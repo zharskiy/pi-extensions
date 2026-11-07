@@ -1,3 +1,4 @@
+import { grantCapBlocker } from "../../config/index.ts";
 import {
   addGrant,
   type Grant,
@@ -80,7 +81,7 @@ const parseAllowFlags = (args: string[], options: AllowOptions = { user: false }
 
 const repoHashOf = (context: LaunchContext) => sha256Hex(context.workspace.repoRoot);
 
-const sessionLaunch = async (deps: CliDeps, context: LaunchContext) => {
+const sessionLaunches = async (deps: CliDeps, context: LaunchContext) => {
   const sessions = await liveSessions(context.stateDir, repoHashOf(context));
   const current = deps.env.PI_SANDBOX_LAUNCH_ID;
 
@@ -91,31 +92,43 @@ const sessionLaunch = async (deps: CliDeps, context: LaunchContext) => {
       );
     }
 
-    return current;
+    return [current];
   }
 
-  const newest = [...sessions].sort((left, right) => right.startedAt - left.startedAt)[0];
-
-  if (newest === undefined) {
+  if (sessions.length === 0) {
     throw new LauncherError(
       "egress allow --session: no pi session is running for this repository",
       "start pi first, or use --hours N or --permanent",
     );
   }
 
-  return newest.launchId;
+  return sessions.map((entry) => entry.launchId);
 };
 
-const scopeOf = async (deps: CliDeps, context: LaunchContext, options: AllowOptions): Promise<GrantScope> => {
+const scopesOf = async (
+  deps: CliDeps,
+  context: LaunchContext,
+  options: AllowOptions,
+): Promise<GrantScope[]> => {
   if (options.scope === "permanent") {
-    return { kind: "permanent" };
+    return [{ kind: "permanent" }];
   }
 
   if (options.scope === "hours") {
-    return { kind: "hours", hours: options.hours ?? Number.NaN };
+    return [{ kind: "hours", hours: options.hours ?? Number.NaN }];
   }
 
-  return { kind: "session", launchId: await sessionLaunch(deps, context) };
+  return (await sessionLaunches(deps, context)).map((launchId) => ({ kind: "session", launchId }));
+};
+
+const assertWithinCap = (context: LaunchContext, target: Target) => {
+  const blocker = grantCapBlocker(context.effective, target.host, target.port);
+
+  if (blocker !== undefined) {
+    throw new LauncherError(
+      `${authorityOf(target.host, target.port)} is outside the allowlist set by ${blocker}; grants cannot add it`,
+    );
+  }
 };
 
 const until = (grant: Grant) =>
@@ -126,26 +139,37 @@ const scopeText = (grant: Grant) => (grant.repoHash === undefined ? "every repos
 const lifetimeText = (grant: Grant) =>
   grant.launchId === undefined ? until(grant) : `for session ${grant.launchId}, ${until(grant)}`;
 
+const grantLine = (grant: Grant) =>
+  `allowed ${authorityOf(grant.host, grant.port)} for ${scopeText(grant)} ${lifetimeText(grant)}`;
+
 const allow = async (deps: CliDeps, args: string[]) => {
   const [text, ...flags] = args;
   const target = parseTarget(text);
   const options = parseAllowFlags(flags);
   const context = await openContext(deps);
-  const grant = await addGrant(
-    context.stateDir,
-    {
-      ...target,
-      ...(options.user ? {} : { repoHash: repoHashOf(context) }),
-      scope: await scopeOf(deps, context, options),
-    },
-    context.effective.config.egress.grants,
-    deps.now(),
+
+  assertWithinCap(context, target);
+
+  const scopes = await scopesOf(deps, context, options);
+  const grants = await Promise.all(
+    scopes.map((scope) =>
+      addGrant(
+        context.stateDir,
+        { ...target, ...(options.user ? {} : { repoHash: repoHashOf(context) }), scope },
+        context.effective.config.egress.grants,
+        deps.now(),
+      ),
+    ),
   );
 
-  writeLine(
-    deps.stdout,
-    `allowed ${authorityOf(grant.host, grant.port)} for ${scopeText(grant)} ${lifetimeText(grant)}`,
-  );
+  writeLines(deps.stdout, grants.map(grantLine));
+
+  if (grants.length > 1) {
+    writeLine(
+      deps.stdout,
+      `the grant applies to each of the ${grants.length} running pi sessions of this repository`,
+    );
+  }
 
   return 0;
 };

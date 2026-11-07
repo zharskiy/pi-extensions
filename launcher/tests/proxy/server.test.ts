@@ -217,6 +217,32 @@ describe("control messages", () => {
     expect(state.controlMessages).toEqual([{ type: "env-secrets", secrets: { rule: "value" } }]);
   });
 
+  it("passes the repository token hash a control message names", async () => {
+    const repoTokenHash = "d".repeat(64);
+    const reply = await plainRequest(state.test.proxy.port, "/control", {
+      method: "POST",
+      token: CONTROL_TOKEN,
+      user: CONTROL_USER,
+      body: JSON.stringify({ type: "env-secrets", secrets: {}, repoTokenHash }),
+    });
+
+    expect(reply.status).toBe(200);
+    expect(state.controlMessages.at(-1)).toEqual({ type: "env-secrets", secrets: {}, repoTokenHash });
+  });
+
+  it("answers a control body over 1 MiB with 400 before closing", async () => {
+    const reply = await plainRequest(state.test.proxy.port, "/control", {
+      method: "POST",
+      token: CONTROL_TOKEN,
+      user: CONTROL_USER,
+      body: "x".repeat(1024 * 1024 + 1024),
+    });
+
+    expect(reply.status).toBe(400);
+    expect(JSON.parse(reply.body)).toEqual({ ok: false, error: "control message too large" });
+    expect(reply.headers.connection).toBe("close");
+  });
+
   it("refuses an unknown control message", async () => {
     const reply = await plainRequest(state.test.proxy.port, "/control", {
       method: "POST",

@@ -1,17 +1,21 @@
 import { join, resolve } from "node:path";
+import { findRepoContainer } from "../container/index.ts";
 import { mcpLoginServer, oneServerDir, prepareMcpLogin, writeBackPackageChange } from "../hostpi/index.ts";
 import { packageChangeFor, readVolumeSettings } from "../provision/index.ts";
 import { expandHome, isWithin, LauncherError } from "../shared/index.ts";
 import { type CliDeps, hostAgentDirOf, writeLine } from "./deps.ts";
+import { deriveVaultServers } from "./derive.ts";
 import { bundledPiCommand } from "./host-pi.ts";
 import {
   type LaunchContext,
+  openBackend,
   openContext,
   openSandboxContext,
   runSandboxPi,
   type Sandbox,
   withSandbox,
 } from "./launch.ts";
+import { syncSandboxMcpAuth } from "./mcp-auth-sync.ts";
 
 const SELF_UPDATE = "pi follows the launcher; update it with npm install -g pi-extensions-mz";
 
@@ -42,10 +46,12 @@ const runOnHost = async (
   return deps.runner.spawnInteractive(file, [...prefix, ...args], options);
 };
 
-const mountedRoots = (context: LaunchContext) => [
+const mountedRoots = (deps: CliDeps, context: LaunchContext) => [
   context.workspace.repoRoot,
   ...(context.workspace.gitCommonDir === undefined ? [] : [context.workspace.gitCommonDir]),
-  ...context.effective.config.mounts.extraReadOnly.map((path) => resolve(context.workspace.repoRoot, path)),
+  ...context.effective.config.mounts.extraReadOnly.map((path) =>
+    resolve(context.workspace.repoRoot, expandHome(path, deps.home)),
+  ),
 ];
 
 const isContainerLocal = (deps: CliDeps, context: LaunchContext, source: string) => {
@@ -55,7 +61,7 @@ const isContainerLocal = (deps: CliDeps, context: LaunchContext, source: string)
 
   const path = resolve(deps.cwd, expandHome(source, deps.home));
 
-  return !mountedRoots(context).some((root) => isWithin(path, root));
+  return !mountedRoots(deps, context).some((root) => isWithin(path, root));
 };
 
 const writeBack = async (
@@ -135,14 +141,36 @@ const loginDir = async (deps: CliDeps, context: LaunchContext, action: string, n
   return (await prepareMcpLogin({ stateDir, name, server })).agentDir;
 };
 
+const runningContainer = async (deps: CliDeps, context: LaunchContext) => {
+  const backend = await openBackend(deps, context.effective.config).catch(() => undefined);
+  const found = backend === undefined ? undefined : await findRepoContainer(backend, context.workspace);
+
+  return backend === undefined || found?.state !== "running" ? undefined : { backend, containerId: found.id };
+};
+
+const syncRunningSandbox = async (deps: CliDeps, context: LaunchContext) => {
+  const running = await runningContainer(deps, context);
+
+  if (running === undefined) {
+    return;
+  }
+
+  await syncSandboxMcpAuth(deps, context, { ...running, servers: await deriveVaultServers(deps, context) });
+};
+
 const mcpAuthCommand = async (deps: CliDeps, action: string, name: string, flags: string[]) => {
   const context = await openContext(deps);
   const agentDir = await loginDir(deps, context, action, name);
-
-  return runOnHost(deps, ["mcp", action, name, ...flags], {
+  const code = await runOnHost(deps, ["mcp", action, name, ...flags], {
     cwd: agentDir,
     env: { PI_CODING_AGENT_DIR: agentDir },
   });
+
+  if (code === 0) {
+    await syncRunningSandbox(deps, context);
+  }
+
+  return code;
 };
 
 const AUTH_VALUE_FLAGS: Record<string, string[]> = { login: ["--timeout"], logout: [] };

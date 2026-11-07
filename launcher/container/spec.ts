@@ -1,14 +1,22 @@
+import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
-import type {
-  BackendCapabilities,
-  ContainerSpec,
-  ImageInfo,
-  MountSpec,
-  NetworkRef,
+import {
+  type BackendCapabilities,
+  type ContainerSpec,
+  type ImageInfo,
+  type MountSpec,
+  type NetworkRef,
+  resolveDockerSocket,
 } from "../backend/index.ts";
 import type { SandboxConfig } from "../config/index.ts";
-import { GUEST_PATHS, isWithin, stableHash } from "../shared/index.ts";
-import type { Workspace } from "../workspace/index.ts";
+import {
+  GUEST_PATHS,
+  isWithin,
+  LAUNCHER_SET_VARIABLES,
+  PI_SESSION_DIR_VARIABLE,
+  stableHash,
+} from "../shared/index.ts";
+import { type HostSessions, resolveExtraMounts, type Workspace } from "../workspace/index.ts";
 import type { GitOverlay } from "./git-overlay.ts";
 import { agentVolumeName, cacheVolumeName, containerName, copiesDir, LABELS, repoHash } from "./names.ts";
 
@@ -52,6 +60,7 @@ export interface ContainerSpecInput {
   trust?: SpecTrust;
   repoProxyToken?: string;
   launchId?: string;
+  hostSessions?: HostSessions;
 }
 
 export interface RepoVolumesInput {
@@ -119,6 +128,17 @@ const hostUser = (hostEnv: Record<string, string | undefined>, uid: number) =>
 
 const resolvedPath = (repoRoot: string, path: string) => (isAbsolute(path) ? path : resolve(repoRoot, path));
 
+const extraMounts = (input: ContainerSpecInput) => {
+  const home = input.hostEnv.HOME ?? homedir();
+
+  return resolveExtraMounts(input.config.mounts.extraReadOnly, {
+    home,
+    env: input.hostEnv,
+    repoRoot: input.workspace.repoRoot,
+    engineSockets: [resolveDockerSocket({ env: input.hostEnv, home })],
+  });
+};
+
 export const repoVolumes = ({ workspace, config, hostEnv, uid }: RepoVolumesInput) => [
   agentVolumeName(hostUser(hostEnv, uid), workspace.repoRoot),
   ...config.mounts.cacheVolumes.map((path) => cacheVolumeName(workspace.repoRoot, path)),
@@ -129,7 +149,7 @@ export const forwardedEnv = (names: string[], hostEnv: Record<string, string | u
     names.flatMap((name) => {
       const value = hostEnv[name];
 
-      return value === undefined ? [] : [[name, value]];
+      return value === undefined || LAUNCHER_SET_VARIABLES.includes(name) ? [] : [[name, value]];
     }),
   );
 
@@ -160,9 +180,33 @@ const trustEnv = (input: ContainerSpecInput): Record<string, string> => ({
   ...(input.trust === undefined ? {} : { PI_SANDBOX_TRUST_HASH: input.trust.hash }),
 });
 
+const hostSessionsDirOf = (input: ContainerSpecInput) =>
+  input.hostSessions !== undefined && "dir" in input.hostSessions ? input.hostSessions.dir : undefined;
+
+const sessionsEnv = (input: ContainerSpecInput): Record<string, string> => {
+  const dir = hostSessionsDirOf(input);
+
+  return dir === undefined ? {} : { [PI_SESSION_DIR_VARIABLE]: dir };
+};
+
+const sessionsMounts = (input: ContainerSpecInput) => {
+  const dir = hostSessionsDirOf(input);
+
+  return dir === undefined ? [] : [bind(dir, dir, false)];
+};
+
+const sessionsLabel = (sessions: HostSessions | undefined): Record<string, string> => {
+  if (sessions === undefined) {
+    return {};
+  }
+
+  return { [LABELS.sessionDir]: "dir" in sessions ? sessions.dir : sessions.off };
+};
+
 const sandboxEnv = (input: ContainerSpecInput) => ({
   ...proxyEnv(input),
   ...trustEnv(input),
+  ...sessionsEnv(input),
   SSL_CERT_FILE: GUEST_CA_BUNDLE,
   REQUESTS_CA_BUNDLE: GUEST_CA_BUNDLE,
   GIT_SSL_CAINFO: GUEST_CA_BUNDLE,
@@ -199,6 +243,7 @@ const baseLabels = (input: ContainerSpecInput) => ({
   [LABELS.configHash]: input.configHash,
   [LABELS.version]: input.launcherVersion,
   ...(input.proxy === undefined ? {} : { [LABELS.proxyPolicyHash]: input.proxy.policyHash }),
+  ...sessionsLabel(input.hostSessions),
 });
 
 const withSpecHash = (spec: LauncherContainerSpec): LauncherContainerSpec => ({
@@ -210,11 +255,7 @@ export const buildContainerSpec = (input: ContainerSpecInput): LauncherContainer
   const { workspace, config } = input;
   const overlay = readOnlyOverlay(input);
   const trust = trustMounts(input);
-  const extraReadOnly = config.mounts.extraReadOnly.map((path) => {
-    const absolute = resolvedPath(workspace.repoRoot, path);
-
-    return bind(absolute, absolute, true);
-  });
+  const extraReadOnly = extraMounts(input).map((mount) => bind(mount.source, mount.target, true));
   const agentVolume = agentVolumeName(hostUser(input.hostEnv, input.hostUid), workspace.repoRoot);
   const caches = config.mounts.cacheVolumes.map((path) =>
     volume(cacheVolumeName(workspace.repoRoot, path), resolvedPath(workspace.repoRoot, path)),
@@ -229,6 +270,7 @@ export const buildContainerSpec = (input: ContainerSpecInput): LauncherContainer
       ...overlay.mounts,
       ...extraReadOnly,
       volume(agentVolume, GUEST_PATHS.agentDir),
+      ...sessionsMounts(input),
       ...caches,
       ...renderMounts(input.renderDir),
       ...trust.mounts,

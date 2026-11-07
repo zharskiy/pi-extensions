@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CredentialRule, EgressCap } from "../../config/index.ts";
 import type { AccessLogEntry } from "../../proxy/access-log.ts";
+import type { Dialer } from "../../proxy/dial.ts";
 import { repoProxyToken } from "../../proxy/dynamic.ts";
 import type { EgressPolicy } from "../../proxy/policy.ts";
 import { createProxyRuntime, type ProxyRuntime } from "../../proxy/runtime.ts";
@@ -84,6 +85,7 @@ export interface TestProxyOptions {
   gateway?: { host: string; port: number; url: string };
   privateHosts?: string[];
   ports?: () => Record<string, number>;
+  dial?: Dialer;
   onControl?: Parameters<typeof startProxyServer>[0]["onControl"];
   vault?: Parameters<typeof startProxyServer>[0]["vault"];
   denialPages?: Parameters<typeof startProxyServer>[0]["denialPages"];
@@ -116,7 +118,7 @@ export const startTestProxy = async (options: TestProxyOptions): Promise<TestPro
     privateHosts: options.privateHosts,
     ca: options.ca,
     log: (entry) => log.push(entry),
-    dial: mappedDial(options.ports ?? (() => ({}))),
+    dial: options.dial ?? mappedDial(options.ports ?? (() => ({}))),
     upstreamCa: options.ca?.certPem,
     helloTimeoutMs: 500,
     onControl: options.onControl,

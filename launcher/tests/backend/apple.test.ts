@@ -1,3 +1,4 @@
+import { statSync } from "node:fs";
 import { PassThrough } from "node:stream";
 import { describe, expect, it } from "vitest";
 import { createAppleBackend } from "../../backend/apple/backend.ts";
@@ -93,11 +94,11 @@ describe("apple adapter", () => {
     const parsed = parse(args);
 
     expect(command).toBe("create");
-    expect(new Set(parsed.pairs)).toEqual(
+    expect(cli.envFiles.at(-1)).toBe("TERM=xterm-256color\n");
+    expect(new Set(parsed.pairs.filter((pair) => !pair.startsWith("--env-file ")))).toEqual(
       new Set([
         "--name pi-sandbox-abc",
         "--label pi-sandbox.repo-hash=abc",
-        "--env TERM=xterm-256color",
         "--mount type=bind,source=/work/repo,target=/work/repo",
         "--mount type=bind,source=/work/repo/.git/hooks,target=/work/repo/.git/hooks,readonly",
         "--volume pi-sandbox-agent-u1:/home/pi/.pi/agent",
@@ -113,6 +114,35 @@ describe("apple adapter", () => {
     expect(parsed.positional).toEqual([IMAGE]);
   });
 
+  it("passes the environment through a private env file that is gone after the call, never in argv", async () => {
+    const { cli, backend } = await readyCli();
+    const token = "http://pi-sandbox:REPO-TOKEN-1@192.168.66.1:3128";
+    const { id } = await backend.createContainer({ ...spec, env: { HTTPS_PROXY: token, TERM: "xterm" } });
+
+    await backend.startContainer(id);
+
+    await backend.exec(
+      { containerId: id, command: ["true"], env: { PI_SANDBOX_LAUNCH_ID: "l1", LANG: "C" }, workdir: "/" },
+      { stdout: new PassThrough(), stderr: new PassThrough(), tty: false },
+    );
+
+    const argv = [...cli.calls.map((call) => call.args), ...cli.spawned.map((call) => call.args)].flat();
+    const envFile =
+      lastCall(cli.calls, "create")[lastCall(cli.calls, "create").indexOf("--env-file") + 1] ?? "";
+
+    expect(argv.join(" ")).not.toMatch(/REPO-TOKEN-1|--env /);
+    expect(cli.envFiles).toEqual([`HTTPS_PROXY=${token}\nTERM=xterm\n`, "PI_SANDBOX_LAUNCH_ID=l1\nLANG=C\n"]);
+    expect(() => statSync(envFile)).toThrow();
+  });
+
+  it("refuses an environment value with a line break", async () => {
+    const { backend } = await readyCli();
+
+    await expect(backend.createContainer({ ...spec, env: { BAD: "a\nINJECTED=1" } })).rejects.toThrow(
+      "environment variable BAD has a line break; it cannot be passed",
+    );
+  });
+
   it("forwards the ssh agent with --ssh when the spec asks for it", async () => {
     const { cli, backend } = await readyCli();
 
@@ -125,7 +155,7 @@ describe("apple adapter", () => {
     const parsed = parse(lastCall(cli.calls, "create").slice(1));
 
     expect(parsed.switches).toContain("--ssh");
-    expect(parsed.pairs).toContain("--env SSH_AUTH_SOCK=/var/host-services/ssh-auth.sock");
+    expect(cli.envFiles.at(-1)).toContain("SSH_AUTH_SOCK=/var/host-services/ssh-auth.sock\n");
     expect(parsed.pairs).toContain("--network none");
   });
 
@@ -137,7 +167,7 @@ describe("apple adapter", () => {
     const parsed = parse(lastCall(cli.calls, "create").slice(1));
 
     expect(parsed.switches).not.toContain("--ssh");
-    expect(parsed.pairs.filter((pair) => pair.startsWith("--env SSH_AUTH_SOCK"))).toEqual([]);
+    expect(cli.envFiles.at(-1)).not.toContain("SSH_AUTH_SOCK");
   });
 
   it("runs a tty exec on the host terminal with env and workdir", async () => {
@@ -156,7 +186,10 @@ describe("apple adapter", () => {
     expect(exitCode).toBe(0);
     expect(call?.interactive).toBe(true);
     expect(new Set(parsed.switches)).toEqual(new Set(["--interactive", "--tty"]));
-    expect(new Set(parsed.pairs)).toEqual(new Set(["--env COLUMNS=120", "--workdir /work/repo/sub"]));
+    expect(parsed.pairs.filter((pair) => !pair.startsWith("--env-file "))).toEqual([
+      "--workdir /work/repo/sub",
+    ]);
+    expect(cli.envFiles.at(-1)).toBe("COLUMNS=120\n");
     expect(parsed.positional).toEqual([id, "pi", "--help"]);
   });
 
@@ -229,6 +262,74 @@ describe("apple adapter", () => {
 
     expect(cli.networks.get("pi-sandbox")).toEqual({ internal: true, labels: ["pi-sandbox.managed=true"] });
     expect(cli.calls.filter((call) => call.args.slice(0, 2).join(" ") === "network create")).toHaveLength(1);
+  });
+
+  it("gives each repository its own internal network and removes it with the repository's last container", async () => {
+    const { cli, backend } = await readyCli();
+    const repoA = "a".repeat(64);
+    const repoB = "b".repeat(64);
+    const routeA = await backend.prepareProxyRoute(3128, "p".repeat(64), "image", repoA);
+    const routeB = await backend.prepareProxyRoute(3128, "p".repeat(64), "image", repoB);
+    const create = (name: string, repo: string) =>
+      backend.createContainer({
+        ...spec,
+        name,
+        labels: { "pi-sandbox.repo-hash": repo },
+        network: repo === repoA ? routeA.network : routeB.network,
+      });
+
+    expect(routeA.network).toEqual({ kind: "internal", name: `pi-sandbox-${"a".repeat(12)}` });
+    expect(cli.networks.get(`pi-sandbox-${"a".repeat(12)}`)).toEqual({
+      internal: true,
+      labels: ["pi-sandbox.managed=true", `pi-sandbox.repo-hash=${repoA}`],
+    });
+
+    const first = await create("agent-a1", repoA);
+    const second = await create("agent-a2", repoA);
+
+    await create("agent-b", repoB);
+
+    await backend.removeContainer(first.id);
+
+    expect(cli.networks.has(`pi-sandbox-${"a".repeat(12)}`)).toBe(true);
+
+    await backend.removeContainer(second.id);
+
+    expect(cli.networks.has(`pi-sandbox-${"a".repeat(12)}`)).toBe(false);
+    expect(cli.networks.has(`pi-sandbox-${"b".repeat(12)}`)).toBe(true);
+  });
+
+  it("keeps the repository's network when asked to while the last container is replaced", async () => {
+    const { cli, backend } = await readyCli();
+    const repo = "a".repeat(64);
+    const route = await backend.prepareProxyRoute(3128, "p".repeat(64), "image", repo);
+    const created = await backend.createContainer({
+      ...spec,
+      name: "agent-a",
+      labels: { "pi-sandbox.repo-hash": repo },
+      network: route.network,
+    });
+
+    await backend.removeContainer(created.id, { keepNetwork: true });
+
+    expect(cli.networks.has(`pi-sandbox-${"a".repeat(12)}`)).toBe(true);
+  });
+
+  it("prunes managed networks of repositories outside the keep set", async () => {
+    const { cli, backend } = await readyCli();
+    const repoA = "a".repeat(64);
+    const repoB = "b".repeat(64);
+
+    await backend.prepareProxyRoute(3128, "p".repeat(64), "image");
+
+    await backend.prepareProxyRoute(3128, "p".repeat(64), "image", repoA);
+
+    await backend.prepareProxyRoute(3128, "p".repeat(64), "image", repoB);
+
+    cli.networks.set("pi-sandbox-foreign", { internal: true, labels: [] });
+
+    expect(await backend.pruneNetworks([repoA])).toEqual(["pi-sandbox", `pi-sandbox-${"b".repeat(12)}`]);
+    expect([...cli.networks.keys()].sort()).toEqual([`pi-sandbox-${"a".repeat(12)}`, "pi-sandbox-foreign"]);
   });
 
   it("refuses an existing pi-sandbox network that is not internal", async () => {

@@ -1,3 +1,4 @@
+import { constants } from "node:os";
 import type { Backend, ProxyRoute } from "../backend/index.ts";
 import { selectBackend } from "../backend/index.ts";
 import {
@@ -13,6 +14,7 @@ import {
   findCurrentContainer,
   forwardedEnv,
   type LauncherContainerSpec,
+  listenFor,
   runPi,
 } from "../container/index.ts";
 import {
@@ -28,13 +30,23 @@ import {
   assertSafeWorkspace,
   assertWithinWorkspaceRoots,
   discoverWorkspace,
+  type HostSessions,
   type Workspace,
 } from "../workspace/index.ts";
 import { type CliDeps, pathsOf, writeLine, writeNotices } from "./deps.ts";
 import { type HostSide, prepareHostSide } from "./derive.ts";
 import { findHostPi } from "./host-pi.ts";
+import {
+  hostSessionsOf,
+  noticeHostSessions,
+  probeSessionsShare,
+  readyHostSessions,
+  sessionsSweeper,
+  sweepForHostPi,
+} from "./host-sessions.ts";
+import { syncSandboxMcpAuth } from "./mcp-auth-sync.ts";
 import { openSandboxProxy, reportDenials, type SandboxProxy } from "./sandbox-proxy.ts";
-import { beginSession, finishSession, type LaunchSession, pruneEndedGrants } from "./sessions.ts";
+import { beginSession, finishSession, type LaunchSession, othersLive, pruneEndedGrants } from "./sessions.ts";
 import { launcherVersion, piVersion } from "./versions.ts";
 
 export interface LaunchContext {
@@ -60,6 +72,8 @@ export interface SandboxParts {
   host: HostSide;
   proxy?: SandboxProxy;
   image: ImageRef;
+  session: LaunchSession;
+  sessions: HostSessions;
 }
 
 export interface Sandbox extends PreparedContainer {
@@ -73,11 +87,20 @@ const NO_SANDBOX = "--no-sandbox";
 
 const PREPARING = "preparing pi sandbox, one time";
 
-export const openContext = async (deps: CliDeps): Promise<LaunchContext> => {
+const OUTDATED =
+  "pi-sandbox: the sandbox config changed; it applies after every session in this repository exits";
+
+const PREPARATION_SIGNALS: NodeJS.Signals[] = ["SIGINT", "SIGTERM", "SIGHUP"];
+
+const SIGNAL_EXIT_BASE = 128;
+
+export const openContext = async (deps: CliDeps, offline = false): Promise<LaunchContext> => {
   const workspace = await discoverWorkspace(deps.cwd, deps.runner);
   const { notices, ...effective } = await loadEffectiveConfig({
     repoRoot: workspace.repoRoot,
     env: deps.env,
+    home: deps.home,
+    offline,
   });
 
   writeNotices(deps, notices);
@@ -187,12 +210,22 @@ export const prepareImage = async (
   return { ...base, id: layer.id };
 };
 
-const sandboxRoute = async (backend: Backend, proxy: SandboxProxy | undefined, imageId: string) => {
+const sandboxRoute = async (
+  backend: Backend,
+  proxy: SandboxProxy | undefined,
+  imageId: string,
+  repoHash: string,
+) => {
   if (proxy === undefined) {
     return undefined;
   }
 
-  const route: ProxyRoute = await backend.prepareProxyRoute(proxy.instance.port, proxy.policyHash, imageId);
+  const route: ProxyRoute = await backend.prepareProxyRoute(
+    proxy.instance.port,
+    proxy.policyHash,
+    imageId,
+    repoHash,
+  );
 
   return { url: guestProxyUrl(route, proxy.repoToken), network: route.network, policyHash: proxy.policyHash };
 };
@@ -232,14 +265,17 @@ export const prepareContainer = async (
   backend: Backend,
   parts: SandboxParts,
 ): Promise<PreparedContainer> => {
-  const { host, proxy, image } = parts;
+  const { host, proxy, image, session, sessions } = parts;
   const render = await renderAgentDir({
     stateDir: context.stateDir,
     repoHash: host.repoHash,
     hostAgentDir: host.hostAgentDir,
     derived: host.derived,
   });
-  const route = await sandboxRoute(backend, proxy, image.id);
+  const route = await sandboxRoute(backend, proxy, image.id, host.repoHash);
+
+  await readyHostSessions(deps, context, backend, { sessions, launchId: session.launchId });
+
   const spec = buildContainerSpec({
     workspace: context.workspace,
     config: context.effective.config,
@@ -257,31 +293,73 @@ export const prepareContainer = async (
     renderDir: render.renderDir,
     trust: route === undefined ? undefined : host.trust,
     repoProxyToken: proxy?.repoToken,
+    hostSessions: sessions,
   });
-  const { id, created } = await ensureContainer({ backend, spec });
+  const { id, created, outdated } = await ensureContainer({
+    backend,
+    spec,
+    othersLive: () => othersLive(context.stateDir, session),
+  });
+
+  if (outdated) {
+    writeLine(deps.stderr, OUTDATED);
+  }
 
   if (created) {
+    await probeSessionsShare(backend, context, id, sessions);
+
     await pruneEndedGrants(deps, context.stateDir);
   }
 
   await syncAgentFiles(deps, context, backend, host, id);
 
+  await syncSandboxMcpAuth(deps, context, { backend, containerId: id, servers: host.derived.vault });
+
   return { containerId: id, spec, image, created };
 };
 
-export const withSandbox = async <T>(
+const prepareSandbox = async (
   deps: CliDeps,
   context: LaunchContext,
   backend: Backend,
-  use: (sandbox: Sandbox) => Promise<T>,
+  host: HostSide,
+  session: LaunchSession,
+  sessions: HostSessions,
+) => {
+  const proxy = await openSandboxProxy(deps, context, host);
+  const image = await prepareImage(deps, context, backend, host.trust);
+  const prepared = await prepareContainer(deps, context, backend, { host, proxy, image, session, sessions });
+
+  return { prepared, proxy };
+};
+
+export const withSandbox = async (
+  deps: CliDeps,
+  context: LaunchContext,
+  backend: Backend,
+  use: (sandbox: Sandbox) => Promise<number>,
 ) => {
   const host = await prepareHostSide(deps, context);
+  const sessions = hostSessionsOf(deps, context, host.files.settings);
+
+  noticeHostSessions(deps, sessions);
+
   const session = await beginSession(deps, context, host.repoHash);
+  const watch = listenFor(deps.signals ?? process, PREPARATION_SIGNALS);
 
   try {
-    const proxy = await openSandboxProxy(deps, context, host);
-    const image = await prepareImage(deps, context, backend, host.trust);
-    const prepared = await prepareContainer(deps, context, backend, { host, proxy, image });
+    const outcome = await Promise.race([
+      prepareSandbox(deps, context, backend, host, session, sessions).then((ready) => ({ ready })),
+      watch.received.then((signal) => ({ signal })),
+    ]);
+
+    watch.stop();
+
+    if ("signal" in outcome) {
+      return SIGNAL_EXIT_BASE + constants.signals[outcome.signal];
+    }
+
+    const { prepared, proxy } = outcome.ready;
 
     try {
       return await use({ ...prepared, backend, host, proxy, session });
@@ -289,7 +367,9 @@ export const withSandbox = async <T>(
       await reportDenials(deps, context, proxy, session.startedAt);
     }
   } finally {
-    await finishSession(deps, context, backend, session);
+    watch.stop();
+
+    await finishSession(deps, context, backend, session, sessionsSweeper(deps, context));
   }
 };
 
@@ -326,6 +406,8 @@ const runHostPi = async (deps: CliDeps, context: LaunchContext, piArgs: string[]
 
   writeLine(deps.stderr, `pi-sandbox: warning: running ${hostPi} on the host, outside the sandbox`);
 
+  await sweepForHostPi(deps, context);
+
   return deps.runner.spawnInteractive(hostPi, piArgs, { cwd: deps.cwd });
 };
 
@@ -341,7 +423,7 @@ export const launch = async (args: string[], deps: CliDeps) => {
   const piArgs = args.filter((arg) => arg !== NO_SANDBOX);
 
   if (piArgs.length !== args.length) {
-    const context = await openContext(deps);
+    const context = await openContext(deps, true);
 
     checkWorkspaceRoots(deps, context);
 

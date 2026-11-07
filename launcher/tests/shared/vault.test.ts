@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -6,6 +6,7 @@ import {
   codePlaceholder,
   isCodePlaceholder,
   isPlaceholder,
+  loadVaultStore,
   readVaultStore,
   stateLayout,
   syntheticExpiresIn,
@@ -123,5 +124,39 @@ describe("vault store", () => {
     await writeFile(path, JSON.stringify({ ...store, broken: "text", list: [] }));
 
     expect(Object.keys(await readVaultStore(state.dir))).toEqual(["kept"]);
+  });
+});
+
+describe("a corrupt vault store", () => {
+  const corrupt = async () => {
+    const path = stateLayout(state.dir).mcpAuthStore;
+
+    await mkdir(join(state.dir, "mcp-auth"), { recursive: true });
+
+    await writeFile(path, "{ not json");
+
+    return path;
+  };
+
+  it("reads as empty without moving the file", async () => {
+    const path = await corrupt();
+
+    expect(await readVaultStore(state.dir)).toEqual({});
+    expect(await readFile(path, "utf8")).toBe("{ not json");
+  });
+
+  it("is moved aside once before the first write, which starts a fresh store", async () => {
+    const path = await corrupt();
+
+    await writeVaultEntry(state.dir, "first", entry("one"));
+
+    await writeVaultEntry(state.dir, "second", entry("two"));
+
+    const names = await readdir(join(state.dir, "mcp-auth"));
+    const aside = names.filter((name) => name.startsWith("mcp-auth.json.corrupt-"));
+
+    expect(aside).toHaveLength(1);
+    expect(await readFile(join(state.dir, "mcp-auth", aside[0] ?? ""), "utf8")).toBe("{ not json");
+    expect(Object.keys(await loadVaultStore(path, { forWrite: false }))).toEqual(["first", "second"]);
   });
 });

@@ -5,6 +5,7 @@ import {
   checkNoRoute,
   checkSamePath,
   failed,
+  LABELS,
   type ProbeTarget,
   passed,
   removeRepoContainer,
@@ -12,8 +13,10 @@ import {
   sweepCredentials,
 } from "../../container/index.ts";
 import { errorMessage } from "../../shared/index.ts";
+import type { HostSessions } from "../../workspace/index.ts";
 import { type CliDeps, writeLine } from "../deps.ts";
 import { type HostSide, prepareHostSide } from "../derive.ts";
+import { hostSessionsOf, sessionsSweeper } from "../host-sessions.ts";
 import {
   checkWorkspace,
   type LaunchContext,
@@ -24,11 +27,31 @@ import {
   prepareImage,
 } from "../launch.ts";
 import { openSandboxProxy, type SandboxProxy } from "../sandbox-proxy.ts";
-import { beginSession, finishSession } from "../sessions.ts";
-import { checkMcp, checkOffline, checkRules, type NamedCheck } from "./doctor-container.ts";
+import { beginSession, finishSession, type LaunchSession, othersLive } from "../sessions.ts";
+import {
+  checkBrowserShim,
+  checkMcp,
+  checkMcpAuthSweep,
+  checkOffline,
+  checkRules,
+  checkSessionsShare,
+  checkSettingsSweep,
+  type NamedCheck,
+} from "./doctor-container.ts";
 import { hostChecks } from "./doctor-host.ts";
 
-const CONTAINER_CHECKS = ["same-path mount", "credential sweep", "no-route", "offline", "mcp", "trust"];
+const CONTAINER_CHECKS = [
+  "same-path mount",
+  "credential sweep",
+  "no-route",
+  "offline",
+  "mcp",
+  "mcp-auth sweep",
+  "settings sweep",
+  "browser",
+  "sessions share",
+  "trust",
+];
 
 const attempt = async (action: () => Promise<CheckResult>) => {
   try {
@@ -62,12 +85,25 @@ const proxyCheck = async (proxy: SandboxProxy | undefined) => {
     : failed(`${where}, /healthz does not answer`);
 };
 
+const browserCheck = (proxy: SandboxProxy | undefined, target: ProbeTarget) =>
+  proxy === undefined
+    ? Promise.resolve(skipped("no proxy, nothing to open a sign-in through"))
+    : checkBrowserShim(target);
+
+const sessionsShareCheck = async (target: ProbeTarget) => {
+  const containers = await target.backend.findContainers({ [LABELS.managed]: "true" });
+  const container = containers.find((candidate) => candidate.id === target.containerId);
+
+  return checkSessionsShare(target, container?.labels[LABELS.sessionDir]);
+};
+
 const containerChecks = async (
   deps: CliDeps,
   context: LaunchContext,
-  host: HostSide,
+  parts: { host: HostSide; proxy?: SandboxProxy },
   target: ProbeTarget,
 ) => {
+  const { host, proxy } = parts;
   const placeholder = context.effective.config.gateway?.placeholder;
   const rules = await checkRules(target, host.derived.rules).catch((error: unknown) => [
     { name: "trust", result: failed(errorMessage(error)) },
@@ -79,6 +115,10 @@ const containerChecks = async (
     report(deps, "no-route", await attempt(() => checkNoRoute(target))),
     report(deps, "offline", await attempt(() => checkOffline(target))),
     report(deps, "mcp", await attempt(() => checkMcp(target))),
+    report(deps, "mcp-auth sweep", await attempt(() => checkMcpAuthSweep(target))),
+    report(deps, "settings sweep", await attempt(() => checkSettingsSweep(target))),
+    report(deps, "browser", await attempt(() => browserCheck(proxy, target))),
+    report(deps, "sessions share", await attempt(() => sessionsShareCheck(target))),
     ...reportAll(deps, rules),
   ];
 };
@@ -94,7 +134,7 @@ const imageAndContainer = async (
   deps: CliDeps,
   context: LaunchContext,
   backend: Backend,
-  parts: { host: HostSide; proxy?: SandboxProxy },
+  parts: { host: HostSide; proxy?: SandboxProxy; session: LaunchSession; sessions: HostSessions },
   containers: Containers,
 ) => {
   const image = await prepareImage(deps, context, backend, parts.host.trust).catch((error: unknown) =>
@@ -119,10 +159,17 @@ const imageAndContainer = async (
 
   const target = { backend, containerId: prepared.containerId, workdir: prepared.spec.workdir };
 
-  return containerChecks(deps, context, parts.host, target);
+  return containerChecks(deps, context, parts, target);
 };
 
-const sandboxChecks = async (deps: CliDeps, context: LaunchContext, backend: Backend, host: HostSide) => {
+const sandboxChecks = async (
+  deps: CliDeps,
+  context: LaunchContext,
+  backend: Backend,
+  host: HostSide,
+  session: LaunchSession,
+  sessions: HostSessions,
+) => {
   const proxy = await startedProxy(deps, context, host);
 
   if (typeof proxy === "string") {
@@ -136,9 +183,12 @@ const sandboxChecks = async (deps: CliDeps, context: LaunchContext, backend: Bac
   const containers: Containers = {};
 
   try {
-    return [proxyOk, ...(await imageAndContainer(deps, context, backend, { host, proxy }, containers))];
+    return [
+      proxyOk,
+      ...(await imageAndContainer(deps, context, backend, { host, proxy, session, sessions }, containers)),
+    ];
   } finally {
-    if (containers.created !== undefined) {
+    if (containers.created !== undefined && !(await othersLive(context.stateDir, session))) {
       await removeRepoContainer(backend, context.workspace.repoRoot);
     }
   }
@@ -154,12 +204,13 @@ const backendChecks = async (deps: CliDeps, context: LaunchContext, backend: Bac
     ];
   }
 
+  const sessions = hostSessionsOf(deps, context, host.files.settings);
   const session = await beginSession(deps, context, host.repoHash);
 
   try {
-    return await sandboxChecks(deps, context, backend, host);
+    return await sandboxChecks(deps, context, backend, host, session, sessions);
   } finally {
-    await finishSession(deps, context, backend, session);
+    await finishSession(deps, context, backend, session, sessionsSweeper(deps, context));
   }
 };
 

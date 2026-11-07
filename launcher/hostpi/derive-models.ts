@@ -1,4 +1,6 @@
 import { join } from "node:path";
+import type { SecretRef } from "../config/index.ts";
+import { launcherRoot } from "../shared/index.ts";
 import { type Endpoint, endpointOf } from "./endpoints.ts";
 import { deriveHeaders, type HeaderTarget } from "./headers.ts";
 import { isJsonObject, objectOr } from "./json.ts";
@@ -37,6 +39,38 @@ const withHeaders = (
   };
 };
 
+const MODEL_SECRET_SCRIPT = "model-secret.mjs";
+
+const withoutUserinfo = (url: unknown) => {
+  if (typeof url !== "string") {
+    return "";
+  }
+
+  try {
+    const parsed = new URL(url);
+
+    parsed.username = "";
+
+    parsed.password = "";
+
+    return parsed.href;
+  } catch {
+    return "";
+  }
+};
+
+const modelSecret = (scope: ProviderScope, model: JsonObject, id: string, path: string[]): SecretRef => ({
+  command: [
+    process.execPath,
+    join(launcherRoot(), "hostpi", MODEL_SECRET_SCRIPT),
+    scope.file,
+    scope.id,
+    id,
+    withoutUserinfo(model.baseUrl),
+    ...path,
+  ],
+});
+
 const modelEndpoints = (scope: ProviderScope, model: JsonObject) => {
   if (model.baseUrl === undefined) {
     return scope.endpoints;
@@ -52,7 +86,8 @@ const modelSection = (scope: ProviderScope, model: unknown, index: number): Sect
     return { value: model, rules: [], notices: [] };
   }
 
-  const modelId = typeof model.id === "string" ? model.id : String(index);
+  const ownId = typeof model.id === "string" ? model.id : undefined;
+  const modelId = ownId ?? String(index);
   const stripped = stripUserinfo(
     {
       label: `models ${scope.id}`,
@@ -60,6 +95,7 @@ const modelSection = (scope: ProviderScope, model: unknown, index: number): Sect
       identity: `models:${scope.id}:model:${modelId}:baseUrl:userinfo`,
       file: scope.file,
       pointer: ["providers", scope.id, "models", index, "baseUrl"],
+      secret: ownId === undefined ? undefined : modelSecret(scope, model, ownId, ["baseUrl"]),
     },
     model.baseUrl,
   );
@@ -67,6 +103,9 @@ const modelSection = (scope: ProviderScope, model: unknown, index: number): Sect
     identity: `models:${scope.id}:model:${modelId}`,
     pointer: ["providers", scope.id, "models", index, "headers"],
     endpoints: modelEndpoints(scope, model),
+    ...(ownId === undefined
+      ? {}
+      : { literalSecret: (name: string) => modelSecret(scope, model, ownId, ["headers", name]) }),
   });
   const value = model.baseUrl === undefined ? headed.value : { ...headed.value, baseUrl: stripped.value };
 

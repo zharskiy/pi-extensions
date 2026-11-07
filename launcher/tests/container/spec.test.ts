@@ -1,4 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterAll, describe, expect, it } from "vitest";
 import type { BackendCapabilities, MountSpec } from "../../backend/index.ts";
 import { buildContainerSpec, forwardedEnv, repoVolumes } from "../../container/index.ts";
 import type { ContainerSpecInput } from "../../container/spec.ts";
@@ -44,6 +47,20 @@ const specInput = (overrides: Partial<ContainerSpecInput> = {}): ContainerSpecIn
   ...overrides,
 });
 
+const scratch = realpathSync(mkdtempSync(join(tmpdir(), "pi-sandbox-spec-")));
+
+const hostHome = join(scratch, "home");
+
+const sharedDir = join(scratch, "opt", "shared");
+
+mkdirSync(join(hostHome, "libs"), { recursive: true });
+
+mkdirSync(sharedDir, { recursive: true });
+
+afterAll(() => {
+  rmSync(scratch, { recursive: true, force: true });
+});
+
 const mountAt = (mounts: MountSpec[], target: string) => mounts.find((mount) => mount.target === target);
 
 describe("buildContainerSpec", () => {
@@ -66,7 +83,7 @@ describe("buildContainerSpec", () => {
   it("labels a spec hash that changes with the spec and nothing else", () => {
     const hashOf = (input: ContainerSpecInput) => buildContainerSpec(input).labels["pi-sandbox.spec-hash"];
     const base = hashOf(specInput());
-    const extra = sandboxConfig({ mounts: { extraReadOnly: ["/opt/tools"], cacheVolumes: [] } });
+    const extra = sandboxConfig({ mounts: { extraReadOnly: [sharedDir], cacheVolumes: [] } });
 
     expect(base).toMatch(/^[0-9a-f]{64}$/);
     expect(hashOf(specInput())).toBe(base);
@@ -169,19 +186,50 @@ describe("buildContainerSpec", () => {
     expect(spec.requiredCopies).toEqual([]);
   });
 
-  it("adds the extra read-only mounts from config at the same path", () => {
-    const config = sandboxConfig({
-      mounts: { extraReadOnly: ["/opt/shared", "vendor/sdk"], cacheVolumes: [] },
-    });
-    const mounts = buildContainerSpec(specInput({ config })).mounts;
+  it("adds the extra read-only mounts from config at the same path, with ~ expanded", () => {
+    const repo = join(scratch, "repo");
 
-    expect(mountAt(mounts, "/opt/shared")).toEqual({
-      source: "/opt/shared",
-      target: "/opt/shared",
+    mkdirSync(join(repo, "vendor", "sdk"), { recursive: true });
+
+    const config = sandboxConfig({
+      mounts: { extraReadOnly: [sharedDir, "vendor/sdk", "~/libs"], cacheVolumes: [] },
+    });
+    const mounts = buildContainerSpec(
+      specInput({
+        config,
+        workspace: { cwd: repo, repoRoot: repo, isGitRepo: false },
+        hostEnv: { USER: "dev", HOME: hostHome },
+      }),
+    ).mounts;
+
+    expect(mountAt(mounts, sharedDir)).toEqual({
+      source: sharedDir,
+      target: sharedDir,
       readOnly: true,
       kind: "bind",
     });
-    expect(mountAt(mounts, "/work/repo/vendor/sdk")?.readOnly).toBe(true);
+    expect(mountAt(mounts, join(repo, "vendor", "sdk"))?.readOnly).toBe(true);
+    expect(mountAt(mounts, join(hostHome, "libs"))?.source).toBe(join(hostHome, "libs"));
+    expect(mounts.some((mount) => mount.source.includes("~"))).toBe(false);
+  });
+
+  it("refuses an extra mount that would expose the engine socket or the home", () => {
+    const socketDir = join(scratch, "engine");
+
+    mkdirSync(socketDir, { recursive: true });
+
+    const attempt = (path: string, hostEnv: Record<string, string>) => () =>
+      buildContainerSpec(
+        specInput({
+          config: sandboxConfig({ mounts: { extraReadOnly: [path], cacheVolumes: [] } }),
+          hostEnv: { USER: "dev", HOME: hostHome, ...hostEnv },
+        }),
+      );
+
+    expect(attempt(socketDir, { DOCKER_HOST: `unix://${socketDir}/docker.sock` })).toThrow(
+      `mounts.extraReadOnly: ${socketDir} is not allowed (it contains the container engine socket)`,
+    );
+    expect(attempt("~", {})).toThrow("mounts.extraReadOnly: ~ is not allowed (it is the home directory)");
   });
 
   it("keeps pi's agent dir on a named volume per user and repository", () => {
@@ -402,5 +450,37 @@ describe("buildContainerSpec", () => {
 
     expect(spec.workdir).toBe(repoRoot);
     expect(spec.resources).toEqual({ cpus: 4, memoryGiB: 8 });
+  });
+});
+
+describe("buildContainerSpec with host sessions", () => {
+  const dir = "/Users/dev/.pi/agent/sessions/--work-repo--";
+
+  it("binds the host session dir read-write at its own path and points pi at it", () => {
+    const spec = buildContainerSpec(specInput({ hostSessions: { dir } }));
+
+    expect(mountAt(spec.mounts, dir)).toEqual({ source: dir, target: dir, readOnly: false, kind: "bind" });
+    expect(spec.env.PI_CODING_AGENT_SESSION_DIR).toBe(dir);
+    expect(spec.labels["pi-sandbox.session-dir"]).toBe(dir);
+    expect(mountAt(spec.mounts, "/home/pi/.pi/agent")?.kind).toBe("volume");
+  });
+
+  it("keeps sessions in the volume with no bind or env when off, and labels the reason", () => {
+    const spec = buildContainerSpec(
+      specInput({ hostSessions: { off: "sessions.host is off", notice: false } }),
+    );
+
+    expect(spec.mounts.some((mount) => mount.target.includes("/sessions/"))).toBe(false);
+    expect(spec.env.PI_CODING_AGENT_SESSION_DIR).toBeUndefined();
+    expect(spec.labels["pi-sandbox.session-dir"]).toBe("sessions.host is off");
+  });
+
+  it("changes the spec hash when the toggle or the directory changes", () => {
+    const hashOf = (input: ContainerSpecInput) => buildContainerSpec(input).labels["pi-sandbox.spec-hash"];
+    const on = hashOf(specInput({ hostSessions: { dir } }));
+    const off = hashOf(specInput({ hostSessions: { off: "sessions.host is off", notice: false } }));
+    const moved = hashOf(specInput({ hostSessions: { dir: `${dir}-moved` } }));
+
+    expect(new Set([on, off, moved]).size).toBe(3);
   });
 });

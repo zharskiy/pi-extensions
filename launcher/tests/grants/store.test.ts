@@ -76,6 +76,17 @@ describe("addGrant and readGrants", () => {
     });
   });
 
+  it("ends a session grant at egress.grants.maxHours when that is under 12 hours", async () => {
+    const grant = await addGrant(
+      state.stateDir,
+      { host: "a.test", port: 443, scope: { kind: "session", launchId: "0123456789abcdef" } },
+      { ...LIMITS, maxHours: 2 },
+      FAKE_EPOCH,
+    );
+
+    expect(grant.expiresAt).toBe(FAKE_EPOCH + 2 * HOUR);
+  });
+
   it.each([
     [{ ...LIMITS, enabled: false }, { kind: "session", launchId: "0123456789abcdef" } as const],
     [{ ...LIMITS, permanent: false }, { kind: "permanent" } as const],

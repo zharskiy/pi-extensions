@@ -10,6 +10,7 @@
   },
   "credentials": {
     "derive": { "enabled": false },
+    "vault": { "enabled": false },
     "rules": [
       {
         "id": "llm-gateway",

@@ -1,6 +1,7 @@
+import { isAbsolute } from "node:path";
 import type { Backend, BackendCapabilities } from "../../backend/index.ts";
 import { configHash } from "../../config/index.ts";
-import { findCurrentContainer, findRepoContainer, LABELS } from "../../container/index.ts";
+import { findRepoContainer, isCurrentContainer, LABELS } from "../../container/index.ts";
 import { liveSessions } from "../../grants/index.ts";
 import { recordedImage } from "../../image/index.ts";
 import { proxyPolicyHash } from "../../proxy/index.ts";
@@ -24,6 +25,14 @@ const gapLines = (capabilities: BackendCapabilities) =>
     .filter((name) => !capabilities[name])
     .map((name) => `gap: ${GAPS[name]}`);
 
+const sessionDirLine = (label: string | undefined) => {
+  if (label === undefined) {
+    return "session dir: sandbox volume";
+  }
+
+  return isAbsolute(label) ? `session dir: ${label}` : `session dir: sandbox volume (${label})`;
+};
+
 const containerLines = async (backend: Backend, context: LaunchContext) => {
   const container = await findRepoContainer(backend, context.workspace);
 
@@ -34,18 +43,19 @@ const containerLines = async (backend: Backend, context: LaunchContext) => {
   const { config } = context.effective;
   const hash = container.labels[LABELS.configHash] ?? "unknown";
   const record = await recordedImage(context.stateDir, config);
-  const current = await findCurrentContainer(
-    backend,
-    context.workspace,
-    record?.digest ?? "",
-    configHash(config),
-  );
-  const freshness = current?.id === container.id ? "current" : "stale";
+  const current = await isCurrentContainer(container, {
+    stateDir: context.stateDir,
+    repoRoot: context.workspace.repoRoot,
+    digest: record?.digest ?? "",
+    configHash: configHash(config),
+  });
+  const freshness = current ? "current" : "stale";
 
   return [
     `container: ${container.id} ${container.state}`,
     `container digest: ${container.labels[LABELS.imageDigest] ?? "unknown"}`,
     `container config hash: ${hash} (${freshness})`,
+    sessionDirLine(container.labels[LABELS.sessionDir]),
   ];
 };
 

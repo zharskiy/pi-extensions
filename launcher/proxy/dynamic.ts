@@ -1,11 +1,12 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { get } from "node:http";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import type { CredentialRule } from "../config/index.ts";
 import { type ActiveGrantContext, activeGrants, type Grant } from "../grants/index.ts";
 import {
   readJsonFile,
+  sha256Hex,
   stateLayout,
   type VaultServer,
   writeFileAtomic,
@@ -15,12 +16,20 @@ import { proxyAuthorization } from "./auth.ts";
 import { type ProxyInstance, proxyFiles } from "./files.ts";
 import { authorityOf } from "./policy.ts";
 
-export interface ProxyDynamic {
-  version: 1;
+export interface DynamicSection {
   rules: CredentialRule[];
   derivedHosts: string[];
-  tokens: Record<string, string>;
   vault?: VaultServer[];
+}
+
+export interface ProxyDynamic extends DynamicSection {
+  version: 1;
+  tokens: Record<string, string>;
+}
+
+export interface StoredDynamic extends ProxyDynamic {
+  shared: DynamicSection;
+  repos: Record<string, DynamicSection>;
 }
 
 export interface DenialRecord {
@@ -42,7 +51,9 @@ const PRIVATE_MODE = 0o600;
 
 const TOKEN_BYTES = 32;
 
-export const TOKEN_PATTERN = new RegExp(`^[0-9a-f]{${TOKEN_BYTES * 2}}$`);
+const TOKEN_PATTERN = new RegExp(`^[0-9a-f]{${TOKEN_BYTES * 2}}$`);
+
+const TOKEN_HASH = /^[0-9a-f]{64}$/;
 
 const LISTEN_HOST = "127.0.0.1";
 
@@ -66,23 +77,102 @@ const isVaultServer = (value: unknown): value is VaultServer => {
   );
 };
 
-export const emptyDynamic = (): ProxyDynamic => ({ version: 1, rules: [], derivedHosts: [], tokens: {} });
+const emptySection = (): DynamicSection => ({ rules: [], derivedHosts: [] });
 
-export const parseDynamic = (value: unknown): ProxyDynamic => {
-  const dynamic = value as Partial<ProxyDynamic> | undefined;
+export const emptyDynamic = (): StoredDynamic => ({
+  version: 1,
+  rules: [],
+  derivedHosts: [],
+  tokens: {},
+  shared: emptySection(),
+  repos: {},
+});
+
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const parseSection = (value: unknown): DynamicSection => {
+  const section = value as Partial<DynamicSection> | undefined;
+
+  if (!isObject(section)) {
+    return emptySection();
+  }
+
+  return {
+    rules: Array.isArray(section.rules) ? section.rules : [],
+    derivedHosts: Array.isArray(section.derivedHosts) ? section.derivedHosts : [],
+    ...(Array.isArray(section.vault) ? { vault: section.vault.filter(isVaultServer) } : {}),
+  };
+};
+
+const parseRepos = (value: unknown) =>
+  isObject(value)
+    ? Object.fromEntries(
+        Object.entries(value)
+          .filter(([hash]) => TOKEN_HASH.test(hash))
+          .map(([hash, section]) => [hash, parseSection(section)]),
+      )
+    : {};
+
+export const parseDynamic = (value: unknown): StoredDynamic => {
+  const dynamic = value as Partial<StoredDynamic> | undefined;
 
   if (typeof dynamic !== "object" || dynamic === null || dynamic.version !== 1) {
     return emptyDynamic();
   }
 
+  const legacy = dynamic.shared === undefined && dynamic.repos === undefined;
+
   return {
     version: 1,
-    rules: Array.isArray(dynamic.rules) ? dynamic.rules : [],
-    derivedHosts: Array.isArray(dynamic.derivedHosts) ? dynamic.derivedHosts : [],
-    tokens: typeof dynamic.tokens === "object" && dynamic.tokens !== null ? dynamic.tokens : {},
-    ...(Array.isArray(dynamic.vault) ? { vault: dynamic.vault.filter(isVaultServer) } : {}),
+    ...parseSection(dynamic),
+    tokens: isObject(dynamic.tokens) ? (dynamic.tokens as Record<string, string>) : {},
+    shared: parseSection(legacy ? dynamic : dynamic.shared),
+    repos: parseRepos(dynamic.repos),
   };
 };
+
+const unique = <T>(items: T[], key: (item: T) => string) => [
+  ...new Map(items.map((item) => [key(item), item])).values(),
+];
+
+const unionOf = (sections: DynamicSection[]): DynamicSection => {
+  const vault = sections.flatMap((section) => section.vault ?? []);
+
+  return {
+    rules: unique(
+      sections.flatMap((section) => section.rules),
+      (rule) => JSON.stringify(rule),
+    ),
+    derivedHosts: unique(
+      sections.flatMap((section) => section.derivedHosts),
+      (host) => host,
+    ),
+    vault: unique(vault, (server) => `${server.server}|${server.url}`),
+  };
+};
+
+const sectionOf = (dynamic: ProxyDynamic): DynamicSection => ({
+  rules: dynamic.rules,
+  derivedHosts: dynamic.derivedHosts,
+  ...(dynamic.vault === undefined ? {} : { vault: dynamic.vault }),
+});
+
+export const tokenFileHashes = async (directory: string) => {
+  const names = await readdir(directory).catch(() => [] as string[]);
+  const entries = await Promise.all(
+    names.map(async (repoHash) => {
+      const token = await readFile(join(directory, repoHash), "utf8").catch(() => "");
+
+      return TOKEN_PATTERN.test(token) ? ([sha256Hex(token), repoHash] as const) : undefined;
+    }),
+  );
+
+  return Object.fromEntries(entries.filter((entry) => entry !== undefined));
+};
+
+export const repoTokensDir = (stateDir: string, policyHash: string) =>
+  dirname(stateLayout(stateDir).proxyRepoToken(policyHash, "repo"));
 
 export const writeProxyDynamic = async (
   stateDir: string,
@@ -91,12 +181,23 @@ export const writeProxyDynamic = async (
 ): Promise<void> => {
   const path = stateLayout(stateDir).proxyDynamic(policyHash);
   const current = parseDynamic(await readJsonFile<unknown>(path).catch(() => undefined));
+  const written = Object.keys(dynamic.tokens);
+  const live = new Set([
+    ...Object.keys(await tokenFileHashes(repoTokensDir(stateDir, policyHash))),
+    ...written,
+  ]);
+  const kept = Object.entries(current.repos).filter(([hash]) => live.has(hash) && !written.includes(hash));
+  const repos = Object.fromEntries([...kept, ...written.map((hash) => [hash, sectionOf(dynamic)] as const)]);
+  const shared = written.length === 0 ? sectionOf(dynamic) : current.shared;
+  const stored: StoredDynamic = {
+    version: 1,
+    ...unionOf([shared, ...Object.values(repos)]),
+    tokens: { ...current.tokens, ...dynamic.tokens },
+    shared,
+    repos,
+  };
 
-  await writeJsonFile(
-    path,
-    { ...dynamic, tokens: { ...current.tokens, ...dynamic.tokens } },
-    { mode: PRIVATE_MODE },
-  );
+  await writeJsonFile(path, stored, { mode: PRIVATE_MODE });
 };
 
 const readToken = async (path: string) => {

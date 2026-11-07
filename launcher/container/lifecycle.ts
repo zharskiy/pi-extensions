@@ -1,14 +1,21 @@
 import { copyFile, mkdir } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import type { Backend, ContainerSummary, MountSpec } from "../backend/index.ts";
-import { sha256Hex } from "../shared/index.ts";
+import { isWithin, readJsonFile, sha256Hex, withFileLock, writeJsonFile } from "../shared/index.ts";
 import type { Workspace } from "../workspace/index.ts";
-import { LABELS, repoHash } from "./names.ts";
+import { copiesDir, LABELS, repoHash } from "./names.ts";
 import type { LauncherContainerSpec, RequiredCopy } from "./spec.ts";
 
 export interface EnsureContainerInput {
   backend: Backend;
   spec: LauncherContainerSpec;
+  othersLive?: () => Promise<boolean>;
+}
+
+export interface EnsuredContainer {
+  id: string;
+  created: boolean;
+  outdated: boolean;
 }
 
 export interface Garbage {
@@ -23,38 +30,84 @@ const RELAYS = { [LABELS.relay]: "true" };
 
 const IDENTITY = [LABELS.imageDigest, LABELS.configHash, LABELS.specHash];
 
-const isCurrent = (container: ContainerSummary, spec: LauncherContainerSpec) =>
-  IDENTITY.every((label) => container.labels[label] === spec.labels[label]);
+const LOCK_TIMEOUT_MS = 120_000;
 
-const discard = async (backend: Backend, container: ContainerSummary) => {
+const isCurrent = (container: ContainerSummary, labels: Record<string, string | undefined>) =>
+  IDENTITY.every((label) => container.labels[label] === labels[label]);
+
+const wantedFileOf = (directory: string) => `${directory}.wanted.json`;
+
+const recordWanted = (spec: LauncherContainerSpec) =>
+  writeJsonFile(
+    wantedFileOf(spec.copiesDir),
+    Object.fromEntries(IDENTITY.map((label) => [label, spec.labels[label] ?? ""])),
+  );
+
+export const isCurrentContainer = async (
+  container: ContainerSummary,
+  input: { stateDir: string; repoRoot: string; digest: string; configHash: string },
+) => {
+  const wanted = await readJsonFile<Record<string, string>>(
+    wantedFileOf(copiesDir(input.stateDir, input.repoRoot)),
+  );
+
+  return isCurrent(container, {
+    [LABELS.imageDigest]: input.digest,
+    [LABELS.configHash]: input.configHash,
+    [LABELS.specHash]: wanted?.[LABELS.specHash],
+  });
+};
+
+const discard = async (backend: Backend, container: ContainerSummary, keepNetwork = false) => {
   if (container.state === "running") {
     await backend.stopContainer(container.id);
   }
 
-  await backend.removeContainer(container.id);
+  await backend.removeContainer(container.id, { keepNetwork });
 };
 
-const placeCopy = async (copy: RequiredCopy, directory: string): Promise<MountSpec> => {
-  const placed = join(directory, sha256Hex(copy.target).slice(0, 12));
+const placeCopyDir = async (
+  guestDir: string,
+  copies: RequiredCopy[],
+  directory: string,
+): Promise<MountSpec> => {
+  const placed = join(directory, sha256Hex(guestDir).slice(0, 12));
 
-  await copyFile(copy.source, placed);
+  await mkdir(placed, { recursive: true });
 
-  return { source: placed, target: copy.target, readOnly: true, kind: "bind" };
+  await Promise.all(copies.map((copy) => copyFile(copy.source, join(placed, basename(copy.target)))));
+
+  return { source: placed, target: guestDir, readOnly: true, kind: "bind" };
 };
+
+const shadowsMount = (guestDir: string, mounts: MountSpec[]) =>
+  mounts.some((mount) => isWithin(guestDir, mount.target));
 
 const placeCopies = async (spec: LauncherContainerSpec) => {
-  if (spec.requiredCopies.length === 0) {
+  const placeable = spec.requiredCopies.filter((copy) => !shadowsMount(dirname(copy.target), spec.mounts));
+
+  if (placeable.length === 0) {
     return [];
   }
 
   await mkdir(spec.copiesDir, { recursive: true });
 
-  return Promise.all(spec.requiredCopies.map((copy) => placeCopy(copy, spec.copiesDir)));
+  const guestDirs = [...new Set(placeable.map((copy) => dirname(copy.target)))];
+
+  return Promise.all(
+    guestDirs.map((guestDir) =>
+      placeCopyDir(
+        guestDir,
+        placeable.filter((copy) => dirname(copy.target) === guestDir),
+        spec.copiesDir,
+      ),
+    ),
+  );
 };
 
 const runtimeSpec = ({ requiredCopies: _copies, copiesDir: _dir, ...spec }: LauncherContainerSpec) => spec;
 
-const createFresh = async (backend: Backend, spec: LauncherContainerSpec) => {
+const createFresh = async (backend: Backend, spec: LauncherContainerSpec): Promise<EnsuredContainer> => {
   const copied = await placeCopies(spec);
   const mounts = [...spec.mounts, ...copied];
 
@@ -66,29 +119,61 @@ const createFresh = async (backend: Backend, spec: LauncherContainerSpec) => {
 
   await backend.startContainer(id);
 
-  return { id, created: true };
+  return { id, created: true, outdated: false };
 };
 
-export const ensureContainer = async ({ backend, spec }: EnsureContainerInput) => {
-  const existing = await backend.findContainers({ [LABELS.repoHash]: spec.labels[LABELS.repoHash] ?? "" });
-  const current = existing.find((container) => isCurrent(container, spec));
+const repoContainers = (backend: Backend, spec: LauncherContainerSpec) =>
+  backend.findContainers({ [LABELS.repoHash]: spec.labels[LABELS.repoHash] ?? "" });
 
-  await Promise.all(
-    existing.filter((container) => container !== current).map((container) => discard(backend, container)),
-  );
-
-  if (current === undefined) {
-    return createFresh(backend, spec);
+const reuse = async (backend: Backend, container: ContainerSummary, outdated: boolean) => {
+  if (container.state !== "running") {
+    await backend.startContainer(container.id);
   }
 
-  await placeCopies(spec);
-
-  if (current.state !== "running") {
-    await backend.startContainer(current.id);
-  }
-
-  return { id: current.id, created: false };
+  return { id: container.id, created: false, outdated };
 };
+
+const createOrAdopt = async (backend: Backend, spec: LauncherContainerSpec) => {
+  try {
+    return await createFresh(backend, spec);
+  } catch (error) {
+    const raced = (await repoContainers(backend, spec)).find((container) => container.name === spec.name);
+
+    if (raced === undefined) {
+      throw error;
+    }
+
+    return reuse(backend, raced, !isCurrent(raced, spec.labels));
+  }
+};
+
+const findOrCreate = async (input: EnsureContainerInput): Promise<EnsuredContainer> => {
+  const { backend, spec } = input;
+
+  await recordWanted(spec);
+
+  const existing = await repoContainers(backend, spec);
+  const current = existing.find((container) => isCurrent(container, spec.labels));
+
+  if (current !== undefined) {
+    await placeCopies(spec);
+
+    return reuse(backend, current, false);
+  }
+
+  const shared = existing.find((container) => container.state === "running");
+
+  if (shared !== undefined && (await input.othersLive?.()) === true) {
+    return reuse(backend, shared, true);
+  }
+
+  await Promise.all(existing.map((container) => discard(backend, container, true)));
+
+  return createOrAdopt(backend, spec);
+};
+
+export const ensureContainer = (input: EnsureContainerInput) =>
+  withFileLock(`${input.spec.copiesDir}.lock`, () => findOrCreate(input), { timeoutMs: LOCK_TIMEOUT_MS });
 
 export const stopIdleContainer = async (backend: Backend, containerId: string) => {
   const found = (await backend.findContainers(MANAGED)).find((container) => container.id === containerId);
@@ -152,10 +237,21 @@ const runningPolicyHashes = (agents: ContainerSummary[]) =>
 export const policyHashesInUse = async (backend: Backend) =>
   runningPolicyHashes(await listLauncherContainers(backend));
 
-export const collectGarbage = async (backend: Backend): Promise<Garbage> => {
+export interface GarbageKeep {
+  repoHashes: string[];
+  policyHashes: string[];
+}
+
+export const collectGarbage = async (
+  backend: Backend,
+  keep: GarbageKeep = { repoHashes: [], policyHashes: [] },
+): Promise<Garbage> => {
   const agents = await listLauncherContainers(backend);
-  const stopped = agents.filter((container) => container.state !== "running");
-  const inUse = runningPolicyHashes(agents);
+  const stopped = agents.filter(
+    (container) =>
+      container.state !== "running" && !keep.repoHashes.includes(container.labels[LABELS.repoHash] ?? ""),
+  );
+  const inUse = [...new Set([...runningPolicyHashes(agents), ...keep.policyHashes])];
 
   await Promise.all(stopped.map((container) => backend.removeContainer(container.id)));
 

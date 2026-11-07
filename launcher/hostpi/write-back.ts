@@ -1,4 +1,4 @@
-import { readFile, stat } from "node:fs/promises";
+import { readFile, realpath, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { errorMessage, LauncherError, stableHash, writeFileAtomic } from "../shared/index.ts";
 import { isJsonObject } from "./json.ts";
@@ -72,8 +72,10 @@ const changedPackages = (packages: unknown[], change: PackageChange) => {
       );
 };
 
+const targetOf = async (path: string) => realpath(path).catch(() => path);
+
 export const writeBackPackageChange = async (change: PackageChange): Promise<{ changed: boolean }> => {
-  const path = join(change.hostAgentDir, "settings.json");
+  const path = await targetOf(join(change.hostAgentDir, "settings.json"));
   const text = await readSettingsText(path);
   const settings = parseSettings(path, text);
   const before = packagesOf(settings);

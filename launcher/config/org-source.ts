@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { getCACertificates } from "node:tls";
 import {
   errorMessage,
+  expandHome,
   LauncherError,
   readJsonFile,
   sha256Hex,
@@ -17,19 +18,27 @@ import { validateLayer } from "./validate.ts";
 interface OrgCache {
   text: string;
   fetchedAt: number;
+  failedAt?: number;
 }
 
 interface OrgMeta {
   source?: unknown;
   fetchedAt?: unknown;
   sha256?: unknown;
+  failedAt?: unknown;
 }
 
 const DEFAULT_REFRESH_HOURS = 24;
 
 const HOUR_MS = 3_600_000;
 
+const RETRY_MS = HOUR_MS;
+
 const FETCH_TIMEOUT_MS = 3000;
+
+const MAX_RESPONSE_BYTES = 1_048_576;
+
+const OVERSIZE = "org: response larger than 1 MiB";
 
 const MAX_REDIRECTS = 3;
 
@@ -66,9 +75,18 @@ const readCache = async (input: OrgLayerInput): Promise<OrgCache | undefined> =>
   const intact = meta.source === input.ref.source && meta.sha256 === hash;
   const pinned = input.ref.sha256;
 
+  const failedAt = typeof meta.failedAt === "number" ? meta.failedAt : undefined;
+
   return intact && (pinned === undefined || pinned === hash)
-    ? { text, fetchedAt: meta.fetchedAt }
+    ? { text, fetchedAt: meta.fetchedAt, failedAt }
     : undefined;
+};
+
+const recordFailure = async (input: OrgLayerInput) => {
+  const file = cacheFiles(input.stateDir).meta;
+  const meta = await readJsonFile<OrgMeta>(file).catch(() => undefined);
+
+  await writeJsonFile(file, { ...meta, failedAt: input.now() }).catch(() => undefined);
 };
 
 const writeCache = async (input: OrgLayerInput, text: string) => {
@@ -114,11 +132,19 @@ const fetchBaseline = async (input: OrgLayerInput) => {
     throw new Error(`HTTP ${response.status}`);
   }
 
+  if (Buffer.byteLength(response.body) > MAX_RESPONSE_BYTES) {
+    throw new LauncherError(OVERSIZE, BASELINE_HINT);
+  }
+
   return response.body;
 };
 
 const fetchFresh = async (input: OrgLayerInput) => {
   const text = await fetchBaseline(input).catch((error: unknown) => {
+    if (error instanceof LauncherError) {
+      throw error;
+    }
+
     throw new LauncherError(
       `org: could not fetch the baseline from ${displaySource(input.ref.source)} (${errorMessage(error)})`,
       "check the network or org.source in the config",
@@ -133,11 +159,33 @@ const fetchFresh = async (input: OrgLayerInput) => {
 const fallbackNotice = (cache: OrgCache, error: unknown) =>
   `${errorMessage(error)}; using the copy fetched at ${new Date(cache.fetchedAt).toISOString()}`;
 
+const isSettled = (input: OrgLayerInput, cache: OrgCache) => {
+  const refreshMs = (input.ref.refreshHours ?? DEFAULT_REFRESH_HOURS) * HOUR_MS;
+  const now = input.now();
+
+  return (
+    now - cache.fetchedAt < refreshMs || (cache.failedAt !== undefined && now - cache.failedAt < RETRY_MS)
+  );
+};
+
+const offlineResult = (input: OrgLayerInput, cache: OrgCache | undefined): OrgLayerResult =>
+  cache === undefined
+    ? {
+        layer: undefined,
+        notices: [
+          `org: no cached baseline from ${displaySource(input.ref.source)}; the org layer is skipped`,
+        ],
+      }
+    : { layer: parseLayer(cache.text), notices: [] };
+
 const loadFromUrl = async (input: OrgLayerInput): Promise<OrgLayerResult> => {
   const cache = await readCache(input);
-  const refreshMs = (input.ref.refreshHours ?? DEFAULT_REFRESH_HOURS) * HOUR_MS;
 
-  if (cache !== undefined && input.now() - cache.fetchedAt < refreshMs) {
+  if (input.offline === true) {
+    return offlineResult(input, cache);
+  }
+
+  if (cache !== undefined && isSettled(input, cache)) {
     return { layer: parseLayer(cache.text), notices: [] };
   }
 
@@ -152,12 +200,14 @@ const loadFromUrl = async (input: OrgLayerInput): Promise<OrgLayerResult> => {
       throw error;
     }
 
+    await recordFailure(input);
+
     return { layer: parseLayer(cache.text), notices: [fallbackNotice(cache, error)] };
   }
 };
 
 const loadFromFile = async (input: OrgLayerInput): Promise<OrgLayerResult> => {
-  const text = await readFile(input.ref.source, "utf8").catch((error: unknown) => {
+  const text = await readFile(expandHome(input.ref.source, input.home), "utf8").catch((error: unknown) => {
     throw new LauncherError(
       `org: cannot read ${input.ref.source} (${errorMessage(error)})`,
       "fix org.source in the config",
@@ -182,8 +232,21 @@ const requestOnce = (url: URL, signal: AbortSignal) =>
   new Promise<HttpsResponse>((resolve, reject) => {
     const request = get(url, { ca: trustedCas(), signal }, (response) => {
       const chunks: Buffer[] = [];
+      const received = { bytes: 0 };
 
-      response.on("data", (chunk: Buffer) => chunks.push(chunk));
+      response.on("data", (chunk: Buffer) => {
+        received.bytes += chunk.length;
+
+        if (received.bytes > MAX_RESPONSE_BYTES) {
+          reject(new LauncherError(OVERSIZE, BASELINE_HINT));
+
+          request.destroy();
+
+          return;
+        }
+
+        chunks.push(chunk);
+      });
 
       response.on("error", reject);
 

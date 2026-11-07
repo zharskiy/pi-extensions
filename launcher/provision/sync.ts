@@ -1,12 +1,23 @@
 import { join } from "node:path";
 import type { Backend } from "../backend/index.ts";
 import { type JsonObject, packageSourceKey, sourceOfEntry } from "../hostpi/index.ts";
-import { expandHome, readJsonFile, stableHash, stateLayout, writeJsonFile } from "../shared/index.ts";
+import {
+  expandHome,
+  readJsonFile,
+  stableHash,
+  stateLayout,
+  withFileLock,
+  writeJsonFile,
+} from "../shared/index.ts";
 import { hasBakedPackage, keepBakedPackage, mergeTopLevel, prepareHostSettings } from "./merge-settings.ts";
 import type { PackageDiff, SyncInput, SyncResult } from "./types.ts";
 import { readVolumeFile, writeVolumeFile } from "./volume.ts";
 
 export { mergeTopLevel };
+
+const PRIVATE_MODE = 0o600;
+
+const LOCK_TIMEOUT_MS = 30_000;
 
 interface WritableFile {
   name: "settings.json" | "mcp.json";
@@ -32,14 +43,14 @@ const syncFile = async (input: SyncInput, file: WritableFile): Promise<string[]>
     await writeVolumeFile(input.backend, input.containerId, file.name, merged);
   }
 
-  await writeJsonFile(basePath, file.host);
+  await writeJsonFile(basePath, file.host, { mode: PRIVATE_MODE });
 
   return volume.invalid
     ? [`${file.name} in the sandbox volume was not valid JSON; replaced with the host copy`]
     : [];
 };
 
-export const syncWritableFiles = async (input: SyncInput): Promise<SyncResult> => {
+const syncBoth = async (input: SyncInput): Promise<SyncResult> => {
   const volumeSettings = await readVolumeFile(input.backend, input.containerId, "settings.json");
   const prepared = prepareHostSettings(input.hostSettings ?? {}, {
     hostAgentDir: input.hostAgentDir,
@@ -55,6 +66,11 @@ export const syncWritableFiles = async (input: SyncInput): Promise<SyncResult> =
 
   return { notices: [...prepared.notices, ...settingsNotices, ...mcpNotices] };
 };
+
+export const syncWritableFiles = (input: SyncInput): Promise<SyncResult> =>
+  withFileLock(join(stateLayout(input.stateDir).sync(input.repoHash), "sync.lock"), () => syncBoth(input), {
+    timeoutMs: LOCK_TIMEOUT_MS,
+  });
 
 export const readVolumeSettings = async (backend: Backend, containerId: string) =>
   (await readVolumeFile(backend, containerId, "settings.json")).value;

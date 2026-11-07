@@ -1,16 +1,25 @@
-import { readdir, readFile, stat } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { readFile, stat } from "node:fs/promises";
 import type { CredentialRule, EgressCap } from "../config/index.ts";
 import { liveSessions, readGrants } from "../grants/index.ts";
 import { sha256Hex, stateLayout, type VaultServer } from "../shared/index.ts";
-import { emptyDynamic, extraAllowList, type ProxyDynamic, parseDynamic, TOKEN_PATTERN } from "./dynamic.ts";
+import {
+  type DynamicSection,
+  emptyDynamic,
+  extraAllowList,
+  parseDynamic,
+  repoTokensDir,
+  type StoredDynamic,
+  tokenFileHashes,
+} from "./dynamic.ts";
 import { matchesEntry, parseEntry } from "./policy.ts";
 
 export interface ProxyRuntime {
   repoOf(token: string): Promise<string | undefined>;
+  repoOfTokenHash(tokenHash: string): Promise<string | undefined>;
+  liveRepos(): Promise<Set<string>>;
   extras(repoHash: string): Promise<string[]>;
-  rules(): Promise<CredentialRule[]>;
-  vault(): Promise<VaultServer[]>;
+  rules(repoHash?: string): Promise<CredentialRule[]>;
+  vault(repoHash?: string): Promise<VaultServer[]>;
 }
 
 export interface RuntimeOptions {
@@ -42,19 +51,6 @@ const readJson = async (path: string) => {
   }
 };
 
-const tokenFiles = async (directory: string) => {
-  const names = await readdir(directory).catch(() => []);
-  const entries = await Promise.all(
-    names.map(async (repoHash) => {
-      const token = await readFile(join(directory, repoHash), "utf8").catch(() => "");
-
-      return TOKEN_PATTERN.test(token) ? ([sha256Hex(token), repoHash] as const) : undefined;
-    }),
-  );
-
-  return Object.fromEntries(entries.filter((entry) => entry !== undefined));
-};
-
 const capped = (entries: string[], cap: string[] | undefined) =>
   cap === undefined
     ? entries
@@ -64,8 +60,11 @@ const capped = (entries: string[], cap: string[] | undefined) =>
         return cap.some((pattern) => matchesEntry(pattern, parsed.pattern, parsed.port ?? 443));
       });
 
-const vaultHosts = (current: ProxyDynamic) =>
-  (current.vault ?? []).flatMap((server) => server.discovery.hosts);
+const vaultHosts = (servers: VaultServer[]) => servers.flatMap((server) => server.discovery.hosts);
+
+const uniqueServers = (servers: VaultServer[]) => [
+  ...new Map(servers.map((server) => [`${server.server}|${server.url}`, server])).values(),
+];
 
 const ruleKey = (rule: CredentialRule) =>
   `${rule.id}|${rule.host.toLowerCase()}|${rule.port ?? 443}|${rule.pathPrefix ?? ""}`;
@@ -79,9 +78,9 @@ const mergeRules = (first: CredentialRule[], second: CredentialRule[]) => {
 export const createProxyRuntime = (options: RuntimeOptions): ProxyRuntime => {
   const layout = stateLayout(options.stateDir);
   const dynamicPath = layout.proxyDynamic(options.policyHash);
-  const tokensDir = dirname(layout.proxyRepoToken(options.policyHash, "repo"));
+  const tokensDir = repoTokensDir(options.stateDir, options.policyHash);
   const now = options.now ?? Date.now;
-  const cache: { dynamic: Snapshot<ProxyDynamic>; tokens: Snapshot<Record<string, string>> } = {
+  const cache: { dynamic: Snapshot<StoredDynamic>; tokens: Snapshot<Record<string, string>> } = {
     dynamic: { stamp: "", value: emptyDynamic() },
     tokens: { stamp: "", value: {} },
   };
@@ -100,20 +99,38 @@ export const createProxyRuntime = (options: RuntimeOptions): ProxyRuntime => {
     const stamp = await stampOf(tokensDir);
 
     if (stamp !== cache.tokens.stamp) {
-      cache.tokens = { stamp, value: await tokenFiles(tokensDir) };
+      cache.tokens = { stamp, value: await tokenFileHashes(tokensDir) };
     }
 
     return cache.tokens.value;
   };
 
-  const repoOf = async (token: string) => {
-    const hash = sha256Hex(token);
-    const fromFiles = (await tokens())[hash];
+  const repoOfTokenHash = async (tokenHash: string) => {
+    const fromFiles = (await tokens())[tokenHash];
 
-    return fromFiles ?? (await dynamic()).tokens[hash];
+    return fromFiles ?? (await dynamic()).tokens[tokenHash];
   };
 
-  const grantEntries = async (current: ProxyDynamic, repoHash: string) => {
+  const repoOf = (token: string) => repoOfTokenHash(sha256Hex(token));
+
+  const liveRepos = async () =>
+    new Set([...Object.values(await tokens()), ...Object.values((await dynamic()).tokens)]);
+
+  const sectionsFor = async (repoHash: string | undefined): Promise<DynamicSection[]> => {
+    const current = await dynamic();
+    const owned = await Promise.all(
+      Object.entries(current.repos).map(async ([tokenHash, section]) => {
+        const owner = await repoOfTokenHash(tokenHash);
+        const wanted = owner !== undefined && (repoHash === undefined || owner === repoHash);
+
+        return wanted ? [section] : [];
+      }),
+    );
+
+    return [current.shared, ...owned.flat()];
+  };
+
+  const grantEntries = async (current: StoredDynamic, repoHash: string) => {
     if (!options.grantsEnabled) {
       return [];
     }
@@ -129,18 +146,24 @@ export const createProxyRuntime = (options: RuntimeOptions): ProxyRuntime => {
     return capped(fromGrants, options.cap.grants);
   };
 
+  const vault = async (repoHash?: string) =>
+    uniqueServers((await sectionsFor(repoHash)).flatMap((section) => section.vault ?? []));
+
   const extras = async (repoHash: string) => {
     const current = await dynamic();
+    const derived = (await sectionsFor(undefined)).flatMap((section) => section.derivedHosts);
 
     return [
-      ...capped([...current.derivedHosts, ...vaultHosts(current)], options.cap.derivedHosts),
+      ...capped([...new Set([...derived, ...vaultHosts(await vault(repoHash))])], options.cap.derivedHosts),
       ...(await grantEntries(current, repoHash)),
     ];
   };
 
-  const rules = async () => mergeRules(options.staticRules, (await dynamic()).rules);
+  const rules = async (repoHash?: string) =>
+    mergeRules(
+      options.staticRules,
+      (await sectionsFor(repoHash)).flatMap((section) => section.rules),
+    );
 
-  const vault = async () => (await dynamic()).vault ?? [];
-
-  return { repoOf, extras, rules, vault };
+  return { repoOf, repoOfTokenHash, liveRepos, extras, rules, vault };
 };

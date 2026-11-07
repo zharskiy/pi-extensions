@@ -1,3 +1,5 @@
+import type { SecretRef } from "../config/index.ts";
+import { isSecretName } from "../shared/index.ts";
 import { type Endpoint, endpointOf } from "./endpoints.ts";
 import { jsonPointer } from "./json.ts";
 import { rulesFor, type Section } from "./rules.ts";
@@ -8,6 +10,7 @@ export interface UserinfoTarget {
   identity: string;
   file: string;
   pointer: Array<string | number>;
+  secret?: SecretRef;
 }
 
 const parsed = (url: string) => {
@@ -16,6 +19,16 @@ const parsed = (url: string) => {
   } catch {
     return undefined;
   }
+};
+
+const SECRET_QUERY_NAME = /^(auth|sig|signature|pass|passwd|pwd)$/i;
+
+export const hasQueryCredential = (url: unknown) => {
+  const parts = typeof url === "string" ? parsed(url) : undefined;
+
+  return [...(parts?.searchParams.keys() ?? [])].some(
+    (name) => isSecretName(name) || SECRET_QUERY_NAME.test(name),
+  );
 };
 
 export const hasUrlPassword = (url: unknown) =>
@@ -43,7 +56,7 @@ export const stripUserinfo = (target: UserinfoTarget, url: unknown): Section<unk
           header: "Authorization",
           template: "Basic {secret}",
           transform: "urlUserinfoBase64",
-          secret: { file: target.file, pointer: jsonPointer(target.pointer) },
+          secret: target.secret ?? { file: target.file, pointer: jsonPointer(target.pointer) },
         })
       : [],
     notices: [`${target.label}: ${target.key} carried user credentials; they were removed in the sandbox`],

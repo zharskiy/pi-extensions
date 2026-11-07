@@ -1,5 +1,5 @@
 import { isAbsolute } from "node:path";
-import { BACKEND_NAMES, isSecretName, LauncherError } from "../shared/index.ts";
+import { BACKEND_NAMES, isSecretName, LAUNCHER_SET_VARIABLES, LauncherError } from "../shared/index.ts";
 import { getPath, isRecord } from "./dotted.ts";
 import type { LayerConfig } from "./types.ts";
 
@@ -86,8 +86,13 @@ const host: Check = (value) => {
 const variable: Check = (value) =>
   VARIABLE.test(value) ? undefined : `${value} is not an environment variable name`;
 
+const launcherSet: Check = (value) =>
+  LAUNCHER_SET_VARIABLES.includes(value) ? `${value} is set by the launcher and is not forwarded` : undefined;
+
 const forwardableVariable: Check = (value) =>
-  variable(value) ?? (isSecretName(value) ? `${value} looks like a secret and stays on the host` : undefined);
+  variable(value) ??
+  launcherSet(value) ??
+  (isSecretName(value) ? `${value} looks like a secret and stays on the host` : undefined);
 
 const absolutePath: Check = (value) =>
   value.startsWith("/") || value === "~" || value.startsWith("~/")
@@ -335,11 +340,13 @@ const LAYER_SPEC: ObjectSpec = {
     env: { type: "object", properties: { allow: list(forwardableVariable) } },
     ssh: { type: "object", properties: { agent: { type: "boolean" } } },
     resources: { type: "object", properties: { cpus: positive, memoryGiB: positive } },
+    sessions: shape({ host: flag }),
     org: shape({ source: text(orgSource), sha256: text(sha256Text), refreshHours: positive }, ["source"]),
   },
 };
 
 const PROJECT_REFUSED_KEYS = [
+  "backend",
   "credentials.rules",
   "credentials.derive",
   "credentials.vault",

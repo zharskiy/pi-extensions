@@ -11,6 +11,7 @@ import { type TLSSocket, connect as tlsConnect } from "node:tls";
 import type { CredentialRule } from "../config/index.ts";
 import type { AccessLogEntry } from "./access-log.ts";
 import type { DialAccess, Dialer } from "./dial.ts";
+import { parseRequestTarget } from "./request-target.ts";
 import {
   type HeaderPair,
   matchRules,
@@ -19,6 +20,7 @@ import {
   type ScrubSecret,
   scrubResponseHeaders,
   transformSecret,
+  withoutStrayPlaceholders,
 } from "./rules.ts";
 import type { SecretResolver } from "./secrets/index.ts";
 import type { TokenPlan, TokenResponse, VaultTokenHook } from "./vault/index.ts";
@@ -32,7 +34,7 @@ export interface TerminatedTarget {
 }
 
 export interface TerminatorOptions {
-  rules: () => Promise<CredentialRule[]>;
+  rules: (repoHash: string) => Promise<CredentialRule[]>;
   resolver: SecretResolver;
   dial: Dialer;
   upstreamCa?: string | string[];
@@ -70,6 +72,13 @@ const MAX_TOKEN_RESPONSE_BYTES = 1024 * 1024;
 const BUFFERED_DROPPED = new Set(["accept-encoding", "content-length"]);
 
 const RESPONSE_DROPPED = new Set(["content-length", "content-encoding"]);
+
+const HEADER_BREAK = /[\r\n\0]/;
+
+interface RoutedPath {
+  path: string;
+  decodedPath: string;
+}
 
 const connectionTokens = (headers: IncomingHttpHeaders) =>
   new Set(
@@ -118,11 +127,13 @@ const collect = (stream: IncomingMessage, limit: number) =>
     const chunks: Buffer[] = [];
     const state = { size: 0 };
 
-    stream.on("data", (chunk: Buffer) => {
+    const onData = (chunk: Buffer) => {
       state.size += chunk.length;
 
       if (state.size > limit) {
-        stream.destroy();
+        stream.off("data", onData);
+
+        stream.pause();
 
         resolve(undefined);
 
@@ -130,7 +141,9 @@ const collect = (stream: IncomingMessage, limit: number) =>
       }
 
       chunks.push(chunk);
-    });
+    };
+
+    stream.on("data", onData);
 
     stream.once("end", () => resolve(Buffer.concat(chunks)));
 
@@ -150,28 +163,54 @@ const isEncoded = (message: IncomingMessage) => {
   return encoding !== "" && encoding !== "identity";
 };
 
-const sendBuffered = (response: ServerResponse, reply: TokenResponse) => {
+const sendBuffered = (response: ServerResponse, reply: TokenResponse, extra: HeaderPair[] = []) => {
   const pairs = reply.headers.filter(([name]) => !RESPONSE_DROPPED.has(name.toLowerCase()));
 
-  response.writeHead(reply.status, [...pairs, ["content-length", String(reply.body.length)]].flat());
+  response.writeHead(
+    reply.status,
+    [...pairs, ...extra, ["content-length", String(reply.body.length)]].flat(),
+  );
 
   response.end(reply.body);
 };
 
+const errorReply = (status: number, error: string): TokenResponse => ({
+  status,
+  headers: [
+    ["content-type", "application/json"],
+    ["proxy-agent", "pi-sandbox"],
+  ],
+  body: Buffer.from(JSON.stringify({ error })),
+});
+
 const sendError = (response: ServerResponse, status: number, error: string) =>
-  sendBuffered(response, {
-    status,
-    headers: [
-      ["content-type", "application/json"],
-      ["proxy-agent", "pi-sandbox"],
-    ],
-    body: Buffer.from(JSON.stringify({ error })),
-  });
+  sendBuffered(response, errorReply(status, error));
+
+const sendAndClose = (response: ServerResponse, status: number, error: string) => {
+  response.once("finish", () => response.socket?.destroySoon());
+
+  sendBuffered(response, errorReply(status, error), [["connection", "close"]]);
+};
+
+const rawError = (client: Duplex, status: string, error: string) => {
+  const body = JSON.stringify({ error });
+
+  client.end(
+    [
+      `HTTP/1.1 ${status}`,
+      "content-type: application/json",
+      `content-length: ${Buffer.byteLength(body)}`,
+      "connection: close",
+      "",
+      body,
+    ].join("\r\n"),
+  );
+};
 
 const authorityOf = (target: TerminatedTarget) =>
   target.port === 443 ? target.host : `${target.host}:${target.port}`;
 
-const absoluteUrl = (target: TerminatedTarget, path: string | undefined) =>
+const absoluteUrl = (target: TerminatedTarget, path: string) =>
   `https://${authorityOf(target)}${upstreamPath(target.pathPrefix, path)}`;
 
 const failure = (response: ServerResponse, error: unknown) => {
@@ -196,14 +235,16 @@ export const createTerminator = (options: TerminatorOptions) => {
     rule: CredentialRule,
     target: TerminatedTarget,
   ): Promise<Applied> => {
-    if (!ruleApplies(state.headers, rule)) {
-      return state;
+    const headers = withoutStrayPlaceholders(state.headers, rule);
+
+    if (!ruleApplies(headers, rule)) {
+      return { ...state, headers };
     }
 
-    const result = await options.resolver.resolve(rule.id, rule.secret);
+    const result = await options.resolver.resolve(rule.id, rule.secret, target.repoHash);
     const injected = result.ok ? transformSecret(rule, result.value) : undefined;
 
-    if (!result.ok || injected === undefined) {
+    if (!result.ok || injected === undefined || HEADER_BREAK.test(injected)) {
       options.log({
         repo: target.repoHash,
         host: target.host,
@@ -215,11 +256,11 @@ export const createTerminator = (options: TerminatorOptions) => {
         bytesOut: 0,
       });
 
-      return { ...state, headers: rewriteRequestHeaders(state.headers, rule, undefined) };
+      return { ...state, headers: rewriteRequestHeaders(headers, rule, undefined) };
     }
 
     return {
-      headers: rewriteRequestHeaders(state.headers, rule, injected),
+      headers: rewriteRequestHeaders(headers, rule, injected),
       secrets: [
         ...state.secrets,
         { value: result.value, placeholder: rule.placeholder },
@@ -230,7 +271,7 @@ export const createTerminator = (options: TerminatorOptions) => {
   };
 
   const applyRules = async (pairs: HeaderPair[], target: TerminatedTarget, path: string) => {
-    const matching = matchRules(await options.rules(), target.host, target.port, path);
+    const matching = matchRules(await options.rules(target.repoHash), target.host, target.port, path);
     const initial: Applied = { headers: pairs, secrets: [], used: [] };
 
     return matching.reduce<Promise<Applied>>(
@@ -240,43 +281,59 @@ export const createTerminator = (options: TerminatorOptions) => {
   };
 
   const upstreamSocket = async (target: TerminatedTarget) => {
-    const socket = await options.dial(target.host, target.port, target.access);
-
-    return tlsConnect({
+    const socket = await options.dial(target.host, target.port, target.access, target.repoHash);
+    const secure = tlsConnect({
       socket,
       servername: target.host,
       ca: options.upstreamCa,
       ALPNProtocols: ["http/1.1"],
     });
+
+    socket.on("error", () => secure.destroy());
+
+    secure.on("error", () => secure.destroy());
+
+    return secure;
+  };
+
+  const requestOver = (
+    secure: TLSSocket,
+    target: TerminatedTarget,
+    method: string | undefined,
+    path: string,
+    headers: HeaderPair[],
+  ) => {
+    try {
+      return httpsRequest({
+        hostname: target.host,
+        port: target.port,
+        method,
+        path: upstreamPath(target.pathPrefix, path),
+        headers: headerObject(headers, authorityOf(target)),
+        createConnection: () => secure,
+      });
+    } catch (error) {
+      secure.destroy();
+
+      throw error;
+    }
   };
 
   const openWith = async (
     target: TerminatedTarget,
     method: string | undefined,
-    path: string,
+    routed: RoutedPath,
     pairs: HeaderPair[],
   ) => {
-    const applied = await applyRules(pairs, target, path);
+    const applied = await applyRules(pairs, target, routed.decodedPath);
     const secure = await upstreamSocket(target);
-    const request = httpsRequest({
-      hostname: target.host,
-      port: target.port,
-      method,
-      path: upstreamPath(target.pathPrefix, path),
-      headers: headerObject(applied.headers, authorityOf(target)),
-      createConnection: () => secure,
-    });
+    const request = requestOver(secure, target, method, routed.path, applied.headers);
 
     return { request, applied };
   };
 
-  const open = (incoming: IncomingMessage, target: TerminatedTarget, upgrade: boolean) =>
-    openWith(
-      target,
-      incoming.method,
-      incoming.url ?? "/",
-      forwardedPairs(incoming.rawHeaders, incoming.headers, upgrade),
-    );
+  const open = (incoming: IncomingMessage, target: TerminatedTarget, routed: RoutedPath, upgrade: boolean) =>
+    openWith(target, incoming.method, routed, forwardedPairs(incoming.rawHeaders, incoming.headers, upgrade));
 
   const afterResponse = (upstream: IncomingMessage, applied: Applied) => {
     if (upstream.statusCode === UNAUTHORIZED) {
@@ -339,7 +396,7 @@ export const createTerminator = (options: TerminatorOptions) => {
   ) => {
     afterResponse(upstream, applied);
 
-    if (isEventStream(upstream)) {
+    if (isEventStream(upstream) && plan.strict !== true) {
       response.writeHead(upstream.statusCode ?? 502, responsePairs(upstream, applied).flat());
 
       upstream.pipe(response);
@@ -358,6 +415,8 @@ export const createTerminator = (options: TerminatorOptions) => {
     const body = await collect(upstream, MAX_TOKEN_RESPONSE_BYTES);
 
     if (body === undefined) {
+      upstream.destroy();
+
       sendError(response, 502, "pi-sandbox: token response too large");
 
       return;
@@ -378,12 +437,13 @@ export const createTerminator = (options: TerminatorOptions) => {
     incoming: IncomingMessage,
     response: ServerResponse,
     target: TerminatedTarget,
+    routed: RoutedPath,
     vault: VaultTokenHook,
   ) => {
     const body = await collect(incoming, MAX_FORM_BYTES);
 
     if (body === undefined) {
-      sendError(response, 413, "pi-sandbox: request body too large");
+      sendAndClose(response, 413, "pi-sandbox: request body too large");
 
       return;
     }
@@ -393,7 +453,7 @@ export const createTerminator = (options: TerminatorOptions) => {
     );
     const plan = await vault.plan({
       repoHash: target.repoHash,
-      url: absoluteUrl(target, incoming.url),
+      url: absoluteUrl(target, routed.path),
       headers: pairs,
       body,
     });
@@ -406,7 +466,7 @@ export const createTerminator = (options: TerminatorOptions) => {
       return;
     }
 
-    const { request, applied } = await openWith(target, incoming.method, incoming.url ?? "/", [
+    const { request, applied } = await openWith(target, incoming.method, routed, [
       ...plan.headers,
       ["content-length", String(plan.body.length)],
     ]);
@@ -424,13 +484,14 @@ export const createTerminator = (options: TerminatorOptions) => {
     request.end(plan.body);
   };
 
-  const buffersFor = async (incoming: IncomingMessage, target: TerminatedTarget) =>
+  const buffersFor = async (incoming: IncomingMessage, target: TerminatedTarget, routed: RoutedPath) =>
     options.vault !== undefined &&
     (await options.vault.buffers({
       host: target.host,
       port: target.port,
+      repoHash: target.repoHash,
       method: incoming.method ?? "GET",
-      url: absoluteUrl(target, incoming.url),
+      url: absoluteUrl(target, routed.path),
       contentType: String(incoming.headers["content-type"] ?? ""),
     }));
 
@@ -443,15 +504,23 @@ export const createTerminator = (options: TerminatorOptions) => {
       return;
     }
 
-    if (options.vault !== undefined && (await buffersFor(incoming, target))) {
-      await forwardBuffered(incoming, response, target, options.vault).catch((error: unknown) =>
+    const routed = parseRequestTarget(incoming.url, target.host, target.port);
+
+    if (!routed.ok) {
+      sendAndClose(response, 400, routed.reason);
+
+      return;
+    }
+
+    if (options.vault !== undefined && (await buffersFor(incoming, target, routed))) {
+      await forwardBuffered(incoming, response, target, routed, options.vault).catch((error: unknown) =>
         failure(response, error),
       );
 
       return;
     }
 
-    const opened = await open(incoming, target, false).catch((error: unknown) => error as Error);
+    const opened = await open(incoming, target, routed, false).catch((error: unknown) => error as Error);
 
     if (opened instanceof Error) {
       failure(response, opened);
@@ -464,11 +533,25 @@ export const createTerminator = (options: TerminatorOptions) => {
 
   const forwardUpgrade = async (incoming: IncomingMessage, client: Duplex, head: Buffer) => {
     const target = targets.get(incoming.socket);
-    const opened =
-      target === undefined ? undefined : await open(incoming, target, true).catch(() => undefined);
+
+    if (target === undefined) {
+      client.destroy();
+
+      return;
+    }
+
+    const routed = parseRequestTarget(incoming.url, target.host, target.port);
+
+    if (!routed.ok) {
+      rawError(client, "400 Bad Request", routed.reason);
+
+      return;
+    }
+
+    const opened = await open(incoming, target, routed, true).catch(() => undefined);
 
     if (opened === undefined) {
-      client.destroy();
+      rawError(client, "502 Bad Gateway", "pi-sandbox: upstream request failed");
 
       return;
     }
@@ -504,6 +587,8 @@ export const createTerminator = (options: TerminatorOptions) => {
     });
 
     request.on("error", () => client.destroy());
+
+    client.on("error", () => request.destroy());
 
     request.end();
   };

@@ -75,7 +75,9 @@ const checkLimits = (request: GrantRequest, limits: GrantLimits) => {
   }
 };
 
-const grantFor = (request: GrantRequest, now: number): Grant => {
+const sessionHours = (limits: GrantLimits) => Math.min(SESSION_GRANT_CAP_HOURS, limits.maxHours);
+
+const grantFor = (request: GrantRequest, limits: GrantLimits, now: number): Grant => {
   const base = {
     host: request.host.trim().toLowerCase(),
     port: request.port,
@@ -84,7 +86,7 @@ const grantFor = (request: GrantRequest, now: number): Grant => {
   };
 
   if (request.scope.kind === "session") {
-    return { ...base, expiresAt: now + SESSION_GRANT_CAP_HOURS * HOUR_MS, launchId: request.scope.launchId };
+    return { ...base, expiresAt: now + sessionHours(limits) * HOUR_MS, launchId: request.scope.launchId };
   }
 
   if (request.scope.kind === "hours") {
@@ -108,7 +110,7 @@ export const addGrant = async (
 ): Promise<Grant> => {
   checkLimits(request, limits);
 
-  const grant = grantFor(request, now);
+  const grant = grantFor(request, limits, now);
 
   return updateGrants(stateDir, (grants) => ({
     grants: [...grants.filter((existing) => !sameTarget(existing, grant)), grant],

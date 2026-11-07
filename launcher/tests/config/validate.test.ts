@@ -39,7 +39,7 @@ describe("validateLayer", () => {
       resources: { cpus: 4, memoryGiB: 8 },
     };
 
-    expect(validateLayer(layer, "project")).toEqual(layer);
+    expect(validateLayer(layer, "user")).toEqual(layer);
   });
 
   it("reports unknown keys with the layer and the dotted key", () => {

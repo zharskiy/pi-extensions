@@ -153,6 +153,12 @@ if [ "$stopped_proxies" -eq 0 ]; then
   echo "proxy: none running"
 fi
 
+state_note() {
+  if [ "$1" = "sessions" ]; then
+    echo " (launch records)"
+  fi
+}
+
 remove_state() {
   if [ "$#" -eq 0 ]; then
     return 0
@@ -160,7 +166,7 @@ remove_state() {
 
   if [ -e "$state_dir/$1" ]; then
     act rm -rf "$state_dir/$1"
-    echo "state: $(verb "remove" "removed") $state_dir/$1"
+    echo "state: $(verb "remove" "removed") $state_dir/$1$(state_note "$1")"
   fi
 
   shift
@@ -185,11 +191,13 @@ if command -v docker >/dev/null 2>&1 && docker --host "$docker_host" info >/dev/
     act docker --host "$docker_host" rm -f $containers $relays >/dev/null
   fi
 
-  if docker --host "$docker_host" network inspect pi-sandbox >/dev/null 2>&1; then
-    act docker --host "$docker_host" network rm pi-sandbox >/dev/null
+  networks=$(docker --host "$docker_host" network ls -q --filter label=pi-sandbox.managed=true --filter name=pi-sandbox)
+
+  if [ -n "$networks" ]; then
+    act docker --host "$docker_host" network rm $networks >/dev/null
   fi
 
-  echo "containers: $(verb "remove" "removed") $(echo $containers | wc -w | tr -d ' ') sandbox and $(echo $relays | wc -w | tr -d ' ') relay containers and the pi-sandbox network"
+  echo "containers: $(verb "remove" "removed") $(echo $containers | wc -w | tr -d ' ') sandbox and $(echo $relays | wc -w | tr -d ' ') relay containers and $(echo $networks | wc -w | tr -d ' ') pi-sandbox networks"
 
   if [ "$volumes" -eq 1 ]; then
     volume_names=$(docker --host "$docker_host" volume ls -q --filter label=pi-sandbox.managed=true --filter name=pi-sandbox- | grep '^pi-sandbox-' || true)
@@ -200,20 +208,56 @@ if command -v docker >/dev/null 2>&1 && docker --host "$docker_host" info >/dev/
 
     echo "volumes: $(verb "remove" "removed") $(echo $volume_names | wc -w | tr -d ' ') pi-sandbox volumes"
   else
-    echo "volumes: kept (pass --volumes to remove sessions and caches)"
+    echo "volumes: kept (pass --volumes to remove caches and older sandbox-only sessions)"
   fi
 else
   echo "containers: no reachable docker engine, nothing removed"
 fi
 
 if command -v container >/dev/null 2>&1 && container system status >/dev/null 2>&1; then
-  apple_containers=$(container list --all --quiet 2>/dev/null | grep '^pi-sandbox-' || true)
+  apple_containers=""
+
+  collect_apple_managed() {
+    if [ "$#" -eq 0 ]; then
+      return 0
+    fi
+
+    if container inspect "$1" 2>/dev/null | grep -q '"pi-sandbox\.managed"[[:space:]]*:[[:space:]]*"true"'; then
+      apple_containers="$apple_containers $1"
+    fi
+
+    shift
+    collect_apple_managed "$@"
+  }
+
+  collect_apple_managed $(container list --all --quiet 2>/dev/null | grep '^pi-sandbox-' || true)
 
   if [ -n "$apple_containers" ]; then
     act container delete --force $apple_containers >/dev/null
   fi
 
-  echo "apple container: $(verb "remove" "removed") $(echo $apple_containers | wc -w | tr -d ' ') pi-sandbox containers"
+  apple_networks=""
+
+  collect_apple_networks() {
+    if [ "$#" -eq 0 ]; then
+      return 0
+    fi
+
+    if container network inspect "$1" 2>/dev/null | grep -q '"pi-sandbox\.managed"[[:space:]]*:[[:space:]]*"true"'; then
+      apple_networks="$apple_networks $1"
+    fi
+
+    shift
+    collect_apple_networks "$@"
+  }
+
+  collect_apple_networks $(container network list --quiet 2>/dev/null | grep '^pi-sandbox' || true)
+
+  if [ -n "$apple_networks" ]; then
+    act container network delete $apple_networks >/dev/null
+  fi
+
+  echo "apple container: $(verb "remove" "removed") $(echo $apple_containers | wc -w | tr -d ' ') pi-sandbox containers and $(echo $apple_networks | wc -w | tr -d ' ') pi-sandbox networks"
 fi
 
 if [ "$vm" -eq 1 ]; then
@@ -228,3 +272,4 @@ else
 fi
 
 echo "kept: your repositories, ~/.pi, ~/.config/pi-sandbox and the rest of $state_dir (image record, CA, salt, proxy instances)"
+echo "kept: your pi sessions stay in ${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/sessions"

@@ -19,13 +19,19 @@ const matchesHost = (host: string, pattern: string) => {
   return host.endsWith(suffix) && label.length > 0 && !label.includes(".");
 };
 
-const matchesEntry = (entry: string, rule: CredentialRule) => {
+const allowEntryMatches = (entry: string, host: string, port: number) => {
   const withPort = ENTRY_PORT.exec(entry.trim());
   const pattern = normalized(withPort?.[1] ?? entry);
-  const port = withPort?.[2] === undefined ? TLS_PORT : Number(withPort[2]);
+  const entryPort = withPort?.[2] === undefined ? TLS_PORT : Number(withPort[2]);
 
-  return matchesHost(normalized(rule.host), pattern) && port === (rule.port ?? TLS_PORT);
+  return matchesHost(normalized(host), pattern) && entryPort === port;
 };
+
+const matchesEntry = (entry: string, rule: CredentialRule) =>
+  allowEntryMatches(entry, rule.host, rule.port ?? TLS_PORT);
+
+export const grantCapBlocker = (effective: EffectiveConfig, host: string, port: number) =>
+  effective.grantCaps?.find((cap) => !cap.allow.some((entry) => allowEntryMatches(entry, host, port)))?.layer;
 
 const policyRuleIds = (layers: Layers) =>
   new Set((layers.policy?.credentials?.rules ?? []).map((rule) => rule.id));

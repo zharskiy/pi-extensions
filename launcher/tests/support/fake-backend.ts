@@ -64,6 +64,13 @@ const RELAY_NETWORK = "pi-sandbox";
 
 const RELAY_ADDRESS = "10.89.0.2:3128";
 
+const REPO_HASH_LABEL = "pi-sandbox.repo-hash";
+
+const SHORT_REPO_HASH = 12;
+
+const repoNetworkOf = (repoHash: string | undefined) =>
+  repoHash === undefined ? RELAY_NETWORK : `${RELAY_NETWORK}-${repoHash.slice(0, SHORT_REPO_HASH)}`;
+
 const imageIdOf = (digest: string) => `sha256:image-${digest.replace(/^sha256:/, "")}`;
 
 const infoOf = (digest: string): ImageInfo => ({ id: imageIdOf(digest), digest });
@@ -205,6 +212,33 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
     }
   };
 
+  const networks = new Set<string>();
+  const removedNetworks = new Set<string>();
+
+  const start = (id: string) => {
+    const network = container(id).spec?.network;
+
+    if (network?.kind === "internal" && removedNetworks.has(network.name)) {
+      throw new LauncherError(`network ${network.name} not found`);
+    }
+
+    setState(id, "running");
+  };
+
+  const dropRepoNetwork = (repoHash: string | undefined) => {
+    const remaining = [...containers.values()].some(
+      (entry) => entry.summary.labels[REPO_HASH_LABEL] === repoHash,
+    );
+
+    if (repoHash === undefined || remaining) {
+      return;
+    }
+
+    networks.delete(repoNetworkOf(repoHash));
+
+    removedNetworks.add(repoNetworkOf(repoHash));
+  };
+
   const backend: Backend = {
     name: "colima",
     capabilities: { ...DEFAULT_CAPABILITIES, ...options.capabilities },
@@ -234,16 +268,20 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
 
       return { id };
     },
-    startContainer: async (id) => setState(id, "running"),
+    startContainer: async (id) => start(id),
     stopContainer: async (id, timeoutSeconds) => {
       stops.push({ id, timeoutSeconds });
 
       setState(id, "stopped");
     },
-    removeContainer: async (id) => {
-      container(id);
+    removeContainer: async (id, removal) => {
+      const repoHash = container(id).summary.labels[REPO_HASH_LABEL];
 
       containers.delete(id);
+
+      if (removal?.keepNetwork !== true) {
+        dropRepoNetwork(repoHash);
+      }
     },
     exec: runExec,
     ensureVolume: async (name) => {
@@ -254,10 +292,26 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
     },
     exportVolume: async () => undefined,
     importVolume: async () => undefined,
-    prepareProxyRoute: async (hostPort, policyHash, imageId) => {
+    prepareProxyRoute: async (hostPort, policyHash, imageId, repoHash) => {
+      const name = repoNetworkOf(repoHash);
+
       routes.push({ hostPort, policyHash, imageId });
 
-      return { network: { kind: "internal", name: RELAY_NETWORK }, address: RELAY_ADDRESS };
+      networks.add(name);
+
+      removedNetworks.delete(name);
+
+      return { network: { kind: "internal", name }, address: RELAY_ADDRESS };
+    },
+    pruneNetworks: async (keepRepoHashes) => {
+      const kept = new Set(keepRepoHashes.map((hash) => `${RELAY_NETWORK}-${hash.slice(0, 12)}`));
+      const removed = [...networks].filter((name) => !kept.has(name));
+
+      removed.forEach((name) => {
+        networks.delete(name);
+      });
+
+      return removed;
     },
     status: async () => ({ socket: "/fake/docker.sock" }),
   };
@@ -270,5 +324,17 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
     return id;
   };
 
-  return { backend, containers, volumes, localImages, pulls, builds, execs, routes, stops, addContainer };
+  return {
+    backend,
+    containers,
+    volumes,
+    networks,
+    localImages,
+    pulls,
+    builds,
+    execs,
+    routes,
+    stops,
+    addContainer,
+  };
 };

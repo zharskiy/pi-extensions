@@ -3,6 +3,7 @@ import type { Duplex } from "node:stream";
 import { createSecureContext } from "node:tls";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { CredentialRule } from "../../config/index.ts";
+import { createDialer } from "../../proxy/dial.ts";
 import type { LauncherCa } from "../../proxy/tls-ca.ts";
 import {
   closeServer,
@@ -64,6 +65,20 @@ const RULES: CredentialRule[] = [
     secret: { command: ["git-token"] },
   },
   {
+    id: "broken",
+    host: "broken.test",
+    header: "x-api-key",
+    template: "{secret}\r\nx-injected: 1",
+    secret: { command: ["broken"] },
+  },
+  {
+    id: "newline",
+    host: "newline.test",
+    header: "authorization",
+    template: "Bearer {secret}",
+    secret: { command: ["newline"] },
+  },
+  {
     id: "derived:git",
     host: "npm.test",
     header: "authorization",
@@ -94,7 +109,14 @@ const state: {
   token: "",
   releaseStream: [],
   seen: [],
-  resolver: fakeResolver({ gateway: SECRET, api: API_SECRET, git: GIT_SECRET, "derived:git": GIT_URL }),
+  resolver: fakeResolver({
+    gateway: SECRET,
+    api: API_SECRET,
+    git: GIT_SECRET,
+    "derived:git": GIT_URL,
+    broken: "value",
+    newline: "trailing\n",
+  }),
 };
 
 const respond = (
@@ -149,6 +171,7 @@ const startUpstream = async () => {
     "api.test": await leafFor("api.test"),
     "git.test": await leafFor("git.test"),
     "npm.test": await leafFor("npm.test"),
+    "newline.test": await leafFor("newline.test"),
   };
   const server = createHttpsServer(
     {
@@ -181,7 +204,11 @@ beforeAll(async () => {
   state.upstream = await startUpstream();
   state.test = await startTestProxy({
     stateDir: state.stateDir,
-    policy: { allow: ["api.test", "git.test", "npm.test"], mcpHosts: [], gatewayHost: "gateway.test" },
+    policy: {
+      allow: ["api.test", "git.test", "npm.test", "broken.test", "newline.test"],
+      mcpHosts: [],
+      gatewayHost: "gateway.test",
+    },
     ca: state.ca,
     rules: RULES,
     resolver: state.resolver.resolver,
@@ -191,6 +218,8 @@ beforeAll(async () => {
       "api.test:443": portOf(state.upstream),
       "git.test:443": portOf(state.upstream),
       "npm.test:443": portOf(state.upstream),
+      "broken.test:443": portOf(state.upstream),
+      "newline.test:443": portOf(state.upstream),
     }),
   });
   state.token = await state.test.tokenOf(REPO);
@@ -288,7 +317,7 @@ describe("legacy gateway rule", () => {
 });
 
 describe("credential rules", () => {
-  it("substitutes a placeholder inside any auth-like header", async () => {
+  it("substitutes a placeholder inside auth-like headers and strips it from any other header", async () => {
     const body = await echoed("api.test", "/v1/models", {
       authorization: `Bearer ${API_PLACEHOLDER}`,
       "x-goog-api-key": API_PLACEHOLDER,
@@ -297,7 +326,7 @@ describe("credential rules", () => {
 
     expect(body.headers.authorization).toBe(`Bearer ${API_SECRET}`);
     expect(body.headers["x-goog-api-key"]).toBe(API_SECRET);
-    expect(body.headers["x-trace"]).toBe(API_PLACEHOLDER);
+    expect(body.headers["x-trace"]).toBeUndefined();
   });
 
   it("sets the header of a header rule when the client sends none", async () => {
@@ -436,6 +465,169 @@ describe("gateway on a non-443 port", () => {
     );
     expect(local.test?.log).toContainEqual(
       expect.objectContaining({ host: "gateway.test", rule: "egress.port" }),
+    );
+  });
+});
+
+const rawExchange = async (authority: string, servername: string, request: string) => {
+  const secure = await secureTunnel(
+    state.test.proxy.port,
+    authority,
+    servername,
+    state.ca.certPem,
+    state.token,
+  );
+
+  secure.write(request);
+
+  return readRest(secure as never);
+};
+
+const rawGet = (host: string, target: string, headers: string[] = []) =>
+  rawExchange(
+    `${host}:443`,
+    host,
+    [`GET ${target} HTTP/1.1`, `Host: ${host}`, ...headers, "Connection: close", "", ""].join("\r\n"),
+  );
+
+const statusOf = (raw: string) => Number(raw.split(" ")[1]);
+
+describe("request targets on a terminated host", () => {
+  it("refuses an absolute-form target for another origin with 400 and sends nothing upstream", async () => {
+    const before = state.seen.length;
+    const raw = await rawGet("api.test", "https://attacker.example/x", [
+      `Authorization: Bearer ${API_PLACEHOLDER}`,
+    ]);
+
+    expect(statusOf(raw)).toBe(400);
+    expect(raw).not.toContain(API_SECRET);
+    expect(state.seen.length).toBe(before);
+  });
+
+  it("rewrites an absolute-form target for the terminated host to origin form", async () => {
+    const raw = await rawGet("api.test", "https://api.test/v1/models", [
+      `Authorization: Bearer ${API_PLACEHOLDER}`,
+    ]);
+
+    expect(statusOf(raw)).toBe(200);
+    expect(state.seen.at(-1)).toEqual({ url: "/v1/models", authorization: `Bearer ${API_SECRET}` });
+  });
+
+  it("refuses dot segments before the gateway prefix is applied", async () => {
+    const before = state.seen.length;
+    const raw = await Promise.all(
+      ["/../admin", "/%2E%2e/admin", "/x/..%2fadmin"].map((target) =>
+        rawGet("gateway.test", target, [`x-api-key: ${PLACEHOLDER}`]),
+      ),
+    );
+
+    expect(raw.map(statusOf)).toEqual([400, 400, 400]);
+    expect(state.seen.length).toBe(before);
+  });
+
+  it("matches a rule path prefix on the decoded path", async () => {
+    const body = await echoed("api.test", "/%6dcp/tools", { authorization: `Bearer ${MISSING_PLACEHOLDER}` });
+
+    expect(body.headers.authorization).toBeUndefined();
+  });
+
+  it("answers a CONNECT with an uppercase name and a trailing dot like the plain name", async () => {
+    const raw = await rawExchange(
+      "API.Test.:443",
+      "API.TEST",
+      `GET /v1/models HTTP/1.1\r\nHost: api.test\r\nAuthorization: Bearer ${API_PLACEHOLDER}\r\nConnection: close\r\n\r\n`,
+    );
+
+    expect(statusOf(raw)).toBe(200);
+    expect(state.seen.at(-1)).toEqual({ url: "/v1/models", authorization: `Bearer ${API_SECRET}` });
+  });
+});
+
+describe("unusable credential values", () => {
+  it("answers 502 when the outgoing request cannot be built and keeps serving", async () => {
+    const raw = await rawGet("broken.test", "/x");
+    const after = await echoed("api.test", "/v1/after", { authorization: `Bearer ${API_PLACEHOLDER}` });
+
+    expect(statusOf(raw)).toBe(502);
+    expect(raw).not.toContain("value");
+    expect(after.headers.authorization).toBe(`Bearer ${API_SECRET}`);
+  });
+
+  it("treats a secret with a line break as unavailable", async () => {
+    const body = await echoed("newline.test", "/x");
+
+    expect(body.headers.authorization).toBeUndefined();
+    expect(state.test.log).toContainEqual(
+      expect.objectContaining({ rule: "credential", reason: "unavailable", credential: "newline" }),
+    );
+  });
+});
+
+describe("terminated handshake", () => {
+  it("closes a terminated CONNECT whose client never starts TLS", async () => {
+    const reply = await openConnect(state.test.proxy.port, "git.test:443", state.token);
+    const started = Date.now();
+
+    await readRest(reply.socket);
+
+    expect(reply.status).toBe(200);
+    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(
+      await waitFor(() => state.test.log.find((entry) => entry.rule === "sni" && entry.host === "git.test")),
+    ).toMatchObject({ decision: "deny", reason: "no TLS server name" });
+  });
+});
+
+describe("restricted addresses after DNS", () => {
+  const local: { test?: TestProxy; stateDir: string; token: string } = { stateDir: "", token: "" };
+
+  beforeAll(async () => {
+    local.stateDir = await createStateDir();
+    local.test = await startTestProxy({
+      stateDir: local.stateDir,
+      policy: { allow: ["api.test", "tunnel.test"], mcpHosts: [] },
+      ca: state.ca,
+      rules: RULES,
+      resolver: state.resolver.resolver,
+      dial: createDialer({
+        overrides: new Map([
+          ["api.test", "10.0.0.5"],
+          ["tunnel.test", "127.0.0.1"],
+        ]),
+      }),
+    });
+    local.token = await local.test.tokenOf(REPO);
+  });
+
+  afterAll(async () => {
+    await local.test?.proxy.close();
+
+    await removeDir(local.stateDir);
+  });
+
+  it("refuses a terminated rule host that resolves to a private address", async () => {
+    const response = await requestThrough({
+      proxyPort: local.test?.proxy.port ?? 0,
+      token: local.token,
+      host: "api.test",
+      ca: state.ca.certPem,
+      path: "/v1/models",
+      headers: { authorization: `Bearer ${API_PLACEHOLDER}` },
+    });
+    const body = await readBody(response);
+
+    expect(response.statusCode).toBe(502);
+    expect(body).toContain("restricted addresses");
+    expect(body).not.toContain(API_SECRET);
+  });
+
+  it("refuses a tunnel whose name resolves to a loopback address and records the denial", async () => {
+    const reply = await openConnect(local.test?.proxy.port ?? 0, "tunnel.test:443", local.token);
+    const body = JSON.parse(await readRest(reply.socket)) as { rule: string };
+
+    expect(reply.status).toBe(403);
+    expect(local.test?.log).toContainEqual(
+      expect.objectContaining({ host: "tunnel.test", decision: "deny", rule: body.rule, repo: REPO }),
     );
   });
 });

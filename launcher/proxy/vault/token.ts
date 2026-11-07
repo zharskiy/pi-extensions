@@ -14,6 +14,7 @@ import { readStoreEntry, serverUrlOf, updateStoreEntry, vaultKey } from "./store
 export interface BufferQuery {
   host: string;
   port: number;
+  repoHash: string;
   method: string;
   url: string;
   contentType: string;
@@ -42,6 +43,7 @@ export type TokenPlan =
   | {
       kind: "forward";
       reason?: string;
+      strict?: boolean;
       headers: HeaderPair[];
       body: Buffer;
       complete(response: TokenResponse): Promise<TokenOutcome>;
@@ -54,7 +56,7 @@ export interface VaultTokenHook {
 
 export interface TokenDeps {
   stateDir: string;
-  servers: () => Promise<VaultServer[]>;
+  servers: (repoHash?: string) => Promise<VaultServer[]>;
   resolver: SecretResolver;
   flows: Flows;
   now: () => number;
@@ -107,21 +109,18 @@ const oauthError = (status: number, error: string, description: string) =>
 const expiredSignIn = (server: VaultServer) =>
   oauthError(400, "invalid_grant", `the stored sign-in for ${server.server} has expired; sign in again`);
 
-const parseBody = (response: TokenResponse): Record<string, unknown> | undefined => {
-  const text = response.body.toString("utf8");
-
-  if (isFormType(headerValue(response.headers, "content-type"))) {
-    return Object.fromEntries(new URLSearchParams(text));
-  }
-
+const parseJson = (body: Buffer): Record<string, unknown> | undefined => {
   try {
-    const parsed: unknown = JSON.parse(text);
+    const parsed: unknown = JSON.parse(body.toString("utf8"));
 
     return isObject(parsed) ? parsed : undefined;
   } catch {
     return undefined;
   }
 };
+
+const parseLoose = (body: Buffer) =>
+  parseJson(body) ?? Object.fromEntries(new URLSearchParams(body.toString("utf8")));
 
 const carriesTokens = (body: Record<string, unknown> | undefined) =>
   body !== undefined && TOKEN_FIELDS.some((field) => nonEmpty(body[field]));
@@ -137,6 +136,17 @@ const expiresInOf = (value: unknown) => {
 const refused = (): TokenOutcome => ({
   reason: "token response refused",
   response: oauthError(400, "invalid_grant", "token response outside a sandbox sign-in"),
+});
+
+const notJson = (endpoint: string): TokenOutcome => ({
+  reason: "response refused",
+  response: oauthError(502, "server_error", `the ${endpoint} answered with a body that is not JSON`),
+});
+
+const answer = (reason: string, status: number, error: string, description: string): TokenPlan => ({
+  kind: "answer",
+  reason,
+  response: oauthError(status, error, description),
 });
 
 const withoutTokens = (entry: VaultEntry | undefined) => {
@@ -206,7 +216,9 @@ export const createTokenHook = (deps: TokenDeps) => {
       return { reason: "refresh refused", response: expiredSignIn(server) };
     }
 
-    if (!result.ok) {
+    const stillValid = after.tokensExpireAt === undefined || after.tokensExpireAt > deps.now();
+
+    if (!result.ok && !stillValid) {
       return {
         reason: "refresh unavailable",
         response: oauthError(
@@ -229,7 +241,13 @@ export const createTokenHook = (deps: TokenDeps) => {
     client: VaultClientInformation,
     response: TokenResponse,
   ): Promise<TokenOutcome> => {
-    const body = parseBody(response);
+    const body = parseJson(response.body);
+
+    if (body === undefined) {
+      await deps.flows.finish(flow.id);
+
+      return notJson("token endpoint");
+    }
 
     if (!carriesTokens(body)) {
       await deps.flows.finish(flow.id);
@@ -237,7 +255,7 @@ export const createTokenHook = (deps: TokenDeps) => {
       return { reason: "code exchange failed", response };
     }
 
-    if (body === undefined || !isSuccess(response.status) || !nonEmpty(body.access_token)) {
+    if (!isSuccess(response.status) || !nonEmpty(body.access_token)) {
       return refused();
     }
 
@@ -274,7 +292,7 @@ export const createTokenHook = (deps: TokenDeps) => {
   ): Promise<TokenPlan> => {
     const found = deps.flows.byCode(placeholder);
     const flow = found?.flow.repoHash === request.repoHash ? found.flow : undefined;
-    const server = (await deps.servers()).find((entry) => entry.server === flow?.server);
+    const server = (await deps.servers(request.repoHash)).find((entry) => entry.server === flow?.server);
     const matches =
       flow !== undefined &&
       sameUrl(request.url, flow.tokenEndpoint) &&
@@ -312,6 +330,7 @@ export const createTokenHook = (deps: TokenDeps) => {
 
     return {
       kind: "forward",
+      strict: true,
       headers,
       body: Buffer.from(params.toString()),
       complete: (response) => bindResponse(flow, server, client, response),
@@ -319,11 +338,16 @@ export const createTokenHook = (deps: TokenDeps) => {
   };
 
   const registered = async (servers: VaultServer[], response: TokenResponse): Promise<TokenOutcome> => {
-    const body = parseBody(response);
-    const secret = body?.client_secret;
-    const sensitive = nonEmpty(secret) || body?.registration_access_token !== undefined;
+    const body = parseJson(response.body);
 
-    if (body === undefined || !sensitive || !isSuccess(response.status)) {
+    if (body === undefined) {
+      return notJson("registration endpoint");
+    }
+
+    const secret = body.client_secret;
+    const sensitive = nonEmpty(secret) || body.registration_access_token !== undefined;
+
+    if (!sensitive || !isSuccess(response.status)) {
       return { response };
     }
 
@@ -357,15 +381,19 @@ export const createTokenHook = (deps: TokenDeps) => {
     };
   };
 
-  const registrationPlan = async (request: TokenRequest): Promise<TokenPlan> => {
-    const servers = (await deps.servers()).filter(
-      (server) =>
-        server.discovery.registrationEndpoint !== undefined &&
-        sameUrl(server.discovery.registrationEndpoint, request.url),
-    );
+  const registrationPlan = (servers: VaultServer[], request: TokenRequest): TokenPlan => {
+    if (!isJsonType(headerValue(request.headers, "content-type"))) {
+      return answer(
+        "registration refused",
+        400,
+        "invalid_client_metadata",
+        "a registration body must be JSON",
+      );
+    }
 
     return {
       kind: "forward",
+      strict: true,
       headers: request.headers,
       body: request.body,
       complete: (response) => registered(servers, response),
@@ -373,29 +401,57 @@ export const createTokenHook = (deps: TokenDeps) => {
   };
 
   const unbound = async (response: TokenResponse): Promise<TokenOutcome> =>
-    carriesTokens(parseBody(response)) ? refused() : { response };
+    carriesTokens(parseLoose(response.body)) ? refused() : { response };
 
-  const isRegistration = async (url: string) =>
-    (await deps.servers()).some(
+  const tokenEndpointAnswer = async (response: TokenResponse): Promise<TokenOutcome> => {
+    const body = parseJson(response.body);
+
+    if (body === undefined) {
+      return notJson("token endpoint");
+    }
+
+    return carriesTokens(body) ? refused() : { response };
+  };
+
+  const registrationServers = (servers: VaultServer[], url: string) =>
+    servers.filter(
       (server) =>
         server.discovery.registrationEndpoint !== undefined &&
         sameUrl(server.discovery.registrationEndpoint, url),
     );
 
+  const isTokenEndpoint = (servers: VaultServer[], url: string) =>
+    servers.some((server) => sameUrl(server.discovery.tokenEndpoint, url));
+
+  const isEndpoint = async (url: string, repoHash: string) => {
+    const servers = await deps.servers(repoHash);
+
+    return isTokenEndpoint(servers, url) || registrationServers(servers, url).length > 0;
+  };
+
   const buffers = async (query: BufferQuery) =>
-    query.method === "POST" &&
-    (isFormType(query.contentType) || (isJsonType(query.contentType) && (await isRegistration(query.url))));
+    (query.method === "POST" && isFormType(query.contentType)) ||
+    (await isEndpoint(query.url, query.repoHash));
 
   const plan = async (request: TokenRequest): Promise<TokenPlan> => {
-    if (isJsonType(headerValue(request.headers, "content-type"))) {
-      return registrationPlan(request);
+    const servers = await deps.servers(request.repoHash);
+    const registration = registrationServers(servers, request.url);
+
+    if (registration.length > 0) {
+      return registrationPlan(registration, request);
+    }
+
+    const tokenEndpoint = isTokenEndpoint(servers, request.url);
+
+    if (!isFormType(headerValue(request.headers, "content-type"))) {
+      return tokenEndpoint
+        ? answer("token request refused", 400, "invalid_request", "a token request body must be form-encoded")
+        : { kind: "forward", headers: request.headers, body: request.body, complete: unbound };
     }
 
     const params = new URLSearchParams(request.body.toString("utf8"));
     const refreshToken = params.get("refresh_token");
-    const server = (await deps.servers()).find(
-      (entry) => refreshToken !== null && entry.refresh === refreshToken,
-    );
+    const server = servers.find((entry) => refreshToken !== null && entry.refresh === refreshToken);
 
     if (server !== undefined) {
       return { kind: "answer", ...(await answerRefresh(server)) };
@@ -407,7 +463,15 @@ export const createTokenHook = (deps: TokenDeps) => {
       return exchangePlan(request, params, code);
     }
 
-    return { kind: "forward", headers: request.headers, body: request.body, complete: unbound };
+    return tokenEndpoint
+      ? {
+          kind: "forward",
+          strict: true,
+          headers: request.headers,
+          body: request.body,
+          complete: tokenEndpointAnswer,
+        }
+      : { kind: "forward", headers: request.headers, body: request.body, complete: unbound };
   };
 
   return { buffers, plan };

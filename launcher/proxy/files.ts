@@ -29,4 +29,5 @@ export interface DaemonConfig<Config> {
   egressCap?: { derivedHosts?: string[]; grants?: string[] };
   piCommand?: string[];
   discoverCommand?: string[];
+  parentEnv?: Record<string, string>;
 }

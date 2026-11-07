@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { realpathSync } from "node:fs";
-import { request } from "node:http";
+import { Agent, request } from "node:http";
 import { connect } from "node:net";
 import { fileURLToPath } from "node:url";
 
@@ -50,6 +50,7 @@ const send = (proxy, method, path, body, timeoutMs) =>
         port: proxy.port,
         method,
         path,
+        agent: new Agent(),
         timeout: timeoutMs,
         headers: {
           "proxy-authorization": proxy.authorization,
@@ -119,6 +120,7 @@ const replay = (flow, query) =>
         port: flow.port,
         method: "GET",
         path: `${flow.path}?${query}`,
+        agent: new Agent(),
         timeout: REQUEST_TIMEOUT_MS,
       },
       (response) => {

@@ -676,6 +676,118 @@ describe("docker-engine egress relay", () => {
     expect(relayOf(engine)).toBeUndefined();
   });
 
+  it("gives each repository its own internal network with the relay on it", async () => {
+    const { engine, backend } = await readyBackend();
+    const repoA = "a".repeat(64);
+    const repoB = "b".repeat(64);
+    const routeA = await backend.prepareProxyRoute(3128, POLICY, IMAGE, repoA);
+    const routeB = await backend.prepareProxyRoute(3128, POLICY, IMAGE, repoB);
+    const relayId = relayOf(engine)?.Id;
+    const members = (name: string) => engine.networks.get(name)?.connected.map((entry) => entry.container);
+
+    expect(routeA.network).toEqual({ kind: "internal", name: `pi-sandbox-${"a".repeat(12)}` });
+    expect(routeB.network).toEqual({ kind: "internal", name: `pi-sandbox-${"b".repeat(12)}` });
+    expect(engine.networks.get(`pi-sandbox-${"a".repeat(12)}`)?.body).toEqual({
+      Name: `pi-sandbox-${"a".repeat(12)}`,
+      Driver: "bridge",
+      Internal: true,
+      Labels: { "pi-sandbox.managed": "true", "pi-sandbox.repo-hash": repoA },
+    });
+    expect(members(`pi-sandbox-${"a".repeat(12)}`)).toEqual([relayId]);
+    expect(members(`pi-sandbox-${"b".repeat(12)}`)).toEqual([relayId]);
+    expect(engine.networks.has("pi-sandbox")).toBe(false);
+
+    const again = await backend.prepareProxyRoute(3128, POLICY, IMAGE, repoA);
+
+    expect(again.address).toBe(routeA.address);
+    expect(members(`pi-sandbox-${"a".repeat(12)}`)).toEqual([relayId]);
+  });
+
+  it("keeps the repository's network when asked to while the last container is replaced", async () => {
+    const { engine, backend } = await readyBackend();
+    const repo = "a".repeat(64);
+    const route = await backend.prepareProxyRoute(3128, POLICY, IMAGE, repo);
+    const created = await backend.createContainer({
+      ...baseSpec,
+      name: "agent-a",
+      labels: { "pi-sandbox.managed": "true", "pi-sandbox.repo-hash": repo },
+      network: route.network,
+    });
+
+    await backend.removeContainer(created.id, { keepNetwork: true });
+
+    expect(engine.networks.has(`pi-sandbox-${"a".repeat(12)}`)).toBe(true);
+  });
+
+  it("removes a repository's network with its last container and keeps the others", async () => {
+    const { engine, backend } = await readyBackend();
+    const repoA = "a".repeat(64);
+    const repoB = "b".repeat(64);
+    const routeA = await backend.prepareProxyRoute(3128, POLICY, IMAGE, repoA);
+    const routeB = await backend.prepareProxyRoute(3128, POLICY, IMAGE, repoB);
+    const create = (name: string, repo: string, network: typeof routeA.network) =>
+      backend.createContainer({
+        ...baseSpec,
+        name,
+        labels: { "pi-sandbox.managed": "true", "pi-sandbox.repo-hash": repo },
+        network,
+      });
+    const first = await create("agent-a1", repoA, routeA.network);
+    const second = await create("agent-a2", repoA, routeA.network);
+    const other = await create("agent-b", repoB, routeB.network);
+
+    await backend.removeContainer(first.id);
+
+    expect(engine.networks.has(`pi-sandbox-${"a".repeat(12)}`)).toBe(true);
+
+    await backend.removeContainer(second.id);
+
+    expect(engine.networks.has(`pi-sandbox-${"a".repeat(12)}`)).toBe(false);
+    expect(
+      engine.networks.get(`pi-sandbox-${"b".repeat(12)}`)?.connected.map((entry) => entry.container),
+    ).toEqual([relayOf(engine)?.Id, other.id]);
+    expect(relayOf(engine)?.State).toBe("running");
+  });
+
+  it("prunes managed networks of repositories outside the keep set that hold only relays", async () => {
+    const { engine, backend } = await readyBackend();
+    const repoA = "a".repeat(64);
+    const repoB = "b".repeat(64);
+    const repoC = "c".repeat(64);
+
+    await backend.prepareProxyRoute(3128, POLICY, IMAGE);
+
+    await backend.prepareProxyRoute(3128, POLICY, IMAGE, repoA);
+
+    await backend.prepareProxyRoute(3128, POLICY, IMAGE, repoB);
+
+    const routeC = await backend.prepareProxyRoute(3128, POLICY, IMAGE, repoC);
+
+    await backend.createContainer({ ...baseSpec, name: "agent-c", network: routeC.network });
+
+    engine.networks.set("pi-sandbox-foreign", {
+      body: { Name: "pi-sandbox-foreign", Internal: true },
+      connected: [],
+    });
+
+    engine.networks.set("pi-sandbox-other", {
+      body: { Name: "pi-sandbox-other", Internal: true, Labels: { "pi-sandbox.managed": "true" } },
+      connected: [],
+    });
+
+    expect((await backend.pruneNetworks([repoA])).sort()).toEqual([
+      "pi-sandbox",
+      `pi-sandbox-${"b".repeat(12)}`,
+    ]);
+    expect([...engine.networks.keys()].sort()).toEqual([
+      `pi-sandbox-${"a".repeat(12)}`,
+      `pi-sandbox-${"c".repeat(12)}`,
+      "pi-sandbox-foreign",
+      "pi-sandbox-other",
+    ]);
+    expect(relayOf(engine)?.State).toBe("running");
+  });
+
   it("creates the relay from a pinned image pulled by digest, which has no tag", async () => {
     const engine = await startEngine();
     const backend = backendFor(engine);

@@ -1,7 +1,19 @@
-import { generateKeyPairSync, randomBytes, X509Certificate } from "node:crypto";
-import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  createPrivateKey,
+  createPublicKey,
+  generateKeyPairSync,
+  randomBytes,
+  X509Certificate,
+} from "node:crypto";
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { type CommandRunner, createProcessRunner, LauncherError } from "../shared/index.ts";
+import {
+  type CommandRunner,
+  createProcessRunner,
+  LauncherError,
+  withFileLock,
+  writeFileAtomic,
+} from "../shared/index.ts";
 
 export interface LeafCertificate {
   key: string;
@@ -12,6 +24,8 @@ export interface LauncherCa {
   certPath: string;
   certPem: string;
   leaf(host: string): Promise<LeafCertificate>;
+  ephemeralLeaf(host: string): Promise<LeafCertificate>;
+  pruneLeaves(): Promise<void>;
 }
 
 interface CaOptions {
@@ -26,6 +40,10 @@ const LEAF_DAYS = "397";
 const RENEW_MARGIN_MS = 24 * 60 * 60 * 1000;
 
 const PRIVATE_MODE = 0o600;
+
+const MINT_LOCK_TIMEOUT_MS = 30_000;
+
+const CERT_SUFFIX = "-cert.pem";
 
 const LEAF_HOST = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/;
 
@@ -66,12 +84,29 @@ const parseCertificate = (pem: string | undefined) => {
 const isFresh = (certificate: X509Certificate | undefined) =>
   certificate !== undefined && Date.parse(certificate.validTo) - Date.now() > RENEW_MARGIN_MS;
 
-const writePrivateKey = async (path: string) => {
-  const { privateKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
+const newPrivateKey = () =>
+  String(
+    generateKeyPairSync("ec", { namedCurve: "P-256" }).privateKey.export({ type: "pkcs8", format: "pem" }),
+  );
 
-  await writeFile(path, privateKey.export({ type: "pkcs8", format: "pem" }), { mode: PRIVATE_MODE });
+const writePrivateKey = async (path: string) => {
+  await writeFile(path, newPrivateKey(), { mode: PRIVATE_MODE });
 
   await chmod(path, PRIVATE_MODE);
+};
+
+const publicDer = (key: string | X509Certificate) => {
+  const publicKey = typeof key === "string" ? createPublicKey(createPrivateKey(key)) : key.publicKey;
+
+  return publicKey.export({ type: "spki", format: "der" });
+};
+
+const keyMatches = (key: string, certificate: X509Certificate) => {
+  try {
+    return publicDer(key).equals(publicDer(certificate));
+  } catch {
+    return false;
+  }
 };
 
 const openssl = async (runner: CommandRunner, args: string[]) => {
@@ -111,51 +146,46 @@ const createCa = async (directory: string, runner: CommandRunner) => {
   ]);
 };
 
-const createLeaf = async (directory: string, host: string, runner: CommandRunner) => {
-  const base = join(directory, "leaf", host);
-  const configPath = `${base}.cnf`;
-  const requestPath = `${base}.csr`;
+const signLeaf = async (directory: string, host: string, runner: CommandRunner): Promise<LeafCertificate> => {
+  const work = await mkdtemp(join(directory, "work-"));
+  const keyPath = join(work, "key.pem");
+  const configPath = join(work, "leaf.cnf");
+  const requestPath = join(work, "leaf.csr");
+  const certPath = join(work, "cert.pem");
 
-  await mkdir(join(directory, "leaf"), { recursive: true });
+  try {
+    await writePrivateKey(keyPath);
 
-  await writePrivateKey(`${base}-key.pem`);
+    await writeFile(configPath, leafConfig(host));
 
-  await writeFile(configPath, leafConfig(host));
+    await openssl(runner, ["req", "-new", "-key", keyPath, "-config", configPath, "-out", requestPath]);
 
-  await openssl(runner, [
-    "req",
-    "-new",
-    "-key",
-    `${base}-key.pem`,
-    "-config",
-    configPath,
-    "-out",
-    requestPath,
-  ]);
+    await openssl(runner, [
+      "x509",
+      "-req",
+      "-in",
+      requestPath,
+      "-CA",
+      join(directory, "ca-cert.pem"),
+      "-CAkey",
+      join(directory, "ca-key.pem"),
+      "-set_serial",
+      `0x${randomBytes(16).toString("hex")}`,
+      "-days",
+      LEAF_DAYS,
+      "-sha256",
+      "-extfile",
+      configPath,
+      "-extensions",
+      "leaf",
+      "-out",
+      certPath,
+    ]);
 
-  await openssl(runner, [
-    "x509",
-    "-req",
-    "-in",
-    requestPath,
-    "-CA",
-    join(directory, "ca-cert.pem"),
-    "-CAkey",
-    join(directory, "ca-key.pem"),
-    "-set_serial",
-    `0x${randomBytes(16).toString("hex")}`,
-    "-days",
-    LEAF_DAYS,
-    "-sha256",
-    "-extfile",
-    configPath,
-    "-extensions",
-    "leaf",
-    "-out",
-    `${base}-cert.pem`,
-  ]);
-
-  await rm(requestPath, { force: true });
+    return { key: await readFile(keyPath, "utf8"), cert: await readFile(certPath, "utf8") };
+  } finally {
+    await rm(work, { recursive: true, force: true });
+  }
 };
 
 export const openLauncherCa = async ({ stateDir, runner }: CaOptions): Promise<LauncherCa> => {
@@ -173,25 +203,95 @@ export const openLauncherCa = async ({ stateDir, runner }: CaOptions): Promise<L
   const certPem = await readFile(certPath, "utf8");
   const authority = new X509Certificate(certPem);
 
-  const leaf = async (host: string): Promise<LeafCertificate> => {
+  const leafDir = join(directory, "leaf");
+
+  const checkHost = (host: string) => {
     if (!LEAF_HOST.test(host)) {
       throw new LauncherError(`cannot issue a certificate for ${host}`, "use a DNS hostname for the gateway");
     }
-
-    const base = join(directory, "leaf", host);
-    const current = parseCertificate(await readOptional(`${base}-cert.pem`));
-
-    if (!isFresh(current) || !current?.checkIssued(authority)) {
-      await createLeaf(directory, host, runner);
-    }
-
-    return {
-      key: await readFile(`${base}-key.pem`, "utf8"),
-      cert: await readFile(`${base}-cert.pem`, "utf8"),
-    };
   };
 
-  return { certPath, certPem, leaf };
+  const isUsable = (certificate: X509Certificate | undefined): certificate is X509Certificate =>
+    certificate !== undefined && isFresh(certificate) && certificate.checkIssued(authority);
+
+  const stored = async (base: string): Promise<LeafCertificate | undefined> => {
+    const key = await readOptional(`${base}-key.pem`);
+    const cert = await readOptional(`${base}${CERT_SUFFIX}`);
+    const certificate = parseCertificate(cert);
+
+    if (key === undefined || cert === undefined || !isUsable(certificate) || !keyMatches(key, certificate)) {
+      return undefined;
+    }
+
+    return { key, cert };
+  };
+
+  const mintStored = async (host: string, base: string) => {
+    const again = await stored(base);
+
+    if (again !== undefined) {
+      return again;
+    }
+
+    const minted = await signLeaf(directory, host, runner);
+
+    await writeFileAtomic(`${base}-key.pem`, minted.key, { mode: PRIVATE_MODE });
+
+    await writeFileAtomic(`${base}${CERT_SUFFIX}`, minted.cert, { mode: PRIVATE_MODE });
+
+    return minted;
+  };
+
+  const leaf = async (host: string): Promise<LeafCertificate> => {
+    checkHost(host);
+
+    const base = join(leafDir, host);
+    const current = await stored(base);
+
+    if (current !== undefined) {
+      return current;
+    }
+
+    await mkdir(leafDir, { recursive: true, mode: 0o700 });
+
+    return withFileLock(`${base}.lock`, () => mintStored(host, base), { timeoutMs: MINT_LOCK_TIMEOUT_MS });
+  };
+
+  const ephemeralLeaf = async (host: string): Promise<LeafCertificate> => {
+    checkHost(host);
+
+    return signLeaf(directory, host, runner);
+  };
+
+  const pruneHost = async (host: string) => {
+    const base = join(leafDir, host);
+
+    await withFileLock(
+      `${base}.lock`,
+      async () => {
+        if (!isUsable(parseCertificate(await readOptional(`${base}${CERT_SUFFIX}`)))) {
+          await rm(`${base}${CERT_SUFFIX}`, { force: true });
+
+          await rm(`${base}-key.pem`, { force: true });
+        }
+
+        await rm(`${base}.cnf`, { force: true });
+      },
+      { timeoutMs: MINT_LOCK_TIMEOUT_MS },
+    );
+  };
+
+  const pruneLeaves = async () => {
+    const names = await readdir(leafDir).catch(() => [] as string[]);
+    const hosts = names
+      .filter((name) => name.endsWith(CERT_SUFFIX) || name.endsWith(".cnf"))
+      .map((name) => name.replace(/(-cert\.pem|\.cnf)$/, ""))
+      .filter((host) => LEAF_HOST.test(host));
+
+    await Promise.all([...new Set(hosts)].map(pruneHost));
+  };
+
+  return { certPath, certPem, leaf, ephemeralLeaf, pruneLeaves };
 };
 
 export const ensureLauncherCa = async (stateDir: string, runner: CommandRunner = createProcessRunner()) => {

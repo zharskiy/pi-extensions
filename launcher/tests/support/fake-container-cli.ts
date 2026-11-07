@@ -104,6 +104,15 @@ export const createFakeContainerCli = (options: FakeCliOptions = {}) => {
   const networks = new Map<string, { internal: boolean; labels: string[] }>();
   const volumeLabels = new Map<string, string[]>();
   const spawned: FakeSpawn[] = [];
+  const envFiles: string[] = [];
+
+  const recordEnvFile = (args: string[]) => {
+    const index = args.indexOf("--env-file");
+
+    if (index !== -1) {
+      envFiles.push(readFileSync(args[index + 1] ?? "", "utf8"));
+    }
+  };
 
   const publishedDigest = (reference: string) => {
     const repository = repositoryOf(reference);
@@ -229,6 +238,10 @@ export const createFakeContainerCli = (options: FakeCliOptions = {}) => {
       return failed(`Error: volume ${name} not found`);
     }
 
+    if (action === "list") {
+      return ok(JSON.stringify([...networks.entries()].map(([id, entry]) => networkJson(id, entry))));
+    }
+
     if (action === "delete") {
       volumes.delete(name);
     }
@@ -246,6 +259,14 @@ export const createFakeContainerCli = (options: FakeCliOptions = {}) => {
       });
 
       return ok();
+    }
+
+    if (action === "list") {
+      return ok(JSON.stringify([...networks.entries()].map(([id, entry]) => networkJson(id, entry))));
+    }
+
+    if (action === "delete") {
+      return networks.delete(name) ? ok() : failed(`Error: network ${name} not found`);
     }
 
     const network = networks.get(name);
@@ -305,6 +326,8 @@ export const createFakeContainerCli = (options: FakeCliOptions = {}) => {
 
     const [command = "", ...args] = call.args;
 
+    recordEnvFile(args);
+
     return commands[command]?.(args) ?? failed(`Error: unknown command ${command}`);
   });
 
@@ -317,6 +340,8 @@ export const createFakeContainerCli = (options: FakeCliOptions = {}) => {
     const piped = Array.isArray(options.stdio) && options.stdio[0] === "pipe";
 
     spawned.push(record);
+
+    recordEnvFile(args);
 
     Object.assign(child, { stdin: piped ? stdin : null, stdout, stderr, pid: 4000 + spawned.length });
 
@@ -348,6 +373,7 @@ export const createFakeContainerCli = (options: FakeCliOptions = {}) => {
     ...fake,
     spawn,
     spawned,
+    envFiles,
     networks,
     volumeLabels,
     images,

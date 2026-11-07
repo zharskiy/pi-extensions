@@ -1,4 +1,4 @@
-export { endSession, liveSessions, newLaunchId, registerSession } from "./sessions.ts";
+export { endSession, liveSessions, newLaunchId, registerSession, withRepoSessionLock } from "./sessions.ts";
 export {
   activeGrants,
   addGrant,

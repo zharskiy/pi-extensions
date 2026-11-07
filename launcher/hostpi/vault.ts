@@ -23,7 +23,7 @@ import type {
   VaultDiscoveryInput,
   VaultDiscoveryResult,
 } from "./types.ts";
-import { hasUrlPassword } from "./userinfo.ts";
+import { hasQueryCredential, hasUrlPassword } from "./userinfo.ts";
 
 const SCRIPT = "mcp-discover.mjs";
 
@@ -58,6 +58,7 @@ export const vaultCandidate = (name: string, definition: unknown): McpOAuthServe
   const excluded =
     hasAuthorization(definition.headers) ||
     hasUrlPassword(definition.url) ||
+    hasQueryCredential(definition.url) ||
     definition.auth !== undefined ||
     objectOr(definition.oauth).clientSecret !== undefined;
 

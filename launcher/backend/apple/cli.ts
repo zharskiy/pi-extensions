@@ -24,6 +24,8 @@ export const APPLE_COMMANDS = {
   volumeRemove: ["volume", "delete"],
   networkInspect: ["network", "inspect"],
   networkCreate: ["network", "create"],
+  networkRemove: ["network", "delete"],
+  networkList: ["network", "list", "--format", "json"],
 } as const;
 
 export const APPLE_FLAGS = {
@@ -32,7 +34,7 @@ export const APPLE_FLAGS = {
   file: "--file",
   name: "--name",
   label: "--label",
-  env: "--env",
+  envFile: "--env-file",
   workdir: "--workdir",
   user: "--user",
   tmpfs: "--tmpfs",
@@ -162,6 +164,16 @@ const internalOf = (network: unknown) => {
   }
 
   return mode === undefined ? undefined : mode === APPLE_HOST_ONLY_MODE;
+};
+
+export const networkNamesOf = (output: string) => {
+  const parsed = parseJson(output);
+
+  return (Array.isArray(parsed) ? parsed : []).flatMap((entry) => {
+    const name = text(record(entry).id) ?? text(record(record(entry).config).id);
+
+    return name === undefined ? [] : [name];
+  });
 };
 
 export const networkOf = (output: string): AppleNetwork => {

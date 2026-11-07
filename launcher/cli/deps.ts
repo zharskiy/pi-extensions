@@ -1,4 +1,3 @@
-import { join } from "node:path";
 import type { Backend } from "../backend/index.ts";
 import type { EgressCap, ExtraCa, SandboxConfig } from "../config/index.ts";
 import type { HostTerminal, SignalSource } from "../container/index.ts";
@@ -10,7 +9,8 @@ import type {
   ProxyInstance,
   TrustBundle,
 } from "../proxy/index.ts";
-import { type CommandRunner, expandHome, launcherPaths } from "../shared/index.ts";
+import { type CommandRunner, launcherPaths } from "../shared/index.ts";
+import { hostAgentDir } from "../workspace/index.ts";
 
 interface ProxyRequest {
   config: SandboxConfig;
@@ -19,6 +19,7 @@ interface ProxyRequest {
   home: string;
   egressCap: EgressCap;
   piCommand: string[];
+  discoverCommand?: string[];
 }
 
 interface DenialFilter {
@@ -74,10 +75,4 @@ export const writeNotices = (deps: CliDeps, notices: string[]) => {
 export const pathsOf = (deps: CliDeps) =>
   launcherPaths({ env: deps.env, home: deps.home, platform: deps.platform });
 
-export const hostAgentDirOf = (deps: CliDeps) => {
-  const configured = deps.env.PI_CODING_AGENT_DIR;
-
-  return configured === undefined || configured === ""
-    ? join(deps.home, ".pi", "agent")
-    : expandHome(configured, deps.home);
-};
+export const hostAgentDirOf = (deps: CliDeps) => hostAgentDir(deps.home, deps.env);

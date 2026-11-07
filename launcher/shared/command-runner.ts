@@ -39,10 +39,20 @@ const launchError = (file: string, error: NodeJS.ErrnoException) =>
     ? new LauncherError(`${file}: command not found`, `install ${file} or add it to PATH`)
     : new LauncherError(`${file}: ${error.message}`);
 
-const start = (file: string, args: string[], stdio: StdioOptions, options: InteractiveOptions) =>
+export interface ProcessRunnerOptions {
+  baseEnv?: Record<string, string>;
+}
+
+const start = (
+  file: string,
+  args: string[],
+  stdio: StdioOptions,
+  options: InteractiveOptions,
+  baseEnv: NodeJS.ProcessEnv,
+) =>
   spawn(file, args, {
     cwd: options.cwd,
-    env: options.env === undefined ? process.env : { ...process.env, ...options.env },
+    env: options.env === undefined ? baseEnv : { ...baseEnv, ...options.env },
     stdio,
   });
 
@@ -52,27 +62,35 @@ const settle = (file: string, child: ChildProcess) =>
     child.once("close", (code, signal) => resolve(exitCode(code, signal)));
   });
 
-const run = async (file: string, args: string[], options: RunOptions = {}): Promise<RunResult> => {
-  const stdin = options.input === undefined ? "ignore" : "pipe";
-  const child = start(file, args, [stdin, "pipe", "pipe"], options);
-  const stdout: Buffer[] = [];
-  const stderr: Buffer[] = [];
+const runWith =
+  (baseEnv: NodeJS.ProcessEnv) =>
+  async (file: string, args: string[], options: RunOptions = {}): Promise<RunResult> => {
+    const stdin = options.input === undefined ? "ignore" : "pipe";
+    const child = start(file, args, [stdin, "pipe", "pipe"], options, baseEnv);
+    const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
 
-  child.stdout?.on("data", (chunk: Buffer) => stdout.push(chunk));
-  child.stderr?.on("data", (chunk: Buffer) => stderr.push(chunk));
-  child.stdin?.on("error", () => undefined);
-  child.stdin?.end(options.input);
+    child.stdout?.on("data", (chunk: Buffer) => stdout.push(chunk));
+    child.stderr?.on("data", (chunk: Buffer) => stderr.push(chunk));
+    child.stdin?.on("error", () => undefined);
+    child.stdin?.end(options.input);
 
-  const code = await settle(file, child);
+    const code = await settle(file, child);
 
-  return {
-    code,
-    stdout: Buffer.concat(stdout).toString("utf8"),
-    stderr: Buffer.concat(stderr).toString("utf8"),
+    return {
+      code,
+      stdout: Buffer.concat(stdout).toString("utf8"),
+      stderr: Buffer.concat(stderr).toString("utf8"),
+    };
   };
+
+const spawnInteractiveWith =
+  (baseEnv: NodeJS.ProcessEnv) =>
+  (file: string, args: string[], options: InteractiveOptions = {}) =>
+    settle(file, start(file, args, "inherit", options, baseEnv));
+
+export const createProcessRunner = (options: ProcessRunnerOptions = {}): CommandRunner => {
+  const baseEnv = options.baseEnv ?? process.env;
+
+  return { run: runWith(baseEnv), spawnInteractive: spawnInteractiveWith(baseEnv) };
 };
-
-const spawnInteractive = (file: string, args: string[], options: InteractiveOptions = {}) =>
-  settle(file, start(file, args, "inherit", options));
-
-export const createProcessRunner = (): CommandRunner => ({ run, spawnInteractive });

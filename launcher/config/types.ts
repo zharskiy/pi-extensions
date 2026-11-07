@@ -35,7 +35,7 @@ export interface DeriveConfig {
   hosts?: string[];
 }
 
-export interface VaultConfig {
+interface VaultConfig {
   enabled: boolean;
 }
 
@@ -118,6 +118,7 @@ export interface SandboxConfig {
   env: { allow: string[] };
   ssh: { agent: boolean };
   resources: { cpus?: number; memoryGiB?: number };
+  sessions: { host: boolean };
   org?: OrgRef;
 }
 
@@ -145,6 +146,7 @@ export interface LayerConfig {
   env?: Partial<SandboxConfig["env"]>;
   ssh?: Partial<SandboxConfig["ssh"]>;
   resources?: SandboxConfig["resources"];
+  sessions?: Partial<SandboxConfig["sessions"]>;
   org?: OrgRef;
 }
 
@@ -153,10 +155,16 @@ export interface EgressCap {
   grants?: string[];
 }
 
+interface LayerCap {
+  layer: LayerName;
+  allow: string[];
+}
+
 export interface EffectiveConfig {
   config: SandboxConfig;
   sources: Record<string, ConfigSource>;
   egressCap: EgressCap;
+  grantCaps?: LayerCap[];
 }
 
 export interface FetchTextResult {
@@ -171,6 +179,8 @@ export interface OrgLayerInput {
   stateDir: string;
   fetchText: FetchText;
   now: () => number;
+  home?: string;
+  offline?: boolean;
 }
 
 export interface OrgLayerResult {

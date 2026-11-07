@@ -1,6 +1,6 @@
 import dns from "node:dns";
 
-const PI_CLI = "pi-coding-agent";
+const HOST_PI_SCRIPTS = ["pi-coding-agent", "hostpi/mcp-discover.mjs"];
 
 const overrides = new Map(
   (process.env.PI_SANDBOX_TEST_RESOLVE ?? "")
@@ -29,6 +29,8 @@ const lookup = (hostname, options, callback) => {
   return process.nextTick(() => done(null, address, family(address)));
 };
 
-if ((process.argv[1] ?? "").includes(PI_CLI) && overrides.size > 0) {
+const script = process.argv[1] ?? "";
+
+if (HOST_PI_SCRIPTS.some((name) => script.includes(name)) && overrides.size > 0) {
   dns.lookup = lookup;
 }

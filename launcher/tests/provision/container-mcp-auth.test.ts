@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { lstat, mkdir, readFile, rm, stat, symlink } from "node:fs/promises";
+import { lstat, mkdir, readFile, rm, stat, symlink, utimes } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { ExecIo, ExecSpec } from "../../backend/index.ts";
@@ -190,5 +190,101 @@ describe("syncContainerMcpAuth", () => {
     expect(result.notices).toEqual([
       "mcp-auth.json in the sandbox volume was not valid JSON; replaced with the vault entries",
     ]);
+  });
+
+  it("sweeps a client secret from in-container registration unless it is the vault placeholder", async () => {
+    const CLIENT = placeholderFor("salt", "mcp:docs:oauth:client");
+    const env = await setup({
+      [DOCS]: {
+        serverUrl: "https://mcp.docs.example/mcp",
+        clientInformation: { client_id: "docs-client", client_secret: "REAL-CLIENT-1" },
+      },
+      [STRAY]: {
+        serverUrl: "https://mcp.stray.example/mcp",
+        clientInformation: {
+          client_id: "stray",
+          client_secret: "REAL-CLIENT-2",
+          client_secret_expires_at: 0,
+        },
+      },
+    });
+    const vaultEntry = {
+      ...docsEntry,
+      clientInformation: { client_id: "docs-client", client_secret: CLIENT },
+    };
+    const result = await env.sync({
+      [DOCS]: { serverUrl: "https://mcp.docs.example/mcp", discovery: {} },
+      [KEPT]: vaultEntry,
+    });
+    const text = await readFile(join(env.agentDir, "mcp-auth.json"), "utf8");
+    const base = await readFile(stateLayout(env.stateDir).syncMcpAuth("repo1"), "utf8");
+
+    expect(text).not.toMatch(/REAL-CLIENT/);
+    expect(base).not.toMatch(/REAL-CLIENT/);
+    expect((await env.file())?.[KEPT]?.clientInformation).toEqual({
+      client_id: "docs-client",
+      client_secret: CLIENT,
+    });
+    expect((await env.file())?.[STRAY]?.clientInformation).toEqual({
+      client_id: "stray",
+      client_secret_expires_at: 0,
+    });
+    expect(result.notices).toEqual([
+      `mcp: removed a token that is not a placeholder from the sandbox's mcp-auth.json (${DOCS})`,
+      `mcp: removed a token that is not a placeholder from the sandbox's mcp-auth.json (${STRAY})`,
+    ]);
+  });
+
+  it("takes over a lock in the container only once it is older than the stale window", async () => {
+    const env = await setup({ [KEPT]: { serverUrl: "https://mcp.kept.example/mcp" } });
+    const lock = join(env.agentDir, "mcp-auth.json.lock");
+    const old = new Date(Date.now() - 20_000);
+
+    await mkdir(lock);
+
+    await utimes(lock, old, old);
+
+    await env.sync({ [DOCS]: docsEntry });
+
+    expect(await env.file()).toEqual({
+      [KEPT]: { serverUrl: "https://mcp.kept.example/mcp" },
+      [DOCS]: docsEntry,
+    });
+    await expect(lstat(lock)).rejects.toThrow();
+  });
+
+  it("keeps waiting past five seconds for a holder that refreshes its lock", {
+    timeout: 20_000,
+  }, async () => {
+    const env = await setup({ [KEPT]: { serverUrl: "https://mcp.kept.example/mcp" } });
+    const lock = join(env.agentDir, "mcp-auth.json.lock");
+
+    await mkdir(lock);
+
+    const refresh = setInterval(() => {
+      const now = new Date();
+
+      void utimes(lock, now, now).catch(() => undefined);
+    }, 500);
+    let settled = false;
+    const pending = env.sync({ [DOCS]: docsEntry }).finally(() => {
+      settled = true;
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 6_000));
+
+    expect(settled).toBe(false);
+    expect(await env.file()).toEqual({ [KEPT]: { serverUrl: "https://mcp.kept.example/mcp" } });
+
+    clearInterval(refresh);
+
+    await rm(lock, { recursive: true });
+
+    await pending;
+
+    expect(await env.file()).toEqual({
+      [KEPT]: { serverUrl: "https://mcp.kept.example/mcp" },
+      [DOCS]: docsEntry,
+    });
   });
 });

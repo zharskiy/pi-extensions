@@ -1,7 +1,8 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtempSync, rmSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { BackendCapabilities } from "../../backend/index.ts";
 import {
   collectGarbage,
@@ -12,6 +13,7 @@ import {
   stopIdleContainer,
 } from "../../container/lifecycle.ts";
 import { buildContainerSpec, type ContainerSpecInput } from "../../container/spec.ts";
+import { sha256Hex } from "../../shared/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
 
@@ -30,6 +32,12 @@ const workspace = {
 
 const stateDirs: string[] = [];
 
+const LOCK_STATE = mkdtempSync(join(tmpdir(), "pi-sandbox-lifecycle-lock-"));
+
+afterAll(() => {
+  rmSync(LOCK_STATE, { recursive: true, force: true });
+});
+
 const specOf = (overrides: Partial<ContainerSpecInput> = {}) =>
   buildContainerSpec({
     workspace,
@@ -40,7 +48,7 @@ const specOf = (overrides: Partial<ContainerSpecInput> = {}) =>
     hostGid: 20,
     platform: "darwin",
     capabilities,
-    stateDir: "/state",
+    stateDir: LOCK_STATE,
     launcherVersion: "0.4.0",
     configHash: "cfg-one",
     ...overrides,
@@ -84,7 +92,7 @@ describe("ensureContainer", () => {
     const first = await ensureContainer({ backend: fake.backend, spec: specOf() });
     const second = await ensureContainer({ backend: fake.backend, spec: specOf() });
 
-    expect(second).toEqual({ id: first.id, created: false });
+    expect(second).toEqual({ id: first.id, created: false, outdated: false });
     expect(fake.containers.size).toBe(1);
   });
 
@@ -96,7 +104,7 @@ describe("ensureContainer", () => {
 
     const second = await ensureContainer({ backend: fake.backend, spec: specOf() });
 
-    expect(second).toEqual({ id: first.id, created: false });
+    expect(second).toEqual({ id: first.id, created: false, outdated: false });
     expect(fake.containers.get(first.id)?.summary.state).toBe("running");
   });
 
@@ -156,28 +164,141 @@ describe("ensureContainer", () => {
     expect(fake.containers.has(first.id)).toBe(false);
   });
 
-  it("mounts a state-dir copy of the git config when the backend cannot mount single files", async () => {
+  it("keeps the running container of a changed config while other sessions of the repo are live", async () => {
+    const fake = createFakeBackend();
+    const first = await ensureContainer({ backend: fake.backend, spec: specOf() });
+    const second = await ensureContainer({
+      backend: fake.backend,
+      spec: specOf({ configHash: "cfg-two" }),
+      othersLive: async () => true,
+    });
+
+    expect(second).toEqual({ id: first.id, created: false, outdated: true });
+    expect(fake.stops).toEqual([]);
+    expect([...fake.containers.keys()]).toEqual([first.id]);
+  });
+
+  it("replaces the container of a changed config once no other session is live", async () => {
+    const fake = createFakeBackend();
+    const first = await ensureContainer({ backend: fake.backend, spec: specOf() });
+    const second = await ensureContainer({
+      backend: fake.backend,
+      spec: specOf({ configHash: "cfg-two" }),
+      othersLive: async () => false,
+    });
+
+    expect(second.created).toBe(true);
+    expect(second.outdated).toBe(false);
+    expect(fake.containers.has(first.id)).toBe(false);
+  });
+
+  it("creates one container when two first launches of a repo run at once", async () => {
+    const fake = createFakeBackend();
+    const [one, two] = await Promise.all([
+      ensureContainer({ backend: fake.backend, spec: specOf() }),
+      ensureContainer({ backend: fake.backend, spec: specOf() }),
+    ]);
+
+    expect(one.id).toBe(two.id);
+    expect([one.created, two.created].sort()).toEqual([false, true]);
+    expect(fake.containers.size).toBe(1);
+  });
+
+  it("reuses the container another launcher created under the same name", async () => {
+    const fake = createFakeBackend();
+    const spec = specOf();
+    const raced = { id: "" };
+    const backend = {
+      ...fake.backend,
+      createContainer: async () => {
+        raced.id = fake.addContainer({ name: spec.name, labels: spec.labels, state: "created", image: "x" });
+
+        throw new Error(`container name ${spec.name} is already in use`);
+      },
+    };
+    const result = await ensureContainer({ backend, spec });
+
+    expect(result).toEqual({ id: raced.id, created: false, outdated: false });
+    expect(fake.containers.get(raced.id)?.summary.state).toBe("running");
+  });
+
+  it("binds copies as directories, never single files, when the backend cannot mount single files", async () => {
     const repo = await newStateDir();
     const gitDir = join(repo, ".git");
+    const trustPem = join(repo, "trust.pem");
     const fake = createFakeBackend({ capabilities: { singleFileMount: false } });
 
     await mkdir(gitDir, { recursive: true });
     await writeFile(join(gitDir, "config"), "[core]\n\tbare = false\n");
+    await writeFile(trustPem, "pem\n");
 
     const spec = specOf({
       workspace: { cwd: repo, repoRoot: repo, gitCommonDir: gitDir, isGitRepo: true },
       capabilities: { ...capabilities, singleFileMount: false },
       stateDir: state.dir,
+      proxy: {
+        url: "http://pi-sandbox:t@10.89.0.2:3128",
+        network: { kind: "internal", name: "n" },
+        policyHash: "p",
+      },
+      trust: { pemPath: trustPem, hash: "trust-1" },
     });
     const { id } = await ensureContainer({ backend: fake.backend, spec });
-    const configMount = fake.containers
-      .get(id)
-      ?.spec?.mounts.find((mount) => mount.target === join(gitDir, "config"));
+    const mounts = fake.containers.get(id)?.spec?.mounts ?? [];
+    const copied = mounts.filter((mount) => mount.source.startsWith(spec.copiesDir));
+    const sources = await Promise.all(copied.map((mount) => stat(mount.source)));
 
-    expect(configMount?.readOnly).toBe(true);
-    expect(configMount?.source.startsWith(spec.copiesDir)).toBe(true);
-    expect(spec.copiesDir.startsWith(state.dir)).toBe(true);
-    expect(await readFile(configMount?.source ?? "", "utf8")).toBe("[core]\n\tbare = false\n");
+    expect(copied.map((mount) => mount.target)).toEqual(["/etc/pi-sandbox"]);
+    expect(sources.every((info) => info.isDirectory())).toBe(true);
+    expect(await readFile(join(copied[0]?.source ?? "", "ca.pem"), "utf8")).toBe("pem\n");
+    expect(mounts.some((mount) => mount.target === join(gitDir, "config"))).toBe(false);
+  });
+});
+
+describe("ensureContainer and the repository network", () => {
+  const routedSpec = async (fake: ReturnType<typeof createFakeBackend>, configHash: string) => {
+    const route = await fake.backend.prepareProxyRoute(
+      3128,
+      "p",
+      "sha256:image-one",
+      sha256Hex(workspace.repoRoot),
+    );
+
+    return specOf({
+      configHash,
+      proxy: { url: "http://pi-sandbox:t@10.89.0.2:3128", network: route.network, policyHash: "p" },
+    });
+  };
+
+  it("replaces an outdated container without tearing down the network the new one joins", async () => {
+    const fake = createFakeBackend();
+    const first = await ensureContainer({ backend: fake.backend, spec: await routedSpec(fake, "cfg-one") });
+    const spec = await routedSpec(fake, "cfg-two");
+    const second = await ensureContainer({ backend: fake.backend, spec });
+
+    expect(second.created).toBe(true);
+    expect(second.id).not.toBe(first.id);
+    expect(fake.containers.get(second.id)?.summary.state).toBe("running");
+    expect(spec.network.kind === "internal" && fake.networks.has(spec.network.name)).toBe(true);
+  });
+
+  it("still removes the repository network when its last container is removed by reset or gc", async () => {
+    const reset = createFakeBackend();
+    const collected = createFakeBackend();
+    const resetSpec = await routedSpec(reset, "cfg-one");
+    const collectedSpec = await routedSpec(collected, "cfg-one");
+    const { id } = await ensureContainer({ backend: collected.backend, spec: collectedSpec });
+
+    await ensureContainer({ backend: reset.backend, spec: resetSpec });
+
+    await removeRepoContainer(reset.backend, workspace.repoRoot);
+
+    await collected.backend.stopContainer(id);
+
+    await collectGarbage(collected.backend);
+
+    expect(reset.networks.size).toBe(0);
+    expect(collected.networks.size).toBe(0);
   });
 });
 
@@ -191,7 +312,7 @@ describe("stopIdleContainer", () => {
 
     const again = await ensureContainer({ backend: fake.backend, spec: specOf() });
 
-    expect(again).toEqual({ id, created: false });
+    expect(again).toEqual({ id, created: false, outdated: false });
     expect(fake.containers.get(id)?.summary.state).toBe("running");
   });
 

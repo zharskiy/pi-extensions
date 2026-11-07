@@ -30,7 +30,99 @@ const SHORT_HASH = 12;
 
 const BUILD_CRT = "/usr/local/share/ca-certificates/pi-sandbox-build.crt";
 
-const FROM_LINE = /^\s*FROM\s/im;
+const FORBIDDEN_DIRECTIVES = new Set([
+  "ENTRYPOINT",
+  "CMD",
+  "USER",
+  "HEALTHCHECK",
+  "ONBUILD",
+  "SHELL",
+  "STOPSIGNAL",
+  "VOLUME",
+]);
+
+const FORBIDDEN_VARIABLES = new Set([
+  "NODE_EXTRA_CA_CERTS",
+  "NODE_OPTIONS",
+  "SSL_CERT_FILE",
+  "SSL_CERT_DIR",
+  "REQUESTS_CA_BUNDLE",
+  "CURL_CA_BUNDLE",
+  "HTTP_PROXY",
+  "HTTPS_PROXY",
+  "NO_PROXY",
+  "ALL_PROXY",
+  "PATH",
+  "HOME",
+]);
+
+const FIRST_NAME = /^([A-Za-z_][A-Za-z0-9_]*)/;
+
+const ASSIGNED_NAME = /\s([A-Za-z_][A-Za-z0-9_]*)=/g;
+
+const FROM_FLAG = /(^|\s)--from[=\s]/i;
+
+interface Instruction {
+  directive: string;
+  args: string;
+}
+
+const instructionsOf = (text: string): Instruction[] =>
+  text
+    .replace(/\\\r?\n/g, " ")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line !== "" && !line.startsWith("#"))
+    .map((line) => {
+      const [word = "", ...rest] = line.split(/\s+/);
+
+      return { directive: word.toUpperCase(), args: rest.join(" ") };
+    });
+
+const variableNames = (args: string) => [
+  ...(FIRST_NAME.exec(args)?.slice(1, 2) ?? []),
+  ...[...` ${args}`.matchAll(ASSIGNED_NAME)].map((match) => match[1] ?? ""),
+];
+
+const isForbiddenVariable = (name: string) => {
+  const upper = name.toUpperCase();
+
+  return FORBIDDEN_VARIABLES.has(upper) || upper.startsWith("PI_");
+};
+
+const problemOf = (instruction: Instruction) => {
+  const { directive, args } = instruction;
+
+  if (directive === "FROM") {
+    return "has a FROM line";
+  }
+
+  if (FORBIDDEN_DIRECTIVES.has(directive)) {
+    return `has a ${directive} instruction`;
+  }
+
+  if ((directive === "COPY" || directive === "ADD") && FROM_FLAG.test(args)) {
+    return `has a ${directive} --from instruction`;
+  }
+
+  const variable =
+    directive === "ENV" || directive === "ARG" ? variableNames(args).find(isForbiddenVariable) : undefined;
+
+  return variable === undefined ? undefined : `sets ${variable} with ${directive}`;
+};
+
+const assertAllowedLayer = (path: string, text: string) => {
+  const problem = instructionsOf(text)
+    .map(problemOf)
+    .find((found) => found !== undefined);
+
+  if (problem !== undefined) {
+    throw new LauncherError(
+      `image.dockerfile: ${path} ${problem}`,
+      "image.dockerfile may only add RUN, COPY, ADD, ENV, ARG, WORKDIR, LABEL and EXPOSE steps on top of the sandbox image",
+    );
+  }
+};
 
 const userDockerfile = async (path: string | undefined) => {
   if (path === undefined) {
@@ -41,12 +133,7 @@ const userDockerfile = async (path: string | undefined) => {
     throw new LauncherError(`image.dockerfile: cannot read ${path}: ${errorMessage(error)}`);
   });
 
-  if (FROM_LINE.test(text)) {
-    throw new LauncherError(
-      `image.dockerfile: ${path} has a FROM line`,
-      "drop the FROM line, the launcher builds the layer on top of the sandbox image",
-    );
-  }
+  assertAllowedLayer(path, text);
 
   return text.trimEnd();
 };

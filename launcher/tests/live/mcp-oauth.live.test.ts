@@ -15,6 +15,19 @@ const ACCESS_LIFETIME_SECONDS = Number(process.env.PI_SANDBOX_LIVE_OAUTH_LIFETIM
 
 const AUTHORIZE_URL = /https:\/\/\S+\/authorize\?\S+/;
 
+const PLACEHOLDER = /^pi-sandbox-[0-9a-f]{24}$/;
+
+interface RenderedServer {
+  url?: string;
+  headers?: Record<string, string>;
+  oauth?: Record<string, unknown>;
+}
+
+interface AuthEntry {
+  serverUrl?: string;
+  tokens?: { access_token?: string };
+}
+
 const tokenSecrets = (oauth: OAuthFixture) =>
   Object.fromEntries([...oauth.issuedAccess(), ...oauth.issuedRefresh()].map((value) => [value, value]));
 
@@ -92,17 +105,40 @@ describe.skipIf(!liveEnabled)("HTTP MCP server with OAuth (live)", () => {
     expect(state.mcp?.tokens().at(-1)).toBe(oauth.issuedAccess().at(-1));
   });
 
-  it("keeps only placeholders in the container's mcp-auth.json and mcp.json", async () => {
+  it("renders a vault server and keeps only placeholders in the container's mcp-auth.json", async () => {
     const sandbox = state.sandbox as LiveSandbox;
     const oauth = state.oauth as OAuthFixture;
-    const files = await sandbox.exec("cat ~/.pi/agent/mcp-auth.json; echo; cat ~/.pi/agent/mcp.json");
+    const auth = await sandbox.exec("cat ~/.pi/agent/mcp-auth.json");
+    const config = await sandbox.exec("cat ~/.pi/agent/mcp.json");
 
-    expect(files.code).toBe(0);
+    expect(auth.code).toBe(0);
 
-    expect(files.stdout).toMatch(/Bearer pi-sandbox-[0-9a-f]{24}/);
+    expect(config.code).toBe(0);
+
+    const server = (JSON.parse(config.stdout) as { mcpServers: Record<string, RenderedServer> }).mcpServers[
+      SERVER
+    ];
+
+    expect(server?.url).toBe(state.mcp?.endpoint(FIXTURE_HOSTS.oauthMcp));
+
+    expect(Object.keys(server?.headers ?? {}).map((header) => header.toLowerCase())).not.toContain(
+      "authorization",
+    );
+
+    Object.values(server?.oauth ?? {}).forEach((value) => {
+      expect(["string", "number", "boolean"]).toContain(typeof value);
+    });
+
+    const entry = Object.values(JSON.parse(auth.stdout) as Record<string, AuthEntry>).find(
+      (candidate) => candidate.serverUrl === server?.url,
+    );
+
+    expect(entry?.tokens?.access_token).toMatch(PLACEHOLDER);
 
     [...oauth.issuedAccess(), ...oauth.issuedRefresh()].forEach((token) => {
-      expect(files.stdout).not.toContain(token);
+      expect(auth.stdout).not.toContain(token);
+
+      expect(config.stdout).not.toContain(token);
     });
   });
 

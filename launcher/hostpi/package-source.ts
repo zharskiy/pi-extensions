@@ -25,3 +25,35 @@ export const entryMatches = (source: string) => (entry: unknown) => {
 
 export const packagesOf = (settings: JsonObject | undefined): unknown[] =>
   Array.isArray(settings?.packages) ? settings.packages : [];
+
+const URL_IN_SOURCE = /^((?:git:)?)([a-z][a-z0-9+.-]*:\/\/.*)$/i;
+
+const WEB_PROTOCOLS = new Set(["http:", "https:"]);
+
+const parsedUrl = (text: string) => {
+  try {
+    return new URL(text);
+  } catch {
+    return undefined;
+  }
+};
+
+const carriesCredential = (url: URL) =>
+  url.password !== "" || (url.username !== "" && WEB_PROTOCOLS.has(url.protocol));
+
+export const withoutSourceCredential = (source: string) => {
+  const match = URL_IN_SOURCE.exec(source);
+  const url = match === null ? undefined : parsedUrl(match[2] ?? "");
+
+  if (match === null || url === undefined || !carriesCredential(url)) {
+    return undefined;
+  }
+
+  const host = url.host;
+
+  url.username = "";
+
+  url.password = "";
+
+  return { source: `${match[1] ?? ""}${url.href}`, host };
+};

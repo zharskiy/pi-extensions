@@ -16,6 +16,7 @@ import {
   sendProxyControl,
   stopProxy,
 } from "../../proxy/index.ts";
+import { sha256Hex } from "../../shared/index.ts";
 import { CONTROL_USER, openConnect, pageThrough, plainGet, readRest } from "./proxy-client.ts";
 
 const state = { stateDir: "", home: "" };
@@ -39,6 +40,7 @@ const config = (allow: string[]): SandboxConfig => ({
   env: { allow: [] },
   resources: {},
   ssh: { agent: false },
+  sessions: { host: true },
 });
 
 const isAlive = (pid: number) => {
@@ -354,8 +356,16 @@ describe("control socket and repository tokens", () => {
     const token = await repoProxyToken(state.stateDir, instance.policyHash, repoHash);
     const page = await pageThrough(instance.port, "evil.test:443", token);
 
+    expect(
+      await sendProxyControl(instance, {
+        type: "env-secrets",
+        secrets: { rule: "value" },
+        repoTokenHash: sha256Hex(token),
+      }),
+    ).toEqual({ ok: true });
     expect(await sendProxyControl(instance, { type: "env-secrets", secrets: { rule: "value" } })).toEqual({
-      ok: true,
+      ok: false,
+      error: "the control message names no live repository token",
     });
     expect(page).toMatchObject({ connect: 200, status: 403 });
     expect(page.body).toBe("pi-sandbox: evil.test is not allowed; run pi sandbox egress allow evil.test");
@@ -384,6 +394,37 @@ describe("control socket and repository tokens", () => {
 
     expect(capped.policyHash).toBe(proxyPolicyHash(config(["registry.npmjs.org"]), { grants: [] }));
     expect(capped.policyHash).not.toBe(proxyPolicyHash(config(["registry.npmjs.org"])));
+  }, 20_000);
+});
+
+describe("daemon environment", () => {
+  it("spawns the daemon with a minimal env and hands the parent proxy address through its config", async () => {
+    const spawned: Array<NodeJS.ProcessEnv | undefined> = [];
+    const allow = ["env.example.test"];
+    const outcome = await ensureProxyRunning({
+      ...options(allow),
+      env: {
+        PATH: "/usr/bin",
+        HOME: state.home,
+        GATEWAY_KEY: "secret",
+        HTTPS_PROXY: "http://corp:pass@proxy.test:3128",
+      },
+      timeoutMs: 100,
+      spawn: (_command, _args, spawnOptions) => {
+        spawned.push(spawnOptions.env);
+
+        return idle();
+      },
+    }).catch((error: Error) => error);
+    const daemonConfig = JSON.parse(
+      await readFile(join(instanceDir(allow), "proxy-config.json"), "utf8"),
+    ) as {
+      parentEnv: Record<string, string>;
+    };
+
+    expect(outcome).toBeInstanceOf(Error);
+    expect(spawned[0]).toEqual({ PATH: "/usr/bin", HOME: state.home });
+    expect(daemonConfig.parentEnv).toEqual({ HTTPS_PROXY: "http://proxy.test:3128" });
   }, 20_000);
 });
 

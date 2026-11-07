@@ -151,6 +151,7 @@ const LEAVES: readonly Leaf[] = [
   { key: "ssh.agent", rule: { problem: staysOff } },
   { key: "resources.cpus" },
   { key: "resources.memoryGiB" },
+  { key: "sessions.host", rule: { problem: cannotEnable } },
   { key: "org", rule: { problem: unchanged, lockers: ["policy"] } },
 ];
 
@@ -246,7 +247,16 @@ const applyLayer = (state: State, layerName: LayerName, layers: Layers): State =
   return overlay(state, layer, layerName);
 };
 
-const SKELETON = { image: {}, egress: {}, tls: {}, mounts: {}, env: {}, ssh: {}, resources: {} };
+const SKELETON = {
+  image: {},
+  egress: {},
+  tls: {},
+  mounts: {},
+  env: {},
+  ssh: {},
+  resources: {},
+  sessions: {},
+};
 
 const depthOf = (key: string) => key.split(".").length;
 
@@ -274,9 +284,18 @@ const capFor = (layers: Layers, optIn: (layer: LayerConfig) => boolean) =>
     ),
   );
 
+const grantsOptIn = (layer: LayerConfig) => layer.egress?.grants?.enabled === true;
+
+const grantCapsOf = (layers: Layers) =>
+  CAP_LAYERS.flatMap((layer) => {
+    const allow = capOf(layers[layer], grantsOptIn);
+
+    return allow === undefined ? [] : [{ layer, allow }];
+  });
+
 const egressCapOf = (layers: Layers): EgressCap => {
   const derivedHosts = capFor(layers, (layer) => layer.credentials?.derive?.enabled === true);
-  const grants = capFor(layers, (layer) => layer.egress?.grants?.enabled === true);
+  const grants = capFor(layers, grantsOptIn);
 
   return {
     ...(derivedHosts === undefined ? {} : { derivedHosts }),
@@ -288,5 +307,10 @@ export const mergeLayers = ({ defaults, layers, profile }: MergeInput): Effectiv
   const base = overlay(overlay({ values: {}, sources: {} }, defaults, "default"), profile, "profile");
   const merged = LAYER_ORDER.reduce((state, layerName) => applyLayer(state, layerName, layers), base);
 
-  return { config: toConfig(merged.values), sources: merged.sources, egressCap: egressCapOf(layers) };
+  return {
+    config: toConfig(merged.values),
+    sources: merged.sources,
+    egressCap: egressCapOf(layers),
+    grantCaps: grantCapsOf(layers),
+  };
 };

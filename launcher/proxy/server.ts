@@ -35,12 +35,15 @@ export interface ProxyServerOptions {
   resolver: SecretResolver;
   gateway?: { host: string; port: number; url: string };
   privateHosts?: string[];
-  ca?: { leaf(host: string): Promise<LeafCertificate> };
+  ca?: {
+    leaf(host: string): Promise<LeafCertificate>;
+    ephemeralLeaf(host: string): Promise<LeafCertificate>;
+  };
   log: (entry: AccessLogEntry) => void;
   dial?: Dialer;
   upstreamCa?: string | string[];
   helloTimeoutMs?: number;
-  onControl?: (message: ControlMessage) => ControlReply;
+  onControl?: (message: ControlMessage) => ControlReply | Promise<ControlReply>;
   vault?: VaultHook;
   denialPages?: { maxNames?: number; mintsPerMinute?: number };
 }
@@ -81,6 +84,8 @@ const DEFAULT_HELLO_TIMEOUT_MS = 10_000;
 const MAX_DENIALS = 200;
 
 const MAX_CONTROL_BYTES = 1024 * 1024;
+
+const TOKEN_HASH = /^[0-9a-f]{64}$/;
 
 const OAUTH_PATHS = new Set<string>(Object.values(OAUTH_ROUTES));
 
@@ -197,28 +202,37 @@ const readClientHello = (socket: Socket, head: Buffer, timeoutMs: number) =>
     socket.resume();
   });
 
+interface Body {
+  text?: string;
+  overflow: boolean;
+}
+
 const readBody = (request: IncomingMessage) =>
-  new Promise<string | undefined>((resolve) => {
+  new Promise<Body>((resolve) => {
     const chunks: Buffer[] = [];
     const state = { size: 0 };
 
-    request.on("data", (chunk: Buffer) => {
+    const onData = (chunk: Buffer) => {
       state.size += chunk.length;
 
       if (state.size > MAX_CONTROL_BYTES) {
-        request.destroy();
+        request.off("data", onData);
 
-        resolve(undefined);
+        request.pause();
+
+        resolve({ overflow: true });
 
         return;
       }
 
       chunks.push(chunk);
-    });
+    };
 
-    request.once("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    request.on("data", onData);
 
-    request.once("error", () => resolve(undefined));
+    request.once("end", () => resolve({ text: Buffer.concat(chunks).toString("utf8"), overflow: false }));
+
+    request.once("error", () => resolve({ overflow: false }));
   });
 
 const isStringMap = (value: unknown): value is Record<string, string> =>
@@ -227,12 +241,15 @@ const isStringMap = (value: unknown): value is Record<string, string> =>
   !Array.isArray(value) &&
   Object.values(value).every((entry) => typeof entry === "string");
 
+const tokenHashOf = (value: unknown) =>
+  typeof value === "string" && TOKEN_HASH.test(value) ? { repoTokenHash: value } : {};
+
 const parseControlMessage = (text: string | undefined): ControlMessage | undefined => {
   try {
-    const message = JSON.parse(text ?? "") as { type?: unknown; secrets?: unknown };
+    const message = JSON.parse(text ?? "") as { type?: unknown; secrets?: unknown; repoTokenHash?: unknown };
 
     return message.type === "env-secrets" && isStringMap(message.secrets)
-      ? { type: "env-secrets", secrets: message.secrets }
+      ? { type: "env-secrets", secrets: message.secrets, ...tokenHashOf(message.repoTokenHash) }
       : undefined;
   } catch {
     return undefined;
@@ -279,10 +296,10 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
   };
 
   const terminator = createTerminator({
-    rules: () => options.runtime.rules(),
+    rules: (repoHash) => options.runtime.rules(repoHash),
     resolver: options.resolver,
-    dial: async (host, port, access) => {
-      const socket = await dial(host, port, access);
+    dial: async (host, port, access, repoHash) => {
+      const socket = await dial(host, port, access, repoHash);
 
       track(socket);
 
@@ -296,7 +313,7 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
   const pages =
     ca === undefined
       ? undefined
-      : createDenialPages({ leaf: (host) => ca.leaf(host), ...options.denialPages });
+      : createDenialPages({ leaf: (host) => ca.ephemeralLeaf(host), ...options.denialPages });
 
   const rememberDenial = (repoHash: string, entry: DenialRecord) => {
     denials.set(repoHash, [...(denials.get(repoHash) ?? []), entry].slice(-MAX_DENIALS));
@@ -433,10 +450,13 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
       },
     });
     const state = { secured: false };
+    const handshake = setTimeout(() => client.destroy(), helloTimeoutMs);
 
     secure.on("error", () => client.destroy());
 
     secure.once("secure", () => {
+      clearTimeout(handshake);
+
       connection.sni = secure.servername || undefined;
 
       if (connection.sni === undefined) {
@@ -457,6 +477,8 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
     });
 
     client.once("close", () => {
+      clearTimeout(handshake);
+
       if (state.secured) {
         record({
           repo: connection.repoHash,
@@ -573,7 +595,7 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
 
   const tunnel = async (connection: Connection, head: Buffer) => {
     const { client, host, port, repoHash } = connection;
-    const upstream = await dial(host, port, accessOf(host)).catch((error: Error) => error);
+    const upstream = await dial(host, port, accessOf(host), repoHash).catch((error: Error) => error);
 
     if (upstream instanceof RestrictedAddressError) {
       refuse(client, host, { rule: upstream.rule, reason: upstream.message }, { port, repoHash });
@@ -675,8 +697,8 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
     const connection: Connection = { host, port: target.port, repoHash: caller.repoHash, extras, client };
     const terminated =
       isGatewayTarget(host, target.port) ||
-      isRuleHost(await options.runtime.rules(), host, target.port) ||
-      (await options.vault?.isVaultHost(host, target.port)) === true;
+      isRuleHost(await options.runtime.rules(caller.repoHash), host, target.port) ||
+      (await options.vault?.isVaultHost(host, target.port, caller.repoHash)) === true;
 
     if (terminated) {
       await intercept(connection, head);
@@ -708,11 +730,25 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
     response.end(JSON.stringify(body));
   };
 
+  const sendJsonAndClose = (response: ServerResponse, status: number, body: object) => {
+    response.once("finish", () => response.socket?.destroySoon());
+
+    sendJson(response, status, body, { connection: "close" });
+  };
+
   const challenge = (response: ServerResponse) =>
     sendJson(response, 407, { error: AUTH_DENIAL.reason }, { "proxy-authenticate": AUTH_CHALLENGE });
 
   const handleControl = async (request: IncomingMessage, response: ServerResponse) => {
-    const message = parseControlMessage(await readBody(request));
+    const body = await readBody(request);
+
+    if (body.overflow) {
+      sendJsonAndClose(response, 400, { ok: false, error: "control message too large" });
+
+      return;
+    }
+
+    const message = parseControlMessage(body.text);
 
     if (message === undefined) {
       sendJson(response, 400, { ok: false, error: "unknown control message" });
@@ -720,7 +756,10 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
       return;
     }
 
-    const reply = options.onControl?.(message) ?? { ok: false, error: "control messages are not accepted" };
+    const reply = (await options.onControl?.(message)) ?? {
+      ok: false,
+      error: "control messages are not accepted",
+    };
 
     sendJson(response, reply.ok ? 200 : 400, reply);
   };
@@ -742,11 +781,17 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
     response: ServerResponse,
     vault: VaultHook,
     repoHash: string,
-  ): Promise<VaultReply> => {
+  ): Promise<VaultReply & { close?: boolean }> => {
     const path = pathOf(request.url);
 
     if (request.method === "POST" && path === OAUTH_ROUTES.open) {
-      return vault.open(repoHash, parseJsonBody(await readBody(request)));
+      const body = await readBody(request);
+
+      if (body.overflow) {
+        return { status: 413, body: { ok: false, error: "pi-sandbox: request body too large" }, close: true };
+      }
+
+      return vault.open(repoHash, parseJsonBody(body.text));
     }
 
     if (request.method === "GET" && path === OAUTH_ROUTES.callback) {
@@ -780,7 +825,15 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
       return;
     }
 
-    sendReply(response, await oauthReply(request, response, options.vault, caller.repoHash));
+    const reply = await oauthReply(request, response, options.vault, caller.repoHash);
+
+    if (reply.close === true) {
+      sendJsonAndClose(response, reply.status, reply.body ?? {});
+
+      return;
+    }
+
+    sendReply(response, reply);
   };
 
   const handlePlain = async (request: IncomingMessage, response: ServerResponse) => {

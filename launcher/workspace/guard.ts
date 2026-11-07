@@ -1,6 +1,7 @@
-import { realpathSync } from "node:fs";
+import { lstatSync, readdirSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { isWithin, LauncherError, launcherPaths } from "../shared/index.ts";
+import { sessionSlug } from "./pi-session-dir.ts";
 import type { Workspace } from "./types.ts";
 
 interface GuardContext {
@@ -64,4 +65,74 @@ export const assertSafeWorkspace = (workspace: Workspace, context: GuardContext)
   const covered = dirs.find((dir) => isWithin(dir, unsafe));
 
   throw new LauncherError(`${unsafe} would mount ${covered} into the sandbox, refusing`, HINT);
+};
+
+interface HostSessionsContext {
+  home: string;
+  agentDir: string;
+  repoRoot: string;
+}
+
+const SLUG = /^--[^/]*--$/;
+
+const SESSIONS_HINT = "set sessions.host to false in the user config";
+
+const refuseSessions = (dir: string, reason: string) =>
+  new LauncherError(`sessions: ${dir} ${reason}, refusing to mount it into the sandbox`, SESSIONS_HINT);
+
+const realSessionsDir = (sessions: string) => {
+  try {
+    return realpathSync.native(sessions);
+  } catch {
+    return undefined;
+  }
+};
+
+const agentEntries = (agentDir: string) => {
+  try {
+    return readdirSync(agentDir).filter((name) => name !== "sessions");
+  } catch {
+    return [];
+  }
+};
+
+const protectedPiPaths = (context: HostSessionsContext) => {
+  const agentDir = resolve(context.agentDir);
+
+  return [
+    { path: realOrResolved(join(context.home, ".pi")), both: false },
+    { path: realOrResolved(agentDir), both: false },
+    ...agentEntries(agentDir).map((name) => ({ path: realOrResolved(join(agentDir, name)), both: true })),
+  ];
+};
+
+export const assertHostSessionsDir = (dir: string, context: HostSessionsContext) => {
+  const sessions = join(resolve(context.agentDir), "sessions");
+  const slug = sessionSlug(context.repoRoot);
+
+  if (!SLUG.test(slug) || dir !== join(sessions, slug)) {
+    throw refuseSessions(dir, "is not pi's session directory of this repository");
+  }
+
+  const info = lstatSync(dir, { throwIfNoEntry: false });
+
+  if (info === undefined || info.isSymbolicLink() || !info.isDirectory()) {
+    throw refuseSessions(dir, "is not a real directory");
+  }
+
+  const realSessions = realSessionsDir(sessions);
+
+  const real = realOrResolved(dir);
+
+  if (realSessions === undefined || real !== join(realSessions, slug)) {
+    throw refuseSessions(dir, "resolves outside pi's sessions directory");
+  }
+
+  const overlap = protectedPiPaths(context).find(
+    ({ path, both }) => isWithin(path, real) || (both && isWithin(real, path)),
+  );
+
+  if (overlap !== undefined) {
+    throw refuseSessions(dir, `resolves to a path that overlaps ${overlap.path}`);
+  }
 };

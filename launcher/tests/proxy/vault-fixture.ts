@@ -3,6 +3,7 @@ import { createServer as createHttpsServer, type Server } from "node:https";
 import { createServer as createNetServer } from "node:net";
 import { createSecureContext } from "node:tls";
 import type { CredentialRule } from "../../config/index.ts";
+import type { Dialer } from "../../proxy/dial.ts";
 import { writeProxyDynamic } from "../../proxy/dynamic.ts";
 import { createProxyRuntime } from "../../proxy/runtime.ts";
 import type { SecretResolver } from "../../proxy/secrets/index.ts";
@@ -144,6 +145,8 @@ export interface VaultProxyOptions {
   servers?: VaultServer[];
   pollMs?: number;
   flowTtlMs?: number;
+  dial?: Dialer;
+  now?: () => number;
 }
 
 export const startVaultProxy = async (options: VaultProxyOptions): Promise<VaultProxy> => {
@@ -165,13 +168,14 @@ export const startVaultProxy = async (options: VaultProxyOptions): Promise<Vault
   const opened: string[] = [];
   const vault = createVault({
     stateDir: options.stateDir,
-    servers: () => runtime.vault(),
+    servers: (repoHash) => runtime.vault(repoHash),
     resolver: options.resolver,
     runner: createFakeRunner(() => undefined).runner,
     openBrowser: async (url) => {
       opened.push(url);
     },
     pollMs: options.pollMs ?? 200,
+    ...(options.now === undefined ? {} : { now: options.now }),
     flowTtlMs: options.flowTtlMs ?? 60_000,
   });
   const port = portOf(options.upstream.server);
@@ -182,6 +186,7 @@ export const startVaultProxy = async (options: VaultProxyOptions): Promise<Vault
     resolver: options.resolver,
     grantsEnabled: false,
     ports: () => ({ "auth.test:443": port, "mcp.test:443": port }),
+    dial: options.dial,
     vault,
   });
 

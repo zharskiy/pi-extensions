@@ -18,7 +18,7 @@ export type { TokenPlan, TokenResponse, VaultTokenHook } from "./token.ts";
 
 export interface VaultOptions {
   stateDir: string;
-  servers: () => Promise<VaultServer[]>;
+  servers: (repoHash?: string) => Promise<VaultServer[]>;
   resolver: SecretResolver;
   runner: CommandRunner;
   discoverCommand?: string[];
@@ -29,7 +29,7 @@ export interface VaultOptions {
 }
 
 export interface VaultHook extends VaultTokenHook {
-  isVaultHost(host: string, port: number): Promise<boolean>;
+  isVaultHost(host: string, port: number, repoHash?: string): Promise<boolean>;
   open(repoHash: string, body: unknown): Promise<VaultReply>;
   callback(repoHash: string, flow: string, signal?: AbortSignal): Promise<VaultReply>;
   cancel(repoHash: string, flow: string): Promise<VaultReply>;
@@ -68,14 +68,17 @@ export const createVault = (options: VaultOptions): VaultHook => {
     now,
   });
 
-  const isVaultHost = async (host: string, port: number) =>
-    (await options.servers()).some((server) =>
+  const isVaultHost = async (host: string, port: number, repoHash?: string) =>
+    (await options.servers(repoHash)).some((server) =>
       server.discovery.hosts.some((entry) => matchesEntry(entry, host, port)),
     );
 
-  const candidates = async () => {
+  const candidates = async (repoHash: string) => {
     const found = await Promise.all(
-      (await options.servers()).map(async (server) => ({ server, discovery: await discover(server) })),
+      (await options.servers(repoHash)).map(async (server) => ({
+        server,
+        discovery: await discover(server),
+      })),
     );
 
     return found.filter((entry): entry is OpenCandidate => entry.discovery.ok);
@@ -83,7 +86,7 @@ export const createVault = (options: VaultOptions): VaultHook => {
 
   const open = async (repoHash: string, body: unknown): Promise<VaultReply> => {
     const request: Partial<OAuthOpenRequest> = isObject(body) ? body : {};
-    const check = checkAuthorizeUrl(request.url, await candidates());
+    const check = checkAuthorizeUrl(request.url, await candidates(repoHash));
 
     if (!check.ok) {
       return failure(check.status, check.error);
@@ -128,7 +131,7 @@ export const createVault = (options: VaultOptions): VaultHook => {
   };
 
   const buffers = async (query: BufferQuery) =>
-    (await isVaultHost(query.host, query.port)) && (await tokens.buffers(query));
+    (await isVaultHost(query.host, query.port, query.repoHash)) && (await tokens.buffers(query));
 
   return {
     isVaultHost,

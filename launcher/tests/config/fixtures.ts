@@ -31,7 +31,11 @@ export const createLayers = async () => {
     policyFile,
     userFile,
     projectFile,
-    env: { PI_SANDBOX_POLICY_FILE: policyFile, PI_SANDBOX_USER_CONFIG: userFile },
+    env: {
+      PI_SANDBOX_POLICY_FILE: policyFile,
+      PI_SANDBOX_USER_CONFIG: userFile,
+      PI_SANDBOX_STATE_DIR: join(root, "state"),
+    },
     policy: (value: unknown) => writeJson(policyFile, value),
     user: (value: unknown) => writeJson(userFile, value),
     project: (value: unknown) => writeJson(projectFile, value),

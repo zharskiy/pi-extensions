@@ -3,7 +3,7 @@ import type { AddressInfo, Socket } from "node:net";
 import { createSecureContext, type SecureContext, TLSSocket, connect as tlsConnect } from "node:tls";
 import type { TestCa, TestCertificate } from "./test-ca.ts";
 
-export interface InspectedTunnel {
+interface InspectedTunnel {
   host: string;
   port: number;
   authorized: boolean;

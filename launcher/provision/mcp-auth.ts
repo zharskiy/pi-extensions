@@ -18,17 +18,27 @@ const FILE = posix.join(GUEST_PATHS.agentDir, "mcp-auth.json");
 
 const LOCK = posix.join(GUEST_PATHS.agentDir, CONTAINER_MCP_AUTH_LOCK);
 
-const LOCK_TIMEOUT_MS = 5_000;
+const LOCK_STALE_MS = 10_000;
+
+const LOCK_TIMEOUT_MS = LOCK_STALE_MS + 5_000;
 
 const LOCK_RETRY_MS = 50;
+
+const LOCK_BUSY = 3;
 
 const PRIVATE_MODE = 0o600;
 
 const SECRET_TOKEN_FIELDS = ["access_token", "refresh_token", "id_token"] as const;
 
-const LOCK_SCRIPT = 'mkdir -p "$(dirname "$1")" && mkdir "$1" 2>/dev/null';
-
-const TAKE_OVER_SCRIPT = 'rm -rf "$1" && mkdir "$1"';
+const LOCK_SCRIPT = [
+  'const fs = require("node:fs");',
+  "const [lock, staleMs] = [process.argv[1], Number(process.argv[2])];",
+  'fs.mkdirSync(require("node:path").dirname(lock), { recursive: true });',
+  "const take = () => { try { fs.mkdirSync(lock); return true; } catch (error) { if (error.code !== 'EEXIST') throw error; return false; } };",
+  "const age = () => { try { return Date.now() - fs.statSync(lock).mtimeMs; } catch { return Infinity; } };",
+  `const stale = () => age() > staleMs && (fs.rmSync(lock, { recursive: true, force: true }), true);`,
+  `process.exit(take() || (stale() && take()) ? 0 : ${LOCK_BUSY});`,
+].join("\n");
 
 const READ_SCRIPT = 'if [ -L "$1" ]; then rm -f "$1"; fi; if [ -f "$1" ]; then cat "$1"; fi';
 
@@ -57,25 +67,35 @@ const run = async (backend: Backend, containerId: string, command: string[], std
 
 const script = (text: string, path: string) => ["sh", "-c", text, "sh", path];
 
+const lockCommand = () => ["node", "-e", LOCK_SCRIPT, LOCK, String(LOCK_STALE_MS)];
+
 const acquire = async (backend: Backend, containerId: string, deadline: number): Promise<void> => {
-  const attempt = await run(backend, containerId, script(LOCK_SCRIPT, LOCK));
+  const attempt = await run(backend, containerId, lockCommand());
 
   if (attempt.code === 0) {
     return;
   }
 
-  if (Date.now() < deadline) {
-    await sleep(LOCK_RETRY_MS);
-
-    return acquire(backend, containerId, deadline);
+  if (attempt.code !== LOCK_BUSY) {
+    throw new LauncherError(`mcp-auth.json: could not lock it in the sandbox (exit ${attempt.code})`);
   }
 
-  const taken = await run(backend, containerId, script(TAKE_OVER_SCRIPT, LOCK));
-
-  if (taken.code !== 0) {
-    throw new LauncherError(`mcp-auth.json: could not lock it in the sandbox (exit ${taken.code})`);
+  if (Date.now() >= deadline) {
+    throw new LauncherError(
+      "mcp-auth.json: the lock in the sandbox is held by another process",
+      "try again in a moment",
+    );
   }
+
+  await sleep(LOCK_RETRY_MS);
+
+  return acquire(backend, containerId, deadline);
 };
+
+const keepFresh = (backend: Backend, containerId: string) =>
+  setInterval(() => {
+    void run(backend, containerId, ["touch", "-c", LOCK]).catch(() => undefined);
+  }, LOCK_STALE_MS / 2);
 
 const isObject = (value: unknown): value is JsonObject =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -118,8 +138,47 @@ const applyEntries = (current: JsonObject, entries: ContainerMcpAuthEntries): Js
 
 const isLeak = (value: unknown) => typeof value === "string" && !isPlaceholder(value);
 
-const sweptEntry = (entry: unknown) => {
-  if (!isObject(entry) || !isObject(entry.tokens)) {
+const isClientSecretField = (field: string) => field.toLowerCase().startsWith("client_secret");
+
+const vaultClientSecret = (entry: ContainerMcpAuthEntries[string] | undefined) => {
+  const client = isObject(entry) && isObject(entry.clientInformation) ? entry.clientInformation : {};
+
+  return client.client_secret;
+};
+
+const sweptClient = (entry: JsonObject, vaultSecret: unknown) => {
+  if (!isObject(entry.clientInformation)) {
+    return { entry, swept: false };
+  }
+
+  const client = entry.clientInformation;
+  const leaked = Object.keys(client).filter(
+    (field) =>
+      isClientSecretField(field) && typeof client[field] === "string" && client[field] !== vaultSecret,
+  );
+
+  if (leaked.length === 0) {
+    return { entry, swept: false };
+  }
+
+  const kept = Object.fromEntries(Object.entries(client).filter(([field]) => !leaked.includes(field)));
+
+  return { entry: { ...entry, clientInformation: kept }, swept: true };
+};
+
+const sweptEntry = (entry: unknown, vaultSecret: unknown) => {
+  if (!isObject(entry)) {
+    return { entry, swept: false };
+  }
+
+  const client = sweptClient(entry, vaultSecret);
+  const tokens = sweptTokens(client.entry);
+
+  return { entry: tokens.entry, swept: client.swept || tokens.swept };
+};
+
+const sweptTokens = (entry: JsonObject) => {
+  if (!isObject(entry.tokens)) {
     return { entry, swept: false };
   }
 
@@ -140,8 +199,11 @@ const sweptEntry = (entry: unknown) => {
   };
 };
 
-const sweep = (value: JsonObject) => {
-  const results = Object.entries(value).map(([key, entry]) => ({ key, ...sweptEntry(entry) }));
+const sweep = (value: JsonObject, entries: ContainerMcpAuthEntries) => {
+  const results = Object.entries(value).map(([key, entry]) => ({
+    key,
+    ...sweptEntry(entry, vaultClientSecret(entries[key])),
+  }));
 
   return {
     value: Object.fromEntries(results.map((result) => [result.key, result.entry])),
@@ -162,7 +224,7 @@ const mergeAndWrite = async (input: ContainerMcpAuthSyncInput): Promise<SyncResu
   }
 
   const current = parseFile(read.stdout);
-  const swept = sweep(applyEntries(current.value, input.entries));
+  const swept = sweep(applyEntries(current.value, input.entries), input.entries);
   const text = `${JSON.stringify(swept.value, null, 2)}\n`;
   const written = await run(input.backend, input.containerId, script(WRITE_SCRIPT, FILE), text);
 
@@ -184,9 +246,13 @@ const mergeAndWrite = async (input: ContainerMcpAuthSyncInput): Promise<SyncResu
 export const syncContainerMcpAuth = async (input: ContainerMcpAuthSyncInput): Promise<SyncResult> => {
   await acquire(input.backend, input.containerId, Date.now() + LOCK_TIMEOUT_MS);
 
+  const refresher = keepFresh(input.backend, input.containerId);
+
   try {
     return await mergeAndWrite(input);
   } finally {
+    clearInterval(refresher);
+
     await run(input.backend, input.containerId, ["rm", "-rf", LOCK]).catch(() => undefined);
   }
 };

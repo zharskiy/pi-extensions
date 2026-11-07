@@ -7,6 +7,7 @@ export interface EgressPolicy {
   gatewayPort?: number;
   deny?: string[];
   credentialHosts?: string[];
+  grantCap?: string[];
 }
 
 export interface ConnectRequest {
@@ -165,8 +166,12 @@ export const matchesEntry = (entry: string, host: string, port: number) => {
 
 export const authorityOf = (host: string, port: number) => (port === TLS_PORT ? host : `${host}:${port}`);
 
-const notAllowedReason = (host: string, port: number) => {
+const notAllowedReason = (host: string, port: number, grantCap: string[] | undefined) => {
   const target = authorityOf(host, port);
+
+  if (grantCap !== undefined && !grantCap.some((pattern) => matchesEntry(pattern, host, port))) {
+    return `pi-sandbox: ${target} is outside the allowlist set by policy or org`;
+  }
 
   return `pi-sandbox: ${target} is not allowed; run pi sandbox egress allow ${target}`;
 };
@@ -226,11 +231,11 @@ const hostDecision = (host: string, port: number, policy: EgressPolicy, extra: s
     .filter((entry) => matchesPattern(host, entry.pattern));
 
   if (entries.length === 0) {
-    return deny("egress.allow", notAllowedReason(host, port));
+    return deny("egress.allow", notAllowedReason(host, port, policy.grantCap));
   }
 
   if (!entries.some((entry) => (entry.port ?? TLS_PORT) === port)) {
-    return deny("egress.port", notAllowedReason(host, port));
+    return deny("egress.port", notAllowedReason(host, port, policy.grantCap));
   }
 
   return { allowed: true };

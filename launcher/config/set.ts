@@ -1,6 +1,13 @@
 import { mkdir, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { LauncherError, readJsonFile, writeJsonFile } from "../shared/index.ts";
+import {
+  LauncherError,
+  launcherPaths,
+  readJsonFile,
+  sha256Hex,
+  withFileLock,
+  writeJsonFile,
+} from "../shared/index.ts";
 import { isRecord, setPath } from "./dotted.ts";
 import { layerFile, loadOrg, readLayer, resolveConfig, validateLayerFile } from "./load.ts";
 import { layerKeys } from "./validate.ts";
@@ -33,17 +40,10 @@ const prepareProjectFolder = async (file: string) => {
   await writeFile(join(folder, ".gitignore"), "*\n", { flag: "wx" });
 };
 
-export const setConfigValue = async ({ layer, key, value, repoRoot, env }: SetConfigOptions) => {
-  if (layer === "project" && repoRoot === undefined) {
-    throw new LauncherError("project: no repository root to write .pi/sandbox.json in");
-  }
+const lockOf = (file: string, env: NodeJS.ProcessEnv | undefined) =>
+  join(launcherPaths({ env }).stateDir, "locks", `config-${sha256Hex(file).slice(0, 16)}`);
 
-  if (!settableKeys().includes(key)) {
-    throw new LauncherError(`${layer}: ${key} is not a known key`);
-  }
-
-  const root = repoRoot ?? process.cwd();
-  const file = layerFile(layer, root, env);
+const writeValue = async ({ layer, key, value, env }: SetConfigOptions, root: string, file: string) => {
   const current = (await readJsonFile<unknown>(file)) ?? {};
 
   if (!isRecord(current)) {
@@ -69,4 +69,21 @@ export const setConfigValue = async ({ layer, key, value, repoRoot, env }: SetCo
   await writeJsonFile(file, updated);
 
   return { file };
+};
+
+export const setConfigValue = async (options: SetConfigOptions) => {
+  const { layer, key, repoRoot, env } = options;
+
+  if (layer === "project" && repoRoot === undefined) {
+    throw new LauncherError("project: no repository root to write .pi/sandbox.json in");
+  }
+
+  if (!settableKeys().includes(key)) {
+    throw new LauncherError(`${layer}: ${key} is not a known key`);
+  }
+
+  const root = repoRoot ?? process.cwd();
+  const file = layerFile(layer, root, env);
+
+  return withFileLock(lockOf(file, env), () => writeValue(options, root, file), { timeoutMs: 10_000 });
 };

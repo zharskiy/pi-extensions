@@ -26,6 +26,14 @@ const REAL_KEY = "real-secret-value-1234567890";
 
 const PINNED = `sha256:${"a".repeat(64)}`;
 
+const tokenHashOf = async (harness: { stateDir: string; repoRoot: string }, policyHash: string) =>
+  sha256Hex(
+    await readFile(
+      stateLayout(harness.stateDir).proxyRepoToken(policyHash, sha256Hex(harness.repoRoot)),
+      "utf8",
+    ),
+  );
+
 const denial = (host: string, port: number): DenialRecord => ({
   time: 1_700_000_000_500,
   host,
@@ -81,7 +89,11 @@ describe("pi launch wiring", () => {
 
     expect(await run([], harness.deps)).toBe(0);
     expect(harness.controlMessages).toEqual([
-      { type: "env-secrets", secrets: { corp: REAL_KEY, [PARENT_PROXY_SECRET_KEY]: "user:password-123" } },
+      {
+        type: "env-secrets",
+        repoTokenHash: await tokenHashOf(harness, "policy"),
+        secrets: { corp: REAL_KEY, [PARENT_PROXY_SECRET_KEY]: "user:password-123" },
+      },
     ]);
 
     const [container] = [...fake.containers.values()];
@@ -111,7 +123,11 @@ describe("pi launch wiring", () => {
     expect(await run([], harness.deps)).toBe(0);
 
     expect(harness.controlMessages).toEqual([
-      { type: "env-secrets", secrets: { [PARENT_PROXY_SECRET_KEY]: "corp:p@ss" } },
+      {
+        type: "env-secrets",
+        repoTokenHash: await tokenHashOf(harness, "policy"),
+        secrets: { [PARENT_PROXY_SECRET_KEY]: "corp:p@ss" },
+      },
     ]);
     expect(requests.map((request) => request.env.HTTPS_PROXY)).toEqual(["http://proxy.example.test:8080"]);
 
@@ -163,6 +179,24 @@ describe("pi launch wiring", () => {
       "pi-sandbox: other.test:8443 was blocked; run pi sandbox egress allow other.test:8443\n",
     );
     expect(harness.stderr().match(/blocked\.example\.test was blocked/g)).toHaveLength(1);
+  });
+
+  it("does not suggest a grant for a denied host outside the policy allowlist", async () => {
+    const fake = createFakeBackend();
+    const harness = await harnessWith({
+      adapters: () => [fake.backend],
+      denials: [denial("evil.test", 443), denial("docs.example.test", 443)],
+    });
+
+    await harness.writeJson(harness.policyFile, { egress: { allow: ["*.example.test"] } });
+
+    await run([], harness.deps);
+
+    expect(harness.stderr()).toContain(
+      "pi-sandbox: evil.test is outside the allowlist set by policy or org\n",
+    );
+    expect(harness.stderr()).not.toContain("egress allow evil.test");
+    expect(harness.stderr()).toContain("run pi sandbox egress allow docs.example.test");
   });
 
   it("stops the container when the last session of the repository ends", async () => {

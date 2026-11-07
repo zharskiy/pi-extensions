@@ -35,7 +35,7 @@ const setup = (respond: FakeResponder = () => ({ stdout: "" }), extra: Partial<S
     now: clock.now,
     piCommand: PI,
     mcpAuthDir: state.mcpAuthDir,
-    envSecrets: () => new Map(),
+    envSecrets: async () => new Map(),
     ...extra,
   });
 
@@ -168,7 +168,7 @@ describe("env and file secrets", () => {
   it("reads env secrets from the map handed over by the launcher, never from the environment", async () => {
     process.env.PI_SANDBOX_TEST_SECRET = "from-daemon-env";
 
-    const { resolver } = setup(undefined, { envSecrets: () => new Map([["handed", "from-launcher"]]) });
+    const { resolver } = setup(undefined, { envSecrets: async () => new Map([["handed", "from-launcher"]]) });
 
     expect(await secretOf(resolver, "handed", { env: "WHATEVER" })).toBe("from-launcher");
     expect(await resolver.resolve("other", { env: "PI_SANDBOX_TEST_SECRET" })).toMatchObject({ ok: false });
@@ -200,6 +200,37 @@ describe("env and file secrets", () => {
         { ONE: "1", TWO: "" },
       ),
     ).toEqual({ one: "1" });
+  });
+});
+
+describe("line breaks in secrets", () => {
+  it("trims trailing line breaks from a file secret", async () => {
+    const { resolver } = setup();
+    const file = join(state.home, "secret.json");
+
+    await writeFile(file, JSON.stringify({ key: "value\r\n" }));
+
+    expect(await secretOf(resolver, "rule", { file, pointer: "/key" })).toBe("value");
+  });
+
+  it("refuses an env secret holding a line break", async () => {
+    const { resolver } = setup(undefined, { envSecrets: async () => new Map([["rule", "value\n"]]) });
+
+    expect(await secretOf(resolver, "rule", { env: "RULE" })).toContain("line break");
+  });
+
+  it("looks env secrets up for the requesting repository", async () => {
+    const asked: Array<string | undefined> = [];
+    const { resolver } = setup(undefined, {
+      envSecrets: async (repoHash) => {
+        asked.push(repoHash);
+
+        return new Map([["rule", `for-${repoHash}`]]);
+      },
+    });
+
+    expect((await resolver.resolve("rule", { env: "RULE" }, "repo-a")).ok).toBe(true);
+    expect(asked).toEqual(["repo-a"]);
   });
 });
 
@@ -332,7 +363,28 @@ describe("mcpOAuth secrets", () => {
     expect(await secretOf(resolver, "rule", ref)).toBe(
       `unavailable: mcpOAuth secret for rule: no valid token for docs-server; run pi mcp login docs-server`,
     );
-    expect(fake.calls).toHaveLength(1);
+    expect(fake.calls).toHaveLength(2);
+  });
+
+  it("tries the host refresh once more when the first run left the expired token in place", async () => {
+    const seen: unknown[] = [];
+    const clock = createFakeClock();
+    const attempts = { count: 0 };
+    const { fake, resolver } = setup(
+      async (call) => {
+        attempts.count += 1;
+
+        return attempts.count === 1 ? { stdout: "" } : refresher(clock, seen)(call);
+      },
+      { now: clock.now },
+    );
+
+    await writeServer();
+
+    await writeStore("expired-token", clock.now() - 1);
+
+    expect(await secretOf(resolver, "rule", ref)).toBe("fresh-token");
+    expect(fake.calls).toHaveLength(2);
   });
 
   it("picks up a token pi rotated during the refresh", async () => {

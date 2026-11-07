@@ -31,20 +31,35 @@ const stopRepoContainer = async (backend: Backend, context: LaunchContext) => {
   }
 };
 
+type Sweep = (full: boolean) => Promise<void>;
+
 export const finishSession = async (
   deps: CliDeps,
   context: LaunchContext,
   backend: Backend,
   session: LaunchSession,
+  sweep?: Sweep,
 ) => {
+  const last = { stopped: false };
+
   try {
     await endSession(context.stateDir, {
       repoHash: session.repoHash,
       launchId: session.launchId,
-      onLast: () => stopRepoContainer(backend, context),
+      onLast: async () => {
+        await stopRepoContainer(backend, context);
+
+        last.stopped = true;
+
+        await sweep?.(true);
+      },
     });
   } catch (error) {
     writeLine(deps.stderr, `pi-sandbox: warning: could not end the session: ${errorMessage(error)}`);
+  }
+
+  if (!last.stopped) {
+    await sweep?.(false);
   }
 };
 
@@ -53,3 +68,6 @@ export const liveLaunchIds = async (stateDir: string, repoHash?: string) =>
 
 export const pruneEndedGrants = async (deps: CliDeps, stateDir: string) =>
   pruneGrants(stateDir, { now: deps.now(), liveLaunches: await liveLaunchIds(stateDir) });
+
+export const othersLive = async (stateDir: string, session: LaunchSession) =>
+  (await liveSessions(stateDir, session.repoHash)).some((entry) => entry.launchId !== session.launchId);

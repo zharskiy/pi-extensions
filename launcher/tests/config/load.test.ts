@@ -106,6 +106,16 @@ describe("loadEffectiveConfig", () => {
     );
   });
 
+  it("refuses a project config that picks the backend", async () => {
+    const files = await createLayers();
+
+    await files.project({ backend: "apple" });
+
+    await expect(loadEffectiveConfig({ repoRoot: files.repoRoot, env: files.env })).rejects.toThrow(
+      `project: backend may not be set by a project config`,
+    );
+  });
+
   it("lets the user turn the ssh agent on unless policy keeps it off", async () => {
     const { config } = await loadWith({ user: { ssh: { agent: true } } });
 
@@ -160,8 +170,8 @@ describe("loadEffectiveConfig", () => {
       user: {
         egress: { allow: ["github.com", "crates.io"] },
         credentials: { kind: "static", envVar: "API" },
+        backend: "apple",
       },
-      project: { backend: "apple" },
     });
 
     expect(config.egress.allow).toEqual(["github.com", "crates.io"]);
@@ -249,8 +259,8 @@ describe("loadEffectiveConfig", () => {
     ],
     [
       "backend",
-      { policy: { backend: "colima" }, project: { backend: "apple" } },
-      "project: backend cannot change, locked by policy",
+      { policy: { backend: "colima" }, user: { backend: "apple" } },
+      "user: backend cannot change, locked by policy",
     ],
     [
       "profile",

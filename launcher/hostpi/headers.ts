@@ -16,9 +16,24 @@ export interface HeaderTarget {
   file: string;
   pointer: Array<string | number>;
   endpoints: Endpoint[];
+  literalSecret?: (name: string) => SecretRef;
 }
 
 const SECRET_SLOT = "{secret}";
+
+const CREDENTIAL_HEADERS = new Set(["cookie", "set-cookie", "proxy-authorization"]);
+
+const CREDENTIAL_PREFIXES = ["x-auth", "x-api", "x-access", "x-session"];
+
+const isCredentialHeader = (name: string) => {
+  const lower = name.toLowerCase();
+
+  return (
+    isAuthLikeHeader(name) ||
+    CREDENTIAL_HEADERS.has(lower) ||
+    CREDENTIAL_PREFIXES.some((prefix) => lower.startsWith(prefix))
+  );
+};
 
 const WHOLE_VARIABLE = /^\$(?:([A-Za-z_][A-Za-z0-9_]*)|\{([A-Za-z_][A-Za-z0-9_]*)\})$/;
 
@@ -38,7 +53,7 @@ const embedded = (value: string, reference: string, name: string): Binding => ({
   template: value.split(reference).join(SECRET_SLOT),
 });
 
-const bindingOf = (name: string, value: unknown, file: string, pointer: string): Binding => {
+const bindingOf = (name: string, value: unknown, literal: SecretRef): Binding => {
   if (typeof value !== "string") {
     return { kind: "keep" };
   }
@@ -65,7 +80,7 @@ const bindingOf = (name: string, value: unknown, file: string, pointer: string):
     return embedded(value, reference[0], reference[1] ?? "");
   }
 
-  return isAuthLikeHeader(name) ? whole({ file, pointer }) : { kind: "keep" };
+  return isCredentialHeader(name) ? whole(literal) : { kind: "keep" };
 };
 
 const headerSection = (
@@ -76,7 +91,11 @@ const headerSection = (
 ): Section<[string, unknown]> => {
   const identity = `${target.identity}:header:${name.toLowerCase()}`;
   const placeholder = placeholderOf(context, identity);
-  const binding = bindingOf(name, value, target.file, jsonPointer([...target.pointer, name]));
+  const literal = target.literalSecret?.(name) ?? {
+    file: target.file,
+    pointer: jsonPointer([...target.pointer, name]),
+  };
+  const binding = bindingOf(name, value, literal);
 
   if (binding.kind === "keep") {
     return { value: [name, value], rules: [], notices: [] };

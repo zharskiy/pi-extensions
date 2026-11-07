@@ -1,4 +1,4 @@
-import { createServer, type Server } from "node:net";
+import { connect, createServer, type Server } from "node:net";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { LauncherCa } from "../../proxy/tls-ca.ts";
 import { OAUTH_CALLBACK_STATUS, OAUTH_ROUTES } from "../../shared/index.ts";
@@ -268,6 +268,27 @@ describe("callback relay", () => {
     );
 
     expect(Object.fromEntries(query)).toEqual({ error: "access_denied", state: "state-1" });
+  });
+
+  it("answers an unparseable callback target with 400 and keeps the flow pending", async () => {
+    const port = await freePort();
+    const flow = ((await open(authorizeUrl(port))).body as { flow: string }).flow;
+    const raw = await new Promise<string>((resolve, reject) => {
+      const socket = connect({ host: "127.0.0.1", port }, () =>
+        socket.write("GET http://[ HTTP/1.1\r\nHost: x\r\n\r\n"),
+      );
+      const chunks: Buffer[] = [];
+
+      socket.on("data", (chunk: Buffer) => chunks.push(chunk));
+
+      socket.once("close", () => resolve(Buffer.concat(chunks).toString("utf8")));
+
+      socket.once("error", reject);
+    });
+
+    expect(raw.split(" ")[1]).toBe("400");
+    expect((await state.proxy.vault.callback(REPO, flow)).status).toBe(OAUTH_CALLBACK_STATUS.pending);
+    expect((await hitCallback(port, "/callback?code=x&state=state-1")).status).toBe(200);
   });
 
   it("answers a wrong state or path with 400 and keeps the flow pending", async () => {

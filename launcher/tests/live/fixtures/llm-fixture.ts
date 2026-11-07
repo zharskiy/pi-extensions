@@ -10,7 +10,7 @@ export interface ProviderFixture {
   path: string;
 }
 
-export interface ChatMessage {
+interface ChatMessage {
   role: string;
   content?: unknown;
   tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }>;
@@ -36,7 +36,7 @@ export const PROVIDER: ProviderFixture = JSON.parse(
   readFileSync(new URL("./provider.json", import.meta.url), "utf8"),
 ) as ProviderFixture;
 
-export const contentText = (content: unknown): string => {
+const contentText = (content: unknown): string => {
   if (typeof content === "string") {
     return content;
   }

@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ExecIo, ExecSpec } from "../../backend/index.ts";
 import { run } from "../../cli/index.ts";
+import { registerSession } from "../../grants/index.ts";
+import { sha256Hex } from "../../shared/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { createHarness } from "./harness.ts";
 
@@ -16,6 +18,10 @@ interface Probes {
   offline?: string;
   mcpListExit?: number;
   ruleAnswer?: string;
+  mcpAuth?: string;
+  settings?: string;
+  browserExit?: number;
+  sessionsExit?: number;
 }
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -47,13 +53,37 @@ type Intent =
   | "offline"
   | "mcp list"
   | "rule request"
+  | "container mcp-auth"
+  | "container settings"
+  | "browser"
+  | "sessions share"
   | "sync";
 
 const intentOf = (command: string[]): Intent | undefined => {
   const text = command.join(" ");
 
-  if (text.includes("settings.json") || text.includes("pi-sandbox-tmp")) {
+  if (command[0] === "sh" && text.includes("PI_CODING_AGENT_SESSION_DIR")) {
+    return "sessions share";
+  }
+
+  if (command[0] === "cat" && text.includes("settings.json")) {
+    return "container settings";
+  }
+
+  if (
+    text.includes("settings.json") ||
+    text.includes("pi-sandbox-tmp") ||
+    (command[0] === "sh" && text.includes("mcp-auth.json"))
+  ) {
     return "sync";
+  }
+
+  if (command[0] === "cat" && text.includes("mcp-auth.json")) {
+    return "container mcp-auth";
+  }
+
+  if (command[0] === "xdg-open") {
+    return "browser";
   }
 
   if (text.includes("auth.json")) {
@@ -123,6 +153,22 @@ const answering =
 
         return 0;
       },
+      "container mcp-auth": () => {
+        io.stdout.write(probes.mcpAuth ?? "{}");
+
+        return 0;
+      },
+      "container settings": () => {
+        io.stdout.write(probes.settings ?? "{}");
+
+        return 0;
+      },
+      browser: () => {
+        io.stderr.write("pi-sandbox: proxy refused\n");
+
+        return probes.browserExit ?? 0;
+      },
+      "sessions share": () => probes.sessionsExit ?? 0,
       sync: () => 0,
     };
     const intent = intentOf(spec.command);
@@ -143,6 +189,7 @@ const HOST_LINES = [
   "skip parent proxy: no parent proxy configured",
   "skip org baseline: no org baseline configured",
   "ok grants: none active",
+  expect.stringMatching(/^ok sessions: \/.+\/home\/\.pi\/agent\/sessions\/--.+-repo-- \(host pi lists them/),
 ];
 
 const doctorWith = async (probes: Probes, healthStatus = 200, userConfig?: unknown, hostAuth?: unknown) => {
@@ -182,6 +229,10 @@ describe("pi sandbox doctor", () => {
       "ok no-route: no direct route to 1.1.1.1:443",
       "ok offline: PI_OFFLINE is unset",
       "ok mcp: pi mcp list connects to every enabled server",
+      "ok mcp-auth sweep: 0 entries in mcp-auth.json, every token is a placeholder",
+      "ok settings sweep: no settings.json package carries a credential in its URL",
+      "ok browser: xdg-open reaches the proxy's /healthz",
+      "ok sessions share: writable at the host path",
       "skip trust: no credential rule, nothing is terminated",
       ...HOST_LINES,
     ]);
@@ -195,12 +246,16 @@ describe("pi sandbox doctor", () => {
 
     expect([...new Set(probes.map((exec) => intentOf(exec.spec.command)))].sort()).toEqual([
       "auth file",
+      "browser",
+      "container mcp-auth",
+      "container settings",
       "direct route",
       "environment",
       "mcp file",
       "mcp list",
       "offline",
       "repo visible",
+      "sessions share",
     ]);
     expect(fake.execs.every((exec) => exec.spec.containerId === container && !exec.tty)).toBe(true);
     expect(fake.containers.size).toBe(0);
@@ -286,6 +341,61 @@ describe("pi sandbox doctor", () => {
     expect(lines).toContain("ok credential sweep: no credential in the environment, auth.json or mcp.json");
   });
 
+  it("keeps the container it created when another session of the repository started meanwhile", async () => {
+    const port = await healthServer(200);
+    const fake = createFakeBackend({ exec: answering({}) });
+    const harness = await createHarness({
+      adapters: () => [fake.backend],
+      proxy: { ensure: async () => ({ pid: 77, port, policyHash: "p", token: "token-1" }) },
+    });
+
+    cleanups.push(harness.cleanup);
+
+    await registerSession(harness.stateDir, {
+      launchId: "00000000000000cc",
+      pid: process.pid,
+      repoHash: sha256Hex(harness.repoRoot),
+      startedAt: 1,
+    });
+
+    await run(["sandbox", "doctor"], harness.deps);
+
+    expect(fake.containers.size).toBe(1);
+    expect(fake.stops).toEqual([]);
+  });
+
+  it("fails the settings sweep on a package whose URL carries a credential", async () => {
+    const { code, lines } = await doctorWith({
+      settings: JSON.stringify({
+        packages: ["npm:fine", { source: "git:https://user:hunter2@git.example.test/team/ext.git" }],
+      }),
+    });
+
+    expect(lines).toContain(
+      "fail settings sweep: settings.json package git.example.test carries a credential in its URL",
+    );
+    expect(lines.join("\n")).not.toContain("hunter2");
+    expect(code).toBe(1);
+  });
+
+  it("fails the mcp-auth sweep on a token that is not a placeholder and the browser check when the proxy refuses", async () => {
+    const { code, lines } = await doctorWith({
+      mcpAuth: JSON.stringify({
+        "mcp__docs|https://docs.example.test/mcp": {
+          tokens: { access_token: "real-access-token-0123456789", token_type: "Bearer" },
+        },
+      }),
+      browserExit: 1,
+    });
+
+    expect(lines).toContain(
+      "fail mcp-auth sweep: mcp-auth.json holds a token that is not a placeholder (mcp__docs|https://docs.example.test/mcp)",
+    );
+    expect(lines).toContain("fail browser: xdg-open --pi-sandbox-check exited 1: pi-sandbox: proxy refused");
+    expect(lines.join("\n")).not.toContain("real-access-token");
+    expect(code).toBe(1);
+  });
+
   it("fails when the container reaches the internet directly or the repo is not mounted", async () => {
     const { code, lines } = await doctorWith({ routeExit: 0, sameDir: 1 });
 
@@ -321,6 +431,10 @@ describe("pi sandbox doctor", () => {
       "skip no-route: no runtime",
       "skip offline: no runtime",
       "skip mcp: no runtime",
+      "skip mcp-auth sweep: no runtime",
+      "skip settings sweep: no runtime",
+      "skip browser: no runtime",
+      "skip sessions share: no runtime",
       "skip trust: no runtime",
       ...HOST_LINES,
     ]);
@@ -344,6 +458,10 @@ describe("pi sandbox doctor", () => {
       "skip no-route: no image",
       "skip offline: no image",
       "skip mcp: no image",
+      "skip mcp-auth sweep: no image",
+      "skip settings sweep: no image",
+      "skip browser: no image",
+      "skip sessions share: no image",
       "skip trust: no image",
       ...HOST_LINES,
     ]);

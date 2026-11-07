@@ -187,4 +187,54 @@ describe("renderAgentDir", () => {
 
     expect(result.entries).toEqual(["auth.json", "models.json"]);
   });
+
+  it("leaves out git dirs, key files, credential files and secret-named files of any extension", async () => {
+    const stateDir = await tempDir("render-state");
+    const host = await tempDir("render-host");
+    const skill = join(host, "skills", "deploy");
+    const kept = ["SKILL.md", "tokens.ts", "public.crt"];
+    const skipped = [
+      ".git/config",
+      ".git/HEAD",
+      ".env.local",
+      ".netrc",
+      ".npmrc",
+      ".git-credentials",
+      "id_ed25519",
+      "id_rsa.pub",
+      "server.pem",
+      "server.key",
+      "store.p12",
+      "store.pfx",
+      "store.jks",
+      "app.keystore",
+      "bundle.crt",
+      "api-token",
+      "client_secret.bin",
+      "password.lst",
+    ];
+
+    await Promise.all(
+      [...kept, ...skipped].map((name) =>
+        writeText(
+          join(skill, name),
+          name === "bundle.crt"
+            ? "-----BEGIN CERTIFICATE-----\n-----BEGIN RSA PRIVATE KEY-----\nSECRET\n"
+            : `${name}\n`,
+        ),
+      ),
+    );
+
+    const result = await renderAgentDir({
+      stateDir,
+      repoHash: "repo1",
+      hostAgentDir: host,
+      derived: derived(),
+    });
+    const files = await listTree(result.renderDir);
+
+    expect(files.filter((path) => path.startsWith("skills/deploy/") && !path.endsWith("/")).sort()).toEqual(
+      kept.map((name) => `skills/deploy/${name}`).sort(),
+    );
+  });
 });

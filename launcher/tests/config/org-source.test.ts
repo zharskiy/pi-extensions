@@ -105,7 +105,77 @@ describe("loadOrgLayer from an HTTPS source", () => {
 
     fake.route(URL_SOURCE, { status: 503, body: "" });
 
+    clock.advance(HOUR_MS);
+
     await expect(load()).resolves.toMatchObject({ notices: [expect.stringContaining("HTTP 503")] });
+  });
+
+  it("retries a failed refresh at most once an hour and prints the notice once per failed attempt", async () => {
+    const { fake, clock, load } = await setup();
+
+    await load();
+
+    fake.route(URL_SOURCE, new Error("getaddrinfo ENOTFOUND"));
+
+    clock.advance(25 * HOUR_MS);
+
+    expect((await load()).notices).toHaveLength(1);
+
+    clock.advance(HOUR_MS - 1);
+
+    await expect(load()).resolves.toEqual({
+      layer: { fallback: "refuse", egress: { allow: ["github.com"] } },
+      notices: [],
+    });
+    expect(fake.calls).toHaveLength(2);
+
+    clock.advance(1);
+
+    expect((await load()).notices).toHaveLength(1);
+    expect(fake.calls).toHaveLength(3);
+
+    fake.route(URL_SOURCE, ok(NEWER));
+
+    clock.advance(HOUR_MS);
+
+    await expect(load()).resolves.toEqual({
+      layer: { fallback: "refuse", egress: { allow: [] } },
+      notices: [],
+    });
+    expect(fake.calls).toHaveLength(4);
+  });
+
+  it("refuses a response larger than 1 MiB", async () => {
+    const huge = JSON.stringify({ fallback: "refuse", pad: "x".repeat(1_048_576) });
+    const { load } = await setup({ [URL_SOURCE]: ok(huge) });
+
+    await expect(load()).rejects.toThrow(/^org: response larger than 1 MiB$/);
+  });
+
+  it("offline, uses any cached copy and skips the layer without one, never fetching", async () => {
+    const { fake, clock, stateDir } = await setup();
+    const offline = () =>
+      loadOrgLayer({
+        ref: { source: URL_SOURCE },
+        stateDir,
+        fetchText: fake.fetchText,
+        now: clock.now,
+        offline: true,
+      });
+
+    await expect(offline()).resolves.toEqual({
+      layer: undefined,
+      notices: [
+        "org: no cached baseline from https://config.example.internal/pi/baseline.json; the org layer is skipped",
+      ],
+    });
+
+    await loadOrgLayer({ ref: { source: URL_SOURCE }, stateDir, fetchText: fake.fetchText, now: clock.now });
+
+    clock.advance(100 * HOUR_MS);
+
+    await expect(offline()).resolves.toMatchObject({ layer: { fallback: "refuse" }, notices: [] });
+    expect(fake.calls).toHaveLength(1);
   });
 
   it("refuses to start when the fetch fails and there is no cache", async () => {
@@ -193,6 +263,22 @@ describe("loadOrgLayer from a file source", () => {
       "does not match the pinned sha256",
     );
     expect(fake.calls).toEqual([]);
+  });
+
+  it("expands a leading ~/ to the home directory", async () => {
+    const { stateDir, clock, fake } = await setup();
+
+    await writeFile(join(stateDir, "baseline.json"), BASELINE);
+
+    await expect(
+      loadOrgLayer({
+        ref: { source: "~/baseline.json" },
+        stateDir,
+        fetchText: fake.fetchText,
+        now: clock.now,
+        home: stateDir,
+      }),
+    ).resolves.toMatchObject({ layer: { fallback: "refuse" } });
   });
 
   it("names the missing file", async () => {

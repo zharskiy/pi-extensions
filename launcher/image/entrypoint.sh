@@ -19,9 +19,8 @@ if [ -d "$render_dir" ]; then
   find "$render_dir" -mindepth 1 -maxdepth 1 ! -name mcp-auth.json -exec sh -c '
     link="$1/$(basename "$2")"
 
-    if [ -L "$link" ] || [ ! -e "$link" ]; then
-      ln -sfn "$2" "$link"
-    fi
+    rm -rf "$link"
+    ln -s "$2" "$link"
   ' sh "$agent_dir" {} \;
 fi
 

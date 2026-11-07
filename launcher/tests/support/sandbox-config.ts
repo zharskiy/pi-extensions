@@ -19,5 +19,6 @@ export const sandboxConfig = (overrides: Partial<SandboxConfig> = {}): SandboxCo
   env: { allow: ["TERM", "LANG"] },
   ssh: { agent: false },
   resources: {},
+  sessions: { host: true },
   ...overrides,
 });

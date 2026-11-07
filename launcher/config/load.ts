@@ -21,6 +21,8 @@ interface LoadOptions {
   env?: NodeJS.ProcessEnv;
   fetchText?: FetchText;
   now?: () => number;
+  home?: string;
+  offline?: boolean;
 }
 
 export const layerFile = (layer: LayerName, repoRoot: string, env?: NodeJS.ProcessEnv) => {
@@ -33,7 +35,7 @@ export const layerFile = (layer: LayerName, repoRoot: string, env?: NodeJS.Proce
   return layer === "policy" ? paths.policyFile : paths.userConfigFile;
 };
 
-const HOST_ONLY_KEYS = ["env.allow", "image.reference", "image.digest"];
+const HOST_ONLY_KEYS = ["env.allow", "image.reference", "image.digest", "sessions.host"];
 
 const assertProjectKeys = (layer: LayerConfig, file: string) => {
   const key = HOST_ONLY_KEYS.find((name) => getPath(layer, name) !== undefined);
@@ -85,6 +87,8 @@ export const loadOrg = (ref: OrgRef | undefined, options: LoadOptions) =>
         stateDir: launcherPaths({ env: options.env }).stateDir,
         fetchText: options.fetchText ?? httpsFetchText,
         now: options.now ?? Date.now,
+        home: options.home,
+        offline: options.offline,
       });
 
 export const loadEffectiveConfig = async (options: LoadOptions) => {

@@ -4,6 +4,7 @@ export {
   ensureContainer,
   findCurrentContainer,
   findRepoContainer,
+  isCurrentContainer,
   policyHashesInUse,
   removeRepoContainer,
   stopIdleContainer,
@@ -20,6 +21,6 @@ export {
   sweepCredentials,
 } from "./probes.ts";
 export type { HostTerminal, SignalSource } from "./run-pi.ts";
-export { runPi } from "./run-pi.ts";
+export { listenFor, runPi } from "./run-pi.ts";
 export type { LauncherContainerSpec } from "./spec.ts";
 export { buildContainerSpec, forwardedEnv, repoVolumes } from "./spec.ts";

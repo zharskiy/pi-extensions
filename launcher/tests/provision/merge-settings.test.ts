@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -137,6 +137,64 @@ describe("syncWritableFiles", () => {
     await env.sync({});
 
     expect(writes(env.fake.execs)[guest("settings.json")]).toEqual({ local: 1 });
+  });
+
+  it("removes a credential from a package URL inside the sandbox and in the base copy, with a notice", async () => {
+    const env = await setup({});
+    const result = await env.sync({
+      packages: [
+        "git:https://me:ghp_token123@github.com/org/ext",
+        { source: "https://TOKEN456@git.example.com/org/tool.git", skills: [] },
+        "git:git@github.com:org/plain",
+        "npm:a",
+      ],
+    });
+    const syncDir = stateLayout(env.stateDir).sync("repo1");
+    const base = await readFile(join(syncDir, "settings.json"), "utf8");
+
+    expect(writes(env.fake.execs)[guest("settings.json")]).toEqual({
+      packages: [
+        "git:https://github.com/org/ext",
+        { source: "https://git.example.com/org/tool.git", skills: [] },
+        "git:git@github.com:org/plain",
+        "npm:a",
+      ],
+    });
+    expect(base).not.toMatch(/ghp_token123|TOKEN456/);
+    expect(result.notices).toEqual([
+      "settings.json package github.com carried a credential in its URL; it was removed inside the sandbox",
+      "settings.json package git.example.com carried a credential in its URL; it was removed inside the sandbox",
+    ]);
+  });
+
+  it("writes the base copies readable by the owner only", async () => {
+    const env = await setup({});
+
+    await env.sync({ theme: "dark" }, { mcpServers: {} });
+
+    const syncDir = stateLayout(env.stateDir).sync("repo1");
+
+    expect((await stat(join(syncDir, "settings.json"))).mode & 0o777).toBe(0o600);
+    expect((await stat(join(syncDir, "mcp.json"))).mode & 0o777).toBe(0o600);
+  });
+
+  it("waits for another launch's sync of the same repository before it reads the volume", async () => {
+    const env = await setup({});
+    const lock = join(stateLayout(env.stateDir).sync("repo1"), "sync.lock");
+
+    await mkdir(lock, { recursive: true });
+
+    const pending = env.sync({ theme: "dark" });
+
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    expect(env.fake.execs).toEqual([]);
+
+    await rm(lock, { recursive: true });
+
+    await pending;
+
+    expect(writes(env.fake.execs)[guest("settings.json")]).toEqual({ theme: "dark" });
   });
 
   it("replaces an invalid volume file with a notice", async () => {

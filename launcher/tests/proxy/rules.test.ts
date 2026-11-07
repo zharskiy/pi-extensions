@@ -42,20 +42,38 @@ describe("matchRules", () => {
 });
 
 describe("rewriteRequestHeaders", () => {
-  it("substitutes the placeholder in auth-like headers only", () => {
+  it("substitutes the placeholder in auth-like headers and strips it from any other header", () => {
     const headers = [
       ["Authorization", `Bearer ${PLACEHOLDER}`],
       ["x-api-key", PLACEHOLDER],
       ["proxy-authorization", PLACEHOLDER],
+      ["Sec-WebSocket-Key", PLACEHOLDER],
       ["x-trace", PLACEHOLDER],
+      ["accept", "*/*"],
     ] as const;
 
     expect(rewriteRequestHeaders([...headers], rule(), "secret")).toEqual([
       ["Authorization", "Bearer secret"],
       ["x-api-key", "secret"],
-      ["proxy-authorization", PLACEHOLDER],
-      ["x-trace", PLACEHOLDER],
+      ["accept", "*/*"],
     ]);
+  });
+
+  it("substitutes only in the header a header rule names", () => {
+    const header = rule({ header: "x-api-key", template: "{secret}" });
+    const headers = [
+      ["x-api-key", PLACEHOLDER],
+      ["Authorization", `Bearer ${PLACEHOLDER}`],
+      ["x-echo-token", PLACEHOLDER],
+    ] as const;
+
+    expect(rewriteRequestHeaders([...headers], header, "secret")).toEqual([["x-api-key", "secret"]]);
+  });
+
+  it("strips a stray placeholder when the secret is unavailable", () => {
+    const header = rule({ header: "x-api-key" });
+
+    expect(rewriteRequestHeaders([["sec-websocket-key", PLACEHOLDER]], header, undefined)).toEqual([]);
   });
 
   it("sets the header from the template when it is absent", () => {
@@ -92,10 +110,8 @@ describe("rewriteRequestHeaders", () => {
     ]);
   });
 
-  it("never touches the query string", () => {
-    expect(rewriteRequestHeaders([[":path", `/x?key=${PLACEHOLDER}`]], rule(), "secret")).toEqual([
-      [":path", `/x?key=${PLACEHOLDER}`],
-    ]);
+  it("never substitutes into a header that is not a carrier", () => {
+    expect(rewriteRequestHeaders([[":path", `/x?key=${PLACEHOLDER}`]], rule(), "secret")).toEqual([]);
   });
 });
 

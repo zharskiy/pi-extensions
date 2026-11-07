@@ -1,5 +1,11 @@
 import { type CommandRunner, errorMessage, LauncherError } from "../../shared/index.ts";
-import type { Backend, BackendCapabilities, ContainerSpec, Detection } from "../types.ts";
+import type {
+  Backend,
+  BackendCapabilities,
+  ContainerSpec,
+  Detection,
+  RemoveContainerOptions,
+} from "../types.ts";
 import { containerBody, type EngineContainer, labelFilters, summaryOf } from "./container-body.ts";
 import { createEngineClient, segment } from "./engine-client.ts";
 import { runExec } from "./exec-session.ts";
@@ -26,6 +32,8 @@ const LIMA_HOST = "host.lima.internal";
 const DOCKER_HOST_ALIAS = "host.docker.internal";
 
 const STOP_TIMEOUT_SECONDS = 5;
+
+const REPO_HASH_LABEL = "pi-sandbox.repo-hash";
 
 export const createDockerEngineBackend = (options: DockerEngineOptions): Backend => {
   const client = createEngineClient(options.socketPath);
@@ -124,11 +132,35 @@ export const createDockerEngineBackend = (options: DockerEngineOptions): Backend
     );
   };
 
-  const removeContainer = async (id: string) => {
+  const repoHashOf = async (id: string) => {
+    const response = await client.call({ method: "GET", path: `/containers/${segment(id)}/json` }, [404]);
+
+    if (response.status === 404) {
+      return undefined;
+    }
+
+    const inspected = JSON.parse(response.body.toString("utf8")) as {
+      Config?: { Labels?: Record<string, string> | null };
+    };
+
+    return inspected.Config?.Labels?.[REPO_HASH_LABEL];
+  };
+
+  const removeContainer = async (id: string, options: RemoveContainerOptions = {}) => {
+    const repoHash = await repoHashOf(id);
+
     await client.call(
       { method: "DELETE", path: `/containers/${segment(id)}`, query: { force: true } },
       [404],
     );
+
+    if (options.keepNetwork === true || repoHash === undefined) {
+      return;
+    }
+
+    if ((await findContainers({ [REPO_HASH_LABEL]: repoHash })).length === 0) {
+      await relay.removeRepoNetwork(repoHash);
+    }
   };
 
   const status = async () => {
@@ -166,6 +198,7 @@ export const createDockerEngineBackend = (options: DockerEngineOptions): Backend
     exportVolume: volumes.exportVolume,
     importVolume: volumes.importVolume,
     prepareProxyRoute: relay.prepareProxyRoute,
+    pruneNetworks: relay.pruneNetworks,
     status,
   };
 };

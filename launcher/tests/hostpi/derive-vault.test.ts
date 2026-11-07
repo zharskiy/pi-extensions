@@ -133,13 +133,14 @@ describe("deriveSandboxPi vault servers", () => {
 });
 
 describe("vaultCandidates", () => {
-  it("keeps only public http servers without a client secret, auth, Authorization header or url password", () => {
+  it("keeps only public http servers without a client secret, auth, Authorization header or url password or query credential", () => {
     const candidates = vaultCandidates({
       mcpServers: {
         good: { url: "https://user@mcp.good.example/mcp", oauth: { scope: "read", clientId: braced("ID") } },
         secret: { url: "https://mcp.a.example", oauth: { clientSecret: "!pass show x" } },
         header: { url: "https://mcp.b.example", headers: { authorization: "Bearer x" } },
         password: { url: "https://user:pw@mcp.c.example" },
+        query: { url: "https://mcp.q.example/mcp?token=abc" },
         auth: { url: "https://mcp.d.example", auth: { provider: "someone" } },
         local: { url: "http://localhost:3000/mcp" },
         plain: { url: "http://mcp.e.example/mcp" },

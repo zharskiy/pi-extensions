@@ -1,6 +1,7 @@
 import { type ChildProcess, type SpawnOptions, spawn as spawnProcess } from "node:child_process";
-import { stat } from "node:fs/promises";
-import { basename, dirname } from "node:path";
+import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { basename, dirname, join } from "node:path";
 import { type CommandRunner, errorMessage, LauncherError, type RunResult } from "../../shared/index.ts";
 import { pinnedReference } from "../image-reference.ts";
 import type {
@@ -13,6 +14,7 @@ import type {
   ImageInfo,
   NetworkRef,
   ProxyRoute,
+  RemoveContainerOptions,
 } from "../types.ts";
 import {
   APPLE_COMMANDS,
@@ -26,6 +28,7 @@ import {
   containerSummariesOf,
   imageDigestOf,
   memoryArgument,
+  networkNamesOf,
   networkOf,
   volumeArgument,
 } from "./cli.ts";
@@ -47,7 +50,19 @@ const ALREADY_EXISTS = /already exists|exists/i;
 
 const MANAGED_LABEL = "pi-sandbox.managed=true";
 
-const NETWORK_HINT = "remove it (container network delete pi-sandbox) so the launcher can create its own";
+const REPO_HASH_LABEL = "pi-sandbox.repo-hash";
+
+const SHORT_REPO_HASH = 12;
+
+const networkHint = (name: string) =>
+  `remove it (container network delete ${name}) so the launcher can create its own`;
+
+const PRUNABLE_NETWORK = /^pi-sandbox(?:-([0-9a-f]{12}))?$/;
+
+const repoNetworkName = (repoHash: string | undefined) =>
+  repoHash === undefined
+    ? APPLE_PROXY_NETWORK
+    : `${APPLE_PROXY_NETWORK}-${repoHash.slice(0, SHORT_REPO_HASH)}`;
 
 const capabilities: BackendCapabilities = {
   singleFileMount: false,
@@ -80,12 +95,45 @@ const mountArguments = (spec: ContainerSpec) =>
       : [APPLE_FLAGS.volume, volumeArgument(mount)],
   );
 
-const createArguments = (spec: ContainerSpec) => [
+const PRIVATE_MODE = 0o600;
+
+const envFileText = (env: Record<string, string>) =>
+  keyValues(env)
+    .map((line) => {
+      if (/[\r\n]/.test(line)) {
+        throw new LauncherError(
+          `environment variable ${line.split("=")[0]} has a line break; it cannot be passed`,
+        );
+      }
+
+      return `${line}\n`;
+    })
+    .join("");
+
+const withEnvFile = async <T>(env: Record<string, string>, run: (flags: string[]) => Promise<T>) => {
+  if (Object.keys(env).length === 0) {
+    return run([]);
+  }
+
+  const text = envFileText(env);
+  const dir = await mkdtemp(join(tmpdir(), "pi-sandbox-env-"));
+  const file = join(dir, "env");
+
+  try {
+    await writeFile(file, text, { mode: PRIVATE_MODE });
+
+    return await run([APPLE_FLAGS.envFile, file]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+};
+
+const createArguments = (spec: ContainerSpec, envFlags: string[]) => [
   ...APPLE_COMMANDS.create,
   APPLE_FLAGS.name,
   spec.name,
   ...pairs(APPLE_FLAGS.label, keyValues(spec.labels)),
-  ...pairs(APPLE_FLAGS.env, keyValues(guestEnv(spec))),
+  ...envFlags,
   ...mountArguments(spec),
   ...(spec.sshAgent === undefined ? [] : [APPLE_FLAGS.ssh]),
   ...networkArguments(spec.network),
@@ -103,11 +151,11 @@ const createArguments = (spec: ContainerSpec) => [
   spec.image,
 ];
 
-const execArguments = (spec: ExecSpec, io: ExecIo) => [
+const execArguments = (spec: ExecSpec, io: ExecIo, envFlags: string[]) => [
   ...APPLE_COMMANDS.exec,
   ...(io.stdin === undefined ? [] : [APPLE_FLAGS.interactive]),
   ...(io.tty ? [APPLE_FLAGS.tty] : []),
-  ...pairs(APPLE_FLAGS.env, keyValues(spec.env)),
+  ...envFlags,
   APPLE_FLAGS.workdir,
   spec.workdir,
   spec.containerId,
@@ -250,7 +298,9 @@ export const createAppleBackend = (options: AppleOptions): Backend => {
   };
 
   const createContainer = async (spec: ContainerSpec) => {
-    const result = await container(createArguments(spec));
+    const result = await withEnvFile(guestEnv(spec), (envFlags) =>
+      container(createArguments(spec, envFlags)),
+    );
 
     if (result.code !== 0 && ALREADY_EXISTS.test(firstLine(result))) {
       throw new LauncherError(`container name ${spec.name} is already in use`, "run pi sandbox reset");
@@ -275,14 +325,55 @@ export const createAppleBackend = (options: AppleOptions): Backend => {
     );
   };
 
-  const removeContainer = async (id: string) => {
+  const removeNetwork = async (name: string) => {
+    const network = await inspectProxyNetwork(name);
+
+    return network?.managed === true && (await container([...APPLE_COMMANDS.networkRemove, name])).code === 0;
+  };
+
+  const removeRepoNetwork = async (repoHash: string) => {
+    await removeNetwork(repoNetworkName(repoHash));
+  };
+
+  const pruneNetworks = async (keepRepoHashes: string[]) => {
+    const kept = new Set(keepRepoHashes.map((hash) => hash.slice(0, SHORT_REPO_HASH)));
+    const listed = networkNamesOf((await checked("network list", APPLE_COMMANDS.networkList)).stdout);
+    const candidates = listed.filter((name) => {
+      const match = PRUNABLE_NETWORK.exec(name);
+
+      return match !== null && (match[1] === undefined || !kept.has(match[1]));
+    });
+    const removed = await candidates.reduce<Promise<boolean[]>>(
+      async (previous, name) => [...(await previous), await removeNetwork(name)],
+      Promise.resolve([]),
+    );
+
+    return candidates.filter((_name, index) => removed[index]);
+  };
+
+  const removeContainer = async (id: string, options: RemoveContainerOptions = {}) => {
+    const listed = await findContainers({}).catch(() => []);
+    const repoHash = listed.find((summary) => summary.id === id || summary.name === id)?.labels[
+      REPO_HASH_LABEL
+    ];
+
     await tolerant("delete", [...APPLE_COMMANDS.remove, APPLE_FLAGS.force, id], NOT_FOUND);
+
+    if (options.keepNetwork === true || repoHash === undefined) {
+      return;
+    }
+
+    if ((await findContainers({ [REPO_HASH_LABEL]: repoHash })).length === 0) {
+      await removeRepoNetwork(repoHash);
+    }
   };
 
   const exec = (spec: ExecSpec, io: ExecIo) =>
-    io.tty
-      ? runner.spawnInteractive(CONTAINER_CLI, execArguments(spec, io))
-      : pipedExec(spawn, execArguments(spec, io), io);
+    withEnvFile(spec.env, (envFlags) =>
+      io.tty
+        ? runner.spawnInteractive(CONTAINER_CLI, execArguments(spec, io, envFlags))
+        : pipedExec(spawn, execArguments(spec, io, envFlags), io),
+    );
 
   const ensureVolume = async (name: string) => {
     const present = await container([...APPLE_COMMANDS.volumeInspect, name]);
@@ -360,62 +451,63 @@ export const createAppleBackend = (options: AppleOptions): Backend => {
     ]);
   };
 
-  const inspectProxyNetwork = async () => {
-    const inspected = await container([...APPLE_COMMANDS.networkInspect, APPLE_PROXY_NETWORK]);
+  const inspectProxyNetwork = async (name: string) => {
+    const inspected = await container([...APPLE_COMMANDS.networkInspect, name]);
 
     return inspected.code === 0 ? networkOf(inspected.stdout) : undefined;
   };
 
-  const assertManagedNetwork = (network: AppleNetwork) => {
+  const assertManagedNetwork = (name: string, network: AppleNetwork) => {
     if (network.internal === undefined) {
-      throw new LauncherError(
-        `container network ${APPLE_PROXY_NETWORK} cannot be verified as internal`,
-        NETWORK_HINT,
-      );
+      throw new LauncherError(`container network ${name} cannot be verified as internal`, networkHint(name));
     }
 
     if (!network.internal) {
-      throw new LauncherError(
-        `container network ${APPLE_PROXY_NETWORK} exists but is not internal`,
-        NETWORK_HINT,
-      );
+      throw new LauncherError(`container network ${name} exists but is not internal`, networkHint(name));
     }
 
     if (!network.managed) {
       throw new LauncherError(
-        `container network ${APPLE_PROXY_NETWORK} exists but is not managed by pi-sandbox`,
-        NETWORK_HINT,
+        `container network ${name} exists but is not managed by pi-sandbox`,
+        networkHint(name),
       );
     }
   };
 
-  const createProxyNetwork = async () => {
+  const createProxyNetwork = async (name: string, repoHash: string | undefined) => {
     await checked("network create", [
       ...APPLE_COMMANDS.networkCreate,
       APPLE_FLAGS.internal,
       APPLE_FLAGS.label,
       `${APPLE_MANAGED_LABEL}=true`,
-      APPLE_PROXY_NETWORK,
+      ...(repoHash === undefined ? [] : [APPLE_FLAGS.label, `${REPO_HASH_LABEL}=${repoHash}`]),
+      name,
     ]);
 
-    return inspectProxyNetwork();
+    return inspectProxyNetwork(name);
   };
 
-  const prepareProxyRoute = async (hostPort: number): Promise<ProxyRoute> => {
-    const network = (await inspectProxyNetwork()) ?? (await createProxyNetwork());
+  const prepareProxyRoute = async (
+    hostPort: number,
+    _policyHash?: string,
+    _imageId?: string,
+    repoHash?: string,
+  ): Promise<ProxyRoute> => {
+    const name = repoNetworkName(repoHash);
+    const network = (await inspectProxyNetwork(name)) ?? (await createProxyNetwork(name, repoHash));
 
     if (network === undefined) {
-      throw new LauncherError(`container network ${APPLE_PROXY_NETWORK} could not be inspected`);
+      throw new LauncherError(`container network ${name} could not be inspected`);
     }
 
-    assertManagedNetwork(network);
+    assertManagedNetwork(name, network);
 
     if (network.gateway === undefined) {
-      throw new LauncherError(`container network ${APPLE_PROXY_NETWORK} has no gateway address`);
+      throw new LauncherError(`container network ${name} has no gateway address`);
     }
 
     return {
-      network: { kind: "internal", name: APPLE_PROXY_NETWORK },
+      network: { kind: "internal", name },
       address: `${network.gateway}:${hostPort}`,
     };
   };
@@ -447,6 +539,7 @@ export const createAppleBackend = (options: AppleOptions): Backend => {
     exportVolume,
     importVolume,
     prepareProxyRoute,
+    pruneNetworks,
     status,
   };
 };

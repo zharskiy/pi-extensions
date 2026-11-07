@@ -12,6 +12,7 @@ export const LABELS = {
   proxyPolicyHash: "pi-sandbox.proxy-policy-hash",
   relay: "pi-sandbox.relay",
   version: "pi-sandbox.version",
+  sessionDir: "pi-sandbox.session-dir",
 } as const;
 
 const SHORT = 12;

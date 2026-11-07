@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -96,6 +96,32 @@ describe("sessions", () => {
     await writeFile(join(state.stateDir, "sessions", REPO, "lock"), String(DEAD_PID));
 
     expect(await registerSession(state.stateDir, entry())).toBe(2);
+  });
+
+  it("treats a lock without a readable pid as held until it is 10 s old", async () => {
+    const first = entry();
+    const lock = join(state.stateDir, "sessions", REPO, "lock");
+
+    await registerSession(state.stateDir, first);
+
+    await writeFile(lock, "");
+
+    const waiting = { done: false };
+    const second = registerSession(state.stateDir, entry()).then((count) => {
+      waiting.done = true;
+
+      return count;
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    expect(waiting.done).toBe(false);
+
+    const old = new Date(Date.now() - 11_000);
+
+    await utimes(lock, old, old);
+
+    expect(await second).toBe(2);
   });
 
   it("registers concurrent sessions without losing any", async () => {

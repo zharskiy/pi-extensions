@@ -51,4 +51,5 @@ export const defaultConfig = async (): Promise<SandboxConfig> => ({
   env: { allow: TERMINAL_VARIABLES },
   ssh: { agent: false },
   resources: {},
+  sessions: { host: true },
 });

@@ -14,6 +14,7 @@ import {
   writeJsonFile,
 } from "../shared/index.ts";
 import { controlAuthorization } from "./auth.ts";
+import { minimalEnv, parentProxyEnv } from "./child-env.ts";
 import { type DaemonConfig, type ProxyInstance, proxyFiles, proxyRoot } from "./files.ts";
 import { proxyPolicyHash } from "./settings.ts";
 import { openLauncherCa } from "./tls-ca.ts";
@@ -21,6 +22,7 @@ import { openLauncherCa } from "./tls-ca.ts";
 interface EnvSecretsMessage {
   type: "env-secrets";
   secrets: Record<string, string>;
+  repoTokenHash?: string;
 }
 
 export type ControlMessage = EnvSecretsMessage;
@@ -360,7 +362,7 @@ const launchDaemon = async (
       "--home",
       options.home,
     ],
-    { detached: true, stdio: ["ignore", "ignore", log], env: options.env },
+    { detached: true, stdio: ["ignore", "ignore", log], env: minimalEnv(options.env) },
   );
   const exited = { done: false };
 
@@ -442,6 +444,7 @@ const replaceInstance = async (options: EnsureProxyOptions, files: InstanceFiles
     egressCap: options.egressCap ?? {},
     piCommand: options.piCommand ?? [],
     discoverCommand: options.discoverCommand ?? [],
+    parentEnv: parentProxyEnv(options.env),
   };
 
   await writeJsonFile(files.config, daemonConfig, { mode: PRIVATE_MODE });

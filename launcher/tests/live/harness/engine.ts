@@ -86,9 +86,6 @@ export const listNetworks = async () => {
   return response.body ?? [];
 };
 
-export const inspectNetwork = async (id: string) =>
-  (await call<EngineNetwork>("GET", `/networks/${id}`)).body;
-
 export const removeContainer = (id: string) => call("DELETE", `/containers/${id}?force=1&v=1`);
 
 export const startContainer = (id: string) => call("POST", `/containers/${id}/start`);
@@ -96,17 +93,3 @@ export const startContainer = (id: string) => call("POST", `/containers/${id}/st
 export const removeVolume = (name: string) => call("DELETE", `/volumes/${encodeURIComponent(name)}?force=1`);
 
 export const removeNetwork = (id: string) => call("DELETE", `/networks/${id}`);
-
-export const engineListing = async () => {
-  const [containers, volumes, networks] = await Promise.all([
-    listContainers(),
-    listVolumes(),
-    listNetworks(),
-  ]);
-
-  return {
-    containers: containers.map((container) => `${container.Names.join(",")} ${container.State}`),
-    volumes: volumes.map((volume) => volume.Name),
-    networks: networks.map((network) => network.Name),
-  };
-};

@@ -1,3 +1,5 @@
+import { spawnSync } from "node:child_process";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { CredentialRule } from "../../config/index.ts";
 import type { DeriveInput } from "../../hostpi/index.ts";
@@ -12,6 +14,8 @@ import {
   JWT_ACCESS,
   providerHosts,
   SECRETS,
+  tempDir,
+  writeJson,
 } from "./fixtures.ts";
 
 const SALT = "c".repeat(64);
@@ -137,23 +141,56 @@ describe("deriveSandboxPi models.json", () => {
     expect(rule("x-signed")?.secret).toEqual({ command: ["sh", "-c", "print-signature --now"] });
   });
 
-  it("binds model-level headers to the model host with the model identity", () => {
-    const result = deriveSandboxPi(input());
-    const rules = rulesOf(result.rules, "derived:models:custom:model:model-a:header:authorization");
+  it("binds model-level headers to the model host and resolves them by model id, not array position", async () => {
+    const agentDir = await tempDir("models-identity");
+    const models = hostModels();
+    const file = join(agentDir, "models.json");
 
-    expect(rules).toEqual([
+    await writeJson(file, models);
+
+    const result = deriveSandboxPi(input({ files: { agentDir, auth: hostAuth(), models, mcp: hostMcp() } }));
+    const rules = rulesOf(result.rules, "derived:models:custom:model:model-a:header:authorization");
+    const resolve = () => {
+      const secret = rules[0]?.secret;
+      const [command = "", ...args] = secret !== undefined && "command" in secret ? secret.command : [];
+
+      return spawnSync(command, args, { encoding: "utf8" });
+    };
+
+    expect(rules).toMatchObject([
       {
-        id: "derived:models:custom:model:model-a:header:authorization",
         host: "model-a.custom.example",
         placeholder: P("models:custom:model:model-a:header:authorization"),
         header: "Authorization",
         template: "{secret}",
-        secret: {
-          file: `${AGENT_DIR}/models.json`,
-          pointer: "/providers/custom/models/0/headers/Authorization",
-        },
       },
     ]);
+    expect(resolve().stdout).toBe(SECRETS.modelHeader);
+
+    const custom = models.providers.custom;
+
+    await writeJson(file, {
+      providers: {
+        custom: {
+          ...custom,
+          models: [
+            { id: "model-b", baseUrl: "https://evil.example", headers: { Authorization: "B-SECRET" } },
+            ...custom.models,
+          ],
+        },
+      },
+    });
+
+    expect(resolve().stdout).toBe(SECRETS.modelHeader);
+
+    await writeJson(file, {
+      providers: {
+        custom: { ...custom, models: [{ ...custom.models[0], baseUrl: "https://moved.example" }] },
+      },
+    });
+
+    expect(resolve().status).not.toBe(0);
+    expect(resolve().stdout).toBe("");
   });
 
   it("warns about host-local endpoints and providers without a host and gives them no rule", () => {
@@ -245,6 +282,106 @@ describe("deriveSandboxPi mcp.json", () => {
     });
     expect(result.notices).toContain(
       "mcp tools: API_TOKEN is a placeholder in the sandbox; add credentials.rules for the host it calls",
+    );
+  });
+
+  it("drops stdio env values and args that carry URL userinfo or a secret-named flag value", () => {
+    const mcp = {
+      mcpServers: {
+        cli: {
+          command: "tool",
+          args: [
+            "serve",
+            "--api-key=LITERAL-ARG-SECRET",
+            "-token=LITERAL-SHORT-SECRET",
+            "https://me:URL-ARG-SECRET@db.example/x",
+            "--db=postgres://u:FLAG-URL-SECRET@db.example/app",
+            "--port=8080",
+          ],
+          env: { DATABASE_URL: "postgres://admin:ENV-URL-SECRET@db.example/app", MODE: "fast" },
+        },
+      },
+    };
+    const result = deriveSandboxPi(input({ files: { agentDir: AGENT_DIR, mcp } }));
+    const cli = servers(result).cli;
+
+    expect(JSON.stringify(result.files["mcp.json"])).not.toMatch(/SECRET/);
+    expect(cli?.args).toEqual([
+      "serve",
+      `--api-key=${P("mcp:cli:arg:1")}`,
+      `-token=${P("mcp:cli:arg:2")}`,
+      P("mcp:cli:arg:3"),
+      `--db=${P("mcp:cli:arg:4")}`,
+      "--port=8080",
+    ]);
+    expect(cli?.env).toEqual({ DATABASE_URL: P("mcp:cli:env:DATABASE_URL"), MODE: "fast" });
+    expect(result.notices).toEqual(
+      expect.arrayContaining([
+        "mcp cli: --api-key is a placeholder in the sandbox; add credentials.rules for the host it calls",
+        "mcp cli: args[3] is a placeholder in the sandbox; add credentials.rules for the host it calls",
+        "mcp cli: DATABASE_URL is a placeholder in the sandbox; add credentials.rules for the host it calls",
+      ]),
+    );
+  });
+
+  it("turns literal cookie, session, access and proxy credential headers into placeholders", () => {
+    const headers = {
+      Cookie: "session=LIT-COOKIE",
+      "Set-Cookie": "a=LIT-SET",
+      "Proxy-Authorization": "Basic LIT-PROXY",
+      "X-Auth-User": "LIT-XAUTH",
+      "X-Api-Tenant": "LIT-XAPI",
+      "X-Access-Id": "LIT-XACCESS",
+      "X-Session-Id": "LIT-XSESSION",
+      "X-Trace": "plain",
+    };
+    const mcp = { mcpServers: { lit: { url: "https://lit.example/mcp", headers } } };
+    const result = deriveSandboxPi(input({ files: { agentDir: AGENT_DIR, mcp } }));
+
+    expect(JSON.stringify(result.files["mcp.json"])).not.toMatch(/LIT-/);
+    expect(servers(result).lit?.headers).toMatchObject({ "X-Trace": "plain" });
+    expect(rulesOf(result.rules, "derived:mcp:lit:header:cookie")[0]).toMatchObject({
+      host: "lit.example",
+      header: "Cookie",
+      secret: { file: `${AGENT_DIR}/mcp.json`, pointer: "/mcpServers/lit/headers/Cookie" },
+    });
+  });
+
+  it("drops a server whose url carries a credential in its query string and keeps it out of the vault", () => {
+    const mcp = {
+      mcpServers: {
+        keyed: { url: "https://q.example/mcp?api_key=QUERY-SECRET&x=1" },
+        signed: { url: "https://s.example/mcp?sig=QUERY-SIG" },
+        plain: { url: "https://p.example/mcp?region=eu" },
+      },
+    };
+    const discovery = {
+      ok: true as const,
+      server: "keyed",
+      url: "https://q.example/mcp?api_key=QUERY-SECRET&x=1",
+      fetchedAt: 1,
+      issuer: "https://auth.q.example",
+      authorizationEndpoint: "https://auth.q.example/authorize",
+      tokenEndpoint: "https://auth.q.example/token",
+      hosts: ["auth.q.example"],
+      piState: {},
+    };
+    const result = deriveSandboxPi(
+      input({
+        files: { agentDir: AGENT_DIR, mcp },
+        vault: { enabled: true, discovery: { keyed: discovery } },
+      }),
+    );
+
+    expect(Object.keys(servers(result))).toEqual(["plain"]);
+    expect(JSON.stringify(result.files)).not.toMatch(/QUERY-/);
+    expect(result.vault).toEqual([]);
+    expect(result.rules.filter((rule) => rule.id.startsWith("derived:mcp:keyed"))).toEqual([]);
+    expect(result.notices).toContain(
+      "mcp keyed: the url carries a credential in its query string; add a header rule instead",
+    );
+    expect(result.notices).toContain(
+      "mcp signed: the url carries a credential in its query string; add a header rule instead",
     );
   });
 

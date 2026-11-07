@@ -1,4 +1,4 @@
-import { chmod, readFile, stat } from "node:fs/promises";
+import { chmod, lstat, readFile, readlink, rename, stat, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { writeBackPackageChange } from "../../hostpi/index.ts";
@@ -15,6 +15,22 @@ const setup = async (value: unknown, indent = "    ") => {
 };
 
 describe("writeBackPackageChange", () => {
+  it("writes through a symlinked settings.json and keeps the link", async () => {
+    const host = await setup({ packages: ["npm:first"] });
+    const settings = join(host.hostAgentDir, "settings.json");
+    const dotfile = join(host.hostAgentDir, "dotfiles-settings.json");
+
+    await rename(settings, dotfile);
+
+    await symlink(dotfile, settings);
+
+    await writeBackPackageChange({ hostAgentDir: host.hostAgentDir, source: "npm:second", kind: "install" });
+
+    expect((await lstat(settings)).isSymbolicLink()).toBe(true);
+    expect(await readlink(settings)).toBe(dotfile);
+    expect(JSON.parse(await readFile(dotfile, "utf8"))).toEqual({ packages: ["npm:first", "npm:second"] });
+  });
+
   it("appends an installed package and keeps the other keys and the indentation", async () => {
     const original = { theme: "dark", packages: ["npm:first"], defaultModel: "m" };
     const host = await setup(original, "\t");

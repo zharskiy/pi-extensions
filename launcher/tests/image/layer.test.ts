@@ -128,6 +128,61 @@ describe("ensureLayerImage", () => {
     expect(fake.builds).toEqual([]);
   });
 
+  it("refuses directives that change how the sandbox starts, runs or trusts, naming the directive", async () => {
+    const cases = [
+      ["COPY --from=builder /x /y", "has a COPY --from instruction"],
+      ["add --from=other /x /y", "has a ADD --from instruction"],
+      ['ENTRYPOINT ["/bin/sh"]', "has a ENTRYPOINT instruction"],
+      ["CMD sleep 1", "has a CMD instruction"],
+      ["user root", "has a USER instruction"],
+      ["HEALTHCHECK NONE", "has a HEALTHCHECK instruction"],
+      ["ONBUILD RUN true", "has a ONBUILD instruction"],
+      ['SHELL ["/bin/bash", "-c"]', "has a SHELL instruction"],
+      ["STOPSIGNAL SIGKILL", "has a STOPSIGNAL instruction"],
+      ["VOLUME /data", "has a VOLUME instruction"],
+      ["ENV NODE_OPTIONS=--require=/x.js", "sets NODE_OPTIONS with ENV"],
+      ["ENV A=1 \\\n  node_extra_ca_certs=/x.pem", "sets node_extra_ca_certs with ENV"],
+      ["ENV PATH /evil:$PATH", "sets PATH with ENV"],
+      ["ARG https_proxy=http://x", "sets https_proxy with ARG"],
+      ["ARG SSL_CERT_FILE", "sets SSL_CERT_FILE with ARG"],
+      ["ENV HOME=/tmp", "sets HOME with ENV"],
+      ["ENV PI_SANDBOX=0", "sets PI_SANDBOX with ENV"],
+      ["ENV CURL_CA_BUNDLE=/x REQUESTS_CA_BUNDLE=/y", "sets CURL_CA_BUNDLE with ENV"],
+    ];
+
+    await cases.reduce(async (previous, [line = "", problem = ""]) => {
+      await previous;
+
+      const fake = createFakeBackend();
+      const dockerfile = await extraDockerfile(`RUN true\n${line}\n`);
+
+      await expect(
+        ensureLayerImage({
+          backend: fake.backend,
+          baseImageId: BASE_ID,
+          config: configWith({ dockerfile }),
+          stateDir: await tempDir(),
+        }),
+      ).rejects.toThrow(`image.dockerfile: ${dockerfile} ${problem}`);
+      expect(fake.builds).toEqual([]);
+    }, Promise.resolve());
+  });
+
+  it("accepts plain build steps, a COPY without --from and harmless variables", async () => {
+    const fake = createFakeBackend();
+    const dockerfile = await extraDockerfile(
+      "# USER root in a comment\nRUN echo CMD \\\n && echo USER\nCOPY tool /opt/tool\nENV TOOL_HOME=/opt/tool\nARG VERSION=1\nWORKDIR /opt\n",
+    );
+    const layer = await ensureLayerImage({
+      backend: fake.backend,
+      baseImageId: BASE_ID,
+      config: configWith({ dockerfile }),
+      stateDir: await tempDir(),
+    });
+
+    expect(layer.built).toBe(true);
+  });
+
   it("tags the layer by its inputs hash and records it next to the base image", async () => {
     const fake = createFakeBackend();
     const stateDir = await tempDir();

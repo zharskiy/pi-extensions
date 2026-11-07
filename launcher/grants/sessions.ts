@@ -83,3 +83,6 @@ export const endSession = (stateDir: string, input: EndSessionInput): Promise<nu
 
     return remaining;
   });
+
+export const withRepoSessionLock = <T>(stateDir: string, repoHash: string, action: () => Promise<T>) =>
+  withFileLock(lockFile(stateDir, repoHash), action);

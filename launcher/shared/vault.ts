@@ -1,12 +1,12 @@
-import { readFile } from "node:fs/promises";
+import { readFile, rename } from "node:fs/promises";
 import { writeFileAtomic } from "./atomic-write.ts";
 import { withFileLock } from "./file-lock.ts";
 import { placeholderFor } from "./placeholder.ts";
 import { stateLayout } from "./state-layout.ts";
 
-export type OAuthValue = string | number | boolean;
+type OAuthValue = string | number | boolean;
 
-export interface VaultEndpoints {
+interface VaultEndpoints {
   issuer: string;
   authorizationEndpoint: string;
   tokenEndpoint: string;
@@ -91,10 +91,6 @@ export type OAuthOpenReply =
   | { ok: true; flow: string; port: number; path: string }
   | { ok: false; error: string };
 
-export interface OAuthFlowQuery {
-  flow: string;
-}
-
 export type OAuthCallbackReply =
   | { status: "ready"; query: string }
   | { status: "pending" }
@@ -124,7 +120,7 @@ export const syntheticExpiresIn = (remainingSeconds: number) =>
 const isEntry = (value: unknown): value is VaultEntry =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-const parseStore = (text: string | undefined): VaultStore => {
+const parseStore = (text: string | undefined): VaultStore | undefined => {
   try {
     const parsed: unknown = text === undefined || text.trim() === "" ? {} : JSON.parse(text);
 
@@ -132,25 +128,54 @@ const parseStore = (text: string | undefined): VaultStore => {
       ? Object.fromEntries(
           Object.entries(parsed).filter((pair): pair is [string, VaultEntry] => isEntry(pair[1])),
         )
-      : {};
+      : undefined;
   } catch {
-    return {};
+    return undefined;
   }
 };
 
-const loadStore = async (path: string) => parseStore(await readFile(path, "utf8").catch(() => undefined));
+const moveAside = async (path: string) => {
+  const now = new Date();
+  const aside = `${path}.corrupt-${now.getTime()}`;
+  const moved = await rename(path, aside).then(
+    () => true,
+    () => false,
+  );
+
+  if (moved) {
+    process.stderr.write(
+      `${now.toISOString()} pi-sandbox: ${path} did not parse; moved it to ${aside} and started an empty store\n`,
+    );
+  }
+};
+
+export const loadVaultStore = async (path: string, options: { forWrite: boolean }): Promise<VaultStore> => {
+  const store = parseStore(await readFile(path, "utf8").catch(() => undefined));
+
+  if (store !== undefined) {
+    return store;
+  }
+
+  if (options.forWrite) {
+    await moveAside(path);
+  }
+
+  return {};
+};
 
 export const readVaultStore = (stateDir: string): Promise<VaultStore> => {
   const layout = stateLayout(stateDir);
 
-  return withFileLock(layout.mcpAuthStoreLock, () => loadStore(layout.mcpAuthStore));
+  return withFileLock(layout.mcpAuthStoreLock, () =>
+    loadVaultStore(layout.mcpAuthStore, { forWrite: false }),
+  );
 };
 
 export const writeVaultEntry = (stateDir: string, key: string, entry: VaultEntry | null): Promise<void> => {
   const layout = stateLayout(stateDir);
 
   return withFileLock(layout.mcpAuthStoreLock, async () => {
-    const current = await loadStore(layout.mcpAuthStore);
+    const current = await loadVaultStore(layout.mcpAuthStore, { forWrite: true });
     const { [key]: _replaced, ...others } = current;
     const next = entry === null ? others : { ...others, [key]: entry };
 

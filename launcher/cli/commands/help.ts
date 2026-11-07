@@ -14,7 +14,7 @@ const USAGE = [
   "  pi sandbox egress revoke <host[:port]> [--user]",
   "  pi sandbox egress list [--denied]   active grants, or the hosts the proxy blocked",
   "  pi sandbox gc                       remove stopped containers, idle relays and idle proxies",
-  "  pi sandbox reset [--volumes]        stop and remove this repo's container",
+  "  pi sandbox reset [--volumes]        stop and remove this repo's container (--volumes: caches, older sandbox-only sessions)",
   "  pi sandbox doctor                   preflight and smoke checks, one line each",
   `  pi sandbox migrate --to <backend>   move the volumes to another backend (${BACKEND_NAMES.join(", ")})`,
   "  pi sandbox --version                print the launcher version",

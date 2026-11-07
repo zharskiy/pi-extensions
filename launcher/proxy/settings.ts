@@ -80,6 +80,7 @@ export const proxySettings = (config: SandboxConfig, cap: EgressCap = {}): Proxy
       deny: sorted(config.egress.deny ?? []),
       credentialHosts: sorted([...new Set(rules.map(ruleHost))]),
       ...(gateway === undefined ? {} : { gatewayHost: gateway.host, gatewayPort: gateway.port }),
+      ...(cap.grants === undefined ? {} : { grantCap: sorted(cap.grants) }),
     },
     ...(gateway === undefined ? {} : { gateway }),
     credentials: legacyCredentials(config.credentials),

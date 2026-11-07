@@ -57,7 +57,7 @@ interface FakeMount {
 interface CreateBody {
   Image: string;
   Labels?: Record<string, string>;
-  HostConfig?: { Mounts?: FakeMount[] };
+  HostConfig?: { Mounts?: FakeMount[]; NetworkMode?: string };
 }
 
 interface FakeContainer {
@@ -261,6 +261,10 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
 
     containers.set(id, { Id: id, Name: name, State: "created", body: spec });
 
+    const mode = spec.HostConfig?.NetworkMode ?? "";
+
+    networks.get(mode)?.connected.push({ container: id, address: `10.89.0.${100 + containers.size}` });
+
     volumeMounts(containers.get(id) as FakeContainer).forEach((mount) => {
       volumes.set(mount.Source, volumes.get(mount.Source) ?? EMPTY_TAR);
     });
@@ -295,6 +299,10 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
     }
 
     containers.delete(container.Id);
+
+    networks.forEach((network) => {
+      network.connected = network.connected.filter((entry) => entry.container !== container.Id);
+    });
 
     return { status: 204 };
   });
@@ -407,12 +415,44 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
     return { status: 200 };
   };
 
+  const disconnectNetwork = ({ match, body }: RouteRequest): RouteResult => {
+    const network = networks.get(match[1] ?? "");
+    const request = parsed<{ Container: string }>(body);
+
+    if (network === undefined) {
+      return notFound(`network ${match[1]} not found`);
+    }
+
+    network.connected = network.connected.filter((entry) => entry.container !== request.Container);
+
+    return { status: 200 };
+  };
+
+  const removeNetwork = ({ match }: RouteRequest): RouteResult => {
+    const network = networks.get(match[1] ?? "");
+
+    if (network === undefined) {
+      return notFound(`network ${match[1]} not found`);
+    }
+
+    if (network.connected.length > 0) {
+      return conflict(`network ${match[1]} has active endpoints`);
+    }
+
+    networks.delete(match[1] ?? "");
+
+    return { status: 204 };
+  };
+
   const networkJson = (network: FakeNetwork) => ({
     Name: network.body.Name,
     Internal: network.body.Internal ?? false,
     Labels: network.body.Labels ?? {},
     Containers: Object.fromEntries(
-      network.connected.map(({ container, address }) => [container, { IPv4Address: `${address}/24` }]),
+      network.connected.map(({ container, address }) => [
+        container,
+        { Name: findContainer(container)?.Name ?? "", IPv4Address: `${address}/24` },
+      ]),
     ),
   });
 
@@ -429,8 +469,26 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
           : { status: 200, json: networkJson(network) };
       },
     },
+    {
+      method: "GET",
+      pattern: /^\/networks$/,
+      handle: ({ query }) => {
+        const wanted = (JSON.parse(query.get("filters") ?? "{}") as { label?: string[] }).label ?? [];
+        const listed = [...networks.values()].filter((network) =>
+          wanted.every((filter) => {
+            const [key = "", ...value] = filter.split("=");
+
+            return network.body.Labels?.[key] === value.join("=");
+          }),
+        );
+
+        return { status: 200, json: listed.map((network) => ({ Name: network.body.Name })) };
+      },
+    },
     { method: "POST", pattern: /^\/networks\/create$/, handle: createNetwork },
     { method: "POST", pattern: /^\/networks\/([^/]+)\/connect$/, handle: connectNetwork },
+    { method: "POST", pattern: /^\/networks\/([^/]+)\/disconnect$/, handle: disconnectNetwork },
+    { method: "DELETE", pattern: /^\/networks\/([^/]+)$/, handle: removeNetwork },
     { method: "GET", pattern: /^\/_ping$/, handle: () => ({ status: 200, raw: "OK" }) },
     {
       method: "GET",

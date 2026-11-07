@@ -16,13 +16,13 @@ export interface SecretResolverDeps {
   now: () => number;
   piCommand: string[];
   mcpAuthDir: string;
-  envSecrets: () => ReadonlyMap<string, string>;
+  envSecrets: (repoHash: string | undefined) => Promise<ReadonlyMap<string, string>>;
 }
 
 export type SecretResult = { ok: true; value: string; expiresAt?: number } | { ok: false; reason: string };
 
 export interface SecretResolver {
-  resolve(key: string, ref: SecretRef): Promise<SecretResult>;
+  resolve(key: string, ref: SecretRef, repoHash?: string): Promise<SecretResult>;
   invalidate(key: string): void;
 }
 
@@ -62,7 +62,7 @@ export const createSecretResolver = (deps: SecretResolverDeps): SecretResolver =
     });
   };
 
-  const load = (key: string, ref: SecretRef) => async (options: SecretLoadOptions) => {
+  const load = (key: string, ref: SecretRef, repoHash?: string) => async (options: SecretLoadOptions) => {
     if ("command" in ref) {
       return commandSecret({
         key,
@@ -86,19 +86,19 @@ export const createSecretResolver = (deps: SecretResolverDeps): SecretResolver =
       return fileSecret(key, ref, deps.home);
     }
 
-    return envSecret(key, deps.envSecrets());
+    return envSecret(key, await deps.envSecrets(repoHash));
   };
 
-  const fetch = (key: string, ref: SecretRef) => {
+  const fetch = (key: string, ref: SecretRef, repoHash?: string) => {
     if ("env" in ref || "file" in ref) {
-      return load(key, ref)({ forced: true });
+      return load(key, ref, repoHash)({ forced: true });
     }
 
     return cache.get(cacheKey(key, ref), load(key, ref));
   };
 
-  const resolve = async (key: string, ref: SecretRef) =>
-    fetch(key, ref).then(success, (error: unknown) => failure(key, ref, error));
+  const resolve = async (key: string, ref: SecretRef, repoHash?: string) =>
+    fetch(key, ref, repoHash).then(success, (error: unknown) => failure(key, ref, error));
 
   return { resolve, invalidate };
 };

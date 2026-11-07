@@ -1,30 +1,14 @@
-import { readFile } from "node:fs/promises";
 import {
+  loadVaultStore,
   readVaultStore,
   stateLayout,
   type VaultEntry,
   type VaultServer,
-  type VaultStore,
   withFileLock,
   writeFileAtomic,
 } from "../../shared/index.ts";
 
 const PRIVATE_MODE = 0o600;
-
-const isObject = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
-
-const parseStore = (text: string | undefined): VaultStore => {
-  try {
-    const parsed: unknown = text === undefined || text.trim() === "" ? {} : JSON.parse(text);
-
-    return isObject(parsed)
-      ? (Object.fromEntries(Object.entries(parsed).filter(([, entry]) => isObject(entry))) as VaultStore)
-      : {};
-  } catch {
-    return {};
-  }
-};
 
 export const vaultKey = (server: string, url: string) =>
   `mcp__${server.replaceAll("-", "_")}|${new URL(url).href}`;
@@ -42,7 +26,7 @@ export const updateStoreEntry = (
   const layout = stateLayout(stateDir);
 
   return withFileLock(layout.mcpAuthStoreLock, async () => {
-    const store = parseStore(await readFile(layout.mcpAuthStore, "utf8").catch(() => undefined));
+    const store = await loadVaultStore(layout.mcpAuthStore, { forWrite: true });
     const next = update(store[key]);
 
     if (next === undefined) {

@@ -5,10 +5,10 @@ import { deriveHeaders } from "./headers.ts";
 import { isJsonObject, objectOr } from "./json.ts";
 import { type DeriveContext, mergeSections, placeholderOf, rulesFor, type Section } from "./rules.ts";
 import type { DeriveVault, JsonObject } from "./types.ts";
-import { hasUrlPassword, stripUserinfo } from "./userinfo.ts";
+import { hasQueryCredential, hasUrlPassword, stripUserinfo } from "./userinfo.ts";
 import { vaultCandidate } from "./vault.ts";
 
-type ServerSection = Section<[string, unknown]> & { vault?: VaultServer };
+type ServerSection = Section<[string, unknown]> & { vault?: VaultServer; dropped?: boolean };
 
 export interface McpDeriveOptions {
   signedIn: string[];
@@ -160,12 +160,68 @@ const httpServer = (
   };
 };
 
-const isSecretEnvValue = (variable: string, value: unknown) =>
-  typeof value === "string" && (value.includes("${") || value.startsWith("!") || isSecretName(variable));
+const hasUrlUserinfo = (value: string) => {
+  try {
+    const url = new URL(value);
 
-const stdioServer = (context: DeriveContext, name: string, server: JsonObject): ServerSection => {
+    return url.username !== "" || url.password !== "";
+  } catch {
+    return false;
+  }
+};
+
+const isSecretEnvValue = (variable: string, value: unknown) =>
+  typeof value === "string" &&
+  (value.includes("${") || value.startsWith("!") || isSecretName(variable) || hasUrlUserinfo(value));
+
+const FLAG_WITH_VALUE = /^(--?[A-Za-z0-9][A-Za-z0-9_.-]*)=(.*)$/s;
+
+const placeholderNotice = (name: string, label: string) =>
+  `mcp ${name}: ${label} is a placeholder in the sandbox; add credentials.rules for the host it calls`;
+
+const stdioArg = (context: DeriveContext, name: string, arg: unknown, index: number) => {
+  if (typeof arg !== "string") {
+    return { value: arg, notices: [] };
+  }
+
+  const placeholder = placeholderOf(context, `mcp:${name}:arg:${index}`);
+  const flag = FLAG_WITH_VALUE.exec(arg);
+  const flagName = flag?.[1] ?? "";
+
+  if (flag !== null && isSecretName(flagName.replace(/^-+/, ""))) {
+    return { value: `${flagName}=${placeholder}`, notices: [placeholderNotice(name, flagName)] };
+  }
+
+  return hasUrlUserinfo(flag?.[2] ?? arg)
+    ? {
+        value: flag === null ? placeholder : `${flagName}=${placeholder}`,
+        notices: [placeholderNotice(name, `args[${index}]`)],
+      }
+    : { value: arg, notices: [] };
+};
+
+const stdioArgs = (
+  context: DeriveContext,
+  name: string,
+  server: JsonObject,
+): { server: JsonObject; notices: string[] } => {
+  if (!Array.isArray(server.args)) {
+    return { server, notices: [] };
+  }
+
+  const args = server.args.map((arg, index) => stdioArg(context, name, arg, index));
+
+  return {
+    server: { ...server, args: args.map((arg) => arg.value) },
+    notices: args.flatMap((arg) => arg.notices),
+  };
+};
+
+const stdioServer = (context: DeriveContext, name: string, original: JsonObject): ServerSection => {
+  const { server, notices: argNotices } = stdioArgs(context, name, original);
+
   if (!isJsonObject(server.env)) {
-    return { value: [name, server], rules: [], notices: [] };
+    return { value: [name, server], rules: [], notices: argNotices };
   }
 
   const entries = Object.entries(server.env);
@@ -182,10 +238,7 @@ const stdioServer = (context: DeriveContext, name: string, server: JsonObject): 
   return {
     value: [name, { ...server, env }],
     rules: [],
-    notices: secret.map(
-      (variable) =>
-        `mcp ${name}: ${variable} is a placeholder in the sandbox; add credentials.rules for the host it calls`,
-    ),
+    notices: [...argNotices, ...secret.map((variable) => placeholderNotice(name, variable))],
   };
 };
 
@@ -197,6 +250,15 @@ const serverSection = (
 ): ServerSection => {
   if (!isJsonObject(server)) {
     return { value: [name, server], rules: [], notices: [] };
+  }
+
+  if (isHttpServer(server) && hasQueryCredential(server.url)) {
+    return {
+      value: [name, undefined],
+      rules: [],
+      notices: [`mcp ${name}: the url carries a credential in its query string; add a header rule instead`],
+      dropped: true,
+    };
   }
 
   if (isHttpServer(server)) {
@@ -212,12 +274,12 @@ export const deriveMcp = (context: DeriveContext, mcp: JsonObject, options: McpD
   const sections = Object.entries(objectOr(mcp.mcpServers)).map(([name, server]) =>
     serverSection(context, name, server, options),
   );
-  const merged = mergeSections(sections);
+  const merged = mergeSections(sections.filter((section) => section.dropped !== true));
 
   return {
     value: { ...mcp, mcpServers: Object.fromEntries(merged.values) },
+    notices: sections.flatMap((section) => section.notices),
     rules: merged.rules,
-    notices: merged.notices,
     vault: sections.flatMap((section) => (section.vault === undefined ? [] : [section.vault])),
   };
 };

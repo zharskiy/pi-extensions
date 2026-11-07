@@ -51,6 +51,14 @@ export type StartResult = { ok: true; flow: Flow } | { ok: false; status: number
 
 const LISTEN_HOST = "127.0.0.1";
 
+const parseUrl = (target: string | undefined) => {
+  try {
+    return new URL(target ?? "/", `http://${LISTEN_HOST}`);
+  } catch {
+    return undefined;
+  }
+};
+
 const FLOW_BYTES = 16;
 
 const TEXT = { "content-type": "text/plain; charset=utf-8", connection: "close" };
@@ -106,9 +114,9 @@ export const createFlows = (options: FlowOptions) => {
     url.searchParams.get("state") === live.flow.state;
 
   const handle = (live: Live, request: IncomingMessage, response: ServerResponse) => {
-    const url = new URL(request.url ?? "/", `http://${LISTEN_HOST}`);
+    const url = parseUrl(request.url);
 
-    if (!isCallback(live, request, url)) {
+    if (url === undefined || !isCallback(live, request, url)) {
       response.writeHead(400, TEXT).end("pi-sandbox: this is not the pending sign-in callback");
 
       return;

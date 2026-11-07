@@ -94,6 +94,30 @@ describe("decideConnect", () => {
   });
 });
 
+describe("denial hint under a grant cap", () => {
+  const capped: EgressPolicy = { ...policy, grantCap: ["*.corp.test", "tools.test:8443"] };
+
+  it("offers egress allow only for a host the cap still lets a grant reach", () => {
+    expect(decideConnect({ host: "api.corp.test", port: 443 }, capped)).toMatchObject({
+      reason: "pi-sandbox: api.corp.test is not allowed; run pi sandbox egress allow api.corp.test",
+    });
+    expect(decideConnect({ host: "tools.test", port: 8443 }, capped)).toMatchObject({
+      reason: "pi-sandbox: tools.test:8443 is not allowed; run pi sandbox egress allow tools.test:8443",
+    });
+  });
+
+  it("names the policy or org allowlist for a host outside the cap", () => {
+    expect(decideConnect({ host: "evil.test", port: 443 }, capped)).toEqual({
+      allowed: false,
+      rule: "egress.allow",
+      reason: "pi-sandbox: evil.test is outside the allowlist set by policy or org",
+    });
+    expect(decideConnect({ host: "tools.test", port: 443 }, capped)).toMatchObject({
+      reason: "pi-sandbox: tools.test is outside the allowlist set by policy or org",
+    });
+  });
+});
+
 describe("restrictedAddress", () => {
   it("passes public addresses and flags resolved private ones", () => {
     expect(restrictedAddress("93.184.216.34")).toBeUndefined();

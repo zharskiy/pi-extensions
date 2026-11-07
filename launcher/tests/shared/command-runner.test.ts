@@ -64,3 +64,14 @@ describe("createProcessRunner spawnInteractive", () => {
     );
   });
 });
+
+describe("createProcessRunner with a base env", () => {
+  it("starts children from the base env instead of the host env", async () => {
+    const script =
+      "process.stdout.write(JSON.stringify([process.env.BASE, process.env.EXTRA, process.env.HOME]))";
+    const isolated = createProcessRunner({ baseEnv: { BASE: "kept", PATH: process.env.PATH ?? "" } });
+    const result = await isolated.run(node, ["-e", script], { env: { EXTRA: "yes" } });
+
+    expect(JSON.parse(result.stdout)).toEqual(["kept", "yes", null]);
+  });
+});

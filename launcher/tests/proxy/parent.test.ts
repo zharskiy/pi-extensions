@@ -158,6 +158,53 @@ describe("parent proxy", () => {
     expect(parentRouteFor("none", { HTTPS_PROXY: "http://x:1" }, resolverWith(undefined))).toBeUndefined();
   });
 
+  it("gives up on a parent that accepts the connection but never answers the CONNECT", async () => {
+    const silent = createTcpServer((socket) => {
+      socket.on("data", () => undefined);
+    });
+
+    await listen(silent);
+
+    const route = parentRouteFor({ url: `http://127.0.0.1:${portOf(silent)}` }, {}, resolverWith(undefined));
+    const started = Date.now();
+    const outcome = await createDialer({
+      parent: route && { ...route, timeoutMs: 200 },
+      resolve: publicResolve,
+    })("api.example.test", 443, "public").catch((error: Error) => error.message);
+
+    await close(silent);
+
+    expect(outcome).toBe("the parent proxy did not answer in time");
+    expect(Date.now() - started).toBeLessThan(2_000);
+  });
+
+  it("asks for the parent credentials of the repository that dials", async () => {
+    const asked: Array<string | undefined> = [];
+    const resolver: SecretResolver = {
+      resolve: async (_key, _ref, repoHash) => {
+        asked.push(repoHash);
+
+        return repoHash === "a".repeat(64) ? { ok: true, value: "corp:pass" } : { ok: false, reason: "none" };
+      },
+      invalidate: () => undefined,
+    };
+    const route = parentRouteFor(
+      { url: `http://127.0.0.1:${portOf(state.parent)}`, auth: { env: "PARENT" } },
+      {},
+      resolver,
+    );
+    const dial = createDialer({ parent: route, resolve: publicResolve });
+    const socket = await dial("api.example.test", 443, "public", "a".repeat(64));
+    const other = await dial("api.example.test", 443, "public", "b".repeat(64)).catch(
+      (error: Error) => error,
+    );
+
+    socket.destroy();
+
+    expect(asked).toEqual(["a".repeat(64), "b".repeat(64)]);
+    expect(other).toBeInstanceOf(Error);
+  });
+
   it("honours noProxy entries", () => {
     expect(bypassesParent(["internal.test"], "internal.test")).toBe(true);
     expect(bypassesParent([".corp.test"], "git.corp.test")).toBe(true);

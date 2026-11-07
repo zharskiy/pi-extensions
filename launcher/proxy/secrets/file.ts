@@ -39,9 +39,11 @@ export const fileSecret = async (
 
   const value = pointerValue(parse(text), ref.pointer);
 
-  if (typeof value !== "string" || value === "") {
+  const trimmed = typeof value === "string" ? value.replace(/[\r\n]+$/, "") : "";
+
+  if (trimmed === "") {
     throw unavailable(`file secret for ${key}: ${path} has no string at ${ref.pointer}`);
   }
 
-  return { value };
+  return { value: trimmed };
 };

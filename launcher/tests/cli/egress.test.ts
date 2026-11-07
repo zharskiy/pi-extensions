@@ -70,7 +70,7 @@ describe("pi sandbox egress allow", () => {
     expect(harness.stdout()).toBe("allowed git.example.test:8443 for every repository permanently\n");
   });
 
-  it("keys the default session grant to the newest live pi session of the repository", async () => {
+  it("outside a sandbox session, grants the host to every live pi session of the repository and says so", async () => {
     const harness = await harnessWith();
 
     await liveSession(harness, "1111111111111111", 1);
@@ -78,10 +78,39 @@ describe("pi sandbox egress allow", () => {
     await liveSession(harness, LAUNCH, 2);
 
     expect(await run(["sandbox", "egress", "allow", "docs.example.test"], harness.deps)).toBe(0);
-    expect((await readGrants(harness.stateDir))[0]).toMatchObject({
-      launchId: LAUNCH,
-      expiresAt: NOW + 12 * HOUR,
+
+    const grants = await readGrants(harness.stateDir);
+
+    expect(grants.map((grant) => grant.launchId).sort()).toEqual([LAUNCH, "1111111111111111"]);
+    expect(grants.every((grant) => grant.expiresAt === NOW + 12 * HOUR)).toBe(true);
+    expect(harness.stdout()).toContain(
+      "the grant applies to each of the 2 running pi sessions of this repository",
+    );
+  });
+
+  it("refuses a host outside the policy allowlist, naming the layer, and stores nothing", async () => {
+    const harness = await harnessWith();
+
+    await harness.writeJson(harness.policyFile, { egress: { allow: ["*.example.test"] } });
+
+    expect(await run(["sandbox", "egress", "allow", "evil.test", "--hours", "1"], harness.deps)).toBe(1);
+    expect(harness.stderr()).toContain(
+      "pi-sandbox: evil.test is outside the allowlist set by policy; grants cannot add it",
+    );
+    expect(await run(["sandbox", "egress", "allow", "docs.example.test", "--hours", "1"], harness.deps)).toBe(
+      0,
+    );
+    expect((await readGrants(harness.stateDir)).map((grant) => grant.host)).toEqual(["docs.example.test"]);
+  });
+
+  it("lets a policy that opts into grants keep its allowlist from capping them", async () => {
+    const harness = await harnessWith();
+
+    await harness.writeJson(harness.policyFile, {
+      egress: { allow: ["*.example.test"], grants: { enabled: true } },
     });
+
+    expect(await run(["sandbox", "egress", "allow", "other.test", "--hours", "1"], harness.deps)).toBe(0);
   });
 
   it("keys the session grant to PI_SANDBOX_LAUNCH_ID when set", async () => {

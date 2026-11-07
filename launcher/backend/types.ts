@@ -38,6 +38,10 @@ export interface ContainerSpec {
   sshAgent?: { guestSocket: string };
 }
 
+export interface RemoveContainerOptions {
+  keepNetwork?: boolean;
+}
+
 export interface TerminalSize {
   columns: number;
   rows: number;
@@ -96,12 +100,18 @@ export interface Backend {
   createContainer(spec: ContainerSpec): Promise<{ id: string }>;
   startContainer(id: string): Promise<void>;
   stopContainer(id: string, timeoutSeconds?: number): Promise<void>;
-  removeContainer(id: string): Promise<void>;
+  removeContainer(id: string, options?: RemoveContainerOptions): Promise<void>;
   exec(spec: ExecSpec, io: ExecIo): Promise<number>;
   ensureVolume(name: string): Promise<void>;
   removeVolume(name: string): Promise<void>;
   exportVolume(name: string, tarPath: string, imageId: string): Promise<void>;
   importVolume(name: string, tarPath: string, imageId: string): Promise<void>;
-  prepareProxyRoute(hostPort: number, policyHash: string, imageId: string): Promise<ProxyRoute>;
+  prepareProxyRoute(
+    hostPort: number,
+    policyHash: string,
+    imageId: string,
+    repoHash?: string,
+  ): Promise<ProxyRoute>;
+  pruneNetworks(keepRepoHashes: string[]): Promise<string[]>;
   status(): Promise<Record<string, string>>;
 }

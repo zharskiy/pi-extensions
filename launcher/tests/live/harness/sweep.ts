@@ -15,7 +15,7 @@ export interface Finding {
 
 const FILESYSTEM = "tar -cf - --exclude=./proc --exclude=./sys --exclude=./dev -C / . 2>/dev/null; true";
 
-const ENVIRONMENT = "env; printf '\\n'; tr '\\000' '\\n' < /proc/1/environ";
+const ENVIRONMENT = "env; printf '\\n'; cat /proc/[0-9]*/environ 2>/dev/null | tr '\\000' '\\n'; true";
 
 const BUILD_CONTEXT = /^(build|layer)-/;
 
@@ -83,7 +83,7 @@ const filesUnder = async (dir: string): Promise<string[]> => {
   return nested.flat();
 };
 
-export const buildContextFindings = async (stateDir: string, secrets: Secrets): Promise<Finding[]> => {
+const buildContextFindings = async (stateDir: string, secrets: Secrets): Promise<Finding[]> => {
   const entries = await readdir(stateDir).catch(() => [] as string[]);
   const contexts = entries.filter((entry) => BUILD_CONTEXT.test(entry)).map((entry) => join(stateDir, entry));
   const files = (await Promise.all(contexts.map(filesUnder))).flat();

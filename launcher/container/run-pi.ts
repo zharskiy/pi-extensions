@@ -34,8 +34,6 @@ const SIGNAL_EXIT_BASE = 128;
 
 const GRACE_MS = 5000;
 
-const STOP_TIMEOUT_SECONDS = 2;
-
 const TTY_SIGNALS: NodeJS.Signals[] = ["SIGTERM", "SIGHUP"];
 
 const PIPE_SIGNALS: NodeJS.Signals[] = ["SIGINT", ...TTY_SIGNALS];
@@ -68,7 +66,7 @@ const withRawMode = async <T>(terminal: HostTerminal, action: () => Promise<T>) 
   }
 };
 
-const listenFor = (source: SignalSource, names: NodeJS.Signals[]) => {
+export const listenFor = (source: SignalSource, names: NodeJS.Signals[]) => {
   const stops: Array<() => void> = [];
   const received = new Promise<NodeJS.Signals>((resolve) => {
     names.forEach((name) => {
@@ -120,7 +118,7 @@ const settleSignal = async (
   const ended = await endsWithin(running, input.graceMs ?? GRACE_MS);
 
   if (!ended) {
-    await input.backend.stopContainer(input.containerId, STOP_TIMEOUT_SECONDS).catch(() => undefined);
+    await quietExec(input, `kill -KILL "$(cat ${pidFile})"`);
   }
 
   return SIGNAL_EXIT_BASE + constants.signals[signal];

@@ -34,6 +34,8 @@ const PRIVATE_MODE = 0o600;
 
 const REFRESH_LOCK_WAIT_MS = 30_000;
 
+const REFRESH_ATTEMPTS = 2;
+
 const readJson = async (path: string) => {
   const text = await readFile(path, "utf8").catch(() => undefined);
 
@@ -143,19 +145,8 @@ const copyBack = async (deps: McpOAuthDeps, agentDir: string, name: string, repl
   );
 };
 
-const refreshOnce = async (deps: McpOAuthDeps, key: string, server: string, href: string, seen?: string) => {
-  const [file, ...args] = deps.piCommand;
-
-  if (file === undefined) {
-    throw unavailable(`mcpOAuth secret for ${key}: no pi command is configured`);
-  }
-
-  const current = tokenOf(storeEntry(await readStore(deps), server, href)?.entry);
-
-  if (current !== undefined && current.access !== seen && !needsRefresh(current, deps.now())) {
-    return;
-  }
-
+const runPi = async (deps: McpOAuthDeps, key: string, server: string, href: string, replaced?: string) => {
+  const [file = "", ...args] = deps.piCommand;
   const prepared = await prepareOneServerDir(deps, key, server, href);
 
   try {
@@ -166,16 +157,52 @@ const refreshOnce = async (deps: McpOAuthDeps, key: string, server: string, href
       })
       .catch(() => undefined);
 
-    await copyBack(deps, prepared.agentDir, prepared.name, current?.access);
+    await copyBack(deps, prepared.agentDir, prepared.name, replaced);
   } finally {
     await rm(prepared.root, { recursive: true, force: true });
   }
 };
 
+const stillExpired = (
+  before: { access: string } | undefined,
+  after: ReturnType<typeof tokenOf>,
+  now: number,
+) =>
+  before !== undefined &&
+  after?.access === before.access &&
+  after.expiresAt !== undefined &&
+  after.expiresAt <= now;
+
+const refreshOnce = async (
+  deps: McpOAuthDeps,
+  key: string,
+  target: { server: string; href: string; seen?: string },
+  attempts: number,
+): Promise<void> => {
+  if (deps.piCommand[0] === undefined) {
+    throw unavailable(`mcpOAuth secret for ${key}: no pi command is configured`);
+  }
+
+  const read = async () => tokenOf(storeEntry(await readStore(deps), target.server, target.href)?.entry);
+  const current = await read();
+
+  if (current !== undefined && current.access !== target.seen && !needsRefresh(current, deps.now())) {
+    return;
+  }
+
+  await runPi(deps, key, target.server, target.href, current?.access);
+
+  if (attempts > 1 && stillExpired(current, await read(), deps.now())) {
+    await refreshOnce(deps, key, target, attempts - 1);
+  }
+};
+
 const runRefresh = (deps: McpOAuthDeps, key: string, server: string, href: string, seen?: string) =>
-  withFileLock(layoutOf(deps).mcpAuthRefreshLock(server), () => refreshOnce(deps, key, server, href, seen), {
-    timeoutMs: REFRESH_LOCK_WAIT_MS,
-  });
+  withFileLock(
+    layoutOf(deps).mcpAuthRefreshLock(server),
+    () => refreshOnce(deps, key, { server, href, seen }, REFRESH_ATTEMPTS),
+    { timeoutMs: REFRESH_LOCK_WAIT_MS },
+  );
 
 export const createMcpOAuthSource = (deps: McpOAuthDeps) => {
   const queue = { tail: Promise.resolve() };

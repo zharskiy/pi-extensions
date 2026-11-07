@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ExecIo, ExecSpec } from "../../backend/index.ts";
@@ -130,6 +130,23 @@ describe("pi install and pi remove", () => {
 
     expect(await run(["install", join(harness.repoRoot, "ext")], harness.deps)).toBe(0);
     expect(await hostSettings(harness)).toEqual({ packages: [join(harness.repoRoot, "ext")] });
+  });
+
+  it("writes back a ~/ package under a ~/ extra read-only mount", async () => {
+    const volume = volumeBackend(installing(0));
+    const harness = await harnessWith({ adapters: () => [volume.fake.backend] });
+
+    await mkdir(join(harness.deps.home, "tools", "ext"), { recursive: true });
+
+    await harness.writeJson(harness.userConfigFile, { mounts: { extraReadOnly: ["~/tools"] } });
+
+    await harness.writeJson(join(harness.hostAgentDir, "settings.json"), { packages: [] });
+
+    harness.deps.env.HOME = harness.deps.home;
+
+    expect(await run(["install", "~/tools/ext"], harness.deps)).toBe(0);
+    expect(harness.stderr()).not.toContain("is a path inside the sandbox");
+    expect(await hostSettings(harness)).toEqual({ packages: ["~/tools/ext"] });
   });
 
   it("passes a project install with -l straight through", async () => {

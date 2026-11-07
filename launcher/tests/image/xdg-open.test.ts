@@ -104,10 +104,14 @@ const closedPort = async () => {
   return port;
 };
 
-const runShim = (args: string[], proxy?: string) =>
+const runShim = (args: string[], proxy?: string, extraEnv: Record<string, string> = {}) =>
   new Promise<{ code: number; stderr: string; stdout: string }>((resolve) => {
     const child = spawn(process.execPath, [SHIM, ...args], {
-      env: { PATH: process.env.PATH ?? "", ...(proxy === undefined ? {} : { HTTPS_PROXY: proxy }) },
+      env: {
+        PATH: process.env.PATH ?? "",
+        ...(proxy === undefined ? {} : { HTTPS_PROXY: proxy }),
+        ...extraEnv,
+      },
     });
     const stderr: Buffer[] = [];
     const stdout: Buffer[] = [];
@@ -158,6 +162,49 @@ describe("xdg-open shim", () => {
     expect(JSON.parse(fake.seen[0]?.body ?? "{}")).toEqual({ url: AUTHORIZE });
     expect(fake.seen.every((seen) => seen.authorization === BASIC)).toBe(true);
     expect(pi.seen).toEqual(["/callback?code=pi-sandbox-code-1&state=s1"]);
+  });
+
+  it("talks to the proxy and pi's listener directly even when the environment proxy is on", async () => {
+    const decoy: string[] = [];
+    const decoyPort = await listen((request, response) => {
+      decoy.push(`${request.method} ${request.url}`);
+
+      response.writeHead(403);
+
+      response.end();
+    });
+    const pi = await fakePi();
+    const fake = await fakeProxy((seen) =>
+      seen.url === ROUTES.open
+        ? { status: 200, body: { ok: true, flow: "f9", port: pi.port, path: "/callback" } }
+        : { status: CALLBACK_STATUS.ready, body: { query: "code=c9&state=s9" } },
+    );
+    const result = await runShim([AUTHORIZE], fake.proxy, {
+      NODE_USE_ENV_PROXY: "1",
+      HTTP_PROXY: `http://127.0.0.1:${decoyPort}`,
+      http_proxy: `http://127.0.0.1:${decoyPort}`,
+      NO_PROXY: "",
+    });
+
+    expect(result).toMatchObject({ code: 0, stderr: "" });
+    expect(decoy).toEqual([]);
+    expect(fake.seen.map((seen) => `${seen.method} ${seen.url}`)).toEqual([
+      `POST ${ROUTES.open}`,
+      `GET ${ROUTES.callback}?flow=f9`,
+    ]);
+    expect(pi.seen).toEqual(["/callback?code=c9&state=s9"]);
+  });
+
+  it("sends origin-form requests when the environment proxy is the sandbox proxy itself", async () => {
+    const fake = await fakeProxy(() => ({ status: 200 }));
+    const result = await runShim([CHECK_FLAG], fake.proxy, {
+      NODE_USE_ENV_PROXY: "1",
+      HTTP_PROXY: fake.proxy,
+      NO_PROXY: "",
+    });
+
+    expect(result.code).toBe(0);
+    expect(fake.seen.map((seen) => seen.url)).toEqual([HEALTH_ROUTE]);
   });
 
   it("cancels the flow when pi's listener is gone", async () => {

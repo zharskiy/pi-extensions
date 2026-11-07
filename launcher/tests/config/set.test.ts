@@ -27,6 +27,22 @@ describe("setConfigValue", () => {
     });
   });
 
+  it("keeps every value when several sets of the same file run at once", async () => {
+    const files = await createLayers();
+    const keys = ["resources.cpus", "resources.memoryGiB", "ssh.agent", "fallback"] as const;
+    const values = { "resources.cpus": 2, "resources.memoryGiB": 4, "ssh.agent": true, fallback: "host" };
+
+    await Promise.all(
+      keys.map((key) => setConfigValue({ layer: "user", key, value: values[key], env: files.env })),
+    );
+
+    expect(await readJson(files.userFile)).toEqual({
+      resources: { cpus: 2, memoryGiB: 4 },
+      ssh: { agent: true },
+      fallback: "host",
+    });
+  });
+
   it("creates the user file when missing", async () => {
     const files = await createLayers();
 

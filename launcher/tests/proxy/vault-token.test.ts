@@ -1,5 +1,6 @@
 import { gzipSync } from "node:zlib";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { createDialer } from "../../proxy/dial.ts";
 import type { SecretResolver, SecretResult } from "../../proxy/secrets/index.ts";
 import type { LauncherCa } from "../../proxy/tls-ca.ts";
 import { readVaultStore, type VaultEntry, writeVaultEntry } from "../../shared/index.ts";
@@ -344,6 +345,17 @@ describe("vault refresh", () => {
     expect(reply.status).toBe(503);
     expect(JSON.parse(reply.body)).toMatchObject({ error: "temporarily_unavailable" });
   });
+
+  it("answers with the stored placeholders when the host refresh failed but the token is still valid", async () => {
+    state.result = { ok: false, reason: "refresh failed" };
+
+    await writeVaultEntry(state.stateDir, KEY, signedInEntry(Date.now() + 40_000));
+
+    const reply = await postThrough(state.proxy, "auth.test", "/token", refreshForm);
+
+    expect(reply.status).toBe(200);
+    expect(JSON.parse(reply.body)).toMatchObject({ access_token: PLACEHOLDERS.access });
+  });
 });
 
 describe("vault client registration", () => {
@@ -434,5 +446,148 @@ describe("vault client registration", () => {
       client_secret: "real-secret",
       token_endpoint_auth_method: "client_secret_basic",
     });
+  });
+});
+
+describe("vault endpoints regardless of the request content type", () => {
+  const plainText = { "content-type": "text/plain" };
+
+  it("refuses a refresh placeholder sent to the token endpoint as text/plain without calling upstream", async () => {
+    const reply = await postThrough(
+      state.proxy,
+      "auth.test",
+      "/token",
+      `grant_type=refresh_token&refresh_token=${PLACEHOLDERS.refresh}`,
+      plainText,
+    );
+
+    expect(reply.status).toBe(400);
+    expect(JSON.parse(reply.body)).toMatchObject({ error: "invalid_request" });
+    expect(shared.upstream.calls).toEqual([]);
+  });
+
+  it("refuses a registration body that is not JSON without calling upstream", async () => {
+    const reply = await postThrough(state.proxy, "auth.test", "/register", "{}", plainText);
+
+    expect(reply.status).toBe(400);
+    expect(JSON.parse(reply.body)).toMatchObject({ error: "invalid_client_metadata" });
+    expect(shared.upstream.calls).toEqual([]);
+  });
+
+  it("refuses a token endpoint response that is not JSON", async () => {
+    shared.upstream.handler.current = (_call, response) => {
+      response.writeHead(200, { "content-type": "text/plain" });
+
+      response.end("access_token=real-access-token&token_type=Bearer");
+    };
+
+    const reply = await postThrough(state.proxy, "auth.test", "/token", "grant_type=client_credentials");
+
+    expect(reply.status).toBe(502);
+    expectNoRealValues(reply.body);
+  });
+
+  it("refuses a code exchange answer that is not JSON and ends the flow", async () => {
+    shared.upstream.handler.current = (_call, response) => {
+      response.writeHead(200, { "content-type": "application/x-www-form-urlencoded" });
+
+      response.end("access_token=real-access-token&token_type=Bearer");
+    };
+
+    const signedIn = await startSignIn(state.proxy);
+    const reply = await postThrough(state.proxy, "auth.test", "/token", exchangeForm(signedIn));
+    const again = await postThrough(state.proxy, "auth.test", "/token", exchangeForm(signedIn));
+
+    expect(reply.status).toBe(502);
+    expectNoRealValues(reply.body);
+    expect(again.status).toBe(400);
+    expect(await storedEntry()).toBeUndefined();
+  });
+
+  it("refuses an event-stream answer from the token endpoint", async () => {
+    shared.upstream.handler.current = (_call, response) => {
+      response.writeHead(200, { "content-type": "text/event-stream" });
+
+      response.end("data: access_token=real-access-token\n\n");
+    };
+
+    const reply = await postThrough(state.proxy, "auth.test", "/token", "grant_type=client_credentials");
+
+    expect(reply.status).toBe(502);
+    expectNoRealValues(reply.body);
+  });
+
+  it("refuses a registration answer that is not JSON", async () => {
+    shared.upstream.handler.current = (_call, response) => {
+      response.writeHead(201, { "content-type": "text/plain" });
+
+      response.end("client_id=c&client_secret=real-secret");
+    };
+
+    const reply = await postThrough(state.proxy, "auth.test", "/register", "{}", {
+      "content-type": "application/json",
+    });
+
+    expect(reply.status).toBe(502);
+    expectNoRealValues(reply.body);
+  });
+
+  it("refuses tokens in a text/plain answer to another form POST on a vault host", async () => {
+    shared.upstream.handler.current = (_call, response) => {
+      response.writeHead(200, { "content-type": "text/plain" });
+
+      response.end("access_token=real-access-token");
+    };
+
+    const reply = await postThrough(state.proxy, "mcp.test", "/other", "a=1");
+
+    expect(reply.status).toBe(400);
+    expectNoRealValues(reply.body);
+  });
+});
+
+describe("vault body limits", () => {
+  it("answers 413 to a token request body over 64 KiB", async () => {
+    const reply = await postThrough(state.proxy, "auth.test", "/token", `a=${"x".repeat(70 * 1024)}`);
+
+    expect(reply.status).toBe(413);
+    expect(JSON.parse(reply.body)).toEqual({ error: "pi-sandbox: request body too large" });
+    expect(reply.headers.connection).toBe("close");
+    expect(shared.upstream.calls).toEqual([]);
+  });
+
+  it("answers 502 to a token response over 1 MiB", async () => {
+    shared.upstream.handler.current = (_call, response) => {
+      response.writeHead(200, { "content-type": "application/json" });
+
+      response.end(JSON.stringify({ padding: "x".repeat(1024 * 1024 + 10) }));
+    };
+
+    const reply = await postThrough(state.proxy, "auth.test", "/token", "grant_type=client_credentials");
+
+    expect(reply.status).toBe(502);
+    expect(JSON.parse(reply.body)).toEqual({ error: "pi-sandbox: token response too large" });
+  });
+});
+
+describe("vault host behind a private address", () => {
+  it("refuses a vault host that resolves to a private address", async () => {
+    const stateDir = await createStateDir();
+    const local = await startVaultProxy({
+      stateDir,
+      ca: shared.ca,
+      upstream: shared.upstream,
+      resolver,
+      dial: createDialer({ overrides: new Map([["auth.test", "10.0.0.5"]]) }),
+    });
+    const reply = await postThrough(local, "auth.test", "/token", "grant_type=client_credentials");
+
+    await local.test.proxy.close();
+
+    await removeDir(stateDir);
+
+    expect(reply.status).toBe(502);
+    expect(reply.body).toContain("restricted addresses");
+    expect(shared.upstream.calls).toEqual([]);
   });
 });

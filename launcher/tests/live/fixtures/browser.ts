@@ -31,7 +31,7 @@ const lookupWith =
     callback(null, address, 4);
   };
 
-export const browserGet = (url: string, ca: string, resolveHost: Resolve = () => undefined) =>
+const browserGet = (url: string, ca: string, resolveHost: Resolve = () => undefined) =>
   new Promise<BrowserResponse>((resolve, reject) => {
     const target = new URL(url);
     const send = target.protocol === "https:" ? httpsRequest : httpRequest;

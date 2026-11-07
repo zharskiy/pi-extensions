@@ -1,5 +1,10 @@
 import { isAbsolute, resolve } from "node:path";
-import { type JsonObject, packageSourceKey, sourceOfEntry } from "../hostpi/index.ts";
+import {
+  type JsonObject,
+  packageSourceKey,
+  sourceOfEntry,
+  withoutSourceCredential,
+} from "../hostpi/index.ts";
 import { expandHome, isWithin, stableHash } from "../shared/index.ts";
 
 export interface HostSettingsContext {
@@ -67,12 +72,29 @@ const isMounted = (source: string, context: HostSettingsContext) => {
   return context.mountRoots.some((root) => isWithin(path, root));
 };
 
-const bakedEntry = (entry: unknown) =>
-  typeof entry === "string"
-    ? BAKED_EXTENSIONS_SOURCE
-    : { ...(entry as JsonObject), source: BAKED_EXTENSIONS_SOURCE };
+const withSource = (entry: unknown, source: string) =>
+  typeof entry === "string" ? source : { ...(entry as JsonObject), source };
 
-const hostPackage = (entry: unknown, context: HostSettingsContext) => {
+const bakedEntry = (entry: unknown) => withSource(entry, BAKED_EXTENSIONS_SOURCE);
+
+const withoutCredential = (entry: unknown) => {
+  const source = sourceOfEntry(entry);
+  const stripped = source === undefined ? undefined : withoutSourceCredential(source);
+
+  return stripped === undefined
+    ? { entry, notices: [] }
+    : {
+        entry: withSource(entry, stripped.source),
+        notices: [
+          `settings.json package ${stripped.host} carried a credential in its URL; it was removed inside the sandbox`,
+        ],
+      };
+};
+
+const placedPackage = (
+  entry: unknown,
+  context: HostSettingsContext,
+): { entry?: unknown; notice?: string } => {
   const source = sourceOfEntry(entry);
 
   if (source === undefined) {
@@ -92,6 +114,16 @@ const hostPackage = (entry: unknown, context: HostSettingsContext) => {
   return { entry };
 };
 
+const hostPackage = (original: unknown, context: HostSettingsContext) => {
+  const cleaned = withoutCredential(original);
+  const outcome = placedPackage(cleaned.entry, context);
+
+  return {
+    ...outcome,
+    notices: [...cleaned.notices, ...(outcome.notice === undefined ? [] : [outcome.notice])],
+  };
+};
+
 export const prepareHostSettings = (settings: JsonObject, context: HostSettingsContext) => {
   if (!Array.isArray(settings.packages)) {
     return { settings, notices: [] };
@@ -104,7 +136,7 @@ export const prepareHostSettings = (settings: JsonObject, context: HostSettingsC
       ...settings,
       packages: outcomes.flatMap((outcome) => ("entry" in outcome ? [outcome.entry] : [])),
     },
-    notices: outcomes.flatMap((outcome) => (outcome.notice === undefined ? [] : [outcome.notice])),
+    notices: outcomes.flatMap((outcome) => outcome.notices),
   };
 };
 

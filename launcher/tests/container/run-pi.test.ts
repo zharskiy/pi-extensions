@@ -248,7 +248,7 @@ describe("runPi on a signal", () => {
     expect(signals.listenerCount("SIGTERM")).toBe(0);
   });
 
-  it("stops the container only when pi does not end within the grace period after SIGHUP", async () => {
+  it("kills only the launch's pi, never the shared container, when pi ignores SIGHUP for the grace period", async () => {
     const { signals, host, fake, started } = signalled(false, false);
     const running = runPi({
       backend: fake.backend,
@@ -265,8 +265,15 @@ describe("runPi on a signal", () => {
     signals.emit("SIGHUP");
 
     expect(await running).toBe(129);
-    expect(fake.stops.map((stop) => stop.id)).toEqual(["c"]);
-    expect(scripts(fake.execs).at(-1)?.[2]).toMatch(/^rm -f \/tmp\/pi-sandbox-[0-9a-f]{16}\.pid$/);
+
+    const pidFile = pidFileOf(fake.execs[0]?.spec.command ?? []);
+
+    expect(fake.stops).toEqual([]);
+    expect(scripts(fake.execs)).toEqual([
+      ["sh", "-c", `kill -TERM "$(cat ${pidFile})"`],
+      ["sh", "-c", `kill -KILL "$(cat ${pidFile})"`],
+      ["sh", "-c", `rm -f ${pidFile}`],
+    ]);
   });
 
   it("handles SIGINT only without a tty, where it cannot reach pi as a keystroke", async () => {

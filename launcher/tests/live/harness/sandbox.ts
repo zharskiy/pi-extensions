@@ -32,16 +32,17 @@ export interface PiResult {
 export interface PiRun {
   done: Promise<PiResult>;
   output(): string;
+  stop(): void;
 }
 
-export interface AccessEntry {
+interface AccessEntry {
   host: string;
   decision: "allow" | "deny";
   rule: string;
   reason?: string;
 }
 
-export interface PiOptions {
+interface PiOptions {
   timeoutMs?: number;
   env?: Record<string, string>;
 }
@@ -77,7 +78,7 @@ const DEFAULT_TIMEOUT_MS = 540_000;
 
 const RELAY_NETWORK = "pi-sandbox";
 
-export const liveRoot = () => process.env.PI_SANDBOX_LIVE_DIR ?? join(homedir(), ".cache", "pi-sandbox-live");
+const liveRoot = () => process.env.PI_SANDBOX_LIVE_DIR ?? join(homedir(), ".cache", "pi-sandbox-live");
 
 export const liveEnabled = process.env.PI_SANDBOX_LIVE === "1" && engineSocket !== undefined;
 
@@ -256,7 +257,13 @@ export const createLiveSandbox = async (name: string): Promise<LiveSandbox> => {
       });
     });
 
-    return { done, output: () => Buffer.concat([...stdout, ...stderr]).toString("utf8") };
+    return {
+      done,
+      output: () => Buffer.concat([...stdout, ...stderr]).toString("utf8"),
+      stop: () => {
+        child.kill("SIGTERM");
+      },
+    };
   };
 
   const exec = async (script: string): Promise<PiResult> => {
@@ -301,7 +308,14 @@ export const createLiveSandbox = async (name: string): Promise<LiveSandbox> => {
 
     await Promise.all(volumes.map((volume) => removeVolume(volume.Name)));
 
-    const network = (await listNetworks()).find((candidate) => candidate.Name === RELAY_NETWORK);
+    const networks = await listNetworks();
+    const repoNetworks = networks.filter(
+      (candidate) => candidate.Name === `${RELAY_NETWORK}-${repoHash.slice(0, 12)}`,
+    );
+
+    await Promise.all(repoNetworks.map((candidate) => removeNetwork(candidate.Id)));
+
+    const network = networks.find((candidate) => candidate.Name === RELAY_NETWORK);
     const attached = network === undefined ? [] : await listContainers({ "pi-sandbox.relay": "true" });
 
     if (network !== undefined && !networkExisted && attached.length === 0) {

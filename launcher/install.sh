@@ -347,13 +347,17 @@ smoke() {
   smoke_dir=$(mktemp -d "$smoke_parent/pi-sandbox-smoke.XXXXXX") || return 1
   smoke_status=0
 
+  smoke_real=$(cd "$smoke_dir" && pwd -P) || return 1
+  smoke_sessions="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/sessions"
+  smoke_slug="--$(printf '%s' "$smoke_real" | sed 's|^/||; s|[/\\:]|-|g')--"
   git -C "$smoke_dir" init -q || smoke_status=1
 
   if [ "$smoke_status" -eq 0 ]; then
-    smoke_output=$(cd "$smoke_dir" && PATH="$bin_dir:$PATH" "$shim" sandbox doctor 2>&1) || smoke_status=1
-    (cd "$smoke_dir" && PATH="$bin_dir:$PATH" "$shim" sandbox reset --volumes >/dev/null 2>&1) || true
+    smoke_output=$(cd "$smoke_dir" && PATH="$bin_dir:$PATH" PI_SANDBOX_SESSIONS_HOST=off "$shim" sandbox doctor 2>&1) || smoke_status=1
+    (cd "$smoke_dir" && PATH="$bin_dir:$PATH" PI_SANDBOX_SESSIONS_HOST=off "$shim" sandbox reset --volumes >/dev/null 2>&1) || true
   fi
 
+  rmdir "$smoke_sessions/$smoke_slug" 2>/dev/null || true
   rm -rf "$smoke_dir"
 
   return "$smoke_status"

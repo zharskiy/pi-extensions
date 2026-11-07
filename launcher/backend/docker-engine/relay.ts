@@ -11,10 +11,18 @@ interface RelayInspect {
 interface NetworkInspect {
   Internal?: boolean;
   Labels?: Record<string, string> | null;
-  Containers?: Record<string, { IPv4Address?: string }> | null;
+  Containers?: Record<string, { Name?: string; IPv4Address?: string }> | null;
+}
+
+interface NetworkSummary {
+  Name?: string;
 }
 
 const RELAY_NETWORK = "pi-sandbox";
+
+const REPO_LABEL = "pi-sandbox.repo-hash";
+
+const SHORT_REPO_HASH = 12;
 
 const RELAY_PREFIX = "pi-sandbox-relay-";
 
@@ -32,7 +40,13 @@ const RELAY_LISTEN_PORT = 3128;
 
 const DOCKER_HOST_GATEWAY = "host.docker.internal:host-gateway";
 
-const NETWORK_HINT = "remove it (docker network rm pi-sandbox) so the launcher can create its own";
+const networkHint = (name: string) =>
+  `remove it (docker network rm ${name}) so the launcher can create its own`;
+
+const PRUNABLE_NETWORK = /^pi-sandbox(?:-([0-9a-f]{12}))?$/;
+
+const repoNetworkName = (repoHash: string | undefined) =>
+  repoHash === undefined ? RELAY_NETWORK : `${RELAY_NETWORK}-${repoHash.slice(0, SHORT_REPO_HASH)}`;
 
 const relayName = (policyHash: string) => `${RELAY_PREFIX}${policyHash.slice(0, 8)}`;
 
@@ -44,32 +58,29 @@ const relayLabels = (hostPort: number, policyHash: string) => ({
 });
 
 export const createRelayOperations = (client: EngineClient, hostAlias: string) => {
-  const inspectNetwork = async () => {
-    const response = await client.call({ method: "GET", path: `/networks/${segment(RELAY_NETWORK)}` }, [404]);
+  const inspectNetwork = async (name: string) => {
+    const response = await client.call({ method: "GET", path: `/networks/${segment(name)}` }, [404]);
 
     return response.status === 404
       ? undefined
       : (JSON.parse(response.body.toString("utf8")) as NetworkInspect);
   };
 
-  const assertManaged = (network: NetworkInspect) => {
+  const assertManaged = (name: string, network: NetworkInspect) => {
     if (network.Internal !== true) {
-      throw new LauncherError(`network ${RELAY_NETWORK} exists but is not internal`, NETWORK_HINT);
+      throw new LauncherError(`network ${name} exists but is not internal`, networkHint(name));
     }
 
     if (network.Labels?.[MANAGED_LABEL] !== "true") {
-      throw new LauncherError(
-        `network ${RELAY_NETWORK} exists but is not managed by pi-sandbox`,
-        NETWORK_HINT,
-      );
+      throw new LauncherError(`network ${name} exists but is not managed by pi-sandbox`, networkHint(name));
     }
   };
 
-  const ensureNetwork = async () => {
-    const existing = await inspectNetwork();
+  const ensureNetwork = async (name: string, repoHash: string | undefined) => {
+    const existing = await inspectNetwork(name);
 
     if (existing !== undefined) {
-      assertManaged(existing);
+      assertManaged(name, existing);
 
       return;
     }
@@ -77,7 +88,20 @@ export const createRelayOperations = (client: EngineClient, hostAlias: string) =
     await client.call({
       method: "POST",
       path: "/networks/create",
-      json: { Name: RELAY_NETWORK, Driver: "bridge", Internal: true, Labels: { [MANAGED_LABEL]: "true" } },
+      json: {
+        Name: name,
+        Driver: "bridge",
+        Internal: true,
+        Labels: { [MANAGED_LABEL]: "true", ...(repoHash === undefined ? {} : { [REPO_LABEL]: repoHash }) },
+      },
+    });
+  };
+
+  const connect = async (network: string, containerId: string) => {
+    await client.call({
+      method: "POST",
+      path: `/networks/${segment(network)}/connect`,
+      json: { Container: containerId },
     });
   };
 
@@ -113,20 +137,12 @@ export const createRelayOperations = (client: EngineClient, hostAlias: string) =
       },
     });
 
-    await client.call({
-      method: "POST",
-      path: `/networks/${segment(RELAY_NETWORK)}/connect`,
-      json: { Container: created.Id },
-    });
-
     await startRelay(created.Id);
 
     return created.Id;
   };
 
   const ensureRelay = async (hostPort: number, policyHash: string, imageId: string) => {
-    await ensureNetwork();
-
     const relay = await inspectRelay(relayName(policyHash));
 
     if (relay !== undefined && matches(relay, relayLabels(hostPort, policyHash))) {
@@ -147,12 +163,17 @@ export const createRelayOperations = (client: EngineClient, hostAlias: string) =
     return createRelay(hostPort, policyHash, imageId);
   };
 
-  const relayAddress = async (relayId: string) => {
-    const network = await inspectNetwork();
-    const address = network?.Containers?.[relayId]?.IPv4Address?.split("/")[0];
+  const relayAddress = async (network: string, relayId: string) => {
+    const before = await inspectNetwork(network);
+
+    if (before?.Containers?.[relayId] === undefined) {
+      await connect(network, relayId);
+    }
+
+    const address = (await inspectNetwork(network))?.Containers?.[relayId]?.IPv4Address?.split("/")[0];
 
     if (address === undefined || address === "") {
-      throw new LauncherError(`relay ${relayId.slice(0, 12)} has no address on network ${RELAY_NETWORK}`);
+      throw new LauncherError(`relay ${relayId.slice(0, 12)} has no address on network ${network}`);
     }
 
     return address;
@@ -162,14 +183,73 @@ export const createRelayOperations = (client: EngineClient, hostAlias: string) =
     hostPort: number,
     policyHash: string,
     imageId: string,
+    repoHash?: string,
   ): Promise<ProxyRoute> => {
+    const network = repoNetworkName(repoHash);
+
+    await ensureNetwork(network, repoHash);
+
     const relayId = await ensureRelay(hostPort, policyHash, imageId);
 
     return {
-      network: { kind: "internal", name: RELAY_NETWORK },
-      address: `${await relayAddress(relayId)}:${RELAY_LISTEN_PORT}`,
+      network: { kind: "internal", name: network },
+      address: `${await relayAddress(network, relayId)}:${RELAY_LISTEN_PORT}`,
     };
   };
 
-  return { prepareProxyRoute };
+  const removeNetwork = async (name: string) => {
+    const network = await inspectNetwork(name);
+
+    if (network === undefined || network.Labels?.[MANAGED_LABEL] !== "true") {
+      return false;
+    }
+
+    const attached = Object.entries(network.Containers ?? {});
+
+    if (attached.some(([, entry]) => !(entry.Name ?? "").startsWith(RELAY_PREFIX))) {
+      return false;
+    }
+
+    await Promise.all(
+      attached.map(([containerId]) =>
+        client.call(
+          {
+            method: "POST",
+            path: `/networks/${segment(name)}/disconnect`,
+            json: { Container: containerId, Force: true },
+          },
+          [404],
+        ),
+      ),
+    );
+
+    const response = await client.call({ method: "DELETE", path: `/networks/${segment(name)}` }, [404, 409]);
+
+    return response.status < 300;
+  };
+
+  const removeRepoNetwork = async (repoHash: string) => {
+    await removeNetwork(repoNetworkName(repoHash));
+  };
+
+  const pruneNetworks = async (keepRepoHashes: string[]) => {
+    const kept = new Set(keepRepoHashes.map((hash) => hash.slice(0, SHORT_REPO_HASH)));
+    const listed = await client.json<NetworkSummary[]>({
+      method: "GET",
+      path: "/networks",
+      query: { filters: JSON.stringify({ label: [`${MANAGED_LABEL}=true`] }) },
+    });
+    const candidates = listed
+      .map((network) => network.Name ?? "")
+      .filter((name) => {
+        const match = PRUNABLE_NETWORK.exec(name);
+
+        return match !== null && (match[1] === undefined || !kept.has(match[1]));
+      });
+    const removed = await Promise.all(candidates.map(removeNetwork));
+
+    return candidates.filter((_name, index) => removed[index]);
+  };
+
+  return { prepareProxyRoute, removeRepoNetwork, pruneNetworks };
 };

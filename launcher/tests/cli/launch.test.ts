@@ -2,7 +2,7 @@ import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { run } from "../../cli/index.ts";
-import { LauncherError } from "../../shared/index.ts";
+import { LauncherError, sha256Hex } from "../../shared/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { createHarness } from "./harness.ts";
 
@@ -36,7 +36,7 @@ const writeScript = async (dir: string, body: string) => {
 
 describe("pi [args]", () => {
   it("prepares once on the cold path, then reuses the container without image work", async () => {
-    const fake = createFakeBackend({ exec: () => 3 });
+    const fake = createFakeBackend({ exec: (spec) => (spec.command.includes("pi") ? 3 : 0) });
     const harness = await harnessWith({ adapters: () => [fake.backend] });
 
     expect(await run(["--model", "x"], harness.deps)).toBe(3);
@@ -67,7 +67,10 @@ describe("pi [args]", () => {
     const mounts = container?.spec?.mounts ?? [];
 
     expect(fake.routes).toEqual([{ hostPort: 3128, policyHash: "policy", imageId: container?.spec?.image }]);
-    expect(container?.spec?.network).toEqual({ kind: "internal", name: "pi-sandbox" });
+    expect(container?.spec?.network).toEqual({
+      kind: "internal",
+      name: `pi-sandbox-${sha256Hex(harness.repoRoot).slice(0, 12)}`,
+    });
     expect(container?.spec?.labels["pi-sandbox.proxy-policy-hash"]).toBe("policy");
 
     expect(mounts).toContainEqual({

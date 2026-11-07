@@ -2,7 +2,7 @@ import { appendFile, mkdir, readFile, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { rootCertificates } from "node:tls";
 import { parseArgs } from "node:util";
-import { legacyGatewayRule, type SandboxConfig } from "../config/index.ts";
+import type { SandboxConfig } from "../config/index.ts";
 import {
   createProcessRunner,
   errorMessage,
@@ -13,9 +13,11 @@ import {
   writeJsonFile,
 } from "../shared/index.ts";
 import { createAccessLog } from "./access-log.ts";
+import { minimalEnv } from "./child-env.ts";
 import { createDialer } from "./dial.ts";
 import { type DaemonConfig, type ProxyInstance, proxyFiles } from "./files.ts";
 import { parentRouteFor } from "./parent.ts";
+import { createRepoSecrets } from "./repo-secrets.ts";
 import { createProxyRuntime } from "./runtime.ts";
 import { createSecretResolver } from "./secrets/index.ts";
 import { startProxyServer } from "./server.ts";
@@ -87,29 +89,32 @@ const run = async (args: ReturnType<typeof parseDaemonArgs>) => {
   }
 
   const settings = proxySettings(config, cap);
-  const runner = createProcessRunner();
+  const parentEnv = daemonConfig.parentEnv ?? {};
+  const runner = createProcessRunner({ baseEnv: { ...minimalEnv(process.env), ...parentEnv } });
   const ca = await openLauncherCa({ stateDir: args.stateDir, runner });
-  const secrets = { current: new Map<string, string>() };
+
+  await ca.pruneLeaves();
+
+  const runtime = createProxyRuntime({
+    stateDir: args.stateDir,
+    policyHash,
+    staticRules: settings.rules,
+    grantsEnabled: settings.grants.enabled,
+    cap: settings.cap,
+  });
+  const secrets = createRepoSecrets(runtime);
   const resolver = createSecretResolver({
     runner,
     home: args.home,
     now: Date.now,
     piCommand: daemonConfig.piCommand ?? [],
     mcpAuthDir: stateLayout(args.stateDir).mcpAuth,
-    envSecrets: () => secrets.current,
-  });
-  const gatewayRule = legacyGatewayRule(config, process.env);
-  const runtime = createProxyRuntime({
-    stateDir: args.stateDir,
-    policyHash,
-    staticRules: [...(gatewayRule === undefined ? [] : [gatewayRule]), ...settings.rules],
-    grantsEnabled: settings.grants.enabled,
-    cap: settings.cap,
+    envSecrets: secrets.secretsOf,
   });
   const log = createAccessLog(files.accessLog);
   const vault = createVault({
     stateDir: args.stateDir,
-    servers: () => runtime.vault(),
+    servers: (repoHash) => runtime.vault(repoHash),
     resolver,
     runner,
     discoverCommand: daemonConfig.discoverCommand ?? [],
@@ -126,16 +131,12 @@ const run = async (args: ReturnType<typeof parseDaemonArgs>) => {
     ca,
     log: log.write,
     dial: createDialer({
-      parent: parentRouteFor(settings.parentProxy, process.env, resolver),
+      parent: parentRouteFor(settings.parentProxy, parentEnv, resolver),
       overrides: testResolveOverrides(process.env),
     }),
     upstreamCa: await upstreamTrust(args.stateDir, settings.extraCa.length > 0),
     vault,
-    onControl: (message) => {
-      secrets.current = new Map(Object.entries(message.secrets));
-
-      return { ok: true };
-    },
+    onControl: secrets.accept,
   });
   const record: ProxyInstance = { policyHash, port: server.port, token, pid: process.pid };
 

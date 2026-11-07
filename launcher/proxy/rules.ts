@@ -15,6 +15,8 @@ const SECRET_MARKER = "{secret}";
 
 const REDACTED = "pi-sandbox-redacted";
 
+const FETCH_RESERVED = "sec-";
+
 const pathMatches = (prefix: string | undefined, path: string) =>
   prefix === undefined || path === prefix || path.startsWith(prefix.endsWith("/") ? prefix : `${prefix}/`);
 
@@ -36,10 +38,17 @@ const carries = (value: string, placeholder: string | undefined) =>
 const isRuleHeader = (name: string, rule: CredentialRule) =>
   rule.header !== undefined && name.toLowerCase() === rule.header.toLowerCase();
 
+const isCarrier = (name: string, rule: CredentialRule) =>
+  rule.header === undefined
+    ? isAuthLikeHeader(name) && !name.toLowerCase().startsWith(FETCH_RESERVED)
+    : isRuleHeader(name, rule);
+
+export const withoutStrayPlaceholders = (headers: HeaderPair[], rule: CredentialRule) =>
+  headers.filter(([name, value]) => isCarrier(name, rule) || !carries(value, rule.placeholder));
+
 export const ruleApplies = (headers: HeaderPair[], rule: CredentialRule) => {
   const placeholderSent = headers.some(
-    ([name, value]) =>
-      (isAuthLikeHeader(name) || isRuleHeader(name, rule)) && carries(value, rule.placeholder),
+    ([name, value]) => isCarrier(name, rule) && carries(value, rule.placeholder),
   );
   const headerMissing = rule.header !== undefined && !headers.some(([name]) => isRuleHeader(name, rule));
 
@@ -49,7 +58,7 @@ export const ruleApplies = (headers: HeaderPair[], rule: CredentialRule) => {
 const substitute = (headers: HeaderPair[], rule: CredentialRule, secret: string) =>
   headers.map(
     ([name, value]): HeaderPair =>
-      isAuthLikeHeader(name) && carries(value, rule.placeholder)
+      isCarrier(name, rule) && carries(value, rule.placeholder)
         ? [name, value.replaceAll(rule.placeholder ?? "", secret)]
         : [name, value],
   );
@@ -78,21 +87,20 @@ const setRuleHeader = (headers: HeaderPair[], rule: CredentialRule, secret: stri
 };
 
 const strip = (headers: HeaderPair[], rule: CredentialRule) =>
-  headers.filter(
-    ([name, value]) =>
-      !((isAuthLikeHeader(name) || isRuleHeader(name, rule)) && carries(value, rule.placeholder)),
-  );
+  headers.filter(([name, value]) => !(isCarrier(name, rule) && carries(value, rule.placeholder)));
 
 export const rewriteRequestHeaders = (
   headers: HeaderPair[],
   rule: CredentialRule,
   secret: string | undefined,
 ): HeaderPair[] => {
+  const kept = withoutStrayPlaceholders(headers, rule);
+
   if (secret === undefined) {
-    return strip(headers, rule);
+    return strip(kept, rule);
   }
 
-  return setRuleHeader(substitute(headers, rule, secret), rule, secret);
+  return setRuleHeader(substitute(kept, rule, secret), rule, secret);
 };
 
 const userinfoBase64 = (secret: string) => {
