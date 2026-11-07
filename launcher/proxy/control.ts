@@ -18,7 +18,7 @@ import { type DaemonConfig, type ProxyInstance, proxyFiles, proxyRoot } from "./
 import { proxyPolicyHash } from "./settings.ts";
 import { openLauncherCa } from "./tls-ca.ts";
 
-export interface EnvSecretsMessage {
+interface EnvSecretsMessage {
   type: "env-secrets";
   secrets: Record<string, string>;
 }
@@ -43,6 +43,7 @@ export interface EnsureProxyOptions {
   timeoutMs?: number;
   egressCap?: EgressCap;
   piCommand?: string[];
+  discoverCommand?: string[];
 }
 
 interface Health {
@@ -440,6 +441,7 @@ const replaceInstance = async (options: EnsureProxyOptions, files: InstanceFiles
     config: options.config,
     egressCap: options.egressCap ?? {},
     piCommand: options.piCommand ?? [],
+    discoverCommand: options.discoverCommand ?? [],
   };
 
   await writeJsonFile(files.config, daemonConfig, { mode: PRIVATE_MODE });

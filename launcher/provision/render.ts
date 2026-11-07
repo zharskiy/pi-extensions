@@ -4,7 +4,7 @@ import { sha256Hex, stateLayout, writeFileAtomic } from "../shared/index.ts";
 import { readHostEntries, type Tree } from "./tree.ts";
 import type { RenderInput, RenderResult } from "./types.ts";
 
-export const RENDER_COPIED_ENTRIES = [
+const RENDER_COPIED_ENTRIES = [
   "agents",
   "prompts",
   "skills",
@@ -15,7 +15,7 @@ export const RENDER_COPIED_ENTRIES = [
   "keybindings.json",
 ] as const;
 
-const RENDERED_FILES = ["auth.json", "models.json", "mcp-auth.json"] as const;
+const RENDERED_FILES = ["auth.json", "models.json"] as const;
 
 const FILE_MODE = 0o644;
 
@@ -32,7 +32,6 @@ const desiredTree = async (input: RenderInput): Promise<Tree> => {
   const rendered: Array<[string, unknown]> = [
     ["auth.json", files["auth.json"]],
     ["models.json", files["models.json"]],
-    ["mcp-auth.json", {}],
   ];
 
   return new Map([

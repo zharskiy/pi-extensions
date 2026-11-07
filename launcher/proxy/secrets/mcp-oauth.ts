@@ -1,7 +1,14 @@
 import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { type CommandRunner, writeFileAtomic } from "../../shared/index.ts";
+import { dirname, join } from "node:path";
+import {
+  type CommandRunner,
+  stateLayout,
+  type VaultEntry,
+  withFileLock,
+  writeFileAtomic,
+} from "../../shared/index.ts";
+import { updateStoreEntry } from "../vault/store.ts";
 import type { CachedSecret, SecretLoadOptions } from "./cache.ts";
 import { unavailable } from "./errors.ts";
 
@@ -17,11 +24,15 @@ interface TokenEntry {
   tokensExpireAt?: unknown;
 }
 
-const REFRESH_MARGIN_MS = 60_000;
+const REFRESH_SKEW_MS = 30_000;
+
+const RETRY_INTERVAL_MS = 10_000;
 
 const SERVER_NAME = /^[A-Za-z0-9_][A-Za-z0-9._-]*$/;
 
 const PRIVATE_MODE = 0o600;
+
+const REFRESH_LOCK_WAIT_MS = 30_000;
 
 const readJson = async (path: string) => {
   const text = await readFile(path, "utf8").catch(() => undefined);
@@ -52,19 +63,30 @@ const storeEntry = (store: unknown, server: string, href: string) => {
   return name !== undefined && isObject(entry) ? { name, entry: entry as TokenEntry } : undefined;
 };
 
-const usable = (entry: TokenEntry | undefined, now: number) => {
+const tokenOf = (entry: TokenEntry | undefined) => {
   const access = entry?.tokens?.access_token;
-  const expiresAt = typeof entry?.tokensExpireAt === "number" ? entry.tokensExpireAt : undefined;
 
   if (typeof access !== "string" || access === "") {
     return undefined;
   }
 
-  if (expiresAt !== undefined && expiresAt - REFRESH_MARGIN_MS <= now) {
-    return undefined;
+  return { access, expiresAt: typeof entry?.tokensExpireAt === "number" ? entry.tokensExpireAt : undefined };
+};
+
+const needsRefresh = (token: { expiresAt?: number }, now: number) =>
+  token.expiresAt !== undefined && token.expiresAt - REFRESH_SKEW_MS <= now;
+
+const fresh = (token: { access: string; expiresAt?: number }) => ({
+  value: token.access,
+  expiresAt: token.expiresAt === undefined ? undefined : token.expiresAt - REFRESH_SKEW_MS,
+});
+
+const afterRefresh = (token: { access: string; expiresAt?: number }, now: number) => {
+  if (token.expiresAt === undefined || !needsRefresh(token, now)) {
+    return fresh(token);
   }
 
-  return { value: access, expiresAt: expiresAt === undefined ? undefined : expiresAt - REFRESH_MARGIN_MS };
+  return { value: token.access, expiresAt: Math.min(token.expiresAt, now + RETRY_INTERVAL_MS) };
 };
 
 const writePrivateJson = (path: string, value: unknown) =>
@@ -82,9 +104,14 @@ const serverDefinition = async (deps: McpOAuthDeps, key: string, server: string)
 
 const storePath = (directory: string) => join(directory, "mcp-auth.json");
 
+const layoutOf = (deps: McpOAuthDeps) => stateLayout(dirname(deps.mcpAuthDir));
+
+const readStore = (deps: McpOAuthDeps) =>
+  withFileLock(layoutOf(deps).mcpAuthStoreLock, () => readJson(storePath(deps.mcpAuthDir)));
+
 const prepareOneServerDir = async (deps: McpOAuthDeps, key: string, server: string, href: string) => {
   const definition = await serverDefinition(deps, key, server);
-  const found = storeEntry(await readJson(storePath(deps.mcpAuthDir)), server, href);
+  const found = storeEntry(await readStore(deps), server, href);
 
   if (found === undefined) {
     throw unavailable(`mcpOAuth secret for ${key}: ${server} is not signed in; run pi mcp login ${server}`);
@@ -103,7 +130,7 @@ const prepareOneServerDir = async (deps: McpOAuthDeps, key: string, server: stri
   return { root, agentDir, cwd, name: found.name };
 };
 
-const copyBack = async (deps: McpOAuthDeps, agentDir: string, name: string) => {
+const copyBack = async (deps: McpOAuthDeps, agentDir: string, name: string, replaced: string | undefined) => {
   const refreshed = await readJson(storePath(agentDir));
   const entry = isObject(refreshed) ? refreshed[name] : undefined;
 
@@ -111,19 +138,22 @@ const copyBack = async (deps: McpOAuthDeps, agentDir: string, name: string) => {
     return;
   }
 
-  const current = await readJson(storePath(deps.mcpAuthDir));
-
-  await writePrivateJson(storePath(deps.mcpAuthDir), {
-    ...(isObject(current) ? current : {}),
-    [name]: entry,
-  });
+  await updateStoreEntry(dirname(deps.mcpAuthDir), name, (current) =>
+    tokenOf(current)?.access === replaced ? (entry as VaultEntry) : undefined,
+  );
 };
 
-const runRefresh = async (deps: McpOAuthDeps, key: string, server: string, href: string) => {
+const refreshOnce = async (deps: McpOAuthDeps, key: string, server: string, href: string, seen?: string) => {
   const [file, ...args] = deps.piCommand;
 
   if (file === undefined) {
     throw unavailable(`mcpOAuth secret for ${key}: no pi command is configured`);
+  }
+
+  const current = tokenOf(storeEntry(await readStore(deps), server, href)?.entry);
+
+  if (current !== undefined && current.access !== seen && !needsRefresh(current, deps.now())) {
+    return;
   }
 
   const prepared = await prepareOneServerDir(deps, key, server, href);
@@ -136,11 +166,16 @@ const runRefresh = async (deps: McpOAuthDeps, key: string, server: string, href:
       })
       .catch(() => undefined);
 
-    await copyBack(deps, prepared.agentDir, prepared.name);
+    await copyBack(deps, prepared.agentDir, prepared.name, current?.access);
   } finally {
     await rm(prepared.root, { recursive: true, force: true });
   }
 };
+
+const runRefresh = (deps: McpOAuthDeps, key: string, server: string, href: string, seen?: string) =>
+  withFileLock(layoutOf(deps).mcpAuthRefreshLock(server), () => refreshOnce(deps, key, server, href, seen), {
+    timeoutMs: REFRESH_LOCK_WAIT_MS,
+  });
 
 export const createMcpOAuthSource = (deps: McpOAuthDeps) => {
   const queue = { tail: Promise.resolve() };
@@ -154,7 +189,7 @@ export const createMcpOAuthSource = (deps: McpOAuthDeps) => {
   };
 
   const read = async (server: string, href: string) =>
-    usable(storeEntry(await readJson(storePath(deps.mcpAuthDir)), server, href)?.entry, deps.now());
+    tokenOf(storeEntry(await readJson(storePath(deps.mcpAuthDir)), server, href)?.entry);
 
   return async (
     key: string,
@@ -168,22 +203,23 @@ export const createMcpOAuthSource = (deps: McpOAuthDeps) => {
     }
 
     const href = new URL(url).href;
-    const current = options.forced ? undefined : await read(server, href);
+    const current = await read(server, href);
 
-    if (current !== undefined) {
-      return current;
+    if (!options.forced && current !== undefined && !needsRefresh(current, deps.now())) {
+      return fresh(current);
     }
 
-    await serialised(() => runRefresh(deps, key, server, href));
+    await serialised(() => runRefresh(deps, key, server, href, current?.access));
 
     const refreshed = await read(server, href);
+    const now = deps.now();
 
-    if (refreshed === undefined) {
+    if (refreshed === undefined || (refreshed.expiresAt !== undefined && refreshed.expiresAt <= now)) {
       throw unavailable(
         `mcpOAuth secret for ${key}: no valid token for ${server}; run pi mcp login ${server}`,
       );
     }
 
-    return refreshed;
+    return afterRefresh(refreshed, now);
   };
 };

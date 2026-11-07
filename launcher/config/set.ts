@@ -2,7 +2,7 @@ import { mkdir, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { LauncherError, readJsonFile, writeJsonFile } from "../shared/index.ts";
 import { isRecord, setPath } from "./dotted.ts";
-import { layerFile, readLayer, resolveConfig, validateLayerFile } from "./load.ts";
+import { layerFile, loadOrg, readLayer, resolveConfig, validateLayerFile } from "./load.ts";
 import { layerKeys } from "./validate.ts";
 
 interface SetConfigOptions {
@@ -58,7 +58,9 @@ export const setConfigValue = async ({ layer, key, value, repoRoot, env }: SetCo
       : await readLayer("user", layerFile("user", root, env));
   const project = layer === "project" ? validateLayerFile(updated, layer, file) : undefined;
 
-  await resolveConfig({ policy, user, project });
+  const org = await loadOrg(policy?.org ?? user?.org, { repoRoot: root, env });
+
+  await resolveConfig({ policy, org: org.layer, user, project });
 
   if (layer === "project") {
     await prepareProjectFolder(file);

@@ -21,6 +21,7 @@ import {
   transformSecret,
 } from "./rules.ts";
 import type { SecretResolver } from "./secrets/index.ts";
+import type { TokenPlan, TokenResponse, VaultTokenHook } from "./vault/index.ts";
 
 export interface TerminatedTarget {
   host: string;
@@ -36,6 +37,7 @@ export interface TerminatorOptions {
   dial: Dialer;
   upstreamCa?: string | string[];
   log: (entry: Omit<AccessLogEntry, "time" | "user">) => void;
+  vault?: VaultTokenHook;
 }
 
 interface Applied {
@@ -60,6 +62,14 @@ const HOP_BY_HOP = new Set([
 const UPGRADE_HEADERS = new Set(["connection", "upgrade"]);
 
 const UNAUTHORIZED = 401;
+
+const MAX_FORM_BYTES = 64 * 1024;
+
+const MAX_TOKEN_RESPONSE_BYTES = 1024 * 1024;
+
+const BUFFERED_DROPPED = new Set(["accept-encoding", "content-length"]);
+
+const RESPONSE_DROPPED = new Set(["content-length", "content-encoding"]);
 
 const connectionTokens = (headers: IncomingHttpHeaders) =>
   new Set(
@@ -102,6 +112,67 @@ const statusBlock = (upstream: IncomingMessage, pairs: HeaderPair[]) => {
 
   return [`HTTP/1.1 ${upstream.statusCode} ${upstream.statusMessage}`, ...lines, "", ""].join("\r\n");
 };
+
+const collect = (stream: IncomingMessage, limit: number) =>
+  new Promise<Buffer | undefined>((resolve) => {
+    const chunks: Buffer[] = [];
+    const state = { size: 0 };
+
+    stream.on("data", (chunk: Buffer) => {
+      state.size += chunk.length;
+
+      if (state.size > limit) {
+        stream.destroy();
+
+        resolve(undefined);
+
+        return;
+      }
+
+      chunks.push(chunk);
+    });
+
+    stream.once("end", () => resolve(Buffer.concat(chunks)));
+
+    stream.once("error", () => resolve(undefined));
+  });
+
+const isEventStream = (message: IncomingMessage) =>
+  String(message.headers["content-type"] ?? "")
+    .toLowerCase()
+    .startsWith("text/event-stream");
+
+const isEncoded = (message: IncomingMessage) => {
+  const encoding = String(message.headers["content-encoding"] ?? "identity")
+    .trim()
+    .toLowerCase();
+
+  return encoding !== "" && encoding !== "identity";
+};
+
+const sendBuffered = (response: ServerResponse, reply: TokenResponse) => {
+  const pairs = reply.headers.filter(([name]) => !RESPONSE_DROPPED.has(name.toLowerCase()));
+
+  response.writeHead(reply.status, [...pairs, ["content-length", String(reply.body.length)]].flat());
+
+  response.end(reply.body);
+};
+
+const sendError = (response: ServerResponse, status: number, error: string) =>
+  sendBuffered(response, {
+    status,
+    headers: [
+      ["content-type", "application/json"],
+      ["proxy-agent", "pi-sandbox"],
+    ],
+    body: Buffer.from(JSON.stringify({ error })),
+  });
+
+const authorityOf = (target: TerminatedTarget) =>
+  target.port === 443 ? target.host : `${target.host}:${target.port}`;
+
+const absoluteUrl = (target: TerminatedTarget, path: string | undefined) =>
+  `https://${authorityOf(target)}${upstreamPath(target.pathPrefix, path)}`;
 
 const failure = (response: ServerResponse, error: unknown) => {
   if (response.headersSent) {
@@ -158,13 +229,9 @@ export const createTerminator = (options: TerminatorOptions) => {
     };
   };
 
-  const applyRules = async (incoming: IncomingMessage, target: TerminatedTarget, upgrade: boolean) => {
-    const matching = matchRules(await options.rules(), target.host, target.port, incoming.url ?? "/");
-    const initial: Applied = {
-      headers: forwardedPairs(incoming.rawHeaders, incoming.headers, upgrade),
-      secrets: [],
-      used: [],
-    };
+  const applyRules = async (pairs: HeaderPair[], target: TerminatedTarget, path: string) => {
+    const matching = matchRules(await options.rules(), target.host, target.port, path);
+    const initial: Applied = { headers: pairs, secrets: [], used: [] };
 
     return matching.reduce<Promise<Applied>>(
       async (state, rule) => applyRule(await state, rule, target),
@@ -183,23 +250,33 @@ export const createTerminator = (options: TerminatorOptions) => {
     });
   };
 
-  const open = async (incoming: IncomingMessage, target: TerminatedTarget, upgrade: boolean) => {
-    const applied = await applyRules(incoming, target, upgrade);
+  const openWith = async (
+    target: TerminatedTarget,
+    method: string | undefined,
+    path: string,
+    pairs: HeaderPair[],
+  ) => {
+    const applied = await applyRules(pairs, target, path);
     const secure = await upstreamSocket(target);
     const request = httpsRequest({
       hostname: target.host,
       port: target.port,
-      method: incoming.method,
-      path: upstreamPath(target.pathPrefix, incoming.url),
-      headers: headerObject(
-        applied.headers,
-        target.port === 443 ? target.host : `${target.host}:${target.port}`,
-      ),
+      method,
+      path: upstreamPath(target.pathPrefix, path),
+      headers: headerObject(applied.headers, authorityOf(target)),
       createConnection: () => secure,
     });
 
     return { request, applied };
   };
+
+  const open = (incoming: IncomingMessage, target: TerminatedTarget, upgrade: boolean) =>
+    openWith(
+      target,
+      incoming.method,
+      incoming.url ?? "/",
+      forwardedPairs(incoming.rawHeaders, incoming.headers, upgrade),
+    );
 
   const afterResponse = (upstream: IncomingMessage, applied: Applied) => {
     if (upstream.statusCode === UNAUTHORIZED) {
@@ -239,11 +316,137 @@ export const createTerminator = (options: TerminatorOptions) => {
     incoming.pipe(request);
   };
 
+  const logVault = (target: TerminatedTarget, reason: string | undefined) => {
+    if (reason !== undefined) {
+      options.log({
+        repo: target.repoHash,
+        host: target.host,
+        decision: "allow",
+        rule: "vault",
+        reason,
+        bytesIn: 0,
+        bytesOut: 0,
+      });
+    }
+  };
+
+  const completeBuffered = async (
+    upstream: IncomingMessage,
+    response: ServerResponse,
+    target: TerminatedTarget,
+    plan: Extract<TokenPlan, { kind: "forward" }>,
+    applied: Applied,
+  ) => {
+    afterResponse(upstream, applied);
+
+    if (isEventStream(upstream)) {
+      response.writeHead(upstream.statusCode ?? 502, responsePairs(upstream, applied).flat());
+
+      upstream.pipe(response);
+
+      return;
+    }
+
+    if (isEncoded(upstream)) {
+      upstream.resume();
+
+      sendError(response, 502, "pi-sandbox: compressed token response refused");
+
+      return;
+    }
+
+    const body = await collect(upstream, MAX_TOKEN_RESPONSE_BYTES);
+
+    if (body === undefined) {
+      sendError(response, 502, "pi-sandbox: token response too large");
+
+      return;
+    }
+
+    const outcome = await plan.complete({
+      status: upstream.statusCode ?? 502,
+      headers: responsePairs(upstream, applied),
+      body,
+    });
+
+    logVault(target, outcome.reason);
+
+    sendBuffered(response, outcome.response);
+  };
+
+  const forwardBuffered = async (
+    incoming: IncomingMessage,
+    response: ServerResponse,
+    target: TerminatedTarget,
+    vault: VaultTokenHook,
+  ) => {
+    const body = await collect(incoming, MAX_FORM_BYTES);
+
+    if (body === undefined) {
+      sendError(response, 413, "pi-sandbox: request body too large");
+
+      return;
+    }
+
+    const pairs = forwardedPairs(incoming.rawHeaders, incoming.headers, false).filter(
+      ([name]) => !BUFFERED_DROPPED.has(name.toLowerCase()),
+    );
+    const plan = await vault.plan({
+      repoHash: target.repoHash,
+      url: absoluteUrl(target, incoming.url),
+      headers: pairs,
+      body,
+    });
+
+    logVault(target, plan.reason);
+
+    if (plan.kind === "answer") {
+      sendBuffered(response, plan.response);
+
+      return;
+    }
+
+    const { request, applied } = await openWith(target, incoming.method, incoming.url ?? "/", [
+      ...plan.headers,
+      ["content-length", String(plan.body.length)],
+    ]);
+
+    request.on("response", (upstream) => {
+      void completeBuffered(upstream, response, target, plan, applied).catch((error: unknown) =>
+        failure(response, error),
+      );
+    });
+
+    request.on("error", (error) => failure(response, error));
+
+    response.on("close", () => request.destroy());
+
+    request.end(plan.body);
+  };
+
+  const buffersFor = async (incoming: IncomingMessage, target: TerminatedTarget) =>
+    options.vault !== undefined &&
+    (await options.vault.buffers({
+      host: target.host,
+      port: target.port,
+      method: incoming.method ?? "GET",
+      url: absoluteUrl(target, incoming.url),
+      contentType: String(incoming.headers["content-type"] ?? ""),
+    }));
+
   const forward = async (incoming: IncomingMessage, response: ServerResponse) => {
     const target = targets.get(incoming.socket);
 
     if (target === undefined) {
       response.destroy();
+
+      return;
+    }
+
+    if (options.vault !== undefined && (await buffersFor(incoming, target))) {
+      await forwardBuffered(incoming, response, target, options.vault).catch((error: unknown) =>
+        failure(response, error),
+      );
 
       return;
     }
@@ -306,7 +509,7 @@ export const createTerminator = (options: TerminatorOptions) => {
   };
 
   const server = createServer((incoming, response) => {
-    void forward(incoming, response);
+    void forward(incoming, response).catch((error: unknown) => failure(response, error));
   });
 
   server.on("upgrade", (incoming: IncomingMessage, client: Duplex, head: Buffer) => {

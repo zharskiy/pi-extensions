@@ -4,7 +4,7 @@ export const sandboxConfig = (overrides: Partial<SandboxConfig> = {}): SandboxCo
   backend: "auto",
   fallback: "host",
   image: { reference: "ghcr.io/zharskiy/pi-sandbox:0.4.0" },
-  credentials: { kind: "host-pi-auth", rules: [], derive: { enabled: true } },
+  credentials: { kind: "host-pi-auth", rules: [], derive: { enabled: true }, vault: { enabled: true } },
   egress: {
     allow: ["registry.npmjs.org"],
     mcpHosts: [],

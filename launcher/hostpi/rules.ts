@@ -15,7 +15,7 @@ export interface DeriveContext {
   agentDir: string;
 }
 
-export const DERIVED_PREFIX = "derived:";
+const DERIVED_PREFIX = "derived:";
 
 export const placeholderOf = (context: DeriveContext, identity: string) =>
   placeholderFor(context.salt, identity);

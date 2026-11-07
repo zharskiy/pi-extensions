@@ -10,7 +10,7 @@ const step = (value: unknown, token: string) =>
     ? (value as Record<string, unknown>)[token]
     : undefined;
 
-export const pointerValue = (document: unknown, pointer: string) =>
+const pointerValue = (document: unknown, pointer: string) =>
   pointer
     .split("/")
     .slice(1)

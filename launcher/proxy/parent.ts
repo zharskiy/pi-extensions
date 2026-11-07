@@ -1,5 +1,5 @@
 import { connect, type Socket } from "node:net";
-import type { ParentProxy } from "../config/index.ts";
+import type { ParentProxy, SecretRef } from "../config/index.ts";
 import { normalizeHost } from "./policy.ts";
 import { PARENT_PROXY_SECRET_KEY, type SecretResolver } from "./secrets/index.ts";
 
@@ -38,7 +38,7 @@ const matchesNoProxy = (host: string, entry: string) => {
 export const bypassesParent = (noProxy: string[], host: string) =>
   noProxy.some((entry) => entry.trim() !== "" && matchesNoProxy(normalizeHost(host), entry));
 
-export const parentRouteFromUrl = (
+const parentRouteFromUrl = (
   url: string,
   noProxy: string[],
   authorization: () => Promise<string | undefined>,
@@ -59,9 +59,6 @@ const listOf = (value: string | undefined) =>
     .map((entry) => entry.trim())
     .filter((entry) => entry !== "");
 
-const userinfoOf = (url: URL) =>
-  url.username === "" ? undefined : `${decodeURIComponent(url.username)}:${decodeURIComponent(url.password)}`;
-
 const parseUrl = (value: string | undefined) => {
   try {
     return value === undefined || value === "" ? undefined : new URL(value);
@@ -70,17 +67,28 @@ const parseUrl = (value: string | undefined) => {
   }
 };
 
-const envRoute = (env: Record<string, string | undefined>) => {
+const ENV_PARENT_SECRET: SecretRef = { env: "HTTPS_PROXY" };
+
+const memoryAuthorization = (resolver: SecretResolver, ref: SecretRef) => async () => {
+  const result = await resolver.resolve(PARENT_PROXY_SECRET_KEY, ref);
+
+  return result.ok ? basicAuthorization(result.value) : undefined;
+};
+
+const envRoute = (env: Record<string, string | undefined>, resolver: SecretResolver) => {
   const url = parseUrl(env.HTTPS_PROXY ?? env.https_proxy);
 
   if (url === undefined || url.protocol !== "http:") {
     return undefined;
   }
 
-  const credentials = userinfoOf(url);
-  const authorization = credentials === undefined ? undefined : basicAuthorization(credentials);
+  const address = `${url.protocol}//${url.host}`;
 
-  return parentRouteFromUrl(url.href, listOf(env.NO_PROXY ?? env.no_proxy), async () => authorization);
+  return parentRouteFromUrl(
+    address,
+    listOf(env.NO_PROXY ?? env.no_proxy),
+    memoryAuthorization(resolver, ENV_PARENT_SECRET),
+  );
 };
 
 export const parentRouteFor = (
@@ -93,20 +101,11 @@ export const parentRouteFor = (
   }
 
   if (parent === "env") {
-    return envRoute(env);
+    return envRoute(env, resolver);
   }
 
-  const auth = parent.auth;
-
-  const authorization = async () => {
-    if (auth === undefined) {
-      return undefined;
-    }
-
-    const result = await resolver.resolve(PARENT_PROXY_SECRET_KEY, auth);
-
-    return result.ok ? basicAuthorization(result.value) : undefined;
-  };
+  const authorization =
+    parent.auth === undefined ? async () => undefined : memoryAuthorization(resolver, parent.auth);
 
   return parentRouteFromUrl(parent.url, parent.noProxy ?? [], authorization);
 };

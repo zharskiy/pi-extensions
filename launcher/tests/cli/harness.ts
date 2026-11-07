@@ -5,7 +5,9 @@ import { join } from "node:path";
 import { PassThrough, Writable } from "node:stream";
 import type { Backend } from "../../backend/index.ts";
 import type { CliDeps } from "../../cli/index.ts";
-import type { ProxyInstance } from "../../proxy/index.ts";
+import { piVersion } from "../../cli/versions.ts";
+import type { BundledPi } from "../../hostpi/index.ts";
+import type { ControlMessage, DenialRecord, ProxyInstance } from "../../proxy/index.ts";
 import type { RunResult } from "../../shared/index.ts";
 import { createFakeRunner, type FakeResponder } from "../support/fake-runner.ts";
 
@@ -19,6 +21,11 @@ export interface HarnessOptions {
   proxy?: Partial<CliDeps["proxy"]>;
   respond?: FakeResponder;
   env?: Record<string, string>;
+  bundledPi?: BundledPi | null;
+  providerHosts?: Record<string, { hosts: string[]; envVars?: string[] }>;
+  denials?: DenialRecord[];
+  resolve?: (host: string) => Promise<string[]>;
+  confirm?: boolean;
 }
 
 const collector = (): Collected => {
@@ -37,6 +44,13 @@ const collector = (): Collected => {
 const TARBALL = "pi-extensions-mz-0.4.0.tgz";
 
 const RUNNING_PROXY: ProxyInstance = { pid: 4242, port: 3128, policyHash: "policy", token: "token-1" };
+
+const FAKE_PI_DIR = "/fake/node_modules/@earendil-works/pi-coding-agent";
+
+const PROVIDER_HOSTS = { example: { hosts: ["models.example.test"] } };
+
+const isProviderHostsScript = (call: { file: string; args: string[] }) =>
+  call.file === process.execPath && (call.args[0] ?? "").endsWith("provider-hosts.mjs");
 
 const gitAnswer = (repoRoot: string, args: string[]): Partial<RunResult> | undefined => {
   if (args[0] === "rev-parse" && args[1] === "--show-toplevel") {
@@ -62,7 +76,16 @@ export const createHarness = async (options: HarnessOptions = {}) => {
   const userConfigFile = join(root, "config", "config.json");
   const policyFile = join(root, "policy.json");
 
+  const hostAgentDir = join(root, "home", ".pi", "agent");
+  const trustPem = join(stateDir, "ca", "trust.pem");
+
   mkdirSync(join(repoRoot, ".git", "hooks"), { recursive: true });
+
+  mkdirSync(join(stateDir, "ca"), { recursive: true });
+
+  writeFileSync(trustPem, "trust bundle\n");
+
+  writeFileSync(join(stateDir, "ca", "extra.pem"), "");
   mkdirSync(cwd, { recursive: true });
 
   const stdout = collector();
@@ -72,6 +95,10 @@ export const createHarness = async (options: HarnessOptions = {}) => {
 
     if (custom !== undefined) {
       return custom;
+    }
+
+    if (isProviderHostsScript(call)) {
+      return { stdout: JSON.stringify(options.providerHosts ?? PROVIDER_HOSTS) };
     }
 
     if (call.interactive) {
@@ -87,6 +114,16 @@ export const createHarness = async (options: HarnessOptions = {}) => {
   const terminalOut = new PassThrough();
   const stoppedProxies: Array<string | undefined> = [];
   const removedProxies: string[] = [];
+  const controlMessages: ControlMessage[] = [];
+  const questions: string[] = [];
+  const bundledPi =
+    options.bundledPi === null
+      ? undefined
+      : (options.bundledPi ?? {
+          command: [process.execPath, join(FAKE_PI_DIR, "dist", "cli.js")],
+          version: await piVersion(),
+          packageDir: FAKE_PI_DIR,
+        });
   const deps: CliDeps = {
     runner: fake.runner,
     env: {
@@ -127,8 +164,25 @@ export const createHarness = async (options: HarnessOptions = {}) => {
 
         return true;
       },
-      ensureCa: async () => ({ certPemPath: join(stateDir, "ca", "ca.pem") }),
+      control: async (_instance, message) => {
+        controlMessages.push(message);
+
+        return { ok: true };
+      },
+      denials: async () => options.denials ?? [],
+      trust: async () => ({
+        pemPath: trustPem,
+        extraPemPath: join(stateDir, "ca", "extra.pem"),
+        hash: "trust-hash",
+      }),
       ...options.proxy,
+    },
+    bundledPi: async () => bundledPi,
+    resolveHost: options.resolve ?? (async () => []),
+    confirm: async (question) => {
+      questions.push(question);
+
+      return options.confirm ?? false;
     },
     now: () => 1_700_000_000_000,
   };
@@ -144,12 +198,16 @@ export const createHarness = async (options: HarnessOptions = {}) => {
     repoRoot,
     cwd,
     stateDir,
+    hostAgentDir,
+    trustPem,
     userConfigFile,
     policyFile,
     deps,
     calls: fake.calls,
     stoppedProxies,
     removedProxies,
+    controlMessages,
+    questions,
     stdout: stdout.text,
     stderr: stderr.text,
     writeJson,

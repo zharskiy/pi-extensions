@@ -67,7 +67,12 @@ describe("mergeLayers with credential rules", () => {
   it("defaults to no rules and derivation on", async () => {
     const { config } = await merge({});
 
-    expect(config.credentials).toEqual({ kind: "host-pi-auth", rules: [], derive: { enabled: true } });
+    expect(config.credentials).toEqual({
+      kind: "host-pi-auth",
+      rules: [],
+      derive: { enabled: true },
+      vault: { enabled: true },
+    });
   });
 
   it("lets a lower layer drop rules but not add or change them", async () => {
@@ -102,6 +107,7 @@ describe("mergeLayers with credential rules", () => {
       command: ["corp-sso"],
       rules: [gitRule],
       derive: { enabled: false },
+      vault: { enabled: true },
     });
     expect(
       await refusal({

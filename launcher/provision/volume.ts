@@ -13,7 +13,7 @@ const WRITE_SCRIPT = 'mkdir -p "$(dirname "$1")" && cat > "$1.pi-sandbox-tmp" &&
 
 const guestPath = (name: string) => posix.join(GUEST_PATHS.agentDir, name);
 
-const collector = () => {
+export const collector = () => {
   const chunks: Buffer[] = [];
   const stream = new Writable({
     write(chunk: Buffer | string, _encoding, callback) {

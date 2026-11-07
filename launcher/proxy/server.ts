@@ -3,10 +3,11 @@ import type { AddressInfo, Socket } from "node:net";
 import { userInfo } from "node:os";
 import type { Duplex } from "node:stream";
 import { createSecureContext, type SecureContext, TLSSocket } from "node:tls";
-import { LauncherError, sha256Hex } from "../shared/index.ts";
+import { LauncherError, OAUTH_ROUTES, sha256Hex } from "../shared/index.ts";
 import type { AccessLogEntry } from "./access-log.ts";
 import { parseProxyAuthorization, sameText } from "./auth.ts";
 import type { ControlMessage, ControlReply } from "./control.ts";
+import { createDenialPages } from "./denial-page.ts";
 import { createDialer, type DialAccess, type Dialer, RestrictedAddressError } from "./dial.ts";
 import type { DenialRecord } from "./dynamic.ts";
 import {
@@ -23,6 +24,7 @@ import type { SecretResolver } from "./secrets/index.ts";
 import { clientHelloRecordLength, parseServerName } from "./sni.ts";
 import { createTerminator } from "./terminate.ts";
 import type { LeafCertificate } from "./tls-ca.ts";
+import type { VaultHook, VaultReply } from "./vault/index.ts";
 
 export interface ProxyServerOptions {
   listen: { host: string; port: number };
@@ -39,6 +41,8 @@ export interface ProxyServerOptions {
   upstreamCa?: string | string[];
   helloTimeoutMs?: number;
   onControl?: (message: ControlMessage) => ControlReply;
+  vault?: VaultHook;
+  denialPages?: { maxNames?: number; mintsPerMinute?: number };
 }
 
 export interface ProxyServer {
@@ -77,6 +81,8 @@ const DEFAULT_HELLO_TIMEOUT_MS = 10_000;
 const MAX_DENIALS = 200;
 
 const MAX_CONTROL_BYTES = 1024 * 1024;
+
+const OAUTH_PATHS = new Set<string>(Object.values(OAUTH_ROUTES));
 
 const ESTABLISHED = `HTTP/1.1 200 Connection Established\r\nProxy-Agent: ${PROXY_AGENT}\r\n\r\n`;
 
@@ -241,6 +247,17 @@ const sinceOf = (url: string) => {
 
 const pathOf = (url: string | undefined) => (url?.startsWith("/") ? (url.split("?")[0] ?? "") : "");
 
+const flowOf = (url: string | undefined) =>
+  new URL(url ?? "/", "http://proxy").searchParams.get("flow") ?? "";
+
+const parseJsonBody = (text: string | undefined): unknown => {
+  try {
+    return JSON.parse(text ?? "");
+  } catch {
+    return undefined;
+  }
+};
+
 export const startProxyServer = async (options: ProxyServerOptions): Promise<ProxyServer> => {
   const dial = options.dial ?? createDialer();
   const policyHash = options.policyHash ?? sha256Hex(JSON.stringify(options.policy));
@@ -273,7 +290,13 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
     },
     upstreamCa: options.upstreamCa,
     log: record,
+    vault: options.vault,
   });
+  const ca = options.ca;
+  const pages =
+    ca === undefined
+      ? undefined
+      : createDenialPages({ leaf: (host) => ca.leaf(host), ...options.denialPages });
 
   const rememberDenial = (repoHash: string, entry: DenialRecord) => {
     denials.set(repoHash, [...(denials.get(repoHash) ?? []), entry].slice(-MAX_DENIALS));
@@ -316,6 +339,31 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
     recordDenial(host, denial, context);
 
     socket.end(rawResponse(forbiddenStatus(denial), denialBody(host, denial)));
+  };
+
+  const showDenial = async (
+    client: Socket,
+    host: string,
+    denial: DenialInput,
+    context: { port: number; repoHash: string },
+  ) => {
+    recordDenial(host, denial, context);
+
+    const secureContext = await pages?.context(host);
+
+    if (secureContext === undefined || pages === undefined) {
+      client.end(rawResponse(forbiddenStatus(denial), denialBody(host, denial)));
+
+      return;
+    }
+
+    if (client.destroyed) {
+      return;
+    }
+
+    client.write(ESTABLISHED);
+
+    pages.serve(client, secureContext, denial.reason);
   };
 
   const accessOf = (host: string): DialAccess => {
@@ -612,6 +660,12 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
     const host = normalizeHost(target.host);
     const { decision, extras } = await decide(host, target.port, caller.repoHash);
 
+    if (!decision.allowed && HINTED_RULES.has(decision.rule) && head.length === 0) {
+      await showDenial(client, host, decision, { port: target.port, repoHash: caller.repoHash });
+
+      return;
+    }
+
     if (!decision.allowed) {
       refuse(client, host, decision, { port: target.port, repoHash: caller.repoHash });
 
@@ -620,7 +674,9 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
 
     const connection: Connection = { host, port: target.port, repoHash: caller.repoHash, extras, client };
     const terminated =
-      isGatewayTarget(host, target.port) || isRuleHost(await options.runtime.rules(), host, target.port);
+      isGatewayTarget(host, target.port) ||
+      isRuleHost(await options.runtime.rules(), host, target.port) ||
+      (await options.vault?.isVaultHost(host, target.port)) === true;
 
     if (terminated) {
       await intercept(connection, head);
@@ -669,6 +725,64 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
     sendJson(response, reply.ok ? 200 : 400, reply);
   };
 
+  const sendReply = (response: ServerResponse, reply: VaultReply) => {
+    if (reply.body === undefined) {
+      response.writeHead(reply.status, { "proxy-agent": PROXY_AGENT });
+
+      response.end();
+
+      return;
+    }
+
+    sendJson(response, reply.status, reply.body);
+  };
+
+  const oauthReply = async (
+    request: IncomingMessage,
+    response: ServerResponse,
+    vault: VaultHook,
+    repoHash: string,
+  ): Promise<VaultReply> => {
+    const path = pathOf(request.url);
+
+    if (request.method === "POST" && path === OAUTH_ROUTES.open) {
+      return vault.open(repoHash, parseJsonBody(await readBody(request)));
+    }
+
+    if (request.method === "GET" && path === OAUTH_ROUTES.callback) {
+      const abort = new AbortController();
+
+      response.once("close", () => abort.abort());
+
+      return vault.callback(repoHash, flowOf(request.url), abort.signal);
+    }
+
+    if (request.method === "POST" && path === OAUTH_ROUTES.cancel) {
+      return vault.cancel(repoHash, flowOf(request.url));
+    }
+
+    return { status: 405, body: { ok: false, error: "pi-sandbox: method not allowed" } };
+  };
+
+  const handleOAuth = async (request: IncomingMessage, response: ServerResponse, caller: Caller) => {
+    if (caller.kind !== "repo") {
+      sendJson(response, 403, {
+        ok: false,
+        error: "pi-sandbox: sign-in routes need the sandbox's proxy token",
+      });
+
+      return;
+    }
+
+    if (options.vault === undefined) {
+      sendJson(response, 404, { ok: false, error: "pi-sandbox: sign-in from the sandbox is not enabled" });
+
+      return;
+    }
+
+    sendReply(response, await oauthReply(request, response, options.vault, caller.repoHash));
+  };
+
   const handlePlain = async (request: IncomingMessage, response: ServerResponse) => {
     const caller = await callerOf(request);
     const path = pathOf(request.url);
@@ -677,6 +791,12 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
       recordDenial(hostOf(request.headers.host), AUTH_DENIAL);
 
       challenge(response);
+
+      return;
+    }
+
+    if (OAUTH_PATHS.has(path)) {
+      await handleOAuth(request, response, caller);
 
       return;
     }
@@ -735,8 +855,10 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
     server.listen(options.listen.port, options.listen.host, () => resolve());
   });
 
-  const close = () =>
-    new Promise<void>((resolve) => {
+  const close = async () => {
+    await options.vault?.close();
+
+    await new Promise<void>((resolve) => {
       sockets.forEach((socket) => {
         socket.destroy();
       });
@@ -745,6 +867,7 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
 
       server.close(() => resolve());
     });
+  };
 
   return { port: (server.address() as AddressInfo).port, policyHash, close };
 };

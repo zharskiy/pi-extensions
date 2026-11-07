@@ -15,8 +15,14 @@ import {
   type LauncherContainerSpec,
   runPi,
 } from "../container/index.ts";
-import { ensureBuiltImage, recordedImage, resolveExtensionsSource } from "../image/index.ts";
-import { guestProxyUrl } from "../proxy/index.ts";
+import {
+  ensureBuiltImage,
+  ensureLayerImage,
+  recordedImage,
+  resolveExtensionsSource,
+} from "../image/index.ts";
+import { renderAgentDir, syncWritableFiles } from "../provision/index.ts";
+import { guestProxyUrl, type TrustBundle } from "../proxy/index.ts";
 import { errorMessage, LauncherError, launcherRoot } from "../shared/index.ts";
 import {
   assertSafeWorkspace,
@@ -24,8 +30,11 @@ import {
   discoverWorkspace,
   type Workspace,
 } from "../workspace/index.ts";
-import { type CliDeps, pathsOf, writeLine } from "./deps.ts";
+import { type CliDeps, pathsOf, writeLine, writeNotices } from "./deps.ts";
+import { type HostSide, prepareHostSide } from "./derive.ts";
 import { findHostPi } from "./host-pi.ts";
+import { openSandboxProxy, reportDenials, type SandboxProxy } from "./sandbox-proxy.ts";
+import { beginSession, finishSession, type LaunchSession, pruneEndedGrants } from "./sessions.ts";
 import { launcherVersion, piVersion } from "./versions.ts";
 
 export interface LaunchContext {
@@ -44,6 +53,20 @@ export interface PreparedContainer {
   containerId: string;
   spec: LauncherContainerSpec;
   image: ImageRef;
+  created: boolean;
+}
+
+export interface SandboxParts {
+  host: HostSide;
+  proxy?: SandboxProxy;
+  image: ImageRef;
+}
+
+export interface Sandbox extends PreparedContainer {
+  backend: Backend;
+  host: HostSide;
+  proxy?: SandboxProxy;
+  session: LaunchSession;
 }
 
 const NO_SANDBOX = "--no-sandbox";
@@ -52,7 +75,12 @@ const PREPARING = "preparing pi sandbox, one time";
 
 export const openContext = async (deps: CliDeps): Promise<LaunchContext> => {
   const workspace = await discoverWorkspace(deps.cwd, deps.runner);
-  const effective = await loadEffectiveConfig({ repoRoot: workspace.repoRoot, env: deps.env });
+  const { notices, ...effective } = await loadEffectiveConfig({
+    repoRoot: workspace.repoRoot,
+    env: deps.env,
+  });
+
+  writeNotices(deps, notices);
 
   return { workspace, effective, stateDir: pathsOf(deps).stateDir };
 };
@@ -107,7 +135,15 @@ const currentImage = async (backend: Backend, context: LaunchContext) => {
     : { reference: record.reference, digest: record.digest, id: record.id };
 };
 
-const buildImage = async (deps: CliDeps, context: LaunchContext, backend: Backend): Promise<ImageRef> => {
+const buildTrust = (context: LaunchContext, trust: TrustBundle | undefined) =>
+  context.effective.config.tls.extraCa.length === 0 ? undefined : trust?.extraPemPath;
+
+const buildImage = async (
+  deps: CliDeps,
+  context: LaunchContext,
+  backend: Backend,
+  trust: TrustBundle | undefined,
+): Promise<ImageRef> => {
   const { config } = context.effective;
 
   writeLine(deps.stderr, PREPARING);
@@ -125,60 +161,85 @@ const buildImage = async (deps: CliDeps, context: LaunchContext, backend: Backen
     config,
     versions: { pi: await piVersion(), extensions },
     stateDir: context.stateDir,
+    trustPem: buildTrust(context, trust),
+    env: deps.env,
   });
 
   return { reference: image.reference, digest: image.digest, id: image.id };
 };
 
-export const prepareImage = async (deps: CliDeps, context: LaunchContext, backend: Backend) =>
-  (await currentImage(backend, context)) ?? (await buildImage(deps, context, backend));
+export const prepareImage = async (
+  deps: CliDeps,
+  context: LaunchContext,
+  backend: Backend,
+  trust?: TrustBundle,
+): Promise<ImageRef> => {
+  const base = (await currentImage(backend, context)) ?? (await buildImage(deps, context, backend, trust));
+  const layer = await ensureLayerImage({
+    backend,
+    baseImageId: base.id,
+    config: context.effective.config,
+    stateDir: context.stateDir,
+    trustPem: buildTrust(context, trust),
+    env: deps.env,
+  });
 
-export const needsProxy = (config: SandboxConfig) =>
-  config.gateway !== undefined || config.egress.allow.length > 0 || config.egress.mcpHosts.length > 0;
-
-export const startProxy = async (deps: CliDeps, context: LaunchContext) => {
-  try {
-    return await deps.proxy.ensure({
-      config: context.effective.config,
-      stateDir: context.stateDir,
-      env: deps.env,
-      home: deps.home,
-    });
-  } catch (error) {
-    throw new LauncherError(
-      `the egress proxy could not start, refusing to run without it: ${errorMessage(error)}`,
-      error instanceof LauncherError && error.hint !== undefined ? error.hint : "run pi sandbox doctor",
-    );
-  }
+  return { ...base, id: layer.id };
 };
 
-const sandboxProxy = async (deps: CliDeps, context: LaunchContext, backend: Backend, imageId: string) => {
-  const { config } = context.effective;
-
-  if (!needsProxy(config)) {
+const sandboxRoute = async (backend: Backend, proxy: SandboxProxy | undefined, imageId: string) => {
+  if (proxy === undefined) {
     return undefined;
   }
 
-  const instance = await startProxy(deps, context);
-  const route: ProxyRoute = await backend.prepareProxyRoute(instance.port, instance.policyHash, imageId);
-  const ca = config.gateway === undefined ? undefined : await deps.proxy.ensureCa(context.stateDir);
+  const route: ProxyRoute = await backend.prepareProxyRoute(proxy.instance.port, proxy.policyHash, imageId);
 
-  return {
-    url: guestProxyUrl(route, instance.token),
-    network: route.network,
-    policyHash: instance.policyHash,
-    caPemPath: ca?.certPemPath,
-  };
+  return { url: guestProxyUrl(route, proxy.repoToken), network: route.network, policyHash: proxy.policyHash };
+};
+
+const syncAgentFiles = async (
+  deps: CliDeps,
+  context: LaunchContext,
+  backend: Backend,
+  host: HostSide,
+  id: string,
+) => {
+  try {
+    const { notices } = await syncWritableFiles({
+      backend,
+      containerId: id,
+      stateDir: context.stateDir,
+      repoHash: host.repoHash,
+      hostAgentDir: host.hostAgentDir,
+      repoRoot: context.workspace.repoRoot,
+      config: context.effective.config,
+      hostSettings: host.files.settings,
+      mcp: host.derived.files["mcp.json"],
+    });
+
+    writeNotices(deps, notices);
+  } catch (error) {
+    writeLine(
+      deps.stderr,
+      `pi-sandbox: warning: settings.json and mcp.json were not synced: ${errorMessage(error)}`,
+    );
+  }
 };
 
 export const prepareContainer = async (
   deps: CliDeps,
   context: LaunchContext,
   backend: Backend,
-  resolved?: ImageRef,
+  parts: SandboxParts,
 ): Promise<PreparedContainer> => {
-  const image = resolved ?? (await prepareImage(deps, context, backend));
-  const proxy = await sandboxProxy(deps, context, backend, image.id);
+  const { host, proxy, image } = parts;
+  const render = await renderAgentDir({
+    stateDir: context.stateDir,
+    repoHash: host.repoHash,
+    hostAgentDir: host.hostAgentDir,
+    derived: host.derived,
+  });
+  const route = await sandboxRoute(backend, proxy, image.id);
   const spec = buildContainerSpec({
     workspace: context.workspace,
     config: context.effective.config,
@@ -190,14 +251,59 @@ export const prepareContainer = async (
     capabilities: backend.capabilities,
     stateDir: context.stateDir,
     gitOverlay: await discoverGitOverlay(context.workspace, deps.runner, deps.home),
-    proxy,
+    proxy: route,
     launcherVersion: await launcherVersion(),
     configHash: configHash(context.effective.config),
+    renderDir: render.renderDir,
+    trust: route === undefined ? undefined : host.trust,
+    repoProxyToken: proxy?.repoToken,
   });
-  const { id } = await ensureContainer({ backend, spec });
+  const { id, created } = await ensureContainer({ backend, spec });
 
-  return { containerId: id, spec, image };
+  if (created) {
+    await pruneEndedGrants(deps, context.stateDir);
+  }
+
+  await syncAgentFiles(deps, context, backend, host, id);
+
+  return { containerId: id, spec, image, created };
 };
+
+export const withSandbox = async <T>(
+  deps: CliDeps,
+  context: LaunchContext,
+  backend: Backend,
+  use: (sandbox: Sandbox) => Promise<T>,
+) => {
+  const host = await prepareHostSide(deps, context);
+  const session = await beginSession(deps, context, host.repoHash);
+
+  try {
+    const proxy = await openSandboxProxy(deps, context, host);
+    const image = await prepareImage(deps, context, backend, host.trust);
+    const prepared = await prepareContainer(deps, context, backend, { host, proxy, image });
+
+    try {
+      return await use({ ...prepared, backend, host, proxy, session });
+    } finally {
+      await reportDenials(deps, context, proxy, session.startedAt);
+    }
+  } finally {
+    await finishSession(deps, context, backend, session);
+  }
+};
+
+export const runSandboxPi = (deps: CliDeps, context: LaunchContext, sandbox: Sandbox, piArgs: string[]) =>
+  runPi({
+    backend: sandbox.backend,
+    containerId: sandbox.containerId,
+    piArgs,
+    env: forwardedEnv(context.effective.config.env.allow, deps.env),
+    launchId: sandbox.session.launchId,
+    workspace: context.workspace,
+    terminal: deps.terminal,
+    signals: deps.signals,
+  });
 
 const runHostPi = async (deps: CliDeps, context: LaunchContext, piArgs: string[]) => {
   const { config, sources } = context.effective;
@@ -223,28 +329,26 @@ const runHostPi = async (deps: CliDeps, context: LaunchContext, piArgs: string[]
   return deps.runner.spawnInteractive(hostPi, piArgs, { cwd: deps.cwd });
 };
 
-export const launch = async (args: string[], deps: CliDeps) => {
-  const piArgs = args.filter((arg) => arg !== NO_SANDBOX);
+export const openSandboxContext = async (deps: CliDeps) => {
   const context = await openContext(deps);
 
+  checkWorkspace(deps, context);
+
+  return { context, backend: await openBackend(deps, context.effective.config) };
+};
+
+export const launch = async (args: string[], deps: CliDeps) => {
+  const piArgs = args.filter((arg) => arg !== NO_SANDBOX);
+
   if (piArgs.length !== args.length) {
+    const context = await openContext(deps);
+
     checkWorkspaceRoots(deps, context);
 
     return runHostPi(deps, context, piArgs);
   }
 
-  checkWorkspace(deps, context);
+  const { context, backend } = await openSandboxContext(deps);
 
-  const backend = await openBackend(deps, context.effective.config);
-  const { containerId } = await prepareContainer(deps, context, backend);
-
-  return runPi({
-    backend,
-    containerId,
-    piArgs,
-    env: forwardedEnv(context.effective.config.env.allow, deps.env),
-    workspace: context.workspace,
-    terminal: deps.terminal,
-    signals: deps.signals,
-  });
+  return withSandbox(deps, context, backend, (sandbox) => runSandboxPi(deps, context, sandbox, piArgs));
 };

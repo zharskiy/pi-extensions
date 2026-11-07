@@ -34,7 +34,18 @@ const LAUNCHER_GRAPH: Record<string, string[]> = {
   hostpi: ["config", "shared"],
   grants: ["shared"],
   provision: ["backend", "config", "hostpi", "shared"],
-  cli: ["backend", "config", "container", "image", "proxy", "shared", "workspace"],
+  cli: [
+    "backend",
+    "config",
+    "container",
+    "grants",
+    "hostpi",
+    "image",
+    "provision",
+    "proxy",
+    "shared",
+    "workspace",
+  ],
   bin: ["cli"],
 };
 const CODE_ROOTS = [...LAYERS, EXTENSIONS, TEST, LAUNCHER];

@@ -7,7 +7,7 @@ export interface SecretLoadOptions {
   forced: boolean;
 }
 
-export type SecretLoader = (options: SecretLoadOptions) => Promise<CachedSecret>;
+type SecretLoader = (options: SecretLoadOptions) => Promise<CachedSecret>;
 
 export interface SecretCache {
   get(key: string, load: SecretLoader): Promise<CachedSecret>;

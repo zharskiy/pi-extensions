@@ -1,0 +1,6 @@
+{
+  "api": "openai-completions",
+  "provider": "fixture",
+  "model": "fixture-model",
+  "path": "/v1"
+}

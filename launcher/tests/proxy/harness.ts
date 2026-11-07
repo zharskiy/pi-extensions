@@ -7,7 +7,7 @@ import type { CredentialRule, EgressCap } from "../../config/index.ts";
 import type { AccessLogEntry } from "../../proxy/access-log.ts";
 import { repoProxyToken } from "../../proxy/dynamic.ts";
 import type { EgressPolicy } from "../../proxy/policy.ts";
-import { createProxyRuntime } from "../../proxy/runtime.ts";
+import { createProxyRuntime, type ProxyRuntime } from "../../proxy/runtime.ts";
 import type { SecretResolver, SecretResult } from "../../proxy/secrets/index.ts";
 import { type ProxyServer, startProxyServer } from "../../proxy/server.ts";
 import { type LauncherCa, openLauncherCa } from "../../proxy/tls-ca.ts";
@@ -55,7 +55,7 @@ export const fakeResolver = (values: Record<string, string>) => {
   return { resolver, invalidated, asked };
 };
 
-export const mappedDial =
+const mappedDial =
   (ports: () => Record<string, number>) =>
   (host: string, port: number): Promise<Socket> =>
     new Promise((resolve, reject) => {
@@ -85,11 +85,14 @@ export interface TestProxyOptions {
   privateHosts?: string[];
   ports?: () => Record<string, number>;
   onControl?: Parameters<typeof startProxyServer>[0]["onControl"];
+  vault?: Parameters<typeof startProxyServer>[0]["vault"];
+  denialPages?: Parameters<typeof startProxyServer>[0]["denialPages"];
 }
 
 export interface TestProxy {
   proxy: ProxyServer;
   log: AccessLogEntry[];
+  runtime: ProxyRuntime;
   tokenOf(repoHash: string): Promise<string>;
 }
 
@@ -117,9 +120,16 @@ export const startTestProxy = async (options: TestProxyOptions): Promise<TestPro
     upstreamCa: options.ca?.certPem,
     helloTimeoutMs: 500,
     onControl: options.onControl,
+    vault: options.vault,
+    denialPages: options.denialPages,
   });
 
-  return { proxy, log, tokenOf: (repoHash) => repoProxyToken(options.stateDir, POLICY_HASH, repoHash) };
+  return {
+    proxy,
+    log,
+    runtime,
+    tokenOf: (repoHash) => repoProxyToken(options.stateDir, POLICY_HASH, repoHash),
+  };
 };
 
 export const waitFor = async <T>(find: () => T | undefined, attempts = 100): Promise<T> => {

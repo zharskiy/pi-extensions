@@ -10,6 +10,7 @@ import { getPath } from "./dotted.ts";
 import { mergeLayers, resolveProfileName } from "./merge.ts";
 import { httpsFetchText, loadOrgLayer } from "./org-source.ts";
 import { loadProfile } from "./profiles.ts";
+import { capManualRules } from "./rule-cap.ts";
 import type { EffectiveConfig, FetchText, LayerConfig, LayerName, OrgRef } from "./types.ts";
 import { validateLayer } from "./validate.ts";
 
@@ -76,7 +77,7 @@ export const resolveConfig = async (layers: Layers): Promise<EffectiveConfig> =>
   return mergeLayers({ defaults: await defaultConfig(), layers, profile });
 };
 
-const loadOrg = (ref: OrgRef | undefined, options: LoadOptions) =>
+export const loadOrg = (ref: OrgRef | undefined, options: LoadOptions) =>
   ref === undefined
     ? { layer: undefined, notices: [] }
     : loadOrgLayer({
@@ -93,7 +94,8 @@ export const loadEffectiveConfig = async (options: LoadOptions) => {
     ),
   );
   const org = await loadOrg(policy?.org ?? user?.org, options);
-  const effective = await resolveConfig({ policy, org: org.layer, user, project });
+  const layers = { policy, org: org.layer, user, project };
+  const capped = capManualRules(await resolveConfig(layers), layers);
 
-  return { ...effective, notices: org.notices };
+  return { ...capped.effective, notices: [...org.notices, ...capped.notices] };
 };

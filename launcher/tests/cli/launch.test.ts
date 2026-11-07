@@ -77,8 +77,8 @@ describe("pi [args]", () => {
       kind: "bind",
     });
     expect(mounts.some((mount) => mount.target === "/etc/pi-sandbox/ca.pem")).toBe(false);
-    expect(container?.spec?.env.HTTPS_PROXY).toBe("http://pi-sandbox:token-1@10.89.0.2:3128");
-    expect(container?.spec?.env.HTTP_PROXY).toBe("http://pi-sandbox:token-1@10.89.0.2:3128");
+    expect(container?.spec?.env.HTTPS_PROXY).toMatch(/^http:\/\/pi-sandbox:[0-9a-f]{64}@10\.89\.0\.2:3128$/);
+    expect(container?.spec?.env.HTTP_PROXY).toBe(container?.spec?.env.HTTPS_PROXY);
     expect(container?.spec?.env.NODE_EXTRA_CA_CERTS).toBeUndefined();
   });
 
@@ -101,13 +101,21 @@ describe("pi [args]", () => {
     expect(container?.spec?.env.TERM).toBeUndefined();
     expect(container?.spec?.env.TERM_PROGRAM).toBeUndefined();
     expect(piExecs.map((exec) => exec.spec.env)).toEqual([
-      { TERM: "xterm-256color", TERM_PROGRAM: "first" },
-      { TERM: "xterm-kitty", TERM_PROGRAM: "second" },
+      {
+        TERM: "xterm-256color",
+        TERM_PROGRAM: "first",
+        PI_SANDBOX_LAUNCH_ID: expect.stringMatching(/^[0-9a-f]{16}$/),
+      },
+      {
+        TERM: "xterm-kitty",
+        TERM_PROGRAM: "second",
+        PI_SANDBOX_LAUNCH_ID: expect.stringMatching(/^[0-9a-f]{16}$/),
+      },
     ]);
     expect([...fake.containers.keys()]).toEqual([container?.summary.id]);
   });
 
-  it("mounts the launcher CA read-only when a gateway is configured", async () => {
+  it("mounts the trust bundle read-only when a gateway is configured", async () => {
     const fake = createFakeBackend();
     const harness = await harnessWith({ adapters: () => [fake.backend] });
 
@@ -125,8 +133,9 @@ describe("pi [args]", () => {
     const [container] = [...fake.containers.values()];
 
     expect(container?.spec?.env.NODE_EXTRA_CA_CERTS).toBe("/etc/pi-sandbox/ca.pem");
+    expect(container?.spec?.env.PI_SANDBOX_TRUST_HASH).toBe("trust-hash");
     expect(container?.spec?.mounts).toContainEqual({
-      source: join(harness.stateDir, "ca", "ca.pem"),
+      source: harness.trustPem,
       target: "/etc/pi-sandbox/ca.pem",
       readOnly: true,
       kind: "bind",

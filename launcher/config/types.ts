@@ -35,12 +35,17 @@ export interface DeriveConfig {
   hosts?: string[];
 }
 
-export interface CredentialsExtras {
-  rules: CredentialRule[];
-  derive: DeriveConfig;
+export interface VaultConfig {
+  enabled: boolean;
 }
 
-export type CredentialsConfig = CredentialSource & CredentialsExtras;
+interface CredentialsExtras {
+  rules: CredentialRule[];
+  derive: DeriveConfig;
+  vault: VaultConfig;
+}
+
+type CredentialsConfig = CredentialSource & CredentialsExtras;
 
 export interface GrantsConfig {
   enabled: boolean;
@@ -48,7 +53,7 @@ export interface GrantsConfig {
   permanent: boolean;
 }
 
-export interface ParentProxyConfig {
+interface ParentProxyConfig {
   url: string;
   noProxy?: string[];
   auth?: SecretRef;
@@ -64,7 +69,7 @@ export interface OrgRef {
   refreshHours?: number;
 }
 
-export interface GatewayProvider {
+interface GatewayProvider {
   id: string;
   apiKind: string;
 }
@@ -81,7 +86,7 @@ export interface WorkspaceRootsConfig {
   outside: "refuse" | "warn";
 }
 
-export interface EgressConfig {
+interface EgressConfig {
   allow: string[];
   mcpHosts: string[];
   denyPrivateAddresses: true;
@@ -91,7 +96,7 @@ export interface EgressConfig {
   grants: GrantsConfig;
 }
 
-export interface ImageConfig {
+interface ImageConfig {
   reference: string;
   digest?: string;
   packages?: string[];
@@ -123,6 +128,7 @@ export type ConfigSource = "default" | "profile" | LayerName;
 type LayerCredentials = (CredentialSource | { kind?: undefined }) & {
   rules?: CredentialRule[];
   derive?: Partial<DeriveConfig>;
+  vault?: Partial<VaultConfig>;
 };
 
 export interface LayerConfig {

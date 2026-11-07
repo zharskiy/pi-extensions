@@ -1,6 +1,13 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { LauncherError, stableHash, stateLayout, writeJsonFile } from "../shared/index.ts";
+import {
+  LauncherError,
+  stableHash,
+  stateLayout,
+  type VaultEntry,
+  writeJsonFile,
+  writeVaultEntry,
+} from "../shared/index.ts";
 import { isJsonObject, objectOr } from "./json.ts";
 import type { HostPiFiles, JsonObject, McpOAuthServer } from "./types.ts";
 
@@ -97,7 +104,7 @@ const writeOneServer = async (stateDir: string, name: string, server: McpOAuthSe
   return layout.mcpAuth;
 };
 
-const recordServer = async (stateDir: string, name: string, server: McpOAuthServer) => {
+export const recordServer = async (stateDir: string, name: string, server: McpOAuthServer) => {
   const path = stateLayout(stateDir).mcpAuthServer(name);
   const existing = await readObject(path);
 
@@ -173,7 +180,7 @@ const oauthServers = (files: HostPiFiles) =>
   });
 
 export const seedMcpAuth = async (input: McpSeedInput): Promise<{ signedIn: string[] }> => {
-  const helperPath = join(stateLayout(input.stateDir).mcpAuth, AUTH_FILE);
+  const helperPath = stateLayout(input.stateDir).mcpAuthStore;
   const helperText = await readFile(helperPath, "utf8").catch(() => undefined);
   const helper = await readObject(helperPath);
 
@@ -189,9 +196,11 @@ export const seedMcpAuth = async (input: McpSeedInput): Promise<{ signedIn: stri
     .filter((entry) => hasToken(entry.token));
   const store = { ...helper, ...Object.fromEntries(seeds.map((entry) => [entry.key, entry.token])) };
 
-  if (seeds.length > 0) {
-    await writeJsonFile(helperPath, store, { mode: PRIVATE_MODE });
-  }
+  await seeds.reduce(
+    (previous, entry) =>
+      previous.then(() => writeVaultEntry(input.stateDir, entry.key, entry.token as VaultEntry)),
+    Promise.resolve(),
+  );
 
   const signedIn = servers.filter((entry) => hasToken(store[entry.key]));
 

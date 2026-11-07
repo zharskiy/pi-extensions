@@ -5,7 +5,6 @@ export { setConfigValue } from "./set.ts";
 export type {
   CredentialRule,
   CredentialSource,
-  CredentialsConfig,
   DeriveConfig,
   EffectiveConfig,
   EgressCap,
@@ -13,14 +12,11 @@ export type {
   FetchText,
   FetchTextResult,
   GatewayConfig,
-  GatewayProvider,
   GrantsConfig,
-  OrgLayerInput,
-  OrgLayerResult,
-  OrgRef,
   ParentProxy,
-  ParentProxyConfig,
   SandboxConfig,
   SecretRef,
+  VaultConfig,
   WorkspaceRootsConfig,
 } from "./types.ts";
+export { vaultEnabled } from "./vault.ts";

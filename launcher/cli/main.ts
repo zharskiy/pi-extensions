@@ -1,11 +1,16 @@
+import { lookup } from "node:dns/promises";
 import { homedir } from "node:os";
+import { createInterface } from "node:readline/promises";
 import { createDefaultAdapters } from "../backend/index.ts";
 import type { HostTerminal } from "../container/index.ts";
+import { locateBundledPi } from "../hostpi/index.ts";
 import {
-  ensureLauncherCa,
   ensureProxyRunning,
+  ensureTrustBundle,
+  readDenials,
   readProxyInstances,
   removeProxyInstance,
+  sendProxyControl,
   stopProxy,
 } from "../proxy/index.ts";
 import { createProcessRunner } from "../shared/index.ts";
@@ -37,6 +42,23 @@ const hostTerminal = (): HostTerminal => ({
   },
 });
 
+const resolveHost = async (host: string) =>
+  (await lookup(host, { all: true }).catch(() => [])).map((entry) => entry.address);
+
+const confirm = async (question: string) => {
+  if (process.stdin.isTTY !== true) {
+    return false;
+  }
+
+  const prompt = createInterface({ input: process.stdin, output: process.stderr });
+
+  try {
+    return /^y(es)?$/i.test((await prompt.question(question)).trim());
+  } finally {
+    prompt.close();
+  }
+};
+
 const realDeps = (): CliDeps => {
   const runner = createProcessRunner();
   const home = homedir();
@@ -58,8 +80,14 @@ const realDeps = (): CliDeps => {
       list: readProxyInstances,
       stop: stopProxy,
       remove: removeProxyInstance,
-      ensureCa: (stateDir) => ensureLauncherCa(stateDir, runner),
+      control: sendProxyControl,
+      denials: readDenials,
+      trust: (stateDir, sources) =>
+        ensureTrustBundle({ stateDir, runner, platform: process.platform, sources }),
     },
+    bundledPi: locateBundledPi,
+    resolveHost,
+    confirm,
     now: () => Date.now(),
   };
 };

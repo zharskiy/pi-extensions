@@ -1,15 +1,18 @@
 import type { Backend, BackendCapabilities } from "../../backend/index.ts";
 import { configHash } from "../../config/index.ts";
 import { findCurrentContainer, findRepoContainer, LABELS } from "../../container/index.ts";
+import { liveSessions } from "../../grants/index.ts";
 import { recordedImage } from "../../image/index.ts";
 import { proxyPolicyHash } from "../../proxy/index.ts";
-import { LauncherError } from "../../shared/index.ts";
+import { LauncherError, sha256Hex } from "../../shared/index.ts";
 import { type CliDeps, writeLines } from "../deps.ts";
 import { type LaunchContext, openBackend, openContext } from "../launch.ts";
 import { launcherVersion } from "../versions.ts";
+import { grantLines } from "./egress.ts";
 
 const GAPS: Record<keyof BackendCapabilities, string> = {
-  singleFileMount: "no single-file mounts, git config files are mounted from read-only copies",
+  singleFileMount:
+    "no single-file mounts, git config files and the trust bundle are mounted from read-only copies",
   sshAgent: "no ssh agent forwarding, ssh.agent has no effect",
   internalNetwork: "no internal network, the container cannot reach the egress proxy",
 };
@@ -69,7 +72,7 @@ const backendLines = async (deps: CliDeps, context: LaunchContext) => {
 
 const proxyLines = async (deps: CliDeps, context: LaunchContext) => {
   const instances = await deps.proxy.list(context.stateDir);
-  const wanted = proxyPolicyHash(context.effective.config);
+  const wanted = proxyPolicyHash(context.effective.config, context.effective.egressCap);
 
   if (instances.length === 0) {
     return ["proxy: stopped"];
@@ -88,6 +91,28 @@ const imageLine = async (context: LaunchContext) => {
   return `image: ${image.reference} ${image.digest ?? record?.digest ?? "(not built yet)"}`;
 };
 
+const sessionLines = async (context: LaunchContext) => {
+  const sessions = await liveSessions(context.stateDir, sha256Hex(context.workspace.repoRoot));
+
+  return [
+    `sessions: ${sessions.length} running for this repository`,
+    ...sessions.map(
+      (session) =>
+        `session: ${session.launchId} pid ${session.pid} since ${new Date(session.startedAt).toISOString()}`,
+    ),
+  ];
+};
+
+const grantStatus = async (deps: CliDeps, context: LaunchContext) => {
+  if (!context.effective.config.egress.grants.enabled) {
+    return ["grants: turned off by egress.grants.enabled"];
+  }
+
+  const lines = await grantLines(deps, context);
+
+  return [`grants: ${lines.length} active`, ...lines.map((line) => `grant: ${line}`)];
+};
+
 export const statusCommand = async (deps: CliDeps) => {
   const context = await openContext(deps);
   const lines = [
@@ -96,6 +121,8 @@ export const statusCommand = async (deps: CliDeps) => {
     ...(await backendLines(deps, context)),
     ...(await proxyLines(deps, context)),
     await imageLine(context),
+    ...(await sessionLines(context)),
+    ...(await grantStatus(deps, context)),
   ];
 
   writeLines(deps.stdout, lines);

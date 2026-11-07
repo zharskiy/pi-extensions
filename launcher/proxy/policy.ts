@@ -165,7 +165,7 @@ export const matchesEntry = (entry: string, host: string, port: number) => {
 
 export const authorityOf = (host: string, port: number) => (port === TLS_PORT ? host : `${host}:${port}`);
 
-export const notAllowedReason = (host: string, port: number) => {
+const notAllowedReason = (host: string, port: number) => {
   const target = authorityOf(host, port);
 
   return `pi-sandbox: ${target} is not allowed; run pi sandbox egress allow ${target}`;

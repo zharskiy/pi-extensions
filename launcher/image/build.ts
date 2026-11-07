@@ -36,6 +36,10 @@ const DOCKERFILE = "Dockerfile";
 
 const ENTRYPOINT = "entrypoint.sh";
 
+const BROWSER_SHIM = "xdg-open.mjs";
+
+const COPIED_ASSETS = [ENTRYPOINT, BROWSER_SHIM];
+
 const PACKAGE_NAME = "pi-extensions-mz";
 
 const PINNED = "pinned";
@@ -75,7 +79,7 @@ export const prepareBuildContext = async (versions: ImageVersions, dir: string, 
 
   await writeFile(join(dir, DOCKERFILE), pinVersions(dockerfile, versions));
 
-  await copyFile(join(imageAssets(), ENTRYPOINT), join(dir, ENTRYPOINT));
+  await Promise.all(COPIED_ASSETS.map((name) => copyFile(join(imageAssets(), name), join(dir, name))));
 
   await placeBuildTrust(dir, trustPem);
 
@@ -96,7 +100,7 @@ const extensionsIdentity = async (source: ExtensionsSource) =>
 
 const inputsHash = async (config: SandboxConfig, versions: ImageVersions) => {
   const assets = await Promise.all(
-    [DOCKERFILE, ENTRYPOINT].map((name) => readFile(join(imageAssets(), name), "utf8")),
+    [DOCKERFILE, ...COPIED_ASSETS].map((name) => readFile(join(imageAssets(), name), "utf8")),
   );
   const extensions = await extensionsIdentity(versions.extensions);
 

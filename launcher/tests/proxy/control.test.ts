@@ -16,7 +16,7 @@ import {
   sendProxyControl,
   stopProxy,
 } from "../../proxy/index.ts";
-import { CONTROL_USER, openConnect, plainGet, readRest } from "./proxy-client.ts";
+import { CONTROL_USER, openConnect, pageThrough, plainGet, readRest } from "./proxy-client.ts";
 
 const state = { stateDir: "", home: "" };
 
@@ -24,7 +24,7 @@ const config = (allow: string[]): SandboxConfig => ({
   backend: "auto",
   fallback: "refuse",
   image: { reference: "example/pi-sandbox:test" },
-  credentials: { kind: "host-pi-auth", rules: [], derive: { enabled: true } },
+  credentials: { kind: "host-pi-auth", rules: [], derive: { enabled: true }, vault: { enabled: true } },
   egress: {
     allow,
     mcpHosts: [],
@@ -352,14 +352,13 @@ describe("control socket and repository tokens", () => {
   it("takes env secrets from the launcher and serves a repository its denials", async () => {
     const instance = await ensureProxyRunning(options(["registry.npmjs.org"]));
     const token = await repoProxyToken(state.stateDir, instance.policyHash, repoHash);
-    const reply = await openConnect(instance.port, "evil.test:443", token);
-
-    await readRest(reply.socket);
+    const page = await pageThrough(instance.port, "evil.test:443", token);
 
     expect(await sendProxyControl(instance, { type: "env-secrets", secrets: { rule: "value" } })).toEqual({
       ok: true,
     });
-    expect(reply.status).toBe(403);
+    expect(page).toMatchObject({ connect: 200, status: 403 });
+    expect(page.body).toBe("pi-sandbox: evil.test is not allowed; run pi sandbox egress allow evil.test");
     expect(await readDenials(state.stateDir, instance.policyHash, { repoHash, since: 0 })).toContainEqual(
       expect.objectContaining({ host: "evil.test", repoHash, rule: "egress.allow" }),
     );

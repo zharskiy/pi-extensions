@@ -1,5 +1,6 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ExecIo, ExecSpec } from "../../backend/index.ts";
 import { run } from "../../cli/index.ts";
@@ -9,8 +10,12 @@ import { createHarness } from "./harness.ts";
 interface Probes {
   env?: string;
   auth?: string;
+  mcp?: string;
   routeExit?: number;
   sameDir?: number;
+  offline?: string;
+  mcpListExit?: number;
+  ruleAnswer?: string;
 }
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -33,13 +38,42 @@ const healthServer = async (status: number) => {
   return (server.address() as AddressInfo).port;
 };
 
-type Intent = "repo visible" | "environment" | "auth file" | "direct route";
+type Intent =
+  | "repo visible"
+  | "environment"
+  | "auth file"
+  | "mcp file"
+  | "direct route"
+  | "offline"
+  | "mcp list"
+  | "rule request"
+  | "sync";
 
 const intentOf = (command: string[]): Intent | undefined => {
   const text = command.join(" ");
 
+  if (text.includes("settings.json") || text.includes("pi-sandbox-tmp")) {
+    return "sync";
+  }
+
   if (text.includes("auth.json")) {
     return "auth file";
+  }
+
+  if (text.includes("mcp.json")) {
+    return "mcp file";
+  }
+
+  if (text === "pi mcp list") {
+    return "mcp list";
+  }
+
+  if (command[0] === "printenv") {
+    return "offline";
+  }
+
+  if (command[0] === "node") {
+    return "rule request";
   }
 
   if (text.includes("1.1.1.1")) {
@@ -68,7 +102,28 @@ const answering =
 
         return 0;
       },
+      "mcp file": () => {
+        io.stdout.write(probes.mcp ?? "{}");
+
+        return 0;
+      },
       "direct route": () => probes.routeExit ?? 1,
+      offline: () => {
+        io.stdout.write(probes.offline ?? "");
+
+        return probes.offline === undefined ? 1 : 0;
+      },
+      "mcp list": () => {
+        io.stderr.write("docs: connection refused\n");
+
+        return probes.mcpListExit ?? 0;
+      },
+      "rule request": () => {
+        io.stdout.write(`${probes.ruleAnswer ?? "200"}\n`);
+
+        return 0;
+      },
+      sync: () => 0,
     };
     const intent = intentOf(spec.command);
 
@@ -82,7 +137,15 @@ const GATEWAY = {
   providers: [{ id: "gateway", apiKind: "example-messages" }],
 };
 
-const doctorWith = async (probes: Probes, healthStatus = 200, userConfig?: unknown) => {
+const HOST_LINES = [
+  expect.stringMatching(/^ok bundled pi: pi \S+, the same as the image$/),
+  "ok provider hosts: 1 built-in providers with known hosts",
+  "skip parent proxy: no parent proxy configured",
+  "skip org baseline: no org baseline configured",
+  "ok grants: none active",
+];
+
+const doctorWith = async (probes: Probes, healthStatus = 200, userConfig?: unknown, hostAuth?: unknown) => {
   const port = await healthServer(healthStatus);
   const fake = createFakeBackend({ exec: answering(probes) });
   const harness = await createHarness({
@@ -94,6 +157,10 @@ const doctorWith = async (probes: Probes, healthStatus = 200, userConfig?: unkno
 
   if (userConfig !== undefined) {
     await harness.writeJson(harness.userConfigFile, userConfig);
+  }
+
+  if (hostAuth !== undefined) {
+    await harness.writeJson(join(harness.hostAgentDir, "auth.json"), hostAuth);
   }
 
   const code = await run(["sandbox", "doctor"], harness.deps);
@@ -111,23 +178,82 @@ describe("pi sandbox doctor", () => {
       `ok proxy: pid 77 port ${port}, /healthz answers`,
       expect.stringMatching(/^ok image: ghcr\.io\/zharskiy\/pi-sandbox:\S+ sha256:built-1$/),
       `ok same-path mount: ${harness.repoRoot} is mounted at the same path`,
-      "ok credential sweep: no credential in the environment or auth.json",
+      "ok credential sweep: no credential in the environment, auth.json or mcp.json",
       "ok no-route: no direct route to 1.1.1.1:443",
+      "ok offline: PI_OFFLINE is unset",
+      "ok mcp: pi mcp list connects to every enabled server",
+      "skip trust: no credential rule, nothing is terminated",
+      ...HOST_LINES,
     ]);
     expect(code).toBe(0);
   });
 
-  it("runs every probe inside the repository container without a tty", async () => {
+  it("runs every probe inside the repository container without a tty, then removes the container it created", async () => {
     const { fake } = await doctorWith({});
-    const [container] = [...fake.containers.keys()];
+    const probes = fake.execs.filter((exec) => intentOf(exec.spec.command) !== "sync");
+    const container = fake.execs[0]?.spec.containerId;
 
-    expect(fake.execs.map((exec) => intentOf(exec.spec.command)).sort()).toEqual([
+    expect([...new Set(probes.map((exec) => intentOf(exec.spec.command)))].sort()).toEqual([
       "auth file",
       "direct route",
       "environment",
+      "mcp file",
+      "mcp list",
+      "offline",
       "repo visible",
     ]);
     expect(fake.execs.every((exec) => exec.spec.containerId === container && !exec.tty)).toBe(true);
+    expect(fake.containers.size).toBe(0);
+  });
+
+  it("checks trust and every credential rule host with its placeholder", async () => {
+    const { lines, fake } = await doctorWith({ ruleAnswer: "401" }, 200, undefined, {
+      example: { type: "api_key", key: "real-secret-value-1234567890" },
+    });
+    const request = fake.execs.find((exec) => intentOf(exec.spec.command) === "rule request");
+
+    expect(lines).toContain("ok trust: the container trusts the proxy's certificate for models.example.test");
+    expect(lines).toContain(
+      "fail rule derived:auth:example:key: https://models.example.test/ answered HTTP 401 with the placeholder",
+    );
+    expect(request?.spec.command.at(-1)).toMatch(/^Bearer pi-sandbox-[0-9a-f]{24}$/);
+    expect(JSON.stringify(fake.execs.map((exec) => exec.spec))).not.toContain("real-secret-value");
+  });
+
+  it("fails the trust check on a certificate error and the offline and mcp checks inside", async () => {
+    const { code, lines } = await doctorWith(
+      { ruleAnswer: "error SELF_SIGNED_CERT_IN_CHAIN", offline: "1", mcpListExit: 1 },
+      200,
+      undefined,
+      { example: { type: "api_key", key: "real-secret-value-1234567890" } },
+    );
+
+    expect(lines).toContain("fail trust: models.example.test: SELF_SIGNED_CERT_IN_CHAIN");
+    expect(lines).toContain(
+      "fail offline: PI_OFFLINE is set in the container, so package installs and updates are off",
+    );
+    expect(lines).toContain("fail mcp: pi mcp list exited 1: docs: connection refused");
+    expect(code).toBe(1);
+  });
+
+  it("fails the sweep on an mcp.json header or stdio env value that is not a placeholder", async () => {
+    const { lines } = await doctorWith({
+      mcp: JSON.stringify({
+        mcpServers: {
+          docs: {
+            url: "https://docs.example.test/mcp",
+            headers: { Authorization: "Bearer real-secret-1234567890" },
+          },
+          tool: { command: "tool", env: { TOOL_TOKEN: "pi-sandbox-0123456789abcdef01234567", MODE: "fast" } },
+        },
+      }),
+    });
+    const sweep = lines.find((line) => line.startsWith("fail credential sweep")) ?? "";
+
+    expect(sweep).toBe(
+      "fail credential sweep: /home/pi/.pi/agent/mcp.json holds a value other than a placeholder at mcpServers.docs.headers.Authorization",
+    );
+    expect(lines.join("\n")).not.toContain("real-secret");
   });
 
   it("fails the sweep on secret-named variables and auth.json values other than the placeholder", async () => {
@@ -157,7 +283,7 @@ describe("pi sandbox doctor", () => {
       { gateway: GATEWAY },
     );
 
-    expect(lines).toContain("ok credential sweep: no credential in the environment or auth.json");
+    expect(lines).toContain("ok credential sweep: no credential in the environment, auth.json or mcp.json");
   });
 
   it("fails when the container reaches the internet directly or the repo is not mounted", async () => {
@@ -193,6 +319,10 @@ describe("pi sandbox doctor", () => {
       "skip same-path mount: no runtime",
       "skip credential sweep: no runtime",
       "skip no-route: no runtime",
+      "skip offline: no runtime",
+      "skip mcp: no runtime",
+      "skip trust: no runtime",
+      ...HOST_LINES,
     ]);
   });
 
@@ -207,11 +337,15 @@ describe("pi sandbox doctor", () => {
 
     expect(await run(["sandbox", "doctor"], harness.deps)).toBe(1);
     expect(harness.stdout().trim().split("\n").slice(1)).toEqual([
-      "ok proxy: not required, no gateway and an empty allowlist",
+      "ok proxy: not required, no gateway, no credential rule and an empty allowlist",
       "fail image: build failed",
       "skip same-path mount: no image",
       "skip credential sweep: no image",
       "skip no-route: no image",
+      "skip offline: no image",
+      "skip mcp: no image",
+      "skip trust: no image",
+      ...HOST_LINES,
     ]);
   });
 });

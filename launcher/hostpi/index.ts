@@ -1,6 +1,5 @@
 export { deriveSandboxPi } from "./derive.ts";
 export { readHostPiFiles } from "./files.ts";
-export type { McpLoginInput, McpLoginServerInput, McpSeedInput } from "./mcp-auth.ts";
 export {
   mcpAuthKey,
   mcpLoginServer,
@@ -10,21 +9,21 @@ export {
   seedMcpAuth,
 } from "./mcp-auth.ts";
 export { packageSourceKey, sourceOfEntry } from "./package-source.ts";
-export type { PrivateHostInput, ResolveHost } from "./private-hosts.ts";
 export { privateHostNotices } from "./private-hosts.ts";
-export type { ProviderHostsInput, ProviderHostsResult } from "./provider-hosts.ts";
 export { locateBundledPi, readProviderHosts } from "./provider-hosts.ts";
 export type {
   BundledPi,
-  DerivedFiles,
+  ContainerMcpAuthEntries,
+  ContainerMcpAuthInput,
   DerivedSandboxPi,
   DeriveInput,
+  DeriveVault,
   HostPiFiles,
   JsonObject,
   McpOAuthServer,
-  PackageChange,
   PackageChangeKind,
-  ProviderHostEntry,
-  ProviderHosts,
+  VaultDiscoveryInput,
+  VaultDiscoveryResult,
 } from "./types.ts";
+export { containerMcpAuth, discoverVaultServers, mcpDiscoverCommand, vaultCandidates } from "./vault.ts";
 export { writeBackPackageChange } from "./write-back.ts";

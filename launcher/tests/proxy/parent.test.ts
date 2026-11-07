@@ -143,18 +143,18 @@ describe("parent proxy", () => {
     socket.destroy();
   });
 
-  it("reads the parent and its credentials from HTTPS_PROXY in env mode", async () => {
-    const route = parentRouteFor(
-      "env",
-      {
-        HTTPS_PROXY: `http://corp:pass@127.0.0.1:${portOf(state.parent)}`,
-        NO_PROXY: "internal.test,.corp.test",
-      },
-      resolverWith(undefined),
-    );
+  it("takes the env parent's address from HTTPS_PROXY and its credentials only from the launcher's memory copy", async () => {
+    const env = {
+      HTTPS_PROXY: `http://corp:pass@127.0.0.1:${portOf(state.parent)}`,
+      NO_PROXY: "internal.test,.corp.test",
+    };
+    const sent = parentRouteFor("env", env, resolverWith("corp:sent-by-launcher"));
+    const unsent = parentRouteFor("env", env, resolverWith(undefined));
 
-    expect(route?.noProxy).toEqual(["internal.test", ".corp.test"]);
-    expect(await route?.authorization()).toBe(basicAuthorization("corp:pass"));
+    expect(sent?.noProxy).toEqual(["internal.test", ".corp.test"]);
+    expect(sent?.port).toBe(portOf(state.parent));
+    expect(await sent?.authorization()).toBe(basicAuthorization("corp:sent-by-launcher"));
+    expect(await unsent?.authorization()).toBeUndefined();
     expect(parentRouteFor("none", { HTTPS_PROXY: "http://x:1" }, resolverWith(undefined))).toBeUndefined();
   });
 

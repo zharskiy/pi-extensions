@@ -3,7 +3,8 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { run } from "../../cli/index.ts";
 import { LABELS, repoVolumes } from "../../container/index.ts";
-import { launcherRoot } from "../../shared/index.ts";
+import { registerSession } from "../../grants/index.ts";
+import { launcherRoot, sha256Hex } from "../../shared/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
 import { createHarness } from "./harness.ts";
@@ -41,13 +42,15 @@ describe("pi sandbox status", () => {
     expect(lines).toContain(`launcher: ${await packageVersion()}`);
     expect(lines).toContain("backend: colima fake");
     expect(lines).toContain("backend socket: /fake/docker.sock");
-    expect(lines).toContain(`container: ${container?.summary.id} running`);
+    expect(lines).toContain(`container: ${container?.summary.id} stopped`);
     expect(lines).toContain("container digest: sha256:built-1");
     expect(lines.some((line) => /^container config hash: [0-9a-f]{64} \(current\)$/.test(line))).toBe(true);
     expect(lines).toContain("proxy: stopped");
     expect(lines).toContain(`image: ghcr.io/zharskiy/pi-sandbox:${await packageVersion()} sha256:built-1`);
     expect(lines).toContain("gap: no ssh agent forwarding, ssh.agent has no effect");
     expect(lines).toContain("gap: no internal network, the container cannot reach the egress proxy");
+    expect(lines).toContain("sessions: 0 running for this repository");
+    expect(lines).toContain("grants: 0 active");
   });
 
   it("reports the container stale when its image digest differs from the recorded image", async () => {
@@ -89,6 +92,28 @@ describe("pi sandbox status", () => {
       `proxy: policy ${"b".repeat(12)} pid 12 port 4002 (other policy)`,
     ]);
     expect(harness.stdout()).not.toContain("secret-token");
+  });
+
+  it("reports live sessions and active grants of this repository", async () => {
+    const harness = await harnessWith();
+
+    await registerSession(harness.stateDir, {
+      launchId: "0123456789abcdef",
+      pid: process.pid,
+      repoHash: sha256Hex(harness.repoRoot),
+      startedAt: 1_700_000_000_000,
+    });
+
+    await run(["sandbox", "egress", "allow", "docs.example.test", "--permanent"], harness.deps);
+
+    expect(await run(["sandbox", "status"], harness.deps)).toBe(0);
+
+    const lines = harness.stdout().split("\n");
+
+    expect(lines).toContain("sessions: 1 running for this repository");
+    expect(lines).toContain(`session: 0123456789abcdef pid ${process.pid} since 2023-11-14T22:13:20.000Z`);
+    expect(lines).toContain("grants: 1 active");
+    expect(lines).toContain("grant: docs.example.test for this repository permanently");
   });
 
   it("still reports the proxy and image without a backend", async () => {
@@ -167,6 +192,19 @@ describe("pi sandbox config", () => {
     );
   });
 
+  it("refuses loosening a key the org baseline locked, and writes nothing", async () => {
+    const harness = await harnessWith();
+    const baseline = join(harness.root, "org-baseline.json");
+
+    await harness.writeJson(baseline, { egress: { grants: { permanent: false } } });
+
+    await harness.writeJson(harness.userConfigFile, { org: { source: baseline } });
+
+    expect(await run(["sandbox", "config", "set", "egress.grants.permanent", "true"], harness.deps)).toBe(1);
+    expect(harness.stderr()).toContain("locked by org");
+    expect(JSON.parse(await readFile(harness.userConfigFile, "utf8"))).toEqual({ org: { source: baseline } });
+  });
+
   it("refuses loosening a key the policy locked and names the layer", async () => {
     const harness = await harnessWith();
 
@@ -178,7 +216,7 @@ describe("pi sandbox config", () => {
 });
 
 describe("pi sandbox gc and reset", () => {
-  it("removes stopped launcher containers and keeps running ones", async () => {
+  it("removes stopped launcher containers, this repository's idle one included, and keeps running ones", async () => {
     const fake = createFakeBackend();
     const harness = await harnessWith({ adapters: () => [fake.backend] });
 
@@ -191,12 +229,20 @@ describe("pi sandbox gc and reset", () => {
       image: "x",
     });
 
+    fake.addContainer({
+      name: "pi-sandbox-busy",
+      labels: { [LABELS.managed]: "true" },
+      state: "running",
+      image: "x",
+    });
+
     fake.addContainer({ name: "unrelated", labels: {}, state: "stopped", image: "x" });
 
     expect(await run(["sandbox", "gc"], harness.deps)).toBe(0);
-    expect(harness.stdout()).toContain("removed 1 stopped container\n");
+    expect(harness.stdout()).toContain("removed 2 stopped containers\n");
+    expect(harness.stdout()).toContain("pruned 0 ended grants\n");
     expect([...fake.containers.values()].map((entry) => entry.summary.name).sort()).toEqual([
-      expect.stringMatching(/^pi-sandbox-[0-9a-f]{12}$/),
+      "pi-sandbox-busy",
       "unrelated",
     ]);
   });
@@ -214,6 +260,13 @@ describe("pi sandbox gc and reset", () => {
     });
 
     await run([], harness.deps);
+
+    fake.addContainer({
+      name: "pi-sandbox-busy",
+      labels: { [LABELS.managed]: "true", [LABELS.proxyPolicyHash]: "policy" },
+      state: "running",
+      image: "x",
+    });
 
     const relay = (policyHash: string) =>
       fake.addContainer({

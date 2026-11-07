@@ -1,14 +1,29 @@
+import { join } from "node:path";
 import type { Backend } from "../backend/index.ts";
-import type { SandboxConfig } from "../config/index.ts";
+import type { EgressCap, ExtraCa, SandboxConfig } from "../config/index.ts";
 import type { HostTerminal, SignalSource } from "../container/index.ts";
-import type { ProxyInstance } from "../proxy/index.ts";
-import { type CommandRunner, launcherPaths } from "../shared/index.ts";
+import type { BundledPi } from "../hostpi/index.ts";
+import type {
+  ControlMessage,
+  ControlReply,
+  DenialRecord,
+  ProxyInstance,
+  TrustBundle,
+} from "../proxy/index.ts";
+import { type CommandRunner, expandHome, launcherPaths } from "../shared/index.ts";
 
 interface ProxyRequest {
   config: SandboxConfig;
   stateDir: string;
   env: NodeJS.ProcessEnv;
   home: string;
+  egressCap: EgressCap;
+  piCommand: string[];
+}
+
+interface DenialFilter {
+  repoHash: string;
+  since: number;
 }
 
 interface ProxyControl {
@@ -16,7 +31,9 @@ interface ProxyControl {
   list(stateDir: string): Promise<ProxyInstance[]>;
   stop(stateDir: string, policyHash?: string): Promise<number>;
   remove(stateDir: string, policyHash: string): Promise<boolean>;
-  ensureCa(stateDir: string): Promise<{ certPemPath: string }>;
+  control(instance: ProxyInstance, message: ControlMessage): Promise<ControlReply>;
+  denials(stateDir: string, policyHash: string, filter: DenialFilter): Promise<DenialRecord[]>;
+  trust(stateDir: string, sources: ExtraCa[]): Promise<TrustBundle>;
 }
 
 export interface CliDeps {
@@ -33,6 +50,9 @@ export interface CliDeps {
   gid: number;
   adapters(): Backend[];
   proxy: ProxyControl;
+  bundledPi(): Promise<BundledPi | undefined>;
+  resolveHost(host: string): Promise<string[]>;
+  confirm(question: string): Promise<boolean>;
   now(): number;
 }
 
@@ -44,5 +64,20 @@ export const writeLines = (stream: NodeJS.WritableStream, lines: string[]) => {
   stream.write(lines.map((line) => `${line}\n`).join(""));
 };
 
+export const writeNotices = (deps: CliDeps, notices: string[]) => {
+  writeLines(
+    deps.stderr,
+    [...new Set(notices)].map((notice) => `pi-sandbox: ${notice}`),
+  );
+};
+
 export const pathsOf = (deps: CliDeps) =>
   launcherPaths({ env: deps.env, home: deps.home, platform: deps.platform });
+
+export const hostAgentDirOf = (deps: CliDeps) => {
+  const configured = deps.env.PI_CODING_AGENT_DIR;
+
+  return configured === undefined || configured === ""
+    ? join(deps.home, ".pi", "agent")
+    : expandHome(configured, deps.home);
+};

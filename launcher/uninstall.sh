@@ -153,6 +153,22 @@ if [ "$stopped_proxies" -eq 0 ]; then
   echo "proxy: none running"
 fi
 
+remove_state() {
+  if [ "$#" -eq 0 ]; then
+    return 0
+  fi
+
+  if [ -e "$state_dir/$1" ]; then
+    act rm -rf "$state_dir/$1"
+    echo "state: $(verb "remove" "removed") $state_dir/$1"
+  fi
+
+  shift
+  remove_state "$@"
+}
+
+remove_state sessions render sync mcp-auth provider-hosts org grants.json
+
 colima_socket="$HOME/.colima/$colima_profile/docker.sock"
 
 if [ -S "$colima_socket" ]; then
@@ -211,4 +227,4 @@ else
   echo "colima: profile $colima_profile kept (pass --vm to delete it)"
 fi
 
-echo "kept: your repositories, ~/.pi, ~/.config/pi-sandbox and $state_dir"
+echo "kept: your repositories, ~/.pi, ~/.config/pi-sandbox and the rest of $state_dir (image record, CA, salt, proxy instances)"

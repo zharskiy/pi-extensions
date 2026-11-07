@@ -20,8 +20,10 @@ import { createProxyRuntime } from "./runtime.ts";
 import { createSecretResolver } from "./secrets/index.ts";
 import { startProxyServer } from "./server.ts";
 import { proxyPolicyHash, proxySettings } from "./settings.ts";
+import { testResolveOverrides } from "./test-resolve.ts";
 import { openLauncherCa } from "./tls-ca.ts";
 import { extraPemPathOf } from "./trust.ts";
+import { createVault } from "./vault/index.ts";
 
 const LISTEN_HOST = "127.0.0.1";
 
@@ -105,6 +107,13 @@ const run = async (args: ReturnType<typeof parseDaemonArgs>) => {
     cap: settings.cap,
   });
   const log = createAccessLog(files.accessLog);
+  const vault = createVault({
+    stateDir: args.stateDir,
+    servers: () => runtime.vault(),
+    resolver,
+    runner,
+    discoverCommand: daemonConfig.discoverCommand ?? [],
+  });
   const server = await startProxyServer({
     listen: { host: LISTEN_HOST, port: args.port },
     policy: settings.policy,
@@ -116,8 +125,12 @@ const run = async (args: ReturnType<typeof parseDaemonArgs>) => {
     privateHosts: settings.privateHosts,
     ca,
     log: log.write,
-    dial: createDialer({ parent: parentRouteFor(settings.parentProxy, process.env, resolver) }),
+    dial: createDialer({
+      parent: parentRouteFor(settings.parentProxy, process.env, resolver),
+      overrides: testResolveOverrides(process.env),
+    }),
     upstreamCa: await upstreamTrust(args.stateDir, settings.extraCa.length > 0),
+    vault,
     onControl: (message) => {
       secrets.current = new Map(Object.entries(message.secrets));
 

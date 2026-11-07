@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -253,14 +253,14 @@ describe("mcpOAuth secrets", () => {
     expect(fake.calls).toHaveLength(0);
   });
 
-  it("refreshes a token within 60 s of expiry through a one-server agent dir", async () => {
+  it("refreshes a token within 30 s of expiry through a one-server agent dir", async () => {
     const seen: unknown[] = [];
     const clock = createFakeClock();
     const { fake, resolver } = setup((call) => refresher(clock, seen)(call), { now: clock.now });
 
     await writeServer();
 
-    await writeStore("old-token", clock.now() + 30_000);
+    await writeStore("old-token", clock.now() + 20_000);
 
     expect(await secretOf(resolver, "mcp:docs-server:oauth", ref)).toBe("fresh-token");
     expect(fake.calls.map(argvOf)).toEqual([[...PI, "mcp", "list"]]);
@@ -273,6 +273,87 @@ describe("mcpOAuth secrets", () => {
     expect(JSON.parse(await readFile(join(state.mcpAuthDir, "mcp-auth.json"), "utf8"))[key].tokens).toEqual({
       access_token: "fresh-token",
     });
+  });
+
+  it("injects a token with a 60 s lifetime and keeps it after a refresh that changed nothing", async () => {
+    const clock = createFakeClock();
+    const { fake, resolver } = setup(() => ({ stdout: "" }), { now: clock.now });
+
+    await writeServer();
+
+    await writeStore("short-token", clock.now() + 60_000);
+
+    expect(await secretOf(resolver, "rule", ref)).toBe("short-token");
+    expect(fake.calls).toHaveLength(0);
+
+    clock.advance(31_000);
+
+    expect(await secretOf(resolver, "rule", ref)).toBe("short-token");
+    expect(await secretOf(resolver, "rule", ref)).toBe("short-token");
+    expect(fake.calls).toHaveLength(1);
+  });
+
+  it("injects a token with 45 s remaining without running pi on every request", async () => {
+    const clock = createFakeClock();
+    const { fake, resolver } = setup(() => ({ stdout: "" }), { now: clock.now });
+
+    await writeServer();
+
+    await writeStore("live-token", clock.now() + 45_000);
+
+    const values = await Promise.all([1, 2, 3].map(() => secretOf(resolver, "rule", ref)));
+
+    clock.advance(10_000);
+
+    values.push(await secretOf(resolver, "rule", ref));
+
+    expect(values).toEqual(["live-token", "live-token", "live-token", "live-token"]);
+    expect(fake.calls).toHaveLength(0);
+
+    clock.advance(6_000);
+
+    await secretOf(resolver, "rule", ref);
+
+    clock.advance(5_000);
+
+    await secretOf(resolver, "rule", ref);
+
+    expect(fake.calls).toHaveLength(1);
+  });
+
+  it("rejects an expired token whose refresh did nothing", async () => {
+    const clock = createFakeClock();
+    const { fake, resolver } = setup(() => undefined, { now: clock.now });
+
+    await writeServer();
+
+    await writeStore("expired-token", clock.now() - 1);
+
+    expect(await secretOf(resolver, "rule", ref)).toBe(
+      `unavailable: mcpOAuth secret for rule: no valid token for docs-server; run pi mcp login docs-server`,
+    );
+    expect(fake.calls).toHaveLength(1);
+  });
+
+  it("picks up a token pi rotated during the refresh", async () => {
+    const seen: unknown[] = [];
+    const clock = createFakeClock();
+    const { fake, resolver } = setup((call) => refresher(clock, seen)(call), { now: clock.now });
+
+    await writeServer();
+
+    await writeStore("old-token", clock.now() + 45_000);
+
+    expect(await secretOf(resolver, "rule", ref)).toBe("old-token");
+
+    clock.advance(20_000);
+
+    expect(await secretOf(resolver, "rule", ref)).toBe("fresh-token");
+
+    clock.advance(60_000);
+
+    expect(await secretOf(resolver, "rule", ref)).toBe("fresh-token");
+    expect(fake.calls).toHaveLength(1);
   });
 
   it("refreshes once after a 401 even when the token has not expired", async () => {
@@ -302,5 +383,92 @@ describe("mcpOAuth secrets", () => {
 
     expect(result.ok).toBe(false);
     expect(JSON.stringify(result)).not.toContain("expired-token-value");
+  });
+
+  describe("locking", () => {
+    const delayedRefresher = (clock: { now(): number }) => async (call: Parameters<FakeResponder>[0]) => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      return refresher(clock, [])(call);
+    };
+
+    it("lets two resolvers sharing one store run pi mcp list once", async () => {
+      const clock = createFakeClock();
+      const fake = createFakeRunner(delayedRefresher(clock));
+      const deps = { runner: fake.runner, now: clock.now };
+      const first = setup(undefined, deps);
+      const second = setup(undefined, deps);
+
+      await writeServer();
+
+      await writeStore("old-token", clock.now() - 1);
+
+      const values = await Promise.all([
+        secretOf(first.resolver, "rule", ref),
+        secretOf(second.resolver, "rule", ref),
+      ]);
+
+      expect(values).toEqual(["fresh-token", "fresh-token"]);
+      expect(fake.calls).toHaveLength(1);
+    });
+
+    it("waits for a held store lock before copying a refresh back", async () => {
+      const clock = createFakeClock();
+      const { resolver } = setup((call) => refresher(clock, [])(call), { now: clock.now });
+      const lock = join(state.mcpAuthDir, "mcp-auth.json.lock");
+
+      await writeServer();
+
+      await writeStore("old-token", clock.now() - 1);
+
+      await mkdir(lock);
+
+      const pending = secretOf(resolver, "rule", ref);
+
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      const during = JSON.parse(await readFile(join(state.mcpAuthDir, "mcp-auth.json"), "utf8"))[key].tokens;
+
+      await rm(lock, { recursive: true });
+
+      expect(during.access_token).toBe("old-token");
+      expect(await pending).toBe("fresh-token");
+    });
+
+    it("takes over a stale refresh lock", async () => {
+      const clock = createFakeClock();
+      const { fake, resolver } = setup((call) => refresher(clock, [])(call), { now: clock.now });
+      const lock = join(state.mcpAuthDir, "refresh-docs-server.lock");
+      const old = new Date(Date.now() - 60_000);
+
+      await writeServer();
+
+      await writeStore("old-token", clock.now() - 1);
+
+      await mkdir(lock);
+
+      await utimes(lock, old, old);
+
+      expect(await secretOf(resolver, "rule", ref)).toBe("fresh-token");
+      expect(fake.calls).toHaveLength(1);
+    });
+
+    it("skips the copy-back when another writer changed the access token meanwhile", async () => {
+      const clock = createFakeClock();
+      const { resolver } = setup(
+        async (call) => {
+          await writeStore("rotated-elsewhere", clock.now() + 3_600_000);
+
+          return refresher(clock, [])(call);
+        },
+        { now: clock.now },
+      );
+
+      await writeServer();
+
+      await writeStore("old-token", clock.now() - 1);
+
+      expect(await secretOf(resolver, "rule", ref)).toBe("rotated-elsewhere");
+    });
   });
 });

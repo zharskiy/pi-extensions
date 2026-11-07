@@ -247,6 +247,7 @@ const CREDENTIAL_RULE: ObjectSpec = {
 const CREDENTIAL_EXTRAS: Record<string, Spec> = {
   rules: { type: "array", items: CREDENTIAL_RULE, check: uniqueIds },
   derive: shape({ enabled: flag, hosts: list(hostPattern) }),
+  vault: shape({ enabled: flag }),
 };
 
 const legacyCredentials = (properties: Record<string, Spec>, required: readonly string[]): ObjectSpec =>
@@ -341,6 +342,7 @@ const LAYER_SPEC: ObjectSpec = {
 const PROJECT_REFUSED_KEYS = [
   "credentials.rules",
   "credentials.derive",
+  "credentials.vault",
   "egress.deny",
   "egress.privateHosts",
   "egress.parentProxy",

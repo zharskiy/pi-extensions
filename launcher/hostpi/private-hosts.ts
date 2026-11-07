@@ -42,7 +42,7 @@ const isPrivateV6 = (address: string) => {
   return lower === "::1" || lower === "::" || /^f[cd]/.test(lower) || /^fe[89ab]/.test(lower);
 };
 
-export const isPrivateAddress = (address: string) => {
+const isPrivateAddress = (address: string) => {
   const family = isIP(address);
 
   if (family === 4) {

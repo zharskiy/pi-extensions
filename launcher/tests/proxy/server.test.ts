@@ -1,5 +1,7 @@
+import { execFile } from "node:child_process";
 import { writeFile } from "node:fs/promises";
 import { createServer as createHttpsServer, type Server } from "node:https";
+import { type TLSSocket, connect as tlsConnect } from "node:tls";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { addGrant, endSession, newLaunchId, registerSession } from "../../grants/index.ts";
 import { writeProxyDynamic } from "../../proxy/dynamic.ts";
@@ -21,6 +23,7 @@ import {
 import {
   CONTROL_USER,
   openConnect,
+  pageThrough,
   plainGet,
   plainRequest,
   readBody,
@@ -99,8 +102,8 @@ afterAll(async () => {
   await removeDir(state.stateDir);
 });
 
-const connectStatus = async (authority: string, token = state.token) => {
-  const reply = await openConnect(state.test.proxy.port, authority, token);
+const connectStatusOn = async (port: number, authority: string, token: string) => {
+  const reply = await openConnect(port, authority, token);
 
   if (reply.status === 200) {
     reply.socket.destroy();
@@ -110,6 +113,12 @@ const connectStatus = async (authority: string, token = state.token) => {
 
   return { status: reply.status, body: JSON.parse(await readRest(reply.socket)), head: reply.head };
 };
+
+const connectStatus = (authority: string, token = state.token) =>
+  connectStatusOn(state.test.proxy.port, authority, token);
+
+const deniedPage = async (authority: string, token = state.token) =>
+  (await pageThrough(state.test.proxy.port, authority, token, state.ca.certPem)).body;
 
 describe("proxy authentication", () => {
   it("answers a CONNECT without credentials with 407 and a challenge", async () => {
@@ -260,18 +269,68 @@ describe("CONNECT tunnel", () => {
     expect(entry).toMatchObject({ host: "target.test", rule: "egress.allow", repo: REPO });
   });
 
-  it("denies a host outside the allowlist with the allow hint in the status line and body", async () => {
-    const denied = await connectStatus("evil.test:443");
+  it("answers a host outside the allowlist with a 403 page carrying the allow hint inside the tunnel", async () => {
+    const denied = await pageThrough(state.test.proxy.port, "evil.test:443", state.token, state.ca.certPem);
 
-    expect(denied.status).toBe(403);
-    expect(denied.head.split("\r\n")[0]).toBe(`HTTP/1.1 403 ${hint("evil.test")}`);
-    expect(denied.body).toEqual({ denied: "evil.test", rule: "egress.allow", reason: hint("evil.test") });
+    expect(denied).toEqual({
+      connect: 200,
+      status: 403,
+      contentType: "text/plain; charset=utf-8",
+      body: hint("evil.test"),
+    });
+    expect(state.test.log).toContainEqual(
+      expect.objectContaining({ host: "evil.test", decision: "deny", rule: "egress.allow" }),
+    );
   });
 
   it("names the port in the hint for a port that is not allowed", async () => {
-    const denied = await connectStatus("target.test:8443");
+    expect(await deniedPage("target.test:8443")).toBe(hint("target.test:8443"));
+    expect(state.test.log).toContainEqual(
+      expect.objectContaining({ host: "target.test", decision: "deny", rule: "egress.port" }),
+    );
+  });
 
-    expect(denied.body).toMatchObject({ rule: "egress.port", reason: hint("target.test:8443") });
+  it("lets Node's built-in fetch through HTTPS_PROXY show the denial text", async () => {
+    const script =
+      "fetch('https://evil.test/doc').then(async (r) => console.log(r.status, await r.text()), (e) => console.log(String(e), String(e.cause)))";
+    const output = await new Promise<string>((resolve) => {
+      execFile(
+        process.execPath,
+        ["-e", script],
+        {
+          env: {
+            PATH: process.env.PATH ?? "",
+            NODE_USE_ENV_PROXY: "1",
+            HTTPS_PROXY: `http://pi-sandbox:${state.token}@127.0.0.1:${state.test.proxy.port}`,
+            NODE_EXTRA_CA_CERTS: state.ca.certPath,
+          },
+          timeout: 15_000,
+        },
+        (_error, stdout, stderr) => resolve(`${stdout}${stderr}`),
+      );
+    });
+
+    expect(output).toContain("is not allowed");
+    expect(output).toContain(`403 ${hint("evil.test")}`);
+  }, 20_000);
+
+  it("serves the denial page to every request on a kept-alive tunnel and closes it", async () => {
+    const reply = await openConnect(state.test.proxy.port, "evil.test:443", state.token);
+    const secure = await new Promise<TLSSocket>((resolve, reject) => {
+      const socket = tlsConnect({ socket: reply.socket, servername: "evil.test", ca: state.ca.certPem }, () =>
+        resolve(socket),
+      );
+
+      socket.once("error", reject);
+    });
+
+    secure.write("POST /upload HTTP/1.1\r\nHost: evil.test\r\nContent-Length: 0\r\n\r\n");
+
+    const raw = await readRest(secure as never);
+
+    expect(raw).toContain("HTTP/1.1 403 Forbidden");
+    expect(raw.toLowerCase()).toContain("connection: close");
+    expect(raw.endsWith(hint("evil.test"))).toBe(true);
   });
 
   it.each([
@@ -315,6 +374,37 @@ describe("CONNECT tunnel", () => {
   });
 });
 
+describe("denial page certificates", () => {
+  it("reuses a minted name and falls back to a 403 on the CONNECT once minting is rate-limited", async () => {
+    const stateDir = await createStateDir();
+    const local = await startTestProxy({
+      stateDir,
+      policy: { allow: [], mcpHosts: [] },
+      ca: state.ca,
+      denialPages: { mintsPerMinute: 1 },
+    });
+    const token = await local.tokenOf(REPO);
+
+    const first = await pageThrough(local.proxy.port, "first.test:443", token, state.ca.certPem);
+    const again = await pageThrough(local.proxy.port, "first.test:443", token, state.ca.certPem);
+    const second = await connectStatusOn(local.proxy.port, "second.test:443", token);
+
+    await local.proxy.close();
+
+    await removeDir(stateDir);
+
+    expect([first.status, again.status]).toEqual([403, 403]);
+    expect(second.status).toBe(403);
+    expect(second.head.split("\r\n")[0]).toBe(`HTTP/1.1 403 ${hint("second.test")}`);
+    expect(second.body).toEqual({ denied: "second.test", rule: "egress.allow", reason: hint("second.test") });
+    expect(local.log.filter((entry) => entry.decision === "deny").map((entry) => entry.host)).toEqual([
+      "first.test",
+      "first.test",
+      "second.test",
+    ]);
+  });
+});
+
 describe("grants", () => {
   it("allows a host with a repository grant for that repository only", async () => {
     await addGrant(
@@ -325,7 +415,7 @@ describe("grants", () => {
     );
 
     expect((await connectStatus("granted.test:443")).status).toBe(200);
-    expect((await connectStatus("granted.test:443", state.otherToken)).status).toBe(403);
+    expect(await deniedPage("granted.test:443", state.otherToken)).toBe(hint("granted.test"));
   });
 
   it("keeps egress.deny above a grant", async () => {
@@ -371,13 +461,13 @@ describe("grants", () => {
 
     await endSession(state.stateDir, { repoHash: OTHER_REPO, launchId, onLast: async () => undefined });
 
-    expect((await connectStatus("granted.test:443", state.otherToken)).status).toBe(403);
+    expect(await deniedPage("granted.test:443", state.otherToken)).toBe(hint("granted.test"));
   });
 });
 
 describe("dynamic configuration", () => {
   it("picks up derived hosts written after the proxy started", async () => {
-    expect((await connectStatus("reloaded.test:443")).status).toBe(403);
+    expect(await deniedPage("reloaded.test:443")).toBe(hint("reloaded.test"));
 
     await writeProxyDynamic(state.stateDir, POLICY_HASH, {
       version: 1,
@@ -392,7 +482,7 @@ describe("dynamic configuration", () => {
   it("keeps a broken dynamic file from widening anything", async () => {
     await writeFile(stateLayout(state.stateDir).proxyDynamic(POLICY_HASH), "{ not json");
 
-    expect((await connectStatus("reloaded.test:443")).status).toBe(403);
+    expect(await deniedPage("reloaded.test:443")).toBe(hint("reloaded.test"));
   });
 });
 

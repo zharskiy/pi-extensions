@@ -18,9 +18,11 @@ cpus=4
 memory=8
 disk=60
 version=""
+org_source=""
+org_sha256=""
 
 usage() {
-  echo "usage: install.sh [--profile solo|team|enterprise] [--cpu N] [--memory GiB] [--disk GiB] [--version X.Y.Z] [--bin-dir DIR] [--dry-run]"
+  echo "usage: install.sh [--profile solo|team|enterprise] [--org <https url or absolute path> [--org-sha256 <hex>]] [--cpu N] [--memory GiB] [--disk GiB] [--version X.Y.Z] [--bin-dir DIR] [--dry-run]"
 }
 
 fail() {
@@ -64,6 +66,8 @@ parse_args() {
     --memory) memory="${2:-}"; shift 2 ;;
     --disk) disk="${2:-}"; shift 2 ;;
     --version) version="${2:-}"; shift 2 ;;
+    --org) org_source="${2:-}"; shift 2 ;;
+    --org-sha256) org_sha256="${2:-}"; shift 2 ;;
     --dry-run) dry_run=1; shift ;;
     --bin-dir) bin_dir="${2:-}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
@@ -89,6 +93,16 @@ case "$profile" in
   solo|team|enterprise) ;;
   *) fail "unknown profile $profile, use solo, team or enterprise" ;;
 esac
+
+case "$org_source" in
+  ""|https://*|/*) ;;
+  *) fail "--org needs an https URL or an absolute path, got $org_source" ;;
+esac
+
+if [ -n "$org_sha256" ]; then
+  [ -n "$org_source" ] || fail "--org-sha256 needs --org"
+  printf '%s' "$org_sha256" | grep -Eq '^[0-9a-fA-F]{64}$' || fail "--org-sha256 needs 64 hex digits"
+fi
 
 script_dir=$(cd "$(dirname "$0")" && pwd)
 checkout=$(dirname "$script_dir")
@@ -193,10 +207,42 @@ if [ "$from_checkout" -eq 1 ]; then
   fi
   installed="$(verb "write" "wrote") $shim running $checkout/launcher/bin/pi-sandbox-dev.js"
 else
-  act npm install -g "$package_name@$version" >/dev/null
+  act npm install -g --legacy-peer-deps=false "$package_name@$version" >/dev/null
   npm_bin="$(npm prefix -g)/bin/pi-sandbox"
   act ln -sfn "$npm_bin" "$shim"
   installed="$(verb "install" "installed") $package_name@$version and link $shim to $npm_bin"
+fi
+
+bundled_pi_package="node_modules/@earendil-works/pi-coding-agent/package.json"
+
+has_bundled_pi() {
+  if [ "$#" -eq 0 ]; then
+    return 1
+  fi
+
+  if [ -f "$1/$bundled_pi_package" ]; then
+    return 0
+  fi
+
+  shift
+  has_bundled_pi "$@"
+}
+
+bundled_pi_present() {
+  if [ "$from_checkout" -eq 1 ]; then
+    has_bundled_pi "$checkout"
+  else
+    npm_root=$(npm root -g)
+    has_bundled_pi "$npm_root/$package_name" "$(dirname "$npm_root")"
+  fi
+}
+
+if [ "$dry_run" -eq 0 ] && ! bundled_pi_present; then
+  if [ "$from_checkout" -eq 1 ]; then
+    fail "pi is missing next to the launcher in $checkout, run npm install there and run this again"
+  fi
+
+  fail "pi is missing next to the launcher, npm skipped the peer dependency; run npm install -g --legacy-peer-deps=false $package_name@$version and run this again"
 fi
 
 snippet_files=""
@@ -273,6 +319,21 @@ else
     printf '{\n  "profile": "%s"\n}\n' "$profile" > "$user_config"
   fi
   step 6 "config: $(verb "write" "wrote") $user_config with profile $profile"
+fi
+
+if [ -n "$org_source" ]; then
+  if [ "$dry_run" -eq 0 ]; then
+    mkdir -p "$(dirname "$user_config")"
+    PI_SANDBOX_ORG_SOURCE="$org_source" PI_SANDBOX_ORG_SHA256="$org_sha256" node -e '
+      const { existsSync, readFileSync, writeFileSync } = require("node:fs");
+      const file = process.argv[1];
+      const config = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {};
+      const sha256 = process.env.PI_SANDBOX_ORG_SHA256.toLowerCase();
+      config.org = { source: process.env.PI_SANDBOX_ORG_SOURCE, ...(sha256 === "" ? {} : { sha256 }) };
+      writeFileSync(file, `${JSON.stringify(config, null, 2)}\n`);
+    ' "$user_config"
+  fi
+  step 6 "config: $(verb "set" "set") org in $user_config to $org_source${org_sha256:+ pinned to sha256 $org_sha256}"
 fi
 
 step 7 "proxy: no launch agent needed, the launcher starts the egress proxy on demand"

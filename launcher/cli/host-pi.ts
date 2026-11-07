@@ -2,6 +2,7 @@ import { constants } from "node:fs";
 import { access, readFile, realpath, stat } from "node:fs/promises";
 import { delimiter, join } from "node:path";
 import { isWithin, launcherRoot } from "../shared/index.ts";
+import type { CliDeps } from "./deps.ts";
 
 const WRAPPER_LIMIT = 4096;
 
@@ -41,4 +42,16 @@ export const findHostPi = async (env: NodeJS.ProcessEnv) => {
   const verdicts = await Promise.all(candidates.map((path) => isHostPi(path, ownBinDir)));
 
   return candidates.find((_, index) => verdicts[index]);
+};
+
+export const bundledPiCommand = async (deps: CliDeps) => {
+  const bundled = await deps.bundledPi();
+
+  if (bundled !== undefined) {
+    return bundled.command;
+  }
+
+  const hostPi = await findHostPi(deps.env);
+
+  return hostPi === undefined ? undefined : [hostPi];
 };

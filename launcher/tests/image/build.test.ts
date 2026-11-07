@@ -34,12 +34,12 @@ afterEach(async () => {
 });
 
 describe("prepareBuildContext", () => {
-  it("writes the Dockerfile, the entrypoint and an empty trust file, and no pi auth or models", async () => {
+  it("writes the Dockerfile, the entrypoint, the browser shim and an empty trust file, and no pi auth or models", async () => {
     const dir = await tempDir();
 
     await prepareBuildContext(versions, dir);
 
-    expect((await readdir(dir)).sort()).toEqual(["Dockerfile", "entrypoint.sh", "trust.pem"]);
+    expect((await readdir(dir)).sort()).toEqual(["Dockerfile", "entrypoint.sh", "trust.pem", "xdg-open.mjs"]);
     expect(await readFile(join(dir, "trust.pem"), "utf8")).toBe("");
     expect(await readFile(join(dir, "entrypoint.sh"), "utf8")).toContain("sleep infinity");
   });
@@ -159,6 +159,7 @@ describe("ensureBuiltImage", () => {
       "Dockerfile",
       "entrypoint.sh",
       "trust.pem",
+      "xdg-open.mjs",
     ]);
     expect(JSON.parse(await readFile(join(stateDir, "image.json"), "utf8"))).toMatchObject({
       reference: config.image.reference,

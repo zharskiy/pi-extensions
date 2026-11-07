@@ -1,4 +1,5 @@
 import type { CredentialRule, CredentialSource, DeriveConfig, GatewayConfig } from "../config/index.ts";
+import type { CommandRunner, VaultDiscovery, VaultServer } from "../shared/index.ts";
 
 export type JsonObject = Record<string, unknown>;
 
@@ -11,7 +12,7 @@ export interface HostPiFiles {
   notices?: string[];
 }
 
-export interface ProviderHostEntry {
+interface ProviderHostEntry {
   hosts: string[];
   envVars?: string[];
 }
@@ -28,9 +29,15 @@ export interface DeriveInput {
   env: Record<string, string | undefined>;
   derive: DeriveConfig;
   mcpSignedIn: string[];
+  vault?: DeriveVault;
 }
 
-export interface DerivedFiles {
+export interface DeriveVault {
+  enabled: boolean;
+  discovery: Record<string, VaultDiscovery>;
+}
+
+interface DerivedFiles {
   "auth.json": JsonObject;
   "models.json": JsonObject;
   "mcp.json": JsonObject;
@@ -41,6 +48,7 @@ export interface DerivedSandboxPi {
   hosts: string[];
   files: DerivedFiles;
   notices: string[];
+  vault: VaultServer[];
 }
 
 export type PackageChangeKind = "install" | "remove";
@@ -62,3 +70,23 @@ export interface McpOAuthServer {
   url: string;
   oauth?: Record<string, string | number | boolean>;
 }
+
+export interface VaultDiscoveryInput {
+  stateDir: string;
+  runner: CommandRunner;
+  pi: BundledPi;
+  candidates: Record<string, McpOAuthServer>;
+  now: () => number;
+}
+
+export interface VaultDiscoveryResult {
+  discovery: Record<string, VaultDiscovery>;
+  notices: string[];
+}
+
+export interface ContainerMcpAuthInput {
+  stateDir: string;
+  servers: VaultServer[];
+}
+
+export type ContainerMcpAuthEntries = Record<string, JsonObject | null>;

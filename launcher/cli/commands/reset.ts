@@ -1,8 +1,10 @@
+import { rm } from "node:fs/promises";
 import { policyHashesInUse, removeRepoContainer, repoVolumes } from "../../container/index.ts";
 import { proxyPolicyHash } from "../../proxy/index.ts";
-import { LauncherError } from "../../shared/index.ts";
+import { LauncherError, sha256Hex, stateLayout } from "../../shared/index.ts";
 import { type CliDeps, writeLine, writeLines } from "../deps.ts";
 import { openBackend, openContext } from "../launch.ts";
+import { pruneEndedGrants } from "../sessions.ts";
 
 const VOLUMES = "--volumes";
 
@@ -26,7 +28,14 @@ export const resetCommand = async (deps: CliDeps, args: string[]) => {
     writeLine(deps.stdout, `no container for ${workspace.repoRoot}`);
   }
 
-  const policyHash = proxyPolicyHash(effective.config);
+  const layout = stateLayout(stateDir);
+  const repoHash = sha256Hex(workspace.repoRoot);
+
+  await rm(layout.render(repoHash), { recursive: true, force: true });
+
+  await pruneEndedGrants(deps, stateDir);
+
+  const policyHash = proxyPolicyHash(effective.config, effective.egressCap);
 
   if ((await policyHashesInUse(backend)).includes(policyHash)) {
     writeLine(deps.stdout, `kept proxy instance ${policyHash}, in use by another repository`);
@@ -41,6 +50,8 @@ export const resetCommand = async (deps: CliDeps, args: string[]) => {
   const volumes = repoVolumes({ workspace, config: effective.config, hostEnv: deps.env, uid: deps.uid });
 
   await Promise.all(volumes.map((name) => backend.removeVolume(name)));
+
+  await rm(layout.sync(repoHash), { recursive: true, force: true });
 
   writeLines(
     deps.stdout,

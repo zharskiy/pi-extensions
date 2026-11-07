@@ -4,7 +4,13 @@ import { get } from "node:http";
 import { dirname } from "node:path";
 import type { CredentialRule } from "../config/index.ts";
 import { type ActiveGrantContext, activeGrants, type Grant } from "../grants/index.ts";
-import { readJsonFile, stateLayout, writeFileAtomic, writeJsonFile } from "../shared/index.ts";
+import {
+  readJsonFile,
+  stateLayout,
+  type VaultServer,
+  writeFileAtomic,
+  writeJsonFile,
+} from "../shared/index.ts";
 import { proxyAuthorization } from "./auth.ts";
 import { type ProxyInstance, proxyFiles } from "./files.ts";
 import { authorityOf } from "./policy.ts";
@@ -14,6 +20,7 @@ export interface ProxyDynamic {
   rules: CredentialRule[];
   derivedHosts: string[];
   tokens: Record<string, string>;
+  vault?: VaultServer[];
 }
 
 export interface DenialRecord {
@@ -41,6 +48,24 @@ const LISTEN_HOST = "127.0.0.1";
 
 const REQUEST_TIMEOUT_MS = 1000;
 
+const isText = (value: unknown) => typeof value === "string" && value !== "";
+
+const isVaultServer = (value: unknown): value is VaultServer => {
+  const server = value as Partial<VaultServer> | undefined;
+  const discovery = server?.discovery as Partial<VaultServer["discovery"]> | undefined;
+
+  return (
+    typeof server === "object" &&
+    server !== null &&
+    [server.server, server.url, server.ruleId, server.access, server.refresh, server.client].every(isText) &&
+    discovery?.ok === true &&
+    isText(discovery.tokenEndpoint) &&
+    isText(discovery.authorizationEndpoint) &&
+    Array.isArray(discovery.hosts) &&
+    discovery.hosts.every((host) => typeof host === "string")
+  );
+};
+
 export const emptyDynamic = (): ProxyDynamic => ({ version: 1, rules: [], derivedHosts: [], tokens: {} });
 
 export const parseDynamic = (value: unknown): ProxyDynamic => {
@@ -55,6 +80,7 @@ export const parseDynamic = (value: unknown): ProxyDynamic => {
     rules: Array.isArray(dynamic.rules) ? dynamic.rules : [],
     derivedHosts: Array.isArray(dynamic.derivedHosts) ? dynamic.derivedHosts : [],
     tokens: typeof dynamic.tokens === "object" && dynamic.tokens !== null ? dynamic.tokens : {},
+    ...(Array.isArray(dynamic.vault) ? { vault: dynamic.vault.filter(isVaultServer) } : {}),
   };
 };
 

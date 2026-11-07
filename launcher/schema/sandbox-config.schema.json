@@ -269,6 +269,16 @@
                 }
               },
               "description": "Rules and hosts derived from the host pi files. Not in a project config; enabled can only turn off below, hosts only narrow."
+            },
+            "vault": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                }
+              },
+              "description": "MCP token vault: sign in to OAuth MCP servers from inside the sandbox while the tokens stay on the host. Default true, effective only with credentials.derive.enabled. Not in a project config; enabled can only turn off below."
             }
           },
           "required": ["kind"]
@@ -443,6 +453,16 @@
                 }
               },
               "description": "Rules and hosts derived from the host pi files. Not in a project config; enabled can only turn off below, hosts only narrow."
+            },
+            "vault": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                }
+              },
+              "description": "MCP token vault: sign in to OAuth MCP servers from inside the sandbox while the tokens stay on the host. Default true, effective only with credentials.derive.enabled. Not in a project config; enabled can only turn off below."
             }
           },
           "required": ["kind"]
@@ -620,6 +640,16 @@
                 }
               },
               "description": "Rules and hosts derived from the host pi files. Not in a project config; enabled can only turn off below, hosts only narrow."
+            },
+            "vault": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                }
+              },
+              "description": "MCP token vault: sign in to OAuth MCP servers from inside the sandbox while the tokens stay on the host. Default true, effective only with credentials.derive.enabled. Not in a project config; enabled can only turn off below."
             }
           },
           "required": ["kind", "command"]
@@ -787,6 +817,16 @@
                 }
               },
               "description": "Rules and hosts derived from the host pi files. Not in a project config; enabled can only turn off below, hosts only narrow."
+            },
+            "vault": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                }
+              },
+              "description": "MCP token vault: sign in to OAuth MCP servers from inside the sandbox while the tokens stay on the host. Default true, effective only with credentials.derive.enabled. Not in a project config; enabled can only turn off below."
             }
           },
           "description": "Credential rules without a legacy credential source."

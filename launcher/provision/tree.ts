@@ -2,14 +2,14 @@ import { lstat, readdir, readFile } from "node:fs/promises";
 import { basename, extname, join, posix } from "node:path";
 import { isSecretName } from "../shared/index.ts";
 
-export interface TreeFile {
+interface TreeFile {
   data: Buffer;
   mode: number;
 }
 
 export type Tree = Map<string, TreeFile>;
 
-export const MAX_FILE_BYTES = 8 * 1024 * 1024;
+const MAX_FILE_BYTES = 8 * 1024 * 1024;
 
 const EXECUTABLE_BITS = 0o111;
 

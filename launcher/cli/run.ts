@@ -1,12 +1,14 @@
 import { errorMessage, LauncherError } from "../shared/index.ts";
 import { configCommand } from "./commands/config.ts";
 import { doctorCommand } from "./commands/doctor.ts";
+import { egressCommand } from "./commands/egress.ts";
 import { gcCommand } from "./commands/gc.ts";
 import { helpCommand } from "./commands/help.ts";
 import { migrateCommand } from "./commands/migrate.ts";
 import { resetCommand } from "./commands/reset.ts";
 import { statusCommand } from "./commands/status.ts";
 import { type CliDeps, writeLine } from "./deps.ts";
+import { intercept } from "./intercept.ts";
 import { launch } from "./launch.ts";
 import { launcherVersion } from "./versions.ts";
 
@@ -32,6 +34,7 @@ const COMMANDS: Record<string, Command> = {
   gc: { run: gcCommand, takesArguments: false },
   doctor: { run: doctorCommand, takesArguments: false },
   config: { run: configCommand, takesArguments: true },
+  egress: { run: egressCommand, takesArguments: true },
   reset: { run: resetCommand, takesArguments: true },
   migrate: { run: migrateCommand, takesArguments: true },
   help,
@@ -58,7 +61,11 @@ const sandbox = (deps: CliDeps, [name = "help", ...args]: string[]) => {
 const route = (argv: string[], deps: CliDeps) => {
   const [first, ...rest] = argv;
 
-  return first === "sandbox" ? sandbox(deps, rest) : launch(argv, deps);
+  if (first === "sandbox") {
+    return sandbox(deps, rest);
+  }
+
+  return (argv.includes("--no-sandbox") ? undefined : intercept(argv, deps)) ?? launch(argv, deps);
 };
 
 export const renderFailure = (error: unknown, stderr: NodeJS.WritableStream) => {

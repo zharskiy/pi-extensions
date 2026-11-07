@@ -36,7 +36,7 @@ export const defaultConfig = async (): Promise<SandboxConfig> => ({
   backend: "auto",
   fallback: "host",
   image: { reference: `${IMAGE_REPOSITORY}:${await packageVersion()}` },
-  credentials: { kind: "host-pi-auth", rules: [], derive: { enabled: true } },
+  credentials: { kind: "host-pi-auth", rules: [], derive: { enabled: true }, vault: { enabled: true } },
   egress: {
     allow: DEFAULT_EGRESS,
     mcpHosts: [],

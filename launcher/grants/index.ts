@@ -9,11 +9,6 @@ export {
 } from "./store.ts";
 export type {
   ActiveGrantContext,
-  EndSessionInput,
   Grant,
-  GrantLimits,
-  GrantMatch,
-  GrantRequest,
   GrantScope,
-  SessionEntry,
 } from "./types.ts";

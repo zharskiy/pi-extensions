@@ -5,7 +5,7 @@ import { unavailable } from "./errors.ts";
 
 const PI_AUTH_TTL_SECONDS = 240;
 
-export const piAuthArgv = (piCommand: string[], ref: { piAuth: string; bearer?: boolean }) => [
+const piAuthArgv = (piCommand: string[], ref: { piAuth: string; bearer?: boolean }) => [
   ...piCommand,
   "auth",
   ref.bearer === true ? "print-bearer-token" : "print-api-key",

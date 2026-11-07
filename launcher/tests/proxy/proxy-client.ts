@@ -11,7 +11,7 @@ export interface ConnectReply {
 
 const HEAD_END = "\r\n\r\n";
 
-export const REPO_USER = "pi-sandbox";
+const REPO_USER = "pi-sandbox";
 
 export const CONTROL_USER = "pi-sandbox-control";
 
@@ -93,6 +93,8 @@ export interface TunnelRequest {
   port?: number;
   headers?: Record<string, string>;
   token?: string;
+  method?: string;
+  body?: string;
 }
 
 export const requestThrough = async (options: TunnelRequest) => {
@@ -109,6 +111,7 @@ export const requestThrough = async (options: TunnelRequest) => {
       {
         host: options.host,
         path: options.path,
+        method: options.method ?? "GET",
         headers: options.headers,
         createConnection: () => secure,
       },
@@ -117,7 +120,7 @@ export const requestThrough = async (options: TunnelRequest) => {
 
     request.once("error", reject);
 
-    request.end();
+    request.end(options.body);
   });
 };
 
@@ -171,3 +174,50 @@ export const plainGet = (
   token?: string,
   user?: string,
 ) => plainRequest(proxyPort, path, { host, token, user });
+
+export interface PageReply {
+  connect: number;
+  status: number;
+  contentType?: string;
+  body: string;
+}
+
+const secureOver = (socket: Socket, servername: string, ca: string | undefined) =>
+  new Promise<TLSSocket>((resolve, reject) => {
+    const secure = tlsConnect(
+      { socket, servername, ca, rejectUnauthorized: ca !== undefined, ALPNProtocols: ["http/1.1"] },
+      () => resolve(secure),
+    );
+
+    secure.once("error", reject);
+  });
+
+export const pageThrough = async (
+  proxyPort: number,
+  authority: string,
+  token: string,
+  ca?: string,
+): Promise<PageReply> => {
+  const reply = await openConnect(proxyPort, authority, token);
+
+  if (reply.status !== 200) {
+    return { connect: reply.status, status: reply.status, body: await readRest(reply.socket) };
+  }
+
+  const host = authority.replace(/:\d+$/, "");
+  const secure = await secureOver(reply.socket, host, ca);
+  const response = await new Promise<IncomingMessage>((resolve, reject) => {
+    const request = httpsRequest({ host, path: "/", createConnection: () => secure }, resolve);
+
+    request.once("error", reject);
+
+    request.end();
+  });
+
+  return {
+    connect: 200,
+    status: response.statusCode ?? 0,
+    contentType: response.headers["content-type"],
+    body: await readBody(response),
+  };
+};

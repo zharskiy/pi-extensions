@@ -43,7 +43,12 @@ describe("loadEffectiveConfig", () => {
 
     expect(config).toEqual(await defaultConfig());
     expect(config.image.reference).toMatch(/^ghcr\.io\/zharskiy\/pi-sandbox:\d+\.\d+\.\d+/);
-    expect(config.credentials).toEqual({ kind: "host-pi-auth", rules: [], derive: { enabled: true } });
+    expect(config.credentials).toEqual({
+      kind: "host-pi-auth",
+      rules: [],
+      derive: { enabled: true },
+      vault: { enabled: true },
+    });
     expect(config.fallback).toBe("host");
     expect(config.ssh).toEqual({ agent: false });
     expect(sources["egress.allow"]).toBe("default");
@@ -128,7 +133,12 @@ describe("loadEffectiveConfig", () => {
 
     expect(config.profile).toBe("team");
     expect(config.fallback).toBe("refuse");
-    expect(config.credentials).toEqual({ kind: "static", rules: [], derive: { enabled: true } });
+    expect(config.credentials).toEqual({
+      kind: "static",
+      rules: [],
+      derive: { enabled: true },
+      vault: { enabled: true },
+    });
     expect(sources).toMatchObject({ profile: "user", fallback: "profile", credentials: "profile" });
   });
 
@@ -160,6 +170,7 @@ describe("loadEffectiveConfig", () => {
       envVar: "API",
       rules: [],
       derive: { enabled: true },
+      vault: { enabled: true },
     });
     expect(config.backend).toBe("apple");
   });
@@ -419,5 +430,64 @@ describe("mergeLayers", () => {
     expect(config.egress.allow).toEqual(["github.com"]);
     expect(config.resources.cpus).toBe(2);
     expect(sources).toMatchObject({ "egress.allow": "policy", "resources.cpus": "project" });
+  });
+});
+
+describe("the D3 cap on manual credential rules", () => {
+  const rule = (id: string, host: string) => ({
+    id,
+    host,
+    placeholder: `pi-sandbox-${id}`,
+    secret: { env: "TOKEN_VALUE" },
+  });
+
+  it("drops a user rule whose host is outside the policy allowlist, with a notice", async () => {
+    const effective = await loadWith({
+      policy: { egress: { allow: ["*.corp.test", "git.corp.test:8443"] } },
+      user: {
+        credentials: {
+          rules: [
+            rule("inside", "api.corp.test"),
+            { ...rule("port", "git.corp.test"), port: 8443 },
+            rule("outside", "evil.example.test"),
+          ],
+        },
+      },
+    });
+
+    expect(effective.config.credentials.rules.map((entry) => entry.id)).toEqual(["inside", "port"]);
+    expect(effective.notices).toEqual([
+      "credentials.rules outside: evil.example.test is outside the egress.allow of the policy or org baseline, so the rule was dropped",
+    ]);
+  });
+
+  it("exempts the policy layer's own rules from its cap", async () => {
+    const effective = await loadWith({
+      policy: {
+        egress: { allow: ["*.corp.test"] },
+        credentials: { rules: [rule("policy-owned", "outside.example.test")] },
+      },
+    });
+
+    expect(effective.config.credentials.rules.map((entry) => entry.id)).toEqual(["policy-owned"]);
+    expect(effective.notices).toEqual([]);
+  });
+
+  it("keeps every rule when the capping layer opts in with credentials.derive.enabled", async () => {
+    const effective = await loadWith({
+      policy: { egress: { allow: ["*.corp.test"] }, credentials: { derive: { enabled: true } } },
+      user: { credentials: { rules: [rule("outside", "evil.example.test")] } },
+    });
+
+    expect(effective.config.credentials.rules.map((entry) => entry.id)).toEqual(["outside"]);
+    expect(effective.notices).toEqual([]);
+  });
+
+  it("caps nothing without a policy or org allowlist", async () => {
+    const effective = await loadWith({
+      user: { credentials: { rules: [rule("outside", "evil.example.test")] } },
+    });
+
+    expect(effective.config.credentials.rules).toHaveLength(1);
   });
 });

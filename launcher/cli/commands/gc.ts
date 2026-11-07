@@ -1,6 +1,7 @@
 import { collectGarbage } from "../../container/index.ts";
 import { type CliDeps, writeLine, writeLines } from "../deps.ts";
 import { openBackend, openContext } from "../launch.ts";
+import { pruneEndedGrants } from "../sessions.ts";
 
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
 
@@ -21,6 +22,10 @@ export const gcCommand = async (deps: CliDeps) => {
   ]);
 
   writeLine(deps.stdout, `removed ${plural(garbage.containers.length, "stopped container")}`);
+
+  const pruned = await pruneEndedGrants(deps, stateDir);
+
+  writeLine(deps.stdout, `pruned ${plural(pruned, "ended grant")}`);
 
   return 0;
 };

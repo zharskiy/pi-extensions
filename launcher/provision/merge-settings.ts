@@ -9,7 +9,7 @@ export interface HostSettingsContext {
   bakedInVolume: boolean;
 }
 
-export const BAKED_EXTENSIONS_SOURCE = "/opt/pi-sandbox/extensions/node_modules/pi-extensions-mz";
+const BAKED_EXTENSIONS_SOURCE = "/opt/pi-sandbox/extensions/node_modules/pi-extensions-mz";
 
 const EXTENSIONS_NPM_KEY = "npm:pi-extensions-mz";
 

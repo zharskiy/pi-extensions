@@ -1,4 +1,4 @@
-export const matchesHostPattern = (pattern: string, host: string) => {
+const matchesHostPattern = (pattern: string, host: string) => {
   const lowerPattern = pattern.toLowerCase();
   const lowerHost = host.toLowerCase();
 

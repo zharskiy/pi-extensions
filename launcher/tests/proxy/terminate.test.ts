@@ -16,7 +16,14 @@ import {
   type TestProxy,
   waitFor,
 } from "./harness.ts";
-import { openConnect, readBody, readRest, requestThrough, secureTunnel } from "./proxy-client.ts";
+import {
+  openConnect,
+  pageThrough,
+  readBody,
+  readRest,
+  requestThrough,
+  secureTunnel,
+} from "./proxy-client.ts";
 
 const PLACEHOLDER = "pi-sandbox-0123456789abcdef01234567";
 
@@ -416,13 +423,19 @@ describe("gateway on a non-443 port", () => {
   });
 
   it("refuses the gateway host on 443", async () => {
-    const reply = await openConnect(
+    const page = await pageThrough(
       local.test?.proxy.port ?? 0,
       "gateway.test:443",
       (await local.test?.tokenOf(REPO)) ?? "",
+      state.ca.certPem,
     );
 
-    expect(reply.status).toBe(403);
-    expect(JSON.parse(await readRest(reply.socket)).rule).toBe("egress.port");
+    expect(page).toMatchObject({ connect: 200, status: 403 });
+    expect(page.body).toBe(
+      "pi-sandbox: gateway.test is not allowed; run pi sandbox egress allow gateway.test",
+    );
+    expect(local.test?.log).toContainEqual(
+      expect.objectContaining({ host: "gateway.test", rule: "egress.port" }),
+    );
   });
 });

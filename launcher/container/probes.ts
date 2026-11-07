@@ -1,7 +1,7 @@
 import { get } from "node:http";
 import { Readable, Writable } from "node:stream";
 import type { Backend } from "../backend/index.ts";
-import { isSecretName } from "../shared/index.ts";
+import { isAuthLikeHeader, isPlaceholder, isSecretName } from "../shared/index.ts";
 
 export interface CheckResult {
   status: "ok" | "fail" | "skip";
@@ -20,6 +20,10 @@ interface Leaf {
 }
 
 const GUEST_AUTH_FILE = "/home/pi/.pi/agent/auth.json";
+
+const GUEST_MCP_FILE = "/home/pi/.pi/agent/mcp.json";
+
+const TOKEN_FIELDS = ["access", "refresh"];
 
 const HEALTH_TIMEOUT_MS = 2000;
 
@@ -81,7 +85,7 @@ const stringLeaves = (value: unknown, path: string): Leaf[] => {
   );
 };
 
-const parsedAuth = (output: string) => {
+const parsedJson = (output: string) => {
   try {
     return JSON.parse(output) as unknown;
   } catch {
@@ -89,11 +93,36 @@ const parsedAuth = (output: string) => {
   }
 };
 
-const isEntryType = (path: string) => path.split(".").at(-1) === "type";
+const lastSegment = (path: string) => path.split(".").at(-1) ?? "";
+
+const isPlaceholderValue = (value: string, placeholder: string | undefined) =>
+  value === "" ||
+  value === placeholder ||
+  isPlaceholder(value) ||
+  isPlaceholder(value.trim().split(/\s+/).at(-1) ?? "");
+
+const isSecretField = (path: string) => {
+  const name = lastSegment(path);
+
+  return name !== "type" && (TOKEN_FIELDS.includes(name) || isSecretName(name));
+};
 
 const foreignAuthPaths = (auth: unknown, placeholder: string | undefined) =>
   stringLeaves(auth, "")
-    .filter((leaf) => !isEntryType(leaf.path) && leaf.value !== placeholder)
+    .filter((leaf) => isSecretField(leaf.path) && !isPlaceholderValue(leaf.value, placeholder))
+    .map((leaf) => leaf.path);
+
+const isMcpSecret = (path: string) => {
+  const parts = path.split(".");
+  const section = parts.at(-2);
+  const name = parts.at(-1) ?? "";
+
+  return (section === "headers" && isAuthLikeHeader(name)) || (section === "env" && isSecretName(name));
+};
+
+const foreignMcpPaths = (mcp: unknown, placeholder: string | undefined) =>
+  stringLeaves(mcp, "")
+    .filter((leaf) => isMcpSecret(leaf.path) && !isPlaceholderValue(leaf.value, placeholder))
     .map((leaf) => leaf.path);
 
 const secretEnvNames = (output: string, placeholder: string | undefined) =>
@@ -101,26 +130,36 @@ const secretEnvNames = (output: string, placeholder: string | undefined) =>
     .split("\n")
     .filter((line) => line.includes("="))
     .map((line) => ({ name: line.slice(0, line.indexOf("=")), value: line.slice(line.indexOf("=") + 1) }))
-    .filter(({ name, value }) => isSecretName(name) && value !== "" && value !== placeholder)
+    .filter(({ name, value }) => isSecretName(name) && !isPlaceholderValue(value, placeholder))
     .map(({ name }) => name);
+
+const readGuestJson = async (target: ProbeTarget, path: string) => {
+  const file = await execCapture(target, ["cat", path]);
+
+  return file.exitCode === 0 ? parsedJson(file.output) : {};
+};
 
 export const sweepCredentials = async (target: ProbeTarget, placeholder: string | undefined) => {
   const env = await execCapture(target, ["env"]);
-  const authFile = await execCapture(target, ["cat", GUEST_AUTH_FILE]);
-  const auth = authFile.exitCode === 0 ? parsedAuth(authFile.output) : {};
+  const auth = await readGuestJson(target, GUEST_AUTH_FILE);
+  const mcp = await readGuestJson(target, GUEST_MCP_FILE);
   const problems = [
     ...(env.exitCode === 0 ? [] : [`env exited ${env.exitCode}`]),
     ...(auth === undefined ? [`${GUEST_AUTH_FILE} is not JSON`] : []),
+    ...(mcp === undefined ? [`${GUEST_MCP_FILE} is not JSON`] : []),
     ...secretEnvNames(env.output, placeholder).map(
       (name) => `environment variable ${name} holds a value other than the placeholder`,
     ),
     ...foreignAuthPaths(auth, placeholder).map(
       (path) => `${GUEST_AUTH_FILE} holds a value other than the placeholder at ${path}`,
     ),
+    ...foreignMcpPaths(mcp, placeholder).map(
+      (path) => `${GUEST_MCP_FILE} holds a value other than a placeholder at ${path}`,
+    ),
   ];
 
   return problems.length === 0
-    ? passed("no credential in the environment or auth.json")
+    ? passed("no credential in the environment, auth.json or mcp.json")
     : failed(problems.join("; "));
 };
 

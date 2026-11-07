@@ -15,6 +15,7 @@ const derived = (key = "pi-sandbox-aaaaaaaaaaaaaaaaaaaaaaaa"): DerivedSandboxPi 
     "mcp.json": { mcpServers: {} },
   },
   notices: [],
+  vault: [],
 });
 
 const listTree = async (dir: string, prefix = ""): Promise<string[]> => {
@@ -84,7 +85,6 @@ describe("renderAgentDir", () => {
     expect(result.entries).toEqual([
       "auth.json",
       "models.json",
-      "mcp-auth.json",
       "agents",
       "skills",
       "extensions",
@@ -100,7 +100,6 @@ describe("renderAgentDir", () => {
       "extensions/tool/",
       "extensions/tool/tokenizer.js",
       "keybindings.json",
-      "mcp-auth.json",
       "models.json",
       "skills/",
       "skills/deploy/",
@@ -110,7 +109,7 @@ describe("renderAgentDir", () => {
     expect(JSON.parse(await readFile(join(result.renderDir, "auth.json"), "utf8"))).toEqual(
       derived().files["auth.json"],
     );
-    expect(await readFile(join(result.renderDir, "mcp-auth.json"), "utf8")).toBe("{}\n");
+    await expect(lstat(join(result.renderDir, "mcp-auth.json"))).rejects.toThrow();
     expect((await lstat(join(result.renderDir, "skills", "deploy", "run.sh"))).mode & 0o777).toBe(0o755);
   });
 
@@ -186,6 +185,6 @@ describe("renderAgentDir", () => {
       derived: derived(),
     });
 
-    expect(result.entries).toEqual(["auth.json", "models.json", "mcp-auth.json"]);
+    expect(result.entries).toEqual(["auth.json", "models.json"]);
   });
 });

@@ -2,7 +2,7 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { CredentialRule, EgressCap } from "../config/index.ts";
 import { liveSessions, readGrants } from "../grants/index.ts";
-import { sha256Hex, stateLayout } from "../shared/index.ts";
+import { sha256Hex, stateLayout, type VaultServer } from "../shared/index.ts";
 import { emptyDynamic, extraAllowList, type ProxyDynamic, parseDynamic, TOKEN_PATTERN } from "./dynamic.ts";
 import { matchesEntry, parseEntry } from "./policy.ts";
 
@@ -10,6 +10,7 @@ export interface ProxyRuntime {
   repoOf(token: string): Promise<string | undefined>;
   extras(repoHash: string): Promise<string[]>;
   rules(): Promise<CredentialRule[]>;
+  vault(): Promise<VaultServer[]>;
 }
 
 export interface RuntimeOptions {
@@ -62,6 +63,9 @@ const capped = (entries: string[], cap: string[] | undefined) =>
 
         return cap.some((pattern) => matchesEntry(pattern, parsed.pattern, parsed.port ?? 443));
       });
+
+const vaultHosts = (current: ProxyDynamic) =>
+  (current.vault ?? []).flatMap((server) => server.discovery.hosts);
 
 const ruleKey = (rule: CredentialRule) =>
   `${rule.id}|${rule.host.toLowerCase()}|${rule.port ?? 443}|${rule.pathPrefix ?? ""}`;
@@ -129,12 +133,14 @@ export const createProxyRuntime = (options: RuntimeOptions): ProxyRuntime => {
     const current = await dynamic();
 
     return [
-      ...capped(current.derivedHosts, options.cap.derivedHosts),
+      ...capped([...current.derivedHosts, ...vaultHosts(current)], options.cap.derivedHosts),
       ...(await grantEntries(current, repoHash)),
     ];
   };
 
   const rules = async () => mergeRules(options.staticRules, (await dynamic()).rules);
 
-  return { repoOf, extras, rules };
+  const vault = async () => (await dynamic()).vault ?? [];
+
+  return { repoOf, extras, rules, vault };
 };

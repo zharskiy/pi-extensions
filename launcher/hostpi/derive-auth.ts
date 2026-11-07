@@ -11,7 +11,7 @@ export interface AuthSources {
   env: Record<string, string | undefined>;
 }
 
-export const FAR_FUTURE_EXPIRES = 4102444800000;
+const FAR_FUTURE_EXPIRES = 4102444800000;
 
 const OAUTH_SECRET_FIELDS = new Set(["access", "refresh", "expires"]);
 

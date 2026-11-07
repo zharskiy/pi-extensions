@@ -133,6 +133,7 @@ const LEAVES: readonly Leaf[] = [
   { key: "credentials.rules", rule: { problem: ruleSubset } },
   { key: "credentials.derive.enabled", rule: { problem: cannotEnable } },
   { key: "credentials.derive.hosts", rule: { problem: quietSubset } },
+  { key: "credentials.vault.enabled", rule: { problem: cannotEnable } },
   { key: "egress.allow", rule: { problem: subset } },
   { key: "egress.mcpHosts", rule: { problem: subset } },
   { key: "egress.denyPrivateAddresses" },
@@ -273,7 +274,7 @@ const capFor = (layers: Layers, optIn: (layer: LayerConfig) => boolean) =>
     ),
   );
 
-export const egressCapOf = (layers: Layers): EgressCap => {
+const egressCapOf = (layers: Layers): EgressCap => {
   const derivedHosts = capFor(layers, (layer) => layer.credentials?.derive?.enabled === true);
   const grants = capFor(layers, (layer) => layer.egress?.grants?.enabled === true);
 
