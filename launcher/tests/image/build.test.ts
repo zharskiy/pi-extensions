@@ -54,6 +54,16 @@ describe("prepareBuildContext", () => {
     );
   });
 
+  it("sources the bash hint from the first line of the system bashrc", async () => {
+    const dir = await tempDir();
+
+    await prepareBuildContext(versions, dir);
+
+    expect(await readFile(join(dir, "Dockerfile"), "utf8")).toContain(
+      "sed -i '1i . /usr/local/lib/pi-sandbox/bash-env.sh' /etc/bash.bashrc",
+    );
+  });
+
   it("copies the trust bundle into the context", async () => {
     const dir = await tempDir();
     const trust = join(await tempDir(), "trust.pem");

@@ -227,7 +227,7 @@ and in `~/.pi/agent/mcp.json`:
 
 The server runs inside the container with the same allowlist; it reaches the network only through the proxy (`HTTPS_PROXY` and `NODE_USE_ENV_PROXY=1` are set). Secret `env` values become placeholders; bind them with a `credentials.rules` entry for the host the server calls.
 
-The launcher bakes no toolchains into the image beyond Node, git and a few tools. When pi's shell runs a command the image lacks, bash prints its usual error and `pi-sandbox: <cmd> is not in the sandbox image; add it with image.packages or image.npmGlobal in ~/.config/pi-sandbox/config.json (see pi sandbox doctor)`; add the package to the user config and the next launch builds the layer. The hint comes from `BASH_ENV`, which the image sets and neither `env.allow` nor `image.dockerfile` may change.
+The launcher bakes no toolchains into the image beyond Node, git and a few tools. When pi's shell runs a command the image lacks, bash prints its usual error and `pi-sandbox: <cmd> is not in the sandbox image; add it with image.packages or image.npmGlobal in ~/.config/pi-sandbox/config.json (see pi sandbox doctor)`; add the package to the user config and the next launch builds the layer. The hint comes from `BASH_ENV`, which the image sets and neither `env.allow` nor `image.dockerfile` may change, and from the first line of the image's `/etc/bash.bashrc`, since bash skips `BASH_ENV` for a `bash -c` whose stdin is a socket and whose environment has no `SHLVL`, which is how pi runs commands.
 
 Environment overrides, mainly for tests: `PI_SANDBOX_STATE_DIR` (state dir), `PI_SANDBOX_USER_CONFIG` (user file) and `PI_SANDBOX_POLICY_FILE` (policy file, honoured only when the standard policy file does not exist).
 

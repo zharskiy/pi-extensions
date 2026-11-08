@@ -38,13 +38,35 @@ const loadUserConfig = async (value: unknown) => {
   });
 };
 
+const emptyHome = async () => {
+  const home = await mkdtemp(join(tmpdir(), "pi-sandbox-bash-home-"));
+
+  dirs.push(home);
+
+  return home;
+};
+
+const bashrcHome = async () => {
+  const home = await emptyHome();
+
+  await writeFile(join(home, ".bashrc"), `. '${BASH_ENV_FILE}'\n`);
+
+  return home;
+};
+
+const shellTool = (script: string, env: Record<string, string>) =>
+  spawnSync("bash", ["-c", script], {
+    encoding: "utf8",
+    stdio: ["pipe", "pipe", "pipe"],
+    env: { PATH: process.env.PATH ?? "", BASH_ENV: BASH_ENV_FILE, ...env },
+  });
+
 describe("the missing-command hint", () => {
   it.skipIf(!(bashMajor >= 4))(
     "names the command and the config keys on stderr and exits 127 under bash -c",
-    () => {
-      const result = spawnSync("bash", ["-c", "pi-sandbox-missing-tool --version"], {
-        encoding: "utf8",
-        env: { PATH: process.env.PATH, BASH_ENV: BASH_ENV_FILE },
+    async () => {
+      const result = shellTool(`. '${BASH_ENV_FILE}'; pi-sandbox-missing-tool --version`, {
+        HOME: await emptyHome(),
       });
 
       expect(result.stderr).toBe(HINT);
@@ -53,11 +75,47 @@ describe("the missing-command hint", () => {
     },
   );
 
-  it.skipIf(!(bashMajor >= 4))("leaves commands that exist alone", () => {
-    const result = spawnSync("bash", ["-c", "echo found"], {
-      encoding: "utf8",
-      env: { PATH: process.env.PATH, BASH_ENV: BASH_ENV_FILE },
-    });
+  it.skipIf(!(bashMajor >= 4))("gives the same hint when the script is sourced twice", async () => {
+    const result = shellTool(
+      `. '${BASH_ENV_FILE}'; . '${BASH_ENV_FILE}'; pi-sandbox-missing-tool --version`,
+      { HOME: await emptyHome() },
+    );
+
+    expect(result.stderr).toBe(HINT);
+    expect(result.stdout).toBe("");
+    expect(result.status).toBe(127);
+  });
+
+  it.skipIf(!(bashMajor >= 4))(
+    "is skipped through BASH_ENV alone by a socket-stdin bash -c without SHLVL",
+    async () => {
+      const result = shellTool("pi-sandbox-missing-tool --version", { HOME: await emptyHome() });
+
+      expect(result.stderr).not.toContain("pi-sandbox:");
+      expect(result.status).toBe(127);
+    },
+  );
+
+  it.skipIf(!(bashMajor >= 4))("is read through BASH_ENV once SHLVL is set", async () => {
+    const result = shellTool("pi-sandbox-missing-tool --version", { HOME: await emptyHome(), SHLVL: "1" });
+
+    expect(result.stderr).toBe(HINT);
+    expect(result.status).toBe(127);
+  });
+
+  it.skipIf(!(bashMajor >= 4))(
+    "reaches a socket-stdin bash -c without SHLVL through a bashrc that sources the script",
+    async () => {
+      const result = shellTool("pi-sandbox-missing-tool --version", { HOME: await bashrcHome() });
+
+      expect(result.stderr).toBe(HINT);
+      expect(result.stdout).toBe("");
+      expect(result.status).toBe(127);
+    },
+  );
+
+  it.skipIf(!(bashMajor >= 4))("leaves commands that exist alone", async () => {
+    const result = shellTool("echo found", { HOME: await bashrcHome() });
 
     expect(result.stdout).toBe("found\n");
     expect(result.stderr).toBe("");

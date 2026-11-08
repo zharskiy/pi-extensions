@@ -82,10 +82,10 @@ launcher/
 │   ├── run-pi.ts            runPi: exec behind a pid file, PI_SANDBOX_LAUNCH_ID, raw mode, resizes, signal handling
 │   └── probes.ts            CheckResult (ok, warn, fail, skip) and doctor checks: same-path mount, credential sweep (environment, auth.json, mcp.json), no-route, proxy health
 ├── image/
-│   ├── Dockerfile           the sandbox image (no pi config baked in; BASH_ENV set to bash-env.sh)
+│   ├── Dockerfile           the sandbox image (no pi config baked in; BASH_ENV set to bash-env.sh, which /etc/bash.bashrc also sources first)
 │   ├── entrypoint.sh        render links, settings seed, CA bundle, idle
 │   ├── xdg-open.mjs         /usr/local/bin/xdg-open in the image: one https: URL to POST /oauth/open, long-polls the callback and replays it to pi, --pi-sandbox-check
-│   ├── bash-env.sh          /usr/local/lib/pi-sandbox/bash-env.sh in the image, read through BASH_ENV: command_not_found_handle with the image.packages hint
+│   ├── bash-env.sh          /usr/local/lib/pi-sandbox/bash-env.sh in the image, read through BASH_ENV and the system bashrc: command_not_found_handle with the image.packages hint
 │   ├── sandbox-image.ts     ensureSandboxImage: the recorded image when a current container uses it, else a pinned pull or a build, then the layer
 │   ├── context.ts           buildInContext (a temporary build dir under the state dir, removed after), reusableImage
 │   ├── extensions.ts        resolveExtensionsSource (tarball pack cache, skipped on a dirty tree, registry or none), packExtensionsTarball
@@ -178,7 +178,7 @@ launcher/
     ├── workspace/git-integrity.test.ts   worktree pointer checks and the session-end notices
     ├── workspace/workspace-mode.test.ts   workspace discovery (scan, nested repository and git config refusals, node projects, lenient mode), self binds and notices, pin locks and session-end notices over nested repositories
     ├── image/sandbox-image.test.ts   ensureSandboxImage paths (recorded, pinned, built, layer)
-    ├── image/bash-env.test.ts   the missing-command hint under bash -c with BASH_ENV (skipped on bash older than 4), BASH_ENV refused in env.allow and never forwarded
+    ├── image/bash-env.test.ts   the missing-command hint under a bash -c spawned like pi's shell tool (sourced, sourced twice, through a bashrc, and BASH_ENV skipped for socket stdin without SHLVL; skipped on bash older than 4), BASH_ENV refused in env.allow and never forwarded
     ├── cli/harness.ts       temp dirs (removed after each test), fake runner, CliDeps with collected output, recorded control messages and confirmations, a fake bundled pi
     ├── cli/launch-wiring.test.ts, intercept.test.ts, egress.test.ts, vault-wiring.test.ts, launch-host-sessions.test.ts   launch wiring, intercepted commands, grants, the token vault wiring and its doctor lines, host sessions
     ├── config/fixtures.ts   layer files in temp dirs

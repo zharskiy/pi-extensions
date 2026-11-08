@@ -1,13 +1,15 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, readdirSync } from "node:fs";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDockerEngineBackend, execCapture, LABELS, resolveDockerSocket } from "../../backend/index.ts";
 import { ensureContainer, type LauncherContainerSpec } from "../../container/index.ts";
-import { createProcessRunner } from "../../shared/index.ts";
+import { ensureSandboxImage } from "../../image/index.ts";
+import { createProcessRunner, launcherRoot } from "../../shared/index.ts";
 import { runBackendConformance } from "../backend/conformance.ts";
+import { sandboxConfig } from "../support/sandbox-config.ts";
 import { listNetworks, removeNetwork } from "./harness/engine.ts";
 
 const PULLABLE = "busybox:1.36";
@@ -143,6 +145,97 @@ hooks.describe("docker-engine volume ownership", () => {
 
       hooks.expect(ensured.notices).toEqual([]);
       hooks.expect(written).toEqual({ code: 0, stdout: "1000\n", stderr: "" });
+    },
+  );
+});
+
+const HINT_CONTAINER = `pi-sandbox-live-bash-hint-${randomBytes(4).toString("hex")}`;
+
+const HINT_IMAGE = "pi-sandbox-live-bash-hint:test";
+
+const pinnedPi = async () => {
+  const manifest = JSON.parse(await readFile(join(launcherRoot(), "..", "package.json"), "utf8")) as {
+    devDependencies: Record<string, string>;
+  };
+
+  return (manifest.devDependencies["@earendil-works/pi-coding-agent"] ?? "").replace(/^[^0-9]*/, "");
+};
+
+const SHELL_TOOL_PROBE = [
+  'const { spawnSync } = require("node:child_process");',
+  'const result = spawnSync("bash", ["-c", "pi-sandbox-missing-tool --version"], {',
+  '  encoding: "utf8",',
+  '  stdio: ["pipe", "pipe", "pipe"],',
+  "  env: { PATH: process.env.PATH, BASH_ENV: process.env.BASH_ENV },",
+  "});",
+  "process.stdout.write(JSON.stringify({ stderr: result.stderr, status: result.status }));",
+].join("\n");
+
+hooks.describe("docker-engine sandbox image missing-command hint", () => {
+  const backend = createDockerEngineBackend({
+    socketPath: socketPath ?? "",
+    runner: createProcessRunner(),
+    home: homedir(),
+  });
+  const state = { dir: "", id: "" };
+
+  hooks.afterAll(async () => {
+    if (state.id !== "") {
+      await backend.removeContainer(state.id);
+    }
+
+    await rm(state.dir, { recursive: true, force: true });
+  });
+
+  const spec = (): LauncherContainerSpec => ({
+    name: HINT_CONTAINER,
+    image: HINT_IMAGE,
+    labels: { [LABELS.repoHash]: randomBytes(32).toString("hex") },
+    mounts: [],
+    network: { kind: "none" },
+    env: {},
+    workdir: "/home/pi",
+    user: "1000:1000",
+    readOnlyRoot: true,
+    tmpfs: ["/tmp:mode=1777", "/home/pi:mode=1777"],
+    init: true,
+    resources: { cpus: 1, memoryGiB: 0.5 },
+    requiredCopies: [],
+    copiesDir: join(state.dir, "copies"),
+    volumeLabels: {},
+    ownedPaths: [],
+  });
+
+  hooks.it(
+    "a bash -c spawned like pi's shell tool, with socket stdin and no SHLVL, prints the hint and exits 127",
+    async () => {
+      state.dir = await mkdtemp(join(tmpdir(), "pi-sandbox-live-bash-hint-"));
+
+      await ensureSandboxImage({
+        backend,
+        config: sandboxConfig({ image: { reference: HINT_IMAGE } }),
+        stateDir: state.dir,
+        versions: async () => ({ pi: await pinnedPi(), extensions: { kind: "none" } }),
+        inUse: async () => false,
+      });
+
+      const ensured = await ensureContainer({ backend, spec: spec() });
+
+      state.id = ensured.id;
+
+      const probed = await execCapture(backend, {
+        containerId: ensured.id,
+        command: ["node", "-e", SHELL_TOOL_PROBE],
+        env: {},
+        workdir: "/home/pi",
+      });
+
+      hooks.expect(probed.code).toBe(0);
+      hooks.expect(JSON.parse(probed.stdout)).toEqual({
+        stderr:
+          "bash: pi-sandbox-missing-tool: command not found\npi-sandbox: pi-sandbox-missing-tool is not in the sandbox image; add it with image.packages or image.npmGlobal in ~/.config/pi-sandbox/config.json (see pi sandbox doctor)\n",
+        status: 127,
+      });
     },
   );
 });
