@@ -55,7 +55,7 @@ const headersOf = (request: EngineRequest, extra: Record<string, string>) => {
   return contentType === undefined ? extra : { ...extra, "Content-Type": contentType };
 };
 
-const messageOf = (body: Buffer) => {
+export const messageOf = (body: Buffer) => {
   const text = body.toString("utf8").trim();
 
   try {
@@ -65,7 +65,7 @@ const messageOf = (body: Buffer) => {
   }
 };
 
-const engineError = (request: EngineRequest, response: EngineResponse) =>
+export const engineError = (request: Pick<EngineRequest, "method" | "path">, response: EngineResponse) =>
   new LauncherError(
     `engine: ${request.method} ${request.path} failed (${response.status}): ${messageOf(response.body)}`,
   );

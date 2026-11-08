@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { isIPv4 } from "node:net";
 import { type CommandRunner, errorMessage, LauncherError } from "../../shared/index.ts";
 import { LABELS } from "../labels.ts";
@@ -10,7 +11,7 @@ import type {
   RemoveContainerOptions,
 } from "../types.ts";
 import { containerBody, type EngineContainer, labelFilters, summaryOf } from "./container-body.ts";
-import { createEngineClient, segment } from "./engine-client.ts";
+import { createEngineClient, engineError, messageOf, segment } from "./engine-client.ts";
 import { runExec } from "./exec-session.ts";
 import { createImageOperations } from "./images.ts";
 import { createRelayOperations } from "./relay.ts";
@@ -47,6 +48,14 @@ const DOCKER_HOST_ALIAS = "host.docker.internal";
 const STOP_TIMEOUT_SECONDS = 5;
 
 const DOCKER_DESKTOP = "Docker Desktop";
+
+const MISSING_BIND_SOURCE = /bind source path does not exist: (.+)$/;
+
+const unsharedSource = (body: Buffer) => {
+  const path = MISSING_BIND_SOURCE.exec(messageOf(body))?.[1];
+
+  return path !== undefined && existsSync(path) ? path : undefined;
+};
 
 export const createDockerEngineBackend = (options: DockerEngineOptions): Backend => {
   const client = createEngineClient(options.socketPath);
@@ -154,11 +163,26 @@ export const createDockerEngineBackend = (options: DockerEngineOptions): Backend
         query: { name: spec.name },
         json: containerBody(spec, agentSocket),
       },
-      [409],
+      [400, 409],
     );
 
     if (response.status === 409) {
       throw new LauncherError(`container name ${spec.name} is already in use`, "run pi sandbox reset");
+    }
+
+    if (response.status === 400) {
+      const path = unsharedSource(response.body);
+
+      if (path !== undefined) {
+        throw new LauncherError(
+          `the sandbox VM does not share ${path}`,
+          colimaProfile === undefined
+            ? `share ${path} in the runtime's file sharing settings`
+            : "run pi sandbox doctor; its vm shares line names the command",
+        );
+      }
+
+      throw engineError({ method: "POST", path: "/containers/create" }, response);
     }
 
     return { id: (JSON.parse(response.body.toString("utf8")) as { Id: string }).Id };

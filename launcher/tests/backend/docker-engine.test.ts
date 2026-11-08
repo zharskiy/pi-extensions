@@ -380,6 +380,53 @@ describe("docker-engine container translation", () => {
     expect(engine.requests.find((request) => request.path.endsWith("/stop"))?.query.get("t")).toBe("10");
   });
 
+  it("names a host folder the VM does not share when the engine misses the bind source", async () => {
+    const host = await temporaryDir();
+    const engine = await startEngine({ vmShares: ["/nowhere"] });
+    const backend = backendFor(engine);
+    const mounts = [{ kind: "bind" as const, source: host, target: "/work/repo", readOnly: false }];
+
+    await backend.pullImage(IMAGE);
+
+    await expect(backend.createContainer({ ...baseSpec, mounts })).rejects.toMatchObject({
+      message: `the sandbox VM does not share ${host}`,
+      hint: `share ${host} in the runtime's file sharing settings`,
+    });
+  });
+
+  it("points at the doctor's vm shares line on a Colima socket", async () => {
+    const host = await temporaryDir();
+    const home = await temporaryDir();
+    const socketPath = join(home, ".colima", "pi-sandbox", "docker.sock");
+
+    await startEngine({ vmShares: ["/nowhere"], socketPath });
+    const backend = createDockerEngineBackend({
+      socketPath,
+      runner: agentRunner(),
+      home,
+      platform: "darwin",
+    });
+    const mounts = [{ kind: "bind" as const, source: host, target: "/work/repo", readOnly: false }];
+
+    await backend.pullImage(IMAGE);
+
+    await expect(backend.createContainer({ ...baseSpec, mounts })).rejects.toMatchObject({
+      message: `the sandbox VM does not share ${host}`,
+      hint: "run pi sandbox doctor; its vm shares line names the command",
+    });
+  });
+
+  it("keeps the engine message when the missing bind source is missing on the host too", async () => {
+    const engine = await startEngine({ vmShares: ["/nowhere"] });
+    const backend = backendFor(engine);
+
+    await backend.pullImage(IMAGE);
+
+    await expect(backend.createContainer(baseSpec)).rejects.toThrow(
+      'engine: POST /containers/create failed (400): invalid mount config for type "bind": bind source path does not exist: /work/repo',
+    );
+  });
+
   it("URL-encodes names in engine paths", async () => {
     const engine = await startEngine();
     const backend = backendFor(engine);

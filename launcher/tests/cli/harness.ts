@@ -188,6 +188,49 @@ export const writePathPi = async (dir: string, version?: string) => {
   return { bin: join(dir, "bin"), pi, packageDir };
 };
 
+export interface YamlMount {
+  location: string;
+  writable?: boolean;
+  mountPoint?: string;
+}
+
+const mountLines = (mount: YamlMount, indent: string) =>
+  [
+    `${indent}- location: "${mount.location}"`,
+    ...(mount.writable === undefined ? [] : [`${indent}  writable: ${mount.writable}`]),
+    ...(mount.mountPoint === undefined ? [] : [`${indent}  mountPoint: ${mount.mountPoint}`]),
+  ].join("\n");
+
+const mountsYaml = (mounts: YamlMount[], indent: string) =>
+  mounts.length === 0
+    ? "mounts: []\n"
+    : `mounts:\n${mounts.map((mount) => mountLines(mount, indent)).join("\n")}\n`;
+
+const limaYamlPath = (home: string, profile: string) =>
+  join(home, ".colima", "_lima", profile === "default" ? "colima" : `colima-${profile}`, "lima.yaml");
+
+export const colimaYamlPath = (home: string, profile = "pi-sandbox") =>
+  join(home, ".colima", profile, "colima.yaml");
+
+export const writeLimaMounts = async (home: string, mounts: YamlMount[], profile = "pi-sandbox") => {
+  const file = limaYamlPath(home, profile);
+
+  await mkdir(join(file, ".."), { recursive: true });
+
+  await writeFile(file, `vmType: vz\n${mountsYaml(mounts, "")}ssh:\n  localPort: 0\n`);
+};
+
+export const writeColimaMounts = async (home: string, mounts: YamlMount[], profile = "pi-sandbox") => {
+  const file = colimaYamlPath(home, profile);
+
+  await mkdir(join(file, ".."), { recursive: true });
+
+  await writeFile(
+    file,
+    `cpu: 8\n# Colima default behaviour: $HOME is mounted as writable.\n${mountsYaml(mounts, "  ")}mountType: virtiofs\n`,
+  );
+};
+
 export const createHarness = async (options: HarnessOptions = {}) => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "pi-sandbox-cli-")));
 

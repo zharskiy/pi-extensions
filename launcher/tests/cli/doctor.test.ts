@@ -10,7 +10,14 @@ import { registerSession } from "../../grants/index.ts";
 import { sha256Hex } from "../../shared/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { argvOf, type FakeCall } from "../support/fake-runner.ts";
-import { createHarness, writeManagedPi, writePathPi } from "./harness.ts";
+import {
+  createHarness,
+  writeColimaMounts,
+  writeLimaMounts,
+  writeManagedPi,
+  writePathPi,
+  type YamlMount,
+} from "./harness.ts";
 
 interface Probes {
   env?: string;
@@ -197,7 +204,11 @@ const HOST_CHECK_LINES = [
   expect.stringMatching(/^ok sessions: \/.+\/home\/\.pi\/agent\/sessions\/--.+-repo-- \(host pi lists them/),
 ];
 
-const HOST_LINES = [...HOST_CHECK_LINES, "skip vm size: no colima profile: VM size not checked"];
+const HOST_LINES = [
+  ...HOST_CHECK_LINES,
+  "skip vm size: no colima profile: VM size not checked",
+  "skip vm shares: no colima profile: shares not checked",
+];
 
 const doctorWith = async (probes: Probes, healthStatus = 200, userConfig?: unknown, hostAuth?: unknown) => {
   const port = await healthServer(healthStatus);
@@ -439,6 +450,7 @@ describe("pi sandbox doctor", () => {
       "skip trust: no runtime",
       ...HOST_CHECK_LINES,
       "skip vm size: no runtime",
+      "skip vm shares: no runtime",
     ]);
   });
 
@@ -487,7 +499,8 @@ describe("pi sandbox doctor", () => {
   describe("vm size", () => {
     const GIB = 1024 ** 3;
 
-    const RESIZE = "colima stop --profile pi-sandbox && colima start --profile pi-sandbox --cpu 4 --memory 8";
+    const RESIZE =
+      "colima stop --profile pi-sandbox && colima start --profile pi-sandbox --activate=false --cpu 8 --memory 10";
 
     const colimaStatus =
       (status?: object) =>
@@ -525,15 +538,15 @@ describe("pi sandbox doctor", () => {
       );
 
       expect(line).toBe(
-        `warn vm size: profile pi-sandbox has 2 CPUs and 4 GiB, below 4 CPUs and 8 GiB; resize it with ${RESIZE}`,
+        `warn vm size: profile pi-sandbox has 2 CPUs and 4 GiB, below 8 CPUs and 10 GiB; resize it with ${RESIZE}`,
       );
       expect(code).toBe(0);
     });
 
-    it("passes for a 4 CPU, 8 GiB profile", async () => {
-      const { line } = await doctorOn(colimaProfile, colimaStatus({ cpu: 4, memory: 8 * GIB }));
+    it("passes for an 8 CPU, 10 GiB profile", async () => {
+      const { line } = await doctorOn(colimaProfile, colimaStatus({ cpu: 8, memory: 10 * GIB }));
 
-      expect(line).toBe("ok vm size: profile pi-sandbox has 4 CPUs and 8 GiB");
+      expect(line).toBe("ok vm size: profile pi-sandbox has 8 CPUs and 10 GiB");
     });
 
     it("skips when colima is not on PATH", async () => {
@@ -554,6 +567,68 @@ describe("pi sandbox doctor", () => {
       expect(line).toBe("skip vm size: apple backend: VM size not checked");
       expect(harness.calls.some((call) => call.file === "colima")).toBe(false);
     });
+  });
+});
+
+describe("pi sandbox doctor vm shares", () => {
+  const colimaProfile = { status: async () => ({ socket: "/fake/docker.sock", profile: "pi-sandbox" }) };
+
+  type Harness = Awaited<ReturnType<typeof createHarness>>;
+
+  const sharesLine = async (backend: Partial<Backend>, lima?: (harness: Harness) => YamlMount[]) => {
+    const fake = createFakeBackend({ exec: answering({}) });
+    const harness = await createHarness({ adapters: () => [{ ...fake.backend, ...backend }] });
+
+    await harness.writeJson(harness.userConfigFile, { egress: { allow: [] } });
+
+    if (lima !== undefined) {
+      await writeLimaMounts(harness.deps.home, lima(harness));
+
+      await writeColimaMounts(harness.deps.home, lima(harness));
+    }
+
+    await run(["sandbox", "doctor"], harness.deps);
+
+    const line = harness
+      .stdout()
+      .split("\n")
+      .find((entry) => entry.includes(" vm shares: "));
+
+    return { line, harness };
+  };
+
+  it("passes when the profile shares every path of the repository", async () => {
+    const { line, harness } = await sharesLine(colimaProfile, ({ root }) => [
+      { location: root, writable: true },
+    ]);
+
+    expect(line).toBe(`ok vm shares: profile pi-sandbox shares ${harness.root}; this repository is covered`);
+  });
+
+  it("fails with the command that shares the repository and never restarts the VM", async () => {
+    const { line, harness } = await sharesLine(colimaProfile, ({ deps, stateDir }) => [
+      { location: deps.home, writable: true },
+      { location: stateDir },
+    ]);
+    const { repoRoot, stateDir } = harness;
+    const home = harness.deps.home;
+
+    expect(line).toBe(
+      `fail vm shares: ${repoRoot} is not shared with profile pi-sandbox; run pi here once (it shares ${repoRoot} and restarts the VM) or colima stop --profile pi-sandbox && colima start --profile pi-sandbox --activate=false --mount ${home}:w --mount ${stateDir} --mount ${repoRoot}:w`,
+    );
+    expect(harness.calls.some((call) => ["stop", "start"].includes(call.args[0] ?? ""))).toBe(false);
+  });
+
+  it("skips when colima did not write the instance config", async () => {
+    const { line } = await sharesLine(colimaProfile);
+
+    expect(line).toBe("skip vm shares: colima did not report the shares of profile pi-sandbox");
+  });
+
+  it("skips on the apple backend", async () => {
+    const { line } = await sharesLine({ name: "apple", ...colimaProfile });
+
+    expect(line).toBe("skip vm shares: apple backend: no VM shares");
   });
 });
 

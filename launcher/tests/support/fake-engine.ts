@@ -4,6 +4,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import type { Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { isWithin } from "../../shared/index.ts";
 
 interface FakeExecContext {
   command: string[];
@@ -48,6 +49,7 @@ export interface FakeEngineOptions {
   socketPath?: string;
   operatingSystem?: string;
   bridgeGateway?: string;
+  vmShares?: string[];
 }
 
 interface FakeImage {
@@ -282,9 +284,29 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
     };
   };
 
+  const unsharedBind = (spec: CreateBody) => {
+    const shares = options.vmShares;
+
+    return shares === undefined
+      ? undefined
+      : (spec.HostConfig?.Mounts ?? []).find(
+          (mount) => mount.Type === "bind" && !shares.some((share) => isWithin(mount.Source, share)),
+        );
+  };
+
   const createContainer = ({ query, body }: RouteRequest): RouteResult => {
     const spec = parsed<CreateBody>(body);
     const name = query.get("name") ?? randomBytes(6).toString("hex");
+    const unshared = unsharedBind(spec);
+
+    if (unshared !== undefined) {
+      return {
+        status: 400,
+        json: {
+          message: `invalid mount config for type "bind": bind source path does not exist: ${unshared.Source}`,
+        },
+      };
+    }
 
     if (findContainer(name) !== undefined) {
       return conflict(`Conflict. The container name "/${name}" is already in use`);

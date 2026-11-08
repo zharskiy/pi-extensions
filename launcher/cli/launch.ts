@@ -40,7 +40,15 @@ import {
   withGitPinLock,
   workspaceNotices,
 } from "../workspace/index.ts";
-import { type CliDeps, pathsOf, settleAll, writeLine, writeLines, writeNotices } from "./deps.ts";
+import {
+  type CliDeps,
+  pathsOf,
+  settleAll,
+  withFallbackHint,
+  writeLine,
+  writeLines,
+  writeNotices,
+} from "./deps.ts";
 import { type HostSide, prepareHostSide } from "./derive.ts";
 import { hostPiCommand, resolveJobPi, sandboxRoots } from "./host-pi.ts";
 import {
@@ -62,6 +70,7 @@ import {
   pruneEndedGrants,
 } from "./sessions.ts";
 import { imagePiVersion, launcherVersion } from "./versions.ts";
+import { ensureVmShares } from "./vm-shares.ts";
 
 export interface LaunchContext {
   workspace: Workspace;
@@ -145,21 +154,11 @@ export const checkWorkspace = (deps: CliDeps, context: LaunchContext) => {
   assertSafeWorkspace(context.workspace, { home: deps.home, env: deps.env, platform: deps.platform });
 };
 
-const fallbackHint = (hint: string | undefined) => {
-  const hostPi = "or run pi --no-sandbox to use host pi";
-
-  return hint === undefined ? hostPi : `${hint}; ${hostPi}`;
-};
-
 export const openBackend = async (deps: CliDeps, config: SandboxConfig) => {
   try {
     return await selectBackend(config.backend, deps.adapters());
   } catch (error) {
-    if (error instanceof LauncherError && config.fallback === "host") {
-      throw new LauncherError(error.message, fallbackHint(error.hint));
-    }
-
-    throw error;
+    throw withFallbackHint(error, config.fallback);
   }
 };
 
@@ -402,6 +401,8 @@ export const withSandbox = async (
   backend: Backend,
   use: (sandbox: Sandbox) => Promise<number>,
 ) => {
+  await ensureVmShares(deps, context, backend);
+
   const host = await prepareHostSide(deps, context, await resolveJobPi(deps));
   const sessions = hostSessionsOf(deps, context, host.files.settings);
 

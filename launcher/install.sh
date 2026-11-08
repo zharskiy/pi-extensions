@@ -22,8 +22,11 @@ link_hops=40
 
 profile=""
 dry_run=0
-cpus=4
-memory=8
+max_cpus=8
+max_memory=10
+cpus=""
+memory=""
+sizing=""
 disk=60
 version=""
 org_source=""
@@ -36,6 +39,37 @@ usage() {
 fail() {
   echo "pi-sandbox install: $1" >&2
   exit 1
+}
+
+clamp() {
+  value=$1
+
+  if [ -z "$value" ] || [ "$value" -gt "$3" ]; then
+    value=$3
+  fi
+
+  if [ "$value" -lt "$2" ]; then
+    value=$2
+  fi
+
+  echo "$value"
+}
+
+size_to_host() {
+  host_cpus=$(sysctl -n hw.ncpu 2>/dev/null || true)
+  host_bytes=$(sysctl -n hw.memsize 2>/dev/null || true)
+
+  if [ -n "$host_cpus$host_bytes" ] && { [ -z "$cpus" ] || [ -z "$memory" ]; }; then
+    sizing=", sized to this Mac"
+  fi
+
+  if [ -z "$cpus" ]; then
+    cpus=$(clamp "$host_cpus" 2 "$max_cpus")
+  fi
+
+  if [ -z "$memory" ]; then
+    memory=$(clamp "${host_bytes:+$((host_bytes / 2147483648))}" 4 "$max_memory")
+  fi
 }
 
 step() {
@@ -172,12 +206,22 @@ if [ "$os" = Darwin ]; then
     version_at_least "${colima_version:-0}" "$min_colima" || fail "colima ${colima_version:-unknown} is older than $min_colima, run brew upgrade colima"
   fi
 
+  size_to_host
+
   if colima status --profile "$colima_profile" >/dev/null 2>&1; then
     step 3 "colima: profile $colima_profile is running (colima stop --profile $colima_profile and run this again to apply new resources)"
   else
+    if [ -f "$HOME/.colima/$colima_profile/colima.yaml" ]; then
+      home_mount=""
+      shares="shares kept"
+    else
+      home_mount="$HOME:w"
+      shares="$HOME writable"
+    fi
+
     act colima start --profile "$colima_profile" --vm-type vz --mount-type virtiofs --ssh-agent \
-      --cpu "$cpus" --memory "$memory" --disk "$disk" --mount "$HOME:w" >/dev/null
-    step 3 "colima: $(verb "start profile $colima_profile (vz, virtiofs, ssh agent, $cpus CPUs, ${memory} GiB, ${disk} GiB, $HOME writable)" "started profile $colima_profile (vz, virtiofs, ssh agent, $cpus CPUs, ${memory} GiB, ${disk} GiB, $HOME writable)")"
+      --cpu "$cpus" --memory "$memory" --disk "$disk" ${home_mount:+--mount} ${home_mount:+"$home_mount"} >/dev/null
+    step 3 "colima: $(verb "start profile $colima_profile (vz, virtiofs, ssh agent, $cpus CPUs, ${memory} GiB, ${disk} GiB$sizing, $shares)" "started profile $colima_profile (vz, virtiofs, ssh agent, $cpus CPUs, ${memory} GiB, ${disk} GiB$sizing, $shares)")"
   fi
 else
   step 2 "runtime: using the Docker Engine socket"

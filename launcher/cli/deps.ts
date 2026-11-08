@@ -9,7 +9,7 @@ import type {
   ProxyInstance,
   TrustBundle,
 } from "../proxy/index.ts";
-import { type CommandRunner, launcherPaths } from "../shared/index.ts";
+import { type CommandRunner, LauncherError, launcherPaths } from "../shared/index.ts";
 import { hostAgentDir } from "../workspace/index.ts";
 
 interface ProxyRequest {
@@ -73,6 +73,17 @@ export const writeNotices = (deps: CliDeps, notices: string[]) => {
     [...new Set(notices)].map((notice) => `pi-sandbox: ${notice}`),
   );
 };
+
+const fallbackHint = (hint: string | undefined) => {
+  const hostPi = "or run pi --no-sandbox to use host pi";
+
+  return hint === undefined ? hostPi : `${hint}; ${hostPi}`;
+};
+
+export const withFallbackHint = (error: unknown, fallback: SandboxConfig["fallback"]) =>
+  error instanceof LauncherError && fallback === "host"
+    ? new LauncherError(error.message, fallbackHint(error.hint))
+    : error;
 
 export const pathsOf = (deps: CliDeps) =>
   launcherPaths({ env: deps.env, home: deps.home, platform: deps.platform });

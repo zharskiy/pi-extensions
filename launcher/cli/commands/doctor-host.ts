@@ -27,6 +27,7 @@ import {
 import { hostSessionsOf } from "../host-sessions.ts";
 import type { LaunchContext } from "../launch.ts";
 import { isOlderVersion, testedPiVersion } from "../versions.ts";
+import { checkVmShares } from "../vm-shares.ts";
 import type { NamedCheck } from "./doctor-container.ts";
 import { grantLines } from "./egress.ts";
 
@@ -44,9 +45,9 @@ const HOURS_SHOWN_BELOW_MS = 2 * DAY_MS;
 
 const DEFAULT_PROXY_PORT = 80;
 
-const MIN_VM_CPUS = 4;
+const MIN_VM_CPUS = 8;
 
-const MIN_VM_GIB = 8;
+const MIN_VM_GIB = 10;
 
 const GIB = 1024 ** 3;
 
@@ -324,7 +325,7 @@ const checkVmSize = async (deps: CliDeps, backend: Backend | undefined) => {
     return passed(current);
   }
 
-  const resize = `colima stop --profile ${profile} && colima start --profile ${profile} --cpu ${MIN_VM_CPUS} --memory ${MIN_VM_GIB}`;
+  const resize = `colima stop --profile ${profile} && colima start --profile ${profile} --activate=false --cpu ${MIN_VM_CPUS} --memory ${MIN_VM_GIB}`;
 
   return warned(`${current}, below ${MIN_VM_CPUS} CPUs and ${MIN_VM_GIB} GiB; resize it with ${resize}`);
 };
@@ -349,6 +350,7 @@ export const hostChecks = async (
       named("grants", checkGrants(deps, context)),
       named("sessions", checkSessions(deps, context, files)),
       named("vm size", checkVmSize(deps, backend)),
+      named("vm shares", checkVmShares(deps, context, backend)),
     ]),
     vaultChecks(deps, context, files, pi),
   ]);
