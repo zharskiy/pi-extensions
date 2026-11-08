@@ -127,7 +127,7 @@ case "$os" in
   Darwin)
     macos=$(sw_vers -productVersion)
     command -v brew >/dev/null 2>&1 || fail "Homebrew is missing, install it from https://brew.sh and run this again"
-    preflight="macOS $macos on $chip, Homebrew present, Docker Desktop not required"
+    preflight="macOS $macos on $chip, Homebrew present"
     ;;
   Linux)
     [ -S /var/run/docker.sock ] || fail "Linux needs a running Docker Engine at /var/run/docker.sock (development only)"
