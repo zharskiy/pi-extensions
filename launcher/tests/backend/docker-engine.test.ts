@@ -134,13 +134,6 @@ const resizeSource = () => {
   return { onResize, emit, listeners };
 };
 
-const agentRunner = () =>
-  createFakeRunner((call) =>
-    call.file === "colima" && call.args.join(" ") === "ssh --profile pi-sandbox -- printenv SSH_AUTH_SOCK"
-      ? { stdout: "/run/host-services/ssh-auth.sock\n" }
-      : undefined,
-  ).runner;
-
 describe("engineSocketPath", () => {
   it("is the docker socket of the pi-sandbox colima profile under the home it is given", () => {
     expect(engineSocketPath("/Users/dev")).toBe("/Users/dev/.colima/pi-sandbox/docker.sock");
@@ -159,46 +152,6 @@ describe("docker-engine adapter on the colima VM", () => {
       address: "10.89.0.2:3128",
     });
     expect(relayBody(engine)?.Cmd).toEqual(["TCP-LISTEN:3128,fork,reuseaddr", "TCP:host.lima.internal:3128"]);
-  });
-
-  it("bind-mounts the VM ssh-agent socket at the guest path the spec names", async () => {
-    const engine = await startEngine();
-    const backend = backendFor(engine, agentRunner());
-
-    await backend.pullImage(IMAGE);
-
-    await backend.createContainer({ ...baseSpec, sshAgent: { guestSocket: "/run/agent.sock" } });
-
-    const body = engine.createdBodies.at(-1)?.body as { Env: string[]; HostConfig: { Binds: string[] } };
-
-    expect(body.HostConfig.Binds).toContain("/run/host-services/ssh-auth.sock:/run/agent.sock");
-    expect(body.Env).toContain("SSH_AUTH_SOCK=/run/agent.sock");
-  });
-
-  it("refuses an ssh-agent spec when the VM has no agent socket", async () => {
-    const engine = await startEngine();
-    const backend = backendFor(engine);
-
-    await backend.pullImage(IMAGE);
-
-    await expect(
-      backend.createContainer({ ...baseSpec, sshAgent: { guestSocket: "/run/agent.sock" } }),
-    ).rejects.toThrow(/ssh agent/);
-    expect(engine.createdBodies).toEqual([]);
-  });
-
-  it("mounts no agent socket when the spec does not ask for one", async () => {
-    const engine = await startEngine();
-    const backend = backendFor(engine, agentRunner());
-
-    await backend.pullImage(IMAGE);
-
-    await backend.createContainer(baseSpec);
-
-    const body = engine.createdBodies.at(-1)?.body as { Env: string[]; HostConfig: { Binds: string[] } };
-
-    expect(body.HostConfig.Binds.some((bind) => bind.includes("ssh-auth"))).toBe(false);
-    expect(body.Env.some((entry) => entry.startsWith("SSH_AUTH_SOCK="))).toBe(false);
   });
 });
 
@@ -244,7 +197,6 @@ describe("docker-engine container translation", () => {
       body: {
         Env: ["TERM=xterm-256color", "PI_OFFLINE=1"],
         HostConfig: {
-          Binds: [],
           Mounts: [
             { Type: "bind", Source: "/work/repo", Target: "/work/repo", ReadOnly: false },
             {

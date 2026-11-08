@@ -1,14 +1,7 @@
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
-import {
-  authorityOf,
-  type CredentialRule,
-  type EgressCap,
-  matchesEntry,
-  parseEntry,
-  TLS_PORT,
-} from "../config/index.ts";
-import { activeGrants, type Grant, liveSessions, readGrants } from "../grants/index.ts";
+import { authorityOf, type CredentialRule, TLS_PORT } from "../config/index.ts";
+import { activeGrants, type Grant, readGrants } from "../grants/index.ts";
 import { readJsonObject, sha256Hex, stateLayout, type VaultServer } from "../shared/index.ts";
 import {
   type DynamicSection,
@@ -32,9 +25,6 @@ export interface RuntimeOptions {
   policyHash: string;
   staticRules: CredentialRule[];
   grantsEnabled: boolean;
-  cap: EgressCap;
-  now?: () => number;
-  isAlive?: (pid: number) => boolean;
 }
 
 interface Snapshot<T> {
@@ -81,15 +71,6 @@ const stampCached = <T>(stampNow: () => Promise<string>, load: () => Promise<T>,
   };
 };
 
-const capped = (entries: string[], cap: string[] | undefined) =>
-  cap === undefined
-    ? entries
-    : entries.filter((entry) => {
-        const parsed = parseEntry(entry);
-
-        return cap.some((pattern) => matchesEntry(pattern, parsed.pattern, parsed.port ?? TLS_PORT));
-      });
-
 const vaultHosts = (servers: VaultServer[]) => servers.flatMap((server) => server.discovery.hosts);
 
 const uniqueServers = (servers: VaultServer[]) => [
@@ -116,7 +97,6 @@ const serversOf = (sections: DynamicSection[]) =>
 export const createProxyRuntime = (options: RuntimeOptions): ProxyRuntime => {
   const layout = stateLayout(options.stateDir);
   const files = layout.proxyInstance(options.policyHash);
-  const now = options.now ?? Date.now;
 
   const dynamic = stampCached<StoredDynamic>(
     () => stampOf(files.dynamic),
@@ -153,17 +133,10 @@ export const createProxyRuntime = (options: RuntimeOptions): ProxyRuntime => {
     return [{ section: current.shared }, ...owned];
   };
 
-  const grantEntries = async (repoHash: string) => {
-    if (!options.grantsEnabled) {
-      return [];
-    }
-
-    const live = await liveSessions(options.stateDir, undefined, options.isAlive);
-    const context = { now: now(), repoHash, liveLaunches: new Set(live.map((entry) => entry.launchId)) };
-    const granted = activeGrants(await grants(), context).map((grant) => authorityOf(grant.host, grant.port));
-
-    return capped(granted, options.cap.grants);
-  };
+  const grantEntries = async (repoHash: string) =>
+    options.grantsEnabled
+      ? activeGrants(await grants(), repoHash).map((grant) => authorityOf(grant.host, grant.port))
+      : [];
 
   const vault = async (repoHash?: string) => serversOf(visibleTo(await ownedSections(), repoHash));
 
@@ -172,10 +145,7 @@ export const createProxyRuntime = (options: RuntimeOptions): ProxyRuntime => {
     const derived = sections.flatMap((entry) => entry.section.derivedHosts);
     const hosts = vaultHosts(serversOf(visibleTo(sections, repoHash)));
 
-    return [
-      ...capped([...new Set([...derived, ...hosts])], options.cap.derivedHosts),
-      ...(await grantEntries(repoHash)),
-    ];
+    return [...new Set([...derived, ...hosts]), ...(await grantEntries(repoHash))];
   };
 
   const rules = async (repoHash?: string) =>

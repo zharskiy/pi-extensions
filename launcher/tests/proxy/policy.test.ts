@@ -2,9 +2,8 @@ import { describe, expect, it } from "vitest";
 import { decideConnect, type EgressPolicy, restrictedAddress, sniDenial } from "../../proxy/policy.ts";
 
 const policy: EgressPolicy = {
-  allow: ["registry.npmjs.org", "*.githubusercontent.com", "example.test:8443"],
-  mcpHosts: ["mcp.example.com"],
-  gatewayHost: "gateway.example.com",
+  allow: ["registry.npmjs.org", "*.githubusercontent.com", "example.test:8443", "mcp.example.com"],
+  credentialHosts: ["llm.example.com:8443"],
 };
 
 const ruleFor = (host: string, port = 443, sni?: string) => {
@@ -18,7 +17,6 @@ describe("decideConnect", () => {
     ["registry.npmjs.org", "allowed"],
     ["REGISTRY.npmjs.org.", "allowed"],
     ["mcp.example.com", "allowed"],
-    ["gateway.example.com", "allowed"],
     ["raw.githubusercontent.com", "allowed"],
     ["a.b.githubusercontent.com", "egress.allow"],
     ["githubusercontent.com", "egress.allow"],
@@ -60,21 +58,10 @@ describe("decideConnect", () => {
     expect(ruleFor("registry.npmjs.org", 8443)).toBe("egress.port");
   });
 
-  it("allows the gateway on the port of its URL only", () => {
-    const gatewayPolicy = {
-      allow: [],
-      mcpHosts: ["mcp.example.com:9443"],
-      gatewayHost: "gateway.corp",
-      gatewayPort: 8443,
-    };
+  it("allows a credential rule host on the port of its rule only", () => {
+    expect(ruleFor("llm.example.com", 8443)).toBe("allowed");
 
-    expect(decideConnect({ host: "gateway.corp", port: 8443 }, gatewayPolicy)).toEqual({ allowed: true });
-
-    expect(decideConnect({ host: "gateway.corp", port: 443 }, gatewayPolicy)).toMatchObject({
-      rule: "egress.port",
-    });
-
-    expect(decideConnect({ host: "mcp.example.com", port: 9443 }, gatewayPolicy)).toEqual({ allowed: true });
+    expect(ruleFor("llm.example.com", 443)).toBe("egress.port");
   });
 
   it("accepts a matching SNI case-insensitively", () => {
@@ -94,34 +81,24 @@ describe("decideConnect", () => {
   });
 });
 
-describe("denial hint under a grant cap", () => {
-  const capped: EgressPolicy = { ...policy, grantCap: ["*.corp.test", "tools.test:8443"] };
-
-  it("offers egress allow only for a host the cap still lets a grant reach", () => {
-    expect(decideConnect({ host: "api.corp.test", port: 443 }, capped)).toMatchObject({
-      reason: "pi-sandbox: api.corp.test is not allowed; run pi sandbox egress allow api.corp.test",
-    });
-    expect(decideConnect({ host: "tools.test", port: 8443 }, capped)).toMatchObject({
+describe("denial hint", () => {
+  it("offers egress allow while grants are on", () => {
+    expect(decideConnect({ host: "tools.test", port: 8443 }, policy)).toMatchObject({
       reason: "pi-sandbox: tools.test:8443 is not allowed; run pi sandbox egress allow tools.test:8443",
     });
   });
 
-  it("names the policy or org allowlist for a host outside the cap", () => {
-    expect(decideConnect({ host: "evil.test", port: 443 }, capped)).toEqual({
+  it("points at egress.allow when grants are off", () => {
+    expect(decideConnect({ host: "evil.test", port: 443 }, { ...policy, grants: false })).toEqual({
       allowed: false,
-      rule: "egress.cap",
-      reason: "pi-sandbox: evil.test is outside the allowlist set by policy or org",
-    });
-    expect(decideConnect({ host: "tools.test", port: 443 }, capped)).toMatchObject({
-      rule: "egress.cap",
-      reason: "pi-sandbox: tools.test is outside the allowlist set by policy or org",
+      rule: "egress.allow",
+      reason: "pi-sandbox: evil.test is not allowed; egress grants are off, add it to egress.allow",
     });
   });
 });
 
 const guarded: EgressPolicy = {
   allow: ["registry.npmjs.org"],
-  mcpHosts: [],
   deny: ["evil.test", "*.blocked.test", "ports.test:8443"],
   credentialHosts: ["rules.test"],
 };

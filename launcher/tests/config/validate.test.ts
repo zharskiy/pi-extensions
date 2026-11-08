@@ -16,25 +16,14 @@ describe("validateLayer", () => {
   it("accepts a complete layer and returns it", () => {
     const layer = {
       $schema: "../schema/sandbox-config.schema.json",
-      profile: "team",
       fallback: "refuse",
       image: { reference: "ghcr.io/acme/pi:1", digest: `sha256:${"a".repeat(64)}` },
-      gateway: {
-        url: "https://llm.acme.test",
-        authHeader: "x-api-key",
-        placeholder: "pi-sandbox-placeholder",
-        providers: [{ id: "gateway", apiKind: "example-messages" }],
-      },
-      credentials: { kind: "sso", command: ["acme-sso", "token"] },
       egress: {
         allow: ["github.com", "*.acme.test", "git.acme.test:2222", "*.acme.test:8443"],
-        mcpHosts: ["mcp.acme.test"],
-        denyPrivateAddresses: true,
       },
       workspaceRoots: { roots: ["~/work", "/srv/repos"], outside: "warn" },
       mounts: { extraReadOnly: ["/opt/tools"], cacheVolumes: ["node_modules", ".venv"] },
       env: { allow: ["TERM", "EDITOR"] },
-      ssh: { agent: false },
       resources: { cpus: 4, memoryGiB: 8 },
     };
 
@@ -46,9 +35,7 @@ describe("validateLayer", () => {
     expect(problemOf({ egress: { allowed: [] } }, "project")).toBe(
       "project: egress.allowed is not a known key",
     );
-    expect(problemOf({ credentials: { kind: "static", file: "/x" } })).toBe(
-      "user: credentials.file is not a known key",
-    );
+    expect(problemOf({ credentials: { file: "/x" } })).toBe("user: credentials.file is not a known key");
   });
 
   it("reports wrong types with the layer and the key", () => {
@@ -63,11 +50,8 @@ describe("validateLayer", () => {
     expect(problemOf({ egress: { allow: ["github.com:"] } })).toBe(
       "user: egress.allow[0] github.com: is not a host name or host:port",
     );
-    expect(problemOf({ egress: { denyPrivateAddresses: false } })).toBe(
-      "user: egress.denyPrivateAddresses must be true",
-    );
     expect(problemOf({ resources: { cpus: 0 } })).toBe("user: resources.cpus must be greater than 0");
-    expect(problemOf({ ssh: { agent: "yes" } })).toBe("user: ssh.agent must be true or false");
+    expect(problemOf({ ssh: { agent: true } })).toBe("user: ssh is not a known key");
     expect(problemOf({ image: { digest: "latest" } })).toBe(
       "user: image.digest must look like sha256:<64 hex digits>",
     );
@@ -77,34 +61,6 @@ describe("validateLayer", () => {
     expect(problemOf({ mounts: { extraReadOnly: ["relative"] } })).toBe(
       "user: mounts.extraReadOnly[0] relative must be an absolute path or start with ~/",
     );
-  });
-
-  it("checks the credential source by kind", () => {
-    expect(problemOf({ credentials: { kind: "vault" } })).toBe(
-      "user: credentials.kind must be one of static, host-pi-auth, sso",
-    );
-    expect(problemOf({ credentials: { kind: "sso" } })).toBe("user: credentials.command is required");
-    expect(problemOf({ credentials: { kind: "static", envVar: "GATEWAY_API_KEY" } })).toBeUndefined();
-  });
-
-  it("checks the gateway", () => {
-    const gateway = { url: "http://llm.acme.test", authHeader: "x-api-key", placeholder: "p", providers: [] };
-
-    expect(problemOf({ gateway })).toBe("user: gateway.url must be an https URL");
-    expect(problemOf({ gateway: { url: "https://llm.acme.test" } })).toBe(
-      "user: gateway.authHeader is required",
-    );
-    expect(
-      problemOf({ gateway: { ...gateway, url: "https://x.test", providers: [{ id: "a", apiKind: " " }] } }),
-    ).toBe("user: gateway.providers[0].apiKind must not be empty");
-    expect(
-      problemOf({ gateway: { ...gateway, url: "https://x.test", providers: [{ id: "a", apiKind: 7 }] } }),
-    ).toContain("gateway.providers[0].apiKind");
-    expect(
-      problemOf({
-        gateway: { ...gateway, url: "https://x.test", providers: [{ id: "a", apiKind: "any-api-name" }] },
-      }),
-    ).toBeUndefined();
   });
 
   it("refuses forwarding environment variables that look like secrets", () => {

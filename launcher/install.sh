@@ -9,7 +9,6 @@ marker_begin="# pi-sandbox begin"
 marker_end="# pi-sandbox end"
 wrapper_marker="launcher/bin/pi-sandbox"
 bin_dir="$HOME/.local/bin"
-policy_file="${PI_SANDBOX_POLICY_FILE:-/Library/Application Support/pi-sandbox/policy.json}"
 user_config="${PI_SANDBOX_USER_CONFIG:-$HOME/.config/pi-sandbox/config.json}"
 state_dir="${PI_SANDBOX_STATE_DIR:-$HOME/.local/state/pi-sandbox}"
 agent_dir="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
@@ -20,7 +19,6 @@ managed_layout='"layout"[[:space:]]*:[[:space:]]*"releases-v1"'
 managed_package="node_modules/@earendil-works/pi-coding-agent/package.json"
 link_hops=40
 
-profile=""
 dry_run=0
 max_cpus=8
 max_memory=10
@@ -29,11 +27,10 @@ memory=""
 sizing=""
 disk=60
 version=""
-org_source=""
-org_sha256=""
+org_file=""
 
 usage() {
-  echo "usage: install.sh [--profile solo|team|enterprise] [--org <https url or absolute path> [--org-sha256 <hex>]] [--cpu N] [--memory GiB] [--disk GiB] [--version X.Y.Z] [--bin-dir DIR] [--dry-run]"
+  echo "usage: install.sh [--org <absolute path>] [--cpu N] [--memory GiB] [--disk GiB] [--version X.Y.Z] [--bin-dir DIR] [--dry-run]"
 }
 
 fail() {
@@ -103,13 +100,11 @@ parse_args() {
   fi
 
   case "$1" in
-    --profile) profile="${2:-}"; shift 2 ;;
     --cpu) cpus="${2:-}"; shift 2 ;;
     --memory) memory="${2:-}"; shift 2 ;;
     --disk) disk="${2:-}"; shift 2 ;;
     --version) version="${2:-}"; shift 2 ;;
-    --org) org_source="${2:-}"; shift 2 ;;
-    --org-sha256) org_sha256="${2:-}"; shift 2 ;;
+    --org) org_file="${2:-}"; shift 2 ;;
     --dry-run) dry_run=1; shift ;;
     --bin-dir) bin_dir="${2:-}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
@@ -129,28 +124,10 @@ fi
 
 shim="$shim_dir/pi"
 
-if [ -z "$profile" ]; then
-  if [ -f "$policy_file" ]; then
-    profile=enterprise
-  else
-    profile=solo
-  fi
-fi
-
-case "$profile" in
-  solo|team|enterprise) ;;
-  *) fail "unknown profile $profile, use solo, team or enterprise" ;;
+case "$org_file" in
+  ""|/*) ;;
+  *) fail "--org needs an absolute path, got $org_file" ;;
 esac
-
-case "$org_source" in
-  ""|https://*|/*) ;;
-  *) fail "--org needs an https URL or an absolute path, got $org_source" ;;
-esac
-
-if [ -n "$org_sha256" ]; then
-  [ -n "$org_source" ] || fail "--org-sha256 needs --org"
-  printf '%s' "$org_sha256" | grep -Eq '^[0-9a-fA-F]{64}$' || fail "--org-sha256 needs 64 hex digits"
-fi
 
 script_dir=$(cd "$(dirname "$0")" && pwd)
 checkout=$(dirname "$script_dir")
@@ -187,7 +164,7 @@ command -v npm >/dev/null 2>&1 || fail "npm is missing, install Node $min_node o
 node_version=$(node -p 'process.versions.node')
 version_at_least "$node_version" "$min_node" || fail "node $node_version is too old, install Node $min_node or newer"
 
-step 1 "preflight: $preflight, node $node_version, profile $profile"
+step 1 "preflight: $preflight, node $node_version"
 
 if command -v colima >/dev/null 2>&1; then
   step 2 "runtime: colima is present"
@@ -214,9 +191,9 @@ else
     shares="$HOME writable"
   fi
 
-  act colima start --profile "$colima_profile" --vm-type vz --mount-type virtiofs --ssh-agent \
+  act colima start --profile "$colima_profile" --vm-type vz --mount-type virtiofs \
     --cpu "$cpus" --memory "$memory" --disk "$disk" ${home_mount:+--mount} ${home_mount:+"$home_mount"} >/dev/null
-  step 3 "colima: $(verb "start profile $colima_profile (vz, virtiofs, ssh agent, $cpus CPUs, ${memory} GiB, ${disk} GiB$sizing, $shares)" "started profile $colima_profile (vz, virtiofs, ssh agent, $cpus CPUs, ${memory} GiB, ${disk} GiB$sizing, $shares)")"
+  step 3 "colima: $(verb "start profile $colima_profile (vz, virtiofs, $cpus CPUs, ${memory} GiB, ${disk} GiB$sizing, $shares)" "started profile $colima_profile (vz, virtiofs, $cpus CPUs, ${memory} GiB, ${disk} GiB$sizing, $shares)")"
 fi
 
 step 4 "image: prepared and verified by the smoke check in step 7"
@@ -438,29 +415,22 @@ fi
 
 step 5 "launcher: $installed, $snippet$shadowed"
 
-if [ -f "$user_config" ]; then
-  step 6 "config: $user_config exists, left as it is"
-else
+if [ -n "$org_file" ]; then
   if [ "$dry_run" -eq 0 ]; then
     mkdir -p "$(dirname "$user_config")"
-    printf '{\n  "profile": "%s"\n}\n' "$profile" > "$user_config"
-  fi
-  step 6 "config: $(verb "write" "wrote") $user_config with profile $profile"
-fi
-
-if [ -n "$org_source" ]; then
-  if [ "$dry_run" -eq 0 ]; then
-    mkdir -p "$(dirname "$user_config")"
-    PI_SANDBOX_ORG_SOURCE="$org_source" PI_SANDBOX_ORG_SHA256="$org_sha256" node -e '
+    PI_SANDBOX_ORG_FILE="$org_file" node -e '
       const { existsSync, readFileSync, writeFileSync } = require("node:fs");
       const file = process.argv[1];
       const config = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {};
-      const sha256 = process.env.PI_SANDBOX_ORG_SHA256.toLowerCase();
-      config.org = { source: process.env.PI_SANDBOX_ORG_SOURCE, ...(sha256 === "" ? {} : { sha256 }) };
+      config.org = process.env.PI_SANDBOX_ORG_FILE;
       writeFileSync(file, `${JSON.stringify(config, null, 2)}\n`);
     ' "$user_config"
   fi
-  step 6 "config: $(verb "set" "set") org in $user_config to $org_source${org_sha256:+ pinned to sha256 $org_sha256}"
+  step 6 "config: $(verb "set" "set") org in $user_config to $org_file"
+elif [ -f "$user_config" ]; then
+  step 6 "config: $user_config exists, left as it is"
+else
+  step 6 "config: the defaults apply, no user config written"
 fi
 
 smoke_parent="$HOME/.cache"

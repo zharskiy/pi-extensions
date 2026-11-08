@@ -339,16 +339,6 @@ describe("control socket and repository tokens", () => {
 
     expect(reply.status).toBe(407);
   }, 20_000);
-
-  it("gives a capped configuration its own policy instance", async () => {
-    const capped = await ensureProxyRunning({
-      ...options(["registry.npmjs.org"]),
-      egressCap: { grants: [] },
-    });
-
-    expect(capped.policyHash).toBe(proxyPolicyHash(config(["registry.npmjs.org"]), { grants: [] }));
-    expect(capped.policyHash).not.toBe(proxyPolicyHash(config(["registry.npmjs.org"])));
-  }, 20_000);
 });
 
 describe("daemon environment", () => {

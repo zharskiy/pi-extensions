@@ -98,7 +98,7 @@ describe("runPi", () => {
       containerId: "container-9",
       piArgs: [],
       env: { TERM: "xterm-256color", PI_SANDBOX_DEBUG: "1" },
-      launchId: "0123456789abcdef",
+      sessionId: "0123456789abcdef",
       workspace,
       terminal,
     });

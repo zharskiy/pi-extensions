@@ -99,7 +99,6 @@ const specOf = (base: string, workspace: Workspace, gitOverlay: GitOverlay) =>
     stateDir: join(base, "state"),
     gitOverlay,
     launcherVersion: "0.4.0",
-    configHash: "cfg",
   });
 
 const gitMountsOf = (spec: { mounts: MountSpec[] }, repo: string) =>
@@ -125,7 +124,6 @@ describe("the git dir in the container", () => {
       { target: join(repo, ".git", "config"), readOnly: true, snapshot: true },
       { target: join(repo, ".git", "commondir"), readOnly: true, snapshot: true },
     ]);
-    expect(spec.labels["pi-sandbox.git-protection"]).toBeDefined();
   });
 
   it("writes the pin and the snapshots before a start, with hooks copied", async () => {

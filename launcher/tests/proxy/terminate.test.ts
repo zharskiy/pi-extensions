@@ -32,7 +32,7 @@ const API_PLACEHOLDER = "pi-sandbox-89abcdef0123456789abcdef";
 
 const MISSING_PLACEHOLDER = "pi-sandbox-fedcba9876543210fedcba98";
 
-const SECRET = "real-gateway-secret";
+const SECRET = "real-llm-secret";
 
 const API_SECRET = "real-api-secret";
 
@@ -42,12 +42,12 @@ const REPO = "1".repeat(64);
 
 const RULES: CredentialRule[] = [
   {
-    id: "gateway",
-    host: "gateway.test",
+    id: "llm",
+    host: "llm.test",
     placeholder: PLACEHOLDER,
     header: "x-api-key",
     template: "{secret}",
-    secret: { env: "GATEWAY_KEY" },
+    secret: { env: "LLM_KEY" },
   },
   { id: "api", host: "api.test", placeholder: API_PLACEHOLDER, secret: { piAuth: "api" } },
   {
@@ -110,7 +110,7 @@ const state: {
   releaseStream: [],
   seen: [],
   resolver: fakeResolver({
-    gateway: SECRET,
+    llm: SECRET,
     api: API_SECRET,
     git: GIT_SECRET,
     "derived:git": GIT_URL,
@@ -167,7 +167,7 @@ const respond = (
 const startUpstream = async () => {
   const leafFor = async (host: string) => state.ca.leaf(host);
   const contexts = {
-    "gateway.test": await leafFor("gateway.test"),
+    "llm.test": await leafFor("llm.test"),
     "api.test": await leafFor("api.test"),
     "git.test": await leafFor("git.test"),
     "npm.test": await leafFor("npm.test"),
@@ -175,7 +175,7 @@ const startUpstream = async () => {
   };
   const server = createHttpsServer(
     {
-      ...contexts["gateway.test"],
+      ...contexts["llm.test"],
       SNICallback: (name, callback) => {
         const leaf = contexts[name as keyof typeof contexts];
 
@@ -206,15 +206,13 @@ beforeAll(async () => {
     stateDir: state.stateDir,
     policy: {
       allow: ["api.test", "git.test", "npm.test", "broken.test", "newline.test"],
-      mcpHosts: [],
-      gatewayHost: "gateway.test",
+      credentialHosts: ["llm.test"],
     },
     ca: state.ca,
     rules: RULES,
     resolver: state.resolver.resolver,
-    gateway: { host: "gateway.test", port: 443, url: "https://gateway.test/v1" },
     ports: () => ({
-      "gateway.test:443": portOf(state.upstream),
+      "llm.test:443": portOf(state.upstream),
       "api.test:443": portOf(state.upstream),
       "git.test:443": portOf(state.upstream),
       "npm.test:443": portOf(state.upstream),
@@ -249,21 +247,21 @@ const echoed = async (host: string, path: string, headers: Record<string, string
     headers: Record<string, string>;
   };
 
-describe("legacy gateway rule", () => {
-  it("replaces the placeholder and keeps the gateway path prefix", async () => {
-    const body = await echoed("gateway.test", "/messages", { "x-api-key": PLACEHOLDER });
+describe("a header rule with a placeholder", () => {
+  it("replaces the placeholder and keeps the path", async () => {
+    const body = await echoed("llm.test", "/v1/messages", { "x-api-key": PLACEHOLDER });
 
     expect(body).toMatchObject({ url: "/v1/messages", headers: { "x-api-key": SECRET } });
   });
 
   it("forwards any other value of the auth header untouched", async () => {
-    const body = await echoed("gateway.test", "/messages", { "x-api-key": "user-supplied" });
+    const body = await echoed("llm.test", "/v1/messages", { "x-api-key": "user-supplied" });
 
     expect(body.headers["x-api-key"]).toBe("user-supplied");
   });
 
   it("streams server-sent events before the response ends", async () => {
-    const response = await through("gateway.test", "/stream", { "x-api-key": PLACEHOLDER });
+    const response = await through("llm.test", "/v1/stream", { "x-api-key": PLACEHOLDER });
     const first = await new Promise<string>((resolve) =>
       response.once("data", (chunk: Buffer) => resolve(String(chunk))),
     );
@@ -280,14 +278,14 @@ describe("legacy gateway rule", () => {
   it("forwards a WebSocket upgrade with the credential", async () => {
     const secure = await secureTunnel(
       state.test.proxy.port,
-      "gateway.test:443",
-      "gateway.test",
+      "llm.test:443",
+      "llm.test",
       state.ca.certPem,
       state.token,
     );
 
     secure.write(
-      `GET /socket HTTP/1.1\r\nHost: gateway.test\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nx-api-key: ${PLACEHOLDER}\r\n\r\n`,
+      `GET /socket HTTP/1.1\r\nHost: llm.test\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nx-api-key: ${PLACEHOLDER}\r\n\r\n`,
     );
 
     const head = await new Promise<string>((resolve) =>
@@ -310,7 +308,9 @@ describe("legacy gateway rule", () => {
   });
 
   it("logs the terminated connection without the credential", async () => {
-    await waitFor(() => state.test.log.find((entry) => entry.rule === "gateway"));
+    await waitFor(() =>
+      state.test.log.find((entry) => entry.rule === "terminate" && entry.host === "llm.test"),
+    );
 
     expect(JSON.stringify(state.test.log)).not.toContain(SECRET);
   });
@@ -414,19 +414,18 @@ describe("credential rules", () => {
   });
 });
 
-describe("gateway on a non-443 port", () => {
+describe("a rule on a non-443 port", () => {
   const local: { test?: TestProxy; stateDir: string } = { stateDir: "" };
 
   beforeAll(async () => {
     local.stateDir = await createStateDir();
     local.test = await startTestProxy({
       stateDir: local.stateDir,
-      policy: { allow: [], mcpHosts: [], gatewayHost: "gateway.test", gatewayPort: 8443 },
+      policy: { allow: [], credentialHosts: ["llm.test:8443"] },
       ca: state.ca,
       rules: [{ ...RULES[0], port: 8443 } as CredentialRule],
       resolver: state.resolver.resolver,
-      gateway: { host: "gateway.test", port: 8443, url: "https://gateway.test:8443/v1" },
-      ports: () => ({ "gateway.test:8443": portOf(state.upstream) }),
+      ports: () => ({ "llm.test:8443": portOf(state.upstream) }),
     });
   });
 
@@ -436,11 +435,11 @@ describe("gateway on a non-443 port", () => {
     await removeDir(local.stateDir);
   });
 
-  it("intercepts the gateway on the URL port and injects the credential", async () => {
+  it("intercepts the host on the rule port and injects the credential", async () => {
     const response = await requestThrough({
       proxyPort: local.test?.proxy.port ?? 0,
       token: (await local.test?.tokenOf(REPO)) ?? "",
-      host: "gateway.test",
+      host: "llm.test",
       port: 8443,
       ca: state.ca.certPem,
       path: "/messages",
@@ -448,23 +447,21 @@ describe("gateway on a non-443 port", () => {
     });
     const body = JSON.parse(await readBody(response));
 
-    expect(body).toMatchObject({ url: "/v1/messages", headers: { "x-api-key": SECRET } });
+    expect(body).toMatchObject({ url: "/messages", headers: { "x-api-key": SECRET } });
   });
 
-  it("refuses the gateway host on 443", async () => {
+  it("refuses the host on 443", async () => {
     const page = await pageThrough(
       local.test?.proxy.port ?? 0,
-      "gateway.test:443",
+      "llm.test:443",
       (await local.test?.tokenOf(REPO)) ?? "",
       state.ca.certPem,
     );
 
     expect(page).toMatchObject({ connect: 200, status: 403 });
-    expect(page.body).toBe(
-      "pi-sandbox: gateway.test is not allowed; run pi sandbox egress allow gateway.test",
-    );
+    expect(page.body).toBe("pi-sandbox: llm.test is not allowed; run pi sandbox egress allow llm.test");
     expect(local.test?.log).toContainEqual(
-      expect.objectContaining({ host: "gateway.test", rule: "egress.port" }),
+      expect.objectContaining({ host: "llm.test", rule: "egress.port" }),
     );
   });
 });
@@ -513,11 +510,11 @@ describe("request targets on a terminated host", () => {
     expect(state.seen.at(-1)).toEqual({ url: "/v1/models", authorization: `Bearer ${API_SECRET}` });
   });
 
-  it("refuses dot segments before the gateway prefix is applied", async () => {
+  it("refuses dot segments in the path", async () => {
     const before = state.seen.length;
     const raw = await Promise.all(
       ["/../admin", "/%2E%2e/admin", "/x/..%2fadmin"].map((target) =>
-        rawGet("gateway.test", target, [`x-api-key: ${PLACEHOLDER}`]),
+        rawGet("llm.test", target, [`x-api-key: ${PLACEHOLDER}`]),
       ),
     );
 
@@ -585,7 +582,7 @@ describe("restricted addresses after DNS", () => {
     local.stateDir = await createStateDir();
     local.test = await startTestProxy({
       stateDir: local.stateDir,
-      policy: { allow: ["api.test", "tunnel.test"], mcpHosts: [] },
+      policy: { allow: ["api.test", "tunnel.test"] },
       ca: state.ca,
       rules: RULES,
       resolver: state.resolver.resolver,

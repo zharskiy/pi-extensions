@@ -30,7 +30,7 @@ describe("the end of a session", () => {
     const harness = await createHarness({ backend: () => fake.backend });
 
     await registerSession(harness.stateDir, {
-      launchId: "0123456789abcdef",
+      sessionId: "0123456789abcdef",
       pid: process.pid,
       repoHash: sha256Hex(harness.repoRoot),
       startedAt: 1,
@@ -50,7 +50,7 @@ describe("a config change while other sessions of the repository are live", () =
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
     const other = {
-      launchId: OTHER_LAUNCH,
+      sessionId: OTHER_LAUNCH,
       repoHash: sha256Hex(harness.repoRoot),
       startedAt: 1,
       pid: process.pid,

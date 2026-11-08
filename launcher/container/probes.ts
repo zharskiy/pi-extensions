@@ -97,11 +97,8 @@ const parsedJson = (output: string) => {
 
 const lastSegment = (path: string) => path.split(".").at(-1) ?? "";
 
-const isPlaceholderValue = (value: string, placeholder: string | undefined) =>
-  value === "" ||
-  value === placeholder ||
-  isPlaceholder(value) ||
-  isPlaceholder(value.trim().split(/\s+/).at(-1) ?? "");
+const isPlaceholderValue = (value: string) =>
+  value === "" || isPlaceholder(value) || isPlaceholder(value.trim().split(/\s+/).at(-1) ?? "");
 
 const isSecretField = (path: string) => {
   const name = lastSegment(path);
@@ -109,9 +106,9 @@ const isSecretField = (path: string) => {
   return name !== "type" && (TOKEN_FIELDS.includes(name) || isSecretName(name));
 };
 
-const foreignAuthPaths = (auth: unknown, placeholder: string | undefined) =>
+const foreignAuthPaths = (auth: unknown) =>
   stringLeaves(auth, "")
-    .filter((leaf) => isSecretField(leaf.path) && !isPlaceholderValue(leaf.value, placeholder))
+    .filter((leaf) => isSecretField(leaf.path) && !isPlaceholderValue(leaf.value))
     .map((leaf) => leaf.path);
 
 const isMcpSecret = (path: string) => {
@@ -122,17 +119,17 @@ const isMcpSecret = (path: string) => {
   return (section === "headers" && isAuthLikeHeader(name)) || (section === "env" && isSecretName(name));
 };
 
-const foreignMcpPaths = (mcp: unknown, placeholder: string | undefined) =>
+const foreignMcpPaths = (mcp: unknown) =>
   stringLeaves(mcp, "")
-    .filter((leaf) => isMcpSecret(leaf.path) && !isPlaceholderValue(leaf.value, placeholder))
+    .filter((leaf) => isMcpSecret(leaf.path) && !isPlaceholderValue(leaf.value))
     .map((leaf) => leaf.path);
 
-const secretEnvNames = (output: string, placeholder: string | undefined) =>
+const secretEnvNames = (output: string) =>
   output
     .split("\n")
     .filter((line) => line.includes("="))
     .map((line) => ({ name: line.slice(0, line.indexOf("=")), value: line.slice(line.indexOf("=") + 1) }))
-    .filter(({ name, value }) => isSecretName(name) && !isPlaceholderValue(value, placeholder))
+    .filter(({ name, value }) => isSecretName(name) && !isPlaceholderValue(value))
     .map(({ name }) => name);
 
 const readGuestJson = async (target: ProbeTarget, path: string) => {
@@ -141,7 +138,7 @@ const readGuestJson = async (target: ProbeTarget, path: string) => {
   return file.exitCode === 0 ? parsedJson(file.output) : {};
 };
 
-export const sweepCredentials = async (target: ProbeTarget, placeholder: string | undefined) => {
+export const sweepCredentials = async (target: ProbeTarget) => {
   const env = await execCapture(target, ["env"]);
   const auth = await readGuestJson(target, GUEST_AUTH_FILE);
   const mcp = await readGuestJson(target, GUEST_MCP_FILE);
@@ -149,13 +146,13 @@ export const sweepCredentials = async (target: ProbeTarget, placeholder: string 
     ...(env.exitCode === 0 ? [] : [`env exited ${env.exitCode}`]),
     ...(auth === undefined ? [`${GUEST_AUTH_FILE} is not JSON`] : []),
     ...(mcp === undefined ? [`${GUEST_MCP_FILE} is not JSON`] : []),
-    ...secretEnvNames(env.output, placeholder).map(
+    ...secretEnvNames(env.output).map(
       (name) => `environment variable ${name} holds a value other than the placeholder`,
     ),
-    ...foreignAuthPaths(auth, placeholder).map(
+    ...foreignAuthPaths(auth).map(
       (path) => `${GUEST_AUTH_FILE} holds a value other than the placeholder at ${path}`,
     ),
-    ...foreignMcpPaths(mcp, placeholder).map(
+    ...foreignMcpPaths(mcp).map(
       (path) => `${GUEST_MCP_FILE} holds a value other than a placeholder at ${path}`,
     ),
   ];

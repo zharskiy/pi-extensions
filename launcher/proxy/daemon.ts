@@ -81,14 +81,13 @@ const run = async (args: ReturnType<typeof parseDaemonArgs>) => {
   }
 
   const { config, token } = daemonConfig;
-  const cap = daemonConfig.egressCap ?? {};
-  const policyHash = proxyPolicyHash(config, cap);
+  const policyHash = proxyPolicyHash(config);
 
   if (policyHash !== args.policyHash) {
     throw new LauncherError(`${files.config}: policy hash does not match ${args.policyHash}`);
   }
 
-  const settings = proxySettings(config, cap);
+  const settings = proxySettings(config);
   const parentEnv = daemonConfig.parentEnv ?? {};
   const runner = createProcessRunner({ baseEnv: { ...minimalEnv(process.env), ...parentEnv } });
   const ca = await openLauncherCa({ stateDir: args.stateDir, runner });
@@ -99,8 +98,7 @@ const run = async (args: ReturnType<typeof parseDaemonArgs>) => {
     stateDir: args.stateDir,
     policyHash,
     staticRules: settings.rules,
-    grantsEnabled: settings.grants.enabled,
-    cap: settings.cap,
+    grantsEnabled: settings.policy.grants === true,
   });
   const secrets = createRepoSecrets(runtime);
   const resolver = createSecretResolver({
@@ -126,7 +124,6 @@ const run = async (args: ReturnType<typeof parseDaemonArgs>) => {
     controlToken: token,
     runtime,
     resolver,
-    gateway: settings.gateway,
     privateHosts: settings.privateHosts,
     ca,
     log: log.write,

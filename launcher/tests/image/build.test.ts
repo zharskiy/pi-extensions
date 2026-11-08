@@ -12,13 +12,6 @@ import { sandboxConfig } from "../support/sandbox-config.ts";
 
 const versions = { pi: "1.5.0", extensions: { kind: "registry" as const, version: "0.4.0" } };
 
-const gateway = {
-  url: "https://gateway.example.com",
-  authHeader: "x-api-key",
-  placeholder: "pi-sandbox-placeholder",
-  providers: [{ id: "gateway", apiKind: "example-messages" }],
-};
-
 const dirs: string[] = [];
 
 const tempDir = async () => {
@@ -192,7 +185,7 @@ describe("ensureBuiltImage", () => {
     expect((await readdir(stateDir)).sort()).toEqual(["image.json"]);
   });
 
-  it("reuses the recorded build while its inputs are unchanged, whatever the gateway", async () => {
+  it("reuses the recorded build while its inputs are unchanged, whatever the credential rules", async () => {
     const fake = createFakeBackend();
     const stateDir = await tempDir();
     const config = sandboxConfig();
@@ -201,7 +194,15 @@ describe("ensureBuiltImage", () => {
 
     const again = await ensureBuiltImage({
       backend: fake.backend,
-      config: sandboxConfig({ gateway }),
+      config: sandboxConfig({
+        credentials: {
+          rules: [
+            { id: "llm", host: "llm.example.com", placeholder: "pi-sandbox-llm", secret: { env: "LLM_KEY" } },
+          ],
+          derive: { enabled: true },
+          vault: { enabled: true },
+        },
+      }),
       versions,
       stateDir,
     });

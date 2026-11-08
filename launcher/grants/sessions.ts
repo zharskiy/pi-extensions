@@ -12,24 +12,24 @@ import {
 } from "../shared/index.ts";
 import type { EndSessionInput, SessionEntry } from "./types.ts";
 
-const LAUNCH_ID = /^[0-9a-f]{16}$/;
+const SESSION_ID = /^[0-9a-f]{16}$/;
 
 const ENTRY_SUFFIX = ".json";
 
 const PRIVATE_MODE = 0o600;
 
-export const newLaunchId = (): string => randomBytes(8).toString("hex");
+export const newSessionId = (): string => randomBytes(8).toString("hex");
 
-const checkedLaunchId = (launchId: string) => {
-  if (!LAUNCH_ID.test(launchId)) {
-    throw new LauncherError(`invalid launch id ${launchId}`);
+const checkedSessionId = (sessionId: string) => {
+  if (!SESSION_ID.test(sessionId)) {
+    throw new LauncherError(`invalid session id ${sessionId}`);
   }
 
-  return launchId;
+  return sessionId;
 };
 
-const entryFile = (stateDir: string, repoHash: string, launchId: string) =>
-  join(stateLayout(stateDir).sessionsOf(repoHash), `${checkedLaunchId(launchId)}${ENTRY_SUFFIX}`);
+const entryFile = (stateDir: string, repoHash: string, sessionId: string) =>
+  join(stateLayout(stateDir).sessionsOf(repoHash), `${checkedSessionId(sessionId)}${ENTRY_SUFFIX}`);
 
 const lockFile = (stateDir: string, repoHash: string) =>
   join(stateLayout(stateDir).sessionsOf(repoHash), "lock");
@@ -40,7 +40,7 @@ interface StoredEntry {
 }
 
 const isEntry = (value: unknown): value is SessionEntry =>
-  isJsonObject(value) && typeof value.pid === "number" && typeof value.launchId === "string";
+  isJsonObject(value) && typeof value.pid === "number" && typeof value.sessionId === "string";
 
 const readEntry = async (path: string): Promise<StoredEntry> => {
   const value = await readJsonObject(path);
@@ -90,14 +90,14 @@ export const liveSessions = async (
 
 export const registerSession = (stateDir: string, entry: SessionEntry): Promise<number> =>
   withFileLock(lockFile(stateDir, entry.repoHash), async () => {
-    await writeJsonFile(entryFile(stateDir, entry.repoHash, entry.launchId), entry, { mode: PRIVATE_MODE });
+    await writeJsonFile(entryFile(stateDir, entry.repoHash, entry.sessionId), entry, { mode: PRIVATE_MODE });
 
     return (await pruneDead(stateDir, entry.repoHash)).length;
   });
 
 export const endSession = (stateDir: string, input: EndSessionInput): Promise<number> =>
   withFileLock(lockFile(stateDir, input.repoHash), async () => {
-    await rm(entryFile(stateDir, input.repoHash, input.launchId), { force: true });
+    await rm(entryFile(stateDir, input.repoHash, input.sessionId), { force: true });
 
     const remaining = (await pruneDead(stateDir, input.repoHash)).length;
 

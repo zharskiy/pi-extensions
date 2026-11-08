@@ -19,9 +19,6 @@ const STATES: Record<string, ContainerState> = {
   created: "created",
 };
 
-const bindOf = (mount: MountSpec) =>
-  mount.readOnly ? `${mount.source}:${mount.target}:ro` : `${mount.source}:${mount.target}`;
-
 const mountOf = (mount: MountSpec) => ({
   Type: mount.kind,
   Source: mount.source,
@@ -43,21 +40,12 @@ export const envList = (env: Record<string, string>) =>
 const scaled = (value: number | undefined, factor: number) =>
   value === undefined ? undefined : Math.round(value * factor);
 
-const agentMounts = (spec: ContainerSpec, agentSocket: string | undefined): MountSpec[] =>
-  spec.sshAgent === undefined || agentSocket === undefined
-    ? []
-    : [{ kind: "bind", source: agentSocket, target: spec.sshAgent.guestSocket, readOnly: false }];
-
-const agentEnv = (spec: ContainerSpec): Record<string, string> =>
-  spec.sshAgent === undefined ? {} : { SSH_AUTH_SOCK: spec.sshAgent.guestSocket };
-
-export const containerBody = (spec: ContainerSpec, agentSocket?: string) => ({
+export const containerBody = (spec: ContainerSpec) => ({
   Image: spec.image,
   Labels: spec.labels,
-  Env: envList({ ...spec.env, ...agentEnv(spec) }),
+  Env: envList(spec.env),
   WorkingDir: spec.workdir,
   HostConfig: {
-    Binds: agentMounts(spec, agentSocket).map(bindOf),
     Mounts: spec.mounts.map(mountOf),
     NetworkMode: networkModeOf(spec.network),
     ReadonlyRootfs: spec.readOnlyRoot,

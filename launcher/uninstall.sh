@@ -47,7 +47,6 @@ parse_args() {
     --vm) vm=1; shift ;;
     --dry-run) dry_run=1; shift ;;
     --bin-dir) bin_dir="${2:-}"; shift 2 ;;
-    --profile) shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) usage >&2; fail "unknown option $1" ;;
   esac
@@ -197,7 +196,7 @@ remove_state() {
   remove_state "$@"
 }
 
-remove_state sessions render sync mcp-auth provider-hosts org grants.json
+remove_state sessions render sync mcp-auth provider-hosts grants.json
 
 engine_socket="$HOME/.colima/$colima_profile/docker.sock"
 

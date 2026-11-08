@@ -2,7 +2,6 @@ import { BlockList, isIP } from "node:net";
 import {
   authorityOf,
   isLoopbackName,
-  matchesEntry,
   matchesPattern,
   normalizeHost,
   parseEntry,
@@ -11,12 +10,9 @@ import {
 
 export interface EgressPolicy {
   allow: string[];
-  mcpHosts: string[];
-  gatewayHost?: string;
-  gatewayPort?: number;
   deny?: string[];
   credentialHosts?: string[];
-  grantCap?: string[];
+  grants?: boolean;
 }
 
 export interface ConnectRequest {
@@ -142,30 +138,21 @@ export const restrictedAddress = (address: string): Denial | undefined => {
   return match === undefined ? undefined : deny(match.range.rule, `${plain} is a ${match.range.reason}`);
 };
 
-const notAllowed = (rule: string, host: string, port: number, grantCap: string[] | undefined) => {
+const notAllowed = (rule: string, host: string, port: number, grants: boolean) => {
   const target = authorityOf(host, port);
 
-  if (grantCap !== undefined && !grantCap.some((pattern) => matchesEntry(pattern, host, port))) {
-    return deny("egress.cap", `pi-sandbox: ${target} is outside the allowlist set by policy or org`);
-  }
-
-  return deny(rule, `pi-sandbox: ${target} is not allowed; run pi sandbox egress allow ${target}`);
+  return deny(
+    rule,
+    grants
+      ? `pi-sandbox: ${target} is not allowed; run pi sandbox egress allow ${target}`
+      : `pi-sandbox: ${target} is not allowed; egress grants are off, add it to egress.allow`,
+  );
 };
 
-const policyHosts = (policy: EgressPolicy) => [
-  ...policy.allow,
-  ...policy.mcpHosts,
-  ...(policy.credentialHosts ?? []),
-  ...(policy.gatewayHost === undefined ? [] : [`${policy.gatewayHost}:${policy.gatewayPort ?? TLS_PORT}`]),
-];
+const policyHosts = (policy: EgressPolicy) => [...policy.allow, ...(policy.credentialHosts ?? [])];
 
 const isDenied = (host: string, port: number, deny: string[]) =>
   deny.map(parseEntry).some((entry) => matchesPattern(host, entry.pattern) && (entry.port ?? port) === port);
-
-export const isGatewayHost = (host: string, port: number, policy: EgressPolicy) =>
-  policy.gatewayHost !== undefined &&
-  normalizeHost(host) === normalizeHost(policy.gatewayHost) &&
-  port === (policy.gatewayPort ?? TLS_PORT);
 
 const literalDecision = (host: string): Denial => {
   const restricted = restrictedAddress(host);
@@ -205,11 +192,11 @@ const hostDecision = (host: string, port: number, policy: EgressPolicy, extra: s
     .filter((entry) => matchesPattern(host, entry.pattern));
 
   if (entries.length === 0) {
-    return notAllowed("egress.allow", host, port, policy.grantCap);
+    return notAllowed("egress.allow", host, port, policy.grants !== false);
   }
 
   if (!entries.some((entry) => (entry.port ?? TLS_PORT) === port)) {
-    return notAllowed("egress.port", host, port, policy.grantCap);
+    return notAllowed("egress.port", host, port, policy.grants !== false);
   }
 
   return { allowed: true };

@@ -45,18 +45,5 @@ const envProxyArgs = (env: Env) => {
   return proxyArgs(http, https ?? http, env.NO_PROXY ?? env.no_proxy);
 };
 
-export const buildProxyArgs = (parentProxy: ParentProxy, env: Env): Record<string, string> => {
-  if (parentProxy === "none") {
-    return {};
-  }
-
-  if (parentProxy === "env") {
-    return envProxyArgs(env);
-  }
-
-  if (parentProxy.auth !== undefined) {
-    throw credentialsRefused();
-  }
-
-  return proxyArgs(parentProxy.url, parentProxy.url, parentProxy.noProxy?.join(","));
-};
+export const buildProxyArgs = (parentProxy: ParentProxy, env: Env): Record<string, string> =>
+  parentProxy === "none" ? {} : envProxyArgs(env);

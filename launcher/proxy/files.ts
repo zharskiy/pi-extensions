@@ -8,7 +8,6 @@ export interface ProxyInstance {
 export interface DaemonConfig<Config> {
   token: string;
   config: Config;
-  egressCap?: { derivedHosts?: string[]; grants?: string[] };
   piCommand?: string[];
   discoverCommand?: string[];
   piVersion?: string;

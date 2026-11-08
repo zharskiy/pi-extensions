@@ -65,14 +65,13 @@ export interface ContainerSpecInput {
   hostEnv: Record<string, string | undefined>;
   hostUid: number;
   stateDir: string;
-  gitOverlay?: GitOverlay;
+  gitOverlay: GitOverlay;
   proxy?: SpecProxy;
   launcherVersion: string;
-  configHash: string;
   renderDir?: string;
   trust?: SpecTrust;
   repoProxyToken?: string;
-  launchId?: string;
+  sessionId?: string;
   hostSessions?: HostSessions;
 }
 
@@ -87,13 +86,9 @@ const GUEST_HOME = "/home/pi";
 
 const GUEST_CA_BUNDLE = "/tmp/pi-sandbox/ca-bundle.pem";
 
-const GUEST_SSH_AUTH_SOCK = "/run/host-ssh-agent.sock";
-
 const SHARED_TMPFS = "mode=1777";
 
 const NO_NETWORK: NetworkRef = { kind: "none" };
-
-const GIT_PROTECTION = "snapshots";
 
 const bind = (source: string, target: string, readOnly: boolean): MountSpec => ({
   source,
@@ -121,7 +116,7 @@ const gitCommonDirsOf = (workspace: Workspace) =>
 const gitMounts = (input: ContainerSpecInput) => {
   const overlay = input.gitOverlay;
 
-  if (overlay === undefined || gitCommonDirsOf(input.workspace).length === 0) {
+  if (gitCommonDirsOf(input.workspace).length === 0) {
     return [];
   }
 
@@ -308,20 +303,15 @@ const trustMounts = (input: ContainerSpecInput) => {
 const renderMounts = (renderDir: string | undefined) =>
   renderDir === undefined ? [] : [bind(renderDir, GUEST_PATHS.renderDir, true)];
 
-const sshAgentOf = (input: ContainerSpecInput) =>
-  input.config.ssh.agent ? { guestSocket: GUEST_SSH_AUTH_SOCK } : undefined;
-
 const baseLabels = (input: ContainerSpecInput) => ({
   [LABELS.managed]: "true",
   [LABELS.repoHash]: repoHash(input.workspace.repoRoot),
   [LABELS.repoRoot]: input.workspace.repoRoot,
   [LABELS.imageDigest]: input.image.digest,
   [LABELS.imageReference]: input.image.reference,
-  [LABELS.configHash]: input.configHash,
   [LABELS.version]: input.launcherVersion,
   ...(input.proxy === undefined ? {} : { [LABELS.proxyPolicyHash]: input.proxy.policyHash }),
   ...sessionsLabel(input.hostSessions),
-  ...(input.gitOverlay === undefined ? {} : { [LABELS.gitProtection]: GIT_PROTECTION }),
   ...(input.workspace.gitCommonDir === undefined
     ? {}
     : { [LABELS.gitCommonDir]: input.workspace.gitCommonDir }),
@@ -363,7 +353,6 @@ export const buildContainerSpec = (input: ContainerSpecInput): LauncherContainer
     tmpfs: [`/tmp:${SHARED_TMPFS}`, `${GUEST_HOME}:${SHARED_TMPFS}`],
     init: true,
     resources: { cpus: config.resources.cpus, memoryGiB: config.resources.memoryGiB },
-    sshAgent: sshAgentOf(input),
     wantedFile: wantedFile(input.stateDir, workspace.repoRoot),
     volumeLabels: Object.fromEntries([
       [agentVolume, repoVolumeLabels(workspace)],

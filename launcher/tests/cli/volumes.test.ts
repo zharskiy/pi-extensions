@@ -67,7 +67,7 @@ describe("pi sandbox gc and shared caches", () => {
     await run([], harness.deps);
 
     await registerSession(harness.stateDir, {
-      launchId: "00000000000000cc",
+      sessionId: "00000000000000cc",
       pid: process.pid,
       repoHash: sha256Hex(harness.repoRoot),
       startedAt: 1,

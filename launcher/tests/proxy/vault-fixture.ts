@@ -162,7 +162,6 @@ export const startVaultProxy = async (options: VaultProxyOptions): Promise<Vault
     policyHash: POLICY_HASH,
     staticRules: [],
     grantsEnabled: false,
-    cap: {},
   });
   const opened: string[] = [];
   const vault = createVault({
@@ -180,7 +179,7 @@ export const startVaultProxy = async (options: VaultProxyOptions): Promise<Vault
   const port = portOf(options.upstream.server);
   const test = await startTestProxy({
     stateDir: options.stateDir,
-    policy: { allow: [], mcpHosts: [] },
+    policy: { allow: [] },
     ca: options.ca,
     resolver: options.resolver,
     grantsEnabled: false,

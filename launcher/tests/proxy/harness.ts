@@ -3,7 +3,7 @@ import type { Server } from "node:https";
 import { type AddressInfo, connect, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { CredentialRule, EgressCap } from "../../config/index.ts";
+import type { CredentialRule } from "../../config/index.ts";
 import type { AccessLogEntry } from "../../proxy/access-log.ts";
 import type { Dialer } from "../../proxy/dial.ts";
 import { repoProxyToken } from "../../proxy/dynamic.ts";
@@ -79,10 +79,8 @@ export interface TestProxyOptions {
   policy: EgressPolicy;
   ca?: LauncherCa;
   rules?: CredentialRule[];
-  cap?: EgressCap;
   grantsEnabled?: boolean;
   resolver?: SecretResolver;
-  gateway?: { host: string; port: number; url: string };
   privateHosts?: string[];
   ports?: () => Record<string, number>;
   dial?: Dialer;
@@ -106,7 +104,6 @@ export const startTestProxy = async (options: TestProxyOptions): Promise<TestPro
     policyHash: POLICY_HASH,
     staticRules: options.rules ?? [],
     grantsEnabled: options.grantsEnabled ?? true,
-    cap: options.cap ?? {},
   });
   const proxy = await startProxyServer({
     listen: { host: "127.0.0.1", port: 0 },
@@ -115,7 +112,6 @@ export const startTestProxy = async (options: TestProxyOptions): Promise<TestPro
     controlToken: CONTROL_TOKEN,
     runtime,
     resolver: options.resolver ?? fakeResolver({}).resolver,
-    gateway: options.gateway,
     privateHosts: options.privateHosts,
     ca: options.ca,
     log: (entry) => log.push(entry),

@@ -31,7 +31,7 @@ describe("pi sandbox status", () => {
     expect(lines).toContain("runtime socket: /fake/docker.sock");
     expect(lines).toContain(`container: ${container?.summary.id} stopped`);
     expect(lines).toContain("container digest: sha256:built-1");
-    expect(lines.some((line) => /^container config hash: [0-9a-f]{64} \(current\)$/.test(line))).toBe(true);
+    expect(lines.some((line) => /^container spec hash: [0-9a-f]{64} \(current\)$/.test(line))).toBe(true);
     expect(lines).toContain("proxy: stopped");
     expect(lines).toContain(`image: ghcr.io/zharskiy/pi-sandbox:${await packageVersion()} sha256:built-1`);
     expect(lines).toContain("sessions: 0 running for this repository");
@@ -52,7 +52,7 @@ describe("pi sandbox status", () => {
 
     const lines = harness.stdout().split("\n");
 
-    expect(lines.some((line) => /^container config hash: [0-9a-f]{64} \(stale\)$/.test(line))).toBe(true);
+    expect(lines.some((line) => /^container spec hash: [0-9a-f]{64} \(stale\)$/.test(line))).toBe(true);
   });
 
   it("reports the container stale when its spec hash differs from the one the last launch wanted", async () => {
@@ -69,7 +69,7 @@ describe("pi sandbox status", () => {
 
     const lines = harness.stdout().split("\n");
 
-    expect(lines.some((line) => /^container config hash: [0-9a-f]{64} \(stale\)$/.test(line))).toBe(true);
+    expect(lines).toContain("container spec hash: older-spec (stale)");
   });
 
   it("lists every running proxy instance and marks the one for this repository's policy", async () => {
@@ -100,13 +100,13 @@ describe("pi sandbox status", () => {
     const harness = await createHarness();
 
     await registerSession(harness.stateDir, {
-      launchId: "0123456789abcdef",
+      sessionId: "0123456789abcdef",
       pid: process.pid,
       repoHash: sha256Hex(harness.repoRoot),
       startedAt: 1_700_000_000_000,
     });
 
-    await run(["sandbox", "egress", "allow", "docs.example.test", "--permanent"], harness.deps);
+    await run(["sandbox", "egress", "allow", "docs.example.test"], harness.deps);
 
     expect(await run(["sandbox", "status"], harness.deps)).toBe(0);
 
@@ -115,7 +115,7 @@ describe("pi sandbox status", () => {
     expect(lines).toContain("sessions: 1 running for this repository");
     expect(lines).toContain(`session: 0123456789abcdef pid ${process.pid} since 2023-11-14T22:13:20.000Z`);
     expect(lines).toContain("grants: 1 active");
-    expect(lines).toContain("grant: docs.example.test for this repository permanently");
+    expect(lines).toContain("grant: docs.example.test for this repository");
   });
 
   it("still reports the proxy and image without a reachable engine", async () => {
@@ -162,58 +162,12 @@ describe("pi sandbox config", () => {
     expect(parsed.sources.fallback).toBe("default");
   });
 
-  it("sets a user key, or a project key with --project", async () => {
+  it("only shows the config and refuses any other option", async () => {
     const harness = await createHarness();
 
-    expect(await run(["sandbox", "config", "set", "fallback", '"refuse"'], harness.deps)).toBe(0);
-    expect(JSON.parse(await readFile(harness.userConfigFile, "utf8"))).toEqual({ fallback: "refuse" });
-    expect(harness.stdout()).toContain(`set fallback in ${harness.userConfigFile}`);
-
-    expect(
-      await run(
-        ["sandbox", "config", "set", "mounts.cacheVolumes", '["node_modules"]', "--project"],
-        harness.deps,
-      ),
-    ).toBe(0);
-
-    const projectFile = join(harness.repoRoot, ".pi", "sandbox.json");
-
-    expect(JSON.parse(await readFile(projectFile, "utf8"))).toEqual({
-      mounts: { cacheVolumes: ["node_modules"] },
-    });
-    expect(await readFile(join(harness.repoRoot, ".pi", ".gitignore"), "utf8")).toBe("*\n");
-  });
-
-  it("refuses a value that is not JSON with a hint", async () => {
-    const harness = await createHarness();
-
-    expect(await run(["sandbox", "config", "set", "fallback", "refuse"], harness.deps)).toBe(1);
-    expect(harness.stderr()).toContain("pi-sandbox: config set fallback: refuse is not a JSON value\n");
-    expect(harness.stderr()).toContain(
-      `  hint: quote strings as JSON, for example pi sandbox config set fallback '"refuse"'`,
-    );
-  });
-
-  it("refuses loosening a key the org baseline locked, and writes nothing", async () => {
-    const harness = await createHarness();
-    const baseline = join(harness.root, "org-baseline.json");
-
-    await harness.writeJson(baseline, { egress: { grants: { permanent: false } } });
-
-    await harness.writeJson(harness.userConfigFile, { org: { source: baseline } });
-
-    expect(await run(["sandbox", "config", "set", "egress.grants.permanent", "true"], harness.deps)).toBe(1);
-    expect(harness.stderr()).toContain("locked by org");
-    expect(JSON.parse(await readFile(harness.userConfigFile, "utf8"))).toEqual({ org: { source: baseline } });
-  });
-
-  it("refuses loosening a key the policy locked and names the layer", async () => {
-    const harness = await createHarness();
-
-    await harness.writeJson(harness.policyFile, { fallback: "refuse" });
-
-    expect(await run(["sandbox", "config", "set", "fallback", '"host"'], harness.deps)).toBe(1);
-    expect(harness.stderr()).toContain("policy");
+    expect(await run(["sandbox", "config", "set", "fallback", '"refuse"'], harness.deps)).toBe(1);
+    expect(harness.stderr()).toContain('pi-sandbox: unknown config option "set fallback "refuse""\n');
+    expect(harness.stderr()).toContain("  hint: pi sandbox config [--json]");
   });
 });
 
@@ -242,7 +196,6 @@ describe("pi sandbox gc and reset", () => {
 
     expect(await run(["sandbox", "gc"], harness.deps)).toBe(0);
     expect(harness.stdout()).toContain("removed 2 stopped containers\n");
-    expect(harness.stdout()).toContain("pruned 0 ended grants\n");
     expect([...fake.containers.values()].map((entry) => entry.summary.name).sort()).toEqual([
       "pi-sandbox-busy",
       "unrelated",
@@ -353,7 +306,7 @@ describe("pi sandbox gc and reset", () => {
     await writeFile(tokenFile, "f".repeat(64));
 
     await registerSession(harness.stateDir, {
-      launchId: "00000000000000bb",
+      sessionId: "00000000000000bb",
       pid: process.pid,
       repoHash: repo,
       startedAt: 1,
@@ -448,10 +401,10 @@ describe("pi sandbox gc and reset", () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
 
-    await fake.backend.ensureVolume("pi-sandbox-agent-legacy");
+    await fake.backend.ensureVolume("pi-sandbox-agent-unlabelled");
 
     expect(await run(["sandbox", "gc"], harness.deps)).toBe(0);
-    expect(fake.volumes.has("pi-sandbox-agent-legacy")).toBe(true);
+    expect(fake.volumes.has("pi-sandbox-agent-unlabelled")).toBe(true);
     expect(harness.stdout()).toContain(
       "kept 1 volume without repository label; run pi sandbox reset in the repository or remove them by hand\n",
     );

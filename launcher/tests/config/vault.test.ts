@@ -43,7 +43,7 @@ describe("credentials.vault", () => {
     expect(vaultEnabled(config)).toBe(false);
   });
 
-  it("cannot be turned back on below a layer that turned it off", async () => {
+  it("cannot be changed below a layer that set it", async () => {
     const problem = await problemOf(() =>
       merge({
         policy: { credentials: { vault: { enabled: false } } },
@@ -51,16 +51,7 @@ describe("credentials.vault", () => {
       }),
     );
 
-    expect(problem).toBe("user: credentials.vault.enabled cannot enable, locked by policy");
-  });
-
-  it("may be turned off below a layer that left it on", async () => {
-    const { config } = await merge({
-      policy: { credentials: { vault: { enabled: true } } },
-      user: { credentials: { vault: { enabled: false } } },
-    });
-
-    expect(config.credentials.vault.enabled).toBe(false);
+    expect(problem).toBe("user: credentials.vault.enabled is set by the policy config and is final there");
   });
 
   it("is refused in a project config", async () => {
@@ -68,7 +59,7 @@ describe("credentials.vault", () => {
       validateLayer({ credentials: { vault: { enabled: false } } }, "project"),
     );
 
-    expect(problem).toBe("project: credentials.vault may not be set by a project config");
+    expect(problem).toBe("project: credentials.vault.enabled may not be set by a project config");
   });
 
   it("refuses a value that is not a boolean and an unknown key", async () => {

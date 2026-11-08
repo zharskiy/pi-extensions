@@ -4,7 +4,7 @@ import { createServer as createHttpsServer, type Server } from "node:https";
 import { connect } from "node:net";
 import { type TLSSocket, connect as tlsConnect } from "node:tls";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { addGrant, endSession, newLaunchId, registerSession } from "../../grants/index.ts";
+import { addGrant } from "../../grants/index.ts";
 import { writeProxyDynamic } from "../../proxy/dynamic.ts";
 import type { LauncherCa } from "../../proxy/tls-ca.ts";
 import { stateLayout } from "../../shared/index.ts";
@@ -36,8 +36,6 @@ import {
 const REPO = "1".repeat(64);
 
 const OTHER_REPO = "2".repeat(64);
-
-const LIMITS = { enabled: true, maxHours: 168, permanent: true };
 
 const state: {
   stateDir: string;
@@ -82,7 +80,7 @@ beforeAll(async () => {
 
   state.test = await startTestProxy({
     stateDir: state.stateDir,
-    policy: { allow: ["target.test", "other.test"], mcpHosts: [], deny: ["blocked.test"] },
+    policy: { allow: ["target.test", "other.test"], deny: ["blocked.test"] },
     ca: state.ca,
     ports,
     onControl: (message) => {
@@ -407,7 +405,7 @@ describe("the upstream of a spliced tunnel", () => {
     const stateDir = await createStateDir();
     const local = await startTestProxy({
       stateDir,
-      policy: { allow: ["target.test", "other.test"], mcpHosts: [] },
+      policy: { allow: ["target.test", "other.test"] },
       ca: state.ca,
       dial: (host, port) => {
         dialled.push(`${host}:${port}`);
@@ -483,7 +481,7 @@ describe("denial page certificates", () => {
     const stateDir = await createStateDir();
     const local = await startTestProxy({
       stateDir,
-      policy: { allow: [], mcpHosts: [] },
+      policy: { allow: [] },
       ca: state.ca,
       denialPages: { mintsPerMinute: 1 },
     });
@@ -511,61 +509,22 @@ describe("denial page certificates", () => {
 
 describe("grants", () => {
   it("allows a host with a repository grant for that repository only", async () => {
-    await addGrant(
-      state.stateDir,
-      { host: "granted.test", port: 443, repoHash: REPO, scope: { kind: "permanent" } },
-      LIMITS,
-      Date.now(),
-    );
+    await addGrant(state.stateDir, { host: "granted.test", port: 443, repoHash: REPO }, true, Date.now());
 
     expect((await connectStatus("granted.test:443")).status).toBe(200);
     expect(await deniedPage("granted.test:443", state.otherToken)).toBe(hint("granted.test"));
   });
 
   it("keeps egress.deny above a grant", async () => {
-    await addGrant(
-      state.stateDir,
-      { host: "blocked.test", port: 443, scope: { kind: "permanent" } },
-      LIMITS,
-      Date.now(),
-    );
+    await addGrant(state.stateDir, { host: "blocked.test", port: 443 }, true, Date.now());
 
     expect((await connectStatus("blocked.test:443")).body.rule).toBe("egress.deny");
   });
 
   it("keeps private addresses denied with a grant", async () => {
-    await addGrant(
-      state.stateDir,
-      { host: "10.0.0.1", port: 443, scope: { kind: "permanent" } },
-      LIMITS,
-      Date.now(),
-    );
+    await addGrant(state.stateDir, { host: "10.0.0.1", port: 443 }, true, Date.now());
 
     expect((await connectStatus("10.0.0.1:443")).body.rule).toBe("private-address");
-  });
-
-  it("allows a session grant only while its launch is live", async () => {
-    const launchId = newLaunchId();
-
-    await registerSession(state.stateDir, {
-      launchId,
-      pid: process.pid,
-      repoHash: OTHER_REPO,
-      startedAt: Date.now(),
-    });
-
-    await addGrant(
-      state.stateDir,
-      { host: "granted.test", port: 443, repoHash: OTHER_REPO, scope: { kind: "session", launchId } },
-      LIMITS,
-      Date.now(),
-    );
-
-    expect((await connectStatus("granted.test:443", state.otherToken)).status).toBe(200);
-
-    await endSession(state.stateDir, { repoHash: OTHER_REPO, launchId, onLast: async () => undefined });
-
-    expect(await deniedPage("granted.test:443", state.otherToken)).toBe(hint("granted.test"));
   });
 });
 
@@ -620,54 +579,6 @@ describe("denials", () => {
     const reply = await plainGet(state.test.proxy.port, "/denials?since=0", "127.0.0.1", state.token);
 
     expect(JSON.parse(reply.body).denials).toHaveLength(200);
-  });
-});
-
-describe("egress cap", () => {
-  const local: { test?: TestProxy; stateDir: string } = { stateDir: "" };
-
-  beforeAll(async () => {
-    local.stateDir = await createStateDir();
-    local.test = await startTestProxy({
-      stateDir: local.stateDir,
-      policy: { allow: [], mcpHosts: [] },
-      cap: { derivedHosts: ["derived.test"], grants: ["*.granted.test"] },
-      ports,
-    });
-
-    await writeProxyDynamic(local.stateDir, POLICY_HASH, {
-      version: 1,
-      rules: [],
-      derivedHosts: ["derived.test", "clipped.test"],
-    });
-
-    await addGrant(
-      local.stateDir,
-      { host: "granted.test", port: 443, scope: { kind: "permanent" } },
-      LIMITS,
-      Date.now(),
-    );
-  });
-
-  afterAll(async () => {
-    await local.test?.proxy.close();
-
-    await removeDir(local.stateDir);
-  });
-
-  const statusOf = async (authority: string) => {
-    const token = (await local.test?.tokenOf(REPO)) ?? "";
-    const reply = await openConnect(local.test?.proxy.port ?? 0, authority, token);
-
-    reply.socket.destroy();
-
-    return reply.status;
-  };
-
-  it("clips derived hosts and grants to the cap", async () => {
-    expect(await statusOf("derived.test:443")).toBe(200);
-    expect(await statusOf("clipped.test:443")).toBe(403);
-    expect(await statusOf("granted.test:443")).toBe(403);
   });
 });
 

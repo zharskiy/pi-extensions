@@ -139,7 +139,7 @@ describe.skipIf(!liveEnabled)("run_agent with the fetch agent and a session gran
     await state.sandbox?.cleanup();
   }, 120_000);
 
-  it("is denied first, fetches after pi sandbox egress allow --session, and names the denial on exit", async () => {
+  it("is denied first, fetches after pi sandbox egress allow, and names the denial on exit", async () => {
     const sandbox = state.sandbox as LiveSandbox;
     const page = state.page as HttpsFixture;
     const target = authority(FIXTURE_HOSTS.page, page.port);
@@ -157,7 +157,7 @@ describe.skipIf(!liveEnabled)("run_agent with the fetch agent and a session gran
 
     expect.soft(firstResults.join("\n")).toContain("not allowed");
 
-    const grant = await sandbox.pi(["sandbox", "egress", "allow", target, "--session"]).done;
+    const grant = await sandbox.pi(["sandbox", "egress", "allow", target]).done;
 
     expect(grant.code).toBe(0);
 

@@ -51,37 +51,6 @@ export const createDockerEngineBackend = (options: DockerEngineOptions): Backend
     }
   };
 
-  const colimaAgentSocket = async () => {
-    try {
-      const result = await options.runner.run("colima", [
-        "ssh",
-        "--profile",
-        ENGINE_PROFILE,
-        "--",
-        "printenv",
-        "SSH_AUTH_SOCK",
-      ]);
-      const socket = result.stdout.trim();
-
-      return result.code === 0 && socket !== "" ? socket : undefined;
-    } catch {
-      return undefined;
-    }
-  };
-
-  const hostAgentSocket = async () => {
-    const socket = await colimaAgentSocket();
-
-    if (socket === undefined) {
-      throw new LauncherError(
-        "ssh agent forwarding needs a Colima VM started with an ssh agent",
-        "start it with colima start --profile pi-sandbox --ssh-agent, or set ssh.agent to false",
-      );
-    }
-
-    return socket;
-  };
-
   const findContainers = async (labels: Record<string, string>) => {
     const containers = await client.json<EngineContainer[]>({
       method: "GET",
@@ -93,13 +62,12 @@ export const createDockerEngineBackend = (options: DockerEngineOptions): Backend
   };
 
   const createContainer = async (spec: ContainerSpec) => {
-    const agentSocket = spec.sshAgent === undefined ? undefined : await hostAgentSocket();
     const response = await client.call(
       {
         method: "POST",
         path: "/containers/create",
         query: { name: spec.name },
-        json: containerBody(spec, agentSocket),
+        json: containerBody(spec),
       },
       [400, 409],
     );

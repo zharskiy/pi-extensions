@@ -1,5 +1,5 @@
 import type { Backend } from "../backend/index.ts";
-import type { EgressCap, ExtraCa, SandboxConfig } from "../config/index.ts";
+import type { ExtraCa, SandboxConfig } from "../config/index.ts";
 import type { HostTerminal, SignalSource } from "../container/index.ts";
 import type { BundledPi } from "../hostpi/index.ts";
 import type {
@@ -17,7 +17,6 @@ interface ProxyRequest {
   stateDir: string;
   env: NodeJS.ProcessEnv;
   home: string;
-  egressCap: EgressCap;
   piCommand: string[];
   discoverCommand?: string[];
   piVersion?: string;

@@ -49,11 +49,6 @@ describe.skipIf(!liveEnabled)("behind a TLS-inspecting parent proxy with tls.ext
       authorize: (seen) => seen === token,
     });
 
-    const credentialsFile = await sandbox.writeFile(
-      "parent-credentials.json",
-      JSON.stringify({ basic: `${credentials.user}:${credentials.password}` }),
-    );
-
     await sandbox.writeAgentFile("models.json", providerModels(state.llm.baseUrl(FIXTURE_HOSTS.llm), apiKey));
 
     await sandbox.writeAgentFile("settings.json", providerSettings());
@@ -67,7 +62,9 @@ describe.skipIf(!liveEnabled)("behind a TLS-inspecting parent proxy with tls.ext
       },
     });
 
-    await sandbox.writeUserConfig(fixtureConfig(sandbox, { extraCa: [parentCa.certPath] }));
+    await sandbox.writeUserConfig(
+      fixtureConfig(sandbox, { extraCa: [parentCa.certPath], egress: { parentProxy: "none" } }),
+    );
 
     const prebuild = await sandbox.pi(["mcp", "list"]).done;
 
@@ -80,9 +77,7 @@ describe.skipIf(!liveEnabled)("behind a TLS-inspecting parent proxy with tls.ext
     await sandbox.writeUserConfig(
       fixtureConfig(sandbox, {
         extraCa: [parentCa.certPath],
-        egress: {
-          parentProxy: { url: state.parent.url, auth: { file: credentialsFile, pointer: "/basic" } },
-        },
+        egress: { parentProxy: "env" },
       }),
     );
   }, 600_000);
@@ -100,8 +95,15 @@ describe.skipIf(!liveEnabled)("behind a TLS-inspecting parent proxy with tls.ext
   it("sends every upstream connection through the authenticated parent proxy", async () => {
     const sandbox = state.sandbox as LiveSandbox;
     const parent = state.parent as InspectingProxy;
-    const prompt = await sandbox.pi(["-p", "say hello", ...MODEL_ARGS]).done;
-    const list = await sandbox.pi(["mcp", "list"]).done;
+    const url = new URL(parent.url);
+
+    url.username = encodeURIComponent(credentials.user);
+
+    url.password = encodeURIComponent(credentials.password);
+
+    const env = { HTTPS_PROXY: url.toString() };
+    const prompt = await sandbox.pi(["-p", "say hello", ...MODEL_ARGS], { env }).done;
+    const list = await sandbox.pi(["mcp", "list"], { env }).done;
 
     expect(prompt.code).toBe(0);
 

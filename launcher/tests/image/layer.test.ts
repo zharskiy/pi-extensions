@@ -292,14 +292,16 @@ describe("ensureLayerImage", () => {
 
   it("refuses a parent proxy with credentials when it has to build the layer", async () => {
     const fake = createFakeBackend();
-    const base = configWith({ packages: ["jq"] });
-    const config = {
-      ...base,
-      egress: { ...base.egress, parentProxy: { url: "http://proxy.corp.example:3128", auth: { env: "P" } } },
-    };
+    const config = configWith({ packages: ["jq"] });
 
     await expect(
-      ensureLayerImage({ backend: fake.backend, baseImageId: BASE_ID, config, stateDir: await tempDir() }),
+      ensureLayerImage({
+        backend: fake.backend,
+        baseImageId: BASE_ID,
+        config,
+        stateDir: await tempDir(),
+        env: { HTTPS_PROXY: "http://dev:secret@proxy.corp.example:3128" },
+      }),
     ).rejects.toThrow(/parent proxy needs credentials/);
   });
 });

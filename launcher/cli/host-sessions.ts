@@ -85,11 +85,11 @@ const sweepWhenIdle = async (
   deps: CliDeps,
   context: LaunchContext,
   running: () => Promise<boolean>,
-  launchId?: string,
+  sessionId?: string,
 ) => {
   try {
     return await withRepoSessionLock(context.stateDir, context.repoHash, async () => {
-      const others = await othersLive(context.stateDir, context.repoHash, launchId);
+      const others = await othersLive(context.stateDir, context.repoHash, sessionId);
 
       return sweep(deps, context, !others && !(await running()));
     });
@@ -104,7 +104,7 @@ export const readyHostSessions = async (
   deps: CliDeps,
   context: LaunchContext,
   backend: Backend,
-  parts: { sessions: HostSessions; launchId: string },
+  parts: { sessions: HostSessions; sessionId: string },
 ) => {
   const { sessions } = parts;
 
@@ -121,7 +121,7 @@ export const readyHostSessions = async (
   refuseStuck(
     deps,
     context,
-    await sweepWhenIdle(deps, context, () => containerRunning(backend, context), parts.launchId),
+    await sweepWhenIdle(deps, context, () => containerRunning(backend, context), parts.sessionId),
   );
 };
 

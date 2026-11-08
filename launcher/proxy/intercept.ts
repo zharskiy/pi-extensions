@@ -17,8 +17,6 @@ interface InterceptOptions {
   ca?: LeafSource;
   leafRecheckMs: number;
   helloTimeoutMs: number;
-  gatewayPath?: string;
-  isGatewayTarget: (host: string, port: number) => boolean;
   accessOf: (host: string) => DialAccess;
   serve: (socket: TLSSocket, target: TerminatedTarget) => void;
   record: RecordAccess;
@@ -86,8 +84,6 @@ export const createInterceptor = (options: InterceptOptions) => {
 
   const startTls = (connection: Connection, secureContext: SecureContext) => {
     const { client, host, port } = connection;
-    const gateway = options.isGatewayTarget(host, port);
-
     client.write(ESTABLISHED);
 
     const secure = new TLSSocket(client, {
@@ -129,7 +125,6 @@ export const createInterceptor = (options: InterceptOptions) => {
         port,
         repoHash: connection.repoHash,
         access: options.accessOf(host),
-        ...(gateway && options.gatewayPath !== undefined ? { pathPrefix: options.gatewayPath } : {}),
       });
     });
 
@@ -142,7 +137,7 @@ export const createInterceptor = (options: InterceptOptions) => {
           host,
           sni: connection.sni,
           decision: "allow",
-          rule: gateway ? "gateway" : "terminate",
+          rule: "terminate",
           bytesIn: client.bytesWritten,
           bytesOut: client.bytesRead,
         });

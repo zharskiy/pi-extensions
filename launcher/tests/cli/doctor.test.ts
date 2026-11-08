@@ -188,13 +188,6 @@ const answering =
     return intent === undefined ? 127 : answers[intent]();
   };
 
-const GATEWAY = {
-  url: "https://gateway.example.com",
-  authHeader: "x-api-key",
-  placeholder: "pi-sandbox-placeholder",
-  providers: [{ id: "gateway", apiKind: "example-messages" }],
-};
-
 const HOST_CHECK_LINES = [
   expect.stringMatching(/^ok host pi: pi \S+ next to the launcher; the image follows it$/),
   "ok provider hosts: 1 built-in providers with known hosts",
@@ -330,14 +323,14 @@ describe("pi sandbox doctor", () => {
   it("fails the sweep on secret-named variables and auth.json values other than the placeholder", async () => {
     const { code, lines } = await doctorWith({
       env: "TERM=xterm\nGATEWAY_API_KEY=real-secret-value-1234567890\nSESSION_TOKEN=\nPLAIN=real-secret-value-1234567890\n",
-      auth: JSON.stringify({ gateway: { type: "api_key", key: "real-secret-value-1234567890" } }),
+      auth: JSON.stringify({ llm: { type: "api_key", key: "real-secret-value-1234567890" } }),
     });
     const sweep = lines.find((line) => line.startsWith("fail credential sweep")) ?? "";
 
     expect(sweep).toBe(
       [
         "fail credential sweep: environment variable GATEWAY_API_KEY holds a value other than the placeholder",
-        "/home/pi/.pi/agent/auth.json holds a value other than the placeholder at gateway.key",
+        "/home/pi/.pi/agent/auth.json holds a value other than the placeholder at llm.key",
       ].join("; "),
     );
     expect(lines.join("\n")).not.toContain("real-secret-value-1234567890");
@@ -347,11 +340,10 @@ describe("pi sandbox doctor", () => {
   it("passes the sweep when secret-named variables and auth.json hold only the placeholder", async () => {
     const { lines } = await doctorWith(
       {
-        env: "TERM=xterm\nGATEWAY_API_KEY=pi-sandbox-placeholder\nSESSION_TOKEN=\n",
-        auth: JSON.stringify({ gateway: { type: "api_key", key: "pi-sandbox-placeholder" } }),
+        env: "TERM=xterm\nGATEWAY_API_KEY=pi-sandbox-0123456789abcdef01234567\nSESSION_TOKEN=\n",
+        auth: JSON.stringify({ llm: { type: "api_key", key: "pi-sandbox-0123456789abcdef01234567" } }),
       },
       200,
-      { gateway: GATEWAY },
     );
 
     expect(lines).toContain("ok credential sweep: no credential in the environment, auth.json or mcp.json");
@@ -366,7 +358,7 @@ describe("pi sandbox doctor", () => {
     });
 
     await registerSession(harness.stateDir, {
-      launchId: "00000000000000cc",
+      sessionId: "00000000000000cc",
       pid: process.pid,
       repoHash: sha256Hex(harness.repoRoot),
       startedAt: 1,
@@ -456,7 +448,7 @@ describe("pi sandbox doctor", () => {
     ]);
   });
 
-  it("reports a file org baseline with its hash", async () => {
+  it("reports the org baseline file it loaded", async () => {
     const fake = createFakeBackend();
     const down = { ...fake.backend, detect: async () => ({ available: false, reason: "socket missing" }) };
     const harness = await createHarness({ backend: () => down });
@@ -464,13 +456,11 @@ describe("pi sandbox doctor", () => {
 
     await harness.writeJson(baseline, {});
 
-    await harness.writeJson(harness.userConfigFile, { org: { source: baseline } });
+    await harness.writeJson(harness.userConfigFile, { org: baseline });
 
     await run(["sandbox", "doctor"], harness.deps);
 
-    expect(harness.stdout()).toContain(
-      `ok org baseline: ${baseline}, sha256 ${sha256Hex("{}").slice(0, 12)}\n`,
-    );
+    expect(harness.stdout()).toContain(`ok org baseline: ${baseline} loaded\n`);
   });
 
   it("does not count skipped checks as failures", async () => {
@@ -482,7 +472,7 @@ describe("pi sandbox doctor", () => {
 
     expect(await run(["sandbox", "doctor"], harness.deps)).toBe(1);
     expect(harness.stdout().trim().split("\n").slice(1)).toEqual([
-      "ok proxy: not required, no gateway, no credential rule and an empty allowlist",
+      "ok proxy: not required, no credential rule and an empty allowlist",
       "fail image: build failed",
       "skip same-path mount: no image",
       "skip credential sweep: no image",

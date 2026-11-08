@@ -5,7 +5,6 @@ import { proxyPolicyHash } from "../../proxy/index.ts";
 import { LauncherError, stateLayout } from "../../shared/index.ts";
 import { type CliDeps, writeLine, writeLines } from "../deps.ts";
 import { type LaunchContext, openAdminContext, openBackend } from "../launch.ts";
-import { pruneEndedGrants } from "../sessions.ts";
 
 const VOLUMES = "--volumes";
 
@@ -52,9 +51,7 @@ export const resetCommand = async (deps: CliDeps, args: string[]) => {
 
   await rm(layout.render(repoHash), { recursive: true, force: true });
 
-  await pruneEndedGrants(deps, stateDir);
-
-  const policyHash = proxyPolicyHash(effective.config, effective.egressCap);
+  const policyHash = proxyPolicyHash(effective.config);
 
   if ((await policyHashesInUse(backend)).includes(policyHash)) {
     writeLine(deps.stdout, `kept proxy instance ${policyHash}, in use by another repository`);

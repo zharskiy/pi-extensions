@@ -24,7 +24,6 @@ export interface ContainerSpec {
   tmpfs: string[];
   init: true;
   resources: ContainerResources;
-  sshAgent?: { guestSocket: string };
 }
 
 export interface RemoveContainerOptions {

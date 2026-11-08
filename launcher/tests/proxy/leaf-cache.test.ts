@@ -29,7 +29,7 @@ const proxyServing = async (leafRecheckMs: number) => {
   const test = await startTestProxy({
     stateDir,
     ca,
-    policy: { allow: [`${HOST}:443`], mcpHosts: [] },
+    policy: { allow: [`${HOST}:443`] },
     rules: [
       { id: "api", host: HOST, placeholder: "pi-sandbox-0123456789abcdef01234567", secret: { env: "API" } },
     ],

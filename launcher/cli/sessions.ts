@@ -5,19 +5,19 @@ import {
   gitDirInUseElsewhere,
   gitSessionEndNotices,
 } from "../container/index.ts";
-import { endSession, liveSessions, newLaunchId, pruneGrants, registerSession } from "../grants/index.ts";
+import { endSession, liveSessions, newSessionId, registerSession } from "../grants/index.ts";
 import { errorMessage } from "../shared/index.ts";
 import { type CliDeps, writeLine, writeNotices } from "./deps.ts";
 import type { LaunchContext } from "./launch.ts";
 
 export interface LaunchSession {
-  launchId: string;
+  sessionId: string;
   repoHash: string;
   startedAt: number;
 }
 
 export const beginSession = async (deps: CliDeps, context: LaunchContext): Promise<LaunchSession> => {
-  const session = { launchId: newLaunchId(), repoHash: context.repoHash, startedAt: deps.now() };
+  const session = { sessionId: newSessionId(), repoHash: context.repoHash, startedAt: deps.now() };
 
   await registerSession(context.stateDir, { ...session, pid: process.pid });
 
@@ -61,7 +61,7 @@ export const finishSession = async (
   try {
     await endSession(context.stateDir, {
       repoHash: session.repoHash,
-      launchId: session.launchId,
+      sessionId: session.sessionId,
       onLast: async () => {
         await stopRepoContainer(backend, context);
 
@@ -81,11 +81,5 @@ export const finishSession = async (
   }
 };
 
-export const liveLaunchIds = async (stateDir: string, repoHash?: string) =>
-  new Set((await liveSessions(stateDir, repoHash)).map((entry) => entry.launchId));
-
-export const pruneEndedGrants = async (deps: CliDeps, stateDir: string) =>
-  pruneGrants(stateDir, { now: deps.now(), liveLaunches: await liveLaunchIds(stateDir) });
-
-export const othersLive = async (stateDir: string, repoHash: string, launchId?: string) =>
-  (await liveSessions(stateDir, repoHash)).some((entry) => entry.launchId !== launchId);
+export const othersLive = async (stateDir: string, repoHash: string, sessionId?: string) =>
+  (await liveSessions(stateDir, repoHash)).some((entry) => entry.sessionId !== sessionId);

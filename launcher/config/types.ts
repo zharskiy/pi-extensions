@@ -1,14 +1,5 @@
 type Fallback = "refuse" | "host";
 
-export const PROFILE_NAMES = ["enterprise", "team", "solo"] as const;
-
-export type ProfileName = (typeof PROFILE_NAMES)[number];
-
-export type CredentialSource =
-  | { kind: "static"; envVar?: string; keychainService?: string }
-  | { kind: "host-pi-auth"; authFile?: string }
-  | { kind: "sso"; command: string[] };
-
 export type SecretRef =
   | { env: string }
   | { file: string; pointer: string }
@@ -37,47 +28,15 @@ interface VaultConfig {
   enabled: boolean;
 }
 
-interface CredentialsExtras {
+interface CredentialsConfig {
   rules: CredentialRule[];
   derive: DeriveConfig;
   vault: VaultConfig;
 }
 
-type CredentialsConfig = CredentialSource & CredentialsExtras;
-
-export interface GrantsConfig {
-  enabled: boolean;
-  maxHours: number;
-  permanent: boolean;
-}
-
-interface ParentProxyConfig {
-  url: string;
-  noProxy?: string[];
-  auth?: SecretRef;
-}
-
-export type ParentProxy = "env" | "none" | ParentProxyConfig;
+export type ParentProxy = "env" | "none";
 
 export type ExtraCa = { file: string } | { hostStore: true };
-
-export interface OrgRef {
-  source: string;
-  sha256?: string;
-  refreshHours?: number;
-}
-
-interface GatewayProvider {
-  id: string;
-  apiKind: string;
-}
-
-export interface GatewayConfig {
-  url: string;
-  authHeader: string;
-  placeholder: string;
-  providers: GatewayProvider[];
-}
 
 export interface WorkspaceRootsConfig {
   roots: string[];
@@ -86,12 +45,10 @@ export interface WorkspaceRootsConfig {
 
 interface EgressConfig {
   allow: string[];
-  mcpHosts: string[];
-  denyPrivateAddresses: true;
   deny: string[];
   privateHosts: string[];
   parentProxy: ParentProxy;
-  grants: GrantsConfig;
+  grants: boolean;
 }
 
 interface ImageConfig {
@@ -110,83 +67,42 @@ interface MountsConfig {
 }
 
 export interface SandboxConfig {
-  profile?: ProfileName;
   fallback: Fallback;
   image: ImageConfig;
-  gateway?: GatewayConfig;
   credentials: CredentialsConfig;
   egress: EgressConfig;
   tls: { extraCa: ExtraCa[] };
   workspaceRoots?: WorkspaceRootsConfig;
   mounts: MountsConfig;
   env: { allow: string[] };
-  ssh: { agent: boolean };
   resources: { cpus?: number; memoryGiB?: number };
   sessions: { host: boolean };
-  org?: OrgRef;
+  org?: string;
 }
 
 export type LayerName = "policy" | "org" | "user" | "project";
 
-export type ConfigSource = "default" | "profile" | LayerName;
-
-type LayerCredentials = (CredentialSource | { kind?: undefined }) & {
-  rules?: CredentialRule[];
-  derive?: Partial<DeriveConfig>;
-  vault?: Partial<VaultConfig>;
-};
+export type ConfigSource = "default" | LayerName;
 
 export interface LayerConfig {
-  profile?: ProfileName;
   fallback?: Fallback;
   image?: Partial<ImageConfig>;
-  gateway?: GatewayConfig;
-  credentials?: LayerCredentials;
-  egress?: Partial<Omit<EgressConfig, "grants">> & { grants?: Partial<GrantsConfig> };
+  credentials?: {
+    rules?: CredentialRule[];
+    derive?: Partial<DeriveConfig>;
+    vault?: Partial<VaultConfig>;
+  };
+  egress?: Partial<EgressConfig>;
   tls?: Partial<SandboxConfig["tls"]>;
   workspaceRoots?: WorkspaceRootsConfig;
   mounts?: Partial<SandboxConfig["mounts"]>;
   env?: Partial<SandboxConfig["env"]>;
-  ssh?: Partial<SandboxConfig["ssh"]>;
   resources?: SandboxConfig["resources"];
   sessions?: Partial<SandboxConfig["sessions"]>;
-  org?: OrgRef;
-}
-
-export interface EgressCap {
-  derivedHosts?: string[];
-  grants?: string[];
-}
-
-interface LayerCap {
-  layer: LayerName;
-  allow: string[];
+  org?: string;
 }
 
 export interface EffectiveConfig {
   config: SandboxConfig;
   sources: Record<string, ConfigSource>;
-  egressCap: EgressCap;
-  grantCaps?: LayerCap[];
-}
-
-export interface FetchTextResult {
-  status: number;
-  body: string;
-}
-
-export type FetchText = (url: string, options: { timeoutMs: number }) => Promise<FetchTextResult>;
-
-export interface OrgLayerInput {
-  ref: OrgRef;
-  stateDir: string;
-  fetchText: FetchText;
-  now: () => number;
-  home?: string;
-  offline?: boolean;
-}
-
-export interface OrgLayerResult {
-  layer: LayerConfig | undefined;
-  notices: string[];
 }

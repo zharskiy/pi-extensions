@@ -29,7 +29,7 @@ describe("launcher CA", () => {
   it("signs leaf certificates with the CA", async () => {
     const ca = await openLauncherCa({ stateDir: state.stateDir, runner: createProcessRunner() });
     const authority = new X509Certificate(ca.certPem);
-    const leaf = new X509Certificate((await ca.leaf("gateway.example.com")).cert);
+    const leaf = new X509Certificate((await ca.leaf("llm.example.com")).cert);
 
     expect(ca.certPath).toBe(join(state.stateDir, "ca", "ca-cert.pem"));
 
@@ -37,19 +37,19 @@ describe("launcher CA", () => {
 
     expect(leaf.checkIssued(authority)).toBe(true);
 
-    expect(leaf.subjectAltName).toBe("DNS:gateway.example.com");
+    expect(leaf.subjectAltName).toBe("DNS:llm.example.com");
 
     expect((await stat(join(state.stateDir, "ca", "ca-key.pem"))).mode & 0o777).toBe(0o600);
   });
 
   it("reuses the cached CA and leaf", async () => {
     const first = await openLauncherCa({ stateDir: state.stateDir, runner: createProcessRunner() });
-    const firstLeaf = await first.leaf("gateway.example.com");
+    const firstLeaf = await first.leaf("llm.example.com");
     const second = await openLauncherCa({ stateDir: state.stateDir, runner: createProcessRunner() });
 
     expect(second.certPem).toBe(first.certPem);
 
-    expect((await second.leaf("gateway.example.com")).cert).toBe(firstLeaf.cert);
+    expect((await second.leaf("llm.example.com")).cert).toBe(firstLeaf.cert);
   });
 
   it("refuses a leaf for a name that is not a hostname", async () => {

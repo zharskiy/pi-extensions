@@ -1,7 +1,7 @@
 import { readFile, rm } from "node:fs/promises";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { CredentialRule } from "../../config/index.ts";
-import { addGrant, newLaunchId, registerSession } from "../../grants/index.ts";
+import { addGrant } from "../../grants/index.ts";
 import { removeRepoToken, repoProxyToken, writeProxyDynamic } from "../../proxy/dynamic.ts";
 import { createProxyRuntime } from "../../proxy/runtime.ts";
 import { sha256Hex, stateLayout } from "../../shared/index.ts";
@@ -29,13 +29,12 @@ const rule = (id: string): CredentialRule => ({
   secret: { env: id },
 });
 
-const runtime = (extra: { grantsEnabled?: boolean; isAlive?: (pid: number) => boolean } = {}) =>
+const runtime = (extra: { grantsEnabled?: boolean } = {}) =>
   createProxyRuntime({
     stateDir: state.stateDir,
     policyHash: POLICY_HASH,
     staticRules: [],
     grantsEnabled: false,
-    cap: {},
     ...extra,
   });
 
@@ -150,31 +149,12 @@ describe("repository tokens", () => {
   });
 });
 
-describe("session grants", () => {
-  it("drop out on the next call once the launch's process is gone", async () => {
-    const launchId = newLaunchId();
-    const alive = new Set([process.pid]);
+describe("grants", () => {
+  it("reach the runtime of the granted repository only, and nothing while grants are off", async () => {
+    await addGrant(state.stateDir, { host: "granted.test", port: 443, repoHash: REPO_A }, true, Date.now());
 
-    await registerSession(state.stateDir, {
-      launchId,
-      pid: process.pid,
-      repoHash: REPO_A,
-      startedAt: Date.now(),
-    });
-
-    await addGrant(
-      state.stateDir,
-      { host: "granted.test", port: 443, repoHash: REPO_A, scope: { kind: "session", launchId } },
-      { enabled: true, maxHours: 24, permanent: true },
-      Date.now(),
-    );
-
-    const current = runtime({ grantsEnabled: true, isAlive: (pid) => alive.has(pid) });
-
-    expect(await current.extras(REPO_A)).toContain("granted.test");
-
-    alive.clear();
-
-    expect(await current.extras(REPO_A)).not.toContain("granted.test");
+    expect(await runtime({ grantsEnabled: true }).extras(REPO_A)).toContain("granted.test");
+    expect(await runtime({ grantsEnabled: true }).extras(REPO_B)).not.toContain("granted.test");
+    expect(await runtime().extras(REPO_A)).not.toContain("granted.test");
   });
 });

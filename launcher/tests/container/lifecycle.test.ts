@@ -10,7 +10,6 @@ import {
   gitDirInUseElsewhere,
   listLauncherContainers,
   removeRepoContainer,
-  stopIdleContainer,
 } from "../../container/lifecycle.ts";
 import { buildContainerSpec, type ContainerSpecInput } from "../../container/spec.ts";
 import { sha256Hex } from "../../shared/index.ts";
@@ -48,8 +47,8 @@ const specOf = (overrides: Partial<ContainerSpecInput> = {}) =>
     hostEnv: { USER: "dev" },
     hostUid: 501,
     stateDir: LOCK_STATE,
+    gitOverlay: { selfBinds: [], readOnlyDirs: [], readOnlyFiles: [] },
     launcherVersion: "0.4.0",
-    configHash: "cfg-one",
     ...overrides,
   });
 
@@ -141,7 +140,7 @@ describe("ensureContainer", () => {
     const fake = createFakeBackend();
     const first = await ensureContainer({ backend: fake.backend, spec: specOf() });
 
-    await stopIdleContainer(fake.backend, first.id);
+    await fake.backend.stopContainer(first.id);
 
     const trusted = specOf({ trust: { pemPath: "/state/ca/trust.pem", hash: "trust-2" } });
     const second = await ensureContainer({ backend: fake.backend, spec: trusted });
@@ -151,12 +150,12 @@ describe("ensureContainer", () => {
     expect(fake.containers.get(second.id)?.spec?.env.PI_SANDBOX_TRUST_HASH).toBe("trust-2");
   });
 
-  it("replaces the container when the config hash changes", async () => {
+  it("replaces the container when its spec changes", async () => {
     const fake = createFakeBackend();
     const first = await ensureContainer({ backend: fake.backend, spec: specOf() });
     const second = await ensureContainer({
       backend: fake.backend,
-      spec: specOf({ configHash: "cfg-two" }),
+      spec: specOf({ launcherVersion: "0.5.0" }),
     });
 
     expect(second.created).toBe(true);
@@ -168,7 +167,7 @@ describe("ensureContainer", () => {
     const first = await ensureContainer({ backend: fake.backend, spec: specOf() });
     const second = await ensureContainer({
       backend: fake.backend,
-      spec: specOf({ configHash: "cfg-two" }),
+      spec: specOf({ launcherVersion: "0.5.0" }),
       othersLive: async () => true,
     });
 
@@ -182,7 +181,7 @@ describe("ensureContainer", () => {
     const first = await ensureContainer({ backend: fake.backend, spec: specOf() });
     const second = await ensureContainer({
       backend: fake.backend,
-      spec: specOf({ configHash: "cfg-two" }),
+      spec: specOf({ launcherVersion: "0.5.0" }),
       othersLive: async () => false,
     });
 
@@ -223,7 +222,7 @@ describe("ensureContainer", () => {
 });
 
 describe("ensureContainer and the repository network", () => {
-  const routedSpec = async (fake: ReturnType<typeof createFakeBackend>, configHash: string) => {
+  const routedSpec = async (fake: ReturnType<typeof createFakeBackend>, launcherVersion: string) => {
     const route = await fake.backend.prepareProxyRoute({
       hostPort: 3128,
       repoHash: sha256Hex(workspace.repoRoot),
@@ -231,15 +230,15 @@ describe("ensureContainer and the repository network", () => {
     });
 
     return specOf({
-      configHash,
+      launcherVersion,
       proxy: { url: "http://pi-sandbox:t@10.89.0.2:3128", network: route.network, policyHash: "p" },
     });
   };
 
   it("replaces an outdated container without tearing down the network the new one joins", async () => {
     const fake = createFakeBackend();
-    const first = await ensureContainer({ backend: fake.backend, spec: await routedSpec(fake, "cfg-one") });
-    const spec = await routedSpec(fake, "cfg-two");
+    const first = await ensureContainer({ backend: fake.backend, spec: await routedSpec(fake, "0.4.0") });
+    const spec = await routedSpec(fake, "0.5.0");
     const second = await ensureContainer({ backend: fake.backend, spec });
 
     expect(second.created).toBe(true);
@@ -251,8 +250,8 @@ describe("ensureContainer and the repository network", () => {
   it("still removes the repository network when its last container is removed by reset or gc", async () => {
     const reset = createFakeBackend();
     const collected = createFakeBackend();
-    const resetSpec = await routedSpec(reset, "cfg-one");
-    const collectedSpec = await routedSpec(collected, "cfg-one");
+    const resetSpec = await routedSpec(reset, "0.4.0");
+    const collectedSpec = await routedSpec(collected, "0.4.0");
     const { id } = await ensureContainer({ backend: collected.backend, spec: collectedSpec });
 
     await ensureContainer({ backend: reset.backend, spec: resetSpec });
@@ -268,29 +267,17 @@ describe("ensureContainer and the repository network", () => {
   });
 });
 
-describe("stopIdleContainer", () => {
-  it("stops a running container and keeps it for the next launch", async () => {
+describe("ensureContainer with a stopped container", () => {
+  it("starts a stopped container whose spec is current instead of creating one", async () => {
     const fake = createFakeBackend();
     const { id } = await ensureContainer({ backend: fake.backend, spec: specOf() });
 
-    expect(await stopIdleContainer(fake.backend, id)).toEqual({ stopped: true });
-    expect(fake.containers.get(id)?.summary.state).toBe("stopped");
+    await fake.backend.stopContainer(id);
 
     const again = await ensureContainer({ backend: fake.backend, spec: specOf() });
 
     expect(again).toMatchObject({ id, created: false, outdated: false });
     expect(fake.containers.get(id)?.summary.state).toBe("running");
-  });
-
-  it("does nothing for a container that is already stopped or gone", async () => {
-    const fake = createFakeBackend();
-    const { id } = await ensureContainer({ backend: fake.backend, spec: specOf() });
-
-    await stopIdleContainer(fake.backend, id);
-
-    expect(await stopIdleContainer(fake.backend, id)).toEqual({ stopped: false });
-    expect(await stopIdleContainer(fake.backend, "container-missing")).toEqual({ stopped: false });
-    expect(fake.stops).toHaveLength(1);
   });
 });
 
@@ -338,13 +325,12 @@ describe("container housekeeping", () => {
 });
 
 describe("findCurrentContainer", () => {
-  it("finds the repository's container only for the same digest and config hash", async () => {
+  it("finds the repository's container only for the same image digest", async () => {
     const fake = createFakeBackend();
     const { id } = await ensureContainer({ backend: fake.backend, spec: specOf() });
 
-    expect((await findCurrentContainer(fake.backend, workspace, "sha256:one", "cfg-one"))?.id).toBe(id);
-    expect(await findCurrentContainer(fake.backend, workspace, "sha256:two", "cfg-one")).toBeUndefined();
-    expect(await findCurrentContainer(fake.backend, workspace, "sha256:one", "cfg-two")).toBeUndefined();
+    expect((await findCurrentContainer(fake.backend, workspace, "sha256:one"))?.id).toBe(id);
+    expect(await findCurrentContainer(fake.backend, workspace, "sha256:two")).toBeUndefined();
   });
 });
 
@@ -419,7 +405,7 @@ describe("gitDirInUseElsewhere", () => {
     expect(await gitDirInUseElsewhere(fake.backend, unrelated)).toBe(false);
     expect(await gitDirInUseElsewhere(fake.backend, workspace)).toBe(false);
 
-    await stopIdleContainer(fake.backend, id);
+    await fake.backend.stopContainer(id);
 
     expect(await gitDirInUseElsewhere(fake.backend, worktree)).toBe(false);
   });
@@ -439,7 +425,7 @@ describe("gitDirInUseElsewhere in a workspace", () => {
 
     expect(await gitDirInUseElsewhere(fake.backend, folder, workspace.gitCommonDir)).toBe(true);
 
-    await stopIdleContainer(fake.backend, single.id);
+    await fake.backend.stopContainer(single.id);
 
     expect(await gitDirInUseElsewhere(fake.backend, folder, workspace.gitCommonDir)).toBe(false);
 
@@ -551,7 +537,7 @@ describe("volumes the sandbox writes", () => {
     const spec = cachedSpec();
     const first = await ensureContainer({ backend: fake.backend, spec });
 
-    await stopIdleContainer(fake.backend, first.id);
+    await fake.backend.stopContainer(first.id);
 
     await ensureContainer({ backend: fake.backend, spec });
 

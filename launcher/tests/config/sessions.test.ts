@@ -49,10 +49,10 @@ describe("sessions.host", () => {
 
   it("stays off once the policy or org layer turns it off", async () => {
     expect(await refusal({ policy: { sessions: { host: false } }, user: { sessions: { host: true } } })).toBe(
-      "user: sessions.host cannot enable, locked by policy",
+      "user: sessions.host is set by the policy config and is final there",
     );
     expect(await refusal({ org: { sessions: { host: false } }, user: { sessions: { host: true } } })).toBe(
-      "user: sessions.host cannot enable, locked by org",
+      "user: sessions.host is set by the org config and is final there",
     );
     expect((await merge({ policy: { sessions: { host: false } } })).config.sessions.host).toBe(false);
   });

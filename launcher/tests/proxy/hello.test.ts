@@ -8,8 +8,6 @@ import { openConnect, readRest } from "./proxy-client.ts";
 
 const REPO = "1".repeat(64);
 
-const LIMITS = { enabled: true, maxHours: 168, permanent: true };
-
 const state: { stateDir: string; recorder: Server; received: Buffer[]; test: TestProxy; token: string } = {
   stateDir: "",
   recorder: undefined as unknown as Server,
@@ -62,7 +60,7 @@ beforeAll(async () => {
 
   state.test = await startTestProxy({
     stateDir: state.stateDir,
-    policy: { allow: ["target.test"], mcpHosts: [] },
+    policy: { allow: ["target.test"] },
     ports: () => ({ "target.test:443": portOf(state.recorder), "granted.test:443": portOf(state.recorder) }),
   });
   state.token = await state.test.tokenOf(REPO);
@@ -144,12 +142,7 @@ describe("ClientHello on a tunnel", () => {
   });
 
   it("forwards the hello of a host reachable only through a grant", async () => {
-    await addGrant(
-      state.stateDir,
-      { host: "granted.test", port: 443, repoHash: REPO, scope: { kind: "permanent" } },
-      LIMITS,
-      Date.now(),
-    );
+    await addGrant(state.stateDir, { host: "granted.test", port: 443, repoHash: REPO }, true, Date.now());
 
     const hello = await captureHello("granted.test");
     const socket = await tunnelTo("granted.test:443");
@@ -173,7 +166,7 @@ describe("upstream that never accepts the connection", () => {
     local.stateDir = await createStateDir();
     local.test = await startTestProxy({
       stateDir: local.stateDir,
-      policy: { allow: ["slow.test"], mcpHosts: [] },
+      policy: { allow: ["slow.test"] },
       privateHosts: ["slow.test"],
       dial: createDialer({ overrides: new Map([["slow.test", "192.0.2.1"]]), connectTimeoutMs: 200 }),
     });

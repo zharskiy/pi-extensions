@@ -105,21 +105,18 @@ describe("mounts.sharedCaches", () => {
     expect(sources["mounts.sharedCaches"]).toBe("user");
   });
 
-  it("lets a layer below the policy only drop shared caches", async () => {
+  it("keeps the shared caches the policy set", async () => {
     const policy = { mounts: { sharedCaches: ["~/.npm", "~/.cargo"] } };
-    const { config } = await loadWith({ policy, user: { mounts: { sharedCaches: ["~/.npm"] } } });
 
-    expect(config.mounts.sharedCaches).toEqual(["~/.npm"]);
-    await expect(
-      loadWith({ policy, user: { mounts: { sharedCaches: ["~/.npm", "~/.m2"] } } }),
-    ).rejects.toThrow("user: mounts.sharedCaches cannot add ~/.m2, locked by policy");
+    await expect(loadWith({ policy, user: { mounts: { sharedCaches: ["~/.npm"] } } })).rejects.toThrow(
+      "user: mounts.sharedCaches is set by the policy config and is final there",
+    );
   });
 });
 
 describe("mounts.autoNodeModules", () => {
   it("is taken from the lowest layer that sets it, the project included", async () => {
     const { config, sources } = await loadWith({
-      policy: { mounts: { autoNodeModules: false } },
       user: { mounts: { autoNodeModules: true } },
       project: { mounts: { autoNodeModules: false } },
     });
@@ -128,14 +125,13 @@ describe("mounts.autoNodeModules", () => {
     expect(sources["mounts.autoNodeModules"]).toBe("project");
   });
 
-  it("lets the user turn it back on below the policy", async () => {
-    const { config, sources } = await loadWith({
-      policy: { mounts: { autoNodeModules: false } },
-      user: { mounts: { autoNodeModules: true } },
-    });
-
-    expect(config.mounts.autoNodeModules).toBe(true);
-    expect(sources["mounts.autoNodeModules"]).toBe("user");
+  it("stays as the policy set it", async () => {
+    await expect(
+      loadWith({
+        policy: { mounts: { autoNodeModules: false } },
+        project: { mounts: { autoNodeModules: true } },
+      }),
+    ).rejects.toThrow("project: mounts.autoNodeModules is set by the policy config and is final there");
   });
 
   it("must be true or false", () => {

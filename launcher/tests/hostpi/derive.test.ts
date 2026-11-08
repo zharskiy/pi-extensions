@@ -431,35 +431,6 @@ describe("deriveSandboxPi rules and hosts", () => {
     expect(disabled.rules).toEqual([manual]);
   });
 
-  it("renders the legacy gateway providers and adds its rule", () => {
-    const gateway = {
-      url: "https://gateway.corp.example",
-      authHeader: "x-gateway-key",
-      placeholder: "pi-sandbox-gateway",
-      providers: [{ id: "keyed", apiKind: "example-api" }],
-    };
-    const result = deriveSandboxPi(input({ gateway }));
-
-    expect(result.files["auth.json"].keyed).toEqual({ type: "api_key", key: "pi-sandbox-gateway" });
-    expect((result.files["models.json"].providers as Record<string, unknown>).keyed).toEqual({
-      baseUrl: "https://gateway.corp.example/keyed",
-      apiKey: "pi-sandbox-gateway",
-      api: "example-api",
-      models: [],
-    });
-    expect(rulesOf(result.rules, "gateway")).toEqual([
-      {
-        id: "gateway",
-        host: "gateway.corp.example",
-        placeholder: "pi-sandbox-gateway",
-        header: "x-gateway-key",
-        template: "{secret}",
-        secret: { piAuth: "keyed" },
-      },
-    ]);
-    expect(rulesOf(result.rules, "derived:auth:keyed:key")).toEqual([]);
-  });
-
   it("passes read notices through", () => {
     const result = deriveSandboxPi(
       input({ files: { agentDir: AGENT_DIR, notices: ["auth.json: invalid JSON, ignored"] } }),

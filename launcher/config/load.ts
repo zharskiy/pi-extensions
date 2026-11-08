@@ -6,25 +6,16 @@ import {
   readJsonFile,
 } from "../shared/index.ts";
 import { defaultConfig } from "./defaults.ts";
-import { mergeLayers, resolveProfileName } from "./merge.ts";
-import { httpsFetchText, loadOrgLayer } from "./org-source.ts";
-import { loadProfile } from "./profiles.ts";
-import { capManualRules } from "./rule-cap.ts";
-import type { EffectiveConfig, FetchText, LayerConfig, LayerName, OrgRef } from "./types.ts";
+import { mergeLayers } from "./merge.ts";
+import type { EffectiveConfig, LayerName } from "./types.ts";
 import { projectKeyRefusal, validateLayer } from "./validate.ts";
-
-type Layers = Partial<Record<LayerName, LayerConfig>>;
 
 interface LoadOptions {
   repoRoot: string;
   env?: NodeJS.ProcessEnv;
-  fetchText?: FetchText;
-  now?: () => number;
-  home?: string;
-  offline?: boolean;
 }
 
-export const layerFile = (layer: LayerName, repoRoot: string, env?: NodeJS.ProcessEnv) => {
+const layerFile = (layer: Exclude<LayerName, "org">, repoRoot: string, env?: NodeJS.ProcessEnv) => {
   if (layer === "project") {
     return projectConfigFile(repoRoot);
   }
@@ -52,40 +43,36 @@ export const validateLayerFile = (value: unknown, layer: LayerName, file: string
   return validated(value, layer, file);
 };
 
-export const readLayer = async (layer: LayerName, file: string) => {
+const readLayer = async (layer: LayerName, file: string) => {
   const value = await readJsonFile<unknown>(file);
 
   return value === undefined ? undefined : validateLayerFile(value, layer, file);
 };
 
-export const resolveConfig = async (layers: Layers): Promise<EffectiveConfig> => {
-  const profileName = resolveProfileName(layers);
-  const profile = profileName === undefined ? undefined : await loadProfile(profileName);
+const readOrg = async (file: string | undefined) => {
+  if (file === undefined) {
+    return undefined;
+  }
 
-  return mergeLayers({ defaults: await defaultConfig(), layers, profile });
+  const layer = await readLayer("org", file);
+
+  if (layer === undefined) {
+    throw new LauncherError(
+      `org: ${file} does not exist`,
+      "fix org in the config, or ask your administrator",
+    );
+  }
+
+  return layer;
 };
 
-export const loadOrg = (ref: OrgRef | undefined, options: LoadOptions) =>
-  ref === undefined
-    ? { layer: undefined, notices: [] }
-    : loadOrgLayer({
-        ref,
-        stateDir: launcherPaths({ env: options.env }).stateDir,
-        fetchText: options.fetchText ?? httpsFetchText,
-        now: options.now ?? Date.now,
-        home: options.home,
-        offline: options.offline,
-      });
-
-export const loadEffectiveConfig = async (options: LoadOptions) => {
+export const loadEffectiveConfig = async (options: LoadOptions): Promise<EffectiveConfig> => {
   const [policy, user, project] = await Promise.all(
     (["policy", "user", "project"] as const).map((layer) =>
       readLayer(layer, layerFile(layer, options.repoRoot, options.env)),
     ),
   );
-  const org = await loadOrg(policy?.org ?? user?.org, options);
-  const layers = { policy, org: org.layer, user, project };
-  const capped = capManualRules(await resolveConfig(layers), layers);
+  const org = await readOrg(policy?.org ?? user?.org);
 
-  return { ...capped.effective, notices: [...org.notices, ...capped.notices] };
+  return mergeLayers({ defaults: await defaultConfig(), layers: { policy, org, user, project } });
 };

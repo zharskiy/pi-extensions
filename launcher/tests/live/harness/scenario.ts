@@ -14,8 +14,6 @@ export const MODEL_ARGS = ["--model", `${PROVIDER.provider}/${PROVIDER.model}`];
 export const authority = (host: string, port: number) => `${host}:${port}`;
 
 export const fixtureConfig = (sandbox: LiveSandbox, options: FixtureConfigOptions = {}) => ({
-  backend: "colima",
-  ssh: { agent: false },
   egress: {
     allow: options.allow ?? [],
     privateHosts: ALL_FIXTURE_HOSTS,

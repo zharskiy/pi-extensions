@@ -1,6 +1,5 @@
 import { isAbsolute } from "node:path";
 import type { Backend } from "../../backend/index.ts";
-import { configHash } from "../../config/index.ts";
 import {
   findRepoContainer,
   isCurrentContainer,
@@ -35,20 +34,19 @@ const containerLines = async (backend: Backend, context: LaunchContext) => {
   }
 
   const { config } = context.effective;
-  const hash = container.labels[LABELS.configHash] ?? "unknown";
+  const hash = container.labels[LABELS.specHash] ?? "unknown";
   const record = await recordedImage(context.stateDir, config);
   const current = await isCurrentContainer(container, {
     stateDir: context.stateDir,
     repoRoot: context.workspace.repoRoot,
     digest: record?.digest ?? "",
-    configHash: configHash(config),
   });
   const freshness = current ? "current" : "stale";
 
   return [
     `container: ${container.id} ${container.state}`,
     `container digest: ${container.labels[LABELS.imageDigest] ?? "unknown"}`,
-    `container config hash: ${hash} (${freshness})`,
+    `container spec hash: ${hash} (${freshness})`,
     sessionDirLine(container.labels[LABELS.sessionDir]),
   ];
 };
@@ -75,7 +73,7 @@ const runtimeLines = async (deps: CliDeps, context: LaunchContext) => {
 
 const proxyLines = async (deps: CliDeps, context: LaunchContext) => {
   const instances = await deps.proxy.list(context.stateDir);
-  const wanted = proxyPolicyHash(context.effective.config, context.effective.egressCap);
+  const wanted = proxyPolicyHash(context.effective.config);
 
   if (instances.length === 0) {
     return ["proxy: stopped"];
@@ -101,7 +99,7 @@ const sessionLines = async (context: LaunchContext) => {
     `sessions: ${sessions.length} running for this repository`,
     ...sessions.map(
       (session) =>
-        `session: ${session.launchId} pid ${session.pid} since ${new Date(session.startedAt).toISOString()}`,
+        `session: ${session.sessionId} pid ${session.pid} since ${new Date(session.startedAt).toISOString()}`,
     ),
   ];
 };
@@ -119,12 +117,12 @@ const volumeLines = (context: LaunchContext) => {
   ];
 };
 
-const grantStatus = async (deps: CliDeps, context: LaunchContext) => {
-  if (!context.effective.config.egress.grants.enabled) {
-    return ["grants: turned off by egress.grants.enabled"];
+const grantStatus = async (context: LaunchContext) => {
+  if (!context.effective.config.egress.grants) {
+    return ["grants: turned off by egress.grants"];
   }
 
-  const lines = await grantLines(deps, context);
+  const lines = await grantLines(context);
 
   return [`grants: ${lines.length} active`, ...lines.map((line) => `grant: ${line}`)];
 };
@@ -139,7 +137,7 @@ export const statusCommand = async (deps: CliDeps) => {
     await imageLine(context),
     ...volumeLines(context),
     ...(await sessionLines(context)),
-    ...(await grantStatus(deps, context)),
+    ...(await grantStatus(context)),
   ];
 
   writeLines(deps.stdout, lines);

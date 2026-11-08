@@ -29,15 +29,8 @@ export const envSecret = (key: string, envSecrets: ReadonlyMap<string, string>):
 const envNameOf = (entry: EnvSecretEntry) =>
   "env" in entry.ref && typeof entry.ref.env === "string" ? entry.ref.env : undefined;
 
-const parentProxyEntries = (parent: ParentProxy): EnvSecretEntry[] =>
-  typeof parent === "object" && parent.auth !== undefined
-    ? [{ key: PARENT_PROXY_SECRET_KEY, ref: parent.auth }]
-    : [];
-
-const envSecretEntries = (rules: CredentialRule[], parent: ParentProxy): EnvSecretEntry[] => [
-  ...rules.filter((rule) => "env" in rule.secret).map((rule) => ({ key: rule.id, ref: rule.secret })),
-  ...parentProxyEntries(parent),
-];
+const envSecretEntries = (rules: CredentialRule[]): EnvSecretEntry[] =>
+  rules.filter((rule) => "env" in rule.secret).map((rule) => ({ key: rule.id, ref: rule.secret }));
 
 const envProxyCredentials = (env: NodeJS.ProcessEnv) => {
   const text = env.HTTPS_PROXY ?? env.https_proxy;
@@ -84,7 +77,7 @@ export const envSecretsFor = (
   parentProxy: ParentProxy,
   env: NodeJS.ProcessEnv,
 ): Record<string, string> => {
-  const entries = envSecretEntries(rules, parentProxy);
+  const entries = envSecretEntries(rules);
 
   assertSingleLine(entries, env);
 

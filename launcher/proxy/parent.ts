@@ -102,14 +102,7 @@ export const parentRouteFor = (
     return undefined;
   }
 
-  if (parent === "env") {
-    return envRoute(env, resolver);
-  }
-
-  const authorization =
-    parent.auth === undefined ? async () => undefined : memoryAuthorization(resolver, parent.auth);
-
-  return parentRouteFromUrl(parent.url, parent.noProxy ?? [], authorization);
+  return envRoute(env, resolver);
 };
 
 const readHead = (socket: Socket, timeoutMs: number) =>

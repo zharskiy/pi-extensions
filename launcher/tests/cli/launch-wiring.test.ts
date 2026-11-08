@@ -3,9 +3,8 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { ProxyRouteRequest } from "../../backend/index.ts";
 import { run } from "../../cli/index.ts";
-import { readGrants } from "../../grants/index.ts";
 import { type DenialRecord, PARENT_PROXY_SECRET_KEY } from "../../proxy/index.ts";
-import { sha256Hex, stateLayout } from "../../shared/index.ts";
+import { sha256Hex } from "../../shared/index.ts";
 import { expectNoLeak } from "../support/expect-no-leak.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { createHarness, renderDirOf, repoDynamicOf, repoTokenOf } from "./harness.ts";
@@ -14,12 +13,12 @@ const REAL_KEY = "real-secret-value-1234567890";
 
 const PINNED = `sha256:${"a".repeat(64)}`;
 
-const denial = (host: string, port: number, rule = "egress.allow"): DenialRecord => ({
+const denial = (host: string, port: number): DenialRecord => ({
   time: 1_700_000_000_500,
   host,
   port,
   repoHash: "repo",
-  rule,
+  rule: "egress.allow",
   reason: "not allowed",
 });
 
@@ -39,11 +38,11 @@ describe("pi launch wiring", () => {
     expect(await repoDynamicOf(harness)).toEqual({ rules: [], derivedHosts: expect.any(Array), vault: [] });
   });
 
-  it("hands env secrets and the parent proxy credentials to the proxy, not to the container", async () => {
+  it("hands env secrets to the proxy, not to the container", async () => {
     const fake = createFakeBackend({ registry: { "registry.example.test/pi-sandbox:1": PINNED } });
     const harness = await createHarness({
       backend: () => fake.backend,
-      env: { CORP_TOKEN: REAL_KEY, PARENT_CREDS: "user:password-123" },
+      env: { CORP_TOKEN: REAL_KEY },
     });
 
     await harness.writeJson(harness.userConfigFile, {
@@ -57,7 +56,6 @@ describe("pi launch wiring", () => {
           },
         ],
       },
-      egress: { parentProxy: { url: "http://proxy.example.test:8080", auth: { env: "PARENT_CREDS" } } },
       image: { reference: "registry.example.test/pi-sandbox:1", digest: PINNED },
     });
 
@@ -66,11 +64,11 @@ describe("pi launch wiring", () => {
       {
         type: "env-secrets",
         repoTokenHash: sha256Hex(await repoTokenOf(harness)),
-        secrets: { corp: REAL_KEY, [PARENT_PROXY_SECRET_KEY]: "user:password-123" },
+        secrets: { corp: REAL_KEY },
       },
     ]);
 
-    await expectNoLeak(fake, renderDirOf(harness), [REAL_KEY, "password-123"]);
+    await expectNoLeak(fake, renderDirOf(harness), [REAL_KEY]);
   });
 
   it("hands the env parent proxy's credentials over control and starts the proxy without them", async () => {
@@ -188,36 +186,21 @@ describe("pi launch wiring", () => {
     expect(harness.stderr().match(/blocked\.example\.test was blocked/g)).toHaveLength(1);
   });
 
-  it("does not suggest a grant for a denied host outside the policy allowlist", async () => {
+  it("points at egress.allow instead of a grant when egress grants are off", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({
       backend: () => fake.backend,
-      denials: [denial("evil.test", 443, "egress.cap"), denial("docs.example.test", 443)],
+      denials: [denial("evil.test", 443)],
     });
 
-    await harness.writeJson(harness.policyFile, { egress: { allow: ["*.example.test"] } });
+    await harness.writeJson(harness.policyFile, { egress: { grants: false } });
 
     await run([], harness.deps);
 
     expect(harness.stderr()).toContain(
-      "pi-sandbox: evil.test is outside the allowlist set by policy or org\n",
+      "pi-sandbox: evil.test was blocked; egress grants are off, add it to egress.allow\n",
     );
     expect(harness.stderr()).not.toContain("egress allow evil.test");
-    expect(harness.stderr()).toContain("run pi sandbox egress allow docs.example.test");
-  });
-
-  it("drops session grants of ended launches when the container is created", async () => {
-    const fake = createFakeBackend();
-    const harness = await createHarness({ backend: () => fake.backend });
-
-    await harness.writeJson(stateLayout(harness.stateDir).grants, [
-      { host: "gone.example.test", port: 443, createdAt: 1, launchId: "ffffffffffffffff", expiresAt: 9e15 },
-      { host: "kept.example.test", port: 443, createdAt: 1 },
-    ]);
-
-    await run([], harness.deps);
-
-    expect((await readGrants(harness.stateDir)).map((grant) => grant.host)).toEqual(["kept.example.test"]);
   });
 
   it("says once that the host CA store was skipped when the launcher does not run on macOS", async () => {

@@ -2,7 +2,7 @@ import { constants } from "node:fs";
 import { access, lstat } from "node:fs/promises";
 import { connect } from "node:net";
 import type { Backend } from "../../backend/index.ts";
-import { orgBaselineStatus, type ParentProxy, vaultEnabled } from "../../config/index.ts";
+import { type ParentProxy, vaultEnabled } from "../../config/index.ts";
 import { failed, passed, skipped, warned } from "../../container/index.ts";
 import { type HostPi, type HostPiFiles, readHostPiFiles } from "../../hostpi/index.ts";
 import {
@@ -96,13 +96,8 @@ const checkProviderHosts = async (deps: CliDeps, context: LaunchContext, pi: Hos
     : failed(notices[0] ?? "the provider host table is empty");
 };
 
-const parentUrl = (parent: ParentProxy, env: NodeJS.ProcessEnv) => {
-  if (parent === "none") {
-    return undefined;
-  }
-
-  return parent === "env" ? (env.HTTPS_PROXY ?? env.https_proxy) : parent.url;
-};
+const parentUrl = (parent: ParentProxy, env: NodeJS.ProcessEnv) =>
+  parent === "none" ? undefined : (env.HTTPS_PROXY ?? env.https_proxy);
 
 const reachable = (host: string, port: number) =>
   new Promise<boolean>((resolve) => {
@@ -151,29 +146,18 @@ const checkParentProxy = async (deps: CliDeps, context: LaunchContext) => {
     : failed(`${authority} does not accept connections`);
 };
 
-const checkOrg = async (deps: CliDeps, context: LaunchContext) => {
-  const ref = context.effective.config.org;
+const checkOrg = (context: LaunchContext) => {
+  const file = context.effective.config.org;
 
-  if (ref === undefined) {
-    return skipped("no org baseline configured");
-  }
-
-  const status = await orgBaselineStatus({
-    ref,
-    stateDir: context.stateDir,
-    now: deps.now,
-    home: deps.home,
-  });
-
-  return status.ok ? passed(status.message) : failed(status.message);
+  return file === undefined ? skipped("no org baseline configured") : passed(`${file} loaded`);
 };
 
-const checkGrants = async (deps: CliDeps, context: LaunchContext) => {
-  if (!context.effective.config.egress.grants.enabled) {
-    return passed("turned off by egress.grants.enabled");
+const checkGrants = async (context: LaunchContext) => {
+  if (!context.effective.config.egress.grants) {
+    return passed("turned off by egress.grants");
   }
 
-  const lines = await grantLines(deps, context);
+  const lines = await grantLines(context);
 
   return passed(lines.length === 0 ? "none active" : `${lines.length} active: ${lines.join("; ")}`);
 };
@@ -337,8 +321,8 @@ export const hostChecks = async (
       named("host pi", checkHostPi(deps, context, pi)),
       named("provider hosts", checkProviderHosts(deps, context, pi)),
       named("parent proxy", checkParentProxy(deps, context)),
-      named("org baseline", checkOrg(deps, context)),
-      named("grants", checkGrants(deps, context)),
+      named("org baseline", Promise.resolve(checkOrg(context))),
+      named("grants", checkGrants(context)),
       named("sessions", checkSessions(deps, context, files)),
       named("vm size", checkVmSize(deps, backend)),
       named("vm shares", checkVmShares(deps, context, backend)),

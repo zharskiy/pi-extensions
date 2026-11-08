@@ -105,7 +105,7 @@ afterAll(async () => {
 const proxyWith = async (dial?: ReturnType<typeof createDialer>) => {
   const test = await startTestProxy({
     stateDir: state.stateDir,
-    policy: { allow: [HOST], mcpHosts: [] },
+    policy: { allow: [HOST] },
     ca: state.ca,
     rules: RULES,
     resolver: fakeResolver({ api: "secret" }).resolver,
@@ -121,8 +121,8 @@ const proxyWith = async (dial?: ReturnType<typeof createDialer>) => {
 const viaParent = () =>
   createDialer({
     parent: parentRouteFor(
-      { url: `http://127.0.0.1:${portOf(state.parent as unknown as Server)}` },
-      {},
+      "env",
+      { HTTPS_PROXY: `http://127.0.0.1:${portOf(state.parent as unknown as Server)}` },
       fakeResolver({}).resolver,
     ),
     resolve: async () => [{ address: "93.184.216.34", family: 4 }],

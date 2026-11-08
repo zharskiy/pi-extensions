@@ -8,7 +8,7 @@ import {
 } from "../shared/index.ts";
 import { getPath } from "./dotted.ts";
 import { isLoopbackName, SECRET_MARKER, TLS_PORT } from "./egress-entry.ts";
-import { type LayerConfig, PROFILE_NAMES } from "./types.ts";
+import type { LayerConfig } from "./types.ts";
 
 type Check = (value: string) => string | undefined;
 
@@ -23,13 +23,6 @@ interface ObjectSpec {
   check?: ObjectCheck;
 }
 
-interface VariantsSpec {
-  type: "variants";
-  tag: string;
-  variants: Record<string, ObjectSpec>;
-  untagged?: ObjectSpec;
-}
-
 type Spec =
   | { type: "string"; check?: Check; values?: readonly string[] }
   | { type: "number"; exclusiveMinimum: number; maximum?: number; integer?: boolean }
@@ -37,9 +30,7 @@ type Spec =
   | { type: "boolean" }
   | { type: "array"; items: Spec; check?: ListCheck }
   | ObjectSpec
-  | VariantsSpec
-  | { type: "keyed"; variants: Record<string, ObjectSpec> }
-  | { type: "either"; text: Spec; object: Spec };
+  | { type: "keyed"; variants: Record<string, ObjectSpec> };
 
 interface Problem {
   path: string;
@@ -65,8 +56,6 @@ const IP_LITERAL = /^[0-9.]+$|:/;
 const RULE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 const JSON_POINTER = /^(\/([^~/]|~[01])*)+$/;
-
-const SHA256_HEX = /^[0-9a-f]{64}$/;
 
 const APT_PACKAGE = /^[a-z0-9][a-z0-9+.-]*(=[A-Za-z0-9.+:~-]+)?$/;
 
@@ -164,11 +153,6 @@ const privateHost: Check = (value) => {
   return isLoopbackName(value) ? "must not name loopback" : undefined;
 };
 
-const noProxyEntry: Check = (value) =>
-  quietHost(value.startsWith(".") ? value.slice(1) : value) === undefined
-    ? undefined
-    : "must be a host name, .domain or *.domain";
-
 const ruleId: Check = (value) =>
   RULE_ID.test(value) ? undefined : "must be letters, digits, dot, dash or underscore";
 
@@ -187,22 +171,7 @@ const jsonPointer: Check = (value) => (JSON_POINTER.test(value) ? undefined : "m
 const quietAbsolutePath: Check = (value) =>
   absolutePath(value) === undefined ? undefined : "must be an absolute path or start with ~/";
 
-const httpUrl: Check = (value) => {
-  const url = URL.canParse(value) ? new URL(value) : undefined;
-
-  if (url === undefined || url.protocol !== "http:") {
-    return "must be an http URL";
-  }
-
-  return url.username === "" && url.password === "" ? undefined : "must not carry credentials";
-};
-
-const orgSource: Check = (value) =>
-  quietAbsolutePath(value) === undefined || httpsUrl(value) === undefined
-    ? undefined
-    : "must be an absolute path or an https URL";
-
-const sha256Text: Check = (value) => (SHA256_HEX.test(value) ? undefined : "must be 64 hex digits");
+const orgFile: Check = (value) => (isAbsolute(value) ? undefined : "must be an absolute path");
 
 const aptPackage: Check = (value) => (APT_PACKAGE.test(value) ? undefined : "must be a package name");
 
@@ -289,21 +258,6 @@ const CREDENTIAL_RULE: ObjectSpec = {
   },
 };
 
-const CREDENTIAL_EXTRAS: Record<string, Spec> = {
-  rules: { type: "array", items: CREDENTIAL_RULE, check: uniqueIds },
-  derive: shape({ enabled: flag, hosts: list(hostPattern) }),
-  vault: shape({ enabled: flag }),
-};
-
-const legacyCredentials = (properties: Record<string, Spec>, required: readonly string[]): ObjectSpec =>
-  shape({ ...properties, ...CREDENTIAL_EXTRAS }, required);
-
-const PARENT_PROXY: Spec = {
-  type: "either",
-  text: choice(["env", "none"]),
-  object: shape({ url: text(httpUrl), noProxy: list(noProxyEntry), auth: SECRET_REF }, ["url"]),
-};
-
 const EXTRA_CA: Spec = {
   type: "keyed",
   variants: {
@@ -316,7 +270,6 @@ const LAYER_SPEC: ObjectSpec = {
   type: "object",
   properties: {
     $schema: text(),
-    profile: choice(PROFILE_NAMES),
     fallback: choice(["refuse", "host"]),
     image: shape({
       reference: text(nonEmpty),
@@ -325,46 +278,17 @@ const LAYER_SPEC: ObjectSpec = {
       npmGlobal: list(npmPackage),
       dockerfile: text(quietAbsolutePath),
     }),
-    gateway: {
-      type: "object",
-      required: ["url", "authHeader", "placeholder", "providers"],
-      properties: {
-        url: text(httpsUrl),
-        authHeader: text(header),
-        placeholder: text(nonEmpty),
-        providers: {
-          type: "array",
-          items: {
-            type: "object",
-            required: ["id", "apiKind"],
-            properties: { id: text(nonEmpty), apiKind: text(nonEmpty) },
-          },
-        },
-      },
-    },
-    credentials: {
-      type: "variants",
-      tag: "kind",
-      untagged: shape(CREDENTIAL_EXTRAS),
-      variants: {
-        static: legacyCredentials(
-          { kind: choice(["static"]), envVar: text(variable), keychainService: text(nonEmpty) },
-          ["kind"],
-        ),
-        "host-pi-auth": legacyCredentials({ kind: choice(["host-pi-auth"]), authFile: text(absolutePath) }, [
-          "kind",
-        ]),
-        sso: legacyCredentials({ kind: choice(["sso"]), command: list(nonEmpty) }, ["kind", "command"]),
-      },
-    },
+    credentials: shape({
+      rules: { type: "array", items: CREDENTIAL_RULE, check: uniqueIds },
+      derive: shape({ enabled: flag, hosts: list(hostPattern) }),
+      vault: shape({ enabled: flag }),
+    }),
     egress: shape({
       allow: list(host),
-      mcpHosts: list(host),
-      denyPrivateAddresses: { type: "true" },
       deny: list(quietHost),
       privateHosts: list(privateHost),
-      parentProxy: PARENT_PROXY,
-      grants: shape({ enabled: flag, maxHours: positive, permanent: flag }),
+      parentProxy: choice(["env", "none"]),
+      grants: flag,
     }),
     tls: shape({ extraCa: { type: "array", items: EXTRA_CA } }),
     workspaceRoots: {
@@ -382,38 +306,32 @@ const LAYER_SPEC: ObjectSpec = {
       },
     },
     env: { type: "object", properties: { allow: list(forwardableVariable) } },
-    ssh: { type: "object", properties: { agent: { type: "boolean" } } },
     resources: { type: "object", properties: { cpus: positive, memoryGiB: positive } },
     sessions: shape({ host: flag }),
-    org: shape({ source: text(orgSource), sha256: text(sha256Text), refreshHours: positive }, ["source"]),
+    org: text(orgFile),
   },
 };
 
-const SECURITY_KEYS = [
-  "credentials.rules",
-  "credentials.derive",
-  "credentials.vault",
-  "egress.deny",
-  "egress.privateHosts",
-  "egress.parentProxy",
-  "egress.grants",
-  "tls",
-  "image.packages",
-  "image.npmGlobal",
-  "image.dockerfile",
-  "mounts.sharedCaches",
-  "org",
+const joinPath = (prefix: string, key: string) => (prefix === "" ? key : `${prefix}.${key}`);
+
+const PROJECT_KEYS = [
+  "mounts.cacheVolumes",
+  "mounts.autoNodeModules",
+  "resources.cpus",
+  "resources.memoryGiB",
 ];
 
-const HOST_ONLY_KEYS = ["env.allow", "image.reference", "image.digest", "sessions.host"];
+const setKeys = (value: unknown, prefix: string): string[] =>
+  isJsonObject(value)
+    ? Object.entries(value).flatMap(([key, child]) => {
+        const path = joinPath(prefix, key);
 
-const PROJECT_REFUSED_KEYS = [
-  ...SECURITY_KEYS.map((key) => ({ key, owner: "the user or policy config" })),
-  ...HOST_ONLY_KEYS.map((key) => ({ key, owner: "the user config" })),
-];
+        return isJsonObject(child) ? setKeys(child, path) : [path];
+      })
+    : [];
 
 export const projectKeyRefusal = (value: unknown, file?: string) => {
-  const refused = PROJECT_REFUSED_KEYS.find(({ key }) => getPath(value, key) !== undefined);
+  const refused = setKeys(value, "").find((key) => key !== "$schema" && !PROJECT_KEYS.includes(key));
 
   if (refused === undefined) {
     return undefined;
@@ -423,14 +341,12 @@ export const projectKeyRefusal = (value: unknown, file?: string) => {
   const from = file === undefined ? "" : ` from ${file}`;
 
   return new LauncherError(
-    `project: ${refused.key} may not be set by a project config${where}`,
-    `remove ${refused.key}${from}; set it in ${refused.owner} instead`,
+    `project: ${refused} may not be set by a project config${where}`,
+    `remove ${refused}${from}; a project config may set only ${PROJECT_KEYS.join(", ")}`,
   );
 };
 
 const ORG_KEY_LAYERS = ["policy", "user"];
-
-const joinPath = (prefix: string, key: string) => (prefix === "" ? key : `${prefix}.${key}`);
 
 const at = (path: string, problem: string | undefined): Problem | undefined =>
   problem === undefined ? undefined : { path, problem };
@@ -493,25 +409,6 @@ const objectProblem = (spec: ObjectSpec, value: unknown, path: string): Problem 
   ]);
 };
 
-const variantProblem = (spec: VariantsSpec, value: unknown, path: string): Problem | undefined => {
-  if (!isJsonObject(value)) {
-    return { path, problem: "must be an object" };
-  }
-
-  const names = Object.keys(spec.variants);
-  const tag = value[spec.tag];
-
-  if (tag === undefined && spec.untagged !== undefined) {
-    return objectProblem(spec.untagged, value, path);
-  }
-
-  if (typeof tag !== "string" || !names.includes(tag)) {
-    return { path: joinPath(path, spec.tag), problem: `must be one of ${names.join(", ")}` };
-  }
-
-  return objectProblem(spec.variants[tag], value, path);
-};
-
 const keyedProblem = (variants: Record<string, ObjectSpec>, value: unknown, path: string) => {
   if (!isJsonObject(value)) {
     return { path, problem: "must be an object" };
@@ -551,15 +448,7 @@ const problemOf = (spec: Spec, value: unknown, path: string): Problem | undefine
       : { path, problem: "must be an array" };
   }
 
-  if (spec.type === "keyed") {
-    return keyedProblem(spec.variants, value, path);
-  }
-
-  if (spec.type === "either") {
-    return problemOf(typeof value === "string" ? spec.text : spec.object, value, path);
-  }
-
-  return spec.type === "object" ? objectProblem(spec, value, path) : variantProblem(spec, value, path);
+  return spec.type === "keyed" ? keyedProblem(spec.variants, value, path) : objectProblem(spec, value, path);
 };
 
 const misplacedOrg = (value: unknown, layerName: string) =>
@@ -593,63 +482,11 @@ const keysOf = (spec: Spec, path: string): string[] => {
     ]);
   }
 
-  if (spec.type === "variants") {
-    const variants = [
-      ...Object.values(spec.variants),
-      ...(spec.untagged === undefined ? [] : [spec.untagged]),
-    ];
-
-    return [...new Set(variants.flatMap((variant) => keysOf(variant, path)))];
-  }
-
   if (spec.type === "keyed") {
     return [...new Set(Object.values(spec.variants).flatMap((variant) => keysOf(variant, path)))];
-  }
-
-  if (spec.type === "either") {
-    return keysOf(spec.object, path);
   }
 
   return spec.type === "array" ? keysOf(spec.items, `${path}[]`) : [];
 };
 
 export const layerKeys = () => keysOf(LAYER_SPEC, "");
-
-interface Constraint {
-  path: string;
-  required?: readonly string[];
-  values?: readonly string[];
-}
-
-const variantsOf = (spec: Spec): Spec[] => {
-  if (spec.type === "variants") {
-    return [...Object.values(spec.variants), ...(spec.untagged === undefined ? [] : [spec.untagged])];
-  }
-
-  if (spec.type === "keyed") {
-    return Object.values(spec.variants);
-  }
-
-  return spec.type === "either" ? [spec.text, spec.object] : [];
-};
-
-const constraintsOf = (spec: Spec, path: string): Constraint[] => {
-  if (spec.type === "string") {
-    return spec.values === undefined ? [] : [{ path, values: spec.values }];
-  }
-
-  if (spec.type === "array") {
-    return constraintsOf(spec.items, `${path}[]`);
-  }
-
-  if (spec.type === "object") {
-    return [
-      ...(spec.required === undefined ? [] : [{ path, required: spec.required }]),
-      ...Object.entries(spec.properties).flatMap(([key, child]) => constraintsOf(child, joinPath(path, key))),
-    ];
-  }
-
-  return variantsOf(spec).flatMap((variant) => constraintsOf(variant, path));
-};
-
-export const layerConstraints = () => constraintsOf(LAYER_SPEC, "");

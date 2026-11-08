@@ -6,7 +6,6 @@ import { removeRepoToken } from "../../proxy/index.ts";
 import { LauncherError, stateLayout } from "../../shared/index.ts";
 import { type CliDeps, pathsOf, writeLine, writeLines } from "../deps.ts";
 import { openAdminContext, openBackend } from "../launch.ts";
-import { pruneEndedGrants } from "../sessions.ts";
 
 const SHARED_CACHES = "--shared-caches";
 
@@ -158,10 +157,6 @@ export const gcCommand = async (deps: CliDeps, args: string[]) => {
   ]);
 
   writeLine(deps.stdout, `removed ${plural(garbage.containers.length, "stopped container")}`);
-
-  const pruned = await pruneEndedGrants(deps, stateDir);
-
-  writeLine(deps.stdout, `pruned ${plural(pruned, "ended grant")}`);
 
   return 0;
 };

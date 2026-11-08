@@ -37,7 +37,7 @@ export interface GitPlan {
 
 const EMPTY: GitOverlay = { selfBinds: [], readOnlyDirs: [], readOnlyFiles: [] };
 
-const UNPROTECTED: GitPlan = { overlay: EMPTY, ready: async () => EMPTY };
+const NO_GIT_PLAN: GitPlan = { overlay: EMPTY, ready: async () => EMPTY };
 
 const protectContext = (context: GitGuardContext): GitProtectContext => ({
   runner: context.runner,
@@ -137,7 +137,7 @@ export const planGitOverlay = async (workspace: Workspace, context: GitGuardCont
   );
 
   if (repos.length === 0) {
-    return UNPROTECTED;
+    return NO_GIT_PLAN;
   }
 
   const protect = workspace.isGitRepo ? protectContext(context) : { ...protectContext(context), workspace };

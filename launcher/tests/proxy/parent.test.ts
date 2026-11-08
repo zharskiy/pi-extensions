@@ -88,9 +88,8 @@ const loopbackSix = await new Promise<boolean>((resolve) => {
 describe("parent proxy", () => {
   it("dials a parent given as an IPv6 literal without its brackets", async () => {
     const route = parentRouteFor("env", { HTTPS_PROXY: "http://[::1]:3128" }, resolverWith(undefined));
-    const explicit = parentRouteFor({ url: "http://[::1]:3128" }, {}, resolverWith(undefined));
 
-    expect([route?.host, route?.port, explicit?.host]).toEqual(["::1", 3128, "::1"]);
+    expect([route?.host, route?.port]).toEqual(["::1", 3128]);
   });
 
   it.skipIf(!loopbackSix)("tunnels through a parent listening on [::1]", async () => {
@@ -109,7 +108,11 @@ describe("parent proxy", () => {
     await new Promise<void>((resolve) => parent.listen(0, "::1", () => resolve()));
 
     try {
-      const route = parentRouteFor({ url: `http://[::1]:${portOf(parent)}` }, {}, resolverWith(undefined));
+      const route = parentRouteFor(
+        "env",
+        { HTTPS_PROXY: `http://[::1]:${portOf(parent)}` },
+        resolverWith(undefined),
+      );
       const socket = await createDialer({ parent: route, resolve: publicResolve })(
         "api.example.test",
         443,
@@ -128,8 +131,8 @@ describe("parent proxy", () => {
 
   it("tunnels through the parent with Basic auth from the secret", async () => {
     const route = parentRouteFor(
-      { url: `http://127.0.0.1:${portOf(state.parent)}`, auth: { env: "PARENT" } },
-      {},
+      "env",
+      { HTTPS_PROXY: `http://127.0.0.1:${portOf(state.parent)}` },
       resolverWith("corp:pass"),
     );
     const socket = await createDialer({ parent: route, resolve: publicResolve })(
@@ -149,8 +152,8 @@ describe("parent proxy", () => {
 
   it("fails when the parent refuses the credentials", async () => {
     const route = parentRouteFor(
-      { url: `http://127.0.0.1:${portOf(state.parent)}` },
-      {},
+      "env",
+      { HTTPS_PROXY: `http://127.0.0.1:${portOf(state.parent)}` },
       resolverWith(undefined),
     );
 
@@ -161,8 +164,8 @@ describe("parent proxy", () => {
 
   it("still refuses a name that resolves only to private addresses", async () => {
     const route = parentRouteFor(
-      { url: `http://127.0.0.1:${portOf(state.parent)}` },
-      {},
+      "env",
+      { HTTPS_PROXY: `http://127.0.0.1:${portOf(state.parent)}` },
       resolverWith("corp:pass"),
     );
     const dial = createDialer({ parent: route, resolve: async () => [{ address: "10.0.0.5", family: 4 }] });
@@ -173,8 +176,8 @@ describe("parent proxy", () => {
   it("lets the parent resolve a name the host cannot", async () => {
     const before = state.seen.length;
     const route = parentRouteFor(
-      { url: `http://127.0.0.1:${portOf(state.parent)}`, auth: { env: "PARENT" } },
-      {},
+      "env",
+      { HTTPS_PROXY: `http://127.0.0.1:${portOf(state.parent)}` },
       resolverWith("corp:pass"),
     );
     const notFound = async () => {
@@ -213,7 +216,11 @@ describe("parent proxy", () => {
 
     await listen(silent);
 
-    const route = parentRouteFor({ url: `http://127.0.0.1:${portOf(silent)}` }, {}, resolverWith(undefined));
+    const route = parentRouteFor(
+      "env",
+      { HTTPS_PROXY: `http://127.0.0.1:${portOf(silent)}` },
+      resolverWith(undefined),
+    );
     const started = Date.now();
     const outcome = await createDialer({
       parent: route && { ...route, timeoutMs: 200 },
@@ -237,8 +244,8 @@ describe("parent proxy", () => {
       invalidate: () => undefined,
     };
     const route = parentRouteFor(
-      { url: `http://127.0.0.1:${portOf(state.parent)}`, auth: { env: "PARENT" } },
-      {},
+      "env",
+      { HTTPS_PROXY: `http://127.0.0.1:${portOf(state.parent)}` },
       resolver,
     );
     const dial = createDialer({ parent: route, resolve: publicResolve });

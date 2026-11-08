@@ -1,4 +1,4 @@
-import type { CredentialRule, CredentialSource, DeriveConfig, GatewayConfig } from "../config/index.ts";
+import type { CredentialRule, DeriveConfig } from "../config/index.ts";
 import type { CommandRunner, JsonObject, VaultDiscovery, VaultServer } from "../shared/index.ts";
 
 export type { JsonObject } from "../shared/index.ts";
@@ -22,8 +22,6 @@ export type ProviderHosts = Record<string, ProviderHostEntry>;
 export interface DeriveInput {
   files: HostPiFiles;
   providerHosts: ProviderHosts;
-  gateway?: GatewayConfig;
-  credentials?: CredentialSource;
   manual: CredentialRule[];
   salt: string;
   env: Record<string, string | undefined>;

@@ -206,18 +206,11 @@ describe("env and file secrets", () => {
     ).toEqual({ one: "1" });
   });
 
-  it("hands the parent proxy credentials from HTTPS_PROXY or from the configured env reference", () => {
+  it("hands the parent proxy credentials from HTTPS_PROXY", () => {
     expect(envSecretsFor([], "env", { HTTPS_PROXY: "http://corp:p%40ss@proxy.test:3128" })).toEqual({
       [PARENT_PROXY_SECRET_KEY]: "corp:p@ss",
     });
     expect(envSecretsFor([], "none", { HTTPS_PROXY: "http://corp:pass@proxy.test:3128" })).toEqual({});
-    expect(
-      envSecretsFor(
-        [],
-        { url: "http://proxy.test:3128", auth: { env: "PARENT_AUTH" } },
-        { PARENT_AUTH: "u:p" },
-      ),
-    ).toEqual({ [PARENT_PROXY_SECRET_KEY]: "u:p" });
   });
 
   it("refuses an env credential that holds a line break", () => {

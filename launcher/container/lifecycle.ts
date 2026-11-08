@@ -39,14 +39,11 @@ const MANAGED = { [LABELS.managed]: "true" };
 
 const RELAYS = { [LABELS.relay]: "true" };
 
-const IDENTITY = [LABELS.imageDigest, LABELS.configHash, LABELS.specHash];
+const IDENTITY = [LABELS.imageDigest, LABELS.specHash];
 
 const LOCK_TIMEOUT_MS = 120_000;
 
 const OUTDATED = "the sandbox config changed; it applies after every session in this repository exits";
-
-const UNPROTECTED =
-  "the running sandbox of this repository predates the read-only git dir snapshots; they apply after every session in this repository exits";
 
 const isCurrent = (container: ContainerSummary, labels: Record<string, string | undefined>) =>
   IDENTITY.every((label) => container.labels[label] === labels[label]);
@@ -59,13 +56,12 @@ const recordWanted = (spec: LauncherContainerSpec) =>
 
 export const isCurrentContainer = async (
   container: ContainerSummary,
-  input: { stateDir: string; repoRoot: string; digest: string; configHash: string },
+  input: { stateDir: string; repoRoot: string; digest: string },
 ) => {
   const wanted = await readJsonFile<Record<string, string>>(wantedFile(input.stateDir, input.repoRoot));
 
   return isCurrent(container, {
     [LABELS.imageDigest]: input.digest,
-    [LABELS.configHash]: input.configHash,
     [LABELS.specHash]: wanted?.[LABELS.specHash],
   });
 };
@@ -215,15 +211,13 @@ const reuse = async (
   const outdated = !isCurrent(container, spec.labels);
   const started =
     container.state === "running" ? [] : await startPrepared(backend, container.id, spec, !outdated);
-  const guarded = spec.labels[LABELS.gitCommonDir] ?? spec.labels[LABELS.gitCommonDirs];
-  const unprotected = guarded !== undefined && container.labels[LABELS.gitProtection] === undefined;
 
   return {
     id: container.id,
     created: false,
     outdated,
     spec,
-    notices: [...(outdated ? [OUTDATED, ...(unprotected ? [UNPROTECTED] : [])] : []), ...started],
+    notices: [...(outdated ? [OUTDATED] : []), ...started],
   };
 };
 
@@ -294,28 +288,10 @@ const findOrCreate = async (input: EnsureContainerInput): Promise<EnsuredContain
 export const ensureContainer = (input: EnsureContainerInput) =>
   withFileLock(`${input.spec.wantedFile}.lock`, () => findOrCreate(input), { timeoutMs: LOCK_TIMEOUT_MS });
 
-export const stopIdleContainer = async (backend: Backend, containerId: string) => {
-  const found = (await backend.findContainers(MANAGED)).find((container) => container.id === containerId);
-
-  if (found?.state !== "running") {
-    return { stopped: false };
-  }
-
-  await backend.stopContainer(found.id);
-
-  return { stopped: true };
-};
-
-export const findCurrentContainer = async (
-  backend: Backend,
-  workspace: Workspace,
-  digest: string,
-  configHash: string,
-) => {
+export const findCurrentContainer = async (backend: Backend, workspace: Workspace, digest: string) => {
   const [found] = await backend.findContainers({
     [LABELS.repoHash]: repoHash(workspace.repoRoot),
     [LABELS.imageDigest]: digest,
-    [LABELS.configHash]: configHash,
   });
 
   return found;

@@ -1,5 +1,5 @@
 import { setTimeout as delay } from "node:timers/promises";
-import { LEGACY_GATEWAY_RULE_ID, type SandboxConfig, vaultEnabled } from "../config/index.ts";
+import { type SandboxConfig, vaultEnabled } from "../config/index.ts";
 import {
   type DerivedSandboxPi,
   deriveSandboxPi,
@@ -31,8 +31,7 @@ const DNS_WAIT_MS = 2000;
 const MISSING_PI =
   "no pi on the host, built-in providers get no credential rules; install pi or reinstall the launcher with npm install -g pi-extensions-mz";
 
-const needsProxy = (config: SandboxConfig) =>
-  config.gateway !== undefined || config.egress.allow.length > 0 || config.egress.mcpHosts.length > 0;
+const needsProxy = (config: SandboxConfig) => config.egress.allow.length > 0;
 
 export const providerHostsOf = async (deps: CliDeps, stateDir: string, pi: HostPi | undefined) => {
   if (pi === undefined) {
@@ -79,8 +78,6 @@ const deriveFor = async (
   const derived = deriveSandboxPi({
     files,
     providerHosts: providers.hosts,
-    gateway: config.gateway,
-    credentials: config.credentials,
     manual: config.credentials.rules,
     salt,
     env: deps.env,
@@ -141,7 +138,7 @@ export const prepareHostSide = async (
   const [privateNotices, trust] = await settleAll([
     noticesWithin(
       privateHostNotices({
-        rules: derived.rules.filter((rule) => rule.id !== LEGACY_GATEWAY_RULE_ID),
+        rules: derived.rules,
         privateHosts: config.egress.privateHosts,
         resolve: deps.resolveHost,
       }),

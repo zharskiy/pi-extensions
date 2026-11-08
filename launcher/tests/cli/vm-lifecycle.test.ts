@@ -93,7 +93,7 @@ const setupWith = async (setup: Setup = {}) => {
 
 const liveSession = (stateDir: string) =>
   registerSession(stateDir, {
-    launchId: "00000000000000aa",
+    sessionId: "00000000000000aa",
     pid: process.pid,
     repoHash: sha256Hex("/elsewhere"),
     startedAt: 1,

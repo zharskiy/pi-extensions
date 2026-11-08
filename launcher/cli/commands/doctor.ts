@@ -76,7 +76,7 @@ const skipAll = (deps: CliDeps, names: string[], reason: string) =>
 
 const proxyCheck = async (proxy: SandboxProxy | undefined) => {
   if (proxy === undefined) {
-    return passed("not required, no gateway, no credential rule and an empty allowlist");
+    return passed("not required, no credential rule and an empty allowlist");
   }
 
   const where = `pid ${proxy.instance.pid} port ${proxy.instance.port}`;
@@ -105,14 +105,13 @@ const containerChecks = async (
   target: ProbeTarget,
 ) => {
   const { host, proxy } = parts;
-  const placeholder = context.effective.config.gateway?.placeholder;
   const rules = await checkRules(target, host.derived.rules).catch((error: unknown) => [
     { name: "trust", result: failed(errorMessage(error)) },
   ]);
 
   return [
     report(deps, "same-path mount", await attempt(() => checkSamePath(target, context.workspace.repoRoot))),
-    report(deps, "credential sweep", await attempt(() => sweepCredentials(target, placeholder))),
+    report(deps, "credential sweep", await attempt(() => sweepCredentials(target))),
     report(deps, "no-route", await attempt(() => checkNoRoute(target))),
     report(deps, "offline", await attempt(() => checkOffline(target))),
     report(deps, "mcp", await attempt(() => checkMcp(target))),
@@ -191,7 +190,7 @@ const sandboxChecks = async (
   } finally {
     if (
       containers.created !== undefined &&
-      !(await othersLive(context.stateDir, context.repoHash, session.launchId))
+      !(await othersLive(context.stateDir, context.repoHash, session.sessionId))
     ) {
       await removeRepoContainer(backend, context.workspace.repoRoot);
     }

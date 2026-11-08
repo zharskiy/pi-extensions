@@ -253,7 +253,7 @@ export const openLauncherCa = async ({ stateDir, runner }: CaOptions): Promise<L
 
   const checkHost = (host: string) => {
     if (!LEAF_HOST.test(host)) {
-      throw new LauncherError(`cannot issue a certificate for ${host}`, "use a DNS hostname for the gateway");
+      throw new LauncherError(`cannot issue a certificate for ${host}`, "use a DNS hostname for the host");
     }
   };
 

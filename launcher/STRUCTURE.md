@@ -12,11 +12,11 @@ launcher/
 │   ├── main.ts              builds the real CliDeps and calls run
 │   ├── run.ts               the command table, routes argv (intercepted commands before the pass-through), renders LauncherError and unexpected errors
 │   ├── deps.ts              CliDeps: runner, env, home, cwd, streams, terminal, signals, platform, uid, backend, proxy control (ensure, list, stop, remove, control, denials, trust), bundledPi, resolveHost, confirm, now; writeNotices, hostAgentDirOf, settleAll (waits for every promise, then throws the first error)
-│   ├── launch.ts            LaunchContext (repoHash computed once), the pi pipeline, withSandbox (a signal cancels preparation at the next step and waits for the current one) and the steps other commands reuse (prepareImage through ensureSandboxImage with the host pi resolved once per launch, hostPiMoved and the image pi notice, prepareContainer with render, the git plan, sync and grant pruning); proxy and image, then render, git notices, version, git plan and host sessions; prints the workspace and node_modules overlay notices, then the two syncs, each group in parallel
+│   ├── launch.ts            LaunchContext (repoHash computed once), the pi pipeline, withSandbox (a signal cancels preparation at the next step and waits for the current one) and the steps other commands reuse (prepareImage through ensureSandboxImage with the host pi resolved once per launch, hostPiMoved and the image pi notice, prepareContainer with render, the git plan and sync); proxy and image, then render, git notices, version, git plan and host sessions; prints the workspace and node_modules overlay notices, then the two syncs, each group in parallel
 │   ├── derive.ts            the host side: host pi files, MCP token seed, provider host table, vault discovery, deriveSandboxPi, private-host notices (DNS waited for at most 2 s), trust bundle; deriveVaultServers
-│   ├── sandbox-proxy.ts     starts the proxy with daemonEnv, the host pi command, its version and the discover command, the repository token, dynamic.json (under a lock) with the vault servers, envSecretsFor over /control (no line breaks), the cap-aware denial summary on exit (rule egress.cap)
+│   ├── sandbox-proxy.ts     starts the proxy with daemonEnv, the host pi command, its version and the discover command, the repository token, dynamic.json (under a lock) with the vault servers, envSecretsFor over /control (no line breaks), the denial summary on exit (the grant hint, or egress.allow when grants are off)
 │   ├── mcp-auth-sync.ts     syncSandboxMcpAuth: containerMcpAuth and syncContainerMcpAuth into a container, with notices
-│   ├── sessions.ts          registers and ends a launch session, stops the idle container after the last one (then the full host sessions sweep), prunes ended grants; the session-end git notices with a pins-in-use check per git common dir
+│   ├── sessions.ts          registers and ends a launch session, stops the idle container after the last one (then the full host sessions sweep); the session-end git notices with a pins-in-use check per git common dir
 │   ├── host-sessions.ts     host sessions on or off for this launch (with the notice), readyHostSessions (prepare, guard, sweep), sweepWhenIdle under the session registry lock, the share probe, the exit and --no-sandbox sweeps
 │   ├── intercept.ts         pi install|remove (write-back of the packages entry), pi mcp add|remove|login|logout on the host (then the mcp-auth.json sync into a running container), bare pi update
 │   ├── host-pi.ts           resolveJobPi (managed, else bundled: host jobs and the image), resolveShellPi and hostPiCommand (one selection, also PATH outside sandboxRoots: doctor, pi update, --no-sandbox), the doctor's host pi text
@@ -26,29 +26,23 @@ launcher/
 │   ├── index.ts             the public surface
 │   └── commands/
 │       ├── status.ts            runtime, container (and its session dir label), proxy, image, sessions, grants, node_modules overlays, shared caches
-│       ├── config.ts            config show and set
-│       ├── egress.ts            egress allow, revoke and list (grants, denials)
-│       ├── gc.ts                stopped containers (and the proxy token of each repository whose container it removes), idle relays and proxies (repositories with a live session kept), unmounted volumes whose labelled repository root is gone (shared caches kept and left out of the unlabelled count; --shared-caches removes this user's unmounted ones), ended grants
+│       ├── config.ts            config show (the effective config and the source of each key)
+│       ├── egress.ts            egress allow, revoke and list [--user] (persistent grants per repository or user-wide, denials)
+│       ├── gc.ts                stopped containers (and the proxy token of each repository whose container it removes), idle relays and proxies (repositories with a live session kept), unmounted volumes whose labelled repository root is gone (shared caches kept and left out of the unlabelled count; --shared-caches removes this user's unmounted ones)
 │       ├── reset.ts             this repository's container, proxy instance, render dir, and with --volumes its volumes (node_modules overlays included, shared caches kept) and sync copy
 │       ├── stop.ts              pi sandbox stop: colima stop of the pi-sandbox profile (refused while a pi session runs), then every proxy instance
 │       ├── doctor.ts            the doctor's order and rendering
 │       ├── doctor-container.ts  in-container checks: PI_OFFLINE, pi mcp list, the mcp-auth.json placeholder sweep, the settings.json package URL sweep, xdg-open --pi-sandbox-check, the host sessions share probe, trust and one request per credential rule host; exports OFFLINE_PROBE, MCP_LIST_PROBE and SHIM_PROBE
-│       ├── doctor-host.ts       host checks: host pi (warn below the tested version), provider hosts, parent proxy, org baseline (orgBaselineStatus), grants, the host session dir, vm size (colima status, warn below 8 CPUs or 10 GiB), vm shares (checkVmShares, report only), one line per vault server
+│       ├── doctor-host.ts       host checks: host pi (warn below the tested version), provider hosts, parent proxy, org baseline (the file the config loaded), grants, the host session dir, vm size (colima status, warn below 8 CPUs or 10 GiB), vm shares (checkVmShares, report only), one line per vault server
 │       └── help.ts              usage
 ├── config/
-│   ├── types.ts             SandboxConfig, layers, credential rules, secret sources, egress, tls, image and org keys, EgressCap
-│   ├── validate.ts          the key spec (egress host[:port], rules, secret sources, org; the schema's noProxy pattern matches it), validateLayer, layerKeys, projectKeyRefusal (one list of 17 project-refused keys, each with the layer that owns it)
-│   ├── merge.ts             tighten-only and convenience rules over policy, org, user and project, mergeLayers, per-key sources, the D3 cap
-│   ├── load.ts              loadEffectiveConfig from defaults, profile, policy, org, user, project, with the org notices and an injectable fetchText; refuses a project layer that sets a project-refused key
-│   ├── org-source.ts        loadOrgLayer: fetch or read the org baseline, sha256 pin, cache in <state>/org/ with the last failed attempt, offline mode, httpsFetchText (1 MiB cap), orgBaselineStatus for the doctor
+│   ├── types.ts             SandboxConfig, layers, credential rules, secret sources, egress, tls, image and org keys
+│   ├── validate.ts          the key spec (egress host[:port], rules, secret sources, org file), validateLayer, layerKeys, projectKeyRefusal (PROJECT_KEYS, the four keys a project may set)
+│   ├── merge.ts             mergeLayers over policy, org, user and project: policy and org keys final, egress.deny and env.allow unions, per-key sources
+│   ├── load.ts              loadEffectiveConfig from defaults, policy, the org file, user, project; refuses a project layer that sets a key outside PROJECT_KEYS
 │   ├── egress-entry.ts      the egress entry grammar: TLS_PORT, normalizeHost, parseEntry, matchesPattern (single-label *.), matchesEntry, authorityOf, isLoopbackName, SECRET_MARKER, fillTemplate
-│   ├── rule-cap.ts          capManualRules: the D3 cap on credentials.rules below policy, with notices
 │   ├── vault.ts             vaultEnabled: credentials.vault.enabled while credentials.derive.enabled
-│   ├── legacy-gateway.ts    legacyGatewayRule: the gateway and the legacy credentials as one credential rule
-│   ├── set.ts               setConfigValue over the same four layers, with the .pi/.gitignore write
 │   ├── defaults.ts          the default config and image reference
-│   ├── profiles.ts          loadProfile from profiles/
-│   ├── hash.ts              configHash
 │   └── dotted.ts            dotted key access
 ├── workspace/
 │   ├── discover.ts          discoverWorkspace: the nearest .git found without git, its layout checked, then git rev-parse must agree; without one, workspace mode (each nested repository confirmed, git dirs inside the root, 128 repositories and the scan budget, refusals), unreadable directories refused, the 512 node project cap; lenient for admin commands and --no-sandbox
@@ -73,12 +67,12 @@ launcher/
 │   ├── managed-network.ts   repoNetworkName, repoNetworkLabels, pruneCandidates and removeWithNetworkCleanup
 │   └── docker-engine/       Docker Engine API adapter for the Colima VM: socket (the pinned ~/.colima/pi-sandbox/docker.sock), engine client, container body, exec session (streams with backpressure), images (pull with digest check, build), volumes, relay per policy (kept while other repositories use it)
 ├── container/
-│   ├── spec.ts              buildContainerSpec (network, proxy env with the repository token, render and trust mounts, the host session dir bind and env, ssh agent, volume labels and owned paths, spec hash), nodeModulesOverlays, sharedCacheVolumes, repoVolumes, forwardedEnv
+│   ├── spec.ts              buildContainerSpec (network, proxy env with the repository token, render and trust mounts, the host session dir bind and env, volume labels and owned paths, spec hash), nodeModulesOverlays, sharedCacheVolumes, repoVolumes, forwardedEnv
 │   ├── git-overlay.ts       planGitOverlay (discovery once per launch: the overlay for the spec and ready() for right before a start: pins, layout checks, hook dirs, leaves checked again, snapshots, baseline), discoverGitOverlay and readyGitOverlay over it, the merged overlay of a workspace's repositories; re-exports gitLaunchNotices and gitSessionEndNotices from workspace
 │   ├── git-snapshot.ts      writeGitSnapshots, gitSnapshotPath, gitSnapshotsDir: launcher-owned copies of the read-only git paths
 │   ├── names.ts             container and volume names, userHashOf, the shared cache volume name and the wanted identity file (re-exports LABELS from backend)
-│   ├── lifecycle.ts         ensureContainer (per-repository lock, wanted identity, reuse while other sessions are live, beforeStart right before a create or start, inside aroundStart, replacement that keeps the repository network, missing mount points created on the host, the root chown of owned volume paths after each start), gitDirInUseElsewhere (both git dir labels), isCurrentContainer, stopIdleContainer, findCurrentContainer, findRepoContainer, removeRepoContainer, collectGarbage
-│   ├── run-pi.ts            runPi: exec behind a pid file, PI_SANDBOX_LAUNCH_ID, raw mode, resizes, signal handling
+│   ├── lifecycle.ts         ensureContainer (per-repository lock, wanted identity, reuse while other sessions are live, beforeStart right before a create or start, inside aroundStart, replacement that keeps the repository network, missing mount points created on the host, the root chown of owned volume paths after each start), gitDirInUseElsewhere (both git dir labels), isCurrentContainer, findCurrentContainer, findRepoContainer, removeRepoContainer, collectGarbage
+│   ├── run-pi.ts            runPi: exec behind a pid file, PI_SANDBOX_LAUNCH_ID (the session id), raw mode, resizes, signal handling
 │   └── probes.ts            CheckResult (ok, warn, fail, skip) and doctor checks: same-path mount, credential sweep (environment, auth.json, mcp.json), no-route, proxy health
 ├── image/
 │   ├── Dockerfile           the sandbox image (no pi config baked in; BASH_ENV set to bash-env.sh, which /etc/bash.bashrc also sources first)
@@ -101,7 +95,6 @@ launcher/
 │   ├── derive-mcp.ts        mcp.json HTTP and stdio servers
 │   ├── headers.ts           header values to placeholders and secret sources
 │   ├── rules.ts             placeholder and rule construction per identity
-│   ├── gateway.ts           the legacy gateway's providers and rule
 │   ├── endpoints.ts         rule endpoints (host, port) and their keys
 │   ├── provider-endpoints.ts  hosts of a provider from the table or its baseUrl
 │   ├── userinfo.ts          credentials in URLs
@@ -127,9 +120,9 @@ launcher/
 │   ├── host-sessions.ts     prepareHostSessions (0700), sweepHostSessions (special files, pi's header rule failing closed with bare-CR rejection, owner access restored, size, 8 files at a time, failures), probeHostSessions (host marker, guest create and delete)
 │   └── types.ts             RenderInput, SyncInput and results
 ├── grants/
-│   ├── store.ts             grants.json: addGrant with the limits, revokeGrants, activeGrants, pruneGrants
-│   ├── sessions.ts          newLaunchId, registerSession and endSession (both delete entries of dead launchers), liveSessions, withRepoSessionLock
-│   └── types.ts             Grant, GrantScope, SessionEntry
+│   ├── store.ts             grants.json: addGrant (refused while egress.grants is false), revokeGrants, activeGrants
+│   ├── sessions.ts          newSessionId, registerSession and endSession (both delete entries of dead launchers), liveSessions, withRepoSessionLock
+│   └── types.ts             Grant, GrantRequest, GrantMatch, SessionEntry
 ├── proxy/
 │   ├── daemon.ts            the proxy process entry
 │   ├── control.ts           ensureProxyRunning, readProxyInstances, stopProxy, removeProxyInstance, daemonEnv, per-instance lock, control token, kept port, restart on a host pi version change
@@ -158,14 +151,13 @@ launcher/
 │   ├── test-resolve.ts      PI_SANDBOX_TEST_RESOLVE, honoured only from the sources (live tests)
 │   ├── tls-ca.ts            launcher CA (created once under a lock, pair renamed into place) and leaf certificates through openssl
 │   ├── access-log.ts        JSON-line access log
-│   ├── settings.ts          proxy settings from the config and the cap, proxyPolicyHash
+│   ├── settings.ts          proxy settings from the config, proxyPolicyHash
 │   └── files.ts             per-instance file paths under proxy/<policy hash>/ and the ProxyInstance record
-├── shared/                  LauncherError, errorMessage, CommandRunner, sha256Hex, repoHash, stableHash, JSON files (readJsonFile, writeJsonFile, readText, and the lenient isJsonObject, parseJsonObject, readJsonObject), writeFileAtomic, ensureRandomHexFile, launcherPaths, realOrResolved (and its sync variant), launcherRoot, launcherEntry, expandHome, isWithin, isSecretName, isAuthLikeHeader, placeholders, ensureSalt, stateLayout, GUEST_PATHS; regular-file.ts (readRegularFile without following links, lstatOrUndefined, sameEntry); pi-env.ts (PI_AGENT_DIR_VARIABLE, PI_SESSION_DIR_VARIABLE, LAUNCHER_SET_VARIABLES with BASH_ENV); vault.ts (VaultServer, VaultDiscovery, VaultEntry, vaultPlaceholders, readVaultStore, updateVaultStore, writeVaultEntry, mcpAuthKey, MCP_SERVER_NAME); state-layout.ts (stateLayout, every state path including configLock, ca, extraPem, imageRecord, pack, wanted, orgBaseline, orgMeta, proxyRoot and proxyInstance(policyHash) with dynamic, dynamicLock, tokensDir and repoToken), file-lock.ts (withFileLock, the pid lock every launcher lock uses; withDirectoryLock, the mkdir lock pi uses on mcp-auth.json; isProcessAlive)
-├── profiles/                solo.json, team.json, enterprise.json
-├── examples/                org-baseline.team.json, org-baseline.enterprise.json (starting points for an org baseline)
+├── shared/                  LauncherError, errorMessage, CommandRunner, sha256Hex, repoHash, stableHash, JSON files (readJsonFile, writeJsonFile, readText, and the lenient isJsonObject, parseJsonObject, readJsonObject), writeFileAtomic, ensureRandomHexFile, launcherPaths, realOrResolved (and its sync variant), launcherRoot, launcherEntry, expandHome, isWithin, isSecretName, isAuthLikeHeader, placeholders, ensureSalt, stateLayout, GUEST_PATHS; regular-file.ts (readRegularFile without following links, lstatOrUndefined, sameEntry); pi-env.ts (PI_AGENT_DIR_VARIABLE, PI_SESSION_DIR_VARIABLE, LAUNCHER_SET_VARIABLES with BASH_ENV); vault.ts (VaultServer, VaultDiscovery, VaultEntry, vaultPlaceholders, readVaultStore, updateVaultStore, writeVaultEntry, mcpAuthKey, MCP_SERVER_NAME); state-layout.ts (stateLayout, every state path including ca, extraPem, imageRecord, pack, wanted, proxyRoot and proxyInstance(policyHash) with dynamic, dynamicLock, tokensDir and repoToken), file-lock.ts (withFileLock, the pid lock every launcher lock uses; withDirectoryLock, the mkdir lock pi uses on mcp-auth.json; isProcessAlive)
+├── examples/                org-baseline.json (a starting point for an org baseline)
 ├── schema/                  sandbox-config.schema.json
-├── install.sh               macOS install: Colima profile, launcher and its bundled pi (or the managed pi, whose ~/.local/bin/pi link it replaces and records in replaced-pi-link), PATH, user config (and --org), doctor in a temporary repository (host sessions off)
-├── uninstall.sh             removes what install.sh and the launcher created (restores the recorded managed pi link when the record names this shim; engine objects through bin/uninstall-engine.mjs, no docker CLI), and the session, render, sync, mcp-auth, provider-hosts, org and grants state
+├── install.sh               macOS install: Colima profile, launcher and its bundled pi (or the managed pi, whose ~/.local/bin/pi link it replaces and records in replaced-pi-link), PATH, the user config's org key (--org), doctor in a temporary repository (host sessions off)
+├── uninstall.sh             removes what install.sh and the launcher created (restores the recorded managed pi link when the record names this shim; engine objects through bin/uninstall-engine.mjs, no docker CLI), and the session, render, sync, mcp-auth, provider-hosts and grants state
 ├── THREAT-MODEL.md          assets, trust boundaries, what each feature weakens, known gaps
 ├── tsconfig.build.json      emits dist/ (gitignored) for the published bin
 └── tests/
@@ -174,7 +166,7 @@ launcher/
     ├── container/run-pi.test.ts runPi, including the signal path, on the fake backend
     ├── backend/fake-backend.conformance.test.ts   the conformance suite and the fake's own contract (refusals, prune rules, guest agent dir)
     ├── proxy/hello.test.ts, keep-alive.test.ts, vault-protocol.test.ts, private-hosts.test.ts   ClientHello reading and the dial timeout, upstream connections never shared between repositories, the code placeholders, privateHostNotices
-    ├── config/project-keys.test.ts, egress-entry.test.ts, mounts.test.ts   the project-refused keys, the egress entry grammar, mounts.sharedCaches and mounts.autoNodeModules (validation, defaults, layers)
+    ├── config/project-keys.test.ts, egress-entry.test.ts, mounts.test.ts   the project allowlist, the egress entry grammar, mounts.sharedCaches and mounts.autoNodeModules (validation, defaults, layers)
     ├── workspace/git-integrity.test.ts   worktree pointer checks and the session-end notices
     ├── workspace/workspace-mode.test.ts   workspace discovery (scan, nested repository and git config refusals, node projects, lenient mode), self binds and notices, pin locks and session-end notices over nested repositories
     ├── image/sandbox-image.test.ts   ensureSandboxImage paths (recorded, pinned, built, layer)
@@ -186,7 +178,7 @@ launcher/
     ├── cli/host-pi.test.ts, install.test.ts, uninstall.test.ts   the host pi of host jobs, the image and --no-sandbox; install.sh's managed pi takeover run for real with a temp HOME and fake uname, sw_vers, brew, colima and npm (no git, so the smoke step is skipped), and the colima start with --mount $HOME:w only for a new profile; uninstall.sh's engine cleanup and link restore
     ├── config/fixtures.ts   layer files in temp dirs
     ├── proxy/proxy-client.ts    CONNECT and TLS client helpers
-    ├── support/             fake-runner.ts (+ its test), fake-engine.ts, fake-backend.ts (with guestAgentDir and guestFile), fake-clock.ts, fake-fetch.ts, sandbox-config.ts, temp-dir.ts (tempDir, writeText, writeJson, removed after each test), expect-no-leak.ts (expectNoLeak over container specs, exec argv, env and stdin, and render files)
+    ├── support/             fake-runner.ts (+ its test), fake-engine.ts, fake-backend.ts (with guestAgentDir and guestFile), fake-clock.ts, sandbox-config.ts, temp-dir.ts (tempDir, writeText, writeJson, removed after each test), expect-no-leak.ts (expectNoLeak over container specs, exec argv, env and stdin, and render files)
     └── live/                *.live.test.ts against a real engine with fixtures/ and harness/, run only with PI_SANDBOX_LIVE=1 against ~/.colima/pi-sandbox/docker.sock
 ```
 

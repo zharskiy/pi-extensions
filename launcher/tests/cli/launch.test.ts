@@ -43,7 +43,7 @@ describe("pi [args]", () => {
     expect(last?.workdir).toBe(harness.cwd);
   });
 
-  it("mounts the repository at its host path, routes through the proxy and leaves out the CA without a gateway", async () => {
+  it("mounts the repository at its host path, routes through the proxy and leaves out the CA without a credential rule", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
 
@@ -104,16 +104,15 @@ describe("pi [args]", () => {
     expect([...fake.containers.keys()]).toEqual([container?.summary.id]);
   });
 
-  it("mounts the trust bundle read-only when a gateway is configured", async () => {
+  it("mounts the trust bundle read-only when a credential rule is configured", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
 
     await harness.writeJson(harness.userConfigFile, {
-      gateway: {
-        url: "https://gateway.example.com",
-        authHeader: "x-api-key",
-        placeholder: "pi-sandbox-placeholder",
-        providers: [{ id: "gateway", apiKind: "example-messages" }],
+      credentials: {
+        rules: [
+          { id: "llm", host: "llm.example.com", placeholder: "pi-sandbox-llm", secret: { env: "LLM_KEY" } },
+        ],
       },
     });
 
@@ -137,7 +136,7 @@ describe("pi [args]", () => {
 
     await run([], harness.deps);
 
-    await harness.writeJson(harness.userConfigFile, { resources: { cpus: 2 } });
+    await run(["sandbox", "reset"], harness.deps);
 
     await run([], harness.deps);
 
@@ -292,22 +291,5 @@ describe("pi [args]", () => {
 
     expect(call?.file).toBe(hostPi);
     expect(call?.args).toEqual(["-p", "hi"]);
-  });
-});
-
-describe("pi --no-sandbox with an org baseline", () => {
-  it("never fetches the baseline, so an unreachable org source without a cache does not block host pi", async () => {
-    const harness = await createHarness();
-    const hostDir = join(harness.root, "host-bin");
-
-    await writeScript(hostDir, "echo host pi");
-
-    harness.deps.env.PATH = hostDir;
-
-    await harness.writeJson(harness.userConfigFile, { org: { source: "https://org.invalid/baseline.json" } });
-
-    expect(await run(["--no-sandbox"], harness.deps)).toBe(0);
-    expect(harness.stderr()).toContain("the org layer is skipped");
-    expect(harness.stderr()).not.toContain("could not fetch");
   });
 });

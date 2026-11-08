@@ -6,11 +6,7 @@ import {
   withFileLock,
   writeJsonFile,
 } from "../shared/index.ts";
-import type { ActiveGrantContext, Grant, GrantLimits, GrantMatch, GrantRequest } from "./types.ts";
-
-export const SESSION_GRANT_CAP_HOURS = 12;
-
-const HOUR_MS = 60 * 60 * 1000;
+import type { Grant, GrantMatch, GrantRequest } from "./types.ts";
 
 const PRIVATE_MODE = 0o600;
 
@@ -48,69 +44,27 @@ const updateGrants = <T>(stateDir: string, change: (grants: Grant[]) => { grants
     return next.result;
   });
 
-const checkLimits = (request: GrantRequest, limits: GrantLimits) => {
-  if (!limits.enabled) {
-    throw new LauncherError("egress grants are turned off by egress.grants.enabled");
-  }
-
-  if (request.scope.kind === "permanent" && !limits.permanent) {
-    throw new LauncherError(
-      "permanent egress grants are turned off by egress.grants.permanent",
-      "use --hours N",
-    );
-  }
-
-  if (request.scope.kind !== "hours") {
-    return;
-  }
-
-  const { hours } = request.scope;
-
-  if (!Number.isFinite(hours) || hours <= 0) {
-    throw new LauncherError(`--hours needs a positive number, got ${hours}`);
-  }
-
-  if (hours > limits.maxHours) {
-    throw new LauncherError(`--hours ${hours} exceeds egress.grants.maxHours (${limits.maxHours})`);
-  }
-};
-
-const sessionHours = (limits: GrantLimits) => Math.min(SESSION_GRANT_CAP_HOURS, limits.maxHours);
-
-const grantFor = (request: GrantRequest, limits: GrantLimits, now: number): Grant => {
-  const base = {
-    host: request.host.trim().toLowerCase(),
-    port: request.port,
-    ...(request.repoHash === undefined ? {} : { repoHash: request.repoHash }),
-    createdAt: now,
-  };
-
-  if (request.scope.kind === "session") {
-    return { ...base, expiresAt: now + sessionHours(limits) * HOUR_MS, launchId: request.scope.launchId };
-  }
-
-  if (request.scope.kind === "hours") {
-    return { ...base, expiresAt: now + request.scope.hours * HOUR_MS };
-  }
-
-  return base;
-};
+const grantFor = (request: GrantRequest, now: number): Grant => ({
+  host: request.host.trim().toLowerCase(),
+  port: request.port,
+  ...(request.repoHash === undefined ? {} : { repoHash: request.repoHash }),
+  createdAt: now,
+});
 
 const sameTarget = (left: Grant, right: Grant) =>
-  left.host === right.host &&
-  left.port === right.port &&
-  left.repoHash === right.repoHash &&
-  left.launchId === right.launchId;
+  left.host === right.host && left.port === right.port && left.repoHash === right.repoHash;
 
 export const addGrant = async (
   stateDir: string,
   request: GrantRequest,
-  limits: GrantLimits,
+  enabled: boolean,
   now: number,
 ): Promise<Grant> => {
-  checkLimits(request, limits);
+  if (!enabled) {
+    throw new LauncherError("egress grants are turned off by egress.grants");
+  }
 
-  const grant = grantFor(request, limits, now);
+  const grant = grantFor(request, now);
 
   return updateGrants(stateDir, (grants) => ({
     grants: [...grants.filter((existing) => !sameTarget(existing, grant)), grant],
@@ -130,22 +84,5 @@ export const revokeGrants = (stateDir: string, match: GrantMatch): Promise<numbe
     return { grants: kept, result: grants.length - kept.length };
   });
 
-const isLive = (grant: Grant, context: { now: number; liveLaunches: ReadonlySet<string> }) =>
-  (grant.expiresAt === undefined || grant.expiresAt > context.now) &&
-  (grant.launchId === undefined || context.liveLaunches.has(grant.launchId));
-
-export const activeGrants = (grants: Grant[], context: ActiveGrantContext): Grant[] =>
-  grants.filter(
-    (grant) =>
-      isLive(grant, context) && (grant.repoHash === undefined || grant.repoHash === context.repoHash),
-  );
-
-export const pruneGrants = (
-  stateDir: string,
-  context: { now: number; liveLaunches: ReadonlySet<string> },
-): Promise<number> =>
-  updateGrants(stateDir, (grants) => {
-    const kept = grants.filter((grant) => isLive(grant, context));
-
-    return { grants: kept, result: grants.length - kept.length };
-  });
+export const activeGrants = (grants: Grant[], repoHash: string): Grant[] =>
+  grants.filter((grant) => grant.repoHash === undefined || grant.repoHash === repoHash);

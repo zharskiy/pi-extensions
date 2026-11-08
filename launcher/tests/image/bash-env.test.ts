@@ -32,8 +32,6 @@ const loadUserConfig = async (value: unknown) => {
 
   return loadEffectiveConfig({
     repoRoot: root,
-    home: root,
-    offline: true,
     env: { PI_SANDBOX_USER_CONFIG: userConfig, PI_SANDBOX_POLICY_FILE: join(root, "policy.json") },
   });
 };

@@ -7,8 +7,8 @@ import { sha256Hex } from "../../shared/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { createHarness } from "./harness.ts";
 
-const UNPROTECTED =
-  "pi-sandbox: the running sandbox of this repository predates the read-only git dir snapshots; they apply after every session in this repository exits";
+const OUTDATED =
+  "pi-sandbox: the sandbox config changed; it applies after every session in this repository exits";
 
 const absent = async (path: string) => (await lstat(path).catch(() => undefined)) === undefined;
 
@@ -53,12 +53,12 @@ describe("the commondir pin around container starts", () => {
     expect(harness.calls.some((call) => call.file === "git")).toBe(false);
   });
 
-  it("says so when it joins a running sandbox that predates the git snapshots", async () => {
+  it("says so when it joins a running sandbox whose config changed", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
 
     await registerSession(harness.stateDir, {
-      launchId: "00000000000000aa",
+      sessionId: "00000000000000aa",
       repoHash: sha256Hex(harness.repoRoot),
       startedAt: 1,
       pid: process.pid,
@@ -66,16 +66,9 @@ describe("the commondir pin around container starts", () => {
 
     expect(await run([], harness.deps)).toBe(0);
 
-    const [[id, entry] = []] = [...fake.containers.entries()];
-    const { "pi-sandbox.git-protection": _protection, ...labels } = entry?.summary.labels ?? {};
-
-    if (id !== undefined && entry !== undefined) {
-      fake.containers.set(id, { ...entry, summary: { ...entry.summary, labels } });
-    }
-
     await harness.writeJson(harness.userConfigFile, { mounts: { cacheVolumes: ["vendor"] } });
 
     expect(await run([], harness.deps)).toBe(0);
-    expect(harness.stderr()).toContain(UNPROTECTED);
+    expect(harness.stderr()).toContain(OUTDATED);
   });
 });

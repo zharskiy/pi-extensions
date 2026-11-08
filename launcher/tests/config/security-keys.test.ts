@@ -15,17 +15,15 @@ const problemOf = (value: unknown, layer = "user") => {
 };
 
 const rule = (overrides: Record<string, unknown> = {}) => ({
-  id: "corp-gateway",
+  id: "corp-llm",
   host: "llm.corp.test",
   placeholder: "pi-sandbox-corp",
-  secret: { env: "CORP_GATEWAY_KEY" },
+  secret: { env: "CORP_LLM_KEY" },
   ...overrides,
 });
 
 const FULL_LAYER = {
   credentials: {
-    kind: "static",
-    envVar: "GATEWAY_KEY",
     rules: [
       rule(),
       rule({
@@ -48,12 +46,8 @@ const FULL_LAYER = {
   egress: {
     deny: ["paste.example.test", "*.tracker.test:8443"],
     privateHosts: ["*.corp.internal", "git.corp.internal"],
-    parentProxy: {
-      url: "http://proxy.corp.test:3128",
-      noProxy: [".corp.test", "*.lan"],
-      auth: { env: "PX" },
-    },
-    grants: { enabled: true, maxHours: 24, permanent: false },
+    parentProxy: "none",
+    grants: true,
   },
   tls: { extraCa: [{ file: "/etc/corp/ca.pem" }, { hostStore: true }] },
   image: {
@@ -61,7 +55,7 @@ const FULL_LAYER = {
     npmGlobal: ["@scope/tool@1.2.3", "plain@0.1.0-beta.1"],
     dockerfile: "/etc/pi-sandbox/layer.Dockerfile",
   },
-  org: { source: "https://config.corp.test/pi-sandbox.json", sha256: "a".repeat(64), refreshHours: 12 },
+  org: "/etc/pi-sandbox/org.json",
 };
 
 describe("validateLayer with the credential, egress, tls, image and org keys", () => {
@@ -75,36 +69,32 @@ describe("validateLayer with the credential, egress, tls, image and org keys", (
 
     expect(validateLayer(baseline, "org")).toEqual(baseline);
     expect(problemOf(FULL_LAYER, "org")).toBe("org: org may only be set by the policy or user config");
-    expect(problemOf({ org: FULL_LAYER.org }, "profile team")).toBe(
-      "profile team: org may only be set by the policy or user config",
-    );
   });
 
-  it("accepts credentials with rules and no legacy kind, and keeps the legacy objects valid", () => {
+  it("accepts credentials as rules, derive and vault only", () => {
     expect(problemOf({ credentials: { rules: [rule()] } })).toBeUndefined();
     expect(problemOf({ credentials: { derive: { enabled: false } } })).toBeUndefined();
-    expect(
-      problemOf({ credentials: { kind: "host-pi-auth", authFile: "~/.pi/agent/auth.json" } }),
-    ).toBeUndefined();
-    expect(problemOf({ credentials: { kind: "sso", command: ["corp-sso"] } })).toBeUndefined();
-    expect(problemOf({ credentials: { kind: "magic" } })).toBe(
-      "user: credentials.kind must be one of static, host-pi-auth, sso",
-    );
+    expect(problemOf({ credentials: { kind: "static" } })).toBe("user: credentials.kind is not a known key");
   });
 
-  it("refuses every new key in the project layer, naming the key and the layer", () => {
+  it("refuses every key outside the project allowlist, naming the key and the layer", () => {
     const cases: Array<[unknown, string]> = [
       [{ credentials: { rules: [rule()] } }, "credentials.rules"],
-      [{ credentials: { derive: { enabled: false } } }, "credentials.derive"],
+      [{ credentials: { derive: { enabled: false } } }, "credentials.derive.enabled"],
+      [{ egress: { allow: ["x.test"] } }, "egress.allow"],
       [{ egress: { deny: ["x.test"] } }, "egress.deny"],
       [{ egress: { privateHosts: ["x.test"] } }, "egress.privateHosts"],
       [{ egress: { parentProxy: "none" } }, "egress.parentProxy"],
-      [{ egress: { grants: { enabled: false } } }, "egress.grants"],
-      [{ tls: { extraCa: [] } }, "tls"],
+      [{ egress: { grants: false } }, "egress.grants"],
+      [{ tls: { extraCa: [] } }, "tls.extraCa"],
       [{ image: { packages: ["git"] } }, "image.packages"],
       [{ image: { npmGlobal: ["tool@1.0.0"] } }, "image.npmGlobal"],
       [{ image: { dockerfile: "/x" } }, "image.dockerfile"],
-      [{ org: { source: "/etc/org.json" } }, "org"],
+      [{ fallback: "host" }, "fallback"],
+      [{ workspaceRoots: { roots: ["/srv"], outside: "warn" } }, "workspaceRoots.roots"],
+      [{ mounts: { extraReadOnly: ["/opt"] } }, "mounts.extraReadOnly"],
+      [{ sessions: { host: false } }, "sessions.host"],
+      [{ org: "/etc/org.json" }, "org"],
     ];
 
     cases.forEach(([layer, key]) => {
@@ -176,13 +166,8 @@ describe("validateLayer with the credential, egress, tls, image and org keys", (
   it("checks the parent proxy, grants, extra CA, image and org shapes", () => {
     const cases: Array<[unknown, string]> = [
       [{ egress: { parentProxy: "auto" } }, "egress.parentProxy must be one of env, none"],
-      [
-        { egress: { parentProxy: { url: "https://proxy.test" } } },
-        "egress.parentProxy.url must be an http URL",
-      ],
-      [{ egress: { parentProxy: {} } }, "egress.parentProxy.url is required"],
-      [{ egress: { grants: { maxHours: 0 } } }, "egress.grants.maxHours must be greater than 0"],
-      [{ egress: { grants: { permanent: "no" } } }, "egress.grants.permanent must be true or false"],
+      [{ egress: { parentProxy: { url: "http://proxy.test:3128" } } }, "egress.parentProxy must be a string"],
+      [{ egress: { grants: { enabled: true } } }, "egress.grants must be true or false"],
       [{ egress: { deny: ["https://x.test"] } }, "egress.deny[0] must be a host name or host:port"],
       [{ tls: { extraCa: [{ hostStore: false }] } }, "tls.extraCa[0].hostStore must be true"],
       [{ tls: { extraCa: [{ url: "https://ca.test" }] } }, "tls.extraCa[0] must set one of file, hostStore"],
@@ -203,13 +188,9 @@ describe("validateLayer with the credential, egress, tls, image and org keys", (
         { image: { dockerfile: "layer.Dockerfile" } },
         "image.dockerfile must be an absolute path or start with ~/",
       ],
-      [{ org: {} }, "org.source is required"],
-      [
-        { org: { source: "http://config.test/a.json" } },
-        "org.source must be an absolute path or an https URL",
-      ],
-      [{ org: { source: "/etc/org.json", sha256: "abc" } }, "org.sha256 must be 64 hex digits"],
-      [{ org: { source: "/etc/org.json", publicKey: "x" } }, "org.publicKey is not a known key"],
+      [{ org: { source: "/etc/org.json" } }, "org must be a string"],
+      [{ org: "https://config.test/a.json" }, "org must be an absolute path"],
+      [{ org: "~/org.json" }, "org must be an absolute path"],
       [{ image: { registry: { host: "r.test" } } }, "image.registry is not a known key"],
     ];
 
@@ -220,13 +201,12 @@ describe("validateLayer with the credential, egress, tls, image and org keys", (
 
   it("never puts a configured value into a message", () => {
     const layers = [
-      { egress: { parentProxy: { url: `http://user:${SECRET_VALUE}@proxy.test:3128` } } },
+      { egress: { parentProxy: `http://user:${SECRET_VALUE}@proxy.test:3128` } },
       { credentials: { rules: [rule({ placeholder: SECRET_VALUE })] } },
       { credentials: { rules: [rule({ header: "x-key", template: SECRET_VALUE })] } },
       { egress: { privateHosts: [`${SECRET_VALUE}:1`] } },
       { egress: { deny: [`${SECRET_VALUE}/path`] } },
-      { org: { source: SECRET_VALUE } },
-      { org: { source: "/etc/o.json", sha256: SECRET_VALUE } },
+      { org: SECRET_VALUE },
       { image: { npmGlobal: [SECRET_VALUE] } },
     ];
 

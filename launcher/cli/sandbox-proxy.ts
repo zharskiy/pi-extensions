@@ -20,8 +20,6 @@ export interface SandboxProxy {
   repoToken: string;
 }
 
-const CAP_RULE = "egress.cap";
-
 const hostPiOf = (host: HostSide) =>
   host.pi === undefined ? {} : { discoverCommand: mcpDiscoverCommand(host.pi), piVersion: host.pi.version };
 
@@ -32,7 +30,6 @@ const startProxy = async (deps: CliDeps, context: LaunchContext, host: HostSide)
       stateDir: context.stateDir,
       env: daemonEnv(deps.env),
       home: deps.home,
-      egressCap: context.effective.egressCap,
       piCommand: host.pi?.command ?? [],
       ...hostPiOf(host),
     });
@@ -96,12 +93,12 @@ const deniedTargets = (denials: DenialRecord[]) => [
   ...new Map(denials.map((denial) => [authorityOf(denial.host, denial.port), denial])).values(),
 ];
 
-const denialLine = (denial: DenialRecord) => {
+const denialLine = (grants: boolean) => (denial: DenialRecord) => {
   const target = authorityOf(denial.host, denial.port);
 
-  return denial.rule === CAP_RULE
-    ? `pi-sandbox: ${target} is outside the allowlist set by policy or org`
-    : `pi-sandbox: ${target} was blocked; run pi sandbox egress allow ${target}`;
+  return grants
+    ? `pi-sandbox: ${target} was blocked; run pi sandbox egress allow ${target}`
+    : `pi-sandbox: ${target} was blocked; egress grants are off, add it to egress.allow`;
 };
 
 export const reportDenials = async (
@@ -118,5 +115,5 @@ export const reportDenials = async (
     .denials(context.stateDir, proxy.policyHash, { repoHash: context.repoHash, since })
     .catch(() => []);
 
-  writeLines(deps.stderr, deniedTargets(denials).map(denialLine));
+  writeLines(deps.stderr, deniedTargets(denials).map(denialLine(context.effective.config.egress.grants)));
 };

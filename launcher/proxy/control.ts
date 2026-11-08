@@ -1,7 +1,7 @@
 import { type ChildProcess, type SpawnOptions, spawn as spawnProcess } from "node:child_process";
 import { closeSync, openSync } from "node:fs";
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import type { EgressCap, SandboxConfig } from "../config/index.ts";
+import type { SandboxConfig } from "../config/index.ts";
 import {
   type CommandRunner,
   createProcessRunner,
@@ -36,7 +36,6 @@ export interface EnsureProxyOptions {
   runner?: CommandRunner;
   port?: number;
   timeoutMs?: number;
-  egressCap?: EgressCap;
   piCommand?: string[];
   discoverCommand?: string[];
   piVersion?: string;
@@ -333,7 +332,6 @@ const replaceInstance = async (options: EnsureProxyOptions, files: InstanceFiles
   const daemonConfig: DaemonConfig<SandboxConfig> = {
     token: await instanceToken(files),
     config: options.config,
-    egressCap: options.egressCap ?? {},
     piCommand: options.piCommand ?? [],
     discoverCommand: options.discoverCommand ?? [],
     ...(options.piVersion === undefined ? {} : { piVersion: options.piVersion }),
@@ -355,7 +353,7 @@ const replaceInstance = async (options: EnsureProxyOptions, files: InstanceFiles
 };
 
 export const ensureProxyRunning = async (options: EnsureProxyOptions): Promise<ProxyInstance> => {
-  const hash = proxyPolicyHash(options.config, options.egressCap);
+  const hash = proxyPolicyHash(options.config);
   const files = stateLayout(options.stateDir).proxyInstance(hash);
 
   await openLauncherCa({ stateDir: options.stateDir, runner: options.runner ?? createProcessRunner() });

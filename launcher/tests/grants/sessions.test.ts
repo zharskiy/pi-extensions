@@ -2,7 +2,7 @@ import { mkdtemp, readdir, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { endSession, liveSessions, newLaunchId, registerSession } from "../../grants/index.ts";
+import { endSession, liveSessions, newSessionId, registerSession } from "../../grants/index.ts";
 
 const REPO = "1".repeat(64);
 
@@ -19,7 +19,7 @@ afterEach(async () => {
 });
 
 const entry = (pid = process.pid, repoHash = REPO) => ({
-  launchId: newLaunchId(),
+  sessionId: newSessionId(),
   pid,
   repoHash,
   startedAt: 1,
@@ -27,8 +27,8 @@ const entry = (pid = process.pid, repoHash = REPO) => ({
 
 describe("sessions", () => {
   it("makes 16 hex launch ids", () => {
-    expect(newLaunchId()).toMatch(/^[0-9a-f]{16}$/);
-    expect(newLaunchId()).not.toBe(newLaunchId());
+    expect(newSessionId()).toMatch(/^[0-9a-f]{16}$/);
+    expect(newSessionId()).not.toBe(newSessionId());
   });
 
   it("counts live sessions per repository and runs onLast only for the last one", async () => {
@@ -43,14 +43,14 @@ describe("sessions", () => {
     expect(
       await endSession(state.stateDir, {
         repoHash: REPO,
-        launchId: first.launchId,
+        sessionId: first.sessionId,
         onLast: async () => void calls.push("first"),
       }),
     ).toBe(1);
     expect(
       await endSession(state.stateDir, {
         repoHash: REPO,
-        launchId: second.launchId,
+        sessionId: second.sessionId,
         onLast: async () => void calls.push("second"),
       }),
     ).toBe(0);
@@ -64,8 +64,8 @@ describe("sessions", () => {
 
     await registerSession(state.stateDir, live);
 
-    expect((await liveSessions(state.stateDir, REPO)).map((session) => session.launchId)).toEqual([
-      live.launchId,
+    expect((await liveSessions(state.stateDir, REPO)).map((session) => session.sessionId)).toEqual([
+      live.sessionId,
     ]);
     expect(await liveSessions(state.stateDir, REPO, () => false)).toEqual([]);
 
@@ -73,7 +73,7 @@ describe("sessions", () => {
 
     await endSession(state.stateDir, {
       repoHash: REPO,
-      launchId: live.launchId,
+      sessionId: live.sessionId,
       onLast: async () => void calls.push("last"),
     });
 
@@ -95,11 +95,11 @@ describe("sessions", () => {
 
     await endSession(state.stateDir, {
       repoHash: REPO,
-      launchId: newLaunchId(),
+      sessionId: newSessionId(),
       onLast: async () => undefined,
     });
 
-    expect(await files()).toEqual([`${live.launchId}.json`]);
+    expect(await files()).toEqual([`${live.sessionId}.json`]);
   });
 
   it("lists sessions of every repository", async () => {

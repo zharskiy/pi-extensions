@@ -1,11 +1,6 @@
 import { constants } from "node:os";
 import type { Backend, ProxyRoute } from "../backend/index.ts";
-import {
-  configHash,
-  type EffectiveConfig,
-  loadEffectiveConfig,
-  type SandboxConfig,
-} from "../config/index.ts";
+import { type EffectiveConfig, loadEffectiveConfig, type SandboxConfig } from "../config/index.ts";
 import {
   buildContainerSpec,
   ensureContainer,
@@ -59,14 +54,7 @@ import {
 } from "./host-sessions.ts";
 import { syncSandboxMcpAuth } from "./mcp-auth-sync.ts";
 import { openSandboxProxy, reportDenials, type SandboxProxy } from "./sandbox-proxy.ts";
-import {
-  beginSession,
-  finishSession,
-  gitGuardOf,
-  type LaunchSession,
-  othersLive,
-  pruneEndedGrants,
-} from "./sessions.ts";
+import { beginSession, finishSession, gitGuardOf, type LaunchSession, othersLive } from "./sessions.ts";
 import { imagePiVersion, launcherVersion } from "./versions.ts";
 import { openLaunchBackend, reachableBackend } from "./vm-lifecycle.ts";
 import { ensureVmShares } from "./vm-shares.ts";
@@ -110,26 +98,18 @@ const PREPARATION_SIGNALS: NodeJS.Signals[] = ["SIGINT", "SIGTERM", "SIGHUP"];
 const SIGNAL_EXIT_BASE = 128;
 
 interface ContextOptions {
-  offline?: boolean;
   lenient?: boolean;
 }
 
 export const openContext = async (
   deps: CliDeps,
-  { offline = false, lenient = false }: ContextOptions = {},
+  { lenient = false }: ContextOptions = {},
 ): Promise<LaunchContext> => {
   const stateDir = pathsOf(deps).stateDir;
   const workspace = await discoverWorkspace(deps.cwd, deps.runner, stateLayout(stateDir).gitNoHooks, {
     lenient,
   });
-  const { notices, ...effective } = await loadEffectiveConfig({
-    repoRoot: workspace.repoRoot,
-    env: deps.env,
-    home: deps.home,
-    offline,
-  });
-
-  writeNotices(deps, notices);
+  const effective = await loadEffectiveConfig({ repoRoot: workspace.repoRoot, env: deps.env });
 
   return { workspace, effective, stateDir, repoHash: repoHash(workspace.repoRoot) };
 };
@@ -194,7 +174,7 @@ export const prepareImage = (
       }),
     }),
     inUse: async (digest) => {
-      const found = await findCurrentContainer(backend, context.workspace, digest, configHash(config));
+      const found = await findCurrentContainer(backend, context.workspace, digest);
 
       return found !== undefined && (found.state === "running" || !(await hostPiMoved(context, host.pi)));
     },
@@ -295,7 +275,7 @@ export const prepareContainer = async (
     gitLaunchNotices(context.workspace),
     launcherVersion(),
     planGitOverlay(context.workspace, gitGuardOf(deps, context)),
-    readyHostSessions(deps, context, backend, { sessions, launchId: session.launchId }),
+    readyHostSessions(deps, context, backend, { sessions, sessionId: session.sessionId }),
   ]);
 
   writeNotices(deps, gitNotices);
@@ -314,7 +294,6 @@ export const prepareContainer = async (
       gitOverlay,
       proxy: route,
       launcherVersion: version,
-      configHash: configHash(context.effective.config),
       renderDir: render.renderDir,
       trust: route === undefined ? undefined : host.trust,
       repoProxyToken: proxy?.repoToken,
@@ -327,7 +306,7 @@ export const prepareContainer = async (
   const { id, created, spec, notices } = await ensureContainer({
     backend,
     spec: wanted,
-    othersLive: () => othersLive(context.stateDir, context.repoHash, session.launchId),
+    othersLive: () => othersLive(context.stateDir, context.repoHash, session.sessionId),
     beforeStart: async () => specWith(await git.ready()),
     aroundStart: (start) => withGitPinLock(context.stateDir, context.workspace, start),
   });
@@ -336,8 +315,6 @@ export const prepareContainer = async (
 
   if (created) {
     await probeSessionsShare(backend, context, id, sessions);
-
-    await pruneEndedGrants(deps, context.stateDir);
   }
 
   cancelled?.throwIfAborted();
@@ -441,7 +418,7 @@ export const runSandboxPi = (deps: CliDeps, context: LaunchContext, sandbox: San
     containerId: sandbox.containerId,
     piArgs,
     env: forwardedEnv(context.effective.config.env.allow, deps.env),
-    launchId: sandbox.session.launchId,
+    sessionId: sandbox.session.sessionId,
     workspace: context.workspace,
     terminal: deps.terminal,
     signals: deps.signals,
@@ -486,7 +463,7 @@ export const launch = async (args: string[], deps: CliDeps) => {
   const piArgs = args.filter((arg) => arg !== NO_SANDBOX);
 
   if (piArgs.length !== args.length) {
-    const context = await openContext(deps, { offline: true, lenient: true });
+    const context = await openContext(deps, { lenient: true });
 
     checkWorkspaceRoots(deps, context);
 

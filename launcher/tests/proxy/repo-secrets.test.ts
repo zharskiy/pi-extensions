@@ -27,7 +27,6 @@ const setup = () => {
     policyHash: POLICY_HASH,
     staticRules: [],
     grantsEnabled: false,
-    cap: {},
   });
 
   return createRepoSecrets(runtime);

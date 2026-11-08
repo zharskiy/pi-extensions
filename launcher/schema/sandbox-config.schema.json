@@ -2,15 +2,12 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/zharskiy/pi-extensions/launcher/schema/sandbox-config.schema.json",
   "title": "pi sandbox config layer",
-  "description": "One layer of the pi sandbox config: the policy file, the org baseline, the user config or a project's .pi/sandbox.json. Security keys may only be tightened by lower layers.",
+  "description": "One layer of the pi sandbox config: the policy file, the org baseline, the user config or a project's .pi/sandbox.json. A key set by the policy or the org baseline is final; egress.deny and env.allow add up across layers.",
   "type": "object",
   "additionalProperties": false,
   "properties": {
     "$schema": {
       "type": "string"
-    },
-    "profile": {
-      "enum": ["enterprise", "team", "solo"]
     },
     "fallback": {
       "enum": ["refuse", "host"]
@@ -33,7 +30,7 @@
             "type": "string",
             "pattern": "^[a-z0-9][a-z0-9+.-]*(=[A-Za-z0-9.+:~-]+)?$"
           },
-          "description": "System packages added to an image layer. Not in a project config."
+          "description": "System packages added to an image layer."
         },
         "npmGlobal": {
           "type": "array",
@@ -41,34 +38,21 @@
             "type": "string",
             "pattern": "^(@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*@[0-9][0-9A-Za-z.+-]*$"
           },
-          "description": "npm packages (name@version) installed globally in an image layer. Not in a project config."
+          "description": "npm packages (name@version) installed globally in an image layer."
         },
         "dockerfile": {
           "type": "string",
           "pattern": "^(/|~$|~/)",
-          "description": "Dockerfile text appended to the image layer, without FROM. Not in a project config."
+          "description": "Dockerfile text appended to the image layer, without FROM."
         }
       },
-      "description": "image.reference, image.digest, image.packages, image.npmGlobal and image.dockerfile may not be set by a project config."
+      "description": "A project config may not set image keys."
     },
-    "gateway": {
+    "credentials": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "url": {
-          "type": "string",
-          "format": "uri",
-          "pattern": "^https://"
-        },
-        "authHeader": {
-          "type": "string",
-          "pattern": "^[A-Za-z0-9-]+$"
-        },
-        "placeholder": {
-          "type": "string",
-          "minLength": 1
-        },
-        "providers": {
+        "rules": {
           "type": "array",
           "items": {
             "type": "object",
@@ -76,759 +60,169 @@
             "properties": {
               "id": {
                 "type": "string",
-                "minLength": 1
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
               },
-              "apiKind": {
+              "host": {
                 "type": "string",
-                "minLength": 1,
-                "description": "The `api` value pi expects for this provider in its models.json, written through unchanged."
+                "pattern": "^[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)*$"
+              },
+              "port": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 65535
+              },
+              "pathPrefix": {
+                "type": "string",
+                "pattern": "^/"
+              },
+              "placeholder": {
+                "type": "string",
+                "pattern": "^pi-sandbox-.+"
+              },
+              "header": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9-]+$"
+              },
+              "template": {
+                "type": "string",
+                "pattern": "\\{secret\\}"
+              },
+              "transform": {
+                "description": "applied to the resolved secret before the template",
+                "enum": ["urlUserinfoBase64"]
+              },
+              "secret": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "env": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                      }
+                    },
+                    "required": ["env"],
+                    "description": "An environment variable of the launcher, read at launch and handed to the proxy in memory."
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "file": {
+                        "type": "string",
+                        "pattern": "^(/|~$|~/)"
+                      },
+                      "pointer": {
+                        "type": "string",
+                        "pattern": "^(/([^~/]|~[01])*)+$"
+                      }
+                    },
+                    "required": ["file", "pointer"],
+                    "description": "A JSON pointer into a host file."
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "command": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "ttlSeconds": {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      }
+                    },
+                    "required": ["command"],
+                    "description": "A host command; stdout trimmed, or JSON { token, expiresAt }. Cached for ttlSeconds (default 300)."
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "piAuth": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "bearer": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": ["piAuth"],
+                    "description": "The host pi credential of this provider id."
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "mcpOAuth": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "server": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "url": {
+                            "type": "string",
+                            "format": "uri",
+                            "pattern": "^https://"
+                          }
+                        },
+                        "required": ["server", "url"]
+                      }
+                    },
+                    "required": ["mcpOAuth"],
+                    "description": "The OAuth token of an MCP server signed in with pi mcp login."
+                  }
+                ]
               }
             },
-            "required": ["id", "apiKind"]
-          }
-        }
-      },
-      "required": ["url", "authHeader", "placeholder", "providers"]
-    },
-    "credentials": {
-      "oneOf": [
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "kind": {
-              "const": "static"
-            },
-            "envVar": {
-              "type": "string",
-              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
-            },
-            "keychainService": {
-              "type": "string",
-              "minLength": 1
-            },
-            "rules": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "additionalProperties": false,
-                "properties": {
-                  "id": {
-                    "type": "string",
-                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
-                  },
-                  "host": {
-                    "type": "string",
-                    "pattern": "^[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)*$"
-                  },
-                  "port": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": 65535
-                  },
-                  "pathPrefix": {
-                    "type": "string",
-                    "pattern": "^/"
-                  },
-                  "placeholder": {
-                    "type": "string",
-                    "pattern": "^pi-sandbox-.+"
-                  },
-                  "header": {
-                    "type": "string",
-                    "pattern": "^[A-Za-z0-9-]+$"
-                  },
-                  "template": {
-                    "type": "string",
-                    "pattern": "\\{secret\\}"
-                  },
-                  "transform": {
-                    "description": "applied to the resolved secret before the template",
-                    "enum": ["urlUserinfoBase64"]
-                  },
-                  "secret": {
-                    "oneOf": [
-                      {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "properties": {
-                          "env": {
-                            "type": "string",
-                            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
-                          }
-                        },
-                        "required": ["env"],
-                        "description": "An environment variable of the launcher, read at launch and handed to the proxy in memory."
-                      },
-                      {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "properties": {
-                          "file": {
-                            "type": "string",
-                            "pattern": "^(/|~$|~/)"
-                          },
-                          "pointer": {
-                            "type": "string",
-                            "pattern": "^(/([^~/]|~[01])*)+$"
-                          }
-                        },
-                        "required": ["file", "pointer"],
-                        "description": "A JSON pointer into a host file."
-                      },
-                      {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "properties": {
-                          "command": {
-                            "type": "array",
-                            "minItems": 1,
-                            "items": {
-                              "type": "string",
-                              "minLength": 1
-                            }
-                          },
-                          "ttlSeconds": {
-                            "type": "number",
-                            "exclusiveMinimum": 0
-                          }
-                        },
-                        "required": ["command"],
-                        "description": "A host command; stdout trimmed, or JSON { token, expiresAt }. Cached for ttlSeconds (default 300)."
-                      },
-                      {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "properties": {
-                          "piAuth": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "bearer": {
-                            "type": "boolean"
-                          }
-                        },
-                        "required": ["piAuth"],
-                        "description": "The host pi credential of this provider id."
-                      },
-                      {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "properties": {
-                          "mcpOAuth": {
-                            "type": "object",
-                            "additionalProperties": false,
-                            "properties": {
-                              "server": {
-                                "type": "string",
-                                "minLength": 1
-                              },
-                              "url": {
-                                "type": "string",
-                                "format": "uri",
-                                "pattern": "^https://"
-                              }
-                            },
-                            "required": ["server", "url"]
-                          }
-                        },
-                        "required": ["mcpOAuth"],
-                        "description": "The OAuth token of an MCP server signed in with pi mcp login."
-                      }
-                    ]
-                  }
-                },
-                "required": ["id", "host", "secret"],
-                "anyOf": [
-                  {
-                    "required": ["placeholder"]
-                  },
-                  {
-                    "required": ["header"]
-                  }
-                ]
+            "required": ["id", "host", "secret"],
+            "anyOf": [
+              {
+                "required": ["placeholder"]
               },
-              "description": "Credential rules. Not in a project config; a lower layer may only drop rules set above."
-            },
-            "derive": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "enabled": {
-                  "type": "boolean"
-                },
-                "hosts": {
-                  "type": "array",
-                  "items": {
-                    "type": "string",
-                    "pattern": "^(\\*\\.)?[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)*$"
-                  }
-                }
-              },
-              "description": "Rules and hosts derived from the host pi files. Not in a project config; enabled can only turn off below, hosts only narrow."
-            },
-            "vault": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "enabled": {
-                  "type": "boolean"
-                }
-              },
-              "description": "MCP token vault: sign in to OAuth MCP servers from inside the sandbox while the tokens stay on the host. Default true, effective only with credentials.derive.enabled. Not in a project config; enabled can only turn off below."
-            }
+              {
+                "required": ["header"]
+              }
+            ]
           },
-          "required": ["kind"]
+          "description": "Credential rules. Not in a project config."
         },
-        {
+        "derive": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "kind": {
-              "const": "host-pi-auth"
+            "enabled": {
+              "type": "boolean"
             },
-            "authFile": {
-              "type": "string",
-              "pattern": "^(/|~$|~/)"
-            },
-            "rules": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "additionalProperties": false,
-                "properties": {
-                  "id": {
-                    "type": "string",
-                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
-                  },
-                  "host": {
-                    "type": "string",
-                    "pattern": "^[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)*$"
-                  },
-                  "port": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": 65535
-                  },
-                  "pathPrefix": {
-                    "type": "string",
-                    "pattern": "^/"
-                  },
-                  "placeholder": {
-                    "type": "string",
-                    "pattern": "^pi-sandbox-.+"
-                  },
-                  "header": {
-                    "type": "string",
-                    "pattern": "^[A-Za-z0-9-]+$"
-                  },
-                  "template": {
-                    "type": "string",
-                    "pattern": "\\{secret\\}"
-                  },
-                  "transform": {
-                    "description": "applied to the resolved secret before the template",
-                    "enum": ["urlUserinfoBase64"]
-                  },
-                  "secret": {
-                    "oneOf": [
-                      {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "properties": {
-                          "env": {
-                            "type": "string",
-                            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
-                          }
-                        },
-                        "required": ["env"],
-                        "description": "An environment variable of the launcher, read at launch and handed to the proxy in memory."
-                      },
-                      {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "properties": {
-                          "file": {
-                            "type": "string",
-                            "pattern": "^(/|~$|~/)"
-                          },
-                          "pointer": {
-                            "type": "string",
-                            "pattern": "^(/([^~/]|~[01])*)+$"
-                          }
-                        },
-                        "required": ["file", "pointer"],
-                        "description": "A JSON pointer into a host file."
-                      },
-                      {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "properties": {
-                          "command": {
-                            "type": "array",
-                            "minItems": 1,
-                            "items": {
-                              "type": "string",
-                              "minLength": 1
-                            }
-                          },
-                          "ttlSeconds": {
-                            "type": "number",
-                            "exclusiveMinimum": 0
-                          }
-                        },
-                        "required": ["command"],
-                        "description": "A host command; stdout trimmed, or JSON { token, expiresAt }. Cached for ttlSeconds (default 300)."
-                      },
-                      {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "properties": {
-                          "piAuth": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "bearer": {
-                            "type": "boolean"
-                          }
-                        },
-                        "required": ["piAuth"],
-                        "description": "The host pi credential of this provider id."
-                      },
-                      {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "properties": {
-                          "mcpOAuth": {
-                            "type": "object",
-                            "additionalProperties": false,
-                            "properties": {
-                              "server": {
-                                "type": "string",
-                                "minLength": 1
-                              },
-                              "url": {
-                                "type": "string",
-                                "format": "uri",
-                                "pattern": "^https://"
-                              }
-                            },
-                            "required": ["server", "url"]
-                          }
-                        },
-                        "required": ["mcpOAuth"],
-                        "description": "The OAuth token of an MCP server signed in with pi mcp login."
-                      }
-                    ]
-                  }
-                },
-                "required": ["id", "host", "secret"],
-                "anyOf": [
-                  {
-                    "required": ["placeholder"]
-                  },
-                  {
-                    "required": ["header"]
-                  }
-                ]
-              },
-              "description": "Credential rules. Not in a project config; a lower layer may only drop rules set above."
-            },
-            "derive": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "enabled": {
-                  "type": "boolean"
-                },
-                "hosts": {
-                  "type": "array",
-                  "items": {
-                    "type": "string",
-                    "pattern": "^(\\*\\.)?[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)*$"
-                  }
-                }
-              },
-              "description": "Rules and hosts derived from the host pi files. Not in a project config; enabled can only turn off below, hosts only narrow."
-            },
-            "vault": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "enabled": {
-                  "type": "boolean"
-                }
-              },
-              "description": "MCP token vault: sign in to OAuth MCP servers from inside the sandbox while the tokens stay on the host. Default true, effective only with credentials.derive.enabled. Not in a project config; enabled can only turn off below."
-            }
-          },
-          "required": ["kind"]
-        },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "kind": {
-              "const": "sso"
-            },
-            "command": {
+            "hosts": {
               "type": "array",
               "items": {
                 "type": "string",
-                "minLength": 1
+                "pattern": "^(\\*\\.)?[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)*$"
               }
-            },
-            "rules": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "additionalProperties": false,
-                "properties": {
-                  "id": {
-                    "type": "string",
-                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
-                  },
-                  "host": {
-                    "type": "string",
-                    "pattern": "^[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)*$"
-                  },
-                  "port": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": 65535
-                  },
-                  "pathPrefix": {
-                    "type": "string",
-                    "pattern": "^/"
-                  },
-                  "placeholder": {
-                    "type": "string",
-                    "pattern": "^pi-sandbox-.+"
-                  },
-                  "header": {
-                    "type": "string",
-                    "pattern": "^[A-Za-z0-9-]+$"
-                  },
-                  "template": {
-                    "type": "string",
-                    "pattern": "\\{secret\\}"
-                  },
-                  "transform": {
-                    "description": "applied to the resolved secret before the template",
-                    "enum": ["urlUserinfoBase64"]
-                  },
-                  "secret": {
-                    "oneOf": [
-                      {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "properties": {
-                          "env": {
-                            "type": "string",
-                            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
-                          }
-                        },
-                        "required": ["env"],
-                        "description": "An environment variable of the launcher, read at launch and handed to the proxy in memory."
-                      },
-                      {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "properties": {
-                          "file": {
-                            "type": "string",
-                            "pattern": "^(/|~$|~/)"
-                          },
-                          "pointer": {
-                            "type": "string",
-                            "pattern": "^(/([^~/]|~[01])*)+$"
-                          }
-                        },
-                        "required": ["file", "pointer"],
-                        "description": "A JSON pointer into a host file."
-                      },
-                      {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "properties": {
-                          "command": {
-                            "type": "array",
-                            "minItems": 1,
-                            "items": {
-                              "type": "string",
-                              "minLength": 1
-                            }
-                          },
-                          "ttlSeconds": {
-                            "type": "number",
-                            "exclusiveMinimum": 0
-                          }
-                        },
-                        "required": ["command"],
-                        "description": "A host command; stdout trimmed, or JSON { token, expiresAt }. Cached for ttlSeconds (default 300)."
-                      },
-                      {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "properties": {
-                          "piAuth": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "bearer": {
-                            "type": "boolean"
-                          }
-                        },
-                        "required": ["piAuth"],
-                        "description": "The host pi credential of this provider id."
-                      },
-                      {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "properties": {
-                          "mcpOAuth": {
-                            "type": "object",
-                            "additionalProperties": false,
-                            "properties": {
-                              "server": {
-                                "type": "string",
-                                "minLength": 1
-                              },
-                              "url": {
-                                "type": "string",
-                                "format": "uri",
-                                "pattern": "^https://"
-                              }
-                            },
-                            "required": ["server", "url"]
-                          }
-                        },
-                        "required": ["mcpOAuth"],
-                        "description": "The OAuth token of an MCP server signed in with pi mcp login."
-                      }
-                    ]
-                  }
-                },
-                "required": ["id", "host", "secret"],
-                "anyOf": [
-                  {
-                    "required": ["placeholder"]
-                  },
-                  {
-                    "required": ["header"]
-                  }
-                ]
-              },
-              "description": "Credential rules. Not in a project config; a lower layer may only drop rules set above."
-            },
-            "derive": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "enabled": {
-                  "type": "boolean"
-                },
-                "hosts": {
-                  "type": "array",
-                  "items": {
-                    "type": "string",
-                    "pattern": "^(\\*\\.)?[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)*$"
-                  }
-                }
-              },
-              "description": "Rules and hosts derived from the host pi files. Not in a project config; enabled can only turn off below, hosts only narrow."
-            },
-            "vault": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "enabled": {
-                  "type": "boolean"
-                }
-              },
-              "description": "MCP token vault: sign in to OAuth MCP servers from inside the sandbox while the tokens stay on the host. Default true, effective only with credentials.derive.enabled. Not in a project config; enabled can only turn off below."
             }
           },
-          "required": ["kind", "command"]
+          "description": "Rules and hosts derived from the host pi files. Not in a project config."
         },
-        {
+        "vault": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "rules": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "additionalProperties": false,
-                "properties": {
-                  "id": {
-                    "type": "string",
-                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
-                  },
-                  "host": {
-                    "type": "string",
-                    "pattern": "^[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)*$"
-                  },
-                  "port": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": 65535
-                  },
-                  "pathPrefix": {
-                    "type": "string",
-                    "pattern": "^/"
-                  },
-                  "placeholder": {
-                    "type": "string",
-                    "pattern": "^pi-sandbox-.+"
-                  },
-                  "header": {
-                    "type": "string",
-                    "pattern": "^[A-Za-z0-9-]+$"
-                  },
-                  "template": {
-                    "type": "string",
-                    "pattern": "\\{secret\\}"
-                  },
-                  "transform": {
-                    "description": "applied to the resolved secret before the template",
-                    "enum": ["urlUserinfoBase64"]
-                  },
-                  "secret": {
-                    "oneOf": [
-                      {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "properties": {
-                          "env": {
-                            "type": "string",
-                            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
-                          }
-                        },
-                        "required": ["env"],
-                        "description": "An environment variable of the launcher, read at launch and handed to the proxy in memory."
-                      },
-                      {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "properties": {
-                          "file": {
-                            "type": "string",
-                            "pattern": "^(/|~$|~/)"
-                          },
-                          "pointer": {
-                            "type": "string",
-                            "pattern": "^(/([^~/]|~[01])*)+$"
-                          }
-                        },
-                        "required": ["file", "pointer"],
-                        "description": "A JSON pointer into a host file."
-                      },
-                      {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "properties": {
-                          "command": {
-                            "type": "array",
-                            "minItems": 1,
-                            "items": {
-                              "type": "string",
-                              "minLength": 1
-                            }
-                          },
-                          "ttlSeconds": {
-                            "type": "number",
-                            "exclusiveMinimum": 0
-                          }
-                        },
-                        "required": ["command"],
-                        "description": "A host command; stdout trimmed, or JSON { token, expiresAt }. Cached for ttlSeconds (default 300)."
-                      },
-                      {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "properties": {
-                          "piAuth": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "bearer": {
-                            "type": "boolean"
-                          }
-                        },
-                        "required": ["piAuth"],
-                        "description": "The host pi credential of this provider id."
-                      },
-                      {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "properties": {
-                          "mcpOAuth": {
-                            "type": "object",
-                            "additionalProperties": false,
-                            "properties": {
-                              "server": {
-                                "type": "string",
-                                "minLength": 1
-                              },
-                              "url": {
-                                "type": "string",
-                                "format": "uri",
-                                "pattern": "^https://"
-                              }
-                            },
-                            "required": ["server", "url"]
-                          }
-                        },
-                        "required": ["mcpOAuth"],
-                        "description": "The OAuth token of an MCP server signed in with pi mcp login."
-                      }
-                    ]
-                  }
-                },
-                "required": ["id", "host", "secret"],
-                "anyOf": [
-                  {
-                    "required": ["placeholder"]
-                  },
-                  {
-                    "required": ["header"]
-                  }
-                ]
-              },
-              "description": "Credential rules. Not in a project config; a lower layer may only drop rules set above."
-            },
-            "derive": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "enabled": {
-                  "type": "boolean"
-                },
-                "hosts": {
-                  "type": "array",
-                  "items": {
-                    "type": "string",
-                    "pattern": "^(\\*\\.)?[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)*$"
-                  }
-                }
-              },
-              "description": "Rules and hosts derived from the host pi files. Not in a project config; enabled can only turn off below, hosts only narrow."
-            },
-            "vault": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "enabled": {
-                  "type": "boolean"
-                }
-              },
-              "description": "MCP token vault: sign in to OAuth MCP servers from inside the sandbox while the tokens stay on the host. Default true, effective only with credentials.derive.enabled. Not in a project config; enabled can only turn off below."
+            "enabled": {
+              "type": "boolean"
             }
           },
-          "description": "Credential rules without a legacy credential source."
+          "description": "MCP token vault: sign in to OAuth MCP servers from inside the sandbox while the tokens stay on the host. Default true, effective only with credentials.derive.enabled. Not in a project config."
         }
-      ]
+      }
     },
     "egress": {
       "type": "object",
@@ -840,16 +234,6 @@
             "type": "string",
             "pattern": "^(\\*\\.)?[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)*(:[0-9]{1,5})?$"
           }
-        },
-        "mcpHosts": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "pattern": "^(\\*\\.)?[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)*(:[0-9]{1,5})?$"
-          }
-        },
-        "denyPrivateAddresses": {
-          "const": true
         },
         "deny": {
           "type": "array",
@@ -865,142 +249,15 @@
             "type": "string",
             "pattern": "^(\\*\\.)?[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)*$"
           },
-          "description": "Names that may resolve to private addresses; never IP literals or loopback. Not in a project config; only narrows below."
+          "description": "Names that may resolve to private addresses, such as a private gateway host; never IP literals or loopback. Not in a project config."
         },
         "parentProxy": {
-          "oneOf": [
-            {
-              "enum": ["env", "none"]
-            },
-            {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "url": {
-                  "type": "string",
-                  "format": "uri",
-                  "pattern": "^http://"
-                },
-                "noProxy": {
-                  "type": "array",
-                  "items": {
-                    "type": "string",
-                    "pattern": "^\\.?(\\*\\.)?[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)*(:[0-9]{1,5})?$"
-                  }
-                },
-                "auth": {
-                  "oneOf": [
-                    {
-                      "type": "object",
-                      "additionalProperties": false,
-                      "properties": {
-                        "env": {
-                          "type": "string",
-                          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
-                        }
-                      },
-                      "required": ["env"],
-                      "description": "An environment variable of the launcher, read at launch and handed to the proxy in memory."
-                    },
-                    {
-                      "type": "object",
-                      "additionalProperties": false,
-                      "properties": {
-                        "file": {
-                          "type": "string",
-                          "pattern": "^(/|~$|~/)"
-                        },
-                        "pointer": {
-                          "type": "string",
-                          "pattern": "^(/([^~/]|~[01])*)+$"
-                        }
-                      },
-                      "required": ["file", "pointer"],
-                      "description": "A JSON pointer into a host file."
-                    },
-                    {
-                      "type": "object",
-                      "additionalProperties": false,
-                      "properties": {
-                        "command": {
-                          "type": "array",
-                          "minItems": 1,
-                          "items": {
-                            "type": "string",
-                            "minLength": 1
-                          }
-                        },
-                        "ttlSeconds": {
-                          "type": "number",
-                          "exclusiveMinimum": 0
-                        }
-                      },
-                      "required": ["command"],
-                      "description": "A host command; stdout trimmed, or JSON { token, expiresAt }. Cached for ttlSeconds (default 300)."
-                    },
-                    {
-                      "type": "object",
-                      "additionalProperties": false,
-                      "properties": {
-                        "piAuth": {
-                          "type": "string",
-                          "minLength": 1
-                        },
-                        "bearer": {
-                          "type": "boolean"
-                        }
-                      },
-                      "required": ["piAuth"],
-                      "description": "The host pi credential of this provider id."
-                    },
-                    {
-                      "type": "object",
-                      "additionalProperties": false,
-                      "properties": {
-                        "mcpOAuth": {
-                          "type": "object",
-                          "additionalProperties": false,
-                          "properties": {
-                            "server": {
-                              "type": "string",
-                              "minLength": 1
-                            },
-                            "url": {
-                              "type": "string",
-                              "format": "uri",
-                              "pattern": "^https://"
-                            }
-                          },
-                          "required": ["server", "url"]
-                        }
-                      },
-                      "required": ["mcpOAuth"],
-                      "description": "The OAuth token of an MCP server signed in with pi mcp login."
-                    }
-                  ]
-                }
-              },
-              "required": ["url"]
-            }
-          ],
-          "description": "Upstream proxy: env (host HTTPS_PROXY, the default), none, or a URL. Not in a project config; fixed when set above."
+          "enum": ["env", "none"],
+          "description": "Upstream proxy: env (host HTTPS_PROXY, the default) or none. Not in a project config."
         },
         "grants": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "enabled": {
-              "type": "boolean"
-            },
-            "maxHours": {
-              "type": "number",
-              "exclusiveMinimum": 0
-            },
-            "permanent": {
-              "type": "boolean"
-            }
-          },
-          "description": "Limits for pi sandbox egress allow. Not in a project config; can only turn off or shrink below."
+          "type": "boolean",
+          "description": "Whether pi sandbox egress allow may add hosts. Default true. Not in a project config."
         }
       }
     },
@@ -1047,11 +304,11 @@
             "type": "string",
             "pattern": "^~/(?!(\\.pi|\\.ssh|\\.gnupg|\\.aws|\\.docker|\\.colima|\\.kube|\\.config|\\.local/bin)(/|$))(?!(.*/)?\\.{1,2}(/|$))[^/]+(/[^/]+)*/?$"
           },
-          "description": "Directories under ~ kept in one volume per user and shared by every repository, mounted read-write at the same path in the container. Not ~/.pi, ~/.ssh, ~/.gnupg, ~/.aws, ~/.docker, ~/.colima, ~/.kube, ~/.config or ~/.local/bin, no nested entries. Not in a project config; can only lose entries below."
+          "description": "Directories under ~ kept in one volume per user and shared by every repository, mounted read-write at the same path in the container. Not ~/.pi, ~/.ssh, ~/.gnupg, ~/.aws, ~/.docker, ~/.colima, ~/.kube, ~/.config or ~/.local/bin, no nested entries. Not in a project config."
         },
         "autoNodeModules": {
           "type": "boolean",
-          "description": "Give every folder with a lockfile its own node_modules volume so the sandbox never shares node_modules with the host. On by default; the lowest layer that sets it wins."
+          "description": "Give every folder with a lockfile its own node_modules volume so the sandbox never shares node_modules with the host. On by default."
         }
       }
     },
@@ -1084,16 +341,6 @@
       },
       "description": "env.allow may not be set by a project config."
     },
-    "ssh": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "agent": {
-          "type": "boolean",
-          "description": "Forward the host ssh agent into the container. Off by default; a project config cannot turn it on."
-        }
-      }
-    },
     "resources": {
       "type": "object",
       "additionalProperties": false,
@@ -1114,7 +361,7 @@
       "properties": {
         "host": {
           "type": "boolean",
-          "description": "Keep this repository's pi sessions in host pi's own session directory, so host pi lists them. On by default; policy or org may turn it off and lock it, a project config may not set it."
+          "description": "Keep this repository's pi sessions in host pi's own session directory, so host pi lists them. On by default; a project config may not set it."
         }
       }
     },
@@ -1151,27 +398,12 @@
           }
         }
       },
-      "description": "Extra CA certificates trusted by the proxy, the container and image builds. Not in a project config; only narrows below."
+      "description": "Extra CA certificates trusted by the proxy, the container and image builds. Not in a project config."
     },
     "org": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "source": {
-          "type": "string",
-          "pattern": "^(/|~$|~/|https://)"
-        },
-        "sha256": {
-          "type": "string",
-          "pattern": "^[0-9a-f]{64}$"
-        },
-        "refreshHours": {
-          "type": "number",
-          "exclusiveMinimum": 0
-        }
-      },
-      "required": ["source"],
-      "description": "Organisation baseline layer (a file path or an https URL), merged between policy and user. Only in the policy or user config."
+      "type": "string",
+      "pattern": "^/",
+      "description": "Absolute path of the organisation baseline file, merged between policy and user. Only in the policy or user config."
     }
   }
 }

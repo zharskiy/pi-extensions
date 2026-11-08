@@ -280,7 +280,7 @@ describe("the launch shares a repository the VM does not see", () => {
     const { home, stateDir, repoRoot } = context.paths;
 
     await registerSession(context.harness.stateDir, {
-      launchId: "00000000000000dd",
+      sessionId: "00000000000000dd",
       pid: process.pid,
       repoHash: sha256Hex("/elsewhere"),
       startedAt: 1,
@@ -378,7 +378,7 @@ describe("the launch shares a repository the VM does not see", () => {
     const context = await launchWith({ config: { fallback: "refuse" } });
 
     await registerSession(context.harness.stateDir, {
-      launchId: "00000000000000ee",
+      sessionId: "00000000000000ee",
       pid: process.pid,
       repoHash: sha256Hex("/elsewhere"),
       startedAt: 1,

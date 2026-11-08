@@ -12,7 +12,7 @@ import { createDenialPages } from "./denial-page.ts";
 import { createDenials, isHinted } from "./denials.ts";
 import { createDialer, type DialAccess, type Dialer } from "./dial.ts";
 import { createInterceptor } from "./intercept.ts";
-import { decideConnect, type EgressPolicy, isGatewayHost } from "./policy.ts";
+import { decideConnect, type EgressPolicy } from "./policy.ts";
 import { PROXY_AGENT, rawReply, sendJson } from "./replies.ts";
 import { isRuleHost } from "./rules.ts";
 import type { ProxyRuntime } from "./runtime.ts";
@@ -29,7 +29,6 @@ export interface ProxyServerOptions {
   controlToken: string;
   runtime: ProxyRuntime;
   resolver: SecretResolver;
-  gateway?: { host: string; port: number; url: string };
   privateHosts?: string[];
   ca?: {
     leaf(host: string): Promise<LeafCertificate>;
@@ -86,7 +85,6 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
   const user = currentUser();
   const sockets = new Set<Socket>();
   const helloTimeoutMs = options.helloTimeoutMs ?? DEFAULT_HELLO_TIMEOUT_MS;
-  const gatewayPath = options.gateway === undefined ? undefined : new URL(options.gateway.url).pathname;
 
   const track = (socket: Socket) => {
     sockets.add(socket);
@@ -119,23 +117,15 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
       : createDenialPages({ leaf: (host) => ca.ephemeralLeaf(host), ...options.denialPages });
   const denials = createDenials(record, pages);
 
-  const accessOf = (host: string): DialAccess => {
-    const isGateway = options.gateway !== undefined && normalizeHost(options.gateway.host) === host;
-    const isPrivate = (options.privateHosts ?? []).some((pattern) =>
-      matchesPattern(host, normalizeHost(pattern)),
-    );
-
-    return isGateway || isPrivate ? "private" : "public";
-  };
-
-  const isGatewayTarget = (host: string, port: number) => isGatewayHost(host, port, options.policy);
+  const accessOf = (host: string): DialAccess =>
+    (options.privateHosts ?? []).some((pattern) => matchesPattern(host, normalizeHost(pattern)))
+      ? "private"
+      : "public";
 
   const intercept = createInterceptor({
     ca,
     leafRecheckMs: options.leafRecheckMs ?? DEFAULT_LEAF_RECHECK_MS,
     helloTimeoutMs,
-    gatewayPath,
-    isGatewayTarget,
     accessOf,
     serve: terminator.serve,
     record,
@@ -173,7 +163,6 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
   };
 
   const isTerminated = async (host: string, port: number, repoHash: string) =>
-    isGatewayTarget(host, port) ||
     isRuleHost(await options.runtime.rules(repoHash), host, port) ||
     (await options.vault?.isVaultHost(host, port, repoHash)) === true;
 

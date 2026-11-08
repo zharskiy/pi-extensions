@@ -33,14 +33,14 @@ const specInput = (overrides: Partial<ContainerSpecInput> = {}): ContainerSpecIn
     USER: "dev",
     TERM: "xterm-256color",
     LANG: "en_US.UTF-8",
-    GATEWAY_API_KEY: "real-secret-value-1234567890",
+    LLM_API_KEY: "real-secret-value-1234567890",
     HOME: "/Users/dev",
   },
   hostUid: 501,
   stateDir: "/state",
   proxy,
+  gitOverlay: { selfBinds: [], readOnlyDirs: [], readOnlyFiles: [] },
   launcherVersion: "0.4.0",
-  configHash: "cfg123",
   ...overrides,
 });
 
@@ -67,13 +67,12 @@ describe("buildContainerSpec", () => {
     expect(buildContainerSpec(specInput()).name).toBe(`pi-sandbox-${repoHash.slice(0, 12)}`);
   });
 
-  it("labels the container with repo, image, config, proxy policy and launcher identity", () => {
+  it("labels the container with repo, image, proxy policy and launcher identity", () => {
     expect(buildContainerSpec(specInput()).labels).toMatchObject({
       "pi-sandbox.repo-hash": repoHash,
       "pi-sandbox.repo-root": repoRoot,
       "pi-sandbox.image-digest": "sha256:abc",
       "pi-sandbox.image-reference": "ghcr.io/zharskiy/pi-sandbox:0.4.0",
-      "pi-sandbox.config-hash": "cfg123",
       "pi-sandbox.proxy-policy-hash": "policy-1",
       "pi-sandbox.version": "0.4.0",
     });
@@ -385,8 +384,8 @@ describe("buildContainerSpec", () => {
   });
 
   it("keeps the launch id out of the spec and its hash", () => {
-    const first = buildContainerSpec(specInput({ launchId: "aaaaaaaaaaaaaaaa" }));
-    const second = buildContainerSpec(specInput({ launchId: "bbbbbbbbbbbbbbbb" }));
+    const first = buildContainerSpec(specInput({ sessionId: "aaaaaaaaaaaaaaaa" }));
+    const second = buildContainerSpec(specInput({ sessionId: "bbbbbbbbbbbbbbbb" }));
 
     expect(second).toEqual(first);
     expect(JSON.stringify(first)).not.toContain("aaaaaaaaaaaaaaaa");
@@ -444,16 +443,6 @@ describe("buildContainerSpec", () => {
       TERM: "xterm",
       LANG: "C",
     });
-  });
-
-  it("asks for the ssh agent only when ssh.agent is on", () => {
-    const on = sandboxConfig({ ssh: { agent: true } });
-
-    expect(buildContainerSpec(specInput()).sshAgent).toBeUndefined();
-    expect(buildContainerSpec(specInput({ config: on })).sshAgent).toEqual({
-      guestSocket: "/run/host-ssh-agent.sock",
-    });
-    expect(buildContainerSpec(specInput({ config: on })).env.SSH_AUTH_SOCK).toBeUndefined();
   });
 
   it("works in the repo root and carries the configured resources", () => {

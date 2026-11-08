@@ -181,7 +181,7 @@ describe("pi launch with host sessions", () => {
     });
 
     await registerSession(harness.stateDir, {
-      launchId: "0123456789abcdef",
+      sessionId: "0123456789abcdef",
       pid: process.pid,
       repoHash: sha256Hex(harness.repoRoot),
       startedAt: 1,
@@ -203,7 +203,7 @@ describe("pi launch with host sessions", () => {
     await symlink("/etc/passwd", join(dir, "early.jsonl"));
 
     await registerSession(harness.stateDir, {
-      launchId: "0123456789abcdef",
+      sessionId: "0123456789abcdef",
       pid: process.pid,
       repoHash: sha256Hex(harness.repoRoot),
       startedAt: 1,
@@ -398,7 +398,7 @@ describe("pi --no-sandbox with host sessions", () => {
     await symlink("/etc/passwd", join(dir, "run", "agents", "leak.jsonl"));
 
     await registerSession(harness.stateDir, {
-      launchId: "0123456789abcdef",
+      sessionId: "0123456789abcdef",
       pid: process.pid,
       repoHash: sha256Hex(harness.repoRoot),
       startedAt: 1,

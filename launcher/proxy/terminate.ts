@@ -31,7 +31,6 @@ export interface TerminatedTarget {
   port: number;
   repoHash: string;
   access: DialAccess;
-  pathPrefix?: string;
 }
 
 export interface TerminatorOptions {
@@ -116,8 +115,7 @@ const headerObject = (pairs: HeaderPair[], host: string) =>
     { host },
   );
 
-const upstreamPath = (prefix: string | undefined, path: string | undefined) =>
-  `${(prefix ?? "").replace(/\/$/, "")}${path ?? "/"}`;
+const upstreamPath = (path: string | undefined) => path ?? "/";
 
 const statusBlock = (upstream: IncomingMessage, pairs: HeaderPair[]) => {
   const lines = pairs.map(([name, value]) => `${name}: ${value}`);
@@ -191,7 +189,7 @@ const rawError = (client: Duplex, status: string, error: string) => {
 };
 
 const absoluteUrl = (target: TerminatedTarget, path: string) =>
-  `https://${authorityOf(target.host, target.port)}${upstreamPath(target.pathPrefix, path)}`;
+  `https://${authorityOf(target.host, target.port)}${upstreamPath(path)}`;
 
 const poolKey = (target: TerminatedTarget) =>
   `${target.repoHash}|${target.host}|${target.port}|${target.access}`;
@@ -313,7 +311,7 @@ export const createTerminator = (options: TerminatorOptions) => {
     hostname: target.host,
     port: target.port,
     method,
-    path: upstreamPath(target.pathPrefix, path),
+    path: upstreamPath(path),
     headers: headerObject(headers, authorityOf(target.host, target.port)),
   });
 
