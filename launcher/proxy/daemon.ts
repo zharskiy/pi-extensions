@@ -59,12 +59,6 @@ const upstreamTrust = async (stateDir: string, hasExtraCa: boolean) => {
   return extra.trim() === "" ? undefined : [...rootCertificates, extra];
 };
 
-const reportProblem = async (log: string, line: string) => {
-  await appendFile(log, `${new Date().toISOString()} ${line}\n`, { mode: PRIVATE_MODE }).catch(
-    () => undefined,
-  );
-};
-
 const reportFailure = async (log: string | undefined, error: unknown) => {
   const hint = error instanceof LauncherError && error.hint !== undefined ? ` (${error.hint})` : "";
   const line = `${new Date().toISOString()} ${errorMessage(error)}${hint}\n`;
@@ -126,7 +120,7 @@ const run = async (args: ReturnType<typeof parseDaemonArgs>) => {
     discoverCommand: daemonConfig.discoverCommand ?? [],
   });
   const server = await startProxyServer({
-    listen: { host: LISTEN_HOST, port: args.port, extraHosts: daemonConfig.listenHosts ?? [] },
+    listen: { host: LISTEN_HOST, port: args.port },
     policy: settings.policy,
     policyHash,
     controlToken: token,
@@ -143,14 +137,12 @@ const run = async (args: ReturnType<typeof parseDaemonArgs>) => {
     upstreamCa: await upstreamTrust(args.stateDir, settings.extraCa.length > 0),
     vault,
     onControl: secrets.accept,
-    onListenError: (line) => void reportProblem(files.proxyLog, line),
   });
   const record: ProxyInstance = {
     policyHash,
     port: server.port,
     token,
     pid: process.pid,
-    listenHosts: daemonConfig.listenHosts ?? [],
   };
 
   await writeJsonFile(files.record, record, { mode: PRIVATE_MODE });

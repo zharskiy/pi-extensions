@@ -59,7 +59,6 @@ const scanContainer = async (repoHash: string, script: string, secrets: Secrets)
   const backend = createDockerEngineBackend({
     socketPath: engineSocket ?? "",
     runner: createProcessRunner(),
-    home: process.env.HOME ?? "",
   });
   const out = scanner(secrets);
   const err = scanner(secrets);

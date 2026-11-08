@@ -53,16 +53,14 @@ const setupWith = async (setup: Setup = {}) => {
     return answers.stop ?? {};
   };
   const harness = await createHarness({
-    adapters: () => [
-      {
-        ...fake.backend,
-        detect: async () =>
-          vm.running && answers.staysDown !== true
-            ? { available: true }
-            : { available: false, reason: "socket missing" },
-        status: async () => ({ socket: "/fake/docker.sock", profile: "pi-sandbox" }),
-      },
-    ],
+    backend: () => ({
+      ...fake.backend,
+      detect: async () =>
+        vm.running && answers.staysDown !== true
+          ? { available: true }
+          : { available: false, reason: "socket missing" },
+      status: async () => ({ socket: "/fake/docker.sock", profile: "pi-sandbox" }),
+    }),
     respond: (call) => (call.file === "colima" && answers.missing !== true ? answer(call) : undefined),
     proxy: {
       list: async () => setup.proxies ?? [],
@@ -111,12 +109,15 @@ describe("a launch starts the stopped sandbox VM", () => {
     expect(context.fake.containers.size).toBe(1);
   });
 
-  it("starts nothing without the pi-sandbox colima profile and reports no backend", async () => {
+  it("starts nothing without the pi-sandbox colima profile and says the engine is unreachable", async () => {
     const context = await setupWith({ profile: false });
 
     expect(await run([], context.harness.deps)).toBe(1);
     expect(context.harness.stderr()).toContain(
-      "pi-sandbox: no sandbox backend available: colima (socket missing)",
+      [
+        "pi-sandbox: the sandbox VM engine is unreachable at ~/.colima/pi-sandbox/docker.sock",
+        "  hint: run launcher/install.sh or colima start --profile pi-sandbox --activate=false; or run pi --no-sandbox to use host pi",
+      ].join("\n"),
     );
     expect(context.colimaCalls()).toEqual([]);
   });
@@ -126,7 +127,7 @@ describe("a launch starts the stopped sandbox VM", () => {
 
     expect(await run([], context.harness.deps)).toBe(1);
     expect(context.harness.stderr()).toContain(
-      "pi-sandbox: no sandbox backend available: colima (socket missing)",
+      "pi-sandbox: the sandbox VM engine is unreachable at ~/.colima/pi-sandbox/docker.sock",
     );
     expect(context.colimaCalls()).toEqual([STATUS]);
   });
@@ -165,20 +166,13 @@ describe("a launch starts the stopped sandbox VM", () => {
     );
   });
 
-  it("never asks colima when the backend is apple", async () => {
-    const context = await setupWith({ config: { backend: "apple" } });
-
-    expect(await run([], context.harness.deps)).toBe(1);
-    expect(context.colimaCalls()).toEqual([]);
-  });
-
   it("never starts the VM for pi sandbox status or gc", async () => {
     const status = await setupWith();
     const gc = await setupWith();
 
     expect(await run(["sandbox", "status"], status.harness.deps)).toBe(0);
     expect(await run(["sandbox", "gc"], gc.harness.deps)).toBe(1);
-    expect(status.harness.stdout()).toContain("backend: none (no sandbox backend available");
+    expect(status.harness.stdout()).toContain("runtime: none (the sandbox VM engine is unreachable");
     expect([...status.colimaCalls(), ...gc.colimaCalls()]).toEqual([]);
   });
 });

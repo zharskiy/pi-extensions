@@ -13,7 +13,6 @@ const exists = (path: string) =>
   );
 
 const REFUSED: Array<[string, unknown]> = [
-  ["backend", "apple"],
   [
     "credentials.rules",
     [{ id: "corp", host: "llm.corp.test", placeholder: "pi-sandbox-corp", secret: { env: "CORP_KEY" } }],

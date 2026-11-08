@@ -10,7 +10,6 @@ export const LABELS = {
   relay: "pi-sandbox.relay",
   relayPort: "pi-sandbox.relay-port",
   relayImage: "pi-sandbox.relay-image",
-  helper: "pi-sandbox.helper",
   version: "pi-sandbox.version",
   sessionDir: "pi-sandbox.session-dir",
   gitProtection: "pi-sandbox.git-protection",

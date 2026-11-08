@@ -1,10 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import {
-  type AddressInfo,
-  createServer as createNetServer,
-  type Server as NetServer,
-  type Socket,
-} from "node:net";
+import type { AddressInfo, Socket } from "node:net";
 import { userInfo } from "node:os";
 import type { Duplex } from "node:stream";
 import { matchesPattern, normalizeHost } from "../config/index.ts";
@@ -28,7 +23,7 @@ import { type Connection, createTunnel } from "./tunnel.ts";
 import type { VaultHook } from "./vault/index.ts";
 
 export interface ProxyServerOptions {
-  listen: { host: string; port: number; extraHosts?: string[] };
+  listen: { host: string; port: number };
   policy: EgressPolicy;
   policyHash?: string;
   controlToken: string;
@@ -46,7 +41,6 @@ export interface ProxyServerOptions {
   helloTimeoutMs?: number;
   leafRecheckMs?: number;
   onControl?: (message: ControlMessage) => ControlReply | Promise<ControlReply>;
-  onListenError?: (line: string) => void;
   vault?: VaultHook;
   denialPages?: { maxNames?: number; mintsPerMinute?: number };
 }
@@ -284,21 +278,6 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
 
   const port = (server.address() as AddressInfo).port;
 
-  const listenAlso = (host: string) =>
-    new Promise<NetServer | undefined>((resolve) => {
-      const extra = createNetServer((socket) => server.emit("connection", socket));
-
-      extra.once("error", (error) => {
-        options.onListenError?.(`proxy cannot also listen on ${host}:${port}: ${error.message}`);
-
-        resolve(undefined);
-      });
-
-      extra.listen(port, host, () => resolve(extra));
-    });
-
-  const listeners = await Promise.all((options.listen.extraHosts ?? []).map(listenAlso));
-
   const close = async () => {
     await options.vault?.close();
 
@@ -310,10 +289,6 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
       });
 
       server.closeAllConnections();
-
-      listeners.forEach((extra) => {
-        extra?.close();
-      });
 
       server.close(() => resolve());
     });

@@ -1,4 +1,3 @@
-import { createWriteStream } from "node:fs";
 import { type ClientRequest, request as httpRequest, type IncomingMessage } from "node:http";
 import type { Socket } from "node:net";
 import type { Readable } from "node:stream";
@@ -29,7 +28,6 @@ export interface EngineClient {
   call(request: EngineRequest, accepted?: number[]): Promise<EngineResponse>;
   json<T>(request: EngineRequest, accepted?: number[]): Promise<T>;
   progress(request: EngineRequest): Promise<Array<Record<string, unknown>>>;
-  download(request: EngineRequest, path: string): Promise<void>;
   upgrade(request: EngineRequest): Promise<Hijacked>;
 }
 
@@ -155,16 +153,6 @@ export const createEngineClient = (socketPath: string): EngineClient => {
     return lines;
   };
 
-  const download = async (request: EngineRequest, path: string) => {
-    const response = await send(request);
-
-    if (isFailure(response.statusCode ?? 0, [])) {
-      throw engineError(request, await collect(response));
-    }
-
-    await pipeline(response, createWriteStream(path));
-  };
-
   const upgrade = (request: EngineRequest) =>
     new Promise<Hijacked>((resolve, reject) => {
       const outgoing = open(request, { Connection: "Upgrade", Upgrade: "tcp" });
@@ -180,5 +168,5 @@ export const createEngineClient = (socketPath: string): EngineClient => {
       writeBody(outgoing, request);
     });
 
-  return { socketPath, call, json, progress, download, upgrade };
+  return { socketPath, call, json, progress, upgrade };
 };

@@ -47,7 +47,7 @@ const launchWith = async (
   userConfig?: unknown,
 ) => {
   const fake = createFakeBackend();
-  const harness = await harnessWith({ adapters: () => [fake.backend], respond: discovering(answer) });
+  const harness = await harnessWith({ backend: () => fake.backend, respond: discovering(answer) });
 
   if (userConfig !== undefined) {
     await harness.writeJson(harness.userConfigFile, userConfig);
@@ -115,7 +115,7 @@ describe("mcp token vault wiring", () => {
   it("syncs the sandbox mcp-auth.json with placeholders only, never the host tokens", async () => {
     const fake = createFakeBackend();
     const harness = await harnessWith({
-      adapters: () => [fake.backend],
+      backend: () => fake.backend,
       respond: discovering({ stdout: JSON.stringify(DISCOVERED) }),
     });
 
@@ -139,7 +139,7 @@ describe("mcp token vault wiring", () => {
 
   it("runs the mcp-auth.json sync on every launch, with no entries when no server qualifies", async () => {
     const fake = createFakeBackend();
-    const harness = await createHarness({ adapters: () => [fake.backend] });
+    const harness = await createHarness({ backend: () => fake.backend });
 
     expect(await run([], harness.deps)).toBe(0);
     expect(await run([], harness.deps)).toBe(0);
@@ -188,7 +188,7 @@ describe("intercepted pi mcp login and logout", () => {
     const fake = createFakeBackend();
     const paths = { stateDir: "" };
     const harness = await harnessWith({
-      adapters: () => [fake.backend],
+      backend: () => fake.backend,
       respond: signingIn(() => paths.stateDir),
     });
 
@@ -234,7 +234,7 @@ describe("pi sandbox doctor on the vault", () => {
   ) => {
     const fake = createFakeBackend();
     const down = { ...fake.backend, detect: async () => ({ available: false, reason: "socket missing" }) };
-    const harness = await harnessWith({ adapters: () => [down], respond: discovering(answer) });
+    const harness = await harnessWith({ backend: () => down, respond: discovering(answer) });
 
     if (userConfig !== undefined) {
       await harness.writeJson(harness.userConfigFile, userConfig);

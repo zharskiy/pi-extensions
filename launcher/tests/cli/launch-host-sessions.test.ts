@@ -38,7 +38,7 @@ const sandboxWith = async (onPi: (dir: string) => Promise<void> = async () => un
       return 0;
     },
   });
-  const harness = await createHarness({ adapters: () => [fake.backend] });
+  const harness = await createHarness({ backend: () => fake.backend });
 
   box.dir = hostSessionsDir(harness.hostAgentDir, harness.repoRoot);
 
@@ -119,7 +119,7 @@ describe("pi launch with host sessions", () => {
         return 0;
       },
     });
-    const harness = await createHarness({ adapters: () => [fake.backend] });
+    const harness = await createHarness({ backend: () => fake.backend });
     const dir = hostSessionsDir(harness.hostAgentDir, harness.repoRoot);
 
     expect(await run([], harness.deps)).not.toBe(0);
@@ -373,7 +373,7 @@ describe("pi --no-sandbox with host sessions", () => {
 
   it("sweeps the agents subtree too when the repository's container is not running", async () => {
     const fake = createFakeBackend();
-    const harness = await createHarness({ adapters: () => [fake.backend] });
+    const harness = await createHarness({ backend: () => fake.backend });
     const dir = hostSessionsDir(harness.hostAgentDir, harness.repoRoot);
 
     await hostPiIn(harness);
@@ -388,7 +388,7 @@ describe("pi --no-sandbox with host sessions", () => {
 
   it("leaves the agents subtree alone while a sandboxed session of the repository is registered", async () => {
     const fake = createFakeBackend();
-    const harness = await createHarness({ adapters: () => [fake.backend] });
+    const harness = await createHarness({ backend: () => fake.backend });
     const dir = hostSessionsDir(harness.hostAgentDir, harness.repoRoot);
 
     await hostPiIn(harness);

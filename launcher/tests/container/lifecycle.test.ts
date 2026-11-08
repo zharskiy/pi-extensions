@@ -1,9 +1,8 @@
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, stat, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { BackendCapabilities } from "../../backend/index.ts";
 import {
   collectGarbage,
   ensureContainer,
@@ -23,11 +22,6 @@ const WORK = realpathSync(mkdtempSync(join(tmpdir(), "pi-sandbox-lifecycle-work-
 mkdirSync(join(WORK, "repo"));
 
 mkdirSync(join(WORK, "other"));
-
-const capabilities: BackendCapabilities = {
-  singleFileMount: true,
-  sshAgent: true,
-};
 
 const workspace = {
   cwd: `${WORK}/repo/src`,
@@ -53,9 +47,6 @@ const specOf = (overrides: Partial<ContainerSpecInput> = {}) =>
     image: { reference: "pi-sandbox:local", digest: "sha256:one", id: "sha256:image-one" },
     hostEnv: { USER: "dev" },
     hostUid: 501,
-    hostGid: 20,
-    platform: "darwin",
-    capabilities,
     stateDir: LOCK_STATE,
     launcherVersion: "0.4.0",
     configHash: "cfg-one",
@@ -228,38 +219,6 @@ describe("ensureContainer", () => {
 
     expect(result).toMatchObject({ id: raced.id, created: false, outdated: false });
     expect(fake.containers.get(raced.id)?.summary.state).toBe("running");
-  });
-
-  it("binds copies as directories, never single files, when the backend cannot mount single files", async () => {
-    const repo = await newStateDir();
-    const gitDir = join(repo, ".git");
-    const trustPem = join(repo, "trust.pem");
-    const fake = createFakeBackend({ capabilities: { singleFileMount: false } });
-
-    await mkdir(gitDir, { recursive: true });
-    await writeFile(join(gitDir, "config"), "[core]\n\tbare = false\n");
-    await writeFile(trustPem, "pem\n");
-
-    const spec = specOf({
-      workspace: { cwd: repo, repoRoot: repo, gitCommonDir: gitDir, isGitRepo: true },
-      capabilities: { ...capabilities, singleFileMount: false },
-      stateDir: state.dir,
-      proxy: {
-        url: "http://pi-sandbox:t@10.89.0.2:3128",
-        network: { kind: "internal", name: "n" },
-        policyHash: "p",
-      },
-      trust: { pemPath: trustPem, hash: "trust-1" },
-    });
-    const { id } = await ensureContainer({ backend: fake.backend, spec });
-    const mounts = fake.containers.get(id)?.spec?.mounts ?? [];
-    const copied = mounts.filter((mount) => mount.source.startsWith(spec.copiesDir));
-    const sources = await Promise.all(copied.map((mount) => stat(mount.source)));
-
-    expect(copied.map((mount) => mount.target)).toEqual(["/etc/pi-sandbox"]);
-    expect(sources.every((info) => info.isDirectory())).toBe(true);
-    expect(await readFile(join(copied[0]?.source ?? "", "ca.pem"), "utf8")).toBe("pem\n");
-    expect(mounts.some((mount) => mount.target === join(gitDir, "config"))).toBe(false);
   });
 });
 
@@ -610,14 +569,13 @@ describe("volumes the sandbox writes", () => {
     ]);
   });
 
-  it("hands the volumes to the host user on Linux and warns when that fails", async () => {
+  it("warns when handing the volumes to the sandbox user fails", async () => {
     const fake = createFakeBackend({ execScripts: [{ command: ["chown"], code: 1, stderr: "denied\n" }] });
     const result = await ensureContainer({
       backend: fake.backend,
-      spec: specOf({ workspace: nodeWorkspace, platform: "linux", hostUid: 1001, hostGid: 1002 }),
+      spec: specOf({ workspace: nodeWorkspace }),
     });
 
-    expect(chownsOf(fake)[0]?.command.slice(0, 3)).toEqual(["chown", "-h", "1001:1002"]);
     expect(result.notices).toEqual([
       "warning: the sandbox user may not be able to write its cache volumes: denied",
     ]);

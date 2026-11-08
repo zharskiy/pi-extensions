@@ -10,7 +10,7 @@ import { testedPiVersion } from "../../cli/versions.ts";
 import type { BundledPi } from "../../hostpi/index.ts";
 import type { ControlMessage, DenialRecord, ProxyInstance } from "../../proxy/index.ts";
 import { type RunResult, sha256Hex, stateLayout } from "../../shared/index.ts";
-import type { FakeExec } from "../support/fake-backend.ts";
+import { createFakeBackend, type FakeExec } from "../support/fake-backend.ts";
 import { createFakeRunner, type FakeResponder } from "../support/fake-runner.ts";
 
 interface Collected {
@@ -19,7 +19,7 @@ interface Collected {
 }
 
 export interface HarnessOptions {
-  adapters?: () => Backend[];
+  backend?: () => Backend;
   proxy?: Partial<CliDeps["proxy"]>;
   respond?: FakeResponder;
   env?: Record<string, string>;
@@ -31,6 +31,11 @@ export interface HarnessOptions {
 }
 
 const roots: string[] = [];
+
+const unreachableBackend = (): Backend => ({
+  ...createFakeBackend().backend,
+  detect: async () => ({ available: false, reason: "socket missing" }),
+});
 
 const removeRoot = (root: string) => rm(root, { recursive: true, force: true });
 
@@ -206,22 +211,20 @@ const mountsYaml = (mounts: YamlMount[], indent: string) =>
     ? "mounts: []\n"
     : `mounts:\n${mounts.map((mount) => mountLines(mount, indent)).join("\n")}\n`;
 
-const limaYamlPath = (home: string, profile: string) =>
-  join(home, ".colima", "_lima", profile === "default" ? "colima" : `colima-${profile}`, "lima.yaml");
+const limaYamlPath = (home: string) => join(home, ".colima", "_lima", "colima-pi-sandbox", "lima.yaml");
 
-export const colimaYamlPath = (home: string, profile = "pi-sandbox") =>
-  join(home, ".colima", profile, "colima.yaml");
+export const colimaYamlPath = (home: string) => join(home, ".colima", "pi-sandbox", "colima.yaml");
 
-export const writeLimaMounts = async (home: string, mounts: YamlMount[], profile = "pi-sandbox") => {
-  const file = limaYamlPath(home, profile);
+export const writeLimaMounts = async (home: string, mounts: YamlMount[]) => {
+  const file = limaYamlPath(home);
 
   await mkdir(join(file, ".."), { recursive: true });
 
   await writeFile(file, `vmType: vz\n${mountsYaml(mounts, "")}ssh:\n  localPort: 0\n`);
 };
 
-export const writeColimaMounts = async (home: string, mounts: YamlMount[], profile = "pi-sandbox") => {
-  const file = colimaYamlPath(home, profile);
+export const writeColimaMounts = async (home: string, mounts: YamlMount[]) => {
+  const file = colimaYamlPath(home);
 
   await mkdir(join(file, ".."), { recursive: true });
 
@@ -315,8 +318,7 @@ export const createHarness = async (options: HarnessOptions = {}) => {
     },
     platform: "darwin",
     uid: 501,
-    gid: 20,
-    adapters: options.adapters ?? (() => []),
+    backend: options.backend ?? unreachableBackend,
     proxy: {
       ensure: async () => RUNNING_PROXY,
       list: async () => [],

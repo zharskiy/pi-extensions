@@ -15,7 +15,7 @@ const OTHER_LAUNCH = "00000000000000aa";
 describe("the end of a session", () => {
   it("stops the container when the last session of the repository ends", async () => {
     const fake = createFakeBackend();
-    const harness = await createHarness({ adapters: () => [fake.backend] });
+    const harness = await createHarness({ backend: () => fake.backend });
 
     await run([], harness.deps);
 
@@ -27,7 +27,7 @@ describe("the end of a session", () => {
 
   it("keeps the container running while another session of the repository is live", async () => {
     const fake = createFakeBackend();
-    const harness = await createHarness({ adapters: () => [fake.backend] });
+    const harness = await createHarness({ backend: () => fake.backend });
 
     await registerSession(harness.stateDir, {
       launchId: "0123456789abcdef",
@@ -48,7 +48,7 @@ describe("the end of a session", () => {
 describe("a config change while other sessions of the repository are live", () => {
   it("keeps the shared container with a notice, then replaces it once the others have exited", async () => {
     const fake = createFakeBackend();
-    const harness = await createHarness({ adapters: () => [fake.backend] });
+    const harness = await createHarness({ backend: () => fake.backend });
     const other = {
       launchId: OTHER_LAUNCH,
       repoHash: sha256Hex(harness.repoRoot),
@@ -91,7 +91,7 @@ describe("a signal while the sandbox is being prepared", () => {
         await fake.backend.startContainer(id);
       },
     };
-    const harness = await createHarness({ adapters: () => [backend] });
+    const harness = await createHarness({ backend: () => backend });
 
     harness.deps.signals = signals;
 
@@ -108,20 +108,18 @@ describe("a signal while the sandbox is being prepared", () => {
     const fake = createFakeBackend();
     const sessionsWhenBuilt: number[] = [];
     const harness = await createHarness({
-      adapters: () => [
-        {
-          ...fake.backend,
-          buildImage: async (...args: Parameters<typeof fake.backend.buildImage>) => {
-            signals.emit("SIGINT");
+      backend: () => ({
+        ...fake.backend,
+        buildImage: async (...args: Parameters<typeof fake.backend.buildImage>) => {
+          signals.emit("SIGINT");
 
-            await sleep(50);
+          await sleep(50);
 
-            sessionsWhenBuilt.push((await liveSessions(harness.stateDir)).length);
+          sessionsWhenBuilt.push((await liveSessions(harness.stateDir)).length);
 
-            return fake.backend.buildImage(...args);
-          },
+          return fake.backend.buildImage(...args);
         },
-      ],
+      }),
     });
 
     harness.deps.signals = signals;

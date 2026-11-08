@@ -17,7 +17,6 @@ describe("validateLayer", () => {
     const layer = {
       $schema: "../schema/sandbox-config.schema.json",
       profile: "team",
-      backend: "colima",
       fallback: "refuse",
       image: { reference: "ghcr.io/acme/pi:1", digest: `sha256:${"a".repeat(64)}` },
       gateway: {
@@ -53,7 +52,7 @@ describe("validateLayer", () => {
   });
 
   it("reports wrong types with the layer and the key", () => {
-    expect(problemOf({ backend: "docker" })).toBe("user: backend must be one of auto, colima, apple");
+    expect(problemOf({ fallback: "docker" })).toBe("user: fallback must be one of refuse, host");
     expect(problemOf({ egress: { allow: "github.com" } })).toBe("user: egress.allow must be an array");
     expect(problemOf({ egress: { allow: ["https://github.com"] } })).toBe(
       "user: egress.allow[0] https://github.com is not a host name or host:port",

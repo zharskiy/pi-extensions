@@ -1,7 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import { sep } from "node:path";
-import type { BackendCapabilities } from "../backend/index.ts";
-import { resolveDockerSocket } from "../backend/index.ts";
+import { engineSocketPath } from "../backend/index.ts";
 import { type CommandRunner, stateLayout } from "../shared/index.ts";
 import {
   assertGitIntegrity,
@@ -45,7 +44,7 @@ const protectContext = (context: GitGuardContext): GitProtectContext => ({
   home: context.home,
   env: context.env,
   emptyHooksDir: stateLayout(context.stateDir).gitNoHooks,
-  engineSockets: [resolveDockerSocket({ env: context.env, home: context.home })],
+  engineSockets: [engineSocketPath(context.home)],
 });
 
 const sameList = (first: string[], second: string[]) =>
@@ -68,8 +67,6 @@ const pinned = async (workspace: Workspace, paths: ProtectedGitPaths, context: G
 
   return current;
 };
-
-const NESTED_FILES_NOTICE = "pi-sandbox: workspace: nested .git files are not read-only on this backend";
 
 const depthOf = (path: string) => path.split(sep).length;
 
@@ -156,11 +153,6 @@ export const planGitOverlay = async (workspace: Workspace, context: GitGuardCont
     ready: () => readied(workspace, context, plans),
   };
 };
-
-export const backendNotices = (workspace: Workspace, capabilities: BackendCapabilities) =>
-  !capabilities.singleFileMount && !workspace.isGitRepo && (workspace.nested ?? []).length > 0
-    ? [NESTED_FILES_NOTICE]
-    : [];
 
 export const discoverGitOverlay = async (workspace: Workspace, context: GitGuardContext) =>
   (await planGitOverlay(workspace, context)).overlay;

@@ -9,7 +9,6 @@ wrapper_marker="launcher/bin/pi-sandbox"
 bin_dir="$HOME/.local/bin"
 script_dir=$(cd "$(dirname "$0")" && pwd)
 state_dir="${PI_SANDBOX_STATE_DIR:-$HOME/.local/state/pi-sandbox}"
-managed_label=pi-sandbox.managed
 
 dry_run=0
 volumes=0
@@ -200,18 +199,7 @@ remove_state() {
 
 remove_state sessions render sync mcp-auth provider-hosts org grants.json
 
-colima_socket="$HOME/.colima/$colima_profile/docker.sock"
-
-case "${DOCKER_HOST:-}" in
-  unix://*) host_socket="${DOCKER_HOST#unix://}" ;;
-  *) host_socket=/var/run/docker.sock ;;
-esac
-
-if [ -S "$colima_socket" ]; then
-  engine_socket="$colima_socket"
-else
-  engine_socket="$host_socket"
-fi
+engine_socket="$HOME/.colima/$colima_profile/docker.sock"
 
 engine_flags=""
 
@@ -226,53 +214,7 @@ fi
 if [ -S "$engine_socket" ] && command -v node >/dev/null 2>&1; then
   node "$script_dir/bin/uninstall-engine.mjs" "$engine_socket" $engine_flags
 else
-  echo "containers: no reachable docker engine, nothing removed"
-fi
-
-if command -v container >/dev/null 2>&1 && container system status >/dev/null 2>&1; then
-  apple_containers=""
-
-  collect_apple_managed() {
-    if [ "$#" -eq 0 ]; then
-      return 0
-    fi
-
-    if container inspect "$1" 2>/dev/null | grep -q "\"$managed_label\"[[:space:]]*:[[:space:]]*\"true\""; then
-      apple_containers="$apple_containers $1"
-    fi
-
-    shift
-    collect_apple_managed "$@"
-  }
-
-  collect_apple_managed $(container list --all --quiet 2>/dev/null | grep '^pi-sandbox-' || true)
-
-  if [ -n "$apple_containers" ]; then
-    act container delete --force $apple_containers >/dev/null
-  fi
-
-  apple_networks=""
-
-  collect_apple_networks() {
-    if [ "$#" -eq 0 ]; then
-      return 0
-    fi
-
-    if container network inspect "$1" 2>/dev/null | grep -q "\"$managed_label\"[[:space:]]*:[[:space:]]*\"true\""; then
-      apple_networks="$apple_networks $1"
-    fi
-
-    shift
-    collect_apple_networks "$@"
-  }
-
-  collect_apple_networks $(container network list --quiet 2>/dev/null | grep '^pi-sandbox' || true)
-
-  if [ -n "$apple_networks" ]; then
-    act container network delete $apple_networks >/dev/null
-  fi
-
-  echo "apple container: $(verb "remove" "removed") $(echo $apple_containers | wc -w | tr -d ' ') pi-sandbox containers and $(echo $apple_networks | wc -w | tr -d ' ') pi-sandbox networks"
+  echo "containers: the sandbox VM engine is not running, nothing removed"
 fi
 
 if [ "$vm" -eq 1 ]; then

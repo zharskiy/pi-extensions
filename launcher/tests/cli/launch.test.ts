@@ -23,7 +23,7 @@ const writeScript = async (dir: string, body: string) => {
 describe("pi [args]", () => {
   it("prepares once on the cold path, then reuses the container without image work", async () => {
     const fake = createFakeBackend({ exec: (spec) => (isPiSession(spec) ? 3 : 0) });
-    const harness = await createHarness({ adapters: () => [fake.backend] });
+    const harness = await createHarness({ backend: () => fake.backend });
 
     expect(await run(["--model", "x"], harness.deps)).toBe(3);
     expect(occurrences(harness.stderr(), PREPARING)).toBe(1);
@@ -45,7 +45,7 @@ describe("pi [args]", () => {
 
   it("mounts the repository at its host path, routes through the proxy and leaves out the CA without a gateway", async () => {
     const fake = createFakeBackend();
-    const harness = await createHarness({ adapters: () => [fake.backend] });
+    const harness = await createHarness({ backend: () => fake.backend });
 
     await run([], harness.deps);
 
@@ -73,7 +73,7 @@ describe("pi [args]", () => {
 
   it("passes the terminal variables to pi's exec, not the container, and reuses it from another terminal", async () => {
     const fake = createFakeBackend();
-    const harness = await createHarness({ adapters: () => [fake.backend], env: { TERM_PROGRAM: "first" } });
+    const harness = await createHarness({ backend: () => fake.backend, env: { TERM_PROGRAM: "first" } });
 
     await run([], harness.deps);
 
@@ -106,7 +106,7 @@ describe("pi [args]", () => {
 
   it("mounts the trust bundle read-only when a gateway is configured", async () => {
     const fake = createFakeBackend();
-    const harness = await createHarness({ adapters: () => [fake.backend] });
+    const harness = await createHarness({ backend: () => fake.backend });
 
     await harness.writeJson(harness.userConfigFile, {
       gateway: {
@@ -133,7 +133,7 @@ describe("pi [args]", () => {
 
   it("reuses the packed extensions tarball while the version and HEAD are unchanged", async () => {
     const fake = createFakeBackend();
-    const harness = await createHarness({ adapters: () => [fake.backend] });
+    const harness = await createHarness({ backend: () => fake.backend });
 
     await run([], harness.deps);
 
@@ -147,7 +147,7 @@ describe("pi [args]", () => {
 
   it("creates the container from the built image id and keeps the reference in a label", async () => {
     const fake = createFakeBackend();
-    const harness = await createHarness({ adapters: () => [fake.backend] });
+    const harness = await createHarness({ backend: () => fake.backend });
 
     await run([], harness.deps);
 
@@ -160,7 +160,7 @@ describe("pi [args]", () => {
   it("refuses a repository rooted at the home directory before touching the backend", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({
-      adapters: () => [fake.backend],
+      backend: () => fake.backend,
       respond: (call) =>
         call.file === "git" && call.args.includes("--show-toplevel")
           ? { stdout: `${harness.deps.home}\n${harness.deps.home}/.git\n` }
@@ -182,7 +182,7 @@ describe("pi [args]", () => {
 
   it("passes pi --version through to pi inside", async () => {
     const fake = createFakeBackend();
-    const harness = await createHarness({ adapters: () => [fake.backend] });
+    const harness = await createHarness({ backend: () => fake.backend });
 
     await run(["--version"], harness.deps);
 
@@ -192,10 +192,12 @@ describe("pi [args]", () => {
   it("refuses when no backend is available", async () => {
     const fake = createFakeBackend();
     const down = { ...fake.backend, detect: async () => ({ available: false, reason: "socket missing" }) };
-    const harness = await createHarness({ adapters: () => [down] });
+    const harness = await createHarness({ backend: () => down });
 
     expect(await run([], harness.deps)).toBe(1);
-    expect(harness.stderr()).toContain("pi-sandbox: no sandbox backend available: colima (socket missing)");
+    expect(harness.stderr()).toContain(
+      "pi-sandbox: the sandbox VM engine is unreachable at ~/.colima/pi-sandbox/docker.sock",
+    );
     expect(harness.stderr()).toContain("  hint: ");
     expect(harness.stderr()).toContain("pi --no-sandbox");
   });
@@ -203,7 +205,7 @@ describe("pi [args]", () => {
   it("fails closed when the proxy cannot start", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({
-      adapters: () => [fake.backend],
+      backend: () => fake.backend,
       proxy: {
         ensure: async () => {
           throw new LauncherError("the pi-sandbox egress proxy did not become healthy", "see proxy.log");
@@ -221,7 +223,7 @@ describe("pi [args]", () => {
   it("skips the proxy when nothing may leave the container", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({
-      adapters: () => [fake.backend],
+      backend: () => fake.backend,
       proxy: {
         ensure: async () => {
           throw new Error("must not start");
@@ -241,7 +243,7 @@ describe("pi [args]", () => {
 
   it("refuses outside the workspace roots and warns when the policy says warn", async () => {
     const fake = createFakeBackend();
-    const harness = await createHarness({ adapters: () => [fake.backend] });
+    const harness = await createHarness({ backend: () => fake.backend });
 
     await harness.writeJson(harness.policyFile, {
       workspaceRoots: { roots: [join(harness.root, "elsewhere")], outside: "refuse" },

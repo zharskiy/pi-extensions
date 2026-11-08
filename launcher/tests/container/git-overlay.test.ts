@@ -2,9 +2,8 @@ import { lstat, mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import type { BackendCapabilities, MountSpec } from "../../backend/index.ts";
+import type { MountSpec } from "../../backend/index.ts";
 import {
-  backendNotices,
   buildContainerSpec,
   discoverGitOverlay,
   type GitGuardContext,
@@ -29,8 +28,6 @@ const created: string[] = [];
 afterEach(async () => {
   await Promise.all(created.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 });
-
-const capabilities: BackendCapabilities = { singleFileMount: true, sshAgent: false };
 
 const git = async (cwd: string, args: string[]) => {
   const result = await runner.run(
@@ -92,16 +89,13 @@ const busy = async () => true;
 const workspaceAt = (base: string, cwd: string) =>
   discoverWorkspace(cwd, runner, join(base, "state", "git", "no-hooks"));
 
-const specOf = (base: string, workspace: Workspace, gitOverlay: GitOverlay, singleFileMount = true) =>
+const specOf = (base: string, workspace: Workspace, gitOverlay: GitOverlay) =>
   buildContainerSpec({
     workspace,
     config: sandboxConfig(),
     image: { reference: "pi-sandbox:local", digest: "sha256:one", id: "sha256:image-one" },
     hostEnv: { USER: "dev", HOME: join(base, "home") },
     hostUid: 501,
-    hostGid: 20,
-    platform: "darwin",
-    capabilities: { ...capabilities, singleFileMount },
     stateDir: join(base, "state"),
     gitOverlay,
     launcherVersion: "0.4.0",
@@ -343,19 +337,6 @@ describe("the git dir in the container", () => {
     );
   });
 
-  it("binds no git files on a backend without single-file mounts but keeps the dir snapshots", async () => {
-    const base = await createBase();
-    const repo = await createRepo(base);
-    const workspace = await workspaceAt(base, repo);
-    const spec = specOf(base, workspace, await discoverGitOverlay(workspace, contextOf(base)), false);
-
-    expect(gitMountsOf(spec, repo).map((mount) => mount.target)).toEqual([
-      repo,
-      join(repo, ".git"),
-      join(repo, ".git", "hooks"),
-    ]);
-  });
-
   it("leaves a git dir alone outside git and when git itself fails", async () => {
     const base = await createBase();
     const repo = await createRepo(base);
@@ -584,16 +565,5 @@ describe("the git dirs of a workspace in the container", () => {
     const workspace = await workspaceAt(base, folder);
 
     await expect(discoverGitOverlay(workspace, contextOf(base))).rejects.toThrow("lies inside the workspace");
-  });
-
-  it("says nested git files stay writable on a backend without single-file mounts", async () => {
-    const { base, folder, first } = await createFolder();
-    const workspace = await workspaceAt(base, folder);
-    const single = await workspaceAt(base, first);
-    const notice = "pi-sandbox: workspace: nested .git files are not read-only on this backend";
-
-    expect(backendNotices(workspace, { singleFileMount: false, sshAgent: true })).toEqual([notice]);
-    expect(backendNotices(workspace, { singleFileMount: true, sshAgent: true })).toEqual([]);
-    expect(backendNotices(single, { singleFileMount: false, sshAgent: true })).toEqual([]);
   });
 });

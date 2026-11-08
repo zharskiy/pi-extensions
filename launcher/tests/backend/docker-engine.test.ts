@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough, Writable } from "node:stream";
@@ -7,8 +7,8 @@ import { createDockerEngineBackend } from "../../backend/docker-engine/backend.t
 import {
   type Backend,
   type ContainerSpec,
+  engineSocketPath,
   LABELS,
-  resolveDockerSocket,
   type TerminalSize,
 } from "../../backend/index.ts";
 import { createProcessRunner, LauncherError } from "../../shared/index.ts";
@@ -64,11 +64,8 @@ const startEngine = async (options: FakeEngineOptions = {}) => {
   return engine;
 };
 
-const backendFor = (
-  engine: FakeEngine,
-  home = "/nonexistent-home",
-  runner = createFakeRunner(() => undefined).runner,
-) => createDockerEngineBackend({ socketPath: engine.socketPath, runner, home, platform: "darwin" });
+const backendFor = (engine: FakeEngine, runner = createFakeRunner(() => undefined).runner) =>
+  createDockerEngineBackend({ socketPath: engine.socketPath, runner });
 
 const relayOf = (engine: FakeEngine, name = RELAY) =>
   [...engine.containers.values()].find((container) => container.Name === name);
@@ -90,7 +87,6 @@ const baseSpec: ContainerSpec = {
   network: { kind: "none" },
   env: { TERM: "xterm-256color", PI_OFFLINE: "1" },
   workdir: "/work/repo",
-  user: "501:20",
   readOnlyRoot: true,
   tmpfs: ["/tmp", "/home/pi:mode=1777"],
   init: true,
@@ -145,51 +141,19 @@ const agentRunner = () =>
       : undefined,
   ).runner;
 
-describe("resolveDockerSocket", () => {
-  const home = "/Users/dev";
-  const existing = (paths: string[]) => (path: string) => paths.includes(path);
-
-  it("prefers a unix DOCKER_HOST", () => {
-    const socket = resolveDockerSocket({
-      env: { DOCKER_HOST: "unix:///run/custom.sock" },
-      home,
-      exists: existing([]),
-    });
-
-    expect(socket).toBe("/run/custom.sock");
-  });
-
-  it("ignores a non-unix DOCKER_HOST and prefers the pi-sandbox colima profile", () => {
-    const sockets = ["/Users/dev/.colima/pi-sandbox/docker.sock", "/Users/dev/.colima/default/docker.sock"];
-
-    expect(
-      resolveDockerSocket({ env: { DOCKER_HOST: "tcp://1.2.3.4:2375" }, home, exists: existing(sockets) }),
-    ).toBe("/Users/dev/.colima/pi-sandbox/docker.sock");
-  });
-
-  it("falls back to the default colima profile, then the system socket", () => {
-    const defaultProfile = ["/Users/dev/.colima/default/docker.sock"];
-
-    expect(resolveDockerSocket({ env: {}, home, exists: existing(defaultProfile) })).toBe(defaultProfile[0]);
-    expect(resolveDockerSocket({ env: {}, home, exists: existing([]) })).toBe("/var/run/docker.sock");
+describe("engineSocketPath", () => {
+  it("is the docker socket of the pi-sandbox colima profile under the home it is given", () => {
+    expect(engineSocketPath("/Users/dev")).toBe("/Users/dev/.colima/pi-sandbox/docker.sock");
   });
 });
 
-describe("docker-engine adapter on a colima socket", () => {
-  const colimaEngine = async () => {
-    const home = await temporaryDir();
-    const engine = await startEngine({ socketPath: join(home, ".colima", "pi-sandbox", "docker.sock") });
-
-    return { home, engine };
-  };
-
-  it("declares ssh-agent support and relays the guest to host.lima.internal", async () => {
-    const { home, engine } = await colimaEngine();
-    const backend = backendFor(engine, home);
+describe("docker-engine adapter on the colima VM", () => {
+  it("relays the guest to host.lima.internal", async () => {
+    const engine = await startEngine();
+    const backend = backendFor(engine);
 
     await backend.pullImage(IMAGE);
 
-    expect(backend.capabilities).toEqual({ singleFileMount: true, sshAgent: true });
     expect(await routeOn(backend, 3128)).toEqual({
       network: { kind: "internal", name: REPO_NETWORK },
       address: "10.89.0.2:3128",
@@ -198,8 +162,8 @@ describe("docker-engine adapter on a colima socket", () => {
   });
 
   it("bind-mounts the VM ssh-agent socket at the guest path the spec names", async () => {
-    const { home, engine } = await colimaEngine();
-    const backend = backendFor(engine, home, agentRunner());
+    const engine = await startEngine();
+    const backend = backendFor(engine, agentRunner());
 
     await backend.pullImage(IMAGE);
 
@@ -212,8 +176,8 @@ describe("docker-engine adapter on a colima socket", () => {
   });
 
   it("refuses an ssh-agent spec when the VM has no agent socket", async () => {
-    const { home, engine } = await colimaEngine();
-    const backend = backendFor(engine, home);
+    const engine = await startEngine();
+    const backend = backendFor(engine);
 
     await backend.pullImage(IMAGE);
 
@@ -224,8 +188,8 @@ describe("docker-engine adapter on a colima socket", () => {
   });
 
   it("mounts no agent socket when the spec does not ask for one", async () => {
-    const { home, engine } = await colimaEngine();
-    const backend = backendFor(engine, home, agentRunner());
+    const engine = await startEngine();
+    const backend = backendFor(engine, agentRunner());
 
     await backend.pullImage(IMAGE);
 
@@ -238,74 +202,13 @@ describe("docker-engine adapter on a colima socket", () => {
   });
 });
 
-describe("docker-engine adapter on another engine socket", () => {
-  it("declares no ssh-agent and relays the guest to host.docker.internal", async () => {
-    const engine = await startEngine();
-    const backend = backendFor(engine);
-
-    await backend.pullImage(IMAGE);
-
-    await routeOn(backend, 8080);
-
-    expect(backend.capabilities.sshAgent).toBe(false);
-    expect(relayBody(engine)?.Cmd).toEqual([
-      "TCP-LISTEN:3128,fork,reuseaddr",
-      "TCP:host.docker.internal:8080",
-    ]);
-  });
-
-  it("asks for no extra proxy address on Docker Desktop or off Linux", async () => {
-    const engine = await startEngine({ bridgeGateway: "172.17.0.1" });
-    const desktop = createDockerEngineBackend({
-      socketPath: engine.socketPath,
-      runner: createFakeRunner(() => undefined).runner,
-      home: "/nonexistent-home",
-      platform: "linux",
-    });
-    const mac = createDockerEngineBackend({
-      socketPath: engine.socketPath,
-      runner: createFakeRunner(() => undefined).runner,
-      home: "/nonexistent-home",
-      platform: "darwin",
-    });
-
-    await desktop.pullImage(IMAGE);
-
-    await routeOn(desktop, 8080);
-
-    expect(await desktop.proxyListenHosts()).toEqual([]);
-    expect(await mac.proxyListenHosts()).toEqual([]);
-    expect(engine.createdBodies.find((entry) => entry.name === RELAY)?.body).toMatchObject({
-      HostConfig: { ExtraHosts: ["host.docker.internal:host-gateway"] },
-    });
-  });
-
-  it("on a native Linux engine has the proxy listen on the bridge gateway and points the relay at it", async () => {
-    const engine = await startEngine({ operatingSystem: "Ubuntu 24.04 LTS", bridgeGateway: "172.17.0.1" });
-    const backend = createDockerEngineBackend({
-      socketPath: engine.socketPath,
-      runner: createFakeRunner(() => undefined).runner,
-      home: "/nonexistent-home",
-      platform: "linux",
-    });
-
-    await backend.pullImage(IMAGE);
-
-    await routeOn(backend, 8080);
-
-    expect(await backend.proxyListenHosts()).toEqual(["172.17.0.1"]);
-    expect(engine.createdBodies.find((entry) => entry.name === RELAY)?.body).toMatchObject({
-      Cmd: ["TCP-LISTEN:3128,fork,reuseaddr", "TCP:host.docker.internal:8080"],
-      HostConfig: { ExtraHosts: ["host.docker.internal:172.17.0.1"] },
-    });
-  });
-
+describe("docker-engine adapter status", () => {
   it("reports the socket path and engine version in status", async () => {
     const engine = await startEngine();
 
     expect(await backendFor(engine).status()).toEqual({
       socket: engine.socketPath,
-      profile: "none",
+      profile: "pi-sandbox",
       engine: "27.0.0-fake",
       api: "1.47",
       platform: "linux/arm64",
@@ -318,7 +221,6 @@ describe("docker-engine adapter on another engine socket", () => {
     const backend = createDockerEngineBackend({
       socketPath,
       runner: createFakeRunner(() => undefined).runner,
-      home: dir,
     });
 
     const detection = await backend.detect();
@@ -384,28 +286,6 @@ describe("docker-engine container translation", () => {
     const host = await temporaryDir();
     const engine = await startEngine({ vmShares: ["/nowhere"] });
     const backend = backendFor(engine);
-    const mounts = [{ kind: "bind" as const, source: host, target: "/work/repo", readOnly: false }];
-
-    await backend.pullImage(IMAGE);
-
-    await expect(backend.createContainer({ ...baseSpec, mounts })).rejects.toMatchObject({
-      message: `the sandbox VM does not share ${host}`,
-      hint: `share ${host} in the runtime's file sharing settings`,
-    });
-  });
-
-  it("points at the doctor's vm shares line on a Colima socket", async () => {
-    const host = await temporaryDir();
-    const home = await temporaryDir();
-    const socketPath = join(home, ".colima", "pi-sandbox", "docker.sock");
-
-    await startEngine({ vmShares: ["/nowhere"], socketPath });
-    const backend = createDockerEngineBackend({
-      socketPath,
-      runner: agentRunner(),
-      home,
-      platform: "darwin",
-    });
     const mounts = [{ kind: "bind" as const, source: host, target: "/work/repo", readOnly: false }];
 
     await backend.pullImage(IMAGE);
@@ -495,7 +375,6 @@ describe("docker-engine images", () => {
     const backend = createDockerEngineBackend({
       socketPath: engine.socketPath,
       runner: createProcessRunner(),
-      home: context,
     });
     const built = await backend.buildImage(context, "pi-sandbox:dev");
 
@@ -513,7 +392,6 @@ describe("docker-engine images", () => {
     const backend = createDockerEngineBackend({
       socketPath: engine.socketPath,
       runner: createProcessRunner(),
-      home: context,
     });
 
     await backend.buildImage(context, "pi-sandbox:plain");
@@ -670,17 +548,6 @@ describe("docker-engine volumes", () => {
     await expect(refused).rejects.toBeInstanceOf(LauncherError);
     await expect(refused).rejects.toThrow("volume pi-sandbox-agent-u1 is in use");
   });
-
-  it("refuses to import a missing archive", async () => {
-    const backend = backendFor(await startEngine());
-    const dir = await temporaryDir();
-
-    await mkdir(join(dir, "nested"));
-
-    await expect(
-      backend.importVolume("pi-sandbox-cache", join(dir, "nested", "absent.tar"), IMAGE),
-    ).rejects.toThrow(/does not exist/);
-  });
 });
 
 describe("docker-engine egress relay", () => {
@@ -717,7 +584,7 @@ describe("docker-engine egress relay", () => {
         [LABELS.proxyPolicyHash]: POLICY,
         [LABELS.relayImage]: IMAGE,
       },
-      HostConfig: { NetworkMode: "bridge", ExtraHosts: ["host.docker.internal:host-gateway"] },
+      HostConfig: { NetworkMode: "bridge" },
     });
   });
 
@@ -757,10 +624,7 @@ describe("docker-engine egress relay", () => {
 
     expect(relayOf(engine)?.Id).not.toBe(first);
     expect(relayOf(engine)?.State).toBe("running");
-    expect(relayBody(engine)?.Cmd).toEqual([
-      "TCP-LISTEN:3128,fork,reuseaddr",
-      "TCP:host.docker.internal:4000",
-    ]);
+    expect(relayBody(engine)?.Cmd).toEqual(["TCP-LISTEN:3128,fork,reuseaddr", "TCP:host.lima.internal:4000"]);
     expect(await backend.findContainers({ [LABELS.relayPort]: "4000" })).toHaveLength(1);
   });
 
@@ -781,10 +645,7 @@ describe("docker-engine egress relay", () => {
     const routeB = await routeOn(backend, 4000, { repo: "b".repeat(64) });
 
     expect(relayOf(engine)?.Id).toBe(first);
-    expect(relayBody(engine)?.Cmd).toEqual([
-      "TCP-LISTEN:3128,fork,reuseaddr",
-      "TCP:host.docker.internal:3128",
-    ]);
+    expect(relayBody(engine)?.Cmd).toEqual(["TCP-LISTEN:3128,fork,reuseaddr", "TCP:host.lima.internal:3128"]);
     expect(routeB.notices).toEqual([
       `the egress relay ${RELAY} still forwards to proxy port 3128, not 4000; it is kept because sandboxes of other repositories use it, so egress may fail until they exit and it is replaced`,
     ]);
@@ -807,10 +668,7 @@ describe("docker-engine egress relay", () => {
     const again = await routeOn(backend, 4000, { repo });
 
     expect(relayOf(engine)?.Id).not.toBe(first);
-    expect(relayBody(engine)?.Cmd).toEqual([
-      "TCP-LISTEN:3128,fork,reuseaddr",
-      "TCP:host.docker.internal:4000",
-    ]);
+    expect(relayBody(engine)?.Cmd).toEqual(["TCP-LISTEN:3128,fork,reuseaddr", "TCP:host.lima.internal:4000"]);
     expect(again.notices).toBeUndefined();
   });
 

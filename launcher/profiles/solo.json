@@ -1,5 +1,4 @@
 {
-  "backend": "auto",
   "fallback": "host",
   "credentials": { "kind": "host-pi-auth" },
   "egress": {

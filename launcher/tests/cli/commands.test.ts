@@ -15,9 +15,9 @@ const packageVersion = async () =>
     .version;
 
 describe("pi sandbox status", () => {
-  it("reports backend, container, proxy, image and capability gaps", async () => {
-    const fake = createFakeBackend({ capabilities: { sshAgent: false } });
-    const harness = await createHarness({ adapters: () => [fake.backend] });
+  it("reports runtime, container, proxy and image", async () => {
+    const fake = createFakeBackend();
+    const harness = await createHarness({ backend: () => fake.backend });
 
     await run([], harness.deps);
 
@@ -27,21 +27,20 @@ describe("pi sandbox status", () => {
     const [container] = [...fake.containers.values()];
 
     expect(lines).toContain(`launcher: ${await packageVersion()}`);
-    expect(lines).toContain("backend: colima fake");
-    expect(lines).toContain("backend socket: /fake/docker.sock");
+    expect(lines).toContain("runtime: colima fake");
+    expect(lines).toContain("runtime socket: /fake/docker.sock");
     expect(lines).toContain(`container: ${container?.summary.id} stopped`);
     expect(lines).toContain("container digest: sha256:built-1");
     expect(lines.some((line) => /^container config hash: [0-9a-f]{64} \(current\)$/.test(line))).toBe(true);
     expect(lines).toContain("proxy: stopped");
     expect(lines).toContain(`image: ghcr.io/zharskiy/pi-sandbox:${await packageVersion()} sha256:built-1`);
-    expect(lines).toContain("gap: no ssh agent forwarding, ssh.agent has no effect");
     expect(lines).toContain("sessions: 0 running for this repository");
     expect(lines).toContain("grants: 0 active");
   });
 
   it("reports the container stale when its image digest differs from the recorded image", async () => {
     const fake = createFakeBackend();
-    const harness = await createHarness({ adapters: () => [fake.backend] });
+    const harness = await createHarness({ backend: () => fake.backend });
 
     await run([], harness.deps);
 
@@ -58,7 +57,7 @@ describe("pi sandbox status", () => {
 
   it("reports the container stale when its spec hash differs from the one the last launch wanted", async () => {
     const fake = createFakeBackend();
-    const harness = await createHarness({ adapters: () => [fake.backend] });
+    const harness = await createHarness({ backend: () => fake.backend });
 
     await run([], harness.deps);
 
@@ -119,14 +118,14 @@ describe("pi sandbox status", () => {
     expect(lines).toContain("grant: docs.example.test for this repository permanently");
   });
 
-  it("still reports the proxy and image without a backend", async () => {
+  it("still reports the proxy and image without a reachable engine", async () => {
     const fake = createFakeBackend();
     const down = { ...fake.backend, detect: async () => ({ available: false, reason: "socket missing" }) };
-    const harness = await createHarness({ adapters: () => [down] });
+    const harness = await createHarness({ backend: () => down });
 
     expect(await run(["sandbox", "status"], harness.deps)).toBe(0);
     expect(harness.stdout()).toContain(
-      "backend: none (no sandbox backend available: colima (socket missing); apple (no adapter on this host))",
+      "runtime: none (the sandbox VM engine is unreachable at ~/.colima/pi-sandbox/docker.sock)",
     );
     expect(harness.stdout()).toContain("proxy: stopped");
     expect(harness.stdout()).toContain("(not built yet)");
@@ -137,16 +136,16 @@ describe("pi sandbox config", () => {
   it("prints the effective config followed by the source layer of each key", async () => {
     const harness = await createHarness();
 
-    await harness.writeJson(harness.userConfigFile, { backend: "colima" });
+    await harness.writeJson(harness.userConfigFile, { fallback: "refuse" });
 
     expect(await run(["sandbox", "config"], harness.deps)).toBe(0);
 
     const output = harness.stdout();
     const json = output.slice(0, output.indexOf("\n# "));
 
-    expect(JSON.parse(json).backend).toBe("colima");
-    expect(output).toContain("# backend: user\n");
-    expect(output).toContain("# fallback: default\n");
+    expect(JSON.parse(json).fallback).toBe("refuse");
+    expect(output).toContain("# fallback: user\n");
+    expect(output).toContain("# image.reference: default\n");
   });
 
   it("prints config and sources as one JSON object with --json", async () => {
@@ -155,20 +154,20 @@ describe("pi sandbox config", () => {
     expect(await run(["sandbox", "config", "--json"], harness.deps)).toBe(0);
 
     const parsed = JSON.parse(harness.stdout()) as {
-      config: { backend: string };
+      config: { fallback: string };
       sources: Record<string, string>;
     };
 
-    expect(parsed.config.backend).toBe("auto");
-    expect(parsed.sources.backend).toBe("default");
+    expect(parsed.config.fallback).toBe("host");
+    expect(parsed.sources.fallback).toBe("default");
   });
 
   it("sets a user key, or a project key with --project", async () => {
     const harness = await createHarness();
 
-    expect(await run(["sandbox", "config", "set", "backend", '"apple"'], harness.deps)).toBe(0);
-    expect(JSON.parse(await readFile(harness.userConfigFile, "utf8"))).toEqual({ backend: "apple" });
-    expect(harness.stdout()).toContain(`set backend in ${harness.userConfigFile}`);
+    expect(await run(["sandbox", "config", "set", "fallback", '"refuse"'], harness.deps)).toBe(0);
+    expect(JSON.parse(await readFile(harness.userConfigFile, "utf8"))).toEqual({ fallback: "refuse" });
+    expect(harness.stdout()).toContain(`set fallback in ${harness.userConfigFile}`);
 
     expect(
       await run(
@@ -188,10 +187,10 @@ describe("pi sandbox config", () => {
   it("refuses a value that is not JSON with a hint", async () => {
     const harness = await createHarness();
 
-    expect(await run(["sandbox", "config", "set", "backend", "apple"], harness.deps)).toBe(1);
-    expect(harness.stderr()).toContain("pi-sandbox: config set backend: apple is not a JSON value\n");
+    expect(await run(["sandbox", "config", "set", "fallback", "refuse"], harness.deps)).toBe(1);
+    expect(harness.stderr()).toContain("pi-sandbox: config set fallback: refuse is not a JSON value\n");
     expect(harness.stderr()).toContain(
-      `  hint: quote strings as JSON, for example pi sandbox config set backend '"apple"'`,
+      `  hint: quote strings as JSON, for example pi sandbox config set fallback '"refuse"'`,
     );
   });
 
@@ -221,7 +220,7 @@ describe("pi sandbox config", () => {
 describe("pi sandbox gc and reset", () => {
   it("removes stopped launcher containers, this repository's idle one included, and keeps running ones", async () => {
     const fake = createFakeBackend();
-    const harness = await createHarness({ adapters: () => [fake.backend] });
+    const harness = await createHarness({ backend: () => fake.backend });
 
     await run([], harness.deps);
 
@@ -252,7 +251,7 @@ describe("pi sandbox gc and reset", () => {
 
   it("removes the proxy token of a repository whose container it removed, so the token stops working", async () => {
     const fake = createFakeBackend();
-    const harness = await createHarness({ adapters: () => [fake.backend] });
+    const harness = await createHarness({ backend: () => fake.backend });
     const tokens = stateLayout(harness.stateDir).proxyInstance("policy");
     const other = "b".repeat(64);
 
@@ -281,7 +280,7 @@ describe("pi sandbox gc and reset", () => {
   it("removes relays and stops proxies that no running container uses", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({
-      adapters: () => [fake.backend],
+      backend: () => fake.backend,
       proxy: {
         list: async () => [
           { policyHash: "policy", pid: 1, port: 3128, token: "t" },
@@ -318,7 +317,7 @@ describe("pi sandbox gc and reset", () => {
 
   it("removes the networks of repositories that have no container left", async () => {
     const fake = createFakeBackend();
-    const harness = await createHarness({ adapters: () => [fake.backend] });
+    const harness = await createHarness({ backend: () => fake.backend });
     const kept = "a".repeat(64);
 
     await run([], harness.deps);
@@ -343,7 +342,7 @@ describe("pi sandbox gc and reset", () => {
   it("keeps the proxy, relay and container of a repository whose session is still preparing", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({
-      adapters: () => [fake.backend],
+      backend: () => fake.backend,
       proxy: { list: async () => [{ policyHash: "preparing", pid: 3, port: 5000, token: "t" }] },
     });
     const repo = sha256Hex(harness.repoRoot);
@@ -381,7 +380,7 @@ describe("pi sandbox gc and reset", () => {
 
   it("removes this repo's container and, with --volumes, its agent and cache volumes", async () => {
     const fake = createFakeBackend();
-    const harness = await createHarness({ adapters: () => [fake.backend] });
+    const harness = await createHarness({ backend: () => fake.backend });
 
     await harness.writeJson(harness.userConfigFile, { mounts: { cacheVolumes: ["node_modules"] } });
 
@@ -411,7 +410,7 @@ describe("pi sandbox gc and reset", () => {
 
   it("removes a volume whose repository no longer exists on disk", async () => {
     const fake = createFakeBackend();
-    const harness = await createHarness({ adapters: () => [fake.backend] });
+    const harness = await createHarness({ backend: () => fake.backend });
     const gone = await tempDir("gone-repo");
 
     await fake.backend.ensureVolume("pi-sandbox-agent-gone", {
@@ -428,7 +427,7 @@ describe("pi sandbox gc and reset", () => {
 
   it("keeps the volumes of a repository that still exists after its stopped container is removed", async () => {
     const fake = createFakeBackend();
-    const harness = await createHarness({ adapters: () => [fake.backend] });
+    const harness = await createHarness({ backend: () => fake.backend });
 
     await run([], harness.deps);
 
@@ -447,7 +446,7 @@ describe("pi sandbox gc and reset", () => {
 
   it("keeps a volume without a repository label and says how to remove it", async () => {
     const fake = createFakeBackend();
-    const harness = await createHarness({ adapters: () => [fake.backend] });
+    const harness = await createHarness({ backend: () => fake.backend });
 
     await fake.backend.ensureVolume("pi-sandbox-agent-legacy");
 
@@ -460,7 +459,7 @@ describe("pi sandbox gc and reset", () => {
 
   it("removes the proxy instance of this repo's policy so its token rotates on the next launch", async () => {
     const fake = createFakeBackend();
-    const harness = await createHarness({ adapters: () => [fake.backend] });
+    const harness = await createHarness({ backend: () => fake.backend });
 
     await run([], harness.deps);
 
@@ -471,7 +470,7 @@ describe("pi sandbox gc and reset", () => {
 
   it("keeps the proxy instance when a running container of another repository shares its policy", async () => {
     const fake = createFakeBackend();
-    const harness = await createHarness({ adapters: () => [fake.backend] });
+    const harness = await createHarness({ backend: () => fake.backend });
 
     await run([], harness.deps);
 

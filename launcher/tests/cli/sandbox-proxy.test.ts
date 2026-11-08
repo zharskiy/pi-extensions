@@ -7,7 +7,7 @@ describe("env-sourced credentials", () => {
   it("refuses a secret value with a line break before the sandbox starts", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({
-      adapters: () => [fake.backend],
+      backend: () => fake.backend,
       env: { CORP_TOKEN: "abc\r\nX-Evil: 1" },
     });
 

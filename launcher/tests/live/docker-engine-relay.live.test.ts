@@ -1,11 +1,11 @@
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { type Backend, createDockerEngineBackend, LABELS, resolveDockerSocket } from "../../backend/index.ts";
+import { type Backend, createDockerEngineBackend, engineSocketPath, LABELS } from "../../backend/index.ts";
 import { createProcessRunner } from "../../shared/index.ts";
 
 const RELAY_IMAGE = "pi-sandbox-relay-test:alpine";
@@ -18,18 +18,7 @@ const POLICY_HASH = "0".repeat(64);
 
 const REPO_HASH = "f".repeat(64);
 
-const colimaSockets = () => {
-  const root = join(homedir(), ".colima");
-
-  return existsSync(root) ? readdirSync(root).map((profile) => join(root, profile, "docker.sock")) : [];
-};
-
-const socketPath = [
-  resolveDockerSocket({ env: process.env, home: homedir() }),
-  ...colimaSockets(),
-  "/var/run/docker.sock",
-  join(homedir(), ".docker", "run", "docker.sock"),
-].find((path) => existsSync(path));
+const socketPath = [engineSocketPath(homedir())].find((path) => existsSync(path));
 
 const enabled = process.env.PI_SANDBOX_LIVE === "1" && socketPath !== undefined;
 
@@ -62,7 +51,6 @@ describe.skipIf(!enabled)("docker-engine egress relay (live)", () => {
   const backend = createDockerEngineBackend({
     socketPath: socketPath ?? "",
     runner: createProcessRunner(),
-    home: homedir(),
   });
   const state: { server?: Server; clientId?: string; address?: string } = {};
 

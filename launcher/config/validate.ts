@@ -1,6 +1,5 @@
 import { isAbsolute } from "node:path";
 import {
-  BACKEND_NAMES,
   isJsonObject,
   isSecretName,
   LAUNCHER_SET_VARIABLES,
@@ -318,7 +317,6 @@ const LAYER_SPEC: ObjectSpec = {
   properties: {
     $schema: text(),
     profile: choice(PROFILE_NAMES),
-    backend: choice(["auto", ...BACKEND_NAMES]),
     fallback: choice(["refuse", "host"]),
     image: shape({
       reference: text(nonEmpty),
@@ -392,7 +390,6 @@ const LAYER_SPEC: ObjectSpec = {
 };
 
 const SECURITY_KEYS = [
-  "backend",
   "credentials.rules",
   "credentials.derive",
   "credentials.vault",

@@ -1,7 +1,7 @@
 import { lookup } from "node:dns/promises";
 import { homedir } from "node:os";
 import { createInterface } from "node:readline/promises";
-import { createDefaultAdapters } from "../backend/index.ts";
+import { createDockerEngineBackend, engineSocketPath } from "../backend/index.ts";
 import type { HostTerminal } from "../container/index.ts";
 import { locateBundledPi } from "../hostpi/index.ts";
 import {
@@ -73,8 +73,7 @@ const realDeps = (): CliDeps => {
     terminal: hostTerminal(),
     platform: process.platform,
     uid: process.getuid?.() ?? 0,
-    gid: process.getgid?.() ?? 0,
-    adapters: () => createDefaultAdapters({ runner, env: process.env, home }),
+    backend: () => createDockerEngineBackend({ socketPath: engineSocketPath(home), runner }),
     proxy: {
       ensure: (request) => ensureProxyRunning({ ...request, runner }),
       list: readProxyInstances,

@@ -1,4 +1,4 @@
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { request } from "node:http";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -21,20 +21,8 @@ export interface EngineNetwork {
   Containers?: Record<string, unknown>;
 }
 
-const UNIX_PREFIX = "unix://";
-
-const colimaSockets = () => {
-  const root = join(homedir(), ".colima");
-
-  return existsSync(root) ? readdirSync(root).map((profile) => join(root, profile, "docker.sock")) : [];
-};
-
-const dockerHost = process.env.DOCKER_HOST?.startsWith(UNIX_PREFIX)
-  ? process.env.DOCKER_HOST.slice(UNIX_PREFIX.length)
-  : undefined;
-
-export const engineSocket = [dockerHost, ...colimaSockets(), "/var/run/docker.sock"].find(
-  (path): path is string => path !== undefined && existsSync(path),
+export const engineSocket = [join(homedir(), ".colima", "pi-sandbox", "docker.sock")].find((path) =>
+  existsSync(path),
 );
 
 const call = <T>(method: string, path: string) =>

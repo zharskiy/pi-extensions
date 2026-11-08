@@ -1,16 +1,5 @@
-import { spawn, spawnSync } from "node:child_process";
-import {
-  chmod,
-  lstat,
-  mkdir,
-  mkdtemp,
-  readFile,
-  readlink,
-  realpath,
-  rm,
-  symlink,
-  writeFile,
-} from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { lstat, mkdir, mkdtemp, readlink, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -28,33 +17,18 @@ afterEach(async () => {
   await Promise.all(created.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 });
 
-const FAKE_CONTAINER = `#!/bin/sh
-case "$1" in
-  system) exit 0 ;;
-  list) printf 'pi-sandbox-mine\\npi-sandbox-foreign\\nother\\n' ;;
-  inspect)
-    if [ "$2" = pi-sandbox-mine ]; then
-      printf '[{"configuration":{"labels":{"pi-sandbox.managed": "true"}}}]\\n'
-    else
-      printf '[{"configuration":{"labels":{"owner":"someone"}}}]\\n'
-    fi ;;
-  delete) echo "$@" >> "$FAKE_LOG" ;;
-  network)
-    case "$2" in
-      list) printf 'pi-sandbox\npi-sandbox-0123456789ab\npi-sandbox-other\nbridge\n' ;;
-      inspect)
-        if [ "$3" = pi-sandbox-other ]; then
-          printf '[{"config":{"labels":{}}}]\n'
-        else
-          printf '[{"config":{"labels":{"pi-sandbox.managed":"true"}}}]\n'
-        fi ;;
-      delete) echo "$@" >> "$FAKE_LOG" ;;
-    esac ;;
-esac
-`;
+const linkEngineSocket = async (root: string, socket: string) => {
+  const link = join(root, "home", ".colima", "pi-sandbox", "docker.sock");
 
-const runUninstall = (root: string, socket: string, flags: string[] = []) =>
-  new Promise<{ status: number | null; stdout: string }>((resolve) => {
+  await mkdir(dirname(link), { recursive: true });
+
+  await symlink(socket, link);
+};
+
+const runUninstall = async (root: string, socket: string, flags: string[] = []) => {
+  await linkEngineSocket(root, socket);
+
+  return new Promise<{ status: number | null; stdout: string }>((resolve) => {
     const child = spawn(
       "sh",
       [join(launcherRoot(), "uninstall.sh"), "--bin-dir", join(root, "local-bin"), ...flags],
@@ -63,7 +37,6 @@ const runUninstall = (root: string, socket: string, flags: string[] = []) =>
           HOME: join(root, "home"),
           PATH: `${dirname(process.execPath)}:/usr/bin:/bin`,
           PI_SANDBOX_STATE_DIR: join(root, "state"),
-          DOCKER_HOST: `unix://${socket}`,
         },
       },
     );
@@ -73,6 +46,7 @@ const runUninstall = (root: string, socket: string, flags: string[] = []) =>
 
     child.on("close", (status) => resolve({ status, stdout: Buffer.concat(chunks).toString("utf8") }));
   });
+};
 
 const managed = { [LABELS.managed]: "true" };
 
@@ -120,7 +94,7 @@ const seedEngine = (engine: FakeEngine) => {
 };
 
 const engineRoot = async () => {
-  const root = await mkdtemp(join(tmpdir(), "pi-sandbox-uninstall-"));
+  const root = await mkdtemp(join("/tmp", "psu-"));
   const engine = await createFakeEngine();
 
   created.push(root);
@@ -183,48 +157,8 @@ describe("uninstall.sh on the docker engine", () => {
     const result = await runUninstall(root, join(root, "missing.sock"), ["--volumes"]);
 
     expect(result.status).toBe(0);
-    expect(result.stdout).toContain("containers: no reachable docker engine, nothing removed");
+    expect(result.stdout).toContain("containers: the sandbox VM engine is not running, nothing removed");
     expect(result.stdout).not.toContain("volumes:");
-  });
-});
-
-describe("uninstall.sh on the Apple runtime", () => {
-  it("deletes only containers and networks that carry the launcher's managed label", async () => {
-    const root = await mkdtemp(join(tmpdir(), "pi-sandbox-uninstall-"));
-    const bin = join(root, "bin");
-    const log = join(root, "deleted.log");
-
-    created.push(root);
-
-    await mkdir(bin, { recursive: true });
-
-    await writeFile(join(bin, "container"), FAKE_CONTAINER);
-
-    await chmod(join(bin, "container"), 0o755);
-
-    const result = spawnSync(
-      "sh",
-      [join(launcherRoot(), "uninstall.sh"), "--bin-dir", join(root, "local-bin")],
-      {
-        env: {
-          HOME: join(root, "home"),
-          PATH: `${bin}:/usr/bin:/bin`,
-          PI_SANDBOX_STATE_DIR: join(root, "state"),
-          DOCKER_HOST: `unix://${join(root, "missing.sock")}`,
-          FAKE_LOG: log,
-        },
-        encoding: "utf8",
-      },
-    );
-
-    expect(result.status).toBe(0);
-    expect(result.stdout).toContain(
-      "apple container: removed 1 pi-sandbox containers and 2 pi-sandbox networks",
-    );
-    expect((await readFile(log, "utf8")).trim().split("\n")).toEqual([
-      "delete --force pi-sandbox-mine",
-      "network delete pi-sandbox pi-sandbox-0123456789ab",
-    ]);
   });
 });
 

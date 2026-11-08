@@ -1,11 +1,8 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import type * as Vitest from "vitest";
 import { type Backend, type ContainerSpec, LABELS } from "../../backend/index.ts";
-import { createProcessRunner, LauncherError } from "../../shared/index.ts";
+import { LauncherError } from "../../shared/index.ts";
 
 interface NetworkTraits {
   managed: boolean;
@@ -43,8 +40,6 @@ const WRONG_DIGEST = `sha256:${"0".repeat(64)}`;
 
 const RUN_LABEL = "pi-sandbox.conformance";
 
-const GREETING = "hello from the host\n";
-
 const PIPED_INPUT = "piped input\n";
 
 const SHORT_REPO_HASH = 12;
@@ -52,16 +47,6 @@ const SHORT_REPO_HASH = 12;
 const randomHash = () => randomBytes(32).toString("hex");
 
 const networkOf = (repoHash: string) => `pi-sandbox-${repoHash.slice(0, SHORT_REPO_HASH)}`;
-
-const tarRunner = createProcessRunner();
-
-const tar = async (args: string[]) => {
-  const result = await tarRunner.run("tar", args, { env: { COPYFILE_DISABLE: "1" } });
-
-  if (result.code !== 0) {
-    throw new Error(`tar ${args.join(" ")}: ${result.stderr}`);
-  }
-};
 
 const inputOf = (text = "") => {
   const stdin = new PassThrough();
@@ -83,7 +68,7 @@ export const runBackendConformance = (
   const volumes = [`${prefix}-a`, `${prefix}-b`, `${prefix}-mounted`, `${prefix}-owned`, `${prefix}-listed`];
   const policyHash = randomHash();
   const repos = [randomHash(), randomHash(), randomHash(), randomHash(), randomHash()];
-  const state: { target?: ConformanceTarget; workDir?: string } = {};
+  const state: { target?: ConformanceTarget } = {};
 
   const target = () => {
     if (state.target === undefined) {
@@ -163,7 +148,6 @@ export const runBackendConformance = (
   describe(`${title} backend conformance`, () => {
     beforeAll(async () => {
       state.target = await factory();
-      state.workDir = await mkdtemp(join(tmpdir(), "pi-sandbox-conformance-"));
     });
 
     afterAll(async () => {
@@ -188,10 +172,6 @@ export const runBackendConformance = (
       );
 
       await state.target?.dispose?.();
-
-      if (state.workDir !== undefined) {
-        await rm(state.workDir, { recursive: true, force: true });
-      }
     });
 
     it("detects the runtime and reports a version", async () => {
@@ -315,44 +295,6 @@ export const runBackendConformance = (
       });
 
       await backend().removeContainer(created.id);
-    });
-
-    it("round-trips a volume through export and import", async () => {
-      const workDir = state.workDir ?? "";
-      const source = join(workDir, "source");
-      const restored = join(workDir, "restored");
-
-      await mkdir(join(source, "volume"), { recursive: true });
-
-      await writeFile(join(source, "volume", "hello.txt"), GREETING);
-
-      await tar(["-c", "-f", join(workDir, "seed.tar"), "-C", source, "volume"]);
-
-      await backend().ensureVolume(volumes[0] ?? "");
-
-      await backend().importVolume(volumes[0] ?? "", join(workDir, "seed.tar"), target().runnableImage);
-
-      await backend().exportVolume(volumes[0] ?? "", join(workDir, "first.tar"), target().runnableImage);
-
-      await backend().importVolume(volumes[1] ?? "", join(workDir, "first.tar"), target().runnableImage);
-
-      await backend().exportVolume(volumes[1] ?? "", join(workDir, "second.tar"), target().runnableImage);
-
-      await mkdir(restored, { recursive: true });
-
-      await tar(["-x", "-f", join(workDir, "second.tar"), "-C", restored]);
-
-      expect(await readFile(join(restored, "volume", "hello.txt"), "utf8")).toBe(GREETING);
-    });
-
-    it("refuses to export a volume that does not exist", async () => {
-      await expect(
-        backend().exportVolume(
-          `${prefix}-missing`,
-          join(state.workDir ?? "", "missing.tar"),
-          target().runnableImage,
-        ),
-      ).rejects.toBeInstanceOf(LauncherError);
     });
 
     it("removes volumes idempotently", async () => {

@@ -294,7 +294,6 @@ describe("mergeLayers egress cap", () => {
 
 const COMPLETE_LAYER: LayerConfig = {
   profile: "team",
-  backend: "apple",
   fallback: "refuse",
   image: {
     reference: "registry.corp.test/pi",

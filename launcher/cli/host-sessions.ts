@@ -1,4 +1,4 @@
-import { type Backend, selectBackend } from "../backend/index.ts";
+import type { Backend } from "../backend/index.ts";
 import { findRepoContainer, removeRepoContainer } from "../container/index.ts";
 import { withRepoSessionLock } from "../grants/index.ts";
 import { prepareHostSessions, probeHostSessions, sweepHostSessions } from "../provision/index.ts";
@@ -13,6 +13,7 @@ import {
 import { type CliDeps, hostAgentDirOf, writeLine, writeNotices } from "./deps.ts";
 import type { LaunchContext } from "./launch.ts";
 import { othersLive } from "./sessions.ts";
+import { reachableBackend } from "./vm-lifecycle.ts";
 
 export const hostSessionsOf = (
   deps: CliDeps,
@@ -165,7 +166,7 @@ export const sessionsSweeper = (deps: CliDeps, context: LaunchContext) => async 
 };
 
 const runningOrUnknown = (deps: CliDeps, context: LaunchContext) => () =>
-  selectBackend(context.effective.config.backend, deps.adapters())
+  reachableBackend(deps)
     .then((backend) => containerRunning(backend, context))
     .catch(() => true);
 

@@ -56,7 +56,6 @@ export const containerBody = (spec: ContainerSpec, agentSocket?: string) => ({
   Labels: spec.labels,
   Env: envList({ ...spec.env, ...agentEnv(spec) }),
   WorkingDir: spec.workdir,
-  User: spec.user,
   HostConfig: {
     Binds: agentMounts(spec, agentSocket).map(bindOf),
     Mounts: spec.mounts.map(mountOf),

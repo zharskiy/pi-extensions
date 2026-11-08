@@ -1,10 +1,10 @@
 import { randomBytes } from "node:crypto";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createDockerEngineBackend, execCapture, LABELS, resolveDockerSocket } from "../../backend/index.ts";
+import { createDockerEngineBackend, engineSocketPath, execCapture, LABELS } from "../../backend/index.ts";
 import { ensureContainer, type LauncherContainerSpec } from "../../container/index.ts";
 import { ensureSandboxImage } from "../../image/index.ts";
 import { createProcessRunner, launcherRoot } from "../../shared/index.ts";
@@ -18,20 +18,7 @@ const RUNNABLE = "pi-sandbox-conformance:busybox";
 
 const RELAY = "pi-sandbox-relay-test:alpine";
 
-const colimaSockets = () => {
-  const root = join(homedir(), ".colima");
-
-  return existsSync(root) ? readdirSync(root).map((profile) => join(root, profile, "docker.sock")) : [];
-};
-
-const candidates = () => [
-  resolveDockerSocket({ env: process.env, home: homedir() }),
-  ...colimaSockets(),
-  "/var/run/docker.sock",
-  join(homedir(), ".docker", "run", "docker.sock"),
-];
-
-const socketPath = candidates().find((path) => existsSync(path));
+const socketPath = [engineSocketPath(homedir())].find((path) => existsSync(path));
 
 const enabled = process.env.PI_SANDBOX_LIVE === "1" && socketPath !== undefined;
 
@@ -58,7 +45,7 @@ runBackendConformance(
   hooks,
   async () => {
     const runner = createProcessRunner();
-    const backend = createDockerEngineBackend({ socketPath: socketPath ?? "", runner, home: homedir() });
+    const backend = createDockerEngineBackend({ socketPath: socketPath ?? "", runner });
 
     await backend.pullImage(PULLABLE);
 
@@ -90,7 +77,6 @@ hooks.describe("docker-engine volume ownership", () => {
   const backend = createDockerEngineBackend({
     socketPath: socketPath ?? "",
     runner: createProcessRunner(),
-    home: homedir(),
   });
   const state = { dir: "", id: "" };
 
@@ -112,13 +98,11 @@ hooks.describe("docker-engine volume ownership", () => {
     network: { kind: "none" },
     env: {},
     workdir: "/",
-    user: "1000:1000",
     readOnlyRoot: true,
     tmpfs: ["/tmp:mode=1777", "/home/pi:mode=1777"],
     init: true,
     resources: { cpus: 1, memoryGiB: 0.25 },
-    requiredCopies: [],
-    copiesDir: join(state.dir, "copies"),
+    wantedFile: join(state.dir, "wanted.json"),
     volumeLabels: {},
     ownedPaths: ["/home/pi/.cache", OWNERSHIP_TARGET],
   });
@@ -175,7 +159,6 @@ hooks.describe("docker-engine sandbox image missing-command hint", () => {
   const backend = createDockerEngineBackend({
     socketPath: socketPath ?? "",
     runner: createProcessRunner(),
-    home: homedir(),
   });
   const state = { dir: "", id: "" };
 
@@ -195,13 +178,11 @@ hooks.describe("docker-engine sandbox image missing-command hint", () => {
     network: { kind: "none" },
     env: {},
     workdir: "/home/pi",
-    user: "1000:1000",
     readOnlyRoot: true,
     tmpfs: ["/tmp:mode=1777", "/home/pi:mode=1777"],
     init: true,
     resources: { cpus: 1, memoryGiB: 0.5 },
-    requiredCopies: [],
-    copiesDir: join(state.dir, "copies"),
+    wantedFile: join(state.dir, "wanted.json"),
     volumeLabels: {},
     ownedPaths: [],
   });

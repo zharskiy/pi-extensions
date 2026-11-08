@@ -14,7 +14,7 @@ const launchHarness = async (options: { bundledPi?: null } = {}) => {
   const fake = createFakeBackend();
   const requests: ProxyRequest[] = [];
   const harness = await createHarness({
-    adapters: () => [fake.backend],
+    backend: () => fake.backend,
     ...options,
     proxy: {
       ensure: async (request) => {

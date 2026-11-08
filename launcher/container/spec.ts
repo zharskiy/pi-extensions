@@ -1,12 +1,11 @@
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import {
-  type BackendCapabilities,
   type ContainerSpec,
+  engineSocketPath,
   type ImageInfo,
   type MountSpec,
   type NetworkRef,
-  resolveDockerSocket,
 } from "../backend/index.ts";
 import type { SandboxConfig } from "../config/index.ts";
 import {
@@ -29,21 +28,15 @@ import {
   agentVolumeName,
   cacheVolumeName,
   containerName,
-  copiesDir,
   LABELS,
   repoHash,
   sharedVolumeName,
   userHashOf,
+  wantedFile,
 } from "./names.ts";
 
-export interface RequiredCopy {
-  source: string;
-  target: string;
-}
-
 export interface LauncherContainerSpec extends ContainerSpec {
-  requiredCopies: RequiredCopy[];
-  copiesDir: string;
+  wantedFile: string;
   volumeLabels: Record<string, Record<string, string>>;
   ownedPaths: string[];
 }
@@ -71,9 +64,6 @@ export interface ContainerSpecInput {
   image: ImageInfo & { reference: string };
   hostEnv: Record<string, string | undefined>;
   hostUid: number;
-  hostGid: number;
-  platform: NodeJS.Platform;
-  capabilities: BackendCapabilities;
   stateDir: string;
   gitOverlay?: GitOverlay;
   proxy?: SpecProxy;
@@ -137,12 +127,11 @@ const gitMounts = (input: ContainerSpecInput) => {
 
   const snapshots = gitSnapshotsDir(input.stateDir, input.workspace.repoRoot);
   const snapshotOf = (target: string) => bind(gitSnapshotPath(snapshots, target), target, true);
-  const files = input.capabilities.singleFileMount ? overlay.readOnlyFiles : [];
 
   return [
     ...overlay.selfBinds.map((path) => bind(path, path, false)),
     ...overlay.readOnlyDirs.map(snapshotOf),
-    ...files.map(snapshotOf),
+    ...overlay.readOnlyFiles.map(snapshotOf),
   ];
 };
 
@@ -158,7 +147,7 @@ const extraMounts = (input: ContainerSpecInput) => {
     home,
     env: input.hostEnv,
     repoRoot: input.workspace.repoRoot,
-    engineSockets: [resolveDockerSocket({ env: input.hostEnv, home })],
+    engineSockets: [engineSocketPath(home)],
   });
 };
 
@@ -313,20 +302,14 @@ const sandboxEnv = (input: ContainerSpecInput) => ({
 const trustMounts = (input: ContainerSpecInput) => {
   const source = trustSource(input);
 
-  if (source === undefined) {
-    return { mounts: [], copies: [] };
-  }
-
-  return input.capabilities.singleFileMount
-    ? { mounts: [bind(source, GUEST_PATHS.trustPem, true)], copies: [] }
-    : { mounts: [], copies: [{ source, target: GUEST_PATHS.trustPem }] };
+  return source === undefined ? [] : [bind(source, GUEST_PATHS.trustPem, true)];
 };
 
 const renderMounts = (renderDir: string | undefined) =>
   renderDir === undefined ? [] : [bind(renderDir, GUEST_PATHS.renderDir, true)];
 
 const sshAgentOf = (input: ContainerSpecInput) =>
-  input.config.ssh.agent && input.capabilities.sshAgent ? { guestSocket: GUEST_SSH_AUTH_SOCK } : undefined;
+  input.config.ssh.agent ? { guestSocket: GUEST_SSH_AUTH_SOCK } : undefined;
 
 const baseLabels = (input: ContainerSpecInput) => ({
   [LABELS.managed]: "true",
@@ -354,7 +337,6 @@ const withSpecHash = (spec: LauncherContainerSpec): LauncherContainerSpec => ({
 
 export const buildContainerSpec = (input: ContainerSpecInput): LauncherContainerSpec => {
   const { workspace, config } = input;
-  const trust = trustMounts(input);
   const extraReadOnly = extraMounts(input).map((mount) => bind(mount.source, mount.target, true));
   const agentVolume = agentVolumeName(hostUser(input.hostEnv, input.hostUid), workspace.repoRoot);
   const owned = ownedVolumes(input);
@@ -372,19 +354,17 @@ export const buildContainerSpec = (input: ContainerSpecInput): LauncherContainer
       ...sessionsMounts(input),
       ...volumes.map((entry) => volume(entry.name, entry.target)),
       ...renderMounts(input.renderDir),
-      ...trust.mounts,
+      ...trustMounts(input),
     ],
     network: input.proxy?.network ?? NO_NETWORK,
     env: sandboxEnv(input),
     workdir: workspace.repoRoot,
-    user: input.platform === "linux" ? `${input.hostUid}:${input.hostGid}` : undefined,
     readOnlyRoot: true,
     tmpfs: [`/tmp:${SHARED_TMPFS}`, `${GUEST_HOME}:${SHARED_TMPFS}`],
     init: true,
     resources: { cpus: config.resources.cpus, memoryGiB: config.resources.memoryGiB },
     sshAgent: sshAgentOf(input),
-    requiredCopies: trust.copies,
-    copiesDir: copiesDir(input.stateDir, workspace.repoRoot),
+    wantedFile: wantedFile(input.stateDir, workspace.repoRoot),
     volumeLabels: Object.fromEntries([
       [agentVolume, repoVolumeLabels(workspace)],
       ...volumes.map((entry) => [entry.name, entry.labels]),

@@ -1,18 +1,17 @@
-import { copyFile, lstat, mkdir, realpath } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { lstat, mkdir, realpath } from "node:fs/promises";
+import { dirname } from "node:path";
 import { type Backend, type ContainerSummary, execCapture, type MountSpec } from "../backend/index.ts";
 import {
   errorMessage,
   isWithin,
   LauncherError,
   readJsonFile,
-  sha256Hex,
   withFileLock,
   writeJsonFile,
 } from "../shared/index.ts";
 import type { Workspace } from "../workspace/index.ts";
-import { copiesDir, LABELS, repoHash } from "./names.ts";
-import type { LauncherContainerSpec, RequiredCopy } from "./spec.ts";
+import { LABELS, repoHash, wantedFile } from "./names.ts";
+import type { LauncherContainerSpec } from "./spec.ts";
 
 export interface EnsureContainerInput {
   backend: Backend;
@@ -52,11 +51,9 @@ const UNPROTECTED =
 const isCurrent = (container: ContainerSummary, labels: Record<string, string | undefined>) =>
   IDENTITY.every((label) => container.labels[label] === labels[label]);
 
-const wantedFileOf = (directory: string) => `${directory}.wanted.json`;
-
 const recordWanted = (spec: LauncherContainerSpec) =>
   writeJsonFile(
-    wantedFileOf(spec.copiesDir),
+    spec.wantedFile,
     Object.fromEntries(IDENTITY.map((label) => [label, spec.labels[label] ?? ""])),
   );
 
@@ -64,9 +61,7 @@ export const isCurrentContainer = async (
   container: ContainerSummary,
   input: { stateDir: string; repoRoot: string; digest: string; configHash: string },
 ) => {
-  const wanted = await readJsonFile<Record<string, string>>(
-    wantedFileOf(copiesDir(input.stateDir, input.repoRoot)),
-  );
+  const wanted = await readJsonFile<Record<string, string>>(wantedFile(input.stateDir, input.repoRoot));
 
   return isCurrent(container, {
     [LABELS.imageDigest]: input.digest,
@@ -83,48 +78,8 @@ const discard = async (backend: Backend, container: ContainerSummary, keepNetwor
   await backend.removeContainer(container.id, { keepNetwork });
 };
 
-const placeCopyDir = async (
-  guestDir: string,
-  copies: RequiredCopy[],
-  directory: string,
-): Promise<MountSpec> => {
-  const placed = join(directory, sha256Hex(guestDir).slice(0, 12));
-
-  await mkdir(placed, { recursive: true });
-
-  await Promise.all(copies.map((copy) => copyFile(copy.source, join(placed, basename(copy.target)))));
-
-  return { source: placed, target: guestDir, readOnly: true, kind: "bind" };
-};
-
-const shadowsMount = (guestDir: string, mounts: MountSpec[]) =>
-  mounts.some((mount) => isWithin(guestDir, mount.target));
-
-const placeCopies = async (spec: LauncherContainerSpec) => {
-  const placeable = spec.requiredCopies.filter((copy) => !shadowsMount(dirname(copy.target), spec.mounts));
-
-  if (placeable.length === 0) {
-    return [];
-  }
-
-  await mkdir(spec.copiesDir, { recursive: true });
-
-  const guestDirs = [...new Set(placeable.map((copy) => dirname(copy.target)))];
-
-  return Promise.all(
-    guestDirs.map((guestDir) =>
-      placeCopyDir(
-        guestDir,
-        placeable.filter((copy) => dirname(copy.target) === guestDir),
-        spec.copiesDir,
-      ),
-    ),
-  );
-};
-
 const runtimeSpec = ({
-  requiredCopies: _copies,
-  copiesDir: _dir,
+  wantedFile: _wanted,
   volumeLabels: _labels,
   ownedPaths: _owned,
   ...spec
@@ -197,7 +152,7 @@ const handOverVolumes = async (backend: Backend, id: string, spec: LauncherConta
 
   const result = await execCapture(backend, {
     containerId: id,
-    command: ["chown", "-h", spec.user ?? DEFAULT_OWNER, ...spec.ownedPaths],
+    command: ["chown", "-h", DEFAULT_OWNER, ...spec.ownedPaths],
     env: {},
     workdir: "/",
     user: ROOT_USER,
@@ -232,8 +187,7 @@ const ownerLabels = (labels: Record<string, string>) =>
   );
 
 const createFresh = async (backend: Backend, spec: LauncherContainerSpec): Promise<EnsuredContainer> => {
-  const copied = await placeCopies(spec);
-  const mounts = [...spec.mounts, ...copied];
+  const { mounts } = spec;
   const owner = ownerLabels(spec.labels);
 
   await Promise.all(
@@ -244,7 +198,7 @@ const createFresh = async (backend: Backend, spec: LauncherContainerSpec): Promi
 
   await ensureMountPoints(mounts);
 
-  const { id } = await backend.createContainer({ ...runtimeSpec(spec), mounts });
+  const { id } = await backend.createContainer(runtimeSpec(spec));
   const notices = await startPrepared(backend, id, spec);
 
   return { id, created: true, outdated: false, spec, notices };
@@ -294,8 +248,6 @@ const startOrCreateNow = async (input: EnsureContainerInput, stopped: ContainerS
   await recordWanted(spec);
 
   if (stopped !== undefined && isCurrent(stopped, spec.labels)) {
-    await placeCopies(spec);
-
     return reuse(backend, stopped, spec);
   }
 
@@ -321,8 +273,6 @@ const findOrCreate = async (input: EnsureContainerInput): Promise<EnsuredContain
   const current = existing.find((container) => isCurrent(container, spec.labels));
 
   if (current?.state === "running") {
-    await placeCopies(spec);
-
     return reuse(backend, current, spec);
   }
 
@@ -342,7 +292,7 @@ const findOrCreate = async (input: EnsureContainerInput): Promise<EnsuredContain
 };
 
 export const ensureContainer = (input: EnsureContainerInput) =>
-  withFileLock(`${input.spec.copiesDir}.lock`, () => findOrCreate(input), { timeoutMs: LOCK_TIMEOUT_MS });
+  withFileLock(`${input.spec.wantedFile}.lock`, () => findOrCreate(input), { timeoutMs: LOCK_TIMEOUT_MS });
 
 export const stopIdleContainer = async (backend: Backend, containerId: string) => {
   const found = (await backend.findContainers(MANAGED)).find((container) => container.id === containerId);

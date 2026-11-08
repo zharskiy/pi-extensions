@@ -1,4 +1,3 @@
-import { BACKEND_NAMES } from "../../shared/index.ts";
 import { type CliDeps, writeLines } from "../deps.ts";
 
 const USAGE = [
@@ -7,7 +6,7 @@ const USAGE = [
   "  pi --no-sandbox [args...]           run host pi when the policy fallback allows it",
   "  pi install|remove <source>          inside the sandbox, then written to the host settings.json",
   "  pi mcp add|remove|login|logout ...  run on the host",
-  "  pi sandbox status                   backend, container, proxy, image, sessions, grants, gaps",
+  "  pi sandbox status                   runtime, container, proxy, image, sessions, grants",
   "  pi sandbox config [--json]          effective config with the source layer of each key",
   "  pi sandbox config set <key> <json value> [--project]",
   "  pi sandbox egress allow <host[:port]> [--session | --hours N | --permanent] [--user]",
@@ -18,7 +17,6 @@ const USAGE = [
   "  pi sandbox reset [--volumes]        stop and remove this repo's container (--volumes: caches, older sandbox-only sessions)",
   "  pi sandbox stop                     stop the sandbox VM when no pi session runs; the next pi starts it again",
   "  pi sandbox doctor                   preflight and smoke checks, one line each",
-  `  pi sandbox migrate --to <backend>   move the volumes to another backend (${BACKEND_NAMES.join(", ")})`,
   "  pi sandbox --version                print the launcher version",
   "  pi sandbox help                     show this help",
 ];

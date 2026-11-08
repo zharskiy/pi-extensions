@@ -24,12 +24,11 @@ const RELAY_PREFIX = "pi-sandbox-relay-";
 
 const RELAY_LISTEN_PORT = 3128;
 
-const DOCKER_HOST_ALIAS = "host.docker.internal";
+const HOST_ALIAS = "host.lima.internal";
 
-const HOST_GATEWAY = "host-gateway";
+const NETWORK_HINT = "run pi sandbox gc";
 
-const networkHint = (name: string) =>
-  `remove it (docker network rm ${name}) so the launcher can create its own`;
+const FOREIGN_NETWORK_HINT = "remove that network from the sandbox VM so the launcher can create its own";
 
 const relayName = (policyHash: string) => `${RELAY_PREFIX}${policyHash.slice(0, 8)}`;
 
@@ -40,11 +39,7 @@ const relayLabels = (hostPort: number, policyHash: string) => ({
   [LABELS.proxyPolicyHash]: policyHash,
 });
 
-export const createRelayOperations = (
-  client: EngineClient,
-  hostAlias: string,
-  nativeGateway: () => Promise<string | undefined>,
-) => {
+export const createRelayOperations = (client: EngineClient) => {
   const inspectNetwork = async (name: string) => {
     const response = await client.call({ method: "GET", path: `/networks/${segment(name)}` }, [404]);
 
@@ -55,11 +50,14 @@ export const createRelayOperations = (
 
   const assertManaged = (name: string, network: NetworkInspect) => {
     if (network.Internal !== true) {
-      throw new LauncherError(`network ${name} exists but is not internal`, networkHint(name));
+      throw new LauncherError(`network ${name} exists but is not internal`, NETWORK_HINT);
     }
 
     if (network.Labels?.[LABELS.managed] !== "true") {
-      throw new LauncherError(`network ${name} exists but is not managed by pi-sandbox`, networkHint(name));
+      throw new LauncherError(
+        `network ${name} exists but is not managed by pi-sandbox`,
+        FOREIGN_NETWORK_HINT,
+      );
     }
   };
 
@@ -106,7 +104,6 @@ export const createRelayOperations = (
   };
 
   const createRelay = async (hostPort: number, policyHash: string, imageId: string) => {
-    const gateway = (await nativeGateway()) ?? HOST_GATEWAY;
     const created = await client.json<{ Id: string }>({
       method: "POST",
       path: "/containers/create",
@@ -114,11 +111,10 @@ export const createRelayOperations = (
       json: {
         Image: imageId,
         Entrypoint: ["socat"],
-        Cmd: [`TCP-LISTEN:${RELAY_LISTEN_PORT},fork,reuseaddr`, `TCP:${hostAlias}:${hostPort}`],
+        Cmd: [`TCP-LISTEN:${RELAY_LISTEN_PORT},fork,reuseaddr`, `TCP:${HOST_ALIAS}:${hostPort}`],
         Labels: { ...relayLabels(hostPort, policyHash), [LABELS.relayImage]: imageId },
         HostConfig: {
           NetworkMode: "bridge",
-          ExtraHosts: [`${DOCKER_HOST_ALIAS}:${gateway}`],
           Init: true,
           ReadonlyRootfs: true,
         },

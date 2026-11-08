@@ -56,7 +56,7 @@ export const stateLayout = (stateDir: string) => ({
   trustPem: join(stateDir, "ca", "trust.pem"),
   imageRecord: join(stateDir, "image.json"),
   pack: join(stateDir, "pack"),
-  copies: (repoKey: string) => join(stateDir, "copies", repoKey),
+  wanted: (repoKey: string) => join(stateDir, "wanted", `${repoKey}.json`),
   configLock: (fileHash: string) => join(stateDir, "locks", `config-${fileHash}`),
   proxyRoot: join(stateDir, "proxy"),
   proxyInstance: (policyHash: string) => proxyInstanceFiles(stateDir, policyHash),

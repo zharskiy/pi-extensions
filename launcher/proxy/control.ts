@@ -40,7 +40,6 @@ export interface EnsureProxyOptions {
   piCommand?: string[];
   discoverCommand?: string[];
   piVersion?: string;
-  listenHosts?: string[];
 }
 
 const PRIVATE_MODE = 0o600;
@@ -120,9 +119,6 @@ const healthyRecord = async (files: InstanceFiles) => {
 
   return (await isHealthy(record)) ? record : undefined;
 };
-
-const listensOn = (record: ProxyInstance, hosts: string[]) =>
-  hosts.every((host) => (record.listenHosts ?? []).includes(host));
 
 const recordedPort = async (files: InstanceFiles) => {
   const port = Number.parseInt(await readFile(files.port, "utf8").catch(() => ""), 10);
@@ -319,18 +315,14 @@ const runsSamePi = async (files: InstanceFiles, options: EnsureProxyOptions) => 
   );
 };
 
-const isReusable = async (record: ProxyInstance, options: EnsureProxyOptions, files: InstanceFiles) =>
-  listensOn(record, options.listenHosts ?? []) && (await runsSamePi(files, options));
-
 const instanceToken = (files: InstanceFiles) => ensureRandomHexFile(files.token, TOKEN_BYTES);
 
 const replaceInstance = async (options: EnsureProxyOptions, files: InstanceFiles, hash: string) => {
   const now = options.now ?? Date.now;
   const runner = options.runner ?? createProcessRunner();
   const stale = await readRecord(files);
-  const listenHosts = options.listenHosts ?? [];
 
-  if (stale !== undefined && (await isReusable(stale, options, files)) && (await respondsTwice(stale))) {
+  if (stale !== undefined && (await runsSamePi(files, options)) && (await respondsTwice(stale))) {
     return stale;
   }
 
@@ -346,7 +338,6 @@ const replaceInstance = async (options: EnsureProxyOptions, files: InstanceFiles
     discoverCommand: options.discoverCommand ?? [],
     ...(options.piVersion === undefined ? {} : { piVersion: options.piVersion }),
     parentEnv: parentProxyEnv(options.env),
-    listenHosts,
   };
 
   await writeJsonFile(files.config, daemonConfig, { mode: PRIVATE_MODE });
@@ -371,7 +362,7 @@ export const ensureProxyRunning = async (options: EnsureProxyOptions): Promise<P
 
   const current = await healthyRecord(files);
 
-  if (current !== undefined && (await isReusable(current, options, files))) {
+  if (current !== undefined && (await runsSamePi(files, options))) {
     return current;
   }
 

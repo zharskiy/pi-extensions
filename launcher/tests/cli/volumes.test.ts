@@ -13,7 +13,7 @@ const SHARED = "~/.cache/pip";
 
 const volumeHarness = async () => {
   const fake = createFakeBackend();
-  const harness = await createHarness({ adapters: () => [fake.backend] });
+  const harness = await createHarness({ backend: () => fake.backend });
   const config = sandboxConfig({ mounts: { sharedCaches: [SHARED] } });
 
   await writeFile(join(harness.repoRoot, "package-lock.json"), "{}");
@@ -117,7 +117,7 @@ describe("pi sandbox status and volumes", () => {
   });
 
   it("reports none of either when nothing is configured or found", async () => {
-    const harness = await createHarness({ adapters: () => [createFakeBackend().backend] });
+    const harness = await createHarness({ backend: () => createFakeBackend().backend });
 
     expect(await run(["sandbox", "status"], harness.deps)).toBe(0);
 

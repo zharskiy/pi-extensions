@@ -73,7 +73,7 @@ const launchWith = async (setup: Setup = {}) => {
   const answers = setup.answers ?? {};
   const holder: { home: string } = { home: "" };
   const harness = await createHarness({
-    adapters: () => [{ ...fake.backend, ...PROFILE, ...setup.backend }],
+    backend: () => ({ ...fake.backend, ...PROFILE, ...setup.backend }),
     respond: (call) => colima(holder.home, answers)(call),
   });
   const paths = {
@@ -374,26 +374,6 @@ describe("the launch shares a repository the VM does not see", () => {
     expect([...missing.colimaCalls(), ...flow.colimaCalls()]).toEqual([]);
   });
 
-  it("never restarts a profile other than pi-sandbox and names the command instead", async () => {
-    const context = await launchWith({
-      backend: { status: async () => ({ socket: "/fake/docker.sock", profile: "default" }) },
-    });
-    const { home, stateDir, repoRoot } = context.paths;
-
-    await writeLimaMounts(home, homeAndState(context.paths), "default");
-
-    await writeColimaMounts(home, homeAndState(context.paths), "default");
-
-    expect(await run0(context)).toBe(1);
-    expect(context.harness.stderr()).toContain(
-      [
-        `pi-sandbox: ${repoRoot} is not shared with the sandbox VM; the launcher restarts only its own pi-sandbox profile, not default`,
-        `  hint: share it yourself with colima stop --profile default && colima start --profile default --activate=false --mount ${home}:w --mount ${stateDir} --mount ${repoRoot}:w`,
-      ].join("\n"),
-    );
-    expect(context.colimaCalls()).toEqual([]);
-  });
-
   it("adds no --no-sandbox suffix to a refusal under fallback refuse", async () => {
     const context = await launchWith({ config: { fallback: "refuse" } });
 
@@ -437,15 +417,4 @@ describe("the launch shares a repository the VM does not see", () => {
       `pi-sandbox: the sandbox VM did not come back after sharing ${context.paths.repoRoot}: socket missing\n`,
     );
   }, 15_000);
-
-  it("does nothing on the apple backend or without a colima profile", async () => {
-    const apple = await launchWith({ backend: { name: "apple" } });
-    const plain = await launchWith({
-      backend: { status: async () => ({ socket: "/var/run/docker.sock", profile: "none" }) },
-    });
-
-    expect(await run0(apple)).toBe(0);
-    expect(await run0(plain)).toBe(0);
-    expect([...apple.colimaCalls(), ...plain.colimaCalls()]).toEqual([]);
-  });
 });

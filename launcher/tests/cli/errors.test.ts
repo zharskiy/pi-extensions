@@ -20,7 +20,7 @@ describe("error rendering", () => {
 
   it("prints a LauncherError without a hint as one line", async () => {
     const harness = await createHarness({
-      adapters: () => {
+      backend: () => {
         throw new LauncherError("engine refused");
       },
     });
@@ -33,7 +33,7 @@ describe("error rendering", () => {
 
   it("prints an unexpected error message without a stack and exits 70", async () => {
     const harness = await createHarness({
-      adapters: () => {
+      backend: () => {
         throw new Error("boom");
       },
     });

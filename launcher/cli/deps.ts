@@ -21,7 +21,6 @@ interface ProxyRequest {
   piCommand: string[];
   discoverCommand?: string[];
   piVersion?: string;
-  listenHosts?: string[];
 }
 
 interface DenialFilter {
@@ -50,8 +49,7 @@ export interface CliDeps {
   signals?: SignalSource;
   platform: NodeJS.Platform;
   uid: number;
-  gid: number;
-  adapters(): Backend[];
+  backend(): Backend;
   proxy: ProxyControl;
   bundledPi(): Promise<BundledPi | undefined>;
   resolveHost(host: string): Promise<string[]>;

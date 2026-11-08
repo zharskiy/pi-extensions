@@ -194,9 +194,6 @@ export const createLiveSandbox = async (name: string): Promise<LiveSandbox> => {
   const ca = await createTestCa(certs, "fixture-ca");
   const certificate = await ca.issue(ALL_FIXTURE_HOSTS);
   const socket = engineSocket ?? "";
-  const linkedSocket = socket.startsWith(join(homedir(), ".colima"))
-    ? join(home, socket.slice(homedir().length + 1))
-    : socket;
   const env: Record<string, string> = {
     PATH: `${bin}:${process.env.PATH ?? ""}`,
     HOME: home,
@@ -206,7 +203,6 @@ export const createLiveSandbox = async (name: string): Promise<LiveSandbox> => {
     PI_SANDBOX_STATE_DIR: stateDir,
     PI_SANDBOX_USER_CONFIG: userConfigFile,
     PI_SANDBOX_POLICY_FILE: join(root, "no-policy.json"),
-    DOCKER_HOST: `unix://${linkedSocket}`,
     PI_SANDBOX_TEST_RESOLVE: resolveValue(),
     NODE_OPTIONS: `--import=${RESOLVE_PRELOAD}`,
     NODE_EXTRA_CA_CERTS: ca.certPath,
@@ -215,7 +211,6 @@ export const createLiveSandbox = async (name: string): Promise<LiveSandbox> => {
   const backend = createDockerEngineBackend({
     socketPath: socket,
     runner: createProcessRunner(),
-    home: homedir(),
   });
 
   const agentContainer = async () => {

@@ -27,6 +27,7 @@ import {
 import { hostSessionsOf } from "../host-sessions.ts";
 import type { LaunchContext } from "../launch.ts";
 import { isOlderVersion, testedPiVersion } from "../versions.ts";
+import { OWN_PROFILE } from "../vm-lifecycle.ts";
 import { checkVmShares } from "../vm-shares.ts";
 import type { NamedCheck } from "./doctor-container.ts";
 import { grantLines } from "./egress.ts";
@@ -295,17 +296,7 @@ const checkVmSize = async (deps: CliDeps, backend: Backend | undefined) => {
     return skipped("no runtime");
   }
 
-  if (backend.name !== "colima") {
-    return skipped(`${backend.name} backend: VM size not checked`);
-  }
-
-  const backendStatus = await backend.status().catch((): Record<string, string> => ({}));
-  const profile = backendStatus.profile;
-
-  if (profile === undefined || profile === "none") {
-    return skipped("no colima profile: VM size not checked");
-  }
-
+  const profile = OWN_PROFILE;
   const result = await colimaStatus(deps, profile);
 
   if (result === undefined) {

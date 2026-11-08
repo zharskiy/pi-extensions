@@ -1,6 +1,5 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { createServer as createNetServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -19,7 +18,7 @@ import {
 } from "../../proxy/index.ts";
 import { sha256Hex } from "../../shared/index.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
-import { CONTROL_USER, openConnect, pageThrough, plainGet, plainRequest, readRest } from "./proxy-client.ts";
+import { CONTROL_USER, openConnect, pageThrough, plainGet, readRest } from "./proxy-client.ts";
 
 const state = { stateDir: "", home: "" };
 
@@ -70,14 +69,6 @@ const recordHungProxy = async (allow: string[], pid: number) => {
     JSON.stringify({ policyHash: proxyPolicyHash(config(allow)), port: 9, token: "stale", pid }),
   );
 };
-
-const loopbackSix = await new Promise<boolean>((resolve) => {
-  const probe = createNetServer();
-
-  probe.once("error", () => resolve(false));
-
-  probe.listen(0, "::1", () => probe.close(() => resolve(true)));
-});
 
 const instanceDir = (allow: string[]) => join(state.stateDir, "proxy", proxyPolicyHash(config(allow)));
 
@@ -139,7 +130,6 @@ describe("ensureProxyRunning", () => {
       port: instance.port,
       token: instance.token,
       pid: instance.pid,
-      listenHosts: [],
     });
     expect((await stat(join(dir, "proxy.json"))).mode & 0o777).toBe(0o600);
     expect((await stat(join(dir, "proxy-config.json"))).mode & 0o777).toBe(0o600);
@@ -257,36 +247,6 @@ describe("ensureProxyRunning", () => {
     expect(moved.port).toBe(first.port);
     expect(stored.piVersion).toBe("1.6.0");
     expect(isAlive(first.pid)).toBe(false);
-  }, 20_000);
-
-  it.skipIf(!loopbackSix)(
-    "also listens on a host address the backend asks for, with the same port and token check",
-    async () => {
-      const plain = await ensureProxyRunning(options(["registry.npmjs.org"]));
-      const widened = await ensureProxyRunning({ ...options(["registry.npmjs.org"]), listenHosts: ["::1"] });
-      const reused = await ensureProxyRunning({ ...options(["registry.npmjs.org"]), listenHosts: ["::1"] });
-      const authorized = await plainRequest(widened.port, "/healthz", {
-        address: "::1",
-        token: widened.token,
-        user: CONTROL_USER,
-      });
-      const anonymous = await plainRequest(widened.port, "/healthz", { address: "::1" });
-
-      expect(widened.pid).not.toBe(plain.pid);
-      expect(widened.port).toBe(plain.port);
-      expect(reused.pid).toBe(widened.pid);
-      expect(JSON.parse(authorized.body)).toMatchObject({ ok: true, pid: widened.pid });
-      expect(anonymous.status).toBe(407);
-    },
-    20_000,
-  );
-
-  it("still starts when an extra host address cannot be bound, and says so in the proxy log", async () => {
-    const instance = await ensureProxyRunning({ ...options(["github.com"]), listenHosts: ["192.0.2.1"] });
-    const log = await readFile(join(instanceDir(["github.com"]), "proxy.log"), "utf8");
-
-    expect(instance.listenHosts).toEqual(["192.0.2.1"]);
-    expect(log).toContain(`proxy cannot also listen on 192.0.2.1:${instance.port}`);
   }, 20_000);
 
   it("starts a single daemon when two launchers ask at once", async () => {

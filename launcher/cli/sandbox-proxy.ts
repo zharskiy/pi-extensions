@@ -1,4 +1,3 @@
-import type { Backend } from "../backend/index.ts";
 import { authorityOf } from "../config/index.ts";
 import { mcpDiscoverCommand } from "../hostpi/index.ts";
 import {
@@ -26,12 +25,9 @@ const CAP_RULE = "egress.cap";
 const hostPiOf = (host: HostSide) =>
   host.pi === undefined ? {} : { discoverCommand: mcpDiscoverCommand(host.pi), piVersion: host.pi.version };
 
-const startProxy = async (deps: CliDeps, context: LaunchContext, host: HostSide, backend: Backend) => {
+const startProxy = async (deps: CliDeps, context: LaunchContext, host: HostSide) => {
   try {
-    const listenHosts = await backend.proxyListenHosts();
-
     return await deps.proxy.ensure({
-      listenHosts,
       config: context.effective.config,
       stateDir: context.stateDir,
       env: daemonEnv(deps.env),
@@ -80,13 +76,12 @@ export const openSandboxProxy = async (
   deps: CliDeps,
   context: LaunchContext,
   host: HostSide,
-  backend: Backend,
 ): Promise<SandboxProxy | undefined> => {
   if (!host.proxyNeeded) {
     return undefined;
   }
 
-  const instance = await startProxy(deps, context, host, backend);
+  const instance = await startProxy(deps, context, host);
   const repoToken = await repoProxyToken(context.stateDir, instance.policyHash, context.repoHash);
   const tokenHash = sha256Hex(repoToken);
 

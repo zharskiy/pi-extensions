@@ -268,16 +268,6 @@ const planShares = async (
   return { profile, missing: pathsOf(missing), added, next: nextShares(base, added, deps.home) };
 };
 
-const colimaProfile = async (backend: Backend) => {
-  if (backend.name !== "colima") {
-    return undefined;
-  }
-
-  const status = await backend.status().catch((): Record<string, string> => ({}));
-
-  return status.profile === undefined || status.profile === "none" ? undefined : status.profile;
-};
-
 const locationsOf = (shares: VmShare[]) => shares.map((share) => share.location).join(", ");
 
 const notShared = (paths: string[]) =>
@@ -383,23 +373,11 @@ const shareMissing = async (
     );
   }
 
-  if (profile !== OWN_PROFILE) {
-    throw new LauncherError(
-      `${notShared(plan.missing)}; the launcher restarts only its own ${OWN_PROFILE} profile, not ${profile}`,
-      manualHint(plan),
-    );
-  }
-
   await restartWithShares(deps, context, backend, plan, needs);
 };
 
 const shareWhenMissing = async (deps: CliDeps, context: LaunchContext, backend: Backend) => {
-  const profile = await colimaProfile(backend);
-
-  if (profile === undefined) {
-    return;
-  }
-
+  const profile = OWN_PROFILE;
   const needs = needsOf(deps, context);
   const shares = await runningShares(deps.home, profile);
 
@@ -428,11 +406,9 @@ const missingShareLine = async (deps: CliDeps, profile: string, needs: Need[], m
 
   const command = restartCommand(profile, plan.next);
 
-  return profile === OWN_PROFILE
-    ? failed(
-        `${subject}; run pi here once (it shares ${locationsOf(plan.added)} and restarts the VM) or ${command}`,
-      )
-    : failed(`${subject}; ${command}`);
+  return failed(
+    `${subject}; run pi here once (it shares ${locationsOf(plan.added)} and restarts the VM) or ${command}`,
+  );
 };
 
 export const checkVmShares = async (
@@ -444,16 +420,7 @@ export const checkVmShares = async (
     return skipped("no runtime");
   }
 
-  if (backend.name !== "colima") {
-    return skipped(`${backend.name} backend: no VM shares`);
-  }
-
-  const profile = await colimaProfile(backend);
-
-  if (profile === undefined) {
-    return skipped("no colima profile: shares not checked");
-  }
-
+  const profile = OWN_PROFILE;
   const shares = await runningShares(deps.home, profile);
 
   if (shares === undefined) {

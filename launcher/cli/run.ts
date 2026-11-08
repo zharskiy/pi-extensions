@@ -4,7 +4,6 @@ import { doctorCommand } from "./commands/doctor.ts";
 import { egressCommand } from "./commands/egress.ts";
 import { gcCommand } from "./commands/gc.ts";
 import { helpCommand } from "./commands/help.ts";
-import { migrateCommand } from "./commands/migrate.ts";
 import { resetCommand } from "./commands/reset.ts";
 import { statusCommand } from "./commands/status.ts";
 import { stopCommand } from "./commands/stop.ts";
@@ -38,7 +37,6 @@ const COMMANDS: Record<string, Command> = {
   egress: { run: egressCommand, takesArguments: true },
   reset: { run: resetCommand, takesArguments: true },
   stop: { run: stopCommand, takesArguments: false },
-  migrate: { run: migrateCommand, takesArguments: true },
   help,
   "--help": help,
   "-h": help,

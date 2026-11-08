@@ -1,7 +1,3 @@
-import type { BackendName } from "../shared/index.ts";
-
-type Backend = "auto" | BackendName;
-
 type Fallback = "refuse" | "host";
 
 export const PROFILE_NAMES = ["enterprise", "team", "solo"] as const;
@@ -115,7 +111,6 @@ interface MountsConfig {
 
 export interface SandboxConfig {
   profile?: ProfileName;
-  backend: Backend;
   fallback: Fallback;
   image: ImageConfig;
   gateway?: GatewayConfig;
@@ -143,7 +138,6 @@ type LayerCredentials = (CredentialSource | { kind?: undefined }) & {
 
 export interface LayerConfig {
   profile?: ProfileName;
-  backend?: Backend;
   fallback?: Fallback;
   image?: Partial<ImageConfig>;
   gateway?: GatewayConfig;

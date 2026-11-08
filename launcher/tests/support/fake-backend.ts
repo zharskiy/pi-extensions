@@ -1,10 +1,9 @@
 import { spawn } from "node:child_process";
-import { readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import type {
   Backend,
-  BackendCapabilities,
   ContainerSpec,
   ContainerState,
   ContainerSummary,
@@ -50,20 +49,13 @@ interface FakeRoute {
 }
 
 interface FakeBackendOptions {
-  capabilities?: Partial<BackendCapabilities>;
   localImages?: Record<string, string>;
   registry?: Record<string, string>;
   exec?: (spec: ExecSpec, io: ExecIo) => Promise<number> | number;
   execScripts?: FakeExecScript[];
-  proxyListenHosts?: string[];
   routeNotices?: string[];
   guestAgentDir?: string;
 }
-
-const DEFAULT_CAPABILITIES: BackendCapabilities = {
-  singleFileMount: true,
-  sshAgent: true,
-};
 
 const NETWORK_PREFIX = "pi-sandbox";
 
@@ -148,16 +140,6 @@ const shellIn = (agentDir: string, spec: ExecSpec, io: ExecIo) =>
     child.once("close", (code) => resolve(code ?? 1));
   });
 
-const archiveOf = async (tarPath: string) => {
-  const found = await stat(tarPath).catch(() => undefined);
-
-  if (found === undefined) {
-    throw new LauncherError(`volume archive ${tarPath} does not exist`);
-  }
-
-  return readFile(tarPath);
-};
-
 const contextFiles = async (dir: string) => {
   const names = await readdir(dir);
   const contents = await Promise.all(names.map((name) => readFile(join(dir, name), "utf8")));
@@ -169,7 +151,6 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
   const containers = new Map<string, FakeContainer>();
   const volumes = new Set<string>();
   const volumeLabels = new Map<string, Record<string, string>>();
-  const volumeData = new Map<string, Buffer>();
   const localImages = new Map(Object.entries(options.localImages ?? {}));
   const registry = new Map(Object.entries(options.registry ?? {}));
   const pulls: string[] = [];
@@ -309,8 +290,6 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
   };
 
   const backend: Backend = {
-    name: "colima",
-    capabilities: { ...DEFAULT_CAPABILITIES, ...options.capabilities },
     detect: async () => ({ available: true, version: "fake" }),
     pullImage,
     resolveImage,
@@ -384,35 +363,18 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
       volumes.delete(name);
 
       volumeLabels.delete(name);
-
-      volumeData.delete(name);
-    },
-    exportVolume: async (name, tarPath) => {
-      if (!volumes.has(name)) {
-        throw new LauncherError(`volume ${name} does not exist`);
-      }
-
-      await writeFile(tarPath, volumeData.get(name) ?? Buffer.alloc(0));
-    },
-    importVolume: async (name, tarPath) => {
-      const archive = await archiveOf(tarPath);
-
-      volumeLabels.set(name, volumeLabels.get(name) ?? { [LABELS.managed]: "true" });
-
-      volumes.add(name);
-
-      volumeData.set(name, archive);
     },
     prepareProxyRoute: async ({ hostPort, repoHash, relay }) => {
       const name = repoNetworkOf(repoHash);
-      const hint = `remove it (docker network rm ${name}) so the launcher can create its own`;
-
       if (externalNetworks.has(name)) {
-        throw new LauncherError(`network ${name} exists but is not internal`, hint);
+        throw new LauncherError(`network ${name} exists but is not internal`, "run pi sandbox gc");
       }
 
       if (foreignNetworks.has(name)) {
-        throw new LauncherError(`network ${name} exists but is not managed by pi-sandbox`, hint);
+        throw new LauncherError(
+          `network ${name} exists but is not managed by pi-sandbox`,
+          "remove that network from the sandbox VM so the launcher can create its own",
+        );
       }
 
       routes.push({ hostPort, policyHash: relay.policyHash, imageId: relay.imageId });
@@ -446,7 +408,6 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
 
       return removed;
     },
-    proxyListenHosts: async () => options.proxyListenHosts ?? [],
     status: async () => ({ socket: "/fake/docker.sock" }),
   };
 
@@ -484,7 +445,6 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
     containers,
     volumes,
     volumeLabels,
-    volumeData,
     networks,
     foreignNetworks,
     plantNetwork,

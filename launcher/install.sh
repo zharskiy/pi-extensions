@@ -177,12 +177,8 @@ case "$os" in
     command -v brew >/dev/null 2>&1 || fail "Homebrew is missing, install it from https://brew.sh and run this again"
     preflight="macOS $macos on $chip, Homebrew present"
     ;;
-  Linux)
-    [ -S /var/run/docker.sock ] || fail "Linux needs a running Docker Engine at /var/run/docker.sock (development only)"
-    preflight="Linux on $chip with the Docker Engine socket, development only"
-    ;;
   *)
-    fail "unsupported system $os, pi-sandbox supports macOS (and Linux for development)"
+    fail "unsupported system $os, pi-sandbox supports macOS only"
     ;;
 esac
 
@@ -193,39 +189,34 @@ version_at_least "$node_version" "$min_node" || fail "node $node_version is too 
 
 step 1 "preflight: $preflight, node $node_version, profile $profile"
 
-if [ "$os" = Darwin ]; then
-  if command -v colima >/dev/null 2>&1; then
-    step 2 "runtime: colima is present"
-  else
-    act brew install colima >/dev/null
-    step 2 "runtime: $(verb "brew install colima" "installed colima with Homebrew")"
-  fi
-
-  if [ "$dry_run" -eq 0 ]; then
-    colima_version=$(colima version 2>/dev/null | sed -n 's/^colima version v\{0,1\}\([0-9.]*\).*/\1/p' | head -n 1)
-    version_at_least "${colima_version:-0}" "$min_colima" || fail "colima ${colima_version:-unknown} is older than $min_colima, run brew upgrade colima"
-  fi
-
-  size_to_host
-
-  if colima status --profile "$colima_profile" >/dev/null 2>&1; then
-    step 3 "colima: profile $colima_profile is running (colima stop --profile $colima_profile and run this again to apply new resources)"
-  else
-    if [ -f "$HOME/.colima/$colima_profile/colima.yaml" ]; then
-      home_mount=""
-      shares="shares kept"
-    else
-      home_mount="$HOME:w"
-      shares="$HOME writable"
-    fi
-
-    act colima start --profile "$colima_profile" --vm-type vz --mount-type virtiofs --ssh-agent \
-      --cpu "$cpus" --memory "$memory" --disk "$disk" ${home_mount:+--mount} ${home_mount:+"$home_mount"} >/dev/null
-    step 3 "colima: $(verb "start profile $colima_profile (vz, virtiofs, ssh agent, $cpus CPUs, ${memory} GiB, ${disk} GiB$sizing, $shares)" "started profile $colima_profile (vz, virtiofs, ssh agent, $cpus CPUs, ${memory} GiB, ${disk} GiB$sizing, $shares)")"
-  fi
+if command -v colima >/dev/null 2>&1; then
+  step 2 "runtime: colima is present"
 else
-  step 2 "runtime: using the Docker Engine socket"
-  step 3 "colima: not used on Linux"
+  act brew install colima >/dev/null
+  step 2 "runtime: $(verb "brew install colima" "installed colima with Homebrew")"
+fi
+
+if [ "$dry_run" -eq 0 ]; then
+  colima_version=$(colima version 2>/dev/null | sed -n 's/^colima version v\{0,1\}\([0-9.]*\).*/\1/p' | head -n 1)
+  version_at_least "${colima_version:-0}" "$min_colima" || fail "colima ${colima_version:-unknown} is older than $min_colima, run brew upgrade colima"
+fi
+
+size_to_host
+
+if colima status --profile "$colima_profile" >/dev/null 2>&1; then
+  step 3 "colima: profile $colima_profile is running (colima stop --profile $colima_profile and run this again to apply new resources)"
+else
+  if [ -f "$HOME/.colima/$colima_profile/colima.yaml" ]; then
+    home_mount=""
+    shares="shares kept"
+  else
+    home_mount="$HOME:w"
+    shares="$HOME writable"
+  fi
+
+  act colima start --profile "$colima_profile" --vm-type vz --mount-type virtiofs --ssh-agent \
+    --cpu "$cpus" --memory "$memory" --disk "$disk" ${home_mount:+--mount} ${home_mount:+"$home_mount"} >/dev/null
+  step 3 "colima: $(verb "start profile $colima_profile (vz, virtiofs, ssh agent, $cpus CPUs, ${memory} GiB, ${disk} GiB$sizing, $shares)" "started profile $colima_profile (vz, virtiofs, ssh agent, $cpus CPUs, ${memory} GiB, ${disk} GiB$sizing, $shares)")"
 fi
 
 step 4 "image: prepared and verified by the smoke check in step 7"
@@ -428,7 +419,7 @@ if [ -f "$HOME/.bashrc" ]; then
   add_snippet "$HOME/.bashrc"
 fi
 
-if [ "$os" = Darwin ] && [ -f "$HOME/.bash_profile" ]; then
+if [ -f "$HOME/.bash_profile" ]; then
   add_snippet "$HOME/.bash_profile"
 fi
 

@@ -1,12 +1,3 @@
-import type { BackendName } from "../shared/index.ts";
-
-export type { BackendName };
-
-export interface BackendCapabilities {
-  singleFileMount: boolean;
-  sshAgent: boolean;
-}
-
 export interface MountSpec {
   source: string;
   target: string;
@@ -29,7 +20,6 @@ export interface ContainerSpec {
   network: NetworkRef;
   env: Record<string, string>;
   workdir: string;
-  user?: string;
   readOnlyRoot: boolean;
   tmpfs: string[];
   init: true;
@@ -103,8 +93,6 @@ export interface ProxyRouteRequest {
 }
 
 export interface Backend {
-  readonly name: BackendName;
-  readonly capabilities: BackendCapabilities;
   detect(): Promise<Detection>;
   pullImage(reference: string, digest?: string): Promise<ImageInfo>;
   resolveImage(reference: string): Promise<ImageInfo | undefined>;
@@ -118,10 +106,7 @@ export interface Backend {
   ensureVolume(name: string, labels?: Record<string, string>): Promise<void>;
   listVolumes(): Promise<VolumeSummary[]>;
   removeVolume(name: string): Promise<void>;
-  exportVolume(name: string, tarPath: string, imageId: string): Promise<void>;
-  importVolume(name: string, tarPath: string, imageId: string): Promise<void>;
   prepareProxyRoute(request: ProxyRouteRequest): Promise<ProxyRoute>;
   pruneNetworks(keepRepoHashes: string[]): Promise<string[]>;
-  proxyListenHosts(): Promise<string[]>;
   status(): Promise<Record<string, string>>;
 }

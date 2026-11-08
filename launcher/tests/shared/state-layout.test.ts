@@ -58,7 +58,7 @@ describe("stateLayout", () => {
     expect(layout.extraPem).toBe("/state/ca/extra.pem");
     expect(layout.imageRecord).toBe("/state/image.json");
     expect(layout.pack).toBe("/state/pack");
-    expect(layout.copies("k1")).toBe("/state/copies/k1");
+    expect(layout.wanted("k1")).toBe("/state/wanted/k1.json");
     expect(layout.orgBaseline).toBe("/state/org/baseline.json");
     expect(layout.orgMeta).toBe("/state/org/meta.json");
   });

@@ -3,8 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type CommandRunner, LauncherError } from "../../shared/index.ts";
-import { repositoryOf, tagOf } from "../image-reference.ts";
-import { missingImage, verifiedPull } from "../pull.ts";
+import { pinnedReference, repositoryOf, tagOf } from "../image-reference.ts";
 import type { ImageInfo } from "../types.ts";
 import { type EngineClient, segment } from "./engine-client.ts";
 
@@ -22,6 +21,15 @@ const infoOf = (image: EngineImage, digest?: string): ImageInfo => ({
 });
 
 const accepts = (image: EngineImage, digest: string) => [...repoDigests(image), image.Id].includes(digest);
+
+const missingImage = (reference: string, after: "pull" | "build") =>
+  new LauncherError(`image ${reference} is missing after ${after}`);
+
+const digestMismatch = (reference: string, actual: string, expected: string) =>
+  new LauncherError(
+    `image ${reference} has digest ${actual}, expected ${expected}`,
+    "update image.digest in the policy or publish the expected image",
+  );
 
 export const createImageOperations = (client: EngineClient, runner: CommandRunner) => {
   const inspect = async (reference: string) => {
@@ -43,14 +51,28 @@ export const createImageOperations = (client: EngineClient, runner: CommandRunne
     return image === undefined ? undefined : infoOf(image);
   };
 
-  const pullImage = (reference: string, digest?: string) =>
-    verifiedPull(reference, digest, {
-      inspect,
-      pull: () => pull(reference, digest),
-      accepts,
-      digestOf: (image) => infoOf(image).digest,
-      infoOf: (image) => infoOf(image, digest),
-    });
+  const pullImage = async (reference: string, digest?: string) => {
+    const target = digest === undefined ? reference : pinnedReference(reference, digest);
+    const present = await inspect(target);
+
+    if (present !== undefined && (digest === undefined || accepts(present, digest))) {
+      return infoOf(present, digest);
+    }
+
+    await pull(reference, digest);
+
+    const pulled = await inspect(target);
+
+    if (pulled === undefined) {
+      throw missingImage(target, "pull");
+    }
+
+    if (digest !== undefined && !accepts(pulled, digest)) {
+      throw digestMismatch(target, infoOf(pulled).digest, digest);
+    }
+
+    return infoOf(pulled, digest);
+  };
 
   const archiveContext = async (contextDir: string, tarPath: string) => {
     const result = await runner.run("tar", ["-c", "-f", tarPath, "-C", contextDir, "."], {

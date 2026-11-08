@@ -3,7 +3,6 @@ import type { SandboxConfig } from "../../config/index.ts";
 type ConfigOverrides = Omit<Partial<SandboxConfig>, "mounts"> & { mounts?: Partial<SandboxConfig["mounts"]> };
 
 export const sandboxConfig = ({ mounts, ...overrides }: ConfigOverrides = {}): SandboxConfig => ({
-  backend: "auto",
   fallback: "host",
   image: { reference: "ghcr.io/zharskiy/pi-sandbox:0.4.0" },
   credentials: { kind: "host-pi-auth", rules: [], derive: { enabled: true }, vault: { enabled: true } },

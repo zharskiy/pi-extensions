@@ -1,13 +1,9 @@
-export { createAppleBackend } from "./apple/backend.ts";
 export { createDockerEngineBackend } from "./docker-engine/backend.ts";
-export { resolveDockerSocket } from "./docker-engine/socket.ts";
+export { ENGINE_PROFILE, ENGINE_SOCKET_DISPLAY, engineSocketPath } from "./docker-engine/socket.ts";
 export { execCapture } from "./exec-capture.ts";
 export { LABELS } from "./labels.ts";
-export { createDefaultAdapters, selectBackend } from "./select.ts";
 export type {
   Backend,
-  BackendCapabilities,
-  BackendName,
   ContainerSpec,
   ContainerState,
   ContainerSummary,

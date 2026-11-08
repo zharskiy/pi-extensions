@@ -121,7 +121,6 @@ const narrowerRoots = (above: unknown, below: unknown) => {
 
 const LEAVES: readonly Leaf[] = [
   { key: "profile", rule: { problem: unchanged, lockedWhenUnset: true } },
-  { key: "backend", rule: { problem: unchanged, lockers: ["policy"] } },
   { key: "fallback", rule: { problem: noFallback } },
   { key: "image.reference", rule: { problem: unchanged, lockKey: "image.digest" } },
   { key: "image.digest", rule: { problem: unchangedWhenSet } },

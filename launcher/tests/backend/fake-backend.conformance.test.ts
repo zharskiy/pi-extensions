@@ -80,16 +80,6 @@ describe("fake backend contract", () => {
     await expect(fake.backend.removeContainer("missing")).resolves.toBeUndefined();
   });
 
-  it("refuses to import a missing archive", async () => {
-    const fake = createFakeBackend();
-    const missing = join(await tempDir("fake-volume"), "missing.tar");
-
-    await expect(fake.backend.importVolume("v1", missing, PULLABLE)).rejects.toThrow(
-      `volume archive ${missing} does not exist`,
-    );
-    expect(fake.volumes.has("v1")).toBe(false);
-  });
-
   it("runs sh against the guest agent dir and reads its files back", async () => {
     const fake = createFakeBackend({ guestAgentDir: await tempDir("fake-guest") });
     const { id } = await fake.backend.createContainer(specFor("guest"));

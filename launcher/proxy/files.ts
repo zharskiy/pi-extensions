@@ -3,7 +3,6 @@ export interface ProxyInstance {
   port: number;
   token: string;
   pid: number;
-  listenHosts?: string[];
 }
 
 export interface DaemonConfig<Config> {
@@ -14,5 +13,4 @@ export interface DaemonConfig<Config> {
   discoverCommand?: string[];
   piVersion?: string;
   parentEnv?: Record<string, string>;
-  listenHosts?: string[];
 }

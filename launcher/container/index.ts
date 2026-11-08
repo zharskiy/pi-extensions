@@ -1,5 +1,4 @@
 export {
-  backendNotices,
   discoverGitOverlay,
   type GitGuardContext,
   type GitOverlay,

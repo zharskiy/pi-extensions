@@ -1,5 +1,5 @@
 import { isAbsolute } from "node:path";
-import type { Backend, BackendCapabilities } from "../../backend/index.ts";
+import type { Backend } from "../../backend/index.ts";
 import { configHash } from "../../config/index.ts";
 import {
   findRepoContainer,
@@ -17,18 +17,7 @@ import { type LaunchContext, openAdminContext, openBackend } from "../launch.ts"
 import { launcherVersion } from "../versions.ts";
 import { grantLines } from "./egress.ts";
 
-const GAPS: Record<keyof BackendCapabilities, string> = {
-  singleFileMount:
-    "no single-file mounts, git config files and the trust bundle are mounted from read-only copies",
-  sshAgent: "no ssh agent forwarding, ssh.agent has no effect",
-};
-
 const SHORT_HASH = 12;
-
-const gapLines = (capabilities: BackendCapabilities) =>
-  (Object.keys(GAPS) as Array<keyof BackendCapabilities>)
-    .filter((name) => !capabilities[name])
-    .map((name) => `gap: ${GAPS[name]}`);
 
 const sessionDirLine = (label: string | undefined) => {
   if (label === undefined) {
@@ -64,21 +53,20 @@ const containerLines = async (backend: Backend, context: LaunchContext) => {
   ];
 };
 
-const backendLines = async (deps: CliDeps, context: LaunchContext) => {
+const runtimeLines = async (deps: CliDeps, context: LaunchContext) => {
   try {
     const backend = await openBackend(deps, context.effective.config);
     const detection = await backend.detect();
-    const details = Object.entries(await backend.status()).map(([key, value]) => `backend ${key}: ${value}`);
+    const details = Object.entries(await backend.status()).map(([key, value]) => `runtime ${key}: ${value}`);
 
     return [
-      `backend: ${backend.name} ${detection.version ?? "unknown"}`,
+      `runtime: colima ${detection.version ?? "unknown"}`,
       ...details,
       ...(await containerLines(backend, context)),
-      ...gapLines(backend.capabilities),
     ];
   } catch (error) {
     if (error instanceof LauncherError) {
-      return [`backend: none (${error.message})`];
+      return [`runtime: none (${error.message})`];
     }
 
     throw error;
@@ -146,7 +134,7 @@ export const statusCommand = async (deps: CliDeps) => {
   const lines = [
     `launcher: ${await launcherVersion()}`,
     `repo: ${context.workspace.repoRoot}`,
-    ...(await backendLines(deps, context)),
+    ...(await runtimeLines(deps, context)),
     ...(await proxyLines(deps, context)),
     await imageLine(context),
     ...volumeLines(context),

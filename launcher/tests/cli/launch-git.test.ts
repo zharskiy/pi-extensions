@@ -17,16 +17,14 @@ describe("the commondir pin around container starts", () => {
     const fake = createFakeBackend();
     const pinsAtStart: string[] = [];
     const harness = await createHarness({
-      adapters: () => [
-        {
-          ...fake.backend,
-          startContainer: async (id: string) => {
-            pinsAtStart.push(await readFile(join(harness.repoRoot, ".git", "commondir"), "utf8"));
+      backend: () => ({
+        ...fake.backend,
+        startContainer: async (id: string) => {
+          pinsAtStart.push(await readFile(join(harness.repoRoot, ".git", "commondir"), "utf8"));
 
-            await fake.backend.startContainer(id);
-          },
+          await fake.backend.startContainer(id);
         },
-      ],
+      }),
     });
     const pin = join(harness.repoRoot, ".git", "commondir");
 
@@ -44,7 +42,7 @@ describe("the commondir pin around container starts", () => {
 
   it("refuses a repository whose commondir the sandbox rewrote, naming the file, and starts nothing", async () => {
     const fake = createFakeBackend();
-    const harness = await createHarness({ adapters: () => [fake.backend] });
+    const harness = await createHarness({ backend: () => fake.backend });
     const pin = join(harness.repoRoot, ".git", "commondir");
 
     await writeFile(pin, "../.x\n");
@@ -57,7 +55,7 @@ describe("the commondir pin around container starts", () => {
 
   it("says so when it joins a running sandbox that predates the git snapshots", async () => {
     const fake = createFakeBackend();
-    const harness = await createHarness({ adapters: () => [fake.backend] });
+    const harness = await createHarness({ backend: () => fake.backend });
 
     await registerSession(harness.stateDir, {
       launchId: "00000000000000aa",

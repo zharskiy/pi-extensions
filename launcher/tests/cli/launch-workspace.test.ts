@@ -10,8 +10,6 @@ import { createHarness, type HarnessOptions } from "./harness.ts";
 
 const WORKSPACE_NOTICE = "pi-sandbox: workspace with 2 repositories, git metadata protected";
 
-const NESTED_FILES_NOTICE = "pi-sandbox: workspace: nested .git files are not read-only on this backend";
-
 const overlayNotice = (places: string) =>
   `pi-sandbox: node_modules overlaid in ${places}; host node_modules is hidden; set mounts.autoNodeModules=false to keep it`;
 
@@ -71,25 +69,16 @@ const pinned = async (gitDir: string) =>
 describe("pi in a folder of repositories", () => {
   it("says once that the workspace's repositories are protected", async () => {
     const fake = createFakeBackend();
-    const harness = await workspaceHarness({ repos: ["a", "deep/b"] }, { adapters: () => [fake.backend] });
+    const harness = await workspaceHarness({ repos: ["a", "deep/b"] }, { backend: () => fake.backend });
 
     expect(await run([], harness.deps)).toBe(0);
     expect(occurrences(harness.stderr(), WORKSPACE_NOTICE)).toBe(1);
-    expect(harness.stderr()).not.toContain(NESTED_FILES_NOTICE);
     expect(fake.containers.size).toBe(1);
-  });
-
-  it("warns that nested .git files stay writable on a backend without single-file mounts", async () => {
-    const fake = createFakeBackend({ capabilities: { singleFileMount: false } });
-    const harness = await workspaceHarness({ repos: ["a", "b"] }, { adapters: () => [fake.backend] });
-
-    expect(await run([], harness.deps)).toBe(0);
-    expect(occurrences(harness.stderr(), NESTED_FILES_NOTICE)).toBe(1);
   });
 
   it("refuses a nested repository git does not confirm and starts nothing", async () => {
     const fake = createFakeBackend();
-    const harness = await workspaceHarness({ repos: ["a", "broken"] }, { adapters: () => [fake.backend] });
+    const harness = await workspaceHarness({ repos: ["a", "broken"] }, { backend: () => fake.backend });
 
     expect(await run([], harness.deps)).toBe(1);
     expect(harness.stderr()).toContain(
@@ -99,21 +88,15 @@ describe("pi in a folder of repositories", () => {
     expect(fake.containers.size).toBe(0);
   });
 
-  it("runs status, gc, reset and migrate in a workspace the launch refuses", async () => {
-    const source = createFakeBackend();
-    const target = createFakeBackend();
-    const harness = await workspaceHarness(
-      { repos: ["a", "broken"] },
-      { adapters: () => [source.backend, { ...target.backend, name: "apple" }] },
-    );
+  it("runs status, gc and reset in a workspace the launch refuses", async () => {
+    const fake = createFakeBackend();
+    const harness = await workspaceHarness({ repos: ["a", "broken"] }, { backend: () => fake.backend });
 
     expect(await run(["sandbox", "status"], harness.deps)).toBe(0);
     expect(harness.stdout()).toContain(`repo: ${harness.work}\n`);
     expect(await run(["sandbox", "gc"], harness.deps)).toBe(0);
     expect(await run(["sandbox", "reset"], harness.deps)).toBe(0);
     expect(harness.stdout()).toContain(`no container for ${harness.work}\n`);
-    expect(await run(["sandbox", "migrate", "--to", "apple"], harness.deps)).toBe(0);
-    expect(harness.stdout()).toContain("set backend to apple in ");
     expect(harness.stderr()).not.toContain("cannot be protected");
   });
 
@@ -137,7 +120,7 @@ describe("pi in a folder of repositories", () => {
 
   it("releases the pin of each nested repository unless another running sandbox mounts its git dir", async () => {
     const fake = createFakeBackend();
-    const harness = await workspaceHarness({ repos: ["a", "b"] }, { adapters: () => [fake.backend] });
+    const harness = await workspaceHarness({ repos: ["a", "b"] }, { backend: () => fake.backend });
     const shared = join(harness.work, "a", ".git");
     const own = join(harness.work, "b", ".git");
 
@@ -159,7 +142,7 @@ describe("the node_modules overlay notice", () => {
     const fake = createFakeBackend();
     const harness = await workspaceHarness(
       { repos: ["a", "b"], lockfiles: ["a/package-lock.json"] },
-      { adapters: () => [fake.backend] },
+      { backend: () => fake.backend },
     );
 
     expect(await run([], harness.deps)).toBe(0);
@@ -170,7 +153,7 @@ describe("the node_modules overlay notice", () => {
     const fake = createFakeBackend();
     const harness = await workspaceHarness(
       { repos: ["a", "b"], lockfiles: ["a/package-lock.json", "b/pnpm-lock.yaml", "tools/yarn.lock"] },
-      { adapters: () => [fake.backend] },
+      { backend: () => fake.backend },
     );
 
     expect(await run([], harness.deps)).toBe(0);
@@ -180,10 +163,7 @@ describe("the node_modules overlay notice", () => {
   it("says the overlay is off when there are more than 512 node projects", async () => {
     const fake = createFakeBackend();
     const lockfiles = Array.from({ length: 513 }, (_, index) => `a/p${index}/package-lock.json`);
-    const harness = await workspaceHarness(
-      { repos: ["a", "b"], lockfiles },
-      { adapters: () => [fake.backend] },
-    );
+    const harness = await workspaceHarness({ repos: ["a", "b"], lockfiles }, { backend: () => fake.backend });
 
     expect(await run([], harness.deps)).toBe(0);
     expect(occurrences(harness.stderr(), CAPPED_NOTICE)).toBe(1);
@@ -194,7 +174,7 @@ describe("the node_modules overlay notice", () => {
     const fake = createFakeBackend();
     const harness = await workspaceHarness(
       { repos: ["a", "b"], lockfiles: ["a/package-lock.json"] },
-      { adapters: () => [fake.backend] },
+      { backend: () => fake.backend },
     );
 
     await harness.writeJson(harness.userConfigFile, { mounts: { autoNodeModules: false } });
@@ -205,7 +185,7 @@ describe("the node_modules overlay notice", () => {
 
   it("stays silent without node projects", async () => {
     const fake = createFakeBackend();
-    const harness = await workspaceHarness({ repos: ["a", "b"] }, { adapters: () => [fake.backend] });
+    const harness = await workspaceHarness({ repos: ["a", "b"] }, { backend: () => fake.backend });
 
     expect(await run([], harness.deps)).toBe(0);
     expect(harness.stderr()).not.toContain("node_modules overlaid");

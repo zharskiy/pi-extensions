@@ -68,7 +68,6 @@ describe("loadEffectiveConfig", () => {
       "resources.cpus": "user",
       "resources.memoryGiB": "policy",
       "mounts.cacheVolumes": "project",
-      backend: "default",
     });
   });
 
@@ -103,16 +102,6 @@ describe("loadEffectiveConfig", () => {
 
     await expect(loadEffectiveConfig({ repoRoot: files.repoRoot, env: files.env })).rejects.toThrow(
       `project: image.digest may not be set by a project config (${files.projectFile})`,
-    );
-  });
-
-  it("refuses a project config that picks the backend", async () => {
-    const files = await createLayers();
-
-    await files.project({ backend: "apple" });
-
-    await expect(loadEffectiveConfig({ repoRoot: files.repoRoot, env: files.env })).rejects.toThrow(
-      `project: backend may not be set by a project config`,
     );
   });
 
@@ -165,12 +154,11 @@ describe("loadEffectiveConfig", () => {
     expect(sources).toMatchObject({ "egress.allow": "project", fallback: "user", workspaceRoots: "project" });
   });
 
-  it("lets the user layer loosen the defaults and the backend when policy leaves them open", async () => {
+  it("lets the user layer loosen the defaults when policy leaves them open", async () => {
     const { config } = await loadWith({
       user: {
         egress: { allow: ["github.com", "crates.io"] },
         credentials: { kind: "static", envVar: "API" },
-        backend: "apple",
       },
     });
 
@@ -182,7 +170,6 @@ describe("loadEffectiveConfig", () => {
       derive: { enabled: true },
       vault: { enabled: true },
     });
-    expect(config.backend).toBe("apple");
   });
 
   const loosening: Array<[string, { policy?: unknown; user?: unknown; project?: unknown }, string]> = [
@@ -256,11 +243,6 @@ describe("loadEffectiveConfig", () => {
       "gateway",
       { policy: { gateway: GATEWAY }, user: { gateway: { ...GATEWAY, url: "https://evil.test" } } },
       "user: gateway cannot change, locked by policy",
-    ],
-    [
-      "backend",
-      { policy: { backend: "colima" }, user: { backend: "apple" } },
-      "user: backend cannot change, locked by policy",
     ],
     [
       "profile",

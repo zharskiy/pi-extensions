@@ -47,8 +47,6 @@ export interface FakeEngineOptions {
   registry?: Record<string, string>;
   exec?: FakeExecHandler;
   socketPath?: string;
-  operatingSystem?: string;
-  bridgeGateway?: string;
   vmShares?: string[];
 }
 
@@ -153,7 +151,7 @@ const runStatement = (result: ScriptResult, statement: string): ScriptResult => 
   return exit === null ? result : { ...result, code: Number(exit[1]) };
 };
 
-export const runFakeScript = (command: string[]): ScriptResult => {
+const runFakeScript = (command: string[]): ScriptResult => {
   const statements = (command.at(-1) ?? "").split(";").map((statement) => statement.trim());
   const result = statements.reduce(runStatement, { stdout: "", stderr: "", code: -1 });
 
@@ -207,19 +205,7 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
   const volumes = new Map<string, Buffer>();
   const volumeLabels = new Map<string, Record<string, string>>();
   const createdBodies: Array<{ name: string; body: unknown }> = [];
-  const networks = new Map<string, FakeNetwork>(
-    options.bridgeGateway === undefined
-      ? []
-      : [
-          [
-            "bridge",
-            {
-              body: { Name: "bridge", IPAM: { Config: [{ Gateway: options.bridgeGateway }] } },
-              connected: [],
-            },
-          ],
-        ],
-  );
+  const networks = new Map<string, FakeNetwork>();
   const requests: EngineRequestRecord[] = [];
   const resizes: Array<{ execId: string; rows: number; columns: number }> = [];
   const execHandler = options.exec ?? defaultExec;
@@ -394,27 +380,6 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
     return { status: 200 };
   };
 
-  const mountedVolume = (container: FakeContainer, path: string) =>
-    volumeMounts(container).find((mount) => mount.Target === path || path === "/");
-
-  const getArchive = withContainer((container, { query }) => {
-    const mount = mountedVolume(container, query.get("path") ?? "");
-
-    return mount === undefined
-      ? notFound("Could not find the file")
-      : { status: 200, raw: volumes.get(mount.Source) };
-  });
-
-  const putArchive = withContainer((container, { query, body }) => {
-    const mount = mountedVolume(container, query.get("path") ?? "");
-
-    if (mount !== undefined) {
-      volumes.set(mount.Source, body);
-    }
-
-    return { status: 200 };
-  });
-
   const volumeInUse = (name: string) =>
     [...containers.values()].some((container) =>
       volumeMounts(container).some((mount) => mount.Source === name),
@@ -559,11 +524,6 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
     { method: "GET", pattern: /^\/_ping$/, handle: () => ({ status: 200, raw: "OK" }) },
     {
       method: "GET",
-      pattern: /^\/info$/,
-      handle: () => ({ status: 200, json: { OperatingSystem: options.operatingSystem ?? "Docker Desktop" } }),
-    },
-    {
-      method: "GET",
       pattern: /^\/version$/,
       handle: () => ({
         status: 200,
@@ -617,8 +577,6 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
     { method: "POST", pattern: /^\/containers\/([^/]+)\/exec$/, handle: createExec },
     { method: "GET", pattern: /^\/exec\/([^/]+)\/json$/, handle: inspectExec },
     { method: "POST", pattern: /^\/exec\/([^/]+)\/resize$/, handle: resizeExec },
-    { method: "GET", pattern: /^\/containers\/([^/]+)\/archive$/, handle: getArchive },
-    { method: "PUT", pattern: /^\/containers\/([^/]+)\/archive$/, handle: putArchive },
     {
       method: "POST",
       pattern: /^\/volumes\/create$/,

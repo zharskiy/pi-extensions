@@ -15,8 +15,8 @@ export const agentVolumeName = (user: string, repoRoot: string) =>
 export const cacheVolumeName = (repoRoot: string, path: string) =>
   `pi-sandbox-cache-${shortRepoHash(repoRoot)}-${sha256Hex(path).slice(0, 8)}`;
 
-export const copiesDir = (stateDir: string, repoRoot: string) =>
-  stateLayout(stateDir).copies(shortRepoHash(repoRoot));
+export const wantedFile = (stateDir: string, repoRoot: string) =>
+  stateLayout(stateDir).wanted(shortRepoHash(repoRoot));
 
 export const userHashOf = (stateDir: string) => sha256Hex(stateDir).slice(0, SHORT);
 

@@ -206,15 +206,15 @@ const HOST_CHECK_LINES = [
 
 const HOST_LINES = [
   ...HOST_CHECK_LINES,
-  "skip vm size: no colima profile: VM size not checked",
-  "skip vm shares: no colima profile: shares not checked",
+  "skip vm size: colima not on PATH",
+  "skip vm shares: colima did not report the shares of profile pi-sandbox",
 ];
 
 const doctorWith = async (probes: Probes, healthStatus = 200, userConfig?: unknown, hostAuth?: unknown) => {
   const port = await healthServer(healthStatus);
   const fake = createFakeBackend({ exec: answering(probes) });
   const harness = await createHarness({
-    adapters: () => [fake.backend],
+    backend: () => fake.backend,
     proxy: { ensure: async () => ({ pid: 77, port, policyHash: "p", token: "token-1" }) },
   });
 
@@ -361,7 +361,7 @@ describe("pi sandbox doctor", () => {
     const port = await healthServer(200);
     const fake = createFakeBackend({ exec: answering({}) });
     const harness = await createHarness({
-      adapters: () => [fake.backend],
+      backend: () => fake.backend,
       proxy: { ensure: async () => ({ pid: 77, port, policyHash: "p", token: "token-1" }) },
     });
 
@@ -428,13 +428,15 @@ describe("pi sandbox doctor", () => {
   it("skips every check after the runtime when no backend is available and still exits 1", async () => {
     const fake = createFakeBackend();
     const down = { ...fake.backend, detect: async () => ({ available: false, reason: "socket missing" }) };
-    const harness = await createHarness({ adapters: () => [down] });
+    const harness = await createHarness({ backend: () => down });
 
     expect(await run(["sandbox", "doctor"], harness.deps)).toBe(1);
 
     const lines = harness.stdout().trim().split("\n");
 
-    expect(lines[0]).toMatch(/^fail runtime: no sandbox backend available: colima \(socket missing\)/);
+    expect(lines[0]).toMatch(
+      /^fail runtime: the sandbox VM engine is unreachable at ~\/\.colima\/pi-sandbox\/docker\.sock/,
+    );
     expect(lines.slice(1)).toEqual([
       "skip proxy: no runtime",
       "skip image: no runtime",
@@ -457,7 +459,7 @@ describe("pi sandbox doctor", () => {
   it("reports a file org baseline with its hash", async () => {
     const fake = createFakeBackend();
     const down = { ...fake.backend, detect: async () => ({ available: false, reason: "socket missing" }) };
-    const harness = await createHarness({ adapters: () => [down] });
+    const harness = await createHarness({ backend: () => down });
     const baseline = join(harness.root, "org.json");
 
     await harness.writeJson(baseline, {});
@@ -474,7 +476,7 @@ describe("pi sandbox doctor", () => {
   it("does not count skipped checks as failures", async () => {
     const fake = createFakeBackend({ exec: answering({}) });
     const failing = { ...fake.backend, buildImage: async () => Promise.reject(new Error("build failed")) };
-    const harness = await createHarness({ adapters: () => [failing] });
+    const harness = await createHarness({ backend: () => failing });
 
     await harness.writeJson(harness.userConfigFile, { egress: { allow: [] } });
 
@@ -516,7 +518,7 @@ describe("pi sandbox doctor", () => {
 
     const doctorOn = async (backend: Partial<Backend>, respond?: (call: FakeCall) => object | undefined) => {
       const fake = createFakeBackend({ exec: answering({}) });
-      const harness = await createHarness({ adapters: () => [{ ...fake.backend, ...backend }], respond });
+      const harness = await createHarness({ backend: () => ({ ...fake.backend, ...backend }), respond });
 
       await harness.writeJson(harness.userConfigFile, { egress: { allow: [] } });
 
@@ -560,13 +562,6 @@ describe("pi sandbox doctor", () => {
 
       expect(line).toBe("skip vm size: colima did not report the size of profile pi-sandbox");
     });
-
-    it("skips on the apple backend without asking colima", async () => {
-      const { line, harness } = await doctorOn({ name: "apple", ...colimaProfile });
-
-      expect(line).toBe("skip vm size: apple backend: VM size not checked");
-      expect(harness.calls.some((call) => call.file === "colima")).toBe(false);
-    });
   });
 });
 
@@ -577,7 +572,7 @@ describe("pi sandbox doctor vm shares", () => {
 
   const sharesLine = async (backend: Partial<Backend>, lima?: (harness: Harness) => YamlMount[]) => {
     const fake = createFakeBackend({ exec: answering({}) });
-    const harness = await createHarness({ adapters: () => [{ ...fake.backend, ...backend }] });
+    const harness = await createHarness({ backend: () => ({ ...fake.backend, ...backend }) });
 
     await harness.writeJson(harness.userConfigFile, { egress: { allow: [] } });
 
@@ -624,12 +619,6 @@ describe("pi sandbox doctor vm shares", () => {
 
     expect(line).toBe("skip vm shares: colima did not report the shares of profile pi-sandbox");
   });
-
-  it("skips on the apple backend", async () => {
-    const { line } = await sharesLine({ name: "apple", ...colimaProfile });
-
-    expect(line).toBe("skip vm shares: apple backend: no VM shares");
-  });
 });
 
 describe("pi sandbox doctor on the host pi", () => {
@@ -639,7 +628,7 @@ describe("pi sandbox doctor on the host pi", () => {
   ) => {
     const fake = createFakeBackend();
     const down = { ...fake.backend, detect: async () => ({ available: false, reason: "socket missing" }) };
-    const harness = await createHarness({ adapters: () => [down], ...(bundled ? {} : { bundledPi: null }) });
+    const harness = await createHarness({ backend: () => down, ...(bundled ? {} : { bundledPi: null }) });
 
     await prepare(harness);
 

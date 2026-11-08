@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import type { BackendCapabilities, MountSpec } from "../../backend/index.ts";
+import type { MountSpec } from "../../backend/index.ts";
 import {
   buildContainerSpec,
   forwardedEnv,
@@ -17,11 +17,6 @@ import { sandboxConfig } from "../support/sandbox-config.ts";
 const repoRoot = "/work/repo";
 
 const repoHash = sha256Hex(repoRoot);
-
-const capabilities: BackendCapabilities = {
-  singleFileMount: true,
-  sshAgent: true,
-};
 
 const proxy = {
   url: "http://pi-sandbox:token-1@10.89.0.2:3128",
@@ -42,9 +37,6 @@ const specInput = (overrides: Partial<ContainerSpecInput> = {}): ContainerSpecIn
     HOME: "/Users/dev",
   },
   hostUid: 501,
-  hostGid: 20,
-  platform: "darwin",
-  capabilities,
   stateDir: "/state",
   proxy,
   launcherVersion: "0.4.0",
@@ -162,32 +154,11 @@ describe("buildContainerSpec", () => {
     expect(mounts.map((mount) => mount.target).indexOf("/work/repo/.git")).toBe(1);
   });
 
-  it("binds no git files and asks for no git copies when the backend cannot mount single files", () => {
-    const gitOverlay = {
-      selfBinds: ["/work/repo/.git"],
-      readOnlyDirs: ["/work/repo/.git/hooks"],
-      readOnlyFiles: ["/work/repo/.git/config"],
-    };
-    const spec = buildContainerSpec(
-      specInput({
-        gitOverlay,
-        proxy: { ...proxy, caPemPath: undefined },
-        capabilities: { ...capabilities, singleFileMount: false },
-      }),
-    );
-
-    expect(mountAt(spec.mounts, "/work/repo/.git/config")).toBeUndefined();
-    expect(mountAt(spec.mounts, "/work/repo/.git/hooks")?.readOnly).toBe(true);
-    expect(spec.requiredCopies).toEqual([]);
-    expect(spec.copiesDir).toBe(`/state/copies/${repoHash.slice(0, 12)}`);
-  });
-
-  it("needs no git mounts or copies outside git", () => {
+  it("needs no git mounts outside git", () => {
     const workspace = { cwd: "/work/plain", repoRoot: "/work/plain", isGitRepo: false };
     const spec = buildContainerSpec(specInput({ workspace }));
 
     expect(spec.mounts.filter((mount) => mount.target.includes(".git"))).toEqual([]);
-    expect(spec.requiredCopies).toEqual([]);
   });
 
   it("adds the extra read-only mounts from config at the same path, with ~ expanded", () => {
@@ -397,21 +368,6 @@ describe("buildContainerSpec", () => {
     expect(hashOf("one")).not.toBe(hashOf("two"));
   });
 
-  it("asks for a copy of the trust bundle when the backend cannot mount single files", () => {
-    const spec = buildContainerSpec(
-      specInput({
-        trust: { pemPath: "/state/ca/trust.pem", hash: "h" },
-        capabilities: { ...capabilities, singleFileMount: false },
-      }),
-    );
-
-    expect(mountAt(spec.mounts, "/etc/pi-sandbox/ca.pem")).toBeUndefined();
-    expect(spec.requiredCopies).toContainEqual({
-      source: "/state/ca/trust.pem",
-      target: "/etc/pi-sandbox/ca.pem",
-    });
-  });
-
   it("puts the per-repo proxy token in the proxy URL instead of the instance token", () => {
     const spec = buildContainerSpec(specInput({ repoProxyToken: "repo-token-1" }));
 
@@ -490,23 +446,14 @@ describe("buildContainerSpec", () => {
     });
   });
 
-  it("asks for the ssh agent only when ssh.agent is on and the backend can forward it", () => {
+  it("asks for the ssh agent only when ssh.agent is on", () => {
     const on = sandboxConfig({ ssh: { agent: true } });
 
     expect(buildContainerSpec(specInput()).sshAgent).toBeUndefined();
     expect(buildContainerSpec(specInput({ config: on })).sshAgent).toEqual({
       guestSocket: "/run/host-ssh-agent.sock",
     });
-    expect(
-      buildContainerSpec(specInput({ config: on, capabilities: { ...capabilities, sshAgent: false } }))
-        .sshAgent,
-    ).toBeUndefined();
     expect(buildContainerSpec(specInput({ config: on })).env.SSH_AUTH_SOCK).toBeUndefined();
-  });
-
-  it("maps the host user on linux only", () => {
-    expect(buildContainerSpec(specInput({ platform: "linux" })).user).toBe("501:20");
-    expect(buildContainerSpec(specInput()).user).toBeUndefined();
   });
 
   it("works in the repo root and carries the configured resources", () => {

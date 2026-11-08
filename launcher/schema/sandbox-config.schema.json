@@ -12,10 +12,6 @@
     "profile": {
       "enum": ["enterprise", "team", "solo"]
     },
-    "backend": {
-      "description": "Container runtime. Not in a project config.",
-      "enum": ["auto", "colima", "apple"]
-    },
     "fallback": {
       "enum": ["refuse", "host"]
     },

@@ -33,7 +33,6 @@ const packageVersion = async () => {
 };
 
 export const defaultConfig = async (): Promise<SandboxConfig> => ({
-  backend: "auto",
   fallback: "host",
   image: { reference: `${IMAGE_REPOSITORY}:${await packageVersion()}` },
   credentials: { kind: "host-pi-auth", rules: [], derive: { enabled: true }, vault: { enabled: true } },

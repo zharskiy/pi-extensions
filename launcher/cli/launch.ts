@@ -1,6 +1,5 @@
 import { constants } from "node:os";
 import type { Backend, ProxyRoute } from "../backend/index.ts";
-import { selectBackend } from "../backend/index.ts";
 import {
   configHash,
   type EffectiveConfig,
@@ -8,7 +7,6 @@ import {
   type SandboxConfig,
 } from "../config/index.ts";
 import {
-  backendNotices,
   buildContainerSpec,
   ensureContainer,
   findCurrentContainer,
@@ -70,7 +68,7 @@ import {
   pruneEndedGrants,
 } from "./sessions.ts";
 import { imagePiVersion, launcherVersion } from "./versions.ts";
-import { openLaunchBackend } from "./vm-lifecycle.ts";
+import { openLaunchBackend, reachableBackend } from "./vm-lifecycle.ts";
 import { ensureVmShares } from "./vm-shares.ts";
 
 export interface LaunchContext {
@@ -157,7 +155,7 @@ export const checkWorkspace = (deps: CliDeps, context: LaunchContext) => {
 
 export const openBackend = async (deps: CliDeps, config: SandboxConfig) => {
   try {
-    return await selectBackend(config.backend, deps.adapters());
+    return await reachableBackend(deps);
   } catch (error) {
     throw withFallbackHint(error, config.fallback);
   }
@@ -247,12 +245,8 @@ const overlayNotices = (context: LaunchContext) => {
   ];
 };
 
-const writeLaunchNotices = (deps: CliDeps, context: LaunchContext, backend: Backend) => {
-  writeLines(deps.stderr, [
-    ...workspaceNotices(context.workspace),
-    ...backendNotices(context.workspace, backend.capabilities),
-    ...overlayNotices(context),
-  ]);
+const writeLaunchNotices = (deps: CliDeps, context: LaunchContext) => {
+  writeLines(deps.stderr, [...workspaceNotices(context.workspace), ...overlayNotices(context)]);
 };
 
 const syncAgentFiles = async (
@@ -306,7 +300,7 @@ export const prepareContainer = async (
 
   writeNotices(deps, gitNotices);
 
-  writeLaunchNotices(deps, context, backend);
+  writeLaunchNotices(deps, context);
 
   const route = await sandboxRoute(deps, backend, proxy, image.id, context.repoHash);
   const specWith = (gitOverlay: GitOverlay) =>
@@ -316,9 +310,6 @@ export const prepareContainer = async (
       image,
       hostEnv: deps.env,
       hostUid: deps.uid,
-      hostGid: deps.gid,
-      platform: deps.platform,
-      capabilities: backend.capabilities,
       stateDir: context.stateDir,
       gitOverlay,
       proxy: route,
@@ -376,7 +367,7 @@ const prepareSandbox = async (
   cancelled: AbortSignal,
 ) => {
   const [proxy, image] = await settleAll([
-    openSandboxProxy(deps, context, host, backend),
+    openSandboxProxy(deps, context, host),
     prepareImage(deps, context, backend, host),
   ]);
 

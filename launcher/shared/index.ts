@@ -1,6 +1,4 @@
 export { ensureRandomHexFile, writeFileAtomic } from "./atomic-write.ts";
-export type { BackendName } from "./backend-names.ts";
-export { BACKEND_NAMES } from "./backend-names.ts";
 export type { CommandRunner, RunOptions, RunResult } from "./command-runner.ts";
 export { createProcessRunner } from "./command-runner.ts";
 export { errorMessage, LauncherError } from "./errors.ts";
