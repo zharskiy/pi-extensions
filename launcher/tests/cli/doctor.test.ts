@@ -5,11 +5,12 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { Backend, ExecIo, ExecSpec } from "../../backend/index.ts";
 import { MCP_LIST_PROBE, OFFLINE_PROBE, SHIM_PROBE } from "../../cli/commands/doctor-container.ts";
 import { run } from "../../cli/index.ts";
+import { testedPiVersion } from "../../cli/versions.ts";
 import { registerSession } from "../../grants/index.ts";
 import { sha256Hex } from "../../shared/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { argvOf, type FakeCall } from "../support/fake-runner.ts";
-import { createHarness } from "./harness.ts";
+import { createHarness, writeManagedPi, writePathPi } from "./harness.ts";
 
 interface Probes {
   env?: string;
@@ -188,7 +189,7 @@ const GATEWAY = {
 };
 
 const HOST_CHECK_LINES = [
-  expect.stringMatching(/^ok bundled pi: pi \S+, the same as the image$/),
+  expect.stringMatching(/^ok host pi: pi \S+ next to the launcher; the image follows it$/),
   "ok provider hosts: 1 built-in providers with known hosts",
   "skip parent proxy: no parent proxy configured",
   "skip org baseline: no org baseline configured",
@@ -553,5 +554,71 @@ describe("pi sandbox doctor", () => {
       expect(line).toBe("skip vm size: apple backend: VM size not checked");
       expect(harness.calls.some((call) => call.file === "colima")).toBe(false);
     });
+  });
+});
+
+describe("pi sandbox doctor on the host pi", () => {
+  const hostPiLine = async (
+    prepare: (harness: Awaited<ReturnType<typeof createHarness>>) => Promise<void>,
+    bundled = true,
+  ) => {
+    const fake = createFakeBackend();
+    const down = { ...fake.backend, detect: async () => ({ available: false, reason: "socket missing" }) };
+    const harness = await createHarness({ adapters: () => [down], ...(bundled ? {} : { bundledPi: null }) });
+
+    await prepare(harness);
+
+    await run(["sandbox", "doctor"], harness.deps);
+
+    return {
+      harness,
+      line: harness
+        .stdout()
+        .split("\n")
+        .find((entry) => / host pi: /.test(entry)),
+    };
+  };
+
+  it("names pi's managed install and says the image follows it", async () => {
+    const managed = { wrapper: "" };
+    const { line } = await hostPiLine(async (harness) => {
+      managed.wrapper = (await writeManagedPi(harness.hostAgentDir, "1.6.0")).wrapper;
+    });
+
+    expect(line).toBe(`ok host pi: pi 1.6.0, managed install ${managed.wrapper}; the image follows it`);
+  });
+
+  it("warns when the managed pi is older than the pi the launcher is tested with", async () => {
+    const managed = { wrapper: "" };
+    const { line } = await hostPiLine(async (harness) => {
+      managed.wrapper = (await writeManagedPi(harness.hostAgentDir, "1.0.0")).wrapper;
+    });
+
+    expect(line).toBe(
+      `warn host pi: pi 1.0.0 (managed install ${managed.wrapper}) is older than ${await testedPiVersion()}, the pi this launcher is tested with; run pi update`,
+    );
+  });
+
+  it("names the PATH pi that pi --no-sandbox runs next to the launcher's own pi", async () => {
+    const onPath = { pi: "" };
+    const { line } = await hostPiLine(async (harness) => {
+      const written = await writePathPi(join(harness.root, "brew"), "1.7.0");
+
+      onPath.pi = written.pi;
+
+      harness.deps.env.PATH = written.bin;
+    });
+
+    expect(line).toBe(
+      `ok host pi: pi ${await testedPiVersion()} next to the launcher; the image follows it; pi --no-sandbox runs pi 1.7.0 at ${onPath.pi}`,
+    );
+  });
+
+  it("fails when the host has no pi", async () => {
+    const { line } = await hostPiLine(async () => undefined, false);
+
+    expect(line).toBe(
+      "fail host pi: no pi on the host; install pi or reinstall the launcher with npm install -g pi-extensions-mz",
+    );
   });
 });

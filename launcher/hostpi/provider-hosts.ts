@@ -1,5 +1,4 @@
-import { existsSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import {
   type CommandRunner,
   errorMessage,
@@ -10,13 +9,13 @@ import {
   stateLayout,
   writeJsonFile,
 } from "../shared/index.ts";
+import { SAFE_VERSION } from "./locate.ts";
 import type { BundledPi, ProviderHosts } from "./types.ts";
 
 export interface ProviderHostsInput {
   stateDir: string;
   runner: CommandRunner;
   pi: BundledPi;
-  imagePiVersion: string;
 }
 
 export interface ProviderHostsResult {
@@ -24,18 +23,7 @@ export interface ProviderHostsResult {
   notices: string[];
 }
 
-interface PiManifest {
-  version?: unknown;
-  bin?: unknown;
-}
-
-const PI_PACKAGE = "@earendil-works/pi-coding-agent";
-
-const PI_BIN = "pi";
-
 const SCRIPT = "provider-hosts.mjs";
-
-const SAFE_VERSION = /^[0-9A-Za-z][0-9A-Za-z.+-]*$/;
 
 const isStringList = (value: unknown): value is string[] =>
   Array.isArray(value) && value.every((item) => typeof item === "string");
@@ -53,45 +41,6 @@ const parseTable = (text: string) => {
   const value = parseJsonObject(text);
 
   return isTable(value) ? value : undefined;
-};
-
-const packageDirFrom = (start: string): string | undefined => {
-  const candidate = join(start, "node_modules", PI_PACKAGE);
-
-  if (existsSync(join(candidate, "package.json"))) {
-    return candidate;
-  }
-
-  const parent = dirname(start);
-
-  return parent === start ? undefined : packageDirFrom(parent);
-};
-
-const binOf = (manifest: PiManifest) => {
-  if (typeof manifest.bin === "string") {
-    return manifest.bin;
-  }
-
-  const named = isJsonObject(manifest.bin) ? manifest.bin[PI_BIN] : undefined;
-
-  return typeof named === "string" ? named : undefined;
-};
-
-export const locateBundledPi = async (): Promise<BundledPi | undefined> => {
-  const packageDir = packageDirFrom(launcherRoot());
-
-  if (packageDir === undefined) {
-    return undefined;
-  }
-
-  const manifest: PiManifest = (await readJsonObject(join(packageDir, "package.json"))) ?? {};
-  const bin = binOf(manifest);
-
-  if (typeof manifest.version !== "string" || bin === undefined) {
-    return undefined;
-  }
-
-  return { command: [process.execPath, join(packageDir, bin)], version: manifest.version, packageDir };
 };
 
 const unavailable = (reason: string): ProviderHostsResult => ({
@@ -129,12 +78,6 @@ const runScript = async (
 };
 
 export const readProviderHosts = async (input: ProviderHostsInput): Promise<ProviderHostsResult> => {
-  if (input.pi.version !== input.imagePiVersion) {
-    return unavailable(
-      `the launcher's pi ${input.pi.version} differs from the image pi ${input.imagePiVersion}`,
-    );
-  }
-
   const cache = SAFE_VERSION.test(input.pi.version)
     ? stateLayout(input.stateDir).providerHosts(input.pi.version)
     : undefined;

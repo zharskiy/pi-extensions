@@ -26,12 +26,11 @@ describe("readProviderHosts", () => {
   it("runs the bundled script, returns its table and caches it per pi version", async () => {
     const stateDir = await tempDir("provider-hosts");
     const fake = await sampleRunner();
-    const first = await readProviderHosts({ stateDir, runner: fake.runner, pi: PI, imagePiVersion: "1.5.0" });
+    const first = await readProviderHosts({ stateDir, runner: fake.runner, pi: PI });
     const second = await readProviderHosts({
       stateDir,
       runner: fake.runner,
       pi: PI,
-      imagePiVersion: "1.5.0",
     });
     const cached = JSON.parse(await readFile(stateLayout(stateDir).providerHosts("1.5.0"), "utf8"));
 
@@ -40,22 +39,6 @@ describe("readProviderHosts", () => {
     expect(second.hosts).toEqual(first.hosts);
     expect(cached).toEqual(first.hosts);
     expect(fake.calls).toHaveLength(1);
-  });
-
-  it("returns an empty table with a notice when the pi versions differ, without running anything", async () => {
-    const stateDir = await tempDir("provider-hosts");
-    const fake = await sampleRunner();
-    const result = await readProviderHosts({
-      stateDir,
-      runner: fake.runner,
-      pi: PI,
-      imagePiVersion: "1.6.0",
-    });
-
-    expect(result.hosts).toEqual({});
-    expect(result.notices).toHaveLength(1);
-    expect(result.notices[0]).toContain("1.6.0");
-    expect(fake.calls).toEqual([]);
   });
 
   it("returns an empty table with a notice when the script fails or prints something else", async () => {
@@ -70,13 +53,11 @@ describe("readProviderHosts", () => {
       stateDir,
       runner: failing.runner,
       pi: PI,
-      imagePiVersion: "1.5.0",
     });
     const unreadable = await readProviderHosts({
       stateDir,
       runner: garbled.runner,
       pi: PI,
-      imagePiVersion: "1.5.0",
     });
 
     expect(failed).toEqual({ hosts: {}, notices: [expect.stringContaining("boom")] });
@@ -94,7 +75,6 @@ describe("readProviderHosts", () => {
       stateDir,
       runner: fake.runner,
       pi: PI,
-      imagePiVersion: "1.5.0",
     });
 
     expect(Object.keys(result.hosts)).toHaveLength(3);

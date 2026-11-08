@@ -30,6 +30,7 @@ export interface BuiltImage {
   digest: string;
   id: string;
   built: boolean;
+  pi?: string;
 }
 
 const VERSION_PATTERN = /^[0-9A-Za-z][0-9A-Za-z.+-]*$/;
@@ -130,9 +131,9 @@ const buildLocally = async (input: EnsureImageInput, hash: string): Promise<Buil
     fill: (dir) => prepareBuildContext(input.versions, dir, input.trustPem),
   });
 
-  await writeImageRecord(input.stateDir, { reference, digest, id, inputsHash: hash });
+  await writeImageRecord(input.stateDir, { reference, digest, id, inputsHash: hash, pi: input.versions.pi });
 
-  return { reference, digest, id, built: true };
+  return { reference, digest, id, built: true, pi: input.versions.pi };
 };
 
 export const pullPinnedImage = async (input: PullImageInput, pinned: string): Promise<BuiltImage> => {
@@ -159,7 +160,19 @@ export const ensureBuiltImage = async (input: EnsureImageInput): Promise<BuiltIm
   const record = await recordedImage(input.stateDir, input.config);
   const reused = await reusableBuild(input.backend, record, hash);
 
-  return reused === undefined
-    ? buildLocally(input, hash)
-    : { reference: input.config.image.reference, digest: reused.digest, id: reused.id, built: false };
+  if (reused === undefined || record === undefined) {
+    return buildLocally(input, hash);
+  }
+
+  if (record.pi !== input.versions.pi) {
+    await writeImageRecord(input.stateDir, { ...record, pi: input.versions.pi });
+  }
+
+  return {
+    reference: input.config.image.reference,
+    digest: reused.digest,
+    id: reused.id,
+    built: false,
+    pi: input.versions.pi,
+  };
 };

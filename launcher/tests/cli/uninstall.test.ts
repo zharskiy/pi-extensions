@@ -1,5 +1,16 @@
 import { spawn, spawnSync } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readlink,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -214,5 +225,78 @@ describe("uninstall.sh on the Apple runtime", () => {
       "delete --force pi-sandbox-mine",
       "network delete pi-sandbox pi-sandbox-0123456789ab",
     ]);
+  });
+});
+
+const shimRoot = async (record?: { link: string; shim?: string }) => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "pi-sandbox-uninstall-")));
+  const shim = join(root, "local-bin", "pi");
+
+  created.push(root);
+
+  await mkdir(join(root, "local-bin"), { recursive: true });
+
+  await symlink("../lib/node_modules/pi-extensions-mz/launcher/bin/pi-sandbox", shim);
+
+  if (record !== undefined) {
+    await mkdir(join(root, "state"), { recursive: true });
+
+    await writeFile(join(root, "state", "replaced-pi-link"), `${record.shim ?? shim}\n${record.link}\n`);
+  }
+
+  return { root, shim, record: join(root, "state", "replaced-pi-link") };
+};
+
+const exists = (path: string) =>
+  lstat(path).then(
+    () => true,
+    () => false,
+  );
+
+describe("uninstall.sh and a replaced pi link", () => {
+  it("puts back exactly the link install.sh replaced and forgets the record", async () => {
+    const { root, shim, record } = await shimRoot({ link: "../../.pi/agent/bin/pi" });
+    const result = await runUninstall(root, join(root, "missing.sock"));
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain(
+      `launcher: removed ${shim}\nlauncher: restored ${shim} to ../../.pi/agent/bin/pi\n`,
+    );
+    expect(await readlink(shim)).toBe("../../.pi/agent/bin/pi");
+    expect(await exists(record)).toBe(false);
+  });
+
+  it("leaves a record that names another shim alone", async () => {
+    const { root, shim, record } = await shimRoot({
+      link: "../../.pi/agent/bin/pi",
+      shim: "/elsewhere/bin/pi",
+    });
+    const result = await runUninstall(root, join(root, "missing.sock"));
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain(
+      `launcher: ${record} records the replaced pi link of /elsewhere/bin/pi, not ${shim}; left as it is\n`,
+    );
+    expect(await exists(shim)).toBe(false);
+    expect(await exists(record)).toBe(true);
+  });
+
+  it("restores nothing when install.sh replaced no link", async () => {
+    const { root, shim } = await shimRoot();
+    const result = await runUninstall(root, join(root, "missing.sock"));
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).not.toContain("restore");
+    expect(await exists(shim)).toBe(false);
+  });
+
+  it("only says what it would restore with --dry-run", async () => {
+    const { root, shim, record } = await shimRoot({ link: "../../.pi/agent/bin/pi" });
+    const result = await runUninstall(root, join(root, "missing.sock"), ["--dry-run"]);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain(`launcher: would restore ${shim} to ../../.pi/agent/bin/pi\n`);
+    expect(await readlink(shim)).toBe("../lib/node_modules/pi-extensions-mz/launcher/bin/pi-sandbox");
+    expect(await exists(record)).toBe(true);
   });
 });

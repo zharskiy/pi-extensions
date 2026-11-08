@@ -58,7 +58,12 @@ parse_args() {
 
 parse_args "$@"
 
+if [ -d "$bin_dir" ]; then
+  bin_dir=$(cd -P "$bin_dir" && pwd)
+fi
+
 shim="$bin_dir/pi"
+replaced_link="$state_dir/replaced-pi-link"
 
 is_ours() {
   if [ -L "$shim" ]; then
@@ -70,15 +75,33 @@ is_ours() {
   [ -f "$shim" ] && grep -q "$wrapper_marker" "$shim"
 }
 
+shim_free=1
+
 if [ -e "$shim" ] || [ -L "$shim" ]; then
   if is_ours; then
     act rm -f "$shim"
     echo "launcher: $(verb "remove" "removed") $shim"
   else
+    shim_free=0
     echo "launcher: $shim is not the pi-sandbox launcher, left as it is"
   fi
 else
   echo "launcher: no $shim"
+fi
+
+recorded_shim=""
+
+if [ -f "$replaced_link" ]; then
+  recorded_shim=$(sed -n 1p "$replaced_link")
+fi
+
+if [ -n "$recorded_shim" ] && [ "$recorded_shim" != "$shim" ]; then
+  echo "launcher: $replaced_link records the replaced pi link of $recorded_shim, not $shim; left as it is"
+elif [ -n "$recorded_shim" ] && [ "$shim_free" -eq 1 ]; then
+  replaced=$(sed -n 2p "$replaced_link")
+  act ln -s "$replaced" "$shim"
+  act rm -f "$replaced_link"
+  echo "launcher: $(verb "restore" "restored") $shim to $replaced"
 fi
 
 if command -v npm >/dev/null 2>&1 && npm ls -g "$package_name" >/dev/null 2>&1; then

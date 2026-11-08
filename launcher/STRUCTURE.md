@@ -12,15 +12,15 @@ launcher/
 │   ├── main.ts              builds the real CliDeps and calls run
 │   ├── run.ts               the command table, routes argv (intercepted commands before the pass-through), renders LauncherError and unexpected errors
 │   ├── deps.ts              CliDeps: runner, env, home, cwd, streams, terminal, signals, platform, uid and gid, adapters, proxy control (ensure, list, stop, remove, control, denials, trust), bundledPi, resolveHost, confirm, now; writeNotices, hostAgentDirOf, settleAll (waits for every promise, then throws the first error)
-│   ├── launch.ts            LaunchContext (repoHash computed once), the pi pipeline, withSandbox (a signal cancels preparation at the next step and waits for the current one) and the steps other commands reuse (prepareImage through ensureSandboxImage, prepareContainer with render, the git plan, sync and grant pruning); proxy and image, then render, git notices, version, git plan and host sessions; prints the workspace, backend and node_modules overlay notices, then the two syncs, each group in parallel
+│   ├── launch.ts            LaunchContext (repoHash computed once), the pi pipeline, withSandbox (a signal cancels preparation at the next step and waits for the current one) and the steps other commands reuse (prepareImage through ensureSandboxImage with the host pi resolved once per launch, hostPiMoved and the image pi notice, prepareContainer with render, the git plan, sync and grant pruning); proxy and image, then render, git notices, version, git plan and host sessions; prints the workspace, backend and node_modules overlay notices, then the two syncs, each group in parallel
 │   ├── derive.ts            the host side: host pi files, MCP token seed, provider host table, vault discovery, deriveSandboxPi, private-host notices (DNS waited for at most 2 s), trust bundle; deriveVaultServers
-│   ├── sandbox-proxy.ts     starts the proxy with daemonEnv and the discover command, the repository token, dynamic.json (under a lock) with the vault servers, envSecretsFor over /control (no line breaks), the cap-aware denial summary on exit (rule egress.cap)
+│   ├── sandbox-proxy.ts     starts the proxy with daemonEnv, the host pi command, its version and the discover command, the repository token, dynamic.json (under a lock) with the vault servers, envSecretsFor over /control (no line breaks), the cap-aware denial summary on exit (rule egress.cap)
 │   ├── mcp-auth-sync.ts     syncSandboxMcpAuth: containerMcpAuth and syncContainerMcpAuth into a container, with notices
 │   ├── sessions.ts          registers and ends a launch session, stops the idle container after the last one (then the full host sessions sweep), prunes ended grants; the session-end git notices with a pins-in-use check per git common dir
 │   ├── host-sessions.ts     host sessions on or off for this launch (with the notice), readyHostSessions (prepare, guard, sweep), sweepWhenIdle under the session registry lock, the share probe, the exit and --no-sandbox sweeps
 │   ├── intercept.ts         pi install|remove (write-back of the packages entry), pi mcp add|remove|login|logout on the host (then the mcp-auth.json sync into a running container), bare pi update
-│   ├── host-pi.ts           finds the host pi for --no-sandbox; bundledPiCommand (the pi next to the launcher, else the host pi)
-│   ├── versions.ts          launcher version, pinned pi version
+│   ├── host-pi.ts           resolveJobPi (managed, else bundled: host jobs and the image), resolveShellPi and hostPiCommand (one selection, also PATH outside sandboxRoots: doctor, pi update, --no-sandbox), the doctor's host pi text
+│   ├── versions.ts          launcher version, testedPiVersion (the devDependency pin), imagePiVersion (the host pi's, else the pin), isOlderVersion
 │   ├── index.ts             the public surface
 │   └── commands/
 │       ├── status.ts            backend, container (and its session dir label), proxy, image, sessions, grants, gaps, node_modules overlays, shared caches
@@ -30,7 +30,7 @@ launcher/
 │       ├── reset.ts             this repository's container, proxy instance, render dir, and with --volumes its volumes (node_modules overlays included, shared caches kept) and sync copy
 │       ├── doctor.ts            the doctor's order and rendering
 │       ├── doctor-container.ts  in-container checks: PI_OFFLINE, pi mcp list, the mcp-auth.json placeholder sweep, the settings.json package URL sweep, xdg-open --pi-sandbox-check, the host sessions share probe, trust and one request per credential rule host; exports OFFLINE_PROBE, MCP_LIST_PROBE and SHIM_PROBE
-│       ├── doctor-host.ts       host checks: bundled pi, provider hosts, parent proxy, org baseline (orgBaselineStatus), grants, the host session dir, vm size (colima status, warn below 4 CPUs or 8 GiB), one line per vault server
+│       ├── doctor-host.ts       host checks: host pi (warn below the tested version), provider hosts, parent proxy, org baseline (orgBaselineStatus), grants, the host session dir, vm size (colima status, warn below 4 CPUs or 8 GiB), one line per vault server
 │       ├── migrate.ts           volumes to another backend (agent, cache and node_modules volumes; not the shared caches)
 │       └── help.ts              usage
 ├── config/
@@ -58,7 +58,7 @@ launcher/
 │   ├── git-integrity.ts     assertGitIntegrity, pinGitDirs and unpinGitDirs (the commondir pin), withGitPinLock (one lock per git common dir, every repository's in a workspace), gitAlternatesNotices, gitDirOf
 │   ├── git-scan.ts          scanGitBaseline (nested .git entries and gitlinks, one walk skipping every known git dir and the gitlinks of each repository), nestedGitNotices
 │   ├── git-command.ts       inertGitOptions: core.fsmonitor off and an empty core.hooksPath for the launcher's own git calls
-│   ├── guard.ts             assertSafeWorkspace: refuses a repo at or above home, ~/.pi, state, config or /, or inside ~/.pi, state or config; assertHostSessionsDir, the one ~/.pi exception
+│   ├── guard.ts             assertSafeWorkspace: refuses a repo at or above home, ~/.pi, the host agent dir, state, config or /, or inside ~/.pi, the host agent dir, state or config; assertHostSessionsDir, the one ~/.pi exception
 │   ├── pi-session-dir.ts    hostAgentDir, pi's session slug, hostSessionsDir, hostSessionsChoice (on, or off with its reason)
 │   ├── mounts.ts            resolveExtraMounts: mounts.extraReadOnly checked (exists, real path, protected paths, .git, engine socket)
 │   ├── roots.ts             assertWithinWorkspaceRoots
@@ -91,7 +91,7 @@ launcher/
 │   ├── extensions.ts        resolveExtensionsSource (tarball pack cache, skipped on a dirty tree, registry or none), packExtensionsTarball
 │   ├── build.ts             build context, ensureBuiltImage, pullPinnedImage, recordedImage
 │   ├── layer.ts             ensureLayerImage: image.packages, npmGlobal and dockerfile on top of the base, the dockerfile allowlist (BASH_ENV refused) with heredoc bodies skipped
-│   ├── record.ts            image.json with its layer record
+│   ├── record.ts            image.json with its layer record and the pi version of a local build
 │   ├── build-trust.ts       the extra CAs in the build context
 │   └── build-proxy.ts       parent proxy build arguments, refused with credentials
 ├── hostpi/
@@ -107,11 +107,12 @@ launcher/
 │   ├── provider-endpoints.ts  hosts of a provider from the table or its baseUrl
 │   ├── userinfo.ts          credentials in URLs
 │   ├── json.ts              objectOr and jsonPointer
-│   ├── provider-hosts.ts    locateBundledPi (an unreadable pi package.json counts as no bundled pi), readProviderHosts with its cache
-│   ├── provider-hosts.mjs   run with node against the bundled pi: the built-in provider host table (with mcp-discover.mjs, the launcher files that load a pi package)
+│   ├── locate.ts            locateManagedPi (pi's managed install in the host agent dir), locateBundledPi (an unreadable pi package.json counts as no bundled pi), locatePiPackage (a PATH pi's package)
+│   ├── provider-hosts.ts    readProviderHosts with its cache per pi version
+│   ├── provider-hosts.mjs   run with node against the host pi's package: the built-in provider host table (with mcp-discover.mjs, the launcher files that load a pi package)
 │   ├── mcp-auth.ts          sanitizeMcpServer (server names checked against MCP_SERVER_NAME), mcpLoginServer, prepareMcpLogin, oneServerDir, seedMcpAuth, recordServer
 │   ├── vault.ts             vaultCandidates, mcpDiscoverCommand, discoverVaultServers with its cache, containerMcpAuth (placeholder entries)
-│   ├── mcp-discover.mjs     run with node against the bundled pi: one server's authorization server discovery as a VaultDiscovery
+│   ├── mcp-discover.mjs     run with node against the host pi's package: one server's authorization server discovery as a VaultDiscovery
 │   ├── package-source.ts    package source keys, sourceOfEntry, withoutSourceCredential (URL userinfo)
 │   ├── model-secret.mjs     run with node as a command secret: one model's secret in models.json, found by provider, model id and base URL
 │   ├── write-back.ts        writeBackPackageChange: the packages key of the host settings.json, under a settings.json.lock directory lock compatible with pi's
@@ -132,7 +133,7 @@ launcher/
 │   └── types.ts             Grant, GrantScope, SessionEntry
 ├── proxy/
 │   ├── daemon.ts            the proxy process entry
-│   ├── control.ts           ensureProxyRunning, readProxyInstances, stopProxy, removeProxyInstance, daemonEnv, per-instance lock, control token, kept port and extra listen hosts
+│   ├── control.ts           ensureProxyRunning, readProxyInstances, stopProxy, removeProxyInstance, daemonEnv, per-instance lock, control token, kept port and extra listen hosts, restart on a host pi version change
 │   ├── client.ts            the launcher's HTTP client to a daemon: readHealth, sendProxyControl, fetchDenials
 │   ├── server.ts            startProxyServer: token check, decideConnect, CONNECT dispatch to the denial page, the interceptor or the tunnel, listen (extra listen hosts) and close
 │   ├── control-routes.ts    createControlRoutes: /healthz, /policy, /denials, /control and /oauth/open|callback|cancel
@@ -164,8 +165,8 @@ launcher/
 ├── profiles/                solo.json, team.json, enterprise.json
 ├── examples/                org-baseline.team.json, org-baseline.enterprise.json (starting points for an org baseline)
 ├── schema/                  sandbox-config.schema.json
-├── install.sh               macOS install: Colima profile, launcher and its bundled pi, PATH, user config (and --org), doctor in a temporary repository (host sessions off)
-├── uninstall.sh             removes what install.sh and the launcher created (engine objects through bin/uninstall-engine.mjs, no docker CLI), and the session, render, sync, mcp-auth, provider-hosts, org and grants state
+├── install.sh               macOS install: Colima profile, launcher and its bundled pi (or the managed pi, whose ~/.local/bin/pi link it replaces and records in replaced-pi-link), PATH, user config (and --org), doctor in a temporary repository (host sessions off)
+├── uninstall.sh             removes what install.sh and the launcher created (restores the recorded managed pi link when the record names this shim; engine objects through bin/uninstall-engine.mjs, no docker CLI), and the session, render, sync, mcp-auth, provider-hosts, org and grants state
 ├── THREAT-MODEL.md          assets, trust boundaries, what each feature weakens, known gaps
 ├── tsconfig.build.json      emits dist/ (gitignored) for the published bin
 └── tests/
@@ -179,8 +180,9 @@ launcher/
     ├── workspace/workspace-mode.test.ts   workspace discovery (scan, nested repository and git config refusals, node projects, lenient mode), self binds and notices, pin locks and session-end notices over nested repositories
     ├── image/sandbox-image.test.ts   ensureSandboxImage paths (recorded, pinned, built, layer)
     ├── image/bash-env.test.ts   the missing-command hint under a bash -c spawned like pi's shell tool (sourced, sourced twice, through a bashrc, and BASH_ENV skipped for socket stdin without SHLVL; skipped on bash older than 4), BASH_ENV refused in env.allow and never forwarded
-    ├── cli/harness.ts       temp dirs (removed after each test), fake runner, CliDeps with collected output, recorded control messages and confirmations, a fake bundled pi
+    ├── cli/harness.ts       temp dirs (removed after each test), fake runner, CliDeps with collected output, recorded control messages and confirmations, a fake bundled pi; writeManagedPi and writePathPi
     ├── cli/launch-wiring.test.ts, intercept.test.ts, egress.test.ts, vault-wiring.test.ts, launch-host-sessions.test.ts   launch wiring, intercepted commands, grants, the token vault wiring and its doctor lines, host sessions
+    ├── cli/host-pi.test.ts, install.test.ts, uninstall.test.ts   the host pi of host jobs, the image and --no-sandbox; install.sh's managed pi takeover run for real with a temp HOME and fake uname, sw_vers, brew, colima and npm (no git, so the smoke step is skipped); uninstall.sh's engine cleanup and link restore
     ├── config/fixtures.ts   layer files in temp dirs
     ├── proxy/proxy-client.ts    CONNECT and TLS client helpers
     ├── support/             fake-runner.ts (+ its test), fake-engine.ts, fake-container-cli.ts, fake-backend.ts (with guestAgentDir and guestFile), fake-clock.ts, fake-fetch.ts, sandbox-config.ts, temp-dir.ts (tempDir, writeText, writeJson, removed after each test), expect-no-leak.ts (expectNoLeak over container specs, exec argv, env and stdin, and render files)

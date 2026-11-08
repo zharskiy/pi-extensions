@@ -18,6 +18,7 @@ export interface SandboxImage {
   reference: string;
   digest: string;
   id: string;
+  pi?: string;
 }
 
 const imageInUse = async (input: SandboxImageInput) => {
@@ -50,5 +51,5 @@ export const ensureSandboxImage = async (input: SandboxImageInput): Promise<Sand
     env: input.env,
   });
 
-  return { reference: base.reference, digest: base.digest, id: layer.id };
+  return { reference: base.reference, digest: base.digest, id: layer.id, pi: base.pi };
 };

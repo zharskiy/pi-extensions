@@ -236,6 +236,29 @@ describe("ensureProxyRunning", () => {
     expect(again.port).toBe(first.port);
   }, 20_000);
 
+  it("restarts the daemon when the host pi version or its commands change", async () => {
+    const pi = (version: string, entry = `/pi/${version}/cli.js`) => ({
+      ...options(["registry.npmjs.org"]),
+      piVersion: version,
+      piCommand: [process.execPath, entry],
+      discoverCommand: [process.execPath, "mcp-discover.mjs", `/pi/${version}`],
+    });
+    const first = await ensureProxyRunning(pi("1.5.0"));
+    const same = await ensureProxyRunning(pi("1.5.0"));
+    const elsewhere = await ensureProxyRunning(pi("1.5.0", "/other/cli.js"));
+    const moved = await ensureProxyRunning(pi("1.6.0"));
+    const stored = JSON.parse(
+      await readFile(join(instanceDir(["registry.npmjs.org"]), "proxy-config.json"), "utf8"),
+    );
+
+    expect(same.pid).toBe(first.pid);
+    expect(elsewhere.pid).not.toBe(first.pid);
+    expect(moved.pid).not.toBe(elsewhere.pid);
+    expect(moved.port).toBe(first.port);
+    expect(stored.piVersion).toBe("1.6.0");
+    expect(isAlive(first.pid)).toBe(false);
+  }, 20_000);
+
   it.skipIf(!loopbackSix)(
     "also listens on a host address the backend asks for, with the same port and token check",
     async () => {

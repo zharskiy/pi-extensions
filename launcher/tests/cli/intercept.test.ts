@@ -3,9 +3,10 @@ import { join, relative, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { ExecIo, ExecSpec } from "../../backend/index.ts";
 import { run } from "../../cli/index.ts";
+import { testedPiVersion } from "../../cli/versions.ts";
 import { GUEST_PATHS, stateLayout } from "../../shared/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
-import { createHarness } from "./harness.ts";
+import { createHarness, writeManagedPi, writePathPi } from "./harness.ts";
 
 const SETTINGS = "/home/pi/.pi/agent/settings.json";
 
@@ -345,6 +346,68 @@ describe("pi update", () => {
     expect(await run(["update"], harness.deps)).toBe(0);
     expect(harness.stdout()).toBe(
       "pi follows the launcher; update it with npm install -g pi-extensions-mz\n",
+    );
+  });
+
+  it("runs the managed pi's own update on the host and names the version the sandbox follows", async () => {
+    const holder: { agentDir?: string } = {};
+    const harness = await createHarness({
+      adapters: () => {
+        throw new Error("the backend must not be used");
+      },
+      respond: async (call) => {
+        if (!call.interactive || holder.agentDir === undefined) {
+          return undefined;
+        }
+
+        await writeManagedPi(holder.agentDir, "1.7.0");
+
+        return { code: 0 };
+      },
+    });
+    const managed = await writeManagedPi(harness.hostAgentDir, "1.6.0");
+
+    holder.agentDir = harness.hostAgentDir;
+
+    expect(await run(["update"], harness.deps)).toBe(0);
+    expect(harness.calls.filter((call) => call.interactive).map((call) => [call.file, ...call.args])).toEqual(
+      [[managed.wrapper, "update"]],
+    );
+    expect(harness.stderr()).toBe("pi-sandbox: the sandbox follows pi 1.7.0 at the next launch\n");
+    expect(harness.stdout()).toBe("");
+  });
+
+  it("runs a PATH pi's own update and says the sandbox keeps the pi next to the launcher", async () => {
+    const harness = await createHarness({
+      adapters: () => {
+        throw new Error("the backend must not be used");
+      },
+    });
+    const onPath = await writePathPi(join(harness.root, "brew"), "1.7.0");
+
+    harness.deps.env.PATH = onPath.bin;
+
+    expect(await run(["update"], harness.deps)).toBe(0);
+    expect(harness.calls.filter((call) => call.interactive).map((call) => [call.file, ...call.args])).toEqual(
+      [[onPath.pi, "update"]],
+    );
+    expect(harness.stderr()).toBe(
+      `pi-sandbox: the sandbox follows pi ${await testedPiVersion()} next to the launcher, not ${onPath.pi}; update it with npm install -g pi-extensions-mz\n`,
+    );
+  });
+
+  it("treats pi update pi, self and --self as the bare self-update", async () => {
+    const harness = await createHarness({
+      adapters: () => {
+        throw new Error("the backend must not be used");
+      },
+    });
+
+    expect(await run(["update", "pi"], harness.deps)).toBe(0);
+    expect(await run(["update", "self"], harness.deps)).toBe(0);
+    expect(await run(["update", "--self"], harness.deps)).toBe(0);
+    expect(harness.stdout()).toBe(
+      "pi follows the launcher; update it with npm install -g pi-extensions-mz\n".repeat(3),
     );
   });
 

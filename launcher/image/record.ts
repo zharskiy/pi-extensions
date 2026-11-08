@@ -12,6 +12,7 @@ export interface ImageRecord {
   digest: string;
   id: string;
   inputsHash: string;
+  pi?: string;
   layer?: LayerRecord;
 }
 

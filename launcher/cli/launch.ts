@@ -21,9 +21,15 @@ import {
   planGitOverlay,
   runPi,
 } from "../container/index.ts";
-import { ensureSandboxImage, resolveExtensionsSource, type SandboxImage } from "../image/index.ts";
+import type { HostPi } from "../hostpi/index.ts";
+import {
+  ensureSandboxImage,
+  recordedImage,
+  resolveExtensionsSource,
+  type SandboxImage,
+} from "../image/index.ts";
 import { renderAgentDir, syncWritableFiles } from "../provision/index.ts";
-import { guestProxyUrl, type TrustBundle } from "../proxy/index.ts";
+import { guestProxyUrl } from "../proxy/index.ts";
 import { errorMessage, LauncherError, launcherRoot, repoHash, stateLayout } from "../shared/index.ts";
 import {
   assertSafeWorkspace,
@@ -36,7 +42,7 @@ import {
 } from "../workspace/index.ts";
 import { type CliDeps, pathsOf, settleAll, writeLine, writeLines, writeNotices } from "./deps.ts";
 import { type HostSide, prepareHostSide } from "./derive.ts";
-import { findHostPi } from "./host-pi.ts";
+import { hostPiCommand, resolveJobPi, sandboxRoots } from "./host-pi.ts";
 import {
   hostSessionsOf,
   noticeHostSessions,
@@ -55,7 +61,7 @@ import {
   othersLive,
   pruneEndedGrants,
 } from "./sessions.ts";
-import { launcherVersion, piVersion } from "./versions.ts";
+import { imagePiVersion, launcherVersion } from "./versions.ts";
 
 export interface LaunchContext {
   workspace: Workspace;
@@ -157,11 +163,21 @@ export const openBackend = async (deps: CliDeps, config: SandboxConfig) => {
   }
 };
 
+const isPinned = (context: LaunchContext) => context.effective.config.image.digest !== undefined;
+
+const hostPiMoved = async (context: LaunchContext, pi: HostPi | undefined) => {
+  if (pi === undefined || isPinned(context)) {
+    return false;
+  }
+
+  return (await recordedImage(context.stateDir, context.effective.config))?.pi !== pi.version;
+};
+
 export const prepareImage = (
   deps: CliDeps,
   context: LaunchContext,
   backend: Backend,
-  trust?: TrustBundle,
+  host: Partial<Pick<HostSide, "trust" | "pi">>,
 ): Promise<SandboxImage> => {
   const { config } = context.effective;
 
@@ -170,17 +186,20 @@ export const prepareImage = (
     config,
     stateDir: context.stateDir,
     env: deps.env,
-    trustPem: trust?.extraPemPath,
+    trustPem: host.trust?.extraPemPath,
     versions: async () => ({
-      pi: await piVersion(),
+      pi: await imagePiVersion(host.pi),
       extensions: await resolveExtensionsSource({
         launcherRoot: launcherRoot(),
         runner: deps.runner,
         stateDir: context.stateDir,
       }),
     }),
-    inUse: async (digest) =>
-      (await findCurrentContainer(backend, context.workspace, digest, configHash(config))) !== undefined,
+    inUse: async (digest) => {
+      const found = await findCurrentContainer(backend, context.workspace, digest, configHash(config));
+
+      return found !== undefined && (found.state === "running" || !(await hostPiMoved(context, host.pi)));
+    },
     preparing: () => writeLine(deps.stderr, PREPARING),
   });
 };
@@ -340,6 +359,13 @@ export const prepareContainer = async (
   return { containerId: id, spec, image, created };
 };
 
+const imagePiNotices = (context: LaunchContext, host: HostSide, image: SandboxImage) =>
+  host.pi === undefined || isPinned(context) || image.pi === host.pi.version
+    ? []
+    : [
+        `the sandbox image has pi ${image.pi ?? "of an unrecorded version"}, the host pi ${host.pi.version}; the image is rebuilt after every session in this repository exits`,
+      ];
+
 const prepareSandbox = async (
   deps: CliDeps,
   context: LaunchContext,
@@ -351,8 +377,10 @@ const prepareSandbox = async (
 ) => {
   const [proxy, image] = await settleAll([
     openSandboxProxy(deps, context, host, backend),
-    prepareImage(deps, context, backend, host.trust),
+    prepareImage(deps, context, backend, host),
   ]);
+
+  writeNotices(deps, imagePiNotices(context, host, image));
 
   cancelled.throwIfAborted();
 
@@ -374,7 +402,7 @@ export const withSandbox = async (
   backend: Backend,
   use: (sandbox: Sandbox) => Promise<number>,
 ) => {
-  const host = await prepareHostSide(deps, context);
+  const host = await prepareHostSide(deps, context, await resolveJobPi(deps));
   const sessions = hostSessionsOf(deps, context, host.files.settings);
 
   noticeHostSessions(deps, sessions);
@@ -436,20 +464,21 @@ const runHostPi = async (deps: CliDeps, context: LaunchContext, piArgs: string[]
     );
   }
 
-  const hostPi = await findHostPi(deps.env);
+  const command = (await hostPiCommand(deps, sandboxRoots(deps, context))) ?? [];
+  const [file, ...prefix] = command;
 
-  if (hostPi === undefined) {
+  if (file === undefined) {
     throw new LauncherError(
-      `${NO_SANDBOX}: no host pi found on PATH`,
-      "install pi on the host with npm install -g @earendil-works/pi-coding-agent",
+      `${NO_SANDBOX}: no pi on the host`,
+      "install pi on the host, or reinstall the launcher with npm install -g pi-extensions-mz",
     );
   }
 
-  writeLine(deps.stderr, `pi-sandbox: warning: running ${hostPi} on the host, outside the sandbox`);
+  writeLine(deps.stderr, `pi-sandbox: warning: running ${command.at(-1)} on the host, outside the sandbox`);
 
   await sweepForHostPi(deps, context);
 
-  return deps.runner.spawnInteractive(hostPi, piArgs, { cwd: deps.cwd });
+  return deps.runner.spawnInteractive(file, [...prefix, ...piArgs], { cwd: deps.cwd });
 };
 
 export const openSandboxContext = async (deps: CliDeps) => {

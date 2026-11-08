@@ -6,6 +6,7 @@ import { removeRepoContainer, repoVolumes } from "../../container/index.ts";
 import { recordedImage } from "../../image/index.ts";
 import { BACKEND_NAMES, type BackendName, LauncherError } from "../../shared/index.ts";
 import { type CliDeps, writeLine, writeLines } from "../deps.ts";
+import { resolveJobPi } from "../host-pi.ts";
 import { type LaunchContext, openAdminContext, openBackend, prepareImage } from "../launch.ts";
 
 const targetName = (args: string[]) => {
@@ -45,7 +46,7 @@ const helperImageId = async (deps: CliDeps, context: LaunchContext, backend: Bac
   const local =
     record === undefined ? undefined : await backend.resolveImage(record.id).catch(() => undefined);
 
-  return local?.id ?? (await prepareImage(deps, context, backend)).id;
+  return local?.id ?? (await prepareImage(deps, context, backend, { pi: await resolveJobPi(deps) })).id;
 };
 
 const moveVolume = async (source: MigrationSide, target: MigrationSide, name: string, directory: string) => {

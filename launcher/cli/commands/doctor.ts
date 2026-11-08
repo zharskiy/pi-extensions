@@ -16,6 +16,7 @@ import { errorMessage } from "../../shared/index.ts";
 import type { HostSessions } from "../../workspace/index.ts";
 import { type CliDeps, writeLine } from "../deps.ts";
 import { type HostSide, prepareHostSide } from "../derive.ts";
+import { resolveJobPi } from "../host-pi.ts";
 import { hostSessionsOf, sessionsSweeper } from "../host-sessions.ts";
 import {
   checkWorkspace,
@@ -137,7 +138,7 @@ const imageAndContainer = async (
   parts: { host: HostSide; proxy?: SandboxProxy; session: LaunchSession; sessions: HostSessions },
   containers: Containers,
 ) => {
-  const image = await prepareImage(deps, context, backend, parts.host.trust).catch((error: unknown) =>
+  const image = await prepareImage(deps, context, backend, parts.host).catch((error: unknown) =>
     errorMessage(error),
   );
 
@@ -198,7 +199,9 @@ const sandboxChecks = async (
 };
 
 const backendChecks = async (deps: CliDeps, context: LaunchContext, backend: Backend) => {
-  const host = await prepareHostSide(deps, context).catch((error: unknown) => errorMessage(error));
+  const host = await prepareHostSide(deps, context, await resolveJobPi(deps)).catch((error: unknown) =>
+    errorMessage(error),
+  );
 
   if (typeof host === "string") {
     return [

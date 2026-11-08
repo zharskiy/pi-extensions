@@ -4,6 +4,7 @@ import {
   type DerivedSandboxPi,
   deriveSandboxPi,
   discoverVaultServers,
+  type HostPi,
   type HostPiFiles,
   readHostPiFiles,
   readProviderHosts,
@@ -13,12 +14,13 @@ import {
 import { privateHostNotices, type TrustBundle } from "../proxy/index.ts";
 import { ensureSalt } from "../shared/index.ts";
 import { type CliDeps, hostAgentDirOf, settleAll, writeNotices } from "./deps.ts";
+import { resolveJobPi } from "./host-pi.ts";
 import type { LaunchContext } from "./launch.ts";
-import { piVersion } from "./versions.ts";
 
 export interface HostSide {
   hostAgentDir: string;
   files: HostPiFiles;
+  pi?: HostPi;
   derived: DerivedSandboxPi;
   trust?: TrustBundle;
   proxyNeeded: boolean;
@@ -27,24 +29,26 @@ export interface HostSide {
 const DNS_WAIT_MS = 2000;
 
 const MISSING_PI =
-  "the launcher's bundled pi is missing, built-in providers get no credential rules; reinstall with npm install -g pi-extensions-mz";
+  "no pi on the host, built-in providers get no credential rules; install pi or reinstall the launcher with npm install -g pi-extensions-mz";
 
 const needsProxy = (config: SandboxConfig) =>
   config.gateway !== undefined || config.egress.allow.length > 0 || config.egress.mcpHosts.length > 0;
 
-export const providerHostsOf = async (deps: CliDeps, stateDir: string) => {
-  const pi = await deps.bundledPi();
-
+export const providerHostsOf = async (deps: CliDeps, stateDir: string, pi: HostPi | undefined) => {
   if (pi === undefined) {
     return { hosts: {}, notices: [MISSING_PI] };
   }
 
-  return readProviderHosts({ stateDir, runner: deps.runner, pi, imagePiVersion: await piVersion() });
+  return readProviderHosts({ stateDir, runner: deps.runner, pi });
 };
 
-export const discoverVault = async (deps: CliDeps, context: LaunchContext, files: HostPiFiles) => {
+export const discoverVault = async (
+  deps: CliDeps,
+  context: LaunchContext,
+  files: HostPiFiles,
+  pi: HostPi | undefined,
+) => {
   const candidates = vaultCandidates(files.mcp ?? {});
-  const pi = await deps.bundledPi();
 
   if (!vaultEnabled(context.effective.config) || pi === undefined || Object.keys(candidates).length === 0) {
     return { discovery: {}, notices: [] };
@@ -59,12 +63,17 @@ export const discoverVault = async (deps: CliDeps, context: LaunchContext, files
   });
 };
 
-const deriveFor = async (deps: CliDeps, context: LaunchContext, files: HostPiFiles) => {
+const deriveFor = async (
+  deps: CliDeps,
+  context: LaunchContext,
+  files: HostPiFiles,
+  pi: HostPi | undefined,
+) => {
   const { config } = context.effective;
   const [seeded, providers, vault, salt] = await settleAll([
     seedMcpAuth({ stateDir: context.stateDir, files }),
-    providerHostsOf(deps, context.stateDir),
-    discoverVault(deps, context, files),
+    providerHostsOf(deps, context.stateDir, pi),
+    discoverVault(deps, context, files, pi),
     ensureSalt(context.stateDir),
   ]);
   const derived = deriveSandboxPi({
@@ -84,8 +93,8 @@ const deriveFor = async (deps: CliDeps, context: LaunchContext, files: HostPiFil
 };
 
 export const deriveVaultServers = async (deps: CliDeps, context: LaunchContext) => {
-  const files = await readHostPiFiles(hostAgentDirOf(deps));
-  const { derived } = await deriveFor(deps, context, files);
+  const [files, pi] = await Promise.all([readHostPiFiles(hostAgentDirOf(deps)), resolveJobPi(deps)]);
+  const { derived } = await deriveFor(deps, context, files, pi);
 
   return derived.vault;
 };
@@ -119,11 +128,15 @@ const noticesWithin = async (pending: Promise<string[]>) => {
   }
 };
 
-export const prepareHostSide = async (deps: CliDeps, context: LaunchContext): Promise<HostSide> => {
+export const prepareHostSide = async (
+  deps: CliDeps,
+  context: LaunchContext,
+  pi: HostPi | undefined,
+): Promise<HostSide> => {
   const { config } = context.effective;
   const hostAgentDir = hostAgentDirOf(deps);
   const files = await readHostPiFiles(hostAgentDir);
-  const { derived, notices } = await deriveFor(deps, context, files);
+  const { derived, notices } = await deriveFor(deps, context, files, pi);
   const proxyNeeded = needsProxy(config) || derived.rules.length > 0;
   const [privateNotices, trust] = await settleAll([
     noticesWithin(
@@ -138,5 +151,5 @@ export const prepareHostSide = async (deps: CliDeps, context: LaunchContext): Pr
 
   writeNotices(deps, [...notices, ...privateNotices, ...hostStoreNotices(deps, context)]);
 
-  return { hostAgentDir, files, derived, trust, proxyNeeded };
+  return { hostAgentDir, files, pi, derived, trust, proxyNeeded };
 };

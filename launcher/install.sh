@@ -11,6 +11,14 @@ wrapper_marker="launcher/bin/pi-sandbox"
 bin_dir="$HOME/.local/bin"
 policy_file="${PI_SANDBOX_POLICY_FILE:-/Library/Application Support/pi-sandbox/policy.json}"
 user_config="${PI_SANDBOX_USER_CONFIG:-$HOME/.config/pi-sandbox/config.json}"
+state_dir="${PI_SANDBOX_STATE_DIR:-$HOME/.local/state/pi-sandbox}"
+agent_dir="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
+replaced_link="$state_dir/replaced-pi-link"
+managed_kind='"kind"[[:space:]]*:[[:space:]]*"pi-managed-install"'
+managed_schema='"schemaVersion"[[:space:]]*:[[:space:]]*1([^0-9.]|$)'
+managed_layout='"layout"[[:space:]]*:[[:space:]]*"releases-v1"'
+managed_package="node_modules/@earendil-works/pi-coding-agent/package.json"
+link_hops=40
 
 profile=""
 dry_run=0
@@ -31,7 +39,7 @@ fail() {
 }
 
 step() {
-  echo "[$1/9] $2"
+  echo "[$1/8] $2"
 }
 
 act() {
@@ -79,7 +87,13 @@ parse_args() {
 
 parse_args "$@"
 
-shim="$bin_dir/pi"
+shim_dir="$bin_dir"
+
+if [ -d "$bin_dir" ]; then
+  shim_dir=$(cd -P "$bin_dir" && pwd)
+fi
+
+shim="$shim_dir/pi"
 
 if [ -z "$profile" ]; then
   if [ -f "$policy_file" ]; then
@@ -170,7 +184,7 @@ else
   step 3 "colima: not used on Linux"
 fi
 
-step 4 "image: prepared and verified by the smoke check in step 8"
+step 4 "image: prepared and verified by the smoke check in step 7"
 
 host_pi=$(command -v pi 2>/dev/null || true)
 
@@ -184,15 +198,95 @@ is_ours() {
   [ -f "$shim" ] && grep -q "$wrapper_marker" "$shim"
 }
 
-if { [ -e "$shim" ] || [ -L "$shim" ]; } && ! is_ours; then
-  if [ "$dry_run" -eq 0 ]; then
-    fail "$shim exists and is not the pi-sandbox launcher, move it away or pass --bin-dir and run this again"
+link_target=""
+
+resolve_link() {
+  if [ ! -L "$1" ]; then
+    link_target="$1"
+    return 0
   fi
 
-  echo "pi-sandbox install: would refuse, $shim exists and is not the pi-sandbox launcher (move it away or pass --bin-dir)"
+  if [ "$2" -le 0 ]; then
+    return 1
+  fi
+
+  hop=$(readlink "$1")
+
+  case "$hop" in
+    /*) next="$hop" ;;
+    *) next="${1%/*}/$hop" ;;
+  esac
+
+  resolve_link "$next" $(($2 - 1))
+}
+
+has_marker() {
+  [ -f "$1" ] && grep -Eq "$managed_kind" "$1" && grep -Eq "$managed_schema" "$1" && grep -Eq "$managed_layout" "$1"
+}
+
+is_safe_release() {
+  case "$1" in
+    ""|[!0-9A-Za-z]*|*[!0-9A-Za-z.+-]*) return 1 ;;
+  esac
+}
+
+is_managed_root() {
+  [ -x "$1/bin/pi" ] && has_marker "$1/install/managed-install.json" || return 1
+  release=$(cat "$1/install/current-version" 2>/dev/null) || return 1
+  is_safe_release "$release" && [ -f "$1/install/releases/$release/$managed_package" ]
+}
+
+managed_root=""
+
+is_managed_pi() {
+  [ -L "$shim" ] || return 1
+  resolve_link "$shim" "$link_hops" || return 1
+
+  case "$link_target" in
+    */bin/pi) ;;
+    *) return 1 ;;
+  esac
+
+  candidate_root=$(cd -P "${link_target%/bin/pi}" 2>/dev/null && pwd) || return 1
+  is_managed_root "$candidate_root" || return 1
+  managed_root="$candidate_root"
+}
+
+refuse() {
+  if [ "$dry_run" -eq 0 ]; then
+    fail "$1, move it away or pass --bin-dir and run this again"
+  fi
+
+  echo "pi-sandbox install: would refuse, $1 (move it away or pass --bin-dir)"
+}
+
+agent_root=$(cd -P "$agent_dir" 2>/dev/null && pwd) || agent_root="$agent_dir"
+
+if { [ -e "$shim" ] || [ -L "$shim" ]; } && ! is_ours && ! is_managed_pi; then
+  refuse "$shim exists and is not the pi-sandbox launcher"
+fi
+
+if [ -n "$managed_root" ] && [ "$managed_root" != "$agent_root" ]; then
+  refuse "$shim is pi's managed install at $managed_root, outside the host agent dir $agent_dir; the launcher uses only the managed install in the agent dir"
+  managed_root=""
+fi
+
+recorded_shim=""
+
+if [ -f "$replaced_link" ]; then
+  recorded_shim=$(sed -n 1p "$replaced_link")
+fi
+
+if [ -n "$managed_root" ] && [ -n "$recorded_shim" ] && [ "$recorded_shim" != "$shim" ]; then
+  fail "$replaced_link records the replaced pi link of $recorded_shim, not $shim; run uninstall.sh --bin-dir $(dirname "$recorded_shim") first"
 fi
 
 act mkdir -p "$bin_dir"
+
+if [ -n "$managed_root" ] && [ "$dry_run" -eq 0 ]; then
+  mkdir -p "$state_dir"
+  printf '%s\n%s\n' "$shim" "$(readlink "$shim")" > "$replaced_link"
+fi
 
 if [ "$from_checkout" -eq 1 ]; then
   if [ "$dry_run" -eq 0 ]; then
@@ -233,12 +327,12 @@ bundled_pi_present() {
   fi
 }
 
-if [ "$dry_run" -eq 0 ] && ! bundled_pi_present; then
+if [ "$dry_run" -eq 0 ] && ! is_managed_root "$agent_dir" && ! bundled_pi_present; then
   if [ "$from_checkout" -eq 1 ]; then
-    fail "pi is missing next to the launcher in $checkout, run npm install there and run this again"
+    fail "no managed pi in $agent_dir and pi is missing next to the launcher in $checkout, run npm install there and run this again"
   fi
 
-  fail "pi is missing next to the launcher, npm skipped the peer dependency; run npm install -g --legacy-peer-deps=false $package_name@$version and run this again"
+  fail "no managed pi in $agent_dir and pi is missing next to the launcher, npm skipped the peer dependency; run npm install -g --legacy-peer-deps=false $package_name@$version and run this again"
 fi
 
 snippet_files=""
@@ -301,7 +395,9 @@ else
 fi
 
 shadowed=""
-if [ -n "$host_pi" ] && [ "$host_pi" != "$shim" ]; then
+if [ -n "$managed_root" ]; then
+  shadowed="; the managed pi at $managed_root/bin/pi stays the host pi for host jobs and pi --no-sandbox (uninstall.sh restores the link)"
+elif [ -n "$host_pi" ] && [ "$host_pi" != "$shim" ]; then
   shadowed=", $host_pi is now shadowed (reach it with pi --no-sandbox when policy allows)"
 fi
 
@@ -332,8 +428,6 @@ if [ -n "$org_source" ]; then
   step 6 "config: $(verb "set" "set") org in $user_config to $org_source${org_sha256:+ pinned to sha256 $org_sha256}"
 fi
 
-step 7 "proxy: no launch agent needed, the launcher starts the egress proxy on demand"
-
 smoke_parent="$HOME/.cache"
 smoke_output=""
 
@@ -360,18 +454,18 @@ smoke() {
 }
 
 if [ "$dry_run" -eq 1 ]; then
-  step 8 "smoke: would run $shim sandbox doctor in a temporary git repository under $smoke_parent"
+  step 7 "smoke: would run $shim sandbox doctor in a temporary git repository under $smoke_parent"
 elif ! command -v git >/dev/null 2>&1; then
-  step 8 "smoke: skipped, git is missing; run pi sandbox doctor inside a repository"
+  step 7 "smoke: skipped, git is missing; run pi sandbox doctor inside a repository"
 elif smoke; then
-  step 8 "smoke: $shim sandbox doctor passed in a temporary git repository"
+  step 7 "smoke: $shim sandbox doctor passed in a temporary git repository"
 else
   printf '%s\n' "$smoke_output" >&2
   fail "smoke check failed, run $shim sandbox doctor inside a repository to see which check"
 fi
 
 if [ -n "$snippet_files" ]; then
-  step 9 "next, in a new shell: cd <repo> && pi"
+  step 8 "next, in a new shell: cd <repo> && pi"
 else
-  step 9 "next: cd <repo> && pi"
+  step 8 "next: cd <repo> && pi"
 fi

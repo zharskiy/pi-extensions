@@ -250,7 +250,9 @@ describe("pi launch wiring", () => {
     await run([], harness.deps);
 
     expect(harness.stderr()).toContain("pi-sandbox: mcp docs: sign in with pi mcp login docs\n");
-    expect(harness.stderr()).toContain("pi-sandbox: the launcher's bundled pi is missing");
+    expect(harness.stderr()).toContain(
+      "pi-sandbox: no pi on the host, built-in providers get no credential rules; install pi or reinstall the launcher with npm install -g pi-extensions-mz\n",
+    );
   });
 });
 

@@ -65,6 +65,13 @@ export interface BundledPi {
   packageDir: string;
 }
 
+type HostPiSource = "managed" | "path" | "bundled";
+
+export interface HostPi extends BundledPi {
+  source: HostPiSource;
+  wrapper?: string;
+}
+
 export interface McpOAuthServer {
   url: string;
   oauth?: Record<string, string | number | boolean>;

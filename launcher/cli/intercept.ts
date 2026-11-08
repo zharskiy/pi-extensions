@@ -1,12 +1,25 @@
 import { realpath } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import { findRepoContainer } from "../container/index.ts";
-import { mcpLoginServer, oneServerDir, prepareMcpLogin, writeBackPackageChange } from "../hostpi/index.ts";
+import {
+  type HostPi,
+  mcpLoginServer,
+  oneServerDir,
+  prepareMcpLogin,
+  writeBackPackageChange,
+} from "../hostpi/index.ts";
 import { type PackageRequest, packageChangeFor, readVolumeSettings } from "../provision/index.ts";
 import { expandHome, GUEST_PATHS, isWithin, LauncherError } from "../shared/index.ts";
 import { type CliDeps, hostAgentDirOf, writeLine } from "./deps.ts";
 import { deriveVaultServers } from "./derive.ts";
-import { bundledPiCommand } from "./host-pi.ts";
+import {
+  interactiveCommand,
+  nearbyRoots,
+  resolveJobPi,
+  resolveShellPi,
+  type ShellPi,
+  sandboxRoots,
+} from "./host-pi.ts";
 import {
   type LaunchContext,
   openBackend,
@@ -18,23 +31,25 @@ import {
 } from "./launch.ts";
 import { syncSandboxMcpAuth } from "./mcp-auth-sync.ts";
 
-const SELF_UPDATE = "pi follows the launcher; update it with npm install -g pi-extensions-mz";
+const SELF_UPDATE_HINT = "update it with npm install -g pi-extensions-mz";
+
+const SELF_UPDATE = `pi follows the launcher; ${SELF_UPDATE_HINT}`;
 
 const LOCAL_FLAGS = ["-l", "--local"];
 
 const LOCAL_SOURCE = /^(\/|\.|~)/;
 
 const piOnHost = async (deps: CliDeps) => {
-  const command = await bundledPiCommand(deps);
+  const pi = await resolveJobPi(deps);
 
-  if (command === undefined) {
+  if (pi === undefined) {
     throw new LauncherError(
       "no pi on the host to run this with",
-      "reinstall the launcher with npm install -g pi-extensions-mz",
+      "install pi or reinstall the launcher with npm install -g pi-extensions-mz",
     );
   }
 
-  return command;
+  return pi.command;
 };
 
 const runOnHost = async (
@@ -46,14 +61,6 @@ const runOnHost = async (
 
   return deps.runner.spawnInteractive(file, [...prefix, ...args], options);
 };
-
-const mountedRoots = (deps: CliDeps, context: LaunchContext) => [
-  context.workspace.repoRoot,
-  ...(context.workspace.gitCommonDir === undefined ? [] : [context.workspace.gitCommonDir]),
-  ...context.effective.config.mounts.extraReadOnly.map((path) =>
-    resolve(context.workspace.repoRoot, expandHome(path, deps.home)),
-  ),
-];
 
 const localPathOf = (deps: CliDeps, context: LaunchContext, source: string) =>
   resolve(context.workspace.cwd, expandHome(source, deps.home));
@@ -75,7 +82,7 @@ const isInRepository = async (context: LaunchContext, path: string) => {
 const localRefusal = async (deps: CliDeps, context: LaunchContext, request: PackageRequest, file: string) => {
   const path = localPathOf(deps, context, request.source);
 
-  if (!mountedRoots(deps, context).some((root) => isWithin(path, root))) {
+  if (!sandboxRoots(deps, context).some((root) => isWithin(path, root))) {
     return `${request.source} is a path inside the sandbox, ${file} was left as it is`;
   }
 
@@ -276,10 +283,35 @@ const packageSource = (args: string[]) => {
   return sources.length === 1 ? sources[0] : undefined;
 };
 
-const selfUpdate = (deps: CliDeps) => {
-  writeLine(deps.stdout, SELF_UPDATE);
+const SELF_TARGETS = ["pi", "self", "--self"];
 
-  return 0;
+const isSelfUpdate = (args: string[]) =>
+  args.length === 0 || (args.length === 1 && SELF_TARGETS.includes(args[0] ?? ""));
+
+const followsText = (updated: ShellPi, followed: HostPi) =>
+  followed.source === "managed"
+    ? `the sandbox follows pi ${followed.version} at the next launch`
+    : `the sandbox follows pi ${followed.version} next to the launcher, not ${updated.command.at(-1)}; ${SELF_UPDATE_HINT}`;
+
+const selfUpdate = async (deps: CliDeps) => {
+  const roots = await nearbyRoots(deps);
+  const pi = await resolveShellPi(deps, roots);
+
+  if (pi === undefined || pi.source === "bundled") {
+    writeLine(deps.stdout, SELF_UPDATE);
+
+    return 0;
+  }
+
+  const [file = "", ...prefix] = interactiveCommand(pi);
+  const code = await deps.runner.spawnInteractive(file, [...prefix, "update"], { cwd: deps.cwd });
+  const followed = code === 0 ? await resolveJobPi(deps) : undefined;
+
+  if (followed !== undefined) {
+    writeLine(deps.stderr, `pi-sandbox: ${followsText(pi, followed)}`);
+  }
+
+  return code;
 };
 
 export const intercept = (argv: string[], deps: CliDeps): Promise<number> | number | undefined => {
@@ -295,5 +327,5 @@ export const intercept = (argv: string[], deps: CliDeps): Promise<number> | numb
     return mcpCommand(deps, rest);
   }
 
-  return command === "update" && rest.length === 0 ? selfUpdate(deps) : undefined;
+  return command === "update" && isSelfUpdate(rest) ? selfUpdate(deps) : undefined;
 };

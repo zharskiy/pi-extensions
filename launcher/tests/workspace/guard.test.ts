@@ -80,6 +80,20 @@ describe("assertSafeWorkspace", () => {
     });
   });
 
+  it("refuses a repository that contains or lies inside a custom PI_CODING_AGENT_DIR", async () => {
+    const { base, context } = await createHome();
+    const agentDir = join(base, "agents", "pi");
+    const custom = { ...context, env: { PI_CODING_AGENT_DIR: agentDir } };
+
+    expect(() => assertSafeWorkspace(workspaceAt(join(base, "agents")), custom)).toThrow(
+      `${join(base, "agents")} would mount ${agentDir} into the sandbox, refusing`,
+    );
+    expect(() => assertSafeWorkspace(workspaceAt(join(agentDir, "install", "releases")), custom)).toThrow(
+      `${join(agentDir, "install", "releases")} is inside ${agentDir}, refusing`,
+    );
+    expect(() => assertSafeWorkspace(workspaceAt(join(base, "agents")), context)).not.toThrow();
+  });
+
   it("protects only the user config file, not its directory, when PI_SANDBOX_USER_CONFIG points elsewhere", async () => {
     const { base, context } = await createHome();
     const configDir = join(base, "shared-config");

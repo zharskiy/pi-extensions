@@ -39,6 +39,7 @@ export interface EnsureProxyOptions {
   egressCap?: EgressCap;
   piCommand?: string[];
   discoverCommand?: string[];
+  piVersion?: string;
   listenHosts?: string[];
 }
 
@@ -302,6 +303,25 @@ const respondsTwice = async (record: ProxyInstance) => {
   return isHealthy(record);
 };
 
+const sameList = (stored: unknown, wanted: string[]) =>
+  Array.isArray(stored) &&
+  stored.length === wanted.length &&
+  stored.every((item, index) => item === wanted[index]);
+
+const runsSamePi = async (files: InstanceFiles, options: EnsureProxyOptions) => {
+  const stored = await readJsonObject(files.config);
+
+  return (
+    stored !== undefined &&
+    stored.piVersion === options.piVersion &&
+    sameList(stored.piCommand, options.piCommand ?? []) &&
+    sameList(stored.discoverCommand, options.discoverCommand ?? [])
+  );
+};
+
+const isReusable = async (record: ProxyInstance, options: EnsureProxyOptions, files: InstanceFiles) =>
+  listensOn(record, options.listenHosts ?? []) && (await runsSamePi(files, options));
+
 const instanceToken = (files: InstanceFiles) => ensureRandomHexFile(files.token, TOKEN_BYTES);
 
 const replaceInstance = async (options: EnsureProxyOptions, files: InstanceFiles, hash: string) => {
@@ -310,7 +330,7 @@ const replaceInstance = async (options: EnsureProxyOptions, files: InstanceFiles
   const stale = await readRecord(files);
   const listenHosts = options.listenHosts ?? [];
 
-  if (stale !== undefined && listensOn(stale, listenHosts) && (await respondsTwice(stale))) {
+  if (stale !== undefined && (await isReusable(stale, options, files)) && (await respondsTwice(stale))) {
     return stale;
   }
 
@@ -324,6 +344,7 @@ const replaceInstance = async (options: EnsureProxyOptions, files: InstanceFiles
     egressCap: options.egressCap ?? {},
     piCommand: options.piCommand ?? [],
     discoverCommand: options.discoverCommand ?? [],
+    ...(options.piVersion === undefined ? {} : { piVersion: options.piVersion }),
     parentEnv: parentProxyEnv(options.env),
     listenHosts,
   };
@@ -350,7 +371,7 @@ export const ensureProxyRunning = async (options: EnsureProxyOptions): Promise<P
 
   const current = await healthyRecord(files);
 
-  if (current !== undefined && listensOn(current, options.listenHosts ?? [])) {
+  if (current !== undefined && (await isReusable(current, options, files))) {
     return current;
   }
 

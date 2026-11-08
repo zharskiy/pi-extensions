@@ -1,12 +1,12 @@
 import { mkdirSync, writeFileSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough, Writable } from "node:stream";
 import { afterEach } from "vitest";
 import type { Backend, ExecSpec } from "../../backend/index.ts";
 import type { CliDeps } from "../../cli/index.ts";
-import { piVersion } from "../../cli/versions.ts";
+import { testedPiVersion } from "../../cli/versions.ts";
 import type { BundledPi } from "../../hostpi/index.ts";
 import type { ControlMessage, DenialRecord, ProxyInstance } from "../../proxy/index.ts";
 import { type RunResult, sha256Hex, stateLayout } from "../../shared/index.ts";
@@ -123,6 +123,71 @@ export const repoDynamicOf = async (harness: HarnessPaths, policyHash = RUNNING_
   return stored.repos[sha256Hex(await repoTokenOf(harness, policyHash))];
 };
 
+interface ManagedPiOptions {
+  marker?: unknown;
+  release?: string;
+}
+
+const MANAGED_MARKER = {
+  kind: "pi-managed-install",
+  schemaVersion: 1,
+  layout: "releases-v1",
+  entrypoint: { type: "symlink", path: "/unused/.local/bin/pi" },
+};
+
+export const writeManagedPi = async (agentDir: string, version: string, options: ManagedPiOptions = {}) => {
+  const install = join(agentDir, "install");
+  const packageDir = join(install, "releases", version, "node_modules", "@earendil-works", "pi-coding-agent");
+  const wrapper = join(agentDir, "bin", "pi");
+
+  await mkdir(packageDir, { recursive: true });
+
+  await writeFile(
+    join(packageDir, "package.json"),
+    JSON.stringify({ name: "@earendil-works/pi-coding-agent", version, bin: { pi: "dist/cli.js" } }),
+  );
+
+  await writeFile(join(install, "managed-install.json"), JSON.stringify(options.marker ?? MANAGED_MARKER));
+
+  await writeFile(join(install, "current-version"), `${options.release ?? version}\n`);
+
+  await writeScript(wrapper, 'echo managed pi "$@"');
+
+  return { wrapper, packageDir, entry: join(packageDir, "dist", "cli.js") };
+};
+
+const writeScript = async (path: string, body: string) => {
+  await mkdir(join(path, ".."), { recursive: true });
+
+  await writeFile(path, `#!/bin/sh\n${body}\n`);
+
+  await chmod(path, 0o755);
+};
+
+export const writePathPi = async (dir: string, version?: string) => {
+  const packageDir = join(dir, "lib", "node_modules", "@earendil-works", "pi-coding-agent");
+  const pi = join(dir, "bin", "pi");
+
+  if (version === undefined) {
+    await writeScript(pi, "echo path pi");
+
+    return { bin: join(dir, "bin"), pi, packageDir };
+  }
+
+  await writeScript(join(packageDir, "dist", "cli.js"), "echo path pi");
+
+  await writeFile(
+    join(packageDir, "package.json"),
+    JSON.stringify({ name: "@earendil-works/pi-coding-agent", version }),
+  );
+
+  await mkdir(join(dir, "bin"), { recursive: true });
+
+  await symlink(join(packageDir, "dist", "cli.js"), pi);
+
+  return { bin: join(dir, "bin"), pi, packageDir };
+};
+
 export const createHarness = async (options: HarnessOptions = {}) => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "pi-sandbox-cli-")));
 
@@ -179,7 +244,7 @@ export const createHarness = async (options: HarnessOptions = {}) => {
       ? undefined
       : (options.bundledPi ?? {
           command: [process.execPath, join(FAKE_PI_DIR, "dist", "cli.js")],
-          version: await piVersion(),
+          version: await testedPiVersion(),
           packageDir: FAKE_PI_DIR,
         });
   const deps: CliDeps = {

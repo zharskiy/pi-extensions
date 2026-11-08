@@ -162,7 +162,7 @@ describe("ensureBuiltImage", () => {
     );
   });
 
-  it("builds locally when no digest is pinned and records the digest", async () => {
+  it("builds locally when no digest is pinned and records the digest and the pi version", async () => {
     const fake = createFakeBackend();
     const stateDir = await tempDir();
     const config = sandboxConfig();
@@ -173,6 +173,7 @@ describe("ensureBuiltImage", () => {
       digest: "sha256:built-1",
       id: "sha256:image-built-1",
       built: true,
+      pi: versions.pi,
     });
     expect(fake.builds.map((build) => build.tag)).toEqual([config.image.reference]);
     expect(Object.keys(fake.builds[0]?.files ?? {}).sort()).toEqual([
@@ -186,6 +187,7 @@ describe("ensureBuiltImage", () => {
       reference: config.image.reference,
       digest: "sha256:built-1",
       id: "sha256:image-built-1",
+      pi: versions.pi,
     });
     expect((await readdir(stateDir)).sort()).toEqual(["image.json"]);
   });
@@ -209,6 +211,7 @@ describe("ensureBuiltImage", () => {
       digest: "sha256:built-1",
       id: "sha256:image-built-1",
       built: false,
+      pi: versions.pi,
     });
     expect(fake.builds).toHaveLength(1);
   });

@@ -1,5 +1,6 @@
 export { deriveSandboxPi } from "./derive.ts";
 export { readHostPiFiles } from "./files.ts";
+export { locateBundledPi, locateManagedPi, locatePiPackage } from "./locate.ts";
 export {
   mcpLoginServer,
   oneServerDir,
@@ -13,12 +14,13 @@ export {
   sourceOfEntry,
   withoutSourceCredential,
 } from "./package-source.ts";
-export { locateBundledPi, readProviderHosts } from "./provider-hosts.ts";
+export { readProviderHosts } from "./provider-hosts.ts";
 export type {
   BundledPi,
   ContainerMcpAuthEntries,
   DerivedSandboxPi,
   DeriveInput,
+  HostPi,
   HostPiFiles,
   JsonObject,
   PackageChangeKind,

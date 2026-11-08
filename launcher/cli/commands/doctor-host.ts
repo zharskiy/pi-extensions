@@ -4,7 +4,7 @@ import { connect } from "node:net";
 import type { Backend } from "../../backend/index.ts";
 import { orgBaselineStatus, type ParentProxy, vaultEnabled } from "../../config/index.ts";
 import { failed, passed, skipped, warned } from "../../container/index.ts";
-import { type HostPiFiles, readHostPiFiles } from "../../hostpi/index.ts";
+import { type HostPi, type HostPiFiles, readHostPiFiles } from "../../hostpi/index.ts";
 import {
   errorMessage,
   mcpAuthKey,
@@ -16,9 +16,17 @@ import {
 import { assertHostSessionsDir } from "../../workspace/index.ts";
 import { type CliDeps, hostAgentDirOf } from "../deps.ts";
 import { discoverVault, providerHostsOf } from "../derive.ts";
+import {
+  hostPiPlace,
+  hostPiText,
+  resolveJobPi,
+  resolveShellPi,
+  type ShellPi,
+  sandboxRoots,
+} from "../host-pi.ts";
 import { hostSessionsOf } from "../host-sessions.ts";
 import type { LaunchContext } from "../launch.ts";
-import { piVersion } from "../versions.ts";
+import { isOlderVersion, testedPiVersion } from "../versions.ts";
 import type { NamedCheck } from "./doctor-container.ts";
 import { grantLines } from "./egress.ts";
 
@@ -47,22 +55,38 @@ interface VmSize {
   memory: number;
 }
 
-const checkBundledPi = async (deps: CliDeps) => {
-  const bundled = await deps.bundledPi();
+const REINSTALL = "reinstall the launcher with npm install -g pi-extensions-mz";
 
-  if (bundled === undefined) {
-    return failed("no pi next to the launcher; reinstall it with npm install -g pi-extensions-mz");
+const shellPiNote = (shell: ShellPi | undefined) =>
+  shell?.source === "path" ? `; pi --no-sandbox runs ${hostPiText(shell)}` : "";
+
+const checkHostPi = async (deps: CliDeps, context: LaunchContext, job: HostPi | undefined) => {
+  const shell = await resolveShellPi(deps, sandboxRoots(deps, context));
+
+  if (job === undefined) {
+    return shell === undefined
+      ? failed(`no pi on the host; install pi or ${REINSTALL}`)
+      : failed(`${hostPiText(shell)} serves pi --no-sandbox only, host jobs have no pi; ${REINSTALL}`);
   }
 
-  const pinned = await piVersion();
+  const tested = await testedPiVersion();
 
-  return bundled.version === pinned
-    ? passed(`pi ${bundled.version}, the same as the image`)
-    : failed(`the launcher's pi ${bundled.version} differs from the image pi ${pinned}`);
+  if (isOlderVersion(job.version, tested)) {
+    return warned(
+      `pi ${job.version} (${hostPiPlace(job)}) is older than ${tested}, the pi this launcher is tested with; ${job.source === "managed" ? "run pi update" : REINSTALL}`,
+    );
+  }
+
+  const image =
+    context.effective.config.image.digest === undefined
+      ? "the image follows it"
+      : "the image is pinned by image.digest";
+
+  return passed(`${hostPiText(job)}; ${image}${shellPiNote(shell)}`);
 };
 
-const checkProviderHosts = async (deps: CliDeps, context: LaunchContext) => {
-  const { hosts, notices } = await providerHostsOf(deps, context.stateDir);
+const checkProviderHosts = async (deps: CliDeps, context: LaunchContext, pi: HostPi | undefined) => {
+  const { hosts, notices } = await providerHostsOf(deps, context.stateDir, pi);
   const count = Object.keys(hosts).length;
 
   return count > 0
@@ -199,6 +223,7 @@ const vaultChecks = async (
   deps: CliDeps,
   context: LaunchContext,
   files: HostPiFiles,
+  pi: HostPi | undefined,
 ): Promise<NamedCheck[]> => {
   if (!vaultEnabled(context.effective.config)) {
     return [
@@ -209,7 +234,7 @@ const vaultChecks = async (
     ];
   }
 
-  const { discovery } = await discoverVault(deps, context, files);
+  const { discovery } = await discoverVault(deps, context, files, pi);
   const store = await readVaultStore(context.stateDir);
 
   return Object.values(discovery).map((found) => vaultCheck(deps, found, store));
@@ -314,18 +339,18 @@ export const hostChecks = async (
   context: LaunchContext,
   backend?: Backend,
 ): Promise<NamedCheck[]> => {
-  const files = await readHostPiFiles(hostAgentDirOf(deps));
+  const [files, pi] = await Promise.all([readHostPiFiles(hostAgentDirOf(deps)), resolveJobPi(deps)]);
   const [checks, vault] = await Promise.all([
     Promise.all([
-      named("bundled pi", checkBundledPi(deps)),
-      named("provider hosts", checkProviderHosts(deps, context)),
+      named("host pi", checkHostPi(deps, context, pi)),
+      named("provider hosts", checkProviderHosts(deps, context, pi)),
       named("parent proxy", checkParentProxy(deps, context)),
       named("org baseline", checkOrg(deps, context)),
       named("grants", checkGrants(deps, context)),
       named("sessions", checkSessions(deps, context, files)),
       named("vm size", checkVmSize(deps, backend)),
     ]),
-    vaultChecks(deps, context, files),
+    vaultChecks(deps, context, files, pi),
   ]);
 
   return [...checks, ...vault];

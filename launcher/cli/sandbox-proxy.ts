@@ -13,7 +13,6 @@ import {
 import { errorMessage, LauncherError, sha256Hex } from "../shared/index.ts";
 import { type CliDeps, writeLine, writeLines } from "./deps.ts";
 import type { HostSide } from "./derive.ts";
-import { bundledPiCommand } from "./host-pi.ts";
 import type { LaunchContext } from "./launch.ts";
 
 export interface SandboxProxy {
@@ -24,19 +23,12 @@ export interface SandboxProxy {
 
 const CAP_RULE = "egress.cap";
 
-const discoverCommandOf = async (deps: CliDeps) => {
-  const pi = await deps.bundledPi();
+const hostPiOf = (host: HostSide) =>
+  host.pi === undefined ? {} : { discoverCommand: mcpDiscoverCommand(host.pi), piVersion: host.pi.version };
 
-  return pi === undefined ? {} : { discoverCommand: mcpDiscoverCommand(pi) };
-};
-
-const startProxy = async (deps: CliDeps, context: LaunchContext, backend: Backend) => {
+const startProxy = async (deps: CliDeps, context: LaunchContext, host: HostSide, backend: Backend) => {
   try {
-    const [listenHosts, piCommand, discover] = await Promise.all([
-      backend.proxyListenHosts(),
-      bundledPiCommand(deps),
-      discoverCommandOf(deps),
-    ]);
+    const listenHosts = await backend.proxyListenHosts();
 
     return await deps.proxy.ensure({
       listenHosts,
@@ -45,8 +37,8 @@ const startProxy = async (deps: CliDeps, context: LaunchContext, backend: Backen
       env: daemonEnv(deps.env),
       home: deps.home,
       egressCap: context.effective.egressCap,
-      piCommand: piCommand ?? [],
-      ...discover,
+      piCommand: host.pi?.command ?? [],
+      ...hostPiOf(host),
     });
   } catch (error) {
     throw new LauncherError(
@@ -94,7 +86,7 @@ export const openSandboxProxy = async (
     return undefined;
   }
 
-  const instance = await startProxy(deps, context, backend);
+  const instance = await startProxy(deps, context, host, backend);
   const repoToken = await repoProxyToken(context.stateDir, instance.policyHash, context.repoHash);
   const tokenHash = sha256Hex(repoToken);
 

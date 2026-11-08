@@ -1,6 +1,6 @@
 export { discoverWorkspace } from "./discover.ts";
 export { assertGitIntegrity, pinGitDirs, withGitPinLock } from "./git-integrity.ts";
-export { gitRefusal } from "./git-layout.ts";
+export { findGitRoot, gitRefusal } from "./git-layout.ts";
 export {
   findProtectedGitPaths,
   type GitOverlay,

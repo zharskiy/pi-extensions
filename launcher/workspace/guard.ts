@@ -1,7 +1,7 @@
 import { lstatSync, readdirSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { isWithin, LauncherError, launcherPaths, realOrResolvedSync } from "../shared/index.ts";
-import { sessionSlug } from "./pi-session-dir.ts";
+import { hostAgentDir, sessionSlug } from "./pi-session-dir.ts";
 import type { Workspace } from "./types.ts";
 
 interface GuardContext {
@@ -21,9 +21,12 @@ const protectedConfig = (context: GuardContext, userConfigFile: string) => {
 const launcherDirs = (context: GuardContext) => {
   const paths = launcherPaths(context);
 
-  return [join(context.home, ".pi"), paths.stateDir, protectedConfig(context, paths.userConfigFile)].map(
-    realOrResolvedSync,
-  );
+  return [
+    join(context.home, ".pi"),
+    hostAgentDir(context.home, context.env),
+    paths.stateDir,
+    protectedConfig(context, paths.userConfigFile),
+  ].map(realOrResolvedSync);
 };
 
 const HINT = "run pi inside a project directory";
