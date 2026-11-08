@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { addGrant } from "../../grants/index.ts";
 import { writeProxyDynamic } from "../../proxy/dynamic.ts";
 import type { LauncherCa } from "../../proxy/tls-ca.ts";
-import { stateLayout } from "../../shared/index.ts";
+import { sha256Hex, stateLayout } from "../../shared/index.ts";
 import {
   CONTROL_TOKEN,
   closeServer,
@@ -197,8 +197,9 @@ describe("per-repository tokens", () => {
 });
 
 describe("control messages", () => {
-  it("accepts env secrets from the control token only", async () => {
-    const body = JSON.stringify({ type: "env-secrets", secrets: { rule: "value" } });
+  it("accepts env secrets naming a repository token hash from the control token only", async () => {
+    const repoTokenHash = "d".repeat(64);
+    const body = JSON.stringify({ type: "env-secrets", secrets: { rule: "value" }, repoTokenHash });
     const refused = await plainRequest(state.test.proxy.port, "/control", {
       method: "POST",
       token: state.token,
@@ -210,23 +211,19 @@ describe("control messages", () => {
       user: CONTROL_USER,
       body,
     });
-
-    expect(refused.status).toBe(407);
-    expect(JSON.parse(accepted.body)).toEqual({ ok: true });
-    expect(state.controlMessages).toEqual([{ type: "env-secrets", secrets: { rule: "value" } }]);
-  });
-
-  it("passes the repository token hash a control message names", async () => {
-    const repoTokenHash = "d".repeat(64);
-    const reply = await plainRequest(state.test.proxy.port, "/control", {
+    const unnamed = await plainRequest(state.test.proxy.port, "/control", {
       method: "POST",
       token: CONTROL_TOKEN,
       user: CONTROL_USER,
-      body: JSON.stringify({ type: "env-secrets", secrets: {}, repoTokenHash }),
+      body: JSON.stringify({ type: "env-secrets", secrets: {} }),
     });
 
-    expect(reply.status).toBe(200);
-    expect(state.controlMessages.at(-1)).toEqual({ type: "env-secrets", secrets: {}, repoTokenHash });
+    expect(refused.status).toBe(407);
+    expect(JSON.parse(accepted.body)).toEqual({ ok: true });
+    expect(unnamed.status).toBe(400);
+    expect(state.controlMessages).toEqual([
+      { type: "env-secrets", secrets: { rule: "value" }, repoTokenHash },
+    ]);
   });
 
   it("answers a control body over 1 MiB with 400 before closing", async () => {
@@ -533,16 +530,16 @@ describe("dynamic configuration", () => {
     expect(await deniedPage("reloaded.test:443")).toBe(hint("reloaded.test"));
 
     await writeProxyDynamic(state.stateDir, POLICY_HASH, {
-      version: 1,
       rules: [],
       derivedHosts: ["reloaded.test"],
+      tokenHash: sha256Hex(state.token),
     });
 
     expect((await connectStatus("reloaded.test:443")).status).toBe(200);
   });
 
   it("keeps a broken dynamic file from widening anything", async () => {
-    await writeFile(stateLayout(state.stateDir).proxyDynamic(POLICY_HASH), "{ not json");
+    await writeFile(stateLayout(state.stateDir).proxyInstance(POLICY_HASH).dynamic, "{ not json");
 
     expect(await deniedPage("reloaded.test:443")).toBe(hint("reloaded.test"));
   });

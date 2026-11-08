@@ -42,7 +42,6 @@ const launch = async (repoHash: string, id: string, vault = [vaultServer({ serve
   const token = await repoProxyToken(state.stateDir, POLICY_HASH, repoHash);
 
   await writeProxyDynamic(state.stateDir, POLICY_HASH, {
-    version: 1,
     rules: [rule(id)],
     derivedHosts: [`${id}-host.test`],
     vault,
@@ -87,31 +86,18 @@ describe("dynamic configuration per repository", () => {
   it("drops a repository's entries once its token is gone", async () => {
     await launch(REPO_A, "alpha");
 
-    await rm(stateLayout(state.stateDir).proxyRepoToken(POLICY_HASH, REPO_A), { force: true });
+    await rm(stateLayout(state.stateDir).proxyInstance(POLICY_HASH).repoToken(REPO_A), { force: true });
 
     await launch(REPO_B, "beta");
 
     const current = runtime();
     const stored = JSON.parse(
-      await readFile(stateLayout(state.stateDir).proxyDynamic(POLICY_HASH), "utf8"),
+      await readFile(stateLayout(state.stateDir).proxyInstance(POLICY_HASH).dynamic, "utf8"),
     ) as { repos: Record<string, unknown> };
 
     expect(Object.keys(stored.repos)).toHaveLength(1);
     expect(ids(await current.rules(REPO_A))).toEqual([]);
     expect(ids(await current.rules())).toEqual(["beta"]);
-  });
-
-  it("shares a section written without a repository token with every repository", async () => {
-    await writeProxyDynamic(state.stateDir, POLICY_HASH, {
-      version: 1,
-      rules: [rule("shared")],
-      derivedHosts: [],
-    });
-
-    await launch(REPO_A, "alpha");
-
-    expect(ids(await runtime().rules(REPO_A))).toEqual(["alpha", "shared"]);
-    expect(ids(await runtime().rules(REPO_B))).toEqual(["shared"]);
   });
 
   it("keeps every repository when many launches write at once", async () => {

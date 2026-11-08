@@ -15,15 +15,10 @@ import {
   runPi,
 } from "../container/index.ts";
 import type { HostPi } from "../hostpi/index.ts";
-import {
-  ensureSandboxImage,
-  recordedImage,
-  resolveExtensionsSource,
-  type SandboxImage,
-} from "../image/index.ts";
-import { renderAgentDir, syncWritableFiles } from "../provision/index.ts";
+import { ensureSandboxImage, recordedImage, type SandboxImage } from "../image/index.ts";
+import { renderAgentDir, syncSettingsFile } from "../provision/index.ts";
 import { guestProxyUrl } from "../proxy/index.ts";
-import { errorMessage, LauncherError, launcherRoot, repoHash, stateLayout } from "../shared/index.ts";
+import { errorMessage, LauncherError, repoHash, stateLayout } from "../shared/index.ts";
 import {
   assertSafeWorkspace,
   assertWithinWorkspaceRoots,
@@ -165,14 +160,7 @@ export const prepareImage = (
     stateDir: context.stateDir,
     env: deps.env,
     trustPem: host.trust?.extraPemPath,
-    versions: async () => ({
-      pi: await imagePiVersion(host.pi),
-      extensions: await resolveExtensionsSource({
-        launcherRoot: launcherRoot(),
-        runner: deps.runner,
-        stateDir: context.stateDir,
-      }),
-    }),
+    versions: async () => ({ pi: await imagePiVersion(host.pi) }),
     inUse: async (digest) => {
       const found = await findCurrentContainer(backend, context.workspace, digest);
 
@@ -237,7 +225,7 @@ const syncAgentFiles = async (
   id: string,
 ) => {
   try {
-    const { notices } = await syncWritableFiles({
+    const { notices } = await syncSettingsFile({
       backend,
       containerId: id,
       stateDir: context.stateDir,
@@ -246,15 +234,11 @@ const syncAgentFiles = async (
       repoRoot: context.workspace.repoRoot,
       config: context.effective.config,
       hostSettings: host.files.settings,
-      mcp: host.derived.files["mcp.json"],
     });
 
     writeNotices(deps, notices);
   } catch (error) {
-    writeLine(
-      deps.stderr,
-      `pi-sandbox: warning: settings.json and mcp.json were not synced: ${errorMessage(error)}`,
-    );
+    writeLine(deps.stderr, `pi-sandbox: warning: settings.json was not synced: ${errorMessage(error)}`);
   }
 };
 
@@ -364,7 +348,7 @@ const prepareSandbox = async (
   return { prepared, proxy };
 };
 
-export const withSandbox = async (
+const withSandbox = async (
   deps: CliDeps,
   context: LaunchContext,
   backend: Backend,
@@ -412,7 +396,7 @@ export const withSandbox = async (
   }
 };
 
-export const runSandboxPi = (deps: CliDeps, context: LaunchContext, sandbox: Sandbox, piArgs: string[]) =>
+const runSandboxPi = (deps: CliDeps, context: LaunchContext, sandbox: Sandbox, piArgs: string[]) =>
   runPi({
     backend: sandbox.backend,
     containerId: sandbox.containerId,
@@ -451,7 +435,7 @@ const runHostPi = async (deps: CliDeps, context: LaunchContext, piArgs: string[]
   return deps.runner.spawnInteractive(file, [...prefix, ...piArgs], { cwd: deps.cwd });
 };
 
-export const openSandboxContext = async (deps: CliDeps) => {
+const openSandboxContext = async (deps: CliDeps) => {
   const context = await openContext(deps);
 
   checkWorkspace(deps, context);

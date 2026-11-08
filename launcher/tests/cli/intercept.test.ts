@@ -1,14 +1,12 @@
-import { mkdir, readFile, symlink } from "node:fs/promises";
-import { join, relative, resolve } from "node:path";
+import { mkdir, readdir, readFile, symlink } from "node:fs/promises";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { ExecIo, ExecSpec } from "../../backend/index.ts";
 import { run } from "../../cli/index.ts";
 import { testedPiVersion } from "../../cli/versions.ts";
-import { GUEST_PATHS, stateLayout } from "../../shared/index.ts";
+import { stateLayout } from "../../shared/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { createHarness, writeManagedPi, writePathPi } from "./harness.ts";
-
-const SETTINGS = "/home/pi/.pi/agent/settings.json";
 
 type PiAnswer = (args: string[], files: Map<string, string>, workdir: string) => number;
 
@@ -61,99 +59,55 @@ const volumeBackend = (answer: PiAnswer) => {
   return { fake: createFakeBackend({ exec }), files, piRuns };
 };
 
-const LOCAL_SOURCE = /^(\/|\.|~)/;
+const hostPiRuns = (harness: Awaited<ReturnType<typeof createHarness>>) =>
+  harness.calls.filter((entry) => entry.interactive).map((entry) => entry.args.slice(1));
 
-const storedForm = (source: string, workdir: string) =>
-  LOCAL_SOURCE.test(source) ? relative(GUEST_PATHS.agentDir, resolve(workdir, source)) : source;
+const noBackend = () => {
+  throw new Error("the backend must not be used");
+};
 
-const volumePackages = (files: Map<string, string>) =>
-  (JSON.parse(files.get(SETTINGS) ?? "{}") as { packages?: unknown[] }).packages ?? [];
+const workspaceRoot = async () => {
+  const harness = await createHarness({
+    backend: noBackend,
+    respond: (call) =>
+      call.file === "git" && String(call.options.cwd ?? "").includes("work")
+        ? { stdout: `${call.options.cwd}\n.git\n` }
+        : undefined,
+  });
+  const work = join(harness.root, "work");
 
-const recording =
-  (packagesAfter: (packages: unknown[], args: string[], workdir: string) => unknown[]): PiAnswer =>
-  (args, files, workdir) => {
-    const settings = JSON.parse(files.get(SETTINGS) ?? "{}") as Record<string, unknown>;
+  await mkdir(join(work, "a", ".git", "hooks"), { recursive: true });
 
-    files.set(
-      SETTINGS,
-      JSON.stringify({ ...settings, packages: packagesAfter(volumePackages(files), args, workdir) }),
-    );
+  await mkdir(join(work, "tools", "ext"), { recursive: true });
 
-    return 0;
-  };
-
-const installing =
-  (code: number): PiAnswer =>
-  (args, files, workdir) => {
-    const stored = storedForm(args[1] ?? "", workdir);
-    const packages = volumePackages(files);
-    const next = args[0] === "remove" ? packages.filter((entry) => entry !== stored) : [...packages, stored];
-
-    recording(() => next)(args, files, workdir);
-
-    return code;
-  };
-
-const hostSettings = async (harness: { hostAgentDir: string }) =>
-  JSON.parse(await readFile(join(harness.hostAgentDir, "settings.json"), "utf8")) as Record<string, unknown>;
+  return { ...harness, deps: { ...harness.deps, cwd: work } };
+};
 
 describe("pi install and pi remove", () => {
-  it("runs inside the sandbox and writes only that package entry to the host settings.json on exit 0", async () => {
-    const volume = volumeBackend(installing(0));
-    const harness = await createHarness({ backend: () => volume.fake.backend });
-
-    await harness.writeJson(join(harness.hostAgentDir, "settings.json"), {
-      theme: "dark",
-      packages: ["npm:old"],
-    });
+  it("runs pi install and pi remove with the host pi in the current directory, without the sandbox", async () => {
+    const harness = await createHarness({ backend: noBackend });
 
     expect(await run(["install", "npm:fresh"], harness.deps)).toBe(0);
-    expect(volume.piRuns).toEqual([["install", "npm:fresh"]]);
-    expect(await hostSettings(harness)).toEqual({ theme: "dark", packages: ["npm:old", "npm:fresh"] });
-
     expect(await run(["remove", "npm:old"], harness.deps)).toBe(0);
-    expect(await hostSettings(harness)).toEqual({ theme: "dark", packages: ["npm:fresh"] });
+    expect(hostPiRuns(harness)).toEqual([
+      ["install", "npm:fresh"],
+      ["remove", "npm:old"],
+    ]);
+    expect(harness.calls.find((entry) => entry.interactive)?.options).toEqual({ cwd: harness.cwd });
   });
 
-  it("leaves the host settings.json alone when pi install fails", async () => {
-    const volume = volumeBackend(installing(1));
-    const harness = await createHarness({ backend: () => volume.fake.backend });
+  it("installs a local source outside the repository on the host", async () => {
+    const harness = await createHarness({ backend: noBackend });
+    const ext = join(harness.deps.home, "tools", "ext");
 
-    await harness.writeJson(join(harness.hostAgentDir, "settings.json"), { packages: ["npm:old"] });
+    await mkdir(ext, { recursive: true });
 
-    expect(await run(["install", "npm:fresh"], harness.deps)).toBe(1);
-    expect(await hostSettings(harness)).toEqual({ packages: ["npm:old"] });
+    expect(await run(["install", ext], harness.deps)).toBe(0);
+    expect(hostPiRuns(harness)).toEqual([["install", ext]]);
   });
 
-  it("refuses to write back a path that exists only inside the sandbox", async () => {
-    const volume = volumeBackend(installing(0));
-    const harness = await createHarness({ backend: () => volume.fake.backend });
-
-    await harness.writeJson(join(harness.hostAgentDir, "settings.json"), { packages: [] });
-
-    expect(await run(["install", "/tmp/inside"], harness.deps)).toBe(0);
-    expect(await hostSettings(harness)).toEqual({ packages: [] });
-    expect(harness.stderr()).toContain("pi-sandbox: /tmp/inside is a path inside the sandbox");
-  });
-
-  it("installs a package from the repository in the sandbox only", async () => {
-    const volume = volumeBackend(installing(0));
-    const harness = await createHarness({ backend: () => volume.fake.backend });
-
-    await mkdir(join(harness.repoRoot, "ext"), { recursive: true });
-
-    await harness.writeJson(join(harness.hostAgentDir, "settings.json"), { packages: [] });
-
-    expect(await run(["install", "../ext"], harness.deps)).toBe(0);
-    expect(await hostSettings(harness)).toEqual({ packages: [] });
-    expect(harness.stderr()).toContain(
-      "pi-sandbox: ../ext lies in the repository, which the sandbox can rewrite; installed in the sandbox only",
-    );
-  });
-
-  it("refuses a package outside the repository that links back into it", async () => {
-    const volume = volumeBackend(installing(0));
-    const harness = await createHarness({ backend: () => volume.fake.backend });
+  it("refuses to install a package source inside the repository on the host", async () => {
+    const harness = await createHarness({ backend: noBackend });
     const link = join(harness.deps.home, "tools", "ext");
 
     await mkdir(join(harness.repoRoot, "ext"), { recursive: true });
@@ -162,96 +116,36 @@ describe("pi install and pi remove", () => {
 
     await symlink(join(harness.repoRoot, "ext"), link);
 
-    await harness.writeJson(harness.userConfigFile, { mounts: { extraReadOnly: ["~/tools"] } });
+    expect(await run(["install", "../ext"], harness.deps)).toBe(1);
+    expect(await run(["install", link], harness.deps)).toBe(1);
 
-    harness.deps.env.HOME = harness.deps.home;
+    const workspace = await workspaceRoot();
 
-    await harness.writeJson(join(harness.hostAgentDir, "settings.json"), { packages: [] });
-
-    expect(await run(["install", link], harness.deps)).toBe(0);
-    expect(await hostSettings(harness)).toEqual({ packages: [] });
-    expect(harness.stderr()).toContain("installed in the sandbox only");
-  });
-
-  it("writes back a package under an extra read-only mount as a path relative to the host agent dir", async () => {
-    const volume = volumeBackend(installing(0));
-    const harness = await createHarness({ backend: () => volume.fake.backend });
-    const ext = join(harness.deps.home, "tools", "ext");
-    const file = join(harness.hostAgentDir, "settings.json");
-
-    await mkdir(ext, { recursive: true });
-
-    await harness.writeJson(harness.userConfigFile, { mounts: { extraReadOnly: ["~/tools"] } });
-
-    harness.deps.env.HOME = harness.deps.home;
-
-    await harness.writeJson(file, { packages: [] });
-
-    expect(await run(["install", ext], harness.deps)).toBe(0);
-    expect(await hostSettings(harness)).toEqual({ packages: ["../../tools/ext"] });
-    expect(harness.stderr()).toContain(`pi-sandbox: added ../../tools/ext in ${file}`);
-  });
-
-  it("writes nothing and names both sources when the sandbox recorded a different entry for the package", async () => {
-    const swapped = "npm:fresh@git+https://attacker.example/x.git";
-    const volume = volumeBackend(recording((packages) => [...packages, swapped]));
-    const harness = await createHarness({ backend: () => volume.fake.backend });
-    const file = join(harness.hostAgentDir, "settings.json");
-
-    await harness.writeJson(file, { packages: ["npm:old"] });
-
-    expect(await run(["install", "npm:fresh"], harness.deps)).toBe(0);
-    expect(await hostSettings(harness)).toEqual({ packages: ["npm:old"] });
+    expect(await run(["install", "./tools/ext"], workspace.deps)).toBe(1);
+    expect([...hostPiRuns(harness), ...hostPiRuns(workspace)]).toEqual([]);
+    expect(await readdir(harness.hostAgentDir).catch(() => [])).toEqual([]);
     expect(harness.stderr()).toContain(
-      `pi-sandbox: the sandbox recorded ${swapped} instead of npm:fresh; ${file} was left as it is`,
+      "pi-sandbox: ../ext lies in the repository, which the sandbox can rewrite; not installed on the host\n",
     );
-  });
-
-  it("writes the typed source into a host object entry, keeps the host fields and copies nothing from the volume", async () => {
-    const volume = volumeBackend(
-      recording(() => [{ source: "npm:tool@2.0.0", extensions: ["planted.js"], skills: [] }]),
+    expect(harness.stderr()).toContain(
+      `pi-sandbox: ${link} lies in the repository, which the sandbox can rewrite; not installed on the host\n`,
     );
-    const harness = await createHarness({ backend: () => volume.fake.backend });
-    const file = join(harness.hostAgentDir, "settings.json");
-
-    await harness.writeJson(file, { packages: [{ source: "npm:tool@1.0.0", skills: ["review"] }] });
-
-    expect(await run(["install", "npm:tool@2.0.0"], harness.deps)).toBe(0);
-    expect(await hostSettings(harness)).toEqual({
-      packages: [{ source: "npm:tool@2.0.0", skills: ["review"] }],
-    });
-    expect(harness.stderr()).toContain(`pi-sandbox: added npm:tool@2.0.0 in ${file}`);
-  });
-
-  it("leaves the host alone when an install drops an entry or a remove finds none", async () => {
-    const volume = volumeBackend(recording(() => []));
-    const harness = await createHarness({ backend: () => volume.fake.backend });
-
-    await harness.writeJson(join(harness.hostAgentDir, "settings.json"), { packages: ["npm:old"] });
-
-    expect(await run(["install", "npm:old"], harness.deps)).toBe(0);
-    expect(await run(["remove", "npm:ghost"], harness.deps)).toBe(0);
-    expect(await hostSettings(harness)).toEqual({ packages: ["npm:old"] });
-    expect(harness.stderr()).not.toContain("removed");
+    expect(workspace.stderr()).toContain(
+      "pi-sandbox: ./tools/ext lies in the repository, which the sandbox can rewrite; not installed on the host\n",
+    );
   });
 
   it("passes a project install with -l straight through", async () => {
-    const volume = volumeBackend(installing(0));
+    const volume = volumeBackend(() => 0);
     const harness = await createHarness({ backend: () => volume.fake.backend });
-
-    await harness.writeJson(join(harness.hostAgentDir, "settings.json"), { packages: [] });
 
     expect(await run(["install", "npm:local", "-l"], harness.deps)).toBe(0);
     expect(volume.piRuns).toEqual([["install", "npm:local", "-l"]]);
-    expect(await hostSettings(harness)).toEqual({ packages: [] });
+    expect(hostPiRuns(harness)).toEqual([]);
   });
 });
 
 describe("pi mcp", () => {
-  const noBackend = () => {
-    throw new Error("the backend must not be used");
-  };
-
   it("runs mcp add and remove with the host pi against the host agent dir", async () => {
     const harness = await createHarness({ backend: noBackend });
 

@@ -19,9 +19,7 @@ export {
   hostAgentDir,
   hostSessionsChoice,
   hostSessionsDir,
-  sessionSlug,
   sessionsSwitchNotice,
 } from "./pi-session-dir.ts";
 export { assertWithinWorkspaceRoots } from "./roots.ts";
 export { gitRepos, mountedGitDirs, type Workspace } from "./types.ts";
-export { scanWorkspace } from "./workspace-scan.ts";

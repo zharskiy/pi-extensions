@@ -91,6 +91,7 @@ describe("renderAgentDir", () => {
       "extensions/tool/",
       "extensions/tool/tokenizer.js",
       "keybindings.json",
+      "mcp.json",
       "models.json",
       "skills/",
       "skills/deploy/",
@@ -177,7 +178,7 @@ describe("renderAgentDir", () => {
       derived: derived(),
     });
 
-    expect(await listTree(result.renderDir)).toEqual(["auth.json", "models.json"]);
+    expect(await listTree(result.renderDir)).toEqual(["auth.json", "mcp.json", "models.json"]);
   });
 
   it("leaves out git dirs, key files, credential files and secret-named files of any extension", async () => {

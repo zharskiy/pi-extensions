@@ -13,6 +13,7 @@ import {
   openCa,
   portOf,
   removeDir,
+  resolveTo,
   startTestProxy,
   type TestProxy,
   waitFor,
@@ -586,12 +587,7 @@ describe("restricted addresses after DNS", () => {
       ca: state.ca,
       rules: RULES,
       resolver: state.resolver.resolver,
-      dial: createDialer({
-        overrides: new Map([
-          ["api.test", "10.0.0.5"],
-          ["tunnel.test", "127.0.0.1"],
-        ]),
-      }),
+      dial: createDialer({ resolve: resolveTo({ "api.test": "10.0.0.5", "tunnel.test": "127.0.0.1" }) }),
     });
     local.token = await local.test.tokenOf(REPO);
   });

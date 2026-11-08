@@ -153,9 +153,3 @@ export const planGitOverlay = async (workspace: Workspace, context: GitGuardCont
     ready: () => readied(workspace, context, plans),
   };
 };
-
-export const discoverGitOverlay = async (workspace: Workspace, context: GitGuardContext) =>
-  (await planGitOverlay(workspace, context)).overlay;
-
-export const readyGitOverlay = async (workspace: Workspace, context: GitGuardContext) =>
-  (await planGitOverlay(workspace, context)).ready();

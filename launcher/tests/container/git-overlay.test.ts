@@ -5,7 +5,6 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { MountSpec } from "../../backend/index.ts";
 import {
   buildContainerSpec,
-  discoverGitOverlay,
   type GitGuardContext,
   type GitOverlay,
   gitDirInUseElsewhere,
@@ -13,7 +12,6 @@ import {
   gitSessionEndNotices,
   LABELS,
   planGitOverlay,
-  readyGitOverlay,
 } from "../../container/index.ts";
 import { createProcessRunner, sha256Hex } from "../../shared/index.ts";
 import { discoverWorkspace, type Workspace } from "../../workspace/index.ts";
@@ -22,6 +20,12 @@ import { createFakeRunner } from "../support/fake-runner.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
 
 const runner = createProcessRunner();
+
+const discoverGitOverlay = async (workspace: Workspace, context: GitGuardContext) =>
+  (await planGitOverlay(workspace, context)).overlay;
+
+const readyGitOverlay = async (workspace: Workspace, context: GitGuardContext) =>
+  (await planGitOverlay(workspace, context)).ready();
 
 const created: string[] = [];
 

@@ -136,16 +136,10 @@ describe("withFileLock", () => {
     expect(await readdir(state.dir)).toEqual([]);
   });
 
-  it("treats a lock without a readable owner as held until it is older than the stale window", async () => {
+  it("takes over a lock without a readable owner at once", async () => {
     const lockPath = join(state.dir, "store.json.lock");
 
-    await mkdir(lockPath);
-
-    expect(await lockError(withFileLock(lockPath, async () => "never", { timeoutMs: 100 }))).toContain(
-      "lock is held by another process",
-    );
-
-    await utimes(lockPath, longAgo(), longAgo());
+    await writeFile(lockPath, "");
 
     expect(await withFileLock(lockPath, async () => "taken", { timeoutMs: 100 })).toBe("taken");
     expect(await readdir(state.dir)).toEqual([]);

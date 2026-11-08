@@ -2,15 +2,13 @@ import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Backend } from "../backend/index.ts";
 import type { SandboxConfig } from "../config/index.ts";
-import { LauncherError, launcherRoot, sha256Hex, stableHash } from "../shared/index.ts";
+import { LauncherError, launcherRoot, stableHash } from "../shared/index.ts";
 import { placeBuildTrust } from "./build-trust.ts";
 import { buildInContext, reusableImage } from "./context.ts";
-import { type ExtensionsSource, PACKAGE_NAME } from "./extensions.ts";
 import { type ImageRecord, isImageRecord, readImageRecord, writeImageRecord } from "./record.ts";
 
 export interface ImageVersions {
   pi: string;
-  extensions: ExtensionsSource;
 }
 
 export interface PullImageInput {
@@ -47,8 +45,6 @@ const COPIED_ASSETS = [ENTRYPOINT, BROWSER_SHIM, BASH_ENV_FILE];
 
 const PINNED = "pinned";
 
-const CONTEXT_TARBALL = "pi-extensions.tgz";
-
 const imageAssets = () => join(launcherRoot(), "image");
 
 const checkedVersion = (name: string, value: string) => {
@@ -59,21 +55,8 @@ const checkedVersion = (name: string, value: string) => {
   return value;
 };
 
-const extensionsArgument = (source: ExtensionsSource) => {
-  if (source.kind === "registry") {
-    return `${PACKAGE_NAME}@${checkedVersion("extensions", source.version)}`;
-  }
-
-  return source.kind === "tarball" ? CONTEXT_TARBALL : "none";
-};
-
 const pinVersions = (dockerfile: string, versions: ImageVersions) =>
-  dockerfile
-    .replace(/^ARG PI_VERSION$/m, `ARG PI_VERSION=${checkedVersion("pi", versions.pi)}`)
-    .replace(
-      /^ARG EXTENSIONS_SOURCE=none$/m,
-      `ARG EXTENSIONS_SOURCE=${extensionsArgument(versions.extensions)}`,
-    );
+  dockerfile.replace(/^ARG PI_VERSION$/m, `ARG PI_VERSION=${checkedVersion("pi", versions.pi)}`);
 
 export const prepareBuildContext = async (versions: ImageVersions, dir: string, trustPem?: string) => {
   const dockerfile = await readFile(join(imageAssets(), DOCKERFILE), "utf8");
@@ -86,25 +69,15 @@ export const prepareBuildContext = async (versions: ImageVersions, dir: string, 
 
   await placeBuildTrust(dir, trustPem);
 
-  if (versions.extensions.kind === "tarball") {
-    await copyFile(versions.extensions.path, join(dir, CONTEXT_TARBALL));
-  }
-
   return dir;
 };
-
-const fileSha256 = async (path: string) => sha256Hex(await readFile(path));
-
-const extensionsIdentity = async (source: ExtensionsSource) =>
-  source.kind === "tarball" ? { kind: source.kind, sha256: await fileSha256(source.path) } : source;
 
 const inputsHash = async (config: SandboxConfig, versions: ImageVersions) => {
   const assets = await Promise.all(
     [DOCKERFILE, ...COPIED_ASSETS].map((name) => readFile(join(imageAssets(), name), "utf8")),
   );
-  const extensions = await extensionsIdentity(versions.extensions);
 
-  return stableHash({ reference: config.image.reference, pi: versions.pi, extensions, assets });
+  return stableHash({ reference: config.image.reference, pi: versions.pi, assets });
 };
 
 export const recordedImage = async (stateDir: string, config: SandboxConfig) => {

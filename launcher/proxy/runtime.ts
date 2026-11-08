@@ -33,7 +33,7 @@ interface Snapshot<T> {
 }
 
 interface OwnedSection {
-  owner?: string;
+  owner: string;
   section: DynamicSection;
 }
 
@@ -88,7 +88,7 @@ const mergeRules = (first: CredentialRule[], second: CredentialRule[]) => {
 
 const visibleTo = (sections: OwnedSection[], repoHash: string | undefined) =>
   sections
-    .filter((entry) => repoHash === undefined || entry.owner === undefined || entry.owner === repoHash)
+    .filter((entry) => repoHash === undefined || entry.owner === repoHash)
     .map((entry) => entry.section);
 
 const serversOf = (sections: DynamicSection[]) =>
@@ -124,13 +124,11 @@ export const createProxyRuntime = (options: RuntimeOptions): ProxyRuntime => {
 
   const ownedSections = async (): Promise<OwnedSection[]> => {
     const [current, owners] = await Promise.all([dynamic(), tokens()]);
-    const owned = Object.entries(current.repos).flatMap(([tokenHash, section]) => {
+    return Object.entries(current.repos).flatMap(([tokenHash, section]) => {
       const owner = owners[tokenHash];
 
       return owner === undefined ? [] : [{ owner, section }];
     });
-
-    return [{ section: current.shared }, ...owned];
   };
 
   const grantEntries = async (repoHash: string) =>

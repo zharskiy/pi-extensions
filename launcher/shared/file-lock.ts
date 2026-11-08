@@ -11,7 +11,7 @@ export interface FileLockOptions {
 }
 
 interface LockSettings {
-  staleMs: number;
+  staleMs?: number;
   retryMs: number;
   deadline: number;
 }
@@ -44,8 +44,8 @@ export const isProcessAlive = (pid: number) => {
   }
 };
 
-const settingsOf = (options: FileLockOptions): LockSettings => ({
-  staleMs: options.staleMs ?? DEFAULT_STALE_MS,
+const settingsOf = (options: FileLockOptions, byAge: boolean): LockSettings => ({
+  staleMs: byAge ? (options.staleMs ?? DEFAULT_STALE_MS) : undefined,
   retryMs: options.retryMs ?? DEFAULT_RETRY_MS,
   deadline: Date.now() + (options.timeoutMs ?? DEFAULT_TIMEOUT_MS),
 });
@@ -69,9 +69,9 @@ const snapshotOf = async (path: string): Promise<LockSnapshot | undefined> => {
   return { owner: Number.parseInt(text, 10), mark, mtimeMs: info.mtimeMs };
 };
 
-const isHeld = (snapshot: LockSnapshot, staleMs: number) =>
-  Number.isInteger(snapshot.owner) && snapshot.owner > 0
-    ? isProcessAlive(snapshot.owner)
+const isHeld = (snapshot: LockSnapshot, staleMs: number | undefined) =>
+  staleMs === undefined
+    ? Number.isInteger(snapshot.owner) && snapshot.owner > 0 && isProcessAlive(snapshot.owner)
     : Date.now() - snapshot.mtimeMs <= staleMs;
 
 const sameLock = (left: LockSnapshot | undefined, right: LockSnapshot) =>
@@ -90,7 +90,7 @@ const restore = async (moved: string, path: string) => {
   });
 };
 
-const moveAside = async (path: string, stale: LockSnapshot, staleMs: number) => {
+const moveAside = async (path: string, stale: LockSnapshot, staleMs: number | undefined) => {
   const moved = sibling(path, "stale");
   const renamed = await rename(path, moved).then(
     () => true,
@@ -110,20 +110,20 @@ const moveAside = async (path: string, stale: LockSnapshot, staleMs: number) => 
   await rm(moved, { recursive: true, force: true });
 };
 
-const clearDeadGuard = async (guard: string, staleMs: number) => {
+const clearDeadGuard = async (guard: string) => {
   const snapshot = await snapshotOf(guard);
 
-  if (snapshot !== undefined && !isHeld(snapshot, staleMs)) {
-    await moveAside(guard, snapshot, staleMs);
+  if (snapshot !== undefined && !isHeld(snapshot, undefined)) {
+    await moveAside(guard, snapshot, undefined);
   }
 };
 
-const takeOver = async (path: string, stale: LockSnapshot, staleMs: number) => {
+const takeOver = async (path: string, stale: LockSnapshot, staleMs: number | undefined) => {
   const guard = `${path}.takeover`;
   const mark = await createPidLock(guard);
 
   if (mark === undefined) {
-    await clearDeadGuard(guard, staleMs);
+    await clearDeadGuard(guard);
 
     return;
   }
@@ -228,7 +228,7 @@ const holding = async <T>(
 ) => {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
 
-  const mark = await acquire(path, attempt, settingsOf(options));
+  const mark = await acquire(path, attempt, settingsOf(options, refresh !== undefined));
   const refresher =
     refresh === undefined
       ? undefined

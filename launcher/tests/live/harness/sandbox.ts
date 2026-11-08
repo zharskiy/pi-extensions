@@ -73,7 +73,13 @@ const run = promisify(execFile);
 
 const LAUNCHER_ENTRY = fileURLToPath(new URL("../../../bin/pi-sandbox-dev.js", import.meta.url));
 
-const RESOLVE_PRELOAD = fileURLToPath(new URL("../fixtures/host-pi-resolve.mjs", import.meta.url));
+const resolvePreload = () => {
+  const url = new URL("./resolve-preload.mjs", import.meta.url);
+
+  url.searchParams.set("hosts", resolveValue());
+
+  return url.href;
+};
 
 const DEFAULT_TIMEOUT_MS = 540_000;
 
@@ -203,8 +209,7 @@ export const createLiveSandbox = async (name: string): Promise<LiveSandbox> => {
     PI_SANDBOX_STATE_DIR: stateDir,
     PI_SANDBOX_USER_CONFIG: userConfigFile,
     PI_SANDBOX_POLICY_FILE: join(root, "no-policy.json"),
-    PI_SANDBOX_TEST_RESOLVE: resolveValue(),
-    NODE_OPTIONS: `--import=${RESOLVE_PRELOAD}`,
+    NODE_OPTIONS: `--import=${resolvePreload()}`,
     NODE_EXTRA_CA_CERTS: ca.certPath,
     GIT_CONFIG_NOSYSTEM: "1",
   };

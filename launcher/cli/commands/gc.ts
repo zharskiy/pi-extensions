@@ -61,9 +61,6 @@ const orphaned = async (volume: VolumeSummary) => {
 const sharedBy = (volume: VolumeSummary, userHash: string | undefined) =>
   userHash !== undefined && volume.labels[LABELS.userHash] === userHash;
 
-const unlabelled = (volume: VolumeSummary) =>
-  volume.labels[LABELS.repoRoot] === undefined && volume.labels[LABELS.userHash] === undefined;
-
 const removedVolume = (backend: Backend, volume: VolumeSummary) =>
   backend.removeVolume(volume.name).then(
     () => [volume],
@@ -90,7 +87,6 @@ const pruneVolumes = async (backend: Backend, sharedOwner: string | undefined) =
     removed: removed.filter((volume) => !sharedBy(volume, sharedOwner)).map((volume) => volume.name),
     shared: removed.filter((volume) => sharedBy(volume, sharedOwner)),
     sharedInUse: shared.filter((volume) => volume.inUse),
-    unlabelled: volumes.filter(unlabelled).length,
   };
 };
 
@@ -110,13 +106,6 @@ const sharedOwnerOf = (args: string[], stateDir: string) => {
 
   return args.includes(SHARED_CACHES) ? userHashOf(stateDir) : undefined;
 };
-
-const unlabelledNotice = (count: number) =>
-  count === 0
-    ? []
-    : [
-        `kept ${plural(count, "volume")} without repository label; run pi sandbox reset in the repository or remove them by hand`,
-      ];
 
 export const gcCommand = async (deps: CliDeps, args: string[]) => {
   const sharedOwner = sharedOwnerOf(args, pathsOf(deps).stateDir);
@@ -153,7 +142,6 @@ export const gcCommand = async (deps: CliDeps, args: string[]) => {
     ...networks.map((name) => `removed network ${name}`),
     ...volumes.removed.map((name) => `removed volume ${name}`),
     ...sharedLines(volumes),
-    ...unlabelledNotice(volumes.unlabelled),
   ]);
 
   writeLine(deps.stdout, `removed ${plural(garbage.containers.length, "stopped container")}`);

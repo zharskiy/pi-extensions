@@ -35,10 +35,10 @@ const setup = () => {
 const tokenHashOf = async (repoHash: string) =>
   sha256Hex(await repoProxyToken(state.stateDir, POLICY_HASH, repoHash));
 
-const message = (repoTokenHash: string | undefined, secrets: Record<string, string>) => ({
+const message = (repoTokenHash: string, secrets: Record<string, string>) => ({
   type: "env-secrets" as const,
   secrets,
-  ...(repoTokenHash === undefined ? {} : { repoTokenHash }),
+  repoTokenHash,
 });
 
 describe("per-repository env secrets", () => {
@@ -71,7 +71,6 @@ describe("per-repository env secrets", () => {
   it("refuses a message without a live repository token", async () => {
     const secrets = setup();
 
-    expect(await secrets.accept(message(undefined, { rule: "x" }))).toMatchObject({ ok: false });
     expect(await secrets.accept(message("f".repeat(64), { rule: "x" }))).toMatchObject({ ok: false });
   });
 
@@ -80,14 +79,14 @@ describe("per-repository env secrets", () => {
 
     await secrets.accept(message(await tokenHashOf(REPO_A), { rule: "from-a" }));
 
-    await rm(stateLayout(state.stateDir).proxyRepoToken(POLICY_HASH, REPO_A), { force: true });
+    await rm(stateLayout(state.stateDir).proxyInstance(POLICY_HASH).repoToken(REPO_A), { force: true });
 
     expect((await secrets.secretsOf(REPO_A)).size).toBe(0);
   });
 
   it("notices a removed token even when the tokens directory keeps its timestamp", async () => {
     const secrets = setup();
-    const tokenFile = stateLayout(state.stateDir).proxyRepoToken(POLICY_HASH, REPO_A);
+    const tokenFile = stateLayout(state.stateDir).proxyInstance(POLICY_HASH).repoToken(REPO_A);
 
     await secrets.accept(message(await tokenHashOf(REPO_A), { rule: "from-a" }));
 

@@ -435,19 +435,16 @@ export const runBackendConformance = (
 
         await routeFor(repoB);
 
-        await plant("pi-sandbox", { managed: true, internal: true });
-
         await plant(networkOf(repoE), { managed: false, internal: true });
 
         await plant(unrelated, { managed: true, internal: true });
 
         const pruned = await backend().pruneNetworks([repoA]);
 
-        expect(pruned).toEqual(expect.arrayContaining(["pi-sandbox", networkOf(repoB)]));
+        expect(pruned).toEqual(expect.arrayContaining([networkOf(repoB)]));
         expect(pruned).not.toContain(networkOf(repoA));
         expect(pruned).not.toContain(networkOf(repoE));
         expect(pruned).not.toContain(unrelated);
-        expect(await networks().has("pi-sandbox")).toBe(false);
         expect(await networks().has(networkOf(repoB))).toBe(false);
         expect(await networks().has(networkOf(repoA))).toBe(true);
         expect(await networks().has(networkOf(repoE))).toBe(true);

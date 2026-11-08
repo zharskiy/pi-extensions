@@ -1,16 +1,13 @@
-import { writeFileSync } from "node:fs";
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { ensureBuiltImage, prepareBuildContext } from "../../image/build.ts";
-import { packExtensionsTarball } from "../../image/extensions.ts";
-import { recordedImage, resolveExtensionsSource } from "../../image/index.ts";
+import { recordedImage } from "../../image/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
-import { createFakeRunner } from "../support/fake-runner.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
 
-const versions = { pi: "1.5.0", extensions: { kind: "registry" as const, version: "0.4.0" } };
+const versions = { pi: "1.5.0" };
 
 const dirs: string[] = [];
 
@@ -84,7 +81,7 @@ describe("prepareBuildContext", () => {
     expect(dockerfile).toContain("is managed by the sandbox and follows the launcher");
   });
 
-  it("pins the pi and extensions versions as Dockerfile defaults", async () => {
+  it("pins the pi version as a Dockerfile default", async () => {
     const dir = await tempDir();
 
     await prepareBuildContext(versions, dir);
@@ -93,29 +90,6 @@ describe("prepareBuildContext", () => {
 
     expect(dockerfile).toMatch(/^FROM node:24-bookworm-slim$/m);
     expect(dockerfile).toMatch(/^ARG PI_VERSION=1\.5\.0$/m);
-    expect(dockerfile).toMatch(/^ARG EXTENSIONS_SOURCE=pi-extensions-mz@0\.4\.0$/m);
-  });
-
-  it("copies an extensions tarball into the context and installs from it", async () => {
-    const dir = await tempDir();
-    const tarball = join(await tempDir(), "pi-extensions-mz-0.4.0.tgz");
-
-    await writeFile(tarball, "tarball bytes");
-    await prepareBuildContext({ pi: "1.5.0", extensions: { kind: "tarball", path: tarball } }, dir);
-
-    expect(await readFile(join(dir, "pi-extensions.tgz"), "utf8")).toBe("tarball bytes");
-    expect(await readFile(join(dir, "Dockerfile"), "utf8")).toMatch(
-      /^ARG EXTENSIONS_SOURCE=pi-extensions\.tgz$/m,
-    );
-  });
-
-  it("builds without extensions when the source is none", async () => {
-    const dir = await tempDir();
-
-    await prepareBuildContext({ pi: "1.5.0", extensions: { kind: "none" } }, dir);
-
-    expect(await readdir(dir)).not.toContain("pi-extensions.tgz");
-    expect(await readFile(join(dir, "Dockerfile"), "utf8")).toMatch(/^ARG EXTENSIONS_SOURCE=none$/m);
   });
 
   it("refuses a version that is not a plain version string", async () => {
@@ -233,37 +207,6 @@ describe("ensureBuiltImage", () => {
     expect(fake.builds).toHaveLength(2);
   });
 
-  it("rebuilds when the extensions tarball content changes", async () => {
-    const fake = createFakeBackend();
-    const stateDir = await tempDir();
-    const tarball = join(await tempDir(), "pi-extensions-mz-0.4.0.tgz");
-    const tarballVersions = { pi: "1.5.0", extensions: { kind: "tarball" as const, path: tarball } };
-
-    await writeFile(tarball, "first");
-    await ensureBuiltImage({
-      backend: fake.backend,
-      config: sandboxConfig(),
-      versions: tarballVersions,
-      stateDir,
-    });
-    await ensureBuiltImage({
-      backend: fake.backend,
-      config: sandboxConfig(),
-      versions: tarballVersions,
-      stateDir,
-    });
-    await writeFile(tarball, "second");
-    await ensureBuiltImage({
-      backend: fake.backend,
-      config: sandboxConfig(),
-      versions: tarballVersions,
-      stateDir,
-    });
-
-    expect(fake.builds).toHaveLength(2);
-    expect(fake.builds[1]?.files["pi-extensions.tgz"]).toBe("second");
-  });
-
   it("rebuilds when the recorded image is gone from the engine", async () => {
     const fake = createFakeBackend();
     const stateDir = await tempDir();
@@ -277,51 +220,6 @@ describe("ensureBuiltImage", () => {
 
     expect(again.built).toBe(true);
     expect(fake.builds).toHaveLength(2);
-  });
-});
-
-const packingRunner = (code = 0) =>
-  createFakeRunner((call) => {
-    const outDir = call.args[2] ?? "";
-
-    if (call.file === "git") {
-      return { code: 128 };
-    }
-
-    if (code === 0) {
-      writeFileSync(join(outDir, "pi-extensions-mz-0.4.0.tgz"), "packed");
-    }
-
-    return code === 0
-      ? { stdout: "> prepack\n> npm run build\npi-extensions-mz-0.4.0.tgz\n" }
-      : { code, stderr: "npm error something\nnpm error code E1" };
-  });
-
-const packageAt = async (packageDir: string, manifest: Record<string, string>) => {
-  await mkdir(join(packageDir, "launcher"), { recursive: true });
-  await writeFile(join(packageDir, "package.json"), JSON.stringify(manifest));
-
-  return join(packageDir, "launcher");
-};
-
-describe("packExtensionsTarball", () => {
-  it("packs the package into the out dir and returns the tarball path", async () => {
-    const outDir = join(await tempDir(), "out");
-    const { runner, calls } = packingRunner();
-    const path = await packExtensionsTarball({ packageDir: "/src/pkg", runner, outDir });
-
-    expect(path).toBe(join(outDir, "pi-extensions-mz-0.4.0.tgz"));
-    expect(calls.map((call) => [call.file, ...call.args])).toEqual([
-      ["npm", "pack", "--pack-destination", outDir, "/src/pkg"],
-    ]);
-  });
-
-  it("reports a failed pack", async () => {
-    const { runner } = packingRunner(1);
-
-    await expect(
-      packExtensionsTarball({ packageDir: "/src/pkg", runner, outDir: await tempDir() }),
-    ).rejects.toThrow(/npm pack \/src\/pkg failed: npm error code E1/);
   });
 });
 
@@ -343,108 +241,5 @@ describe("recordedImage", () => {
     expect(
       await recordedImage(stateDir, sandboxConfig({ image: { ...config.image, digest: "sha256:pinned" } })),
     ).toBeUndefined();
-  });
-
-  it("ignores a record from before image ids were recorded", async () => {
-    const stateDir = await tempDir();
-    const config = sandboxConfig();
-
-    await writeFile(
-      join(stateDir, "image.json"),
-      JSON.stringify({ reference: config.image.reference, digest: "sha256:old", inputsHash: "x" }),
-    );
-
-    expect(await recordedImage(stateDir, config)).toBeUndefined();
-  });
-});
-
-describe("resolveExtensionsSource", () => {
-  const gitRunner = (head: string, status = "") =>
-    createFakeRunner((call) => {
-      if (call.file === "git") {
-        return { stdout: call.args.includes("status") ? status : `${head}\n` };
-      }
-
-      writeFileSync(join(call.args[2] ?? "", "pi-extensions-mz-0.4.0.tgz"), "packed");
-
-      return { stdout: "pi-extensions-mz-0.4.0.tgz\n" };
-    });
-
-  it("reuses the packed tarball while the version and HEAD are unchanged", async () => {
-    const root = await packageAt(join(await tempDir(), "checkout"), {
-      name: "pi-extensions-mz",
-      version: "0.4.0",
-    });
-    const stateDir = await tempDir();
-    const first = gitRunner("head-one");
-    const second = gitRunner("head-one");
-    const moved = gitRunner("head-two");
-
-    await resolveExtensionsSource({ launcherRoot: root, runner: first.runner, stateDir });
-    await resolveExtensionsSource({ launcherRoot: root, runner: second.runner, stateDir });
-    await resolveExtensionsSource({ launcherRoot: root, runner: moved.runner, stateDir });
-
-    const packs = (calls: typeof first.calls) => calls.filter((call) => call.file === "npm").length;
-
-    expect([packs(first.calls), packs(second.calls), packs(moved.calls)]).toEqual([1, 0, 1]);
-  });
-
-  it("packs again on every launch while the checkout has uncommitted changes, and after them", async () => {
-    const root = await packageAt(join(await tempDir(), "checkout"), {
-      name: "pi-extensions-mz",
-      version: "0.4.0",
-    });
-    const stateDir = await tempDir();
-    const clean = gitRunner("head-one");
-    const dirty = gitRunner("head-one", " M extensions/a/index.ts\0");
-    const again = gitRunner("head-one", " M extensions/a/index.ts\0");
-    const committed = gitRunner("head-one");
-    const runs = [clean, dirty, again, committed];
-
-    await runs.reduce(
-      (previous, { runner }) =>
-        previous.then(() => resolveExtensionsSource({ launcherRoot: root, runner, stateDir })),
-      Promise.resolve<unknown>(undefined),
-    );
-
-    expect(runs.map(({ calls }) => calls.filter((call) => call.file === "npm").length)).toEqual([1, 1, 1, 1]);
-  });
-
-  it("packs a checkout of this package into a tarball", async () => {
-    const root = await packageAt(join(await tempDir(), "checkout"), {
-      name: "pi-extensions-mz",
-      version: "0.4.0",
-    });
-    const stateDir = await tempDir();
-    const { runner } = packingRunner();
-
-    expect(await resolveExtensionsSource({ launcherRoot: root, runner, stateDir })).toEqual({
-      kind: "tarball",
-      path: join(stateDir, "pack", "pi-extensions-mz-0.4.0.tgz"),
-    });
-  });
-
-  it("uses the registry version for an installed copy", async () => {
-    const installed = join(await tempDir(), "lib", "node_modules", "pi-extensions-mz");
-    const root = await packageAt(installed, { name: "pi-extensions-mz", version: "0.4.1" });
-    const { runner, calls } = packingRunner();
-
-    expect(await resolveExtensionsSource({ launcherRoot: root, runner, stateDir: await tempDir() })).toEqual({
-      kind: "registry",
-      version: "0.4.1",
-    });
-    expect(calls).toEqual([]);
-  });
-
-  it("refuses a folder that is not this package", async () => {
-    const root = await packageAt(join(await tempDir(), "other"), {
-      name: "something-else",
-      version: "1.0.0",
-    });
-    const { runner } = packingRunner();
-
-    await expect(
-      resolveExtensionsSource({ launcherRoot: root, runner, stateDir: await tempDir() }),
-    ).rejects.toThrow(/not the pi-extensions-mz package/);
   });
 });

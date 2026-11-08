@@ -38,7 +38,6 @@ export interface ProxyServerOptions {
   dial?: Dialer;
   upstreamCa?: string | string[];
   helloTimeoutMs?: number;
-  leafRecheckMs?: number;
   onControl?: (message: ControlMessage) => ControlReply | Promise<ControlReply>;
   vault?: VaultHook;
   denialPages?: { maxNames?: number; mintsPerMinute?: number };
@@ -55,8 +54,6 @@ const AUTH_CHALLENGE = `Basic realm="${PROXY_AGENT}"`;
 const AUTH_DENIAL = { rule: "auth", reason: "missing or wrong Proxy-Authorization" };
 
 const DEFAULT_HELLO_TIMEOUT_MS = 10_000;
-
-const DEFAULT_LEAF_RECHECK_MS = 60_000;
 
 const UNPARSEABLE = "unparseable";
 
@@ -124,7 +121,6 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
 
   const intercept = createInterceptor({
     ca,
-    leafRecheckMs: options.leafRecheckMs ?? DEFAULT_LEAF_RECHECK_MS,
     helloTimeoutMs,
     accessOf,
     serve: terminator.serve,

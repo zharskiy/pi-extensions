@@ -2,8 +2,7 @@ import { posix } from "node:path";
 import { execCapture } from "../../backend/index.ts";
 import { type CredentialRule, fillTemplate, TLS_PORT } from "../../config/index.ts";
 import { type CheckResult, failed, type ProbeTarget, passed, skipped } from "../../container/index.ts";
-import { sourceOfEntry, withoutSourceCredential } from "../../hostpi/index.ts";
-import { probeHostSessions, readVolumeFile } from "../../provision/index.ts";
+import { credentialHosts, probeHostSessions, readVolumeFile } from "../../provision/index.ts";
 import { isPlaceholder } from "../../shared/index.ts";
 
 export interface NamedCheck {
@@ -99,14 +98,6 @@ export const checkMcpAuthSweep = async (target: ProbeTarget) => {
     ? passed(`${Object.keys(store).length} entries in mcp-auth.json, every token is a placeholder`)
     : failed(`mcp-auth.json holds a token that is not a placeholder (${leaked.join(", ")})`);
 };
-
-const credentialHosts = (packages: unknown) =>
-  (Array.isArray(packages) ? packages : []).flatMap((entry) => {
-    const source = sourceOfEntry(entry);
-    const stripped = source === undefined ? undefined : withoutSourceCredential(source);
-
-    return stripped === undefined ? [] : [stripped.host];
-  });
 
 export const checkSettingsSweep = async (target: ProbeTarget) => {
   const { value, invalid } = await readVolumeFile(target.backend, target.containerId, "settings.json");

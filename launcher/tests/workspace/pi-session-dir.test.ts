@@ -7,9 +7,9 @@ import {
   hostAgentDir,
   hostSessionsChoice,
   hostSessionsDir,
-  sessionSlug,
   sessionsSwitchNotice,
 } from "../../workspace/index.ts";
+import { sessionSlug } from "../../workspace/pi-session-dir.ts";
 
 const created: string[] = [];
 

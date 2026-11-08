@@ -5,15 +5,9 @@ import {
   randomBytes,
   X509Certificate,
 } from "node:crypto";
-import { chmod, mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import {
-  type CommandRunner,
-  LauncherError,
-  stateLayout,
-  withFileLock,
-  writeFileAtomic,
-} from "../shared/index.ts";
+import { type CommandRunner, LauncherError, stateLayout, withFileLock } from "../shared/index.ts";
 
 export interface LeafCertificate {
   key: string;
@@ -25,7 +19,6 @@ export interface LauncherCa {
   certPem: string;
   leaf(host: string): Promise<LeafCertificate>;
   ephemeralLeaf(host: string): Promise<LeafCertificate>;
-  pruneLeaves(): Promise<void>;
 }
 
 interface CaOptions {
@@ -43,7 +36,7 @@ const PRIVATE_MODE = 0o600;
 
 const MINT_LOCK_TIMEOUT_MS = 30_000;
 
-const CERT_SUFFIX = "-cert.pem";
+const MAX_LEAVES = 256;
 
 const CA_KEY = "ca-key.pem";
 
@@ -248,8 +241,8 @@ export const openLauncherCa = async ({ stateDir, runner }: CaOptions): Promise<L
 
   await mkdir(directory, { recursive: true, mode: 0o700 });
 
-  const { certPem, certificate: authority } = await ensureCa(directory, runner);
-  const leafDir = join(directory, "leaf");
+  const { certPem } = await ensureCa(directory, runner);
+  const leaves = new Map<string, Promise<LeafCertificate>>();
 
   const checkHost = (host: string) => {
     if (!LEAF_HOST.test(host)) {
@@ -257,33 +250,22 @@ export const openLauncherCa = async ({ stateDir, runner }: CaOptions): Promise<L
     }
   };
 
-  const isUsable = (certificate: X509Certificate | undefined): certificate is X509Certificate =>
-    certificate !== undefined && isFresh(certificate) && certificate.checkIssued(authority);
+  const mint = (host: string) => {
+    const minted = signLeaf(directory, host, runner);
 
-  const stored = async (base: string): Promise<LeafCertificate | undefined> => {
-    const key = await readOptional(`${base}-key.pem`);
-    const cert = await readOptional(`${base}${CERT_SUFFIX}`);
-    const certificate = parseCertificate(cert);
+    leaves.set(host, minted);
 
-    if (key === undefined || cert === undefined || !isUsable(certificate) || !keyMatches(key, certificate)) {
-      return undefined;
+    minted.catch(() => {
+      if (leaves.get(host) === minted) {
+        leaves.delete(host);
+      }
+    });
+
+    const [oldest] = leaves.keys();
+
+    if (leaves.size > MAX_LEAVES && oldest !== undefined) {
+      leaves.delete(oldest);
     }
-
-    return { key, cert };
-  };
-
-  const mintStored = async (host: string, base: string) => {
-    const again = await stored(base);
-
-    if (again !== undefined) {
-      return again;
-    }
-
-    const minted = await signLeaf(directory, host, runner);
-
-    await writeFileAtomic(`${base}-key.pem`, minted.key, { mode: PRIVATE_MODE });
-
-    await writeFileAtomic(`${base}${CERT_SUFFIX}`, minted.cert, { mode: PRIVATE_MODE });
 
     return minted;
   };
@@ -291,16 +273,19 @@ export const openLauncherCa = async ({ stateDir, runner }: CaOptions): Promise<L
   const leaf = async (host: string): Promise<LeafCertificate> => {
     checkHost(host);
 
-    const base = join(leafDir, host);
-    const current = await stored(base);
+    const cached = leaves.get(host);
 
-    if (current !== undefined) {
-      return current;
+    if (cached === undefined) {
+      return mint(host);
     }
 
-    await mkdir(leafDir, { recursive: true, mode: 0o700 });
+    leaves.delete(host);
 
-    return withFileLock(`${base}.lock`, () => mintStored(host, base), { timeoutMs: MINT_LOCK_TIMEOUT_MS });
+    leaves.set(host, cached);
+
+    const current = await cached;
+
+    return isFresh(parseCertificate(current.cert)) ? current : mint(host);
   };
 
   const ephemeralLeaf = async (host: string): Promise<LeafCertificate> => {
@@ -309,33 +294,5 @@ export const openLauncherCa = async ({ stateDir, runner }: CaOptions): Promise<L
     return signLeaf(directory, host, runner);
   };
 
-  const pruneHost = async (host: string) => {
-    const base = join(leafDir, host);
-
-    await withFileLock(
-      `${base}.lock`,
-      async () => {
-        if (!isUsable(parseCertificate(await readOptional(`${base}${CERT_SUFFIX}`)))) {
-          await rm(`${base}${CERT_SUFFIX}`, { force: true });
-
-          await rm(`${base}-key.pem`, { force: true });
-        }
-
-        await rm(`${base}.cnf`, { force: true });
-      },
-      { timeoutMs: MINT_LOCK_TIMEOUT_MS },
-    );
-  };
-
-  const pruneLeaves = async () => {
-    const names = await readdir(leafDir).catch(() => [] as string[]);
-    const hosts = names
-      .filter((name) => name.endsWith(CERT_SUFFIX) || name.endsWith(".cnf"))
-      .map((name) => name.replace(/(-cert\.pem|\.cnf)$/, ""))
-      .filter((host) => LEAF_HOST.test(host));
-
-    await Promise.all([...new Set(hosts)].map(pruneHost));
-  };
-
-  return { certPath, certPem, leaf, ephemeralLeaf, pruneLeaves };
+  return { certPath, certPem, leaf, ephemeralLeaf };
 };

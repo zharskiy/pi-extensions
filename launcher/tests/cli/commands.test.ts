@@ -282,13 +282,12 @@ describe("pi sandbox gc and reset", () => {
       image: "x",
     });
 
-    ["pi-sandbox", `pi-sandbox-${"a".repeat(12)}`, `pi-sandbox-${"b".repeat(12)}`].forEach((name) => {
+    [`pi-sandbox-${"a".repeat(12)}`, `pi-sandbox-${"b".repeat(12)}`].forEach((name) => {
       fake.networks.add(name);
     });
 
     expect(await run(["sandbox", "gc"], harness.deps)).toBe(0);
     expect([...fake.networks]).toEqual([`pi-sandbox-${"a".repeat(12)}`]);
-    expect(harness.stdout()).toContain("removed network pi-sandbox\n");
     expect(harness.stdout()).toContain(`removed network pi-sandbox-${"b".repeat(12)}\n`);
   });
 
@@ -299,7 +298,7 @@ describe("pi sandbox gc and reset", () => {
       proxy: { list: async () => [{ policyHash: "preparing", pid: 3, port: 5000, token: "t" }] },
     });
     const repo = sha256Hex(harness.repoRoot);
-    const tokenFile = stateLayout(harness.stateDir).proxyRepoToken("preparing", repo);
+    const tokenFile = stateLayout(harness.stateDir).proxyInstance("preparing").repoToken(repo);
 
     await mkdir(join(tokenFile, ".."), { recursive: true });
 
@@ -397,7 +396,7 @@ describe("pi sandbox gc and reset", () => {
     expect(harness.stdout()).not.toContain("removed volume");
   });
 
-  it("keeps a volume without a repository label and says how to remove it", async () => {
+  it("keeps a volume without a repository label", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
 
@@ -405,9 +404,6 @@ describe("pi sandbox gc and reset", () => {
 
     expect(await run(["sandbox", "gc"], harness.deps)).toBe(0);
     expect(fake.volumes.has("pi-sandbox-agent-unlabelled")).toBe(true);
-    expect(harness.stdout()).toContain(
-      "kept 1 volume without repository label; run pi sandbox reset in the repository or remove them by hand\n",
-    );
   });
 
   it("removes the proxy instance of this repo's policy so its token rotates on the next launch", async () => {

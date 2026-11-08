@@ -1,11 +1,6 @@
 import type { Backend } from "../backend/index.ts";
 import type { SandboxConfig } from "../config/index.ts";
-import type {
-  ContainerMcpAuthEntries,
-  DerivedSandboxPi,
-  JsonObject,
-  PackageChangeKind,
-} from "../hostpi/index.ts";
+import type { ContainerMcpAuthEntries, DerivedSandboxPi, JsonObject } from "../hostpi/index.ts";
 
 export interface RenderInput {
   stateDir: string;
@@ -27,19 +22,11 @@ export interface SyncInput {
   repoRoot: string;
   config: SandboxConfig;
   hostSettings?: JsonObject;
-  mcp: JsonObject;
 }
 
 export interface SyncResult {
   notices: string[];
 }
-
-export interface PackageRequest {
-  kind: PackageChangeKind;
-  source: string;
-}
-
-export type PackageDiff = { kind: PackageChangeKind } | { kind: "mismatch"; recorded: string };
 
 export interface ContainerMcpAuthSyncInput {
   backend: Backend;

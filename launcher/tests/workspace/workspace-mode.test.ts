@@ -9,12 +9,12 @@ import {
   gitSessionEndNotices,
   protectedGitOverlay,
   recordGitBaseline,
-  scanWorkspace,
   type Workspace,
   withGitPinLock,
   workspaceNotices,
   workspaceSelfBinds,
 } from "../../workspace/index.ts";
+import { scanWorkspace } from "../../workspace/workspace-scan.ts";
 import { createFakeRunner } from "../support/fake-runner.ts";
 import { tempDir } from "../support/temp-dir.ts";
 

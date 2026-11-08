@@ -15,7 +15,6 @@ interface LeafSource {
 
 interface InterceptOptions {
   ca?: LeafSource;
-  leafRecheckMs: number;
   helloTimeoutMs: number;
   accessOf: (host: string) => DialAccess;
   serve: (socket: TLSSocket, target: TerminatedTarget) => void;
@@ -26,7 +25,6 @@ interface InterceptOptions {
 interface CachedContext {
   cert: string;
   context: SecureContext;
-  checkedAt: number;
 }
 
 const TLS_FAILED = { rule: "tls", reason: "TLS handshake with the client failed" };
@@ -34,52 +32,26 @@ const TLS_FAILED = { rule: "tls", reason: "TLS handshake with the client failed"
 const handshakeDenial = (connection: Connection) => sniDenial(connection.host, connection.sni) ?? TLS_FAILED;
 
 export const createInterceptor = (options: InterceptOptions) => {
-  const settled = new Map<string, CachedContext>();
-  const refreshing = new Map<string, Promise<CachedContext>>();
+  const contexts = new Map<string, CachedContext>();
   const { denials } = options;
-
-  const loadContext = async (ca: LeafSource, host: string, known: CachedContext | undefined) => {
-    const leaf = await ca.leaf(host);
-    const context = known?.cert === leaf.cert ? known.context : createSecureContext(leaf);
-
-    return { cert: leaf.cert, context, checkedAt: Date.now() };
-  };
-
-  const refresh = (ca: LeafSource, host: string, known: CachedContext | undefined) => {
-    const loading = loadContext(ca, host, known)
-      .then(
-        (loaded) => {
-          settled.set(host, loaded);
-
-          return loaded;
-        },
-        (error: unknown) => {
-          settled.delete(host);
-
-          throw error;
-        },
-      )
-      .finally(() => refreshing.delete(host));
-
-    refreshing.set(host, loading);
-
-    return loading;
-  };
 
   const secureContextFor = async (host: string) => {
     if (options.ca === undefined) {
       throw new LauncherError("the proxy needs the launcher CA to terminate TLS");
     }
 
-    const known = settled.get(host);
+    const leaf = await options.ca.leaf(host);
+    const known = contexts.get(host);
 
-    if (known !== undefined && Date.now() - known.checkedAt < options.leafRecheckMs) {
+    if (known?.cert === leaf.cert) {
       return known.context;
     }
 
-    const loading = refreshing.get(host) ?? refresh(options.ca, host, known);
+    const context = createSecureContext(leaf);
 
-    return (await loading).context;
+    contexts.set(host, { cert: leaf.cert, context });
+
+    return context;
   };
 
   const startTls = (connection: Connection, secureContext: SecureContext) => {

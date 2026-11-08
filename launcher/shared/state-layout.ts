@@ -52,13 +52,9 @@ export const stateLayout = (stateDir: string) => ({
   extraPem: join(stateDir, "ca", "extra.pem"),
   trustPem: join(stateDir, "ca", "trust.pem"),
   imageRecord: join(stateDir, "image.json"),
-  pack: join(stateDir, "pack"),
   wanted: (repoKey: string) => join(stateDir, "wanted", `${repoKey}.json`),
   proxyRoot: join(stateDir, "proxy"),
   proxyInstance: (policyHash: string) => proxyInstanceFiles(stateDir, policyHash),
-  proxyDynamic: (policyHash: string) => join(stateDir, "proxy", policyHash, "dynamic.json"),
-  proxyRepoToken: (policyHash: string, repoHash: string) =>
-    join(stateDir, "proxy", policyHash, "tokens", repoHash),
 });
 
 export const ensureSalt = (stateDir: string) => ensureRandomHexFile(stateLayout(stateDir).salt, SALT_BYTES);

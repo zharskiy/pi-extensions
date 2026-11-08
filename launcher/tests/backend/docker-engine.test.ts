@@ -723,11 +723,6 @@ describe("docker-engine egress relay", () => {
     const repoB = "b".repeat(64);
     const repoC = "c".repeat(64);
 
-    engine.networks.set("pi-sandbox", {
-      body: { Name: "pi-sandbox", Internal: true, Labels: { [LABELS.managed]: "true" } },
-      connected: [],
-    });
-
     await routeOn(backend, 3128, { repo: repoA });
 
     await routeOn(backend, 3128, { repo: repoB });
@@ -736,10 +731,7 @@ describe("docker-engine egress relay", () => {
 
     await backend.createContainer({ ...baseSpec, name: "agent-c", network: routeC.network });
 
-    expect((await backend.pruneNetworks([repoA])).sort()).toEqual([
-      "pi-sandbox",
-      `pi-sandbox-${"b".repeat(12)}`,
-    ]);
+    expect(await backend.pruneNetworks([repoA])).toEqual([`pi-sandbox-${"b".repeat(12)}`]);
     expect([...engine.networks.keys()].sort()).toEqual([
       `pi-sandbox-${"a".repeat(12)}`,
       `pi-sandbox-${"c".repeat(12)}`,

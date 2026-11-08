@@ -1,11 +1,12 @@
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ensureSandboxImage, type SandboxImageInput } from "../../image/index.ts";
+import { ensureSandboxImage } from "../../image/index.ts";
+import type { SandboxImageInput } from "../../image/sandbox-image.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
 import { tempDir, writeText } from "../support/temp-dir.ts";
 
-const versions = { pi: "1.5.0", extensions: { kind: "registry" as const, version: "0.4.0" } };
+const versions = { pi: "1.5.0" };
 
 const inputOf = async (
   fake: ReturnType<typeof createFakeBackend>,

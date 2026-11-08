@@ -13,7 +13,7 @@ const USAGE = [
   "  pi sandbox egress list [--user] [--denied]        grants, or the hosts the proxy blocked",
   "  pi sandbox gc [--shared-caches]    remove stopped containers, idle relays and idle proxies",
   "                                      (--shared-caches: also this user's unused shared cache volumes)",
-  "  pi sandbox reset [--volumes]        stop and remove this repo's container (--volumes: caches, older sandbox-only sessions)",
+  "  pi sandbox reset [--volumes]        stop and remove this repo's container (--volumes: caches, sandbox-only sessions)",
   "  pi sandbox stop                     stop the sandbox VM when no pi session runs; the next pi starts it again",
   "  pi sandbox doctor                   preflight and smoke checks, one line each",
   "  pi sandbox --version                print the launcher version",

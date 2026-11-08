@@ -1,5 +1,5 @@
 import { lookup as dnsLookup, type LookupAddress, type LookupOptions } from "node:dns";
-import { connect, isIP, type LookupFunction, type Socket } from "node:net";
+import { connect, type LookupFunction, type Socket } from "node:net";
 import { bypassesParent, dialViaParent, type ParentRoute } from "./parent.ts";
 import { restrictedAddress } from "./policy.ts";
 
@@ -10,14 +10,6 @@ type Dial = (host: string, port: number, access: DialAccess, repoHash?: string) 
 export type Dialer = Dial & { checkAddresses?: (host: string, access: DialAccess) => Promise<void> };
 
 type Resolve = (hostname: string) => Promise<LookupAddress[]>;
-
-type Overrides = ReadonlyMap<string, string>;
-
-type LookupAll = (
-  hostname: string,
-  family: LookupOptions["family"],
-  callback: (error: NodeJS.ErrnoException | null, addresses: LookupAddress[]) => void,
-) => void;
 
 export class RestrictedAddressError extends Error {
   readonly rule: string;
@@ -47,59 +39,50 @@ const publicAddresses = (hostname: string, addresses: LookupAddress[]) => {
   );
 };
 
-const lookupAll =
-  (overrides: Overrides): LookupAll =>
-  (hostname, family, callback) => {
-    const address = overrides.get(hostname.toLowerCase());
+const systemResolve: Resolve = (hostname) =>
+  new Promise((resolve, reject) => {
+    dnsLookup(hostname, { all: true }, (error, addresses) =>
+      error === null ? resolve(addresses) : reject(error),
+    );
+  });
 
-    if (address !== undefined) {
-      callback(null, [{ address, family: isIP(address) }]);
+const FAMILIES: Record<string, number> = { IPv4: 4, IPv6: 6 };
 
-      return;
-    }
+const ofFamily = (addresses: LookupAddress[], family: LookupOptions["family"]) => {
+  const wanted = typeof family === "string" ? FAMILIES[family] : family;
 
-    dnsLookup(hostname, { all: true, family }, callback);
-  };
+  return wanted === undefined || wanted === 0
+    ? addresses
+    : addresses.filter((entry) => entry.family === wanted);
+};
 
 const lookupWith =
   (
-    resolveAll: LookupAll,
+    resolveHost: Resolve,
     filter: (hostname: string, addresses: LookupAddress[]) => LookupAddress[] | Error,
   ): LookupFunction =>
   (hostname, options, callback) => {
-    resolveAll(hostname, options.family, (error, addresses) => {
-      if (error !== null) {
-        callback(error, "", 0);
+    resolveHost(hostname).then(
+      (addresses) => {
+        const result = filter(hostname, ofFamily(addresses, options.family));
 
-        return;
-      }
+        if (result instanceof Error) {
+          callback(result, "", 0);
 
-      const result = filter(hostname, addresses);
+          return;
+        }
 
-      if (result instanceof Error) {
-        callback(result, "", 0);
+        if (options.all === true) {
+          callback(null, result);
 
-        return;
-      }
+          return;
+        }
 
-      if (options.all === true) {
-        callback(null, result);
-
-        return;
-      }
-
-      callback(null, result[0]?.address ?? "", result[0]?.family ?? 4);
-    });
+        callback(null, result[0]?.address ?? "", result[0]?.family ?? 4);
+      },
+      (error: NodeJS.ErrnoException) => callback(error, "", 0),
+    );
   };
-
-const systemResolve =
-  (resolveAll: LookupAll): Resolve =>
-  (hostname) =>
-    new Promise((resolve, reject) => {
-      resolveAll(hostname, undefined, (error, addresses) =>
-        error === null ? resolve(addresses) : reject(error),
-      );
-    });
 
 const connected = (socket: Socket, host: string, port: number, timeoutMs: number) =>
   new Promise<Socket>((resolve, reject) => {
@@ -157,25 +140,21 @@ const checkResolved = async (resolve: Resolve, host: string) => {
 export interface DialerOptions {
   parent?: ParentRoute;
   resolve?: Resolve;
-  overrides?: Overrides;
   connectTimeoutMs?: number;
 }
 
 export const createDialer = ({
   parent,
-  resolve,
-  overrides = new Map(),
+  resolve: resolveHost = systemResolve,
   connectTimeoutMs = CONNECT_TIMEOUT_MS,
 }: DialerOptions = {}): Dialer => {
-  const resolveAll = lookupAll(overrides);
   const dialDirect = direct(
     {
-      public: lookupWith(resolveAll, publicAddresses),
-      private: lookupWith(resolveAll, (_, addresses) => addresses),
+      public: lookupWith(resolveHost, publicAddresses),
+      private: lookupWith(resolveHost, (_, addresses) => addresses),
     },
     connectTimeoutMs,
   );
-  const resolveHost = resolve ?? systemResolve(resolveAll);
   const isDirect = (host: string) => parent === undefined || bypassesParent(parent.noProxy, host);
 
   const dial: Dial = async (host, port, access, repoHash) => {
@@ -192,7 +171,7 @@ export const createDialer = ({
 
   const checkAddresses = async (host: string, access: DialAccess) => {
     if (access === "public") {
-      await checkResolved(isDirect(host) ? systemResolve(resolveAll) : resolveHost, host);
+      await checkResolved(resolveHost, host);
     }
   };
 

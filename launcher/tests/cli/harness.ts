@@ -56,8 +56,6 @@ const collector = (): Collected => {
   return { stream, text: () => chunks.join("") };
 };
 
-const TARBALL = "pi-extensions-mz-0.4.0.tgz";
-
 const RUNNING_PROXY: ProxyInstance = { pid: 4242, port: 3128, policyHash: "policy", token: "token-1" };
 
 const FAKE_PI_DIR = "/fake/node_modules/@earendil-works/pi-coding-agent";
@@ -73,23 +71,9 @@ const withoutOptions = (args: string[]): string[] =>
 const gitAnswer = (repoRoot: string, given: string[]): Partial<RunResult> | undefined => {
   const args = withoutOptions(given);
 
-  if (args[0] === "rev-parse" && args[1] === "--show-toplevel") {
-    return { stdout: `${repoRoot}\n${join(repoRoot, ".git")}\n` };
-  }
-
-  if (args[0] === "status") {
-    return { stdout: "" };
-  }
-
-  return args[0] === "rev-parse" && args[1] === "HEAD" ? { stdout: "head-one\n" } : undefined;
-};
-
-const npmPack = (args: string[]): Partial<RunResult> => {
-  const outDir = args[2] ?? "";
-
-  writeFileSync(join(outDir, TARBALL), "tarball");
-
-  return { stdout: `${TARBALL}\n` };
+  return args[0] === "rev-parse" && args[1] === "--show-toplevel"
+    ? { stdout: `${repoRoot}\n${join(repoRoot, ".git")}\n` }
+    : undefined;
 };
 
 interface HarnessPaths {
@@ -274,11 +258,7 @@ export const createHarness = async (options: HarnessOptions = {}) => {
       return { code: 0 };
     }
 
-    if (call.file === "git") {
-      return gitAnswer(repoRoot, call.args);
-    }
-
-    return call.file === "npm" && call.args[0] === "pack" ? npmPack(call.args) : undefined;
+    return call.file === "git" ? gitAnswer(repoRoot, call.args) : undefined;
   });
   const terminalOut = new PassThrough();
   const stoppedProxies: Array<string | undefined> = [];

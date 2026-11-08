@@ -1,15 +1,5 @@
 import { spawnSync } from "node:child_process";
-import {
-  lstat,
-  mkdir,
-  mkdtemp,
-  readFile,
-  readlink,
-  realpath,
-  rm,
-  symlink,
-  writeFile,
-} from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, readlink, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -30,7 +20,6 @@ const sandboxRoot = async () => {
   const paths = {
     root,
     home: join(root, "home"),
-    opt: join(root, "opt"),
     render: join(root, "opt", "render"),
     bundle: join(root, "tmp"),
     system: join(root, "system.crt"),
@@ -51,7 +40,6 @@ type Paths = Awaited<ReturnType<typeof sandboxRoot>>;
 const runEntrypoint = async (paths: Paths) => {
   const guestPaths: Record<string, string> = {
     "/opt/pi-sandbox/render": paths.render,
-    "/opt/pi-sandbox": paths.opt,
     "/tmp/pi-sandbox": paths.bundle,
     "/etc/ssl/certs/ca-certificates.crt": paths.system,
     "/etc/pi-sandbox/ca.pem": paths.trust,
@@ -81,8 +69,6 @@ describe("image entrypoint", () => {
 
     await mkdir(join(paths.render, "skills"));
 
-    await writeFile(join(paths.render, "mcp-auth.json"), "{}\n");
-
     await mkdir(join(agent, "skills", "planted"), { recursive: true });
 
     await writeFile(join(agent, "auth.json"), '{"planted":true}\n');
@@ -91,10 +77,9 @@ describe("image entrypoint", () => {
 
     expect(await readlink(join(agent, "auth.json"))).toBe(join(paths.render, "auth.json"));
     expect(await readlink(join(agent, "skills"))).toBe(join(paths.render, "skills"));
-    await expect(lstat(join(agent, "mcp-auth.json"))).rejects.toThrow();
   });
 
-  it("drops dangling links into the render dir and a linked mcp-auth.json", async () => {
+  it("drops dangling links into the render dir", async () => {
     const paths = await sandboxRoot();
     const agent = join(paths.home, ".pi", "agent");
 
@@ -106,31 +91,18 @@ describe("image entrypoint", () => {
 
     await rm(join(paths.render, "models.json"));
 
-    await symlink(join(paths.render, "mcp-auth.json"), join(agent, "mcp-auth.json"));
-
     await runEntrypoint(paths);
 
     await expect(lstat(join(agent, "models.json"))).rejects.toThrow();
-    await expect(lstat(join(agent, "mcp-auth.json"))).rejects.toThrow();
   });
 
-  it("seeds settings once and appends the mounted trust bundle to the CA bundle", async () => {
+  it("appends the mounted trust bundle to the CA bundle", async () => {
     const paths = await sandboxRoot();
-    const agent = join(paths.home, ".pi", "agent");
-
-    await writeFile(join(paths.opt, "settings.json"), '{"seeded":true}\n');
 
     await writeFile(paths.trust, "TRUST\n");
 
     await runEntrypoint(paths);
 
-    expect(await readFile(join(agent, "settings.json"), "utf8")).toBe('{"seeded":true}\n');
-
-    await writeFile(join(agent, "settings.json"), '{"mine":true}\n');
-
-    await runEntrypoint(paths);
-
-    expect(await readFile(join(agent, "settings.json"), "utf8")).toBe('{"mine":true}\n');
     expect(await readFile(join(paths.bundle, "ca-bundle.pem"), "utf8")).toBe("SYSTEM\nTRUST\n");
   });
 });

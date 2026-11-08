@@ -1,6 +1,8 @@
+import type { LookupAddress } from "node:dns";
+import { lookup } from "node:dns/promises";
 import { mkdtemp, rm } from "node:fs/promises";
 import type { Server } from "node:https";
-import { type AddressInfo, connect, type Socket } from "node:net";
+import { type AddressInfo, connect, isIP, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CredentialRule } from "../../config/index.ts";
@@ -17,6 +19,14 @@ import { createProcessRunner } from "../../shared/index.ts";
 export const POLICY_HASH = "a".repeat(64);
 
 export const CONTROL_TOKEN = "c".repeat(64);
+
+export const resolveTo =
+  (addresses: Record<string, string>) =>
+  async (hostname: string): Promise<LookupAddress[]> => {
+    const address = addresses[hostname.toLowerCase()];
+
+    return address === undefined ? lookup(hostname, { all: true }) : [{ address, family: isIP(address) }];
+  };
 
 export const portOf = (server: Server) => (server.address() as AddressInfo).port;
 
@@ -87,7 +97,6 @@ export interface TestProxyOptions {
   onControl?: Parameters<typeof startProxyServer>[0]["onControl"];
   vault?: Parameters<typeof startProxyServer>[0]["vault"];
   denialPages?: Parameters<typeof startProxyServer>[0]["denialPages"];
-  leafRecheckMs?: number;
 }
 
 export interface TestProxy {
@@ -118,7 +127,6 @@ export const startTestProxy = async (options: TestProxyOptions): Promise<TestPro
     dial: options.dial ?? mappedDial(options.ports ?? (() => ({}))),
     upstreamCa: options.ca?.certPem,
     helloTimeoutMs: 500,
-    leafRecheckMs: options.leafRecheckMs,
     onControl: options.onControl,
     vault: options.vault,
     denialPages: options.denialPages,

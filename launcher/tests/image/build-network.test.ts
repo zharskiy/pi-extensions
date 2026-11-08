@@ -7,7 +7,7 @@ import { ensureBuiltImage } from "../../image/build.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
 
-const versions = { pi: "1.5.0", extensions: { kind: "none" as const } };
+const versions = { pi: "1.5.0" };
 
 const dirs: string[] = [];
 

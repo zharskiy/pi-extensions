@@ -1,9 +1,10 @@
 import dns from "node:dns";
+import { syncBuiltinESMExports } from "node:module";
 
-const HOST_PI_SCRIPTS = ["pi-coding-agent", "hostpi/mcp-discover.mjs"];
+const RESOLVED_SCRIPTS = ["pi-coding-agent", "hostpi/mcp-discover.mjs", "proxy/daemon"];
 
 const overrides = new Map(
-  (process.env.PI_SANDBOX_TEST_RESOLVE ?? "")
+  (new URL(import.meta.url).searchParams.get("hosts") ?? "")
     .split(",")
     .map((pair) => pair.split("=").map((part) => part.trim()))
     .filter(([name, address]) => name && address),
@@ -31,6 +32,8 @@ const lookup = (hostname, options, callback) => {
 
 const script = process.argv[1] ?? "";
 
-if (HOST_PI_SCRIPTS.some((name) => script.includes(name)) && overrides.size > 0) {
+if (RESOLVED_SCRIPTS.some((name) => script.includes(name)) && overrides.size > 0) {
   dns.lookup = lookup;
+
+  syncBuiltinESMExports();
 }

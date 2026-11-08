@@ -30,6 +30,7 @@ const desiredTree = async (input: RenderInput): Promise<Tree> => {
   const rendered: Array<[string, unknown]> = [
     ["auth.json", files["auth.json"]],
     ["models.json", files["models.json"]],
+    ["mcp.json", files["mcp.json"]],
   ];
 
   return new Map([

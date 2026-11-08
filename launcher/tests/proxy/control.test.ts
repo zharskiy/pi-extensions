@@ -317,10 +317,13 @@ describe("control socket and repository tokens", () => {
         repoTokenHash: sha256Hex(token),
       }),
     ).toEqual({ ok: true });
-    expect(await sendProxyControl(instance, { type: "env-secrets", secrets: { rule: "value" } })).toEqual({
-      ok: false,
-      error: "the control message names no live repository token",
-    });
+    expect(
+      await sendProxyControl(instance, {
+        type: "env-secrets",
+        secrets: { rule: "value" },
+        repoTokenHash: "f".repeat(64),
+      }),
+    ).toEqual({ ok: false, error: "the control message names no live repository token" });
     expect(page).toMatchObject({ connect: 200, status: 403 });
     expect(page.body).toBe("pi-sandbox: evil.test is not allowed; run pi sandbox egress allow evil.test");
     expect(await readDenials(state.stateDir, instance.policyHash, { repoHash, since: 0 })).toContainEqual(

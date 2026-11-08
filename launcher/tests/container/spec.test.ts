@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import type { MountSpec } from "../../backend/index.ts";
+import type { SandboxConfig } from "../../config/index.ts";
 import {
   buildContainerSpec,
   forwardedEnv,
@@ -89,6 +90,21 @@ describe("buildContainerSpec", () => {
     expect(
       hashOf(specInput({ proxy: { ...proxy, url: "http://pi-sandbox:token-2@10.89.0.2:3128" } })),
     ).not.toBe(base);
+  });
+
+  it("changes the spec hash with each config field that shapes the container", () => {
+    const hashOf = (input: ContainerSpecInput) => buildContainerSpec(input).labels["pi-sandbox.spec-hash"];
+    const withConfig = (config: SandboxConfig) => hashOf(specInput({ config }));
+    const base = hashOf(specInput());
+    const changed = [
+      withConfig(sandboxConfig({ mounts: { extraReadOnly: [sharedDir] } })),
+      withConfig(sandboxConfig({ mounts: { cacheVolumes: ["/work/repo/.cache"] } })),
+      withConfig(sandboxConfig({ resources: { cpus: 2 } })),
+      withConfig(sandboxConfig({ resources: { memoryGiB: 4 } })),
+      hashOf(specInput({ image: { reference: "other:1", digest: "sha256:def", id: "sha256:image-def" } })),
+    ];
+
+    expect(new Set([base, ...changed]).size).toBe(changed.length + 1);
   });
 
   it("creates the container from the image id", () => {

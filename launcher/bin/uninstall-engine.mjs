@@ -116,7 +116,7 @@ const cleanContainers = async () => {
 
 const cleanVolumes = async () => {
   if (!withVolumes) {
-    console.log("volumes: kept (pass --volumes to remove caches and older sandbox-only sessions)");
+    console.log("volumes: kept (pass --volumes to remove them)");
 
     return;
   }

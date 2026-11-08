@@ -1,22 +1,13 @@
 import { isAbsolute, resolve } from "node:path";
-import {
-  type JsonObject,
-  packageSourceKey,
-  sourceOfEntry,
-  withoutSourceCredential,
-} from "../hostpi/index.ts";
-import { expandHome, isWithin, stableHash } from "../shared/index.ts";
+import type { JsonObject } from "../hostpi/index.ts";
+import { expandHome, isWithin } from "../shared/index.ts";
+import { sourceOfEntry, withoutSourceCredential } from "./package-source.ts";
 
 export interface HostSettingsContext {
   hostAgentDir: string;
   mountRoots: string[];
   home?: string;
-  bakedInVolume: boolean;
 }
-
-const BAKED_EXTENSIONS_SOURCE = "/opt/pi-sandbox/extensions/node_modules/pi-extensions-mz";
-
-const EXTENSIONS_NPM_KEY = "npm:pi-extensions-mz";
 
 const HOST_OWNED_SETTINGS = [
   "npmCommand",
@@ -27,50 +18,9 @@ const HOST_OWNED_SETTINGS = [
   "httpProxy",
 ];
 
-const sameValue = (left: unknown, right: unknown) =>
-  left === undefined || right === undefined ? left === right : stableHash(left) === stableHash(right);
-
-const decide = (key: string, base: JsonObject | undefined, host: JsonObject, volume: JsonObject) => {
-  const inHost = Object.hasOwn(host, key);
-  const inBase = base !== undefined && Object.hasOwn(base, key);
-  const hostChanged = base === undefined || inHost !== inBase || !sameValue(base[key], host[key]);
-
-  if (inHost && hostChanged) {
-    return { keep: true, value: host[key] };
-  }
-
-  if (!inHost && inBase) {
-    return { keep: false };
-  }
-
-  return Object.hasOwn(volume, key) ? { keep: true, value: volume[key] } : { keep: false };
-};
-
-export const mergeTopLevel = (
-  base: JsonObject | undefined,
-  host: JsonObject,
-  volume: JsonObject | undefined,
-): JsonObject => {
-  if (volume === undefined) {
-    return { ...host };
-  }
-
-  const keys = [...new Set([...Object.keys(volume), ...Object.keys(host)])];
-
-  return Object.fromEntries(
-    keys.flatMap((key) => {
-      const decision = decide(key, base, host, volume);
-
-      return decision.keep ? [[key, decision.value]] : [];
-    }),
-  );
-};
-
-export const withHostOwnedSettings = (merged: JsonObject, host: JsonObject): JsonObject => ({
-  ...Object.fromEntries(Object.entries(merged).filter(([key]) => !HOST_OWNED_SETTINGS.includes(key))),
-  ...Object.fromEntries(
-    HOST_OWNED_SETTINGS.flatMap((key) => (Object.hasOwn(host, key) ? [[key, host[key]]] : [])),
-  ),
+export const hostWinsSettings = (host: JsonObject, volume: JsonObject | undefined): JsonObject => ({
+  ...Object.fromEntries(Object.entries(volume ?? {}).filter(([key]) => !HOST_OWNED_SETTINGS.includes(key))),
+  ...host,
 });
 
 const isLocalSource = (source: string) =>
@@ -90,8 +40,6 @@ const isMounted = (source: string, context: HostSettingsContext) => {
 
 const withSource = (entry: unknown, source: string) =>
   typeof entry === "string" ? source : { ...(entry as JsonObject), source };
-
-const bakedEntry = (entry: unknown) => withSource(entry, BAKED_EXTENSIONS_SOURCE);
 
 const withoutCredential = (entry: unknown) => {
   const source = sourceOfEntry(entry);
@@ -115,10 +63,6 @@ const placedPackage = (
 
   if (source === undefined) {
     return { entry };
-  }
-
-  if (context.bakedInVolume && packageSourceKey(source) === EXTENSIONS_NPM_KEY) {
-    return { entry: bakedEntry(entry) };
   }
 
   if (isLocalSource(source) && !isMounted(source, context)) {
@@ -154,20 +98,4 @@ export const prepareHostSettings = (settings: JsonObject, context: HostSettingsC
     },
     notices: outcomes.flatMap((outcome) => outcome.notices),
   };
-};
-
-const isBaked = (entry: unknown) => sourceOfEntry(entry) === BAKED_EXTENSIONS_SOURCE;
-
-export const hasBakedPackage = (settings: JsonObject | undefined) =>
-  Array.isArray(settings?.packages) && settings.packages.some(isBaked);
-
-export const keepBakedPackage = (merged: JsonObject, volume: JsonObject | undefined) => {
-  if (!hasBakedPackage(volume) || hasBakedPackage(merged)) {
-    return merged;
-  }
-
-  const packages = Array.isArray(merged.packages) ? merged.packages : [];
-  const baked = (Array.isArray(volume?.packages) ? volume.packages : []).find(isBaked);
-
-  return { ...merged, packages: [baked, ...packages] };
 };

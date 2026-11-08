@@ -1,11 +1,9 @@
 export {
-  discoverGitOverlay,
   type GitGuardContext,
   type GitOverlay,
   gitLaunchNotices,
   gitSessionEndNotices,
   planGitOverlay,
-  readyGitOverlay,
 } from "./git-overlay.ts";
 export {
   collectGarbage,

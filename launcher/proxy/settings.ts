@@ -11,8 +11,6 @@ export interface ProxySettings {
   extraCa: ExtraCa[];
 }
 
-const SETTINGS_VERSION = 3;
-
 const ruleHost = (rule: CredentialRule) => authorityOf(rule.host, rule.port ?? TLS_PORT);
 
 const sorted = (values: string[]) => [...values].sort();
@@ -34,5 +32,4 @@ export const proxySettings = (config: SandboxConfig): ProxySettings => {
   };
 };
 
-export const proxyPolicyHash = (config: SandboxConfig) =>
-  sha256Hex(JSON.stringify({ version: SETTINGS_VERSION, ...proxySettings(config) }));
+export const proxyPolicyHash = (config: SandboxConfig) => sha256Hex(JSON.stringify(proxySettings(config)));

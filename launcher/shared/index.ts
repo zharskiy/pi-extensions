@@ -10,12 +10,10 @@ export {
   parseJsonObject,
   readJsonFile,
   readJsonObject,
-  readText,
   writeJsonFile,
 } from "./json-file.ts";
 export {
   expandHome,
-  isCompiled,
   isWithin,
   launcherEntry,
   launcherPaths,

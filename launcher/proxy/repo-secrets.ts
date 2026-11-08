@@ -25,8 +25,7 @@ export const createRepoSecrets = (repos: Repos) => {
   };
 
   const accept = async (message: ControlMessage): Promise<ControlReply> => {
-    const repoHash =
-      message.repoTokenHash === undefined ? undefined : await repos.repoOfTokenHash(message.repoTokenHash);
+    const repoHash = await repos.repoOfTokenHash(message.repoTokenHash);
 
     if (repoHash === undefined) {
       return { ok: false, error: "the control message names no live repository token" };

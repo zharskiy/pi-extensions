@@ -53,8 +53,6 @@ const POLL_MS = 50;
 
 const TOKEN_BYTES = 32;
 
-const PROXY_URL_KEYS = ["HTTPS_PROXY", "https_proxy"];
-
 const DAEMON_ENV_KEYS = [
   "PATH",
   "HOME",
@@ -73,29 +71,14 @@ const DAEMON_ENV_KEYS = [
   "PI_SANDBOX_STATE_DIR",
   "PI_SANDBOX_USER_CONFIG",
   "PI_SANDBOX_POLICY_FILE",
-  "PI_SANDBOX_TEST_RESOLVE",
 ];
-
-const withoutUserinfo = (text: string | undefined) => {
-  try {
-    const url = text === undefined || text === "" ? undefined : new URL(text);
-
-    return url === undefined
-      ? text
-      : `${url.protocol}//${url.host}${url.pathname === "/" ? "" : url.pathname}`;
-  } catch {
-    return text;
-  }
-};
 
 const pickEnv = (env: NodeJS.ProcessEnv, keys: string[]) =>
   Object.fromEntries(keys.filter((key) => env[key] !== undefined).map((key) => [key, env[key]]));
 
 export const daemonEnv = (env: NodeJS.ProcessEnv): NodeJS.ProcessEnv => ({
   ...pickEnv(env, DAEMON_ENV_KEYS),
-  ...Object.fromEntries(
-    PROXY_URL_KEYS.filter((key) => env[key] !== undefined).map((key) => [key, withoutUserinfo(env[key])]),
-  ),
+  ...parentProxyEnv(env),
 });
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));

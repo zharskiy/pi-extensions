@@ -7,7 +7,7 @@ import type { ProxyInstance } from "./files.ts";
 interface EnvSecretsMessage {
   type: "env-secrets";
   secrets: Record<string, string>;
-  repoTokenHash?: string;
+  repoTokenHash: string;
 }
 
 export type ControlMessage = EnvSecretsMessage;

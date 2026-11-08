@@ -1,5 +1,3 @@
-import { TEST_RESOLVE_ENV } from "./test-resolve.ts";
-
 type Env = Record<string, string | undefined>;
 
 const PASSED = [
@@ -14,7 +12,6 @@ const PASSED = [
   "NODE_OPTIONS",
   "SSL_CERT_FILE",
   "SSL_CERT_DIR",
-  TEST_RESOLVE_ENV,
 ];
 
 const PROXY_URLS = ["HTTPS_PROXY", "https_proxy"];

@@ -1,10 +1,10 @@
 import { spawn } from "node:child_process";
 import { chmod, lstat, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { locateBundledPi } from "../../hostpi/index.ts";
-import { hostSessionsDir, sessionSlug } from "../../workspace/index.ts";
+import { hostSessionsDir } from "../../workspace/index.ts";
 import { conversationText, type LlmFixture, startLlmFixture } from "./fixtures/llm-fixture.ts";
 import { listContainers } from "./harness/engine.ts";
 import { FIXTURE_HOSTS } from "./harness/names.ts";
@@ -188,7 +188,7 @@ describe.skipIf(!liveEnabled)("pi sessions in the host session directory (live)"
 
     expect(result.code).toBe(0);
     expect(result.stdout).toContain(REPLY);
-    expect(await readdir(join(sandboxOf().agentDir, "sessions"))).toEqual([sessionSlug(sandboxOf().repo)]);
+    expect(await readdir(join(sandboxOf().agentDir, "sessions"))).toEqual([basename(dirOf())]);
     expect(await sessionFiles(dirOf())).toHaveLength(1);
   });
 
@@ -231,7 +231,7 @@ describe.skipIf(!liveEnabled)("pi sessions in the host session directory (live)"
     const read = await sandboxOf().exec(`cat '${join(other, "x.jsonl")}'`);
 
     expect(listing.stdout.split("\n").filter((name) => name !== "" && name !== "." && name !== "..")).toEqual(
-      [sessionSlug(sandboxOf().repo)],
+      [basename(dirOf())],
     );
     expect(read.code).not.toBe(0);
   });

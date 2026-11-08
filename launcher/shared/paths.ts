@@ -82,7 +82,7 @@ export const projectConfigFile = (repoRoot: string) => join(repoRoot, ".pi", "sa
 
 const moduleFolder = (moduleUrl: string) => dirname(dirname(fileURLToPath(moduleUrl)));
 
-export const isCompiled = (moduleUrl = import.meta.url) => basename(moduleFolder(moduleUrl)) === BUILD_DIR;
+const isCompiled = (moduleUrl = import.meta.url) => basename(moduleFolder(moduleUrl)) === BUILD_DIR;
 
 export const launcherRoot = (moduleUrl = import.meta.url) => {
   const folder = moduleFolder(moduleUrl);

@@ -5,7 +5,7 @@ const NETWORK_PREFIX = "pi-sandbox";
 
 const SHORT_REPO_HASH = 12;
 
-const PRUNABLE_NETWORK = /^pi-sandbox(?:-([0-9a-f]{12}))?$/;
+const PRUNABLE_NETWORK = /^pi-sandbox-([0-9a-f]{12})$/;
 
 export const repoNetworkName = (repoHash: string) =>
   `${NETWORK_PREFIX}-${repoHash.slice(0, SHORT_REPO_HASH)}`;
@@ -21,7 +21,7 @@ export const pruneCandidates = (names: string[], keepRepoHashes: string[]) => {
   return names.filter((name) => {
     const match = PRUNABLE_NETWORK.exec(name);
 
-    return match !== null && (match[1] === undefined || !kept.has(match[1]));
+    return match !== null && !kept.has(match[1] ?? "");
   });
 };
 

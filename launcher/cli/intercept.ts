@@ -1,34 +1,13 @@
 import { realpath } from "node:fs/promises";
-import { join, relative, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { findRepoContainer } from "../container/index.ts";
-import {
-  type HostPi,
-  mcpLoginServer,
-  oneServerDir,
-  prepareMcpLogin,
-  writeBackPackageChange,
-} from "../hostpi/index.ts";
-import { type PackageRequest, packageChangeFor, readVolumeSettings } from "../provision/index.ts";
-import { expandHome, GUEST_PATHS, isWithin, LauncherError } from "../shared/index.ts";
+import { type HostPi, mcpLoginServer, oneServerDir, prepareMcpLogin } from "../hostpi/index.ts";
+import { expandHome, isWithin, LauncherError } from "../shared/index.ts";
+import { mountedGitDirs } from "../workspace/index.ts";
 import { type CliDeps, hostAgentDirOf, writeLine } from "./deps.ts";
 import { deriveVaultServers } from "./derive.ts";
-import {
-  interactiveCommand,
-  nearbyRoots,
-  resolveJobPi,
-  resolveShellPi,
-  type ShellPi,
-  sandboxRoots,
-} from "./host-pi.ts";
-import {
-  type LaunchContext,
-  openBackend,
-  openContext,
-  openSandboxContext,
-  runSandboxPi,
-  type Sandbox,
-  withSandbox,
-} from "./launch.ts";
+import { interactiveCommand, nearbyRoots, resolveJobPi, resolveShellPi, type ShellPi } from "./host-pi.ts";
+import { type LaunchContext, openBackend, openContext } from "./launch.ts";
 import { syncSandboxMcpAuth } from "./mcp-auth-sync.ts";
 
 const SELF_UPDATE_HINT = "update it with npm install -g pi-extensions-mz";
@@ -36,8 +15,6 @@ const SELF_UPDATE_HINT = "update it with npm install -g pi-extensions-mz";
 const SELF_UPDATE = `pi follows the launcher; ${SELF_UPDATE_HINT}`;
 
 const LOCAL_FLAGS = ["-l", "--local"];
-
-const LOCAL_SOURCE = /^(\/|\.|~)/;
 
 const piOnHost = async (deps: CliDeps) => {
   const pi = await resolveJobPi(deps);
@@ -62,115 +39,30 @@ const runOnHost = async (
   return deps.runner.spawnInteractive(file, [...prefix, ...args], options);
 };
 
-const localPathOf = (deps: CliDeps, context: LaunchContext, source: string) =>
-  resolve(context.workspace.cwd, expandHome(source, deps.home));
+const LOCAL_SOURCE = /^(\/|\.|~)/;
 
-const repositoryRoots = (context: LaunchContext) =>
-  Promise.all(
-    [context.workspace.repoRoot, context.workspace.gitCommonDir]
-      .flatMap((root) => root ?? [])
-      .map((root) => realpath(root).catch(() => root)),
-  );
+const realOf = (path: string) => realpath(path).catch(() => path);
 
-const isInRepository = async (context: LaunchContext, path: string) => {
-  const real = await realpath(path).catch(() => path);
-  const roots = await repositoryRoots(context);
+const inRepository = async (deps: CliDeps, source: string) => {
+  const context = await openContext(deps, { lenient: true });
+  const path = resolve(context.workspace.cwd, expandHome(source, deps.home));
+  const candidates = [path, await realOf(path)];
+  const roots = await Promise.all(mountedGitDirs(context.workspace).map(realOf));
 
-  return roots.some((root) => isWithin(path, root) || isWithin(real, root));
+  return roots.some((root) => candidates.some((candidate) => isWithin(candidate, root)));
 };
 
-const localRefusal = async (deps: CliDeps, context: LaunchContext, request: PackageRequest, file: string) => {
-  const path = localPathOf(deps, context, request.source);
-
-  if (!sandboxRoots(deps, context).some((root) => isWithin(path, root))) {
-    return `${request.source} is a path inside the sandbox, ${file} was left as it is`;
-  }
-
-  return request.kind === "install" && (await isInRepository(context, path))
-    ? `${request.source} lies in the repository, which the sandbox can rewrite; installed in the sandbox only, ${file} was left as it is`
-    : undefined;
-};
-
-const sourceForms = (deps: CliDeps, context: LaunchContext, hostAgentDir: string, source: string) => {
-  if (!LOCAL_SOURCE.test(source)) {
-    return { stored: source, written: source };
-  }
-
-  const path = localPathOf(deps, context, source);
-
-  return {
-    stored: relative(GUEST_PATHS.agentDir, path) || ".",
-    written: relative(hostAgentDir, path) || ".",
-  };
-};
-
-const refusalFor = (deps: CliDeps, context: LaunchContext, request: PackageRequest, file: string) =>
-  LOCAL_SOURCE.test(request.source) ? localRefusal(deps, context, request, file) : undefined;
-
-const writeBack = async (
-  deps: CliDeps,
-  context: LaunchContext,
-  sandbox: Sandbox,
-  request: PackageRequest,
-  before: Awaited<ReturnType<typeof readVolumeSettings>>,
-) => {
-  const hostAgentDir = sandbox.host.hostAgentDir;
-  const forms = sourceForms(deps, context, hostAgentDir, request.source);
-  const change = packageChangeFor(before, await readVolumeSettings(sandbox.backend, sandbox.containerId), {
-    kind: request.kind,
-    source: forms.stored,
-  });
-
-  if (change === undefined) {
-    return;
-  }
-
-  const file = join(hostAgentDir, "settings.json");
-
-  if (change.kind === "mismatch") {
+const packageCommand = async (deps: CliDeps, argv: string[], source: string) => {
+  if (argv[0] === "install" && LOCAL_SOURCE.test(source) && (await inRepository(deps, source))) {
     writeLine(
       deps.stderr,
-      `pi-sandbox: the sandbox recorded ${change.recorded} instead of ${forms.stored}; ${file} was left as it is`,
+      `pi-sandbox: ${source} lies in the repository, which the sandbox can rewrite; not installed on the host`,
     );
 
-    return;
+    return 1;
   }
 
-  const refusal = await refusalFor(deps, context, request, file);
-
-  if (refusal !== undefined) {
-    writeLine(deps.stderr, `pi-sandbox: ${refusal}`);
-
-    return;
-  }
-
-  const { changed } = await writeBackPackageChange({
-    hostAgentDir,
-    source: forms.written,
-    kind: change.kind,
-  });
-
-  if (changed) {
-    writeLine(
-      deps.stderr,
-      `pi-sandbox: ${change.kind === "install" ? "added" : "removed"} ${forms.written} in ${file}`,
-    );
-  }
-};
-
-const packageCommand = async (deps: CliDeps, argv: string[], request: PackageRequest) => {
-  const { context, backend } = await openSandboxContext(deps);
-
-  return withSandbox(deps, context, backend, async (sandbox) => {
-    const before = await readVolumeSettings(backend, sandbox.containerId);
-    const code = await runSandboxPi(deps, context, sandbox, argv);
-
-    if (code === 0) {
-      await writeBack(deps, context, sandbox, request, before);
-    }
-
-    return code;
-  });
+  return runOnHost(deps, argv, { cwd: deps.cwd });
 };
 
 const confirmProjectServer = (deps: CliDeps, name: string) => () =>
@@ -320,7 +212,7 @@ export const intercept = (argv: string[], deps: CliDeps): Promise<number> | numb
   if (command === "install" || command === "remove") {
     const source = packageSource(rest);
 
-    return source === undefined ? undefined : packageCommand(deps, argv, { kind: command, source });
+    return source === undefined ? undefined : packageCommand(deps, argv, source);
   }
 
   if (command === "mcp") {

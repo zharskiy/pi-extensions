@@ -67,13 +67,10 @@ const writtenMcpAuth = (execs: FakeExec[]) =>
     .filter(isMcpAuthWrite)
     .map((exec) => JSON.parse(stdinOf(exec).toString("utf8")) as Record<string, unknown>);
 
-const renderedMcp = (execs: FakeExec[]) => {
-  const texts = execs
-    .map((exec) => stdinOf(exec).toString("utf8"))
-    .filter((text) => text.includes('"mcpServers"'));
-
-  return JSON.parse(texts.at(-1) ?? "{}") as { mcpServers?: Record<string, Record<string, unknown>> };
-};
+const renderedMcp = async (harness: Parameters<typeof renderDirOf>[0]) =>
+  JSON.parse(await readFile(join(renderDirOf(harness), "mcp.json"), "utf8")) as {
+    mcpServers?: Record<string, Record<string, unknown>>;
+  };
 
 const authorizationOf = (server: Record<string, unknown> | undefined) =>
   String((server?.headers as Record<string, string> | undefined)?.Authorization);
@@ -83,10 +80,10 @@ const tokensOf = (written: Record<string, unknown> | undefined) =>
 
 describe("mcp token vault wiring", () => {
   it("discovers the authorization server at launch on the host and hands its hosts to the proxy", async () => {
-    const { fake, harness } = await launchWith({ stdout: JSON.stringify(DISCOVERED) });
+    const { harness } = await launchWith({ stdout: JSON.stringify(DISCOVERED) });
     const discovery = harness.calls.find(isDiscovery);
     const dynamic = await repoDynamicOf(harness);
-    const docs = renderedMcp(fake.execs).mcpServers?.docs;
+    const docs = (await renderedMcp(harness)).mcpServers?.docs;
 
     expect(JSON.parse(String(discovery?.options.input))).toEqual({ url: DOCS_URL });
     expect(dynamic?.vault?.map((server) => [server.server, server.discovery.hosts])).toEqual([
@@ -101,9 +98,9 @@ describe("mcp token vault wiring", () => {
   });
 
   it("keeps a server whose discovery failed in header mode for the launch and says why", async () => {
-    const { fake, harness } = await launchWith({ code: 1, stderr: "no authorization server metadata\n" });
+    const { harness } = await launchWith({ code: 1, stderr: "no authorization server metadata\n" });
     const dynamic = await repoDynamicOf(harness);
-    const docs = renderedMcp(fake.execs).mcpServers?.docs;
+    const docs = (await renderedMcp(harness)).mcpServers?.docs;
 
     expect(dynamic?.vault).toEqual([]);
     expect(authorizationOf(docs)).toMatch(/^Bearer pi-sandbox-/);
@@ -157,7 +154,7 @@ describe("mcp token vault wiring", () => {
       { credentials: { vault: { enabled: false } } },
     );
     const dynamic = await repoDynamicOf(harness);
-    const docs = renderedMcp(fake.execs).mcpServers?.docs;
+    const docs = (await renderedMcp(harness)).mcpServers?.docs;
 
     expect(harness.calls.some(isDiscovery)).toBe(false);
     expect(dynamic?.vault).toEqual([]);

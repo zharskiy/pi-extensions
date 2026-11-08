@@ -3,7 +3,7 @@ import { connect as tlsConnect } from "node:tls";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { addGrant } from "../../grants/index.ts";
 import { createDialer } from "../../proxy/dial.ts";
-import { createStateDir, removeDir, startTestProxy, type TestProxy, waitFor } from "./harness.ts";
+import { createStateDir, removeDir, resolveTo, startTestProxy, type TestProxy, waitFor } from "./harness.ts";
 import { openConnect, readRest } from "./proxy-client.ts";
 
 const REPO = "1".repeat(64);
@@ -168,7 +168,7 @@ describe("upstream that never accepts the connection", () => {
       stateDir: local.stateDir,
       policy: { allow: ["slow.test"] },
       privateHosts: ["slow.test"],
-      dial: createDialer({ overrides: new Map([["slow.test", "192.0.2.1"]]), connectTimeoutMs: 200 }),
+      dial: createDialer({ resolve: resolveTo({ "slow.test": "192.0.2.1" }), connectTimeoutMs: 200 }),
     });
   });
 

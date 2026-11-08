@@ -49,14 +49,6 @@ export interface DerivedSandboxPi {
   vault: VaultServer[];
 }
 
-export type PackageChangeKind = "install" | "remove";
-
-export interface PackageChange {
-  hostAgentDir: string;
-  source: string;
-  kind: PackageChangeKind;
-}
-
 export interface BundledPi {
   command: string[];
   version: string;

@@ -42,7 +42,6 @@ const startProxy = async (deps: CliDeps, context: LaunchContext, host: HostSide)
 };
 
 const dynamicOf = (host: HostSide, tokenHash: string): ProxyDynamic => ({
-  version: 1,
   rules: host.derived.rules,
   derivedHosts: host.derived.hosts,
   vault: host.derived.vault,

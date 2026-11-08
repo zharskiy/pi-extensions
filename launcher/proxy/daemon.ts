@@ -23,7 +23,6 @@ import { createProxyRuntime } from "./runtime.ts";
 import { createSecretResolver } from "./secrets/index.ts";
 import { startProxyServer } from "./server.ts";
 import { proxyPolicyHash, proxySettings } from "./settings.ts";
-import { testResolveOverrides } from "./test-resolve.ts";
 import { openLauncherCa } from "./tls-ca.ts";
 import { createVault } from "./vault/index.ts";
 
@@ -92,8 +91,6 @@ const run = async (args: ReturnType<typeof parseDaemonArgs>) => {
   const runner = createProcessRunner({ baseEnv: { ...minimalEnv(process.env), ...parentEnv } });
   const ca = await openLauncherCa({ stateDir: args.stateDir, runner });
 
-  await ca.pruneLeaves();
-
   const runtime = createProxyRuntime({
     stateDir: args.stateDir,
     policyHash,
@@ -127,10 +124,7 @@ const run = async (args: ReturnType<typeof parseDaemonArgs>) => {
     privateHosts: settings.privateHosts,
     ca,
     log: log.write,
-    dial: createDialer({
-      parent: parentRouteFor(settings.parentProxy, parentEnv, resolver),
-      overrides: testResolveOverrides(process.env),
-    }),
+    dial: createDialer({ parent: parentRouteFor(settings.parentProxy, parentEnv, resolver) }),
     upstreamCa: await upstreamTrust(args.stateDir, settings.extraCa.length > 0),
     vault,
     onControl: secrets.accept,

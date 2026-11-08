@@ -23,7 +23,7 @@ export interface ChatRequest {
   tools?: Array<{ function: { name: string } }>;
 }
 
-export type Reply = { text: string } | { tool: { name: string; arguments: Record<string, unknown> } };
+type Reply = { text: string } | { tool: { name: string; arguments: Record<string, unknown> } };
 
 export type Script = (request: ChatRequest) => Reply | Promise<Reply>;
 

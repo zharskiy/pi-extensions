@@ -130,20 +130,6 @@ describe("pi [args]", () => {
     });
   });
 
-  it("reuses the packed extensions tarball while the version and HEAD are unchanged", async () => {
-    const fake = createFakeBackend();
-    const harness = await createHarness({ backend: () => fake.backend });
-
-    await run([], harness.deps);
-
-    await run(["sandbox", "reset"], harness.deps);
-
-    await run([], harness.deps);
-
-    expect(occurrences(harness.stderr(), PREPARING)).toBe(2);
-    expect(harness.calls.filter((call) => call.file === "npm")).toHaveLength(1);
-  });
-
   it("creates the container from the built image id and keeps the reference in a label", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });

@@ -170,7 +170,7 @@ stop_proxies() {
   stop_proxies "$@"
 }
 
-stop_proxies "$state_dir/proxy.json" "$state_dir"/proxy/*/proxy.json
+stop_proxies "$state_dir"/proxy/*/proxy.json
 
 if [ "$stopped_proxies" -eq 0 ]; then
   echo "proxy: none running"

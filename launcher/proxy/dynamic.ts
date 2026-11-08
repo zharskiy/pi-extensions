@@ -21,13 +21,10 @@ export interface DynamicSection {
 }
 
 export interface ProxyDynamic extends DynamicSection {
-  version: 1;
-  tokenHash?: string;
+  tokenHash: string;
 }
 
 export interface StoredDynamic {
-  version: 1;
-  shared: DynamicSection;
   repos: Record<string, DynamicSection>;
 }
 
@@ -69,7 +66,7 @@ const isVaultServer = (value: unknown): value is VaultServer => {
 
 const emptySection = (): DynamicSection => ({ rules: [], derivedHosts: [] });
 
-export const emptyDynamic = (): StoredDynamic => ({ version: 1, shared: emptySection(), repos: {} });
+export const emptyDynamic = (): StoredDynamic => ({ repos: {} });
 
 const parseSection = (value: unknown): DynamicSection => {
   if (!isJsonObject(value)) {
@@ -93,9 +90,7 @@ const parseRepos = (value: unknown) =>
     : {};
 
 export const parseDynamic = (value: unknown): StoredDynamic =>
-  isJsonObject(value) && value.version === 1
-    ? { version: 1, shared: parseSection(value.shared), repos: parseRepos(value.repos) }
-    : emptyDynamic();
+  isJsonObject(value) ? { repos: parseRepos(value.repos) } : emptyDynamic();
 
 const sectionOf = (dynamic: ProxyDynamic): DynamicSection => ({
   rules: dynamic.rules,
@@ -124,12 +119,7 @@ const storedWith = async (
   const written = dynamic.tokenHash;
   const live = new Set(Object.keys(await tokenFileHashes(files.tokensDir)));
   const kept = Object.entries(current.repos).filter(([hash]) => live.has(hash) && hash !== written);
-  const repos = Object.fromEntries(written === undefined ? kept : [...kept, [written, sectionOf(dynamic)]]);
-  const stored: StoredDynamic = {
-    version: 1,
-    shared: written === undefined ? sectionOf(dynamic) : current.shared,
-    repos,
-  };
+  const stored: StoredDynamic = { repos: Object.fromEntries([...kept, [written, sectionOf(dynamic)]]) };
 
   return stored;
 };

@@ -63,7 +63,7 @@ const RELAY_ADDRESS = "10.89.0.2:3128";
 
 const SHORT_REPO_HASH = 12;
 
-const PRUNABLE_NETWORK = /^pi-sandbox(?:-([0-9a-f]{12}))?$/;
+const PRUNABLE_NETWORK = /^pi-sandbox-([0-9a-f]{12})$/;
 
 const RESET_HINT = "run pi sandbox reset";
 
@@ -397,7 +397,7 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
           (entry) => entry.spec?.network.kind === "internal" && entry.spec.network.name === name,
         );
 
-        return match !== null && !attached && (match[1] === undefined || !kept.has(match[1]));
+        return match !== null && !attached && !kept.has(match[1] ?? "");
       });
 
       removed.forEach((name) => {

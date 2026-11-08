@@ -4,7 +4,7 @@ import { createDialer } from "../../proxy/dial.ts";
 import type { SecretResolver, SecretResult } from "../../proxy/secrets/index.ts";
 import type { LauncherCa } from "../../proxy/tls-ca.ts";
 import { readVaultStore, type VaultEntry, writeVaultEntry } from "../../shared/index.ts";
-import { closeServer, createStateDir, openCa, removeDir } from "./harness.ts";
+import { closeServer, createStateDir, openCa, removeDir, resolveTo } from "./harness.ts";
 import { requestThrough } from "./proxy-client.ts";
 import {
   exchangeForm,
@@ -578,7 +578,7 @@ describe("vault host behind a private address", () => {
       ca: shared.ca,
       upstream: shared.upstream,
       resolver,
-      dial: createDialer({ overrides: new Map([["auth.test", "10.0.0.5"]]) }),
+      dial: createDialer({ resolve: resolveTo({ "auth.test": "10.0.0.5" }) }),
     });
     const reply = await postThrough(local, "auth.test", "/token", "grant_type=client_credentials");
 

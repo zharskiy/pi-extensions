@@ -51,12 +51,11 @@ describe("stateLayout", () => {
     expect(layout.sessionsOf("r1")).toBe("/state/sessions/r1");
     expect(layout.mcpAuthServer("docs")).toBe("/state/mcp-auth/servers/docs.json");
     expect(layout.providerHosts("1.5.0")).toBe("/state/provider-hosts/1.5.0.json");
-    expect(layout.proxyDynamic("p1")).toBe("/state/proxy/p1/dynamic.json");
-    expect(layout.proxyRepoToken("p1", "r1")).toBe("/state/proxy/p1/tokens/r1");
+    expect(layout.proxyInstance("p1").dynamic).toBe("/state/proxy/p1/dynamic.json");
+    expect(layout.proxyInstance("p1").repoToken("r1")).toBe("/state/proxy/p1/tokens/r1");
     expect(layout.ca).toBe("/state/ca");
     expect(layout.extraPem).toBe("/state/ca/extra.pem");
     expect(layout.imageRecord).toBe("/state/image.json");
-    expect(layout.pack).toBe("/state/pack");
     expect(layout.wanted("k1")).toBe("/state/wanted/k1.json");
   });
 

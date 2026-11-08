@@ -4,12 +4,12 @@ import { createServer as createNetServer } from "node:net";
 import { createSecureContext } from "node:tls";
 import type { CredentialRule } from "../../config/index.ts";
 import type { Dialer } from "../../proxy/dial.ts";
-import { writeProxyDynamic } from "../../proxy/dynamic.ts";
+import { repoProxyToken, writeProxyDynamic } from "../../proxy/dynamic.ts";
 import { createProxyRuntime } from "../../proxy/runtime.ts";
 import type { SecretResolver } from "../../proxy/secrets/index.ts";
 import type { LauncherCa } from "../../proxy/tls-ca.ts";
 import { createVault, type VaultHook } from "../../proxy/vault/index.ts";
-import { type VaultServer, vaultPlaceholders } from "../../shared/index.ts";
+import { sha256Hex, type VaultServer, vaultPlaceholders } from "../../shared/index.ts";
 import { createFakeRunner } from "../support/fake-runner.ts";
 import { listen, POLICY_HASH, portOf, startTestProxy, type TestProxy } from "./harness.ts";
 import { readBody, requestThrough } from "./proxy-client.ts";
@@ -150,12 +150,16 @@ export interface VaultProxyOptions {
 }
 
 export const startVaultProxy = async (options: VaultProxyOptions): Promise<VaultProxy> => {
-  await writeProxyDynamic(options.stateDir, POLICY_HASH, {
-    version: 1,
-    rules: [accessRule],
-    derivedHosts: [],
-    vault: options.servers ?? [vaultServer()],
-  });
+  await Promise.all(
+    [REPO, OTHER_REPO].map(async (repoHash) =>
+      writeProxyDynamic(options.stateDir, POLICY_HASH, {
+        rules: [accessRule],
+        derivedHosts: [],
+        vault: options.servers ?? [vaultServer()],
+        tokenHash: sha256Hex(await repoProxyToken(options.stateDir, POLICY_HASH, repoHash)),
+      }),
+    ),
+  );
 
   const runtime = createProxyRuntime({
     stateDir: options.stateDir,

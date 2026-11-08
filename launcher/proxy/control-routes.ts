@@ -47,15 +47,15 @@ const readBody = async (request: IncomingMessage) => {
 const isStringMap = (value: unknown): value is Record<string, string> =>
   isJsonObject(value) && Object.values(value).every((entry) => typeof entry === "string");
 
-const tokenHashOf = (value: unknown) =>
-  typeof value === "string" && TOKEN_HASH.test(value) ? { repoTokenHash: value } : {};
-
 const parseControlMessage = (text: string | undefined): ControlMessage | undefined => {
   try {
     const message = JSON.parse(text ?? "") as { type?: unknown; secrets?: unknown; repoTokenHash?: unknown };
 
-    return message.type === "env-secrets" && isStringMap(message.secrets)
-      ? { type: "env-secrets", secrets: message.secrets, ...tokenHashOf(message.repoTokenHash) }
+    return message.type === "env-secrets" &&
+      isStringMap(message.secrets) &&
+      typeof message.repoTokenHash === "string" &&
+      TOKEN_HASH.test(message.repoTokenHash)
+      ? { type: "env-secrets", secrets: message.secrets, repoTokenHash: message.repoTokenHash }
       : undefined;
   } catch {
     return undefined;
