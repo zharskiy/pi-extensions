@@ -17,7 +17,7 @@ pi-extensions/
 │   ├── framework/           fakes, harnesses, pi/ (real pi), live/, eval-runs/
 │   └── evals/               prompt-quality evals, local only
 ├── future-plans/        research and specs for work not started (sandbox-services/: the spec for sidecar services such as Postgres and Redis next to the sandbox)
-├── researches/          research notes: sandbox-approaches/ (README.md, research.md) compares the sandboxes of other coding agents and asks whether the launcher is overkill
+├── researches/          research notes: sandbox-approaches/ (README.md, research.md) compares the sandboxes of other coding agents and asks whether the launcher is overkill; openshell/ (README.md, research.md) asks whether NVIDIA OpenShell could replace the launcher with the same UX
 ├── .github/workflows/   ci.yml
 ├── README.md  AGENTS.md  ARCHITECTURE.md  STRUCTURE.md  LICENSE
 └── package.json  tsconfig.json  biome.json  knip.json  vitest.config.ts
