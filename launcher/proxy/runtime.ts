@@ -2,7 +2,7 @@ import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { authorityOf, type CredentialRule, TLS_PORT } from "../config/index.ts";
 import { activeGrants, type Grant, readGrants } from "../grants/index.ts";
-import { readJsonObject, sha256Hex, stateLayout, type VaultServer } from "../shared/index.ts";
+import { readJsonObject, sha256Hex, stateLayout } from "../shared/index.ts";
 import {
   type DynamicSection,
   emptyDynamic,
@@ -17,7 +17,6 @@ export interface ProxyRuntime {
   liveRepos(): Promise<Set<string>>;
   extras(repoHash: string): Promise<string[]>;
   rules(repoHash?: string): Promise<CredentialRule[]>;
-  vault(repoHash?: string): Promise<VaultServer[]>;
 }
 
 export interface RuntimeOptions {
@@ -71,12 +70,6 @@ const stampCached = <T>(stampNow: () => Promise<string>, load: () => Promise<T>,
   };
 };
 
-const vaultHosts = (servers: VaultServer[]) => servers.flatMap((server) => server.discovery.hosts);
-
-const uniqueServers = (servers: VaultServer[]) => [
-  ...new Map(servers.map((server) => [`${server.server}|${server.url}`, server])).values(),
-];
-
 const ruleKey = (rule: CredentialRule) =>
   `${rule.id}|${rule.host.toLowerCase()}|${rule.port ?? TLS_PORT}|${rule.pathPrefix ?? ""}`;
 
@@ -90,9 +83,6 @@ const visibleTo = (sections: OwnedSection[], repoHash: string | undefined) =>
   sections
     .filter((entry) => repoHash === undefined || entry.owner === repoHash)
     .map((entry) => entry.section);
-
-const serversOf = (sections: DynamicSection[]) =>
-  uniqueServers(sections.flatMap((section) => section.vault ?? []));
 
 export const createProxyRuntime = (options: RuntimeOptions): ProxyRuntime => {
   const layout = stateLayout(options.stateDir);
@@ -136,14 +126,11 @@ export const createProxyRuntime = (options: RuntimeOptions): ProxyRuntime => {
       ? activeGrants(await grants(), repoHash).map((grant) => authorityOf(grant.host, grant.port))
       : [];
 
-  const vault = async (repoHash?: string) => serversOf(visibleTo(await ownedSections(), repoHash));
-
   const extras = async (repoHash: string) => {
     const sections = await ownedSections();
     const derived = sections.flatMap((entry) => entry.section.derivedHosts);
-    const hosts = vaultHosts(serversOf(visibleTo(sections, repoHash)));
 
-    return [...new Set([...derived, ...hosts]), ...(await grantEntries(repoHash))];
+    return [...new Set(derived), ...(await grantEntries(repoHash))];
   };
 
   const rules = async (repoHash?: string) =>
@@ -152,5 +139,5 @@ export const createProxyRuntime = (options: RuntimeOptions): ProxyRuntime => {
       visibleTo(await ownedSections(), repoHash).flatMap((section) => section.rules),
     );
 
-  return { repoOf, repoOfTokenHash, liveRepos, extras, rules, vault };
+  return { repoOf, repoOfTokenHash, liveRepos, extras, rules };
 };

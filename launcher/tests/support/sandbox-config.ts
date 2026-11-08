@@ -5,7 +5,7 @@ type ConfigOverrides = Omit<Partial<SandboxConfig>, "mounts"> & { mounts?: Parti
 export const sandboxConfig = ({ mounts, ...overrides }: ConfigOverrides = {}): SandboxConfig => ({
   fallback: "host",
   image: { reference: "ghcr.io/zharskiy/pi-sandbox:0.4.0" },
-  credentials: { rules: [], derive: { enabled: true }, vault: { enabled: true } },
+  credentials: { rules: [], derive: { enabled: true } },
   egress: {
     allow: ["registry.npmjs.org"],
     deny: [],

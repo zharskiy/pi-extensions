@@ -34,8 +34,6 @@ export const OFFLINE_PROBE = ["printenv", "PI_OFFLINE"];
 
 export const MCP_LIST_PROBE = ["pi", "mcp", "list"];
 
-export const SHIM_PROBE = ["xdg-open", "--pi-sandbox-check"];
-
 const execText = (target: ProbeTarget, command: string[]) =>
   execCapture(target.backend, {
     containerId: target.containerId,
@@ -111,16 +109,6 @@ export const checkSettingsSweep = async (target: ProbeTarget) => {
   return host === undefined
     ? passed("no settings.json package carries a credential in its URL")
     : failed(`settings.json package ${host} carries a credential in its URL`);
-};
-
-export const checkBrowserShim = async (target: ProbeTarget) => {
-  const { code, stdout, stderr } = await execText(target, SHIM_PROBE);
-
-  return code === 0
-    ? passed("xdg-open reaches the proxy's /healthz")
-    : failed(
-        `xdg-open --pi-sandbox-check exited ${code}: ${lastLine(stderr) ?? lastLine(stdout) ?? "no output"}`,
-      );
 };
 
 const urlOf = (rule: CredentialRule) => {

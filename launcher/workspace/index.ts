@@ -16,7 +16,6 @@ export { assertHostSessionsDir, assertSafeWorkspace } from "./guard.ts";
 export { resolveExtraMounts } from "./mounts.ts";
 export {
   type HostSessions,
-  hostAgentDir,
   hostSessionsChoice,
   hostSessionsDir,
   sessionsSwitchNotice,

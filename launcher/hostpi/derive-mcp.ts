@@ -1,27 +1,15 @@
 import { join } from "node:path";
-import {
-  isJsonObject,
-  isSecretName,
-  type VaultDiscovered,
-  type VaultServer,
-  vaultPlaceholders,
-} from "../shared/index.ts";
+import { isJsonObject, isSecretName } from "../shared/index.ts";
 import { type Endpoint, endpointOf } from "./endpoints.ts";
 import { deriveHeaders, hasAuthorizationHeader } from "./headers.ts";
 import { objectOr } from "./json.ts";
 import { type DeriveContext, mergeSections, placeholderOf, rulesFor, type Section } from "./rules.ts";
-import type { DeriveVault, JsonObject } from "./types.ts";
+import type { JsonObject } from "./types.ts";
 import { hasQueryCredential, hasUrlPassword, hasUrlUserinfo, stripUserinfo } from "./userinfo.ts";
-import { vaultCandidate } from "./vault.ts";
 
-type ServerSection = Section<[string, unknown]> & { vault?: VaultServer; dropped?: boolean };
+type ServerSection = Section<[string, unknown]> & { dropped?: boolean };
 
-export interface McpDeriveOptions {
-  signedIn: string[];
-  vault?: DeriveVault;
-}
-
-export type McpSection = Section<JsonObject> & { vault: VaultServer[] };
+export type McpSection = Section<JsonObject>;
 
 const isHttpServer = (server: JsonObject) => typeof server.url === "string";
 
@@ -32,52 +20,18 @@ const oauthSection = (
   name: string,
   url: string,
   endpoints: Endpoint[],
-  signedIn: string[],
 ): Section<JsonObject> => {
   const identity = `mcp:${name}:oauth`;
   const placeholder = placeholderOf(context, identity);
-  const loginNotice = signedIn.includes(name) ? [] : [`mcp ${name}: sign in with pi mcp login ${name}`];
 
   return {
     value: { Authorization: `Bearer ${placeholder}` },
     rules: rulesFor(identity, endpoints, { placeholder, secret: { mcpOAuth: { server: name, url } } }),
-    notices: loginNotice,
+    notices: [],
   };
 };
 
-const vaultDiscoveryOf = (name: string, server: JsonObject, options: McpDeriveOptions) => {
-  const candidate = options.vault?.enabled === true ? vaultCandidate(name, server) : undefined;
-  const discovery = candidate === undefined ? undefined : options.vault?.discovery[name];
-
-  return discovery?.ok === true && discovery.url === candidate?.url ? { candidate, discovery } : undefined;
-};
-
-const vaultServerOf = (
-  context: DeriveContext,
-  name: string,
-  url: string,
-  oauth: VaultServer["oauth"],
-  discovery: VaultDiscovered,
-): VaultServer => ({
-  server: name,
-  url,
-  ruleId: `derived:mcp:${name}:oauth`,
-  ...vaultPlaceholders(context.salt, name),
-  ...(oauth === undefined ? {} : { oauth }),
-  discovery,
-});
-
-const vaultNotice = (name: string, signedIn: string[]) =>
-  signedIn.includes(name)
-    ? []
-    : [`mcp ${name}: sign in from /mcp in pi, or with pi mcp login ${name} in the shell`];
-
-const httpServer = (
-  context: DeriveContext,
-  name: string,
-  server: JsonObject,
-  options: McpDeriveOptions,
-): ServerSection => {
+const httpServer = (context: DeriveContext, name: string, server: JsonObject): ServerSection => {
   const stripped = stripUserinfo(
     {
       label: `mcp ${name}`,
@@ -118,36 +72,10 @@ const httpServer = (
     };
   }
 
-  const vault = vaultDiscoveryOf(name, server, options);
-
-  if (vault !== undefined) {
-    const identity = `mcp:${name}:oauth`;
-    const vaultServer = vaultServerOf(
-      context,
-      name,
-      vault.candidate.url,
-      vault.candidate.oauth,
-      vault.discovery,
-    );
-    const body = { placeholder: vaultServer.access, secret: { mcpOAuth: { server: name, url } } };
-    const definition = {
-      ...rest,
-      ...(headers.value === undefined ? {} : { headers: headers.value }),
-      ...(vaultServer.oauth === undefined ? {} : { oauth: vaultServer.oauth }),
-    };
-
-    return {
-      value: [name, definition],
-      rules: [...stripped.rules, ...headers.rules, ...rulesFor(identity, endpoints, body)],
-      notices: [...stripped.notices, ...headers.notices, ...vaultNotice(name, options.signedIn)],
-      vault: vaultServer,
-    };
-  }
-
   const bearer =
     hasAuthorizationHeader(headers.value) || hasUrlPassword(server.url)
       ? undefined
-      : oauthSection(context, name, url, endpoints, options.signedIn);
+      : oauthSection(context, name, url, endpoints);
 
   return {
     value: [
@@ -233,12 +161,7 @@ const stdioServer = (context: DeriveContext, name: string, original: JsonObject)
   };
 };
 
-const serverSection = (
-  context: DeriveContext,
-  name: string,
-  server: unknown,
-  options: McpDeriveOptions,
-): ServerSection => {
+const serverSection = (context: DeriveContext, name: string, server: unknown): ServerSection => {
   if (!isJsonObject(server)) {
     return { value: [name, server], rules: [], notices: [] };
   }
@@ -253,7 +176,7 @@ const serverSection = (
   }
 
   if (isHttpServer(server)) {
-    return httpServer(context, name, server, options);
+    return httpServer(context, name, server);
   }
 
   return isStdioServer(server)
@@ -261,9 +184,9 @@ const serverSection = (
     : { value: [name, server], rules: [], notices: [] };
 };
 
-export const deriveMcp = (context: DeriveContext, mcp: JsonObject, options: McpDeriveOptions): McpSection => {
+export const deriveMcp = (context: DeriveContext, mcp: JsonObject): McpSection => {
   const sections = Object.entries(objectOr(mcp.mcpServers)).map(([name, server]) =>
-    serverSection(context, name, server, options),
+    serverSection(context, name, server),
   );
   const merged = mergeSections(sections.filter((section) => section.dropped !== true));
 
@@ -271,6 +194,5 @@ export const deriveMcp = (context: DeriveContext, mcp: JsonObject, options: McpD
     value: { ...mcp, mcpServers: Object.fromEntries(merged.values) },
     notices: sections.flatMap((section) => section.notices),
     rules: merged.rules,
-    vault: sections.flatMap((section) => (section.vault === undefined ? [] : [section.vault])),
   };
 };

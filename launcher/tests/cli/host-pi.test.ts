@@ -45,7 +45,6 @@ describe("the host pi of host jobs", () => {
     expect(await run([], harness.deps)).toBe(0);
     expect(requests[0]?.piCommand).toEqual([process.execPath, managed.entry]);
     expect(requests[0]?.piVersion).toBe("1.6.0");
-    expect(requests[0]?.discoverCommand?.at(-1)).toBe(managed.packageDir);
     expect(providerScriptCall(harness)?.args[1]).toBe(managed.packageDir);
     expect(fake.builds[0]?.files.Dockerfile).toContain("ARG PI_VERSION=1.6.0");
   });

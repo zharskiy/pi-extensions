@@ -1,5 +1,3 @@
-import type { VaultDiscovered } from "../../shared/index.ts";
-
 export { tempDir, writeJson, writeText } from "../support/temp-dir.ts";
 
 export const braced = (name: string) => ["$", "{", name, "}"].join("");
@@ -98,17 +96,4 @@ export const providerHosts = () => ({
   jwt: { hosts: ["api.jwt.example", "alt.jwt.example"] },
   opaque: { hosts: ["api.opaque.example"] },
   envOnly: { hosts: ["api.envonly.example"], envVars: ["ENVONLY_API_KEY"] },
-});
-
-export const vaultDiscovery = (server: string, url: string): VaultDiscovered => ({
-  ok: true,
-  server,
-  url,
-  fetchedAt: 1_000,
-  issuer: "https://auth.vault.example/",
-  authorizationEndpoint: "https://auth.vault.example/authorize",
-  tokenEndpoint: "https://auth.vault.example/token",
-  registrationEndpoint: "https://auth.vault.example/register",
-  hosts: ["auth.vault.example"],
-  piState: { authorizationServerUrl: "https://auth.vault.example/" },
 });

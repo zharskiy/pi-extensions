@@ -178,7 +178,7 @@ describe("withFileLock", () => {
 
 describe("withDirectoryLock", () => {
   it("holds an empty directory, the lock format pi uses for the same file", async () => {
-    const lockPath = join(state.dir, "mcp-auth.json.lock");
+    const lockPath = join(state.dir, "vm.lock");
 
     const inside = await withDirectoryLock(lockPath, async () => ({
       directory: (await stat(lockPath)).isDirectory(),
@@ -190,7 +190,7 @@ describe("withDirectoryLock", () => {
   });
 
   it("waits for a directory lock that its holder keeps fresh", async () => {
-    const lockPath = join(state.dir, "mcp-auth.json.lock");
+    const lockPath = join(state.dir, "vm.lock");
 
     await mkdir(lockPath);
 
@@ -201,7 +201,7 @@ describe("withDirectoryLock", () => {
   });
 
   it("takes over a directory lock that stopped being refreshed", async () => {
-    const lockPath = join(state.dir, "mcp-auth.json.lock");
+    const lockPath = join(state.dir, "vm.lock");
 
     await mkdir(lockPath);
 
@@ -212,7 +212,7 @@ describe("withDirectoryLock", () => {
   });
 
   it("keeps a long holder's lock fresh so a short stale window does not let others in", async () => {
-    const lockPath = join(state.dir, "mcp-auth.json.lock");
+    const lockPath = join(state.dir, "vm.lock");
     const events: string[] = [];
     const long = withDirectoryLock(
       lockPath,
@@ -242,7 +242,7 @@ describe("withDirectoryLock", () => {
   });
 
   it("lets processes racing for an abandoned directory lock in one at a time", async () => {
-    const lockPath = join(state.dir, "mcp-auth.json.lock");
+    const lockPath = join(state.dir, "vm.lock");
     const log = join(state.dir, "log");
 
     await mkdir(lockPath);

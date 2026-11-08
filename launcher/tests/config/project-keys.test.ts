@@ -8,7 +8,6 @@ const REFUSED: Array<[string, unknown]> = [
     [{ id: "corp", host: "llm.corp.test", placeholder: "pi-sandbox-corp", secret: { env: "CORP_KEY" } }],
   ],
   ["credentials.derive.enabled", false],
-  ["credentials.vault.enabled", false],
   ["egress.allow", ["evil.example.test"]],
   ["egress.deny", ["paste.example.test"]],
   ["egress.privateHosts", ["git.corp.internal"]],

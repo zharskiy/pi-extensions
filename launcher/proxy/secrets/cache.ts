@@ -5,11 +5,7 @@ export interface CachedSecret {
   expiresAt?: number;
 }
 
-export interface SecretLoadOptions {
-  forced: boolean;
-}
-
-type SecretLoader = (options: SecretLoadOptions) => Promise<CachedSecret>;
+type SecretLoader = () => Promise<CachedSecret>;
 
 export interface SecretCache {
   get(key: string, load: SecretLoader): Promise<CachedSecret>;
@@ -24,7 +20,9 @@ export const createSecretCache = (now: () => number): SecretCache => {
   const isFresh = (entry: CachedSecret) => entry.expiresAt === undefined || now() < entry.expiresAt;
 
   const start = (key: string, load: SecretLoader) => async () => {
-    const entry = await load({ forced: forced.delete(key) });
+    forced.delete(key);
+
+    const entry = await load();
 
     values.set(key, entry);
 

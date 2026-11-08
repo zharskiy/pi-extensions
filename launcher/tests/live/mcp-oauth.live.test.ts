@@ -1,7 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { followRedirects } from "./fixtures/browser.ts";
 import { type McpFixture, startMcpFixture } from "./fixtures/mcp-fixture.ts";
-import { type OAuthFixture, startOAuthFixture } from "./fixtures/oauth-fixture.ts";
+import { followRedirects, type OAuthFixture, startOAuthFixture } from "./fixtures/oauth-fixture.ts";
 import { ALL_FIXTURE_HOSTS, FIXTURE_HOSTS, LOOPBACK } from "./harness/names.ts";
 import { createLiveSandbox, type LiveSandbox, liveEnabled } from "./harness/sandbox.ts";
 import { fixtureConfig, waitFor } from "./harness/scenario.ts";
@@ -15,17 +14,12 @@ const ACCESS_LIFETIME_SECONDS = Number(process.env.PI_SANDBOX_LIVE_OAUTH_LIFETIM
 
 const AUTHORIZE_URL = /https:\/\/\S+\/authorize\?\S+/;
 
-const PLACEHOLDER = /^pi-sandbox-[0-9a-f]{24}$/;
+const BEARER_PLACEHOLDER = /^Bearer pi-sandbox-[0-9a-f]{24}$/;
 
 interface RenderedServer {
   url?: string;
   headers?: Record<string, string>;
   oauth?: Record<string, unknown>;
-}
-
-interface AuthEntry {
-  serverUrl?: string;
-  tokens?: { access_token?: string };
 }
 
 const tokenSecrets = (oauth: OAuthFixture) =>
@@ -63,7 +57,7 @@ describe.skipIf(!liveEnabled)("HTTP MCP server with OAuth (live)", () => {
     await state.sandbox?.cleanup();
   }, 120_000);
 
-  it("signs in on the host through the printed authorize URL and the host callback", async () => {
+  it("signs in with the host pi's own login, which stores the tokens in the host agent dir", async () => {
     const sandbox = state.sandbox as LiveSandbox;
     const login = sandbox.pi(["mcp", "login", SERVER]);
     const exited = { done: false };
@@ -91,6 +85,10 @@ describe.skipIf(!liveEnabled)("HTTP MCP server with OAuth (live)", () => {
     expect(result.code).toBe(0);
 
     expect(state.oauth?.grants()).toEqual(["authorization_code"]);
+
+    const store = JSON.stringify(await sandbox.readAgentFile("mcp-auth.json"));
+
+    expect(store).toContain(state.oauth?.issuedAccess().at(-1));
   });
 
   it("calls the server from the container with the token the proxy injects", async () => {
@@ -105,13 +103,11 @@ describe.skipIf(!liveEnabled)("HTTP MCP server with OAuth (live)", () => {
     expect(state.mcp?.tokens().at(-1)).toBe(oauth.issuedAccess().at(-1));
   });
 
-  it("renders a vault server and keeps only placeholders in the container's mcp-auth.json", async () => {
+  it("renders the server with a placeholder Authorization and no oauth block, and the container holds no token", async () => {
     const sandbox = state.sandbox as LiveSandbox;
     const oauth = state.oauth as OAuthFixture;
-    const auth = await sandbox.exec("cat ~/.pi/agent/mcp-auth.json");
+    const auth = await sandbox.exec("cat ~/.pi/agent/mcp-auth.json 2>/dev/null || true");
     const config = await sandbox.exec("cat ~/.pi/agent/mcp.json");
-
-    expect(auth.code).toBe(0);
 
     expect(config.code).toBe(0);
 
@@ -121,19 +117,9 @@ describe.skipIf(!liveEnabled)("HTTP MCP server with OAuth (live)", () => {
 
     expect(server?.url).toBe(state.mcp?.endpoint(FIXTURE_HOSTS.oauthMcp));
 
-    expect(Object.keys(server?.headers ?? {}).map((header) => header.toLowerCase())).not.toContain(
-      "authorization",
-    );
+    expect(server?.headers?.Authorization).toMatch(BEARER_PLACEHOLDER);
 
-    Object.values(server?.oauth ?? {}).forEach((value) => {
-      expect(["string", "number", "boolean"]).toContain(typeof value);
-    });
-
-    const entry = Object.values(JSON.parse(auth.stdout) as Record<string, AuthEntry>).find(
-      (candidate) => candidate.serverUrl === server?.url,
-    );
-
-    expect(entry?.tokens?.access_token).toMatch(PLACEHOLDER);
+    expect(server?.oauth).toBeUndefined();
 
     [...oauth.issuedAccess(), ...oauth.issuedRefresh()].forEach((token) => {
       expect(auth.stdout).not.toContain(token);
@@ -142,7 +128,7 @@ describe.skipIf(!liveEnabled)("HTTP MCP server with OAuth (live)", () => {
     });
   });
 
-  it("refreshes the expired access token in the proxy", async () => {
+  it("refreshes the expired access token through the host login the proxy runs", async () => {
     const sandbox = state.sandbox as LiveSandbox;
     const oauth = state.oauth as OAuthFixture;
     const first = oauth.issuedAccess()[0];

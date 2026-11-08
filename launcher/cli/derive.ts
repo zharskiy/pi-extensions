@@ -1,20 +1,16 @@
 import { setTimeout as delay } from "node:timers/promises";
-import { type SandboxConfig, vaultEnabled } from "../config/index.ts";
+import type { SandboxConfig } from "../config/index.ts";
 import {
   type DerivedSandboxPi,
   deriveSandboxPi,
-  discoverVaultServers,
   type HostPi,
   type HostPiFiles,
   readHostPiFiles,
   readProviderHosts,
-  seedMcpAuth,
-  vaultCandidates,
 } from "../hostpi/index.ts";
 import { privateHostNotices, type TrustBundle } from "../proxy/index.ts";
 import { ensureSalt } from "../shared/index.ts";
 import { type CliDeps, hostAgentDirOf, settleAll, writeNotices } from "./deps.ts";
-import { resolveJobPi } from "./host-pi.ts";
 import type { LaunchContext } from "./launch.ts";
 
 export interface HostSide {
@@ -41,27 +37,6 @@ export const providerHostsOf = async (deps: CliDeps, stateDir: string, pi: HostP
   return readProviderHosts({ stateDir, runner: deps.runner, pi });
 };
 
-export const discoverVault = async (
-  deps: CliDeps,
-  context: LaunchContext,
-  files: HostPiFiles,
-  pi: HostPi | undefined,
-) => {
-  const candidates = vaultCandidates(files.mcp ?? {});
-
-  if (!vaultEnabled(context.effective.config) || pi === undefined || Object.keys(candidates).length === 0) {
-    return { discovery: {}, notices: [] };
-  }
-
-  return discoverVaultServers({
-    stateDir: context.stateDir,
-    runner: deps.runner,
-    pi,
-    candidates,
-    now: deps.now,
-  });
-};
-
 const deriveFor = async (
   deps: CliDeps,
   context: LaunchContext,
@@ -69,10 +44,8 @@ const deriveFor = async (
   pi: HostPi | undefined,
 ) => {
   const { config } = context.effective;
-  const [seeded, providers, vault, salt] = await settleAll([
-    seedMcpAuth({ stateDir: context.stateDir, files }),
+  const [providers, salt] = await settleAll([
     providerHostsOf(deps, context.stateDir, pi),
-    discoverVault(deps, context, files, pi),
     ensureSalt(context.stateDir),
   ]);
   const derived = deriveSandboxPi({
@@ -82,18 +55,9 @@ const deriveFor = async (
     salt,
     env: deps.env,
     derive: config.credentials.derive,
-    mcpSignedIn: seeded.signedIn,
-    vault: { enabled: vaultEnabled(config), discovery: vault.discovery },
   });
 
-  return { derived, notices: [...providers.notices, ...vault.notices, ...derived.notices] };
-};
-
-export const deriveVaultServers = async (deps: CliDeps, context: LaunchContext) => {
-  const [files, pi] = await Promise.all([readHostPiFiles(hostAgentDirOf(deps)), resolveJobPi(deps)]);
-  const { derived } = await deriveFor(deps, context, files, pi);
-
-  return derived.vault;
+  return { derived, notices: [...providers.notices, ...derived.notices] };
 };
 
 const HOST_STORE_SKIPPED =

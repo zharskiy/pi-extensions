@@ -47,7 +47,7 @@ import {
   sessionsSweeper,
   sweepForHostPi,
 } from "./host-sessions.ts";
-import { syncSandboxMcpAuth } from "./mcp-auth-sync.ts";
+import { signInMcpServers } from "./mcp-sign-in.ts";
 import { openSandboxProxy, reportDenials, type SandboxProxy } from "./sandbox-proxy.ts";
 import { beginSession, finishSession, gitGuardOf, type LaunchSession, othersLive } from "./sessions.ts";
 import { imagePiVersion, launcherVersion } from "./versions.ts";
@@ -303,10 +303,7 @@ export const prepareContainer = async (
 
   cancelled?.throwIfAborted();
 
-  await Promise.all([
-    syncAgentFiles(deps, context, backend, host, id),
-    syncSandboxMcpAuth(deps, context, { backend, containerId: id, servers: host.derived.vault }),
-  ]);
+  await syncAgentFiles(deps, context, backend, host, id);
 
   return { containerId: id, spec, image, created };
 };
@@ -360,6 +357,8 @@ const withSandbox = async (
   const sessions = hostSessionsOf(deps, context, host.files.settings);
 
   noticeHostSessions(deps, sessions);
+
+  await signInMcpServers(deps, context, host);
 
   const session = await beginSession(deps, context);
   const watch = listenFor(deps.signals ?? process, PREPARATION_SIGNALS);

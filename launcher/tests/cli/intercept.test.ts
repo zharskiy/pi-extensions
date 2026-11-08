@@ -1,10 +1,9 @@
-import { mkdir, readdir, readFile, symlink } from "node:fs/promises";
+import { mkdir, readdir, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { ExecIo, ExecSpec } from "../../backend/index.ts";
 import { run } from "../../cli/index.ts";
 import { testedPiVersion } from "../../cli/versions.ts";
-import { stateLayout } from "../../shared/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { createHarness, writeManagedPi, writePathPi } from "./harness.ts";
 
@@ -155,77 +154,43 @@ describe("pi mcp", () => {
 
     expect(call?.file).toBe(process.execPath);
     expect(call?.args.slice(1)).toEqual(["mcp", "add", "docs", "--url", "https://docs.example.test/mcp"]);
-    expect(call?.options).toEqual({ cwd: harness.cwd });
+    expect(call?.options).toEqual({ cwd: harness.cwd, env: { PI_CODING_AGENT_DIR: harness.hostAgentDir } });
   });
 
-  it("signs in on the host against a one-server helper dir with only the sanitised server", async () => {
+  it("signs in on the host with the host agent dir from an empty directory outside the repository", async () => {
     const harness = await createHarness({ backend: noBackend });
+    const runner = harness.deps.runner;
+    const seen: string[][] = [];
 
-    await harness.writeJson(join(harness.hostAgentDir, "mcp.json"), {
-      mcpServers: {
-        docs: {
-          url: "https://docs.example.test/mcp",
-          headers: { "X-Trace": "on" },
-          oauth: { clientId: "pi", scope: "!secret-command" },
-        },
-        other: { url: "https://other.example.test/mcp" },
+    harness.deps.runner = {
+      ...runner,
+      spawnInteractive: async (file, args, options) => {
+        seen.push(await readdir(options?.cwd ?? ""));
+
+        return runner.spawnInteractive(file, args, options);
       },
-    });
+    };
 
     expect(await run(["mcp", "login", "docs"], harness.deps)).toBe(0);
 
-    const helper = stateLayout(harness.stateDir).mcpAuth;
     const call = harness.calls.find((entry) => entry.interactive);
 
+    expect(seen).toEqual([[]]);
     expect(call?.args.slice(1)).toEqual(["mcp", "login", "docs"]);
-    expect(call?.options).toEqual({ cwd: helper, env: { PI_CODING_AGENT_DIR: helper } });
-    expect(JSON.parse(await readFile(join(helper, "mcp.json"), "utf8"))).toEqual({
-      mcpServers: { docs: { url: "https://docs.example.test/mcp", oauth: { clientId: "pi" } } },
-    });
+    expect(call?.options.env).toEqual({ PI_CODING_AGENT_DIR: harness.hostAgentDir });
+    expect(call?.options.cwd?.startsWith(harness.repoRoot)).toBe(false);
+    expect(await readdir(call?.options.cwd ?? "").catch(() => "removed")).toBe("removed");
   });
 
-  it("passes login flags such as --timeout to the host pi and leaves unknown flags to the sandbox", async () => {
+  it("passes login and logout with every flag to the host pi", async () => {
     const harness = await createHarness({ backend: noBackend });
-
-    await harness.writeJson(join(harness.hostAgentDir, "mcp.json"), {
-      mcpServers: { docs: { url: "https://docs.example.test/mcp" } },
-    });
 
     expect(await run(["mcp", "login", "docs", "--timeout", "30", "-l"], harness.deps)).toBe(0);
-    expect(await run(["mcp", "login", "--timeout", "45", "docs"], harness.deps)).toBe(0);
-    expect(await run(["mcp", "logout", "docs", "--local"], harness.deps)).toBe(0);
+    expect(await run(["mcp", "logout", "docs"], harness.deps)).toBe(0);
     expect(harness.calls.filter((entry) => entry.interactive).map((entry) => entry.args.slice(1))).toEqual([
-      ["mcp", "login", "docs", "--timeout", "30"],
-      ["mcp", "login", "docs", "--timeout", "45"],
+      ["mcp", "login", "docs", "--timeout", "30", "-l"],
       ["mcp", "logout", "docs"],
     ]);
-
-    await run(["mcp", "login", "docs", "--bogus"], harness.deps);
-
-    expect(harness.calls.filter((entry) => entry.interactive)).toHaveLength(3);
-  });
-
-  it("asks before signing in to a server defined only by the repository", async () => {
-    const harness = await createHarness({ backend: noBackend });
-
-    await harness.writeJson(join(harness.repoRoot, ".pi", "mcp.json"), {
-      mcpServers: { repo: { url: "https://repo.example.test/mcp" } },
-    });
-
-    expect(await run(["mcp", "login", "repo"], harness.deps)).toBe(1);
-    expect(harness.questions).toEqual([
-      expect.stringContaining("mcp repo is defined only in this repository"),
-    ]);
-    expect(harness.calls.some((entry) => entry.interactive)).toBe(false);
-
-    const confirming = await createHarness({ backend: noBackend, confirm: true });
-
-    await confirming.writeJson(join(confirming.repoRoot, ".pi", "mcp.json"), {
-      mcpServers: { repo: { url: "https://repo.example.test/mcp" } },
-    });
-
-    expect(await run(["mcp", "login", "repo"], confirming.deps)).toBe(0);
-    expect(confirming.calls.some((entry) => entry.interactive)).toBe(true);
   });
 });
 

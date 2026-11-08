@@ -6,6 +6,7 @@ import {
   type CommandRunner,
   createProcessRunner,
   ensureRandomHexFile,
+  hostAgentDir,
   isProcessAlive,
   LauncherError,
   launcherEntry,
@@ -37,7 +38,6 @@ export interface EnsureProxyOptions {
   port?: number;
   timeoutMs?: number;
   piCommand?: string[];
-  discoverCommand?: string[];
   piVersion?: string;
 }
 
@@ -293,7 +293,7 @@ const runsSamePi = async (files: InstanceFiles, options: EnsureProxyOptions) => 
     stored !== undefined &&
     stored.piVersion === options.piVersion &&
     sameList(stored.piCommand, options.piCommand ?? []) &&
-    sameList(stored.discoverCommand, options.discoverCommand ?? [])
+    stored.hostAgentDir === hostAgentDir(options.home, options.env)
   );
 };
 
@@ -316,7 +316,7 @@ const replaceInstance = async (options: EnsureProxyOptions, files: InstanceFiles
     token: await instanceToken(files),
     config: options.config,
     piCommand: options.piCommand ?? [],
-    discoverCommand: options.discoverCommand ?? [],
+    hostAgentDir: hostAgentDir(options.home, options.env),
     ...(options.piVersion === undefined ? {} : { piVersion: options.piVersion }),
     parentEnv: parentProxyEnv(options.env),
   };

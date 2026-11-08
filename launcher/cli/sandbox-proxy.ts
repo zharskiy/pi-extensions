@@ -1,5 +1,4 @@
 import { authorityOf } from "../config/index.ts";
-import { mcpDiscoverCommand } from "../hostpi/index.ts";
 import {
   type DenialRecord,
   daemonEnv,
@@ -20,8 +19,7 @@ export interface SandboxProxy {
   repoToken: string;
 }
 
-const hostPiOf = (host: HostSide) =>
-  host.pi === undefined ? {} : { discoverCommand: mcpDiscoverCommand(host.pi), piVersion: host.pi.version };
+const hostPiOf = (host: HostSide) => (host.pi === undefined ? {} : { piVersion: host.pi.version });
 
 const startProxy = async (deps: CliDeps, context: LaunchContext, host: HostSide) => {
   try {
@@ -44,7 +42,6 @@ const startProxy = async (deps: CliDeps, context: LaunchContext, host: HostSide)
 const dynamicOf = (host: HostSide, tokenHash: string): ProxyDynamic => ({
   rules: host.derived.rules,
   derivedHosts: host.derived.hosts,
-  vault: host.derived.vault,
   tokenHash,
 });
 

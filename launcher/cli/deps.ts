@@ -9,8 +9,7 @@ import type {
   ProxyInstance,
   TrustBundle,
 } from "../proxy/index.ts";
-import { type CommandRunner, LauncherError, launcherPaths } from "../shared/index.ts";
-import { hostAgentDir } from "../workspace/index.ts";
+import { type CommandRunner, hostAgentDir, LauncherError, launcherPaths } from "../shared/index.ts";
 
 interface ProxyRequest {
   config: SandboxConfig;
@@ -18,7 +17,6 @@ interface ProxyRequest {
   env: NodeJS.ProcessEnv;
   home: string;
   piCommand: string[];
-  discoverCommand?: string[];
   piVersion?: string;
 }
 

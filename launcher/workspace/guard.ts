@@ -1,7 +1,7 @@
 import { lstatSync, readdirSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { isWithin, LauncherError, launcherPaths, realOrResolvedSync } from "../shared/index.ts";
-import { hostAgentDir, sessionSlug } from "./pi-session-dir.ts";
+import { hostAgentDir, isWithin, LauncherError, launcherPaths, realOrResolvedSync } from "../shared/index.ts";
+import { sessionSlug } from "./pi-session-dir.ts";
 import type { Workspace } from "./types.ts";
 
 interface GuardContext {

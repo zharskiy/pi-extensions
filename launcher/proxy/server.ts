@@ -20,7 +20,6 @@ import type { SecretResolver } from "./secrets/index.ts";
 import { createTerminator } from "./terminate.ts";
 import type { LeafCertificate } from "./tls-ca.ts";
 import { type Connection, createTunnel } from "./tunnel.ts";
-import type { VaultHook } from "./vault/index.ts";
 
 export interface ProxyServerOptions {
   listen: { host: string; port: number };
@@ -39,7 +38,6 @@ export interface ProxyServerOptions {
   upstreamCa?: string | string[];
   helloTimeoutMs?: number;
   onControl?: (message: ControlMessage) => ControlReply | Promise<ControlReply>;
-  vault?: VaultHook;
   denialPages?: { maxNames?: number; mintsPerMinute?: number };
 }
 
@@ -105,7 +103,6 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
     },
     upstreamCa: options.upstreamCa,
     log: record,
-    vault: options.vault,
   });
   const ca = options.ca;
   const pages =
@@ -133,7 +130,6 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
     policyHash,
     denials,
     onControl: options.onControl,
-    vault: options.vault,
   });
 
   const callerOf = async (request: IncomingMessage): Promise<Caller | undefined> => {
@@ -159,8 +155,7 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
   };
 
   const isTerminated = async (host: string, port: number, repoHash: string) =>
-    isRuleHost(await options.runtime.rules(repoHash), host, port) ||
-    (await options.vault?.isVaultHost(host, port, repoHash)) === true;
+    isRuleHost(await options.runtime.rules(repoHash), host, port);
 
   const handleConnect = async (request: IncomingMessage, client: Socket, head: Buffer) => {
     const target = parseAuthority(request.url);
@@ -264,7 +259,7 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
   const port = (server.address() as AddressInfo).port;
 
   const close = async () => {
-    await options.vault?.close();
+    await options.resolver.close();
 
     terminator.close();
 

@@ -28,15 +28,13 @@ RUN test -n "${PI_VERSION}" || { echo "PI_VERSION build argument is required" >&
  && npm install --global "@earendil-works/pi-coding-agent@${PI_VERSION}" \
  && npm cache clean --force
 
-COPY xdg-open.mjs bash-env.sh /usr/local/lib/pi-sandbox/
+COPY bash-env.sh /usr/local/lib/pi-sandbox/
 
 COPY entrypoint.sh /usr/local/bin/pi-sandbox-entrypoint
 
 RUN mkdir -p /opt/pi-sandbox/render /etc/pi-sandbox \
- && chmod 0755 /usr/local/lib/pi-sandbox/xdg-open.mjs \
  && chmod 0644 /usr/local/lib/pi-sandbox/bash-env.sh \
  && sed -i '1i . /usr/local/lib/pi-sandbox/bash-env.sh' /etc/bash.bashrc \
- && ln -sf /usr/local/lib/pi-sandbox/xdg-open.mjs /usr/local/bin/xdg-open \
  && printf '#!/bin/sh\necho "pi %s is managed by the sandbox and follows the launcher"\n' "${PI_VERSION}" > /usr/local/bin/pi-sandbox-self-update \
  && chmod 0755 /usr/local/bin/pi-sandbox-entrypoint /usr/local/bin/pi-sandbox-self-update \
  && if [ -f /usr/local/share/ca-certificates/pi-sandbox-build.crt ]; then \

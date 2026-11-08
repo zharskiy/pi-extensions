@@ -2,20 +2,19 @@ import { constants } from "node:fs";
 import { access, lstat } from "node:fs/promises";
 import { connect } from "node:net";
 import type { Backend } from "../../backend/index.ts";
-import { type ParentProxy, vaultEnabled } from "../../config/index.ts";
+import type { ParentProxy } from "../../config/index.ts";
 import { failed, passed, skipped, warned } from "../../container/index.ts";
-import { type HostPi, type HostPiFiles, readHostPiFiles } from "../../hostpi/index.ts";
 import {
-  errorMessage,
-  mcpAuthKey,
-  parseJsonObject,
-  readVaultStore,
-  type VaultDiscovery,
-  type VaultEntry,
-} from "../../shared/index.ts";
+  type HostPi,
+  type HostPiFiles,
+  type McpSignIn,
+  mcpSignIns,
+  readHostPiFiles,
+} from "../../hostpi/index.ts";
+import { errorMessage, isFreshMcpToken, parseJsonObject } from "../../shared/index.ts";
 import { assertHostSessionsDir } from "../../workspace/index.ts";
 import { type CliDeps, hostAgentDirOf } from "../deps.ts";
-import { discoverVault, providerHostsOf } from "../derive.ts";
+import { providerHostsOf } from "../derive.ts";
 import {
   hostPiPlace,
   hostPiText,
@@ -170,61 +169,33 @@ const durationText = (ms: number) => {
   return ms < HOURS_SHOWN_BELOW_MS ? `${Math.round(ms / HOUR_MS)} h` : `${Math.round(ms / DAY_MS)} days`;
 };
 
-const signInText = (deps: CliDeps, name: string, entry: VaultEntry | undefined) => {
-  const tokens = entry?.tokens;
+const signInCheck = (deps: CliDeps, server: McpSignIn): NamedCheck => {
+  const name = `mcp ${server.name}`;
+  const { entry } = server;
+  const usable = isFreshMcpToken(entry, deps.now()) || entry?.refresh !== undefined;
 
-  if (tokens === undefined || (tokens.access_token === undefined && tokens.refresh_token === undefined)) {
-    return `not signed in; sign in from /mcp in pi, or with pi mcp login ${name} in the shell`;
+  if (!usable) {
+    return { name, result: warned(`needs sign-in: run pi mcp login ${server.name}`) };
   }
 
-  if (entry?.tokensExpireAt === undefined) {
-    return "signed in";
+  const left = entry?.expiresAt === undefined ? undefined : entry.expiresAt - deps.now();
+
+  if (left === undefined) {
+    return { name, result: passed("signed in on the host") };
   }
 
-  const left = entry.tokensExpireAt - deps.now();
-
-  return left > 0
-    ? `signed in, token expires in ${durationText(left)}`
-    : "signed in, token expired, the proxy refreshes it";
+  return {
+    name,
+    result: passed(
+      left > 0
+        ? `signed in on the host (expires in ${durationText(left)})`
+        : "signed in on the host (refreshed on use)",
+    ),
+  };
 };
 
-const vaultCheck = (
-  deps: CliDeps,
-  discovery: VaultDiscovery,
-  store: Record<string, VaultEntry>,
-): NamedCheck => {
-  const name = `mcp ${discovery.server}`;
-
-  if (!discovery.ok) {
-    return { name, result: failed(`vault discovery failed: ${discovery.error}`) };
-  }
-
-  const ready = `vault ready (authorization server ${new URL(discovery.issuer).host})`;
-  const entry = store[mcpAuthKey(discovery.server, discovery.url)];
-
-  return { name, result: passed(`${ready}, ${signInText(deps, discovery.server, entry)}`) };
-};
-
-const vaultChecks = async (
-  deps: CliDeps,
-  context: LaunchContext,
-  files: HostPiFiles,
-  pi: HostPi | undefined,
-): Promise<NamedCheck[]> => {
-  if (!vaultEnabled(context.effective.config)) {
-    return [
-      {
-        name: "mcp vault",
-        result: skipped("turned off by credentials.vault.enabled or credentials.derive.enabled"),
-      },
-    ];
-  }
-
-  const { discovery } = await discoverVault(deps, context, files, pi);
-  const store = await readVaultStore(context.stateDir);
-
-  return Object.values(discovery).map((found) => vaultCheck(deps, found, store));
-};
+const signInChecks = async (deps: CliDeps, files: HostPiFiles): Promise<NamedCheck[]> =>
+  (await mcpSignIns(files)).map((server) => signInCheck(deps, server));
 
 const unsafeSessionsDir = (deps: CliDeps, context: LaunchContext, dir: string) => {
   try {
@@ -316,7 +287,7 @@ export const hostChecks = async (
   backend?: Backend,
 ): Promise<NamedCheck[]> => {
   const [files, pi] = await Promise.all([readHostPiFiles(hostAgentDirOf(deps)), resolveJobPi(deps)]);
-  const [checks, vault] = await Promise.all([
+  const [checks, signIns] = await Promise.all([
     Promise.all([
       named("host pi", checkHostPi(deps, context, pi)),
       named("provider hosts", checkProviderHosts(deps, context, pi)),
@@ -327,8 +298,8 @@ export const hostChecks = async (
       named("vm size", checkVmSize(deps, backend)),
       named("vm shares", checkVmShares(deps, context, backend)),
     ]),
-    vaultChecks(deps, context, files, pi),
+    signInChecks(deps, files),
   ]);
 
-  return [...checks, ...vault];
+  return [...checks, ...signIns];
 };

@@ -1,6 +1,6 @@
 import type { Backend } from "../backend/index.ts";
 import type { SandboxConfig } from "../config/index.ts";
-import type { ContainerMcpAuthEntries, DerivedSandboxPi, JsonObject } from "../hostpi/index.ts";
+import type { DerivedSandboxPi, JsonObject } from "../hostpi/index.ts";
 
 export interface RenderInput {
   stateDir: string;
@@ -26,12 +26,4 @@ export interface SyncInput {
 
 export interface SyncResult {
   notices: string[];
-}
-
-export interface ContainerMcpAuthSyncInput {
-  backend: Backend;
-  containerId: string;
-  stateDir: string;
-  repoHash: string;
-  entries: ContainerMcpAuthEntries;
 }

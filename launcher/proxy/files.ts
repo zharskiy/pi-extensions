@@ -9,7 +9,7 @@ export interface DaemonConfig<Config> {
   token: string;
   config: Config;
   piCommand?: string[];
-  discoverCommand?: string[];
+  hostAgentDir: string;
   piVersion?: string;
   parentEnv?: Record<string, string>;
 }

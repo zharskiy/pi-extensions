@@ -15,7 +15,6 @@ const derived = (key = "pi-sandbox-aaaaaaaaaaaaaaaaaaaaaaaa"): DerivedSandboxPi 
     "mcp.json": { mcpServers: {} },
   },
   notices: [],
-  vault: [],
 });
 
 const listTree = async (dir: string, prefix = ""): Promise<string[]> => {

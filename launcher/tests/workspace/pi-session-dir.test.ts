@@ -2,9 +2,9 @@ import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { hostAgentDir } from "../../shared/index.ts";
 import {
   assertHostSessionsDir,
-  hostAgentDir,
   hostSessionsChoice,
   hostSessionsDir,
   sessionsSwitchNotice,

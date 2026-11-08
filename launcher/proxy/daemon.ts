@@ -24,7 +24,6 @@ import { createSecretResolver } from "./secrets/index.ts";
 import { startProxyServer } from "./server.ts";
 import { proxyPolicyHash, proxySettings } from "./settings.ts";
 import { openLauncherCa } from "./tls-ca.ts";
-import { createVault } from "./vault/index.ts";
 
 const LISTEN_HOST = "127.0.0.1";
 
@@ -104,16 +103,12 @@ const run = async (args: ReturnType<typeof parseDaemonArgs>) => {
     now: Date.now,
     piCommand: daemonConfig.piCommand ?? [],
     stateDir: args.stateDir,
+    hostAgentDir: daemonConfig.hostAgentDir,
     envSecrets: secrets.secretsOf,
+    childEnv: { ...minimalEnv(process.env), ...parentEnv },
+    logFile: files.proxyLog,
   });
   const log = createAccessLog(files.accessLog);
-  const vault = createVault({
-    stateDir: args.stateDir,
-    servers: (repoHash) => runtime.vault(repoHash),
-    resolver,
-    runner,
-    discoverCommand: daemonConfig.discoverCommand ?? [],
-  });
   const server = await startProxyServer({
     listen: { host: LISTEN_HOST, port: args.port },
     policy: settings.policy,
@@ -126,7 +121,6 @@ const run = async (args: ReturnType<typeof parseDaemonArgs>) => {
     log: log.write,
     dial: createDialer({ parent: parentRouteFor(settings.parentProxy, parentEnv, resolver) }),
     upstreamCa: await upstreamTrust(args.stateDir, settings.extraCa.length > 0),
-    vault,
     onControl: secrets.accept,
   });
   const record: ProxyInstance = {

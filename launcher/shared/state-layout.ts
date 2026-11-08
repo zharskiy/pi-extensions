@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { ensureRandomHexFile } from "./atomic-write.ts";
+import { sha256Hex } from "./hash.ts";
 
 const SALT_BYTES = 32;
 
@@ -40,13 +41,9 @@ export const stateLayout = (stateDir: string) => ({
   gitBaseline: (repoHash: string) => join(stateDir, "git", repoHash, "baseline.json"),
   gitPinLock: (gitCommonDirHash: string) => join(stateDir, "git", "pins", `${gitCommonDirHash}.lock`),
   sync: (repoHash: string) => join(stateDir, "sync", repoHash),
-  mcpAuth: join(stateDir, "mcp-auth"),
-  mcpAuthServer: (name: string) => join(stateDir, "mcp-auth", "servers", `${name}.json`),
-  mcpAuthStore: join(stateDir, "mcp-auth", "mcp-auth.json"),
-  mcpAuthStoreLock: join(stateDir, "mcp-auth", "mcp-auth.json.lock"),
-  mcpAuthDiscovery: (name: string) => join(stateDir, "mcp-auth", "discovery", `${name}.json`),
-  mcpAuthRefreshLock: (name: string) => join(stateDir, "mcp-auth", `refresh-${name}.lock`),
-  syncMcpAuth: (repoHash: string) => join(stateDir, "sync", repoHash, "mcp-auth.json"),
+  mcpLogin: join(stateDir, "mcp-login.json"),
+  mcpLoginDirPrefix: join(stateDir, "mcp-login-"),
+  mcpLoginLock: (key: string) => join(stateDir, "locks", `mcp-login-${sha256Hex(key).slice(0, 8)}.lock`),
   providerHosts: (piVersion: string) => join(stateDir, "provider-hosts", `${piVersion}.json`),
   ca: join(stateDir, "ca"),
   extraPem: join(stateDir, "ca", "extra.pem"),

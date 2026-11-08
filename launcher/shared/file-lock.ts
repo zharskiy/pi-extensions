@@ -139,10 +139,12 @@ const takeOver = async (path: string, stale: LockSnapshot, staleMs: number | und
   }
 };
 
+class LockBusy extends LauncherError {}
+
 const busy = (path: string, snapshot: LockSnapshot | undefined) => {
   const owner = snapshot !== undefined && Number.isInteger(snapshot.owner) ? ` (pid ${snapshot.owner})` : "";
 
-  return new LauncherError(
+  return new LockBusy(
     `${path}: lock is held by another process${owner}`,
     `wait for it, or remove ${path} if that process is gone`,
   );
@@ -249,6 +251,33 @@ const holding = async <T>(
 
 export const withFileLock = <T>(path: string, action: () => Promise<T>, options: FileLockOptions = {}) =>
   holding(path, createPidLock, options, action);
+
+export const withFileLockIfFree = async <T>(
+  path: string,
+  action: () => Promise<T>,
+): Promise<{ busy: true } | { busy: false; value: T }> => {
+  const entered = { now: false };
+
+  try {
+    const value = await withFileLock(
+      path,
+      () => {
+        entered.now = true;
+
+        return action();
+      },
+      { timeoutMs: 0 },
+    );
+
+    return { busy: false, value };
+  } catch (error) {
+    if (!entered.now && error instanceof LockBusy) {
+      return { busy: true };
+    }
+
+    throw error;
+  }
+};
 
 export const withDirectoryLock = <T>(path: string, action: () => Promise<T>, options: FileLockOptions = {}) =>
   holding(

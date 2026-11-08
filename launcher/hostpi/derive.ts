@@ -28,10 +28,7 @@ export const deriveSandboxPi = (input: DeriveInput): DerivedSandboxPi => {
     env: input.env,
   });
   const modelsSection = deriveModels(context, { ...models, providers }, input.providerHosts);
-  const mcp = deriveMcp(context, objectOr(input.files.mcp), {
-    signedIn: input.mcpSignedIn,
-    vault: input.vault,
-  });
+  const mcp = deriveMcp(context, objectOr(input.files.mcp));
   const manual = input.manual;
   const derived = keptDerived([...auth.rules, ...modelsSection.rules, ...mcp.rules], manual, input.derive);
   const notices = [...(input.files.notices ?? []), ...auth.notices, ...modelsSection.notices, ...mcp.notices];
@@ -45,6 +42,5 @@ export const deriveSandboxPi = (input: DeriveInput): DerivedSandboxPi => {
       "mcp.json": mcp.value,
     },
     notices: [...new Set(notices)],
-    vault: mcp.vault,
   };
 };

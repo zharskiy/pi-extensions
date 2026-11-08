@@ -211,16 +211,6 @@
             }
           },
           "description": "Rules and hosts derived from the host pi files. Not in a project config."
-        },
-        "vault": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "enabled": {
-              "type": "boolean"
-            }
-          },
-          "description": "MCP token vault: sign in to OAuth MCP servers from inside the sandbox while the tokens stay on the host. Default true, effective only with credentials.derive.enabled. Not in a project config."
         }
       }
     },

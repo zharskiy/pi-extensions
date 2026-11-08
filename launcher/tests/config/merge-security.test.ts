@@ -39,7 +39,6 @@ const COMPLETE_LAYER: LayerConfig = {
       },
     ],
     derive: { enabled: false, hosts: ["*.corp.test"] },
-    vault: { enabled: false },
   },
   egress: {
     allow: ["llm.corp.test"],

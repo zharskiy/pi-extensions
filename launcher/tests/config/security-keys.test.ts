@@ -71,7 +71,7 @@ describe("validateLayer with the credential, egress, tls, image and org keys", (
     expect(problemOf(FULL_LAYER, "org")).toBe("org: org may only be set by the policy or user config");
   });
 
-  it("accepts credentials as rules, derive and vault only", () => {
+  it("accepts credentials as rules and derive only", () => {
     expect(problemOf({ credentials: { rules: [rule()] } })).toBeUndefined();
     expect(problemOf({ credentials: { derive: { enabled: false } } })).toBeUndefined();
     expect(problemOf({ credentials: { kind: "static" } })).toBe("user: credentials.kind is not a known key");

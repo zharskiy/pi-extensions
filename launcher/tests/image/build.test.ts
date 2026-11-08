@@ -24,18 +24,12 @@ afterEach(async () => {
 });
 
 describe("prepareBuildContext", () => {
-  it("writes the Dockerfile, the entrypoint, the browser shim, the bash hint and an empty trust file, and no pi auth or models", async () => {
+  it("writes the Dockerfile, the entrypoint, the bash hint and an empty trust file, and no pi auth or models", async () => {
     const dir = await tempDir();
 
     await prepareBuildContext(versions, dir);
 
-    expect((await readdir(dir)).sort()).toEqual([
-      "Dockerfile",
-      "bash-env.sh",
-      "entrypoint.sh",
-      "trust.pem",
-      "xdg-open.mjs",
-    ]);
+    expect((await readdir(dir)).sort()).toEqual(["Dockerfile", "bash-env.sh", "entrypoint.sh", "trust.pem"]);
     expect(await readFile(join(dir, "trust.pem"), "utf8")).toBe("");
     expect(await readFile(join(dir, "entrypoint.sh"), "utf8")).toContain("sleep infinity");
     expect(await readFile(join(dir, "bash-env.sh"), "utf8")).toContain("command_not_found_handle");
@@ -148,7 +142,6 @@ describe("ensureBuiltImage", () => {
       "bash-env.sh",
       "entrypoint.sh",
       "trust.pem",
-      "xdg-open.mjs",
     ]);
     expect(JSON.parse(await readFile(join(stateDir, "image.json"), "utf8"))).toMatchObject({
       reference: config.image.reference,
@@ -174,7 +167,6 @@ describe("ensureBuiltImage", () => {
             { id: "llm", host: "llm.example.com", placeholder: "pi-sandbox-llm", secret: { env: "LLM_KEY" } },
           ],
           derive: { enabled: true },
-          vault: { enabled: true },
         },
       }),
       versions,

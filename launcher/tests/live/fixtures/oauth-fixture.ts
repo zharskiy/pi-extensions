@@ -1,9 +1,12 @@
 import { createHash, randomBytes } from "node:crypto";
-import type { ServerResponse } from "node:http";
+import { lookup as dnsLookup } from "node:dns";
+import { request as httpRequest, type ServerResponse } from "node:http";
+import { request as httpsRequest } from "node:https";
+import type { LookupFunction } from "node:net";
 import { type HttpsFixture, type SeenRequest, sendJson, startHttpsFixture } from "./https-fixture.ts";
 import type { TestCertificate } from "./test-ca.ts";
 
-export type ClientAuth = "none" | "client_secret_basic" | "client_secret_post";
+type ClientAuth = "none" | "client_secret_basic" | "client_secret_post";
 
 export interface OAuthFixtureOptions {
   clientAuth?: ClientAuth;
@@ -274,4 +277,70 @@ export const startOAuthFixture = async (
       state.refresh.clear();
     },
   };
+};
+
+interface BrowserResponse {
+  status: number;
+  location?: string;
+  body: string;
+}
+
+type Resolve = (host: string) => string | undefined;
+
+const lookupWith =
+  (resolveHost: Resolve): LookupFunction =>
+  (hostname, options, callback) => {
+    const address = resolveHost(hostname);
+
+    if (address === undefined) {
+      dnsLookup(hostname, options, callback);
+
+      return;
+    }
+
+    if (options.all === true) {
+      callback(null, [{ address, family: 4 }]);
+
+      return;
+    }
+
+    callback(null, address, 4);
+  };
+
+const browserGet = (url: string, ca: string, resolveHost: Resolve = () => undefined) =>
+  new Promise<BrowserResponse>((resolve, reject) => {
+    const target = new URL(url);
+    const send = target.protocol === "https:" ? httpsRequest : httpRequest;
+    const request = send(target, { method: "GET", ca, lookup: lookupWith(resolveHost) }, (response) => {
+      const chunks: Buffer[] = [];
+
+      response.on("data", (chunk: Buffer) => chunks.push(chunk));
+
+      response.once("end", () =>
+        resolve({
+          status: response.statusCode ?? 0,
+          location: response.headers.location,
+          body: Buffer.concat(chunks).toString("utf8"),
+        }),
+      );
+    });
+
+    request.once("error", reject);
+
+    request.end();
+  });
+
+export const followRedirects = async (
+  url: string,
+  ca: string,
+  resolve: Resolve = () => undefined,
+  limit = 5,
+): Promise<BrowserResponse> => {
+  const response = await browserGet(url, ca, resolve);
+
+  if (response.location === undefined || limit === 0) {
+    return response;
+  }
+
+  return followRedirects(new URL(response.location, url).href, ca, resolve, limit - 1);
 };

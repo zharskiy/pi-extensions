@@ -1,7 +1,13 @@
 import { existsSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, join, resolve, sep } from "node:path";
-import { expandHome, isWithin, LauncherError, launcherPaths, realOrResolvedSync } from "../shared/index.ts";
-import { hostAgentDir } from "./pi-session-dir.ts";
+import {
+  expandHome,
+  hostAgentDir,
+  isWithin,
+  LauncherError,
+  launcherPaths,
+  realOrResolvedSync,
+} from "../shared/index.ts";
 
 interface ExtraMountContext {
   home: string;

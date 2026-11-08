@@ -3,9 +3,7 @@ import { isJsonObject } from "../shared/index.ts";
 import type { ControlMessage, ControlReply } from "./control.ts";
 import { type DenialContext, type Denials, denialBody } from "./denials.ts";
 import type { EgressPolicy } from "./policy.ts";
-import { PROXY_AGENT, readLimited, sendJson, sendJsonAndClose } from "./replies.ts";
-import type { VaultHook, VaultReply } from "./vault/index.ts";
-import { OAUTH_ROUTES } from "./vault/protocol.ts";
+import { readLimited, sendJson, sendJsonAndClose } from "./replies.ts";
 
 export type Caller = { kind: "repo"; repoHash: string } | { kind: "control" };
 
@@ -14,14 +12,11 @@ interface ControlRouteOptions {
   policyHash: string;
   denials: Denials;
   onControl?: (message: ControlMessage) => ControlReply | Promise<ControlReply>;
-  vault?: VaultHook;
 }
 
 const MAX_CONTROL_BYTES = 1024 * 1024;
 
 const TOKEN_HASH = /^[0-9a-f]{64}$/;
-
-const OAUTH_PATHS = new Set<string>(Object.values(OAUTH_ROUTES));
 
 const UNPARSEABLE = "unparseable";
 
@@ -68,29 +63,6 @@ const sinceOf = (url: string) => {
   return Number.isFinite(since) ? since : 0;
 };
 
-const flowOf = (url: string | undefined) =>
-  new URL(url ?? "/", "http://proxy").searchParams.get("flow") ?? "";
-
-const parseJsonBody = (text: string | undefined): unknown => {
-  try {
-    return JSON.parse(text ?? "");
-  } catch {
-    return undefined;
-  }
-};
-
-const sendReply = (response: ServerResponse, reply: VaultReply) => {
-  if (reply.body === undefined) {
-    response.writeHead(reply.status, { "proxy-agent": PROXY_AGENT });
-
-    response.end();
-
-    return;
-  }
-
-  sendJson(response, reply.status, reply.body);
-};
-
 export const createControlRoutes = (options: ControlRouteOptions) => {
   const handleControl = async (request: IncomingMessage, response: ServerResponse) => {
     const body = await readBody(request);
@@ -117,66 +89,6 @@ export const createControlRoutes = (options: ControlRouteOptions) => {
     sendJson(response, reply.ok ? 200 : 400, reply);
   };
 
-  const oauthReply = async (
-    request: IncomingMessage,
-    response: ServerResponse,
-    vault: VaultHook,
-    repoHash: string,
-  ): Promise<VaultReply & { close?: boolean }> => {
-    const path = pathOf(request.url);
-
-    if (request.method === "POST" && path === OAUTH_ROUTES.open) {
-      const body = await readBody(request);
-
-      if (body.overflow) {
-        return { status: 413, body: { ok: false, error: "pi-sandbox: request body too large" }, close: true };
-      }
-
-      return vault.open(repoHash, parseJsonBody(body.text));
-    }
-
-    if (request.method === "GET" && path === OAUTH_ROUTES.callback) {
-      const abort = new AbortController();
-
-      response.once("close", () => abort.abort());
-
-      return vault.callback(repoHash, flowOf(request.url), abort.signal);
-    }
-
-    if (request.method === "POST" && path === OAUTH_ROUTES.cancel) {
-      return vault.cancel(repoHash, flowOf(request.url));
-    }
-
-    return { status: 405, body: { ok: false, error: "pi-sandbox: method not allowed" } };
-  };
-
-  const handleOAuth = async (request: IncomingMessage, response: ServerResponse, caller: Caller) => {
-    if (caller.kind !== "repo") {
-      sendJson(response, 403, {
-        ok: false,
-        error: "pi-sandbox: sign-in routes need the sandbox's proxy token",
-      });
-
-      return;
-    }
-
-    if (options.vault === undefined) {
-      sendJson(response, 404, { ok: false, error: "pi-sandbox: sign-in from the sandbox is not enabled" });
-
-      return;
-    }
-
-    const reply = await oauthReply(request, response, options.vault, caller.repoHash);
-
-    if (reply.close === true) {
-      sendJsonAndClose(response, reply.status, reply.body ?? {});
-
-      return;
-    }
-
-    sendReply(response, reply);
-  };
-
   const refusePlain = (request: IncomingMessage, response: ServerResponse, caller: Caller) => {
     const host = hostOf(request.headers.host);
     const denial = { rule: "plain-http", reason: "only HTTPS through CONNECT is proxied" };
@@ -189,12 +101,6 @@ export const createControlRoutes = (options: ControlRouteOptions) => {
 
   return async (request: IncomingMessage, response: ServerResponse, caller: Caller) => {
     const path = pathOf(request.url);
-
-    if (OAUTH_PATHS.has(path)) {
-      await handleOAuth(request, response, caller);
-
-      return;
-    }
 
     if (request.method === "GET" && path === "/healthz") {
       sendJson(response, 200, { ok: true, policyHash: options.policyHash, pid: process.pid });

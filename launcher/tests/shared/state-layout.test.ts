@@ -49,7 +49,10 @@ describe("stateLayout", () => {
     expect(layout.render("r1")).toBe("/state/render/r1");
     expect(layout.sync("r1")).toBe("/state/sync/r1");
     expect(layout.sessionsOf("r1")).toBe("/state/sessions/r1");
-    expect(layout.mcpAuthServer("docs")).toBe("/state/mcp-auth/servers/docs.json");
+    expect(layout.mcpLogin).toBe("/state/mcp-login.json");
+    expect(layout.mcpLoginLock("mcp__docs|https://docs.test/")).toMatch(
+      /^\/state\/locks\/mcp-login-[0-9a-f]{8}\.lock$/,
+    );
     expect(layout.providerHosts("1.5.0")).toBe("/state/provider-hosts/1.5.0.json");
     expect(layout.proxyInstance("p1").dynamic).toBe("/state/proxy/p1/dynamic.json");
     expect(layout.proxyInstance("p1").repoToken("r1")).toBe("/state/proxy/p1/tokens/r1");

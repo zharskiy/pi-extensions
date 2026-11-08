@@ -1,12 +1,5 @@
 import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import {
-  expandHome,
-  GUEST_PATHS,
-  isWithin,
-  PI_AGENT_DIR_VARIABLE,
-  PI_SESSION_DIR_VARIABLE,
-} from "../shared/index.ts";
+import { GUEST_PATHS, hostAgentDir, isWithin, PI_SESSION_DIR_VARIABLE } from "../shared/index.ts";
 
 export type HostSessions = { dir: string } | { off: string; notice: boolean };
 
@@ -22,21 +15,7 @@ const SWITCH_VARIABLE = "PI_SANDBOX_SESSIONS_HOST";
 
 const SWITCH_OFF = "off";
 
-const FILE_URL = /^file:\/\//;
-
 const isSet = (value: unknown) => typeof value === "string" && value !== "";
-
-const normalizedPath = (path: string, home: string) => {
-  const expanded = expandHome(path, home);
-
-  return FILE_URL.test(expanded) ? fileURLToPath(expanded) : expanded;
-};
-
-export const hostAgentDir = (home: string, env: NodeJS.ProcessEnv) => {
-  const configured = env[PI_AGENT_DIR_VARIABLE];
-
-  return isSet(configured) ? normalizedPath(configured as string, home) : join(home, ".pi", "agent");
-};
 
 export const sessionSlug = (path: string) =>
   `--${resolve(path)

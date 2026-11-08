@@ -27,7 +27,6 @@ const input = (overrides: Partial<DeriveInput> = {}): DeriveInput => ({
   salt: SALT,
   env: { ENVONLY_API_KEY: SECRETS.envValue },
   derive: { enabled: true },
-  mcpSignedIn: ["sentryish"],
   ...overrides,
 });
 
@@ -246,11 +245,11 @@ describe("deriveSandboxPi mcp.json", () => {
     ]);
   });
 
-  it("asks for a sign-in only for servers without a token in the helper dir", () => {
+  it("keeps the oauth block and its client secret out of the sandbox mcp.json", () => {
     const result = deriveSandboxPi(input());
 
-    expect(result.notices).toContain("mcp literal: sign in with pi mcp login literal");
-    expect(result.notices).not.toContain("mcp sentryish: sign in with pi mcp login sentryish");
+    expect(servers(result).sentryish?.oauth).toBeUndefined();
+    expect(JSON.stringify(result.files)).not.toContain(SECRETS.oauthClient);
   });
 
   it("points a literal secret header at the host mcp.json", () => {
@@ -347,7 +346,7 @@ describe("deriveSandboxPi mcp.json", () => {
     });
   });
 
-  it("drops a server whose url carries a credential in its query string and keeps it out of the vault", () => {
+  it("drops a server whose url carries a credential in its query string ", () => {
     const mcp = {
       mcpServers: {
         keyed: { url: "https://q.example/mcp?api_key=QUERY-SECRET&x=1" },
@@ -355,27 +354,10 @@ describe("deriveSandboxPi mcp.json", () => {
         plain: { url: "https://p.example/mcp?region=eu" },
       },
     };
-    const discovery = {
-      ok: true as const,
-      server: "keyed",
-      url: "https://q.example/mcp?api_key=QUERY-SECRET&x=1",
-      fetchedAt: 1,
-      issuer: "https://auth.q.example",
-      authorizationEndpoint: "https://auth.q.example/authorize",
-      tokenEndpoint: "https://auth.q.example/token",
-      hosts: ["auth.q.example"],
-      piState: {},
-    };
-    const result = deriveSandboxPi(
-      input({
-        files: { agentDir: AGENT_DIR, mcp },
-        vault: { enabled: true, discovery: { keyed: discovery } },
-      }),
-    );
+    const result = deriveSandboxPi(input({ files: { agentDir: AGENT_DIR, mcp } }));
 
     expect(Object.keys(servers(result))).toEqual(["plain"]);
     expect(JSON.stringify(result.files)).not.toMatch(/QUERY-/);
-    expect(result.vault).toEqual([]);
     expect(result.rules.filter((rule) => rule.id.startsWith("derived:mcp:keyed"))).toEqual([]);
     expect(result.notices).toContain(
       "mcp keyed: the url carries a credential in its query string; add a header rule instead",
@@ -484,7 +466,6 @@ describe("deriveSandboxPi url userinfo", () => {
     );
     expect(servers.guarded?.headers).toBeUndefined();
     expect(rulesOf(result.rules, "derived:mcp:guarded:oauth")).toEqual([]);
-    expect(result.notices).not.toContain("mcp guarded: sign in with pi mcp login guarded");
     expect(rulesOf(result.rules, "derived:mcp:guarded:url:userinfo")[0]).toMatchObject({
       host: "mcp.guarded.example",
       transform: "urlUserinfoBase64",

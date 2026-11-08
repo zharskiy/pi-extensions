@@ -84,7 +84,6 @@ interface HarnessPaths {
 interface DynamicSection {
   rules: unknown[];
   derivedHosts: string[];
-  vault?: Array<{ server: string; discovery: { hosts: string[] } }>;
 }
 
 export const isPiSession = (spec: ExecSpec) => spec.env.PI_SANDBOX_LAUNCH_ID !== undefined;

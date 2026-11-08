@@ -1,14 +1,17 @@
-import { realpath } from "node:fs/promises";
-import { join, resolve } from "node:path";
-import { findRepoContainer } from "../container/index.ts";
-import { type HostPi, mcpLoginServer, oneServerDir, prepareMcpLogin } from "../hostpi/index.ts";
-import { expandHome, isWithin, LauncherError } from "../shared/index.ts";
+import { realpath, rm } from "node:fs/promises";
+import { resolve } from "node:path";
+import type { HostPi } from "../hostpi/index.ts";
+import {
+  expandHome,
+  isWithin,
+  LauncherError,
+  makeMcpLoginDir,
+  PI_AGENT_DIR_VARIABLE,
+} from "../shared/index.ts";
 import { mountedGitDirs } from "../workspace/index.ts";
-import { type CliDeps, hostAgentDirOf, writeLine } from "./deps.ts";
-import { deriveVaultServers } from "./derive.ts";
+import { type CliDeps, hostAgentDirOf, pathsOf, writeLine } from "./deps.ts";
 import { interactiveCommand, nearbyRoots, resolveJobPi, resolveShellPi, type ShellPi } from "./host-pi.ts";
-import { type LaunchContext, openBackend, openContext } from "./launch.ts";
-import { syncSandboxMcpAuth } from "./mcp-auth-sync.ts";
+import { openContext } from "./launch.ts";
 
 const SELF_UPDATE_HINT = "update it with npm install -g pi-extensions-mz";
 
@@ -65,104 +68,34 @@ const packageCommand = async (deps: CliDeps, argv: string[], source: string) => 
   return runOnHost(deps, argv, { cwd: deps.cwd });
 };
 
-const confirmProjectServer = (deps: CliDeps, name: string) => () =>
-  deps.confirm(
-    `pi-sandbox: mcp ${name} is defined only in this repository's .pi/mcp.json, which the sandbox can write; sign in to it on the host? [y/N] `,
-  );
+const MCP_HOST_ACTIONS = new Set(["add", "remove", "login", "logout"]);
 
-const loginDir = async (deps: CliDeps, context: LaunchContext, action: string, name: string) => {
-  const stateDir = context.stateDir;
+const MCP_PROJECT_ACTIONS = new Set(["add", "remove"]);
 
-  if (action === "logout") {
-    return oneServerDir(stateDir, name);
+const inEmptyDir = async <T>(deps: CliDeps, use: (cwd: string) => Promise<T>) => {
+  const cwd = await makeMcpLoginDir(pathsOf(deps).stateDir);
+
+  try {
+    return await use(cwd);
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
   }
-
-  const server = await mcpLoginServer({
-    name,
-    hostAgentDir: hostAgentDirOf(deps),
-    projectMcpFile: join(context.workspace.repoRoot, ".pi", "mcp.json"),
-    confirm: confirmProjectServer(deps, name),
-  });
-
-  return (await prepareMcpLogin({ stateDir, name, server })).agentDir;
-};
-
-const runningContainer = async (deps: CliDeps, context: LaunchContext) => {
-  const backend = await openBackend(deps, context.effective.config).catch(() => undefined);
-  const found = backend === undefined ? undefined : await findRepoContainer(backend, context.workspace);
-
-  return backend === undefined || found?.state !== "running" ? undefined : { backend, containerId: found.id };
-};
-
-const syncRunningSandbox = async (deps: CliDeps, context: LaunchContext) => {
-  const running = await runningContainer(deps, context);
-
-  if (running === undefined) {
-    return;
-  }
-
-  await syncSandboxMcpAuth(deps, context, { ...running, servers: await deriveVaultServers(deps, context) });
-};
-
-const mcpAuthCommand = async (deps: CliDeps, action: string, name: string, flags: string[]) => {
-  const context = await openContext(deps);
-  const agentDir = await loginDir(deps, context, action, name);
-  const code = await runOnHost(deps, ["mcp", action, name, ...flags], {
-    cwd: agentDir,
-    env: { PI_CODING_AGENT_DIR: agentDir },
-  });
-
-  if (code === 0) {
-    await syncRunningSandbox(deps, context);
-  }
-
-  return code;
-};
-
-const AUTH_VALUE_FLAGS: Record<string, string[]> = { login: ["--timeout"], logout: [] };
-
-const splitAuthArgs = (action: string, args: string[]) => {
-  const valueFlags = AUTH_VALUE_FLAGS[action] ?? [];
-  const split = { names: [] as string[], flags: [] as string[], unknown: false };
-
-  args.forEach((arg, index) => {
-    if (valueFlags.includes(arg) || valueFlags.includes(args[index - 1] ?? "")) {
-      split.flags.push(arg);
-
-      return;
-    }
-
-    if (arg.startsWith("-")) {
-      split.unknown ||= !LOCAL_FLAGS.includes(arg);
-
-      return;
-    }
-
-    split.names.push(arg);
-  });
-
-  return split;
 };
 
 const mcpCommand = (deps: CliDeps, args: string[]) => {
-  const [action, ...rest] = args;
+  const [action = ""] = args;
 
-  if (action === "add" || action === "remove") {
-    return runOnHost(deps, ["mcp", ...args], { cwd: deps.cwd });
-  }
-
-  if (action !== "login" && action !== "logout") {
+  if (!MCP_HOST_ACTIONS.has(action)) {
     return undefined;
   }
 
-  const { names, flags, unknown } = splitAuthArgs(action, rest);
-  const [name] = names;
+  const env = { [PI_AGENT_DIR_VARIABLE]: hostAgentDirOf(deps) };
 
-  if (unknown || name === undefined || names.length !== 1) {
-    return undefined;
+  if (MCP_PROJECT_ACTIONS.has(action)) {
+    return runOnHost(deps, ["mcp", ...args], { cwd: deps.cwd, env });
   }
 
-  return mcpAuthCommand(deps, action, name, flags);
+  return inEmptyDir(deps, (cwd) => runOnHost(deps, ["mcp", ...args], { cwd, env }));
 };
 
 const packageSource = (args: string[]) => {

@@ -16,4 +16,3 @@ export { envSecretsFor, PARENT_PROXY_SECRET_KEY } from "./secrets/index.ts";
 export { proxyPolicyHash } from "./settings.ts";
 export type { TrustBundle } from "./trust.ts";
 export { ensureTrustBundle } from "./trust.ts";
-export { OAUTH_CALLBACK_STATUS, OAUTH_ROUTES } from "./vault/protocol.ts";

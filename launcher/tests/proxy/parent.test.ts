@@ -64,6 +64,8 @@ afterAll(async () => {
 const resolverWith = (value: string | undefined): SecretResolver => ({
   resolve: async () => (value === undefined ? { ok: false, reason: "none" } : { ok: true, value }),
   invalidate: () => undefined,
+  rejected: async () => undefined,
+  close: async () => undefined,
 });
 
 const echoOnce = (socket: Socket, text: string) =>
@@ -242,6 +244,8 @@ describe("parent proxy", () => {
         return repoHash === "a".repeat(64) ? { ok: true, value: "corp:pass" } : { ok: false, reason: "none" };
       },
       invalidate: () => undefined,
+      rejected: async () => undefined,
+      close: async () => undefined,
     };
     const route = parentRouteFor(
       "env",

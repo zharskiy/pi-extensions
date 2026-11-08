@@ -33,7 +33,7 @@ const packageVersion = async () => {
 export const defaultConfig = async (): Promise<SandboxConfig> => ({
   fallback: "host",
   image: { reference: `${IMAGE_REPOSITORY}:${await packageVersion()}` },
-  credentials: { rules: [], derive: { enabled: true }, vault: { enabled: true } },
+  credentials: { rules: [], derive: { enabled: true } },
   egress: {
     allow: DEFAULT_EGRESS,
     deny: [],

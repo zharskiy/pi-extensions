@@ -35,7 +35,7 @@ describe("pi launch wiring", () => {
     expect(url.password).toMatch(/^[0-9a-f]{64}$/);
     expect(url.password).not.toBe("token-1");
     expect(await repoTokenOf(harness)).toBe(url.password);
-    expect(await repoDynamicOf(harness)).toEqual({ rules: [], derivedHosts: expect.any(Array), vault: [] });
+    expect(await repoDynamicOf(harness)).toEqual({ rules: [], derivedHosts: expect.any(Array) });
   });
 
   it("hands env secrets to the proxy, not to the container", async () => {
@@ -232,7 +232,7 @@ describe("pi launch wiring", () => {
 
     await run([], harness.deps);
 
-    expect(harness.stderr()).toContain("pi-sandbox: mcp docs: sign in with pi mcp login docs\n");
+    expect(harness.stderr()).toContain("pi-sandbox: mcp docs: not signed in; run pi mcp login docs\n");
     expect(harness.stderr()).toContain(
       "pi-sandbox: no pi on the host, built-in providers get no credential rules; install pi or reinstall the launcher with npm install -g pi-extensions-mz\n",
     );

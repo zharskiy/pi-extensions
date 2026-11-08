@@ -1,5 +1,5 @@
 import type { CredentialRule, DeriveConfig } from "../config/index.ts";
-import type { CommandRunner, JsonObject, VaultDiscovery, VaultServer } from "../shared/index.ts";
+import type { JsonObject } from "../shared/index.ts";
 
 export type { JsonObject } from "../shared/index.ts";
 
@@ -26,13 +26,6 @@ export interface DeriveInput {
   salt: string;
   env: Record<string, string | undefined>;
   derive: DeriveConfig;
-  mcpSignedIn: string[];
-  vault?: DeriveVault;
-}
-
-export interface DeriveVault {
-  enabled: boolean;
-  discovery: Record<string, VaultDiscovery>;
 }
 
 interface DerivedFiles {
@@ -46,7 +39,6 @@ export interface DerivedSandboxPi {
   hosts: string[];
   files: DerivedFiles;
   notices: string[];
-  vault: VaultServer[];
 }
 
 export interface BundledPi {
@@ -63,26 +55,6 @@ export interface HostPi extends BundledPi {
 }
 
 export interface McpOAuthServer {
+  name: string;
   url: string;
-  oauth?: Record<string, string | number | boolean>;
 }
-
-export interface VaultDiscoveryInput {
-  stateDir: string;
-  runner: CommandRunner;
-  pi: BundledPi;
-  candidates: Record<string, McpOAuthServer>;
-  now: () => number;
-}
-
-export interface VaultDiscoveryResult {
-  discovery: Record<string, VaultDiscovery>;
-  notices: string[];
-}
-
-export interface ContainerMcpAuthInput {
-  stateDir: string;
-  servers: VaultServer[];
-}
-
-export type ContainerMcpAuthEntries = Record<string, JsonObject | null>;

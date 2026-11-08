@@ -20,4 +20,3 @@ export type {
   SecretRef,
   WorkspaceRootsConfig,
 } from "./types.ts";
-export { vaultEnabled } from "./vault.ts";

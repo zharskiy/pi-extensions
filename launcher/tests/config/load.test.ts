@@ -41,7 +41,7 @@ describe("loadEffectiveConfig", () => {
 
     expect(config).toEqual(await defaultConfig());
     expect(config.image.reference).toMatch(/^ghcr\.io\/zharskiy\/pi-sandbox:\d+\.\d+\.\d+/);
-    expect(config.credentials).toEqual({ rules: [], derive: { enabled: true }, vault: { enabled: true } });
+    expect(config.credentials).toEqual({ rules: [], derive: { enabled: true } });
     expect(config.egress.grants).toBe(true);
     expect(sources["egress.allow"]).toBe("default");
     expect(sources["resources.cpus"]).toBeUndefined();

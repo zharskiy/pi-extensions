@@ -6,7 +6,6 @@ import { removeRepoToken, repoProxyToken, writeProxyDynamic } from "../../proxy/
 import { createProxyRuntime } from "../../proxy/runtime.ts";
 import { sha256Hex, stateLayout } from "../../shared/index.ts";
 import { createStateDir, POLICY_HASH, removeDir } from "./harness.ts";
-import { vaultServer } from "./vault-fixture.ts";
 
 const REPO_A = "a".repeat(64);
 
@@ -38,13 +37,12 @@ const runtime = (extra: { grantsEnabled?: boolean } = {}) =>
     ...extra,
   });
 
-const launch = async (repoHash: string, id: string, vault = [vaultServer({ server: id })]) => {
+const launch = async (repoHash: string, id: string) => {
   const token = await repoProxyToken(state.stateDir, POLICY_HASH, repoHash);
 
   await writeProxyDynamic(state.stateDir, POLICY_HASH, {
     rules: [rule(id)],
     derivedHosts: [`${id}-host.test`],
-    vault,
     tokenHash: sha256Hex(token),
   });
 
@@ -54,7 +52,7 @@ const launch = async (repoHash: string, id: string, vault = [vaultServer({ serve
 const ids = (rules: CredentialRule[]) => rules.map((entry) => entry.id).sort();
 
 describe("dynamic configuration per repository", () => {
-  it("keeps each repository's rules and vault servers apart and unions derived hosts", async () => {
+  it("keeps each repository's rules apart and unions derived hosts", async () => {
     await launch(REPO_A, "alpha");
 
     await launch(REPO_B, "beta");
@@ -63,7 +61,6 @@ describe("dynamic configuration per repository", () => {
 
     expect(ids(await current.rules(REPO_A))).toEqual(["alpha"]);
     expect(ids(await current.rules(REPO_B))).toEqual(["beta"]);
-    expect((await current.vault(REPO_A)).map((server) => server.server)).toEqual(["alpha"]);
     expect(await current.extras(REPO_A)).toEqual(
       expect.arrayContaining(["alpha-host.test", "beta-host.test"]),
     );
@@ -74,12 +71,11 @@ describe("dynamic configuration per repository", () => {
 
     await launch(REPO_B, "beta");
 
-    await launch(REPO_A, "gamma", []);
+    await launch(REPO_A, "gamma");
 
     const current = runtime();
 
     expect(ids(await current.rules(REPO_A))).toEqual(["gamma"]);
-    expect(await current.vault(REPO_A)).toEqual([]);
     expect(ids(await current.rules(REPO_B))).toEqual(["beta"]);
   });
 

@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Backend, ExecIo, ExecSpec } from "../../backend/index.ts";
-import { MCP_LIST_PROBE, OFFLINE_PROBE, SHIM_PROBE } from "../../cli/commands/doctor-container.ts";
+import { MCP_LIST_PROBE, OFFLINE_PROBE } from "../../cli/commands/doctor-container.ts";
 import { run } from "../../cli/index.ts";
 import { testedPiVersion } from "../../cli/versions.ts";
 import { registerSession } from "../../grants/index.ts";
@@ -30,7 +30,6 @@ interface Probes {
   ruleAnswer?: string;
   mcpAuth?: string;
   settings?: string;
-  browserExit?: number;
   sessionsExit?: number;
 }
 
@@ -65,7 +64,6 @@ type Intent =
   | "rule request"
   | "container mcp-auth"
   | "container settings"
-  | "browser"
   | "sessions share"
   | "sync";
 
@@ -92,10 +90,6 @@ const intentOf = (command: string[]): Intent | undefined => {
 
   if (command[0] === "cat" && text.includes("mcp-auth.json")) {
     return "container mcp-auth";
-  }
-
-  if (isProbe(command, SHIM_PROBE)) {
-    return "browser";
   }
 
   if (text.includes("auth.json")) {
@@ -175,11 +169,6 @@ const answering =
 
         return 0;
       },
-      browser: () => {
-        io.stderr.write("pi-sandbox: proxy refused\n");
-
-        return probes.browserExit ?? 0;
-      },
       "sessions share": () => probes.sessionsExit ?? 0,
       sync: () => 0,
     };
@@ -240,7 +229,6 @@ describe("pi sandbox doctor", () => {
       "ok mcp: pi mcp list connects to every enabled server",
       "ok mcp-auth sweep: 0 entries in mcp-auth.json, every token is a placeholder",
       "ok settings sweep: no settings.json package carries a credential in its URL",
-      "ok browser: xdg-open reaches the proxy's /healthz",
       "ok sessions share: writable at the host path",
       "skip trust: no credential rule, nothing is terminated",
       ...HOST_LINES,
@@ -255,7 +243,6 @@ describe("pi sandbox doctor", () => {
 
     expect([...new Set(probes.map((exec) => intentOf(exec.spec.command)))].sort()).toEqual([
       "auth file",
-      "browser",
       "container mcp-auth",
       "container settings",
       "direct route",
@@ -384,20 +371,18 @@ describe("pi sandbox doctor", () => {
     expect(code).toBe(1);
   });
 
-  it("fails the mcp-auth sweep on a token that is not a placeholder and the browser check when the proxy refuses", async () => {
+  it("fails the mcp-auth sweep on a token that is not a placeholder", async () => {
     const { code, lines } = await doctorWith({
       mcpAuth: JSON.stringify({
         "mcp__docs|https://docs.example.test/mcp": {
           tokens: { access_token: "real-access-token-0123456789", token_type: "Bearer" },
         },
       }),
-      browserExit: 1,
     });
 
     expect(lines).toContain(
       "fail mcp-auth sweep: mcp-auth.json holds a token that is not a placeholder (mcp__docs|https://docs.example.test/mcp)",
     );
-    expect(lines).toContain("fail browser: xdg-open --pi-sandbox-check exited 1: pi-sandbox: proxy refused");
     expect(lines.join("\n")).not.toContain("real-access-token");
     expect(code).toBe(1);
   });
@@ -439,7 +424,6 @@ describe("pi sandbox doctor", () => {
       "skip mcp: no runtime",
       "skip mcp-auth sweep: no runtime",
       "skip settings sweep: no runtime",
-      "skip browser: no runtime",
       "skip sessions share: no runtime",
       "skip trust: no runtime",
       ...HOST_CHECK_LINES,
@@ -481,7 +465,6 @@ describe("pi sandbox doctor", () => {
       "skip mcp: no image",
       "skip mcp-auth sweep: no image",
       "skip settings sweep: no image",
-      "skip browser: no image",
       "skip sessions share: no image",
       "skip trust: no image",
       ...HOST_LINES,
@@ -674,5 +657,42 @@ describe("pi sandbox doctor on the host pi", () => {
     expect(line).toBe(
       "fail host pi: no pi on the host; install pi or reinstall the launcher with npm install -g pi-extensions-mz",
     );
+  });
+});
+
+describe("pi sandbox doctor mcp sign-in lines", () => {
+  it("prints one line per OAuth server from the host pi sign-in store", async () => {
+    const fake = createFakeBackend();
+    const down = { ...fake.backend, detect: async () => ({ available: false, reason: "socket missing" }) };
+    const harness = await createHarness({ backend: () => down });
+    const now = harness.deps.now();
+
+    await harness.writeJson(join(harness.hostAgentDir, "mcp.json"), {
+      mcpServers: {
+        docs: { url: "https://docs.example.test/mcp" },
+        signed: { url: "https://signed.example.test/mcp" },
+        keyed: { url: "https://keyed.example.test/mcp", headers: { Authorization: "Bearer x" } },
+      },
+    });
+
+    await harness.writeJson(join(harness.hostAgentDir, "mcp-auth.json"), {
+      "mcp__signed|https://signed.example.test/mcp": {
+        tokens: { access_token: "real-access-token" },
+        tokensExpireAt: now + 2 * 3_600_000,
+      },
+    });
+
+    await run(["sandbox", "doctor"], harness.deps);
+
+    const lines = harness
+      .stdout()
+      .split("\n")
+      .filter((line) => / mcp \S+: /.test(line));
+
+    expect(lines).toEqual([
+      "warn mcp docs: needs sign-in: run pi mcp login docs",
+      "ok mcp signed: signed in on the host (expires in 2 h)",
+    ]);
+    expect(harness.stdout()).not.toContain("real-access-token");
   });
 });

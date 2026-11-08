@@ -24,14 +24,9 @@ export interface DeriveConfig {
   hosts?: string[];
 }
 
-interface VaultConfig {
-  enabled: boolean;
-}
-
 interface CredentialsConfig {
   rules: CredentialRule[];
   derive: DeriveConfig;
-  vault: VaultConfig;
 }
 
 export type ParentProxy = "env" | "none";
@@ -90,7 +85,6 @@ export interface LayerConfig {
   credentials?: {
     rules?: CredentialRule[];
     derive?: Partial<DeriveConfig>;
-    vault?: Partial<VaultConfig>;
   };
   egress?: Partial<EgressConfig>;
   tls?: Partial<SandboxConfig["tls"]>;

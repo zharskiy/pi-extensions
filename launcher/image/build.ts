@@ -37,11 +37,9 @@ const DOCKERFILE = "Dockerfile";
 
 const ENTRYPOINT = "entrypoint.sh";
 
-const BROWSER_SHIM = "xdg-open.mjs";
-
 const BASH_ENV_FILE = "bash-env.sh";
 
-const COPIED_ASSETS = [ENTRYPOINT, BROWSER_SHIM, BASH_ENV_FILE];
+const COPIED_ASSETS = [ENTRYPOINT, BASH_ENV_FILE];
 
 const PINNED = "pinned";
 

@@ -7,7 +7,6 @@ import {
   readJsonObject,
   sha256Hex,
   stateLayout,
-  type VaultServer,
   withFileLock,
   writeJsonFile,
 } from "../shared/index.ts";
@@ -17,7 +16,6 @@ import type { ProxyInstance } from "./files.ts";
 export interface DynamicSection {
   rules: CredentialRule[];
   derivedHosts: string[];
-  vault?: VaultServer[];
 }
 
 export interface ProxyDynamic extends DynamicSection {
@@ -45,25 +43,6 @@ const TOKEN_PATTERN = new RegExp(`^[0-9a-f]{${TOKEN_BYTES * 2}}$`);
 
 const TOKEN_HASH = /^[0-9a-f]{64}$/;
 
-const isText = (value: unknown) => typeof value === "string" && value !== "";
-
-const isVaultServer = (value: unknown): value is VaultServer => {
-  if (!isJsonObject(value) || !isJsonObject(value.discovery)) {
-    return false;
-  }
-
-  const discovery = value.discovery;
-
-  return (
-    [value.server, value.url, value.ruleId, value.access, value.refresh, value.client].every(isText) &&
-    discovery.ok === true &&
-    isText(discovery.tokenEndpoint) &&
-    isText(discovery.authorizationEndpoint) &&
-    Array.isArray(discovery.hosts) &&
-    discovery.hosts.every((host) => typeof host === "string")
-  );
-};
-
 const emptySection = (): DynamicSection => ({ rules: [], derivedHosts: [] });
 
 export const emptyDynamic = (): StoredDynamic => ({ repos: {} });
@@ -76,7 +55,6 @@ const parseSection = (value: unknown): DynamicSection => {
   return {
     rules: Array.isArray(value.rules) ? (value.rules as CredentialRule[]) : [],
     derivedHosts: Array.isArray(value.derivedHosts) ? (value.derivedHosts as string[]) : [],
-    ...(Array.isArray(value.vault) ? { vault: value.vault.filter(isVaultServer) } : {}),
   };
 };
 
@@ -95,7 +73,6 @@ export const parseDynamic = (value: unknown): StoredDynamic =>
 const sectionOf = (dynamic: ProxyDynamic): DynamicSection => ({
   rules: dynamic.rules,
   derivedHosts: dynamic.derivedHosts,
-  ...(dynamic.vault === undefined ? {} : { vault: dynamic.vault }),
 });
 
 export const tokenFileHashes = async (directory: string) => {

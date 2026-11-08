@@ -61,6 +61,8 @@ export const fakeResolver = (values: Record<string, string>) => {
     invalidate: (key) => {
       invalidated.push(key);
     },
+    rejected: async () => undefined,
+    close: async () => undefined,
   };
 
   return { resolver, invalidated, asked };
@@ -95,7 +97,6 @@ export interface TestProxyOptions {
   ports?: () => Record<string, number>;
   dial?: Dialer;
   onControl?: Parameters<typeof startProxyServer>[0]["onControl"];
-  vault?: Parameters<typeof startProxyServer>[0]["vault"];
   denialPages?: Parameters<typeof startProxyServer>[0]["denialPages"];
 }
 
@@ -128,7 +129,6 @@ export const startTestProxy = async (options: TestProxyOptions): Promise<TestPro
     upstreamCa: options.ca?.certPem,
     helloTimeoutMs: 500,
     onControl: options.onControl,
-    vault: options.vault,
     denialPages: options.denialPages,
   });
 

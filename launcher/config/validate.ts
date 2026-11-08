@@ -281,7 +281,6 @@ const LAYER_SPEC: ObjectSpec = {
     credentials: shape({
       rules: { type: "array", items: CREDENTIAL_RULE, check: uniqueIds },
       derive: shape({ enabled: flag, hosts: list(hostPattern) }),
-      vault: shape({ enabled: flag }),
     }),
     egress: shape({
       allow: list(host),

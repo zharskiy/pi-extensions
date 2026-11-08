@@ -30,7 +30,6 @@ import {
 import { openSandboxProxy, type SandboxProxy } from "../sandbox-proxy.ts";
 import { beginSession, finishSession, type LaunchSession, othersLive } from "../sessions.ts";
 import {
-  checkBrowserShim,
   checkMcp,
   checkMcpAuthSweep,
   checkOffline,
@@ -49,7 +48,6 @@ const CONTAINER_CHECKS = [
   "mcp",
   "mcp-auth sweep",
   "settings sweep",
-  "browser",
   "sessions share",
   "trust",
 ];
@@ -86,11 +84,6 @@ const proxyCheck = async (proxy: SandboxProxy | undefined) => {
     : failed(`${where}, /healthz does not answer`);
 };
 
-const browserCheck = (proxy: SandboxProxy | undefined, target: ProbeTarget) =>
-  proxy === undefined
-    ? Promise.resolve(skipped("no proxy, nothing to open a sign-in through"))
-    : checkBrowserShim(target);
-
 const sessionsShareCheck = async (target: ProbeTarget) => {
   const containers = await target.backend.findContainers({ [LABELS.managed]: "true" });
   const container = containers.find((candidate) => candidate.id === target.containerId);
@@ -104,7 +97,7 @@ const containerChecks = async (
   parts: { host: HostSide; proxy?: SandboxProxy },
   target: ProbeTarget,
 ) => {
-  const { host, proxy } = parts;
+  const { host } = parts;
   const rules = await checkRules(target, host.derived.rules).catch((error: unknown) => [
     { name: "trust", result: failed(errorMessage(error)) },
   ]);
@@ -117,7 +110,6 @@ const containerChecks = async (
     report(deps, "mcp", await attempt(() => checkMcp(target))),
     report(deps, "mcp-auth sweep", await attempt(() => checkMcpAuthSweep(target))),
     report(deps, "settings sweep", await attempt(() => checkSettingsSweep(target))),
-    report(deps, "browser", await attempt(() => browserCheck(proxy, target))),
     report(deps, "sessions share", await attempt(() => sessionsShareCheck(target))),
     ...reportAll(deps, rules),
   ];

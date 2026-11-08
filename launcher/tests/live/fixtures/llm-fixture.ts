@@ -49,11 +49,6 @@ const contentText = (content: unknown): string => {
 export const conversationText = (request: ChatRequest) =>
   request.messages.map((message) => contentText(message.content)).join("\n");
 
-export const toolResults = (request: ChatRequest) =>
-  request.messages
-    .filter((message) => message.role === "tool")
-    .map((message) => contentText(message.content));
-
 const chunk = (delta: Record<string, unknown>, finish: string | null = null) =>
   `data: ${JSON.stringify({
     id: "fixture",

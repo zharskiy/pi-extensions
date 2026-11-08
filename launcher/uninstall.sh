@@ -196,7 +196,7 @@ remove_state() {
   remove_state "$@"
 }
 
-remove_state sessions render sync mcp-auth provider-hosts grants.json
+remove_state sessions render sync mcp-login.json provider-hosts grants.json
 
 engine_socket="$HOME/.colima/$colima_profile/docker.sock"
 
