@@ -3,18 +3,19 @@ import { dirname, join, resolve, sep } from "node:path";
 import type { Backend } from "../backend/index.ts";
 import { type CheckResult, failed, passed, skipped } from "../container/index.ts";
 import { liveSessions } from "../grants/index.ts";
-import {
-  errorMessage,
-  expandHome,
-  isWithin,
-  LauncherError,
-  realOrResolvedSync,
-  withDirectoryLock,
-} from "../shared/index.ts";
+import { expandHome, isWithin, LauncherError, realOrResolvedSync } from "../shared/index.ts";
 import { mountedGitDirs } from "../workspace/index.ts";
 import { type CliDeps, withFallbackHint, writeLine } from "./deps.ts";
 import { hostSessionsOf } from "./host-sessions.ts";
 import type { LaunchContext } from "./launch.ts";
+import {
+  detectAgain,
+  instanceOf,
+  OWN_PROFILE,
+  plainStart,
+  runColima as runColimaFor,
+  withVmLock,
+} from "./vm-lifecycle.ts";
 
 export interface VmShare {
   location: string;
@@ -42,10 +43,6 @@ interface Need {
   writable: boolean;
 }
 
-type Detection = Awaited<ReturnType<Backend["detect"]>>;
-
-const OWN_PROFILE = "pi-sandbox";
-
 const MOUNTS_KEY = /^mounts:\s*(.*)$/;
 
 const ENTRY_KEY = /^([A-Za-z0-9_]+):\s*(.*)$/;
@@ -59,10 +56,6 @@ const PLAIN_KEYS = ["location", "writable"];
 const EMPTY_VALUES = ["", "null", "~"];
 
 const SAFE_WORD = /^[A-Za-z0-9_@%+=:,./-]+$/;
-
-const LOCK_TIMEOUT_MS = 180_000;
-
-const DETECT_DELAYS_MS = [0, 500, 1000, 1500, 2000];
 
 const yamlValue = (raw: string) => {
   const quoted = QUOTED.exec(raw);
@@ -150,8 +143,6 @@ export const shareFor = (path: string, home: string, shares: VmShare[] = []) => 
 
   return shallow || isWithin(home, candidate) || holdsShare ? path : candidate;
 };
-
-const instanceOf = (profile: string) => (profile === "default" ? "colima" : `colima-${profile}`);
 
 const limaDir = (home: string, profile: string) => join(home, ".colima", "_lima", instanceOf(profile));
 
@@ -241,8 +232,6 @@ const startArgs = (profile: string, shares: VmShare[]) => [
 const restartCommand = (profile: string, shares: VmShare[]) =>
   `colima stop --profile ${profile} && colima ${startArgs(profile, shares).map(shellWord).join(" ")}`;
 
-const plainStart = (profile: string) => `colima start --profile ${profile} --activate=false`;
-
 const colimaYaml = (profile: string) => `~/.colima/${profile}/colima.yaml`;
 
 const editHint = (profile: string) =>
@@ -299,24 +288,13 @@ const sessionsText = (count: number) =>
 
 const manualHint = (plan: SharePlan) => `share it yourself with ${restartCommand(plan.profile, plan.next)}`;
 
-const lastLine = (text: string) => text.trim().split("\n").at(-1) ?? "";
-
-const runColima = async (deps: CliDeps, plan: SharePlan, args: string[]) => {
-  const failure = `could not share ${locationsOf(plan.added)} with the sandbox VM`;
-  const result = await deps.runner.run("colima", args).catch((error: unknown) => {
-    throw new LauncherError(
-      `${failure}: ${errorMessage(error)}`,
-      error instanceof LauncherError ? error.hint : undefined,
-    );
-  });
-
-  if (result.code !== 0) {
-    throw new LauncherError(
-      `${failure}: colima ${args[0]} failed: ${lastLine(result.stderr) || `exit ${result.code}`}`,
-      `run ${plainStart(plan.profile)} and see ~/.colima/_lima/${instanceOf(plan.profile)}/ha.stderr.log`,
-    );
-  }
-};
+const runColima = (deps: CliDeps, plan: SharePlan, args: string[]) =>
+  runColimaFor(
+    deps,
+    `could not share ${locationsOf(plan.added)} with the sandbox VM`,
+    args,
+    `run ${plainStart(plan.profile)} and see ~/.colima/_lima/${instanceOf(plan.profile)}/ha.stderr.log`,
+  );
 
 const assertShared = async (deps: CliDeps, plan: SharePlan, needs: Need[]) => {
   const shares = await runningShares(deps.home, plan.profile);
@@ -330,21 +308,6 @@ const assertShared = async (deps: CliDeps, plan: SharePlan, needs: Need[]) => {
     );
   }
 };
-
-const pause = (ms: number) => new Promise((done) => setTimeout(done, ms));
-
-const detectAfterRestart = (backend: Backend) =>
-  DETECT_DELAYS_MS.reduce<Promise<Detection | undefined>>(async (previous, delay) => {
-    const last = await previous;
-
-    if (last?.available === true) {
-      return last;
-    }
-
-    await pause(delay);
-
-    return backend.detect();
-  }, Promise.resolve(undefined));
 
 const assertLiveFree = async (context: LaunchContext, plan: SharePlan) => {
   const live = await liveSessions(context.stateDir);
@@ -374,7 +337,7 @@ const restartWithShares = async (
 
   await assertShared(deps, plan, needs);
 
-  const detection = await detectAfterRestart(backend);
+  const detection = await detectAgain(() => backend.detect());
 
   if (detection?.available !== true) {
     throw new LauncherError(
@@ -444,11 +407,7 @@ const shareWhenMissing = async (deps: CliDeps, context: LaunchContext, backend: 
     return;
   }
 
-  await withDirectoryLock(
-    join(context.stateDir, "locks", "vm-shares.lock"),
-    () => shareMissing(deps, context, backend, profile, needs),
-    { timeoutMs: LOCK_TIMEOUT_MS },
-  );
+  await withVmLock(context.stateDir, () => shareMissing(deps, context, backend, profile, needs));
 };
 
 export const ensureVmShares = async (deps: CliDeps, context: LaunchContext, backend: Backend) => {

@@ -70,6 +70,7 @@ import {
   pruneEndedGrants,
 } from "./sessions.ts";
 import { imagePiVersion, launcherVersion } from "./versions.ts";
+import { openLaunchBackend } from "./vm-lifecycle.ts";
 import { ensureVmShares } from "./vm-shares.ts";
 
 export interface LaunchContext {
@@ -487,7 +488,7 @@ export const openSandboxContext = async (deps: CliDeps) => {
 
   checkWorkspace(deps, context);
 
-  return { context, backend: await openBackend(deps, context.effective.config) };
+  return { context, backend: await openLaunchBackend(deps, context.effective.config, context.stateDir) };
 };
 
 export const launch = async (args: string[], deps: CliDeps) => {

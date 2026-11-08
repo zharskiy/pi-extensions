@@ -20,6 +20,7 @@ launcher/
 │   ├── host-sessions.ts     host sessions on or off for this launch (with the notice), readyHostSessions (prepare, guard, sweep), sweepWhenIdle under the session registry lock, the share probe, the exit and --no-sandbox sweeps
 │   ├── intercept.ts         pi install|remove (write-back of the packages entry), pi mcp add|remove|login|logout on the host (then the mcp-auth.json sync into a running container), bare pi update
 │   ├── host-pi.ts           resolveJobPi (managed, else bundled: host jobs and the image), resolveShellPi and hostPiCommand (one selection, also PATH outside sandboxRoots: doctor, pi update, --no-sandbox), the doctor's host pi text
+│   ├── vm-lifecycle.ts      the Colima VM operations every caller shares: the vm.lock, the colima runner wrapper, the detect retry, and openLaunchBackend (starts the stopped pi-sandbox profile on the launch path only)
 │   ├── vm-shares.ts         ensureVmShares (share a missing folder with the Colima VM: lima.yaml and colima.yaml mounts, the full --mount list, lock, live-session refusal, restart) and checkVmShares for the doctor
 │   ├── versions.ts          launcher version, testedPiVersion (the devDependency pin), imagePiVersion (the host pi's, else the pin), isOlderVersion
 │   ├── index.ts             the public surface
@@ -29,6 +30,7 @@ launcher/
 │       ├── egress.ts            egress allow, revoke and list (grants, denials)
 │       ├── gc.ts                stopped containers (and the proxy token of each repository whose container it removes), idle relays and proxies (repositories with a live session kept), unmounted volumes whose labelled repository root is gone (shared caches kept and left out of the unlabelled count; --shared-caches removes this user's unmounted ones), ended grants
 │       ├── reset.ts             this repository's container, proxy instance, render dir, and with --volumes its volumes (node_modules overlays included, shared caches kept) and sync copy
+│       ├── stop.ts              pi sandbox stop: colima stop of the pi-sandbox profile (refused while a pi session runs), then every proxy instance
 │       ├── doctor.ts            the doctor's order and rendering
 │       ├── doctor-container.ts  in-container checks: PI_OFFLINE, pi mcp list, the mcp-auth.json placeholder sweep, the settings.json package URL sweep, xdg-open --pi-sandbox-check, the host sessions share probe, trust and one request per credential rule host; exports OFFLINE_PROBE, MCP_LIST_PROBE and SHIM_PROBE
 │       ├── doctor-host.ts       host checks: host pi (warn below the tested version), provider hosts, parent proxy, org baseline (orgBaselineStatus), grants, the host session dir, vm size (colima status, warn below 8 CPUs or 10 GiB), vm shares (checkVmShares, report only), one line per vault server
@@ -183,6 +185,7 @@ launcher/
     ├── image/bash-env.test.ts   the missing-command hint under a bash -c spawned like pi's shell tool (sourced, sourced twice, through a bashrc, and BASH_ENV skipped for socket stdin without SHLVL; skipped on bash older than 4), BASH_ENV refused in env.allow and never forwarded
     ├── cli/harness.ts       temp dirs (removed after each test), fake runner, CliDeps with collected output, recorded control messages and confirmations, a fake bundled pi; writeManagedPi and writePathPi; writeLimaMounts and writeColimaMounts
     ├── cli/launch-wiring.test.ts, intercept.test.ts, egress.test.ts, vault-wiring.test.ts, launch-host-sessions.test.ts   launch wiring, intercepted commands, grants, the token vault wiring and its doctor lines, host sessions
+    ├── cli/vm-lifecycle.test.ts   the launch's start of the stopped VM (notice, status then start, no profile, running but unreachable, colima failures, apple, admin commands never start it) and pi sandbox stop (order of colima stop and proxy stop, live-session refusal, already stopped, no profile, arguments, help)
     ├── cli/vm-shares.test.ts   the lima.yaml parser, shareFor, and the launch's VM share step against a fake colima (notice, full --mount list, live-session refusal, colima failures, custom colima.yaml keys, apple and profile-less no-op)
     ├── cli/host-pi.test.ts, install.test.ts, uninstall.test.ts   the host pi of host jobs, the image and --no-sandbox; install.sh's managed pi takeover run for real with a temp HOME and fake uname, sw_vers, brew, colima and npm (no git, so the smoke step is skipped), and the colima start with --mount $HOME:w only for a new profile; uninstall.sh's engine cleanup and link restore
     ├── config/fixtures.ts   layer files in temp dirs
