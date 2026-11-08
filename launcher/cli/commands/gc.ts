@@ -1,9 +1,9 @@
 import { access } from "node:fs/promises";
-import type { Backend, ContainerSummary } from "../../backend/index.ts";
+import type { Backend, ContainerSummary, VolumeSummary } from "../../backend/index.ts";
 import { collectGarbage, LABELS } from "../../container/index.ts";
 import { liveSessions } from "../../grants/index.ts";
 import { removeRepoToken } from "../../proxy/index.ts";
-import { stateLayout } from "../../shared/index.ts";
+import { LauncherError, stateLayout } from "../../shared/index.ts";
 import { type CliDeps, writeLine, writeLines } from "../deps.ts";
 import { openBackend, openContext } from "../launch.ts";
 import { pruneEndedGrants } from "../sessions.ts";
@@ -51,6 +51,43 @@ const removeTokens = (stateDir: string, removed: ContainerSummary[], policyHashe
     }),
   );
 
+const orphaned = async (volume: VolumeSummary) => {
+  const root = volume.labels[LABELS.repoRoot];
+
+  return root !== undefined && !volume.inUse && !(await exists(root));
+};
+
+const removedVolume = (backend: Backend, name: string) =>
+  backend.removeVolume(name).then(
+    () => [name],
+    (error: unknown) => {
+      if (error instanceof LauncherError) {
+        return [];
+      }
+
+      throw error;
+    },
+  );
+
+const pruneVolumes = async (backend: Backend) => {
+  const volumes = await backend.listVolumes();
+  const verdicts = await Promise.all(volumes.map(orphaned));
+  const removable = volumes.filter((_volume, index) => verdicts[index]);
+  const removed = await Promise.all(removable.map((volume) => removedVolume(backend, volume.name)));
+
+  return {
+    removed: removed.flat(),
+    unlabelled: volumes.filter((volume) => volume.labels[LABELS.repoRoot] === undefined).length,
+  };
+};
+
+const unlabelledNotice = (count: number) =>
+  count === 0
+    ? []
+    : [
+        `kept ${plural(count, "volume")} without repository label; run pi sandbox reset in the repository or remove them by hand`,
+      ];
+
 export const gcCommand = async (deps: CliDeps) => {
   const { effective, stateDir } = await openContext(deps);
   const backend = await openBackend(deps, effective.config);
@@ -76,11 +113,15 @@ export const gcCommand = async (deps: CliDeps) => {
     ...new Set([...(await reposWithContainers(backend)), ...repoHashes]),
   ]);
 
+  const volumes = await pruneVolumes(backend);
+
   writeLines(deps.stdout, [
     ...garbage.containers.map((container) => `removed ${container.name} (${container.id})`),
     ...garbage.relays.map((relay) => `removed relay ${relay.name} (${relay.id})`),
     ...idle.map((instance) => `stopped proxy pid ${instance.pid} port ${instance.port}`),
     ...networks.map((name) => `removed network ${name}`),
+    ...volumes.removed.map((name) => `removed volume ${name}`),
+    ...unlabelledNotice(volumes.unlabelled),
   ]);
 
   writeLine(deps.stdout, `removed ${plural(garbage.containers.length, "stopped container")}`);

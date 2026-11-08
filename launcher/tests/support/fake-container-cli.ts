@@ -18,6 +18,7 @@ interface FakeCliContainer {
   image: string;
   labels: Record<string, string>;
   status: "running" | "stopped";
+  volumes: string[];
 }
 
 interface FakeSpawn {
@@ -170,11 +171,11 @@ export const createFakeContainerCli = (options: FakeCliOptions = {}) => {
       ]),
     );
 
-    containers.set(name, { id: name, image, labels, status: "stopped" });
+    const mounted = flagValues(parsed, "--volume").map((volume) => volume.split(":")[0] ?? "");
 
-    flagValues(parsed, "--volume").forEach((volume) => {
-      const source = volume.split(":")[0] ?? "";
+    containers.set(name, { id: name, image, labels, status: "stopped", volumes: mounted });
 
+    mounted.forEach((source) => {
       volumes.set(source, volumes.get(source) ?? Buffer.alloc(0));
     });
 
@@ -225,6 +226,16 @@ export const createFakeContainerCli = (options: FakeCliOptions = {}) => {
     return ok();
   };
 
+  const volumeJson = (name: string) => ({
+    name,
+    labels: Object.fromEntries(
+      (volumeLabels.get(name) ?? []).map((label) => [
+        label.split("=")[0],
+        label.split("=").slice(1).join("="),
+      ]),
+    ),
+  });
+
   const volumeCommand = ([action = "", ...rest]: string[]) => {
     const name = rest.at(-1) ?? "";
 
@@ -236,16 +247,18 @@ export const createFakeContainerCli = (options: FakeCliOptions = {}) => {
       return ok();
     }
 
+    if (action === "list") {
+      return ok(JSON.stringify([...volumes.keys()].map(volumeJson)));
+    }
+
     if (!volumes.has(name)) {
       return failed(`Error: volume ${name} not found`);
     }
 
-    if (action === "list") {
-      return ok(JSON.stringify([...networks.entries()].map(([id, entry]) => networkJson(id, entry))));
-    }
-
     if (action === "delete") {
       volumes.delete(name);
+
+      volumeLabels.delete(name);
     }
 
     return ok(JSON.stringify([{ name }]));
@@ -284,6 +297,7 @@ export const createFakeContainerCli = (options: FakeCliOptions = {}) => {
       id: container.id,
       labels: container.labels,
       image: { reference: container.image },
+      mounts: container.volumes.map((name) => ({ type: { volume: { name } }, destination: "/data" })),
     },
   });
 

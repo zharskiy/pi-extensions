@@ -192,6 +192,7 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
   const containers = new Map<string, FakeContainer>();
   const execs = new Map<string, FakeExec>();
   const volumes = new Map<string, Buffer>();
+  const volumeLabels = new Map<string, Record<string, string>>();
   const createdBodies: Array<{ name: string; body: unknown }> = [];
   const networks = new Map<string, FakeNetwork>(
     options.bridgeGateway === undefined
@@ -216,11 +217,11 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
   const volumeMounts = (container: FakeContainer) =>
     (container.body.HostConfig?.Mounts ?? []).filter((mount) => mount.Type === "volume");
 
-  const labelsMatch = (container: FakeContainer, filters: string[]) =>
+  const labelsMatch = (labels: Record<string, string> | undefined, filters: string[]) =>
     filters.every((filter) => {
       const [key = "", ...value] = filter.split("=");
 
-      return container.body.Labels?.[key] === value.join("=");
+      return labels?.[key] === value.join("=");
     });
 
   const findImage = (reference: string) =>
@@ -399,6 +400,8 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
 
     volumes.delete(name);
 
+    volumeLabels.delete(name);
+
     return { status: 204 };
   };
 
@@ -510,7 +513,10 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
           }),
         );
 
-        return { status: 200, json: listed.map((network) => ({ Name: network.body.Name })) };
+        return {
+          status: 200,
+          json: listed.map((network) => ({ Name: network.body.Name, Labels: network.body.Labels ?? {} })),
+        };
       },
     },
     { method: "POST", pattern: /^\/networks\/create$/, handle: createNetwork },
@@ -559,13 +565,14 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
         return {
           status: 200,
           json: [...containers.values()]
-            .filter((container) => labelsMatch(container, filters))
+            .filter((container) => labelsMatch(container.body.Labels, filters))
             .map((container) => ({
               Id: container.Id,
               Names: [`/${container.Name}`],
               Labels: container.body.Labels ?? {},
               State: container.State,
               Image: container.body.Image,
+              Mounts: volumeMounts(container).map((mount) => ({ Type: "volume", Name: mount.Source })),
             })),
         };
       },
@@ -583,9 +590,12 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
       method: "POST",
       pattern: /^\/volumes\/create$/,
       handle: ({ body }) => {
-        const name = parsed<{ Name: string }>(body).Name;
+        const spec = parsed<{ Name: string; Labels?: Record<string, string> }>(body);
+        const name = spec.Name;
 
         volumes.set(name, volumes.get(name) ?? EMPTY_TAR);
+
+        volumeLabels.set(name, volumeLabels.get(name) ?? spec.Labels ?? {});
 
         return { status: 201, json: { Name: name } };
       },
@@ -595,6 +605,24 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
       pattern: /^\/volumes\/([^/]+)$/,
       handle: ({ match }) =>
         volumes.has(match[1] ?? "") ? { status: 200, json: { Name: match[1] } } : notFound("no such volume"),
+    },
+    {
+      method: "GET",
+      pattern: /^\/volumes$/,
+      handle: ({ query }) => {
+        const wanted = parsed<{ label?: string[] }>(Buffer.from(query.get("filters") ?? "{}")).label ?? [];
+        const listed = [...volumes.keys()]
+          .map((name) => ({ Name: name, Labels: volumeLabels.get(name) ?? {} }))
+          .filter((volume) =>
+            wanted.every((filter) => {
+              const [key = "", ...value] = filter.split("=");
+
+              return volume.Labels[key] === value.join("=");
+            }),
+          );
+
+        return { status: 200, json: { Volumes: listed } };
+      },
     },
     { method: "DELETE", pattern: /^\/volumes\/([^/]+)$/, handle: removeVolume },
   ];
@@ -732,6 +760,7 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
     images,
     containers,
     volumes,
+    volumeLabels,
     networks,
     publish: (reference: string, digest: string) => registry.set(reference, digest),
     close,

@@ -34,9 +34,11 @@ import {
   containerSummariesOf,
   imageDigestOf,
   memoryArgument,
+  mountedVolumesOf,
   networkNamesOf,
   networkOf,
   volumeArgument,
+  volumesOf,
 } from "./cli.ts";
 
 type SpawnProcess = (file: string, args: string[], options: SpawnOptions) => ChildProcess;
@@ -343,17 +345,25 @@ export const createAppleBackend = (options: AppleOptions): Backend => {
         : pipedExec(spawn, execArguments(spec, io, envFlags), io),
     );
 
-  const ensureVolume = async (name: string) => {
+  const ensureVolume = async (name: string, labels: Record<string, string> = {}) => {
     const present = await container([...APPLE_COMMANDS.volumeInspect, name]);
 
     if (present.code !== 0) {
       await checked("volume create", [
         ...APPLE_COMMANDS.volumeCreate,
-        APPLE_FLAGS.label,
-        `${LABELS.managed}=true`,
+        ...pairs(APPLE_FLAGS.label, keyValues({ ...labels, [LABELS.managed]: "true" })),
         name,
       ]);
     }
+  };
+
+  const listVolumes = async () => {
+    const volumes = volumesOf((await checked("volume list", APPLE_COMMANDS.volumeList)).stdout);
+    const mounted = mountedVolumesOf((await checked("list", APPLE_COMMANDS.list)).stdout);
+
+    return volumes
+      .filter((volume) => volume.labels[LABELS.managed] === "true")
+      .map((volume) => ({ ...volume, inUse: mounted.has(volume.name) }));
   };
 
   const removeVolume = async (name: string) => {
@@ -496,6 +506,7 @@ export const createAppleBackend = (options: AppleOptions): Backend => {
     removeContainer,
     exec,
     ensureVolume,
+    listVolumes,
     removeVolume,
     exportVolume,
     importVolume,

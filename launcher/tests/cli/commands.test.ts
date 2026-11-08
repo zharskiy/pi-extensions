@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { run } from "../../cli/index.ts";
@@ -7,6 +7,7 @@ import { registerSession } from "../../grants/index.ts";
 import { launcherRoot, sha256Hex, stateLayout } from "../../shared/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
+import { tempDir } from "../support/temp-dir.ts";
 import { createHarness } from "./harness.ts";
 
 const packageVersion = async () =>
@@ -406,6 +407,55 @@ describe("pi sandbox gc and reset", () => {
     expect(fake.volumes.has(cache)).toBe(false);
     expect(fake.volumes.has(agent)).toBe(false);
     expect(harness.stdout()).toContain(`removed volume ${cache}\n`);
+  });
+
+  it("removes a volume whose repository no longer exists on disk", async () => {
+    const fake = createFakeBackend();
+    const harness = await createHarness({ adapters: () => [fake.backend] });
+    const gone = await tempDir("gone-repo");
+
+    await fake.backend.ensureVolume("pi-sandbox-agent-gone", {
+      [LABELS.repoHash]: sha256Hex(gone),
+      [LABELS.repoRoot]: gone,
+    });
+
+    await rm(gone, { recursive: true, force: true });
+
+    expect(await run(["sandbox", "gc"], harness.deps)).toBe(0);
+    expect(fake.volumes.has("pi-sandbox-agent-gone")).toBe(false);
+    expect(harness.stdout()).toContain("removed volume pi-sandbox-agent-gone\n");
+  });
+
+  it("keeps the volumes of a repository that still exists after its stopped container is removed", async () => {
+    const fake = createFakeBackend();
+    const harness = await createHarness({ adapters: () => [fake.backend] });
+
+    await run([], harness.deps);
+
+    const [agent = ""] = repoVolumes({
+      workspace: { cwd: harness.repoRoot, repoRoot: harness.repoRoot, isGitRepo: true },
+      config: sandboxConfig(),
+      hostEnv: harness.deps.env,
+      uid: harness.deps.uid,
+    });
+
+    expect(await run(["sandbox", "gc"], harness.deps)).toBe(0);
+    expect(fake.containers.size).toBe(0);
+    expect(fake.volumes.has(agent)).toBe(true);
+    expect(harness.stdout()).not.toContain("removed volume");
+  });
+
+  it("keeps a volume without a repository label and says how to remove it", async () => {
+    const fake = createFakeBackend();
+    const harness = await createHarness({ adapters: () => [fake.backend] });
+
+    await fake.backend.ensureVolume("pi-sandbox-agent-legacy");
+
+    expect(await run(["sandbox", "gc"], harness.deps)).toBe(0);
+    expect(fake.volumes.has("pi-sandbox-agent-legacy")).toBe(true);
+    expect(harness.stdout()).toContain(
+      "kept 1 volume without repository label; run pi sandbox reset in the repository or remove them by hand\n",
+    );
   });
 
   it("removes the proxy instance of this repo's policy so its token rotates on the next launch", async () => {

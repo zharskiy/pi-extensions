@@ -63,6 +63,12 @@ export interface ContainerSummary {
   image: string;
 }
 
+export interface VolumeSummary {
+  name: string;
+  labels: Record<string, string>;
+  inUse: boolean;
+}
+
 export interface ExecIo {
   stdin?: NodeJS.ReadableStream;
   stdout: NodeJS.WritableStream;
@@ -108,7 +114,8 @@ export interface Backend {
   stopContainer(id: string, timeoutSeconds?: number): Promise<void>;
   removeContainer(id: string, options?: RemoveContainerOptions): Promise<void>;
   exec(spec: ExecSpec, io: ExecIo): Promise<number>;
-  ensureVolume(name: string): Promise<void>;
+  ensureVolume(name: string, labels?: Record<string, string>): Promise<void>;
+  listVolumes(): Promise<VolumeSummary[]>;
   removeVolume(name: string): Promise<void>;
   exportVolume(name: string, tarPath: string, imageId: string): Promise<void>;
   importVolume(name: string, tarPath: string, imageId: string): Promise<void>;

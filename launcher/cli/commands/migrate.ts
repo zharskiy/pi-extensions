@@ -55,7 +55,9 @@ const moveVolume = async (source: MigrationSide, target: MigrationSide, name: st
 
   await source.backend.exportVolume(name, archive, source.imageId);
 
-  await target.backend.ensureVolume(name);
+  const listed = (await source.backend.listVolumes()).find((volume) => volume.name === name);
+
+  await target.backend.ensureVolume(name, listed?.labels);
 
   await target.backend.importVolume(name, archive, target.imageId);
 

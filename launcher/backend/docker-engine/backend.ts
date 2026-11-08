@@ -234,6 +234,7 @@ export const createDockerEngineBackend = (options: DockerEngineOptions): Backend
     removeContainer,
     exec: (spec, io) => runExec(client, spec, io),
     ensureVolume: volumes.ensureVolume,
+    listVolumes: volumes.listVolumes,
     removeVolume: volumes.removeVolume,
     exportVolume: volumes.exportVolume,
     importVolume: volumes.importVolume,

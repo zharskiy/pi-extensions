@@ -1,14 +1,19 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { LABELS } from "../../backend/index.ts";
 import { launcherRoot } from "../../shared/index.ts";
+import { createFakeEngine, type FakeEngine } from "../support/fake-engine.ts";
 
 const created: string[] = [];
 
+const engines: FakeEngine[] = [];
+
 afterEach(async () => {
+  await Promise.all(engines.splice(0).map((engine) => engine.close()));
+
   await Promise.all(created.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 });
 
@@ -37,70 +42,138 @@ case "$1" in
 esac
 `;
 
-const FAKE_DOCKER = `#!/bin/sh
-shift 2
-case "$1 $2" in
-  "info "*) exit 0 ;;
-  "ps -aq")
-    case "$4" in
-      label=pi-sandbox.relay=true) printf 'relay-1\\n' ;;
-      label=pi-sandbox.managed=true) printf 'sandbox-1\\nrelay-1\\nsandbox-2\\n' ;;
-    esac ;;
-  "rm -f") echo "$@" >> "$FAKE_LOG" ;;
-  "network ls") echo "$@" >> "$FAKE_LOG.args"; printf 'net-legacy\\nnet-repo\\n' ;;
-  "network rm") echo "$@" >> "$FAKE_LOG" ;;
-esac
-exit 0
-`;
-
-describe("uninstall.sh labels", () => {
-  it("filters on the same label names the launcher puts on what it creates", async () => {
-    const script = await readFile(join(launcherRoot(), "uninstall.sh"), "utf8");
-
-    expect(script).toContain(`\nmanaged_label=${LABELS.managed}\n`);
-    expect(script).toContain(`\nrelay_label=${LABELS.relay}\n`);
-  });
-});
-
-describe("uninstall.sh on the docker engine", () => {
-  it("removes labelled containers, counts relays once and removes the labelled networks", async () => {
-    const root = await mkdtemp(join(tmpdir(), "pi-sandbox-uninstall-"));
-    const bin = join(root, "bin");
-    const log = join(root, "removed.log");
-
-    created.push(root);
-
-    await mkdir(bin, { recursive: true });
-
-    await writeFile(join(bin, "docker"), FAKE_DOCKER);
-
-    await chmod(join(bin, "docker"), 0o755);
-
-    const result = spawnSync(
+const runUninstall = (root: string, socket: string, flags: string[] = []) =>
+  new Promise<{ status: number | null; stdout: string }>((resolve) => {
+    const child = spawn(
       "sh",
-      [join(launcherRoot(), "uninstall.sh"), "--bin-dir", join(root, "local-bin")],
+      [join(launcherRoot(), "uninstall.sh"), "--bin-dir", join(root, "local-bin"), ...flags],
       {
         env: {
           HOME: join(root, "home"),
-          PATH: `${bin}:/usr/bin:/bin`,
+          PATH: `${dirname(process.execPath)}:/usr/bin:/bin`,
           PI_SANDBOX_STATE_DIR: join(root, "state"),
-          FAKE_LOG: log,
+          DOCKER_HOST: `unix://${socket}`,
         },
-        encoding: "utf8",
       },
     );
+    const chunks: Buffer[] = [];
+
+    child.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
+
+    child.on("close", (status) => resolve({ status, stdout: Buffer.concat(chunks).toString("utf8") }));
+  });
+
+const managed = { [LABELS.managed]: "true" };
+
+const seedEngine = (engine: FakeEngine) => {
+  const container = (id: string, labels: Record<string, string>) => {
+    engine.containers.set(id, {
+      Id: id,
+      Name: id,
+      State: "running",
+      body: { Image: "image", Labels: labels },
+    });
+  };
+
+  const network = (name: string, labels: Record<string, string>) => {
+    engine.networks.set(name, { body: { Name: name, Labels: labels }, connected: [] });
+  };
+
+  const volume = (name: string, labels: Record<string, string>) => {
+    engine.volumes.set(name, Buffer.alloc(0));
+
+    engine.volumeLabels.set(name, labels);
+  };
+
+  container("sandbox-1", managed);
+
+  container("sandbox-2", { ...managed, [LABELS.repoHash]: "abc" });
+
+  container("relay-1", { ...managed, [LABELS.relay]: "true" });
+
+  container("foreign", { owner: "someone" });
+
+  network("pi-sandbox", managed);
+
+  network("pi-sandbox-0123456789ab", managed);
+
+  network("pi-sandbox-other", {});
+
+  network("elsewhere", managed);
+
+  volume("pi-sandbox-cache", managed);
+
+  volume("pi-sandbox-unlabelled", {});
+
+  volume("other-data", managed);
+};
+
+const engineRoot = async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-sandbox-uninstall-"));
+  const engine = await createFakeEngine();
+
+  created.push(root);
+
+  engines.push(engine);
+
+  seedEngine(engine);
+
+  return { root, engine };
+};
+
+describe("uninstall.sh on the docker engine", () => {
+  it("removes the labelled containers, counts relays once and removes the managed pi-sandbox networks", async () => {
+    const { root, engine } = await engineRoot();
+    const result = await runUninstall(root, engine.socketPath);
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain(
       "containers: removed 2 sandbox and 1 relay containers and 2 pi-sandbox networks",
     );
-    expect((await readFile(`${log}.args`, "utf8")).trim()).toBe(
-      "network ls -q --filter label=pi-sandbox.managed=true --filter name=pi-sandbox",
-    );
-    expect((await readFile(log, "utf8")).trim().split("\n")).toEqual([
-      "rm -f sandbox-1 sandbox-2 relay-1",
-      "network rm net-legacy net-repo",
+    expect(result.stdout).toContain("volumes: kept (pass --volumes");
+    expect([...engine.containers.keys()]).toEqual(["foreign"]);
+    expect([...engine.networks.keys()].sort()).toEqual(["elsewhere", "pi-sandbox-other"]);
+    expect([...engine.volumes.keys()].sort()).toEqual([
+      "other-data",
+      "pi-sandbox-cache",
+      "pi-sandbox-unlabelled",
     ]);
+  });
+
+  it("removes only the managed pi-sandbox volumes with --volumes", async () => {
+    const { root, engine } = await engineRoot();
+    const result = await runUninstall(root, engine.socketPath, ["--volumes"]);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("volumes: removed 1 pi-sandbox volumes");
+    expect([...engine.volumes.keys()].sort()).toEqual(["other-data", "pi-sandbox-unlabelled"]);
+  });
+
+  it("lists what it would remove and removes nothing with --dry-run", async () => {
+    const { root, engine } = await engineRoot();
+    const result = await runUninstall(root, engine.socketPath, ["--dry-run", "--volumes"]);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain(
+      "containers: would remove 2 sandbox and 1 relay containers and 2 pi-sandbox networks",
+    );
+    expect(result.stdout).toContain("volumes: would remove 1 pi-sandbox volumes");
+    expect(engine.containers.size).toBe(4);
+    expect(engine.networks.size).toBe(4);
+    expect(engine.volumes.size).toBe(3);
+    expect(engine.requests.filter((request) => request.method === "DELETE")).toEqual([]);
+  });
+
+  it("removes nothing and says so when no engine answers on the socket", async () => {
+    const root = await mkdtemp(join(tmpdir(), "pi-sandbox-uninstall-"));
+
+    created.push(root);
+
+    const result = await runUninstall(root, join(root, "missing.sock"), ["--volumes"]);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("containers: no reachable docker engine, nothing removed");
+    expect(result.stdout).not.toContain("volumes:");
   });
 });
 
@@ -126,6 +199,7 @@ describe("uninstall.sh on the Apple runtime", () => {
           HOME: join(root, "home"),
           PATH: `${bin}:/usr/bin:/bin`,
           PI_SANDBOX_STATE_DIR: join(root, "state"),
+          DOCKER_HOST: `unix://${join(root, "missing.sock")}`,
           FAKE_LOG: log,
         },
         encoding: "utf8",

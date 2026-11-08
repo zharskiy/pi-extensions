@@ -146,15 +146,11 @@ version_at_least "$node_version" "$min_node" || fail "node $node_version is too 
 step 1 "preflight: $preflight, node $node_version, profile $profile"
 
 if [ "$os" = Darwin ]; then
-  missing=""
-  command -v colima >/dev/null 2>&1 || missing=" colima"
-  command -v docker >/dev/null 2>&1 || missing="$missing docker"
-
-  if [ -n "$missing" ]; then
-    act brew install $missing >/dev/null
-    step 2 "runtime: $(verb "brew install$missing" "installed$missing with Homebrew")"
+  if command -v colima >/dev/null 2>&1; then
+    step 2 "runtime: colima is present"
   else
-    step 2 "runtime: colima and the docker CLI are present"
+    act brew install colima >/dev/null
+    step 2 "runtime: $(verb "brew install colima" "installed colima with Homebrew")"
   fi
 
   if [ "$dry_run" -eq 0 ]; then

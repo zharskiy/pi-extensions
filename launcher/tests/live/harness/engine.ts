@@ -12,6 +12,7 @@ export interface EngineContainer {
 
 export interface EngineVolume {
   Name: string;
+  Labels?: Record<string, string> | null;
 }
 
 export interface EngineNetwork {

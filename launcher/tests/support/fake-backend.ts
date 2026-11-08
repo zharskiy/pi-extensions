@@ -165,6 +165,7 @@ const contextFiles = async (dir: string) => {
 export const createFakeBackend = (options: FakeBackendOptions = {}) => {
   const containers = new Map<string, FakeContainer>();
   const volumes = new Set<string>();
+  const volumeLabels = new Map<string, Record<string, string>>();
   const volumeData = new Map<string, Buffer>();
   const localImages = new Map(Object.entries(options.localImages ?? {}));
   const registry = new Map(Object.entries(options.registry ?? {}));
@@ -355,11 +356,25 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
       }
     },
     exec: runExec,
-    ensureVolume: async (name) => {
+    ensureVolume: async (name, labels = {}) => {
+      volumeLabels.set(name, volumeLabels.get(name) ?? { ...labels, [LABELS.managed]: "true" });
+
       volumes.add(name);
     },
+    listVolumes: async () =>
+      [...volumes]
+        .filter((name) => volumeLabels.get(name)?.[LABELS.managed] === "true")
+        .map((name) => ({
+          name,
+          labels: volumeLabels.get(name) ?? {},
+          inUse: [...containers.values()].some((entry) =>
+            (entry.spec?.mounts ?? []).some((mount) => mount.kind === "volume" && mount.source === name),
+          ),
+        })),
     removeVolume: async (name) => {
       volumes.delete(name);
+
+      volumeLabels.delete(name);
 
       volumeData.delete(name);
     },
@@ -372,6 +387,8 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
     },
     importVolume: async (name, tarPath) => {
       const archive = await archiveOf(tarPath);
+
+      volumeLabels.set(name, volumeLabels.get(name) ?? { [LABELS.managed]: "true" });
 
       volumes.add(name);
 
@@ -457,6 +474,7 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
     backend,
     containers,
     volumes,
+    volumeLabels,
     volumeData,
     networks,
     foreignNetworks,

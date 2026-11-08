@@ -19,4 +19,5 @@ export type {
   ProxyRoute,
   ProxyRouteRequest,
   TerminalSize,
+  VolumeSummary,
 } from "./types.ts";

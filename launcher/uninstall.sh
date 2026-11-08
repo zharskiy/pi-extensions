@@ -7,9 +7,9 @@ marker_begin="# pi-sandbox begin"
 marker_end="# pi-sandbox end"
 wrapper_marker="launcher/bin/pi-sandbox"
 bin_dir="$HOME/.local/bin"
+script_dir=$(cd "$(dirname "$0")" && pwd)
 state_dir="${PI_SANDBOX_STATE_DIR:-$HOME/.local/state/pi-sandbox}"
 managed_label=pi-sandbox.managed
-relay_label=pi-sandbox.relay
 
 dry_run=0
 volumes=0
@@ -179,40 +179,29 @@ remove_state sessions render sync mcp-auth provider-hosts org grants.json
 
 colima_socket="$HOME/.colima/$colima_profile/docker.sock"
 
+case "${DOCKER_HOST:-}" in
+  unix://*) host_socket="${DOCKER_HOST#unix://}" ;;
+  *) host_socket=/var/run/docker.sock ;;
+esac
+
 if [ -S "$colima_socket" ]; then
-  docker_host="unix://$colima_socket"
+  engine_socket="$colima_socket"
 else
-  docker_host="${DOCKER_HOST:-unix:///var/run/docker.sock}"
+  engine_socket="$host_socket"
 fi
 
-if command -v docker >/dev/null 2>&1 && docker --host "$docker_host" info >/dev/null 2>&1; then
-  relays=$(docker --host "$docker_host" ps -aq --filter "label=$relay_label=true")
-  managed=$(docker --host "$docker_host" ps -aq --filter "label=$managed_label=true")
-  containers=$(printf '%s\n' $managed | grep -vxF "$(printf '%s\n' $relays)" || true)
+engine_flags=""
 
-  if [ -n "$containers$relays" ]; then
-    act docker --host "$docker_host" rm -f $containers $relays >/dev/null
-  fi
+if [ "$dry_run" -eq 1 ]; then
+  engine_flags="--dry-run"
+fi
 
-  networks=$(docker --host "$docker_host" network ls -q --filter "label=$managed_label=true" --filter name=pi-sandbox)
+if [ "$volumes" -eq 1 ]; then
+  engine_flags="$engine_flags --volumes"
+fi
 
-  if [ -n "$networks" ]; then
-    act docker --host "$docker_host" network rm $networks >/dev/null
-  fi
-
-  echo "containers: $(verb "remove" "removed") $(echo $containers | wc -w | tr -d ' ') sandbox and $(echo $relays | wc -w | tr -d ' ') relay containers and $(echo $networks | wc -w | tr -d ' ') pi-sandbox networks"
-
-  if [ "$volumes" -eq 1 ]; then
-    volume_names=$(docker --host "$docker_host" volume ls -q --filter "label=$managed_label=true" --filter name=pi-sandbox- | grep '^pi-sandbox-' || true)
-
-    if [ -n "$volume_names" ]; then
-      act docker --host "$docker_host" volume rm $volume_names >/dev/null
-    fi
-
-    echo "volumes: $(verb "remove" "removed") $(echo $volume_names | wc -w | tr -d ' ') pi-sandbox volumes"
-  else
-    echo "volumes: kept (pass --volumes to remove caches and older sandbox-only sessions)"
-  fi
+if [ -S "$engine_socket" ] && command -v node >/dev/null 2>&1; then
+  node "$script_dir/bin/uninstall-engine.mjs" "$engine_socket" $engine_flags
 else
   echo "containers: no reachable docker engine, nothing removed"
 fi

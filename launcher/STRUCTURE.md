@@ -6,7 +6,8 @@ Layer rules and behaviour are in [ARCHITECTURE.md](ARCHITECTURE.md).
 launcher/
 ├── bin/
 │   ├── pi-sandbox.js        the package bin: imports the built ../dist/cli/main.js
-│   └── pi-sandbox-dev.js    development entry: imports ../cli/main.ts, not published
+│   ├── pi-sandbox-dev.js    development entry: imports ../cli/main.ts, not published
+│   └── uninstall-engine.mjs run by uninstall.sh with node: removes the labelled containers, relays, pi-sandbox networks and (--volumes) volumes over the engine socket, imports nothing
 ├── cli/
 │   ├── main.ts              builds the real CliDeps and calls run
 │   ├── run.ts               the command table, routes argv (intercepted commands before the pass-through), renders LauncherError and unexpected errors
@@ -25,7 +26,7 @@ launcher/
 │       ├── status.ts            backend, container (and its session dir label), proxy, image, sessions, grants, gaps
 │       ├── config.ts            config show and set
 │       ├── egress.ts            egress allow, revoke and list (grants, denials)
-│       ├── gc.ts                stopped containers (and the proxy token of each repository whose container it removes), idle relays and proxies (repositories with a live session kept), ended grants
+│       ├── gc.ts                stopped containers (and the proxy token of each repository whose container it removes), idle relays and proxies (repositories with a live session kept), unmounted volumes whose labelled repository root is gone, ended grants
 │       ├── reset.ts             this repository's container, proxy instance, render dir, and with --volumes its volumes and sync copy
 │       ├── doctor.ts            the doctor's order and rendering
 │       ├── doctor-container.ts  in-container checks: PI_OFFLINE, pi mcp list, the mcp-auth.json placeholder sweep, the settings.json package URL sweep, xdg-open --pi-sandbox-check, the host sessions share probe, trust and one request per credential rule host; exports OFFLINE_PROBE, MCP_LIST_PROBE and SHIM_PROBE
@@ -69,7 +70,7 @@ launcher/
 │   ├── managed-network.ts   repoNetworkName, repoNetworkLabels, pruneCandidates and removeWithNetworkCleanup, shared by both adapters
 │   ├── pull.ts              verifiedPull (inspect, pull, inspect, digest check) and missingImage, shared by both adapters
 │   ├── docker-engine/       Docker Engine API adapter (backend name colima): socket, engine client, container body, exec session (streams with backpressure), images, volumes, relay per policy (kept while other repositories use it), the bridge gateway the proxy listens on for a native Linux engine
-│   └── apple/               Apple container adapter: backend.ts (container inspect for one container, a labelled network per repository), cli.ts (every flag and JSON shape it assumes)
+│   └── apple/               Apple container adapter: backend.ts (container inspect for one container, a labelled network per repository), cli.ts (every flag and JSON shape it assumes, the volume list and container mounts included)
 ├── container/
 │   ├── spec.ts              buildContainerSpec (network, proxy env with the repository token, render and trust mounts, the host session dir bind and env, ssh agent, spec hash), repoVolumes, forwardedEnv
 │   ├── git-overlay.ts       planGitOverlay (discovery once per launch: the overlay for the spec and ready() for right before a start: pins, layout checks, hook dirs, leaves checked again, snapshots, baseline), discoverGitOverlay and readyGitOverlay over it; re-exports gitLaunchNotices and gitSessionEndNotices from workspace
@@ -161,7 +162,7 @@ launcher/
 ├── examples/                org-baseline.team.json, org-baseline.enterprise.json (starting points for an org baseline)
 ├── schema/                  sandbox-config.schema.json
 ├── install.sh               macOS install: Colima profile, launcher and its bundled pi, PATH, user config (and --org), doctor in a temporary repository (host sessions off)
-├── uninstall.sh             removes what install.sh and the launcher created, and the session, render, sync, mcp-auth, provider-hosts, org and grants state
+├── uninstall.sh             removes what install.sh and the launcher created (engine objects through bin/uninstall-engine.mjs, no docker CLI), and the session, render, sync, mcp-auth, provider-hosts, org and grants state
 ├── THREAT-MODEL.md          assets, trust boundaries, what each feature weakens, known gaps
 ├── tsconfig.build.json      emits dist/ (gitignored) for the published bin
 └── tests/

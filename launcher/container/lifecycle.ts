@@ -116,12 +116,24 @@ const placeCopies = async (spec: LauncherContainerSpec) => {
 
 const runtimeSpec = ({ requiredCopies: _copies, copiesDir: _dir, ...spec }: LauncherContainerSpec) => spec;
 
+const ownerLabels = (labels: Record<string, string>) =>
+  Object.fromEntries(
+    [LABELS.repoHash, LABELS.repoRoot].flatMap((key) => {
+      const value = labels[key];
+
+      return value === undefined ? [] : [[key, value]];
+    }),
+  );
+
 const createFresh = async (backend: Backend, spec: LauncherContainerSpec): Promise<EnsuredContainer> => {
   const copied = await placeCopies(spec);
   const mounts = [...spec.mounts, ...copied];
+  const owner = ownerLabels(spec.labels);
 
   await Promise.all(
-    mounts.filter((mount) => mount.kind === "volume").map((mount) => backend.ensureVolume(mount.source)),
+    mounts
+      .filter((mount) => mount.kind === "volume")
+      .map((mount) => backend.ensureVolume(mount.source, owner)),
   );
 
   const { id } = await backend.createContainer({ ...runtimeSpec(spec), mounts });

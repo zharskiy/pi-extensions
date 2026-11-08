@@ -22,6 +22,7 @@ export const APPLE_COMMANDS = {
   volumeInspect: ["volume", "inspect"],
   volumeCreate: ["volume", "create"],
   volumeRemove: ["volume", "delete"],
+  volumeList: ["volume", "list", "--format", "json"],
   networkInspect: ["network", "inspect"],
   networkCreate: ["network", "create"],
   networkRemove: ["network", "delete"],
@@ -124,6 +125,37 @@ export const containerSummariesOf = (output: string) => {
 
   return (Array.isArray(containers) ? containers : []).map(summaryOf);
 };
+
+const listed = (output: string) => {
+  const parsed = parseJson(output);
+
+  return Array.isArray(parsed) ? parsed : [];
+};
+
+export const volumesOf = (output: string) =>
+  listed(output).flatMap((entry) => {
+    const volume = record(entry);
+    const configuration = record(volume.configuration);
+    const name = text(volume.name) ?? text(configuration.name);
+    const labels = record(volume.labels ?? configuration.labels) as Record<string, string>;
+
+    return name === undefined ? [] : [{ name, labels }];
+  });
+
+const mountedName = (mount: unknown) => text(record(record(record(mount).type).volume).name);
+
+export const mountedVolumesOf = (output: string) =>
+  new Set(
+    listed(output).flatMap((entry) => {
+      const mounts = record(record(entry).configuration).mounts;
+
+      return (Array.isArray(mounts) ? mounts : []).flatMap((mount) => {
+        const name = mountedName(mount);
+
+        return name === undefined ? [] : [name];
+      });
+    }),
+  );
 
 const APPLE_NETWORK_FIELDS = {
   gateway: [

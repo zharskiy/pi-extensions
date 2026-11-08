@@ -286,9 +286,13 @@ export const createLiveSandbox = async (name: string): Promise<LiveSandbox> => {
   };
 
   const cleanup = async () => {
+    const exited = [...children].map((child) => new Promise((resolve) => child.once("close", resolve)));
+
     children.forEach((child) => {
       child.kill("SIGKILL");
     });
+
+    await Promise.all(exited);
 
     await stopDaemons(stateDir);
 
@@ -304,9 +308,12 @@ export const createLiveSandbox = async (name: string): Promise<LiveSandbox> => {
 
     await Promise.all([...owned, ...relays].map((container) => removeContainer(container.Id)));
 
-    const volumes = (await listVolumes()).filter((volume) => volume.Name.includes(repoHash.slice(0, 12)));
-
-    await Promise.all(volumes.map((volume) => removeVolume(volume.Name)));
+    const volumes = (await listVolumes()).filter(
+      (volume) =>
+        volume.Name.includes(repoHash.slice(0, 12)) || volume.Labels?.["pi-sandbox.repo-hash"] === repoHash,
+    );
+    const removals = await Promise.all(volumes.map((volume) => removeVolume(volume.Name)));
+    const kept = volumes.filter((_volume, index) => ![204, 404].includes(removals[index]?.status ?? 0));
 
     const networks = await listNetworks();
     const repoNetworks = networks.filter(
@@ -323,6 +330,10 @@ export const createLiveSandbox = async (name: string): Promise<LiveSandbox> => {
     }
 
     await rm(root, { recursive: true, force: true });
+
+    if (kept.length > 0) {
+      throw new Error(`live cleanup could not remove ${kept.map((volume) => volume.Name).join(", ")}`);
+    }
   };
 
   return {
