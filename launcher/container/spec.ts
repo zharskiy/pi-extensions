@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { isAbsolute, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import {
   type BackendCapabilities,
   type ContainerSpec,
@@ -18,12 +18,23 @@ import {
 } from "../shared/index.ts";
 import {
   type GitOverlay,
+  gitRepos,
   type HostSessions,
+  mountedGitDirs,
   resolveExtraMounts,
   type Workspace,
 } from "../workspace/index.ts";
 import { gitSnapshotPath, gitSnapshotsDir } from "./git-snapshot.ts";
-import { agentVolumeName, cacheVolumeName, containerName, copiesDir, LABELS, repoHash } from "./names.ts";
+import {
+  agentVolumeName,
+  cacheVolumeName,
+  containerName,
+  copiesDir,
+  LABELS,
+  repoHash,
+  sharedVolumeName,
+  userHashOf,
+} from "./names.ts";
 
 export interface RequiredCopy {
   source: string;
@@ -33,6 +44,13 @@ export interface RequiredCopy {
 export interface LauncherContainerSpec extends ContainerSpec {
   requiredCopies: RequiredCopy[];
   copiesDir: string;
+  volumeLabels: Record<string, Record<string, string>>;
+  ownedPaths: string[];
+}
+
+export interface PathVolume {
+  path: string;
+  name: string;
 }
 
 interface SpecProxy {
@@ -102,17 +120,18 @@ const volume = (source: string, target: string): MountSpec => ({
 });
 
 const writableRoots = (workspace: Workspace) => {
-  const roots = [
-    ...new Set([workspace.repoRoot, workspace.gitCommonDir].filter((path) => path !== undefined)),
-  ];
+  const roots = [...new Set(mountedGitDirs(workspace))];
 
   return roots.filter((path) => !roots.some((other) => other !== path && isWithin(path, other)));
 };
 
+const gitCommonDirsOf = (workspace: Workspace) =>
+  gitRepos(workspace).flatMap((repo) => (repo.gitCommonDir === undefined ? [] : [repo.gitCommonDir]));
+
 const gitMounts = (input: ContainerSpecInput) => {
   const overlay = input.gitOverlay;
 
-  if (overlay === undefined || input.workspace.gitCommonDir === undefined) {
+  if (overlay === undefined || gitCommonDirsOf(input.workspace).length === 0) {
     return [];
   }
 
@@ -143,10 +162,81 @@ const extraMounts = (input: ContainerSpecInput) => {
   });
 };
 
+const homeRelative = (path: string) => path.slice(2).replace(/\/+$/, "");
+
+const guestHomePath = (path: string) => join(GUEST_HOME, homeRelative(path));
+
+const cacheTargets = (workspace: Workspace, config: SandboxConfig) =>
+  config.mounts.cacheVolumes.map((path) => resolvedPath(workspace.repoRoot, path));
+
+export const nodeModulesOverlays = (workspace: Workspace, config: SandboxConfig): PathVolume[] => {
+  if (!config.mounts.autoNodeModules) {
+    return [];
+  }
+
+  const covered = cacheTargets(workspace, config);
+
+  return (workspace.nodeProjects ?? [])
+    .map((dir) => join(dir, "node_modules"))
+    .filter((path) => !covered.some((target) => isWithin(path, target)))
+    .map((path) => ({ path, name: cacheVolumeName(workspace.repoRoot, relative(workspace.repoRoot, path)) }));
+};
+
+export const sharedCacheVolumes = (config: SandboxConfig, stateDir: string): PathVolume[] => {
+  const userHash = userHashOf(stateDir);
+
+  return config.mounts.sharedCaches.map((entry) => {
+    const path = `~/${homeRelative(entry)}`;
+
+    return { path, name: sharedVolumeName(userHash, path) };
+  });
+};
+
 export const repoVolumes = ({ workspace, config, hostEnv, uid }: RepoVolumesInput) => [
-  agentVolumeName(hostUser(hostEnv, uid), workspace.repoRoot),
-  ...config.mounts.cacheVolumes.map((path) => cacheVolumeName(workspace.repoRoot, path)),
+  ...new Set([
+    agentVolumeName(hostUser(hostEnv, uid), workspace.repoRoot),
+    ...config.mounts.cacheVolumes.map((path) => cacheVolumeName(workspace.repoRoot, path)),
+    ...nodeModulesOverlays(workspace, config).map((overlay) => overlay.name),
+  ]),
 ];
+
+const parentsBelow = (root: string, path: string): string[] => {
+  const parent = dirname(path);
+
+  return parent === root || !isWithin(parent, root) ? [] : [...parentsBelow(root, parent), parent];
+};
+
+const repoVolumeLabels = (workspace: Workspace) => ({
+  [LABELS.repoHash]: repoHash(workspace.repoRoot),
+  [LABELS.repoRoot]: workspace.repoRoot,
+});
+
+const sharedVolumeLabels = (stateDir: string, path: string) => ({
+  [LABELS.userHash]: userHashOf(stateDir),
+  [LABELS.sharedPath]: path,
+});
+
+const ownedVolumes = (input: ContainerSpecInput) => {
+  const { workspace, config } = input;
+  const repoLabels = repoVolumeLabels(workspace);
+  const caches = config.mounts.cacheVolumes.map((path) => ({
+    name: cacheVolumeName(workspace.repoRoot, path),
+    target: resolvedPath(workspace.repoRoot, path),
+    labels: repoLabels,
+  }));
+  const overlays = nodeModulesOverlays(workspace, config).map((overlay) => ({
+    name: overlay.name,
+    target: overlay.path,
+    labels: repoLabels,
+  }));
+  const shared = sharedCacheVolumes(config, input.stateDir).map((cache) => ({
+    name: cache.name,
+    target: guestHomePath(cache.path),
+    labels: sharedVolumeLabels(input.stateDir, cache.path),
+  }));
+
+  return { repo: [...caches, ...overlays], shared };
+};
 
 export const forwardedEnv = (names: string[], hostEnv: Record<string, string | undefined>) =>
   Object.fromEntries(
@@ -252,6 +342,9 @@ const baseLabels = (input: ContainerSpecInput) => ({
   ...(input.workspace.gitCommonDir === undefined
     ? {}
     : { [LABELS.gitCommonDir]: input.workspace.gitCommonDir }),
+  ...(input.workspace.isGitRepo || gitCommonDirsOf(input.workspace).length === 0
+    ? {}
+    : { [LABELS.gitCommonDirs]: JSON.stringify(gitCommonDirsOf(input.workspace)) }),
 });
 
 const withSpecHash = (spec: LauncherContainerSpec): LauncherContainerSpec => ({
@@ -264,9 +357,8 @@ export const buildContainerSpec = (input: ContainerSpecInput): LauncherContainer
   const trust = trustMounts(input);
   const extraReadOnly = extraMounts(input).map((mount) => bind(mount.source, mount.target, true));
   const agentVolume = agentVolumeName(hostUser(input.hostEnv, input.hostUid), workspace.repoRoot);
-  const caches = config.mounts.cacheVolumes.map((path) =>
-    volume(cacheVolumeName(workspace.repoRoot, path), resolvedPath(workspace.repoRoot, path)),
-  );
+  const owned = ownedVolumes(input);
+  const volumes = [...owned.repo, ...owned.shared];
 
   return withSpecHash({
     name: containerName(workspace.repoRoot),
@@ -278,7 +370,7 @@ export const buildContainerSpec = (input: ContainerSpecInput): LauncherContainer
       ...extraReadOnly,
       volume(agentVolume, GUEST_PATHS.agentDir),
       ...sessionsMounts(input),
-      ...caches,
+      ...volumes.map((entry) => volume(entry.name, entry.target)),
       ...renderMounts(input.renderDir),
       ...trust.mounts,
     ],
@@ -293,5 +385,15 @@ export const buildContainerSpec = (input: ContainerSpecInput): LauncherContainer
     sshAgent: sshAgentOf(input),
     requiredCopies: trust.copies,
     copiesDir: copiesDir(input.stateDir, workspace.repoRoot),
+    volumeLabels: Object.fromEntries([
+      [agentVolume, repoVolumeLabels(workspace)],
+      ...volumes.map((entry) => [entry.name, entry.labels]),
+    ]),
+    ownedPaths: [
+      ...new Set([
+        ...owned.shared.flatMap((entry) => parentsBelow(GUEST_HOME, entry.target)),
+        ...volumes.map((entry) => entry.target),
+      ]),
+    ],
   });
 };

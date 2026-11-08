@@ -1,4 +1,6 @@
 import { mkdir } from "node:fs/promises";
+import { sep } from "node:path";
+import type { BackendCapabilities } from "../backend/index.ts";
 import { resolveDockerSocket } from "../backend/index.ts";
 import { type CommandRunner, stateLayout } from "../shared/index.ts";
 import {
@@ -8,11 +10,13 @@ import {
   type GitPathGuard,
   type GitProtectContext,
   gitPathGuard,
+  gitRepos,
   type ProtectedGitPaths,
   pinGitDirs,
   protectedGitOverlay,
   recordGitBaseline,
   type Workspace,
+  workspaceSelfBinds,
 } from "../workspace/index.ts";
 import { gitSnapshotsDir, writeGitSnapshots } from "./git-snapshot.ts";
 
@@ -65,18 +69,63 @@ const pinned = async (workspace: Workspace, paths: ProtectedGitPaths, context: G
   return current;
 };
 
-const readied = async (
-  workspace: Workspace,
-  context: GitGuardContext,
+const NESTED_FILES_NOTICE = "pi-sandbox: workspace: nested .git files are not read-only on this backend";
+
+const depthOf = (path: string) => path.split(sep).length;
+
+const byDepth = (left: string, right: string) => depthOf(left) - depthOf(right) || left.localeCompare(right);
+
+const unique = (paths: string[]) => [...new Set(paths)];
+
+const combined = (workspace: Workspace, overlays: GitOverlay[]): GitOverlay => ({
+  selfBinds: unique([
+    ...workspaceSelfBinds(workspace),
+    ...overlays.flatMap((overlay) => overlay.selfBinds),
+  ]).sort(byDepth),
+  readOnlyDirs: unique(overlays.flatMap((overlay) => overlay.readOnlyDirs)),
+  readOnlyFiles: unique(overlays.flatMap((overlay) => overlay.readOnlyFiles)),
+});
+
+const merged = (workspace: Workspace, overlays: GitOverlay[]): GitOverlay => {
+  const [single] = overlays;
+
+  return workspace.isGitRepo && single !== undefined ? single : combined(workspace, overlays);
+};
+
+interface RepoPlan {
+  overlay: GitOverlay;
+  ready(): Promise<GitOverlay>;
+}
+
+const readiedRepo = async (
+  repo: Workspace,
   protect: GitProtectContext,
   guard: GitPathGuard,
   discovered: ProtectedGitPaths,
 ) => {
-  const paths = await pinned(workspace, discovered, protect);
+  const paths = await pinned(repo, discovered, protect);
 
   await Promise.all(paths.dirs.map((dir) => mkdir(dir, { recursive: true }).catch(() => undefined)));
 
-  const overlay = await protectedGitOverlay(workspace, paths, guard);
+  return protectedGitOverlay(repo, paths, guard);
+};
+
+const repoPlan = async (
+  repo: Workspace,
+  gitCommonDir: string,
+  protect: GitProtectContext,
+): Promise<RepoPlan> => {
+  const guard = gitPathGuard(repo, protect);
+  const paths = await findProtectedGitPaths(repo, gitCommonDir, protect);
+
+  return {
+    overlay: await protectedGitOverlay(repo, paths, guard),
+    ready: () => readiedRepo(repo, protect, guard, paths),
+  };
+};
+
+const readied = async (workspace: Workspace, context: GitGuardContext, plans: RepoPlan[]) => {
+  const overlay = merged(workspace, await Promise.all(plans.map((plan) => plan.ready())));
 
   await writeGitSnapshots(overlay, gitSnapshotsDir(context.stateDir, workspace.repoRoot));
 
@@ -86,21 +135,32 @@ const readied = async (
 };
 
 export const planGitOverlay = async (workspace: Workspace, context: GitGuardContext): Promise<GitPlan> => {
-  const gitCommonDir = workspace.gitCommonDir;
+  const repos = gitRepos(workspace).flatMap((repo) =>
+    repo.gitCommonDir === undefined ? [] : [{ repo, gitCommonDir: repo.gitCommonDir }],
+  );
 
-  if (gitCommonDir === undefined) {
+  if (repos.length === 0) {
     return UNPROTECTED;
   }
 
-  const protect = protectContext(context);
-  const guard = gitPathGuard(workspace, protect);
-  const paths = await findProtectedGitPaths(workspace, gitCommonDir, protect);
+  const protect = workspace.isGitRepo ? protectContext(context) : { ...protectContext(context), workspace };
+  const plans = await Promise.all(
+    repos.map(({ repo, gitCommonDir }) => repoPlan(repo, gitCommonDir, protect)),
+  );
 
   return {
-    overlay: await protectedGitOverlay(workspace, paths, guard),
-    ready: () => readied(workspace, context, protect, guard, paths),
+    overlay: merged(
+      workspace,
+      plans.map((plan) => plan.overlay),
+    ),
+    ready: () => readied(workspace, context, plans),
   };
 };
+
+export const backendNotices = (workspace: Workspace, capabilities: BackendCapabilities) =>
+  !capabilities.singleFileMount && !workspace.isGitRepo && (workspace.nested ?? []).length > 0
+    ? [NESTED_FILES_NOTICE]
+    : [];
 
 export const discoverGitOverlay = async (workspace: Workspace, context: GitGuardContext) =>
   (await planGitOverlay(workspace, context)).overlay;

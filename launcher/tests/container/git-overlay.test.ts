@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { BackendCapabilities, MountSpec } from "../../backend/index.ts";
 import {
+  backendNotices,
   buildContainerSpec,
   discoverGitOverlay,
   type GitGuardContext,
@@ -497,5 +498,102 @@ describe("the git checks around a session", () => {
       `git: ${planted} is a symbolic link`,
     ]);
     expect(await lstat(join(repo, ".git", "commondir")).catch(() => undefined)).toBeUndefined();
+  });
+});
+
+describe("the git dirs of a workspace in the container", () => {
+  const createFolder = async () => {
+    const base = await createBase();
+    const folder = join(base, "projects");
+    const first = await createRepo(folder, "app");
+    const second = await createRepo(folder, join("group", "lib"));
+
+    return { base, folder, first, second };
+  };
+
+  it("binds each nested repository's git files read-only and its root and parents onto themselves", async () => {
+    const { base, folder, first, second } = await createFolder();
+    const workspace = await workspaceAt(base, folder);
+    const spec = specOf(base, workspace, await discoverGitOverlay(workspace, contextOf(base)));
+    const mounts = gitMountsOf(spec, folder).map((mount) => describeMount(base, mount));
+    const indexOf = (target: string) => mounts.findIndex((mount) => mount.target === target);
+
+    expect(mounts).toEqual(
+      expect.arrayContaining([
+        { target: folder, readOnly: false, snapshot: false },
+        { target: first, readOnly: false, snapshot: false },
+        { target: join(folder, "group"), readOnly: false, snapshot: false },
+        { target: second, readOnly: false, snapshot: false },
+        { target: join(first, ".git", "hooks"), readOnly: true, snapshot: true },
+        { target: join(first, ".git", "config"), readOnly: true, snapshot: true },
+        { target: join(second, ".git", "hooks"), readOnly: true, snapshot: true },
+        { target: join(second, ".git", "config"), readOnly: true, snapshot: true },
+      ]),
+    );
+    expect(indexOf(join(folder, "group"))).toBeLessThan(indexOf(second));
+    expect(indexOf(second)).toBeLessThan(indexOf(join(second, ".git", "config")));
+    expect(JSON.parse(spec.labels[LABELS.gitCommonDirs] ?? "[]")).toEqual([
+      join(first, ".git"),
+      join(second, ".git"),
+    ]);
+  });
+
+  it("writes the snapshots of every nested repository in one start", async () => {
+    const { base, folder, first, second } = await createFolder();
+    const workspace = await workspaceAt(base, folder);
+
+    await writeFile(join(first, ".git", "hooks", "pre-commit"), "first\n");
+
+    await writeFile(join(second, ".git", "hooks", "pre-commit"), "second\n");
+
+    const spec = specOf(base, workspace, await readyGitOverlay(workspace, contextOf(base)));
+    const hookOf = (repo: string) => {
+      const source = spec.mounts.find((mount) => mount.target === join(repo, ".git", "hooks"))?.source ?? "";
+
+      return readFile(join(source, "pre-commit"), "utf8");
+    };
+
+    expect(await hookOf(first)).toBe("first\n");
+    expect(await hookOf(second)).toBe("second\n");
+    expect(await readFile(join(second, ".git", "commondir"), "utf8")).toBe(".\n");
+  });
+
+  it("recreates the container when a nested repository appears", async () => {
+    const { base, folder } = await createFolder();
+    const hashOf = async () => {
+      const workspace = await workspaceAt(base, folder);
+
+      return specOf(base, workspace, await discoverGitOverlay(workspace, contextOf(base))).labels[
+        LABELS.specHash
+      ];
+    };
+    const before = await hashOf();
+
+    await createRepo(folder, "tools");
+
+    expect(await hashOf()).not.toBe(before);
+  });
+
+  it("refuses a nested repository whose hooks path lies in the workspace outside it", async () => {
+    const { base, folder, first } = await createFolder();
+
+    await mkdir(join(folder, "shared-hooks"));
+
+    await git(first, ["config", "core.hooksPath", join(folder, "shared-hooks")]);
+
+    const workspace = await workspaceAt(base, folder);
+
+    await expect(discoverGitOverlay(workspace, contextOf(base))).rejects.toThrow("lies inside the workspace");
+  });
+
+  it("says nested git files stay writable on a backend without single-file mounts", async () => {
+    const { base, folder, first } = await createFolder();
+    const workspace = await workspaceAt(base, folder);
+    const single = await workspaceAt(base, first);
+    const notice = "pi-sandbox: workspace: nested .git files are not read-only on this backend";
+
+    expect(backendNotices(workspace, { singleFileMount: false, sshAgent: true })).toEqual([notice]);
+    expect(backendNotices(workspace, { singleFileMount: true, sshAgent: true })).toEqual([]);
+    expect(backendNotices(single, { singleFileMount: false, sshAgent: true })).toEqual([]);
   });
 });

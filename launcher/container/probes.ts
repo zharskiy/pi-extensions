@@ -4,7 +4,7 @@ import type { Backend } from "../backend/index.ts";
 import { isAuthLikeHeader, isPlaceholder, isSecretName } from "../shared/index.ts";
 
 export interface CheckResult {
-  status: "ok" | "fail" | "skip";
+  status: "ok" | "warn" | "fail" | "skip";
   detail: string;
 }
 
@@ -42,6 +42,8 @@ const NO_ROUTE_PROBE = [
 const COMMAND_MISSING = 127;
 
 export const passed = (detail: string): CheckResult => ({ status: "ok", detail });
+
+export const warned = (detail: string): CheckResult => ({ status: "warn", detail });
 
 export const failed = (detail: string): CheckResult => ({ status: "fail", detail });
 

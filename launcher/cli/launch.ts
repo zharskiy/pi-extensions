@@ -8,6 +8,7 @@ import {
   type SandboxConfig,
 } from "../config/index.ts";
 import {
+  backendNotices,
   buildContainerSpec,
   ensureContainer,
   findCurrentContainer,
@@ -16,6 +17,7 @@ import {
   gitLaunchNotices,
   type LauncherContainerSpec,
   listenFor,
+  nodeModulesOverlays,
   planGitOverlay,
   runPi,
 } from "../container/index.ts";
@@ -30,8 +32,9 @@ import {
   type HostSessions,
   type Workspace,
   withGitPinLock,
+  workspaceNotices,
 } from "../workspace/index.ts";
-import { type CliDeps, pathsOf, settleAll, writeLine, writeNotices } from "./deps.ts";
+import { type CliDeps, pathsOf, settleAll, writeLine, writeLines, writeNotices } from "./deps.ts";
 import { type HostSide, prepareHostSide } from "./derive.ts";
 import { findHostPi } from "./host-pi.ts";
 import {
@@ -92,9 +95,19 @@ const PREPARATION_SIGNALS: NodeJS.Signals[] = ["SIGINT", "SIGTERM", "SIGHUP"];
 
 const SIGNAL_EXIT_BASE = 128;
 
-export const openContext = async (deps: CliDeps, offline = false): Promise<LaunchContext> => {
+interface ContextOptions {
+  offline?: boolean;
+  lenient?: boolean;
+}
+
+export const openContext = async (
+  deps: CliDeps,
+  { offline = false, lenient = false }: ContextOptions = {},
+): Promise<LaunchContext> => {
   const stateDir = pathsOf(deps).stateDir;
-  const workspace = await discoverWorkspace(deps.cwd, deps.runner, stateLayout(stateDir).gitNoHooks);
+  const workspace = await discoverWorkspace(deps.cwd, deps.runner, stateLayout(stateDir).gitNoHooks, {
+    lenient,
+  });
   const { notices, ...effective } = await loadEffectiveConfig({
     repoRoot: workspace.repoRoot,
     env: deps.env,
@@ -106,6 +119,8 @@ export const openContext = async (deps: CliDeps, offline = false): Promise<Launc
 
   return { workspace, effective, stateDir, repoHash: repoHash(workspace.repoRoot) };
 };
+
+export const openAdminContext = (deps: CliDeps) => openContext(deps, { lenient: true });
 
 const checkWorkspaceRoots = (deps: CliDeps, context: LaunchContext) => {
   const roots = context.effective.config.workspaceRoots;
@@ -192,6 +207,35 @@ const sandboxRoute = async (
   return { url: guestProxyUrl(route, proxy.repoToken), network: route.network, policyHash: proxy.policyHash };
 };
 
+const CAPPED_NOTICE =
+  "pi-sandbox: more than 512 node_modules directories; overlay disabled, host node_modules is used";
+
+const overlayNotices = (context: LaunchContext) => {
+  if (context.workspace.nodeProjectsCapped === true) {
+    return [CAPPED_NOTICE];
+  }
+
+  const count = nodeModulesOverlays(context.workspace, context.effective.config).length;
+
+  if (count === 0) {
+    return [];
+  }
+
+  const places = count === 1 ? "1 directory" : `${count} directories`;
+
+  return [
+    `pi-sandbox: node_modules overlaid in ${places}; host node_modules is hidden; set mounts.autoNodeModules=false to keep it`,
+  ];
+};
+
+const writeLaunchNotices = (deps: CliDeps, context: LaunchContext, backend: Backend) => {
+  writeLines(deps.stderr, [
+    ...workspaceNotices(context.workspace),
+    ...backendNotices(context.workspace, backend.capabilities),
+    ...overlayNotices(context),
+  ]);
+};
+
 const syncAgentFiles = async (
   deps: CliDeps,
   context: LaunchContext,
@@ -242,6 +286,8 @@ export const prepareContainer = async (
   ]);
 
   writeNotices(deps, gitNotices);
+
+  writeLaunchNotices(deps, context, backend);
 
   const route = await sandboxRoute(deps, backend, proxy, image.id, context.repoHash);
   const specWith = (gitOverlay: GitOverlay) =>
@@ -418,7 +464,7 @@ export const launch = async (args: string[], deps: CliDeps) => {
   const piArgs = args.filter((arg) => arg !== NO_SANDBOX);
 
   if (piArgs.length !== args.length) {
-    const context = await openContext(deps, true);
+    const context = await openContext(deps, { offline: true, lenient: true });
 
     checkWorkspaceRoots(deps, context);
 

@@ -5,7 +5,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import type { RunResult } from "../../shared/index.ts";
-import { runFakeScript } from "./fake-engine.ts";
+import { fakeUidOf, runFakeScript } from "./fake-engine.ts";
 import { createFakeRunner } from "./fake-runner.ts";
 
 interface FakeCliOptions {
@@ -200,6 +200,10 @@ export const createFakeContainerCli = (options: FakeCliOptions = {}) => {
 
     if (containers.get(id)?.status !== "running") {
       return failed(`Error: container ${id} is not running`);
+    }
+
+    if (command.join(" ") === "id -u") {
+      return ok(`${fakeUidOf(flagValues(parsed, "--user")[0])}\n`);
     }
 
     return command.at(-1) === ECHO_INPUT ? ok(input) : runFakeScript(command);

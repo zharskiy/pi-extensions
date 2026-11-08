@@ -150,6 +150,7 @@ const execArguments = (spec: ExecSpec, io: ExecIo, envFlags: string[]) => [
   ...(io.stdin === undefined ? [] : [APPLE_FLAGS.interactive]),
   ...(io.tty ? [APPLE_FLAGS.tty] : []),
   ...envFlags,
+  ...optional(APPLE_FLAGS.user, spec.user),
   APPLE_FLAGS.workdir,
   spec.workdir,
   spec.containerId,

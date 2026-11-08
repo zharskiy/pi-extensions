@@ -26,6 +26,7 @@ const execBody = (spec: ExecSpec, io: ExecIo) => ({
   Tty: io.tty,
   Env: envList(spec.env),
   WorkingDir: spec.workdir,
+  ...(spec.user === undefined ? {} : { User: spec.user }),
   Cmd: spec.command,
   ConsoleSize: consoleSizeOf(io),
 });

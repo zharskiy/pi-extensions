@@ -53,6 +53,7 @@ const FORBIDDEN_VARIABLES = new Set([
   "ALL_PROXY",
   "PATH",
   "HOME",
+  "BASH_ENV",
 ]);
 
 const FIRST_NAME = /^([A-Za-z_][A-Za-z0-9_]*)/;

@@ -17,3 +17,8 @@ export const cacheVolumeName = (repoRoot: string, path: string) =>
 
 export const copiesDir = (stateDir: string, repoRoot: string) =>
   stateLayout(stateDir).copies(shortRepoHash(repoRoot));
+
+export const userHashOf = (stateDir: string) => sha256Hex(stateDir).slice(0, SHORT);
+
+export const sharedVolumeName = (userHash: string, path: string) =>
+  `pi-sandbox-shared-${userHash}-${sha256Hex(path).slice(0, 8)}`;

@@ -509,5 +509,6 @@ describe("pi sandbox help and version", () => {
     expect(await run(["sandbox", "help"], harness.deps)).toBe(0);
     expect(await run(["sandbox"], harness.deps)).toBe(0);
     expect(harness.stdout().match(/pi sandbox doctor/g)).toHaveLength(2);
+    expect(harness.stdout()).toContain("pi sandbox gc [--shared-caches]");
   });
 });

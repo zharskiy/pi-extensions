@@ -147,6 +147,8 @@ const LEAVES: readonly Leaf[] = [
   { key: "workspaceRoots", rule: { problem: narrowerRoots } },
   { key: "mounts.extraReadOnly", rule: { problem: subset } },
   { key: "mounts.cacheVolumes" },
+  { key: "mounts.sharedCaches", rule: { problem: subset } },
+  { key: "mounts.autoNodeModules" },
   { key: "env.allow", union: true },
   { key: "ssh.agent", rule: { problem: staysOff } },
   { key: "resources.cpus" },

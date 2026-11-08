@@ -1043,6 +1043,19 @@
             "minLength": 1,
             "pattern": "^(?!/)(?!(.*/)?\\.\\.(/|$))"
           }
+        },
+        "sharedCaches": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^~/(?!(\\.pi|\\.ssh|\\.gnupg|\\.aws|\\.docker|\\.colima|\\.kube|\\.config|\\.local/bin)(/|$))(?!(.*/)?\\.{1,2}(/|$))[^/]+(/[^/]+)*/?$"
+          },
+          "description": "Directories under ~ kept in one volume per user and shared by every repository, mounted read-write at the same path in the container. Not ~/.pi, ~/.ssh, ~/.gnupg, ~/.aws, ~/.docker, ~/.colima, ~/.kube, ~/.config or ~/.local/bin, no nested entries. Not in a project config; can only lose entries below."
+        },
+        "autoNodeModules": {
+          "type": "boolean",
+          "description": "Give every folder with a lockfile its own node_modules volume so the sandbox never shares node_modules with the host. On by default; the lowest layer that sets it wins."
         }
       }
     },

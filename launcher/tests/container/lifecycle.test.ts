@@ -1,5 +1,5 @@
-import { mkdtempSync, rmSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -18,15 +18,21 @@ import { sha256Hex } from "../../shared/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
 
+const WORK = realpathSync(mkdtempSync(join(tmpdir(), "pi-sandbox-lifecycle-work-")));
+
+mkdirSync(join(WORK, "repo"));
+
+mkdirSync(join(WORK, "other"));
+
 const capabilities: BackendCapabilities = {
   singleFileMount: true,
   sshAgent: true,
 };
 
 const workspace = {
-  cwd: "/work/repo/src",
-  repoRoot: "/work/repo",
-  gitCommonDir: "/work/repo/.git",
+  cwd: `${WORK}/repo/src`,
+  repoRoot: `${WORK}/repo`,
+  gitCommonDir: `${WORK}/repo/.git`,
   isGitRepo: true,
 };
 
@@ -36,6 +42,8 @@ const LOCK_STATE = mkdtempSync(join(tmpdir(), "pi-sandbox-lifecycle-lock-"));
 
 afterAll(() => {
   rmSync(LOCK_STATE, { recursive: true, force: true });
+
+  rmSync(WORK, { recursive: true, force: true });
 });
 
 const specOf = (overrides: Partial<ContainerSpecInput> = {}) =>
@@ -340,7 +348,9 @@ describe("container housekeeping", () => {
   it("garbage-collects stopped launcher containers and keeps running ones", async () => {
     const fake = createFakeBackend();
     const running = await ensureContainer({ backend: fake.backend, spec: specOf() });
-    const other = specOf({ workspace: { cwd: "/work/other", repoRoot: "/work/other", isGitRepo: false } });
+    const other = specOf({
+      workspace: { cwd: `${WORK}/other`, repoRoot: `${WORK}/other`, isGitRepo: false },
+    });
     const stopped = await ensureContainer({ backend: fake.backend, spec: other });
     const unrelated = fake.addContainer({
       name: "unrelated",
@@ -427,21 +437,21 @@ describe("gitDirInUseElsewhere", () => {
     const fake = createFakeBackend();
     const { id } = await ensureContainer({ backend: fake.backend, spec: specOf() });
     const worktree = {
-      cwd: "/work/wt",
-      repoRoot: "/work/wt",
-      gitCommonDir: "/work/repo/.git",
+      cwd: `${WORK}/wt`,
+      repoRoot: `${WORK}/wt`,
+      gitCommonDir: `${WORK}/repo/.git`,
       isGitRepo: true,
     };
     const submodule = {
-      cwd: "/work/repo/lib",
-      repoRoot: "/work/repo/lib",
-      gitCommonDir: "/work/repo/.git/modules/lib",
+      cwd: `${WORK}/repo/lib`,
+      repoRoot: `${WORK}/repo/lib`,
+      gitCommonDir: `${WORK}/repo/.git/modules/lib`,
       isGitRepo: true,
     };
     const unrelated = {
-      cwd: "/work/other",
-      repoRoot: "/work/other",
-      gitCommonDir: "/work/other/.git",
+      cwd: `${WORK}/other`,
+      repoRoot: `${WORK}/other`,
+      gitCommonDir: `${WORK}/other/.git`,
       isGitRepo: true,
     };
 
@@ -453,5 +463,195 @@ describe("gitDirInUseElsewhere", () => {
     await stopIdleContainer(fake.backend, id);
 
     expect(await gitDirInUseElsewhere(fake.backend, worktree)).toBe(false);
+  });
+});
+
+describe("gitDirInUseElsewhere in a workspace", () => {
+  const folder = {
+    cwd: WORK,
+    repoRoot: WORK,
+    isGitRepo: false,
+    nested: [{ ...workspace, cwd: workspace.repoRoot }],
+  };
+
+  it("keeps a nested repository pinned while its own sandbox runs, and the reverse", async () => {
+    const fake = createFakeBackend();
+    const single = await ensureContainer({ backend: fake.backend, spec: specOf() });
+
+    expect(await gitDirInUseElsewhere(fake.backend, folder, workspace.gitCommonDir)).toBe(true);
+
+    await stopIdleContainer(fake.backend, single.id);
+
+    expect(await gitDirInUseElsewhere(fake.backend, folder, workspace.gitCommonDir)).toBe(false);
+
+    await ensureContainer({ backend: fake.backend, spec: specOf({ workspace: folder }) });
+
+    expect(await gitDirInUseElsewhere(fake.backend, workspace)).toBe(true);
+    expect(await gitDirInUseElsewhere(fake.backend, folder, workspace.gitCommonDir)).toBe(false);
+  });
+});
+
+describe("volumes the sandbox writes", () => {
+  const project = join(WORK, "repo", "web");
+  const nodeWorkspace = { ...workspace, nodeProjects: [project] };
+  const cachedSpec = (stateDir = LOCK_STATE) =>
+    specOf({
+      workspace: nodeWorkspace,
+      stateDir,
+      config: sandboxConfig({
+        mounts: { extraReadOnly: [], cacheVolumes: [], sharedCaches: ["~/.cache/pip"] },
+      }),
+    });
+  const chownsOf = (fake: ReturnType<typeof createFakeBackend>) =>
+    fake.execs.filter((exec) => exec.spec.command[0] === "chown").map((exec) => exec.spec);
+
+  beforeEach(async () => {
+    await rm(project, { recursive: true, force: true });
+
+    await mkdir(project, { recursive: true });
+  });
+
+  it("creates a missing mount point on the host before the container starts", async () => {
+    const fake = createFakeBackend();
+
+    await ensureContainer({ backend: fake.backend, spec: cachedSpec() });
+
+    expect((await stat(join(project, "node_modules"))).isDirectory()).toBe(true);
+  });
+
+  it("refuses a mount point the sandbox side turned into a link", async () => {
+    const fake = createFakeBackend();
+    const elsewhere = join(WORK, "elsewhere");
+
+    await mkdir(elsewhere, { recursive: true });
+
+    await symlink(elsewhere, join(project, "node_modules"));
+
+    await expect(ensureContainer({ backend: fake.backend, spec: cachedSpec() })).rejects.toThrow(
+      `the mount point ${join(project, "node_modules")} is a symbolic link`,
+    );
+    expect([...fake.containers.values()]).toEqual([]);
+  });
+
+  it("refuses a mount point whose existing parent leads outside the repository through a link", async () => {
+    const fake = createFakeBackend();
+    const outside = join(WORK, "outside");
+    const link = join(WORK, "repo", "sym");
+
+    await rm(link, { force: true });
+
+    await mkdir(join(outside, "x"), { recursive: true });
+
+    await symlink(outside, link);
+
+    const spec = specOf({ config: sandboxConfig({ mounts: { cacheVolumes: ["sym/x/y"] } }) });
+
+    await expect(ensureContainer({ backend: fake.backend, spec })).rejects.toThrow(
+      `the mount point ${join(link, "x")} leads outside ${workspace.repoRoot}`,
+    );
+    expect(await stat(join(outside, "x", "y")).catch(() => undefined)).toBeUndefined();
+    expect([...fake.containers.values()]).toEqual([]);
+
+    await rm(link, { force: true });
+  });
+
+  it("creates every missing directory of a nested mount point inside the repository", async () => {
+    const fake = createFakeBackend();
+    const spec = specOf({ config: sandboxConfig({ mounts: { cacheVolumes: ["deep/a/b"] } }) });
+
+    await ensureContainer({ backend: fake.backend, spec });
+
+    expect((await stat(join(WORK, "repo", "deep", "a", "b"))).isDirectory()).toBe(true);
+  });
+
+  it("runs no root exec on an older container adopted after a lost create race", async () => {
+    const fake = createFakeBackend();
+    const spec = cachedSpec();
+    const racing = {
+      ...fake.backend,
+      createContainer: async () => {
+        fake.addContainer({
+          name: spec.name,
+          labels: { ...spec.labels, "pi-sandbox.spec-hash": "older" },
+          state: "stopped",
+          image: spec.image,
+        });
+
+        throw new Error("container name is already in use");
+      },
+    };
+    const result = await ensureContainer({ backend: racing, spec });
+
+    expect(result.outdated).toBe(true);
+    expect(fake.containers.get(result.id)?.summary.state).toBe("running");
+    expect(chownsOf(fake)).toEqual([]);
+  });
+
+  it("hands every owned volume and the home dirs above a shared cache to the sandbox user as root on each start", async () => {
+    const fake = createFakeBackend();
+    const spec = cachedSpec();
+    const first = await ensureContainer({ backend: fake.backend, spec });
+
+    await stopIdleContainer(fake.backend, first.id);
+
+    await ensureContainer({ backend: fake.backend, spec });
+
+    const [chown] = chownsOf(fake);
+
+    expect(chownsOf(fake)).toHaveLength(2);
+    expect(chown?.user).toBe("0");
+    expect(chown?.command).toEqual([
+      "chown",
+      "-h",
+      "1000:1000",
+      "/home/pi/.cache",
+      join(project, "node_modules"),
+      "/home/pi/.cache/pip",
+    ]);
+  });
+
+  it("hands the volumes to the host user on Linux and warns when that fails", async () => {
+    const fake = createFakeBackend({ execScripts: [{ command: ["chown"], code: 1, stderr: "denied\n" }] });
+    const result = await ensureContainer({
+      backend: fake.backend,
+      spec: specOf({ workspace: nodeWorkspace, platform: "linux", hostUid: 1001, hostGid: 1002 }),
+    });
+
+    expect(chownsOf(fake)[0]?.command.slice(0, 3)).toEqual(["chown", "-h", "1001:1002"]);
+    expect(result.notices).toEqual([
+      "warning: the sandbox user may not be able to write its cache volumes: denied",
+    ]);
+  });
+
+  it("runs no root exec when the sandbox has no volumes of its own to hand over", async () => {
+    const fake = createFakeBackend();
+
+    await ensureContainer({
+      backend: fake.backend,
+      spec: specOf({ config: sandboxConfig({ mounts: { extraReadOnly: [], cacheVolumes: [] } }) }),
+    });
+
+    expect(chownsOf(fake)).toEqual([]);
+  });
+
+  it("labels repository volumes with the repository and shared caches with the user only", async () => {
+    const fake = createFakeBackend();
+    const spec = cachedSpec();
+
+    await ensureContainer({ backend: fake.backend, spec });
+
+    const labelsOf = (target: string) =>
+      fake.volumeLabels.get(spec.mounts.find((mount) => mount.target === target)?.source ?? "");
+
+    expect(labelsOf(join(project, "node_modules"))).toEqual({
+      "pi-sandbox.managed": "true",
+      "pi-sandbox.repo-hash": sha256Hex(workspace.repoRoot),
+      "pi-sandbox.repo-root": workspace.repoRoot,
+    });
+    expect(labelsOf("/home/pi/.cache/pip")).toEqual({
+      "pi-sandbox.managed": "true",
+      "pi-sandbox.user-hash": sha256Hex(LOCK_STATE).slice(0, 12),
+      "pi-sandbox.shared-path": "~/.cache/pip",
+    });
   });
 });

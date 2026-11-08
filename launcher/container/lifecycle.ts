@@ -1,7 +1,15 @@
-import { copyFile, mkdir } from "node:fs/promises";
+import { copyFile, lstat, mkdir, realpath } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-import type { Backend, ContainerSummary, MountSpec } from "../backend/index.ts";
-import { isWithin, readJsonFile, sha256Hex, withFileLock, writeJsonFile } from "../shared/index.ts";
+import { type Backend, type ContainerSummary, execCapture, type MountSpec } from "../backend/index.ts";
+import {
+  errorMessage,
+  isWithin,
+  LauncherError,
+  readJsonFile,
+  sha256Hex,
+  withFileLock,
+  writeJsonFile,
+} from "../shared/index.ts";
 import type { Workspace } from "../workspace/index.ts";
 import { copiesDir, LABELS, repoHash } from "./names.ts";
 import type { LauncherContainerSpec, RequiredCopy } from "./spec.ts";
@@ -114,7 +122,105 @@ const placeCopies = async (spec: LauncherContainerSpec) => {
   );
 };
 
-const runtimeSpec = ({ requiredCopies: _copies, copiesDir: _dir, ...spec }: LauncherContainerSpec) => spec;
+const runtimeSpec = ({
+  requiredCopies: _copies,
+  copiesDir: _dir,
+  volumeLabels: _labels,
+  ownedPaths: _owned,
+  ...spec
+}: LauncherContainerSpec) => spec;
+
+const DEFAULT_OWNER = "1000:1000";
+
+const ROOT_USER = "0";
+
+const MOUNT_POINT_HINT = "replace it with a directory, or remove it so the launcher can create one";
+
+const isMissing = (error: unknown) => (error as NodeJS.ErrnoException).code === "ENOENT";
+
+const isTaken = (error: unknown) => (error as NodeJS.ErrnoException).code === "EEXIST";
+
+const foundAt = (path: string) =>
+  lstat(path).catch((error: unknown) => (isMissing(error) ? undefined : Promise.reject(error)));
+
+const ensureMountPoint = async (root: string, path: string): Promise<void> => {
+  const found = await foundAt(path);
+
+  if (found?.isSymbolicLink() === true) {
+    throw new LauncherError(`the mount point ${path} is a symbolic link`, MOUNT_POINT_HINT);
+  }
+
+  if (found !== undefined && !found.isDirectory()) {
+    throw new LauncherError(`the mount point ${path} is not a directory`, MOUNT_POINT_HINT);
+  }
+
+  if (found !== undefined && !isWithin(await realpath(path), await realpath(root))) {
+    throw new LauncherError(`the mount point ${path} leads outside ${root}`, MOUNT_POINT_HINT);
+  }
+
+  if (found !== undefined || path === root) {
+    return;
+  }
+
+  await ensureMountPoint(root, dirname(path));
+
+  await mkdir(path).catch((error: unknown) =>
+    isTaken(error) ? ensureMountPoint(root, path) : Promise.reject(error),
+  );
+};
+
+const writableRootOf = (mounts: MountSpec[], target: string) =>
+  mounts.find(
+    (mount) =>
+      mount.kind === "bind" &&
+      !mount.readOnly &&
+      mount.source === mount.target &&
+      mount.target !== target &&
+      isWithin(target, mount.target),
+  )?.target;
+
+const ensureMountPoints = (mounts: MountSpec[]) =>
+  Promise.all(
+    mounts
+      .filter((mount) => mount.kind === "volume")
+      .flatMap((mount) => {
+        const root = writableRootOf(mounts, mount.target);
+
+        return root === undefined ? [] : [ensureMountPoint(root, mount.target)];
+      }),
+  );
+
+const handOverVolumes = async (backend: Backend, id: string, spec: LauncherContainerSpec) => {
+  if (spec.ownedPaths.length === 0) {
+    return [];
+  }
+
+  const result = await execCapture(backend, {
+    containerId: id,
+    command: ["chown", "-h", spec.user ?? DEFAULT_OWNER, ...spec.ownedPaths],
+    env: {},
+    workdir: "/",
+    user: ROOT_USER,
+  }).catch((error: unknown) => ({ code: -1, stdout: "", stderr: errorMessage(error) }));
+
+  return result.code === 0
+    ? []
+    : [`warning: the sandbox user may not be able to write its cache volumes: ${result.stderr.trim()}`];
+};
+
+const startPrepared = async (backend: Backend, id: string, spec: LauncherContainerSpec, current = true) => {
+  if (!current) {
+    await backend.startContainer(id);
+
+    return [];
+  }
+
+  await ensureMountPoints(spec.mounts);
+
+  await backend.startContainer(id);
+
+  return handOverVolumes(backend, id, spec);
+};
 
 const ownerLabels = (labels: Record<string, string>) =>
   Object.fromEntries(
@@ -133,14 +239,15 @@ const createFresh = async (backend: Backend, spec: LauncherContainerSpec): Promi
   await Promise.all(
     mounts
       .filter((mount) => mount.kind === "volume")
-      .map((mount) => backend.ensureVolume(mount.source, owner)),
+      .map((mount) => backend.ensureVolume(mount.source, spec.volumeLabels[mount.source] ?? owner)),
   );
 
+  await ensureMountPoints(mounts);
+
   const { id } = await backend.createContainer({ ...runtimeSpec(spec), mounts });
+  const notices = await startPrepared(backend, id, spec);
 
-  await backend.startContainer(id);
-
-  return { id, created: true, outdated: false, spec, notices: [] };
+  return { id, created: true, outdated: false, spec, notices };
 };
 
 const repoContainers = (backend: Backend, spec: LauncherContainerSpec) =>
@@ -151,20 +258,18 @@ const reuse = async (
   container: ContainerSummary,
   spec: LauncherContainerSpec,
 ): Promise<EnsuredContainer> => {
-  if (container.state !== "running") {
-    await backend.startContainer(container.id);
-  }
-
   const outdated = !isCurrent(container, spec.labels);
-  const unprotected =
-    spec.labels[LABELS.gitCommonDir] !== undefined && container.labels[LABELS.gitProtection] === undefined;
+  const started =
+    container.state === "running" ? [] : await startPrepared(backend, container.id, spec, !outdated);
+  const guarded = spec.labels[LABELS.gitCommonDir] ?? spec.labels[LABELS.gitCommonDirs];
+  const unprotected = guarded !== undefined && container.labels[LABELS.gitProtection] === undefined;
 
   return {
     id: container.id,
     created: false,
     outdated,
     spec,
-    notices: outdated ? [OUTDATED, ...(unprotected ? [UNPROTECTED] : [])] : [],
+    notices: [...(outdated ? [OUTDATED, ...(unprotected ? [UNPROTECTED] : [])] : []), ...started],
   };
 };
 
@@ -277,20 +382,42 @@ const isAgent = (container: ContainerSummary) => container.labels[LABELS.relay] 
 export const listLauncherContainers = async (backend: Backend) =>
   (await backend.findContainers(MANAGED)).filter(isAgent);
 
-const sharesGitDir = (container: ContainerSummary, gitCommonDir: string) => {
-  const other = container.labels[LABELS.gitCommonDir];
+const listedGitDirs = (label: string | undefined): string[] => {
+  if (label === undefined) {
+    return [];
+  }
 
-  return other !== undefined && (isWithin(other, gitCommonDir) || isWithin(gitCommonDir, other));
+  try {
+    const parsed: unknown = JSON.parse(label);
+
+    return Array.isArray(parsed) ? parsed.filter((entry): entry is string => typeof entry === "string") : [];
+  } catch {
+    return [];
+  }
 };
 
-export const gitDirInUseElsewhere = async (backend: Backend, workspace: Workspace) => {
-  const gitCommonDir = workspace.gitCommonDir;
+const gitDirsOf = (container: ContainerSummary) => {
+  const single = container.labels[LABELS.gitCommonDir];
 
+  return [
+    ...(single === undefined ? [] : [single]),
+    ...listedGitDirs(container.labels[LABELS.gitCommonDirs]),
+  ];
+};
+
+const sharesGitDir = (container: ContainerSummary, gitCommonDir: string) =>
+  gitDirsOf(container).some((other) => isWithin(other, gitCommonDir) || isWithin(gitCommonDir, other));
+
+export const gitDirInUseElsewhere = async (
+  backend: Backend,
+  owner: Workspace,
+  gitCommonDir: string | undefined = owner.gitCommonDir,
+) => {
   if (gitCommonDir === undefined) {
     return false;
   }
 
-  const own = repoHash(workspace.repoRoot);
+  const own = repoHash(owner.repoRoot);
 
   return (await listLauncherContainers(backend)).some(
     (container) =>

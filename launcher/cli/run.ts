@@ -31,7 +31,7 @@ const version: Command = { run: printVersion, takesArguments: true };
 
 const COMMANDS: Record<string, Command> = {
   status: { run: statusCommand, takesArguments: false },
-  gc: { run: gcCommand, takesArguments: false },
+  gc: { run: gcCommand, takesArguments: true },
   doctor: { run: doctorCommand, takesArguments: false },
   config: { run: configCommand, takesArguments: true },
   egress: { run: egressCommand, takesArguments: true },

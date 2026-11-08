@@ -241,7 +241,7 @@ export const doctorCommand = async (deps: CliDeps) => {
   report(deps, "runtime", passed(`${backend.name} ${detection.version ?? "unknown"}`));
 
   const results = await backendChecks(deps, context, backend);
-  const host = reportAll(deps, await hostChecks(deps, context));
+  const host = reportAll(deps, await hostChecks(deps, context, backend));
 
   return [...results, ...host].every(Boolean) ? 0 : 1;
 };

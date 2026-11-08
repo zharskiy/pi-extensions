@@ -2,12 +2,13 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import type { ExecIo, ExecSpec } from "../../backend/index.ts";
+import type { Backend, ExecIo, ExecSpec } from "../../backend/index.ts";
 import { MCP_LIST_PROBE, OFFLINE_PROBE, SHIM_PROBE } from "../../cli/commands/doctor-container.ts";
 import { run } from "../../cli/index.ts";
 import { registerSession } from "../../grants/index.ts";
 import { sha256Hex } from "../../shared/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
+import { argvOf, type FakeCall } from "../support/fake-runner.ts";
 import { createHarness } from "./harness.ts";
 
 interface Probes {
@@ -186,7 +187,7 @@ const GATEWAY = {
   providers: [{ id: "gateway", apiKind: "example-messages" }],
 };
 
-const HOST_LINES = [
+const HOST_CHECK_LINES = [
   expect.stringMatching(/^ok bundled pi: pi \S+, the same as the image$/),
   "ok provider hosts: 1 built-in providers with known hosts",
   "skip parent proxy: no parent proxy configured",
@@ -194,6 +195,8 @@ const HOST_LINES = [
   "ok grants: none active",
   expect.stringMatching(/^ok sessions: \/.+\/home\/\.pi\/agent\/sessions\/--.+-repo-- \(host pi lists them/),
 ];
+
+const HOST_LINES = [...HOST_CHECK_LINES, "skip vm size: no colima profile: VM size not checked"];
 
 const doctorWith = async (probes: Probes, healthStatus = 200, userConfig?: unknown, hostAuth?: unknown) => {
   const port = await healthServer(healthStatus);
@@ -433,7 +436,8 @@ describe("pi sandbox doctor", () => {
       "skip browser: no runtime",
       "skip sessions share: no runtime",
       "skip trust: no runtime",
-      ...HOST_LINES,
+      ...HOST_CHECK_LINES,
+      "skip vm size: no runtime",
     ]);
   });
 
@@ -477,5 +481,77 @@ describe("pi sandbox doctor", () => {
       "skip trust: no image",
       ...HOST_LINES,
     ]);
+  });
+
+  describe("vm size", () => {
+    const GIB = 1024 ** 3;
+
+    const RESIZE = "colima stop --profile pi-sandbox && colima start --profile pi-sandbox --cpu 4 --memory 8";
+
+    const colimaStatus =
+      (status?: object) =>
+      (call: FakeCall): object | undefined => {
+        if (argvOf(call).join(" ") !== "colima status --profile pi-sandbox --json") {
+          return undefined;
+        }
+
+        return status === undefined
+          ? { code: 1, stderr: "colima [profile=pi-sandbox] is not running" }
+          : { stdout: JSON.stringify(status) };
+      };
+
+    const doctorOn = async (backend: Partial<Backend>, respond?: (call: FakeCall) => object | undefined) => {
+      const fake = createFakeBackend({ exec: answering({}) });
+      const harness = await createHarness({ adapters: () => [{ ...fake.backend, ...backend }], respond });
+
+      await harness.writeJson(harness.userConfigFile, { egress: { allow: [] } });
+
+      const code = await run(["sandbox", "doctor"], harness.deps);
+      const line = harness
+        .stdout()
+        .split("\n")
+        .find((entry) => entry.includes(" vm size: "));
+
+      return { code, line, harness };
+    };
+
+    const colimaProfile = { status: async () => ({ socket: "/fake/docker.sock", profile: "pi-sandbox" }) };
+
+    it("warns with the resize command for a 2 CPU, 4 GiB profile without failing doctor", async () => {
+      const { code, line } = await doctorOn(
+        colimaProfile,
+        colimaStatus({ cpu: 2, memory: 4 * GIB, disk: 60 * GIB }),
+      );
+
+      expect(line).toBe(
+        `warn vm size: profile pi-sandbox has 2 CPUs and 4 GiB, below 4 CPUs and 8 GiB; resize it with ${RESIZE}`,
+      );
+      expect(code).toBe(0);
+    });
+
+    it("passes for a 4 CPU, 8 GiB profile", async () => {
+      const { line } = await doctorOn(colimaProfile, colimaStatus({ cpu: 4, memory: 8 * GIB }));
+
+      expect(line).toBe("ok vm size: profile pi-sandbox has 4 CPUs and 8 GiB");
+    });
+
+    it("skips when colima is not on PATH", async () => {
+      const { line } = await doctorOn(colimaProfile);
+
+      expect(line).toBe("skip vm size: colima not on PATH");
+    });
+
+    it("skips when colima does not report the profile's size", async () => {
+      const { line } = await doctorOn(colimaProfile, colimaStatus());
+
+      expect(line).toBe("skip vm size: colima did not report the size of profile pi-sandbox");
+    });
+
+    it("skips on the apple backend without asking colima", async () => {
+      const { line, harness } = await doctorOn({ name: "apple", ...colimaProfile });
+
+      expect(line).toBe("skip vm size: apple backend: VM size not checked");
+      expect(harness.calls.some((call) => call.file === "colima")).toBe(false);
+    });
   });
 });

@@ -1,13 +1,19 @@
 import { isAbsolute } from "node:path";
 import type { Backend, BackendCapabilities } from "../../backend/index.ts";
 import { configHash } from "../../config/index.ts";
-import { findRepoContainer, isCurrentContainer, LABELS } from "../../container/index.ts";
+import {
+  findRepoContainer,
+  isCurrentContainer,
+  LABELS,
+  nodeModulesOverlays,
+  sharedCacheVolumes,
+} from "../../container/index.ts";
 import { liveSessions } from "../../grants/index.ts";
 import { recordedImage } from "../../image/index.ts";
 import { proxyPolicyHash } from "../../proxy/index.ts";
 import { LauncherError } from "../../shared/index.ts";
 import { type CliDeps, writeLines } from "../deps.ts";
-import { type LaunchContext, openBackend, openContext } from "../launch.ts";
+import { type LaunchContext, openAdminContext, openBackend } from "../launch.ts";
 import { launcherVersion } from "../versions.ts";
 import { grantLines } from "./egress.ts";
 
@@ -112,6 +118,19 @@ const sessionLines = async (context: LaunchContext) => {
   ];
 };
 
+const volumeLines = (context: LaunchContext) => {
+  const { config } = context.effective;
+  const overlays = nodeModulesOverlays(context.workspace, config);
+  const shared = sharedCacheVolumes(config, context.stateDir);
+
+  return [
+    `node_modules overlays: ${overlays.length}`,
+    ...overlays.map((overlay) => `node_modules overlay: ${overlay.path} (${overlay.name})`),
+    `shared caches: ${shared.length}`,
+    ...shared.map((cache) => `shared cache: ${cache.path} (${cache.name})`),
+  ];
+};
+
 const grantStatus = async (deps: CliDeps, context: LaunchContext) => {
   if (!context.effective.config.egress.grants.enabled) {
     return ["grants: turned off by egress.grants.enabled"];
@@ -123,13 +142,14 @@ const grantStatus = async (deps: CliDeps, context: LaunchContext) => {
 };
 
 export const statusCommand = async (deps: CliDeps) => {
-  const context = await openContext(deps);
+  const context = await openAdminContext(deps);
   const lines = [
     `launcher: ${await launcherVersion()}`,
     `repo: ${context.workspace.repoRoot}`,
     ...(await backendLines(deps, context)),
     ...(await proxyLines(deps, context)),
     await imageLine(context),
+    ...volumeLines(context),
     ...(await sessionLines(context)),
     ...(await grantStatus(deps, context)),
   ];

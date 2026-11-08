@@ -1,4 +1,5 @@
 export {
+  backendNotices,
   discoverGitOverlay,
   type GitGuardContext,
   type GitOverlay,
@@ -17,7 +18,7 @@ export {
   policyHashesInUse,
   removeRepoContainer,
 } from "./lifecycle.ts";
-export { LABELS } from "./names.ts";
+export { LABELS, userHashOf } from "./names.ts";
 export type { CheckResult, ProbeTarget } from "./probes.ts";
 export {
   answersHealth,
@@ -27,8 +28,15 @@ export {
   passed,
   skipped,
   sweepCredentials,
+  warned,
 } from "./probes.ts";
 export type { HostTerminal, SignalSource } from "./run-pi.ts";
 export { listenFor, runPi } from "./run-pi.ts";
 export type { LauncherContainerSpec } from "./spec.ts";
-export { buildContainerSpec, forwardedEnv, repoVolumes } from "./spec.ts";
+export {
+  buildContainerSpec,
+  forwardedEnv,
+  nodeModulesOverlays,
+  repoVolumes,
+  sharedCacheVolumes,
+} from "./spec.ts";

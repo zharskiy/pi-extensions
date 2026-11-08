@@ -10,6 +10,7 @@ interface FakeExecContext {
   tty: boolean;
   env: string[];
   workdir: string;
+  user?: string;
   input: () => Promise<Buffer>;
   write: (data: string | Buffer, stream?: OutputStream) => void;
 }
@@ -76,7 +77,7 @@ interface FakeContainer {
 
 interface FakeExec {
   containerId: string;
-  body: { Cmd: string[]; Tty: boolean; Env?: string[]; WorkingDir?: string };
+  body: { Cmd: string[]; Tty: boolean; Env?: string[]; WorkingDir?: string; User?: string };
   running: boolean;
   exitCode: number | null;
 }
@@ -159,7 +160,17 @@ export const runFakeScript = (command: string[]): ScriptResult => {
 
 const ECHO_INPUT = "cat";
 
+const GUEST_UID = "1000";
+
+export const fakeUidOf = (user: string | undefined) => (user ?? GUEST_UID).split(":")[0] ?? GUEST_UID;
+
 const defaultExec: FakeExecHandler = async (context) => {
+  if (context.command.join(" ") === "id -u") {
+    context.write(`${fakeUidOf(context.user)}\n`, "stdout");
+
+    return 0;
+  }
+
   if (context.command.at(-1) === ECHO_INPUT) {
     context.write(await context.input(), "stdout");
 
@@ -698,6 +709,7 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
       tty: exec.body.Tty,
       env: exec.body.Env ?? [],
       workdir: exec.body.WorkingDir ?? "",
+      user: exec.body.User,
       input: () => ended,
       write,
     });

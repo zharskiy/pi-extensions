@@ -79,6 +79,7 @@ describe("discoverWorkspace", () => {
       gitDir: join(repo, ".git"),
       gitCommonDir: join(repo, ".git"),
       isGitRepo: true,
+      nodeProjects: [],
     });
   });
 
@@ -92,6 +93,7 @@ describe("discoverWorkspace", () => {
       gitDir: join(repo, ".git"),
       gitCommonDir: join(repo, ".git"),
       isGitRepo: true,
+      nodeProjects: [],
     });
   });
 
@@ -107,6 +109,7 @@ describe("discoverWorkspace", () => {
       gitDir: join(repo, ".git", "worktrees", "linked"),
       gitCommonDir: join(repo, ".git"),
       isGitRepo: true,
+      nodeProjects: [],
     });
   });
 
@@ -250,11 +253,13 @@ describe("discoverWorkspace", () => {
       cwd: folder,
       repoRoot: folder,
       isGitRepo: false,
+      nested: [],
+      nodeProjects: [],
     });
   });
 
   it("resolves symlinked paths to their real location", async () => {
-    const { runner: fake } = createFakeRunner(() => ({ code: 128, stderr: "fatal: not a git repository" }));
+    const { runner: fake } = createFakeRunner(() => undefined);
     const folder = await temporaryFolder();
     const linked = join(tmpdir(), folder.split("/").at(-1) ?? "");
 

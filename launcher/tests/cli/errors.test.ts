@@ -54,7 +54,16 @@ describe("error rendering", () => {
   it("refuses arguments to a command that takes none", async () => {
     const harness = await createHarness();
 
+    expect(await run(["sandbox", "status", "--all"], harness.deps)).toBe(1);
+    expect(harness.stderr()).toContain("pi sandbox status takes no arguments");
+  });
+
+  it("refuses an unknown gc option and names the one it takes", async () => {
+    const harness = await createHarness();
+
     expect(await run(["sandbox", "gc", "--all"], harness.deps)).toBe(1);
-    expect(harness.stderr()).toContain("pi sandbox gc takes no arguments");
+    expect(harness.stderr()).toBe(
+      'pi-sandbox: unknown gc option "--all"\n  hint: pi sandbox gc [--shared-caches]\n',
+    );
   });
 });

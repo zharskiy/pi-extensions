@@ -1,6 +1,8 @@
 import type { SandboxConfig } from "../../config/index.ts";
 
-export const sandboxConfig = (overrides: Partial<SandboxConfig> = {}): SandboxConfig => ({
+type ConfigOverrides = Omit<Partial<SandboxConfig>, "mounts"> & { mounts?: Partial<SandboxConfig["mounts"]> };
+
+export const sandboxConfig = ({ mounts, ...overrides }: ConfigOverrides = {}): SandboxConfig => ({
   backend: "auto",
   fallback: "host",
   image: { reference: "ghcr.io/zharskiy/pi-sandbox:0.4.0" },
@@ -15,7 +17,7 @@ export const sandboxConfig = (overrides: Partial<SandboxConfig> = {}): SandboxCo
     grants: { enabled: true, maxHours: 168, permanent: true },
   },
   tls: { extraCa: [] },
-  mounts: { extraReadOnly: [], cacheVolumes: [] },
+  mounts: { extraReadOnly: [], cacheVolumes: [], sharedCaches: [], autoNodeModules: true, ...mounts },
   env: { allow: ["TERM", "LANG"] },
   ssh: { agent: false },
   resources: {},

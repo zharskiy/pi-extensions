@@ -3,7 +3,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import type { BackendCapabilities, MountSpec } from "../../backend/index.ts";
-import { buildContainerSpec, forwardedEnv, repoVolumes } from "../../container/index.ts";
+import {
+  buildContainerSpec,
+  forwardedEnv,
+  nodeModulesOverlays,
+  repoVolumes,
+  sharedCacheVolumes,
+} from "../../container/index.ts";
 import type { ContainerSpecInput } from "../../container/spec.ts";
 import { sha256Hex } from "../../shared/index.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
@@ -59,6 +65,8 @@ mkdirSync(sharedDir, { recursive: true });
 afterAll(() => {
   rmSync(scratch, { recursive: true, force: true });
 });
+
+const LABELS_SPEC_HASH = "pi-sandbox.spec-hash";
 
 const mountAt = (mounts: MountSpec[], target: string) => mounts.find((mount) => mount.target === target);
 
@@ -264,6 +272,67 @@ describe("buildContainerSpec", () => {
       readOnly: false,
       kind: "volume",
     });
+  });
+
+  it("overlays node_modules of every node project with a volume and leaves out those a cache covers", () => {
+    const workspace = {
+      cwd: repoRoot,
+      repoRoot,
+      gitCommonDir: "/work/repo/.git",
+      isGitRepo: true,
+      nodeProjects: [repoRoot, "/work/repo/web", "/work/repo/vendor/lib"],
+    };
+    const config = sandboxConfig({ mounts: { cacheVolumes: ["vendor"] } });
+    const input = specInput({ workspace, config });
+    const mounts = buildContainerSpec(input).mounts;
+
+    expect(nodeModulesOverlays(workspace, config)).toEqual([
+      {
+        path: "/work/repo/node_modules",
+        name: `pi-sandbox-cache-${repoHash.slice(0, 12)}-${sha256Hex("node_modules").slice(0, 8)}`,
+      },
+      {
+        path: "/work/repo/web/node_modules",
+        name: `pi-sandbox-cache-${repoHash.slice(0, 12)}-${sha256Hex("web/node_modules").slice(0, 8)}`,
+      },
+    ]);
+    expect(mountAt(mounts, "/work/repo/web/node_modules")).toMatchObject({ kind: "volume", readOnly: false });
+    expect(mountAt(mounts, "/work/repo/vendor/lib/node_modules")).toBeUndefined();
+    expect(repoVolumes({ workspace, config, hostEnv: input.hostEnv, uid: 501 })).toEqual(
+      mounts.filter((mount) => mount.kind === "volume").map((mount) => mount.source),
+    );
+  });
+
+  it("keeps host node_modules visible when the overlay is off", () => {
+    const workspace = { cwd: repoRoot, repoRoot, isGitRepo: false, nodeProjects: ["/work/repo/web"] };
+    const off = sandboxConfig({ mounts: { autoNodeModules: false } });
+    const plain = buildContainerSpec(
+      specInput({ workspace: { cwd: repoRoot, repoRoot, isGitRepo: false }, config: off }),
+    );
+
+    expect(nodeModulesOverlays(workspace, off)).toEqual([]);
+    expect(buildContainerSpec(specInput({ workspace, config: off })).labels[LABELS_SPEC_HASH]).toBe(
+      plain.labels[LABELS_SPEC_HASH],
+    );
+  });
+
+  it("mounts a shared cache at its home path under one name for every repository of the same state dir", () => {
+    const config = sandboxConfig({ mounts: { sharedCaches: ["~/.cache/pip/"] } });
+    const other = { cwd: "/work/other", repoRoot: "/work/other", isGitRepo: false };
+    const name = `pi-sandbox-shared-${sha256Hex("/state").slice(0, 12)}-${sha256Hex("~/.cache/pip").slice(0, 8)}`;
+    const first = buildContainerSpec(specInput({ config }));
+    const second = buildContainerSpec(specInput({ config, workspace: other }));
+
+    expect(sharedCacheVolumes(config, "/state")).toEqual([{ path: "~/.cache/pip", name }]);
+    expect(mountAt(first.mounts, "/home/pi/.cache/pip")).toEqual({
+      source: name,
+      target: "/home/pi/.cache/pip",
+      readOnly: false,
+      kind: "volume",
+    });
+    expect(mountAt(second.mounts, "/home/pi/.cache/pip")?.source).toBe(name);
+    expect(sharedCacheVolumes(config, "/other-state")[0]?.name).not.toBe(name);
+    expect(repoVolumes({ workspace: other, config, hostEnv: {}, uid: 501 })).not.toContain(name);
   });
 
   it("mounts the proxy CA read-only when the proxy has one, and only then", () => {

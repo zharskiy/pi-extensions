@@ -12,26 +12,26 @@ launcher/
 │   ├── main.ts              builds the real CliDeps and calls run
 │   ├── run.ts               the command table, routes argv (intercepted commands before the pass-through), renders LauncherError and unexpected errors
 │   ├── deps.ts              CliDeps: runner, env, home, cwd, streams, terminal, signals, platform, uid and gid, adapters, proxy control (ensure, list, stop, remove, control, denials, trust), bundledPi, resolveHost, confirm, now; writeNotices, hostAgentDirOf, settleAll (waits for every promise, then throws the first error)
-│   ├── launch.ts            LaunchContext (repoHash computed once), the pi pipeline, withSandbox (a signal cancels preparation at the next step and waits for the current one) and the steps other commands reuse (prepareImage through ensureSandboxImage, prepareContainer with render, the git plan, sync and grant pruning); proxy and image, then render, git notices, version, git plan and host sessions, then the two syncs, each group in parallel
+│   ├── launch.ts            LaunchContext (repoHash computed once), the pi pipeline, withSandbox (a signal cancels preparation at the next step and waits for the current one) and the steps other commands reuse (prepareImage through ensureSandboxImage, prepareContainer with render, the git plan, sync and grant pruning); proxy and image, then render, git notices, version, git plan and host sessions; prints the workspace, backend and node_modules overlay notices, then the two syncs, each group in parallel
 │   ├── derive.ts            the host side: host pi files, MCP token seed, provider host table, vault discovery, deriveSandboxPi, private-host notices (DNS waited for at most 2 s), trust bundle; deriveVaultServers
 │   ├── sandbox-proxy.ts     starts the proxy with daemonEnv and the discover command, the repository token, dynamic.json (under a lock) with the vault servers, envSecretsFor over /control (no line breaks), the cap-aware denial summary on exit (rule egress.cap)
 │   ├── mcp-auth-sync.ts     syncSandboxMcpAuth: containerMcpAuth and syncContainerMcpAuth into a container, with notices
-│   ├── sessions.ts          registers and ends a launch session, stops the idle container after the last one (then the full host sessions sweep), prunes ended grants
+│   ├── sessions.ts          registers and ends a launch session, stops the idle container after the last one (then the full host sessions sweep), prunes ended grants; the session-end git notices with a pins-in-use check per git common dir
 │   ├── host-sessions.ts     host sessions on or off for this launch (with the notice), readyHostSessions (prepare, guard, sweep), sweepWhenIdle under the session registry lock, the share probe, the exit and --no-sandbox sweeps
 │   ├── intercept.ts         pi install|remove (write-back of the packages entry), pi mcp add|remove|login|logout on the host (then the mcp-auth.json sync into a running container), bare pi update
 │   ├── host-pi.ts           finds the host pi for --no-sandbox; bundledPiCommand (the pi next to the launcher, else the host pi)
 │   ├── versions.ts          launcher version, pinned pi version
 │   ├── index.ts             the public surface
 │   └── commands/
-│       ├── status.ts            backend, container (and its session dir label), proxy, image, sessions, grants, gaps
+│       ├── status.ts            backend, container (and its session dir label), proxy, image, sessions, grants, gaps, node_modules overlays, shared caches
 │       ├── config.ts            config show and set
 │       ├── egress.ts            egress allow, revoke and list (grants, denials)
-│       ├── gc.ts                stopped containers (and the proxy token of each repository whose container it removes), idle relays and proxies (repositories with a live session kept), unmounted volumes whose labelled repository root is gone, ended grants
-│       ├── reset.ts             this repository's container, proxy instance, render dir, and with --volumes its volumes and sync copy
+│       ├── gc.ts                stopped containers (and the proxy token of each repository whose container it removes), idle relays and proxies (repositories with a live session kept), unmounted volumes whose labelled repository root is gone (shared caches kept and left out of the unlabelled count; --shared-caches removes this user's unmounted ones), ended grants
+│       ├── reset.ts             this repository's container, proxy instance, render dir, and with --volumes its volumes (node_modules overlays included, shared caches kept) and sync copy
 │       ├── doctor.ts            the doctor's order and rendering
 │       ├── doctor-container.ts  in-container checks: PI_OFFLINE, pi mcp list, the mcp-auth.json placeholder sweep, the settings.json package URL sweep, xdg-open --pi-sandbox-check, the host sessions share probe, trust and one request per credential rule host; exports OFFLINE_PROBE, MCP_LIST_PROBE and SHIM_PROBE
-│       ├── doctor-host.ts       host checks: bundled pi, provider hosts, parent proxy, org baseline (orgBaselineStatus), grants, the host session dir, one line per vault server
-│       ├── migrate.ts           volumes to another backend
+│       ├── doctor-host.ts       host checks: bundled pi, provider hosts, parent proxy, org baseline (orgBaselineStatus), grants, the host session dir, vm size (colima status, warn below 4 CPUs or 8 GiB), one line per vault server
+│       ├── migrate.ts           volumes to another backend (agent, cache and node_modules volumes; not the shared caches)
 │       └── help.ts              usage
 ├── config/
 │   ├── types.ts             SandboxConfig, layers, credential rules, secret sources, egress, tls, image and org keys, EgressCap
@@ -49,20 +49,22 @@ launcher/
 │   ├── hash.ts              configHash
 │   └── dotted.ts            dotted key access
 ├── workspace/
-│   ├── discover.ts          discoverWorkspace: the nearest .git found without git, its layout checked, then git rev-parse must agree
+│   ├── discover.ts          discoverWorkspace: the nearest .git found without git, its layout checked, then git rev-parse must agree; without one, workspace mode (each nested repository confirmed, git dirs inside the root, 128 repositories and the scan budget, refusals), unreadable directories refused, the 512 node project cap; lenient for admin commands and --no-sandbox
+│   ├── workspace-scan.ts    scanWorkspace: one level-by-level walk (50 000 directories, node_modules, .pi and .git skipped, unreadable directories recorded, submodule checkouts not registered) for nested repositories and node projects (lockfile dirs, package.json dirs below them, 256 per repository)
+│   ├── git-workspace.ts     workspaceSelfBinds, workspaceNotices, gitConfigFiles (every non-command config origin of a repository, includes too), assertWorkspaceGitConfig (root and nested listings, config inside the workspace outside its repositories refused) and the listing refusal
 │   ├── git-layout.ts        gitLayoutAt (main, separate, submodule and linked worktree git dirs, refusing links and foreign commondir or gitdir pointers, pinning an empty commondir in place), findGitRoot, findModuleGitDirs, findWorktreeGitDirs, gitRefusal
-│   ├── git-protect.ts       findProtectedGitPaths (hooks dirs, config and pointer files, pins), gitPathGuard (the protected-path check with the engine sockets passed in), protectedGitOverlay (each leaf lstat'ed, refused when it is a link or goes through one, then the self binds)
-│   ├── git-session.ts       recordGitBaseline (scan and alternates in git/<repo hash>/baseline.json), gitLaunchNotices, gitSessionEndNotices (unpin under the pin lock, layout, alternates and nested-repository notices)
-│   ├── git-integrity.ts     assertGitIntegrity, pinGitDirs and unpinGitDirs (the commondir pin), withGitPinLock (one lock per git common dir), gitAlternatesNotices, gitDirOf
-│   ├── git-scan.ts          scanGitBaseline (nested .git entries and gitlinks), nestedGitNotices
+│   ├── git-protect.ts       findProtectedGitPaths (hooks dirs, config and pointer files, pins; config origins, includes too, inside the repository bound read-only; in a workspace those inside any nested repository, and a hooksPath or origin in the workspace outside every repository refused), gitPathGuard (the protected-path check with the engine sockets passed in), protectedGitOverlay (each leaf lstat'ed, refused when it is a link or goes through one, then the self binds)
+│   ├── git-session.ts       recordGitBaseline (scan and alternates in git/<repo hash>/baseline.json), gitLaunchNotices, gitSessionEndNotices (unpin under each pin lock, layout, alternates and nested-repository notices), per repository of a workspace
+│   ├── git-integrity.ts     assertGitIntegrity, pinGitDirs and unpinGitDirs (the commondir pin), withGitPinLock (one lock per git common dir, every repository's in a workspace), gitAlternatesNotices, gitDirOf
+│   ├── git-scan.ts          scanGitBaseline (nested .git entries and gitlinks, one walk skipping every known git dir and the gitlinks of each repository), nestedGitNotices
 │   ├── git-command.ts       inertGitOptions: core.fsmonitor off and an empty core.hooksPath for the launcher's own git calls
 │   ├── guard.ts             assertSafeWorkspace: refuses a repo at or above home, ~/.pi, state, config or /, or inside ~/.pi, state or config; assertHostSessionsDir, the one ~/.pi exception
 │   ├── pi-session-dir.ts    hostAgentDir, pi's session slug, hostSessionsDir, hostSessionsChoice (on, or off with its reason)
 │   ├── mounts.ts            resolveExtraMounts: mounts.extraReadOnly checked (exists, real path, protected paths, .git, engine socket)
 │   ├── roots.ts             assertWithinWorkspaceRoots
-│   └── types.ts             Workspace
+│   └── types.ts             Workspace (nested repositories, node projects), gitRepos, mountedGitDirs
 ├── backend/
-│   ├── types.ts             Backend, BackendCapabilities, ContainerSpec, ExecSpec, ExecIo, ImageInfo, MountSpec, NetworkRef, ProxyRoute
+│   ├── types.ts             Backend, BackendCapabilities, ContainerSpec, ExecSpec (with user), ExecIo, ImageInfo, MountSpec, NetworkRef, ProxyRoute
 │   ├── select.ts            selectBackend, createDefaultAdapters
 │   ├── image-reference.ts   repository, tag and repo@digest of an image reference
 │   ├── labels.ts            LABELS: every pi-sandbox.* label key
@@ -72,22 +74,23 @@ launcher/
 │   ├── docker-engine/       Docker Engine API adapter (backend name colima): socket, engine client, container body, exec session (streams with backpressure), images, volumes, relay per policy (kept while other repositories use it), the bridge gateway the proxy listens on for a native Linux engine
 │   └── apple/               Apple container adapter: backend.ts (container inspect for one container, a labelled network per repository), cli.ts (every flag and JSON shape it assumes, the volume list and container mounts included)
 ├── container/
-│   ├── spec.ts              buildContainerSpec (network, proxy env with the repository token, render and trust mounts, the host session dir bind and env, ssh agent, spec hash), repoVolumes, forwardedEnv
-│   ├── git-overlay.ts       planGitOverlay (discovery once per launch: the overlay for the spec and ready() for right before a start: pins, layout checks, hook dirs, leaves checked again, snapshots, baseline), discoverGitOverlay and readyGitOverlay over it; re-exports gitLaunchNotices and gitSessionEndNotices from workspace
+│   ├── spec.ts              buildContainerSpec (network, proxy env with the repository token, render and trust mounts, the host session dir bind and env, ssh agent, volume labels and owned paths, spec hash), nodeModulesOverlays, sharedCacheVolumes, repoVolumes, forwardedEnv
+│   ├── git-overlay.ts       planGitOverlay (discovery once per launch: the overlay for the spec and ready() for right before a start: pins, layout checks, hook dirs, leaves checked again, snapshots, baseline), discoverGitOverlay and readyGitOverlay over it, the merged overlay of a workspace's repositories, backendNotices; re-exports gitLaunchNotices and gitSessionEndNotices from workspace
 │   ├── git-snapshot.ts      writeGitSnapshots, gitSnapshotPath, gitSnapshotsDir: launcher-owned copies of the read-only git paths
-│   ├── names.ts             container and volume names (re-exports LABELS from backend)
-│   ├── lifecycle.ts         ensureContainer (per-repository lock, wanted identity, reuse while other sessions are live, beforeStart right before a create or start, inside aroundStart, replacement that keeps the repository network), gitDirInUseElsewhere, isCurrentContainer, stopIdleContainer, findCurrentContainer, findRepoContainer, removeRepoContainer, collectGarbage
+│   ├── names.ts             container and volume names, userHashOf and the shared cache volume name (re-exports LABELS from backend)
+│   ├── lifecycle.ts         ensureContainer (per-repository lock, wanted identity, reuse while other sessions are live, beforeStart right before a create or start, inside aroundStart, replacement that keeps the repository network, missing mount points created on the host, the root chown of owned volume paths after each start), gitDirInUseElsewhere (both git dir labels), isCurrentContainer, stopIdleContainer, findCurrentContainer, findRepoContainer, removeRepoContainer, collectGarbage
 │   ├── run-pi.ts            runPi: exec behind a pid file, PI_SANDBOX_LAUNCH_ID, raw mode, resizes, signal handling
-│   └── probes.ts            doctor checks: same-path mount, credential sweep (environment, auth.json, mcp.json), no-route, proxy health
+│   └── probes.ts            CheckResult (ok, warn, fail, skip) and doctor checks: same-path mount, credential sweep (environment, auth.json, mcp.json), no-route, proxy health
 ├── image/
-│   ├── Dockerfile           the sandbox image (no pi config baked in)
+│   ├── Dockerfile           the sandbox image (no pi config baked in; BASH_ENV set to bash-env.sh)
 │   ├── entrypoint.sh        render links, settings seed, CA bundle, idle
 │   ├── xdg-open.mjs         /usr/local/bin/xdg-open in the image: one https: URL to POST /oauth/open, long-polls the callback and replays it to pi, --pi-sandbox-check
+│   ├── bash-env.sh          /usr/local/lib/pi-sandbox/bash-env.sh in the image, read through BASH_ENV: command_not_found_handle with the image.packages hint
 │   ├── sandbox-image.ts     ensureSandboxImage: the recorded image when a current container uses it, else a pinned pull or a build, then the layer
 │   ├── context.ts           buildInContext (a temporary build dir under the state dir, removed after), reusableImage
 │   ├── extensions.ts        resolveExtensionsSource (tarball pack cache, skipped on a dirty tree, registry or none), packExtensionsTarball
 │   ├── build.ts             build context, ensureBuiltImage, pullPinnedImage, recordedImage
-│   ├── layer.ts             ensureLayerImage: image.packages, npmGlobal and dockerfile on top of the base, the dockerfile allowlist with heredoc bodies skipped
+│   ├── layer.ts             ensureLayerImage: image.packages, npmGlobal and dockerfile on top of the base, the dockerfile allowlist (BASH_ENV refused) with heredoc bodies skipped
 │   ├── record.ts            image.json with its layer record
 │   ├── build-trust.ts       the extra CAs in the build context
 │   └── build-proxy.ts       parent proxy build arguments, refused with credentials
@@ -157,7 +160,7 @@ launcher/
 │   ├── access-log.ts        JSON-line access log
 │   ├── settings.ts          proxy settings from the config and the cap, proxyPolicyHash
 │   └── files.ts             per-instance file paths under proxy/<policy hash>/ and the ProxyInstance record
-├── shared/                  LauncherError, errorMessage, CommandRunner, sha256Hex, repoHash, stableHash, JSON files (readJsonFile, writeJsonFile, readText, and the lenient isJsonObject, parseJsonObject, readJsonObject), writeFileAtomic, ensureRandomHexFile, launcherPaths, realOrResolved (and its sync variant), launcherRoot, launcherEntry, expandHome, isWithin, BACKEND_NAMES, isSecretName, isAuthLikeHeader, placeholders, ensureSalt, stateLayout, GUEST_PATHS; regular-file.ts (readRegularFile without following links, lstatOrUndefined, sameEntry); pi-env.ts (PI_AGENT_DIR_VARIABLE, PI_SESSION_DIR_VARIABLE, LAUNCHER_SET_VARIABLES); vault.ts (VaultServer, VaultDiscovery, VaultEntry, vaultPlaceholders, readVaultStore, updateVaultStore, writeVaultEntry, mcpAuthKey, MCP_SERVER_NAME); state-layout.ts (stateLayout, every state path including configLock, ca, extraPem, imageRecord, pack, copies, orgBaseline, orgMeta, proxyRoot and proxyInstance(policyHash) with dynamic, dynamicLock, tokensDir and repoToken), file-lock.ts (withFileLock, the pid lock every launcher lock uses; withDirectoryLock, the mkdir lock pi uses on mcp-auth.json; isProcessAlive)
+├── shared/                  LauncherError, errorMessage, CommandRunner, sha256Hex, repoHash, stableHash, JSON files (readJsonFile, writeJsonFile, readText, and the lenient isJsonObject, parseJsonObject, readJsonObject), writeFileAtomic, ensureRandomHexFile, launcherPaths, realOrResolved (and its sync variant), launcherRoot, launcherEntry, expandHome, isWithin, BACKEND_NAMES, isSecretName, isAuthLikeHeader, placeholders, ensureSalt, stateLayout, GUEST_PATHS; regular-file.ts (readRegularFile without following links, lstatOrUndefined, sameEntry); pi-env.ts (PI_AGENT_DIR_VARIABLE, PI_SESSION_DIR_VARIABLE, LAUNCHER_SET_VARIABLES with BASH_ENV); vault.ts (VaultServer, VaultDiscovery, VaultEntry, vaultPlaceholders, readVaultStore, updateVaultStore, writeVaultEntry, mcpAuthKey, MCP_SERVER_NAME); state-layout.ts (stateLayout, every state path including configLock, ca, extraPem, imageRecord, pack, copies, orgBaseline, orgMeta, proxyRoot and proxyInstance(policyHash) with dynamic, dynamicLock, tokensDir and repoToken), file-lock.ts (withFileLock, the pid lock every launcher lock uses; withDirectoryLock, the mkdir lock pi uses on mcp-auth.json; isProcessAlive)
 ├── profiles/                solo.json, team.json, enterprise.json
 ├── examples/                org-baseline.team.json, org-baseline.enterprise.json (starting points for an org baseline)
 ├── schema/                  sandbox-config.schema.json
@@ -171,9 +174,11 @@ launcher/
     ├── container/run-pi.test.ts runPi, including the signal path, on the fake backend
     ├── backend/fake-backend.conformance.test.ts   the conformance suite and the fake's own contract (refusals, prune rules, guest agent dir)
     ├── proxy/hello.test.ts, keep-alive.test.ts, vault-protocol.test.ts, private-hosts.test.ts   ClientHello reading and the dial timeout, upstream connections never shared between repositories, the code placeholders, privateHostNotices
-    ├── config/project-keys.test.ts, egress-entry.test.ts   the project-refused keys, the egress entry grammar
+    ├── config/project-keys.test.ts, egress-entry.test.ts, mounts.test.ts   the project-refused keys, the egress entry grammar, mounts.sharedCaches and mounts.autoNodeModules (validation, defaults, layers)
     ├── workspace/git-integrity.test.ts   worktree pointer checks and the session-end notices
+    ├── workspace/workspace-mode.test.ts   workspace discovery (scan, nested repository and git config refusals, node projects, lenient mode), self binds and notices, pin locks and session-end notices over nested repositories
     ├── image/sandbox-image.test.ts   ensureSandboxImage paths (recorded, pinned, built, layer)
+    ├── image/bash-env.test.ts   the missing-command hint under bash -c with BASH_ENV (skipped on bash older than 4), BASH_ENV refused in env.allow and never forwarded
     ├── cli/harness.ts       temp dirs (removed after each test), fake runner, CliDeps with collected output, recorded control messages and confirmations, a fake bundled pi
     ├── cli/launch-wiring.test.ts, intercept.test.ts, egress.test.ts, vault-wiring.test.ts, launch-host-sessions.test.ts   launch wiring, intercepted commands, grants, the token vault wiring and its doctor lines, host sessions
     ├── config/fixtures.ts   layer files in temp dirs

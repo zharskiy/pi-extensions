@@ -121,14 +121,14 @@ describe("the git notices after a session", () => {
 
     await mkdir(wide);
 
-    await Promise.all(Array.from({ length: 20_000 }, (_, index) => mkdir(join(wide, `d${index}`))));
+    await Promise.all(Array.from({ length: 50_000 }, (_, index) => mkdir(join(wide, `d${index}`))));
 
     await pinGitDirs(workspace, []);
 
     await recordGitBaseline(workspace, context);
 
     expect(await gitSessionEndNotices(workspace, context, idle)).toEqual([
-      "git: the scan for nested repositories stopped after 20000 directories",
+      "git: the scan for nested repositories stopped after 50000 directories",
     ]);
-  }, 30_000);
+  }, 60_000);
 });

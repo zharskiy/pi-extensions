@@ -51,6 +51,7 @@ export interface ExecSpec {
   command: string[];
   env: Record<string, string>;
   workdir: string;
+  user?: string;
 }
 
 export type ContainerState = "running" | "stopped" | "created" | "unknown";

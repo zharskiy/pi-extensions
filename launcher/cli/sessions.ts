@@ -42,8 +42,8 @@ export const gitGuardOf = (deps: CliDeps, context: LaunchContext): GitGuardConte
 });
 
 const settleGit = async (deps: CliDeps, context: LaunchContext, backend: Backend) => {
-  const notices = await gitSessionEndNotices(context.workspace, gitGuardOf(deps, context), () =>
-    gitDirInUseElsewhere(backend, context.workspace),
+  const notices = await gitSessionEndNotices(context.workspace, gitGuardOf(deps, context), (gitCommonDir) =>
+    gitDirInUseElsewhere(backend, context.workspace, gitCommonDir),
   ).catch((error: unknown) => [`warning: git: the check after the session failed: ${errorMessage(error)}`]);
 
   writeNotices(deps, notices);

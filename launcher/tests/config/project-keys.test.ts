@@ -28,6 +28,7 @@ const REFUSED: Array<[string, unknown]> = [
   ["image.packages", ["git"]],
   ["image.npmGlobal", ["tool@1.0.0"]],
   ["image.dockerfile", "/etc/pi-sandbox/layer.Dockerfile"],
+  ["mounts.sharedCaches", ["~/.npm"]],
   ["org", { source: "/etc/pi-sandbox/org.json" }],
   ["env.allow", ["EDITOR"]],
   ["image.reference", "evil/pi"],

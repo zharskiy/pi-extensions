@@ -15,4 +15,7 @@ export const LABELS = {
   sessionDir: "pi-sandbox.session-dir",
   gitProtection: "pi-sandbox.git-protection",
   gitCommonDir: "pi-sandbox.git-common-dir",
+  gitCommonDirs: "pi-sandbox.git-common-dirs",
+  userHash: "pi-sandbox.user-hash",
+  sharedPath: "pi-sandbox.shared-path",
 } as const;

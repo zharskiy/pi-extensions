@@ -21,7 +21,7 @@ import {
   pointerPath,
   readGitPointer,
 } from "./git-layout.ts";
-import { gitDirOf, type Workspace } from "./types.ts";
+import { gitDirOf, gitRepos, type Workspace } from "./types.ts";
 
 const PIN_MODE = 0o644;
 
@@ -32,16 +32,21 @@ const ALTERNATES = [
   ["objects", "info", "http-alternates"],
 ];
 
+const pinLockTimeout = { timeoutMs: PIN_LOCK_TIMEOUT_MS };
+
 export const withGitPinLock = <T>(stateDir: string, workspace: Workspace, action: () => Promise<T>) => {
-  const gitCommonDir = workspace.gitCommonDir;
+  const layout = stateLayout(stateDir);
+  const gitCommonDirs = gitRepos(workspace)
+    .map((repo) => repo.gitCommonDir)
+    .filter((dir) => dir !== undefined);
 
-  if (gitCommonDir === undefined) {
-    return action();
-  }
-
-  return withFileLock(stateLayout(stateDir).gitPinLock(sha256Hex(gitCommonDir)), action, {
-    timeoutMs: PIN_LOCK_TIMEOUT_MS,
-  });
+  return [...new Set(gitCommonDirs)]
+    .sort()
+    .reduceRight<() => Promise<T>>(
+      (inner, gitCommonDir) => () =>
+        withFileLock(layout.gitPinLock(sha256Hex(gitCommonDir)), inner, pinLockTimeout),
+      action,
+    )();
 };
 
 const assertWorktreePointers = async (worktreeDir: string, gitCommonDir: string) => {

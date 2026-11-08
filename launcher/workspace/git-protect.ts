@@ -3,8 +3,14 @@ import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { type CommandRunner, expandHome, isWithin, lstatOrUndefined } from "../shared/index.ts";
 import { inertGitOptions } from "./git-command.ts";
 import { findModuleGitDirs, findWorktreeGitDirs, gitRefusal, lstatKind } from "./git-layout.ts";
+import {
+  gitConfigFiles,
+  nestedRepoDirs,
+  outsideNestedRepos,
+  workspaceConfigRefusal,
+} from "./git-workspace.ts";
 import { protectedRealPathGuard } from "./mounts.ts";
-import { gitDirOf, type Workspace } from "./types.ts";
+import { gitDirOf, gitRepos, type Workspace } from "./types.ts";
 
 export interface GitOverlay {
   selfBinds: string[];
@@ -18,6 +24,7 @@ export interface GitProtectContext {
   env: NodeJS.ProcessEnv;
   emptyHooksDir: string;
   engineSockets: string[];
+  workspace?: Workspace;
 }
 
 export interface ProtectedGitPaths {
@@ -26,6 +33,7 @@ export interface ProtectedGitPaths {
   dirs: string[];
   pins: string[];
   files: string[];
+  workspaceRoot?: string;
 }
 
 export type GitPathGuard = (path: string) => string | undefined;
@@ -70,9 +78,14 @@ const hooksPathDirs = async (workspace: Workspace, gitCommonDir: string, context
     return [];
   }
 
-  const roots = [workspace.repoRoot, gitCommonDir];
+  const outer = context.workspace;
+  const roots = [workspace.repoRoot, gitCommonDir, ...(outer === undefined ? [] : [outer.repoRoot])];
   const lexical = resolve(workspace.repoRoot, expandHome(value, context.home));
   const real = await realOrPending(lexical);
+
+  if (outer !== undefined && (outsideNestedRepos(outer, real) || outsideNestedRepos(outer, lexical))) {
+    throw workspaceConfigRefusal(real);
+  }
 
   if (!roots.some((root) => isWithin(real, root))) {
     return [];
@@ -82,7 +95,9 @@ const hooksPathDirs = async (workspace: Workspace, gitCommonDir: string, context
     throw gitRefusal(lexical, "(core.hooksPath) goes through a symbolic link the sandbox could repoint");
   }
 
-  if (roots.includes(real) || isWithin(gitCommonDir, real)) {
+  const held = [gitCommonDir, ...(outer === undefined ? [] : gitRepos(outer).map((repo) => repo.repoRoot))];
+
+  if (roots.includes(real) || held.some((dir) => isWithin(dir, real))) {
     throw gitRefusal(real, "(core.hooksPath) is the repository or holds its git dir and cannot be read-only");
   }
 
@@ -128,10 +143,13 @@ const selfBindsOf = async (
   workspace: Workspace,
   gitCommonDir: string,
   guard: GitPathGuard,
+  workspaceRoot: string | undefined,
 ) => {
-  const roots = isWithin(gitCommonDir, workspace.repoRoot)
-    ? [workspace.repoRoot]
-    : [workspace.repoRoot, gitCommonDir];
+  const roots = [
+    workspace.repoRoot,
+    ...(isWithin(gitCommonDir, workspace.repoRoot) ? [] : [gitCommonDir]),
+    ...(workspaceRoot === undefined ? [] : [workspaceRoot]),
+  ];
   const rootOf = (path: string) =>
     roots.filter((root) => isWithin(path, root)).sort((first, second) => second.length - first.length)[0];
   const candidates = unique([
@@ -156,6 +174,22 @@ const selfBindsOf = async (
   return kept.sort(byDepth);
 };
 
+const configFilesIn = async (workspace: Workspace, gitCommonDir: string, context: GitProtectContext) => {
+  const gitDirs = [...new Set([gitCommonDir, gitDirOf(workspace, gitCommonDir)])];
+  const outer = context.workspace;
+  const listing = gitConfigFiles(workspace.repoRoot, gitDirs, context.runner, context.emptyHooksDir);
+  const files = outer === undefined ? await listing.catch((): string[] => []) : await listing;
+  const refused = outer === undefined ? undefined : files.find((file) => outsideNestedRepos(outer, file));
+
+  if (refused !== undefined) {
+    throw workspaceConfigRefusal(refused);
+  }
+
+  const dirs = outer === undefined ? [workspace.repoRoot, ...gitDirs] : nestedRepoDirs(outer);
+
+  return files.filter((file) => dirs.some((dir) => isWithin(file, dir)));
+};
+
 const rootGitFile = (workspace: Workspace, gitCommonDir: string) => {
   const dotGit = join(workspace.repoRoot, ".git");
 
@@ -171,6 +205,7 @@ export const findProtectedGitPaths = async (
   const modules = knownModules ?? (await findModuleGitDirs(gitCommonDir));
   const worktrees = await findWorktreeGitDirs(gitCommonDir);
   const hooksPath = await hooksPathDirs(workspace, gitCommonDir, context);
+  const configFiles = await configFilesIn(workspace, gitCommonDir, context);
   const pins = [gitCommonDir, ...modules].map((dir) => join(dir, "commondir"));
   const dirs = unique([
     join(gitCommonDir, "hooks"),
@@ -183,9 +218,13 @@ export const findProtectedGitPaths = async (
     ...modules.flatMap((dir) => [join(dir, "config"), join(dir, "config.worktree")]),
     ...worktrees.flatMap((dir) => WORKTREE_FILES.map((name) => join(dir, name))),
     ...rootGitFile(workspace, gitCommonDir),
+    ...configFiles,
   ]).filter((path) => !pins.includes(path));
+  const workspaceRoot = context.workspace?.repoRoot;
 
-  return { gitCommonDir, modules, dirs, pins, files };
+  return workspaceRoot === undefined
+    ? { gitCommonDir, modules, dirs, pins, files }
+    : { gitCommonDir, modules, dirs, pins, files, workspaceRoot };
 };
 
 export const protectedGitOverlay = async (
@@ -201,7 +240,13 @@ export const protectedGitOverlay = async (
   const readOnlyFiles = [...paths.files.filter((_, index) => present[index]), ...paths.pins];
 
   return {
-    selfBinds: await selfBindsOf([...paths.dirs, ...readOnlyFiles], workspace, paths.gitCommonDir, guard),
+    selfBinds: await selfBindsOf(
+      [...paths.dirs, ...readOnlyFiles],
+      workspace,
+      paths.gitCommonDir,
+      guard,
+      paths.workspaceRoot,
+    ),
     readOnlyDirs: paths.dirs,
     readOnlyFiles,
   };

@@ -8,6 +8,7 @@ import { Writable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { createDockerEngineBackend } from "../../../backend/index.ts";
+import { userHashOf } from "../../../container/index.ts";
 import { stopProxy } from "../../../proxy/index.ts";
 import { createProcessRunner } from "../../../shared/index.ts";
 import { createTestCa, type TestCa, type TestCertificate } from "../fixtures/test-ca.ts";
@@ -308,9 +309,12 @@ export const createLiveSandbox = async (name: string): Promise<LiveSandbox> => {
 
     await Promise.all([...owned, ...relays].map((container) => removeContainer(container.Id)));
 
+    const userHashes = [stateDir, existsSync(stateDir) ? realpathSync(stateDir) : stateDir].map(userHashOf);
     const volumes = (await listVolumes()).filter(
       (volume) =>
-        volume.Name.includes(repoHash.slice(0, 12)) || volume.Labels?.["pi-sandbox.repo-hash"] === repoHash,
+        volume.Name.includes(repoHash.slice(0, 12)) ||
+        volume.Labels?.["pi-sandbox.repo-hash"] === repoHash ||
+        userHashes.includes(volume.Labels?.["pi-sandbox.user-hash"] ?? ""),
     );
     const removals = await Promise.all(volumes.map((volume) => removeVolume(volume.Name)));
     const kept = volumes.filter((_volume, index) => ![204, 404].includes(removals[index]?.status ?? 0));

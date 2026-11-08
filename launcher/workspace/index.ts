@@ -11,6 +11,7 @@ export {
   protectedGitOverlay,
 } from "./git-protect.ts";
 export { gitLaunchNotices, gitSessionEndNotices, recordGitBaseline } from "./git-session.ts";
+export { workspaceNotices, workspaceSelfBinds } from "./git-workspace.ts";
 export { assertHostSessionsDir, assertSafeWorkspace } from "./guard.ts";
 export { resolveExtraMounts } from "./mounts.ts";
 export {
@@ -22,4 +23,5 @@ export {
   sessionsSwitchNotice,
 } from "./pi-session-dir.ts";
 export { assertWithinWorkspaceRoots } from "./roots.ts";
-export type { Workspace } from "./types.ts";
+export { gitRepos, mountedGitDirs, type Workspace } from "./types.ts";
+export { scanWorkspace } from "./workspace-scan.ts";

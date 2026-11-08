@@ -71,6 +71,18 @@ const SHA256_HEX = /^[0-9a-f]{64}$/;
 
 const APT_PACKAGE = /^[a-z0-9][a-z0-9+.-]*(=[A-Za-z0-9.+:~-]+)?$/;
 
+const PRIVATE_HOME_PATHS = [
+  ".pi",
+  ".ssh",
+  ".gnupg",
+  ".aws",
+  ".docker",
+  ".colima",
+  ".kube",
+  ".config",
+  ".local/bin",
+];
+
 const NPM_PACKAGE = /^(@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*@[0-9][0-9A-Za-z.+-]*$/;
 
 const nonEmpty: Check = (value) => (value.trim() === "" ? "must not be empty" : undefined);
@@ -107,6 +119,25 @@ const repoPath: Check = (value) =>
   value !== "" && !isAbsolute(value) && !value.split("/").includes("..")
     ? undefined
     : `${value} must be a relative path inside the repository`;
+
+const homeSegments = (value: string) => value.slice(2).replace(/\/$/, "").split("/");
+
+const sharedCache: Check = (value) => {
+  if (!value.startsWith("~/")) {
+    return `${value} must start with ~/`;
+  }
+
+  const segments = homeSegments(value);
+
+  if (segments.some((segment) => segment === "" || segment === "." || segment === "..")) {
+    return `${value} must name a directory below ~ without empty, . or .. segments`;
+  }
+
+  const path = segments.join("/");
+  const privateDir = PRIVATE_HOME_PATHS.find((dir) => path === dir || path.startsWith(`${dir}/`));
+
+  return privateDir === undefined ? undefined : `${value} must not be or lie under ~/${privateDir}`;
+};
 
 const httpsUrl: Check = (value) =>
   URL.canParse(value) && new URL(value).protocol === "https:" ? undefined : "must be an https URL";
@@ -180,6 +211,19 @@ const npmPackage: Check = (value) =>
   NPM_PACKAGE.test(value) ? undefined : "must be an npm name@version, no URL, path or git source";
 
 const notEmptyList: ListCheck = (value) => (value.length === 0 ? "must not be empty" : undefined);
+
+const distinctCaches: ListCheck = (value) => {
+  const paths = value.map((item) => homeSegments(String(item)).join("/"));
+  const duplicate = paths.find((path, index) => paths.indexOf(path) !== index);
+
+  if (duplicate !== undefined) {
+    return `lists ~/${duplicate} twice`;
+  }
+
+  const nested = paths.find((path) => paths.some((other) => path.startsWith(`${other}/`)));
+
+  return nested === undefined ? undefined : `lists ~/${nested} inside another entry`;
+};
 
 const uniqueIds: ListCheck = (value) => {
   const ids = value.map((item) => (isJsonObject(item) ? item.id : undefined));
@@ -332,7 +376,12 @@ const LAYER_SPEC: ObjectSpec = {
     },
     mounts: {
       type: "object",
-      properties: { extraReadOnly: list(absolutePath), cacheVolumes: list(repoPath) },
+      properties: {
+        extraReadOnly: list(absolutePath),
+        cacheVolumes: list(repoPath),
+        sharedCaches: { type: "array", items: text(sharedCache), check: distinctCaches },
+        autoNodeModules: flag,
+      },
     },
     env: { type: "object", properties: { allow: list(forwardableVariable) } },
     ssh: { type: "object", properties: { agent: { type: "boolean" } } },
@@ -355,6 +404,7 @@ const SECURITY_KEYS = [
   "image.packages",
   "image.npmGlobal",
   "image.dockerfile",
+  "mounts.sharedCaches",
   "org",
 ];
 

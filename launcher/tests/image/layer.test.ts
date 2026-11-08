@@ -147,6 +147,8 @@ describe("ensureLayerImage", () => {
       ["ARG https_proxy=http://x", "sets https_proxy with ARG"],
       ["ARG SSL_CERT_FILE", "sets SSL_CERT_FILE with ARG"],
       ["ENV HOME=/tmp", "sets HOME with ENV"],
+      ["ENV BASH_ENV=/tmp/rc.sh", "sets BASH_ENV with ENV"],
+      ["ARG bash_env", "sets bash_env with ARG"],
       ["ENV PI_SANDBOX=0", "sets PI_SANDBOX with ENV"],
       ["ENV CURL_CA_BUNDLE=/x REQUESTS_CA_BUNDLE=/y", "sets CURL_CA_BUNDLE with ENV"],
     ];

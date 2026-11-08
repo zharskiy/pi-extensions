@@ -6,7 +6,7 @@ import { removeRepoContainer, repoVolumes } from "../../container/index.ts";
 import { recordedImage } from "../../image/index.ts";
 import { BACKEND_NAMES, type BackendName, LauncherError } from "../../shared/index.ts";
 import { type CliDeps, writeLine, writeLines } from "../deps.ts";
-import { type LaunchContext, openBackend, openContext, prepareImage } from "../launch.ts";
+import { type LaunchContext, openAdminContext, openBackend, prepareImage } from "../launch.ts";
 
 const targetName = (args: string[]) => {
   const [flag, name, ...extra] = args;
@@ -72,7 +72,7 @@ const moveVolumes = (source: MigrationSide, target: MigrationSide, names: string
 
 export const migrateCommand = async (deps: CliDeps, args: string[]) => {
   const name = targetName(args);
-  const context = await openContext(deps);
+  const context = await openAdminContext(deps);
 
   if (context.effective.sources.backend === "policy") {
     throw new LauncherError("migrate: backend is set by policy and cannot change");

@@ -106,6 +106,13 @@ interface ImageConfig {
   dockerfile?: string;
 }
 
+interface MountsConfig {
+  extraReadOnly: string[];
+  cacheVolumes: string[];
+  sharedCaches: string[];
+  autoNodeModules: boolean;
+}
+
 export interface SandboxConfig {
   profile?: ProfileName;
   backend: Backend;
@@ -116,7 +123,7 @@ export interface SandboxConfig {
   egress: EgressConfig;
   tls: { extraCa: ExtraCa[] };
   workspaceRoots?: WorkspaceRootsConfig;
-  mounts: { extraReadOnly: string[]; cacheVolumes: string[] };
+  mounts: MountsConfig;
   env: { allow: string[] };
   ssh: { agent: boolean };
   resources: { cpus?: number; memoryGiB?: number };

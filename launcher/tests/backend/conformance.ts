@@ -283,6 +283,26 @@ export const runBackendConformance = (
       await backend().removeContainer(created.id);
     });
 
+    it("runs an exec as the user it names", async () => {
+      const created = await backend().createContainer(specFor("exec-user", {}));
+      const uidAs = async (user: string) => {
+        const stdout = collector();
+        const exitCode = await backend().exec(
+          { containerId: created.id, command: ["id", "-u"], env: {}, workdir: "/", user },
+          { stdout: stdout.stream, stderr: collector().stream, tty: false },
+        );
+
+        return { exitCode, stdout: stdout.text() };
+      };
+
+      await backend().startContainer(created.id);
+
+      expect(await uidAs("0")).toEqual({ exitCode: 0, stdout: "0\n" });
+      expect(await uidAs("1000:1000")).toEqual({ exitCode: 0, stdout: "1000\n" });
+
+      await backend().removeContainer(created.id);
+    });
+
     it("delivers exec stdout and stderr to their own streams", async () => {
       const created = await backend().createContainer(specFor("streams", {}));
 

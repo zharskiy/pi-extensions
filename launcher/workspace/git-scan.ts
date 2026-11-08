@@ -3,7 +3,8 @@ import { readdir, readlink } from "node:fs/promises";
 import { join } from "node:path";
 import { type CommandRunner, readRegularFile } from "../shared/index.ts";
 import { inertGitOptions } from "./git-command.ts";
-import { gitDirOf, type Workspace } from "./types.ts";
+import { gitDirOf, gitRepos, type Workspace } from "./types.ts";
+import { SCAN_BUDGET } from "./workspace-scan.ts";
 
 export interface NestedGitEntry {
   path: string;
@@ -22,8 +23,6 @@ interface Walk {
   budget: number;
   complete: boolean;
 }
-
-const DIRECTORY_BUDGET = 20_000;
 
 const GITLINK_PREFIX = "160000 ";
 
@@ -124,29 +123,32 @@ const walkLevel = async (dirs: string[], skipped: Set<string>, walk: Walk): Prom
   });
 };
 
+const gitDirsOf = (repo: Workspace) =>
+  [join(repo.repoRoot, ".git"), repo.gitCommonDir, repo.gitDir].filter((path) => path !== undefined);
+
+const repoGitlinks = (repo: Workspace, runner: CommandRunner, emptyHooksDir: string) =>
+  repo.gitCommonDir === undefined
+    ? Promise.resolve([])
+    : gitlinksOf(repo, repo.gitCommonDir, runner, emptyHooksDir);
+
 export const scanGitBaseline = async (
   workspace: Workspace,
   runner: CommandRunner,
   emptyHooksDir: string,
 ): Promise<GitBaseline> => {
-  const gitCommonDir = workspace.gitCommonDir;
-
-  if (gitCommonDir === undefined) {
+  if (workspace.isGitRepo && workspace.gitCommonDir === undefined) {
     return EMPTY;
   }
 
-  const skipped = new Set([
-    join(workspace.repoRoot, ".git"),
-    gitCommonDir,
-    gitDirOf(workspace, gitCommonDir),
-  ]);
+  const repos = gitRepos(workspace);
+  const skipped = new Set(repos.flatMap(gitDirsOf));
   const [walk, gitlinks] = await Promise.all([
-    walkLevel([workspace.repoRoot], skipped, { found: [], budget: DIRECTORY_BUDGET, complete: true }),
-    gitlinksOf(workspace, gitCommonDir, runner, emptyHooksDir),
+    walkLevel([workspace.repoRoot], skipped, { found: [], budget: SCAN_BUDGET, complete: true }),
+    Promise.all(repos.map((repo) => repoGitlinks(repo, runner, emptyHooksDir))),
   ]);
 
   return {
-    gitlinks,
+    gitlinks: gitlinks.flat().sort(),
     nested: walk.found,
     complete: walk.complete,
   };
@@ -167,6 +169,6 @@ export const nestedGitNotices = (before: GitBaseline, after: GitBaseline) => {
     ...gitlinks.map((path) => `git: the sandbox added the gitlink ${path} (a nested repository); ${REVIEW}`),
     ...(after.complete
       ? []
-      : [`git: the scan for nested repositories stopped after ${DIRECTORY_BUDGET} directories`]),
+      : [`git: the scan for nested repositories stopped after ${SCAN_BUDGET} directories`]),
   ];
 };

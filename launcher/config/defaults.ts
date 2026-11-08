@@ -47,7 +47,7 @@ export const defaultConfig = async (): Promise<SandboxConfig> => ({
     grants: { enabled: true, maxHours: DEFAULT_GRANT_HOURS, permanent: true },
   },
   tls: { extraCa: [] },
-  mounts: { extraReadOnly: [], cacheVolumes: [] },
+  mounts: { extraReadOnly: [], cacheVolumes: [], sharedCaches: [], autoNodeModules: true },
   env: { allow: TERMINAL_VARIABLES },
   ssh: { agent: false },
   resources: {},

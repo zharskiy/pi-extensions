@@ -328,7 +328,12 @@ const COMPLETE_LAYER: LayerConfig = {
   },
   tls: { extraCa: [{ file: "/etc/corp/ca.pem" }] },
   workspaceRoots: { roots: ["/work"], outside: "refuse" },
-  mounts: { extraReadOnly: ["/opt/tools"], cacheVolumes: ["node_modules"] },
+  mounts: {
+    extraReadOnly: ["/opt/tools"],
+    cacheVolumes: ["node_modules"],
+    sharedCaches: ["~/.cache/pip"],
+    autoNodeModules: false,
+  },
   env: { allow: ["EDITOR"] },
   ssh: { agent: true },
   resources: { cpus: 2, memoryGiB: 4 },

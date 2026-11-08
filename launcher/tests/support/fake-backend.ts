@@ -15,6 +15,7 @@ import type {
 } from "../../backend/index.ts";
 import { LABELS } from "../../backend/index.ts";
 import { GUEST_PATHS, LauncherError } from "../../shared/index.ts";
+import { fakeUidOf } from "./fake-engine.ts";
 
 interface FakeContainer {
   summary: ContainerSummary;
@@ -82,6 +83,8 @@ const infoOf = (digest: string): ImageInfo => ({ id: imageIdOf(digest), digest }
 
 const matches = (labels: Record<string, string>, wanted: Record<string, string>) =>
   Object.entries(wanted).every(([key, value]) => labels[key] === value);
+
+const isIdQuery = (command: string[]) => command.join(" ") === "id -u";
 
 const startsWith = (command: string[], prefix: string[]) =>
   prefix.every((part, index) => command[index] === part);
@@ -236,6 +239,12 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
 
     if (script !== undefined) {
       return runScript(script, io, stdinDone);
+    }
+
+    if (isIdQuery(spec.command)) {
+      io.stdout.write(`${fakeUidOf(spec.user)}\n`);
+
+      return 0;
     }
 
     return options.guestAgentDir !== undefined && spec.command[0] === "sh"

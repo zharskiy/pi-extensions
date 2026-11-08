@@ -1,8 +1,9 @@
 import { readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Backend } from "../../backend/index.ts";
 import { run } from "../../cli/index.ts";
-import { repoVolumes } from "../../container/index.ts";
+import { nodeModulesOverlays, repoVolumes } from "../../container/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
 import { createHarness } from "./harness.ts";
@@ -67,6 +68,34 @@ describe("pi sandbox migrate", () => {
     });
     expect(source.fake.containers.size).toBe(0);
     expect(harness.stdout()).toContain(`${harness.stateDir}/migrate/1700000000000/${agent}.tar`);
+  });
+
+  it("moves the node_modules overlay volume of a node project", async () => {
+    const source = archivingBackend("colima", new Map());
+    const target = archivingBackend("apple", new Map());
+    const harness = await createHarness({ adapters: () => [source.backend, target.backend] });
+
+    await writeFile(join(harness.repoRoot, "package-lock.json"), "{}");
+
+    await run([], harness.deps);
+
+    const [overlay] = nodeModulesOverlays(
+      {
+        cwd: harness.repoRoot,
+        repoRoot: harness.repoRoot,
+        isGitRepo: true,
+        nodeProjects: [harness.repoRoot],
+      },
+      sandboxConfig(),
+    );
+    const name = overlay?.name ?? "";
+
+    source.contents.set(name, "installed packages");
+
+    expect(source.fake.volumes.has(name)).toBe(true);
+    expect(await run(["sandbox", "migrate", "--to", "apple"], harness.deps)).toBe(0);
+    expect(target.contents.get(name)).toBe("installed packages");
+    expect(harness.stdout()).toContain(`${harness.stateDir}/migrate/1700000000000/${name}.tar`);
   });
 
   it("moves volumes with a pinned digest through each backend's own image id, never the reference tag", async () => {
