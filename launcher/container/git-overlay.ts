@@ -21,7 +21,7 @@ import { gitSnapshotsDir, writeGitSnapshots } from "./git-snapshot.ts";
 
 export type { GitOverlay } from "../workspace/index.ts";
 
-export { gitLaunchNotices, gitSessionEndNotices } from "../workspace/index.ts";
+export { gitLaunchEndNotices, gitLaunchNotices } from "../workspace/index.ts";
 
 export interface GitGuardContext {
   runner: CommandRunner;

@@ -17,15 +17,15 @@ export interface GrantMatch {
   repoHash?: string;
 }
 
-export interface SessionEntry {
-  sessionId: string;
+export interface Launch {
+  launchId: string;
   pid: number;
   repoHash: string;
   startedAt: number;
 }
 
-export interface EndSessionInput {
+export interface EndLaunchInput {
   repoHash: string;
-  sessionId: string;
+  launchId: string;
   onLast: () => Promise<void>;
 }

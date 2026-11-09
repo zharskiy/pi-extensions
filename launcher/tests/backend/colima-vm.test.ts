@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { createColimaVm } from "../../backend/colima/vm.ts";
 import { run } from "../../cli/index.ts";
-import { registerSession } from "../../grants/index.ts";
+import { registerLaunch } from "../../grants/index.ts";
 import type { ProxyInstance } from "../../proxy/index.ts";
 import { sha256Hex } from "../../shared/index.ts";
+import { createHarness, writeColimaMounts, writeLimaMounts } from "../cli/harness.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { argvOf, type FakeCall } from "../support/fake-runner.ts";
-import { createHarness, writeColimaMounts, writeLimaMounts } from "./harness.ts";
 
 interface ColimaAnswers {
   running?: boolean;
@@ -52,14 +53,21 @@ const setupWith = async (setup: Setup = {}) => {
 
     return answers.stop ?? {};
   };
+  const detect = async () =>
+    vm.running && answers.staysDown !== true
+      ? { available: true }
+      : { available: false, reason: "socket missing" };
   const harness = await createHarness({
     backend: () => ({
       ...fake.backend,
-      detect: async () =>
-        vm.running && answers.staysDown !== true
-          ? { available: true }
-          : { available: false, reason: "socket missing" },
+      detect,
       status: async () => ({ socket: "/fake/docker.sock", profile: "pi-sandbox" }),
+      vm: createColimaVm({
+        home: harness.deps.home,
+        stateDir: harness.stateDir,
+        runner: harness.deps.runner,
+        detect,
+      }),
     }),
     respond: (call) => (call.file === "colima" && answers.missing !== true ? answer(call) : undefined),
     proxy: {
@@ -92,8 +100,8 @@ const setupWith = async (setup: Setup = {}) => {
 };
 
 const liveSession = (stateDir: string) =>
-  registerSession(stateDir, {
-    sessionId: "00000000000000aa",
+  registerLaunch(stateDir, {
+    launchId: "00000000000000aa",
     pid: process.pid,
     repoHash: sha256Hex("/elsewhere"),
     startedAt: 1,

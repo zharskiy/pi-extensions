@@ -1,6 +1,7 @@
 export { discoverWorkspace } from "./discover.ts";
-export { assertGitIntegrity, pinGitDirs, withGitPinLock } from "./git-integrity.ts";
-export { findGitRoot, gitRefusal } from "./git-layout.ts";
+export { assertGitIntegrity, pinGitDirs, withGitPinLock } from "./git/integrity.ts";
+export { gitLaunchEndNotices, gitLaunchNotices, recordGitBaseline } from "./git/launch.ts";
+export { findGitRoot, gitRefusal } from "./git/layout.ts";
 export {
   findProtectedGitPaths,
   type GitOverlay,
@@ -9,9 +10,8 @@ export {
   gitPathGuard,
   type ProtectedGitPaths,
   protectedGitOverlay,
-} from "./git-protect.ts";
-export { gitLaunchNotices, gitSessionEndNotices, recordGitBaseline } from "./git-session.ts";
-export { workspaceNotices, workspaceSelfBinds } from "./git-workspace.ts";
+} from "./git/protect.ts";
+export { workspaceNotices, workspaceSelfBinds } from "./git/workspace.ts";
 export { assertHostSessionsDir, assertSafeWorkspace } from "./guard.ts";
 export { resolveExtraMounts } from "./mounts.ts";
 export {

@@ -6,7 +6,7 @@ import { createProcessRunner, sha256Hex, stateLayout } from "../../shared/index.
 import {
   discoverWorkspace,
   findProtectedGitPaths,
-  gitSessionEndNotices,
+  gitLaunchEndNotices,
   protectedGitOverlay,
   recordGitBaseline,
   type Workspace,
@@ -576,7 +576,7 @@ describe("the workspace git locks and session end", () => {
 
     await Promise.all([markRepo(join(root, "planted")), markRepo(join(repo, "sub"))]);
 
-    const notices = await gitSessionEndNotices(workspace, context, async (gitCommonDir) => {
+    const notices = await gitLaunchEndNotices(workspace, context, async (gitCommonDir) => {
       asked.push(gitCommonDir);
 
       return false;

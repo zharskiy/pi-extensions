@@ -1,8 +1,8 @@
 export {
   type GitGuardContext,
   type GitOverlay,
+  gitLaunchEndNotices,
   gitLaunchNotices,
-  gitSessionEndNotices,
   planGitOverlay,
 } from "./git-overlay.ts";
 export {
@@ -16,17 +16,6 @@ export {
   removeRepoContainer,
 } from "./lifecycle.ts";
 export { LABELS, userHashOf } from "./names.ts";
-export type { CheckResult, ProbeTarget } from "./probes.ts";
-export {
-  answersHealth,
-  checkNoRoute,
-  checkSamePath,
-  failed,
-  passed,
-  skipped,
-  sweepCredentials,
-  warned,
-} from "./probes.ts";
 export type { HostTerminal, SignalSource } from "./run-pi.ts";
 export { listenFor, runPi } from "./run-pi.ts";
 export type { LauncherContainerSpec } from "./spec.ts";

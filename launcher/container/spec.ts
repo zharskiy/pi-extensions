@@ -71,7 +71,7 @@ export interface ContainerSpecInput {
   renderDir?: string;
   trust?: SpecTrust;
   repoProxyToken?: string;
-  sessionId?: string;
+  launchId?: string;
   hostSessions?: HostSessions;
 }
 

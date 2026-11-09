@@ -1,9 +1,9 @@
 import { realpath } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { type CommandRunner, errorMessage, isWithin, LauncherError } from "../shared/index.ts";
-import { inertGitOptions } from "./git-command.ts";
-import { findGitRoot, gitLayoutAt } from "./git-layout.ts";
-import { assertWorkspaceGitConfig } from "./git-workspace.ts";
+import { inertGitOptions } from "./git/command.ts";
+import { findGitRoot, gitLayoutAt } from "./git/layout.ts";
+import { assertWorkspaceGitConfig } from "./git/workspace.ts";
 import type { Workspace } from "./types.ts";
 import { SCAN_BUDGET, scanWorkspace, type WorkspaceScan } from "./workspace-scan.ts";
 

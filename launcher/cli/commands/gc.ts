@@ -1,11 +1,11 @@
 import { access } from "node:fs/promises";
 import type { Backend, ContainerSummary, VolumeSummary } from "../../backend/index.ts";
 import { collectGarbage, LABELS, userHashOf } from "../../container/index.ts";
-import { liveSessions } from "../../grants/index.ts";
+import { liveLaunches } from "../../grants/index.ts";
 import { removeRepoToken } from "../../proxy/index.ts";
 import { LauncherError, stateLayout } from "../../shared/index.ts";
 import { type CliDeps, pathsOf, writeLine, writeLines } from "../deps.ts";
-import { openAdminContext, openBackend } from "../launch.ts";
+import { openContext } from "../launch.ts";
 
 const SHARED_CACHES = "--shared-caches";
 
@@ -109,10 +109,10 @@ const sharedOwnerOf = (args: string[], stateDir: string) => {
 
 export const gcCommand = async (deps: CliDeps, args: string[]) => {
   const sharedOwner = sharedOwnerOf(args, pathsOf(deps).stateDir);
-  const { effective, stateDir } = await openAdminContext(deps);
-  const backend = await openBackend(deps, effective.config);
+  const { context, backend } = await openContext(deps, "admin");
+  const { stateDir } = context;
   const instances = await deps.proxy.list(stateDir);
-  const repoHashes = [...new Set((await liveSessions(stateDir)).map((session) => session.repoHash))];
+  const repoHashes = [...new Set((await liveLaunches(stateDir)).map((launch) => launch.repoHash))];
   const policyHashes = await livePolicyHashes(
     stateDir,
     instances.map((instance) => instance.policyHash),

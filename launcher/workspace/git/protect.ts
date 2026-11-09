@@ -1,16 +1,11 @@
 import { realpath } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
-import { type CommandRunner, expandHome, isWithin, lstatOrUndefined } from "../shared/index.ts";
-import { inertGitOptions } from "./git-command.ts";
-import { findModuleGitDirs, findWorktreeGitDirs, gitRefusal, lstatKind } from "./git-layout.ts";
-import {
-  gitConfigFiles,
-  nestedRepoDirs,
-  outsideNestedRepos,
-  workspaceConfigRefusal,
-} from "./git-workspace.ts";
-import { protectedRealPathGuard } from "./mounts.ts";
-import { gitDirOf, gitRepos, type Workspace } from "./types.ts";
+import { type CommandRunner, expandHome, isWithin, lstatOrUndefined } from "../../shared/index.ts";
+import { protectedRealPathGuard } from "../mounts.ts";
+import { gitDirOf, gitRepos, type Workspace } from "../types.ts";
+import { inertGitOptions } from "./command.ts";
+import { findModuleGitDirs, findWorktreeGitDirs, gitRefusal, lstatKind } from "./layout.ts";
+import { gitConfigFiles, nestedRepoDirs, outsideNestedRepos, workspaceConfigRefusal } from "./workspace.ts";
 
 export interface GitOverlay {
   selfBinds: string[];

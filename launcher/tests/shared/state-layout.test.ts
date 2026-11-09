@@ -46,9 +46,8 @@ describe("stateLayout", () => {
 
     expect(layout.salt).toBe("/state/salt");
     expect(layout.grants).toBe("/state/grants.json");
-    expect(layout.render("r1")).toBe("/state/render/r1");
-    expect(layout.sync("r1")).toBe("/state/sync/r1");
-    expect(layout.sessionsOf("r1")).toBe("/state/sessions/r1");
+    expect(layout.vmLock).toBe("/state/locks/vm.lock");
+    expect(layout.gitPinLock("g1")).toBe("/state/locks/git-g1.lock");
     expect(layout.mcpLogin).toBe("/state/mcp-login.json");
     expect(layout.mcpLoginLock("mcp__docs|https://docs.test/")).toMatch(
       /^\/state\/locks\/mcp-login-[0-9a-f]{8}\.lock$/,
@@ -59,7 +58,19 @@ describe("stateLayout", () => {
     expect(layout.ca).toBe("/state/ca");
     expect(layout.extraPem).toBe("/state/ca/extra.pem");
     expect(layout.imageRecord).toBe("/state/image.json");
-    expect(layout.wanted("k1")).toBe("/state/wanted/k1.json");
+  });
+
+  it("keeps every file of one repository under repos/<repo hash>", () => {
+    expect(stateLayout("/state").repo("r1")).toEqual({
+      directory: "/state/repos/r1",
+      launches: "/state/repos/r1/launches",
+      lock: "/state/repos/r1/lock",
+      render: "/state/repos/r1/render",
+      sync: "/state/repos/r1/sync",
+      gitSnapshots: "/state/repos/r1/git/snapshots",
+      gitBaseline: "/state/repos/r1/git/baseline.json",
+      wanted: "/state/repos/r1/wanted.json",
+    });
   });
 
   it("keeps every file of one proxy instance in its own directory", () => {

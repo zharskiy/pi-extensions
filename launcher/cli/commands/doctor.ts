@@ -1,56 +1,36 @@
-import type { Backend } from "../../backend/index.ts";
+import { ENGINE_PROFILE, type VmSize } from "../../backend/index.ts";
+import { LABELS } from "../../container/index.ts";
+import { errorMessage } from "../../shared/index.ts";
+import { type CliDeps, writeLine } from "../deps.ts";
+import {
+  type LaunchContext,
+  openContext,
+  type Sandbox,
+  type Stage,
+  type StageOutcome,
+  vmPathsOf,
+  withSandbox,
+} from "../launch.ts";
+import type { SandboxProxy } from "../sandbox-proxy.ts";
+import { hostChecks } from "./doctor-host.ts";
 import {
   answersHealth,
   type CheckResult,
-  checkNoRoute,
-  checkSamePath,
-  failed,
-  LABELS,
-  type ProbeTarget,
-  passed,
-  removeRepoContainer,
-  skipped,
-  sweepCredentials,
-} from "../../container/index.ts";
-import { errorMessage } from "../../shared/index.ts";
-import type { HostSessions } from "../../workspace/index.ts";
-import { type CliDeps, writeLine } from "../deps.ts";
-import { type HostSide, prepareHostSide } from "../derive.ts";
-import { resolveJobPi } from "../host-pi.ts";
-import { hostSessionsOf, sessionsSweeper } from "../host-sessions.ts";
-import {
-  checkWorkspace,
-  type LaunchContext,
-  openBackend,
-  openContext,
-  type PreparedContainer,
-  prepareContainer,
-  prepareImage,
-} from "../launch.ts";
-import { openSandboxProxy, type SandboxProxy } from "../sandbox-proxy.ts";
-import { beginSession, finishSession, type LaunchSession, othersLive } from "../sessions.ts";
-import {
   checkMcp,
   checkMcpAuthSweep,
+  checkNoRoute,
   checkOffline,
   checkRules,
+  checkSamePath,
   checkSessionsShare,
   checkSettingsSweep,
-  type NamedCheck,
-} from "./doctor-container.ts";
-import { hostChecks } from "./doctor-host.ts";
-
-const CONTAINER_CHECKS = [
-  "same-path mount",
-  "credential sweep",
-  "no-route",
-  "offline",
-  "mcp",
-  "mcp-auth sweep",
-  "settings sweep",
-  "sessions share",
-  "trust",
-];
+  failed,
+  type ProbeTarget,
+  passed,
+  skipped,
+  sweepCredentials,
+  warned,
+} from "./doctor-probes.ts";
 
 const attempt = async (action: () => Promise<CheckResult>) => {
   try {
@@ -60,28 +40,30 @@ const attempt = async (action: () => Promise<CheckResult>) => {
   }
 };
 
-const report = (deps: CliDeps, name: string, result: CheckResult) => {
+const print = (deps: CliDeps, name: string, result: CheckResult) => {
   writeLine(deps.stdout, `${result.status} ${name}: ${result.detail}`);
 
   return result.status !== "fail";
 };
 
-const reportAll = (deps: CliDeps, checks: NamedCheck[]) =>
-  checks.map((check) => report(deps, check.name, check.result));
+const printStage = (deps: CliDeps, stage: Stage, outcome: StageOutcome) => {
+  if (!outcome.ok) {
+    writeLine(deps.stdout, `fail ${stage}: ${errorMessage(outcome.error)}`);
 
-const skipAll = (deps: CliDeps, names: string[], reason: string) =>
-  names.map((name) => report(deps, name, skipped(reason)));
-
-const proxyCheck = async (proxy: SandboxProxy | undefined) => {
-  if (proxy === undefined) {
-    return passed("not required, no credential rule and an empty allowlist");
+    return;
   }
 
-  const where = `pid ${proxy.instance.pid} port ${proxy.instance.port}`;
+  writeLine(deps.stdout, outcome.detail === undefined ? `ok ${stage}` : `ok ${stage}: ${outcome.detail}`);
+};
+
+const proxyHealth = async (proxy: SandboxProxy | undefined) => {
+  if (proxy === undefined) {
+    return skipped("no proxy is required");
+  }
 
   return (await answersHealth(proxy.instance.port, proxy.repoToken))
-    ? passed(`${where}, /healthz answers`)
-    : failed(`${where}, /healthz does not answer`);
+    ? passed("/healthz answers")
+    : failed("/healthz does not answer");
 };
 
 const sessionsShareCheck = async (target: ProbeTarget) => {
@@ -91,151 +73,102 @@ const sessionsShareCheck = async (target: ProbeTarget) => {
   return checkSessionsShare(target, container?.labels[LABELS.sessionDir]);
 };
 
-const containerChecks = async (
-  deps: CliDeps,
-  context: LaunchContext,
-  parts: { host: HostSide; proxy?: SandboxProxy },
-  target: ProbeTarget,
-) => {
-  const { host } = parts;
-  const rules = await checkRules(target, host.derived.rules).catch((error: unknown) => [
+const sharesCheck = async (deps: CliDeps, context: LaunchContext, sandbox: Sandbox) => {
+  const coverage = await sandbox.backend.vm.coverage(vmPathsOf(deps, context));
+
+  if (coverage === undefined) {
+    return skipped(`colima did not report the shares of profile ${ENGINE_PROFILE}`);
+  }
+
+  const { shares, missing } = coverage;
+
+  return missing.length === 0
+    ? passed(
+        `profile ${ENGINE_PROFILE} shares ${shares.map((share) => share.location).join(", ")}; this repository is covered`,
+      )
+    : failed(
+        `${missing.join(", ")} ${missing.length === 1 ? "is" : "are"} not shared with profile ${ENGINE_PROFILE}`,
+      );
+};
+
+const gibText = (gib: number) => `${Math.round(gib * 10) / 10} GiB`;
+
+const isBelow = (size: VmSize, wanted: VmSize) =>
+  size.cpus < wanted.cpus || size.memoryGiB < wanted.memoryGiB;
+
+const sizeCheck = async (deps: CliDeps, sandbox: Sandbox) => {
+  const { vm } = sandbox.backend;
+  const size = await vm.size();
+
+  if (size === undefined) {
+    return skipped(`colima did not report the size of profile ${ENGINE_PROFILE}`);
+  }
+
+  const wanted = vm.recommendedSize(deps.machine.cpus, deps.machine.memoryGiB);
+  const current = `profile ${ENGINE_PROFILE} has ${size.cpus} CPUs and ${gibText(size.memoryGiB)}`;
+
+  if (!isBelow(size, wanted)) {
+    return passed(current);
+  }
+
+  const resize = `colima stop --profile ${ENGINE_PROFILE} && colima start --profile ${ENGINE_PROFILE} --activate=false --cpu ${wanted.cpus} --memory ${wanted.memoryGiB}`;
+
+  return warned(
+    `${current}, below ${wanted.cpus} CPUs and ${wanted.memoryGiB} GiB; resize it with ${resize}`,
+  );
+};
+
+const probe = async (deps: CliDeps, context: LaunchContext, sandbox: Sandbox) => {
+  const target = {
+    backend: sandbox.backend,
+    containerId: sandbox.containerId,
+    workdir: sandbox.spec.workdir,
+  };
+  const rules = await checkRules(target, sandbox.host.derived.rules).catch((error: unknown) => [
     { name: "trust", result: failed(errorMessage(error)) },
   ]);
-
-  return [
-    report(deps, "same-path mount", await attempt(() => checkSamePath(target, context.workspace.repoRoot))),
-    report(deps, "credential sweep", await attempt(() => sweepCredentials(target))),
-    report(deps, "no-route", await attempt(() => checkNoRoute(target))),
-    report(deps, "offline", await attempt(() => checkOffline(target))),
-    report(deps, "mcp", await attempt(() => checkMcp(target))),
-    report(deps, "mcp-auth sweep", await attempt(() => checkMcpAuthSweep(target))),
-    report(deps, "settings sweep", await attempt(() => checkSettingsSweep(target))),
-    report(deps, "sessions share", await attempt(() => sessionsShareCheck(target))),
-    ...reportAll(deps, rules),
+  const results = [
+    print(deps, "proxy health", await attempt(() => proxyHealth(sandbox.proxy))),
+    print(deps, "same-path mount", await attempt(() => checkSamePath(target, context.workspace.repoRoot))),
+    print(deps, "credential sweep", await attempt(() => sweepCredentials(target))),
+    print(deps, "no-route", await attempt(() => checkNoRoute(target))),
+    print(deps, "offline", await attempt(() => checkOffline(target))),
+    print(deps, "mcp", await attempt(() => checkMcp(target))),
+    print(deps, "mcp-auth sweep", await attempt(() => checkMcpAuthSweep(target))),
+    print(deps, "settings sweep", await attempt(() => checkSettingsSweep(target))),
+    print(deps, "sessions share", await attempt(() => sessionsShareCheck(target))),
+    ...rules.map((check) => print(deps, check.name, check.result)),
+    print(deps, "vm shares", await attempt(() => sharesCheck(deps, context, sandbox))),
+    print(deps, "vm size", await attempt(() => sizeCheck(deps, sandbox))),
   ];
-};
 
-const startedProxy = (deps: CliDeps, context: LaunchContext, host: HostSide) =>
-  openSandboxProxy(deps, context, host).catch((error: unknown) => errorMessage(error));
-
-interface Containers {
-  created?: PreparedContainer;
-}
-
-const imageAndContainer = async (
-  deps: CliDeps,
-  context: LaunchContext,
-  backend: Backend,
-  parts: { host: HostSide; proxy?: SandboxProxy; session: LaunchSession; sessions: HostSessions },
-  containers: Containers,
-) => {
-  const image = await prepareImage(deps, context, backend, parts.host).catch((error: unknown) =>
-    errorMessage(error),
-  );
-
-  if (typeof image === "string") {
-    return [report(deps, "image", failed(image)), ...skipAll(deps, CONTAINER_CHECKS, "no image")];
-  }
-
-  report(deps, "image", passed(`${image.reference} ${image.digest}`));
-
-  const prepared = await prepareContainer(deps, context, backend, { ...parts, image }).catch(
-    (error: unknown) => errorMessage(error),
-  );
-
-  if (typeof prepared === "string") {
-    return [report(deps, "container", failed(prepared)), ...skipAll(deps, CONTAINER_CHECKS, "no container")];
-  }
-
-  containers.created = prepared.created ? prepared : undefined;
-
-  const target = { backend, containerId: prepared.containerId, workdir: prepared.spec.workdir };
-
-  return containerChecks(deps, context, parts, target);
-};
-
-const sandboxChecks = async (
-  deps: CliDeps,
-  context: LaunchContext,
-  backend: Backend,
-  host: HostSide,
-  session: LaunchSession,
-  sessions: HostSessions,
-) => {
-  const proxy = await startedProxy(deps, context, host);
-
-  if (typeof proxy === "string") {
-    return [
-      report(deps, "proxy", failed(proxy)),
-      ...skipAll(deps, ["image", ...CONTAINER_CHECKS], "no proxy"),
-    ];
-  }
-
-  const proxyOk = report(deps, "proxy", await attempt(() => proxyCheck(proxy)));
-  const containers: Containers = {};
-
-  try {
-    return [
-      proxyOk,
-      ...(await imageAndContainer(deps, context, backend, { host, proxy, session, sessions }, containers)),
-    ];
-  } finally {
-    if (
-      containers.created !== undefined &&
-      !(await othersLive(context.stateDir, context.repoHash, session.sessionId))
-    ) {
-      await removeRepoContainer(backend, context.workspace.repoRoot);
-    }
-  }
-};
-
-const backendChecks = async (deps: CliDeps, context: LaunchContext, backend: Backend) => {
-  const host = await prepareHostSide(deps, context, await resolveJobPi(deps)).catch((error: unknown) =>
-    errorMessage(error),
-  );
-
-  if (typeof host === "string") {
-    return [
-      report(deps, "host pi files", failed(host)),
-      ...skipAll(deps, ["proxy", "image", ...CONTAINER_CHECKS], "no host files"),
-    ];
-  }
-
-  const sessions = hostSessionsOf(deps, context, host.files.settings);
-  const session = await beginSession(deps, context);
-
-  try {
-    return await sandboxChecks(deps, context, backend, host, session, sessions);
-  } finally {
-    await finishSession(deps, context, backend, session, sessionsSweeper(deps, context));
-  }
+  return results.every(Boolean) ? 0 : 1;
 };
 
 export const doctorCommand = async (deps: CliDeps) => {
-  const context = await openContext(deps);
+  const { context, backend } = await openContext(deps, "sandbox");
+  const failures: Stage[] = [];
+  const report = (stage: Stage, outcome: StageOutcome) => {
+    if (!outcome.ok) {
+      failures.push(stage);
+    }
 
-  checkWorkspace(deps, context);
-
-  const backend = await openBackend(deps, context.effective.config).catch((error: unknown) =>
-    errorMessage(error),
-  );
-
-  if (typeof backend === "string") {
-    report(deps, "runtime", failed(backend));
-
-    skipAll(deps, ["proxy", "image", ...CONTAINER_CHECKS], "no runtime");
-
-    reportAll(deps, await hostChecks(deps, context));
+    printStage(deps, stage, outcome);
+  };
+  const code = await withSandbox(deps, context, backend, (sandbox) => probe(deps, context, sandbox), {
+    report,
+  }).catch((error: unknown) => {
+    if (failures.length === 0) {
+      throw error;
+    }
 
     return 1;
+  });
+  const host = (await hostChecks(deps, context)).map((check) => print(deps, check.name, check.result));
+
+  if (code !== 0) {
+    return code;
   }
 
-  const detection = await backend.detect();
-
-  report(deps, "runtime", passed(`colima ${detection.version ?? "unknown"}`));
-
-  const results = await backendChecks(deps, context, backend);
-  const host = reportAll(deps, await hostChecks(deps, context, backend));
-
-  return [...results, ...host].every(Boolean) ? 0 : 1;
+  return failures.length === 0 && host.every(Boolean) ? 0 : 1;
 };

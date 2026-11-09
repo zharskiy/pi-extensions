@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createDockerEngineBackend, engineSocketPath, execCapture, LABELS } from "../../backend/index.ts";
+import { createColimaBackend, engineSocketPath, execCapture, LABELS } from "../../backend/index.ts";
 import { ensureContainer, type LauncherContainerSpec } from "../../container/index.ts";
 import { ensureSandboxImage } from "../../image/index.ts";
 import { createProcessRunner, launcherRoot } from "../../shared/index.ts";
@@ -45,7 +45,7 @@ runBackendConformance(
   hooks,
   async () => {
     const runner = createProcessRunner();
-    const backend = createDockerEngineBackend({ socketPath: socketPath ?? "", runner });
+    const backend = createColimaBackend({ home: "", stateDir: "", socketPath: socketPath ?? "", runner });
 
     await backend.pullImage(PULLABLE);
 
@@ -74,7 +74,9 @@ const OWNERSHIP_VOLUME = `pi-sandbox-live-ownership-${randomBytes(4).toString("h
 const OWNERSHIP_TARGET = "/home/pi/.cache/live";
 
 hooks.describe("docker-engine volume ownership", () => {
-  const backend = createDockerEngineBackend({
+  const backend = createColimaBackend({
+    home: "",
+    stateDir: "",
     socketPath: socketPath ?? "",
     runner: createProcessRunner(),
   });
@@ -156,7 +158,9 @@ const SHELL_TOOL_PROBE = [
 ].join("\n");
 
 hooks.describe("docker-engine sandbox image missing-command hint", () => {
-  const backend = createDockerEngineBackend({
+  const backend = createColimaBackend({
+    home: "",
+    stateDir: "",
     socketPath: socketPath ?? "",
     runner: createProcessRunner(),
   });

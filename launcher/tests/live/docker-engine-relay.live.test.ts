@@ -5,7 +5,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { type Backend, createDockerEngineBackend, engineSocketPath, LABELS } from "../../backend/index.ts";
+import { type Backend, createColimaBackend, engineSocketPath, LABELS } from "../../backend/index.ts";
 import { createProcessRunner } from "../../shared/index.ts";
 
 const RELAY_IMAGE = "pi-sandbox-relay-test:alpine";
@@ -48,7 +48,9 @@ const portOf = (server: Server) => {
 };
 
 describe.skipIf(!enabled)("docker-engine egress relay (live)", () => {
-  const backend = createDockerEngineBackend({
+  const backend = createColimaBackend({
+    home: "",
+    stateDir: "",
     socketPath: socketPath ?? "",
     runner: createProcessRunner(),
   });

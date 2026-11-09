@@ -1,7 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Writable } from "node:stream";
-import { createDockerEngineBackend } from "../../../backend/index.ts";
+import { createColimaBackend } from "../../../backend/index.ts";
 import { createProcessRunner } from "../../../shared/index.ts";
 import { engineSocket, listContainers, startContainer } from "./engine.ts";
 import type { LiveSandbox } from "./sandbox.ts";
@@ -56,7 +56,9 @@ const scanContainer = async (repoHash: string, script: string, secrets: Secrets)
 
   await startContainer(agent.Id);
 
-  const backend = createDockerEngineBackend({
+  const backend = createColimaBackend({
+    home: "",
+    stateDir: "",
     socketPath: engineSocket ?? "",
     runner: createProcessRunner(),
   });

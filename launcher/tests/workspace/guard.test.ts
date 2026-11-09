@@ -80,6 +80,28 @@ describe("assertSafeWorkspace", () => {
     });
   });
 
+  it("refuses a repository inside ~/.ssh", async () => {
+    const { home, context } = await createHome();
+    const repo = join(home, ".ssh", "keys");
+
+    expect(() => assertSafeWorkspace(workspaceAt(repo, join(repo, ".git")), context)).toThrow(
+      `${repo} is inside ${join(home, ".ssh")}, refusing to mount it into the sandbox`,
+    );
+  });
+
+  it("refuses a repository or git common dir inside another protected home or system directory", async () => {
+    const { base, home, context } = await createHome();
+    const attempts = [
+      workspaceAt(join(home, ".aws", "config-repo")),
+      workspaceAt(join(base, "worktree"), join(home, ".gnupg", "repo.git")),
+      workspaceAt("/etc/pi-sandbox-repo"),
+    ];
+
+    attempts.forEach((workspace) => {
+      expect(() => assertSafeWorkspace(workspace, context)).toThrow(/is inside .*, refusing/);
+    });
+  });
+
   it("refuses a repository that contains or lies inside a custom PI_CODING_AGENT_DIR", async () => {
     const { base, context } = await createHome();
     const agentDir = join(base, "agents", "pi");

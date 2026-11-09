@@ -11,8 +11,9 @@ import type {
   ExecSpec,
   ImageInfo,
   TerminalSize,
+  Vm,
 } from "../../backend/index.ts";
-import { LABELS } from "../../backend/index.ts";
+import { LABELS, recommendedVmSize } from "../../backend/index.ts";
 import { GUEST_PATHS, LauncherError } from "../../shared/index.ts";
 import { fakeUidOf } from "./fake-engine.ts";
 
@@ -55,6 +56,7 @@ interface FakeBackendOptions {
   execScripts?: FakeExecScript[];
   routeNotices?: string[];
   guestAgentDir?: string;
+  vm?: Partial<Vm>;
 }
 
 const NETWORK_PREFIX = "pi-sandbox";
@@ -289,7 +291,18 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
     removedNetworks.add(repoNetworkOf(repoHash));
   };
 
+  const vm: Vm = {
+    ensureRunning: async () => undefined,
+    coverage: async () => undefined,
+    ensureShares: async () => undefined,
+    size: async () => undefined,
+    recommendedSize: recommendedVmSize,
+    stop: async () => "stopped",
+    ...options.vm,
+  };
+
   const backend: Backend = {
+    vm,
     detect: async () => ({ available: true, version: "fake" }),
     pullImage,
     resolveImage,

@@ -9,7 +9,8 @@ import {
   sha256Hex,
   stateLayout,
   withFileLock,
-} from "../shared/index.ts";
+} from "../../shared/index.ts";
+import { gitDirOf, gitRepos, type Workspace } from "../types.ts";
 import {
   findModuleGitDirs,
   findWorktreeGitDirs,
@@ -20,8 +21,7 @@ import {
   pinStateOf,
   pointerPath,
   readGitPointer,
-} from "./git-layout.ts";
-import { gitDirOf, gitRepos, type Workspace } from "./types.ts";
+} from "./layout.ts";
 
 const PIN_MODE = 0o644;
 

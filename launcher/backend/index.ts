@@ -1,5 +1,6 @@
-export { createDockerEngineBackend } from "./docker-engine/backend.ts";
-export { ENGINE_PROFILE, ENGINE_SOCKET_DISPLAY, engineSocketPath } from "./docker-engine/socket.ts";
+export { createColimaBackend } from "./colima/backend.ts";
+export { ENGINE_PROFILE, ENGINE_SOCKET_DISPLAY, engineSocketPath } from "./colima/profile.ts";
+export { recommendedVmSize } from "./colima/vm.ts";
 export { execCapture } from "./exec-capture.ts";
 export { LABELS } from "./labels.ts";
 export type {
@@ -15,5 +16,8 @@ export type {
   ProxyRoute,
   ProxyRouteRequest,
   TerminalSize,
+  Vm,
+  VmPath,
+  VmSize,
   VolumeSummary,
 } from "./types.ts";

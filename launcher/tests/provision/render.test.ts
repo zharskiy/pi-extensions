@@ -80,7 +80,7 @@ describe("renderAgentDir", () => {
       derived: derived(),
     });
 
-    expect(result.renderDir).toBe(stateLayout(stateDir).render("repo1"));
+    expect(result.renderDir).toBe(stateLayout(stateDir).repo("repo1").render);
     expect(await listTree(result.renderDir)).toEqual([
       "AGENTS.md",
       "agents/",

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { run } from "../../cli/index.ts";
 import { LABELS, nodeModulesOverlays, sharedCacheVolumes } from "../../container/index.ts";
-import { registerSession } from "../../grants/index.ts";
+import { registerLaunch } from "../../grants/index.ts";
 import { sha256Hex } from "../../shared/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
@@ -66,8 +66,8 @@ describe("pi sandbox gc and shared caches", () => {
 
     await run([], harness.deps);
 
-    await registerSession(harness.stateDir, {
-      sessionId: "00000000000000cc",
+    await registerLaunch(harness.stateDir, {
+      launchId: "00000000000000cc",
       pid: process.pid,
       repoHash: sha256Hex(harness.repoRoot),
       startedAt: 1,

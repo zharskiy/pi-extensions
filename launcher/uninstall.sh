@@ -177,8 +177,8 @@ if [ "$stopped_proxies" -eq 0 ]; then
 fi
 
 state_note() {
-  if [ "$1" = "sessions" ]; then
-    echo " (launch records)"
+  if [ "$1" = "repos" ]; then
+    echo " (launch records, render, sync and git copies)"
   fi
 }
 
@@ -196,7 +196,7 @@ remove_state() {
   remove_state "$@"
 }
 
-remove_state sessions render sync mcp-login.json provider-hosts grants.json
+remove_state repos mcp-login.json provider-hosts grants.json
 
 engine_socket="$HOME/.colima/$colima_profile/docker.sock"
 

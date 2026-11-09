@@ -9,7 +9,7 @@ import type { CliDeps } from "../../cli/index.ts";
 import { testedPiVersion } from "../../cli/versions.ts";
 import type { BundledPi } from "../../hostpi/index.ts";
 import type { ControlMessage, DenialRecord, ProxyInstance } from "../../proxy/index.ts";
-import { type RunResult, sha256Hex, stateLayout } from "../../shared/index.ts";
+import { LauncherError, type RunResult, sha256Hex, stateLayout } from "../../shared/index.ts";
 import { createFakeBackend, type FakeExec } from "../support/fake-backend.ts";
 import { createFakeRunner, type FakeResponder } from "../support/fake-runner.ts";
 
@@ -28,14 +28,26 @@ export interface HarnessOptions {
   denials?: DenialRecord[];
   resolve?: (host: string) => Promise<string[]>;
   confirm?: boolean;
+  machine?: CliDeps["machine"];
 }
 
 const roots: string[] = [];
 
-const unreachableBackend = (): Backend => ({
-  ...createFakeBackend().backend,
+export const unreachable = (backend: Backend): Backend => ({
+  ...backend,
   detect: async () => ({ available: false, reason: "socket missing" }),
+  vm: {
+    ...backend.vm,
+    ensureRunning: async () => {
+      throw new LauncherError(
+        "the sandbox VM engine is unreachable at ~/.colima/pi-sandbox/docker.sock",
+        "run launcher/install.sh or colima start --profile pi-sandbox --activate=false",
+      );
+    },
+  },
 });
+
+const unreachableBackend = () => unreachable(createFakeBackend().backend);
 
 const removeRoot = (root: string) => rm(root, { recursive: true, force: true });
 
@@ -94,7 +106,7 @@ export const piSessions = (fake: { execs: FakeExec[] }) =>
 export const piSession = (fake: { execs: FakeExec[] }) => piSessions(fake).at(-1);
 
 export const renderDirOf = (harness: HarnessPaths) =>
-  stateLayout(harness.stateDir).render(sha256Hex(harness.repoRoot));
+  stateLayout(harness.stateDir).repo(sha256Hex(harness.repoRoot)).render;
 
 export const repoTokenOf = (harness: HarnessPaths, policyHash = RUNNING_PROXY.policyHash) =>
   readFile(
@@ -297,6 +309,7 @@ export const createHarness = async (options: HarnessOptions = {}) => {
     },
     platform: "darwin",
     uid: 501,
+    machine: options.machine ?? { cpus: 8, memoryGiB: 32 },
     backend: options.backend ?? unreachableBackend,
     proxy: {
       ensure: async () => RUNNING_PROXY,

@@ -2,22 +2,14 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import type { Backend, ExecIo, ExecSpec } from "../../backend/index.ts";
-import { MCP_LIST_PROBE, OFFLINE_PROBE } from "../../cli/commands/doctor-container.ts";
+import type { ExecIo, ExecSpec, Vm } from "../../backend/index.ts";
+import { MCP_LIST_PROBE, OFFLINE_PROBE } from "../../cli/commands/doctor-probes.ts";
 import { run } from "../../cli/index.ts";
 import { testedPiVersion } from "../../cli/versions.ts";
-import { registerSession } from "../../grants/index.ts";
-import { sha256Hex } from "../../shared/index.ts";
+import { registerLaunch } from "../../grants/index.ts";
+import { LauncherError, sha256Hex } from "../../shared/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
-import { argvOf, type FakeCall } from "../support/fake-runner.ts";
-import {
-  createHarness,
-  writeColimaMounts,
-  writeLimaMounts,
-  writeManagedPi,
-  writePathPi,
-  type YamlMount,
-} from "./harness.ts";
+import { createHarness, unreachable, writeManagedPi, writePathPi } from "./harness.ts";
 
 interface Probes {
   env?: string;
@@ -186,15 +178,22 @@ const HOST_CHECK_LINES = [
   expect.stringMatching(/^ok sessions: \/.+\/home\/\.pi\/agent\/sessions\/--.+-repo-- \(host pi lists them/),
 ];
 
-const HOST_LINES = [
-  ...HOST_CHECK_LINES,
-  "skip vm size: colima not on PATH",
+const PREPARED = ["ok vm", "ok shares", "ok host"];
+
+const VM_LINES = [
   "skip vm shares: colima did not report the shares of profile pi-sandbox",
+  "skip vm size: colima did not report the size of profile pi-sandbox",
 ];
 
-const doctorWith = async (probes: Probes, healthStatus = 200, userConfig?: unknown, hostAuth?: unknown) => {
+const doctorWith = async (
+  probes: Probes,
+  healthStatus = 200,
+  userConfig?: unknown,
+  hostAuth?: unknown,
+  vm?: Partial<Vm>,
+) => {
   const port = await healthServer(healthStatus);
-  const fake = createFakeBackend({ exec: answering(probes) });
+  const fake = createFakeBackend({ exec: answering(probes), vm });
   const harness = await createHarness({
     backend: () => fake.backend,
     proxy: { ensure: async () => ({ pid: 77, port, policyHash: "p", token: "token-1" }) },
@@ -215,13 +214,16 @@ const doctorWith = async (probes: Probes, healthStatus = 200, userConfig?: unkno
 };
 
 describe("pi sandbox doctor", () => {
-  it("prints one ok line per check when every probe passes", async () => {
+  it("prints one ok line per stage and per check when every probe passes", async () => {
     const { code, lines, harness, port } = await doctorWith({});
 
     expect(lines).toEqual([
-      "ok runtime: colima fake",
-      `ok proxy: pid 77 port ${port}, /healthz answers`,
+      ...PREPARED,
+      `ok proxy: pid 77 port ${port}`,
       expect.stringMatching(/^ok image: ghcr\.io\/zharskiy\/pi-sandbox:\S+ sha256:built-1$/),
+      "ok container",
+      "ok sync",
+      "ok proxy health: /healthz answers",
       `ok same-path mount: ${harness.repoRoot} is mounted at the same path`,
       "ok credential sweep: no credential in the environment, auth.json or mcp.json",
       "ok no-route: no direct route to 1.1.1.1:443",
@@ -231,12 +233,13 @@ describe("pi sandbox doctor", () => {
       "ok settings sweep: no settings.json package carries a credential in its URL",
       "ok sessions share: writable at the host path",
       "skip trust: no credential rule, nothing is terminated",
-      ...HOST_LINES,
+      ...VM_LINES,
+      ...HOST_CHECK_LINES,
     ]);
     expect(code).toBe(0);
   });
 
-  it("runs every probe inside the repository container without a tty, then removes the container it created", async () => {
+  it("runs every probe inside the repository container without a tty, then stops it like a launch", async () => {
     const { fake } = await doctorWith({});
     const probes = fake.execs.filter((exec) => intentOf(exec.spec.command) !== "sync");
     const container = fake.execs[0]?.spec.containerId;
@@ -254,7 +257,7 @@ describe("pi sandbox doctor", () => {
       "sessions share",
     ]);
     expect(fake.execs.every((exec) => exec.spec.containerId === container && !exec.tty)).toBe(true);
-    expect(fake.containers.size).toBe(0);
+    expect([...fake.containers.values()].map((entry) => entry.summary.state)).toEqual(["stopped"]);
   });
 
   it("checks trust and every credential rule host with its placeholder", async () => {
@@ -336,7 +339,7 @@ describe("pi sandbox doctor", () => {
     expect(lines).toContain("ok credential sweep: no credential in the environment, auth.json or mcp.json");
   });
 
-  it("keeps the container it created when another session of the repository started meanwhile", async () => {
+  it("leaves the container running when another launch of the repository is live", async () => {
     const port = await healthServer(200);
     const fake = createFakeBackend({ exec: answering({}) });
     const harness = await createHarness({
@@ -344,8 +347,8 @@ describe("pi sandbox doctor", () => {
       proxy: { ensure: async () => ({ pid: 77, port, policyHash: "p", token: "token-1" }) },
     });
 
-    await registerSession(harness.stateDir, {
-      sessionId: "00000000000000cc",
+    await registerLaunch(harness.stateDir, {
+      launchId: "00000000000000cc",
       pid: process.pid,
       repoHash: sha256Hex(harness.repoRoot),
       startedAt: 1,
@@ -398,43 +401,41 @@ describe("pi sandbox doctor", () => {
   it("fails the proxy check when /healthz does not answer", async () => {
     const { code, lines } = await doctorWith({}, 503);
 
-    expect(lines[1]).toMatch(/^fail proxy: pid 77 port \d+, \/healthz does not answer$/);
+    expect(lines).toContain("fail proxy health: /healthz does not answer");
     expect(code).toBe(1);
   });
 
-  it("skips every check after the runtime when no backend is available and still exits 1", async () => {
-    const fake = createFakeBackend();
-    const down = { ...fake.backend, detect: async () => ({ available: false, reason: "socket missing" }) };
-    const harness = await createHarness({ backend: () => down });
+  it("stops at the vm stage when the VM engine is unreachable, prints the host checks and exits 1", async () => {
+    const harness = await createHarness({ backend: () => unreachable(createFakeBackend().backend) });
 
     expect(await run(["sandbox", "doctor"], harness.deps)).toBe(1);
 
     const lines = harness.stdout().trim().split("\n");
 
     expect(lines[0]).toMatch(
-      /^fail runtime: the sandbox VM engine is unreachable at ~\/\.colima\/pi-sandbox\/docker\.sock/,
+      /^fail vm: the sandbox VM engine is unreachable at ~\/\.colima\/pi-sandbox\/docker\.sock/,
     );
-    expect(lines.slice(1)).toEqual([
-      "skip proxy: no runtime",
-      "skip image: no runtime",
-      "skip same-path mount: no runtime",
-      "skip credential sweep: no runtime",
-      "skip no-route: no runtime",
-      "skip offline: no runtime",
-      "skip mcp: no runtime",
-      "skip mcp-auth sweep: no runtime",
-      "skip settings sweep: no runtime",
-      "skip sessions share: no runtime",
-      "skip trust: no runtime",
-      ...HOST_CHECK_LINES,
-      "skip vm size: no runtime",
-      "skip vm shares: no runtime",
-    ]);
+    expect(lines.slice(1)).toEqual(HOST_CHECK_LINES);
+  });
+
+  it("shares a missing path through the shares stage and stops when sharing fails", async () => {
+    const shared: string[][] = [];
+    const { code, lines, fake } = await doctorWith({}, 200, undefined, undefined, {
+      ensureShares: async (paths) => {
+        shared.push(paths.map((entry) => entry.path));
+
+        throw new LauncherError("/elsewhere is not shared with the sandbox VM");
+      },
+    });
+
+    expect(lines.slice(0, 2)).toEqual(["ok vm", "fail shares: /elsewhere is not shared with the sandbox VM"]);
+    expect(shared).toHaveLength(1);
+    expect(fake.containers.size).toBe(0);
+    expect(code).toBe(1);
   });
 
   it("reports the org baseline file it loaded", async () => {
-    const fake = createFakeBackend();
-    const down = { ...fake.backend, detect: async () => ({ available: false, reason: "socket missing" }) };
+    const down = unreachable(createFakeBackend().backend);
     const harness = await createHarness({ backend: () => down });
     const baseline = join(harness.root, "org.json");
 
@@ -447,7 +448,7 @@ describe("pi sandbox doctor", () => {
     expect(harness.stdout()).toContain(`ok org baseline: ${baseline} loaded\n`);
   });
 
-  it("does not count skipped checks as failures", async () => {
+  it("reports the proxy and image stages both, then stops after a failed image", async () => {
     const fake = createFakeBackend({ exec: answering({}) });
     const failing = { ...fake.backend, buildImage: async () => Promise.reject(new Error("build failed")) };
     const harness = await createHarness({ backend: () => failing });
@@ -455,43 +456,21 @@ describe("pi sandbox doctor", () => {
     await harness.writeJson(harness.userConfigFile, { egress: { allow: [] } });
 
     expect(await run(["sandbox", "doctor"], harness.deps)).toBe(1);
-    expect(harness.stdout().trim().split("\n").slice(1)).toEqual([
+    expect(harness.stdout().trim().split("\n")).toEqual([
+      ...PREPARED,
       "ok proxy: not required, no credential rule and an empty allowlist",
       "fail image: build failed",
-      "skip same-path mount: no image",
-      "skip credential sweep: no image",
-      "skip no-route: no image",
-      "skip offline: no image",
-      "skip mcp: no image",
-      "skip mcp-auth sweep: no image",
-      "skip settings sweep: no image",
-      "skip sessions share: no image",
-      "skip trust: no image",
-      ...HOST_LINES,
+      ...HOST_CHECK_LINES,
     ]);
   });
 
   describe("vm size", () => {
-    const GIB = 1024 ** 3;
-
     const RESIZE =
       "colima stop --profile pi-sandbox && colima start --profile pi-sandbox --activate=false --cpu 8 --memory 10";
 
-    const colimaStatus =
-      (status?: object) =>
-      (call: FakeCall): object | undefined => {
-        if (argvOf(call).join(" ") !== "colima status --profile pi-sandbox --json") {
-          return undefined;
-        }
-
-        return status === undefined
-          ? { code: 1, stderr: "colima [profile=pi-sandbox] is not running" }
-          : { stdout: JSON.stringify(status) };
-      };
-
-    const doctorOn = async (backend: Partial<Backend>, respond?: (call: FakeCall) => object | undefined) => {
-      const fake = createFakeBackend({ exec: answering({}) });
-      const harness = await createHarness({ backend: () => ({ ...fake.backend, ...backend }), respond });
+    const sizeLine = async (size: Vm["size"], machine?: { cpus: number; memoryGiB: number }) => {
+      const fake = createFakeBackend({ exec: answering({}), vm: { size } });
+      const harness = await createHarness({ backend: () => fake.backend, machine });
 
       await harness.writeJson(harness.userConfigFile, { egress: { allow: [] } });
 
@@ -501,16 +480,11 @@ describe("pi sandbox doctor", () => {
         .split("\n")
         .find((entry) => entry.includes(" vm size: "));
 
-      return { code, line, harness };
+      return { code, line };
     };
 
-    const colimaProfile = { status: async () => ({ socket: "/fake/docker.sock", profile: "pi-sandbox" }) };
-
     it("warns with the resize command for a 2 CPU, 4 GiB profile without failing doctor", async () => {
-      const { code, line } = await doctorOn(
-        colimaProfile,
-        colimaStatus({ cpu: 2, memory: 4 * GIB, disk: 60 * GIB }),
-      );
+      const { code, line } = await sizeLine(async () => ({ cpus: 2, memoryGiB: 4 }));
 
       expect(line).toBe(
         `warn vm size: profile pi-sandbox has 2 CPUs and 4 GiB, below 8 CPUs and 10 GiB; resize it with ${RESIZE}`,
@@ -519,19 +493,19 @@ describe("pi sandbox doctor", () => {
     });
 
     it("passes for an 8 CPU, 10 GiB profile", async () => {
-      const { line } = await doctorOn(colimaProfile, colimaStatus({ cpu: 8, memory: 10 * GIB }));
+      const { line } = await sizeLine(async () => ({ cpus: 8, memoryGiB: 10 }));
 
       expect(line).toBe("ok vm size: profile pi-sandbox has 8 CPUs and 10 GiB");
     });
 
-    it("skips when colima is not on PATH", async () => {
-      const { line } = await doctorOn(colimaProfile);
+    it("measures the profile against the size install.sh gives this machine", async () => {
+      const { line } = await sizeLine(async () => ({ cpus: 4, memoryGiB: 4 }), { cpus: 4, memoryGiB: 8 });
 
-      expect(line).toBe("skip vm size: colima not on PATH");
+      expect(line).toBe("ok vm size: profile pi-sandbox has 4 CPUs and 4 GiB");
     });
 
     it("skips when colima does not report the profile's size", async () => {
-      const { line } = await doctorOn(colimaProfile, colimaStatus());
+      const { line } = await sizeLine(async () => undefined);
 
       expect(line).toBe("skip vm size: colima did not report the size of profile pi-sandbox");
     });
@@ -539,21 +513,11 @@ describe("pi sandbox doctor", () => {
 });
 
 describe("pi sandbox doctor vm shares", () => {
-  const colimaProfile = { status: async () => ({ socket: "/fake/docker.sock", profile: "pi-sandbox" }) };
-
-  type Harness = Awaited<ReturnType<typeof createHarness>>;
-
-  const sharesLine = async (backend: Partial<Backend>, lima?: (harness: Harness) => YamlMount[]) => {
-    const fake = createFakeBackend({ exec: answering({}) });
-    const harness = await createHarness({ backend: () => ({ ...fake.backend, ...backend }) });
+  const sharesLine = async (coverage: Vm["coverage"]) => {
+    const fake = createFakeBackend({ exec: answering({}), vm: { coverage } });
+    const harness = await createHarness({ backend: () => fake.backend });
 
     await harness.writeJson(harness.userConfigFile, { egress: { allow: [] } });
-
-    if (lima !== undefined) {
-      await writeLimaMounts(harness.deps.home, lima(harness));
-
-      await writeColimaMounts(harness.deps.home, lima(harness));
-    }
 
     await run(["sandbox", "doctor"], harness.deps);
 
@@ -566,29 +530,25 @@ describe("pi sandbox doctor vm shares", () => {
   };
 
   it("passes when the profile shares every path of the repository", async () => {
-    const { line, harness } = await sharesLine(colimaProfile, ({ root }) => [
-      { location: root, writable: true },
-    ]);
+    const asked: string[][] = [];
+    const { line, harness } = await sharesLine(async (paths) => {
+      asked.push(paths.map((entry) => entry.path));
 
-    expect(line).toBe(`ok vm shares: profile pi-sandbox shares ${harness.root}; this repository is covered`);
+      return { shares: [{ location: "/Users", writable: true }], missing: [] };
+    });
+
+    expect(line).toBe("ok vm shares: profile pi-sandbox shares /Users; this repository is covered");
+    expect(asked[0]).toContain(harness.repoRoot);
   });
 
-  it("fails with the command that shares the repository and never restarts the VM", async () => {
-    const { line, harness } = await sharesLine(colimaProfile, ({ deps, stateDir }) => [
-      { location: deps.home, writable: true },
-      { location: stateDir },
-    ]);
-    const { repoRoot, stateDir } = harness;
-    const home = harness.deps.home;
+  it("fails naming the paths the VM does not share", async () => {
+    const { line } = await sharesLine(async () => ({ shares: [], missing: ["/srv/repo"] }));
 
-    expect(line).toBe(
-      `fail vm shares: ${repoRoot} is not shared with profile pi-sandbox; run pi here once (it shares ${repoRoot} and restarts the VM) or colima stop --profile pi-sandbox && colima start --profile pi-sandbox --activate=false --mount ${home}:w --mount ${stateDir} --mount ${repoRoot}:w`,
-    );
-    expect(harness.calls.some((call) => ["stop", "start"].includes(call.args[0] ?? ""))).toBe(false);
+    expect(line).toBe("fail vm shares: /srv/repo is not shared with profile pi-sandbox");
   });
 
   it("skips when colima did not write the instance config", async () => {
-    const { line } = await sharesLine(colimaProfile);
+    const { line } = await sharesLine(async () => undefined);
 
     expect(line).toBe("skip vm shares: colima did not report the shares of profile pi-sandbox");
   });
@@ -599,8 +559,7 @@ describe("pi sandbox doctor on the host pi", () => {
     prepare: (harness: Awaited<ReturnType<typeof createHarness>>) => Promise<void>,
     bundled = true,
   ) => {
-    const fake = createFakeBackend();
-    const down = { ...fake.backend, detect: async () => ({ available: false, reason: "socket missing" }) };
+    const down = unreachable(createFakeBackend().backend);
     const harness = await createHarness({ backend: () => down, ...(bundled ? {} : { bundledPi: null }) });
 
     await prepare(harness);
@@ -662,8 +621,7 @@ describe("pi sandbox doctor on the host pi", () => {
 
 describe("pi sandbox doctor mcp sign-in lines", () => {
   it("prints one line per OAuth server from the host pi sign-in store", async () => {
-    const fake = createFakeBackend();
-    const down = { ...fake.backend, detect: async () => ({ available: false, reason: "socket missing" }) };
+    const down = unreachable(createFakeBackend().backend);
     const harness = await createHarness({ backend: () => down });
     const now = harness.deps.now();
 

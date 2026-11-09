@@ -32,7 +32,7 @@ const syncSettings = async (input: SyncInput): Promise<SyncResult> => {
 
 export const syncSettingsFile = (input: SyncInput): Promise<SyncResult> =>
   withFileLock(
-    join(stateLayout(input.stateDir).sync(input.repoHash), "sync.lock"),
+    join(stateLayout(input.stateDir).repo(input.repoHash).sync, "sync.lock"),
     () => syncSettings(input),
     {
       timeoutMs: LOCK_TIMEOUT_MS,

@@ -2,7 +2,7 @@ import { lstat, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { run } from "../../cli/index.ts";
-import { registerSession } from "../../grants/index.ts";
+import { registerLaunch } from "../../grants/index.ts";
 import { sha256Hex } from "../../shared/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { createHarness } from "./harness.ts";
@@ -57,8 +57,8 @@ describe("the commondir pin around container starts", () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
 
-    await registerSession(harness.stateDir, {
-      sessionId: "00000000000000aa",
+    await registerLaunch(harness.stateDir, {
+      launchId: "00000000000000aa",
       repoHash: sha256Hex(harness.repoRoot),
       startedAt: 1,
       pid: process.pid,

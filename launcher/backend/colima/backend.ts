@@ -7,13 +7,16 @@ import { containerBody, type EngineContainer, labelFilters, summaryOf } from "./
 import { createEngineClient, engineError, messageOf, segment } from "./engine-client.ts";
 import { runExec } from "./exec-session.ts";
 import { createImageOperations } from "./images.ts";
+import { ENGINE_PROFILE, engineSocketPath } from "./profile.ts";
 import { createRelayOperations } from "./relay.ts";
-import { ENGINE_PROFILE } from "./socket.ts";
+import { createColimaVm } from "./vm.ts";
 import { createVolumeOperations } from "./volumes.ts";
 
-export interface DockerEngineOptions {
-  socketPath: string;
+export interface ColimaBackendOptions {
+  home: string;
+  stateDir: string;
   runner: CommandRunner;
+  socketPath?: string;
 }
 
 interface EngineVersion {
@@ -33,8 +36,9 @@ const unsharedSource = (body: Buffer) => {
   return path !== undefined && existsSync(path) ? path : undefined;
 };
 
-export const createDockerEngineBackend = (options: DockerEngineOptions): Backend => {
-  const client = createEngineClient(options.socketPath);
+export const createColimaBackend = (options: ColimaBackendOptions): Backend => {
+  const socket = () => options.socketPath ?? engineSocketPath(options.home);
+  const client = createEngineClient(socket);
   const images = createImageOperations(client, options.runner);
   const volumes = createVolumeOperations(client);
   const relay = createRelayOperations(client);
@@ -132,7 +136,7 @@ export const createDockerEngineBackend = (options: DockerEngineOptions): Backend
     );
 
   const status = async () => {
-    const base = { socket: options.socketPath, profile: ENGINE_PROFILE };
+    const base = { socket: socket(), profile: ENGINE_PROFILE };
 
     try {
       const engine = await version();
@@ -149,6 +153,7 @@ export const createDockerEngineBackend = (options: DockerEngineOptions): Backend
   };
 
   return {
+    vm: createColimaVm({ home: options.home, stateDir: options.stateDir, runner: options.runner, detect }),
     detect,
     pullImage: images.pullImage,
     resolveImage: images.resolveImage,

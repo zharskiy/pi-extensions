@@ -1,6 +1,6 @@
 import type { Backend } from "../backend/index.ts";
 import { findRepoContainer, removeRepoContainer } from "../container/index.ts";
-import { withRepoSessionLock } from "../grants/index.ts";
+import { withRepoLaunchLock } from "../grants/index.ts";
 import { prepareHostSessions, probeHostSessions, sweepHostSessions } from "../provision/index.ts";
 import { errorMessage, LauncherError } from "../shared/index.ts";
 import {
@@ -10,10 +10,9 @@ import {
   hostSessionsDir,
   sessionsSwitchNotice,
 } from "../workspace/index.ts";
-import { type CliDeps, hostAgentDirOf, writeLine, writeNotices } from "./deps.ts";
+import { type CliDeps, hostAgentDirOf, reachableBackend, writeLine, writeNotices } from "./deps.ts";
 import type { LaunchContext } from "./launch.ts";
-import { othersLive } from "./sessions.ts";
-import { reachableBackend } from "./vm-lifecycle.ts";
+import { othersLive } from "./launches.ts";
 
 export const hostSessionsOf = (
   deps: CliDeps,
@@ -85,11 +84,11 @@ const sweepWhenIdle = async (
   deps: CliDeps,
   context: LaunchContext,
   running: () => Promise<boolean>,
-  sessionId?: string,
+  launchId?: string,
 ) => {
   try {
-    return await withRepoSessionLock(context.stateDir, context.repoHash, async () => {
-      const others = await othersLive(context.stateDir, context.repoHash, sessionId);
+    return await withRepoLaunchLock(context.stateDir, context.repoHash, async () => {
+      const others = await othersLive(context.stateDir, context.repoHash, launchId);
 
       return sweep(deps, context, !others && !(await running()));
     });
@@ -104,7 +103,7 @@ export const readyHostSessions = async (
   deps: CliDeps,
   context: LaunchContext,
   backend: Backend,
-  parts: { sessions: HostSessions; sessionId: string },
+  parts: { sessions: HostSessions; launchId: string },
 ) => {
   const { sessions } = parts;
 
@@ -121,7 +120,7 @@ export const readyHostSessions = async (
   refuseStuck(
     deps,
     context,
-    await sweepWhenIdle(deps, context, () => containerRunning(backend, context), parts.sessionId),
+    await sweepWhenIdle(deps, context, () => containerRunning(backend, context), parts.launchId),
   );
 };
 
@@ -166,7 +165,7 @@ export const sessionsSweeper = (deps: CliDeps, context: LaunchContext) => async 
 };
 
 const runningOrUnknown = (deps: CliDeps, context: LaunchContext) => () =>
-  reachableBackend(deps)
+  reachableBackend(deps, context.effective.config)
     .then((backend) => containerRunning(backend, context))
     .catch(() => true);
 

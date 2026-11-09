@@ -24,7 +24,6 @@ export interface Hijacked {
 }
 
 export interface EngineClient {
-  readonly socketPath: string;
   call(request: EngineRequest, accepted?: number[]): Promise<EngineResponse>;
   json<T>(request: EngineRequest, accepted?: number[]): Promise<T>;
   progress(request: EngineRequest): Promise<Array<Record<string, unknown>>>;
@@ -98,18 +97,18 @@ const writeBody = (outgoing: ClientRequest, request: EngineRequest) => {
   outgoing.end(request.json === undefined ? undefined : JSON.stringify(request.json));
 };
 
-export const createEngineClient = (socketPath: string): EngineClient => {
+export const createEngineClient = (socket: () => string): EngineClient => {
   const failure = (error: NodeJS.ErrnoException) =>
     CONNECTION_ERRORS.has(error.code ?? "")
       ? new LauncherError(
-          `engine socket ${socketPath} is not reachable (${error.code})`,
+          `engine socket ${socket()} is not reachable (${error.code})`,
           "start the runtime, for example colima start --profile pi-sandbox",
         )
       : new LauncherError(`engine: ${error.message}`);
 
   const open = (request: EngineRequest, extra: Record<string, string> = {}) =>
     httpRequest({
-      socketPath,
+      socketPath: socket(),
       method: request.method,
       path: urlOf(request),
       headers: headersOf(request, extra),
@@ -168,5 +167,5 @@ export const createEngineClient = (socketPath: string): EngineClient => {
       writeBody(outgoing, request);
     });
 
-  return { socketPath, call, json, progress, upgrade };
+  return { call, json, progress, upgrade };
 };

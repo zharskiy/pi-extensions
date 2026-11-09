@@ -50,7 +50,7 @@ const allow = async (deps: CliDeps, args: string[]) => {
   assertFlags(flags, ["--user"]);
 
   const target = parseTarget(text);
-  const context = await openContext(deps);
+  const { context } = await openContext(deps, "host");
   const grant = await addGrant(
     context.stateDir,
     { ...target, ...(flags.includes("--user") ? {} : { repoHash: context.repoHash }) },
@@ -69,7 +69,7 @@ const revoke = async (deps: CliDeps, args: string[]) => {
   assertFlags(flags, ["--user"]);
 
   const target = parseTarget(text);
-  const context = await openContext(deps);
+  const { context } = await openContext(deps, "host");
   const count = await revokeGrants(context.stateDir, {
     host: target.host,
     ...(text?.includes(":") ? { port: target.port } : {}),
@@ -102,7 +102,7 @@ const deniedLines = async (deps: CliDeps, context: LaunchContext) => {
 const list = async (deps: CliDeps, args: string[]) => {
   assertFlags(args, ["--denied", "--user"]);
 
-  const context = await openContext(deps);
+  const { context } = await openContext(deps, "host");
   const lines = args.includes("--denied")
     ? await deniedLines(deps, context)
     : await grantLines(context, args.includes("--user"));

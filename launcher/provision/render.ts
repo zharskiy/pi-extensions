@@ -97,7 +97,7 @@ const writeChanged = async (dir: string, tree: Tree) => {
 };
 
 export const renderAgentDir = async (input: RenderInput): Promise<RenderResult> => {
-  const renderDir = stateLayout(input.stateDir).render(input.repoHash);
+  const renderDir = stateLayout(input.stateDir).repo(input.repoHash).render;
   const tree = await desiredTree(input);
 
   await mkdir(renderDir, { recursive: true });

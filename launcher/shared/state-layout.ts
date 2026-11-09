@@ -30,17 +30,30 @@ const proxyInstanceFiles = (stateDir: string, policyHash: string) => {
   };
 };
 
+const repoFiles = (stateDir: string, repoHash: string) => {
+  const directory = join(stateDir, "repos", repoHash);
+
+  return {
+    directory,
+    launches: join(directory, "launches"),
+    lock: join(directory, "lock"),
+    render: join(directory, "render"),
+    sync: join(directory, "sync"),
+    gitSnapshots: join(directory, "git", "snapshots"),
+    gitBaseline: join(directory, "git", "baseline.json"),
+    wanted: join(directory, "wanted.json"),
+  };
+};
+
 export const stateLayout = (stateDir: string) => ({
   salt: join(stateDir, "salt"),
   grants: join(stateDir, "grants.json"),
-  sessions: join(stateDir, "sessions"),
-  sessionsOf: (repoHash: string) => join(stateDir, "sessions", repoHash),
-  render: (repoHash: string) => join(stateDir, "render", repoHash),
+  repos: join(stateDir, "repos"),
+  repo: (repoHash: string) => repoFiles(stateDir, repoHash),
   gitNoHooks: join(stateDir, "git", "no-hooks"),
-  gitSnapshots: (repoHash: string) => join(stateDir, "git", repoHash, "snapshots"),
-  gitBaseline: (repoHash: string) => join(stateDir, "git", repoHash, "baseline.json"),
-  gitPinLock: (gitCommonDirHash: string) => join(stateDir, "git", "pins", `${gitCommonDirHash}.lock`),
-  sync: (repoHash: string) => join(stateDir, "sync", repoHash),
+  gitPinLock: (gitCommonDirHash: string) => join(stateDir, "locks", `git-${gitCommonDirHash}.lock`),
+  vmLock: join(stateDir, "locks", "vm.lock"),
+  buildContext: (name: string) => join(stateDir, name),
   mcpLogin: join(stateDir, "mcp-login.json"),
   mcpLoginDirPrefix: join(stateDir, "mcp-login-"),
   mcpLoginLock: (key: string) => join(stateDir, "locks", `mcp-login-${sha256Hex(key).slice(0, 8)}.lock`),
@@ -49,7 +62,6 @@ export const stateLayout = (stateDir: string) => ({
   extraPem: join(stateDir, "ca", "extra.pem"),
   trustPem: join(stateDir, "ca", "trust.pem"),
   imageRecord: join(stateDir, "image.json"),
-  wanted: (repoKey: string) => join(stateDir, "wanted", `${repoKey}.json`),
   proxyRoot: join(stateDir, "proxy"),
   proxyInstance: (policyHash: string) => proxyInstanceFiles(stateDir, policyHash),
 });

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { run } from "../../cli/index.ts";
 import { LABELS, repoVolumes } from "../../container/index.ts";
-import { registerSession } from "../../grants/index.ts";
+import { registerLaunch } from "../../grants/index.ts";
 import { launcherRoot, sha256Hex, stateLayout } from "../../shared/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
@@ -34,7 +34,7 @@ describe("pi sandbox status", () => {
     expect(lines.some((line) => /^container spec hash: [0-9a-f]{64} \(current\)$/.test(line))).toBe(true);
     expect(lines).toContain("proxy: stopped");
     expect(lines).toContain(`image: ghcr.io/zharskiy/pi-sandbox:${await packageVersion()} sha256:built-1`);
-    expect(lines).toContain("sessions: 0 running for this repository");
+    expect(lines).toContain("launches: 0 running for this repository");
     expect(lines).toContain("grants: 0 active");
   });
 
@@ -96,11 +96,11 @@ describe("pi sandbox status", () => {
     expect(harness.stdout()).not.toContain("secret-token");
   });
 
-  it("reports live sessions and active grants of this repository", async () => {
+  it("reports live launches and active grants of this repository", async () => {
     const harness = await createHarness();
 
-    await registerSession(harness.stateDir, {
-      sessionId: "0123456789abcdef",
+    await registerLaunch(harness.stateDir, {
+      launchId: "0123456789abcdef",
       pid: process.pid,
       repoHash: sha256Hex(harness.repoRoot),
       startedAt: 1_700_000_000_000,
@@ -112,8 +112,8 @@ describe("pi sandbox status", () => {
 
     const lines = harness.stdout().split("\n");
 
-    expect(lines).toContain("sessions: 1 running for this repository");
-    expect(lines).toContain(`session: 0123456789abcdef pid ${process.pid} since 2023-11-14T22:13:20.000Z`);
+    expect(lines).toContain("launches: 1 running for this repository");
+    expect(lines).toContain(`launch: 0123456789abcdef pid ${process.pid} since 2023-11-14T22:13:20.000Z`);
     expect(lines).toContain("grants: 1 active");
     expect(lines).toContain("grant: docs.example.test for this repository");
   });
@@ -304,8 +304,8 @@ describe("pi sandbox gc and reset", () => {
 
     await writeFile(tokenFile, "f".repeat(64));
 
-    await registerSession(harness.stateDir, {
-      sessionId: "00000000000000bb",
+    await registerLaunch(harness.stateDir, {
+      launchId: "00000000000000bb",
       pid: process.pid,
       repoHash: repo,
       startedAt: 1,

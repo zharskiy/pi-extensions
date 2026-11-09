@@ -1,10 +1,10 @@
 import type { Dirent } from "node:fs";
 import { readdir, readlink } from "node:fs/promises";
 import { join } from "node:path";
-import { type CommandRunner, readRegularFile } from "../shared/index.ts";
-import { inertGitOptions } from "./git-command.ts";
-import { gitDirOf, gitRepos, type Workspace } from "./types.ts";
-import { SCAN_BUDGET } from "./workspace-scan.ts";
+import { type CommandRunner, readRegularFile } from "../../shared/index.ts";
+import { gitDirOf, gitRepos, type Workspace } from "../types.ts";
+import { SCAN_BUDGET } from "../workspace-scan.ts";
+import { inertGitOptions } from "./command.ts";
 
 export interface NestedGitEntry {
   path: string;

@@ -149,7 +149,7 @@ describe("buildContainerSpec", () => {
       readOnlyFiles: ["/work/repo/.git/config", "/work/repo/.git/commondir"],
     };
     const mounts = buildContainerSpec(specInput({ gitOverlay })).mounts;
-    const snapshots = `/state/git/${repoHash}/snapshots/`;
+    const snapshots = `/state/repos/${repoHash}/git/snapshots/`;
 
     expect(mountAt(mounts, "/work/repo/.git")).toEqual({
       source: "/work/repo/.git",
@@ -400,8 +400,8 @@ describe("buildContainerSpec", () => {
   });
 
   it("keeps the launch id out of the spec and its hash", () => {
-    const first = buildContainerSpec(specInput({ sessionId: "aaaaaaaaaaaaaaaa" }));
-    const second = buildContainerSpec(specInput({ sessionId: "bbbbbbbbbbbbbbbb" }));
+    const first = buildContainerSpec(specInput({ launchId: "aaaaaaaaaaaaaaaa" }));
+    const second = buildContainerSpec(specInput({ launchId: "bbbbbbbbbbbbbbbb" }));
 
     expect(second).toEqual(first);
     expect(JSON.stringify(first)).not.toContain("aaaaaaaaaaaaaaaa");

@@ -5,17 +5,17 @@ import {
   repoHash,
   stateLayout,
   writeJsonFile,
-} from "../shared/index.ts";
-import { assertGitIntegrity, gitAlternatesNotices, unpinGitDirs, withGitPinLock } from "./git-integrity.ts";
-import { type GitBaseline, nestedGitNotices, scanGitBaseline } from "./git-scan.ts";
-import { gitRepos, type Workspace } from "./types.ts";
+} from "../../shared/index.ts";
+import { gitRepos, type Workspace } from "../types.ts";
+import { assertGitIntegrity, gitAlternatesNotices, unpinGitDirs, withGitPinLock } from "./integrity.ts";
+import { type GitBaseline, nestedGitNotices, scanGitBaseline } from "./scan.ts";
 
-export interface GitSessionContext {
+export interface GitLaunchContext {
   runner: CommandRunner;
   stateDir: string;
 }
 
-interface SessionRecord {
+interface BaselineRecord {
   scan: GitBaseline;
   alternates: string[];
 }
@@ -25,7 +25,7 @@ type PinsInUse = (gitCommonDir: string) => Promise<boolean>;
 const pathsOf = (stateDir: string, repoRoot: string) => {
   const layout = stateLayout(stateDir);
 
-  return { noHooks: layout.gitNoHooks, record: layout.gitBaseline(repoHash(repoRoot)) };
+  return { noHooks: layout.gitNoHooks, record: layout.repo(repoHash(repoRoot)).gitBaseline };
 };
 
 const alternatesOf = async (workspace: Workspace) => {
@@ -34,14 +34,14 @@ const alternatesOf = async (workspace: Workspace) => {
   return notices.flat();
 };
 
-export const recordGitBaseline = async (workspace: Workspace, context: GitSessionContext) => {
+export const recordGitBaseline = async (workspace: Workspace, context: GitLaunchContext) => {
   const paths = pathsOf(context.stateDir, workspace.repoRoot);
   const [scan, alternates] = await Promise.all([
     scanGitBaseline(workspace, context.runner, paths.noHooks),
     alternatesOf(workspace),
   ]);
 
-  await writeJsonFile(paths.record, { scan, alternates } satisfies SessionRecord);
+  await writeJsonFile(paths.record, { scan, alternates } satisfies BaselineRecord);
 };
 
 export const gitLaunchNotices = async (workspace: Workspace) => {
@@ -50,7 +50,7 @@ export const gitLaunchNotices = async (workspace: Workspace) => {
   return alternatesOf(workspace);
 };
 
-const scanNotices = async (workspace: Workspace, context: GitSessionContext, record: SessionRecord) => {
+const scanNotices = async (workspace: Workspace, context: GitLaunchContext, record: BaselineRecord) => {
   const { noHooks } = pathsOf(context.stateDir, workspace.repoRoot);
 
   return nestedGitNotices(record.scan, await scanGitBaseline(workspace, context.runner, noHooks));
@@ -66,7 +66,7 @@ const commonDirRepos = (workspace: Workspace) => {
   return [...byCommonDir.entries()];
 };
 
-const unpinned = async (workspace: Workspace, context: GitSessionContext, pinsInUse: PinsInUse) => {
+const unpinned = async (workspace: Workspace, context: GitLaunchContext, pinsInUse: PinsInUse) => {
   const notices = await Promise.all(
     commonDirRepos(workspace).map(([gitCommonDir, repo]) =>
       withGitPinLock(context.stateDir, repo, async () =>
@@ -91,9 +91,9 @@ const brokenRepos = async (workspace: Workspace) => {
   return notices.flat();
 };
 
-export const gitSessionEndNotices = async (
+export const gitLaunchEndNotices = async (
   workspace: Workspace,
-  context: GitSessionContext,
+  context: GitLaunchContext,
   pinsInUse: PinsInUse,
 ) => {
   if (workspace.isGitRepo && workspace.gitCommonDir === undefined) {
@@ -102,7 +102,7 @@ export const gitSessionEndNotices = async (
 
   const released = await unpinned(workspace, context, pinsInUse);
   const broken = await brokenRepos(workspace);
-  const record = await readJsonFile<SessionRecord>(
+  const record = await readJsonFile<BaselineRecord>(
     pathsOf(context.stateDir, workspace.repoRoot).record,
   ).catch(() => undefined);
   const alternates = (await alternatesOf(workspace)).filter(

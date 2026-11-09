@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { run } from "../../cli/index.ts";
 import { LauncherError, sha256Hex } from "../../shared/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
-import { createHarness, isPiSession, piSession, piSessions } from "./harness.ts";
+import { createHarness, isPiSession, piSession, piSessions, unreachable } from "./harness.ts";
 
 const PREPARING = "preparing pi sandbox, one time";
 
@@ -175,8 +175,7 @@ describe("pi [args]", () => {
   });
 
   it("refuses when no backend is available", async () => {
-    const fake = createFakeBackend();
-    const down = { ...fake.backend, detect: async () => ({ available: false, reason: "socket missing" }) };
+    const down = unreachable(createFakeBackend().backend);
     const harness = await createHarness({ backend: () => down });
 
     expect(await run([], harness.deps)).toBe(1);

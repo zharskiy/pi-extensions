@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { Writable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { createDockerEngineBackend } from "../../../backend/index.ts";
+import { createColimaBackend } from "../../../backend/index.ts";
 import { userHashOf } from "../../../container/index.ts";
 import { stopProxy } from "../../../proxy/index.ts";
 import { createProcessRunner } from "../../../shared/index.ts";
@@ -213,7 +213,9 @@ export const createLiveSandbox = async (name: string): Promise<LiveSandbox> => {
     NODE_EXTRA_CA_CERTS: ca.certPath,
     GIT_CONFIG_NOSYSTEM: "1",
   };
-  const backend = createDockerEngineBackend({
+  const backend = createColimaBackend({
+    home: "",
+    stateDir: "",
     socketPath: socket,
     runner: createProcessRunner(),
   });

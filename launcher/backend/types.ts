@@ -91,7 +91,46 @@ export interface ProxyRouteRequest {
   relay: { policyHash: string; imageId: string };
 }
 
+export interface VmPath {
+  path: string;
+  writable: boolean;
+}
+
+export interface VmShare {
+  location: string;
+  writable: boolean;
+}
+
+export interface VmCoverage {
+  shares: VmShare[];
+  missing: string[];
+}
+
+export interface VmSize {
+  cpus: number;
+  memoryGiB: number;
+}
+
+type VmStop = "absent" | "already stopped" | "stopped";
+
+export type VmReport = (notice: string) => void;
+
+export interface VmShareOptions {
+  busy: () => Promise<number>;
+  report: VmReport;
+}
+
+export interface Vm {
+  ensureRunning(report: VmReport): Promise<void>;
+  coverage(paths: VmPath[]): Promise<VmCoverage | undefined>;
+  ensureShares(paths: VmPath[], options: VmShareOptions): Promise<void>;
+  size(): Promise<VmSize | undefined>;
+  recommendedSize(cpus: number, memGiB: number): VmSize;
+  stop(options: Pick<VmShareOptions, "busy">): Promise<VmStop>;
+}
+
 export interface Backend {
+  vm: Vm;
   detect(): Promise<Detection>;
   pullImage(reference: string, digest?: string): Promise<ImageInfo>;
   resolveImage(reference: string): Promise<ImageInfo | undefined>;

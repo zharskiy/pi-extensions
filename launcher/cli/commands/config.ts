@@ -3,7 +3,7 @@ import { type CliDeps, writeLine, writeLines } from "../deps.ts";
 import { openContext } from "../launch.ts";
 
 const showConfig = async (deps: CliDeps, json: boolean) => {
-  const { effective } = await openContext(deps);
+  const { effective } = (await openContext(deps, "host")).context;
 
   if (json) {
     writeLine(deps.stdout, JSON.stringify(effective, null, 2));

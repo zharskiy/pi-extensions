@@ -142,7 +142,7 @@ describe("syncSettingsFile", () => {
 
   it("waits for another launch's sync of the same repository before it reads the volume", async () => {
     const env = await setup({});
-    const lock = join(stateLayout(env.stateDir).sync("repo1"), "sync.lock");
+    const lock = join(stateLayout(env.stateDir).repo("repo1").sync, "sync.lock");
 
     await mkdir(dirname(lock), { recursive: true });
 

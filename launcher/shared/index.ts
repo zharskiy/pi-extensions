@@ -48,4 +48,5 @@ export {
 } from "./placeholder.ts";
 export { lstatOrUndefined, readRegularFile, sameEntry } from "./regular-file.ts";
 export { isAuthLikeHeader, isSecretName } from "./secret-name.ts";
+export { settleAll } from "./settle.ts";
 export { ensureSalt, GUEST_PATHS, stateLayout } from "./state-layout.ts";

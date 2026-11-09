@@ -7,12 +7,12 @@ import {
   nodeModulesOverlays,
   sharedCacheVolumes,
 } from "../../container/index.ts";
-import { liveSessions } from "../../grants/index.ts";
+import { liveLaunches } from "../../grants/index.ts";
 import { recordedImage } from "../../image/index.ts";
 import { proxyPolicyHash } from "../../proxy/index.ts";
 import { LauncherError } from "../../shared/index.ts";
-import { type CliDeps, writeLines } from "../deps.ts";
-import { type LaunchContext, openAdminContext, openBackend } from "../launch.ts";
+import { type CliDeps, reachableBackend, writeLines } from "../deps.ts";
+import { type LaunchContext, openContext } from "../launch.ts";
 import { launcherVersion } from "../versions.ts";
 import { grantLines } from "./egress.ts";
 
@@ -53,7 +53,7 @@ const containerLines = async (backend: Backend, context: LaunchContext) => {
 
 const runtimeLines = async (deps: CliDeps, context: LaunchContext) => {
   try {
-    const backend = await openBackend(deps, context.effective.config);
+    const backend = await reachableBackend(deps, context.effective.config);
     const detection = await backend.detect();
     const details = Object.entries(await backend.status()).map(([key, value]) => `runtime ${key}: ${value}`);
 
@@ -92,14 +92,14 @@ const imageLine = async (context: LaunchContext) => {
   return `image: ${image.reference} ${image.digest ?? record?.digest ?? "(not built yet)"}`;
 };
 
-const sessionLines = async (context: LaunchContext) => {
-  const sessions = await liveSessions(context.stateDir, context.repoHash);
+const launchLines = async (context: LaunchContext) => {
+  const launches = await liveLaunches(context.stateDir, context.repoHash);
 
   return [
-    `sessions: ${sessions.length} running for this repository`,
-    ...sessions.map(
-      (session) =>
-        `session: ${session.sessionId} pid ${session.pid} since ${new Date(session.startedAt).toISOString()}`,
+    `launches: ${launches.length} running for this repository`,
+    ...launches.map(
+      (launch) =>
+        `launch: ${launch.launchId} pid ${launch.pid} since ${new Date(launch.startedAt).toISOString()}`,
     ),
   ];
 };
@@ -128,7 +128,7 @@ const grantStatus = async (context: LaunchContext) => {
 };
 
 export const statusCommand = async (deps: CliDeps) => {
-  const context = await openAdminContext(deps);
+  const { context } = await openContext(deps, "host");
   const lines = [
     `launcher: ${await launcherVersion()}`,
     `repo: ${context.workspace.repoRoot}`,
@@ -136,7 +136,7 @@ export const statusCommand = async (deps: CliDeps) => {
     ...(await proxyLines(deps, context)),
     await imageLine(context),
     ...volumeLines(context),
-    ...(await sessionLines(context)),
+    ...(await launchLines(context)),
     ...(await grantStatus(context)),
   ];
 

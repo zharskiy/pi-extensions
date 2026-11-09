@@ -2,7 +2,7 @@ import { EventEmitter } from "node:events";
 import { setTimeout as sleep } from "node:timers/promises";
 import { describe, expect, it } from "vitest";
 import { run } from "../../cli/index.ts";
-import { liveSessions, registerSession } from "../../grants/index.ts";
+import { liveLaunches, registerLaunch } from "../../grants/index.ts";
 import { sha256Hex } from "../../shared/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { createHarness, piSessions } from "./harness.ts";
@@ -29,8 +29,8 @@ describe("the end of a session", () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
 
-    await registerSession(harness.stateDir, {
-      sessionId: "0123456789abcdef",
+    await registerLaunch(harness.stateDir, {
+      launchId: "0123456789abcdef",
       pid: process.pid,
       repoHash: sha256Hex(harness.repoRoot),
       startedAt: 1,
@@ -50,13 +50,13 @@ describe("a config change while other sessions of the repository are live", () =
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
     const other = {
-      sessionId: OTHER_LAUNCH,
+      launchId: OTHER_LAUNCH,
       repoHash: sha256Hex(harness.repoRoot),
       startedAt: 1,
       pid: process.pid,
     };
 
-    await registerSession(harness.stateDir, other);
+    await registerLaunch(harness.stateDir, other);
 
     expect(await run([], harness.deps)).toBe(0);
 
@@ -69,7 +69,7 @@ describe("a config change while other sessions of the repository are live", () =
     expect(harness.stderr()).toContain(OUTDATED);
     expect(fake.stops).toEqual([]);
 
-    await registerSession(harness.stateDir, { ...other, pid: 2 ** 22 + 12345 });
+    await registerLaunch(harness.stateDir, { ...other, pid: 2 ** 22 + 12345 });
 
     expect(await run([], harness.deps)).toBe(0);
     expect(fake.containers.has(first ?? "")).toBe(false);
@@ -98,7 +98,7 @@ describe("a signal while the sandbox is being prepared", () => {
     expect(await run([], harness.deps)).toBe(143);
     expect(fake.containers.size).toBe(1);
     expect(fake.stops.map((stop) => stop.id)).toEqual([...fake.containers.keys()]);
-    expect(await liveSessions(harness.stateDir)).toEqual([]);
+    expect(await liveLaunches(harness.stateDir)).toEqual([]);
     expect(signals.listenerCount("SIGINT")).toBe(0);
     expect(piSessions(fake)).toEqual([]);
   });
@@ -115,7 +115,7 @@ describe("a signal while the sandbox is being prepared", () => {
 
           await sleep(50);
 
-          sessionsWhenBuilt.push((await liveSessions(harness.stateDir)).length);
+          sessionsWhenBuilt.push((await liveLaunches(harness.stateDir)).length);
 
           return fake.backend.buildImage(...args);
         },
@@ -127,6 +127,6 @@ describe("a signal while the sandbox is being prepared", () => {
     expect(await run([], harness.deps)).toBe(130);
     expect(sessionsWhenBuilt).toEqual([1]);
     expect(fake.containers.size).toBe(0);
-    expect(await liveSessions(harness.stateDir)).toEqual([]);
+    expect(await liveLaunches(harness.stateDir)).toEqual([]);
   });
 });

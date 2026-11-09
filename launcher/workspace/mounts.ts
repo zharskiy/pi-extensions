@@ -1,5 +1,5 @@
 import { existsSync, realpathSync, statSync } from "node:fs";
-import { isAbsolute, join, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import {
   expandHome,
   hostAgentDir,
@@ -9,22 +9,27 @@ import {
   realOrResolvedSync,
 } from "../shared/index.ts";
 
-interface ExtraMountContext {
+interface ProtectedContext {
   home: string;
   env: NodeJS.ProcessEnv;
-  repoRoot: string;
   engineSockets?: string[];
 }
 
-interface Protected {
+interface ExtraMountContext extends ProtectedContext {
+  repoRoot: string;
+}
+
+export interface Protected {
   path: string;
   reason: string;
   under: boolean;
 }
 
-const HOME_SECRETS = [".ssh", ".gnupg", ".aws", ".docker", ".colima", ".kube"];
+const PROTECTED_HOME = [".ssh", ".gnupg", ".aws", ".docker", ".colima", ".kube"];
 
 const SYSTEM_DIRS = ["/var/run", "/run", "/etc", "/proc", "/sys", "/dev"];
+
+const DEFAULT_CONFIG_DIR = [".config", "pi-sandbox"];
 
 const dockerHostSocket = (env: NodeJS.ProcessEnv) => {
   const host = env.DOCKER_HOST;
@@ -32,7 +37,13 @@ const dockerHostSocket = (env: NodeJS.ProcessEnv) => {
   return host?.startsWith("unix://") ? host.slice("unix://".length) : undefined;
 };
 
-const protectedPaths = (context: ExtraMountContext): Protected[] => {
+const userConfigOf = (home: string, userConfigFile: string) => {
+  const defaultDir = resolve(home, ...DEFAULT_CONFIG_DIR);
+
+  return resolve(dirname(userConfigFile)) === defaultDir ? defaultDir : userConfigFile;
+};
+
+export const protectedPaths = (context: ProtectedContext): Protected[] => {
   const paths = launcherPaths({ env: context.env, home: context.home });
   const sockets = [dockerHostSocket(context.env), ...(context.engineSockets ?? [])].filter(
     (path) => path !== undefined,
@@ -42,8 +53,12 @@ const protectedPaths = (context: ExtraMountContext): Protected[] => {
     { path: join(context.home, ".pi"), reason: "pi's directory", under: true },
     { path: hostAgentDir(context.home, context.env), reason: "pi's agent directory", under: true },
     { path: paths.stateDir, reason: "the launcher state directory", under: true },
-    { path: paths.userConfigFile, reason: "the launcher user config", under: true },
-    ...HOME_SECRETS.map((name) => ({ path: join(context.home, name), reason: `~/${name}`, under: true })),
+    {
+      path: userConfigOf(context.home, paths.userConfigFile),
+      reason: "the launcher user config",
+      under: true,
+    },
+    ...PROTECTED_HOME.map((name) => ({ path: join(context.home, name), reason: `~/${name}`, under: true })),
     ...SYSTEM_DIRS.map((path) => ({ path, reason: path, under: true })),
     ...sockets.map((path) => ({ path, reason: "the container engine socket", under: true })),
   ];

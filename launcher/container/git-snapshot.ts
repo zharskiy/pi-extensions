@@ -13,7 +13,7 @@ const MODE_BITS = 0o777;
 const SNAPSHOT_NAME_LENGTH = 16;
 
 export const gitSnapshotsDir = (stateDir: string, repoRoot: string) =>
-  stateLayout(stateDir).gitSnapshots(repoHash(repoRoot));
+  stateLayout(stateDir).repo(repoHash(repoRoot)).gitSnapshots;
 
 export const gitSnapshotPath = (snapshotsDir: string, target: string) =>
   join(snapshotsDir, sha256Hex(target).slice(0, SNAPSHOT_NAME_LENGTH));

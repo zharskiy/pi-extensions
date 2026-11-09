@@ -1,7 +1,7 @@
 import { lookup } from "node:dns/promises";
-import { homedir } from "node:os";
+import { cpus, homedir, totalmem } from "node:os";
 import { createInterface } from "node:readline/promises";
-import { createDockerEngineBackend, engineSocketPath } from "../backend/index.ts";
+import { createColimaBackend } from "../backend/index.ts";
 import type { HostTerminal } from "../container/index.ts";
 import { locateBundledPi } from "../hostpi/index.ts";
 import {
@@ -14,12 +14,14 @@ import {
   stopProxy,
 } from "../proxy/index.ts";
 import { createProcessRunner } from "../shared/index.ts";
-import type { CliDeps } from "./deps.ts";
+import { type CliDeps, pathsOf } from "./deps.ts";
 import { renderFailure, run } from "./run.ts";
 
 const DEFAULT_COLUMNS = 80;
 
 const DEFAULT_ROWS = 24;
+
+const GIB = 1024 ** 3;
 
 const hostTerminal = (): HostTerminal => ({
   stdin: process.stdin,
@@ -62,18 +64,22 @@ const confirm = async (question: string) => {
 const realDeps = (): CliDeps => {
   const runner = createProcessRunner();
   const home = homedir();
+  const env = process.env;
+  const platform = process.platform;
+  const { stateDir } = pathsOf({ env, home, platform });
 
   return {
     runner,
-    env: process.env,
+    env,
     home,
     cwd: process.cwd(),
     stdout: process.stdout,
     stderr: process.stderr,
     terminal: hostTerminal(),
-    platform: process.platform,
+    platform,
     uid: process.getuid?.() ?? 0,
-    backend: () => createDockerEngineBackend({ socketPath: engineSocketPath(home), runner }),
+    machine: { cpus: cpus().length, memoryGiB: totalmem() / GIB },
+    backend: () => createColimaBackend({ home, stateDir, runner }),
     proxy: {
       ensure: (request) => ensureProxyRunning({ ...request, runner }),
       list: readProxyInstances,

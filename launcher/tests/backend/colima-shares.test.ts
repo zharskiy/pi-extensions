@@ -1,20 +1,22 @@
 import { rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { vmSharesOf } from "../../backend/colima/colima-yaml.ts";
+import { shareFor } from "../../backend/colima/shares.ts";
+import { createColimaVm } from "../../backend/colima/vm.ts";
 import type { Backend } from "../../backend/index.ts";
 import { run } from "../../cli/index.ts";
-import { shareFor, vmSharesOf } from "../../cli/vm-shares.ts";
-import { registerSession } from "../../grants/index.ts";
+import { registerLaunch } from "../../grants/index.ts";
 import { sha256Hex } from "../../shared/index.ts";
-import { createFakeBackend } from "../support/fake-backend.ts";
-import { argvOf, type FakeCall } from "../support/fake-runner.ts";
 import {
   colimaYamlPath,
   createHarness,
   writeColimaMounts,
   writeLimaMounts,
   type YamlMount,
-} from "./harness.ts";
+} from "../cli/harness.ts";
+import { createFakeBackend } from "../support/fake-backend.ts";
+import { argvOf, type FakeCall } from "../support/fake-runner.ts";
 
 const PROFILE = { status: async () => ({ socket: "/fake/docker.sock", profile: "pi-sandbox" }) };
 
@@ -71,9 +73,19 @@ const homeAndState = ({ home, stateDir }: Paths): YamlMount[] => [
 const launchWith = async (setup: Setup = {}) => {
   const fake = createFakeBackend();
   const answers = setup.answers ?? {};
-  const holder: { home: string } = { home: "" };
+  const holder: { home: string; stateDir: string } = { home: "", stateDir: "" };
   const harness = await createHarness({
-    backend: () => ({ ...fake.backend, ...PROFILE, ...setup.backend }),
+    backend: () => {
+      const backend = { ...fake.backend, ...PROFILE, ...setup.backend };
+      const vm = createColimaVm({
+        home: holder.home,
+        stateDir: holder.stateDir,
+        runner: harness.deps.runner,
+        detect: () => backend.detect(),
+      });
+
+      return { ...backend, vm };
+    },
     respond: (call) => colima(holder.home, answers)(call),
   });
   const paths = {
@@ -84,6 +96,8 @@ const launchWith = async (setup: Setup = {}) => {
   };
 
   holder.home = paths.home;
+
+  holder.stateDir = paths.stateDir;
 
   await writeLimaMounts(paths.home, (setup.lima ?? homeAndState)(paths));
 
@@ -279,8 +293,8 @@ describe("the launch shares a repository the VM does not see", () => {
     const context = await launchWith();
     const { home, stateDir, repoRoot } = context.paths;
 
-    await registerSession(context.harness.stateDir, {
-      sessionId: "00000000000000dd",
+    await registerLaunch(context.harness.stateDir, {
+      launchId: "00000000000000dd",
       pid: process.pid,
       repoHash: sha256Hex("/elsewhere"),
       startedAt: 1,
@@ -377,8 +391,8 @@ describe("the launch shares a repository the VM does not see", () => {
   it("adds no --no-sandbox suffix to a refusal under fallback refuse", async () => {
     const context = await launchWith({ config: { fallback: "refuse" } });
 
-    await registerSession(context.harness.stateDir, {
-      sessionId: "00000000000000ee",
+    await registerLaunch(context.harness.stateDir, {
+      launchId: "00000000000000ee",
       pid: process.pid,
       repoHash: sha256Hex("/elsewhere"),
       startedAt: 1,
@@ -417,4 +431,31 @@ describe("the launch shares a repository the VM does not see", () => {
       `pi-sandbox: the sandbox VM did not come back after sharing ${context.paths.repoRoot}: socket missing\n`,
     );
   }, 15_000);
+});
+
+describe("the coverage of the VM shares", () => {
+  it("lists the shares and the paths they miss", async () => {
+    const context = await launchWith();
+    const { home, stateDir, repoRoot } = context.paths;
+    const needs = [
+      { path: repoRoot, writable: true },
+      { path: stateDir, writable: false },
+    ];
+
+    expect(await context.harness.deps.backend().vm.coverage(needs)).toEqual({
+      shares: [
+        { location: home, writable: true },
+        { location: stateDir, writable: false },
+      ],
+      missing: [repoRoot],
+    });
+  });
+
+  it("knows no coverage before colima wrote the instance config", async () => {
+    const context = await launchWith();
+
+    await rm(join(context.paths.home, ".colima", "_lima", "colima-pi-sandbox", "lima.yaml"));
+
+    expect(await context.harness.deps.backend().vm.coverage([])).toBeUndefined();
+  });
 });

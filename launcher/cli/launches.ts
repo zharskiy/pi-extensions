@@ -3,25 +3,24 @@ import {
   findRepoContainer,
   type GitGuardContext,
   gitDirInUseElsewhere,
-  gitSessionEndNotices,
+  gitLaunchEndNotices,
 } from "../container/index.ts";
-import { endSession, liveSessions, newSessionId, registerSession } from "../grants/index.ts";
+import { endLaunch, type Launch, liveLaunches, newLaunchId, registerLaunch } from "../grants/index.ts";
 import { errorMessage } from "../shared/index.ts";
 import { type CliDeps, writeLine, writeNotices } from "./deps.ts";
 import type { LaunchContext } from "./launch.ts";
 
-export interface LaunchSession {
-  sessionId: string;
-  repoHash: string;
-  startedAt: number;
-}
+export const beginLaunch = async (deps: CliDeps, context: LaunchContext): Promise<Launch> => {
+  const launch = {
+    launchId: newLaunchId(),
+    pid: process.pid,
+    repoHash: context.repoHash,
+    startedAt: deps.now(),
+  };
 
-export const beginSession = async (deps: CliDeps, context: LaunchContext): Promise<LaunchSession> => {
-  const session = { sessionId: newSessionId(), repoHash: context.repoHash, startedAt: deps.now() };
+  await registerLaunch(context.stateDir, launch);
 
-  await registerSession(context.stateDir, { ...session, pid: process.pid });
-
-  return session;
+  return launch;
 };
 
 const stopRepoContainer = async (backend: Backend, context: LaunchContext) => {
@@ -42,26 +41,26 @@ export const gitGuardOf = (deps: CliDeps, context: LaunchContext): GitGuardConte
 });
 
 const settleGit = async (deps: CliDeps, context: LaunchContext, backend: Backend) => {
-  const notices = await gitSessionEndNotices(context.workspace, gitGuardOf(deps, context), (gitCommonDir) =>
+  const notices = await gitLaunchEndNotices(context.workspace, gitGuardOf(deps, context), (gitCommonDir) =>
     gitDirInUseElsewhere(backend, context.workspace, gitCommonDir),
   ).catch((error: unknown) => [`warning: git: the check after the session failed: ${errorMessage(error)}`]);
 
   writeNotices(deps, notices);
 };
 
-export const finishSession = async (
+export const finishLaunch = async (
   deps: CliDeps,
   context: LaunchContext,
   backend: Backend,
-  session: LaunchSession,
+  launch: Launch,
   sweep?: Sweep,
 ) => {
   const last = { stopped: false };
 
   try {
-    await endSession(context.stateDir, {
-      repoHash: session.repoHash,
-      sessionId: session.sessionId,
+    await endLaunch(context.stateDir, {
+      repoHash: launch.repoHash,
+      launchId: launch.launchId,
       onLast: async () => {
         await stopRepoContainer(backend, context);
 
@@ -73,7 +72,7 @@ export const finishSession = async (
       },
     });
   } catch (error) {
-    writeLine(deps.stderr, `pi-sandbox: warning: could not end the session: ${errorMessage(error)}`);
+    writeLine(deps.stderr, `pi-sandbox: warning: could not end the launch: ${errorMessage(error)}`);
   }
 
   if (!last.stopped) {
@@ -81,5 +80,7 @@ export const finishSession = async (
   }
 };
 
-export const othersLive = async (stateDir: string, repoHash: string, sessionId?: string) =>
-  (await liveSessions(stateDir, repoHash)).some((entry) => entry.sessionId !== sessionId);
+export const othersLive = async (stateDir: string, repoHash: string, launchId?: string) =>
+  (await liveLaunches(stateDir, repoHash)).some((entry) => entry.launchId !== launchId);
+
+export const busyLaunches = async (stateDir: string) => (await liveLaunches(stateDir)).length;

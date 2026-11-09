@@ -1,4 +1,4 @@
-import type { Backend } from "../backend/index.ts";
+import { type Backend, ENGINE_PROFILE, ENGINE_SOCKET_DISPLAY } from "../backend/index.ts";
 import type { ExtraCa, SandboxConfig } from "../config/index.ts";
 import type { HostTerminal, SignalSource } from "../container/index.ts";
 import type { BundledPi } from "../hostpi/index.ts";
@@ -46,6 +46,7 @@ export interface CliDeps {
   signals?: SignalSource;
   platform: NodeJS.Platform;
   uid: number;
+  machine: { cpus: number; memoryGiB: number };
   backend(): Backend;
   proxy: ProxyControl;
   bundledPi(): Promise<BundledPi | undefined>;
@@ -80,22 +81,26 @@ export const withFallbackHint = (error: unknown, fallback: SandboxConfig["fallba
     ? new LauncherError(error.message, fallbackHint(error.hint))
     : error;
 
-export const pathsOf = (deps: CliDeps) =>
+export const pathsOf = (deps: Pick<CliDeps, "env" | "home" | "platform">) =>
   launcherPaths({ env: deps.env, home: deps.home, platform: deps.platform });
 
 export const hostAgentDirOf = (deps: CliDeps) => hostAgentDir(deps.home, deps.env);
 
-export const settleAll = async <T extends readonly unknown[] | []>(
-  pending: T,
-): Promise<{ -readonly [K in keyof T]: Awaited<T[K]> }> => {
-  const results = await Promise.allSettled<readonly unknown[]>(pending);
-  const failure = results.find((result) => result.status === "rejected");
+const unreachable = (config: SandboxConfig) =>
+  withFallbackHint(
+    new LauncherError(
+      `the sandbox VM engine is unreachable at ${ENGINE_SOCKET_DISPLAY}`,
+      `run launcher/install.sh or colima start --profile ${ENGINE_PROFILE} --activate=false`,
+    ),
+    config.fallback,
+  );
 
-  if (failure !== undefined) {
-    throw failure.reason;
+export const reachableBackend = async (deps: CliDeps, config: SandboxConfig) => {
+  const backend = deps.backend();
+
+  if ((await backend.detect()).available) {
+    return backend;
   }
 
-  return results.map((result) => (result as PromiseFulfilledResult<unknown>).value) as {
-    -readonly [K in keyof T]: Awaited<T[K]>;
-  };
+  throw unreachable(config);
 };

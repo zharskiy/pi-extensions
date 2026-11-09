@@ -1,7 +1,7 @@
 import { constants } from "node:fs";
 import { open, readdir, realpath } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
-import { isWithin, LauncherError, lstatOrUndefined, readRegularFile, sameEntry } from "../shared/index.ts";
+import { isWithin, LauncherError, lstatOrUndefined, readRegularFile, sameEntry } from "../../shared/index.ts";
 
 export interface GitLayout {
   gitDir: string;

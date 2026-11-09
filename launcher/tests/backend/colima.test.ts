@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough, Writable } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createDockerEngineBackend } from "../../backend/docker-engine/backend.ts";
+import { createColimaBackend } from "../../backend/colima/backend.ts";
 import {
   type Backend,
   type ContainerSpec,
@@ -65,7 +65,12 @@ const startEngine = async (options: FakeEngineOptions = {}) => {
 };
 
 const backendFor = (engine: FakeEngine, runner = createFakeRunner(() => undefined).runner) =>
-  createDockerEngineBackend({ socketPath: engine.socketPath, runner });
+  createColimaBackend({
+    home: "/nonexistent",
+    stateDir: "/nonexistent",
+    socketPath: engine.socketPath,
+    runner,
+  });
 
 const relayOf = (engine: FakeEngine, name = RELAY) =>
   [...engine.containers.values()].find((container) => container.Name === name);
@@ -140,7 +145,7 @@ describe("engineSocketPath", () => {
   });
 });
 
-describe("docker-engine adapter on the colima VM", () => {
+describe("colima adapter on the colima VM", () => {
   it("relays the guest to host.lima.internal", async () => {
     const engine = await startEngine();
     const backend = backendFor(engine);
@@ -155,7 +160,7 @@ describe("docker-engine adapter on the colima VM", () => {
   });
 });
 
-describe("docker-engine adapter status", () => {
+describe("colima adapter status", () => {
   it("reports the socket path and engine version in status", async () => {
     const engine = await startEngine();
 
@@ -171,7 +176,9 @@ describe("docker-engine adapter status", () => {
   it("reports an unreachable socket as unavailable with the path", async () => {
     const dir = await temporaryDir();
     const socketPath = join(dir, "missing.sock");
-    const backend = createDockerEngineBackend({
+    const backend = createColimaBackend({
+      home: "/nonexistent",
+      stateDir: "/nonexistent",
       socketPath,
       runner: createFakeRunner(() => undefined).runner,
     });
@@ -183,7 +190,7 @@ describe("docker-engine adapter status", () => {
   });
 });
 
-describe("docker-engine container translation", () => {
+describe("colima container translation", () => {
   it("translates the container spec into the engine create body", async () => {
     const engine = await startEngine();
     const backend = backendFor(engine);
@@ -269,7 +276,7 @@ describe("docker-engine container translation", () => {
   });
 });
 
-describe("docker-engine images", () => {
+describe("colima images", () => {
   it("names the reference when the registry refuses the pull", async () => {
     const backend = backendFor(await startEngine());
 
@@ -324,7 +331,9 @@ describe("docker-engine images", () => {
 
     await writeFile(join(context, "Dockerfile"), "FROM scratch\n");
 
-    const backend = createDockerEngineBackend({
+    const backend = createColimaBackend({
+      home: "/nonexistent",
+      stateDir: "/nonexistent",
       socketPath: engine.socketPath,
       runner: createProcessRunner(),
     });
@@ -341,7 +350,9 @@ describe("docker-engine images", () => {
 
     await writeFile(join(context, "Dockerfile"), "FROM scratch\n");
 
-    const backend = createDockerEngineBackend({
+    const backend = createColimaBackend({
+      home: "/nonexistent",
+      stateDir: "/nonexistent",
       socketPath: engine.socketPath,
       runner: createProcessRunner(),
     });
@@ -358,7 +369,7 @@ describe("docker-engine images", () => {
   });
 });
 
-describe("docker-engine exec", () => {
+describe("colima exec", () => {
   it("passes stdin, raw tty output and every resize through, then unsubscribes", async () => {
     const engine = await startEngine({
       exec: async (context) => {
@@ -479,7 +490,7 @@ describe("docker-engine exec", () => {
   });
 });
 
-describe("docker-engine volumes", () => {
+describe("colima volumes", () => {
   it("labels the volumes it creates as managed", async () => {
     const engine = await startEngine();
 
@@ -502,7 +513,7 @@ describe("docker-engine volumes", () => {
   });
 });
 
-describe("docker-engine egress relay", () => {
+describe("colima egress relay", () => {
   const readyBackend = async () => {
     const engine = await startEngine();
     const backend = backendFor(engine);

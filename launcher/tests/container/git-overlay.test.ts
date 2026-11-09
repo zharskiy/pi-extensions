@@ -8,12 +8,12 @@ import {
   type GitGuardContext,
   type GitOverlay,
   gitDirInUseElsewhere,
+  gitLaunchEndNotices,
   gitLaunchNotices,
-  gitSessionEndNotices,
   LABELS,
   planGitOverlay,
 } from "../../container/index.ts";
-import { createProcessRunner, sha256Hex } from "../../shared/index.ts";
+import { createProcessRunner, sha256Hex, stateLayout } from "../../shared/index.ts";
 import { discoverWorkspace, type Workspace } from "../../workspace/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { createFakeRunner } from "../support/fake-runner.ts";
@@ -111,7 +111,7 @@ const gitMountsOf = (spec: { mounts: MountSpec[] }, repo: string) =>
 const describeMount = (base: string, mount: MountSpec) => ({
   target: mount.target,
   readOnly: mount.readOnly,
-  snapshot: mount.source.startsWith(join(base, "state", "git")),
+  snapshot: mount.source.startsWith(join(base, "state", "repos")),
 });
 
 describe("the git dir in the container", () => {
@@ -303,7 +303,7 @@ describe("the git dir in the container", () => {
 
     await expect(plan.ready()).rejects.toThrow(`git: ${hooks} is a symbolic link`);
     expect(
-      await lstat(join(base, "state", "git", sha256Hex(repo), "snapshots")).catch(() => undefined),
+      await lstat(stateLayout(join(base, "state")).repo(sha256Hex(repo)).gitSnapshots).catch(() => undefined),
     ).toBeUndefined();
   });
 
@@ -377,14 +377,14 @@ describe("the git checks around a session", () => {
 
     await readyGitOverlay(workspace, contextOf(base));
 
-    expect(await gitSessionEndNotices(workspace, contextOf(base), idle)).toEqual([]);
+    expect(await gitLaunchEndNotices(workspace, contextOf(base), idle)).toEqual([]);
     expect(await lstat(pin).catch(() => undefined)).toBeUndefined();
 
     await readyGitOverlay(workspace, contextOf(base));
 
     await writeFile(pin, "../.x\n");
 
-    expect(await gitSessionEndNotices(workspace, contextOf(base), idle)).toEqual([
+    expect(await gitLaunchEndNotices(workspace, contextOf(base), idle)).toEqual([
       `git: ${pin} was changed inside the sandbox; the launcher removed it`,
     ]);
     expect(await lstat(pin).catch(() => undefined)).toBeUndefined();
@@ -397,7 +397,7 @@ describe("the git checks around a session", () => {
 
     await readyGitOverlay(workspace, contextOf(base));
 
-    expect(await gitSessionEndNotices(workspace, contextOf(base), busy)).toEqual([]);
+    expect(await gitLaunchEndNotices(workspace, contextOf(base), busy)).toEqual([]);
     expect(await readFile(join(repo, ".git", "commondir"), "utf8")).toBe(".\n");
   });
 
@@ -421,7 +421,7 @@ describe("the git checks around a session", () => {
     await readyGitOverlay(workspace, contextOf(base));
 
     expect(
-      await gitSessionEndNotices(workspace, contextOf(base), () =>
+      await gitLaunchEndNotices(workspace, contextOf(base), () =>
         gitDirInUseElsewhere(fake.backend, workspace),
       ),
     ).toEqual([]);
@@ -439,7 +439,7 @@ describe("the git checks around a session", () => {
 
     await git(repo, ["add", "vendor/nested"]);
 
-    const notices = await gitSessionEndNotices(workspace, contextOf(base), idle);
+    const notices = await gitLaunchEndNotices(workspace, contextOf(base), idle);
 
     expect(notices).toEqual([
       `git: the sandbox created ${join(repo, "vendor", "nested", ".git")}; review it before running host git tools in this repository`,
@@ -459,7 +459,7 @@ describe("the git checks around a session", () => {
     await writeFile(join(module, "HEAD"), "ref: refs/heads/main\n");
     await writeFile(join(module, "commondir"), "../../../.x\n");
 
-    const notices = await gitSessionEndNotices(workspace, contextOf(base), idle);
+    const notices = await gitLaunchEndNotices(workspace, contextOf(base), idle);
 
     expect(notices).toEqual([
       `git: ${join(module, "commondir")} was changed inside the sandbox; the launcher removed it`,
@@ -477,7 +477,7 @@ describe("the git checks around a session", () => {
     await mkdir(join(repo, ".git", "modules"));
     await symlink(join(base, "home"), planted);
 
-    expect(await gitSessionEndNotices(workspace, contextOf(base), idle)).toEqual([
+    expect(await gitLaunchEndNotices(workspace, contextOf(base), idle)).toEqual([
       `git: ${planted} is a symbolic link`,
     ]);
     expect(await lstat(join(repo, ".git", "commondir")).catch(() => undefined)).toBeUndefined();

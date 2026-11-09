@@ -47,7 +47,7 @@ const LOCAL_SOURCE = /^(\/|\.|~)/;
 const realOf = (path: string) => realpath(path).catch(() => path);
 
 const inRepository = async (deps: CliDeps, source: string) => {
-  const context = await openContext(deps, { lenient: true });
+  const { context } = await openContext(deps, "host");
   const path = resolve(context.workspace.cwd, expandHome(source, deps.home));
   const candidates = [path, await realOf(path)];
   const roots = await Promise.all(mountedGitDirs(context.workspace).map(realOf));

@@ -4,7 +4,7 @@ import { LABELS, policyHashesInUse, removeRepoContainer, repoVolumes } from "../
 import { proxyPolicyHash } from "../../proxy/index.ts";
 import { LauncherError, stateLayout } from "../../shared/index.ts";
 import { type CliDeps, writeLine, writeLines } from "../deps.ts";
-import { type LaunchContext, openAdminContext, openBackend } from "../launch.ts";
+import { type LaunchContext, openContext } from "../launch.ts";
 
 const VOLUMES = "--volumes";
 
@@ -33,9 +33,8 @@ export const resetCommand = async (deps: CliDeps, args: string[]) => {
     throw new LauncherError(`unknown reset option "${unknown}"`, "pi sandbox reset [--volumes]");
   }
 
-  const context = await openAdminContext(deps);
+  const { context, backend } = await openContext(deps, "admin");
   const { workspace, effective, stateDir, repoHash } = context;
-  const backend = await openBackend(deps, effective.config);
   const removed = await removeRepoContainer(backend, workspace.repoRoot);
 
   writeLines(
@@ -47,9 +46,9 @@ export const resetCommand = async (deps: CliDeps, args: string[]) => {
     writeLine(deps.stdout, `no container for ${workspace.repoRoot}`);
   }
 
-  const layout = stateLayout(stateDir);
+  const layout = stateLayout(stateDir).repo(repoHash);
 
-  await rm(layout.render(repoHash), { recursive: true, force: true });
+  await rm(layout.render, { recursive: true, force: true });
 
   const policyHash = proxyPolicyHash(effective.config);
 
@@ -67,7 +66,7 @@ export const resetCommand = async (deps: CliDeps, args: string[]) => {
 
   await Promise.all(volumes.map((name) => backend.removeVolume(name)));
 
-  await rm(layout.sync(repoHash), { recursive: true, force: true });
+  await rm(layout.sync, { recursive: true, force: true });
 
   writeLines(
     deps.stdout,

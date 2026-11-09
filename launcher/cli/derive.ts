@@ -9,8 +9,8 @@ import {
   readProviderHosts,
 } from "../hostpi/index.ts";
 import { privateHostNotices, type TrustBundle } from "../proxy/index.ts";
-import { ensureSalt } from "../shared/index.ts";
-import { type CliDeps, hostAgentDirOf, settleAll, writeNotices } from "./deps.ts";
+import { ensureSalt, settleAll } from "../shared/index.ts";
+import { type CliDeps, hostAgentDirOf, writeNotices } from "./deps.ts";
 import type { LaunchContext } from "./launch.ts";
 
 export interface HostSide {

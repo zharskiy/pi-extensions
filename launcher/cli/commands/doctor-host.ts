@@ -1,9 +1,7 @@
 import { constants } from "node:fs";
 import { access, lstat } from "node:fs/promises";
 import { connect } from "node:net";
-import type { Backend } from "../../backend/index.ts";
 import type { ParentProxy } from "../../config/index.ts";
-import { failed, passed, skipped, warned } from "../../container/index.ts";
 import {
   type HostPi,
   type HostPiFiles,
@@ -11,7 +9,7 @@ import {
   mcpSignIns,
   readHostPiFiles,
 } from "../../hostpi/index.ts";
-import { errorMessage, isFreshMcpToken, parseJsonObject } from "../../shared/index.ts";
+import { errorMessage, isFreshMcpToken } from "../../shared/index.ts";
 import { assertHostSessionsDir } from "../../workspace/index.ts";
 import { type CliDeps, hostAgentDirOf } from "../deps.ts";
 import { providerHostsOf } from "../derive.ts";
@@ -26,9 +24,7 @@ import {
 import { hostSessionsOf } from "../host-sessions.ts";
 import type { LaunchContext } from "../launch.ts";
 import { isOlderVersion, testedPiVersion } from "../versions.ts";
-import { OWN_PROFILE } from "../vm-lifecycle.ts";
-import { checkVmShares } from "../vm-shares.ts";
-import type { NamedCheck } from "./doctor-container.ts";
+import { failed, type NamedCheck, passed, skipped, warned } from "./doctor-probes.ts";
 import { grantLines } from "./egress.ts";
 
 const CONNECT_TIMEOUT_MS = 3000;
@@ -44,17 +40,6 @@ const MINUTES_SHOWN_BELOW_MS = 2 * HOUR_MS;
 const HOURS_SHOWN_BELOW_MS = 2 * DAY_MS;
 
 const DEFAULT_PROXY_PORT = 80;
-
-const MIN_VM_CPUS = 8;
-
-const MIN_VM_GIB = 10;
-
-const GIB = 1024 ** 3;
-
-interface VmSize {
-  cpus: number;
-  memory: number;
-}
 
 const REINSTALL = "reinstall the launcher with npm install -g pi-extensions-mz";
 
@@ -238,54 +223,12 @@ const checkSessions = async (deps: CliDeps, context: LaunchContext, files: HostP
     : failed(`${sessions.dir} is not writable`);
 };
 
-const vmSizeOf = (cpus: unknown, memory: unknown): VmSize | undefined =>
-  typeof cpus === "number" && typeof memory === "number" ? { cpus, memory } : undefined;
-
-const colimaStatus = (deps: CliDeps, profile: string) =>
-  deps.runner.run("colima", ["status", "--profile", profile, "--json"]).catch(() => undefined);
-
-const gibText = (bytes: number) => `${Math.round((bytes / GIB) * 10) / 10} GiB`;
-
-const checkVmSize = async (deps: CliDeps, backend: Backend | undefined) => {
-  if (backend === undefined) {
-    return skipped("no runtime");
-  }
-
-  const profile = OWN_PROFILE;
-  const result = await colimaStatus(deps, profile);
-
-  if (result === undefined) {
-    return skipped("colima not on PATH");
-  }
-
-  const vm = result.code === 0 ? parseJsonObject(result.stdout) : undefined;
-  const size = vm === undefined ? undefined : vmSizeOf(vm.cpu, vm.memory);
-
-  if (size === undefined) {
-    return skipped(`colima did not report the size of profile ${profile}`);
-  }
-
-  const current = `profile ${profile} has ${size.cpus} CPUs and ${gibText(size.memory)}`;
-
-  if (size.cpus >= MIN_VM_CPUS && size.memory >= MIN_VM_GIB * GIB) {
-    return passed(current);
-  }
-
-  const resize = `colima stop --profile ${profile} && colima start --profile ${profile} --activate=false --cpu ${MIN_VM_CPUS} --memory ${MIN_VM_GIB}`;
-
-  return warned(`${current}, below ${MIN_VM_CPUS} CPUs and ${MIN_VM_GIB} GiB; resize it with ${resize}`);
-};
-
 const named = async (name: string, result: Promise<NamedCheck["result"]>): Promise<NamedCheck> => ({
   name,
   result: await result,
 });
 
-export const hostChecks = async (
-  deps: CliDeps,
-  context: LaunchContext,
-  backend?: Backend,
-): Promise<NamedCheck[]> => {
+export const hostChecks = async (deps: CliDeps, context: LaunchContext): Promise<NamedCheck[]> => {
   const [files, pi] = await Promise.all([readHostPiFiles(hostAgentDirOf(deps)), resolveJobPi(deps)]);
   const [checks, signIns] = await Promise.all([
     Promise.all([
@@ -295,8 +238,6 @@ export const hostChecks = async (
       named("org baseline", Promise.resolve(checkOrg(context))),
       named("grants", checkGrants(context)),
       named("sessions", checkSessions(deps, context, files)),
-      named("vm size", checkVmSize(deps, backend)),
-      named("vm shares", checkVmShares(deps, context, backend)),
     ]),
     signInChecks(deps, files),
   ]);

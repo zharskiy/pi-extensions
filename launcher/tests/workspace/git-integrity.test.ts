@@ -5,7 +5,7 @@ import { createProcessRunner } from "../../shared/index.ts";
 import {
   assertGitIntegrity,
   discoverWorkspace,
-  gitSessionEndNotices,
+  gitLaunchEndNotices,
   pinGitDirs,
   recordGitBaseline,
 } from "../../workspace/index.ts";
@@ -95,7 +95,7 @@ describe("the git notices after a session", () => {
 
     await writeFile(httpAlternates, "https://example.com/objects\n");
 
-    expect(await gitSessionEndNotices(workspace, context, idle)).toEqual([alternatesNotice(httpAlternates)]);
+    expect(await gitLaunchEndNotices(workspace, context, idle)).toEqual([alternatesNotice(httpAlternates)]);
   });
 
   it("says so when it cannot remove the pin", async () => {
@@ -108,7 +108,7 @@ describe("the git notices after a session", () => {
 
     await chmod(gitDir, 0o555);
 
-    const notices = await gitSessionEndNotices(workspace, context, idle).finally(() => chmod(gitDir, 0o755));
+    const notices = await gitLaunchEndNotices(workspace, context, idle).finally(() => chmod(gitDir, 0o755));
 
     expect(notices).toEqual([
       `git: ${join(gitDir, "commondir")} could not be removed; remove it before running git in this repository`,
@@ -127,7 +127,7 @@ describe("the git notices after a session", () => {
 
     await recordGitBaseline(workspace, context);
 
-    expect(await gitSessionEndNotices(workspace, context, idle)).toEqual([
+    expect(await gitLaunchEndNotices(workspace, context, idle)).toEqual([
       "git: the scan for nested repositories stopped after 50000 directories",
     ]);
   }, 60_000);

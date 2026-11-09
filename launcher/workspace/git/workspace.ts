@@ -1,8 +1,8 @@
 import { realpath } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
-import { type CommandRunner, errorMessage, isWithin, LauncherError } from "../shared/index.ts";
-import { inertGitOptions } from "./git-command.ts";
-import { gitRepos, type Workspace } from "./types.ts";
+import { type CommandRunner, errorMessage, isWithin, LauncherError } from "../../shared/index.ts";
+import { gitRepos, type Workspace } from "../types.ts";
+import { inertGitOptions } from "./command.ts";
 
 const FILE_ORIGIN = "file:";
 
