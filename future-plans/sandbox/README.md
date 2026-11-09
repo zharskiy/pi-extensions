@@ -14,6 +14,10 @@
 | The container exiting on its own when its proxy is gone after a `kill -9` | the sweep at the next launch of any repository cleans up |
 | Generating the config schema from the key spec | a test already keeps the two key sets equal |
 | Deriving Gradle credentials from `gradle.properties` | header rules in `credentials.rules` work meanwhile |
+| Deriving uv config (`uv.toml`, `UV_INDEX_URL`, `UV_DEFAULT_INDEX`) and its index credentials | a new deriver; until then uv resolves against public PyPI unless pointed at the index by hand (a known gap in the threat model) |
+| Placeholders for registry tokens read from environment variables (`${NPM_TOKEN}` in a project `.npmrc`, `UV_INDEX_<NAME>_PASSWORD`), through a rule field that sets the variable inside | a new rule field and a project `.npmrc` scan; only `~/.npmrc` is derived meanwhile |
+| Installing `tls.extraCa` into the VM's engine trust (lima `caCerts`, or `update-ca-certificates` and a docker restart in the VM) | touches the Colima profile beyond its mounts; the README gives the `provision` workaround and `image.digest` meanwhile |
+| Shared tool caches by default | kept opt-in by decision: `mounts.sharedCaches` is a write channel between repositories, so the user chooses it (or `mounts.hostCaches`) |
 
 ## Original research
 

@@ -18,7 +18,7 @@ Started in a folder that is not a repository but holds repositories, pi treats t
 
 ## Install
 
-macOS with Homebrew and Node 22.19 or newer, from a checkout or a release:
+macOS with Homebrew and Node 22.19 or newer. Run the script from a checkout, or from the npm package: after `npm install -g pi-extensions-mz` it is `$(npm root -g)/pi-extensions-mz/launcher/install.sh`.
 
 ```bash
 launcher/install.sh [--org <absolute path>] [--cpu N] [--memory GiB] [--disk GiB] [--version X.Y.Z] [--bin-dir DIR] [--dry-run]
@@ -27,13 +27,13 @@ launcher/install.sh [--org <absolute path>] [--cpu N] [--memory GiB] [--disk GiB
 | flag | effect |
 | --- | --- |
 | `--org <absolute path>` | sets `org` in the user config to that organisation baseline file |
-| `--cpu N`, `--memory GiB` | size of a new Colima profile; default this Mac's CPUs and half its memory, at most 8 CPUs and 10 GiB, at least 2 and 4 |
-| `--disk GiB` | disk of a new Colima profile, default 60 |
-| `--version X.Y.Z` | the `pi-extensions-mz` version to install, default the checkout's version, else the latest |
+| `--cpu N`, `--memory GiB` | size of the Colima profile when install.sh starts it (a running profile keeps its size until you stop it); default this Mac's CPUs and half its memory, at most 8 CPUs and 10 GiB, at least 2 and 4; values you pass are used as given |
+| `--disk GiB` | disk of the Colima profile when install.sh starts it, default 60 |
+| `--version X.Y.Z` | the `pi-extensions-mz` version `npm install -g` installs, default the version of the package that holds the script, else the latest; ignored from a checkout, which runs its own sources |
 | `--bin-dir DIR` | where the `pi` link goes, default `~/.local/bin` |
 | `--dry-run` | prints each step without changing anything |
 
-It prints each step before it runs it, with the output of Homebrew, Colima, npm and the smoke doctor indented below, and can be run again safely. It installs Colima 0.8.0 or newer when missing (no Docker Desktop and no `docker` CLI), starts a Colima profile named `pi-sandbox` without switching your docker context, installs the launcher (`npm install -g`, or from a checkout a wrapper that runs the sources) and links `~/.local/bin/pi` to it, adds `~/.local/bin` to `PATH` in your shell rc files between `# pi-sandbox begin` and `# pi-sandbox end`, and runs `pi sandbox doctor` in a temporary repository as a smoke test. When `~/.local/bin/pi` is pi's own managed install, it records the link and replaces it; `uninstall.sh` puts it back. Any other `pi` there makes it stop; pass `--bin-dir`.
+It prints each step before it runs it, with the output of Homebrew, Colima, npm and the smoke doctor indented below, and can be run again safely. It installs Colima 0.8.0 or newer when missing (no Docker Desktop and no `docker` CLI), starts a Colima profile named `pi-sandbox` without switching your docker context, installs the launcher (`npm install -g`, or from a checkout a wrapper that runs the sources) and links `~/.local/bin/pi` to it, adds `~/.local/bin` to `PATH` in `~/.zshrc` (created when missing) and an existing `~/.bashrc` or `~/.bash_profile`, between `# pi-sandbox begin` and `# pi-sandbox end`, and runs `pi sandbox doctor` in a temporary repository as a smoke test. When `~/.local/bin/pi` is pi's own managed install, it records the link and replaces it; `uninstall.sh` puts it back. Any other `pi` there makes it stop; pass `--bin-dir`.
 
 The launcher runs a host pi for host jobs (printing credentials for the proxy, MCP sign-in, the provider host table): pi's managed install in `~/.pi/agent`, else the pi installed next to the launcher. The sandbox image is built with that pi's version and rebuilt when it changes. A `pi` found on `PATH` is used only by `pi --no-sandbox`.
 
@@ -43,15 +43,16 @@ The launcher runs a host pi for host jobs (printing credentials for the proxy, M
 cd <repo> && pi
 ```
 
-The first launch prints `preparing pi sandbox, one time` and the image build steps. A failed build shows the last 30 lines of its output; behind a proxy or CA that signs downloads, set `tls.extraCa` (or `image.digest` to a prebuilt image). Later launches reuse the image, and a second `pi` in the same repository joins the running container. A stopped VM (after a reboot or `pi sandbox stop`) is started by the next `pi`, which takes 15 to 40 seconds. A repository outside your home is shared with the VM at its first launch, which restarts the VM and is refused while other pi sessions run.
+The first launch prints `preparing pi sandbox, one time` and the image build steps. The build runs in the VM, not through the sandbox proxy, so `egress.allow` does not apply to it: the VM's engine pulls `node:24-bookworm-slim` from Docker Hub, and the build downloads from deb.debian.org, gitlab.com (glab) and registry.npmjs.org (pi), plus the sources of `image.packages` and `image.npmGlobal`. A failed build shows the last 30 lines of its output; behind a proxy or CA that signs downloads, set `tls.extraCa` (or `image.digest` to a prebuilt image). Later launches reuse the image, and a second `pi` in the same repository joins the running container. A stopped VM (after a reboot or `pi sandbox stop`) is started by the next `pi`, which takes 15 to 40 seconds. A repository outside your home is shared with the VM at its first launch, which restarts the VM and is refused while other pi sessions run.
 
 What is different inside:
 
 - A blocked host gets a 403 page saying to run `pi sandbox egress allow <host>` on the host. When pi exits the launcher prints one line per blocked host with what to do: grant it (or, with grants off, ask your administrator to add it to `egress.allow`), add a host that resolves to a private address to `egress.privateHosts`, nothing for a host `egress.deny` names (denied by policy), use https instead of plain HTTP, or the reason it could not be reached.
 - `NO_PROXY` holds `localhost,127.0.0.1,::1`, so tests reach servers you start inside without the proxy.
-- `pi install|remove <source>` and `pi mcp add|remove|login|logout` run with host pi on the host; the sandbox picks the change up at the next launch. A bare `pi update` updates host pi.
+- `pi install|remove <source>` and `pi mcp add|remove|login|logout` run with host pi on the host; the sandbox picks the change up at the next launch. `pi update` alone (or `pi update pi`, `self` or `--self`) updates host pi.
 - Provider `/login` inside does not work; log in with host pi.
-- Build output (`node_modules`, `.venv`, `target`, `.gradle` beside their lockfiles) gets its own volume, so Linux builds never mix with the host's. Run the install once inside.
+- Build output gets its own volume, so Linux builds never mix with the host's: `node_modules` beside an npm, pnpm, yarn or bun lockfile, `.venv` beside `uv.lock`, `poetry.lock` or `Pipfile.lock`, `target` beside `Cargo.lock`, `.gradle` beside `settings.gradle(.kts)`. Maven `target/` and Gradle `build/` are shared with the host. Run the install once inside.
+- `/home/pi` and `/tmp` live in memory: tool caches (npm, pip, uv, Maven, Gradle) count against the container's memory, are downloaded again by each new sandbox and vanish when the last session exits, unless `mounts.hostCaches` or `mounts.sharedCaches` keeps them.
 - While a sandbox of the repository runs, `.git/commondir` holds `.`; the launcher pins it so the sandbox cannot point host git at another config, and removes it afterwards.
 - Pi sessions live in host pi's own session directory for the repository, so `/resume` on the host lists them. The agent can read this repository's earlier sessions; `sessions.host: false` keeps them in the sandbox volume.
 - Notices (overlays, workspace, host caches, MCP sign-in, private hosts, ignored config keys) print once per repository until their text changes.
@@ -76,7 +77,7 @@ What is different inside:
 | `pi sandbox doctor` | prepare the sandbox like `pi` and print one `ok`, `warn`, `fail` or `skip` line per check |
 | `pi sandbox --version`, `pi sandbox help` | version and usage |
 
-Failures are one line, `pi-sandbox: <message>`, often followed by `  hint: <what to do>`, with exit code 1.
+Failures are one line, `pi-sandbox: <message>`, often followed by `  hint: <what to do>`, with exit code 1 (70 for an unexpected error).
 
 ## Configuration
 
@@ -87,7 +88,7 @@ Four layers, highest first: the policy (`/Library/Application Support/pi-sandbox
 - A project file may set only `mounts.cacheVolumes`, `mounts.autoOverlays`, `resources.cpus` and `resources.memoryGiB`, so a cloned repository cannot add hosts, private hosts, mounts, packages or credentials. Any other key in it is ignored.
 - Ignored keys print one warning naming each key and its layer, once per repository until the text changes; `pi sandbox config` lists them every time.
 
-[examples/org-baseline.json](examples/org-baseline.json) is a starting point for an org baseline: it refuses `--no-sandbox`, turns grants off, names the internal gateway, registry and git hosts (also as private hosts, since they resolve to internal addresses), denies a paste site, adds the corporate CA and a gateway and registry credential, and keeps credential derivation on so `gh`, `glab`, npm, pip and Maven work as on the host. The keys are in [schema/sandbox-config.schema.json](schema/sandbox-config.schema.json); `pi sandbox config` shows the result. A user config for a Java developer:
+[examples/org-baseline.json](examples/org-baseline.json) is a starting point for an org baseline: it refuses `--no-sandbox`, turns grants off, names the internal gateway, registry and git hosts (also as private hosts, since they resolve to internal addresses), denies a paste site, adds the corporate CA and a gateway and registry credential, and keeps credential derivation on so `gh`, `glab`, npm, pip and Maven work as on the host. The keys are in [schema/sandbox-config.schema.json](schema/sandbox-config.schema.json); `pi sandbox config` shows the result. The baseline binds only when the root-owned policy file sets `org` to it (with `fallback: "refuse"` to close `--no-sandbox`); `install.sh --org` writes `org` into the user config, which the user can edit or drop. The launcher neither fetches nor verifies the file, so ship it to a fixed local path by MDM or a package: it is read at every launch, and a missing file stops every launch, `--no-sandbox` included. A user config for a Java developer:
 
 ```json
 {
@@ -97,16 +98,25 @@ Four layers, highest first: the policy (`/Library/Application Support/pi-sandbox
 }
 ```
 
-- `egress.presets` (default `npm`, `pypi`, `github`) adds package registry and download hosts: `npm`, `pypi`, `github`, `maven`, `gradle`, `go`, `cargo`; `[]` turns them off. `egress.allow` adds `host`, `*.domain` or `host:port` entries, `egress.deny` always wins, and `egress.privateHosts` names hosts that may resolve to private addresses (an internal gateway).
+- `egress.presets` (default `npm`, `pypi`, `github`) adds package registry and download hosts: `npm`, `pypi`, `github`, `maven`, `gradle`, `go`, `cargo`; `[]` turns them off. `egress.allow` adds `host`, `*.corp.example` (exactly one label more, not `corp.example` itself) or `host:port` entries, and an entry without a port allows 443 only; `egress.deny` always wins, and `egress.privateHosts` names hosts that may resolve to private addresses (an internal gateway).
 - `mounts.hostCaches` (default none) binds your own tool caches read-write, so a build reuses what you already downloaded: `maven` `~/.m2/repository`, `gradle` `~/.gradle/caches` and `~/.gradle/wrapper`, `npm` `~/.npm/_cacache`, `pip` `~/Library/Caches/pip`, `go` `~/go/pkg/mod`, `cargo` `~/.cargo/registry` and `~/.cargo/git`. Only cache folders, never a tool's config. Host builds then run what the sandbox writes there; see the [threat model](THREAT-MODEL.md#5-known-gaps).
 - `mounts.autoOverlays` (default `true`) gives each build output folder its own volume; `false` lets the sandbox use the host's. `mounts.sharedCaches` lists `~/` folders that get one volume shared by all your sandboxes (never your host folder), and `mounts.cacheVolumes` per-repository cache volumes.
 - `mounts.extraReadOnly` binds more host paths read-only; protected paths such as `~/.ssh` are refused.
-- `image.packages` (Debian packages), `image.npmGlobal` (`name@version`) and `image.dockerfile` (an absolute or `~/` path to a file of Dockerfile lines, run as root) add a layer to the image. A command the image lacks prints a hint naming these keys.
-- `sessions.host` (default `true`), `fallback` (`refuse` or `host`), `tls.extraCa` (a corporate CA file, or `{ "hostStore": true }`), `egress.parentProxy` (`env` uses your `HTTPS_PROXY`), `egress.grants` (`false` turns grants off) and `env.allow` (terminal variables forwarded to each run).
+- `image.packages` (Debian packages), `image.npmGlobal` (`name@version`) and `image.dockerfile` (an absolute or `~/` path to a file of Dockerfile lines, run as root) add a layer to the image. A command the image lacks prints a hint naming `image.packages` and `image.npmGlobal`.
+- `image.reference` with `image.digest` (`sha256:…`) pulls a prebuilt image instead of building one.
+- `resources.cpus` and `resources.memoryGiB` limit the container (a project may set them); `workspaceRoots` (`{ "roots": [...], "outside": "refuse" }` or `"warn"`) refuses or warns about a launch outside those folders.
+- `sessions.host` (default `true`), `fallback` (default `host`, which allows `pi --no-sandbox`; `refuse` turns it off), `egress.grants` (`false` turns grants off) and `env.allow` (terminal variables forwarded to each run).
+
+### Corporate proxy and TLS inspection
+
+- `egress.parentProxy: "env"` (the default) chains the launcher proxy to `HTTPS_PROXY` and `NO_PROXY` of the shell that runs `pi`, not to the macOS system proxy or a PAC file. NTLM or Kerberos proxies need a local relay such as `px` or `cntlm`.
+- The image build gets the same `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY`, with a loopback relay rewritten to the host. A proxy URL with credentials is refused for builds, since they would be written into the build: use a proxy without them, or `image.reference` and `image.digest` to a prebuilt image.
+- `tls.extraCa` (`[{ "file": "/path/corp-ca.pem" }]`, or `[{ "hostStore": true }]` for the macOS System keychain) is trusted by the launcher proxy upstream, inside the container and during the image build steps.
+- `tls.extraCa` does not reach the VM's engine, so when the proxy inspects Docker Hub the base image pull fails with an x509 error (a [known gap](THREAT-MODEL.md#5-known-gaps)). Until it does, add a `provision` script with `mode: system` to `~/.colima/pi-sandbox/colima.yaml` that copies the CA into `/usr/local/share/ca-certificates/`, runs `update-ca-certificates` and restarts docker, then restart the profile; or pull a prebuilt image (`image.reference` and `image.digest`) from a registry the proxy does not inspect.
 
 ### Credentials
 
-Rules come from your host files on every launch (`credentials.derive`, on by default): each provider in `auth.json` and each provider key in the environment, each `apiKey` and secret header of `models.json`, each HTTP server of `mcp.json`, the hosts of `gh` (2.17 or later) and `glab` with their tokens, the registry credentials of `~/.npmrc`, `pip.conf` and `~/.m2/settings.xml`, and your git `user.name` and `user.email`. Inside, the matching files (`auth.json`, gh `hosts.yml`, glab `config.yml`, `.npmrc`, `pip.conf`, Maven `settings.xml`, `~/.gitconfig` with the gh and glab credential helpers) hold placeholders only, so `gh`, `glab`, `git push`, npm, pip and Maven work as on the host while the proxy fetches the real value on the host (from host pi, `gh auth token`, `glab config get token`, the file or the environment). A derived gh or glab token reaches everything it can on its host; `credentials.derive.hosts` keeps only the hosts you list and `credentials.derive.enabled: false` turns derivation off. `credentials.rules` adds rules by hand, with a secret from `env`, a `file`, a `command` (a keychain or password manager CLI), `piAuth` or `mcpOAuth`; the schema documents each field. MCP servers sign in on the host: host pi keeps the token in `~/.pi/agent/mcp-auth.json` and the proxy injects it. When it is missing or expired, a launch from a terminal runs `pi mcp login <name>` on the host first (`pi sandbox doctor` never does; it names the command), and mid-session the proxy opens the sign-in in your browser (at most once per server per minute) and pi inside gets a message to retry. An MCP server defined only in the project's `.pi/mcp.json` gets no token; add it with `pi mcp add`.
+Rules come from your host files on every launch (`credentials.derive`, on by default): each provider in `auth.json` and each provider key in the environment, each `apiKey` and secret header of `models.json`, each HTTP server of `mcp.json`, the hosts of `gh` (2.17 or later) and `glab` with their tokens, the registry credentials of `~/.npmrc`, `pip.conf` and `~/.m2/settings.xml`, and your git `user.name` and `user.email`. Inside, the matching files (`auth.json`, gh `hosts.yml`, glab `config.yml`, `.npmrc`, `pip.conf`, Maven `settings.xml`, `~/.gitconfig` with the gh and glab credential helpers) hold placeholders only, so `gh`, `glab`, `git push`, npm, pip and Maven work as on the host while the proxy fetches the real value on the host (from host pi, `gh auth token`, `glab config get token`, the file or the environment). A derived gh or glab token reaches everything it can on its host; `credentials.derive.hosts` keeps only the hosts you list and `credentials.derive.enabled: false` turns derivation off. `credentials.rules` adds rules by hand, with a secret from `env`, a `file`, a `command` (a keychain or password manager CLI), `piAuth` or `mcpOAuth`; the schema documents each field. MCP servers sign in on the host: host pi keeps the token in `~/.pi/agent/mcp-auth.json` and the proxy injects it. When it is missing or expired and cannot be refreshed, a launch from a terminal runs `pi mcp login <name>` on the host first (`pi sandbox doctor` never does; it names the command); after a failed or cancelled sign-in this is skipped for a day and the launch prints `run pi mcp login <name>`. Mid-session the proxy opens the sign-in in your browser (at most once per server per minute, none for 10 minutes after a failure) and pi inside gets a message to retry. An MCP server defined only in the project's `.pi/mcp.json` gets no token; add it with `pi mcp add`.
 
 ### Databases and other services
 
@@ -114,7 +124,7 @@ The sandbox has no engine socket and cannot reach your `localhost`, so `docker c
 
 ```bash
 PATH=/usr/lib/postgresql/15/bin:$PATH        # Debian bookworm's PostgreSQL
-initdb -D /tmp/pg && pg_ctl -D /tmp/pg -o "-k /tmp" -l /tmp/pg.log start
+initdb -D /tmp/pg --no-locale -E UTF8 -U postgres && pg_ctl -D /tmp/pg -o "-k /tmp" -l /tmp/pg.log start
 redis-server --dir /tmp --daemonize yes
 ```
 
