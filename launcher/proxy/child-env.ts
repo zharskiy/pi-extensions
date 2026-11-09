@@ -12,6 +12,9 @@ const PASSED = [
   "NODE_OPTIONS",
   "SSL_CERT_FILE",
   "SSL_CERT_DIR",
+  "GH_CONFIG_DIR",
+  "GLAB_CONFIG_DIR",
+  "XDG_CONFIG_HOME",
 ];
 
 const PROXY_URLS = ["HTTPS_PROXY", "https_proxy"];

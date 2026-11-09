@@ -1,11 +1,17 @@
 import { join } from "node:path";
 import { isJsonObject, isSecretName } from "../shared/index.ts";
-import { type Endpoint, endpointOf } from "./endpoints.ts";
+import {
+  type Endpoint,
+  endpointOf,
+  hasQueryCredential,
+  hasUrlPassword,
+  hasUrlUserinfo,
+  strippedUrl,
+} from "./endpoints.ts";
 import { deriveHeaders, hasAuthorizationHeader } from "./headers.ts";
 import { objectOr } from "./json.ts";
 import { type DeriveContext, mergeSections, placeholderOf, rulesFor, type Section } from "./rules.ts";
 import type { JsonObject } from "./types.ts";
-import { hasQueryCredential, hasUrlPassword, hasUrlUserinfo, stripUserinfo } from "./userinfo.ts";
 
 type ServerSection = Section<[string, unknown]> & { dropped?: boolean };
 
@@ -32,16 +38,7 @@ const oauthSection = (
 };
 
 const httpServer = (context: DeriveContext, name: string, server: JsonObject): ServerSection => {
-  const stripped = stripUserinfo(
-    {
-      label: `mcp ${name}`,
-      key: `mcpServers.${name}.url`,
-      identity: `mcp:${name}:url:userinfo`,
-      file: join(context.agentDir, "mcp.json"),
-      pointer: ["mcpServers", name, "url"],
-    },
-    server.url,
-  );
+  const stripped = strippedUrl(`mcp ${name}`, `mcpServers.${name}.url`, server.url);
   const url = String(stripped.value);
   const result = endpointOf(url);
   const endpoints = "endpoint" in result ? [result.endpoint] : [];
@@ -84,7 +81,7 @@ const httpServer = (context: DeriveContext, name: string, server: JsonObject): S
         ? rest
         : { ...rest, headers: { ...headers.value, ...bearer?.value } },
     ],
-    rules: [...stripped.rules, ...headers.rules, ...(bearer?.rules ?? [])],
+    rules: [...headers.rules, ...(bearer?.rules ?? [])],
     notices: [...stripped.notices, ...headers.notices, ...(bearer?.notices ?? [])],
   };
 };

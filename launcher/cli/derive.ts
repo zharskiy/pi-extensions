@@ -2,6 +2,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { egressAllowList, type SandboxConfig } from "../config/index.ts";
 import {
   type DerivedSandboxPi,
+  deriveHostTools,
   deriveSandboxPi,
   type HostPi,
   type HostPiFiles,
@@ -48,8 +49,17 @@ const deriveFor = async (
     providerHostsOf(deps, context.stateDir, pi),
     ensureSalt(context.stateDir),
   ]);
+  const tools = await deriveHostTools({
+    home: deps.home,
+    env: deps.env,
+    platform: deps.platform,
+    runner: deps.runner,
+    salt,
+    enabled: config.credentials.derive.enabled,
+  });
   const derived = deriveSandboxPi({
     files,
+    tools,
     providerHosts: providers.hosts,
     manual: config.credentials.rules,
     salt,

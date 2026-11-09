@@ -20,7 +20,6 @@ import {
   ruleApplies,
   type ScrubSecret,
   scrubResponseHeaders,
-  transformSecret,
   withoutStrayPlaceholders,
 } from "./rules.ts";
 import type { SecretReply, SecretResolver } from "./secrets/index.ts";
@@ -219,7 +218,7 @@ export const createTerminator = (options: TerminatorOptions) => {
     }
 
     const result = await options.resolver.resolve(rule.id, rule.secret, target.repoHash);
-    const injected = result.ok ? transformSecret(rule, result.value) : undefined;
+    const injected = result.ok ? result.value : undefined;
 
     if (!result.ok && result.reply !== undefined) {
       return { ...state, headers, reply: state.reply ?? result.reply };
@@ -237,16 +236,14 @@ export const createTerminator = (options: TerminatorOptions) => {
         bytesOut: 0,
       });
 
-      return { ...state, headers: rewriteRequestHeaders(headers, rule, undefined) };
+      return { ...state, headers: rewriteRequestHeaders(headers, rule, undefined).headers };
     }
 
+    const rewritten = rewriteRequestHeaders(headers, rule, injected);
+
     return {
-      headers: rewriteRequestHeaders(headers, rule, injected),
-      secrets: [
-        ...state.secrets,
-        { value: result.value, placeholder: rule.placeholder },
-        { value: injected, placeholder: rule.placeholder },
-      ],
+      headers: rewritten.headers,
+      secrets: [...state.secrets, { value: injected, placeholder: rule.placeholder }, ...rewritten.secrets],
       used: [...state.used, { rule, value: result.value }],
     };
   };

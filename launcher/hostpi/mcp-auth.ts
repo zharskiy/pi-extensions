@@ -5,11 +5,10 @@ import {
   type McpAuthEntry,
   readMcpAuthEntry,
 } from "../shared/index.ts";
-import { endpointOf } from "./endpoints.ts";
+import { endpointOf, hasQueryCredential, hasUrlPassword, withoutUserinfo } from "./endpoints.ts";
 import { hasAuthorizationHeader } from "./headers.ts";
 import { objectOr } from "./json.ts";
 import type { HostPiFiles, McpOAuthServer } from "./types.ts";
-import { hasQueryCredential, hasUrlPassword, withoutUserinfo } from "./userinfo.ts";
 
 export interface McpSignIn extends McpOAuthServer {
   entry?: McpAuthEntry;

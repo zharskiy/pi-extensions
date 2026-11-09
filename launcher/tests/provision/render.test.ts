@@ -1,12 +1,17 @@
 import { chmod, lstat, readdir, readFile, rm, stat, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { DerivedSandboxPi } from "../../hostpi/index.ts";
+import type { DerivedSandboxPi, DerivedTools } from "../../hostpi/index.ts";
 import { renderAgentDir } from "../../provision/index.ts";
 import { stateLayout } from "../../shared/index.ts";
 import { tempDir, writeText } from "./fixtures.ts";
 
-const derived = (key = "pi-sandbox-aaaaaaaaaaaaaaaaaaaaaaaa"): DerivedSandboxPi => ({
+const NO_TOOLS: DerivedTools = { gh: [], glab: [], maven: { servers: [], mirrors: [] }, git: {}, env: {} };
+
+const derived = (
+  key = "pi-sandbox-aaaaaaaaaaaaaaaaaaaaaaaa",
+  tools: Partial<DerivedTools> = {},
+): DerivedSandboxPi => ({
   rules: [],
   hosts: [],
   files: {
@@ -14,6 +19,7 @@ const derived = (key = "pi-sandbox-aaaaaaaaaaaaaaaaaaaaaaaa"): DerivedSandboxPi 
     "models.json": { providers: {} },
     "mcp.json": { mcpServers: {} },
   },
+  tools: { ...NO_TOOLS, ...tools },
   notices: [],
 });
 
@@ -205,6 +211,63 @@ describe("renderAgentDir", () => {
     expect(proxy).toContain(`<port>\${env.PI_SANDBOX_PROXY_PORT}</port>`);
     expect(proxy).toContain("<username>pi-sandbox</username>");
     expect(proxy).toContain(`<password>\${env.PI_SANDBOX_PROXY_TOKEN}</password>`);
+  });
+
+  it("renders the tool files of the derived gh, glab, npm, pip, Maven and git settings", async () => {
+    const stateDir = await tempDir("render-state");
+    const host = await tempDir("render-host");
+    const P = "pi-sandbox-bbbbbbbbbbbbbbbbbbbbbbbb";
+    const result = await renderAgentDir({
+      stateDir,
+      repoHash: "repo1",
+      hostAgentDir: host,
+      derived: derived(undefined, {
+        gh: [{ host: "github.com", token: P }],
+        glab: [{ host: "gitlab.corp.test", token: P, user: "me", apiHost: "api.gitlab.corp.test" }],
+        npmrc: [{ key: "//npm.corp.test/:_authToken", value: P }],
+        pip: [{ name: "global", entries: [["index-url", `https://me:${P}@pypi.corp.test/simple`]] }],
+        maven: {
+          servers: [{ id: "corp", username: "me", password: P }],
+          mirrors: [{ id: "corp", url: "https://maven.corp.test/repo", mirrorOf: "*" }],
+        },
+        git: { name: 'Max "Z"', email: "max@corp.test" },
+      }),
+    });
+    const read = (name: string) => readFile(join(result.renderDir, "tools", name), "utf8");
+
+    expect(await read("gh-hosts.yml")).toBe(
+      `github.com:\n    oauth_token: "${P}"\n    git_protocol: "https"\n`,
+    );
+    expect(await read("glab-config.yml")).toContain(
+      `hosts:\n    gitlab.corp.test:\n        token: "${P}"\n        user: "me"\n        api_host: "api.gitlab.corp.test"\n        git_protocol: "https"\n        use_keyring: "false"\n`,
+    );
+    expect(await read("npmrc")).toBe(`//npm.corp.test/:_authToken=${P}\n`);
+    expect(await read("pip.conf")).toBe(`[global]\nindex-url = https://me:${P}@pypi.corp.test/simple\n`);
+    expect(await read("m2-settings.xml")).toMatch(
+      new RegExp(
+        `<proxy>[\\s\\S]*<servers>[\\s\\S]*<password>${P}</password>[\\s\\S]*<mirrorOf>\\*</mirrorOf>`,
+      ),
+    );
+    expect(await read("gitconfig")).toBe(
+      [
+        "[user]",
+        '\tname = "Max \\"Z\\""',
+        '\temail = "max@corp.test"',
+        '[credential "https://github.com"]',
+        '\thelper = ""',
+        '\thelper = "!gh auth git-credential"',
+        '[url "https://github.com/"]',
+        '\tinsteadOf = "git@github.com:"',
+        '\tinsteadOf = "ssh://git@github.com/"',
+        '[credential "https://gitlab.corp.test"]',
+        '\thelper = ""',
+        '\thelper = "!glab auth git-credential"',
+        '[url "https://gitlab.corp.test/"]',
+        '\tinsteadOf = "git@gitlab.corp.test:"',
+        '\tinsteadOf = "ssh://git@gitlab.corp.test/"',
+        "",
+      ].join("\n"),
+    );
   });
 
   it("leaves out git dirs, key files, credential files and secret-named files of any extension", async () => {

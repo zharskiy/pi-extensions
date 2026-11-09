@@ -3,8 +3,9 @@ import type { CredentialRule } from "../../config/index.ts";
 import {
   matchRules,
   rewriteRequestHeaders,
+  ruleApplies,
   scrubResponseHeaders,
-  transformSecret,
+  withoutStrayPlaceholders,
 } from "../../proxy/rules.ts";
 
 const PLACEHOLDER = "pi-sandbox-0123456789abcdef01234567";
@@ -52,7 +53,7 @@ describe("rewriteRequestHeaders", () => {
       ["accept", "*/*"],
     ] as const;
 
-    expect(rewriteRequestHeaders([...headers], rule(), "secret")).toEqual([
+    expect(rewriteRequestHeaders([...headers], rule(), "secret").headers).toEqual([
       ["Authorization", "Bearer secret"],
       ["x-api-key", "secret"],
       ["accept", "*/*"],
@@ -67,19 +68,21 @@ describe("rewriteRequestHeaders", () => {
       ["x-echo-token", PLACEHOLDER],
     ] as const;
 
-    expect(rewriteRequestHeaders([...headers], header, "secret")).toEqual([["x-api-key", "secret"]]);
+    expect(rewriteRequestHeaders([...headers], header, "secret").headers).toEqual([["x-api-key", "secret"]]);
   });
 
   it("strips a stray placeholder when the secret is unavailable", () => {
     const header = rule({ header: "x-api-key" });
 
-    expect(rewriteRequestHeaders([["sec-websocket-key", PLACEHOLDER]], header, undefined)).toEqual([]);
+    expect(rewriteRequestHeaders([["sec-websocket-key", PLACEHOLDER]], header, undefined).headers).toEqual(
+      [],
+    );
   });
 
   it("sets the header from the template when it is absent", () => {
     const git = rule({ placeholder: undefined, header: "authorization", template: "Basic {secret}" });
 
-    expect(rewriteRequestHeaders([["accept", "*/*"]], git, "c2VjcmV0")).toEqual([
+    expect(rewriteRequestHeaders([["accept", "*/*"]], git, "c2VjcmV0").headers).toEqual([
       ["accept", "*/*"],
       ["authorization", "Basic c2VjcmV0"],
     ]);
@@ -88,7 +91,7 @@ describe("rewriteRequestHeaders", () => {
   it("sets the template when the rule header still carries the placeholder", () => {
     const header = rule({ header: "x-goog-user-project", template: "{secret}" });
 
-    expect(rewriteRequestHeaders([["x-goog-user-project", PLACEHOLDER]], header, "secret")).toEqual([
+    expect(rewriteRequestHeaders([["x-goog-user-project", PLACEHOLDER]], header, "secret").headers).toEqual([
       ["x-goog-user-project", "secret"],
     ]);
   });
@@ -96,7 +99,9 @@ describe("rewriteRequestHeaders", () => {
   it("leaves a header the client set to its own value", () => {
     const header = rule({ header: "x-api-key" });
 
-    expect(rewriteRequestHeaders([["x-api-key", "mine"]], header, "secret")).toEqual([["x-api-key", "mine"]]);
+    expect(rewriteRequestHeaders([["x-api-key", "mine"]], header, "secret").headers).toEqual([
+      ["x-api-key", "mine"],
+    ]);
   });
 
   it("strips the placeholder header when the secret is unavailable", () => {
@@ -105,13 +110,13 @@ describe("rewriteRequestHeaders", () => {
       ["accept", "*/*"],
     ] as const;
 
-    expect(rewriteRequestHeaders([...headers], rule({ header: "authorization" }), undefined)).toEqual([
-      ["accept", "*/*"],
-    ]);
+    expect(rewriteRequestHeaders([...headers], rule({ header: "authorization" }), undefined).headers).toEqual(
+      [["accept", "*/*"]],
+    );
   });
 
   it("never substitutes into a header that is not a carrier", () => {
-    expect(rewriteRequestHeaders([[":path", `/x?key=${PLACEHOLDER}`]], rule(), "secret")).toEqual([]);
+    expect(rewriteRequestHeaders([[":path", `/x?key=${PLACEHOLDER}`]], rule(), "secret").headers).toEqual([]);
   });
 });
 
@@ -142,14 +147,50 @@ describe("scrubResponseHeaders", () => {
   });
 });
 
-describe("transformSecret", () => {
-  it("turns a URL secret into base64 of its decoded userinfo", () => {
-    const urlRule = rule({ transform: "urlUserinfoBase64" });
+describe("Basic credentials", () => {
+  const b64 = (text: string) => Buffer.from(text).toString("base64");
 
-    expect(transformSecret(urlRule, "https://me%40corp:pa%3Ass@registry.test/")).toBe(
-      Buffer.from("me@corp:pa:ss").toString("base64"),
+  it("substitutes the placeholder inside a Basic value and re-encodes it", () => {
+    const sent = b64(`x-access-token:${PLACEHOLDER}`);
+    const rewritten = rewriteRequestHeaders([["Authorization", `Basic ${sent}`]], rule(), "gho_real");
+
+    expect(rewritten.headers).toEqual([["Authorization", `Basic ${b64("x-access-token:gho_real")}`]]);
+    expect(rewritten.secrets).toEqual([{ value: b64("x-access-token:gho_real"), placeholder: sent }]);
+  });
+
+  it("decides and strips on the decoded view", () => {
+    const encoded = `Basic ${b64(`me:${PLACEHOLDER}`)}`;
+    const headers: Array<readonly [string, string]> = [
+      ["authorization", encoded],
+      ["x-trace", encoded],
+      ["accept", "*/*"],
+    ];
+
+    expect(ruleApplies(headers, rule())).toBe(true);
+    expect(withoutStrayPlaceholders(headers, rule())).toEqual([
+      ["authorization", encoded],
+      ["accept", "*/*"],
+    ]);
+    expect(ruleApplies([["authorization", `Basic ${b64("me:other")}`]], rule())).toBe(false);
+    expect(rewriteRequestHeaders([["authorization", encoded]], rule(), undefined).headers).toEqual([]);
+  });
+
+  it("scrubs the exact base64 it sent from response headers", () => {
+    const sent = b64(`me:${PLACEHOLDER}`);
+    const rewritten = rewriteRequestHeaders([["authorization", `Basic ${sent}`]], rule(), "s3cret");
+    const echoed = b64("me:s3cret");
+    const scrubbed = scrubResponseHeaders(
+      [
+        ["x-echo", `Basic ${echoed}`],
+        ["x-raw", "s3cret"],
+      ],
+      [{ value: "s3cret", placeholder: PLACEHOLDER }, ...rewritten.secrets],
     );
-    expect(transformSecret(urlRule, "not a url")).toBeUndefined();
-    expect(transformSecret(rule(), "plain")).toBe("plain");
+
+    expect(JSON.stringify(scrubbed)).not.toContain(echoed);
+    expect(scrubbed).toEqual([
+      ["x-echo", `Basic ${sent}`],
+      ["x-raw", PLACEHOLDER],
+    ]);
   });
 });

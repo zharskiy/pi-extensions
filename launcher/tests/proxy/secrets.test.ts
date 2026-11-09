@@ -188,6 +188,52 @@ describe("env and file secrets", () => {
     });
   });
 
+  it("reads a value of a tool config file in its format", async () => {
+    const auth = Buffer.from("me:npm-basic").toString("base64");
+
+    await writeFile(join(state.home, ".npmrc"), `//npm.corp.test/:_auth=${auth}\n`);
+
+    await writeFile(
+      join(state.home, "pip.conf"),
+      "[global]\nindex-url = https://me:pip%3Asecret@pypi.corp.test/\n",
+    );
+
+    await writeFile(
+      join(state.home, "settings.xml"),
+      "<settings><servers><server><id>corp</id><password>m2-secret</password></server></servers></settings>",
+    );
+
+    const { resolver } = setup();
+
+    expect(
+      await secretOf(resolver, "npm", { file: "~/.npmrc", format: "npmrc", key: "//npm.corp.test/:_auth" }),
+    ).toBe("npm-basic");
+    expect(
+      await secretOf(resolver, "pip", {
+        file: "~/pip.conf",
+        format: "ini",
+        key: "global.index-url",
+        urlPassword: true,
+      }),
+    ).toBe("pip:secret");
+    expect(
+      await secretOf(resolver, "m2", { file: "~/settings.xml", format: "maven-servers", key: "corp" }),
+    ).toBe("m2-secret");
+    expect(
+      await secretOf(resolver, "m2", { file: "~/settings.xml", format: "maven-servers", key: "other" }),
+    ).toContain("has no maven-servers value at other");
+  });
+
+  it("hands the launcher only the password of an env URL with urlPassword", () => {
+    const rule = { id: "pip", host: "pypi.corp.test", placeholder: "pip", secret: { env: "PIP_INDEX_URL" } };
+
+    expect(
+      envSecretsFor([{ ...rule, secret: { env: "PIP_INDEX_URL", urlPassword: true } }], {
+        PIP_INDEX_URL: "https://me:p%40ss@pypi.corp.test/simple",
+      }),
+    ).toEqual({ pip: "p@ss" });
+  });
+
   it("collects env values for the launcher, skipping unset variables and other kinds", () => {
     const envRule = (id: string, secret: SecretRef) => ({ id, host: `${id}.test`, placeholder: id, secret });
 

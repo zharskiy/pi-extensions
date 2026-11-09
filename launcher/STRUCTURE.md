@@ -13,7 +13,7 @@ launcher/
 │   ├── run.ts               the command table, routes argv (intercepted commands before the pass-through), renders LauncherError and unexpected errors
 │   ├── deps.ts              CliDeps: runner, env, home, cwd, streams, terminal, signals, platform, uid, machine (host CPUs and GiB), backend, proxy control (ensure, read, stop, denials, trust), bundledPi, resolveHost, confirm, now; writeNotices, hostAgentDirOf, reachableBackend (the one engine unreachable error, no VM start)
 │   ├── launch.ts            LaunchContext (repoHash computed once), openContext(deps, mode) (sandbox: strict discovery, workspace checks, the backend; admin: lenient, a reachable backend; host: lenient, no backend), vmPathsOf (the paths the VM must share), the pi pipeline and withSandbox (stages vm, shares, host, proxy, image, container, sync, each reported through an optional report; a signal cancels preparation at the next step and waits for the current one), prepareSandbox(input) with proxy and image, then render, git notices, version, git plan and host sessions; prints the workspace and node_modules overlay notices, then the settings sync
-│   ├── derive.ts            the host side: host pi files, provider host table, deriveSandboxPi, private-host notices (DNS waited for at most 2 s), trust bundle
+│   ├── derive.ts            the host side: host pi files, provider host table, deriveHostTools and deriveSandboxPi, private-host notices (DNS waited for at most 2 s), trust bundle
 │   ├── sandbox-proxy.ts     the repository's RepoProxyInput (envSecretsFor with no line breaks, parentProxyAuth apart), the repository token and ensureRepoProxy under the repository launch lock, the denial summary on exit (the grant hint, or egress.allow when grants are off)
 │   ├── mcp-sign-in.ts       signInMcpServers: at launch start, one interactive host pi mcp login per derived OAuth server that needs one (TTY only, the shared lock and mcp-login.json, 24 h quiet after a failure), with its notices
 │   ├── launches.ts          beginLaunch (repo.json, the launch entry and its heartbeat) and finishLaunch (ends the launch, removeRepoSandbox and the launch-end git notices after the last one, the top-level session sweep otherwise, then sweepOrphans), othersLive, busyLaunches (the count the VM share and stop steps refuse on)
@@ -73,8 +73,8 @@ launcher/
 │   ├── lifecycle.ts         ensureContainer (container.lock, reuse of a running current container or of an outdated one while other launches are live, beforeStart right before a create inside aroundStart, unused cache volumes removed, missing mount points created and recorded, the root chown of owned volume paths after each create), discardContainer (stop 3 s, wait for the removal, delete), gitDirInUseElsewhere (both git dir labels), findCurrentContainer, findRepoContainer, listLauncherContainers, removeRepoContainers
 │   └── run-pi.ts            runPi: exec behind a pid file, PI_SANDBOX_LAUNCH_ID (the launch id), raw mode, resizes, signal handling
 ├── image/
-│   ├── Dockerfile           the sandbox image (no pi config baked in; base tools with curl, jq, python3, make and gh; the launcher CA in the system store; the pi-sandbox stub that points back to the host; BASH_ENV set to bash-env.sh, which /etc/bash.bashrc also sources first)
-│   ├── entrypoint.sh        render links, render/tools links into the home (~/.m2/settings.xml), CA bundle, the JVM truststore, idle
+│   ├── Dockerfile           the sandbox image (no pi config baked in; base tools with curl, jq, python3, make and gh; the pinned glab .deb checked with sha256sum -c; the launcher CA in the system store; the pi-sandbox stub that points back to the host; BASH_ENV set to bash-env.sh, which /etc/bash.bashrc also sources first)
+│   ├── entrypoint.sh        render links, render/tools links into the home (~/.m2/settings.xml, ~/.config/gh/hosts.yml, ~/.npmrc, ~/.config/pip/pip.conf) and copies (~/.gitconfig, ~/.config/glab-cli/config.yml with mode 600), CA bundle, the JVM truststore, idle
 │   ├── bash-env.sh          /usr/local/lib/pi-sandbox/bash-env.sh in the image, read through BASH_ENV and the system bashrc: command_not_found_handle with the image.packages hint, and the trust flags appended to JAVA_TOOL_OPTIONS when the entrypoint built the truststore
 │   ├── sandbox-image.ts     ensureSandboxImage: the recorded image when a current container uses it, else a pinned pull or a build, then the layer, then removeStaleImages after a build
 │   ├── context.ts           buildInContext (a temporary build dir from stateLayout, removed after), reusableImage
@@ -86,24 +86,24 @@ launcher/
 │   └── build-proxy.ts       parent proxy build arguments, refused with credentials
 ├── hostpi/
 │   ├── files.ts             readHostPiFiles
-│   ├── derive.ts            deriveSandboxPi: rules, hosts, files and notices
+│   ├── derive.ts            deriveSandboxPi: rules, hosts, files, tools and notices
+│   ├── derive-tools.ts      deriveHostTools: the gh, glab, npm, pip, Maven and git derivers (host files and commands, placeholders only)
+│   ├── tools/               gh.ts (hosts.yml hosts, gh on PATH, version check, gh auth token rules, GH_TOKEN), glab.ts (config.yml hosts in glab's order, glab config get token rules, api_host, gh wins a shared host, GITLAB_TOKEN), npmrc.ts, pip.ts, maven.ts (servers for mirror or profile repository hosts, encrypted ones skipped), git.ts (user.name and user.email), files.ts (file reads, PATH lookup, placeholder rules)
 │   ├── derive-auth.ts       auth.json entries and environment keys
 │   ├── derive-models.ts     models.json providers and models
 │   ├── derive-mcp.ts        mcp.json HTTP and stdio servers
 │   ├── headers.ts           header values to placeholders and secret sources
 │   ├── rules.ts             placeholder and rule construction per identity
-│   ├── endpoints.ts         rule endpoints (host, port) and their keys
+│   ├── endpoints.ts         rule endpoints (host, port) and their keys; URL credential checks and strippedUrl (userinfo removed with a notice)
 │   ├── provider-endpoints.ts  hosts of a provider from the table or its baseUrl
-│   ├── userinfo.ts          credentials in URLs
 │   ├── json.ts              objectOr and jsonPointer
 │   ├── locate.ts            locateManagedPi (pi's managed install in the host agent dir), locateBundledPi (an unreadable pi package.json counts as no bundled pi), locatePiPackage (a PATH pi's package)
 │   ├── provider-hosts.ts    readProviderHosts with its cache per pi version
 │   ├── provider-hosts.mjs   run with node against the host pi's package: the built-in provider host table (the one launcher file that loads a pi package)
 │   ├── mcp-auth.ts          mcpSignIns (each OAuth server of the host user mcp.json with its host pi mcp-auth.json entry) and mcpSignInsNeeded (no refresh token, access token missing or expired)
-│   ├── model-secret.mjs     run with node as a command secret: one model's secret in models.json, found by provider, model id and base URL
 │   └── types.ts             HostPiFiles, DeriveInput, DerivedSandboxPi, BundledPi
 ├── provision/
-│   ├── render.ts            renderAgentDir: <state>/repos/<repo hash>/render/ (auth.json, models.json, mcp.json, the copied entries and tools/m2-settings.xml with the sandbox proxy), returns { renderDir }
+│   ├── render.ts            renderAgentDir: <state>/repos/<repo hash>/render/ (auth.json, models.json, mcp.json, the copied entries and tools/: m2-settings.xml with the sandbox proxy and the derived servers and mirrors, gh-hosts.yml, glab-config.yml, npmrc, pip.conf, gitconfig), returns { renderDir }
 │   ├── tree.ts              filtered copy of the host agent dir entries (16 reads at a time)
 │   ├── pool.ts              inPool: runs work over a list with at most n in flight
 │   ├── sync.ts              syncSettingsFile: the host settings.json keys over the volume copy, under the sync lock
@@ -133,19 +133,19 @@ launcher/
 │   ├── runtime.ts           the repository's rules and extras: derived hosts and its grants read live from grants.json
 │   ├── auth.ts              the repository token authorization, guestProxyUrl
 │   ├── policy.ts            decideConnect, restricted addresses, the denial reason
-│   ├── rules.ts             matchRule, header rewrite and response scrub
+│   ├── rules.ts             matchRule, header rewrite (Basic values through their decoded text) and response scrub (also the base64 sent)
 │   ├── terminate.ts         credential injection for rule hosts on the terminated stream, a secret's local reply (the MCP sign-in 503) answered without dialling upstream, an upstream 401 to an injected token turned into that reply; keep-alive upstream agents per repository, host, port and access, upgrades on a fresh connection
 │   ├── parent.ts            parent proxy route (IPv6 literal without brackets) and CONNECT through it
 │   ├── trust.ts             ensureTrustBundle: the launcher CA plus tls.extraCa
 │   ├── sign-in.ts           createSignIn: the proxy's host pi mcp login per server (own process group, output to proxy.log, the shared lock, 60 s after a start and 10 min after a failure in mcp-login.json), waited on by mcp-oauth and killed at close
-│   ├── secrets/             createSecretResolver: env, file, command, pi-auth, mcp-oauth (host pi's mcp-auth.json entry, else the sign-in and its 503 reply), cache, errors
+│   ├── secrets/             createSecretResolver: env (urlPassword), file (a JSON pointer or a tool config format), command, pi-auth, mcp-oauth (host pi's mcp-auth.json entry, else the sign-in and its 503 reply), cache, errors
 │   ├── sni.ts               ClientHello server name parsing
 │   ├── dial.ts              resolving dialer with the private-address filter, 10 s connect timeout
 │   ├── tls-ca.ts            launcher CA (created once under a lock, pair renamed into place) and leaf certificates through openssl, kept in memory (LRU of 256)
 │   ├── access-log.ts        JSON-line access log capped with one rotation, capLog
 │   ├── settings.ts          proxyPolicy: the egress policy from the RepoProxyInput
 │   └── files.ts             RepoProxyInput, RepoProxy (the proxy.json record), DaemonInput
-├── shared/                  LauncherError, errorMessage, CommandRunner, sha256Hex, repoHash, stableHash, JSON files (readJsonFile, writeJsonFile, and the lenient isJsonObject, parseJsonObject, readJsonObject), writeFileAtomic, ensureRandomHexFile, launcherPaths, realOrResolved (and its sync variant), launcherRoot, launcherEntry, expandHome, isWithin, isSecretName, isAuthLikeHeader, placeholders, settleAll (waits for every promise, then throws the first error), ensureSalt, stateLayout, GUEST_PATHS; regular-file.ts (readRegularFile without following links, lstatOrUndefined, sameEntry); pi-env.ts (PI_AGENT_DIR_VARIABLE, PI_SESSION_DIR_VARIABLE, LAUNCHER_SET_VARIABLES with BASH_ENV, hostAgentDir); mcp-auth-key.ts (MCP_SERVER_NAME, mcpAuthKey, readMcpAuthEntry, the one parser of host pi's mcp-auth.json, isFreshMcpToken, mcpLoginCommand, makeMcpLoginDir, readMcpLogins and updateMcpLogin over mcp-login.json); state-layout.ts (stateLayout, every state path: repo(repoHash) with record, launches, lock, containerLock, render, sync, git, gitCopy(path), gitBaseline, pins.json, created.json and proxy (record, token, log, accessLog) under repos/<repo hash>/, the locks (vmLock, gitPinLock, mcpLoginLock(key)), buildContext, ca, extraPem, imageRecord, gcRecord, mcpLogin), liveness.ts (bootTime, processMark, isLive and isLiveFile: pid alive, boot time within 30 s, heartbeat under 90 s; heartbeat, terminateProcess, HEARTBEAT_MS), repo-state.ts (files only: repo.json, pins.json, created.json, git config copies, hasRepoLeftovers, knownRepos, forgetRepo), file-lock.ts (withFileLock, the pid and boot lock every launcher lock uses, refreshed while held, withFileLockIfFree; withDirectoryLock, the mkdir lock of vm.lock)
+├── shared/                  LauncherError, errorMessage, CommandRunner, sha256Hex, repoHash, stableHash, JSON files (readJsonFile, writeJsonFile, and the lenient isJsonObject, parseJsonObject, readJsonObject), writeFileAtomic, ensureRandomHexFile, launcherPaths, realOrResolved (and its sync variant), launcherRoot, launcherEntry, expandHome, isWithin, isSecretName, isAuthLikeHeader, placeholders, tool-config.ts (npmrc, ini and Maven settings parsers, the json select, toolConfigValue), settleAll (waits for every promise, then throws the first error), ensureSalt, stateLayout, GUEST_PATHS; regular-file.ts (readRegularFile without following links, lstatOrUndefined, sameEntry); pi-env.ts (PI_AGENT_DIR_VARIABLE, PI_SESSION_DIR_VARIABLE, LAUNCHER_SET_VARIABLES with BASH_ENV, hostAgentDir); mcp-auth-key.ts (MCP_SERVER_NAME, mcpAuthKey, readMcpAuthEntry, the one parser of host pi's mcp-auth.json, isFreshMcpToken, mcpLoginCommand, makeMcpLoginDir, readMcpLogins and updateMcpLogin over mcp-login.json); state-layout.ts (stateLayout, every state path: repo(repoHash) with record, launches, lock, containerLock, render, sync, git, gitCopy(path), gitBaseline, pins.json, created.json and proxy (record, token, log, accessLog) under repos/<repo hash>/, the locks (vmLock, gitPinLock, mcpLoginLock(key)), buildContext, ca, extraPem, imageRecord, gcRecord, mcpLogin), liveness.ts (bootTime, processMark, isLive and isLiveFile: pid alive, boot time within 30 s, heartbeat under 90 s; heartbeat, terminateProcess, HEARTBEAT_MS), repo-state.ts (files only: repo.json, pins.json, created.json, git config copies, hasRepoLeftovers, knownRepos, forgetRepo), file-lock.ts (withFileLock, the pid and boot lock every launcher lock uses, refreshed while held, withFileLockIfFree; withDirectoryLock, the mkdir lock of vm.lock)
 ├── examples/                org-baseline.json (a starting point for an org baseline)
 ├── schema/                  sandbox-config.schema.json
 ├── install.sh               macOS install: Colima profile (started with --activate=false), launcher and its bundled pi (or the managed pi, whose ~/.local/bin/pi link it replaces and records in replaced-pi-link), PATH, the user config's org key (--org), doctor in a temporary repository (host sessions off)
@@ -174,7 +174,7 @@ launcher/
     ├── config/fixtures.ts   layer files in temp dirs
     ├── proxy/mcp-oauth.test.ts   the mcpOAuth source against a fake host pi script: fresh token, login on expiry, the 503 after the wait, cooldowns across resolvers, the 401 cases through the proxy, the login group killed at proxy close
     ├── proxy/proxy-client.ts    CONNECT and TLS client helpers
-    ├── support/             fake-runner.ts (+ its test), fake-engine.ts, fake-backend.ts (with guestAgentDir, guestFile, a vm with overridable steps, relays, AutoRemove on stop, the created specs, images that a rebuild leaves untagged and the image removals), fake-clock.ts, sandbox-config.ts, temp-dir.ts (tempDir, writeText, writeJson, removed after each test), expect-no-leak.ts (expectNoLeak over container specs, exec argv, env and stdin, and render files)
+    ├── support/             fake-runner.ts (+ its test), fake-engine.ts, fake-backend.ts (with guestAgentDir, guestFile, a vm with overridable steps, relays, AutoRemove on stop, the created specs, images that a rebuild leaves untagged and the image removals), fake-clock.ts, sandbox-config.ts, temp-dir.ts (tempDir, writeText, writeJson, writeExecutable, removed after each test), expect-no-leak.ts (expectNoLeak over container specs, exec argv, env and stdin, and render files)
     └── live/                *.live.test.ts against a real engine with fixtures/ and harness/, run only with PI_SANDBOX_LIVE=1 against ~/.colima/pi-sandbox/docker.sock; harness/resolve-preload.mjs is the --import preload that resolves the fixture hosts for host pi scripts and the proxy daemon
 ```
 

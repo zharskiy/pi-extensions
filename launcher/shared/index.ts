@@ -74,3 +74,22 @@ export {
 export { isAuthLikeHeader, isSecretName } from "./secret-name.ts";
 export { settleAll } from "./settle.ts";
 export { ensureSalt, GUEST_PATHS, stateLayout } from "./state-layout.ts";
+export type {
+  IniSection,
+  MavenRepository,
+  MavenServer,
+  MavenSettings,
+  NpmrcEntry,
+  ToolConfigFormat,
+  ToolConfigSelect,
+} from "./tool-config.ts";
+export {
+  iniWords,
+  isToolConfigKey,
+  parseIni,
+  parseMavenSettings,
+  parseNpmrc,
+  TOOL_CONFIG_FORMATS,
+  toolConfigValue,
+  urlPasswordOf,
+} from "./tool-config.ts";

@@ -1,3 +1,5 @@
+import { isSecretName } from "../shared/index.ts";
+
 export interface Endpoint {
   host: string;
   port?: number;
@@ -36,3 +38,42 @@ export const endpointKey = (endpoint: Endpoint) =>
 export const uniqueEndpoints = (endpoints: Endpoint[]) => [
   ...new Map(endpoints.map((endpoint) => [endpointKey(endpoint), endpoint])).values(),
 ];
+
+const parsed = (url: unknown) => (typeof url === "string" && URL.canParse(url) ? new URL(url) : undefined);
+
+const SECRET_QUERY_NAME = /^(auth|sig|signature|pass|passwd|pwd)$/i;
+
+export const hasQueryCredential = (url: unknown) =>
+  [...(parsed(url)?.searchParams.keys() ?? [])].some(
+    (name) => isSecretName(name) || SECRET_QUERY_NAME.test(name),
+  );
+
+export const hasUrlPassword = (url: unknown) => (parsed(url)?.password ?? "") !== "";
+
+export const hasUrlUserinfo = (url: unknown) => {
+  const parts = parsed(url);
+
+  return parts !== undefined && (parts.username !== "" || parts.password !== "");
+};
+
+export const withoutUserinfo = (url: unknown) => {
+  const parts = parsed(url);
+
+  if (parts === undefined) {
+    return "";
+  }
+
+  parts.username = "";
+
+  parts.password = "";
+
+  return parts.href;
+};
+
+export const strippedUrl = (label: string, key: string, url: unknown) =>
+  hasUrlUserinfo(url)
+    ? {
+        value: withoutUserinfo(url),
+        notices: [`${label}: ${key} carried user credentials; add a credentials.rules header rule`],
+      }
+    : { value: url, notices: [] };

@@ -2,9 +2,12 @@ import { isAbsolute } from "node:path";
 import {
   isJsonObject,
   isSecretName,
+  isToolConfigKey,
   LAUNCHER_SET_VARIABLES,
   LauncherError,
   PLACEHOLDER_PREFIX,
+  TOOL_CONFIG_FORMATS,
+  type ToolConfigFormat,
 } from "../shared/index.ts";
 import { getPath } from "./dotted.ts";
 import { isLoopbackName, SECRET_MARKER, TLS_PORT } from "./egress-entry.ts";
@@ -208,6 +211,22 @@ const ruleMode: ObjectCheck = (value) => {
   return value.template !== undefined && value.header === undefined ? "template needs a header" : undefined;
 };
 
+const fileSecretMode: ObjectCheck = (value) => {
+  const selected = [value.format, value.key, value.urlPassword].some((field) => field !== undefined);
+
+  if (value.pointer !== undefined) {
+    return selected ? "sets pointer together with format, key or urlPassword" : undefined;
+  }
+
+  if (value.format === undefined || value.key === undefined) {
+    return "needs a pointer, or a format and a key";
+  }
+
+  return isToolConfigKey(value.format as ToolConfigFormat, String(value.key))
+    ? undefined
+    : `key does not fit the ${String(value.format)} format`;
+};
+
 const text = (check?: Check): Spec => ({ type: "string", check });
 
 const choice = (values: readonly string[]): Spec => ({ type: "string", values });
@@ -229,8 +248,20 @@ const shape = (properties: Record<string, Spec>, required?: readonly string[]): 
 const SECRET_REF: Spec = {
   type: "keyed",
   variants: {
-    env: shape({ env: text(variable) }, ["env"]),
-    file: shape({ file: text(quietAbsolutePath), pointer: text(jsonPointer) }, ["file", "pointer"]),
+    env: shape({ env: text(variable), urlPassword: { type: "true" } }, ["env"]),
+    file: {
+      ...shape(
+        {
+          file: text(quietAbsolutePath),
+          pointer: text(jsonPointer),
+          format: choice(TOOL_CONFIG_FORMATS),
+          key: text(nonEmpty),
+          urlPassword: { type: "true" },
+        },
+        ["file"],
+      ),
+      check: fileSecretMode,
+    },
     command: shape(
       { command: { type: "array", items: text(nonEmpty), check: notEmptyList }, ttlSeconds: positive },
       ["command"],
@@ -254,7 +285,6 @@ const CREDENTIAL_RULE: ObjectSpec = {
     placeholder: text(placeholder),
     header: text(header),
     template: text(template),
-    transform: choice(["urlUserinfoBase64"]),
     secret: SECRET_REF,
   },
 };

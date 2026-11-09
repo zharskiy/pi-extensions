@@ -1,4 +1,4 @@
-export { tempDir, writeJson, writeText } from "../support/temp-dir.ts";
+export { tempDir, writeExecutable, writeJson, writeText } from "../support/temp-dir.ts";
 
 export const braced = (name: string) => ["$", "{", name, "}"].join("");
 

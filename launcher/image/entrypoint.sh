@@ -32,7 +32,21 @@ link_tool() {
   fi
 }
 
+copy_tool() {
+  if [ -f "$tools_dir/$1" ]; then
+    mkdir -p "$(dirname "$home/$2")"
+    rm -rf "${home:?}/$2"
+    cp "$tools_dir/$1" "$home/$2"
+    chmod "$3" "$home/$2"
+  fi
+}
+
 link_tool m2-settings.xml .m2/settings.xml
+link_tool gh-hosts.yml .config/gh/hosts.yml
+link_tool npmrc .npmrc
+link_tool pip.conf .config/pip/pip.conf
+copy_tool glab-config.yml .config/glab-cli/config.yml 0600
+copy_tool gitconfig .gitconfig 0644
 
 cat "$system_bundle" > "$bundle_dir/ca-bundle.pem"
 

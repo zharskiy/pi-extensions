@@ -87,10 +87,6 @@
                 "type": "string",
                 "pattern": "\\{secret\\}"
               },
-              "transform": {
-                "description": "applied to the resolved secret before the template",
-                "enum": ["urlUserinfoBase64"]
-              },
               "secret": {
                 "oneOf": [
                   {
@@ -100,6 +96,10 @@
                       "env": {
                         "type": "string",
                         "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                      },
+                      "urlPassword": {
+                        "const": true,
+                        "description": "The value is a URL; use the password in it."
                       }
                     },
                     "required": ["env"],
@@ -120,6 +120,30 @@
                     },
                     "required": ["file", "pointer"],
                     "description": "A JSON pointer into a host file."
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "file": {
+                        "type": "string",
+                        "pattern": "^(/|~$|~/)"
+                      },
+                      "format": {
+                        "enum": ["json", "npmrc", "ini", "maven-servers"]
+                      },
+                      "key": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "json: a JSON pointer whose segments may be [field=value] to pick an array element; npmrc: the key, as //host/path/:_authToken; ini: section.name, with [n] for the nth word of the value; maven-servers: a server id, giving its password."
+                      },
+                      "urlPassword": {
+                        "const": true,
+                        "description": "The value is a URL; use the password in it."
+                      }
+                    },
+                    "required": ["file", "format", "key"],
+                    "description": "A value in a host tool config file: JSON, .npmrc (_auth and _password decoded), ini (pip.conf) or the servers of a Maven settings.xml."
                   },
                   {
                     "type": "object",

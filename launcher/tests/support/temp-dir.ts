@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach } from "vitest";
@@ -24,3 +24,9 @@ export const writeText = async (path: string, text: string | Buffer) => {
 };
 
 export const writeJson = (path: string, value: unknown) => writeText(path, JSON.stringify(value, null, 2));
+
+export const writeExecutable = async (path: string) => {
+  await writeText(path, "#!/bin/sh\nexit 0\n");
+
+  await chmod(path, 0o755);
+};

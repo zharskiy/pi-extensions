@@ -15,6 +15,10 @@ export const LAUNCHER_SET_VARIABLES: readonly string[] = [
   PI_SESSION_DIR_VARIABLE,
   BASH_ENV_VARIABLE,
   JAVA_OPTIONS_VARIABLE,
+  "GH_TOKEN",
+  "GITLAB_TOKEN",
+  "GITLAB_HOST",
+  "GIT_TERMINAL_PROMPT",
 ];
 
 const FILE_URL = /^file:\/\//;

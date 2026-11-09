@@ -1,6 +1,14 @@
 import { lstat, mkdir, readdir, readFile, rm } from "node:fs/promises";
 import { join, posix } from "node:path";
-import { stateLayout, writeFileAtomic } from "../shared/index.ts";
+import type { DerivedTools, GlabHost, ToolHost } from "../hostpi/index.ts";
+import {
+  type IniSection,
+  type MavenRepository,
+  type MavenServer,
+  type NpmrcEntry,
+  stateLayout,
+  writeFileAtomic,
+} from "../shared/index.ts";
 import { readHostEntries, type Tree } from "./tree.ts";
 import type { RenderInput, RenderResult } from "./types.ts";
 
@@ -24,23 +32,134 @@ interface Existing {
 
 const jsonBytes = (value: unknown) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
 
-const MAVEN_SETTINGS = `<?xml version="1.0" encoding="UTF-8"?>
-<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">
-  <proxies>
-    <proxy>
-      <id>pi-sandbox</id>
-      <active>true</active>
-      <protocol>http</protocol>
-      <host>\${env.PI_SANDBOX_PROXY_HOST}</host>
-      <port>\${env.PI_SANDBOX_PROXY_PORT}</port>
-      <username>pi-sandbox</username>
-      <password>\${env.PI_SANDBOX_PROXY_TOKEN}</password>
-    </proxy>
-  </proxies>
-</settings>
-`;
+const XML_ESCAPES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" };
 
-const toolFiles = (): Array<[string, Buffer]> => [["tools/m2-settings.xml", Buffer.from(MAVEN_SETTINGS)]];
+const xml = (text: string) => text.replace(/[&<>"]/g, (character) => XML_ESCAPES[character] ?? character);
+
+const xmlElement = (indent: string, name: string, value: string | undefined) =>
+  value === undefined ? [] : [`${indent}<${name}>${xml(value)}</${name}>`];
+
+const mavenServer = (server: MavenServer) => [
+  "    <server>",
+  ...xmlElement("      ", "id", server.id),
+  ...xmlElement("      ", "username", server.username),
+  ...xmlElement("      ", "password", server.password),
+  "    </server>",
+];
+
+const mavenMirror = (mirror: MavenRepository) => [
+  "    <mirror>",
+  ...xmlElement("      ", "id", mirror.id),
+  ...xmlElement("      ", "mirrorOf", mirror.mirrorOf),
+  ...xmlElement("      ", "url", mirror.url),
+  "    </mirror>",
+];
+
+const xmlList = (name: string, items: string[][]) =>
+  items.length === 0 ? [] : [`  <${name}>`, ...items.flat(), `  </${name}>`];
+
+const mavenSettings = (maven: DerivedTools["maven"]) =>
+  [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">',
+    "  <proxies>",
+    "    <proxy>",
+    "      <id>pi-sandbox</id>",
+    "      <active>true</active>",
+    "      <protocol>http</protocol>",
+    `      <host>\${env.PI_SANDBOX_PROXY_HOST}</host>`,
+    `      <port>\${env.PI_SANDBOX_PROXY_PORT}</port>`,
+    "      <username>pi-sandbox</username>",
+    `      <password>\${env.PI_SANDBOX_PROXY_TOKEN}</password>`,
+    "    </proxy>",
+    "  </proxies>",
+    ...xmlList("servers", maven.servers.map(mavenServer)),
+    ...xmlList("mirrors", maven.mirrors.map(mavenMirror)),
+    "</settings>",
+    "",
+  ].join("\n");
+
+const yaml = (text: string) => JSON.stringify(text);
+
+const ghHosts = (hosts: ToolHost[]) =>
+  hosts.flatMap((entry) => [
+    `${entry.host}:`,
+    `    oauth_token: ${yaml(entry.token)}`,
+    `    git_protocol: "https"`,
+  ]);
+
+const glabField = (name: string, value: string | undefined) =>
+  value === undefined ? [] : [`        ${name}: ${yaml(value)}`];
+
+const glabConfig = (hosts: GlabHost[]) => [
+  'check_update: "false"',
+  'telemetry: "false"',
+  "hosts:",
+  ...hosts.flatMap((entry) => [
+    `    ${entry.host}:`,
+    ...glabField("token", entry.token),
+    ...glabField("user", entry.user),
+    ...glabField("api_host", entry.apiHost),
+    ...glabField("api_protocol", entry.apiProtocol),
+    ...glabField("git_protocol", "https"),
+    ...glabField("use_keyring", "false"),
+  ]),
+];
+
+const gitValue = (text: string) =>
+  `"${text
+    .replace(/[\r\n]+/g, " ")
+    .replaceAll("\\", "\\\\")
+    .replaceAll('"', '\\"')}"`;
+
+const gitIdentity = (git: DerivedTools["git"]) => {
+  const entries = (["name", "email"] as const).flatMap((key) => {
+    const value = git[key];
+
+    return value === undefined || value === "" ? [] : [`\t${key} = ${gitValue(value)}`];
+  });
+
+  return entries.length === 0 ? [] : ["[user]", ...entries];
+};
+
+const gitHost = (host: string, helper: string) => [
+  `[credential "https://${host}"]`,
+  '\thelper = ""',
+  `\thelper = ${gitValue(helper)}`,
+  `[url "https://${host}/"]`,
+  `\tinsteadOf = ${gitValue(`git@${host}:`)}`,
+  `\tinsteadOf = ${gitValue(`ssh://git@${host}/`)}`,
+];
+
+const gitConfig = (tools: DerivedTools) => [
+  ...gitIdentity(tools.git),
+  ...tools.gh.flatMap((entry) => gitHost(entry.host, "!gh auth git-credential")),
+  ...tools.glab.flatMap((entry) => gitHost(entry.host, "!glab auth git-credential")),
+];
+
+const npmrc = (entries: NpmrcEntry[]) => entries.map((entry) => `${entry.key}=${entry.value}`);
+
+const iniEntry = ([name, value]: [string, string]) =>
+  value.includes("\n")
+    ? [`${name} =`, ...value.split("\n").map((line) => `    ${line}`)]
+    : [`${name} = ${value}`];
+
+const pipConfig = (sections: IniSection[]) =>
+  sections.flatMap((section) => [`[${section.name}]`, ...section.entries.flatMap(iniEntry)]);
+
+const lines = (items: string[]) => Buffer.from(`${items.join("\n")}\n`);
+
+const optional = (name: string, items: string[]): Array<[string, Buffer]> =>
+  items.length === 0 ? [] : [[name, lines(items)]];
+
+const toolFiles = (tools: DerivedTools): Array<[string, Buffer]> => [
+  ["tools/m2-settings.xml", Buffer.from(mavenSettings(tools.maven))],
+  ...optional("tools/gh-hosts.yml", ghHosts(tools.gh)),
+  ...(tools.glab.length === 0 ? [] : optional("tools/glab-config.yml", glabConfig(tools.glab))),
+  ...optional("tools/gitconfig", gitConfig(tools)),
+  ...optional("tools/npmrc", npmrc(tools.npmrc ?? [])),
+  ...optional("tools/pip.conf", pipConfig(tools.pip ?? [])),
+];
 
 const desiredTree = async (input: RenderInput): Promise<Tree> => {
   const copied = await readHostEntries(input.hostAgentDir, RENDER_COPIED_ENTRIES);
@@ -56,7 +175,7 @@ const desiredTree = async (input: RenderInput): Promise<Tree> => {
       name,
       { data: jsonBytes(value), mode: FILE_MODE },
     ]),
-    ...toolFiles().map(([name, data]): [string, { data: Buffer; mode: number }] => [
+    ...toolFiles(input.derived.tools).map(([name, data]): [string, { data: Buffer; mode: number }] => [
       name,
       { data, mode: FILE_MODE },
     ]),

@@ -37,6 +37,15 @@ const FULL_LAYER = {
       }),
       rule({ id: "npm", header: "authorization", template: "Bearer {secret}", secret: { piAuth: "corp" } }),
       rule({ id: "file", secret: { file: "~/.corp/token.json", pointer: "/token" } }),
+      rule({
+        id: "npmrc",
+        secret: { file: "~/.npmrc", format: "npmrc", key: "//npm.corp.test/:_authToken" },
+      }),
+      rule({
+        id: "pip",
+        secret: { file: "~/.config/pip/pip.conf", format: "ini", key: "global.index-url", urlPassword: true },
+      }),
+      rule({ id: "pipenv", secret: { env: "PIP_INDEX_URL", urlPassword: true } }),
       rule({ id: "cmd", secret: { command: ["security", "find-generic-password", "-w"], ttlSeconds: 60 } }),
       rule({ id: "mcp", secret: { mcpOAuth: { server: "docs", url: "https://mcp.corp.test/mcp" } } }),
       rule({ id: "bearer", secret: { piAuth: "corp", bearer: true } }),
@@ -129,6 +138,23 @@ describe("validateLayer with the credential, egress, tls, image and org keys", (
         rule({ secret: { file: "/a.json", pointer: "a" } }),
         "credentials.rules[0].secret.pointer must be a JSON pointer",
       ],
+      [
+        rule({ secret: { file: "/a.json" } }),
+        "credentials.rules[0].secret needs a pointer, or a format and a key",
+      ],
+      [
+        rule({ secret: { file: "/a.json", pointer: "/a", format: "json", key: "/a" } }),
+        "credentials.rules[0].secret sets pointer together with format, key or urlPassword",
+      ],
+      [
+        rule({ secret: { file: "/pip.conf", format: "ini", key: "index-url" } }),
+        "credentials.rules[0].secret key does not fit the ini format",
+      ],
+      [
+        rule({ secret: { file: "/a", format: "yaml", key: "a" } }),
+        "credentials.rules[0].secret.format must be one of json, npmrc, ini, maven-servers",
+      ],
+      [rule({ transform: "urlUserinfoBase64" }), "credentials.rules[0].transform is not a known key"],
       [
         rule({ secret: { mcpOAuth: { server: "docs", url: "http://mcp.test" } } }),
         "credentials.rules[0].secret.mcpOAuth.url must be an https URL",

@@ -70,6 +70,7 @@ export interface ContainerSpecInput {
   trust?: SpecTrust;
   launchId?: string;
   hostSessions?: HostSessions;
+  toolEnv?: Record<string, string>;
 }
 
 export interface RepoVolumesInput {
@@ -110,9 +111,9 @@ const writableRoots = (workspace: Workspace) => {
 const gitCommonDirsOf = (workspace: Workspace) =>
   gitRepos(workspace).flatMap((repo) => (repo.gitCommonDir === undefined ? [] : [repo.gitCommonDir]));
 
-const GIT_CONFIG_FILES = new Set(["config", "config.worktree"]);
+const REPO_CONFIG_NAMES = new Set(["config", "config.worktree"]);
 
-export const isGitConfigFile = (path: string) => GIT_CONFIG_FILES.has(basename(path));
+export const isGitConfigFile = (path: string) => REPO_CONFIG_NAMES.has(basename(path));
 
 const gitMounts = (input: ContainerSpecInput) => {
   const overlay = input.gitOverlay;
@@ -309,6 +310,7 @@ const sessionsLabel = (sessions: HostSessions | undefined): Record<string, strin
 
 const sandboxEnv = (input: ContainerSpecInput) => ({
   ...proxyEnv(input),
+  ...input.toolEnv,
   ...trustEnv(input),
   ...sessionsEnv(input),
   SSL_CERT_FILE: GUEST_CA_BUNDLE,
@@ -316,6 +318,7 @@ const sandboxEnv = (input: ContainerSpecInput) => ({
   PIP_CERT: GUEST_CA_BUNDLE,
   CARGO_HTTP_CAINFO: GUEST_CA_BUNDLE,
   GIT_SSL_CAINFO: GUEST_CA_BUNDLE,
+  GIT_TERMINAL_PROMPT: "0",
   PI_SANDBOX: "1",
   PI_SKIP_VERSION_CHECK: "1",
   PI_TELEMETRY: "0",

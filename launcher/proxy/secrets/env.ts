@@ -1,5 +1,5 @@
 import type { CredentialRule, ParentProxy, SecretRef } from "../../config/index.ts";
-import { LauncherError } from "../../shared/index.ts";
+import { LauncherError, urlPasswordOf } from "../../shared/index.ts";
 import type { CachedSecret } from "./cache.ts";
 import { unavailable } from "./errors.ts";
 
@@ -59,11 +59,17 @@ const assertSingleLine = (entries: EnvSecretEntry[], env: NodeJS.ProcessEnv) => 
   }
 };
 
+const envValueOf = (entry: EnvSecretEntry, env: NodeJS.ProcessEnv) => {
+  const name = envNameOf(entry);
+  const value = name === undefined ? undefined : env[name];
+
+  return "urlPassword" in entry.ref && entry.ref.urlPassword === true ? urlPasswordOf(value) : value;
+};
+
 const envValues = (entries: EnvSecretEntry[], env: NodeJS.ProcessEnv) =>
   Object.fromEntries(
     entries.flatMap((entry) => {
-      const name = envNameOf(entry);
-      const value = name === undefined ? undefined : env[name];
+      const value = envValueOf(entry, env);
 
       return value === undefined || value === "" ? [] : [[entry.key, value] as const];
     }),

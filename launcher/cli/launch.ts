@@ -360,6 +360,7 @@ const prepareContainer = async (
       renderDir: render.renderDir,
       trust: route === undefined ? undefined : host.trust,
       hostSessions: sessions,
+      toolEnv: host.derived.tools.env,
     });
   const planned = specWith(git.overlay);
 

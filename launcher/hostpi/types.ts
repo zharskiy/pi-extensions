@@ -1,5 +1,12 @@
 import type { CredentialRule, DeriveConfig } from "../config/index.ts";
-import type { JsonObject } from "../shared/index.ts";
+import type {
+  CommandRunner,
+  IniSection,
+  JsonObject,
+  MavenRepository,
+  MavenServer,
+  NpmrcEntry,
+} from "../shared/index.ts";
 
 export type { JsonObject } from "../shared/index.ts";
 
@@ -19,8 +26,50 @@ interface ProviderHostEntry {
 
 export type ProviderHosts = Record<string, ProviderHostEntry>;
 
+export interface ToolsInput {
+  home: string;
+  env: Record<string, string | undefined>;
+  platform: NodeJS.Platform;
+  runner: CommandRunner;
+  salt: string;
+  enabled: boolean;
+}
+
+export interface ToolHost {
+  host: string;
+  token: string;
+}
+
+export interface GlabHost extends ToolHost {
+  user?: string;
+  apiHost?: string;
+  apiProtocol?: string;
+}
+
+export interface GitIdentity {
+  name?: string;
+  email?: string;
+}
+
+export interface DerivedTools {
+  gh: ToolHost[];
+  glab: GlabHost[];
+  npmrc?: NpmrcEntry[];
+  pip?: IniSection[];
+  maven: { servers: MavenServer[]; mirrors: MavenRepository[] };
+  git: GitIdentity;
+  env: Record<string, string>;
+}
+
+export interface ToolsSection {
+  value: DerivedTools;
+  rules: CredentialRule[];
+  notices: string[];
+}
+
 export interface DeriveInput {
   files: HostPiFiles;
+  tools?: ToolsSection;
   providerHosts: ProviderHosts;
   manual: CredentialRule[];
   salt: string;
@@ -38,6 +87,7 @@ export interface DerivedSandboxPi {
   rules: CredentialRule[];
   hosts: string[];
   files: DerivedFiles;
+  tools: DerivedTools;
   notices: string[];
 }
 

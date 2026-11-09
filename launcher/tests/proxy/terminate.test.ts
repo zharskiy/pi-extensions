@@ -39,6 +39,10 @@ const API_SECRET = "real-api-secret";
 
 const GIT_SECRET = "real-git-secret";
 
+const GH_PLACEHOLDER = "pi-sandbox-aaaabbbbccccddddeeeeffff";
+
+const GH_SECRET = "gho_real-token";
+
 const REPO = "1".repeat(64);
 
 const RULES: CredentialRule[] = [
@@ -79,19 +83,10 @@ const RULES: CredentialRule[] = [
     template: "Bearer {secret}",
     secret: { command: ["newline"] },
   },
-  {
-    id: "derived:git",
-    host: "npm.test",
-    header: "authorization",
-    template: "Basic {secret}",
-    transform: "urlUserinfoBase64",
-    secret: { command: ["git-url"] },
-  },
+  { id: "derived:gh", host: "npm.test", placeholder: GH_PLACEHOLDER, secret: { command: ["gh-token"] } },
 ];
 
-const GIT_URL = "https://deploy%40corp:p%3Ass@npm.test/";
-
-const GIT_BASIC = Buffer.from("deploy@corp:p:ss").toString("base64");
+const b64 = (text: string) => Buffer.from(text).toString("base64");
 
 const state: {
   stateDir: string;
@@ -114,7 +109,7 @@ const state: {
     llm: SECRET,
     api: API_SECRET,
     git: GIT_SECRET,
-    "derived:git": GIT_URL,
+    "derived:gh": GH_SECRET,
     broken: "value",
     newline: "trailing\n",
   }),
@@ -146,6 +141,14 @@ const respond = (
       "set-cookie": [`session=${API_SECRET}; Secure`],
       "www-authenticate": `Bearer error="${API_SECRET}"`,
     });
+
+    response.end("{}");
+
+    return;
+  }
+
+  if (request.url === "/echo-auth") {
+    response.writeHead(200, { "x-echo-authorization": String(request.headers.authorization) });
 
     response.end("{}");
 
@@ -336,12 +339,18 @@ describe("credential rules", () => {
     expect(body.headers.authorization).toBe(`Basic ${GIT_SECRET}`);
   });
 
-  it("sends the base64 userinfo of a URL secret, never the URL", async () => {
-    const response = await through("npm.test", "/pkg");
-    const body = JSON.parse(await readBody(response)) as { headers: Record<string, string> };
+  it("substitutes inside a Basic value git sends and scrubs the base64 it sent from the response", async () => {
+    const sent = b64(`x-access-token:${GH_PLACEHOLDER}`);
+    const body = await echoed("npm.test", "/repo.git/info/refs", { authorization: `Basic ${sent}` });
 
-    expect(body.headers.authorization).toBe(`Basic ${GIT_BASIC}`);
-    expect(JSON.stringify(body)).not.toContain(GIT_URL);
+    expect(body.headers.authorization).toBe(`Basic ${b64(`x-access-token:${GH_SECRET}`)}`);
+
+    const response = await through("npm.test", "/echo-auth", { authorization: `Basic ${sent}` });
+
+    await readBody(response);
+
+    expect(response.headers["x-echo-authorization"]).toBe(`Basic ${sent}`);
+    expect(JSON.stringify(response.headers)).not.toContain(b64(`x-access-token:${GH_SECRET}`));
   });
 
   it("scrubs the secret from every response header and never shows it to the client", async () => {

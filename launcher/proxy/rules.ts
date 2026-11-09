@@ -27,8 +27,18 @@ export const matchRules = (rules: CredentialRule[], host: string, port: number, 
     .filter((rule) => pathMatches(rule.pathPrefix, path.split("?")[0] ?? "/"))
     .sort((left, right) => prefixLength(right) - prefixLength(left));
 
+const BASIC = /^Basic\s+([A-Za-z0-9+/=]+)$/i;
+
+const basicText = (value: string) => {
+  const encoded = BASIC.exec(value)?.[1];
+
+  return encoded === undefined ? undefined : Buffer.from(encoded, "base64").toString("latin1");
+};
+
+const viewOf = (value: string) => basicText(value) ?? value;
+
 const carries = (value: string, placeholder: string | undefined) =>
-  placeholder !== undefined && placeholder !== "" && value.includes(placeholder);
+  placeholder !== undefined && placeholder !== "" && viewOf(value).includes(placeholder);
 
 const isRuleHeader = (name: string, rule: CredentialRule) =>
   rule.header !== undefined && name.toLowerCase() === rule.header.toLowerCase();
@@ -50,13 +60,45 @@ export const ruleApplies = (headers: HeaderPair[], rule: CredentialRule) => {
   return placeholderSent || headerMissing;
 };
 
-const substitute = (headers: HeaderPair[], rule: CredentialRule, secret: string) =>
-  headers.map(
-    ([name, value]): HeaderPair =>
-      isCarrier(name, rule) && carries(value, rule.placeholder)
-        ? [name, value.replaceAll(rule.placeholder ?? "", secret)]
-        : [name, value],
-  );
+export interface RewrittenHeaders {
+  headers: HeaderPair[];
+  secrets: ScrubSecret[];
+}
+
+interface Substituted {
+  pair: HeaderPair;
+  sent?: ScrubSecret;
+}
+
+const latin1 = (text: string) => Buffer.from(text, "utf8").toString("latin1");
+
+const substituteOne = (pair: HeaderPair, rule: CredentialRule, secret: string): Substituted => {
+  const [name, value] = pair;
+  const placeholder = rule.placeholder ?? "";
+
+  if (!isCarrier(name, rule) || !carries(value, placeholder)) {
+    return { pair };
+  }
+
+  const decoded = basicText(value);
+
+  if (decoded === undefined) {
+    return { pair: [name, value.replaceAll(placeholder, secret)] };
+  }
+
+  const encoded = Buffer.from(decoded.replaceAll(placeholder, latin1(secret)), "latin1").toString("base64");
+
+  return { pair: [name, `Basic ${encoded}`], sent: { value: encoded, placeholder: BASIC.exec(value)?.[1] } };
+};
+
+const substitute = (headers: HeaderPair[], rule: CredentialRule, secret: string): RewrittenHeaders => {
+  const results = headers.map((pair) => substituteOne(pair, rule, secret));
+
+  return {
+    headers: results.map((result) => result.pair),
+    secrets: results.flatMap((result) => (result.sent === undefined ? [] : [result.sent])),
+  };
+};
 
 const setRuleHeader = (headers: HeaderPair[], rule: CredentialRule, secret: string) => {
   const header = rule.header;
@@ -85,32 +127,17 @@ export const rewriteRequestHeaders = (
   headers: HeaderPair[],
   rule: CredentialRule,
   secret: string | undefined,
-): HeaderPair[] => {
+): RewrittenHeaders => {
   const kept = withoutStrayPlaceholders(headers, rule);
 
   if (secret === undefined) {
-    return strip(kept, rule);
+    return { headers: strip(kept, rule), secrets: [] };
   }
 
-  return setRuleHeader(substitute(kept, rule, secret), rule, secret);
+  const substituted = substitute(kept, rule, secret);
+
+  return { headers: setRuleHeader(substituted.headers, rule, secret), secrets: substituted.secrets };
 };
-
-const userinfoBase64 = (secret: string) => {
-  try {
-    const url = new URL(secret);
-
-    return url.username === ""
-      ? undefined
-      : Buffer.from(`${decodeURIComponent(url.username)}:${decodeURIComponent(url.password)}`).toString(
-          "base64",
-        );
-  } catch {
-    return undefined;
-  }
-};
-
-export const transformSecret = (rule: CredentialRule, secret: string) =>
-  rule.transform === "urlUserinfoBase64" ? userinfoBase64(secret) : secret;
 
 const scrubValue = (value: string, secrets: ScrubSecret[]) =>
   secrets

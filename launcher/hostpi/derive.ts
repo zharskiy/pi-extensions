@@ -4,7 +4,9 @@ import { deriveMcp } from "./derive-mcp.ts";
 import { deriveModels } from "./derive-models.ts";
 import { endpointKey } from "./endpoints.ts";
 import { objectOr } from "./json.ts";
-import type { DerivedSandboxPi, DeriveInput } from "./types.ts";
+import type { DerivedSandboxPi, DerivedTools, DeriveInput } from "./types.ts";
+
+const NO_TOOLS: DerivedTools = { gh: [], glab: [], maven: { servers: [], mirrors: [] }, git: {}, env: {} };
 
 const allowedByDerive = (derive: DeriveConfig, host: string) =>
   derive.enabled &&
@@ -30,8 +32,19 @@ export const deriveSandboxPi = (input: DeriveInput): DerivedSandboxPi => {
   const modelsSection = deriveModels(context, { ...models, providers }, input.providerHosts);
   const mcp = deriveMcp(context, objectOr(input.files.mcp));
   const manual = input.manual;
-  const derived = keptDerived([...auth.rules, ...modelsSection.rules, ...mcp.rules], manual, input.derive);
-  const notices = [...(input.files.notices ?? []), ...auth.notices, ...modelsSection.notices, ...mcp.notices];
+  const tools = input.tools ?? { value: NO_TOOLS, rules: [], notices: [] };
+  const derived = keptDerived(
+    [...auth.rules, ...modelsSection.rules, ...mcp.rules, ...tools.rules],
+    manual,
+    input.derive,
+  );
+  const notices = [
+    ...(input.files.notices ?? []),
+    ...auth.notices,
+    ...modelsSection.notices,
+    ...mcp.notices,
+    ...tools.notices,
+  ];
 
   return {
     rules: [...derived, ...manual],
@@ -41,6 +54,7 @@ export const deriveSandboxPi = (input: DeriveInput): DerivedSandboxPi => {
       "models.json": modelsSection.value,
       "mcp.json": mcp.value,
     },
+    tools: tools.value,
     notices: [...new Set(notices)],
   };
 };

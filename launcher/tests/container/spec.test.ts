@@ -469,6 +469,7 @@ describe("buildContainerSpec", () => {
       PIP_CERT: "/tmp/pi-sandbox/ca-bundle.pem",
       CARGO_HTTP_CAINFO: "/tmp/pi-sandbox/ca-bundle.pem",
       GIT_SSL_CAINFO: "/tmp/pi-sandbox/ca-bundle.pem",
+      GIT_TERMINAL_PROMPT: "0",
       PI_SANDBOX: "1",
       PI_SKIP_VERSION_CHECK: "1",
       PI_TELEMETRY: "0",

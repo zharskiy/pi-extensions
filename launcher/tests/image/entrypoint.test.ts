@@ -38,6 +38,7 @@ const HOST_TOOLS = [
   "readlink",
   "awk",
   "cp",
+  "chmod",
   "mv",
   "sed",
   "printf",
@@ -223,6 +224,35 @@ describe("image entrypoint", () => {
       join(paths.render, "tools", "m2-settings.xml"),
     );
     await expect(lstat(join(paths.home, ".pi", "agent", "tools"))).rejects.toThrow();
+  });
+
+  it("puts the gh, npm and pip files in place and writable copies of the gitconfig and the glab config", async () => {
+    const paths = await sandboxRoot();
+    const tools = join(paths.render, "tools");
+    const names = ["gh-hosts.yml", "npmrc", "pip.conf", "glab-config.yml", "gitconfig"];
+
+    await mkdir(tools);
+
+    await Promise.all(names.map((name) => writeFile(join(tools, name), `${name}\n`)));
+
+    await mkdir(join(paths.home, ".config", "glab-cli"), { recursive: true });
+
+    await writeFile(join(paths.home, ".gitconfig"), "planted\n");
+
+    await runEntrypoint(paths);
+
+    expect(await readlink(join(paths.home, ".config", "gh", "hosts.yml"))).toBe(join(tools, "gh-hosts.yml"));
+    expect(await readlink(join(paths.home, ".npmrc"))).toBe(join(tools, "npmrc"));
+    expect(await readlink(join(paths.home, ".config", "pip", "pip.conf"))).toBe(join(tools, "pip.conf"));
+
+    const glab = join(paths.home, ".config", "glab-cli", "config.yml");
+    const gitconfig = join(paths.home, ".gitconfig");
+
+    expect((await lstat(glab)).isSymbolicLink()).toBe(false);
+    expect((await lstat(glab)).mode & 0o777).toBe(0o600);
+    expect(await readFile(glab, "utf8")).toBe("glab-config.yml\n");
+    expect((await lstat(gitconfig)).isFile()).toBe(true);
+    expect(await readFile(gitconfig, "utf8")).toBe("gitconfig\n");
   });
 
   it("builds a JVM truststore from the JDK cacerts and every proxy CA cert and adds the trust flags", async () => {

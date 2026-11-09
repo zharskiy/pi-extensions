@@ -1,10 +1,10 @@
-import { spawnSync } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { CredentialRule } from "../../config/index.ts";
 import type { DeriveInput } from "../../hostpi/index.ts";
 import { deriveSandboxPi } from "../../hostpi/index.ts";
-import { isPlaceholder, jwtShapedPlaceholder, placeholderFor } from "../../shared/index.ts";
+import { isPlaceholder, jwtShapedPlaceholder, placeholderFor, toolConfigValue } from "../../shared/index.ts";
 import {
   AGENT_DIR,
   braced,
@@ -149,11 +149,12 @@ describe("deriveSandboxPi models.json", () => {
 
     const result = deriveSandboxPi(input({ files: { agentDir, auth: hostAuth(), models, mcp: hostMcp() } }));
     const rules = rulesOf(result.rules, "derived:models:custom:model:model-a:header:authorization");
-    const resolve = () => {
+    const resolve = async () => {
       const secret = rules[0]?.secret;
-      const [command = "", ...args] = secret !== undefined && "command" in secret ? secret.command : [];
 
-      return spawnSync(command, args, { encoding: "utf8" });
+      return secret !== undefined && "format" in secret
+        ? toolConfigValue(await readFile(secret.file, "utf8"), secret)
+        : undefined;
     };
 
     expect(rules).toMatchObject([
@@ -164,7 +165,7 @@ describe("deriveSandboxPi models.json", () => {
         template: "{secret}",
       },
     ]);
-    expect(resolve().stdout).toBe(SECRETS.modelHeader);
+    expect(await resolve()).toBe(SECRETS.modelHeader);
 
     const custom = models.providers.custom;
 
@@ -180,16 +181,11 @@ describe("deriveSandboxPi models.json", () => {
       },
     });
 
-    expect(resolve().stdout).toBe(SECRETS.modelHeader);
+    expect(await resolve()).toBe(SECRETS.modelHeader);
 
-    await writeJson(file, {
-      providers: {
-        custom: { ...custom, models: [{ ...custom.models[0], baseUrl: "https://moved.example" }] },
-      },
-    });
+    await writeJson(file, { providers: { custom: { ...custom, models: [] } } });
 
-    expect(resolve().status).not.toBe(0);
-    expect(resolve().stdout).toBe("");
+    expect(await resolve()).toBeUndefined();
   });
 
   it("warns about host-local endpoints and providers without a host and gives them no rule", () => {
@@ -438,39 +434,25 @@ describe("deriveSandboxPi url userinfo", () => {
     mcp: { mcpServers: { guarded: { url: `https://eve:${PASSWORD}@mcp.guarded.example/mcp` } } },
   });
 
-  it("strips userinfo from every url, names the key and adds a Basic header rule", () => {
+  it("strips userinfo from every url, names the key and derives no rule for it", () => {
     const result = deriveSandboxPi(input({ files: files() }));
     const providers = result.files["models.json"].providers as Record<string, Record<string, unknown>>;
     const servers = result.files["mcp.json"].mcpServers as Record<string, Record<string, unknown>>;
 
-    expect(JSON.stringify(result.files)).not.toContain(PASSWORD);
+    expect(JSON.stringify(result)).not.toContain(PASSWORD);
     expect(JSON.stringify(result.files)).not.toContain("bob");
-    expect(JSON.stringify(result.notices)).not.toContain(PASSWORD);
     expect(providers.proxied?.baseUrl).toBe("https://llm.proxied.example/v1");
     expect(servers.guarded?.url).toBe("https://mcp.guarded.example/mcp");
-    expect(result.notices).toContain(
-      "models proxied: providers.proxied.baseUrl carried user credentials; they were removed in the sandbox",
+    expect(result.notices).toEqual(
+      expect.arrayContaining([
+        "models proxied: providers.proxied.baseUrl carried user credentials; add a credentials.rules header rule",
+        "models proxied: providers.proxied.models[0].baseUrl carried user credentials; add a credentials.rules header rule",
+        "mcp guarded: mcpServers.guarded.url carried user credentials; add a credentials.rules header rule",
+      ]),
     );
-    expect(rulesOf(result.rules, "derived:models:proxied:baseUrl:userinfo")).toEqual([
-      {
-        id: "derived:models:proxied:baseUrl:userinfo",
-        host: "llm.proxied.example",
-        header: "Authorization",
-        template: "Basic {secret}",
-        transform: "urlUserinfoBase64",
-        secret: { file: `${AGENT_DIR}/models.json`, pointer: "/providers/proxied/baseUrl" },
-      },
-    ]);
-    expect(rulesOf(result.rules, "derived:models:proxied:model:m1:baseUrl:userinfo")[0]?.host).toBe(
-      "m1.proxied.example",
-    );
+    expect(result.rules.filter((rule) => rule.id.includes("userinfo"))).toEqual([]);
     expect(servers.guarded?.headers).toBeUndefined();
     expect(rulesOf(result.rules, "derived:mcp:guarded:oauth")).toEqual([]);
-    expect(rulesOf(result.rules, "derived:mcp:guarded:url:userinfo")[0]).toMatchObject({
-      host: "mcp.guarded.example",
-      transform: "urlUserinfoBase64",
-      secret: { file: `${AGENT_DIR}/mcp.json`, pointer: "/mcpServers/guarded/url" },
-    });
   });
 });
 

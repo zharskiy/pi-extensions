@@ -1,8 +1,14 @@
+import type { ToolConfigFormat } from "../shared/index.ts";
+
 type Fallback = "refuse" | "host";
 
-export type SecretRef =
-  | { env: string }
+export type FileSecret =
   | { file: string; pointer: string }
+  | { file: string; format: ToolConfigFormat; key: string; urlPassword?: true };
+
+export type SecretRef =
+  | { env: string; urlPassword?: true }
+  | FileSecret
   | { command: string[]; ttlSeconds?: number }
   | { piAuth: string; bearer?: boolean }
   | { mcpOAuth: { server: string; url: string } };
@@ -15,7 +21,6 @@ export interface CredentialRule {
   placeholder?: string;
   header?: string;
   template?: string;
-  transform?: "urlUserinfoBase64";
   secret: SecretRef;
 }
 

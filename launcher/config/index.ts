@@ -16,6 +16,7 @@ export type {
   DeriveConfig,
   EffectiveConfig,
   ExtraCa,
+  FileSecret,
   ParentProxy,
   SandboxConfig,
   SecretRef,
