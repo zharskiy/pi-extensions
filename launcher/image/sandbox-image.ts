@@ -17,6 +17,7 @@ export interface SandboxImageInput {
   repoHash: string;
   env?: Record<string, string | undefined>;
   trustPem?: string;
+  proxyCaPem?: string;
   versions: () => Promise<ImageVersions>;
   inUse: (digest: string) => Promise<boolean>;
   preparing?: () => void;

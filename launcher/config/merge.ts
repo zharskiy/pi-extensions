@@ -26,6 +26,7 @@ const LEAF_KEYS = [
   "credentials.derive.enabled",
   "credentials.derive.hosts",
   "egress.allow",
+  "egress.presets",
   "egress.deny",
   "egress.privateHosts",
   "egress.parentProxy",

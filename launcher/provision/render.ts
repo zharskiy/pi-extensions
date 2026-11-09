@@ -24,6 +24,24 @@ interface Existing {
 
 const jsonBytes = (value: unknown) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
 
+const MAVEN_SETTINGS = `<?xml version="1.0" encoding="UTF-8"?>
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">
+  <proxies>
+    <proxy>
+      <id>pi-sandbox</id>
+      <active>true</active>
+      <protocol>http</protocol>
+      <host>\${env.PI_SANDBOX_PROXY_HOST}</host>
+      <port>\${env.PI_SANDBOX_PROXY_PORT}</port>
+      <username>pi-sandbox</username>
+      <password>\${env.PI_SANDBOX_PROXY_TOKEN}</password>
+    </proxy>
+  </proxies>
+</settings>
+`;
+
+const toolFiles = (): Array<[string, Buffer]> => [["tools/m2-settings.xml", Buffer.from(MAVEN_SETTINGS)]];
+
 const desiredTree = async (input: RenderInput): Promise<Tree> => {
   const copied = await readHostEntries(input.hostAgentDir, RENDER_COPIED_ENTRIES);
   const files = input.derived.files;
@@ -37,6 +55,10 @@ const desiredTree = async (input: RenderInput): Promise<Tree> => {
     ...rendered.map(([name, value]): [string, { data: Buffer; mode: number }] => [
       name,
       { data: jsonBytes(value), mode: FILE_MODE },
+    ]),
+    ...toolFiles().map(([name, data]): [string, { data: Buffer; mode: number }] => [
+      name,
+      { data, mode: FILE_MODE },
     ]),
     ...copied,
   ]);

@@ -248,6 +248,7 @@ const prepareImage = (
     repoHash: context.repoHash,
     env: deps.env,
     trustPem: host.trust?.extraPemPath,
+    proxyCaPem: host.trust?.caCertPath,
     versions: async () => ({ pi: await imagePiVersion(host.pi) }),
     inUse: async (digest) => (await findCurrentContainer(backend, context.workspace, digest)) !== undefined,
     preparing: () => writeLine(deps.stderr, PREPARING),

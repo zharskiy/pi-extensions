@@ -29,7 +29,13 @@ describe("prepareBuildContext", () => {
 
     await prepareBuildContext(versions, dir);
 
-    expect((await readdir(dir)).sort()).toEqual(["Dockerfile", "bash-env.sh", "entrypoint.sh", "trust.pem"]);
+    expect((await readdir(dir)).sort()).toEqual([
+      "Dockerfile",
+      "bash-env.sh",
+      "entrypoint.sh",
+      "proxy-ca.pem",
+      "trust.pem",
+    ]);
     expect(await readFile(join(dir, "trust.pem"), "utf8")).toBe("");
     expect(await readFile(join(dir, "entrypoint.sh"), "utf8")).toContain("sleep infinity");
     expect(await readFile(join(dir, "bash-env.sh"), "utf8")).toContain("command_not_found_handle");
@@ -53,9 +59,52 @@ describe("prepareBuildContext", () => {
     const trust = join(await tempDir(), "trust.pem");
 
     await writeFile(trust, "-----BEGIN CERTIFICATE-----\n");
-    await prepareBuildContext(versions, dir, trust);
+    await prepareBuildContext(versions, dir, { trustPem: trust });
 
     expect(await readFile(join(dir, "trust.pem"), "utf8")).toBe("-----BEGIN CERTIFICATE-----\n");
+  });
+
+  it("copies the proxy CA into the context and keeps it in the system store after the build", async () => {
+    const dir = await tempDir();
+    const ca = join(await tempDir(), "ca-cert.pem");
+
+    await writeFile(ca, "PROXY CA\n");
+    await prepareBuildContext(versions, dir, { proxyCaPem: ca });
+
+    const dockerfile = await readFile(join(dir, "Dockerfile"), "utf8");
+
+    expect(await readFile(join(dir, "proxy-ca.pem"), "utf8")).toBe("PROXY CA\n");
+    expect(dockerfile).toContain("/usr/local/share/ca-certificates/pi-sandbox-proxy.crt");
+    expect(dockerfile).toMatch(/update-ca-certificates --fresh/);
+  });
+
+  it("installs the base tools and a pi-sandbox command that points back to the host", async () => {
+    const dir = await tempDir();
+
+    await prepareBuildContext(versions, dir);
+
+    const dockerfile = await readFile(join(dir, "Dockerfile"), "utf8");
+    const packages =
+      /apt-get install -y --no-install-recommends ([^\\\n]+)/.exec(dockerfile)?.[1]?.split(" ") ?? [];
+
+    expect(packages).toEqual(
+      expect.arrayContaining([
+        "curl",
+        "jq",
+        "python3",
+        "python3-venv",
+        "make",
+        "unzip",
+        "less",
+        "procps",
+        "xz-utils",
+        "gh",
+      ]),
+    );
+    expect(dockerfile).toContain(
+      "pi sandbox commands run on the host; ask the user to run pi sandbox $* there",
+    );
+    expect(dockerfile).toContain("exit 2");
   });
 
   it("installs the trust bundle for the build only and wires the self-update command", async () => {
@@ -141,6 +190,7 @@ describe("ensureBuiltImage", () => {
       "Dockerfile",
       "bash-env.sh",
       "entrypoint.sh",
+      "proxy-ca.pem",
       "trust.pem",
     ]);
     expect(JSON.parse(await readFile(join(stateDir, "image.json"), "utf8"))).toEqual({
@@ -199,6 +249,23 @@ describe("ensureBuiltImage", () => {
     });
 
     expect(fake.builds).toHaveLength(2);
+  });
+
+  it("rebuilds when the proxy CA changes", async () => {
+    const fake = createFakeBackend();
+    const stateDir = await tempDir();
+    const config = sandboxConfig();
+    const proxyCaPem = join(await tempDir(), "ca-cert.pem");
+
+    await writeFile(proxyCaPem, "CA ONE\n");
+    await ensureBuiltImage({ backend: fake.backend, config, versions, stateDir, proxyCaPem });
+    await ensureBuiltImage({ backend: fake.backend, config, versions, stateDir, proxyCaPem });
+
+    await writeFile(proxyCaPem, "CA TWO\n");
+    await ensureBuiltImage({ backend: fake.backend, config, versions, stateDir, proxyCaPem });
+
+    expect(fake.builds).toHaveLength(2);
+    expect(fake.builds[1]?.files["proxy-ca.pem"]).toBe("CA TWO\n");
   });
 
   it("rebuilds when the recorded image is gone from the engine", async () => {

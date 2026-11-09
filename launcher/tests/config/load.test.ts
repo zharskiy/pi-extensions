@@ -2,7 +2,7 @@ import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { defaultConfig } from "../../config/defaults.ts";
-import { loadEffectiveConfig } from "../../config/index.ts";
+import { egressAllowList, loadEffectiveConfig } from "../../config/index.ts";
 import { createLayers } from "./fixtures.ts";
 
 interface Layers {
@@ -45,6 +45,63 @@ describe("loadEffectiveConfig", () => {
     expect(config.egress.grants).toBe(true);
     expect(sources["egress.allow"]).toBe("default");
     expect(sources["resources.cpus"]).toBeUndefined();
+  });
+
+  it("allows the npm, pypi and github registry hosts by default through egress.presets", async () => {
+    const { config, sources } = await loadWith({});
+
+    expect(config.egress.allow).toEqual([]);
+    expect(sources["egress.presets"]).toBe("default");
+    expect(egressAllowList(config.egress)).toEqual([
+      "registry.npmjs.org",
+      "registry.yarnpkg.com",
+      "repo.yarnpkg.com",
+      "pypi.org",
+      "files.pythonhosted.org",
+      "github.com",
+      "codeload.github.com",
+      "objects.githubusercontent.com",
+      "raw.githubusercontent.com",
+      "release-assets.githubusercontent.com",
+    ]);
+  });
+
+  it("expands the user's presets ahead of egress.allow without duplicates", async () => {
+    const { config } = await loadWith({
+      user: () => ({ egress: { presets: ["maven", "go"], allow: ["repo1.maven.org", "corp.test"] } }),
+    });
+
+    expect(egressAllowList(config.egress)).toEqual([
+      "repo.maven.apache.org",
+      "repo1.maven.org",
+      "proxy.golang.org",
+      "sum.golang.org",
+      "corp.test",
+    ]);
+  });
+
+  it("lets the policy turn the presets off for good", async () => {
+    const { config } = await loadWith({ policy: () => ({ egress: { presets: [] } }) });
+
+    expect(egressAllowList(config.egress)).toEqual([]);
+    await expect(
+      loadWith({
+        policy: () => ({ egress: { presets: [] } }),
+        user: () => ({ egress: { presets: ["npm"] } }),
+      }),
+    ).rejects.toThrow("user: egress.presets is set by the policy config and is final there");
+  });
+
+  it("refuses to forward JAVA_TOOL_OPTIONS, which carries the sandbox proxy", async () => {
+    await expect(loadWith({ user: () => ({ env: { allow: ["JAVA_TOOL_OPTIONS"] } }) })).rejects.toThrow(
+      "user: env.allow[0] JAVA_TOOL_OPTIONS is set by the launcher and is not forwarded",
+    );
+  });
+
+  it("refuses an unknown preset", async () => {
+    await expect(loadWith({ user: () => ({ egress: { presets: ["apt"] } }) })).rejects.toThrow(
+      "egress.presets[0]",
+    );
   });
 
   it("lets the lowest layer win for keys no admin layer set and records the source per key", async () => {

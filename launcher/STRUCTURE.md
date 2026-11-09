@@ -41,6 +41,7 @@ launcher/
 │   ├── load.ts              loadEffectiveConfig from defaults, policy, the org file, user, project; refuses a project layer that sets a key outside PROJECT_KEYS
 │   ├── egress-entry.ts      the egress entry grammar: TLS_PORT, normalizeHost, parseEntry, matchesPattern (single-label *.), matchesEntry, authorityOf, isLoopbackName, SECRET_MARKER, fillTemplate
 │   ├── defaults.ts          the default config and image reference
+│   ├── egress-presets.ts    EGRESS_PRESETS (npm, pypi, github, maven, gradle, go, cargo hosts) and egressAllowList (presets expanded ahead of egress.allow)
 │   └── dotted.ts            dotted key access
 ├── workspace/
 │   ├── created.ts           removeCreatedDirs: recorded dirs removed deepest first while empty and not links
@@ -72,9 +73,9 @@ launcher/
 │   ├── lifecycle.ts         ensureContainer (container.lock, reuse of a running current container or of an outdated one while other launches are live, beforeStart right before a create inside aroundStart, unused cache volumes removed, missing mount points created and recorded, the root chown of owned volume paths after each create), discardContainer (stop 3 s, wait for the removal, delete), gitDirInUseElsewhere (both git dir labels), findCurrentContainer, findRepoContainer, listLauncherContainers, removeRepoContainers
 │   └── run-pi.ts            runPi: exec behind a pid file, PI_SANDBOX_LAUNCH_ID (the launch id), raw mode, resizes, signal handling
 ├── image/
-│   ├── Dockerfile           the sandbox image (no pi config baked in; BASH_ENV set to bash-env.sh, which /etc/bash.bashrc also sources first)
-│   ├── entrypoint.sh        render links, CA bundle, idle
-│   ├── bash-env.sh          /usr/local/lib/pi-sandbox/bash-env.sh in the image, read through BASH_ENV and the system bashrc: command_not_found_handle with the image.packages hint
+│   ├── Dockerfile           the sandbox image (no pi config baked in; base tools with curl, jq, python3, make and gh; the launcher CA in the system store; the pi-sandbox stub that points back to the host; BASH_ENV set to bash-env.sh, which /etc/bash.bashrc also sources first)
+│   ├── entrypoint.sh        render links, render/tools links into the home (~/.m2/settings.xml), CA bundle, the JVM truststore, idle
+│   ├── bash-env.sh          /usr/local/lib/pi-sandbox/bash-env.sh in the image, read through BASH_ENV and the system bashrc: command_not_found_handle with the image.packages hint, and the trust flags appended to JAVA_TOOL_OPTIONS when the entrypoint built the truststore
 │   ├── sandbox-image.ts     ensureSandboxImage: the recorded image when a current container uses it, else a pinned pull or a build, then the layer, then removeStaleImages after a build
 │   ├── context.ts           buildInContext (a temporary build dir from stateLayout, removed after), reusableImage
 │   ├── build.ts             build context, ensureBuiltImage, pullPinnedImage, recordedImage
@@ -102,7 +103,7 @@ launcher/
 │   ├── model-secret.mjs     run with node as a command secret: one model's secret in models.json, found by provider, model id and base URL
 │   └── types.ts             HostPiFiles, DeriveInput, DerivedSandboxPi, BundledPi
 ├── provision/
-│   ├── render.ts            renderAgentDir: <state>/repos/<repo hash>/render/ (auth.json, models.json, mcp.json and the copied entries), returns { renderDir }
+│   ├── render.ts            renderAgentDir: <state>/repos/<repo hash>/render/ (auth.json, models.json, mcp.json, the copied entries and tools/m2-settings.xml with the sandbox proxy), returns { renderDir }
 │   ├── tree.ts              filtered copy of the host agent dir entries (16 reads at a time)
 │   ├── pool.ts              inPool: runs work over a list with at most n in flight
 │   ├── sync.ts              syncSettingsFile: the host settings.json keys over the volume copy, under the sync lock

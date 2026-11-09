@@ -324,6 +324,7 @@ export const createHarness = async (options: HarnessOptions = {}) => {
       denials: async () => options.denials ?? [],
       trust: async () => ({
         pemPath: trustPem,
+        caCertPath: trustPem,
         extraPemPath: join(stateDir, "ca", "extra.pem"),
         hash: "trust-hash",
       }),

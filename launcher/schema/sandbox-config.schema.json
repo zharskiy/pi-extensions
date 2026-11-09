@@ -225,6 +225,13 @@
             "pattern": "^(\\*\\.)?[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)*(:[0-9]{1,5})?$"
           }
         },
+        "presets": {
+          "type": "array",
+          "items": {
+            "enum": ["npm", "pypi", "github", "maven", "gradle", "go", "cargo"]
+          },
+          "description": "Package registry host sets added to egress.allow. Default npm, pypi and github; [] turns them off. Not in a project config."
+        },
         "deny": {
           "type": "array",
           "items": {

@@ -1,5 +1,5 @@
 import { setTimeout as delay } from "node:timers/promises";
-import type { SandboxConfig } from "../config/index.ts";
+import { egressAllowList, type SandboxConfig } from "../config/index.ts";
 import {
   type DerivedSandboxPi,
   deriveSandboxPi,
@@ -27,7 +27,7 @@ const DNS_WAIT_MS = 2000;
 const MISSING_PI =
   "no pi on the host, built-in providers get no credential rules; install pi or reinstall the launcher with npm install -g pi-extensions-mz";
 
-const needsProxy = (config: SandboxConfig) => config.egress.allow.length > 0;
+const needsProxy = (config: SandboxConfig) => egressAllowList(config.egress).length > 0;
 
 export const providerHostsOf = async (deps: CliDeps, stateDir: string, pi: HostPi | undefined) => {
   if (pi === undefined) {

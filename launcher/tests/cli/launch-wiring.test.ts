@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { lstat, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { ProxyRouteRequest } from "../../backend/index.ts";
@@ -92,6 +92,31 @@ describe("pi launch wiring", () => {
     ]);
 
     await expectNoLeak(fake, renderDirOf(harness), ["p@ss", "p%40ss"]);
+  });
+
+  it("renders Maven proxy settings and hands the proxy to JVMs on a host without ~/.m2/settings.xml", async () => {
+    const fake = createFakeBackend();
+    const harness = await createHarness({ backend: () => fake.backend });
+
+    await expect(lstat(join(harness.deps.home, ".m2", "settings.xml"))).rejects.toThrow();
+    expect(await run([], harness.deps)).toBe(0);
+
+    const [container] = fake.created;
+    const env = container?.spec?.env ?? {};
+    const token = new URL(env.HTTPS_PROXY ?? "").password;
+    const settings = await readFile(join(renderDirOf(harness), "tools", "m2-settings.xml"), "utf8");
+
+    expect(settings).toMatch(/<proxy>[\s\S]*<host>\$\{env\.PI_SANDBOX_PROXY_HOST\}<\/host>[\s\S]*<\/proxy>/);
+    expect(env).toMatchObject({
+      https_proxy: env.HTTPS_PROXY,
+      PI_SANDBOX_PROXY_HOST: "pi-sandbox-proxy",
+      PI_SANDBOX_PROXY_TOKEN: token,
+      PIP_CERT: "/tmp/pi-sandbox/ca-bundle.pem",
+    });
+    expect(env.JAVA_TOOL_OPTIONS).toContain("-Dhttps.proxyHost=pi-sandbox-proxy");
+    expect(env.JAVA_TOOL_OPTIONS).not.toContain("trustStore");
+
+    await expectNoLeak(fake, renderDirOf(harness), [REAL_KEY]);
   });
 
   it("renders host auth.json with placeholders into a read-only render mount", async () => {

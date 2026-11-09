@@ -392,6 +392,27 @@ describe("buildContainerSpec", () => {
     expect(spec.env.ALL_PROXY).toBe(spec.env.HTTPS_PROXY);
   });
 
+  it("points JVMs at the proxy alias with Basic proxy auth, leaving the trust flags to the entrypoint", () => {
+    const spec = buildContainerSpec(specInput());
+
+    expect(spec.env.JAVA_TOOL_OPTIONS?.split(" ")).toEqual([
+      "-Dhttps.proxyHost=pi-sandbox-proxy",
+      "-Dhttps.proxyPort=3128",
+      "-Dhttps.proxyUser=pi-sandbox",
+      "-Dhttps.proxyPassword=token-1",
+      "-Dhttp.proxyHost=pi-sandbox-proxy",
+      "-Dhttp.proxyPort=3128",
+      "-Dhttp.proxyUser=pi-sandbox",
+      "-Dhttp.proxyPassword=token-1",
+      "-Djdk.http.auth.tunneling.disabledSchemes=",
+      "-Djdk.http.auth.proxying.disabledSchemes=",
+    ]);
+    expect(spec.env.JAVA_TOOL_OPTIONS).not.toContain("javax.net.ssl");
+    expect(spec.env.https_proxy).toBe(spec.env.HTTPS_PROXY);
+    expect(spec.env.no_proxy).toBe("");
+    expect(spec.env.PIP_CERT).toBe("/tmp/pi-sandbox/ca-bundle.pem");
+  });
+
   it("marks the sandbox and never sets pi offline", () => {
     const spec = buildContainerSpec(specInput());
 
@@ -423,7 +444,7 @@ describe("buildContainerSpec", () => {
     const spec = buildContainerSpec(specInput({ proxy: undefined }));
 
     expect(spec.network).toEqual({ kind: "none" });
-    expect(Object.keys(spec.env).filter((name) => name.endsWith("_PROXY"))).toEqual([]);
+    expect(Object.keys(spec.env).filter((name) => /_proxy|PROXY_|JAVA_TOOL_OPTIONS/i.test(name))).toEqual([]);
     expect(spec.labels["pi-sandbox.proxy-token-hash"]).toBeUndefined();
   });
 
@@ -433,10 +454,20 @@ describe("buildContainerSpec", () => {
       HTTP_PROXY: "http://pi-sandbox:token-1@pi-sandbox-proxy:3128",
       ALL_PROXY: "http://pi-sandbox:token-1@pi-sandbox-proxy:3128",
       NO_PROXY: "",
+      https_proxy: "http://pi-sandbox:token-1@pi-sandbox-proxy:3128",
+      http_proxy: "http://pi-sandbox:token-1@pi-sandbox-proxy:3128",
+      all_proxy: "http://pi-sandbox:token-1@pi-sandbox-proxy:3128",
+      no_proxy: "",
       NODE_USE_ENV_PROXY: "1",
+      PI_SANDBOX_PROXY_HOST: "pi-sandbox-proxy",
+      PI_SANDBOX_PROXY_PORT: "3128",
+      PI_SANDBOX_PROXY_TOKEN: "token-1",
+      JAVA_TOOL_OPTIONS: expect.any(String),
       NODE_EXTRA_CA_CERTS: "/etc/pi-sandbox/ca.pem",
       SSL_CERT_FILE: "/tmp/pi-sandbox/ca-bundle.pem",
       REQUESTS_CA_BUNDLE: "/tmp/pi-sandbox/ca-bundle.pem",
+      PIP_CERT: "/tmp/pi-sandbox/ca-bundle.pem",
+      CARGO_HTTP_CAINFO: "/tmp/pi-sandbox/ca-bundle.pem",
       GIT_SSL_CAINFO: "/tmp/pi-sandbox/ca-bundle.pem",
       PI_SANDBOX: "1",
       PI_SKIP_VERSION_CHECK: "1",

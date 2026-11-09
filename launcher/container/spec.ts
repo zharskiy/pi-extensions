@@ -241,14 +241,40 @@ export const forwardedEnv = (names: string[], hostEnv: Record<string, string | u
     }),
   );
 
+const javaProxyOptions = (host: string, port: string, user: string, password: string) =>
+  ["https", "http"]
+    .flatMap((scheme) => [
+      `-D${scheme}.proxyHost=${host}`,
+      `-D${scheme}.proxyPort=${port}`,
+      `-D${scheme}.proxyUser=${user}`,
+      `-D${scheme}.proxyPassword=${password}`,
+    ])
+    .concat(["-Djdk.http.auth.tunneling.disabledSchemes=", "-Djdk.http.auth.proxying.disabledSchemes="])
+    .join(" ");
+
 const proxyEnv = (input: ContainerSpecInput): Record<string, string> => {
   if (input.proxy === undefined) {
     return {};
   }
 
   const { url } = input.proxy;
+  const { hostname, port, username, password } = new URL(url);
 
-  return { HTTPS_PROXY: url, HTTP_PROXY: url, ALL_PROXY: url, NO_PROXY: "", NODE_USE_ENV_PROXY: "1" };
+  return {
+    HTTPS_PROXY: url,
+    HTTP_PROXY: url,
+    ALL_PROXY: url,
+    NO_PROXY: "",
+    https_proxy: url,
+    http_proxy: url,
+    all_proxy: url,
+    no_proxy: "",
+    NODE_USE_ENV_PROXY: "1",
+    PI_SANDBOX_PROXY_HOST: hostname,
+    PI_SANDBOX_PROXY_PORT: port,
+    PI_SANDBOX_PROXY_TOKEN: password,
+    JAVA_TOOL_OPTIONS: javaProxyOptions(hostname, port, username, password),
+  };
 };
 
 const trustSource = (input: ContainerSpecInput) => input.trust?.pemPath ?? input.proxy?.caPemPath;
@@ -287,6 +313,8 @@ const sandboxEnv = (input: ContainerSpecInput) => ({
   ...sessionsEnv(input),
   SSL_CERT_FILE: GUEST_CA_BUNDLE,
   REQUESTS_CA_BUNDLE: GUEST_CA_BUNDLE,
+  PIP_CERT: GUEST_CA_BUNDLE,
+  CARGO_HTTP_CAINFO: GUEST_CA_BUNDLE,
   GIT_SSL_CAINFO: GUEST_CA_BUNDLE,
   PI_SANDBOX: "1",
   PI_SKIP_VERSION_CHECK: "1",

@@ -221,7 +221,7 @@ describe("pi [args]", () => {
       },
     });
 
-    await harness.writeJson(harness.userConfigFile, { egress: { allow: [] } });
+    await harness.writeJson(harness.userConfigFile, { egress: { allow: [], presets: [] } });
 
     expect(await run([], harness.deps)).toBe(0);
 

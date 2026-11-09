@@ -42,6 +42,7 @@ const COMPLETE_LAYER: LayerConfig = {
   },
   egress: {
     allow: ["llm.corp.test"],
+    presets: ["maven"],
     deny: ["paste.corp.test"],
     privateHosts: ["*.corp.internal"],
     parentProxy: "none",

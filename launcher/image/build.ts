@@ -21,6 +21,7 @@ export interface PullImageInput {
 export interface EnsureImageInput extends PullImageInput {
   versions: ImageVersions;
   trustPem?: string;
+  proxyCaPem?: string;
   env?: Record<string, string | undefined>;
 }
 
@@ -45,6 +46,16 @@ const COPIED_ASSETS = [ENTRYPOINT, BASH_ENV_FILE];
 
 const PINNED = "pinned";
 
+const PROXY_CA_FILE = "proxy-ca.pem";
+
+interface BuildTrust {
+  trustPem?: string;
+  proxyCaPem?: string;
+}
+
+const proxyCaText = (path: string | undefined) =>
+  path === undefined ? Promise.resolve("") : readFile(path, "utf8");
+
 const imageAssets = () => join(launcherRoot(), "image");
 
 const checkedVersion = (name: string, value: string) => {
@@ -58,7 +69,7 @@ const checkedVersion = (name: string, value: string) => {
 const pinVersions = (dockerfile: string, versions: ImageVersions) =>
   dockerfile.replace(/^ARG PI_VERSION$/m, `ARG PI_VERSION=${checkedVersion("pi", versions.pi)}`);
 
-export const prepareBuildContext = async (versions: ImageVersions, dir: string, trustPem?: string) => {
+export const prepareBuildContext = async (versions: ImageVersions, dir: string, trust: BuildTrust = {}) => {
   const dockerfile = await readFile(join(imageAssets(), DOCKERFILE), "utf8");
 
   await mkdir(dir, { recursive: true });
@@ -67,17 +78,20 @@ export const prepareBuildContext = async (versions: ImageVersions, dir: string, 
 
   await Promise.all(COPIED_ASSETS.map((name) => copyFile(join(imageAssets(), name), join(dir, name))));
 
-  await placeBuildTrust(dir, trustPem);
+  await writeFile(join(dir, PROXY_CA_FILE), await proxyCaText(trust.proxyCaPem));
+
+  await placeBuildTrust(dir, trust.trustPem);
 
   return dir;
 };
 
-const inputsHash = async (config: SandboxConfig, versions: ImageVersions) => {
+const inputsHash = async (input: EnsureImageInput) => {
   const assets = await Promise.all(
     [DOCKERFILE, ...COPIED_ASSETS].map((name) => readFile(join(imageAssets(), name), "utf8")),
   );
+  const proxyCa = await proxyCaText(input.proxyCaPem);
 
-  return stableHash({ reference: config.image.reference, pi: versions.pi, assets });
+  return stableHash({ reference: input.config.image.reference, pi: input.versions.pi, assets, proxyCa });
 };
 
 export const recordedImage = async (stateDir: string, config: SandboxConfig) => {
@@ -110,7 +124,8 @@ const buildLocally = async (input: EnsureImageInput, hash: string): Promise<Buil
   const { id, digest } = await buildInContext(input, {
     prefix: "build",
     tag: reference,
-    fill: (dir) => prepareBuildContext(input.versions, dir, input.trustPem),
+    fill: (dir) =>
+      prepareBuildContext(input.versions, dir, { trustPem: input.trustPem, proxyCaPem: input.proxyCaPem }),
   });
   const replaced = await replaceBase(input.stateDir, { id, digest, inputsHash: hash, pi: input.versions.pi });
 
@@ -150,7 +165,7 @@ export const ensureBuiltImage = async (input: EnsureImageInput): Promise<BuiltIm
     return pullPinnedImage(input, pinned);
   }
 
-  const hash = await inputsHash(input.config, input.versions);
+  const hash = await inputsHash(input);
   const base = await readBaseRecord(input.stateDir);
   const reused = await reusableBuild(input.backend, input.config.image.reference, base, hash);
 

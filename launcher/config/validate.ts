@@ -8,6 +8,7 @@ import {
 } from "../shared/index.ts";
 import { getPath } from "./dotted.ts";
 import { isLoopbackName, SECRET_MARKER, TLS_PORT } from "./egress-entry.ts";
+import { EGRESS_PRESETS } from "./egress-presets.ts";
 import type { LayerConfig } from "./types.ts";
 
 type Check = (value: string) => string | undefined;
@@ -284,6 +285,7 @@ const LAYER_SPEC: ObjectSpec = {
     }),
     egress: shape({
       allow: list(host),
+      presets: { type: "array", items: choice(Object.keys(EGRESS_PRESETS)) },
       deny: list(quietHost),
       privateHosts: list(privateHost),
       parentProxy: choice(["env", "none"]),

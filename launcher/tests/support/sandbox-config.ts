@@ -8,6 +8,7 @@ export const sandboxConfig = ({ mounts, ...overrides }: ConfigOverrides = {}): S
   credentials: { rules: [], derive: { enabled: true } },
   egress: {
     allow: ["registry.npmjs.org"],
+    presets: [],
     deny: [],
     privateHosts: [],
     parentProxy: "env",

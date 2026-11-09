@@ -6,8 +6,6 @@ const PACKAGE_NAME = "pi-extensions-mz";
 
 const IMAGE_REPOSITORY = "ghcr.io/zharskiy/pi-sandbox";
 
-const DEFAULT_EGRESS = ["registry.npmjs.org", "github.com", "pypi.org", "files.pythonhosted.org"];
-
 const TERMINAL_VARIABLES = [
   "TERM",
   "COLORTERM",
@@ -35,7 +33,8 @@ export const defaultConfig = async (): Promise<SandboxConfig> => ({
   image: { reference: `${IMAGE_REPOSITORY}:${await packageVersion()}` },
   credentials: { rules: [], derive: { enabled: true } },
   egress: {
-    allow: DEFAULT_EGRESS,
+    allow: [],
+    presets: ["npm", "pypi", "github"],
     deny: [],
     privateHosts: [],
     parentProxy: "env",

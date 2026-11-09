@@ -96,6 +96,8 @@ describe("renderAgentDir", () => {
       "skills/deploy/",
       "skills/deploy/SKILL.md",
       "skills/deploy/run.sh",
+      "tools/",
+      "tools/m2-settings.xml",
     ]);
     expect(JSON.parse(await readFile(join(result.renderDir, "auth.json"), "utf8"))).toEqual(
       derived().files["auth.json"],
@@ -177,7 +179,32 @@ describe("renderAgentDir", () => {
       derived: derived(),
     });
 
-    expect(await listTree(result.renderDir)).toEqual(["auth.json", "mcp.json", "models.json"]);
+    expect(await listTree(result.renderDir)).toEqual([
+      "auth.json",
+      "mcp.json",
+      "models.json",
+      "tools/",
+      "tools/m2-settings.xml",
+    ]);
+  });
+
+  it("renders Maven settings with the sandbox proxy read from the env when the host has no settings.xml", async () => {
+    const stateDir = await tempDir("render-state");
+    const host = await tempDir("render-host");
+    const result = await renderAgentDir({
+      stateDir,
+      repoHash: "repo1",
+      hostAgentDir: host,
+      derived: derived(),
+    });
+    const settings = await readFile(join(result.renderDir, "tools", "m2-settings.xml"), "utf8");
+    const proxy = /<proxy>([\s\S]*)<\/proxy>/.exec(settings)?.[1] ?? "";
+
+    expect(proxy).toContain("<active>true</active>");
+    expect(proxy).toContain(`<host>\${env.PI_SANDBOX_PROXY_HOST}</host>`);
+    expect(proxy).toContain(`<port>\${env.PI_SANDBOX_PROXY_PORT}</port>`);
+    expect(proxy).toContain("<username>pi-sandbox</username>");
+    expect(proxy).toContain(`<password>\${env.PI_SANDBOX_PROXY_TOKEN}</password>`);
   });
 
   it("leaves out git dirs, key files, credential files and secret-named files of any extension", async () => {

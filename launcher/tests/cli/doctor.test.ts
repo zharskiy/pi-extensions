@@ -455,7 +455,7 @@ describe("pi sandbox doctor", () => {
     const failing = { ...fake.backend, buildImage: async () => Promise.reject(new Error("build failed")) };
     const harness = await createHarness({ backend: () => failing });
 
-    await harness.writeJson(harness.userConfigFile, { egress: { allow: [] } });
+    await harness.writeJson(harness.userConfigFile, { egress: { allow: [], presets: [] } });
 
     expect(await run(["sandbox", "doctor"], harness.deps)).toBe(1);
     expect(harness.stdout().trim().split("\n")).toEqual([
@@ -474,7 +474,7 @@ describe("pi sandbox doctor", () => {
       const fake = createFakeBackend({ exec: answering({}), vm: { size } });
       const harness = await createHarness({ backend: () => fake.backend, machine });
 
-      await harness.writeJson(harness.userConfigFile, { egress: { allow: [] } });
+      await harness.writeJson(harness.userConfigFile, { egress: { allow: [], presets: [] } });
 
       const code = await run(["sandbox", "doctor"], harness.deps);
       const line = harness
@@ -519,7 +519,7 @@ describe("pi sandbox doctor vm shares", () => {
     const fake = createFakeBackend({ exec: answering({}), vm: { coverage } });
     const harness = await createHarness({ backend: () => fake.backend });
 
-    await harness.writeJson(harness.userConfigFile, { egress: { allow: [] } });
+    await harness.writeJson(harness.userConfigFile, { egress: { allow: [], presets: [] } });
 
     await run(["sandbox", "doctor"], harness.deps);
 

@@ -1,4 +1,4 @@
-import { authorityOf } from "../config/index.ts";
+import { authorityOf, egressAllowList } from "../config/index.ts";
 import { type Launch, withRepoLaunchLock } from "../grants/index.ts";
 import {
   type DenialRecord,
@@ -29,7 +29,7 @@ const proxyInput = (deps: CliDeps, context: LaunchContext, host: HostSide): Inpu
 
   return {
     repoHash: context.repoHash,
-    allow: egress.allow,
+    allow: egressAllowList(egress),
     deny: egress.deny,
     privateHosts: egress.privateHosts,
     grants: egress.grants,

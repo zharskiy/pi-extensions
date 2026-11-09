@@ -21,6 +21,7 @@ export interface TrustBundleInput {
 
 export interface TrustBundle {
   pemPath: string;
+  caCertPath: string;
   extraPemPath: string;
   hash: string;
 }
@@ -101,5 +102,5 @@ export const ensureTrustBundle = async (input: TrustBundleInput): Promise<TrustB
 
   await writeIfChanged(pemPath, bundle);
 
-  return { pemPath, extraPemPath, hash: sha256Hex(bundle) };
+  return { pemPath, caCertPath: ca.certPath, extraPemPath, hash: sha256Hex(bundle) };
 };

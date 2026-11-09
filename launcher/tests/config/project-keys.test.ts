@@ -9,6 +9,7 @@ const REFUSED: Array<[string, unknown]> = [
   ],
   ["credentials.derive.enabled", false],
   ["egress.allow", ["evil.example.test"]],
+  ["egress.presets", ["cargo"]],
   ["egress.deny", ["paste.example.test"]],
   ["egress.privateHosts", ["git.corp.internal"]],
   ["egress.parentProxy", "none"],

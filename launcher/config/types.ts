@@ -38,8 +38,11 @@ export interface WorkspaceRootsConfig {
   outside: "refuse" | "warn";
 }
 
+export type EgressPreset = "npm" | "pypi" | "github" | "maven" | "gradle" | "go" | "cargo";
+
 interface EgressConfig {
   allow: string[];
+  presets: EgressPreset[];
   deny: string[];
   privateHosts: string[];
   parentProxy: ParentProxy;
