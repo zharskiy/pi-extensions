@@ -1,7 +1,7 @@
 import { rm } from "node:fs/promises";
 import type { Backend } from "../../backend/index.ts";
 import { LABELS, repoVolumes } from "../../container/index.ts";
-import { withRepoLaunchLock } from "../../grants/index.ts";
+import { liveLaunches, withRepoLaunchLock } from "../../grants/index.ts";
 import { LauncherError, stateLayout } from "../../shared/index.ts";
 import { type CliDeps, writeLine, writeLines } from "../deps.ts";
 import { type LaunchContext, openContext } from "../launch.ts";
@@ -27,18 +27,23 @@ const ownVolumes = async (deps: CliDeps, context: LaunchContext, backend: Backen
   return [...new Set([...named, ...labelled])];
 };
 
-export const resetCommand = async (deps: CliDeps, args: string[]) => {
-  const unknown = args.find((arg) => arg !== VOLUMES);
+const refuseLive = async (stateDir: string, context: LaunchContext) => {
+  const count = (await liveLaunches(stateDir, context.repoHash)).length;
 
-  if (unknown !== undefined) {
-    throw new LauncherError(`unknown reset option "${unknown}"`, "pi sandbox reset [--volumes]");
+  if (count > 0) {
+    throw new LauncherError(
+      `${count} ${count === 1 ? "session is" : "sessions are"} running in ${context.workspace.repoRoot}`,
+      "exit them, then run pi sandbox reset again",
+    );
   }
+};
 
-  const { context, backend } = await openContext(deps, "admin");
+const reset = async (deps: CliDeps, context: LaunchContext, backend: Backend, withVolumes: boolean) => {
   const { workspace, stateDir, repoHash } = context;
-  const removed = await withRepoLaunchLock(stateDir, repoHash, () =>
-    removeRepoSandbox(deps, backend, repoHash),
-  );
+
+  await refuseLive(stateDir, context);
+
+  const removed = await removeRepoSandbox(deps, backend, repoHash);
 
   writeLines(deps.stdout, removed);
 
@@ -50,8 +55,8 @@ export const resetCommand = async (deps: CliDeps, args: string[]) => {
 
   await rm(layout.render, { recursive: true, force: true });
 
-  if (!args.includes(VOLUMES)) {
-    return 0;
+  if (!withVolumes) {
+    return;
   }
 
   const volumes = await ownVolumes(deps, context, backend);
@@ -63,6 +68,20 @@ export const resetCommand = async (deps: CliDeps, args: string[]) => {
   writeLines(
     deps.stdout,
     volumes.map((name) => `removed volume ${name}`),
+  );
+};
+
+export const resetCommand = async (deps: CliDeps, args: string[]) => {
+  const unknown = args.find((arg) => arg !== VOLUMES);
+
+  if (unknown !== undefined) {
+    throw new LauncherError(`unknown reset option "${unknown}"`, "pi sandbox reset [--volumes]");
+  }
+
+  const { context, backend } = await openContext(deps, "admin");
+
+  await withRepoLaunchLock(context.stateDir, context.repoHash, () =>
+    reset(deps, context, backend, args.includes(VOLUMES)),
   );
 
   return 0;

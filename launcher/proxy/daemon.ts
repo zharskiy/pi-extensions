@@ -5,8 +5,6 @@ import { parseArgs } from "node:util";
 import {
   createProcessRunner,
   errorMessage,
-  HEARTBEAT_MS,
-  heartbeat,
   isJsonObject,
   LauncherError,
   parseJsonObject,
@@ -34,6 +32,8 @@ const PRIVATE_MODE = 0o600;
 const REPO_HASH = /^[0-9a-f]{64}$/;
 
 const IDLE_CHECKS = 2;
+
+const IDLE_INTERVAL_MS = 30_000;
 
 const parseDaemonArgs = () => {
   const { values } = parseArgs({
@@ -133,11 +133,9 @@ const run = async (args: DaemonArgs) => {
     dial: createDialer({ parent: parentRouteFor(input.parent, input.parentEnv, resolver) }),
     upstreamCa: await upstreamTrust(args.stateDir, input.extraCa),
   });
-  const record: RepoProxy = { ...processMark(), port: server.port, inputHash };
+  const record: RepoProxy = { ...(await processMark()), port: server.port, inputHash };
 
   await writeJsonFile(files.record, record, { mode: PRIVATE_MODE });
-
-  const stopHeartbeat = heartbeat(files.record);
 
   const removeRecord = async () => {
     const current = await readJsonObject(files.record);
@@ -150,7 +148,7 @@ const run = async (args: DaemonArgs) => {
   const idle = watchIdle({
     stateDir: args.stateDir,
     repoHash: args.repoHash,
-    intervalMs: HEARTBEAT_MS,
+    intervalMs: IDLE_INTERVAL_MS,
     emptyChecks: IDLE_CHECKS,
     onIdle: async () => {
       await resolver.close();
@@ -161,8 +159,6 @@ const run = async (args: DaemonArgs) => {
 
   const finish = async () => {
     idle.stop();
-
-    stopHeartbeat();
 
     await server.close();
 

@@ -64,13 +64,14 @@ export const createMcpOAuthSource = (deps: McpOAuthDeps) => {
 
   const resolve = async (key: string, ref: McpOAuthRef): Promise<CachedSecret> => {
     const { server, url, id } = target(key, ref);
-    const current = usable(id, await readMcpAuthEntry(deps.hostAgentDir, server, url));
+    const entry = await readMcpAuthEntry(deps.hostAgentDir, server, url);
+    const current = usable(id, entry);
 
     if (current !== undefined) {
       return cachedOf(current);
     }
 
-    const login = await deps.signIn.start(server, url);
+    const login = await deps.signIn.start(server, url, isFreshMcpToken(entry, deps.now()));
     const code =
       login === undefined ? undefined : await within(login.exited, deps.signInWaitMs ?? SIGN_IN_WAIT_MS);
     const after = code === 0 ? usable(id, await readMcpAuthEntry(deps.hostAgentDir, server, url)) : undefined;
@@ -87,7 +88,7 @@ export const createMcpOAuthSource = (deps: McpOAuthDeps) => {
 
     rejected.set(id, value);
 
-    await deps.signIn.start(server, url);
+    await deps.signIn.start(server, url, true);
 
     return replyFor(server);
   };

@@ -12,15 +12,7 @@ export {
   readJsonObject,
   writeJsonFile,
 } from "./json-file.ts";
-export {
-  bootTime,
-  HEARTBEAT_MS,
-  heartbeat,
-  isLive,
-  isLiveFile,
-  processMark,
-  terminateProcess,
-} from "./liveness.ts";
+export { bootTime, isLive, processMark, terminateProcess } from "./liveness.ts";
 export type { McpAuthEntry, McpLoginState } from "./mcp-auth-key.ts";
 export {
   isFreshMcpToken,
@@ -55,6 +47,7 @@ export {
   PLACEHOLDER_PREFIX,
   placeholderFor,
 } from "./placeholder.ts";
+export { processStart } from "./process-start.ts";
 export { lstatOrUndefined, readRegularFile, sameEntry } from "./regular-file.ts";
 export type { PinRecord } from "./repo-state.ts";
 export {
@@ -91,5 +84,5 @@ export {
   parseNpmrc,
   TOOL_CONFIG_FORMATS,
   toolConfigValue,
-  urlPasswordOf,
+  urlPartOf,
 } from "./tool-config.ts";

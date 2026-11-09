@@ -1,10 +1,16 @@
 import { join } from "node:path";
 import type { SecretRef } from "../../config/index.ts";
 import { isSecretName, type NpmrcEntry, parseNpmrc } from "../../shared/index.ts";
-import type { Endpoint } from "../endpoints.ts";
+import { type Endpoint, hasUrlUserinfo } from "../endpoints.ts";
 import { mergeSections, type Section } from "../rules.ts";
 import type { ToolsInput } from "../types.ts";
-import { emptySection, placeholderRules, readOptional, toolPlaceholder } from "./files.ts";
+import {
+  emptySection,
+  placeholderRules,
+  readOptional,
+  toolPlaceholder,
+  urlCredentialSection,
+} from "./files.ts";
 
 const REGISTRY_CREDENTIAL = /^\/\/([^/]+)(\/.*)?:(_authToken|_auth|_password)$/;
 
@@ -15,6 +21,10 @@ const VARIABLE = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
 const UNSCOPED_CREDENTIALS = new Set(["_auth", "_authtoken", "_password"]);
 
 const HOST_TLS_FILES = new Set(["ca", "cafile", "cert", "certfile"]);
+
+const PROXY_KEYS = new Set(["proxy", "https-proxy", "http-proxy"]);
+
+const REGISTRY_KEY = "registry";
 
 const encode = (text: string) => Buffer.from(text, "utf8").toString("base64");
 
@@ -115,11 +125,40 @@ const plainSection = (input: ToolsInput, entry: NpmrcEntry): Section<NpmrcEntry[
     return dropped(entry.key, "stays on the host");
   }
 
+  if (PROXY_KEYS.has(name)) {
+    return dropped(
+      entry.key,
+      "stays on the host; the sandbox reaches the network through the launcher proxy",
+    );
+  }
+
   const value = expanded(input, entry);
 
-  return value === undefined
-    ? dropped(entry.key, "reads an environment variable that is unset or secret; the key stays on the host")
-    : { value: [{ key: entry.key, value }], rules: [], notices: [] };
+  if (value === undefined) {
+    return dropped(
+      entry.key,
+      "reads an environment variable that is unset or secret; the key stays on the host",
+    );
+  }
+
+  if (!hasUrlUserinfo(value)) {
+    return { value: [{ key: entry.key, value }], rules: [], notices: [] };
+  }
+
+  if (name !== REGISTRY_KEY || value !== entry.value) {
+    return dropped(entry.key, "carries credentials in a URL and stays on the host");
+  }
+
+  const section = urlCredentialSection(input, {
+    label: "npmrc",
+    key: entry.key,
+    identity: `npmrc:${entry.key}:url`,
+    url: value,
+    secret: { file: join(input.home, ".npmrc"), format: "npmrc", key: entry.key },
+    pathPrefix: pathPrefixOf,
+  });
+
+  return { ...section, value: [{ key: entry.key, value: section.value }] };
 };
 
 export const deriveNpmrc = async (input: ToolsInput): Promise<Section<NpmrcEntry[] | undefined>> => {

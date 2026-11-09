@@ -100,8 +100,13 @@
                       "urlPassword": {
                         "const": true,
                         "description": "The value is a URL; use the password in it."
+                      },
+                      "urlUsername": {
+                        "const": true,
+                        "description": "The value is a URL; use the user name in it, for a token sent as the user name."
                       }
                     },
+                    "not": { "required": ["urlPassword", "urlUsername"] },
                     "required": ["env"],
                     "description": "An environment variable of the launcher, read at launch and handed to the proxy in memory."
                   },
@@ -140,8 +145,13 @@
                       "urlPassword": {
                         "const": true,
                         "description": "The value is a URL; use the password in it."
+                      },
+                      "urlUsername": {
+                        "const": true,
+                        "description": "The value is a URL; use the user name in it, for a token sent as the user name."
                       }
                     },
+                    "not": { "required": ["urlPassword", "urlUsername"] },
                     "required": ["file", "format", "key"],
                     "description": "A value in a host tool config file: JSON, .npmrc (_auth and _password decoded), ini (pip.conf) or the servers of a Maven settings.xml."
                   },

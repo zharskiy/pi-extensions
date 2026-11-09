@@ -1,7 +1,12 @@
 import { join } from "node:path";
 import type { SecretRef } from "../../config/index.ts";
-import { type MavenServer, type MavenSettings, parseMavenSettings } from "../../shared/index.ts";
-import { type Endpoint, endpointOf, uniqueEndpoints } from "../endpoints.ts";
+import {
+  type MavenRepository,
+  type MavenServer,
+  type MavenSettings,
+  parseMavenSettings,
+} from "../../shared/index.ts";
+import { type Endpoint, endpointOf, hasUrlUserinfo, uniqueEndpoints, withoutUserinfo } from "../endpoints.ts";
 import { mergeSections, type Section } from "../rules.ts";
 import type { DerivedTools, ToolsInput } from "../types.ts";
 import { emptySection, placeholderRules, readOptional, toolPlaceholder } from "./files.ts";
@@ -72,6 +77,17 @@ const serverSection = (
   };
 };
 
+const mirrorSection = (mirror: MavenRepository): Section<MavenRepository> =>
+  hasUrlUserinfo(mirror.url)
+    ? {
+        value: { ...mirror, url: withoutUserinfo(mirror.url) },
+        rules: [],
+        notices: [
+          `maven ${mirror.id}: the mirror URL carried user credentials; they stay on the host, put them in a <server> with id ${mirror.id}`,
+        ],
+      }
+    : emptySection(mirror);
+
 export const deriveMaven = async (input: ToolsInput): Promise<Section<MavenRender>> => {
   const file = join(input.home, ".m2", "settings.xml");
   const text = await readOptional(file);
@@ -89,10 +105,11 @@ export const deriveMaven = async (input: ToolsInput): Promise<Section<MavenRende
   const merged = mergeSections(
     settings.servers.map((server) => serverSection(input, file, settings, server)),
   );
+  const mirrors = mergeSections(settings.mirrors.map(mirrorSection));
 
   return {
-    value: { servers: merged.values.flat(), mirrors: settings.mirrors },
+    value: { servers: merged.values.flat(), mirrors: mirrors.values },
     rules: merged.rules,
-    notices: merged.notices,
+    notices: [...merged.notices, ...mirrors.notices],
   };
 };

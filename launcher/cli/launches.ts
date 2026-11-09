@@ -7,21 +7,17 @@ import { sweepRepoSessions } from "./host-sessions.ts";
 import type { LaunchContext } from "./launch.ts";
 import { removeRepoSandbox, sweepOrphans } from "./sweep.ts";
 
-const heartbeats = new Map<string, () => void>();
-
 export const beginLaunch = async (deps: CliDeps, context: LaunchContext): Promise<Launch> => {
   const launch = {
     launchId: newLaunchId(),
-    ...processMark(),
+    ...(await processMark()),
     repoHash: context.repoHash,
     startedAt: deps.now(),
   };
 
   await writeRepoRecord(context.stateDir, context.repoHash, context.workspace.repoRoot);
 
-  const registered = await registerLaunch(context.stateDir, launch);
-
-  heartbeats.set(launch.launchId, registered.stopHeartbeat);
+  await registerLaunch(context.stateDir, launch);
 
   return launch;
 };
@@ -41,12 +37,6 @@ const settleGit = async (deps: CliDeps, context: LaunchContext) => {
   writeNotices(deps, notices);
 };
 
-const stopHeartbeat = (launch: Launch) => {
-  heartbeats.get(launch.launchId)?.();
-
-  heartbeats.delete(launch.launchId);
-};
-
 export const finishLaunch = async (
   deps: CliDeps,
   context: LaunchContext,
@@ -63,17 +53,15 @@ export const finishLaunch = async (
         last.done = true;
 
         await removeRepoSandbox(deps, backend, context.repoHash);
-
-        await settleGit(deps, context);
       },
     });
   } catch (error) {
     writeLine(deps.stderr, `pi-sandbox: warning: could not end the launch: ${errorMessage(error)}`);
-  } finally {
-    stopHeartbeat(launch);
   }
 
-  if (!last.done) {
+  if (last.done) {
+    await settleGit(deps, context);
+  } else {
     await sweepRepoSessions(deps, context.workspace.repoRoot, false);
   }
 

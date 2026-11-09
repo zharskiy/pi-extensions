@@ -280,6 +280,7 @@ const prepareImage = (
     versions: async () => ({ pi: await imagePiVersion(host.pi) }),
     inUse: async (digest) => (await findCurrentContainer(backend, context.workspace, digest)) !== undefined,
     preparing: () => writeLine(deps.stderr, PREPARING),
+    waiting: () => writeLine(deps.stderr, "pi-sandbox: waiting for the image build in another session"),
     progress: (step) => writeLine(deps.stderr, `pi-sandbox: build: ${step}`),
   });
 };
@@ -421,13 +422,10 @@ const prepareContainer = async (
     othersLive: () => othersLive(context.stateDir, context.repoHash, launch.launchId),
     beforeStart: async () => specWith(await git.ready()),
     aroundStart: (start) => withGitPinLock(context.stateDir, context.workspace, start),
+    afterCreate: (created) => probeSessionsShare(backend, created, sessions),
   });
 
   writeNotices(deps, notices);
-
-  if (created) {
-    await probeSessionsShare(backend, context, id, sessions);
-  }
 
   return { containerId: id, spec, image, created };
 };

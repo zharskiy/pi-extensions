@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, rm, rmdir } from "node:fs/promises";
 import type { Backend, ImageInfo } from "../backend/index.ts";
 import type { SandboxConfig } from "../config/index.ts";
 import { stateLayout } from "../shared/index.ts";
@@ -41,5 +41,7 @@ export const buildInContext = async (
     return await input.backend.buildImage(contextDir, build.tag, buildArgs, input.progress);
   } finally {
     await rm(contextDir, { recursive: true, force: true });
+
+    await rmdir(stateLayout(input.stateDir).build).catch(() => undefined);
   }
 };

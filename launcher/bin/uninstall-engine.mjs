@@ -1,4 +1,5 @@
-import { lstat, readdir, readFile, rmdir, stat, unlink } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { lstat, readdir, readFile, rmdir, unlink } from "node:fs/promises";
 import { request } from "node:http";
 import { uptime } from "node:os";
 import { join, sep } from "node:path";
@@ -12,8 +13,6 @@ const PING_TIMEOUT_MS = 3000;
 
 const HOST_SIDE = "--host-side";
 
-const FRESH_MS = 90_000;
-
 const BOOT_SKEW_SECONDS = 30;
 
 const STOP_GRACE_MS = 2000;
@@ -23,6 +22,8 @@ const EXIT_POLL_MS = 50;
 const REPO_HASH = /^[0-9a-f]{64}$/;
 
 const PIN = /^\.\n?$/;
+
+const START_FIELD = 19;
 
 const args = process.argv.slice(2);
 
@@ -174,7 +175,33 @@ const alive = (pid) => {
   }
 };
 
-const isMark = (mark) => Number.isInteger(mark?.pid) && mark.pid > 0 && Number.isFinite(mark.boot);
+const isMark = (mark) =>
+  Number.isInteger(mark?.pid) &&
+  mark.pid > 0 &&
+  Number.isFinite(mark.boot) &&
+  typeof mark.start === "string" &&
+  mark.start !== "";
+
+const psStart = (pid) =>
+  new Promise((resolve) => {
+    execFile("/bin/ps", ["-o", "lstart=", "-p", String(pid)], { env: { LC_ALL: "C" } }, (error, stdout) => {
+      const text = stdout.trim().split(/\s+/).join("-");
+
+      resolve(error === null && text !== "" ? text : undefined);
+    });
+  });
+
+const procStart = async (pid) => {
+  const text = await readFile(`/proc/${pid}/stat`, "utf8").catch(() => undefined);
+  const fields = text
+    ?.slice(text.lastIndexOf(")") + 1)
+    .trim()
+    .split(" ");
+
+  return fields?.[START_FIELD];
+};
+
+const processStart = (pid) => (process.platform === "linux" ? procStart(pid) : psStart(pid));
 
 const sameBoot = (boot) => Math.abs(boot - bootTime()) <= BOOT_SKEW_SECONDS;
 
@@ -191,13 +218,9 @@ const readJson = (path) =>
   );
 
 const liveMark = async (path) => {
-  const [mark, info] = await Promise.all([readJson(path), stat(path).catch(() => undefined)]);
+  const mark = await readJson(path);
   const live =
-    isMark(mark) &&
-    info !== undefined &&
-    sameBoot(mark.boot) &&
-    Date.now() - info.mtimeMs < FRESH_MS &&
-    alive(mark.pid);
+    isMark(mark) && sameBoot(mark.boot) && alive(mark.pid) && (await processStart(mark.pid)) === mark.start;
 
   return live ? mark : undefined;
 };
@@ -311,7 +334,7 @@ const stopLogins = async (stateDir) => {
   const logins = Object.values((await readJson(join(stateDir, "mcp-login.json"))) ?? {});
   const groups = logins
     .map((login) => login?.running)
-    .filter((running) => isMark({ pid: running?.pgid, boot: running?.boot }))
+    .filter((running) => Number.isInteger(running?.pgid) && running.pgid > 0 && Number.isFinite(running.boot))
     .filter((running) => sameBoot(running.boot) && alive(-running.pgid));
 
   if (!dryRun) {

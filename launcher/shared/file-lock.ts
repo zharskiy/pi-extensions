@@ -3,7 +3,7 @@ import { link, mkdir, open, rename, rm, stat, utimes, writeFile } from "node:fs/
 import { dirname } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { errorMessage, LauncherError } from "./errors.ts";
-import { bootTime, HEARTBEAT_MS, isLive } from "./liveness.ts";
+import { isLive, isRunning, processMark } from "./liveness.ts";
 
 export interface FileLockOptions {
   staleMs?: number;
@@ -15,11 +15,13 @@ interface LockSettings {
   staleMs?: number;
   retryMs: number;
   deadline: number;
+  held?: string;
 }
 
 interface LockSnapshot {
   owner: number;
   boot: number;
+  start: string;
   mark: string;
   mtimeMs: number;
 }
@@ -56,17 +58,21 @@ const snapshotOf = async (path: string): Promise<LockSnapshot | undefined> => {
   const text = (await handle?.readFile("utf8").catch(() => "")) ?? "";
   const mark = info.isFile() ? `${info.ino}:${text}` : `${info.ino}:${info.birthtimeMs}`;
 
-  const [owner = "", boot = ""] = text.split(" ");
+  const [owner = "", boot = "", start = ""] = text.split(" ");
 
   await handle?.close();
 
-  return { owner: Number.parseInt(owner, 10), boot: Number(boot), mark, mtimeMs: info.mtimeMs };
+  return { owner: Number.parseInt(owner, 10), boot: Number(boot), start, mark, mtimeMs: info.mtimeMs };
 };
 
-const isHeld = (snapshot: LockSnapshot, staleMs: number | undefined) =>
+const isHeld = async (snapshot: LockSnapshot, staleMs: number | undefined) =>
   staleMs === undefined
-    ? isLive({ pid: snapshot.owner, boot: snapshot.boot }, snapshot.mtimeMs)
+    ? isLive({ pid: snapshot.owner, boot: snapshot.boot, start: snapshot.start })
     : Date.now() - snapshot.mtimeMs <= staleMs;
+
+const stillHeld = async (snapshot: LockSnapshot, settings: LockSettings) =>
+  (settings.staleMs === undefined && snapshot.mark === settings.held && isRunning(snapshot.owner)) ||
+  isHeld(snapshot, settings.staleMs);
 
 const sameLock = (left: LockSnapshot | undefined, right: LockSnapshot) =>
   left !== undefined && left.mark === right.mark && left.mtimeMs === right.mtimeMs;
@@ -97,7 +103,7 @@ const moveAside = async (path: string, stale: LockSnapshot, staleMs: number | un
 
   const found = await snapshotOf(moved);
 
-  if (found !== undefined && !sameLock(found, stale) && isHeld(found, staleMs)) {
+  if (found !== undefined && !sameLock(found, stale) && (await isHeld(found, staleMs))) {
     await restore(moved, path);
   }
 
@@ -107,7 +113,7 @@ const moveAside = async (path: string, stale: LockSnapshot, staleMs: number | un
 const clearDeadGuard = async (guard: string) => {
   const snapshot = await snapshotOf(guard);
 
-  if (snapshot !== undefined && !isHeld(snapshot, undefined)) {
+  if (snapshot !== undefined && !(await isHeld(snapshot, undefined))) {
     await moveAside(guard, snapshot, undefined);
   }
 };
@@ -125,7 +131,7 @@ const takeOver = async (path: string, stale: LockSnapshot, staleMs: number | und
   try {
     const current = await snapshotOf(path);
 
-    if (current !== undefined && sameLock(current, stale) && !isHeld(current, staleMs)) {
+    if (current !== undefined && sameLock(current, stale) && !(await isHeld(current, staleMs))) {
       await moveAside(path, stale, staleMs);
     }
   } finally {
@@ -140,7 +146,7 @@ const busy = (path: string, snapshot: LockSnapshot | undefined) => {
 
   return new LockBusy(
     `${path}: lock is held by another process${owner}`,
-    `wait for it, or remove ${path} if that process is gone`,
+    "wait for it to finish and run the command again",
   );
 };
 
@@ -155,7 +161,7 @@ const acquire = async (path: string, attempt: Attempt, settings: LockSettings): 
 
   const snapshot = await snapshotOf(path);
 
-  if (snapshot !== undefined && !isHeld(snapshot, settings.staleMs)) {
+  if (snapshot !== undefined && !(await stillHeld(snapshot, settings))) {
     await takeOver(path, snapshot, settings.staleMs);
 
     return acquire(path, attempt, settings);
@@ -167,7 +173,7 @@ const acquire = async (path: string, attempt: Attempt, settings: LockSettings): 
 
   await sleep(settings.retryMs);
 
-  return acquire(path, attempt, settings);
+  return acquire(path, attempt, { ...settings, held: snapshot?.mark });
 };
 
 const failure = (path: string, error: unknown) => new LauncherError(`${path}: ${errorMessage(error)}`);
@@ -175,7 +181,9 @@ const failure = (path: string, error: unknown) => new LauncherError(`${path}: ${
 const createPidLock: Attempt = async (path) => {
   const draft = sibling(path, "draft");
 
-  await writeFile(draft, `${process.pid} ${bootTime()} ${randomBytes(8).toString("hex")}`, {
+  const self = await processMark();
+
+  await writeFile(draft, `${self.pid} ${self.boot} ${self.start} ${randomBytes(8).toString("hex")}`, {
     mode: PRIVATE_MODE,
     flag: "wx",
   });
@@ -218,7 +226,7 @@ const release = async (path: string, mark: string) => {
 interface Holding {
   attempt: Attempt;
   byAge: boolean;
-  refresh: number;
+  refresh?: number;
 }
 
 const holding = async <T>(
@@ -230,13 +238,16 @@ const holding = async <T>(
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
 
   const mark = await acquire(path, kind.attempt, settingsOf(options, kind.byAge));
-  const refresher = setInterval(() => {
-    const now = new Date();
+  const refresher =
+    kind.refresh === undefined
+      ? undefined
+      : setInterval(() => {
+          const now = new Date();
 
-    void utimes(path, now, now).catch(() => undefined);
-  }, kind.refresh);
+          void utimes(path, now, now).catch(() => undefined);
+        }, kind.refresh);
 
-  refresher.unref();
+  refresher?.unref();
 
   try {
     return await action();
@@ -248,7 +259,7 @@ const holding = async <T>(
 };
 
 export const withFileLock = <T>(path: string, action: () => Promise<T>, options: FileLockOptions = {}) =>
-  holding(path, { attempt: createPidLock, byAge: false, refresh: HEARTBEAT_MS }, options, action);
+  holding(path, { attempt: createPidLock, byAge: false }, options, action);
 
 export const withFileLockIfFree = async <T>(
   path: string,

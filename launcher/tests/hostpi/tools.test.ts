@@ -1,8 +1,11 @@
+import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { CredentialRule } from "../../config/index.ts";
 import { deriveHostTools, deriveSandboxPi } from "../../hostpi/index.ts";
-import { placeholderFor } from "../../shared/index.ts";
+import { renderAgentDir } from "../../provision/index.ts";
+import { envSecretsFor } from "../../proxy/index.ts";
+import { placeholderFor, toolConfigValue } from "../../shared/index.ts";
 import { createFakeRunner, type FakeResponder } from "../support/fake-runner.ts";
 import { braced, tempDir, writeExecutable, writeText } from "./fixtures.ts";
 
@@ -386,6 +389,162 @@ describe("pip", () => {
       ["pypi.env.test", { env: "PIP_INDEX_URL", urlPassword: true }],
     ]);
     expect(JSON.stringify(tools)).not.toContain("PIP-REAL");
+  });
+});
+
+const URL_SECRETS = {
+  registry: "NPM-REG-PW-11",
+  scoped: "NPM-SCOPED-PW-12",
+  userOnly: "NPM-USER-TOKEN-13",
+  npmProxy: "NPM-PROXY-PW-14",
+  index: "PIP-INDEX-PW-21",
+  extra: "PIP-EXTRA-TOKEN-22",
+  pipProxy: "PIP-PROXY-PW-23",
+  findLinks: "PIP-LINKS-PW-24",
+  env: "PIP-ENV-PW-25",
+};
+
+const URL_NPMRC = [
+  `registry=https://npmuser:${URL_SECRETS.registry}@npm.corp.test/repo/`,
+  `@corp:registry=https://bot:${URL_SECRETS.scoped}@scoped.corp.test/`,
+  `@fury:registry=https://${URL_SECRETS.userOnly}@npm.fury.test/me/`,
+  `https-proxy=http://puser:${URL_SECRETS.npmProxy}@proxy.corp.test:3128`,
+  "proxy=http://proxy.corp.test:3128",
+].join("\n");
+
+const URL_PIP = [
+  "[global]",
+  `index-url = https://me:${URL_SECRETS.index}@pypi.corp.test/simple`,
+  "extra-index-url =",
+  `    https://${URL_SECRETS.extra}@pypi.fury.test/me/simple`,
+  `proxy = http://puser:${URL_SECRETS.pipProxy}@proxy.corp.test:3128`,
+  `find-links = https://me:${URL_SECRETS.findLinks}@links.corp.test/`,
+  "trusted-host = pypi.corp.test",
+].join("\n");
+
+const treeText = async (dir: string): Promise<string> => {
+  const names = await readdir(dir, { recursive: true, withFileTypes: true });
+  const texts = await Promise.all(
+    names
+      .filter((entry) => entry.isFile())
+      .map((entry) => readFile(join(entry.parentPath, entry.name), "utf8")),
+  );
+
+  return texts.join("\n");
+};
+
+const resolvedOn = async (rules: CredentialRule[], host: string, env: Record<string, string>) => {
+  const rule = rules.find((entry) => entry.host === host);
+  const secret = rule?.secret;
+
+  if (rule === undefined || secret === undefined || !("file" in secret) || !("format" in secret)) {
+    return rule === undefined ? undefined : envSecretsFor([rule], env)[rule.id];
+  }
+
+  return toolConfigValue(await readFile(secret.file, "utf8"), secret);
+};
+
+describe("URL userinfo in npmrc and pip.conf", () => {
+  it("renders placeholders for every userinfo form, keeps the secrets on the host and binds each to its host", async () => {
+    const env = { PIP_INDEX_URL: `https://env:${URL_SECRETS.env}@pypi.env.test/simple` };
+    const { home, tools } = await derive({
+      files: { ".npmrc": URL_NPMRC, ".config/pip/pip.conf": URL_PIP },
+      env,
+    });
+    const sandbox = deriveSandboxPi({ ...pureInput(), tools });
+    const stateDir = await tempDir("tools-render");
+    const { renderDir } = await renderAgentDir({
+      stateDir,
+      repoHash: "repo1",
+      hostAgentDir: join(home, "agent"),
+      derived: sandbox,
+    });
+    const rendered = await treeText(renderDir);
+    const leaked = Object.values(URL_SECRETS).filter(
+      (secret) => JSON.stringify(sandbox).includes(secret) || rendered.includes(secret),
+    );
+
+    expect(leaked).toEqual([]);
+    expect(tools.value.npmrc).toEqual([
+      { key: "registry", value: `https://npmuser:${P("npmrc:registry:url")}@npm.corp.test/repo/` },
+      { key: "@corp:registry", value: `https://bot:${P("npmrc:@corp:registry:url")}@scoped.corp.test/` },
+      { key: "@fury:registry", value: `https://${P("npmrc:@fury:registry:url")}@npm.fury.test/me/` },
+    ]);
+    expect(tools.value.pip).toEqual([
+      {
+        name: "global",
+        entries: [
+          ["extra-index-url", `https://${P("pip:global.extra-index-url[0]")}@pypi.fury.test/me/simple`],
+          ["trusted-host", "pypi.corp.test"],
+          ["index-url", `https://env:${P("pip:env.PIP_INDEX_URL")}@pypi.env.test/simple`],
+        ],
+      },
+    ]);
+    expect(
+      tools.rules.map((rule) => ({
+        host: rule.host,
+        pathPrefix: rule.pathPrefix,
+        placeholder: rule.placeholder,
+      })),
+    ).toEqual([
+      { host: "npm.corp.test", pathPrefix: "/repo", placeholder: P("npmrc:registry:url") },
+      { host: "scoped.corp.test", pathPrefix: undefined, placeholder: P("npmrc:@corp:registry:url") },
+      { host: "npm.fury.test", pathPrefix: "/me", placeholder: P("npmrc:@fury:registry:url") },
+      { host: "pypi.corp.test", pathPrefix: undefined, placeholder: P("pip:global.index-url[0]") },
+      { host: "pypi.fury.test", pathPrefix: undefined, placeholder: P("pip:global.extra-index-url[0]") },
+      { host: "pypi.env.test", pathPrefix: undefined, placeholder: P("pip:env.PIP_INDEX_URL") },
+    ]);
+    expect(
+      await Promise.all(
+        [
+          "npm.corp.test",
+          "scoped.corp.test",
+          "npm.fury.test",
+          "pypi.corp.test",
+          "pypi.fury.test",
+          "pypi.env.test",
+        ].map((host) => resolvedOn(tools.rules, host, env)),
+      ),
+    ).toEqual([
+      URL_SECRETS.registry,
+      URL_SECRETS.scoped,
+      URL_SECRETS.userOnly,
+      URL_SECRETS.index,
+      URL_SECRETS.extra,
+      URL_SECRETS.env,
+    ]);
+    expect(tools.notices).toEqual([
+      "npmrc: https-proxy stays on the host; the sandbox reaches the network through the launcher proxy",
+      "npmrc: proxy stays on the host; the sandbox reaches the network through the launcher proxy",
+      "pip: global.proxy stays on the host; the sandbox reaches the network through the launcher proxy",
+      "pip: global.find-links carries credentials in a URL and stays on the host",
+    ]);
+    expect(rendered).toContain(`registry=https://npmuser:${P("npmrc:registry:url")}@npm.corp.test/repo/`);
+    expect(rendered).toContain(`https://${P("pip:global.extra-index-url[0]")}@pypi.fury.test/me/simple`);
+  });
+
+  it("keeps a registry URL out when its credentials come through an environment variable", async () => {
+    const { tools } = await derive({
+      files: { ".npmrc": `registry=https://me:${braced("NPM_PW")}@npm.corp.test/\n` },
+      env: { NPM_PW: "NPM-VAR-PW" },
+    });
+
+    expect(tools.value.npmrc).toEqual([]);
+    expect(tools.rules).toEqual([]);
+    expect(tools.notices).toEqual(["npmrc: registry carries credentials in a URL and stays on the host"]);
+  });
+
+  it("strips userinfo from a Maven mirror URL and points at a server entry", async () => {
+    const settings = `<settings><mirrors><mirror><id>nexus</id><mirrorOf>*</mirrorOf><url>https://me:M2-MIRROR-PW@nexus.corp.test/repo</url></mirror></mirrors></settings>`;
+    const { tools } = await derive({ files: { ".m2/settings.xml": settings } });
+
+    expect(tools.value.maven.mirrors).toEqual([
+      { id: "nexus", mirrorOf: "*", url: "https://nexus.corp.test/repo" },
+    ]);
+    expect(JSON.stringify(tools)).not.toContain("M2-MIRROR-PW");
+    expect(tools.notices).toEqual([
+      "maven nexus: the mirror URL carried user credentials; they stay on the host, put them in a <server> with id nexus",
+    ]);
   });
 });
 

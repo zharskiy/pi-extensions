@@ -37,7 +37,7 @@ interface Login {
 }
 
 export interface SignIn {
-  start(server: string, url: string): Promise<Login | undefined>;
+  start(server: string, url: string, rejected?: boolean): Promise<Login | undefined>;
   close(): Promise<void>;
 }
 
@@ -45,13 +45,19 @@ const START_COOLDOWN_MS = 60_000;
 
 const FAILURE_COOLDOWN_MS = 10 * 60_000;
 
+const REJECTED_COOLDOWN_MS = 10 * 60_000;
+
 const LOGIN_TIMEOUT_SECONDS = 300;
 
 const bootTime = () => Math.round(Date.now() / 1000 - uptime());
 
-const mayStart = (state: McpLoginState, now: number) =>
-  (state.lastStart === undefined || now - state.lastStart >= START_COOLDOWN_MS) &&
-  (state.failedAt === undefined || now - state.failedAt >= FAILURE_COOLDOWN_MS);
+const since = (at: number | undefined, now: number, cooldownMs: number) =>
+  at === undefined || now - at >= cooldownMs;
+
+const mayStart = (state: McpLoginState, now: number, rejected: boolean) =>
+  since(state.lastStart, now, START_COOLDOWN_MS) &&
+  since(state.failedAt, now, FAILURE_COOLDOWN_MS) &&
+  (!rejected || since(state.rejectedStart, now, REJECTED_COOLDOWN_MS));
 
 const exitOf = (child: ChildProcess) =>
   new Promise<number>((resolve) => {
@@ -118,14 +124,24 @@ export const createSignIn = (deps: SignInDeps): SignIn => {
     return { child, exited };
   };
 
-  const runLogin = async (server: string, key: string, started: (child: ChildProcess) => void) => {
+  const runLogin = async (
+    server: string,
+    key: string,
+    rejected: boolean,
+    started: (child: ChildProcess) => void,
+  ) => {
     const state = (await readMcpLogins(deps.stateDir))[key] ?? {};
+    const now = deps.now();
 
-    if (closing.now || !mayStart(state, deps.now())) {
+    if (closing.now || !mayStart(state, now, rejected)) {
       return undefined;
     }
 
-    await updateMcpLogin(deps.stateDir, key, (current) => ({ ...current, lastStart: deps.now() }));
+    await updateMcpLogin(deps.stateDir, key, (current) => ({
+      ...current,
+      lastStart: now,
+      ...(rejected ? { rejectedStart: now } : {}),
+    }));
 
     const login = await launch(server);
     const pgid = login.child.pid;
@@ -148,7 +164,7 @@ export const createSignIn = (deps: SignInDeps): SignIn => {
     return code;
   };
 
-  const start = (server: string, url: string): Promise<Login | undefined> => {
+  const start = (server: string, url: string, rejected = false): Promise<Login | undefined> => {
     const key = mcpAuthKey(server, url);
     const known = running.get(key);
 
@@ -177,7 +193,7 @@ export const createSignIn = (deps: SignInDeps): SignIn => {
         resolve({ exited: entry.done });
       };
       const held = withFileLockIfFree(stateLayout(deps.stateDir).mcpLoginLock(key), () =>
-        runLogin(server, key, track),
+        runLogin(server, key, rejected, track),
       );
 
       void held.then(

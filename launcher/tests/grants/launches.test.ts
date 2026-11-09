@@ -3,41 +3,33 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { endLaunch, liveLaunches, newLaunchId, registerLaunch } from "../../grants/index.ts";
-import { bootTime, stateLayout } from "../../shared/index.ts";
+import { bootTime, processMark, stateLayout } from "../../shared/index.ts";
 
 const REPO = "1".repeat(64);
 
 const DEAD_PID = 999_999;
 
-const state = { stateDir: "", beats: [] as Array<() => void> };
+const state = { stateDir: "", self: { pid: 0, boot: 0, start: "" } };
 
 beforeEach(async () => {
   state.stateDir = await mkdtemp(join(tmpdir(), "pi-sandbox-launches-"));
+
+  state.self = await processMark();
 });
 
 afterEach(async () => {
-  state.beats.splice(0).forEach((stop) => {
-    stop();
-  });
-
   await rm(state.stateDir, { recursive: true, force: true });
 });
 
 const entry = (pid = process.pid, repoHash = REPO) => ({
   launchId: newLaunchId(),
+  ...state.self,
   pid,
-  boot: bootTime(),
   repoHash,
   startedAt: 1,
 });
 
-const register = async (launch: ReturnType<typeof entry>) => {
-  const registered = await registerLaunch(state.stateDir, launch);
-
-  state.beats.push(registered.stopHeartbeat);
-
-  return registered.live;
-};
+const register = (launch: ReturnType<typeof entry>) => registerLaunch(state.stateDir, launch);
 
 describe("launches", () => {
   it("makes 16 hex launch ids", () => {
@@ -81,8 +73,6 @@ describe("launches", () => {
     expect((await liveLaunches(state.stateDir, REPO)).map((session) => session.launchId)).toEqual([
       live.launchId,
     ]);
-    expect(await liveLaunches(state.stateDir, REPO, Date.now() + 120_000)).toEqual([]);
-
     const calls: string[] = [];
 
     await endLaunch(state.stateDir, {
@@ -116,14 +106,25 @@ describe("launches", () => {
     expect(await files()).toEqual([`${live.launchId}.json`]);
   });
 
-  it("does not count a live pid whose heartbeat is older than 90 s", async () => {
-    const stale = entry();
+  it("keeps counting a live launch whose entry was last touched hours ago, as after the Mac slept", async () => {
+    const slept = entry();
+    const directory = stateLayout(state.stateDir).repo(REPO).launches;
 
-    await register(stale);
+    await register(slept);
 
-    const old = new Date(Date.now() - 120_000);
+    const old = new Date(Date.now() - 6 * 60 * 60 * 1000);
 
-    await utimes(join(stateLayout(state.stateDir).repo(REPO).launches, `${stale.launchId}.json`), old, old);
+    await utimes(join(directory, `${slept.launchId}.json`), old, old);
+
+    expect(await register(entry())).toBe(2);
+    expect((await liveLaunches(state.stateDir, REPO)).map((launch) => launch.launchId)).toContain(
+      slept.launchId,
+    );
+    expect(await readdir(directory)).toContain(`${slept.launchId}.json`);
+  });
+
+  it("does not count a live pid recorded with another process start time, as after pid reuse", async () => {
+    await register({ ...entry(), start: "Thu-Jan-1-00:00:00-1970" });
 
     expect(await liveLaunches(state.stateDir, REPO)).toEqual([]);
   });
@@ -147,7 +148,10 @@ describe("launches", () => {
 
     await register(first);
 
-    await writeFile(stateLayout(state.stateDir).repo(REPO).lock, `${DEAD_PID} ${bootTime()} x`);
+    await writeFile(
+      stateLayout(state.stateDir).repo(REPO).lock,
+      `${DEAD_PID} ${bootTime()} ${state.self.start} x`,
+    );
 
     expect(await register(entry())).toBe(2);
   });

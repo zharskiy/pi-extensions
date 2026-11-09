@@ -1,4 +1,5 @@
 import { access } from "node:fs/promises";
+import { dirname } from "node:path";
 import type { Backend, VolumeSummary } from "../backend/index.ts";
 import {
   discardContainer,
@@ -8,7 +9,7 @@ import {
   removeRepoContainers,
 } from "../container/index.ts";
 import { liveLaunches, withRepoLaunchLock } from "../grants/index.ts";
-import { collectImages } from "../image/index.ts";
+import { collectImages, removeBuildLeftovers } from "../image/index.ts";
 import { removeRepoToken } from "../proxy/index.ts";
 import {
   errorMessage,
@@ -45,6 +46,14 @@ const exists = (path: string) =>
     () => false,
   );
 
+const rootState = async (root: string | undefined) => {
+  if (root === undefined || (await exists(root))) {
+    return "present";
+  }
+
+  return (await exists(dirname(root))) ? "gone" : "unreachable";
+};
+
 const warn = (deps: CliDeps, what: string, error: unknown) => {
   writeLine(deps.stderr, `pi-sandbox: warning: ${what}: ${errorMessage(error)}`);
 };
@@ -67,12 +76,23 @@ const removeEngineSide = async (backend: Backend, repoHash: string) => {
   ];
 };
 
-const releasePins = async (deps: CliDeps, backend: Backend | undefined, repoHash: string) => {
+interface Engine {
+  reachable?: Backend;
+  stopped: boolean;
+}
+
+const engineOf = async (backend: Backend | undefined): Promise<Engine> => ({
+  reachable: await reachable(backend),
+  stopped: backend === undefined,
+});
+
+const releasePins = async (deps: CliDeps, engine: Engine, repoHash: string) => {
   const stateDir = pathsOf(deps).stateDir;
+  const backend = engine.reachable;
   const inUse = (gitCommonDir: string) =>
     backend === undefined
-      ? Promise.resolve(false)
-      : gitDirInUseElsewhere(backend, repoHash, gitCommonDir).catch(() => false);
+      ? Promise.resolve(!engine.stopped)
+      : gitDirInUseElsewhere(backend, repoHash, gitCommonDir).catch(() => true);
   const { kept, notices } = await unpinRecorded(stateDir, await readPins(stateDir, repoHash), inUse);
 
   await writePins(stateDir, repoHash, kept);
@@ -86,12 +106,11 @@ const removeCreated = async (stateDir: string, repoHash: string) => {
   await writeCreatedDirs(stateDir, repoHash, kept);
 };
 
-export const removeRepoSandbox = async (deps: CliDeps, backend: Backend | undefined, repoHash: string) => {
+const removeSandbox = async (deps: CliDeps, engine: Engine, repoHash: string) => {
   const stateDir = pathsOf(deps).stateDir;
-  const engine = await reachable(backend);
-  const removed = await (engine === undefined
+  const removed = await (engine.reachable === undefined
     ? Promise.resolve([])
-    : removeEngineSide(engine, repoHash)
+    : removeEngineSide(engine.reachable, repoHash)
   ).catch((error: unknown) => {
     warn(deps, "the sandbox containers were not removed", error);
 
@@ -116,6 +135,9 @@ export const removeRepoSandbox = async (deps: CliDeps, backend: Backend | undefi
   return [...removed, ...(stopped ? [`stopped the proxy of ${repoHash.slice(0, SHORT_HASH)}`] : [])];
 };
 
+export const removeRepoSandbox = async (deps: CliDeps, backend: Backend | undefined, repoHash: string) =>
+  removeSandbox(deps, await engineOf(backend), repoHash);
+
 const removeRepoVolumes = async (backend: Backend | undefined, repoHash: string) => {
   if (backend === undefined) {
     return [];
@@ -129,7 +151,7 @@ const removeRepoVolumes = async (backend: Backend | undefined, repoHash: string)
   return removed.flat().map((volume) => `removed volume ${volume.name}`);
 };
 
-const sweepRepo = async (deps: CliDeps, engine: Backend | undefined, repoHash: string, inEngine: boolean) => {
+const sweepRepo = async (deps: CliDeps, engine: Engine, repoHash: string, inEngine: boolean) => {
   const stateDir = pathsOf(deps).stateDir;
   const live = async () => (await liveLaunches(stateDir, repoHash)).length > 0;
 
@@ -137,11 +159,12 @@ const sweepRepo = async (deps: CliDeps, engine: Backend | undefined, repoHash: s
     return [];
   }
 
-  const leftovers = inEngine || (await hasRepoLeftovers(stateDir, repoHash));
   const root = await repoRootOf(stateDir, repoHash);
-  const gone = root !== undefined && !(await exists(root));
+  const state = await rootState(root);
+  const gone = state === "gone";
+  const leftovers = inEngine || (await hasRepoLeftovers(stateDir, repoHash));
 
-  if (!leftovers && !gone) {
+  if (state === "unreachable" || (!leftovers && !gone)) {
     return [];
   }
 
@@ -150,7 +173,7 @@ const sweepRepo = async (deps: CliDeps, engine: Backend | undefined, repoHash: s
       return [];
     }
 
-    const lines = leftovers ? await removeRepoSandbox(deps, engine, repoHash) : [];
+    const lines = leftovers ? await removeSandbox(deps, engine, repoHash) : [];
 
     if (!gone) {
       return lines;
@@ -160,7 +183,7 @@ const sweepRepo = async (deps: CliDeps, engine: Backend | undefined, repoHash: s
 
     return [
       ...lines,
-      ...(await removeRepoVolumes(engine, repoHash)),
+      ...(await removeRepoVolumes(engine.reachable, repoHash)),
       `forgot ${root}, which no longer exists`,
     ];
   });
@@ -195,7 +218,7 @@ const removedVolume = (backend: Backend, volume: VolumeSummary) =>
 const orphaned = async (volume: VolumeSummary) => {
   const root = volume.labels[LABELS.repoRoot];
 
-  return root !== undefined && !volume.inUse && !(await exists(root));
+  return root !== undefined && !volume.inUse && (await rootState(root)) === "gone";
 };
 
 const sharedBy = (volume: VolumeSummary, userHash: string | undefined) =>
@@ -236,8 +259,13 @@ const gcDue = async (deps: CliDeps) => {
 const collectGarbage = async (deps: CliDeps, backend: Backend | undefined, sharedOwner?: string) => {
   const stateDir = pathsOf(deps).stateDir;
   const engine = await reachable(backend);
-  const volumes = engine === undefined ? [] : await pruneVolumes(engine, sharedOwner);
-  const images = engine === undefined ? [] : await collectImages(engine, stateDir);
+
+  if (engine === undefined) {
+    return [];
+  }
+
+  const volumes = await pruneVolumes(engine, sharedOwner);
+  const images = await collectImages(engine, stateDir);
 
   await writeJsonFile(stateLayout(stateDir).gcRecord, { lastRun: deps.now() });
 
@@ -245,8 +273,8 @@ const collectGarbage = async (deps: CliDeps, backend: Backend | undefined, share
 };
 
 const sweepAll = async (deps: CliDeps, backend: Backend | undefined) => {
-  const engine = await reachable(backend);
-  const fromEngine = new Set(await engineRepos(engine));
+  const engine = await engineOf(backend);
+  const fromEngine = new Set(await engineRepos(engine.reachable));
   const hashes = [...new Set([...fromEngine, ...(await knownRepos(pathsOf(deps).stateDir))])];
   const lines = await Promise.all(
     hashes.map((hash) =>
@@ -268,6 +296,9 @@ export const sweepOrphans = async (
 ): Promise<string[]> => {
   try {
     const swept = await sweepAll(deps, backend);
+
+    await removeBuildLeftovers(pathsOf(deps).stateDir);
+
     const due = options.collect !== undefined || (await gcDue(deps));
     const collected = due ? await collectGarbage(deps, backend, options.collect?.sharedOwner) : [];
 

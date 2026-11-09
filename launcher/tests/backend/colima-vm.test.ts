@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createColimaVm } from "../../backend/colima/vm.ts";
 import { run } from "../../cli/index.ts";
 import { registerLaunch } from "../../grants/index.ts";
-import { bootTime, sha256Hex, stateLayout } from "../../shared/index.ts";
+import { processMark, sha256Hex, stateLayout } from "../../shared/index.ts";
 import { createHarness, writeColimaMounts, writeLimaMounts } from "../cli/harness.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { argvOf, type FakeCall } from "../support/fake-runner.ts";
@@ -103,11 +103,10 @@ const setupWith = async (setup: Setup = {}) => {
   };
 };
 
-const liveSession = (stateDir: string) =>
+const liveSession = async (stateDir: string) =>
   registerLaunch(stateDir, {
     launchId: "00000000000000aa",
-    pid: process.pid,
-    boot: bootTime(),
+    ...(await processMark()),
     repoHash: sha256Hex("/elsewhere"),
     startedAt: 1,
   });

@@ -6,6 +6,7 @@ export interface ToolConfigSelect {
   format: ToolConfigFormat;
   key: string;
   urlPassword?: true;
+  urlUsername?: true;
 }
 
 export interface NpmrcEntry {
@@ -74,7 +75,7 @@ const unquote = (value: string) =>
 
 const decodeBase64 = (value: string) => Buffer.from(value, "base64").toString("utf8");
 
-export const urlPasswordOf = (value: string | undefined) => {
+const urlPasswordOf = (value: string | undefined) => {
   if (value === undefined || !URL.canParse(value)) {
     return undefined;
   }
@@ -82,6 +83,24 @@ export const urlPasswordOf = (value: string | undefined) => {
   const password = new URL(value).password;
 
   return password === "" ? undefined : decodeURIComponent(password);
+};
+
+const urlUsernameOf = (value: string | undefined) => {
+  if (value === undefined || !URL.canParse(value)) {
+    return undefined;
+  }
+
+  const username = new URL(value).username;
+
+  return username === "" ? undefined : decodeURIComponent(username);
+};
+
+export const urlPartOf = (value: string | undefined, select: { urlPassword?: true; urlUsername?: true }) => {
+  if (select.urlPassword === true) {
+    return urlPasswordOf(value);
+  }
+
+  return select.urlUsername === true ? urlUsernameOf(value) : value;
 };
 
 export const parseNpmrc = (text: string): NpmrcEntry[] =>
@@ -331,7 +350,5 @@ export const isToolConfigKey = (format: ToolConfigFormat, key: string) =>
   KEY_PATTERNS[format]?.test(key) ?? false;
 
 export const toolConfigValue = (text: string, select: ToolConfigSelect) => {
-  const value = READERS[select.format](text, select.key);
-
-  return select.urlPassword === true ? urlPasswordOf(value) : value;
+  return urlPartOf(READERS[select.format](text, select.key), select);
 };

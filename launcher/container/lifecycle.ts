@@ -20,6 +20,7 @@ export interface EnsureContainerInput {
   othersLive?: () => Promise<boolean>;
   beforeStart?: () => Promise<LauncherContainerSpec>;
   aroundStart?: <T>(start: () => Promise<T>) => Promise<T>;
+  afterCreate?: (id: string) => Promise<void>;
 }
 
 export interface EnsuredContainer {
@@ -70,7 +71,9 @@ const isTaken = (error: unknown) => (error as NodeJS.ErrnoException).code === "E
 const foundAt = (path: string) =>
   lstat(path).catch((error: unknown) => (isMissing(error) ? undefined : Promise.reject(error)));
 
-const ensureMountPoint = async (root: string, path: string): Promise<string[]> => {
+type DirMade = (path: string) => Promise<void>;
+
+const ensureMountPoint = async (root: string, path: string, onMade: DirMade): Promise<void> => {
   const found = await foundAt(path);
 
   if (found?.isSymbolicLink() === true) {
@@ -86,16 +89,15 @@ const ensureMountPoint = async (root: string, path: string): Promise<string[]> =
   }
 
   if (found !== undefined || path === root) {
-    return [];
+    return;
   }
 
-  const parents = await ensureMountPoint(root, dirname(path));
-  const made = await mkdir(path).then(
-    () => [path],
-    (error: unknown) => (isTaken(error) ? ensureMountPoint(root, path) : Promise.reject(error)),
-  );
+  await ensureMountPoint(root, dirname(path), onMade);
 
-  return [...parents, ...made];
+  await mkdir(path).then(
+    () => onMade(path),
+    (error: unknown) => (isTaken(error) ? ensureMountPoint(root, path, onMade) : Promise.reject(error)),
+  );
 };
 
 const writableRootOf = (mounts: MountSpec[], target: string) =>
@@ -108,18 +110,21 @@ const writableRootOf = (mounts: MountSpec[], target: string) =>
       isWithin(target, mount.target),
   )?.target;
 
-const ensureMountPoints = async (mounts: MountSpec[]) => {
-  const created = await Promise.all(
+const ensureMountPoints = async (mounts: MountSpec[], onMade: DirMade) => {
+  const outcomes = await Promise.allSettled(
     mounts
       .filter((mount) => mount.kind === "volume")
       .flatMap((mount) => {
         const root = writableRootOf(mounts, mount.target);
 
-        return root === undefined ? [] : [ensureMountPoint(root, mount.target)];
+        return root === undefined ? [] : [ensureMountPoint(root, mount.target, onMade)];
       }),
   );
+  const failed = outcomes.find((outcome) => outcome.status === "rejected");
 
-  return created.flat();
+  if (failed !== undefined) {
+    throw failed.reason;
+  }
 };
 
 const handOverVolumes = async (backend: Backend, id: string, spec: LauncherContainerSpec) => {
@@ -182,7 +187,7 @@ const createFresh = async (
       .map((mount) => backend.ensureVolume(mount.source, spec.volumeLabels[mount.source] ?? owner)),
   );
 
-  await recordCreatedDirs(input.stateDir, specRepoHash(spec), await ensureMountPoints(mounts));
+  await ensureMountPoints(mounts, (path) => recordCreatedDirs(input.stateDir, specRepoHash(spec), [path]));
 
   const { id } = await backend.createContainer(runtimeSpec(spec));
 
@@ -224,6 +229,26 @@ const createNow = async (input: EnsureContainerInput) =>
 const create = (input: EnsureContainerInput) =>
   input.aroundStart === undefined ? createNow(input) : input.aroundStart(() => createNow(input));
 
+const checked = async (input: EnsureContainerInput, ensured: EnsuredContainer) => {
+  if (!ensured.created || input.afterCreate === undefined) {
+    return ensured;
+  }
+
+  await input.afterCreate(ensured.id).catch(async (error: unknown) => {
+    const made = (await agentContainers(input.backend, specRepoHash(ensured.spec))).find(
+      (container) => container.id === ensured.id,
+    );
+
+    if (made !== undefined) {
+      await discardContainer(input.backend, made);
+    }
+
+    throw error;
+  });
+
+  return ensured;
+};
+
 const findOrCreate = async (input: EnsureContainerInput): Promise<EnsuredContainer> => {
   const { backend, spec } = input;
   const existing = await agentContainers(backend, specRepoHash(spec));
@@ -242,7 +267,7 @@ const findOrCreate = async (input: EnsureContainerInput): Promise<EnsuredContain
 
   await Promise.all(existing.map((container) => discardContainer(backend, container)));
 
-  return create(input);
+  return checked(input, await create(input));
 };
 
 export const ensureContainer = (input: EnsureContainerInput) =>

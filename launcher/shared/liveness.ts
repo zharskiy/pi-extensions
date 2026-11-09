@@ -1,15 +1,12 @@
-import { stat, utimes } from "node:fs/promises";
 import { uptime } from "node:os";
 import { setTimeout as sleep } from "node:timers/promises";
+import { processStart } from "./process-start.ts";
 
 export interface ProcessMark {
   pid: number;
   boot: number;
+  start: string;
 }
-
-export const HEARTBEAT_MS = 30_000;
-
-const FRESH_MS = 90_000;
 
 const BOOT_SKEW_SECONDS = 30;
 
@@ -17,9 +14,21 @@ const EXIT_POLL_MS = 50;
 
 export const bootTime = () => Math.round(Date.now() / 1000 - uptime());
 
-export const processMark = (): ProcessMark => ({ pid: process.pid, boot: bootTime() });
+const ownStart = { value: undefined as Promise<string> | undefined };
 
-const isAlive = (pid: number) => {
+const startOfSelf = () => {
+  ownStart.value ??= processStart(process.pid).then((start) => start ?? "");
+
+  return ownStart.value;
+};
+
+export const processMark = async (): Promise<ProcessMark> => ({
+  pid: process.pid,
+  boot: bootTime(),
+  start: await startOfSelf(),
+});
+
+export const isRunning = (pid: number) => {
   try {
     process.kill(pid, 0);
 
@@ -30,34 +39,20 @@ const isAlive = (pid: number) => {
 };
 
 const isMark = (mark: Partial<ProcessMark>): mark is ProcessMark =>
-  Number.isInteger(mark.pid) && (mark.pid ?? 0) > 0 && Number.isFinite(mark.boot);
+  Number.isInteger(mark.pid) &&
+  (mark.pid ?? 0) > 0 &&
+  Number.isFinite(mark.boot) &&
+  typeof mark.start === "string" &&
+  mark.start !== "";
 
-export const isLive = (mark: Partial<ProcessMark>, mtimeMs: number, now = Date.now()) =>
+export const isLive = async (mark: Partial<ProcessMark>) =>
   isMark(mark) &&
   Math.abs(mark.boot - bootTime()) <= BOOT_SKEW_SECONDS &&
-  now - mtimeMs < FRESH_MS &&
-  isAlive(mark.pid);
-
-export const isLiveFile = async (path: string, mark: Partial<ProcessMark>) => {
-  const info = await stat(path).catch(() => undefined);
-
-  return info !== undefined && isLive(mark, info.mtimeMs);
-};
-
-export const heartbeat = (path: string, intervalMs = HEARTBEAT_MS) => {
-  const timer = setInterval(() => {
-    const now = new Date();
-
-    void utimes(path, now, now).catch(() => undefined);
-  }, intervalMs);
-
-  timer.unref();
-
-  return () => clearInterval(timer);
-};
+  isRunning(mark.pid) &&
+  (await processStart(mark.pid)) === mark.start;
 
 const exited = async (pid: number, deadline: number): Promise<boolean> => {
-  if (!isAlive(pid)) {
+  if (!isRunning(pid)) {
     return true;
   }
 

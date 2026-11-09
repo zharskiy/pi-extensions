@@ -24,7 +24,7 @@ export const matchRules = (rules: CredentialRule[], host: string, port: number, 
   rules
     .filter((rule) => normalizeHost(rule.host) === normalizeHost(host))
     .filter((rule) => (rule.port ?? TLS_PORT) === port)
-    .filter((rule) => pathMatches(rule.pathPrefix, path.split("?")[0] ?? "/"))
+    .filter((rule) => pathMatches(rule.pathPrefix, path))
     .sort((left, right) => prefixLength(right) - prefixLength(left));
 
 const BASIC = /^Basic\s+([A-Za-z0-9+/=]+)$/i;

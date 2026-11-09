@@ -57,20 +57,39 @@ const protectContext = (context: GitGuardContext): GitProtectContext => ({
 const sameList = (first: string[], second: string[]) =>
   first.length === second.length && first.every((entry, index) => entry === second[index]);
 
-const pinned = async (workspace: Workspace, paths: ProtectedGitPaths, context: GitProtectContext) => {
-  const first = await pinGitDirs(workspace, paths.modules);
+interface Recorder {
+  pin(path: string, gitCommonDir: string): Promise<void>;
+  dirs(paths: string[]): Promise<void>;
+}
+
+const recorderOf = (stateDir: string, owner: string): Recorder => ({
+  pin: (path, gitCommonDir) => recordPins(stateDir, owner, [{ path, gitCommonDir }]),
+  dirs: (paths) => recordCreatedDirs(stateDir, owner, paths),
+});
+
+const pinned = async (
+  workspace: Workspace,
+  paths: ProtectedGitPaths,
+  context: GitProtectContext,
+  recorder: Recorder,
+) => {
+  const onPin = (path: string) => recorder.pin(path, paths.gitCommonDir);
+
+  await pinGitDirs(workspace, paths.modules, onPin);
+
   const modules = await assertGitIntegrity(workspace);
 
   if (sameList(modules, paths.modules)) {
-    return { paths, pins: first };
+    return paths;
   }
 
   const current = await findProtectedGitPaths(workspace, paths.gitCommonDir, context, modules);
-  const second = await pinGitDirs(workspace, current.modules);
+
+  await pinGitDirs(workspace, current.modules, onPin);
 
   await assertGitIntegrity(workspace);
 
-  return { paths: current, pins: [...first, ...second] };
+  return current;
 };
 
 const depthOf = (path: string) => path.split(sep).length;
@@ -94,16 +113,9 @@ const merged = (workspace: Workspace, overlays: GitOverlay[]): GitOverlay => {
   return workspace.isGitRepo && single !== undefined ? single : combined(workspace, overlays);
 };
 
-interface ReadyRepo {
-  overlay: GitOverlay;
-  pins: string[];
-  gitCommonDir: string;
-  created: string[];
-}
-
 interface RepoPlan {
   overlay: GitOverlay;
-  ready(): Promise<ReadyRepo>;
+  ready(recorder: Recorder): Promise<GitOverlay>;
 }
 
 const createdChain = (first: string | undefined, dir: string): string[] => {
@@ -114,24 +126,22 @@ const createdChain = (first: string | undefined, dir: string): string[] => {
   return dir === first || dirname(dir) === dir ? [dir] : [...createdChain(first, dirname(dir)), dir];
 };
 
-const createDir = async (dir: string) =>
-  createdChain(await mkdir(dir, { recursive: true }).catch(() => undefined), dir);
+const createDir = async (dir: string, recorder: Recorder) => {
+  await recorder.dirs(createdChain(await mkdir(dir, { recursive: true }).catch(() => undefined), dir));
+};
 
 const readiedRepo = async (
   repo: Workspace,
   protect: GitProtectContext,
   guard: GitPathGuard,
   discovered: ProtectedGitPaths,
-): Promise<ReadyRepo> => {
-  const { paths, pins } = await pinned(repo, discovered, protect);
-  const created = await Promise.all(paths.dirs.map(createDir));
+  recorder: Recorder,
+) => {
+  const paths = await pinned(repo, discovered, protect, recorder);
 
-  return {
-    overlay: await protectedGitOverlay(repo, paths, guard),
-    pins,
-    gitCommonDir: paths.gitCommonDir,
-    created: created.flat(),
-  };
+  await Promise.all(paths.dirs.map((dir) => createDir(dir, recorder)));
+
+  return protectedGitOverlay(repo, paths, guard);
 };
 
 const repoPlan = async (
@@ -144,7 +154,7 @@ const repoPlan = async (
 
   return {
     overlay: await protectedGitOverlay(repo, paths, guard),
-    ready: () => readiedRepo(repo, protect, guard, paths),
+    ready: (recorder) => readiedRepo(repo, protect, guard, paths, recorder),
   };
 };
 
@@ -163,20 +173,17 @@ const copyGitConfig = async (stateDir: string, owner: string, path: string) => {
 
 const readied = async (workspace: Workspace, context: GitGuardContext, plans: RepoPlan[]) => {
   const owner = repoHash(workspace.repoRoot);
-  const repos = await Promise.all(plans.map((plan) => plan.ready()));
-  const pins = repos.flatMap((repo) => repo.pins.map((path) => ({ path, gitCommonDir: repo.gitCommonDir })));
+  const recorder = recorderOf(context.stateDir, owner);
+  const outcomes = await Promise.allSettled(plans.map((plan) => plan.ready(recorder)));
+  const failed = outcomes.find((outcome) => outcome.status === "rejected");
 
-  await recordPins(context.stateDir, owner, pins);
-
-  await recordCreatedDirs(
-    context.stateDir,
-    owner,
-    repos.flatMap((repo) => repo.created),
-  );
+  if (failed !== undefined) {
+    throw failed.reason;
+  }
 
   const overlay = merged(
     workspace,
-    repos.map((repo) => repo.overlay),
+    outcomes.flatMap((outcome) => (outcome.status === "fulfilled" ? [outcome.value] : [])),
   );
 
   await Promise.all(

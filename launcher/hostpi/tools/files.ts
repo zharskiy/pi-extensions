@@ -2,8 +2,8 @@ import { constants } from "node:fs";
 import { access, readFile, stat } from "node:fs/promises";
 import { delimiter, join } from "node:path";
 import type { CredentialRule } from "../../config/index.ts";
-import { placeholderFor } from "../../shared/index.ts";
-import type { Endpoint } from "../endpoints.ts";
+import { placeholderFor, type ToolConfigFormat } from "../../shared/index.ts";
+import { type Endpoint, endpointOf, hasUrlUserinfo, withoutUserinfo } from "../endpoints.ts";
 import { rulesFor, type Section } from "../rules.ts";
 import type { ToolsInput } from "../types.ts";
 
@@ -52,3 +52,53 @@ export const placeholderRules = (
 ): CredentialRule[] => rulesFor(identity, endpoints, { placeholder, secret });
 
 export const emptySection = <T>(value: T): Section<T> => ({ value, rules: [], notices: [] });
+
+export type UrlSecret = { file: string; format: ToolConfigFormat; key: string } | { env: string };
+
+export interface UrlCredential {
+  label: string;
+  key: string;
+  identity: string;
+  url: string;
+  secret: UrlSecret;
+  pathPrefix?: (path: string) => string | undefined;
+}
+
+export const urlCredentialSection = (input: ToolsInput, credential: UrlCredential): Section<string> => {
+  if (!hasUrlUserinfo(credential.url)) {
+    return emptySection(credential.url);
+  }
+
+  const result = endpointOf(credential.url);
+
+  if (!("endpoint" in result)) {
+    return {
+      value: withoutUserinfo(credential.url),
+      rules: [],
+      notices: [
+        `${credential.label}: ${credential.key} is not an https URL; its credentials stay on the host`,
+      ],
+    };
+  }
+
+  const placeholder = toolPlaceholder(input, credential.identity);
+  const parsed = new URL(credential.url);
+  const part = parsed.password === "" ? { urlUsername: true as const } : { urlPassword: true as const };
+
+  if (parsed.password === "") {
+    parsed.username = placeholder;
+  } else {
+    parsed.password = placeholder;
+  }
+
+  const pathPrefix = credential.pathPrefix?.(parsed.pathname);
+
+  return {
+    value: parsed.href,
+    rules: placeholderRules(credential.identity, [result.endpoint], placeholder, {
+      ...credential.secret,
+      ...part,
+    }).map((rule) => (pathPrefix === undefined ? rule : { ...rule, pathPrefix })),
+    notices: [],
+  };
+};

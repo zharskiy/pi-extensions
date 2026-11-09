@@ -218,6 +218,36 @@ describe("mcpOAuth secrets read the host pi sign-in", () => {
     expect(await piRuns()).toHaveLength(2);
   });
 
+  it("starts a login after a 401 to an injected token at most once in 10 min, even when it succeeds", async () => {
+    const clock = createFakeClock(Date.now());
+    const resolver = resolverWith("noop", { now: clock.now });
+
+    await writeEntry("stored-token", Date.now() + 3_600_000);
+
+    await resolver.rejected("mcp", REF, "stored-token");
+
+    await waitUntil(async () => ((await piRuns()).length > 0 ? true : undefined));
+
+    clock.advance(61_000);
+
+    expect((await resolver.resolve("mcp", REF)).ok).toBe(false);
+
+    await resolver.rejected("mcp", REF, "stored-token");
+
+    clock.advance(5 * 60_000);
+
+    await resolverWith("noop", { now: clock.now }).rejected("mcp", REF, "stored-token");
+
+    expect(await piRuns()).toHaveLength(1);
+    expect(await loginRecord()).toEqual(expect.objectContaining({ rejectedStart: expect.any(Number) }));
+
+    clock.advance(5 * 60_000);
+
+    await resolver.rejected("mcp", REF, "stored-token");
+
+    await waitUntil(async () => ((await piRuns()).length === 2 ? true : undefined));
+  });
+
   it("never names a token in a failure", async () => {
     await writeEntry("expired-token-value", Date.now() - 1);
 

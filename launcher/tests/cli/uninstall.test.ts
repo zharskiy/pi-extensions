@@ -1,11 +1,11 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { once } from "node:events";
-import { lstat, mkdir, mkdtemp, readlink, realpath, rm, symlink, utimes, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readlink, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { LABELS } from "../../backend/index.ts";
-import { bootTime, launcherRoot, stateLayout } from "../../shared/index.ts";
+import { bootTime, launcherRoot, processMark, processStart, stateLayout } from "../../shared/index.ts";
 import { createFakeEngine, type FakeEngine } from "../support/fake-engine.ts";
 
 const created: string[] = [];
@@ -315,7 +315,13 @@ describe("uninstall.sh and the host side of the sandbox state", () => {
 
     await writeFile(
       files.proxy.record,
-      JSON.stringify({ pid: proxy.pid, boot: bootTime(), port: 1, inputHash: "x" }),
+      JSON.stringify({
+        pid: proxy.pid,
+        boot: bootTime(),
+        start: await processStart(proxy.pid ?? 0),
+        port: 1,
+        inputHash: "x",
+      }),
     );
 
     await writeFile(
@@ -340,19 +346,19 @@ describe("uninstall.sh and the host side of the sandbox state", () => {
     expect(await exists(stateDir)).toBe(false);
   });
 
-  it("leaves a proxy record whose heartbeat is stale and a created dir that is no longer empty", async () => {
+  it("leaves a proxy record whose pid now runs another process and a created dir that is no longer empty", async () => {
     const { root, files } = await sandboxState();
     const createdDir = join(root, "repo", "node_modules");
     const proxy = await idleProcess();
-    const stale = new Date(Date.now() - 120_000);
 
     await mkdir(join(createdDir, "kept"), { recursive: true });
 
     await writeFile(files.created, JSON.stringify([createdDir]));
 
-    await writeFile(files.proxy.record, JSON.stringify({ pid: proxy.pid, boot: bootTime() }));
-
-    await utimes(files.proxy.record, stale, stale);
+    await writeFile(
+      files.proxy.record,
+      JSON.stringify({ pid: proxy.pid, boot: bootTime(), start: "Thu-Jan-1-00:00:00-1970" }),
+    );
 
     const result = await runUninstall(root, join(root, "missing.sock"));
 
@@ -374,7 +380,7 @@ describe("uninstall.sh and the host side of the sandbox state", () => {
 
     await writeFile(
       join(files.launches, "00000000000000aa.json"),
-      JSON.stringify({ pid: process.pid, boot: bootTime(), launchId: "00000000000000aa" }),
+      JSON.stringify({ ...(await processMark()), launchId: "00000000000000aa" }),
     );
 
     const result = await runUninstall(root, join(root, "missing.sock"));

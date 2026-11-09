@@ -144,7 +144,7 @@ describe("validateLayer with the credential, egress, tls, image and org keys", (
       ],
       [
         rule({ secret: { file: "/a.json", pointer: "/a", format: "json", key: "/a" } }),
-        "credentials.rules[0].secret sets pointer together with format, key or urlPassword",
+        "credentials.rules[0].secret sets pointer together with format, key, urlPassword or urlUsername",
       ],
       [
         rule({ secret: { file: "/pip.conf", format: "ini", key: "index-url" } }),

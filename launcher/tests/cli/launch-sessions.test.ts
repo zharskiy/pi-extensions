@@ -1,11 +1,11 @@
 import { EventEmitter } from "node:events";
-import { lstat, readdir, readFile, utimes } from "node:fs/promises";
+import { lstat, mkdir, readdir, readFile, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { describe, expect, it } from "vitest";
 import { run } from "../../cli/index.ts";
 import { liveLaunches, registerLaunch } from "../../grants/index.ts";
-import { bootTime, sha256Hex, stateLayout } from "../../shared/index.ts";
+import { processMark, sha256Hex, stateLayout } from "../../shared/index.ts";
 import { createFakeBackend, createHarness, piSessions } from "./harness.ts";
 
 const OUTDATED =
@@ -76,7 +76,7 @@ describe("the end of a session", () => {
     const harness = await createHarness({ backend: () => fake.backend });
 
     await registerLaunch(harness.stateDir, {
-      boot: bootTime(),
+      ...(await processMark()),
       launchId: "0123456789abcdef",
       pid: process.pid,
       repoHash: sha256Hex(harness.repoRoot),
@@ -134,7 +134,7 @@ describe("the end of a session", () => {
     expect(fake.networks.size).toBe(0);
   });
 
-  it("still releases the pins, the proxy and the created dirs when the engine is gone at the end", async () => {
+  it("releases the proxy and the created dirs when the engine is gone at the end, and keeps the pin until the engine answers", async () => {
     const fake = createFakeBackend();
     const engine = { up: true };
     const backend: typeof fake.backend = {
@@ -153,35 +153,38 @@ describe("the end of a session", () => {
 
     await withCacheMount(harness);
 
+    const pin = join(harness.repoRoot, ".git", "commondir");
+
     expect(await run([], harness.deps)).toBe(0);
     expect(fake.containers.size).toBe(1);
-    expect(harness.stoppedProxies).toEqual([repo]);
+    expect(harness.stoppedProxies).toContain(repo);
     expect(
       await lstat(stateLayout(harness.stateDir).repo(repo).proxy.token).catch(() => undefined),
     ).toBeUndefined();
-    expect(await lstat(join(harness.repoRoot, ".git", "commondir")).catch(() => undefined)).toBeUndefined();
     expect(await lstat(join(harness.repoRoot, "deep")).catch(() => undefined)).toBeUndefined();
+    expect(await lstat(pin).catch(() => undefined)).toBeDefined();
+
+    engine.up = true;
+
+    expect(await run(["sandbox", "gc"], harness.deps)).toBe(0);
+    expect(await lstat(pin).catch(() => undefined)).toBeUndefined();
   });
 });
 
 describe("the sweep of what a killed launcher left", () => {
-  it("removes the sandbox of another repository whose launcher stopped its heartbeat, at the next launch", async () => {
+  it("removes the sandbox of another repository whose launcher is gone and its pid reused, at the next launch", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
     const orphan = "b".repeat(64);
     const files = stateLayout(harness.stateDir).repo(orphan);
-    const entry = join(files.launches, "00000000000000ee.json");
-    const old = new Date(Date.now() - 120_000);
 
-    await harness.writeJson(entry, {
+    await harness.writeJson(join(files.launches, "00000000000000ee.json"), {
       launchId: "00000000000000ee",
-      pid: process.pid,
-      boot: bootTime(),
+      ...(await processMark()),
+      start: "Thu-Jan-1-00:00:00-1970",
       repoHash: orphan,
       startedAt: 1,
     });
-
-    await utimes(entry, old, old);
 
     await harness.writeJson(files.proxy.token, "token");
 
@@ -202,18 +205,20 @@ describe("the sweep of what a killed launcher left", () => {
     expect(await lstat(files.proxy.token).catch(() => undefined)).toBeUndefined();
   });
 
-  it("keeps the sandbox of another repository while its launcher keeps its heartbeat", async () => {
+  it("keeps the sandbox of another repository while its launcher runs, even when its entry is hours old after a sleep", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
     const other = "c".repeat(64);
+    const old = new Date(Date.now() - 6 * 60 * 60 * 1000);
 
     await registerLaunch(harness.stateDir, {
       launchId: "00000000000000ff",
-      pid: process.pid,
-      boot: bootTime(),
+      ...(await processMark()),
       repoHash: other,
       startedAt: 1,
     });
+
+    await utimes(join(stateLayout(harness.stateDir).repo(other).launches, "00000000000000ff.json"), old, old);
 
     const id = fake.addContainer({
       name: `pi-sandbox-${other.slice(0, 12)}`,
@@ -236,8 +241,7 @@ describe("a config change while other sessions of the repository are live", () =
       launchId: OTHER_LAUNCH,
       repoHash: sha256Hex(harness.repoRoot),
       startedAt: 1,
-      pid: process.pid,
-      boot: bootTime(),
+      ...(await processMark()),
     };
 
     await registerLaunch(harness.stateDir, other);
@@ -313,5 +317,61 @@ describe("a signal while the sandbox is being prepared", () => {
     expect(sessionsWhenBuilt).toEqual([1]);
     expect(fake.containers.size).toBe(0);
     expect(await launchesShown(harness)).toBe("launches: 0 running for this repository");
+  });
+});
+
+describe("a launch refused after it wrote into the repository", () => {
+  it("removes the git pin it wrote before a later check refused, so nothing stays unrecorded", async () => {
+    const fake = createFakeBackend();
+    const box = { planted: false, root: "" };
+    const backend: typeof fake.backend = {
+      ...fake.backend,
+      findContainers: async (labels) => {
+        if (!box.planted && labels["pi-sandbox.repo-hash"] === sha256Hex(box.root)) {
+          box.planted = true;
+
+          await rm(join(box.root, ".git", "hooks"), { recursive: true, force: true });
+
+          await writeFile(join(box.root, ".git", "hooks"), "");
+        }
+
+        return fake.backend.findContainers(labels);
+      },
+    };
+    const harness = await createHarness({ backend: () => backend });
+
+    box.root = harness.repoRoot;
+
+    expect(await run([], harness.deps)).toBe(1);
+    expect(box.planted).toBe(true);
+    expect(harness.stderr()).toContain(`${join(harness.repoRoot, ".git", "hooks")} is not a directory`);
+    expect(fake.containers.size).toBe(0);
+
+    expect(await run(["sandbox", "gc"], harness.deps)).toBe(0);
+    expect(await lstat(join(harness.repoRoot, ".git", "commondir")).catch(() => undefined)).toBeUndefined();
+  });
+
+  it("removes the mount point it made before another mount point was refused", async () => {
+    const fake = createFakeBackend();
+    const harness = await createHarness({ backend: () => fake.backend });
+    const elsewhere = join(harness.root, "elsewhere");
+
+    await mkdir(join(harness.repoRoot, "b"), { recursive: true });
+
+    await mkdir(elsewhere, { recursive: true });
+
+    await symlink(elsewhere, join(harness.repoRoot, "b", "node_modules"));
+
+    await harness.writeJson(harness.userConfigFile, {
+      mounts: { cacheVolumes: ["a/node_modules", "b/node_modules"] },
+    });
+
+    expect(await run([], harness.deps)).toBe(1);
+    expect(harness.stderr()).toContain(
+      `the mount point ${join(harness.repoRoot, "b", "node_modules")} is a symbolic link`,
+    );
+
+    expect(await run(["sandbox", "gc"], harness.deps)).toBe(0);
+    expect(await lstat(join(harness.repoRoot, "a")).catch(() => undefined)).toBeUndefined();
   });
 });

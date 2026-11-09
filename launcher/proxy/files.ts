@@ -22,6 +22,7 @@ export interface RepoProxyInput {
 export interface RepoProxy {
   pid: number;
   boot: number;
+  start: string;
   port: number;
   inputHash: string;
 }

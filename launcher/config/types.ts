@@ -4,10 +4,10 @@ type Fallback = "refuse" | "host";
 
 export type FileSecret =
   | { file: string; pointer: string }
-  | { file: string; format: ToolConfigFormat; key: string; urlPassword?: true };
+  | { file: string; format: ToolConfigFormat; key: string; urlPassword?: true; urlUsername?: true };
 
 export type SecretRef =
-  | { env: string; urlPassword?: true }
+  | { env: string; urlPassword?: true; urlUsername?: true }
   | FileSecret
   | { command: string[]; ttlSeconds?: number }
   | { piAuth: string; bearer?: boolean }

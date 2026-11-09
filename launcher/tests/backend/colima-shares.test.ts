@@ -7,7 +7,7 @@ import { createColimaVm } from "../../backend/colima/vm.ts";
 import type { Backend } from "../../backend/index.ts";
 import { run } from "../../cli/index.ts";
 import { registerLaunch } from "../../grants/index.ts";
-import { bootTime, sha256Hex } from "../../shared/index.ts";
+import { processMark, sha256Hex } from "../../shared/index.ts";
 import {
   colimaYamlPath,
   createHarness,
@@ -300,8 +300,7 @@ describe("the launch shares a repository the VM does not see", () => {
 
     await registerLaunch(context.harness.stateDir, {
       launchId: "00000000000000dd",
-      pid: process.pid,
-      boot: bootTime(),
+      ...(await processMark()),
       repoHash: sha256Hex("/elsewhere"),
       startedAt: 1,
     });
@@ -399,8 +398,7 @@ describe("the launch shares a repository the VM does not see", () => {
 
     await registerLaunch(context.harness.stateDir, {
       launchId: "00000000000000ee",
-      pid: process.pid,
-      boot: bootTime(),
+      ...(await processMark()),
       repoHash: sha256Hex("/elsewhere"),
       startedAt: 1,
     });

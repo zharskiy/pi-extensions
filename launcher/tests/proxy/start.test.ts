@@ -1,5 +1,6 @@
 import { type ChildProcess, spawn } from "node:child_process";
-import { mkdir, mkdtemp, readdir, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
+import { once } from "node:events";
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -15,7 +16,7 @@ import {
   repoProxyToken,
   stopRepoProxy,
 } from "../../proxy/index.ts";
-import { bootTime, stateLayout } from "../../shared/index.ts";
+import { bootTime, processMark, stateLayout } from "../../shared/index.ts";
 import { openConnect, plainGet } from "./proxy-client.ts";
 
 const REPO = "1".repeat(64);
@@ -168,18 +169,23 @@ describe("ensureRepoProxy", () => {
     expect(rotated.proxy.pid).not.toBe(first.proxy.pid);
   }, 20_000);
 
-  it("never kills a live process whose record stopped its heartbeat, and starts a fresh proxy", async () => {
+  it("never kills a live process that only reuses the recorded pid, and starts a fresh proxy", async () => {
     const stranger = idle();
-    const old = new Date(Date.now() - 120_000);
+
+    await once(stranger, "spawn");
 
     await mkdir(files().directory, { recursive: true });
 
     await writeFile(
       files().record,
-      JSON.stringify({ pid: stranger.pid, boot: bootTime(), port: 9, inputHash: "old" }),
+      JSON.stringify({
+        pid: stranger.pid,
+        boot: bootTime(),
+        start: "Thu-Jan-1-00:00:00-1970",
+        port: 9,
+        inputHash: "old",
+      }),
     );
-
-    await utimes(files().record, old, old);
 
     const started = await ensure(await inputFor());
 
@@ -205,8 +211,7 @@ describe("watchIdle", () => {
     const outcome = { idle: false };
     const launch = {
       launchId: newLaunchId(),
-      pid: process.pid,
-      boot: bootTime(),
+      ...(await processMark()),
       repoHash: REPO,
       startedAt: 1,
     };
@@ -228,7 +233,7 @@ describe("watchIdle", () => {
       await new Promise((resolve) => setTimeout(resolve, 120));
     });
 
-    const registered = await held.pending;
+    await held.pending;
 
     await new Promise((resolve) => setTimeout(resolve, 120));
 
@@ -239,8 +244,6 @@ describe("watchIdle", () => {
       launchId: launch.launchId,
       onLast: async () => undefined,
     });
-
-    registered?.stopHeartbeat();
 
     await held.watch?.idle;
 

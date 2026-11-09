@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { run } from "../../cli/index.ts";
 import { LABELS, repoVolumes } from "../../container/index.ts";
 import { registerLaunch } from "../../grants/index.ts";
-import { bootTime, launcherRoot, sha256Hex, stateLayout } from "../../shared/index.ts";
+import { launcherRoot, processMark, sha256Hex, stateLayout } from "../../shared/index.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
 import { tempDir } from "../support/temp-dir.ts";
 import { createFakeBackend, createHarness } from "./harness.ts";
@@ -60,7 +60,7 @@ describe("pi sandbox status", () => {
 
   it("reports the proxy of this repository without its token", async () => {
     const harness = await createHarness({
-      proxy: { read: async () => ({ pid: 11, port: 4001, boot: 1, inputHash: "input" }) },
+      proxy: { read: async () => ({ pid: 11, port: 4001, boot: 1, start: "", inputHash: "input" }) },
     });
 
     expect(await run(["sandbox", "status"], harness.deps)).toBe(0);
@@ -77,7 +77,7 @@ describe("pi sandbox status", () => {
     const harness = await createHarness();
 
     await registerLaunch(harness.stateDir, {
-      boot: bootTime(),
+      ...(await processMark()),
       launchId: "0123456789abcdef",
       pid: process.pid,
       repoHash: sha256Hex(harness.repoRoot),
@@ -184,7 +184,7 @@ describe("pi sandbox gc and reset", () => {
     const repo = sha256Hex(harness.repoRoot);
 
     await registerLaunch(harness.stateDir, {
-      boot: bootTime(),
+      ...(await processMark()),
       launchId: "00000000000000bb",
       pid: process.pid,
       repoHash: repo,
@@ -216,6 +216,35 @@ describe("pi sandbox gc and reset", () => {
     expect(await readFile(files.record, "utf8").catch(() => undefined)).toBeUndefined();
     expect(fake.volumes.has("pi-sandbox-agent-gone")).toBe(false);
     expect(harness.stdout()).toContain(`forgot ${gone}, which no longer exists\n`);
+  });
+
+  it("keeps the state, sandbox and volumes of a repository whose disk is not mounted", async () => {
+    const fake = createFakeBackend();
+    const harness = await createHarness({ backend: () => fake.backend });
+    const unmounted = join(harness.root, "Volumes", "Projects", "repo");
+    const hash = sha256Hex(unmounted);
+    const files = stateLayout(harness.stateDir).repo(hash);
+    const pin = join(unmounted, ".git", "commondir");
+
+    await harness.writeJson(files.record, { root: unmounted });
+
+    await harness.writeJson(files.pins, [{ path: pin, gitCommonDir: join(unmounted, ".git") }]);
+
+    await fake.backend.ensureVolume("pi-sandbox-agent-unmounted", {
+      [LABELS.repoHash]: hash,
+      [LABELS.repoRoot]: unmounted,
+    });
+
+    const id = await orphanOf(fake, hash);
+
+    expect(await run(["sandbox", "gc"], harness.deps)).toBe(0);
+    expect(await readFile(files.record, "utf8")).toContain(unmounted);
+    expect(JSON.parse(await readFile(files.pins, "utf8"))).toEqual([
+      { path: pin, gitCommonDir: join(unmounted, ".git") },
+    ]);
+    expect(fake.volumes.has("pi-sandbox-agent-unmounted")).toBe(true);
+    expect(fake.containers.has(id)).toBe(true);
+    expect(harness.stdout()).toBe("nothing to remove\n");
   });
 
   it("removes the dangling sandbox images no container uses and keeps the current base, images in use and foreign ones", async () => {
@@ -272,6 +301,27 @@ describe("pi sandbox gc and reset", () => {
     ]);
   });
 
+  it("leaves the daily collection due when it ran without an engine, as under pi sandbox stop", async () => {
+    const harness = await createHarness({ backend: () => createFakeBackend().backend });
+
+    expect(await run(["sandbox", "stop"], harness.deps)).toBe(0);
+    expect(
+      await readFile(stateLayout(harness.stateDir).gcRecord, "utf8").catch(() => undefined),
+    ).toBeUndefined();
+  });
+
+  it("removes what an interrupted image build left in the state dir, unless a build is running", async () => {
+    const harness = await createHarness({ backend: () => createFakeBackend().backend });
+    const leftover = stateLayout(harness.stateDir).buildContext("build-0123abcd");
+
+    await mkdir(leftover, { recursive: true });
+
+    await writeFile(`${leftover}.tar`, "partial");
+
+    expect(await run(["sandbox", "gc"], harness.deps)).toBe(0);
+    expect(await readFile(`${leftover}.tar`, "utf8").catch(() => undefined)).toBeUndefined();
+  });
+
   it("says when there is nothing to remove", async () => {
     const harness = await createHarness({ backend: () => createFakeBackend().backend });
 
@@ -279,7 +329,26 @@ describe("pi sandbox gc and reset", () => {
     expect(harness.stdout()).toBe("nothing to remove\n");
   });
 
-  it("removes this repository's sandbox and proxy on reset, even while it runs", async () => {
+  it("refuses reset while a session of the repository runs, names the count and removes nothing", async () => {
+    const fake = createFakeBackend();
+    const harness = await createHarness({ backend: () => fake.backend });
+    const repo = sha256Hex(harness.repoRoot);
+    const id = await orphanOf(fake, repo);
+    const launch = { ...(await processMark()), repoHash: repo, startedAt: 1 };
+
+    await registerLaunch(harness.stateDir, { ...launch, launchId: "00000000000000a1" });
+
+    await registerLaunch(harness.stateDir, { ...launch, launchId: "00000000000000a2" });
+
+    expect(await run(["sandbox", "reset", "--volumes"], harness.deps)).toBe(1);
+    expect(harness.stderr()).toContain(`2 sessions are running in ${harness.repoRoot}`);
+    expect(harness.stderr()).toContain("exit them, then run pi sandbox reset again");
+    expect(fake.containers.has(id)).toBe(true);
+    expect(fake.relays.has(repo)).toBe(true);
+    expect(harness.stoppedProxies).toEqual([]);
+  });
+
+  it("removes this repository's sandbox and proxy on reset once no session runs", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
     const repo = sha256Hex(harness.repoRoot);

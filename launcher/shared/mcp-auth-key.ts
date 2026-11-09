@@ -12,6 +12,7 @@ export interface McpAuthEntry {
 export interface McpLoginState {
   lastStart?: number;
   failedAt?: number;
+  rejectedStart?: number;
   running?: { pgid: number; boot: number };
 }
 

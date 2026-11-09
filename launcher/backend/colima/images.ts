@@ -1,7 +1,5 @@
 import { createReadStream } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { rm } from "node:fs/promises";
 import { type CommandRunner, LauncherError } from "../../shared/index.ts";
 import { pinnedReference, repositoryOf, tagOf } from "../image-reference.ts";
 import { LABELS } from "../labels.ts";
@@ -120,8 +118,7 @@ export const createImageOperations = (client: EngineClient, runner: CommandRunne
     buildArgs: Record<string, string> = {},
     progress: (step: string) => void = () => undefined,
   ) => {
-    const workDir = await mkdtemp(join(tmpdir(), "pi-sandbox-build-"));
-    const tarPath = join(workDir, "context.tar");
+    const tarPath = `${contextDir}.tar`;
 
     try {
       await archiveContext(contextDir, tarPath);
@@ -137,7 +134,7 @@ export const createImageOperations = (client: EngineClient, runner: CommandRunne
         stepsTo(progress),
       );
     } finally {
-      await rm(workDir, { recursive: true, force: true });
+      await rm(tarPath, { force: true });
     }
 
     const built = await inspect(tag);

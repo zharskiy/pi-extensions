@@ -1,5 +1,5 @@
 import type { Backend } from "../backend/index.ts";
-import { findRepoContainer, removeRepoContainers } from "../container/index.ts";
+import { findRepoContainer } from "../container/index.ts";
 import { liveLaunches, withRepoLaunchLock } from "../grants/index.ts";
 import { prepareHostSessions, probeHostSessions, sweepHostSessions } from "../provision/index.ts";
 import { errorMessage, LauncherError } from "../shared/index.ts";
@@ -125,30 +125,14 @@ const notShared = (dir: string) =>
     `sessions: ${dir} is not writable from the sandbox; set sessions.host: false or share it with the VM`,
   );
 
-export const probeSessionsShare = async (
-  backend: Backend,
-  context: LaunchContext,
-  containerId: string,
-  sessions: HostSessions,
-) => {
+export const probeSessionsShare = async (backend: Backend, containerId: string, sessions: HostSessions) => {
   if ("off" in sessions) {
     return;
   }
 
-  const discard = () => removeRepoContainers(backend, context.repoHash);
-  const shared = await probeHostSessions(backend, containerId, sessions.dir).catch(async (error: unknown) => {
-    await discard();
-
-    throw error;
-  });
-
-  if (shared) {
-    return;
+  if (!(await probeHostSessions(backend, containerId, sessions.dir))) {
+    throw notShared(sessions.dir);
   }
-
-  await discard();
-
-  throw notShared(sessions.dir);
 };
 
 export const sweepRepoSessions = async (deps: CliDeps, repoRoot: string, full: boolean) => {

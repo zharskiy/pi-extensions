@@ -93,9 +93,11 @@ export const assertGitIntegrity = async (workspace: Workspace): Promise<string[]
   return modules;
 };
 
-const writeGitPin = async (gitDir: string): Promise<string[]> => {
+type PinWritten = (path: string) => Promise<void>;
+
+const writeGitPin = async (gitDir: string, onPin: PinWritten): Promise<void> => {
   if ((await pinStateOf(gitDir)) === "pinned") {
-    return [];
+    return;
   }
 
   const path = join(gitDir, "commondir");
@@ -117,23 +119,30 @@ const writeGitPin = async (gitDir: string): Promise<string[]> => {
       () => false,
     ));
 
-  if (!written && (await pinStateOf(gitDir)) === "absent") {
-    throw new LauncherError(`git: could not write ${path}`);
+  if (written) {
+    await onPin(path);
+
+    return;
   }
 
-  return written ? [path] : [];
+  if ((await pinStateOf(gitDir)) === "absent") {
+    throw new LauncherError(`git: could not write ${path}`);
+  }
 };
 
-export const pinGitDirs = async (workspace: Workspace, modules: string[]): Promise<string[]> => {
+export const pinGitDirs = async (workspace: Workspace, modules: string[], onPin: PinWritten) => {
   const gitCommonDir = workspace.gitCommonDir;
 
   if (gitCommonDir === undefined) {
-    return [];
+    return;
   }
 
-  const written = await Promise.all([gitCommonDir, ...modules].map(writeGitPin));
+  const outcomes = await Promise.allSettled([gitCommonDir, ...modules].map((dir) => writeGitPin(dir, onPin)));
+  const failed = outcomes.find((outcome) => outcome.status === "rejected");
 
-  return written.flat();
+  if (failed !== undefined) {
+    throw failed.reason;
+  }
 };
 
 const pinTextOf = (path: string) =>

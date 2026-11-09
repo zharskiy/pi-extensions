@@ -49,6 +49,16 @@ describe("ensureSandboxImage", () => {
     expect(fake.builds).toHaveLength(1);
   });
 
+  it("builds once when two launches prepare the image at the same time, and the second says it waits", async () => {
+    const fake = createFakeBackend();
+    const { input, asked } = await inputOf(fake, { waiting: () => asked.push("waiting") });
+    const [first, second] = await Promise.all([ensureSandboxImage(input), ensureSandboxImage(input)]);
+
+    expect(second).toEqual(first);
+    expect(fake.builds).toHaveLength(1);
+    expect(asked.filter((step) => step === "waiting")).toEqual(["waiting"]);
+  });
+
   it("announces nothing when the recorded build is reused or the pinned image is already local", async () => {
     const fake = createFakeBackend();
     const { input, asked } = await inputOf(fake);

@@ -213,11 +213,24 @@ const ruleMode: ObjectCheck = (value) => {
   return value.template !== undefined && value.header === undefined ? "template needs a header" : undefined;
 };
 
+const oneUrlPart: ObjectCheck = (value) =>
+  value.urlPassword !== undefined && value.urlUsername !== undefined
+    ? "sets both urlPassword and urlUsername"
+    : undefined;
+
 const fileSecretMode: ObjectCheck = (value) => {
-  const selected = [value.format, value.key, value.urlPassword].some((field) => field !== undefined);
+  const selected = [value.format, value.key, value.urlPassword, value.urlUsername].some(
+    (field) => field !== undefined,
+  );
 
   if (value.pointer !== undefined) {
-    return selected ? "sets pointer together with format, key or urlPassword" : undefined;
+    return selected ? "sets pointer together with format, key, urlPassword or urlUsername" : undefined;
+  }
+
+  const both = oneUrlPart(value);
+
+  if (both !== undefined) {
+    return both;
   }
 
   if (value.format === undefined || value.key === undefined) {
@@ -250,7 +263,12 @@ const shape = (properties: Record<string, Spec>, required?: readonly string[]): 
 const SECRET_REF: Spec = {
   type: "keyed",
   variants: {
-    env: shape({ env: text(variable), urlPassword: { type: "true" } }, ["env"]),
+    env: {
+      ...shape({ env: text(variable), urlPassword: { type: "true" }, urlUsername: { type: "true" } }, [
+        "env",
+      ]),
+      check: oneUrlPart,
+    },
     file: {
       ...shape(
         {
@@ -259,6 +277,7 @@ const SECRET_REF: Spec = {
           format: choice(TOOL_CONFIG_FORMATS),
           key: text(nonEmpty),
           urlPassword: { type: "true" },
+          urlUsername: { type: "true" },
         },
         ["file"],
       ),

@@ -2,7 +2,7 @@ import { mkdir, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { syncSettingsFile } from "../../provision/index.ts";
-import { bootTime, stateLayout } from "../../shared/index.ts";
+import { processMark, stateLayout } from "../../shared/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
 import { runningContainer, tempDir, writeText } from "./fixtures.ts";
@@ -88,7 +88,7 @@ describe("syncSettingsFile", () => {
     ]);
   });
 
-  it("keeps command and proxy settings from the host and drops the ones the volume planted", async () => {
+  it("keeps command settings from the host and drops the ones the volume planted", async () => {
     const planted = {
       npmCommand: ["sh", "-c", "planted"],
       selfUpdateCommand: ["planted"],
@@ -106,6 +106,15 @@ describe("syncSettingsFile", () => {
       theme: "volume",
       shellPath: "/bin/zsh",
     });
+  });
+
+  it("never syncs the host httpProxy, which may carry the proxy password", async () => {
+    const env = await setup({});
+
+    await env.sync({ httpProxy: "http://corp:PROXY-REAL-PW@proxy.corp.test:3128", theme: "dark" });
+
+    expect(await env.volume("settings.json")).toEqual({ theme: "dark" });
+    expect(await env.fake.guestFile("settings.json")).not.toContain("PROXY-REAL-PW");
   });
 
   it("removes a credential from a package URL inside the sandbox, with a notice", async () => {
@@ -139,7 +148,9 @@ describe("syncSettingsFile", () => {
 
     await mkdir(dirname(lock), { recursive: true });
 
-    await writeFile(lock, `${process.pid} ${bootTime()} 0123456789abcdef`);
+    const self = await processMark();
+
+    await writeFile(lock, `${self.pid} ${self.boot} ${self.start} 0123456789abcdef`);
 
     const pending = env.sync({ theme: "dark" });
 

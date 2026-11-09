@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { run } from "../../cli/index.ts";
 import { LABELS } from "../../container/index.ts";
 import { registerLaunch } from "../../grants/index.ts";
-import { bootTime } from "../../shared/index.ts";
+import { processMark } from "../../shared/index.ts";
 import type { FakeCall } from "../support/fake-runner.ts";
 import { createFakeBackend, createHarness, type HarnessOptions } from "./harness.ts";
 
@@ -125,15 +125,13 @@ describe("pi in a folder of repositories", () => {
     const shared = join(harness.work, "a", ".git");
     const own = join(harness.work, "b", ".git");
     const other = "e".repeat(64);
-    const registered = await registerLaunch(harness.stateDir, {
+
+    await registerLaunch(harness.stateDir, {
       launchId: "00000000000000ab",
-      pid: process.pid,
-      boot: bootTime(),
+      ...(await processMark()),
       repoHash: other,
       startedAt: 1,
     });
-
-    registered.stopHeartbeat();
 
     fake.addContainer({
       name: "pi-sandbox-a",

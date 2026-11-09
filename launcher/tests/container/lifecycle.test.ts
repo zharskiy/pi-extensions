@@ -210,6 +210,30 @@ describe("ensureContainer", () => {
     expect(fake.containers.size).toBe(1);
   });
 
+  it("discards only its own new container when its check after the create fails, never one another launch then adopts", async () => {
+    const fake = createFakeBackend();
+    const other: { launch?: ReturnType<typeof ensureContainer> } = {};
+    const failing = ensureContainer({
+      backend: fake.backend,
+      spec: specOf(),
+      afterCreate: async () => {
+        other.launch = ensureContainer({ backend: fake.backend, spec: specOf() });
+
+        await new Promise((resolve) => setTimeout(resolve, 50));
+
+        throw new Error("sessions dir is not shared");
+      },
+    });
+
+    await expect(failing).rejects.toThrow("sessions dir is not shared");
+
+    const adopted = await other.launch;
+
+    expect(adopted?.created).toBe(true);
+    expect([...fake.containers.keys()]).toEqual([adopted?.id]);
+    expect(fake.containers.get(adopted?.id ?? "")?.summary.state).toBe("running");
+  });
+
   it("reuses the container another launcher created under the same name", async () => {
     const fake = createFakeBackend();
     const spec = specOf();

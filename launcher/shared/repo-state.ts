@@ -14,7 +14,17 @@ const GIT_COPY = /^[0-9a-f]{16}$/;
 
 const REPO_HASH = /^[0-9a-f]{64}$/;
 
+const queues = new Map<string, Promise<void>>();
+
 const filesOf = (stateDir: string, repoHash: string) => stateLayout(stateDir).repo(repoHash);
+
+const queued = (path: string, step: () => Promise<void>) => {
+  const next = (queues.get(path) ?? Promise.resolve()).catch(() => undefined).then(step);
+
+  queues.set(path, next);
+
+  return next;
+};
 
 const exists = (path: string) =>
   access(path).then(
@@ -66,16 +76,17 @@ export const readPins = (stateDir: string, repoHash: string) =>
 export const writePins = (stateDir: string, repoHash: string, pins: PinRecord[]) =>
   writeList(filesOf(stateDir, repoHash).pins, pins);
 
-export const recordPins = async (stateDir: string, repoHash: string, pins: PinRecord[]) => {
-  if (pins.length === 0) {
-    return;
-  }
+export const recordPins = (stateDir: string, repoHash: string, pins: PinRecord[]) =>
+  queued(filesOf(stateDir, repoHash).pins, async () => {
+    if (pins.length === 0) {
+      return;
+    }
 
-  const known = await readPins(stateDir, repoHash);
-  const added = pins.filter((pin) => !known.some((entry) => entry.path === pin.path));
+    const known = await readPins(stateDir, repoHash);
+    const added = pins.filter((pin) => !known.some((entry) => entry.path === pin.path));
 
-  await writePins(stateDir, repoHash, [...known, ...added]);
-};
+    await writePins(stateDir, repoHash, [...known, ...added]);
+  });
 
 export const readCreatedDirs = (stateDir: string, repoHash: string) =>
   readList(filesOf(stateDir, repoHash).created, isPath);
@@ -83,15 +94,16 @@ export const readCreatedDirs = (stateDir: string, repoHash: string) =>
 export const writeCreatedDirs = (stateDir: string, repoHash: string, dirs: string[]) =>
   writeList(filesOf(stateDir, repoHash).created, dirs);
 
-export const recordCreatedDirs = async (stateDir: string, repoHash: string, dirs: string[]) => {
-  if (dirs.length === 0) {
-    return;
-  }
+export const recordCreatedDirs = (stateDir: string, repoHash: string, dirs: string[]) =>
+  queued(filesOf(stateDir, repoHash).created, async () => {
+    if (dirs.length === 0) {
+      return;
+    }
 
-  const known = await readCreatedDirs(stateDir, repoHash);
+    const known = await readCreatedDirs(stateDir, repoHash);
 
-  await writeCreatedDirs(stateDir, repoHash, [...new Set([...known, ...dirs])]);
-};
+    await writeCreatedDirs(stateDir, repoHash, [...new Set([...known, ...dirs])]);
+  });
 
 const gitCopies = async (stateDir: string, repoHash: string) => {
   const directory = filesOf(stateDir, repoHash).git;

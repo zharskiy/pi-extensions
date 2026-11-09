@@ -69,7 +69,7 @@ What is different inside:
 | `pi sandbox egress revoke <host[:port]> [--user]` | remove a grant |
 | `pi sandbox egress list [--user] [--denied]` | grants, or the hosts the proxy blocked |
 | `pi sandbox gc [--shared-caches]` | remove sandboxes no session uses, volumes of deleted repositories and unused images |
-| `pi sandbox reset [--volumes]` | remove this repository's sandbox; `--volumes` also its cache, overlay and agent volumes |
+| `pi sandbox reset [--volumes]` | remove this repository's sandbox once none of its sessions runs; `--volumes` also its cache, overlay and agent volumes |
 | `pi sandbox stop` | stop the sandbox VM when no pi session runs |
 | `pi sandbox doctor` | prepare the sandbox like `pi` and print one `ok`, `warn`, `fail` or `skip` line per check |
 | `pi sandbox --version`, `pi sandbox help` | version and usage |
@@ -127,7 +127,7 @@ Start with `pi sandbox doctor`: it names the stage or check that fails.
 2. **`the sandbox VM engine is unreachable`.** Run `colima start --profile pi-sandbox --activate=false`, or `launcher/install.sh` when the profile is missing.
 3. **`<repo> is not shared with the sandbox VM`.** Sharing a folder outside your home restarts the VM; exit the other pi sessions and run `pi` again, or run the `colima` command the hint names.
 4. **`<cmd> is not in the sandbox image`.** Add the Debian package to `image.packages` (or an npm tool to `image.npmGlobal`) in the user config; the next launch builds the layer.
-5. **`the sandbox config changed; it applies after every session in this repository exits`.** Exit the other sessions, or run `pi sandbox reset`. A launcher killed with `kill -9` leaves its sandbox until the next `pi` in any repository or `pi sandbox gc`.
+5. **`the sandbox config changed; it applies after every session in this repository exits`.** Exit the other sessions of the repository; the next `pi` builds the new sandbox. `pi sandbox reset` refuses while any of them runs and says how many do. A launcher killed with `kill -9` leaves its sandbox until the next `pi` in any repository or `pi sandbox gc`.
 
 ## More
 

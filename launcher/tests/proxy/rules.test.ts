@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CredentialRule } from "../../config/index.ts";
+import { parseRequestTarget } from "../../proxy/request-target.ts";
 import {
   matchRules,
   rewriteRequestHeaders,
@@ -27,7 +28,7 @@ describe("matchRules", () => {
   ];
 
   it("matches host and port, most specific path first", () => {
-    expect(matchRules(rules, "API.test", 443, "/mcp/tools?x=1").map((entry) => entry.id)).toEqual([
+    expect(matchRules(rules, "API.test", 443, "/mcp/tools").map((entry) => entry.id)).toEqual([
       "mcp",
       "root",
     ]);
@@ -35,6 +36,14 @@ describe("matchRules", () => {
 
   it("keeps a path prefix to whole segments", () => {
     expect(matchRules(rules, "api.test", 443, "/mcpx").map((entry) => entry.id)).toEqual(["root"]);
+  });
+
+  it("does not widen a path prefix through an encoded question mark", () => {
+    const target = parseRequestTarget("/mcp%3Fx/tools?y=1", "api.test", 443);
+    const path = target.ok ? target.decodedPath : "";
+
+    expect(path).toBe("/mcp?x/tools");
+    expect(matchRules(rules, "api.test", 443, path).map((entry) => entry.id)).toEqual(["root"]);
   });
 
   it("matches a rule port only on that port", () => {

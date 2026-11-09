@@ -130,9 +130,9 @@ image/index.ts                 public surface
 image/Dockerfile               the sandbox image
 image/entrypoint.sh            render links, CA bundle, JVM truststore, idle
 image/bash-env.sh              the missing-command hint and the JVM trust flags
-image/sandbox-image.ts         ensureSandboxImage: reuse, pull or build, then the layer
+image/sandbox-image.ts         ensureSandboxImage under the build lock: reuse, pull or build, then the layer; build leftovers
 image/build.ts                 the base image build and pinned pull
-image/context.ts               temporary build contexts
+image/context.ts               build contexts under <state>/build/
 image/layer.ts                 the user image layer
 image/record.ts                the image records
 image/prune.ts                 removal of stale and dangling images
@@ -246,7 +246,8 @@ shared/hash.ts                 hashes
 shared/json-file.ts            JSON file reading and writing
 shared/atomic-write.ts         atomic and random-hex file writes
 shared/file-lock.ts            the lock primitives
-shared/liveness.ts             the liveness rule
+shared/liveness.ts             the liveness rule: pid, boot time and process start
+shared/process-start.ts        a process's start time (ps on macOS, /proc on Linux)
 shared/paths.ts                state, config and policy paths, launcher root
 shared/state-layout.ts         every path under the state dir
 shared/repo-state.ts           per-repository record files

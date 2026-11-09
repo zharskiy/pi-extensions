@@ -10,7 +10,7 @@ import { testedPiVersion } from "../../cli/versions.ts";
 import { newLaunchId, registerLaunch } from "../../grants/index.ts";
 import type { BundledPi } from "../../hostpi/index.ts";
 import type { DenialRecord, RepoProxy, RepoProxyInput } from "../../proxy/index.ts";
-import { bootTime, LauncherError, type RunResult, sha256Hex, stateLayout } from "../../shared/index.ts";
+import { LauncherError, processMark, type RunResult, sha256Hex, stateLayout } from "../../shared/index.ts";
 import { createFakeBackend as createBareBackend, type FakeExec } from "../support/fake-backend.ts";
 import { createFakeRunner, type FakeResponder } from "../support/fake-runner.ts";
 
@@ -33,8 +33,6 @@ export interface HarnessOptions {
 }
 
 const roots: string[] = [];
-
-const heldLaunches: Array<() => void> = [];
 
 export const unreachable = (backend: Backend): Backend => ({
   ...backend,
@@ -65,10 +63,6 @@ const unreachableBackend = () => unreachable(createFakeBackend().backend);
 const removeRoot = (root: string) => rm(root, { recursive: true, force: true });
 
 afterEach(async () => {
-  heldLaunches.splice(0).forEach((stop) => {
-    stop();
-  });
-
   await Promise.all(roots.splice(0).map(removeRoot));
 });
 
@@ -85,7 +79,7 @@ const collector = (): Collected => {
   return { stream, text: () => chunks.join("") };
 };
 
-const RUNNING_PROXY: RepoProxy = { pid: 4242, boot: 0, port: 3128, inputHash: "input" };
+const RUNNING_PROXY: RepoProxy = { pid: 4242, boot: 0, start: "", port: 3128, inputHash: "input" };
 
 const FAKE_PI_DIR = "/fake/node_modules/@earendil-works/pi-coding-agent";
 
@@ -127,15 +121,12 @@ export const renderDirOf = (harness: HarnessPaths) =>
   stateLayout(harness.stateDir).repo(sha256Hex(harness.repoRoot)).render;
 
 export const holdLaunch = async (harness: HarnessPaths) => {
-  const registered = await registerLaunch(harness.stateDir, {
+  await registerLaunch(harness.stateDir, {
     launchId: newLaunchId(),
-    pid: process.pid,
-    boot: bootTime(),
+    ...(await processMark()),
     repoHash: sha256Hex(harness.repoRoot),
     startedAt: 1,
   });
-
-  heldLaunches.push(registered.stopHeartbeat);
 };
 
 interface ManagedPiOptions {

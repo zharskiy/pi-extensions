@@ -8,7 +8,7 @@ import {
   createProcessRunner,
   ensureRandomHexFile,
   ensureSalt,
-  isLiveFile,
+  isLive,
   LauncherError,
   launcherEntry,
   readJsonObject,
@@ -68,6 +68,7 @@ const isRecord = (value: unknown): value is RepoProxy => {
   return (
     typeof record?.pid === "number" &&
     typeof record.boot === "number" &&
+    typeof record.start === "string" &&
     typeof record.port === "number" &&
     typeof record.inputHash === "string"
   );
@@ -77,7 +78,7 @@ export const readRepoProxy = async (stateDir: string, repoHash: string): Promise
   const path = proxyFiles(stateDir, repoHash).record;
   const record = await readJsonObject(path);
 
-  return isRecord(record) && (await isLiveFile(path, record)) ? record : undefined;
+  return isRecord(record) && (await isLive(record)) ? record : undefined;
 };
 
 export const stopRepoProxy = async (stateDir: string, repoHash: string) => {

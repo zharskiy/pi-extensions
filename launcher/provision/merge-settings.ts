@@ -18,9 +18,14 @@ const HOST_OWNED_SETTINGS = [
   "httpProxy",
 ];
 
+const SANDBOX_DROPPED_SETTINGS = ["httpProxy"];
+
+const without = (settings: JsonObject, keys: string[]) =>
+  Object.fromEntries(Object.entries(settings).filter(([key]) => !keys.includes(key)));
+
 export const hostWinsSettings = (host: JsonObject, volume: JsonObject | undefined): JsonObject => ({
-  ...Object.fromEntries(Object.entries(volume ?? {}).filter(([key]) => !HOST_OWNED_SETTINGS.includes(key))),
-  ...host,
+  ...without(volume ?? {}, HOST_OWNED_SETTINGS),
+  ...without(host, SANDBOX_DROPPED_SETTINGS),
 });
 
 const isLocalSource = (source: string) =>

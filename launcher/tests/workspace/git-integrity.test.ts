@@ -90,7 +90,7 @@ describe("the git notices after a session", () => {
 
     await writeFile(alternates, "/elsewhere/objects\n");
 
-    await pinGitDirs(workspace, []);
+    await pinGitDirs(workspace, [], async () => undefined);
 
     await recordGitBaseline(workspace, context);
 
@@ -102,7 +102,11 @@ describe("the git notices after a session", () => {
   it("says so when it cannot remove the pin", async () => {
     const { repo, workspace, context } = await createRepo();
     const gitDir = join(repo, ".git");
-    const pins = (await pinGitDirs(workspace, [])).map((path) => ({ path, gitCommonDir: gitDir }));
+    const pins: Array<{ path: string; gitCommonDir: string }> = [];
+
+    await pinGitDirs(workspace, [], async (path) => {
+      pins.push({ path, gitCommonDir: gitDir });
+    });
 
     await chmod(gitDir, 0o555);
 
@@ -124,7 +128,7 @@ describe("the git notices after a session", () => {
       Array.from({ length: 5 }, (_, index) => mkdir(join(repo, "wide", `d${index}`), { recursive: true })),
     );
 
-    await pinGitDirs(workspace, []);
+    await pinGitDirs(workspace, [], async () => undefined);
 
     await recordGitBaseline(workspace, narrow);
 

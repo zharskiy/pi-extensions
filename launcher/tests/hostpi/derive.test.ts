@@ -201,6 +201,32 @@ describe("deriveSandboxPi models.json", () => {
   });
 });
 
+describe("deriveSandboxPi models.json query credentials", () => {
+  it("drops a provider or a model whose baseUrl carries a credential in its query string", () => {
+    const models = {
+      providers: {
+        keyed: { baseUrl: "https://q.example/v1?api-key=QUERY-SECRET", apiKey: "x" },
+        mixed: {
+          baseUrl: "https://m.example/v1?region=eu",
+          models: [{ id: "signed", baseUrl: "https://s.example/v1?key=QUERY-KEY" }, { id: "plain" }],
+        },
+      },
+    };
+    const result = deriveSandboxPi(input({ files: { agentDir: AGENT_DIR, models } }));
+    const providers = result.files["models.json"].providers as Record<string, Record<string, unknown>>;
+
+    expect(Object.keys(providers)).toEqual(["mixed"]);
+    expect(providers.mixed?.models).toEqual([{ id: "plain" }]);
+    expect(JSON.stringify(result)).not.toMatch(/QUERY-/);
+    expect(result.notices).toContain(
+      "models keyed: providers.keyed.baseUrl carries a credential in its query string; the provider stays out of the sandbox, use a header instead",
+    );
+    expect(result.notices).toContain(
+      "models mixed: providers.mixed.models[0].baseUrl carries a credential in its query string; the model stays out of the sandbox, use a header instead",
+    );
+  });
+});
+
 describe("deriveSandboxPi mcp.json", () => {
   const servers = (result = deriveSandboxPi(input())) =>
     result.files["mcp.json"].mcpServers as Record<string, Record<string, unknown>>;

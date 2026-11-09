@@ -1,10 +1,9 @@
 import { join } from "node:path";
-import type { SecretRef } from "../../config/index.ts";
 import { type IniSection, iniWords, parseIni } from "../../shared/index.ts";
-import { endpointOf } from "../endpoints.ts";
+import { hasUrlUserinfo } from "../endpoints.ts";
 import { mergeSections, type Section } from "../rules.ts";
 import type { ToolsInput } from "../types.ts";
-import { emptySection, firstExisting, placeholderRules, toolPlaceholder } from "./files.ts";
+import { emptySection, firstExisting, type UrlSecret, urlCredentialSection } from "./files.ts";
 
 const INDEX_KEYS = new Set(["index-url", "extra-index-url"]);
 
@@ -15,62 +14,42 @@ const configPaths = (input: ToolsInput) => [
   join(input.home, "Library", "Application Support", "pip", "pip.conf"),
 ];
 
-const withPassword = (url: string, placeholder: string) => {
-  const parsed = new URL(url);
+const PROXY_KEY = "proxy";
 
-  parsed.password = placeholder;
+const urlSection = (input: ToolsInput, key: string, url: string, secret: UrlSecret) =>
+  urlCredentialSection(input, { label: "pip", key, identity: `pip:${key}`, url, secret });
 
-  return parsed.href;
-};
-
-const hasPassword = (word: string) => URL.canParse(word) && new URL(word).password !== "";
-
-const urlSection = (input: ToolsInput, key: string, url: string, secret: SecretRef): Section<string> => {
-  if (!hasPassword(url)) {
-    return { value: url, rules: [], notices: [] };
-  }
-
-  const identity = `pip:${key}`;
-  const placeholder = toolPlaceholder(input, identity);
-  const result = endpointOf(url);
-
-  if (!("endpoint" in result)) {
-    return {
-      value: withPassword(url, ""),
-      rules: [],
-      notices: [`pip: ${key} is not an https URL; its password stays on the host`],
-    };
-  }
-
-  return {
-    value: withPassword(url, placeholder),
-    rules: placeholderRules(identity, [result.endpoint], placeholder, secret),
-    notices: [],
-  };
-};
+const dropped = (key: string, reason: string): Section<Array<[string, string]>> => ({
+  value: [],
+  rules: [],
+  notices: [`pip: ${key} ${reason}`],
+});
 
 const entrySection = (
   input: ToolsInput,
   file: string,
   section: string,
   [name, value]: [string, string],
-): Section<[string, string]> => {
+): Section<Array<[string, string]>> => {
+  const key = `${section}.${name}`;
+
+  if (name === PROXY_KEY) {
+    return dropped(key, "stays on the host; the sandbox reaches the network through the launcher proxy");
+  }
+
   if (!INDEX_KEYS.has(name)) {
-    return { value: [name, value], rules: [], notices: [] };
+    return iniWords(value).some(hasUrlUserinfo)
+      ? dropped(key, "carries credentials in a URL and stays on the host")
+      : { value: [[name, value]], rules: [], notices: [] };
   }
 
   const words = mergeSections(
     iniWords(value).map((word, index) =>
-      urlSection(input, `${section}.${name}[${index}]`, word, {
-        file,
-        format: "ini",
-        key: `${section}.${name}[${index}]`,
-        urlPassword: true,
-      }),
+      urlSection(input, `${key}[${index}]`, word, { file, format: "ini", key: `${key}[${index}]` }),
     ),
   );
 
-  return { value: [name, words.values.join("\n")], rules: words.rules, notices: words.notices };
+  return { value: [[name, words.values.join("\n")]], rules: words.rules, notices: words.notices };
 };
 
 const sectionOf = (input: ToolsInput, file: string, section: IniSection): Section<IniSection> => {
@@ -79,7 +58,7 @@ const sectionOf = (input: ToolsInput, file: string, section: IniSection): Sectio
   );
 
   return {
-    value: { name: section.name, entries: merged.values },
+    value: { name: section.name, entries: merged.values.flat() },
     rules: merged.rules,
     notices: merged.notices,
   };
@@ -92,7 +71,7 @@ const withEnvIndex = (input: ToolsInput, sections: IniSection[]): Section<IniSec
     return { value: sections, rules: [], notices: [] };
   }
 
-  const index = urlSection(input, "env.PIP_INDEX_URL", url, { env: "PIP_INDEX_URL", urlPassword: true });
+  const index = urlSection(input, "env.PIP_INDEX_URL", url, { env: "PIP_INDEX_URL" });
   const others = sections.filter((section) => section.name !== GLOBAL);
   const global = sections.find((section) => section.name === GLOBAL)?.entries ?? [];
   const entries: Array<[string, string]> = [

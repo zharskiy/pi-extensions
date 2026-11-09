@@ -21,13 +21,9 @@ export interface Launch {
   launchId: string;
   pid: number;
   boot: number;
+  start: string;
   repoHash: string;
   startedAt: number;
-}
-
-export interface RegisteredLaunch {
-  live: number;
-  stopHeartbeat: () => void;
 }
 
 export interface EndLaunchInput {

@@ -11,7 +11,7 @@ import { createColimaBackend } from "../../../backend/index.ts";
 import { userHashOf } from "../../../container/index.ts";
 import { endLaunch, newLaunchId, registerLaunch } from "../../../grants/index.ts";
 import { stopRepoProxy } from "../../../proxy/index.ts";
-import { bootTime, createProcessRunner, stateLayout } from "../../../shared/index.ts";
+import { createProcessRunner, processMark, stateLayout } from "../../../shared/index.ts";
 import { createTestCa, type TestCa, type TestCertificate } from "../fixtures/test-ca.ts";
 import {
   engineSocket,
@@ -221,10 +221,9 @@ export const createLiveSandbox = async (name: string): Promise<LiveSandbox> => {
     GIT_CONFIG_NOSYSTEM: "1",
   };
   const launchId = newLaunchId();
-  const held = await registerLaunch(stateDir, {
+  await registerLaunch(stateDir, {
     launchId,
-    pid: process.pid,
-    boot: bootTime(),
+    ...(await processMark()),
     repoHash,
     startedAt: Date.now(),
   });
@@ -309,8 +308,6 @@ export const createLiveSandbox = async (name: string): Promise<LiveSandbox> => {
     }
 
     holder.released = true;
-
-    held.stopHeartbeat();
 
     await endLaunch(stateDir, { repoHash, launchId, onLast: async () => undefined });
   };

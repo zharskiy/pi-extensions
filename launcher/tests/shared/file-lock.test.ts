@@ -1,4 +1,5 @@
 import { execFile, spawn } from "node:child_process";
+import { once } from "node:events";
 import { mkdir, mkdtemp, readdir, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,7 +7,14 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { bootTime, errorMessage, withDirectoryLock, withFileLock } from "../../shared/index.ts";
+import {
+  bootTime,
+  errorMessage,
+  type LauncherError,
+  processStart,
+  withDirectoryLock,
+  withFileLock,
+} from "../../shared/index.ts";
 
 const state = { dir: "" };
 
@@ -40,11 +48,20 @@ const deadPid = async () => {
 
 const sleeper = () => spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"]);
 
-const longAgo = () => new Date(Date.now() - 60_000);
+const longAgo = () => new Date(Date.now() - 6 * 60 * 60 * 1000);
 
-const beyondHeartbeat = () => new Date(Date.now() - 120_000);
+const startOf = async (pid: number | undefined) => (pid === undefined ? "" : await processStart(pid)) ?? "";
 
-const ownerText = (pid: number | undefined, boot = bootTime()) => `${pid} ${boot} 0123456789abcdef`;
+const ownerText = async (pid: number | undefined, boot = bootTime(), start?: string) =>
+  `${pid} ${boot} ${start ?? (await startOf(pid))} 0123456789abcdef`;
+
+const spawned = async () => {
+  const holder = sleeper();
+
+  await once(holder, "spawn");
+
+  return holder;
+};
 
 const SHARED = pathToFileURL(join(import.meta.dirname, "..", "..", "shared", "index.ts")).href;
 
@@ -113,33 +130,36 @@ describe("withFileLock", () => {
     expect(await exists(lockPath)).toBe(false);
   });
 
-  it("never takes over the lock of a live holder within its heartbeat window", async () => {
+  it("never takes over the lock of a live holder, however long ago its file changed", async () => {
     const lockPath = join(state.dir, "store.json.lock");
-    const holder = sleeper();
-    const owner = ownerText(holder.pid);
+    const holder = await spawned();
+    const owner = await ownerText(holder.pid);
 
     try {
       await writeFile(lockPath, owner);
 
       await utimes(lockPath, longAgo(), longAgo());
 
-      const problem = await lockError(withFileLock(lockPath, async () => "never", { timeoutMs: 150 }));
+      const problem = await withFileLock(lockPath, async () => "never", { timeoutMs: 150 }).catch(
+        (error: LauncherError) => error,
+      );
 
-      expect(problem).toBe(`${lockPath}: lock is held by another process (pid ${holder.pid})`);
+      expect(problem).toMatchObject({
+        message: `${lockPath}: lock is held by another process (pid ${holder.pid})`,
+        hint: "wait for it to finish and run the command again",
+      });
       expect(await readFile(lockPath, "utf8")).toBe(owner);
     } finally {
       holder.kill();
     }
   });
 
-  it("takes over the lock of a live pid whose heartbeat stopped 90 s ago", async () => {
+  it("takes over the lock of a live pid recorded with another process start time", async () => {
     const lockPath = join(state.dir, "store.json.lock");
-    const holder = sleeper();
+    const holder = await spawned();
 
     try {
-      await writeFile(lockPath, ownerText(holder.pid));
-
-      await utimes(lockPath, beyondHeartbeat(), beyondHeartbeat());
+      await writeFile(lockPath, await ownerText(holder.pid, bootTime(), "Thu-Jan-1-00:00:00-1970"));
 
       expect(await withFileLock(lockPath, async () => "taken", { timeoutMs: 100 })).toBe("taken");
     } finally {
@@ -149,10 +169,10 @@ describe("withFileLock", () => {
 
   it("takes over the lock of a live pid recorded with another boot time", async () => {
     const lockPath = join(state.dir, "store.json.lock");
-    const holder = sleeper();
+    const holder = await spawned();
 
     try {
-      await writeFile(lockPath, ownerText(holder.pid, bootTime() - 3600));
+      await writeFile(lockPath, await ownerText(holder.pid, bootTime() - 3600));
 
       expect(await withFileLock(lockPath, async () => "taken", { timeoutMs: 100 })).toBe("taken");
     } finally {
@@ -163,7 +183,7 @@ describe("withFileLock", () => {
   it("takes over the lock of a dead holder at once and leaves nothing behind", async () => {
     const lockPath = join(state.dir, "store.json.lock");
 
-    await writeFile(lockPath, ownerText(await deadPid()));
+    await writeFile(lockPath, await ownerText(await deadPid(), bootTime(), "Mon-Nov-9-00:00:00-2026"));
 
     expect(await withFileLock(lockPath, async () => "taken", { timeoutMs: 100 })).toBe("taken");
     expect(await readdir(state.dir)).toEqual([]);
@@ -180,10 +200,10 @@ describe("withFileLock", () => {
 
   it("does not remove a newer holder's lock when its own lock was taken from it", async () => {
     const lockPath = join(state.dir, "store.json.lock");
-    const holder = sleeper();
+    const holder = await spawned();
 
     try {
-      const owner = ownerText(holder.pid);
+      const owner = await ownerText(holder.pid);
 
       await withFileLock(lockPath, async () => {
         await rm(lockPath);
@@ -201,7 +221,7 @@ describe("withFileLock", () => {
     const lockPath = join(state.dir, "store.json.lock");
     const log = join(state.dir, "log");
 
-    await writeFile(lockPath, ownerText(await deadPid()));
+    await writeFile(lockPath, await ownerText(await deadPid(), bootTime(), "Mon-Nov-9-00:00:00-2026"));
 
     await Promise.all(Array.from({ length: 4 }, () => contender("withFileLock", lockPath, log)));
 

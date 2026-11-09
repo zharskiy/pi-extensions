@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { run } from "../../cli/index.ts";
 import { registerLaunch } from "../../grants/index.ts";
-import { bootTime, sha256Hex } from "../../shared/index.ts";
+import { processMark, sha256Hex } from "../../shared/index.ts";
 import { createFakeBackend, createHarness } from "./harness.ts";
 
 const OUTDATED =
@@ -54,7 +54,7 @@ describe("the commondir pin around container starts", () => {
     const harness = await createHarness({ backend: () => fake.backend });
 
     await registerLaunch(harness.stateDir, {
-      boot: bootTime(),
+      ...(await processMark()),
       launchId: "00000000000000aa",
       repoHash: sha256Hex(harness.repoRoot),
       startedAt: 1,

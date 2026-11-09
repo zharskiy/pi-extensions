@@ -1,5 +1,7 @@
+import { rm } from "node:fs/promises";
 import type { Backend } from "../backend/index.ts";
 import type { SandboxConfig } from "../config/index.ts";
+import { stateLayout, withFileLock, withFileLockIfFree } from "../shared/index.ts";
 import {
   type BuiltImage,
   ensureBuiltImage,
@@ -21,6 +23,7 @@ export interface SandboxImageInput {
   versions: () => Promise<ImageVersions>;
   inUse: (digest: string) => Promise<boolean>;
   preparing?: () => void;
+  waiting?: () => void;
   progress?: (step: string) => void;
 }
 
@@ -30,6 +33,8 @@ export interface SandboxImage {
   id: string;
   pi?: string;
 }
+
+const BUILD_LOCK_TIMEOUT_MS = 60 * 60 * 1000;
 
 const imageInUse = async (input: SandboxImageInput) => {
   const record = await recordedImage(input.stateDir, input.config);
@@ -53,7 +58,7 @@ const baseImage = async (input: SandboxImageInput, trustPem: string | undefined)
   return recorded === undefined ? freshImage(input, trustPem) : { ...recorded, built: false };
 };
 
-export const ensureSandboxImage = async (input: SandboxImageInput): Promise<SandboxImage> => {
+const preparedImage = async (input: SandboxImageInput): Promise<SandboxImage> => {
   const trustPem = input.config.tls.extraCa.length === 0 ? undefined : input.trustPem;
   const base = await baseImage(input, trustPem);
   const layer = await ensureLayerImage({
@@ -73,3 +78,21 @@ export const ensureSandboxImage = async (input: SandboxImageInput): Promise<Sand
 
   return { reference: base.reference, digest: base.digest, id: layer.id, pi: base.pi };
 };
+
+export const ensureSandboxImage = async (input: SandboxImageInput): Promise<SandboxImage> => {
+  const lock = stateLayout(input.stateDir).buildLock;
+  const free = await withFileLockIfFree(lock, () => preparedImage(input));
+
+  if (!free.busy) {
+    return free.value;
+  }
+
+  input.waiting?.();
+
+  return withFileLock(lock, () => preparedImage(input), { timeoutMs: BUILD_LOCK_TIMEOUT_MS });
+};
+
+export const removeBuildLeftovers = (stateDir: string) =>
+  withFileLockIfFree(stateLayout(stateDir).buildLock, () =>
+    rm(stateLayout(stateDir).build, { recursive: true, force: true }),
+  );

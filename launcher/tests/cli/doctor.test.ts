@@ -6,7 +6,7 @@ import type { ExecIo, ExecSpec, Vm } from "../../backend/index.ts";
 import { run } from "../../cli/index.ts";
 import { testedPiVersion } from "../../cli/versions.ts";
 import { registerLaunch } from "../../grants/index.ts";
-import { bootTime, LauncherError, sha256Hex } from "../../shared/index.ts";
+import { LauncherError, processMark, sha256Hex } from "../../shared/index.ts";
 import { createFakeBackend, createHarness, unreachable, writeManagedPi, writePathPi } from "./harness.ts";
 
 interface Probes {
@@ -114,7 +114,9 @@ const doctorWith = async (
   const fake = await guestBackend(probes, vm);
   const harness = await createHarness({
     backend: () => fake.backend,
-    proxy: { ensure: async () => ({ proxy: { pid: 77, port, boot: 0, inputHash: "h" }, notices: [] }) },
+    proxy: {
+      ensure: async () => ({ proxy: { pid: 77, port, boot: 0, start: "", inputHash: "h" }, notices: [] }),
+    },
   });
 
   if (userConfig !== undefined) {
@@ -245,11 +247,13 @@ describe("pi sandbox doctor", () => {
     const fake = createFakeBackend({ exec: answering({}) });
     const harness = await createHarness({
       backend: () => fake.backend,
-      proxy: { ensure: async () => ({ proxy: { pid: 77, port, boot: 0, inputHash: "h" }, notices: [] }) },
+      proxy: {
+        ensure: async () => ({ proxy: { pid: 77, port, boot: 0, start: "", inputHash: "h" }, notices: [] }),
+      },
     });
 
     await registerLaunch(harness.stateDir, {
-      boot: bootTime(),
+      ...(await processMark()),
       launchId: "00000000000000cc",
       pid: process.pid,
       repoHash: sha256Hex(harness.repoRoot),
