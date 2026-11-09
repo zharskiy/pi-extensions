@@ -36,6 +36,7 @@ const LEAF_KEYS = [
   "mounts.extraReadOnly",
   "mounts.cacheVolumes",
   "mounts.sharedCaches",
+  "mounts.hostCaches",
   "mounts.autoNodeModules",
   "env.allow",
   "resources.cpus",

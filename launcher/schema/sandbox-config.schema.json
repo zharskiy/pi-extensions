@@ -327,6 +327,13 @@
           },
           "description": "Directories under ~ kept in one volume per user and shared by every repository, mounted read-write at the same path in the container. Not ~/.pi, ~/.ssh, ~/.gnupg, ~/.aws, ~/.docker, ~/.colima, ~/.kube, ~/.config or ~/.local/bin, no nested entries. Not in a project config."
         },
+        "hostCaches": {
+          "type": "array",
+          "items": {
+            "enum": ["maven", "gradle", "npm", "pip", "go", "cargo"]
+          },
+          "description": "Host tool caches bound read-write into the container: maven ~/.m2/repository, gradle ~/.gradle/caches and ~/.gradle/wrapper, npm ~/.npm/_cacache, pip ~/Library/Caches/pip at ~/.cache/pip, go ~/go/pkg/mod, cargo ~/.cargo/registry and ~/.cargo/git. Cache folders only, never their config files. Host builds run what the sandbox writes there. Default []. Not in a project config."
+        },
         "autoNodeModules": {
           "type": "boolean",
           "description": "Give every folder with a lockfile its own node_modules volume so the sandbox never shares node_modules with the host. On by default."

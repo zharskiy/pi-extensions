@@ -17,6 +17,7 @@ export type {
   EffectiveConfig,
   ExtraCa,
   FileSecret,
+  HostCachePreset,
   ParentProxy,
   SandboxConfig,
   SecretRef,

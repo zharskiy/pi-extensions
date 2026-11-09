@@ -322,6 +322,25 @@ describe("buildContainerSpec", () => {
     expect(repoVolumes({ workspace: other, config, hostEnv: {}, uid: 501 })).not.toContain(name);
   });
 
+  it("binds host caches read-write at their guest paths and owns only their guest parents", () => {
+    const hostCaches = [
+      { preset: "maven" as const, source: "/Users/dev/.m2/repository", target: ".m2/repository" },
+      { preset: "go" as const, source: "/Users/dev/go/pkg/mod", target: "go/pkg/mod" },
+    ];
+    const spec = buildContainerSpec(specInput({ hostCaches }));
+
+    expect(mountAt(spec.mounts, "/home/pi/.m2/repository")).toEqual({
+      source: "/Users/dev/.m2/repository",
+      target: "/home/pi/.m2/repository",
+      readOnly: false,
+      kind: "bind",
+    });
+    expect(mountAt(spec.mounts, "/home/pi/go/pkg/mod")?.source).toBe("/Users/dev/go/pkg/mod");
+    expect(spec.ownedPaths).toEqual(["/home/pi/.m2", "/home/pi/go", "/home/pi/go/pkg"]);
+    expect(spec.mounts.map((mount) => mount.target)).not.toContain("/home/pi/.m2");
+    expect(spec.labels[LABELS_SPEC_HASH]).not.toBe(buildContainerSpec(specInput()).labels[LABELS_SPEC_HASH]);
+  });
+
   it("mounts the proxy CA read-only when the proxy has one, and only then", () => {
     const withoutCa = buildContainerSpec(specInput({ proxy: { ...proxy, caPemPath: undefined } }));
 

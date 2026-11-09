@@ -1,6 +1,6 @@
 import { constants } from "node:os";
 import { resolve } from "node:path";
-import type { Backend, ProxyRoute, VmPath } from "../backend/index.ts";
+import { type Backend, engineSocketPath, type ProxyRoute, type VmPath } from "../backend/index.ts";
 import { type EffectiveConfig, loadEffectiveConfig } from "../config/index.ts";
 import {
   buildContainerSpec,
@@ -32,9 +32,12 @@ import {
 import {
   assertSafeWorkspace,
   assertWithinWorkspaceRoots,
+  createHostCacheDirs,
   discoverWorkspace,
   type HostSessions,
+  hostCachePaths,
   mountedGitDirs,
+  resolveHostCaches,
   type Workspace,
   withGitPinLock,
   workspaceNotices,
@@ -177,6 +180,10 @@ export const vmPathsOf = (deps: CliDeps, context: LaunchContext): VmPath[] => {
       writable: false,
     })),
     ...sessionsDir,
+    ...hostCachePaths(effective.config.mounts.hostCaches, deps.home).map((path) => ({
+      path,
+      writable: true,
+    })),
   ].map((need) => ({ ...need, path: realOrResolvedSync(need.path) }));
 };
 
@@ -207,13 +214,34 @@ const withHint = async <T>(context: LaunchContext, action: () => Promise<T>) => 
 const startVm = (deps: CliDeps, context: LaunchContext, backend: Backend) =>
   withHint(context, () => backend.vm.ensureRunning((notice) => writeNotices(deps, [notice])));
 
+const hostCacheContext = (deps: CliDeps, context: LaunchContext) => ({
+  home: deps.home,
+  env: deps.env,
+  engineSockets: [engineSocketPath(deps.home)],
+  sharedCaches: context.effective.config.mounts.sharedCaches,
+});
+
+const prepareHostCaches = (deps: CliDeps, context: LaunchContext) => {
+  const created = createHostCacheDirs(
+    context.effective.config.mounts.hostCaches,
+    hostCacheContext(deps, context),
+  );
+
+  writeNotices(
+    deps,
+    created.map((path) => `created ${path} for mounts.hostCaches`),
+  );
+};
+
 const shareVm = (deps: CliDeps, context: LaunchContext, backend: Backend) =>
-  withHint(context, () =>
-    backend.vm.ensureShares(vmPathsOf(deps, context), {
+  withHint(context, async () => {
+    prepareHostCaches(deps, context);
+
+    await backend.vm.ensureShares(vmPathsOf(deps, context), {
       busy: () => busyLaunches(context.stateDir),
       report: (notice) => writeNotices(deps, [notice]),
-    }),
-  );
+    });
+  });
 
 const TOKEN_HASH_LENGTH = 16;
 
@@ -302,8 +330,22 @@ const overlayNotices = (context: LaunchContext) => {
   ];
 };
 
+const hostCacheNotices = (context: LaunchContext) => {
+  const presets = [...new Set(context.effective.config.mounts.hostCaches)];
+
+  return presets.length === 0
+    ? []
+    : [
+        `pi-sandbox: host caches shared read-write with the sandbox: ${presets.join(", ")}; host builds run what the sandbox writes there`,
+      ];
+};
+
 const writeLaunchNotices = (deps: CliDeps, context: LaunchContext) => {
-  writeLines(deps.stderr, [...workspaceNotices(context.workspace), ...overlayNotices(context)]);
+  writeLines(deps.stderr, [
+    ...workspaceNotices(context.workspace),
+    ...overlayNotices(context),
+    ...hostCacheNotices(context),
+  ]);
 };
 
 const syncAgentFiles = async (input: SandboxInput, id: string) => {
@@ -346,6 +388,10 @@ const prepareContainer = async (
   writeLaunchNotices(deps, context);
 
   const route = await sandboxRoute(deps, backend, proxy, image.id, context.repoHash);
+  const hostCaches = resolveHostCaches(
+    context.effective.config.mounts.hostCaches,
+    hostCacheContext(deps, context),
+  );
   const specWith = (gitOverlay: GitOverlay) =>
     buildContainerSpec({
       workspace: context.workspace,
@@ -361,6 +407,7 @@ const prepareContainer = async (
       trust: route === undefined ? undefined : host.trust,
       hostSessions: sessions,
       toolEnv: host.derived.tools.env,
+      hostCaches,
     });
   const planned = specWith(git.overlay);
 

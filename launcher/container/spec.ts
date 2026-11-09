@@ -19,6 +19,7 @@ import {
 import {
   type GitOverlay,
   gitRepos,
+  type HostCache,
   type HostSessions,
   mountedGitDirs,
   resolveExtraMounts,
@@ -71,6 +72,7 @@ export interface ContainerSpecInput {
   launchId?: string;
   hostSessions?: HostSessions;
   toolEnv?: Record<string, string>;
+  hostCaches?: HostCache[];
 }
 
 export interface RepoVolumesInput {
@@ -148,6 +150,9 @@ const extraMounts = (input: ContainerSpecInput) => {
     engineSockets: [engineSocketPath(home)],
   });
 };
+
+const hostCacheMounts = (caches: HostCache[] = []) =>
+  caches.map((cache) => bind(cache.source, join(GUEST_HOME, cache.target), false));
 
 const homeRelative = (path: string) => path.slice(2).replace(/\/+$/, "");
 
@@ -362,6 +367,7 @@ export const buildContainerSpec = (input: ContainerSpecInput): LauncherContainer
   const agentVolume = agentVolumeName(hostUser(input.hostEnv, input.hostUid), workspace.repoRoot);
   const owned = ownedVolumes(input);
   const volumes = [...owned.repo, ...owned.shared];
+  const hostCaches = hostCacheMounts(input.hostCaches);
 
   return withSpecHash({
     name: containerName(workspace.repoRoot),
@@ -374,6 +380,7 @@ export const buildContainerSpec = (input: ContainerSpecInput): LauncherContainer
       volume(agentVolume, GUEST_PATHS.agentDir),
       ...sessionsMounts(input),
       ...volumes.map((entry) => volume(entry.name, entry.target)),
+      ...hostCaches,
       ...renderMounts(input.renderDir),
       ...trustMounts(input),
     ],
@@ -391,6 +398,7 @@ export const buildContainerSpec = (input: ContainerSpecInput): LauncherContainer
     ownedPaths: [
       ...new Set([
         ...owned.shared.flatMap((entry) => parentsBelow(GUEST_HOME, entry.target)),
+        ...hostCaches.flatMap((mount) => parentsBelow(GUEST_HOME, mount.target)),
         ...volumes.map((entry) => entry.target),
       ]),
     ],

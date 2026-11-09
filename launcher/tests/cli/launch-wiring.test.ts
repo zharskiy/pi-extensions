@@ -1,7 +1,7 @@
-import { lstat, readFile } from "node:fs/promises";
+import { lstat, readFile, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { ProxyRouteRequest } from "../../backend/index.ts";
+import type { ProxyRouteRequest, VmPath } from "../../backend/index.ts";
 import { run } from "../../cli/index.ts";
 import type { DenialRecord } from "../../proxy/index.ts";
 import { isPlaceholder, sha256Hex } from "../../shared/index.ts";
@@ -116,6 +116,43 @@ describe("pi launch wiring", () => {
     });
     expect(env.JAVA_TOOL_OPTIONS).toContain("-Dhttps.proxyHost=pi-sandbox-proxy");
     expect(env.JAVA_TOOL_OPTIONS).not.toContain("trustStore");
+
+    await expectNoLeak(fake, renderDirOf(harness), [REAL_KEY]);
+  });
+
+  it("binds the host Maven repository read-write, never ~/.m2, after creating it and sharing it with the VM", async () => {
+    const shared: VmPath[][] = [];
+    const fake = createFakeBackend({
+      vm: {
+        ensureShares: async (paths) => {
+          shared.push(paths);
+        },
+      },
+    });
+    const harness = await createHarness({ backend: () => fake.backend });
+    const repository = join(harness.deps.home, ".m2", "repository");
+
+    await writeText(
+      join(harness.deps.home, ".m2", "settings.xml"),
+      `<settings><servers><server><id>corp</id><password>${REAL_KEY}</password></server></servers></settings>`,
+    );
+
+    await harness.writeJson(harness.userConfigFile, { mounts: { hostCaches: ["maven"] } });
+
+    expect(await run([], harness.deps)).toBe(0);
+
+    const mounts = fake.created[0]?.spec?.mounts ?? [];
+
+    expect((await lstat(repository)).isDirectory()).toBe(true);
+    expect(mounts.find((mount) => mount.target === "/home/pi/.m2/repository")).toMatchObject({
+      source: await realpath(repository),
+      readOnly: false,
+      kind: "bind",
+    });
+    expect(mounts.filter((mount) => mount.source.startsWith(join(harness.deps.home, ".m2")))).toHaveLength(1);
+    expect(shared[0]).toContainEqual({ path: await realpath(repository), writable: true });
+    expect(harness.stderr()).toContain(`pi-sandbox: created ${repository} for mounts.hostCaches\n`);
+    expect(harness.stderr()).toContain("host caches shared read-write with the sandbox: maven;");
 
     await expectNoLeak(fake, renderDirOf(harness), [REAL_KEY]);
   });

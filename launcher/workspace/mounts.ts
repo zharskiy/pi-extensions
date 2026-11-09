@@ -1,5 +1,6 @@
-import { existsSync, realpathSync, statSync } from "node:fs";
-import { dirname, isAbsolute, join, resolve, sep } from "node:path";
+import { existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, statSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
+import type { HostCachePreset } from "../config/index.ts";
 import {
   expandHome,
   hostAgentDir,
@@ -140,3 +141,147 @@ export const resolveExtraMounts = (paths: string[], context: ExtraMountContext) 
 
   return paths.map((path) => checkedMount(path, context, guard));
 };
+
+interface HostCacheContext extends ProtectedContext {
+  sharedCaches: string[];
+}
+
+interface CacheDir {
+  host: string;
+  guest: string;
+}
+
+export interface HostCache {
+  preset: HostCachePreset;
+  source: string;
+  target: string;
+}
+
+const same = (path: string): CacheDir => ({ host: path, guest: path });
+
+const HOST_CACHES: Record<HostCachePreset, CacheDir[]> = {
+  maven: [same(".m2/repository")],
+  gradle: [same(".gradle/caches"), same(".gradle/wrapper")],
+  npm: [same(".npm/_cacache")],
+  pip: [{ host: "Library/Caches/pip", guest: ".cache/pip" }],
+  go: [same("go/pkg/mod")],
+  cargo: [same(".cargo/registry"), same(".cargo/git")],
+};
+
+const CREDENTIAL_NAMES = [
+  "settings.xml",
+  "settings-security.xml",
+  "gradle.properties",
+  "init.d",
+  ".npmrc",
+  ".pypirc",
+  "pip.conf",
+  "credentials",
+  "credentials.toml",
+  "config.toml",
+  ".netrc",
+  ".git-credentials",
+];
+
+const CACHE_DIR_MODE = 0o700;
+
+const cacheDirsOf = (presets: HostCachePreset[]) =>
+  [...new Set(presets)].flatMap((preset) => HOST_CACHES[preset].map((dir) => ({ preset, ...dir })));
+
+export const hostCachePaths = (presets: HostCachePreset[], home: string) =>
+  cacheDirsOf(presets).map((dir) => join(home, dir.host));
+
+const lstatQuiet = (path: string) => {
+  try {
+    return lstatSync(path);
+  } catch {
+    return undefined;
+  }
+};
+
+const realOf = (path: string): string => {
+  if (lstatQuiet(path) === undefined) {
+    return join(realOf(dirname(path)), basename(path));
+  }
+
+  try {
+    return realpathSync.native(path);
+  } catch {
+    return resolve(path);
+  }
+};
+
+const isCredentialName = (name: string) => CREDENTIAL_NAMES.includes(name) || name.startsWith("credentials");
+
+const credentialReason = (real: string) => {
+  const found = readdirSync(real).find(isCredentialName);
+
+  return found === undefined ? undefined : `it holds ${found}`;
+};
+
+const homeReason = (real: string, home: string) =>
+  real !== home && isWithin(real, home) ? undefined : "it resolves outside the home directory";
+
+const sharedReason = (guest: string, sharedCaches: string[]) => {
+  const shared = sharedCaches
+    .map((entry) => entry.slice(2).replace(/\/+$/, ""))
+    .find((entry) => isWithin(entry, guest));
+
+  return shared === undefined ? undefined : `~/${shared} is also in mounts.sharedCaches`;
+};
+
+const entryReason = (path: string, real: string, guard: PathGuard, home: string) => {
+  const info = lstatQuiet(path);
+  const found = guard(real) ?? homeReason(real, home) ?? gitReason(real, "directory");
+
+  if (found !== undefined || info === undefined) {
+    return found;
+  }
+
+  if (info.isSymbolicLink()) {
+    return "it is a symbolic link";
+  }
+
+  return info.isDirectory() ? credentialReason(real) : "it is not a directory";
+};
+
+const checkedCaches = (presets: HostCachePreset[], context: HostCacheContext) => {
+  const guard = guardOf(protectedPaths(context));
+  const home = realOrResolvedSync(context.home);
+
+  return cacheDirsOf(presets).map((dir) => {
+    const path = join(context.home, dir.host);
+    const real = realOf(path);
+    const found = sharedReason(dir.guest, context.sharedCaches) ?? entryReason(path, real, guard, home);
+
+    if (found !== undefined) {
+      throw new LauncherError(
+        `mounts.hostCaches: ${dir.preset} (~/${dir.host}) is not allowed (${found})`,
+        `remove ${dir.preset} from mounts.hostCaches`,
+      );
+    }
+
+    return { preset: dir.preset, path, source: real, target: dir.guest };
+  });
+};
+
+export const createHostCacheDirs = (presets: HostCachePreset[], context: HostCacheContext) =>
+  checkedCaches(presets, context)
+    .filter((cache) => !existsSync(cache.path))
+    .map((cache) => {
+      mkdirSync(cache.path, { recursive: true, mode: CACHE_DIR_MODE });
+
+      return cache.path;
+    });
+
+export const resolveHostCaches = (presets: HostCachePreset[], context: HostCacheContext): HostCache[] =>
+  checkedCaches(presets, context).map((cache) => {
+    if (!existsSync(cache.path)) {
+      throw new LauncherError(
+        `mounts.hostCaches: ${cache.preset} (${cache.path}) does not exist`,
+        "run pi again so the launcher creates it",
+      );
+    }
+
+    return { preset: cache.preset, source: cache.source, target: cache.target };
+  });

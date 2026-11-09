@@ -54,6 +54,7 @@ const COMPLETE_LAYER: LayerConfig = {
     extraReadOnly: ["/opt/tools"],
     cacheVolumes: ["node_modules"],
     sharedCaches: ["~/.cache/pip"],
+    hostCaches: ["maven"],
     autoNodeModules: false,
   },
   env: { allow: ["EDITOR"] },

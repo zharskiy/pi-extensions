@@ -14,7 +14,13 @@ export {
 } from "./git/protect.ts";
 export { workspaceNotices, workspaceSelfBinds } from "./git/workspace.ts";
 export { assertHostSessionsDir, assertSafeWorkspace } from "./guard.ts";
-export { resolveExtraMounts } from "./mounts.ts";
+export {
+  createHostCacheDirs,
+  type HostCache,
+  hostCachePaths,
+  resolveExtraMounts,
+  resolveHostCaches,
+} from "./mounts.ts";
 export {
   type HostSessions,
   hostSessionsChoice,

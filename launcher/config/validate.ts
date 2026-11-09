@@ -12,7 +12,7 @@ import {
 import { getPath } from "./dotted.ts";
 import { isLoopbackName, SECRET_MARKER, TLS_PORT } from "./egress-entry.ts";
 import { EGRESS_PRESETS } from "./egress-presets.ts";
-import type { LayerConfig } from "./types.ts";
+import type { HostCachePreset, LayerConfig } from "./types.ts";
 
 type Check = (value: string) => string | undefined;
 
@@ -74,6 +74,8 @@ const PRIVATE_HOME_PATHS = [
   ".config",
   ".local/bin",
 ];
+
+const HOST_CACHE_PRESETS: readonly HostCachePreset[] = ["maven", "gradle", "npm", "pip", "go", "cargo"];
 
 const NPM_PACKAGE = /^(@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*@[0-9][0-9A-Za-z.+-]*$/;
 
@@ -333,6 +335,7 @@ const LAYER_SPEC: ObjectSpec = {
         extraReadOnly: list(absolutePath),
         cacheVolumes: list(repoPath),
         sharedCaches: { type: "array", items: text(sharedCache), check: distinctCaches },
+        hostCaches: { type: "array", items: choice(HOST_CACHE_PRESETS) },
         autoNodeModules: flag,
       },
     },

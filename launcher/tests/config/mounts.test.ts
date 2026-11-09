@@ -114,6 +114,38 @@ describe("mounts.sharedCaches", () => {
   });
 });
 
+describe("mounts.hostCaches", () => {
+  it("defaults to no host caches", async () => {
+    const { config, sources } = await loadWith({});
+
+    expect(config.mounts.hostCaches).toEqual([]);
+    expect(sources["mounts.hostCaches"]).toBe("default");
+  });
+
+  it("lets the user layer enable host caches and keeps the policy's choice final", async () => {
+    const { config, sources } = await loadWith({ user: { mounts: { hostCaches: ["maven", "gradle"] } } });
+
+    expect(config.mounts.hostCaches).toEqual(["maven", "gradle"]);
+    expect(sources["mounts.hostCaches"]).toBe("user");
+
+    await expect(
+      loadWith({ policy: { mounts: { hostCaches: [] } }, user: { mounts: { hostCaches: ["npm"] } } }),
+    ).rejects.toThrow("user: mounts.hostCaches is set by the policy config and is final there");
+  });
+
+  it("refuses the project layer setting mounts.hostCaches", async () => {
+    await expect(loadWith({ project: { mounts: { hostCaches: ["maven"] } } })).rejects.toThrow(
+      "project: mounts.hostCaches may not be set by a project config",
+    );
+  });
+
+  it("refuses an unknown preset", () => {
+    expect(() => validateLayer({ mounts: { hostCaches: ["ssh"] } }, "user")).toThrow(
+      "user: mounts.hostCaches[0] must be one of maven, gradle, npm, pip, go, cargo",
+    );
+  });
+});
+
 describe("mounts.autoNodeModules", () => {
   it("is taken from the lowest layer that sets it, the project included", async () => {
     const { config, sources } = await loadWith({

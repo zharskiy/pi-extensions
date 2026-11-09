@@ -43,6 +43,8 @@ export interface WorkspaceRootsConfig {
   outside: "refuse" | "warn";
 }
 
+export type HostCachePreset = "maven" | "gradle" | "npm" | "pip" | "go" | "cargo";
+
 export type EgressPreset = "npm" | "pypi" | "github" | "maven" | "gradle" | "go" | "cargo";
 
 interface EgressConfig {
@@ -66,6 +68,7 @@ interface MountsConfig {
   extraReadOnly: string[];
   cacheVolumes: string[];
   sharedCaches: string[];
+  hostCaches: HostCachePreset[];
   autoNodeModules: boolean;
 }
 

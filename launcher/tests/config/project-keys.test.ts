@@ -23,6 +23,7 @@ const REFUSED: Array<[string, unknown]> = [
   ["image.digest", `sha256:${"e".repeat(64)}`],
   ["mounts.extraReadOnly", ["/opt"]],
   ["mounts.sharedCaches", ["~/.npm"]],
+  ["mounts.hostCaches", ["maven"]],
   ["org", "/etc/pi-sandbox/org.json"],
   ["env.allow", ["EDITOR"]],
   ["sessions.host", false],
