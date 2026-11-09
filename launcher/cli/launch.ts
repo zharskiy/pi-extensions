@@ -245,6 +245,7 @@ const prepareImage = (
     backend,
     config,
     stateDir: context.stateDir,
+    repoHash: context.repoHash,
     env: deps.env,
     trustPem: host.trust?.extraPemPath,
     versions: async () => ({ pi: await imagePiVersion(host.pi) }),

@@ -368,6 +368,50 @@ describe("colima images", () => {
       JSON.stringify({ HTTPS_PROXY: "http://proxy.example.com:8080" }),
     ]);
   });
+
+  it("labels builds as managed, lists images with their tags and use, and removes only unused ones", async () => {
+    const engine = await startEngine();
+    const context = await temporaryDir();
+    const backend = createColimaBackend({
+      home: "/nonexistent",
+      stateDir: "/nonexistent",
+      socketPath: engine.socketPath,
+      runner: createProcessRunner(),
+    });
+
+    await writeFile(join(context, "Dockerfile"), "FROM scratch\n");
+
+    const used = await backend.buildImage(context, "pi-sandbox-layer:used");
+
+    await writeFile(join(context, "Dockerfile"), "FROM scratch\nUSER pi\n");
+
+    const idle = await backend.buildImage(context, "pi-sandbox-layer:idle");
+
+    await backend.createContainer({ ...baseSpec, image: used.id });
+
+    expect(await backend.listImages()).toEqual(
+      expect.arrayContaining([
+        {
+          id: used.id,
+          tags: ["pi-sandbox-layer:used"],
+          labels: { [LABELS.managed]: "true" },
+          inUse: true,
+          created: expect.any(Number),
+        },
+        {
+          id: idle.id,
+          tags: ["pi-sandbox-layer:idle"],
+          labels: { [LABELS.managed]: "true" },
+          inUse: false,
+          created: expect.any(Number),
+        },
+      ]),
+    );
+    expect(await backend.removeImage("pi-sandbox-layer:used")).toBe(false);
+    expect(await backend.removeImage("pi-sandbox-layer:idle")).toBe(true);
+    expect(await backend.removeImage("pi-sandbox-layer:idle")).toBe(false);
+    expect((await backend.listImages()).map((image) => image.id)).toEqual([used.id]);
+  });
 });
 
 describe("colima exec", () => {

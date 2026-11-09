@@ -1,4 +1,8 @@
+import { lstat, readdir, readFile, rmdir, stat, unlink } from "node:fs/promises";
 import { request } from "node:http";
+import { uptime } from "node:os";
+import { join, sep } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 
 const MANAGED_LABEL = "pi-sandbox.managed";
 
@@ -6,7 +10,25 @@ const RELAY_LABEL = "pi-sandbox.relay";
 
 const PING_TIMEOUT_MS = 3000;
 
-const [socketPath = "", ...flags] = process.argv.slice(2);
+const HOST_SIDE = "--host-side";
+
+const FRESH_MS = 90_000;
+
+const BOOT_SKEW_SECONDS = 30;
+
+const STOP_GRACE_MS = 2000;
+
+const EXIT_POLL_MS = 50;
+
+const REPO_HASH = /^[0-9a-f]{64}$/;
+
+const PIN = /^\.\n?$/;
+
+const args = process.argv.slice(2);
+
+const hostSide = args[0] === HOST_SIDE;
+
+const [target = "", ...flags] = hostSide ? args.slice(1) : args;
 
 const dryRun = flags.includes("--dry-run");
 
@@ -14,7 +36,7 @@ const withVolumes = flags.includes("--volumes");
 
 const call = (method, path, timeout = 0) =>
   new Promise((resolve, reject) => {
-    const outgoing = request({ socketPath, method, path, timeout }, (response) => {
+    const outgoing = request({ socketPath: target, method, path, timeout }, (response) => {
       const chunks = [];
 
       response.on("data", (chunk) => chunks.push(chunk));
@@ -140,10 +162,225 @@ const clean = async () => {
   await cleanVolumes();
 };
 
-try {
-  await clean();
-} catch (error) {
-  console.error(`pi-sandbox uninstall: docker engine at ${socketPath}: ${error.message}`);
+const bootTime = () => Math.round(Date.now() / 1000 - uptime());
 
-  process.exitCode = 1;
-}
+const alive = (pid) => {
+  try {
+    process.kill(pid, 0);
+
+    return true;
+  } catch (error) {
+    return error.code === "EPERM";
+  }
+};
+
+const isMark = (mark) => Number.isInteger(mark?.pid) && mark.pid > 0 && Number.isFinite(mark.boot);
+
+const sameBoot = (boot) => Math.abs(boot - bootTime()) <= BOOT_SKEW_SECONDS;
+
+const readJson = (path) =>
+  readFile(path, "utf8").then(
+    (text) => {
+      try {
+        return JSON.parse(text);
+      } catch {
+        return undefined;
+      }
+    },
+    () => undefined,
+  );
+
+const liveMark = async (path) => {
+  const [mark, info] = await Promise.all([readJson(path), stat(path).catch(() => undefined)]);
+  const live =
+    isMark(mark) &&
+    info !== undefined &&
+    sameBoot(mark.boot) &&
+    Date.now() - info.mtimeMs < FRESH_MS &&
+    alive(mark.pid);
+
+  return live ? mark : undefined;
+};
+
+const entriesOf = (path) => readdir(path).catch(() => []);
+
+const repoDirs = async (stateDir) => {
+  const names = await entriesOf(join(stateDir, "repos"));
+
+  return names.filter((name) => REPO_HASH.test(name)).map((name) => join(stateDir, "repos", name));
+};
+
+const liveLaunches = async (repo) => {
+  const launches = join(repo, "launches");
+  const names = (await entriesOf(launches)).filter((name) => name.endsWith(".json"));
+  const marks = await Promise.all(names.map((name) => liveMark(join(launches, name))));
+
+  return marks.filter((mark) => mark !== undefined).length;
+};
+
+const readList = async (path) => {
+  const value = await readJson(path);
+
+  return Array.isArray(value) ? value : [];
+};
+
+const removePin = async (pin) => {
+  const info = typeof pin?.path === "string" ? await lstat(pin.path).catch(() => undefined) : undefined;
+  const text = info?.isFile() ? await readFile(pin.path, "utf8").catch(() => undefined) : undefined;
+
+  if (text === undefined || !PIN.test(text)) {
+    return [];
+  }
+
+  if (!dryRun) {
+    await unlink(pin.path).catch(() => undefined);
+  }
+
+  return [pin.path];
+};
+
+const depthOf = (path) => path.split(sep).length;
+
+const removeCreatedDir = async (removed, path) => {
+  const done = await removed;
+  const info = await lstat(path).catch(() => undefined);
+
+  if (info === undefined || !info.isDirectory()) {
+    return done;
+  }
+
+  if (dryRun) {
+    return [...done, path];
+  }
+
+  return rmdir(path).then(
+    () => [...done, path],
+    () => done,
+  );
+};
+
+const removeCreatedDirs = async (repo) => {
+  const dirs = (await readList(join(repo, "created.json"))).filter((dir) => typeof dir === "string");
+
+  return [...new Set(dirs)]
+    .sort((first, second) => depthOf(second) - depthOf(first) || second.localeCompare(first))
+    .reduce(removeCreatedDir, Promise.resolve([]));
+};
+
+const exited = async (pid, deadline) => {
+  if (!alive(pid)) {
+    return true;
+  }
+
+  if (Date.now() >= deadline) {
+    return false;
+  }
+
+  await sleep(EXIT_POLL_MS);
+
+  return exited(pid, deadline);
+};
+
+const signal = (pid, name) => {
+  try {
+    process.kill(pid, name);
+  } catch {
+    return;
+  }
+};
+
+const stopProxy = async (repo) => {
+  const proxy = await liveMark(join(repo, "proxy", "proxy.json"));
+
+  if (proxy === undefined) {
+    return [];
+  }
+
+  if (!dryRun) {
+    signal(proxy.pid, "SIGTERM");
+
+    if (!(await exited(proxy.pid, Date.now() + STOP_GRACE_MS))) {
+      signal(proxy.pid, "SIGKILL");
+    }
+  }
+
+  return [proxy.pid];
+};
+
+const stopLogins = async (stateDir) => {
+  const logins = Object.values((await readJson(join(stateDir, "mcp-login.json"))) ?? {});
+  const groups = logins
+    .map((login) => login?.running)
+    .filter((running) => isMark({ pid: running?.pgid, boot: running?.boot }))
+    .filter((running) => sameBoot(running.boot) && alive(-running.pgid));
+
+  if (!dryRun) {
+    groups.forEach((running) => {
+      signal(-running.pgid, "SIGTERM");
+    });
+  }
+
+  return groups.length;
+};
+
+const cleanRepo = async (repo) => {
+  const pins = await Promise.all((await readList(join(repo, "pins.json"))).map(removePin));
+  const dirs = await removeCreatedDirs(repo);
+  const proxies = await stopProxy(repo);
+
+  return { pins: pins.flat().length, dirs: dirs.length, proxies: proxies.length };
+};
+
+const sum = (totals, counts) => ({
+  pins: totals.pins + counts.pins,
+  dirs: totals.dirs + counts.dirs,
+  proxies: totals.proxies + counts.proxies,
+});
+
+const cleanHostSide = async (stateDir) => {
+  const repos = await repoDirs(stateDir);
+  const live = (await Promise.all(repos.map(liveLaunches))).reduce((total, count) => total + count, 0);
+
+  if (live > 0) {
+    console.error(
+      `pi-sandbox uninstall: ${live} pi sessions still run in the sandbox; exit the pi sessions first`,
+    );
+
+    process.exitCode = 1;
+
+    return;
+  }
+
+  const counts = (await Promise.all(repos.map(cleanRepo))).reduce(sum, { pins: 0, dirs: 0, proxies: 0 });
+  const logins = await stopLogins(stateDir);
+
+  console.log(`git: ${verb} ${counts.pins} git pins`);
+
+  console.log(`mount points: ${verb} ${counts.dirs} created directories`);
+
+  console.log(`proxy: ${dryRun ? "would stop" : "stopped"} ${counts.proxies} proxies`);
+
+  console.log(`mcp: ${dryRun ? "would stop" : "stopped"} ${logins} sign-ins`);
+};
+
+const runHostSide = async () => {
+  try {
+    await cleanHostSide(target);
+  } catch (error) {
+    console.error(`pi-sandbox uninstall: state at ${target}: ${error.message}`);
+
+    process.exitCode = 1;
+  }
+};
+
+const runEngine = async () => {
+  try {
+    await clean();
+  } catch (error) {
+    console.error(`pi-sandbox uninstall: docker engine at ${target}: ${error.message}`);
+
+    process.exitCode = 1;
+  }
+};
+
+await (hostSide ? runHostSide() : runEngine());

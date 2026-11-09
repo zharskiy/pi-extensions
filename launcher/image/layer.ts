@@ -4,14 +4,15 @@ import type { Backend } from "../backend/index.ts";
 import type { SandboxConfig } from "../config/index.ts";
 import { errorMessage, LauncherError, sha256Hex } from "../shared/index.ts";
 import { placeBuildTrust, TRUST_FILE } from "./build-trust.ts";
-import { buildInContext, reusableImage } from "./context.ts";
-import { isImageRecord, type LayerRecord, readImageRecord, writeImageRecord } from "./record.ts";
+import { buildInContext } from "./context.ts";
+import { writeWantedLayer } from "./record.ts";
 
 interface EnsureLayerInput {
   backend: Backend;
   baseImageId: string;
   config: SandboxConfig;
   stateDir: string;
+  repoHash: string;
   trustPem?: string;
   env?: Record<string, string | undefined>;
 }
@@ -23,7 +24,7 @@ interface LayerImage {
   built: boolean;
 }
 
-const TAG_PREFIX = "pi-sandbox-layer";
+export const LAYER_TAG_PREFIX = "pi-sandbox-layer:";
 
 const SHORT_HASH = 12;
 
@@ -80,33 +81,7 @@ const hasLayer = (config: SandboxConfig) =>
   (config.image.npmGlobal ?? []).length > 0 ||
   config.image.dockerfile !== undefined;
 
-const reusableLayer = async (input: EnsureLayerInput, inputsHash: string) => {
-  const record = await readImageRecord(input.stateDir);
-  const layer = record?.layer;
-
-  if (layer === undefined || layer.inputsHash !== inputsHash) {
-    return undefined;
-  }
-
-  return (await reusableImage(input.backend, layer.tag, layer.digest)) === undefined ? undefined : layer;
-};
-
-const recordLayer = async (stateDir: string, layer: LayerRecord) => {
-  const record = await readImageRecord(stateDir);
-
-  if (!isImageRecord(record)) {
-    return;
-  }
-
-  await writeImageRecord(stateDir, { ...record, layer });
-};
-
-const buildLayer = async (
-  input: EnsureLayerInput,
-  dockerfile: string,
-  inputsHash: string,
-): Promise<LayerImage> => {
-  const tag = `${TAG_PREFIX}:${inputsHash.slice(0, SHORT_HASH)}`;
+const buildLayer = async (input: EnsureLayerInput, dockerfile: string, tag: string): Promise<LayerImage> => {
   const { id, digest } = await buildInContext(input, {
     prefix: "layer",
     tag,
@@ -117,21 +92,23 @@ const buildLayer = async (
     },
   });
 
-  await recordLayer(input.stateDir, { tag, id, digest, inputsHash });
-
   return { id, digest, tag, built: true };
 };
 
 export const ensureLayerImage = async (input: EnsureLayerInput): Promise<LayerImage> => {
   if (!hasLayer(input.config)) {
+    await writeWantedLayer(input.stateDir, input.repoHash, undefined);
+
     return { id: input.baseImageId, built: false };
   }
 
   const dockerfile = await renderLayerDockerfile(input.baseImageId, input.config);
-  const inputsHash = sha256Hex(dockerfile);
-  const reused = await reusableLayer(input, inputsHash);
+  const tag = `${LAYER_TAG_PREFIX}${sha256Hex(dockerfile).slice(0, SHORT_HASH)}`;
+
+  await writeWantedLayer(input.stateDir, input.repoHash, tag);
+  const reused = await input.backend.resolveImage(tag).catch(() => undefined);
 
   return reused === undefined
-    ? buildLayer(input, dockerfile, inputsHash)
-    : { id: reused.id, digest: reused.digest, tag: reused.tag, built: false };
+    ? buildLayer(input, dockerfile, tag)
+    : { id: reused.id, digest: reused.digest, tag, built: false };
 };

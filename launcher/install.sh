@@ -191,7 +191,7 @@ else
     shares="$HOME writable"
   fi
 
-  act colima start --profile "$colima_profile" --vm-type vz --mount-type virtiofs \
+  act colima start --profile "$colima_profile" --activate=false --vm-type vz --mount-type virtiofs \
     --cpu "$cpus" --memory "$memory" --disk "$disk" ${home_mount:+--mount} ${home_mount:+"$home_mount"} >/dev/null
   step 3 "colima: $(verb "start profile $colima_profile (vz, virtiofs, $cpus CPUs, ${memory} GiB, ${disk} GiB$sizing, $shares)" "started profile $colima_profile (vz, virtiofs, $cpus CPUs, ${memory} GiB, ${disk} GiB$sizing, $shares)")"
 fi

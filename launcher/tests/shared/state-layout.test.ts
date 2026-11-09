@@ -74,6 +74,7 @@ describe("stateLayout", () => {
       gitBaseline: "/state/repos/r1/git/baseline.json",
       pins: "/state/repos/r1/pins.json",
       created: "/state/repos/r1/created.json",
+      image: "/state/repos/r1/image.json",
       proxy: {
         directory: "/state/repos/r1/proxy",
         record: "/state/repos/r1/proxy/proxy.json",

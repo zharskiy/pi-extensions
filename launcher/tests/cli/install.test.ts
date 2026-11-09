@@ -215,7 +215,7 @@ describe("install.sh and the Colima profile", () => {
 
     expect(result.status).toBe(0);
     expect(await startOf(home)).toBe(
-      `start --profile pi-sandbox --vm-type vz --mount-type virtiofs --cpu 8 --memory 10 --disk 60 --mount ${home}:w`,
+      `start --profile pi-sandbox --activate=false --vm-type vz --mount-type virtiofs --cpu 8 --memory 10 --disk 60 --mount ${home}:w`,
     );
     expect(result.stdout).toContain(
       `[3/8] colima: started profile pi-sandbox (vz, virtiofs, 8 CPUs, 10 GiB, 60 GiB, ${home} writable)`,
@@ -259,7 +259,7 @@ describe("install.sh and the Colima profile", () => {
 
     expect(result.status).toBe(0);
     expect(await startOf(home)).toBe(
-      "start --profile pi-sandbox --vm-type vz --mount-type virtiofs --cpu 8 --memory 10 --disk 60",
+      "start --profile pi-sandbox --activate=false --vm-type vz --mount-type virtiofs --cpu 8 --memory 10 --disk 60",
     );
     expect(result.stdout).toContain("60 GiB, shares kept)");
   });

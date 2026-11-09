@@ -17,6 +17,7 @@ const inputOf = async (
     backend: fake.backend,
     config: sandboxConfig(),
     stateDir: await tempDir("sandbox-image"),
+    repoHash: "a".repeat(64),
     versions: async () => {
       asked.push("versions");
 
@@ -100,5 +101,99 @@ describe("ensureSandboxImage", () => {
     ]);
     expect(image.digest).toBe("sha256:built-1");
     expect(image.id).not.toBe("sha256:image-built-1");
+  });
+
+  it("after a layer build removes the layer tags no container uses and that are not current, and keeps the base and an image in use", async () => {
+    const fake = createFakeBackend();
+    const { input } = await inputOf(fake);
+    const withLayer = (spec: string) =>
+      ensureSandboxImage({
+        ...input,
+        config: sandboxConfig({ image: { ...sandboxConfig().image, npmGlobal: [spec] } }),
+      });
+    const used = await withLayer("used@1.0.0");
+
+    fake.addContainer({ name: "running", labels: {}, state: "running", image: used.id });
+
+    const idle = await withLayer("idle@1.0.0");
+
+    fake.ageImages(2 * 60 * 60);
+
+    const current = await withLayer("current@1.0.0");
+    const images = await fake.backend.listImages();
+    const tagOf = (id: string) => images.find((image) => image.id === id)?.tags;
+
+    expect(images.map((image) => image.id).sort()).toEqual(
+      [used.id, current.id, "sha256:image-built-1"].sort(),
+    );
+    expect(tagOf("sha256:image-built-1")).toEqual([sandboxConfig().image.reference]);
+    expect(tagOf(current.id)).toEqual([expect.stringMatching(/^pi-sandbox-layer:/)]);
+    expect(idle.id).not.toBe(current.id);
+  });
+
+  it("removes the previous base image after a rebuild unless a container uses it", async () => {
+    const fake = createFakeBackend();
+    const { input } = await inputOf(fake);
+    const first = await ensureSandboxImage(input);
+
+    fake.ageImages(2 * 60 * 60);
+
+    const rebuilt = await ensureSandboxImage({ ...input, versions: async () => ({ pi: "1.6.0" }) });
+
+    expect((await fake.backend.listImages()).map((image) => image.id)).toEqual([rebuilt.id]);
+    expect(fake.imageRemovals).toEqual([first.id]);
+
+    fake.addContainer({ name: "running", labels: {}, state: "running", image: rebuilt.id });
+
+    fake.ageImages(2 * 60 * 60);
+
+    const third = await ensureSandboxImage({ ...input, versions: async () => ({ pi: "1.7.0" }) });
+
+    expect((await fake.backend.listImages()).map((image) => image.id).sort()).toEqual(
+      [rebuilt.id, third.id].sort(),
+    );
+  });
+
+  it("keeps a layer tag built in the last hour that no container uses yet and removes an older one", async () => {
+    const fake = createFakeBackend();
+    const { input } = await inputOf(fake);
+    const withLayer = (spec: string) =>
+      ensureSandboxImage({
+        ...input,
+        config: sandboxConfig({ image: { ...sandboxConfig().image, npmGlobal: [spec] } }),
+      });
+    const old = await withLayer("old@1.0.0");
+
+    fake.ageImages(2 * 60 * 60);
+
+    const fresh = await withLayer("fresh@1.0.0");
+    const current = await withLayer("current@1.0.0");
+    const ids = (await fake.backend.listImages()).map((image) => image.id);
+
+    expect(ids).toContain(fresh.id);
+    expect(ids).toContain(current.id);
+    expect(ids).not.toContain(old.id);
+  });
+
+  it("keeps an old layer another repository reuses before its container exists, because that repository's record names it", async () => {
+    const fake = createFakeBackend();
+    const { input } = await inputOf(fake);
+    const withLayer = (repoHash: string, spec: string) =>
+      ensureSandboxImage({
+        ...input,
+        repoHash,
+        config: sandboxConfig({ image: { ...sandboxConfig().image, npmGlobal: [spec] } }),
+      });
+    const first = await withLayer("a".repeat(64), "first@1.0.0");
+
+    fake.ageImages(2 * 60 * 60);
+
+    const reused = await withLayer("a".repeat(64), "first@1.0.0");
+    const other = await withLayer("b".repeat(64), "other@1.0.0");
+    const ids = (await fake.backend.listImages()).map((image) => image.id);
+
+    expect(reused.id).toBe(first.id);
+    expect(ids).toContain(first.id);
+    expect(ids).toContain(other.id);
   });
 });

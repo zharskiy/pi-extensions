@@ -143,11 +143,13 @@ describe("ensureBuiltImage", () => {
       "entrypoint.sh",
       "trust.pem",
     ]);
-    expect(JSON.parse(await readFile(join(stateDir, "image.json"), "utf8"))).toMatchObject({
-      reference: config.image.reference,
-      digest: "sha256:built-1",
-      id: "sha256:image-built-1",
-      pi: versions.pi,
+    expect(JSON.parse(await readFile(join(stateDir, "image.json"), "utf8"))).toEqual({
+      base: {
+        digest: "sha256:built-1",
+        id: "sha256:image-built-1",
+        inputsHash: expect.any(String),
+        pi: versions.pi,
+      },
     });
     expect((await readdir(stateDir)).sort()).toEqual(["image.json"]);
   });
@@ -216,7 +218,7 @@ describe("ensureBuiltImage", () => {
 });
 
 describe("recordedImage", () => {
-  it("returns the recorded image for the configured reference and pinned digest only", async () => {
+  it("returns the recorded base image for the configured reference unless another digest is pinned", async () => {
     const fake = createFakeBackend();
     const stateDir = await tempDir();
     const config = sandboxConfig();
@@ -226,10 +228,10 @@ describe("recordedImage", () => {
     await ensureBuiltImage({ backend: fake.backend, config, versions, stateDir });
 
     expect(await recordedImage(stateDir, config)).toMatchObject({
+      reference: config.image.reference,
       digest: "sha256:built-1",
       id: "sha256:image-built-1",
     });
-    expect(await recordedImage(stateDir, sandboxConfig({ image: { reference: "other:1" } }))).toBeUndefined();
     expect(
       await recordedImage(stateDir, sandboxConfig({ image: { ...config.image, digest: "sha256:pinned" } })),
     ).toBeUndefined();

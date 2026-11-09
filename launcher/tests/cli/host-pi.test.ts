@@ -56,13 +56,13 @@ describe("the host pi of host jobs", () => {
     expect(await run([], harness.deps)).toBe(0);
 
     const recordFile = join(harness.stateDir, "image.json");
-    const { pi: _recorded, ...record } = JSON.parse(await readFile(recordFile, "utf8"));
+    const { pi: _recorded, ...base } = JSON.parse(await readFile(recordFile, "utf8")).base;
 
-    await writeFile(recordFile, JSON.stringify(record));
+    await writeFile(recordFile, JSON.stringify({ base }));
 
     expect(await run([], harness.deps)).toBe(0);
     expect(fake.builds).toHaveLength(1);
-    expect(JSON.parse(await readFile(recordFile, "utf8")).pi).toBe(await testedPiVersion());
+    expect(JSON.parse(await readFile(recordFile, "utf8")).base.pi).toBe(await testedPiVersion());
   });
 
   it("keeps the image of a running container after a host pi update, says so, and still derives provider rules", async () => {

@@ -198,6 +198,7 @@ hooks.describe("docker-engine sandbox image missing-command hint", () => {
         backend,
         config: sandboxConfig({ image: { reference: HINT_IMAGE } }),
         stateDir: state.dir,
+        repoHash: "a".repeat(64),
         versions: async () => ({ pi: await pinnedPi(), extensions: { kind: "none" } }),
         inUse: async () => false,
       });

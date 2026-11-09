@@ -54,6 +54,8 @@ interface FakeImage {
   Id: string;
   RepoTags: string[];
   RepoDigests: string[];
+  Labels?: Record<string, string>;
+  Created?: number;
 }
 
 interface FakeMount {
@@ -262,12 +264,43 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
   const build = ({ query, body }: RouteRequest): RouteResult => {
     const tag = query.get("t") ?? "unnamed";
 
-    images.set(tag, { Id: sha(body), RepoTags: [tag], RepoDigests: [] });
+    images.set(tag, {
+      Id: sha(body),
+      RepoTags: [tag],
+      RepoDigests: [],
+      Labels: JSON.parse(query.get("labels") ?? "{}") as Record<string, string>,
+      Created: Math.floor(Date.now() / 1000),
+    });
 
     return {
       status: 200,
       raw: `${JSON.stringify({ stream: "Step 1/1" })}\n${JSON.stringify({ aux: { ID: sha(body) } })}\n`,
     };
+  };
+
+  const removeImage = ({ match }: RouteRequest): RouteResult => {
+    const reference = match[1] ?? "";
+    const image = findImage(reference);
+
+    if (image === undefined) {
+      return notFound(`No such image: ${reference}`);
+    }
+
+    const used = [...containers.values()].some(
+      (container) => findImage(container.body.Image)?.Id === image.Id,
+    );
+
+    if (used) {
+      return { status: 409, json: { message: `image ${reference} is being used by a container` } };
+    }
+
+    [...images.entries()]
+      .filter(([, entry]) => entry.Id === image.Id)
+      .forEach(([key]) => {
+        images.delete(key);
+      });
+
+    return { status: 200, json: [{ Deleted: image.Id }] };
   };
 
   const unsharedBind = (spec: CreateBody) => {
@@ -559,9 +592,15 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
       pattern: /^\/images\/json$/,
       handle: () => ({
         status: 200,
-        json: [...images.values()].map(({ Id, RepoTags }) => ({ Id, RepoTags })),
+        json: [...images.values()].map(({ Id, RepoTags, Labels, Created }) => ({
+          Id,
+          RepoTags,
+          Labels,
+          Created,
+        })),
       }),
     },
+    { method: "DELETE", pattern: /^\/images\/(.+)$/, handle: removeImage },
     {
       method: "GET",
       pattern: /^\/images\/(.+)\/json$/,
@@ -587,6 +626,7 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
               Labels: container.body.Labels ?? {},
               State: container.State,
               Image: container.body.Image,
+              ImageID: findImage(container.body.Image)?.Id,
               Mounts: volumeMounts(container).map((mount) => ({ Type: "volume", Name: mount.Source })),
             })),
         };

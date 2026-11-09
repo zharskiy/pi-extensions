@@ -4,13 +4,25 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type CommandRunner, LauncherError } from "../../shared/index.ts";
 import { pinnedReference, repositoryOf, tagOf } from "../image-reference.ts";
-import type { ImageInfo } from "../types.ts";
+import { LABELS } from "../labels.ts";
+import type { ImageInfo, ImageSummary } from "../types.ts";
 import { type EngineClient, segment } from "./engine-client.ts";
 
 interface EngineImage {
   Id: string;
   RepoDigests?: string[] | null;
 }
+
+interface ListedImage {
+  Id: string;
+  RepoTags?: string[] | null;
+  Labels?: Record<string, string> | null;
+  Created?: number;
+}
+
+const NO_TAG = "<none>:<none>";
+
+const BUILD_LABELS = JSON.stringify({ [LABELS.managed]: "true" });
 
 const repoDigests = (image: EngineImage) =>
   (image.RepoDigests ?? []).map((entry) => entry.slice(entry.indexOf("@") + 1));
@@ -88,6 +100,7 @@ export const createImageOperations = (client: EngineClient, runner: CommandRunne
     t: tag,
     rm: true,
     forcerm: true,
+    labels: BUILD_LABELS,
     ...(Object.keys(buildArgs).length === 0 ? {} : { buildargs: JSON.stringify(buildArgs) }),
   });
 
@@ -118,5 +131,39 @@ export const createImageOperations = (client: EngineClient, runner: CommandRunne
     return infoOf(built, built.Id);
   };
 
-  return { pullImage, resolveImage, buildImage };
+  const usedImages = async () => {
+    const containers = await client.json<Array<{ ImageID?: string }>>({
+      method: "GET",
+      path: "/containers/json",
+      query: { all: true },
+    });
+
+    return new Set(
+      containers.flatMap((container) => (container.ImageID === undefined ? [] : [container.ImageID])),
+    );
+  };
+
+  const listImages = async (): Promise<ImageSummary[]> => {
+    const images = await client.json<ListedImage[]>({ method: "GET", path: "/images/json" });
+    const used = await usedImages();
+
+    return images.map((image) => ({
+      id: image.Id,
+      tags: (image.RepoTags ?? []).filter((tag) => tag !== NO_TAG),
+      labels: image.Labels ?? {},
+      inUse: used.has(image.Id),
+      created: image.Created ?? 0,
+    }));
+  };
+
+  const removeImage = async (reference: string) => {
+    const response = await client.call(
+      { method: "DELETE", path: `/images/${segment(reference)}` },
+      [404, 409],
+    );
+
+    return response.status < 300;
+  };
+
+  return { pullImage, resolveImage, buildImage, listImages, removeImage };
 };

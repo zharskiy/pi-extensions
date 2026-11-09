@@ -8,6 +8,8 @@ import { ensureLayerImage } from "../../image/layer.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
 
+const REPO = "a".repeat(64);
+
 type ImageConfig = SandboxConfig["image"];
 
 const REFERENCE = "ghcr.io/zharskiy/pi-sandbox:0.4.0";
@@ -46,6 +48,7 @@ describe("ensureLayerImage", () => {
   it("uses the base image as is when no layer key is set", async () => {
     const fake = createFakeBackend();
     const result = await ensureLayerImage({
+      repoHash: REPO,
       backend: fake.backend,
       baseImageId: BASE_ID,
       config: configWith({}),
@@ -61,6 +64,7 @@ describe("ensureLayerImage", () => {
     const dockerfile = await extraDockerfile("RUN echo extra > /opt/extra\n");
 
     await ensureLayerImage({
+      repoHash: REPO,
       backend: fake.backend,
       baseImageId: BASE_ID,
       config: configWith({ packages: ["jq", "chromium=120.0"], npmGlobal: ["typescript@5.6.0"], dockerfile }),
@@ -93,6 +97,7 @@ describe("ensureLayerImage", () => {
     const fake = createFakeBackend();
 
     await ensureLayerImage({
+      repoHash: REPO,
       backend: fake.backend,
       baseImageId: BASE_ID,
       config: configWith({ npmGlobal: ["typescript@5.6.0"] }),
@@ -109,6 +114,7 @@ describe("ensureLayerImage", () => {
 
     await writeFile(trustPem, "corporate root\n");
     await ensureLayerImage({
+      repoHash: REPO,
       backend: fake.backend,
       baseImageId: BASE_ID,
       config: configWith({ packages: ["jq"] }),
@@ -119,7 +125,7 @@ describe("ensureLayerImage", () => {
     expect(fake.builds.at(-1)?.files["trust.pem"]).toBe("corporate root\n");
   });
 
-  it("tags the layer by its inputs hash and records it next to the base image", async () => {
+  it("tags the layer by its inputs hash and keeps only the base image in image.json", async () => {
     const fake = createFakeBackend();
     const stateDir = await tempDir();
     const config = configWith({ packages: ["jq"] });
@@ -129,20 +135,24 @@ describe("ensureLayerImage", () => {
       versions: { pi: "1.5.0" },
       stateDir,
     });
-    const layer = await ensureLayerImage({ backend: fake.backend, baseImageId: base.id, config, stateDir });
+    const layer = await ensureLayerImage({
+      repoHash: REPO,
+      backend: fake.backend,
+      baseImageId: base.id,
+      config,
+      stateDir,
+    });
     const record = JSON.parse(await readFile(join(stateDir, "image.json"), "utf8"));
 
     expect(layer.built).toBe(true);
     expect(layer.tag).toMatch(/^pi-sandbox-layer:[0-9a-f]{12}$/);
     expect(fake.builds.at(-1)?.tag).toBe(layer.tag);
-    expect(record).toMatchObject({
-      id: base.id,
-      layer: { tag: layer.tag, id: layer.id, digest: layer.digest },
-    });
-    expect((await readdir(stateDir)).sort()).toEqual(["image.json"]);
+    expect(Object.keys(record)).toEqual(["base"]);
+    expect(record.base).toMatchObject({ id: base.id });
+    expect((await readdir(stateDir)).sort()).toEqual(["image.json", "repos"]);
   });
 
-  it("reuses the recorded layer while its inputs hold and rebuilds when a key or the base changes", async () => {
+  it("reuses the layer tagged by its inputs and rebuilds when a key or the base changes", async () => {
     const fake = createFakeBackend();
     const stateDir = await tempDir();
     const config = configWith({ packages: ["jq"] });
@@ -153,7 +163,13 @@ describe("ensureLayerImage", () => {
       stateDir,
     });
     const ensure = (baseImageId: string, image: Partial<ImageConfig>) =>
-      ensureLayerImage({ backend: fake.backend, baseImageId, config: configWith(image), stateDir });
+      ensureLayerImage({
+        repoHash: REPO,
+        backend: fake.backend,
+        baseImageId,
+        config: configWith(image),
+        stateDir,
+      });
     const first = await ensure(base.id, { packages: ["jq"] });
     const again = await ensure(base.id, { packages: ["jq"] });
     const changed = await ensure(base.id, { packages: ["jq", "curl"] });
@@ -172,6 +188,7 @@ describe("ensureLayerImage", () => {
 
     await expect(
       ensureLayerImage({
+        repoHash: REPO,
         backend: fake.backend,
         baseImageId: BASE_ID,
         config,

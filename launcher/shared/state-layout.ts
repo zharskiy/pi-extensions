@@ -37,6 +37,7 @@ const repoFiles = (stateDir: string, repoHash: string) => {
     gitBaseline: join(git, "baseline.json"),
     pins: join(directory, "pins.json"),
     created: join(directory, "created.json"),
+    image: join(directory, "image.json"),
     proxy: repoProxyFiles(join(directory, "proxy")),
   };
 };

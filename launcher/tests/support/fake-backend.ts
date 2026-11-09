@@ -10,6 +10,7 @@ import type {
   ExecIo,
   ExecSpec,
   ImageInfo,
+  ImageSummary,
   TerminalSize,
   Vm,
 } from "../../backend/index.ts";
@@ -169,6 +170,10 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
   const created: FakeContainer[] = [];
   const relays = new Map<string, FakeRelay>();
   const gone = new Set<string>();
+  const danglingImages = new Set<string>();
+  const builtImages = new Set<string>();
+  const imageCreated = new Map<string, number>();
+  const imageRemovals: string[] = [];
 
   const removalOf = (id: string) => gone.has(id);
   const sequence = { next: 0 };
@@ -221,9 +226,11 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
     return infoOf(present);
   };
 
+  const presentDigests = () => [...new Set([...localImages.values(), ...danglingImages])];
+
   const resolveImage = async (reference: string) => {
     const digest =
-      localImages.get(reference) ?? [...localImages.values()].find((value) => imageIdOf(value) === reference);
+      localImages.get(reference) ?? presentDigests().find((value) => imageIdOf(value) === reference);
 
     return digest === undefined ? undefined : infoOf(digest);
   };
@@ -323,6 +330,27 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
       (entry) => entry.spec?.network.kind === "internal" && entry.spec.network.name === name,
     );
 
+  const tagsOf = (digest: string) =>
+    [...localImages.entries()].filter(([, value]) => value === digest).map(([tag]) => tag);
+
+  const imageUsed = (id: string) =>
+    [...containers.values()].some((entry) => entry.summary.image === id) ||
+    [...relays.values()].some((relay) => relay.imageId === id);
+
+  const imageSummary = (digest: string): ImageSummary => ({
+    id: imageIdOf(digest),
+    tags: tagsOf(digest),
+    labels: builtImages.has(digest) ? { [LABELS.managed]: "true" } : {},
+    inUse: imageUsed(imageIdOf(digest)),
+    created: imageCreated.get(digest) ?? 0,
+  });
+
+  const ageImages = (seconds: number) => {
+    [...imageCreated.entries()].forEach(([digest, created]) => {
+      imageCreated.set(digest, created - seconds);
+    });
+  };
+
   const vm: Vm = {
     ensureRunning: async () => undefined,
     coverage: async () => undefined,
@@ -340,12 +368,46 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
     resolveImage,
     buildImage: async (contextDir, tag) => {
       const digest = `sha256:${nextId("built")}`;
+      const previous = localImages.get(tag);
 
       builds.push({ contextDir, tag, files: await contextFiles(contextDir) });
 
       localImages.set(tag, digest);
 
+      builtImages.add(digest);
+
+      imageCreated.set(digest, Math.floor(Date.now() / 1000));
+
+      if (previous !== undefined && tagsOf(previous).length === 0) {
+        danglingImages.add(previous);
+      }
+
       return infoOf(digest);
+    },
+    listImages: async () => presentDigests().map(imageSummary),
+    removeImage: async (reference) => {
+      const tagged = localImages.get(reference);
+      const digest = tagged ?? presentDigests().find((value) => imageIdOf(value) === reference);
+
+      if (digest === undefined || imageUsed(imageIdOf(digest))) {
+        return false;
+      }
+
+      imageRemovals.push(reference);
+
+      if (tagged !== undefined) {
+        localImages.delete(reference);
+
+        return true;
+      }
+
+      tagsOf(digest).forEach((tag) => {
+        localImages.delete(tag);
+      });
+
+      danglingImages.delete(digest);
+
+      return true;
     },
     findContainers: async (labels) =>
       [...[...containers.values()].map((entry) => entry.summary), ...relaySummaries()].filter((summary) =>
@@ -506,6 +568,8 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
     localImages,
     pulls,
     builds,
+    imageRemovals,
+    ageImages,
     execs,
     routes,
     stops,

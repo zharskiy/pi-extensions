@@ -5,7 +5,7 @@ import type { SandboxConfig } from "../config/index.ts";
 import { LauncherError, launcherRoot, stableHash } from "../shared/index.ts";
 import { placeBuildTrust } from "./build-trust.ts";
 import { buildInContext, reusableImage } from "./context.ts";
-import { type ImageRecord, isImageRecord, readImageRecord, writeImageRecord } from "./record.ts";
+import { type BaseRecord, readBaseRecord, writeBaseRecord } from "./record.ts";
 
 export interface ImageVersions {
   pi: string;
@@ -30,6 +30,7 @@ export interface BuiltImage {
   id: string;
   built: boolean;
   pi?: string;
+  replaced?: string;
 }
 
 const VERSION_PATTERN = /^[0-9A-Za-z][0-9A-Za-z.+-]*$/;
@@ -80,20 +81,26 @@ const inputsHash = async (config: SandboxConfig, versions: ImageVersions) => {
 };
 
 export const recordedImage = async (stateDir: string, config: SandboxConfig) => {
-  const record = await readImageRecord(stateDir);
+  const base = await readBaseRecord(stateDir);
   const { reference, digest } = config.image;
 
-  if (!isImageRecord(record) || record.reference !== reference) {
+  if (base === undefined || (digest !== undefined && base.digest !== digest)) {
     return undefined;
   }
 
-  return digest === undefined || record.digest === digest ? record : undefined;
+  return { reference, ...base };
 };
 
-const reusableBuild = (backend: Backend, record: ImageRecord | undefined, hash: string) =>
-  record === undefined || record.inputsHash !== hash
-    ? undefined
-    : reusableImage(backend, record.reference, record.digest);
+const reusableBuild = (backend: Backend, reference: string, base: BaseRecord | undefined, hash: string) =>
+  base === undefined || base.inputsHash !== hash ? undefined : reusableImage(backend, reference, base.digest);
+
+const replaceBase = async (stateDir: string, base: BaseRecord) => {
+  const previous = await readBaseRecord(stateDir);
+
+  await writeBaseRecord(stateDir, base);
+
+  return previous === undefined || previous.id === base.id ? {} : { replaced: previous.id };
+};
 
 const buildLocally = async (input: EnsureImageInput, hash: string): Promise<BuiltImage> => {
   const reference = input.config.image.reference;
@@ -105,10 +112,9 @@ const buildLocally = async (input: EnsureImageInput, hash: string): Promise<Buil
     tag: reference,
     fill: (dir) => prepareBuildContext(input.versions, dir, input.trustPem),
   });
+  const replaced = await replaceBase(input.stateDir, { id, digest, inputsHash: hash, pi: input.versions.pi });
 
-  await writeImageRecord(input.stateDir, { reference, digest, id, inputsHash: hash, pi: input.versions.pi });
-
-  return { reference, digest, id, built: true, pi: input.versions.pi };
+  return { reference, digest, id, built: true, pi: input.versions.pi, ...replaced };
 };
 
 const pulledImage = async (input: PullImageInput, pinned: string) => {
@@ -132,9 +138,9 @@ export const pullPinnedImage = async (input: PullImageInput, pinned: string): Pr
     throw new LauncherError(`image ${reference} has digest ${digest}, expected ${pinned}`);
   }
 
-  await writeImageRecord(input.stateDir, { reference, digest, id, inputsHash: PINNED });
+  const replaced = await replaceBase(input.stateDir, { id, digest, inputsHash: PINNED });
 
-  return { reference, digest, id, built: false };
+  return { reference, digest, id, built: false, ...replaced };
 };
 
 export const ensureBuiltImage = async (input: EnsureImageInput): Promise<BuiltImage> => {
@@ -145,15 +151,15 @@ export const ensureBuiltImage = async (input: EnsureImageInput): Promise<BuiltIm
   }
 
   const hash = await inputsHash(input.config, input.versions);
-  const record = await recordedImage(input.stateDir, input.config);
-  const reused = await reusableBuild(input.backend, record, hash);
+  const base = await readBaseRecord(input.stateDir);
+  const reused = await reusableBuild(input.backend, input.config.image.reference, base, hash);
 
-  if (reused === undefined || record === undefined) {
+  if (reused === undefined || base === undefined) {
     return buildLocally(input, hash);
   }
 
-  if (record.pi !== input.versions.pi) {
-    await writeImageRecord(input.stateDir, { ...record, pi: input.versions.pi });
+  if (base.pi !== input.versions.pi) {
+    await writeBaseRecord(input.stateDir, { ...base, pi: input.versions.pi });
   }
 
   return {

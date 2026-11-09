@@ -219,6 +219,60 @@ describe("pi sandbox gc and reset", () => {
     expect(harness.stdout()).toContain(`forgot ${gone}, which no longer exists\n`);
   });
 
+  it("removes the dangling sandbox images no container uses and keeps the current base, images in use and foreign ones", async () => {
+    const fake = createFakeBackend({ localImages: { "foreign:1": "sha256:foreign" } });
+    const harness = await createHarness({ backend: () => fake.backend });
+    const context = await tempDir("gc-images");
+    const build = (tag: string) => fake.backend.buildImage(context, tag);
+    const dangling = await build("pi-sandbox-layer:old");
+    const used = await build("pi-sandbox-layer:used");
+    const current = await build("pi-sandbox:base");
+
+    await build("pi-sandbox-layer:old");
+
+    await build("pi-sandbox-layer:used");
+
+    await build("pi-sandbox:base");
+
+    fake.addContainer({ name: "running", labels: {}, state: "running", image: used.id });
+
+    await harness.writeJson(stateLayout(harness.stateDir).imageRecord, {
+      base: { id: current.id, digest: current.digest, inputsHash: "pinned" },
+    });
+
+    expect(await run(["sandbox", "gc"], harness.deps)).toBe(0);
+    expect(fake.imageRemovals).toEqual([dangling.id]);
+    expect(harness.stdout()).toContain(`removed image ${dangling.id.replace(/^sha256:/, "").slice(0, 12)}\n`);
+    expect((await fake.backend.listImages()).map((image) => image.id)).toEqual(
+      expect.arrayContaining([used.id, current.id, "sha256:image-foreign"]),
+    );
+  });
+
+  it("removes a layer tag older than an hour that no record and no container names, and keeps a named one", async () => {
+    const fake = createFakeBackend();
+    const harness = await createHarness({ backend: () => fake.backend });
+    const context = await tempDir("gc-layers");
+
+    await fake.backend.buildImage(context, "pi-sandbox-layer:orphan");
+
+    await fake.backend.buildImage(context, "pi-sandbox-layer:named");
+
+    await harness.writeJson(stateLayout(harness.stateDir).repo("d".repeat(64)).image, {
+      layer: "pi-sandbox-layer:named",
+    });
+
+    fake.ageImages(2 * 60 * 60);
+
+    await fake.backend.buildImage(context, "pi-sandbox-layer:fresh");
+
+    expect(await run(["sandbox", "gc"], harness.deps)).toBe(0);
+    expect(harness.stdout()).toContain("removed image pi-sandbox-layer:orphan\n");
+    expect((await fake.backend.listImages()).flatMap((image) => image.tags).sort()).toEqual([
+      "pi-sandbox-layer:fresh",
+      "pi-sandbox-layer:named",
+    ]);
+  });
+
   it("says when there is nothing to remove", async () => {
     const harness = await createHarness({ backend: () => createFakeBackend().backend });
 

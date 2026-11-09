@@ -8,6 +8,7 @@ import {
   removeRepoContainers,
 } from "../container/index.ts";
 import { liveLaunches, withRepoLaunchLock } from "../grants/index.ts";
+import { collectImages } from "../image/index.ts";
 import { removeRepoToken } from "../proxy/index.ts";
 import {
   errorMessage,
@@ -233,12 +234,14 @@ const gcDue = async (deps: CliDeps) => {
 };
 
 const collectGarbage = async (deps: CliDeps, backend: Backend | undefined, sharedOwner?: string) => {
+  const stateDir = pathsOf(deps).stateDir;
   const engine = await reachable(backend);
-  const lines = engine === undefined ? [] : await pruneVolumes(engine, sharedOwner);
+  const volumes = engine === undefined ? [] : await pruneVolumes(engine, sharedOwner);
+  const images = engine === undefined ? [] : await collectImages(engine, stateDir);
 
-  await writeJsonFile(stateLayout(pathsOf(deps).stateDir).gcRecord, { lastRun: deps.now() });
+  await writeJsonFile(stateLayout(stateDir).gcRecord, { lastRun: deps.now() });
 
-  return lines;
+  return [...volumes, ...images.map((image) => `removed image ${image}`)];
 };
 
 const sweepAll = async (deps: CliDeps, backend: Backend | undefined) => {

@@ -1,31 +1,49 @@
-import { readJsonObject, stateLayout, writeJsonFile } from "../shared/index.ts";
+import { rm } from "node:fs/promises";
+import { knownRepos, readJsonObject, stateLayout, writeJsonFile } from "../shared/index.ts";
 
-export interface LayerRecord {
-  tag: string;
+export interface BaseRecord {
   id: string;
   digest: string;
-  inputsHash: string;
-}
-
-export interface ImageRecord {
-  reference: string;
-  digest: string;
-  id: string;
   inputsHash: string;
   pi?: string;
-  layer?: LayerRecord;
 }
 
 const recordFileOf = (stateDir: string) => stateLayout(stateDir).imageRecord;
 
-export const readImageRecord = async (stateDir: string): Promise<Partial<ImageRecord> | undefined> =>
-  readJsonObject(recordFileOf(stateDir));
+const isBaseRecord = (base: unknown): base is BaseRecord => {
+  const record = base as Partial<BaseRecord> | undefined;
 
-export const writeImageRecord = (stateDir: string, record: ImageRecord) =>
-  writeJsonFile(recordFileOf(stateDir), record);
+  return (
+    typeof record?.id === "string" &&
+    typeof record.digest === "string" &&
+    typeof record.inputsHash === "string"
+  );
+};
 
-export const isImageRecord = (record: Partial<ImageRecord> | undefined): record is ImageRecord =>
-  typeof record?.reference === "string" &&
-  typeof record.digest === "string" &&
-  typeof record.id === "string" &&
-  typeof record.inputsHash === "string";
+export const readBaseRecord = async (stateDir: string): Promise<BaseRecord | undefined> => {
+  const base = (await readJsonObject(recordFileOf(stateDir)))?.base;
+
+  return isBaseRecord(base) ? base : undefined;
+};
+
+export const writeBaseRecord = (stateDir: string, base: BaseRecord) =>
+  writeJsonFile(recordFileOf(stateDir), { base });
+
+export const writeWantedLayer = (stateDir: string, repoHash: string, tag: string | undefined) => {
+  const path = stateLayout(stateDir).repo(repoHash).image;
+
+  return tag === undefined ? rm(path, { force: true }) : writeJsonFile(path, { layer: tag });
+};
+
+const wantedLayerOf = async (stateDir: string, repoHash: string) => {
+  const layer = (await readJsonObject(stateLayout(stateDir).repo(repoHash).image))?.layer;
+
+  return typeof layer === "string" ? [layer] : [];
+};
+
+export const wantedLayers = async (stateDir: string) => {
+  const repos = await knownRepos(stateDir);
+  const tags = await Promise.all(repos.map((repoHash) => wantedLayerOf(stateDir, repoHash)));
+
+  return new Set(tags.flat());
+};

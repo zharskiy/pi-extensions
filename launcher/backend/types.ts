@@ -80,6 +80,14 @@ export interface ImageInfo {
   digest: string;
 }
 
+export interface ImageSummary {
+  id: string;
+  tags: string[];
+  labels: Record<string, string>;
+  inUse: boolean;
+  created: number;
+}
+
 export interface ProxyRoute {
   network: NetworkRef;
   address: string;
@@ -136,6 +144,8 @@ export interface Backend {
   pullImage(reference: string, digest?: string): Promise<ImageInfo>;
   resolveImage(reference: string): Promise<ImageInfo | undefined>;
   buildImage(contextDir: string, tag: string, buildArgs?: Record<string, string>): Promise<ImageInfo>;
+  listImages(): Promise<ImageSummary[]>;
+  removeImage(reference: string): Promise<boolean>;
   findContainers(labels: Record<string, string>): Promise<ContainerSummary[]>;
   createContainer(spec: ContainerSpec): Promise<{ id: string }>;
   startContainer(id: string): Promise<void>;

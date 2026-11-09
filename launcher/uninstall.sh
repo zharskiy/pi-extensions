@@ -12,10 +12,10 @@ state_dir="${PI_SANDBOX_STATE_DIR:-$HOME/.local/state/pi-sandbox}"
 
 dry_run=0
 volumes=0
-vm=0
+keep_vm=0
 
 usage() {
-  echo "usage: uninstall.sh [--volumes] [--vm] [--bin-dir DIR] [--dry-run]"
+  echo "usage: uninstall.sh [--keep-vm] [--volumes] [--bin-dir DIR] [--dry-run]"
 }
 
 fail() {
@@ -44,7 +44,7 @@ parse_args() {
 
   case "$1" in
     --volumes) volumes=1; shift ;;
-    --vm) vm=1; shift ;;
+    --keep-vm) keep_vm=1; shift ;;
     --dry-run) dry_run=1; shift ;;
     --bin-dir) bin_dir="${2:-}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
@@ -55,6 +55,40 @@ parse_args() {
 }
 
 parse_args "$@"
+
+dry_flag=""
+
+if [ "$dry_run" -eq 1 ]; then
+  dry_flag="--dry-run"
+fi
+
+if [ -d "$state_dir" ]; then
+  command -v node >/dev/null 2>&1 || fail "node is needed to release the git pins, created directories and proxies recorded in $state_dir"
+  node "$script_dir/bin/uninstall-engine.mjs" --host-side "$state_dir" $dry_flag || fail "nothing was removed"
+fi
+
+engine_socket="$HOME/.colima/$colima_profile/docker.sock"
+
+engine_flags="$dry_flag"
+
+if [ "$volumes" -eq 1 ] || [ "$keep_vm" -eq 0 ]; then
+  engine_flags="$engine_flags --volumes"
+fi
+
+if [ -S "$engine_socket" ] && command -v node >/dev/null 2>&1; then
+  node "$script_dir/bin/uninstall-engine.mjs" "$engine_socket" $engine_flags
+else
+  echo "containers: the sandbox VM engine is not running, nothing removed"
+fi
+
+if [ "$keep_vm" -eq 1 ]; then
+  echo "colima: profile $colima_profile kept (--keep-vm)"
+elif command -v colima >/dev/null 2>&1 && colima list 2>/dev/null | grep -q "^$colima_profile "; then
+  act colima delete --profile "$colima_profile" --force >/dev/null
+  echo "colima: $(verb "delete" "deleted") profile $colima_profile"
+else
+  echo "colima: no profile $colima_profile"
+fi
 
 if [ -d "$bin_dir" ]; then
   bin_dir=$(cd -P "$bin_dir" && pwd)
@@ -102,6 +136,25 @@ elif [ -n "$recorded_shim" ] && [ "$shim_free" -eq 1 ]; then
   echo "launcher: $(verb "restore" "restored") $shim to $replaced"
 fi
 
+remove_state() {
+  if [ ! -d "$state_dir" ]; then
+    return 0
+  fi
+
+  if [ "$dry_run" -eq 0 ]; then
+    find "$state_dir" -mindepth 1 -maxdepth 1 ! -name replaced-pi-link -exec rm -rf {} +
+    rmdir "$state_dir" 2>/dev/null || true
+  fi
+
+  if [ -e "$replaced_link" ]; then
+    echo "state: $(verb "remove" "removed") $state_dir except $replaced_link"
+  else
+    echo "state: $(verb "remove" "removed") $state_dir"
+  fi
+}
+
+remove_state
+
 if command -v npm >/dev/null 2>&1 && npm ls -g "$package_name" >/dev/null 2>&1; then
   act npm uninstall -g "$package_name" >/dev/null
   echo "package: $(verb "uninstall" "uninstalled") the global $package_name"
@@ -139,93 +192,5 @@ remove_snippet "$HOME/.bashrc"
 
 remove_snippet "$HOME/.bash_profile"
 
-is_proxy_daemon() {
-  case "$(ps -o command= -p "$1" 2>/dev/null)" in
-    *proxy/daemon.ts*|*proxy/daemon.js*) return 0 ;;
-  esac
-
-  return 1
-}
-
-stopped_proxies=0
-
-stop_proxies() {
-  if [ "$#" -eq 0 ]; then
-    return 0
-  fi
-
-  if [ -f "$1" ]; then
-    pid=$(sed -n 's/.*"pid": *\([0-9][0-9]*\).*/\1/p' "$1" | head -n 1)
-
-    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && is_proxy_daemon "$pid"; then
-      act kill "$pid"
-      echo "proxy: $(verb "stop" "stopped") pid $pid"
-      stopped_proxies=$((stopped_proxies + 1))
-    elif [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-      echo "proxy: pid $pid from $1 is not the pi-sandbox proxy, left running"
-    fi
-  fi
-
-  shift
-  stop_proxies "$@"
-}
-
-stop_proxies "$state_dir"/repos/*/proxy/proxy.json
-
-if [ "$stopped_proxies" -eq 0 ]; then
-  echo "proxy: none running"
-fi
-
-state_note() {
-  if [ "$1" = "repos" ]; then
-    echo " (launch records, render, sync, git copies and proxy files)"
-  fi
-}
-
-remove_state() {
-  if [ "$#" -eq 0 ]; then
-    return 0
-  fi
-
-  if [ -e "$state_dir/$1" ]; then
-    act rm -rf "$state_dir/$1"
-    echo "state: $(verb "remove" "removed") $state_dir/$1$(state_note "$1")"
-  fi
-
-  shift
-  remove_state "$@"
-}
-
-remove_state repos mcp-login.json provider-hosts grants.json
-
-engine_socket="$HOME/.colima/$colima_profile/docker.sock"
-
-engine_flags=""
-
-if [ "$dry_run" -eq 1 ]; then
-  engine_flags="--dry-run"
-fi
-
-if [ "$volumes" -eq 1 ]; then
-  engine_flags="$engine_flags --volumes"
-fi
-
-if [ -S "$engine_socket" ] && command -v node >/dev/null 2>&1; then
-  node "$script_dir/bin/uninstall-engine.mjs" "$engine_socket" $engine_flags
-else
-  echo "containers: the sandbox VM engine is not running, nothing removed"
-fi
-
-if [ "$vm" -eq 1 ]; then
-  if command -v colima >/dev/null 2>&1 && colima list 2>/dev/null | grep -q "^$colima_profile "; then
-    act colima delete --profile "$colima_profile" --force >/dev/null
-    echo "colima: $(verb "delete" "deleted") profile $colima_profile"
-  else
-    echo "colima: no profile $colima_profile"
-  fi
-else
-  echo "colima: profile $colima_profile kept (pass --vm to delete it)"
-fi
-
-echo "kept: your repositories, ~/.pi, ~/.config/pi-sandbox and the rest of $state_dir (image record, CA, salt)"
+echo "kept: your repositories, ~/.pi and ~/.config/pi-sandbox"
 echo "kept: your pi sessions stay in ${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/sessions"

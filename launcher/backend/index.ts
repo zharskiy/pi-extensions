@@ -11,6 +11,7 @@ export type {
   ExecIo,
   ExecSpec,
   ImageInfo,
+  ImageSummary,
   MountSpec,
   NetworkRef,
   ProxyRoute,

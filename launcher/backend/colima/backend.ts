@@ -149,6 +149,8 @@ export const createColimaBackend = (options: ColimaBackendOptions): Backend => {
     pullImage: images.pullImage,
     resolveImage: images.resolveImage,
     buildImage: images.buildImage,
+    listImages: images.listImages,
+    removeImage: images.removeImage,
     findContainers,
     createContainer,
     startContainer,
