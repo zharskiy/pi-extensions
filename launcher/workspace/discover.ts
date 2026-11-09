@@ -5,18 +5,19 @@ import { inertGitOptions } from "./git/command.ts";
 import { findGitRoot, gitLayoutAt } from "./git/layout.ts";
 import { assertWorkspaceGitConfig } from "./git/workspace.ts";
 import type { Workspace } from "./types.ts";
-import { SCAN_BUDGET, scanWorkspace, type WorkspaceScan } from "./workspace-scan.ts";
+import { scanBudgetOf, scanWorkspace, type WorkspaceScan } from "./workspace-scan.ts";
 
 export interface DiscoverOptions {
   lenient?: boolean;
-  scanNodeProjects?: boolean;
+  scanOverlays?: boolean;
+  scanBudget?: number;
 }
 
 const NARROWER = "start pi in a narrower folder";
 
 const MAX_NESTED_REPOS = 128;
 
-const MAX_NODE_PROJECTS = 512;
+const MAX_OVERLAYS = 512;
 
 const realPath = async (path: string) => {
   try {
@@ -50,9 +51,9 @@ const tooManyRepos = (root: string, count: number) =>
     NARROWER,
   );
 
-const tooLarge = (root: string) =>
+const tooLarge = (root: string, budget: number) =>
   new LauncherError(
-    `workspace: ${root} has more than ${SCAN_BUDGET} directories to search for repositories, refusing`,
+    `workspace: ${root} has more than ${budget} directories to search for repositories, refusing`,
     NARROWER,
   );
 
@@ -117,17 +118,15 @@ const nestedRepo = async (repo: string, root: string, runner: CommandRunner, emp
   return confirmed;
 };
 
-const nodeProjectsOf = (scan: WorkspaceScan) =>
-  scan.nodeProjects.length > MAX_NODE_PROJECTS
-    ? { nodeProjects: [], nodeProjectsCapped: true }
-    : { nodeProjects: scan.nodeProjects };
+const overlaysOf = (scan: WorkspaceScan) =>
+  scan.overlays.length > MAX_OVERLAYS ? { overlays: [], overlaysCapped: true } : { overlays: scan.overlays };
 
 const lenientFolder = (cwd: string, scan: WorkspaceScan): Workspace => ({
   cwd,
   repoRoot: cwd,
   isGitRepo: false,
   nested: scan.repos.map((repo) => ({ cwd: repo, repoRoot: repo, isGitRepo: true })),
-  ...nodeProjectsOf(scan),
+  ...overlaysOf(scan),
 });
 
 const strictFolder = async (
@@ -135,9 +134,10 @@ const strictFolder = async (
   scan: WorkspaceScan,
   runner: CommandRunner,
   emptyHooksDir: string,
+  budget: number,
 ) => {
   if (scan.truncated) {
-    throw tooLarge(cwd);
+    throw tooLarge(cwd, budget);
   }
 
   const unreadable = scan.unreadable[0];
@@ -156,7 +156,7 @@ const strictFolder = async (
     repoRoot: cwd,
     isGitRepo: false,
     nested,
-    ...nodeProjectsOf(scan),
+    ...overlaysOf(scan),
   };
 
   await assertWorkspaceGitConfig(workspace, runner, emptyHooksDir);
@@ -173,18 +173,20 @@ export const discoverWorkspace = async (
   const realCwd = await realPath(cwd);
   const root = await findGitRoot(realCwd);
 
+  const budget = scanBudgetOf(options.scanBudget);
+
   if (root === undefined) {
-    const scan = await scanWorkspace(realCwd, "workspace", { nodeProjects: options.scanNodeProjects });
+    const scan = await scanWorkspace(realCwd, "workspace", { overlays: options.scanOverlays, budget });
 
     return options.lenient === true
       ? lenientFolder(realCwd, scan)
-      : strictFolder(realCwd, scan, runner, emptyHooksDir);
+      : strictFolder(realCwd, scan, runner, emptyHooksDir, budget);
   }
 
   const [repo, scan] = await Promise.all([
     confirmedRepo(root, realCwd, runner, emptyHooksDir),
-    options.scanNodeProjects === false ? undefined : scanWorkspace(root, "git"),
+    options.scanOverlays === false ? undefined : scanWorkspace(root, "git", { budget }),
   ]);
 
-  return scan === undefined ? { ...repo, nodeProjects: [] } : { ...repo, ...nodeProjectsOf(scan) };
+  return scan === undefined ? { ...repo, overlays: [] } : { ...repo, ...overlaysOf(scan) };
 };

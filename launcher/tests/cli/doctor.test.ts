@@ -506,6 +506,16 @@ describe("pi sandbox doctor", () => {
       expect(line).toBe("ok vm size: profile pi-sandbox has 4 CPUs and 4 GiB");
     });
 
+    it("does not warn on a 16 GiB machine whose profile has the recommended size", async () => {
+      const { code, line } = await sizeLine(async () => ({ cpus: 8, memoryGiB: 8 }), {
+        cpus: 10,
+        memoryGiB: 16,
+      });
+
+      expect(line).toBe("ok vm size: profile pi-sandbox has 8 CPUs and 8 GiB");
+      expect(code).toBe(0);
+    });
+
     it("skips when colima does not report the profile's size", async () => {
       const { line } = await sizeLine(async () => undefined);
 

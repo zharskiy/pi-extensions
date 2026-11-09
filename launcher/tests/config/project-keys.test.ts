@@ -31,7 +31,7 @@ const REFUSED: Array<[string, unknown]> = [
 
 const ALLOWED: Array<[string, unknown]> = [
   ["mounts.cacheVolumes", ["node_modules"]],
-  ["mounts.autoNodeModules", false],
+  ["mounts.autoOverlays", false],
   ["resources.cpus", 2],
   ["resources.memoryGiB", 4],
 ];

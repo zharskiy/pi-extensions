@@ -3,7 +3,7 @@ import { readdir, readlink } from "node:fs/promises";
 import { join } from "node:path";
 import { type CommandRunner, readRegularFile } from "../../shared/index.ts";
 import { gitDirOf, gitRepos, type Workspace } from "../types.ts";
-import { SCAN_BUDGET } from "../workspace-scan.ts";
+import { scanBudgetOf } from "../workspace-scan.ts";
 import { inertGitOptions } from "./command.ts";
 
 export interface NestedGitEntry {
@@ -16,6 +16,7 @@ export interface GitBaseline {
   gitlinks: string[];
   nested: NestedGitEntry[];
   complete: boolean;
+  budget: number;
 }
 
 interface Walk {
@@ -27,8 +28,6 @@ interface Walk {
 const GITLINK_PREFIX = "160000 ";
 
 const REVIEW = "review it before running host git tools in this repository";
-
-const EMPTY: GitBaseline = { gitlinks: [], nested: [], complete: true };
 
 const gitlinksOf = async (
   workspace: Workspace,
@@ -135,15 +134,18 @@ export const scanGitBaseline = async (
   workspace: Workspace,
   runner: CommandRunner,
   emptyHooksDir: string,
+  scanBudget?: number,
 ): Promise<GitBaseline> => {
+  const budget = scanBudgetOf(scanBudget);
+
   if (workspace.isGitRepo && workspace.gitCommonDir === undefined) {
-    return EMPTY;
+    return { gitlinks: [], nested: [], complete: true, budget };
   }
 
   const repos = gitRepos(workspace);
   const skipped = new Set(repos.flatMap(gitDirsOf));
   const [walk, gitlinks] = await Promise.all([
-    walkLevel([workspace.repoRoot], skipped, { found: [], budget: SCAN_BUDGET, complete: true }),
+    walkLevel([workspace.repoRoot], skipped, { found: [], budget, complete: true }),
     Promise.all(repos.map((repo) => repoGitlinks(repo, runner, emptyHooksDir))),
   ]);
 
@@ -151,6 +153,7 @@ export const scanGitBaseline = async (
     gitlinks: gitlinks.flat().sort(),
     nested: walk.found,
     complete: walk.complete,
+    budget,
   };
 };
 
@@ -169,6 +172,6 @@ export const nestedGitNotices = (before: GitBaseline, after: GitBaseline) => {
     ...gitlinks.map((path) => `git: the sandbox added the gitlink ${path} (a nested repository); ${REVIEW}`),
     ...(after.complete
       ? []
-      : [`git: the scan for nested repositories stopped after ${SCAN_BUDGET} directories`]),
+      : [`git: the scan for nested repositories stopped after ${after.budget} directories`]),
   ];
 };

@@ -366,8 +366,10 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
     detect: async () => ({ available: true, version: "fake" }),
     pullImage,
     resolveImage,
-    buildImage: async (contextDir, tag) => {
+    buildImage: async (contextDir, tag, _args, progress) => {
       const digest = `sha256:${nextId("built")}`;
+
+      progress?.("Step 1/1");
       const previous = localImages.get(tag);
 
       builds.push({ contextDir, tag, files: await contextFiles(contextDir) });

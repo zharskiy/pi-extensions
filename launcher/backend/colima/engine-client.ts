@@ -19,6 +19,8 @@ interface EngineResponse {
   body: Buffer;
 }
 
+type ProgressLine = Record<string, unknown>;
+
 export interface Hijacked {
   socket: Socket;
   head: Buffer;
@@ -27,7 +29,7 @@ export interface Hijacked {
 export interface EngineClient {
   call(request: EngineRequest, accepted?: number[]): Promise<EngineResponse>;
   json<T>(request: EngineRequest, accepted?: number[]): Promise<T>;
-  progress(request: EngineRequest): Promise<Array<Record<string, unknown>>>;
+  progress(request: EngineRequest, onLine?: (line: ProgressLine) => void): Promise<ProgressLine[]>;
   upgrade(request: EngineRequest): Promise<Hijacked>;
 }
 
@@ -75,14 +77,59 @@ const collect = async (response: IncomingMessage): Promise<EngineResponse> => ({
 
 const isFailure = (status: number, accepted: number[]) => status >= 400 && !accepted.includes(status);
 
-const parseLines = (body: Buffer) =>
-  body
-    .toString("utf8")
+const parseLines = (text: string) =>
+  text
     .split("\n")
     .filter((line) => line.trim() !== "")
-    .map((line) => JSON.parse(line) as Record<string, unknown>);
+    .map((line) => JSON.parse(line) as ProgressLine);
 
-const progressError = (lines: Array<Record<string, unknown>>) => {
+const readLines = (response: IncomingMessage, onLine: (line: ProgressLine) => void) =>
+  new Promise<ProgressLine[]>((resolve, reject) => {
+    const state = { rest: "", lines: [] as ProgressLine[] };
+
+    const take = (text: string) => {
+      const parsed = parseLines(text);
+
+      state.lines.push(...parsed);
+
+      parsed.forEach(onLine);
+    };
+
+    const guarded = (action: () => void) => {
+      try {
+        action();
+      } catch (error) {
+        response.destroy();
+
+        reject(error);
+      }
+    };
+
+    response.setEncoding("utf8");
+
+    response.on("data", (chunk: string) =>
+      guarded(() => {
+        const text = state.rest + chunk;
+        const end = text.lastIndexOf("\n") + 1;
+
+        state.rest = text.slice(end);
+
+        take(text.slice(0, end));
+      }),
+    );
+
+    response.once("end", () =>
+      guarded(() => {
+        take(state.rest);
+
+        resolve(state.lines);
+      }),
+    );
+
+    response.once("error", reject);
+  });
+
+const progressError = (lines: ProgressLine[]) => {
   const failed = lines.find((line) => line.error !== undefined || line.errorDetail !== undefined);
 
   return failed === undefined ? undefined : String(failed.error ?? JSON.stringify(failed.errorDetail));
@@ -146,8 +193,14 @@ export const createEngineClient = (socket: () => string): EngineClient => {
     return (response.body.length === 0 ? undefined : JSON.parse(response.body.toString("utf8"))) as T;
   };
 
-  const progress = async (request: EngineRequest) => {
-    const lines = parseLines((await call(request)).body);
+  const progress = async (request: EngineRequest, onLine: (line: ProgressLine) => void = () => undefined) => {
+    const response = await send(request);
+
+    if (isFailure(response.statusCode ?? 0, [])) {
+      throw engineError(request, await collect(response));
+    }
+
+    const lines = await readLines(response, onLine);
     const error = progressError(lines);
 
     if (error !== undefined) {

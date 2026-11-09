@@ -144,8 +144,8 @@ const notAllowed = (rule: string, host: string, port: number, grants: boolean) =
   return deny(
     rule,
     grants
-      ? `pi-sandbox: ${target} is not allowed; run pi sandbox egress allow ${target}`
-      : `pi-sandbox: ${target} is not allowed; egress grants are off, add it to egress.allow`,
+      ? `${target} is not allowed by the sandbox. Ask the user to run pi sandbox egress allow ${target} on the host.`
+      : `${target} is not allowed by the sandbox. Egress grants are off; ask the user to add it to egress.allow on the host.`,
   );
 };
 

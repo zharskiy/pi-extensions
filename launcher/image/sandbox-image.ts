@@ -21,6 +21,7 @@ export interface SandboxImageInput {
   versions: () => Promise<ImageVersions>;
   inUse: (digest: string) => Promise<boolean>;
   preparing?: () => void;
+  progress?: (step: string) => void;
 }
 
 export interface SandboxImage {
@@ -63,6 +64,7 @@ export const ensureSandboxImage = async (input: SandboxImageInput): Promise<Sand
     repoHash: input.repoHash,
     trustPem,
     env: input.env,
+    progress: input.progress,
   });
 
   if (base.built || layer.built || base.replaced !== undefined) {

@@ -20,7 +20,7 @@ export const sandboxConfig = ({ mounts, ...overrides }: ConfigOverrides = {}): S
     cacheVolumes: [],
     sharedCaches: [],
     hostCaches: [],
-    autoNodeModules: true,
+    autoOverlays: true,
     ...mounts,
   },
   env: { allow: ["TERM", "LANG"] },

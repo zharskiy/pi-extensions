@@ -332,10 +332,10 @@ describe("pi launch wiring", () => {
     await run([], harness.deps);
 
     expect(harness.stderr()).toContain(
-      "pi-sandbox: blocked.example.test was blocked; run pi sandbox egress allow blocked.example.test\n",
+      "pi-sandbox: blocked.example.test was blocked; run pi sandbox egress allow blocked.example.test on the host\n",
     );
     expect(harness.stderr()).toContain(
-      "pi-sandbox: other.test:8443 was blocked; run pi sandbox egress allow other.test:8443\n",
+      "pi-sandbox: other.test:8443 was blocked; run pi sandbox egress allow other.test:8443 on the host\n",
     );
     expect(harness.stderr().match(/blocked\.example\.test was blocked/g)).toHaveLength(1);
   });

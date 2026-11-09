@@ -13,10 +13,10 @@ import { createHarness, type HarnessOptions } from "./harness.ts";
 const WORKSPACE_NOTICE = "pi-sandbox: workspace with 2 repositories, git metadata protected";
 
 const overlayNotice = (places: string) =>
-  `pi-sandbox: node_modules overlaid in ${places}; host node_modules is hidden; set mounts.autoNodeModules=false to keep it`;
+  `pi-sandbox: node_modules overlaid in ${places}; the host copies are hidden; set mounts.autoOverlays=false to keep them`;
 
 const CAPPED_NOTICE =
-  "pi-sandbox: more than 512 node_modules directories; overlay disabled, host node_modules is used";
+  "pi-sandbox: more than 512 build output directories; overlays disabled, the host copies are used";
 
 const occurrences = (text: string, line: string) => text.split("\n").filter((entry) => entry === line).length;
 
@@ -149,7 +149,7 @@ describe("pi in a folder of repositories", () => {
   });
 });
 
-describe("the node_modules overlay notice", () => {
+describe("the overlay notice", () => {
   it("names one directory in the singular", async () => {
     const fake = createFakeBackend();
     const harness = await workspaceHarness(
@@ -159,6 +159,26 @@ describe("the node_modules overlay notice", () => {
 
     expect(await run([], harness.deps)).toBe(0);
     expect(occurrences(harness.stderr(), overlayNotice("1 directory"))).toBe(1);
+  });
+
+  it("prints the notice once per value, again only when the overlays change", async () => {
+    const fake = createFakeBackend();
+    const harness = await workspaceHarness(
+      { repos: ["a", "b"], lockfiles: ["a/package-lock.json"] },
+      { backend: () => fake.backend },
+    );
+
+    expect(await run([], harness.deps)).toBe(0);
+    expect(await run([], harness.deps)).toBe(0);
+    expect(occurrences(harness.stderr(), overlayNotice("1 directory"))).toBe(1);
+    expect(occurrences(harness.stderr(), WORKSPACE_NOTICE)).toBe(1);
+
+    await writeFile(join(harness.work, "b", "Cargo.lock"), "");
+
+    expect(await run([], harness.deps)).toBe(0);
+    expect(harness.stderr()).toContain(
+      "pi-sandbox: node_modules, target overlaid in 2 directories; the host copies are hidden",
+    );
   });
 
   it("counts several directories in the plural", async () => {
@@ -172,34 +192,34 @@ describe("the node_modules overlay notice", () => {
     expect(occurrences(harness.stderr(), overlayNotice("3 directories"))).toBe(1);
   });
 
-  it("says the overlay is off when there are more than 512 node projects", async () => {
+  it("says overlays are off when there are more than 512", async () => {
     const fake = createFakeBackend();
     const lockfiles = Array.from({ length: 513 }, (_, index) => `a/p${index}/package-lock.json`);
     const harness = await workspaceHarness({ repos: ["a", "b"], lockfiles }, { backend: () => fake.backend });
 
     expect(await run([], harness.deps)).toBe(0);
     expect(occurrences(harness.stderr(), CAPPED_NOTICE)).toBe(1);
-    expect(harness.stderr()).not.toContain("node_modules overlaid");
+    expect(harness.stderr()).not.toContain("overlaid in");
   });
 
-  it("stays silent when mounts.autoNodeModules is off", async () => {
+  it("stays silent when mounts.autoOverlays is off", async () => {
     const fake = createFakeBackend();
     const harness = await workspaceHarness(
       { repos: ["a", "b"], lockfiles: ["a/package-lock.json"] },
       { backend: () => fake.backend },
     );
 
-    await harness.writeJson(harness.userConfigFile, { mounts: { autoNodeModules: false } });
+    await harness.writeJson(harness.userConfigFile, { mounts: { autoOverlays: false } });
 
     expect(await run([], harness.deps)).toBe(0);
-    expect(harness.stderr()).not.toContain("node_modules overlaid");
+    expect(harness.stderr()).not.toContain("overlaid in");
   });
 
-  it("stays silent without node projects", async () => {
+  it("stays silent without overlay markers", async () => {
     const fake = createFakeBackend();
     const harness = await workspaceHarness({ repos: ["a", "b"] }, { backend: () => fake.backend });
 
     expect(await run([], harness.deps)).toBe(0);
-    expect(harness.stderr()).not.toContain("node_modules overlaid");
+    expect(harness.stderr()).not.toContain("overlaid in");
   });
 });

@@ -13,6 +13,7 @@ import { type GitBaseline, nestedGitNotices, scanGitBaseline } from "./scan.ts";
 export interface GitLaunchContext {
   runner: CommandRunner;
   stateDir: string;
+  scanBudget?: number;
 }
 
 interface BaselineRecord {
@@ -35,7 +36,7 @@ const alternatesOf = async (workspace: Workspace) => {
 export const recordGitBaseline = async (workspace: Workspace, context: GitLaunchContext) => {
   const paths = pathsOf(context.stateDir, workspace.repoRoot);
   const [scan, alternates] = await Promise.all([
-    scanGitBaseline(workspace, context.runner, paths.noHooks),
+    scanGitBaseline(workspace, context.runner, paths.noHooks, context.scanBudget),
     alternatesOf(workspace),
   ]);
 
@@ -51,7 +52,10 @@ export const gitLaunchNotices = async (workspace: Workspace) => {
 const scanNotices = async (workspace: Workspace, context: GitLaunchContext, record: BaselineRecord) => {
   const { noHooks } = pathsOf(context.stateDir, workspace.repoRoot);
 
-  return nestedGitNotices(record.scan, await scanGitBaseline(workspace, context.runner, noHooks));
+  return nestedGitNotices(
+    record.scan,
+    await scanGitBaseline(workspace, context.runner, noHooks, context.scanBudget),
+  );
 };
 
 const brokenRepos = async (workspace: Workspace) => {

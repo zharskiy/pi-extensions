@@ -15,6 +15,7 @@ interface EnsureLayerInput {
   repoHash: string;
   trustPem?: string;
   env?: Record<string, string | undefined>;
+  progress?: (step: string) => void;
 }
 
 interface LayerImage {

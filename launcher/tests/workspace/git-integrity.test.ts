@@ -118,18 +118,18 @@ describe("the git notices after a session", () => {
 
   it("says the scan for nested repositories stopped when the repository has too many directories", async () => {
     const { repo, workspace, context } = await createRepo();
-    const wide = join(repo, "wide");
+    const narrow = { ...context, scanBudget: 5 };
 
-    await mkdir(wide);
-
-    await Promise.all(Array.from({ length: 50_000 }, (_, index) => mkdir(join(wide, `d${index}`))));
+    await Promise.all(
+      Array.from({ length: 5 }, (_, index) => mkdir(join(repo, "wide", `d${index}`), { recursive: true })),
+    );
 
     await pinGitDirs(workspace, []);
 
-    await recordGitBaseline(workspace, context);
+    await recordGitBaseline(workspace, narrow);
 
-    expect(await gitLaunchEndNotices(workspace, context)).toEqual([
-      "git: the scan for nested repositories stopped after 50000 directories",
+    expect(await gitLaunchEndNotices(workspace, narrow)).toEqual([
+      "git: the scan for nested repositories stopped after 5 directories",
     ]);
-  }, 60_000);
+  });
 });

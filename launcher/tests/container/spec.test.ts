@@ -7,7 +7,7 @@ import type { SandboxConfig } from "../../config/index.ts";
 import {
   buildContainerSpec,
   forwardedEnv,
-  nodeModulesOverlays,
+  overlayVolumes,
   repoVolumes,
   sharedCacheVolumes,
 } from "../../container/index.ts";
@@ -261,43 +261,48 @@ describe("buildContainerSpec", () => {
     });
   });
 
-  it("overlays node_modules of every node project with a volume and leaves out those a cache covers", () => {
+  it("overlays the build output of every marker folder with a volume and leaves out those a cache covers", () => {
     const workspace = {
       cwd: repoRoot,
       repoRoot,
       gitCommonDir: "/work/repo/.git",
       isGitRepo: true,
-      nodeProjects: [repoRoot, "/work/repo/web", "/work/repo/vendor/lib"],
+      overlays: ["/work/repo/node_modules", "/work/repo/api/.venv", "/work/repo/vendor/lib/node_modules"],
     };
     const config = sandboxConfig({ mounts: { cacheVolumes: ["vendor"] } });
     const input = specInput({ workspace, config });
     const mounts = buildContainerSpec(input).mounts;
 
-    expect(nodeModulesOverlays(workspace, config)).toEqual([
+    expect(overlayVolumes(workspace, config)).toEqual([
       {
         path: "/work/repo/node_modules",
         name: `pi-sandbox-cache-${repoHash.slice(0, 12)}-${sha256Hex("node_modules").slice(0, 8)}`,
       },
       {
-        path: "/work/repo/web/node_modules",
-        name: `pi-sandbox-cache-${repoHash.slice(0, 12)}-${sha256Hex("web/node_modules").slice(0, 8)}`,
+        path: "/work/repo/api/.venv",
+        name: `pi-sandbox-cache-${repoHash.slice(0, 12)}-${sha256Hex("api/.venv").slice(0, 8)}`,
       },
     ]);
-    expect(mountAt(mounts, "/work/repo/web/node_modules")).toMatchObject({ kind: "volume", readOnly: false });
+    expect(mountAt(mounts, "/work/repo/api/.venv")).toMatchObject({ kind: "volume", readOnly: false });
     expect(mountAt(mounts, "/work/repo/vendor/lib/node_modules")).toBeUndefined();
     expect(repoVolumes({ workspace, config, hostEnv: input.hostEnv, uid: 501 })).toEqual(
       mounts.filter((mount) => mount.kind === "volume").map((mount) => mount.source),
     );
   });
 
-  it("keeps host node_modules visible when the overlay is off", () => {
-    const workspace = { cwd: repoRoot, repoRoot, isGitRepo: false, nodeProjects: ["/work/repo/web"] };
-    const off = sandboxConfig({ mounts: { autoNodeModules: false } });
+  it("keeps the host build output visible when overlays are off", () => {
+    const workspace = {
+      cwd: repoRoot,
+      repoRoot,
+      isGitRepo: false,
+      overlays: ["/work/repo/web/node_modules"],
+    };
+    const off = sandboxConfig({ mounts: { autoOverlays: false } });
     const plain = buildContainerSpec(
       specInput({ workspace: { cwd: repoRoot, repoRoot, isGitRepo: false }, config: off }),
     );
 
-    expect(nodeModulesOverlays(workspace, off)).toEqual([]);
+    expect(overlayVolumes(workspace, off)).toEqual([]);
     expect(buildContainerSpec(specInput({ workspace, config: off })).labels[LABELS_SPEC_HASH]).toBe(
       plain.labels[LABELS_SPEC_HASH],
     );

@@ -2,7 +2,7 @@ import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { run } from "../../cli/index.ts";
-import { LABELS, nodeModulesOverlays, sharedCacheVolumes } from "../../container/index.ts";
+import { LABELS, overlayVolumes, sharedCacheVolumes } from "../../container/index.ts";
 import { sha256Hex } from "../../shared/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
@@ -20,8 +20,13 @@ const volumeHarness = async () => {
   await harness.writeJson(harness.userConfigFile, { mounts: { sharedCaches: [SHARED] } });
 
   const [shared] = sharedCacheVolumes(config, harness.stateDir);
-  const [overlay] = nodeModulesOverlays(
-    { cwd: harness.repoRoot, repoRoot: harness.repoRoot, isGitRepo: true, nodeProjects: [harness.repoRoot] },
+  const [overlay] = overlayVolumes(
+    {
+      cwd: harness.repoRoot,
+      repoRoot: harness.repoRoot,
+      isGitRepo: true,
+      overlays: [join(harness.repoRoot, "node_modules")],
+    },
     config,
   );
 
@@ -104,8 +109,8 @@ describe("pi sandbox status and volumes", () => {
 
     const lines = harness.stdout().split("\n");
 
-    expect(lines).toContain("node_modules overlays: 1");
-    expect(lines).toContain(`node_modules overlay: ${join(harness.repoRoot, "node_modules")} (${overlay})`);
+    expect(lines).toContain("overlays: 1");
+    expect(lines).toContain(`overlay: ${join(harness.repoRoot, "node_modules")} (${overlay})`);
     expect(lines).toContain("shared caches: 1");
     expect(lines).toContain(`shared cache: ${SHARED} (${shared})`);
   });
@@ -117,9 +122,9 @@ describe("pi sandbox status and volumes", () => {
 
     const lines = harness.stdout().split("\n");
 
-    expect(lines).toContain("node_modules overlays: 0");
+    expect(lines).toContain("overlays: 0");
     expect(lines).toContain("shared caches: 0");
-    expect(lines.some((line) => line.startsWith("node_modules overlay:"))).toBe(false);
+    expect(lines.some((line) => line.startsWith("overlay:"))).toBe(false);
     expect(lines.some((line) => line.startsWith("shared cache:"))).toBe(false);
   });
 });

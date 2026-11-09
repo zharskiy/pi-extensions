@@ -362,7 +362,7 @@ describe("gitDirInUseElsewhere in a workspace", () => {
 
 describe("volumes the sandbox writes", () => {
   const project = join(WORK, "repo", "web");
-  const nodeWorkspace = { ...workspace, nodeProjects: [project] };
+  const nodeWorkspace = { ...workspace, overlays: [join(project, "node_modules")] };
   const cachedSpec = (stateDir = LOCK_STATE) =>
     specOf({
       workspace: nodeWorkspace,

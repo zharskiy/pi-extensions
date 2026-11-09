@@ -143,7 +143,12 @@ export interface Backend {
   detect(): Promise<Detection>;
   pullImage(reference: string, digest?: string): Promise<ImageInfo>;
   resolveImage(reference: string): Promise<ImageInfo | undefined>;
-  buildImage(contextDir: string, tag: string, buildArgs?: Record<string, string>): Promise<ImageInfo>;
+  buildImage(
+    contextDir: string,
+    tag: string,
+    buildArgs?: Record<string, string>,
+    progress?: (step: string) => void,
+  ): Promise<ImageInfo>;
   listImages(): Promise<ImageSummary[]>;
   removeImage(reference: string): Promise<boolean>;
   findContainers(labels: Record<string, string>): Promise<ContainerSummary[]>;

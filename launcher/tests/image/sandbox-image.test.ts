@@ -49,6 +49,34 @@ describe("ensureSandboxImage", () => {
     expect(fake.builds).toHaveLength(1);
   });
 
+  it("announces nothing when the recorded build is reused or the pinned image is already local", async () => {
+    const fake = createFakeBackend();
+    const { input, asked } = await inputOf(fake);
+
+    await ensureSandboxImage(input);
+
+    asked.length = 0;
+
+    await ensureSandboxImage(input);
+
+    expect(asked).toEqual(["versions"]);
+    expect(fake.builds).toHaveLength(1);
+
+    const reference = "ghcr.io/zharskiy/pi-sandbox:0.4.0";
+    const registry = createFakeBackend({ registry: { [reference]: "sha256:pinned" } });
+    const pinned = await inputOf(registry, {
+      config: sandboxConfig({ image: { reference, digest: "sha256:pinned" } }),
+    });
+
+    await ensureSandboxImage(pinned.input);
+
+    pinned.asked.length = 0;
+
+    await ensureSandboxImage(pinned.input);
+
+    expect(pinned.asked).toEqual([]);
+  });
+
   it("pulls a pinned image without resolving versions", async () => {
     const reference = "ghcr.io/zharskiy/pi-sandbox:0.4.0";
     const fake = createFakeBackend({ registry: { [reference]: "sha256:pinned" } });

@@ -22,6 +22,8 @@ interface ListedImage {
 
 const NO_TAG = "<none>:<none>";
 
+const BUILD_STEP = /^Step \d+\/\d+/;
+
 const BUILD_LABELS = JSON.stringify({ [LABELS.managed]: "true" });
 
 const repoDigests = (image: EngineImage) =>
@@ -31,6 +33,14 @@ const infoOf = (image: EngineImage, digest?: string): ImageInfo => ({
   id: image.Id,
   digest: digest ?? repoDigests(image)[0] ?? image.Id,
 });
+
+const stepsTo = (report: (step: string) => void) => (line: Record<string, unknown>) => {
+  const step = typeof line.stream === "string" ? BUILD_STEP.exec(line.stream) : null;
+
+  if (step !== null) {
+    report(step[0]);
+  }
+};
 
 const accepts = (image: EngineImage, digest: string) => [...repoDigests(image), image.Id].includes(digest);
 
@@ -104,20 +114,28 @@ export const createImageOperations = (client: EngineClient, runner: CommandRunne
     ...(Object.keys(buildArgs).length === 0 ? {} : { buildargs: JSON.stringify(buildArgs) }),
   });
 
-  const buildImage = async (contextDir: string, tag: string, buildArgs: Record<string, string> = {}) => {
+  const buildImage = async (
+    contextDir: string,
+    tag: string,
+    buildArgs: Record<string, string> = {},
+    progress: (step: string) => void = () => undefined,
+  ) => {
     const workDir = await mkdtemp(join(tmpdir(), "pi-sandbox-build-"));
     const tarPath = join(workDir, "context.tar");
 
     try {
       await archiveContext(contextDir, tarPath);
 
-      await client.progress({
-        method: "POST",
-        path: "/build",
-        query: buildQuery(tag, buildArgs),
-        stream: createReadStream(tarPath),
-        contentType: "application/x-tar",
-      });
+      await client.progress(
+        {
+          method: "POST",
+          path: "/build",
+          query: buildQuery(tag, buildArgs),
+          stream: createReadStream(tarPath),
+          contentType: "application/x-tar",
+        },
+        stepsTo(progress),
+      );
     } finally {
       await rm(workDir, { recursive: true, force: true });
     }

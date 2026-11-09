@@ -55,7 +55,7 @@ const COMPLETE_LAYER: LayerConfig = {
     cacheVolumes: ["node_modules"],
     sharedCaches: ["~/.cache/pip"],
     hostCaches: ["maven"],
-    autoNodeModules: false,
+    autoOverlays: false,
   },
   env: { allow: ["EDITOR"] },
   resources: { cpus: 2, memoryGiB: 4 },
@@ -132,10 +132,10 @@ describe("mergeLayers with keys of the policy and org layers", () => {
     );
     expect(
       await refusal({
-        org: { mounts: { autoNodeModules: true } },
-        project: { mounts: { autoNodeModules: false } },
+        org: { mounts: { autoOverlays: true } },
+        project: { mounts: { autoOverlays: false } },
       }),
-    ).toBe("project: mounts.autoNodeModules is set by the org config and is final there");
+    ).toBe("project: mounts.autoOverlays is set by the org config and is final there");
   });
 
   it("lets a lower layer set a sibling key the admin layers left open", async () => {

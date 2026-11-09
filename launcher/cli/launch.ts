@@ -1,5 +1,5 @@
 import { constants } from "node:os";
-import { resolve } from "node:path";
+import { basename, resolve } from "node:path";
 import { type Backend, engineSocketPath, type ProxyRoute, type VmPath } from "../backend/index.ts";
 import { type EffectiveConfig, loadEffectiveConfig } from "../config/index.ts";
 import {
@@ -11,7 +11,7 @@ import {
   gitLaunchNotices,
   type LauncherContainerSpec,
   listenFor,
-  nodeModulesOverlays,
+  overlayVolumes,
   planGitOverlay,
   runPi,
 } from "../container/index.ts";
@@ -48,7 +48,6 @@ import {
   reachableBackend,
   withFallbackHint,
   writeLine,
-  writeLines,
   writeNotices,
 } from "./deps.ts";
 import { type HostSide, prepareHostSide } from "./derive.ts";
@@ -62,6 +61,7 @@ import {
 } from "./host-sessions.ts";
 import { beginLaunch, busyLaunches, finishLaunch, gitGuardOf, othersLive } from "./launches.ts";
 import { signInMcpServers } from "./mcp-sign-in.ts";
+import { writeOnce } from "./notices.ts";
 import { openSandboxProxy, reportDenials, type SandboxProxy } from "./sandbox-proxy.ts";
 import { sweepOrphans } from "./sweep.ts";
 import { imagePiVersion, launcherVersion } from "./versions.ts";
@@ -280,6 +280,7 @@ const prepareImage = (
     versions: async () => ({ pi: await imagePiVersion(host.pi) }),
     inUse: async (digest) => (await findCurrentContainer(backend, context.workspace, digest)) !== undefined,
     preparing: () => writeLine(deps.stderr, PREPARING),
+    progress: (step) => writeLine(deps.stderr, `pi-sandbox: build: ${step}`),
   });
 };
 
@@ -310,23 +311,24 @@ const sandboxRoute = async (
 };
 
 const CAPPED_NOTICE =
-  "pi-sandbox: more than 512 node_modules directories; overlay disabled, host node_modules is used";
+  "pi-sandbox: more than 512 build output directories; overlays disabled, the host copies are used";
 
 const overlayNotices = (context: LaunchContext) => {
-  if (context.workspace.nodeProjectsCapped === true) {
+  if (context.workspace.overlaysCapped === true) {
     return [CAPPED_NOTICE];
   }
 
-  const count = nodeModulesOverlays(context.workspace, context.effective.config).length;
+  const paths = overlayVolumes(context.workspace, context.effective.config).map((overlay) => overlay.path);
 
-  if (count === 0) {
+  if (paths.length === 0) {
     return [];
   }
 
-  const places = count === 1 ? "1 directory" : `${count} directories`;
+  const places = paths.length === 1 ? "1 directory" : `${paths.length} directories`;
+  const kinds = [...new Set(paths.map((path) => basename(path)))].sort().join(", ");
 
   return [
-    `pi-sandbox: node_modules overlaid in ${places}; host node_modules is hidden; set mounts.autoNodeModules=false to keep it`,
+    `pi-sandbox: ${kinds} overlaid in ${places}; the host copies are hidden; set mounts.autoOverlays=false to keep them`,
   ];
 };
 
@@ -340,13 +342,12 @@ const hostCacheNotices = (context: LaunchContext) => {
       ];
 };
 
-const writeLaunchNotices = (deps: CliDeps, context: LaunchContext) => {
-  writeLines(deps.stderr, [
+const writeLaunchNotices = (deps: CliDeps, context: LaunchContext) =>
+  writeOnce(deps, context, [
     ...workspaceNotices(context.workspace),
     ...overlayNotices(context),
     ...hostCacheNotices(context),
   ]);
-};
 
 const syncAgentFiles = async (input: SandboxInput, id: string) => {
   const { deps, context, backend, host } = input;
@@ -385,7 +386,7 @@ const prepareContainer = async (
 
   writeNotices(deps, gitNotices);
 
-  writeLaunchNotices(deps, context);
+  await writeLaunchNotices(deps, context);
 
   const route = await sandboxRoute(deps, backend, proxy, image.id, context.repoHash);
   const hostCaches = resolveHostCaches(
@@ -435,7 +436,7 @@ const imagePiNotices = (context: LaunchContext, host: HostSide, image: SandboxIm
   host.pi === undefined || isPinned(context) || image.pi === host.pi.version
     ? []
     : [
-        `the sandbox image has pi ${image.pi ?? "of an unrecorded version"}, the host pi ${host.pi.version}; the image is rebuilt after every session in this repository exits`,
+        `pi-sandbox: the sandbox image has pi ${image.pi ?? "of an unrecorded version"}, the host pi ${host.pi.version}; the image is rebuilt after every session in this repository exits`,
       ];
 
 const proxyDetail = (proxy: SandboxProxy | undefined) =>
@@ -461,7 +462,7 @@ const prepareSandbox = async (input: SandboxInput) => {
     ),
   ]);
 
-  writeNotices(deps, imagePiNotices(context, host, image));
+  await writeOnce(deps, context, imagePiNotices(context, host, image));
 
   cancelled.throwIfAborted();
 

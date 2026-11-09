@@ -84,7 +84,8 @@ describe("decideConnect", () => {
 describe("denial hint", () => {
   it("offers egress allow while grants are on", () => {
     expect(decideConnect({ host: "tools.test", port: 8443 }, policy)).toMatchObject({
-      reason: "pi-sandbox: tools.test:8443 is not allowed; run pi sandbox egress allow tools.test:8443",
+      reason:
+        "tools.test:8443 is not allowed by the sandbox. Ask the user to run pi sandbox egress allow tools.test:8443 on the host.",
     });
   });
 
@@ -92,7 +93,8 @@ describe("denial hint", () => {
     expect(decideConnect({ host: "evil.test", port: 443 }, { ...policy, grants: false })).toEqual({
       allowed: false,
       rule: "egress.allow",
-      reason: "pi-sandbox: evil.test is not allowed; egress grants are off, add it to egress.allow",
+      reason:
+        "evil.test is not allowed by the sandbox. Egress grants are off; ask the user to add it to egress.allow on the host.",
     });
   });
 });
@@ -133,7 +135,8 @@ describe("decideConnect with deny, rule hosts and extra entries", () => {
 
   it("carries the allow hint in the denial reason", () => {
     expect(decideConnect({ host: "new.test", port: 443 }, guarded)).toMatchObject({
-      reason: "pi-sandbox: new.test is not allowed; run pi sandbox egress allow new.test",
+      reason:
+        "new.test is not allowed by the sandbox. Ask the user to run pi sandbox egress allow new.test on the host.",
     });
   });
 });

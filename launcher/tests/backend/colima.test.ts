@@ -326,7 +326,7 @@ describe("colima images", () => {
     expect(await backend.resolveImage("example.test/absent:1")).toBeUndefined();
   });
 
-  it("builds an image from a context directory and returns its id", async () => {
+  it("builds an image from a context directory, streams its steps and returns its id", async () => {
     const engine = await startEngine();
     const context = await temporaryDir();
 
@@ -338,8 +338,10 @@ describe("colima images", () => {
       socketPath: engine.socketPath,
       runner: createProcessRunner(),
     });
-    const built = await backend.buildImage(context, "pi-sandbox:dev");
+    const steps: string[] = [];
+    const built = await backend.buildImage(context, "pi-sandbox:dev", {}, (step) => steps.push(step));
 
+    expect(steps).toEqual(["Step 1/1"]);
     expect(built.id).toMatch(/^sha256:[0-9a-f]{64}$/);
     expect(built.digest).toBe(built.id);
     expect(engine.images.get("pi-sandbox:dev")?.Id).toBe(built.id);

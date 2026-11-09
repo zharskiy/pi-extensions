@@ -161,15 +161,14 @@ const guestHomePath = (path: string) => join(GUEST_HOME, homeRelative(path));
 const cacheTargets = (workspace: Workspace, config: SandboxConfig) =>
   config.mounts.cacheVolumes.map((path) => resolvedPath(workspace.repoRoot, path));
 
-export const nodeModulesOverlays = (workspace: Workspace, config: SandboxConfig): PathVolume[] => {
-  if (!config.mounts.autoNodeModules) {
+export const overlayVolumes = (workspace: Workspace, config: SandboxConfig): PathVolume[] => {
+  if (!config.mounts.autoOverlays) {
     return [];
   }
 
   const covered = cacheTargets(workspace, config);
 
-  return (workspace.nodeProjects ?? [])
-    .map((dir) => join(dir, "node_modules"))
+  return (workspace.overlays ?? [])
     .filter((path) => !covered.some((target) => isWithin(path, target)))
     .map((path) => ({ path, name: cacheVolumeName(workspace.repoRoot, relative(workspace.repoRoot, path)) }));
 };
@@ -188,7 +187,7 @@ export const repoVolumes = ({ workspace, config, hostEnv, uid }: RepoVolumesInpu
   ...new Set([
     agentVolumeName(hostUser(hostEnv, uid), workspace.repoRoot),
     ...config.mounts.cacheVolumes.map((path) => cacheVolumeName(workspace.repoRoot, path)),
-    ...nodeModulesOverlays(workspace, config).map((overlay) => overlay.name),
+    ...overlayVolumes(workspace, config).map((overlay) => overlay.name),
   ]),
 ];
 
@@ -224,7 +223,7 @@ const ownedVolumes = (input: ContainerSpecInput) => {
       labels: cacheVolumeLabels(workspace, target),
     };
   });
-  const overlays = nodeModulesOverlays(workspace, config).map((overlay) => ({
+  const overlays = overlayVolumes(workspace, config).map((overlay) => ({
     name: overlay.name,
     target: overlay.path,
     labels: cacheVolumeLabels(workspace, overlay.path),

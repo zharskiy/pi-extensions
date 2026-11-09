@@ -37,8 +37,8 @@ describe("mounts.sharedCaches", () => {
   it("defaults to no shared caches and node_modules overlays on", async () => {
     const { config, sources } = await loadWith({});
 
-    expect((await defaultConfig()).mounts).toMatchObject({ sharedCaches: [], autoNodeModules: true });
-    expect(config.mounts).toMatchObject({ sharedCaches: [], autoNodeModules: true });
+    expect((await defaultConfig()).mounts).toMatchObject({ sharedCaches: [], autoOverlays: true });
+    expect(config.mounts).toMatchObject({ sharedCaches: [], autoOverlays: true });
     expect(sources["mounts.sharedCaches"]).toBe("default");
   });
 
@@ -146,29 +146,29 @@ describe("mounts.hostCaches", () => {
   });
 });
 
-describe("mounts.autoNodeModules", () => {
+describe("mounts.autoOverlays", () => {
   it("is taken from the lowest layer that sets it, the project included", async () => {
     const { config, sources } = await loadWith({
-      user: { mounts: { autoNodeModules: true } },
-      project: { mounts: { autoNodeModules: false } },
+      user: { mounts: { autoOverlays: true } },
+      project: { mounts: { autoOverlays: false } },
     });
 
-    expect(config.mounts.autoNodeModules).toBe(false);
-    expect(sources["mounts.autoNodeModules"]).toBe("project");
+    expect(config.mounts.autoOverlays).toBe(false);
+    expect(sources["mounts.autoOverlays"]).toBe("project");
   });
 
   it("stays as the policy set it", async () => {
     await expect(
       loadWith({
-        policy: { mounts: { autoNodeModules: false } },
-        project: { mounts: { autoNodeModules: true } },
+        policy: { mounts: { autoOverlays: false } },
+        project: { mounts: { autoOverlays: true } },
       }),
-    ).rejects.toThrow("project: mounts.autoNodeModules is set by the policy config and is final there");
+    ).rejects.toThrow("project: mounts.autoOverlays is set by the policy config and is final there");
   });
 
   it("must be true or false", () => {
-    expect(() => validateLayer({ mounts: { autoNodeModules: "off" } }, "project")).toThrow(
-      "project: mounts.autoNodeModules must be true or false",
+    expect(() => validateLayer({ mounts: { autoOverlays: "off" } }, "project")).toThrow(
+      "project: mounts.autoOverlays must be true or false",
     );
   });
 });

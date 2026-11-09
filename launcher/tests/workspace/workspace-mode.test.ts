@@ -48,7 +48,8 @@ const markRepo = (path: string) => mkdir(join(path, ".git"), { recursive: true }
 
 const noHooksOf = (base: string) => join(base, "state", "git", "no-hooks");
 
-const discover = (root: string) => discoverWorkspace(root, runner, noHooksOf(root));
+const discover = (root: string, scanBudget?: number) =>
+  discoverWorkspace(root, runner, noHooksOf(root), { scanBudget });
 
 const repoAt = (repoRoot: string): Workspace => ({
   cwd: repoRoot,
@@ -97,7 +98,7 @@ describe("the workspace scan", () => {
         join(root, "a", "b", "c", "d", "e", "f", "deep"),
         join(root, "shallow"),
       ],
-      nodeProjects: [],
+      overlays: [],
       truncated: false,
       unreadable: [],
     });
@@ -120,17 +121,41 @@ describe("the workspace scan", () => {
 
   it("refuses a workspace with more directories than the search may visit", async () => {
     const root = await createRoot();
-    const wide = join(root, "wide");
 
-    await mkdir(wide);
+    await Promise.all(
+      Array.from({ length: 5 }, (_, index) => mkdir(join(root, "wide", `d${index}`), { recursive: true })),
+    );
 
-    await Promise.all(Array.from({ length: 50_000 }, (_, index) => mkdir(join(wide, `d${index}`))));
-
-    await expect(discover(root)).rejects.toMatchObject({
-      message: `workspace: ${root} has more than 50000 directories to search for repositories, refusing`,
+    await expect(discover(root, 5)).rejects.toMatchObject({
+      message: `workspace: ${root} has more than 5 directories to search for repositories, refusing`,
       hint: "start pi in a narrower folder",
     });
-  }, 60_000);
+  });
+
+  it("overlays the build output each marker names, skipping a marker folder whose output is a file", async () => {
+    const root = await createRoot();
+    const repo = await createRepo(join(root, "repo"));
+    const folders = ["api", "cli", "app", "plain"].map((name) => join(repo, name));
+
+    await Promise.all(folders.map((dir) => mkdir(dir)));
+
+    await Promise.all([
+      writeFile(join(repo, "api", "uv.lock"), ""),
+      writeFile(join(repo, "api", "poetry.lock"), ""),
+      writeFile(join(repo, "cli", "Cargo.lock"), ""),
+      writeFile(join(repo, "app", "settings.gradle.kts"), ""),
+      writeFile(join(repo, "plain", "Pipfile.lock"), ""),
+      writeFile(join(repo, "plain", ".venv"), ""),
+      writeFile(join(repo, "settings.gradle"), ""),
+    ]);
+
+    expect((await discoverWorkspace(repo, runner, noHooksOf(root))).overlays).toEqual([
+      join(repo, ".gradle"),
+      join(repo, "api", ".venv"),
+      join(repo, "app", ".gradle"),
+      join(repo, "cli", "target"),
+    ]);
+  });
 
   it("finds lockfile folders in a workspace and in a repository, skipping a linked node_modules", async () => {
     const root = await createRoot();
@@ -151,11 +176,12 @@ describe("the workspace scan", () => {
 
     await symlink(join(root, "app", "node_modules"), join(root, "linked", "node_modules"));
 
-    expect((await discover(root)).nodeProjects).toEqual([join(root, "app"), repo, join(repo, "web")]);
-    expect((await discoverWorkspace(repo, runner, noHooksOf(root))).nodeProjects).toEqual([
-      repo,
-      join(repo, "web"),
-    ]);
+    expect((await discover(root)).overlays).toEqual(
+      [join(root, "app"), repo, join(repo, "web")].map((dir) => join(dir, "node_modules")),
+    );
+    expect((await discoverWorkspace(repo, runner, noHooksOf(root))).overlays).toEqual(
+      [repo, join(repo, "web")].map((dir) => join(dir, "node_modules")),
+    );
   });
 
   it("adds package folders below a lockfile folder of the same repository, at most 256 per repository", async () => {
@@ -175,13 +201,15 @@ describe("the workspace scan", () => {
       ].map((file) => writeFile(file, "{}")),
     );
 
-    const { nodeProjects } = await scanWorkspace(root, "workspace");
+    const { overlays } = await scanWorkspace(root, "workspace");
 
-    expect(nodeProjects).toHaveLength(257);
-    expect(nodeProjects[0]).toBe(mono);
-    expect(nodeProjects.every((dir) => dir === mono || dir.startsWith(join(mono, "packages", "p")))).toBe(
-      true,
-    );
+    expect(overlays).toHaveLength(257);
+    expect(overlays[0]).toBe(join(mono, "node_modules"));
+    expect(
+      overlays.every(
+        (dir) => dir === join(mono, "node_modules") || dir.startsWith(join(mono, "packages", "p")),
+      ),
+    ).toBe(true);
   });
 
   it("discovers a folder without repositories when git is not installed", async () => {
@@ -196,7 +224,7 @@ describe("the workspace scan", () => {
       repoRoot: root,
       isGitRepo: false,
       nested: [],
-      nodeProjects: [],
+      overlays: [],
     });
   });
 
@@ -234,7 +262,7 @@ describe("the workspace scan", () => {
     expect(lenient.nested).toEqual([]);
   });
 
-  it("skips the .pi folder, so agent worktrees are neither repositories nor node projects", async () => {
+  it("skips the .pi folder, so agent worktrees are neither repositories nor overlays", async () => {
     const root = await createRoot();
     const agent = join(root, ".pi", "worktrees", "agent-1");
     const repoAgent = join(root, "repo", ".pi", "worktrees", "agent-2");
@@ -245,12 +273,12 @@ describe("the workspace scan", () => {
 
     expect(await scanWorkspace(root, "workspace")).toMatchObject({
       repos: [join(root, "repo")],
-      nodeProjects: [],
+      overlays: [],
     });
-    expect((await scanWorkspace(join(root, "repo"), "git")).nodeProjects).toEqual([]);
+    expect((await scanWorkspace(join(root, "repo"), "git")).overlays).toEqual([]);
   });
 
-  it("collects no node projects when asked not to, still listing repositories", async () => {
+  it("collects no overlays when asked not to, still listing repositories", async () => {
     const root = await createRoot();
     const repo = await createRepo(join(root, "repo"));
 
@@ -258,16 +286,16 @@ describe("the workspace scan", () => {
 
     const lenient = await discoverWorkspace(root, runner, noHooksOf(root), {
       lenient: true,
-      scanNodeProjects: false,
+      scanOverlays: false,
     });
-    const inRepo = await discoverWorkspace(repo, runner, noHooksOf(root), { scanNodeProjects: false });
+    const inRepo = await discoverWorkspace(repo, runner, noHooksOf(root), { scanOverlays: false });
 
     expect(lenient.nested?.map((nested) => nested.repoRoot)).toEqual([repo]);
-    expect(lenient.nodeProjects).toEqual([]);
-    expect(inRepo.nodeProjects).toEqual([]);
+    expect(lenient.overlays).toEqual([]);
+    expect(inRepo.overlays).toEqual([]);
   });
 
-  it("drops every node project and says so when there are more than 512", async () => {
+  it("drops every overlay and says so when there are more than 512", async () => {
     const root = await createRoot();
     const apps = Array.from({ length: 513 }, (_, index) => join(root, `app${index}`));
 
@@ -275,7 +303,7 @@ describe("the workspace scan", () => {
 
     await Promise.all(apps.map((dir) => writeFile(join(dir, "yarn.lock"), "")));
 
-    const capped = { nodeProjects: [], nodeProjectsCapped: true };
+    const capped = { overlays: [], overlaysCapped: true };
 
     expect(await discover(root)).toMatchObject(capped);
     expect(await discoverWorkspace(root, runner, noHooksOf(root), { lenient: true })).toMatchObject(capped);
@@ -296,7 +324,7 @@ describe("the workspace scan", () => {
       repoRoot: root,
       isGitRepo: false,
       nested: [{ cwd: odd, repoRoot: odd, isGitRepo: true }],
-      nodeProjects: [],
+      overlays: [],
     });
     expect(calls).toEqual([]);
   });

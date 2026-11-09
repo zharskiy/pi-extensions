@@ -10,6 +10,7 @@ export interface BuildContextInput {
   config: SandboxConfig;
   stateDir: string;
   env?: Record<string, string | undefined>;
+  progress?: (step: string) => void;
 }
 
 export const reusableImage = async (
@@ -37,7 +38,7 @@ export const buildInContext = async (
 
     const buildArgs = buildProxyArgs(input.config.egress.parentProxy, input.env ?? {});
 
-    return await input.backend.buildImage(contextDir, build.tag, buildArgs);
+    return await input.backend.buildImage(contextDir, build.tag, buildArgs, input.progress);
   } finally {
     await rm(contextDir, { recursive: true, force: true });
   }

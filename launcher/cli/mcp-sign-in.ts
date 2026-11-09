@@ -13,6 +13,7 @@ import {
 import { type CliDeps, hostAgentDirOf, writeLine } from "./deps.ts";
 import type { HostSide } from "./derive.ts";
 import type { LaunchContext } from "./launch.ts";
+import { writeOnce } from "./notices.ts";
 
 const LOGIN_TIMEOUT_SECONDS = 120;
 
@@ -22,9 +23,10 @@ const notice = (deps: CliDeps, name: string, text: string) => {
   writeLine(deps.stderr, `pi-sandbox: mcp ${name}: ${text}`);
 };
 
-const notSignedIn = (deps: CliDeps, name: string) => {
-  notice(deps, name, `not signed in; run pi mcp login ${name}`);
-};
+const notSignedInLine = (name: string) => `pi-sandbox: mcp ${name}: not signed in; run pi mcp login ${name}`;
+
+const notSignedIn = (deps: CliDeps, context: LaunchContext, name: string) =>
+  writeOnce(deps, context, [notSignedInLine(name)]);
 
 const derivedServers = (host: HostSide) =>
   new Set(
@@ -83,7 +85,7 @@ const signIn = async (deps: CliDeps, context: LaunchContext, host: HostSide, ser
   }
 
   if (!outcome.value) {
-    notSignedIn(deps, server.name);
+    await notSignedIn(deps, context, server.name);
   }
 };
 
@@ -94,16 +96,20 @@ export const signInMcpServers = async (deps: CliDeps, context: LaunchContext, ho
   );
 
   if (deps.terminal.stdin.isTTY !== true) {
-    needed.forEach((server) => {
-      notSignedIn(deps, server.name);
-    });
+    await writeOnce(
+      deps,
+      context,
+      needed.map((server) => notSignedInLine(server.name)),
+    );
 
     return;
   }
 
   await needed.reduce(
     (previous, server) =>
-      previous.then(() => signIn(deps, context, host, server).catch(() => notSignedIn(deps, server.name))),
+      previous.then(() =>
+        signIn(deps, context, host, server).catch(() => notSignedIn(deps, context, server.name)),
+      ),
     Promise.resolve(),
   );
 };

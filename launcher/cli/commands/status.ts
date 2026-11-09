@@ -1,6 +1,6 @@
 import { isAbsolute } from "node:path";
 import type { Backend } from "../../backend/index.ts";
-import { findRepoContainer, LABELS, nodeModulesOverlays, sharedCacheVolumes } from "../../container/index.ts";
+import { findRepoContainer, LABELS, overlayVolumes, sharedCacheVolumes } from "../../container/index.ts";
 import { liveLaunches } from "../../grants/index.ts";
 import { recordedImage } from "../../image/index.ts";
 import { LauncherError } from "../../shared/index.ts";
@@ -79,12 +79,12 @@ const launchLines = async (context: LaunchContext) => {
 
 const volumeLines = (context: LaunchContext) => {
   const { config } = context.effective;
-  const overlays = nodeModulesOverlays(context.workspace, config);
+  const overlays = overlayVolumes(context.workspace, config);
   const shared = sharedCacheVolumes(config, context.stateDir);
 
   return [
-    `node_modules overlays: ${overlays.length}`,
-    ...overlays.map((overlay) => `node_modules overlay: ${overlay.path} (${overlay.name})`),
+    `overlays: ${overlays.length}`,
+    ...overlays.map((overlay) => `overlay: ${overlay.path} (${overlay.name})`),
     `shared caches: ${shared.length}`,
     ...shared.map((cache) => `shared cache: ${cache.path} (${cache.name})`),
   ];

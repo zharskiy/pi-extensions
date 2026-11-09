@@ -21,7 +21,7 @@ export type { LauncherContainerSpec } from "./spec.ts";
 export {
   buildContainerSpec,
   forwardedEnv,
-  nodeModulesOverlays,
+  overlayVolumes,
   repoVolumes,
   sharedCacheVolumes,
 } from "./spec.ts";

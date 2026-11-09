@@ -2,23 +2,15 @@ import type { Dirent } from "node:fs";
 import { readdir, realpath } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { isWithin, readRegularFile } from "../shared/index.ts";
+import { isNodeLockfile, NODE_OVERLAY, overlaysMarkedBy } from "./overlay-markers.ts";
 
-export const SCAN_BUDGET = 50_000;
+const SCAN_BUDGET = 50_000;
 
 const PACKAGES_PER_REPO = 256;
 
 const GIT_FILE_PREFIX = "gitdir: ";
 
 const SKIPPED_DIRS = new Set([".git", ".pi", "node_modules"]);
-
-const LOCKFILES = new Set([
-  "package-lock.json",
-  "npm-shrinkwrap.json",
-  "pnpm-lock.yaml",
-  "yarn.lock",
-  "bun.lock",
-  "bun.lockb",
-]);
 
 interface UnreadableDir {
   dir: string;
@@ -27,14 +19,17 @@ interface UnreadableDir {
 
 export interface WorkspaceScan {
   repos: string[];
-  nodeProjects: string[];
+  overlays: string[];
   truncated: boolean;
   unreadable: UnreadableDir[];
 }
 
 export interface ScanOptions {
-  nodeProjects?: boolean;
+  overlays?: boolean;
+  budget?: number;
 }
+
+export const scanBudgetOf = (budget = SCAN_BUDGET) => budget;
 
 interface Pending {
   dir: string;
@@ -104,16 +99,25 @@ const listed = async (pending: Pending, findRepos: boolean): Promise<Listed> => 
   };
 };
 
-const hasLockfile = (level: Listed) => level.entries.some((entry) => LOCKFILES.has(entry.name));
+const hasNodeLockfile = (level: Listed) => level.entries.some((entry) => isNodeLockfile(entry.name));
 
-const overlayable = (level: Listed) => {
-  const modules = level.entries.find((entry) => entry.name === "node_modules");
+const overlayable = (level: Listed, target: string) => {
+  const existing = level.entries.find((entry) => entry.name === target);
 
-  return modules === undefined || modules.isDirectory();
+  return existing === undefined || existing.isDirectory();
 };
 
+const markedOverlays = (level: Listed) =>
+  overlaysMarkedBy(level.entries.map((entry) => entry.name))
+    .filter((target) => overlayable(level, target))
+    .map((target) => join(level.dir, target));
+
 const isPackage = (level: Listed) =>
-  !level.boundary && level.underLockfile && level.entries.some((entry) => entry.name === "package.json");
+  !level.boundary &&
+  level.underLockfile &&
+  !hasNodeLockfile(level) &&
+  overlayable(level, NODE_OVERLAY) &&
+  level.entries.some((entry) => entry.name === "package.json");
 
 const repoOf = (level: Listed, root: string) => (level.boundary ? level.dir : (level.owners.at(-1) ?? root));
 
@@ -121,7 +125,7 @@ const isWalked = (entry: Dirent) => entry.isDirectory() && !SKIPPED_DIRS.has(ent
 
 const childrenOf = (level: Listed): Pending[] => {
   const owners = level.boundary ? [...level.owners, level.dir] : level.owners;
-  const underLockfile = hasLockfile(level) || (!level.boundary && level.underLockfile);
+  const underLockfile = hasNodeLockfile(level) || (!level.boundary && level.underLockfile);
 
   return level.entries
     .filter(isWalked)
@@ -129,22 +133,20 @@ const childrenOf = (level: Listed): Pending[] => {
 };
 
 const withPackages = (levels: Listed[], root: string, walk: Walk) =>
-  levels
-    .filter((level) => overlayable(level) && !hasLockfile(level) && isPackage(level))
-    .reduce(
-      (state, level) => {
-        const repo = repoOf(level, root);
-        const count = state.packages[repo] ?? 0;
+  levels.filter(isPackage).reduce(
+    (state, level) => {
+      const repo = repoOf(level, root);
+      const count = state.packages[repo] ?? 0;
 
-        return count >= PACKAGES_PER_REPO
-          ? state
-          : {
-              nodeProjects: [...state.nodeProjects, level.dir],
-              packages: { ...state.packages, [repo]: count + 1 },
-            };
-      },
-      { nodeProjects: walk.nodeProjects, packages: walk.packages },
-    );
+      return count >= PACKAGES_PER_REPO
+        ? state
+        : {
+            overlays: [...state.overlays, join(level.dir, NODE_OVERLAY)],
+            packages: { ...state.packages, [repo]: count + 1 },
+          };
+    },
+    { overlays: walk.overlays, packages: walk.packages },
+  );
 
 const walkLevel = async (dirs: Pending[], root: string, findRepos: boolean, walk: Walk): Promise<Walk> => {
   if (dirs.length === 0) {
@@ -157,12 +159,12 @@ const walkLevel = async (dirs: Pending[], root: string, findRepos: boolean, walk
 
   const taken = dirs.slice(0, walk.budget);
   const levels = await Promise.all(taken.map((pending) => listed(pending, findRepos)));
-  const locked = levels.filter((level) => overlayable(level) && hasLockfile(level)).map((level) => level.dir);
-  const packaged = withPackages(levels, root, { ...walk, nodeProjects: [...walk.nodeProjects, ...locked] });
+  const marked = levels.flatMap(markedOverlays);
+  const packaged = withPackages(levels, root, { ...walk, overlays: [...walk.overlays, ...marked] });
 
   return walkLevel(levels.flatMap(childrenOf), root, findRepos, {
     repos: [...walk.repos, ...levels.filter((level) => level.registered).map((level) => level.dir)],
-    nodeProjects: packaged.nodeProjects,
+    overlays: packaged.overlays,
     packages: packaged.packages,
     truncated: walk.truncated || taken.length < dirs.length,
     unreadable: [
@@ -186,17 +188,17 @@ export const scanWorkspace = async (
     mode === "workspace",
     {
       repos: [],
-      nodeProjects: [],
+      overlays: [],
       truncated: false,
       unreadable: [],
-      budget: SCAN_BUDGET,
+      budget: scanBudgetOf(options.budget),
       packages: {},
     },
   );
 
   return {
     repos: walk.repos.sort(),
-    nodeProjects: options.nodeProjects === false ? [] : walk.nodeProjects.sort(),
+    overlays: options.overlays === false ? [] : walk.overlays.sort(),
     truncated: walk.truncated,
     unreadable: walk.unreadable,
   };

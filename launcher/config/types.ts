@@ -69,7 +69,7 @@ interface MountsConfig {
   cacheVolumes: string[];
   sharedCaches: string[];
   hostCaches: HostCachePreset[];
-  autoNodeModules: boolean;
+  autoOverlays: boolean;
 }
 
 export interface SandboxConfig {

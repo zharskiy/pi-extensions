@@ -78,7 +78,7 @@ describe("MCP sign-in at launch start", () => {
     expect(harness.stderr()).not.toContain("mcp docs");
   });
 
-  it("records a failed login and does not retry it at launch start for 24 h", async () => {
+  it("records a failed login, does not retry it at launch start for 24 h and says so once", async () => {
     const { harness, logins } = await harnessWith({ loginExit: 1 });
 
     expect(await run([], harness.deps)).toBe(0);
@@ -87,7 +87,7 @@ describe("MCP sign-in at launch start", () => {
     expect(logins()).toHaveLength(1);
     expect(
       harness.stderr().split("pi-sandbox: mcp docs: not signed in; run pi mcp login docs\n"),
-    ).toHaveLength(3);
+    ).toHaveLength(2);
 
     const later = harness.deps.now() + 24 * 3_600_000 + 1;
 

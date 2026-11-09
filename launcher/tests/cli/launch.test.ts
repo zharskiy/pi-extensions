@@ -21,12 +21,13 @@ const writeScript = async (dir: string, body: string) => {
 };
 
 describe("pi [args]", () => {
-  it("prepares once on the cold path, then starts again without image work", async () => {
+  it("prepares once on the cold path, streaming the build steps, then starts again without image work", async () => {
     const fake = createFakeBackend({ exec: (spec) => (isPiSession(spec) ? 3 : 0) });
     const harness = await createHarness({ backend: () => fake.backend });
 
     expect(await run(["--model", "x"], harness.deps)).toBe(3);
     expect(occurrences(harness.stderr(), PREPARING)).toBe(1);
+    expect(occurrences(harness.stderr(), "pi-sandbox: build: Step 1/1")).toBe(1);
     expect(fake.builds).toHaveLength(1);
 
     const packs = harness.calls.filter((call) => call.file === "npm").length;

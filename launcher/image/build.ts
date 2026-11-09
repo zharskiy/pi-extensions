@@ -16,6 +16,7 @@ export interface PullImageInput {
   config: SandboxConfig;
   stateDir: string;
   preparing?: () => void;
+  progress?: (step: string) => void;
 }
 
 export interface EnsureImageInput extends PullImageInput {
@@ -116,17 +117,22 @@ const replaceBase = async (stateDir: string, base: BaseRecord) => {
   return previous === undefined || previous.id === base.id ? {} : { replaced: previous.id };
 };
 
-const buildLocally = async (input: EnsureImageInput, hash: string): Promise<BuiltImage> => {
-  const reference = input.config.image.reference;
-
+const announced = <T>(input: PullImageInput, action: () => Promise<T>) => {
   input.preparing?.();
 
-  const { id, digest } = await buildInContext(input, {
-    prefix: "build",
-    tag: reference,
-    fill: (dir) =>
-      prepareBuildContext(input.versions, dir, { trustPem: input.trustPem, proxyCaPem: input.proxyCaPem }),
-  });
+  return action();
+};
+
+const buildLocally = async (input: EnsureImageInput, hash: string): Promise<BuiltImage> => {
+  const reference = input.config.image.reference;
+  const { id, digest } = await announced(input, () =>
+    buildInContext(input, {
+      prefix: "build",
+      tag: reference,
+      fill: (dir) =>
+        prepareBuildContext(input.versions, dir, { trustPem: input.trustPem, proxyCaPem: input.proxyCaPem }),
+    }),
+  );
   const replaced = await replaceBase(input.stateDir, { id, digest, inputsHash: hash, pi: input.versions.pi });
 
   return { reference, digest, id, built: true, pi: input.versions.pi, ...replaced };
@@ -140,9 +146,7 @@ const pulledImage = async (input: PullImageInput, pinned: string) => {
     return local;
   }
 
-  input.preparing?.();
-
-  return input.backend.pullImage(reference, pinned);
+  return announced(input, () => input.backend.pullImage(reference, pinned));
 };
 
 export const pullPinnedImage = async (input: PullImageInput, pinned: string): Promise<BuiltImage> => {

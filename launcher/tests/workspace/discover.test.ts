@@ -79,7 +79,7 @@ describe("discoverWorkspace", () => {
       gitDir: join(repo, ".git"),
       gitCommonDir: join(repo, ".git"),
       isGitRepo: true,
-      nodeProjects: [],
+      overlays: [],
     });
   });
 
@@ -93,7 +93,7 @@ describe("discoverWorkspace", () => {
       gitDir: join(repo, ".git"),
       gitCommonDir: join(repo, ".git"),
       isGitRepo: true,
-      nodeProjects: [],
+      overlays: [],
     });
   });
 
@@ -109,7 +109,7 @@ describe("discoverWorkspace", () => {
       gitDir: join(repo, ".git", "worktrees", "linked"),
       gitCommonDir: join(repo, ".git"),
       isGitRepo: true,
-      nodeProjects: [],
+      overlays: [],
     });
   });
 
@@ -254,7 +254,7 @@ describe("discoverWorkspace", () => {
       repoRoot: folder,
       isGitRepo: false,
       nested: [],
-      nodeProjects: [],
+      overlays: [],
     });
   });
 

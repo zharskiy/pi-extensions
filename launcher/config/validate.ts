@@ -336,7 +336,7 @@ const LAYER_SPEC: ObjectSpec = {
         cacheVolumes: list(repoPath),
         sharedCaches: { type: "array", items: text(sharedCache), check: distinctCaches },
         hostCaches: { type: "array", items: choice(HOST_CACHE_PRESETS) },
-        autoNodeModules: flag,
+        autoOverlays: flag,
       },
     },
     env: { type: "object", properties: { allow: list(forwardableVariable) } },
@@ -348,12 +348,7 @@ const LAYER_SPEC: ObjectSpec = {
 
 const joinPath = (prefix: string, key: string) => (prefix === "" ? key : `${prefix}.${key}`);
 
-const PROJECT_KEYS = [
-  "mounts.cacheVolumes",
-  "mounts.autoNodeModules",
-  "resources.cpus",
-  "resources.memoryGiB",
-];
+const PROJECT_KEYS = ["mounts.cacheVolumes", "mounts.autoOverlays", "resources.cpus", "resources.memoryGiB"];
 
 const setKeys = (value: unknown, prefix: string): string[] =>
   isJsonObject(value)

@@ -92,7 +92,7 @@ const denialLine = (grants: boolean) => (denial: DenialRecord) => {
   const target = authorityOf(denial.host, denial.port);
 
   return grants
-    ? `pi-sandbox: ${target} was blocked; run pi sandbox egress allow ${target}`
+    ? `pi-sandbox: ${target} was blocked; run pi sandbox egress allow ${target} on the host`
     : `pi-sandbox: ${target} was blocked; egress grants are off, add it to egress.allow`;
 };
 
