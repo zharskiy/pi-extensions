@@ -6,7 +6,7 @@ import type { SecretRef } from "../../config/index.ts";
 import {
   createSecretResolver,
   envSecretsFor,
-  PARENT_PROXY_SECRET_KEY,
+  parentProxyAuth,
   type SecretResolverDeps,
 } from "../../proxy/secrets/index.ts";
 import { createFakeClock } from "../support/fake-clock.ts";
@@ -198,23 +198,20 @@ describe("env and file secrets", () => {
           envRule("two", { env: "TWO" }),
           envRule("three", { command: ["x"] }),
         ],
-        "none",
         { ONE: "1", TWO: "" },
       ),
     ).toEqual({ one: "1" });
   });
 
   it("hands the parent proxy credentials from HTTPS_PROXY", () => {
-    expect(envSecretsFor([], "env", { HTTPS_PROXY: "http://corp:p%40ss@proxy.test:3128" })).toEqual({
-      [PARENT_PROXY_SECRET_KEY]: "corp:p@ss",
-    });
-    expect(envSecretsFor([], "none", { HTTPS_PROXY: "http://corp:pass@proxy.test:3128" })).toEqual({});
+    expect(parentProxyAuth("env", { HTTPS_PROXY: "http://corp:p%40ss@proxy.test:3128" })).toBe("corp:p@ss");
+    expect(parentProxyAuth("none", { HTTPS_PROXY: "http://corp:pass@proxy.test:3128" })).toBeUndefined();
   });
 
   it("refuses an env credential that holds a line break", () => {
     const corp = { id: "corp", host: "corp.test", placeholder: "corp", secret: { env: "CORP" } };
 
-    expect(() => envSecretsFor([corp], "none", { CORP: "abc\r\nX-Evil: 1" })).toThrow(
+    expect(() => envSecretsFor([corp], { CORP: "abc\r\nX-Evil: 1" })).toThrow(
       "CORP contains a line break and cannot be used as a credential",
     );
   });

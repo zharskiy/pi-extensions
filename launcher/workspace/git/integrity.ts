@@ -4,6 +4,7 @@ import { join } from "node:path";
 import {
   LauncherError,
   lstatOrUndefined,
+  type PinRecord,
   readRegularFile,
   sameEntry,
   sha256Hex,
@@ -34,8 +35,10 @@ const ALTERNATES = [
 
 const pinLockTimeout = { timeoutMs: PIN_LOCK_TIMEOUT_MS };
 
+const withGitDirPinLock = <T>(stateDir: string, gitCommonDir: string, action: () => Promise<T>) =>
+  withFileLock(stateLayout(stateDir).gitPinLock(sha256Hex(gitCommonDir)), action, pinLockTimeout);
+
 export const withGitPinLock = <T>(stateDir: string, workspace: Workspace, action: () => Promise<T>) => {
-  const layout = stateLayout(stateDir);
   const gitCommonDirs = gitRepos(workspace)
     .map((repo) => repo.gitCommonDir)
     .filter((dir) => dir !== undefined);
@@ -43,8 +46,7 @@ export const withGitPinLock = <T>(stateDir: string, workspace: Workspace, action
   return [...new Set(gitCommonDirs)]
     .sort()
     .reduceRight<() => Promise<T>>(
-      (inner, gitCommonDir) => () =>
-        withFileLock(layout.gitPinLock(sha256Hex(gitCommonDir)), inner, pinLockTimeout),
+      (inner, gitCommonDir) => () => withGitDirPinLock(stateDir, gitCommonDir, inner),
       action,
     )();
 };
@@ -91,9 +93,9 @@ export const assertGitIntegrity = async (workspace: Workspace): Promise<string[]
   return modules;
 };
 
-const writeGitPin = async (gitDir: string) => {
+const writeGitPin = async (gitDir: string): Promise<string[]> => {
   if ((await pinStateOf(gitDir)) === "pinned") {
-    return;
+    return [];
   }
 
   const path = join(gitDir, "commondir");
@@ -118,14 +120,20 @@ const writeGitPin = async (gitDir: string) => {
   if (!written && (await pinStateOf(gitDir)) === "absent") {
     throw new LauncherError(`git: could not write ${path}`);
   }
+
+  return written ? [path] : [];
 };
 
-export const pinGitDirs = async (workspace: Workspace, modules: string[]) => {
+export const pinGitDirs = async (workspace: Workspace, modules: string[]): Promise<string[]> => {
   const gitCommonDir = workspace.gitCommonDir;
 
-  if (gitCommonDir !== undefined) {
-    await Promise.all([gitCommonDir, ...modules].map(writeGitPin));
+  if (gitCommonDir === undefined) {
+    return [];
   }
+
+  const written = await Promise.all([gitCommonDir, ...modules].map(writeGitPin));
+
+  return written.flat();
 };
 
 const pinTextOf = (path: string) =>
@@ -134,8 +142,7 @@ const pinTextOf = (path: string) =>
     () => undefined,
   );
 
-const removePin = async (gitDir: string): Promise<string[]> => {
-  const path = join(gitDir, "commondir");
+const removePin = async (path: string): Promise<string[]> => {
   const info = await lstatOrUndefined(path);
 
   if (info === undefined) {
@@ -143,6 +150,11 @@ const removePin = async (gitDir: string): Promise<string[]> => {
   }
 
   const text = info.isFile() ? await pinTextOf(path) : undefined;
+
+  if (text === undefined || !isPinText(text)) {
+    return [`git: ${path} no longer holds the launcher's pin, so it was left in place`];
+  }
+
   const again = await lstatOrUndefined(path);
   const removed =
     again !== undefined &&
@@ -152,26 +164,27 @@ const removePin = async (gitDir: string): Promise<string[]> => {
       () => false,
     ));
 
-  if (!removed) {
-    return [`git: ${path} could not be removed; remove it before running git in this repository`];
-  }
-
-  return text !== undefined && isPinText(text)
+  return removed
     ? []
-    : [`git: ${path} was changed inside the sandbox; the launcher removed it`];
+    : [`git: ${path} could not be removed; remove it before running git in this repository`];
 };
 
-export const unpinGitDirs = async (workspace: Workspace) => {
-  const gitCommonDir = workspace.gitCommonDir;
+type PinInUse = (gitCommonDir: string) => Promise<boolean>;
 
-  if (gitCommonDir === undefined) {
-    return [];
-  }
+const releasePin = (stateDir: string, pin: PinRecord, inUse: PinInUse) =>
+  withGitDirPinLock(stateDir, pin.gitCommonDir, async () =>
+    (await inUse(pin.gitCommonDir))
+      ? { kept: [pin], notices: [] }
+      : { kept: [], notices: await removePin(pin.path) },
+  );
 
-  const modules = await findModuleGitDirs(gitCommonDir).catch(() => []);
-  const notices = await Promise.all([gitCommonDir, ...modules].map(removePin));
+export const unpinRecorded = async (stateDir: string, pins: PinRecord[], inUse: PinInUse) => {
+  const outcomes = await Promise.all(pins.map((pin) => releasePin(stateDir, pin, inUse)));
 
-  return notices.flat();
+  return {
+    kept: outcomes.flatMap((outcome) => outcome.kept),
+    notices: outcomes.flatMap((outcome) => outcome.notices),
+  };
 };
 
 export const gitAlternatesNotices = async (workspace: Workspace) => {

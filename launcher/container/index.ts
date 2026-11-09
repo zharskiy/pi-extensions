@@ -6,14 +6,13 @@ export {
   planGitOverlay,
 } from "./git-overlay.ts";
 export {
-  collectGarbage,
+  discardContainer,
   ensureContainer,
   findCurrentContainer,
   findRepoContainer,
   gitDirInUseElsewhere,
-  isCurrentContainer,
-  policyHashesInUse,
-  removeRepoContainer,
+  listLauncherContainers,
+  removeRepoContainers,
 } from "./lifecycle.ts";
 export { LABELS, userHashOf } from "./names.ts";
 export type { HostTerminal, SignalSource } from "./run-pi.ts";

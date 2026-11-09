@@ -9,7 +9,7 @@ import { fileSecret } from "./file.ts";
 import { createMcpOAuthSource } from "./mcp-oauth.ts";
 import { piAuthSecret } from "./pi-auth.ts";
 
-export { envSecretsFor, PARENT_PROXY_SECRET_KEY } from "./env.ts";
+export { envSecretsFor, PARENT_PROXY_SECRET_KEY, parentProxyAuth } from "./env.ts";
 export type { SecretReply } from "./errors.ts";
 
 export interface SecretResolverDeps {

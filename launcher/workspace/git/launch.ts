@@ -7,7 +7,7 @@ import {
   writeJsonFile,
 } from "../../shared/index.ts";
 import { gitRepos, type Workspace } from "../types.ts";
-import { assertGitIntegrity, gitAlternatesNotices, unpinGitDirs, withGitPinLock } from "./integrity.ts";
+import { assertGitIntegrity, gitAlternatesNotices } from "./integrity.ts";
 import { type GitBaseline, nestedGitNotices, scanGitBaseline } from "./scan.ts";
 
 export interface GitLaunchContext {
@@ -19,8 +19,6 @@ interface BaselineRecord {
   scan: GitBaseline;
   alternates: string[];
 }
-
-type PinsInUse = (gitCommonDir: string) => Promise<boolean>;
 
 const pathsOf = (stateDir: string, repoRoot: string) => {
   const layout = stateLayout(stateDir);
@@ -56,28 +54,6 @@ const scanNotices = async (workspace: Workspace, context: GitLaunchContext, reco
   return nestedGitNotices(record.scan, await scanGitBaseline(workspace, context.runner, noHooks));
 };
 
-const commonDirRepos = (workspace: Workspace) => {
-  const byCommonDir = new Map(
-    gitRepos(workspace).flatMap((repo) =>
-      repo.gitCommonDir === undefined ? [] : [[repo.gitCommonDir, repo] as const],
-    ),
-  );
-
-  return [...byCommonDir.entries()];
-};
-
-const unpinned = async (workspace: Workspace, context: GitLaunchContext, pinsInUse: PinsInUse) => {
-  const notices = await Promise.all(
-    commonDirRepos(workspace).map(([gitCommonDir, repo]) =>
-      withGitPinLock(context.stateDir, repo, async () =>
-        (await pinsInUse(gitCommonDir)) ? [] : unpinGitDirs(repo),
-      ),
-    ),
-  );
-
-  return notices.flat();
-};
-
 const brokenRepos = async (workspace: Workspace) => {
   const notices = await Promise.all(
     gitRepos(workspace).map((repo) =>
@@ -91,16 +67,11 @@ const brokenRepos = async (workspace: Workspace) => {
   return notices.flat();
 };
 
-export const gitLaunchEndNotices = async (
-  workspace: Workspace,
-  context: GitLaunchContext,
-  pinsInUse: PinsInUse,
-) => {
+export const gitLaunchEndNotices = async (workspace: Workspace, context: GitLaunchContext) => {
   if (workspace.isGitRepo && workspace.gitCommonDir === undefined) {
     return [];
   }
 
-  const released = await unpinned(workspace, context, pinsInUse);
   const broken = await brokenRepos(workspace);
   const record = await readJsonFile<BaselineRecord>(
     pathsOf(context.stateDir, workspace.repoRoot).record,
@@ -111,5 +82,5 @@ export const gitLaunchEndNotices = async (
   const scanned =
     record === undefined || broken.length > 0 ? [] : await scanNotices(workspace, context, record);
 
-  return [...released, ...broken, ...alternates, ...scanned];
+  return [...broken, ...alternates, ...scanned];
 };

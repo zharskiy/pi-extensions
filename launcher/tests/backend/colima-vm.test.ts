@@ -1,9 +1,9 @@
+import { mkdir, writeFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import { createColimaVm } from "../../backend/colima/vm.ts";
 import { run } from "../../cli/index.ts";
 import { registerLaunch } from "../../grants/index.ts";
-import type { ProxyInstance } from "../../proxy/index.ts";
-import { sha256Hex } from "../../shared/index.ts";
+import { bootTime, sha256Hex, stateLayout } from "../../shared/index.ts";
 import { createHarness, writeColimaMounts, writeLimaMounts } from "../cli/harness.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { argvOf, type FakeCall } from "../support/fake-runner.ts";
@@ -20,10 +20,10 @@ interface Setup {
   colima?: ColimaAnswers;
   profile?: boolean;
   config?: unknown;
-  proxies?: ProxyInstance[];
+  proxy?: boolean;
 }
 
-const PROXY: ProxyInstance = { pid: 777, port: 4128, policyHash: "policy-a", token: "token-a" };
+const LEFT_REPO = "d".repeat(64);
 
 const STOP = "colima stop --profile pi-sandbox";
 
@@ -71,11 +71,10 @@ const setupWith = async (setup: Setup = {}) => {
     }),
     respond: (call) => (call.file === "colima" && answers.missing !== true ? answer(call) : undefined),
     proxy: {
-      list: async () => setup.proxies ?? [],
       stop: async () => {
         events.push("proxy stop");
 
-        return setup.proxies?.length ?? 0;
+        return setup.proxy === true;
       },
     },
   });
@@ -103,6 +102,7 @@ const liveSession = (stateDir: string) =>
   registerLaunch(stateDir, {
     launchId: "00000000000000aa",
     pid: process.pid,
+    boot: bootTime(),
     repoHash: sha256Hex("/elsewhere"),
     startedAt: 1,
   });
@@ -114,7 +114,7 @@ describe("a launch starts the stopped sandbox VM", () => {
     expect(await run([], context.harness.deps)).toBe(0);
     expect(context.harness.stderr()).toContain("pi-sandbox: starting the sandbox VM\n");
     expect(context.colimaCalls()).toEqual([STATUS, START]);
-    expect(context.fake.containers.size).toBe(1);
+    expect(context.fake.created).toHaveLength(1);
   });
 
   it("starts nothing without the pi-sandbox colima profile and says the engine is unreachable", async () => {
@@ -186,14 +186,19 @@ describe("a launch starts the stopped sandbox VM", () => {
 });
 
 describe("pi sandbox stop", () => {
-  it("stops the VM, then the proxies, and says the next pi starts it again", async () => {
-    const context = await setupWith({ colima: { running: true }, proxies: [PROXY] });
+  it("stops the VM, then sweeps what the sandboxes left, proxies included, and says the next pi starts it again", async () => {
+    const context = await setupWith({ colima: { running: true }, proxy: true });
+    const proxyDir = stateLayout(context.harness.stateDir).repo(LEFT_REPO).proxy;
+
+    await mkdir(proxyDir.directory, { recursive: true });
+
+    await writeFile(proxyDir.token, "f".repeat(64));
 
     expect(await run(["sandbox", "stop"], context.harness.deps)).toBe(0);
     expect(context.events).toEqual([STATUS, STOP, "proxy stop"]);
     expect(context.harness.stdout()).toBe(
       [
-        "stopped proxy pid 777 port 4128",
+        `stopped the proxy of ${LEFT_REPO.slice(0, 12)}`,
         "stopped the sandbox VM (profile pi-sandbox); the next pi starts it again",
         "",
       ].join("\n"),

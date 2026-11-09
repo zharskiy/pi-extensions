@@ -1,22 +1,13 @@
 import { isAbsolute } from "node:path";
 import type { Backend } from "../../backend/index.ts";
-import {
-  findRepoContainer,
-  isCurrentContainer,
-  LABELS,
-  nodeModulesOverlays,
-  sharedCacheVolumes,
-} from "../../container/index.ts";
+import { findRepoContainer, LABELS, nodeModulesOverlays, sharedCacheVolumes } from "../../container/index.ts";
 import { liveLaunches } from "../../grants/index.ts";
 import { recordedImage } from "../../image/index.ts";
-import { proxyPolicyHash } from "../../proxy/index.ts";
 import { LauncherError } from "../../shared/index.ts";
 import { type CliDeps, reachableBackend, writeLines } from "../deps.ts";
 import { type LaunchContext, openContext } from "../launch.ts";
 import { launcherVersion } from "../versions.ts";
 import { grantLines } from "./egress.ts";
-
-const SHORT_HASH = 12;
 
 const sessionDirLine = (label: string | undefined) => {
   if (label === undefined) {
@@ -33,20 +24,10 @@ const containerLines = async (backend: Backend, context: LaunchContext) => {
     return ["container: none"];
   }
 
-  const { config } = context.effective;
-  const hash = container.labels[LABELS.specHash] ?? "unknown";
-  const record = await recordedImage(context.stateDir, config);
-  const current = await isCurrentContainer(container, {
-    stateDir: context.stateDir,
-    repoRoot: context.workspace.repoRoot,
-    digest: record?.digest ?? "",
-  });
-  const freshness = current ? "current" : "stale";
-
   return [
     `container: ${container.id} ${container.state}`,
     `container digest: ${container.labels[LABELS.imageDigest] ?? "unknown"}`,
-    `container spec hash: ${hash} (${freshness})`,
+    `container spec hash: ${container.labels[LABELS.specHash] ?? "unknown"}`,
     sessionDirLine(container.labels[LABELS.sessionDir]),
   ];
 };
@@ -72,17 +53,9 @@ const runtimeLines = async (deps: CliDeps, context: LaunchContext) => {
 };
 
 const proxyLines = async (deps: CliDeps, context: LaunchContext) => {
-  const instances = await deps.proxy.list(context.stateDir);
-  const wanted = proxyPolicyHash(context.effective.config);
+  const proxy = await deps.proxy.read(context.stateDir, context.repoHash);
 
-  if (instances.length === 0) {
-    return ["proxy: stopped"];
-  }
-
-  return instances.map(
-    (instance) =>
-      `proxy: policy ${instance.policyHash.slice(0, SHORT_HASH)} pid ${instance.pid} port ${instance.port} (${instance.policyHash === wanted ? "this repository" : "other policy"})`,
-  );
+  return [proxy === undefined ? "proxy: stopped" : `proxy: pid ${proxy.pid} port ${proxy.port}`];
 };
 
 const imageLine = async (context: LaunchContext) => {

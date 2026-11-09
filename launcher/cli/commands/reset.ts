@@ -1,10 +1,11 @@
 import { rm } from "node:fs/promises";
 import type { Backend } from "../../backend/index.ts";
-import { LABELS, policyHashesInUse, removeRepoContainer, repoVolumes } from "../../container/index.ts";
-import { proxyPolicyHash } from "../../proxy/index.ts";
+import { LABELS, repoVolumes } from "../../container/index.ts";
+import { withRepoLaunchLock } from "../../grants/index.ts";
 import { LauncherError, stateLayout } from "../../shared/index.ts";
 import { type CliDeps, writeLine, writeLines } from "../deps.ts";
 import { type LaunchContext, openContext } from "../launch.ts";
+import { removeRepoSandbox } from "../sweep.ts";
 
 const VOLUMES = "--volumes";
 
@@ -34,29 +35,20 @@ export const resetCommand = async (deps: CliDeps, args: string[]) => {
   }
 
   const { context, backend } = await openContext(deps, "admin");
-  const { workspace, effective, stateDir, repoHash } = context;
-  const removed = await removeRepoContainer(backend, workspace.repoRoot);
-
-  writeLines(
-    deps.stdout,
-    removed.map((container) => `removed container ${container.name} (${container.id})`),
+  const { workspace, stateDir, repoHash } = context;
+  const removed = await withRepoLaunchLock(stateDir, repoHash, () =>
+    removeRepoSandbox(deps, backend, repoHash),
   );
 
+  writeLines(deps.stdout, removed);
+
   if (removed.length === 0) {
-    writeLine(deps.stdout, `no container for ${workspace.repoRoot}`);
+    writeLine(deps.stdout, `no sandbox for ${workspace.repoRoot}`);
   }
 
   const layout = stateLayout(stateDir).repo(repoHash);
 
   await rm(layout.render, { recursive: true, force: true });
-
-  const policyHash = proxyPolicyHash(effective.config);
-
-  if ((await policyHashesInUse(backend)).includes(policyHash)) {
-    writeLine(deps.stdout, `kept proxy instance ${policyHash}, in use by another repository`);
-  } else if (await deps.proxy.remove(stateDir, policyHash)) {
-    writeLine(deps.stdout, `removed proxy instance ${policyHash}`);
-  }
 
   if (!args.includes(VOLUMES)) {
     return 0;

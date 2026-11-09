@@ -66,7 +66,6 @@ export const runBackendConformance = (
   const runId = randomBytes(4).toString("hex");
   const prefix = `pi-sandbox-conformance-${runId}`;
   const volumes = [`${prefix}-a`, `${prefix}-b`, `${prefix}-mounted`, `${prefix}-owned`, `${prefix}-listed`];
-  const policyHash = randomHash();
   const repos = [randomHash(), randomHash(), randomHash(), randomHash(), randomHash()];
   const state: { target?: ConformanceTarget } = {};
 
@@ -121,7 +120,7 @@ export const runBackendConformance = (
     return backend().prepareProxyRoute({
       hostPort,
       repoHash,
-      relay: { policyHash, imageId: target().relayImage ?? target().runnableImage },
+      imageId: target().relayImage ?? target().runnableImage,
     });
   };
 
@@ -159,7 +158,9 @@ export const runBackendConformance = (
       const relays =
         state.target === undefined
           ? []
-          : await backend().findContainers({ [LABELS.relay]: "true", [LABELS.proxyPolicyHash]: policyHash });
+          : (await backend().findContainers({ [LABELS.relay]: "true" })).filter((relay) =>
+              repos.includes(relay.labels[LABELS.repoHash] ?? ""),
+            );
 
       await Promise.all(relays.map((relay) => backend().removeContainer(relay.id)));
 
@@ -358,16 +359,18 @@ export const runBackendConformance = (
       await backend().removeContainer(created.id);
     });
 
-    it("stops a running container within the given timeout", async () => {
+    it("removes a stopped container by itself, so waiting for the removal returns", async () => {
       const created = await backend().createContainer(specFor("stop", {}));
 
       await backend().startContainer(created.id);
 
       await backend().stopContainer(created.id, 1);
 
+      await backend().waitRemoved(created.id, 10_000);
+
       const listed = await backend().findContainers({ [RUN_LABEL]: runId });
 
-      expect(listed.find((container) => container.id === created.id)?.state).toBe("stopped");
+      expect(listed.find((container) => container.id === created.id)).toBeUndefined();
 
       await backend().removeContainer(created.id);
     });
@@ -381,29 +384,32 @@ export const runBackendConformance = (
       expect(routeA.network).toEqual({ kind: "internal", name: networkOf(repoA) });
       expect(routeB.network).toEqual({ kind: "internal", name: networkOf(repoB) });
       expect(again).toEqual(routeA);
-      expect(routeA.address).toMatch(/^\d+\.\d+\.\d+\.\d+:\d+$/);
+      expect(routeA.address).toBe("pi-sandbox-proxy:3128");
+      expect(routeB.address).toBe(routeA.address);
+      expect(
+        (await backend().findContainers({ [LABELS.relay]: "true", [LABELS.repoHash]: repoA })).map(
+          (relay) => relay.name,
+        ),
+      ).toEqual([`pi-sandbox-relay-${repoA.slice(0, 12)}`]);
       expect(await networks().has(networkOf(repoA))).toBe(true);
       expect(await networks().has(networkOf(repoB))).toBe(true);
     });
 
-    it("drops a repository's network with its last container unless asked to keep it", async () => {
+    it("removes a repository's network only once no sandbox container is attached", async () => {
       const [repoA = "", repoB = ""] = repos;
       const first = await createOn("net-a1", repoA);
-      const second = await createOn("net-a2", repoA);
       const other = await createOn("net-b", repoB);
+
+      expect(await backend().removeRepoNetwork(repoA)).toBe(false);
+      expect(await networks().has(networkOf(repoA))).toBe(true);
 
       await backend().removeContainer(first.id);
 
-      expect(await networks().has(networkOf(repoA))).toBe(true);
+      const relays = await backend().findContainers({ [LABELS.relay]: "true", [LABELS.repoHash]: repoA });
 
-      await backend().removeContainer(second.id, { keepNetwork: true });
+      await Promise.all(relays.map((relay) => backend().removeContainer(relay.id)));
 
-      expect(await networks().has(networkOf(repoA))).toBe(true);
-
-      const third = await createOn("net-a3", repoA);
-
-      await backend().removeContainer(third.id);
-
+      expect(await backend().removeRepoNetwork(repoA)).toBe(true);
       expect(await networks().has(networkOf(repoA))).toBe(false);
       expect(await networks().has(networkOf(repoB))).toBe(true);
 
@@ -427,28 +433,20 @@ export const runBackendConformance = (
         await expect(external).rejects.toThrow("exists but is not internal");
       });
 
-      it("prunes the launcher's networks of repositories outside the keep set and nothing else", async () => {
-        const [repoA = "", repoB = "", , , repoE = ""] = repos;
-        const unrelated = `${prefix}-network`;
+      it("lists the launcher's networks with their repository and nothing else", async () => {
+        const [repoA = "", , , , repoE = ""] = repos;
 
         await routeFor(repoA);
 
-        await routeFor(repoB);
-
         await plant(networkOf(repoE), { managed: false, internal: true });
 
-        await plant(unrelated, { managed: true, internal: true });
+        const listed = await backend().listNetworks();
 
-        const pruned = await backend().pruneNetworks([repoA]);
-
-        expect(pruned).toEqual(expect.arrayContaining([networkOf(repoB)]));
-        expect(pruned).not.toContain(networkOf(repoA));
-        expect(pruned).not.toContain(networkOf(repoE));
-        expect(pruned).not.toContain(unrelated);
-        expect(await networks().has(networkOf(repoB))).toBe(false);
-        expect(await networks().has(networkOf(repoA))).toBe(true);
-        expect(await networks().has(networkOf(repoE))).toBe(true);
-        expect(await networks().has(unrelated)).toBe(true);
+        expect(listed).toContainEqual({
+          name: networkOf(repoA),
+          labels: expect.objectContaining({ [LABELS.repoHash]: repoA }),
+        });
+        expect(listed.map((network) => network.name)).not.toContain(networkOf(repoE));
       });
     }
   });

@@ -3,17 +3,16 @@ import type { AddressInfo, Socket } from "node:net";
 import { userInfo } from "node:os";
 import type { Duplex } from "node:stream";
 import { matchesPattern, normalizeHost } from "../config/index.ts";
-import { LauncherError, sha256Hex } from "../shared/index.ts";
+import { LauncherError } from "../shared/index.ts";
 import type { AccessLogEntry } from "./access-log.ts";
-import { parseProxyAuthorization, sameText } from "./auth.ts";
-import type { ControlMessage, ControlReply } from "./control.ts";
-import { type Caller, createControlRoutes, hostOf, pathOf } from "./control-routes.ts";
+import { proxyTokenOf, sameText } from "./auth.ts";
 import { createDenialPages } from "./denial-page.ts";
 import { createDenials, isHinted } from "./denials.ts";
 import { createDialer, type DialAccess, type Dialer } from "./dial.ts";
 import { createInterceptor } from "./intercept.ts";
 import { decideConnect, type EgressPolicy } from "./policy.ts";
 import { PROXY_AGENT, rawReply, sendJson } from "./replies.ts";
+import { createRoutes, hostOf } from "./routes.ts";
 import { isRuleHost } from "./rules.ts";
 import type { ProxyRuntime } from "./runtime.ts";
 import type { SecretResolver } from "./secrets/index.ts";
@@ -24,8 +23,8 @@ import { type Connection, createTunnel } from "./tunnel.ts";
 export interface ProxyServerOptions {
   listen: { host: string; port: number };
   policy: EgressPolicy;
-  policyHash?: string;
-  controlToken: string;
+  repoHash: string;
+  token: string;
   runtime: ProxyRuntime;
   resolver: SecretResolver;
   privateHosts?: string[];
@@ -37,13 +36,11 @@ export interface ProxyServerOptions {
   dial?: Dialer;
   upstreamCa?: string | string[];
   helloTimeoutMs?: number;
-  onControl?: (message: ControlMessage) => ControlReply | Promise<ControlReply>;
   denialPages?: { maxNames?: number; mintsPerMinute?: number };
 }
 
 export interface ProxyServer {
   port: number;
-  policyHash: string;
   close(): Promise<void>;
 }
 
@@ -76,7 +73,7 @@ const parseAuthority = (authority: string | undefined) => {
 
 export const startProxyServer = async (options: ProxyServerOptions): Promise<ProxyServer> => {
   const dial = options.dial ?? createDialer();
-  const policyHash = options.policyHash ?? sha256Hex(JSON.stringify(options.policy));
+  const { repoHash } = options;
   const user = currentUser();
   const sockets = new Set<Socket>();
   const helloTimeoutMs = options.helloTimeoutMs ?? DEFAULT_HELLO_TIMEOUT_MS;
@@ -92,10 +89,10 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
   };
 
   const terminator = createTerminator({
-    rules: (repoHash) => options.runtime.rules(repoHash),
+    rules: async () => options.runtime.rules(),
     resolver: options.resolver,
-    dial: async (host, port, access, repoHash) => {
-      const socket = await dial(host, port, access, repoHash);
+    dial: async (host, port, access, repo) => {
+      const socket = await dial(host, port, access, repo);
 
       track(socket);
 
@@ -125,43 +122,30 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
     denials,
   });
   const tunnel = createTunnel({ dial, accessOf, track, record, denials, helloTimeoutMs });
-  const routes = createControlRoutes({
-    policy: options.policy,
-    policyHash,
-    denials,
-    onControl: options.onControl,
-  });
+  const routes = createRoutes(repoHash, denials);
 
-  const callerOf = async (request: IncomingMessage): Promise<Caller | undefined> => {
-    const parsed = parseProxyAuthorization(request.headers["proxy-authorization"]);
+  const isCaller = (request: IncomingMessage) => {
+    const token = proxyTokenOf(request.headers["proxy-authorization"]);
 
-    if (parsed?.kind === "control") {
-      return sameText(parsed.token, options.controlToken) ? { kind: "control" } : undefined;
-    }
-
-    const repoHash = parsed === undefined ? undefined : await options.runtime.repoOf(parsed.token);
-
-    return repoHash === undefined ? undefined : { kind: "repo", repoHash };
+    return token !== undefined && sameText(token, options.token);
   };
 
-  const decide = async (host: string, port: number, repoHash: string) => {
+  const decide = async (host: string, port: number) => {
     const decision = decideConnect({ host, port }, options.policy);
 
     if (decision.allowed || !isHinted(decision.rule)) {
       return decision;
     }
 
-    return decideConnect({ host, port }, options.policy, await options.runtime.extras(repoHash));
+    return decideConnect({ host, port }, options.policy, await options.runtime.extras());
   };
 
-  const isTerminated = async (host: string, port: number, repoHash: string) =>
-    isRuleHost(await options.runtime.rules(repoHash), host, port);
+  const isTerminated = (host: string, port: number) => isRuleHost(options.runtime.rules(), host, port);
 
   const handleConnect = async (request: IncomingMessage, client: Socket, head: Buffer) => {
     const target = parseAuthority(request.url);
-    const caller = await callerOf(request);
 
-    if (caller?.kind !== "repo") {
+    if (!isCaller(request)) {
       denials.note(target?.host ?? UNPARSEABLE, AUTH_DENIAL);
 
       client.end(
@@ -172,8 +156,6 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
 
       return;
     }
-
-    const { repoHash } = caller;
 
     if (target === undefined) {
       denials.refuse(
@@ -188,7 +170,7 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
 
     const host = normalizeHost(target.host);
     const { port } = target;
-    const decision = await decide(host, port, repoHash);
+    const decision = await decide(host, port);
 
     if (!decision.allowed && isHinted(decision.rule) && head.length === 0) {
       await denials.show(client, host, decision, { port, repoHash });
@@ -204,7 +186,7 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
 
     const connection: Connection = { host, port, repoHash, client };
 
-    if (await isTerminated(host, port, repoHash)) {
+    if (isTerminated(host, port)) {
       await intercept(connection, head);
 
       return;
@@ -223,10 +205,8 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
     void handleConnect(request, client, head).catch(() => client.destroy());
   };
 
-  const handlePlain = async (request: IncomingMessage, response: ServerResponse) => {
-    const caller = await callerOf(request);
-
-    if (caller === undefined || (pathOf(request.url) === "/control" && caller.kind !== "control")) {
+  const handlePlain = (request: IncomingMessage, response: ServerResponse) => {
+    if (!isCaller(request)) {
       denials.note(hostOf(request.headers.host), AUTH_DENIAL);
 
       sendJson(response, 407, { error: AUTH_DENIAL.reason }, { "proxy-authenticate": AUTH_CHALLENGE });
@@ -234,11 +214,15 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
       return;
     }
 
-    await routes(request, response, caller);
+    routes(request, response);
   };
 
   const server = createServer((request, response) => {
-    void handlePlain(request, response).catch(() => response.destroy());
+    try {
+      handlePlain(request, response);
+    } catch {
+      response.destroy();
+    }
   });
 
   server.on("connect", onConnect);
@@ -274,5 +258,5 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
     });
   };
 
-  return { port, policyHash, close };
+  return { port, close };
 };

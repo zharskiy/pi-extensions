@@ -7,7 +7,7 @@ import { MCP_LIST_PROBE, OFFLINE_PROBE } from "../../cli/commands/doctor-probes.
 import { run } from "../../cli/index.ts";
 import { testedPiVersion } from "../../cli/versions.ts";
 import { registerLaunch } from "../../grants/index.ts";
-import { LauncherError, sha256Hex } from "../../shared/index.ts";
+import { bootTime, LauncherError, sha256Hex } from "../../shared/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { createHarness, unreachable, writeManagedPi, writePathPi } from "./harness.ts";
 
@@ -196,7 +196,7 @@ const doctorWith = async (
   const fake = createFakeBackend({ exec: answering(probes), vm });
   const harness = await createHarness({
     backend: () => fake.backend,
-    proxy: { ensure: async () => ({ pid: 77, port, policyHash: "p", token: "token-1" }) },
+    proxy: { ensure: async () => ({ proxy: { pid: 77, port, boot: 0, inputHash: "h" }, notices: [] }) },
   });
 
   if (userConfig !== undefined) {
@@ -239,7 +239,7 @@ describe("pi sandbox doctor", () => {
     expect(code).toBe(0);
   });
 
-  it("runs every probe inside the repository container without a tty, then stops it like a launch", async () => {
+  it("runs every probe inside the repository container without a tty, then removes it like a launch", async () => {
     const { fake } = await doctorWith({});
     const probes = fake.execs.filter((exec) => intentOf(exec.spec.command) !== "sync");
     const container = fake.execs[0]?.spec.containerId;
@@ -257,7 +257,8 @@ describe("pi sandbox doctor", () => {
       "sessions share",
     ]);
     expect(fake.execs.every((exec) => exec.spec.containerId === container && !exec.tty)).toBe(true);
-    expect([...fake.containers.values()].map((entry) => entry.summary.state)).toEqual(["stopped"]);
+    expect(fake.created.map((entry) => entry.summary.id)).toEqual([container]);
+    expect(fake.containers.size).toBe(0);
   });
 
   it("checks trust and every credential rule host with its placeholder", async () => {
@@ -344,10 +345,11 @@ describe("pi sandbox doctor", () => {
     const fake = createFakeBackend({ exec: answering({}) });
     const harness = await createHarness({
       backend: () => fake.backend,
-      proxy: { ensure: async () => ({ pid: 77, port, policyHash: "p", token: "token-1" }) },
+      proxy: { ensure: async () => ({ proxy: { pid: 77, port, boot: 0, inputHash: "h" }, notices: [] }) },
     });
 
     await registerLaunch(harness.stateDir, {
+      boot: bootTime(),
       launchId: "00000000000000cc",
       pid: process.pid,
       repoHash: sha256Hex(harness.repoRoot),

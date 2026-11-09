@@ -20,9 +20,9 @@ const repoRoot = "/work/repo";
 const repoHash = sha256Hex(repoRoot);
 
 const proxy = {
-  url: "http://pi-sandbox:token-1@10.89.0.2:3128",
+  url: "http://pi-sandbox:token-1@pi-sandbox-proxy:3128",
   network: { kind: "internal" as const, name: "pi-sandbox" },
-  policyHash: "policy-1",
+  tokenHash: "token-hash-1",
   caPemPath: "/state/ca/ca.pem",
 };
 
@@ -68,13 +68,13 @@ describe("buildContainerSpec", () => {
     expect(buildContainerSpec(specInput()).name).toBe(`pi-sandbox-${repoHash.slice(0, 12)}`);
   });
 
-  it("labels the container with repo, image, proxy policy and launcher identity", () => {
+  it("labels the container with repo, image, proxy token hash and launcher identity", () => {
     expect(buildContainerSpec(specInput()).labels).toMatchObject({
       "pi-sandbox.repo-hash": repoHash,
       "pi-sandbox.repo-root": repoRoot,
       "pi-sandbox.image-digest": "sha256:abc",
       "pi-sandbox.image-reference": "ghcr.io/zharskiy/pi-sandbox:0.4.0",
-      "pi-sandbox.proxy-policy-hash": "policy-1",
+      "pi-sandbox.proxy-token-hash": "token-hash-1",
       "pi-sandbox.version": "0.4.0",
     });
   });
@@ -88,7 +88,7 @@ describe("buildContainerSpec", () => {
     expect(hashOf(specInput())).toBe(base);
     expect(hashOf(specInput({ config: extra }))).not.toBe(base);
     expect(
-      hashOf(specInput({ proxy: { ...proxy, url: "http://pi-sandbox:token-2@10.89.0.2:3128" } })),
+      hashOf(specInput({ proxy: { ...proxy, url: "http://pi-sandbox:token-2@pi-sandbox-proxy:3128" } })),
     ).not.toBe(base);
   });
 
@@ -142,14 +142,14 @@ describe("buildContainerSpec", () => {
     });
   });
 
-  it("binds the discovered git dirs onto themselves and the git files read-only from the state dir", () => {
+  it("binds the git dirs onto themselves, hooks and pointers read-only from the host and config from a private copy", () => {
     const gitOverlay = {
       selfBinds: ["/work/repo/.git", "/work/repo/.git/modules"],
       readOnlyDirs: ["/work/repo/.git/hooks"],
       readOnlyFiles: ["/work/repo/.git/config", "/work/repo/.git/commondir"],
     };
     const mounts = buildContainerSpec(specInput({ gitOverlay })).mounts;
-    const snapshots = `/state/repos/${repoHash}/git/snapshots/`;
+    const copies = `/state/repos/${repoHash}/git/`;
 
     expect(mountAt(mounts, "/work/repo/.git")).toEqual({
       source: "/work/repo/.git",
@@ -158,13 +158,14 @@ describe("buildContainerSpec", () => {
       kind: "bind",
     });
     expect(mountAt(mounts, "/work/repo/.git/modules")?.readOnly).toBe(false);
-    [...gitOverlay.readOnlyDirs, ...gitOverlay.readOnlyFiles].forEach((path) => {
-      expect(mountAt(mounts, path)).toEqual({
-        source: expect.stringMatching(new RegExp(`^${snapshots}[0-9a-f]{16}$`)),
-        target: path,
-        readOnly: true,
-        kind: "bind",
-      });
+    ["/work/repo/.git/hooks", "/work/repo/.git/commondir"].forEach((path) => {
+      expect(mountAt(mounts, path)).toEqual({ source: path, target: path, readOnly: true, kind: "bind" });
+    });
+    expect(mountAt(mounts, "/work/repo/.git/config")).toEqual({
+      source: expect.stringMatching(new RegExp(`^${copies}[0-9a-f]{16}$`)),
+      target: "/work/repo/.git/config",
+      readOnly: true,
+      kind: "bind",
     });
     expect(mounts.map((mount) => mount.target).indexOf("/work/repo/.git")).toBe(1);
   });
@@ -383,13 +384,12 @@ describe("buildContainerSpec", () => {
     expect(hashOf("one")).not.toBe(hashOf("two"));
   });
 
-  it("puts the per-repo proxy token in the proxy URL instead of the instance token", () => {
-    const spec = buildContainerSpec(specInput({ repoProxyToken: "repo-token-1" }));
+  it("names the proxy by its network alias, so a relay recreated for a new proxy port keeps working", () => {
+    const spec = buildContainerSpec(specInput());
 
-    expect(spec.env.HTTPS_PROXY).toBe("http://pi-sandbox:repo-token-1@10.89.0.2:3128");
-    expect(spec.env.HTTP_PROXY).toBe("http://pi-sandbox:repo-token-1@10.89.0.2:3128");
-    expect(spec.env.ALL_PROXY).toBe("http://pi-sandbox:repo-token-1@10.89.0.2:3128");
-    expect(JSON.stringify(spec)).not.toContain(":token-1@");
+    expect(new URL(spec.env.HTTPS_PROXY ?? "").hostname).toBe("pi-sandbox-proxy");
+    expect(spec.env.HTTP_PROXY).toBe(spec.env.HTTPS_PROXY);
+    expect(spec.env.ALL_PROXY).toBe(spec.env.HTTPS_PROXY);
   });
 
   it("marks the sandbox and never sets pi offline", () => {
@@ -424,14 +424,14 @@ describe("buildContainerSpec", () => {
 
     expect(spec.network).toEqual({ kind: "none" });
     expect(Object.keys(spec.env).filter((name) => name.endsWith("_PROXY"))).toEqual([]);
-    expect(spec.labels["pi-sandbox.proxy-policy-hash"]).toBeUndefined();
+    expect(spec.labels["pi-sandbox.proxy-token-hash"]).toBeUndefined();
   });
 
   it("holds only the proxy and static sandbox settings, no forwarded terminal variables", () => {
     expect(buildContainerSpec(specInput()).env).toEqual({
-      HTTPS_PROXY: "http://pi-sandbox:token-1@10.89.0.2:3128",
-      HTTP_PROXY: "http://pi-sandbox:token-1@10.89.0.2:3128",
-      ALL_PROXY: "http://pi-sandbox:token-1@10.89.0.2:3128",
+      HTTPS_PROXY: "http://pi-sandbox:token-1@pi-sandbox-proxy:3128",
+      HTTP_PROXY: "http://pi-sandbox:token-1@pi-sandbox-proxy:3128",
+      ALL_PROXY: "http://pi-sandbox:token-1@pi-sandbox-proxy:3128",
       NO_PROXY: "",
       NODE_USE_ENV_PROXY: "1",
       NODE_EXTRA_CA_CERTS: "/etc/pi-sandbox/ca.pem",

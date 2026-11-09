@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { run } from "../../cli/index.ts";
 import { LABELS, repoVolumes } from "../../container/index.ts";
 import { registerLaunch } from "../../grants/index.ts";
-import { launcherRoot, sha256Hex, stateLayout } from "../../shared/index.ts";
+import { bootTime, launcherRoot, sha256Hex, stateLayout } from "../../shared/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
 import { tempDir } from "../support/temp-dir.ts";
@@ -15,7 +15,7 @@ const packageVersion = async () =>
     .version;
 
 describe("pi sandbox status", () => {
-  it("reports runtime, container, proxy and image", async () => {
+  it("reports runtime, proxy and image, and no container once the last session exited", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
 
@@ -24,62 +24,44 @@ describe("pi sandbox status", () => {
     expect(await run(["sandbox", "status"], harness.deps)).toBe(0);
 
     const lines = harness.stdout().split("\n");
-    const [container] = [...fake.containers.values()];
 
     expect(lines).toContain(`launcher: ${await packageVersion()}`);
     expect(lines).toContain("runtime: colima fake");
     expect(lines).toContain("runtime socket: /fake/docker.sock");
-    expect(lines).toContain(`container: ${container?.summary.id} stopped`);
-    expect(lines).toContain("container digest: sha256:built-1");
-    expect(lines.some((line) => /^container spec hash: [0-9a-f]{64} \(current\)$/.test(line))).toBe(true);
+    expect(lines).toContain("container: none");
     expect(lines).toContain("proxy: stopped");
     expect(lines).toContain(`image: ghcr.io/zharskiy/pi-sandbox:${await packageVersion()} sha256:built-1`);
     expect(lines).toContain("launches: 0 running for this repository");
     expect(lines).toContain("grants: 0 active");
   });
 
-  it("reports the container stale when its image digest differs from the recorded image", async () => {
+  it("reports the running container of this repository", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
-
-    await run([], harness.deps);
-
-    const [container] = [...fake.containers.values()];
-
-    Object.assign(container?.summary.labels ?? {}, { [LABELS.imageDigest]: "sha256:older" });
-
-    await run(["sandbox", "status"], harness.deps);
-
-    const lines = harness.stdout().split("\n");
-
-    expect(lines.some((line) => /^container spec hash: [0-9a-f]{64} \(stale\)$/.test(line))).toBe(true);
-  });
-
-  it("reports the container stale when its spec hash differs from the one the last launch wanted", async () => {
-    const fake = createFakeBackend();
-    const harness = await createHarness({ backend: () => fake.backend });
-
-    await run([], harness.deps);
-
-    const [container] = [...fake.containers.values()];
-
-    Object.assign(container?.summary.labels ?? {}, { [LABELS.specHash]: "older-spec" });
-
-    await run(["sandbox", "status"], harness.deps);
-
-    const lines = harness.stdout().split("\n");
-
-    expect(lines).toContain("container spec hash: older-spec (stale)");
-  });
-
-  it("lists every running proxy instance and marks the one for this repository's policy", async () => {
-    const harness = await createHarness({
-      proxy: {
-        list: async () => [
-          { policyHash: "a".repeat(64), pid: 11, port: 4001, token: "secret-token-a" },
-          { policyHash: "b".repeat(64), pid: 12, port: 4002, token: "secret-token-b" },
-        ],
+    const id = fake.addContainer({
+      name: "pi-sandbox-repo",
+      labels: {
+        [LABELS.managed]: "true",
+        [LABELS.repoHash]: sha256Hex(harness.repoRoot),
+        [LABELS.imageDigest]: "sha256:one",
+        [LABELS.specHash]: "spec-1",
       },
+      state: "running",
+      image: "sha256:image-one",
+    });
+
+    expect(await run(["sandbox", "status"], harness.deps)).toBe(0);
+
+    const lines = harness.stdout().split("\n");
+
+    expect(lines).toContain(`container: ${id} running`);
+    expect(lines).toContain("container digest: sha256:one");
+    expect(lines).toContain("container spec hash: spec-1");
+  });
+
+  it("reports the proxy of this repository without its token", async () => {
+    const harness = await createHarness({
+      proxy: { read: async () => ({ pid: 11, port: 4001, boot: 1, inputHash: "input" }) },
     });
 
     expect(await run(["sandbox", "status"], harness.deps)).toBe(0);
@@ -89,17 +71,14 @@ describe("pi sandbox status", () => {
       .split("\n")
       .filter((line) => line.startsWith("proxy: "));
 
-    expect(proxies).toEqual([
-      `proxy: policy ${"a".repeat(12)} pid 11 port 4001 (other policy)`,
-      `proxy: policy ${"b".repeat(12)} pid 12 port 4002 (other policy)`,
-    ]);
-    expect(harness.stdout()).not.toContain("secret-token");
+    expect(proxies).toEqual(["proxy: pid 11 port 4001"]);
   });
 
   it("reports live launches and active grants of this repository", async () => {
     const harness = await createHarness();
 
     await registerLaunch(harness.stateDir, {
+      boot: bootTime(),
       launchId: "0123456789abcdef",
       pid: process.pid,
       repoHash: sha256Hex(harness.repoRoot),
@@ -172,162 +151,97 @@ describe("pi sandbox config", () => {
 });
 
 describe("pi sandbox gc and reset", () => {
-  it("removes stopped launcher containers, this repository's idle one included, and keeps running ones", async () => {
+  const orphanOf = async (fake: ReturnType<typeof createFakeBackend>, repoHash: string) => {
+    await fake.backend.prepareProxyRoute({ hostPort: 3128, repoHash, imageId: "relay" });
+
+    return fake.addContainer({
+      name: `pi-sandbox-${repoHash.slice(0, 12)}`,
+      labels: { [LABELS.managed]: "true", [LABELS.repoHash]: repoHash },
+      state: "running",
+      image: "x",
+    });
+  };
+
+  it("removes the container, relay and network of a repository no live launch uses", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
+    const orphan = "b".repeat(64);
+    const id = await orphanOf(fake, orphan);
 
-    await run([], harness.deps);
-
-    fake.addContainer({
-      name: "pi-sandbox-old",
-      labels: { [LABELS.managed]: "true" },
-      state: "stopped",
-      image: "x",
-    });
-
-    fake.addContainer({
-      name: "pi-sandbox-busy",
-      labels: { [LABELS.managed]: "true" },
-      state: "running",
-      image: "x",
-    });
-
-    fake.addContainer({ name: "unrelated", labels: {}, state: "stopped", image: "x" });
+    fake.addContainer({ name: "unrelated", labels: {}, state: "running", image: "x" });
 
     expect(await run(["sandbox", "gc"], harness.deps)).toBe(0);
-    expect(harness.stdout()).toContain("removed 2 stopped containers\n");
-    expect([...fake.containers.values()].map((entry) => entry.summary.name).sort()).toEqual([
-      "pi-sandbox-busy",
-      "unrelated",
-    ]);
-  });
-
-  it("removes the proxy token of a repository whose container it removed, so the token stops working", async () => {
-    const fake = createFakeBackend();
-    const harness = await createHarness({ backend: () => fake.backend });
-    const tokens = stateLayout(harness.stateDir).proxyInstance("policy");
-    const other = "b".repeat(64);
-
-    await run([], harness.deps);
-
-    await mkdir(tokens.tokensDir, { recursive: true });
-
-    await writeFile(tokens.repoToken(other), "c".repeat(64));
-
-    fake.addContainer({
-      name: "pi-sandbox-other",
-      labels: { [LABELS.managed]: "true", [LABELS.repoHash]: other, [LABELS.proxyPolicyHash]: "policy" },
-      state: "running",
-      image: "x",
-    });
-
-    const repoToken = tokens.repoToken(sha256Hex(harness.repoRoot));
-    const before = await readFile(repoToken, "utf8").catch(() => undefined);
-
-    expect(await run(["sandbox", "gc"], harness.deps)).toBe(0);
-    expect(before).toMatch(/^[0-9a-f]{64}$/);
-    expect(await readFile(repoToken, "utf8").catch(() => undefined)).toBeUndefined();
-    expect(await readFile(tokens.repoToken(other), "utf8")).toBe("c".repeat(64));
-  });
-
-  it("removes relays and stops proxies that no running container uses", async () => {
-    const fake = createFakeBackend();
-    const harness = await createHarness({
-      backend: () => fake.backend,
-      proxy: {
-        list: async () => [
-          { policyHash: "policy", pid: 1, port: 3128, token: "t" },
-          { policyHash: "idle", pid: 2, port: 4000, token: "t" },
-        ],
-      },
-    });
-
-    await run([], harness.deps);
-
-    fake.addContainer({
-      name: "pi-sandbox-busy",
-      labels: { [LABELS.managed]: "true", [LABELS.proxyPolicyHash]: "policy" },
-      state: "running",
-      image: "x",
-    });
-
-    const relay = (policyHash: string) =>
-      fake.addContainer({
-        name: `pi-sandbox-relay-${policyHash}`,
-        labels: { [LABELS.managed]: "true", [LABELS.relay]: "true", [LABELS.proxyPolicyHash]: policyHash },
-        state: "running",
-        image: "relay",
-      });
-    const kept = relay("policy");
-    const idle = relay("idle");
-
-    expect(await run(["sandbox", "gc"], harness.deps)).toBe(0);
-    expect(fake.containers.has(kept)).toBe(true);
-    expect(fake.containers.has(idle)).toBe(false);
-    expect(harness.stoppedProxies).toEqual(["idle"]);
-    expect(harness.stdout()).toContain("stopped proxy pid 2 port 4000\n");
-  });
-
-  it("removes the networks of repositories that have no container left", async () => {
-    const fake = createFakeBackend();
-    const harness = await createHarness({ backend: () => fake.backend });
-    const kept = "a".repeat(64);
-
-    await run([], harness.deps);
-
-    fake.addContainer({
-      name: "pi-sandbox-kept",
-      labels: { [LABELS.managed]: "true", [LABELS.repoHash]: kept },
-      state: "running",
-      image: "x",
-    });
-
-    [`pi-sandbox-${"a".repeat(12)}`, `pi-sandbox-${"b".repeat(12)}`].forEach((name) => {
-      fake.networks.add(name);
-    });
-
-    expect(await run(["sandbox", "gc"], harness.deps)).toBe(0);
-    expect([...fake.networks]).toEqual([`pi-sandbox-${"a".repeat(12)}`]);
-    expect(harness.stdout()).toContain(`removed network pi-sandbox-${"b".repeat(12)}\n`);
+    expect(fake.containers.has(id)).toBe(false);
+    expect(fake.relays.has(orphan)).toBe(false);
+    expect(fake.networks.has(`pi-sandbox-${orphan.slice(0, 12)}`)).toBe(false);
+    expect(harness.stoppedProxies).toContain(orphan);
+    expect(harness.stdout()).toContain(`removed container pi-sandbox-${orphan.slice(0, 12)} (${id})\n`);
+    expect([...fake.containers.values()].map((entry) => entry.summary.name)).toEqual(["unrelated"]);
   });
 
   it("keeps the proxy, relay and container of a repository whose session is still preparing", async () => {
     const fake = createFakeBackend();
-    const harness = await createHarness({
-      backend: () => fake.backend,
-      proxy: { list: async () => [{ policyHash: "preparing", pid: 3, port: 5000, token: "t" }] },
-    });
+    const harness = await createHarness({ backend: () => fake.backend });
     const repo = sha256Hex(harness.repoRoot);
-    const tokenFile = stateLayout(harness.stateDir).proxyInstance("preparing").repoToken(repo);
-
-    await mkdir(join(tokenFile, ".."), { recursive: true });
-
-    await writeFile(tokenFile, "f".repeat(64));
 
     await registerLaunch(harness.stateDir, {
+      boot: bootTime(),
       launchId: "00000000000000bb",
       pid: process.pid,
       repoHash: repo,
       startedAt: 1,
     });
 
-    const created = fake.addContainer({
-      name: "pi-sandbox-preparing",
-      labels: { [LABELS.managed]: "true", [LABELS.repoHash]: repo, [LABELS.proxyPolicyHash]: "preparing" },
-      state: "created",
-      image: "x",
-    });
-    const relay = fake.addContainer({
-      name: "pi-sandbox-relay-preparing",
-      labels: { [LABELS.managed]: "true", [LABELS.relay]: "true", [LABELS.proxyPolicyHash]: "preparing" },
-      state: "running",
-      image: "relay",
-    });
+    const id = await orphanOf(fake, repo);
 
     expect(await run(["sandbox", "gc"], harness.deps)).toBe(0);
     expect(harness.stoppedProxies).toEqual([]);
-    expect(fake.containers.has(created)).toBe(true);
-    expect(fake.containers.has(relay)).toBe(true);
+    expect(fake.containers.has(id)).toBe(true);
+    expect(fake.relays.has(repo)).toBe(true);
+  });
+
+  it("forgets a repository whose root no longer exists, with its state and volumes", async () => {
+    const fake = createFakeBackend();
+    const harness = await createHarness({ backend: () => fake.backend });
+    const gone = await tempDir("gone-repo");
+    const hash = sha256Hex(gone);
+    const files = stateLayout(harness.stateDir).repo(hash);
+
+    await harness.writeJson(files.record, { root: gone });
+
+    await fake.backend.ensureVolume("pi-sandbox-agent-gone", { [LABELS.repoHash]: hash });
+
+    await rm(gone, { recursive: true, force: true });
+
+    expect(await run(["sandbox", "gc"], harness.deps)).toBe(0);
+    expect(await readFile(files.record, "utf8").catch(() => undefined)).toBeUndefined();
+    expect(fake.volumes.has("pi-sandbox-agent-gone")).toBe(false);
+    expect(harness.stdout()).toContain(`forgot ${gone}, which no longer exists\n`);
+  });
+
+  it("says when there is nothing to remove", async () => {
+    const harness = await createHarness({ backend: () => createFakeBackend().backend });
+
+    expect(await run(["sandbox", "gc"], harness.deps)).toBe(0);
+    expect(harness.stdout()).toBe("nothing to remove\n");
+  });
+
+  it("removes this repository's sandbox and proxy on reset, even while it runs", async () => {
+    const fake = createFakeBackend();
+    const harness = await createHarness({ backend: () => fake.backend });
+    const repo = sha256Hex(harness.repoRoot);
+    const id = await orphanOf(fake, repo);
+    const token = stateLayout(harness.stateDir).repo(repo).proxy.token;
+
+    await mkdir(join(token, ".."), { recursive: true });
+
+    await writeFile(token, "f".repeat(64));
+
+    expect(await run(["sandbox", "reset"], harness.deps)).toBe(0);
+    expect(fake.containers.has(id)).toBe(false);
+    expect(fake.relays.has(repo)).toBe(false);
+    expect(harness.stoppedProxies).toEqual([repo]);
+    expect(await readFile(token, "utf8").catch(() => undefined)).toBeUndefined();
   });
 
   it("removes this repo's container and, with --volumes, its agent and cache volumes", async () => {
@@ -377,7 +291,7 @@ describe("pi sandbox gc and reset", () => {
     expect(harness.stdout()).toContain("removed volume pi-sandbox-agent-gone\n");
   });
 
-  it("keeps the volumes of a repository that still exists after its stopped container is removed", async () => {
+  it("keeps the volumes of a repository that still exists after its container is removed", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
 
@@ -404,42 +318,6 @@ describe("pi sandbox gc and reset", () => {
 
     expect(await run(["sandbox", "gc"], harness.deps)).toBe(0);
     expect(fake.volumes.has("pi-sandbox-agent-unlabelled")).toBe(true);
-  });
-
-  it("removes the proxy instance of this repo's policy so its token rotates on the next launch", async () => {
-    const fake = createFakeBackend();
-    const harness = await createHarness({ backend: () => fake.backend });
-
-    await run([], harness.deps);
-
-    expect(await run(["sandbox", "reset"], harness.deps)).toBe(0);
-    expect(harness.removedProxies).toEqual([expect.stringMatching(/^[0-9a-f]{64}$/)]);
-    expect(harness.stdout()).toContain(`removed proxy instance ${harness.removedProxies[0]}\n`);
-  });
-
-  it("keeps the proxy instance when a running container of another repository shares its policy", async () => {
-    const fake = createFakeBackend();
-    const harness = await createHarness({ backend: () => fake.backend });
-
-    await run([], harness.deps);
-
-    await run(["sandbox", "reset"], harness.deps);
-
-    const [policyHash = ""] = harness.removedProxies;
-
-    fake.addContainer({
-      name: "pi-sandbox-other",
-      labels: { [LABELS.managed]: "true", [LABELS.repoHash]: "other", [LABELS.proxyPolicyHash]: policyHash },
-      state: "running",
-      image: "x",
-    });
-
-    await run([], harness.deps);
-
-    expect(await run(["sandbox", "reset", "--volumes"], harness.deps)).toBe(0);
-    expect(harness.removedProxies).toEqual([policyHash]);
-    expect(harness.stdout()).toContain(`kept proxy instance ${policyHash}, in use by another repository\n`);
-    expect([...fake.containers.values()].map((entry) => entry.summary.name)).toEqual(["pi-sandbox-other"]);
   });
 });
 

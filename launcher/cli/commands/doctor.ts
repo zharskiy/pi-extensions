@@ -61,7 +61,7 @@ const proxyHealth = async (proxy: SandboxProxy | undefined) => {
     return skipped("no proxy is required");
   }
 
-  return (await answersHealth(proxy.instance.port, proxy.repoToken))
+  return (await answersHealth(proxy.proxy.port, proxy.token))
     ? passed("/healthz answers")
     : failed("/healthz does not answer");
 };
@@ -93,8 +93,8 @@ const sharesCheck = async (deps: CliDeps, context: LaunchContext, sandbox: Sandb
 
 const gibText = (gib: number) => `${Math.round(gib * 10) / 10} GiB`;
 
-const isBelow = (size: VmSize, wanted: VmSize) =>
-  size.cpus < wanted.cpus || size.memoryGiB < wanted.memoryGiB;
+const isBelow = (size: VmSize, recommended: VmSize) =>
+  size.cpus < recommended.cpus || size.memoryGiB < recommended.memoryGiB;
 
 const sizeCheck = async (deps: CliDeps, sandbox: Sandbox) => {
   const { vm } = sandbox.backend;
@@ -104,17 +104,17 @@ const sizeCheck = async (deps: CliDeps, sandbox: Sandbox) => {
     return skipped(`colima did not report the size of profile ${ENGINE_PROFILE}`);
   }
 
-  const wanted = vm.recommendedSize(deps.machine.cpus, deps.machine.memoryGiB);
+  const recommended = vm.recommendedSize(deps.machine.cpus, deps.machine.memoryGiB);
   const current = `profile ${ENGINE_PROFILE} has ${size.cpus} CPUs and ${gibText(size.memoryGiB)}`;
 
-  if (!isBelow(size, wanted)) {
+  if (!isBelow(size, recommended)) {
     return passed(current);
   }
 
-  const resize = `colima stop --profile ${ENGINE_PROFILE} && colima start --profile ${ENGINE_PROFILE} --activate=false --cpu ${wanted.cpus} --memory ${wanted.memoryGiB}`;
+  const resize = `colima stop --profile ${ENGINE_PROFILE} && colima start --profile ${ENGINE_PROFILE} --activate=false --cpu ${recommended.cpus} --memory ${recommended.memoryGiB}`;
 
   return warned(
-    `${current}, below ${wanted.cpus} CPUs and ${wanted.memoryGiB} GiB; resize it with ${resize}`,
+    `${current}, below ${recommended.cpus} CPUs and ${recommended.memoryGiB} GiB; resize it with ${resize}`,
   );
 };
 

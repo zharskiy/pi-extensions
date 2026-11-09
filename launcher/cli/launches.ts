@@ -1,37 +1,30 @@
 import type { Backend } from "../backend/index.ts";
-import {
-  findRepoContainer,
-  type GitGuardContext,
-  gitDirInUseElsewhere,
-  gitLaunchEndNotices,
-} from "../container/index.ts";
+import { type GitGuardContext, gitLaunchEndNotices } from "../container/index.ts";
 import { endLaunch, type Launch, liveLaunches, newLaunchId, registerLaunch } from "../grants/index.ts";
-import { errorMessage } from "../shared/index.ts";
+import { errorMessage, processMark, writeRepoRecord } from "../shared/index.ts";
 import { type CliDeps, writeLine, writeNotices } from "./deps.ts";
+import { sweepRepoSessions } from "./host-sessions.ts";
 import type { LaunchContext } from "./launch.ts";
+import { removeRepoSandbox, sweepOrphans } from "./sweep.ts";
+
+const heartbeats = new Map<string, () => void>();
 
 export const beginLaunch = async (deps: CliDeps, context: LaunchContext): Promise<Launch> => {
   const launch = {
     launchId: newLaunchId(),
-    pid: process.pid,
+    ...processMark(),
     repoHash: context.repoHash,
     startedAt: deps.now(),
   };
 
-  await registerLaunch(context.stateDir, launch);
+  await writeRepoRecord(context.stateDir, context.repoHash, context.workspace.repoRoot);
+
+  const registered = await registerLaunch(context.stateDir, launch);
+
+  heartbeats.set(launch.launchId, registered.stopHeartbeat);
 
   return launch;
 };
-
-const stopRepoContainer = async (backend: Backend, context: LaunchContext) => {
-  const container = await findRepoContainer(backend, context.workspace);
-
-  if (container?.state === "running") {
-    await backend.stopContainer(container.id);
-  }
-};
-
-type Sweep = (full: boolean) => Promise<void>;
 
 export const gitGuardOf = (deps: CliDeps, context: LaunchContext): GitGuardContext => ({
   runner: deps.runner,
@@ -40,12 +33,18 @@ export const gitGuardOf = (deps: CliDeps, context: LaunchContext): GitGuardConte
   stateDir: context.stateDir,
 });
 
-const settleGit = async (deps: CliDeps, context: LaunchContext, backend: Backend) => {
-  const notices = await gitLaunchEndNotices(context.workspace, gitGuardOf(deps, context), (gitCommonDir) =>
-    gitDirInUseElsewhere(backend, context.workspace, gitCommonDir),
-  ).catch((error: unknown) => [`warning: git: the check after the session failed: ${errorMessage(error)}`]);
+const settleGit = async (deps: CliDeps, context: LaunchContext) => {
+  const notices = await gitLaunchEndNotices(context.workspace, gitGuardOf(deps, context)).catch(
+    (error: unknown) => [`warning: git: the check after the session failed: ${errorMessage(error)}`],
+  );
 
   writeNotices(deps, notices);
+};
+
+const stopHeartbeat = (launch: Launch) => {
+  heartbeats.get(launch.launchId)?.();
+
+  heartbeats.delete(launch.launchId);
 };
 
 export const finishLaunch = async (
@@ -53,31 +52,32 @@ export const finishLaunch = async (
   context: LaunchContext,
   backend: Backend,
   launch: Launch,
-  sweep?: Sweep,
 ) => {
-  const last = { stopped: false };
+  const last = { done: false };
 
   try {
     await endLaunch(context.stateDir, {
       repoHash: launch.repoHash,
       launchId: launch.launchId,
       onLast: async () => {
-        await stopRepoContainer(backend, context);
+        last.done = true;
 
-        last.stopped = true;
+        await removeRepoSandbox(deps, backend, context.repoHash);
 
-        await settleGit(deps, context, backend);
-
-        await sweep?.(true);
+        await settleGit(deps, context);
       },
     });
   } catch (error) {
     writeLine(deps.stderr, `pi-sandbox: warning: could not end the launch: ${errorMessage(error)}`);
+  } finally {
+    stopHeartbeat(launch);
   }
 
-  if (!last.stopped) {
-    await sweep?.(false);
+  if (!last.done) {
+    await sweepRepoSessions(deps, context.workspace.repoRoot, false);
   }
+
+  await sweepOrphans(deps, backend);
 };
 
 export const othersLive = async (stateDir: string, repoHash: string, launchId?: string) =>

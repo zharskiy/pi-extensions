@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { run } from "../../cli/index.ts";
 import { LauncherError, sha256Hex } from "../../shared/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
-import { createHarness, isPiSession, piSession, piSessions, unreachable } from "./harness.ts";
+import { createHarness, holdLaunch, isPiSession, piSession, piSessions, unreachable } from "./harness.ts";
 
 const PREPARING = "preparing pi sandbox, one time";
 
@@ -21,7 +21,7 @@ const writeScript = async (dir: string, body: string) => {
 };
 
 describe("pi [args]", () => {
-  it("prepares once on the cold path, then reuses the container without image work", async () => {
+  it("prepares once on the cold path, then starts again without image work", async () => {
     const fake = createFakeBackend({ exec: (spec) => (isPiSession(spec) ? 3 : 0) });
     const harness = await createHarness({ backend: () => fake.backend });
 
@@ -35,7 +35,7 @@ describe("pi [args]", () => {
     expect(occurrences(harness.stderr(), PREPARING)).toBe(1);
     expect(fake.builds).toHaveLength(1);
     expect(harness.calls.filter((call) => call.file === "npm")).toHaveLength(packs);
-    expect(fake.containers.size).toBe(1);
+    expect(fake.containers.size).toBe(0);
 
     const last = piSession(fake)?.spec;
 
@@ -49,15 +49,17 @@ describe("pi [args]", () => {
 
     await run([], harness.deps);
 
-    const [container] = [...fake.containers.values()];
+    const [container] = fake.created;
     const mounts = container?.spec?.mounts ?? [];
 
-    expect(fake.routes).toEqual([{ hostPort: 3128, policyHash: "policy", imageId: container?.spec?.image }]);
+    expect(fake.routes).toEqual([
+      { hostPort: 3128, repoHash: sha256Hex(harness.repoRoot), imageId: container?.spec?.image },
+    ]);
     expect(container?.spec?.network).toEqual({
       kind: "internal",
       name: `pi-sandbox-${sha256Hex(harness.repoRoot).slice(0, 12)}`,
     });
-    expect(container?.spec?.labels["pi-sandbox.proxy-policy-hash"]).toBe("policy");
+    expect(container?.spec?.labels["pi-sandbox.proxy-token-hash"]).toMatch(/^[0-9a-f]{16}$/);
 
     expect(mounts).toContainEqual({
       source: harness.repoRoot,
@@ -66,7 +68,9 @@ describe("pi [args]", () => {
       kind: "bind",
     });
     expect(mounts.some((mount) => mount.target === "/etc/pi-sandbox/ca.pem")).toBe(false);
-    expect(container?.spec?.env.HTTPS_PROXY).toMatch(/^http:\/\/pi-sandbox:[0-9a-f]{64}@10\.89\.0\.2:3128$/);
+    expect(container?.spec?.env.HTTPS_PROXY).toMatch(
+      /^http:\/\/pi-sandbox:[0-9a-f]{64}@pi-sandbox-proxy:3128$/,
+    );
     expect(container?.spec?.env.HTTP_PROXY).toBe(container?.spec?.env.HTTPS_PROXY);
     expect(container?.spec?.env.NODE_EXTRA_CA_CERTS).toBeUndefined();
   });
@@ -75,9 +79,11 @@ describe("pi [args]", () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend, env: { TERM_PROGRAM: "first" } });
 
+    await holdLaunch(harness);
+
     await run([], harness.deps);
 
-    const [container] = [...fake.containers.values()];
+    const [container] = fake.created;
 
     harness.deps.env.TERM_PROGRAM = "second";
 
@@ -118,7 +124,7 @@ describe("pi [args]", () => {
 
     await run([], harness.deps);
 
-    const [container] = [...fake.containers.values()];
+    const [container] = fake.created;
 
     expect(container?.spec?.env.NODE_EXTRA_CA_CERTS).toBe("/etc/pi-sandbox/ca.pem");
     expect(container?.spec?.env.PI_SANDBOX_TRUST_HASH).toBe("trust-hash");
@@ -136,7 +142,7 @@ describe("pi [args]", () => {
 
     await run([], harness.deps);
 
-    const [container] = [...fake.containers.values()];
+    const [container] = fake.created;
 
     expect(container?.spec?.image).toBe("sha256:image-built-1");
     expect(container?.spec?.labels["pi-sandbox.image-reference"]).toMatch(/^ghcr\.io\/zharskiy\/pi-sandbox:/);
@@ -219,7 +225,7 @@ describe("pi [args]", () => {
 
     expect(await run([], harness.deps)).toBe(0);
 
-    const [container] = [...fake.containers.values()];
+    const [container] = fake.created;
 
     expect(container?.spec?.network).toEqual({ kind: "none" });
     expect(container?.spec?.env.HTTPS_PROXY).toBeUndefined();

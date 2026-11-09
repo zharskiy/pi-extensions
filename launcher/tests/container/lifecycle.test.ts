@@ -4,15 +4,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-  collectGarbage,
-  ensureContainer,
+  type EnsureContainerInput,
+  ensureContainer as ensureWith,
   findCurrentContainer,
   gitDirInUseElsewhere,
   listLauncherContainers,
-  removeRepoContainer,
+  removeRepoContainers,
 } from "../../container/lifecycle.ts";
 import { buildContainerSpec, type ContainerSpecInput } from "../../container/spec.ts";
-import { sha256Hex } from "../../shared/index.ts";
+import { readCreatedDirs, sha256Hex } from "../../shared/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
 
@@ -38,6 +38,11 @@ afterAll(() => {
 
   rmSync(WORK, { recursive: true, force: true });
 });
+
+const REPO_HASH = sha256Hex(`${WORK}/repo`);
+
+const ensureContainer = (input: Omit<EnsureContainerInput, "stateDir">) =>
+  ensureWith({ stateDir: LOCK_STATE, ...input });
 
 const specOf = (overrides: Partial<ContainerSpecInput> = {}) =>
   buildContainerSpec({
@@ -94,7 +99,7 @@ describe("ensureContainer", () => {
     expect(fake.containers.size).toBe(1);
   });
 
-  it("starts a matching container that is stopped", async () => {
+  it("creates a fresh container once the previous one stopped and the engine removed it", async () => {
     const fake = createFakeBackend();
     const first = await ensureContainer({ backend: fake.backend, spec: specOf() });
 
@@ -102,8 +107,25 @@ describe("ensureContainer", () => {
 
     const second = await ensureContainer({ backend: fake.backend, spec: specOf() });
 
-    expect(second).toMatchObject({ id: first.id, created: false, outdated: false });
-    expect(fake.containers.get(first.id)?.summary.state).toBe("running");
+    expect(second).toMatchObject({ created: true, outdated: false });
+    expect(second.id).not.toBe(first.id);
+  });
+
+  it("treats a container made for another proxy token as outdated", async () => {
+    const fake = createFakeBackend();
+    const network = { kind: "internal" as const, name: "pi-sandbox-net" };
+    const first = await ensureContainer({
+      backend: fake.backend,
+      spec: specOf({ proxy: { url: "http://pi-sandbox:a@pi-sandbox-proxy:3128", network, tokenHash: "a" } }),
+    });
+    const kept = await ensureContainer({
+      backend: fake.backend,
+      spec: specOf({ proxy: { url: "http://pi-sandbox:a@pi-sandbox-proxy:3128", network, tokenHash: "b" } }),
+      othersLive: async () => true,
+    });
+
+    expect(fake.containers.get(first.id)?.summary.labels["pi-sandbox.proxy-token-hash"]).toBe("a");
+    expect(kept).toMatchObject({ id: first.id, outdated: true });
   });
 
   it("replaces the container when the image digest changes", async () => {
@@ -126,7 +148,7 @@ describe("ensureContainer", () => {
       proxy: {
         url: "http://pi-sandbox:t@10.89.0.9:3128",
         network: { kind: "internal", name: "pi-sandbox" },
-        policyHash: "p",
+        tokenHash: "t",
       },
     });
     const second = await ensureContainer({ backend: fake.backend, spec: rerouted });
@@ -134,20 +156,6 @@ describe("ensureContainer", () => {
     expect(second.created).toBe(true);
     expect(fake.containers.has(first.id)).toBe(false);
     expect(fake.containers.get(second.id)?.spec?.env.HTTPS_PROXY).toBe("http://pi-sandbox:t@10.89.0.9:3128");
-  });
-
-  it("replaces a stopped container whose spec is stale", async () => {
-    const fake = createFakeBackend();
-    const first = await ensureContainer({ backend: fake.backend, spec: specOf() });
-
-    await fake.backend.stopContainer(first.id);
-
-    const trusted = specOf({ trust: { pemPath: "/state/ca/trust.pem", hash: "trust-2" } });
-    const second = await ensureContainer({ backend: fake.backend, spec: trusted });
-
-    expect(second.created).toBe(true);
-    expect(fake.containers.has(first.id)).toBe(false);
-    expect(fake.containers.get(second.id)?.spec?.env.PI_SANDBOX_TRUST_HASH).toBe("trust-2");
   });
 
   it("replaces the container when its spec changes", async () => {
@@ -209,7 +217,7 @@ describe("ensureContainer", () => {
     const backend = {
       ...fake.backend,
       createContainer: async () => {
-        raced.id = fake.addContainer({ name: spec.name, labels: spec.labels, state: "created", image: "x" });
+        raced.id = fake.addContainer({ name: spec.name, labels: spec.labels, state: "running", image: "x" });
 
         throw new Error(`container name ${spec.name} is already in use`);
       },
@@ -222,62 +230,26 @@ describe("ensureContainer", () => {
 });
 
 describe("ensureContainer and the repository network", () => {
-  const routedSpec = async (fake: ReturnType<typeof createFakeBackend>, launcherVersion: string) => {
-    const route = await fake.backend.prepareProxyRoute({
-      hostPort: 3128,
-      repoHash: sha256Hex(workspace.repoRoot),
-      relay: { policyHash: "p", imageId: "sha256:image-one" },
-    });
-
-    return specOf({
-      launcherVersion,
-      proxy: { url: "http://pi-sandbox:t@10.89.0.2:3128", network: route.network, policyHash: "p" },
-    });
-  };
-
   it("replaces an outdated container without tearing down the network the new one joins", async () => {
     const fake = createFakeBackend();
-    const first = await ensureContainer({ backend: fake.backend, spec: await routedSpec(fake, "0.4.0") });
-    const spec = await routedSpec(fake, "0.5.0");
+    const route = await fake.backend.prepareProxyRoute({
+      hostPort: 3128,
+      repoHash: REPO_HASH,
+      imageId: "sha256:image-one",
+    });
+    const routed = (launcherVersion: string) =>
+      specOf({
+        launcherVersion,
+        proxy: { url: `http://pi-sandbox:t@${route.address}`, network: route.network, tokenHash: "t" },
+      });
+    const first = await ensureContainer({ backend: fake.backend, spec: routed("0.4.0") });
+    const spec = routed("0.5.0");
     const second = await ensureContainer({ backend: fake.backend, spec });
 
     expect(second.created).toBe(true);
     expect(second.id).not.toBe(first.id);
     expect(fake.containers.get(second.id)?.summary.state).toBe("running");
     expect(spec.network.kind === "internal" && fake.networks.has(spec.network.name)).toBe(true);
-  });
-
-  it("still removes the repository network when its last container is removed by reset or gc", async () => {
-    const reset = createFakeBackend();
-    const collected = createFakeBackend();
-    const resetSpec = await routedSpec(reset, "0.4.0");
-    const collectedSpec = await routedSpec(collected, "0.4.0");
-    const { id } = await ensureContainer({ backend: collected.backend, spec: collectedSpec });
-
-    await ensureContainer({ backend: reset.backend, spec: resetSpec });
-
-    await removeRepoContainer(reset.backend, workspace.repoRoot);
-
-    await collected.backend.stopContainer(id);
-
-    await collectGarbage(collected.backend);
-
-    expect(reset.networks.size).toBe(0);
-    expect(collected.networks.size).toBe(0);
-  });
-});
-
-describe("ensureContainer with a stopped container", () => {
-  it("starts a stopped container whose spec is current instead of creating one", async () => {
-    const fake = createFakeBackend();
-    const { id } = await ensureContainer({ backend: fake.backend, spec: specOf() });
-
-    await fake.backend.stopContainer(id);
-
-    const again = await ensureContainer({ backend: fake.backend, spec: specOf() });
-
-    expect(again).toMatchObject({ id, created: false, outdated: false });
-    expect(fake.containers.get(id)?.summary.state).toBe("running");
   });
 });
 
@@ -291,36 +263,26 @@ describe("container housekeeping", () => {
     expect((await listLauncherContainers(fake.backend)).map((container) => container.id)).toEqual([id]);
   });
 
-  it("garbage-collects stopped launcher containers and keeps running ones", async () => {
-    const fake = createFakeBackend();
-    const running = await ensureContainer({ backend: fake.backend, spec: specOf() });
-    const other = specOf({
-      workspace: { cwd: `${WORK}/other`, repoRoot: `${WORK}/other`, isGitRepo: false },
-    });
-    const stopped = await ensureContainer({ backend: fake.backend, spec: other });
-    const unrelated = fake.addContainer({
-      name: "unrelated",
-      labels: {},
-      state: "stopped",
-      image: "busybox",
-    });
-
-    await fake.backend.stopContainer(stopped.id);
-
-    const garbage = await collectGarbage(fake.backend);
-
-    expect(garbage.containers.map((container) => container.id)).toEqual([stopped.id]);
-    expect([...fake.containers.keys()].sort()).toEqual([running.id, unrelated].sort());
-  });
-
-  it("stops and removes the container of one repo", async () => {
+  it("stops the container of one repository with a short timeout, waits for the engine to remove it, then deletes it", async () => {
     const fake = createFakeBackend();
     const { id } = await ensureContainer({ backend: fake.backend, spec: specOf() });
 
-    const removed = await removeRepoContainer(fake.backend, workspace.repoRoot);
+    const removed = await removeRepoContainers(fake.backend, REPO_HASH);
 
     expect(removed.map((container) => container.id)).toEqual([id]);
+    expect(fake.stops).toEqual([{ id, timeoutSeconds: 3 }]);
+    expect(fake.waits).toEqual([id]);
+    expect(fake.removals).toEqual([id]);
     expect(fake.containers.size).toBe(0);
+  });
+
+  it("never lists a relay as a launcher container", async () => {
+    const fake = createFakeBackend();
+
+    await fake.backend.prepareProxyRoute({ hostPort: 3128, repoHash: REPO_HASH, imageId: "relay" });
+
+    expect(await listLauncherContainers(fake.backend)).toEqual([]);
+    expect(await removeRepoContainers(fake.backend, REPO_HASH)).toEqual([]);
   });
 });
 
@@ -331,49 +293,6 @@ describe("findCurrentContainer", () => {
 
     expect((await findCurrentContainer(fake.backend, workspace, "sha256:one"))?.id).toBe(id);
     expect(await findCurrentContainer(fake.backend, workspace, "sha256:two")).toBeUndefined();
-  });
-});
-
-describe("relay garbage collection", () => {
-  const proxyFor = (policyHash: string) => ({
-    url: "http://pi-sandbox:t@10.89.0.2:3128",
-    network: { kind: "internal" as const, name: "pi-sandbox" },
-    policyHash,
-  });
-
-  const relay = (fake: ReturnType<typeof createFakeBackend>, policyHash: string) =>
-    fake.addContainer({
-      name: `pi-sandbox-relay-${policyHash}`,
-      labels: {
-        "pi-sandbox.managed": "true",
-        "pi-sandbox.relay": "true",
-        "pi-sandbox.proxy-policy-hash": policyHash,
-      },
-      state: "running",
-      image: "relay",
-    });
-
-  it("removes relays no running container uses and reports the policy hashes still in use", async () => {
-    const fake = createFakeBackend();
-    const used = relay(fake, "policy-used");
-    const idle = relay(fake, "policy-idle");
-
-    await ensureContainer({ backend: fake.backend, spec: specOf({ proxy: proxyFor("policy-used") }) });
-
-    const garbage = await collectGarbage(fake.backend);
-
-    expect(garbage.relays.map((entry) => entry.id)).toEqual([idle]);
-    expect(garbage.policyHashesInUse).toEqual(["policy-used"]);
-    expect(fake.containers.has(used)).toBe(true);
-    expect(fake.containers.has(idle)).toBe(false);
-  });
-
-  it("never lists a relay as a launcher container", async () => {
-    const fake = createFakeBackend();
-
-    relay(fake, "policy");
-
-    expect(await listLauncherContainers(fake.backend)).toEqual([]);
   });
 });
 
@@ -400,14 +319,17 @@ describe("gitDirInUseElsewhere", () => {
       isGitRepo: true,
     };
 
-    expect(await gitDirInUseElsewhere(fake.backend, worktree)).toBe(true);
-    expect(await gitDirInUseElsewhere(fake.backend, submodule)).toBe(true);
-    expect(await gitDirInUseElsewhere(fake.backend, unrelated)).toBe(false);
-    expect(await gitDirInUseElsewhere(fake.backend, workspace)).toBe(false);
+    const inUse = (owner: { repoRoot: string; gitCommonDir: string }) =>
+      gitDirInUseElsewhere(fake.backend, sha256Hex(owner.repoRoot), owner.gitCommonDir);
+
+    expect(await inUse(worktree)).toBe(true);
+    expect(await inUse(submodule)).toBe(true);
+    expect(await inUse(unrelated)).toBe(false);
+    expect(await inUse(workspace)).toBe(false);
 
     await fake.backend.stopContainer(id);
 
-    expect(await gitDirInUseElsewhere(fake.backend, worktree)).toBe(false);
+    expect(await inUse(worktree)).toBe(false);
   });
 });
 
@@ -423,16 +345,18 @@ describe("gitDirInUseElsewhere in a workspace", () => {
     const fake = createFakeBackend();
     const single = await ensureContainer({ backend: fake.backend, spec: specOf() });
 
-    expect(await gitDirInUseElsewhere(fake.backend, folder, workspace.gitCommonDir)).toBe(true);
+    const folderHash = sha256Hex(folder.repoRoot);
+
+    expect(await gitDirInUseElsewhere(fake.backend, folderHash, workspace.gitCommonDir)).toBe(true);
 
     await fake.backend.stopContainer(single.id);
 
-    expect(await gitDirInUseElsewhere(fake.backend, folder, workspace.gitCommonDir)).toBe(false);
+    expect(await gitDirInUseElsewhere(fake.backend, folderHash, workspace.gitCommonDir)).toBe(false);
 
     await ensureContainer({ backend: fake.backend, spec: specOf({ workspace: folder }) });
 
-    expect(await gitDirInUseElsewhere(fake.backend, workspace)).toBe(true);
-    expect(await gitDirInUseElsewhere(fake.backend, folder, workspace.gitCommonDir)).toBe(false);
+    expect(await gitDirInUseElsewhere(fake.backend, REPO_HASH, workspace.gitCommonDir)).toBe(true);
+    expect(await gitDirInUseElsewhere(fake.backend, folderHash, workspace.gitCommonDir)).toBe(false);
   });
 });
 
@@ -456,12 +380,32 @@ describe("volumes the sandbox writes", () => {
     await mkdir(project, { recursive: true });
   });
 
-  it("creates a missing mount point on the host before the container starts", async () => {
+  it("creates a missing mount point on the host before the container starts and records it", async () => {
     const fake = createFakeBackend();
 
     await ensureContainer({ backend: fake.backend, spec: cachedSpec() });
 
     expect((await stat(join(project, "node_modules"))).isDirectory()).toBe(true);
+    expect(await readCreatedDirs(LOCK_STATE, REPO_HASH)).toContain(join(project, "node_modules"));
+  });
+
+  it("removes cache volumes of this repository that the new container no longer mounts", async () => {
+    const fake = createFakeBackend();
+
+    await fake.backend.ensureVolume("pi-sandbox-cache-stale", {
+      "pi-sandbox.repo-hash": REPO_HASH,
+      "pi-sandbox.cache-path": "gone/node_modules",
+    });
+
+    await fake.backend.ensureVolume("pi-sandbox-cache-foreign", {
+      "pi-sandbox.repo-hash": "f".repeat(64),
+      "pi-sandbox.cache-path": "gone/node_modules",
+    });
+
+    await ensureContainer({ backend: fake.backend, spec: cachedSpec() });
+
+    expect(fake.volumes.has("pi-sandbox-cache-stale")).toBe(false);
+    expect(fake.volumes.has("pi-sandbox-cache-foreign")).toBe(true);
   });
 
   it("refuses a mount point the sandbox side turned into a link", async () => {
@@ -518,7 +462,7 @@ describe("volumes the sandbox writes", () => {
         fake.addContainer({
           name: spec.name,
           labels: { ...spec.labels, "pi-sandbox.spec-hash": "older" },
-          state: "stopped",
+          state: "running",
           image: spec.image,
         });
 
@@ -591,6 +535,7 @@ describe("volumes the sandbox writes", () => {
       "pi-sandbox.managed": "true",
       "pi-sandbox.repo-hash": sha256Hex(workspace.repoRoot),
       "pi-sandbox.repo-root": workspace.repoRoot,
+      "pi-sandbox.cache-path": "web/node_modules",
     });
     expect(labelsOf("/home/pi/.cache/pip")).toEqual({
       "pi-sandbox.managed": "true",

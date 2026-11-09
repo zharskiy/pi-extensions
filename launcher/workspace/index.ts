@@ -1,7 +1,8 @@
+export { removeCreatedDirs } from "./created.ts";
 export { discoverWorkspace } from "./discover.ts";
-export { assertGitIntegrity, pinGitDirs, withGitPinLock } from "./git/integrity.ts";
+export { assertGitIntegrity, pinGitDirs, unpinRecorded, withGitPinLock } from "./git/integrity.ts";
 export { gitLaunchEndNotices, gitLaunchNotices, recordGitBaseline } from "./git/launch.ts";
-export { findGitRoot, gitRefusal } from "./git/layout.ts";
+export { findGitRoot } from "./git/layout.ts";
 export {
   findProtectedGitPaths,
   type GitOverlay,

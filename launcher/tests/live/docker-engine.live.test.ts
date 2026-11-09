@@ -104,7 +104,6 @@ hooks.describe("docker-engine volume ownership", () => {
     tmpfs: ["/tmp:mode=1777", "/home/pi:mode=1777"],
     init: true,
     resources: { cpus: 1, memoryGiB: 0.25 },
-    wantedFile: join(state.dir, "wanted.json"),
     volumeLabels: {},
     ownedPaths: ["/home/pi/.cache", OWNERSHIP_TARGET],
   });
@@ -118,7 +117,7 @@ hooks.describe("docker-engine volume ownership", () => {
 
       await buildFrom(backend.buildImage, RUNNABLE, `FROM ${PULLABLE}\nCMD ["sleep", "3600"]\n`);
 
-      const ensured = await ensureContainer({ backend, spec: spec() });
+      const ensured = await ensureContainer({ backend, spec: spec(), stateDir: state.dir });
 
       state.id = ensured.id;
 
@@ -186,7 +185,6 @@ hooks.describe("docker-engine sandbox image missing-command hint", () => {
     tmpfs: ["/tmp:mode=1777", "/home/pi:mode=1777"],
     init: true,
     resources: { cpus: 1, memoryGiB: 0.5 },
-    wantedFile: join(state.dir, "wanted.json"),
     volumeLabels: {},
     ownedPaths: [],
   });
@@ -204,7 +202,7 @@ hooks.describe("docker-engine sandbox image missing-command hint", () => {
         inUse: async () => false,
       });
 
-      const ensured = await ensureContainer({ backend, spec: spec() });
+      const ensured = await ensureContainer({ backend, spec: spec(), stateDir: state.dir });
 
       state.id = ensured.id;
 

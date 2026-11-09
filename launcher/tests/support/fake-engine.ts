@@ -38,7 +38,7 @@ interface FakeNetwork {
     Labels?: Record<string, string>;
     IPAM?: { Config: Array<{ Gateway?: string }> };
   };
-  connected: Array<{ container: string; address: string }>;
+  connected: Array<{ container: string; address: string; aliases?: string[] }>;
 }
 
 type FakeExecHandler = (context: FakeExecContext) => Promise<number> | number;
@@ -65,7 +65,7 @@ interface FakeMount {
 interface CreateBody {
   Image: string;
   Labels?: Record<string, string>;
-  HostConfig?: { Mounts?: FakeMount[]; NetworkMode?: string };
+  HostConfig?: { Mounts?: FakeMount[]; NetworkMode?: string; AutoRemove?: boolean };
 }
 
 interface FakeContainer {
@@ -340,19 +340,39 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
       return { status: 204 };
     });
 
-  const removeContainer = withContainer((container, { query }) => {
-    if (container.State === "running" && query.get("force") !== "true") {
-      return conflict("You cannot remove a running container");
-    }
-
+  const dropContainer = (container: FakeContainer) => {
     containers.delete(container.Id);
 
     networks.forEach((network) => {
       network.connected = network.connected.filter((entry) => entry.container !== container.Id);
     });
+  };
+
+  const removeContainer = withContainer((container, { query }) => {
+    if (container.State === "running" && query.get("force") !== "true") {
+      return conflict("You cannot remove a running container");
+    }
+
+    dropContainer(container);
 
     return { status: 204 };
   });
+
+  const stopContainer = withContainer((container) => {
+    if (container.State !== "running") {
+      return { status: 304 };
+    }
+
+    container.State = "exited";
+
+    if (container.body.HostConfig?.AutoRemove === true) {
+      dropContainer(container);
+    }
+
+    return { status: 204 };
+  });
+
+  const waitContainer = withContainer(() => ({ status: 200, json: { StatusCode: 0 } }));
 
   const createExec = withContainer((container, { body }) => {
     if (container.State !== "running") {
@@ -427,9 +447,10 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
 
   const connectNetwork = ({ match, body }: RouteRequest): RouteResult => {
     const network = networks.get(match[1] ?? "");
-    const request = parsed<{ Container: string; EndpointConfig?: { IPAMConfig?: { IPv4Address?: string } } }>(
-      body,
-    );
+    const request = parsed<{
+      Container: string;
+      EndpointConfig?: { IPAMConfig?: { IPv4Address?: string }; Aliases?: string[] };
+    }>(body);
 
     if (network === undefined) {
       return notFound(`network ${match[1]} not found`);
@@ -438,6 +459,7 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
     network.connected.push({
       container: request.Container,
       address: request.EndpointConfig?.IPAMConfig?.IPv4Address ?? `10.89.0.${network.connected.length + 2}`,
+      ...(request.EndpointConfig?.Aliases === undefined ? {} : { aliases: request.EndpointConfig.Aliases }),
     });
 
     return { status: 200 };
@@ -478,9 +500,9 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
     Labels: network.body.Labels ?? {},
     IPAM: network.body.IPAM ?? { Config: [] },
     Containers: Object.fromEntries(
-      network.connected.map(({ container, address }) => [
+      network.connected.map(({ container, address, aliases }) => [
         container,
-        { Name: findContainer(container)?.Name ?? "", IPv4Address: `${address}/24` },
+        { Name: findContainer(container)?.Name ?? "", IPv4Address: `${address}/24`, Aliases: aliases ?? [] },
       ]),
     ),
   });
@@ -502,9 +524,9 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
       method: "GET",
       pattern: /^\/networks$/,
       handle: ({ query }) => {
-        const wanted = (JSON.parse(query.get("filters") ?? "{}") as { label?: string[] }).label ?? [];
+        const filters = (JSON.parse(query.get("filters") ?? "{}") as { label?: string[] }).label ?? [];
         const listed = [...networks.values()].filter((network) =>
-          wanted.every((filter) => {
+          filters.every((filter) => {
             const [key = "", ...value] = filter.split("=");
 
             return network.body.Labels?.[key] === value.join("=");
@@ -572,7 +594,8 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
     },
     { method: "POST", pattern: /^\/containers\/create$/, handle: createContainer },
     { method: "POST", pattern: /^\/containers\/([^/]+)\/start$/, handle: setState("running") },
-    { method: "POST", pattern: /^\/containers\/([^/]+)\/stop$/, handle: setState("exited") },
+    { method: "POST", pattern: /^\/containers\/([^/]+)\/stop$/, handle: stopContainer },
+    { method: "POST", pattern: /^\/containers\/([^/]+)\/wait$/, handle: waitContainer },
     { method: "DELETE", pattern: /^\/containers\/([^/]+)$/, handle: removeContainer },
     { method: "POST", pattern: /^\/containers\/([^/]+)\/exec$/, handle: createExec },
     { method: "GET", pattern: /^\/exec\/([^/]+)\/json$/, handle: inspectExec },
@@ -601,11 +624,11 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
       method: "GET",
       pattern: /^\/volumes$/,
       handle: ({ query }) => {
-        const wanted = parsed<{ label?: string[] }>(Buffer.from(query.get("filters") ?? "{}")).label ?? [];
+        const filters = parsed<{ label?: string[] }>(Buffer.from(query.get("filters") ?? "{}")).label ?? [];
         const listed = [...volumes.keys()]
           .map((name) => ({ Name: name, Labels: volumeLabels.get(name) ?? {} }))
           .filter((volume) =>
-            wanted.every((filter) => {
+            filters.every((filter) => {
               const [key = "", ...value] = filter.split("=");
 
               return volume.Labels[key] === value.join("=");

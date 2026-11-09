@@ -26,10 +26,6 @@ export interface ContainerSpec {
   resources: ContainerResources;
 }
 
-export interface RemoveContainerOptions {
-  keepNetwork?: boolean;
-}
-
 export interface TerminalSize {
   columns: number;
   rows: number;
@@ -51,6 +47,11 @@ export interface ContainerSummary {
   labels: Record<string, string>;
   state: ContainerState;
   image: string;
+}
+
+export interface NetworkSummary {
+  name: string;
+  labels: Record<string, string>;
 }
 
 export interface VolumeSummary {
@@ -88,7 +89,7 @@ export interface ProxyRoute {
 export interface ProxyRouteRequest {
   hostPort: number;
   repoHash: string;
-  relay: { policyHash: string; imageId: string };
+  imageId: string;
 }
 
 export interface VmPath {
@@ -139,12 +140,14 @@ export interface Backend {
   createContainer(spec: ContainerSpec): Promise<{ id: string }>;
   startContainer(id: string): Promise<void>;
   stopContainer(id: string, timeoutSeconds?: number): Promise<void>;
-  removeContainer(id: string, options?: RemoveContainerOptions): Promise<void>;
+  waitRemoved(id: string, timeoutMs: number): Promise<void>;
+  removeContainer(id: string): Promise<void>;
   exec(spec: ExecSpec, io: ExecIo): Promise<number>;
   ensureVolume(name: string, labels?: Record<string, string>): Promise<void>;
   listVolumes(): Promise<VolumeSummary[]>;
   removeVolume(name: string): Promise<void>;
   prepareProxyRoute(request: ProxyRouteRequest): Promise<ProxyRoute>;
-  pruneNetworks(keepRepoHashes: string[]): Promise<string[]>;
+  listNetworks(): Promise<NetworkSummary[]>;
+  removeRepoNetwork(repoHash: string): Promise<boolean>;
   status(): Promise<Record<string, string>>;
 }

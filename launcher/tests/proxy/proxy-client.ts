@@ -13,8 +13,6 @@ const HEAD_END = "\r\n\r\n";
 
 const REPO_USER = "pi-sandbox";
 
-export const CONTROL_USER = "pi-sandbox-control";
-
 const authorization = (token: string, user = REPO_USER) =>
   `Basic ${Buffer.from(`${user}:${token}`).toString("base64")}`;
 

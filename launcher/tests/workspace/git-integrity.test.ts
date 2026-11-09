@@ -8,6 +8,7 @@ import {
   gitLaunchEndNotices,
   pinGitDirs,
   recordGitBaseline,
+  unpinRecorded,
 } from "../../workspace/index.ts";
 import { tempDir } from "../support/temp-dir.ts";
 
@@ -95,21 +96,21 @@ describe("the git notices after a session", () => {
 
     await writeFile(httpAlternates, "https://example.com/objects\n");
 
-    expect(await gitLaunchEndNotices(workspace, context, idle)).toEqual([alternatesNotice(httpAlternates)]);
+    expect(await gitLaunchEndNotices(workspace, context)).toEqual([alternatesNotice(httpAlternates)]);
   });
 
   it("says so when it cannot remove the pin", async () => {
     const { repo, workspace, context } = await createRepo();
     const gitDir = join(repo, ".git");
-
-    await pinGitDirs(workspace, []);
-
-    await recordGitBaseline(workspace, context);
+    const pins = (await pinGitDirs(workspace, [])).map((path) => ({ path, gitCommonDir: gitDir }));
 
     await chmod(gitDir, 0o555);
 
-    const notices = await gitLaunchEndNotices(workspace, context, idle).finally(() => chmod(gitDir, 0o755));
+    const { notices, kept } = await unpinRecorded(context.stateDir, pins, idle).finally(() =>
+      chmod(gitDir, 0o755),
+    );
 
+    expect(kept).toEqual([]);
     expect(notices).toEqual([
       `git: ${join(gitDir, "commondir")} could not be removed; remove it before running git in this repository`,
     ]);
@@ -127,7 +128,7 @@ describe("the git notices after a session", () => {
 
     await recordGitBaseline(workspace, context);
 
-    expect(await gitLaunchEndNotices(workspace, context, idle)).toEqual([
+    expect(await gitLaunchEndNotices(workspace, context)).toEqual([
       "git: the scan for nested repositories stopped after 50000 directories",
     ]);
   }, 60_000);

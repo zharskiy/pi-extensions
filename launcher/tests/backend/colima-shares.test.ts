@@ -7,7 +7,7 @@ import { createColimaVm } from "../../backend/colima/vm.ts";
 import type { Backend } from "../../backend/index.ts";
 import { run } from "../../cli/index.ts";
 import { registerLaunch } from "../../grants/index.ts";
-import { sha256Hex } from "../../shared/index.ts";
+import { bootTime, sha256Hex } from "../../shared/index.ts";
 import {
   colimaYamlPath,
   createHarness,
@@ -184,7 +184,7 @@ describe("the launch shares a repository the VM does not see", () => {
     expect(await run0(context)).toBe(0);
     expect(context.colimaCalls()).toEqual([]);
     expect(context.harness.stderr()).not.toContain("with the sandbox VM");
-    expect(context.fake.containers.size).toBe(1);
+    expect(context.fake.created).toHaveLength(1);
   });
 
   it("restarts the VM with the full mount list and prints one notice", async () => {
@@ -198,7 +198,7 @@ describe("the launch shares a repository the VM does not see", () => {
     expect(context.colimaCalls()).toEqual(
       restart(`--mount ${home}:w --mount ${stateDir} --mount ${repoRoot}:w`),
     );
-    expect(context.fake.containers.size).toBe(1);
+    expect(context.fake.created).toHaveLength(1);
   });
 
   it("writes the implicit home share out when colima.yaml has an empty list", async () => {
@@ -296,6 +296,7 @@ describe("the launch shares a repository the VM does not see", () => {
     await registerLaunch(context.harness.stateDir, {
       launchId: "00000000000000dd",
       pid: process.pid,
+      boot: bootTime(),
       repoHash: sha256Hex("/elsewhere"),
       startedAt: 1,
     });
@@ -394,6 +395,7 @@ describe("the launch shares a repository the VM does not see", () => {
     await registerLaunch(context.harness.stateDir, {
       launchId: "00000000000000ee",
       pid: process.pid,
+      boot: bootTime(),
       repoHash: sha256Hex("/elsewhere"),
       startedAt: 1,
     });

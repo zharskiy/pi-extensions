@@ -30,8 +30,6 @@ const imageInUse = async (input: SandboxImageInput) => {
 const freshImage = async (input: SandboxImageInput, trustPem: string | undefined) => {
   const pinned = input.config.image.digest;
 
-  input.preparing?.();
-
   if (pinned !== undefined) {
     return pullPinnedImage(input, pinned);
   }

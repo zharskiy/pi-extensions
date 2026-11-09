@@ -1,6 +1,6 @@
 import type { Backend } from "../backend/index.ts";
-import { findRepoContainer, removeRepoContainer } from "../container/index.ts";
-import { withRepoLaunchLock } from "../grants/index.ts";
+import { findRepoContainer, removeRepoContainers } from "../container/index.ts";
+import { liveLaunches, withRepoLaunchLock } from "../grants/index.ts";
 import { prepareHostSessions, probeHostSessions, sweepHostSessions } from "../provision/index.ts";
 import { errorMessage, LauncherError } from "../shared/index.ts";
 import {
@@ -12,7 +12,6 @@ import {
 } from "../workspace/index.ts";
 import { type CliDeps, hostAgentDirOf, reachableBackend, writeLine, writeNotices } from "./deps.ts";
 import type { LaunchContext } from "./launch.ts";
-import { othersLive } from "./launches.ts";
 
 export const hostSessionsOf = (
   deps: CliDeps,
@@ -37,8 +36,7 @@ export const noticeHostSessions = (deps: CliDeps, sessions: HostSessions) => {
   writeNotices(deps, [...off, ...(ignored === undefined ? [] : [ignored])]);
 };
 
-const sweptDir = (deps: CliDeps, context: LaunchContext) =>
-  hostSessionsDir(hostAgentDirOf(deps), context.workspace.repoRoot);
+const sweptDir = (deps: CliDeps, repoRoot: string) => hostSessionsDir(hostAgentDirOf(deps), repoRoot);
 
 const containerRunning = async (backend: Backend, context: LaunchContext) =>
   (await findRepoContainer(backend, context.workspace))?.state === "running";
@@ -47,15 +45,11 @@ const warnUnswept = (deps: CliDeps, dir: string, error: unknown) => {
   writeLine(deps.stderr, `pi-sandbox: warning: sessions: ${dir} was not swept: ${errorMessage(error)}`);
 };
 
-const sweep = async (deps: CliDeps, context: LaunchContext, full: boolean): Promise<string[]> => {
-  const dir = sweptDir(deps, context);
+const sweep = async (deps: CliDeps, repoRoot: string, full: boolean): Promise<string[]> => {
+  const dir = sweptDir(deps, repoRoot);
 
   try {
-    const { notices, failures } = await sweepHostSessions({
-      dir,
-      repoRoot: context.workspace.repoRoot,
-      full,
-    });
+    const { notices, failures } = await sweepHostSessions({ dir, repoRoot, full });
 
     writeNotices(deps, notices);
 
@@ -72,7 +66,7 @@ const refuseStuck = (deps: CliDeps, context: LaunchContext, failures: string[]) 
     return;
   }
 
-  const dir = sweptDir(deps, context);
+  const dir = sweptDir(deps, context.workspace.repoRoot);
 
   throw new LauncherError(
     `sessions: ${failures.join("; ")}, in ${dir}; refusing to run pi while host pi could read it`,
@@ -88,12 +82,14 @@ const sweepWhenIdle = async (
 ) => {
   try {
     return await withRepoLaunchLock(context.stateDir, context.repoHash, async () => {
-      const others = await othersLive(context.stateDir, context.repoHash, launchId);
+      const others = (await liveLaunches(context.stateDir, context.repoHash)).some(
+        (entry) => entry.launchId !== launchId,
+      );
 
-      return sweep(deps, context, !others && !(await running()));
+      return sweep(deps, context.workspace.repoRoot, !others && !(await running()));
     });
   } catch (error) {
-    warnUnswept(deps, sweptDir(deps, context), error);
+    warnUnswept(deps, sweptDir(deps, context.workspace.repoRoot), error);
 
     return [];
   }
@@ -139,7 +135,7 @@ export const probeSessionsShare = async (
     return;
   }
 
-  const discard = () => removeRepoContainer(backend, context.workspace.repoRoot);
+  const discard = () => removeRepoContainers(backend, context.repoHash);
   const shared = await probeHostSessions(backend, containerId, sessions.dir).catch(async (error: unknown) => {
     await discard();
 
@@ -155,8 +151,8 @@ export const probeSessionsShare = async (
   throw notShared(sessions.dir);
 };
 
-export const sessionsSweeper = (deps: CliDeps, context: LaunchContext) => async (full: boolean) => {
-  const failures = await sweep(deps, context, full);
+export const sweepRepoSessions = async (deps: CliDeps, repoRoot: string, full: boolean) => {
+  const failures = await sweep(deps, repoRoot, full);
 
   writeNotices(
     deps,

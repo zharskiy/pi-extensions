@@ -1,15 +1,32 @@
-export interface ProxyInstance {
-  policyHash: string;
-  port: number;
+import type { CredentialRule } from "../config/index.ts";
+
+export interface RepoProxyInput {
+  repoHash: string;
   token: string;
-  pid: number;
+  allow: string[];
+  deny: string[];
+  privateHosts: string[];
+  grants: boolean;
+  rules: CredentialRule[];
+  derivedHosts: string[];
+  envSecrets: Record<string, string>;
+  parent: "env" | "none";
+  parentEnv: Record<string, string>;
+  parentAuth?: string;
+  extraCa: boolean;
+  piCommand: string[];
+  hostAgentDir: string;
+  accessLogLimit: number;
 }
 
-export interface DaemonConfig<Config> {
-  token: string;
-  config: Config;
-  piCommand?: string[];
-  hostAgentDir: string;
-  piVersion?: string;
-  parentEnv?: Record<string, string>;
+export interface RepoProxy {
+  pid: number;
+  boot: number;
+  port: number;
+  inputHash: string;
+}
+
+export interface DaemonInput {
+  input: RepoProxyInput;
+  inputHash: string;
 }

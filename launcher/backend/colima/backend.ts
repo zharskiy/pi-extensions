@@ -1,8 +1,6 @@
 import { existsSync } from "node:fs";
 import { type CommandRunner, errorMessage, LauncherError } from "../../shared/index.ts";
-import { LABELS } from "../labels.ts";
-import { removeWithNetworkCleanup } from "../managed-network.ts";
-import type { Backend, ContainerSpec, Detection, RemoveContainerOptions } from "../types.ts";
+import type { Backend, ContainerSpec, Detection } from "../types.ts";
 import { containerBody, type EngineContainer, labelFilters, summaryOf } from "./container-body.ts";
 import { createEngineClient, engineError, messageOf, segment } from "./engine-client.ts";
 import { runExec } from "./exec-session.ts";
@@ -103,37 +101,30 @@ export const createColimaBackend = (options: ColimaBackendOptions): Backend => {
   const stopContainer = async (id: string, timeoutSeconds = STOP_TIMEOUT_SECONDS) => {
     await client.call(
       { method: "POST", path: `/containers/${segment(id)}/stop`, query: { t: timeoutSeconds } },
-      [304],
+      [304, 404],
     );
   };
 
-  const repoHashOf = async (id: string) => {
-    const response = await client.call({ method: "GET", path: `/containers/${segment(id)}/json` }, [404]);
-
-    if (response.status === 404) {
-      return undefined;
-    }
-
-    const inspected = JSON.parse(response.body.toString("utf8")) as {
-      Config?: { Labels?: Record<string, string> | null };
-    };
-
-    return inspected.Config?.Labels?.[LABELS.repoHash];
+  const waitRemoved = async (id: string, timeoutMs: number) => {
+    await client
+      .call(
+        {
+          method: "POST",
+          path: `/containers/${segment(id)}/wait`,
+          query: { condition: "removed" },
+          timeoutMs,
+        },
+        [404, 409],
+      )
+      .catch(() => undefined);
   };
 
-  const deleteContainer = async (id: string) => {
+  const removeContainer = async (id: string) => {
     await client.call(
       { method: "DELETE", path: `/containers/${segment(id)}`, query: { force: true } },
-      [404],
+      [404, 409],
     );
   };
-
-  const removeContainer = (id: string, options: RemoveContainerOptions = {}) =>
-    removeWithNetworkCleanup(
-      { repoHashOf, remove: deleteContainer, findContainers, removeNetwork: relay.removeNetwork },
-      id,
-      options,
-    );
 
   const status = async () => {
     const base = { socket: socket(), profile: ENGINE_PROFILE };
@@ -162,13 +153,15 @@ export const createColimaBackend = (options: ColimaBackendOptions): Backend => {
     createContainer,
     startContainer,
     stopContainer,
+    waitRemoved,
     removeContainer,
     exec: (spec, io) => runExec(client, spec, io),
     ensureVolume: volumes.ensureVolume,
     listVolumes: volumes.listVolumes,
     removeVolume: volumes.removeVolume,
     prepareProxyRoute: relay.prepareProxyRoute,
-    pruneNetworks: relay.pruneNetworks,
+    listNetworks: relay.listNetworks,
+    removeRepoNetwork: relay.removeRepoNetwork,
     status,
   };
 };

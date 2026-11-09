@@ -570,22 +570,15 @@ describe("the workspace git locks and session end", () => {
     const repo = await createRepo(join(root, "repo"));
     const workspace = await discover(root);
     const context = { runner, stateDir: join(root, "state") };
-    const asked: string[] = [];
-
     await recordGitBaseline(workspace, context);
 
     await Promise.all([markRepo(join(root, "planted")), markRepo(join(repo, "sub"))]);
 
-    const notices = await gitLaunchEndNotices(workspace, context, async (gitCommonDir) => {
-      asked.push(gitCommonDir);
-
-      return false;
-    });
+    const notices = await gitLaunchEndNotices(workspace, context);
 
     expect(notices).toEqual([
       `git: the sandbox created ${join(root, "planted", ".git")}; review it before running host git tools in this repository`,
       `git: the sandbox created ${join(repo, "sub", ".git")}; review it before running host git tools in this repository`,
     ]);
-    expect(asked).toEqual([join(repo, ".git")]);
   });
 });

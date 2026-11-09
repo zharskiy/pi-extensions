@@ -36,7 +36,7 @@ describe("ensureSandboxImage", () => {
     const { input, asked } = await inputOf(fake);
     const first = await ensureSandboxImage(input);
 
-    expect(asked).toEqual(["preparing", "versions"]);
+    expect(asked).toEqual(["versions", "preparing"]);
     expect(fake.builds).toHaveLength(1);
 
     asked.length = 0;

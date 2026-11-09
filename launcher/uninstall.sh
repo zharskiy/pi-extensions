@@ -170,7 +170,7 @@ stop_proxies() {
   stop_proxies "$@"
 }
 
-stop_proxies "$state_dir"/proxy/*/proxy.json
+stop_proxies "$state_dir"/repos/*/proxy/proxy.json
 
 if [ "$stopped_proxies" -eq 0 ]; then
   echo "proxy: none running"
@@ -178,7 +178,7 @@ fi
 
 state_note() {
   if [ "$1" = "repos" ]; then
-    echo " (launch records, render, sync and git copies)"
+    echo " (launch records, render, sync, git copies and proxy files)"
   fi
 }
 
@@ -227,5 +227,5 @@ else
   echo "colima: profile $colima_profile kept (pass --vm to delete it)"
 fi
 
-echo "kept: your repositories, ~/.pi, ~/.config/pi-sandbox and the rest of $state_dir (image record, CA, salt, proxy instances)"
+echo "kept: your repositories, ~/.pi, ~/.config/pi-sandbox and the rest of $state_dir (image record, CA, salt)"
 echo "kept: your pi sessions stay in ${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/sessions"

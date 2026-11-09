@@ -46,11 +46,8 @@ const envProxyCredentials = (env: NodeJS.ProcessEnv) => {
   }
 };
 
-const parentEnvSecret = (parent: ParentProxy, env: NodeJS.ProcessEnv): Record<string, string> => {
-  const credentials = parent === "env" ? envProxyCredentials(env) : undefined;
-
-  return credentials === undefined ? {} : { [PARENT_PROXY_SECRET_KEY]: credentials };
-};
+export const parentProxyAuth = (parent: ParentProxy, env: NodeJS.ProcessEnv) =>
+  parent === "env" ? envProxyCredentials(env) : undefined;
 
 const assertSingleLine = (entries: EnvSecretEntry[], env: NodeJS.ProcessEnv) => {
   const broken = entries
@@ -72,14 +69,10 @@ const envValues = (entries: EnvSecretEntry[], env: NodeJS.ProcessEnv) =>
     }),
   );
 
-export const envSecretsFor = (
-  rules: CredentialRule[],
-  parentProxy: ParentProxy,
-  env: NodeJS.ProcessEnv,
-): Record<string, string> => {
+export const envSecretsFor = (rules: CredentialRule[], env: NodeJS.ProcessEnv): Record<string, string> => {
   const entries = envSecretEntries(rules);
 
   assertSingleLine(entries, env);
 
-  return { ...envValues(entries, env), ...parentEnvSecret(parentProxy, env) };
+  return envValues(entries, env);
 };

@@ -2,7 +2,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { syncSettingsFile } from "../../provision/index.ts";
-import { GUEST_PATHS, stateLayout } from "../../shared/index.ts";
+import { bootTime, GUEST_PATHS, stateLayout } from "../../shared/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
 import { runningContainer, tempDir, writeText } from "./fixtures.ts";
@@ -146,7 +146,7 @@ describe("syncSettingsFile", () => {
 
     await mkdir(dirname(lock), { recursive: true });
 
-    await writeFile(lock, String(process.pid));
+    await writeFile(lock, `${process.pid} ${bootTime()} 0123456789abcdef`);
 
     const pending = env.sync({ theme: "dark" });
 

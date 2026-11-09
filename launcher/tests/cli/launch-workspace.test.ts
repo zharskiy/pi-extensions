@@ -4,6 +4,8 @@ import { join, sep } from "node:path";
 import { describe, expect, it } from "vitest";
 import { run } from "../../cli/index.ts";
 import { LABELS } from "../../container/index.ts";
+import { registerLaunch } from "../../grants/index.ts";
+import { bootTime } from "../../shared/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import type { FakeCall } from "../support/fake-runner.ts";
 import { createHarness, type HarnessOptions } from "./harness.ts";
@@ -73,7 +75,7 @@ describe("pi in a folder of repositories", () => {
 
     expect(await run([], harness.deps)).toBe(0);
     expect(occurrences(harness.stderr(), WORKSPACE_NOTICE)).toBe(1);
-    expect(fake.containers.size).toBe(1);
+    expect(fake.created).toHaveLength(1);
   });
 
   it("refuses a nested repository git does not confirm and starts nothing", async () => {
@@ -96,7 +98,7 @@ describe("pi in a folder of repositories", () => {
     expect(harness.stdout()).toContain(`repo: ${harness.work}\n`);
     expect(await run(["sandbox", "gc"], harness.deps)).toBe(0);
     expect(await run(["sandbox", "reset"], harness.deps)).toBe(0);
-    expect(harness.stdout()).toContain(`no container for ${harness.work}\n`);
+    expect(harness.stdout()).toContain(`no sandbox for ${harness.work}\n`);
     expect(harness.stderr()).not.toContain("cannot be protected");
   });
 
@@ -123,10 +125,20 @@ describe("pi in a folder of repositories", () => {
     const harness = await workspaceHarness({ repos: ["a", "b"] }, { backend: () => fake.backend });
     const shared = join(harness.work, "a", ".git");
     const own = join(harness.work, "b", ".git");
+    const other = "e".repeat(64);
+    const registered = await registerLaunch(harness.stateDir, {
+      launchId: "00000000000000ab",
+      pid: process.pid,
+      boot: bootTime(),
+      repoHash: other,
+      startedAt: 1,
+    });
+
+    registered.stopHeartbeat();
 
     fake.addContainer({
       name: "pi-sandbox-a",
-      labels: { [LABELS.managed]: "true", [LABELS.repoHash]: "other", [LABELS.gitCommonDir]: shared },
+      labels: { [LABELS.managed]: "true", [LABELS.repoHash]: other, [LABELS.gitCommonDir]: shared },
       state: "running",
       image: "x",
     });

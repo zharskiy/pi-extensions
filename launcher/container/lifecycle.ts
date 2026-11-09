@@ -5,17 +5,18 @@ import {
   errorMessage,
   isWithin,
   LauncherError,
-  readJsonFile,
+  recordCreatedDirs,
+  stateLayout,
   withFileLock,
-  writeJsonFile,
 } from "../shared/index.ts";
 import type { Workspace } from "../workspace/index.ts";
-import { LABELS, repoHash, wantedFile } from "./names.ts";
+import { LABELS, repoHash } from "./names.ts";
 import type { LauncherContainerSpec } from "./spec.ts";
 
 export interface EnsureContainerInput {
   backend: Backend;
   spec: LauncherContainerSpec;
+  stateDir: string;
   othersLive?: () => Promise<boolean>;
   beforeStart?: () => Promise<LauncherContainerSpec>;
   aroundStart?: <T>(start: () => Promise<T>) => Promise<T>;
@@ -29,57 +30,32 @@ export interface EnsuredContainer {
   notices: string[];
 }
 
-export interface Garbage {
-  containers: ContainerSummary[];
-  relays: ContainerSummary[];
-  policyHashesInUse: string[];
-}
-
 const MANAGED = { [LABELS.managed]: "true" };
 
-const RELAYS = { [LABELS.relay]: "true" };
-
-const IDENTITY = [LABELS.imageDigest, LABELS.specHash];
+const IDENTITY = [LABELS.imageDigest, LABELS.specHash, LABELS.proxyTokenHash];
 
 const LOCK_TIMEOUT_MS = 120_000;
+
+const STOP_SECONDS = 3;
+
+const REMOVAL_WAIT_MS = 10_000;
 
 const OUTDATED = "the sandbox config changed; it applies after every session in this repository exits";
 
 const isCurrent = (container: ContainerSummary, labels: Record<string, string | undefined>) =>
   IDENTITY.every((label) => container.labels[label] === labels[label]);
 
-const recordWanted = (spec: LauncherContainerSpec) =>
-  writeJsonFile(
-    spec.wantedFile,
-    Object.fromEntries(IDENTITY.map((label) => [label, spec.labels[label] ?? ""])),
-  );
-
-export const isCurrentContainer = async (
-  container: ContainerSummary,
-  input: { stateDir: string; repoRoot: string; digest: string },
-) => {
-  const wanted = await readJsonFile<Record<string, string>>(wantedFile(input.stateDir, input.repoRoot));
-
-  return isCurrent(container, {
-    [LABELS.imageDigest]: input.digest,
-    [LABELS.specHash]: wanted?.[LABELS.specHash],
-  });
-};
-
-const discard = async (backend: Backend, container: ContainerSummary, keepNetwork = false) => {
+export const discardContainer = async (backend: Backend, container: ContainerSummary) => {
   if (container.state === "running") {
-    await backend.stopContainer(container.id);
+    await backend.stopContainer(container.id, STOP_SECONDS).catch(() => undefined);
+
+    await backend.waitRemoved(container.id, REMOVAL_WAIT_MS);
   }
 
-  await backend.removeContainer(container.id, { keepNetwork });
+  await backend.removeContainer(container.id);
 };
 
-const runtimeSpec = ({
-  wantedFile: _wanted,
-  volumeLabels: _labels,
-  ownedPaths: _owned,
-  ...spec
-}: LauncherContainerSpec) => spec;
+const runtimeSpec = ({ volumeLabels: _labels, ownedPaths: _owned, ...spec }: LauncherContainerSpec) => spec;
 
 const DEFAULT_OWNER = "1000:1000";
 
@@ -94,7 +70,7 @@ const isTaken = (error: unknown) => (error as NodeJS.ErrnoException).code === "E
 const foundAt = (path: string) =>
   lstat(path).catch((error: unknown) => (isMissing(error) ? undefined : Promise.reject(error)));
 
-const ensureMountPoint = async (root: string, path: string): Promise<void> => {
+const ensureMountPoint = async (root: string, path: string): Promise<string[]> => {
   const found = await foundAt(path);
 
   if (found?.isSymbolicLink() === true) {
@@ -110,14 +86,16 @@ const ensureMountPoint = async (root: string, path: string): Promise<void> => {
   }
 
   if (found !== undefined || path === root) {
-    return;
+    return [];
   }
 
-  await ensureMountPoint(root, dirname(path));
-
-  await mkdir(path).catch((error: unknown) =>
-    isTaken(error) ? ensureMountPoint(root, path) : Promise.reject(error),
+  const parents = await ensureMountPoint(root, dirname(path));
+  const made = await mkdir(path).then(
+    () => [path],
+    (error: unknown) => (isTaken(error) ? ensureMountPoint(root, path) : Promise.reject(error)),
   );
+
+  return [...parents, ...made];
 };
 
 const writableRootOf = (mounts: MountSpec[], target: string) =>
@@ -130,8 +108,8 @@ const writableRootOf = (mounts: MountSpec[], target: string) =>
       isWithin(target, mount.target),
   )?.target;
 
-const ensureMountPoints = (mounts: MountSpec[]) =>
-  Promise.all(
+const ensureMountPoints = async (mounts: MountSpec[]) => {
+  const created = await Promise.all(
     mounts
       .filter((mount) => mount.kind === "volume")
       .flatMap((mount) => {
@@ -140,6 +118,9 @@ const ensureMountPoints = (mounts: MountSpec[]) =>
         return root === undefined ? [] : [ensureMountPoint(root, mount.target)];
       }),
   );
+
+  return created.flat();
+};
 
 const handOverVolumes = async (backend: Backend, id: string, spec: LauncherContainerSpec) => {
   if (spec.ownedPaths.length === 0) {
@@ -159,20 +140,6 @@ const handOverVolumes = async (backend: Backend, id: string, spec: LauncherConta
     : [`warning: the sandbox user may not be able to write its cache volumes: ${result.stderr.trim()}`];
 };
 
-const startPrepared = async (backend: Backend, id: string, spec: LauncherContainerSpec, current = true) => {
-  if (!current) {
-    await backend.startContainer(id);
-
-    return [];
-  }
-
-  await ensureMountPoints(spec.mounts);
-
-  await backend.startContainer(id);
-
-  return handOverVolumes(backend, id, spec);
-};
-
 const ownerLabels = (labels: Record<string, string>) =>
   Object.fromEntries(
     [LABELS.repoHash, LABELS.repoRoot].flatMap((key) => {
@@ -182,9 +149,32 @@ const ownerLabels = (labels: Record<string, string>) =>
     }),
   );
 
-const createFresh = async (backend: Backend, spec: LauncherContainerSpec): Promise<EnsuredContainer> => {
+const specRepoHash = (spec: LauncherContainerSpec) => spec.labels[LABELS.repoHash] ?? "";
+
+const pruneCacheVolumes = async (backend: Backend, spec: LauncherContainerSpec) => {
+  const mounted = new Set(
+    spec.mounts.filter((mount) => mount.kind === "volume").map((mount) => mount.source),
+  );
+  const stale = (await backend.listVolumes()).filter(
+    (volume) =>
+      volume.labels[LABELS.repoHash] === specRepoHash(spec) &&
+      volume.labels[LABELS.cachePath] !== undefined &&
+      !volume.inUse &&
+      !mounted.has(volume.name),
+  );
+
+  await Promise.all(stale.map((volume) => backend.removeVolume(volume.name).catch(() => undefined)));
+};
+
+const createFresh = async (
+  input: EnsureContainerInput,
+  spec: LauncherContainerSpec,
+): Promise<EnsuredContainer> => {
+  const { backend } = input;
   const { mounts } = spec;
   const owner = ownerLabels(spec.labels);
+
+  await pruneCacheVolumes(backend, spec);
 
   await Promise.all(
     mounts
@@ -192,101 +182,75 @@ const createFresh = async (backend: Backend, spec: LauncherContainerSpec): Promi
       .map((mount) => backend.ensureVolume(mount.source, spec.volumeLabels[mount.source] ?? owner)),
   );
 
-  await ensureMountPoints(mounts);
+  await recordCreatedDirs(input.stateDir, specRepoHash(spec), await ensureMountPoints(mounts));
 
   const { id } = await backend.createContainer(runtimeSpec(spec));
-  const notices = await startPrepared(backend, id, spec);
 
-  return { id, created: true, outdated: false, spec, notices };
+  await backend.startContainer(id);
+
+  return { id, created: true, outdated: false, spec, notices: await handOverVolumes(backend, id, spec) };
 };
 
-const repoContainers = (backend: Backend, spec: LauncherContainerSpec) =>
-  backend.findContainers({ [LABELS.repoHash]: spec.labels[LABELS.repoHash] ?? "" });
+const isAgent = (container: ContainerSummary) => container.labels[LABELS.relay] !== "true";
 
-const reuse = async (
-  backend: Backend,
-  container: ContainerSummary,
-  spec: LauncherContainerSpec,
-): Promise<EnsuredContainer> => {
+const agentContainers = async (backend: Backend, repo: string) =>
+  (await backend.findContainers({ [LABELS.repoHash]: repo })).filter(isAgent);
+
+const reuse = (container: ContainerSummary, spec: LauncherContainerSpec): EnsuredContainer => {
   const outdated = !isCurrent(container, spec.labels);
-  const started =
-    container.state === "running" ? [] : await startPrepared(backend, container.id, spec, !outdated);
 
-  return {
-    id: container.id,
-    created: false,
-    outdated,
-    spec,
-    notices: [...(outdated ? [OUTDATED] : []), ...started],
-  };
+  return { id: container.id, created: false, outdated, spec, notices: outdated ? [OUTDATED] : [] };
 };
 
-const createOrAdopt = async (backend: Backend, spec: LauncherContainerSpec) => {
+const createOrAdopt = async (input: EnsureContainerInput, spec: LauncherContainerSpec) => {
   try {
-    return await createFresh(backend, spec);
+    return await createFresh(input, spec);
   } catch (error) {
-    const raced = (await repoContainers(backend, spec)).find((container) => container.name === spec.name);
+    const raced = (await agentContainers(input.backend, specRepoHash(spec))).find(
+      (container) => container.name === spec.name && container.state === "running",
+    );
 
     if (raced === undefined) {
       throw error;
     }
 
-    return reuse(backend, raced, spec);
+    return reuse(raced, spec);
   }
 };
 
-const startOrCreateNow = async (input: EnsureContainerInput, stopped: ContainerSummary | undefined) => {
-  const { backend } = input;
-  const spec = (await input.beforeStart?.()) ?? input.spec;
+const createNow = async (input: EnsureContainerInput) =>
+  createOrAdopt(input, (await input.beforeStart?.()) ?? input.spec);
 
-  await recordWanted(spec);
-
-  if (stopped !== undefined && isCurrent(stopped, spec.labels)) {
-    return reuse(backend, stopped, spec);
-  }
-
-  if (stopped !== undefined) {
-    await discard(backend, stopped, true);
-  }
-
-  return createOrAdopt(backend, spec);
-};
-
-const startOrCreate = (input: EnsureContainerInput, stopped: ContainerSummary | undefined) => {
-  const start = () => startOrCreateNow(input, stopped);
-
-  return input.aroundStart === undefined ? start() : input.aroundStart(start);
-};
+const create = (input: EnsureContainerInput) =>
+  input.aroundStart === undefined ? createNow(input) : input.aroundStart(() => createNow(input));
 
 const findOrCreate = async (input: EnsureContainerInput): Promise<EnsuredContainer> => {
   const { backend, spec } = input;
+  const existing = await agentContainers(backend, specRepoHash(spec));
+  const running = existing.filter((container) => container.state === "running");
+  const current = running.find((container) => isCurrent(container, spec.labels));
 
-  await recordWanted(spec);
-
-  const existing = await repoContainers(backend, spec);
-  const current = existing.find((container) => isCurrent(container, spec.labels));
-
-  if (current?.state === "running") {
-    return reuse(backend, current, spec);
+  if (current !== undefined) {
+    return reuse(current, spec);
   }
 
-  const shared = existing.find((container) => container.state === "running");
+  const [shared] = running;
 
   if (shared !== undefined && (await input.othersLive?.()) === true) {
-    return reuse(backend, shared, spec);
+    return reuse(shared, spec);
   }
 
-  await Promise.all(
-    existing
-      .filter((container) => container !== current)
-      .map((container) => discard(backend, container, true)),
-  );
+  await Promise.all(existing.map((container) => discardContainer(backend, container)));
 
-  return startOrCreate(input, current);
+  return create(input);
 };
 
 export const ensureContainer = (input: EnsureContainerInput) =>
-  withFileLock(`${input.spec.wantedFile}.lock`, () => findOrCreate(input), { timeoutMs: LOCK_TIMEOUT_MS });
+  withFileLock(
+    stateLayout(input.stateDir).repo(specRepoHash(input.spec)).containerLock,
+    () => findOrCreate(input),
+    { timeoutMs: LOCK_TIMEOUT_MS },
+  );
 
 export const findCurrentContainer = async (backend: Backend, workspace: Workspace, digest: string) => {
   const [found] = await backend.findContainers({
@@ -298,12 +262,10 @@ export const findCurrentContainer = async (backend: Backend, workspace: Workspac
 };
 
 export const findRepoContainer = async (backend: Backend, workspace: Workspace) => {
-  const [found] = await backend.findContainers({ [LABELS.repoHash]: repoHash(workspace.repoRoot) });
+  const [found] = await agentContainers(backend, repoHash(workspace.repoRoot));
 
   return found;
 };
-
-const isAgent = (container: ContainerSummary) => container.labels[LABELS.relay] !== "true";
 
 export const listLauncherContainers = async (backend: Backend) =>
   (await backend.findContainers(MANAGED)).filter(isAgent);
@@ -334,72 +296,18 @@ const gitDirsOf = (container: ContainerSummary) => {
 const sharesGitDir = (container: ContainerSummary, gitCommonDir: string) =>
   gitDirsOf(container).some((other) => isWithin(other, gitCommonDir) || isWithin(gitCommonDir, other));
 
-export const gitDirInUseElsewhere = async (
-  backend: Backend,
-  owner: Workspace,
-  gitCommonDir: string | undefined = owner.gitCommonDir,
-) => {
-  if (gitCommonDir === undefined) {
-    return false;
-  }
-
-  const own = repoHash(owner.repoRoot);
-
-  return (await listLauncherContainers(backend)).some(
+export const gitDirInUseElsewhere = async (backend: Backend, owner: string, gitCommonDir: string) =>
+  (await listLauncherContainers(backend)).some(
     (container) =>
       container.state !== "stopped" &&
-      container.labels[LABELS.repoHash] !== own &&
+      container.labels[LABELS.repoHash] !== owner &&
       sharesGitDir(container, gitCommonDir),
   );
-};
 
-export const removeRepoContainer = async (backend: Backend, repoRoot: string) => {
-  const existing = await backend.findContainers({ [LABELS.repoHash]: repoHash(repoRoot) });
+export const removeRepoContainers = async (backend: Backend, repo: string) => {
+  const existing = await agentContainers(backend, repo);
 
-  await Promise.all(existing.map((container) => discard(backend, container)));
+  await Promise.all(existing.map((container) => discardContainer(backend, container)));
 
   return existing;
-};
-
-const policyHashesOf = (containers: ContainerSummary[]) => [
-  ...new Set(
-    containers.flatMap((container) => {
-      const hash = container.labels[LABELS.proxyPolicyHash];
-
-      return hash === undefined ? [] : [hash];
-    }),
-  ),
-];
-
-const runningPolicyHashes = (agents: ContainerSummary[]) =>
-  policyHashesOf(agents.filter((container) => container.state === "running"));
-
-export const policyHashesInUse = async (backend: Backend) =>
-  runningPolicyHashes(await listLauncherContainers(backend));
-
-export interface GarbageKeep {
-  repoHashes: string[];
-  policyHashes: string[];
-}
-
-export const collectGarbage = async (
-  backend: Backend,
-  keep: GarbageKeep = { repoHashes: [], policyHashes: [] },
-): Promise<Garbage> => {
-  const agents = await listLauncherContainers(backend);
-  const stopped = agents.filter(
-    (container) =>
-      container.state !== "running" && !keep.repoHashes.includes(container.labels[LABELS.repoHash] ?? ""),
-  );
-  const inUse = [...new Set([...runningPolicyHashes(agents), ...keep.policyHashes])];
-
-  await Promise.all(stopped.map((container) => backend.removeContainer(container.id)));
-
-  const relays = (await backend.findContainers(RELAYS)).filter(
-    (relay) => !inUse.includes(relay.labels[LABELS.proxyPolicyHash] ?? ""),
-  );
-
-  await Promise.all(relays.map((relay) => discard(backend, relay)));
-
-  return { containers: stopped, relays, policyHashesInUse: inUse };
 };

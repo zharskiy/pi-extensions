@@ -1,6 +1,5 @@
 import { authorityOf } from "../../config/index.ts";
 import { activeGrants, addGrant, type Grant, readGrants, revokeGrants } from "../../grants/index.ts";
-import { proxyPolicyHash } from "../../proxy/index.ts";
 import { LauncherError } from "../../shared/index.ts";
 import { type CliDeps, writeLine, writeLines } from "../deps.ts";
 import { type LaunchContext, openContext } from "../launch.ts";
@@ -87,11 +86,7 @@ export const grantLines = async (context: LaunchContext, userOnly = false) =>
     .map(grantText);
 
 const deniedLines = async (deps: CliDeps, context: LaunchContext) => {
-  const policyHash = proxyPolicyHash(context.effective.config);
-  const denials = await deps.proxy.denials(context.stateDir, policyHash, {
-    repoHash: context.repoHash,
-    since: 0,
-  });
+  const denials = await deps.proxy.denials(context.stateDir, context.repoHash, 0);
 
   return denials.map(
     (denial) =>

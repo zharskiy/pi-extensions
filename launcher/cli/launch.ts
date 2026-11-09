@@ -16,8 +16,7 @@ import {
   runPi,
 } from "../container/index.ts";
 import type { Launch } from "../grants/index.ts";
-import type { HostPi } from "../hostpi/index.ts";
-import { ensureSandboxImage, recordedImage, type SandboxImage } from "../image/index.ts";
+import { ensureSandboxImage, type SandboxImage } from "../image/index.ts";
 import { renderAgentDir, syncSettingsFile } from "../provision/index.ts";
 import { guestProxyUrl } from "../proxy/index.ts";
 import {
@@ -27,6 +26,7 @@ import {
   realOrResolvedSync,
   repoHash,
   settleAll,
+  sha256Hex,
   stateLayout,
 } from "../shared/index.ts";
 import {
@@ -55,12 +55,12 @@ import {
   noticeHostSessions,
   probeSessionsShare,
   readyHostSessions,
-  sessionsSweeper,
   sweepForHostPi,
 } from "./host-sessions.ts";
 import { beginLaunch, busyLaunches, finishLaunch, gitGuardOf, othersLive } from "./launches.ts";
 import { signInMcpServers } from "./mcp-sign-in.ts";
 import { openSandboxProxy, reportDenials, type SandboxProxy } from "./sandbox-proxy.ts";
+import { sweepOrphans } from "./sweep.ts";
 import { imagePiVersion, launcherVersion } from "./versions.ts";
 
 export interface LaunchContext {
@@ -215,8 +215,13 @@ const shareVm = (deps: CliDeps, context: LaunchContext, backend: Backend) =>
     }),
   );
 
-const prepareHost = async (deps: CliDeps, context: LaunchContext) => {
-  const host = await prepareHostSide(deps, context, await resolveJobPi(deps));
+const TOKEN_HASH_LENGTH = 16;
+
+const prepareHost = async (deps: CliDeps, context: LaunchContext, backend: Backend) => {
+  const [host] = await settleAll([
+    resolveJobPi(deps).then((pi) => prepareHostSide(deps, context, pi)),
+    sweepOrphans(deps, backend),
+  ]);
   const sessions = hostSessionsOf(deps, context, host.files.settings);
 
   noticeHostSessions(deps, sessions);
@@ -227,14 +232,6 @@ const prepareHost = async (deps: CliDeps, context: LaunchContext) => {
 };
 
 const isPinned = (context: LaunchContext) => context.effective.config.image.digest !== undefined;
-
-const hostPiMoved = async (context: LaunchContext, pi: HostPi | undefined) => {
-  if (pi === undefined || isPinned(context)) {
-    return false;
-  }
-
-  return (await recordedImage(context.stateDir, context.effective.config))?.pi !== pi.version;
-};
 
 const prepareImage = (
   deps: CliDeps,
@@ -251,11 +248,7 @@ const prepareImage = (
     env: deps.env,
     trustPem: host.trust?.extraPemPath,
     versions: async () => ({ pi: await imagePiVersion(host.pi) }),
-    inUse: async (digest) => {
-      const found = await findCurrentContainer(backend, context.workspace, digest);
-
-      return found !== undefined && (found.state === "running" || !(await hostPiMoved(context, host.pi)));
-    },
+    inUse: async (digest) => (await findCurrentContainer(backend, context.workspace, digest)) !== undefined,
     preparing: () => writeLine(deps.stderr, PREPARING),
   });
 };
@@ -272,14 +265,18 @@ const sandboxRoute = async (
   }
 
   const route: ProxyRoute = await backend.prepareProxyRoute({
-    hostPort: proxy.instance.port,
+    hostPort: proxy.proxy.port,
     repoHash,
-    relay: { policyHash: proxy.policyHash, imageId },
+    imageId,
   });
 
   writeNotices(deps, route.notices ?? []);
 
-  return { url: guestProxyUrl(route, proxy.repoToken), network: route.network, policyHash: proxy.policyHash };
+  return {
+    url: guestProxyUrl(route, proxy.token),
+    network: route.network,
+    tokenHash: sha256Hex(proxy.token).slice(0, TOKEN_HASH_LENGTH),
+  };
 };
 
 const CAPPED_NOTICE =
@@ -360,16 +357,16 @@ const prepareContainer = async (
       launcherVersion: version,
       renderDir: render.renderDir,
       trust: route === undefined ? undefined : host.trust,
-      repoProxyToken: proxy?.repoToken,
       hostSessions: sessions,
     });
-  const wanted = specWith(git.overlay);
+  const planned = specWith(git.overlay);
 
   cancelled.throwIfAborted();
 
   const { id, created, spec, notices } = await ensureContainer({
     backend,
-    spec: wanted,
+    spec: planned,
+    stateDir: context.stateDir,
     othersLive: () => othersLive(context.stateDir, context.repoHash, launch.launchId),
     beforeStart: async () => specWith(await git.ready()),
     aroundStart: (start) => withGitPinLock(context.stateDir, context.workspace, start),
@@ -394,12 +391,12 @@ const imagePiNotices = (context: LaunchContext, host: HostSide, image: SandboxIm
 const proxyDetail = (proxy: SandboxProxy | undefined) =>
   proxy === undefined
     ? "not required, no credential rule and an empty allowlist"
-    : `pid ${proxy.instance.pid} port ${proxy.instance.port}`;
+    : `pid ${proxy.proxy.pid} port ${proxy.proxy.port}`;
 
 const prepareSandbox = async (input: SandboxInput) => {
-  const { deps, context, backend, host, cancelled, staged } = input;
+  const { deps, context, backend, host, launch, cancelled, staged } = input;
   const pending = [
-    openSandboxProxy(deps, context, host),
+    openSandboxProxy(deps, context, host, launch),
     prepareImage(deps, context, backend, host),
   ] as const;
 
@@ -442,7 +439,7 @@ export const withSandbox = async (
 
   await staged("shares", () => shareVm(deps, context, backend));
 
-  const { host, sessions } = await staged("host", () => prepareHost(deps, context));
+  const { host, sessions } = await staged("host", () => prepareHost(deps, context, backend));
   const launch = await beginLaunch(deps, context);
   const watch = listenFor(deps.signals ?? process, PREPARATION_SIGNALS);
   const cancel = new AbortController();
@@ -483,7 +480,7 @@ export const withSandbox = async (
   } finally {
     watch.stop();
 
-    await finishLaunch(deps, context, backend, launch, sessionsSweeper(deps, context));
+    await finishLaunch(deps, context, backend, launch);
   }
 };
 

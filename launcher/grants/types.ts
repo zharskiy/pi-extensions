@@ -20,8 +20,14 @@ export interface GrantMatch {
 export interface Launch {
   launchId: string;
   pid: number;
+  boot: number;
   repoHash: string;
   startedAt: number;
+}
+
+export interface RegisteredLaunch {
+  live: number;
+  stopHeartbeat: () => void;
 }
 
 export interface EndLaunchInput {

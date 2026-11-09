@@ -51,6 +51,7 @@ export const containerBody = (spec: ContainerSpec) => ({
     ReadonlyRootfs: spec.readOnlyRoot,
     Tmpfs: Object.fromEntries(spec.tmpfs.map(tmpfsEntry)),
     Init: spec.init,
+    AutoRemove: true,
     NanoCpus: scaled(spec.resources.cpus, NANO_CPUS),
     Memory: scaled(spec.resources.memoryGiB, GIB),
   },

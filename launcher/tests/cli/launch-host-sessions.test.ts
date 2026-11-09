@@ -5,10 +5,10 @@ import { describe, expect, it } from "vitest";
 import type { ExecSpec } from "../../backend/index.ts";
 import { run } from "../../cli/index.ts";
 import { registerLaunch } from "../../grants/index.ts";
-import { sha256Hex } from "../../shared/index.ts";
+import { bootTime, sha256Hex } from "../../shared/index.ts";
 import { hostSessionsDir } from "../../workspace/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
-import { createHarness, isPiSession } from "./harness.ts";
+import { createHarness, holdLaunch, isPiSession } from "./harness.ts";
 
 const CUSTOM_NOTICE =
   "pi-sandbox: sessions: host pi uses a custom session dir, so sandbox sessions stay in the sandbox volume\n";
@@ -45,7 +45,7 @@ const sandboxWith = async (onPi: (dir: string) => Promise<void> = async () => un
   return { fake, harness, dir: box.dir };
 };
 
-const containerSpec = (fake: ReturnType<typeof createFakeBackend>) => [...fake.containers.values()][0]?.spec;
+const containerSpec = (fake: ReturnType<typeof createFakeBackend>) => fake.created[0]?.spec;
 
 describe("pi launch with host sessions", () => {
   it("binds the repository's host session dir at its own path, creates it 0700 and points pi at it", async () => {
@@ -181,6 +181,7 @@ describe("pi launch with host sessions", () => {
     });
 
     await registerLaunch(harness.stateDir, {
+      boot: bootTime(),
       launchId: "0123456789abcdef",
       pid: process.pid,
       repoHash: sha256Hex(harness.repoRoot),
@@ -203,6 +204,7 @@ describe("pi launch with host sessions", () => {
     await symlink("/etc/passwd", join(dir, "early.jsonl"));
 
     await registerLaunch(harness.stateDir, {
+      boot: bootTime(),
       launchId: "0123456789abcdef",
       pid: process.pid,
       repoHash: sha256Hex(harness.repoRoot),
@@ -262,7 +264,7 @@ describe("pi launch with host sessions", () => {
 
     expect(await run([], harness.deps)).toBe(0);
     expect((await readdir(dir)).filter((name) => name.endsWith(".jsonl"))).toEqual([]);
-    expect(fake.containers.size).toBe(1);
+    expect(fake.created).toHaveLength(1);
   });
 
   it.skipIf(process.platform !== "darwin")(
@@ -303,23 +305,27 @@ describe("pi launch with host sessions", () => {
     },
   );
 
-  it("recreates the container after sessions.host changes, on the repository network that still exists", async () => {
+  it("creates the next container with the changed sessions.host on the repository network", async () => {
     const { fake, harness } = await sandboxWith();
 
     expect(await run([], harness.deps)).toBe(0);
 
-    const [first] = [...fake.containers.keys()];
+    const first = fake.created[0]?.summary.id;
 
     await harness.writeJson(harness.userConfigFile, { sessions: { host: false } });
 
     expect(await run([], harness.deps)).toBe(0);
 
-    const [second] = [...fake.containers.values()];
+    const second = fake.created.at(-1);
     const network = second?.spec?.network;
 
     expect(second?.summary.id).not.toBe(first);
     expect(fake.execs.filter((exec) => isPiSession(exec.spec))).toHaveLength(2);
-    expect(network?.kind === "internal" && fake.networks.has(network.name)).toBe(true);
+    expect(network).toEqual({
+      kind: "internal",
+      name: `pi-sandbox-${sha256Hex(harness.repoRoot).slice(0, 12)}`,
+    });
+    expect(second?.summary.labels["pi-sandbox.session-dir"]).toBe("sessions.host is off");
   });
 
   it("shows the session dir the container was created with in pi sandbox status", async () => {
@@ -327,6 +333,10 @@ describe("pi launch with host sessions", () => {
     const off = await sandboxWith();
 
     await off.harness.writeJson(off.harness.userConfigFile, { sessions: { host: false } });
+
+    await holdLaunch(on.harness);
+
+    await holdLaunch(off.harness);
 
     await run([], on.harness.deps);
 
@@ -398,6 +408,7 @@ describe("pi --no-sandbox with host sessions", () => {
     await symlink("/etc/passwd", join(dir, "run", "agents", "leak.jsonl"));
 
     await registerLaunch(harness.stateDir, {
+      boot: bootTime(),
       launchId: "0123456789abcdef",
       pid: process.pid,
       repoHash: sha256Hex(harness.repoRoot),

@@ -5,7 +5,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import type { CredentialRule } from "../../config/index.ts";
 import { createSecretResolver, type SecretResolver } from "../../proxy/secrets/index.ts";
 import type { LauncherCa } from "../../proxy/tls-ca.ts";
-import { isProcessAlive, mcpAuthKey } from "../../shared/index.ts";
+import { mcpAuthKey } from "../../shared/index.ts";
 import { createFakeClock } from "../support/fake-clock.ts";
 import { createFakeRunner } from "../support/fake-runner.ts";
 import { closeServer, createStateDir, listen, openCa, portOf, removeDir, startTestProxy } from "./harness.ts";
@@ -19,7 +19,15 @@ const KEY = mcpAuthKey("docs", URL_TEXT);
 
 const PLACEHOLDER = "pi-sandbox-0123456789abcdef01234567";
 
-const REPO = "1".repeat(64);
+const isRunning = (pid: number) => {
+  try {
+    process.kill(pid, "SIGCONT");
+
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 const FAKE_PI = `
 import { spawn } from "node:child_process";
@@ -258,7 +266,7 @@ describe("mcpOAuth sign-in through the proxy", () => {
       resolver,
       ports: () => ({ "mcp.test:443": portOf(proxy.upstream as Server) }),
     });
-    const token = await test.tokenOf(REPO);
+    const token = test.token;
 
     const send = async (authorization: string) => {
       const response = await requestThrough({
@@ -308,10 +316,10 @@ describe("mcpOAuth sign-in through the proxy", () => {
 
     const child = await waitUntil(childPid);
 
-    expect(isProcessAlive(child)).toBe(true);
+    expect(isRunning(child)).toBe(true);
 
     await test.proxy.close();
 
-    await waitUntil(async () => (isProcessAlive(child) ? undefined : true));
+    await waitUntil(async () => (isRunning(child) ? undefined : true));
   });
 });

@@ -45,7 +45,13 @@ export interface FakeExecScript {
 
 interface FakeRoute {
   hostPort: number;
-  policyHash: string;
+  repoHash: string;
+  imageId: string;
+}
+
+interface FakeRelay {
+  id: string;
+  hostPort: number;
   imageId: string;
 }
 
@@ -61,11 +67,9 @@ interface FakeBackendOptions {
 
 const NETWORK_PREFIX = "pi-sandbox";
 
-const RELAY_ADDRESS = "10.89.0.2:3128";
+const RELAY_ADDRESS = "pi-sandbox-proxy:3128";
 
 const SHORT_REPO_HASH = 12;
-
-const PRUNABLE_NETWORK = /^pi-sandbox-([0-9a-f]{12})$/;
 
 const RESET_HINT = "run pi sandbox reset";
 
@@ -75,8 +79,8 @@ const imageIdOf = (digest: string) => `sha256:image-${digest.replace(/^sha256:/,
 
 const infoOf = (digest: string): ImageInfo => ({ id: imageIdOf(digest), digest });
 
-const matches = (labels: Record<string, string>, wanted: Record<string, string>) =>
-  Object.entries(wanted).every(([key, value]) => labels[key] === value);
+const matches = (labels: Record<string, string>, filter: Record<string, string>) =>
+  Object.entries(filter).every(([key, value]) => labels[key] === value);
 
 const isIdQuery = (command: string[]) => command.join(" ") === "id -u";
 
@@ -160,6 +164,13 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
   const execs: FakeExec[] = [];
   const routes: FakeRoute[] = [];
   const stops: Array<{ id: string; timeoutSeconds?: number }> = [];
+  const waits: string[] = [];
+  const removals: string[] = [];
+  const created: FakeContainer[] = [];
+  const relays = new Map<string, FakeRelay>();
+  const gone = new Set<string>();
+
+  const removalOf = (id: string) => gone.has(id);
   const sequence = { next: 0 };
 
   const nextId = (prefix: string) => {
@@ -238,7 +249,7 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
   const assertRunning = (id: string) => {
     const state = containers.get(id)?.summary.state;
 
-    if (state !== undefined && state !== "running") {
+    if (removalOf(id) || (state !== undefined && state !== "running")) {
       throw new LauncherError(`container ${id} is not running`);
     }
   };
@@ -262,7 +273,7 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
     }
   };
 
-  const networks = new Set<string>();
+  const networks = new Map<string, string>();
   const foreignNetworks = new Set<string>();
   const externalNetworks = new Set<string>();
   const removedNetworks = new Set<string>();
@@ -277,19 +288,40 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
     setState(id, "running");
   };
 
-  const dropRepoNetwork = (repoHash: string | undefined) => {
-    const remaining = [...containers.values()].some(
-      (entry) => entry.summary.labels[LABELS.repoHash] === repoHash,
-    );
+  const relaySummary = (repoHash: string, relay: FakeRelay): ContainerSummary => ({
+    id: relay.id,
+    name: `${NETWORK_PREFIX}-relay-${repoHash.slice(0, SHORT_REPO_HASH)}`,
+    labels: {
+      [LABELS.managed]: "true",
+      [LABELS.relay]: "true",
+      [LABELS.repoHash]: repoHash,
+      [LABELS.relayPort]: String(relay.hostPort),
+    },
+    state: "running",
+    image: relay.imageId,
+  });
 
-    if (repoHash === undefined || remaining) {
-      return;
+  const relaySummaries = () =>
+    [...relays.entries()].map(([repoHash, relay]) => relaySummary(repoHash, relay));
+
+  const drop = (id: string) => {
+    if (containers.has(id)) {
+      gone.add(id);
     }
 
-    networks.delete(repoNetworkOf(repoHash));
+    containers.delete(id);
 
-    removedNetworks.add(repoNetworkOf(repoHash));
+    [...relays.entries()]
+      .filter(([, relay]) => relay.id === id)
+      .forEach(([repoHash]) => {
+        relays.delete(repoHash);
+      });
   };
+
+  const attached = (name: string) =>
+    [...containers.values()].some(
+      (entry) => entry.spec?.network.kind === "internal" && entry.spec.network.name === name,
+    );
 
   const vm: Vm = {
     ensureRunning: async () => undefined,
@@ -316,9 +348,9 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
       return infoOf(digest);
     },
     findContainers: async (labels) =>
-      [...containers.values()]
-        .map((entry) => entry.summary)
-        .filter((summary) => matches(summary.labels, labels)),
+      [...[...containers.values()].map((entry) => entry.summary), ...relaySummaries()].filter((summary) =>
+        matches(summary.labels, labels),
+      ),
     createContainer: async (spec) => {
       const taken = [...containers.values()].some((entry) => entry.summary.name === spec.name);
 
@@ -327,11 +359,14 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
       }
 
       const id = nextId("container");
-
-      containers.set(id, {
+      const entry = {
         spec,
-        summary: { id, name: spec.name, labels: spec.labels, state: "created", image: spec.image },
-      });
+        summary: { id, name: spec.name, labels: spec.labels, state: "created" as const, image: spec.image },
+      };
+
+      containers.set(id, entry);
+
+      created.push(entry);
 
       return { id };
     },
@@ -339,22 +374,15 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
     stopContainer: async (id, timeoutSeconds) => {
       stops.push({ id, timeoutSeconds });
 
-      setState(id, "stopped");
+      drop(id);
     },
-    removeContainer: async (id, removal) => {
-      const found = containers.get(id);
+    waitRemoved: async (id) => {
+      waits.push(id);
+    },
+    removeContainer: async (id) => {
+      removals.push(id);
 
-      if (found === undefined) {
-        return;
-      }
-
-      const repoHash = found.summary.labels[LABELS.repoHash];
-
-      containers.delete(id);
-
-      if (removal?.keepNetwork !== true) {
-        dropRepoNetwork(repoHash);
-      }
+      drop(id);
     },
     exec: runExec,
     ensureVolume: async (name, labels = {}) => {
@@ -377,8 +405,9 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
 
       volumeLabels.delete(name);
     },
-    prepareProxyRoute: async ({ hostPort, repoHash, relay }) => {
+    prepareProxyRoute: async ({ hostPort, repoHash, imageId }) => {
       const name = repoNetworkOf(repoHash);
+
       if (externalNetworks.has(name)) {
         throw new LauncherError(`network ${name} exists but is not internal`, "run pi sandbox gc");
       }
@@ -390,11 +419,17 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
         );
       }
 
-      routes.push({ hostPort, policyHash: relay.policyHash, imageId: relay.imageId });
+      routes.push({ hostPort, repoHash, imageId });
 
-      networks.add(name);
+      networks.set(name, repoHash);
 
       removedNetworks.delete(name);
+
+      const relay = relays.get(repoHash);
+
+      if (relay === undefined || relay.hostPort !== hostPort) {
+        relays.set(repoHash, { id: nextId("relay"), hostPort, imageId });
+      }
 
       return {
         network: { kind: "internal", name },
@@ -402,24 +437,23 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
         ...(options.routeNotices === undefined ? {} : { notices: options.routeNotices }),
       };
     },
-    pruneNetworks: async (keepRepoHashes) => {
-      const kept = new Set(keepRepoHashes.map((hash) => hash.slice(0, SHORT_REPO_HASH)));
-      const removed = [...networks].filter((name) => {
-        const match = PRUNABLE_NETWORK.exec(name);
-        const attached = [...containers.values()].some(
-          (entry) => entry.spec?.network.kind === "internal" && entry.spec.network.name === name,
-        );
+    listNetworks: async () =>
+      [...networks.entries()].map(([name, repoHash]) => ({
+        name,
+        labels: { [LABELS.managed]: "true", [LABELS.repoHash]: repoHash },
+      })),
+    removeRepoNetwork: async (repoHash) => {
+      const name = repoNetworkOf(repoHash);
 
-        return match !== null && !attached && !kept.has(match[1] ?? "");
-      });
+      if (!networks.has(name) || attached(name)) {
+        return false;
+      }
 
-      removed.forEach((name) => {
-        networks.delete(name);
+      networks.delete(name);
 
-        removedNetworks.add(name);
-      });
+      removedNetworks.add(name);
 
-      return removed;
+      return true;
     },
     status: async () => ({ socket: "/fake/docker.sock" }),
   };
@@ -432,14 +466,20 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
     return id;
   };
 
-  const plantNetwork = (name: string, managed = true, internal = true) => {
+  const plantNetwork = (name: string, managed = true, internal = true, repoHash = "") => {
     if (!internal) {
       externalNetworks.add(name);
 
       return;
     }
 
-    (managed ? networks : foreignNetworks).add(name);
+    if (managed) {
+      networks.set(name, repoHash);
+
+      return;
+    }
+
+    foreignNetworks.add(name);
   };
 
   const hasNetwork = (name: string) =>
@@ -469,6 +509,10 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
     execs,
     routes,
     stops,
+    waits,
+    removals,
+    created,
+    relays,
     addContainer,
   };
 };

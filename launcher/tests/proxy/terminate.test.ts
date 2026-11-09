@@ -221,7 +221,7 @@ beforeAll(async () => {
       "newline.test:443": portOf(state.upstream),
     }),
   });
-  state.token = await state.test.tokenOf(REPO);
+  state.token = state.test.token;
 }, 30_000);
 
 afterAll(async () => {
@@ -439,7 +439,7 @@ describe("a rule on a non-443 port", () => {
   it("intercepts the host on the rule port and injects the credential", async () => {
     const response = await requestThrough({
       proxyPort: local.test?.proxy.port ?? 0,
-      token: (await local.test?.tokenOf(REPO)) ?? "",
+      token: local.test?.token ?? "",
       host: "llm.test",
       port: 8443,
       ca: state.ca.certPem,
@@ -455,7 +455,7 @@ describe("a rule on a non-443 port", () => {
     const page = await pageThrough(
       local.test?.proxy.port ?? 0,
       "llm.test:443",
-      (await local.test?.tokenOf(REPO)) ?? "",
+      local.test?.token ?? "",
       state.ca.certPem,
     );
 
@@ -589,7 +589,7 @@ describe("restricted addresses after DNS", () => {
       resolver: state.resolver.resolver,
       dial: createDialer({ resolve: resolveTo({ "api.test": "10.0.0.5", "tunnel.test": "127.0.0.1" }) }),
     });
-    local.token = await local.test.tokenOf(REPO);
+    local.token = local.test.token;
   });
 
   afterAll(async () => {

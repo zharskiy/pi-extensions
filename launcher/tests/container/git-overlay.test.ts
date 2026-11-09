@@ -1,4 +1,15 @@
-import { lstat, mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  realpath,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -13,8 +24,8 @@ import {
   LABELS,
   planGitOverlay,
 } from "../../container/index.ts";
-import { createProcessRunner, sha256Hex, stateLayout } from "../../shared/index.ts";
-import { discoverWorkspace, type Workspace } from "../../workspace/index.ts";
+import { createProcessRunner, readPins, sha256Hex, stateLayout, writePins } from "../../shared/index.ts";
+import { discoverWorkspace, unpinRecorded, type Workspace } from "../../workspace/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { createFakeRunner } from "../support/fake-runner.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
@@ -88,6 +99,15 @@ const contextOf = (base: string, gitRunner = runner): GitGuardContext => ({
 
 const idle = async () => false;
 
+const releasePins = async (base: string, repo: string, inUse: (gitCommonDir: string) => Promise<boolean>) => {
+  const stateDir = join(base, "state");
+  const { kept, notices } = await unpinRecorded(stateDir, await readPins(stateDir, sha256Hex(repo)), inUse);
+
+  await writePins(stateDir, sha256Hex(repo), kept);
+
+  return notices;
+};
+
 const busy = async () => true;
 
 const workspaceAt = (base: string, cwd: string) =>
@@ -111,26 +131,26 @@ const gitMountsOf = (spec: { mounts: MountSpec[] }, repo: string) =>
 const describeMount = (base: string, mount: MountSpec) => ({
   target: mount.target,
   readOnly: mount.readOnly,
-  snapshot: mount.source.startsWith(join(base, "state", "repos")),
+  copy: mount.source.startsWith(join(base, "state", "repos")),
 });
 
 describe("the git dir in the container", () => {
-  it("binds .git onto itself and its config, hooks and commondir pin read-only from snapshots", async () => {
+  it("binds .git onto itself, hooks and the commondir pin read-only from the host and config from a copy", async () => {
     const base = await createBase();
     const repo = await createRepo(base);
     const workspace = await workspaceAt(base, repo);
     const spec = specOf(base, workspace, await discoverGitOverlay(workspace, contextOf(base)));
 
     expect(gitMountsOf(spec, repo).map((mount) => describeMount(base, mount))).toEqual([
-      { target: repo, readOnly: false, snapshot: false },
-      { target: join(repo, ".git"), readOnly: false, snapshot: false },
-      { target: join(repo, ".git", "hooks"), readOnly: true, snapshot: true },
-      { target: join(repo, ".git", "config"), readOnly: true, snapshot: true },
-      { target: join(repo, ".git", "commondir"), readOnly: true, snapshot: true },
+      { target: repo, readOnly: false, copy: false },
+      { target: join(repo, ".git"), readOnly: false, copy: false },
+      { target: join(repo, ".git", "hooks"), readOnly: true, copy: false },
+      { target: join(repo, ".git", "config"), readOnly: true, copy: true },
+      { target: join(repo, ".git", "commondir"), readOnly: true, copy: false },
     ]);
   });
 
-  it("writes the pin and the snapshots before a start, with hooks copied", async () => {
+  it("writes and records the pin and a private copy of the config before a start, and binds the hooks from the host", async () => {
     const base = await createBase();
     const repo = await createRepo(base);
     const workspace = await workspaceAt(base, repo);
@@ -144,28 +164,39 @@ describe("the git dir in the container", () => {
     const hooks = sourceAt(join(repo, ".git", "hooks"));
 
     expect(await readFile(join(repo, ".git", "commondir"), "utf8")).toBe(".\n");
-    expect(await readFile(sourceAt(join(repo, ".git", "commondir")), "utf8")).toBe(".\n");
+    expect(sourceAt(join(repo, ".git", "commondir"))).toBe(join(repo, ".git", "commondir"));
     expect(await readFile(sourceAt(join(repo, ".git", "config")), "utf8")).toBe(
       await readFile(join(repo, ".git", "config"), "utf8"),
     );
-    expect(await readFile(join(hooks, "pre-commit"), "utf8")).toBe("#!/bin/sh\nexit 0\n");
-    expect(((await stat(join(hooks, "pre-commit"))).mode & 0o111) !== 0).toBe(true);
+    expect(sourceAt(join(repo, ".git", "config"))).not.toBe(join(repo, ".git", "config"));
+    expect(hooks).toBe(join(repo, ".git", "hooks"));
+    expect(await readPins(join(base, "state"), sha256Hex(repo))).toEqual([
+      { path: join(repo, ".git", "commondir"), gitCommonDir: join(repo, ".git") },
+    ]);
   });
 
-  it("refuses a symlinked hook file before a start and never copies its target", async () => {
+  it("never copies the target of a symlinked hook into the state dir", async () => {
     const base = await createBase();
     const repo = await createRepo(base);
     const secret = join(base, "home", "secret");
-    const hook = join(repo, ".git", "hooks", "post-checkout");
     const workspace = await workspaceAt(base, repo);
 
-    await writeFile(secret, "secret\n");
+    await writeFile(secret, "secret-value\n");
 
-    await symlink(secret, hook);
+    await symlink(secret, join(repo, ".git", "hooks", "post-checkout"));
 
-    await expect(readyGitOverlay(workspace, contextOf(base))).rejects.toThrow(
-      `git: ${hook} is a symbolic link; symlinked hooks are not supported inside the sandbox`,
+    const spec = specOf(base, workspace, await readyGitOverlay(workspace, contextOf(base)));
+    const copies = await readdir(stateLayout(join(base, "state")).repo(sha256Hex(repo)).git);
+    const texts = await Promise.all(
+      copies.map((name) =>
+        readFile(join(stateLayout(join(base, "state")).repo(sha256Hex(repo)).git, name), "utf8"),
+      ),
     );
+
+    expect(spec.mounts.find((mount) => mount.target === join(repo, ".git", "hooks"))?.source).toBe(
+      join(repo, ".git", "hooks"),
+    );
+    expect(texts.some((text) => text.includes("secret-value"))).toBe(false);
   });
 
   it("protects a linked worktree's .git file, its gitdir pointers and the common dir pin", async () => {
@@ -181,16 +212,16 @@ describe("the git dir in the container", () => {
     const mounts = specOf(base, workspace, overlay).mounts.map((mount) => describeMount(base, mount));
 
     expect(mounts.filter((mount) => mount.target.startsWith(base))).toEqual([
-      { target: worktree, readOnly: false, snapshot: false },
-      { target: join(repo, ".git"), readOnly: false, snapshot: false },
-      { target: join(repo, ".git", "worktrees"), readOnly: false, snapshot: false },
-      { target: gitDir, readOnly: false, snapshot: false },
-      { target: join(repo, ".git", "hooks"), readOnly: true, snapshot: true },
-      { target: join(repo, ".git", "config"), readOnly: true, snapshot: true },
-      { target: join(gitDir, "commondir"), readOnly: true, snapshot: true },
-      { target: join(gitDir, "gitdir"), readOnly: true, snapshot: true },
-      { target: join(worktree, ".git"), readOnly: true, snapshot: true },
-      { target: join(repo, ".git", "commondir"), readOnly: true, snapshot: true },
+      { target: worktree, readOnly: false, copy: false },
+      { target: join(repo, ".git"), readOnly: false, copy: false },
+      { target: join(repo, ".git", "worktrees"), readOnly: false, copy: false },
+      { target: gitDir, readOnly: false, copy: false },
+      { target: join(repo, ".git", "hooks"), readOnly: true, copy: false },
+      { target: join(repo, ".git", "config"), readOnly: true, copy: true },
+      { target: join(gitDir, "commondir"), readOnly: true, copy: false },
+      { target: join(gitDir, "gitdir"), readOnly: true, copy: false },
+      { target: join(worktree, ".git"), readOnly: true, copy: false },
+      { target: join(repo, ".git", "commondir"), readOnly: true, copy: false },
     ]);
   });
 
@@ -288,7 +319,7 @@ describe("the git dir in the container", () => {
     expect(overlay.selfBinds).toEqual([join(repo, ".git"), join(repo, ".husky")]);
   });
 
-  it("refuses a link planted where a missing hooks dir is about to be created, and snapshots nothing", async () => {
+  it("refuses a link planted where a missing hooks dir is about to be created, and copies nothing", async () => {
     const base = await createBase();
     const repo = await createRepo(base);
     const workspace = await workspaceAt(base, repo);
@@ -303,7 +334,11 @@ describe("the git dir in the container", () => {
 
     await expect(plan.ready()).rejects.toThrow(`git: ${hooks} is a symbolic link`);
     expect(
-      await lstat(stateLayout(join(base, "state")).repo(sha256Hex(repo)).gitSnapshots).catch(() => undefined),
+      await lstat(
+        stateLayout(join(base, "state"))
+          .repo(sha256Hex(repo))
+          .gitCopy(join(repo, ".git", "config")),
+      ).catch(() => undefined),
     ).toBeUndefined();
   });
 
@@ -369,7 +404,7 @@ describe("the git checks around a session", () => {
     ]);
   });
 
-  it("removes the pin after the session and reports a commondir the sandbox rewrote", async () => {
+  it("removes the recorded pin after the session and leaves a commondir that no longer holds it", async () => {
     const base = await createBase();
     const repo = await createRepo(base);
     const workspace = await workspaceAt(base, repo);
@@ -377,17 +412,18 @@ describe("the git checks around a session", () => {
 
     await readyGitOverlay(workspace, contextOf(base));
 
-    expect(await gitLaunchEndNotices(workspace, contextOf(base), idle)).toEqual([]);
+    expect(await releasePins(base, repo, idle)).toEqual([]);
     expect(await lstat(pin).catch(() => undefined)).toBeUndefined();
+    expect(await gitLaunchEndNotices(workspace, contextOf(base))).toEqual([]);
 
     await readyGitOverlay(workspace, contextOf(base));
 
     await writeFile(pin, "../.x\n");
 
-    expect(await gitLaunchEndNotices(workspace, contextOf(base), idle)).toEqual([
-      `git: ${pin} was changed inside the sandbox; the launcher removed it`,
+    expect(await releasePins(base, repo, idle)).toEqual([
+      `git: ${pin} no longer holds the launcher's pin, so it was left in place`,
     ]);
-    expect(await lstat(pin).catch(() => undefined)).toBeUndefined();
+    expect(await readFile(pin, "utf8")).toBe("../.x\n");
   });
 
   it("keeps the pins while another running sandbox shares the git dir", async () => {
@@ -397,7 +433,7 @@ describe("the git checks around a session", () => {
 
     await readyGitOverlay(workspace, contextOf(base));
 
-    expect(await gitLaunchEndNotices(workspace, contextOf(base), busy)).toEqual([]);
+    expect(await releasePins(base, repo, busy)).toEqual([]);
     expect(await readFile(join(repo, ".git", "commondir"), "utf8")).toBe(".\n");
   });
 
@@ -421,8 +457,8 @@ describe("the git checks around a session", () => {
     await readyGitOverlay(workspace, contextOf(base));
 
     expect(
-      await gitLaunchEndNotices(workspace, contextOf(base), () =>
-        gitDirInUseElsewhere(fake.backend, workspace),
+      await releasePins(base, repo, (gitCommonDir) =>
+        gitDirInUseElsewhere(fake.backend, sha256Hex(repo), gitCommonDir),
       ),
     ).toEqual([]);
     expect(await readFile(join(repo, ".git", "commondir"), "utf8")).toBe(".\n");
@@ -439,7 +475,7 @@ describe("the git checks around a session", () => {
 
     await git(repo, ["add", "vendor/nested"]);
 
-    const notices = await gitLaunchEndNotices(workspace, contextOf(base), idle);
+    const notices = await gitLaunchEndNotices(workspace, contextOf(base));
 
     expect(notices).toEqual([
       `git: the sandbox created ${join(repo, "vendor", "nested", ".git")}; review it before running host git tools in this repository`,
@@ -447,7 +483,7 @@ describe("the git checks around a session", () => {
     ]);
   });
 
-  it("removes a commondir the sandbox planted in a module git dir", async () => {
+  it("reports a commondir the sandbox planted in a module git dir", async () => {
     const base = await createBase();
     const repo = await createRepo(base);
     const workspace = await workspaceAt(base, repo);
@@ -459,10 +495,10 @@ describe("the git checks around a session", () => {
     await writeFile(join(module, "HEAD"), "ref: refs/heads/main\n");
     await writeFile(join(module, "commondir"), "../../../.x\n");
 
-    const notices = await gitLaunchEndNotices(workspace, contextOf(base), idle);
+    await releasePins(base, repo, idle);
 
-    expect(notices).toEqual([
-      `git: ${join(module, "commondir")} was changed inside the sandbox; the launcher removed it`,
+    expect(await gitLaunchEndNotices(workspace, contextOf(base))).toEqual([
+      `git: ${join(module, "commondir")} was not written by git or the launcher`,
     ]);
   });
 
@@ -477,7 +513,9 @@ describe("the git checks around a session", () => {
     await mkdir(join(repo, ".git", "modules"));
     await symlink(join(base, "home"), planted);
 
-    expect(await gitLaunchEndNotices(workspace, contextOf(base), idle)).toEqual([
+    await releasePins(base, repo, idle);
+
+    expect(await gitLaunchEndNotices(workspace, contextOf(base))).toEqual([
       `git: ${planted} is a symbolic link`,
     ]);
     expect(await lstat(join(repo, ".git", "commondir")).catch(() => undefined)).toBeUndefined();
@@ -503,14 +541,14 @@ describe("the git dirs of a workspace in the container", () => {
 
     expect(mounts).toEqual(
       expect.arrayContaining([
-        { target: folder, readOnly: false, snapshot: false },
-        { target: first, readOnly: false, snapshot: false },
-        { target: join(folder, "group"), readOnly: false, snapshot: false },
-        { target: second, readOnly: false, snapshot: false },
-        { target: join(first, ".git", "hooks"), readOnly: true, snapshot: true },
-        { target: join(first, ".git", "config"), readOnly: true, snapshot: true },
-        { target: join(second, ".git", "hooks"), readOnly: true, snapshot: true },
-        { target: join(second, ".git", "config"), readOnly: true, snapshot: true },
+        { target: folder, readOnly: false, copy: false },
+        { target: first, readOnly: false, copy: false },
+        { target: join(folder, "group"), readOnly: false, copy: false },
+        { target: second, readOnly: false, copy: false },
+        { target: join(first, ".git", "hooks"), readOnly: true, copy: false },
+        { target: join(first, ".git", "config"), readOnly: true, copy: true },
+        { target: join(second, ".git", "hooks"), readOnly: true, copy: false },
+        { target: join(second, ".git", "config"), readOnly: true, copy: true },
       ]),
     );
     expect(indexOf(join(folder, "group"))).toBeLessThan(indexOf(second));
@@ -521,7 +559,7 @@ describe("the git dirs of a workspace in the container", () => {
     ]);
   });
 
-  it("writes the snapshots of every nested repository in one start", async () => {
+  it("binds the hooks of every nested repository and pins them in one start", async () => {
     const { base, folder, first, second } = await createFolder();
     const workspace = await workspaceAt(base, folder);
 
@@ -538,6 +576,9 @@ describe("the git dirs of a workspace in the container", () => {
 
     expect(await hookOf(first)).toBe("first\n");
     expect(await hookOf(second)).toBe("second\n");
+    expect((await readPins(join(base, "state"), sha256Hex(folder))).map((pin) => pin.path).sort()).toEqual(
+      [join(first, ".git", "commondir"), join(second, ".git", "commondir")].sort(),
+    );
     expect(await readFile(join(second, ".git", "commondir"), "utf8")).toBe(".\n");
   });
 

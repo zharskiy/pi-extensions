@@ -11,6 +11,7 @@ interface EngineRequest {
   json?: unknown;
   stream?: Readable;
   contentType?: string;
+  timeoutMs?: number;
 }
 
 interface EngineResponse {
@@ -121,6 +122,10 @@ export const createEngineClient = (socket: () => string): EngineClient => {
       outgoing.once("response", resolve);
 
       outgoing.once("error", (error) => reject(failure(error)));
+
+      if (request.timeoutMs !== undefined) {
+        outgoing.setTimeout(request.timeoutMs, () => outgoing.destroy(new Error("timed out")));
+      }
 
       writeBody(outgoing, request);
     });

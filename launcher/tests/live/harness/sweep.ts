@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { Writable } from "node:stream";
 import { createColimaBackend } from "../../../backend/index.ts";
 import { createProcessRunner } from "../../../shared/index.ts";
-import { engineSocket, listContainers, startContainer } from "./engine.ts";
+import { engineSocket, listContainers } from "./engine.ts";
 import type { LiveSandbox } from "./sandbox.ts";
 
 export type Secrets = Record<string, string>;
@@ -53,8 +53,6 @@ const scanContainer = async (repoHash: string, script: string, secrets: Secrets)
   if (agent === undefined) {
     throw new Error("no sandbox container to sweep");
   }
-
-  await startContainer(agent.Id);
 
   const backend = createColimaBackend({
     home: "",

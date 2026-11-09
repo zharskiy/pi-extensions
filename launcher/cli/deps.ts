@@ -2,36 +2,21 @@ import { type Backend, ENGINE_PROFILE, ENGINE_SOCKET_DISPLAY } from "../backend/
 import type { ExtraCa, SandboxConfig } from "../config/index.ts";
 import type { HostTerminal, SignalSource } from "../container/index.ts";
 import type { BundledPi } from "../hostpi/index.ts";
-import type {
-  ControlMessage,
-  ControlReply,
-  DenialRecord,
-  ProxyInstance,
-  TrustBundle,
-} from "../proxy/index.ts";
+import type { DenialRecord, RepoProxy, RepoProxyInput, RepoProxyStart, TrustBundle } from "../proxy/index.ts";
 import { type CommandRunner, hostAgentDir, LauncherError, launcherPaths } from "../shared/index.ts";
 
 interface ProxyRequest {
-  config: SandboxConfig;
   stateDir: string;
+  input: RepoProxyInput;
   env: NodeJS.ProcessEnv;
-  home: string;
-  piCommand: string[];
-  piVersion?: string;
-}
-
-interface DenialFilter {
-  repoHash: string;
-  since: number;
+  othersLive: () => Promise<boolean>;
 }
 
 interface ProxyControl {
-  ensure(request: ProxyRequest): Promise<ProxyInstance>;
-  list(stateDir: string): Promise<ProxyInstance[]>;
-  stop(stateDir: string, policyHash?: string): Promise<number>;
-  remove(stateDir: string, policyHash: string): Promise<boolean>;
-  control(instance: ProxyInstance, message: ControlMessage): Promise<ControlReply>;
-  denials(stateDir: string, policyHash: string, filter: DenialFilter): Promise<DenialRecord[]>;
+  ensure(request: ProxyRequest): Promise<RepoProxyStart>;
+  read(stateDir: string, repoHash: string): Promise<RepoProxy | undefined>;
+  stop(stateDir: string, repoHash: string): Promise<boolean>;
+  denials(stateDir: string, repoHash: string, since: number): Promise<DenialRecord[]>;
   trust(stateDir: string, sources: ExtraCa[]): Promise<TrustBundle>;
 }
 

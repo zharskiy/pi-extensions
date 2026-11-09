@@ -6,7 +6,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { errorMessage, withDirectoryLock, withFileLock } from "../../shared/index.ts";
+import { bootTime, errorMessage, withDirectoryLock, withFileLock } from "../../shared/index.ts";
 
 const state = { dir: "" };
 
@@ -41,6 +41,10 @@ const deadPid = async () => {
 const sleeper = () => spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"]);
 
 const longAgo = () => new Date(Date.now() - 60_000);
+
+const beyondHeartbeat = () => new Date(Date.now() - 120_000);
+
+const ownerText = (pid: number | undefined, boot = bootTime()) => `${pid} ${boot} 0123456789abcdef`;
 
 const SHARED = pathToFileURL(join(import.meta.dirname, "..", "..", "shared", "index.ts")).href;
 
@@ -109,19 +113,48 @@ describe("withFileLock", () => {
     expect(await exists(lockPath)).toBe(false);
   });
 
-  it("never takes over the lock of a live holder, however long it has been stalled", async () => {
+  it("never takes over the lock of a live holder within its heartbeat window", async () => {
     const lockPath = join(state.dir, "store.json.lock");
     const holder = sleeper();
+    const owner = ownerText(holder.pid);
 
     try {
-      await writeFile(lockPath, String(holder.pid));
+      await writeFile(lockPath, owner);
 
       await utimes(lockPath, longAgo(), longAgo());
 
       const problem = await lockError(withFileLock(lockPath, async () => "never", { timeoutMs: 150 }));
 
       expect(problem).toBe(`${lockPath}: lock is held by another process (pid ${holder.pid})`);
-      expect(await readFile(lockPath, "utf8")).toBe(String(holder.pid));
+      expect(await readFile(lockPath, "utf8")).toBe(owner);
+    } finally {
+      holder.kill();
+    }
+  });
+
+  it("takes over the lock of a live pid whose heartbeat stopped 90 s ago", async () => {
+    const lockPath = join(state.dir, "store.json.lock");
+    const holder = sleeper();
+
+    try {
+      await writeFile(lockPath, ownerText(holder.pid));
+
+      await utimes(lockPath, beyondHeartbeat(), beyondHeartbeat());
+
+      expect(await withFileLock(lockPath, async () => "taken", { timeoutMs: 100 })).toBe("taken");
+    } finally {
+      holder.kill();
+    }
+  });
+
+  it("takes over the lock of a live pid recorded with another boot time", async () => {
+    const lockPath = join(state.dir, "store.json.lock");
+    const holder = sleeper();
+
+    try {
+      await writeFile(lockPath, ownerText(holder.pid, bootTime() - 3600));
+
+      expect(await withFileLock(lockPath, async () => "taken", { timeoutMs: 100 })).toBe("taken");
     } finally {
       holder.kill();
     }
@@ -130,7 +163,7 @@ describe("withFileLock", () => {
   it("takes over the lock of a dead holder at once and leaves nothing behind", async () => {
     const lockPath = join(state.dir, "store.json.lock");
 
-    await writeFile(lockPath, String(await deadPid()));
+    await writeFile(lockPath, ownerText(await deadPid()));
 
     expect(await withFileLock(lockPath, async () => "taken", { timeoutMs: 100 })).toBe("taken");
     expect(await readdir(state.dir)).toEqual([]);
@@ -150,13 +183,15 @@ describe("withFileLock", () => {
     const holder = sleeper();
 
     try {
+      const owner = ownerText(holder.pid);
+
       await withFileLock(lockPath, async () => {
         await rm(lockPath);
 
-        await writeFile(lockPath, String(holder.pid));
+        await writeFile(lockPath, owner);
       });
 
-      expect(await readFile(lockPath, "utf8")).toBe(String(holder.pid));
+      expect(await readFile(lockPath, "utf8")).toBe(owner);
     } finally {
       holder.kill();
     }
@@ -166,7 +201,7 @@ describe("withFileLock", () => {
     const lockPath = join(state.dir, "store.json.lock");
     const log = join(state.dir, "log");
 
-    await writeFile(lockPath, String(await deadPid()));
+    await writeFile(lockPath, ownerText(await deadPid()));
 
     await Promise.all(Array.from({ length: 4 }, () => contender("withFileLock", lockPath, log)));
 

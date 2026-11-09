@@ -49,11 +49,11 @@ const systemResolve: Resolve = (hostname) =>
 const FAMILIES: Record<string, number> = { IPv4: 4, IPv6: 6 };
 
 const ofFamily = (addresses: LookupAddress[], family: LookupOptions["family"]) => {
-  const wanted = typeof family === "string" ? FAMILIES[family] : family;
+  const requested = typeof family === "string" ? FAMILIES[family] : family;
 
-  return wanted === undefined || wanted === 0
+  return requested === undefined || requested === 0
     ? addresses
-    : addresses.filter((entry) => entry.family === wanted);
+    : addresses.filter((entry) => entry.family === requested);
 };
 
 const lookupWith =

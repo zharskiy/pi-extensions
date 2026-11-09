@@ -1,7 +1,14 @@
-import { mkdir } from "node:fs/promises";
-import { sep } from "node:path";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { dirname, sep } from "node:path";
 import { engineSocketPath } from "../backend/index.ts";
-import { type CommandRunner, stateLayout } from "../shared/index.ts";
+import {
+  type CommandRunner,
+  readRegularFile,
+  recordCreatedDirs,
+  recordPins,
+  repoHash,
+  stateLayout,
+} from "../shared/index.ts";
 import {
   assertGitIntegrity,
   findProtectedGitPaths,
@@ -17,7 +24,7 @@ import {
   type Workspace,
   workspaceSelfBinds,
 } from "../workspace/index.ts";
-import { gitSnapshotsDir, writeGitSnapshots } from "./git-snapshot.ts";
+import { isGitConfigFile } from "./spec.ts";
 
 export type { GitOverlay } from "../workspace/index.ts";
 
@@ -51,21 +58,19 @@ const sameList = (first: string[], second: string[]) =>
   first.length === second.length && first.every((entry, index) => entry === second[index]);
 
 const pinned = async (workspace: Workspace, paths: ProtectedGitPaths, context: GitProtectContext) => {
-  await pinGitDirs(workspace, paths.modules);
-
+  const first = await pinGitDirs(workspace, paths.modules);
   const modules = await assertGitIntegrity(workspace);
 
   if (sameList(modules, paths.modules)) {
-    return paths;
+    return { paths, pins: first };
   }
 
   const current = await findProtectedGitPaths(workspace, paths.gitCommonDir, context, modules);
-
-  await pinGitDirs(workspace, current.modules);
+  const second = await pinGitDirs(workspace, current.modules);
 
   await assertGitIntegrity(workspace);
 
-  return current;
+  return { paths: current, pins: [...first, ...second] };
 };
 
 const depthOf = (path: string) => path.split(sep).length;
@@ -89,22 +94,44 @@ const merged = (workspace: Workspace, overlays: GitOverlay[]): GitOverlay => {
   return workspace.isGitRepo && single !== undefined ? single : combined(workspace, overlays);
 };
 
+interface ReadyRepo {
+  overlay: GitOverlay;
+  pins: string[];
+  gitCommonDir: string;
+  created: string[];
+}
+
 interface RepoPlan {
   overlay: GitOverlay;
-  ready(): Promise<GitOverlay>;
+  ready(): Promise<ReadyRepo>;
 }
+
+const createdChain = (first: string | undefined, dir: string): string[] => {
+  if (first === undefined) {
+    return [];
+  }
+
+  return dir === first || dirname(dir) === dir ? [dir] : [...createdChain(first, dirname(dir)), dir];
+};
+
+const createDir = async (dir: string) =>
+  createdChain(await mkdir(dir, { recursive: true }).catch(() => undefined), dir);
 
 const readiedRepo = async (
   repo: Workspace,
   protect: GitProtectContext,
   guard: GitPathGuard,
   discovered: ProtectedGitPaths,
-) => {
-  const paths = await pinned(repo, discovered, protect);
+): Promise<ReadyRepo> => {
+  const { paths, pins } = await pinned(repo, discovered, protect);
+  const created = await Promise.all(paths.dirs.map(createDir));
 
-  await Promise.all(paths.dirs.map((dir) => mkdir(dir, { recursive: true }).catch(() => undefined)));
-
-  return protectedGitOverlay(repo, paths, guard);
+  return {
+    overlay: await protectedGitOverlay(repo, paths, guard),
+    pins,
+    gitCommonDir: paths.gitCommonDir,
+    created: created.flat(),
+  };
 };
 
 const repoPlan = async (
@@ -121,10 +148,40 @@ const repoPlan = async (
   };
 };
 
-const readied = async (workspace: Workspace, context: GitGuardContext, plans: RepoPlan[]) => {
-  const overlay = merged(workspace, await Promise.all(plans.map((plan) => plan.ready())));
+const MODE_BITS = 0o777;
 
-  await writeGitSnapshots(overlay, gitSnapshotsDir(context.stateDir, workspace.repoRoot));
+const copyGitConfig = async (stateDir: string, owner: string, path: string) => {
+  const { data, mode } = await readRegularFile(path);
+  const copy = stateLayout(stateDir).repo(owner).gitCopy(path);
+
+  await mkdir(dirname(copy), { recursive: true, mode: 0o700 });
+
+  await rm(copy, { force: true });
+
+  await writeFile(copy, data, { mode: mode & MODE_BITS, flag: "wx" });
+};
+
+const readied = async (workspace: Workspace, context: GitGuardContext, plans: RepoPlan[]) => {
+  const owner = repoHash(workspace.repoRoot);
+  const repos = await Promise.all(plans.map((plan) => plan.ready()));
+  const pins = repos.flatMap((repo) => repo.pins.map((path) => ({ path, gitCommonDir: repo.gitCommonDir })));
+
+  await recordPins(context.stateDir, owner, pins);
+
+  await recordCreatedDirs(
+    context.stateDir,
+    owner,
+    repos.flatMap((repo) => repo.created),
+  );
+
+  const overlay = merged(
+    workspace,
+    repos.map((repo) => repo.overlay),
+  );
+
+  await Promise.all(
+    overlay.readOnlyFiles.filter(isGitConfigFile).map((path) => copyGitConfig(context.stateDir, owner, path)),
+  );
 
   await recordGitBaseline(workspace, context);
 

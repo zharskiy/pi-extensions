@@ -22,10 +22,6 @@ import { secureTunnel } from "./proxy-client.ts";
 
 const HOST = "api.test";
 
-const REPO_A = "a".repeat(64);
-
-const REPO_B = "b".repeat(64);
-
 const RULES: CredentialRule[] = [
   { id: "api", host: HOST, placeholder: "pi-sandbox-0123456789abcdef01234567", secret: { env: "API" } },
 ];
@@ -149,45 +145,29 @@ const exchange = (secure: TLSSocket, path: string) =>
     secure.write(`GET ${path} HTTP/1.1\r\nHost: ${HOST}\r\n\r\n`);
   });
 
-const tunnelFor = async (test: TestProxy, repoHash: string) =>
-  secureTunnel(test.proxy.port, `${HOST}:443`, HOST, state.ca.certPem, await test.tokenOf(repoHash));
+const tunnelFor = (test: TestProxy) =>
+  secureTunnel(test.proxy.port, `${HOST}:443`, HOST, state.ca.certPem, test.token);
 
-const twoRequests = async (test: TestProxy, first: string, second: string) => {
-  const one = await tunnelFor(test, first);
+const twoRequests = async (test: TestProxy) => {
+  const one = await tunnelFor(test);
 
   await exchange(one, "/one");
 
-  const two = first === second ? one : await tunnelFor(test, second);
-
-  await exchange(two, "/two");
+  await exchange(one, "/two");
 
   one.destroy();
-
-  two.destroy();
 };
 
 describe("upstream connections of a terminated host", () => {
   it("reuses one upstream connection for two requests on one client connection", async () => {
-    await twoRequests(await proxyWith(), REPO_A, REPO_A);
+    await twoRequests(await proxyWith());
 
     expect(state.connections).toBe(1);
   });
 
-  it("never shares an upstream connection between two repositories", async () => {
-    await twoRequests(await proxyWith(), REPO_A, REPO_B);
-
-    expect(state.connections).toBe(2);
-  });
-
   it("reuses the parent tunnel within one repository", async () => {
-    await twoRequests(await proxyWith(viaParent()), REPO_A, REPO_A);
+    await twoRequests(await proxyWith(viaParent()));
 
     expect([state.parentConnects, state.connections]).toEqual([1, 1]);
-  });
-
-  it("never shares a parent tunnel between two repositories", async () => {
-    await twoRequests(await proxyWith(viaParent()), REPO_A, REPO_B);
-
-    expect([state.parentConnects, state.connections]).toEqual([2, 2]);
   });
 });

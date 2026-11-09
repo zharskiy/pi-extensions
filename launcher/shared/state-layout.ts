@@ -10,38 +10,34 @@ export const GUEST_PATHS = {
   trustPem: "/etc/pi-sandbox/ca.pem",
 } as const;
 
-const proxyInstanceFiles = (stateDir: string, policyHash: string) => {
-  const directory = join(stateDir, "proxy", policyHash);
-  const dynamic = join(directory, "dynamic.json");
+const GIT_COPY_NAME = 16;
 
-  return {
-    directory,
-    record: join(directory, "proxy.json"),
-    config: join(directory, "proxy-config.json"),
-    token: join(directory, "proxy-token"),
-    port: join(directory, "proxy-port"),
-    accessLog: join(directory, "proxy-access.log"),
-    proxyLog: join(directory, "proxy.log"),
-    lock: join(directory, "lock"),
-    dynamic,
-    dynamicLock: `${dynamic}.lock`,
-    tokensDir: join(directory, "tokens"),
-    repoToken: (repoHash: string) => join(directory, "tokens", repoHash),
-  };
-};
+const repoProxyFiles = (directory: string) => ({
+  directory,
+  record: join(directory, "proxy.json"),
+  token: join(directory, "token"),
+  log: join(directory, "proxy.log"),
+  accessLog: join(directory, "access.log"),
+});
 
 const repoFiles = (stateDir: string, repoHash: string) => {
   const directory = join(stateDir, "repos", repoHash);
+  const git = join(directory, "git");
 
   return {
     directory,
+    record: join(directory, "repo.json"),
     launches: join(directory, "launches"),
     lock: join(directory, "lock"),
+    containerLock: join(directory, "container.lock"),
     render: join(directory, "render"),
     sync: join(directory, "sync"),
-    gitSnapshots: join(directory, "git", "snapshots"),
-    gitBaseline: join(directory, "git", "baseline.json"),
-    wanted: join(directory, "wanted.json"),
+    git,
+    gitCopy: (path: string) => join(git, sha256Hex(path).slice(0, GIT_COPY_NAME)),
+    gitBaseline: join(git, "baseline.json"),
+    pins: join(directory, "pins.json"),
+    created: join(directory, "created.json"),
+    proxy: repoProxyFiles(join(directory, "proxy")),
   };
 };
 
@@ -62,8 +58,7 @@ export const stateLayout = (stateDir: string) => ({
   extraPem: join(stateDir, "ca", "extra.pem"),
   trustPem: join(stateDir, "ca", "trust.pem"),
   imageRecord: join(stateDir, "image.json"),
-  proxyRoot: join(stateDir, "proxy"),
-  proxyInstance: (policyHash: string) => proxyInstanceFiles(stateDir, policyHash),
+  gcRecord: join(stateDir, "gc.json"),
 });
 
 export const ensureSalt = (stateDir: string) => ensureRandomHexFile(stateLayout(stateDir).salt, SALT_BYTES);

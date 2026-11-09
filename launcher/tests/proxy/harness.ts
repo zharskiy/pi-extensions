@@ -8,7 +8,6 @@ import { join } from "node:path";
 import type { CredentialRule } from "../../config/index.ts";
 import type { AccessLogEntry } from "../../proxy/access-log.ts";
 import type { Dialer } from "../../proxy/dial.ts";
-import { repoProxyToken } from "../../proxy/dynamic.ts";
 import type { EgressPolicy } from "../../proxy/policy.ts";
 import { createProxyRuntime, type ProxyRuntime } from "../../proxy/runtime.ts";
 import type { SecretResolver, SecretResult } from "../../proxy/secrets/index.ts";
@@ -16,9 +15,9 @@ import { type ProxyServer, startProxyServer } from "../../proxy/server.ts";
 import { type LauncherCa, openLauncherCa } from "../../proxy/tls-ca.ts";
 import { createProcessRunner } from "../../shared/index.ts";
 
-export const POLICY_HASH = "a".repeat(64);
+const TEST_REPO = "1".repeat(64);
 
-export const CONTROL_TOKEN = "c".repeat(64);
+const TEST_TOKEN = "c".repeat(64);
 
 export const resolveTo =
   (addresses: Record<string, string>) =>
@@ -91,12 +90,13 @@ export interface TestProxyOptions {
   policy: EgressPolicy;
   ca?: LauncherCa;
   rules?: CredentialRule[];
+  derivedHosts?: string[];
+  repoHash?: string;
   grantsEnabled?: boolean;
   resolver?: SecretResolver;
   privateHosts?: string[];
   ports?: () => Record<string, number>;
   dial?: Dialer;
-  onControl?: Parameters<typeof startProxyServer>[0]["onControl"];
   denialPages?: Parameters<typeof startProxyServer>[0]["denialPages"];
 }
 
@@ -104,22 +104,25 @@ export interface TestProxy {
   proxy: ProxyServer;
   log: AccessLogEntry[];
   runtime: ProxyRuntime;
-  tokenOf(repoHash: string): Promise<string>;
+  repoHash: string;
+  token: string;
 }
 
 export const startTestProxy = async (options: TestProxyOptions): Promise<TestProxy> => {
   const log: AccessLogEntry[] = [];
+  const repoHash = options.repoHash ?? TEST_REPO;
   const runtime = createProxyRuntime({
     stateDir: options.stateDir,
-    policyHash: POLICY_HASH,
-    staticRules: options.rules ?? [],
+    repoHash,
+    rules: options.rules ?? [],
+    derivedHosts: options.derivedHosts ?? [],
     grantsEnabled: options.grantsEnabled ?? true,
   });
   const proxy = await startProxyServer({
     listen: { host: "127.0.0.1", port: 0 },
     policy: options.policy,
-    policyHash: POLICY_HASH,
-    controlToken: CONTROL_TOKEN,
+    repoHash,
+    token: TEST_TOKEN,
     runtime,
     resolver: options.resolver ?? fakeResolver({}).resolver,
     privateHosts: options.privateHosts,
@@ -128,16 +131,10 @@ export const startTestProxy = async (options: TestProxyOptions): Promise<TestPro
     dial: options.dial ?? mappedDial(options.ports ?? (() => ({}))),
     upstreamCa: options.ca?.certPem,
     helloTimeoutMs: 500,
-    onControl: options.onControl,
     denialPages: options.denialPages,
   });
 
-  return {
-    proxy,
-    log,
-    runtime,
-    tokenOf: (repoHash) => repoProxyToken(options.stateDir, POLICY_HASH, repoHash),
-  };
+  return { proxy, log, runtime, repoHash, token: TEST_TOKEN };
 };
 
 export const waitFor = async <T>(find: () => T | undefined, attempts = 100): Promise<T> => {

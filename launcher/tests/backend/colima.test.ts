@@ -19,28 +19,21 @@ const IMAGE = "example.test/pi-sandbox:1";
 
 const DIGEST = `sha256:${"c".repeat(64)}`;
 
-const POLICY = "a".repeat(64);
-
-const OTHER_POLICY = "b".repeat(64);
-
-const RELAY = `pi-sandbox-relay-${POLICY.slice(0, 8)}`;
-
 const REPO = "e".repeat(64);
+
+const RELAY = `pi-sandbox-relay-${REPO.slice(0, 12)}`;
+
+const ALIAS_ADDRESS = "pi-sandbox-proxy:3128";
 
 const REPO_NETWORK = `pi-sandbox-${REPO.slice(0, 12)}`;
 
 interface RouteOptions {
-  policy?: string;
   image?: string;
   repo?: string;
 }
 
 const routeOn = (backend: Backend, hostPort: number, options: RouteOptions = {}) =>
-  backend.prepareProxyRoute({
-    hostPort,
-    repoHash: options.repo ?? REPO,
-    relay: { policyHash: options.policy ?? POLICY, imageId: options.image ?? IMAGE },
-  });
+  backend.prepareProxyRoute({ hostPort, repoHash: options.repo ?? REPO, imageId: options.image ?? IMAGE });
 
 const cleanups: Array<() => Promise<unknown>> = [];
 
@@ -154,7 +147,7 @@ describe("colima adapter on the colima VM", () => {
 
     expect(await routeOn(backend, 3128)).toEqual({
       network: { kind: "internal", name: REPO_NETWORK },
-      address: "10.89.0.2:3128",
+      address: ALIAS_ADDRESS,
     });
     expect(relayBody(engine)?.Cmd).toEqual(["TCP-LISTEN:3128,fork,reuseaddr", "TCP:host.lima.internal:3128"]);
   });
@@ -216,12 +209,13 @@ describe("colima container translation", () => {
           ],
           NetworkMode: "pi-sandbox-net",
           ReadonlyRootfs: true,
+          AutoRemove: true,
         },
       },
     });
   });
 
-  it("maps engine states to summary states and passes the stop timeout", async () => {
+  it("maps engine states to summary states, passes the stop timeout and lets the engine remove a stopped container", async () => {
     const engine = await startEngine();
     const { backend, id } = await startedContainer(engine);
 
@@ -237,7 +231,14 @@ describe("colima container translation", () => {
 
     await backend.stopContainer(id, 10);
 
-    expect((await backend.findContainers({}))[0]?.state).toBe("stopped");
+    await backend.waitRemoved(id, 1000);
+
+    await backend.removeContainer(id);
+
+    expect(await backend.findContainers({})).toEqual([]);
+    expect(engine.requests.find((request) => request.path.endsWith("/wait"))?.query.get("condition")).toBe(
+      "removed",
+    );
     expect(engine.requests.find((request) => request.path.endsWith("/stop"))?.query.get("t")).toBe("10");
   });
 
@@ -475,11 +476,13 @@ describe("colima exec", () => {
     expect(stderr.text()).toBe("done");
   });
 
-  it("refuses to exec in a stopped container", async () => {
+  it("refuses to exec in a container that is not running", async () => {
     const engine = await startEngine();
-    const { backend, id } = await startedContainer(engine);
+    const backend = backendFor(engine);
 
-    await backend.stopContainer(id);
+    await backend.pullImage(IMAGE);
+
+    const { id } = await backend.createContainer(baseSpec);
 
     await expect(
       backend.exec(
@@ -523,47 +526,35 @@ describe("colima egress relay", () => {
     return { engine, backend };
   };
 
-  it("creates a managed internal network and a running relay named after the policy", async () => {
+  it("creates a managed internal network and a running relay of the repository under the proxy alias", async () => {
     const { engine, backend } = await readyBackend();
-
-    await routeOn(backend, 3128);
-
+    const route = await routeOn(backend, 3128);
     const relay = relayOf(engine);
 
+    expect(route).toEqual({ network: { kind: "internal", name: REPO_NETWORK }, address: ALIAS_ADDRESS });
     expect(engine.networks.get(REPO_NETWORK)?.body).toEqual({
       Name: REPO_NETWORK,
       Driver: "bridge",
       Internal: true,
       Labels: { [LABELS.managed]: "true", [LABELS.repoHash]: REPO },
     });
-    expect(engine.networks.get(REPO_NETWORK)?.connected.map((entry) => entry.container)).toEqual([relay?.Id]);
+    expect(engine.networks.get(REPO_NETWORK)?.connected).toEqual([
+      expect.objectContaining({ container: relay?.Id, aliases: ["pi-sandbox-proxy"] }),
+    ]);
     expect(relay?.State).toBe("running");
-    expect(engine.createdBodies.find((entry) => entry.name === RELAY)?.body).toMatchObject({
+    expect(relayBody(engine)).toMatchObject({
       Image: IMAGE,
       Labels: {
         [LABELS.managed]: "true",
         [LABELS.relay]: "true",
+        [LABELS.repoHash]: REPO,
         [LABELS.relayPort]: "3128",
-        [LABELS.proxyPolicyHash]: POLICY,
-        [LABELS.relayImage]: IMAGE,
       },
-      HostConfig: { NetworkMode: "bridge" },
+      HostConfig: { NetworkMode: "bridge", AutoRemove: true },
     });
   });
 
-  it("routes to the address the network reports for the relay", async () => {
-    const { engine, backend } = await readyBackend();
-
-    await routeOn(backend, 3128);
-
-    const route = await routeOn(backend, 4000, { policy: OTHER_POLICY });
-
-    expect(route.address).toBe("10.89.0.3:3128");
-    expect(relayOf(engine, `pi-sandbox-relay-${OTHER_POLICY.slice(0, 8)}`)?.State).toBe("running");
-    expect(relayOf(engine)?.State).toBe("running");
-  });
-
-  it("reuses a running relay for the same host port and policy", async () => {
+  it("reuses a running relay for the same host port", async () => {
     const { engine, backend } = await readyBackend();
 
     await routeOn(backend, 3128);
@@ -576,95 +567,46 @@ describe("colima egress relay", () => {
     expect(await backend.findContainers({ [LABELS.relay]: "true" })).toHaveLength(1);
   });
 
-  it("recreates the relay when the host port changes", async () => {
+  it("recreates the relay under the same name and alias when the proxy port changes, while a sandbox runs", async () => {
     const { engine, backend } = await readyBackend();
-
-    await routeOn(backend, 3128);
-
-    const first = relayOf(engine)?.Id;
-
-    await routeOn(backend, 4000);
-
-    expect(relayOf(engine)?.Id).not.toBe(first);
-    expect(relayOf(engine)?.State).toBe("running");
-    expect(relayBody(engine)?.Cmd).toEqual(["TCP-LISTEN:3128,fork,reuseaddr", "TCP:host.lima.internal:4000"]);
-    expect(await backend.findContainers({ [LABELS.relayPort]: "4000" })).toHaveLength(1);
-  });
-
-  it("keeps the relay, with a notice, when a port change would cut another repository's running sandbox", async () => {
-    const { engine, backend } = await readyBackend();
-    const repoA = "a".repeat(64);
-    const routeA = await routeOn(backend, 3128, { repo: repoA });
-    const sandboxA = await backend.createContainer({
-      ...baseSpec,
-      name: "agent-a",
-      labels: { [LABELS.managed]: "true", [LABELS.repoHash]: repoA },
-      network: routeA.network,
-    });
-
-    await backend.startContainer(sandboxA.id);
-
-    const first = relayOf(engine)?.Id;
-    const routeB = await routeOn(backend, 4000, { repo: "b".repeat(64) });
-
-    expect(relayOf(engine)?.Id).toBe(first);
-    expect(relayBody(engine)?.Cmd).toEqual(["TCP-LISTEN:3128,fork,reuseaddr", "TCP:host.lima.internal:3128"]);
-    expect(routeB.notices).toEqual([
-      `the egress relay ${RELAY} still forwards to proxy port 3128, not 4000; it is kept because sandboxes of other repositories use it, so egress may fail until they exit and it is replaced`,
-    ]);
-  });
-
-  it("recreates the relay on a port change when only this repository's sandbox uses it", async () => {
-    const { engine, backend } = await readyBackend();
-    const repo = "a".repeat(64);
-    const route = await routeOn(backend, 3128, { repo });
+    const route = await routeOn(backend, 3128);
     const sandbox = await backend.createContainer({
       ...baseSpec,
-      name: "agent-a",
-      labels: { [LABELS.managed]: "true", [LABELS.repoHash]: repo },
+      name: "agent",
+      labels: { [LABELS.managed]: "true", [LABELS.repoHash]: REPO },
       network: route.network,
     });
 
     await backend.startContainer(sandbox.id);
 
     const first = relayOf(engine)?.Id;
-    const again = await routeOn(backend, 4000, { repo });
+    const again = await routeOn(backend, 4000);
 
     expect(relayOf(engine)?.Id).not.toBe(first);
+    expect(again).toEqual(route);
     expect(relayBody(engine)?.Cmd).toEqual(["TCP-LISTEN:3128,fork,reuseaddr", "TCP:host.lima.internal:4000"]);
-    expect(again.notices).toBeUndefined();
+    expect(engine.networks.get(REPO_NETWORK)?.connected).toContainEqual(
+      expect.objectContaining({ container: relayOf(engine)?.Id, aliases: ["pi-sandbox-proxy"] }),
+    );
+    expect(engine.containers.get(sandbox.id)?.State).toBe("running");
   });
 
-  it("starts a stopped relay whose labels match instead of recreating it", async () => {
+  it("gives each repository its own network and relay", async () => {
     const { engine, backend } = await readyBackend();
+    const repoA = "a".repeat(64);
+    const repoB = "b".repeat(64);
 
-    await routeOn(backend, 3128);
+    await routeOn(backend, 3128, { repo: repoA });
 
-    const first = relayOf(engine)?.Id ?? "";
+    await routeOn(backend, 3128, { repo: repoB });
 
-    await backend.stopContainer(first);
+    const relayA = relayOf(engine, `pi-sandbox-relay-${"a".repeat(12)}`)?.Id;
+    const relayB = relayOf(engine, `pi-sandbox-relay-${"b".repeat(12)}`)?.Id;
+    const members = (name: string) => engine.networks.get(name)?.connected.map((entry) => entry.container);
 
-    const route = await routeOn(backend, 3128);
-
-    expect(relayOf(engine)?.Id).toBe(first);
-    expect(relayOf(engine)?.State).toBe("running");
-    expect(route.address).toBe("10.89.0.2:3128");
-    expect(engine.createdBodies.filter((entry) => entry.name === RELAY)).toHaveLength(1);
-  });
-
-  it("reuses a relay whose port and policy match even when the image changes", async () => {
-    const { engine, backend } = await readyBackend();
-    const pinned = await backend.pullImage(IMAGE, DIGEST);
-
-    await routeOn(backend, 3128);
-
-    const first = relayOf(engine)?.Id;
-
-    await routeOn(backend, 3128, { image: pinned.id });
-
-    expect(relayOf(engine)?.Id).toBe(first);
-    expect(engine.createdBodies.filter((entry) => entry.name === RELAY)).toHaveLength(1);
-    expect(relayBody(engine)?.Labels?.[LABELS.relayImage]).toBe(IMAGE);
+    expect(relayA).not.toBe(relayB);
+    expect(members(`pi-sandbox-${"a".repeat(12)}`)).toEqual([relayA]);
+    expect(members(`pi-sandbox-${"b".repeat(12)}`)).toEqual([relayB]);
   });
 
   it("creates no relay when the repository's network is refused", async () => {
@@ -676,78 +618,36 @@ describe("colima egress relay", () => {
     expect(relayOf(engine)).toBeUndefined();
   });
 
-  it("gives each repository its own internal network with the relay on it", async () => {
+  it("a stopped relay is gone, and the next route creates a fresh one", async () => {
     const { engine, backend } = await readyBackend();
-    const repoA = "a".repeat(64);
-    const repoB = "b".repeat(64);
-    const routeA = await routeOn(backend, 3128, { repo: repoA });
-    const routeB = await routeOn(backend, 3128, { repo: repoB });
-    const relayId = relayOf(engine)?.Id;
-    const members = (name: string) => engine.networks.get(name)?.connected.map((entry) => entry.container);
 
-    expect(routeA.network).toEqual({ kind: "internal", name: `pi-sandbox-${"a".repeat(12)}` });
-    expect(routeB.network).toEqual({ kind: "internal", name: `pi-sandbox-${"b".repeat(12)}` });
-    expect(engine.networks.get(`pi-sandbox-${"a".repeat(12)}`)?.body).toEqual({
-      Name: `pi-sandbox-${"a".repeat(12)}`,
-      Driver: "bridge",
-      Internal: true,
-      Labels: { [LABELS.managed]: "true", [LABELS.repoHash]: repoA },
+    await routeOn(backend, 3128);
+
+    await backend.stopContainer(relayOf(engine)?.Id ?? "");
+
+    expect(relayOf(engine)).toBeUndefined();
+
+    await routeOn(backend, 3128);
+
+    expect(relayOf(engine)?.State).toBe("running");
+  });
+
+  it("removes the repository network with its relay, and keeps it while a sandbox is attached", async () => {
+    const { engine, backend } = await readyBackend();
+    const route = await routeOn(backend, 3128);
+    const sandbox = await backend.createContainer({
+      ...baseSpec,
+      name: "agent",
+      labels: { [LABELS.managed]: "true", [LABELS.repoHash]: REPO },
+      network: route.network,
     });
-    expect(members(`pi-sandbox-${"a".repeat(12)}`)).toEqual([relayId]);
-    expect(members(`pi-sandbox-${"b".repeat(12)}`)).toEqual([relayId]);
-    expect(engine.networks.has("pi-sandbox")).toBe(false);
 
-    const again = await routeOn(backend, 3128, { repo: repoA });
+    expect(await backend.removeRepoNetwork(REPO)).toBe(false);
 
-    expect(again.address).toBe(routeA.address);
-    expect(members(`pi-sandbox-${"a".repeat(12)}`)).toEqual([relayId]);
-  });
+    await backend.removeContainer(sandbox.id);
 
-  it("keeps the relay running on other repositories' networks when one repository's network goes", async () => {
-    const { engine, backend } = await readyBackend();
-    const repoA = "a".repeat(64);
-    const repoB = "b".repeat(64);
-    const routeA = await routeOn(backend, 3128, { repo: repoA });
-    const routeB = await routeOn(backend, 3128, { repo: repoB });
-    const create = (name: string, repo: string, network: typeof routeA.network) =>
-      backend.createContainer({
-        ...baseSpec,
-        name,
-        labels: { [LABELS.managed]: "true", [LABELS.repoHash]: repo },
-        network,
-      });
-    const only = await create("agent-a", repoA, routeA.network);
-    const other = await create("agent-b", repoB, routeB.network);
-
-    await backend.removeContainer(only.id);
-
-    expect(engine.networks.has(`pi-sandbox-${"a".repeat(12)}`)).toBe(false);
-    expect(
-      engine.networks.get(`pi-sandbox-${"b".repeat(12)}`)?.connected.map((entry) => entry.container),
-    ).toEqual([relayOf(engine)?.Id, other.id]);
-    expect(relayOf(engine)?.State).toBe("running");
-  });
-
-  it("prunes managed networks of repositories outside the keep set that hold only relays", async () => {
-    const { engine, backend } = await readyBackend();
-    const repoA = "a".repeat(64);
-    const repoB = "b".repeat(64);
-    const repoC = "c".repeat(64);
-
-    await routeOn(backend, 3128, { repo: repoA });
-
-    await routeOn(backend, 3128, { repo: repoB });
-
-    const routeC = await routeOn(backend, 3128, { repo: repoC });
-
-    await backend.createContainer({ ...baseSpec, name: "agent-c", network: routeC.network });
-
-    expect(await backend.pruneNetworks([repoA])).toEqual([`pi-sandbox-${"b".repeat(12)}`]);
-    expect([...engine.networks.keys()].sort()).toEqual([
-      `pi-sandbox-${"a".repeat(12)}`,
-      `pi-sandbox-${"c".repeat(12)}`,
-    ]);
-    expect(relayOf(engine)?.State).toBe("running");
+    expect(await backend.removeRepoNetwork(REPO)).toBe(true);
+    expect(engine.networks.has(REPO_NETWORK)).toBe(false);
   });
 
   it("creates the relay from a pinned image pulled by digest, which has no tag", async () => {
@@ -758,7 +658,7 @@ describe("colima egress relay", () => {
     expect(engine.images.has(IMAGE)).toBe(false);
     expect(await routeOn(backend, 3128, { image: pinned.id })).toEqual({
       network: { kind: "internal", name: REPO_NETWORK },
-      address: "10.89.0.2:3128",
+      address: ALIAS_ADDRESS,
     });
     expect(relayBody(engine)).toMatchObject({ Image: pinned.id });
     expect(relayOf(engine)?.State).toBe("running");

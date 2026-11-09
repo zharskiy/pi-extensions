@@ -5,13 +5,11 @@ import { createColimaBackend } from "../backend/index.ts";
 import type { HostTerminal } from "../container/index.ts";
 import { locateBundledPi } from "../hostpi/index.ts";
 import {
-  ensureProxyRunning,
+  ensureRepoProxy,
   ensureTrustBundle,
   readDenials,
-  readProxyInstances,
-  removeProxyInstance,
-  sendProxyControl,
-  stopProxy,
+  readRepoProxy,
+  stopRepoProxy,
 } from "../proxy/index.ts";
 import { createProcessRunner } from "../shared/index.ts";
 import { type CliDeps, pathsOf } from "./deps.ts";
@@ -81,11 +79,9 @@ const realDeps = (): CliDeps => {
     machine: { cpus: cpus().length, memoryGiB: totalmem() / GIB },
     backend: () => createColimaBackend({ home, stateDir, runner }),
     proxy: {
-      ensure: (request) => ensureProxyRunning({ ...request, runner }),
-      list: readProxyInstances,
-      stop: stopProxy,
-      remove: removeProxyInstance,
-      control: sendProxyControl,
+      ensure: (request) => ensureRepoProxy({ ...request, runner }),
+      read: readRepoProxy,
+      stop: stopRepoProxy,
       denials: readDenials,
       trust: (stateDir, sources) =>
         ensureTrustBundle({ stateDir, runner, platform: process.platform, sources }),

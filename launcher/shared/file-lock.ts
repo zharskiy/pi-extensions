@@ -3,6 +3,7 @@ import { link, mkdir, open, rename, rm, stat, utimes, writeFile } from "node:fs/
 import { dirname } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { errorMessage, LauncherError } from "./errors.ts";
+import { bootTime, HEARTBEAT_MS, isLive } from "./liveness.ts";
 
 export interface FileLockOptions {
   staleMs?: number;
@@ -18,6 +19,7 @@ interface LockSettings {
 
 interface LockSnapshot {
   owner: number;
+  boot: number;
   mark: string;
   mtimeMs: number;
 }
@@ -33,16 +35,6 @@ const DIRECTORY_REFRESH_MS = 1_000;
 const PRIVATE_MODE = 0o600;
 
 const isCode = (error: unknown, code: string) => (error as NodeJS.ErrnoException).code === code;
-
-export const isProcessAlive = (pid: number) => {
-  try {
-    process.kill(pid, 0);
-
-    return true;
-  } catch (error) {
-    return isCode(error, "EPERM");
-  }
-};
 
 const settingsOf = (options: FileLockOptions, byAge: boolean): LockSettings => ({
   staleMs: byAge ? (options.staleMs ?? DEFAULT_STALE_MS) : undefined,
@@ -64,14 +56,16 @@ const snapshotOf = async (path: string): Promise<LockSnapshot | undefined> => {
   const text = (await handle?.readFile("utf8").catch(() => "")) ?? "";
   const mark = info.isFile() ? `${info.ino}:${text}` : `${info.ino}:${info.birthtimeMs}`;
 
+  const [owner = "", boot = ""] = text.split(" ");
+
   await handle?.close();
 
-  return { owner: Number.parseInt(text, 10), mark, mtimeMs: info.mtimeMs };
+  return { owner: Number.parseInt(owner, 10), boot: Number(boot), mark, mtimeMs: info.mtimeMs };
 };
 
 const isHeld = (snapshot: LockSnapshot, staleMs: number | undefined) =>
   staleMs === undefined
-    ? Number.isInteger(snapshot.owner) && snapshot.owner > 0 && isProcessAlive(snapshot.owner)
+    ? isLive({ pid: snapshot.owner, boot: snapshot.boot }, snapshot.mtimeMs)
     : Date.now() - snapshot.mtimeMs <= staleMs;
 
 const sameLock = (left: LockSnapshot | undefined, right: LockSnapshot) =>
@@ -181,7 +175,7 @@ const failure = (path: string, error: unknown) => new LauncherError(`${path}: ${
 const createPidLock: Attempt = async (path) => {
   const draft = sibling(path, "draft");
 
-  await writeFile(draft, `${process.pid}:${randomBytes(8).toString("hex")}`, {
+  await writeFile(draft, `${process.pid} ${bootTime()} ${randomBytes(8).toString("hex")}`, {
     mode: PRIVATE_MODE,
     flag: "wx",
   });
@@ -221,24 +215,28 @@ const release = async (path: string, mark: string) => {
   }
 };
 
+interface Holding {
+  attempt: Attempt;
+  byAge: boolean;
+  refresh: number;
+}
+
 const holding = async <T>(
   path: string,
-  attempt: Attempt,
+  kind: Holding,
   options: FileLockOptions,
   action: () => Promise<T>,
-  refresh?: number,
 ) => {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
 
-  const mark = await acquire(path, attempt, settingsOf(options, refresh !== undefined));
-  const refresher =
-    refresh === undefined
-      ? undefined
-      : setInterval(() => {
-          const now = new Date();
+  const mark = await acquire(path, kind.attempt, settingsOf(options, kind.byAge));
+  const refresher = setInterval(() => {
+    const now = new Date();
 
-          void utimes(path, now, now).catch(() => undefined);
-        }, refresh);
+    void utimes(path, now, now).catch(() => undefined);
+  }, kind.refresh);
+
+  refresher.unref();
 
   try {
     return await action();
@@ -250,7 +248,7 @@ const holding = async <T>(
 };
 
 export const withFileLock = <T>(path: string, action: () => Promise<T>, options: FileLockOptions = {}) =>
-  holding(path, createPidLock, options, action);
+  holding(path, { attempt: createPidLock, byAge: false, refresh: HEARTBEAT_MS }, options, action);
 
 export const withFileLockIfFree = async <T>(
   path: string,
@@ -282,8 +280,14 @@ export const withFileLockIfFree = async <T>(
 export const withDirectoryLock = <T>(path: string, action: () => Promise<T>, options: FileLockOptions = {}) =>
   holding(
     path,
-    createDirectoryLock,
+    {
+      attempt: createDirectoryLock,
+      byAge: true,
+      refresh: Math.max(
+        1,
+        Math.min(DIRECTORY_REFRESH_MS, Math.floor((options.staleMs ?? DEFAULT_STALE_MS) / 4)),
+      ),
+    },
     options,
     action,
-    Math.max(1, Math.min(DIRECTORY_REFRESH_MS, Math.floor((options.staleMs ?? DEFAULT_STALE_MS) / 4))),
   );

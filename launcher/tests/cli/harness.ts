@@ -1,5 +1,5 @@
 import { mkdirSync, writeFileSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough, Writable } from "node:stream";
@@ -7,9 +7,10 @@ import { afterEach } from "vitest";
 import type { Backend, ExecSpec } from "../../backend/index.ts";
 import type { CliDeps } from "../../cli/index.ts";
 import { testedPiVersion } from "../../cli/versions.ts";
+import { newLaunchId, registerLaunch } from "../../grants/index.ts";
 import type { BundledPi } from "../../hostpi/index.ts";
-import type { ControlMessage, DenialRecord, ProxyInstance } from "../../proxy/index.ts";
-import { LauncherError, type RunResult, sha256Hex, stateLayout } from "../../shared/index.ts";
+import type { DenialRecord, RepoProxy, RepoProxyInput } from "../../proxy/index.ts";
+import { bootTime, LauncherError, type RunResult, sha256Hex, stateLayout } from "../../shared/index.ts";
 import { createFakeBackend, type FakeExec } from "../support/fake-backend.ts";
 import { createFakeRunner, type FakeResponder } from "../support/fake-runner.ts";
 
@@ -33,6 +34,8 @@ export interface HarnessOptions {
 
 const roots: string[] = [];
 
+const heldLaunches: Array<() => void> = [];
+
 export const unreachable = (backend: Backend): Backend => ({
   ...backend,
   detect: async () => ({ available: false, reason: "socket missing" }),
@@ -52,6 +55,10 @@ const unreachableBackend = () => unreachable(createFakeBackend().backend);
 const removeRoot = (root: string) => rm(root, { recursive: true, force: true });
 
 afterEach(async () => {
+  heldLaunches.splice(0).forEach((stop) => {
+    stop();
+  });
+
   await Promise.all(roots.splice(0).map(removeRoot));
 });
 
@@ -68,7 +75,7 @@ const collector = (): Collected => {
   return { stream, text: () => chunks.join("") };
 };
 
-const RUNNING_PROXY: ProxyInstance = { pid: 4242, port: 3128, policyHash: "policy", token: "token-1" };
+const RUNNING_PROXY: RepoProxy = { pid: 4242, boot: 0, port: 3128, inputHash: "input" };
 
 const FAKE_PI_DIR = "/fake/node_modules/@earendil-works/pi-coding-agent";
 
@@ -93,11 +100,6 @@ interface HarnessPaths {
   repoRoot: string;
 }
 
-interface DynamicSection {
-  rules: unknown[];
-  derivedHosts: string[];
-}
-
 export const isPiSession = (spec: ExecSpec) => spec.env.PI_SANDBOX_LAUNCH_ID !== undefined;
 
 export const piSessions = (fake: { execs: FakeExec[] }) =>
@@ -108,19 +110,16 @@ export const piSession = (fake: { execs: FakeExec[] }) => piSessions(fake).at(-1
 export const renderDirOf = (harness: HarnessPaths) =>
   stateLayout(harness.stateDir).repo(sha256Hex(harness.repoRoot)).render;
 
-export const repoTokenOf = (harness: HarnessPaths, policyHash = RUNNING_PROXY.policyHash) =>
-  readFile(
-    stateLayout(harness.stateDir).proxyInstance(policyHash).repoToken(sha256Hex(harness.repoRoot)),
-    "utf8",
-  );
+export const holdLaunch = async (harness: HarnessPaths) => {
+  const registered = await registerLaunch(harness.stateDir, {
+    launchId: newLaunchId(),
+    pid: process.pid,
+    boot: bootTime(),
+    repoHash: sha256Hex(harness.repoRoot),
+    startedAt: 1,
+  });
 
-export const repoDynamicOf = async (harness: HarnessPaths, policyHash = RUNNING_PROXY.policyHash) => {
-  const files = stateLayout(harness.stateDir).proxyInstance(policyHash);
-  const stored = JSON.parse(await readFile(files.dynamic, "utf8")) as {
-    repos: Record<string, DynamicSection>;
-  };
-
-  return stored.repos[sha256Hex(await repoTokenOf(harness, policyHash))];
+  heldLaunches.push(registered.stopHeartbeat);
 };
 
 interface ManagedPiOptions {
@@ -272,9 +271,8 @@ export const createHarness = async (options: HarnessOptions = {}) => {
     return call.file === "git" ? gitAnswer(repoRoot, call.args) : undefined;
   });
   const terminalOut = new PassThrough();
-  const stoppedProxies: Array<string | undefined> = [];
-  const removedProxies: string[] = [];
-  const controlMessages: ControlMessage[] = [];
+  const stoppedProxies: string[] = [];
+  const proxyInputs: RepoProxyInput[] = [];
   const questions: string[] = [];
   const bundledPi =
     options.bundledPi === null
@@ -312,22 +310,16 @@ export const createHarness = async (options: HarnessOptions = {}) => {
     machine: options.machine ?? { cpus: 8, memoryGiB: 32 },
     backend: options.backend ?? unreachableBackend,
     proxy: {
-      ensure: async () => RUNNING_PROXY,
-      list: async () => [],
-      stop: async (_stateDir, policyHash) => {
-        stoppedProxies.push(policyHash);
+      ensure: async (request) => {
+        proxyInputs.push(request.input);
 
-        return 1;
+        return { proxy: RUNNING_PROXY, notices: [] };
       },
-      remove: async (_stateDir, policyHash) => {
-        removedProxies.push(policyHash);
+      read: async () => undefined,
+      stop: async (_stateDir, repoHash) => {
+        stoppedProxies.push(repoHash);
 
-        return true;
-      },
-      control: async (_instance, message) => {
-        controlMessages.push(message);
-
-        return { ok: true };
+        return false;
       },
       denials: async () => options.denials ?? [],
       trust: async () => ({
@@ -365,8 +357,7 @@ export const createHarness = async (options: HarnessOptions = {}) => {
     deps,
     calls: fake.calls,
     stoppedProxies,
-    removedProxies,
-    controlMessages,
+    proxyInputs,
     questions,
     stdout: stdout.text,
     stderr: stderr.text,

@@ -77,8 +77,6 @@ export const listNetworks = async () => {
 
 export const removeContainer = (id: string) => call("DELETE", `/containers/${id}?force=1&v=1`);
 
-export const startContainer = (id: string) => call("POST", `/containers/${id}/start`);
-
 export const removeVolume = (name: string) => call("DELETE", `/volumes/${encodeURIComponent(name)}?force=1`);
 
 export const removeNetwork = (id: string) => call("DELETE", `/networks/${id}`);

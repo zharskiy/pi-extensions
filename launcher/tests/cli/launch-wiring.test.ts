@@ -3,11 +3,11 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { ProxyRouteRequest } from "../../backend/index.ts";
 import { run } from "../../cli/index.ts";
-import { type DenialRecord, PARENT_PROXY_SECRET_KEY } from "../../proxy/index.ts";
+import type { DenialRecord } from "../../proxy/index.ts";
 import { sha256Hex } from "../../shared/index.ts";
 import { expectNoLeak } from "../support/expect-no-leak.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
-import { createHarness, renderDirOf, repoDynamicOf, repoTokenOf } from "./harness.ts";
+import { createHarness, renderDirOf } from "./harness.ts";
 
 const REAL_KEY = "real-secret-value-1234567890";
 
@@ -23,19 +23,27 @@ const denial = (host: string, port: number): DenialRecord => ({
 });
 
 describe("pi launch wiring", () => {
-  it("gives the container its repository token, never the instance token, and records it for the proxy", async () => {
+  it("gives the container and its proxy the same repository token and labels the container with its hash", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
 
     await run([], harness.deps);
 
-    const [container] = [...fake.containers.values()];
+    const [container] = fake.created;
     const url = new URL(container?.spec?.env.HTTPS_PROXY ?? "");
+    const [input] = harness.proxyInputs;
 
     expect(url.password).toMatch(/^[0-9a-f]{64}$/);
-    expect(url.password).not.toBe("token-1");
-    expect(await repoTokenOf(harness)).toBe(url.password);
-    expect(await repoDynamicOf(harness)).toEqual({ rules: [], derivedHosts: expect.any(Array) });
+    expect(url.hostname).toBe("pi-sandbox-proxy");
+    expect(input?.token).toBe(url.password);
+    expect(input).toMatchObject({
+      repoHash: sha256Hex(harness.repoRoot),
+      rules: [],
+      derivedHosts: expect.any(Array),
+    });
+    expect(container?.summary.labels["pi-sandbox.proxy-token-hash"]).toBe(
+      sha256Hex(url.password).slice(0, 16),
+    );
   });
 
   it("hands env secrets to the proxy, not to the container", async () => {
@@ -60,30 +68,16 @@ describe("pi launch wiring", () => {
     });
 
     expect(await run([], harness.deps)).toBe(0);
-    expect(harness.controlMessages).toEqual([
-      {
-        type: "env-secrets",
-        repoTokenHash: sha256Hex(await repoTokenOf(harness)),
-        secrets: { corp: REAL_KEY },
-      },
-    ]);
+    expect(harness.proxyInputs.map((input) => input.envSecrets)).toEqual([{ corp: REAL_KEY }]);
 
     await expectNoLeak(fake, renderDirOf(harness), [REAL_KEY]);
   });
 
-  it("hands the env parent proxy's credentials over control and starts the proxy without them", async () => {
+  it("hands the env parent proxy's credentials to the proxy input and its address without them", async () => {
     const fake = createFakeBackend({ registry: { "registry.example.test/pi-sandbox:1": PINNED } });
-    const requests: Array<{ env: NodeJS.ProcessEnv }> = [];
     const harness = await createHarness({
       backend: () => fake.backend,
       env: { HTTPS_PROXY: "http://corp:p%40ss@proxy.example.test:8080" },
-      proxy: {
-        ensure: async (request) => {
-          requests.push(request);
-
-          return { pid: 4242, port: 3128, policyHash: "policy", token: "token-1" };
-        },
-      },
     });
 
     await harness.writeJson(harness.userConfigFile, {
@@ -92,19 +86,12 @@ describe("pi launch wiring", () => {
 
     expect(await run([], harness.deps)).toBe(0);
 
-    expect(harness.controlMessages).toEqual([
-      {
-        type: "env-secrets",
-        repoTokenHash: sha256Hex(await repoTokenOf(harness)),
-        secrets: { [PARENT_PROXY_SECRET_KEY]: "corp:p@ss" },
-      },
+    expect(harness.proxyInputs.map((input) => input.parentAuth)).toEqual(["corp:p@ss"]);
+    expect(harness.proxyInputs.map((input) => input.parentEnv.HTTPS_PROXY)).toEqual([
+      "http://proxy.example.test:8080",
     ]);
-    expect(requests.map((request) => request.env.HTTPS_PROXY)).toEqual(["http://proxy.example.test:8080"]);
 
     await expectNoLeak(fake, renderDirOf(harness), ["p@ss", "p%40ss"]);
-
-    expect(await run([], harness.deps)).toBe(0);
-    expect(harness.controlMessages).toHaveLength(2);
   });
 
   it("renders host auth.json with placeholders into a read-only render mount", async () => {
@@ -117,7 +104,7 @@ describe("pi launch wiring", () => {
 
     await run([], harness.deps);
 
-    const [container] = [...fake.containers.values()];
+    const [container] = fake.created;
     const renderDir = renderDirOf(harness);
     const rendered = await readFile(join(renderDir, "auth.json"), "utf8");
 

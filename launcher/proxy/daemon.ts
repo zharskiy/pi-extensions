@@ -2,13 +2,15 @@ import { appendFile, mkdir, readFile, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { rootCertificates } from "node:tls";
 import { parseArgs } from "node:util";
-import type { SandboxConfig } from "../config/index.ts";
 import {
   createProcessRunner,
   errorMessage,
+  HEARTBEAT_MS,
+  heartbeat,
+  isJsonObject,
   LauncherError,
-  launcherPaths,
-  readJsonFile,
+  parseJsonObject,
+  processMark,
   readJsonObject,
   stateLayout,
   writeJsonFile,
@@ -16,43 +18,58 @@ import {
 import { createAccessLog } from "./access-log.ts";
 import { minimalEnv } from "./child-env.ts";
 import { createDialer } from "./dial.ts";
-import type { DaemonConfig, ProxyInstance } from "./files.ts";
+import type { DaemonInput, RepoProxy, RepoProxyInput } from "./files.ts";
+import { watchIdle } from "./idle.ts";
 import { parentRouteFor } from "./parent.ts";
-import { createRepoSecrets } from "./repo-secrets.ts";
 import { createProxyRuntime } from "./runtime.ts";
-import { createSecretResolver } from "./secrets/index.ts";
+import { createSecretResolver, PARENT_PROXY_SECRET_KEY } from "./secrets/index.ts";
 import { startProxyServer } from "./server.ts";
-import { proxyPolicyHash, proxySettings } from "./settings.ts";
+import { proxyPolicy } from "./settings.ts";
 import { openLauncherCa } from "./tls-ca.ts";
 
 const LISTEN_HOST = "127.0.0.1";
 
 const PRIVATE_MODE = 0o600;
 
+const REPO_HASH = /^[0-9a-f]{64}$/;
+
+const IDLE_CHECKS = 2;
+
 const parseDaemonArgs = () => {
   const { values } = parseArgs({
     options: {
-      hash: { type: "string" },
-      port: { type: "string" },
+      repo: { type: "string" },
       state: { type: "string" },
-      home: { type: "string" },
     },
   });
 
-  if (values.hash === undefined || !/^[0-9a-f]{64}$/.test(values.hash)) {
-    throw new LauncherError("--hash <policy hash> is required");
+  if (values.repo === undefined || !REPO_HASH.test(values.repo)) {
+    throw new LauncherError("--repo <repository hash> is required");
   }
 
-  return {
-    policyHash: values.hash,
-    port: Number(values.port ?? "0"),
-    stateDir: values.state ?? launcherPaths().stateDir,
-    home: values.home ?? homedir(),
-  };
+  if (values.state === undefined) {
+    throw new LauncherError("--state <state dir> is required");
+  }
+
+  return { repoHash: values.repo, stateDir: values.state };
 };
 
-const upstreamTrust = async (stateDir: string, hasExtraCa: boolean) => {
-  const extra = hasExtraCa ? await readFile(stateLayout(stateDir).extraPem, "utf8").catch(() => "") : "";
+type DaemonArgs = ReturnType<typeof parseDaemonArgs>;
+
+const readInput = async (repoHash: string): Promise<DaemonInput> => {
+  const text = Buffer.concat((await process.stdin.toArray()) as Buffer[]).toString("utf8");
+  const parsed = parseJsonObject(text);
+  const input = parsed?.input;
+
+  if (!isJsonObject(input) || typeof parsed?.inputHash !== "string" || input.repoHash !== repoHash) {
+    throw new LauncherError("the proxy input on stdin is missing or names another repository");
+  }
+
+  return { input: input as unknown as RepoProxyInput, inputHash: parsed.inputHash };
+};
+
+const upstreamTrust = async (stateDir: string, extraCa: boolean) => {
+  const extra = extraCa ? await readFile(stateLayout(stateDir).extraPem, "utf8").catch(() => "") : "";
 
   return extra.trim() === "" ? undefined : [...rootCertificates, extra];
 };
@@ -70,97 +87,112 @@ const reportFailure = async (log: string | undefined, error: unknown) => {
   process.exit(1);
 };
 
-const run = async (args: ReturnType<typeof parseDaemonArgs>) => {
-  const files = stateLayout(args.stateDir).proxyInstance(args.policyHash);
-  const daemonConfig = await readJsonFile<DaemonConfig<SandboxConfig>>(files.config);
+const envSecretsOf = (input: RepoProxyInput): ReadonlyMap<string, string> =>
+  new Map(
+    Object.entries({
+      ...input.envSecrets,
+      ...(input.parentAuth === undefined ? {} : { [PARENT_PROXY_SECRET_KEY]: input.parentAuth }),
+    }),
+  );
 
-  if (daemonConfig === undefined) {
-    throw new LauncherError(`${files.config}: not found`);
-  }
-
-  const { config, token } = daemonConfig;
-  const policyHash = proxyPolicyHash(config);
-
-  if (policyHash !== args.policyHash) {
-    throw new LauncherError(`${files.config}: policy hash does not match ${args.policyHash}`);
-  }
-
-  const settings = proxySettings(config);
-  const parentEnv = daemonConfig.parentEnv ?? {};
-  const runner = createProcessRunner({ baseEnv: { ...minimalEnv(process.env), ...parentEnv } });
+const run = async (args: DaemonArgs) => {
+  const files = stateLayout(args.stateDir).repo(args.repoHash).proxy;
+  const { input, inputHash } = await readInput(args.repoHash);
+  const childEnv = { ...minimalEnv(process.env), ...input.parentEnv };
+  const runner = createProcessRunner({ baseEnv: childEnv });
   const ca = await openLauncherCa({ stateDir: args.stateDir, runner });
-
-  const runtime = createProxyRuntime({
-    stateDir: args.stateDir,
-    policyHash,
-    staticRules: settings.rules,
-    grantsEnabled: settings.policy.grants === true,
-  });
-  const secrets = createRepoSecrets(runtime);
+  const envSecrets = envSecretsOf(input);
   const resolver = createSecretResolver({
     runner,
-    home: args.home,
+    home: homedir(),
     now: Date.now,
-    piCommand: daemonConfig.piCommand ?? [],
+    piCommand: input.piCommand,
     stateDir: args.stateDir,
-    hostAgentDir: daemonConfig.hostAgentDir,
-    envSecrets: secrets.secretsOf,
-    childEnv: { ...minimalEnv(process.env), ...parentEnv },
-    logFile: files.proxyLog,
+    hostAgentDir: input.hostAgentDir,
+    envSecrets: async () => envSecrets,
+    childEnv,
+    logFile: files.log,
   });
-  const log = createAccessLog(files.accessLog);
+  const log = createAccessLog(files.accessLog, input.accessLogLimit);
   const server = await startProxyServer({
-    listen: { host: LISTEN_HOST, port: args.port },
-    policy: settings.policy,
-    policyHash,
-    controlToken: token,
-    runtime,
+    listen: { host: LISTEN_HOST, port: 0 },
+    policy: proxyPolicy(input),
+    repoHash: input.repoHash,
+    token: input.token,
+    runtime: createProxyRuntime({
+      stateDir: args.stateDir,
+      repoHash: input.repoHash,
+      rules: input.rules,
+      derivedHosts: input.derivedHosts,
+      grantsEnabled: input.grants,
+    }),
     resolver,
-    privateHosts: settings.privateHosts,
+    privateHosts: input.privateHosts,
     ca,
     log: log.write,
-    dial: createDialer({ parent: parentRouteFor(settings.parentProxy, parentEnv, resolver) }),
-    upstreamCa: await upstreamTrust(args.stateDir, settings.extraCa.length > 0),
-    onControl: secrets.accept,
+    dial: createDialer({ parent: parentRouteFor(input.parent, input.parentEnv, resolver) }),
+    upstreamCa: await upstreamTrust(args.stateDir, input.extraCa),
   });
-  const record: ProxyInstance = {
-    policyHash,
-    port: server.port,
-    token,
-    pid: process.pid,
-  };
+  const record: RepoProxy = { ...processMark(), port: server.port, inputHash };
 
   await writeJsonFile(files.record, record, { mode: PRIVATE_MODE });
 
-  const shutdown = async () => {
-    await server.close();
+  const stopHeartbeat = heartbeat(files.record);
 
-    await log.close();
-
+  const removeRecord = async () => {
     const current = await readJsonObject(files.record);
 
     if (current?.pid === process.pid) {
       await rm(files.record, { force: true });
     }
+  };
+
+  const idle = watchIdle({
+    stateDir: args.stateDir,
+    repoHash: args.repoHash,
+    intervalMs: HEARTBEAT_MS,
+    emptyChecks: IDLE_CHECKS,
+    onIdle: async () => {
+      await resolver.close();
+
+      await removeRecord();
+    },
+  });
+
+  const finish = async () => {
+    idle.stop();
+
+    stopHeartbeat();
+
+    await server.close();
+
+    await log.close();
 
     process.exit(0);
   };
 
-  process.once("SIGTERM", () => void shutdown());
+  const terminate = async () => {
+    await removeRecord();
 
-  process.once("SIGINT", () => void shutdown());
+    await finish();
+  };
+
+  void idle.idle.then(finish);
+
+  process.once("SIGTERM", () => void terminate());
+
+  process.once("SIGINT", () => void terminate());
 };
 
 const startProxyDaemon = async () => {
   const args = await Promise.resolve()
     .then(parseDaemonArgs)
     .catch((error: unknown) => reportFailure(undefined, error));
-
-  const files = stateLayout(args.stateDir).proxyInstance(args.policyHash);
+  const files = stateLayout(args.stateDir).repo(args.repoHash).proxy;
 
   await mkdir(files.directory, { recursive: true, mode: 0o700 });
 
-  await run(args).catch((error: unknown) => reportFailure(files.proxyLog, error));
+  await run(args).catch((error: unknown) => reportFailure(files.log, error));
 };
 
 await startProxyDaemon();

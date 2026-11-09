@@ -1,30 +1,43 @@
-import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { endLaunch, liveLaunches, newLaunchId, registerLaunch } from "../../grants/index.ts";
-import { stateLayout } from "../../shared/index.ts";
+import { bootTime, stateLayout } from "../../shared/index.ts";
 
 const REPO = "1".repeat(64);
 
 const DEAD_PID = 999_999;
 
-const state = { stateDir: "" };
+const state = { stateDir: "", beats: [] as Array<() => void> };
 
 beforeEach(async () => {
   state.stateDir = await mkdtemp(join(tmpdir(), "pi-sandbox-launches-"));
 });
 
 afterEach(async () => {
+  state.beats.splice(0).forEach((stop) => {
+    stop();
+  });
+
   await rm(state.stateDir, { recursive: true, force: true });
 });
 
 const entry = (pid = process.pid, repoHash = REPO) => ({
   launchId: newLaunchId(),
   pid,
+  boot: bootTime(),
   repoHash,
   startedAt: 1,
 });
+
+const register = async (launch: ReturnType<typeof entry>) => {
+  const registered = await registerLaunch(state.stateDir, launch);
+
+  state.beats.push(registered.stopHeartbeat);
+
+  return registered.live;
+};
 
 describe("launches", () => {
   it("makes 16 hex launch ids", () => {
@@ -37,9 +50,9 @@ describe("launches", () => {
     const second = entry();
     const calls: string[] = [];
 
-    expect(await registerLaunch(state.stateDir, first)).toBe(1);
-    expect(await registerLaunch(state.stateDir, second)).toBe(2);
-    expect(await registerLaunch(state.stateDir, entry(process.pid, "2".repeat(64)))).toBe(1);
+    expect(await register(first)).toBe(1);
+    expect(await register(second)).toBe(2);
+    expect(await register(entry(process.pid, "2".repeat(64)))).toBe(1);
 
     expect(
       await endLaunch(state.stateDir, {
@@ -61,14 +74,14 @@ describe("launches", () => {
   it("ignores a session whose launcher pid is dead", async () => {
     const live = entry();
 
-    await registerLaunch(state.stateDir, entry(DEAD_PID));
+    await register(entry(DEAD_PID));
 
-    await registerLaunch(state.stateDir, live);
+    await register(live);
 
     expect((await liveLaunches(state.stateDir, REPO)).map((session) => session.launchId)).toEqual([
       live.launchId,
     ]);
-    expect(await liveLaunches(state.stateDir, REPO, () => false)).toEqual([]);
+    expect(await liveLaunches(state.stateDir, REPO, Date.now() + 120_000)).toEqual([]);
 
     const calls: string[] = [];
 
@@ -86,11 +99,11 @@ describe("launches", () => {
     const live = entry();
     const files = async () => (await readdir(directory)).filter((name) => name.endsWith(".json")).sort();
 
-    await registerLaunch(state.stateDir, entry(DEAD_PID));
+    await register(entry(DEAD_PID));
 
     expect(await files()).toEqual([]);
 
-    await registerLaunch(state.stateDir, live);
+    await register(live);
 
     await writeFile(join(directory, `${"a".repeat(16)}.json`), JSON.stringify(entry(DEAD_PID)));
 
@@ -103,10 +116,28 @@ describe("launches", () => {
     expect(await files()).toEqual([`${live.launchId}.json`]);
   });
 
-  it("lists launches of every repository", async () => {
-    await registerLaunch(state.stateDir, entry());
+  it("does not count a live pid whose heartbeat is older than 90 s", async () => {
+    const stale = entry();
 
-    await registerLaunch(state.stateDir, entry(process.pid, "2".repeat(64)));
+    await register(stale);
+
+    const old = new Date(Date.now() - 120_000);
+
+    await utimes(join(stateLayout(state.stateDir).repo(REPO).launches, `${stale.launchId}.json`), old, old);
+
+    expect(await liveLaunches(state.stateDir, REPO)).toEqual([]);
+  });
+
+  it("does not count a live pid recorded with another boot time", async () => {
+    await register({ ...entry(), boot: bootTime() - 3600 });
+
+    expect(await liveLaunches(state.stateDir, REPO)).toEqual([]);
+  });
+
+  it("lists launches of every repository", async () => {
+    await register(entry());
+
+    await register(entry(process.pid, "2".repeat(64)));
 
     expect(await liveLaunches(state.stateDir)).toHaveLength(2);
   });
@@ -114,26 +145,26 @@ describe("launches", () => {
   it("takes over a lock left by a dead launcher", async () => {
     const first = entry();
 
-    await registerLaunch(state.stateDir, first);
+    await register(first);
 
-    await writeFile(stateLayout(state.stateDir).repo(REPO).lock, String(DEAD_PID));
+    await writeFile(stateLayout(state.stateDir).repo(REPO).lock, `${DEAD_PID} ${bootTime()} x`);
 
-    expect(await registerLaunch(state.stateDir, entry())).toBe(2);
+    expect(await register(entry())).toBe(2);
   });
 
   it("takes over a lock without a readable pid at once", async () => {
     const first = entry();
     const lock = stateLayout(state.stateDir).repo(REPO).lock;
 
-    await registerLaunch(state.stateDir, first);
+    await register(first);
 
     await writeFile(lock, "");
 
-    expect(await registerLaunch(state.stateDir, entry())).toBe(2);
+    expect(await register(entry())).toBe(2);
   });
 
   it("registers concurrent launches without losing any", async () => {
-    const counts = await Promise.all([1, 2, 3, 4].map(() => registerLaunch(state.stateDir, entry())));
+    const counts = await Promise.all([1, 2, 3, 4].map(() => register(entry())));
 
     expect([...counts].sort()).toEqual([1, 2, 3, 4]);
   });

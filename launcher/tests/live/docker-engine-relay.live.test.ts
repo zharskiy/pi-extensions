@@ -14,8 +14,6 @@ const CLIENT_IMAGE = "pi-sandbox-conformance:busybox";
 
 const CLIENT_NAME = "pi-sandbox-relay-client";
 
-const POLICY_HASH = "0".repeat(64);
-
 const REPO_HASH = "f".repeat(64);
 
 const socketPath = [engineSocketPath(homedir())].find((path) => existsSync(path));
@@ -88,7 +86,7 @@ describe.skipIf(!enabled)("docker-engine egress relay (live)", () => {
     const route = await backend.prepareProxyRoute({
       hostPort: portOf(state.server),
       repoHash: REPO_HASH,
-      relay: { policyHash: POLICY_HASH, imageId: RELAY_IMAGE },
+      imageId: RELAY_IMAGE,
     });
     const stale = await backend.findContainers({ "pi-sandbox.relay-client": "true" });
 
@@ -125,7 +123,7 @@ describe.skipIf(!enabled)("docker-engine egress relay (live)", () => {
     state.server?.close();
   });
 
-  it("reaches the host listener through the relay address the route reports", async () => {
+  it("reaches the host listener through the proxy alias the route reports", async () => {
     const [host, port] = (state.address ?? "").split(":");
     const result = await run(`echo ping | nc -w 5 ${host} ${port}`);
 

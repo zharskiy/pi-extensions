@@ -1,7 +1,7 @@
 import type { Socket } from "node:net";
 import type { AccessLogEntry } from "./access-log.ts";
+import type { DenialRecord } from "./client.ts";
 import type { createDenialPages } from "./denial-page.ts";
-import type { DenialRecord } from "./dynamic.ts";
 import type { Denial } from "./policy.ts";
 import { ESTABLISHED, rawReply } from "./replies.ts";
 

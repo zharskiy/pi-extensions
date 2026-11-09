@@ -53,43 +53,36 @@ describe("stateLayout", () => {
       /^\/state\/locks\/mcp-login-[0-9a-f]{8}\.lock$/,
     );
     expect(layout.providerHosts("1.5.0")).toBe("/state/provider-hosts/1.5.0.json");
-    expect(layout.proxyInstance("p1").dynamic).toBe("/state/proxy/p1/dynamic.json");
-    expect(layout.proxyInstance("p1").repoToken("r1")).toBe("/state/proxy/p1/tokens/r1");
+    expect(layout.gcRecord).toBe("/state/gc.json");
     expect(layout.ca).toBe("/state/ca");
     expect(layout.extraPem).toBe("/state/ca/extra.pem");
     expect(layout.imageRecord).toBe("/state/image.json");
   });
 
-  it("keeps every file of one repository under repos/<repo hash>", () => {
-    expect(stateLayout("/state").repo("r1")).toEqual({
+  it("keeps every file of one repository under repos/<repo hash>, its proxy included", () => {
+    const { gitCopy, ...files } = stateLayout("/state").repo("r1");
+
+    expect(files).toEqual({
       directory: "/state/repos/r1",
+      record: "/state/repos/r1/repo.json",
       launches: "/state/repos/r1/launches",
       lock: "/state/repos/r1/lock",
+      containerLock: "/state/repos/r1/container.lock",
       render: "/state/repos/r1/render",
       sync: "/state/repos/r1/sync",
-      gitSnapshots: "/state/repos/r1/git/snapshots",
+      git: "/state/repos/r1/git",
       gitBaseline: "/state/repos/r1/git/baseline.json",
-      wanted: "/state/repos/r1/wanted.json",
+      pins: "/state/repos/r1/pins.json",
+      created: "/state/repos/r1/created.json",
+      proxy: {
+        directory: "/state/repos/r1/proxy",
+        record: "/state/repos/r1/proxy/proxy.json",
+        token: "/state/repos/r1/proxy/token",
+        log: "/state/repos/r1/proxy/proxy.log",
+        accessLog: "/state/repos/r1/proxy/access.log",
+      },
     });
-  });
-
-  it("keeps every file of one proxy instance in its own directory", () => {
-    const files = stateLayout("/state").proxyInstance("p1");
-
-    expect(files).toMatchObject({
-      directory: "/state/proxy/p1",
-      record: "/state/proxy/p1/proxy.json",
-      config: "/state/proxy/p1/proxy-config.json",
-      token: "/state/proxy/p1/proxy-token",
-      port: "/state/proxy/p1/proxy-port",
-      accessLog: "/state/proxy/p1/proxy-access.log",
-      proxyLog: "/state/proxy/p1/proxy.log",
-      lock: "/state/proxy/p1/lock",
-      dynamic: "/state/proxy/p1/dynamic.json",
-      dynamicLock: "/state/proxy/p1/dynamic.json.lock",
-      tokensDir: "/state/proxy/p1/tokens",
-    });
-    expect(files.repoToken("r1")).toBe("/state/proxy/p1/tokens/r1");
+    expect(gitCopy("/repo/.git/config")).toMatch(/^\/state\/repos\/r1\/git\/[0-9a-f]{16}$/);
   });
 });
 

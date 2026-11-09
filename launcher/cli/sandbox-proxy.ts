@@ -1,88 +1,87 @@
 import { authorityOf } from "../config/index.ts";
+import { type Launch, withRepoLaunchLock } from "../grants/index.ts";
 import {
   type DenialRecord,
-  daemonEnv,
   envSecretsFor,
-  type ProxyDynamic,
-  type ProxyInstance,
+  PROXY_LOG_LIMIT,
+  parentProxyAuth,
+  parentProxyEnv,
+  type RepoProxy,
+  type RepoProxyInput,
   repoProxyToken,
-  writeProxyDynamic,
 } from "../proxy/index.ts";
-import { errorMessage, LauncherError, sha256Hex } from "../shared/index.ts";
-import { type CliDeps, writeLine, writeLines } from "./deps.ts";
+import { errorMessage, LauncherError } from "../shared/index.ts";
+import { type CliDeps, writeLines, writeNotices } from "./deps.ts";
 import type { HostSide } from "./derive.ts";
 import type { LaunchContext } from "./launch.ts";
+import { othersLive } from "./launches.ts";
 
 export interface SandboxProxy {
-  instance: ProxyInstance;
-  policyHash: string;
-  repoToken: string;
+  proxy: RepoProxy;
+  token: string;
 }
 
-const hostPiOf = (host: HostSide) => (host.pi === undefined ? {} : { piVersion: host.pi.version });
+type InputParts = Omit<RepoProxyInput, "token">;
 
-const startProxy = async (deps: CliDeps, context: LaunchContext, host: HostSide) => {
-  try {
-    return await deps.proxy.ensure({
-      config: context.effective.config,
-      stateDir: context.stateDir,
-      env: daemonEnv(deps.env),
-      home: deps.home,
-      piCommand: host.pi?.command ?? [],
-      ...hostPiOf(host),
-    });
-  } catch (error) {
-    throw new LauncherError(
-      `the egress proxy could not start, refusing to run without it: ${errorMessage(error)}`,
-      error instanceof LauncherError && error.hint !== undefined ? error.hint : "run pi sandbox doctor",
-    );
-  }
+const proxyInput = (deps: CliDeps, context: LaunchContext, host: HostSide): InputParts => {
+  const { egress, tls } = context.effective.config;
+  const parentAuth = parentProxyAuth(egress.parentProxy, deps.env);
+
+  return {
+    repoHash: context.repoHash,
+    allow: egress.allow,
+    deny: egress.deny,
+    privateHosts: egress.privateHosts,
+    grants: egress.grants,
+    rules: host.derived.rules,
+    derivedHosts: host.derived.hosts,
+    envSecrets: envSecretsFor(host.derived.rules, deps.env),
+    parent: egress.parentProxy,
+    parentEnv: parentProxyEnv(deps.env),
+    ...(parentAuth === undefined ? {} : { parentAuth }),
+    extraCa: tls.extraCa.length > 0,
+    piCommand: host.pi?.command ?? [],
+    hostAgentDir: host.hostAgentDir,
+    accessLogLimit: PROXY_LOG_LIMIT,
+  };
 };
 
-const dynamicOf = (host: HostSide, tokenHash: string): ProxyDynamic => ({
-  rules: host.derived.rules,
-  derivedHosts: host.derived.hosts,
-  tokenHash,
-});
-
-const handEnvSecrets = async (
-  deps: CliDeps,
-  context: LaunchContext,
-  host: HostSide,
-  proxy: { instance: ProxyInstance; tokenHash: string },
-) => {
-  const reply = await deps.proxy.control(proxy.instance, {
-    type: "env-secrets",
-    repoTokenHash: proxy.tokenHash,
-    secrets: envSecretsFor(host.derived.rules, context.effective.config.egress.parentProxy, deps.env),
+const startProxy = async (deps: CliDeps, context: LaunchContext, parts: InputParts, launch: Launch) => {
+  const token = await repoProxyToken(context.stateDir, context.repoHash);
+  const started = await deps.proxy.ensure({
+    stateDir: context.stateDir,
+    input: { ...parts, token },
+    env: deps.env,
+    othersLive: () => othersLive(context.stateDir, context.repoHash, launch.launchId),
   });
 
-  if (!reply.ok) {
-    writeLine(
-      deps.stderr,
-      `pi-sandbox: warning: the proxy did not take the environment secrets: ${reply.error}`,
-    );
-  }
+  writeNotices(deps, started.notices);
+
+  return { proxy: started.proxy, token };
 };
 
 export const openSandboxProxy = async (
   deps: CliDeps,
   context: LaunchContext,
   host: HostSide,
+  launch: Launch,
 ): Promise<SandboxProxy | undefined> => {
   if (!host.proxyNeeded) {
     return undefined;
   }
 
-  const instance = await startProxy(deps, context, host);
-  const repoToken = await repoProxyToken(context.stateDir, instance.policyHash, context.repoHash);
-  const tokenHash = sha256Hex(repoToken);
+  const parts = proxyInput(deps, context, host);
 
-  await writeProxyDynamic(context.stateDir, instance.policyHash, dynamicOf(host, tokenHash));
-
-  await handEnvSecrets(deps, context, host, { instance, tokenHash });
-
-  return { instance, policyHash: instance.policyHash, repoToken };
+  try {
+    return await withRepoLaunchLock(context.stateDir, context.repoHash, () =>
+      startProxy(deps, context, parts, launch),
+    );
+  } catch (error) {
+    throw new LauncherError(
+      `the egress proxy could not start, refusing to run without it: ${errorMessage(error)}`,
+      error instanceof LauncherError && error.hint !== undefined ? error.hint : "run pi sandbox doctor",
+    );
+  }
 };
 
 const deniedTargets = (denials: DenialRecord[]) => [
@@ -107,9 +106,7 @@ export const reportDenials = async (
     return;
   }
 
-  const denials = await deps.proxy
-    .denials(context.stateDir, proxy.policyHash, { repoHash: context.repoHash, since })
-    .catch(() => []);
+  const denials = await deps.proxy.denials(context.stateDir, context.repoHash, since).catch(() => []);
 
   writeLines(deps.stderr, deniedTargets(denials).map(denialLine(context.effective.config.egress.grants)));
 };

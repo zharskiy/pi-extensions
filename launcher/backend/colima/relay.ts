@@ -1,7 +1,7 @@
 import { LauncherError } from "../../shared/index.ts";
 import { LABELS } from "../labels.ts";
-import { pruneCandidates, repoNetworkLabels, repoNetworkName } from "../managed-network.ts";
-import type { ProxyRoute, ProxyRouteRequest } from "../types.ts";
+import { relayName, repoNetworkLabels, repoNetworkName } from "../managed-network.ts";
+import type { NetworkSummary, ProxyRoute, ProxyRouteRequest } from "../types.ts";
 import { type EngineClient, segment } from "./engine-client.ts";
 
 interface RelayInspect {
@@ -13,12 +13,15 @@ interface RelayInspect {
 interface NetworkInspect {
   Internal?: boolean;
   Labels?: Record<string, string> | null;
-  Containers?: Record<string, { Name?: string; IPv4Address?: string }> | null;
+  Containers?: Record<string, { Name?: string }> | null;
 }
 
-interface NetworkSummary {
+interface EngineNetwork {
   Name?: string;
+  Labels?: Record<string, string> | null;
 }
+
+const PROXY_ALIAS = "pi-sandbox-proxy";
 
 const RELAY_PREFIX = "pi-sandbox-relay-";
 
@@ -26,17 +29,17 @@ const RELAY_LISTEN_PORT = 3128;
 
 const HOST_ALIAS = "host.lima.internal";
 
+const REMOVAL_WAIT_MS = 10_000;
+
 const NETWORK_HINT = "run pi sandbox gc";
 
 const FOREIGN_NETWORK_HINT = "remove that network from the sandbox VM so the launcher can create its own";
 
-const relayName = (policyHash: string) => `${RELAY_PREFIX}${policyHash.slice(0, 8)}`;
-
-const relayLabels = (hostPort: number, policyHash: string) => ({
+const relayLabels = (hostPort: number, repoHash: string) => ({
   [LABELS.managed]: "true",
   [LABELS.relay]: "true",
+  [LABELS.repoHash]: repoHash,
   [LABELS.relayPort]: String(hostPort),
-  [LABELS.proxyPolicyHash]: policyHash,
 });
 
 export const createRelayOperations = (client: EngineClient) => {
@@ -82,11 +85,11 @@ export const createRelayOperations = (client: EngineClient) => {
     });
   };
 
-  const connect = async (network: string, containerId: string) => {
+  const attach = async (network: string, containerId: string) => {
     await client.call({
       method: "POST",
       path: `/networks/${segment(network)}/connect`,
-      json: { Container: containerId },
+      json: { Container: containerId, EndpointConfig: { Aliases: [PROXY_ALIAS] } },
     });
   };
 
@@ -103,112 +106,96 @@ export const createRelayOperations = (client: EngineClient) => {
     await client.call({ method: "POST", path: `/containers/${segment(relayId)}/start` }, [304]);
   };
 
-  const createRelay = async (hostPort: number, policyHash: string, imageId: string) => {
+  const dropRelay = async (relayId: string) => {
+    await client.call(
+      { method: "DELETE", path: `/containers/${segment(relayId)}`, query: { force: true } },
+      [404, 409],
+    );
+
+    await client
+      .call(
+        {
+          method: "POST",
+          path: `/containers/${segment(relayId)}/wait`,
+          query: { condition: "removed" },
+          timeoutMs: REMOVAL_WAIT_MS,
+        },
+        [404, 409],
+      )
+      .catch(() => undefined);
+  };
+
+  const createRelay = async (request: ProxyRouteRequest, network: string) => {
     const created = await client.json<{ Id: string }>({
       method: "POST",
       path: "/containers/create",
-      query: { name: relayName(policyHash) },
+      query: { name: relayName(request.repoHash) },
       json: {
-        Image: imageId,
+        Image: request.imageId,
         Entrypoint: ["socat"],
-        Cmd: [`TCP-LISTEN:${RELAY_LISTEN_PORT},fork,reuseaddr`, `TCP:${HOST_ALIAS}:${hostPort}`],
-        Labels: { ...relayLabels(hostPort, policyHash), [LABELS.relayImage]: imageId },
+        Cmd: [`TCP-LISTEN:${RELAY_LISTEN_PORT},fork,reuseaddr`, `TCP:${HOST_ALIAS}:${request.hostPort}`],
+        Labels: relayLabels(request.hostPort, request.repoHash),
         HostConfig: {
           NetworkMode: "bridge",
           Init: true,
           ReadonlyRootfs: true,
+          AutoRemove: true,
         },
       },
     });
 
-    await startRelay(created.Id);
+    await attach(network, created.Id);
 
-    return created.Id;
+    await startRelay(created.Id);
   };
 
-  const managedNetworks = () =>
-    client.json<NetworkSummary[]>({
+  const ensureRelay = async (request: ProxyRouteRequest, network: string) => {
+    const relay = await inspectRelay(relayName(request.repoHash));
+
+    if (relay !== undefined && matches(relay, relayLabels(request.hostPort, request.repoHash))) {
+      if ((await inspectNetwork(network))?.Containers?.[relay.Id] === undefined) {
+        await attach(network, relay.Id);
+      }
+
+      if (relay.State?.Running !== true) {
+        await startRelay(relay.Id);
+      }
+
+      return;
+    }
+
+    if (relay !== undefined) {
+      await dropRelay(relay.Id);
+    }
+
+    await createRelay(request, network);
+  };
+
+  const prepareProxyRoute = async (request: ProxyRouteRequest): Promise<ProxyRoute> => {
+    const network = repoNetworkName(request.repoHash);
+
+    await ensureNetwork(network, request.repoHash);
+
+    await ensureRelay(request, network);
+
+    return {
+      network: { kind: "internal", name: network },
+      address: `${PROXY_ALIAS}:${RELAY_LISTEN_PORT}`,
+    };
+  };
+
+  const listNetworks = async (): Promise<NetworkSummary[]> => {
+    const listed = await client.json<EngineNetwork[]>({
       method: "GET",
       path: "/networks",
       query: { filters: JSON.stringify({ label: [`${LABELS.managed}=true`] }) },
     });
 
-  const servesOthers = async (relayId: string, ownNetwork: string) => {
-    const names = (await managedNetworks())
-      .map((network) => network.Name ?? "")
-      .filter((name) => name !== ownNetwork);
-    const inspected = await Promise.all(names.map(inspectNetwork));
-
-    return inspected.some((network) => {
-      const attached = Object.entries(network?.Containers ?? {});
-
-      return (
-        attached.some(([id]) => id === relayId) &&
-        attached.some(([, entry]) => !(entry.Name ?? "").startsWith(RELAY_PREFIX))
-      );
-    });
+    return listed.map((network) => ({ name: network.Name ?? "", labels: network.Labels ?? {} }));
   };
 
-  const keptNotice = (name: string, relay: RelayInspect, hostPort: number) =>
-    `the egress relay ${name} still forwards to proxy port ${relay.Config?.Labels?.[LABELS.relayPort] ?? "unknown"}, not ${hostPort}; it is kept because sandboxes of other repositories use it, so egress may fail until they exit and it is replaced`;
-
-  const ensureRelay = async (hostPort: number, policyHash: string, imageId: string, network: string) => {
-    const name = relayName(policyHash);
-    const relay = await inspectRelay(name);
-
-    if (relay !== undefined && matches(relay, relayLabels(hostPort, policyHash))) {
-      if (relay.State?.Running !== true) {
-        await startRelay(relay.Id);
-      }
-
-      return { relayId: relay.Id, notices: [] };
-    }
-
-    if (relay !== undefined && (await servesOthers(relay.Id, network))) {
-      return { relayId: relay.Id, notices: [keptNotice(name, relay, hostPort)] };
-    }
-
-    if (relay !== undefined) {
-      await client.call(
-        { method: "DELETE", path: `/containers/${segment(relay.Id)}`, query: { force: true } },
-        [404],
-      );
-    }
-
-    return { relayId: await createRelay(hostPort, policyHash, imageId), notices: [] };
-  };
-
-  const relayAddress = async (network: string, relayId: string) => {
-    const before = await inspectNetwork(network);
-
-    if (before?.Containers?.[relayId] === undefined) {
-      await connect(network, relayId);
-    }
-
-    const address = (await inspectNetwork(network))?.Containers?.[relayId]?.IPv4Address?.split("/")[0];
-
-    if (address === undefined || address === "") {
-      throw new LauncherError(`relay ${relayId.slice(0, 12)} has no address on network ${network}`);
-    }
-
-    return address;
-  };
-
-  const prepareProxyRoute = async ({ hostPort, repoHash, relay }: ProxyRouteRequest): Promise<ProxyRoute> => {
-    const network = repoNetworkName(repoHash);
-
-    await ensureNetwork(network, repoHash);
-
-    const { relayId, notices } = await ensureRelay(hostPort, relay.policyHash, relay.imageId, network);
-
-    return {
-      network: { kind: "internal", name: network },
-      address: `${await relayAddress(network, relayId)}:${RELAY_LISTEN_PORT}`,
-      ...(notices.length === 0 ? {} : { notices }),
-    };
-  };
-
-  const removeNetwork = async (name: string) => {
+  const removeRepoNetwork = async (repoHash: string) => {
+    const name = repoNetworkName(repoHash);
     const network = await inspectNetwork(name);
 
     if (network === undefined || network.Labels?.[LABELS.managed] !== "true") {
@@ -239,16 +226,5 @@ export const createRelayOperations = (client: EngineClient) => {
     return response.status < 300;
   };
 
-  const pruneNetworks = async (keepRepoHashes: string[]) => {
-    const listed = await managedNetworks();
-    const candidates = pruneCandidates(
-      listed.map((network) => network.Name ?? ""),
-      keepRepoHashes,
-    );
-    const removed = await Promise.all(candidates.map(removeNetwork));
-
-    return candidates.filter((_name, index) => removed[index]);
-  };
-
-  return { prepareProxyRoute, removeNetwork, pruneNetworks };
+  return { prepareProxyRoute, listNetworks, removeRepoNetwork };
 };

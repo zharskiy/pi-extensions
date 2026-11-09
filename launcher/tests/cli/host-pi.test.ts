@@ -1,31 +1,18 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { type CliDeps, run } from "../../cli/index.ts";
+import { run } from "../../cli/index.ts";
 import { testedPiVersion } from "../../cli/versions.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
-import { createHarness, writeManagedPi, writePathPi } from "./harness.ts";
-
-type ProxyRequest = Parameters<CliDeps["proxy"]["ensure"]>[0];
+import { createHarness, holdLaunch, writeManagedPi, writePathPi } from "./harness.ts";
 
 const BUNDLED_ENTRY = "/fake/node_modules/@earendil-works/pi-coding-agent/dist/cli.js";
 
 const launchHarness = async (options: { bundledPi?: null } = {}) => {
   const fake = createFakeBackend();
-  const requests: ProxyRequest[] = [];
-  const harness = await createHarness({
-    backend: () => fake.backend,
-    ...options,
-    proxy: {
-      ensure: async (request) => {
-        requests.push(request);
+  const harness = await createHarness({ backend: () => fake.backend, ...options });
 
-        return { pid: 4242, port: 3128, policyHash: "policy", token: "token-1" };
-      },
-    },
-  });
-
-  return { fake, harness, requests };
+  return { fake, harness, requests: harness.proxyInputs };
 };
 
 const interactiveCall = (harness: Awaited<ReturnType<typeof createHarness>>) =>
@@ -44,7 +31,6 @@ describe("the host pi of host jobs", () => {
 
     expect(await run([], harness.deps)).toBe(0);
     expect(requests[0]?.piCommand).toEqual([process.execPath, managed.entry]);
-    expect(requests[0]?.piVersion).toBe("1.6.0");
     expect(providerScriptCall(harness)?.args[1]).toBe(managed.packageDir);
     expect(fake.builds[0]?.files.Dockerfile).toContain("ARG PI_VERSION=1.6.0");
   });
@@ -82,11 +68,9 @@ describe("the host pi of host jobs", () => {
   it("keeps the image of a running container after a host pi update, says so, and still derives provider rules", async () => {
     const { fake, harness } = await launchHarness();
 
-    expect(await run([], harness.deps)).toBe(0);
+    await holdLaunch(harness);
 
-    fake.containers.forEach((entry, id) => {
-      fake.containers.set(id, { ...entry, summary: { ...entry.summary, state: "running" } });
-    });
+    expect(await run([], harness.deps)).toBe(0);
 
     await writeManagedPi(harness.hostAgentDir, "1.6.0");
 
@@ -120,7 +104,6 @@ describe("the host pi of host jobs", () => {
 
     expect(await run([], harness.deps)).toBe(0);
     expect(requests[0]?.piCommand).toEqual([process.execPath, BUNDLED_ENTRY]);
-    expect(requests[0]?.piVersion).not.toBe("1.7.0");
   });
 
   it("gives the proxy no pi when there is neither a managed install nor the launcher's own pi", async () => {
@@ -131,7 +114,6 @@ describe("the host pi of host jobs", () => {
 
     expect(await run([], harness.deps)).toBe(0);
     expect(requests[0]?.piCommand).toEqual([]);
-    expect(requests[0]?.piVersion).toBeUndefined();
   });
 });
 

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { run } from "../../cli/index.ts";
 import { registerLaunch } from "../../grants/index.ts";
-import { sha256Hex } from "../../shared/index.ts";
+import { bootTime, sha256Hex } from "../../shared/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { createHarness } from "./harness.ts";
 
@@ -13,7 +13,7 @@ const OUTDATED =
 const absent = async (path: string) => (await lstat(path).catch(() => undefined)) === undefined;
 
 describe("the commondir pin around container starts", () => {
-  it("is in place at every start, a restart of the stopped container included, and gone after the last session", async () => {
+  it("is in place at every container start and gone after each last session", async () => {
     const fake = createFakeBackend();
     const pinsAtStart: string[] = [];
     const harness = await createHarness({
@@ -29,13 +29,10 @@ describe("the commondir pin around container starts", () => {
     const pin = join(harness.repoRoot, ".git", "commondir");
 
     expect(await run([], harness.deps)).toBe(0);
-
-    const [first] = [...fake.containers.keys()];
-
     expect(await absent(pin)).toBe(true);
 
     expect(await run([], harness.deps)).toBe(0);
-    expect([...fake.containers.keys()]).toEqual([first]);
+    expect(fake.created).toHaveLength(2);
     expect(pinsAtStart).toEqual([".\n", ".\n"]);
     expect(await absent(pin)).toBe(true);
   });
@@ -58,6 +55,7 @@ describe("the commondir pin around container starts", () => {
     const harness = await createHarness({ backend: () => fake.backend });
 
     await registerLaunch(harness.stateDir, {
+      boot: bootTime(),
       launchId: "00000000000000aa",
       repoHash: sha256Hex(harness.repoRoot),
       startedAt: 1,

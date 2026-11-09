@@ -1,20 +1,15 @@
 import { execFile } from "node:child_process";
-import { writeFile } from "node:fs/promises";
 import { createServer as createHttpsServer, type Server } from "node:https";
 import { connect } from "node:net";
 import { type TLSSocket, connect as tlsConnect } from "node:tls";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { addGrant } from "../../grants/index.ts";
-import { writeProxyDynamic } from "../../proxy/dynamic.ts";
 import type { LauncherCa } from "../../proxy/tls-ca.ts";
-import { sha256Hex, stateLayout } from "../../shared/index.ts";
 import {
-  CONTROL_TOKEN,
   closeServer,
   createStateDir,
   listen,
   openCa,
-  POLICY_HASH,
   portOf,
   removeDir,
   startTestProxy,
@@ -22,7 +17,6 @@ import {
   waitFor,
 } from "./harness.ts";
 import {
-  CONTROL_USER,
   openConnect,
   pageThrough,
   plainGet,
@@ -35,24 +29,18 @@ import {
 
 const REPO = "1".repeat(64);
 
-const OTHER_REPO = "2".repeat(64);
-
 const state: {
   stateDir: string;
   ca: LauncherCa;
   target: Server;
   test: TestProxy;
   token: string;
-  otherToken: string;
-  controlMessages: unknown[];
 } = {
   stateDir: "",
   ca: undefined as unknown as LauncherCa,
   target: undefined as unknown as Server,
   test: undefined as unknown as TestProxy,
   token: "",
-  otherToken: "",
-  controlMessages: [],
 };
 
 const ports = () => {
@@ -83,14 +71,8 @@ beforeAll(async () => {
     policy: { allow: ["target.test", "other.test"], deny: ["blocked.test"] },
     ca: state.ca,
     ports,
-    onControl: (message) => {
-      state.controlMessages.push(message);
-
-      return { ok: true };
-    },
   });
-  state.token = await state.test.tokenOf(REPO);
-  state.otherToken = await state.test.tokenOf(OTHER_REPO);
+  state.token = state.test.token;
 }, 30_000);
 
 afterAll(async () => {
@@ -133,8 +115,13 @@ describe("proxy authentication", () => {
     expect((await connectStatus("target.test:443", "not-a-token")).status).toBe(407);
   });
 
-  it("never lets the control token open a tunnel", async () => {
-    const reply = await openConnect(state.test.proxy.port, "target.test:443", CONTROL_TOKEN, CONTROL_USER);
+  it("refuses the repository token under another user name", async () => {
+    const reply = await openConnect(
+      state.test.proxy.port,
+      "target.test:443",
+      state.token,
+      "pi-sandbox-control",
+    );
 
     await readRest(reply.socket);
 
@@ -148,18 +135,22 @@ describe("proxy authentication", () => {
     expect(health.headers["proxy-authenticate"]).toBe('Basic realm="pi-sandbox"');
   });
 
-  it("serves health to the control token and to a repository token", async () => {
-    const control = await plainGet(
-      state.test.proxy.port,
-      "/healthz",
-      "127.0.0.1",
-      CONTROL_TOKEN,
-      CONTROL_USER,
-    );
+  it("serves health to the repository token only", async () => {
     const repo = await plainGet(state.test.proxy.port, "/healthz", "127.0.0.1", state.token);
 
-    expect(JSON.parse(control.body)).toMatchObject({ ok: true, policyHash: POLICY_HASH });
-    expect(repo.status).toBe(200);
+    expect(JSON.parse(repo.body)).toEqual({ ok: true, pid: process.pid });
+  });
+
+  it("answers the removed control and policy routes like any plain request", async () => {
+    const control = await plainRequest(state.test.proxy.port, "/control", {
+      method: "POST",
+      token: state.token,
+      body: "{}",
+    });
+    const policy = await plainGet(state.test.proxy.port, "/policy", "127.0.0.1", state.token);
+
+    expect(control.status).toBe(403);
+    expect(policy.status).toBe(403);
   });
 
   it("never writes a token to the access log", async () => {
@@ -180,74 +171,13 @@ describe("proxy authentication", () => {
   });
 });
 
-describe("per-repository tokens", () => {
-  it("tags log entries with the repository of the token", async () => {
-    await connectStatus("evil.test:443", state.otherToken);
+describe("repository token", () => {
+  it("tags log entries with the repository of the proxy", async () => {
+    await connectStatus("evil.test:443");
 
     expect(state.test.log).toContainEqual(
-      expect.objectContaining({ repo: OTHER_REPO, host: "evil.test", decision: "deny" }),
+      expect.objectContaining({ repo: REPO, host: "evil.test", decision: "deny" }),
     );
-  });
-
-  it("accepts a repository token created after the proxy started", async () => {
-    const late = await state.test.tokenOf("3".repeat(64));
-
-    expect((await connectStatus("target.test:443", late)).status).toBe(200);
-  });
-});
-
-describe("control messages", () => {
-  it("accepts env secrets naming a repository token hash from the control token only", async () => {
-    const repoTokenHash = "d".repeat(64);
-    const body = JSON.stringify({ type: "env-secrets", secrets: { rule: "value" }, repoTokenHash });
-    const refused = await plainRequest(state.test.proxy.port, "/control", {
-      method: "POST",
-      token: state.token,
-      body,
-    });
-    const accepted = await plainRequest(state.test.proxy.port, "/control", {
-      method: "POST",
-      token: CONTROL_TOKEN,
-      user: CONTROL_USER,
-      body,
-    });
-    const unnamed = await plainRequest(state.test.proxy.port, "/control", {
-      method: "POST",
-      token: CONTROL_TOKEN,
-      user: CONTROL_USER,
-      body: JSON.stringify({ type: "env-secrets", secrets: {} }),
-    });
-
-    expect(refused.status).toBe(407);
-    expect(JSON.parse(accepted.body)).toEqual({ ok: true });
-    expect(unnamed.status).toBe(400);
-    expect(state.controlMessages).toEqual([
-      { type: "env-secrets", secrets: { rule: "value" }, repoTokenHash },
-    ]);
-  });
-
-  it("answers a control body over 1 MiB with 400 before closing", async () => {
-    const reply = await plainRequest(state.test.proxy.port, "/control", {
-      method: "POST",
-      token: CONTROL_TOKEN,
-      user: CONTROL_USER,
-      body: "x".repeat(1024 * 1024 + 1024),
-    });
-
-    expect(reply.status).toBe(400);
-    expect(JSON.parse(reply.body)).toEqual({ ok: false, error: "control message too large" });
-    expect(reply.headers.connection).toBe("close");
-  });
-
-  it("refuses an unknown control message", async () => {
-    const reply = await plainRequest(state.test.proxy.port, "/control", {
-      method: "POST",
-      token: CONTROL_TOKEN,
-      user: CONTROL_USER,
-      body: JSON.stringify({ type: "other" }),
-    });
-
-    expect(reply.status).toBe(400);
   });
 });
 
@@ -422,7 +352,7 @@ describe("the upstream of a spliced tunnel", () => {
       await removeDir(stateDir);
     };
 
-    return { local, dialled, close, token: await local.tokenOf(REPO) };
+    return { local, dialled, close, token: local.token };
   };
 
   it("opens no upstream socket when the TLS server name differs from the CONNECT host", async () => {
@@ -482,7 +412,7 @@ describe("denial page certificates", () => {
       ca: state.ca,
       denialPages: { mintsPerMinute: 1 },
     });
-    const token = await local.tokenOf(REPO);
+    const token = local.token;
 
     const first = await pageThrough(local.proxy.port, "first.test:443", token, state.ca.certPem);
     const again = await pageThrough(local.proxy.port, "first.test:443", token, state.ca.certPem);
@@ -505,11 +435,21 @@ describe("denial page certificates", () => {
 });
 
 describe("grants", () => {
-  it("allows a host with a repository grant for that repository only", async () => {
+  it("allows a host with a grant of this repository, read live from grants.json", async () => {
+    expect(await deniedPage("granted.test:443")).toBe(hint("granted.test"));
+
+    await addGrant(
+      state.stateDir,
+      { host: "granted.test", port: 443, repoHash: "2".repeat(64) },
+      true,
+      Date.now(),
+    );
+
+    expect(await deniedPage("granted.test:443")).toBe(hint("granted.test"));
+
     await addGrant(state.stateDir, { host: "granted.test", port: 443, repoHash: REPO }, true, Date.now());
 
     expect((await connectStatus("granted.test:443")).status).toBe(200);
-    expect(await deniedPage("granted.test:443", state.otherToken)).toBe(hint("granted.test"));
   });
 
   it("keeps egress.deny above a grant", async () => {
@@ -525,39 +465,33 @@ describe("grants", () => {
   });
 });
 
-describe("dynamic configuration", () => {
-  it("picks up derived hosts written after the proxy started", async () => {
-    expect(await deniedPage("reloaded.test:443")).toBe(hint("reloaded.test"));
-
-    await writeProxyDynamic(state.stateDir, POLICY_HASH, {
-      rules: [],
+describe("derived hosts", () => {
+  it("allows the derived hosts the launcher handed over", async () => {
+    const local = await startTestProxy({
+      stateDir: state.stateDir,
+      policy: { allow: [] },
       derivedHosts: ["reloaded.test"],
-      tokenHash: sha256Hex(state.token),
+      ports,
     });
 
-    expect((await connectStatus("reloaded.test:443")).status).toBe(200);
-  });
-
-  it("keeps a broken dynamic file from widening anything", async () => {
-    await writeFile(stateLayout(state.stateDir).proxyInstance(POLICY_HASH).dynamic, "{ not json");
-
-    expect(await deniedPage("reloaded.test:443")).toBe(hint("reloaded.test"));
+    try {
+      expect((await connectStatusOn(local.proxy.port, "reloaded.test:443", local.token)).status).toBe(200);
+    } finally {
+      await local.proxy.close();
+    }
   });
 });
 
 describe("denials", () => {
-  it("serves the recent denials of the token's repository only", async () => {
+  it("serves the recent denials of the repository", async () => {
     const since = Date.now();
 
     await connectStatus("denied-here.test:443");
-
-    await connectStatus("denied-there.test:443", state.otherToken);
 
     const reply = await plainGet(state.test.proxy.port, `/denials?since=${since}`, "127.0.0.1", state.token);
     const hosts = JSON.parse(reply.body).denials.map((entry: { host: string }) => entry.host);
 
     expect(hosts).toContain("denied-here.test");
-    expect(hosts).not.toContain("denied-there.test");
     expect(JSON.parse(reply.body).denials).toContainEqual(
       expect.objectContaining({ host: "denied-here.test", port: 443, repoHash: REPO, rule: "egress.allow" }),
     );
@@ -580,14 +514,6 @@ describe("denials", () => {
 });
 
 describe("plain HTTP", () => {
-  it("serves the policy", async () => {
-    const policy = JSON.parse(
-      (await plainGet(state.test.proxy.port, "/policy", "127.0.0.1", state.token)).body,
-    );
-
-    expect(policy).toMatchObject({ allow: ["target.test", "other.test"], policyHash: POLICY_HASH });
-  });
-
   it("denies proxied plain HTTP requests", async () => {
     const denied = await plainGet(state.test.proxy.port, "http://target.test/", "target.test", state.token);
 

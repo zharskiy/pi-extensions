@@ -63,7 +63,7 @@ beforeAll(async () => {
     policy: { allow: ["target.test"] },
     ports: () => ({ "target.test:443": portOf(state.recorder), "granted.test:443": portOf(state.recorder) }),
   });
-  state.token = await state.test.tokenOf(REPO);
+  state.token = state.test.token;
 });
 
 afterAll(async () => {
@@ -180,11 +180,7 @@ describe("upstream that never accepts the connection", () => {
 
   it("gives up on the dial and records an upstream denial", async () => {
     const hello = await captureHello("slow.test");
-    const reply = await openConnect(
-      local.test?.proxy.port ?? 0,
-      "slow.test:443",
-      await local.test?.tokenOf(REPO),
-    );
+    const reply = await openConnect(local.test?.proxy.port ?? 0, "slow.test:443", local.test?.token);
     const started = Date.now();
     const closed = readRest(reply.socket);
 

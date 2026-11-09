@@ -9,8 +9,9 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { createColimaBackend } from "../../../backend/index.ts";
 import { userHashOf } from "../../../container/index.ts";
-import { stopProxy } from "../../../proxy/index.ts";
-import { createProcessRunner } from "../../../shared/index.ts";
+import { endLaunch, newLaunchId, registerLaunch } from "../../../grants/index.ts";
+import { stopRepoProxy } from "../../../proxy/index.ts";
+import { bootTime, createProcessRunner, stateLayout } from "../../../shared/index.ts";
 import { createTestCa, type TestCa, type TestCertificate } from "../fixtures/test-ca.ts";
 import {
   engineSocket,
@@ -20,7 +21,6 @@ import {
   removeContainer,
   removeNetwork,
   removeVolume,
-  startContainer,
 } from "./engine.ts";
 import { ALL_FIXTURE_HOSTS, resolveValue } from "./names.ts";
 
@@ -83,8 +83,6 @@ const resolvePreload = () => {
 
 const DEFAULT_TIMEOUT_MS = 540_000;
 
-const RELAY_NETWORK = "pi-sandbox";
-
 const liveRoot = () => process.env.PI_SANDBOX_LIVE_DIR ?? join(homedir(), ".cache", "pi-sandbox-live");
 
 export const liveEnabled = process.env.PI_SANDBOX_LIVE === "1" && engineSocket !== undefined;
@@ -130,8 +128,8 @@ const killAll = (pids: number[], signal: NodeJS.Signals) => {
   });
 };
 
-const stopDaemons = async (stateDir: string) => {
-  await stopProxy(stateDir).catch(() => 0);
+const stopDaemons = async (stateDir: string, repoHash: string) => {
+  await stopRepoProxy(stateDir, repoHash).catch(() => false);
 
   killAll(await daemonPids(stateDir), "SIGTERM");
 
@@ -141,12 +139,13 @@ const stopDaemons = async (stateDir: string) => {
 };
 
 const readAccessLog = async (stateDir: string) => {
-  const instances = await readdir(join(stateDir, "proxy")).catch(() => [] as string[]);
-  const texts = await Promise.all(
-    instances.map((hash) =>
-      readFile(join(stateDir, "proxy", hash, "proxy-access.log"), "utf8").catch(() => ""),
-    ),
-  );
+  const repos = await readdir(stateLayout(stateDir).repos).catch(() => [] as string[]);
+  const logs = repos.flatMap((hash) => {
+    const log = stateLayout(stateDir).repo(hash).proxy.accessLog;
+
+    return [`${log}.1`, log];
+  });
+  const texts = await Promise.all(logs.map((log) => readFile(log, "utf8").catch(() => "")));
 
   return texts
     .join("\n")
@@ -179,7 +178,6 @@ export const createLiveSandbox = async (name: string): Promise<LiveSandbox> => {
   const certs = join(root, "certs");
   const opened = join(root, "opened.txt");
   const children = new Set<ReturnType<typeof spawn>>();
-  const networkExisted = (await listNetworks()).some((network) => network.Name === RELAY_NETWORK);
 
   await Promise.all([agentDir, stateDir, bin, certs].map((dir) => mkdir(dir, { recursive: true })));
 
@@ -213,6 +211,15 @@ export const createLiveSandbox = async (name: string): Promise<LiveSandbox> => {
     NODE_EXTRA_CA_CERTS: ca.certPath,
     GIT_CONFIG_NOSYSTEM: "1",
   };
+  const launchId = newLaunchId();
+  const held = await registerLaunch(stateDir, {
+    launchId,
+    pid: process.pid,
+    boot: bootTime(),
+    repoHash,
+    startedAt: Date.now(),
+  });
+
   const backend = createColimaBackend({
     home: "",
     stateDir: "",
@@ -276,8 +283,6 @@ export const createLiveSandbox = async (name: string): Promise<LiveSandbox> => {
       return { code: 127, stdout: "", stderr: "no sandbox container" };
     }
 
-    await startContainer(container.Id);
-
     const out = collect();
     const err = collect();
     const code = await backend.exec(
@@ -286,6 +291,34 @@ export const createLiveSandbox = async (name: string): Promise<LiveSandbox> => {
     );
 
     return { code, stdout: out.text(), stderr: err.text() };
+  };
+
+  const lastExit = async () => {
+    held.stopHeartbeat();
+
+    await endLaunch(stateDir, { repoHash, launchId, onLast: async () => undefined });
+
+    return pi(["--version"]).done;
+  };
+
+  const leftovers = async () => {
+    const owned = await listContainers({ "pi-sandbox.repo-hash": repoHash });
+    const networks = (await listNetworks()).filter(
+      (candidate) => candidate.Name === `pi-sandbox-${repoHash.slice(0, 12)}`,
+    );
+    const proxy = await readFile(stateLayout(stateDir).repo(repoHash).proxy.record, "utf8").catch(
+      () => undefined,
+    );
+
+    return {
+      containers: owned,
+      networks,
+      named: [
+        ...owned.map((container) => `container ${container.Id}`),
+        ...networks.map((candidate) => `network ${candidate.Name}`),
+        ...(proxy === undefined ? [] : ["proxy"]),
+      ],
+    };
   };
 
   const cleanup = async () => {
@@ -297,19 +330,15 @@ export const createLiveSandbox = async (name: string): Promise<LiveSandbox> => {
 
     await Promise.all(exited);
 
-    await stopDaemons(stateDir);
+    await lastExit();
 
-    const owned = await listContainers({ "pi-sandbox.repo-hash": repoHash });
-    const instanceHashes = await readdir(join(stateDir, "proxy")).catch(() => [] as string[]);
-    const policyHashes = new Set([
-      ...instanceHashes,
-      ...owned.map((container) => container.Labels["pi-sandbox.proxy-policy-hash"] ?? ""),
-    ]);
-    const relays = (await listContainers({ "pi-sandbox.relay": "true" })).filter((relay) =>
-      policyHashes.has(relay.Labels["pi-sandbox.proxy-policy-hash"] ?? ""),
-    );
+    const left = await leftovers();
 
-    await Promise.all([...owned, ...relays].map((container) => removeContainer(container.Id)));
+    await stopDaemons(stateDir, repoHash);
+
+    await Promise.all(left.containers.map((container) => removeContainer(container.Id)));
+
+    await Promise.all(left.networks.map((candidate) => removeNetwork(candidate.Id)));
 
     const userHashes = [stateDir, existsSync(stateDir) ? realpathSync(stateDir) : stateDir].map(userHashOf);
     const volumes = (await listVolumes()).filter(
@@ -321,21 +350,11 @@ export const createLiveSandbox = async (name: string): Promise<LiveSandbox> => {
     const removals = await Promise.all(volumes.map((volume) => removeVolume(volume.Name)));
     const kept = volumes.filter((_volume, index) => ![204, 404].includes(removals[index]?.status ?? 0));
 
-    const networks = await listNetworks();
-    const repoNetworks = networks.filter(
-      (candidate) => candidate.Name === `${RELAY_NETWORK}-${repoHash.slice(0, 12)}`,
-    );
-
-    await Promise.all(repoNetworks.map((candidate) => removeNetwork(candidate.Id)));
-
-    const network = networks.find((candidate) => candidate.Name === RELAY_NETWORK);
-    const attached = network === undefined ? [] : await listContainers({ "pi-sandbox.relay": "true" });
-
-    if (network !== undefined && !networkExisted && attached.length === 0) {
-      await removeNetwork(network.Id);
-    }
-
     await rm(root, { recursive: true, force: true });
+
+    if (left.named.length > 0) {
+      throw new Error(`the last session left ${left.named.join(", ")}`);
+    }
 
     if (kept.length > 0) {
       throw new Error(`live cleanup could not remove ${kept.map((volume) => volume.Name).join(", ")}`);

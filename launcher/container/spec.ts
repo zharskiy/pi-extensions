@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import {
   type ContainerSpec,
   engineSocketPath,
@@ -14,6 +14,7 @@ import {
   LAUNCHER_SET_VARIABLES,
   PI_SESSION_DIR_VARIABLE,
   stableHash,
+  stateLayout,
 } from "../shared/index.ts";
 import {
   type GitOverlay,
@@ -23,7 +24,6 @@ import {
   resolveExtraMounts,
   type Workspace,
 } from "../workspace/index.ts";
-import { gitSnapshotPath, gitSnapshotsDir } from "./git-snapshot.ts";
 import {
   agentVolumeName,
   cacheVolumeName,
@@ -32,11 +32,9 @@ import {
   repoHash,
   sharedVolumeName,
   userHashOf,
-  wantedFile,
 } from "./names.ts";
 
 export interface LauncherContainerSpec extends ContainerSpec {
-  wantedFile: string;
   volumeLabels: Record<string, Record<string, string>>;
   ownedPaths: string[];
 }
@@ -49,7 +47,7 @@ export interface PathVolume {
 interface SpecProxy {
   url: string;
   network: NetworkRef;
-  policyHash: string;
+  tokenHash: string;
   caPemPath?: string;
 }
 
@@ -70,7 +68,6 @@ export interface ContainerSpecInput {
   launcherVersion: string;
   renderDir?: string;
   trust?: SpecTrust;
-  repoProxyToken?: string;
   launchId?: string;
   hostSessions?: HostSessions;
 }
@@ -113,6 +110,10 @@ const writableRoots = (workspace: Workspace) => {
 const gitCommonDirsOf = (workspace: Workspace) =>
   gitRepos(workspace).flatMap((repo) => (repo.gitCommonDir === undefined ? [] : [repo.gitCommonDir]));
 
+const GIT_CONFIG_FILES = new Set(["config", "config.worktree"]);
+
+export const isGitConfigFile = (path: string) => GIT_CONFIG_FILES.has(basename(path));
+
 const gitMounts = (input: ContainerSpecInput) => {
   const overlay = input.gitOverlay;
 
@@ -120,13 +121,14 @@ const gitMounts = (input: ContainerSpecInput) => {
     return [];
   }
 
-  const snapshots = gitSnapshotsDir(input.stateDir, input.workspace.repoRoot);
-  const snapshotOf = (target: string) => bind(gitSnapshotPath(snapshots, target), target, true);
+  const files = stateLayout(input.stateDir).repo(repoHash(input.workspace.repoRoot));
+  const fileMount = (target: string) =>
+    isGitConfigFile(target) ? bind(files.gitCopy(target), target, true) : bind(target, target, true);
 
   return [
     ...overlay.selfBinds.map((path) => bind(path, path, false)),
-    ...overlay.readOnlyDirs.map(snapshotOf),
-    ...overlay.readOnlyFiles.map(snapshotOf),
+    ...overlay.readOnlyDirs.map((path) => bind(path, path, true)),
+    ...overlay.readOnlyFiles.map(fileMount),
   ];
 };
 
@@ -195,6 +197,11 @@ const repoVolumeLabels = (workspace: Workspace) => ({
   [LABELS.repoRoot]: workspace.repoRoot,
 });
 
+const cacheVolumeLabels = (workspace: Workspace, target: string) => ({
+  ...repoVolumeLabels(workspace),
+  [LABELS.cachePath]: relative(workspace.repoRoot, target) || ".",
+});
+
 const sharedVolumeLabels = (stateDir: string, path: string) => ({
   [LABELS.userHash]: userHashOf(stateDir),
   [LABELS.sharedPath]: path,
@@ -202,16 +209,19 @@ const sharedVolumeLabels = (stateDir: string, path: string) => ({
 
 const ownedVolumes = (input: ContainerSpecInput) => {
   const { workspace, config } = input;
-  const repoLabels = repoVolumeLabels(workspace);
-  const caches = config.mounts.cacheVolumes.map((path) => ({
-    name: cacheVolumeName(workspace.repoRoot, path),
-    target: resolvedPath(workspace.repoRoot, path),
-    labels: repoLabels,
-  }));
+  const caches = config.mounts.cacheVolumes.map((path) => {
+    const target = resolvedPath(workspace.repoRoot, path);
+
+    return {
+      name: cacheVolumeName(workspace.repoRoot, path),
+      target,
+      labels: cacheVolumeLabels(workspace, target),
+    };
+  });
   const overlays = nodeModulesOverlays(workspace, config).map((overlay) => ({
     name: overlay.name,
     target: overlay.path,
-    labels: repoLabels,
+    labels: cacheVolumeLabels(workspace, overlay.path),
   }));
   const shared = sharedCacheVolumes(config, input.stateDir).map((cache) => ({
     name: cache.name,
@@ -231,22 +241,12 @@ export const forwardedEnv = (names: string[], hostEnv: Record<string, string | u
     }),
   );
 
-const withRepoToken = (url: string, token: string | undefined) => {
-  if (token === undefined) {
-    return url;
-  }
-
-  const parsed = new URL(url);
-
-  return `${parsed.protocol}//${parsed.username}:${token}@${parsed.host}`;
-};
-
 const proxyEnv = (input: ContainerSpecInput): Record<string, string> => {
   if (input.proxy === undefined) {
     return {};
   }
 
-  const url = withRepoToken(input.proxy.url, input.repoProxyToken);
+  const { url } = input.proxy;
 
   return { HTTPS_PROXY: url, HTTP_PROXY: url, ALL_PROXY: url, NO_PROXY: "", NODE_USE_ENV_PROXY: "1" };
 };
@@ -310,7 +310,7 @@ const baseLabels = (input: ContainerSpecInput) => ({
   [LABELS.imageDigest]: input.image.digest,
   [LABELS.imageReference]: input.image.reference,
   [LABELS.version]: input.launcherVersion,
-  ...(input.proxy === undefined ? {} : { [LABELS.proxyPolicyHash]: input.proxy.policyHash }),
+  ...(input.proxy === undefined ? {} : { [LABELS.proxyTokenHash]: input.proxy.tokenHash }),
   ...sessionsLabel(input.hostSessions),
   ...(input.workspace.gitCommonDir === undefined
     ? {}
@@ -353,7 +353,6 @@ export const buildContainerSpec = (input: ContainerSpecInput): LauncherContainer
     tmpfs: [`/tmp:${SHARED_TMPFS}`, `${GUEST_HOME}:${SHARED_TMPFS}`],
     init: true,
     resources: { cpus: config.resources.cpus, memoryGiB: config.resources.memoryGiB },
-    wantedFile: wantedFile(input.stateDir, workspace.repoRoot),
     volumeLabels: Object.fromEntries([
       [agentVolume, repoVolumeLabels(workspace)],
       ...volumes.map((entry) => [entry.name, entry.labels]),

@@ -15,6 +15,7 @@ export interface PullImageInput {
   backend: Backend;
   config: SandboxConfig;
   stateDir: string;
+  preparing?: () => void;
 }
 
 export interface EnsureImageInput extends PullImageInput {
@@ -96,6 +97,9 @@ const reusableBuild = (backend: Backend, record: ImageRecord | undefined, hash: 
 
 const buildLocally = async (input: EnsureImageInput, hash: string): Promise<BuiltImage> => {
   const reference = input.config.image.reference;
+
+  input.preparing?.();
+
   const { id, digest } = await buildInContext(input, {
     prefix: "build",
     tag: reference,
@@ -107,9 +111,22 @@ const buildLocally = async (input: EnsureImageInput, hash: string): Promise<Buil
   return { reference, digest, id, built: true, pi: input.versions.pi };
 };
 
+const pulledImage = async (input: PullImageInput, pinned: string) => {
+  const reference = input.config.image.reference;
+  const local = await reusableImage(input.backend, reference, pinned);
+
+  if (local !== undefined) {
+    return local;
+  }
+
+  input.preparing?.();
+
+  return input.backend.pullImage(reference, pinned);
+};
+
 export const pullPinnedImage = async (input: PullImageInput, pinned: string): Promise<BuiltImage> => {
   const reference = input.config.image.reference;
-  const { id, digest } = await input.backend.pullImage(reference, pinned);
+  const { id, digest } = await pulledImage(input, pinned);
 
   if (digest !== pinned) {
     throw new LauncherError(`image ${reference} has digest ${digest}, expected ${pinned}`);
