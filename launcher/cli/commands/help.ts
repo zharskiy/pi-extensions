@@ -4,7 +4,7 @@ const USAGE = [
   "usage:",
   "  pi [args...]                        run pi in the sandbox for this repository",
   "  pi --no-sandbox [args...]           run host pi when the policy fallback allows it",
-  "  pi install|remove <source>          inside the sandbox, then written to the host settings.json",
+  "  pi install|remove <source>          run with host pi on the host, like pi mcp add",
   "  pi mcp add|remove|login|logout ...  run on the host",
   "  pi sandbox status                   runtime, container, proxy, image, sessions, grants",
   "  pi sandbox config [--json]          effective config with the source layer of each key",

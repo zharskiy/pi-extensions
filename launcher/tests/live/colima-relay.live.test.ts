@@ -45,7 +45,7 @@ const portOf = (server: Server) => {
   return typeof address === "object" && address !== null ? address.port : 0;
 };
 
-describe.skipIf(!enabled)("docker-engine egress relay (live)", () => {
+describe.skipIf(!enabled)("colima egress relay (live)", () => {
   const backend = createColimaBackend({
     home: "",
     stateDir: "",

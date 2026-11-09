@@ -41,7 +41,7 @@ const buildFrom = async (
 };
 
 runBackendConformance(
-  `docker-engine (${socketPath ?? "no socket"})`,
+  `colima (${socketPath ?? "no socket"})`,
   hooks,
   async () => {
     const runner = createProcessRunner();
@@ -73,7 +73,7 @@ const OWNERSHIP_VOLUME = `pi-sandbox-live-ownership-${randomBytes(4).toString("h
 
 const OWNERSHIP_TARGET = "/home/pi/.cache/live";
 
-hooks.describe("docker-engine volume ownership", () => {
+hooks.describe("colima volume ownership", () => {
   const backend = createColimaBackend({
     home: "",
     stateDir: "",
@@ -156,7 +156,7 @@ const SHELL_TOOL_PROBE = [
   "process.stdout.write(JSON.stringify({ stderr: result.stderr, status: result.status }));",
 ].join("\n");
 
-hooks.describe("docker-engine sandbox image missing-command hint", () => {
+hooks.describe("colima sandbox image missing-command hint", () => {
   const backend = createColimaBackend({
     home: "",
     stateDir: "",

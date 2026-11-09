@@ -5,7 +5,7 @@
 Question: how a test suite inside the pi sandbox reaches the Postgres, Redis or similar it needs, without giving the sandbox a path to the host.
 
 - README.md (this file): the problem, the decision and its open points.
-- spec.md: config, layers, lifecycle, networking, CLI, the Apple gap, alternatives and the implementation outline.
+- spec.md: config, layers, lifecycle, networking, CLI, alternatives and the implementation outline. Its Apple `container` section predates the launcher becoming Colima-only and no longer applies.
 
 ## The problem
 
@@ -25,11 +25,10 @@ The launcher runs sidecar service containers next to the sandbox, one per entry 
 
 | point | state |
 | --- | --- |
-| Apple `container`: name resolution between containers, more than one network per container, the sandbox runs with `--no-dns` today | to verify on a real host; services refuse on Apple until then (spec.md, Apple backend) |
 | Separate services network instead of the repository network the relay sits on | recommended by the spec; it changes the owner's "same internal network" wording |
 | Remove services at the last session end (fresh data every first launch) rather than only stop them | recommended by the spec; it refines the owner's "stop" |
 | Private registries for service images | no registry credentials, as for the sandbox image (a known gap already) |
 
 ## Interim
 
-Until this ships, run the server inside the sandbox: add it with `image.packages` (for example `postgresql`, `redis-server`), start it as the `pi` user with its data under `/tmp` (`initdb -D /tmp/pg`, `pg_ctl -D /tmp/pg -o "-k /tmp" start`, `redis-server --dir /tmp --daemonize yes`), and point the tests at `127.0.0.1`. `/tmp` is a tmpfs, so the data counts against the container's memory and is gone when the container stops. The launcher README should carry this recipe.
+Until this ships, run the server inside the sandbox: add it with `image.packages` (for example `postgresql`, `redis-server`), start it as the `pi` user with its data under `/tmp` (`initdb -D /tmp/pg`, `pg_ctl -D /tmp/pg -o "-k /tmp" start`, `redis-server --dir /tmp --daemonize yes`), and point the tests at `127.0.0.1`. `/tmp` is a tmpfs, so the data counts against the container's memory and is gone when the container stops. The launcher README carries this recipe.
