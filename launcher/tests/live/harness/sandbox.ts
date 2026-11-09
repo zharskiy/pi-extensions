@@ -24,13 +24,13 @@ import {
 } from "./engine.ts";
 import { ALL_FIXTURE_HOSTS, resolveValue } from "./names.ts";
 
-export interface PiResult {
+interface PiResult {
   code: number;
   stdout: string;
   stderr: string;
 }
 
-export interface PiRun {
+interface PiRun {
   done: Promise<PiResult>;
   output(): string;
   stop(): void;
@@ -60,12 +60,12 @@ export interface LiveSandbox {
   env: Record<string, string>;
   writeUserConfig(config: Record<string, unknown>): Promise<void>;
   writeAgentFile(name: string, value: unknown): Promise<void>;
-  readAgentFile(name: string): Promise<unknown>;
   writeFile(name: string, text: string): Promise<string>;
   pi(args: string[], options?: PiOptions): PiRun;
   exec(script: string): Promise<PiResult>;
-  openedUrls(): Promise<string[]>;
   accessLog(): Promise<AccessEntry[]>;
+  lastExit(): Promise<PiResult>;
+  leftovers(): Promise<string[]>;
   cleanup(): Promise<void>;
 }
 
@@ -154,6 +154,15 @@ const readAccessLog = async (stateDir: string) => {
     .map((line) => JSON.parse(line) as AccessEntry);
 };
 
+const GIT_COPY = /^[0-9a-f]{16}$/;
+
+const nonEmptyList = async (path: string) => {
+  const text = await readFile(path, "utf8").catch(() => "[]");
+  const value = JSON.parse(text) as unknown;
+
+  return Array.isArray(value) && value.length === 0 ? [] : [`${path}: ${text.trim()}`];
+};
+
 const collect = () => {
   const chunks: Buffer[] = [];
   const stream = new Writable({
@@ -220,6 +229,7 @@ export const createLiveSandbox = async (name: string): Promise<LiveSandbox> => {
     startedAt: Date.now(),
   });
 
+  const holder = { released: false };
   const backend = createColimaBackend({
     home: "",
     stateDir: "",
@@ -293,30 +303,51 @@ export const createLiveSandbox = async (name: string): Promise<LiveSandbox> => {
     return { code, stdout: out.text(), stderr: err.text() };
   };
 
-  const lastExit = async () => {
+  const release = async () => {
+    if (holder.released) {
+      return;
+    }
+
+    holder.released = true;
+
     held.stopHeartbeat();
 
     await endLaunch(stateDir, { repoHash, launchId, onLast: async () => undefined });
+  };
+
+  const lastExit = async () => {
+    await release();
 
     return pi(["--version"]).done;
   };
 
   const leftovers = async () => {
+    const files = stateLayout(stateDir).repo(repoHash);
     const owned = await listContainers({ "pi-sandbox.repo-hash": repoHash });
     const networks = (await listNetworks()).filter(
       (candidate) => candidate.Name === `pi-sandbox-${repoHash.slice(0, 12)}`,
     );
-    const proxy = await readFile(stateLayout(stateDir).repo(repoHash).proxy.record, "utf8").catch(
-      () => undefined,
+    const daemons = await daemonPids(stateDir);
+    const launches = await readdir(files.launches).catch(() => [] as string[]);
+    const copies = (await readdir(files.git).catch(() => [] as string[])).filter((name) =>
+      GIT_COPY.test(name),
     );
+    const present = await Promise.all(
+      [files.proxy.record, files.proxy.token].map((path) => (existsSync(path) ? [path] : [])),
+    );
+    const lists = await Promise.all([files.pins, files.created].map(nonEmptyList));
 
     return {
       containers: owned,
       networks,
       named: [
-        ...owned.map((container) => `container ${container.Id}`),
+        ...owned.map((container) => `container ${container.Names.join(",")}`),
         ...networks.map((candidate) => `network ${candidate.Name}`),
-        ...(proxy === undefined ? [] : ["proxy"]),
+        ...daemons.map((pid) => `proxy pid ${pid}`),
+        ...launches.map((name) => `launch entry ${name}`),
+        ...copies.map((name) => `git config copy ${name}`),
+        ...present.flat(),
+        ...lists.flat(),
       ],
     };
   };
@@ -353,7 +384,7 @@ export const createLiveSandbox = async (name: string): Promise<LiveSandbox> => {
     await rm(root, { recursive: true, force: true });
 
     if (left.named.length > 0) {
-      throw new Error(`the last session left ${left.named.join(", ")}`);
+      throw new Error(`the last session left ${left.named.join(", ")}; cleanup had to remove them`);
     }
 
     if (kept.length > 0) {
@@ -373,7 +404,6 @@ export const createLiveSandbox = async (name: string): Promise<LiveSandbox> => {
     env,
     writeUserConfig: (config) => writeFile(userConfigFile, `${JSON.stringify(config, null, 2)}\n`),
     writeAgentFile: (file, value) => writeFile(join(agentDir, file), `${JSON.stringify(value, null, 2)}\n`),
-    readAgentFile: async (file) => JSON.parse(await readFile(join(agentDir, file), "utf8")) as unknown,
     writeFile: async (file, text) => {
       await writeFile(join(root, file), text);
 
@@ -381,9 +411,9 @@ export const createLiveSandbox = async (name: string): Promise<LiveSandbox> => {
     },
     pi,
     exec,
-    openedUrls: async () =>
-      existsSync(opened) ? (await readFile(opened, "utf8")).split("\n").filter((line) => line !== "") : [],
     accessLog: () => readAccessLog(stateDir),
+    lastExit,
+    leftovers: async () => (await leftovers()).named,
     cleanup,
   };
 };

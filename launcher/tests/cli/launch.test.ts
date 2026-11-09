@@ -3,8 +3,16 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { run } from "../../cli/index.ts";
 import { LauncherError, sha256Hex } from "../../shared/index.ts";
-import { createFakeBackend } from "../support/fake-backend.ts";
-import { createHarness, holdLaunch, isPiSession, piSession, piSessions, unreachable } from "./harness.ts";
+import {
+  createFakeBackend,
+  createHarness,
+  holdLaunch,
+  isPiSession,
+  piArgsOf,
+  piSession,
+  piSessions,
+  unreachable,
+} from "./harness.ts";
 
 const PREPARING = "preparing pi sandbox, one time";
 
@@ -178,7 +186,7 @@ describe("pi [args]", () => {
 
     await run(["--version"], harness.deps);
 
-    expect(piSession(fake)?.spec.command.slice(-2)).toEqual(["pi", "--version"]);
+    expect(piArgsOf(piSession(fake))).toEqual(["--version"]);
   });
 
   it("refuses when no backend is available", async () => {

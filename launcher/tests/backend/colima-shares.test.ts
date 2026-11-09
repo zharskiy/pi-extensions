@@ -74,6 +74,7 @@ const launchWith = async (setup: Setup = {}) => {
   const fake = createFakeBackend();
   const answers = setup.answers ?? {};
   const holder: { home: string; stateDir: string } = { home: "", stateDir: "" };
+  const pauses: number[] = [];
   const harness = await createHarness({
     backend: () => {
       const backend = { ...fake.backend, ...PROFILE, ...setup.backend };
@@ -82,6 +83,9 @@ const launchWith = async (setup: Setup = {}) => {
         stateDir: holder.stateDir,
         runner: harness.deps.runner,
         detect: () => backend.detect(),
+        pause: async (ms) => {
+          pauses.push(ms);
+        },
       });
 
       return { ...backend, vm };
@@ -111,6 +115,7 @@ const launchWith = async (setup: Setup = {}) => {
     harness,
     fake,
     paths,
+    pauses,
     colimaCalls: () =>
       harness.calls.filter((call) => call.file === "colima").map((call) => argvOf(call).join(" ")),
   };
@@ -429,10 +434,11 @@ describe("the launch shares a repository the VM does not see", () => {
 
     expect(await run0(context)).toBe(1);
     expect(detections.count).toBe(6);
+    expect(context.pauses).toEqual([0, 500, 1000, 1500, 2000]);
     expect(context.harness.stderr()).toContain(
       `pi-sandbox: the sandbox VM did not come back after sharing ${context.paths.repoRoot}: socket missing\n`,
     );
-  }, 15_000);
+  });
 });
 
 describe("the coverage of the VM shares", () => {

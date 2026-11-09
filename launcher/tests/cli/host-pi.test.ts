@@ -3,8 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { run } from "../../cli/index.ts";
 import { testedPiVersion } from "../../cli/versions.ts";
-import { createFakeBackend } from "../support/fake-backend.ts";
-import { createHarness, holdLaunch, writeManagedPi, writePathPi } from "./harness.ts";
+import { createFakeBackend, createHarness, holdLaunch, writeManagedPi, writePathPi } from "./harness.ts";
 
 const BUNDLED_ENTRY = "/fake/node_modules/@earendil-works/pi-coding-agent/dist/cli.js";
 

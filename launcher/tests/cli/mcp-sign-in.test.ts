@@ -3,9 +3,8 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { run } from "../../cli/index.ts";
 import { mcpAuthKey, stateLayout, withFileLock } from "../../shared/index.ts";
-import { createFakeBackend } from "../support/fake-backend.ts";
 import type { FakeCall } from "../support/fake-runner.ts";
-import { createHarness } from "./harness.ts";
+import { createFakeBackend, createHarness } from "./harness.ts";
 
 const URL_TEXT = "https://docs.example.test/mcp";
 

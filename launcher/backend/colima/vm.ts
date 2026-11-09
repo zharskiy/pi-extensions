@@ -17,6 +17,7 @@ export interface ColimaVmOptions {
   stateDir: string;
   runner: CommandRunner;
   detect: () => Promise<Detection>;
+  pause?: (ms: number) => Promise<void>;
 }
 
 const LOCK_TIMEOUT_MS = 180_000;
@@ -47,7 +48,7 @@ const unreachable = () =>
 
 const lastLine = (text: string) => text.trim().split("\n").at(-1) ?? "";
 
-const pause = (ms: number) => new Promise((done) => setTimeout(done, ms));
+const realPause = (ms: number) => new Promise<void>((done) => setTimeout(done, ms));
 
 const clamp = (value: number, low: number, high: number) => Math.max(low, Math.min(high, value));
 
@@ -60,7 +61,7 @@ const plural = (count: number) =>
   count === 1 ? "1 pi session is running" : `${count} pi sessions are running`;
 
 export const createColimaVm = (options: ColimaVmOptions): Vm => {
-  const { home, runner, detect } = options;
+  const { home, runner, detect, pause = realPause } = options;
   const profile = ENGINE_PROFILE;
 
   const run = async (failure: string, args: string[], hint: string) => {

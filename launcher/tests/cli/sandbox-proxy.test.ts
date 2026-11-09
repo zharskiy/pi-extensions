@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { run } from "../../cli/index.ts";
-import { createFakeBackend } from "../support/fake-backend.ts";
-import { createHarness } from "./harness.ts";
+import { createFakeBackend, createHarness } from "./harness.ts";
 
 describe("env-sourced credentials", () => {
   it("refuses a secret value with a line break before the sandbox starts", async () => {

@@ -1,62 +1,16 @@
 import { mkdir, readdir, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { ExecIo, ExecSpec } from "../../backend/index.ts";
 import { run } from "../../cli/index.ts";
 import { testedPiVersion } from "../../cli/versions.ts";
-import { createFakeBackend } from "../support/fake-backend.ts";
-import { createHarness, writeManagedPi, writePathPi } from "./harness.ts";
-
-type PiAnswer = (args: string[], files: Map<string, string>, workdir: string) => number;
-
-const streamText = (stream: NodeJS.ReadableStream | undefined) =>
-  new Promise<string>((resolve) => {
-    const chunks: Buffer[] = [];
-
-    if (stream === undefined) {
-      resolve("");
-
-      return;
-    }
-
-    stream.on("data", (chunk: Buffer | string) => chunks.push(Buffer.from(chunk)));
-
-    stream.once("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
-  });
-
-const volumeBackend = (answer: PiAnswer) => {
-  const files = new Map<string, string>();
-  const piRuns: string[][] = [];
-  const exec = async (spec: ExecSpec, io: ExecIo) => {
-    const [first, second, script = "", , path = ""] = spec.command;
-
-    if (first === "cat") {
-      const text = files.get(second ?? "");
-
-      io.stdout.write(text ?? "");
-
-      return text === undefined ? 1 : 0;
-    }
-
-    if (first === "sh" && script.includes("pi-sandbox-tmp")) {
-      files.set(path, await streamText(io.stdin));
-
-      return 0;
-    }
-
-    if (spec.command.includes("pi")) {
-      const args = spec.command.slice(spec.command.indexOf("pi") + 1);
-
-      piRuns.push(args);
-
-      return answer(args, files, spec.workdir ?? "/");
-    }
-
-    return 0;
-  };
-
-  return { fake: createFakeBackend({ exec }), files, piRuns };
-};
+import {
+  createFakeBackend,
+  createHarness,
+  piArgsOf,
+  piSessions,
+  writeManagedPi,
+  writePathPi,
+} from "./harness.ts";
 
 const hostPiRuns = (harness: Awaited<ReturnType<typeof createHarness>>) =>
   harness.calls.filter((entry) => entry.interactive).map((entry) => entry.args.slice(1));
@@ -135,11 +89,11 @@ describe("pi install and pi remove", () => {
   });
 
   it("passes a project install with -l straight through", async () => {
-    const volume = volumeBackend(() => 0);
-    const harness = await createHarness({ backend: () => volume.fake.backend });
+    const fake = createFakeBackend();
+    const harness = await createHarness({ backend: () => fake.backend });
 
     expect(await run(["install", "npm:local", "-l"], harness.deps)).toBe(0);
-    expect(volume.piRuns).toEqual([["install", "npm:local", "-l"]]);
+    expect(piSessions(fake).map(piArgsOf)).toEqual([["install", "npm:local", "-l"]]);
     expect(hostPiRuns(harness)).toEqual([]);
   });
 });
@@ -271,10 +225,10 @@ describe("pi update", () => {
   });
 
   it("runs pi update --extensions inside the sandbox", async () => {
-    const volume = volumeBackend(() => 0);
-    const harness = await createHarness({ backend: () => volume.fake.backend });
+    const fake = createFakeBackend();
+    const harness = await createHarness({ backend: () => fake.backend });
 
     expect(await run(["update", "--extensions"], harness.deps)).toBe(0);
-    expect(volume.piRuns).toEqual([["update", "--extensions"]]);
+    expect(piSessions(fake).map(piArgsOf)).toEqual([["update", "--extensions"]]);
   });
 });

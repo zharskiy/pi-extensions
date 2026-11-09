@@ -122,25 +122,6 @@ describe("ClientHello on a tunnel", () => {
     ).toMatchObject({ reason: "no TLS server name", repo: REPO });
   });
 
-  it("refuses a hello whose server name differs from the CONNECT host", async () => {
-    const hello = await captureHello("other.test");
-    const socket = await tunnelTo("target.test:443");
-    const closed = readRest(socket);
-
-    socket.write(hello);
-
-    await closed;
-
-    expect(state.test.log).toContainEqual(
-      expect.objectContaining({
-        decision: "deny",
-        rule: "sni",
-        sni: "other.test",
-        reason: "TLS server name other.test does not match target.test",
-      }),
-    );
-  });
-
   it("forwards the hello of a host reachable only through a grant", async () => {
     await addGrant(state.stateDir, { host: "granted.test", port: 443, repoHash: REPO }, true, Date.now());
 

@@ -46,7 +46,9 @@ const changedPaths = () => {
 const isCode = (unit: string) => (path: string) => {
   const match = UNIT_PATH.exec(path);
 
-  return match?.[1] === unit && !EXTENSION_DOCS.includes(match[2] ?? "");
+  const rest = match?.[2] ?? "";
+
+  return match?.[1] === unit && !EXTENSION_DOCS.includes(rest) && !rest.startsWith("tests/");
 };
 
 const unitDocs = (unit: string) => [...EXTENSION_DOCS.map((doc) => `${unit}/${doc}`), ...ROOT_DOCS];
@@ -152,6 +154,22 @@ describe("docs sync rule", () => {
 
   it("ignores changes under platform/ or test/", () => {
     expect(missingDocs(["platform/shared/index.ts", "test/architecture.test.ts"])).toEqual([]);
+  });
+
+  it("ignores test-only changes in an extension or the launcher", () => {
+    expect(
+      missingDocs(["extensions/footer/tests/segments.test.ts", "launcher/tests/cli/launch.test.ts"]),
+    ).toEqual([]);
+  });
+
+  it("names only the shipped code when tests changed with it", () => {
+    expect(missingDocs(["launcher/shared/errors.ts", "launcher/tests/shared/errors.test.ts"])).toEqual([
+      {
+        extension: "launcher",
+        triggers: ["launcher/shared/errors.ts"],
+        missing: unitDocs("launcher"),
+      },
+    ]);
   });
 
   it("treats a nested path as code of its extension", () => {

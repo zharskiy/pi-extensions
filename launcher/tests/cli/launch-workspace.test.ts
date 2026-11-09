@@ -6,9 +6,8 @@ import { run } from "../../cli/index.ts";
 import { LABELS } from "../../container/index.ts";
 import { registerLaunch } from "../../grants/index.ts";
 import { bootTime } from "../../shared/index.ts";
-import { createFakeBackend } from "../support/fake-backend.ts";
 import type { FakeCall } from "../support/fake-runner.ts";
-import { createHarness, type HarnessOptions } from "./harness.ts";
+import { createFakeBackend, createHarness, type HarnessOptions } from "./harness.ts";
 
 const WORKSPACE_NOTICE = "pi-sandbox: workspace with 2 repositories, git metadata protected";
 

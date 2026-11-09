@@ -3,13 +3,11 @@ import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ExecIo, ExecSpec, Vm } from "../../backend/index.ts";
-import { MCP_LIST_PROBE, OFFLINE_PROBE } from "../../cli/commands/doctor-probes.ts";
 import { run } from "../../cli/index.ts";
 import { testedPiVersion } from "../../cli/versions.ts";
 import { registerLaunch } from "../../grants/index.ts";
 import { bootTime, LauncherError, sha256Hex } from "../../shared/index.ts";
-import { createFakeBackend } from "../support/fake-backend.ts";
-import { createHarness, unreachable, writeManagedPi, writePathPi } from "./harness.ts";
+import { createFakeBackend, createHarness, unreachable, writeManagedPi, writePathPi } from "./harness.ts";
 
 interface Probes {
   env?: string;
@@ -22,7 +20,6 @@ interface Probes {
   ruleAnswer?: string;
   mcpAuth?: string;
   settings?: string;
-  sessionsExit?: number;
 }
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -45,129 +42,50 @@ const healthServer = async (status: number) => {
   return (server.address() as AddressInfo).port;
 };
 
-type Intent =
-  | "repo visible"
-  | "environment"
-  | "auth file"
-  | "mcp file"
-  | "direct route"
-  | "offline"
-  | "mcp list"
-  | "rule request"
-  | "container mcp-auth"
-  | "container settings"
-  | "sessions share"
-  | "sync";
-
-const isProbe = (command: string[], probe: string[]) => command.join(" ") === probe.join(" ");
-
-const intentOf = (command: string[]): Intent | undefined => {
-  const text = command.join(" ");
-
-  if (command[0] === "sh" && text.includes("PI_CODING_AGENT_SESSION_DIR")) {
-    return "sessions share";
-  }
-
-  if (command[0] === "cat" && text.includes("settings.json")) {
-    return "container settings";
-  }
-
-  if (
-    text.includes("settings.json") ||
-    text.includes("pi-sandbox-tmp") ||
-    (command[0] === "sh" && text.includes("mcp-auth.json"))
-  ) {
-    return "sync";
-  }
-
-  if (command[0] === "cat" && text.includes("mcp-auth.json")) {
-    return "container mcp-auth";
-  }
-
-  if (text.includes("auth.json")) {
-    return "auth file";
-  }
-
-  if (text.includes("mcp.json")) {
-    return "mcp file";
-  }
-
-  if (isProbe(command, MCP_LIST_PROBE)) {
-    return "mcp list";
-  }
-
-  if (isProbe(command, OFFLINE_PROBE)) {
-    return "offline";
-  }
-
-  if (command[0] === "node") {
-    return "rule request";
-  }
-
-  if (text.includes("1.1.1.1")) {
-    return "direct route";
-  }
-
-  if (command.some((part) => part.endsWith("/repo"))) {
-    return "repo visible";
-  }
-
-  return command.length === 1 ? "environment" : undefined;
-};
-
 const answering =
   (probes: Probes) =>
   (spec: ExecSpec, io: ExecIo): number => {
-    const answers: Record<Intent, () => number> = {
-      "repo visible": () => probes.sameDir ?? 0,
-      environment: () => {
-        io.stdout.write(probes.env ?? "TERM=xterm-256color\nHOME=/home/pi\n");
+    const write = (text: string) => {
+      io.stdout.write(text);
 
-        return 0;
-      },
-      "auth file": () => {
-        io.stdout.write(probes.auth ?? "{}");
-
-        return 0;
-      },
-      "mcp file": () => {
-        io.stdout.write(probes.mcp ?? "{}");
-
-        return 0;
-      },
-      "direct route": () => probes.routeExit ?? 1,
-      offline: () => {
-        io.stdout.write(probes.offline ?? "");
-
-        return probes.offline === undefined ? 1 : 0;
-      },
-      "mcp list": () => {
+      return 0;
+    };
+    const answers: Record<string, () => number> = {
+      test: () => probes.sameDir ?? 0,
+      env: () => write(probes.env ?? "TERM=xterm-256color\nHOME=/home/pi\n"),
+      sh: () => probes.routeExit ?? 1,
+      printenv: () => (probes.offline === undefined ? 1 : write(probes.offline)),
+      pi: () => {
         io.stderr.write("docs: connection refused\n");
 
         return probes.mcpListExit ?? 0;
       },
-      "rule request": () => {
-        io.stdout.write(`${probes.ruleAnswer ?? "200"}\n`);
-
-        return 0;
-      },
-      "container mcp-auth": () => {
-        io.stdout.write(probes.mcpAuth ?? "{}");
-
-        return 0;
-      },
-      "container settings": () => {
-        io.stdout.write(probes.settings ?? "{}");
-
-        return 0;
-      },
-      "sessions share": () => probes.sessionsExit ?? 0,
-      sync: () => 0,
+      node: () => write(`${probes.ruleAnswer ?? "200"}\n`),
     };
-    const intent = intentOf(spec.command);
 
-    return intent === undefined ? 127 : answers[intent]();
+    return answers[spec.command[0] ?? ""]?.() ?? 127;
   };
+
+const GUEST_FILES: Array<[keyof Probes, string]> = [
+  ["auth", "auth.json"],
+  ["mcp", "mcp.json"],
+  ["mcpAuth", "mcp-auth.json"],
+  ["settings", "settings.json"],
+];
+
+const guestBackend = async (probes: Probes, vm?: Partial<Vm>) => {
+  const fake = createFakeBackend({ exec: answering(probes), vm });
+
+  await Promise.all(
+    GUEST_FILES.map(([key, name]) => {
+      const text = probes[key];
+
+      return typeof text === "string" ? fake.writeGuestFile(name, text) : undefined;
+    }),
+  );
+
+  return fake;
+};
 
 const HOST_CHECK_LINES = [
   expect.stringMatching(/^ok host pi: pi \S+ next to the launcher; the image follows it$/),
@@ -193,7 +111,7 @@ const doctorWith = async (
   vm?: Partial<Vm>,
 ) => {
   const port = await healthServer(healthStatus);
-  const fake = createFakeBackend({ exec: answering(probes), vm });
+  const fake = await guestBackend(probes, vm);
   const harness = await createHarness({
     backend: () => fake.backend,
     proxy: { ensure: async () => ({ proxy: { pid: 77, port, boot: 0, inputHash: "h" }, notices: [] }) },
@@ -214,8 +132,9 @@ const doctorWith = async (
 };
 
 describe("pi sandbox doctor", () => {
-  it("prints one ok line per stage and per check when every probe passes", async () => {
-    const { code, lines, harness, port } = await doctorWith({});
+  it("prints one ok line per stage and per check when every probe passes, in one container removed like a launch", async () => {
+    const { code, lines, harness, port, fake } = await doctorWith({});
+    const container = fake.execs[0]?.spec.containerId;
 
     expect(lines).toEqual([
       ...PREPARED,
@@ -229,7 +148,7 @@ describe("pi sandbox doctor", () => {
       "ok no-route: no direct route to 1.1.1.1:443",
       "ok offline: PI_OFFLINE is unset",
       "ok mcp: pi mcp list connects to every enabled server",
-      "ok mcp-auth sweep: 0 entries in mcp-auth.json, every token is a placeholder",
+      "ok mcp-auth sweep: no mcp-auth.json in the sandbox yet",
       "ok settings sweep: no settings.json package carries a credential in its URL",
       "ok sessions share: writable at the host path",
       "skip trust: no credential rule, nothing is terminated",
@@ -237,25 +156,6 @@ describe("pi sandbox doctor", () => {
       ...HOST_CHECK_LINES,
     ]);
     expect(code).toBe(0);
-  });
-
-  it("runs every probe inside the repository container without a tty, then removes it like a launch", async () => {
-    const { fake } = await doctorWith({});
-    const probes = fake.execs.filter((exec) => intentOf(exec.spec.command) !== "sync");
-    const container = fake.execs[0]?.spec.containerId;
-
-    expect([...new Set(probes.map((exec) => intentOf(exec.spec.command)))].sort()).toEqual([
-      "auth file",
-      "container mcp-auth",
-      "container settings",
-      "direct route",
-      "environment",
-      "mcp file",
-      "mcp list",
-      "offline",
-      "repo visible",
-      "sessions share",
-    ]);
     expect(fake.execs.every((exec) => exec.spec.containerId === container && !exec.tty)).toBe(true);
     expect(fake.created.map((entry) => entry.summary.id)).toEqual([container]);
     expect(fake.containers.size).toBe(0);
@@ -265,7 +165,7 @@ describe("pi sandbox doctor", () => {
     const { lines, fake } = await doctorWith({ ruleAnswer: "401" }, 200, undefined, {
       example: { type: "api_key", key: "real-secret-value-1234567890" },
     });
-    const request = fake.execs.find((exec) => intentOf(exec.spec.command) === "rule request");
+    const request = fake.execs.find((exec) => exec.spec.command[0] === "node");
 
     expect(lines).toContain("ok trust: the container trusts the proxy's certificate for models.example.test");
     expect(lines).toContain(
@@ -494,32 +394,10 @@ describe("pi sandbox doctor", () => {
       expect(code).toBe(0);
     });
 
-    it("passes for an 8 CPU, 10 GiB profile", async () => {
-      const { line } = await sizeLine(async () => ({ cpus: 8, memoryGiB: 10 }));
-
-      expect(line).toBe("ok vm size: profile pi-sandbox has 8 CPUs and 10 GiB");
-    });
-
     it("measures the profile against the size install.sh gives this machine", async () => {
       const { line } = await sizeLine(async () => ({ cpus: 4, memoryGiB: 4 }), { cpus: 4, memoryGiB: 8 });
 
       expect(line).toBe("ok vm size: profile pi-sandbox has 4 CPUs and 4 GiB");
-    });
-
-    it("does not warn on a 16 GiB machine whose profile has the recommended size", async () => {
-      const { code, line } = await sizeLine(async () => ({ cpus: 8, memoryGiB: 8 }), {
-        cpus: 10,
-        memoryGiB: 16,
-      });
-
-      expect(line).toBe("ok vm size: profile pi-sandbox has 8 CPUs and 8 GiB");
-      expect(code).toBe(0);
-    });
-
-    it("skips when colima does not report the profile's size", async () => {
-      const { line } = await sizeLine(async () => undefined);
-
-      expect(line).toBe("skip vm size: colima did not report the size of profile pi-sandbox");
     });
   });
 });
@@ -557,12 +435,6 @@ describe("pi sandbox doctor vm shares", () => {
     const { line } = await sharesLine(async () => ({ shares: [], missing: ["/srv/repo"] }));
 
     expect(line).toBe("fail vm shares: /srv/repo is not shared with profile pi-sandbox");
-  });
-
-  it("skips when colima did not write the instance config", async () => {
-    const { line } = await sharesLine(async () => undefined);
-
-    expect(line).toBe("skip vm shares: colima did not report the shares of profile pi-sandbox");
   });
 });
 

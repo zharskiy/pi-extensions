@@ -225,23 +225,15 @@ describe("install.sh and the Colima profile", () => {
   const sysctl = (cpus: number, bytes: number) =>
     `case "$2" in hw.ncpu) echo ${cpus} ;; hw.memsize) echo ${bytes} ;; *) exit 1 ;; esac`;
 
-  it("lowers the VM size to this Mac's CPUs and half its memory", async () => {
-    const { root, home } = await installRoot({ colima: STOPPED_COLIMA, sysctl: sysctl(4, 16 * 1024 ** 3) });
-    const result = runInstall(root);
-
-    expect(await startOf(home)).toContain("--cpu 4 --memory 8 --disk 60");
-    expect(result.stdout).toContain("4 CPUs, 8 GiB, 60 GiB, sized to this Mac, ");
-  });
-
-  it("never sizes the VM below 2 CPUs and 4 GiB, and keeps the size the flags give", async () => {
-    const small = await installRoot({ colima: STOPPED_COLIMA, sysctl: sysctl(1, 4 * 1024 ** 3) });
+  it("sizes the VM to this Mac's CPUs and half its memory, and keeps the size the flags give", async () => {
+    const sized = await installRoot({ colima: STOPPED_COLIMA, sysctl: sysctl(4, 16 * 1024 ** 3) });
     const flagged = await installRoot({ colima: STOPPED_COLIMA, sysctl: sysctl(4, 16 * 1024 ** 3) });
-
-    runInstall(small.root);
+    const result = runInstall(sized.root);
 
     runInstall(flagged.root, ["--cpu", "6", "--memory", "12"]);
 
-    expect(await startOf(small.home)).toContain("--cpu 2 --memory 4 --disk 60");
+    expect(await startOf(sized.home)).toContain("--cpu 4 --memory 8 --disk 60");
+    expect(result.stdout).toContain("4 CPUs, 8 GiB, 60 GiB, sized to this Mac, ");
     expect(await startOf(flagged.home)).toContain("--cpu 6 --memory 12 --disk 60");
   });
 

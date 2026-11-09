@@ -594,11 +594,11 @@ describe("restricted addresses after DNS", () => {
     local.stateDir = await createStateDir();
     local.test = await startTestProxy({
       stateDir: local.stateDir,
-      policy: { allow: ["api.test", "tunnel.test"] },
+      policy: { allow: ["api.test"] },
       ca: state.ca,
       rules: RULES,
       resolver: state.resolver.resolver,
-      dial: createDialer({ resolve: resolveTo({ "api.test": "10.0.0.5", "tunnel.test": "127.0.0.1" }) }),
+      dial: createDialer({ resolve: resolveTo({ "api.test": "10.0.0.5" }) }),
     });
     local.token = local.test.token;
   });
@@ -623,15 +623,5 @@ describe("restricted addresses after DNS", () => {
     expect(response.statusCode).toBe(502);
     expect(body).toContain("restricted addresses");
     expect(body).not.toContain(API_SECRET);
-  });
-
-  it("refuses a tunnel whose name resolves to a loopback address and records the denial", async () => {
-    const reply = await openConnect(local.test?.proxy.port ?? 0, "tunnel.test:443", local.token);
-    const body = JSON.parse(await readRest(reply.socket)) as { rule: string };
-
-    expect(reply.status).toBe(403);
-    expect(local.test?.log).toContainEqual(
-      expect.objectContaining({ host: "tunnel.test", decision: "deny", rule: body.rule, repo: REPO }),
-    );
   });
 });

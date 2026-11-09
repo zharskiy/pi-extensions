@@ -4,9 +4,8 @@ import { describe, expect, it } from "vitest";
 import { run } from "../../cli/index.ts";
 import { LABELS, overlayVolumes, sharedCacheVolumes } from "../../container/index.ts";
 import { sha256Hex } from "../../shared/index.ts";
-import { createFakeBackend } from "../support/fake-backend.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
-import { createHarness, holdLaunch } from "./harness.ts";
+import { createFakeBackend, createHarness, holdLaunch } from "./harness.ts";
 
 const SHARED = "~/.cache/pip";
 

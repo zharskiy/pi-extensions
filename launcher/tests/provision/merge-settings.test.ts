@@ -1,13 +1,11 @@
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { syncSettingsFile } from "../../provision/index.ts";
-import { bootTime, GUEST_PATHS, stateLayout } from "../../shared/index.ts";
+import { bootTime, stateLayout } from "../../shared/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
 import { runningContainer, tempDir, writeText } from "./fixtures.ts";
-
-const guest = (name: string) => `${GUEST_PATHS.agentDir}/${name}`;
 
 const volumeText = (value: unknown) => (typeof value === "string" ? value : JSON.stringify(value));
 
@@ -18,13 +16,7 @@ const volumeBackend = async (files: Record<string, unknown>) => {
     Object.entries(files).map(([name, value]) => writeText(join(guestAgentDir, name), volumeText(value))),
   );
 
-  const fake = createFakeBackend({
-    guestAgentDir,
-    execScripts: Object.entries(files).map(([name, value]) => ({
-      command: ["cat", guest(name)],
-      stdout: volumeText(value),
-    })),
-  });
+  const fake = createFakeBackend({ guestAgentDir });
   const containerId = await runningContainer(fake.backend);
   const volume = async (name: string) => {
     const text = await fake.guestFile(name);
@@ -32,14 +24,16 @@ const volumeBackend = async (files: Record<string, unknown>) => {
     return text === undefined ? undefined : JSON.parse(text);
   };
 
-  return { fake, containerId, volume };
+  const changedAt = async (name: string) => (await stat(join(guestAgentDir, name))).mtimeMs;
+
+  return { fake, containerId, volume, changedAt };
 };
 
 describe("syncSettingsFile", () => {
   const setup = async (volume: Record<string, unknown>) => {
     const stateDir = await tempDir("sync-state");
     const repoRoot = await tempDir("sync-repo");
-    const { fake, containerId, volume: volumeFile } = await volumeBackend(volume);
+    const { fake, containerId, volume: volumeFile, changedAt } = await volumeBackend(volume);
     const sync = (hostSettings: Record<string, unknown> | undefined) =>
       syncSettingsFile({
         backend: fake.backend,
@@ -52,7 +46,7 @@ describe("syncSettingsFile", () => {
         hostSettings,
       });
 
-    return { stateDir, repoRoot, fake, sync, volume: volumeFile };
+    return { stateDir, repoRoot, fake, sync, volume: volumeFile, changedAt };
   };
 
   it("overwrites the volume keys the host sets and keeps the volume-only keys", async () => {
@@ -71,12 +65,11 @@ describe("syncSettingsFile", () => {
     expect(await fresh.volume("settings.json")).toEqual({ theme: "dark" });
 
     const current = await setup({ "settings.json": { theme: "dark" } });
+    const before = await current.changedAt("settings.json");
 
     await current.sync({ theme: "dark" });
 
-    expect(current.fake.execs.map((exec) => exec.spec.command.join(" "))).toEqual([
-      `cat ${guest("settings.json")}`,
-    ]);
+    expect(await current.changedAt("settings.json")).toBe(before);
   });
 
   it("drops local packages outside the mounts with a notice and keeps mounted ones", async () => {
@@ -150,7 +143,7 @@ describe("syncSettingsFile", () => {
 
     const pending = env.sync({ theme: "dark" });
 
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    await new Promise((resolve) => setTimeout(resolve, 50));
 
     expect(env.fake.execs).toEqual([]);
 

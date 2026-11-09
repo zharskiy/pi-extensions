@@ -68,9 +68,9 @@ const TRUST_ERROR = /CERT|SELF_SIGNED|UNABLE_TO|ISSUER/;
 
 const SECRET_TOKEN_FIELDS = ["access_token", "refresh_token", "id_token"];
 
-export const OFFLINE_PROBE = ["printenv", "PI_OFFLINE"];
+const OFFLINE_PROBE = ["printenv", "PI_OFFLINE"];
 
-export const MCP_LIST_PROBE = ["pi", "mcp", "list"];
+const MCP_LIST_PROBE = ["pi", "mcp", "list"];
 
 export const passed = (detail: string): CheckResult => ({ status: "ok", detail });
 

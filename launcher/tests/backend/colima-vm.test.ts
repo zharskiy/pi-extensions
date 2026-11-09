@@ -36,6 +36,7 @@ const setupWith = async (setup: Setup = {}) => {
   const fake = createFakeBackend();
   const vm = { running: answers.running === true };
   const events: string[] = [];
+  const pauses: number[] = [];
   const answer = (call: FakeCall) => {
     const command = call.args[0];
 
@@ -67,6 +68,9 @@ const setupWith = async (setup: Setup = {}) => {
         stateDir: harness.stateDir,
         runner: harness.deps.runner,
         detect,
+        pause: async (ms) => {
+          pauses.push(ms);
+        },
       }),
     }),
     respond: (call) => (call.file === "colima" && answers.missing !== true ? answer(call) : undefined),
@@ -93,6 +97,7 @@ const setupWith = async (setup: Setup = {}) => {
     harness,
     fake,
     events,
+    pauses,
     colimaCalls: () =>
       harness.calls.filter((call) => call.file === "colima").map((call) => argvOf(call).join(" ")),
   };
@@ -163,7 +168,8 @@ describe("a launch starts the stopped sandbox VM", () => {
       "pi-sandbox: the sandbox VM started but its engine is unreachable: socket missing\n",
     );
     expect(context.colimaCalls()).toEqual([STATUS, START]);
-  }, 15_000);
+    expect(context.pauses).toEqual([0, 500, 1000, 1500, 2000]);
+  });
 
   it("names the missing colima", async () => {
     const context = await setupWith({ colima: { missing: true } });

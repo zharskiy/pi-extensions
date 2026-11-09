@@ -1,7 +1,6 @@
 import { spawn } from "node:child_process";
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { Readable } from "node:stream";
 import type {
   Backend,
   ContainerSpec,
@@ -59,7 +58,7 @@ interface FakeRelay {
 interface FakeBackendOptions {
   localImages?: Record<string, string>;
   registry?: Record<string, string>;
-  exec?: (spec: ExecSpec, io: ExecIo) => Promise<number> | number;
+  exec?: (spec: ExecSpec, io: ExecIo) => Promise<number | undefined> | number | undefined;
   execScripts?: FakeExecScript[];
   routeNotices?: string[];
   guestAgentDir?: string;
@@ -87,9 +86,6 @@ const isIdQuery = (command: string[]) => command.join(" ") === "id -u";
 
 const startsWith = (command: string[], prefix: string[]) =>
   prefix.every((part, index) => command[index] === part);
-
-export const stdinFrom = (input: string | Buffer): NodeJS.ReadableStream =>
-  Readable.from([Buffer.from(input)]);
 
 export const stdinOf = (exec: FakeExec) => Buffer.concat(exec.stdin);
 
@@ -122,14 +118,48 @@ const runScript = async (script: FakeExecScript, io: ExecIo, stdinDone: Promise<
   return script.code ?? 0;
 };
 
-const shellIn = (agentDir: string, spec: ExecSpec, io: ExecIo) =>
+const GUEST_PROGRAMS = ["sh", "cat"];
+
+const isWithinAny = (part: string, roots: string[]) =>
+  roots.some((root) => part === root || part.startsWith(`${root}/`));
+
+const runsInGuest = (spec: ExecSpec, containerSpec: ContainerSpec | undefined) => {
+  const binds = (containerSpec?.mounts ?? [])
+    .filter((mount) => mount.kind === "bind" && mount.source === mount.target)
+    .map((mount) => mount.target);
+
+  return (
+    GUEST_PROGRAMS.includes(spec.command[0] ?? "") &&
+    spec.command.some((part) => part.includes(GUEST_PATHS.agentDir) || isWithinAny(part, binds))
+  );
+};
+
+const isPiSessionExec = (spec: ExecSpec) => spec.env.PI_SANDBOX_LAUNCH_ID !== undefined;
+
+const catIn = async (agentDir: string, spec: ExecSpec, io: ExecIo) => {
+  const texts = await Promise.all(
+    spec.command
+      .slice(1)
+      .map((path) => readFile(path.replaceAll(GUEST_PATHS.agentDir, agentDir)).catch(() => undefined)),
+  );
+
+  texts.forEach((text) => {
+    if (text !== undefined) {
+      io.stdout.write(text);
+    }
+  });
+
+  return texts.every((text) => text !== undefined) ? 0 : 1;
+};
+
+const shellIn = (agentDir: string, spec: ExecSpec, env: Record<string, string>, io: ExecIo) =>
   new Promise<number>((resolve) => {
     const [file = "sh", ...args] = spec.command.map((part) =>
       part.replaceAll(GUEST_PATHS.agentDir, agentDir),
     );
     const child = spawn(file, args, {
       stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env, ...spec.env },
+      env: { ...process.env, ...env, ...spec.env },
     });
 
     child.stdout.pipe(io.stdout, { end: false });
@@ -248,9 +278,21 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
       return 0;
     }
 
-    return options.guestAgentDir !== undefined && spec.command[0] === "sh"
-      ? shellIn(options.guestAgentDir, spec, io)
+    return options.guestAgentDir !== undefined && spec.command[0] === "sh" && !isPiSessionExec(spec)
+      ? shellIn(options.guestAgentDir, spec, {}, io)
       : 0;
+  };
+
+  const inGuest = (spec: ExecSpec, io: ExecIo) => {
+    const containerSpec = containers.get(spec.containerId)?.spec;
+
+    if (options.guestAgentDir === undefined || !runsInGuest(spec, containerSpec)) {
+      return undefined;
+    }
+
+    return spec.command[0] === "cat"
+      ? catIn(options.guestAgentDir, spec, io)
+      : shellIn(options.guestAgentDir, spec, containerSpec?.env ?? {}, io);
   };
 
   const assertRunning = (id: string) => {
@@ -272,9 +314,9 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
     const unsubscribe = io.onResize?.((size) => record.resizes.push(size));
 
     try {
-      return options.exec === undefined
-        ? await defaultExec(spec, io, stdinDone)
-        : await options.exec(spec, io);
+      const answered = (await inGuest(spec, io)) ?? (await options.exec?.(spec, io));
+
+      return answered ?? (await defaultExec(spec, io, stdinDone));
     } finally {
       unsubscribe?.();
     }
@@ -549,13 +591,17 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
   const hasNetwork = (name: string) =>
     networks.has(name) || foreignNetworks.has(name) || externalNetworks.has(name);
 
-  const guestFile = (name: string) => {
+  const guestPath = (name: string) => {
     if (options.guestAgentDir === undefined) {
-      throw new Error("guestFile needs the guestAgentDir option");
+      throw new Error("guest files need the guestAgentDir option");
     }
 
-    return readFile(join(options.guestAgentDir, name), "utf8").catch(() => undefined);
+    return join(options.guestAgentDir, name);
   };
+
+  const guestFile = (name: string) => readFile(guestPath(name), "utf8").catch(() => undefined);
+
+  const writeGuestFile = (name: string, text: string) => writeFile(guestPath(name), text);
 
   return {
     backend,
@@ -567,6 +613,7 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
     plantNetwork,
     hasNetwork,
     guestFile,
+    writeGuestFile,
     localImages,
     pulls,
     builds,

@@ -88,9 +88,9 @@ const trustFor = (deps: CliDeps, context: LaunchContext, derived: DerivedSandbox
   return deps.proxy.trust(context.stateDir, sources);
 };
 
-const noticesWithin = async (pending: Promise<string[]>) => {
+const noticesWithin = async (pending: Promise<string[]>, waitMs: number) => {
   const abort = new AbortController();
-  const late = delay(DNS_WAIT_MS, [], { signal: abort.signal }).catch(() => []);
+  const late = delay(waitMs, [], { signal: abort.signal }).catch(() => []);
 
   try {
     return await Promise.race([pending, late]);
@@ -116,6 +116,7 @@ export const prepareHostSide = async (
         privateHosts: config.egress.privateHosts,
         resolve: deps.resolveHost,
       }),
+      deps.dnsWaitMs ?? DNS_WAIT_MS,
     ),
     trustFor(deps, context, derived, proxyNeeded),
   ]);

@@ -6,8 +6,7 @@ import { describe, expect, it } from "vitest";
 import { run } from "../../cli/index.ts";
 import { liveLaunches, registerLaunch } from "../../grants/index.ts";
 import { bootTime, sha256Hex, stateLayout } from "../../shared/index.ts";
-import { createFakeBackend } from "../support/fake-backend.ts";
-import { createHarness, piSessions } from "./harness.ts";
+import { createFakeBackend, createHarness, piSessions } from "./harness.ts";
 
 const OUTDATED =
   "pi-sandbox: the sandbox config changed; it applies after every session in this repository exits";
@@ -29,6 +28,15 @@ const filesUnder = async (dir: string): Promise<string[]> => {
 
 const withCacheMount = (harness: Awaited<ReturnType<typeof createHarness>>) =>
   harness.writeJson(harness.userConfigFile, { mounts: { cacheVolumes: ["deep/cache"] } });
+
+const launchesShown = async (harness: Awaited<ReturnType<typeof createHarness>>) => {
+  await run(["sandbox", "status"], harness.deps);
+
+  return harness
+    .stdout()
+    .split("\n")
+    .findLast((line) => line.startsWith("launches: "));
+};
 
 describe("the end of a session", () => {
   it("leaves the engine and the state dir in their steady state after the last session exits", async () => {
@@ -275,7 +283,7 @@ describe("a signal while the sandbox is being prepared", () => {
     expect(fake.created).toHaveLength(1);
     expect(fake.containers.size).toBe(0);
     expect(fake.stops.map((stop) => stop.id)).toContain(fake.created[0]?.summary.id);
-    expect(await liveLaunches(harness.stateDir)).toEqual([]);
+    expect(await launchesShown(harness)).toBe("launches: 0 running for this repository");
     expect(signals.listenerCount("SIGINT")).toBe(0);
     expect(piSessions(fake)).toEqual([]);
   });
@@ -304,6 +312,6 @@ describe("a signal while the sandbox is being prepared", () => {
     expect(await run([], harness.deps)).toBe(130);
     expect(sessionsWhenBuilt).toEqual([1]);
     expect(fake.containers.size).toBe(0);
-    expect(await liveLaunches(harness.stateDir)).toEqual([]);
+    expect(await launchesShown(harness)).toBe("launches: 0 running for this repository");
   });
 });

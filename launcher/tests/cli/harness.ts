@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,7 +11,7 @@ import { newLaunchId, registerLaunch } from "../../grants/index.ts";
 import type { BundledPi } from "../../hostpi/index.ts";
 import type { DenialRecord, RepoProxy, RepoProxyInput } from "../../proxy/index.ts";
 import { bootTime, LauncherError, type RunResult, sha256Hex, stateLayout } from "../../shared/index.ts";
-import { createFakeBackend, type FakeExec } from "../support/fake-backend.ts";
+import { createFakeBackend as createBareBackend, type FakeExec } from "../support/fake-backend.ts";
 import { createFakeRunner, type FakeResponder } from "../support/fake-runner.ts";
 
 interface Collected {
@@ -49,6 +49,16 @@ export const unreachable = (backend: Backend): Backend => ({
     },
   },
 });
+
+type FakeBackendOptions = NonNullable<Parameters<typeof createBareBackend>[0]>;
+
+export const createFakeBackend = (options: FakeBackendOptions = {}) => {
+  const guestAgentDir = realpathSync(mkdtempSync(join(tmpdir(), "pi-sandbox-guest-")));
+
+  roots.push(guestAgentDir);
+
+  return createBareBackend({ guestAgentDir, ...options });
+};
 
 const unreachableBackend = () => unreachable(createFakeBackend().backend);
 
@@ -106,6 +116,12 @@ export const piSessions = (fake: { execs: FakeExec[] }) =>
   fake.execs.filter((exec) => isPiSession(exec.spec));
 
 export const piSession = (fake: { execs: FakeExec[] }) => piSessions(fake).at(-1);
+
+export const piArgsOf = (exec: FakeExec | undefined) => {
+  const command = exec?.spec.command ?? [];
+
+  return command.slice(command.indexOf("pi") + 1);
+};
 
 export const renderDirOf = (harness: HarnessPaths) =>
   stateLayout(harness.stateDir).repo(sha256Hex(harness.repoRoot)).render;

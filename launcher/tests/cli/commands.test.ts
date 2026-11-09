@@ -5,10 +5,9 @@ import { run } from "../../cli/index.ts";
 import { LABELS, repoVolumes } from "../../container/index.ts";
 import { registerLaunch } from "../../grants/index.ts";
 import { bootTime, launcherRoot, sha256Hex, stateLayout } from "../../shared/index.ts";
-import { createFakeBackend } from "../support/fake-backend.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
 import { tempDir } from "../support/temp-dir.ts";
-import { createHarness } from "./harness.ts";
+import { createFakeBackend, createHarness } from "./harness.ts";
 
 const packageVersion = async () =>
   (JSON.parse(await readFile(join(launcherRoot(), "..", "package.json"), "utf8")) as { version: string })

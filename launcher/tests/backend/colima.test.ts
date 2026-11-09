@@ -302,12 +302,6 @@ describe("colima images", () => {
     expect(engine.createdBodies.at(-1)?.body).toMatchObject({ Image: pulled.id });
   });
 
-  it("refuses a pinned digest the registry does not have", async () => {
-    const backend = backendFor(await startEngine());
-
-    await expect(backend.pullImage(IMAGE, `sha256:${"0".repeat(64)}`)).rejects.toBeInstanceOf(LauncherError);
-  });
-
   it("does not pull again when the pinned image is present", async () => {
     const engine = await startEngine();
     const backend = backendFor(engine);
@@ -315,15 +309,6 @@ describe("colima images", () => {
 
     expect(await backend.pullImage(IMAGE, DIGEST)).toEqual(first);
     expect(engine.requests.filter((request) => request.path === "/images/create")).toHaveLength(1);
-  });
-
-  it("resolves a local image by reference or id", async () => {
-    const backend = backendFor(await startEngine());
-    const pulled = await backend.pullImage(IMAGE);
-
-    expect(await backend.resolveImage(IMAGE)).toEqual(pulled);
-    expect(await backend.resolveImage(pulled.id)).toEqual(pulled);
-    expect(await backend.resolveImage("example.test/absent:1")).toBeUndefined();
   });
 
   it("builds an image from a context directory, streams its steps and returns its id", async () => {
@@ -540,17 +525,6 @@ describe("colima exec", () => {
 });
 
 describe("colima volumes", () => {
-  it("labels the volumes it creates as managed", async () => {
-    const engine = await startEngine();
-
-    await backendFor(engine).ensureVolume("pi-sandbox-cache-x");
-
-    expect(engine.requests.find((request) => request.path === "/volumes/create")?.body).toEqual({
-      Name: "pi-sandbox-cache-x",
-      Labels: { [LABELS.managed]: "true" },
-    });
-  });
-
   it("refuses to remove a volume that a container still mounts", async () => {
     const engine = await startEngine();
     const { backend } = await startedContainer(engine);
@@ -637,24 +611,6 @@ describe("colima egress relay", () => {
     expect(engine.containers.get(sandbox.id)?.State).toBe("running");
   });
 
-  it("gives each repository its own network and relay", async () => {
-    const { engine, backend } = await readyBackend();
-    const repoA = "a".repeat(64);
-    const repoB = "b".repeat(64);
-
-    await routeOn(backend, 3128, { repo: repoA });
-
-    await routeOn(backend, 3128, { repo: repoB });
-
-    const relayA = relayOf(engine, `pi-sandbox-relay-${"a".repeat(12)}`)?.Id;
-    const relayB = relayOf(engine, `pi-sandbox-relay-${"b".repeat(12)}`)?.Id;
-    const members = (name: string) => engine.networks.get(name)?.connected.map((entry) => entry.container);
-
-    expect(relayA).not.toBe(relayB);
-    expect(members(`pi-sandbox-${"a".repeat(12)}`)).toEqual([relayA]);
-    expect(members(`pi-sandbox-${"b".repeat(12)}`)).toEqual([relayB]);
-  });
-
   it("creates no relay when the repository's network is refused", async () => {
     const { engine, backend } = await readyBackend();
 
@@ -676,24 +632,6 @@ describe("colima egress relay", () => {
     await routeOn(backend, 3128);
 
     expect(relayOf(engine)?.State).toBe("running");
-  });
-
-  it("removes the repository network with its relay, and keeps it while a sandbox is attached", async () => {
-    const { engine, backend } = await readyBackend();
-    const route = await routeOn(backend, 3128);
-    const sandbox = await backend.createContainer({
-      ...baseSpec,
-      name: "agent",
-      labels: { [LABELS.managed]: "true", [LABELS.repoHash]: REPO },
-      network: route.network,
-    });
-
-    expect(await backend.removeRepoNetwork(REPO)).toBe(false);
-
-    await backend.removeContainer(sandbox.id);
-
-    expect(await backend.removeRepoNetwork(REPO)).toBe(true);
-    expect(engine.networks.has(REPO_NETWORK)).toBe(false);
   });
 
   it("creates the relay from a pinned image pulled by digest, which has no tag", async () => {

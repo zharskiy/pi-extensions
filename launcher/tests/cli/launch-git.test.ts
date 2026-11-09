@@ -4,8 +4,7 @@ import { describe, expect, it } from "vitest";
 import { run } from "../../cli/index.ts";
 import { registerLaunch } from "../../grants/index.ts";
 import { bootTime, sha256Hex } from "../../shared/index.ts";
-import { createFakeBackend } from "../support/fake-backend.ts";
-import { createHarness } from "./harness.ts";
+import { createFakeBackend, createHarness } from "./harness.ts";
 
 const OUTDATED =
   "pi-sandbox: the sandbox config changed; it applies after every session in this repository exits";

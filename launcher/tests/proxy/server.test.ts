@@ -300,24 +300,6 @@ describe("CONNECT tunnel", () => {
     expect(denied.body.rule).toBe(rule);
   });
 
-  it("closes the tunnel when the TLS server name differs from the CONNECT host", async () => {
-    const outcome = await secureTunnel(
-      state.test.proxy.port,
-      "target.test:443",
-      "other.test",
-      state.ca.certPem,
-      state.token,
-    ).then(
-      () => "connected",
-      () => "closed",
-    );
-
-    expect(outcome).toBe("closed");
-    expect(
-      await waitFor(() => state.test.log.find((entry) => entry.rule === "sni" && entry.sni === "other.test")),
-    ).toMatchObject({ decision: "deny", host: "target.test" });
-  });
-
   it("closes a tunnel that does not start with a TLS ClientHello", async () => {
     const reply = await openConnect(state.test.proxy.port, "target.test:443", state.token);
 

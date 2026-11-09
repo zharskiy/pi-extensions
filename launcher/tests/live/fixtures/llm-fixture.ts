@@ -17,7 +17,7 @@ interface ChatMessage {
   tool_call_id?: string;
 }
 
-export interface ChatRequest {
+interface ChatRequest {
   model: string;
   messages: ChatMessage[];
   tools?: Array<{ function: { name: string } }>;
@@ -35,19 +35,6 @@ export interface LlmFixture extends HttpsFixture {
 export const PROVIDER: ProviderFixture = JSON.parse(
   readFileSync(new URL("./provider.json", import.meta.url), "utf8"),
 ) as ProviderFixture;
-
-const contentText = (content: unknown): string => {
-  if (typeof content === "string") {
-    return content;
-  }
-
-  return Array.isArray(content)
-    ? content.map((part) => (typeof part?.text === "string" ? part.text : "")).join("")
-    : "";
-};
-
-export const conversationText = (request: ChatRequest) =>
-  request.messages.map((message) => contentText(message.content)).join("\n");
 
 const chunk = (delta: Record<string, unknown>, finish: string | null = null) =>
   `data: ${JSON.stringify({

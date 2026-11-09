@@ -11,8 +11,6 @@ export interface FixtureConfigOptions {
 
 export const MODEL_ARGS = ["--model", `${PROVIDER.provider}/${PROVIDER.model}`];
 
-export const authority = (host: string, port: number) => `${host}:${port}`;
-
 export const fixtureConfig = (sandbox: LiveSandbox, options: FixtureConfigOptions = {}) => ({
   egress: {
     allow: options.allow ?? [],
@@ -38,25 +36,3 @@ export const providerSettings = () => ({ defaultProvider: PROVIDER.provider, def
 
 export const randomSecret = (label: string) =>
   `${label}-${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
-
-export const waitFor = async <T>(probe: () => Promise<T | undefined> | T | undefined, timeoutMs: number) => {
-  const deadline = Date.now() + timeoutMs;
-
-  const attempt = async (): Promise<T> => {
-    const value = await probe();
-
-    if (value !== undefined) {
-      return value;
-    }
-
-    if (Date.now() > deadline) {
-      throw new Error(`timed out after ${timeoutMs} ms`);
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 250));
-
-    return attempt();
-  };
-
-  return attempt();
-};

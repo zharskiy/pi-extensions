@@ -6,9 +6,8 @@ import { run } from "../../cli/index.ts";
 import type { DenialRecord } from "../../proxy/index.ts";
 import { isPlaceholder, sha256Hex } from "../../shared/index.ts";
 import { expectNoLeak } from "../support/expect-no-leak.ts";
-import { createFakeBackend } from "../support/fake-backend.ts";
 import { writeExecutable, writeText } from "../support/temp-dir.ts";
-import { createHarness, renderDirOf } from "./harness.ts";
+import { createFakeBackend, createHarness, renderDirOf } from "./harness.ts";
 
 const REAL_KEY = "real-secret-value-1234567890";
 
@@ -303,12 +302,14 @@ describe("pi launch wiring", () => {
     );
   });
 
-  it("launches without the private address notice when DNS does not answer within 2 s", async () => {
+  it("launches without the private address notice when DNS does not answer in time", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({
       backend: () => fake.backend,
       resolve: () => new Promise<string[]>(() => undefined),
     });
+
+    harness.deps.dnsWaitMs = 20;
 
     await harness.writeJson(join(harness.hostAgentDir, "auth.json"), {
       example: { type: "api_key", key: REAL_KEY },

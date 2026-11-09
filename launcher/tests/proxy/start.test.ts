@@ -216,7 +216,7 @@ describe("watchIdle", () => {
       held.watch = watchIdle({
         stateDir: state.stateDir,
         repoHash: REPO,
-        intervalMs: 100,
+        intervalMs: 30,
         emptyChecks: 2,
         onIdle: async () => {
           outcome.idle = true;
@@ -225,12 +225,12 @@ describe("watchIdle", () => {
 
       held.pending = registerLaunch(state.stateDir, launch);
 
-      await new Promise((resolve) => setTimeout(resolve, 350));
+      await new Promise((resolve) => setTimeout(resolve, 120));
     });
 
     const registered = await held.pending;
 
-    await new Promise((resolve) => setTimeout(resolve, 350));
+    await new Promise((resolve) => setTimeout(resolve, 120));
 
     expect(outcome.idle).toBe(false);
 

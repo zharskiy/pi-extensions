@@ -36,6 +36,7 @@ export interface CliDeps {
   proxy: ProxyControl;
   bundledPi(): Promise<BundledPi | undefined>;
   resolveHost(host: string): Promise<string[]>;
+  dnsWaitMs?: number;
   confirm(question: string): Promise<boolean>;
   now(): number;
 }
