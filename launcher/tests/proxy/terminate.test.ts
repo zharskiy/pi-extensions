@@ -572,6 +572,46 @@ describe("unusable credential values", () => {
   });
 });
 
+describe("an upstream certificate the proxy does not trust", () => {
+  const local: { test?: TestProxy; stateDir: string } = { stateDir: "" };
+
+  beforeAll(async () => {
+    local.stateDir = await createStateDir();
+    local.test = await startTestProxy({
+      stateDir: local.stateDir,
+      policy: { allow: ["api.test"] },
+      ca: state.ca,
+      upstreamCa: (await openCa(local.stateDir)).certPem,
+      rules: RULES,
+      resolver: state.resolver.resolver,
+      ports: () => ({ "api.test:443": portOf(state.upstream) }),
+    });
+  }, 30_000);
+
+  afterAll(async () => {
+    await local.test?.proxy.close();
+
+    await removeDir(local.stateDir);
+  });
+
+  it("answers 502 with the certificate error and names tls.extraCa", async () => {
+    const response = await requestThrough({
+      proxyPort: local.test?.proxy.port ?? 0,
+      token: local.test?.token ?? "",
+      host: "api.test",
+      ca: state.ca.certPem,
+      path: "/v1/models",
+      headers: { authorization: `Bearer ${API_PLACEHOLDER}` },
+    });
+    const body = JSON.parse(await readBody(response)) as { error: string };
+
+    expect(response.statusCode).toBe(502);
+    expect(body.error).toMatch(
+      /^upstream request failed: .*(certificate|issuer).*; if a proxy or CA on this network signs this host, set tls\.extraCa to its CA$/,
+    );
+  });
+});
+
 describe("terminated handshake", () => {
   it("closes a terminated CONNECT whose client never starts TLS", async () => {
     const reply = await openConnect(state.test.proxy.port, "git.test:443", state.token);

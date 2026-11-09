@@ -6,6 +6,7 @@ import type {
   MavenRepository,
   MavenServer,
   NpmrcEntry,
+  XmlElement,
 } from "../shared/index.ts";
 
 export type { JsonObject } from "../shared/index.ts";
@@ -56,7 +57,7 @@ export interface DerivedTools {
   glab: GlabHost[];
   npmrc?: NpmrcEntry[];
   pip?: IniSection[];
-  maven: { servers: MavenServer[]; mirrors: MavenRepository[] };
+  maven: { servers: MavenServer[]; mirrors: MavenRepository[]; passthrough: XmlElement[] };
   git: GitIdentity;
   env: Record<string, string>;
 }

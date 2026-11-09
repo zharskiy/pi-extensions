@@ -66,6 +66,28 @@ describe("image build network", () => {
     });
   });
 
+  it.each([
+    ["http://127.0.0.1:3128", "http://host.lima.internal:3128"],
+    ["http://localhost:3128/", "http://host.lima.internal:3128/"],
+    ["http://[::1]:3128", "http://host.lima.internal:3128"],
+  ])("points a loopback proxy %s at the host for the build", async (local, reachable) => {
+    const recording = recordingBackend();
+
+    await ensureBuiltImage({
+      backend: recording.backend,
+      config: egressWith("env"),
+      versions,
+      stateDir: await tempDir(),
+      env: { HTTPS_PROXY: local, HTTP_PROXY: "http://proxy.corp.example:8080" },
+    });
+
+    expect(recording.buildArgs[0]).toMatchObject({
+      HTTPS_PROXY: reachable,
+      https_proxy: reachable,
+      HTTP_PROXY: "http://proxy.corp.example:8080",
+    });
+  });
+
   it("sends no proxy build args without a parent proxy", async () => {
     const recording = recordingBackend();
 

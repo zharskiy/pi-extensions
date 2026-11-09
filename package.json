@@ -64,7 +64,7 @@
     ]
   },
   "scripts": {
-    "build:launcher": "tsc -p launcher/tsconfig.build.json",
+    "build:launcher": "rm -rf launcher/dist && tsc -p launcher/tsconfig.build.json",
     "prepack": "npm run build:launcher",
     "test": "vitest run --project unit",
     "test:live": "vitest run --project live --reporter verbose",

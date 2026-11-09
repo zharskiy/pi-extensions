@@ -79,6 +79,11 @@ act() {
   fi
 }
 
+streamed() {
+  { streamed_status=$( { { if "$@" 2>&1 3>&- 4>&-; then echo 0 >&3; else echo "$?" >&3; fi; } | sed 's/^/      /' >&4; } 3>&1 ); } 4>&1
+  return "$streamed_status"
+}
+
 verb() {
   if [ "$dry_run" -eq 1 ]; then
     echo "would $1"
@@ -169,8 +174,8 @@ step 1 "preflight: $preflight, node $node_version"
 if command -v colima >/dev/null 2>&1; then
   step 2 "runtime: colima is present"
 else
-  act brew install colima >/dev/null
-  step 2 "runtime: $(verb "brew install colima" "installed colima with Homebrew")"
+  step 2 "runtime: $(verb "brew install colima" "installing colima with Homebrew")"
+  act streamed brew install colima
 fi
 
 if [ "$dry_run" -eq 0 ]; then
@@ -191,9 +196,9 @@ else
     shares="$HOME writable"
   fi
 
-  act colima start --profile "$colima_profile" --activate=false --vm-type vz --mount-type virtiofs \
-    --cpu "$cpus" --memory "$memory" --disk "$disk" ${home_mount:+--mount} ${home_mount:+"$home_mount"} >/dev/null
-  step 3 "colima: $(verb "start profile $colima_profile (vz, virtiofs, $cpus CPUs, ${memory} GiB, ${disk} GiB$sizing, $shares)" "started profile $colima_profile (vz, virtiofs, $cpus CPUs, ${memory} GiB, ${disk} GiB$sizing, $shares)")"
+  step 3 "colima: $(verb "start profile $colima_profile (vz, virtiofs, $cpus CPUs, ${memory} GiB, ${disk} GiB$sizing, $shares)" "starting profile $colima_profile (vz, virtiofs, $cpus CPUs, ${memory} GiB, ${disk} GiB$sizing, $shares)")"
+  act streamed colima start --profile "$colima_profile" --activate=false --vm-type vz --mount-type virtiofs \
+    --cpu "$cpus" --memory "$memory" --disk "$disk" ${home_mount:+--mount} ${home_mount:+"$home_mount"}
 fi
 
 step 4 "image: prepared and verified by the smoke check in step 7"
@@ -309,7 +314,8 @@ if [ "$from_checkout" -eq 1 ]; then
   fi
   installed="$(verb "write" "wrote") $shim running $checkout/launcher/bin/pi-sandbox-dev.js"
 else
-  act npm install -g --legacy-peer-deps=false "$package_name@$version" >/dev/null
+  step 5 "launcher: $(verb "install $package_name@$version with npm" "installing $package_name@$version with npm")"
+  act streamed npm install -g --legacy-peer-deps=false "$package_name@$version"
   npm_bin="$(npm prefix -g)/bin/pi-sandbox"
   act ln -sfn "$npm_bin" "$shim"
   installed="$(verb "install" "installed") $package_name@$version and link $shim to $npm_bin"
@@ -434,7 +440,6 @@ else
 fi
 
 smoke_parent="$HOME/.cache"
-smoke_output=""
 
 smoke() {
   mkdir -p "$smoke_parent" || return 1
@@ -448,7 +453,7 @@ smoke() {
   git -C "$smoke_dir" init -q || smoke_status=1
 
   if [ "$smoke_status" -eq 0 ]; then
-    smoke_output=$(cd "$smoke_dir" && PATH="$bin_dir:$PATH" PI_SANDBOX_SESSIONS_HOST=off "$shim" sandbox doctor 2>&1) || smoke_status=1
+    (cd "$smoke_dir" && export PATH="$bin_dir:$PATH" PI_SANDBOX_SESSIONS_HOST=off && streamed "$shim" sandbox doctor) || smoke_status=1
     (cd "$smoke_dir" && PATH="$bin_dir:$PATH" PI_SANDBOX_SESSIONS_HOST=off "$shim" sandbox reset --volumes >/dev/null 2>&1) || true
   fi
 
@@ -462,11 +467,14 @@ if [ "$dry_run" -eq 1 ]; then
   step 7 "smoke: would run $shim sandbox doctor in a temporary git repository under $smoke_parent"
 elif ! command -v git >/dev/null 2>&1; then
   step 7 "smoke: skipped, git is missing; run pi sandbox doctor inside a repository"
-elif smoke; then
-  step 7 "smoke: $shim sandbox doctor passed in a temporary git repository"
 else
-  printf '%s\n' "$smoke_output" >&2
-  fail "smoke check failed, run $shim sandbox doctor inside a repository to see which check"
+  step 7 "smoke: running $shim sandbox doctor in a temporary git repository; the first image build takes a few minutes"
+
+  if smoke; then
+    step 7 "smoke: $shim sandbox doctor passed"
+  else
+    fail "smoke check failed, see the doctor lines above, or run $shim sandbox doctor inside a repository"
+  fi
 fi
 
 if [ -n "$snippet_files" ]; then

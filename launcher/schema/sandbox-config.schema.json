@@ -43,7 +43,7 @@
         "dockerfile": {
           "type": "string",
           "pattern": "^(/|~$|~/)",
-          "description": "Dockerfile text appended to the image layer, without FROM."
+          "description": "Absolute path (or ~/ path) of a file with Dockerfile lines, without FROM, appended to the image layer and run as root."
         }
       },
       "description": "A project config may not set image keys."

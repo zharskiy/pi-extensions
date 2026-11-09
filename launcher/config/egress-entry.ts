@@ -25,12 +25,6 @@ export const matchesPattern = (host: string, pattern: string) => {
   return host === pattern;
 };
 
-export const matchesEntry = (entry: string, host: string, port: number) => {
-  const parsed = parseEntry(entry);
-
-  return matchesPattern(normalizeHost(host), parsed.pattern) && (parsed.port ?? TLS_PORT) === port;
-};
-
 export const authorityOf = (host: string, port: number) => (port === TLS_PORT ? host : `${host}:${port}`);
 
 export const isLoopbackName = (host: string) => host === "localhost" || host.endsWith(".localhost");

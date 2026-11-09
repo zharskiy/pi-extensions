@@ -23,7 +23,7 @@ export const deriveHostTools = async (input: ToolsInput): Promise<ToolsSection> 
 
   if (!input.enabled) {
     return {
-      value: { gh: [], glab: [], maven: { servers: [], mirrors: [] }, git, env: {} },
+      value: { gh: [], glab: [], maven: { servers: [], mirrors: [], passthrough: [] }, git, env: {} },
       rules: [],
       notices: [],
     };

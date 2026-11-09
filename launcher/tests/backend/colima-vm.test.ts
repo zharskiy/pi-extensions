@@ -184,8 +184,9 @@ describe("a launch starts the stopped sandbox VM", () => {
     const gc = await setupWith();
 
     expect(await run(["sandbox", "status"], status.harness.deps)).toBe(0);
-    expect(await run(["sandbox", "gc"], gc.harness.deps)).toBe(1);
+    expect(await run(["sandbox", "gc"], gc.harness.deps)).toBe(0);
     expect(status.harness.stdout()).toContain("runtime: none (the sandbox VM engine is unreachable");
+    expect(gc.harness.stdout()).toContain("the engine step was skipped");
     expect([...status.colimaCalls(), ...gc.colimaCalls()]).toEqual([]);
   });
 });

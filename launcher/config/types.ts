@@ -107,7 +107,14 @@ export interface LayerConfig {
   org?: string;
 }
 
+export interface IgnoredKey {
+  layer: ConfigSource;
+  key: string;
+  reason: string;
+}
+
 export interface EffectiveConfig {
   config: SandboxConfig;
   sources: Record<string, ConfigSource>;
+  ignored: IgnoredKey[];
 }

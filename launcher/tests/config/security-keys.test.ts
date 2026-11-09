@@ -154,7 +154,7 @@ describe("validateLayer with the credential, egress, tls, image and org keys", (
         rule({ secret: { file: "/a", format: "yaml", key: "a" } }),
         "credentials.rules[0].secret.format must be one of json, npmrc, ini, maven-servers",
       ],
-      [rule({ transform: "urlUserinfoBase64" }), "credentials.rules[0].transform is not a known key"],
+      [rule({ nope: "value" }), "credentials.rules[0].nope is not a known key"],
       [
         rule({ secret: { mcpOAuth: { server: "docs", url: "http://mcp.test" } } }),
         "credentials.rules[0].secret.mcpOAuth.url must be an https URL",

@@ -6,7 +6,13 @@ import { endpointKey } from "./endpoints.ts";
 import { objectOr } from "./json.ts";
 import type { DerivedSandboxPi, DerivedTools, DeriveInput } from "./types.ts";
 
-const NO_TOOLS: DerivedTools = { gh: [], glab: [], maven: { servers: [], mirrors: [] }, git: {}, env: {} };
+const NO_TOOLS: DerivedTools = {
+  gh: [],
+  glab: [],
+  maven: { servers: [], mirrors: [], passthrough: [] },
+  git: {},
+  env: {},
+};
 
 const allowedByDerive = (derive: DeriveConfig, host: string) =>
   derive.enabled &&

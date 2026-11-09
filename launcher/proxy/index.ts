@@ -1,6 +1,6 @@
 export { guestProxyUrl } from "./auth.ts";
 export { parentProxyEnv } from "./child-env.ts";
-export type { DenialRecord } from "./client.ts";
+export { type DenialRecord, readHealth } from "./client.ts";
 export type { RepoProxy, RepoProxyInput } from "./files.ts";
 export { privateHostNotices } from "./private-hosts.ts";
 export { envSecretsFor, parentProxyAuth } from "./secrets/index.ts";

@@ -1,8 +1,9 @@
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { defaultConfig } from "../../config/defaults.ts";
 import { egressAllowList, loadEffectiveConfig } from "../../config/index.ts";
+import { launcherRoot } from "../../shared/index.ts";
 import { createLayers } from "./fixtures.ts";
 
 interface Layers {
@@ -34,6 +35,9 @@ const loadWith = async (layers: Layers) => {
 
   return loadEffectiveConfig({ repoRoot: files.repoRoot, env: files.env });
 };
+
+const ignoredWith = async (layers: Layers) =>
+  (await loadWith(layers)).ignored.map((entry) => `${entry.layer}: ${entry.key} (${entry.reason})`);
 
 describe("loadEffectiveConfig", () => {
   it("returns the defaults when no layer file exists", async () => {
@@ -80,16 +84,30 @@ describe("loadEffectiveConfig", () => {
     ]);
   });
 
+  it("lets Gradle plugins resolve through the gradle preset, artifact host included", async () => {
+    const { config } = await loadWith({ user: () => ({ egress: { presets: ["gradle"] } }) });
+
+    expect(egressAllowList(config.egress)).toEqual([
+      "plugins.gradle.org",
+      "plugins-artifacts.gradle.org",
+      "services.gradle.org",
+      "downloads.gradle.org",
+    ]);
+  });
+
   it("lets the policy turn the presets off for good", async () => {
     const { config } = await loadWith({ policy: () => ({ egress: { presets: [] } }) });
 
     expect(egressAllowList(config.egress)).toEqual([]);
-    await expect(
-      loadWith({
-        policy: () => ({ egress: { presets: [] } }),
-        user: () => ({ egress: { presets: ["npm"] } }),
-      }),
-    ).rejects.toThrow("user: egress.presets is set by the policy config and is final there");
+    const kept = await loadWith({
+      policy: () => ({ egress: { presets: [] } }),
+      user: () => ({ egress: { presets: ["npm"] } }),
+    });
+
+    expect(egressAllowList(kept.config.egress)).toEqual([]);
+    expect(kept.ignored).toEqual([
+      { layer: "user", key: "egress.presets", reason: "final in the policy config" },
+    ]);
   });
 
   it("refuses to forward JAVA_TOOL_OPTIONS, which carries the sandbox proxy", async () => {
@@ -131,18 +149,43 @@ describe("loadEffectiveConfig", () => {
     expect(config.egress.deny).toEqual(["paste.example.test", "bin.example.test"]);
   });
 
-  it("refuses a lower layer that sets a key the policy set, and names both layers", async () => {
-    await expect(
-      loadWith({ policy: () => ({ fallback: "refuse" }), user: () => ({ fallback: "refuse" }) }),
-    ).rejects.toThrow("user: fallback is set by the policy config and is final there");
-    await expect(
-      loadWith({ policy: () => ({ resources: { cpus: 2 } }), project: { resources: { cpus: 4 } } }),
-    ).rejects.toThrow("project: resources.cpus is set by the policy config and is final there");
+  it("ignores a lower layer's key the policy set, and names both layers", async () => {
+    const ignored = await loadWith({
+      policy: () => ({ fallback: "refuse", resources: { cpus: 2 } }),
+      user: () => ({ fallback: "host" }),
+      project: { resources: { cpus: 4 } },
+    });
+
+    expect(ignored.config.fallback).toBe("refuse");
+    expect(ignored.config.resources.cpus).toBe(2);
+    expect(ignored.ignored.map((entry) => `${entry.layer}: ${entry.key} (${entry.reason})`)).toEqual([
+      "user: fallback (final in the policy config)",
+      "project: resources.cpus (final in the policy config)",
+    ]);
   });
 
-  it("refuses a project config that sets a key outside its allowlist and names the file", async () => {
-    await expect(loadWith({ project: { egress: { allow: ["evil.test"] } } })).rejects.toThrow(
-      /^project: egress\.allow may not be set by a project config \(.*sandbox\.json\)$/,
+  it("ignores every project key outside its allowlist, names the file and keeps the allowed keys", async () => {
+    const { config, ignored } = await loadWith({
+      project: {
+        egress: { allow: ["evil.test"], privateHosts: ["evil.test"] },
+        credentials: { rules: [] },
+        image: { packages: ["curl"] },
+        resources: { cpus: 2 },
+      },
+    });
+
+    expect(config.egress.allow).toEqual([]);
+    expect(config.egress.privateHosts).toEqual([]);
+    expect(config.image.packages).toBeUndefined();
+    expect(config.resources.cpus).toBe(2);
+    expect(ignored.map((entry) => entry.key)).toEqual([
+      "egress.allow",
+      "egress.privateHosts",
+      "credentials.rules",
+      "image.packages",
+    ]);
+    expect(ignored[0]?.reason).toMatch(
+      /^a project config may set only mounts\.cacheVolumes, mounts\.autoOverlays, resources\.cpus, resources\.memoryGiB; \/.*\.pi\/sandbox\.json$/,
     );
   });
 
@@ -179,25 +222,46 @@ describe("loadEffectiveConfig with an org baseline", () => {
     ).resolves.toMatchObject({ config: { fallback: "refuse" }, sources: { fallback: "org" } });
   });
 
-  it("refuses a user that sets a key of the org baseline", async () => {
-    await expect(
-      loadWith({
+  it("ignores a user key the org baseline set", async () => {
+    expect(
+      await ignoredWith({
         baseline: { egress: { grants: false } },
         user: (org) => ({ org, egress: { grants: true } }),
       }),
-    ).rejects.toThrow("user: egress.grants is set by the org config and is final there");
+    ).toEqual(["user: egress.grants (final in the org config)"]);
   });
 
-  it("refuses an org baseline that sets a key the policy set", async () => {
-    await expect(
-      loadWith({ baseline: { fallback: "host" }, policy: (org) => ({ org, fallback: "refuse" }) }),
-    ).rejects.toThrow("org: fallback is set by the policy config and is final there");
+  it("ignores an org baseline key the policy set", async () => {
+    expect(
+      await ignoredWith({ baseline: { fallback: "host" }, policy: (org) => ({ org, fallback: "refuse" }) }),
+    ).toEqual(["org: fallback (final in the policy config)"]);
   });
 
-  it("refuses a user org when policy names one", async () => {
-    await expect(
-      loadWith({ baseline: {}, policy: (org) => ({ org }), user: (org) => ({ org }) }),
-    ).rejects.toThrow("user: org is set by the policy config and is final there");
+  it("ignores a user org when policy names one", async () => {
+    expect(await ignoredWith({ baseline: {}, policy: (org) => ({ org }), user: (org) => ({ org }) })).toEqual(
+      ["user: org (final in the policy config)"],
+    );
+  });
+
+  it("merges the README's Java user config over the example org baseline", async () => {
+    const baseline = JSON.parse(
+      await readFile(join(launcherRoot(), "examples", "org-baseline.json"), "utf8"),
+    ) as { egress: { allow: string[] } };
+    const { config, ignored } = await loadWith({
+      baseline,
+      user: (org) => ({
+        org,
+        egress: { presets: ["npm", "pypi", "github", "maven", "gradle"], allow: ["registry.corp.example"] },
+        mounts: { hostCaches: ["maven", "gradle"] },
+        image: { packages: ["openjdk-17-jdk-headless", "maven"] },
+      }),
+    });
+
+    expect(ignored).toEqual([]);
+    expect(config.egress.allow).toEqual([...baseline.egress.allow, "registry.corp.example"]);
+    expect(config.image.packages).toEqual(["openjdk-17-jdk-headless", "maven"]);
+    expect(config.credentials.derive.enabled).toBe(true);
+    expect(config.egress.grants).toBe(false);
   });
 
   it("names a missing org file and refuses an org that is not an absolute path", async () => {
@@ -208,7 +272,9 @@ describe("loadEffectiveConfig with an org baseline", () => {
   });
 
   it("keeps the project and the org baseline from setting org", async () => {
-    await expect(loadWith({ project: { org: "/etc/org.json" } })).rejects.toThrow(/^project: org may/);
+    expect(await ignoredWith({ project: { org: "/etc/org.json" } })).toEqual([
+      expect.stringMatching(/^project: org \(a project config may set only /),
+    ]);
     await expect(
       loadWith({ baseline: { org: "/etc/other.json" }, user: (org) => ({ org }) }),
     ).rejects.toThrow("org: org may only be set by the policy or user config");

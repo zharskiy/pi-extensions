@@ -218,8 +218,42 @@ describe("install.sh and the Colima profile", () => {
       `start --profile pi-sandbox --activate=false --vm-type vz --mount-type virtiofs --cpu 8 --memory 10 --disk 60 --mount ${home}:w`,
     );
     expect(result.stdout).toContain(
-      `[3/8] colima: started profile pi-sandbox (vz, virtiofs, 8 CPUs, 10 GiB, 60 GiB, ${home} writable)`,
+      `[3/8] colima: starting profile pi-sandbox (vz, virtiofs, 8 CPUs, 10 GiB, 60 GiB, ${home} writable)`,
     );
+  });
+
+  const INSTALLING_BREW = [
+    'echo "==> Pouring colima"',
+    'echo "brew warning" >&2',
+    `printf '#!/bin/sh\\ncase "$1" in version) echo "colima version 0.8.1" ;; *) exit 0 ;; esac\\n' > "$(dirname "$0")/colima"`,
+    'chmod 0755 "$(dirname "$0")/colima"',
+  ].join("\n");
+
+  it("prints the runtime step before brew runs and streams brew's output indented", async () => {
+    const { root } = await installRoot({ brew: INSTALLING_BREW });
+
+    await rm(join(root, "tools", "colima"));
+
+    const result = runInstall(root);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain(
+      "[2/8] runtime: installing colima with Homebrew\n      ==> Pouring colima\n      brew warning\n",
+    );
+  });
+
+  it("stops with brew's exit status when brew fails, after showing its output", async () => {
+    const { root } = await installRoot({ brew: 'echo "Error: no bottle"\nexit 3' });
+
+    await rm(join(root, "tools", "colima"));
+
+    const result = runInstall(root);
+
+    expect(result.status).toBe(3);
+    expect(result.stdout).toContain(
+      "[2/8] runtime: installing colima with Homebrew\n      Error: no bottle\n",
+    );
+    expect(result.stdout).not.toContain("[3/8]");
   });
 
   const sysctl = (cpus: number, bytes: number) =>

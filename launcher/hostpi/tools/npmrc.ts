@@ -22,6 +22,8 @@ const UNSCOPED_CREDENTIALS = new Set(["_auth", "_authtoken", "_password"]);
 
 const HOST_TLS_FILES = new Set(["ca", "cafile", "cert", "certfile"]);
 
+const CA_KEYS = new Set(["ca", "cafile"]);
+
 const PROXY_KEYS = new Set(["proxy", "https-proxy", "http-proxy"]);
 
 const REGISTRY_KEY = "registry";
@@ -119,6 +121,10 @@ const plainSection = (input: ToolsInput, entry: NpmrcEntry): Section<NpmrcEntry[
       entry.key,
       `has no registry; scope it as //<registry host>/:${name} to use it in the sandbox`,
     );
+  }
+
+  if (CA_KEYS.has(name)) {
+    return dropped(entry.key, "stays on the host; add the CA to tls.extraCa so the sandbox trusts it");
   }
 
   if (isSecretName(name) || HOST_TLS_FILES.has(name)) {

@@ -6,9 +6,9 @@ import {
 } from "node:child_process";
 import { closeSync, openSync } from "node:fs";
 import { rm } from "node:fs/promises";
-import { uptime } from "node:os";
 import { setTimeout as delay } from "node:timers/promises";
 import {
+  bootTime,
   type McpLoginState,
   makeMcpLoginDir,
   mcpAuthKey,
@@ -48,8 +48,6 @@ const FAILURE_COOLDOWN_MS = 10 * 60_000;
 const REJECTED_COOLDOWN_MS = 10 * 60_000;
 
 const LOGIN_TIMEOUT_SECONDS = 300;
-
-const bootTime = () => Math.round(Date.now() / 1000 - uptime());
 
 const since = (at: number | undefined, now: number, cooldownMs: number) =>
   at === undefined || now - at >= cooldownMs;

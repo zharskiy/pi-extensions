@@ -1,24 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { defaultConfig } from "../../config/defaults.ts";
 import { getPath, setPath } from "../../config/dotted.ts";
-import { mergeLayers } from "../../config/merge.ts";
+import { ignoredNotice, mergeLayers } from "../../config/merge.ts";
 import type { LayerConfig, LayerName } from "../../config/types.ts";
 import { layerKeys, validateLayer } from "../../config/validate.ts";
-import { errorMessage, isJsonObject } from "../../shared/index.ts";
+import { isJsonObject } from "../../shared/index.ts";
 
 type Layers = Partial<Record<LayerName, LayerConfig>>;
 
 const merge = async (layers: Layers) => mergeLayers({ defaults: await defaultConfig(), layers });
 
-const refusal = async (layers: Layers) => {
-  try {
-    await merge(layers);
-
-    return undefined;
-  } catch (error) {
-    return errorMessage(error);
-  }
-};
+const ignoredKeys = async (layers: Layers) =>
+  (await merge(layers)).ignored.map((entry) => `${entry.layer}: ${entry.key} (${entry.reason})`);
 
 const COMPLETE_LAYER: LayerConfig = {
   fallback: "refuse",
@@ -63,7 +56,14 @@ const COMPLETE_LAYER: LayerConfig = {
   org: "/etc/pi-sandbox/org.json",
 };
 
-const UNION_KEYS = ["egress.deny", "env.allow"];
+const UNION_KEYS = [
+  "egress.allow",
+  "egress.deny",
+  "egress.privateHosts",
+  "image.packages",
+  "credentials.rules",
+  "env.allow",
+];
 
 const settableKeys = () => layerKeys().filter((key) => key !== "$schema" && !key.includes("[]"));
 
@@ -98,17 +98,18 @@ describe("mergeLayers with a layer that sets every key", () => {
 });
 
 describe("mergeLayers with keys of the policy and org layers", () => {
-  it("makes every key the policy sets final for the org and user layers, except the unions", async () => {
+  it("ignores every key the policy sets in the org and user layers, except the unions, and keeps the policy value", async () => {
     const results = await Promise.all(
       leafKeys()
         .filter((key) => key !== "org")
         .map(async (key) => {
           const layer = setPath({}, key, getPath(COMPLETE_LAYER, key)) as LayerConfig;
+          const merged = await merge({ policy: layer, org: layer, user: layer });
 
           return {
             key,
-            org: await refusal({ policy: layer, org: layer }),
-            user: await refusal({ policy: layer, user: layer }),
+            ignored: merged.ignored.map((entry) => `${entry.layer}: ${entry.key} (${entry.reason})`),
+            source: merged.sources[key],
           };
         }),
     );
@@ -116,26 +117,99 @@ describe("mergeLayers with keys of the policy and org layers", () => {
     expect(results).toEqual(
       results.map(({ key }) =>
         UNION_KEYS.includes(key)
-          ? { key, org: undefined, user: undefined }
+          ? { key, ignored: [], source: "user" }
           : {
               key,
-              org: `org: ${key} is set by the policy config and is final there`,
-              user: `user: ${key} is set by the policy config and is final there`,
+              ignored: [
+                `org: ${key} (final in the policy config)`,
+                `user: ${key} (final in the policy config)`,
+              ],
+              source: "policy",
             },
       ),
     );
   });
 
-  it("makes the org keys final for the user and the project", async () => {
-    expect(await refusal({ org: { egress: { allow: ["a.test"] } }, user: { egress: { allow: [] } } })).toBe(
-      "user: egress.allow is set by the org config and is final there",
-    );
+  it("ignores the org keys in the user and the project and reports every one", async () => {
     expect(
-      await refusal({
-        org: { mounts: { autoOverlays: true } },
+      await ignoredKeys({
+        org: { egress: { grants: false, presets: ["npm"] }, mounts: { autoOverlays: true } },
+        user: { egress: { grants: true, presets: ["maven"] } },
         project: { mounts: { autoOverlays: false } },
       }),
-    ).toBe("project: mounts.autoOverlays is set by the org config and is final there");
+    ).toEqual([
+      "user: egress.presets (final in the org config)",
+      "user: egress.grants (final in the org config)",
+      "project: mounts.autoOverlays (final in the org config)",
+    ]);
+  });
+
+  it("adds the entries of every layer to the union keys and lets none remove one", async () => {
+    const orgRule = {
+      id: "corp",
+      host: "llm.corp.test",
+      placeholder: "pi-sandbox-corp",
+      secret: { env: "CORP" },
+    };
+    const userRule = {
+      id: "mine",
+      host: "git.mine.test",
+      placeholder: "pi-sandbox-mine",
+      secret: { env: "MINE" },
+    };
+    const { config, ignored } = await merge({
+      org: {
+        egress: { allow: ["registry.corp.test"], privateHosts: ["registry.corp.test"] },
+        image: { packages: ["jq"] },
+        credentials: { rules: [orgRule] },
+      },
+      user: {
+        egress: { allow: [], privateHosts: ["git.mine.test"] },
+        image: { packages: ["maven", "jq"] },
+        credentials: { rules: [userRule] },
+      },
+    });
+
+    expect(config.egress.allow).toEqual(["registry.corp.test"]);
+    expect(config.egress.privateHosts).toEqual(["registry.corp.test", "git.mine.test"]);
+    expect(config.image.packages).toEqual(["jq", "maven"]);
+    expect(config.credentials.rules).toEqual([orgRule, userRule]);
+    expect(ignored).toEqual([]);
+  });
+
+  it("keeps the higher layer's rule when a lower layer reuses its id", async () => {
+    const orgRule = {
+      id: "corp",
+      host: "llm.corp.test",
+      placeholder: "pi-sandbox-corp",
+      secret: { env: "CORP" },
+    };
+    const { config, ignored } = await merge({
+      org: { credentials: { rules: [orgRule] } },
+      user: { credentials: { rules: [{ ...orgRule, host: "evil.test" }] } },
+    });
+
+    expect(config.credentials.rules).toEqual([orgRule]);
+    expect(ignored).toEqual([
+      { layer: "user", key: "credentials.rules corp", reason: "a higher layer has a rule with this id" },
+    ]);
+  });
+
+  it("names every ignored key and layer in one warning", () => {
+    expect(
+      ignoredNotice([
+        { layer: "user", key: "egress.presets", reason: "final in the org config" },
+        { layer: "user", key: "egress.grants", reason: "final in the org config" },
+        {
+          layer: "project",
+          key: "egress.allow",
+          reason: "a project config may set only mounts.cacheVolumes",
+        },
+      ]),
+    ).toEqual([
+      "pi-sandbox: warning: config keys ignored: user egress.presets, egress.grants (final in the org config); project egress.allow (a project config may set only mounts.cacheVolumes); see pi sandbox config",
+    ]);
+    expect(ignoredNotice([])).toEqual([]);
   });
 
   it("lets a lower layer set a sibling key the admin layers left open", async () => {

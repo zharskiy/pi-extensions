@@ -3,7 +3,6 @@ import {
   authorityOf,
   fillTemplate,
   isLoopbackName,
-  matchesEntry,
   matchesPattern,
   normalizeHost,
   parseEntry,
@@ -40,20 +39,6 @@ describe("matchesPattern", () => {
     ["evilexample.com", "*.example.com", false],
   ])("%s against %s is %s", (host, pattern, expected) => {
     expect(matchesPattern(host, pattern)).toBe(expected);
-  });
-});
-
-describe("matchesEntry", () => {
-  it.each([
-    ["api.example.com", "API.Example.com.", 443, true],
-    ["api.example.com", "api.example.com", 8443, false],
-    ["api.example.com:8443", "api.example.com", 8443, true],
-    ["api.example.com:8443", "api.example.com", 443, false],
-    ["*.example.com", "x.example.com", 443, true],
-    ["*.example.com:80", "x.example.com", 80, true],
-    ["*.example.com", "x.y.example.com", 443, false],
-  ])("%s admits %s:%d is %s", (entry, host, port, expected) => {
-    expect(matchesEntry(entry, host, port)).toBe(expected);
   });
 });
 

@@ -10,8 +10,10 @@ const INDEX_KEYS = new Set(["index-url", "extra-index-url"]);
 const GLOBAL = "global";
 
 const configPaths = (input: ToolsInput) => [
+  ...(input.env.PIP_CONFIG_FILE ? [input.env.PIP_CONFIG_FILE] : []),
   join(input.home, ".config", "pip", "pip.conf"),
   join(input.home, "Library", "Application Support", "pip", "pip.conf"),
+  join(input.home, ".pip", "pip.conf"),
 ];
 
 const PROXY_KEY = "proxy";

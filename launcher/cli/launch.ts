@@ -1,7 +1,7 @@
 import { constants } from "node:os";
 import { basename, resolve } from "node:path";
 import { type Backend, engineSocketPath, type ProxyRoute, type VmPath } from "../backend/index.ts";
-import { type EffectiveConfig, loadEffectiveConfig } from "../config/index.ts";
+import { type EffectiveConfig, ignoredNotice, loadEffectiveConfig } from "../config/index.ts";
 import {
   buildContainerSpec,
   ensureContainer,
@@ -42,14 +42,7 @@ import {
   withGitPinLock,
   workspaceNotices,
 } from "../workspace/index.ts";
-import {
-  type CliDeps,
-  pathsOf,
-  reachableBackend,
-  withFallbackHint,
-  writeLine,
-  writeNotices,
-} from "./deps.ts";
+import { type CliDeps, pathsOf, withFallbackHint, writeLine, writeNotices } from "./deps.ts";
 import { type HostSide, prepareHostSide } from "./derive.ts";
 import { hostPiCommand, resolveJobPi, sandboxRoots } from "./host-pi.ts";
 import {
@@ -95,6 +88,7 @@ type StageReport = (stage: Stage, outcome: StageOutcome) => void;
 
 interface SandboxOptions {
   report?: StageReport;
+  signIn?: boolean;
 }
 
 type Staged = <T>(stage: Stage, action: () => Promise<T>, detail?: (value: T) => string) => Promise<T>;
@@ -110,7 +104,7 @@ interface SandboxInput {
   staged: Staged;
 }
 
-type ContextMode = "sandbox" | "admin" | "host";
+type ContextMode = "sandbox" | "host";
 
 type Opened<M extends ContextMode> = M extends "host"
   ? { context: LaunchContext }
@@ -130,8 +124,11 @@ const discoverContext = async (deps: CliDeps, lenient: boolean): Promise<LaunchC
     lenient,
   });
   const effective = await loadEffectiveConfig({ repoRoot: workspace.repoRoot, env: deps.env });
+  const context = { workspace, effective, stateDir, repoHash: repoHash(workspace.repoRoot) };
 
-  return { workspace, effective, stateDir, repoHash: repoHash(workspace.repoRoot) };
+  await writeOnce(deps, context, ignoredNotice(effective.ignored));
+
+  return context;
 };
 
 const checkWorkspaceRoots = (deps: CliDeps, context: LaunchContext) => {
@@ -156,10 +153,6 @@ export const openContext = async <M extends ContextMode>(deps: CliDeps, mode: M)
 
   if (mode === "host") {
     return { context } as Opened<M>;
-  }
-
-  if (mode === "admin") {
-    return { context, backend: await reachableBackend(deps, context.effective.config) } as Opened<M>;
   }
 
   checkWorkspace(deps, context);
@@ -245,7 +238,7 @@ const shareVm = (deps: CliDeps, context: LaunchContext, backend: Backend) =>
 
 const TOKEN_HASH_LENGTH = 16;
 
-const prepareHost = async (deps: CliDeps, context: LaunchContext, backend: Backend) => {
+const prepareHost = async (deps: CliDeps, context: LaunchContext, backend: Backend, signIn: boolean) => {
   const [host] = await settleAll([
     resolveJobPi(deps).then((pi) => prepareHostSide(deps, context, pi)),
     sweepOrphans(deps, backend),
@@ -254,7 +247,9 @@ const prepareHost = async (deps: CliDeps, context: LaunchContext, backend: Backe
 
   noticeHostSessions(deps, sessions);
 
-  await signInMcpServers(deps, context, host);
+  if (signIn) {
+    await signInMcpServers(deps, context, host);
+  }
 
   return { host, sessions };
 };
@@ -480,7 +475,7 @@ export const withSandbox = async (
   context: LaunchContext,
   backend: Backend,
   use: (sandbox: Sandbox) => Promise<number>,
-  { report = () => undefined }: SandboxOptions = {},
+  { report = () => undefined, signIn = true }: SandboxOptions = {},
 ) => {
   const staged = stagedWith(report);
 
@@ -488,7 +483,7 @@ export const withSandbox = async (
 
   await staged("shares", () => shareVm(deps, context, backend));
 
-  const { host, sessions } = await staged("host", () => prepareHost(deps, context, backend));
+  const { host, sessions } = await staged("host", () => prepareHost(deps, context, backend, signIn));
   const launch = await beginLaunch(deps, context);
   const watch = listenFor(deps.signals ?? process, PREPARATION_SIGNALS);
   const cancel = new AbortController();

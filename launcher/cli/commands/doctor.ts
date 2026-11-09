@@ -1,5 +1,6 @@
 import { ENGINE_PROFILE, type VmSize } from "../../backend/index.ts";
 import { LABELS } from "../../container/index.ts";
+import { readHealth } from "../../proxy/index.ts";
 import { errorMessage } from "../../shared/index.ts";
 import { type CliDeps, writeLine } from "../deps.ts";
 import {
@@ -14,7 +15,6 @@ import {
 import type { SandboxProxy } from "../sandbox-proxy.ts";
 import { hostChecks } from "./doctor-host.ts";
 import {
-  answersHealth,
   type CheckResult,
   checkMcp,
   checkMcpAuthSweep,
@@ -61,7 +61,7 @@ const proxyHealth = async (proxy: SandboxProxy | undefined) => {
     return skipped("no proxy is required");
   }
 
-  return (await answersHealth(proxy.proxy.port, proxy.token))
+  return (await readHealth(proxy.proxy.port, proxy.token)) !== undefined
     ? passed("/healthz answers")
     : failed("/healthz does not answer");
 };
@@ -157,6 +157,7 @@ export const doctorCommand = async (deps: CliDeps) => {
   };
   const code = await withSandbox(deps, context, backend, (sandbox) => probe(deps, context, sandbox), {
     report,
+    signIn: false,
   }).catch((error: unknown) => {
     if (failures.length === 0) {
       throw error;

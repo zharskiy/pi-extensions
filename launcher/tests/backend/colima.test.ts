@@ -332,6 +332,52 @@ describe("colima images", () => {
     expect(engine.images.get("pi-sandbox:dev")?.Id).toBe(built.id);
   });
 
+  const failingBuild = async (output: string[], error: string) => {
+    const engine = await startEngine({ failBuild: { output, error } });
+    const context = await temporaryDir();
+
+    await writeFile(join(context, "Dockerfile"), "FROM scratch\n");
+
+    return createColimaBackend({
+      home: "/nonexistent",
+      stateDir: "/nonexistent",
+      socketPath: engine.socketPath,
+      runner: createProcessRunner(),
+    })
+      .buildImage(context, "pi-sandbox:failing")
+      .then(
+        () => undefined,
+        (failure: LauncherError) => failure,
+      );
+  };
+
+  it("keeps the last 30 lines of a failed build's output in its error", async () => {
+    const output = Array.from({ length: 40 }, (_, index) => `line ${index + 1}`);
+    const failure = await failingBuild(
+      [...output, "E: Unable to locate package openjdk-99"],
+      "The command '/bin/sh -c apt-get install' returned a non-zero code: 100",
+    );
+    const lines = failure?.message.split("\n") ?? [];
+
+    expect(lines[0]).toBe("engine: The command '/bin/sh -c apt-get install' returned a non-zero code: 100");
+    expect(lines.slice(1)).toEqual(
+      [...output.slice(11), "E: Unable to locate package openjdk-99"].map((line) => `  ${line}`),
+    );
+    expect(failure?.hint).toBeUndefined();
+  });
+
+  it("hints at tls.extraCa and image.digest when the build fails on a certificate", async () => {
+    const failure = await failingBuild(
+      ["curl: (60) SSL certificate problem: unable to get local issuer certificate"],
+      "The command '/bin/sh -c curl' returned a non-zero code: 60",
+    );
+
+    expect(failure?.message).toContain("  curl: (60) SSL certificate problem");
+    expect(failure?.hint).toBe(
+      "a proxy or CA on this network signs the downloads; set tls.extraCa to its CA, or image.digest to a prebuilt image",
+    );
+  });
+
   it("sends build args to the build and none when there are none", async () => {
     const engine = await startEngine();
     const context = await temporaryDir();

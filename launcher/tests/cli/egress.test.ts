@@ -46,8 +46,8 @@ describe("pi sandbox egress allow", () => {
 
     expect(await run(["sandbox", "egress", "allow", "*.example.test"], harness.deps)).toBe(1);
     expect(harness.stderr()).toContain("egress: *.example.test is not a host or host:port");
-    expect(await run(["sandbox", "egress", "allow", "a.test", "--hours", "1"], harness.deps)).toBe(1);
-    expect(harness.stderr()).toContain("egress: unknown option --hours");
+    expect(await run(["sandbox", "egress", "allow", "a.test", "--bogus", "1"], harness.deps)).toBe(1);
+    expect(harness.stderr()).toContain("egress: unknown option --bogus");
   });
 });
 

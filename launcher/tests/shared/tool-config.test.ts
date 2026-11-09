@@ -117,6 +117,7 @@ describe("Maven settings", () => {
         { id: "extra", url: "https://extra.corp.test/m2" },
         { id: "plugins", url: "https://plugins.corp.test/" },
       ],
+      passthrough: [expect.objectContaining({ name: "profiles" })],
     });
     expect(toolConfigValue(SETTINGS, { format: "maven-servers", key: "corp" })).toBe("a&b<c");
   });

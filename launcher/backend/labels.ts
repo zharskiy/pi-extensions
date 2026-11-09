@@ -5,6 +5,7 @@ export const LABELS = {
   imageDigest: "pi-sandbox.image-digest",
   imageReference: "pi-sandbox.image-reference",
   specHash: "pi-sandbox.spec-hash",
+  specSections: "pi-sandbox.spec-sections",
   proxyTokenHash: "pi-sandbox.proxy-token-hash",
   relay: "pi-sandbox.relay",
   relayPort: "pi-sandbox.relay-port",

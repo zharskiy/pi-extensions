@@ -41,7 +41,27 @@ const STOP_SECONDS = 3;
 
 const REMOVAL_WAIT_MS = 10_000;
 
-const OUTDATED = "the sandbox config changed; it applies after every session in this repository exits";
+const APPLIES_LATER = "it applies after every session in this repository exits";
+
+const sectionsOf = (labels: Record<string, string | undefined>) => {
+  try {
+    const parsed: unknown = JSON.parse(labels[LABELS.specSections] ?? "");
+
+    return typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>) : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+const outdatedNotice = (container: ContainerSummary, spec: LauncherContainerSpec) => {
+  const running = sectionsOf(container.labels);
+  const wanted = sectionsOf(spec.labels) ?? {};
+  const changed = Object.keys(wanted).filter((name) => running?.[name] !== wanted[name]);
+
+  return running === undefined || changed.length === 0
+    ? `the sandbox config changed; ${APPLIES_LATER}`
+    : `the sandbox config changed (${changed.join(", ")}); ${APPLIES_LATER}`;
+};
 
 const isCurrent = (container: ContainerSummary, labels: Record<string, string | undefined>) =>
   IDENTITY.every((label) => container.labels[label] === labels[label]);
@@ -204,7 +224,13 @@ const agentContainers = async (backend: Backend, repo: string) =>
 const reuse = (container: ContainerSummary, spec: LauncherContainerSpec): EnsuredContainer => {
   const outdated = !isCurrent(container, spec.labels);
 
-  return { id: container.id, created: false, outdated, spec, notices: outdated ? [OUTDATED] : [] };
+  return {
+    id: container.id,
+    created: false,
+    outdated,
+    spec,
+    notices: outdated ? [outdatedNotice(container, spec)] : [],
+  };
 };
 
 const createOrAdopt = async (input: EnsureContainerInput, spec: LauncherContainerSpec) => {

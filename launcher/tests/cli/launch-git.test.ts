@@ -7,7 +7,7 @@ import { processMark, sha256Hex } from "../../shared/index.ts";
 import { createFakeBackend, createHarness } from "./harness.ts";
 
 const OUTDATED =
-  "pi-sandbox: the sandbox config changed; it applies after every session in this repository exits";
+  "pi-sandbox: the sandbox config changed (overlays); it applies after every session in this repository exits";
 
 const absent = async (path: string) => (await lstat(path).catch(() => undefined)) === undefined;
 
@@ -67,5 +67,15 @@ describe("the commondir pin around container starts", () => {
 
     expect(await run([], harness.deps)).toBe(0);
     expect(harness.stderr()).toContain(OUTDATED);
+
+    await harness.writeJson(harness.userConfigFile, {
+      mounts: { cacheVolumes: ["vendor"] },
+      resources: { cpus: 2 },
+    });
+
+    expect(await run([], harness.deps)).toBe(0);
+    expect(harness.stderr()).toContain(
+      "pi-sandbox: the sandbox config changed (config, overlays); it applies after every session in this repository exits",
+    );
   });
 });

@@ -2,12 +2,15 @@ import { lstat, mkdir, readdir, readFile, rm } from "node:fs/promises";
 import { join, posix } from "node:path";
 import type { DerivedTools, GlabHost, ToolHost } from "../hostpi/index.ts";
 import {
+  escapeXml,
   type IniSection,
+  type MavenHeader,
   type MavenRepository,
   type MavenServer,
   type NpmrcEntry,
   stateLayout,
   writeFileAtomic,
+  xmlLines,
 } from "../shared/index.ts";
 import { readHostEntries, type Tree } from "./tree.ts";
 import type { RenderInput, RenderResult } from "./types.ts";
@@ -32,18 +35,38 @@ interface Existing {
 
 const jsonBytes = (value: unknown) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
 
-const XML_ESCAPES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" };
-
-const xml = (text: string) => text.replace(/[&<>"]/g, (character) => XML_ESCAPES[character] ?? character);
-
 const xmlElement = (indent: string, name: string, value: string | undefined) =>
-  value === undefined ? [] : [`${indent}<${name}>${xml(value)}</${name}>`];
+  value === undefined ? [] : [`${indent}<${name}>${escapeXml(value)}</${name}>`];
+
+const httpHeaders = (headers: MavenHeader[]) =>
+  headers.length === 0
+    ? []
+    : [
+        "        <httpHeaders>",
+        ...headers.flatMap((header) => [
+          "          <property>",
+          ...xmlElement("            ", "name", header.name),
+          ...xmlElement("            ", "value", header.value),
+          "          </property>",
+        ]),
+        "        </httpHeaders>",
+      ];
+
+const serverConfiguration = (server: MavenServer) => {
+  const lines = [
+    ...(server.configuration ?? []).flatMap((element) => xmlLines(element, "        ")),
+    ...httpHeaders(server.headers ?? []),
+  ];
+
+  return lines.length === 0 ? [] : ["      <configuration>", ...lines, "      </configuration>"];
+};
 
 const mavenServer = (server: MavenServer) => [
   "    <server>",
   ...xmlElement("      ", "id", server.id),
   ...xmlElement("      ", "username", server.username),
   ...xmlElement("      ", "password", server.password),
+  ...serverConfiguration(server),
   "    </server>",
 ];
 
@@ -75,6 +98,7 @@ const mavenSettings = (maven: DerivedTools["maven"]) =>
     "  </proxies>",
     ...xmlList("servers", maven.servers.map(mavenServer)),
     ...xmlList("mirrors", maven.mirrors.map(mavenMirror)),
+    ...maven.passthrough.flatMap((element) => xmlLines(element, "  ")),
     "</settings>",
     "",
   ].join("\n");

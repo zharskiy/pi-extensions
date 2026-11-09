@@ -433,7 +433,8 @@ describe("buildContainerSpec", () => {
     ]);
     expect(spec.env.JAVA_TOOL_OPTIONS).not.toContain("javax.net.ssl");
     expect(spec.env.https_proxy).toBe(spec.env.HTTPS_PROXY);
-    expect(spec.env.no_proxy).toBe("");
+    expect(spec.env.no_proxy).toBe("localhost,127.0.0.1,::1");
+    expect(spec.env.NO_PROXY).toBe("localhost,127.0.0.1,::1");
     expect(spec.env.PIP_CERT).toBe("/tmp/pi-sandbox/ca-bundle.pem");
   });
 
@@ -477,11 +478,11 @@ describe("buildContainerSpec", () => {
       HTTPS_PROXY: "http://pi-sandbox:token-1@pi-sandbox-proxy:3128",
       HTTP_PROXY: "http://pi-sandbox:token-1@pi-sandbox-proxy:3128",
       ALL_PROXY: "http://pi-sandbox:token-1@pi-sandbox-proxy:3128",
-      NO_PROXY: "",
+      NO_PROXY: "localhost,127.0.0.1,::1",
       https_proxy: "http://pi-sandbox:token-1@pi-sandbox-proxy:3128",
       http_proxy: "http://pi-sandbox:token-1@pi-sandbox-proxy:3128",
       all_proxy: "http://pi-sandbox:token-1@pi-sandbox-proxy:3128",
-      no_proxy: "",
+      no_proxy: "localhost,127.0.0.1,::1",
       NODE_USE_ENV_PROXY: "1",
       PI_SANDBOX_PROXY_HOST: "pi-sandbox-proxy",
       PI_SANDBOX_PROXY_PORT: "3128",

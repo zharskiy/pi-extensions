@@ -1,4 +1,3 @@
-import { get } from "node:http";
 import { posix } from "node:path";
 import { type Backend, execCapture } from "../../backend/index.ts";
 import { type CredentialRule, fillTemplate, TLS_PORT } from "../../config/index.ts";
@@ -29,6 +28,7 @@ interface Leaf {
 interface RuleAnswer {
   rule: CredentialRule;
   status?: number;
+  body?: string;
   error?: string;
 }
 
@@ -37,8 +37,6 @@ const GUEST_AUTH_FILE = posix.join(GUEST_PATHS.agentDir, "auth.json");
 const GUEST_MCP_FILE = posix.join(GUEST_PATHS.agentDir, "mcp.json");
 
 const TOKEN_FIELDS = ["access", "refresh"];
-
-const HEALTH_TIMEOUT_MS = 2000;
 
 const ROUTE_TARGET = "1.1.1.1:443";
 
@@ -57,12 +55,14 @@ const COMMAND_MISSING = 127;
 const FETCH_SCRIPT = [
   "const [url, name, value] = process.argv.slice(1);",
   "fetch(url, { headers: name ? { [name]: value } : {}, redirect: 'manual' }).then(",
-  "  (response) => console.log(String(response.status)),",
+  "  async (response) => console.log(response.status === 502 ? '502 ' + (await response.text()).replace(/\\s+/g, ' ') : String(response.status)),",
   "  (error) => console.log('error ' + String(error?.cause?.code ?? error?.code ?? error?.message)),",
   ");",
 ].join("\n");
 
 const DENIED = [401, 403];
+
+const BAD_GATEWAY = 502;
 
 const TRUST_ERROR = /CERT|SELF_SIGNED|UNABLE_TO|ISSUER/;
 
@@ -204,31 +204,6 @@ export const checkNoRoute = async (target: ProbeTarget) => {
     : passed(`no direct route to ${ROUTE_TARGET}`);
 };
 
-const proxyAuthorization = (token: string) =>
-  `Basic ${Buffer.from(`pi-sandbox:${token}`).toString("base64")}`;
-
-export const answersHealth = (port: number, token: string) =>
-  new Promise<boolean>((resolve) => {
-    const request = get(
-      {
-        host: "127.0.0.1",
-        port,
-        path: "/healthz",
-        timeout: HEALTH_TIMEOUT_MS,
-        headers: { "proxy-authorization": proxyAuthorization(token) },
-      },
-      (response) => {
-        response.resume();
-
-        resolve(response.statusCode === 200);
-      },
-    );
-
-    request.on("timeout", () => request.destroy());
-
-    request.on("error", () => resolve(false));
-  });
-
 export const checkOffline = async (target: ProbeTarget) => {
   const { code, stdout } = await execText(target, OFFLINE_PROBE);
 
@@ -313,14 +288,32 @@ const askRule = async (target: ProbeTarget, rule: CredentialRule): Promise<RuleA
   const { stdout } = await execText(target, ["node", "-e", FETCH_SCRIPT, urlOf(rule), ...headerOf(rule)]);
   const answer = lastLine(stdout) ?? "error no output";
 
-  return answer.startsWith("error ")
-    ? { rule, error: answer.slice("error ".length) }
-    : { rule, status: Number(answer) };
+  if (answer.startsWith("error ")) {
+    return { rule, error: answer.slice("error ".length) };
+  }
+
+  const [status = "", ...body] = answer.split(" ");
+
+  return { rule, status: Number(status), body: body.join(" ") };
+};
+
+const gatewayReason = (body: string | undefined) => {
+  try {
+    const parsed = JSON.parse(body ?? "") as { error?: unknown };
+
+    return typeof parsed.error === "string" ? parsed.error : body;
+  } catch {
+    return body === undefined || body === "" ? "no reason given" : body;
+  }
 };
 
 const ruleResult = (answer: RuleAnswer) => {
   if (answer.status === undefined) {
     return failed(`${urlOf(answer.rule)}: ${answer.error ?? "no answer"}`);
+  }
+
+  if (answer.status === BAD_GATEWAY) {
+    return failed(`${urlOf(answer.rule)} answered HTTP 502: ${gatewayReason(answer.body)}`);
   }
 
   return DENIED.includes(answer.status)

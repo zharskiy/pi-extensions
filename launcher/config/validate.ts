@@ -9,7 +9,7 @@ import {
   TOOL_CONFIG_FORMATS,
   type ToolConfigFormat,
 } from "../shared/index.ts";
-import { getPath } from "./dotted.ts";
+import { getPath, setPath } from "./dotted.ts";
 import { isLoopbackName, SECRET_MARKER, TLS_PORT } from "./egress-entry.ts";
 import { EGRESS_PRESETS } from "./egress-presets.ts";
 import type { HostCachePreset, LayerConfig } from "./types.ts";
@@ -367,7 +367,12 @@ const LAYER_SPEC: ObjectSpec = {
 
 const joinPath = (prefix: string, key: string) => (prefix === "" ? key : `${prefix}.${key}`);
 
-const PROJECT_KEYS = ["mounts.cacheVolumes", "mounts.autoOverlays", "resources.cpus", "resources.memoryGiB"];
+export const PROJECT_KEYS = [
+  "mounts.cacheVolumes",
+  "mounts.autoOverlays",
+  "resources.cpus",
+  "resources.memoryGiB",
+];
 
 const setKeys = (value: unknown, prefix: string): string[] =>
   isJsonObject(value)
@@ -378,8 +383,23 @@ const setKeys = (value: unknown, prefix: string): string[] =>
       })
     : [];
 
-export const projectKeyRefusal = (value: unknown, file?: string) => {
-  const refused = setKeys(value, "").find((key) => key !== "$schema" && !PROJECT_KEYS.includes(key));
+const isProjectKey = (key: string) => key === "$schema" || PROJECT_KEYS.includes(key);
+
+export const splitProjectKeys = (value: unknown) => {
+  if (!isJsonObject(value)) {
+    return { kept: value, outside: [] };
+  }
+
+  const keys = setKeys(value, "");
+
+  return {
+    kept: keys.filter(isProjectKey).reduce((kept, key) => setPath(kept, key, getPath(value, key)), {}),
+    outside: keys.filter((key) => !isProjectKey(key)),
+  };
+};
+
+const projectKeyRefusal = (value: unknown, file?: string) => {
+  const refused = setKeys(value, "").find((key) => !isProjectKey(key));
 
   if (refused === undefined) {
     return undefined;

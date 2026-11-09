@@ -11,7 +11,12 @@ export const EGRESS_PRESETS: Record<EgressPreset, readonly string[]> = {
   ],
   pypi: ["pypi.org", "files.pythonhosted.org"],
   maven: ["repo.maven.apache.org", "repo1.maven.org"],
-  gradle: ["plugins.gradle.org", "services.gradle.org", "downloads.gradle.org"],
+  gradle: [
+    "plugins.gradle.org",
+    "plugins-artifacts.gradle.org",
+    "services.gradle.org",
+    "downloads.gradle.org",
+  ],
   go: ["proxy.golang.org", "sum.golang.org"],
   cargo: ["crates.io", "index.crates.io", "static.crates.io"],
 };

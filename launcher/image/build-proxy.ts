@@ -1,3 +1,4 @@
+import { VM_HOST_ALIAS } from "../backend/index.ts";
 import type { ParentProxy } from "../config/index.ts";
 import { LauncherError } from "../shared/index.ts";
 
@@ -19,6 +20,24 @@ const hasUserInfo = (url: string) => {
   }
 };
 
+const LOOPBACK_HOSTS = ["127.0.0.1", "localhost", "[::1]"];
+
+const reachableFromBuild = (url: string | undefined) => {
+  if (url === undefined || url === "" || !URL.canParse(url)) {
+    return url;
+  }
+
+  const parsed = new URL(url);
+
+  if (!LOOPBACK_HOSTS.includes(parsed.hostname)) {
+    return url;
+  }
+
+  parsed.hostname = VM_HOST_ALIAS;
+
+  return url.endsWith("/") ? parsed.href : parsed.href.replace(/\/$/, "");
+};
+
 const proxyArgs = (http: string | undefined, https: string | undefined, noProxy: string | undefined) => {
   const urls = [http, https].filter((url): url is string => url !== undefined && url !== "");
 
@@ -27,10 +46,10 @@ const proxyArgs = (http: string | undefined, https: string | undefined, noProxy:
   }
 
   const entries = [
-    ["HTTP_PROXY", http],
-    ["http_proxy", http],
-    ["HTTPS_PROXY", https],
-    ["https_proxy", https],
+    ["HTTP_PROXY", reachableFromBuild(http)],
+    ["http_proxy", reachableFromBuild(http)],
+    ["HTTPS_PROXY", reachableFromBuild(https)],
+    ["https_proxy", reachableFromBuild(https)],
     ["NO_PROXY", noProxy],
     ["no_proxy", noProxy],
   ].filter((entry): entry is [string, string] => entry[1] !== undefined && entry[1] !== "");

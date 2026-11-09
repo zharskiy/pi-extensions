@@ -2,7 +2,6 @@ export {
   authorityOf,
   fillTemplate,
   isLoopbackName,
-  matchesEntry,
   matchesPattern,
   normalizeHost,
   parseEntry,
@@ -11,6 +10,7 @@ export {
 } from "./egress-entry.ts";
 export { egressAllowList } from "./egress-presets.ts";
 export { loadEffectiveConfig } from "./load.ts";
+export { ignoredNotice } from "./merge.ts";
 export type {
   CredentialRule,
   DeriveConfig,

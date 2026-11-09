@@ -8,7 +8,9 @@
     "grants": false
   },
   "credentials": {
-    "derive": { "enabled": false },
+    "derive": {
+      "enabled": true
+    },
     "rules": [
       {
         "id": "llm-gateway",
@@ -28,10 +30,17 @@
         "placeholder": "pi-sandbox-package-registry",
         "header": "authorization",
         "template": "Bearer {secret}",
-        "secret": { "env": "EXAMPLE_REGISTRY_TOKEN" }
+        "secret": {
+          "env": "EXAMPLE_REGISTRY_TOKEN"
+        }
       }
     ]
   },
-  "tls": { "extraCa": [{ "file": "/etc/ssl/certs/example-root-ca.pem" }] },
-  "image": { "packages": ["jq", "ripgrep", "git"] }
+  "tls": {
+    "extraCa": [
+      {
+        "file": "/etc/ssl/certs/example-root-ca.pem"
+      }
+    ]
+  }
 }

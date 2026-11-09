@@ -177,6 +177,23 @@ describe("pi sandbox doctor", () => {
     expect(JSON.stringify(fake.execs.map((exec) => exec.spec))).not.toContain("real-secret-value");
   });
 
+  it("fails a rule whose host answers HTTP 502 through the proxy and prints the proxy's reason", async () => {
+    const { code, lines } = await doctorWith(
+      {
+        ruleAnswer:
+          '502 {"error":"upstream request failed: unable to get local issuer certificate; set tls.extraCa"}',
+      },
+      200,
+      undefined,
+      { example: { type: "api_key", key: "real-secret-value-1234567890" } },
+    );
+
+    expect(lines).toContain(
+      "fail rule derived:auth:example:key: https://models.example.test/ answered HTTP 502: upstream request failed: unable to get local issuer certificate; set tls.extraCa",
+    );
+    expect(code).toBe(1);
+  });
+
   it("fails the trust check on a certificate error and the offline and mcp checks inside", async () => {
     const { code, lines } = await doctorWith(
       { ruleAnswer: "error SELF_SIGNED_CERT_IN_CHAIN", offline: "1", mcpListExit: 1 },

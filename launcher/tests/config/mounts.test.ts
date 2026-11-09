@@ -90,10 +90,11 @@ describe("mounts.sharedCaches", () => {
     );
   });
 
-  it("refuses a project config that sets shared caches", async () => {
-    await expect(loadWith({ project: { mounts: { sharedCaches: ["~/.npm"] } } })).rejects.toThrow(
-      "project: mounts.sharedCaches may not be set by a project config",
-    );
+  it("ignores a project config that sets shared caches", async () => {
+    const { config, ignored } = await loadWith({ project: { mounts: { sharedCaches: ["~/.npm"] } } });
+
+    expect(config.mounts.sharedCaches).toEqual([]);
+    expect(ignored.map((entry) => `${entry.layer} ${entry.key}`)).toEqual(["project mounts.sharedCaches"]);
   });
 
   it("lets the user layer add shared caches when no layer above sets them", async () => {
@@ -108,9 +109,12 @@ describe("mounts.sharedCaches", () => {
   it("keeps the shared caches the policy set", async () => {
     const policy = { mounts: { sharedCaches: ["~/.npm", "~/.cargo"] } };
 
-    await expect(loadWith({ policy, user: { mounts: { sharedCaches: ["~/.npm"] } } })).rejects.toThrow(
-      "user: mounts.sharedCaches is set by the policy config and is final there",
-    );
+    const { config, ignored } = await loadWith({ policy, user: { mounts: { sharedCaches: ["~/.npm"] } } });
+
+    expect(config.mounts.sharedCaches).toEqual(["~/.npm", "~/.cargo"]);
+    expect(ignored).toEqual([
+      { layer: "user", key: "mounts.sharedCaches", reason: "final in the policy config" },
+    ]);
   });
 });
 
@@ -128,15 +132,22 @@ describe("mounts.hostCaches", () => {
     expect(config.mounts.hostCaches).toEqual(["maven", "gradle"]);
     expect(sources["mounts.hostCaches"]).toBe("user");
 
-    await expect(
-      loadWith({ policy: { mounts: { hostCaches: [] } }, user: { mounts: { hostCaches: ["npm"] } } }),
-    ).rejects.toThrow("user: mounts.hostCaches is set by the policy config and is final there");
+    const kept = await loadWith({
+      policy: { mounts: { hostCaches: [] } },
+      user: { mounts: { hostCaches: ["npm"] } },
+    });
+
+    expect(kept.config.mounts.hostCaches).toEqual([]);
+    expect(kept.ignored).toEqual([
+      { layer: "user", key: "mounts.hostCaches", reason: "final in the policy config" },
+    ]);
   });
 
-  it("refuses the project layer setting mounts.hostCaches", async () => {
-    await expect(loadWith({ project: { mounts: { hostCaches: ["maven"] } } })).rejects.toThrow(
-      "project: mounts.hostCaches may not be set by a project config",
-    );
+  it("ignores the project layer setting mounts.hostCaches", async () => {
+    const { config, ignored } = await loadWith({ project: { mounts: { hostCaches: ["maven"] } } });
+
+    expect(config.mounts.hostCaches).toEqual([]);
+    expect(ignored.map((entry) => `${entry.layer} ${entry.key}`)).toEqual(["project mounts.hostCaches"]);
   });
 
   it("refuses an unknown preset", () => {
@@ -158,12 +169,15 @@ describe("mounts.autoOverlays", () => {
   });
 
   it("stays as the policy set it", async () => {
-    await expect(
-      loadWith({
-        policy: { mounts: { autoOverlays: false } },
-        project: { mounts: { autoOverlays: true } },
-      }),
-    ).rejects.toThrow("project: mounts.autoOverlays is set by the policy config and is final there");
+    const { config, ignored } = await loadWith({
+      policy: { mounts: { autoOverlays: false } },
+      project: { mounts: { autoOverlays: true } },
+    });
+
+    expect(config.mounts.autoOverlays).toBe(false);
+    expect(ignored).toEqual([
+      { layer: "project", key: "mounts.autoOverlays", reason: "final in the policy config" },
+    ]);
   });
 
   it("must be true or false", () => {

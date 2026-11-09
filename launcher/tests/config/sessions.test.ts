@@ -12,15 +12,8 @@ type Layers = Partial<Record<LayerName, LayerConfig>>;
 
 const merge = async (layers: Layers) => mergeLayers({ defaults: await defaultConfig(), layers });
 
-const refusal = async (layers: Layers) => {
-  try {
-    await merge(layers);
-
-    return undefined;
-  } catch (error) {
-    return errorMessage(error);
-  }
-};
+const ignoredBy = async (layers: Layers) =>
+  (await merge(layers)).ignored.map((entry) => `${entry.layer}: ${entry.key} (${entry.reason})`);
 
 const problemOf = (value: unknown, layer: string) => {
   try {
@@ -48,12 +41,12 @@ describe("sessions.host", () => {
   });
 
   it("stays off once the policy or org layer turns it off", async () => {
-    expect(await refusal({ policy: { sessions: { host: false } }, user: { sessions: { host: true } } })).toBe(
-      "user: sessions.host is set by the policy config and is final there",
-    );
-    expect(await refusal({ org: { sessions: { host: false } }, user: { sessions: { host: true } } })).toBe(
-      "user: sessions.host is set by the org config and is final there",
-    );
+    expect(
+      await ignoredBy({ policy: { sessions: { host: false } }, user: { sessions: { host: true } } }),
+    ).toEqual(["user: sessions.host (final in the policy config)"]);
+    expect(
+      await ignoredBy({ org: { sessions: { host: false } }, user: { sessions: { host: true } } }),
+    ).toEqual(["user: sessions.host (final in the org config)"]);
     expect((await merge({ policy: { sessions: { host: false } } })).config.sessions.host).toBe(false);
   });
 
@@ -64,14 +57,16 @@ describe("sessions.host", () => {
     expect(problemOf({ sessions: { dir: "/tmp" } }, "user")).toBe("user: sessions.dir is not a known key");
   });
 
-  it("may not be set by a project config, not even to false", async () => {
+  it("is ignored in a project config, even when it turns sessions off", async () => {
     const files = await createLayers();
 
     await files.project({ sessions: { host: false } });
 
-    await expect(loadEffectiveConfig({ repoRoot: files.repoRoot, env: files.env })).rejects.toThrow(
-      `project: sessions.host may not be set by a project config (${files.projectFile})`,
-    );
+    const { config, ignored } = await loadEffectiveConfig({ repoRoot: files.repoRoot, env: files.env });
+
+    expect(config.sessions.host).toBe(true);
+    expect(ignored.map((entry) => entry.key)).toEqual(["sessions.host"]);
+    expect(ignored[0]?.reason).toContain(files.projectFile);
   });
 });
 

@@ -188,6 +188,16 @@ const rawLocal = (client: Duplex, reply: SecretReply) => {
 const poolKey = (target: TerminatedTarget) =>
   `${target.repoHash}|${target.host}|${target.port}|${target.access}`;
 
+const CERTIFICATE_ERROR = /certificate|self[- ]signed|issuer|CERT_/i;
+
+const CERTIFICATE_HINT = "; if a proxy or CA on this network signs this host, set tls.extraCa to its CA";
+
+const upstreamFailure = (error: unknown) => {
+  const message = (error as Error).message;
+
+  return `upstream request failed: ${message}${CERTIFICATE_ERROR.test(message) ? CERTIFICATE_HINT : ""}`;
+};
+
 const failure = (response: ServerResponse, error: unknown) => {
   if (response.headersSent) {
     response.destroy();
@@ -195,7 +205,7 @@ const failure = (response: ServerResponse, error: unknown) => {
     return;
   }
 
-  const body = JSON.stringify({ error: `upstream request failed: ${(error as Error).message}` });
+  const body = JSON.stringify({ error: upstreamFailure(error) });
 
   response.writeHead(502, { "content-type": "application/json", "proxy-agent": PROXY_AGENT });
 

@@ -7,7 +7,7 @@ import { registerLaunch } from "../../grants/index.ts";
 import { launcherRoot, processMark, sha256Hex, stateLayout } from "../../shared/index.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
 import { tempDir } from "../support/temp-dir.ts";
-import { createFakeBackend, createHarness } from "./harness.ts";
+import { createFakeBackend, createHarness, unreachable } from "./harness.ts";
 
 const packageVersion = async () =>
   (JSON.parse(await readFile(join(launcherRoot(), "..", "package.json"), "utf8")) as { version: string })
@@ -366,6 +366,44 @@ describe("pi sandbox gc and reset", () => {
     expect(await readFile(token, "utf8").catch(() => undefined)).toBeUndefined();
   });
 
+  const tokenOf = async (stateDir: string, repo: string) => {
+    const token = stateLayout(stateDir).repo(repo).proxy.token;
+
+    await mkdir(join(token, ".."), { recursive: true });
+
+    await writeFile(token, "f".repeat(64));
+
+    return token;
+  };
+
+  it("runs the host-side part of gc when the VM is stopped and says the engine step was skipped", async () => {
+    const harness = await createHarness({ backend: () => unreachable(createFakeBackend().backend) });
+    const repo = "c".repeat(64);
+    const token = await tokenOf(harness.stateDir, repo);
+
+    expect(await run(["sandbox", "gc"], harness.deps)).toBe(0);
+    expect(harness.stoppedProxies).toEqual([repo]);
+    expect(await readFile(token, "utf8").catch(() => undefined)).toBeUndefined();
+    expect(harness.stdout()).toContain(
+      "the sandbox VM is not running, so the engine step was skipped; the next pi starts it and cleans its containers, volumes and images\n",
+    );
+    expect(harness.stderr()).not.toContain("unreachable");
+  });
+
+  it("runs the host-side part of reset when the VM is stopped and says the engine step was skipped", async () => {
+    const harness = await createHarness({ backend: () => unreachable(createFakeBackend().backend) });
+    const repo = sha256Hex(harness.repoRoot);
+    const token = await tokenOf(harness.stateDir, repo);
+
+    expect(await run(["sandbox", "reset", "--volumes"], harness.deps)).toBe(0);
+    expect(harness.stoppedProxies).toEqual([repo]);
+    expect(await readFile(token, "utf8").catch(() => undefined)).toBeUndefined();
+    expect(harness.stdout()).toContain(
+      "the sandbox VM is not running, so the engine step was skipped; run pi sandbox reset again after the next pi starts it to remove the container and volumes\n",
+    );
+    expect(harness.stdout()).not.toContain("no sandbox for");
+  });
+
   it("removes this repo's container and, with --volumes, its agent and cache volumes", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
@@ -458,5 +496,50 @@ describe("pi sandbox help and version", () => {
     expect(await run(["sandbox"], harness.deps)).toBe(0);
     expect(harness.stdout().match(/pi sandbox doctor/g)).toHaveLength(2);
     expect(harness.stdout()).toContain("pi sandbox gc [--shared-caches]");
+  });
+
+  const readmeRows = async () => {
+    const readme = await readFile(join(launcherRoot(), "README.md"), "utf8");
+    const table = readme.slice(readme.indexOf("| command | what it does |"));
+    const rows = table
+      .split("\n")
+      .slice(2)
+      .filter((line) => line.startsWith("| `"));
+
+    return rows.map((row) => {
+      const [command = "", description = ""] = row
+        .slice(2, -2)
+        .replaceAll("\\|", "\u0000")
+        .split(" | ")
+        .map((cell) => cell.replaceAll("\u0000", "|"));
+
+      return {
+        commands: [...command.matchAll(/`([^`]+)`/g)].map((match) => match[1] ?? ""),
+        description: description.replaceAll("`", ""),
+      };
+    });
+  };
+
+  it("lists every command of the README table with the same description, in aligned columns", async () => {
+    const harness = await createHarness();
+
+    await run(["sandbox", "help"], harness.deps);
+
+    const lines = harness.stdout().trimEnd().split("\n").slice(1);
+    const rows = await readmeRows();
+    const described = (command: string) => lines.find((line) => line.startsWith(`  ${command}  `));
+    const columns = new Set(lines.map((line) => /^ {2}\S.*?\S {2,}(?=\S)/.exec(line)?.[0].length));
+
+    expect(rows.flatMap((row) => row.commands).filter((command) => described(command) === undefined)).toEqual(
+      [],
+    );
+    expect(
+      rows
+        .filter((row) => row.commands.length === 1)
+        .filter((row) => !described(row.commands[0] ?? "")?.endsWith(`  ${row.description}`))
+        .map((row) => row.commands[0]),
+    ).toEqual([]);
+    expect(columns.size).toBe(1);
+    expect(lines).toHaveLength(rows.flatMap((row) => row.commands).length);
   });
 });

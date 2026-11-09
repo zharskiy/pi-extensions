@@ -6,6 +6,9 @@ import { sweepOrphans } from "../sweep.ts";
 
 const SHARED_CACHES = "--shared-caches";
 
+const ENGINE_SKIPPED =
+  "the sandbox VM is not running, so the engine step was skipped; the next pi starts it and cleans its containers, volumes and images";
+
 const sharedOwnerOf = (args: string[], stateDir: string) => {
   const unknown = args.find((arg) => arg !== SHARED_CACHES);
 
@@ -18,10 +21,18 @@ const sharedOwnerOf = (args: string[], stateDir: string) => {
 
 export const gcCommand = async (deps: CliDeps, args: string[]) => {
   const sharedOwner = sharedOwnerOf(args, pathsOf(deps).stateDir);
-  const { backend } = await openContext(deps, "admin");
+
+  await openContext(deps, "host");
+
+  const backend = deps.backend();
+  const reachable = (await backend.detect()).available;
   const lines = await sweepOrphans(deps, backend, { collect: { sharedOwner } });
 
   writeLines(deps.stdout, lines);
+
+  if (!reachable) {
+    writeLine(deps.stdout, ENGINE_SKIPPED);
+  }
 
   writeLine(deps.stdout, lines.length === 0 ? "nothing to remove" : `done, ${lines.length} removed`);
 

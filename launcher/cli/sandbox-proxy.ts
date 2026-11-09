@@ -88,12 +88,29 @@ const deniedTargets = (denials: DenialRecord[]) => [
   ...new Map(denials.map((denial) => [authorityOf(denial.host, denial.port), denial])).values(),
 ];
 
+const NOT_ALLOWED = ["egress.allow", "egress.port", "egress.cap"];
+
+const denialHint = (denial: DenialRecord, target: string, grants: boolean) => {
+  if (NOT_ALLOWED.includes(denial.rule)) {
+    return grants
+      ? `run pi sandbox egress allow ${target} on the host`
+      : `ask your administrator to add ${target} to egress.allow`;
+  }
+
+  const hints: Record<string, string> = {
+    "private-address": `it resolves to a private address; add ${denial.host} to egress.privateHosts`,
+    "egress.deny": "denied by policy",
+    "plain-http": "plain HTTP is not proxied; use https",
+    upstream: `it could not be reached: ${denial.reason}`,
+  };
+
+  return hints[denial.rule] ?? denial.reason;
+};
+
 const denialLine = (grants: boolean) => (denial: DenialRecord) => {
   const target = authorityOf(denial.host, denial.port);
 
-  return grants
-    ? `pi-sandbox: ${target} was blocked; run pi sandbox egress allow ${target} on the host`
-    : `pi-sandbox: ${target} was blocked; egress grants are off, add it to egress.allow`;
+  return `pi-sandbox: ${target} was blocked; ${denialHint(denial, target, grants)}`;
 };
 
 export const reportDenials = async (

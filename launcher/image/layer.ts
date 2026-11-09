@@ -2,7 +2,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Backend } from "../backend/index.ts";
 import type { SandboxConfig } from "../config/index.ts";
-import { errorMessage, LauncherError, sha256Hex } from "../shared/index.ts";
+import { errorMessage, expandHome, LauncherError, sha256Hex } from "../shared/index.ts";
 import { placeBuildTrust, TRUST_FILE } from "./build-trust.ts";
 import { buildInContext } from "./context.ts";
 import { writeWantedLayer } from "./record.ts";
@@ -33,12 +33,12 @@ const BUILD_CRT = "/usr/local/share/ca-certificates/pi-sandbox-build.crt";
 
 const ENTRYPOINT = "/usr/local/bin/pi-sandbox-entrypoint";
 
-const userDockerfile = async (path: string | undefined) => {
+const userDockerfile = async (path: string | undefined, home: string | undefined) => {
   if (path === undefined) {
     return undefined;
   }
 
-  const text = await readFile(path, "utf8").catch((error: unknown) => {
+  const text = await readFile(expandHome(path, home), "utf8").catch((error: unknown) => {
     throw new LauncherError(`image.dockerfile: cannot read ${path}: ${errorMessage(error)}`);
   });
 
@@ -55,8 +55,12 @@ const aptStep = (packages: string[]) =>
 const npmStep = (specs: string[]) =>
   specs.length === 0 ? [] : [`RUN npm install --global ${specs.join(" ")} \\\n && npm cache clean --force`];
 
-const renderLayerDockerfile = async (baseImageId: string, config: SandboxConfig) => {
-  const custom = await userDockerfile(config.image.dockerfile);
+const renderLayerDockerfile = async (
+  baseImageId: string,
+  config: SandboxConfig,
+  home: string | undefined,
+) => {
+  const custom = await userDockerfile(config.image.dockerfile, home);
   const steps = [
     `FROM ${baseImageId}`,
     "USER root",
@@ -103,7 +107,11 @@ export const ensureLayerImage = async (input: EnsureLayerInput): Promise<LayerIm
     return { id: input.baseImageId, built: false };
   }
 
-  const dockerfile = await renderLayerDockerfile(input.baseImageId, input.config);
+  const dockerfile = await renderLayerDockerfile(
+    input.baseImageId,
+    input.config,
+    input.env?.HOME || undefined,
+  );
   const tag = `${LAYER_TAG_PREFIX}${sha256Hex(dockerfile).slice(0, SHORT_HASH)}`;
 
   await writeWantedLayer(input.stateDir, input.repoHash, tag);

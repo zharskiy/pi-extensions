@@ -89,6 +89,7 @@ export interface TestProxyOptions {
   stateDir: string;
   policy: EgressPolicy;
   ca?: LauncherCa;
+  upstreamCa?: string;
   rules?: CredentialRule[];
   derivedHosts?: string[];
   repoHash?: string;
@@ -129,7 +130,7 @@ export const startTestProxy = async (options: TestProxyOptions): Promise<TestPro
     ca: options.ca,
     log: (entry) => log.push(entry),
     dial: options.dial ?? mappedDial(options.ports ?? (() => ({}))),
-    upstreamCa: options.ca?.certPem,
+    upstreamCa: options.upstreamCa ?? options.ca?.certPem,
     helloTimeoutMs: 500,
     denialPages: options.denialPages,
   });

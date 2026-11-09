@@ -1,6 +1,6 @@
 import { createReadStream } from "node:fs";
 import { rm } from "node:fs/promises";
-import { type CommandRunner, LauncherError } from "../../shared/index.ts";
+import { type CommandRunner, errorMessage, LauncherError } from "../../shared/index.ts";
 import { pinnedReference, repositoryOf, tagOf } from "../image-reference.ts";
 import { LABELS } from "../labels.ts";
 import type { ImageInfo, ImageSummary } from "../types.ts";
@@ -22,6 +22,13 @@ const NO_TAG = "<none>:<none>";
 
 const BUILD_STEP = /^Step \d+\/\d+/;
 
+const KEPT_OUTPUT_LINES = 30;
+
+const CERTIFICATE_ERROR = /certificate|x509|SSL|self[- ]signed|issuer/i;
+
+const CERTIFICATE_HINT =
+  "a proxy or CA on this network signs the downloads; set tls.extraCa to its CA, or image.digest to a prebuilt image";
+
 const BUILD_LABELS = JSON.stringify({ [LABELS.managed]: "true" });
 
 const repoDigests = (image: EngineImage) =>
@@ -32,12 +39,33 @@ const infoOf = (image: EngineImage, digest?: string): ImageInfo => ({
   digest: digest ?? repoDigests(image)[0] ?? image.Id,
 });
 
-const stepsTo = (report: (step: string) => void) => (line: Record<string, unknown>) => {
-  const step = typeof line.stream === "string" ? BUILD_STEP.exec(line.stream) : null;
+const outputOf = (line: Record<string, unknown>) =>
+  typeof line.stream === "string" ? line.stream.split("\n").filter((text) => text.trim() !== "") : [];
 
-  if (step !== null) {
-    report(step[0]);
-  }
+const buildOutput = (report: (step: string) => void) => {
+  const kept: string[] = [];
+
+  const take = (line: Record<string, unknown>) => {
+    const step = typeof line.stream === "string" ? BUILD_STEP.exec(line.stream) : null;
+
+    if (step !== null) {
+      report(step[0]);
+    }
+
+    kept.push(...outputOf(line));
+
+    kept.splice(0, Math.max(0, kept.length - KEPT_OUTPUT_LINES));
+  };
+
+  return { take, kept };
+};
+
+const buildFailure = (error: unknown, output: string[]) => {
+  const message = errorMessage(error);
+  const text = [message, ...output.map((line) => `  ${line.trimEnd()}`)].join("\n");
+  const hint = CERTIFICATE_ERROR.test([message, ...output].join("\n")) ? CERTIFICATE_HINT : undefined;
+
+  return new LauncherError(text, hint ?? (error instanceof LauncherError ? error.hint : undefined));
 };
 
 const accepts = (image: EngineImage, digest: string) => [...repoDigests(image), image.Id].includes(digest);
@@ -119,20 +147,23 @@ export const createImageOperations = (client: EngineClient, runner: CommandRunne
     progress: (step: string) => void = () => undefined,
   ) => {
     const tarPath = `${contextDir}.tar`;
+    const output = buildOutput(progress);
 
     try {
       await archiveContext(contextDir, tarPath);
 
-      await client.progress(
-        {
-          method: "POST",
-          path: "/build",
-          query: buildQuery(tag, buildArgs),
-          stream: createReadStream(tarPath),
-          contentType: "application/x-tar",
-        },
-        stepsTo(progress),
-      );
+      await client
+        .progress(
+          {
+            method: "POST",
+            path: "/build",
+            query: buildQuery(tag, buildArgs),
+            stream: createReadStream(tarPath),
+            contentType: "application/x-tar",
+          },
+          output.take,
+        )
+        .catch((error: unknown) => Promise.reject(buildFailure(error, output.kept)));
     } finally {
       await rm(tarPath, { force: true });
     }

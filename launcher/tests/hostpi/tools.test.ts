@@ -20,6 +20,7 @@ const P = (identity: string) => placeholderFor(SALT, identity);
 const b64 = (text: string) => Buffer.from(text).toString("base64");
 
 interface Setup {
+  envFromHome?: (home: string) => Record<string, string>;
   bins?: string[];
   files?: Record<string, string>;
   env?: Record<string, string>;
@@ -40,7 +41,7 @@ const derive = async (setup: Setup = {}) => {
   const fake = createFakeRunner((call) => setup.respond?.(call));
   const tools = await deriveHostTools({
     home,
-    env: { PATH: `/nonexistent:${bin}`, ...setup.env },
+    env: { PATH: `/nonexistent:${bin}`, ...setup.env, ...setup.envFromHome?.(home) },
     platform: "darwin",
     runner: fake.runner,
     salt: SALT,
@@ -293,7 +294,7 @@ describe("npmrc", () => {
     ]);
     expect(tools.notices).toEqual([
       "npmrc: _authToken has no registry; scope it as //<registry host>/:_authtoken to use it in the sandbox",
-      "npmrc: cafile stays on the host",
+      "npmrc: cafile stays on the host; add the CA to tls.extraCa so the sandbox trusts it",
     ]);
     expect(JSON.stringify(tools)).not.toMatch(/NPM-REAL|NPM-UNSCOPED/);
   });
@@ -321,6 +322,7 @@ describe("Maven settings", () => {
         { id: "extra", password: P("maven:extra:password") },
       ],
       mirrors: [{ id: "corp", url: "https://maven.corp.test/repo", mirrorOf: "*" }],
+      passthrough: [expect.objectContaining({ name: "profiles" })],
     });
     expect(tools.rules).toEqual([
       {
@@ -389,6 +391,43 @@ describe("pip", () => {
       ["pypi.env.test", { env: "PIP_INDEX_URL", urlPassword: true }],
     ]);
     expect(JSON.stringify(tools)).not.toContain("PIP-REAL");
+  });
+});
+
+describe("pip config locations", () => {
+  const indexOf = (url: string) => ["[global]", `index-url = ${url}`].join("\n");
+
+  it.each([
+    [".pip/pip.conf", {}],
+    ["Library/Application Support/pip/pip.conf", {}],
+  ])("reads %s", async (path, env) => {
+    const { tools } = await derive({ files: { [path]: indexOf("https://pypi.corp.test/simple") }, env });
+
+    expect(tools.value.pip).toEqual([
+      { name: "global", entries: [["index-url", "https://pypi.corp.test/simple"]] },
+    ]);
+  });
+
+  it("takes PIP_CONFIG_FILE over the files in the home", async () => {
+    const { home, tools } = await derive({
+      files: {
+        "elsewhere/pip.conf": indexOf("https://me:PIP-REAL@pypi.env-file.test/simple"),
+        ".config/pip/pip.conf": indexOf("https://pypi.home.test/simple"),
+      },
+      envFromHome: (dir) => ({ PIP_CONFIG_FILE: join(dir, "elsewhere", "pip.conf") }),
+    });
+
+    expect(tools.rules.map((rule) => [rule.host, rule.secret])).toEqual([
+      [
+        "pypi.env-file.test",
+        {
+          file: join(home, "elsewhere", "pip.conf"),
+          format: "ini",
+          key: "global.index-url[0]",
+          urlPassword: true,
+        },
+      ],
+    ]);
   });
 });
 
@@ -563,5 +602,89 @@ describe("git identity and the derive switch", () => {
     expect(tools.value.gh).toEqual([]);
     expect(tools.value.npmrc).toBeUndefined();
     expect(calls.map((call) => call.file)).toEqual(["git"]);
+  });
+});
+
+const MAVEN_SETTINGS = `<settings>
+  <localRepository>/Users/me/m2repo</localRepository>
+  <servers>
+    <server><id>corp</id><username>me</username><password>M2-REAL-PASSWORD</password></server>
+    <server>
+      <id>gitlab</id>
+      <configuration>
+        <timeout>30000</timeout>
+        <httpHeaders><property><name>Private-Token</name><value>GL-REAL-TOKEN</value></property></httpHeaders>
+      </configuration>
+    </server>
+    <server><id>deploy</id><username>ci</username><configuration><timeout>5000</timeout></configuration></server>
+    <server><id>ssh</id><username>git</username><privateKey>/Users/me/.ssh/id_ed25519</privateKey></server>
+  </servers>
+  <mirrors><mirror><id>corp</id><mirrorOf>central</mirrorOf><url>https://maven.corp.test/repo</url></mirror></mirrors>
+  <profiles>
+    <profile>
+      <id>corp</id>
+      <properties><java.version>17</java.version><deploy.password>M2-REAL-PROPERTY</deploy.password></properties>
+      <repositories><repository><id>gitlab</id><url>https://gitlab.corp.test/api/v4/packages/maven</url></repository></repositories>
+      <pluginRepositories><pluginRepository><id>plugins</id><url>https://bob:M2-REAL-URL@plugins.corp.test/m2</url></pluginRepository></pluginRepositories>
+    </profile>
+  </profiles>
+  <activeProfiles><activeProfile>corp</activeProfile></activeProfiles>
+  <pluginGroups><pluginGroup>org.sonarsource.scanner.maven</pluginGroup></pluginGroups>
+</settings>`;
+
+describe("Maven settings in the sandbox", () => {
+  const renderedMaven = async () => {
+    const { home, tools } = await derive({ files: { ".m2/settings.xml": MAVEN_SETTINGS } });
+    const sandbox = deriveSandboxPi({ ...pureInput(), tools });
+    const { renderDir } = await renderAgentDir({
+      stateDir: await tempDir("maven-render"),
+      repoHash: "repo1",
+      hostAgentDir: join(home, "agent"),
+      derived: sandbox,
+    });
+
+    return { tools, rendered: await treeText(renderDir) };
+  };
+
+  it("copies profiles, activeProfiles, pluginGroups and the mirrors, and keeps every secret on the host", async () => {
+    const { rendered } = await renderedMaven();
+
+    expect(rendered).toContain("<activeProfile>corp</activeProfile>");
+    expect(rendered).toContain("<pluginGroup>org.sonarsource.scanner.maven</pluginGroup>");
+    expect(rendered).toContain("<java.version>17</java.version>");
+    expect(rendered).toContain("<url>https://gitlab.corp.test/api/v4/packages/maven</url>");
+    expect(rendered).toContain("<url>https://plugins.corp.test/m2</url>");
+    expect(rendered).toContain("<mirrorOf>central</mirrorOf>");
+    expect(rendered).not.toContain("localRepository");
+    expect(rendered).not.toMatch(/M2-REAL|GL-REAL|deploy\.password/);
+  });
+
+  it("turns httpHeaders values into placeholders bound to the header and passes a server without credentials through", async () => {
+    const { tools, rendered } = await renderedMaven();
+    const header = tools.rules.find((rule) => rule.id === "derived:maven:gitlab:header:Private-Token");
+
+    expect(rendered).toContain(
+      `<name>Private-Token</name>\n            <value>${P("maven:gitlab:header:Private-Token")}</value>`,
+    );
+    expect(rendered).toContain("<timeout>30000</timeout>");
+    expect(rendered).toMatch(
+      /<id>deploy<\/id>\s*<username>ci<\/username>\s*<configuration>\s*<timeout>5000<\/timeout>/,
+    );
+    expect(rendered).not.toContain("<id>ssh</id>");
+    expect(header).toMatchObject({ host: "gitlab.corp.test", header: "Private-Token" });
+    expect(await resolvedOn(header === undefined ? [] : [header], "gitlab.corp.test", {})).toBe(
+      "GL-REAL-TOKEN",
+    );
+  });
+
+  it("says what stays on the host", async () => {
+    const { tools } = await renderedMaven();
+
+    expect(tools.notices).toEqual([
+      "maven ssh: a privateKey or passphrase stays on the host",
+      "maven profiles: the property deploy.password looks like a secret and stays on the host",
+      "maven profiles: a repository URL carried user credentials; they stay on the host, put them in a <server> with its id",
+      "maven: localRepository /Users/me/m2repo is not used in the sandbox; Maven there uses ~/.m2/repository",
+    ]);
   });
 });

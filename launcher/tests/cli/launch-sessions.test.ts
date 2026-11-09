@@ -9,7 +9,7 @@ import { processMark, sha256Hex, stateLayout } from "../../shared/index.ts";
 import { createFakeBackend, createHarness, piSessions } from "./harness.ts";
 
 const OUTDATED =
-  "pi-sandbox: the sandbox config changed; it applies after every session in this repository exits";
+  "pi-sandbox: the sandbox config changed (overlays); it applies after every session in this repository exits";
 
 const OTHER_LAUNCH = "00000000000000aa";
 

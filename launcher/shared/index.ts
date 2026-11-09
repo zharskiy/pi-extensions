@@ -69,14 +69,17 @@ export { settleAll } from "./settle.ts";
 export { ensureSalt, GUEST_PATHS, stateLayout } from "./state-layout.ts";
 export type {
   IniSection,
+  MavenHeader,
   MavenRepository,
   MavenServer,
   MavenSettings,
   NpmrcEntry,
   ToolConfigFormat,
   ToolConfigSelect,
+  XmlElement,
 } from "./tool-config.ts";
 export {
+  escapeXml,
   iniWords,
   isToolConfigKey,
   parseIni,
@@ -85,4 +88,5 @@ export {
   TOOL_CONFIG_FORMATS,
   toolConfigValue,
   urlPartOf,
+  xmlLines,
 } from "./tool-config.ts";

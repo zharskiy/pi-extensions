@@ -37,12 +37,11 @@ const ALLOWED: Array<[string, unknown]> = [
 ];
 
 describe("keys a project config may set", () => {
-  it.each(REFUSED)("refuses %s when a project file is read", (key, value) => {
+  it.each(REFUSED)("drops %s when a project file is read and keeps the allowed keys", (key, value) => {
     const file = "/repo/.pi/sandbox.json";
+    const layer = setPath({ resources: { cpus: 2 } }, key, value);
 
-    expect(() => validateLayerFile(setPath({}, key, value), "project", file)).toThrow(
-      `project: ${key} may not be set by a project config (${file})`,
-    );
+    expect(validateLayerFile(layer, "project", file)).toEqual({ resources: { cpus: 2 } });
     expect(validateLayerFile(setPath({}, key, value), "user", "/home/user/config.json")).toEqual(
       setPath({}, key, value),
     );

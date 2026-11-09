@@ -67,6 +67,16 @@ describe("MCP sign-in at launch start", () => {
     expect(harness.stderr()).toContain("pi-sandbox: mcp docs: signing in on the host; your browser opens\n");
   });
 
+  it("starts no login from pi sandbox doctor, even from a terminal, and names the login command", async () => {
+    const { harness, logins } = await harnessWith();
+
+    await run(["sandbox", "doctor"], harness.deps);
+
+    expect(logins()).toEqual([]);
+    expect(harness.stderr()).not.toContain("signing in on the host");
+    expect(harness.stdout()).toContain("warn mcp docs: needs sign-in: run pi mcp login docs\n");
+  });
+
   it("starts no login when a refresh token is stored", async () => {
     const { harness, logins } = await harnessWith({
       store: { [KEY]: { tokens: { access_token: "a", refresh_token: "r" }, tokensExpireAt: 1 } },

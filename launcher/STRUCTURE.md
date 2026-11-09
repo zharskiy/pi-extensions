@@ -35,7 +35,7 @@ cli/launch.ts                  the launch context, openContext and the pi pipeli
 cli/launches.ts                begin and finish a launch, the last-session removal, live launch counts
 cli/sweep.ts                   removeRepoSandbox, the orphan sweep and the daily collection
 cli/derive.ts                  the host side of a launch: host pi files, derivation, trust bundle, notices
-cli/sandbox-proxy.ts           the repository's proxy input and token, and the denial summary at exit
+cli/sandbox-proxy.ts           the repository's proxy input and token, and the denial summary at exit with a hint per kind
 cli/mcp-sign-in.ts             the launch-start MCP sign-in on the host
 cli/host-sessions.ts           host sessions for a launch: choice, preparation, sweeps, share probe
 cli/intercept.ts               pi install, remove, mcp and update run on the host
@@ -61,8 +61,8 @@ config/index.ts                public surface
 config/types.ts                the config, layer and rule types
 config/defaults.ts             the default config and image reference
 config/load.ts                 loads and merges the layers, the org file included
-config/merge.ts                the layer merge: final keys, unions, sources
-config/validate.ts             the key spec of every layer and the project allowlist
+config/merge.ts                the layer merge: union and final keys, ignored keys and their warning, sources
+config/validate.ts             the key spec of every layer and the project allowlist and its split
 config/dotted.ts               dotted key access
 config/egress-entry.ts         the egress entry grammar and host matching
 config/egress-presets.ts       the egress preset hosts and the expanded allow list
@@ -100,11 +100,11 @@ backend/image-reference.ts     image reference parsing
 backend/managed-network.ts     per-repository network and relay names and labels
 backend/exec-capture.ts        a non-tty exec with collected output
 backend/colima/backend.ts      the Colima backend
-backend/colima/profile.ts      the pi-sandbox profile and its socket
+backend/colima/profile.ts      the pi-sandbox profile, its socket and the VM's name for the host
 backend/colima/engine-client.ts  the engine HTTP client over the socket
 backend/colima/container-body.ts  container create bodies from a spec
 backend/colima/exec-session.ts  exec streams with backpressure
-backend/colima/images.ts       image pull, build and removal
+backend/colima/images.ts       image pull, build (with the output tail of a failed build) and removal
 backend/colima/volumes.ts      volume operations
 backend/colima/relay.ts        the per-repository network and relay
 backend/colima/vm.ts           VM start, size and stop
@@ -119,7 +119,7 @@ container/index.ts             public surface
 container/spec.ts              the container spec: mounts, env, labels
 container/git-overlay.ts       the git overlay plan and its ready() step before a create
 container/names.ts             container and volume names
-container/lifecycle.ts         ensureContainer: reuse, replace, create
+container/lifecycle.ts         ensureContainer: reuse, replace, create, and the notice naming the changed spec sections
 container/run-pi.ts            pi through exec, with signals and resize
 ```
 
@@ -137,7 +137,7 @@ image/layer.ts                 the user image layer
 image/record.ts                the image records
 image/prune.ts                 removal of stale and dangling images
 image/build-trust.ts           extra CAs in the build context
-image/build-proxy.ts           parent proxy build arguments
+image/build-proxy.ts           parent proxy build arguments, loopback proxies pointed at the host
 ```
 
 ## hostpi/
@@ -164,8 +164,8 @@ hostpi/tools/files.ts          shared helpers of the tool derivers
 hostpi/tools/gh.ts             gh hosts and tokens
 hostpi/tools/glab.ts           glab hosts and tokens
 hostpi/tools/npmrc.ts          ~/.npmrc credentials
-hostpi/tools/pip.ts            pip.conf and PIP_INDEX_URL credentials
-hostpi/tools/maven.ts          ~/.m2/settings.xml servers and mirrors
+hostpi/tools/pip.ts            pip.conf (PIP_CONFIG_FILE and the home locations) and PIP_INDEX_URL credentials
+hostpi/tools/maven.ts          ~/.m2/settings.xml servers (passwords and httpHeaders), mirrors, profiles, activeProfiles, pluginGroups
 hostpi/tools/git.ts            git user name and email
 ```
 
@@ -256,7 +256,7 @@ shared/placeholder.ts          the placeholder format
 shared/secret-name.ts          secret-looking names
 shared/pi-env.ts               pi variable names the launcher sets
 shared/mcp-auth-key.ts         host pi's mcp-auth.json parser and sign-in dirs
-shared/tool-config.ts          npmrc, ini and Maven settings parsers
+shared/tool-config.ts          npmrc, ini and Maven settings parsers, and the XML writer
 shared/settle.ts               settleAll
 ```
 

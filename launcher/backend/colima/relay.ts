@@ -3,6 +3,7 @@ import { LABELS } from "../labels.ts";
 import { relayName, repoNetworkLabels, repoNetworkName } from "../managed-network.ts";
 import type { NetworkSummary, ProxyRoute, ProxyRouteRequest } from "../types.ts";
 import { type EngineClient, segment } from "./engine-client.ts";
+import { VM_HOST_ALIAS } from "./profile.ts";
 
 interface RelayInspect {
   Id: string;
@@ -26,8 +27,6 @@ const PROXY_ALIAS = "pi-sandbox-proxy";
 const RELAY_PREFIX = "pi-sandbox-relay-";
 
 const RELAY_LISTEN_PORT = 3128;
-
-const HOST_ALIAS = "host.lima.internal";
 
 const REMOVAL_WAIT_MS = 10_000;
 
@@ -133,7 +132,7 @@ export const createRelayOperations = (client: EngineClient) => {
       json: {
         Image: request.imageId,
         Entrypoint: ["socat"],
-        Cmd: [`TCP-LISTEN:${RELAY_LISTEN_PORT},fork,reuseaddr`, `TCP:${HOST_ALIAS}:${request.hostPort}`],
+        Cmd: [`TCP-LISTEN:${RELAY_LISTEN_PORT},fork,reuseaddr`, `TCP:${VM_HOST_ALIAS}:${request.hostPort}`],
         Labels: relayLabels(request.hostPort, request.repoHash),
         HostConfig: {
           NetworkMode: "bridge",

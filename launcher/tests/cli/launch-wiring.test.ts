@@ -13,13 +13,13 @@ const REAL_KEY = "real-secret-value-1234567890";
 
 const PINNED = `sha256:${"a".repeat(64)}`;
 
-const denial = (host: string, port: number): DenialRecord => ({
+const denial = (host: string, port: number, rule = "egress.allow", reason = "not allowed"): DenialRecord => ({
   time: 1_700_000_000_500,
   host,
   port,
   repoHash: "repo",
-  rule: "egress.allow",
-  reason: "not allowed",
+  rule,
+  reason,
 });
 
 describe("pi launch wiring", () => {
@@ -285,7 +285,7 @@ describe("pi launch wiring", () => {
     await expectNoLeak(fake, renderDir, [REAL_KEY]);
   });
 
-  it("says when a credential rule host resolves to a private address", async () => {
+  it("says once per repository when a credential rule host resolves to a private address", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({
       backend: () => fake.backend,
@@ -297,9 +297,12 @@ describe("pi launch wiring", () => {
     });
 
     expect(await run([], harness.deps)).toBe(0);
-    expect(harness.stderr()).toContain(
-      "pi-sandbox: models.example.test resolves to a private address; add it to egress.privateHosts",
-    );
+    expect(await run([], harness.deps)).toBe(0);
+    expect(
+      harness
+        .stderr()
+        .match(/models\.example\.test resolves to a private address; add it to egress\.privateHosts/g),
+    ).toHaveLength(1);
   });
 
   it("launches without the private address notice when DNS does not answer in time", async () => {
@@ -353,9 +356,49 @@ describe("pi launch wiring", () => {
     await run([], harness.deps);
 
     expect(harness.stderr()).toContain(
-      "pi-sandbox: evil.test was blocked; egress grants are off, add it to egress.allow\n",
+      "pi-sandbox: evil.test was blocked; ask your administrator to add evil.test to egress.allow\n",
     );
     expect(harness.stderr()).not.toContain("egress allow evil.test");
+  });
+
+  it.each([
+    [
+      "a private address",
+      denial(
+        "nexus.corp.test",
+        443,
+        "private-address",
+        "nexus.corp.test resolves only to restricted addresses",
+      ),
+      "pi-sandbox: nexus.corp.test was blocked; it resolves to a private address; add nexus.corp.test to egress.privateHosts\n",
+    ],
+    [
+      "egress.deny",
+      denial("paste.test", 443, "egress.deny", "paste.test is in egress.deny"),
+      "pi-sandbox: paste.test was blocked; denied by policy\n",
+    ],
+    [
+      "plain HTTP",
+      denial("localhost.test", 80, "plain-http", "only HTTPS through CONNECT is proxied"),
+      "pi-sandbox: localhost.test:80 was blocked; plain HTTP is not proxied; use https\n",
+    ],
+    [
+      "an upstream failure",
+      denial("down.test", 443, "upstream", "connect ECONNREFUSED 203.0.113.9:443"),
+      "pi-sandbox: down.test was blocked; it could not be reached: connect ECONNREFUSED 203.0.113.9:443\n",
+    ],
+    [
+      "a TLS name mismatch",
+      denial("api.test", 443, "sni", "TLS server name evil.test does not match api.test"),
+      "pi-sandbox: api.test was blocked; TLS server name evil.test does not match api.test\n",
+    ],
+  ])("prints its own hint for %s when pi exits", async (_kind, record, line) => {
+    const harness = await createHarness({ backend: () => createFakeBackend().backend, denials: [record] });
+
+    await run([], harness.deps);
+
+    expect(harness.stderr()).toContain(line);
+    expect(harness.stderr()).not.toContain("egress allow");
   });
 
   it("says once that the host CA store was skipped when the launcher does not run on macOS", async () => {

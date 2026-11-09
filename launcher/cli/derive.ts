@@ -13,6 +13,7 @@ import { privateHostNotices, type TrustBundle } from "../proxy/index.ts";
 import { ensureSalt, settleAll } from "../shared/index.ts";
 import { type CliDeps, hostAgentDirOf, writeNotices } from "./deps.ts";
 import type { LaunchContext } from "./launch.ts";
+import { writeOnce } from "./notices.ts";
 
 export interface HostSide {
   hostAgentDir: string;
@@ -121,7 +122,13 @@ export const prepareHostSide = async (
     trustFor(deps, context, derived, proxyNeeded),
   ]);
 
-  writeNotices(deps, [...notices, ...privateNotices, ...hostStoreNotices(deps, context)]);
+  writeNotices(deps, [...notices, ...hostStoreNotices(deps, context)]);
+
+  await writeOnce(
+    deps,
+    context,
+    privateNotices.map((notice) => `pi-sandbox: ${notice}`),
+  );
 
   return { hostAgentDir, files, pi, derived, trust, proxyNeeded };
 };

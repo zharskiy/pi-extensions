@@ -38,22 +38,32 @@ const refuseLive = async (stateDir: string, context: LaunchContext) => {
   }
 };
 
+const ENGINE_SKIPPED =
+  "the sandbox VM is not running, so the engine step was skipped; run pi sandbox reset again after the next pi starts it to remove the container and volumes";
+
 const reset = async (deps: CliDeps, context: LaunchContext, backend: Backend, withVolumes: boolean) => {
   const { workspace, stateDir, repoHash } = context;
 
   await refuseLive(stateDir, context);
 
+  const reachable = (await backend.detect()).available;
   const removed = await removeRepoSandbox(deps, backend, repoHash);
 
   writeLines(deps.stdout, removed);
 
-  if (removed.length === 0) {
+  if (removed.length === 0 && reachable) {
     writeLine(deps.stdout, `no sandbox for ${workspace.repoRoot}`);
   }
 
   const layout = stateLayout(stateDir).repo(repoHash);
 
   await rm(layout.render, { recursive: true, force: true });
+
+  if (!reachable) {
+    writeLine(deps.stdout, ENGINE_SKIPPED);
+
+    return;
+  }
 
   if (!withVolumes) {
     return;
@@ -78,10 +88,10 @@ export const resetCommand = async (deps: CliDeps, args: string[]) => {
     throw new LauncherError(`unknown reset option "${unknown}"`, "pi sandbox reset [--volumes]");
   }
 
-  const { context, backend } = await openContext(deps, "admin");
+  const { context } = await openContext(deps, "host");
 
   await withRepoLaunchLock(context.stateDir, context.repoHash, () =>
-    reset(deps, context, backend, args.includes(VOLUMES)),
+    reset(deps, context, deps.backend(), args.includes(VOLUMES)),
   );
 
   return 0;

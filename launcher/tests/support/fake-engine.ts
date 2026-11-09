@@ -48,6 +48,7 @@ export interface FakeEngineOptions {
   exec?: FakeExecHandler;
   socketPath?: string;
   vmShares?: string[];
+  failBuild?: { output: string[]; error: string };
 }
 
 interface FakeImage {
@@ -261,7 +262,20 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
     };
   };
 
+  const failedBuild = (failure: { output: string[]; error: string }): RouteResult => ({
+    status: 200,
+    raw: [
+      ...failure.output.map((line) => JSON.stringify({ stream: `${line}\n` })),
+      JSON.stringify({ errorDetail: { message: failure.error }, error: failure.error }),
+      "",
+    ].join("\n"),
+  });
+
   const build = ({ query, body }: RouteRequest): RouteResult => {
+    if (options.failBuild !== undefined) {
+      return failedBuild(options.failBuild);
+    }
+
     const tag = query.get("t") ?? "unnamed";
 
     images.set(tag, {

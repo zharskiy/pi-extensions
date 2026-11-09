@@ -7,8 +7,8 @@ import {
 } from "../shared/index.ts";
 import { defaultConfig } from "./defaults.ts";
 import { mergeLayers } from "./merge.ts";
-import type { EffectiveConfig, LayerName } from "./types.ts";
-import { projectKeyRefusal, validateLayer } from "./validate.ts";
+import type { EffectiveConfig, IgnoredKey, LayerName } from "./types.ts";
+import { PROJECT_KEYS, splitProjectKeys, validateLayer } from "./validate.ts";
 
 interface LoadOptions {
   repoRoot: string;
@@ -33,20 +33,30 @@ const validated = (value: unknown, layer: LayerName, file: string) => {
   }
 };
 
-export const validateLayerFile = (value: unknown, layer: LayerName, file: string) => {
-  const refused = layer === "project" ? projectKeyRefusal(value, file) : undefined;
-
-  if (refused !== undefined) {
-    throw refused;
-  }
-
-  return validated(value, layer, file);
-};
+export const validateLayerFile = (value: unknown, layer: LayerName, file: string) =>
+  validated(layer === "project" ? splitProjectKeys(value).kept : value, layer, file);
 
 const readLayer = async (layer: LayerName, file: string) => {
   const value = await readJsonFile<unknown>(file);
 
   return value === undefined ? undefined : validateLayerFile(value, layer, file);
+};
+
+const readProject = async (file: string) => {
+  const value = await readJsonFile<unknown>(file);
+
+  if (value === undefined) {
+    return { layer: undefined, ignored: [] };
+  }
+
+  const reason = `a project config may set only ${PROJECT_KEYS.join(", ")}; ${file}`;
+  const ignored: IgnoredKey[] = splitProjectKeys(value).outside.map((key) => ({
+    layer: "project",
+    key,
+    reason,
+  }));
+
+  return { layer: validateLayerFile(value, "project", file), ignored };
 };
 
 const readOrg = async (file: string | undefined) => {
@@ -67,12 +77,17 @@ const readOrg = async (file: string | undefined) => {
 };
 
 export const loadEffectiveConfig = async (options: LoadOptions): Promise<EffectiveConfig> => {
-  const [policy, user, project] = await Promise.all(
-    (["policy", "user", "project"] as const).map((layer) =>
+  const [policy, user] = await Promise.all(
+    (["policy", "user"] as const).map((layer) =>
       readLayer(layer, layerFile(layer, options.repoRoot, options.env)),
     ),
   );
+  const project = await readProject(layerFile("project", options.repoRoot, options.env));
   const org = await readOrg(policy?.org ?? user?.org);
 
-  return mergeLayers({ defaults: await defaultConfig(), layers: { policy, org, user, project } });
+  return mergeLayers({
+    defaults: await defaultConfig(),
+    layers: { policy, org, user, project: project.layer },
+    ignored: project.ignored,
+  });
 };

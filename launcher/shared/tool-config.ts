@@ -19,10 +19,24 @@ export interface IniSection {
   entries: Array<[string, string]>;
 }
 
+export interface XmlElement {
+  name: string;
+  children: XmlElement[];
+  text: string;
+}
+
+export interface MavenHeader {
+  name: string;
+  value: string;
+}
+
 export interface MavenServer {
   id: string;
   username?: string;
   password?: string;
+  headers?: MavenHeader[];
+  configuration?: XmlElement[];
+  keyed?: true;
 }
 
 export interface MavenRepository {
@@ -35,12 +49,8 @@ export interface MavenSettings {
   servers: MavenServer[];
   mirrors: MavenRepository[];
   repositories: MavenRepository[];
-}
-
-interface XmlElement {
-  name: string;
-  children: XmlElement[];
-  text: string;
+  passthrough: XmlElement[];
+  localRepository?: string;
 }
 
 const JSON_KEY = /^(\/([^~/]|~[01])*)+$/;
@@ -253,10 +263,37 @@ const repositoryOf = (element: XmlElement): MavenRepository[] => {
   return [mirrorOf === undefined ? { id, url } : { id, url, mirrorOf }];
 };
 
+const nested = (elements: XmlElement[], path: string[]): XmlElement[] =>
+  path.reduce((level, name) => level.flatMap((element) => childrenOf(element, name)), elements);
+
+const HEADERS = "httpHeaders";
+
+const KEY_FIELDS = ["privateKey", "passphrase"];
+
+const PASSTHROUGH = ["profiles", "activeProfiles", "pluginGroups"];
+
+const HEADER_KEY = /^(.+)\/httpHeaders\/(.+)$/;
+
+const headersOf = (server: XmlElement) =>
+  nested([server], ["configuration", HEADERS, "property"]).flatMap((property) => {
+    const name = childText(property, "name");
+    const value = childText(property, "value");
+
+    return name === undefined || value === undefined ? [] : [{ name, value }];
+  });
+
+const configurationOf = (server: XmlElement) =>
+  childrenOf(server, "configuration").flatMap((configuration) =>
+    configuration.children.filter((child) => child.name !== HEADERS),
+  );
+
 const serverOf = (element: XmlElement): MavenServer[] => {
   const id = childText(element, "id");
   const username = childText(element, "username");
   const password = childText(element, "password");
+  const headers = headersOf(element);
+  const configuration = configurationOf(element);
+  const keyed = KEY_FIELDS.some((name) => childText(element, name) !== undefined);
 
   if (id === undefined) {
     return [];
@@ -267,12 +304,26 @@ const serverOf = (element: XmlElement): MavenServer[] => {
       id,
       ...(username === undefined ? {} : { username }),
       ...(password === undefined ? {} : { password }),
+      ...(headers.length === 0 ? {} : { headers }),
+      ...(configuration.length === 0 ? {} : { configuration }),
+      ...(keyed ? { keyed: true as const } : {}),
     },
   ];
 };
 
-const nested = (elements: XmlElement[], path: string[]): XmlElement[] =>
-  path.reduce((level, name) => level.flatMap((element) => childrenOf(element, name)), elements);
+const XML_ESCAPES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" };
+
+export const escapeXml = (text: string) =>
+  text.replace(/[&<>"]/g, (character) => XML_ESCAPES[character] ?? character);
+
+export const xmlLines = (element: XmlElement, indent: string): string[] =>
+  element.children.length === 0
+    ? [`${indent}<${element.name}>${escapeXml(element.text.trim())}</${element.name}>`]
+    : [
+        `${indent}<${element.name}>`,
+        ...element.children.flatMap((child) => xmlLines(child, `${indent}  `)),
+        `${indent}</${element.name}>`,
+      ];
 
 export const parseMavenSettings = (text: string): MavenSettings | undefined => {
   const settings = childrenOf(parseXml(text), "settings");
@@ -282,6 +333,7 @@ export const parseMavenSettings = (text: string): MavenSettings | undefined => {
   }
 
   const profiles = nested(settings, ["profiles", "profile"]);
+  const localRepository = settings[0] === undefined ? undefined : childText(settings[0], "localRepository");
 
   return {
     servers: nested(settings, ["servers", "server"]).flatMap(serverOf),
@@ -290,11 +342,22 @@ export const parseMavenSettings = (text: string): MavenSettings | undefined => {
       ...nested(profiles, ["repositories", "repository"]),
       ...nested(profiles, ["pluginRepositories", "pluginRepository"]),
     ].flatMap(repositoryOf),
+    passthrough: settings.flatMap((element) =>
+      element.children.filter((child) => PASSTHROUGH.includes(child.name)),
+    ),
+    ...(localRepository === undefined ? {} : { localRepository }),
   };
 };
 
-const mavenServerPassword = (text: string, id: string) =>
-  parseMavenSettings(text)?.servers.find((server) => server.id === id)?.password;
+const mavenServerSecret = (text: string, key: string) => {
+  const header = HEADER_KEY.exec(key);
+  const id = header?.[1] ?? key;
+  const server = parseMavenSettings(text)?.servers.find((candidate) => candidate.id === id);
+
+  return header === null
+    ? server?.password
+    : server?.headers?.find((entry) => entry.name === header[2])?.value;
+};
 
 const unescapeToken = (token: string) => token.replaceAll("~1", "/").replaceAll("~0", "~");
 
@@ -336,7 +399,7 @@ const READERS: Record<ToolConfigFormat, (text: string, key: string) => string | 
   json: jsonValue,
   npmrc: npmrcValue,
   ini: iniValue,
-  "maven-servers": mavenServerPassword,
+  "maven-servers": mavenServerSecret,
 };
 
 const KEY_PATTERNS: Record<ToolConfigFormat, RegExp> = {

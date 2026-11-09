@@ -1,5 +1,5 @@
 export { createColimaBackend } from "./colima/backend.ts";
-export { ENGINE_PROFILE, ENGINE_SOCKET_DISPLAY, engineSocketPath } from "./colima/profile.ts";
+export { ENGINE_PROFILE, ENGINE_SOCKET_DISPLAY, engineSocketPath, VM_HOST_ALIAS } from "./colima/profile.ts";
 export { recommendedVmSize } from "./colima/vm.ts";
 export { execCapture } from "./exec-capture.ts";
 export { LABELS } from "./labels.ts";

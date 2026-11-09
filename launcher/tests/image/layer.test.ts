@@ -93,6 +93,24 @@ describe("ensureLayerImage", () => {
     expect(Object.keys(fake.builds.at(-1)?.files ?? {}).sort()).toEqual(["Dockerfile", "trust.pem"]);
   });
 
+  it("reads an image.dockerfile path that starts with ~/ from the home", async () => {
+    const fake = createFakeBackend();
+    const home = await tempDir();
+
+    await writeFile(join(home, "layer.Dockerfile"), "RUN echo from-home > /opt/home\n");
+
+    await ensureLayerImage({
+      repoHash: REPO,
+      backend: fake.backend,
+      baseImageId: BASE_ID,
+      config: configWith({ dockerfile: "~/layer.Dockerfile" }),
+      stateDir: await tempDir(),
+      env: { HOME: home },
+    });
+
+    expect(layerDockerfile(fake)).toContain("RUN echo from-home > /opt/home");
+  });
+
   it("leaves out the steps whose keys are not set", async () => {
     const fake = createFakeBackend();
 

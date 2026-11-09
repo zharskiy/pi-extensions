@@ -6,7 +6,13 @@ import { renderAgentDir } from "../../provision/index.ts";
 import { stateLayout } from "../../shared/index.ts";
 import { tempDir, writeText } from "./fixtures.ts";
 
-const NO_TOOLS: DerivedTools = { gh: [], glab: [], maven: { servers: [], mirrors: [] }, git: {}, env: {} };
+const NO_TOOLS: DerivedTools = {
+  gh: [],
+  glab: [],
+  maven: { servers: [], mirrors: [], passthrough: [] },
+  git: {},
+  env: {},
+};
 
 const derived = (
   key = "pi-sandbox-aaaaaaaaaaaaaaaaaaaaaaaa",
@@ -229,6 +235,7 @@ describe("renderAgentDir", () => {
         maven: {
           servers: [{ id: "corp", username: "me", password: P }],
           mirrors: [{ id: "corp", url: "https://maven.corp.test/repo", mirrorOf: "*" }],
+          passthrough: [],
         },
         git: { name: 'Max "Z"', email: "max@corp.test" },
       }),

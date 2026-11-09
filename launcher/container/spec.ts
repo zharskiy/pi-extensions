@@ -246,6 +246,8 @@ export const forwardedEnv = (names: string[], hostEnv: Record<string, string | u
     }),
   );
 
+const LOOPBACK_HOSTS = "localhost,127.0.0.1,::1";
+
 const javaProxyOptions = (host: string, port: string, user: string, password: string) =>
   ["https", "http"]
     .flatMap((scheme) => [
@@ -269,11 +271,11 @@ const proxyEnv = (input: ContainerSpecInput): Record<string, string> => {
     HTTPS_PROXY: url,
     HTTP_PROXY: url,
     ALL_PROXY: url,
-    NO_PROXY: "",
+    NO_PROXY: LOOPBACK_HOSTS,
     https_proxy: url,
     http_proxy: url,
     all_proxy: url,
-    no_proxy: "",
+    no_proxy: LOOPBACK_HOSTS,
     NODE_USE_ENV_PROXY: "1",
     PI_SANDBOX_PROXY_HOST: hostname,
     PI_SANDBOX_PROXY_PORT: port,
@@ -355,9 +357,42 @@ const baseLabels = (input: ContainerSpecInput) => ({
     : { [LABELS.gitCommonDirs]: JSON.stringify(gitCommonDirsOf(input.workspace)) }),
 });
 
+const SECTION_HASH_LENGTH = 12;
+
+const specSections = ({
+  image,
+  env,
+  mounts,
+  labels,
+  volumeLabels,
+  ownedPaths,
+  ...rest
+}: LauncherContainerSpec) => ({
+  config: {
+    ...rest,
+    labels: { ...labels, [LABELS.imageDigest]: undefined, [LABELS.proxyTokenHash]: undefined },
+  },
+  image: { image, digest: labels[LABELS.imageDigest] },
+  credentials: { env, token: labels[LABELS.proxyTokenHash] },
+  overlays: { volumes: mounts.filter((mount) => mount.kind === "volume"), volumeLabels, ownedPaths },
+  mounts: mounts.filter((mount) => mount.kind !== "volume"),
+});
+
+const sectionHashes = (spec: LauncherContainerSpec) =>
+  Object.fromEntries(
+    Object.entries(specSections(spec)).map(([name, part]) => [
+      name,
+      stableHash(part).slice(0, SECTION_HASH_LENGTH),
+    ]),
+  );
+
 const withSpecHash = (spec: LauncherContainerSpec): LauncherContainerSpec => ({
   ...spec,
-  labels: { ...spec.labels, [LABELS.specHash]: stableHash(spec) },
+  labels: {
+    ...spec.labels,
+    [LABELS.specHash]: stableHash(spec),
+    [LABELS.specSections]: JSON.stringify(sectionHashes(spec)),
+  },
 });
 
 export const buildContainerSpec = (input: ContainerSpecInput): LauncherContainerSpec => {
