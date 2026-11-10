@@ -356,14 +356,14 @@ export const runBackendConformance = (
       await backend().removeContainer(created.id);
     });
 
-    it("removes a stopped container by itself, so waiting for the removal returns", async () => {
+    it("removes a stopped container by itself, and a removal after it returns once it is gone", async () => {
       const created = await backend().createContainer(specFor("stop", {}));
 
       await backend().startContainer(created.id);
 
       await backend().stopContainer(created.id, 1);
 
-      await backend().waitRemoved(created.id, 10_000);
+      await backend().removeContainer(created.id);
 
       const listed = await backend().findContainers({ [RUN_LABEL]: runId });
 

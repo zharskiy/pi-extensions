@@ -63,17 +63,11 @@ acme.ghe.com:
     user: me
 `;
 
-const ghVersion =
-  (version: string): FakeResponder =>
-  (call) =>
-    call.args[0] === "--version" ? { stdout: `gh version ${version} (2024-01-01)\n` } : undefined;
-
 describe("gh", () => {
   it("derives a command rule per host, the API hosts and GH_TOKEN, all with placeholders", async () => {
     const { bin, tools } = await derive({
       bins: ["gh"],
       files: { ".config/gh/hosts.yml": GH_HOSTS },
-      respond: ghVersion("2.40.1"),
     });
     const gh = join(bin, "gh");
 
@@ -88,7 +82,7 @@ describe("gh", () => {
         id: "derived:gh:acme.ghe.com:token",
         host: "api.acme.ghe.com",
         placeholder: P("gh:acme.ghe.com:token"),
-        secret: { command: [gh, "auth", "token", "--hostname", "acme.ghe.com"], ttlSeconds: 300 },
+        secret: { command: [gh, "auth", "token", "--hostname", "acme.ghe.com"] },
       },
     ]);
     expect(tools.value.gh).toEqual([
@@ -104,7 +98,6 @@ describe("gh", () => {
       bins: ["gh"],
       files: { "elsewhere/hosts.yml": "corp.example.test:\n    user: me\n" },
       env: { GH_CONFIG_DIR: "" },
-      respond: ghVersion("2.17.0"),
     });
 
     expect(tools.value.gh).toEqual([]);
@@ -116,24 +109,9 @@ describe("gh", () => {
     const configured = await derive({
       bins: ["gh"],
       env: { GH_CONFIG_DIR: moved },
-      respond: ghVersion("2.17.0"),
     });
 
     expect(configured.tools.value.gh.map((entry) => entry.host)).toEqual(["corp.example.test"]);
-  });
-
-  it("derives nothing for a gh older than 2.17 and says so", async () => {
-    const { tools } = await derive({
-      bins: ["gh"],
-      files: { ".config/gh/hosts.yml": GH_HOSTS },
-      respond: ghVersion("2.16.9"),
-    });
-
-    expect(tools.rules).toEqual([]);
-    expect(tools.value.env).toEqual({});
-    expect(tools.notices).toEqual([
-      "gh on the host is older than 2.17 or did not report its version; update it to use gh and git push in the sandbox",
-    ]);
   });
 
   it("derives nothing and says nothing without gh on PATH", async () => {
@@ -186,7 +164,7 @@ describe("glab", () => {
         id: "derived:glab:gitlab.corp.test:token",
         host,
         placeholder: P("glab:gitlab.corp.test:token"),
-        secret: { command: [glab, "config", "get", "token", "--host", "gitlab.corp.test"], ttlSeconds: 300 },
+        secret: { command: [glab, "config", "get", "token", "--host", "gitlab.corp.test"] },
       })),
     );
     expect(rulesOf(tools.rules, "derived:glab:gitlab.com:token").map((rule) => rule.host)).toEqual([
@@ -223,23 +201,6 @@ describe("glab", () => {
     });
 
     expect(tools.value.env).toEqual({ GITLAB_TOKEN: P("glab:gitlab.com:token"), GITLAB_HOST: "gitlab.com" });
-  });
-
-  it("leaves a host gh also signs in to to gh", async () => {
-    const { tools } = await derive({
-      bins: ["gh", "glab"],
-      files: {
-        ".config/gh/hosts.yml": "git.corp.test:\n    user: me\n",
-        ".config/glab-cli/config.yml": "hosts:\n    git.corp.test:\n        user: me\n",
-      },
-      respond: (call) => ghVersion("2.40.0")(call) ?? glabToken(call),
-    });
-
-    expect(tools.rules.map((rule) => rule.id)).toEqual(["derived:gh:git.corp.test:token"]);
-    expect(tools.value.glab).toEqual([]);
-    expect(tools.notices).toEqual([
-      "glab git.corp.test: gh on the host also signs in to it; the sandbox uses the gh credential",
-    ]);
   });
 
   it("derives nothing and says nothing without glab on PATH", async () => {
@@ -302,6 +263,46 @@ describe("npmrc", () => {
   });
 });
 
+describe("npmrc host paths and registries", () => {
+  it("keeps keys that name host paths on the host and lists the registries for the egress notice", async () => {
+    const npmrc = [
+      `prefix=${braced("HOME")}/.npm-global`,
+      "cache=/Users/me/.npm",
+      "script-shell=/opt/homebrew/bin/bash",
+      "logfile=/tmp/npm.log",
+      "registry=https://npm.corp.test/",
+      "@acme:registry=https://acme.corp.test:8443/npm/",
+      "save-exact=true",
+    ].join("\n");
+    const { tools } = await derive({
+      files: { ".npmrc": npmrc, ".m2/settings.xml": MAVEN_SETTINGS },
+      env: { HOME: "/Users/me" },
+    });
+
+    expect(tools.value.npmrc).toEqual([
+      { key: "registry", value: "https://npm.corp.test/" },
+      { key: "@acme:registry", value: "https://acme.corp.test:8443/npm/" },
+      { key: "save-exact", value: "true" },
+    ]);
+    expect(tools.notices).toEqual(
+      expect.arrayContaining([
+        "npmrc: prefix names a host path and stays on the host",
+        "npmrc: cache names a host path and stays on the host",
+        "npmrc: script-shell names a host path and stays on the host",
+        "npmrc: logfile names a host path and stays on the host",
+      ]),
+    );
+    expect(tools.registries).toEqual(
+      expect.arrayContaining([
+        { label: "npmrc", endpoint: { host: "npm.corp.test" } },
+        { label: "npmrc", endpoint: { host: "acme.corp.test", port: 8443 } },
+        { label: "maven", endpoint: { host: "maven.corp.test" } },
+        { label: "maven", endpoint: { host: "plugins.corp.test" } },
+      ]),
+    );
+  });
+});
+
 describe("Maven settings", () => {
   it("merges servers with placeholder passwords and copies mirrors; encrypted and hostless servers stay out", async () => {
     const settings = `<settings>
@@ -344,7 +345,7 @@ describe("Maven settings", () => {
 });
 
 describe("pip", () => {
-  it("puts placeholders in index URL passwords and takes PIP_INDEX_URL over the file", async () => {
+  it("puts placeholders in index URL passwords and ignores PIP_INDEX_URL", async () => {
     const conf = [
       "[global]",
       "index-url = https://me:PIP-REAL-FILE@pypi.corp.test/simple",
@@ -362,12 +363,12 @@ describe("pip", () => {
       {
         name: "global",
         entries: [
+          ["index-url", `https://me:${P("pip:global.index-url[0]")}@pypi.corp.test/simple`],
           [
             "extra-index-url",
             `https://pypi.org/simple\nhttps://bot:${P("pip:global.extra-index-url[1]")}@extra.corp.test/simple`,
           ],
           ["timeout", "30"],
-          ["index-url", `https://env:${P("pip:env.PIP_INDEX_URL")}@pypi.env.test/simple`],
         ],
       },
     ]);
@@ -390,7 +391,6 @@ describe("pip", () => {
           urlPassword: true,
         },
       ],
-      ["pypi.env.test", { env: "PIP_INDEX_URL", urlPassword: true }],
     ]);
     expect(JSON.stringify(tools)).not.toContain("PIP-REAL");
   });
@@ -409,28 +409,6 @@ describe("pip config locations", () => {
       { name: "global", entries: [["index-url", "https://pypi.corp.test/simple"]] },
     ]);
   });
-
-  it("takes PIP_CONFIG_FILE over the files in the home", async () => {
-    const { home, tools } = await derive({
-      files: {
-        "elsewhere/pip.conf": indexOf("https://me:PIP-REAL@pypi.env-file.test/simple"),
-        ".config/pip/pip.conf": indexOf("https://pypi.home.test/simple"),
-      },
-      envFromHome: (dir) => ({ PIP_CONFIG_FILE: join(dir, "elsewhere", "pip.conf") }),
-    });
-
-    expect(tools.rules.map((rule) => [rule.host, rule.secret])).toEqual([
-      [
-        "pypi.env-file.test",
-        {
-          file: join(home, "elsewhere", "pip.conf"),
-          format: "ini",
-          key: "global.index-url[0]",
-          urlPassword: true,
-        },
-      ],
-    ]);
-  });
 });
 
 const URL_SECRETS = {
@@ -442,7 +420,6 @@ const URL_SECRETS = {
   extra: "PIP-EXTRA-TOKEN-22",
   pipProxy: "PIP-PROXY-PW-23",
   findLinks: "PIP-LINKS-PW-24",
-  env: "PIP-ENV-PW-25",
 };
 
 const URL_NPMRC = [
@@ -487,10 +464,9 @@ const resolvedOn = async (rules: CredentialRule[], host: string, env: Record<str
 
 describe("URL userinfo in npmrc and pip.conf", () => {
   it("renders placeholders for every userinfo form, keeps the secrets on the host and binds each to its host", async () => {
-    const env = { PIP_INDEX_URL: `https://env:${URL_SECRETS.env}@pypi.env.test/simple` };
+    const env = {};
     const { home, tools } = await derive({
       files: { ".npmrc": URL_NPMRC, ".config/pip/pip.conf": URL_PIP },
-      env,
     });
     const sandbox = deriveSandboxPi({ ...pureInput(), tools });
     const stateDir = await tempDir("tools-render");
@@ -515,9 +491,9 @@ describe("URL userinfo in npmrc and pip.conf", () => {
       {
         name: "global",
         entries: [
+          ["index-url", `https://me:${P("pip:global.index-url[0]")}@pypi.corp.test/simple`],
           ["extra-index-url", `https://${P("pip:global.extra-index-url[0]")}@pypi.fury.test/me/simple`],
           ["trusted-host", "pypi.corp.test"],
-          ["index-url", `https://env:${P("pip:env.PIP_INDEX_URL")}@pypi.env.test/simple`],
         ],
       },
     ]);
@@ -533,18 +509,12 @@ describe("URL userinfo in npmrc and pip.conf", () => {
       { host: "npm.fury.test", pathPrefix: "/me", placeholder: P("npmrc:@fury:registry:url") },
       { host: "pypi.corp.test", pathPrefix: undefined, placeholder: P("pip:global.index-url[0]") },
       { host: "pypi.fury.test", pathPrefix: undefined, placeholder: P("pip:global.extra-index-url[0]") },
-      { host: "pypi.env.test", pathPrefix: undefined, placeholder: P("pip:env.PIP_INDEX_URL") },
     ]);
     expect(
       await Promise.all(
-        [
-          "npm.corp.test",
-          "scoped.corp.test",
-          "npm.fury.test",
-          "pypi.corp.test",
-          "pypi.fury.test",
-          "pypi.env.test",
-        ].map((host) => resolvedOn(tools.rules, host, env)),
+        ["npm.corp.test", "scoped.corp.test", "npm.fury.test", "pypi.corp.test", "pypi.fury.test"].map(
+          (host) => resolvedOn(tools.rules, host, env),
+        ),
       ),
     ).toEqual([
       URL_SECRETS.registry,
@@ -552,7 +522,6 @@ describe("URL userinfo in npmrc and pip.conf", () => {
       URL_SECRETS.userOnly,
       URL_SECRETS.index,
       URL_SECRETS.extra,
-      URL_SECRETS.env,
     ]);
     expect(tools.notices).toEqual([
       "npmrc: https-proxy stays on the host; the sandbox reaches the network through the launcher proxy",
@@ -604,6 +573,12 @@ describe("git identity and the derive switch", () => {
     expect(tools.value.gh).toEqual([]);
     expect(tools.value.npmrc).toBeUndefined();
     expect(calls.map((call) => call.file)).toEqual([join(bin, "git")]);
+    expect(calls[0]?.args.slice(0, 4)).toEqual([
+      "-c",
+      "core.fsmonitor=false",
+      "-c",
+      "core.hooksPath=/dev/null",
+    ]);
   });
 });
 
@@ -625,7 +600,8 @@ const MAVEN_SETTINGS = `<settings>
   <profiles>
     <profile>
       <id>corp</id>
-      <properties><java.version>17</java.version><deploy.password>M2-REAL-PROPERTY</deploy.password></properties>
+      <activation><activeByDefault>true</activeByDefault></activation>
+      <properties><java.version>17</java.version><deploy.password>M2-REAL-PROPERTY</deploy.password><sonar.login>squ_M2-REAL-SONAR</sonar.login></properties>
       <repositories><repository><id>gitlab</id><url>https://gitlab.corp.test/api/v4/packages/maven</url></repository></repositories>
       <pluginRepositories><pluginRepository><id>plugins</id><url>https://bob:M2-REAL-URL@plugins.corp.test/m2</url></pluginRepository></pluginRepositories>
     </profile>
@@ -648,12 +624,13 @@ describe("Maven settings in the sandbox", () => {
     return { tools, rendered: await treeText(renderDir) };
   };
 
-  it("copies profiles, activeProfiles, pluginGroups and the mirrors, and keeps every secret on the host", async () => {
+  it("copies each profile's id, activation and repositories, activeProfiles, pluginGroups and the mirrors, and no profile properties", async () => {
     const { rendered } = await renderedMaven();
 
     expect(rendered).toContain("<activeProfile>corp</activeProfile>");
     expect(rendered).toContain("<pluginGroup>org.sonarsource.scanner.maven</pluginGroup>");
-    expect(rendered).toContain("<java.version>17</java.version>");
+    expect(rendered).toContain("<activeByDefault>true</activeByDefault>");
+    expect(rendered).not.toMatch(/properties|java\.version|sonar\.login/);
     expect(rendered).toContain("<url>https://gitlab.corp.test/api/v4/packages/maven</url>");
     expect(rendered).toContain("<url>https://plugins.corp.test/m2</url>");
     expect(rendered).toContain("<mirrorOf>central</mirrorOf>");
@@ -684,7 +661,6 @@ describe("Maven settings in the sandbox", () => {
 
     expect(tools.notices).toEqual([
       "maven ssh: a privateKey or passphrase stays on the host",
-      "maven profiles: the property deploy.password looks like a secret and stays on the host",
       "maven profiles: a repository URL carried user credentials; they stay on the host, put them in a <server> with its id",
       "maven: localRepository /Users/me/m2repo is not used in the sandbox; Maven there uses ~/.m2/repository",
     ]);
@@ -697,7 +673,6 @@ describe("host tools inside the sandbox roots", () => {
       bins: ["gh", "git"],
       files: { ".config/gh/hosts.yml": GH_HOSTS },
       excludedRoots: (home) => [join(home, "bin")],
-      respond: ghVersion("2.40.0"),
     });
 
     expect(calls).toEqual([]);
@@ -711,15 +686,13 @@ describe("host tools inside the sandbox roots", () => {
       files: {
         "repo/gh/hosts.yml": "exfil-gh.example:\n    user: me\n",
         "repo/glab/config.yml": "hosts:\n    exfil-glab.example:\n        token: x\n",
-        "repo/pip.conf": "[global]\nextra-index-url = https://u:p@exfil.example/simple\n",
       },
       envFromHome: (dir) => ({
         GH_CONFIG_DIR: join(dir, "repo", "gh"),
         GLAB_CONFIG_DIR: join(dir, "repo", "glab"),
-        PIP_CONFIG_FILE: join(dir, "repo", "pip.conf"),
       }),
       excludedRoots: (dir) => [join(dir, "repo")],
-      respond: (call) => ghVersion("2.40.0")(call) ?? glabToken(call),
+      respond: glabToken,
     });
 
     expect(tools.rules).toEqual([]);
@@ -728,7 +701,6 @@ describe("host tools inside the sandbox roots", () => {
     expect(tools.notices).toEqual([
       `gh: ${join(home, "repo", "gh", "hosts.yml")} (from GH_CONFIG_DIR) lies inside the sandbox, which can rewrite it; ignored`,
       `glab: ${join(home, "repo", "glab", "config.yml")} (from GLAB_CONFIG_DIR) lies inside the sandbox, which can rewrite it; ignored`,
-      `pip: ${join(home, "repo", "pip.conf")} (from PIP_CONFIG_FILE) lies inside the sandbox, which can rewrite it; ignored`,
     ]);
   });
 });
@@ -746,7 +718,7 @@ describe("host tool probes", () => {
     expect(probes[0]?.options.timeoutMs).toBe(30_000);
   });
 
-  it("skips gh, glab and git with a notice when they do not answer in time", async () => {
+  it("skips glab and git with a notice when they do not answer in time; gh needs no probe", async () => {
     const { bin, tools } = await derive({
       bins: ["gh", "glab", "git"],
       files: {
@@ -756,11 +728,10 @@ describe("host tool probes", () => {
       respond: () => ({ code: 124, timedOut: true }),
     });
 
-    expect(tools.rules).toEqual([]);
+    expect(tools.rules.every((rule) => rule.id.startsWith("derived:gh:"))).toBe(true);
     expect(tools.value.git).toEqual({});
     expect(tools.notices).toEqual([
       `git: ${join(bin, "git")} config --global did not answer within 10 s on the host; skipped`,
-      `gh: ${join(bin, "gh")} --version did not answer within 10 s on the host (a Keychain prompt may be waiting); it has no credentials in the sandbox this launch, run pi again once it answers`,
       `glab gitlab.corp.test: ${join(bin, "glab")} config get token did not answer within 30 s on the host (a Keychain prompt may be waiting); it has no credentials in the sandbox this launch, run pi again once it answers`,
     ]);
   });

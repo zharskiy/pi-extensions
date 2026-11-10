@@ -50,14 +50,43 @@ describe("image build network", () => {
       https_proxy: "http://proxy.corp.example:8080",
       NO_PROXY: "internal.example",
       no_proxy: "internal.example",
+      PI_VERSION: "1.5.0",
     });
   });
 
   it.each([
     ["http://127.0.0.1:3128", "http://host.lima.internal:3128"],
-    ["http://localhost:3128/", "http://host.lima.internal:3128/"],
+    ["http://localhost:3128/", "http://host.lima.internal:3128"],
     ["http://[::1]:3128", "http://host.lima.internal:3128"],
-  ])("points a loopback proxy %s at the host for the build", async (local, reachable) => {
+    ["http://proxy.corp.example", "http://proxy.corp.example:80"],
+  ])(
+    "gives the build the runtime's parent proxy %s, a loopback one pointed at the host",
+    async (local, reachable) => {
+      const recording = recordingBackend();
+
+      await ensureBuiltImage({
+        backend: recording.backend,
+        config: egressWith("env"),
+        versions,
+        stateDir: await tempDir(),
+        env: { HTTPS_PROXY: local, HTTP_PROXY: "http://other.corp.example:8080" },
+      });
+
+      expect(recording.buildArgs[0]).toEqual({
+        HTTPS_PROXY: reachable,
+        https_proxy: reachable,
+        HTTP_PROXY: reachable,
+        http_proxy: reachable,
+        PI_VERSION: "1.5.0",
+      });
+    },
+  );
+
+  it.each([
+    [{ HTTPS_PROXY: "127.0.0.1:3128" }],
+    [{ HTTPS_PROXY: "socks5://127.0.0.1:1080" }],
+    [{ HTTP_PROXY: "http://dev:hunter2@proxy.corp.example:8080" }],
+  ])("builds without a proxy where the runtime uses none: %o", async (env) => {
     const recording = recordingBackend();
 
     await ensureBuiltImage({
@@ -65,14 +94,24 @@ describe("image build network", () => {
       config: egressWith("env"),
       versions,
       stateDir: await tempDir(),
-      env: { HTTPS_PROXY: local, HTTP_PROXY: "http://proxy.corp.example:8080" },
+      env,
     });
 
-    expect(recording.buildArgs[0]).toMatchObject({
-      HTTPS_PROXY: reachable,
-      https_proxy: reachable,
-      HTTP_PROXY: "http://proxy.corp.example:8080",
+    expect(recording.buildArgs[0]).toEqual({ PI_VERSION: "1.5.0" });
+  });
+
+  it("uses the lower-case https_proxy when HTTPS_PROXY is empty, as the runtime does", async () => {
+    const recording = recordingBackend();
+
+    await ensureBuiltImage({
+      backend: recording.backend,
+      config: egressWith("env"),
+      versions,
+      stateDir: await tempDir(),
+      env: { HTTPS_PROXY: "", https_proxy: "http://127.0.0.1:3128" },
     });
+
+    expect(recording.buildArgs[0]).toMatchObject({ HTTPS_PROXY: "http://host.lima.internal:3128" });
   });
 
   it("sends no proxy build args without a parent proxy", async () => {
@@ -93,7 +132,7 @@ describe("image build network", () => {
       env: {},
     });
 
-    expect(recording.buildArgs).toEqual([{}, {}]);
+    expect(recording.buildArgs).toEqual([{ PI_VERSION: "1.5.0" }, { PI_VERSION: "1.6.0" }]);
   });
 
   it("refuses credentials in the env proxy URL without echoing them", async () => {
@@ -108,6 +147,9 @@ describe("image build network", () => {
 
     await expect(failure).rejects.toThrow(/parent proxy needs credentials/);
     await expect(failure).rejects.not.toThrow(/hunter2/);
+    await expect(failure).rejects.toMatchObject({
+      hint: "build on a network that needs no proxy credentials; a prebuilt image (image.reference and image.digest) avoids the build only when image.packages, image.npmGlobal and image.dockerfile are unset",
+    });
   });
 
   it("never refuses for credentials when the image is pinned and pulled", async () => {
@@ -119,9 +161,7 @@ describe("image build network", () => {
       backend: fake.backend,
       config,
       stateDir: await tempDir(),
-      repoHash: "a".repeat(64),
       versions: async () => versions,
-      inUse: async () => false,
       env: { HTTPS_PROXY: "http://dev:hunter2@proxy.corp.example:8080" },
     });
 

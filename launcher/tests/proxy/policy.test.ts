@@ -55,23 +55,23 @@ describe("decideConnect", () => {
   });
 
   it("refuses ports other than 443", () => {
-    expect(ruleFor("registry.npmjs.org", 22)).toBe("egress.port");
+    expect(ruleFor("registry.npmjs.org", 22)).toBe("egress.allow");
   });
 
   it("allows an entry with an explicit port only on that port", () => {
     expect(ruleFor("example.test", 8443)).toBe("allowed");
 
-    expect(ruleFor("example.test", 443)).toBe("egress.port");
+    expect(ruleFor("example.test", 443)).toBe("egress.allow");
   });
 
   it("keeps a bare entry on 443 only", () => {
-    expect(ruleFor("registry.npmjs.org", 8443)).toBe("egress.port");
+    expect(ruleFor("registry.npmjs.org", 8443)).toBe("egress.allow");
   });
 
   it("allows a credential rule host on the port of its rule only", () => {
     expect(ruleFor("llm.example.com", 8443)).toBe("allowed");
 
-    expect(ruleFor("llm.example.com", 443)).toBe("egress.port");
+    expect(ruleFor("llm.example.com", 443)).toBe("egress.allow");
   });
 
   it("accepts a matching SNI case-insensitively", () => {
@@ -104,7 +104,7 @@ describe("denial hint", () => {
       allowed: false,
       rule: "egress.allow",
       reason:
-        "evil.test is not allowed by the sandbox. Egress grants are off; ask the user to add it to egress.allow on the host.",
+        "evil.test is not allowed by the sandbox. Egress grants are off; ask the user to have their administrator add evil.test to egress.allow.",
     });
   });
 });
@@ -156,6 +156,20 @@ describe("decideConnect with deny, rule hosts and extra entries", () => {
       allowed: true,
       rule: "grant-or-derived",
     });
+  });
+
+  it("names a rule host credential even when egress.allow also lists it", () => {
+    const egress: EgressPolicy = { allow: ["rules.test"], credentialHosts: ["rules.test"] };
+
+    expect(decideConnect({ host: "rules.test", port: 443 }, egress)).toEqual({
+      allowed: true,
+      rule: "credential",
+    });
+  });
+
+  it("checks a public IPv4-mapped IPv6 address by its IPv4 range", () => {
+    expect(restrictedAddress("::ffff:93.184.216.34")).toBeUndefined();
+    expect(restrictedAddress("[::ffff:a9fe:a9fe]")?.rule).toBe("metadata");
   });
 
   it("lets a denied domain block every name under it, even with a grant", () => {

@@ -1,33 +1,16 @@
 import { join } from "node:path";
-import { type IniSection, iniWords, parseIni } from "../../shared/index.ts";
-import { hasUrlUserinfo } from "../endpoints.ts";
+import { hasUrlUserinfo, type IniSection, iniWords, parseIni } from "../../shared/index.ts";
 import { mergeSections, noticeOnly, type Section } from "../rules.ts";
 import type { ToolsInput } from "../types.ts";
-import { firstExisting, sandboxedConfigNotice, type UrlSecret, urlCredentialSection } from "./files.ts";
+import { firstExisting, type Registry, registriesOf, type UrlSecret, urlCredentialSection } from "./files.ts";
 
 const INDEX_KEYS = new Set(["index-url", "extra-index-url"]);
-
-const GLOBAL = "global";
 
 const homePaths = (input: ToolsInput) => [
   join(input.home, ".config", "pip", "pip.conf"),
   join(input.home, "Library", "Application Support", "pip", "pip.conf"),
   join(input.home, ".pip", "pip.conf"),
 ];
-
-const configPaths = async (input: ToolsInput): Promise<Section<string[]>> => {
-  const file = input.env.PIP_CONFIG_FILE;
-
-  if (!file) {
-    return noticeOnly(homePaths(input));
-  }
-
-  const notice = await sandboxedConfigNotice(input, "pip", "PIP_CONFIG_FILE", file);
-
-  return notice === undefined
-    ? noticeOnly([file, ...homePaths(input)])
-    : noticeOnly(homePaths(input), notice);
-};
 
 const pipName = (name: string) => name.toLowerCase().replaceAll("_", "-").replace(/^--/, "");
 
@@ -79,41 +62,28 @@ const sectionOf = (input: ToolsInput, file: string, section: IniSection): Sectio
   };
 };
 
-const withEnvIndex = (input: ToolsInput, sections: IniSection[]): Section<IniSection[]> => {
-  const url = input.env.PIP_INDEX_URL;
-
-  if (url === undefined || url === "") {
-    return { value: sections, rules: [], notices: [] };
-  }
-
-  const index = urlSection(input, "env.PIP_INDEX_URL", url, { env: "PIP_INDEX_URL" });
-  const others = sections.filter((section) => section.name !== GLOBAL);
-  const global = sections.find((section) => section.name === GLOBAL)?.entries ?? [];
-  const entries: Array<[string, string]> = [
-    ...global.filter(([name]) => name !== "index-url"),
-    ["index-url", index.value],
-  ];
-
-  return { value: [{ name: GLOBAL, entries }, ...others], rules: index.rules, notices: index.notices };
-};
-
-export const derivePip = async (input: ToolsInput): Promise<Section<IniSection[] | undefined>> => {
-  const paths = await configPaths(input);
-  const config = await firstExisting(paths.value);
-
-  if (config === undefined && !input.env.PIP_INDEX_URL) {
-    return noticeOnly(undefined, ...paths.notices);
-  }
-
-  const file = config?.path ?? "";
-  const sections = mergeSections(
-    parseIni(config?.text ?? "").map((section) => sectionOf(input, file, section)),
+const indexUrls = (sections: IniSection[]) =>
+  sections.flatMap((section) =>
+    section.entries.flatMap(([name, value]) => (INDEX_KEYS.has(pipName(name)) ? iniWords(value) : [])),
   );
-  const indexed = withEnvIndex(input, sections.values);
+
+export const derivePip = async (
+  input: ToolsInput,
+): Promise<Section<IniSection[] | undefined> & { registries: Registry[] }> => {
+  const config = await firstExisting(homePaths(input));
+
+  if (config === undefined) {
+    return { ...noticeOnly(undefined), registries: [] };
+  }
+
+  const sections = mergeSections(
+    parseIni(config.text).map((section) => sectionOf(input, config.path, section)),
+  );
 
   return {
-    value: indexed.value,
-    rules: [...sections.rules, ...indexed.rules],
-    notices: [...paths.notices, ...sections.notices, ...indexed.notices],
+    value: sections.values,
+    rules: sections.rules,
+    notices: sections.notices,
+    registries: registriesOf("pip", indexUrls(sections.values)),
   };
 };

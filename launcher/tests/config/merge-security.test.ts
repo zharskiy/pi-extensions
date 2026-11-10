@@ -8,7 +8,7 @@ import { isJsonObject } from "../../shared/index.ts";
 
 type Layers = Partial<Record<LayerName, LayerConfig>>;
 
-const merge = async (layers: Layers) => mergeLayers({ defaults: await defaultConfig(), layers });
+const merge = (layers: Layers) => mergeLayers({ defaults: defaultConfig(), layers });
 
 const ignoredKeys = async (layers: Layers) =>
   (await merge(layers)).ignored.map((entry) => `${entry.layer}: ${entry.key} (${entry.reason})`);
@@ -42,18 +42,11 @@ const COMPLETE_LAYER: LayerConfig = {
     grants: false,
   },
   tls: { extraCa: [{ file: "/etc/corp/ca.pem" }] },
-  workspaceRoots: { roots: ["/work"], outside: "refuse" },
-  mounts: {
-    extraReadOnly: ["/opt/tools"],
-    cacheVolumes: ["node_modules"],
-    sharedCaches: ["~/.cache/pip"],
-    hostCaches: ["maven"],
-    autoOverlays: false,
-  },
+  workspaceRoots: { roots: ["/work"] },
+  mounts: { sharedCaches: ["~/.cache/pip"], autoOverlays: false },
   env: { allow: ["EDITOR"] },
   resources: { cpus: 2, memoryGiB: 4 },
   sessions: { host: false },
-  org: "/etc/pi-sandbox/org.json",
 };
 
 const UNION_KEYS = [
@@ -61,6 +54,7 @@ const UNION_KEYS = [
   "egress.deny",
   "egress.privateHosts",
   "image.packages",
+  "image.npmGlobal",
   "credentials.rules",
   "env.allow",
 ];
@@ -97,75 +91,66 @@ describe("mergeLayers with a layer that sets every key", () => {
   });
 });
 
-describe("mergeLayers with keys of the policy and org layers", () => {
-  it("ignores every key the policy sets in the org and user layers, except the unions, and keeps the policy value", async () => {
-    const results = await Promise.all(
-      leafKeys()
-        .filter((key) => key !== "org")
-        .map(async (key) => {
-          const layer = setPath({}, key, getPath(COMPLETE_LAYER, key)) as LayerConfig;
-          const merged = await merge({ policy: layer, org: layer, user: layer });
+const ORG_RULE = {
+  id: "corp",
+  host: "llm.corp.test",
+  placeholder: "pi-sandbox-corp",
+  secret: { env: "CORP" },
+};
 
-          return {
-            key,
-            ignored: merged.ignored.map((entry) => `${entry.layer}: ${entry.key} (${entry.reason})`),
-            source: merged.sources[key],
-          };
-        }),
+describe("mergeLayers with keys of the policy layer", () => {
+  it("ignores every key the policy sets in the user layer, except the unions, and keeps the policy value", async () => {
+    const results = await Promise.all(
+      leafKeys().map(async (key) => {
+        const layer = setPath({}, key, getPath(COMPLETE_LAYER, key)) as LayerConfig;
+        const merged = await merge({ policy: layer, user: layer });
+
+        return {
+          key,
+          ignored: merged.ignored.map((entry) => `${entry.layer}: ${entry.key} (${entry.reason})`),
+          source: merged.sources[key],
+        };
+      }),
     );
 
     expect(results).toEqual(
       results.map(({ key }) =>
         UNION_KEYS.includes(key)
-          ? { key, ignored: [], source: "user" }
-          : {
-              key,
-              ignored: [
-                `org: ${key} (final in the policy config)`,
-                `user: ${key} (final in the policy config)`,
-              ],
-              source: "policy",
-            },
+          ? { key, ignored: [], source: "policy" }
+          : { key, ignored: [`user: ${key} (final in the policy config)`], source: "policy" },
       ),
     );
   });
 
-  it("ignores the org keys in the user and the project and reports every one", async () => {
+  it("ignores the policy keys in the user config and reports every one", async () => {
     expect(
       await ignoredKeys({
-        org: { egress: { grants: false, presets: ["npm"] }, mounts: { autoOverlays: true } },
-        user: { egress: { grants: true, presets: ["maven"] } },
-        project: { mounts: { autoOverlays: false } },
+        policy: { egress: { grants: true, presets: ["npm"] }, mounts: { autoOverlays: true } },
+        user: { egress: { grants: false, presets: ["maven"] }, mounts: { autoOverlays: false } },
       }),
     ).toEqual([
-      "user: egress.presets (final in the org config)",
-      "user: egress.grants (final in the org config)",
-      "project: mounts.autoOverlays (final in the org config)",
+      "user: egress.presets (final in the policy config)",
+      "user: egress.grants (final in the policy config)",
+      "user: mounts.autoOverlays (final in the policy config)",
     ]);
   });
 
-  it("adds the entries of every layer to the union keys and lets none remove one", async () => {
-    const orgRule = {
-      id: "corp",
-      host: "llm.corp.test",
-      placeholder: "pi-sandbox-corp",
-      secret: { env: "CORP" },
-    };
+  it("adds the entries of every layer to the union keys, lets none remove one and names every layer that added", async () => {
     const userRule = {
       id: "mine",
       host: "git.mine.test",
       placeholder: "pi-sandbox-mine",
       secret: { env: "MINE" },
     };
-    const { config, ignored } = await merge({
-      org: {
+    const { config, ignored, sources } = await merge({
+      policy: {
         egress: { allow: ["registry.corp.test"], privateHosts: ["registry.corp.test"] },
-        image: { packages: ["jq"] },
-        credentials: { rules: [orgRule] },
+        image: { packages: ["jq"], npmGlobal: ["corp-cli@1.0.0"] },
+        credentials: { rules: [ORG_RULE] },
       },
       user: {
         egress: { allow: [], privateHosts: ["git.mine.test"] },
-        image: { packages: ["maven", "jq"] },
+        image: { packages: ["maven", "jq"], npmGlobal: ["tool@2.0.0"] },
         credentials: { rules: [userRule] },
       },
     });
@@ -173,23 +158,63 @@ describe("mergeLayers with keys of the policy and org layers", () => {
     expect(config.egress.allow).toEqual(["registry.corp.test"]);
     expect(config.egress.privateHosts).toEqual(["registry.corp.test", "git.mine.test"]);
     expect(config.image.packages).toEqual(["jq", "maven"]);
-    expect(config.credentials.rules).toEqual([orgRule, userRule]);
+    expect(config.image.npmGlobal).toEqual(["corp-cli@1.0.0", "tool@2.0.0"]);
+    expect(config.credentials.rules).toEqual([ORG_RULE, userRule]);
+    expect(ignored).toEqual([]);
+    expect(sources).toMatchObject({
+      "egress.allow": "policy",
+      "egress.privateHosts": "policy+user",
+      "image.npmGlobal": "policy+user",
+      "credentials.rules": "policy+user",
+    });
+  });
+
+  it("locks egress when the policy turns grants off: the user's hosts and private hosts are ignored", async () => {
+    const { config, ignored, sources } = await merge({
+      policy: { egress: { grants: false, allow: ["registry.corp.test"] } },
+      user: {
+        egress: { allow: ["mine.test"], privateHosts: ["git.mine.test"], deny: ["paste.test"] },
+        image: { packages: ["jq"] },
+      },
+    });
+
+    expect(config.egress.allow).toEqual(["registry.corp.test"]);
+    expect(config.egress.privateHosts).toEqual([]);
+    expect(config.egress.deny).toEqual(["paste.test"]);
+    expect(config.image.packages).toEqual(["jq"]);
+    expect(sources["egress.allow"]).toBe("policy");
+    expect(ignored).toEqual([
+      {
+        layer: "user",
+        key: "egress.allow",
+        reason: "egress is locked: the policy config sets egress.grants to false",
+      },
+      {
+        layer: "user",
+        key: "egress.privateHosts",
+        reason: "egress is locked: the policy config sets egress.grants to false",
+      },
+    ]);
+  });
+
+  it("does not lock egress when grants are off only in the user config", async () => {
+    const { config, ignored } = await merge({
+      policy: { egress: { allow: ["registry.corp.test"] } },
+      user: { egress: { grants: false, allow: ["mine.test"] } },
+    });
+
+    expect(config.egress.allow).toEqual(["registry.corp.test", "mine.test"]);
+    expect(config.egress.grants).toBe(false);
     expect(ignored).toEqual([]);
   });
 
   it("keeps the higher layer's rule when a lower layer reuses its id", async () => {
-    const orgRule = {
-      id: "corp",
-      host: "llm.corp.test",
-      placeholder: "pi-sandbox-corp",
-      secret: { env: "CORP" },
-    };
     const { config, ignored } = await merge({
-      org: { credentials: { rules: [orgRule] } },
-      user: { credentials: { rules: [{ ...orgRule, host: "evil.test" }] } },
+      policy: { credentials: { rules: [ORG_RULE] } },
+      user: { credentials: { rules: [{ ...ORG_RULE, host: "evil.test" }] } },
     });
 
-    expect(config.credentials.rules).toEqual([orgRule]);
+    expect(config.credentials.rules).toEqual([ORG_RULE]);
     expect(ignored).toEqual([
       { layer: "user", key: "credentials.rules corp", reason: "a higher layer has a rule with this id" },
     ]);
@@ -198,21 +223,21 @@ describe("mergeLayers with keys of the policy and org layers", () => {
   it("names every ignored key and layer in one warning", () => {
     expect(
       ignoredNotice([
-        { layer: "user", key: "egress.presets", reason: "final in the org config" },
-        { layer: "user", key: "egress.grants", reason: "final in the org config" },
+        { layer: "user", key: "egress.presets", reason: "final in the policy config" },
+        { layer: "user", key: "egress.grants", reason: "final in the policy config" },
         {
-          layer: "project",
+          layer: "user",
           key: "egress.allow",
-          reason: "a project config may set only mounts.cacheVolumes",
+          reason: "egress is locked: the policy config sets egress.grants to false",
         },
       ]),
     ).toEqual([
-      "pi-sandbox: warning: config keys ignored: user egress.presets, egress.grants (final in the org config); project egress.allow (a project config may set only mounts.cacheVolumes); see pi sandbox config",
+      "pi-sandbox: warning: config keys ignored: user egress.presets, egress.grants (final in the policy config); user egress.allow (egress is locked: the policy config sets egress.grants to false); see pi sandbox config",
     ]);
     expect(ignoredNotice([])).toEqual([]);
   });
 
-  it("lets a lower layer set a sibling key the admin layers left open", async () => {
+  it("lets a lower layer set a sibling key the policy left open", async () => {
     const { config, sources } = await merge({
       policy: { credentials: { derive: { enabled: true } } },
       user: { credentials: { derive: { hosts: ["*.corp.test"] } } },
@@ -227,36 +252,11 @@ describe("mergeLayers with keys of the policy and org layers", () => {
 
   it("unions egress.deny and env.allow across the layers", async () => {
     const { config } = await merge({
-      policy: { egress: { deny: ["a.test"] }, env: { allow: ["PAGER"] } },
-      org: { egress: { deny: ["b.test"] } },
+      policy: { egress: { deny: ["a.test", "b.test"] }, env: { allow: ["PAGER"] } },
       user: { egress: { deny: ["a.test", "c.test"] }, env: { allow: ["EDITOR"] } },
     });
 
     expect(config.egress.deny).toEqual(["a.test", "b.test", "c.test"]);
     expect(config.env.allow).toEqual(expect.arrayContaining(["PAGER", "EDITOR", "TERM"]));
-  });
-});
-
-describe("mergeLayers with a project layer that reaches it unfiltered", () => {
-  it("merges only the project allowlist and records every other project key as ignored", async () => {
-    const { config, sources, ignored } = await merge({
-      project: {
-        egress: { allow: ["evil.test"], privateHosts: ["evil.test"] },
-        mounts: { hostCaches: ["npm"], cacheVolumes: ["node_modules"] },
-        resources: { cpus: 2 },
-      } as LayerConfig,
-    });
-
-    expect(config.egress.allow).not.toContain("evil.test");
-    expect(config.egress.privateHosts).toEqual([]);
-    expect(config.mounts.hostCaches).toEqual([]);
-    expect(config.mounts.cacheVolumes).toEqual(["node_modules"]);
-    expect(config.resources.cpus).toBe(2);
-    expect(sources["egress.allow"]).toBe("default");
-    expect(ignored.map((entry) => `${entry.layer}: ${entry.key}`)).toEqual([
-      "project: egress.allow",
-      "project: egress.privateHosts",
-      "project: mounts.hostCaches",
-    ]);
   });
 });

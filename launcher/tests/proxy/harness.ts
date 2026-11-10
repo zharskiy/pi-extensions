@@ -5,7 +5,7 @@ import type { Server } from "node:https";
 import { type AddressInfo, connect, isIP, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { CredentialRule } from "../../config/index.ts";
+import { authorityOf, type CredentialRule, TLS_PORT } from "../../config/index.ts";
 import type { AccessLogEntry } from "../../proxy/access-log.ts";
 import type { Dialer } from "../../proxy/dial.ts";
 import type { EgressPolicy } from "../../proxy/policy.ts";
@@ -67,16 +67,17 @@ export const fakeResolver = (values: Record<string, string>) => {
   return { resolver, invalidated, asked };
 };
 
-const mappedDial =
-  (ports: () => Record<string, number>) =>
-  (host: string, port: number): Promise<Socket> =>
-    new Promise((resolve, reject) => {
+const mappedDial = (ports: () => Record<string, number>): Dialer => ({
+  dial: (host, port) =>
+    new Promise<Socket>((resolve, reject) => {
       const socket = connect({ host: "127.0.0.1", port: ports()[`${host}:${port}`] ?? 1 });
 
       socket.once("connect", () => resolve(socket));
 
       socket.once("error", reject);
-    });
+    }),
+  checkAddresses: async () => undefined,
+});
 
 export const createStateDir = () => mkdtemp(join(tmpdir(), "pi-sandbox-proxy-"));
 
@@ -98,7 +99,6 @@ export interface TestProxyOptions {
   privateHosts?: string[];
   ports?: () => Record<string, number>;
   dial?: Dialer;
-  denialPages?: Parameters<typeof startProxyServer>[0]["denialPages"];
 }
 
 export interface TestProxy {
@@ -111,6 +111,7 @@ export interface TestProxy {
 
 export const startTestProxy = async (options: TestProxyOptions): Promise<TestProxy> => {
   const log: AccessLogEntry[] = [];
+  const ca = options.ca ?? (await openCa(options.stateDir));
   const repoHash = options.repoHash ?? TEST_REPO;
   const runtime = createProxyRuntime({
     stateDir: options.stateDir,
@@ -121,18 +122,23 @@ export const startTestProxy = async (options: TestProxyOptions): Promise<TestPro
   });
   const proxy = await startProxyServer({
     listen: { host: "127.0.0.1", port: 0 },
-    policy: options.policy,
+    policy: {
+      ...options.policy,
+      credentialHosts: [
+        ...(options.policy.credentialHosts ?? []),
+        ...(options.rules ?? []).map((rule) => authorityOf(rule.host, rule.port ?? TLS_PORT)),
+      ],
+    },
     repoHash,
     token: TEST_TOKEN,
     runtime,
     resolver: options.resolver ?? fakeResolver({}).resolver,
     privateHosts: options.privateHosts,
-    ca: options.ca,
+    ca,
     log: (entry) => log.push(entry),
     dial: options.dial ?? mappedDial(options.ports ?? (() => ({}))),
-    upstreamCa: options.upstreamCa ?? options.ca?.certPem,
+    upstreamCa: options.upstreamCa ?? ca.certPem,
     helloTimeoutMs: 500,
-    denialPages: options.denialPages,
   });
 
   return { proxy, log, runtime, repoHash, token: TEST_TOKEN };

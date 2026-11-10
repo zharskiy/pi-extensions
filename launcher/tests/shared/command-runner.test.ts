@@ -1,6 +1,6 @@
 import { realpath } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
-import { createProcessRunner, LauncherError } from "../../shared/index.ts";
+import { createProcessRunner, LauncherError, withResolvedCommand } from "../../shared/index.ts";
 import { tempDir } from "../support/temp-dir.ts";
 
 const runner = createProcessRunner();
@@ -81,5 +81,40 @@ describe("createProcessRunner with a base env", () => {
     const result = await isolated.run(node, ["-e", script], { env: { EXTRA: "yes" } });
 
     expect(JSON.parse(result.stdout)).toEqual(["kept", "yes", null]);
+  });
+});
+
+describe("withResolvedCommand", () => {
+  it("runs the bare name as the path found once, and fails as not found without one", async () => {
+    const calls: string[] = [];
+    const lookups: string[] = [];
+    const base = {
+      run: async (file: string) => {
+        calls.push(file);
+
+        return { code: 0, stdout: "", stderr: "" };
+      },
+      spawnInteractive: async (file: string) => {
+        calls.push(file);
+
+        return 0;
+      },
+    };
+    const found = withResolvedCommand(base, "git", async () => {
+      lookups.push("git");
+
+      return "/usr/bin/git";
+    });
+
+    await found.run("git", []);
+    await found.spawnInteractive("git", []);
+    await found.run("colima", []);
+
+    expect(calls).toEqual(["/usr/bin/git", "/usr/bin/git", "colima"]);
+    expect(lookups).toEqual(["git"]);
+
+    const missing = withResolvedCommand(base, "git", async () => undefined);
+
+    await expect(missing.run("git", [])).rejects.toThrow("git: command not found");
   });
 });

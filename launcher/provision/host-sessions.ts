@@ -224,20 +224,9 @@ const rejectFile = async (path: string, info: Stats, reason: string): Promise<En
     () => false,
   );
 
-  if (renamed) {
-    return { ...NOTHING, notices: [`sessions: ${path} ${reason}; renamed to ${basename(target)}`] };
-  }
-
-  const removed =
-    (await unchanged(path, info)) &&
-    (await unlink(path).then(
-      () => true,
-      () => false,
-    ));
-
-  return removed
-    ? { ...NOTHING, notices: [`sessions: ${path} ${reason}; it could not be renamed and was deleted`] }
-    : { ...NOTHING, failures: [stuck(path, `a session file that ${reason}`)] };
+  return renamed
+    ? { ...NOTHING, notices: [`sessions: ${path} ${reason}; renamed to ${basename(target)}`] }
+    : { ...NOTHING, failures: [`${path} is a session file that ${reason} and could not be renamed`] };
 };
 
 const checkFile = async (path: string, info: Stats, repoRoot: string): Promise<EntryOutcome> => {

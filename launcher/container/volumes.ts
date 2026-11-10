@@ -1,8 +1,8 @@
 import { userInfo } from "node:os";
-import { join, relative, resolve } from "node:path";
+import { join, relative } from "node:path";
 import { LABELS } from "../backend/index.ts";
 import type { SandboxConfig } from "../config/index.ts";
-import { GUEST_PATHS, isWithin, repoHash } from "../shared/index.ts";
+import { GUEST_PATHS, repoHash } from "../shared/index.ts";
 import type { Workspace } from "../workspace/index.ts";
 import { agentVolumeName, cacheVolumeName, sharedVolumeName, userHashOf } from "./names.ts";
 
@@ -11,7 +11,7 @@ export interface PathVolume {
   name: string;
 }
 
-type VolumeKey = "agent" | "mounts.cacheVolumes" | "mounts.autoOverlays" | "mounts.sharedCaches";
+type VolumeKey = "agent" | "mounts.autoOverlays" | "mounts.sharedCaches";
 
 export interface PlannedVolume {
   name: string;
@@ -45,31 +45,20 @@ const repoLabels = (workspace: Workspace) => ({
   [LABELS.repoRoot]: workspace.repoRoot,
 });
 
-const cacheVolume = (workspace: Workspace, target: string, key: VolumeKey): PlannedVolume => ({
+const overlayVolume = (workspace: Workspace, target: string): PlannedVolume => ({
   name: cacheVolumeName(workspace.repoRoot, repoRelative(workspace, target)),
   target,
   labels: { ...repoLabels(workspace), [LABELS.cachePath]: repoRelative(workspace, target) },
-  key,
+  key: "mounts.autoOverlays",
 });
 
-const cacheTargets = (workspace: Workspace, config: SandboxConfig) => [
-  ...new Set(config.mounts.cacheVolumes.map((path) => resolve(workspace.repoRoot, path))),
-];
-
-const overlayTargets = (workspace: Workspace, config: SandboxConfig) => {
-  if (!config.mounts.autoOverlays) {
-    return [];
-  }
-
-  const covered = cacheTargets(workspace, config);
-
-  return (workspace.overlays ?? []).filter((path) => !covered.some((target) => isWithin(path, target)));
-};
+const overlayTargets = (workspace: Workspace, config: SandboxConfig) =>
+  config.mounts.autoOverlays ? (workspace.overlays ?? []) : [];
 
 export const overlayVolumes = (workspace: Workspace, config: SandboxConfig): PathVolume[] =>
   overlayTargets(workspace, config).map((path) => ({
     path,
-    name: cacheVolume(workspace, path, "mounts.autoOverlays").name,
+    name: overlayVolume(workspace, path).name,
   }));
 
 export const sharedCacheVolumes = (config: SandboxConfig, stateDir: string): PathVolume[] =>
@@ -86,8 +75,7 @@ const repoVolumePlan = ({ workspace, config, uid }: RepoVolumesInput): PlannedVo
     labels: repoLabels(workspace),
     key: "agent",
   },
-  ...cacheTargets(workspace, config).map((target) => cacheVolume(workspace, target, "mounts.cacheVolumes")),
-  ...overlayTargets(workspace, config).map((target) => cacheVolume(workspace, target, "mounts.autoOverlays")),
+  ...overlayTargets(workspace, config).map((target) => overlayVolume(workspace, target)),
 ];
 
 const sharedVolumePlan = (config: SandboxConfig, stateDir: string): PlannedVolume[] =>

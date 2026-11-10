@@ -25,30 +25,8 @@ path_block_line() {
   printf "export PATH='%s':\"\$PATH\"" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
 }
 
-path_block_bin_dir() {
-  path_block_body "$1" | awk -v q="'" '
-    function ends(text, tail) { return length(text) >= length(tail) && substr(text, length(text) - length(tail) + 1) == tail }
-    function inner(text, head, tail) { return substr(text, length(head) + 1, length(text) - length(head) - length(tail)) }
-    {
-      quoted_head = "export PATH=" q
-      quoted_tail = q ":\"$PATH\""
-      plain_head = "export PATH=\""
-      plain_tail = ":$PATH\""
-      dir = ""
-
-      if (index($0, quoted_head) == 1 && ends($0, quoted_tail)) {
-        dir = inner($0, quoted_head, quoted_tail)
-        gsub(q "\\\\" q q, q, dir)
-      } else if (index($0, plain_head) == 1 && ends($0, plain_tail)) {
-        dir = inner($0, plain_head, plain_tail)
-      }
-
-      if (substr(dir, 1, 1) == "/") {
-        print dir
-        exit
-      }
-    }
-  '
+path_block_fish_line() {
+  printf "set -gx PATH '%s' \$PATH" "$(printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e "s/'/\\\\'/g")"
 }
 
 path_block_strip() {

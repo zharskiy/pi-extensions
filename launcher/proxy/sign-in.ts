@@ -7,12 +7,10 @@ import {
 import { closeSync, openSync } from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";
 import {
-  bootTime,
   type McpLoginState,
   mcpAuthKey,
   mcpLoginCommand,
   PI_AGENT_DIR_VARIABLE,
-  processStart,
   readMcpLogins,
   stateLayout,
   updateMcpLogin,
@@ -38,6 +36,7 @@ interface Login {
 
 export interface SignIn {
   start(server: string, url: string, rejected?: boolean): Promise<Login | undefined>;
+  pending(server: string, url: string): Login | undefined;
   close(): Promise<void>;
 }
 
@@ -46,8 +45,6 @@ const START_COOLDOWN_MS = 60_000;
 const FAILURE_COOLDOWN_MS = 10 * 60_000;
 
 const REJECTED_COOLDOWN_MS = 10 * 60_000;
-
-const LOGIN_TIMEOUT_SECONDS = 300;
 
 const since = (at: number | undefined, now: number, cooldownMs: number) =>
   at === undefined || now - at >= cooldownMs;
@@ -116,7 +113,7 @@ export const createSignIn = (deps: SignInDeps): SignIn => {
   const closing = { now: false };
 
   const spawnLogin = (server: string, cwd: string) => {
-    const [file = "", ...args] = mcpLoginCommand(deps.piCommand, server, LOGIN_TIMEOUT_SECONDS);
+    const [file = "", ...args] = mcpLoginCommand(deps.piCommand, server);
     const output = logStdio(deps.logFile);
 
     try {
@@ -129,19 +126,6 @@ export const createSignIn = (deps: SignInDeps): SignIn => {
     } finally {
       output.release();
     }
-  };
-
-  const recordRunning = async (key: string, pgid: number | undefined) => {
-    if (pgid === undefined) {
-      return;
-    }
-
-    const start = (await processStart(pgid)) ?? "";
-
-    await updateMcpLogin(deps.stateDir, key, (current) => ({
-      ...current,
-      running: { pgid, boot: bootTime(), start },
-    }));
   };
 
   const runLogin = async (
@@ -179,14 +163,16 @@ export const createSignIn = (deps: SignInDeps): SignIn => {
 
       started(child);
 
-      await recordRunning(key, child.pid).catch(() => undefined);
-
       return exited;
     });
 
-    await updateMcpLogin(deps.stateDir, key, ({ running: _ended, ...rest }) =>
-      code === 0 || closing.now ? rest : { ...rest, failedAt: deps.now() },
-    );
+    await updateMcpLogin(deps.stateDir, key, ({ failedAt, ...rest }) => {
+      if (code === 0) {
+        return rest;
+      }
+
+      return { ...rest, failedAt: closing.now ? failedAt : deps.now() };
+    });
 
     return code;
   };
@@ -240,6 +226,12 @@ export const createSignIn = (deps: SignInDeps): SignIn => {
     });
   };
 
+  const pending = (server: string, url: string): Login | undefined => {
+    const known = running.get(mcpAuthKey(server, url));
+
+    return known === undefined ? undefined : { exited: known.done };
+  };
+
   const stopAll = async (): Promise<void> => {
     const logins = [...running.values()];
 
@@ -272,5 +264,5 @@ export const createSignIn = (deps: SignInDeps): SignIn => {
     await stopAll();
   };
 
-  return { start, close };
+  return { start, pending, close };
 };

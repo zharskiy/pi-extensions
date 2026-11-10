@@ -1,4 +1,3 @@
-import { isAbsolute } from "node:path";
 import {
   isJsonObject,
   isLauncherSetVariable,
@@ -9,10 +8,9 @@ import {
   TOOL_CONFIG_FORMATS,
   type ToolConfigFormat,
 } from "../shared/index.ts";
-import { getPath, setPath } from "./dotted.ts";
-import { isLoopbackName, SECRET_MARKER, TLS_PORT } from "./egress-entry.ts";
+import { parseHostEntry, SECRET_MARKER } from "./egress-entry.ts";
 import { EGRESS_PRESETS } from "./egress-presets.ts";
-import { FALLBACKS, HOST_CACHE_PRESETS, type LayerConfig, OUTSIDE_MODES, PARENT_PROXIES } from "./types.ts";
+import { FALLBACKS, type LayerConfig, PARENT_PROXIES } from "./types.ts";
 
 type Check = (value: string) => string | undefined;
 
@@ -42,8 +40,6 @@ interface Problem {
   problem: string;
 }
 
-const HOST = /^(\*\.)?[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*(:[0-9]{1,5})?$/;
-
 const MAX_PORT = 65535;
 
 const VARIABLE = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -51,12 +47,6 @@ const VARIABLE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const HEADER = /^[A-Za-z0-9-]+$/;
 
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
-
-const HOST_NAME = /^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*$/;
-
-const HOST_PATTERN = /^(\*\.)?[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*$/;
-
-const IP_LITERAL = /^[0-9.]+$|:/;
 
 const RULE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
@@ -80,17 +70,19 @@ const NPM_PACKAGE = /^(@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*@[0-9][0-9A-
 
 const nonEmpty: Check = (value) => (value.trim() === "" ? "must not be empty" : undefined);
 
-const portOf = (value: string) => Number(value.split(":")[1] ?? TLS_PORT);
+const hostCheck =
+  (wildcard: boolean, port: boolean): Check =>
+  (value) => {
+    const entry = parseHostEntry(value, { wildcard, port });
 
-const host: Check = (value) => {
-  if (!HOST.test(value)) {
-    return "must be a host name or host:port";
-  }
+    return "problem" in entry ? entry.problem : undefined;
+  };
 
-  const port = portOf(value);
+const egressEntry = hostCheck(true, true);
 
-  return port >= 1 && port <= MAX_PORT ? undefined : `has a port outside 1-${MAX_PORT}`;
-};
+const hostName = hostCheck(false, false);
+
+const hostPattern = hostCheck(true, false);
 
 const variable: Check = (value) => (VARIABLE.test(value) ? undefined : "is not an environment variable name");
 
@@ -107,17 +99,7 @@ const absolutePath: Check = (value) =>
     ? undefined
     : "must be an absolute path or start with ~/";
 
-const REFUSED_REPO_SEGMENTS = ["", ".", "..", ".git"];
-
 const withoutTrailingSlash = (value: string) => value.replace(/\/$/, "");
-
-const repoSegments = (value: string) => withoutTrailingSlash(value).split("/");
-
-const repoPath: Check = (value) =>
-  !isAbsolute(value) &&
-  !repoSegments(value).some((segment) => REFUSED_REPO_SEGMENTS.includes(segment.toLowerCase()))
-    ? undefined
-    : "must be a relative path inside the repository without empty, ., .. or .git segments";
 
 const homeSegments = (value: string) => withoutTrailingSlash(value.slice(2)).split("/");
 
@@ -145,20 +127,6 @@ const header: Check = (value) => (HEADER.test(value) ? undefined : "must be a he
 
 const digest: Check = (value) => (DIGEST.test(value) ? undefined : "must look like sha256:<64 hex digits>");
 
-const hostName: Check = (value) =>
-  HOST_NAME.test(value) && !IP_LITERAL.test(value) ? undefined : "must be a host name";
-
-const hostPattern: Check = (value) =>
-  HOST_PATTERN.test(value) ? undefined : "must be a host name or *.domain";
-
-const privateHost: Check = (value) => {
-  if (!HOST_PATTERN.test(value) || IP_LITERAL.test(value)) {
-    return "must be a host name or *.domain, not an IP address";
-  }
-
-  return isLoopbackName(value) ? "must not name loopback" : undefined;
-};
-
 const ruleId: Check = (value) =>
   RULE_ID.test(value) ? undefined : "must be letters, digits, dot, dash or underscore";
 
@@ -174,8 +142,6 @@ const template: Check = (value) =>
 
 const jsonPointer: Check = (value) => (JSON_POINTER.test(value) ? undefined : "must be a JSON pointer");
 
-const orgFile: Check = (value) => (isAbsolute(value) ? undefined : "must be an absolute path");
-
 const aptPackage: Check = (value) => (APT_PACKAGE.test(value) ? undefined : "must be a package name");
 
 const npmPackage: Check = (value) =>
@@ -183,26 +149,29 @@ const npmPackage: Check = (value) =>
 
 const notEmptyList: ListCheck = (value) => (value.length === 0 ? "must not be empty" : undefined);
 
-const distinctPaths =
-  (segments: (value: string) => string[], prefix: string): ListCheck =>
-  (value) => {
-    const paths = value.map((item) => segments(String(item)).join("/"));
-    const duplicate = paths.find((path, index) => paths.indexOf(path) !== index);
+const distinctHomePaths: ListCheck = (value) => {
+  const paths = value.map((item) => homeSegments(String(item)).join("/"));
+  const duplicate = paths.find((path, index) => paths.indexOf(path) !== index);
 
-    if (duplicate !== undefined) {
-      return `lists ${prefix}${duplicate} twice`;
-    }
+  if (duplicate !== undefined) {
+    return `lists ~/${duplicate} twice`;
+  }
 
-    const nested = paths.find((path) => paths.some((other) => path.startsWith(`${other}/`)));
+  const nested = paths.find((path) => paths.some((other) => path.startsWith(`${other}/`)));
 
-    return nested === undefined ? undefined : `lists ${prefix}${nested} inside another entry`;
-  };
+  return nested === undefined ? undefined : `lists ~/${nested} inside another entry`;
+};
 
 const uniqueIds: ListCheck = (value) => {
   const ids = value.map((item) => (isJsonObject(item) ? item.id : undefined));
 
   return ids.some((id, index) => ids.indexOf(id) !== index) ? "has a duplicate id" : undefined;
 };
+
+const pinnedReference: ObjectCheck = (value) =>
+  (value.reference === undefined) !== (value.digest === undefined)
+    ? "sets reference and digest only together: the image is pulled by its digest, or built here without either"
+    : undefined;
 
 const ruleMode: ObjectCheck = (value) => {
   if (value.placeholder === undefined && value.header === undefined) {
@@ -282,10 +251,7 @@ const SECRET_REF: Spec = {
       ),
       check: fileSecretMode,
     },
-    command: shape(
-      { command: { type: "array", items: text(nonEmpty), check: notEmptyList }, ttlSeconds: positive },
-      ["command"],
-    ),
+    command: shape({ command: { type: "array", items: text(nonEmpty), check: notEmptyList } }, ["command"]),
     piAuth: shape({ piAuth: text(nonEmpty), bearer: flag }, ["piAuth"]),
     mcpOAuth: shape({ mcpOAuth: shape({ server: text(nonEmpty), url: text(httpsUrl) }, ["server", "url"]) }, [
       "mcpOAuth",
@@ -322,22 +288,25 @@ const LAYER_SPEC: ObjectSpec = {
   properties: {
     $schema: text(),
     fallback: choice(FALLBACKS),
-    image: shape({
-      reference: text(nonEmpty),
-      digest: text(digest),
-      packages: list(aptPackage),
-      npmGlobal: list(npmPackage),
-      dockerfile: text(absolutePath),
-    }),
+    image: {
+      ...shape({
+        reference: text(nonEmpty),
+        digest: text(digest),
+        packages: list(aptPackage),
+        npmGlobal: list(npmPackage),
+        dockerfile: text(absolutePath),
+      }),
+      check: pinnedReference,
+    },
     credentials: shape({
       rules: { type: "array", items: CREDENTIAL_RULE, check: uniqueIds },
       derive: shape({ enabled: flag, hosts: list(hostPattern) }),
     }),
     egress: shape({
-      allow: list(host),
+      allow: list(egressEntry),
       presets: { type: "array", items: choice(Object.keys(EGRESS_PRESETS)) },
-      deny: list(host),
-      privateHosts: list(privateHost),
+      deny: list(egressEntry),
+      privateHosts: list(hostPattern),
       parentProxy: choice(PARENT_PROXIES),
       grants: flag,
     }),
@@ -345,60 +314,23 @@ const LAYER_SPEC: ObjectSpec = {
     workspaceRoots: {
       type: "object",
       atomic: true,
-      required: ["roots", "outside"],
-      properties: { roots: list(absolutePath), outside: choice(OUTSIDE_MODES) },
+      required: ["roots"],
+      properties: { roots: list(absolutePath) },
     },
     mounts: {
       type: "object",
       properties: {
-        extraReadOnly: list(absolutePath),
-        cacheVolumes: { type: "array", items: text(repoPath), check: distinctPaths(repoSegments, "") },
-        sharedCaches: { type: "array", items: text(sharedCache), check: distinctPaths(homeSegments, "~/") },
-        hostCaches: { type: "array", items: choice(HOST_CACHE_PRESETS) },
+        sharedCaches: { type: "array", items: text(sharedCache), check: distinctHomePaths },
         autoOverlays: flag,
       },
     },
     env: { type: "object", properties: { allow: list(forwardableVariable) } },
     resources: { type: "object", properties: { cpus: positive, memoryGiB: positive } },
     sessions: shape({ host: flag }),
-    org: text(orgFile),
   },
 };
 
 const joinPath = (prefix: string, key: string) => (prefix === "" ? key : `${prefix}.${key}`);
-
-export const PROJECT_KEYS = [
-  "mounts.cacheVolumes",
-  "mounts.autoOverlays",
-  "resources.cpus",
-  "resources.memoryGiB",
-];
-
-const setKeys = (value: unknown, prefix: string): string[] =>
-  isJsonObject(value)
-    ? Object.entries(value).flatMap(([key, child]) => {
-        const path = joinPath(prefix, key);
-
-        return isJsonObject(child) ? setKeys(child, path) : [path];
-      })
-    : [];
-
-const isProjectKey = (key: string) => key === "$schema" || PROJECT_KEYS.includes(key);
-
-export const splitProjectKeys = (value: unknown) => {
-  if (!isJsonObject(value)) {
-    return { kept: value, outside: [] };
-  }
-
-  const keys = setKeys(value, "");
-
-  return {
-    kept: keys.filter(isProjectKey).reduce((kept, key) => setPath(kept, key, getPath(value, key)), {}),
-    outside: keys.filter((key) => !isProjectKey(key)),
-  };
-};
-
-const ORG_KEY_LAYERS = ["policy", "user"];
 
 const at = (path: string, problem: string | undefined): Problem | undefined =>
   problem === undefined ? undefined : { path, problem };
@@ -411,7 +343,7 @@ const MAX_SHOWN = 200;
 const PRINTABLE = /^[\x20-\x7e]*$/;
 
 const NAMED_PATHS =
-  /^(fallback|egress\.presets\[\d+\]|image\.(dockerfile|packages\[\d+\])|tls\.extraCa\[\d+\]\.file|workspaceRoots\.(roots\[\d+\]|outside)|mounts\.(extraReadOnly|cacheVolumes|sharedCaches|hostCaches)\[\d+\]|env\.allow\[\d+\])$/;
+  /^(fallback|egress\.presets\[\d+\]|image\.(dockerfile|packages\[\d+\])|tls\.extraCa\[\d+\]\.file|workspaceRoots\.roots\[\d+\]|mounts\.sharedCaches\[\d+\]|env\.allow\[\d+\])$/;
 
 const shown = (value: string) => {
   const cut = value.length > MAX_SHOWN ? `${value.slice(0, MAX_SHOWN)}...` : value;
@@ -521,17 +453,12 @@ const problemOf = (spec: Spec, value: unknown, path: string): Problem | undefine
   return spec.type === "keyed" ? keyedProblem(spec.variants, value, path) : objectProblem(spec, value, path);
 };
 
-const misplacedOrg = (value: unknown, layerName: string) =>
-  getPath(value, "org") !== undefined && !ORG_KEY_LAYERS.includes(layerName)
-    ? new LauncherError(`${layerName}: org may only be set by the policy or user config`)
-    : undefined;
-
 const normalized = (layer: LayerConfig): LayerConfig => {
-  const volumes = layer.mounts?.cacheVolumes;
+  const caches = layer.mounts?.sharedCaches;
 
-  return volumes === undefined
+  return caches === undefined
     ? layer
-    : { ...layer, mounts: { ...layer.mounts, cacheVolumes: volumes.map(withoutTrailingSlash) } };
+    : { ...layer, mounts: { ...layer.mounts, sharedCaches: caches.map(withoutTrailingSlash) } };
 };
 
 export const validateLayer = (value: unknown, layerName: string): LayerConfig => {
@@ -541,12 +468,6 @@ export const validateLayer = (value: unknown, layerName: string): LayerConfig =>
     throw new LauncherError(
       found.path === "" ? `${layerName}: ${found.problem}` : `${layerName}: ${found.path} ${found.problem}`,
     );
-  }
-
-  const misplaced = misplacedOrg(value, layerName);
-
-  if (misplaced !== undefined) {
-    throw misplaced;
   }
 
   return normalized(value as LayerConfig);

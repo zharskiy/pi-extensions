@@ -1,9 +1,9 @@
 import { type Backend, engineUnreachable } from "../backend/index.ts";
-import type { ExtraCa, SandboxConfig } from "../config/index.ts";
+import type { ExtraCa } from "../config/index.ts";
 import type { HostTerminal, SignalSource } from "../container/index.ts";
 import type { BundledPi } from "../hostpi/index.ts";
 import type { DenialRecord, RepoProxy, RepoProxyInput, RepoProxyStart, TrustBundle } from "../proxy/index.ts";
-import { type CommandRunner, hostAgentDir, LauncherError, launcherPaths } from "../shared/index.ts";
+import { type CommandRunner, hostAgentDir, launcherPaths } from "../shared/index.ts";
 
 interface ProxyRequest {
   stateDir: string;
@@ -35,9 +35,6 @@ export interface CliDeps {
   backend(): Backend;
   proxy: ProxyControl;
   bundledPi(): Promise<BundledPi | undefined>;
-  resolveHost(host: string): Promise<string[]>;
-  dnsWaitMs?: number;
-  confirm(question: string): Promise<boolean>;
   now(): number;
 }
 
@@ -56,28 +53,38 @@ export const writeNotices = (deps: CliDeps, notices: string[]) => {
   );
 };
 
-const fallbackHint = (hint: string | undefined) => {
-  const hostPi = "or run pi --no-sandbox to use host pi";
+const CLOSED_OUTPUT = new Set(["EPIPE", "EIO", "ERR_STREAM_DESTROYED"]);
 
-  return hint === undefined ? hostPi : `${hint}; ${hostPi}`;
+export const onClosedOutput = (streams: NodeJS.WritableStream[], closed: () => void) => {
+  const state = { told: false };
+
+  streams.forEach((stream) => {
+    stream.on("error", (error: NodeJS.ErrnoException) => {
+      if (!CLOSED_OUTPUT.has(error.code ?? "")) {
+        throw error;
+      }
+
+      if (!state.told) {
+        state.told = true;
+
+        closed();
+      }
+    });
+  });
 };
-
-export const withFallbackHint = (error: unknown, fallback: SandboxConfig["fallback"]) =>
-  error instanceof LauncherError && fallback === "host"
-    ? new LauncherError(error.message, fallbackHint(error.hint))
-    : error;
 
 export const pathsOf = (deps: Pick<CliDeps, "env" | "home" | "platform">) =>
   launcherPaths({ env: deps.env, home: deps.home, platform: deps.platform });
 
 export const hostAgentDirOf = (deps: CliDeps) => hostAgentDir(deps.home, deps.env);
 
-export const reachableBackend = async (deps: CliDeps, config: SandboxConfig) => {
+export const reachableBackend = async (deps: CliDeps) => {
   const backend = deps.backend();
+  const detection = await backend.detect();
 
-  if ((await backend.detect()).available) {
+  if (detection.available) {
     return backend;
   }
 
-  throw withFallbackHint(engineUnreachable(), config.fallback);
+  throw engineUnreachable(detection);
 };

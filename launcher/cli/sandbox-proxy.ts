@@ -1,12 +1,11 @@
-import { authorityOf, egressAllowList } from "../config/index.ts";
-import { type Launch, withRepoLaunchLock } from "../grants/index.ts";
+import { authorityOf, egressAllowList, parentProxyOf } from "../config/index.ts";
+import { type Launch, othersLive, withRepoLaunchLock } from "../grants/index.ts";
 import {
   type DenialRecord,
   envSecretsFor,
   PROXY_LOG_LIMIT,
   parentProxyAuth,
   parentProxyEnv,
-  parentTarget,
   type RepoProxy,
   type RepoProxyInput,
   repoProxyToken,
@@ -15,7 +14,6 @@ import { errorMessage, LauncherError } from "../shared/index.ts";
 import type { LaunchContext } from "./context.ts";
 import { type CliDeps, writeLines, writeNotices } from "./deps.ts";
 import type { HostSide } from "./derive.ts";
-import { othersLive } from "./launches.ts";
 
 export interface SandboxProxy {
   proxy: RepoProxy;
@@ -48,7 +46,7 @@ const proxyInput = (deps: CliDeps, context: LaunchContext, host: HostSide): Inpu
 };
 
 const parentNotices = (deps: CliDeps, context: LaunchContext) => {
-  const target = parentTarget(context.effective.config.egress.parentProxy, deps.env);
+  const target = parentProxyOf(context.effective.config.egress.parentProxy, deps.env);
 
   return target !== undefined && "unsupported" in target
     ? [`egress.parentProxy: ${target.unsupported}; the proxy connects directly`]
@@ -74,11 +72,7 @@ export const openSandboxProxy = async (
   context: LaunchContext,
   host: HostSide,
   launch: Launch,
-): Promise<SandboxProxy | undefined> => {
-  if (!host.proxyNeeded) {
-    return undefined;
-  }
-
+): Promise<SandboxProxy> => {
   const parts = proxyInput(deps, context, host);
 
   try {
@@ -97,29 +91,40 @@ const deniedTargets = (denials: DenialRecord[]) => [
   ...new Map(denials.map((denial) => [authorityOf(denial.host, denial.port), denial])).values(),
 ];
 
-const NOT_ALLOWED = ["egress.allow", "egress.port"];
+const PRIVATE_KINDS: Record<string, string> = {
+  "private-address": "private",
+  loopback: "loopback",
+  "link-local": "link-local",
+  "reserved-address": "reserved",
+};
 
-const denialHint = (denial: DenialRecord, target: string, grants: boolean) => {
-  if (NOT_ALLOWED.includes(denial.rule)) {
-    return grants
-      ? `run pi sandbox egress allow ${target} on the host`
+const denialHint = (denial: DenialRecord, target: string, context: LaunchContext) => {
+  if (denial.rule === "egress.allow") {
+    return context.effective.config.egress.grants
+      ? `run pi sandbox egress allow ${target} on the host from ${context.workspace.repoRoot}`
       : `ask your administrator to add ${target} to egress.allow`;
   }
 
+  const kind = PRIVATE_KINDS[denial.rule];
+
+  if (kind !== undefined) {
+    return `it resolves to a ${kind} address; add ${denial.host} to egress.privateHosts`;
+  }
+
   const hints: Record<string, string> = {
-    "private-address": `it resolves to a private address; add ${denial.host} to egress.privateHosts`,
     "egress.deny": "denied by policy",
     "plain-http": "plain HTTP is not proxied; use https",
     upstream: `it could not be reached: ${denial.reason}`,
+    credential: `it could not authenticate: ${denial.reason}`,
   };
 
   return hints[denial.rule] ?? denial.reason;
 };
 
-const denialLine = (grants: boolean) => (denial: DenialRecord) => {
+const denialLine = (context: LaunchContext) => (denial: DenialRecord) => {
   const target = authorityOf(denial.host, denial.port);
 
-  return `pi-sandbox: ${target} was blocked; ${denialHint(denial, target, grants)}`;
+  return `pi-sandbox: ${target} was blocked in this folder's sandbox; ${denialHint(denial, target, context)}`;
 };
 
 export const reportDenials = async (
@@ -134,5 +139,5 @@ export const reportDenials = async (
 
   const denials = await deps.proxy.denials(context.stateDir, context.repoHash, since).catch(() => []);
 
-  writeLines(deps.stderr, deniedTargets(denials).map(denialLine(context.effective.config.egress.grants)));
+  writeLines(deps.stderr, deniedTargets(denials).map(denialLine(context)));
 };

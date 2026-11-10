@@ -2,8 +2,9 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { ensureBuiltImage, prepareBuildContext, pullPinnedImage } from "../../image/build.ts";
+import { BASE_TAG, ensureBuiltImage, prepareBuildContext, pullPinnedImage } from "../../image/build.ts";
 import { recordedImage } from "../../image/index.ts";
+import { LauncherError } from "../../shared/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
 
@@ -27,7 +28,7 @@ describe("prepareBuildContext", () => {
   it("writes the Dockerfile, the entrypoint, the bash hint and an empty trust file, and no pi auth or models", async () => {
     const dir = await tempDir();
 
-    await prepareBuildContext(versions, dir);
+    await prepareBuildContext(dir);
 
     expect((await readdir(dir)).sort()).toEqual([
       "Dockerfile",
@@ -47,7 +48,7 @@ describe("prepareBuildContext", () => {
   it("sources the bash hint from the first line of the system bashrc", async () => {
     const dir = await tempDir();
 
-    await prepareBuildContext(versions, dir);
+    await prepareBuildContext(dir);
 
     expect(await readFile(join(dir, "Dockerfile"), "utf8")).toContain(
       "sed -i '1i . /usr/local/lib/pi-sandbox/bash-env.sh' /etc/bash.bashrc",
@@ -59,7 +60,7 @@ describe("prepareBuildContext", () => {
     const trust = join(await tempDir(), "trust.pem");
 
     await writeFile(trust, "-----BEGIN CERTIFICATE-----\n");
-    await prepareBuildContext(versions, dir, { trustPem: trust });
+    await prepareBuildContext(dir, { trustPem: trust });
 
     expect(await readFile(join(dir, "trust.pem"), "utf8")).toBe("-----BEGIN CERTIFICATE-----\n");
   });
@@ -69,7 +70,7 @@ describe("prepareBuildContext", () => {
     const ca = join(await tempDir(), "ca-cert.pem");
 
     await writeFile(ca, "PROXY CA\n");
-    await prepareBuildContext(versions, dir, { proxyCaPem: ca });
+    await prepareBuildContext(dir, { proxyCaPem: ca });
 
     const dockerfile = await readFile(join(dir, "Dockerfile"), "utf8");
 
@@ -81,7 +82,7 @@ describe("prepareBuildContext", () => {
   it("installs the base tools and a pi-sandbox command that points back to the host", async () => {
     const dir = await tempDir();
 
-    await prepareBuildContext(versions, dir);
+    await prepareBuildContext(dir);
 
     const dockerfile = await readFile(join(dir, "Dockerfile"), "utf8");
     const packages =
@@ -110,7 +111,7 @@ describe("prepareBuildContext", () => {
   it("installs the trust bundle for the build only and wires the self-update command", async () => {
     const dir = await tempDir();
 
-    await prepareBuildContext(versions, dir);
+    await prepareBuildContext(dir);
 
     const dockerfile = await readFile(join(dir, "Dockerfile"), "utf8");
 
@@ -124,36 +125,18 @@ describe("prepareBuildContext", () => {
     expect(dockerfile).toContain("is managed by the sandbox and follows the launcher");
   });
 
-  it("pins the pi version as a Dockerfile default", async () => {
+  it("declares the pi version without a default right before the pi install, so a pi update reuses the earlier layers", async () => {
     const dir = await tempDir();
 
-    await prepareBuildContext(versions, dir);
-
-    const dockerfile = await readFile(join(dir, "Dockerfile"), "utf8");
-
-    expect(dockerfile).toMatch(/^FROM node:24-bookworm-slim$/m);
-    expect(dockerfile).toMatch(/^ARG PI_VERSION=1\.5\.0$/m);
-  });
-
-  it("declares the pi version right before the pi install, so a pi update reuses the earlier layers", async () => {
-    const dir = await tempDir();
-
-    await prepareBuildContext(versions, dir);
+    await prepareBuildContext(dir);
 
     const steps = (await readFile(join(dir, "Dockerfile"), "utf8")).split(/\n\n+/);
-    const pinned = steps.indexOf("ARG PI_VERSION=1.5.0");
+    const declared = steps.indexOf("ARG PI_VERSION");
 
+    expect(steps).toContain("FROM node:24-bookworm-slim");
     expect(steps.filter((step) => step.includes("PI_VERSION")).length).toBeGreaterThan(1);
-    expect(steps.slice(0, pinned).some((step) => step.includes("PI_VERSION"))).toBe(false);
-    expect(steps[pinned + 1]).toMatch(/^RUN test -n "\$\{PI_VERSION\}"[\s\S]*npm install --global/);
-  });
-
-  it("refuses a version that is not a plain version string", async () => {
-    const dir = await tempDir();
-
-    await expect(prepareBuildContext({ ...versions, pi: "1.5.0; rm -rf /" }, dir)).rejects.toThrow(
-      /invalid pi version/,
-    );
+    expect(steps.slice(0, declared).some((step) => step.includes("PI_VERSION"))).toBe(false);
+    expect(steps[declared + 1]).toMatch(/^RUN test -n "\$\{PI_VERSION\}"[\s\S]*npm install --global/);
   });
 });
 
@@ -164,6 +147,7 @@ describe("ensureBuiltImage", () => {
     const config = sandboxConfig({ image: { reference, digest: "sha256:pinned" } });
     const result = await pullPinnedImage(
       { backend: fake.backend, config, stateDir: await tempDir() },
+      reference,
       "sha256:pinned",
     );
 
@@ -179,24 +163,25 @@ describe("ensureBuiltImage", () => {
     const config = sandboxConfig({ image: { reference, digest: "sha256:pinned" } });
 
     await expect(
-      pullPinnedImage({ backend, config, stateDir: await tempDir() }, "sha256:pinned"),
+      pullPinnedImage({ backend, config, stateDir: await tempDir() }, reference, "sha256:pinned"),
     ).rejects.toThrow("has digest sha256:other, expected sha256:pinned");
   });
 
-  it("builds locally when no digest is pinned and records the digest and the pi version", async () => {
+  it("builds locally when no digest is pinned, with the pi version as a build argument, and records the digest", async () => {
     const fake = createFakeBackend();
     const stateDir = await tempDir();
     const config = sandboxConfig();
     const result = await ensureBuiltImage({ backend: fake.backend, config, versions, stateDir });
 
     expect(result).toEqual({
-      reference: config.image.reference,
+      reference: BASE_TAG,
       digest: "sha256:built-1",
       id: "sha256:image-built-1",
       built: true,
-      pi: versions.pi,
     });
-    expect(fake.builds.map((build) => build.tag)).toEqual([config.image.reference]);
+    expect(fake.builds.map((build) => [build.tag, build.args])).toEqual([
+      [BASE_TAG, { PI_VERSION: "1.5.0" }],
+    ]);
     expect(Object.keys(fake.builds[0]?.files ?? {}).sort()).toEqual([
       "Dockerfile",
       "bash-env.sh",
@@ -209,7 +194,6 @@ describe("ensureBuiltImage", () => {
         digest: "sha256:built-1",
         id: "sha256:image-built-1",
         inputsHash: expect.any(String),
-        pi: versions.pi,
       },
     });
     expect((await readdir(stateDir)).sort()).toEqual(["image.json"]);
@@ -237,11 +221,10 @@ describe("ensureBuiltImage", () => {
     });
 
     expect(again).toEqual({
-      reference: config.image.reference,
+      reference: BASE_TAG,
       digest: "sha256:built-1",
       id: "sha256:image-built-1",
       built: false,
-      pi: versions.pi,
     });
     expect(fake.builds).toHaveLength(1);
   });
@@ -279,23 +262,67 @@ describe("ensureBuiltImage", () => {
     expect(fake.builds[1]?.files["proxy-ca.pem"]).toBe("CA TWO\n");
   });
 
-  it("adds the pi version to a reused record that names none, without rebuilding", async () => {
+  it("refuses a pi version that is not a plain version string before it builds", async () => {
     const fake = createFakeBackend();
-    const stateDir = await tempDir();
-    const config = sandboxConfig();
-    const recordFile = join(stateDir, "image.json");
 
-    await ensureBuiltImage({ backend: fake.backend, config, versions, stateDir });
+    await expect(
+      ensureBuiltImage({
+        backend: fake.backend,
+        config: sandboxConfig(),
+        versions: { pi: "1.5.0; rm -rf /" },
+        stateDir: await tempDir(),
+      }),
+    ).rejects.toThrow(/invalid pi version/);
+    expect(fake.builds).toEqual([]);
+  });
 
-    const { pi: _pi, ...base } = JSON.parse(await readFile(recordFile, "utf8")).base;
+  it("hints that the host pi is not published when npm has no such pi version", async () => {
+    const fake = createFakeBackend();
+    const npmFailure = [
+      "engine: The command '/bin/sh -c npm install' returned a non-zero code: 1",
+      "  npm error code ETARGET",
+      "  npm error notarget No matching version found for @earendil-works/pi-coding-agent@9.9.9-dev.",
+    ].join("\n");
+    const backend = {
+      ...fake.backend,
+      buildImage: async () => Promise.reject(new LauncherError(npmFailure)),
+    };
+    const failure = await ensureBuiltImage({
+      backend,
+      config: sandboxConfig(),
+      versions: { pi: "9.9.9-dev" },
+      stateDir: await tempDir(),
+    }).then(
+      () => undefined,
+      (error: LauncherError) => error,
+    );
 
-    await writeFile(recordFile, JSON.stringify({ base }));
+    expect(failure?.message).toBe(npmFailure);
+    expect(failure?.hint).toBe(
+      "the host pi is version 9.9.9-dev, which the npm registry does not have; install a published pi on the host",
+    );
+  });
 
-    const again = await ensureBuiltImage({ backend: fake.backend, config, versions, stateDir });
+  it("keeps the hint of a build failure that is not about the pi version", async () => {
+    const fake = createFakeBackend();
+    const backend = {
+      ...fake.backend,
+      buildImage: async () =>
+        Promise.reject(
+          new LauncherError("engine: npm error 404 Not Found - GET https://registry.npmjs.org/x", "own"),
+        ),
+    };
+    const failure = await ensureBuiltImage({
+      backend,
+      config: sandboxConfig(),
+      versions,
+      stateDir: await tempDir(),
+    }).then(
+      () => undefined,
+      (error: LauncherError) => error,
+    );
 
-    expect(again.built).toBe(false);
-    expect(fake.builds).toHaveLength(1);
-    expect(JSON.parse(await readFile(recordFile, "utf8")).base.pi).toBe("1.5.0");
+    expect(failure?.hint).toBe("own");
   });
 
   it("rebuilds when the recorded image is gone from the engine", async () => {
@@ -315,7 +342,7 @@ describe("ensureBuiltImage", () => {
 });
 
 describe("recordedImage", () => {
-  it("returns the recorded base image for the configured reference unless another digest is pinned", async () => {
+  it("returns the recorded base image only while the config asks for it", async () => {
     const fake = createFakeBackend();
     const stateDir = await tempDir();
     const config = sandboxConfig();
@@ -325,12 +352,24 @@ describe("recordedImage", () => {
     await ensureBuiltImage({ backend: fake.backend, config, versions, stateDir });
 
     expect(await recordedImage(stateDir, config)).toMatchObject({
-      reference: config.image.reference,
+      reference: BASE_TAG,
       digest: "sha256:built-1",
       id: "sha256:image-built-1",
     });
-    expect(
-      await recordedImage(stateDir, sandboxConfig({ image: { ...config.image, digest: "sha256:pinned" } })),
-    ).toBeUndefined();
+    const reference = "registry.corp.example/pi:1";
+    const pinnedConfig = sandboxConfig({ image: { reference, digest: "sha256:pinned" } });
+
+    expect(await recordedImage(stateDir, pinnedConfig)).toBeUndefined();
+
+    const fakeRegistry = createFakeBackend({ registry: { [reference]: "sha256:pinned" } });
+
+    await pullPinnedImage(
+      { backend: fakeRegistry.backend, config: pinnedConfig, stateDir },
+      reference,
+      "sha256:pinned",
+    );
+
+    expect(await recordedImage(stateDir, pinnedConfig)).toMatchObject({ reference, digest: "sha256:pinned" });
+    expect(await recordedImage(stateDir, config)).toBeUndefined();
   });
 });

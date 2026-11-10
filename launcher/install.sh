@@ -1,14 +1,16 @@
 #!/bin/sh
 set -eu
 unset CDPATH
+COLIMA_HOME="$HOME/.colima"
+export COLIMA_HOME
 
 package_name=pi-extensions-mz
 colima_profile=pi-sandbox
 min_colima=0.8.0
 min_node=22.19.0
+min_macos=13
 wrapper_marker="launcher/bin/pi-sandbox"
 bin_dir="$HOME/.local/bin"
-user_config="${PI_SANDBOX_USER_CONFIG:-$HOME/.config/pi-sandbox/config.json}"
 state_dir="${PI_SANDBOX_STATE_DIR:-$HOME/.local/state/pi-sandbox}"
 agent_dir="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
 replaced_link="$state_dir/replaced-pi-link"
@@ -18,18 +20,15 @@ managed_layout='"layout"[[:space:]]*:[[:space:]]*"releases-v1"'
 managed_package="node_modules/@earendil-works/pi-coding-agent/package.json"
 link_hops=40
 
-dry_run=0
 max_cpus=8
 max_memory=10
 cpus=""
 memory=""
 sizing=""
 disk=60
-version=""
-org_file=""
 
 usage() {
-  echo "usage: install.sh [--org <absolute path>] [--cpu N] [--memory GiB] [--disk GiB] [--version X.Y.Z] [--bin-dir DIR] [--dry-run]"
+  echo "usage: install.sh [--cpu N] [--memory GiB] [--disk GiB]"
 }
 
 fail() {
@@ -69,26 +68,12 @@ size_to_host() {
 }
 
 step() {
-  echo "[$1/8] $2"
-}
-
-act() {
-  if [ "$dry_run" -eq 0 ]; then
-    "$@"
-  fi
+  echo "[$1/7] $2"
 }
 
 streamed() {
   { streamed_status=$( { { if "$@" 2>&1 3>&- 4>&-; then echo 0 >&3; else echo "$?" >&3; fi; } | sed 's/^/      /' >&4; } 3>&1 ); } 4>&1
   return "$streamed_status"
-}
-
-verb() {
-  if [ "$dry_run" -eq 1 ]; then
-    echo "would $1"
-  else
-    echo "$2"
-  fi
 }
 
 version_at_least() {
@@ -114,10 +99,6 @@ parse_args() {
     --cpu) needs_value "$#" "$1"; cpus=$2; shift 2 ;;
     --memory) needs_value "$#" "$1"; memory=$2; shift 2 ;;
     --disk) needs_value "$#" "$1"; disk=$2; shift 2 ;;
-    --version) needs_value "$#" "$1"; version=$2; shift 2 ;;
-    --org) needs_value "$#" "$1"; org_file=$2; shift 2 ;;
-    --dry-run) dry_run=1; shift ;;
-    --bin-dir) needs_value "$#" "$1"; bin_dir=$2; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) usage >&2; fail "unknown option $1" ;;
   esac
@@ -127,11 +108,6 @@ parse_args() {
 
 parse_args "$@"
 
-case "$bin_dir" in
-  /*) ;;
-  *) fail "--bin-dir needs an absolute path, got $bin_dir" ;;
-esac
-
 shim_dir="$bin_dir"
 
 if [ -d "$bin_dir" ]; then
@@ -139,11 +115,6 @@ if [ -d "$bin_dir" ]; then
 fi
 
 shim="$shim_dir/pi"
-
-case "$org_file" in
-  ""|/*) ;;
-  *) fail "--org needs an absolute path, got $org_file" ;;
-esac
 
 script_dir=$(cd "$(dirname "$0")" && pwd)
 checkout=$(dirname "$script_dir")
@@ -155,13 +126,10 @@ if [ -f "$checkout/package.json" ] && [ -e "$checkout/.git" ] && grep -q "\"name
   from_checkout=1
 fi
 
-if [ -z "$version" ] && [ -f "$checkout/package.json" ]; then
-  version=$(sed -n 's/^  "version": "\([^"]*\)".*/\1/p' "$checkout/package.json" | head -n 1)
-fi
+version=$(sed -n 's/^  "version": "\([^"]*\)".*/\1/p' "$checkout/package.json" 2>/dev/null | head -n 1)
+[ -n "$version" ] || fail "cannot read the package version from $checkout/package.json"
 
-if [ -z "$version" ]; then
-  version=latest
-fi
+[ "$(id -u)" -ne 0 ] || fail "run install.sh as your own user, not as root or with sudo"
 
 os=$(uname -s)
 chip=$(uname -m)
@@ -169,6 +137,7 @@ chip=$(uname -m)
 case "$os" in
   Darwin)
     macos=$(sw_vers -productVersion)
+    [ "${macos%%.*}" -ge "$min_macos" ] 2>/dev/null || fail "macOS $macos is too old, the sandbox VM (vz with virtiofs) needs macOS $min_macos or newer"
     command -v brew >/dev/null 2>&1 || fail "Homebrew is missing, install it from https://brew.sh and run this again"
     preflight="macOS $macos on $chip, Homebrew present"
     ;;
@@ -187,14 +156,12 @@ step 1 "preflight: $preflight, node $node_version"
 if command -v colima >/dev/null 2>&1; then
   step 2 "runtime: colima is present"
 else
-  step 2 "runtime: $(verb "brew install colima" "installing colima with Homebrew")"
-  act streamed brew install colima
+  step 2 "runtime: installing colima with Homebrew"
+  streamed brew install colima
 fi
 
-if [ "$dry_run" -eq 0 ]; then
-  colima_version=$(colima version 2>/dev/null | sed -n 's/^colima version v\{0,1\}\([0-9.]*\).*/\1/p' | head -n 1)
-  version_at_least "${colima_version:-0}" "$min_colima" || fail "colima ${colima_version:-unknown} is older than $min_colima, run brew upgrade colima"
-fi
+colima_version=$(colima version 2>/dev/null | sed -n 's/^colima version v\{0,1\}\([0-9.]*\).*/\1/p' | head -n 1)
+version_at_least "${colima_version:-0}" "$min_colima" || fail "colima ${colima_version:-unknown} is older than $min_colima, run brew upgrade colima"
 
 size_to_host
 
@@ -209,12 +176,12 @@ else
     shares="$HOME writable"
   fi
 
-  step 3 "colima: $(verb "start profile $colima_profile (vz, virtiofs, $cpus CPUs, ${memory} GiB, ${disk} GiB$sizing, $shares)" "starting profile $colima_profile (vz, virtiofs, $cpus CPUs, ${memory} GiB, ${disk} GiB$sizing, $shares)")"
-  act streamed colima start --profile "$colima_profile" --activate=false --vm-type vz --mount-type virtiofs \
+  step 3 "colima: starting profile $colima_profile (vz, virtiofs, $cpus CPUs, ${memory} GiB, ${disk} GiB$sizing, $shares)"
+  streamed colima start --profile "$colima_profile" --activate=false --vm-type vz --mount-type virtiofs \
     --cpu "$cpus" --memory "$memory" --disk "$disk" ${home_mount:+--mount} ${home_mount:+"$home_mount"}
 fi
 
-step 4 "image: prepared and verified by the smoke check in step 7"
+step 4 "image: prepared and verified by the smoke check in step 6"
 
 host_pi=$(command -v pi 2>/dev/null || true)
 
@@ -282,33 +249,14 @@ is_managed_pi() {
   managed_root="$candidate_root"
 }
 
-refuse() {
-  if [ "$dry_run" -eq 0 ]; then
-    fail "$1, move it away or pass --bin-dir and run this again"
-  fi
-
-  echo "pi-sandbox install: would refuse, $1 (move it away or pass --bin-dir)"
-}
-
 agent_root=$(cd -P "$agent_dir" 2>/dev/null && pwd) || agent_root="$agent_dir"
 
 if { [ -e "$shim" ] || [ -L "$shim" ]; } && ! is_ours && ! is_managed_pi; then
-  refuse "$shim exists and is not the pi-sandbox launcher"
+  fail "$shim exists and is not the pi-sandbox launcher, move it away and run this again"
 fi
 
 if [ -n "$managed_root" ] && [ "$managed_root" != "$agent_root" ]; then
-  refuse "$shim is pi's managed install at $managed_root, outside the host agent dir $agent_dir; the launcher uses only the managed install in the agent dir"
-  managed_root=""
-fi
-
-recorded_shim=""
-
-if [ -f "$replaced_link" ]; then
-  recorded_shim=$(sed -n 1p "$replaced_link")
-fi
-
-if [ -n "$managed_root" ] && [ -n "$recorded_shim" ] && [ "$recorded_shim" != "$shim" ]; then
-  fail "$replaced_link records the replaced pi link of $recorded_shim, not $shim; run uninstall.sh --bin-dir $(dirname "$recorded_shim") first"
+  fail "$shim is pi's managed install at $managed_root, outside the host agent dir $agent_dir; the launcher uses only the managed install in the agent dir, move it away and run this again"
 fi
 
 bundled_pi_package="node_modules/@earendil-works/pi-coding-agent/package.json"
@@ -336,7 +284,7 @@ bundled_pi_present() {
 }
 
 require_host_pi() {
-  if [ "$dry_run" -eq 1 ] || is_managed_root "$agent_dir" || bundled_pi_present; then
+  if is_managed_root "$agent_dir" || bundled_pi_present; then
     return 0
   fi
 
@@ -348,9 +296,9 @@ require_host_pi() {
 }
 
 record_replaced_link() {
-  if [ -n "$managed_root" ] && [ "$dry_run" -eq 0 ]; then
+  if [ -n "$managed_root" ]; then
     mkdir -p "$state_dir"
-    printf '%s\n%s\n' "$shim" "$(readlink "$shim")" > "$replaced_link"
+    printf '%s\n' "$(readlink "$shim")" > "$replaced_link"
   fi
 }
 
@@ -358,33 +306,33 @@ if [ "$from_checkout" -eq 1 ]; then
   require_host_pi
 fi
 
-act mkdir -p "$bin_dir"
+mkdir -p "$bin_dir"
 
 if [ "$from_checkout" -eq 1 ]; then
   record_replaced_link
-
-  if [ "$dry_run" -eq 0 ]; then
-    rm -f "$shim"
-    quoted_entry=$(printf '%s' "$checkout/launcher/bin/pi-sandbox-dev.js" | sed "s/'/'\\\\''/g")
-    printf '#!/bin/sh\nexec node '\''%s'\'' "$@"\n' "$quoted_entry" > "$shim"
-    chmod 0755 "$shim"
-  fi
-  installed="$(verb "write" "wrote") $shim running $checkout/launcher/bin/pi-sandbox-dev.js"
+  rm -f "$shim"
+  quoted_entry=$(printf '%s' "$checkout/launcher/bin/pi-sandbox-dev.js" | sed "s/'/'\\\\''/g")
+  printf '#!/bin/sh\nexec node '\''%s'\'' "$@"\n' "$quoted_entry" > "$shim"
+  chmod 0755 "$shim"
+  installed="wrote $shim running $checkout/launcher/bin/pi-sandbox-dev.js"
 else
-  step 5 "launcher: $(verb "install $package_name@$version with npm" "installing $package_name@$version with npm")"
-  act streamed npm install -g --legacy-peer-deps=false "$package_name@$version"
+  step 5 "launcher: installing $package_name@$version with npm"
+  streamed npm install -g --legacy-peer-deps=false "$package_name@$version"
   require_host_pi
   npm_bin="$(npm prefix -g)/bin/pi-sandbox"
   record_replaced_link
-  act ln -sfn "$npm_bin" "$shim"
-  installed="$(verb "install" "installed") $package_name@$version and link $shim to $npm_bin"
+  ln -sfn "$npm_bin" "$shim"
+  installed="installed $package_name@$version and linked $shim to $npm_bin"
 fi
 
 snippet_files=""
 
-snippet_body=$(path_block_line "$bin_dir")
-
 snippet_broken=""
+
+login_shell=${SHELL:-zsh}
+login_shell=${login_shell##*/}
+
+fish_file="$HOME/.config/fish/conf.d/pi-sandbox.fish"
 
 add_snippet() {
   if path_block_present "$1" && ! path_block_intact "$1"; then
@@ -392,33 +340,38 @@ add_snippet() {
     return 0
   fi
 
-  if path_block_present "$1" && [ "$(path_block_body "$1")" = "$snippet_body" ]; then
+  if path_block_present "$1" && [ "$(path_block_body "$1")" = "$2" ]; then
     return 0
   fi
 
-  if [ "$dry_run" -eq 0 ]; then
-    if path_block_present "$1"; then
-      path_block_strip "$1"
-    fi
-
-    printf '\n%s\n%s\n%s\n' "$marker_begin" "$snippet_body" "$marker_end" >> "$1"
+  if path_block_present "$1"; then
+    path_block_strip "$1"
   fi
+
+  mkdir -p "$(dirname "$1")"
+  printf '\n%s\n%s\n%s\n' "$marker_begin" "$2" "$marker_end" >> "$1"
 
   snippet_files="$snippet_files $1"
 }
 
-add_snippet "$HOME/.zshrc"
+sh_line=$(path_block_line "$bin_dir")
+
+add_snippet "$HOME/.zshrc" "$sh_line"
 
 if [ -f "$HOME/.bashrc" ]; then
-  add_snippet "$HOME/.bashrc"
+  add_snippet "$HOME/.bashrc" "$sh_line"
 fi
 
 if [ -f "$HOME/.bash_profile" ]; then
-  add_snippet "$HOME/.bash_profile"
+  add_snippet "$HOME/.bash_profile" "$sh_line"
+fi
+
+if [ "$login_shell" = fish ] || [ -d "$HOME/.config/fish" ]; then
+  add_snippet "$fish_file" "$(path_block_fish_line "$bin_dir")"
 fi
 
 if [ -n "$snippet_files" ]; then
-  snippet="$(verb "add" "added") the PATH snippet to$snippet_files"
+  snippet="added the PATH snippet to$snippet_files"
 elif [ -n "$snippet_broken" ]; then
   snippet="no PATH snippet added"
 else
@@ -426,31 +379,20 @@ else
 fi
 
 shadowed=""
-if [ -n "$managed_root" ]; then
-  shadowed="; the managed pi at $managed_root/bin/pi stays the host pi for host jobs and pi --no-sandbox (uninstall.sh restores the link)"
-elif [ -n "$host_pi" ] && [ "$host_pi" != "$shim" ]; then
-  shadowed=", $host_pi is now shadowed (reach it with pi --no-sandbox when policy allows)"
-fi
+case "$login_shell" in
+  zsh|bash|fish)
+    if [ -n "$managed_root" ]; then
+      shadowed="; the managed pi at $managed_root/bin/pi stays the host pi for host jobs and pi --no-sandbox (uninstall.sh restores the link)"
+    elif [ -n "$host_pi" ] && [ "$host_pi" != "$shim" ]; then
+      shadowed=", $host_pi is now shadowed"
+    fi
+    ;;
+  *)
+    shadowed="; your login shell $login_shell is not configured: put $bin_dir first on PATH in its startup file, or pi keeps running ${host_pi:-whatever pi it finds} outside the sandbox"
+    ;;
+esac
 
 step 5 "launcher: $installed, $snippet$snippet_broken$shadowed"
-
-if [ -n "$org_file" ]; then
-  if [ "$dry_run" -eq 0 ]; then
-    mkdir -p "$(dirname "$user_config")"
-    PI_SANDBOX_ORG_FILE="$org_file" node -e '
-      const { existsSync, readFileSync, writeFileSync } = require("node:fs");
-      const file = process.argv[1];
-      const config = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {};
-      config.org = process.env.PI_SANDBOX_ORG_FILE;
-      writeFileSync(file, `${JSON.stringify(config, null, 2)}\n`);
-    ' "$user_config"
-  fi
-  step 6 "config: $(verb "set" "set") org in $user_config to $org_file"
-elif [ -f "$user_config" ]; then
-  step 6 "config: $user_config exists, left as it is"
-else
-  step 6 "config: the defaults apply, no user config written"
-fi
 
 smoke_parent="$HOME/.cache"
 
@@ -463,8 +405,8 @@ smoke() {
   git -C "$smoke_dir" init -q || smoke_status=1
 
   if [ "$smoke_status" -eq 0 ]; then
-    (cd "$smoke_dir" && export PATH="$bin_dir:$PATH" PI_SANDBOX_SESSIONS_HOST=off && streamed "$shim" sandbox doctor) || smoke_status=1
-    (cd "$smoke_dir" && PATH="$bin_dir:$PATH" PI_SANDBOX_SESSIONS_HOST=off "$shim" sandbox reset --volumes >/dev/null 2>&1) || true
+    (cd "$smoke_dir" && export PATH="$bin_dir:$PATH" && streamed "$shim" sandbox doctor) || smoke_status=1
+    (cd "$smoke_dir" && PATH="$bin_dir:$PATH" "$shim" sandbox reset >/dev/null 2>&1) || true
   fi
 
   rm -rf "$smoke_dir"
@@ -472,22 +414,20 @@ smoke() {
   return "$smoke_status"
 }
 
-if [ "$dry_run" -eq 1 ]; then
-  step 7 "smoke: would run $shim sandbox doctor in a temporary git repository under $smoke_parent"
-elif ! command -v git >/dev/null 2>&1; then
-  step 7 "smoke: skipped, git is missing; run pi sandbox doctor inside a repository"
+if ! command -v git >/dev/null 2>&1; then
+  step 6 "smoke: skipped, git is missing; run pi sandbox doctor inside a repository"
 else
-  step 7 "smoke: running $shim sandbox doctor in a temporary git repository; the first image build takes a few minutes"
+  step 6 "smoke: running $shim sandbox doctor in a temporary git repository; the first image build takes a few minutes"
 
   if smoke; then
-    step 7 "smoke: $shim sandbox doctor passed"
+    step 6 "smoke: $shim sandbox doctor passed"
   else
     fail "smoke check failed, see the doctor lines above, or run $shim sandbox doctor inside a repository"
   fi
 fi
 
 if [ -n "$snippet_files" ]; then
-  step 8 "next, in a new shell: cd <repo> && pi"
+  step 7 "next, in a new shell: cd <repo> && pi"
 else
-  step 8 "next: cd <repo> && pi"
+  step 7 "next: cd <repo> && pi"
 fi

@@ -234,7 +234,7 @@ describe("sweepHostSessions", () => {
   });
 
   it.skipIf(process.platform !== "darwin")(
-    "reports a file it can neither rename nor delete, even after restoring access",
+    "reports a session file it cannot rename and leaves it in place",
     async () => {
       const { repoRoot, dir } = await sessionsFixture();
       const pinned = join(dir, "pinned.jsonl");
@@ -247,8 +247,9 @@ describe("sweepHostSessions", () => {
         const { failures } = await sweepHostSessions({ dir, repoRoot, full: false });
 
         expect(failures).toEqual([
-          `${pinned} is a session file that names a cwd outside the repository and could be neither renamed nor deleted`,
+          `${pinned} is a session file that names a cwd outside the repository and could not be renamed`,
         ]);
+        expect(await readFile(pinned, "utf8")).toBe(header("/etc"));
       } finally {
         execFileSync("sh", ["-c", 'chflags nouchg "$1"', "sh", pinned]);
       }

@@ -1,104 +1,44 @@
-import { mkdir, rm, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
-import { engineSocketPath } from "../backend/index.ts";
-import {
-  type CommandRunner,
-  readRegularFile,
-  recordCreatedDirs,
-  recordPins,
-  repoHash,
-  stateLayout,
-} from "../shared/index.ts";
+import { mkdir } from "node:fs/promises";
+import { errorMessage, LauncherError } from "../shared/index.ts";
 import {
   assertGitIntegrity,
   byDepth,
-  createWorktreeConfigs,
-  dirsBetween,
   findProtectedGitPaths,
+  type GitLaunchContext,
   type GitOverlay,
-  type GitPathGuard,
-  type GitProtectContext,
-  gitPathGuard,
   gitRepos,
   type ProtectedGitPaths,
-  pinGitDirs,
   protectedGitOverlay,
   protectedWorkspaceOverlay,
   recordGitBaseline,
   unique,
   type Workspace,
 } from "../workspace/index.ts";
-import { isGitConfigFile } from "./spec.ts";
 
 export type { GitOverlay } from "../workspace/index.ts";
 
-export interface GitGuardContext {
-  runner: CommandRunner;
-  home: string;
-  env: NodeJS.ProcessEnv;
-  stateDir: string;
-  volumePaths?: string[];
+export type GitGuardContext = GitLaunchContext;
+
+interface ReadyOptions {
+  othersLive?: boolean;
 }
 
 export interface GitPlan {
   overlay: GitOverlay;
-  ready(): Promise<GitOverlay>;
+  ready(options?: ReadyOptions): Promise<GitOverlay>;
+  pendingNotices(): string[];
 }
 
-const EMPTY: GitOverlay = { selfBinds: [], readOnlyDirs: [], readOnlyFiles: [] };
+const EMPTY: GitOverlay = { selfBinds: [], readOnlyDirs: [] };
 
-const NO_GIT_PLAN: GitPlan = { overlay: EMPTY, ready: async () => EMPTY };
-
-const protectContext = (context: GitGuardContext): GitProtectContext => ({
-  runner: context.runner,
-  home: context.home,
-  env: context.env,
-  emptyHooksDir: stateLayout(context.stateDir).emptyDir,
-  engineSockets: [engineSocketPath(context.home)],
-});
+const NO_GIT_PLAN: GitPlan = { overlay: EMPTY, ready: async () => EMPTY, pendingNotices: () => [] };
 
 const sameList = (first: string[], second: string[]) =>
   first.length === second.length && first.every((entry, index) => entry === second[index]);
 
-interface Recorder {
-  pin(path: string, gitCommonDir: string): Promise<void>;
-  dirs(paths: string[], gitCommonDir: string): Promise<void>;
-}
-
-const recorderOf = (stateDir: string, owner: string): Recorder => ({
-  pin: (path, gitCommonDir) => recordPins(stateDir, owner, [{ path, gitCommonDir }]),
-  dirs: (paths, gitCommonDir) => recordCreatedDirs(stateDir, owner, paths, { gitCommonDir }),
-});
-
-const pinned = async (
-  workspace: Workspace,
-  paths: ProtectedGitPaths,
-  context: GitProtectContext,
-  recorder: Recorder,
-) => {
-  const onPin = (path: string) => recorder.pin(path, paths.gitCommonDir);
-
-  await pinGitDirs(workspace, paths.modules, onPin);
-
-  const modules = await assertGitIntegrity(workspace);
-
-  if (sameList(modules, paths.modules)) {
-    return paths;
-  }
-
-  const current = await findProtectedGitPaths(workspace, paths.gitCommonDir, context, modules);
-
-  await pinGitDirs(workspace, current.modules, onPin);
-
-  await assertGitIntegrity(workspace);
-
-  return current;
-};
-
 const combined = (overlays: GitOverlay[]): GitOverlay => ({
   selfBinds: unique(overlays.flatMap((overlay) => overlay.selfBinds)).sort(byDepth),
   readOnlyDirs: unique(overlays.flatMap((overlay) => overlay.readOnlyDirs)),
-  readOnlyFiles: unique(overlays.flatMap((overlay) => overlay.readOnlyFiles)),
 });
 
 const merged = (workspace: Workspace, outer: GitOverlay, overlays: GitOverlay[]): GitOverlay => {
@@ -107,101 +47,91 @@ const merged = (workspace: Workspace, outer: GitOverlay, overlays: GitOverlay[])
   return workspace.isGitRepo && single !== undefined ? single : combined([outer, ...overlays]);
 };
 
-const outerOverlay = (workspace: Workspace, protect: GitProtectContext) =>
-  workspace.isGitRepo
-    ? Promise.resolve(EMPTY)
-    : protectedWorkspaceOverlay(workspace, gitPathGuard(workspace, protect));
+const outerOverlay = (workspace: Workspace) =>
+  workspace.isGitRepo ? Promise.resolve(EMPTY) : protectedWorkspaceOverlay(workspace);
 
-interface RepoPlan {
-  overlay: GitOverlay;
-  ready(recorder: Recorder): Promise<GitOverlay>;
-}
-
-const createdChain = (first: string | undefined, dir: string) =>
-  first === undefined ? [] : [first, ...dirsBetween(first, dir)];
-
-const createDir = async (dir: string, recorder: Recorder, gitCommonDir: string) => {
-  await recorder.dirs(
-    createdChain(await mkdir(dir, { recursive: true }).catch(() => undefined), dir),
-    gitCommonDir,
+const uncreatable = (dir: string, error: unknown) =>
+  new LauncherError(
+    `git: ${dir} could not be created as a hooks dir (${(error as NodeJS.ErrnoException).code ?? errorMessage(error)}), so it cannot be bound read-only`,
+    "create it as a directory",
   );
+
+const createHooksDir = async (dir: string) => {
+  await mkdir(dir, { recursive: true }).catch((error: unknown) => {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+      throw uncreatable(dir, error);
+    }
+  });
 };
 
-const readiedRepo = async (
-  repo: Workspace,
-  protect: GitProtectContext,
-  guard: GitPathGuard,
-  discovered: ProtectedGitPaths,
-  recorder: Recorder,
-) => {
-  const paths = await pinned(repo, discovered, protect, recorder);
-
-  await Promise.all(paths.dirs.map((dir) => createDir(dir, recorder, paths.gitCommonDir)));
-
-  return protectedGitOverlay(repo, paths, guard);
-};
-
-const plannedPaths = async (repo: Workspace, gitCommonDir: string, protect: GitProtectContext) => {
-  const found = await findProtectedGitPaths(repo, gitCommonDir, protect);
-
-  return (await createWorktreeConfigs(found)) ? findProtectedGitPaths(repo, gitCommonDir, protect) : found;
-};
-
-const repoPlan = async (
-  repo: Workspace,
-  gitCommonDir: string,
-  protect: GitProtectContext,
-): Promise<RepoPlan> => {
-  const guard = gitPathGuard(repo, protect);
-  const paths = await plannedPaths(repo, gitCommonDir, protect);
-
-  return {
-    overlay: await protectedGitOverlay(repo, paths, guard),
-    ready: (recorder) => readiedRepo(repo, protect, guard, paths, recorder),
-  };
-};
-
-const MODE_BITS = 0o777;
-
-const copyGitConfig = async (stateDir: string, owner: string, path: string) => {
-  const { data, mode } = await readRegularFile(path);
-  const copy = stateLayout(stateDir).repo(owner).gitCopy(path);
-
-  await mkdir(dirname(copy), { recursive: true, mode: 0o700 });
-
-  await rm(copy, { force: true });
-
-  await writeFile(copy, data, { mode: mode & MODE_BITS, flag: "wx" });
-};
-
-const readied = async (
-  workspace: Workspace,
-  context: GitGuardContext,
-  plans: RepoPlan[],
-  outer: () => Promise<GitOverlay>,
-) => {
-  const owner = repoHash(workspace.repoRoot);
-  const recorder = recorderOf(context.stateDir, owner);
-  const outcomes = await Promise.allSettled(plans.map((plan) => plan.ready(recorder)));
+const firstFailure = (outcomes: PromiseSettledResult<unknown>[]) => {
   const failed = outcomes.find((outcome) => outcome.status === "rejected");
 
   if (failed !== undefined) {
     throw failed.reason;
   }
+};
+
+const readiedRepo = async (repo: Workspace, discovered: ProtectedGitPaths) => {
+  const modules = await assertGitIntegrity(repo);
+  const paths = sameList(modules, discovered.modules)
+    ? discovered
+    : await findProtectedGitPaths(discovered.gitCommonDir, discovered.workspaceRoot, modules);
+
+  firstFailure(await Promise.allSettled(paths.hooksDirs.map(createHooksDir)));
+
+  return protectedGitOverlay(repo, paths);
+};
+
+interface RepoPlan {
+  overlay: GitOverlay;
+  ready(): Promise<GitOverlay>;
+}
+
+const repoPlan = async (repo: Workspace, gitCommonDir: string, workspaceRoot?: string): Promise<RepoPlan> => {
+  const paths = await findProtectedGitPaths(gitCommonDir, workspaceRoot);
+
+  return { overlay: await protectedGitOverlay(repo, paths), ready: () => readiedRepo(repo, paths) };
+};
+
+interface Readied {
+  overlay: GitOverlay;
+  pending: string[];
+}
+
+const readied = async (
+  workspace: Workspace,
+  context: GitGuardContext,
+  plans: RepoPlan[],
+  options: ReadyOptions,
+): Promise<Readied> => {
+  const outcomes = await Promise.allSettled(plans.map((plan) => plan.ready()));
+
+  firstFailure(outcomes);
 
   const overlay = merged(
     workspace,
-    await outer(),
+    await outerOverlay(workspace),
     outcomes.flatMap((outcome) => (outcome.status === "fulfilled" ? [outcome.value] : [])),
   );
 
-  await Promise.all(
-    overlay.readOnlyFiles.filter(isGitConfigFile).map((path) => copyGitConfig(context.stateDir, owner, path)),
-  );
+  return { overlay, pending: await recordGitBaseline(workspace, context, options.othersLive === true) };
+};
 
-  await recordGitBaseline(workspace, context);
+const withPending = (overlay: GitOverlay, ready: (options: ReadyOptions) => Promise<Readied>): GitPlan => {
+  const last = { pending: [] as string[] };
 
-  return overlay;
+  return {
+    overlay,
+    ready: async (options = {}) => {
+      const done = await ready(options);
+
+      last.pending = done.pending;
+
+      return done.overlay;
+    },
+    pendingNotices: () => last.pending,
+  };
 };
 
 export const planGitOverlay = async (workspace: Workspace, context: GitGuardContext): Promise<GitPlan> => {
@@ -213,23 +143,17 @@ export const planGitOverlay = async (workspace: Workspace, context: GitGuardCont
     return NO_GIT_PLAN;
   }
 
-  const protect = workspace.isGitRepo ? protectContext(context) : { ...protectContext(context), workspace };
-  const outer = () => outerOverlay(workspace, protect);
-
-  if (repos.length === 0) {
-    return { overlay: await outer(), ready: outer };
-  }
-
+  const workspaceRoot = workspace.isGitRepo ? undefined : workspace.repoRoot;
   const plans = await Promise.all(
-    repos.map(({ repo, gitCommonDir }) => repoPlan(repo, gitCommonDir, protect)),
+    repos.map(({ repo, gitCommonDir }) => repoPlan(repo, gitCommonDir, workspaceRoot)),
   );
 
-  return {
-    overlay: merged(
+  return withPending(
+    merged(
       workspace,
-      await outer(),
+      await outerOverlay(workspace),
       plans.map((plan) => plan.overlay),
     ),
-    ready: () => readied(workspace, context, plans, outer),
-  };
+    (options) => readied(workspace, context, plans, options),
+  );
 };

@@ -14,9 +14,7 @@ import {
   checkMcp,
   checkMcpAuthSweep,
   checkNoRoute,
-  checkOffline,
   checkRules,
-  checkSamePath,
   checkSessionsShare,
   checkSettingsSweep,
   failed,
@@ -94,7 +92,16 @@ const sizeCheck = async (deps: CliDeps, sandbox: Sandbox) => {
     : passed(current);
 };
 
-const sharesCheck = async (deps: CliDeps, context: LaunchContext, backend: Backend): Promise<CheckResult> => {
+interface SharesOutcome {
+  result: CheckResult;
+  missing: string[];
+}
+
+const sharesCheck = async (
+  deps: CliDeps,
+  context: LaunchContext,
+  backend: Backend,
+): Promise<SharesOutcome> => {
   const files = await readHostPiFiles(hostAgentDirOf(deps)).catch(() => undefined);
   const coverage = await vmShareCoverage(
     deps,
@@ -104,15 +111,28 @@ const sharesCheck = async (deps: CliDeps, context: LaunchContext, backend: Backe
   );
 
   if (coverage === undefined) {
-    return skipped(`colima has not written the shares of profile ${ENGINE_PROFILE} yet`);
+    return {
+      result: skipped(`colima has not written the shares of profile ${ENGINE_PROFILE} yet`),
+      missing: [],
+    };
   }
 
-  return coverage.missing.length === 0
-    ? passed("the sandbox VM shares every path this repository needs")
-    : warned(
-        `the sandbox VM does not share ${coverage.missing.join(", ")}; the next pi here shares it, restarting the VM once no pi session runs`,
-      );
+  return {
+    result:
+      coverage.missing.length === 0
+        ? passed("the sandbox VM shares every path this repository needs")
+        : warned(
+            `the sandbox VM does not share ${coverage.missing.join(", ")}; the next pi here shares it, restarting the VM once no pi session runs`,
+          ),
+    missing: coverage.missing,
+  };
 };
+
+const sharesOf = (deps: CliDeps, context: LaunchContext, backend: Backend) =>
+  sharesCheck(deps, context, backend).catch((error: unknown) => ({
+    result: failed(errorMessage(error)),
+    missing: [],
+  }));
 
 const single =
   (name: string, check: (input: ProbeInput) => Promise<CheckResult>): Probe =>
@@ -140,10 +160,8 @@ const sessionsShareCheck = async (target: ProbeTarget) => {
 
 const PROBES: Probe[] = [
   single("proxy health", ({ sandbox }) => proxyHealth(sandbox.proxy)),
-  single("same-path mount", ({ target, context }) => checkSamePath(target, context.workspace.repoRoot)),
-  single("credential sweep", ({ target }) => sweepCredentials(target)),
+  single("credential sweep", ({ target, sandbox }) => sweepCredentials(target, sandbox.proxy?.token)),
   single("no-route", ({ target }) => checkNoRoute(target)),
-  single("offline", ({ target }) => checkOffline(target)),
   inOrder(
     single("mcp", ({ target }) => checkMcp(target)),
     single("mcp-auth sweep", ({ target }) => checkMcpAuthSweep(target)),
@@ -166,8 +184,7 @@ const probe = async (deps: CliDeps, context: LaunchContext, sandbox: Sandbox) =>
   return results.every(Boolean) ? 0 : 1;
 };
 
-export const doctorCommand = async (deps: CliDeps) => {
-  const { context, backend } = await openContext(deps, "sandbox");
+const sandboxChecks = async (deps: CliDeps, context: LaunchContext, backend: Backend) => {
   const failures: Stage[] = [];
   const report = (stage: Stage, outcome: StageOutcome) => {
     if (!outcome.ok) {
@@ -187,9 +204,28 @@ export const doctorCommand = async (deps: CliDeps) => {
 
     return 1;
   });
-  const shares = await attempt(() => sharesCheck(deps, context, backend));
+
+  return code === 0 && failures.length === 0 ? 0 : code || 1;
+};
+
+const skipSandbox = (deps: CliDeps, missing: string[]) => {
+  writeLine(
+    deps.stdout,
+    `skip sandbox: run pi once here to share ${missing.join(", ")}, then pi sandbox doctor again`,
+  );
+
+  return 0;
+};
+
+export const doctorCommand = async (deps: CliDeps) => {
+  const { context, backend } = await openContext(deps, "sandbox");
+  const shares = await sharesOf(deps, context, backend);
+  const code =
+    shares.missing.length === 0
+      ? await sandboxChecks(deps, context, backend)
+      : skipSandbox(deps, shares.missing);
   const host = [
-    print(deps, "vm shares", shares),
+    print(deps, "vm shares", shares.result),
     ...(await hostChecks(deps, context)).map((check) => print(deps, check.name, check.result)),
   ];
 
@@ -197,5 +233,5 @@ export const doctorCommand = async (deps: CliDeps) => {
     return code;
   }
 
-  return failures.length === 0 && host.every(Boolean) ? 0 : 1;
+  return host.every(Boolean) ? 0 : 1;
 };

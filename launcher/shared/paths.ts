@@ -78,8 +78,6 @@ export const realOrResolvedSync = (path: string) => {
   }
 };
 
-export const projectConfigFile = (repoRoot: string) => join(repoRoot, ".pi", "sandbox.json");
-
 const moduleFolder = (moduleUrl: string) => dirname(dirname(fileURLToPath(moduleUrl)));
 
 const isCompiled = (moduleUrl = import.meta.url) => basename(moduleFolder(moduleUrl)) === BUILD_DIR;

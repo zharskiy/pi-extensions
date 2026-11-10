@@ -5,7 +5,7 @@ import { createColimaVm } from "../../backend/colima/vm.ts";
 import { run } from "../../cli/index.ts";
 import { registerLaunch } from "../../grants/index.ts";
 import { processMark, sha256Hex, stateLayout } from "../../shared/index.ts";
-import { createHarness, writeColimaMounts, writeLimaMounts } from "../cli/harness.ts";
+import { createHarness, sweepNow, writeColimaMounts, writeLimaMounts } from "../cli/harness.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { argvOf, createFakeRunner, type FakeCall } from "../support/fake-runner.ts";
 import { tempDir } from "../support/temp-dir.ts";
@@ -130,7 +130,7 @@ describe("a launch starts the stopped sandbox VM", () => {
     expect(context.harness.stderr()).toContain(
       [
         "pi-sandbox: the sandbox VM engine is unreachable at ~/.colima/pi-sandbox/docker.sock",
-        "  hint: run launcher/install.sh or colima start --profile pi-sandbox --activate=false; or run pi --no-sandbox to use host pi",
+        "  hint: run launcher/install.sh or colima start --profile pi-sandbox --activate=false",
       ].join("\n"),
     );
     expect(context.colimaCalls()).toEqual([]);
@@ -141,7 +141,10 @@ describe("a launch starts the stopped sandbox VM", () => {
 
     expect(await run([], context.harness.deps)).toBe(1);
     expect(context.harness.stderr()).toContain(
-      "pi-sandbox: the sandbox VM engine is unreachable at ~/.colima/pi-sandbox/docker.sock",
+      [
+        "pi-sandbox: the sandbox VM is running but its engine at ~/.colima/pi-sandbox/docker.sock does not answer: socket missing",
+        "  hint: run colima stop --profile pi-sandbox && colima start --profile pi-sandbox --activate=false and see ~/.colima/_lima/colima-pi-sandbox/ha.stderr.log",
+      ].join("\n"),
     );
     expect(context.colimaCalls()).toEqual([STATUS]);
   });
@@ -155,7 +158,7 @@ describe("a launch starts the stopped sandbox VM", () => {
     expect(context.harness.stderr()).toContain(
       [
         'pi-sandbox: could not start the sandbox VM: colima start failed: level=fatal msg="disk full"',
-        "  hint: run colima start --profile pi-sandbox --activate=false and see ~/.colima/_lima/colima-pi-sandbox/ha.stderr.log; or run pi --no-sandbox to use host pi",
+        "  hint: run colima start --profile pi-sandbox --activate=false and see ~/.colima/_lima/colima-pi-sandbox/ha.stderr.log",
       ].join("\n"),
     );
     expect(context.fake.containers.size).toBe(0);
@@ -181,14 +184,13 @@ describe("a launch starts the stopped sandbox VM", () => {
     );
   });
 
-  it("never starts the VM for pi sandbox status or gc", async () => {
+  it("never starts the VM for pi sandbox status or the sweep", async () => {
     const status = await setupWith();
     const gc = await setupWith();
 
     expect(await run(["sandbox", "status"], status.harness.deps)).toBe(0);
-    expect(await run(["sandbox", "gc"], gc.harness.deps)).toBe(0);
+    expect(await sweepNow(gc.harness.deps)).toBe(0);
     expect(status.harness.stdout()).toContain("runtime: none (the sandbox VM engine is unreachable");
-    expect(gc.harness.stdout()).toContain("the engine step was skipped");
     expect([...status.colimaCalls(), ...gc.colimaCalls()]).toEqual([]);
   });
 });
@@ -229,42 +231,43 @@ const stoppedVm = async (detections: boolean[] = []) => {
     pause: async () => undefined,
   });
   const colimaCalls = () => fake.calls.map((call) => argvOf(call).join(" "));
+  const colimaEnvs = () => fake.calls.map((call) => call.options.env);
 
-  return { home, outside, vm, colimaCalls };
+  return { home, outside, vm, colimaCalls, colimaEnvs };
 };
 
-describe("the stopped sandbox VM, started with the shares a launch needs", () => {
-  it("starts once with the missing share instead of starting and restarting", async () => {
+describe("the stopped sandbox VM", () => {
+  it("starts plainly, leaving any missing share to the shares stage", async () => {
     const context = await stoppedVm();
     const notices: string[] = [];
 
-    await context.vm.ensureRunning(
-      (notice) => notices.push(notice),
-      [{ path: context.outside, writable: true }],
-    );
+    await context.vm.ensureRunning((notice) => notices.push(notice));
 
-    expect(context.colimaCalls()).toEqual([
-      STATUS,
-      `${START} --mount ${context.home}:w --mount ${context.outside}:w`,
-    ]);
-    expect(notices).toEqual([`starting the sandbox VM, sharing ${context.outside} with it, one time`]);
+    expect(context.colimaCalls()).toEqual([STATUS, START]);
+    expect(notices).toEqual(["starting the sandbox VM"]);
     expect(await context.vm.coverage([{ path: context.outside, writable: true }])).toMatchObject({
-      missing: [],
+      missing: [context.outside],
     });
   });
 
-  it("starts plainly when the saved shares already cover every path", async () => {
+  it("runs every colima command against ~/.colima, whatever COLIMA_HOME says", async () => {
     const context = await stoppedVm();
 
-    await context.vm.ensureRunning(() => undefined, [{ path: join(context.home, "repo"), writable: true }]);
+    await context.vm.ensureRunning(() => undefined);
 
-    expect(context.colimaCalls()).toEqual([STATUS, START]);
+    await context.vm.size();
+
+    expect(context.colimaEnvs()).toEqual([
+      { COLIMA_HOME: join(context.home, ".colima") },
+      { COLIMA_HOME: join(context.home, ".colima") },
+      { COLIMA_HOME: join(context.home, ".colima") },
+    ]);
   });
 
   it("starts nothing when another launch brought the engine up while this one waited for the VM lock", async () => {
     const context = await stoppedVm([false, true]);
 
-    await context.vm.ensureRunning(() => undefined, [{ path: context.outside, writable: true }]);
+    await context.vm.ensureRunning(() => undefined);
 
     expect(context.colimaCalls()).toEqual([]);
   });
@@ -337,7 +340,7 @@ describe("pi sandbox stop", () => {
 
     expect(await run(["sandbox", "stop", "now"], context.harness.deps)).toBe(1);
     expect(await run(["sandbox", "help"], context.harness.deps)).toBe(0);
-    expect(context.harness.stderr()).toContain("pi-sandbox: pi sandbox stop takes no arguments\n");
+    expect(context.harness.stderr()).toContain('pi-sandbox: unknown stop option "now"\n');
     expect(context.harness.stdout()).toContain("  pi sandbox stop ");
     expect(context.events).toEqual([]);
   });

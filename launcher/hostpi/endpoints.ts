@@ -1,4 +1,4 @@
-import { isSecretName } from "../shared/index.ts";
+import { hasUrlUserinfo, isSecretName } from "../shared/index.ts";
 
 export interface Endpoint {
   host: string;
@@ -49,12 +49,6 @@ export const hasQueryCredential = (url: unknown) =>
   );
 
 export const hasUrlPassword = (url: unknown) => (parsed(url)?.password ?? "") !== "";
-
-export const hasUrlUserinfo = (url: unknown) => {
-  const parts = parsed(url);
-
-  return parts !== undefined && (parts.username !== "" || parts.password !== "");
-};
 
 export const withoutUserinfo = (url: unknown) => {
   const parts = parsed(url);

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import {
   isJsonObject,
   isLive,
+  knownRepos,
   LauncherError,
   readJsonObject,
   stateLayout,
@@ -83,14 +84,8 @@ export const pruneLaunches = async (stateDir: string, repoHash: string): Promise
   return liveEntries(stored);
 };
 
-const repoHashes = async (stateDir: string) => {
-  const entries = await readdir(stateLayout(stateDir).repos, { withFileTypes: true }).catch(() => []);
-
-  return entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
-};
-
 export const liveLaunches = async (stateDir: string, repoHash?: string): Promise<Launch[]> => {
-  const hashes = repoHash === undefined ? await repoHashes(stateDir) : [repoHash];
+  const hashes = repoHash === undefined ? await knownRepos(stateDir) : [repoHash];
   const entries = await Promise.all(hashes.map((hash) => storedEntries(stateDir, hash)));
 
   return entries.flatMap(liveEntries);

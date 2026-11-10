@@ -1,6 +1,6 @@
 import { isAbsolute } from "node:path";
 import { type Backend, LABELS } from "../../backend/index.ts";
-import { findRepoContainer, overlayVolumes, sharedCacheVolumes } from "../../container/index.ts";
+import { overlayVolumes, sharedCacheVolumes } from "../../container/index.ts";
 import { liveLaunches } from "../../grants/index.ts";
 import { recordedImage } from "../../image/index.ts";
 import { LauncherError } from "../../shared/index.ts";
@@ -18,23 +18,22 @@ const sessionDirLine = (label: string | undefined) => {
 };
 
 const containerLines = async (backend: Backend, context: LaunchContext) => {
-  const container = await findRepoContainer(backend, context.workspace);
-
-  if (container === undefined) {
-    return ["container: none"];
-  }
+  const containers = (
+    await backend.findContainers({ [LABELS.managed]: "true", [LABELS.repoHash]: context.repoHash })
+  ).filter((container) => container.labels[LABELS.relay] === undefined);
 
   return [
-    `container: ${container.id} ${container.state}`,
-    `container digest: ${container.labels[LABELS.imageDigest] ?? "unknown"}`,
-    `container spec hash: ${container.labels[LABELS.specHash] ?? "unknown"}`,
-    sessionDirLine(container.labels[LABELS.sessionDir]),
+    `containers: ${containers.length}`,
+    ...containers.flatMap((container) => [
+      `container: ${container.id} ${container.state} launch ${container.labels[LABELS.launchId] ?? "unknown"} digest ${container.labels[LABELS.imageDigest] ?? "unknown"}`,
+      sessionDirLine(container.labels[LABELS.sessionDir]),
+    ]),
   ];
 };
 
 const runtimeLines = async (deps: CliDeps, context: LaunchContext) => {
   try {
-    const backend = await reachableBackend(deps, context.effective.config);
+    const backend = await reachableBackend(deps);
     const details = Object.entries(await backend.status()).map(([key, value]) => `runtime ${key}: ${value}`);
 
     return [...details, ...(await containerLines(backend, context))];
@@ -57,14 +56,14 @@ const imageLine = async (context: LaunchContext) => {
   const { image } = context.effective.config;
   const record = await recordedImage(context.stateDir, context.effective.config);
 
-  return `image: ${image.reference} ${image.digest ?? record?.digest ?? "(not built yet)"}`;
+  return `image: ${record?.reference ?? image.reference ?? "pi-sandbox-base:local"} ${image.digest ?? record?.digest ?? "(not built yet)"}`;
 };
 
 const launchLines = async (context: LaunchContext) => {
   const launches = await liveLaunches(context.stateDir, context.repoHash);
 
   return [
-    `launches: ${launches.length} running for this repository`,
+    `launches: ${launches.length} running in ${context.workspace.repoRoot}`,
     ...launches.map(
       (launch) =>
         `launch: ${launch.launchId} pid ${launch.pid} since ${new Date(launch.startedAt).toISOString()}`,
@@ -96,10 +95,10 @@ const grantStatus = async (context: LaunchContext) => {
 };
 
 export const statusCommand = async (deps: CliDeps) => {
-  const { context } = await openContext(deps, "host");
+  const { context } = await openContext(deps, "host", { overlays: true });
   const lines = [
     `launcher: ${await launcherVersion()}`,
-    `repo: ${context.workspace.repoRoot}`,
+    `${context.workspace.isGitRepo ? "repo" : "workspace"}: ${context.workspace.repoRoot}`,
     ...(await runtimeLines(deps, context)),
     ...(await proxyLines(deps, context)),
     await imageLine(context),

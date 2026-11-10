@@ -1,10 +1,10 @@
 import { join } from "node:path";
 import type { SecretRef } from "../../config/index.ts";
-import { isSecretName, type NpmrcEntry, parseNpmrc } from "../../shared/index.ts";
-import { endpointOf, hasUrlUserinfo } from "../endpoints.ts";
+import { hasUrlUserinfo, isSecretName, type NpmrcEntry, parseNpmrc } from "../../shared/index.ts";
+import { endpointOf } from "../endpoints.ts";
 import { mergeSections, noticeOnly, placeholderOf, rulesFor, type Section } from "../rules.ts";
 import type { ToolsInput } from "../types.ts";
-import { readOptional, urlCredentialSection } from "./files.ts";
+import { type Registry, readOptional, registriesOf, urlCredentialSection } from "./files.ts";
 
 const REGISTRY_CREDENTIAL = /^\/\/([^/]+)(\/.*)?:(_authToken|_auth|_password)$/;
 
@@ -19,6 +19,10 @@ const HOST_TLS_FILES = new Set(["ca", "cafile", "cert", "certfile"]);
 const CA_KEYS = new Set(["ca", "cafile"]);
 
 const PROXY_KEYS = new Set(["proxy", "https-proxy", "http-proxy"]);
+
+const PATH_KEYS = new Set(["prefix", "cache", "userconfig", "globalconfig", "init-module", "script-shell"]);
+
+const isPathKey = (name: string) => PATH_KEYS.has(name) || name.endsWith("file");
 
 const REGISTRY_KEY = "registry";
 
@@ -128,6 +132,10 @@ const plainSection = (input: ToolsInput, entry: NpmrcEntry): Section<NpmrcEntry[
     );
   }
 
+  if (isPathKey(name)) {
+    return dropped(entry.key, "names a host path and stays on the host");
+  }
+
   const value = expanded(input, entry);
 
   if (value === undefined) {
@@ -157,11 +165,13 @@ const plainSection = (input: ToolsInput, entry: NpmrcEntry): Section<NpmrcEntry[
   return { ...section, value: [{ key: entry.key, value: section.value }] };
 };
 
-export const deriveNpmrc = async (input: ToolsInput): Promise<Section<NpmrcEntry[] | undefined>> => {
+export const deriveNpmrc = async (
+  input: ToolsInput,
+): Promise<Section<NpmrcEntry[] | undefined> & { registries: Registry[] }> => {
   const text = await readOptional(join(input.home, ".npmrc"));
 
   if (text === undefined) {
-    return noticeOnly(undefined);
+    return { ...noticeOnly(undefined), registries: [] };
   }
 
   const merged = mergeSections(
@@ -172,5 +182,13 @@ export const deriveNpmrc = async (input: ToolsInput): Promise<Section<NpmrcEntry
     }),
   );
 
-  return { value: merged.values.flat(), rules: merged.rules, notices: merged.notices };
+  const registries = registriesOf(
+    "npmrc",
+    merged.values
+      .flat()
+      .filter((entry) => nameOf(entry.key) === REGISTRY_KEY)
+      .map((entry) => entry.value),
+  );
+
+  return { value: merged.values.flat(), rules: merged.rules, notices: merged.notices, registries };
 };

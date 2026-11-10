@@ -10,7 +10,7 @@ import { tempDir } from "../support/temp-dir.ts";
 const BASH_ENV_FILE = join(launcherRoot(), "image", "bash-env.sh");
 
 const HINT =
-  "bash: pi-sandbox-missing-tool: command not found\npi-sandbox: pi-sandbox-missing-tool is not in the sandbox image; add it with image.packages or image.npmGlobal in ~/.config/pi-sandbox/config.json (see pi sandbox doctor)\n";
+  "bash: pi-sandbox-missing-tool: command not found\npi-sandbox: pi-sandbox-missing-tool is not in the sandbox image; add its Debian package to image.packages or its npm package to image.npmGlobal in ~/.config/pi-sandbox/config.json on the host\n";
 
 const bashVersion = spawnSync("bash", ["--version"], { encoding: "utf8" }).stdout ?? "";
 
@@ -23,7 +23,6 @@ const loadUserConfig = async (value: unknown) => {
   await writeFile(userConfig, JSON.stringify(value));
 
   return loadEffectiveConfig({
-    repoRoot: root,
     env: { PI_SANDBOX_USER_CONFIG: userConfig, PI_SANDBOX_POLICY_FILE: join(root, "policy.json") },
   });
 };

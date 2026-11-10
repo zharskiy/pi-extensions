@@ -2,12 +2,13 @@ import { LauncherError } from "../../shared/index.ts";
 import { LABELS } from "../labels.ts";
 import { RELAY_PREFIX, relayName, repoNetworkLabels, repoNetworkName } from "../managed-network.ts";
 import type { NetworkSummary, ProxyRoute, ProxyRouteRequest } from "../types.ts";
+import { type EngineContainer, labelFilters } from "./container-body.ts";
 import { type EngineClient, segment } from "./engine-client.ts";
 import { VM_HOST_ALIAS } from "./profile.ts";
 
 interface RelayInspect {
   Id: string;
-  State?: { Running?: boolean };
+  State?: { Running?: boolean; Status?: string };
   Config?: { Labels?: Record<string, string> | null };
   NetworkSettings?: { Networks?: Record<string, unknown> | null };
 }
@@ -33,8 +34,6 @@ const RIVAL_POLL_MS = 100;
 
 const RIVAL_POLL_ATTEMPTS = 150;
 
-const NETWORK_HINT = "run pi sandbox gc";
-
 const FOREIGN_NETWORK_HINT = "remove that network from the sandbox VM so the launcher can create its own";
 
 const relayLabels = (hostPort: number, repoHash: string) => ({
@@ -57,7 +56,7 @@ export const createRelayOperations = (client: EngineClient, pause = realPause) =
 
   const assertManaged = (name: string, network: NetworkInspect) => {
     if (network.Internal !== true) {
-      throw new LauncherError(`network ${name} exists but is not internal`, NETWORK_HINT);
+      throw new LauncherError(`network ${name} exists but is not internal`, FOREIGN_NETWORK_HINT);
     }
 
     if (network.Labels?.[LABELS.managed] !== "true") {
@@ -147,7 +146,7 @@ export const createRelayOperations = (client: EngineClient, pause = realPause) =
 
   const starting = (relay: RelayInspect | undefined, request: ProxyRouteRequest) =>
     relay !== undefined &&
-    relay.State?.Running !== true &&
+    relay.State?.Status === "created" &&
     matches(relay, relayLabels(request.hostPort, request.repoHash));
 
   const createRelay = async (request: ProxyRouteRequest, network: string) => {
@@ -292,6 +291,16 @@ export const createRelayOperations = (client: EngineClient, pause = realPause) =
     return listed.map((network) => ({ name: network.Name ?? "", labels: network.Labels ?? {} }));
   };
 
+  const sandboxesOf = async (repoHash: string) => {
+    const containers = await client.json<EngineContainer[]>({
+      method: "GET",
+      path: "/containers/json",
+      query: { all: true, filters: labelFilters({ [LABELS.repoHash]: repoHash }) },
+    });
+
+    return containers.filter((container) => container.Labels?.[LABELS.relay] !== "true");
+  };
+
   const removeRepoNetwork = async (repoHash: string) => {
     const name = repoNetworkName(repoHash);
     const network = await inspectNetwork(name);
@@ -302,7 +311,10 @@ export const createRelayOperations = (client: EngineClient, pause = realPause) =
 
     const attached = Object.entries(network.Containers ?? {});
 
-    if (attached.some(([, entry]) => !(entry.Name ?? "").startsWith(RELAY_PREFIX))) {
+    if (
+      attached.some(([, entry]) => !(entry.Name ?? "").startsWith(RELAY_PREFIX)) ||
+      (await sandboxesOf(repoHash)).length > 0
+    ) {
       return false;
     }
 

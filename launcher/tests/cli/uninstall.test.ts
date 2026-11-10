@@ -1,6 +1,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { once } from "node:events";
 import {
+  chmod,
   lstat,
   mkdir,
   mkdtemp,
@@ -12,22 +13,26 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, relative, sep } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { LABELS } from "../../backend/index.ts";
-import { bootTime, launcherRoot, processMark, processStart, stateLayout } from "../../shared/index.ts";
-import { PIN_TEXT } from "../../workspace/index.ts";
-import { createFakeEngine, type FakeEngine } from "../support/fake-engine.ts";
+import { run } from "../../cli/index.ts";
+import {
+  bootTime,
+  launcherRoot,
+  processMark,
+  processStart,
+  sha256Hex,
+  stateLayout,
+} from "../../shared/index.ts";
+import { tempDir } from "../support/temp-dir.ts";
+import { createFakeBackend, createHarness, holdLaunch, unreachable } from "./harness.ts";
 
 const created: string[] = [];
-
-const engines: FakeEngine[] = [];
 
 const children: ChildProcess[] = [];
 
 afterEach(async () => {
-  await Promise.all(engines.splice(0).map((engine) => engine.close()));
-
   children.splice(0).forEach((child) => {
     child.kill("SIGKILL");
   });
@@ -35,240 +40,7 @@ afterEach(async () => {
   await Promise.all(created.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 });
 
-const linkEngineSocket = async (root: string, socket: string) => {
-  const link = join(root, "home", ".colima", "pi-sandbox", "docker.sock");
-
-  await mkdir(dirname(link), { recursive: true });
-
-  await symlink(socket, link);
-};
-
-interface RunOptions {
-  binDir?: boolean;
-  tools?: string;
-  shell?: string;
-}
-
-const runUninstall = async (root: string, socket: string, flags: string[] = [], options: RunOptions = {}) => {
-  await linkEngineSocket(root, socket);
-
-  const binDir = options.binDir === false ? [] : ["--bin-dir", join(root, "local-bin")];
-  const tools = options.tools === undefined ? "" : `${options.tools}:`;
-
-  return new Promise<{ status: number | null; stdout: string; stderr: string }>((resolve) => {
-    const child = spawn(options.shell ?? "sh", [join(launcherRoot(), "uninstall.sh"), ...binDir, ...flags], {
-      env: {
-        HOME: join(root, "home"),
-        PATH: `${tools}${dirname(process.execPath)}:/usr/bin:/bin`,
-        PI_SANDBOX_STATE_DIR: join(root, "state"),
-      },
-    });
-    const chunks: Buffer[] = [];
-    const errors: Buffer[] = [];
-
-    child.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
-
-    child.stderr.on("data", (chunk: Buffer) => errors.push(chunk));
-
-    child.on("close", (status) =>
-      resolve({
-        status,
-        stdout: Buffer.concat(chunks).toString("utf8"),
-        stderr: Buffer.concat(errors).toString("utf8"),
-      }),
-    );
-  });
-};
-
-const managed = { [LABELS.managed]: "true" };
-
-const seedEngine = (engine: FakeEngine) => {
-  const container = (id: string, labels: Record<string, string>) => {
-    engine.containers.set(id, {
-      Id: id,
-      Name: id,
-      State: "running",
-      body: { Image: "image", Labels: labels },
-    });
-  };
-
-  const network = (name: string, labels: Record<string, string>) => {
-    engine.networks.set(name, { body: { Name: name, Labels: labels }, connected: [] });
-  };
-
-  const volume = (name: string, labels: Record<string, string>) => {
-    engine.volumes.set(name, Buffer.alloc(0));
-
-    engine.volumeLabels.set(name, labels);
-  };
-
-  container("sandbox-1", managed);
-
-  container("sandbox-2", { ...managed, [LABELS.repoHash]: "abc" });
-
-  container("relay-1", { ...managed, [LABELS.relay]: "true" });
-
-  container("foreign", { owner: "someone" });
-
-  network("pi-sandbox", managed);
-
-  network("pi-sandbox-0123456789ab", managed);
-
-  network("pi-sandbox-other", {});
-
-  network("elsewhere", managed);
-
-  volume("pi-sandbox-cache", managed);
-
-  volume("pi-sandbox-unlabelled", {});
-
-  volume("other-data", managed);
-};
-
-const engineRoot = async () => {
-  const root = await mkdtemp(join("/tmp", "psu-"));
-  const engine = await createFakeEngine();
-
-  created.push(root);
-
-  engines.push(engine);
-
-  seedEngine(engine);
-
-  return { root, engine };
-};
-
-describe("uninstall.sh on the docker engine", () => {
-  it("removes the labelled containers, counts relays once and removes the managed pi-sandbox networks", async () => {
-    const { root, engine } = await engineRoot();
-    const result = await runUninstall(root, engine.socketPath, ["--keep-vm"]);
-
-    expect(result.status).toBe(0);
-    expect(result.stdout).toContain(
-      "containers: removed 2 sandbox and 1 relay containers and 2 pi-sandbox networks",
-    );
-    expect(result.stdout).toContain("volumes: kept (pass --volumes");
-    expect([...engine.containers.keys()]).toEqual(["foreign"]);
-    expect([...engine.networks.keys()].sort()).toEqual(["elsewhere", "pi-sandbox-other"]);
-    expect([...engine.volumes.keys()].sort()).toEqual([
-      "other-data",
-      "pi-sandbox-cache",
-      "pi-sandbox-unlabelled",
-    ]);
-  });
-
-  it("removes only the managed pi-sandbox volumes with --keep-vm --volumes, and with the VM by default", async () => {
-    const { root, engine } = await engineRoot();
-    const result = await runUninstall(root, engine.socketPath, ["--keep-vm", "--volumes"]);
-
-    expect(result.status).toBe(0);
-    expect(result.stdout).toContain("volumes: removed 1 pi-sandbox volumes");
-    expect(result.stdout).toContain("colima: profile pi-sandbox kept (--keep-vm)");
-    expect([...engine.volumes.keys()].sort()).toEqual(["other-data", "pi-sandbox-unlabelled"]);
-
-    const again = await engineRoot();
-    const byDefault = await runUninstall(again.root, again.engine.socketPath);
-
-    expect(byDefault.stdout).toContain("volumes: removed 1 pi-sandbox volumes");
-    expect(byDefault.stdout).toContain("colima: no profile pi-sandbox");
-  });
-
-  it("lists what it would remove and removes nothing with --dry-run", async () => {
-    const { root, engine } = await engineRoot();
-    const result = await runUninstall(root, engine.socketPath, ["--dry-run", "--volumes"]);
-
-    expect(result.status).toBe(0);
-    expect(result.stdout).toContain(
-      "containers: would remove 2 sandbox and 1 relay containers and 2 pi-sandbox networks",
-    );
-    expect(result.stdout).toContain("volumes: would remove 1 pi-sandbox volumes");
-    expect(engine.containers.size).toBe(4);
-    expect(engine.networks.size).toBe(4);
-    expect(engine.volumes.size).toBe(3);
-    expect(engine.requests.filter((request) => request.method === "DELETE")).toEqual([]);
-  });
-
-  it("leaves the engine objects to colima when it deletes the profile", async () => {
-    const { root, engine } = await engineRoot();
-    const tools = join(root, "tools");
-
-    await mkdir(tools, { recursive: true });
-
-    await writeFile(
-      join(tools, "colima"),
-      '#!/bin/sh\necho "$*" >> "$HOME/colima.log"\ncase "$1" in list) echo "pi-sandbox    Running" ;; esac\n',
-      { mode: 0o755 },
-    );
-
-    const result = await runUninstall(root, engine.socketPath, [], { tools });
-
-    expect(result.status).toBe(0);
-    expect(result.stdout).toContain(
-      "containers: removed with the colima profile pi-sandbox, volumes and images included\n",
-    );
-    expect(result.stdout).toContain("colima: deleted profile pi-sandbox\n");
-    expect(engine.requests.filter((request) => request.method === "DELETE")).toEqual([]);
-    expect(await readFile(join(root, "home", "colima.log"), "utf8")).toContain(
-      "delete --profile pi-sandbox --force",
-    );
-  });
-
-  it("falls back to the engine cleanup and fails when colima cannot delete the profile", async () => {
-    const { root, engine } = await engineRoot();
-    const tools = join(root, "tools");
-
-    await mkdir(tools, { recursive: true });
-
-    await writeFile(
-      join(tools, "colima"),
-      '#!/bin/sh\ncase "$1" in list) echo "pi-sandbox    Running" ;; delete) echo "disk busy" >&2; exit 1 ;; esac\n',
-      { mode: 0o755 },
-    );
-
-    const result = await runUninstall(root, engine.socketPath, [], { tools });
-
-    expect(result.status).toBe(1);
-    expect(result.stdout).not.toContain("with the colima profile");
-    expect(result.stdout).toContain(
-      "colima: colima delete --profile pi-sandbox failed, the profile stays; removing the containers through the engine instead\ncontainers: removed 2 sandbox and 1 relay containers and 2 pi-sandbox networks\n",
-    );
-    expect(result.stderr).toContain(
-      "pi-sandbox uninstall: the colima profile pi-sandbox could not be deleted; run colima delete --profile pi-sandbox --force\n",
-    );
-    expect([...engine.containers.keys()]).toEqual(["foreign"]);
-  });
-
-  it("removes nothing and says so when no engine answers on the socket", async () => {
-    const root = await mkdtemp(join(tmpdir(), "pi-sandbox-uninstall-"));
-
-    created.push(root);
-
-    const result = await runUninstall(root, join(root, "missing.sock"), ["--volumes"]);
-
-    expect(result.status).toBe(0);
-    expect(result.stdout).toContain("containers: the sandbox VM engine is not running, nothing removed");
-    expect(result.stdout).not.toContain("volumes:");
-  });
-});
-
-const shimRoot = async (record?: { link: string; shim?: string }) => {
-  const root = await realpath(await mkdtemp(join(tmpdir(), "pi-sandbox-uninstall-")));
-  const shim = join(root, "local-bin", "pi");
-
-  created.push(root);
-
-  await mkdir(join(root, "local-bin"), { recursive: true });
-
-  await symlink("../lib/node_modules/pi-extensions-mz/launcher/bin/pi-sandbox", shim);
-
-  if (record !== undefined) {
-    await mkdir(join(root, "state"), { recursive: true });
-
-    await writeFile(join(root, "state", "replaced-pi-link"), `${record.shim ?? shim}\n${record.link}\n`);
-  }
-
-  return { root, shim, record: join(root, "state", "replaced-pi-link") };
-};
+const UNINSTALL_TIMEOUT_MS = 30_000;
 
 const exists = (path: string) =>
   lstat(path).then(
@@ -276,56 +48,68 @@ const exists = (path: string) =>
     () => false,
   );
 
-describe("uninstall.sh and a replaced pi link", () => {
-  it("puts back exactly the link install.sh replaced and forgets the record", async () => {
-    const { root, shim, record } = await shimRoot({ link: "../../.pi/agent/bin/pi" });
-    const result = await runUninstall(root, join(root, "missing.sock"));
+const FAKE_COLIMA = [
+  'echo "$COLIMA_HOME $*" >> "$HOME/colima.log"',
+  'case "$1" in list) [ -f "$HOME/no-profile" ] || echo "pi-sandbox  Running" ;; delete) exit "$DELETE_EXIT" ;; esac',
+].join("\n");
 
-    expect(result.status).toBe(0);
-    expect(result.stdout).toContain(
-      `launcher: removed ${shim}\nlauncher: restored ${shim} to ../../.pi/agent/bin/pi\n`,
-    );
-    expect(await readlink(shim)).toBe("../../.pi/agent/bin/pi");
-    expect(await exists(record)).toBe(false);
+interface Root {
+  root: string;
+  home: string;
+  stateDir: string;
+  tools: string;
+}
+
+const uninstallRoot = async (): Promise<Root> => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "pi-sandbox-uninstall-")));
+  const home = join(root, "home");
+  const tools = join(root, "tools");
+
+  created.push(root);
+
+  await mkdir(join(home, ".local", "bin"), { recursive: true });
+
+  await mkdir(tools, { recursive: true });
+
+  await writeFile(join(tools, "colima"), `#!/bin/sh\n${FAKE_COLIMA}\n`);
+
+  await writeFile(join(tools, "npm"), "#!/bin/sh\nexit 1\n");
+
+  await Promise.all(["colima", "npm"].map((name) => chmod(join(tools, name), 0o755)));
+
+  return { root, home, stateDir: join(root, "state"), tools };
+};
+
+const runUninstall = async (paths: Root, env: Record<string, string> = {}, script = launcherRoot()) => {
+  const child = spawn("sh", [join(script, "uninstall.sh")], {
+    env: {
+      HOME: paths.home,
+      PATH: `${paths.tools}:${dirname(process.execPath)}:/usr/bin:/bin`,
+      PI_SANDBOX_STATE_DIR: paths.stateDir,
+      DELETE_EXIT: "0",
+      ...env,
+    },
   });
+  const chunks: Buffer[] = [];
+  const errors: Buffer[] = [];
 
-  it("leaves a record that names another shim alone", async () => {
-    const { root, shim, record } = await shimRoot({
-      link: "../../.pi/agent/bin/pi",
-      shim: "/elsewhere/bin/pi",
-    });
-    const result = await runUninstall(root, join(root, "missing.sock"));
+  child.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
 
-    expect(result.status).toBe(0);
-    expect(result.stdout).toContain(
-      `launcher: ${record} records the replaced pi link of /elsewhere/bin/pi, not ${shim}; left as it is\n`,
-    );
-    expect(await exists(shim)).toBe(false);
-    expect(await exists(record)).toBe(true);
-  });
+  child.stderr.on("data", (chunk: Buffer) => errors.push(chunk));
 
-  it("restores nothing when install.sh replaced no link", async () => {
-    const { root, shim } = await shimRoot();
-    const result = await runUninstall(root, join(root, "missing.sock"));
+  const [status] = (await once(child, "close")) as [number | null];
 
-    expect(result.status).toBe(0);
-    expect(result.stdout).not.toContain("restore");
-    expect(await exists(shim)).toBe(false);
-  });
+  return {
+    status,
+    stdout: Buffer.concat(chunks).toString("utf8"),
+    stderr: Buffer.concat(errors).toString("utf8"),
+  };
+};
 
-  it("only says what it would restore with --dry-run", async () => {
-    const { root, shim, record } = await shimRoot({ link: "../../.pi/agent/bin/pi" });
-    const result = await runUninstall(root, join(root, "missing.sock"), ["--dry-run"]);
+const colimaLog = (paths: Root) => readFile(join(paths.home, "colima.log"), "utf8").catch(() => "");
 
-    expect(result.status).toBe(0);
-    expect(result.stdout).toContain(`launcher: would restore ${shim} to ../../.pi/agent/bin/pi\n`);
-    expect(await readlink(shim)).toBe("../lib/node_modules/pi-extensions-mz/launcher/bin/pi-sandbox");
-    expect(await exists(record)).toBe(true);
-  });
-});
-
-const idleProcess = async (detached = false) => {
-  const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { detached, stdio: "ignore" });
+const idleProcess = async () => {
+  const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
 
   children.push(child);
 
@@ -339,43 +123,85 @@ const ended = (child: ChildProcess) =>
     ? Promise.resolve(child.signalCode)
     : once(child, "exit").then(([, signal]) => signal as NodeJS.Signals | null);
 
-const sandboxState = async () => {
-  const root = await realpath(await mkdtemp(join(tmpdir(), "pi-sandbox-uninstall-")));
-  const stateDir = join(root, "state");
-  const repoHash = "c".repeat(64);
-  const files = stateLayout(stateDir).repo(repoHash);
+describe("the hidden uninstall command", () => {
+  it("refuses while a launch is live and removes nothing", async () => {
+    const fake = createFakeBackend();
+    const harness = await createHarness({ backend: () => fake.backend });
+    const id = fake.addContainer({
+      name: "live",
+      labels: { [LABELS.managed]: "true" },
+      state: "running",
+      image: "x",
+    });
 
-  created.push(root);
+    await holdLaunch(harness);
 
-  await mkdir(files.proxy.directory, { recursive: true });
+    expect(await run(["__uninstall"], harness.deps)).toBe(75);
+    expect(harness.stderr()).toContain("1 pi sessions still run in the sandbox; exit them first");
+    expect(fake.containers.has(id)).toBe(true);
+  });
 
-  return { root, stateDir, files };
-};
+  it("removes the managed containers, networks, volumes and images by label, and releases every folder", async () => {
+    const fake = createFakeBackend();
+    const harness = await createHarness({ backend: () => fake.backend });
+    const repo = sha256Hex(harness.repoRoot);
+    const context = await tempDir("uninstall-images");
 
-describe("uninstall.sh and the host side of the sandbox state", () => {
-  it("removes a recorded pin and created dir, stops a live proxy and a sign-in, and removes the state dir", async () => {
-    const { root, stateDir, files } = await sandboxState();
-    const pin = join(root, "repo", ".git", "commondir");
-    const createdDir = join(root, "repo", "node_modules");
-    const foreignPin = join(root, "repo", ".git", "worktrees", "commondir");
+    await fake.backend.prepareProxyRoute({ hostPort: 3128, repoHash: repo, imageId: "relay" });
+
+    const managed = fake.addContainer({
+      name: "pi-sandbox-a",
+      labels: { [LABELS.managed]: "true", [LABELS.repoHash]: repo },
+      state: "running",
+      image: "x",
+    });
+    const foreign = fake.addContainer({ name: "foreign", labels: {}, state: "running", image: "x" });
+
+    await fake.backend.ensureVolume("pi-sandbox-agent-a", { [LABELS.repoHash]: repo });
+
+    const built = await fake.backend.buildImage(context, "pi-sandbox-layer:a");
+
+    await harness.writeJson(stateLayout(harness.stateDir).repo(repo).record, { root: harness.repoRoot });
+
+    expect(await run(["__uninstall"], harness.deps)).toBe(0);
+    expect(fake.containers.has(managed)).toBe(false);
+    expect(fake.containers.has(foreign)).toBe(true);
+    expect(fake.relays.has(repo)).toBe(false);
+    expect(fake.networks.has(`pi-sandbox-${repo.slice(0, 12)}`)).toBe(false);
+    expect(fake.volumes.has("pi-sandbox-agent-a")).toBe(false);
+    expect(fake.imageRemovals).toContain(built.id);
+    expect(harness.stoppedProxies).toContain(repo);
+    expect(harness.stdout()).toContain("host: released the created folders and proxies of 1 folders\n");
+  });
+
+  it("releases the host side and leaves the engine objects to the profile when the VM is stopped", async () => {
+    const harness = await createHarness({ backend: () => unreachable(createFakeBackend().backend) });
+    const repo = "c".repeat(64);
+    const mountPoint = join(harness.root, "elsewhere", "node_modules");
+
+    await mkdir(mountPoint, { recursive: true });
+
+    await harness.writeJson(stateLayout(harness.stateDir).repo(repo).created, [mountPoint]);
+
+    expect(await run(["__uninstall"], harness.deps)).toBe(0);
+    expect(await exists(mountPoint)).toBe(false);
+    expect(harness.stoppedProxies).toEqual([repo]);
+    expect(harness.stdout()).toContain(
+      "engine: the sandbox VM is not running, its objects go with the colima profile\n",
+    );
+  });
+});
+
+describe("uninstall.sh", { timeout: UNINSTALL_TIMEOUT_MS }, () => {
+  it("removes the created dirs, stops a live proxy, deletes the profile and removes the state dir", async () => {
+    const paths = await uninstallRoot();
+    const files = stateLayout(paths.stateDir).repo("c".repeat(64));
+    const createdDir = join(paths.root, "repo", "node_modules");
     const proxy = await idleProcess();
-    const login = await idleProcess(true);
 
-    await mkdir(dirname(foreignPin), { recursive: true });
+    await mkdir(files.proxy.directory, { recursive: true });
 
     await mkdir(createdDir, { recursive: true });
-
-    await writeFile(pin, ".\n");
-
-    await writeFile(foreignPin, "../..\n");
-
-    await writeFile(
-      files.pins,
-      JSON.stringify([
-        { path: pin, gitCommonDir: dirname(pin) },
-        { path: foreignPin, gitCommonDir: dirname(foreignPin) },
-      ]),
-    );
 
     await writeFile(files.created, JSON.stringify([createdDir]));
 
@@ -390,210 +216,157 @@ describe("uninstall.sh and the host side of the sandbox state", () => {
       }),
     );
 
-    await writeFile(
-      stateLayout(stateDir).mcpLogin,
-      JSON.stringify({
-        "mcp__docs|https://docs.example.com/": {
-          running: { pgid: login.pid, boot: bootTime(), start: await processStart(login.pid ?? 0) },
-        },
-      }),
-    );
-
-    const result = await runUninstall(root, join(root, "missing.sock"));
+    const result = await runUninstall(paths, { COLIMA_HOME: "/elsewhere" });
 
     expect(result.status).toBe(0);
-    expect(result.stdout).toContain("git: removed 1 git pins\n");
-    expect(result.stdout).toContain("mount points: removed 1 created directories\n");
-    expect(result.stdout).toContain("proxy: stopped 1 proxies\n");
-    expect(result.stdout).toContain("mcp: stopped 1 sign-ins\n");
-    expect(await ended(proxy)).toBe("SIGTERM");
-    expect(await ended(login)).toBe("SIGTERM");
-    expect(await exists(pin)).toBe(false);
-    expect(await exists(foreignPin)).toBe(true);
     expect(await exists(createdDir)).toBe(false);
-    expect(await exists(stateDir)).toBe(false);
-  });
-
-  it("leaves a proxy record whose pid now runs another process and a created dir that is no longer empty", async () => {
-    const { root, files } = await sandboxState();
-    const createdDir = join(root, "repo", "node_modules");
-    const proxy = await idleProcess();
-
-    await mkdir(join(createdDir, "kept"), { recursive: true });
-
-    await writeFile(files.created, JSON.stringify([createdDir]));
-
-    await writeFile(
-      files.proxy.record,
-      JSON.stringify({ pid: proxy.pid, boot: bootTime(), start: "Thu-Jan-1-00:00:00-1970" }),
+    expect(await ended(proxy)).toBe("SIGTERM");
+    expect(await exists(paths.stateDir)).toBe(false);
+    expect(result.stdout).toContain(
+      "colima: deleted profile pi-sandbox with its containers, volumes and images\n",
     );
-
-    const result = await runUninstall(root, join(root, "missing.sock"));
-
-    expect(result.status).toBe(0);
-    expect(result.stdout).toContain("proxy: stopped 0 proxies\n");
-    expect(proxy.exitCode).toBeNull();
-    expect(await exists(join(createdDir, "kept"))).toBe(true);
-  });
-
-  it("signals no sign-in group whose record has no start or whose pgid now runs another process", async () => {
-    const { root, stateDir } = await sandboxState();
-    const unstamped = await idleProcess(true);
-    const reused = await idleProcess(true);
-
-    await writeFile(
-      stateLayout(stateDir).mcpLogin,
-      JSON.stringify({
-        "mcp__a|https://a.example.com/": { running: { pgid: unstamped.pid, boot: bootTime() } },
-        "mcp__b|https://b.example.com/": {
-          running: { pgid: reused.pid, boot: bootTime(), start: "Thu-Jan-1-00:00:00-1970" },
-        },
-      }),
+    expect((await colimaLog(paths)).split("\n")).toContain(
+      `${join(paths.home, ".colima")} delete --profile pi-sandbox --force`,
     );
-
-    const result = await runUninstall(root, join(root, "missing.sock"));
-
-    expect(result.status).toBe(0);
-    expect(result.stdout).toContain("mcp: stopped 0 sign-ins\n");
-    expect(unstamped.exitCode).toBeNull();
-    expect(reused.exitCode).toBeNull();
   });
 
   it("refuses and removes nothing while a launch is live", async () => {
-    const { root, stateDir, files } = await sandboxState();
-    const pin = join(root, "pin");
-
-    await writeFile(pin, ".\n");
-
-    await writeFile(files.pins, JSON.stringify([{ path: pin, gitCommonDir: root }]));
+    const paths = await uninstallRoot();
+    const files = stateLayout(paths.stateDir).repo("c".repeat(64));
+    const createdDir = join(paths.root, "repo", "node_modules");
 
     await mkdir(files.launches, { recursive: true });
+
+    await mkdir(createdDir, { recursive: true });
+
+    await writeFile(files.created, JSON.stringify([createdDir]));
 
     await writeFile(
       join(files.launches, "00000000000000aa.json"),
       JSON.stringify({ ...(await processMark()), launchId: "00000000000000aa" }),
     );
 
-    const result = await runUninstall(root, join(root, "missing.sock"));
+    const result = await runUninstall(paths);
 
-    expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain("exit the pi sessions first");
-    expect(result.stdout).not.toContain("launcher:");
-    expect(await exists(pin)).toBe(true);
-    expect(await exists(stateDir)).toBe(true);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("pi sessions still run in the sandbox, nothing was removed");
+    expect(await exists(createdDir)).toBe(true);
+    expect(await exists(paths.stateDir)).toBe(true);
+    expect(await colimaLog(paths)).not.toContain("delete");
   });
-});
 
-const OLD_LINE = (binDir: string) => `export PATH="${binDir}:$PATH"`;
+  it("still deletes the profile and the host files when the launcher is missing", async () => {
+    const paths = await uninstallRoot();
+    const copy = join(paths.root, "copy", "launcher");
+    const shim = join(paths.home, ".local", "bin", "pi");
 
-const QUOTED_LINE = (binDir: string) => `export PATH='${binDir.replaceAll("'", "'\\''")}':"$PATH"`;
+    await mkdir(join(copy, "bin"), { recursive: true });
 
-const PATH_BLOCK = (binDir: string, line = OLD_LINE) =>
-  `alias ll=ls\n\n# pi-sandbox begin\n${line(binDir)}\n# pi-sandbox end\n`;
+    await writeFile(join(copy, "uninstall.sh"), await readFile(join(launcherRoot(), "uninstall.sh"), "utf8"));
 
-describe("uninstall.sh and the PATH block", () => {
-  it.each([
-    ["the old double-quoted", OLD_LINE, "custom bin"],
-    ["the single-quoted", QUOTED_LINE, "b $HOME `x` it's"],
-  ])(
-    "finds the bin dir in %s PATH line under dash when --bin-dir is not given",
-    async (_form, line, name) => {
-      const root = await realpath(await mkdtemp(join(tmpdir(), "pi-sandbox-uninstall-")));
-      const binDir = join(root, name);
-      const shim = join(binDir, "pi");
+    await writeFile(
+      join(copy, "bin", "path-block.sh"),
+      await readFile(join(launcherRoot(), "bin", "path-block.sh"), "utf8"),
+    );
 
-      created.push(root);
+    await mkdir(paths.stateDir, { recursive: true });
 
-      await mkdir(binDir, { recursive: true });
+    await symlink("../lib/node_modules/pi-extensions-mz/launcher/bin/pi-sandbox", shim);
 
-      await mkdir(join(root, "home"), { recursive: true });
-
-      await symlink("../lib/node_modules/pi-extensions-mz/launcher/bin/pi-sandbox", shim);
-
-      await writeFile(join(root, "home", ".zshrc"), PATH_BLOCK(binDir, line));
-
-      const result = await runUninstall(root, join(root, "missing.sock"), [], {
-        binDir: false,
-        shell: "/bin/dash",
-      });
-
-      expect(result.status).toBe(0);
-      expect(result.stdout).toContain(`launcher: removed ${shim}\n`);
-      expect(await exists(shim)).toBe(false);
-      expect(await readFile(join(root, "home", ".zshrc"), "utf8")).toBe("alias ll=ls\n\n");
-    },
-  );
-
-  it("leaves an rc file whose markers do not pair up as it is", async () => {
-    const root = await realpath(await mkdtemp(join(tmpdir(), "pi-sandbox-uninstall-")));
-    const text = `${PATH_BLOCK("/opt/bin")}# pi-sandbox begin\nexport KEEP=me\n`;
-
-    created.push(root);
-
-    await mkdir(join(root, "home"), { recursive: true });
-
-    await writeFile(join(root, "home", ".zshrc"), text);
-
-    const result = await runUninstall(root, join(root, "missing.sock"));
+    const result = await runUninstall(paths, {}, copy);
 
     expect(result.status).toBe(0);
-    expect(result.stdout).toContain("left as it is");
-    expect(await readFile(join(root, "home", ".zshrc"), "utf8")).toBe(text);
+    expect(result.stdout).toContain("launcher: not found");
+    expect(await colimaLog(paths)).toContain("delete --profile pi-sandbox --force");
+    expect(await exists(shim)).toBe(false);
+    expect(await exists(paths.stateDir)).toBe(false);
   });
 
-  it("refuses a relative --bin-dir and a --bin-dir without a value", async () => {
-    const root = await realpath(await mkdtemp(join(tmpdir(), "pi-sandbox-uninstall-")));
+  it("fails naming the command when colima cannot delete the profile", async () => {
+    const paths = await uninstallRoot();
+    const result = await runUninstall(paths, { DELETE_EXIT: "1" });
 
-    created.push(root);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "the colima profile pi-sandbox could not be deleted; run colima delete --profile pi-sandbox --force",
+    );
+  });
 
-    const relative = await runUninstall(root, join(root, "missing.sock"), ["--bin-dir", "bin"], {
-      binDir: false,
+  it("puts back exactly the link install.sh replaced, and names it when the path is taken", async () => {
+    const paths = await uninstallRoot();
+    const shim = join(paths.home, ".local", "bin", "pi");
+    const record = join(paths.stateDir, "replaced-pi-link");
+
+    await mkdir(paths.stateDir, { recursive: true });
+
+    await writeFile(record, "../../.pi/agent/bin/pi\n");
+
+    await symlink("../lib/node_modules/pi-extensions-mz/launcher/bin/pi-sandbox", shim);
+
+    const restored = await runUninstall(paths);
+
+    expect(restored.status).toBe(0);
+    expect(await readlink(shim)).toBe("../../.pi/agent/bin/pi");
+    expect(await exists(record)).toBe(false);
+
+    await rm(shim);
+
+    await writeFile(shim, "#!/bin/sh\necho mine\n");
+
+    await mkdir(paths.stateDir, { recursive: true });
+
+    await writeFile(record, "../../.pi/agent/bin/pi\n");
+
+    const taken = await runUninstall(paths);
+
+    expect(taken.status).toBe(0);
+    expect(taken.stdout).toContain(`launcher: ${shim} is not the pi-sandbox launcher, left as it is\n`);
+    expect(taken.stdout).toContain(`pi's managed link was ${shim} -> ../../.pi/agent/bin/pi`);
+    expect(await readFile(shim, "utf8")).toBe("#!/bin/sh\necho mine\n");
+  });
+
+  it("removes its PATH blocks and the fish file, and leaves an rc file whose markers do not pair up", async () => {
+    const paths = await uninstallRoot();
+    const fish = join(paths.home, ".config", "fish", "conf.d", "pi-sandbox.fish");
+    const zshrc = join(paths.home, ".zshrc");
+    const bashrc = join(paths.home, ".bashrc");
+    const broken = "alias a=1\n# pi-sandbox begin\nexport KEEP=me\n";
+
+    await mkdir(dirname(fish), { recursive: true });
+
+    await writeFile(fish, "\n# pi-sandbox begin\nset -gx PATH '/opt/bin' $PATH\n# pi-sandbox end\n");
+
+    await writeFile(
+      zshrc,
+      "alias ll=ls\n\n# pi-sandbox begin\nexport PATH='/opt/bin':\"$PATH\"\n# pi-sandbox end\n",
+    );
+
+    await writeFile(bashrc, broken);
+
+    await writeFile(join(paths.home, "no-profile"), "");
+
+    const result = await runUninstall(paths);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("colima: no profile pi-sandbox\n");
+    expect(await exists(fish)).toBe(false);
+    expect(await readFile(zshrc, "utf8")).toBe("alias ll=ls\n\n");
+    expect(await readFile(bashrc, "utf8")).toBe(broken);
+    expect(result.stdout).toContain("left as it is");
+  });
+
+  it("takes no options", async () => {
+    const paths = await uninstallRoot();
+    const result = await runUninstall(paths, {}, launcherRoot());
+    const keepVm = await new Promise<number | null>((resolve) => {
+      const child = spawn("sh", [join(launcherRoot(), "uninstall.sh"), "--keep-vm"], {
+        env: { HOME: paths.home, PATH: `${paths.tools}:/usr/bin:/bin`, PI_SANDBOX_STATE_DIR: paths.stateDir },
+      });
+
+      child.on("close", resolve);
     });
 
-    await rm(join(root, "home"), { recursive: true });
-
-    const missing = await runUninstall(root, join(root, "missing.sock"), ["--bin-dir"], { binDir: false });
-
-    expect(relative.status).toBe(1);
-    expect(relative.stderr).toContain("pi-sandbox uninstall: --bin-dir needs an absolute path, got bin\n");
-    expect(missing.status).toBe(1);
-    expect(missing.stderr).toContain("pi-sandbox uninstall: --bin-dir needs a value\n");
-  });
-});
-
-describe("bin/uninstall-engine.mjs and the launcher it cleans up after", () => {
-  const source = () => readFile(join(launcherRoot(), "bin", "uninstall-engine.mjs"), "utf8");
-
-  const constant = (text: string, name: string) => new RegExp(`const ${name} = (.+);`).exec(text)?.[1];
-
-  const joined = (base: string, from: string, to: string) =>
-    `join(${base}, ${relative(from, to)
-      .split(sep)
-      .map((part) => JSON.stringify(part))
-      .join(", ")})`;
-
-  it("uses the launcher's label names and pin text", async () => {
-    const text = await source();
-    const pin = new RegExp(/^\/(.+)\/$/.exec(constant(text, "PIN") ?? "")?.[1] ?? "^$");
-
-    expect(constant(text, "MANAGED_LABEL")).toBe(JSON.stringify(LABELS.managed));
-    expect(constant(text, "RELAY_LABEL")).toBe(JSON.stringify(LABELS.relay));
-    expect(pin.test(PIN_TEXT)).toBe(true);
-    expect(pin.test("../..\n")).toBe(false);
-  });
-
-  it("reads the state files where the launcher writes them", async () => {
-    const text = await source();
-    const stateDir = "/state";
-    const layout = stateLayout(stateDir);
-    const repo = layout.repo("e".repeat(64));
-
-    expect(text).toContain(joined("stateDir", stateDir, layout.repos));
-    expect(text).toContain(joined("stateDir", stateDir, layout.mcpLogin));
-    expect(text).toContain(joined("repo", repo.directory, repo.launches));
-    expect(text).toContain(joined("repo", repo.directory, repo.pins));
-    expect(text).toContain(joined("repo", repo.directory, repo.created));
-    expect(text).toContain(joined("repo", repo.directory, repo.proxy.record));
-    expect(dirname(repo.directory)).toBe(layout.repos);
+    expect(result.status).toBe(0);
+    expect(keepVm).toBe(1);
   });
 });

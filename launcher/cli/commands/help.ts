@@ -13,14 +13,10 @@ const COMMANDS: Array<[string, string]> = [
     "allow a host for this repository, or with --user for every repository, until revoked",
   ],
   ["pi sandbox egress revoke <host[:port]> [--user]", "remove a grant"],
-  ["pi sandbox egress list [--user] [--denied]", "grants, or the hosts the proxy blocked"],
+  ["pi sandbox egress list [--denied]", "grants with their scope, or the hosts the proxy blocked"],
   [
-    "pi sandbox gc [--shared-caches]",
-    "remove sandboxes no session uses, volumes of deleted repositories and unused images; --shared-caches also your unused shared cache volumes",
-  ],
-  [
-    "pi sandbox reset [--volumes]",
-    "remove this repository's sandbox once none of its sessions runs; --volumes also its cache, overlay and agent volumes",
+    "pi sandbox reset",
+    "remove this folder's sandbox with its overlay and agent volumes once none of its sessions runs",
   ],
   ["pi sandbox stop", "stop the sandbox VM when no pi session runs"],
   ["pi sandbox doctor", "prepare the sandbox like pi and print one ok, warn, fail or skip line per check"],

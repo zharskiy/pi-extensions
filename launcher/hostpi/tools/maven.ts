@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import type { SecretRef } from "../../config/index.ts";
 import {
+  hasUrlUserinfo,
   isSecretName,
   type MavenHeader,
   type MavenRepository,
@@ -9,11 +10,11 @@ import {
   parseMavenSettings,
   type XmlElement,
 } from "../../shared/index.ts";
-import { type Endpoint, endpointOf, hasUrlUserinfo, uniqueEndpoints, withoutUserinfo } from "../endpoints.ts";
+import { type Endpoint, endpointOf, uniqueEndpoints, withoutUserinfo } from "../endpoints.ts";
 import { mergeSections, noticeOnly, placeholderOf, rulesFor, type Section } from "../rules.ts";
 import type { DerivedTools, ToolsInput } from "../types.ts";
 import { EMPTY_MAVEN } from "../types.ts";
-import { readOptional } from "./files.ts";
+import { type Registry, readOptional, registriesOf } from "./files.ts";
 
 type MavenRender = DerivedTools["maven"];
 
@@ -187,7 +188,7 @@ const serverSection = (
   return { ...section, notices: [...user.notices, ...section.notices] };
 };
 
-const PROPERTIES = "properties";
+const PROFILE_PARTS = new Set(["id", "activation", "repositories", "pluginRepositories"]);
 
 const sanitizedUrl = (element: XmlElement): Section<XmlElement> =>
   hasUrlUserinfo(element.text.trim())
@@ -197,27 +198,18 @@ const sanitizedUrl = (element: XmlElement): Section<XmlElement> =>
       )
     : noticeOnly(element);
 
-const sanitizedChild = (parent: string, element: XmlElement): Section<XmlElement[]> => {
-  if (parent === PROPERTIES && isSecretName(element.name)) {
-    return noticeOnly(
-      [],
-      `maven profiles: the property ${element.name} looks like a secret and stays on the host`,
-    );
-  }
-
-  const section = sanitized(element);
-
-  return { ...section, value: [section.value] };
-};
-
 const sanitized = (element: XmlElement): Section<XmlElement> => {
   if (element.name === "url" && element.children.length === 0) {
     return sanitizedUrl(element);
   }
 
-  const children = mergeSections(element.children.map((child) => sanitizedChild(element.name, child)));
+  const kept =
+    element.name === "profile"
+      ? element.children.filter((child) => PROFILE_PARTS.has(child.name))
+      : element.children;
+  const children = mergeSections(kept.map(sanitized));
 
-  return { value: { ...element, children: children.values.flat() }, rules: [], notices: children.notices };
+  return { value: { ...element, children: children.values }, rules: [], notices: children.notices };
 };
 
 const localRepositoryNotices = (settings: MavenSettings) =>
@@ -235,18 +227,20 @@ const mirrorSection = (mirror: MavenRepository): Section<MavenRepository> =>
       )
     : noticeOnly(mirror);
 
-export const deriveMaven = async (input: ToolsInput): Promise<Section<MavenRender>> => {
+export const deriveMaven = async (
+  input: ToolsInput,
+): Promise<Section<MavenRender> & { registries: Registry[] }> => {
   const file = join(input.home, ".m2", "settings.xml");
   const text = await readOptional(file);
 
   if (text === undefined) {
-    return noticeOnly(EMPTY_MAVEN);
+    return { ...noticeOnly(EMPTY_MAVEN), registries: [] };
   }
 
   const settings = parseMavenSettings(text);
 
   if (settings === undefined) {
-    return noticeOnly(EMPTY_MAVEN, `${file}: not a Maven settings document, ignored`);
+    return { ...noticeOnly(EMPTY_MAVEN, `${file}: not a Maven settings document, ignored`), registries: [] };
   }
 
   const merged = mergeSections(
@@ -264,5 +258,9 @@ export const deriveMaven = async (input: ToolsInput): Promise<Section<MavenRende
       ...passthrough.notices,
       ...localRepositoryNotices(settings),
     ],
+    registries: registriesOf(
+      "maven",
+      [...settings.mirrors, ...settings.repositories].map((repository) => repository.url),
+    ),
   };
 };

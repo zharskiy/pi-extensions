@@ -1,6 +1,7 @@
-import { authorityOf, matchesDenyEntry, parseEntry } from "../../config/index.ts";
+import { authorityOf, matchesDenyEntry, parseEntry, parseHostEntry, TLS_PORT } from "../../config/index.ts";
 import { activeGrants, addGrant, type Grant, readGrants, revokeGrants } from "../../grants/index.ts";
 import { LauncherError } from "../../shared/index.ts";
+import { assertSafeMounts } from "../../workspace/index.ts";
 import { type LaunchContext, openContext } from "../context.ts";
 import { type CliDeps, writeLine, writeLines } from "../deps.ts";
 import { usageOf } from "./help.ts";
@@ -11,23 +12,39 @@ interface Target {
   port: number;
 }
 
-const HOST = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/;
+const USER_FLAG = "--user";
 
-const DEFAULT_PORT = 443;
+const DENIED_FLAG = "--denied";
 
-const MAX_PORT = 65_535;
+const HELP_FLAGS = ["-h", "--help"];
+
+const GRANTS_OFF = "grants are turned off by egress.grants";
 
 const usage = (problem: string) => new LauncherError(problem, usageOf("egress"));
 
-const parseTarget = (text: string | undefined): Target => {
-  const [host = "", port, ...extra] = (text ?? "").trim().toLowerCase().split(":");
-  const number = port === undefined ? DEFAULT_PORT : Number(port);
+const isFlag = (arg: string) => arg.startsWith("-");
 
-  if (!HOST.test(host) || extra.length > 0 || !Number.isInteger(number) || number < 1 || number > MAX_PORT) {
-    throw usage(`egress: ${text ?? "(none)"} is not a host or host:port`);
+const parseTarget = (text: string | undefined): Target => {
+  const entry = parseHostEntry((text ?? "").trim(), { wildcard: false, port: true });
+
+  if ("problem" in entry) {
+    throw usage(`egress: ${text ?? "(none)"} ${entry.problem}`);
   }
 
-  return { host, port: number };
+  return { host: entry.pattern, port: entry.port ?? TLS_PORT };
+};
+
+const targetArgs = (command: string, args: string[]) => {
+  const flags = args.filter(isFlag);
+  const [text, ...extra] = args.filter((arg) => !isFlag(arg));
+
+  assertOptions(command, flags, [USER_FLAG]);
+
+  if (extra.length > 0) {
+    throw usage(`${command}: takes one host, got ${[text, ...extra].join(" ")}`);
+  }
+
+  return { text, target: parseTarget(text), user: flags.includes(USER_FLAG) };
 };
 
 const scopeText = (grant: Grant) => (grant.repoHash === undefined ? "every repository" : "this repository");
@@ -50,49 +67,65 @@ const assertNotDenied = (context: LaunchContext, target: Target) => {
 };
 
 const allow = async (deps: CliDeps, args: string[]) => {
-  const [text, ...flags] = args;
-
-  assertOptions("egress allow", flags, ["--user"]);
-
-  const target = parseTarget(text);
+  const { target, user } = targetArgs("egress allow", args);
   const { context } = await openContext(deps, "host");
+
+  if (!user) {
+    assertSafeMounts([context.workspace.repoRoot], { home: deps.home, env: deps.env });
+  }
 
   assertNotDenied(context, target);
 
   const grant = await addGrant(
     context.stateDir,
-    { ...target, ...(flags.includes("--user") ? {} : { repoHash: context.repoHash }) },
+    { ...target, ...(user ? {} : { repoHash: context.repoHash }) },
     context.effective.config.egress.grants,
     deps.now(),
   );
+  const scope = user ? "every repository" : context.workspace.repoRoot;
 
-  writeLine(deps.stdout, `allowed ${grantText(grant)}`);
+  writeLine(deps.stdout, `allowed ${authorityOf(grant.host, grant.port)} for ${scope}`);
 
   return 0;
 };
 
+const otherScopeHolds = async (
+  context: LaunchContext,
+  target: Target,
+  port: number | undefined,
+  user: boolean,
+) =>
+  (await readGrants(context.stateDir)).some(
+    (grant) =>
+      grant.host === target.host &&
+      (port === undefined || grant.port === port) &&
+      grant.repoHash === (user ? context.repoHash : undefined),
+  );
+
 const revoke = async (deps: CliDeps, args: string[]) => {
-  const [text, ...flags] = args;
-
-  assertOptions("egress revoke", flags, ["--user"]);
-
-  const target = parseTarget(text);
+  const { text, target, user } = targetArgs("egress revoke", args);
   const { context } = await openContext(deps, "host");
+  const port = text?.includes(":") ? target.port : undefined;
   const count = await revokeGrants(context.stateDir, {
     host: target.host,
-    ...(text?.includes(":") ? { port: target.port } : {}),
-    ...(flags.includes("--user") ? {} : { repoHash: context.repoHash }),
+    ...(port === undefined ? {} : { port }),
+    ...(user ? {} : { repoHash: context.repoHash }),
   });
+
+  if (count === 0 && (await otherScopeHolds(context, target, port, user))) {
+    throw new LauncherError(
+      `egress: ${text} has no grant for ${user ? "every repository" : "this repository"}; its grant is for ${user ? "this repository" : "every repository"}`,
+      `pi sandbox egress revoke ${text}${user ? "" : ` ${USER_FLAG}`}`,
+    );
+  }
 
   writeLine(deps.stdout, `revoked ${count} grant${count === 1 ? "" : "s"} for ${text}`);
 
   return 0;
 };
 
-export const grantLines = async (context: LaunchContext, userOnly = false) =>
-  activeGrants(await readGrants(context.stateDir), context.repoHash)
-    .filter((grant) => !userOnly || grant.repoHash === undefined)
-    .map(grantText);
+export const grantLines = async (context: LaunchContext) =>
+  activeGrants(await readGrants(context.stateDir), context.repoHash).map(grantText);
 
 const deniedLines = async (deps: CliDeps, context: LaunchContext) => {
   const denials = await deps.proxy.denials(context.stateDir, context.repoHash, 0);
@@ -103,34 +136,55 @@ const deniedLines = async (deps: CliDeps, context: LaunchContext) => {
   );
 };
 
+const listedGrants = async (context: LaunchContext) => {
+  if (!context.effective.config.egress.grants) {
+    return [GRANTS_OFF];
+  }
+
+  const lines = await grantLines(context);
+
+  return lines.length === 0 ? ["no active grants"] : lines;
+};
+
+const listedDenials = async (deps: CliDeps, context: LaunchContext) => {
+  const lines = await deniedLines(deps, context);
+
+  return lines.length === 0 ? ["no denials recorded by the running proxy"] : lines;
+};
+
 const list = async (deps: CliDeps, args: string[]) => {
-  assertOptions("egress list", args, ["--denied", "--user"]);
+  assertOptions("egress list", args, [DENIED_FLAG]);
 
   const { context } = await openContext(deps, "host");
-  const lines = args.includes("--denied")
-    ? await deniedLines(deps, context)
-    : await grantLines(context, args.includes("--user"));
-  const empty = args.includes("--denied") ? "no denials recorded by the running proxy" : "no active grants";
+  const lines = args.includes(DENIED_FLAG) ? await listedDenials(deps, context) : await listedGrants(context);
 
-  writeLines(deps.stdout, lines.length === 0 ? [empty] : lines);
+  writeLines(deps.stdout, lines);
 
   return 0;
 };
 
+const ACTIONS: Record<string, (deps: CliDeps, args: string[]) => Promise<number>> = { allow, revoke, list };
+
 export const egressCommand = (deps: CliDeps, args: string[]) => {
-  const [action, ...rest] = args;
+  const [action = "", ...rest] = args;
 
-  if (action === "allow") {
-    return allow(deps, rest);
+  if (HELP_FLAGS.includes(action)) {
+    writeLine(deps.stdout, `usage: ${usageOf("egress")}`);
+
+    return Promise.resolve(0);
   }
 
-  if (action === "revoke") {
-    return revoke(deps, rest);
+  const run = Object.hasOwn(ACTIONS, action) ? ACTIONS[action] : undefined;
+
+  if (run === undefined) {
+    throw usage(`unknown egress action "${action}"`);
   }
 
-  if (action === "list") {
-    return list(deps, rest);
+  if (rest.some((arg) => HELP_FLAGS.includes(arg))) {
+    writeLine(deps.stdout, `usage: ${usageOf(`egress ${action}`)}`);
+
+    return Promise.resolve(0);
   }
 
-  throw usage(`unknown egress action "${action ?? ""}"`);
+  return run(deps, rest);
 };

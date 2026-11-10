@@ -4,17 +4,11 @@ import { unavailable } from "./errors.ts";
 
 const DEFAULT_TTL_SECONDS = 300;
 
-const SECONDS_THRESHOLD = 1e12;
-
 const EXPIRY_SKEW_MS = 30_000;
 
 const COMMAND_TIMEOUT_MS = 30_000;
 
 const expiryOf = (value: unknown) => {
-  if (typeof value === "number") {
-    return value < SECONDS_THRESHOLD ? value * 1000 : value;
-  }
-
   const parsed = typeof value === "string" ? Date.parse(value) : Number.NaN;
 
   return Number.isNaN(parsed) ? undefined : parsed;

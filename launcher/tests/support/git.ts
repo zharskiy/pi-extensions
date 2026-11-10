@@ -19,7 +19,7 @@ const IDENTITY = [
   "advice.addEmbeddedRepo=false",
 ];
 
-export const gitHome = mkdtempSync(join(tmpdir(), "pi-sandbox-git-home-"));
+const gitHome = mkdtempSync(join(tmpdir(), "pi-sandbox-git-home-"));
 
 afterAll(() => {
   rmSync(gitHome, { recursive: true, force: true });
@@ -29,7 +29,7 @@ const inherited = Object.entries(process.env).filter(
   (entry): entry is [string, string] => entry[1] !== undefined && !entry[0].startsWith("GIT_"),
 );
 
-export const gitEnv: Record<string, string> = {
+const gitEnv: Record<string, string> = {
   ...Object.fromEntries(inherited),
   HOME: gitHome,
   XDG_CONFIG_HOME: join(gitHome, ".config"),

@@ -1,5 +1,5 @@
 import { connect, type Socket } from "node:net";
-import { normalizeHost, type ParentProxy } from "../config/index.ts";
+import { normalizeHost, type ParentProxy, parentProxyOf } from "../config/index.ts";
 
 export interface ParentRoute {
   host: string;
@@ -12,8 +12,6 @@ export interface ParentRoute {
 const HEAD_END = "\r\n\r\n";
 
 const MAX_HEAD_BYTES = 16_384;
-
-const DEFAULT_PARENT_PORT = 80;
 
 const DIAL_TIMEOUT_MS = 10_000;
 
@@ -39,64 +37,21 @@ const matchesNoProxy = (host: string, entry: string) => {
 export const bypassesParent = (noProxy: string[], host: string) =>
   noProxy.some((entry) => entry.trim() !== "" && matchesNoProxy(normalizeHost(host), entry));
 
-const listOf = (value: string | undefined) =>
-  (value ?? "")
-    .split(",")
-    .map((entry) => entry.trim())
-    .filter((entry) => entry !== "");
-
-const setOf = (value: string | undefined) => (value === undefined || value === "" ? undefined : value);
-
-const parseUrl = (value: string) => {
-  try {
-    return new URL(value);
-  } catch {
-    return undefined;
-  }
-};
-
-export type ParentTarget = { host: string; port: number } | { unsupported: string } | undefined;
-
-export const parentTarget = (parent: ParentProxy, env: Record<string, string | undefined>): ParentTarget => {
-  const text = parent === "none" ? undefined : (setOf(env.HTTPS_PROXY) ?? setOf(env.https_proxy));
-
-  if (text === undefined) {
-    return undefined;
-  }
-
-  const url = parseUrl(text);
-
-  if (url === undefined) {
-    return { unsupported: "HTTPS_PROXY is not a URL" };
-  }
-
-  if (url.protocol !== "http:") {
-    return {
-      unsupported: `HTTPS_PROXY uses ${url.protocol.slice(0, -1)}, only http parent proxies are supported`,
-    };
-  }
-
-  return {
-    host: url.hostname.replace(/^\[(.*)\]$/, "$1"),
-    port: Number(url.port || DEFAULT_PARENT_PORT),
-  };
-};
-
 export const parentRouteFor = (
   parent: ParentProxy,
   env: Record<string, string | undefined>,
-  credentials?: string,
 ): ParentRoute | undefined => {
-  const target = parentTarget(parent, env);
+  const target = parentProxyOf(parent, env);
 
   if (target === undefined || "unsupported" in target) {
     return undefined;
   }
 
   return {
-    ...target,
-    noProxy: listOf(setOf(env.NO_PROXY) ?? env.no_proxy),
-    authorization: credentials === undefined ? undefined : basicAuthorization(credentials),
+    host: target.host,
+    port: target.port,
+    noProxy: target.noProxy,
+    ...(target.credentials === undefined ? {} : { authorization: basicAuthorization(target.credentials) }),
   };
 };
 

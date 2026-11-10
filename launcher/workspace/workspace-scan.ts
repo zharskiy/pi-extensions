@@ -6,7 +6,7 @@ import { gitFileTarget, hasGitDirShape, isGitName } from "./git/layout.ts";
 import { isNodeLockfile, NODE_OVERLAY, overlaysMarkedBy } from "./overlay-markers.ts";
 import { walkLevels } from "./walk.ts";
 
-const SCAN_BUDGET = 50_000;
+export const SCAN_BUDGET = 50_000;
 
 const PACKAGES_PER_REPO = 256;
 
@@ -31,8 +31,6 @@ export interface ScanOptions {
   budget?: number;
   skipOverlays?: boolean;
 }
-
-export const scanBudgetOf = (budget = SCAN_BUDGET) => budget;
 
 interface Pending {
   dir: string;
@@ -205,7 +203,7 @@ export const scanWorkspace = async (
   const skipOverlays = options.skipOverlays === true && options.overlays !== false;
   const { state, complete } = await walkLevels(
     [{ dir: root, owners: [], underLockfile: false }],
-    scanBudgetOf(options.budget),
+    options.budget ?? SCAN_BUDGET,
     { repos: [], bare: [], overlays: [], variants: [], unreadable: [], packages: {} } as Walk,
     {
       list: (pending: Pending) => listed(pending, findRepos),

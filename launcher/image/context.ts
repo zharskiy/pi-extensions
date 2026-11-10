@@ -25,7 +25,12 @@ export const reusableImage = async (
 
 export const buildInContext = async (
   input: BuildContextInput,
-  build: { prefix: string; tag: string; fill: (dir: string) => Promise<unknown> },
+  build: {
+    prefix: string;
+    tag: string;
+    args?: Record<string, string>;
+    fill: (dir: string) => Promise<unknown>;
+  },
 ) => {
   const contextDir = stateLayout(input.stateDir).buildContext(
     `${build.prefix}-${randomBytes(4).toString("hex")}`,
@@ -36,7 +41,7 @@ export const buildInContext = async (
 
     await build.fill(contextDir);
 
-    const buildArgs = buildProxyArgs(input.config.egress.parentProxy, input.env ?? {});
+    const buildArgs = { ...buildProxyArgs(input.config.egress.parentProxy, input.env ?? {}), ...build.args };
 
     return await input.backend.buildImage(contextDir, build.tag, buildArgs, input.progress);
   } finally {

@@ -19,8 +19,7 @@
         "header": "authorization",
         "template": "Bearer {secret}",
         "secret": {
-          "command": ["/usr/local/bin/example-sso", "token", "--audience", "gateway"],
-          "ttlSeconds": 300
+          "command": ["/usr/local/bin/example-sso", "token", "--audience", "gateway"]
         }
       },
       {

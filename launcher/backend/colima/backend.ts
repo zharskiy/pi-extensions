@@ -2,14 +2,7 @@ import { existsSync } from "node:fs";
 import { type CommandRunner, errorMessage, LauncherError } from "../../shared/index.ts";
 import type { Backend, ContainerSpec, Detection } from "../types.ts";
 import { containerBody, type EngineContainer, labelFilters, summaryOf } from "./container-body.ts";
-import {
-  CALL_TIMEOUT_MS,
-  createEngineClient,
-  engineError,
-  messageOf,
-  REMOVAL_TIMEOUT_MS,
-  segment,
-} from "./engine-client.ts";
+import { createEngineClient, type EngineTimeouts, engineError, messageOf, segment } from "./engine-client.ts";
 import { runExec } from "./exec-session.ts";
 import { createImageOperations } from "./images.ts";
 import { ENGINE_PROFILE, engineSocketPath } from "./profile.ts";
@@ -22,7 +15,7 @@ export interface ColimaBackendOptions {
   stateDir: string;
   runner: CommandRunner;
   socketPath?: string;
-  timeouts?: { callMs: number; pingMs: number; removalMs: number };
+  timeouts?: EngineTimeouts;
   pause?: (ms: number) => Promise<void>;
 }
 
@@ -35,9 +28,7 @@ interface EngineVersion {
 
 const STOP_TIMEOUT_SECONDS = 5;
 
-const PING_TIMEOUT_MS = 5000;
-
-const TIMEOUTS = { callMs: CALL_TIMEOUT_MS, pingMs: PING_TIMEOUT_MS, removalMs: REMOVAL_TIMEOUT_MS };
+const REMOVAL_WAIT_MS = 30_000;
 
 const MISSING_BIND_SOURCE = /bind source path does not exist: (.+)$/;
 
@@ -49,8 +40,7 @@ const unsharedSource = (body: Buffer) => {
 
 export const createColimaBackend = (options: ColimaBackendOptions): Backend => {
   const socket = () => options.socketPath ?? engineSocketPath(options.home);
-  const timeouts = options.timeouts ?? TIMEOUTS;
-  const client = createEngineClient(socket, timeouts);
+  const client = createEngineClient(socket, options.timeouts);
   const images = createImageOperations(client, options.runner);
   const volumes = createVolumeOperations(client);
   const relay = createRelayOperations(client, options.pause);
@@ -59,7 +49,7 @@ export const createColimaBackend = (options: ColimaBackendOptions): Backend => {
 
   const detect = async (): Promise<Detection> => {
     try {
-      await client.call({ method: "GET", path: "/_ping", timeoutMs: timeouts.pingMs });
+      await client.call({ method: "GET", path: "/_ping" });
 
       return { available: true };
     } catch (error) {
@@ -89,7 +79,7 @@ export const createColimaBackend = (options: ColimaBackendOptions): Backend => {
     );
 
     if (response.status === 409) {
-      throw new LauncherError(`container name ${spec.name} is already in use`, "run pi sandbox reset");
+      throw new LauncherError(`unexpected name clash: container name ${spec.name} is already in use`);
     }
 
     if (response.status === 400) {
@@ -119,25 +109,28 @@ export const createColimaBackend = (options: ColimaBackendOptions): Backend => {
     );
   };
 
-  const waitRemoved = async (id: string, timeoutMs: number) => {
+  const removeContainer = async (id: string) => {
+    await client.call(
+      { method: "DELETE", path: `/containers/${segment(id)}`, query: { force: true } },
+      [404, 409],
+    );
+
     await client
       .call(
         {
           method: "POST",
           path: `/containers/${segment(id)}/wait`,
           query: { condition: "removed" },
-          timeoutMs,
+          timeoutMs: REMOVAL_WAIT_MS,
         },
-        [404, 409],
+        [404],
       )
-      .catch(() => undefined);
-  };
-
-  const removeContainer = async (id: string) => {
-    await client.call(
-      { method: "DELETE", path: `/containers/${segment(id)}`, query: { force: true } },
-      [404, 409],
-    );
+      .catch((error: unknown) => {
+        throw new LauncherError(
+          `container ${id} was not removed within ${REMOVAL_WAIT_MS / 1000} s: ${errorMessage(error)}`,
+          "the engine may still be finishing it; the next pi start removes what is left",
+        );
+      });
   };
 
   const status = async () => {
@@ -169,7 +162,6 @@ export const createColimaBackend = (options: ColimaBackendOptions): Backend => {
     createContainer,
     startContainer,
     stopContainer,
-    waitRemoved,
     removeContainer,
     exec: (spec, io) => runExec(client, spec, io),
     ensureVolume: volumes.ensureVolume,

@@ -1,6 +1,6 @@
 import { SECRET_MARKER, type SecretRef } from "../config/index.ts";
-import { isAuthLikeHeader, isJsonObject, isSecretName, looksLikeJwt } from "../shared/index.ts";
-import { type Endpoint, hasUrlUserinfo } from "./endpoints.ts";
+import { isAuthLikeHeader, isJsonObject, isSecretShapedValue } from "../shared/index.ts";
+import type { Endpoint } from "./endpoints.ts";
 import { jsonPointer } from "./json.ts";
 import { type DeriveContext, mergeSections, placeholderOf, rulesFor, type Section } from "./rules.ts";
 import type { JsonObject } from "./types.ts";
@@ -19,19 +19,9 @@ export interface HeaderTarget {
   literalSecret?: (name: string) => SecretRef;
 }
 
-const CREDENTIAL_HEADERS = new Set(["cookie", "set-cookie", "proxy-authorization"]);
+const CREDENTIAL_WORDS = /auth|cookie|session[-_]?id/i;
 
-const CREDENTIAL_PREFIXES = ["x-auth", "x-api", "x-access", "x-session"];
-
-const isCredentialHeader = (name: string) => {
-  const lower = name.toLowerCase();
-
-  return (
-    isAuthLikeHeader(name) ||
-    CREDENTIAL_HEADERS.has(lower) ||
-    CREDENTIAL_PREFIXES.some((prefix) => lower.startsWith(prefix))
-  );
-};
+const isCredentialHeader = (name: string) => isAuthLikeHeader(name) || CREDENTIAL_WORDS.test(name);
 
 type TemplatePart =
   | { kind: "literal"; text: string; escape?: true }
@@ -96,19 +86,11 @@ const templateParts = (value: string, index = 0): TemplatePart[] => {
   return [part, ...templateParts(value, next)];
 };
 
-const SCHEME_PREFIX = /^(bearer|basic|token)\s+\S/i;
-
-export const isSecretShapedValue = (value: string) =>
-  SCHEME_PREFIX.test(value.trim()) || looksLikeJwt(value.trim()) || hasUrlUserinfo(value);
-
 const readsHostValue = (value: string) =>
   value.startsWith("!") || templateParts(value).some((part) => part.kind === "env");
 
-const OAUTH_BLOCKING_HEADERS = new Set(["authorization", "cookie"]);
-
 export const carriesCredential = (name: string, value: unknown) =>
-  OAUTH_BLOCKING_HEADERS.has(name.toLowerCase()) ||
-  isSecretName(name) ||
+  isCredentialHeader(name) ||
   (typeof value === "string" && (readsHostValue(value) || isSecretShapedValue(value)));
 
 const whole = (secret: SecretRef): Binding => ({
@@ -129,8 +111,13 @@ const embedded = (
   template: parts.map((part) => (part.kind === "env" ? SECRET_MARKER : part.text)).join(""),
 });
 
-const literalBinding = (name: string, parts: TemplatePart[], literalSecret: SecretRef): Binding => {
-  if (!isCredentialHeader(name)) {
+const literalBinding = (
+  name: string,
+  value: string,
+  parts: TemplatePart[],
+  literalSecret: SecretRef,
+): Binding => {
+  if (!carriesCredential(name, value)) {
     return { kind: "keep" };
   }
 
@@ -153,7 +140,7 @@ const bindingOf = (name: string, value: unknown, literalSecret: SecretRef): Bind
   const [reference] = references;
 
   if (reference === undefined) {
-    return literalBinding(name, parts, literalSecret);
+    return literalBinding(name, value, parts, literalSecret);
   }
 
   if (references.length > 1) {
@@ -212,8 +199,9 @@ export const deriveHeaders = (
     return { value: undefined, rules: [], notices: [] };
   }
 
+  const lastByName = new Map(Object.entries(headers).map((entry) => [entry[0].toLowerCase(), entry]));
   const merged = mergeSections(
-    Object.entries(headers).map(([name, value]) => headerSection(context, target, name, value)),
+    [...lastByName.values()].map(([name, value]) => headerSection(context, target, name, value)),
   );
 
   return { value: Object.fromEntries(merged.values), rules: merged.rules, notices: merged.notices };

@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   authorityOf,
   fillTemplate,
+  isHostName,
   isLoopbackName,
   matchesDenyEntry,
   matchesPattern,
   normalizeHost,
   parseEntry,
+  parseHostEntry,
 } from "../../config/index.ts";
 
 describe("normalizeHost", () => {
@@ -82,5 +84,53 @@ describe("fillTemplate", () => {
     expect(fillTemplate("Bearer {secret}", "s3")).toBe("Bearer s3");
     expect(fillTemplate("{secret}:{secret}", "s3")).toBe("s3:s3");
     expect(fillTemplate(undefined, "s3")).toBe("s3");
+  });
+});
+
+describe("isHostName", () => {
+  it.each([
+    ["api.example.com", true],
+    ["a_b.example.com", true],
+    ["10.0.0.5", true],
+    ["API.example.com", false],
+    ["-a.example.com", false],
+    ["a-.example.com", false],
+    ["a..example.com", false],
+    ["", false],
+    [`${"a".repeat(64)}.com`, false],
+    [`${"a.".repeat(127)}b`, false],
+  ])("%j is %s", (host, expected) => {
+    expect(isHostName(host)).toBe(expected);
+  });
+});
+
+describe("parseHostEntry", () => {
+  it.each([
+    ["Docs.Example.test", { wildcard: false, port: true }, { pattern: "docs.example.test", port: undefined }],
+    ["git.example.test:8443", { wildcard: false, port: true }, { pattern: "git.example.test", port: 8443 }],
+    ["*.Corp.test", { wildcard: true, port: false }, { pattern: "*.corp.test", port: undefined }],
+    ["*.corp.test", { wildcard: false, port: true }, { problem: "must be a host name or host:port" }],
+    ["gw.corp.test:443", { wildcard: true, port: false }, { problem: "must be a host name or *.domain" }],
+    ["gw.corp.test:443", { wildcard: false, port: false }, { problem: "must be a host name" }],
+    [
+      "a.test:80",
+      { wildcard: false, port: true },
+      { problem: "names port 80, and plain HTTP is never forwarded" },
+    ],
+    [
+      "a.test:0",
+      { wildcard: false, port: true },
+      { problem: "has a port that is not a number from 1 to 65535" },
+    ],
+    [
+      "a.test:65536",
+      { wildcard: false, port: true },
+      { problem: "has a port that is not a number from 1 to 65535" },
+    ],
+    ["10.0.0.5", { wildcard: false, port: true }, { problem: "must not be an IP address" }],
+    ["[::1]", { wildcard: false, port: true }, { problem: "must not be an IP address" }],
+    ["*.localhost", { wildcard: true, port: false }, { problem: "must not name loopback" }],
+  ])("reads %j as %j", (text, shape, expected) => {
+    expect(parseHostEntry(text, shape)).toEqual(expected);
   });
 });

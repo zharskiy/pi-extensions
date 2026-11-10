@@ -26,14 +26,14 @@ const LAUNCHER_TEST_SUPPORT = "support";
 const LAUNCHER_GRAPH: Record<string, string[]> = {
   shared: [],
   config: ["shared"],
-  workspace: ["config", "shared"],
+  workspace: ["shared"],
   backend: ["shared"],
   proxy: ["config", "grants", "shared"],
   container: ["backend", "config", "shared", "workspace"],
   image: ["backend", "config", "shared"],
   hostpi: ["config", "shared"],
   grants: ["shared"],
-  provision: ["backend", "config", "hostpi", "shared"],
+  provision: ["backend", "hostpi", "shared"],
   cli: [
     "backend",
     "config",

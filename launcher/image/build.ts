@@ -2,7 +2,7 @@ import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Backend } from "../backend/index.ts";
 import type { SandboxConfig } from "../config/index.ts";
-import { LauncherError, launcherRoot, stableHash } from "../shared/index.ts";
+import { errorMessage, LauncherError, launcherRoot, stableHash } from "../shared/index.ts";
 import { placeBuildTrust } from "./build-trust.ts";
 import { buildInContext, reusableImage } from "./context.ts";
 import { type BaseRecord, readBaseRecord, writeBaseRecord } from "./record.ts";
@@ -31,19 +31,18 @@ export interface BuiltImage {
   digest: string;
   id: string;
   built: boolean;
-  pi?: string;
   replaced?: string;
 }
 
 const VERSION_PATTERN = /^[0-9A-Za-z][0-9A-Za-z.+-]*$/;
 
+const PI_PACKAGE = "@earendil-works/pi-coding-agent";
+
+export const BASE_TAG = "pi-sandbox-base:local";
+
 const DOCKERFILE = "Dockerfile";
 
-const ENTRYPOINT = "entrypoint.sh";
-
-const BASH_ENV_FILE = "bash-env.sh";
-
-const COPIED_ASSETS = [ENTRYPOINT, BASH_ENV_FILE];
+const COPIED_ASSETS = [DOCKERFILE, "entrypoint.sh", "bash-env.sh"];
 
 const PINNED = "pinned";
 
@@ -67,15 +66,10 @@ const checkedVersion = (name: string, value: string) => {
   return value;
 };
 
-const pinVersions = (dockerfile: string, versions: ImageVersions) =>
-  dockerfile.replace(/^ARG PI_VERSION$/m, `ARG PI_VERSION=${checkedVersion("pi", versions.pi)}`);
+const buildArgsFor = (versions: ImageVersions) => ({ PI_VERSION: checkedVersion("pi", versions.pi) });
 
-export const prepareBuildContext = async (versions: ImageVersions, dir: string, trust: BuildTrust = {}) => {
-  const dockerfile = await readFile(join(imageAssets(), DOCKERFILE), "utf8");
-
+export const prepareBuildContext = async (dir: string, trust: BuildTrust = {}) => {
   await mkdir(dir, { recursive: true });
-
-  await writeFile(join(dir, DOCKERFILE), pinVersions(dockerfile, versions));
 
   await Promise.all(COPIED_ASSETS.map((name) => copyFile(join(imageAssets(), name), join(dir, name))));
 
@@ -87,27 +81,22 @@ export const prepareBuildContext = async (versions: ImageVersions, dir: string, 
 };
 
 const inputsHash = async (input: EnsureImageInput) => {
-  const assets = await Promise.all(
-    [DOCKERFILE, ...COPIED_ASSETS].map((name) => readFile(join(imageAssets(), name), "utf8")),
-  );
+  const assets = await Promise.all(COPIED_ASSETS.map((name) => readFile(join(imageAssets(), name), "utf8")));
   const proxyCa = await proxyCaText(input.proxyCaPem);
 
-  return stableHash({ reference: input.config.image.reference, pi: input.versions.pi, assets, proxyCa });
+  return stableHash({ pi: input.versions.pi, assets, proxyCa });
 };
 
 export const recordedImage = async (stateDir: string, config: SandboxConfig) => {
   const base = await readBaseRecord(stateDir);
-  const { reference, digest } = config.image;
+  const { reference = BASE_TAG, digest } = config.image;
+  const current = digest === undefined ? base?.inputsHash !== PINNED : base?.digest === digest;
 
-  if (base === undefined || (digest !== undefined && base.digest !== digest)) {
-    return undefined;
-  }
-
-  return { reference, ...base };
+  return base === undefined || !current ? undefined : { reference, ...base };
 };
 
-const reusableBuild = (backend: Backend, reference: string, base: BaseRecord | undefined, hash: string) =>
-  base === undefined || base.inputsHash !== hash ? undefined : reusableImage(backend, reference, base.digest);
+const reusableBuild = (backend: Backend, base: BaseRecord | undefined, hash: string) =>
+  base === undefined || base.inputsHash !== hash ? undefined : reusableImage(backend, BASE_TAG, base.digest);
 
 const replaceBase = async (stateDir: string, base: BaseRecord) => {
   const previous = await readBaseRecord(stateDir);
@@ -123,23 +112,32 @@ const announced = <T>(input: PullImageInput, action: () => Promise<T>) => {
   return action();
 };
 
+const unpublishedPi = (version: string) => (error: unknown) => {
+  const message = errorMessage(error);
+
+  throw message.includes(`No matching version found for ${PI_PACKAGE}@${version}`)
+    ? new LauncherError(
+        message,
+        `the host pi is version ${version}, which the npm registry does not have; install a published pi on the host`,
+      )
+    : error;
+};
+
 const buildLocally = async (input: EnsureImageInput, hash: string): Promise<BuiltImage> => {
-  const reference = input.config.image.reference;
   const { id, digest } = await announced(input, () =>
     buildInContext(input, {
       prefix: "build",
-      tag: reference,
-      fill: (dir) =>
-        prepareBuildContext(input.versions, dir, { trustPem: input.trustPem, proxyCaPem: input.proxyCaPem }),
-    }),
+      tag: BASE_TAG,
+      args: buildArgsFor(input.versions),
+      fill: (dir) => prepareBuildContext(dir, { trustPem: input.trustPem, proxyCaPem: input.proxyCaPem }),
+    }).catch(unpublishedPi(input.versions.pi)),
   );
-  const replaced = await replaceBase(input.stateDir, { id, digest, inputsHash: hash, pi: input.versions.pi });
+  const replaced = await replaceBase(input.stateDir, { id, digest, inputsHash: hash });
 
-  return { reference, digest, id, built: true, pi: input.versions.pi, ...replaced };
+  return { reference: BASE_TAG, digest, id, built: true, ...replaced };
 };
 
-const pulledImage = async (input: PullImageInput, pinned: string) => {
-  const reference = input.config.image.reference;
+const pulledImage = async (input: PullImageInput, reference: string, pinned: string) => {
   const local = await reusableImage(input.backend, reference, pinned);
 
   if (local !== undefined) {
@@ -149,9 +147,12 @@ const pulledImage = async (input: PullImageInput, pinned: string) => {
   return announced(input, () => input.backend.pullImage(reference, pinned));
 };
 
-export const pullPinnedImage = async (input: PullImageInput, pinned: string): Promise<BuiltImage> => {
-  const reference = input.config.image.reference;
-  const { id, digest } = await pulledImage(input, pinned);
+export const pullPinnedImage = async (
+  input: PullImageInput,
+  reference: string,
+  pinned: string,
+): Promise<BuiltImage> => {
+  const { id, digest } = await pulledImage(input, reference, pinned);
 
   if (digest !== pinned) {
     throw new LauncherError(`image ${reference} has digest ${digest}, expected ${pinned}`);
@@ -165,21 +166,11 @@ export const pullPinnedImage = async (input: PullImageInput, pinned: string): Pr
 export const ensureBuiltImage = async (input: EnsureImageInput): Promise<BuiltImage> => {
   const hash = await inputsHash(input);
   const base = await readBaseRecord(input.stateDir);
-  const reused = await reusableBuild(input.backend, input.config.image.reference, base, hash);
+  const reused = await reusableBuild(input.backend, base, hash);
 
   if (reused === undefined || base === undefined) {
     return buildLocally(input, hash);
   }
 
-  if (base.pi === undefined) {
-    await writeBaseRecord(input.stateDir, { ...base, pi: input.versions.pi });
-  }
-
-  return {
-    reference: input.config.image.reference,
-    digest: reused.digest,
-    id: reused.id,
-    built: false,
-    pi: input.versions.pi,
-  };
+  return { reference: BASE_TAG, digest: reused.digest, id: reused.id, built: false };
 };

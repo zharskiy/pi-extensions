@@ -14,7 +14,6 @@ export interface McpLoginState {
   lastStart?: number;
   failedAt?: number;
   rejectedStart?: number;
-  running?: { pgid: number; boot: number; start: string };
 }
 
 export type McpLogins = Record<string, McpLoginState>;
@@ -65,13 +64,15 @@ export const readMcpAuthEntry = async (
 export const isFreshMcpToken = (entry: McpAuthEntry | undefined, now: number) =>
   entry?.access !== undefined && (entry.expiresAt === undefined || entry.expiresAt - MCP_TOKEN_SKEW_MS > now);
 
-export const mcpLoginCommand = (piCommand: string[], server: string, timeoutSeconds: number) => [
+const LOGIN_TIMEOUT_SECONDS = 300;
+
+export const mcpLoginCommand = (piCommand: string[], server: string) => [
   ...piCommand,
   "mcp",
   "login",
   server,
   "--timeout",
-  String(timeoutSeconds),
+  String(LOGIN_TIMEOUT_SECONDS),
 ];
 
 const makeMcpLoginDir = async (stateDir: string) => {

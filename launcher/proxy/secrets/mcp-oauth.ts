@@ -9,7 +9,7 @@ import {
 } from "../../shared/index.ts";
 import type { SignIn } from "../sign-in.ts";
 import type { CachedSecret } from "./cache.ts";
-import { type SecretReply, signInReply, unavailable } from "./errors.ts";
+import { notSignedIn, type SecretReply, signInReply, unavailable } from "./errors.ts";
 
 export interface McpOAuthDeps {
   now: () => number;
@@ -22,11 +22,21 @@ type McpOAuthRef = { mcpOAuth: { server: string; url: string } };
 
 const SIGN_IN_WAIT_MS = 10_000;
 
-const replyFor = (server: string): SecretReply => ({
+const replyWith = (body: string): SecretReply => ({
   status: 503,
   headers: { "retry-after": "30", "content-type": "text/plain" },
-  body: `pi-sandbox: sign-in to MCP server ${server} opened in the browser on the host; finish it there, then retry. If no browser opened, run pi mcp login ${server} on the host.`,
+  body,
 });
+
+const openedReply = (server: string) =>
+  replyWith(
+    `pi-sandbox: sign-in to MCP server ${server} opened in the browser on the host; finish it there, then retry. If no browser opened, run pi mcp login ${server} on the host.`,
+  );
+
+const notSignedInReply = (server: string) =>
+  replyWith(
+    `pi-sandbox: MCP server ${server} is not signed in on the host; run pi mcp login ${server} on the host, then retry.`,
+  );
 
 const cachedOf = (entry: McpAuthEntry & { access: string }): CachedSecret => ({
   value: entry.access,
@@ -52,6 +62,18 @@ export const createMcpOAuthSource = (deps: McpOAuthDeps) => {
       ? (entry as McpAuthEntry & { access: string })
       : undefined;
 
+  const checkedByLogin = (key: string, entry: McpAuthEntry | undefined): CachedSecret | undefined => {
+    const fresh = usable(key, entry);
+
+    if (fresh !== undefined) {
+      return cachedOf(fresh);
+    }
+
+    return entry?.access !== undefined && entry.access !== rejected.get(key)
+      ? { value: entry.access }
+      : undefined;
+  };
+
   const target = (key: string, ref: McpOAuthRef) => {
     const { server, url } = ref.mcpOAuth;
 
@@ -62,6 +84,11 @@ export const createMcpOAuthSource = (deps: McpOAuthDeps) => {
     return { server, url, id: mcpAuthKey(server, url) };
   };
 
+  const signInFor = (server: string, url: string, entry: McpAuthEntry | undefined) =>
+    entry?.access === undefined
+      ? Promise.resolve(deps.signIn.pending(server, url))
+      : deps.signIn.start(server, url, isFreshMcpToken(entry, deps.now()));
+
   const resolve = async (key: string, ref: McpOAuthRef): Promise<CachedSecret> => {
     const { server, url, id } = target(key, ref);
     const entry = await readMcpAuthEntry(deps.hostAgentDir, server, url);
@@ -71,26 +98,37 @@ export const createMcpOAuthSource = (deps: McpOAuthDeps) => {
       return cachedOf(current);
     }
 
-    const login = await deps.signIn.start(server, url, isFreshMcpToken(entry, deps.now()));
+    const login = await signInFor(server, url, entry);
     const code =
       login === undefined ? undefined : await within(login.exited, deps.signInWaitMs ?? SIGN_IN_WAIT_MS);
-    const after = code === 0 ? usable(id, await readMcpAuthEntry(deps.hostAgentDir, server, url)) : undefined;
+    const after =
+      code === 0 ? checkedByLogin(id, await readMcpAuthEntry(deps.hostAgentDir, server, url)) : undefined;
 
     if (after !== undefined) {
-      return cachedOf(after);
+      return after;
     }
 
-    throw signInReply(`mcpOAuth secret for ${key}: ${server} is not signed in on the host`, replyFor(server));
+    const reason = `mcpOAuth secret for ${key}: ${server} is not signed in on the host`;
+
+    if (login !== undefined && code === undefined) {
+      throw signInReply(reason, openedReply(server));
+    }
+
+    throw notSignedIn(reason);
   };
 
-  const reject = async (key: string, ref: McpOAuthRef, value: string): Promise<SecretReply> => {
+  const reject = async (key: string, ref: McpOAuthRef, value: string | undefined): Promise<SecretReply> => {
     const { server, url, id } = target(key, ref);
+
+    if (value === undefined) {
+      return deps.signIn.pending(server, url) === undefined ? notSignedInReply(server) : openedReply(server);
+    }
 
     rejected.set(id, value);
 
-    await deps.signIn.start(server, url, true);
+    const login = await deps.signIn.start(server, url, true);
 
-    return replyFor(server);
+    return login === undefined ? notSignedInReply(server) : openedReply(server);
   };
 
   return { resolve, reject };

@@ -73,10 +73,16 @@ export const emptyTools = (git: GitIdentity = {}): DerivedTools => ({
   env: {},
 });
 
+export interface ToolRegistry {
+  label: string;
+  endpoint: { host: string; port?: number };
+}
+
 export interface ToolsSection {
   value: DerivedTools;
   rules: CredentialRule[];
   notices: string[];
+  registries: ToolRegistry[];
 }
 
 export interface DeriveInput {
@@ -84,6 +90,7 @@ export interface DeriveInput {
   tools?: ToolsSection;
   providerHosts: ProviderHosts;
   manual: CredentialRule[];
+  egress?: string[];
   salt: string;
   env: Record<string, string | undefined>;
   derive: DeriveConfig;
@@ -100,6 +107,7 @@ export interface DerivedSandboxPi {
   hosts: string[];
   files: DerivedFiles;
   tools: DerivedTools;
+  oauthServers: McpOAuthServer[];
   notices: string[];
 }
 
@@ -109,7 +117,7 @@ export interface BundledPi {
   packageDir: string;
 }
 
-type HostPiSource = "managed" | "path" | "bundled";
+type HostPiSource = "managed" | "bundled";
 
 export interface HostPi extends BundledPi {
   source: HostPiSource;

@@ -1,12 +1,11 @@
 import { existsSync } from "node:fs";
-import { readFile, realpath } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { isJsonObject, launcherRoot, readJsonObject } from "../shared/index.ts";
 import { isExecutable } from "./path-search.ts";
 import type { BundledPi, HostPi } from "./types.ts";
 
 interface PiManifest {
-  name?: unknown;
   version?: unknown;
   bin?: unknown;
 }
@@ -107,25 +106,4 @@ export const locateManagedPi = async (agentDir: string): Promise<HostPi | undefi
     source: "managed",
     wrapper,
   };
-};
-
-const packageAbove = async (dir: string): Promise<{ dir: string; version: string } | undefined> => {
-  const { name, version } = await manifestOf(dir);
-
-  if (name === PI_PACKAGE && typeof version === "string") {
-    return { dir, version };
-  }
-
-  const parent = dirname(dir);
-
-  return parent === dir ? undefined : packageAbove(parent);
-};
-
-export const locatePiPackage = async (binPath: string): Promise<HostPi | undefined> => {
-  const real = await realpath(binPath).catch(() => undefined);
-  const found = real === undefined ? undefined : await packageAbove(dirname(real));
-
-  return found === undefined
-    ? undefined
-    : { command: [binPath], version: found.version, packageDir: found.dir, source: "path" };
 };

@@ -1,4 +1,4 @@
-import { chmod, lstat, readdir, readFile, rm, stat, symlink, utimes } from "node:fs/promises";
+import { chmod, lstat, readdir, readFile, rm, stat, symlink } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { DerivedSandboxPi, DerivedTools } from "../../hostpi/index.ts";
@@ -26,6 +26,7 @@ const derived = (
     "mcp.json": { mcpServers: {} },
   },
   tools: { ...NO_TOOLS, ...tools },
+  oauthServers: [],
   notices: [],
 });
 
@@ -325,6 +326,11 @@ describe("renderAgentDir", () => {
     expect(files.filter((path) => path.startsWith("skills/deploy/") && !path.endsWith("/")).sort()).toEqual(
       kept.map((name) => `skills/deploy/${name}`).sort(),
     );
+    expect(result.notices).toHaveLength(1);
+    expect(result.notices[0]).toMatch(/^render: left out of the sandbox: /);
+    expect(result.notices[0]).toContain("skills/deploy/password.lst (secret-looking name)");
+    expect(result.notices[0]).toContain("skills/deploy/bundle.crt (private key)");
+    expect(result.notices[0]).not.toContain(".git/");
   });
 });
 
@@ -360,7 +366,7 @@ describe("renderAgentDir fix round", () => {
     ]);
   });
 
-  it("keeps the temporary file of a live or recent writer and removes stale ones", async () => {
+  it("removes leftover temporary files of earlier writers", async () => {
     const host = await tempDir("render-host");
     const stateDir = await tempDir("render-state");
     const { renderDir } = await renderAgentDir({
@@ -369,23 +375,13 @@ describe("renderAgentDir fix round", () => {
       hostAgentDir: host,
       derived: derived(),
     });
-    const old = new Date(Date.now() - 10 * 60_000);
-    const live = join(renderDir, `auth.json.${process.pid}.abcd1234.tmp`);
-    const recent = join(renderDir, "auth.json.999999.abcd1234.tmp");
-    const stale = join(renderDir, "auth.json.999998.abcd1234.tmp");
-    const foreign = join(renderDir, "leftover.tmp");
+    const leftover = join(renderDir, `auth.json.${process.pid}.abcd1234.tmp`);
 
-    await Promise.all([live, recent, stale, foreign].map((path) => writeText(path, "partial")));
-
-    await Promise.all([live, stale, foreign].map((path) => utimes(path, old, old)));
+    await writeText(leftover, "partial");
 
     await renderAgentDir({ stateDir, repoHash: "r1", hostAgentDir: host, derived: derived() });
 
-    const tree = await listTree(renderDir);
-
-    expect(tree).toEqual(expect.arrayContaining([basename(live), basename(recent)]));
-    expect(tree).not.toContain(basename(stale));
-    expect(tree).not.toContain(basename(foreign));
+    expect(await listTree(renderDir)).not.toContain(basename(leftover));
   });
 
   it("renders the same repository from parallel launches without failing", async () => {

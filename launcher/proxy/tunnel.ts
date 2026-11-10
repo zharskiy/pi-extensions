@@ -1,9 +1,9 @@
 import type { Socket } from "node:net";
 import type { Denials, RecordAccess } from "./denials.ts";
-import { type DialAccess, type Dialer, RestrictedAddressError } from "./dial.ts";
+import { type Dial, type DialAccess, RestrictedAddressError } from "./dial.ts";
 import { sniDenial } from "./policy.ts";
 import { ESTABLISHED } from "./replies.ts";
-import { clientHelloRecordLength, parseServerName } from "./sni.ts";
+import { isHelloComplete, parseServerName } from "./sni.ts";
 
 export interface Connection {
   host: string;
@@ -14,31 +14,13 @@ export interface Connection {
 }
 
 interface TunnelOptions {
-  dial: Dialer;
+  dial: Dial;
   accessOf: (host: string) => DialAccess;
   track: (socket: Socket) => void;
   record: RecordAccess;
   denials: Denials;
   helloTimeoutMs: number;
 }
-
-const HANDSHAKE_RECORD = 0x16;
-
-const MAX_HELLO_BYTES = 16_389;
-
-const isHelloComplete = (buffer: Buffer) => {
-  if (buffer.length === 0) {
-    return false;
-  }
-
-  const length = clientHelloRecordLength(buffer);
-
-  return (
-    buffer[0] !== HANDSHAKE_RECORD ||
-    buffer.length >= MAX_HELLO_BYTES ||
-    (length !== undefined && buffer.length >= length)
-  );
-};
 
 const readClientHello = (socket: Socket, head: Buffer, timeoutMs: number) =>
   new Promise<Buffer>((resolve) => {
@@ -127,24 +109,8 @@ export const createTunnel = (options: TunnelOptions) => {
     return undefined;
   };
 
-  const restrictedResolution = async (host: string) => {
-    const problem = await dial.checkAddresses?.(host, accessOf(host)).then(
-      () => undefined,
-      (error: unknown) => error,
-    );
-
-    return problem instanceof RestrictedAddressError ? problem : undefined;
-  };
-
   return async (connection: Connection, head: Buffer) => {
     const { client, host, port } = connection;
-    const restricted = await restrictedResolution(host);
-
-    if (restricted !== undefined) {
-      denials.refuse(client, host, { rule: restricted.rule, reason: restricted.message }, { port });
-
-      return;
-    }
 
     if (client.destroyed) {
       return;

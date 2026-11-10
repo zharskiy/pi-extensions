@@ -9,19 +9,10 @@ import {
   readRegularFile,
 } from "../shared/index.ts";
 import { inertGitOptions } from "./git/command.ts";
-import { readGitConfig } from "./git/config.ts";
-import {
-  findGitRoot,
-  gitDirHolding,
-  gitLayoutAt,
-  isGitName,
-  isPinText,
-  lexicalGitLayout,
-} from "./git/layout.ts";
-import { assertWorkspaceGitConfig } from "./git/workspace.ts";
+import { findGitRoot, gitDirHolding, gitLayoutAt, isGitName, lexicalGitLayout } from "./git/layout.ts";
 import { realOrPending, resolvedOnDisk } from "./paths.ts";
 import { type DetachedCheckout, gitDirsOf, type Workspace } from "./types.ts";
-import { scanBudgetOf, scanWorkspace, type WorkspaceScan } from "./workspace-scan.ts";
+import { SCAN_BUDGET, scanWorkspace, type WorkspaceScan } from "./workspace-scan.ts";
 
 export interface DiscoverOptions {
   lenient?: boolean;
@@ -66,18 +57,9 @@ const unprotected = (repo: string, error: unknown) =>
     "fix or move that repository, or start pi inside it",
   );
 
-const outsideRoot = (repo: string, root: string) =>
-  new LauncherError(`workspace: ${repo} uses a git dir outside ${root}`, "start pi inside it");
-
-const revivable = (repo: string, gitDir: string) =>
-  new LauncherError(
-    `workspace: ${join(repo, ".git")} points at ${gitDir}, which does not exist; the sandbox could create it and make ${repo} a repository with its own hooks, refusing`,
-    `delete ${join(repo, ".git")}, or run git worktree repair or git worktree prune in the repository that owns ${gitDir}`,
-  );
-
 const caseVariant = (path: string) =>
   new LauncherError(
-    `workspace: ${path} is a letter-case variant of .git, which git opens as a repository on this volume, refusing`,
+    `workspace: ${path} is a letter-case variant of .git, which git opens as a repository on a case-insensitive volume, refusing`,
     "rename it to .git or remove it",
   );
 
@@ -89,7 +71,7 @@ const unreadableFolder = (cwd: string, code: string) =>
 
 const bareCwd = (cwd: string) =>
   new LauncherError(
-    `workspace: ${cwd} is a git dir (a bare repository), refusing`,
+    `workspace: ${cwd} is a git dir, refusing`,
     "start pi in a checkout of it or in the folder above",
   );
 
@@ -111,19 +93,45 @@ const insideGitDir = (cwd: string, gitDir: string) =>
     "start pi in a repository's checkout or in a folder outside its git dir",
   );
 
+const realOrUndefined = (path: string) => realpath(path).catch(() => undefined);
+
+const splitsOf = (stdout: string) => {
+  const lines = stdout.replace(/\n$/, "").split("\n");
+
+  return lines.slice(1).map((_, index) => ({
+    toplevel: lines.slice(0, index + 1).join("\n"),
+    commonDir: lines.slice(index + 1).join("\n"),
+  }));
+};
+
+const resolvedSplit = async (cwd: string, split: { toplevel: string; commonDir: string }) => {
+  const [repoRoot, gitCommonDir] = await Promise.all([
+    realOrUndefined(split.toplevel),
+    realOrUndefined(resolve(cwd, split.commonDir)),
+  ]);
+
+  return split.toplevel === "" ||
+    split.commonDir === "" ||
+    repoRoot === undefined ||
+    gitCommonDir === undefined
+    ? []
+    : [{ repoRoot, gitCommonDir }];
+};
+
 const reportedByGit = async (cwd: string, runner: CommandRunner, emptyHooksDir: string) => {
   const result = await runner.run(
     "git",
     [...inertGitOptions(emptyHooksDir), "rev-parse", "--show-toplevel", "--git-common-dir"],
     { cwd },
   );
-  const [toplevel = "", commonDir = ""] = result.stdout.split("\n").map((line) => line.trim());
 
-  if (result.code !== 0 || toplevel === "" || commonDir === "") {
+  if (result.code !== 0) {
     return undefined;
   }
 
-  return { repoRoot: await realPath(toplevel), gitCommonDir: await realPath(resolve(cwd, commonDir)) };
+  const found = await Promise.all(splitsOf(result.stdout).map((split) => resolvedSplit(cwd, split)));
+
+  return found.flat().at(0);
 };
 
 const confirmedRepo = async (
@@ -132,7 +140,7 @@ const confirmedRepo = async (
   runner: CommandRunner,
   emptyHooksDir: string,
 ): Promise<Workspace> => {
-  const layout = await gitLayoutAt(root, { fillEmptyPin: true });
+  const layout = await gitLayoutAt(root);
   const reported = await reportedByGit(cwd, runner, emptyHooksDir);
 
   if (reported === undefined) {
@@ -172,12 +180,9 @@ const assertExactDotGit = async (root: string) => {
 };
 
 const singleRepo = async (root: string, cwd: string, runner: CommandRunner, emptyHooksDir: string) => {
-  await assertExactDotGit(root);
+  await Promise.all([assertExactDotGit(root), assertOutsideGitDirs(cwd, root)]);
 
-  const repo = await confirmedRepo(root, cwd, runner, emptyHooksDir);
-  const gitConfig = await readGitConfig(root, runner, emptyHooksDir, { withoutGit: "empty" });
-
-  return { ...repo, gitConfig };
+  return confirmedRepo(root, cwd, runner, emptyHooksDir);
 };
 
 const GIT_FILE_PREFIX = "gitdir: ";
@@ -206,7 +211,7 @@ const commonDirPaths = async (gitDir: string) => {
     () => "",
   );
 
-  return text === "" || isPinText(text) ? [] : (await reachedPaths(gitDir, text)).paths;
+  return text === "" || text === "." ? [] : (await reachedPaths(gitDir, text)).paths;
 };
 
 const detachedCheckout = async (repo: string, root: string): Promise<DetachedCheckout | undefined> => {
@@ -220,11 +225,7 @@ const detachedCheckout = async (repo: string, root: string): Promise<DetachedChe
   const gitDir = await reachedPaths(repo, text);
   const { missing } = gitDir.onDisk;
   const reached = [...gitDir.paths, ...(missing ? [] : await commonDirPaths(gitDir.onDisk.path))];
-  const inside = reached.some((path) => isWithin(path, root));
-
-  if (missing && inside) {
-    throw revivable(repo, gitDir.onDisk.path);
-  }
+  const inside = reached.every((path) => isWithin(path, root));
 
   return missing || !inside ? { repoRoot: repo, missing } : undefined;
 };
@@ -243,17 +244,13 @@ const nestedRepo = async (
     return { detached };
   }
 
-  const confirmed = await confirmedRepo(repo, repo, runner, emptyHooksDir)
-    .then(async (found) => ({ ...found, gitConfig: await readGitConfig(repo, runner, emptyHooksDir) }))
-    .catch((error: unknown) => {
-      throw unprotected(repo, error);
-    });
+  const confirmed = await confirmedRepo(repo, repo, runner, emptyHooksDir).catch((error: unknown) => {
+    throw unprotected(repo, error);
+  });
 
-  if (!gitDirsOf(confirmed).every((dir) => isWithin(dir, root))) {
-    throw outsideRoot(repo, root);
-  }
-
-  return { repo: confirmed };
+  return gitDirsOf(confirmed).every((dir) => isWithin(dir, root))
+    ? { repo: confirmed }
+    : { detached: { repoRoot: repo, missing: false } };
 };
 
 const isLoose = (dir: string, repos: Workspace[]) =>
@@ -278,24 +275,36 @@ const classified = async (
 const overlaysOf = (scan: WorkspaceScan) =>
   scan.overlays.length > MAX_OVERLAYS ? { overlays: [], overlaysCapped: true } : { overlays: scan.overlays };
 
-const lenientFolder = (cwd: string, scan: WorkspaceScan): Workspace => ({
-  cwd,
-  repoRoot: cwd,
-  isGitRepo: false,
-  nested: scan.repos.map((repo) => ({ cwd: repo, repoRoot: repo, isGitRepo: true })),
-  ...overlaysOf(scan),
-});
+const overlaysFound = (
+  scan: WorkspaceScan | undefined,
+): Pick<Workspace, "overlays" | "overlaysCapped" | "overlaysTruncated"> => {
+  if (scan === undefined) {
+    return { overlays: [] };
+  }
 
-const assertOutsideGitDirs = async (cwd: string) => {
+  return scan.truncated ? { overlays: [], overlaysTruncated: true } : overlaysOf(scan);
+};
+
+const assertOutsideGitDirs = async (cwd: string, root?: string) => {
   const holding = await gitDirHolding(cwd);
 
-  if (holding === cwd) {
-    throw bareCwd(cwd);
+  if (holding === undefined || (root !== undefined && (holding === root || !isWithin(holding, root)))) {
+    return;
   }
 
-  if (holding !== undefined) {
-    throw insideGitDir(cwd, holding);
-  }
+  throw holding === cwd ? bareCwd(cwd) : insideGitDir(cwd, holding);
+};
+
+const isOwnedByUser = async (dir: string) => (await lstatOrUndefined(dir))?.uid === process.getuid?.();
+
+const refusedUnreadable = async (cwd: string, scan: WorkspaceScan) => {
+  const owned = await Promise.all(
+    scan.unreadable.map(async (entry) =>
+      entry.dir === cwd || (await isOwnedByUser(entry.dir)) ? [entry] : [],
+    ),
+  );
+
+  return owned.flat();
 };
 
 const strictFolder = async (
@@ -317,52 +326,46 @@ const strictFolder = async (
     throw caseVariant(variant);
   }
 
-  const unreadableRoot = scan.unreadable.find((entry) => entry.dir === cwd);
+  const [unreadable] = await refusedUnreadable(cwd, scan);
 
-  if (unreadableRoot !== undefined) {
-    throw unreadableFolder(cwd, unreadableRoot.code);
+  if (unreadable !== undefined) {
+    throw unreadableFolder(unreadable.dir, unreadable.code);
   }
 
   if (scan.repos.length > MAX_NESTED_REPOS) {
     throw tooManyRepos(cwd, scan.repos.length);
   }
 
-  const [found, rootConfig] = await Promise.all([
-    classified(cwd, scan, runner, emptyHooksDir),
-    readGitConfig(cwd, runner, emptyHooksDir, { withoutGit: "empty" }),
-  ]);
+  const found = await classified(cwd, scan, runner, emptyHooksDir);
 
   if (scan.repos.length + found.bare.length > MAX_NESTED_REPOS) {
     throw tooManyRepos(cwd, scan.repos.length + found.bare.length);
   }
 
-  const masked = scan.unreadable.map((entry) => entry.dir);
-  const workspace: Workspace = {
+  return {
     cwd,
     repoRoot: cwd,
     isGitRepo: false,
     nested: found.live,
     ...overlaysOf(scan),
-    ...(masked.length === 0 ? {} : { masked }),
     ...(found.detached.length === 0 ? {} : { detached: found.detached }),
     ...(found.bare.length === 0 ? {} : { bareDirs: found.bare }),
-  };
-
-  await assertWorkspaceGitConfig(workspace, rootConfig);
-
-  return workspace;
+  } satisfies Workspace;
 };
 
 const repoAt = (root: string, cwd: string, runner: CommandRunner, emptyHooksDir: string, lenient: boolean) =>
   lenient ? lenientRepo(root, cwd) : singleRepo(root, cwd, runner, emptyHooksDir);
 
-const scanned = async (root: string, mode: "workspace" | "git", options: DiscoverOptions, budget: number) => {
+const scanned = async (root: string, mode: "workspace" | "git", options: DiscoverOptions) => {
   const overlays = options.overlays !== false;
-  const skipOverlays = overlays && options.lenient !== true;
-  const scan = await scanWorkspace(root, mode, { overlays, skipOverlays, budget });
+  const scan = await scanWorkspace(root, mode, {
+    overlays,
+    skipOverlays: overlays,
+    budget: options.scanBudget,
+  });
 
-  return skipOverlays && scan.overlays.length > MAX_OVERLAYS
-    ? scanWorkspace(root, mode, { overlays, budget })
+  return mode === "workspace" && overlays && scan.overlays.length > MAX_OVERLAYS
+    ? scanWorkspace(root, mode, { overlays, budget: options.scanBudget })
     : scan;
 };
 
@@ -380,20 +383,22 @@ export const discoverWorkspace = async (
   options: DiscoverOptions = {},
 ): Promise<Workspace> => {
   const { realCwd, root } = folder;
-  const budget = scanBudgetOf(options.scanBudget);
+  const lenient = options.lenient === true;
+  const walked = (path: string, mode: "workspace" | "git") =>
+    lenient && options.overlays === false ? undefined : scanned(path, mode, options);
 
   if (root === undefined) {
-    const scan = await scanned(realCwd, "workspace", options, budget);
+    const scan = await walked(realCwd, "workspace");
 
-    return options.lenient === true
-      ? lenientFolder(realCwd, scan)
-      : strictFolder(realCwd, scan, runner, emptyHooksDir, budget);
+    return lenient || scan === undefined
+      ? { cwd: realCwd, repoRoot: realCwd, isGitRepo: false, ...overlaysFound(scan) }
+      : strictFolder(realCwd, scan, runner, emptyHooksDir, options.scanBudget ?? SCAN_BUDGET);
   }
 
   const [repo, scan] = await Promise.all([
-    repoAt(root, realCwd, runner, emptyHooksDir, options.lenient === true),
-    options.overlays === false ? undefined : scanned(root, "git", options, budget),
+    repoAt(root, realCwd, runner, emptyHooksDir, lenient),
+    options.overlays === false ? undefined : walked(root, "git"),
   ]);
 
-  return scan === undefined ? { ...repo, overlays: [] } : { ...repo, ...overlaysOf(scan) };
+  return { ...repo, ...overlaysFound(scan) };
 };

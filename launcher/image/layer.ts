@@ -5,14 +5,13 @@ import type { SandboxConfig } from "../config/index.ts";
 import { errorMessage, expandHome, LauncherError, sha256Hex, shortHash } from "../shared/index.ts";
 import { placeBuildTrust, TRUST_FILE } from "./build-trust.ts";
 import { buildInContext } from "./context.ts";
-import { writeWantedLayer } from "./record.ts";
+import { writeCurrentLayer } from "./record.ts";
 
 interface EnsureLayerInput {
   backend: Backend;
   baseImageId: string;
   config: SandboxConfig;
   stateDir: string;
-  repoHash: string;
   trustPem?: string;
   env?: Record<string, string | undefined>;
   progress?: (step: string) => void;
@@ -102,7 +101,7 @@ const buildLayer = async (input: EnsureLayerInput, dockerfile: string, tag: stri
 
 export const ensureLayerImage = async (input: EnsureLayerInput): Promise<LayerImage> => {
   if (!hasLayer(input.config)) {
-    await writeWantedLayer(input.stateDir, input.repoHash, undefined);
+    await writeCurrentLayer(input.stateDir, undefined);
 
     return { id: input.baseImageId, built: false };
   }
@@ -114,7 +113,7 @@ export const ensureLayerImage = async (input: EnsureLayerInput): Promise<LayerIm
   );
   const tag = `${LAYER_TAG_PREFIX}${shortHash(sha256Hex(dockerfile))}`;
 
-  await writeWantedLayer(input.stateDir, input.repoHash, tag);
+  await writeCurrentLayer(input.stateDir, tag);
   const reused = await input.backend.resolveImage(tag).catch(() => undefined);
 
   return reused === undefined

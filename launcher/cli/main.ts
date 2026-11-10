@@ -1,8 +1,6 @@
-import { lookup } from "node:dns/promises";
 import { cpus, homedir, totalmem } from "node:os";
-import { createInterface } from "node:readline/promises";
 import { createColimaBackend } from "../backend/index.ts";
-import { locateBundledPi } from "../hostpi/index.ts";
+import { findOnPath, locateBundledPi } from "../hostpi/index.ts";
 import {
   ensureRepoProxy,
   ensureTrustBundle,
@@ -10,34 +8,26 @@ import {
   readRepoProxy,
   stopRepoProxy,
 } from "../proxy/index.ts";
-import { createProcessRunner } from "../shared/index.ts";
-import { type CliDeps, pathsOf } from "./deps.ts";
+import { createProcessRunner, realOrResolved, withResolvedCommand } from "../shared/index.ts";
+import { findGitRoot } from "../workspace/index.ts";
+import { type CliDeps, onClosedOutput, pathsOf } from "./deps.ts";
 import { renderFailure, run } from "./run.ts";
 import { hostTerminal } from "./terminal.ts";
 
 const GIB = 1024 ** 3;
 
-const resolveHost = async (host: string) =>
-  (await lookup(host, { all: true }).catch(() => [])).map((entry) => entry.address);
+const hostGit = (env: NodeJS.ProcessEnv, cwd: string) => async () => {
+  const folder = await realOrResolved(cwd);
+  const root = await findGitRoot(folder);
 
-const confirm = async (question: string) => {
-  if (process.stdin.isTTY !== true) {
-    return false;
-  }
-
-  const prompt = createInterface({ input: process.stdin, output: process.stderr });
-
-  try {
-    return /^y(es)?$/i.test((await prompt.question(question)).trim());
-  } finally {
-    prompt.close();
-  }
+  return findOnPath(env, "git", root === undefined ? [folder] : [folder, root]);
 };
 
 const realDeps = (): CliDeps => {
-  const runner = createProcessRunner();
-  const home = homedir();
   const env = process.env;
+  const cwd = process.cwd();
+  const runner = withResolvedCommand(createProcessRunner(), "git", hostGit(env, cwd));
+  const home = homedir();
   const platform = process.platform;
   const { stateDir } = pathsOf({ env, home, platform });
 
@@ -45,7 +35,7 @@ const realDeps = (): CliDeps => {
     runner,
     env,
     home,
-    cwd: process.cwd(),
+    cwd,
     stdout: process.stdout,
     stderr: process.stderr,
     terminal: hostTerminal(),
@@ -62,8 +52,6 @@ const realDeps = (): CliDeps => {
         ensureTrustBundle({ stateDir, runner, platform: process.platform, sources }),
     },
     bundledPi: locateBundledPi,
-    resolveHost,
-    confirm,
     now: () => Date.now(),
   };
 };
@@ -76,6 +64,8 @@ const exitWith = async (code: number) => {
 
   process.exit(code);
 };
+
+onClosedOutput([process.stdout, process.stderr], () => process.emit("SIGTERM"));
 
 const main = async () => {
   try {

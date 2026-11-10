@@ -18,7 +18,7 @@ const isGrant = (value: unknown): value is Grant =>
 
 const grantsFile = (stateDir: string) => stateLayout(stateDir).grants;
 
-const lockFile = (stateDir: string) => `${grantsFile(stateDir)}.lock`;
+const lockFile = (stateDir: string) => stateLayout(stateDir).grantsLock;
 
 export const readGrants = async (stateDir: string): Promise<Grant[]> => {
   const stored = await readJsonFile<unknown>(grantsFile(stateDir));
@@ -86,3 +86,10 @@ export const revokeGrants = (stateDir: string, match: GrantMatch): Promise<numbe
 
 export const activeGrants = (grants: Grant[], repoHash: string): Grant[] =>
   grants.filter((grant) => grant.repoHash === undefined || grant.repoHash === repoHash);
+
+export const forgetRepoGrants = (stateDir: string, repoHash: string): Promise<number> =>
+  updateGrants(stateDir, (grants) => {
+    const kept = grants.filter((grant) => grant.repoHash !== repoHash);
+
+    return { grants: kept, result: grants.length - kept.length };
+  });

@@ -71,8 +71,6 @@ const TRUST_ERROR = /CERT|SELF_SIGNED|UNABLE_TO|ISSUER/;
 
 const SECRET_TOKEN_FIELDS = ["access_token", "refresh_token", "id_token"];
 
-const OFFLINE_PROBE = ["printenv", "PI_OFFLINE"];
-
 const MCP_LIST_SECONDS = 30;
 
 const MCP_LIST_PROBE = ["timeout", String(MCP_LIST_SECONDS), "pi", "mcp", "list"];
@@ -153,12 +151,12 @@ const foreignMcpPaths = (mcp: unknown) =>
     .filter((leaf) => isMcpSecret(leaf.path) && !isPlaceholderValue(leaf.value))
     .map((leaf) => leaf.path);
 
-const secretEnvNames = (output: string) =>
+const secretEnvNames = (output: string, proxyToken: string | undefined) =>
   output
     .split("\n")
     .filter((line) => line.includes("="))
     .map((line) => ({ name: line.slice(0, line.indexOf("=")), value: line.slice(line.indexOf("=") + 1) }))
-    .filter(({ name, value }) => isSecretName(name) && !isPlaceholderValue(value))
+    .filter(({ name, value }) => isSecretName(name) && !isPlaceholderValue(value) && value !== proxyToken)
     .map(({ name }) => name);
 
 const readGuestJson = async (target: ProbeTarget, path: string) => {
@@ -167,7 +165,7 @@ const readGuestJson = async (target: ProbeTarget, path: string) => {
   return file.code === 0 ? parsedJson(file.stdout) : {};
 };
 
-export const sweepCredentials = async (target: ProbeTarget) => {
+export const sweepCredentials = async (target: ProbeTarget, proxyToken?: string) => {
   const [env, auth, mcp] = await Promise.all([
     execText(target, ["env"]),
     readGuestJson(target, GUEST_AUTH_FILE),
@@ -177,7 +175,7 @@ export const sweepCredentials = async (target: ProbeTarget) => {
     ...(env.code === 0 ? [] : [`env exited ${env.code}`]),
     ...(auth === undefined ? [`${GUEST_AUTH_FILE} is not JSON`] : []),
     ...(mcp === undefined ? [`${GUEST_MCP_FILE} is not JSON`] : []),
-    ...secretEnvNames(env.stdout).map(
+    ...secretEnvNames(env.stdout, proxyToken).map(
       (name) => `environment variable ${name} holds a value other than the placeholder`,
     ),
     ...foreignAuthPaths(auth).map(
@@ -193,14 +191,6 @@ export const sweepCredentials = async (target: ProbeTarget) => {
     : failed(problems.join("; "));
 };
 
-export const checkSamePath = async (target: ProbeTarget, repoRoot: string) => {
-  const { code } = await execText(target, ["test", "-d", repoRoot]);
-
-  return code === 0
-    ? passed(`${repoRoot} is mounted at the same path`)
-    : failed(`${repoRoot} is not visible inside`);
-};
-
 export const checkNoRoute = async (target: ProbeTarget) => {
   const { code } = await execText(target, NO_ROUTE_PROBE);
 
@@ -211,14 +201,6 @@ export const checkNoRoute = async (target: ProbeTarget) => {
   return code === 0
     ? failed(`${ROUTE_TARGET} is reachable directly`)
     : passed(`no direct route to ${ROUTE_TARGET}`);
-};
-
-export const checkOffline = async (target: ProbeTarget) => {
-  const { code, stdout } = await execText(target, OFFLINE_PROBE);
-
-  return code === 0 && stdout.trim() !== ""
-    ? failed("PI_OFFLINE is set in the container, so package installs and updates are off")
-    : passed("PI_OFFLINE is unset");
 };
 
 export const checkMcp = async (target: ProbeTarget) => {

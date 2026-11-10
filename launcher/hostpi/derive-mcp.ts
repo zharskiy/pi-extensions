@@ -1,9 +1,10 @@
-import { join } from "node:path";
-import { isJsonObject } from "../shared/index.ts";
+import { isAbsolute, join } from "node:path";
+import { isJsonObject, isSecretShapedValue } from "../shared/index.ts";
+import type { ProviderCredentials } from "./derive-auth.ts";
 import { type Endpoint, endpointOf, hasQueryCredential, strippedUrl } from "./endpoints.ts";
-import { deriveHeaders, isSecretShapedValue } from "./headers.ts";
+import { deriveHeaders } from "./headers.ts";
 import { objectOr } from "./json.ts";
-import { oauthTarget } from "./mcp-auth.ts";
+import { isDisabledServer, oauthTarget, providerAuthOf } from "./mcp-auth.ts";
 import { type DeriveContext, mergeSections, placeholderOf, rulesFor, type Section } from "./rules.ts";
 import type { JsonObject } from "./types.ts";
 
@@ -31,7 +32,51 @@ const oauthSection = (
   };
 };
 
-const httpServer = (context: DeriveContext, name: string, server: JsonObject): ServerSection => {
+const providerSection = (
+  name: string,
+  provider: string,
+  endpoints: Endpoint[],
+  credentials: ProviderCredentials,
+): Section<JsonObject> => {
+  const body = Object.hasOwn(credentials, provider) ? credentials[provider] : undefined;
+
+  return body === undefined
+    ? {
+        value: {},
+        rules: [],
+        notices: [`mcp ${name}: auth.provider ${provider} has no host credential, so no rule`],
+      }
+    : { value: {}, rules: rulesFor(`mcp:${name}:auth`, endpoints, body), notices: [] };
+};
+
+const authSection = (
+  context: DeriveContext,
+  name: string,
+  server: JsonObject,
+  endpoints: Endpoint[],
+  credentials: ProviderCredentials,
+): Section<JsonObject> | undefined => {
+  const provider = providerAuthOf(server);
+
+  if (isDisabledServer(server)) {
+    return undefined;
+  }
+
+  if (provider !== undefined) {
+    return providerSection(name, provider, endpoints, credentials);
+  }
+
+  const target = oauthTarget(name, server);
+
+  return target === undefined ? undefined : oauthSection(context, name, target, endpoints);
+};
+
+const httpServer = (
+  context: DeriveContext,
+  name: string,
+  server: JsonObject,
+  credentials: ProviderCredentials,
+): ServerSection => {
   const stripped = strippedUrl(`mcp ${name}`, `mcpServers.${name}.url`, server.url);
   const url = String(stripped.value);
   const result = endpointOf(url);
@@ -63,17 +108,18 @@ const httpServer = (context: DeriveContext, name: string, server: JsonObject): S
     };
   }
 
-  const target = oauthTarget(name, server);
-  const bearer = target === undefined ? undefined : oauthSection(context, name, target, endpoints);
+  const bearer = authSection(context, name, server, endpoints, credentials);
+  const extra = bearer === undefined || Object.keys(bearer.value).length === 0 ? undefined : bearer.value;
+  const rules = isDisabledServer(server) ? [] : [...headers.rules, ...(bearer?.rules ?? [])];
 
   return {
     value: [
       name,
-      headers.value === undefined && bearer === undefined
+      headers.value === undefined && extra === undefined
         ? rest
-        : { ...rest, headers: { ...headers.value, ...bearer?.value } },
+        : { ...rest, headers: { ...headers.value, ...extra } },
     ],
-    rules: [...headers.rules, ...(bearer?.rules ?? [])],
+    rules,
     notices: [...stripped.notices, ...headers.notices, ...(bearer?.notices ?? [])],
   };
 };
@@ -210,8 +256,19 @@ const stdioArgs = (
   };
 };
 
+const hostPathNotices = (name: string, server: JsonObject) =>
+  (["command", "cwd"] as const).flatMap((field) => {
+    const value = server[field];
+
+    return typeof value === "string" && isAbsolute(value)
+      ? [`mcp ${name}: ${field} ${value} is a host path, which the sandbox may not have`]
+      : [];
+  });
+
 const stdioServer = (context: DeriveContext, name: string, original: JsonObject): ServerSection => {
-  const { server, notices: argNotices } = stdioArgs(context, name, original);
+  const stdio = stdioArgs(context, name, original);
+  const { server } = stdio;
+  const argNotices = [...hostPathNotices(name, server), ...stdio.notices];
 
   if (!isJsonObject(server.env)) {
     return { value: [name, server], rules: [], notices: argNotices };
@@ -235,7 +292,12 @@ const stdioServer = (context: DeriveContext, name: string, original: JsonObject)
   };
 };
 
-const serverSection = (context: DeriveContext, name: string, server: unknown): ServerSection => {
+const serverSection = (
+  context: DeriveContext,
+  name: string,
+  server: unknown,
+  credentials: ProviderCredentials,
+): ServerSection => {
   if (!isJsonObject(server)) {
     return { value: [name, server], rules: [], notices: [] };
   }
@@ -250,7 +312,7 @@ const serverSection = (context: DeriveContext, name: string, server: unknown): S
   }
 
   if (isHttpServer(server)) {
-    return httpServer(context, name, server);
+    return httpServer(context, name, server, credentials);
   }
 
   return isStdioServer(server)
@@ -258,9 +320,13 @@ const serverSection = (context: DeriveContext, name: string, server: unknown): S
     : { value: [name, server], rules: [], notices: [] };
 };
 
-export const deriveMcp = (context: DeriveContext, mcp: JsonObject): McpSection => {
+export const deriveMcp = (
+  context: DeriveContext,
+  mcp: JsonObject,
+  credentials: ProviderCredentials,
+): McpSection => {
   const sections = Object.entries(objectOr(mcp.mcpServers)).map(([name, server]) =>
-    serverSection(context, name, server),
+    serverSection(context, name, server, credentials),
   );
   const merged = mergeSections(sections.filter((section) => section.dropped !== true));
 

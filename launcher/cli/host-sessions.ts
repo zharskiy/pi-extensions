@@ -1,5 +1,4 @@
-import type { Backend } from "../backend/index.ts";
-import { findRepoContainer } from "../container/index.ts";
+import { type Backend, LABELS } from "../backend/index.ts";
 import { othersLive, withRepoLaunchLock } from "../grants/index.ts";
 import { prepareHostSessions, probeHostSessions, sweepHostSessions } from "../provision/index.ts";
 import { errorMessage, LauncherError } from "../shared/index.ts";
@@ -8,7 +7,6 @@ import {
   type HostSessions,
   hostSessionsChoice,
   hostSessionsDir,
-  sessionsSwitchNotice,
 } from "../workspace/index.ts";
 import type { LaunchContext } from "./context.ts";
 import { type CliDeps, hostAgentDirOf, reachableBackend, writeLine, writeNotices } from "./deps.ts";
@@ -27,19 +25,17 @@ export const hostSessionsOf = (
   });
 
 export const noticeHostSessions = (deps: CliDeps, sessions: HostSessions) => {
-  const off =
-    "off" in sessions && sessions.notice
-      ? [`sessions: ${sessions.off}, so sandbox sessions stay in the sandbox volume`]
-      : [];
-  const ignored = sessionsSwitchNotice(deps.env);
-
-  writeNotices(deps, [...off, ...(ignored === undefined ? [] : [ignored])]);
+  if ("off" in sessions && sessions.notice) {
+    writeNotices(deps, [`sessions: ${sessions.off}, so sandbox sessions stay in the sandbox volume`]);
+  }
 };
 
 const sweptDir = (deps: CliDeps, repoRoot: string) => hostSessionsDir(hostAgentDirOf(deps), repoRoot);
 
 const containerRunning = async (backend: Backend, context: LaunchContext) =>
-  (await findRepoContainer(backend, context.workspace))?.state === "running";
+  (await backend.findContainers({ [LABELS.repoHash]: context.repoHash })).some(
+    (container) => container.labels[LABELS.relay] !== "true" && container.state === "running",
+  );
 
 const warnUnswept = (deps: CliDeps, dir: string, error: unknown) => {
   writeLine(deps.stderr, `pi-sandbox: warning: sessions: ${dir} was not swept: ${errorMessage(error)}`);
@@ -149,7 +145,7 @@ export const sweepRepoSessions = async (deps: CliDeps, repoRoot: string, full: b
 };
 
 const runningOrUnknown = (deps: CliDeps, context: LaunchContext) => () =>
-  reachableBackend(deps, context.effective.config)
+  reachableBackend(deps)
     .then((backend) => containerRunning(backend, context))
     .catch(() => true);
 

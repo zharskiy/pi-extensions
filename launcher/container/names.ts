@@ -4,7 +4,8 @@ const CACHE_VOLUME_PREFIX = "pi-sandbox-cache-";
 
 const shortRepoHash = (repoRoot: string) => shortHash(repoHash(repoRoot));
 
-export const containerName = (repoRoot: string) => `pi-sandbox-${shortRepoHash(repoRoot)}`;
+export const containerName = (repoRoot: string, launchId: string) =>
+  `pi-sandbox-${shortRepoHash(repoRoot)}-${launchId}`;
 
 export const agentVolumeName = (user: string, repoRoot: string) =>
   `pi-sandbox-agent-${shortHash(sha256Hex(user))}-${shortRepoHash(repoRoot)}`;

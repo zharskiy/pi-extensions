@@ -22,13 +22,18 @@ const NO_TAG = "<none>:<none>";
 
 const BUILD_STEP = /^Step \d+\/\d+/;
 
+const FROM_STEP = /^Step \d+\/\d+ : FROM /i;
+
 const KEPT_OUTPUT_LINES = 30;
 
 const CERTIFICATE_ERROR =
   /x509:|certificate verify failed|unable to get local issuer|self[- ]signed certificate|SSL certificate problem|certificate has expired|CERT_[A-Z_]+|UNABLE_TO_VERIFY_LEAF_SIGNATURE/i;
 
-const CERTIFICATE_HINT =
-  "a proxy or CA on this network signs the downloads; set tls.extraCa to its CA, or image.digest to a prebuilt image";
+const DOWNLOAD_CERTIFICATE_HINT =
+  "a proxy or CA on this network signs the downloads; set tls.extraCa to its CA";
+
+const ENGINE_CERTIFICATE_HINT =
+  "a proxy or CA on this network signs the registry, and the VM's engine does not trust it (tls.extraCa does not reach the engine); install the CA in the VM with a provision script in ~/.colima/pi-sandbox/colima.yaml, or use a registry the proxy does not inspect";
 
 const BUILD_LABELS = JSON.stringify({ [LABELS.managed]: "true" });
 
@@ -61,14 +66,24 @@ const buildOutput = (report: (step: string) => void) => {
   return { take, kept };
 };
 
+const certificateHint = (output: string[]) =>
+  FROM_STEP.test(output.findLast((line) => BUILD_STEP.test(line)) ?? "")
+    ? ENGINE_CERTIFICATE_HINT
+    : DOWNLOAD_CERTIFICATE_HINT;
+
 const buildFailure = (error: unknown, output: string[]) => {
   const message = errorMessage(error);
   const text = [message, ...output.map((line) => `  ${line.trimEnd()}`)].join("\n");
   const evidence = [message, ...output.filter((line) => !BUILD_STEP.test(line))].join("\n");
-  const hint = CERTIFICATE_ERROR.test(evidence) ? CERTIFICATE_HINT : undefined;
+  const hint = CERTIFICATE_ERROR.test(evidence) ? certificateHint(output) : undefined;
 
   return new LauncherError(text, hint ?? (error instanceof LauncherError ? error.hint : undefined));
 };
+
+const pullFailure = (error: unknown) =>
+  CERTIFICATE_ERROR.test(errorMessage(error))
+    ? new LauncherError(errorMessage(error), ENGINE_CERTIFICATE_HINT)
+    : error;
 
 const accepts = (image: EngineImage, digest: string) => [...repoDigests(image), image.Id].includes(digest);
 
@@ -109,7 +124,7 @@ export const createImageOperations = (client: EngineClient, runner: CommandRunne
       return infoOf(present, digest);
     }
 
-    await pull(reference, digest);
+    await pull(reference, digest).catch((error: unknown) => Promise.reject(pullFailure(error)));
 
     const pulled = await inspect(target);
 

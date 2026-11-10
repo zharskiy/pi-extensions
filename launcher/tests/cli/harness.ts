@@ -5,7 +5,9 @@ import { join } from "node:path";
 import { PassThrough, Writable } from "node:stream";
 import { afterEach } from "vitest";
 import type { Backend, ExecSpec } from "../../backend/index.ts";
+import { pathsOf } from "../../cli/deps.ts";
 import type { CliDeps } from "../../cli/index.ts";
+import { sweepOrphans } from "../../cli/sweep.ts";
 import { testedPiVersion } from "../../cli/versions.ts";
 import { newLaunchId, registerLaunch } from "../../grants/index.ts";
 import type { BundledPi } from "../../hostpi/index.ts";
@@ -27,8 +29,6 @@ export interface HarnessOptions {
   bundledPi?: BundledPi | null;
   providerHosts?: Record<string, { hosts: string[]; envVars?: string[] }>;
   denials?: DenialRecord[];
-  resolve?: (host: string) => Promise<string[]>;
-  confirm?: boolean;
   machine?: CliDeps["machine"];
 }
 
@@ -41,7 +41,7 @@ export const unreachable = (backend: Backend): Backend => ({
     ...backend.vm,
     ensureRunning: async () => {
       throw new LauncherError(
-        "the sandbox VM engine is unreachable at ~/.colima/pi-sandbox/docker.sock",
+        "the sandbox VM engine is unreachable at ~/.colima/pi-sandbox/docker.sock: socket missing",
         "run launcher/install.sh or colima start --profile pi-sandbox --activate=false",
       );
     },
@@ -119,6 +119,16 @@ export const piArgsOf = (exec: FakeExec | undefined) => {
 
 export const renderDirOf = (harness: HarnessPaths) =>
   stateLayout(harness.stateDir).repo(sha256Hex(harness.repoRoot)).render;
+
+export const sweepNow = async (deps: CliDeps) => {
+  await rm(stateLayout(pathsOf(deps).stateDir).gcRecord, { force: true });
+
+  const lines = await sweepOrphans(deps, deps.backend());
+
+  deps.stdout.write(lines.map((line) => `${line}\n`).join(""));
+
+  return 0;
+};
 
 export const holdLaunch = async (harness: HarnessPaths) => {
   await registerLaunch(harness.stateDir, {
@@ -214,7 +224,7 @@ const mountsYaml = (mounts: YamlMount[], indent: string) =>
 
 const limaYamlPath = (home: string) => join(home, ".colima", "_lima", "colima-pi-sandbox", "lima.yaml");
 
-export const colimaYamlPath = (home: string) => join(home, ".colima", "pi-sandbox", "colima.yaml");
+const colimaYamlPath = (home: string) => join(home, ".colima", "pi-sandbox", "colima.yaml");
 
 export const writeLimaMounts = async (home: string, mounts: YamlMount[]) => {
   const file = limaYamlPath(home);
@@ -280,7 +290,6 @@ export const createHarness = async (options: HarnessOptions = {}) => {
   const terminalOut = new PassThrough();
   const stoppedProxies: string[] = [];
   const proxyInputs: RepoProxyInput[] = [];
-  const questions: string[] = [];
   const bundledPi =
     options.bundledPi === null
       ? undefined
@@ -338,12 +347,6 @@ export const createHarness = async (options: HarnessOptions = {}) => {
       ...options.proxy,
     },
     bundledPi: async () => bundledPi,
-    resolveHost: options.resolve ?? (async () => []),
-    confirm: async (question) => {
-      questions.push(question);
-
-      return options.confirm ?? false;
-    },
     now: () => 1_700_000_000_000,
   };
 
@@ -366,7 +369,6 @@ export const createHarness = async (options: HarnessOptions = {}) => {
     calls: fake.calls,
     stoppedProxies,
     proxyInputs,
-    questions,
     stdout: stdout.text,
     stderr: stderr.text,
     writeJson,

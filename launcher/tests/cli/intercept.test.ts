@@ -1,8 +1,9 @@
 import { mkdir, readdir, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { pathsOf } from "../../cli/deps.ts";
 import { run } from "../../cli/index.ts";
-import { testedPiVersion } from "../../cli/versions.ts";
+import { repoHash, writeRepoRecord } from "../../shared/index.ts";
 import {
   createFakeBackend,
   createHarness,
@@ -80,7 +81,6 @@ describe("pi install and pi remove", () => {
       "ssh:x",
       "git:x",
       `git:file://${harness.repoRoot}`,
-      "git://example.com/acme/ext",
       "git@github.com:acme/ext",
     ];
 
@@ -90,7 +90,7 @@ describe("pi install and pi remove", () => {
     expect(hostPiRuns(harness)).toEqual([]);
     sources.forEach((source) => {
       expect(harness.stderr()).toContain(
-        `pi-sandbox: ${source} lies in the repository, which the sandbox can rewrite; not installed on the host\n`,
+        `pi-sandbox: ${source} lies in a git working tree or a sandboxed folder, which a sandbox can rewrite; not installed on the host\n`,
       );
     });
   });
@@ -143,24 +143,61 @@ describe("pi install and pi remove", () => {
 
     const workspace = await workspaceRoot();
 
+    await writeRepoRecord(pathsOf(workspace.deps).stateDir, repoHash(workspace.deps.cwd), workspace.deps.cwd);
+
     expect(await run(["install", "./tools/ext"], workspace.deps)).toBe(1);
     expect([...hostPiRuns(harness), ...hostPiRuns(workspace)]).toEqual([]);
     expect(await readdir(harness.hostAgentDir).catch(() => [])).toEqual([]);
     expect(harness.stderr()).toContain(
-      "pi-sandbox: ../ext lies in the repository, which the sandbox can rewrite; not installed on the host\n",
+      "pi-sandbox: ../ext lies in a git working tree or a sandboxed folder, which a sandbox can rewrite; not installed on the host\n",
     );
     expect(harness.stderr()).toContain(
-      `pi-sandbox: ${link} lies in the repository, which the sandbox can rewrite; not installed on the host\n`,
+      `pi-sandbox: ${link} lies in a git working tree or a sandboxed folder, which a sandbox can rewrite; not installed on the host\n`,
     );
     expect(harness.stderr()).toContain(
-      "pi-sandbox: ext lies in the repository, which the sandbox can rewrite; not installed on the host\n",
+      "pi-sandbox: ext lies in a git working tree or a sandboxed folder, which a sandbox can rewrite; not installed on the host\n",
     );
     expect(harness.stderr()).toContain(
-      `pi-sandbox: file://${join(harness.repoRoot, "ext")} lies in the repository, which the sandbox can rewrite; not installed on the host\n`,
+      `pi-sandbox: file://${join(harness.repoRoot, "ext")} lies in a git working tree or a sandboxed folder, which a sandbox can rewrite; not installed on the host\n`,
     );
     expect(workspace.stderr()).toContain(
-      "pi-sandbox: ./tools/ext lies in the repository, which the sandbox can rewrite; not installed on the host\n",
+      "pi-sandbox: ./tools/ext lies in a git working tree or a sandboxed folder, which a sandbox can rewrite; not installed on the host\n",
     );
+  });
+
+  it("decides by the source path, not the folder pi was started in", async () => {
+    const harness = await createHarness({ backend: noBackend });
+    const ext = join(harness.deps.home, "tools", "ext");
+    const outside = { ...harness.deps, cwd: harness.deps.home };
+
+    await mkdir(ext, { recursive: true });
+
+    expect(await run(["install", "./tools/ext"], outside)).toBe(0);
+    expect(await run(["install", join(harness.repoRoot, "ext")], outside)).toBe(1);
+    expect(hostPiRuns(harness)).toEqual([["install", ext]]);
+  });
+
+  it("ignores a git root no sandbox can hold, such as a home folder kept in git", async () => {
+    const harness = await createHarness({ backend: noBackend });
+    const ext = join(harness.deps.home, "tools", "ext");
+
+    await mkdir(join(harness.deps.home, ".git"), { recursive: true });
+
+    await mkdir(ext, { recursive: true });
+
+    expect(await run(["install", "~/tools/ext"], { ...harness.deps, cwd: harness.deps.home })).toBe(0);
+    expect(hostPiRuns(harness)).toEqual([["install", ext]]);
+  });
+
+  it("runs pi uninstall on the host like remove and takes git:// URLs as git sources", async () => {
+    const harness = await createHarness({ backend: noBackend });
+
+    expect(await run(["uninstall", "npm:foo"], harness.deps)).toBe(0);
+    expect(await run(["install", "git://example.com/acme/ext"], harness.deps)).toBe(0);
+    expect(hostPiRuns(harness)).toEqual([
+      ["uninstall", "npm:foo"],
+      ["install", "git://example.com/acme/ext"],
+    ]);
   });
 
   it("passes a project install with -l straight through", async () => {
@@ -265,7 +302,7 @@ describe("pi update", () => {
     expect(harness.stdout()).toBe("");
   });
 
-  it("runs a PATH pi's own update and says the sandbox keeps the pi next to the launcher", async () => {
+  it("never runs a PATH pi for pi update; without a managed install pi follows the launcher", async () => {
     const harness = await createHarness({
       backend: () => {
         throw new Error("the backend must not be used");
@@ -276,11 +313,9 @@ describe("pi update", () => {
     harness.deps.env.PATH = onPath.bin;
 
     expect(await run(["update"], harness.deps)).toBe(0);
-    expect(harness.calls.filter((call) => call.interactive).map((call) => [call.file, ...call.args])).toEqual(
-      [[onPath.pi, "update"]],
-    );
-    expect(harness.stderr()).toBe(
-      `pi-sandbox: the sandbox follows pi ${await testedPiVersion()} next to the launcher, not ${onPath.pi}; update it with npm install -g pi-extensions-mz\n`,
+    expect(harness.calls.filter((call) => call.interactive)).toEqual([]);
+    expect(harness.stdout()).toBe(
+      "pi follows the launcher; update it with npm install -g pi-extensions-mz\n",
     );
   });
 

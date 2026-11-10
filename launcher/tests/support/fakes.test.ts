@@ -1,3 +1,6 @@
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { describe, expect, it } from "vitest";
 import { LauncherError } from "../../shared/index.ts";
@@ -49,5 +52,43 @@ describe("createFakeBackend exec", () => {
       ),
     ).toBe(5);
     expect(fake.execs[0]?.stdin.map(String).join("")).toBe("typed");
+  });
+
+  it("never runs a pi session exec in a real shell, even when its command names a bind path", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pi-sandbox-fake-guest-"));
+    const marker = join(root, "ran");
+    const out = new PassThrough();
+    const fake = createFakeBackend({ guestAgentDir: join(root, "agent") });
+    const { id } = await fake.backend.createContainer({
+      name: "pi-sandbox-test-0000000000000001",
+      image: "sha256:image",
+      labels: {},
+      mounts: [{ kind: "bind", source: root, target: root, readOnly: false }],
+      network: { kind: "none" },
+      env: {},
+      workdir: root,
+      readOnlyRoot: true,
+      tmpfs: [],
+      init: true,
+      resources: {},
+    });
+
+    await fake.backend.startContainer(id);
+
+    const code = await fake.backend.exec(
+      {
+        containerId: id,
+        env: { PI_SANDBOX_LAUNCH_ID: "0000000000000001" },
+        workdir: root,
+        command: ["sh", "-c", `touch ${marker}; cd "$1"; shift; exec "$@"`, "sh", root, "pi"],
+      },
+      { stdout: out, stderr: out, tty: false },
+    );
+    const ran = existsSync(marker);
+
+    rmSync(root, { recursive: true, force: true });
+
+    expect(code).toBe(0);
+    expect(ran).toBe(false);
   });
 });

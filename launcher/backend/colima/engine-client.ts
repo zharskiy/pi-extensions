@@ -38,10 +38,6 @@ export const segment = (value: string) => encodeURIComponent(value);
 
 const CONNECTION_ERRORS = new Set(["ENOENT", "ECONNREFUSED", "EACCES", "ENOTSOCK", "ECONNRESET"]);
 
-export const CALL_TIMEOUT_MS = 30_000;
-
-export const REMOVAL_TIMEOUT_MS = 600_000;
-
 const PING_PATH = "/_ping";
 
 const TIMED_OUT = "ETIMEDOUT_ENGINE";
@@ -97,7 +93,11 @@ const errorOf = (line: ProgressLine) =>
     ? undefined
     : String(line.error ?? JSON.stringify(line.errorDetail));
 
-const readLines = (response: IncomingMessage, onLine: (line: ProgressLine) => void) =>
+const readLines = (
+  response: IncomingMessage,
+  onLine: (line: ProgressLine) => void,
+  streamFailure: (error: NodeJS.ErrnoException) => Error,
+) =>
   new Promise<string | undefined>((resolve, reject) => {
     const state: { rest: string; error?: string } = { rest: "" };
 
@@ -140,7 +140,7 @@ const readLines = (response: IncomingMessage, onLine: (line: ProgressLine) => vo
       }),
     );
 
-    response.once("error", reject);
+    response.once("error", (error) => reject(streamFailure(error)));
   });
 
 const writeBody = (outgoing: ClientRequest, request: EngineRequest) => {
@@ -155,25 +155,30 @@ const writeBody = (outgoing: ClientRequest, request: EngineRequest) => {
 
 export interface EngineTimeouts {
   callMs: number;
+  pingMs: number;
   removalMs: number;
 }
 
-const TIMEOUTS: EngineTimeouts = { callMs: CALL_TIMEOUT_MS, removalMs: REMOVAL_TIMEOUT_MS };
+const TIMEOUTS: EngineTimeouts = { callMs: 30_000, pingMs: 5000, removalMs: 600_000 };
 
-const timeoutHint = (request: EngineRequest) =>
-  request.path === PING_PATH
-    ? `run colima stop --profile ${ENGINE_PROFILE} && ${plainStart(ENGINE_PROFILE)} and see ${logHint(ENGINE_PROFILE)}`
-    : `the engine may still be finishing it; run the command again later, and see ${logHint(ENGINE_PROFILE)} if it keeps timing out`;
+const RETRY_HINT = `the engine may still be finishing it; run the command again later, and see ${logHint(ENGINE_PROFILE)} if it keeps timing out`;
 
 export const createEngineClient = (
   socket: () => string,
   timeouts: EngineTimeouts = TIMEOUTS,
 ): EngineClient => {
-  const failure = (error: NodeJS.ErrnoException, request: EngineRequest) => {
+  const failure = (error: NodeJS.ErrnoException, request: EngineRequest, answered = false) => {
     if (error.code === TIMED_OUT) {
       return new LauncherError(
         `engine socket ${socket()} did not answer ${request.method} ${request.path}: ${error.message}`,
-        timeoutHint(request),
+        RETRY_HINT,
+      );
+    }
+
+    if (answered) {
+      return new LauncherError(
+        `engine socket ${socket()} closed ${request.method} ${request.path} before its answer was complete (${error.code ?? error.message})`,
+        RETRY_HINT,
       );
     }
 
@@ -199,23 +204,39 @@ export const createEngineClient = (
   const send = (request: EngineRequest, timeoutMs = request.timeoutMs) =>
     new Promise<IncomingMessage>((resolve, reject) => {
       const outgoing = open(request);
+      const answer: { response?: IncomingMessage } = {};
 
-      outgoing.once("response", resolve);
+      outgoing.once("response", (response) => {
+        answer.response = response;
+
+        resolve(response);
+      });
 
       outgoing.once("error", (error) => reject(failure(error, request)));
 
       if (timeoutMs !== undefined) {
-        outgoing.setTimeout(timeoutMs, () => outgoing.destroy(timedOut(timeoutMs)));
+        outgoing.setTimeout(timeoutMs, () => {
+          const error = timedOut(timeoutMs);
+
+          answer.response?.destroy(error);
+
+          outgoing.destroy(error);
+        });
       }
 
       writeBody(outgoing, request);
     });
 
   const collected = (response: IncomingMessage, request: EngineRequest) =>
-    collect(response).catch((error: NodeJS.ErrnoException) => Promise.reject(failure(error, request)));
+    collect(response).catch((error: NodeJS.ErrnoException) => Promise.reject(failure(error, request, true)));
 
-  const defaultTimeout = (request: EngineRequest) =>
-    request.method === "DELETE" ? timeouts.removalMs : timeouts.callMs;
+  const defaultTimeout = (request: EngineRequest) => {
+    if (request.path === PING_PATH) {
+      return timeouts.pingMs;
+    }
+
+    return request.method === "DELETE" ? timeouts.removalMs : timeouts.callMs;
+  };
 
   const call = async (request: EngineRequest, accepted: number[] = []) => {
     const response = await collected(
@@ -240,10 +261,10 @@ export const createEngineClient = (
     const response = await send(request);
 
     if (isFailure(response.statusCode ?? 0, [])) {
-      throw engineError(request, await collect(response));
+      throw engineError(request, await collected(response, request));
     }
 
-    const error = await readLines(response, onLine);
+    const error = await readLines(response, onLine, (failed) => failure(failed, request, true));
 
     if (error !== undefined) {
       throw new LauncherError(`engine: ${error}`);

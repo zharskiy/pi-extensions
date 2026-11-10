@@ -27,7 +27,6 @@
   },
   "files": [
     "launcher",
-    "launcher/dist",
     "!launcher/bin/pi-sandbox-dev.js",
     "!launcher/tsconfig.build.json",
     "platform",

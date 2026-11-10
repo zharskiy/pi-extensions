@@ -6,7 +6,7 @@ import { run } from "../../cli/index.ts";
 import { overlayVolumes, sharedCacheVolumes } from "../../container/index.ts";
 import { sha256Hex } from "../../shared/index.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
-import { createFakeBackend, createHarness, holdLaunch } from "./harness.ts";
+import { createFakeBackend, createHarness, sweepNow } from "./harness.ts";
 
 const SHARED = "~/.cache/pip";
 
@@ -36,49 +36,23 @@ const volumeHarness = async () => {
 const plantShared = (fake: ReturnType<typeof createFakeBackend>, name: string, userHash: string) =>
   fake.backend.ensureVolume(name, { [LABELS.userHash]: userHash, [LABELS.sharedPath]: SHARED });
 
-describe("pi sandbox gc and shared caches", () => {
-  it("keeps every shared cache without --shared-caches and never counts them as unlabelled", async () => {
+describe("the sweep and shared caches", () => {
+  it("keeps every shared cache and never counts them as unlabelled", async () => {
     const { fake, harness, shared } = await volumeHarness();
 
     await run([], harness.deps);
 
     await plantShared(fake, "pi-sandbox-shared-otheruser000-aaaaaaaa", "otheruser000");
 
-    expect(await run(["sandbox", "gc"], harness.deps)).toBe(0);
+    expect(await sweepNow(harness.deps)).toBe(0);
     expect(fake.volumes.has(shared)).toBe(true);
     expect(fake.volumes.has("pi-sandbox-shared-otheruser000-aaaaaaaa")).toBe(true);
     expect(harness.stdout()).not.toContain("without repository label");
     expect(harness.stdout()).not.toContain("shared cache");
   });
-
-  it("removes only this user's unused shared caches with --shared-caches", async () => {
-    const { fake, harness, shared } = await volumeHarness();
-
-    await run([], harness.deps);
-
-    await plantShared(fake, "pi-sandbox-shared-otheruser000-aaaaaaaa", "otheruser000");
-
-    expect(await run(["sandbox", "gc", "--shared-caches"], harness.deps)).toBe(0);
-    expect(fake.volumes.has(shared)).toBe(false);
-    expect(fake.volumes.has("pi-sandbox-shared-otheruser000-aaaaaaaa")).toBe(true);
-    expect(harness.stdout()).toContain(`removed shared cache ${shared} (${SHARED})\n`);
-    expect(harness.stdout()).not.toContain("without repository label");
-  });
-
-  it("keeps a shared cache a live sandbox still mounts and says so", async () => {
-    const { fake, harness, shared } = await volumeHarness();
-
-    await holdLaunch(harness);
-
-    await run([], harness.deps);
-
-    expect(await run(["sandbox", "gc", "--shared-caches"], harness.deps)).toBe(0);
-    expect(fake.volumes.has(shared)).toBe(true);
-    expect(harness.stdout()).toContain(`kept shared cache ${shared} (${SHARED}), in use\n`);
-  });
 });
 
-describe("pi sandbox reset --volumes", () => {
+describe("pi sandbox reset and volumes", () => {
   it("removes the node_modules overlays, those of deleted packages included, and keeps shared caches", async () => {
     const { fake, harness, shared, overlay } = await volumeHarness();
     const stale = `pi-sandbox-cache-${sha256Hex(harness.repoRoot).slice(0, 12)}-deadbeef`;
@@ -91,7 +65,7 @@ describe("pi sandbox reset --volumes", () => {
     });
 
     expect(fake.volumes.has(overlay)).toBe(true);
-    expect(await run(["sandbox", "reset", "--volumes"], harness.deps)).toBe(0);
+    expect(await run(["sandbox", "reset"], harness.deps)).toBe(0);
     expect(fake.volumes.has(overlay)).toBe(false);
     expect(fake.volumes.has(stale)).toBe(false);
     expect(fake.volumes.has(shared)).toBe(true);
@@ -116,7 +90,7 @@ describe("pi sandbox reset --volumes", () => {
       [LABELS.repoRoot]: "/elsewhere",
     });
 
-    expect(await run(["sandbox", "reset", "--volumes"], harness.deps)).toBe(0);
+    expect(await run(["sandbox", "reset"], harness.deps)).toBe(0);
     expect(fake.volumes.has(orphan)).toBe(false);
     expect(fake.volumes.has(foreign)).toBe(true);
     expect(harness.stdout()).toContain(`removed volume ${orphan}\n`);

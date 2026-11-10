@@ -1,7 +1,9 @@
 import { BlockList, isIP } from "node:net";
 import {
   authorityOf,
+  isHostName,
   isLoopbackName,
+  isNumericName,
   matchesDenyEntry,
   matchesPattern,
   normalizeHost,
@@ -34,11 +36,6 @@ type ConnectDecision = { allowed: true; rule: AllowRule } | Denial;
 export type EgressDecider = (request: ConnectRequest, extra?: string[]) => ConnectDecision;
 
 const METADATA_ADDRESS = "169.254.169.254";
-
-const HOSTNAME =
-  /^(?=.{1,253}$)([a-z0-9_]([a-z0-9_-]{0,61}[a-z0-9_])?)(\.[a-z0-9_]([a-z0-9_-]{0,61}[a-z0-9_])?)*$/;
-
-const NUMERIC_LABEL = /^(0x[0-9a-f]*|[0-9]+)$/;
 
 interface AddressRange {
   rule: string;
@@ -131,28 +128,22 @@ const blockLists = ADDRESS_RANGES.map((range) => {
 
 const deny = (rule: string, reason: string): Denial => ({ allowed: false, rule, reason });
 
-const mappedIpv4 = (address: string) => {
-  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(address);
-
-  return mapped === null ? address : mapped[1];
-};
-
 export const restrictedAddress = (address: string): Denial | undefined => {
-  const plain = mappedIpv4(address.replace(/^\[|\]$/g, ""));
+  const plain = address.replace(/^\[|\]$/g, "");
   const family = isIP(plain) === 4 ? "ipv4" : "ipv6";
   const match = blockLists.find(({ list }) => list.check(plain, family));
 
   return match === undefined ? undefined : deny(match.range.rule, `${plain} is a ${match.range.reason}`);
 };
 
-const notAllowed = (rule: string, host: string, port: number, grants: boolean) => {
+const notAllowed = (host: string, port: number, grants: boolean) => {
   const target = authorityOf(host, port);
 
   return deny(
-    rule,
+    "egress.allow",
     grants
       ? `${target} is not allowed by the sandbox. Ask the user to run pi sandbox egress allow ${target} on the host.`
-      : `${target} is not allowed by the sandbox. Egress grants are off; ask the user to add it to egress.allow on the host.`,
+      : `${target} is not allowed by the sandbox. Egress grants are off; ask the user to have their administrator add ${target} to egress.allow.`,
   );
 };
 
@@ -180,8 +171,6 @@ const literalDecision = (host: string): Denial => {
 
 const isLiteral = (host: string) => isIP(host.replace(/^\[|\]$/g, "")) !== 0;
 
-const isNumericHost = (host: string) => NUMERIC_LABEL.test(host.split(".").at(-1) ?? "");
-
 interface CompiledPolicy {
   allow: AllowEntry[];
   deny: ParsedEntry[];
@@ -198,11 +187,11 @@ const hostDecision = (
     return literalDecision(host);
   }
 
-  if (!HOSTNAME.test(host)) {
+  if (!isHostName(host)) {
     return deny("hostname", `${host} is not a valid hostname`);
   }
 
-  if (isNumericHost(host)) {
+  if (isNumericName(host)) {
     return deny("ip-literal", `${host} looks like a numeric address`);
   }
 
@@ -214,16 +203,12 @@ const hostDecision = (
     return deny("egress.deny", `${host} is in egress.deny`);
   }
 
-  const entries = [...policy.allow, ...extra].filter((entry) => matchesPattern(host, entry.pattern));
-
-  if (entries.length === 0) {
-    return notAllowed("egress.allow", host, port, policy.grants);
-  }
-
-  const allowing = entries.find((entry) => entry.port === port);
+  const allowing = [...policy.allow, ...extra].find(
+    (entry) => entry.port === port && matchesPattern(host, entry.pattern),
+  );
 
   return allowing === undefined
-    ? notAllowed("egress.port", host, port, policy.grants)
+    ? notAllowed(host, port, policy.grants)
     : { allowed: true, rule: allowing.rule };
 };
 
@@ -241,8 +226,8 @@ export const sniDenial = (host: string, sni: string | undefined): Denial | undef
 export const compilePolicy = (policy: EgressPolicy): EgressDecider => {
   const compiled: CompiledPolicy = {
     allow: [
-      ...allowEntries(policy.allow, "egress.allow"),
       ...allowEntries(policy.credentialHosts ?? [], "credential"),
+      ...allowEntries(policy.allow, "egress.allow"),
     ],
     deny: (policy.deny ?? []).map(parseEntry),
     grants: policy.grants !== false,

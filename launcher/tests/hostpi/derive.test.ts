@@ -87,13 +87,13 @@ describe("deriveSandboxPi auth.json", () => {
     );
   });
 
-  it("adds an api_key placeholder for a provider whose key comes from the launcher environment", () => {
+  it("adds an api_key placeholder for a provider whose key comes from the launcher environment, read from that variable", () => {
     const result = deriveSandboxPi(input());
 
     expect(result.files["auth.json"].envOnly).toEqual({ type: "api_key", key: P("auth:envOnly:key") });
     expect(rulesOf(result.rules, "derived:auth:envOnly:key")[0]).toMatchObject({
       host: "api.envonly.example",
-      secret: { piAuth: "envOnly" },
+      secret: { env: "ENVONLY_API_KEY" },
     });
     expect(deriveSandboxPi(input({ env: {} })).files["auth.json"].envOnly).toBeUndefined();
   });
@@ -351,16 +351,17 @@ describe("deriveSandboxPi mcp.json", () => {
       "Set-Cookie": "a=LIT-SET",
       "Proxy-Authorization": "Basic LIT-PROXY",
       "X-Auth-User": "LIT-XAUTH",
-      "X-Api-Tenant": "LIT-XAPI",
-      "X-Access-Id": "LIT-XACCESS",
+      "X-Api-Key": "LIT-XAPI",
+      "X-Access-Token": "LIT-XACCESS",
       "X-Session-Id": "LIT-XSESSION",
+      "X-Api-Version": "2",
       "X-Trace": "plain",
     };
     const mcp = { mcpServers: { lit: { url: "https://lit.example/mcp", headers } } };
     const result = deriveSandboxPi(input({ files: { agentDir: AGENT_DIR, mcp } }));
 
     expect(JSON.stringify(result.files["mcp.json"])).not.toMatch(/LIT-/);
-    expect(servers(result).lit?.headers).toMatchObject({ "X-Trace": "plain" });
+    expect(servers(result).lit?.headers).toMatchObject({ "X-Trace": "plain", "X-Api-Version": "2" });
     expect(rulesOf(result.rules, "derived:mcp:lit:header:cookie")[0]).toMatchObject({
       host: "lit.example",
       header: "Cookie",
@@ -524,19 +525,50 @@ describe("deriveSandboxPi fix round", () => {
   });
 
   it.each([
+    [{ "X-Trace": "2" }, true],
     [{ "X-Api-Version": "2" }, true],
     [{ "X-Access-Region": "eu" }, true],
     [{ "X-Session-Mode": "fast" }, true],
+    [{ "X-Api-Key": "abc" }, false],
+    [{ "X-Session-Id": "abc" }, false],
     [{ Authorization: "x" }, false],
     [{ Cookie: "a=b" }, false],
     [{ "X-Auth-Token": "x" }, false],
     [{ "X-Tenant": "$TENANT" }, false],
     [{ "X-Signed": "!sign" }, false],
     [{ "X-Upstream": "Bearer x" }, false],
-  ])("gives the server headers %o an OAuth bearer: %s", (headers, oauth) => {
-    const result = mcpOnly({ srv: { url: "https://mcp.srv.example/mcp", headers } });
+  ])(
+    "gives the server headers %o an OAuth bearer: %s, exactly when no header is bound as a credential",
+    (headers, oauth) => {
+      const result = mcpOnly({ srv: { url: "https://mcp.srv.example/mcp", headers } });
+      const bound = result.rules.some((rule) => rule.id.startsWith("derived:mcp:srv:header:"));
 
-    expect(rulesOf(result.rules, "derived:mcp:srv:oauth").length > 0).toBe(oauth);
+      expect(rulesOf(result.rules, "derived:mcp:srv:oauth").length > 0).toBe(oauth);
+      expect(bound || ["X-Tenant", "X-Signed"].some((name) => name in headers)).toBe(!oauth);
+    },
+  );
+
+  it("merges header names that differ only in case, the last one winning", () => {
+    const result = mcpOnly({
+      srv: { url: "https://mcp.srv.example/mcp", headers: { "X-Api-Key": "FIRST", "x-api-key": "LAST" } },
+    });
+    const rules = rulesOf(result.rules, "derived:mcp:srv:header:x-api-key");
+
+    expect(serverOf(result, "srv")?.headers).toEqual({ "x-api-key": P("mcp:srv:header:x-api-key") });
+    expect(rules).toHaveLength(1);
+    expect(rules[0]).toMatchObject({
+      header: "x-api-key",
+      secret: { pointer: "/mcpServers/srv/headers/x-api-key" },
+    });
+  });
+
+  it("binds a literal credential-shaped value under any header name", () => {
+    const result = mcpOnly({
+      srv: { url: "https://mcp.srv.example/mcp", headers: { "X-Upstream": "Bearer LIT-UPSTREAM" } },
+    });
+
+    expect(JSON.stringify(result.files["mcp.json"])).not.toContain("LIT-UPSTREAM");
+    expect(rulesOf(result.rules, "derived:mcp:srv:header:x-upstream")).toHaveLength(1);
   });
 
   it("adds no OAuth bearer to a server whose name host pi cannot sign in to", () => {
@@ -678,5 +710,104 @@ describe("deriveSandboxPi fix round", () => {
 
     expect(Object.keys(entry).sort()).toEqual(["access", "accountId", "expires", "refresh", "type"]);
     expect(JSON.stringify(result.files)).not.toContain(SECRETS.idToken);
+  });
+});
+
+describe("deriveSandboxPi fix wave", () => {
+  it("copies a credential's env, with placeholders for secret names and credential shapes", () => {
+    const auth = {
+      keyed: { type: "api_key", key: SECRETS.apiKey, env: { ACCOUNT_ID: "acct-1", GATEWAY_TOKEN: "x-real" } },
+      jwt: {
+        type: "oauth",
+        access: JWT_ACCESS,
+        refresh: SECRETS.refresh,
+        expires: 1,
+        env: { AUTH: `Bearer ${SECRETS.idToken}` },
+      },
+    };
+    const result = deriveSandboxPi(input({ files: { agentDir: AGENT_DIR, auth } }));
+
+    expect(result.files["auth.json"].keyed).toEqual({
+      type: "api_key",
+      key: P("auth:keyed:key"),
+      env: { ACCOUNT_ID: "acct-1", GATEWAY_TOKEN: P("auth:keyed:env:GATEWAY_TOKEN") },
+    });
+    expect((result.files["auth.json"].jwt as Record<string, unknown>).env).toEqual({
+      AUTH: P("auth:jwt:env:AUTH"),
+    });
+    expect(JSON.stringify(result.files)).not.toMatch(/x-real/);
+  });
+
+  it("gives a disabled HTTP MCP server no rule and no sign-in, and a provider-auth server the provider's credential", () => {
+    const mcp = {
+      mcpServers: {
+        off: { url: "https://off.example/mcp", enabled: false, headers: { "X-Api-Key": "OFF-REAL-KEY" } },
+        prov: { url: "https://prov.example/mcp", auth: { provider: "keyed" } },
+        lost: { url: "https://lost.example/mcp", auth: { provider: "nowhere" } },
+        signed: { url: "https://signed.example/mcp" },
+      },
+    };
+    const result = deriveSandboxPi(input({ files: { agentDir: AGENT_DIR, auth: hostAuth(), mcp } }));
+    const servers = result.files["mcp.json"].mcpServers as Record<string, Record<string, unknown>>;
+
+    expect(result.rules.filter((rule) => rule.host === "off.example")).toEqual([]);
+    expect(JSON.stringify(servers.off)).not.toContain("OFF-REAL-KEY");
+    expect(servers.prov).toEqual({ url: "https://prov.example/mcp", auth: { provider: "keyed" } });
+    expect(rulesOf(result.rules, "derived:mcp:prov:auth")).toEqual([
+      {
+        id: "derived:mcp:prov:auth",
+        host: "prov.example",
+        placeholder: P("auth:keyed:key"),
+        secret: { piAuth: "keyed" },
+      },
+    ]);
+    expect(result.rules.filter((rule) => rule.host === "lost.example")).toEqual([]);
+    expect(result.notices).toContain("mcp lost: auth.provider nowhere has no host credential, so no rule");
+    expect(result.oauthServers).toEqual([{ name: "signed", url: "https://signed.example/mcp" }]);
+  });
+
+  it("names absolute stdio command and cwd paths, which the sandbox may not have", () => {
+    const mcp = {
+      mcpServers: {
+        local: { command: "/opt/homebrew/bin/uvx", cwd: "/Users/me/x", args: [] },
+        npx: { command: "npx" },
+      },
+    };
+    const result = deriveSandboxPi(input({ files: { agentDir: AGENT_DIR, mcp } }));
+
+    expect(result.notices).toEqual(
+      expect.arrayContaining([
+        "mcp local: command /opt/homebrew/bin/uvx is a host path, which the sandbox may not have",
+        "mcp local: cwd /Users/me/x is a host path, which the sandbox may not have",
+      ]),
+    );
+    expect(result.notices.some((notice) => notice.startsWith("mcp npx:"))).toBe(false);
+  });
+
+  it("names registry hosts that have neither a credential rule nor an egress entry", () => {
+    const registries = [
+      { label: "npmrc", endpoint: { host: "npm.corp.example" } },
+      { label: "maven", endpoint: { host: "nexus.corp.example", port: 8443 } },
+      { label: "pip", endpoint: { host: "pypi.org" } },
+      { label: "npmrc", endpoint: { host: "api.keyed.example" } },
+    ];
+    const tools = {
+      value: { gh: [], glab: [], maven: { servers: [], mirrors: [], passthrough: [] }, git: {}, env: {} },
+      rules: [],
+      notices: [],
+      registries,
+    };
+    const notices = deriveSandboxPi(input({ tools, egress: ["pypi.org", "nexus.corp.example"] })).notices;
+
+    expect(notices).toContain(
+      'npmrc: npm.corp.example has no credential rule and is not in the egress allowlist; add "npm.corp.example" to egress.allow to reach it',
+    );
+    expect(notices).toContain(
+      'maven: nexus.corp.example:8443 has no credential rule and is not in the egress allowlist; add "nexus.corp.example:8443" to egress.allow to reach it',
+    );
+    expect(notices.filter((notice) => notice.includes("egress.allow"))).toHaveLength(2);
+    expect(deriveSandboxPi(input({ tools })).notices.some((notice) => notice.includes("egress.allow"))).toBe(
+      false,
+    );
   });
 });

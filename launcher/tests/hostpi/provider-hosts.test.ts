@@ -83,16 +83,20 @@ describe("readProviderHosts", () => {
 });
 
 describe("provider-hosts.mjs", () => {
-  it("prints a table of host lists from the installed pi", async () => {
+  it("prints a table of host lists and API key variables from the installed pi, whatever the environment", async () => {
     const piDir = resolve(launcherRoot(), "..", "node_modules", "@earendil-works", "pi-coding-agent");
     const result = await createProcessRunner().run(process.execPath, [SCRIPT, piDir]);
-    const table = JSON.parse(result.stdout) as Record<string, { hosts: unknown }>;
+    const table = JSON.parse(result.stdout) as Record<string, { hosts: unknown; envVars?: unknown }>;
     const entries = Object.values(table);
 
     expect(result.code).toBe(0);
     expect(entries.length).toBeGreaterThan(0);
+    expect(entries.some((entry) => Array.isArray(entry.envVars) && entry.envVars.length > 0)).toBe(true);
     entries.forEach((entry) => {
-      expect(Object.keys(entry)).toEqual(["hosts"]);
+      expect(["hosts", "envVars"]).toEqual(expect.arrayContaining(Object.keys(entry)));
+      (Array.isArray(entry.envVars) ? entry.envVars : []).forEach((name) => {
+        expect(name).toMatch(/^[A-Z][A-Z0-9_]*$/);
+      });
       expect(Array.isArray(entry.hosts)).toBe(true);
       (entry.hosts as unknown[]).forEach((host) => {
         expect(host).toMatch(/^[a-z0-9.-]+$/);

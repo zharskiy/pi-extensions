@@ -10,7 +10,6 @@ export interface AccessLogEntry {
   decision: "allow" | "deny";
   rule: string;
   reason?: string;
-  credential?: string;
   bytesIn: number;
   bytesOut: number;
 }

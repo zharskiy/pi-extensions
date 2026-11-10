@@ -4,8 +4,10 @@ import { isWithin, lstatOrUndefined } from "../shared/index.ts";
 
 const depthOf = (path: string) => path.split(sep).length;
 
+const byCodeUnit = (first: string, second: string) => (first < second ? -1 : first > second ? 1 : 0);
+
 export const byDepth = (first: string, second: string) =>
-  depthOf(first) - depthOf(second) || first.localeCompare(second);
+  depthOf(first) - depthOf(second) || byCodeUnit(first, second);
 
 export const unique = (paths: string[]) => [...new Set(paths)];
 

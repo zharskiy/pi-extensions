@@ -5,12 +5,10 @@ export {
 } from "./git-overlay.ts";
 export {
   discardContainer,
-  ensureContainer,
-  findCurrentContainer,
-  findRepoContainer,
-  gitDirInUseElsewhere,
   listLauncherContainers,
+  removeLaunchContainer,
   removeRepoContainers,
+  startLaunchContainer,
 } from "./lifecycle.ts";
 export { userHashOf } from "./names.ts";
 export type { HostTerminal, SignalSource } from "./run-pi.ts";

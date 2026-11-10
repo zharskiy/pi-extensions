@@ -1,7 +1,10 @@
+import { devNull } from "node:os";
 import { findOnPath } from "../path-search.ts";
 import { noticeOnly, type Section } from "../rules.ts";
 import type { GitIdentity, ToolsInput } from "../types.ts";
 import { PROBE_TIMEOUT_MS, timedOutNotice } from "./files.ts";
+
+const INERT = ["-c", "core.fsmonitor=false", "-c", `core.hooksPath=${devNull}`];
 
 const IDENTITY_LINE = /^user\.(name|email) (.+)$/;
 
@@ -22,7 +25,7 @@ export const deriveGitIdentity = async (input: ToolsInput): Promise<Section<GitI
   }
 
   const result = await input.runner
-    .run(git, ["config", "--global", "--includes", "--get-regexp", "^user\\.(name|email)$"], {
+    .run(git, [...INERT, "config", "--global", "--includes", "--get-regexp", "^user\\.(name|email)$"], {
       timeoutMs: PROBE_TIMEOUT_MS,
     })
     .catch(() => undefined);

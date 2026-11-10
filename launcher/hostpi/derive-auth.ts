@@ -1,10 +1,12 @@
-import { isJsonObject, isSecretName, jwtShapedPlaceholder } from "../shared/index.ts";
+import type { SecretRef } from "../config/index.ts";
+import { isJsonObject, isSecretName, isSecretShapedValue, jwtShapedPlaceholder } from "../shared/index.ts";
 import { noHostNotice, providerEndpoints } from "./provider-endpoints.ts";
 import {
   type DeriveContext,
   mergeSections,
   noticeOnly,
   placeholderOf,
+  type RuleBody,
   rulesFor,
   type Section,
 } from "./rules.ts";
@@ -17,11 +19,17 @@ export interface AuthSources {
   env: Record<string, string | undefined>;
 }
 
+export type ProviderCredentials = Record<string, RuleBody>;
+
+export type AuthSection = Section<JsonObject> & { credentials: ProviderCredentials };
+
 const FAR_FUTURE_EXPIRES = 4102444800000;
 
 const OAUTH_SECRET_FIELDS = new Set(["access", "refresh", "expires"]);
 
 type Entry = [string, JsonObject];
+
+type EntrySection = Section<Entry[]> & { credential?: [string, RuleBody] };
 
 const isPrimitive = (value: unknown) =>
   value === null || ["string", "number", "boolean"].includes(typeof value);
@@ -30,27 +38,48 @@ const withRules = (
   sources: AuthSources,
   id: string,
   entry: Entry,
-  rules: Parameters<typeof rulesFor>[2],
+  body: RuleBody,
   identity: string,
-): Section<Entry[]> => {
+): EntrySection => {
   const endpoints = providerEndpoints(id, sources.modelsProviders, sources.providerHosts);
 
   return {
     value: [entry],
-    rules: rulesFor(identity, endpoints, rules),
+    rules: rulesFor(identity, endpoints, body),
     notices: endpoints.length === 0 ? [noHostNotice(`auth ${id}`)] : [],
+    credential: [id, body],
   };
 };
 
-const apiKeyEntry = (context: DeriveContext, sources: AuthSources, id: string): Section<Entry[]> => {
+const envOf = (context: DeriveContext, id: string, env: unknown) => {
+  if (!isJsonObject(env)) {
+    return {};
+  }
+
+  const entries = Object.entries(env).map(([name, value]) => [
+    name,
+    typeof value === "string" && (isSecretName(name) || isSecretShapedValue(value))
+      ? placeholderOf(context, `auth:${id}:env:${name}`)
+      : value,
+  ]);
+
+  return { env: Object.fromEntries(entries) };
+};
+
+const apiKeyEntry = (
+  context: DeriveContext,
+  sources: AuthSources,
+  id: string,
+  extra: { env?: unknown; secret?: SecretRef } = {},
+): EntrySection => {
   const identity = `auth:${id}:key`;
   const placeholder = placeholderOf(context, identity);
 
   return withRules(
     sources,
     id,
-    [id, { type: "api_key", key: placeholder }],
-    { placeholder, secret: { piAuth: id } },
+    [id, { type: "api_key", key: placeholder, ...envOf(context, id, extra.env) }],
+    { placeholder, secret: extra.secret ?? { piAuth: id } },
     identity,
   );
 };
@@ -60,7 +89,7 @@ const oauthEntry = (
   sources: AuthSources,
   id: string,
   entry: JsonObject,
-): Section<Entry[]> => {
+): EntrySection => {
   const identity = `auth:${id}:access`;
   const access = typeof entry.access === "string" ? entry.access : "";
   const placeholder = jwtShapedPlaceholder(access, context.salt, identity);
@@ -69,6 +98,7 @@ const oauthEntry = (
   );
   const rendered = {
     ...Object.fromEntries(kept),
+    ...envOf(context, id, entry.env),
     access: placeholder,
     refresh: placeholderOf(context, `auth:${id}:refresh`),
     expires: FAR_FUTURE_EXPIRES,
@@ -88,11 +118,11 @@ const hostEntry = (
   sources: AuthSources,
   id: string,
   entry: unknown,
-): Section<Entry[]> => {
+): EntrySection => {
   const type = isJsonObject(entry) ? entry.type : undefined;
 
-  if (type === "api_key") {
-    return apiKeyEntry(context, sources, id);
+  if (type === "api_key" && isJsonObject(entry)) {
+    return apiKeyEntry(context, sources, id, { env: entry.env });
   }
 
   if (type === "oauth" && isJsonObject(entry)) {
@@ -102,19 +132,29 @@ const hostEntry = (
   return noticeOnly([], `auth ${id}: unsupported entry type, not copied`);
 };
 
-const hasEnvKey = (sources: AuthSources, envVars: string[] | undefined) =>
-  (envVars ?? []).some((name) => (sources.env[name] ?? "") !== "");
+const envKeyOf = (sources: AuthSources, envVars: string[] | undefined) =>
+  (envVars ?? []).find((name) => (sources.env[name] ?? "") !== "");
 
-const envProviderIds = (sources: AuthSources) =>
-  Object.entries(sources.providerHosts)
-    .filter(([id, entry]) => sources.auth[id] === undefined && hasEnvKey(sources, entry.envVars))
-    .map(([id]) => id);
+const envProviders = (context: DeriveContext, sources: AuthSources) =>
+  Object.entries(sources.providerHosts).flatMap(([id, entry]) => {
+    const variable = sources.auth[id] === undefined ? envKeyOf(sources, entry.envVars) : undefined;
 
-export const deriveAuth = (context: DeriveContext, sources: AuthSources): Section<JsonObject> => {
-  const merged = mergeSections([
+    return variable === undefined ? [] : [apiKeyEntry(context, sources, id, { secret: { env: variable } })];
+  });
+
+export const deriveAuth = (context: DeriveContext, sources: AuthSources): AuthSection => {
+  const sections = [
     ...Object.entries(sources.auth).map(([id, entry]) => hostEntry(context, sources, id, entry)),
-    ...envProviderIds(sources).map((id) => apiKeyEntry(context, sources, id)),
-  ]);
+    ...envProviders(context, sources),
+  ];
+  const merged = mergeSections(sections);
 
-  return { value: Object.fromEntries(merged.values.flat()), rules: merged.rules, notices: merged.notices };
+  return {
+    value: Object.fromEntries(merged.values.flat()),
+    rules: merged.rules,
+    notices: merged.notices,
+    credentials: Object.fromEntries(
+      sections.flatMap((section) => (section.credential ? [section.credential] : [])),
+    ),
+  };
 };

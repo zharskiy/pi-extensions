@@ -1,6 +1,7 @@
 import { constants } from "node:fs";
 import { access, lstat } from "node:fs/promises";
 import { connect } from "node:net";
+import { parentProxyOf } from "../../config/index.ts";
 import {
   type HostPi,
   type HostPiFiles,
@@ -8,24 +9,15 @@ import {
   mcpSignIns,
   readHostPiFiles,
 } from "../../hostpi/index.ts";
-import { parentTarget } from "../../proxy/index.ts";
 import { errorMessage, isFreshMcpToken } from "../../shared/index.ts";
 import { assertHostSessionsDir } from "../../workspace/index.ts";
 import type { LaunchContext } from "../context.ts";
 import { type CliDeps, hostAgentDirOf } from "../deps.ts";
 import { providerHostsOf } from "../derive.ts";
-import {
-  hostPiPlace,
-  hostPiText,
-  resolveJobPi,
-  resolveShellPi,
-  type ShellPi,
-  sandboxRoots,
-} from "../host-pi.ts";
+import { hostPiPlace, hostPiText, resolveJobPi, sandboxRoots } from "../host-pi.ts";
 import { hostSessionsOf } from "../host-sessions.ts";
 import { isOlderVersion, testedPiVersion } from "../versions.ts";
 import { failed, type NamedCheck, passed, skipped, warned } from "./doctor-probes.ts";
-import { grantLines } from "./egress.ts";
 
 const CONNECT_TIMEOUT_MS = 3000;
 
@@ -41,16 +33,9 @@ const HOURS_SHOWN_BELOW_MS = 2 * DAY_MS;
 
 const REINSTALL = "reinstall the launcher with npm install -g pi-extensions-mz";
 
-const shellPiNote = (shell: ShellPi | undefined) =>
-  shell?.source === "path" ? `; pi --no-sandbox runs ${hostPiText(shell)}` : "";
-
-const checkHostPi = async (deps: CliDeps, context: LaunchContext, job: HostPi | undefined) => {
-  const shell = await resolveShellPi(deps, sandboxRoots(deps, context));
-
+const checkHostPi = async (context: LaunchContext, job: HostPi | undefined) => {
   if (job === undefined) {
-    return shell === undefined
-      ? failed(`no pi on the host; install pi or ${REINSTALL}`)
-      : failed(`${hostPiText(shell)} serves pi --no-sandbox only, host jobs have no pi; ${REINSTALL}`);
+    return failed(`no pi on the host; install pi or ${REINSTALL}`);
   }
 
   const tested = await testedPiVersion();
@@ -66,7 +51,7 @@ const checkHostPi = async (deps: CliDeps, context: LaunchContext, job: HostPi | 
       ? "the image follows it"
       : "the image is pinned by image.digest";
 
-  return passed(`${hostPiText(job)}; ${image}${shellPiNote(shell)}`);
+  return passed(`${hostPiText(job)}; ${image}`);
 };
 
 const checkProviderHosts = async (deps: CliDeps, context: LaunchContext, pi: HostPi | undefined) => {
@@ -98,7 +83,7 @@ const reachable = (host: string, port: number) =>
   });
 
 const checkParentProxy = async (deps: CliDeps, context: LaunchContext) => {
-  const target = parentTarget(context.effective.config.egress.parentProxy, deps.env);
+  const target = parentProxyOf(context.effective.config.egress.parentProxy, deps.env);
 
   if (target === undefined) {
     return skipped("no parent proxy configured");
@@ -115,22 +100,6 @@ const checkParentProxy = async (deps: CliDeps, context: LaunchContext) => {
   return (await reachable(target.host, target.port))
     ? passed(`${authority} accepts connections`)
     : failed(`${authority} does not accept connections`);
-};
-
-const checkOrg = (context: LaunchContext) => {
-  const file = context.effective.config.org;
-
-  return file === undefined ? skipped("no org baseline configured") : passed(`${file} loaded`);
-};
-
-const checkGrants = async (context: LaunchContext) => {
-  if (!context.effective.config.egress.grants) {
-    return passed("turned off by egress.grants");
-  }
-
-  const lines = await grantLines(context);
-
-  return passed(lines.length === 0 ? "none active" : `${lines.length} active: ${lines.join("; ")}`);
 };
 
 const durationText = (ms: number) => {
@@ -222,11 +191,9 @@ export const hostChecks = async (deps: CliDeps, context: LaunchContext): Promise
   ]);
   const [checks, signIns] = await Promise.all([
     Promise.all([
-      named("host pi", checkHostPi(deps, context, pi)),
+      named("host pi", checkHostPi(context, pi)),
       named("provider hosts", checkProviderHosts(deps, context, pi)),
       named("parent proxy", checkParentProxy(deps, context)),
-      named("org baseline", Promise.resolve(checkOrg(context))),
-      named("grants", checkGrants(context)),
       named("sessions", checkSessions(deps, context, files)),
     ]),
     signInChecks(deps, files),

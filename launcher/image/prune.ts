@@ -1,66 +1,49 @@
 import { type Backend, type ImageSummary, LABELS } from "../backend/index.ts";
 import { shortHash, stateLayout, withFileLockIfFree } from "../shared/index.ts";
 import { LAYER_TAG_PREFIX } from "./layer.ts";
-import { readBaseRecord, wantedLayers } from "./record.ts";
+import { currentLayer, readBaseRecord } from "./record.ts";
 
 const SETTLE_SECONDS = 60 * 60;
 
 const nowSeconds = () => Math.floor(Date.now() / 1000);
 
-const settled = (image: ImageSummary, now: number) => now - image.created >= SETTLE_SECONDS;
+const idle = (image: ImageSummary, now: number) => !image.inUse && now - image.created >= SETTLE_SECONDS;
 
-const unreferencedLayerTags = (images: ImageSummary[], wanted: Set<string>, now: number) =>
-  images
-    .filter((image) => !image.inUse && settled(image, now))
-    .flatMap((image) => image.tags.filter((tag) => tag.startsWith(LAYER_TAG_PREFIX) && !wanted.has(tag)));
-
-const removeLayerTags = async (backend: Backend, stateDir: string, images: ImageSummary[], now: number) => {
-  const tags = unreferencedLayerTags(images, await wantedLayers(stateDir), now);
-  const removed = await Promise.all(tags.map(async (tag) => ((await backend.removeImage(tag)) ? [tag] : [])));
+const removeAll = async (backend: Backend, references: string[]) => {
+  const removed = await Promise.all(
+    references.map(async (reference) => ((await backend.removeImage(reference)) ? [reference] : [])),
+  );
 
   return removed.flat();
 };
 
-export const removeStaleImages = async (
-  backend: Backend,
-  stateDir: string,
-  replacedBase: string | undefined,
-) => {
+const collectUnlocked = async (backend: Backend, stateDir: string, replacedBase?: string) => {
+  const [images, layer, base] = await Promise.all([
+    backend.listImages(),
+    currentLayer(stateDir),
+    readBaseRecord(stateDir),
+  ]);
   const now = nowSeconds();
-  const images = await backend.listImages();
-
-  await removeLayerTags(backend, stateDir, images, now);
-
-  const replaced = images.find((image) => image.id === replacedBase);
-
-  if (replaced !== undefined && settled(replaced, now)) {
-    await backend.removeImage(replaced.id);
-  }
-};
-
-const isDangling = (image: ImageSummary, baseId: string | undefined, now: number) =>
-  image.tags.length === 0 &&
-  !image.inUse &&
-  image.labels[LABELS.managed] === "true" &&
-  image.id !== baseId &&
-  settled(image, now);
-
-const removeDangling = async (backend: Backend, stateDir: string) => {
-  const baseId = (await readBaseRecord(stateDir))?.id;
-  const now = nowSeconds();
-  const dangling = (await backend.listImages()).filter((image) => isDangling(image, baseId, now));
-  const removed = await Promise.all(
-    dangling.map(async (image) => ((await backend.removeImage(image.id)) ? [image.id] : [])),
+  const candidates = images.filter((image) => idle(image, now));
+  const layerTags = candidates.flatMap((image) =>
+    image.tags.filter((tag) => tag.startsWith(LAYER_TAG_PREFIX) && tag !== layer),
   );
+  const untagged = candidates
+    .filter(
+      (image) =>
+        image.tags.length === 0 &&
+        image.id !== base?.id &&
+        (image.labels[LABELS.managed] === "true" || image.id === replacedBase),
+    )
+    .map((image) => image.id);
+  const tags = await removeAll(backend, layerTags);
+  const ids = await removeAll(backend, untagged);
 
-  return removed.flat().map((id) => shortHash(id.replace(/^sha256:/, "")));
+  return [...tags, ...ids.map((id) => shortHash(id.replace(/^sha256:/, "")))];
 };
 
-const collectUnlocked = async (backend: Backend, stateDir: string) => {
-  const tags = await removeLayerTags(backend, stateDir, await backend.listImages(), nowSeconds());
-
-  return [...tags, ...(await removeDangling(backend, stateDir))];
-};
+export const removeStaleImages = (backend: Backend, stateDir: string, replacedBase: string | undefined) =>
+  collectUnlocked(backend, stateDir, replacedBase);
 
 export const collectImages = async (backend: Backend, stateDir: string) => {
   const collected = await withFileLockIfFree(stateLayout(stateDir).buildLock, () =>

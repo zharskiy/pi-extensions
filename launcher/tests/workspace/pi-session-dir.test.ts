@@ -2,12 +2,7 @@ import { mkdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { hostAgentDir } from "../../shared/index.ts";
-import {
-  assertHostSessionsDir,
-  hostSessionsChoice,
-  hostSessionsDir,
-  sessionsSwitchNotice,
-} from "../../workspace/index.ts";
+import { assertHostSessionsDir, hostSessionsChoice, hostSessionsDir } from "../../workspace/index.ts";
 import { sessionSlug } from "../../workspace/pi-session-dir.ts";
 import { tempDir } from "../support/temp-dir.ts";
 
@@ -68,12 +63,8 @@ describe("hostSessionsChoice", () => {
     expect(choiceWith()).toEqual({ dir: "/Users/dev/.pi/agent/sessions/--Users-dev-work-repo--" });
   });
 
-  it("stays in the volume without a notice when sessions.host or PI_SANDBOX_SESSIONS_HOST is off", () => {
+  it("stays in the volume without a notice when sessions.host is off", () => {
     expect(choiceWith({ enabled: false })).toEqual({ off: "sessions.host is off", notice: false });
-    expect(choiceWith({ env: { PI_SANDBOX_SESSIONS_HOST: "off" } })).toEqual({
-      off: "PI_SANDBOX_SESSIONS_HOST is off",
-      notice: false,
-    });
   });
 
   it("stays in the volume with a notice when host pi uses a custom session dir", () => {
@@ -99,14 +90,9 @@ describe("hostSessionsChoice", () => {
   });
 });
 
-describe("sessionsSwitchNotice", () => {
-  it("says an unknown PI_SANDBOX_SESSIONS_HOST value is ignored, and leaves the feature on", () => {
-    expect(sessionsSwitchNotice({ PI_SANDBOX_SESSIONS_HOST: "0" })).toBe(
-      'sessions: PI_SANDBOX_SESSIONS_HOST=0 is not "off" and is ignored',
-    );
-    expect(sessionsSwitchNotice({ PI_SANDBOX_SESSIONS_HOST: "off" })).toBeUndefined();
-    expect(sessionsSwitchNotice({})).toBeUndefined();
-    expect("dir" in choiceWith({ env: { PI_SANDBOX_SESSIONS_HOST: "false" } })).toBe(true);
+describe("the sessions switch", () => {
+  it("knows no environment switch: sessions.host is the one switch", () => {
+    expect("dir" in choiceWith({ env: { PI_SANDBOX_SESSIONS_HOST: "off" } })).toBe(true);
   });
 });
 

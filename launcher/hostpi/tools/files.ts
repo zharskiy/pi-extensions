@@ -1,12 +1,10 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { ToolConfigFormat } from "../../shared/index.ts";
-import { endpointOf, hasUrlUserinfo, withoutUserinfo } from "../endpoints.ts";
+import { hasUrlUserinfo, type ToolConfigFormat } from "../../shared/index.ts";
+import { type Endpoint, endpointOf, withoutUserinfo } from "../endpoints.ts";
 import { isInsideRoots } from "../path-search.ts";
 import { noticeOnly, placeholderOf, rulesFor, type Section } from "../rules.ts";
 import type { ToolsInput } from "../types.ts";
-
-export const COMMAND_TTL_SECONDS = 300;
 
 export const PROBE_TIMEOUT_MS = 10_000;
 
@@ -39,7 +37,19 @@ export const timedOutNotice = (label: string, command: string, timeoutMs = PROBE
 export const noCredentialsNotice = (label: string, command: string, timeoutMs: number) =>
   `${label}: ${command} did not answer within ${timeoutMs / 1000} s on the host (a Keychain prompt may be waiting); it has no credentials in the sandbox this launch, run pi again once it answers`;
 
-export type UrlSecret = { file: string; format: ToolConfigFormat; key: string } | { env: string };
+export interface Registry {
+  label: string;
+  endpoint: Endpoint;
+}
+
+export const registriesOf = (label: string, urls: string[]): Registry[] =>
+  urls.flatMap((url) => {
+    const result = endpointOf(withoutUserinfo(url));
+
+    return "endpoint" in result ? [{ label, endpoint: result.endpoint }] : [];
+  });
+
+export type UrlSecret = { file: string; format: ToolConfigFormat; key: string };
 
 export interface UrlCredential {
   label: string;

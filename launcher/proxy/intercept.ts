@@ -1,6 +1,5 @@
 import { createSecureContext, type SecureContext, TLSSocket } from "node:tls";
 import { normalizeHost } from "../config/index.ts";
-import { LauncherError } from "../shared/index.ts";
 import type { Denials, RecordAccess } from "./denials.ts";
 import type { DialAccess } from "./dial.ts";
 import { sniDenial } from "./policy.ts";
@@ -14,7 +13,7 @@ interface LeafSource {
 }
 
 interface InterceptOptions {
-  ca?: LeafSource;
+  ca: LeafSource;
   helloTimeoutMs: number;
   accessOf: (host: string) => DialAccess;
   serve: (socket: TLSSocket, target: TerminatedTarget) => void;
@@ -31,10 +30,6 @@ export const createInterceptor = (options: InterceptOptions) => {
   const { denials } = options;
 
   const secureContextFor = async (host: string) => {
-    if (options.ca === undefined) {
-      throw new LauncherError("the proxy needs the launcher CA to terminate TLS");
-    }
-
     const leaf = await options.ca.leaf(host);
     const known = contexts.get(leaf);
 

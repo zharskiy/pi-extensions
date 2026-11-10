@@ -7,9 +7,6 @@ import type { LeafCertificate } from "./tls-ca.ts";
 
 export interface DenialPageOptions {
   leaf(host: string): Promise<LeafCertificate>;
-  maxNames?: number;
-  mintsPerMinute?: number;
-  idleMs?: number;
   now?: () => number;
 }
 
@@ -40,8 +37,6 @@ const rawPage = (text: string) =>
 
 export const createDenialPages = (options: DenialPageOptions) => {
   const now = options.now ?? Date.now;
-  const maxNames = options.maxNames ?? MAX_NAMES;
-  const mintsPerMinute = options.mintsPerMinute ?? MINTS_PER_MINUTE;
   const contexts = new Map<string, Promise<SecureContext | undefined>>();
   const mints = { times: [] as number[] };
   const texts = new WeakMap<object, string>();
@@ -67,7 +62,7 @@ export const createDenialPages = (options: DenialPageOptions) => {
 
     contexts.set(host, context);
 
-    const excess = [...contexts.keys()].slice(0, Math.max(0, contexts.size - maxNames));
+    const excess = [...contexts.keys()].slice(0, Math.max(0, contexts.size - MAX_NAMES));
 
     excess.forEach((name) => {
       contexts.delete(name);
@@ -79,7 +74,7 @@ export const createDenialPages = (options: DenialPageOptions) => {
 
     mints.times = mints.times.filter((time) => current - time < MINT_WINDOW_MS);
 
-    if (mints.times.length >= mintsPerMinute) {
+    if (mints.times.length >= MINTS_PER_MINUTE) {
       return false;
     }
 
@@ -120,7 +115,7 @@ export const createDenialPages = (options: DenialPageOptions) => {
   const serve = (client: Socket, secureContext: SecureContext, text: string) => {
     const secure = new TLSSocket(client, { isServer: true, secureContext, ALPNProtocols: ["http/1.1"] });
 
-    client.setTimeout(options.idleMs ?? IDLE_MS, () => client.destroy());
+    client.setTimeout(IDLE_MS, () => client.destroy());
 
     secure.on("error", () => client.destroy());
 

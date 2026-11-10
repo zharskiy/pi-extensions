@@ -1,31 +1,34 @@
 import { EventEmitter } from "node:events";
-import { lstat, mkdir, readdir, readFile, rm, symlink, utimes, writeFile } from "node:fs/promises";
+import { lstat, readdir, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { describe, expect, it } from "vitest";
 import { run } from "../../cli/index.ts";
 import { liveLaunches, registerLaunch } from "../../grants/index.ts";
 import { processMark, sha256Hex, stateLayout } from "../../shared/index.ts";
-import { createFakeBackend, createHarness, piSessions } from "./harness.ts";
+import { createFakeBackend, createHarness, piSessions, sweepNow } from "./harness.ts";
 
 const POLL_MS = 5;
 
 const POLLS = 200;
 
-const waitFor = async (ready: () => boolean, left = POLLS): Promise<boolean> => {
+const _waitFor = async (ready: () => boolean, left = POLLS): Promise<boolean> => {
   if (ready() || left === 0) {
     return ready();
   }
 
   await sleep(POLL_MS);
 
-  return waitFor(ready, left - 1);
+  return _waitFor(ready, left - 1);
 };
 
-const OUTDATED =
-  "pi-sandbox: the sandbox config changed (overlays); it applies after every session in this repository exits";
-
 const OTHER_LAUNCH = "00000000000000aa";
+
+const exists = (path: string) =>
+  lstat(path).then(
+    () => true,
+    () => false,
+  );
 
 const filesUnder = async (dir: string): Promise<string[]> => {
   const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
@@ -39,9 +42,6 @@ const filesUnder = async (dir: string): Promise<string[]> => {
 
   return nested.flat();
 };
-
-const withCacheMount = (harness: Awaited<ReturnType<typeof createHarness>>) =>
-  harness.writeJson(harness.userConfigFile, { mounts: { cacheVolumes: ["deep/cache"] } });
 
 const launchesShown = async (harness: Awaited<ReturnType<typeof createHarness>>) => {
   await run(["sandbox", "status"], harness.deps);
@@ -57,8 +57,6 @@ describe("the end of a session", () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
     const repo = sha256Hex(harness.repoRoot);
-
-    await withCacheMount(harness);
 
     expect(await run([], harness.deps)).toBe(0);
 
@@ -77,15 +75,13 @@ describe("the end of a session", () => {
     expect(harness.stoppedProxies).toEqual([repo, repo]);
     expect(left).toEqual(before);
     expect(left).not.toContain(files.proxy.token);
-    expect(left).not.toContain(files.pins);
     expect(left).not.toContain(files.created);
     expect(left.filter((path) => /\/git\/[0-9a-f]{16}$/.test(path))).toEqual([]);
     expect(await lstat(join(harness.repoRoot, ".git", "commondir")).catch(() => undefined)).toBeUndefined();
-    expect(await lstat(join(harness.repoRoot, "deep")).catch(() => undefined)).toBeUndefined();
     expect(await readFile(files.record, "utf8")).toContain(harness.repoRoot);
   });
 
-  it("removes the container, relay and network only after the last session of the repository ends", async () => {
+  it("removes its own container at the end, and the relay and network only after the last session of the repository", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
 
@@ -99,28 +95,18 @@ describe("the end of a session", () => {
 
     await run([], harness.deps);
 
-    const [container] = [...fake.containers.values()];
-
-    expect(container?.summary.state).toBe("running");
+    expect(fake.created).toHaveLength(1);
+    expect(fake.containers.size).toBe(0);
     expect(fake.relays.size).toBe(1);
-    expect(fake.stops).toEqual([]);
+    expect(fake.networks.size).toBe(1);
     expect(harness.stoppedProxies).toEqual([]);
   });
 
-  it("removes the container and the relay side by side, then the network", async () => {
+  it("removes its own container first, then the relay and the network", async () => {
     const fake = createFakeBackend();
     const order: string[] = [];
     const backend = {
       ...fake.backend,
-      waitRemoved: async (id: string, timeoutMs: number) => {
-        order.push(`wait ${id.split("-")[0]}`);
-
-        if (!(await waitFor(() => order.includes("wait container") && order.includes("wait relay")))) {
-          order.push("one at a time");
-        }
-
-        await fake.backend.waitRemoved(id, timeoutMs);
-      },
       removeContainer: async (id: string) => {
         order.push(`remove ${id.split("-")[0]}`);
 
@@ -135,14 +121,7 @@ describe("the end of a session", () => {
     const harness = await createHarness({ backend: () => backend });
 
     expect(await run([], harness.deps)).toBe(0);
-    expect(order.at(-1)).toBe("network");
-    expect([...order].sort()).toEqual([
-      "network",
-      "remove container",
-      "remove relay",
-      "wait container",
-      "wait relay",
-    ]);
+    expect(order).toEqual(["remove container", "remove relay", "network"]);
   });
 
   it("tolerates a container the engine already removed or is still removing", async () => {
@@ -150,7 +129,6 @@ describe("the end of a session", () => {
     const backend = {
       ...fake.backend,
       removeContainer: async () => undefined,
-      waitRemoved: async () => undefined,
     };
     const harness = await createHarness({ backend: () => backend });
 
@@ -159,7 +137,7 @@ describe("the end of a session", () => {
     expect(fake.networks.size).toBe(0);
   });
 
-  it("releases the proxy and the created dirs when the engine is gone at the end, and keeps the pin until the engine answers", async () => {
+  it("releases the proxy when the engine is gone at the end, and the next sweep removes the container", async () => {
     const fake = createFakeBackend();
     const engine = { up: true };
     const backend: typeof fake.backend = {
@@ -176,23 +154,56 @@ describe("the end of a session", () => {
     const harness = await createHarness({ backend: () => backend });
     const repo = sha256Hex(harness.repoRoot);
 
-    await withCacheMount(harness);
-
-    const pin = join(harness.repoRoot, ".git", "commondir");
-
     expect(await run([], harness.deps)).toBe(0);
     expect(fake.containers.size).toBe(1);
     expect(harness.stoppedProxies).toContain(repo);
     expect(
       await lstat(stateLayout(harness.stateDir).repo(repo).proxy.token).catch(() => undefined),
     ).toBeUndefined();
-    expect(await lstat(join(harness.repoRoot, "deep")).catch(() => undefined)).toBeUndefined();
-    expect(await lstat(pin).catch(() => undefined)).toBeDefined();
 
     engine.up = true;
 
-    expect(await run(["sandbox", "gc"], harness.deps)).toBe(0);
-    expect(await lstat(pin).catch(() => undefined)).toBeUndefined();
+    expect(await sweepNow(harness.deps)).toBe(0);
+    expect(fake.containers.size).toBe(0);
+  });
+});
+
+describe("the git report at the last session's end", () => {
+  it("finishes under the launch lock, so a launch registering right after sees no baseline of the ended one", async () => {
+    const fake = createFakeBackend();
+    const seen: { ending?: boolean; atEnd?: boolean; atRegistration?: boolean; registered?: Promise<void> } =
+      {};
+    const harness = await createHarness({
+      respond: (call) =>
+        seen.ending === true && call.file === "git" && call.args.includes("ls-files")
+          ? sleep(300).then(() => ({ code: 1 }))
+          : undefined,
+      backend: () => ({
+        ...fake.backend,
+        removeRepoNetwork: async (repoHash: string) => {
+          seen.ending = true;
+          seen.atEnd = await exists(baseline());
+
+          seen.registered = registerLaunch(harness.stateDir, {
+            launchId: OTHER_LAUNCH,
+            repoHash,
+            startedAt: 2,
+            ...(await processMark()),
+          }).then(async () => {
+            seen.atRegistration = await exists(baseline());
+          });
+
+          return fake.backend.removeRepoNetwork(repoHash);
+        },
+      }),
+    });
+    const baseline = () => stateLayout(harness.stateDir).repo(sha256Hex(harness.repoRoot)).gitBaseline;
+
+    expect(await run([], harness.deps)).toBe(0);
+
+    await seen.registered;
+
+    expect(seen).toMatchObject({ atEnd: true, atRegistration: false });
   });
 });
 
@@ -247,7 +258,11 @@ describe("the sweep of what a killed launcher left", () => {
 
     const id = fake.addContainer({
       name: `pi-sandbox-${other.slice(0, 12)}`,
-      labels: { "pi-sandbox.managed": "true", "pi-sandbox.repo-hash": other },
+      labels: {
+        "pi-sandbox.managed": "true",
+        "pi-sandbox.repo-hash": other,
+        "pi-sandbox.launch-id": "00000000000000ff",
+      },
       state: "running",
       image: "x",
     });
@@ -259,34 +274,27 @@ describe("the sweep of what a killed launcher left", () => {
 });
 
 describe("a config change while other sessions of the repository are live", () => {
-  it("keeps the shared container with a notice, then replaces it once the others have exited", async () => {
+  it("applies to the next launch at once, in a container of its own", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
-    const other = {
+
+    await registerLaunch(harness.stateDir, {
       launchId: OTHER_LAUNCH,
       repoHash: sha256Hex(harness.repoRoot),
       startedAt: 1,
       ...(await processMark()),
-    };
-
-    await registerLaunch(harness.stateDir, other);
+    });
 
     expect(await run([], harness.deps)).toBe(0);
 
-    const [first] = [...fake.containers.keys()];
+    await harness.writeJson(harness.userConfigFile, { env: { allow: ["EDITOR"] } });
 
-    await harness.writeJson(harness.userConfigFile, { mounts: { cacheVolumes: ["vendor"] } });
-
-    expect(await run([], harness.deps)).toBe(0);
-    expect([...fake.containers.keys()]).toEqual([first]);
-    expect(harness.stderr()).toContain(OUTDATED);
-
-    await registerLaunch(harness.stateDir, { ...other, pid: 2 ** 22 + 12345 });
+    harness.deps.env.EDITOR = "vi";
 
     expect(await run([], harness.deps)).toBe(0);
-    expect(fake.containers.has(first ?? "")).toBe(false);
     expect(fake.created).toHaveLength(2);
-    expect(fake.containers.size).toBe(0);
+    expect(piSessions(fake).at(-1)?.spec.env.EDITOR).toBe("vi");
+    expect(harness.stderr()).not.toContain("the sandbox config changed");
   });
 });
 
@@ -312,7 +320,7 @@ describe("a signal while the sandbox is being prepared", () => {
     expect(fake.created).toHaveLength(1);
     expect(fake.containers.size).toBe(0);
     expect(fake.stops.map((stop) => stop.id)).toContain(fake.created[0]?.summary.id);
-    expect(await launchesShown(harness)).toBe("launches: 0 running for this repository");
+    expect(await launchesShown(harness)).toBe(`launches: 0 running in ${harness.repoRoot}`);
     expect(signals.listenerCount("SIGINT")).toBe(0);
     expect(piSessions(fake)).toEqual([]);
   });
@@ -341,12 +349,12 @@ describe("a signal while the sandbox is being prepared", () => {
     expect(await run([], harness.deps)).toBe(130);
     expect(sessionsWhenBuilt).toEqual([1]);
     expect(fake.containers.size).toBe(0);
-    expect(await launchesShown(harness)).toBe("launches: 0 running for this repository");
+    expect(await launchesShown(harness)).toBe(`launches: 0 running in ${harness.repoRoot}`);
   });
 });
 
-describe("a launch refused after it wrote into the repository", () => {
-  it("removes the git pin it wrote before a later check refused, so nothing stays unrecorded", async () => {
+describe("a launch refused right before its start", () => {
+  it("refuses when .git/hooks turned into a file before the start, and leaves no container", async () => {
     const fake = createFakeBackend();
     const box = { planted: false, root: "" };
     const backend: typeof fake.backend = {
@@ -371,32 +379,5 @@ describe("a launch refused after it wrote into the repository", () => {
     expect(box.planted).toBe(true);
     expect(harness.stderr()).toContain(`${join(harness.repoRoot, ".git", "hooks")} is not a directory`);
     expect(fake.containers.size).toBe(0);
-
-    expect(await run(["sandbox", "gc"], harness.deps)).toBe(0);
-    expect(await lstat(join(harness.repoRoot, ".git", "commondir")).catch(() => undefined)).toBeUndefined();
-  });
-
-  it("removes the mount point it made before another mount point was refused", async () => {
-    const fake = createFakeBackend();
-    const harness = await createHarness({ backend: () => fake.backend });
-    const elsewhere = join(harness.root, "elsewhere");
-
-    await mkdir(join(harness.repoRoot, "b"), { recursive: true });
-
-    await mkdir(elsewhere, { recursive: true });
-
-    await symlink(elsewhere, join(harness.repoRoot, "b", "node_modules"));
-
-    await harness.writeJson(harness.userConfigFile, {
-      mounts: { cacheVolumes: ["a/node_modules", "b/node_modules"] },
-    });
-
-    expect(await run([], harness.deps)).toBe(1);
-    expect(harness.stderr()).toContain(
-      `the mount point ${join(harness.repoRoot, "b", "node_modules")} is a symbolic link`,
-    );
-
-    expect(await run(["sandbox", "gc"], harness.deps)).toBe(0);
-    expect(await lstat(join(harness.repoRoot, "a")).catch(() => undefined)).toBeUndefined();
   });
 });

@@ -11,7 +11,7 @@ export type FileSecret =
 export type SecretRef =
   | { env: string; urlPassword?: true; urlUsername?: true }
   | FileSecret
-  | { command: string[]; ttlSeconds?: number }
+  | { command: string[] }
   | { piAuth: string; bearer?: boolean }
   | { mcpOAuth: { server: string; url: string } };
 
@@ -42,16 +42,9 @@ export type ParentProxy = (typeof PARENT_PROXIES)[number];
 
 export type ExtraCa = { file: string } | { hostStore: true };
 
-export const OUTSIDE_MODES = ["refuse", "warn"] as const;
-
-export interface WorkspaceRootsConfig {
+interface WorkspaceRootsConfig {
   roots: string[];
-  outside: (typeof OUTSIDE_MODES)[number];
 }
-
-export const HOST_CACHE_PRESETS = ["maven", "gradle", "npm", "pip", "go", "cargo"] as const;
-
-export type HostCachePreset = (typeof HOST_CACHE_PRESETS)[number];
 
 export type EgressPreset = "npm" | "pypi" | "github" | "maven" | "gradle" | "go" | "cargo";
 
@@ -65,7 +58,7 @@ interface EgressConfig {
 }
 
 interface ImageConfig {
-  reference: string;
+  reference?: string;
   digest?: string;
   packages?: string[];
   npmGlobal?: string[];
@@ -73,10 +66,7 @@ interface ImageConfig {
 }
 
 interface MountsConfig {
-  extraReadOnly: string[];
-  cacheVolumes: string[];
   sharedCaches: string[];
-  hostCaches: HostCachePreset[];
   autoOverlays: boolean;
 }
 
@@ -91,10 +81,9 @@ export interface SandboxConfig {
   env: { allow: string[] };
   resources: { cpus?: number; memoryGiB?: number };
   sessions: { host: boolean };
-  org?: string;
 }
 
-export type LayerName = "policy" | "org" | "user" | "project";
+export type LayerName = "policy" | "user";
 
 export type ConfigSource = "default" | LayerName;
 
@@ -112,7 +101,6 @@ export interface LayerConfig {
   env?: Partial<SandboxConfig["env"]>;
   resources?: SandboxConfig["resources"];
   sessions?: Partial<SandboxConfig["sessions"]>;
-  org?: string;
 }
 
 export interface IgnoredKey {
@@ -123,6 +111,6 @@ export interface IgnoredKey {
 
 export interface EffectiveConfig {
   config: SandboxConfig;
-  sources: Record<string, ConfigSource>;
+  sources: Record<string, string>;
   ignored: IgnoredKey[];
 }

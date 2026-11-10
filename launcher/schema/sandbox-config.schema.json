@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/zharskiy/pi-extensions/launcher/schema/sandbox-config.schema.json",
   "title": "pi sandbox config layer",
-  "description": "One layer of the pi sandbox config: the policy file, the org baseline, the user config or a project's .pi/sandbox.json. A key set by the policy or the org baseline is final; egress.allow, egress.deny, egress.privateHosts, image.packages, credentials.rules and env.allow add up across layers. A project config may set only mounts.cacheVolumes, mounts.autoOverlays, resources.cpus and resources.memoryGiB; any other key in it is ignored. org may be set only by the policy or the user config.",
+  "description": "One layer of the pi sandbox config: the administrator's policy file or the user config. A key the policy sets is final; egress.allow, egress.deny, egress.privateHosts, image.packages, image.npmGlobal, credentials.rules and env.allow add up across the two layers, except that a policy setting egress.grants to false locks egress: the user config's egress.allow and egress.privateHosts entries are then ignored.",
   "type": "object",
   "additionalProperties": false,
   "properties": {
@@ -19,11 +19,13 @@
         "reference": {
           "type": "string",
           "minLength": 1,
-          "pattern": "\\S"
+          "pattern": "\\S",
+          "description": "A prebuilt image pulled by image.digest; set both or neither. Without them the image is built here."
         },
         "digest": {
           "type": "string",
-          "pattern": "^sha256:[0-9a-f]{64}$"
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "description": "The digest image.reference is pulled by; set both or neither."
         },
         "packages": {
           "type": "array",
@@ -39,7 +41,7 @@
             "type": "string",
             "pattern": "^(@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*@[0-9][0-9A-Za-z.+-]*$"
           },
-          "description": "npm packages (name@version) installed globally in an image layer."
+          "description": "npm packages (name@version) installed globally in an image layer; the entries of every layer add up."
         },
         "dockerfile": {
           "type": "string",
@@ -47,7 +49,10 @@
           "description": "Absolute path (or ~/ path) of a file with Dockerfile lines, without FROM, appended to the image layer and run as root."
         }
       },
-      "description": "A project config may not set image keys."
+      "dependentRequired": {
+        "reference": ["digest"],
+        "digest": ["reference"]
+      }
     },
     "credentials": {
       "type": "object",
@@ -61,14 +66,29 @@
             "properties": {
               "id": {
                 "type": "string",
-                "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+                "description": "Letters, digits, dot, dash or underscore; never derived:, the prefix of derived rules."
               },
               "host": {
                 "type": "string",
-                "pattern": "^[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)*$",
-                "not": {
-                  "pattern": "^[0-9.]+$"
-                }
+                "allOf": [
+                  {
+                    "pattern": "^[A-Za-z0-9_]([A-Za-z0-9_-]{0,61}[A-Za-z0-9_])?(\\.[A-Za-z0-9_]([A-Za-z0-9_-]{0,61}[A-Za-z0-9_])?)*$"
+                  },
+                  {
+                    "pattern": "^[^:]{1,253}$"
+                  },
+                  {
+                    "not": {
+                      "pattern": "(^|\\.)(0[xX][0-9A-Fa-f]*|[0-9]+)$"
+                    }
+                  },
+                  {
+                    "not": {
+                      "pattern": "(^|\\.)[Ll][Oo][Cc][Aa][Ll][Hh][Oo][Ss][Tt]$"
+                    }
+                  }
+                ]
               },
               "port": {
                 "type": "integer",
@@ -226,14 +246,10 @@
                           "minLength": 1,
                           "pattern": "\\S"
                         }
-                      },
-                      "ttlSeconds": {
-                        "type": "number",
-                        "exclusiveMinimum": 0
                       }
                     },
                     "required": ["command"],
-                    "description": "A host command; stdout trimmed, or JSON { token, expiresAt }. Cached for ttlSeconds (default 300)."
+                    "description": "A host command; stdout trimmed, or JSON { token, expiresAt } with expiresAt an ISO 8601 time. Cached 300 s or until expiresAt less 30 s."
                   },
                   {
                     "type": "object",
@@ -292,7 +308,7 @@
               "template": ["header"]
             }
           },
-          "description": "Credential rules, each with an id no other rule of the same layer uses (a rule whose id a higher layer already uses is ignored). Not in a project config.",
+          "description": "Credential rules, each with an id no other rule of the same layer uses (a rule whose id a higher layer already uses is ignored).",
           "uniqueItems": true
         },
         "derive": {
@@ -306,11 +322,28 @@
               "type": "array",
               "items": {
                 "type": "string",
-                "pattern": "^(\\*\\.)?[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)*$"
+                "allOf": [
+                  {
+                    "pattern": "^(\\*\\.)?[A-Za-z0-9_]([A-Za-z0-9_-]{0,61}[A-Za-z0-9_])?(\\.[A-Za-z0-9_]([A-Za-z0-9_-]{0,61}[A-Za-z0-9_])?)*$"
+                  },
+                  {
+                    "pattern": "^(\\*\\.)?[^:]{1,253}$"
+                  },
+                  {
+                    "not": {
+                      "pattern": "(^|\\.)(0[xX][0-9A-Fa-f]*|[0-9]+)$"
+                    }
+                  },
+                  {
+                    "not": {
+                      "pattern": "(^|\\.)[Ll][Oo][Cc][Aa][Ll][Hh][Oo][Ss][Tt]$"
+                    }
+                  }
+                ]
               }
             }
           },
-          "description": "Rules and hosts derived from the host pi files. Not in a project config."
+          "description": "Rules and hosts derived from the host pi files."
         }
       }
     },
@@ -322,43 +355,101 @@
           "type": "array",
           "items": {
             "type": "string",
-            "pattern": "^(\\*\\.)?[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)*(:([1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?$"
+            "allOf": [
+              {
+                "pattern": "^(\\*\\.)?[A-Za-z0-9_]([A-Za-z0-9_-]{0,61}[A-Za-z0-9_])?(\\.[A-Za-z0-9_]([A-Za-z0-9_-]{0,61}[A-Za-z0-9_])?)*(:([1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?$"
+              },
+              {
+                "pattern": "^(\\*\\.)?[^:]{1,253}(:|$)"
+              },
+              {
+                "not": {
+                  "pattern": "(^|\\.)(0[xX][0-9A-Fa-f]*|[0-9]+)(:|$)"
+                }
+              },
+              {
+                "not": {
+                  "pattern": "(^|\\.)[Ll][Oo][Cc][Aa][Ll][Hh][Oo][Ss][Tt](:|$)"
+                }
+              },
+              {
+                "not": {
+                  "pattern": ":80$"
+                }
+              }
+            ]
           },
-          "description": "Hosts the sandbox may reach: host, *.domain (exactly one label more, not the domain itself) or host:port; an entry without a port allows 443 only. Not in a project config."
+          "description": "Hosts the sandbox may reach: host, *.domain (exactly one label more, not the domain itself) or host:port; an entry without a port allows 443 only. No IP address, localhost or port 80. Ignored in the user config when the policy sets egress.grants to false."
         },
         "presets": {
           "type": "array",
           "items": {
             "enum": ["npm", "pypi", "github", "maven", "gradle", "go", "cargo"]
           },
-          "description": "Package registry host sets added to egress.allow. Default npm, pypi and github; [] turns them off. Not in a project config."
+          "description": "Package registry host sets added to egress.allow. Default npm, pypi and github; [] turns them off."
         },
         "deny": {
           "type": "array",
           "items": {
             "type": "string",
-            "pattern": "^(\\*\\.)?[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)*(:([1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?$"
+            "allOf": [
+              {
+                "pattern": "^(\\*\\.)?[A-Za-z0-9_]([A-Za-z0-9_-]{0,61}[A-Za-z0-9_])?(\\.[A-Za-z0-9_]([A-Za-z0-9_-]{0,61}[A-Za-z0-9_])?)*(:([1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?$"
+              },
+              {
+                "pattern": "^(\\*\\.)?[^:]{1,253}(:|$)"
+              },
+              {
+                "not": {
+                  "pattern": "(^|\\.)(0[xX][0-9A-Fa-f]*|[0-9]+)(:|$)"
+                }
+              },
+              {
+                "not": {
+                  "pattern": "(^|\\.)[Ll][Oo][Cc][Aa][Ll][Hh][Oo][Ss][Tt](:|$)"
+                }
+              },
+              {
+                "not": {
+                  "pattern": ":80$"
+                }
+              }
+            ]
           },
-          "description": "Hosts never allowed, granted or derived; the union of every layer. A bare name denies that name and every name under it (paste.example.com denies www.paste.example.com and a.b.paste.example.com); *.domain denies every name under domain but not domain itself. An entry without a port denies every port. Not in a project config."
+          "description": "Hosts never allowed, granted or derived; the union of every layer. A bare name denies that name and every name under it (paste.example.com denies www.paste.example.com and a.b.paste.example.com); *.domain denies every name under domain but not domain itself. An entry without a port denies every port."
         },
         "privateHosts": {
           "type": "array",
           "items": {
             "type": "string",
-            "pattern": "^(\\*\\.)?[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)*$",
-            "not": {
-              "pattern": "^[0-9.]+$|^localhost$|\\.localhost$"
-            }
+            "allOf": [
+              {
+                "pattern": "^(\\*\\.)?[A-Za-z0-9_]([A-Za-z0-9_-]{0,61}[A-Za-z0-9_])?(\\.[A-Za-z0-9_]([A-Za-z0-9_-]{0,61}[A-Za-z0-9_])?)*$"
+              },
+              {
+                "pattern": "^(\\*\\.)?[^:]{1,253}$"
+              },
+              {
+                "not": {
+                  "pattern": "(^|\\.)(0[xX][0-9A-Fa-f]*|[0-9]+)$"
+                }
+              },
+              {
+                "not": {
+                  "pattern": "(^|\\.)[Ll][Oo][Cc][Aa][Ll][Hh][Oo][Ss][Tt]$"
+                }
+              }
+            ]
           },
-          "description": "Names that may resolve to private addresses, such as a private gateway host; never IP literals or loopback. Not in a project config."
+          "description": "Names that may resolve to private addresses, such as a private gateway host; never IP literals or loopback. Ignored in the user config when the policy sets egress.grants to false."
         },
         "parentProxy": {
           "enum": ["env", "none"],
-          "description": "Upstream proxy: env (host HTTPS_PROXY, the default) or none. Not in a project config."
+          "description": "Upstream proxy: env (host HTTPS_PROXY, the default) or none."
         },
         "grants": {
           "type": "boolean",
-          "description": "Whether pi sandbox egress allow may add hosts. Default true. Not in a project config."
+          "description": "Whether pi sandbox egress allow may add hosts. Default true. false in the policy also locks egress: the user config's egress.allow and egress.privateHosts are ignored."
         }
       }
     },
@@ -372,33 +463,15 @@
             "type": "string",
             "pattern": "^(/|~$|~/)"
           }
-        },
-        "outside": {
-          "enum": ["refuse", "warn"]
         }
       },
-      "required": ["roots", "outside"]
+      "required": ["roots"],
+      "description": "Folders pi may start in; a launch outside every root is refused."
     },
     "mounts": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "extraReadOnly": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "pattern": "^(/|~$|~/)"
-          }
-        },
-        "cacheVolumes": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "pattern": "^(?!(.*/)?(\\.{1,2}|\\.[Gg][Ii][Tt])(/|$))[^/]+(/[^/]+)*/?$"
-          },
-          "uniqueItems": true,
-          "description": "Relative directories inside the repository, each kept in its own volume; no empty, ., .. or .git segments, no entry listed twice (a trailing slash is dropped) or inside another."
-        },
         "sharedCaches": {
           "type": "array",
           "uniqueItems": true,
@@ -406,14 +479,7 @@
             "type": "string",
             "pattern": "^~/(?!(\\.pi|\\.ssh|\\.gnupg|\\.aws|\\.docker|\\.colima|\\.kube|\\.config|\\.local/bin)(/|$))(?!(.*/)?\\.{1,2}(/|$))[^/]+(/[^/]+)*/?$"
           },
-          "description": "Directories under ~ kept in one volume per user and shared by every repository, mounted read-write at the same path in the container. Not ~/.pi, ~/.ssh, ~/.gnupg, ~/.aws, ~/.docker, ~/.colima, ~/.kube, ~/.config or ~/.local/bin, no entry listed twice (a trailing slash is dropped) or inside another. Not in a project config."
-        },
-        "hostCaches": {
-          "type": "array",
-          "items": {
-            "enum": ["maven", "gradle", "npm", "pip", "go", "cargo"]
-          },
-          "description": "Host tool caches bound read-write into the container: maven ~/.m2/repository, gradle ~/.gradle/caches and ~/.gradle/wrapper, npm ~/.npm/_cacache, pip ~/Library/Caches/pip at ~/.cache/pip, go ~/go/pkg/mod, cargo ~/.cargo/registry and ~/.cargo/git. Cache folders only, never their config files. Host builds run what the sandbox writes there. Default []. Not in a project config."
+          "description": "Directories under ~ kept in one volume per user and shared by every repository, mounted read-write at the same path in the container. Not ~/.pi, ~/.ssh, ~/.gnupg, ~/.aws, ~/.docker, ~/.colima, ~/.kube, ~/.config or ~/.local/bin, no entry listed twice (a trailing slash is dropped) or inside another."
         },
         "autoOverlays": {
           "type": "boolean",
@@ -435,7 +501,7 @@
               },
               {
                 "not": {
-                  "pattern": "[Tt][Oo][Kk][Ee][Nn]|[Ss][Ee][Cc][Rr][Ee][Tt]|[Kk][Ee][Yy]|[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Cc][Rr][Ee][Dd][Ee][Nn][Tt][Ii][Aa][Ll]"
+                  "pattern": "[Tt][Oo][Kk][Ee][Nn]|[Ss][Ee][Cc][Rr][Ee][Tt]|[Kk][Ee][Yy]|[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Pp][Aa][Ss][Ss][Ww][Dd]|[Pp][Aa][Ss][Ss][Pp][Hh][Rr][Aa][Ss][Ee]|[Cc][Rr][Ee][Dd][Ee][Nn][Tt][Ii][Aa][Ll]|[Jj][Ww][Tt]"
                 }
               },
               {
@@ -477,11 +543,10 @@
                 }
               }
             ],
-            "description": "Environment variable forwarded from the host; names that look like secrets, and every variable the launcher sets inside the container (the proxy variables in any case, the CA bundle variables, PI_SANDBOX*, HOME, PATH, PWD and the rest), are refused."
+            "description": "Environment variable forwarded from the host; names that look like secrets (token, secret, key, password, passwd, passphrase, credential or jwt in any case), the proxy variables in any case and every variable listed here that the launcher sets inside the container are refused."
           }
         }
-      },
-      "description": "env.allow may not be set by a project config."
+      }
     },
     "resources": {
       "type": "object",
@@ -503,7 +568,7 @@
       "properties": {
         "host": {
           "type": "boolean",
-          "description": "Keep this repository's pi sessions in host pi's own session directory, so host pi lists them. On by default; a project config may not set it."
+          "description": "Keep this repository's pi sessions in host pi's own session directory, so host pi lists them. On by default."
         }
       }
     },
@@ -540,12 +605,7 @@
           }
         }
       },
-      "description": "Extra CA certificates trusted by the proxy, the container and image builds. Not in a project config."
-    },
-    "org": {
-      "type": "string",
-      "pattern": "^/",
-      "description": "Absolute path of the organisation baseline file, merged between policy and user. Only in the policy or user config."
+      "description": "Extra CA certificates trusted by the proxy, the container and image builds."
     }
   }
 }

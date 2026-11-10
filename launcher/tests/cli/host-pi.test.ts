@@ -1,4 +1,3 @@
-import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { run } from "../../cli/index.ts";
@@ -31,10 +30,10 @@ describe("the host pi of host jobs", () => {
     expect(await run([], harness.deps)).toBe(0);
     expect(requests[0]?.piCommand).toEqual([process.execPath, managed.entry]);
     expect(providerScriptCall(harness)?.args[1]).toBe(managed.packageDir);
-    expect(fake.builds[0]?.files.Dockerfile).toContain("ARG PI_VERSION=1.6.0");
+    expect(fake.builds[0]?.args?.PI_VERSION).toBe("1.6.0");
   });
 
-  it("rebuilds the image with the new host pi once the repository's container has stopped", async () => {
+  it("rebuilds the image when the host pi version changes", async () => {
     const { fake, harness } = await launchHarness();
 
     expect(await run([], harness.deps)).toBe(0);
@@ -42,29 +41,10 @@ describe("the host pi of host jobs", () => {
     await writeManagedPi(harness.hostAgentDir, "1.6.0");
 
     expect(await run([], harness.deps)).toBe(0);
-    expect(fake.builds.map((build) => build.files.Dockerfile?.match(/^ARG PI_VERSION=(.*)$/m)?.[1])).toEqual([
-      await testedPiVersion(),
-      "1.6.0",
-    ]);
-    expect(harness.stderr()).not.toContain("the sandbox image has pi");
+    expect(fake.builds.map((build) => build.args?.PI_VERSION)).toEqual([await testedPiVersion(), "1.6.0"]);
   });
 
-  it("records the pi version of an image whose record names none once the container has stopped", async () => {
-    const { fake, harness } = await launchHarness();
-
-    expect(await run([], harness.deps)).toBe(0);
-
-    const recordFile = join(harness.stateDir, "image.json");
-    const { pi: _recorded, ...base } = JSON.parse(await readFile(recordFile, "utf8")).base;
-
-    await writeFile(recordFile, JSON.stringify({ base }));
-
-    expect(await run([], harness.deps)).toBe(0);
-    expect(fake.builds).toHaveLength(1);
-    expect(JSON.parse(await readFile(recordFile, "utf8")).base.pi).toBe(await testedPiVersion());
-  });
-
-  it("keeps the image of a running container after a host pi update, says so, and still derives provider rules", async () => {
+  it("rebuilds for a host pi update while another launch of the repository runs, and still derives provider rules", async () => {
     const { fake, harness } = await launchHarness();
 
     await holdLaunch(harness);
@@ -74,10 +54,7 @@ describe("the host pi of host jobs", () => {
     await writeManagedPi(harness.hostAgentDir, "1.6.0");
 
     expect(await run([], harness.deps)).toBe(0);
-    expect(fake.builds).toHaveLength(1);
-    expect(harness.stderr()).toContain(
-      `pi-sandbox: the sandbox image has pi ${await testedPiVersion()}, the host pi 1.6.0; the image is rebuilt after every session in this repository exits\n`,
-    );
+    expect(fake.builds.map((build) => build.args?.PI_VERSION)).toEqual([await testedPiVersion(), "1.6.0"]);
     expect(harness.stderr()).not.toContain("provider host table unavailable");
   });
 
@@ -126,11 +103,12 @@ describe("pi --no-sandbox", () => {
     expect(interactiveCall(harness)?.args).toEqual(["-p", "hi"]);
   });
 
-  it("ignores a PATH pi inside the repository or on a relative PATH entry and runs the launcher's pi", async () => {
+  it("never runs a PATH pi, inside the repository or not, and runs the launcher's pi", async () => {
     const harness = await createHarness();
     const planted = await writePathPi(join(harness.repoRoot, "tools"), "1.7.0");
+    const brew = await writePathPi(join(harness.root, "brew"), "1.7.0");
 
-    harness.deps.env.PATH = `${planted.bin}:tools/bin`;
+    harness.deps.env.PATH = `${brew.bin}:${planted.bin}:tools/bin`;
 
     expect(await run(["--no-sandbox"], harness.deps)).toBe(0);
     expect(interactiveCall(harness)?.file).toBe(process.execPath);

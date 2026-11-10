@@ -15,7 +15,7 @@ const problemOf = (sharedCaches: unknown) => {
   }
 };
 
-const loadWith = async (layers: { policy?: unknown; user?: unknown; project?: unknown }) => {
+const loadWith = async (layers: { policy?: unknown; user?: unknown }) => {
   const files = await createLayers();
 
   if (layers.policy !== undefined) {
@@ -26,18 +26,14 @@ const loadWith = async (layers: { policy?: unknown; user?: unknown; project?: un
     await files.user(layers.user);
   }
 
-  if (layers.project !== undefined) {
-    await files.project(layers.project);
-  }
-
-  return loadEffectiveConfig({ repoRoot: files.repoRoot, env: files.env });
+  return loadEffectiveConfig({ env: files.env });
 };
 
 describe("mounts.sharedCaches", () => {
   it("defaults to no shared caches and node_modules overlays on", async () => {
     const { config, sources } = await loadWith({});
 
-    expect((await defaultConfig()).mounts).toMatchObject({ sharedCaches: [], autoOverlays: true });
+    expect(defaultConfig().mounts).toEqual({ sharedCaches: [], autoOverlays: true });
     expect(config.mounts).toMatchObject({ sharedCaches: [], autoOverlays: true });
     expect(sources["mounts.sharedCaches"]).toBe("default");
   });
@@ -90,13 +86,6 @@ describe("mounts.sharedCaches", () => {
     );
   });
 
-  it("ignores a project config that sets shared caches", async () => {
-    const { config, ignored } = await loadWith({ project: { mounts: { sharedCaches: ["~/.npm"] } } });
-
-    expect(config.mounts.sharedCaches).toEqual([]);
-    expect(ignored.map((entry) => `${entry.layer} ${entry.key}`)).toEqual(["project mounts.sharedCaches"]);
-  });
-
   it("lets the user layer add shared caches when no layer above sets them", async () => {
     const { config, sources } = await loadWith({
       user: { mounts: { sharedCaches: ["~/.npm", "~/.cargo"] } },
@@ -118,128 +107,29 @@ describe("mounts.sharedCaches", () => {
   });
 });
 
-describe("mounts.hostCaches", () => {
-  it("defaults to no host caches", async () => {
-    const { config, sources } = await loadWith({});
-
-    expect(config.mounts.hostCaches).toEqual([]);
-    expect(sources["mounts.hostCaches"]).toBe("default");
-  });
-
-  it("lets the user layer enable host caches and keeps the policy's choice final", async () => {
-    const { config, sources } = await loadWith({ user: { mounts: { hostCaches: ["maven", "gradle"] } } });
-
-    expect(config.mounts.hostCaches).toEqual(["maven", "gradle"]);
-    expect(sources["mounts.hostCaches"]).toBe("user");
-
-    const kept = await loadWith({
-      policy: { mounts: { hostCaches: [] } },
-      user: { mounts: { hostCaches: ["npm"] } },
-    });
-
-    expect(kept.config.mounts.hostCaches).toEqual([]);
-    expect(kept.ignored).toEqual([
-      { layer: "user", key: "mounts.hostCaches", reason: "final in the policy config" },
-    ]);
-  });
-
-  it("ignores the project layer setting mounts.hostCaches", async () => {
-    const { config, ignored } = await loadWith({ project: { mounts: { hostCaches: ["maven"] } } });
-
-    expect(config.mounts.hostCaches).toEqual([]);
-    expect(ignored.map((entry) => `${entry.layer} ${entry.key}`)).toEqual(["project mounts.hostCaches"]);
-  });
-
-  it("refuses an unknown preset", () => {
-    expect(() => validateLayer({ mounts: { hostCaches: ["ssh"] } }, "user")).toThrow(
-      "user: mounts.hostCaches[0] ssh must be one of maven, gradle, npm, pip, go, cargo",
-    );
-  });
-});
-
 describe("mounts.autoOverlays", () => {
-  it("is taken from the lowest layer that sets it, the project included", async () => {
-    const { config, sources } = await loadWith({
-      user: { mounts: { autoOverlays: true } },
-      project: { mounts: { autoOverlays: false } },
-    });
+  it("is taken from the user when the policy leaves it open", async () => {
+    const { config, sources } = await loadWith({ user: { mounts: { autoOverlays: false } } });
 
     expect(config.mounts.autoOverlays).toBe(false);
-    expect(sources["mounts.autoOverlays"]).toBe("project");
+    expect(sources["mounts.autoOverlays"]).toBe("user");
   });
 
   it("stays as the policy set it", async () => {
     const { config, ignored } = await loadWith({
       policy: { mounts: { autoOverlays: false } },
-      project: { mounts: { autoOverlays: true } },
+      user: { mounts: { autoOverlays: true } },
     });
 
     expect(config.mounts.autoOverlays).toBe(false);
     expect(ignored).toEqual([
-      { layer: "project", key: "mounts.autoOverlays", reason: "final in the policy config" },
+      { layer: "user", key: "mounts.autoOverlays", reason: "final in the policy config" },
     ]);
   });
 
   it("must be true or false", () => {
-    expect(() => validateLayer({ mounts: { autoOverlays: "off" } }, "project")).toThrow(
-      "project: mounts.autoOverlays must be true or false",
+    expect(() => validateLayer({ mounts: { autoOverlays: "off" } }, "user")).toThrow(
+      "user: mounts.autoOverlays must be true or false",
     );
-  });
-});
-
-describe("mounts.cacheVolumes", () => {
-  const volumesProblem = (cacheVolumes: unknown) => {
-    try {
-      validateLayer({ mounts: { cacheVolumes } }, "project");
-
-      return undefined;
-    } catch (error) {
-      return errorMessage(error);
-    }
-  };
-
-  const SEGMENTS = "must be a relative path inside the repository without empty, ., .. or .git segments";
-
-  it.each([
-    ["."],
-    ["./"],
-    [""],
-    ["/abs"],
-    ["../out"],
-    ["a/../b"],
-    ["a/./b"],
-    ["a//b"],
-    [".git"],
-    ["sub/.git/hooks"],
-    [".GIT/hooks/pre-commit"],
-    ["sub/.Git"],
-  ])("refuses %j", (path) => {
-    expect(volumesProblem([path])).toBe(
-      `project: mounts.cacheVolumes[0] ${path === "" ? '""' : path} ${SEGMENTS}`,
-    );
-  });
-
-  it("accepts relative directories, dot names included", () => {
-    expect(volumesProblem(["node_modules", ".venv", "packages/app/.gradle", ".github/cache", "build/"])).toBe(
-      undefined,
-    );
-  });
-
-  it("refuses an entry listed twice, with or without a trailing slash, and an entry inside another", () => {
-    expect(volumesProblem(["node_modules", "node_modules/"])).toBe(
-      "project: mounts.cacheVolumes lists node_modules twice",
-    );
-    expect(volumesProblem(["build", "build/cache"])).toBe(
-      "project: mounts.cacheVolumes lists build/cache inside another entry",
-    );
-  });
-
-  it("strips a trailing slash so one directory always names one volume", async () => {
-    expect(validateLayer({ mounts: { cacheVolumes: ["build/", "node_modules"] } }, "project")).toEqual({
-      mounts: { cacheVolumes: ["build", "node_modules"] },
-    });
-    expect(
-      (await loadWith({ project: { mounts: { cacheVolumes: ["target/"] } } })).config.mounts.cacheVolumes,
-    ).toEqual(["target"]);
   });
 });

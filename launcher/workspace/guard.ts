@@ -12,8 +12,6 @@ interface GuardContext {
 
 const HINT = "run pi inside a project directory";
 
-const ROOT: Protected = { path: "/", reason: "the root directory", under: false };
-
 const assertOutsideProtected = (mounted: string[], table: Protected[]) => {
   const inside = mounted
     .map((path) => ({ path, entry: table.find((entry) => entry.under && isWithin(path, entry.path)) }))
@@ -30,7 +28,7 @@ const assertOutsideProtected = (mounted: string[], table: Protected[]) => {
 };
 
 export const assertSafeMounts = (mounted: string[], context: GuardContext) => {
-  const table = [ROOT, ...protectedPaths({ home: context.home, env: context.env })];
+  const table = protectedPaths({ home: context.home, env: context.env });
   const covering = mounted
     .map((path) => ({ path, entry: table.find((entry) => isWithin(entry.path, path)) }))
     .find((found) => found.entry !== undefined);

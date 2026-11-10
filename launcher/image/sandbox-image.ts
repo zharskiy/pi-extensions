@@ -2,13 +2,7 @@ import { rm } from "node:fs/promises";
 import type { Backend } from "../backend/index.ts";
 import type { SandboxConfig } from "../config/index.ts";
 import { stateLayout, withFileLock, withFileLockIfFree } from "../shared/index.ts";
-import {
-  type BuiltImage,
-  ensureBuiltImage,
-  type ImageVersions,
-  pullPinnedImage,
-  recordedImage,
-} from "./build.ts";
+import { type BuiltImage, ensureBuiltImage, type ImageVersions, pullPinnedImage } from "./build.ts";
 import { ensureLayerImage } from "./layer.ts";
 import { removeStaleImages } from "./prune.ts";
 
@@ -16,12 +10,10 @@ export interface SandboxImageInput {
   backend: Backend;
   config: SandboxConfig;
   stateDir: string;
-  repoHash: string;
   env?: Record<string, string | undefined>;
   trustPem?: string;
   proxyCaPem?: string;
   versions: () => Promise<ImageVersions>;
-  inUse: (digest: string) => Promise<boolean>;
   preparing?: () => void;
   waiting?: () => void;
   progress?: (step: string) => void;
@@ -31,31 +23,16 @@ export interface SandboxImage {
   reference: string;
   digest: string;
   id: string;
-  pi?: string;
 }
 
 const BUILD_LOCK_TIMEOUT_MS = 60 * 60 * 1000;
 
-const imageInUse = async (input: SandboxImageInput) => {
-  const record = await recordedImage(input.stateDir, input.config);
-
-  return record !== undefined && (await input.inUse(record.digest)) ? record : undefined;
-};
-
-const freshImage = async (input: SandboxImageInput, trustPem: string | undefined) => {
-  const pinned = input.config.image.digest;
-
-  if (pinned !== undefined) {
-    return pullPinnedImage(input, pinned);
-  }
-
-  return ensureBuiltImage({ ...input, versions: await input.versions(), trustPem });
-};
-
 const baseImage = async (input: SandboxImageInput, trustPem: string | undefined): Promise<BuiltImage> => {
-  const recorded = await imageInUse(input);
+  const { reference, digest } = input.config.image;
 
-  return recorded === undefined ? freshImage(input, trustPem) : { ...recorded, built: false };
+  return reference !== undefined && digest !== undefined
+    ? pullPinnedImage(input, reference, digest)
+    : ensureBuiltImage({ ...input, versions: await input.versions(), trustPem });
 };
 
 const preparedImage = async (input: SandboxImageInput): Promise<SandboxImage> => {
@@ -66,7 +43,6 @@ const preparedImage = async (input: SandboxImageInput): Promise<SandboxImage> =>
     baseImageId: base.id,
     config: input.config,
     stateDir: input.stateDir,
-    repoHash: input.repoHash,
     trustPem,
     env: input.env,
     progress: input.progress,
@@ -76,7 +52,7 @@ const preparedImage = async (input: SandboxImageInput): Promise<SandboxImage> =>
     await removeStaleImages(input.backend, input.stateDir, base.replaced).catch(() => undefined);
   }
 
-  return { reference: base.reference, digest: base.digest, id: layer.id, pi: base.pi };
+  return { reference: base.reference, digest: base.digest, id: layer.id };
 };
 
 export const ensureSandboxImage = async (input: SandboxImageInput): Promise<SandboxImage> => {

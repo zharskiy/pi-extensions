@@ -85,13 +85,22 @@ const attachInput = (stdin: NodeJS.ReadableStream | undefined, socket: Hijacked[
   };
 };
 
+const isBrokenPipe = (error: NodeJS.ErrnoException) => error.code === "EPIPE";
+
+const flushed = (output: NodeJS.WritableStream) =>
+  new Promise<void>((done) => {
+    output.write(Buffer.alloc(0), () => done());
+  });
+
 const pump = (hijacked: Hijacked, io: ExecIo) =>
   new Promise<void>((resolve, reject) => {
     const { socket, head } = hijacked;
     const blocked = new Set<NodeJS.WritableStream>();
+    const outputs = [...new Set([io.stdout, io.stderr])];
+    const state: { broken: boolean; failure?: Error } = { broken: false };
 
     const sink: Sink = (target, data) => {
-      if (!target.write(data)) {
+      if (!state.broken && !target.write(data)) {
         blocked.add(target);
       }
     };
@@ -118,16 +127,48 @@ const pump = (hijacked: Hijacked, io: ExecIo) =>
       void Promise.all(waiting.map((target) => once(target, "drain"))).then(resume, resume);
     };
 
+    const broken = (error: NodeJS.ErrnoException) => {
+      if (!isBrokenPipe(error)) {
+        state.failure ??= error;
+
+        socket.destroy(error);
+
+        return;
+      }
+
+      state.broken = true;
+
+      socket.destroy();
+    };
+
+    outputs.forEach((output) => {
+      output.on("error", broken);
+    });
+
+    const detachInput = attachInput(io.stdin, socket);
+
+    const detach = () => {
+      detachInput();
+
+      outputs.forEach((output) => {
+        output.off("error", broken);
+      });
+    };
+
     receive(head);
 
     socket.on("data", receive);
 
-    const detach = attachInput(io.stdin, socket);
-
     socket.once("close", () => {
-      detach();
+      void Promise.all(outputs.map(flushed)).then(() => {
+        detach();
 
-      resolve();
+        if (state.failure === undefined) {
+          resolve();
+        } else {
+          reject(state.failure);
+        }
+      });
     });
 
     socket.once("error", (error) => {

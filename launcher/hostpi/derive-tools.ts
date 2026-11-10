@@ -1,13 +1,13 @@
 import { deriveGh, ghEnv } from "./tools/gh.ts";
 import { deriveGitIdentity } from "./tools/git.ts";
-import { deriveGlab, glabBesideGh, glabEnv } from "./tools/glab.ts";
+import { deriveGlab, glabEnv } from "./tools/glab.ts";
 import { deriveMaven } from "./tools/maven.ts";
 import { deriveNpmrc } from "./tools/npmrc.ts";
 import { derivePip } from "./tools/pip.ts";
 import { emptyTools, type ToolsInput, type ToolsSection } from "./types.ts";
 
 const credentialsOf = async (input: ToolsInput) => {
-  const [git, gh, glabHosts, npmrc, pip, maven] = await Promise.all([
+  const [git, gh, glab, npmrc, pip, maven] = await Promise.all([
     deriveGitIdentity(input),
     deriveGh(input),
     deriveGlab(input),
@@ -15,8 +15,6 @@ const credentialsOf = async (input: ToolsInput) => {
     derivePip(input),
     deriveMaven(input),
   ]);
-  const glab = glabBesideGh(glabHosts, new Set(gh.value.map((entry) => entry.host)));
-
   return { git, gh, glab, npmrc, pip, maven };
 };
 
@@ -24,7 +22,7 @@ export const deriveHostTools = async (input: ToolsInput): Promise<ToolsSection> 
   if (!input.enabled) {
     const git = await deriveGitIdentity(input);
 
-    return { value: emptyTools(git.value), rules: [], notices: git.notices };
+    return { value: emptyTools(git.value), rules: [], notices: git.notices, registries: [] };
   }
 
   const { git, gh, glab, npmrc, pip, maven } = await credentialsOf(input);
@@ -42,5 +40,6 @@ export const deriveHostTools = async (input: ToolsInput): Promise<ToolsSection> 
     },
     rules: sections.flatMap((section) => section.rules),
     notices: sections.flatMap((section) => section.notices),
+    registries: [...npmrc.registries, ...pip.registries, ...maven.registries],
   };
 };

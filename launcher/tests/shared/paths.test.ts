@@ -9,7 +9,6 @@ import {
   launcherEntry,
   launcherPaths,
   launcherRoot,
-  projectConfigFile,
   realOrResolved,
   realOrResolvedSync,
 } from "../../shared/index.ts";
@@ -82,12 +81,6 @@ describe("isWithin", () => {
     expect(isWithin("/work/repo", "/work")).toBe(true);
     expect(isWithin("/workshop", "/work")).toBe(false);
     expect(isWithin("/", "/work")).toBe(false);
-  });
-});
-
-describe("projectConfigFile", () => {
-  it("points at .pi/sandbox.json in the repo root", () => {
-    expect(projectConfigFile("/work/repo")).toBe(join("/work/repo", ".pi", "sandbox.json"));
   });
 });
 

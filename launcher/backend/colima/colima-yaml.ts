@@ -2,20 +2,17 @@ import { resolve } from "node:path";
 import { expandHome } from "../../shared/index.ts";
 import type { VmShare } from "../types.ts";
 
-export interface MountEntry {
-  keys: string[];
-  values: Record<string, string>;
-}
+type MountEntry = Record<string, string>;
 
 const MOUNTS_KEY = /^mounts:\s*(.*)$/;
 
 const ENTRY_KEY = /^([A-Za-z0-9_]+):\s*(.*)$/;
 
-const QUOTED = /^(["'])(.*)\1$/;
+const QUOTED = /^(["'])(.*?)\1(?:\s+#.*)?$/;
 
-const INLINE_COMMENT = /\s+#.*$/;
+const INLINE_COMMENT = /(?:^|\s+)#.*$/;
 
-const PLAIN_KEYS = ["location", "writable"];
+const TRUE = /^(?:true|yes|on)$/i;
 
 const EMPTY_VALUES = ["", "null", "~"];
 
@@ -28,7 +25,7 @@ const yamlValue = (raw: string) => {
 const isTopLevel = (line: string) => line !== "" && !/^[\s-]/.test(line);
 
 const mountsBlock = (text: string) => {
-  const lines = text.split("\n").filter((line) => line.trim() !== "" && !line.trimStart().startsWith("#"));
+  const lines = text.split(/\r?\n/).filter((line) => line.trim() !== "" && !line.trimStart().startsWith("#"));
   const start = lines.findIndex((line) => MOUNTS_KEY.test(line));
 
   if (start === -1) {
@@ -40,7 +37,7 @@ const mountsBlock = (text: string) => {
   const end = rest.findIndex(isTopLevel);
 
   if (inline !== "") {
-    return inline === "[]" ? [] : "flow";
+    return inline === "[]" || EMPTY_VALUES.includes(inline) ? [] : "flow";
   }
 
   return rest.slice(0, end === -1 ? rest.length : end);
@@ -64,21 +61,27 @@ const entryOf = (lines: string[]): MountEntry => {
     return match === null ? [] : [[match[1] ?? "", yamlValue((match[2] ?? "").trim())] as const];
   });
 
-  return { keys: pairs.map(([key]) => key), values: Object.fromEntries(pairs) };
+  return Object.fromEntries(pairs);
 };
 
-export const mountEntriesOf = (text: string) => {
+const mountEntriesOf = (text: string) => {
   const block = mountsBlock(text);
 
-  return block === undefined || block === "flow" ? block : groupedEntries(block).map(entryOf);
+  if (block === undefined || block === "flow") {
+    return block;
+  }
+
+  const entries = groupedEntries(block).map(entryOf);
+
+  return entries.every((entry) => entry.location !== undefined) ? entries : "flow";
 };
 
-export const shareOf = (entry: MountEntry, home: string): VmShare[] => {
-  const location = entry.values.location;
+const shareOf = (entry: MountEntry, home: string): VmShare[] => {
+  const location = entry.location;
 
   return location === undefined || location === ""
     ? []
-    : [{ location: resolve(expandHome(location, home)), writable: entry.values.writable === "true" }];
+    : [{ location: resolve(expandHome(location, home)), writable: TRUE.test(entry.writable ?? "") }];
 };
 
 export const vmSharesOf = (text: string, home: string) => {
@@ -89,8 +92,19 @@ export const vmSharesOf = (text: string, home: string) => {
     : entries.flatMap((entry) => shareOf(entry, home));
 };
 
-export const isPlain = (entry: MountEntry) =>
-  entry.keys.every(
-    (key) =>
-      PLAIN_KEYS.includes(key) || (key === "mountPoint" && EMPTY_VALUES.includes(entry.values[key] ?? "")),
+const isMoved = (entry: MountEntry, home: string) => {
+  const mountPoint = entry.mountPoint ?? "";
+
+  return (
+    !EMPTY_VALUES.includes(mountPoint) &&
+    shareOf(entry, home).some((share) => share.location !== resolve(expandHome(mountPoint, home)))
   );
+};
+
+export const movedMountsOf = (text: string, home: string) => {
+  const entries = mountEntriesOf(text);
+
+  return entries === undefined || entries === "flow"
+    ? []
+    : entries.filter((entry) => isMoved(entry, home)).map((entry) => entry.location ?? "");
+};

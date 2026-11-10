@@ -25,6 +25,7 @@ interface FakeContainer {
 interface FakeBuild {
   contextDir: string;
   tag: string;
+  args?: Record<string, string>;
   files: Record<string, string>;
 }
 
@@ -65,8 +66,6 @@ interface FakeBackendOptions {
 }
 
 const RELAY_ADDRESS = "pi-sandbox-proxy:3128";
-
-const RESET_HINT = "run pi sandbox reset";
 
 const imageIdOf = (digest: string) => `sha256:image-${digest.replace(/^sha256:/, "")}`;
 
@@ -116,18 +115,19 @@ const GUEST_PROGRAMS = ["sh", "cat"];
 const isWithinAny = (part: string, roots: string[]) =>
   roots.some((root) => part === root || part.startsWith(`${root}/`));
 
+const isPiSessionExec = (spec: ExecSpec) => spec.env.PI_SANDBOX_LAUNCH_ID !== undefined;
+
 const runsInGuest = (spec: ExecSpec, containerSpec: ContainerSpec | undefined) => {
   const binds = (containerSpec?.mounts ?? [])
     .filter((mount) => mount.kind === "bind" && mount.source === mount.target)
     .map((mount) => mount.target);
 
   return (
+    !isPiSessionExec(spec) &&
     GUEST_PROGRAMS.includes(spec.command[0] ?? "") &&
     spec.command.some((part) => part.includes(GUEST_PATHS.agentDir) || isWithinAny(part, binds))
   );
 };
-
-const isPiSessionExec = (spec: ExecSpec) => spec.env.PI_SANDBOX_LAUNCH_ID !== undefined;
 
 const catIn = async (agentDir: string, spec: ExecSpec, io: ExecIo) => {
   const texts = await Promise.all(
@@ -188,7 +188,6 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
   const execs: FakeExec[] = [];
   const routes: FakeRoute[] = [];
   const stops: Array<{ id: string; timeoutSeconds?: number }> = [];
-  const waits: string[] = [];
   const removals: string[] = [];
   const created: FakeContainer[] = [];
   const relays = new Map<string, FakeRelay>();
@@ -402,13 +401,13 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
     detect: async () => ({ available: true }),
     pullImage,
     resolveImage,
-    buildImage: async (contextDir, tag, _args, progress) => {
+    buildImage: async (contextDir, tag, args, progress) => {
       const digest = `sha256:${nextId("built")}`;
 
       progress?.("Step 1/1");
       const previous = localImages.get(tag);
 
-      builds.push({ contextDir, tag, files: await contextFiles(contextDir) });
+      builds.push({ contextDir, tag, args, files: await contextFiles(contextDir) });
 
       localImages.set(tag, digest);
 
@@ -455,7 +454,7 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
       const taken = [...containers.values()].some((entry) => entry.summary.name === spec.name);
 
       if (taken) {
-        throw new LauncherError(`container name ${spec.name} is already in use`, RESET_HINT);
+        throw new LauncherError(`unexpected name clash: container name ${spec.name} is already in use`);
       }
 
       const id = nextId("container");
@@ -475,9 +474,6 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
       stops.push({ id, timeoutSeconds });
 
       drop(id);
-    },
-    waitRemoved: async (id) => {
-      waits.push(id);
     },
     removeContainer: async (id) => {
       removals.push(id);
@@ -509,7 +505,10 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
       const name = repoNetworkName(repoHash);
 
       if (externalNetworks.has(name)) {
-        throw new LauncherError(`network ${name} exists but is not internal`, "run pi sandbox gc");
+        throw new LauncherError(
+          `network ${name} exists but is not internal`,
+          "remove that network from the sandbox VM so the launcher can create its own",
+        );
       }
 
       if (foreignNetworks.has(name)) {
@@ -611,7 +610,6 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
     execs,
     routes,
     stops,
-    waits,
     removals,
     created,
     relays,

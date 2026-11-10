@@ -38,24 +38,22 @@ describe("collectImages", () => {
     expect(fake.imageRemovals).not.toContain(dangling.id);
   });
 
-  it("never removes an image a container uses or a layer a repository wants, however old", async () => {
+  it("collects an earlier layer tag and never an image a container uses or the current layer, however old", async () => {
     const fake = createFakeBackend();
     const stateDir = await tempDir("prune-state");
     const context = await tempDir("prune-context");
     const used = await fake.backend.buildImage(context, "pi-sandbox-layer:used");
     const wanted = await fake.backend.buildImage(context, "pi-sandbox-layer:wanted");
 
-    await fake.backend.buildImage(context, "pi-sandbox-layer:orphan");
+    await fake.backend.buildImage(context, "pi-sandbox-layer:earlier");
 
     fake.addContainer({ name: "running", labels: {}, state: "running", image: used.id });
 
-    await writeJsonFile(stateLayout(stateDir).repo("d".repeat(64)).image, {
-      layer: "pi-sandbox-layer:wanted",
-    });
+    await writeJsonFile(stateLayout(stateDir).imageRecord, { layer: "pi-sandbox-layer:wanted" });
 
     fake.ageImages(HOUR_AND_MORE);
 
-    expect(await collectImages(fake.backend, stateDir)).toEqual(["pi-sandbox-layer:orphan"]);
+    expect(await collectImages(fake.backend, stateDir)).toEqual(["pi-sandbox-layer:earlier"]);
 
     const left = await fake.backend.listImages();
 

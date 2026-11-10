@@ -61,8 +61,8 @@ export const createVolumeOperations = (client: EngineClient) => {
 
     if (response.status === 409) {
       throw new LauncherError(
-        `volume ${name} is in use`,
-        "stop the sandbox container first: pi sandbox reset",
+        `volume ${name} is in use by a sandbox container`,
+        "end the pi sessions that use it, then run the command again",
       );
     }
   };

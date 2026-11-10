@@ -1,15 +1,12 @@
 import { mkdirSync, writeFileSync } from "node:fs";
-import { chmod, lstat, mkdir, writeFile } from "node:fs/promises";
+import { lstat, mkdir, writeFile } from "node:fs/promises";
 import { join, sep } from "node:path";
 import { describe, expect, it } from "vitest";
-import { LABELS } from "../../backend/index.ts";
 import { run } from "../../cli/index.ts";
-import { registerLaunch } from "../../grants/index.ts";
-import { processMark } from "../../shared/index.ts";
 import type { FakeCall } from "../support/fake-runner.ts";
 import { createFakeBackend, createHarness, type HarnessOptions } from "./harness.ts";
 
-const WORKSPACE_NOTICE = "pi-sandbox: workspace with 2 repositories, git metadata protected";
+const WORKSPACE_NOTICE = "pi-sandbox: workspace with 2 repositories";
 
 const overlayNotice = (places: string) =>
   `pi-sandbox: node_modules overlaid in ${places}; the host copies are hidden; set mounts.autoOverlays=false to keep them`;
@@ -64,11 +61,11 @@ const workspaceHarness = async (layout: Layout, options: HarnessOptions = {}) =>
   return { ...harness, work, deps: { ...harness.deps, cwd: work } };
 };
 
-const pinned = async (gitDir: string) =>
+const _pinned = async (gitDir: string) =>
   (await lstat(join(gitDir, "commondir")).catch(() => undefined)) !== undefined;
 
 describe("pi in a folder of repositories", () => {
-  it("says once that the workspace's repositories are protected", async () => {
+  it("says once how many repositories the workspace holds", async () => {
     const fake = createFakeBackend();
     const harness = await workspaceHarness({ repos: ["a", "deep/b"] }, { backend: () => fake.backend });
 
@@ -89,13 +86,12 @@ describe("pi in a folder of repositories", () => {
     expect(fake.containers.size).toBe(0);
   });
 
-  it("runs status, gc and reset in a workspace the launch refuses", async () => {
+  it("runs status and reset in a workspace the launch refuses", async () => {
     const fake = createFakeBackend();
     const harness = await workspaceHarness({ repos: ["a", "broken"] }, { backend: () => fake.backend });
 
     expect(await run(["sandbox", "status"], harness.deps)).toBe(0);
-    expect(harness.stdout()).toContain(`repo: ${harness.work}\n`);
-    expect(await run(["sandbox", "gc"], harness.deps)).toBe(0);
+    expect(harness.stdout()).toContain(`workspace: ${harness.work}\n`);
     expect(await run(["sandbox", "reset"], harness.deps)).toBe(0);
     expect(harness.stdout()).toContain(`no sandbox for ${harness.work}\n`);
     expect(harness.stderr()).not.toContain("cannot be protected");
@@ -103,20 +99,10 @@ describe("pi in a folder of repositories", () => {
 
   it("runs host pi with --no-sandbox in a workspace the launch refuses", async () => {
     const harness = await workspaceHarness({ repos: ["a", "broken"] });
-    const hostDir = join(harness.root, "host-bin");
-    const hostPi = join(hostDir, "pi");
-
-    await mkdir(hostDir, { recursive: true });
-
-    await writeFile(hostPi, "#!/bin/sh\necho host pi\n");
-
-    await chmod(hostPi, 0o755);
-
-    harness.deps.env.PATH = hostDir;
 
     expect(await run(["--no-sandbox", "-p", "hi"], harness.deps)).toBe(0);
     expect(harness.stderr()).not.toContain("cannot be protected");
-    expect(harness.calls.find((call) => call.interactive)?.file).toBe(hostPi);
+    expect(harness.calls.find((call) => call.interactive)?.file).toBe(process.execPath);
   });
 
   it("refuses the home and a folder under a dotfiles home before searching them, and still runs status there", async () => {
@@ -150,40 +136,23 @@ describe("pi in a folder of repositories", () => {
     expect(fake.containers.size).toBe(0);
   });
 
-  it.skipIf(process.getuid?.() === 0)(
-    "starts in a folder with an unreadable folder and build output, hiding both from the sandbox",
-    async () => {
-      const fake = createFakeBackend();
-      const harness = await workspaceHarness(
-        { repos: ["a", "b"], lockfiles: ["a/uv.lock"] },
-        { backend: () => fake.backend },
-      );
-      const locked = join(harness.work, "locked");
-      const venv = join(harness.work, "a", ".venv");
+  it("hides build output behind an overlay volume and does not search for repositories inside it", async () => {
+    const fake = createFakeBackend();
+    const harness = await workspaceHarness(
+      { repos: ["a", "b"], lockfiles: ["a/uv.lock"] },
+      { backend: () => fake.backend },
+    );
+    const venv = join(harness.work, "a", ".venv");
 
-      await mkdir(join(venv, "lib", "dep", ".git"), { recursive: true });
-      await mkdir(join(locked, "repo", ".git"), { recursive: true });
+    await mkdir(join(venv, "lib", "dep", ".git"), { recursive: true });
 
-      await chmod(locked, 0o000);
+    expect(await run([], harness.deps)).toBe(0);
 
-      const code = await run([], harness.deps).finally(() => chmod(locked, 0o755));
-      const mounts = fake.created[0]?.spec?.mounts ?? [];
+    const mounts = fake.created[0]?.spec?.mounts ?? [];
 
-      expect(code).toBe(0);
-      expect(harness.stderr()).toContain(
-        `pi-sandbox: cannot read ${locked}; the sandbox sees them as empty read-only folders`,
-      );
-      expect(mounts.find((mount) => mount.target === locked)).toEqual({
-        source: join(harness.stateDir, "empty"),
-        target: locked,
-        readOnly: true,
-        kind: "bind",
-      });
-      expect((await lstat(join(harness.stateDir, "empty"))).isDirectory()).toBe(true);
-      expect(mounts.find((mount) => mount.target === venv)).toMatchObject({ kind: "volume" });
-      expect(mounts.some((mount) => mount.target.startsWith(join(venv, "lib")))).toBe(false);
-    },
-  );
+    expect(mounts.find((mount) => mount.target === venv)).toMatchObject({ kind: "volume" });
+    expect(mounts.some((mount) => mount.target.startsWith(join(venv, "lib")))).toBe(false);
+  });
 
   it("searches build output for repositories when mounts.autoOverlays is off", async () => {
     const fake = createFakeBackend();
@@ -206,32 +175,6 @@ describe("pi in a folder of repositories", () => {
       false,
     );
     expect(harness.stderr()).toContain("workspace with 3 repositories");
-  });
-
-  it("releases the pin of each nested repository unless another running sandbox mounts its git dir", async () => {
-    const fake = createFakeBackend();
-    const harness = await workspaceHarness({ repos: ["a", "b"] }, { backend: () => fake.backend });
-    const shared = join(harness.work, "a", ".git");
-    const own = join(harness.work, "b", ".git");
-    const other = "e".repeat(64);
-
-    await registerLaunch(harness.stateDir, {
-      launchId: "00000000000000ab",
-      ...(await processMark()),
-      repoHash: other,
-      startedAt: 1,
-    });
-
-    fake.addContainer({
-      name: "pi-sandbox-a",
-      labels: { [LABELS.managed]: "true", [LABELS.repoHash]: other, [LABELS.gitCommonDir]: shared },
-      state: "running",
-      image: "x",
-    });
-
-    expect(await run([], harness.deps)).toBe(0);
-    expect(await pinned(shared)).toBe(true);
-    expect(await pinned(own)).toBe(false);
   });
 });
 

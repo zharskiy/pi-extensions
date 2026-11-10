@@ -8,7 +8,7 @@ import {
   stateLayout,
   withDirectoryLock,
 } from "../../shared/index.ts";
-import type { Detection, Vm, VmPath, VmReport, VmShareOptions, VmSize } from "../types.ts";
+import type { Detection, Vm, VmReport, VmShareOptions, VmSize } from "../types.ts";
 import { type Colima, ENGINE_PROFILE, ENGINE_SOCKET_DISPLAY, logHint, plainStart } from "./profile.ts";
 import { createColimaShares } from "./shares.ts";
 
@@ -40,10 +40,16 @@ const STOP_FAILURE = "could not stop the sandbox VM";
 
 const startHint = `run ${plainStart(ENGINE_PROFILE)} and see ${logHint(ENGINE_PROFILE)}`;
 
-export const engineUnreachable = () =>
+export const engineUnreachable = (detection?: Detection) =>
   new LauncherError(
-    `the sandbox VM engine is unreachable at ${ENGINE_SOCKET_DISPLAY}`,
+    `the sandbox VM engine is unreachable at ${ENGINE_SOCKET_DISPLAY}${detection?.reason === undefined ? "" : `: ${detection.reason}`}`,
     `run launcher/install.sh or ${plainStart(ENGINE_PROFILE)}`,
+  );
+
+const engineSilent = (detection: Detection) =>
+  new LauncherError(
+    `the sandbox VM is running but its engine at ${ENGINE_SOCKET_DISPLAY} does not answer: ${detection.reason ?? "not detected"}`,
+    `run colima stop --profile ${ENGINE_PROFILE} && ${plainStart(ENGINE_PROFILE)} and see ${logHint(ENGINE_PROFILE)}`,
   );
 
 const lastLine = (text: string) => text.trim().split("\n").at(-1) ?? "";
@@ -63,9 +69,11 @@ const plural = (count: number) =>
 export const createColimaVm = (options: ColimaVmOptions): Vm => {
   const { home, runner, detect, pause = realPause } = options;
   const profile = ENGINE_PROFILE;
+  const colimaRun = (args: string[]) =>
+    runner.run("colima", args, { env: { COLIMA_HOME: join(home, ".colima") } });
 
   const run = async (failure: string, args: string[], hint: string) => {
-    const result = await runner.run("colima", args).catch((error: unknown) => {
+    const result = await colimaRun(args).catch((error: unknown) => {
       throw new LauncherError(
         `${failure}: ${errorMessage(error)}`,
         error instanceof LauncherError ? error.hint : undefined,
@@ -106,25 +114,17 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
     );
 
   const running = async (failure: string) => {
-    const result = await runner.run("colima", ["status", "--profile", profile]).catch((error: unknown) => {
+    const result = await colimaRun(["status", "--profile", profile]).catch((error: unknown) => {
       throw new LauncherError(`${failure}: ${errorMessage(error)}`, "run launcher/install.sh");
     });
 
     return result.code === 0;
   };
 
-  const startStopped = async (report: VmReport, needs: VmPath[] | undefined) => {
-    const sharing = needs === undefined ? undefined : await shares.planStart(needs);
+  const startStopped = async (report: VmReport) => {
+    report("starting the sandbox VM");
 
-    report(
-      sharing === undefined
-        ? "starting the sandbox VM"
-        : `starting the sandbox VM, sharing ${sharing.shared} with it, one time`,
-    );
-
-    await run(START_FAILURE, sharing?.args ?? ["start", "--profile", profile, "--activate=false"], startHint);
-
-    await sharing?.verify();
+    await run(START_FAILURE, ["start", "--profile", profile, "--activate=false"], startHint);
 
     const detection = await detectAgain();
 
@@ -136,21 +136,27 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
     }
   };
 
-  const ensureRunning = async (report: VmReport, needs?: VmPath[]) => {
+  const ensureRunning = async (report: VmReport) => {
     if ((await detect()).available) {
       return;
     }
 
     await withLock(async () => {
-      if ((await detect()).available) {
+      const detection = await detect();
+
+      if (detection.available) {
         return;
       }
 
-      if (!(await profileExists()) || (await running(START_FAILURE))) {
+      if (!(await profileExists())) {
         throw engineUnreachable();
       }
 
-      await startStopped(report, needs);
+      if (await running(START_FAILURE)) {
+        throw engineSilent(detection);
+      }
+
+      await startStopped(report);
     });
   };
 
@@ -186,9 +192,7 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
   };
 
   const size = async (): Promise<VmSize | undefined> => {
-    const result = await runner
-      .run("colima", ["status", "--profile", profile, "--json"])
-      .catch(() => undefined);
+    const result = await colimaRun(["status", "--profile", profile, "--json"]).catch(() => undefined);
     const vm = result?.code === 0 ? parseJsonObject(result.stdout) : undefined;
 
     return typeof vm?.cpu === "number" && typeof vm.memory === "number"

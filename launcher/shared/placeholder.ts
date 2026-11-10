@@ -1,5 +1,5 @@
 import { sha256Hex } from "./hash.ts";
-import { parseJsonObject } from "./json-file.ts";
+import { type JsonObject, parseJsonObject } from "./json-file.ts";
 
 export const PLACEHOLDER_PREFIX = "pi-sandbox-";
 
@@ -7,15 +7,15 @@ const HEX_LENGTH = 24;
 
 const OPAQUE = new RegExp(`^${PLACEHOLDER_PREFIX}[0-9a-f]{${HEX_LENGTH}}$`);
 
-const CODE_PREFIX = `${PLACEHOLDER_PREFIX}code-`;
-
-const CODE_BYTES = 16;
-
-const CODE = new RegExp(`^${CODE_PREFIX}[0-9a-f]{${CODE_BYTES * 2}}$`);
-
 const JWT = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*$/;
 
+const PLACEHOLDER_HEADER = { alg: "none", typ: "JWT" };
+
+const CHANGING_CLAIMS = new Set(["exp", "iat", "nbf", "jti", "auth_time"]);
+
 const decodeSegment = (segment: string) => Buffer.from(segment, "base64url").toString("utf8");
+
+const encodeSegment = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
 
 const isJsonText = (text: string) => parseJsonObject(text) !== undefined;
 
@@ -32,6 +32,9 @@ export const looksLikeJwt = (value: string) => {
   return isJsonText(decodeSegment(header)) && isJsonText(decodeSegment(payload));
 };
 
+const lastingClaims = (payload: JsonObject) =>
+  Object.fromEntries(Object.entries(payload).filter(([claim]) => !CHANGING_CLAIMS.has(claim)));
+
 export const jwtShapedPlaceholder = (token: string, salt: string, identity: string) => {
   const opaque = placeholderFor(salt, identity);
 
@@ -39,13 +42,17 @@ export const jwtShapedPlaceholder = (token: string, salt: string, identity: stri
     return opaque;
   }
 
-  const [header, payload] = token.split(".");
+  const payload = parseJsonObject(decodeSegment(token.split(".")[1] ?? "")) ?? {};
 
-  return `${header}.${payload}.${Buffer.from(opaque).toString("base64url")}`;
+  return [
+    encodeSegment(PLACEHOLDER_HEADER),
+    encodeSegment(lastingClaims(payload)),
+    Buffer.from(opaque).toString("base64url"),
+  ].join(".");
 };
 
 export const isPlaceholder = (value: string) => {
-  if (OPAQUE.test(value) || CODE.test(value)) {
+  if (OPAQUE.test(value)) {
     return true;
   }
 

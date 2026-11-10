@@ -1,6 +1,6 @@
 export { ensureRandomHexFile, writeFileAtomic } from "./atomic-write.ts";
 export type { CommandRunner, RunOptions, RunResult } from "./command-runner.ts";
-export { createProcessRunner } from "./command-runner.ts";
+export { createProcessRunner, withResolvedCommand } from "./command-runner.ts";
 export { errorMessage, LauncherError } from "./errors.ts";
 export { withDirectoryLock, withFileLock, withFileLockIfFree } from "./file-lock.ts";
 export { repoHash, sha256Hex, shortHash, stableHash } from "./hash.ts";
@@ -37,7 +37,6 @@ export {
   launcherEntry,
   launcherPaths,
   launcherRoot,
-  projectConfigFile,
   realOrResolved,
   realOrResolvedSync,
 } from "./paths.ts";
@@ -50,29 +49,24 @@ export {
 export {
   isPlaceholder,
   jwtShapedPlaceholder,
-  looksLikeJwt,
   PLACEHOLDER_PREFIX,
   placeholderFor,
 } from "./placeholder.ts";
 export { processStart } from "./process-start.ts";
 export { lstatOrUndefined, readRegularFile, sameEntry } from "./regular-file.ts";
-export type { GitCreatedDir, PinRecord, RepoRecord } from "./repo-state.ts";
+export type { RepoRecord } from "./repo-state.ts";
 export {
   forgetRepo,
   hasRepoLeftovers,
+  isMounted,
   knownRepos,
   readCreatedDirs,
-  readGitCreatedDirs,
-  readPins,
   recordCreatedDirs,
-  recordPins,
-  removeGitCopies,
   repoRecordOf,
   writeCreatedDirs,
-  writePins,
   writeRepoRecord,
 } from "./repo-state.ts";
-export { isAuthLikeHeader, isSecretName } from "./secret-name.ts";
+export { hasUrlUserinfo, isAuthLikeHeader, isSecretName, isSecretShapedValue } from "./secret-name.ts";
 export { settleAll } from "./settle.ts";
 export { ensureSalt, GUEST_PATHS, stateLayout } from "./state-layout.ts";
 export type { ToolConfigFormat, ToolConfigSelect } from "./tool-config.ts";

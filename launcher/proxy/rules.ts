@@ -17,12 +17,11 @@ const pathMatches = (prefix: string | undefined, path: string) =>
 
 const prefixLength = (rule: CredentialRule) => rule.pathPrefix?.length ?? 0;
 
-export const isRuleHost = (rules: CredentialRule[], host: string, port: number) =>
-  rules.some((rule) => normalizeHost(rule.host) === normalizeHost(host) && (rule.port ?? TLS_PORT) === port);
+export const rulesOfHost = (rules: CredentialRule[], host: string) =>
+  rules.filter((rule) => normalizeHost(rule.host) === normalizeHost(host));
 
 export const matchRules = (rules: CredentialRule[], host: string, port: number, path: string) =>
-  rules
-    .filter((rule) => normalizeHost(rule.host) === normalizeHost(host))
+  rulesOfHost(rules, host)
     .filter((rule) => (rule.port ?? TLS_PORT) === port)
     .filter((rule) => pathMatches(rule.pathPrefix, path))
     .sort((left, right) => prefixLength(right) - prefixLength(left));
@@ -39,6 +38,17 @@ const viewOf = (value: string) => basicText(value) ?? value;
 
 const carries = (value: string, placeholder: string | undefined) =>
   placeholder !== undefined && placeholder !== "" && viewOf(value).includes(placeholder);
+
+export const withoutOtherPlaceholders = (
+  headers: HeaderPair[],
+  rules: CredentialRule[],
+  matching: CredentialRule[],
+) => {
+  const kept = new Set(matching.map((rule) => rule.placeholder));
+  const others = rules.map((rule) => rule.placeholder).filter((placeholder) => !kept.has(placeholder));
+
+  return headers.filter(([, value]) => !others.some((placeholder) => carries(value, placeholder)));
+};
 
 const isRuleHeader = (name: string, rule: CredentialRule) =>
   rule.header !== undefined && name.toLowerCase() === rule.header.toLowerCase();

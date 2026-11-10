@@ -1,6 +1,8 @@
 import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { LABELS } from "../../backend/index.ts";
+import { openContext } from "../../cli/context.ts";
 import { run } from "../../cli/index.ts";
 import { LauncherError, sha256Hex } from "../../shared/index.ts";
 import {
@@ -49,7 +51,7 @@ describe("pi [args]", () => {
     const last = piSession(fake)?.spec;
 
     expect(last?.command.slice(-3)).toEqual(["pi", "chat", "hello"]);
-    expect(last?.workdir).toBe(harness.cwd);
+    expect(last?.command).toContain(harness.cwd);
   });
 
   it("mounts the repository at its host path, routes through the proxy and trusts the launcher CA without a credential rule, for the denial page", async () => {
@@ -68,7 +70,6 @@ describe("pi [args]", () => {
       kind: "internal",
       name: `pi-sandbox-${sha256Hex(harness.repoRoot).slice(0, 12)}`,
     });
-    expect(container?.spec?.labels["pi-sandbox.proxy-token-hash"]).toMatch(/^[0-9a-f]{16}$/);
 
     expect(mounts).toContainEqual({
       source: harness.repoRoot,
@@ -84,7 +85,7 @@ describe("pi [args]", () => {
     expect(container?.spec?.env.NODE_EXTRA_CA_CERTS).toBe("/etc/pi-sandbox/ca.pem");
   });
 
-  it("passes the terminal variables to pi's exec, not the container, and reuses it from another terminal", async () => {
+  it("passes the terminal variables to pi's exec, not the container, and gives each launch its own container", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend, env: { TERM_PROGRAM: "first" } });
 
@@ -116,7 +117,9 @@ describe("pi [args]", () => {
         PI_SANDBOX_LAUNCH_ID: expect.stringMatching(/^[0-9a-f]{16}$/),
       },
     ]);
-    expect([...fake.containers.keys()]).toEqual([container?.summary.id]);
+    expect(fake.created).toHaveLength(2);
+    expect(new Set(fake.created.map((created) => created.spec?.labels[LABELS.launchId])).size).toBe(2);
+    expect(fake.containers.size).toBe(0);
   });
 
   it("mounts the trust bundle read-only when a credential rule is configured", async () => {
@@ -154,7 +157,7 @@ describe("pi [args]", () => {
     const [container] = fake.created;
 
     expect(container?.spec?.image).toBe("sha256:image-built-1");
-    expect(container?.spec?.labels["pi-sandbox.image-reference"]).toMatch(/^ghcr\.io\/zharskiy\/pi-sandbox:/);
+    expect(container?.spec?.labels[LABELS.imageReference]).toBe("pi-sandbox-base:local");
   });
 
   it("refuses a repository rooted at the home directory before touching the backend", async () => {
@@ -198,7 +201,7 @@ describe("pi [args]", () => {
       "pi-sandbox: the sandbox VM engine is unreachable at ~/.colima/pi-sandbox/docker.sock",
     );
     expect(harness.stderr()).toContain("  hint: ");
-    expect(harness.stderr()).toContain("pi --no-sandbox");
+    expect(harness.stderr()).not.toContain("--no-sandbox");
   });
 
   it("fails closed when the proxy cannot start", async () => {
@@ -219,47 +222,35 @@ describe("pi [args]", () => {
     expect(fake.execs).toHaveLength(0);
   });
 
-  it("skips the proxy when nothing may leave the container", async () => {
-    const fake = createFakeBackend();
-    const harness = await createHarness({
-      backend: () => fake.backend,
-      proxy: {
-        ensure: async () => {
-          throw new Error("must not start");
-        },
-      },
-    });
-
-    await harness.writeJson(harness.userConfigFile, { egress: { allow: [], presets: [] } });
-
-    expect(await run([], harness.deps)).toBe(0);
-
-    const [container] = fake.created;
-
-    expect(container?.spec?.network).toEqual({ kind: "none" });
-    expect(container?.spec?.env.HTTPS_PROXY).toBeUndefined();
-  });
-
-  it("refuses outside the workspace roots and warns when the policy says warn", async () => {
+  it("refuses a folder outside the workspace roots before any discovery", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
 
     await harness.writeJson(harness.policyFile, {
-      workspaceRoots: { roots: [join(harness.root, "elsewhere")], outside: "refuse" },
+      workspaceRoots: { roots: [join(harness.root, "elsewhere")] },
     });
 
     expect(await run([], harness.deps)).toBe(1);
-    expect(harness.stderr()).toContain("is outside the allowed workspace roots");
+    expect(harness.stderr()).toContain(`${harness.repoRoot} is outside the allowed workspace roots`);
+    expect(harness.calls.filter((call) => call.file === "git")).toEqual([]);
     expect(fake.execs).toHaveLength(0);
+  });
 
-    await harness.writeJson(harness.policyFile, {
-      workspaceRoots: { roots: [join(harness.root, "elsewhere")], outside: "warn" },
+  it("does not walk the home folder for a host command started there", async () => {
+    const harness = await createHarness();
+
+    await mkdir(join(harness.deps.home, "project", ".git"), { recursive: true });
+
+    harness.deps.cwd = harness.deps.home;
+
+    const { context } = await openContext(harness.deps, "host");
+
+    expect(context.workspace).toMatchObject({
+      cwd: harness.deps.home,
+      repoRoot: harness.deps.home,
+      isGitRepo: false,
     });
-
-    expect(await run([], harness.deps)).toBe(0);
-    expect(harness.stderr()).toContain(
-      `pi-sandbox: warning: ${harness.repoRoot} is outside the workspace roots`,
-    );
+    expect(context.workspace.nested).toBeUndefined();
   });
 
   it("refuses --no-sandbox under fallback refuse and names the layer that set it", async () => {
@@ -271,25 +262,22 @@ describe("pi [args]", () => {
     expect(harness.stderr()).toContain('--no-sandbox is refused: fallback is "refuse", set by policy');
   });
 
-  it("runs host pi from PATH under fallback host, skipping the launcher's own wrapper", async () => {
+  it("runs the launcher's own pi under fallback host, never a pi on PATH, and says so", async () => {
     const harness = await createHarness();
-    const wrapperDir = join(harness.root, "local-bin");
     const hostDir = join(harness.root, "host-bin");
 
-    await writeScript(wrapperDir, 'exec node "/checkout/launcher/bin/pi-sandbox-dev.js" "$@"');
+    await writeScript(hostDir, "echo host pi");
 
-    const hostPi = await writeScript(hostDir, "echo host pi");
-
-    harness.deps.env.PATH = `${wrapperDir}:${hostDir}`;
+    harness.deps.env.PATH = hostDir;
 
     expect(await run(["--no-sandbox", "-p", "hi"], harness.deps)).toBe(0);
-    expect(harness.stderr()).toContain(
-      `pi-sandbox: warning: running ${hostPi} on the host, outside the sandbox`,
-    );
 
     const call = harness.calls.find((entry) => entry.interactive);
 
-    expect(call?.file).toBe(hostPi);
-    expect(call?.args).toEqual(["-p", "hi"]);
+    expect(call?.file).toBe(process.execPath);
+    expect(call?.args.slice(1)).toEqual(["-p", "hi"]);
+    expect(harness.stderr()).toContain(
+      `pi-sandbox: warning: running ${call?.args[0]} on the host, outside the sandbox`,
+    );
   });
 });

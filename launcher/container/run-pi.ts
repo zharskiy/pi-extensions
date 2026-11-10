@@ -1,4 +1,3 @@
-import { randomBytes } from "node:crypto";
 import { constants } from "node:os";
 import { Writable } from "node:stream";
 import type { Backend, TerminalSize } from "../backend/index.ts";
@@ -6,7 +5,7 @@ import type { Workspace } from "../workspace/index.ts";
 
 export interface HostTerminal {
   stdin: NodeJS.ReadableStream & { isTTY?: boolean; setRawMode?: (mode: boolean) => unknown };
-  stdout: NodeJS.WritableStream;
+  stdout: NodeJS.WritableStream & { isTTY?: boolean };
   stderr: NodeJS.WritableStream;
   columns: number;
   rows: number;
@@ -23,7 +22,7 @@ export interface RunPiInput {
   containerId: string;
   piArgs: string[];
   env?: Record<string, string>;
-  launchId?: string;
+  launchId: string;
   workspace: Workspace;
   terminal: HostTerminal;
   signals?: SignalSource;
@@ -34,24 +33,20 @@ const SIGNAL_EXIT_BASE = 128;
 
 const GRACE_MS = 5000;
 
-const TTY_SIGNALS: NodeJS.Signals[] = ["SIGTERM", "SIGHUP"];
+const SIGNALS: NodeJS.Signals[] = ["SIGINT", "SIGTERM", "SIGHUP"];
 
-const PIPE_SIGNALS: NodeJS.Signals[] = ["SIGINT", ...TTY_SIGNALS];
+const PID_FILE = "/tmp/pi-sandbox-pi.pid";
 
-const LAUNCH_ID_BYTES = 8;
-
-const pidFileOf = (launchId: string) => `/tmp/pi-sandbox-${launchId}.pid`;
-
-const launchEnv = (launchId: string | undefined): Record<string, string> =>
-  launchId === undefined ? {} : { PI_SANDBOX_LAUNCH_ID: launchId };
+const isInteractive = (terminal: HostTerminal) =>
+  terminal.stdin.isTTY === true && terminal.stdout.isTTY === true;
 
 const discard = () =>
   new Writable({
     write: (_chunk, _encoding, done) => done(),
   });
 
-const withRawMode = async <T>(terminal: HostTerminal, action: () => Promise<T>) => {
-  const raw = terminal.stdin.isTTY === true && terminal.stdin.setRawMode !== undefined;
+const withRawMode = async <T>(terminal: HostTerminal, interactive: boolean, action: () => Promise<T>) => {
+  const raw = interactive && terminal.stdin.setRawMode !== undefined;
 
   if (raw) {
     terminal.stdin.setRawMode?.(true);
@@ -100,37 +95,39 @@ const endsWithin = (running: Promise<unknown>, ms: number) => {
 };
 
 const quietExec = (input: RunPiInput, script: string) =>
-  input.backend
-    .exec(
+  endsWithin(
+    input.backend.exec(
       { containerId: input.containerId, command: ["sh", "-c", script], env: {}, workdir: "/" },
       { stdout: discard(), stderr: discard(), tty: false },
-    )
-    .catch(() => undefined);
+    ),
+    input.graceMs ?? GRACE_MS,
+  );
 
-const settleSignal = async (
-  input: RunPiInput,
-  running: Promise<number>,
-  signal: NodeJS.Signals,
-  pidFile: string,
-) => {
-  await quietExec(input, `kill -TERM "$(cat ${pidFile})"`);
+const settleSignal = async (input: RunPiInput, running: Promise<number>, signal: NodeJS.Signals) => {
+  const grace = input.graceMs ?? GRACE_MS;
+  const signalled = SIGNAL_EXIT_BASE + constants.signals[signal];
+  const code = running.catch(() => signalled);
 
-  const ended = await endsWithin(running, input.graceMs ?? GRACE_MS);
+  await quietExec(input, `kill -TERM "$(cat ${PID_FILE})"`);
 
-  if (!ended) {
-    await quietExec(input, `kill -KILL "$(cat ${pidFile})"`);
+  if (await endsWithin(running, grace)) {
+    return code;
   }
 
-  return SIGNAL_EXIT_BASE + constants.signals[signal];
+  await endsWithin(input.backend.stopContainer(input.containerId, 0), grace);
+
+  return signalled;
 };
 
-const execPi = (input: RunPiInput, tty: boolean, pidFile: string) =>
+const PI_SCRIPT = `echo $$ > ${PID_FILE}; cd "$1" 2>/dev/null || echo "pi-sandbox: $1 is not in the sandbox, pi starts in $PWD" >&2; shift; exec "$@"`;
+
+const execPi = (input: RunPiInput, tty: boolean) =>
   input.backend.exec(
     {
       containerId: input.containerId,
-      command: ["sh", "-c", `echo $$ > ${pidFile}; exec "$@"`, "sh", "pi", ...input.piArgs],
-      env: { ...input.env, ...launchEnv(input.launchId) },
-      workdir: input.workspace.cwd,
+      command: ["sh", "-c", PI_SCRIPT, "sh", input.workspace.cwd, "pi", ...input.piArgs],
+      env: { ...input.env, PI_SANDBOX_LAUNCH_ID: input.launchId },
+      workdir: input.workspace.repoRoot,
     },
     {
       stdin: input.terminal.stdin,
@@ -142,23 +139,22 @@ const execPi = (input: RunPiInput, tty: boolean, pidFile: string) =>
     },
   );
 
-export const runPi = (input: RunPiInput) =>
-  withRawMode(input.terminal, async () => {
-    const tty = input.terminal.stdin.isTTY === true;
-    const watch = listenFor(input.signals ?? process, tty ? TTY_SIGNALS : PIPE_SIGNALS);
-    const pidFile = pidFileOf(randomBytes(LAUNCH_ID_BYTES).toString("hex"));
+export const runPi = (input: RunPiInput) => {
+  const interactive = isInteractive(input.terminal);
+
+  return withRawMode(input.terminal, interactive, async () => {
+    const watch = listenFor(input.signals ?? process, SIGNALS);
 
     try {
-      const running = execPi(input, tty, pidFile);
+      const running = execPi(input, interactive);
       const outcome = await Promise.race([
         running.then((code) => ({ code })),
         watch.received.then((signal) => ({ signal })),
       ]);
 
-      return "signal" in outcome ? await settleSignal(input, running, outcome.signal, pidFile) : outcome.code;
+      return "signal" in outcome ? await settleSignal(input, running, outcome.signal) : outcome.code;
     } finally {
       watch.stop();
-
-      await quietExec(input, `rm -f ${pidFile}`);
     }
   });
+};

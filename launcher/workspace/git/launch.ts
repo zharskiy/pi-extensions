@@ -1,3 +1,4 @@
+import { rm } from "node:fs/promises";
 import {
   type CommandRunner,
   errorMessage,
@@ -34,29 +35,46 @@ const alternatesOf = async (workspace: Workspace) => {
   return notices.flat();
 };
 
-export const recordGitBaseline = async (workspace: Workspace, context: GitLaunchContext) => {
+const readRecord = async (path: string) => {
+  const record = await readJsonFile<BaselineRecord>(path).catch(() => undefined);
+
+  return Array.isArray(record?.scan?.own) ? record : undefined;
+};
+
+const changedSince = (record: BaselineRecord, scan: GitBaseline, alternates: string[]) => [
+  ...alternates.filter((notice) => !record.alternates.includes(notice)),
+  ...nestedGitNotices(record.scan, scan),
+];
+
+const PENDING = "git: the check after the last sandbox session did not run; it reports now:";
+
+export const recordGitBaseline = async (
+  workspace: Workspace,
+  context: GitLaunchContext,
+  othersLive = false,
+) => {
   const paths = pathsOf(context.stateDir, workspace.repoRoot);
+  const previous = await readRecord(paths.record);
+
+  if (othersLive && previous !== undefined) {
+    return [];
+  }
+
   const [scan, alternates] = await Promise.all([
     scanGitBaseline(workspace, context.runner, paths.noHooks, context.scanBudget, context.volumePaths),
     alternatesOf(workspace),
   ]);
+  const pending = previous === undefined || othersLive ? [] : changedSince(previous, scan, alternates);
 
   await writeJsonFile(paths.record, { scan, alternates } satisfies BaselineRecord);
+
+  return pending.length === 0 ? [] : [PENDING, ...pending];
 };
 
 export const gitLaunchNotices = async (workspace: Workspace) => {
   await Promise.all(gitRepos(workspace).map(assertGitIntegrity));
 
   return alternatesOf(workspace);
-};
-
-const scanNotices = async (workspace: Workspace, context: GitLaunchContext, record: BaselineRecord) => {
-  const { noHooks } = pathsOf(context.stateDir, workspace.repoRoot);
-
-  return nestedGitNotices(
-    record.scan,
-    await scanGitBaseline(workspace, context.runner, noHooks, context.scanBudget, context.volumePaths),
-  );
 };
 
 const brokenRepos = async (workspace: Workspace) => {
@@ -77,15 +95,26 @@ export const gitLaunchEndNotices = async (workspace: Workspace, context: GitLaun
     return [];
   }
 
-  const broken = await brokenRepos(workspace);
-  const record = await readJsonFile<BaselineRecord>(
-    pathsOf(context.stateDir, workspace.repoRoot).record,
-  ).catch(() => undefined);
-  const alternates = (await alternatesOf(workspace)).filter(
-    (notice) => !(record?.alternates ?? []).includes(notice),
-  );
-  const scanned =
-    record === undefined || broken.length > 0 ? [] : await scanNotices(workspace, context, record);
+  const paths = pathsOf(context.stateDir, workspace.repoRoot);
+  const [broken, record, alternates] = await Promise.all([
+    brokenRepos(workspace),
+    readRecord(paths.record),
+    alternatesOf(workspace),
+  ]);
 
-  return [...broken, ...alternates, ...scanned];
+  if (record === undefined || broken.length > 0) {
+    return [...broken, ...alternates.filter((notice) => !(record?.alternates ?? []).includes(notice))];
+  }
+
+  const scan = await scanGitBaseline(
+    workspace,
+    context.runner,
+    paths.noHooks,
+    context.scanBudget,
+    context.volumePaths,
+  );
+
+  await rm(paths.record, { force: true });
+
+  return changedSince(record, scan, alternates);
 };

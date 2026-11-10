@@ -1,4 +1,4 @@
-import type { CredentialRule, ParentProxy, SecretRef } from "../../config/index.ts";
+import { type CredentialRule, type ParentProxy, parentProxyOf, type SecretRef } from "../../config/index.ts";
 import { LauncherError, urlPartOf } from "../../shared/index.ts";
 import type { CachedSecret } from "./cache.ts";
 import { unavailable } from "./errors.ts";
@@ -30,22 +30,11 @@ const envNameOf = (entry: EnvSecretEntry) =>
 const envSecretEntries = (rules: CredentialRule[]): EnvSecretEntry[] =>
   rules.filter((rule) => "env" in rule.secret).map((rule) => ({ key: rule.id, ref: rule.secret }));
 
-const envProxyCredentials = (env: NodeJS.ProcessEnv) => {
-  const text = env.HTTPS_PROXY || env.https_proxy;
+export const parentProxyAuth = (parent: ParentProxy, env: NodeJS.ProcessEnv) => {
+  const target = parentProxyOf(parent, env);
 
-  try {
-    const url = text === undefined || text === "" ? undefined : new URL(text);
-
-    return url === undefined || url.username === ""
-      ? undefined
-      : `${decodeURIComponent(url.username)}:${decodeURIComponent(url.password)}`;
-  } catch {
-    return undefined;
-  }
+  return target === undefined || "unsupported" in target ? undefined : target.credentials;
 };
-
-export const parentProxyAuth = (parent: ParentProxy, env: NodeJS.ProcessEnv) =>
-  parent === "env" ? envProxyCredentials(env) : undefined;
 
 const assertSingleLine = (entries: EnvSecretEntry[], env: NodeJS.ProcessEnv) => {
   const broken = entries

@@ -136,13 +136,25 @@ describe("assertSafeWorkspace", () => {
     expect(() => assertSafeMounts([join(home, "work")], context)).not.toThrow();
   });
 
-  it("refuses the filesystem root and hints at a project directory", async () => {
+  it("refuses a folder that is or contains a directory the sandbox image uses, not one below it", async () => {
     const { context } = await createHome();
+
+    expect(() => assertSafeMounts(["/opt"], context)).toThrow(
+      "/opt would mount /opt into the sandbox, refusing",
+    );
+    expect(() => assertSafeMounts(["/usr/local"], context)).toThrow(
+      "/usr/local would mount /usr/local into the sandbox, refusing",
+    );
+    expect(() => assertSafeMounts(["/opt/src/project"], context)).not.toThrow();
+  });
+
+  it("refuses the filesystem root and hints at a project directory", async () => {
+    const { home, context } = await createHome();
 
     try {
       assertSafeWorkspace(workspaceAt("/"), context);
     } catch (error) {
-      expect(error).toMatchObject({ message: "/ would mount / into the sandbox, refusing" });
+      expect(error).toMatchObject({ message: `/ would mount ${home} into the sandbox, refusing` });
       expect(error).toMatchObject({ hint: "run pi inside a project directory" });
 
       return;

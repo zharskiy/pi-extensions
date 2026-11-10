@@ -29,6 +29,8 @@ import {
 
 const REPO = "1".repeat(64);
 
+const MINTS_PER_MINUTE = 30;
+
 const state: {
   stateDir: string;
   ca: LauncherCa;
@@ -246,7 +248,7 @@ describe("CONNECT tunnel", () => {
   it("names the port in the hint for a port that is not allowed", async () => {
     expect(await deniedPage("target.test:8443")).toBe(hint("target.test:8443"));
     expect(state.test.log).toContainEqual(
-      expect.objectContaining({ host: "target.test", decision: "deny", rule: "egress.port" }),
+      expect.objectContaining({ host: "target.test", decision: "deny", rule: "egress.allow" }),
     );
   });
 
@@ -324,16 +326,19 @@ describe("the upstream of a spliced tunnel", () => {
       stateDir,
       policy: { allow: ["target.test", "other.test"] },
       ca: state.ca,
-      dial: (host, port) => {
-        dialled.push(`${host}:${port}`);
+      dial: {
+        dial: (host, port) => {
+          dialled.push(`${host}:${port}`);
 
-        return new Promise((resolve, reject) => {
-          const socket = connect({ host: "127.0.0.1", port: portOf(state.target) });
+          return new Promise((resolve, reject) => {
+            const socket = connect({ host: "127.0.0.1", port: portOf(state.target) });
 
-          socket.once("connect", () => resolve(socket));
+            socket.once("connect", () => resolve(socket));
 
-          socket.once("error", reject);
-        });
+            socket.once("error", reject);
+          });
+        },
+        checkAddresses: async () => undefined,
       },
     });
     const close = async () => {
@@ -396,16 +401,19 @@ describe("the upstream of a spliced tunnel", () => {
 describe("denial page certificates", () => {
   it("reuses a minted name and falls back to a 403 on the CONNECT once minting is rate-limited", async () => {
     const stateDir = await createStateDir();
-    const local = await startTestProxy({
-      stateDir,
-      policy: { allow: [] },
-      ca: state.ca,
-      denialPages: { mintsPerMinute: 1 },
-    });
+    const local = await startTestProxy({ stateDir, policy: { allow: [] }, ca: state.ca });
     const token = local.token;
+    const others = Array.from({ length: MINTS_PER_MINUTE - 1 }, (_, index) => `other-${index}.test:443`);
 
     const first = await pageThrough(local.proxy.port, "first.test:443", token, state.ca.certPem);
     const again = await pageThrough(local.proxy.port, "first.test:443", token, state.ca.certPem);
+
+    await others.reduce(async (previous, authority) => {
+      await previous;
+
+      await pageThrough(local.proxy.port, authority, token, state.ca.certPem);
+    }, Promise.resolve());
+
     const second = await connectStatusOn(local.proxy.port, "second.test:443", token);
 
     await local.proxy.close();
@@ -416,12 +424,12 @@ describe("denial page certificates", () => {
     expect(second.status).toBe(403);
     expect(second.head.split("\r\n")[0]).toBe(`HTTP/1.1 403 ${hint("second.test")}`);
     expect(second.body).toEqual({ denied: "second.test", rule: "egress.allow", reason: hint("second.test") });
-    expect(local.log.filter((entry) => entry.decision === "deny").map((entry) => entry.host)).toEqual([
-      "first.test",
-      "first.test",
-      "second.test",
-    ]);
-  });
+    expect(
+      local.log
+        .filter((entry) => entry.decision === "deny" && !entry.host.startsWith("other-"))
+        .map((entry) => entry.host),
+    ).toEqual(["first.test", "first.test", "second.test"]);
+  }, 60_000);
 });
 
 describe("grants", () => {
@@ -523,5 +531,17 @@ describe("plain HTTP", () => {
     expect(denied.status).toBe(403);
     expect(denied.headers["proxy-agent"]).toBe("pi-sandbox");
     expect(JSON.parse(denied.body)).toMatchObject({ denied: "target.test", rule: "plain-http" });
+  });
+
+  it("records the port the plain request named", async () => {
+    const since = Date.now();
+
+    await plainGet(state.test.proxy.port, "http://plain.test:8080/", "plain.test:8080", state.token);
+
+    const listed = await plainGet(state.test.proxy.port, `/denials?since=${since}`, "127.0.0.1", state.token);
+
+    expect(JSON.parse(listed.body).denials).toContainEqual(
+      expect.objectContaining({ host: "plain.test", port: 8080, rule: "plain-http" }),
+    );
   });
 });

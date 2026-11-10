@@ -3,7 +3,6 @@ import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import type { MountSpec } from "../../backend/index.ts";
-import type { SandboxConfig } from "../../config/index.ts";
 import {
   buildContainerSpec,
   forwardedEnv,
@@ -22,8 +21,9 @@ const repoHash = sha256Hex(repoRoot);
 const proxy = {
   url: "http://pi-sandbox:token-1@pi-sandbox-proxy:3128",
   network: { kind: "internal" as const, name: "pi-sandbox" },
-  tokenHash: "token-hash-1",
 };
+
+const launchId = "0123456789abcdef";
 
 const trust = { pemPath: "/state/ca/trust.pem", hash: "trust-1" };
 
@@ -31,37 +31,20 @@ const specInput = (overrides: Partial<ContainerSpecInput> = {}): ContainerSpecIn
   workspace: { cwd: "/work/repo/src", repoRoot, gitCommonDir: "/work/repo/.git", isGitRepo: true },
   config: sandboxConfig(),
   image: { reference: "ghcr.io/zharskiy/pi-sandbox:0.4.0", digest: "sha256:abc", id: "sha256:image-abc" },
-  hostEnv: {
-    USER: "dev",
-    TERM: "xterm-256color",
-    LANG: "en_US.UTF-8",
-    LLM_API_KEY: "real-secret-value-1234567890",
-    HOME: "/Users/dev",
-  },
   hostUid: 501,
   stateDir: "/state",
+  launchId,
   proxy,
   trust,
-  gitOverlay: { selfBinds: [], readOnlyDirs: [], readOnlyFiles: [] },
-  launcherVersion: "0.4.0",
+  gitOverlay: { selfBinds: [], readOnlyDirs: [] },
   ...overrides,
 });
 
 const scratch = realpathSync(mkdtempSync(join(tmpdir(), "pi-sandbox-spec-")));
 
-const hostHome = join(scratch, "home");
-
-const sharedDir = join(scratch, "opt", "shared");
-
-mkdirSync(join(hostHome, "libs"), { recursive: true });
-
-mkdirSync(sharedDir, { recursive: true });
-
 afterAll(() => {
   rmSync(scratch, { recursive: true, force: true });
 });
-
-const LABELS_SPEC_HASH = "pi-sandbox.spec-hash";
 
 const mountAt = (mounts: MountSpec[], target: string) => mounts.find((mount) => mount.target === target);
 
@@ -80,47 +63,19 @@ const withNestedRepo = {
 };
 
 describe("buildContainerSpec", () => {
-  it("names the container after the repo hash", () => {
-    expect(buildContainerSpec(specInput()).name).toBe(`pi-sandbox-${repoHash.slice(0, 12)}`);
+  it("names the container after the repo hash and the launch", () => {
+    expect(buildContainerSpec(specInput()).name).toBe(`pi-sandbox-${repoHash.slice(0, 12)}-${launchId}`);
   });
 
-  it("labels the container with repo, image, proxy token hash and launcher identity", () => {
-    expect(buildContainerSpec(specInput()).labels).toMatchObject({
+  it("labels the container with its repo, its launch and its image", () => {
+    expect(buildContainerSpec(specInput()).labels).toEqual({
+      "pi-sandbox.managed": "true",
       "pi-sandbox.repo-hash": repoHash,
       "pi-sandbox.repo-root": repoRoot,
+      "pi-sandbox.launch-id": launchId,
       "pi-sandbox.image-digest": "sha256:abc",
       "pi-sandbox.image-reference": "ghcr.io/zharskiy/pi-sandbox:0.4.0",
-      "pi-sandbox.proxy-token-hash": "token-hash-1",
-      "pi-sandbox.version": "0.4.0",
     });
-  });
-
-  it("labels a spec hash that changes with the spec and nothing else", () => {
-    const hashOf = (input: ContainerSpecInput) => buildContainerSpec(input).labels["pi-sandbox.spec-hash"];
-    const base = hashOf(specInput());
-    const extra = sandboxConfig({ mounts: { extraReadOnly: [sharedDir], cacheVolumes: [] } });
-
-    expect(base).toMatch(/^[0-9a-f]{64}$/);
-    expect(hashOf(specInput())).toBe(base);
-    expect(hashOf(specInput({ config: extra }))).not.toBe(base);
-    expect(
-      hashOf(specInput({ proxy: { ...proxy, url: "http://pi-sandbox:token-2@pi-sandbox-proxy:3128" } })),
-    ).not.toBe(base);
-  });
-
-  it("changes the spec hash with each config field that shapes the container", () => {
-    const hashOf = (input: ContainerSpecInput) => buildContainerSpec(input).labels["pi-sandbox.spec-hash"];
-    const withConfig = (config: SandboxConfig) => hashOf(specInput({ config }));
-    const base = hashOf(specInput());
-    const changed = [
-      withConfig(sandboxConfig({ mounts: { extraReadOnly: [sharedDir] } })),
-      withConfig(sandboxConfig({ mounts: { cacheVolumes: ["/work/repo/.cache"] } })),
-      withConfig(sandboxConfig({ resources: { cpus: 2 } })),
-      withConfig(sandboxConfig({ resources: { memoryGiB: 4 } })),
-      hashOf(specInput({ image: { reference: "other:1", digest: "sha256:def", id: "sha256:image-def" } })),
-    ];
-
-    expect(new Set([base, ...changed]).size).toBe(changed.length + 1);
   });
 
   it("creates the container from the image id", () => {
@@ -158,14 +113,12 @@ describe("buildContainerSpec", () => {
     });
   });
 
-  it("binds the git dirs onto themselves, hooks and pointers read-only from the host and config from a private copy", () => {
+  it("binds the git dirs onto themselves and the protected dirs read-only from the host", () => {
     const gitOverlay = {
       selfBinds: ["/work/repo/.git", "/work/repo/.git/modules"],
       readOnlyDirs: ["/work/repo/.git/hooks"],
-      readOnlyFiles: ["/work/repo/.git/config", "/work/repo/.git/commondir"],
     };
     const mounts = buildContainerSpec(specInput({ gitOverlay })).mounts;
-    const copies = `/state/repos/${repoHash}/git/`;
 
     expect(mountAt(mounts, "/work/repo/.git")).toEqual({
       source: "/work/repo/.git",
@@ -174,15 +127,13 @@ describe("buildContainerSpec", () => {
       kind: "bind",
     });
     expect(mountAt(mounts, "/work/repo/.git/modules")?.readOnly).toBe(false);
-    ["/work/repo/.git/hooks", "/work/repo/.git/commondir"].forEach((path) => {
-      expect(mountAt(mounts, path)).toEqual({ source: path, target: path, readOnly: true, kind: "bind" });
-    });
-    expect(mountAt(mounts, "/work/repo/.git/config")).toEqual({
-      source: expect.stringMatching(new RegExp(`^${copies}[0-9a-f]{16}$`)),
-      target: "/work/repo/.git/config",
+    expect(mountAt(mounts, "/work/repo/.git/hooks")).toEqual({
+      source: "/work/repo/.git/hooks",
+      target: "/work/repo/.git/hooks",
       readOnly: true,
       kind: "bind",
     });
+    expect(mounts.some((mount) => mount.source.startsWith("/state/repos/"))).toBe(false);
     expect(mounts.map((mount) => mount.target).indexOf("/work/repo/.git")).toBe(1);
   });
 
@@ -191,52 +142,6 @@ describe("buildContainerSpec", () => {
     const spec = buildContainerSpec(specInput({ workspace }));
 
     expect(spec.mounts.filter((mount) => mount.target.includes(".git"))).toEqual([]);
-  });
-
-  it("adds the extra read-only mounts from config at the same path, with ~ expanded", () => {
-    const repo = join(scratch, "repo");
-
-    mkdirSync(join(repo, "vendor", "sdk"), { recursive: true });
-
-    const config = sandboxConfig({
-      mounts: { extraReadOnly: [sharedDir, "vendor/sdk", "~/libs"], cacheVolumes: [] },
-    });
-    const mounts = buildContainerSpec(
-      specInput({
-        config,
-        workspace: { cwd: repo, repoRoot: repo, isGitRepo: false },
-        hostEnv: { USER: "dev", HOME: hostHome },
-      }),
-    ).mounts;
-
-    expect(mountAt(mounts, sharedDir)).toEqual({
-      source: sharedDir,
-      target: sharedDir,
-      readOnly: true,
-      kind: "bind",
-    });
-    expect(mountAt(mounts, join(repo, "vendor", "sdk"))?.readOnly).toBe(true);
-    expect(mountAt(mounts, join(hostHome, "libs"))?.source).toBe(join(hostHome, "libs"));
-    expect(mounts.some((mount) => mount.source.includes("~"))).toBe(false);
-  });
-
-  it("refuses an extra mount that would expose the engine socket or the home", () => {
-    const socketDir = join(scratch, "engine");
-
-    mkdirSync(socketDir, { recursive: true });
-
-    const attempt = (path: string, hostEnv: Record<string, string>) => () =>
-      buildContainerSpec(
-        specInput({
-          config: sandboxConfig({ mounts: { extraReadOnly: [path], cacheVolumes: [] } }),
-          hostEnv: { USER: "dev", HOME: hostHome, ...hostEnv },
-        }),
-      );
-
-    expect(attempt(socketDir, { DOCKER_HOST: `unix://${socketDir}/docker.sock` })).toThrow(
-      `mounts.extraReadOnly: ${socketDir} is not allowed (it contains the container engine socket)`,
-    );
-    expect(attempt("~", {})).toThrow("mounts.extraReadOnly: ~ is not allowed (it is the home directory)");
   });
 
   it("keeps pi's agent dir on a named volume per user account and repository, whatever USER says", () => {
@@ -252,17 +157,14 @@ describe("buildContainerSpec", () => {
     expect(
       mountAt(buildContainerSpec(specInput({ workspace: other })).mounts, "/home/pi/.pi/agent")?.source,
     ).not.toBe(agentVolume);
-    expect(
-      mountAt(
-        buildContainerSpec(specInput({ hostEnv: { USER: "someone-else" } })).mounts,
-        "/home/pi/.pi/agent",
-      )?.source,
-    ).toBe(agentVolume);
   });
 
-  it("lists the repository's agent and cache volumes", () => {
-    const config = sandboxConfig({ mounts: { extraReadOnly: [], cacheVolumes: ["node_modules"] } });
-    const input = specInput({ config });
+  it("lists the repository's agent and overlay volumes", () => {
+    const config = sandboxConfig();
+    const input = specInput({
+      config,
+      workspace: { cwd: repoRoot, repoRoot, isGitRepo: true, overlays: ["/work/repo/node_modules"] },
+    });
     const volumes = buildContainerSpec(input)
       .mounts.filter((mount) => mount.kind === "volume")
       .map((mount) => mount.source);
@@ -270,26 +172,15 @@ describe("buildContainerSpec", () => {
     expect(repoVolumes({ workspace: input.workspace, config, uid: 501 })).toEqual(volumes);
   });
 
-  it("puts cache paths on per-repo named volumes", () => {
-    const config = sandboxConfig({ mounts: { extraReadOnly: [], cacheVolumes: ["node_modules"] } });
-
-    expect(mountAt(buildContainerSpec(specInput({ config })).mounts, "/work/repo/node_modules")).toEqual({
-      source: `pi-sandbox-cache-${repoHash.slice(0, 12)}-${sha256Hex("node_modules").slice(0, 8)}`,
-      target: "/work/repo/node_modules",
-      readOnly: false,
-      kind: "volume",
-    });
-  });
-
-  it("overlays the build output of every marker folder with a volume and leaves out those a cache covers", () => {
+  it("overlays the build output of every marker folder with a volume", () => {
     const workspace = {
       cwd: repoRoot,
       repoRoot,
       gitCommonDir: "/work/repo/.git",
       isGitRepo: true,
-      overlays: ["/work/repo/node_modules", "/work/repo/api/.venv", "/work/repo/vendor/lib/node_modules"],
+      overlays: ["/work/repo/node_modules", "/work/repo/api/.venv"],
     };
-    const config = sandboxConfig({ mounts: { cacheVolumes: ["vendor"] } });
+    const config = sandboxConfig();
     const input = specInput({ workspace, config });
     const mounts = buildContainerSpec(input).mounts;
 
@@ -304,7 +195,6 @@ describe("buildContainerSpec", () => {
       },
     ]);
     expect(mountAt(mounts, "/work/repo/api/.venv")).toMatchObject({ kind: "volume", readOnly: false });
-    expect(mountAt(mounts, "/work/repo/vendor/lib/node_modules")).toBeUndefined();
     expect(repoVolumes({ workspace, config, uid: 501 })).toEqual(
       mounts.filter((mount) => mount.kind === "volume").map((mount) => mount.source),
     );
@@ -331,36 +221,25 @@ describe("buildContainerSpec", () => {
     const attempt = (input: Partial<ContainerSpecInput>) => () =>
       buildContainerSpec(specInput({ workspace, ...input }));
     const overlay = (selfBinds: string[], readOnlyDirs: string[] = []) => ({
-      gitOverlay: { selfBinds, readOnlyDirs, readOnlyFiles: [] },
+      gitOverlay: { selfBinds, readOnlyDirs },
     });
 
     expect(mountAt(buildContainerSpec(specInput({ workspace })).mounts, venv)?.kind).toBe("volume");
-    expect(attempt({ config: sandboxConfig({ mounts: { cacheVolumes: ["api"] } }) })).not.toThrow();
     expect(attempt(overlay([], [join(venv, "hooks")]))).not.toThrow();
     expect(attempt(overlay([join(venv, "tools")]))).toThrow(expect.objectContaining(refusal));
   });
 
-  it("refuses a writable bind that re-exposes an overlay folder below a read-only mount or a cache volume", () => {
+  it("refuses a writable bind that re-exposes an overlay folder below a read-only mount", () => {
     const target = "/work/repo/a/b/target";
     const below = buildContainerSpec.bind(
       undefined,
       specInput({
         workspace: { ...withNestedRepo, overlays: [target] },
-        gitOverlay: { selfBinds: ["/work/repo/a/b"], readOnlyDirs: ["/work/repo/a"], readOnlyFiles: [] },
-      }),
-    );
-    const worktree = "/work/repo/linked/wt";
-    const cached = buildContainerSpec.bind(
-      undefined,
-      specInput({
-        workspace: { ...withNestedRepo, overlays: [join(worktree, ".venv")] },
-        config: sandboxConfig({ mounts: { cacheVolumes: ["linked"] } }),
-        gitOverlay: { selfBinds: [worktree], readOnlyDirs: [], readOnlyFiles: [join(worktree, ".git")] },
+        gitOverlay: { selfBinds: ["/work/repo/a/b"], readOnlyDirs: ["/work/repo/a"] },
       }),
     );
 
     expect(below).toThrow(`workspace: the sandbox could write in ${target}`);
-    expect(cached).toThrow(`workspace: the sandbox could write in ${join(worktree, ".venv")}`);
   });
 
   it("compares mount depth on normalised targets and refuses when a writable bind shares the deepest target", () => {
@@ -372,37 +251,23 @@ describe("buildContainerSpec", () => {
       attempt({
         selfBinds: ["/work/repo/a/b"],
         readOnlyDirs: ["/work/repo/a/./././././."],
-        readOnlyFiles: [],
       }),
     ).toThrow(`workspace: the sandbox could write in ${target}`);
-    expect(
-      attempt({ selfBinds: ["/work/repo/a"], readOnlyDirs: ["/work/repo/a"], readOnlyFiles: [] }),
-    ).toThrow(`workspace: the sandbox could write in ${target}`);
-    expect(
-      attempt({ selfBinds: ["/work/repo/a"], readOnlyDirs: ["/work/repo/a/b/"], readOnlyFiles: [] }),
-    ).not.toThrow();
+    expect(attempt({ selfBinds: ["/work/repo/a"], readOnlyDirs: ["/work/repo/a/b/../"] })).toThrow(
+      "workspace: the sandbox would mount /work/repo/a/b/../ twice, refusing",
+    );
+    expect(attempt({ selfBinds: ["/work/repo/a"], readOnlyDirs: ["/work/repo/a/b/"] })).not.toThrow();
   });
 
-  it("masks each unreadable folder with the launcher's empty folder, read-only", () => {
-    const locked = "/work/repo/locked";
-    const workspace = { ...withNestedRepo, masked: [locked] };
-    const spec = buildContainerSpec(specInput({ workspace }));
+  it("refuses a folder whose mount would cover a path the sandbox image needs", () => {
+    const at = (repoRoot: string) => () =>
+      buildContainerSpec(specInput({ workspace: { cwd: repoRoot, repoRoot, isGitRepo: false, nested: [] } }));
 
-    expect(mountAt(spec.mounts, locked)).toEqual({
-      source: "/state/empty",
-      target: locked,
-      readOnly: true,
-      kind: "bind",
-    });
-    expect(spec.guardedPaths).toContain(locked);
-    expect(() =>
-      buildContainerSpec(
-        specInput({
-          workspace,
-          gitOverlay: { selfBinds: [join(locked, "a")], readOnlyDirs: [], readOnlyFiles: [] },
-        }),
-      ),
-    ).toThrow(expect.objectContaining({ hint: `make ${locked} readable, or start pi in a narrower folder` }));
+    expect(at("/usr/local")).toThrow(
+      "workspace: the sandbox would mount /usr/local over /usr/local/bin, which the sandbox image needs, refusing",
+    );
+    expect(at("/opt")).toThrow("over /opt/pi-sandbox");
+    expect(at("/usr/local/src/app")).not.toThrow();
   });
 
   it("mounts a shared cache at its home path under one name for every repository of the same state dir", () => {
@@ -422,33 +287,6 @@ describe("buildContainerSpec", () => {
     expect(mountAt(second.mounts, "/home/pi/.cache/pip")?.source).toBe(name);
     expect(sharedCacheVolumes(config, "/other-state")[0]?.name).not.toBe(name);
     expect(repoVolumes({ workspace: other, config, uid: 501 })).not.toContain(name);
-  });
-
-  it("binds host caches read-write at their guest paths and owns only their guest parents", () => {
-    const hostCaches = [
-      { preset: "maven" as const, source: "/Users/dev/.m2/repository", target: ".m2/repository" },
-      { preset: "go" as const, source: "/Users/dev/go/pkg/mod", target: "go/pkg/mod" },
-    ];
-    const spec = buildContainerSpec(specInput({ hostCaches }));
-
-    expect(mountAt(spec.mounts, "/home/pi/.m2/repository")).toEqual({
-      source: "/Users/dev/.m2/repository",
-      target: "/home/pi/.m2/repository",
-      readOnly: false,
-      kind: "bind",
-    });
-    expect(mountAt(spec.mounts, "/home/pi/go/pkg/mod")?.source).toBe("/Users/dev/go/pkg/mod");
-    expect(spec.ownedPaths).toEqual(["/home/pi/.m2", "/home/pi/go", "/home/pi/go/pkg"]);
-    expect(spec.mounts.map((mount) => mount.target)).not.toContain("/home/pi/.m2");
-    expect(spec.labels[LABELS_SPEC_HASH]).not.toBe(buildContainerSpec(specInput()).labels[LABELS_SPEC_HASH]);
-  });
-
-  it("mounts no trust bundle and sets no CA variable without trust", () => {
-    const withoutTrust = buildContainerSpec(specInput({ trust: undefined }));
-
-    expect(mountAt(withoutTrust.mounts, "/etc/pi-sandbox/ca.pem")).toBeUndefined();
-    expect(withoutTrust.env.NODE_EXTRA_CA_CERTS).toBeUndefined();
-    expect(withoutTrust.env.PI_SANDBOX_TRUST_HASH).toBeUndefined();
   });
 
   it("mounts the render dir read-only at the guest render path, and only when given", () => {
@@ -476,16 +314,6 @@ describe("buildContainerSpec", () => {
       NODE_EXTRA_CA_CERTS: "/etc/pi-sandbox/ca.pem",
       PI_SANDBOX_TRUST_HASH: "trust-1",
     });
-  });
-
-  it("recreates the container when the trust content changes", () => {
-    const hashOf = (hash: string) =>
-      buildContainerSpec(specInput({ trust: { pemPath: "/state/ca/trust.pem", hash } })).labels[
-        "pi-sandbox.spec-hash"
-      ];
-
-    expect(hashOf("one")).toBe(hashOf("one"));
-    expect(hashOf("one")).not.toBe(hashOf("two"));
   });
 
   it("names the proxy by its network alias, so a relay recreated for a new proxy port keeps working", () => {
@@ -543,14 +371,6 @@ describe("buildContainerSpec", () => {
     expect(buildContainerSpec(specInput()).network).toEqual({ kind: "internal", name: "pi-sandbox" });
   });
 
-  it("has no network and no proxy variables without a proxy", () => {
-    const spec = buildContainerSpec(specInput({ proxy: undefined }));
-
-    expect(spec.network).toEqual({ kind: "none" });
-    expect(Object.keys(spec.env).filter((name) => /_proxy|PROXY_|JAVA_TOOL_OPTIONS/i.test(name))).toEqual([]);
-    expect(spec.labels["pi-sandbox.proxy-token-hash"]).toBeUndefined();
-  });
-
   it("holds only the proxy and static sandbox settings, no forwarded terminal variables", () => {
     expect(buildContainerSpec(specInput()).env).toEqual({
       HTTPS_PROXY: "http://pi-sandbox:token-1@pi-sandbox-proxy:3128",
@@ -579,15 +399,6 @@ describe("buildContainerSpec", () => {
       PI_TELEMETRY: "0",
       PI_CLIPBOARD_OSC52: "1",
     });
-  });
-
-  it("keeps the spec hash when only the forwarded terminal variables change", () => {
-    const first = buildContainerSpec(specInput());
-    const second = buildContainerSpec(
-      specInput({ hostEnv: { USER: "dev", TERM: "xterm-kitty", TERM_PROGRAM: "other", COLORFGBG: "0;15" } }),
-    );
-
-    expect(second.labels["pi-sandbox.spec-hash"]).toBe(first.labels["pi-sandbox.spec-hash"]);
   });
 
   it("never forwards a variable the sandbox sets, whatever the allowlist says", () => {
@@ -622,6 +433,25 @@ describe("buildContainerSpec", () => {
     expect(forwardedEnv(names, spec.env)).toEqual({});
   });
 
+  it("keeps a credential-bearing value on the host and names the variable", () => {
+    const notices: string[] = [];
+    const hostEnv = {
+      PIP_INDEX_URL: "https://dev:hunter2@pypi.corp.example/simple",
+      AUTH_HEADER: "Bearer abc.def",
+      PLAIN_URL: "https://pypi.corp.example/simple",
+      EDITOR: "vi",
+    };
+
+    expect(forwardedEnv(Object.keys(hostEnv), hostEnv, (notice) => notices.push(notice))).toEqual({
+      PLAIN_URL: "https://pypi.corp.example/simple",
+      EDITOR: "vi",
+    });
+    expect(notices).toEqual([
+      "env.allow: PIP_INDEX_URL holds a credential, so it stays on the host",
+      "env.allow: AUTH_HEADER holds a credential, so it stays on the host",
+    ]);
+  });
+
   it("forwards only the allowlisted host variables that are set", () => {
     expect(forwardedEnv(["TERM", "LANG", "COLORFGBG"], { TERM: "xterm", LANG: "C", SECRET: "x" })).toEqual({
       TERM: "xterm",
@@ -629,45 +459,7 @@ describe("buildContainerSpec", () => {
     });
   });
 
-  it("names one cache volume per resolved target, however the path is written", () => {
-    const config = sandboxConfig({
-      mounts: { cacheVolumes: ["node_modules", "./node_modules", "node_modules/"] },
-    });
-    const volumes = buildContainerSpec(specInput({ config })).mounts.filter(
-      (mount) => mount.target === "/work/repo/node_modules",
-    );
-
-    expect(volumes).toEqual([
-      {
-        source: `pi-sandbox-cache-${repoHash.slice(0, 12)}-${sha256Hex("node_modules").slice(0, 8)}`,
-        target: "/work/repo/node_modules",
-        readOnly: false,
-        kind: "volume",
-      },
-    ]);
-  });
-
-  it("refuses a cache volume inside a git dir or a read-only mount, naming the key", () => {
-    const gitOverlay = {
-      selfBinds: ["/work/repo/.git"],
-      readOnlyDirs: ["/work/repo/.git/hooks", "/work/repo/.githooks"],
-      readOnlyFiles: [],
-    };
-    const attempt = (cacheVolumes: string[]) => () =>
-      buildContainerSpec(specInput({ gitOverlay, config: sandboxConfig({ mounts: { cacheVolumes } }) }));
-
-    expect(attempt([".git/hooks/pre-commit"])).toThrow(
-      "mounts.cacheVolumes: /work/repo/.git/hooks/pre-commit lies inside /work/repo/.git/hooks",
-    );
-    expect(attempt([".git/objects"])).toThrow(
-      "mounts.cacheVolumes: /work/repo/.git/objects lies inside /work/repo/.git",
-    );
-    expect(attempt([".githooks/pre-push"])).toThrow("lies inside /work/repo/.githooks");
-    expect(attempt([".githooks"])).toThrow("lies inside /work/repo/.githooks");
-    expect(attempt(["node_modules"])).not.toThrow();
-  });
-
-  it("leaves out a build output overlay inside an extra read-only mount with a notice, and still starts", () => {
+  it("leaves out a build output overlay inside a read-only git dir with a notice, and still starts", () => {
     const repo = join(scratch, "overlay-repo");
 
     mkdirSync(join(repo, "vendor", "pkg"), { recursive: true });
@@ -679,8 +471,8 @@ describe("buildContainerSpec", () => {
       isGitRepo: false,
       overlays: [join(vendor, "pkg", "node_modules"), join(repo, "node_modules")],
     };
-    const config = sandboxConfig({ mounts: { extraReadOnly: ["vendor"] } });
-    const spec = buildContainerSpec(specInput({ workspace, config, hostEnv: { HOME: hostHome } }));
+    const gitOverlay = { selfBinds: [], readOnlyDirs: [vendor] };
+    const spec = buildContainerSpec(specInput({ workspace, gitOverlay }));
 
     expect(mountAt(spec.mounts, join(vendor, "pkg", "node_modules"))).toBeUndefined();
     expect(mountAt(spec.mounts, join(repo, "node_modules"))?.kind).toBe("volume");
@@ -689,15 +481,6 @@ describe("buildContainerSpec", () => {
     expect(spec.notices).toEqual([
       `${join(vendor, "pkg", "node_modules")} is not overlaid: it lies inside ${vendor}, which the sandbox protects`,
     ]);
-    expect(() =>
-      buildContainerSpec(
-        specInput({
-          workspace,
-          config: sandboxConfig({ mounts: { extraReadOnly: ["vendor"], cacheVolumes: ["vendor/cache"] } }),
-          hostEnv: { HOME: hostHome },
-        }),
-      ),
-    ).toThrow(`mounts.cacheVolumes: ${join(vendor, "cache")} lies inside ${vendor}`);
   });
 
   it("leaves out a build output overlay inside a read-only git path and has no notice otherwise", () => {
@@ -708,7 +491,7 @@ describe("buildContainerSpec", () => {
       isGitRepo: true,
       overlays: ["/work/repo/.githooks/node_modules"],
     };
-    const gitOverlay = { selfBinds: [], readOnlyDirs: ["/work/repo/.githooks"], readOnlyFiles: [] };
+    const gitOverlay = { selfBinds: [], readOnlyDirs: ["/work/repo/.githooks"] };
     const spec = buildContainerSpec(specInput({ workspace, gitOverlay }));
 
     expect(mountAt(spec.mounts, "/work/repo/.githooks/node_modules")).toBeUndefined();
@@ -720,7 +503,6 @@ describe("buildContainerSpec", () => {
     const gitOverlay = {
       selfBinds: ["/work/repo/.git"],
       readOnlyDirs: ["/work/repo/.git/hooks"],
-      readOnlyFiles: [],
     };
 
     expect(buildContainerSpec(specInput({ gitOverlay })).guardedPaths).toEqual(
@@ -757,14 +539,5 @@ describe("buildContainerSpec with host sessions", () => {
     expect(spec.mounts.some((mount) => mount.target.includes("/sessions/"))).toBe(false);
     expect(spec.env.PI_CODING_AGENT_SESSION_DIR).toBeUndefined();
     expect(spec.labels["pi-sandbox.session-dir"]).toBe("sessions.host is off");
-  });
-
-  it("changes the spec hash when the toggle or the directory changes", () => {
-    const hashOf = (input: ContainerSpecInput) => buildContainerSpec(input).labels["pi-sandbox.spec-hash"];
-    const on = hashOf(specInput({ hostSessions: { dir } }));
-    const off = hashOf(specInput({ hostSessions: { off: "sessions.host is off", notice: false } }));
-    const moved = hashOf(specInput({ hostSessions: { dir: `${dir}-moved` } }));
-
-    expect(new Set([on, off, moved]).size).toBe(3);
   });
 });

@@ -74,9 +74,10 @@ describe("fake backend contract", () => {
 
     await fake.backend.createContainer(specFor("taken"));
 
-    await expect(fake.backend.createContainer(specFor("taken"))).rejects.toThrow(
-      "container name taken is already in use",
-    );
+    await expect(fake.backend.createContainer(specFor("taken"))).rejects.toMatchObject({
+      message: "unexpected name clash: container name taken is already in use",
+      hint: undefined,
+    });
     await expect(fake.backend.removeContainer("missing")).resolves.toBeUndefined();
   });
 

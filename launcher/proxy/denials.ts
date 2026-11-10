@@ -14,11 +14,9 @@ export interface DenialContext {
   sni?: string;
 }
 
-const HINTED_RULES = new Set(["egress.allow", "egress.port"]);
-
 const MAX_DENIALS = 200;
 
-export const isHinted = (rule: string) => HINTED_RULES.has(rule);
+export const isHinted = (rule: string) => rule === "egress.allow";
 
 export const denialBody = (host: string, denial: DenialInput) => ({
   denied: host,
@@ -35,7 +33,7 @@ const forbidden = (host: string, denial: DenialInput) =>
 export const createDenials = (
   repoHash: string,
   record: RecordAccess,
-  pages: ReturnType<typeof createDenialPages> | undefined,
+  pages: ReturnType<typeof createDenialPages>,
 ) => {
   const state: { remembered: DenialRecord[] } = { remembered: [] };
 
@@ -75,9 +73,9 @@ export const createDenials = (
   const show = async (client: Socket, host: string, denial: DenialInput, context: { port: number }) => {
     note(host, denial, context);
 
-    const secureContext = await pages?.context(host);
+    const secureContext = await pages.context(host);
 
-    if (pages === undefined || secureContext === undefined) {
+    if (secureContext === undefined) {
       client.end(forbidden(host, denial));
 
       return;

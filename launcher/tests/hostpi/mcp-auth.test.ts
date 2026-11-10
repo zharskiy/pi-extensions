@@ -1,80 +1,37 @@
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { mcpSignInsNeeded } from "../../hostpi/index.ts";
+import { mcpSignIns } from "../../hostpi/index.ts";
 import { mcpAuthKey } from "../../shared/index.ts";
 import { tempDir, writeJson } from "./fixtures.ts";
 
-const NOW = 1_700_000_000_000;
+describe("mcpSignIns", () => {
+  it("lists the OAuth servers with their stored entry, skipping credential headers, disabled and provider servers", async () => {
+    const agentDir = await tempDir("mcp-auth");
+    const url = "https://plain.example/mcp";
 
-const SERVERS = {
-  missing: { url: "https://missing.example/mcp" },
-  expired: { url: "https://expired.example/mcp" },
-  refreshable: { url: "https://refreshable.example/mcp" },
-  fresh: { url: "https://fresh.example/mcp" },
-  headed: { url: "https://headed.example/mcp", headers: { Authorization: "Bearer x" } },
-  local: { url: "http://intranet.example/mcp" },
-  tool: { command: "npx" },
-};
-
-const filesWith = async (store: Record<string, unknown>) => {
-  const agentDir = await tempDir("mcp-auth");
-
-  await writeJson(join(agentDir, "mcp-auth.json"), store);
-
-  return { agentDir, mcp: { mcpServers: SERVERS } };
-};
-
-describe("mcpSignInsNeeded", () => {
-  it("lists the OAuth servers with neither a fresh access token nor a refresh token", async () => {
-    const files = await filesWith({
-      [mcpAuthKey("expired", SERVERS.expired.url)]: {
-        tokens: { access_token: "a" },
-        tokensExpireAt: NOW - 1,
-      },
-      [mcpAuthKey("refreshable", SERVERS.refreshable.url)]: {
-        tokens: { access_token: "a", refresh_token: "r" },
-        tokensExpireAt: NOW - 1,
-      },
-      [mcpAuthKey("fresh", SERVERS.fresh.url)]: {
-        tokens: { access_token: "a" },
-        tokensExpireAt: NOW + 3_600_000,
-      },
+    await writeJson(join(agentDir, "mcp-auth.json"), {
+      [mcpAuthKey("plain", url)]: { access: "a", expiresAt: 1 },
     });
 
-    expect(await mcpSignInsNeeded(files, NOW)).toEqual([
-      { name: "missing", url: "https://missing.example/mcp" },
-      { name: "expired", url: "https://expired.example/mcp" },
-    ]);
-  });
-
-  it("treats an unreadable store as no sign-in at all", async () => {
-    const files = await filesWith({});
-
-    await writeJson(join(files.agentDir, "mcp-auth.json"), "not an object");
-
-    expect((await mcpSignInsNeeded(files, NOW)).map((server) => server.name)).toEqual([
-      "missing",
-      "expired",
-      "refreshable",
-      "fresh",
-    ]);
-  });
-});
-
-describe("mcpSignInsNeeded and the derived bearer", () => {
-  it("skips servers with their own credential header and names host pi cannot sign in to", async () => {
-    const agentDir = await tempDir("mcp-auth");
     const files = {
       agentDir,
       mcp: {
         mcpServers: {
           keyed: { url: "https://keyed.example/mcp", headers: { "X-Api-Key": "x" } },
           "dotted.name": { url: "https://dotted.example/mcp" },
-          plain: { url: "https://plain.example/mcp" },
+          off: { url: "https://off.example/mcp", enabled: false },
+          prov: { url: "https://prov.example/mcp", auth: { provider: "p" } },
+          local: { url: "http://intranet.example/mcp" },
+          tool: { command: "npx" },
+          plain: { url },
+          bare: { url: "https://bare.example/mcp" },
         },
       },
     };
+    const servers = await mcpSignIns(files);
 
-    expect(await mcpSignInsNeeded(files, NOW)).toEqual([{ name: "plain", url: "https://plain.example/mcp" }]);
+    expect(servers.map((server) => server.name)).toEqual(["plain", "bare"]);
+    expect(servers[0]?.entry).toBeDefined();
+    expect(servers[1]?.entry).toBeUndefined();
   });
 });

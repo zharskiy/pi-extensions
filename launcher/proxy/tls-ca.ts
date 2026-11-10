@@ -7,6 +7,7 @@ import {
 } from "node:crypto";
 import { chmod, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { isHostName } from "../config/index.ts";
 import { type CommandRunner, LauncherError, stateLayout, withFileLock } from "../shared/index.ts";
 
 export interface LeafCertificate {
@@ -41,8 +42,6 @@ const MAX_LEAVES = 256;
 const CA_KEY = "ca-key.pem";
 
 const CA_CERT = "ca-cert.pem";
-
-const LEAF_HOST = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/;
 
 const caConfig = `[req]
 distinguished_name = dn
@@ -163,7 +162,7 @@ const storedCa = async (directory: string) => {
     : undefined;
 };
 
-const ensureCa = async (directory: string, runner: CommandRunner) => {
+const ensureCa = async (directory: string, lockPath: string, runner: CommandRunner) => {
   const current = await storedCa(directory);
 
   if (current !== undefined) {
@@ -171,7 +170,7 @@ const ensureCa = async (directory: string, runner: CommandRunner) => {
   }
 
   return withFileLock(
-    join(directory, "ca.lock"),
+    lockPath,
     async () => {
       const again = await storedCa(directory);
 
@@ -236,16 +235,17 @@ const signLeaf = async (directory: string, host: string, runner: CommandRunner):
 };
 
 export const openLauncherCa = async ({ stateDir, runner }: CaOptions): Promise<LauncherCa> => {
-  const directory = stateLayout(stateDir).ca;
+  const layout = stateLayout(stateDir);
+  const directory = layout.ca;
   const certPath = join(directory, CA_CERT);
 
   await mkdir(directory, { recursive: true, mode: 0o700 });
 
-  const { certPem } = await ensureCa(directory, runner);
+  const { certPem } = await ensureCa(directory, layout.caLock, runner);
   const leaves = new Map<string, Promise<{ leaf: LeafCertificate; renewAt: number }>>();
 
   const checkHost = (host: string) => {
-    if (!LEAF_HOST.test(host)) {
+    if (!isHostName(host)) {
       throw new LauncherError(`cannot issue a certificate for ${host}`, "use a DNS hostname for the host");
     }
   };

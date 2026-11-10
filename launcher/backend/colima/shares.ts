@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { dirname, join, sep } from "node:path";
 import { isWithin, LauncherError } from "../../shared/index.ts";
 import type { VmCoverage, VmPath, VmShare, VmShareOptions } from "../types.ts";
-import { isPlain, mountEntriesOf, shareOf, vmSharesOf } from "./colima-yaml.ts";
+import { movedMountsOf, vmSharesOf } from "./colima-yaml.ts";
 import { type Colima, instanceOf, logHint, plainStart } from "./profile.ts";
 
 interface SharePlan {
@@ -11,15 +11,11 @@ interface SharePlan {
   next: VmShare[];
 }
 
-interface PlanRefusal {
-  reason: string;
-}
-
 const SAFE_WORD = /^[A-Za-z0-9_@%+=:,./-]+$/;
 
 const segmentsOf = (path: string) => path.split(sep).filter((part) => part !== "");
 
-export const shareFor = (path: string, home: string, shares: VmShare[] = []) => {
+export const shareFor = (path: string, home: string) => {
   if (isWithin(path, home)) {
     return home;
   }
@@ -27,11 +23,8 @@ export const shareFor = (path: string, home: string, shares: VmShare[] = []) => 
   const [top, volume] = segmentsOf(path);
   const candidate = top === "Volumes" && volume !== undefined ? join(sep, top, volume) : dirname(path);
   const shallow = segmentsOf(candidate).length < 2;
-  const holdsShare = shares.some(
-    (share) => share.location !== candidate && isWithin(share.location, candidate),
-  );
 
-  return shallow || isWithin(home, candidate) || holdsShare ? path : candidate;
+  return shallow || isWithin(home, candidate) ? path : candidate;
 };
 
 const readOptional = (path: string) => readFile(path, "utf8").catch(() => undefined);
@@ -47,15 +40,15 @@ const pathsOf = (needs: VmPath[]) => {
   return paths.filter((path) => !paths.some((other) => other !== path && isWithin(path, other)));
 };
 
-const mergedShares = (candidates: VmShare[]) =>
-  [...new Set(candidates.map((candidate) => candidate.location))]
+const merged = (shares: VmShare[]) =>
+  [...new Set(shares.map((share) => share.location))]
     .filter(
       (location) =>
-        !candidates.some((other) => other.location !== location && isWithin(location, other.location)),
+        !shares.some((other) => other.location !== location && isWithin(location, other.location)),
     )
     .map((location) => ({
       location,
-      writable: candidates.some((candidate) => candidate.writable && isWithin(candidate.location, location)),
+      writable: shares.some((share) => share.writable && isWithin(share.location, location)),
     }));
 
 const homeFirst = (shares: VmShare[], home: string) => [
@@ -63,18 +56,30 @@ const homeFirst = (shares: VmShare[], home: string) => [
   ...shares.filter((share) => share.location !== home),
 ];
 
-const nextShares = (base: VmShare[], added: VmShare[], home: string) =>
+const nextShares = (base: VmShare[], needs: VmPath[], home: string) =>
   homeFirst(
-    [
-      ...base.map((share) =>
-        added.some((entry) => entry.location === share.location && entry.writable)
-          ? { ...share, writable: true }
-          : share,
-      ),
-      ...added.filter((entry) => !base.some((share) => share.location === entry.location)),
-    ],
+    merged([
+      ...base,
+      ...uncovered(base, needs).map((need) => ({
+        location: shareFor(need.path, home),
+        writable: need.writable,
+      })),
+    ]),
     home,
   );
+
+const planOf = (current: VmShare[], needs: VmPath[], home: string): SharePlan => {
+  const next = nextShares(current, needs, home);
+
+  return {
+    missing: pathsOf(uncovered(current, needs)),
+    added: next.filter(
+      (share) =>
+        !current.some((have) => have.location === share.location && (have.writable || !share.writable)),
+    ),
+    next,
+  };
+};
 
 const shellWord = (word: string) => (SAFE_WORD.test(word) ? word : `'${word.replaceAll("'", "'\\''")}'`);
 
@@ -105,45 +110,15 @@ const notShared = (paths: string[]) =>
 const sessionsText = (count: number) =>
   count === 1 ? "1 running pi session" : `${count} running pi sessions`;
 
-const droppedShares = (shares: VmShare[], plan: SharePlan) =>
-  shares
-    .filter((share) => !covers(plan.next, { path: share.location, writable: share.writable }))
-    .map((share) => share.location);
-
 export const createColimaShares = (colima: Colima) => {
   const { home, profile } = colima;
 
+  const limaYaml = () => readOptional(join(home, ".colima", "_lima", instanceOf(profile), "lima.yaml"));
+
   const runningShares = async () => {
-    const text = await readOptional(join(home, ".colima", "_lima", instanceOf(profile), "lima.yaml"));
+    const text = await limaYaml();
 
     return text === undefined ? undefined : vmSharesOf(text, home);
-  };
-
-  const savedEntries = async () => {
-    const text = await readOptional(join(home, ".colima", profile, "colima.yaml"));
-
-    return text === undefined ? undefined : (mountEntriesOf(text) ?? []);
-  };
-
-  const planShares = async (needs: VmPath[]): Promise<SharePlan | PlanRefusal> => {
-    const entries = await savedEntries();
-
-    if (entries === undefined || entries === "flow") {
-      return { reason: `the launcher cannot read the mounts of ${colimaYaml(profile)}` };
-    }
-
-    if (!entries.every(isPlain)) {
-      return { reason: `a mount in ${colimaYaml(profile)} has keys the launcher cannot pass to colima` };
-    }
-
-    const saved = entries.flatMap((entry) => shareOf(entry, home));
-    const base = saved.length === 0 ? [{ location: home, writable: true }] : saved;
-    const missing = uncovered(base, needs);
-    const added = mergedShares(
-      missing.map((need) => ({ location: shareFor(need.path, home, base), writable: need.writable })),
-    );
-
-    return { missing: pathsOf(missing), added, next: nextShares(base, added, home) };
   };
 
   const run = (plan: SharePlan, args: string[]) =>
@@ -199,31 +174,23 @@ export const createColimaShares = (colima: Colima) => {
   };
 
   const shareMissing = async (needs: VmPath[], options: VmShareOptions) => {
-    const shares = await runningShares();
+    const text = (await limaYaml()) ?? "";
+    const shares = vmSharesOf(text, home);
 
     if (shares === undefined || uncovered(shares, needs).length === 0) {
       return;
     }
 
-    const plan = await planShares(needs);
+    const moved = movedMountsOf(text, home);
 
-    if ("reason" in plan) {
+    if (moved.length > 0) {
       throw new LauncherError(
-        `${notShared(pathsOf(uncovered(shares, needs)))}; ${plan.reason}`,
+        `${notShared(pathsOf(uncovered(shares, needs)))}; ${moved.join(", ")} ${moved.length === 1 ? "is" : "are"} mounted at another path in the VM, which colima's --mount cannot keep`,
         editHint(profile),
       );
     }
 
-    const dropped = droppedShares(shares, plan);
-
-    if (dropped.length > 0) {
-      throw new LauncherError(
-        `sharing ${locationsOf(plan.added)} would drop ${dropped.join(", ")} from the sandbox VM; refusing`,
-        editHint(profile),
-      );
-    }
-
-    await restartWithShares(plan, needs, options);
+    await restartWithShares(planOf(shares, needs, home), needs, options);
   };
 
   const ensureShares = async (needs: VmPath[], options: VmShareOptions) => {
@@ -236,25 +203,11 @@ export const createColimaShares = (colima: Colima) => {
     await colima.withLock(() => shareMissing(needs, options));
   };
 
-  const planStart = async (needs: VmPath[]) => {
-    const plan = await planShares(needs);
-
-    if ("reason" in plan || plan.added.length === 0) {
-      return undefined;
-    }
-
-    return {
-      args: startArgs(profile, plan.next),
-      shared: locationsOf(plan.added),
-      verify: () => assertShared(plan, needs),
-    };
-  };
-
   const coverage = async (needs: VmPath[]): Promise<VmCoverage | undefined> => {
     const shares = await runningShares();
 
     return shares === undefined ? undefined : { shares, missing: pathsOf(uncovered(shares, needs)) };
   };
 
-  return { ensureShares, coverage, planStart };
+  return { ensureShares, coverage };
 };

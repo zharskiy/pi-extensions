@@ -20,9 +20,10 @@ const sinceOf = (url: string) => {
 
 export const createRoutes = (denials: Denials) => {
   const refusePlain = (request: IncomingMessage, response: ServerResponse) => {
-    const host = hostOf(request.headers.host);
+    const target = parseAuthority(request.headers.host, HTTP_PORT);
+    const host = target?.host ?? UNPARSEABLE;
 
-    denials.note(host, PLAIN_HTTP, { port: HTTP_PORT });
+    denials.note(host, PLAIN_HTTP, { port: target?.port ?? HTTP_PORT });
 
     sendJson(response, 403, denialBody(host, PLAIN_HTTP));
   };

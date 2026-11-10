@@ -44,3 +44,27 @@ export const parentProxyEnv = (env: Env) =>
     ]),
     ...NO_PROXY.map((name): [string, string | undefined] => [name, env[name]]),
   ]);
+
+const withUserinfo = (text: string, auth: string) => {
+  const colon = auth.indexOf(":");
+
+  try {
+    const url = new URL(text);
+
+    url.username = encodeURIComponent(colon < 0 ? auth : auth.slice(0, colon));
+
+    url.password = colon < 0 ? "" : encodeURIComponent(auth.slice(colon + 1));
+
+    return url.href;
+  } catch {
+    return text;
+  }
+};
+
+export const helperProxyEnv = (parentEnv: Record<string, string>, parentAuth: string | undefined) =>
+  Object.fromEntries(
+    Object.entries(parentEnv).map(([name, value]) => [
+      name,
+      parentAuth !== undefined && PROXY_URLS.includes(name) ? withUserinfo(value, parentAuth) : value,
+    ]),
+  );

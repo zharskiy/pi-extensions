@@ -42,8 +42,8 @@ describe("stateLayout", () => {
 
     expect(layout.salt).toBe("/state/salt");
     expect(layout.grants).toBe("/state/grants.json");
+    expect(layout.grantsLock).toBe("/state/grants.json.lock");
     expect(layout.vmLock).toBe("/state/locks/vm.lock");
-    expect(layout.gitPinLock("g1")).toBe("/state/locks/git-g1.lock");
     expect(layout.mcpLogin).toBe("/state/mcp-login.json");
     expect(layout.mcpLoginLock("mcp__docs|https://docs.test/")).toMatch(
       /^\/state\/locks\/mcp-login-[0-9a-f]{8}\.lock$/,
@@ -51,12 +51,13 @@ describe("stateLayout", () => {
     expect(layout.providerHosts("1.5.0")).toBe("/state/provider-hosts/1.5.0.json");
     expect(layout.gcRecord).toBe("/state/gc.json");
     expect(layout.ca).toBe("/state/ca");
+    expect(layout.caLock).toBe("/state/ca/ca.lock");
     expect(layout.extraPem).toBe("/state/ca/extra.pem");
     expect(layout.imageRecord).toBe("/state/image.json");
   });
 
   it("keeps every file of one repository under repos/<repo hash>, its proxy included", () => {
-    const { gitCopy, ...files } = stateLayout("/state").repo("r1");
+    const files = stateLayout("/state").repo("r1");
 
     expect(files).toEqual({
       directory: "/state/repos/r1",
@@ -65,12 +66,12 @@ describe("stateLayout", () => {
       lock: "/state/repos/r1/lock",
       containerLock: "/state/repos/r1/container.lock",
       render: "/state/repos/r1/render",
+      renderLock: "/state/repos/r1/render.lock",
       sync: "/state/repos/r1/sync",
-      git: "/state/repos/r1/git",
+      syncLock: "/state/repos/r1/sync/sync.lock",
       gitBaseline: "/state/repos/r1/git/baseline.json",
-      pins: "/state/repos/r1/pins.json",
       created: "/state/repos/r1/created.json",
-      image: "/state/repos/r1/image.json",
+      seen: "/state/repos/r1/seen.json",
       proxy: {
         directory: "/state/repos/r1/proxy",
         record: "/state/repos/r1/proxy/proxy.json",
@@ -79,7 +80,6 @@ describe("stateLayout", () => {
         accessLog: "/state/repos/r1/proxy/access.log",
       },
     });
-    expect(gitCopy("/repo/.git/config")).toMatch(/^\/state\/repos\/r1\/git\/[0-9a-f]{16}$/);
   });
 });
 

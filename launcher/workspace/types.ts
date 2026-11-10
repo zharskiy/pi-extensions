@@ -1,5 +1,3 @@
-import type { GitConfigListing } from "./git/config.ts";
-
 export interface DetachedCheckout {
   repoRoot: string;
   missing: boolean;
@@ -11,11 +9,10 @@ export interface Workspace {
   gitDir?: string;
   gitCommonDir?: string;
   isGitRepo: boolean;
-  gitConfig?: GitConfigListing;
   nested?: Workspace[];
   overlays?: string[];
   overlaysCapped?: boolean;
-  masked?: string[];
+  overlaysTruncated?: boolean;
   detached?: DetachedCheckout[];
   bareDirs?: string[];
 }

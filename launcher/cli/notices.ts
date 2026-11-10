@@ -1,4 +1,4 @@
-import { readJsonObject, sha256Hex, stateLayout, writeJsonFile } from "../shared/index.ts";
+import { readJsonFile, sha256Hex, stateLayout, writeJsonFile } from "../shared/index.ts";
 import { type CliDeps, writeLines } from "./deps.ts";
 
 interface NoticeScope {
@@ -16,9 +16,8 @@ const seenOf = (value: unknown) =>
   Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
 
 export const writeOnce = async (deps: CliDeps, scope: NoticeScope, lines: string[]) => {
-  const file = stateLayout(scope.stateDir).seen;
-  const record = (await readJsonObject(file).catch(() => undefined)) ?? {};
-  const seen = seenOf(record[scope.repoHash]);
+  const file = stateLayout(scope.stateDir).repo(scope.repoHash).seen;
+  const seen = seenOf(await readJsonFile<unknown>(file).catch(() => undefined));
   const fresh = [...new Set(lines)].filter((line) => !seen.includes(hashOf(line)));
 
   if (fresh.length === 0) {
@@ -27,7 +26,5 @@ export const writeOnce = async (deps: CliDeps, scope: NoticeScope, lines: string
 
   writeLines(deps.stderr, fresh);
 
-  const kept = [...seen, ...fresh.map(hashOf)].slice(-KEPT_PER_REPO);
-
-  await writeJsonFile(file, { ...record, [scope.repoHash]: kept }).catch(() => undefined);
+  await writeJsonFile(file, [...seen, ...fresh.map(hashOf)].slice(-KEPT_PER_REPO)).catch(() => undefined);
 };

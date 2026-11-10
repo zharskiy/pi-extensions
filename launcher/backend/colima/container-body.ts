@@ -12,6 +12,10 @@ const NANO_CPUS = 1_000_000_000;
 
 const GIB = 1024 ** 3;
 
+const PIDS_LIMIT = 4096;
+
+const VOLUME_HANDOVER_CAPABILITIES = ["CHOWN"];
+
 const STATES: Record<string, ContainerState> = {
   running: "running",
   exited: "stopped",
@@ -52,6 +56,10 @@ export const containerBody = (spec: ContainerSpec) => ({
     Tmpfs: Object.fromEntries(spec.tmpfs.map(tmpfsEntry)),
     Init: spec.init,
     AutoRemove: true,
+    CapDrop: ["ALL"],
+    CapAdd: VOLUME_HANDOVER_CAPABILITIES,
+    SecurityOpt: ["no-new-privileges"],
+    PidsLimit: PIDS_LIMIT,
     NanoCpus: scaled(spec.resources.cpus, NANO_CPUS),
     Memory: scaled(spec.resources.memoryGiB, GIB),
   },

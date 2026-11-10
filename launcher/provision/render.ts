@@ -1,5 +1,5 @@
 import { lstat, mkdir, readdir, readFile, rm } from "node:fs/promises";
-import { dirname, join, posix } from "node:path";
+import { join, posix } from "node:path";
 import type { DerivedTools, GlabHost, ToolHost } from "../hostpi/index.ts";
 import {
   escapeXml,
@@ -30,10 +30,6 @@ const RENDER_COPIED_ENTRIES = [
 const FILE_MODE = 0o644;
 
 const LOCK_TIMEOUT_MS = 30_000;
-
-const IN_FLIGHT = /\.(\d+)\.[0-9a-f]{8}\.tmp$/;
-
-const FRESH_TEMPORARY_MS = 60_000;
 
 interface Existing {
   relative: string;
@@ -238,39 +234,11 @@ const ancestorsOf = (path: string): string[] => {
   return parent === "." ? [] : [parent, ...ancestorsOf(parent)];
 };
 
-const isLive = (pid: number) => {
-  try {
-    process.kill(pid, 0);
-
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
-  }
-};
-
-const isInFlight = async (dir: string, relative: string, now: number) => {
-  const pid = IN_FLIGHT.exec(relative)?.[1];
-
-  if (pid === undefined) {
-    return false;
-  }
-
-  const info = await lstat(join(dir, relative)).catch(() => undefined);
-
-  return info !== undefined && (now - info.mtimeMs < FRESH_TEMPORARY_MS || isLive(Number(pid)));
-};
-
 const removeStale = async (dir: string, tree: Tree) => {
   const directories = new Set([...tree.keys()].flatMap(ancestorsOf));
   const existing = await listExisting(dir, "");
-  const now = Date.now();
-  const kept = await Promise.all(
-    existing.map((entry) =>
-      entry.directory || tree.has(entry.relative) ? false : isInFlight(dir, entry.relative, now),
-    ),
-  );
-  const stale = existing.filter((entry, index) =>
-    entry.directory ? !directories.has(entry.relative) : !tree.has(entry.relative) && kept[index] !== true,
+  const stale = existing.filter((entry) =>
+    entry.directory ? !directories.has(entry.relative) : !tree.has(entry.relative),
   );
 
   await Promise.all(stale.map((entry) => rm(join(dir, entry.relative), { recursive: true, force: true })));
@@ -299,13 +267,13 @@ const writeChanged = async (dir: string, tree: Tree) => {
 };
 
 export const renderAgentDir = async (input: RenderInput): Promise<RenderResult & { notices: string[] }> => {
-  const renderDir = stateLayout(input.stateDir).repo(input.repoHash).render;
+  const { render: renderDir, renderLock } = stateLayout(input.stateDir).repo(input.repoHash);
   const { tree, notices } = await desiredTree(input);
 
   await mkdir(renderDir, { recursive: true });
 
   await withFileLock(
-    join(dirname(renderDir), "render.lock"),
+    renderLock,
     async () => {
       await removeStale(renderDir, tree);
 

@@ -64,12 +64,23 @@ class Reader {
   }
 }
 
-export const clientHelloRecordLength = (buffer: Buffer) => {
-  if (buffer.length < RECORD_HEADER) {
-    return undefined;
+const MAX_HELLO_BYTES = RECORD_HEADER + MAX_RECORD;
+
+const recordLength = (buffer: Buffer) =>
+  buffer.length < RECORD_HEADER ? undefined : RECORD_HEADER + Math.min(buffer.readUInt16BE(3), MAX_RECORD);
+
+export const isHelloComplete = (buffer: Buffer) => {
+  if (buffer.length === 0) {
+    return false;
   }
 
-  return RECORD_HEADER + Math.min(buffer.readUInt16BE(3), MAX_RECORD);
+  const length = recordLength(buffer);
+
+  return (
+    buffer[0] !== HANDSHAKE_RECORD ||
+    buffer.length >= MAX_HELLO_BYTES ||
+    (length !== undefined && buffer.length >= length)
+  );
 };
 
 const hostName = (list: Reader): string | undefined => {

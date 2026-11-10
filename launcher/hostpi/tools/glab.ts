@@ -4,7 +4,6 @@ import { findOnPath } from "../path-search.ts";
 import { mergeSections, noticeOnly, placeholderOf, rulesFor, type Section } from "../rules.ts";
 import type { GlabHost, ToolsInput } from "../types.ts";
 import {
-  COMMAND_TTL_SECONDS,
   firstExisting,
   noCredentialsNotice,
   sandboxedConfigNotice,
@@ -190,46 +189,24 @@ const hostSection = async (
     value: [rendered(entry, token)],
     rules: rulesFor(identity, endpoints, {
       placeholder: token,
-      secret: { command: tokenCommand(glab, entry.host), ttlSeconds: COMMAND_TTL_SECONDS },
+      secret: { command: tokenCommand(glab, entry.host) },
     }),
     notices: [],
   };
 };
 
-interface GlabHosts {
-  hosts: Array<{ host: string; section: Section<GlabHost[]> }>;
-  notices: string[];
-}
-
-export const deriveGlab = async (input: ToolsInput): Promise<GlabHosts> => {
+export const deriveGlab = async (input: ToolsInput): Promise<Section<GlabHost[]>> => {
   const { config, notices } = await readConfig(input);
   const entries = hostsOf(config?.text ?? "");
   const glab = entries.length === 0 ? undefined : await findOnPath(input.env, "glab", input.excludedRoots);
 
   if (glab === undefined) {
-    return { hosts: [], notices };
+    return noticeOnly([], ...notices);
   }
 
-  const sections = await Promise.all(entries.map((entry) => hostSection(input, glab, entry)));
+  const merged = mergeSections(await Promise.all(entries.map((entry) => hostSection(input, glab, entry))));
 
-  return {
-    hosts: entries.map((entry, index) => ({ host: entry.host, section: sections[index] ?? noticeOnly([]) })),
-    notices,
-  };
-};
-
-const sharedWithGh = (host: string) =>
-  noticeOnly<GlabHost[]>(
-    [],
-    `glab ${host}: gh on the host also signs in to it; the sandbox uses the gh credential`,
-  );
-
-export const glabBesideGh = (glab: GlabHosts, ghHosts: Set<string>): Section<GlabHost[]> => {
-  const merged = mergeSections(
-    glab.hosts.map(({ host, section }) => (ghHosts.has(host) ? sharedWithGh(host) : section)),
-  );
-
-  return { value: merged.values.flat(), rules: merged.rules, notices: [...glab.notices, ...merged.notices] };
+  return { value: merged.values.flat(), rules: merged.rules, notices: [...notices, ...merged.notices] };
 };
 
 export const glabEnv = (hosts: GlabHost[]): Record<string, string> => {

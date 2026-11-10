@@ -9,8 +9,8 @@ import { Agent, request as httpsRequest } from "node:https";
 import { type Duplex, pipeline } from "node:stream";
 import { type TLSSocket, connect as tlsConnect } from "node:tls";
 import { authorityOf, type CredentialRule } from "../config/index.ts";
-import type { RecordAccess } from "./denials.ts";
-import type { DialAccess, Dialer } from "./dial.ts";
+import type { Denials } from "./denials.ts";
+import { type Dial, type DialAccess, RestrictedAddressError } from "./dial.ts";
 import { PROXY_AGENT, rawHead, rawReply, rawResponse, statusLine } from "./replies.ts";
 import { parseRequestTarget } from "./request-target.ts";
 import {
@@ -18,8 +18,10 @@ import {
   matchRules,
   rewriteRequestHeaders,
   ruleApplies,
+  rulesOfHost,
   type ScrubSecret,
   scrubResponseHeaders,
+  withoutOtherPlaceholders,
   withoutStrayPlaceholders,
 } from "./rules.ts";
 import type { SecretReply, SecretResolver } from "./secrets/index.ts";
@@ -33,15 +35,15 @@ export interface TerminatedTarget {
 export interface TerminatorOptions {
   rules: () => CredentialRule[];
   resolver: SecretResolver;
-  dial: Dialer;
+  dial: Dial;
   upstreamCa?: string | string[];
-  log: RecordAccess;
+  note: Denials["note"];
 }
 
 interface Applied {
   headers: HeaderPair[];
   secrets: ScrubSecret[];
-  used: Array<{ rule: CredentialRule; value: string }>;
+  used: Array<{ rule: CredentialRule; value: string | undefined }>;
   reply?: SecretReply;
 }
 
@@ -137,12 +139,6 @@ const errorReply = (status: number, error: string): LocalReply => ({
   body: Buffer.from(JSON.stringify({ error })),
 });
 
-const wire = (request: ClientRequest, response: ServerResponse) => {
-  request.on("error", (error) => failure(response, error));
-
-  response.on("close", () => request.destroy());
-};
-
 const sendAndClose = (response: ServerResponse, status: number, error: string) => {
   response.once("finish", () => response.socket?.destroySoon());
 
@@ -169,11 +165,16 @@ const CERTIFICATE_ERROR = /certificate|self[- ]signed|issuer|CERT_/i;
 
 const CERTIFICATE_HINT = "; if a proxy or CA on this network signs this host, set tls.extraCa to its CA";
 
-const upstreamFailure = (error: unknown) => {
+const failureReason = (error: unknown) => {
   const message = (error as Error).message;
 
-  return `upstream request failed: ${message}${CERTIFICATE_ERROR.test(message) ? CERTIFICATE_HINT : ""}`;
+  return `${message}${CERTIFICATE_ERROR.test(message) ? CERTIFICATE_HINT : ""}`;
 };
+
+const upstreamFailure = (error: unknown) => `upstream request failed: ${failureReason(error)}`;
+
+const framingOf = (incoming: IncomingMessage): HeaderPair[] =>
+  incoming.headers["transfer-encoding"] === undefined ? [] : [["transfer-encoding", "chunked"]];
 
 const failure = (response: ServerResponse, error: unknown) => {
   if (response.headersSent) {
@@ -192,6 +193,20 @@ const failure = (response: ServerResponse, error: unknown) => {
 export const createTerminator = (options: TerminatorOptions) => {
   const targets = new WeakMap<object, TerminatedTarget>();
   const agents = new Map<string, Agent>();
+
+  const noteFailure = (target: TerminatedTarget, error: unknown) => {
+    const rule = error instanceof RestrictedAddressError ? error.rule : "upstream";
+
+    options.note(target.host, { rule, reason: failureReason(error) }, { port: target.port });
+  };
+
+  const fail = (target: TerminatedTarget, response: ServerResponse, error: unknown) => {
+    if (!response.headersSent) {
+      noteFailure(target, error);
+    }
+
+    failure(response, error);
+  };
 
   const applyRule = async (
     state: Applied,
@@ -212,17 +227,20 @@ export const createTerminator = (options: TerminatorOptions) => {
     }
 
     if (!result.ok || injected === undefined || HEADER_BREAK.test(injected)) {
-      options.log({
-        host: target.host,
-        decision: "allow",
-        rule: "credential",
-        reason: `unavailable: ${result.ok ? "the secret holds a line break" : result.reason}`,
-        credential: rule.id,
-        bytesIn: 0,
-        bytesOut: 0,
-      });
+      options.note(
+        target.host,
+        {
+          rule: "credential",
+          reason: `credential ${rule.id} is unavailable: ${result.ok ? "the secret holds a line break" : result.reason}`,
+        },
+        { port: target.port },
+      );
 
-      return { ...state, headers: rewriteRequestHeaders(headers, rule, undefined).headers };
+      return {
+        ...state,
+        headers: rewriteRequestHeaders(headers, rule, undefined).headers,
+        used: [...state.used, { rule, value: undefined }],
+      };
     }
 
     const rewritten = rewriteRequestHeaders(headers, rule, injected);
@@ -236,8 +254,10 @@ export const createTerminator = (options: TerminatorOptions) => {
   };
 
   const applyRules = async (pairs: HeaderPair[], target: TerminatedTarget, path: string) => {
-    const matching = matchRules(options.rules(), target.host, target.port, path);
-    const initial: Applied = { headers: pairs, secrets: [], used: [] };
+    const rules = options.rules();
+    const matching = matchRules(rules, target.host, target.port, path);
+    const headers = withoutOtherPlaceholders(pairs, rulesOfHost(rules, target.host), matching);
+    const initial: Applied = { headers, secrets: [], used: [] };
 
     return matching.reduce<Promise<Applied>>(async (pending, rule) => {
       const state = await pending;
@@ -351,7 +371,10 @@ export const createTerminator = (options: TerminatorOptions) => {
       target,
       incoming.method,
       routed,
-      forwardedPairs(incoming.rawHeaders, incoming.headers, upgrade),
+      [
+        ...forwardedPairs(incoming.rawHeaders, incoming.headers, upgrade),
+        ...(upgrade ? [] : framingOf(incoming)),
+      ],
       upgrade,
     );
 
@@ -360,9 +383,11 @@ export const createTerminator = (options: TerminatorOptions) => {
       return undefined;
     }
 
-    applied.used.forEach(({ rule }) => {
-      options.resolver.invalidate(rule.id);
-    });
+    applied.used
+      .filter(({ value }) => value !== undefined)
+      .forEach(({ rule }) => {
+        options.resolver.invalidate(rule.id);
+      });
 
     const replies = await Promise.all(
       applied.used.map(({ rule, value }) => options.resolver.rejected(rule.id, rule.secret, value)),
@@ -375,6 +400,7 @@ export const createTerminator = (options: TerminatorOptions) => {
     scrubResponseHeaders(forwardedPairs(upstream.rawHeaders, upstream.headers, false), applied.secrets);
 
   const relay = (
+    target: TerminatedTarget,
     request: ClientRequest,
     incoming: IncomingMessage,
     response: ServerResponse,
@@ -404,7 +430,19 @@ export const createTerminator = (options: TerminatorOptions) => {
         .catch(() => response.destroy());
     });
 
-    wire(request, response);
+    const client = { gone: false };
+
+    request.on("error", (error) => {
+      if (!client.gone) {
+        fail(target, response, error);
+      }
+    });
+
+    response.on("close", () => {
+      client.gone = true;
+
+      request.destroy();
+    });
 
     incoming.pipe(request);
   };
@@ -437,7 +475,7 @@ export const createTerminator = (options: TerminatorOptions) => {
     const opened = await open(incoming, target, routed, false).catch((error: unknown) => error as Error);
 
     if (opened instanceof Error) {
-      failure(response, opened);
+      fail(target, response, opened);
 
       return;
     }
@@ -450,7 +488,7 @@ export const createTerminator = (options: TerminatorOptions) => {
       return;
     }
 
-    relay(opened.request, incoming, response, opened.applied);
+    relay(target, opened.request, incoming, response, opened.applied);
   };
 
   const forwardUpgrade = async (incoming: IncomingMessage, client: Duplex, head: Buffer) => {
@@ -470,9 +508,11 @@ export const createTerminator = (options: TerminatorOptions) => {
       return;
     }
 
-    const opened = await open(incoming, target, routed, true).catch(() => undefined);
+    const opened = await open(incoming, target, routed, true).catch((error: unknown) => error as Error);
 
-    if (opened === undefined) {
+    if (opened instanceof Error) {
+      noteFailure(target, opened);
+
       rawError(client, 502, "pi-sandbox: upstream request failed");
 
       return;
@@ -526,7 +566,13 @@ export const createTerminator = (options: TerminatorOptions) => {
         .catch(() => client.destroy());
     });
 
-    request.on("error", () => client.destroy());
+    request.on("error", (error) => {
+      if (!client.destroyed) {
+        noteFailure(target, error);
+      }
+
+      client.destroy();
+    });
 
     client.on("error", () => request.destroy());
 

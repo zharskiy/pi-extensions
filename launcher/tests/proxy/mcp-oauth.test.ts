@@ -5,7 +5,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import type { CredentialRule } from "../../config/index.ts";
 import { createSecretResolver, type SecretResolver } from "../../proxy/secrets/index.ts";
 import type { LauncherCa } from "../../proxy/tls-ca.ts";
-import { bootTime, mcpAuthKey, processStart } from "../../shared/index.ts";
+import { mcpAuthKey } from "../../shared/index.ts";
 import { createFakeClock } from "../support/fake-clock.ts";
 import { createFakeRunner } from "../support/fake-runner.ts";
 import { closeServer, createStateDir, listen, openCa, portOf, removeDir, startTestProxy } from "./harness.ts";
@@ -18,6 +18,9 @@ const REF = { mcpOAuth: { server: "docs", url: URL_TEXT } };
 const KEY = mcpAuthKey("docs", URL_TEXT);
 
 const PLACEHOLDER = "pi-sandbox-0123456789abcdef01234567";
+
+const NOT_SIGNED_IN =
+  "pi-sandbox: MCP server docs is not signed in on the host; run pi mcp login docs on the host, then retry.";
 
 const isRunning = (pid: number) => {
   try {
@@ -168,6 +171,8 @@ describe("mcpOAuth secrets read the host pi sign-in", () => {
   });
 
   it("answers 503 with the sign-in text when the login still runs after the wait", async () => {
+    await writeEntry("old-token", Date.now() - 1);
+
     const result = await resolverWith("hang", { signInWaitMs: 200 }).resolve("mcp", REF);
 
     expect(result.ok).toBe(false);
@@ -179,34 +184,99 @@ describe("mcpOAuth secrets read the host pi sign-in", () => {
     expect(await piRuns()).toHaveLength(1);
   });
 
-  it("records the running login with its process start and clears it when the resolver closes", async () => {
+  it("leaves the credential out and starts nothing when the host holds no token", async () => {
+    const result = await resolverWith("sign-in").resolve("mcp", REF);
+
+    expect(result).toMatchObject({ ok: false });
+    expect(result.ok ? undefined : result.reply).toBeUndefined();
+    expect(await piRuns()).toEqual([]);
+  });
+
+  it("leaves the credential out, without a sign-in reply, when the login ended or was not started", async () => {
+    const clock = createFakeClock(Date.now());
+
+    await writeEntry("old-token", Date.now() - 1);
+
+    const failed = await resolverWith("fail", { now: clock.now }).resolve("mcp", REF);
+    const skipped = await resolverWith("fail", { now: clock.now }).resolve("mcp", REF);
+
+    expect(failed.ok ? undefined : failed.reply).toBeUndefined();
+    expect(skipped.ok ? undefined : skipped.reply).toBeUndefined();
+    expect(await piRuns()).toHaveLength(1);
+  });
+
+  it("answers a 401 to a request that carried no token with the not-signed-in text and starts nothing", async () => {
+    const reply = await resolverWith("hang").rejected("mcp", REF, undefined);
+
+    expect(reply?.body).toBe(
+      "pi-sandbox: MCP server docs is not signed in on the host; run pi mcp login docs on the host, then retry.",
+    );
+    expect(await piRuns()).toEqual([]);
+  });
+
+  it("answers a 401 to a request that carried no token with the opened text while its login runs", async () => {
+    await writeEntry("old-token", Date.now() - 1);
+
     const resolver = resolverWith("hang", { signInWaitMs: 50 });
 
-    await resolver.resolve("mcp", REF);
+    expect((await resolver.resolve("mcp", REF)).ok).toBe(false);
 
-    const record = await waitUntil(
-      async () =>
-        ((await loginRecord()) as { running?: { pgid: number; boot: number; start: string } }).running,
+    const reply = await resolver.rejected("mcp", REF, undefined);
+
+    expect(reply?.body).toBe(
+      "pi-sandbox: sign-in to MCP server docs opened in the browser on the host; finish it there, then retry. If no browser opened, run pi mcp login docs on the host.",
+    );
+    expect(await piRuns()).toHaveLength(1);
+  });
+
+  it("answers a 401 to a request that carried no token with the not-signed-in text once its login ended", async () => {
+    await writeEntry("old-token", Date.now() - 1);
+
+    const resolver = resolverWith("fail", { signInWaitMs: 2_000 });
+
+    expect((await resolver.resolve("mcp", REF)).ok).toBe(false);
+
+    const reply = await resolver.rejected("mcp", REF, undefined);
+
+    expect(reply?.body).toBe(NOT_SIGNED_IN);
+    expect(await loginRecord()).toEqual({ lastStart: expect.any(Number), failedAt: expect.any(Number) });
+  });
+
+  it("clears an earlier failure once a login succeeds", async () => {
+    await writeEntry("old-token", Date.now() - 1);
+
+    await mkdir(state.stateDir, { recursive: true });
+
+    await writeFile(
+      join(state.stateDir, "mcp-login.json"),
+      JSON.stringify({ [KEY]: { failedAt: Date.now() - 11 * 60_000 } }),
     );
 
-    expect(record).toEqual({
-      pgid: expect.any(Number),
-      boot: expect.any(Number),
-      start: await processStart(record.pgid),
+    expect(await resolverWith("sign-in").resolve("mcp", REF)).toMatchObject({
+      ok: true,
+      value: "fresh-token",
     });
-    expect(Math.abs(record.boot - bootTime())).toBeLessThanOrEqual(1);
-    expect(record.start).not.toBe("");
-
-    await resolver.close();
-
-    expect(await loginRecord()).not.toHaveProperty("running");
+    expect(await loginRecord()).not.toHaveProperty("failedAt");
   });
 
   it("uses a token signed in on the host right after a sign-in reply, without waiting out the failure cache", async () => {
-    const resolver = resolverWith("noop", { signInWaitMs: 50 });
+    await writeEntry("old-token", Date.now() - 1);
+
+    const resolver = resolverWith("hang", { signInWaitMs: 50 });
     const first = await resolver.resolve("mcp", REF);
 
     expect(first.ok ? undefined : first.reply?.status).toBe(503);
+
+    await writeEntry("signed-in-token", Date.now() + 3_600_000);
+
+    expect(await resolver.resolve("mcp", REF)).toMatchObject({ ok: true, value: "signed-in-token" });
+  });
+
+  it("uses a token signed in on the host right after a request that went out without one", async () => {
+    const resolver = resolverWith("fail");
+    const first = await resolver.resolve("mcp", REF);
+
+    expect(first.ok ? undefined : first.reply).toBeUndefined();
 
     await writeEntry("signed-in-token", Date.now() + 3_600_000);
 
@@ -218,22 +288,33 @@ describe("mcpOAuth secrets read the host pi sign-in", () => {
 
     await writeEntry("old-token", Date.now() - 1);
 
-    expect((await resolverWith("noop", { now: clock.now }).resolve("mcp", REF)).ok).toBe(false);
+    const tryLogin = async () => {
+      const resolver = resolverWith("hang", { now: clock.now, signInWaitMs: 50 });
+      const result = await resolver.resolve("mcp", REF);
+
+      await resolver.close();
+
+      return result.ok;
+    };
+
+    expect(await tryLogin()).toBe(false);
 
     clock.advance(30_000);
 
-    expect((await resolverWith("noop", { now: clock.now }).resolve("mcp", REF)).ok).toBe(false);
+    expect(await tryLogin()).toBe(false);
     expect(await piRuns()).toHaveLength(1);
 
     clock.advance(31_000);
 
-    await resolverWith("noop", { now: clock.now }).resolve("mcp", REF);
+    await tryLogin();
 
     expect(await piRuns()).toHaveLength(2);
   });
 
   it("starts nothing within 10 min of a failed login", async () => {
     const clock = createFakeClock(Date.now());
+
+    await writeEntry("old-token", Date.now() - 1);
 
     expect((await resolverWith("fail", { now: clock.now }).resolve("mcp", REF)).ok).toBe(false);
 
@@ -296,7 +377,10 @@ describe("mcpOAuth secrets read the host pi sign-in", () => {
 describe("mcpOAuth sign-in through the proxy", () => {
   const RULE: CredentialRule = { id: "mcp", host: "mcp.test", placeholder: PLACEHOLDER, secret: REF };
 
-  const proxy: { ca?: LauncherCa; upstream?: Server; seen: Array<string | undefined> } = { seen: [] };
+  const proxy: { ca?: LauncherCa; upstream?: Server; seen: Array<string | undefined>; accepting: boolean } = {
+    seen: [],
+    accepting: false,
+  };
 
   beforeAll(async () => {
     const caDir = await createStateDir();
@@ -304,6 +388,14 @@ describe("mcpOAuth sign-in through the proxy", () => {
     proxy.ca = await openCa(caDir);
     proxy.upstream = createHttpsServer(await proxy.ca.leaf("mcp.test"), (request, response) => {
       proxy.seen.push(request.headers.authorization);
+
+      if (proxy.accepting && request.headers.authorization === "Bearer stored-token") {
+        response.writeHead(200, { "content-type": "application/json" });
+
+        response.end("{}");
+
+        return;
+      }
 
       response.writeHead(401, { "www-authenticate": "Bearer" });
 
@@ -317,8 +409,10 @@ describe("mcpOAuth sign-in through the proxy", () => {
     await closeServer(proxy.upstream);
   });
 
-  const started = async (mode: string, expiresAt = Date.now() + 3_600_000) => {
-    await writeEntry("stored-token", expiresAt);
+  const started = async (mode: string, expiresAt: number | null = Date.now() + 3_600_000) => {
+    if (expiresAt !== null) {
+      await writeEntry("stored-token", expiresAt);
+    }
 
     const ca = proxy.ca as LauncherCa;
     const resolver = resolverWith(mode, { signInWaitMs: 200 });
@@ -359,6 +453,70 @@ describe("mcpOAuth sign-in through the proxy", () => {
     expect(proxy.seen.at(-1)).toBe("Bearer stored-token");
     expect(reply.status).toBe(503);
     expect(reply.body).toContain("sign-in to MCP server docs opened in the browser on the host");
+    expect(await piRuns()).toHaveLength(1);
+  });
+
+  it("forwards a request without a credential when the host holds no token and answers its 401 with the not-signed-in reply", async () => {
+    const { test, send } = await started("hang", null);
+    const reply = await send(`Bearer ${PLACEHOLDER}`);
+
+    await test.proxy.close();
+
+    expect(proxy.seen.at(-1)).toBeUndefined();
+    expect(reply.status).toBe(503);
+    expect(reply.body).toContain(
+      "pi-sandbox: MCP server docs is not signed in on the host; run pi mcp login docs on the host, then retry.",
+    );
+    expect(await piRuns()).toEqual([]);
+  });
+
+  it("forwards a request without the expired token when the host login fails", async () => {
+    const { test, send } = await started("fail", Date.now() - 1);
+    const reply = await send(`Bearer ${PLACEHOLDER}`);
+
+    await test.proxy.close();
+
+    expect(proxy.seen.at(-1)).toBeUndefined();
+    expect(reply.status).toBe(503);
+    expect(reply.body).toContain("MCP server docs is not signed in on the host");
+    expect(await piRuns()).toHaveLength(1);
+  });
+
+  it("injects an expired token the host login has just confirmed", async () => {
+    proxy.accepting = true;
+
+    const { test, send } = await started("noop", Date.now() - 1);
+    const reply = await send(`Bearer ${PLACEHOLDER}`);
+
+    await test.proxy.close();
+
+    proxy.accepting = false;
+
+    expect(proxy.seen.at(-1)).toBe("Bearer stored-token");
+    expect(reply.status).toBe(200);
+    expect(await piRuns()).toHaveLength(1);
+  });
+
+  it("drops a confirmed expired token once the upstream rejects it, without a second login", async () => {
+    proxy.accepting = true;
+
+    const { test, send } = await started("noop", Date.now() - 1);
+
+    expect((await send(`Bearer ${PLACEHOLDER}`)).status).toBe(200);
+
+    proxy.accepting = false;
+
+    const rejectedReply = await send(`Bearer ${PLACEHOLDER}`);
+
+    expect(proxy.seen.at(-1)).toBe("Bearer stored-token");
+
+    const after = await send(`Bearer ${PLACEHOLDER}`);
+
+    await test.proxy.close();
+
+    expect(proxy.seen.at(-1)).toBeUndefined();
+    expect([rejectedReply.status, after.status]).toEqual([503, 503]);
+    expect([rejectedReply.body, after.body]).toEqual([NOT_SIGNED_IN, NOT_SIGNED_IN]);
     expect(await piRuns()).toHaveLength(1);
   });
 

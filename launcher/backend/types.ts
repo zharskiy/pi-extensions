@@ -128,7 +128,7 @@ export interface VmShareOptions {
 }
 
 export interface Vm {
-  ensureRunning(report: VmReport, shares?: VmPath[]): Promise<void>;
+  ensureRunning(report: VmReport): Promise<void>;
   coverage(paths: VmPath[]): Promise<VmCoverage | undefined>;
   ensureShares(paths: VmPath[], options: VmShareOptions): Promise<void>;
   size(): Promise<VmSize | undefined>;
@@ -153,7 +153,6 @@ export interface Backend {
   createContainer(spec: ContainerSpec): Promise<{ id: string }>;
   startContainer(id: string): Promise<void>;
   stopContainer(id: string, timeoutSeconds?: number): Promise<void>;
-  waitRemoved(id: string, timeoutMs: number): Promise<void>;
   removeContainer(id: string): Promise<void>;
   exec(spec: ExecSpec, io: ExecIo): Promise<number>;
   ensureVolume(name: string, labels?: Record<string, string>): Promise<void>;

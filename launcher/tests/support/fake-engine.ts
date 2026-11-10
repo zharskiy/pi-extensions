@@ -49,6 +49,7 @@ export interface FakeEngineOptions {
   socketPath?: string;
   vmShares?: string[];
   failBuild?: { output: string[]; error: string };
+  failPull?: string;
   lingeringRemovals?: number;
 }
 
@@ -105,6 +106,8 @@ interface RouteResult {
 }
 
 const EMPTY_TAR = Buffer.alloc(1024);
+
+const AUTO_REMOVAL_MS = 30;
 
 const FRAME_HEADER = 8;
 
@@ -252,6 +255,13 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
   };
 
   const pull = ({ query }: RouteRequest): RouteResult => {
+    if (options.failPull !== undefined) {
+      return {
+        status: 200,
+        raw: `${JSON.stringify({ errorDetail: { message: options.failPull }, error: options.failPull })}\n`,
+      };
+    }
+
     const reference = referenceOf(query);
     const digest = publishedDigest(reference);
 
@@ -378,8 +388,10 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
   };
 
   const withContainer =
-    (handle: (container: FakeContainer, request: RouteRequest) => RouteResult) =>
-    (request: RouteRequest): RouteResult => {
+    <T extends RouteResult | Promise<RouteResult>>(
+      handle: (container: FakeContainer, request: RouteRequest) => T,
+    ) =>
+    (request: RouteRequest): T | RouteResult => {
       const container = findContainer(request.match[1] ?? "");
 
       return container === undefined
@@ -398,6 +410,9 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
       return { status: 204 };
     });
 
+  const endpoints = (network: FakeNetwork) =>
+    network.connected.filter((entry) => findContainer(entry.container)?.State === "running");
+
   const dropContainer = (container: FakeContainer) => {
     containers.delete(container.Id);
 
@@ -407,6 +422,8 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
   };
 
   const lingering = new Map<string, number>();
+
+  const autoRemovals = new Map<string, Promise<void>>();
 
   const removeContainer = withContainer((container, { query }) => {
     if (container.State === "running" && query.get("force") !== "true") {
@@ -452,13 +469,30 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
     container.State = "exited";
 
     if (container.body.HostConfig?.AutoRemove === true) {
-      dropContainer(container);
+      container.State = "removing";
+
+      autoRemovals.set(
+        container.Id,
+        new Promise<void>((done) => {
+          setTimeout(() => {
+            autoRemovals.delete(container.Id);
+
+            dropContainer(container);
+
+            done();
+          }, AUTO_REMOVAL_MS);
+        }),
+      );
     }
 
     return { status: 204 };
   });
 
-  const waitContainer = withContainer(() => ({ status: 200, json: { StatusCode: 0 } }));
+  const waitContainer = withContainer(async (container) => {
+    await autoRemovals.get(container.Id);
+
+    return { status: 200, json: { StatusCode: 0 } };
+  });
 
   const createExec = withContainer((container, { body }) => {
     if (container.State !== "running") {
@@ -588,7 +622,7 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
       return notFound(`network ${match[1]} not found`);
     }
 
-    if (network.connected.length > 0) {
+    if (endpoints(network).length > 0) {
       return conflict(`network ${match[1]} has active endpoints`);
     }
 
@@ -603,7 +637,7 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
     Labels: network.body.Labels ?? {},
     IPAM: network.body.IPAM ?? { Config: [] },
     Containers: Object.fromEntries(
-      network.connected.map(({ container, address, aliases }) => [
+      endpoints(network).map(({ container, address, aliases }) => [
         container,
         { Name: findContainer(container)?.Name ?? "", IPv4Address: `${address}/24`, Aliases: aliases ?? [] },
       ]),

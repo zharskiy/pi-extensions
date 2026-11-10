@@ -6,6 +6,8 @@ const AI_PACKAGE = join("@earendil-works", "pi-ai");
 
 const PROVIDERS_EXPORT = "./providers/*";
 
+const ENV_KEYS_FILE = "env-api-keys.js";
+
 const PLAIN_HOST = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/;
 
 const installRoot = (dir) => {
@@ -48,7 +50,7 @@ const packageDirFrom = (start, stop) => {
   return start === stop || parent === start ? undefined : packageDirFrom(parent, stop);
 };
 
-const providersModule = (aiDir) => {
+const providersTarget = (aiDir) => {
   const manifest = JSON.parse(readFileSync(join(aiDir, "package.json"), "utf8"));
   const target = manifest.exports?.[PROVIDERS_EXPORT]?.import;
 
@@ -56,7 +58,29 @@ const providersModule = (aiDir) => {
     throw new Error(`${aiDir}: no ${PROVIDERS_EXPORT} export`);
   }
 
-  return pathToFileURL(join(aiDir, target.replace("*", "all"))).href;
+  return join(aiDir, target.replace("*", "all"));
+};
+
+const EVERY_VARIABLE_SET = new Proxy({}, { get: () => "set" });
+
+const envKeysFinder = async (providersFile) => {
+  const file = join(dirname(dirname(providersFile)), ENV_KEYS_FILE);
+
+  if (!existsSync(file)) {
+    return () => undefined;
+  }
+
+  const { findEnvKeys } = await import(pathToFileURL(file).href);
+
+  return typeof findEnvKeys === "function" ? (id) => findEnvKeys(id, EVERY_VARIABLE_SET) : () => undefined;
+};
+
+const entryOf = (providers, envKeys, id) => {
+  const envVars = envKeys(id);
+
+  return Array.isArray(envVars) && envVars.length > 0
+    ? { hosts: hostsOf(providers, id), envVars }
+    : { hosts: hostsOf(providers, id) };
 };
 
 const hostOf = (baseUrl) => {
@@ -88,9 +112,11 @@ const main = async (piPackageDir) => {
     throw new Error(`${piPackageDir}: ${AI_PACKAGE} not found`);
   }
 
-  const providers = await import(providersModule(aiDir));
+  const providersFile = providersTarget(aiDir);
+  const providers = await import(pathToFileURL(providersFile).href);
+  const envKeys = await envKeysFinder(providersFile);
   const ids = [...providers.getBuiltinProviders()].sort();
-  const table = Object.fromEntries(ids.map((id) => [id, { hosts: hostsOf(providers, id) }]));
+  const table = Object.fromEntries(ids.map((id) => [id, entryOf(providers, envKeys, id)]));
 
   process.stdout.write(`${JSON.stringify(table)}\n`);
 };

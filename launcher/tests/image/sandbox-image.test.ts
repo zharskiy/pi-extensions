@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ensureSandboxImage } from "../../image/index.ts";
+import { BASE_TAG } from "../../image/build.ts";
+import { collectImages, ensureSandboxImage } from "../../image/index.ts";
 import type { SandboxImageInput } from "../../image/sandbox-image.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
@@ -17,13 +18,11 @@ const inputOf = async (
     backend: fake.backend,
     config: sandboxConfig(),
     stateDir: await tempDir("sandbox-image"),
-    repoHash: "a".repeat(64),
     versions: async () => {
       asked.push("versions");
 
       return versions;
     },
-    inUse: async () => false,
     preparing: () => asked.push("preparing"),
     ...overrides,
   };
@@ -32,7 +31,7 @@ const inputOf = async (
 };
 
 describe("ensureSandboxImage", () => {
-  it("builds once, announcing it, and then reuses the image a current container runs without resolving versions", async () => {
+  it("builds once, announcing it, and then reuses the recorded build while its inputs stay the same", async () => {
     const fake = createFakeBackend();
     const { input, asked } = await inputOf(fake);
     const first = await ensureSandboxImage(input);
@@ -42,11 +41,25 @@ describe("ensureSandboxImage", () => {
 
     asked.length = 0;
 
-    const second = await ensureSandboxImage({ ...input, inUse: async (digest) => digest === first.digest });
+    const second = await ensureSandboxImage(input);
 
     expect(second).toEqual(first);
-    expect(asked).toEqual([]);
+    expect(asked).toEqual(["versions"]);
     expect(fake.builds).toHaveLength(1);
+  });
+
+  it("builds the current image even while a container runs the previous one", async () => {
+    const fake = createFakeBackend();
+    const { input } = await inputOf(fake);
+    const first = await ensureSandboxImage(input);
+
+    fake.addContainer({ name: "running", labels: {}, state: "running", image: first.id });
+
+    const second = await ensureSandboxImage({ ...input, versions: async () => ({ pi: "1.6.0" }) });
+
+    expect(second.id).not.toBe(first.id);
+    expect(fake.builds).toHaveLength(2);
+    expect((await fake.backend.listImages()).map((image) => image.id)).toContain(first.id);
   });
 
   it("builds once when two launches prepare the image at the same time, and the second says it waits", async () => {
@@ -134,7 +147,7 @@ describe("ensureSandboxImage", () => {
     const image = await ensureSandboxImage(input);
 
     expect(fake.builds.map((build) => build.tag)).toEqual([
-      sandboxConfig().image.reference,
+      BASE_TAG,
       expect.stringMatching(/^pi-sandbox-layer:/),
     ]);
     expect(image.digest).toBe("sha256:built-1");
@@ -164,7 +177,7 @@ describe("ensureSandboxImage", () => {
     expect(images.map((image) => image.id).sort()).toEqual(
       [used.id, current.id, "sha256:image-built-1"].sort(),
     );
-    expect(tagOf("sha256:image-built-1")).toEqual([sandboxConfig().image.reference]);
+    expect(tagOf("sha256:image-built-1")).toEqual([BASE_TAG]);
     expect(tagOf(current.id)).toEqual([expect.stringMatching(/^pi-sandbox-layer:/)]);
     expect(idle.id).not.toBe(current.id);
   });
@@ -192,6 +205,29 @@ describe("ensureSandboxImage", () => {
     );
   });
 
+  it("collects a previous base later when it was in use or too young at the rebuild", async () => {
+    const fake = createFakeBackend();
+    const { input } = await inputOf(fake);
+    const first = await ensureSandboxImage(input);
+
+    const running = fake.addContainer({ name: "running", labels: {}, state: "running", image: first.id });
+
+    fake.ageImages(2 * 60 * 60);
+
+    const second = await ensureSandboxImage({ ...input, versions: async () => ({ pi: "1.6.0" }) });
+    const third = await ensureSandboxImage({ ...input, versions: async () => ({ pi: "1.7.0" }) });
+    const listed = async () => (await fake.backend.listImages()).map((image) => image.id).sort();
+
+    expect(await listed()).toEqual([first.id, second.id, third.id].sort());
+
+    await fake.backend.removeContainer(running);
+
+    fake.ageImages(2 * 60 * 60);
+
+    expect(await collectImages(fake.backend, input.stateDir)).toHaveLength(2);
+    expect(await listed()).toEqual([third.id]);
+  });
+
   it("keeps a layer tag built in the last hour that no container uses yet and removes an older one", async () => {
     const fake = createFakeBackend();
     const { input } = await inputOf(fake);
@@ -213,25 +249,24 @@ describe("ensureSandboxImage", () => {
     expect(ids).not.toContain(old.id);
   });
 
-  it("keeps an old layer another repository reuses before its container exists, because that repository's record names it", async () => {
+  it("keeps the current layer however old and unused, and collects an earlier one", async () => {
     const fake = createFakeBackend();
     const { input } = await inputOf(fake);
-    const withLayer = (repoHash: string, spec: string) =>
+    const withLayer = (spec: string) =>
       ensureSandboxImage({
         ...input,
-        repoHash,
         config: sandboxConfig({ image: { ...sandboxConfig().image, npmGlobal: [spec] } }),
       });
-    const first = await withLayer("a".repeat(64), "first@1.0.0");
+    const earlier = await withLayer("earlier@1.0.0");
+    const current = await withLayer("current@1.0.0");
 
     fake.ageImages(2 * 60 * 60);
 
-    const reused = await withLayer("a".repeat(64), "first@1.0.0");
-    const other = await withLayer("b".repeat(64), "other@1.0.0");
+    await collectImages(fake.backend, input.stateDir);
+
     const ids = (await fake.backend.listImages()).map((image) => image.id);
 
-    expect(reused.id).toBe(first.id);
-    expect(ids).toContain(first.id);
-    expect(ids).toContain(other.id);
+    expect(ids).toContain(current.id);
+    expect(ids).not.toContain(earlier.id);
   });
 });

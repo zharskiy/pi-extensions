@@ -1,8 +1,10 @@
-import { type HostPi, type McpOAuthServer, mcpSignInsNeeded } from "../hostpi/index.ts";
+import type { HostPi, McpOAuthServer } from "../hostpi/index.ts";
 import {
+  isFreshMcpToken,
   mcpAuthKey,
   mcpLoginCommand,
   PI_AGENT_DIR_VARIABLE,
+  readMcpAuthEntry,
   readMcpLogins,
   stateLayout,
   updateMcpLogin,
@@ -13,8 +15,6 @@ import type { LaunchContext } from "./context.ts";
 import { type CliDeps, hostAgentDirOf, writeLine } from "./deps.ts";
 import type { HostSide } from "./derive.ts";
 import { writeOnce } from "./notices.ts";
-
-const LOGIN_TIMEOUT_SECONDS = 120;
 
 const FAILURE_QUIET_MS = 24 * 60 * 60_000;
 
@@ -27,14 +27,15 @@ const notSignedInLine = (name: string) => `pi-sandbox: mcp ${name}: not signed i
 const notSignedIn = (deps: CliDeps, context: LaunchContext, name: string) =>
   writeOnce(deps, context, [notSignedInLine(name)]);
 
-const derivedServers = (host: HostSide) =>
-  new Set(
-    host.derived.rules.flatMap((rule) => ("mcpOAuth" in rule.secret ? [rule.secret.mcpOAuth.server] : [])),
-  );
+const needsSignIn = async (host: HostSide, server: McpOAuthServer, now: number) => {
+  const entry = await readMcpAuthEntry(host.hostAgentDir, server.name, server.url);
+
+  return entry?.refresh === undefined && !isFreshMcpToken(entry, now);
+};
 
 const runLogin = (deps: CliDeps, stateDir: string, pi: HostPi, server: McpOAuthServer) =>
   withMcpLoginDir(stateDir, async (cwd) => {
-    const [file = "", ...args] = mcpLoginCommand(pi.command, server.name, LOGIN_TIMEOUT_SECONDS);
+    const [file = "", ...args] = mcpLoginCommand(pi.command, server.name);
     const signals = deps.signals ?? process;
     const keepAlive = () => undefined;
 
@@ -64,9 +65,9 @@ const signInOnce = async (deps: CliDeps, context: LaunchContext, host: HostSide,
 
   const code = await runLogin(deps, context.stateDir, host.pi, server);
 
-  if (code !== 0) {
-    await updateMcpLogin(context.stateDir, key, (current) => ({ ...current, failedAt: deps.now() }));
-  }
+  await updateMcpLogin(context.stateDir, key, ({ failedAt: _failed, ...rest }) =>
+    code === 0 ? rest : { ...rest, failedAt: deps.now() },
+  );
 
   return code === 0;
 };
@@ -86,13 +87,14 @@ const signIn = async (deps: CliDeps, context: LaunchContext, host: HostSide, ser
   }
 };
 
-export const signInMcpServers = async (deps: CliDeps, context: LaunchContext, host: HostSide) => {
-  const derived = derivedServers(host);
-  const needed = (await mcpSignInsNeeded(host.files, deps.now())).filter((server) =>
-    derived.has(server.name),
-  );
+const isTerminal = (stream: object) => "isTTY" in stream && stream.isTTY === true;
 
-  if (deps.terminal.stdin.isTTY !== true) {
+export const signInMcpServers = async (deps: CliDeps, context: LaunchContext, host: HostSide) => {
+  const servers = host.derived.oauthServers;
+  const flags = await Promise.all(servers.map((server) => needsSignIn(host, server, deps.now())));
+  const needed = servers.filter((_, index) => flags[index]);
+
+  if (!isTerminal(deps.terminal.stdin) || !isTerminal(deps.terminal.stdout)) {
     await writeOnce(
       deps,
       context,

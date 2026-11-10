@@ -1,7 +1,7 @@
-import { lstat, readFile, realpath } from "node:fs/promises";
+import { lstat, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { ProxyRouteRequest, VmPath } from "../../backend/index.ts";
+import type { ProxyRouteRequest } from "../../backend/index.ts";
 import { run } from "../../cli/index.ts";
 import type { DenialRecord } from "../../proxy/index.ts";
 import { isPlaceholder, sha256Hex } from "../../shared/index.ts";
@@ -41,9 +41,6 @@ describe("pi launch wiring", () => {
       rules: [],
       derivedHosts: expect.any(Array),
     });
-    expect(container?.summary.labels["pi-sandbox.proxy-token-hash"]).toBe(
-      sha256Hex(url.password).slice(0, 16),
-    );
   });
 
   it("hands env secrets to the proxy, not to the container", async () => {
@@ -119,43 +116,6 @@ describe("pi launch wiring", () => {
     await expectNoLeak(fake, renderDirOf(harness), [REAL_KEY]);
   });
 
-  it("binds the host Maven repository read-write, never ~/.m2, after creating it and sharing it with the VM", async () => {
-    const shared: VmPath[][] = [];
-    const fake = createFakeBackend({
-      vm: {
-        ensureShares: async (paths) => {
-          shared.push(paths);
-        },
-      },
-    });
-    const harness = await createHarness({ backend: () => fake.backend });
-    const repository = join(harness.deps.home, ".m2", "repository");
-
-    await writeText(
-      join(harness.deps.home, ".m2", "settings.xml"),
-      `<settings><servers><server><id>corp</id><password>${REAL_KEY}</password></server></servers></settings>`,
-    );
-
-    await harness.writeJson(harness.userConfigFile, { mounts: { hostCaches: ["maven"] } });
-
-    expect(await run([], harness.deps)).toBe(0);
-
-    const mounts = fake.created[0]?.spec?.mounts ?? [];
-
-    expect((await lstat(repository)).isDirectory()).toBe(true);
-    expect(mounts.find((mount) => mount.target === "/home/pi/.m2/repository")).toMatchObject({
-      source: await realpath(repository),
-      readOnly: false,
-      kind: "bind",
-    });
-    expect(mounts.filter((mount) => mount.source.startsWith(join(harness.deps.home, ".m2")))).toHaveLength(1);
-    expect(shared[0]).toContainEqual({ path: await realpath(repository), writable: true });
-    expect(harness.stderr()).toContain(`pi-sandbox: created ${repository} for mounts.hostCaches\n`);
-    expect(harness.stderr()).toContain("host caches shared read-write with the sandbox: maven;");
-
-    await expectNoLeak(fake, renderDirOf(harness), [REAL_KEY]);
-  });
-
   it("gives gh and git placeholders for the host gh token and the proxy a gh command rule", async () => {
     const fake = createFakeBackend();
     const ghToken = "gho_REAL-HOST-GH-TOKEN-31337";
@@ -192,7 +152,7 @@ describe("pi launch wiring", () => {
         id: "derived:gh:github.com:token",
         host,
         placeholder: env.GH_TOKEN,
-        secret: { command: [gh, "auth", "token", "--hostname", "github.com"], ttlSeconds: 300 },
+        secret: { command: [gh, "auth", "token", "--hostname", "github.com"] },
       })),
     );
     expect(input?.derivedHosts).toEqual(expect.arrayContaining(["api.github.com", "uploads.github.com"]));
@@ -246,7 +206,6 @@ describe("pi launch wiring", () => {
     expect(corpRules.map((rule) => rule.host)).toEqual(["gitlab.corp.test", "api.gitlab.corp.test"]);
     expect(corpRules[0]?.secret).toEqual({
       command: [glab, "config", "get", "token", "--host", "gitlab.corp.test"],
-      ttlSeconds: 300,
     });
     const comRules = input?.rules.filter((rule) => rule.id === "derived:glab:gitlab.com:token") ?? [];
 
@@ -285,7 +244,7 @@ describe("pi launch wiring", () => {
     await expectNoLeak(fake, renderDir, [REAL_KEY]);
   });
 
-  it("leaves a secrets directory of a host skill out of the render dir and says so", async () => {
+  it("leaves a secrets directory of a host skill out of the render dir and says so once per repository", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
 
@@ -303,43 +262,9 @@ describe("pi launch wiring", () => {
     );
 
     await expectNoLeak(fake, renderDir, [REAL_KEY]);
-  });
-
-  it("says once per repository when a credential rule host resolves to a private address", async () => {
-    const fake = createFakeBackend();
-    const harness = await createHarness({
-      backend: () => fake.backend,
-      resolve: async () => ["10.0.0.7"],
-    });
-
-    await harness.writeJson(join(harness.hostAgentDir, "auth.json"), {
-      example: { type: "api_key", key: REAL_KEY },
-    });
 
     expect(await run([], harness.deps)).toBe(0);
-    expect(await run([], harness.deps)).toBe(0);
-    expect(
-      harness
-        .stderr()
-        .match(/models\.example\.test resolves to a private address; add it to egress\.privateHosts/g),
-    ).toHaveLength(1);
-  });
-
-  it("launches without the private address notice when DNS does not answer in time", async () => {
-    const fake = createFakeBackend();
-    const harness = await createHarness({
-      backend: () => fake.backend,
-      resolve: () => new Promise<string[]>(() => undefined),
-    });
-
-    harness.deps.dnsWaitMs = 20;
-
-    await harness.writeJson(join(harness.hostAgentDir, "auth.json"), {
-      example: { type: "api_key", key: REAL_KEY },
-    });
-
-    expect(await run([], harness.deps)).toBe(0);
-    expect(harness.stderr()).not.toContain("resolves to a private address");
+    expect(harness.stderr().split("looks like a secrets directory").length - 1).toBe(1);
   });
 
   it("prints one line per denied host when pi exits", async () => {
@@ -356,10 +281,10 @@ describe("pi launch wiring", () => {
     await run([], harness.deps);
 
     expect(harness.stderr()).toContain(
-      "pi-sandbox: blocked.example.test was blocked; run pi sandbox egress allow blocked.example.test on the host\n",
+      `pi-sandbox: blocked.example.test was blocked in this folder's sandbox; run pi sandbox egress allow blocked.example.test on the host from ${harness.repoRoot}\n`,
     );
     expect(harness.stderr()).toContain(
-      "pi-sandbox: other.test:8443 was blocked; run pi sandbox egress allow other.test:8443 on the host\n",
+      `pi-sandbox: other.test:8443 was blocked in this folder's sandbox; run pi sandbox egress allow other.test:8443 on the host from ${harness.repoRoot}\n`,
     );
     expect(harness.stderr().match(/blocked\.example\.test was blocked/g)).toHaveLength(1);
   });
@@ -376,7 +301,7 @@ describe("pi launch wiring", () => {
     await run([], harness.deps);
 
     expect(harness.stderr()).toContain(
-      "pi-sandbox: evil.test was blocked; ask your administrator to add evil.test to egress.allow\n",
+      "pi-sandbox: evil.test was blocked in this folder's sandbox; ask your administrator to add evil.test to egress.allow\n",
     );
     expect(harness.stderr()).not.toContain("egress allow evil.test");
   });
@@ -390,27 +315,42 @@ describe("pi launch wiring", () => {
         "private-address",
         "nexus.corp.test resolves only to restricted addresses",
       ),
-      "pi-sandbox: nexus.corp.test was blocked; it resolves to a private address; add nexus.corp.test to egress.privateHosts\n",
+      "pi-sandbox: nexus.corp.test was blocked in this folder's sandbox; it resolves to a private address; add nexus.corp.test to egress.privateHosts\n",
+    ],
+    [
+      "a loopback address",
+      denial("dev.corp.test", 443, "loopback", "dev.corp.test is a loopback name"),
+      "pi-sandbox: dev.corp.test was blocked in this folder's sandbox; it resolves to a loopback address; add dev.corp.test to egress.privateHosts\n",
+    ],
+    [
+      "a reserved address",
+      denial("lab.corp.test", 443, "reserved-address", "reserved or special-purpose address"),
+      "pi-sandbox: lab.corp.test was blocked in this folder's sandbox; it resolves to a reserved address; add lab.corp.test to egress.privateHosts\n",
+    ],
+    [
+      "an unavailable credential",
+      denial("api.corp.test", 443, "credential", "credential corp is unavailable: token expired"),
+      "pi-sandbox: api.corp.test was blocked in this folder's sandbox; it could not authenticate: credential corp is unavailable: token expired\n",
     ],
     [
       "egress.deny",
       denial("paste.test", 443, "egress.deny", "paste.test is in egress.deny"),
-      "pi-sandbox: paste.test was blocked; denied by policy\n",
+      "pi-sandbox: paste.test was blocked in this folder's sandbox; denied by policy\n",
     ],
     [
       "plain HTTP",
       denial("localhost.test", 80, "plain-http", "only HTTPS through CONNECT is proxied"),
-      "pi-sandbox: localhost.test:80 was blocked; plain HTTP is not proxied; use https\n",
+      "pi-sandbox: localhost.test:80 was blocked in this folder's sandbox; plain HTTP is not proxied; use https\n",
     ],
     [
       "an upstream failure",
       denial("down.test", 443, "upstream", "connect ECONNREFUSED 203.0.113.9:443"),
-      "pi-sandbox: down.test was blocked; it could not be reached: connect ECONNREFUSED 203.0.113.9:443\n",
+      "pi-sandbox: down.test was blocked in this folder's sandbox; it could not be reached: connect ECONNREFUSED 203.0.113.9:443\n",
     ],
     [
       "a TLS name mismatch",
       denial("api.test", 443, "sni", "TLS server name evil.test does not match api.test"),
-      "pi-sandbox: api.test was blocked; TLS server name evil.test does not match api.test\n",
+      "pi-sandbox: api.test was blocked in this folder's sandbox; TLS server name evil.test does not match api.test\n",
     ],
   ])("prints its own hint for %s when pi exits", async (_kind, record, line) => {
     const harness = await createHarness({ backend: () => createFakeBackend().backend, denials: [record] });

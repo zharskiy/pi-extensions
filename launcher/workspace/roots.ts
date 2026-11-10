@@ -1,4 +1,3 @@
-import type { WorkspaceRootsConfig } from "../config/index.ts";
 import { expandHome, isWithin, LauncherError, realOrResolvedSync } from "../shared/index.ts";
 import type { Workspace } from "./types.ts";
 
@@ -6,10 +5,10 @@ const resolveRoot = (root: string) => realOrResolvedSync(expandHome(root));
 
 export const assertWithinWorkspaceRoots = (
   workspace: Workspace,
-  workspaceRoots: WorkspaceRootsConfig | undefined,
-): "ok" | "warn" => {
+  workspaceRoots: { roots: string[] } | undefined,
+) => {
   if (workspaceRoots === undefined) {
-    return "ok";
+    return;
   }
 
   const roots = workspaceRoots.roots.map(resolveRoot);
@@ -17,16 +16,10 @@ export const assertWithinWorkspaceRoots = (
     (path) => path !== undefined && !roots.some((root) => isWithin(path, root)),
   );
 
-  if (outside === undefined) {
-    return "ok";
+  if (outside !== undefined) {
+    throw new LauncherError(
+      `${outside} is outside the allowed workspace roots (${workspaceRoots.roots.join(", ")})`,
+      "start pi inside one of the workspaceRoots",
+    );
   }
-
-  if (workspaceRoots.outside === "warn") {
-    return "warn";
-  }
-
-  throw new LauncherError(
-    `${outside} is outside the allowed workspace roots (${workspaceRoots.roots.join(", ")})`,
-    "start pi inside one of the workspaceRoots",
-  );
 };

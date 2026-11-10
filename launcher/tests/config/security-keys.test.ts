@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { validateLayerFile } from "../../config/load.ts";
-import { splitProjectKeys, validateLayer } from "../../config/validate.ts";
+import { validateLayer } from "../../config/validate.ts";
 import { errorMessage } from "../../shared/index.ts";
 
 const SECRET_VALUE = "sk-live-value-that-must-not-leak";
@@ -47,7 +46,7 @@ const FULL_LAYER = {
         secret: { file: "~/.config/pip/pip.conf", format: "ini", key: "global.index-url", urlPassword: true },
       }),
       rule({ id: "pipenv", secret: { env: "PIP_INDEX_URL", urlPassword: true } }),
-      rule({ id: "cmd", secret: { command: ["security", "find-generic-password", "-w"], ttlSeconds: 60 } }),
+      rule({ id: "cmd", secret: { command: ["security", "find-generic-password", "-w"] } }),
       rule({ id: "mcp", secret: { mcpOAuth: { server: "docs", url: "https://mcp.corp.test/mcp" } } }),
       rule({ id: "bearer", secret: { piAuth: "corp", bearer: true } }),
     ].map((entry) => JSON.parse(JSON.stringify(entry))),
@@ -65,20 +64,12 @@ const FULL_LAYER = {
     npmGlobal: ["@scope/tool@1.2.3", "plain@0.1.0-beta.1"],
     dockerfile: "/etc/pi-sandbox/layer.Dockerfile",
   },
-  org: "/etc/pi-sandbox/org.json",
 };
 
-describe("validateLayer with the credential, egress, tls, image and org keys", () => {
+describe("validateLayer with the credential, egress, tls and image keys", () => {
   it("accepts every new key in the policy and user layers and returns the layer", () => {
     expect(validateLayer(FULL_LAYER, "policy")).toEqual(FULL_LAYER);
     expect(validateLayer(FULL_LAYER, "user")).toEqual(FULL_LAYER);
-  });
-
-  it("accepts the new keys in the org layer except org itself", () => {
-    const { org: _org, ...baseline } = FULL_LAYER;
-
-    expect(validateLayer(baseline, "org")).toEqual(baseline);
-    expect(problemOf(FULL_LAYER, "org")).toBe("org: org may only be set by the policy or user config");
   });
 
   it("accepts credentials as rules and derive only", () => {
@@ -87,38 +78,22 @@ describe("validateLayer with the credential, egress, tls, image and org keys", (
     expect(problemOf({ credentials: { kind: "static" } })).toBe("user: credentials.kind is not a known key");
   });
 
-  it("drops every key outside the project allowlist from a project layer and names it", () => {
-    const cases: Array<[unknown, string]> = [
-      [{ credentials: { rules: [rule()] } }, "credentials.rules"],
-      [{ credentials: { derive: { enabled: false } } }, "credentials.derive.enabled"],
-      [{ egress: { allow: ["x.test"] } }, "egress.allow"],
-      [{ egress: { deny: ["x.test"] } }, "egress.deny"],
-      [{ egress: { privateHosts: ["x.test"] } }, "egress.privateHosts"],
-      [{ egress: { parentProxy: "none" } }, "egress.parentProxy"],
-      [{ egress: { grants: false } }, "egress.grants"],
-      [{ tls: { extraCa: [] } }, "tls.extraCa"],
-      [{ image: { packages: ["git"] } }, "image.packages"],
-      [{ image: { npmGlobal: ["tool@1.0.0"] } }, "image.npmGlobal"],
-      [{ image: { dockerfile: "/x" } }, "image.dockerfile"],
-      [{ fallback: "host" }, "fallback"],
-      [{ workspaceRoots: { roots: ["/srv"], outside: "warn" } }, "workspaceRoots.roots"],
-      [{ mounts: { extraReadOnly: ["/opt"] } }, "mounts.extraReadOnly"],
-      [{ sessions: { host: false } }, "sessions.host"],
-      [{ org: "/etc/org.json" }, "org"],
-    ];
-
-    cases.forEach(([layer, key]) => {
-      expect(splitProjectKeys(layer).outside[0]).toBe(key);
-      expect(validateLayerFile(layer, "project", "/repo/.pi/sandbox.json")).toEqual({});
-    });
-  });
-
   it("refuses malformed rules with the dotted key", () => {
     const cases: Array<[unknown, string]> = [
       [{ id: "a" }, "credentials.rules[0].host is required"],
       [rule({ id: "has space" }), "credentials.rules[0].id must be letters, digits, dot, dash or underscore"],
+      [
+        rule({ id: "derived:gh" }),
+        "credentials.rules[0].id must be letters, digits, dot, dash or underscore",
+      ],
+      [
+        rule({ secret: { command: ["token"], ttlSeconds: 60 } }),
+        "credentials.rules[0].secret.ttlSeconds is not a known key",
+      ],
       [rule({ host: "*.corp.test" }), "credentials.rules[0].host must be a host name"],
-      [rule({ host: "10.0.0.1" }), "credentials.rules[0].host must be a host name"],
+      [rule({ host: "10.0.0.1" }), "credentials.rules[0].host must not be an IP address"],
+      [rule({ host: "localhost" }), "credentials.rules[0].host must not name loopback"],
+      [rule({ host: "llm.corp.test:443" }), "credentials.rules[0].host must be a host name"],
       [rule({ port: 70000 }), "credentials.rules[0].port must be at most 65535"],
       [rule({ port: 1.5 }), "credentials.rules[0].port must be a whole number"],
       [rule({ pathPrefix: "repos" }), "credentials.rules[0].pathPrefix must start with /"],
@@ -178,10 +153,13 @@ describe("validateLayer with the credential, egress, tls, image and org keys", (
 
   it("refuses private hosts that are IP literals or loopback", () => {
     expect(problemOf({ egress: { privateHosts: ["10.1.2.3"] } })).toBe(
-      "user: egress.privateHosts[0] must be a host name or *.domain, not an IP address",
+      "user: egress.privateHosts[0] must not be an IP address",
     );
     expect(problemOf({ egress: { privateHosts: ["::1"] } })).toBe(
-      "user: egress.privateHosts[0] must be a host name or *.domain, not an IP address",
+      "user: egress.privateHosts[0] must not be an IP address",
+    );
+    expect(problemOf({ egress: { privateHosts: ["gw.corp.test:443"] } })).toBe(
+      "user: egress.privateHosts[0] must be a host name or *.domain",
     );
     expect(problemOf({ egress: { privateHosts: ["localhost"] } })).toBe(
       "user: egress.privateHosts[0] must not name loopback",
@@ -191,7 +169,7 @@ describe("validateLayer with the credential, egress, tls, image and org keys", (
     );
   });
 
-  it("checks the parent proxy, grants, extra CA, image and org shapes", () => {
+  it("checks the parent proxy, grants, extra CA and image shapes", () => {
     const cases: Array<[unknown, string]> = [
       [{ egress: { parentProxy: "auto" } }, "egress.parentProxy must be one of env, none"],
       [{ egress: { parentProxy: { url: "http://proxy.test:3128" } } }, "egress.parentProxy must be a string"],
@@ -216,9 +194,14 @@ describe("validateLayer with the credential, egress, tls, image and org keys", (
         { image: { dockerfile: "layer.Dockerfile" } },
         "image.dockerfile layer.Dockerfile must be an absolute path or start with ~/",
       ],
-      [{ org: { source: "/etc/org.json" } }, "org must be a string"],
-      [{ org: "https://config.test/a.json" }, "org must be an absolute path"],
-      [{ org: "~/org.json" }, "org must be an absolute path"],
+      [
+        { image: { reference: "corp/pi:1" } },
+        "image sets reference and digest only together: the image is pulled by its digest, or built here without either",
+      ],
+      [
+        { image: { digest: `sha256:${"a".repeat(64)}` } },
+        "image sets reference and digest only together: the image is pulled by its digest, or built here without either",
+      ],
       [{ image: { registry: { host: "r.test" } } }, "image.registry is not a known key"],
     ];
 
@@ -234,7 +217,6 @@ describe("validateLayer with the credential, egress, tls, image and org keys", (
       { credentials: { rules: [rule({ header: "x-key", template: SECRET_VALUE })] } },
       { egress: { privateHosts: [`${SECRET_VALUE}:1`] } },
       { egress: { deny: [`${SECRET_VALUE}/path`] } },
-      { org: SECRET_VALUE },
       { image: { npmGlobal: [SECRET_VALUE] } },
     ];
 

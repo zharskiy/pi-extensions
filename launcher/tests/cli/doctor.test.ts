@@ -7,15 +7,13 @@ import { run } from "../../cli/index.ts";
 import { testedPiVersion } from "../../cli/versions.ts";
 import { registerLaunch } from "../../grants/index.ts";
 import { processMark, sha256Hex } from "../../shared/index.ts";
-import { createFakeBackend, createHarness, unreachable, writeManagedPi, writePathPi } from "./harness.ts";
+import { createFakeBackend, createHarness, unreachable, writeManagedPi } from "./harness.ts";
 
 interface Probes {
   env?: string;
   auth?: string;
   mcp?: string;
   routeExit?: number;
-  sameDir?: number;
-  offline?: string;
   mcpListExit?: number;
   ruleAnswer?: string;
   mcpAuth?: string;
@@ -43,7 +41,7 @@ const healthServer = async (status: number) => {
 };
 
 const answering =
-  (probes: Probes) =>
+  (probes: Probes, containerEnv: (containerId: string) => string = () => "TERM=xterm-256color\n") =>
   (spec: ExecSpec, io: ExecIo): number => {
     const write = (text: string) => {
       io.stdout.write(text);
@@ -51,10 +49,8 @@ const answering =
       return 0;
     };
     const answers: Record<string, () => number> = {
-      test: () => probes.sameDir ?? 0,
-      env: () => write(probes.env ?? "TERM=xterm-256color\nHOME=/home/pi\n"),
+      env: () => write(probes.env ?? containerEnv(spec.containerId)),
       sh: () => probes.routeExit ?? 1,
-      printenv: () => (probes.offline === undefined ? 1 : write(probes.offline)),
       pi: () => {
         io.stderr.write("docs: connection refused\n");
 
@@ -76,7 +72,14 @@ const GUEST_FILES: Array<[keyof Probes, string]> = [
 ];
 
 const guestBackend = async (probes: Probes, vm?: Partial<Vm>) => {
-  const fake = createFakeBackend({ exec: answering(probes), vm });
+  const specEnv = (containerId: string) =>
+    Object.entries(fake.containers.get(containerId)?.spec?.env ?? {})
+      .map(([name, value]) => `${name}=${value}\n`)
+      .join("");
+  const fake = createFakeBackend({
+    exec: answering(probes, (containerId) => `TERM=xterm-256color\n${specEnv(containerId)}`),
+    vm,
+  });
 
   await Promise.all(
     GUEST_FILES.map(([key, name]) => {
@@ -94,8 +97,6 @@ const HOST_CHECK_LINES = [
   expect.stringMatching(/^ok host pi: pi \S+ next to the launcher; the image follows it$/),
   "ok provider hosts: 1 built-in providers with known hosts",
   "skip parent proxy: no parent proxy configured",
-  "skip org baseline: no org baseline configured",
-  "ok grants: none active",
   expect.stringMatching(/^ok sessions: \/.+\/home\/\.pi\/agent\/sessions\/--.+-repo-- \(host pi lists them/),
 ];
 
@@ -109,6 +110,7 @@ const doctorWith = async (
   userConfig?: unknown,
   hostAuth?: unknown,
   vm?: Partial<Vm>,
+  hostSettings?: unknown,
 ) => {
   const port = await healthServer(healthStatus);
   const fake = await guestBackend(probes, vm);
@@ -127,6 +129,10 @@ const doctorWith = async (
     await harness.writeJson(join(harness.hostAgentDir, "auth.json"), hostAuth);
   }
 
+  if (hostSettings !== undefined) {
+    await harness.writeJson(join(harness.hostAgentDir, "settings.json"), hostSettings);
+  }
+
   const code = await run(["sandbox", "doctor"], harness.deps);
   const lines = harness.stdout().trim().split("\n");
 
@@ -135,20 +141,18 @@ const doctorWith = async (
 
 describe("pi sandbox doctor", () => {
   it("prints one ok line per stage and per check when every probe passes, in one container removed like a launch", async () => {
-    const { code, lines, harness, port, fake } = await doctorWith({});
+    const { code, lines, port, fake } = await doctorWith({});
     const container = fake.execs[0]?.spec.containerId;
 
     expect(lines).toEqual([
       ...PREPARED,
       `ok proxy: pid 77 port ${port}`,
-      expect.stringMatching(/^ok image: ghcr\.io\/zharskiy\/pi-sandbox:\S+ sha256:built-1$/),
+      "ok image: pi-sandbox-base:local sha256:built-1",
       "ok container",
       "ok sync",
       "ok proxy health: /healthz answers",
-      `ok same-path mount: ${harness.repoRoot} is mounted at the same path`,
       "ok credential sweep: no credential in the environment, auth.json or mcp.json",
       "ok no-route: no direct route to 1.1.1.1:443",
-      "ok offline: PI_OFFLINE is unset",
       "ok mcp: pi mcp list connects to every enabled server",
       "ok mcp-auth sweep: no mcp-auth.json in the sandbox yet",
       "ok settings sweep: no settings.json package carries a credential in its URL",
@@ -195,18 +199,15 @@ describe("pi sandbox doctor", () => {
     expect(code).toBe(1);
   });
 
-  it("fails the trust check on a certificate error and the offline and mcp checks inside", async () => {
+  it("fails the trust check on a certificate error and the mcp check inside", async () => {
     const { code, lines } = await doctorWith(
-      { ruleAnswer: "error SELF_SIGNED_CERT_IN_CHAIN", offline: "1", mcpListExit: 1 },
+      { ruleAnswer: "error SELF_SIGNED_CERT_IN_CHAIN", mcpListExit: 1 },
       200,
       undefined,
       { example: { type: "api_key", key: "real-secret-value-1234567890" } },
     );
 
     expect(lines).toContain("fail trust: models.example.test: SELF_SIGNED_CERT_IN_CHAIN");
-    expect(lines).toContain(
-      "fail offline: PI_OFFLINE is set in the container, so package installs and updates are off",
-    );
     expect(lines).toContain("fail mcp: pi mcp list exited 1: docs: connection refused");
     expect(code).toBe(1);
   });
@@ -250,21 +251,21 @@ describe("pi sandbox doctor", () => {
   });
 
   it("runs the probes at once and still prints them in table order", async () => {
-    const offlineAsked: Array<() => void> = [];
-    const offlineStarted = new Promise<void>((resolve) => {
-      offlineAsked.push(resolve);
+    const mcpAsked: Array<() => void> = [];
+    const mcpStarted = new Promise<void>((resolve) => {
+      mcpAsked.push(resolve);
     });
     const plain = answering({});
     const fake = createFakeBackend({
       exec: async (spec, io) => {
-        if (spec.command[0] === "printenv") {
-          offlineAsked.forEach((resolve) => {
+        if (spec.command[0] === "timeout") {
+          mcpAsked.forEach((resolve) => {
             resolve();
           });
         }
 
         if (spec.command[0] === "sh") {
-          await Promise.race([offlineStarted, new Promise((resolve) => setTimeout(resolve, 2000))]);
+          await Promise.race([mcpStarted, new Promise((resolve) => setTimeout(resolve, 2000))]);
         }
 
         return plain(spec, io);
@@ -285,8 +286,7 @@ describe("pi sandbox doctor", () => {
     const names = lines.map((line) => line.split(":")[0]);
 
     expect(Date.now() - startedAt).toBeLessThan(2000);
-    expect(names.indexOf("ok no-route")).toBeLessThan(names.indexOf("ok offline"));
-    expect(names.indexOf("ok offline")).toBeLessThan(names.indexOf("ok mcp"));
+    expect(names.indexOf("ok no-route")).toBeLessThan(names.indexOf("ok mcp"));
   });
 
   it("fails the sweep on an mcp.json header or stdio env value that is not a placeholder", async () => {
@@ -307,6 +307,14 @@ describe("pi sandbox doctor", () => {
       "fail credential sweep: /home/pi/.pi/agent/mcp.json holds a value other than a placeholder at mcpServers.docs.headers.Authorization",
     );
     expect(lines.join("\n")).not.toContain("real-secret");
+  });
+
+  it("passes the sweep over the container's own environment, whose proxy token is no placeholder", async () => {
+    const { lines, fake } = await doctorWith({});
+    const env = fake.created[0]?.spec?.env ?? {};
+
+    expect(env.PI_SANDBOX_PROXY_TOKEN).toMatch(/^[0-9a-f]{64}$/);
+    expect(lines).toContain("ok credential sweep: no credential in the environment, auth.json or mcp.json");
   });
 
   it("fails the sweep on secret-named variables and auth.json values other than the placeholder", async () => {
@@ -338,7 +346,7 @@ describe("pi sandbox doctor", () => {
     expect(lines).toContain("ok credential sweep: no credential in the environment, auth.json or mcp.json");
   });
 
-  it("leaves the container running when another launch of the repository is live", async () => {
+  it("removes only its own container when another launch of the repository is live", async () => {
     const port = await healthServer(200);
     const fake = createFakeBackend({ exec: answering({}) });
     const harness = await createHarness({
@@ -356,24 +364,32 @@ describe("pi sandbox doctor", () => {
       startedAt: 1,
     });
 
-    await run(["sandbox", "doctor"], harness.deps);
-
-    expect(fake.containers.size).toBe(1);
-    expect(fake.stops).toEqual([]);
-  });
-
-  it("fails the settings sweep on a package whose URL carries a credential", async () => {
-    const { code, lines } = await doctorWith({
-      settings: JSON.stringify({
-        packages: ["npm:fine", { source: "git:https://user:hunter2@git.example.test/team/ext.git" }],
-      }),
+    const other = fake.addContainer({
+      name: "other-launch",
+      labels: {
+        [LABELS.managed]: "true",
+        [LABELS.repoHash]: sha256Hex(harness.repoRoot),
+        [LABELS.launchId]: "00000000000000cc",
+      },
+      state: "running",
+      image: "x",
     });
 
-    expect(lines).toContain(
-      "fail settings sweep: settings.json package git.example.test carries a credential in its URL",
+    await run(["sandbox", "doctor"], harness.deps);
+
+    expect([...fake.containers.keys()]).toEqual([other]);
+  });
+
+  it("strips a credential from a host settings package URL before the sync, so the settings sweep passes", async () => {
+    const { lines, harness } = await doctorWith({}, 200, undefined, undefined, undefined, {
+      packages: ["npm:fine", { source: "git:https://user:hunter2@git.example.test/team/ext.git" }],
+    });
+
+    expect(lines).toContain("ok settings sweep: no settings.json package carries a credential in its URL");
+    expect(harness.stderr()).toContain(
+      "settings.json package git.example.test carried a credential in its URL; it was removed inside the sandbox",
     );
-    expect(lines.join("\n")).not.toContain("hunter2");
-    expect(code).toBe(1);
+    expect(`${harness.stdout()}${harness.stderr()}`).not.toContain("hunter2");
   });
 
   it("fails the mcp-auth sweep on a token that is not a placeholder", async () => {
@@ -392,11 +408,10 @@ describe("pi sandbox doctor", () => {
     expect(code).toBe(1);
   });
 
-  it("fails when the container reaches the internet directly or the repo is not mounted", async () => {
-    const { code, lines } = await doctorWith({ routeExit: 0, sameDir: 1 });
+  it("fails when the container reaches the internet directly", async () => {
+    const { code, lines } = await doctorWith({ routeExit: 0 });
 
     expect(lines).toContain("fail no-route: 1.1.1.1:443 is reachable directly");
-    expect(lines).toContainEqual(expect.stringMatching(/^fail same-path mount: .* is not visible inside$/));
     expect(code).toBe(1);
   });
 
@@ -432,18 +447,22 @@ describe("pi sandbox doctor", () => {
     expect(shared).toEqual([]);
   });
 
-  it("reports the org baseline file it loaded", async () => {
-    const down = unreachable(createFakeBackend().backend);
-    const harness = await createHarness({ backend: () => down });
-    const baseline = join(harness.root, "org.json");
+  it("skips the sandbox and names the paths to share when the VM lacks one, starting nothing", async () => {
+    const started: string[] = [];
+    const { code, lines, fake } = await doctorWith({}, 200, undefined, undefined, {
+      coverage: async () => ({ shares: [], missing: ["/Volumes/work"] }),
+      ensureRunning: async () => {
+        started.push("vm");
+      },
+    });
 
-    await harness.writeJson(baseline, {});
-
-    await harness.writeJson(harness.userConfigFile, { org: baseline });
-
-    await run(["sandbox", "doctor"], harness.deps);
-
-    expect(harness.stdout()).toContain(`ok org baseline: ${baseline} loaded\n`);
+    expect(lines[0]).toBe(
+      "skip sandbox: run pi once here to share /Volumes/work, then pi sandbox doctor again",
+    );
+    expect(lines[1]).toMatch(/^warn vm shares: the sandbox VM does not share \/Volumes\/work; /);
+    expect(started).toEqual([]);
+    expect(fake.created).toEqual([]);
+    expect(code).toBe(0);
   });
 
   it("reports the proxy and image stages both, then stops after a failed image", async () => {
@@ -456,7 +475,7 @@ describe("pi sandbox doctor", () => {
     expect(await run(["sandbox", "doctor"], harness.deps)).toBe(1);
     expect(harness.stdout().trim().split("\n")).toEqual([
       ...PREPARED,
-      "ok proxy: not required, no credential rule and an empty allowlist",
+      "ok proxy: pid 4242 port 3128",
       "fail image: build failed",
       ...HOST_CHECK_LINES,
     ]);
@@ -468,9 +487,14 @@ describe("pi sandbox doctor", () => {
 
     const sizeLine = async (size: Vm["size"], machine?: { cpus: number; memoryGiB: number }) => {
       const fake = createFakeBackend({ exec: answering({}), vm: { size } });
-      const harness = await createHarness({ backend: () => fake.backend, machine });
-
-      await harness.writeJson(harness.userConfigFile, { egress: { allow: [], presets: [] } });
+      const port = await healthServer(200);
+      const harness = await createHarness({
+        backend: () => fake.backend,
+        machine,
+        proxy: {
+          ensure: async () => ({ proxy: { pid: 77, port, boot: 0, start: "", inputHash: "h" }, notices: [] }),
+        },
+      });
 
       const code = await run(["sandbox", "doctor"], harness.deps);
       const line = harness
@@ -536,21 +560,6 @@ describe("pi sandbox doctor on the host pi", () => {
 
     expect(line).toBe(
       `warn host pi: pi 1.0.0 (managed install ${managed.wrapper}) is older than ${await testedPiVersion()}, the pi this launcher is tested with; run pi update`,
-    );
-  });
-
-  it("names the PATH pi that pi --no-sandbox runs next to the launcher's own pi", async () => {
-    const onPath = { pi: "" };
-    const { line } = await hostPiLine(async (harness) => {
-      const written = await writePathPi(join(harness.root, "brew"), "1.7.0");
-
-      onPath.pi = written.pi;
-
-      harness.deps.env.PATH = written.bin;
-    });
-
-    expect(line).toBe(
-      `ok host pi: pi ${await testedPiVersion()} next to the launcher; the image follows it; pi --no-sandbox runs pi 1.7.0 at ${onPath.pi}`,
     );
   });
 

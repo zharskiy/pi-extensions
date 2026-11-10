@@ -2,26 +2,20 @@ import { constants } from "node:os";
 import type { Backend } from "../backend/index.ts";
 import {
   buildContainerSpec,
-  ensureContainer,
-  findCurrentContainer,
   forwardedEnv,
   type GitOverlay,
   type LauncherContainerSpec,
   planGitOverlay,
   runPi,
+  startLaunchContainer,
 } from "../container/index.ts";
-import type { Launch } from "../grants/index.ts";
+import { type Launch, othersLive } from "../grants/index.ts";
 import { type HostPiFiles, readHostPiFiles } from "../hostpi/index.ts";
 import { ensureSandboxImage, type SandboxImage } from "../image/index.ts";
 import { renderAgentDir, syncSettingsFile } from "../provision/index.ts";
 import { guestProxyUrl } from "../proxy/index.ts";
-import { errorMessage, settleAll, sha256Hex } from "../shared/index.ts";
-import {
-  gitLaunchNotices,
-  type HostSessions,
-  resolveHostCaches,
-  withGitPinLock,
-} from "../workspace/index.ts";
+import { errorMessage, settleAll } from "../shared/index.ts";
+import { gitLaunchNotices, type HostSessions } from "../workspace/index.ts";
 import { checkWorkspaceRoots, type LaunchContext, openContext } from "./context.ts";
 import { type CliDeps, hostAgentDirOf, writeLine, writeNotices } from "./deps.ts";
 import { type HostSide, type PreparedHost, prepareHostSide } from "./derive.ts";
@@ -32,14 +26,14 @@ import {
   probeSessionsShare,
   readyHostSessions,
 } from "./host-sessions.ts";
-import { launchNotices, proxyDetail } from "./launch-notices.ts";
-import { beginLaunch, finishLaunch, gitGuardOf, othersLive } from "./launches.ts";
+import { hostPathNotices, launchNotices, proxyDetail } from "./launch-notices.ts";
+import { beginLaunch, finishLaunch, gitGuardOf } from "./launches.ts";
 import { signInMcpServers } from "./mcp-sign-in.ts";
 import { writeOnce } from "./notices.ts";
 import { openSandboxProxy, reportDenials, type SandboxProxy } from "./sandbox-proxy.ts";
 import { sweepOrphans } from "./sweep.ts";
-import { imagePiVersion, launcherVersion } from "./versions.ts";
-import { hostCacheContext, shareVm, startVm } from "./vm.ts";
+import { imagePiVersion } from "./versions.ts";
+import { shareVm, startVm } from "./vm.ts";
 
 interface PreparedContainer {
   containerId: string;
@@ -50,7 +44,7 @@ interface PreparedContainer {
 export interface Sandbox extends PreparedContainer {
   backend: Backend;
   host: HostSide;
-  proxy?: SandboxProxy;
+  proxy: SandboxProxy;
   launch: Launch;
 }
 
@@ -72,11 +66,14 @@ interface SandboxInput {
   deps: CliDeps;
   context: LaunchContext;
   backend: Backend;
-  prepared: PreparedHost;
   launch: Launch;
   sessions: HostSessions;
   cancelled: AbortSignal;
   staged: Staged;
+}
+
+interface PreparedInput extends SandboxInput {
+  prepared: PreparedHost;
 }
 
 const PREPARING = "preparing pi sandbox, one time";
@@ -86,8 +83,6 @@ const STOPPING = "pi-sandbox: stopping after the current step";
 const PREPARATION_SIGNALS: NodeJS.Signals[] = ["SIGINT", "SIGTERM", "SIGHUP"];
 
 const SIGNAL_EXIT_BASE = 128;
-
-const TOKEN_HASH_LENGTH = 16;
 
 const stagedWith =
   (report: StageReport): Staged =>
@@ -145,37 +140,22 @@ const prepareImage = (
     backend,
     config: context.effective.config,
     stateDir: context.stateDir,
-    repoHash: context.repoHash,
     env: deps.env,
-    trustPem: host.trust?.extraPemPath,
-    proxyCaPem: host.trust?.caCertPath,
+    trustPem: host.trust.extraPemPath,
+    proxyCaPem: host.trust.caCertPath,
     versions: async () => ({ pi: await imagePiVersion(host.pi) }),
-    inUse: async (digest) => (await findCurrentContainer(backend, context.workspace, digest)) !== undefined,
     preparing: () => writeLine(deps.stderr, PREPARING),
     waiting: () => writeLine(deps.stderr, "pi-sandbox: waiting for the image build in another session"),
     progress: (step) => writeLine(deps.stderr, `pi-sandbox: build: ${step}`),
   });
 
-const sandboxRoute = async (
-  backend: Backend,
-  proxy: SandboxProxy | undefined,
-  imageId: string,
-  repoHash: string,
-) => {
-  if (proxy === undefined) {
-    return undefined;
-  }
-
+const sandboxRoute = async (backend: Backend, proxy: SandboxProxy, imageId: string, repoHash: string) => {
   const route = await backend.prepareProxyRoute({ hostPort: proxy.proxy.port, repoHash, imageId });
 
-  return {
-    url: guestProxyUrl(route, proxy.token),
-    network: route.network,
-    tokenHash: sha256Hex(proxy.token).slice(0, TOKEN_HASH_LENGTH),
-  };
+  return { url: guestProxyUrl(route, proxy.token), network: route.network };
 };
 
-const syncAgentFiles = async (input: SandboxInput, id: string) => {
+const syncAgentFiles = async (input: PreparedInput, id: string) => {
   const { deps, context, backend } = input;
   const { host } = input.prepared;
   const { notices } = await syncSettingsFile({
@@ -185,17 +165,16 @@ const syncAgentFiles = async (input: SandboxInput, id: string) => {
     repoHash: context.repoHash,
     hostAgentDir: host.hostAgentDir,
     repoRoot: context.workspace.repoRoot,
-    config: context.effective.config,
     hostSettings: host.files.settings,
   });
 
   writeNotices(deps, notices);
 };
 
-const prepareGround = async (input: SandboxInput) => {
+const prepareGround = async (input: PreparedInput) => {
   const { deps, context, backend, launch, sessions } = input;
   const { host } = input.prepared;
-  const [render, gitNotices, version, git] = await settleAll([
+  const [render, gitNotices, git] = await settleAll([
     renderAgentDir({
       stateDir: context.stateDir,
       repoHash: context.repoHash,
@@ -203,75 +182,73 @@ const prepareGround = async (input: SandboxInput) => {
       derived: host.derived,
     }),
     gitLaunchNotices(context.workspace),
-    launcherVersion(),
     planGitOverlay(context.workspace, gitGuardOf(deps, context)),
     readyHostSessions(deps, context, backend, { sessions, launchId: launch.launchId }),
   ]);
 
-  return { render, gitNotices, version, git };
+  return { render, gitNotices, git };
 };
 
 type Ground = Awaited<ReturnType<typeof prepareGround>>;
 
 const prepareContainer = async (
-  input: SandboxInput,
-  parts: { proxy?: SandboxProxy; image: SandboxImage; ground: Promise<Ground> },
+  input: PreparedInput,
+  parts: { proxy: SandboxProxy; image: SandboxImage; ground: Promise<Ground> },
 ): Promise<PreparedContainer> => {
   const { deps, context, backend, launch, sessions, cancelled } = input;
   const { host } = input.prepared;
   const { proxy, image } = parts;
-  const [ground, route, privateNotices] = await settleAll([
+  const [ground, route] = await settleAll([
     parts.ground,
     sandboxRoute(backend, proxy, image.id, context.repoHash),
-    input.prepared.privateNotices,
   ]);
-  const { render, gitNotices, version, git } = ground;
+  const { render, gitNotices, git } = ground;
 
-  writeNotices(deps, [...render.notices, ...gitNotices]);
+  writeNotices(deps, gitNotices);
 
-  await writeOnce(deps, context, [...launchNotices(context, host, image), ...privateNotices]);
+  await writeOnce(deps, context, [
+    ...render.notices.map((notice) => `pi-sandbox: ${notice}`),
+    ...launchNotices(context),
+  ]);
 
-  const hostCaches = resolveHostCaches(
-    context.effective.config.mounts.hostCaches,
-    hostCacheContext(deps, context),
-  );
   const specWith = (gitOverlay: GitOverlay) =>
     buildContainerSpec({
       workspace: context.workspace,
       config: context.effective.config,
       image,
-      hostEnv: deps.env,
       hostUid: deps.uid,
       stateDir: context.stateDir,
+      launchId: launch.launchId,
       gitOverlay,
       proxy: route,
-      launcherVersion: version,
+      trust: host.trust,
       renderDir: render.renderDir,
-      trust: route === undefined ? undefined : host.trust,
       hostSessions: sessions,
       toolEnv: host.derived.tools.env,
-      hostCaches,
     });
   const planned = specWith(git.overlay);
 
   cancelled.throwIfAborted();
 
-  const { id, spec, notices } = await ensureContainer({
+  const { id, spec, notices } = await startLaunchContainer({
     backend,
     spec: planned,
     stateDir: context.stateDir,
-    othersLive: () => othersLive(context.stateDir, context.repoHash, launch.launchId),
-    beforeStart: async () => specWith(await git.ready()),
-    aroundStart: (start) => withGitPinLock(context.stateDir, context.workspace, start),
+    beforeStart: async () =>
+      specWith(
+        await git.ready({
+          othersLive: await othersLive(context.stateDir, context.repoHash, launch.launchId),
+        }),
+      ),
     afterCreate: (created) => probeSessionsShare(backend, created, sessions),
   });
 
-  writeNotices(deps, notices);
+  writeNotices(deps, [...notices, ...git.pendingNotices()]);
 
   return { containerId: id, spec, image };
 };
 
-const prepareSandbox = async (input: SandboxInput) => {
+const prepareSandbox = async (input: PreparedInput) => {
   const { deps, context, backend, launch, cancelled, staged } = input;
   const { host } = input.prepared;
   const pending = [
@@ -350,25 +327,40 @@ const shielded = async <T>(deps: CliDeps, action: () => Promise<T>) => {
   }
 };
 
-const prepareVm = async (
-  deps: CliDeps,
-  context: LaunchContext,
-  backend: Backend,
-  parts: { staged: Staged; sessions: HostSessions; deriving: Promise<PreparedHost>; share: boolean },
+const prepareVm = async (input: SandboxInput, share: boolean) => {
+  const { deps, context, backend, sessions, launch, staged } = input;
+
+  await staged("vm", () => startVm(deps, backend, sessions));
+
+  if (share) {
+    await staged("shares", () => shareVm(deps, context, backend, { sessions, launchId: launch.launchId }));
+  }
+};
+
+const prepareAll = async (
+  input: SandboxInput,
+  parts: { deriving: Promise<PreparedHost>; signIn: boolean; share: boolean },
 ) => {
-  const { staged, sessions, share } = parts;
+  const { deps, context, backend, sessions, cancelled, staged } = input;
+  const { deriving, signIn } = parts;
 
   try {
-    await staged("vm", () => startVm(deps, context, backend, { sessions, share }));
-
-    if (share) {
-      await staged("shares", () => shareVm(deps, context, backend, sessions));
-    }
+    await prepareVm(input, parts.share);
   } catch (error) {
-    await parts.deriving.catch(() => undefined);
+    await deriving.catch(() => undefined);
 
     throw error;
   }
+
+  cancelled.throwIfAborted();
+
+  const prepared = await staged("host", () =>
+    prepareHost(deps, context, backend, { deriving, sessions, signIn }),
+  );
+
+  cancelled.throwIfAborted();
+
+  return { host: prepared.host, ...(await prepareSandbox({ ...input, prepared })) };
 };
 
 export const withSandbox = async (
@@ -381,26 +373,14 @@ export const withSandbox = async (
   const staged = stagedWith(report);
   const files = await readHostPiFiles(hostAgentDirOf(deps));
   const sessions = hostSessionsOf(deps, context, files.settings);
-  const deriving = startHostSide(deps, context, files);
-
-  await prepareVm(deps, context, backend, { staged, sessions, deriving, share });
-
-  const prepared = await staged("host", () =>
-    prepareHost(deps, context, backend, { deriving, sessions, signIn }),
-  );
   const launch = await beginLaunch(deps, context);
   const signal = firstSignal(deps);
   const cancel = new AbortController();
-  const preparation = prepareSandbox({
-    deps,
-    context,
-    backend,
-    prepared,
-    launch,
-    sessions,
-    cancelled: cancel.signal,
-    staged,
-  });
+  const deriving = startHostSide(deps, context, files);
+  const preparation = prepareAll(
+    { deps, context, backend, launch, sessions, cancelled: cancel.signal, staged },
+    { deriving, signIn, share },
+  );
   const ended: { proxy?: SandboxProxy } = {};
 
   try {
@@ -419,9 +399,11 @@ export const withSandbox = async (
 
     signal.stop();
 
-    ended.proxy = outcome.ready.proxy;
+    const { prepared, proxy, host } = outcome.ready;
 
-    return await use({ ...outcome.ready.prepared, backend, host: prepared.host, proxy: ended.proxy, launch });
+    ended.proxy = proxy;
+
+    return await use({ ...prepared, backend, host, proxy, launch });
   } finally {
     signal.stop();
 
@@ -433,17 +415,20 @@ export const withSandbox = async (
   }
 };
 
-const runSandboxPi = (deps: CliDeps, context: LaunchContext, sandbox: Sandbox, piArgs: string[]) =>
-  runPi({
+const runSandboxPi = async (deps: CliDeps, context: LaunchContext, sandbox: Sandbox, piArgs: string[]) => {
+  writeNotices(deps, await hostPathNotices(piArgs, context.workspace.cwd, sandbox.spec.mounts));
+
+  return runPi({
     backend: sandbox.backend,
     containerId: sandbox.containerId,
     piArgs,
-    env: forwardedEnv(context.effective.config.env.allow, deps.env),
+    env: forwardedEnv(context.effective.config.env.allow, deps.env, (notice) => writeNotices(deps, [notice])),
     launchId: sandbox.launch.launchId,
     workspace: context.workspace,
     terminal: deps.terminal,
     signals: deps.signals,
   });
+};
 
 export const launch = async (args: string[], deps: CliDeps) => {
   const piArgs = args.filter((arg) => arg !== NO_SANDBOX);
@@ -451,7 +436,7 @@ export const launch = async (args: string[], deps: CliDeps) => {
   if (piArgs.length !== args.length) {
     const { context } = await openContext(deps, "host");
 
-    checkWorkspaceRoots(deps, context);
+    checkWorkspaceRoots(context);
 
     return runHostPi(deps, context, piArgs);
   }

@@ -199,7 +199,19 @@ const startUpstream = async () => {
         callback(null, leaf === undefined ? undefined : createSecureContext(leaf));
       },
     },
-    respond,
+    (request, response) => {
+      if (request.url !== "/echo-body") {
+        respond(request, response);
+
+        return;
+      }
+
+      void readBody(request).then((body) => {
+        response.writeHead(200, { "content-type": "application/json" });
+
+        response.end(JSON.stringify({ method: request.method, headers: request.headers, body }));
+      });
+    },
   );
 
   server.on("upgrade", (request, socket: Duplex) => {
@@ -397,18 +409,55 @@ describe("credential rules", () => {
     expect(state.seen).toContainEqual({ url: "/leak", authorization: `Bearer ${API_SECRET}` });
   });
 
-  it("strips the placeholder header when the secret is unavailable and logs it", async () => {
+  it("strips the placeholder header when the secret is unavailable and records a denial", async () => {
     const body = await echoed("api.test", "/mcp/tools", { authorization: `Bearer ${MISSING_PLACEHOLDER}` });
 
     expect(body.headers.authorization).toBeUndefined();
     expect(state.test.log).toContainEqual(
       expect.objectContaining({
+        host: "api.test",
+        decision: "deny",
         rule: "credential",
-        reason: "unavailable: no secret for missing",
-        credential: "missing",
+        reason: "credential missing is unavailable: no secret for missing",
         repo: REPO,
       }),
     );
+  });
+
+  it("strips the placeholder of a host rule whose path prefix does not match", async () => {
+    const body = await echoed("api.test", "/v1/models", {
+      authorization: `Bearer ${API_PLACEHOLDER}`,
+      "x-other-key": MISSING_PLACEHOLDER,
+    });
+
+    expect(body.headers.authorization).toBe(`Bearer ${API_SECRET}`);
+    expect(body.headers["x-other-key"]).toBeUndefined();
+  });
+
+  it.each(["GET", "DELETE", "POST"])("keeps the framing of a chunked %s body", async (method) => {
+    const raw = await rawExchange(
+      "api.test:443",
+      "api.test",
+      [
+        `${method} /echo-body HTTP/1.1`,
+        "Host: api.test",
+        "Transfer-Encoding: chunked",
+        "Connection: close",
+        "",
+        "5",
+        "hello",
+        "0",
+        "",
+        "",
+      ].join("\r\n"),
+    );
+    const echo = JSON.parse(raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1)) as {
+      method: string;
+      headers: Record<string, string>;
+      body: string;
+    };
+
+    expect(echo).toMatchObject({ method, body: "hello", headers: { "transfer-encoding": "chunked" } });
   });
 
   it("ends the client response when the upstream dies in the middle of the body", async () => {
@@ -511,7 +560,7 @@ describe("a rule on a non-443 port", () => {
       "llm.test is not allowed by the sandbox. Ask the user to run pi sandbox egress allow llm.test on the host.",
     );
     expect(local.test?.log).toContainEqual(
-      expect.objectContaining({ host: "llm.test", rule: "egress.port" }),
+      expect.objectContaining({ host: "llm.test", rule: "egress.allow" }),
     );
   });
 });
@@ -607,8 +656,8 @@ describe("unusable credential values", () => {
     expect(state.test.log).toContainEqual(
       expect.objectContaining({
         rule: "credential",
-        reason: "unavailable: the secret holds a line break",
-        credential: "newline",
+        decision: "deny",
+        reason: "credential newline is unavailable: the secret holds a line break",
       }),
     );
   });
@@ -651,6 +700,14 @@ describe("an upstream certificate the proxy does not trust", () => {
     expect(body.error).toMatch(
       /^upstream request failed: .*(certificate|issuer).*; if a proxy or CA on this network signs this host, set tls\.extraCa to its CA$/,
     );
+    expect(local.test?.log).toContainEqual(
+      expect.objectContaining({
+        host: "api.test",
+        decision: "deny",
+        rule: "upstream",
+        reason: expect.stringMatching(/(certificate|issuer).*tls\.extraCa/),
+      }),
+    );
   });
 });
 
@@ -691,20 +748,18 @@ describe("restricted addresses after DNS", () => {
     await removeDir(local.stateDir);
   });
 
-  it("refuses a terminated rule host that resolves to a private address", async () => {
-    const response = await requestThrough({
-      proxyPort: local.test?.proxy.port ?? 0,
-      token: local.token,
-      host: "api.test",
-      ca: state.ca.certPem,
-      path: "/v1/models",
-      headers: { authorization: `Bearer ${API_PLACEHOLDER}` },
-    });
-    const body = await readBody(response);
+  it("refuses a terminated rule host that resolves to a private address before the tunnel opens", async () => {
+    const reply = await openConnect(local.test?.proxy.port ?? 0, "api.test:443", local.token);
+    const body = JSON.parse(await readRest(reply.socket)) as { rule: string; reason: string };
 
-    expect(response.statusCode).toBe(502);
-    expect(body).toContain("restricted addresses");
-    expect(body).not.toContain(API_SECRET);
+    expect(reply.status).toBe(403);
+    expect(body).toMatchObject({
+      rule: "private-address",
+      reason: expect.stringContaining("restricted addresses"),
+    });
+    expect(local.test?.log).toContainEqual(
+      expect.objectContaining({ host: "api.test", decision: "deny", rule: "private-address" }),
+    );
   });
 });
 

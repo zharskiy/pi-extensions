@@ -142,6 +142,25 @@ describe("sandbox-config.schema.json", () => {
         "a.test:",
         "https://a.test",
         "10.0.0.1",
+        "10.0.0.1:8443",
+        "::1",
+        "foo.123",
+        "foo.0x1F",
+        "localhost",
+        "db.LocalHost:8443",
+        "a.test:80",
+        "a.test:8080",
+        "a.test:00443",
+        "a_b.Corp.test",
+        "*.svc_x.test:8443",
+        "-a.test",
+        "a-.test",
+        "a.test.",
+        `${"a".repeat(63)}.test`,
+        `${"a".repeat(64)}.test`,
+        `${"a.".repeat(126)}b`,
+        `${"a.".repeat(127)}b`,
+        `*.${"a.".repeat(126)}b`,
       ],
     })),
     {
@@ -157,6 +176,10 @@ describe("sandbox-config.schema.json", () => {
         "db.localhost",
         "localhost.corp.test",
         "gw:443",
+        "::1",
+        "gw_1.corp.test",
+        "*.localhost",
+        "corp.123",
       ],
     },
     {
@@ -170,7 +193,16 @@ describe("sandbox-config.schema.json", () => {
         "1x.example.test",
         "*.example.test",
         "api.example.test:443",
+        "localhost",
+        "API_1.example.test",
+        `${"a.".repeat(127)}b`,
       ],
+    },
+    {
+      name: "credentials.derive.hosts",
+      node: (schema) => schema.properties?.credentials?.properties?.derive?.properties?.hosts?.items,
+      layer: (value) => ({ credentials: { derive: { hosts: [value] } } }),
+      samples: ["api.example.test", "*.corp.test", "10.0.0.1", "localhost", "a.test:443", "a_b.test"],
     },
     {
       name: "env.allow",
@@ -202,39 +234,18 @@ describe("sandbox-config.schema.json", () => {
         "PWD",
         "path",
         "1BAD",
-      ],
-    },
-    {
-      name: "mounts.cacheVolumes",
-      node: (schema) => schema.properties?.mounts?.properties?.cacheVolumes?.items,
-      layer: (value) => ({ mounts: { cacheVolumes: [value] } }),
-      samples: [
-        "node_modules",
-        ".venv",
-        "build/",
-        "a/b",
-        ".github/x",
-        ".gitignore-cache",
-        "",
-        ".",
-        "./",
-        "..",
-        "a/../b",
-        "a/./b",
-        "a//b",
-        "/abs",
-        ".git",
-        "a/.git",
-        "a/.git/b",
-        ".GIT/hooks/pre-commit",
-        "a/.Git",
-        ".gitkeep-cache",
+        "DB_PASSWD",
+        "GPG_PASSPHRASE",
+        "SESSION_JWT",
+        "jwt_issuer",
+        "PI_SANDBOX_EXTRA",
+        "GH_TOKEN",
       ],
     },
     {
       name: "image.reference",
       node: (schema) => schema.properties?.image?.properties?.reference,
-      layer: (value) => ({ image: { reference: value } }),
+      layer: (value) => ({ image: { reference: value, digest: `sha256:${"a".repeat(64)}` } }),
       samples: ["ghcr.io/acme/pi:1", "", "  ", " x "],
     },
   ];
@@ -293,7 +304,14 @@ describe("sandbox-config.schema.json", () => {
 
     expect(rules?.uniqueItems).toBe(true);
     expect(rules?.items?.dependentRequired).toEqual({ template: ["header"] });
-    expect(schema.properties?.mounts?.properties?.cacheVolumes?.uniqueItems).toBe(true);
+    expect(schema.properties?.mounts?.properties?.sharedCaches?.uniqueItems).toBe(true);
+    expect(schema.properties?.image?.dependentRequired).toEqual({
+      reference: ["digest"],
+      digest: ["reference"],
+    });
+    expect(validatorAccepts({ image: { reference: "corp/pi:1" } })).toBe(false);
+    expect(validatorAccepts({ image: { digest: `sha256:${"a".repeat(64)}` } })).toBe(false);
+    expect(validatorAccepts({ mounts: { sharedCaches: ["~/.npm", "~/.npm/cache"] } })).toBe(false);
     expect(
       validatorAccepts(rule({ template: "Bearer {secret}", header: undefined, placeholder: "pi-sandbox-x" })),
     ).toBe(false);

@@ -1,11 +1,14 @@
-import { rm } from "node:fs/promises";
-import { knownRepos, readJsonObject, stateLayout, writeJsonFile } from "../shared/index.ts";
+import { readJsonObject, stateLayout, writeJsonFile } from "../shared/index.ts";
 
 export interface BaseRecord {
   id: string;
   digest: string;
   inputsHash: string;
-  pi?: string;
+}
+
+interface ImageRecord {
+  base?: BaseRecord;
+  layer?: string;
 }
 
 const recordFileOf = (stateDir: string) => stateLayout(stateDir).imageRecord;
@@ -20,30 +23,23 @@ const isBaseRecord = (base: unknown): base is BaseRecord => {
   );
 };
 
-export const readBaseRecord = async (stateDir: string): Promise<BaseRecord | undefined> => {
-  const base = (await readJsonObject(recordFileOf(stateDir)))?.base;
+const readRecord = async (stateDir: string): Promise<ImageRecord> => {
+  const record = await readJsonObject(recordFileOf(stateDir));
 
-  return isBaseRecord(base) ? base : undefined;
+  return {
+    ...(isBaseRecord(record?.base) ? { base: record.base } : {}),
+    ...(typeof record?.layer === "string" ? { layer: record.layer } : {}),
+  };
 };
 
-export const writeBaseRecord = (stateDir: string, base: BaseRecord) =>
-  writeJsonFile(recordFileOf(stateDir), { base });
+const updateRecord = async (stateDir: string, change: ImageRecord) =>
+  writeJsonFile(recordFileOf(stateDir), { ...(await readRecord(stateDir)), ...change });
 
-export const writeWantedLayer = (stateDir: string, repoHash: string, tag: string | undefined) => {
-  const path = stateLayout(stateDir).repo(repoHash).image;
+export const readBaseRecord = async (stateDir: string) => (await readRecord(stateDir)).base;
 
-  return tag === undefined ? rm(path, { force: true }) : writeJsonFile(path, { layer: tag });
-};
+export const writeBaseRecord = (stateDir: string, base: BaseRecord) => updateRecord(stateDir, { base });
 
-const wantedLayerOf = async (stateDir: string, repoHash: string) => {
-  const layer = (await readJsonObject(stateLayout(stateDir).repo(repoHash).image))?.layer;
+export const currentLayer = async (stateDir: string) => (await readRecord(stateDir)).layer;
 
-  return typeof layer === "string" ? [layer] : [];
-};
-
-export const wantedLayers = async (stateDir: string) => {
-  const repos = await knownRepos(stateDir);
-  const tags = await Promise.all(repos.map((repoHash) => wantedLayerOf(stateDir, repoHash)));
-
-  return new Set(tags.flat());
-};
+export const writeCurrentLayer = (stateDir: string, layer: string | undefined) =>
+  updateRecord(stateDir, { layer });

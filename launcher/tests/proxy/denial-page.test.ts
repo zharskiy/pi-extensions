@@ -19,13 +19,18 @@ afterAll(async () => {
 
 const countingPages = () => {
   const minted: string[] = [];
+  const clock = { now: 0 };
   const pages = createDenialPages({
     leaf: async (host) => {
       minted.push(host);
 
       return state.leaf;
     },
-    mintsPerMinute: 1_000,
+    now: () => {
+      clock.now += 60_001;
+
+      return clock.now;
+    },
   });
 
   return { pages, minted };

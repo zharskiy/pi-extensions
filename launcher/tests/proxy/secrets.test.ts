@@ -67,7 +67,7 @@ describe("command secrets", () => {
     ]);
   });
 
-  it("honours ttlSeconds and the expiry of JSON output, less 30 s", async () => {
+  it("keeps a plain token for 300 s and a JSON token until its expiresAt, less 30 s", async () => {
     const { fake, clock, resolver } = setup((call) =>
       call.file === "json-token"
         ? {
@@ -78,24 +78,42 @@ describe("command secrets", () => {
 
     expect(await secretOf(resolver, "json", { command: ["json-token"] })).toBe("jwt");
 
-    await resolver.resolve("short", { command: ["short-token"], ttlSeconds: 5 });
+    await resolver.resolve("short", { command: ["short-token"] });
 
-    clock.advance(6_000);
-
-    await resolver.resolve("json", { command: ["json-token"] });
-
-    await resolver.resolve("short", { command: ["short-token"], ttlSeconds: 5 });
-
-    clock.advance(5_000);
+    clock.advance(11_000);
 
     await resolver.resolve("json", { command: ["json-token"] });
+
+    await resolver.resolve("short", { command: ["short-token"] });
+
+    clock.advance(288_000);
+
+    await resolver.resolve("short", { command: ["short-token"] });
+
+    clock.advance(2_000);
+
+    await resolver.resolve("short", { command: ["short-token"] });
 
     expect(fake.calls.map((call) => call.file)).toEqual([
       "json-token",
       "short-token",
-      "short-token",
       "json-token",
+      "short-token",
     ]);
+  });
+
+  it("reads expiresAt only as an ISO 8601 time and keeps the 300 s for a number", async () => {
+    const { fake, clock, resolver } = setup(() => ({
+      stdout: JSON.stringify({ token: "jwt", expiresAt: clock.now() + 40_000 }),
+    }));
+
+    await resolver.resolve("json", { command: ["json-token"] });
+
+    clock.advance(45_000);
+
+    await resolver.resolve("json", { command: ["json-token"] });
+
+    expect(fake.calls).toHaveLength(1);
   });
 
   it("runs the command once for concurrent requests", async () => {
@@ -180,16 +198,6 @@ describe("command secret failures", () => {
     await resolver.resolve("rule", { command: ["broken"] });
 
     expect(fake.calls).toHaveLength(3);
-  });
-});
-
-describe("rules sharing an id", () => {
-  it("keeps separate cache entries for different references under one id", async () => {
-    const { resolver } = setup((call) => ({ stdout: call.args[0] ?? "" }));
-
-    expect(await secretOf(resolver, "derived:x", { command: ["echo", "first"] })).toBe("first");
-    expect(await secretOf(resolver, "derived:x", { command: ["echo", "second"] })).toBe("second");
-    expect(await secretOf(resolver, "derived:x", { command: ["echo", "first"] })).toBe("first");
   });
 });
 
@@ -310,6 +318,7 @@ describe("env and file secrets", () => {
     expect(parentProxyAuth("env", { HTTPS_PROXY: "", https_proxy: "http://corp:pass@proxy.test:3128" })).toBe(
       "corp:pass",
     );
+    expect(parentProxyAuth("env", { HTTPS_PROXY: "socks5://corp:pass@proxy.test:1080" })).toBeUndefined();
   });
 
   it("refuses an env credential that holds a line break", () => {

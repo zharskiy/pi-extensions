@@ -36,16 +36,35 @@ describe("looksLikeJwt", () => {
 });
 
 describe("jwtShapedPlaceholder", () => {
-  it("keeps the header and payload and replaces the signature", () => {
+  const decoded = (part: string | undefined) =>
+    JSON.parse(Buffer.from(part ?? "", "base64url").toString("utf8"));
+
+  it("has its own header, keeps the lasting claims and replaces the signature", () => {
     const value = jwtShapedPlaceholder(JWT, SALT, "auth:corp:access");
     const [header, payload, signature] = value.split(".");
 
-    expect(`${header}.${payload}`).toBe(JWT.split(".").slice(0, 2).join("."));
+    expect(decoded(header)).toEqual({ alg: "none", typ: "JWT" });
+    expect(decoded(payload)).toEqual({ sub: "user" });
     expect(signature).not.toContain("real-signature");
     expect(Buffer.from(signature ?? "", "base64url").toString("utf8")).toBe(
       placeholderFor(SALT, "auth:corp:access"),
     );
     expect(looksLikeJwt(value)).toBe(true);
+  });
+
+  it("stays the same when the host token is refreshed or signed with another key", () => {
+    const refreshed = `${segment({ alg: "RS256", kid: "new" })}.${segment({
+      sub: "user",
+      exp: 2,
+      iat: 1,
+      nbf: 1,
+      jti: "other",
+      auth_time: 1,
+    })}.another-signature`;
+
+    expect(jwtShapedPlaceholder(refreshed, SALT, "auth:corp:access")).toBe(
+      jwtShapedPlaceholder(JWT, SALT, "auth:corp:access"),
+    );
   });
 
   it("falls back to the opaque placeholder for a token that is not a JWT", () => {

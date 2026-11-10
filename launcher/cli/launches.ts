@@ -1,11 +1,8 @@
 import type { Backend } from "../backend/index.ts";
-import { type GitGuardContext, overlayVolumes } from "../container/index.ts";
+import { type GitGuardContext, overlayVolumes, removeLaunchContainer } from "../container/index.ts";
 import { endLaunch, type Launch, liveLaunches, newLaunchId, registerLaunch } from "../grants/index.ts";
-import { gitLaunchEndNotices } from "../workspace/index.ts";
-
-export { othersLive } from "../grants/index.ts";
-
 import { errorMessage, processMark, writeRepoRecord } from "../shared/index.ts";
+import { gitLaunchEndNotices } from "../workspace/index.ts";
 import type { LaunchContext } from "./context.ts";
 import { type CliDeps, writeLine, writeNotices } from "./deps.ts";
 import { sweepRepoSessions } from "./host-sessions.ts";
@@ -28,18 +25,26 @@ export const beginLaunch = async (deps: CliDeps, context: LaunchContext): Promis
 
 export const gitGuardOf = (deps: CliDeps, context: LaunchContext): GitGuardContext => ({
   runner: deps.runner,
-  home: deps.home,
-  env: deps.env,
   stateDir: context.stateDir,
   volumePaths: overlayVolumes(context.workspace, context.effective.config).map((volume) => volume.path),
 });
 
-const settleGit = async (deps: CliDeps, context: LaunchContext) => {
-  const notices = await gitLaunchEndNotices(context.workspace, gitGuardOf(deps, context)).catch(
-    (error: unknown) => [`warning: git: the check after the session failed: ${errorMessage(error)}`],
-  );
+const gitEndNotices = (deps: CliDeps, context: LaunchContext) =>
+  gitLaunchEndNotices(context.workspace, gitGuardOf(deps, context)).catch((error: unknown) => [
+    `warning: git: the check after the session failed: ${errorMessage(error)}`,
+  ]);
 
-  writeNotices(deps, notices);
+const removeOwnContainer = async (deps: CliDeps, backend: Backend, launch: Launch) => {
+  if (!(await backend.detect()).available) {
+    return;
+  }
+
+  await removeLaunchContainer(backend, launch.launchId).catch((error: unknown) => {
+    writeLine(
+      deps.stderr,
+      `pi-sandbox: warning: the launch's container was not removed: ${errorMessage(error)}`,
+    );
+  });
 };
 
 export const finishLaunch = async (
@@ -48,29 +53,34 @@ export const finishLaunch = async (
   backend: Backend,
   launch: Launch,
 ) => {
-  const last = { done: false };
+  const last: { gitNotices?: string[] } = {};
+
+  await removeOwnContainer(deps, backend, launch);
 
   try {
     await endLaunch(context.stateDir, {
       repoHash: launch.repoHash,
       launchId: launch.launchId,
       onLast: async () => {
-        last.done = true;
-
-        await removeRepoSandbox(deps, backend, context.repoHash);
+        try {
+          await removeRepoSandbox(deps, backend, context.repoHash);
+        } finally {
+          last.gitNotices = await gitEndNotices(deps, context);
+        }
       },
     });
   } catch (error) {
     writeLine(deps.stderr, `pi-sandbox: warning: could not end the launch: ${errorMessage(error)}`);
   }
 
-  if (last.done) {
-    await settleGit(deps, context);
-  } else {
+  if (last.gitNotices === undefined) {
     await sweepRepoSessions(deps, context.workspace.repoRoot, false);
+  } else {
+    writeNotices(deps, last.gitNotices);
   }
 
   await sweepOrphans(deps, backend);
 };
 
-export const busyLaunches = async (stateDir: string) => (await liveLaunches(stateDir)).length;
+export const busyLaunches = async (stateDir: string, except?: string) =>
+  (await liveLaunches(stateDir)).filter((launch) => launch.launchId !== except).length;

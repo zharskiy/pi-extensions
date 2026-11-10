@@ -1,10 +1,9 @@
-import { mkdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { syncSettingsFile } from "../../provision/index.ts";
 import { processMark, stateLayout } from "../../shared/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
-import { sandboxConfig } from "../support/sandbox-config.ts";
 import { runningContainer, tempDir, writeText } from "./fixtures.ts";
 
 const volumeText = (value: unknown) => (typeof value === "string" ? value : JSON.stringify(value));
@@ -24,16 +23,14 @@ const volumeBackend = async (files: Record<string, unknown>) => {
     return text === undefined ? undefined : JSON.parse(text);
   };
 
-  const changedAt = async (name: string) => (await stat(join(guestAgentDir, name))).mtimeMs;
-
-  return { fake, containerId, volume, changedAt };
+  return { fake, containerId, volume };
 };
 
 describe("syncSettingsFile", () => {
   const setup = async (volume: Record<string, unknown>) => {
     const stateDir = await tempDir("sync-state");
     const repoRoot = await tempDir("sync-repo");
-    const { fake, containerId, volume: volumeFile, changedAt } = await volumeBackend(volume);
+    const { fake, containerId, volume: volumeFile } = await volumeBackend(volume);
     const sync = (hostSettings: Record<string, unknown> | undefined) =>
       syncSettingsFile({
         backend: fake.backend,
@@ -42,45 +39,35 @@ describe("syncSettingsFile", () => {
         repoHash: "repo1",
         hostAgentDir: "/host/.pi/agent",
         repoRoot,
-        config: sandboxConfig({ mounts: { extraReadOnly: ["/shared/libs"], cacheVolumes: [] } }),
         hostSettings,
       });
 
-    return { stateDir, repoRoot, fake, sync, volume: volumeFile, changedAt };
+    return { stateDir, repoRoot, fake, sync, volume: volumeFile };
   };
 
-  it("overwrites the volume keys the host sets and keeps the volume-only keys", async () => {
+  it("replaces the volume copy with the filtered host copy on every launch", async () => {
     const env = await setup({ "settings.json": { theme: "dark", packages: ["npm:inside"], local: 1 } });
     const result = await env.sync({ theme: "light", packages: ["npm:a"] });
 
     expect(result.notices).toEqual([]);
-    expect(await env.volume("settings.json")).toEqual({ theme: "light", packages: ["npm:a"], local: 1 });
-  });
+    expect(await env.volume("settings.json")).toEqual({ theme: "light", packages: ["npm:a"] });
 
-  it("writes the host copy when the volume has none and leaves an up to date file alone", async () => {
-    const fresh = await setup({});
+    const broken = await setup({ "settings.json": "{ broken" });
 
-    await fresh.sync({ theme: "dark" });
+    await broken.sync({ theme: "dark" });
 
-    expect(await fresh.volume("settings.json")).toEqual({ theme: "dark" });
-
-    const current = await setup({ "settings.json": { theme: "dark" } });
-    const before = await current.changedAt("settings.json");
-
-    await current.sync({ theme: "dark" });
-
-    expect(await current.changedAt("settings.json")).toBe(before);
+    expect(await broken.volume("settings.json")).toEqual({ theme: "dark" });
   });
 
   it("drops local packages outside the mounts with a notice and keeps mounted ones", async () => {
     const env = await setup({});
     const inRepo = join(env.repoRoot, "tools", "ext");
     const result = await env.sync({
-      packages: ["/elsewhere/ext", inRepo, "/shared/libs/x", "npm:a", "~/private/ext"],
+      packages: ["/elsewhere/ext", inRepo, "npm:a", "~/private/ext"],
     });
 
     expect(await env.volume("settings.json")).toEqual({
-      packages: [inRepo, "/shared/libs/x", "npm:a"],
+      packages: [inRepo, "npm:a"],
     });
     expect(result.notices).toEqual([
       "settings.json: package /elsewhere/ext is a local path outside the sandbox mounts; skipped in the sandbox",
@@ -88,7 +75,45 @@ describe("syncSettingsFile", () => {
     ]);
   });
 
-  it("drops command and session dir settings from both the host and the volume", async () => {
+  it("hands kept local packages to the sandbox as absolute host paths, file URLs included", async () => {
+    const env = await setup({});
+    const relative = join("..", "..", "..", env.repoRoot.slice(1), "ext");
+    const result = await env.sync({
+      packages: [
+        relative,
+        `file://${join(env.repoRoot, "tool")}`,
+        { source: join(env.repoRoot, "y"), skills: [] },
+        "file:///elsewhere/z",
+      ],
+    });
+
+    expect(await env.volume("settings.json")).toEqual({
+      packages: [
+        join(env.repoRoot, "ext"),
+        join(env.repoRoot, "tool"),
+        { source: join(env.repoRoot, "y"), skills: [] },
+      ],
+    });
+    expect(result.notices).toEqual([
+      "settings.json: package file:///elsewhere/z is a local path outside the sandbox mounts; skipped in the sandbox",
+    ]);
+  });
+
+  it("names resource paths in settings.json that lie outside the sandbox mounts", async () => {
+    const env = await setup({});
+    const result = await env.sync({
+      extensions: ["/elsewhere/ext.ts", `${env.repoRoot}/x.ts`, "extensions/local.ts", "!/elsewhere/off.ts"],
+      skills: [`${env.repoRoot}/skill`],
+      themes: "not-a-list",
+    });
+
+    expect(result.notices).toEqual([
+      "settings.json: extensions entry /elsewhere/ext.ts lies outside the sandbox mounts and is missing in the sandbox",
+      "settings.json: extensions entry /elsewhere/off.ts lies outside the sandbox mounts and is missing in the sandbox",
+    ]);
+  });
+
+  it("drops command and session dir settings, whatever the volume held", async () => {
     const planted = {
       npmCommand: ["sh", "-c", "planted"],
       selfUpdateCommand: ["planted"],
@@ -96,6 +121,7 @@ describe("syncSettingsFile", () => {
       shellCommandPrefix: "planted;",
       externalEditor: "planted",
       httpProxy: "http://planted.example:1",
+      sessionDir: "/planted/sessions",
       theme: "volume",
     };
     const env = await setup({ "settings.json": planted });
@@ -147,7 +173,7 @@ describe("syncSettingsFile", () => {
 
   it("waits for another launch's sync of the same repository before it reads the volume", async () => {
     const env = await setup({});
-    const lock = join(stateLayout(env.stateDir).repo("repo1").sync, "sync.lock");
+    const lock = stateLayout(env.stateDir).repo("repo1").syncLock;
 
     await mkdir(dirname(lock), { recursive: true });
 
@@ -166,15 +192,5 @@ describe("syncSettingsFile", () => {
     await pending;
 
     expect(await env.volume("settings.json")).toEqual({ theme: "dark" });
-  });
-
-  it("replaces an invalid volume file with a notice", async () => {
-    const env = await setup({ "settings.json": "{ broken" });
-    const result = await env.sync({ theme: "dark" });
-
-    expect(await env.volume("settings.json")).toEqual({ theme: "dark" });
-    expect(result.notices).toEqual([
-      "settings.json in the sandbox volume was not valid JSON; replaced with the host copy",
-    ]);
   });
 });

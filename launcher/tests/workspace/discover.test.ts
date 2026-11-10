@@ -1,8 +1,7 @@
-import { mkdir, readFile, realpath, stat, symlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, realpath, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { LauncherError } from "../../shared/index.ts";
 import { discoverWorkspace, workspaceFolder } from "../../workspace/index.ts";
 import { createFakeRunner } from "../support/fake-runner.ts";
 import { git, gitRunner } from "../support/git.ts";
@@ -58,7 +57,6 @@ describe("discoverWorkspace", () => {
       gitDir: join(repo, ".git"),
       gitCommonDir: join(repo, ".git"),
       isGitRepo: true,
-      gitConfig: expect.objectContaining({ worktreeConfig: false }),
       overlays: [],
     });
   });
@@ -73,7 +71,6 @@ describe("discoverWorkspace", () => {
       gitDir: join(repo, ".git"),
       gitCommonDir: join(repo, ".git"),
       isGitRepo: true,
-      gitConfig: expect.objectContaining({ worktreeConfig: false }),
       overlays: [],
     });
   });
@@ -90,7 +87,6 @@ describe("discoverWorkspace", () => {
       gitDir: join(repo, ".git", "worktrees", "linked"),
       gitCommonDir: join(repo, ".git"),
       isGitRepo: true,
-      gitConfig: expect.objectContaining({ worktreeConfig: false }),
       overlays: [],
     });
   });
@@ -130,22 +126,16 @@ describe("discoverWorkspace", () => {
     });
   });
 
-  it("pins an empty commondir the engine left as a bind mountpoint in place, so host git works again", async () => {
+  it("refuses an empty commondir in the git dir, which git did not write, and leaves it as it is", async () => {
     const repo = await createRepo();
     const commondir = join(repo, ".git", "commondir");
 
     await writeFile(commondir, "");
 
-    const before = await stat(commondir);
-
-    expect(await discoverAt(repo, runner, NO_HOOKS)).toMatchObject({
-      gitDir: join(repo, ".git"),
-      gitCommonDir: join(repo, ".git"),
-    });
-    expect(await readFile(commondir, "utf8")).toBe(".\n");
-    expect((await stat(commondir)).ino).toBe(before.ino);
-
-    await git(repo, ["status"]);
+    await expect(discoverAt(repo, runner, NO_HOOKS)).rejects.toThrow(
+      `git: ${commondir} was not written by git`,
+    );
+    expect(await readFile(commondir, "utf8")).toBe("");
   });
 
   it("refuses a commondir the sandbox planted, naming the file, before running git", async () => {
@@ -156,14 +146,12 @@ describe("discoverWorkspace", () => {
     await writeFile(join(repo, ".git", "commondir"), "../.x\n");
 
     await expect(discoverAt(repo, recorder, NO_HOOKS)).rejects.toThrow(
-      `git: ${join(repo, ".git", "commondir")} was not written by git or the launcher`,
+      `git: ${join(repo, ".git", "commondir")} was not written by git`,
     );
 
     await writeFile(join(repo, ".git", "commondir"), `${join(other, ".git")}\n`);
 
-    await expect(discoverAt(join(repo, "src"), recorder, NO_HOOKS)).rejects.toThrow(
-      "was not written by git or the launcher",
-    );
+    await expect(discoverAt(join(repo, "src"), recorder, NO_HOOKS)).rejects.toThrow("was not written by git");
     expect(calls).toEqual([]);
   });
 
@@ -259,41 +247,32 @@ describe("discoverWorkspace", () => {
     await expect(discoverAt(repo, missing, NO_HOOKS)).rejects.toThrow("git: command not found");
   });
 
-  it("refuses a repository whose configuration git cannot list, and lists nothing only without git", async () => {
-    const repo = await createRepo();
-    const answering = (config: () => Promise<{ code: number; stdout: string; stderr: string }>) => ({
-      ...runner,
-      run: (file: string, args: string[], options?: Parameters<typeof runner.run>[2]) =>
-        args.includes("config") ? config() : runner.run(file, args, options),
-    });
-    const failing = answering(async () => ({ code: 128, stdout: "", stderr: "fatal: bad config line 3" }));
-    const missing = answering(async () => {
-      throw new LauncherError("git: command not found");
-    });
-
-    await expect(discoverAt(repo, failing, NO_HOOKS)).rejects.toThrow(
-      `git: could not list the git configuration of ${repo}: fatal: bad config line 3`,
-    );
-    expect((await discoverAt(repo, missing, NO_HOOKS)).gitConfig).toEqual({
-      files: [],
-      includes: [],
-      worktreeConfig: false,
-    });
-  });
-
-  it("asks git once for the layout and once for the configuration of a repository", async () => {
+  it("asks git once, for the layout, and lists no configuration", async () => {
     const repo = await createRepo();
     const { recorder, calls } = recording();
 
     await git(repo, ["config", "core.hooksPath", ".husky"]);
 
-    const workspace = await discoverAt(repo, recorder, NO_HOOKS);
+    await discoverAt(repo, recorder, NO_HOOKS);
 
     expect(calls.map((call) => call.find((part) => part === "rev-parse" || part === "config"))).toEqual([
       "rev-parse",
-      "config",
     ]);
-    expect(workspace.gitConfig?.hooksPath).toBe(".husky");
+  });
+
+  it("accepts a repository whose path holds a newline or ends in a space, next to its prefix", async () => {
+    const base = await temporaryFolder();
+
+    await Promise.all(["a", "a\nb", "proj", "proj "].map((name) => git(base, ["init", "--quiet", name])));
+
+    await Promise.all(
+      ["a\nb", "proj "].map(async (name) =>
+        expect(await discoverAt(join(base, name), runner, NO_HOOKS)).toMatchObject({
+          repoRoot: join(base, name),
+          gitCommonDir: join(base, name, ".git"),
+        }),
+      ),
+    );
   });
 
   it("uses the folder itself outside git", async () => {

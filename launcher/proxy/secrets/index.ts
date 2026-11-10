@@ -32,7 +32,7 @@ export type SecretResult =
 export interface SecretResolver {
   resolve(key: string, ref: SecretRef): Promise<SecretResult>;
   invalidate(key: string): void;
-  rejected(key: string, ref: SecretRef, value: string): Promise<SecretReply | undefined>;
+  rejected(key: string, ref: SecretRef, value: string | undefined): Promise<SecretReply | undefined>;
   close(): Promise<void>;
 }
 
@@ -69,27 +69,6 @@ export const createSecretResolver = (deps: SecretResolverDeps): SecretResolver =
     signIn,
     signInWaitMs: deps.signInWaitMs,
   });
-  const entries = new Map<string, Set<string>>();
-
-  const cacheKey = (key: string, ref: SecretRef) => {
-    const composite = `${key}\n${JSON.stringify(ref)}`;
-
-    const known = entries.get(key);
-
-    if (known === undefined) {
-      entries.set(key, new Set([composite]));
-    } else {
-      known.add(composite);
-    }
-
-    return composite;
-  };
-
-  const invalidate = (key: string) => {
-    (entries.get(key) ?? new Set<string>()).forEach((composite) => {
-      cache.invalidate(composite);
-    });
-  };
 
   const load = (key: string, ref: SecretRef) => async () => {
     if ("command" in ref) {
@@ -97,7 +76,6 @@ export const createSecretResolver = (deps: SecretResolverDeps): SecretResolver =
         key,
         kind: "command",
         argv: ref.command,
-        ttlSeconds: ref.ttlSeconds,
         runner: deps.runner,
         now: deps.now,
       });
@@ -123,14 +101,14 @@ export const createSecretResolver = (deps: SecretResolverDeps): SecretResolver =
       return load(key, ref)();
     }
 
-    return cache.get(cacheKey(key, ref), load(key, ref));
+    return cache.get(key, load(key, ref));
   };
 
   const resolve = async (key: string, ref: SecretRef) =>
     fetch(key, ref).then(success, (error: unknown) => failure(key, ref, error));
 
-  const rejected = async (key: string, ref: SecretRef, value: string) =>
+  const rejected = async (key: string, ref: SecretRef, value: string | undefined) =>
     "mcpOAuth" in ref ? mcpOAuth.reject(key, ref, value).catch(() => undefined) : undefined;
 
-  return { resolve, invalidate, rejected, close: signIn.close };
+  return { resolve, invalidate: cache.invalidate, rejected, close: signIn.close };
 };

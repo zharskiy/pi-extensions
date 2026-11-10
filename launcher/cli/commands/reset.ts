@@ -1,31 +1,13 @@
 import { rm } from "node:fs/promises";
-import { type Backend, LABELS } from "../../backend/index.ts";
-import { repoVolumes } from "../../container/index.ts";
+import { type Backend, ENGINE_PROFILE, LABELS } from "../../backend/index.ts";
 import { liveLaunches, withRepoLaunchLock } from "../../grants/index.ts";
 import { LauncherError, stateLayout } from "../../shared/index.ts";
 import { type LaunchContext, openContext } from "../context.ts";
-import { type CliDeps, writeLine, writeLines } from "../deps.ts";
+import { type CliDeps, writeLines } from "../deps.ts";
 import { removeRepoSandbox } from "../sweep.ts";
 
-export const VOLUMES = "--volumes";
-
-const VOLUME_PREFIX = "pi-sandbox-";
-
-const ownVolumes = async (deps: CliDeps, context: LaunchContext, backend: Backend) => {
-  const named = repoVolumes({
-    workspace: context.workspace,
-    config: context.effective.config,
-    uid: deps.uid,
-  });
-  const labelled = (await backend.listVolumes())
-    .filter(
-      (volume) =>
-        volume.labels[LABELS.repoHash] === context.repoHash && volume.name.startsWith(VOLUME_PREFIX),
-    )
-    .map((volume) => volume.name);
-
-  return [...new Set([...named, ...labelled])];
-};
+const ownVolumes = async (context: LaunchContext, backend: Backend) =>
+  (await backend.listVolumes()).filter((volume) => volume.labels[LABELS.repoHash] === context.repoHash);
 
 const refuseLive = async (stateDir: string, context: LaunchContext) => {
   const count = (await liveLaunches(stateDir, context.repoHash)).length;
@@ -38,10 +20,25 @@ const refuseLive = async (stateDir: string, context: LaunchContext) => {
   }
 };
 
-const ENGINE_SKIPPED =
-  "the sandbox VM is not running, so the engine step was skipped; run pi sandbox reset again after the next pi starts it to remove the container and volumes";
+const ENGINE_SKIPPED = `the sandbox VM is not running, so the engine step was skipped; run colima start --profile ${ENGINE_PROFILE} --activate=false, then pi sandbox reset again to remove the container and volumes`;
 
-const reset = async (deps: CliDeps, context: LaunchContext, backend: Backend, withVolumes: boolean) => {
+const removeVolumes = async (context: LaunchContext, backend: Backend) => {
+  const volumes = await ownVolumes(context, backend);
+  const free = volumes.filter((volume) => !volume.inUse);
+
+  await Promise.all(free.map((volume) => backend.removeVolume(volume.name)));
+
+  await rm(stateLayout(context.stateDir).repo(context.repoHash).sync, { recursive: true, force: true });
+
+  return [
+    ...free.map((volume) => `removed volume ${volume.name}`),
+    ...volumes
+      .filter((volume) => volume.inUse)
+      .map((volume) => `kept volume ${volume.name}: a container still mounts it, run pi sandbox reset again`),
+  ];
+};
+
+const reset = async (deps: CliDeps, context: LaunchContext, backend: Backend) => {
   const { workspace, stateDir, repoHash } = context;
 
   await refuseLive(stateDir, context);
@@ -49,44 +46,23 @@ const reset = async (deps: CliDeps, context: LaunchContext, backend: Backend, wi
   const reachable = (await backend.detect()).available;
   const removed = await removeRepoSandbox(deps, backend, repoHash);
 
-  writeLines(deps.stdout, removed);
-
-  if (removed.length === 0 && reachable) {
-    writeLine(deps.stdout, `no sandbox for ${workspace.repoRoot}`);
-  }
-
-  const layout = stateLayout(stateDir).repo(repoHash);
-
-  await rm(layout.render, { recursive: true, force: true });
+  await rm(stateLayout(stateDir).repo(repoHash).render, { recursive: true, force: true });
 
   if (!reachable) {
-    writeLine(deps.stdout, ENGINE_SKIPPED);
+    writeLines(deps.stdout, [...removed, ENGINE_SKIPPED]);
 
     return;
   }
 
-  if (!withVolumes) {
-    return;
-  }
+  const lines = [...removed, ...(await removeVolumes(context, backend))];
 
-  const volumes = await ownVolumes(deps, context, backend);
-
-  await Promise.all(volumes.map((name) => backend.removeVolume(name)));
-
-  await rm(layout.sync, { recursive: true, force: true });
-
-  writeLines(
-    deps.stdout,
-    volumes.map((name) => `removed volume ${name}`),
-  );
+  writeLines(deps.stdout, lines.length === 0 ? [`no sandbox for ${workspace.repoRoot}`] : lines);
 };
 
-export const resetCommand = async (deps: CliDeps, args: string[]) => {
+export const resetCommand = async (deps: CliDeps) => {
   const { context } = await openContext(deps, "host");
 
-  await withRepoLaunchLock(context.stateDir, context.repoHash, () =>
-    reset(deps, context, deps.backend(), args.includes(VOLUMES)),
-  );
+  await withRepoLaunchLock(context.stateDir, context.repoHash, () => reset(deps, context, deps.backend()));
 
   return 0;
 };

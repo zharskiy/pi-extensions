@@ -1,22 +1,20 @@
 import { realpath } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { HostPi } from "../hostpi/index.ts";
 import {
   expandHome,
   isWithin,
+  knownRepos,
   LauncherError,
   PI_AGENT_DIR_VARIABLE,
+  repoRecordOf,
   withMcpLoginDir,
 } from "../shared/index.ts";
-import { mountedGitDirs } from "../workspace/index.ts";
-import { openContext } from "./context.ts";
+import { assertSafeMounts, findGitRoot } from "../workspace/index.ts";
 import { type CliDeps, hostAgentDirOf, pathsOf, writeLine } from "./deps.ts";
-import { interactiveCommand, nearbyRoots, resolveJobPi, resolveShellPi, type ShellPi } from "./host-pi.ts";
+import { interactiveCommand, nearbyRoots, resolveJobPi } from "./host-pi.ts";
 
-const SELF_UPDATE_HINT = "update it with npm install -g pi-extensions-mz";
-
-const SELF_UPDATE = `pi follows the launcher; ${SELF_UPDATE_HINT}`;
+const SELF_UPDATE = "pi follows the launcher; update it with npm install -g pi-extensions-mz";
 
 const LOCAL_FLAGS = ["-l", "--local"];
 
@@ -79,13 +77,17 @@ const isGitPath = (host: string, path: string) => {
   return GIT_HOST.test(host) && repo !== undefined && isRepoPath(repo);
 };
 
+const GIT_PROTOCOLS = ["https:", "http:", "ssh:", "git:"];
+
+const GIT_URL = /^(https?|ssh|git):\/\//i;
+
 const isGitUrl = (text: string) => {
   try {
     const url = new URL(text);
     const ref = url.hash.slice(1);
 
     return (
-      ["https:", "http:", "ssh:"].includes(url.protocol) &&
+      GIT_PROTOCOLS.includes(url.protocol) &&
       url.search === "" &&
       (ref === "" || GIT_REF.test(ref)) &&
       isGitPath(url.hostname, url.pathname.replace(/^\/+/, ""))
@@ -110,12 +112,12 @@ const isGitSource = (source: string) => {
   const text = source.trim();
 
   if (!GIT_PREFIX.test(text)) {
-    return /^(https?|ssh):\/\//i.test(text) && isGitUrl(text);
+    return GIT_URL.test(text) && isGitUrl(text);
   }
 
   const rest = text.slice("git:".length).trim();
 
-  return /^(https?|ssh):\/\//i.test(rest) ? isGitUrl(rest) : isPrefixedGitShorthand(rest);
+  return GIT_URL.test(rest) ? isGitUrl(rest) : isPrefixedGitShorthand(rest);
 };
 
 type PackageSource =
@@ -143,16 +145,36 @@ const localPathOf = (text: string) => {
 
 const realOf = (path: string) => realpath(path).catch(() => path);
 
-const resolvedLocal = async (deps: CliDeps, text: string) => {
-  const { context } = await openContext(deps, "host");
-  const path = resolve(context.workspace.cwd, expandHome(localPathOf(text), deps.home));
-  const candidates = [path, await realOf(path)];
-  const roots = await Promise.all(mountedGitDirs(context.workspace).map(realOf));
+const sandboxedRoots = async (stateDir: string) => {
+  const records = await Promise.all((await knownRepos(stateDir)).map((hash) => repoRecordOf(stateDir, hash)));
 
-  return {
-    path,
-    inRepository: roots.some((root) => candidates.some((candidate) => isWithin(candidate, root))),
-  };
+  return Promise.all(records.flatMap((record) => (record === undefined ? [] : [realOf(record.root)])));
+};
+
+const canHoldSandbox = (deps: CliDeps, root: string) => {
+  try {
+    assertSafeMounts([root], { home: deps.home, env: deps.env });
+
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const isSandboxable = async (deps: CliDeps, candidates: string[]) => {
+  const gitRoots = await Promise.all(candidates.map(findGitRoot));
+  const roots = await sandboxedRoots(pathsOf(deps).stateDir);
+
+  return (
+    gitRoots.some((root) => root !== undefined && canHoldSandbox(deps, root)) ||
+    roots.some((root) => candidates.some((candidate) => isWithin(candidate, root)))
+  );
+};
+
+const resolvedLocal = async (deps: CliDeps, text: string) => {
+  const path = resolve(deps.cwd, expandHome(localPathOf(text), deps.home));
+
+  return { path, inRepository: await isSandboxable(deps, [path, await realOf(path)]) };
 };
 
 const refuse = (deps: CliDeps, source: string, reason: string) => {
@@ -161,7 +183,7 @@ const refuse = (deps: CliDeps, source: string, reason: string) => {
   return 1;
 };
 
-const IN_REPOSITORY = "lies in the repository, which the sandbox can rewrite";
+const IN_REPOSITORY = "lies in a git working tree or a sandboxed folder, which a sandbox can rewrite";
 
 const packageCommand = async (deps: CliDeps, argv: string[], source: string) => {
   const classified = classifySource(source);
@@ -217,14 +239,9 @@ const SELF_TARGETS = ["pi", "self", "--self"];
 const isSelfUpdate = (args: string[]) =>
   args.length === 0 || (args.length === 1 && SELF_TARGETS.includes(args[0] ?? ""));
 
-const followsText = (updated: ShellPi, followed: HostPi) =>
-  followed.source === "managed"
-    ? `the sandbox follows pi ${followed.version} at the next launch`
-    : `the sandbox follows pi ${followed.version} next to the launcher, not ${updated.command.at(-1)}; ${SELF_UPDATE_HINT}`;
-
 const selfUpdate = async (deps: CliDeps) => {
   const roots = await nearbyRoots(deps);
-  const pi = await resolveShellPi(deps, roots);
+  const pi = await resolveJobPi(deps, roots);
 
   if (pi === undefined || pi.source === "bundled") {
     writeLine(deps.stdout, SELF_UPDATE);
@@ -237,7 +254,7 @@ const selfUpdate = async (deps: CliDeps) => {
   const followed = code === 0 ? await resolveJobPi(deps, roots) : undefined;
 
   if (followed !== undefined) {
-    writeLine(deps.stderr, `pi-sandbox: ${followsText(pi, followed)}`);
+    writeLine(deps.stderr, `pi-sandbox: the sandbox follows pi ${followed.version} at the next launch`);
   }
 
   return code;
@@ -246,7 +263,7 @@ const selfUpdate = async (deps: CliDeps) => {
 export const intercept = (argv: string[], deps: CliDeps): Promise<number> | number | undefined => {
   const [command, ...rest] = argv;
 
-  if (command === "install" || command === "remove") {
+  if (command === "install" || command === "remove" || command === "uninstall") {
     const source = packageSource(rest);
 
     return source === undefined ? undefined : packageCommand(deps, argv, source);

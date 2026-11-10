@@ -8,13 +8,13 @@ import type {
   LayerName,
   SandboxConfig,
 } from "./types.ts";
-import { leafKeys, PROJECT_KEYS } from "./validate.ts";
+import { leafKeys } from "./validate.ts";
 
 type Layers = Partial<Record<LayerName, LayerConfig>>;
 
 interface State {
   values: Record<string, unknown>;
-  sources: Record<string, ConfigSource>;
+  sources: Record<string, string>;
   ignored: IgnoredKey[];
 }
 
@@ -23,15 +23,18 @@ interface Leaf {
   value: unknown;
 }
 
-const LAYER_ORDER: readonly LayerName[] = ["policy", "org", "user", "project"];
+const LAYER_ORDER: readonly LayerName[] = ["policy", "user"];
 
-const FINAL_SOURCES: readonly ConfigSource[] = ["policy", "org"];
+const FINAL_SOURCE = "policy";
+
+const LOCKED_KEYS = ["egress.allow", "egress.privateHosts"];
 
 const UNION_KEYS = [
   "egress.allow",
   "egress.deny",
   "egress.privateHosts",
   "image.packages",
+  "image.npmGlobal",
   "credentials.rules",
   "env.allow",
 ];
@@ -71,30 +74,44 @@ const unite = (current: unknown[], added: unknown[]) => {
     return taken !== undefined && JSON.stringify(taken) !== JSON.stringify(item);
   });
 
-  return { list: [...current, ...fresh], repeated: repeated.map(identityOf) };
+  return { list: [...current, ...fresh], repeated: repeated.map(identityOf), added: fresh.length };
 };
 
-const finalSource = (state: State, key: string) => {
-  const source = state.sources[key];
+const isLocked = (state: State, key: string) =>
+  LOCKED_KEYS.includes(key) &&
+  state.sources["egress.grants"] === FINAL_SOURCE &&
+  state.values["egress.grants"] === false;
 
-  return !isUnion(key) && source !== undefined && FINAL_SOURCES.includes(source) ? source : undefined;
+const finalReason = (state: State, key: string) => {
+  if (isLocked(state, key)) {
+    return "egress is locked: the policy config sets egress.grants to false";
+  }
+
+  return !isUnion(key) && state.sources[key] === FINAL_SOURCE ? "final in the policy config" : undefined;
+};
+
+const sourceAfter = (state: State, key: string, source: ConfigSource, added: number) => {
+  const current = state.sources[key];
+
+  if (!isUnion(key) || current === undefined || current === "default") {
+    return source;
+  }
+
+  return added === 0 ? current : `${current}+${source}`;
 };
 
 const setLeaf = (state: State, source: ConfigSource, { key, value }: Leaf): State => {
-  const final = finalSource(state, key);
+  const reason = source === FINAL_SOURCE ? undefined : finalReason(state, key);
 
-  if (final !== undefined) {
-    return {
-      ...state,
-      ignored: [...state.ignored, { layer: source, key, reason: `final in the ${final} config` }],
-    };
+  if (reason !== undefined) {
+    return { ...state, ignored: [...state.ignored, { layer: source, key, reason }] };
   }
 
   const current = state.values[key];
   const united =
     isUnion(key) && Array.isArray(current)
       ? unite(current, value as unknown[])
-      : { list: value, repeated: [] };
+      : { list: value, repeated: [], added: 1 };
   const repeated = united.repeated.map((identity) => ({
     layer: source,
     key: `${key} ${identity}`,
@@ -103,26 +120,13 @@ const setLeaf = (state: State, source: ConfigSource, { key, value }: Leaf): Stat
 
   return {
     values: { ...state.values, [key]: united.list },
-    sources: { ...state.sources, [key]: source },
+    sources: { ...state.sources, [key]: sourceAfter(state, key, source, united.added) },
     ignored: [...state.ignored, ...repeated],
   };
 };
 
-const outsideProject = (state: State, { key }: Leaf): State => ({
-  ...state,
-  ignored: [
-    ...state.ignored,
-    { layer: "project", key, reason: `a project config may set only ${PROJECT_KEYS.join(", ")}` },
-  ],
-});
-
-const overlayLeaf = (state: State, source: ConfigSource, leaf: Leaf): State =>
-  source === "project" && !PROJECT_KEYS.includes(leaf.key)
-    ? outsideProject(state, leaf)
-    : setLeaf(state, source, leaf);
-
 const overlay = (state: State, layer: unknown, source: ConfigSource): State =>
-  definedLeaves(layer).reduce<State>((next, leaf) => overlayLeaf(next, source, leaf), state);
+  definedLeaves(layer).reduce<State>((next, leaf) => setLeaf(next, source, leaf), state);
 
 const applyLayer = (state: State, layerName: LayerName, layers: Layers): State => {
   const layer = layers[layerName];
@@ -139,13 +143,11 @@ const toConfig = (values: Record<string, unknown>) =>
 export const mergeLayers = ({
   defaults,
   layers,
-  ignored = [],
 }: {
   defaults: SandboxConfig;
   layers: Layers;
-  ignored?: IgnoredKey[];
 }): EffectiveConfig => {
-  const base = overlay({ values: {}, sources: {}, ignored }, defaults, "default");
+  const base = overlay({ values: {}, sources: {}, ignored: [] }, defaults, "default");
   const merged = LAYER_ORDER.reduce((state, layerName) => applyLayer(state, layerName, layers), base);
 
   return { config: toConfig(merged.values), sources: merged.sources, ignored: merged.ignored };

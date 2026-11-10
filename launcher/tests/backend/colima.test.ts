@@ -5,15 +5,9 @@ import { join } from "node:path";
 import { PassThrough, Writable } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createColimaBackend } from "../../backend/colima/backend.ts";
-import { createEngineClient } from "../../backend/colima/engine-client.ts";
 import { demultiplexer } from "../../backend/colima/exec-session.ts";
-import {
-  type Backend,
-  type ContainerSpec,
-  engineSocketPath,
-  LABELS,
-  type TerminalSize,
-} from "../../backend/index.ts";
+import { engineSocketPath } from "../../backend/colima/profile.ts";
+import { type Backend, type ContainerSpec, LABELS, type TerminalSize } from "../../backend/index.ts";
 import { createProcessRunner, LauncherError } from "../../shared/index.ts";
 import { createFakeEngine, type FakeEngine, type FakeEngineOptions } from "../support/fake-engine.ts";
 import { createFakeRunner } from "../support/fake-runner.ts";
@@ -242,14 +236,52 @@ describe("colima adapter status", () => {
     );
   });
 
-  it("advises restarting the VM only when the engine does not answer a ping", async () => {
-    const socketPath = await hungSocket();
-    const failure = (await createEngineClient(() => socketPath, { callMs: 50, removalMs: 50 })
-      .call({ method: "GET", path: "/_ping" })
+  const halfAnswer = async (close: boolean) => {
+    const dir = await mkdtemp(join("/tmp", "psb-"));
+    const socketPath = join(dir, "half.sock");
+    const server = createServer((connection) => {
+      connection.once("data", () => {
+        connection.write(
+          "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n[{",
+        );
+
+        if (close) {
+          connection.destroy();
+        }
+      });
+    }).listen(socketPath);
+
+    cleanups.push(async () => {
+      server.close();
+
+      await rm(dir, { recursive: true, force: true });
+    });
+
+    return socketPath;
+  };
+
+  it("says the engine closed a call it had begun to answer, without advising a VM start", async () => {
+    const socketPath = await halfAnswer(true);
+    const failure = (await hungBackend(socketPath)
+      .listNetworks()
       .catch((error: unknown) => error)) as LauncherError;
 
+    expect(failure.message).toMatch(
+      new RegExp(`^engine socket ${socketPath} closed GET /networks before its answer was complete \\(`),
+    );
     expect(failure.hint).toBe(
-      "run colima stop --profile pi-sandbox && colima start --profile pi-sandbox --activate=false and see ~/.colima/_lima/colima-pi-sandbox/ha.stderr.log",
+      "the engine may still be finishing it; run the command again later, and see ~/.colima/_lima/colima-pi-sandbox/ha.stderr.log if it keeps timing out",
+    );
+  });
+
+  it("gives up on an answer that stops halfway", async () => {
+    const socketPath = await halfAnswer(false);
+    const failure = (await hungBackend(socketPath)
+      .listNetworks()
+      .catch((error: unknown) => error)) as LauncherError;
+
+    expect(failure.message).toBe(
+      `engine socket ${socketPath} did not answer GET /networks: no answer within 0.1 s`,
     );
   });
 
@@ -300,6 +332,10 @@ describe("colima container translation", () => {
           NetworkMode: "pi-sandbox-net",
           ReadonlyRootfs: true,
           AutoRemove: true,
+          CapDrop: ["ALL"],
+          CapAdd: ["CHOWN"],
+          SecurityOpt: ["no-new-privileges"],
+          PidsLimit: 4096,
         },
       },
     });
@@ -320,8 +356,6 @@ describe("colima container translation", () => {
     ]);
 
     await backend.stopContainer(id, 10);
-
-    await backend.waitRemoved(id, 1000);
 
     await backend.removeContainer(id);
 
@@ -357,6 +391,16 @@ describe("colima container translation", () => {
     );
   });
 
+  it("reports a taken container name as an unexpected clash, without a hint", async () => {
+    const engine = await startEngine();
+    const { backend } = await startedContainer(engine);
+
+    await expect(backend.createContainer(baseSpec)).rejects.toMatchObject({
+      message: `unexpected name clash: container name ${baseSpec.name} is already in use`,
+      hint: undefined,
+    });
+  });
+
   it("URL-encodes names in engine paths", async () => {
     const engine = await startEngine();
     const backend = backendFor(engine);
@@ -366,6 +410,9 @@ describe("colima container translation", () => {
     expect(engine.requests.at(-1)).toMatchObject({ method: "DELETE", path: "/volumes/odd%20name%2F..%2Fx" });
   });
 });
+
+const ENGINE_CERTIFICATE_HINT =
+  "a proxy or CA on this network signs the registry, and the VM's engine does not trust it (tls.extraCa does not reach the engine); install the CA in the VM with a provision script in ~/.colima/pi-sandbox/colima.yaml, or use a registry the proxy does not inspect";
 
 describe("colima images", () => {
   it("names the reference when the registry refuses the pull", async () => {
@@ -456,16 +503,42 @@ describe("colima images", () => {
     expect(failure?.hint).toBeUndefined();
   });
 
-  it("hints at tls.extraCa and image.digest when the build fails on a certificate", async () => {
+  it("hints at tls.extraCa when a build step fails on a certificate", async () => {
     const failure = await failingBuild(
-      ["curl: (60) SSL certificate problem: unable to get local issuer certificate"],
+      [
+        "Step 1/12 : FROM node:24-bookworm-slim",
+        "Step 9/12 : RUN curl -fsSL https://example.test/x",
+        "curl: (60) SSL certificate problem: unable to get local issuer certificate",
+      ],
       "The command '/bin/sh -c curl' returned a non-zero code: 60",
     );
 
     expect(failure?.message).toContain("  curl: (60) SSL certificate problem");
     expect(failure?.hint).toBe(
-      "a proxy or CA on this network signs the downloads; set tls.extraCa to its CA, or image.digest to a prebuilt image",
+      "a proxy or CA on this network signs the downloads; set tls.extraCa to its CA",
     );
+  });
+
+  it("hints at the engine's own trust when the base image pull of a build fails on a certificate", async () => {
+    const failure = await failingBuild(
+      ["Step 1/12 : FROM node:24-bookworm-slim"],
+      'Get "https://registry-1.docker.io/v2/": tls: failed to verify certificate: x509: certificate signed by unknown authority',
+    );
+
+    expect(failure?.hint).toBe(ENGINE_CERTIFICATE_HINT);
+  });
+
+  it("hints at the engine's own trust when a pinned pull fails on a certificate", async () => {
+    const backend = backendFor(
+      await startEngine({ failPull: "x509: certificate signed by unknown authority" }),
+    );
+    const failure = await backend.pullImage(IMAGE, DIGEST).then(
+      () => undefined,
+      (error: LauncherError) => error,
+    );
+
+    expect(failure?.message).toContain("x509: certificate signed by unknown authority");
+    expect(failure?.hint).toBe(ENGINE_CERTIFICATE_HINT);
   });
 
   it("gives no certificate hint for a failure whose output only names the CA bundle in its steps", async () => {
@@ -678,6 +751,53 @@ describe("colima exec", () => {
     expect(stderr.text()).toBe("done");
   });
 
+  it("ends the session quietly when the stream it writes to has gone, and leaves no listener behind", async () => {
+    const engine = await startEngine({
+      exec: (context) => {
+        context.write("first");
+
+        context.write("warning", "stderr");
+
+        return 3;
+      },
+    });
+    const { backend, id } = await startedContainer(engine);
+    const gone = new Writable({
+      write: (_chunk, _encoding, done) => done(Object.assign(new Error("write EPIPE"), { code: "EPIPE" })),
+    });
+    const stderr = collected();
+
+    const exitCode = await backend.exec(
+      { containerId: id, command: ["sh"], env: {}, workdir: "/" },
+      { stdout: gone, stderr: stderr.stream, tty: false },
+    );
+
+    expect(exitCode).toBe(3);
+    expect(gone.listenerCount("error")).toBe(0);
+    expect(stderr.stream.listenerCount("error")).toBe(0);
+  });
+
+  it("fails the session on any other error of an output stream", async () => {
+    const engine = await startEngine({
+      exec: (context) => {
+        context.write("first");
+
+        return 0;
+      },
+    });
+    const { backend, id } = await startedContainer(engine);
+    const failing = new Writable({
+      write: (_chunk, _encoding, done) => done(Object.assign(new Error("disk full"), { code: "ENOSPC" })),
+    });
+
+    await expect(
+      backend.exec(
+        { containerId: id, command: ["sh"], env: {}, workdir: "/" },
+        { stdout: failing, stderr: collected().stream, tty: false },
+      ),
+    ).rejects.toThrow("disk full");
+  });
+
   it("refuses to exec in a container that is not running", async () => {
     const engine = await startEngine();
     const backend = backendFor(engine);
@@ -703,7 +823,10 @@ describe("colima volumes", () => {
     const refused = backend.removeVolume("pi-sandbox-agent-u1");
 
     await expect(refused).rejects.toBeInstanceOf(LauncherError);
-    await expect(refused).rejects.toThrow("volume pi-sandbox-agent-u1 is in use");
+    await expect(refused).rejects.toThrow("volume pi-sandbox-agent-u1 is in use by a sandbox container");
+    await expect(refused).rejects.toMatchObject({
+      hint: "end the pi sessions that use it, then run the command again",
+    });
   });
 });
 
@@ -943,17 +1066,23 @@ describe("colima egress relay", () => {
     expect(relayOf(engine)).toBeUndefined();
   });
 
-  it("a stopped relay is gone, and the next route creates a fresh one", async () => {
+  it("a stopped relay goes by itself, and a route while the engine still removes it creates a fresh one at once", async () => {
     const { engine, backend } = await readyBackend();
 
     await routeOn(backend, 3128);
 
-    await backend.stopContainer(relayOf(engine)?.Id ?? "");
+    const old = relayOf(engine)?.Id;
 
-    expect(relayOf(engine)).toBeUndefined();
+    await backend.stopContainer(old ?? "");
+
+    expect(relayOf(engine)?.State).toBe("removing");
+
+    const started = Date.now();
 
     await routeOn(backend, 3128);
 
+    expect(Date.now() - started).toBeLessThan(5000);
+    expect(relayOf(engine)?.Id).not.toBe(old);
     expect(relayOf(engine)?.State).toBe("running");
   });
 

@@ -8,7 +8,7 @@ import {
 } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDialer, RestrictedAddressError } from "../../proxy/dial.ts";
-import { basicAuthorization, bypassesParent, parentRouteFor, parentTarget } from "../../proxy/parent.ts";
+import { basicAuthorization, bypassesParent, parentRouteFor } from "../../proxy/parent.ts";
 
 const state: { parent: Server; echo: TcpServer; seen: Array<{ target?: string; auth?: string }> } = {
   parent: undefined as unknown as Server,
@@ -103,7 +103,7 @@ describe("parent proxy", () => {
 
     try {
       const route = parentRouteFor("env", { HTTPS_PROXY: `http://[::1]:${portOf(parent)}` });
-      const socket = await createDialer({ parent: route, resolve: publicResolve })(
+      const socket = await createDialer({ parent: route, resolve: publicResolve }).dial(
         "api.example.test",
         443,
         "public",
@@ -120,12 +120,10 @@ describe("parent proxy", () => {
   });
 
   it("tunnels through the parent with Basic auth from the secret", async () => {
-    const route = parentRouteFor(
-      "env",
-      { HTTPS_PROXY: `http://127.0.0.1:${portOf(state.parent)}` },
-      "corp:pass",
-    );
-    const socket = await createDialer({ parent: route, resolve: publicResolve })(
+    const route = parentRouteFor("env", {
+      HTTPS_PROXY: `http://corp:pass@127.0.0.1:${portOf(state.parent)}`,
+    });
+    const socket = await createDialer({ parent: route, resolve: publicResolve }).dial(
       "api.example.test",
       443,
       "public",
@@ -144,32 +142,31 @@ describe("parent proxy", () => {
     const route = parentRouteFor("env", { HTTPS_PROXY: `http://127.0.0.1:${portOf(state.parent)}` });
 
     await expect(
-      createDialer({ parent: route, resolve: publicResolve })("api.example.test", 443, "public"),
+      createDialer({ parent: route, resolve: publicResolve }).dial("api.example.test", 443, "public"),
     ).rejects.toThrow("407");
   });
 
   it("still refuses a name that resolves only to private addresses", async () => {
-    const route = parentRouteFor(
-      "env",
-      { HTTPS_PROXY: `http://127.0.0.1:${portOf(state.parent)}` },
-      "corp:pass",
-    );
-    const dial = createDialer({ parent: route, resolve: async () => [{ address: "10.0.0.5", family: 4 }] });
+    const route = parentRouteFor("env", {
+      HTTPS_PROXY: `http://corp:pass@127.0.0.1:${portOf(state.parent)}`,
+    });
+    const { dial } = createDialer({
+      parent: route,
+      resolve: async () => [{ address: "10.0.0.5", family: 4 }],
+    });
 
     await expect(dial("internal.example.test", 443, "public")).rejects.toBeInstanceOf(RestrictedAddressError);
   });
 
   it("lets the parent resolve a name the host cannot", async () => {
     const before = state.seen.length;
-    const route = parentRouteFor(
-      "env",
-      { HTTPS_PROXY: `http://127.0.0.1:${portOf(state.parent)}` },
-      "corp:pass",
-    );
+    const route = parentRouteFor("env", {
+      HTTPS_PROXY: `http://corp:pass@127.0.0.1:${portOf(state.parent)}`,
+    });
     const notFound = async () => {
       throw Object.assign(new Error("not found"), { code: "ENOTFOUND" });
     };
-    const socket = await createDialer({ parent: route, resolve: notFound })(
+    const socket = await createDialer({ parent: route, resolve: notFound }).dial(
       "only-parent.test",
       443,
       "public",
@@ -180,18 +177,17 @@ describe("parent proxy", () => {
     socket.destroy();
   });
 
-  it("takes the env parent's address from HTTPS_PROXY and its credentials only from the launcher's memory copy", async () => {
-    const env = {
-      HTTPS_PROXY: `http://corp:pass@127.0.0.1:${portOf(state.parent)}`,
+  it("takes the env parent's address, credentials and NO_PROXY from the environment it is given", async () => {
+    const route = parentRouteFor("env", {
+      HTTPS_PROXY: `http://corp:p%40ss@127.0.0.1:${portOf(state.parent)}`,
       NO_PROXY: "internal.test,.corp.test",
-    };
-    const sent = parentRouteFor("env", env, "corp:sent-by-launcher");
-    const unsent = parentRouteFor("env", env);
+    });
+    const plain = parentRouteFor("env", { HTTPS_PROXY: `http://127.0.0.1:${portOf(state.parent)}` });
 
-    expect(sent?.noProxy).toEqual(["internal.test", ".corp.test"]);
-    expect(sent?.port).toBe(portOf(state.parent));
-    expect(sent?.authorization).toBe(basicAuthorization("corp:sent-by-launcher"));
-    expect(unsent?.authorization).toBeUndefined();
+    expect(route?.noProxy).toEqual(["internal.test", ".corp.test"]);
+    expect(route?.port).toBe(portOf(state.parent));
+    expect(route?.authorization).toBe(basicAuthorization("corp:p@ss"));
+    expect(plain?.authorization).toBeUndefined();
     expect(parentRouteFor("none", { HTTPS_PROXY: "http://x:1" })).toBeUndefined();
   });
 
@@ -207,7 +203,9 @@ describe("parent proxy", () => {
     const outcome = await createDialer({
       parent: route && { ...route, timeoutMs: 200 },
       resolve: publicResolve,
-    })("api.example.test", 443, "public").catch((error: Error) => error.message);
+    })
+      .dial("api.example.test", 443, "public")
+      .catch((error: Error) => error.message);
 
     await close(silent);
 
@@ -223,35 +221,28 @@ describe("parent proxy", () => {
     await listen(chatty);
 
     const route = parentRouteFor("env", { HTTPS_PROXY: `http://127.0.0.1:${portOf(chatty)}` });
-    const outcome = await createDialer({ parent: route, resolve: publicResolve })(
-      "api.example.test",
-      443,
-      "public",
-    ).catch((error: Error) => error.message);
+    const outcome = await createDialer({ parent: route, resolve: publicResolve })
+      .dial("api.example.test", 443, "public")
+      .catch((error: Error) => error.message);
 
     await close(chatty);
 
     expect(outcome).toBe("the parent proxy sent an oversized response head");
   });
 
-  it("names the parent target, or why an env parent cannot be used", () => {
-    expect(parentTarget("env", { HTTPS_PROXY: "http://user:pw@[::1]:3128" })).toEqual({
+  it("routes to the parent target, and not at all when an env parent cannot be used", () => {
+    expect(parentRouteFor("env", { HTTPS_PROXY: "http://[::1]:3128" })).toMatchObject({
       host: "::1",
       port: 3128,
     });
-    expect(parentTarget("env", { HTTPS_PROXY: "", https_proxy: "http://proxy.test" })).toEqual({
+    expect(parentRouteFor("env", { HTTPS_PROXY: "", https_proxy: "http://proxy.test" })).toMatchObject({
       host: "proxy.test",
       port: 80,
     });
-    expect(parentTarget("env", { HTTPS_PROXY: "https://proxy.test:443" })).toEqual({
-      unsupported: "HTTPS_PROXY uses https, only http parent proxies are supported",
-    });
-    expect(parentTarget("env", { HTTPS_PROXY: "not a url" })).toEqual({
-      unsupported: "HTTPS_PROXY is not a URL",
-    });
-    expect(parentTarget("env", {})).toBeUndefined();
-    expect(parentTarget("none", { HTTPS_PROXY: "http://proxy.test" })).toBeUndefined();
     expect(parentRouteFor("env", { HTTPS_PROXY: "https://proxy.test:443" })).toBeUndefined();
+    expect(parentRouteFor("env", { HTTPS_PROXY: "not a url" })).toBeUndefined();
+    expect(parentRouteFor("env", {})).toBeUndefined();
+    expect(parentRouteFor("none", { HTTPS_PROXY: "http://proxy.test" })).toBeUndefined();
   });
 
   it("honours noProxy entries", () => {

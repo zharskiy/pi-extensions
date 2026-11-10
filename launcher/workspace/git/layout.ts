@@ -1,16 +1,13 @@
-import { constants } from "node:fs";
-import { open, readdir, realpath } from "node:fs/promises";
+import { readdir, realpath } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
-import { isWithin, LauncherError, lstatOrUndefined, readRegularFile, sameEntry } from "../../shared/index.ts";
+import { isWithin, LauncherError, lstatOrUndefined, readRegularFile } from "../../shared/index.ts";
 
 export interface GitLayout {
   gitDir: string;
   gitCommonDir: string;
 }
 
-const PIN = /^\.\n?$/;
-
-export const PIN_TEXT = ".\n";
+const OWN_COMMONDIR = /^\.\n?$/;
 
 const GIT_FILE_PREFIX = "gitdir: ";
 
@@ -20,7 +17,7 @@ const HINT =
 export const gitRefusal = (path: string, problem: string) =>
   new LauncherError(`git: ${path} ${problem}`, HINT);
 
-export const isPinText = (text: string) => PIN.test(text);
+const isOwnCommondir = (text: string | undefined) => text === undefined || OWN_COMMONDIR.test(text);
 
 export const pointerPath = (base: string, text: string) => resolve(base, text.trimEnd());
 
@@ -79,61 +76,16 @@ const realOrRefuse = (path: string, owner: string) =>
     throw gitRefusal(owner, `points at ${path}, which does not exist`);
   });
 
-export const fillEmptyPin = async (path: string) => {
-  const handle = await open(path, constants.O_WRONLY | constants.O_NOFOLLOW).catch(() => undefined);
-
-  if (handle === undefined) {
-    throw gitRefusal(path, "is empty and could not be pinned");
-  }
-
-  try {
-    const [opened, current] = await Promise.all([handle.stat(), lstatOrUndefined(path)]);
-
-    if (
-      !opened.isFile() ||
-      opened.size !== 0 ||
-      opened.nlink !== 1 ||
-      current === undefined ||
-      !sameEntry(opened, current)
-    ) {
-      throw gitRefusal(path, "changed while it was pinned");
-    }
-
-    await handle.write(PIN_TEXT, 0);
-  } finally {
-    await handle.close();
-  }
-};
-
-type PinState = "absent" | "empty" | "pinned";
-
-export const pinStateOf = async (gitDir: string): Promise<PinState> => {
+export const assertOwnCommondir = async (gitDir: string) => {
   const path = join(gitDir, "commondir");
-  const text = await readGitPointer(path);
 
-  if (text === undefined) {
-    return "absent";
+  if (!isOwnCommondir(await readGitPointer(path))) {
+    throw gitRefusal(path, "was not written by git");
   }
-
-  if (text === "") {
-    return "empty";
-  }
-
-  if (!isPinText(text)) {
-    throw gitRefusal(path, "was not written by git or the launcher");
-  }
-
-  return "pinned";
 };
 
-interface LayoutOptions {
-  fillEmptyPin?: boolean;
-}
-
-const ownGitDir = async (gitDir: string, options: LayoutOptions): Promise<GitLayout> => {
-  if ((await pinStateOf(gitDir)) === "empty" && options.fillEmptyPin === true) {
-    await fillEmptyPin(join(gitDir, "commondir"));
-  }
+const ownGitDir = async (gitDir: string): Promise<GitLayout> => {
+  await assertOwnCommondir(gitDir);
 
   return { gitDir, gitCommonDir: gitDir };
 };
@@ -181,7 +133,7 @@ const worktreeLayout = async (repoRoot: string, gitDir: string, pointer: string)
   return { gitDir, gitCommonDir };
 };
 
-export const gitLayoutAt = async (repoRoot: string, options: LayoutOptions = {}): Promise<GitLayout> => {
+export const gitLayoutAt = async (repoRoot: string): Promise<GitLayout> => {
   const dotGit = join(repoRoot, ".git");
   const kind = await lstatKind(dotGit, "dir");
 
@@ -190,14 +142,14 @@ export const gitLayoutAt = async (repoRoot: string, options: LayoutOptions = {})
   }
 
   if (kind === "match") {
-    return ownGitDir(dotGit, options);
+    return ownGitDir(dotGit);
   }
 
   const gitDir = await linkedGitDir(repoRoot, dotGit);
   const text = await readGitPointer(join(gitDir, "commondir"));
 
-  return text === undefined || text === "" || isPinText(text)
-    ? ownGitDir(gitDir, options)
+  return text === undefined || isOwnCommondir(text)
+    ? ownGitDir(gitDir)
     : worktreeLayout(repoRoot, gitDir, text);
 };
 
@@ -267,9 +219,13 @@ export const lexicalGitLayout = async (repoRoot: string): Promise<GitLayout> => 
   const text = await readQuietly(dotGit);
   const gitDir = (text === undefined ? undefined : gitFileTarget(repoRoot, text)) ?? dotGit;
   const pointer = await readQuietly(join(gitDir, "commondir"));
-  const own = pointer === undefined || pointer === "" || isPinText(pointer);
-
-  return { gitDir, gitCommonDir: own ? gitDir : pointerPath(gitDir, pointer) };
+  return {
+    gitDir,
+    gitCommonDir:
+      pointer === undefined || pointer === "" || isOwnCommondir(pointer)
+        ? gitDir
+        : pointerPath(gitDir, pointer),
+  };
 };
 
 export const isGitName = (name: string) => name.toLowerCase() === ".git";

@@ -67,9 +67,10 @@ interface Candidate {
 interface Found {
   files: Candidate[];
   skipped: string[];
+  left: string[];
 }
 
-const NOTHING: Found = { files: [], skipped: [] };
+const NOTHING: Found = { files: [], skipped: [], left: [] };
 
 const PARALLEL_READS = 16;
 
@@ -85,7 +86,7 @@ const candidates = async (path: string, relative: string, topLevel: boolean): Pr
   }
 
   if (info.isDirectory() && !topLevel && isSecretDir(basename(path), relative)) {
-    return { files: [], skipped: [relative] };
+    return { ...NOTHING, skipped: [relative] };
   }
 
   if (info.isDirectory()) {
@@ -97,40 +98,60 @@ const candidates = async (path: string, relative: string, topLevel: boolean): Pr
     return {
       files: nested.flatMap((found) => found.files),
       skipped: nested.flatMap((found) => found.skipped),
+      left: nested.flatMap((found) => found.left),
     };
   }
 
-  const excluded = !topLevel && isExcludedName(basename(path));
+  if (!info.isFile()) {
+    return NOTHING;
+  }
 
-  return !info.isFile() || info.size > MAX_FILE_BYTES || excluded
-    ? NOTHING
-    : { files: [{ path, relative }], skipped: [] };
+  if (!topLevel && isExcludedName(basename(path))) {
+    return { ...NOTHING, left: [`${relative} (secret-looking name)`] };
+  }
+
+  return info.size > MAX_FILE_BYTES
+    ? { ...NOTHING, left: [`${relative} (over 8 MiB)`] }
+    : { ...NOTHING, files: [{ path, relative }] };
 };
 
-const readCandidate = async (candidate: Candidate): Promise<[string, TreeFile] | undefined> => {
+type Read = { file: [string, TreeFile] } | { left?: string };
+
+const readCandidate = async (candidate: Candidate): Promise<Read> => {
   const file = await readRegularFile(candidate.path).catch(() => undefined);
 
-  return file === undefined || holdsPrivateKey(basename(candidate.path), file.data)
-    ? undefined
-    : [candidate.relative, { data: file.data, mode: modeOf(file.mode) }];
+  if (file === undefined) {
+    return {};
+  }
+
+  return holdsPrivateKey(basename(candidate.path), file.data)
+    ? { left: `${candidate.relative} (private key)` }
+    : { file: [candidate.relative, { data: file.data, mode: modeOf(file.mode) }] };
 };
 
 const skippedNotice = (relative: string) =>
   `render: ${relative} looks like a secrets directory and stays out of the sandbox`;
+
+const leftNotice = (left: string[]) =>
+  left.length === 0 ? [] : [`render: left out of the sandbox: ${left.join(", ")}`];
 
 export const readHostEntries = async (
   hostAgentDir: string,
   names: readonly string[],
 ): Promise<{ tree: Tree; notices: string[] }> => {
   const found = await Promise.all(names.map((name) => candidates(join(hostAgentDir, name), name, true)));
-  const files = await inPool(
+  const reads = await inPool(
     found.flatMap((entry) => entry.files),
     PARALLEL_READS,
     readCandidate,
   );
+  const left = [
+    ...found.flatMap((entry) => entry.left),
+    ...reads.flatMap((read) => ("left" in read && read.left !== undefined ? [read.left] : [])),
+  ];
 
   return {
-    tree: new Map(files.filter((file): file is [string, TreeFile] => file !== undefined)),
-    notices: found.flatMap((entry) => entry.skipped).map(skippedNotice),
+    tree: new Map(reads.flatMap((read) => ("file" in read ? [read.file] : []))),
+    notices: [...found.flatMap((entry) => entry.skipped).map(skippedNotice), ...leftNotice(left)],
   };
 };

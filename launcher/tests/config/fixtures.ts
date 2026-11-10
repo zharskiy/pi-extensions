@@ -10,18 +10,12 @@ const writeJson = async (path: string, value: unknown) => {
 
 export const createLayers = async () => {
   const root = await tempDir("config");
-  const repoRoot = join(root, "repo");
   const policyFile = join(root, "policy.json");
   const userFile = join(root, "user", "config.json");
-  const projectFile = join(repoRoot, ".pi", "sandbox.json");
-
-  await mkdir(repoRoot, { recursive: true });
 
   return {
-    repoRoot,
     policyFile,
     userFile,
-    projectFile,
     env: {
       PI_SANDBOX_POLICY_FILE: policyFile,
       PI_SANDBOX_USER_CONFIG: userFile,
@@ -29,6 +23,5 @@ export const createLayers = async () => {
     },
     policy: (value: unknown) => writeJson(policyFile, value),
     user: (value: unknown) => writeJson(userFile, value),
-    project: (value: unknown) => writeJson(projectFile, value),
   };
 };

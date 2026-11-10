@@ -119,3 +119,32 @@ export const createProcessRunner = (options: ProcessRunnerOptions = {}): Command
 
   return { run: runWith(baseEnv), spawnInteractive: spawnInteractiveWith(baseEnv) };
 };
+
+export const withResolvedCommand = (
+  runner: CommandRunner,
+  name: string,
+  resolve: () => Promise<string | undefined>,
+): CommandRunner => {
+  const found: { pending?: Promise<string | undefined> } = {};
+  const fileOf = async (file: string) => {
+    if (file !== name) {
+      return file;
+    }
+
+    found.pending ??= resolve();
+
+    const path = await found.pending;
+
+    if (path === undefined) {
+      throw new LauncherError(`${name}: command not found`, `install ${name} or add it to PATH`);
+    }
+
+    return path;
+  };
+
+  return {
+    run: async (file, args, options) => runner.run(await fileOf(file), args, options),
+    spawnInteractive: async (file, args, options) =>
+      runner.spawnInteractive(await fileOf(file), args, options),
+  };
+};

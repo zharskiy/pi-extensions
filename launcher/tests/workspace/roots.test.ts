@@ -23,28 +23,27 @@ const workspaceAt = (repoRoot: string, gitCommonDir?: string): Workspace => ({
 
 describe("assertWithinWorkspaceRoots", () => {
   it("allows everything when no roots are configured", () => {
-    expect(assertWithinWorkspaceRoots(workspaceAt("/"), undefined)).toBe("ok");
+    expect(() => assertWithinWorkspaceRoots(workspaceAt("/"), undefined)).not.toThrow();
   });
 
   it("accepts a repository inside a root, comparing real paths", async () => {
     const { unresolved, base } = await createTree();
     const repo = join(base, "work", "repo");
 
-    expect(
+    expect(() =>
       assertWithinWorkspaceRoots(workspaceAt(repo, join(repo, ".git")), {
         roots: [join(unresolved, "work")],
-        outside: "refuse",
       }),
-    ).toBe("ok");
+    ).not.toThrow();
   });
 
-  it("refuses a repository outside the roots when outside is refuse", async () => {
+  it("refuses a repository outside the roots", async () => {
     const { base } = await createTree();
     const outside = join(base, "elsewhere");
 
-    expect(() =>
-      assertWithinWorkspaceRoots(workspaceAt(outside), { roots: [join(base, "work")], outside: "refuse" }),
-    ).toThrow(`${outside} is outside the allowed workspace roots`);
+    expect(() => assertWithinWorkspaceRoots(workspaceAt(outside), { roots: [join(base, "work")] })).toThrow(
+      `${outside} is outside the allowed workspace roots`,
+    );
   });
 
   it("refuses a linked worktree whose common dir is outside the roots", async () => {
@@ -53,7 +52,6 @@ describe("assertWithinWorkspaceRoots", () => {
     expect(() =>
       assertWithinWorkspaceRoots(workspaceAt(join(base, "work", "repo"), join(base, "elsewhere", ".git")), {
         roots: [join(base, "work")],
-        outside: "refuse",
       }),
     ).toThrow("elsewhere");
   });
@@ -64,19 +62,8 @@ describe("assertWithinWorkspaceRoots", () => {
 
     await mkdir(sibling);
 
-    expect(
-      assertWithinWorkspaceRoots(workspaceAt(sibling), { roots: [join(base, "work")], outside: "warn" }),
-    ).toBe("warn");
-  });
-
-  it("warns instead of refusing when outside is warn", async () => {
-    const { base } = await createTree();
-
-    expect(
-      assertWithinWorkspaceRoots(workspaceAt(join(base, "elsewhere")), {
-        roots: [join(base, "work")],
-        outside: "warn",
-      }),
-    ).toBe("warn");
+    expect(() => assertWithinWorkspaceRoots(workspaceAt(sibling), { roots: [join(base, "work")] })).toThrow(
+      `${sibling} is outside the allowed workspace roots`,
+    );
   });
 });

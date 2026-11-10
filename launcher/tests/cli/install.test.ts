@@ -22,6 +22,7 @@ const SYSTEM_TOOLS = [
 ];
 
 const FAKES: Record<string, string> = {
+  id: "echo 501",
   uname: 'case "$1" in -s) echo Darwin ;; -m) echo arm64 ;; *) echo Darwin ;; esac',
   sw_vers: "echo 15.0",
   brew: "exit 0",
@@ -46,9 +47,9 @@ const writeTools = async (dir: string, fakes: Record<string, string>) => {
   ]);
 };
 
-const installRoot = async (fakes: Record<string, string> = {}) => {
+const installRoot = async (fakes: Record<string, string> = {}, homeName = "home") => {
   const root = await realpath(await tempDir("install"));
-  const home = join(root, "home");
+  const home = join(root, homeName);
   const agentDir = join(home, ".pi", "agent");
 
   await writeTools(join(root, "tools"), { ...FAKES, ...fakes });
@@ -62,9 +63,10 @@ const installRoot = async (fakes: Record<string, string> = {}) => {
 
 const INSTALL_TIMEOUT_MS = 30_000;
 
-const runInstall = (root: string, flags: string[] = []) =>
+const runInstall = (root: string, flags: string[] = [], extraEnv: Record<string, string> = {}) =>
   spawnSync("/bin/sh", [join(launcherRoot(), "install.sh"), ...flags], {
     env: {
+      ...extraEnv,
       HOME: join(root, "home"),
       PATH: join(root, "tools"),
       PI_SANDBOX_STATE_DIR: join(root, "state"),
@@ -100,8 +102,8 @@ describe("install.sh and pi's managed install", { timeout: INSTALL_TIMEOUT_MS },
     expect(result.stdout).toContain(
       `; the managed pi at ${agentDir}/bin/pi stays the host pi for host jobs and pi --no-sandbox (uninstall.sh restores the link)`,
     );
-    expect(result.stdout).toContain("[7/8] smoke: skipped, git is missing");
-    expect(await readFile(record, "utf8")).toBe(`${shim}\n../lib/pi-link\n`);
+    expect(result.stdout).toContain("[6/7] smoke: skipped, git is missing");
+    expect(await readFile(record, "utf8")).toBe("../lib/pi-link\n");
     expect(await isLauncherWrapper(shim)).toBe(true);
   });
 
@@ -115,7 +117,7 @@ describe("install.sh and pi's managed install", { timeout: INSTALL_TIMEOUT_MS },
 
     expect(result.status).toBe(1);
     expect(result.stderr).toContain(
-      `${shim} exists and is not the pi-sandbox launcher, move it away or pass --bin-dir`,
+      `${shim} exists and is not the pi-sandbox launcher, move it away and run this again`,
     );
     expect(await readFile(shim, "utf8")).toBe("#!/bin/sh\necho mine\n");
     expect(await exists(record)).toBe(false);
@@ -134,7 +136,7 @@ describe("install.sh and pi's managed install", { timeout: INSTALL_TIMEOUT_MS },
 
     expect(result.status).toBe(1);
     expect(result.stderr).toContain(
-      `${shim} is pi's managed install at ${elsewhere}, outside the host agent dir ${join(home, ".pi", "agent")}; the launcher uses only the managed install in the agent dir, move it away or pass --bin-dir`,
+      `${shim} is pi's managed install at ${elsewhere}, outside the host agent dir ${join(home, ".pi", "agent")}; the launcher uses only the managed install in the agent dir, move it away and run this again`,
     );
     expect(await readlink(shim)).toBe(join(elsewhere, "bin", "pi"));
     expect(await exists(record)).toBe(false);
@@ -152,34 +154,60 @@ describe("install.sh and pi's managed install", { timeout: INSTALL_TIMEOUT_MS },
 
     expect(again.status).toBe(0);
     expect(again.stdout).not.toContain("the managed pi at");
-    expect(await readFile(record, "utf8")).toBe(`${shim}\n../../.pi/agent/bin/pi\n`);
+    expect(await readFile(record, "utf8")).toBe("../../.pi/agent/bin/pi\n");
     expect(await isLauncherWrapper(shim)).toBe(true);
   });
+});
 
-  it("records the shim of --bin-dir at its real path and refuses another shim while that record stands", async () => {
-    const { root, home, managed, record } = await installRoot();
-    const binDir = join(root, "custom-bin");
-    const shim = join(binDir, "pi");
-    const defaultShim = join(home, ".local", "bin", "pi");
+describe("install.sh preflight and shells", { timeout: INSTALL_TIMEOUT_MS }, () => {
+  it("refuses to run as root and changes nothing", async () => {
+    const { root, home } = await installRoot({ id: "echo 0" });
+    const result = runInstall(root);
 
-    await mkdir(binDir, { recursive: true });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("run install.sh as your own user, not as root or with sudo");
+    expect(await exists(join(home, ".zshrc"))).toBe(false);
+  });
 
-    await symlink(binDir, join(root, "custom-bin-alias"));
+  it("refuses a macOS older than the VM type needs", async () => {
+    const { root } = await installRoot({ sw_vers: "echo 12.7.4" });
+    const result = runInstall(root);
 
-    await symlink(managed.wrapper, shim);
-
-    expect(runInstall(root, ["--bin-dir", join(root, "custom-bin-alias")]).status).toBe(0);
-    expect(await readFile(record, "utf8")).toBe(`${shim}\n${managed.wrapper}\n`);
-
-    await symlink(managed.wrapper, defaultShim);
-
-    const other = runInstall(root);
-
-    expect(other.status).toBe(1);
-    expect(other.stderr).toContain(
-      `${record} records the replaced pi link of ${shim}, not ${defaultShim}; run uninstall.sh --bin-dir ${binDir} first`,
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "macOS 12.7.4 is too old, the sandbox VM (vz with virtiofs) needs macOS 13 or newer",
     );
-    expect(await readlink(defaultShim)).toBe(managed.wrapper);
+  });
+
+  it("writes a fish conf.d snippet for a fish login shell, and uninstall removes it", async () => {
+    const { root, home } = await installRoot();
+    const fish = join(home, ".config", "fish", "conf.d", "pi-sandbox.fish");
+    const env = { SHELL: "/opt/homebrew/bin/fish" };
+    const result = runInstall(root, [], env);
+
+    expect(result.status).toBe(0);
+    expect(await readFile(fish, "utf8")).toBe(
+      `\n# pi-sandbox begin\nset -gx PATH '${join(home, ".local", "bin")}' $PATH\n# pi-sandbox end\n`,
+    );
+
+    const removed = spawnSync("/bin/sh", [join(launcherRoot(), "uninstall.sh")], {
+      env: { HOME: home, PATH: join(root, "tools"), PI_SANDBOX_STATE_DIR: join(root, "state") },
+      encoding: "utf8",
+    });
+
+    expect(removed.status).toBe(0);
+    expect(await exists(fish)).toBe(false);
+  });
+
+  it("does not claim another pi is shadowed for a login shell it does not configure", async () => {
+    const { root } = await installRoot({ pi: "echo other pi" });
+    const result = runInstall(root, [], { SHELL: "/usr/local/bin/nu" });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).not.toContain("is now shadowed");
+    expect(result.stdout).toContain(
+      `your login shell nu is not configured: put ${join(root, "home", ".local", "bin")} first on PATH in its startup file, or pi keeps running ${join(root, "tools", "pi")} outside the sandbox`,
+    );
   });
 });
 
@@ -201,7 +229,7 @@ describe("install.sh and the Colima profile", { timeout: INSTALL_TIMEOUT_MS }, (
       `start --profile pi-sandbox --activate=false --vm-type vz --mount-type virtiofs --cpu 8 --memory 10 --disk 60 --mount ${home}:w`,
     );
     expect(result.stdout).toContain(
-      `[3/8] colima: starting profile pi-sandbox (vz, virtiofs, 8 CPUs, 10 GiB, 60 GiB, ${home} writable)`,
+      `[3/7] colima: starting profile pi-sandbox (vz, virtiofs, 8 CPUs, 10 GiB, 60 GiB, ${home} writable)`,
     );
   });
 
@@ -221,7 +249,7 @@ describe("install.sh and the Colima profile", { timeout: INSTALL_TIMEOUT_MS }, (
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain(
-      "[2/8] runtime: installing colima with Homebrew\n      ==> Pouring colima\n      brew warning\n",
+      "[2/7] runtime: installing colima with Homebrew\n      ==> Pouring colima\n      brew warning\n",
     );
   });
 
@@ -234,9 +262,9 @@ describe("install.sh and the Colima profile", { timeout: INSTALL_TIMEOUT_MS }, (
 
     expect(result.status).toBe(3);
     expect(result.stdout).toContain(
-      "[2/8] runtime: installing colima with Homebrew\n      Error: no bottle\n",
+      "[2/7] runtime: installing colima with Homebrew\n      Error: no bottle\n",
     );
-    expect(result.stdout).not.toContain("[3/8]");
+    expect(result.stdout).not.toContain("[3/7]");
   });
 
   const sysctl = (cpus: number, bytes: number) =>
@@ -284,7 +312,7 @@ describe("install.sh options and the PATH block", { timeout: INSTALL_TIMEOUT_MS 
     await writeFile(zshrc(home), text);
 
     const first = runInstall(root);
-    const second = runInstall(root, ["--bin-dir", join(root, "other-bin")]);
+    const second = runInstall(root);
 
     expect(first.status).toBe(0);
     expect(second.status).toBe(0);
@@ -294,7 +322,7 @@ describe("install.sh options and the PATH block", { timeout: INSTALL_TIMEOUT_MS 
     expect(await readFile(zshrc(home), "utf8")).toBe(text);
   });
 
-  it("replaces its own block for a new --bin-dir and keeps the lines around it", async () => {
+  it("writes its block once when run again and keeps the lines around it", async () => {
     const { root, home } = await installRoot();
 
     await writeFile(zshrc(home), "alias a=1\n");
@@ -303,15 +331,18 @@ describe("install.sh options and the PATH block", { timeout: INSTALL_TIMEOUT_MS 
 
     await writeFile(zshrc(home), `${await readFile(zshrc(home), "utf8")}alias b=2\n`);
 
-    expect(runInstall(root, ["--bin-dir", join(root, "other-bin")]).status).toBe(0);
+    const again = runInstall(root);
+
+    expect(again.status).toBe(0);
+    expect(again.stdout).toContain("PATH snippet already present");
     expect(await readFile(zshrc(home), "utf8")).toBe(
-      `alias a=1\n\nalias b=2\n\n# pi-sandbox begin\nexport PATH='${join(root, "other-bin")}':"$PATH"\n# pi-sandbox end\n`,
+      `alias a=1\n\n# pi-sandbox begin\nexport PATH='${join(home, ".local", "bin")}':"$PATH"\n# pi-sandbox end\nalias b=2\n`,
     );
   });
 
-  it("quotes a bin dir with $, a backtick, a space and a single quote so the shell takes it literally, and uninstall finds it again", async () => {
-    const { root, home } = await installRoot();
-    const binDir = join(root, "b $HOME `touch pwned` it's");
+  it("quotes a home with $, a backtick, a space and a single quote so the shell takes it literally, and uninstall removes it all again", async () => {
+    const { root, home } = await installRoot({}, "h $HOME `touch pwned` it's");
+    const binDir = join(home, ".local", "bin");
     const env = {
       HOME: home,
       PATH: join(root, "tools"),
@@ -319,10 +350,7 @@ describe("install.sh options and the PATH block", { timeout: INSTALL_TIMEOUT_MS 
       PI_SANDBOX_USER_CONFIG: join(root, "config", "config.json"),
       PI_SANDBOX_POLICY_FILE: join(root, "policy.json"),
     };
-    const installed = spawnSync("/bin/dash", [join(launcherRoot(), "install.sh"), "--bin-dir", binDir], {
-      env,
-      encoding: "utf8",
-    });
+    const installed = spawnSync("/bin/dash", [join(launcherRoot(), "install.sh")], { env, encoding: "utf8" });
 
     expect(installed.status).toBe(0);
 
@@ -346,13 +374,16 @@ describe("install.sh options and the PATH block", { timeout: INSTALL_TIMEOUT_MS 
     expect(await readFile(zshrc(home), "utf8")).toBe("\n");
   });
 
-  it("refuses a relative --bin-dir and an option without its value", async () => {
+  it("refuses the removed options and an option without its value", async () => {
     const { root, home } = await installRoot();
-    const relative = runInstall(root, ["--bin-dir", "bin"]);
+    const binDir = runInstall(root, ["--bin-dir", "/opt/bin"]);
+    const dryRun = runInstall(root, ["--dry-run"]);
     const missing = runInstall(root, ["--cpu"]);
 
-    expect(relative.status).toBe(1);
-    expect(relative.stderr).toContain("pi-sandbox install: --bin-dir needs an absolute path, got bin\n");
+    expect(binDir.status).toBe(1);
+    expect(binDir.stderr).toContain("pi-sandbox install: unknown option --bin-dir\n");
+    expect(dryRun.status).toBe(1);
+    expect(dryRun.stderr).toContain("pi-sandbox install: unknown option --dry-run\n");
     expect(missing.status).toBe(1);
     expect(missing.stderr).toContain("pi-sandbox install: --cpu needs a value\n");
     expect(await exists(zshrc(home))).toBe(false);
@@ -388,6 +419,11 @@ describe("install.sh options and the PATH block", { timeout: INSTALL_TIMEOUT_MS 
     await mkdir(join(packaged, "bin"), { recursive: true });
 
     await writeFile(join(packaged, "install.sh"), await readFile(join(launcherRoot(), "install.sh"), "utf8"));
+
+    await writeFile(
+      join(root, "package", "package.json"),
+      '{\n  "name": "pi-extensions-mz",\n  "version": "9.9.9"\n}\n',
+    );
 
     await writeFile(
       join(packaged, "bin", "path-block.sh"),

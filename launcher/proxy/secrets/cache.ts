@@ -40,7 +40,7 @@ export const createSecretCache = (now: () => number): SecretCache => {
 
       return entry;
     } catch (error) {
-      if (!(error instanceof SecretUnavailable && error.reply !== undefined)) {
+      if (!(error instanceof SecretUnavailable && error.hostSignIn)) {
         failures.set(key, { error, until: now() + FAILURE_TTL_MS });
       }
 

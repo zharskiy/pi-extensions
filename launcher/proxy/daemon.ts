@@ -14,7 +14,7 @@ import {
   writeJsonFile,
 } from "../shared/index.ts";
 import { createAccessLog } from "./access-log.ts";
-import { minimalEnv } from "./child-env.ts";
+import { helperProxyEnv, minimalEnv } from "./child-env.ts";
 import { createDialer } from "./dial.ts";
 import { DAEMON_FAILURE_TAG, type DaemonInput, type RepoProxy, type RepoProxyInput } from "./files.ts";
 import { watchIdle } from "./idle.ts";
@@ -85,7 +85,8 @@ const reportFailure = (error: unknown): never => {
 const run = async (args: DaemonArgs) => {
   const files = stateLayout(args.stateDir).repo(args.repoHash).proxy;
   const { input, inputHash } = await readInput(args.repoHash);
-  const childEnv = { ...minimalEnv(process.env), ...input.parentEnv };
+  const parentEnv = helperProxyEnv(input.parentEnv, input.parentAuth);
+  const childEnv = { ...minimalEnv(process.env), ...parentEnv };
   const runner = createProcessRunner({ baseEnv: childEnv });
   const ca = await openLauncherCa({ stateDir: args.stateDir, runner });
   const envSecrets: ReadonlyMap<string, string> = new Map(Object.entries(input.envSecrets));
@@ -117,7 +118,7 @@ const run = async (args: DaemonArgs) => {
     privateHosts: input.privateHosts,
     ca,
     log: log.write,
-    dial: createDialer({ parent: parentRouteFor(input.parent, input.parentEnv, input.parentAuth) }),
+    dial: createDialer({ parent: parentRouteFor(input.parent, parentEnv) }),
     upstreamCa: await upstreamTrust(args.stateDir, input.extraCa),
   });
   const record: RepoProxy = { ...(await processMark()), port: server.port, inputHash };

@@ -5,9 +5,12 @@ import { restrictedAddress } from "./policy.ts";
 
 export type DialAccess = "public" | "private";
 
-type Dial = (host: string, port: number, access: DialAccess) => Promise<Socket>;
+export type Dial = (host: string, port: number, access: DialAccess) => Promise<Socket>;
 
-export type Dialer = Dial & { checkAddresses?: (host: string, access: DialAccess) => Promise<void> };
+export interface Dialer {
+  dial: Dial;
+  checkAddresses(host: string, access: DialAccess): Promise<void>;
+}
 
 type Resolve = (hostname: string) => Promise<LookupAddress[]>;
 
@@ -25,6 +28,11 @@ const UNRESOLVED = new Set(["ENOTFOUND", "EAI_AGAIN", "ENODATA", "EAI_NONAME"]);
 
 const CONNECT_TIMEOUT_MS = 10_000;
 
+const PRIVATE_RESOLUTION = new Set(["loopback", "link-local", "reserved-address", "private-address"]);
+
+const resolutionRule = (rule: string | undefined) =>
+  rule !== undefined && PRIVATE_RESOLUTION.has(rule) ? "private-address" : (rule ?? "resolve");
+
 const publicAddresses = (hostname: string, addresses: LookupAddress[]) => {
   const allowed = addresses.filter((address) => restrictedAddress(address.address) === undefined);
   const denial = addresses.map((address) => restrictedAddress(address.address)).find(Boolean);
@@ -34,7 +42,7 @@ const publicAddresses = (hostname: string, addresses: LookupAddress[]) => {
   }
 
   return new RestrictedAddressError(
-    denial?.rule ?? "resolve",
+    resolutionRule(denial?.rule),
     `${hostname} resolves only to restricted addresses${denial === undefined ? "" : ` (${denial.reason})`}`,
   );
 };
@@ -155,10 +163,8 @@ export const createDialer = ({
     },
     connectTimeoutMs,
   );
-  const isDirect = (host: string) => parent === undefined || bypassesParent(parent.noProxy, host);
-
   const dial: Dial = async (host, port, access) => {
-    if (parent === undefined || isDirect(host)) {
+    if (parent === undefined || bypassesParent(parent.noProxy, host)) {
       return dialDirect(host, port, access);
     }
 
@@ -175,5 +181,5 @@ export const createDialer = ({
     }
   };
 
-  return Object.assign(dial, { checkAddresses });
+  return { dial, checkAddresses };
 };
