@@ -1,27 +1,14 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { ParentProxy } from "../../config/index.ts";
 import { ensureBuiltImage } from "../../image/build.ts";
+import { ensureSandboxImage } from "../../image/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
+import { tempDir as sharedTempDir } from "../support/temp-dir.ts";
 
 const versions = { pi: "1.5.0" };
 
-const dirs: string[] = [];
-
-const tempDir = async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-sandbox-network-"));
-
-  dirs.push(dir);
-
-  return dir;
-};
-
-afterEach(async () => {
-  await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
-});
+const tempDir = () => sharedTempDir("network");
 
 const recordingBackend = () => {
   const fake = createFakeBackend();
@@ -128,14 +115,17 @@ describe("image build network", () => {
     const fake = createFakeBackend({ registry: { [reference]: "sha256:pinned" } });
     const base = egressWith("env");
     const config = { ...base, image: { reference, digest: "sha256:pinned" } };
-    const result = await ensureBuiltImage({
+    const result = await ensureSandboxImage({
       backend: fake.backend,
       config,
-      versions,
       stateDir: await tempDir(),
+      repoHash: "a".repeat(64),
+      versions: async () => versions,
+      inUse: async () => false,
       env: { HTTPS_PROXY: "http://dev:hunter2@proxy.corp.example:8080" },
     });
 
-    expect(result.built).toBe(false);
+    expect(result.digest).toBe("sha256:pinned");
+    expect(fake.builds).toEqual([]);
   });
 });

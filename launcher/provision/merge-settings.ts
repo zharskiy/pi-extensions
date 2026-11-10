@@ -18,7 +18,7 @@ const HOST_OWNED_SETTINGS = [
   "httpProxy",
 ];
 
-const SANDBOX_DROPPED_SETTINGS = ["httpProxy"];
+const SANDBOX_DROPPED_SETTINGS = [...HOST_OWNED_SETTINGS, "sessionDir"];
 
 const without = (settings: JsonObject, keys: string[]) =>
   Object.fromEntries(Object.entries(settings).filter(([key]) => !keys.includes(key)));

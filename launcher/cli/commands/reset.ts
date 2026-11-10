@@ -1,26 +1,26 @@
 import { rm } from "node:fs/promises";
-import type { Backend } from "../../backend/index.ts";
-import { LABELS, repoVolumes } from "../../container/index.ts";
+import { type Backend, LABELS } from "../../backend/index.ts";
+import { repoVolumes } from "../../container/index.ts";
 import { liveLaunches, withRepoLaunchLock } from "../../grants/index.ts";
 import { LauncherError, stateLayout } from "../../shared/index.ts";
+import { type LaunchContext, openContext } from "../context.ts";
 import { type CliDeps, writeLine, writeLines } from "../deps.ts";
-import { type LaunchContext, openContext } from "../launch.ts";
 import { removeRepoSandbox } from "../sweep.ts";
 
-const VOLUMES = "--volumes";
+export const VOLUMES = "--volumes";
 
-const CACHE_PREFIX = "pi-sandbox-cache-";
+const VOLUME_PREFIX = "pi-sandbox-";
 
 const ownVolumes = async (deps: CliDeps, context: LaunchContext, backend: Backend) => {
   const named = repoVolumes({
     workspace: context.workspace,
     config: context.effective.config,
-    hostEnv: deps.env,
     uid: deps.uid,
   });
   const labelled = (await backend.listVolumes())
     .filter(
-      (volume) => volume.labels[LABELS.repoHash] === context.repoHash && volume.name.startsWith(CACHE_PREFIX),
+      (volume) =>
+        volume.labels[LABELS.repoHash] === context.repoHash && volume.name.startsWith(VOLUME_PREFIX),
     )
     .map((volume) => volume.name);
 
@@ -82,12 +82,6 @@ const reset = async (deps: CliDeps, context: LaunchContext, backend: Backend, wi
 };
 
 export const resetCommand = async (deps: CliDeps, args: string[]) => {
-  const unknown = args.find((arg) => arg !== VOLUMES);
-
-  if (unknown !== undefined) {
-    throw new LauncherError(`unknown reset option "${unknown}"`, "pi sandbox reset [--volumes]");
-  }
-
   const { context } = await openContext(deps, "host");
 
   await withRepoLaunchLock(context.stateDir, context.repoHash, () =>

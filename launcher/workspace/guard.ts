@@ -29,9 +29,8 @@ const assertOutsideProtected = (mounted: string[], table: Protected[]) => {
   );
 };
 
-export const assertSafeWorkspace = (workspace: Workspace, context: GuardContext) => {
+export const assertSafeMounts = (mounted: string[], context: GuardContext) => {
   const table = [ROOT, ...protectedPaths({ home: context.home, env: context.env })];
-  const mounted = [workspace.repoRoot, workspace.gitCommonDir].filter((path) => path !== undefined);
   const covering = mounted
     .map((path) => ({ path, entry: table.find((entry) => isWithin(entry.path, path)) }))
     .find((found) => found.entry !== undefined);
@@ -47,6 +46,12 @@ export const assertSafeWorkspace = (workspace: Workspace, context: GuardContext)
     HINT,
   );
 };
+
+export const assertSafeWorkspace = (workspace: Workspace, context: GuardContext) =>
+  assertSafeMounts(
+    [workspace.repoRoot, workspace.gitCommonDir].filter((path) => path !== undefined),
+    context,
+  );
 
 interface HostSessionsContext {
   home: string;

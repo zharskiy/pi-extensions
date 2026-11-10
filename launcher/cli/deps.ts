@@ -1,4 +1,4 @@
-import { type Backend, ENGINE_PROFILE, ENGINE_SOCKET_DISPLAY } from "../backend/index.ts";
+import { type Backend, engineUnreachable } from "../backend/index.ts";
 import type { ExtraCa, SandboxConfig } from "../config/index.ts";
 import type { HostTerminal, SignalSource } from "../container/index.ts";
 import type { BundledPi } from "../hostpi/index.ts";
@@ -72,15 +72,6 @@ export const pathsOf = (deps: Pick<CliDeps, "env" | "home" | "platform">) =>
 
 export const hostAgentDirOf = (deps: CliDeps) => hostAgentDir(deps.home, deps.env);
 
-const unreachable = (config: SandboxConfig) =>
-  withFallbackHint(
-    new LauncherError(
-      `the sandbox VM engine is unreachable at ${ENGINE_SOCKET_DISPLAY}`,
-      `run launcher/install.sh or colima start --profile ${ENGINE_PROFILE} --activate=false`,
-    ),
-    config.fallback,
-  );
-
 export const reachableBackend = async (deps: CliDeps, config: SandboxConfig) => {
   const backend = deps.backend();
 
@@ -88,5 +79,5 @@ export const reachableBackend = async (deps: CliDeps, config: SandboxConfig) => 
     return backend;
   }
 
-  throw unreachable(config);
+  throw withFallbackHint(engineUnreachable(), config.fallback);
 };

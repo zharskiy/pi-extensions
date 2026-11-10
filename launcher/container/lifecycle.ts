@@ -1,16 +1,22 @@
 import { lstat, mkdir, realpath } from "node:fs/promises";
-import { dirname } from "node:path";
-import { type Backend, type ContainerSummary, execCapture, type MountSpec } from "../backend/index.ts";
+import { basename, dirname, join } from "node:path";
+import {
+  type Backend,
+  type ContainerSummary,
+  execCapture,
+  LABELS,
+  type MountSpec,
+} from "../backend/index.ts";
 import {
   errorMessage,
   isWithin,
   LauncherError,
   recordCreatedDirs,
+  repoHash,
   stateLayout,
   withFileLock,
 } from "../shared/index.ts";
 import type { Workspace } from "../workspace/index.ts";
-import { LABELS, repoHash } from "./names.ts";
 import type { LauncherContainerSpec } from "./spec.ts";
 
 export interface EnsureContainerInput {
@@ -69,14 +75,20 @@ const isCurrent = (container: ContainerSummary, labels: Record<string, string | 
 export const discardContainer = async (backend: Backend, container: ContainerSummary) => {
   if (container.state === "running") {
     await backend.stopContainer(container.id, STOP_SECONDS).catch(() => undefined);
-
-    await backend.waitRemoved(container.id, REMOVAL_WAIT_MS);
   }
 
   await backend.removeContainer(container.id);
+
+  await backend.waitRemoved(container.id, REMOVAL_WAIT_MS);
 };
 
-const runtimeSpec = ({ volumeLabels: _labels, ownedPaths: _owned, ...spec }: LauncherContainerSpec) => spec;
+const runtimeSpec = ({
+  volumeLabels: _labels,
+  ownedPaths: _owned,
+  guardedPaths: _guarded,
+  notices: _notices,
+  ...spec
+}: LauncherContainerSpec) => spec;
 
 const DEFAULT_OWNER = "1000:1000";
 
@@ -93,7 +105,31 @@ const foundAt = (path: string) =>
 
 type DirMade = (path: string) => Promise<void>;
 
-const ensureMountPoint = async (root: string, path: string, onMade: DirMade): Promise<void> => {
+interface MountPointGuard {
+  onMade: DirMade;
+  guarded: string[];
+}
+
+const PROTECTED_HINT = "choose a path outside the git dirs and the read-only mounts";
+
+const realOrSelf = (path: string) => realpath(path).catch(() => path);
+
+const realTarget = async (path: string, exists: boolean) =>
+  exists ? realpath(path) : join(await realpath(dirname(path)), basename(path));
+
+const assertUnguarded = async (path: string, exists: boolean, guarded: string[]) => {
+  const real = await realTarget(path, exists);
+  const inside = guarded.find((target) => isWithin(real, target));
+
+  if (inside !== undefined) {
+    throw new LauncherError(
+      `the mount point ${path} lies inside ${inside}, which the sandbox protects`,
+      PROTECTED_HINT,
+    );
+  }
+};
+
+const ensureMountPoint = async (root: string, path: string, guard: MountPointGuard): Promise<void> => {
   const found = await foundAt(path);
 
   if (found?.isSymbolicLink() === true) {
@@ -108,15 +144,23 @@ const ensureMountPoint = async (root: string, path: string, onMade: DirMade): Pr
     throw new LauncherError(`the mount point ${path} leads outside ${root}`, MOUNT_POINT_HINT);
   }
 
-  if (found !== undefined || path === root) {
+  if (path === root) {
     return;
   }
 
-  await ensureMountPoint(root, dirname(path), onMade);
+  if (found !== undefined) {
+    await assertUnguarded(path, true, guard.guarded);
+
+    return;
+  }
+
+  await ensureMountPoint(root, dirname(path), guard);
+
+  await assertUnguarded(path, false, guard.guarded);
 
   await mkdir(path).then(
-    () => onMade(path),
-    (error: unknown) => (isTaken(error) ? ensureMountPoint(root, path, onMade) : Promise.reject(error)),
+    () => guard.onMade(path),
+    (error: unknown) => (isTaken(error) ? ensureMountPoint(root, path, guard) : Promise.reject(error)),
   );
 };
 
@@ -130,14 +174,16 @@ const writableRootOf = (mounts: MountSpec[], target: string) =>
       isWithin(target, mount.target),
   )?.target;
 
-const ensureMountPoints = async (mounts: MountSpec[], onMade: DirMade) => {
+const ensureMountPoints = async (spec: LauncherContainerSpec, onMade: DirMade) => {
+  const { mounts } = spec;
+  const guard = { onMade, guarded: await Promise.all((spec.guardedPaths ?? []).map(realOrSelf)) };
   const outcomes = await Promise.allSettled(
     mounts
       .filter((mount) => mount.kind === "volume")
       .flatMap((mount) => {
         const root = writableRootOf(mounts, mount.target);
 
-        return root === undefined ? [] : [ensureMountPoint(root, mount.target, onMade)];
+        return root === undefined ? [] : [ensureMountPoint(root, mount.target, guard)];
       }),
   );
   const failed = outcomes.find((outcome) => outcome.status === "rejected");
@@ -207,13 +253,19 @@ const createFresh = async (
       .map((mount) => backend.ensureVolume(mount.source, spec.volumeLabels[mount.source] ?? owner)),
   );
 
-  await ensureMountPoints(mounts, (path) => recordCreatedDirs(input.stateDir, specRepoHash(spec), [path]));
+  await ensureMountPoints(spec, (path) => recordCreatedDirs(input.stateDir, specRepoHash(spec), [path]));
 
   const { id } = await backend.createContainer(runtimeSpec(spec));
 
   await backend.startContainer(id);
 
-  return { id, created: true, outdated: false, spec, notices: await handOverVolumes(backend, id, spec) };
+  return {
+    id,
+    created: true,
+    outdated: false,
+    spec,
+    notices: [...(spec.notices ?? []), ...(await handOverVolumes(backend, id, spec))],
+  };
 };
 
 const isAgent = (container: ContainerSummary) => container.labels[LABELS.relay] !== "true";
@@ -229,7 +281,7 @@ const reuse = (container: ContainerSummary, spec: LauncherContainerSpec): Ensure
     created: false,
     outdated,
     spec,
-    notices: outdated ? [outdatedNotice(container, spec)] : [],
+    notices: [...(spec.notices ?? []), ...(outdated ? [outdatedNotice(container, spec)] : [])],
   };
 };
 

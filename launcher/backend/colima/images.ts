@@ -24,7 +24,8 @@ const BUILD_STEP = /^Step \d+\/\d+/;
 
 const KEPT_OUTPUT_LINES = 30;
 
-const CERTIFICATE_ERROR = /certificate|x509|SSL|self[- ]signed|issuer/i;
+const CERTIFICATE_ERROR =
+  /x509:|certificate verify failed|unable to get local issuer|self[- ]signed certificate|SSL certificate problem|certificate has expired|CERT_[A-Z_]+|UNABLE_TO_VERIFY_LEAF_SIGNATURE/i;
 
 const CERTIFICATE_HINT =
   "a proxy or CA on this network signs the downloads; set tls.extraCa to its CA, or image.digest to a prebuilt image";
@@ -63,7 +64,8 @@ const buildOutput = (report: (step: string) => void) => {
 const buildFailure = (error: unknown, output: string[]) => {
   const message = errorMessage(error);
   const text = [message, ...output.map((line) => `  ${line.trimEnd()}`)].join("\n");
-  const hint = CERTIFICATE_ERROR.test([message, ...output].join("\n")) ? CERTIFICATE_HINT : undefined;
+  const evidence = [message, ...output.filter((line) => !BUILD_STEP.test(line))].join("\n");
+  const hint = CERTIFICATE_ERROR.test(evidence) ? CERTIFICATE_HINT : undefined;
 
   return new LauncherError(text, hint ?? (error instanceof LauncherError ? error.hint : undefined));
 };
@@ -190,8 +192,10 @@ export const createImageOperations = (client: EngineClient, runner: CommandRunne
   };
 
   const listImages = async (): Promise<ImageSummary[]> => {
-    const images = await client.json<ListedImage[]>({ method: "GET", path: "/images/json" });
-    const used = await usedImages();
+    const [images, used] = await Promise.all([
+      client.json<ListedImage[]>({ method: "GET", path: "/images/json" }),
+      usedImages(),
+    ]);
 
     return images.map((image) => ({
       id: image.Id,

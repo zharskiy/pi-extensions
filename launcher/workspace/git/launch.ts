@@ -14,6 +14,7 @@ export interface GitLaunchContext {
   runner: CommandRunner;
   stateDir: string;
   scanBudget?: number;
+  volumePaths?: string[];
 }
 
 interface BaselineRecord {
@@ -24,7 +25,7 @@ interface BaselineRecord {
 const pathsOf = (stateDir: string, repoRoot: string) => {
   const layout = stateLayout(stateDir);
 
-  return { noHooks: layout.gitNoHooks, record: layout.repo(repoHash(repoRoot)).gitBaseline };
+  return { noHooks: layout.emptyDir, record: layout.repo(repoHash(repoRoot)).gitBaseline };
 };
 
 const alternatesOf = async (workspace: Workspace) => {
@@ -36,7 +37,7 @@ const alternatesOf = async (workspace: Workspace) => {
 export const recordGitBaseline = async (workspace: Workspace, context: GitLaunchContext) => {
   const paths = pathsOf(context.stateDir, workspace.repoRoot);
   const [scan, alternates] = await Promise.all([
-    scanGitBaseline(workspace, context.runner, paths.noHooks, context.scanBudget),
+    scanGitBaseline(workspace, context.runner, paths.noHooks, context.scanBudget, context.volumePaths),
     alternatesOf(workspace),
   ]);
 
@@ -54,7 +55,7 @@ const scanNotices = async (workspace: Workspace, context: GitLaunchContext, reco
 
   return nestedGitNotices(
     record.scan,
-    await scanGitBaseline(workspace, context.runner, noHooks, context.scanBudget),
+    await scanGitBaseline(workspace, context.runner, noHooks, context.scanBudget, context.volumePaths),
   );
 };
 

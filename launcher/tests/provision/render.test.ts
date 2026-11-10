@@ -1,5 +1,5 @@
-import { chmod, lstat, readdir, readFile, rm, stat, symlink } from "node:fs/promises";
-import { join } from "node:path";
+import { chmod, lstat, readdir, readFile, rm, stat, symlink, utimes } from "node:fs/promises";
+import { basename, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { DerivedSandboxPi, DerivedTools } from "../../hostpi/index.ts";
 import { renderAgentDir } from "../../provision/index.ts";
@@ -325,5 +325,81 @@ describe("renderAgentDir", () => {
     expect(files.filter((path) => path.startsWith("skills/deploy/") && !path.endsWith("/")).sort()).toEqual(
       kept.map((name) => `skills/deploy/${name}`).sort(),
     );
+  });
+});
+
+describe("renderAgentDir fix round", () => {
+  it("leaves out only directories named secrets or credentials, outside node_modules, with a notice", async () => {
+    const host = await tempDir("render-host");
+    const stateDir = await tempDir("render-state");
+    const kept = [
+      "extensions/x/node_modules/js-tokens/index.js",
+      "extensions/x/node_modules/@aws-sdk/credential-providers/index.js",
+      "extensions/x/node_modules/pkg/secrets/index.js",
+      "extensions/x/api-tokens/a.js",
+      "skills/secret-scanner/SKILL.md",
+      "skills/design-tokens/SKILL.md",
+    ];
+    const dropped = ["extensions/x/secrets/config.json", "skills/deploy/.credentials/prod.json"];
+
+    await Promise.all([...kept, ...dropped].map((path) => writeText(join(host, path), "export {};\n")));
+
+    const { renderDir, notices } = await renderAgentDir({
+      stateDir,
+      repoHash: "r1",
+      hostAgentDir: host,
+      derived: derived(),
+    });
+    const tree = await listTree(renderDir);
+
+    expect(kept.filter((path) => !tree.includes(path))).toEqual([]);
+    expect(dropped.filter((path) => tree.includes(path))).toEqual([]);
+    expect(notices).toEqual([
+      "render: skills/deploy/.credentials looks like a secrets directory and stays out of the sandbox",
+      "render: extensions/x/secrets looks like a secrets directory and stays out of the sandbox",
+    ]);
+  });
+
+  it("keeps the temporary file of a live or recent writer and removes stale ones", async () => {
+    const host = await tempDir("render-host");
+    const stateDir = await tempDir("render-state");
+    const { renderDir } = await renderAgentDir({
+      stateDir,
+      repoHash: "r1",
+      hostAgentDir: host,
+      derived: derived(),
+    });
+    const old = new Date(Date.now() - 10 * 60_000);
+    const live = join(renderDir, `auth.json.${process.pid}.abcd1234.tmp`);
+    const recent = join(renderDir, "auth.json.999999.abcd1234.tmp");
+    const stale = join(renderDir, "auth.json.999998.abcd1234.tmp");
+    const foreign = join(renderDir, "leftover.tmp");
+
+    await Promise.all([live, recent, stale, foreign].map((path) => writeText(path, "partial")));
+
+    await Promise.all([live, stale, foreign].map((path) => utimes(path, old, old)));
+
+    await renderAgentDir({ stateDir, repoHash: "r1", hostAgentDir: host, derived: derived() });
+
+    const tree = await listTree(renderDir);
+
+    expect(tree).toEqual(expect.arrayContaining([basename(live), basename(recent)]));
+    expect(tree).not.toContain(basename(stale));
+    expect(tree).not.toContain(basename(foreign));
+  });
+
+  it("renders the same repository from parallel launches without failing", async () => {
+    const host = await hostAgentDir();
+    const stateDir = await tempDir("render-state");
+    const renders = Array.from({ length: 6 }, (_, index) =>
+      renderAgentDir({
+        stateDir,
+        repoHash: "r1",
+        hostAgentDir: host,
+        derived: derived(`pi-sandbox-${String(index).repeat(24)}`),
+      }),
+    );
+
+    await expect(Promise.all(renders)).resolves.toHaveLength(6);
   });
 });

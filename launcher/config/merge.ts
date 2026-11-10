@@ -8,6 +8,7 @@ import type {
   LayerName,
   SandboxConfig,
 } from "./types.ts";
+import { leafKeys, PROJECT_KEYS } from "./validate.ts";
 
 type Layers = Partial<Record<LayerName, LayerConfig>>;
 
@@ -35,35 +36,7 @@ const UNION_KEYS = [
   "env.allow",
 ];
 
-const LEAF_KEYS = [
-  "fallback",
-  "image.reference",
-  "image.digest",
-  "image.packages",
-  "image.npmGlobal",
-  "image.dockerfile",
-  "credentials.rules",
-  "credentials.derive.enabled",
-  "credentials.derive.hosts",
-  "egress.allow",
-  "egress.presets",
-  "egress.deny",
-  "egress.privateHosts",
-  "egress.parentProxy",
-  "egress.grants",
-  "tls.extraCa",
-  "workspaceRoots",
-  "mounts.extraReadOnly",
-  "mounts.cacheVolumes",
-  "mounts.sharedCaches",
-  "mounts.hostCaches",
-  "mounts.autoOverlays",
-  "env.allow",
-  "resources.cpus",
-  "resources.memoryGiB",
-  "sessions.host",
-  "org",
-];
+const LEAF_KEYS = leafKeys();
 
 const SKELETON = {
   image: {},
@@ -135,8 +108,21 @@ const setLeaf = (state: State, source: ConfigSource, { key, value }: Leaf): Stat
   };
 };
 
+const outsideProject = (state: State, { key }: Leaf): State => ({
+  ...state,
+  ignored: [
+    ...state.ignored,
+    { layer: "project", key, reason: `a project config may set only ${PROJECT_KEYS.join(", ")}` },
+  ],
+});
+
+const overlayLeaf = (state: State, source: ConfigSource, leaf: Leaf): State =>
+  source === "project" && !PROJECT_KEYS.includes(leaf.key)
+    ? outsideProject(state, leaf)
+    : setLeaf(state, source, leaf);
+
 const overlay = (state: State, layer: unknown, source: ConfigSource): State =>
-  definedLeaves(layer).reduce<State>((next, leaf) => setLeaf(next, source, leaf), state);
+  definedLeaves(layer).reduce<State>((next, leaf) => overlayLeaf(next, source, leaf), state);
 
 const applyLayer = (state: State, layerName: LayerName, layers: Layers): State => {
   const layer = layers[layerName];
@@ -144,15 +130,11 @@ const applyLayer = (state: State, layerName: LayerName, layers: Layers): State =
   return layer === undefined ? state : overlay(state, layer, layerName);
 };
 
-const depthOf = (key: string) => key.split(".").length;
-
 const toConfig = (values: Record<string, unknown>) =>
-  Object.entries(values)
-    .sort(([left], [right]) => depthOf(left) - depthOf(right))
-    .reduce<Record<string, unknown>>(
-      (config, [key, value]) => setPath(config, key, value),
-      SKELETON,
-    ) as unknown as SandboxConfig;
+  Object.entries(values).reduce<Record<string, unknown>>(
+    (config, [key, value]) => setPath(config, key, value),
+    SKELETON,
+  ) as unknown as SandboxConfig;
 
 export const mergeLayers = ({
   defaults,

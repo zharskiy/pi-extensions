@@ -1,6 +1,7 @@
 import { uptime } from "node:os";
 import { setTimeout as sleep } from "node:timers/promises";
-import { processStart } from "./process-start.ts";
+import { LauncherError } from "./errors.ts";
+import { processStart, readProcessStart } from "./process-start.ts";
 
 export interface ProcessMark {
   pid: number;
@@ -14,19 +15,40 @@ const EXIT_POLL_MS = 50;
 
 export const bootTime = () => Math.round(Date.now() / 1000 - uptime());
 
-const ownStart = { value: undefined as Promise<string> | undefined };
+const ownStart: { pending?: Promise<string | undefined>; known?: string } = {};
 
-const startOfSelf = () => {
-  ownStart.value ??= processStart(process.pid).then((start) => start ?? "");
+const readOwnStart = async () => {
+  const start = await processStart(process.pid);
 
-  return ownStart.value;
+  if (start === undefined || start === "") {
+    ownStart.pending = undefined;
+
+    return undefined;
+  }
+
+  ownStart.known = start;
+
+  return start;
 };
 
-export const processMark = async (): Promise<ProcessMark> => ({
-  pid: process.pid,
-  boot: bootTime(),
-  start: await startOfSelf(),
-});
+const startOfSelf = () => {
+  ownStart.pending ??= readOwnStart();
+
+  return ownStart.pending;
+};
+
+export const processMark = async (): Promise<ProcessMark> => {
+  const start = await startOfSelf();
+
+  if (start === undefined) {
+    throw new LauncherError(
+      `cannot read the start time of process ${process.pid}`,
+      "check that /bin/ps (macOS) or /proc (Linux) works and run the command again",
+    );
+  }
+
+  return { pid: process.pid, boot: bootTime(), start };
+};
 
 export const isRunning = (pid: number) => {
   try {
@@ -45,11 +67,19 @@ const isMark = (mark: Partial<ProcessMark>): mark is ProcessMark =>
   typeof mark.start === "string" &&
   mark.start !== "";
 
+const isOwnMark = (mark: ProcessMark) => mark.pid === process.pid && mark.start === ownStart.known;
+
+const startMatches = async (mark: ProcessMark) => {
+  const reading = await readProcessStart(mark.pid);
+
+  return "start" in reading ? reading.start === mark.start : reading.failed === "tool";
+};
+
 export const isLive = async (mark: Partial<ProcessMark>) =>
   isMark(mark) &&
   Math.abs(mark.boot - bootTime()) <= BOOT_SKEW_SECONDS &&
   isRunning(mark.pid) &&
-  (await processStart(mark.pid)) === mark.start;
+  (isOwnMark(mark) || (await startMatches(mark)));
 
 const exited = async (pid: number, deadline: number): Promise<boolean> => {
   if (!isRunning(pid)) {

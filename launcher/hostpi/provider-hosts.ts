@@ -25,6 +25,8 @@ export interface ProviderHostsResult {
 
 const SCRIPT = "provider-hosts.mjs";
 
+const SCRIPT_TIMEOUT_MS = 30_000;
+
 const isStringList = (value: unknown): value is string[] =>
   Array.isArray(value) && value.every((item) => typeof item === "string");
 
@@ -60,8 +62,13 @@ const runScript = async (
 ): Promise<ProviderHostsResult> => {
   const script = join(launcherRoot(), "hostpi", SCRIPT);
   const result = await input.runner
-    .run(process.execPath, [script, input.pi.packageDir])
+    .run(process.execPath, [script, input.pi.packageDir], { timeoutMs: SCRIPT_TIMEOUT_MS })
     .catch((error: unknown) => ({ code: 1, stdout: "", stderr: errorMessage(error) }));
+
+  if ("timedOut" in result && result.timedOut === true) {
+    return unavailable(`no answer within ${SCRIPT_TIMEOUT_MS / 1000} s`);
+  }
+
   const table = result.code === 0 ? parseTable(result.stdout) : undefined;
 
   if (table === undefined) {

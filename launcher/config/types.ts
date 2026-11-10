@@ -1,6 +1,8 @@
 import type { ToolConfigFormat } from "../shared/index.ts";
 
-type Fallback = "refuse" | "host";
+export const FALLBACKS = ["refuse", "host"] as const;
+
+type Fallback = (typeof FALLBACKS)[number];
 
 export type FileSecret =
   | { file: string; pointer: string }
@@ -34,16 +36,22 @@ interface CredentialsConfig {
   derive: DeriveConfig;
 }
 
-export type ParentProxy = "env" | "none";
+export const PARENT_PROXIES = ["env", "none"] as const;
+
+export type ParentProxy = (typeof PARENT_PROXIES)[number];
 
 export type ExtraCa = { file: string } | { hostStore: true };
 
+export const OUTSIDE_MODES = ["refuse", "warn"] as const;
+
 export interface WorkspaceRootsConfig {
   roots: string[];
-  outside: "refuse" | "warn";
+  outside: (typeof OUTSIDE_MODES)[number];
 }
 
-export type HostCachePreset = "maven" | "gradle" | "npm" | "pip" | "go" | "cargo";
+export const HOST_CACHE_PRESETS = ["maven", "gradle", "npm", "pip", "go", "cargo"] as const;
+
+export type HostCachePreset = (typeof HOST_CACHE_PRESETS)[number];
 
 export type EgressPreset = "npm" | "pypi" | "github" | "maven" | "gradle" | "go" | "cargo";
 

@@ -5,7 +5,7 @@ import { restrictedAddress } from "./policy.ts";
 
 export type DialAccess = "public" | "private";
 
-type Dial = (host: string, port: number, access: DialAccess, repoHash?: string) => Promise<Socket>;
+type Dial = (host: string, port: number, access: DialAccess) => Promise<Socket>;
 
 export type Dialer = Dial & { checkAddresses?: (host: string, access: DialAccess) => Promise<void> };
 
@@ -157,7 +157,7 @@ export const createDialer = ({
   );
   const isDirect = (host: string) => parent === undefined || bypassesParent(parent.noProxy, host);
 
-  const dial: Dial = async (host, port, access, repoHash) => {
+  const dial: Dial = async (host, port, access) => {
     if (parent === undefined || isDirect(host)) {
       return dialDirect(host, port, access);
     }
@@ -166,7 +166,7 @@ export const createDialer = ({
       await checkResolved(resolveHost, host);
     }
 
-    return dialViaParent(parent, host, port, repoHash);
+    return dialViaParent(parent, host, port);
   };
 
   const checkAddresses = async (host: string, access: DialAccess) => {

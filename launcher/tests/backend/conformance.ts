@@ -175,11 +175,8 @@ export const runBackendConformance = (
       await state.target?.dispose?.();
     });
 
-    it("detects the runtime and reports a version", async () => {
-      const detection = await backend().detect();
-
-      expect(detection.available).toBe(true);
-      expect(detection.version).toEqual(expect.any(String));
+    it("detects the runtime", async () => {
+      expect(await backend().detect()).toEqual({ available: true });
     });
 
     it("pulls a missing image and returns its digest, accepting that digest afterwards", async () => {

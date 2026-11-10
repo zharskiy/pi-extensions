@@ -2,7 +2,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Backend } from "../backend/index.ts";
 import type { SandboxConfig } from "../config/index.ts";
-import { errorMessage, expandHome, LauncherError, sha256Hex } from "../shared/index.ts";
+import { errorMessage, expandHome, LauncherError, sha256Hex, shortHash } from "../shared/index.ts";
 import { placeBuildTrust, TRUST_FILE } from "./build-trust.ts";
 import { buildInContext } from "./context.ts";
 import { writeWantedLayer } from "./record.ts";
@@ -27,8 +27,6 @@ interface LayerImage {
 
 export const LAYER_TAG_PREFIX = "pi-sandbox-layer:";
 
-const SHORT_HASH = 12;
-
 const BUILD_CRT = "/usr/local/share/ca-certificates/pi-sandbox-build.crt";
 
 const ENTRYPOINT = "/usr/local/bin/pi-sandbox-entrypoint";
@@ -44,6 +42,8 @@ const userDockerfile = async (path: string | undefined, home: string | undefined
 
   return text.trimEnd();
 };
+
+const sortedUnique = (entries: string[] = []) => [...new Set(entries)].sort();
 
 const aptStep = (packages: string[]) =>
   packages.length === 0
@@ -67,8 +67,8 @@ const renderLayerDockerfile = async (
     `COPY ${TRUST_FILE} /build/${TRUST_FILE}`,
     `RUN if [ -s /build/${TRUST_FILE} ]; then cp /build/${TRUST_FILE} ${BUILD_CRT} && update-ca-certificates; fi`,
     "ARG NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt",
-    ...aptStep(config.image.packages ?? []),
-    ...npmStep(config.image.npmGlobal ?? []),
+    ...aptStep(sortedUnique(config.image.packages)),
+    ...npmStep(sortedUnique(config.image.npmGlobal)),
     ...(custom === undefined ? [] : [custom]),
     "USER root",
     `RUN if [ -f ${BUILD_CRT} ]; then rm ${BUILD_CRT} && update-ca-certificates --fresh; fi \\\n && rm -rf /build`,
@@ -112,7 +112,7 @@ export const ensureLayerImage = async (input: EnsureLayerInput): Promise<LayerIm
     input.config,
     input.env?.HOME || undefined,
   );
-  const tag = `${LAYER_TAG_PREFIX}${sha256Hex(dockerfile).slice(0, SHORT_HASH)}`;
+  const tag = `${LAYER_TAG_PREFIX}${shortHash(sha256Hex(dockerfile))}`;
 
   await writeWantedLayer(input.stateDir, input.repoHash, tag);
   const reused = await input.backend.resolveImage(tag).catch(() => undefined);

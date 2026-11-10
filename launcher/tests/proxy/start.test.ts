@@ -1,6 +1,8 @@
-import { type ChildProcess, spawn } from "node:child_process";
+import { type ChildProcess, type SpawnOptions, spawn } from "node:child_process";
 import { once } from "node:events";
 import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -16,7 +18,7 @@ import {
   repoProxyToken,
   stopRepoProxy,
 } from "../../proxy/index.ts";
-import { bootTime, processMark, stateLayout } from "../../shared/index.ts";
+import { bootTime, processMark, processStart, stateLayout } from "../../shared/index.ts";
 import { openConnect, plainGet } from "./proxy-client.ts";
 
 const REPO = "1".repeat(64);
@@ -24,6 +26,12 @@ const REPO = "1".repeat(64);
 const OTHER = "2".repeat(64);
 
 const SECRET = "env-secret-value-0123456789";
+
+const FAILING_DAEMON = [
+  'console.error("2026-01-01T00:00:00.000Z pi-sandbox-proxy failed: broken input (fix the input)");',
+  'console.error("2026-01-01T00:00:01.000Z pi mcp login: waiting for the browser");',
+  "process.exit(1);",
+].join(" ");
 
 const state = { stateDir: "" };
 
@@ -191,6 +199,77 @@ describe("ensureRepoProxy", () => {
 
     expect(started.proxy.pid).not.toBe(stranger.pid);
     expect(isAlive(stranger)).toBe(true);
+  }, 20_000);
+});
+
+describe("ensureRepoProxy start and health", () => {
+  it("starts the daemon in its proxy dir and names its own failure line in the error, not another writer's", async () => {
+    const seen: Array<string | undefined> = [];
+    const failing = ensureRepoProxy({
+      stateDir: state.stateDir,
+      input: await inputFor(),
+      env: process.env,
+      othersLive: async () => false,
+      spawn: (_command, _args, options) => {
+        seen.push(String(options.cwd));
+
+        return spawn(process.execPath, ["-e", FAILING_DAEMON], {
+          ...options,
+          stdio: ["pipe", "ignore", options.stdio?.[2] ?? "ignore"],
+        } as SpawnOptions);
+      },
+    });
+
+    await expect(failing).rejects.toThrow(
+      "the pi-sandbox egress proxy did not become healthy: broken input (fix the input)",
+    );
+    expect(seen).toEqual([files().directory]);
+  }, 20_000);
+
+  it("retries a health check before it gives up on a live recorded proxy", async () => {
+    const stranger = idle();
+
+    await once(stranger, "spawn");
+
+    const answers = { count: 0 };
+    const health = createServer((_request, response) => {
+      answers.count += 1;
+
+      if (answers.count === 1) {
+        response.writeHead(503).end();
+
+        return;
+      }
+
+      response
+        .writeHead(200, { "content-type": "application/json" })
+        .end(JSON.stringify({ ok: true, pid: stranger.pid }));
+    });
+
+    await new Promise<void>((resolve) => health.listen(0, "127.0.0.1", () => resolve()));
+
+    await mkdir(files().directory, { recursive: true });
+
+    await writeFile(
+      files().record,
+      JSON.stringify({
+        pid: stranger.pid,
+        boot: bootTime(),
+        start: await processStart(stranger.pid ?? 0),
+        port: (health.address() as AddressInfo).port,
+        inputHash: "old",
+      }),
+    );
+
+    const kept = await ensure(await inputFor(), true);
+
+    health.close();
+
+    expect(kept.proxy.pid).toBe(stranger.pid);
+    expect(answers.count).toBe(2);
+    expect(isAlive(stranger)).toBe(true);
+
+    await rm(files().record, { force: true });
   }, 20_000);
 });
 

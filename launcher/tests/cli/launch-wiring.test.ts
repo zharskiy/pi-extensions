@@ -285,6 +285,26 @@ describe("pi launch wiring", () => {
     await expectNoLeak(fake, renderDir, [REAL_KEY]);
   });
 
+  it("leaves a secrets directory of a host skill out of the render dir and says so", async () => {
+    const fake = createFakeBackend();
+    const harness = await createHarness({ backend: () => fake.backend });
+
+    await writeText(join(harness.hostAgentDir, "skills", "deploy", "SKILL.md"), "# deploy\n");
+
+    await writeText(join(harness.hostAgentDir, "skills", "deploy", "secrets", "prod.txt"), REAL_KEY);
+
+    expect(await run([], harness.deps)).toBe(0);
+
+    const renderDir = renderDirOf(harness);
+
+    expect(await readFile(join(renderDir, "skills", "deploy", "SKILL.md"), "utf8")).toBe("# deploy\n");
+    expect(harness.stderr()).toContain(
+      "render: skills/deploy/secrets looks like a secrets directory and stays out of the sandbox",
+    );
+
+    await expectNoLeak(fake, renderDir, [REAL_KEY]);
+  });
+
   it("says once per repository when a credential rule host resolves to a private address", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({
@@ -453,13 +473,5 @@ describe("the proxy route of a repository", () => {
 
     expect(await run([], harness.deps)).toBe(0);
     expect(asked).toEqual([sha256Hex(harness.repoRoot)]);
-  });
-
-  it("prints the notices of the proxy route", async () => {
-    const fake = createFakeBackend({ routeNotices: ["the relay is kept"] });
-    const harness = await createHarness({ backend: () => fake.backend });
-
-    expect(await run([], harness.deps)).toBe(0);
-    expect(harness.stderr()).toContain("pi-sandbox: the relay is kept\n");
   });
 });

@@ -1,7 +1,5 @@
-import { rm } from "node:fs/promises";
 import { type HostPi, type McpOAuthServer, mcpSignInsNeeded } from "../hostpi/index.ts";
 import {
-  makeMcpLoginDir,
   mcpAuthKey,
   mcpLoginCommand,
   PI_AGENT_DIR_VARIABLE,
@@ -9,10 +7,11 @@ import {
   stateLayout,
   updateMcpLogin,
   withFileLockIfFree,
+  withMcpLoginDir,
 } from "../shared/index.ts";
+import type { LaunchContext } from "./context.ts";
 import { type CliDeps, hostAgentDirOf, writeLine } from "./deps.ts";
 import type { HostSide } from "./derive.ts";
-import type { LaunchContext } from "./launch.ts";
 import { writeOnce } from "./notices.ts";
 
 const LOGIN_TIMEOUT_SECONDS = 120;
@@ -33,25 +32,23 @@ const derivedServers = (host: HostSide) =>
     host.derived.rules.flatMap((rule) => ("mcpOAuth" in rule.secret ? [rule.secret.mcpOAuth.server] : [])),
   );
 
-const runLogin = async (deps: CliDeps, stateDir: string, pi: HostPi, server: McpOAuthServer) => {
-  const [file = "", ...args] = mcpLoginCommand(pi.command, server.name, LOGIN_TIMEOUT_SECONDS);
-  const cwd = await makeMcpLoginDir(stateDir);
-  const signals = deps.signals ?? process;
-  const keepAlive = () => undefined;
+const runLogin = (deps: CliDeps, stateDir: string, pi: HostPi, server: McpOAuthServer) =>
+  withMcpLoginDir(stateDir, async (cwd) => {
+    const [file = "", ...args] = mcpLoginCommand(pi.command, server.name, LOGIN_TIMEOUT_SECONDS);
+    const signals = deps.signals ?? process;
+    const keepAlive = () => undefined;
 
-  signals.on("SIGINT", keepAlive);
+    signals.on("SIGINT", keepAlive);
 
-  try {
-    return await deps.runner.spawnInteractive(file, args, {
-      cwd,
-      env: { [PI_AGENT_DIR_VARIABLE]: hostAgentDirOf(deps) },
-    });
-  } finally {
-    signals.off("SIGINT", keepAlive);
-
-    await rm(cwd, { recursive: true, force: true });
-  }
-};
+    try {
+      return await deps.runner.spawnInteractive(file, args, {
+        cwd,
+        env: { [PI_AGENT_DIR_VARIABLE]: hostAgentDirOf(deps) },
+      });
+    } finally {
+      signals.off("SIGINT", keepAlive);
+    }
+  });
 
 const signInOnce = async (deps: CliDeps, context: LaunchContext, host: HostSide, server: McpOAuthServer) => {
   const key = mcpAuthKey(server.name, server.url);

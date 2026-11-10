@@ -163,12 +163,6 @@ export const pullPinnedImage = async (input: PullImageInput, pinned: string): Pr
 };
 
 export const ensureBuiltImage = async (input: EnsureImageInput): Promise<BuiltImage> => {
-  const pinned = input.config.image.digest;
-
-  if (pinned !== undefined) {
-    return pullPinnedImage(input, pinned);
-  }
-
   const hash = await inputsHash(input);
   const base = await readBaseRecord(input.stateDir);
   const reused = await reusableBuild(input.backend, input.config.image.reference, base, hash);
@@ -177,7 +171,7 @@ export const ensureBuiltImage = async (input: EnsureImageInput): Promise<BuiltIm
     return buildLocally(input, hash);
   }
 
-  if (base.pi !== input.versions.pi) {
+  if (base.pi === undefined) {
     await writeBaseRecord(input.stateDir, { ...base, pi: input.versions.pi });
   }
 

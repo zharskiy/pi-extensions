@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import type { Socket } from "node:net";
 import type { Duplex } from "node:stream";
 import { createSecureContext, type SecureContext, TLSSocket } from "node:tls";
-import { PROXY_AGENT } from "./replies.ts";
+import { PROXY_AGENT, rawResponse } from "./replies.ts";
 import type { LeafCertificate } from "./tls-ca.ts";
 
 export interface DenialPageOptions {
@@ -29,12 +29,14 @@ const pageHeaders = (text: string) => ({
 });
 
 const rawPage = (text: string) =>
-  [
-    "HTTP/1.1 403 Forbidden",
-    ...Object.entries(pageHeaders(text)).map(([name, value]) => `${name}: ${value}`),
-    "",
+  rawResponse(
+    "403 Forbidden",
+    [
+      ["content-type", "text/plain; charset=utf-8"],
+      ["proxy-agent", PROXY_AGENT],
+    ],
     text,
-  ].join("\r\n");
+  );
 
 export const createDenialPages = (options: DenialPageOptions) => {
   const now = options.now ?? Date.now;

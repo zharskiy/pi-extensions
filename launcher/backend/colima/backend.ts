@@ -2,7 +2,14 @@ import { existsSync } from "node:fs";
 import { type CommandRunner, errorMessage, LauncherError } from "../../shared/index.ts";
 import type { Backend, ContainerSpec, Detection } from "../types.ts";
 import { containerBody, type EngineContainer, labelFilters, summaryOf } from "./container-body.ts";
-import { createEngineClient, engineError, messageOf, segment } from "./engine-client.ts";
+import {
+  CALL_TIMEOUT_MS,
+  createEngineClient,
+  engineError,
+  messageOf,
+  REMOVAL_TIMEOUT_MS,
+  segment,
+} from "./engine-client.ts";
 import { runExec } from "./exec-session.ts";
 import { createImageOperations } from "./images.ts";
 import { ENGINE_PROFILE, engineSocketPath } from "./profile.ts";
@@ -15,6 +22,8 @@ export interface ColimaBackendOptions {
   stateDir: string;
   runner: CommandRunner;
   socketPath?: string;
+  timeouts?: { callMs: number; pingMs: number; removalMs: number };
+  pause?: (ms: number) => Promise<void>;
 }
 
 interface EngineVersion {
@@ -26,6 +35,10 @@ interface EngineVersion {
 
 const STOP_TIMEOUT_SECONDS = 5;
 
+const PING_TIMEOUT_MS = 5000;
+
+const TIMEOUTS = { callMs: CALL_TIMEOUT_MS, pingMs: PING_TIMEOUT_MS, removalMs: REMOVAL_TIMEOUT_MS };
+
 const MISSING_BIND_SOURCE = /bind source path does not exist: (.+)$/;
 
 const unsharedSource = (body: Buffer) => {
@@ -36,18 +49,19 @@ const unsharedSource = (body: Buffer) => {
 
 export const createColimaBackend = (options: ColimaBackendOptions): Backend => {
   const socket = () => options.socketPath ?? engineSocketPath(options.home);
-  const client = createEngineClient(socket);
+  const timeouts = options.timeouts ?? TIMEOUTS;
+  const client = createEngineClient(socket, timeouts);
   const images = createImageOperations(client, options.runner);
   const volumes = createVolumeOperations(client);
-  const relay = createRelayOperations(client);
+  const relay = createRelayOperations(client, options.pause);
 
   const version = () => client.json<EngineVersion>({ method: "GET", path: "/version" });
 
   const detect = async (): Promise<Detection> => {
     try {
-      await client.call({ method: "GET", path: "/_ping" });
+      await client.call({ method: "GET", path: "/_ping", timeoutMs: timeouts.pingMs });
 
-      return { available: true, version: (await version()).Version };
+      return { available: true };
     } catch (error) {
       return { available: false, reason: errorMessage(error) };
     }
@@ -84,7 +98,7 @@ export const createColimaBackend = (options: ColimaBackendOptions): Backend => {
       if (path !== undefined) {
         throw new LauncherError(
           `the sandbox VM does not share ${path}`,
-          "run pi sandbox doctor; its vm shares line names the command",
+          "run pi sandbox doctor; its vm shares line names the folders the VM lacks",
         );
       }
 

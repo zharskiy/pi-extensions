@@ -1,19 +1,14 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { type Denials, denialBody } from "./denials.ts";
 import { sendJson } from "./replies.ts";
+import { HTTP_PORT, parseAuthority } from "./request-target.ts";
 
 const UNPARSEABLE = "unparseable";
 
-export const hostOf = (authority: string | undefined) => {
-  try {
-    const url = new URL(`http://${authority ?? ""}`);
-    const valid = url.username === "" && url.password === "" && url.pathname === "/" && url.search === "";
+export const PLAIN_HTTP = { rule: "plain-http", reason: "only HTTPS through CONNECT is proxied" };
 
-    return valid && url.hostname !== "" ? url.hostname : UNPARSEABLE;
-  } catch {
-    return UNPARSEABLE;
-  }
-};
+export const hostOf = (authority: string | undefined) =>
+  parseAuthority(authority, HTTP_PORT)?.host ?? UNPARSEABLE;
 
 const pathOf = (url: string | undefined) => (url?.startsWith("/") ? (url.split("?")[0] ?? "") : "");
 
@@ -23,14 +18,13 @@ const sinceOf = (url: string) => {
   return Number.isFinite(since) ? since : 0;
 };
 
-export const createRoutes = (repoHash: string, denials: Denials) => {
+export const createRoutes = (denials: Denials) => {
   const refusePlain = (request: IncomingMessage, response: ServerResponse) => {
     const host = hostOf(request.headers.host);
-    const denial = { rule: "plain-http", reason: "only HTTPS through CONNECT is proxied" };
 
-    denials.note(host, denial, { repoHash, port: 80 });
+    denials.note(host, PLAIN_HTTP, { port: HTTP_PORT });
 
-    sendJson(response, 403, denialBody(host, denial));
+    sendJson(response, 403, denialBody(host, PLAIN_HTTP));
   };
 
   return (request: IncomingMessage, response: ServerResponse) => {
@@ -43,7 +37,7 @@ export const createRoutes = (repoHash: string, denials: Denials) => {
     }
 
     if (request.method === "GET" && path === "/denials") {
-      sendJson(response, 200, { denials: denials.since(repoHash, sinceOf(request.url ?? "/")) });
+      sendJson(response, 200, { denials: denials.since(sinceOf(request.url ?? "/")) });
 
       return;
     }

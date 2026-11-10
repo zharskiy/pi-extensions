@@ -1,5 +1,5 @@
 import { chmod, lstat, mkdir, realpath, symlink, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
+
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createProcessRunner, sha256Hex, stateLayout } from "../../shared/index.ts";
@@ -7,30 +7,26 @@ import {
   discoverWorkspace,
   findProtectedGitPaths,
   gitLaunchEndNotices,
+  mountedGitDirs,
   protectedGitOverlay,
   recordGitBaseline,
   type Workspace,
   withGitPinLock,
+  workspaceFolder,
   workspaceNotices,
   workspaceSelfBinds,
 } from "../../workspace/index.ts";
 import { scanWorkspace } from "../../workspace/workspace-scan.ts";
 import { createFakeRunner } from "../support/fake-runner.ts";
+import { git, gitEnv, gitHome, gitRunner } from "../support/git.ts";
 import { tempDir } from "../support/temp-dir.ts";
 
-const runner = createProcessRunner();
+const discoverAt = async (
+  cwd: string,
+  ...rest: Parameters<typeof discoverWorkspace> extends [unknown, ...infer R] ? R : never
+) => discoverWorkspace(await workspaceFolder(cwd), ...rest);
 
-const NO_SYSTEM = { GIT_CONFIG_NOSYSTEM: "1" };
-
-const git = async (cwd: string, args: string[]) => {
-  const result = await runner.run(
-    "git",
-    ["-c", "user.name=test", "-c", "user.email=test@example.com", ...args],
-    { cwd },
-  );
-
-  expect(result.code, result.stderr).toBe(0);
-};
+const runner = gitRunner;
 
 const createRoot = async () => realpath(await tempDir("workspace-mode"));
 
@@ -49,7 +45,7 @@ const markRepo = (path: string) => mkdir(join(path, ".git"), { recursive: true }
 const noHooksOf = (base: string) => join(base, "state", "git", "no-hooks");
 
 const discover = (root: string, scanBudget?: number) =>
-  discoverWorkspace(root, runner, noHooksOf(root), { scanBudget });
+  discoverAt(root, runner, noHooksOf(root), { scanBudget });
 
 const repoAt = (repoRoot: string): Workspace => ({
   cwd: repoRoot,
@@ -98,7 +94,9 @@ describe("the workspace scan", () => {
         join(root, "a", "b", "c", "d", "e", "f", "deep"),
         join(root, "shallow"),
       ],
+      bare: [],
       overlays: [],
+      variants: [],
       truncated: false,
       unreadable: [],
     });
@@ -149,7 +147,7 @@ describe("the workspace scan", () => {
       writeFile(join(repo, "settings.gradle"), ""),
     ]);
 
-    expect((await discoverWorkspace(repo, runner, noHooksOf(root))).overlays).toEqual([
+    expect((await discoverAt(repo, runner, noHooksOf(root))).overlays).toEqual([
       join(repo, ".gradle"),
       join(repo, "api", ".venv"),
       join(repo, "app", ".gradle"),
@@ -179,7 +177,7 @@ describe("the workspace scan", () => {
     expect((await discover(root)).overlays).toEqual(
       [join(root, "app"), repo, join(repo, "web")].map((dir) => join(dir, "node_modules")),
     );
-    expect((await discoverWorkspace(repo, runner, noHooksOf(root))).overlays).toEqual(
+    expect((await discoverAt(repo, runner, noHooksOf(root))).overlays).toEqual(
       [repo, join(repo, "web")].map((dir) => join(dir, "node_modules")),
     );
   });
@@ -219,7 +217,7 @@ describe("the workspace scan", () => {
 
     const absent = createProcessRunner({ baseEnv: { PATH: join(root, "no-bin") } });
 
-    expect(await discoverWorkspace(root, absent, noHooksOf(root))).toEqual({
+    expect(await discoverAt(root, absent, noHooksOf(root))).toEqual({
       cwd: root,
       repoRoot: root,
       isGitRepo: false,
@@ -232,34 +230,116 @@ describe("the workspace scan", () => {
     const root = await createRoot();
     const { runner: failing } = createFakeRunner(() => ({ code: 1, stderr: "git is broken\n" }));
 
-    await expect(discoverWorkspace(root, failing, noHooksOf(root))).rejects.toThrow(
+    await expect(discoverAt(root, failing, noHooksOf(root))).rejects.toThrow(
       `git: could not list the git configuration of ${root}: git is broken`,
     );
   });
 
-  it("refuses a folder it cannot read, naming it", async () => {
-    if (process.getuid?.() === 0) {
-      return;
-    }
+  it.skipIf(process.getuid?.() === 0)(
+    "masks a folder it cannot read, names it, and refuses an unreadable cwd",
+    async () => {
+      const root = await createRoot();
+      const locked = join(root, "locked");
 
+      await markRepo(join(locked, "hidden-repo"));
+
+      await chmod(locked, 0o000);
+
+      const strict = await discover(root).finally(() => chmod(locked, 0o755));
+
+      expect(strict).toMatchObject({ nested: [], masked: [locked] });
+      expect(await lstat(noHooksOf(root)).catch(() => undefined)).toBeUndefined();
+      expect(workspaceNotices(strict)).toEqual([
+        `pi-sandbox: cannot read ${locked}; the sandbox sees them as empty read-only folders, and git there shows the files a repository tracks in them as deleted`,
+      ]);
+
+      await chmod(locked, 0o000);
+
+      const lenient = await discoverAt(root, runner, noHooksOf(root), { lenient: true }).finally(() =>
+        chmod(locked, 0o755),
+      );
+
+      expect(lenient.nested).toEqual([]);
+      expect(lenient.masked).toBeUndefined();
+
+      await chmod(locked, 0o000);
+
+      await expect(discover(locked).finally(() => chmod(locked, 0o755))).rejects.toMatchObject({
+        message: `workspace: cannot read ${locked} (EACCES), refusing`,
+        hint: "make it readable (chmod u+rx) or start pi in another folder",
+      });
+    },
+  );
+
+  it("caps a notice list at 20 paths", () => {
+    const masked = Array.from({ length: 22 }, (_, index) => `/w/d${index}`);
+    const [notice] = workspaceNotices({ cwd: "/w", repoRoot: "/w", isGitRepo: false, masked });
+
+    expect(notice).toContain("/w/d19 and 2 more;");
+    expect(notice).not.toContain("/w/d20");
+  });
+
+  it("does not search build output an overlay hides, unless overlays are off or discovery is lenient", async () => {
     const root = await createRoot();
-    const locked = join(root, "locked");
+    const venv = join(root, "api", ".venv");
+    const target = join(root, "cli", "target");
 
-    await markRepo(join(locked, "hidden-repo"));
-
-    await chmod(locked, 0o000);
-
-    const strict = discover(root).finally(() => chmod(locked, 0o755));
-
-    await expect(strict).rejects.toThrow(`workspace: ${locked} cannot be protected: cannot read it (EACCES)`);
-
-    await chmod(locked, 0o000);
-
-    const lenient = await discoverWorkspace(root, runner, noHooksOf(root), { lenient: true }).finally(() =>
-      chmod(locked, 0o755),
+    await Promise.all(
+      [join(venv, "src", "dep"), join(target, "vendored"), join(root, "plain", ".venv", "x")].map(markRepo),
     );
 
-    expect(lenient.nested).toEqual([]);
+    await Promise.all([
+      writeFile(join(root, "api", "uv.lock"), ""),
+      writeFile(join(root, "cli", "Cargo.lock"), ""),
+    ]);
+
+    const all = [join(venv, "src", "dep"), join(target, "vendored"), join(root, "plain", ".venv", "x")];
+
+    expect(await scanWorkspace(root, "workspace", { skipOverlays: true })).toMatchObject({
+      repos: [join(root, "plain", ".venv", "x")],
+      overlays: [venv, target],
+    });
+    expect((await scanWorkspace(root, "workspace")).repos).toEqual(all);
+    expect((await scanWorkspace(root, "workspace", { skipOverlays: true, overlays: false })).repos).toEqual(
+      all,
+    );
+    expect(
+      (await discoverAt(root, runner, noHooksOf(root), { lenient: true })).nested?.map(
+        (repo) => repo.repoRoot,
+      ),
+    ).toEqual(all);
+  });
+
+  it("fits a folder with large build output into the search budget when overlays hide it", async () => {
+    const root = await createRoot();
+    const venv = join(root, "app", ".venv");
+
+    await Promise.all(
+      Array.from({ length: 8 }, (_, index) => mkdir(join(venv, `pkg${index}`), { recursive: true })),
+    );
+
+    await writeFile(join(root, "app", "uv.lock"), "");
+
+    await expect(
+      discoverAt(root, runner, noHooksOf(root), { scanBudget: 6, overlays: false }),
+    ).rejects.toThrow("has more than 6 directories");
+    expect(await discover(root, 6)).toMatchObject({ nested: [], overlays: [venv] });
+  });
+
+  it("searches build output again when more than 512 overlays turn every overlay off", async () => {
+    const root = await createRoot();
+    const apps = Array.from({ length: 513 }, (_, index) => join(root, `app${index}`));
+
+    await Promise.all(apps.map((dir) => mkdir(join(dir, ".venv"), { recursive: true })));
+
+    await Promise.all(apps.map((dir) => writeFile(join(dir, "uv.lock"), "")));
+
+    await createRepo(join(root, "app0", ".venv", "dep"));
+
+    const workspace = await discover(root);
+
+    expect(workspace).toMatchObject({ overlays: [], overlaysCapped: true });
+    expect(workspace.nested?.map((nested) => nested.repoRoot)).toEqual([join(root, "app0", ".venv", "dep")]);
   });
 
   it("skips the .pi folder, so agent worktrees are neither repositories nor overlays", async () => {
@@ -284,11 +364,11 @@ describe("the workspace scan", () => {
 
     await writeFile(join(repo, "package-lock.json"), "{}");
 
-    const lenient = await discoverWorkspace(root, runner, noHooksOf(root), {
+    const lenient = await discoverAt(root, runner, noHooksOf(root), {
       lenient: true,
-      scanOverlays: false,
+      overlays: false,
     });
-    const inRepo = await discoverWorkspace(repo, runner, noHooksOf(root), { scanOverlays: false });
+    const inRepo = await discoverAt(repo, runner, noHooksOf(root), { overlays: false });
 
     expect(lenient.nested?.map((nested) => nested.repoRoot)).toEqual([repo]);
     expect(lenient.overlays).toEqual([]);
@@ -306,7 +386,7 @@ describe("the workspace scan", () => {
     const capped = { overlays: [], overlaysCapped: true };
 
     expect(await discover(root)).toMatchObject(capped);
-    expect(await discoverWorkspace(root, runner, noHooksOf(root), { lenient: true })).toMatchObject(capped);
+    expect(await discoverAt(root, runner, noHooksOf(root), { lenient: true })).toMatchObject(capped);
   });
 
   it("lists nested repositories without asking git when discovery is lenient", async () => {
@@ -319,7 +399,7 @@ describe("the workspace scan", () => {
 
     const { runner: fake, calls } = createFakeRunner(() => ({ code: 1 }));
 
-    expect(await discoverWorkspace(root, fake, noHooksOf(root), { lenient: true })).toEqual({
+    expect(await discoverAt(root, fake, noHooksOf(root), { lenient: true })).toEqual({
       cwd: root,
       repoRoot: root,
       isGitRepo: false,
@@ -360,17 +440,181 @@ describe("the nested repository checks", () => {
     );
   });
 
-  it("refuses a nested worktree whose git dir lies outside the workspace", async () => {
+  it("leaves a nested checkout whose git dir lies outside the folder as plain files, without asking git about it", async () => {
     const root = await createRoot();
     const main = await createRepo(join(await createRoot(), "main"));
     const worktree = join(root, "linked");
+    const separate = join(root, "separate");
+    const store = join(await createRoot(), "separate.git");
+    const cwds: string[] = [];
+    const recorder = {
+      ...runner,
+      run: (file: string, args: string[], options?: Parameters<typeof runner.run>[2]) => {
+        cwds.push(String(options?.cwd ?? ""));
+
+        return runner.run(file, args, options);
+      },
+    };
 
     await git(main, ["worktree", "add", "--quiet", "-b", "feature", worktree]);
 
+    await git(root, ["init", "--quiet", `--separate-git-dir=${store}`, separate]);
+
+    const workspace = await discoverAt(root, recorder, noHooksOf(root));
+
+    expect(workspace.nested).toEqual([]);
+    expect(workspace.detached).toEqual([
+      { repoRoot: worktree, missing: false },
+      { repoRoot: separate, missing: false },
+    ]);
+    expect(mountedGitDirs(workspace)).toEqual([root]);
+    expect(cwds).toEqual([root]);
+    expect(workspaceNotices(workspace)).toEqual([
+      `pi-sandbox: ${worktree}, ${separate}: the git dir lies outside this folder, so git does not work there in the sandbox; start pi inside the checkout to use git there`,
+    ]);
+  });
+
+  it("refuses a nested checkout that reaches an outside git dir through a link inside the folder", async () => {
+    const root = await createRoot();
+    const main = await createRepo(join(await createRoot(), "main"));
+    const checkout = join(root, "checkout");
+
+    await git(main, ["worktree", "add", "--quiet", "-b", "feature", checkout]);
+
+    await symlink(join(main, ".git", "worktrees"), join(root, "trees"));
+
+    await writeFile(join(checkout, ".git"), `gitdir: ${join(root, "trees", "checkout")}\n`);
+
     await expect(discover(root)).rejects.toMatchObject({
-      message: `workspace: ${worktree} uses a git dir outside ${root}`,
+      message: `workspace: ${checkout} uses a git dir outside ${root}`,
       hint: "start pi inside it",
     });
+  });
+
+  it("leaves a nested .git file whose git dir is gone outside the folder as a plain folder, with a notice", async () => {
+    const root = await createRoot();
+    const stale = join(root, "stale");
+    const gone = join(await createRoot(), "main", ".git", "worktrees", "stale");
+
+    await mkdir(stale);
+
+    await writeFile(join(stale, ".git"), `gitdir: ${gone}\n`);
+
+    const workspace = await discover(root);
+
+    expect(workspace.detached).toEqual([{ repoRoot: stale, missing: true }]);
+    expect(workspaceNotices(workspace)).toEqual([
+      `pi-sandbox: ${stale}: .git points at a git dir that no longer exists, so the sandbox sees a plain folder; delete the .git file, or run git worktree prune in the repository that owned it`,
+    ]);
+  });
+
+  it("refuses a nested .git file whose missing git dir lies inside the folder, where the sandbox could create it", async () => {
+    const root = await createRoot();
+    const repo = await createRepo(join(root, "repo"));
+    const stale = join(root, "stale");
+    const gone = join(repo, ".git", "worktrees", "stale");
+
+    await mkdir(stale);
+
+    await writeFile(join(stale, ".git"), `gitdir: ${gone}\n`);
+
+    await expect(discover(root)).rejects.toMatchObject({
+      message: `workspace: ${join(stale, ".git")} points at ${gone}, which does not exist; the sandbox could create it and make ${stale} a repository with its own hooks, refusing`,
+      hint: `delete ${join(stale, ".git")}, or run git worktree repair or git worktree prune in the repository that owns ${gone}`,
+    });
+  });
+
+  it("follows a link in a .git pointer the way git does, refusing a missing git dir it lands inside the folder", async () => {
+    const root = await createRoot();
+    const checkout = join(root, "B");
+    const store = join(root, "deep", "store");
+
+    await mkdir(join(root, "deep", "d1", "d2", "d3"), { recursive: true });
+    await mkdir(checkout);
+    await symlink(join(root, "deep", "d1", "d2", "d3"), join(checkout, "sym"));
+    await writeFile(join(checkout, ".git"), "gitdir: sym/../../../store\n");
+
+    await expect(discover(root)).rejects.toThrow(
+      `workspace: ${join(checkout, ".git")} points at ${store}, which does not exist; the sandbox could create it`,
+    );
+
+    await git(root, ["init", "--quiet", "--bare", store]);
+
+    await expect(discover(root)).rejects.toThrow(`workspace: ${checkout} cannot be protected`);
+  });
+
+  it("counts a pointer through a link inside the folder as inside, even when the link leads outside", async () => {
+    const root = await createRoot();
+    const outside = await createRoot();
+    const checkout = join(root, "B");
+
+    await mkdir(checkout);
+    await symlink(outside, join(checkout, "sym"));
+    await writeFile(join(checkout, ".git"), "gitdir: sym/store\n");
+
+    await expect(discover(root)).rejects.toThrow(
+      `workspace: ${join(checkout, ".git")} points at ${join(outside, "store")}, which does not exist`,
+    );
+  });
+
+  it("keeps a nested worktree whose .git file holds a plain relative pointer", async () => {
+    const root = await createRoot();
+    const main = await createRepo(join(root, "main"));
+    const worktree = join(root, "wt");
+
+    await git(main, ["worktree", "add", "--quiet", "-b", "feature", worktree]);
+    await writeFile(join(worktree, ".git"), "gitdir: ../main/.git/worktrees/wt\n");
+
+    const workspace = await discover(root);
+
+    expect(workspace.detached).toBeUndefined();
+    expect(workspace.nested).toEqual([
+      expect.objectContaining({ repoRoot: main }),
+      expect.objectContaining({ repoRoot: worktree, gitCommonDir: join(main, ".git") }),
+    ]);
+  });
+
+  it("refuses a letter-case variant of .git in a workspace and at a repository root, and lists it leniently", async () => {
+    const root = await createRoot();
+    const variant = join(root, "A", ".GIT");
+    const refusal = (path: string) => ({
+      message: `workspace: ${path} is a letter-case variant of .git, which git opens as a repository on this volume, refusing`,
+      hint: "rename it to .git or remove it",
+    });
+
+    await mkdir(variant, { recursive: true });
+
+    await expect(discover(root)).rejects.toMatchObject(refusal(variant));
+    expect(
+      (await discoverAt(root, runner, noHooksOf(root), { lenient: true })).nested?.map(
+        (repo) => repo.repoRoot,
+      ),
+    ).toEqual([join(root, "A")]);
+    await expect(discover(join(root, "A"))).rejects.toMatchObject(refusal(variant));
+  });
+
+  it("refuses a stale .git at the cwd itself, as a single repository", async () => {
+    const root = await createRoot();
+    const gone = join(root, "missing");
+
+    await writeFile(join(root, ".git"), `gitdir: ${gone}\n`);
+
+    await expect(discover(root)).rejects.toThrow(
+      `git: ${join(root, ".git")} points at ${gone}, which is not a directory`,
+    );
+  });
+
+  it("still refuses a nested .git file whose target exists but is no git dir, or is no gitdir pointer", async () => {
+    const root = await createRoot();
+    const odd = join(root, "odd");
+
+    await mkdir(odd);
+
+    await writeFile(join(odd, ".git"), "not a pointer\n");
+
+    await expect(discover(root)).rejects.toThrow(
+      `workspace: ${odd} cannot be protected: git: ${join(odd, ".git")} is not a gitdir file`,
+    );
   });
 
   it("refuses a workspace with more than 128 repositories", async () => {
@@ -385,11 +629,132 @@ describe("the nested repository checks", () => {
   });
 });
 
+describe("bare repositories around a workspace", () => {
+  const withBare = async () => {
+    const root = await createRoot();
+    const bare = join(root, "remote.git");
+
+    await mkdir(root, { recursive: true });
+    await git(root, ["init", "--quiet", "--bare", bare]);
+    await createRepo(join(root, "checkout"));
+
+    return { root, bare };
+  };
+
+  it("accepts a bare repository inside a nested repository, as launching that repository alone does", async () => {
+    const root = await createRoot();
+    const repo = await createRepo(join(root, "repoA"));
+    const fixture = join(repo, "test", "fixtures", "remote.git");
+
+    await mkdir(join(repo, "test", "fixtures"), { recursive: true });
+    await git(root, ["init", "--quiet", "--bare", fixture]);
+
+    expect((await scanWorkspace(root, "workspace")).bare).toEqual([fixture]);
+    expect((await discover(root)).nested?.map((nested) => nested.repoRoot)).toEqual([repo]);
+    expect((await discoverAt(repo, runner, noHooksOf(root))).repoRoot).toBe(repo);
+  });
+
+  it("binds a bare repository in the folder read-only as a whole, without asking git or searching inside it", async () => {
+    const { root, bare } = await withBare();
+    const { runner: fake, calls } = createFakeRunner((call) =>
+      call.options.cwd === join(root, "checkout") ? undefined : { code: 0, stdout: "" },
+    );
+
+    await markRepo(join(bare, "objects", "planted"));
+
+    const scan = await scanWorkspace(root, "workspace");
+    const workspace = await discover(root);
+
+    expect(scan.bare).toEqual([bare]);
+    expect(scan.repos).toEqual([join(root, "checkout")]);
+    expect(workspace.nested?.map((nested) => nested.repoRoot)).toEqual([join(root, "checkout")]);
+    expect(workspace.bareDirs).toEqual([bare]);
+    expect(mountedGitDirs(workspace)).toEqual([root, join(root, "checkout", ".git")]);
+    expect(workspaceNotices(workspace)).toContain(
+      `pi-sandbox: ${bare}: bare repositories, read-only in the sandbox; clone and fetch from them work, push does not`,
+    );
+
+    await discoverAt(root, fake, noHooksOf(root)).catch(() => undefined);
+
+    expect(
+      calls.some(
+        (call) =>
+          String(call.options.cwd ?? "").startsWith(bare) || call.args.some((arg) => arg.includes(bare)),
+      ),
+    ).toBe(false);
+  });
+
+  it("refuses to start in a bare repository, and inside one", async () => {
+    const { bare } = await withBare();
+
+    await expect(discover(bare)).rejects.toMatchObject({
+      message: `workspace: ${bare} is a git dir (a bare repository), refusing`,
+      hint: "start pi in a checkout of it or in the folder above",
+    });
+  });
+
+  it("keeps the git dir of a bare-plus-worktrees layout with its repository", async () => {
+    const root = await createRoot();
+    const source = await createRepo(join(await createRoot(), "source"));
+    const store = join(root, "project", ".bare");
+    const main = join(root, "project", "main");
+
+    await mkdir(join(root, "project"));
+    await git(root, ["clone", "--quiet", "--bare", source, store]);
+    await git(root, [`--git-dir=${store}`, "worktree", "add", "--quiet", main]);
+
+    const workspace = await discover(root);
+
+    expect(workspace.bareDirs).toBeUndefined();
+    expect(workspace.nested).toEqual([expect.objectContaining({ repoRoot: main, gitCommonDir: store })]);
+  });
+
+  it("treats any folder with HEAD and a commondir, or HEAD, objects and refs of any kind and letter case, as a git dir", async () => {
+    const root = await createRoot();
+    const shapes: Record<string, string[]> = {
+      pointer: ["HEAD", "commondir"],
+      files: ["HEAD", "objects", "refs"],
+      mixed: ["Head", "OBJECTS", "Refs"],
+      plain: ["HEAD", "objects"],
+    };
+
+    await Promise.all(
+      Object.entries(shapes).map(async ([name, files]) => {
+        await mkdir(join(root, name));
+
+        await Promise.all(files.map((file) => writeFile(join(root, name, file), "")));
+      }),
+    );
+
+    expect((await scanWorkspace(root, "workspace")).bare).toEqual(
+      ["files", "mixed", "pointer"].map((name) => join(root, name)),
+    );
+    expect((await discover(root)).bareDirs).toEqual(
+      ["files", "mixed", "pointer"].map((name) => join(root, name)),
+    );
+    await expect(discover(join(root, "mixed"))).rejects.toThrow(
+      `workspace: ${join(root, "mixed")} is a git dir (a bare repository), refusing`,
+    );
+  });
+
+  it("refuses a folder inside a bare repository and lists it leniently", async () => {
+    const { root, bare } = await withBare();
+    const hooks = join(bare, "hooks");
+
+    await expect(discover(hooks)).rejects.toMatchObject({
+      message: `workspace: ${hooks} lies inside the git dir ${bare}, refusing`,
+    });
+    expect(await discoverAt(root, runner, noHooksOf(root), { lenient: true })).toMatchObject({
+      nested: [expect.objectContaining({ repoRoot: join(root, "checkout") })],
+    });
+  });
+});
+
 describe("the git configuration around a workspace", () => {
   const configured = async (hooksPath: string) => {
     const root = await createRoot();
     const home = await realpath(await tempDir("workspace-home"));
-    const env = { ...process.env, ...NO_SYSTEM, HOME: home, XDG_CONFIG_HOME: join(home, ".config") };
+    const env = { ...gitEnv, HOME: home, XDG_CONFIG_HOME: join(home, ".config") };
 
     await writeFile(join(home, ".gitconfig"), `[core]\n\thooksPath = ${join(root, hooksPath)}\n`);
 
@@ -408,7 +773,7 @@ describe("the git configuration around a workspace", () => {
   it("refuses a global hooksPath inside the workspace but outside its repositories", async () => {
     const setup = await configured("hooks");
     const repo = await createRepo(join(setup.root, "repo"));
-    const workspace = await discoverWorkspace(setup.root, setup.runner, noHooksOf(setup.root));
+    const workspace = await discoverAt(setup.root, setup.runner, noHooksOf(setup.root));
 
     await mkdir(join(setup.root, "hooks"));
 
@@ -423,7 +788,7 @@ describe("the git configuration around a workspace", () => {
     const setup = await configured(join("a", "tools", "hooks"));
     const first = await createRepo(join(setup.root, "a"));
     const second = await createRepo(join(setup.root, "b"));
-    const workspace = await discoverWorkspace(setup.root, setup.runner, noHooksOf(setup.root));
+    const workspace = await discoverAt(setup.root, setup.runner, noHooksOf(setup.root));
     const hooks = join(first, "tools", "hooks");
     const context = protectContext(setup, workspace);
 
@@ -442,22 +807,20 @@ describe("the git configuration around a workspace", () => {
     await createRepo(join(root, "repo"));
 
     const home = join(root, "home");
-    const env = { ...process.env, ...NO_SYSTEM, HOME: home, XDG_CONFIG_HOME: join(home, ".config") };
+    const env = { ...gitEnv, HOME: home, XDG_CONFIG_HOME: join(home, ".config") };
 
     await mkdir(home);
 
     await writeFile(join(home, ".gitconfig"), "[user]\n\tname = test\n");
 
-    await expect(
-      discoverWorkspace(root, createProcessRunner({ baseEnv: env }), noHooksOf(root)),
-    ).rejects.toThrow(
+    await expect(discoverAt(root, createProcessRunner({ baseEnv: env }), noHooksOf(root))).rejects.toThrow(
       `workspace: git configuration ${join(home, ".gitconfig")} lies inside the workspace, refusing`,
     );
   });
   const plainContext = (root: string, workspace?: Workspace) => ({
     runner,
-    home: homedir(),
-    env: process.env,
+    home: gitHome,
+    env: gitEnv,
     emptyHooksDir: noHooksOf(root),
     engineSockets: [],
     ...(workspace === undefined ? {} : { workspace }),
@@ -501,7 +864,7 @@ describe("the git configuration around a workspace", () => {
   it("refuses a global includeIf that only matches inside a nested repository and points outside every repository", async () => {
     const root = await createRoot();
     const home = await realpath(await tempDir("workspace-home"));
-    const env = { ...process.env, ...NO_SYSTEM, HOME: home, XDG_CONFIG_HOME: join(home, ".config") };
+    const env = { ...gitEnv, HOME: home, XDG_CONFIG_HOME: join(home, ".config") };
     const notes = join(root, "notes", "a.gitconfig");
 
     await createRepo(join(root, "a"));
@@ -515,9 +878,50 @@ describe("the git configuration around a workspace", () => {
       `[includeIf "gitdir:${join(root, "a")}/"]\n\tpath = ${notes}\n`,
     );
 
-    await expect(
-      discoverWorkspace(root, createProcessRunner({ baseEnv: env }), noHooksOf(root)),
-    ).rejects.toThrow(`workspace: git configuration ${notes} lies inside the workspace, refusing`);
+    await expect(discoverAt(root, createProcessRunner({ baseEnv: env }), noHooksOf(root))).rejects.toThrow(
+      `workspace: git configuration ${notes} lies inside the workspace, refusing`,
+    );
+  });
+
+  it("refuses an include in the workspace that does not exist yet, at discovery", async () => {
+    const root = await createRoot();
+    const repo = await createRepo(join(root, "a"));
+    const missing = join(root, "shared.gitconfig");
+
+    await git(repo, ["config", "include.path", "../../shared.gitconfig"]);
+
+    await expect(discover(root)).rejects.toThrow(
+      `git: ${join(repo, ".git", "config")} includes ${missing}, which does not exist; the sandbox could create it with settings host git would then run`,
+    );
+
+    await writeFile(missing, "");
+
+    await expect(discover(root)).rejects.toThrow(
+      `workspace: git configuration ${missing} lies inside the workspace, refusing`,
+    );
+  });
+
+  it("lists each nested repository's configuration once and reuses it for the protected paths", async () => {
+    const root = await createRoot();
+    const repo = await createRepo(join(root, "a"));
+    const calls: string[][] = [];
+    const recorder = {
+      ...runner,
+      run: (file: string, args: string[], options?: Parameters<typeof runner.run>[2]) => {
+        calls.push(args.filter((arg) => arg === "rev-parse" || arg === "config"));
+
+        return runner.run(file, args, options);
+      },
+    };
+    const workspace = await discoverAt(root, recorder, noHooksOf(root));
+    const nested = workspace.nested?.[0] ?? repoAt(repo);
+
+    await findProtectedGitPaths(nested, join(repo, ".git"), {
+      ...plainContext(root, workspace),
+      runner: recorder,
+    });
+
+    expect(calls.flat().sort()).toEqual(["config", "config", "rev-parse"]);
   });
 
   it("binds read-only a file a single repository's config includes from its working tree", async () => {
@@ -591,6 +995,45 @@ describe("the workspace git locks and session end", () => {
     );
 
     expect(held).toEqual([true, true]);
+  });
+
+  it("reports a git dir, a bare repository or a letter-case .git created during the session, in a workspace and a repository", async () => {
+    const root = await createRoot();
+    const repo = await createRepo(join(root, "repo"));
+    const shared = join(root, "shared");
+    const context = { runner, stateDir: join(root, "state") };
+    const review = "review it before running host git tools in this repository";
+
+    await mkdir(shared);
+    await git(shared, ["init", "--quiet", "--bare", "old.git"]);
+
+    const workspace = await discover(root);
+    const single = await discover(repo);
+    const singleContext = { runner, stateDir: join(root, "state-single") };
+
+    await recordGitBaseline(workspace, context);
+    await recordGitBaseline(single, singleContext);
+
+    await Promise.all([
+      git(root, ["init", "--quiet", "--bare", join(shared, "new.git")]),
+      git(root, ["init", "--quiet", "--bare", join(repo, "fixtures", "remote.git")]),
+      mkdir(join(root, "planted", ".GIT"), { recursive: true }),
+      mkdir(join(shared, "old.git", "nested.git"), { recursive: true }),
+    ]);
+
+    const notices = await gitLaunchEndNotices(workspace, context);
+
+    expect(notices).toEqual(
+      expect.arrayContaining([
+        `git: the sandbox created ${join(root, "planted", ".GIT")}; ${review}`,
+        `git: the sandbox created ${join(shared, "new.git")}; ${review}`,
+        `git: the sandbox created ${join(repo, "fixtures", "remote.git")}; ${review}`,
+      ]),
+    );
+    expect(notices.some((notice) => notice.includes("old.git"))).toBe(false);
+    expect(await gitLaunchEndNotices(single, singleContext)).toEqual([
+      `git: the sandbox created ${join(repo, "fixtures", "remote.git")}; ${review}`,
+    ]);
   });
 
   it("reports a .git created in the workspace and inside a nested repository during the session", async () => {

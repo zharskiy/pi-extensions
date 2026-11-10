@@ -1,14 +1,12 @@
 FROM node:24-bookworm-slim
 
-ARG PI_VERSION
-
 ENV DEBIAN_FRONTEND=noninteractive \
     NPM_CONFIG_UPDATE_NOTIFIER=false \
     NPM_CONFIG_FUND=false \
     NPM_CONFIG_AUDIT=false
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends git ripgrep fd-find ncurses-term openssh-client ca-certificates tini socat netcat-openbsd curl jq python3 python3-venv make unzip less procps xz-utils gh \
+ && apt-get install -y --no-install-recommends git ripgrep fd-find ncurses-term openssh-client ca-certificates socat netcat-openbsd curl jq python3 python3-venv make unzip less procps xz-utils gh \
  && ln -s /usr/bin/fdfind /usr/local/bin/fd \
  && rm -rf /var/lib/apt/lists/*
 
@@ -39,6 +37,8 @@ RUN arch="$(dpkg --print-architecture)" \
  && rm -f "$deb"
 
 ARG NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
+
+ARG PI_VERSION
 
 RUN test -n "${PI_VERSION}" || { echo "PI_VERSION build argument is required" >&2; exit 1; } \
  && npm install --global "@earendil-works/pi-coding-agent@${PI_VERSION}" \

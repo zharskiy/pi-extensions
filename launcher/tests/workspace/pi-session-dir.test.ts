@@ -1,7 +1,6 @@
-import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { hostAgentDir } from "../../shared/index.ts";
 import {
   assertHostSessionsDir,
@@ -10,20 +9,13 @@ import {
   sessionsSwitchNotice,
 } from "../../workspace/index.ts";
 import { sessionSlug } from "../../workspace/pi-session-dir.ts";
-
-const created: string[] = [];
-
-afterEach(async () => {
-  await Promise.all(created.splice(0).map((path) => rm(path, { recursive: true, force: true })));
-});
+import { tempDir } from "../support/temp-dir.ts";
 
 const createAgentDir = async () => {
-  const base = await realpath(await mkdtemp(join(tmpdir(), "pi-sandbox-sessions-")));
+  const base = await realpath(await tempDir("sessions"));
   const home = join(base, "home");
   const agentDir = join(home, ".pi", "agent");
   const repoRoot = join(base, "work", "repo");
-
-  created.push(base);
 
   await mkdir(join(agentDir, "sessions"), { recursive: true });
 

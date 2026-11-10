@@ -1,10 +1,10 @@
-import { mkdtemp, rm, stat } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { stat } from "node:fs/promises";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { activeGrants, addGrant, readGrants, revokeGrants } from "../../grants/store.ts";
 import { LauncherError } from "../../shared/index.ts";
 import { FAKE_EPOCH } from "../support/fake-clock.ts";
+import { tempDir } from "../support/temp-dir.ts";
 
 const REPO = "1".repeat(64);
 
@@ -13,11 +13,7 @@ const OTHER = "2".repeat(64);
 const state = { stateDir: "" };
 
 beforeEach(async () => {
-  state.stateDir = await mkdtemp(join(tmpdir(), "pi-sandbox-grants-"));
-});
-
-afterEach(async () => {
-  await rm(state.stateDir, { recursive: true, force: true });
+  state.stateDir = await tempDir("grants");
 });
 
 describe("addGrant and readGrants", () => {

@@ -1,20 +1,12 @@
-import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, realpath } from "node:fs/promises";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
-import { assertSafeWorkspace, type Workspace } from "../../workspace/index.ts";
-
-const created: string[] = [];
-
-afterEach(async () => {
-  await Promise.all(created.splice(0).map((path) => rm(path, { recursive: true, force: true })));
-});
+import { describe, expect, it } from "vitest";
+import { assertSafeMounts, assertSafeWorkspace, type Workspace } from "../../workspace/index.ts";
+import { tempDir } from "../support/temp-dir.ts";
 
 const createHome = async () => {
-  const base = await realpath(await mkdtemp(join(tmpdir(), "pi-sandbox-guard-")));
+  const base = await realpath(await tempDir("guard"));
   const home = join(base, "home");
-
-  created.push(base);
 
   await mkdir(join(home, "work", "repo"), { recursive: true });
 
@@ -133,6 +125,15 @@ describe("assertSafeWorkspace", () => {
     expect(() => assertSafeWorkspace(workspaceAt(join(base, "worktree"), home), context)).toThrow(
       "would mount",
     );
+  });
+
+  it("checks a single folder with the same table before anything is searched", async () => {
+    const { home, context } = await createHome();
+
+    expect(() => assertSafeMounts([home], context)).toThrow(
+      `${home} would mount ${home} into the sandbox, refusing`,
+    );
+    expect(() => assertSafeMounts([join(home, "work")], context)).not.toThrow();
   });
 
   it("refuses the filesystem root and hints at a project directory", async () => {

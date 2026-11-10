@@ -160,6 +160,13 @@ describe("proxy authentication", () => {
     expect(JSON.stringify(state.test.log)).not.toContain(state.token);
   });
 
+  it("refuses a CONNECT to port 80 as plain HTTP and names the host", async () => {
+    expect((await connectStatus("target.test:80")).status).toBe(403);
+    expect(state.test.log).toContainEqual(
+      expect.objectContaining({ host: "target.test", decision: "deny", rule: "plain-http" }),
+    );
+  });
+
   it("logs an unparseable CONNECT authority as unparseable", async () => {
     const raw = "leaked-secret-value/path?q=1";
 
@@ -477,6 +484,19 @@ describe("denials", () => {
     expect(hosts).toContain("denied-here.test");
     expect(JSON.parse(reply.body).denials).toContainEqual(
       expect.objectContaining({ host: "denied-here.test", port: 443, repoHash: REPO, rule: "egress.allow" }),
+    );
+  });
+
+  it("logs a CONNECT without the token but keeps it out of the denials list", async () => {
+    const since = Date.now();
+
+    await connectStatus("stranger.test:443", "not-a-token");
+
+    const reply = await plainGet(state.test.proxy.port, `/denials?since=${since}`, "127.0.0.1", state.token);
+
+    expect(JSON.parse(reply.body).denials).toEqual([]);
+    expect(state.test.log).toContainEqual(
+      expect.objectContaining({ host: "stranger.test", rule: "auth", repo: REPO, decision: "deny" }),
     );
   });
 

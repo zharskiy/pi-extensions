@@ -2,7 +2,6 @@ import { lookup } from "node:dns/promises";
 import { cpus, homedir, totalmem } from "node:os";
 import { createInterface } from "node:readline/promises";
 import { createColimaBackend } from "../backend/index.ts";
-import type { HostTerminal } from "../container/index.ts";
 import { locateBundledPi } from "../hostpi/index.ts";
 import {
   ensureRepoProxy,
@@ -14,33 +13,9 @@ import {
 import { createProcessRunner } from "../shared/index.ts";
 import { type CliDeps, pathsOf } from "./deps.ts";
 import { renderFailure, run } from "./run.ts";
-
-const DEFAULT_COLUMNS = 80;
-
-const DEFAULT_ROWS = 24;
+import { hostTerminal } from "./terminal.ts";
 
 const GIB = 1024 ** 3;
-
-const hostTerminal = (): HostTerminal => ({
-  stdin: process.stdin,
-  stdout: process.stdout,
-  stderr: process.stderr,
-  columns: process.stdout.columns ?? DEFAULT_COLUMNS,
-  rows: process.stdout.rows ?? DEFAULT_ROWS,
-  onResize: (listener) => {
-    const notify = () =>
-      listener({
-        columns: process.stdout.columns ?? DEFAULT_COLUMNS,
-        rows: process.stdout.rows ?? DEFAULT_ROWS,
-      });
-
-    process.stdout.on("resize", notify);
-
-    return () => {
-      process.stdout.off("resize", notify);
-    };
-  },
-});
 
 const resolveHost = async (host: string) =>
   (await lookup(host, { all: true }).catch(() => [])).map((entry) => entry.address);

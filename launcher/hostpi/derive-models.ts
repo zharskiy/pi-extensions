@@ -4,7 +4,7 @@ import { isJsonObject } from "../shared/index.ts";
 import { type Endpoint, endpointOf, hasQueryCredential, strippedUrl } from "./endpoints.ts";
 import { deriveHeaders, type HeaderTarget } from "./headers.ts";
 import { jsonPointer, objectOr } from "./json.ts";
-import { noHostNotice, providerEndpoints } from "./provider-endpoints.ts";
+import { httpsEndpoint, noHostNotice, providerEndpoints } from "./provider-endpoints.ts";
 import { type DeriveContext, mergeSections, placeholderOf, rulesFor, type Section } from "./rules.ts";
 import type { JsonObject, ProviderHosts } from "./types.ts";
 
@@ -44,15 +44,8 @@ const modelSecret = (scope: ProviderScope, id: string, name: string): SecretRef 
   key: jsonPointer(["providers", scope.id, "models", `[id=${id}]`, "headers", name]),
 });
 
-const modelEndpoints = (scope: ProviderScope, model: JsonObject) => {
-  if (model.baseUrl === undefined) {
-    return scope.endpoints;
-  }
-
-  const result = endpointOf(model.baseUrl);
-
-  return "endpoint" in result ? [result.endpoint] : [];
-};
+const modelEndpoints = (scope: ProviderScope, model: JsonObject) =>
+  model.baseUrl === undefined ? scope.endpoints : httpsEndpoint(model.baseUrl);
 
 const queryCredential = (label: string, key: string, what: string) => ({
   value: [],

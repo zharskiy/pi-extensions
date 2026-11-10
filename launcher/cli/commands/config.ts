@@ -1,6 +1,7 @@
-import { LauncherError } from "../../shared/index.ts";
+import { openContext } from "../context.ts";
 import { type CliDeps, writeLine, writeLines } from "../deps.ts";
-import { openContext } from "../launch.ts";
+
+export const JSON_FLAG = "--json";
 
 const showConfig = async (deps: CliDeps, json: boolean) => {
   const { effective } = (await openContext(deps, "host")).context;
@@ -22,11 +23,5 @@ const showConfig = async (deps: CliDeps, json: boolean) => {
 };
 
 export const configCommand = async (deps: CliDeps, args: string[]) => {
-  const [action] = args;
-
-  if (args.length > 1 || (action !== undefined && action !== "--json")) {
-    throw new LauncherError(`unknown config option "${args.join(" ")}"`, "pi sandbox config [--json]");
-  }
-
-  return showConfig(deps, action === "--json");
+  return showConfig(deps, args.includes(JSON_FLAG));
 };

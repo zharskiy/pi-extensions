@@ -1,17 +1,13 @@
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { ensureSalt, isAuthLikeHeader, stateLayout } from "../../shared/index.ts";
+import { tempDir } from "../support/temp-dir.ts";
 
 const state = { dir: "" };
 
 beforeEach(async () => {
-  state.dir = await mkdtemp(join(tmpdir(), "pi-sandbox-state-"));
-});
-
-afterEach(async () => {
-  await rm(state.dir, { recursive: true, force: true });
+  state.dir = await tempDir("state");
 });
 
 describe("ensureSalt", () => {

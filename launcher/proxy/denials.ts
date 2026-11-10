@@ -7,15 +7,14 @@ import { ESTABLISHED, rawReply } from "./replies.ts";
 
 type DenialInput = Pick<Denial, "rule" | "reason">;
 
-export type RecordAccess = (entry: Omit<AccessLogEntry, "time" | "user">) => void;
+export type RecordAccess = (entry: Omit<AccessLogEntry, "time" | "user" | "repo">) => void;
 
 export interface DenialContext {
   port?: number;
-  repoHash?: string;
   sni?: string;
 }
 
-const HINTED_RULES = new Set(["egress.allow", "egress.port", "egress.cap"]);
+const HINTED_RULES = new Set(["egress.allow", "egress.port"]);
 
 const MAX_DENIALS = 200;
 
@@ -34,18 +33,14 @@ const forbidden = (host: string, denial: DenialInput) =>
   rawReply(forbiddenStatus(denial), denialBody(host, denial));
 
 export const createDenials = (
+  repoHash: string,
   record: RecordAccess,
   pages: ReturnType<typeof createDenialPages> | undefined,
 ) => {
-  const remembered = new Map<string, DenialRecord[]>();
+  const state: { remembered: DenialRecord[] } = { remembered: [] };
 
-  const remember = (repoHash: string, entry: DenialRecord) => {
-    remembered.set(repoHash, [...(remembered.get(repoHash) ?? []), entry].slice(-MAX_DENIALS));
-  };
-
-  const note = (host: string, denial: DenialInput, context: DenialContext = {}) => {
+  const log = (host: string, denial: DenialInput, context: DenialContext = {}) => {
     record({
-      repo: context.repoHash,
       host,
       sni: context.sni,
       decision: "deny",
@@ -54,17 +49,21 @@ export const createDenials = (
       bytesIn: 0,
       bytesOut: 0,
     });
+  };
 
-    if (context.repoHash !== undefined) {
-      remember(context.repoHash, {
-        time: Date.now(),
-        host,
-        port: context.port ?? 0,
-        repoHash: context.repoHash,
-        rule: denial.rule,
-        reason: denial.reason,
-      });
-    }
+  const note = (host: string, denial: DenialInput, context: DenialContext = {}) => {
+    log(host, denial, context);
+
+    const entry = {
+      time: Date.now(),
+      host,
+      port: context.port ?? 0,
+      repoHash,
+      rule: denial.rule,
+      reason: denial.reason,
+    };
+
+    state.remembered = [...state.remembered, entry].slice(-MAX_DENIALS);
   };
 
   const refuse = (socket: Socket, host: string, denial: DenialInput, context: DenialContext = {}) => {
@@ -73,17 +72,12 @@ export const createDenials = (
     socket.end(forbidden(host, denial));
   };
 
-  const show = async (
-    client: Socket,
-    host: string,
-    denial: DenialInput,
-    context: { port: number; repoHash: string },
-  ) => {
+  const show = async (client: Socket, host: string, denial: DenialInput, context: { port: number }) => {
     note(host, denial, context);
 
     const secureContext = await pages?.context(host);
 
-    if (secureContext === undefined || pages === undefined) {
+    if (pages === undefined || secureContext === undefined) {
       client.end(forbidden(host, denial));
 
       return;
@@ -98,10 +92,9 @@ export const createDenials = (
     pages.serve(client, secureContext, denial.reason);
   };
 
-  const since = (repoHash: string, time: number) =>
-    (remembered.get(repoHash) ?? []).filter((entry) => entry.time >= time);
+  const since = (time: number) => state.remembered.filter((entry) => entry.time >= time);
 
-  return { note, refuse, show, since };
+  return { log, note, refuse, show, since };
 };
 
 export type Denials = ReturnType<typeof createDenials>;

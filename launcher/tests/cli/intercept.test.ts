@@ -37,16 +37,83 @@ const workspaceRoot = async () => {
 };
 
 describe("pi install and pi remove", () => {
-  it("runs pi install and pi remove with the host pi in the current directory, without the sandbox", async () => {
+  it("runs pi install and pi remove with the host pi from an empty directory, without the sandbox", async () => {
     const harness = await createHarness({ backend: noBackend });
 
     expect(await run(["install", "npm:fresh"], harness.deps)).toBe(0);
     expect(await run(["remove", "npm:old"], harness.deps)).toBe(0);
+    expect(await run(["install", "https://github.com/acme/ext@v1"], harness.deps)).toBe(0);
+    expect(await run(["install", "git:git@github.com:acme/ext"], harness.deps)).toBe(0);
+    expect(await run(["install", "ssh://git@git.example.test/acme/ext.git"], harness.deps)).toBe(0);
     expect(hostPiRuns(harness)).toEqual([
       ["install", "npm:fresh"],
       ["remove", "npm:old"],
+      ["install", "https://github.com/acme/ext@v1"],
+      ["install", "git:git@github.com:acme/ext"],
+      ["install", "ssh://git@git.example.test/acme/ext.git"],
     ]);
-    expect(harness.calls.find((entry) => entry.interactive)?.options).toEqual({ cwd: harness.cwd });
+
+    const cwds = harness.calls.filter((entry) => entry.interactive).map((entry) => entry.options.cwd ?? "");
+
+    expect(cwds.every((cwd) => !cwd.startsWith(harness.repoRoot) && cwd.includes("mcp-login-"))).toBe(true);
+    expect(await Promise.all(cwds.map((cwd) => readdir(cwd).catch(() => "removed")))).toEqual(
+      cwds.map(() => "removed"),
+    );
+  });
+
+  it("hands a relative local source outside the repository to the host pi as an absolute path", async () => {
+    const harness = await createHarness({ backend: noBackend });
+    const ext = join(harness.deps.home, "tools", "ext");
+
+    await mkdir(ext, { recursive: true });
+
+    expect(await run(["remove", "~/tools/ext"], harness.deps)).toBe(0);
+    expect(hostPiRuns(harness)).toEqual([["remove", ext]]);
+  });
+
+  it("treats every source host pi would read as a path as local, and refuses it inside the repository", async () => {
+    const harness = await createHarness({ backend: noBackend });
+    const sources = [
+      " npm:foo",
+      "github:evil",
+      "https://example.com",
+      "ssh:x",
+      "git:x",
+      `git:file://${harness.repoRoot}`,
+      "git://example.com/acme/ext",
+      "git@github.com:acme/ext",
+    ];
+
+    expect(await Promise.all(sources.map((source) => run(["install", source], harness.deps)))).toEqual(
+      sources.map(() => 1),
+    );
+    expect(hostPiRuns(harness)).toEqual([]);
+    sources.forEach((source) => {
+      expect(harness.stderr()).toContain(
+        `pi-sandbox: ${source} lies in the repository, which the sandbox can rewrite; not installed on the host\n`,
+      );
+    });
+  });
+
+  it("refuses npm specs that name a path or another protocol", async () => {
+    const harness = await createHarness({ backend: noBackend });
+    const sources = [
+      "npm:/opt/ext",
+      "npm:file:../ext",
+      "npm:link:../ext",
+      "npm:foo@file:../ext",
+      "npm:./ext",
+    ];
+
+    expect(await Promise.all(sources.map((source) => run(["install", source], harness.deps)))).toEqual(
+      sources.map(() => 1),
+    );
+    expect(hostPiRuns(harness)).toEqual([]);
+    sources.forEach((source) => {
+      expect(harness.stderr()).toContain(
+        `pi-sandbox: ${source} is not a plain npm package name and version; not installed on the host\n`,
+      );
+    });
   });
 
   it("installs a local source outside the repository on the host", async () => {
@@ -71,6 +138,8 @@ describe("pi install and pi remove", () => {
 
     expect(await run(["install", "../ext"], harness.deps)).toBe(1);
     expect(await run(["install", link], harness.deps)).toBe(1);
+    expect(await run(["install", "ext"], harness.deps)).toBe(1);
+    expect(await run(["install", `file://${join(harness.repoRoot, "ext")}`], harness.deps)).toBe(1);
 
     const workspace = await workspaceRoot();
 
@@ -82,6 +151,12 @@ describe("pi install and pi remove", () => {
     );
     expect(harness.stderr()).toContain(
       `pi-sandbox: ${link} lies in the repository, which the sandbox can rewrite; not installed on the host\n`,
+    );
+    expect(harness.stderr()).toContain(
+      "pi-sandbox: ext lies in the repository, which the sandbox can rewrite; not installed on the host\n",
+    );
+    expect(harness.stderr()).toContain(
+      `pi-sandbox: file://${join(harness.repoRoot, "ext")} lies in the repository, which the sandbox can rewrite; not installed on the host\n`,
     );
     expect(workspace.stderr()).toContain(
       "pi-sandbox: ./tools/ext lies in the repository, which the sandbox can rewrite; not installed on the host\n",

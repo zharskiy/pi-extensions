@@ -2,6 +2,7 @@ import { BlockList, isIP } from "node:net";
 import {
   authorityOf,
   isLoopbackName,
+  matchesDenyEntry,
   matchesPattern,
   normalizeHost,
   parseEntry,
@@ -18,7 +19,6 @@ export interface EgressPolicy {
 export interface ConnectRequest {
   host: string;
   port: number;
-  sni?: string;
 }
 
 export interface Denial {
@@ -27,7 +27,11 @@ export interface Denial {
   reason: string;
 }
 
-export type ConnectDecision = { allowed: true } | Denial;
+type AllowRule = "egress.allow" | "credential" | "grant-or-derived";
+
+type ConnectDecision = { allowed: true; rule: AllowRule } | Denial;
+
+export type EgressDecider = (request: ConnectRequest, extra?: string[]) => ConnectDecision;
 
 const METADATA_ADDRESS = "169.254.169.254";
 
@@ -70,6 +74,8 @@ const ADDRESS_RANGES: AddressRange[] = [
     reason: "translated or tunnelled IPv6 address",
     ranges: [
       ["64:ff9b::", 96, "ipv6"],
+      ["64:ff9b:1::", 48, "ipv6"],
+      ["::ffff:0:0:0", 96, "ipv6"],
       ["2002::", 16, "ipv6"],
     ],
   },
@@ -90,6 +96,7 @@ const ADDRESS_RANGES: AddressRange[] = [
       ["192.168.0.0", 16, "ipv4"],
       ["100.64.0.0", 10, "ipv4"],
       ["fc00::", 7, "ipv6"],
+      ["fec0::", 10, "ipv6"],
     ],
   },
   {
@@ -149,10 +156,19 @@ const notAllowed = (rule: string, host: string, port: number, grants: boolean) =
   );
 };
 
-const policyHosts = (policy: EgressPolicy) => [...policy.allow, ...(policy.credentialHosts ?? [])];
+interface AllowEntry {
+  pattern: string;
+  port: number;
+  rule: AllowRule;
+}
 
-const isDenied = (host: string, port: number, deny: string[]) =>
-  deny.map(parseEntry).some((entry) => matchesPattern(host, entry.pattern) && (entry.port ?? port) === port);
+type ParsedEntry = ReturnType<typeof parseEntry>;
+
+const allowEntries = (entries: string[], rule: AllowRule): AllowEntry[] =>
+  entries.map(parseEntry).map((entry) => ({ pattern: entry.pattern, port: entry.port ?? TLS_PORT, rule }));
+
+const isDenied = (host: string, port: number, deny: ParsedEntry[]) =>
+  deny.some((entry) => matchesDenyEntry(host, entry.pattern) && (entry.port ?? port) === port);
 
 const literalDecision = (host: string): Denial => {
   const restricted = restrictedAddress(host);
@@ -166,7 +182,18 @@ const isLiteral = (host: string) => isIP(host.replace(/^\[|\]$/g, "")) !== 0;
 
 const isNumericHost = (host: string) => NUMERIC_LABEL.test(host.split(".").at(-1) ?? "");
 
-const hostDecision = (host: string, port: number, policy: EgressPolicy, extra: string[]): ConnectDecision => {
+interface CompiledPolicy {
+  allow: AllowEntry[];
+  deny: ParsedEntry[];
+  grants: boolean;
+}
+
+const hostDecision = (
+  host: string,
+  port: number,
+  policy: CompiledPolicy,
+  extra: AllowEntry[],
+): ConnectDecision => {
   if (isLiteral(host)) {
     return literalDecision(host);
   }
@@ -183,23 +210,21 @@ const hostDecision = (host: string, port: number, policy: EgressPolicy, extra: s
     return deny("loopback", `${host} is a loopback name`);
   }
 
-  if (isDenied(host, port, policy.deny ?? [])) {
+  if (isDenied(host, port, policy.deny)) {
     return deny("egress.deny", `${host} is in egress.deny`);
   }
 
-  const entries = [...policyHosts(policy), ...extra]
-    .map(parseEntry)
-    .filter((entry) => matchesPattern(host, entry.pattern));
+  const entries = [...policy.allow, ...extra].filter((entry) => matchesPattern(host, entry.pattern));
 
   if (entries.length === 0) {
-    return notAllowed("egress.allow", host, port, policy.grants !== false);
+    return notAllowed("egress.allow", host, port, policy.grants);
   }
 
-  if (!entries.some((entry) => (entry.port ?? TLS_PORT) === port)) {
-    return notAllowed("egress.port", host, port, policy.grants !== false);
-  }
+  const allowing = entries.find((entry) => entry.port === port);
 
-  return { allowed: true };
+  return allowing === undefined
+    ? notAllowed("egress.port", host, port, policy.grants)
+    : { allowed: true, rule: allowing.rule };
 };
 
 export const sniDenial = (host: string, sni: string | undefined): Denial | undefined => {
@@ -213,17 +238,21 @@ export const sniDenial = (host: string, sni: string | undefined): Denial | undef
   return name === target ? undefined : deny("sni", `TLS server name ${name} does not match ${target}`);
 };
 
-export const decideConnect = (
-  request: ConnectRequest,
-  policy: EgressPolicy,
-  extra: string[] = [],
-): ConnectDecision => {
-  const host = normalizeHost(request.host);
-  const decision = hostDecision(host, request.port, policy, extra);
+export const compilePolicy = (policy: EgressPolicy): EgressDecider => {
+  const compiled: CompiledPolicy = {
+    allow: [
+      ...allowEntries(policy.allow, "egress.allow"),
+      ...allowEntries(policy.credentialHosts ?? [], "credential"),
+    ],
+    deny: (policy.deny ?? []).map(parseEntry),
+    grants: policy.grants !== false,
+  };
 
-  if (!decision.allowed || request.sni === undefined) {
-    return decision;
-  }
-
-  return sniDenial(host, request.sni) ?? decision;
+  return (request, extra = []) =>
+    hostDecision(
+      normalizeHost(request.host),
+      request.port,
+      compiled,
+      allowEntries(extra, "grant-or-derived"),
+    );
 };

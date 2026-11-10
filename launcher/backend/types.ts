@@ -72,7 +72,6 @@ export interface ExecIo {
 export interface Detection {
   available: boolean;
   reason?: string;
-  version?: string;
 }
 
 export interface ImageInfo {
@@ -91,7 +90,6 @@ export interface ImageSummary {
 export interface ProxyRoute {
   network: NetworkRef;
   address: string;
-  notices?: string[];
 }
 
 export interface ProxyRouteRequest {
@@ -130,11 +128,11 @@ export interface VmShareOptions {
 }
 
 export interface Vm {
-  ensureRunning(report: VmReport): Promise<void>;
+  ensureRunning(report: VmReport, shares?: VmPath[]): Promise<void>;
   coverage(paths: VmPath[]): Promise<VmCoverage | undefined>;
   ensureShares(paths: VmPath[], options: VmShareOptions): Promise<void>;
   size(): Promise<VmSize | undefined>;
-  recommendedSize(cpus: number, memGiB: number): VmSize;
+  resizeCommand(size: VmSize): string;
   stop(options: Pick<VmShareOptions, "busy">): Promise<VmStop>;
 }
 

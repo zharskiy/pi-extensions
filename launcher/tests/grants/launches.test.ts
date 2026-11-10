@@ -1,9 +1,9 @@
-import { mkdtemp, readdir, rm, utimes, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readdir, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { endLaunch, liveLaunches, newLaunchId, registerLaunch } from "../../grants/index.ts";
 import { bootTime, processMark, stateLayout } from "../../shared/index.ts";
+import { tempDir } from "../support/temp-dir.ts";
 
 const REPO = "1".repeat(64);
 
@@ -12,13 +12,9 @@ const DEAD_PID = 999_999;
 const state = { stateDir: "", self: { pid: 0, boot: 0, start: "" } };
 
 beforeEach(async () => {
-  state.stateDir = await mkdtemp(join(tmpdir(), "pi-sandbox-launches-"));
+  state.stateDir = await tempDir("launches");
 
   state.self = await processMark();
-});
-
-afterEach(async () => {
-  await rm(state.stateDir, { recursive: true, force: true });
 });
 
 const entry = (pid = process.pid, repoHash = REPO) => ({

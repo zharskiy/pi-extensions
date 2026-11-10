@@ -1,20 +1,12 @@
-import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, realpath } from "node:fs/promises";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { assertWithinWorkspaceRoots, type Workspace } from "../../workspace/index.ts";
-
-const created: string[] = [];
-
-afterEach(async () => {
-  await Promise.all(created.splice(0).map((path) => rm(path, { recursive: true, force: true })));
-});
+import { tempDir } from "../support/temp-dir.ts";
 
 const createTree = async () => {
-  const unresolved = await mkdtemp(join(tmpdir(), "pi-sandbox-roots-"));
+  const unresolved = await tempDir("roots");
   const base = await realpath(unresolved);
-
-  created.push(base);
 
   await mkdir(join(base, "work", "repo"), { recursive: true });
   await mkdir(join(base, "elsewhere"), { recursive: true });

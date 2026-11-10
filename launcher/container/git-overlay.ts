@@ -1,5 +1,5 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
-import { dirname, sep } from "node:path";
+import { dirname } from "node:path";
 import { engineSocketPath } from "../backend/index.ts";
 import {
   type CommandRunner,
@@ -11,6 +11,8 @@ import {
 } from "../shared/index.ts";
 import {
   assertGitIntegrity,
+  byDepth,
+  dirsBetween,
   findProtectedGitPaths,
   type GitOverlay,
   type GitPathGuard,
@@ -20,21 +22,21 @@ import {
   type ProtectedGitPaths,
   pinGitDirs,
   protectedGitOverlay,
+  protectedWorkspaceOverlay,
   recordGitBaseline,
+  unique,
   type Workspace,
-  workspaceSelfBinds,
 } from "../workspace/index.ts";
 import { isGitConfigFile } from "./spec.ts";
 
 export type { GitOverlay } from "../workspace/index.ts";
-
-export { gitLaunchEndNotices, gitLaunchNotices } from "../workspace/index.ts";
 
 export interface GitGuardContext {
   runner: CommandRunner;
   home: string;
   env: NodeJS.ProcessEnv;
   stateDir: string;
+  volumePaths?: string[];
 }
 
 export interface GitPlan {
@@ -50,7 +52,7 @@ const protectContext = (context: GitGuardContext): GitProtectContext => ({
   runner: context.runner,
   home: context.home,
   env: context.env,
-  emptyHooksDir: stateLayout(context.stateDir).gitNoHooks,
+  emptyHooksDir: stateLayout(context.stateDir).emptyDir,
   engineSockets: [engineSocketPath(context.home)],
 });
 
@@ -59,12 +61,12 @@ const sameList = (first: string[], second: string[]) =>
 
 interface Recorder {
   pin(path: string, gitCommonDir: string): Promise<void>;
-  dirs(paths: string[]): Promise<void>;
+  dirs(paths: string[], gitCommonDir: string): Promise<void>;
 }
 
 const recorderOf = (stateDir: string, owner: string): Recorder => ({
   pin: (path, gitCommonDir) => recordPins(stateDir, owner, [{ path, gitCommonDir }]),
-  dirs: (paths) => recordCreatedDirs(stateDir, owner, paths),
+  dirs: (paths, gitCommonDir) => recordCreatedDirs(stateDir, owner, paths, { gitCommonDir }),
 });
 
 const pinned = async (
@@ -92,42 +94,36 @@ const pinned = async (
   return current;
 };
 
-const depthOf = (path: string) => path.split(sep).length;
-
-const byDepth = (left: string, right: string) => depthOf(left) - depthOf(right) || left.localeCompare(right);
-
-const unique = (paths: string[]) => [...new Set(paths)];
-
-const combined = (workspace: Workspace, overlays: GitOverlay[]): GitOverlay => ({
-  selfBinds: unique([
-    ...workspaceSelfBinds(workspace),
-    ...overlays.flatMap((overlay) => overlay.selfBinds),
-  ]).sort(byDepth),
+const combined = (overlays: GitOverlay[]): GitOverlay => ({
+  selfBinds: unique(overlays.flatMap((overlay) => overlay.selfBinds)).sort(byDepth),
   readOnlyDirs: unique(overlays.flatMap((overlay) => overlay.readOnlyDirs)),
   readOnlyFiles: unique(overlays.flatMap((overlay) => overlay.readOnlyFiles)),
 });
 
-const merged = (workspace: Workspace, overlays: GitOverlay[]): GitOverlay => {
+const merged = (workspace: Workspace, outer: GitOverlay, overlays: GitOverlay[]): GitOverlay => {
   const [single] = overlays;
 
-  return workspace.isGitRepo && single !== undefined ? single : combined(workspace, overlays);
+  return workspace.isGitRepo && single !== undefined ? single : combined([outer, ...overlays]);
 };
+
+const outerOverlay = (workspace: Workspace, protect: GitProtectContext) =>
+  workspace.isGitRepo
+    ? Promise.resolve(EMPTY)
+    : protectedWorkspaceOverlay(workspace, gitPathGuard(workspace, protect));
 
 interface RepoPlan {
   overlay: GitOverlay;
   ready(recorder: Recorder): Promise<GitOverlay>;
 }
 
-const createdChain = (first: string | undefined, dir: string): string[] => {
-  if (first === undefined) {
-    return [];
-  }
+const createdChain = (first: string | undefined, dir: string) =>
+  first === undefined ? [] : [first, ...dirsBetween(first, dir)];
 
-  return dir === first || dirname(dir) === dir ? [dir] : [...createdChain(first, dirname(dir)), dir];
-};
-
-const createDir = async (dir: string, recorder: Recorder) => {
-  await recorder.dirs(createdChain(await mkdir(dir, { recursive: true }).catch(() => undefined), dir));
+const createDir = async (dir: string, recorder: Recorder, gitCommonDir: string) => {
+  await recorder.dirs(
+    createdChain(await mkdir(dir, { recursive: true }).catch(() => undefined), dir),
+    gitCommonDir,
+  );
 };
 
 const readiedRepo = async (
@@ -139,7 +135,7 @@ const readiedRepo = async (
 ) => {
   const paths = await pinned(repo, discovered, protect, recorder);
 
-  await Promise.all(paths.dirs.map((dir) => createDir(dir, recorder)));
+  await Promise.all(paths.dirs.map((dir) => createDir(dir, recorder, paths.gitCommonDir)));
 
   return protectedGitOverlay(repo, paths, guard);
 };
@@ -171,7 +167,12 @@ const copyGitConfig = async (stateDir: string, owner: string, path: string) => {
   await writeFile(copy, data, { mode: mode & MODE_BITS, flag: "wx" });
 };
 
-const readied = async (workspace: Workspace, context: GitGuardContext, plans: RepoPlan[]) => {
+const readied = async (
+  workspace: Workspace,
+  context: GitGuardContext,
+  plans: RepoPlan[],
+  outer: () => Promise<GitOverlay>,
+) => {
   const owner = repoHash(workspace.repoRoot);
   const recorder = recorderOf(context.stateDir, owner);
   const outcomes = await Promise.allSettled(plans.map((plan) => plan.ready(recorder)));
@@ -183,6 +184,7 @@ const readied = async (workspace: Workspace, context: GitGuardContext, plans: Re
 
   const overlay = merged(
     workspace,
+    await outer(),
     outcomes.flatMap((outcome) => (outcome.status === "fulfilled" ? [outcome.value] : [])),
   );
 
@@ -200,11 +202,17 @@ export const planGitOverlay = async (workspace: Workspace, context: GitGuardCont
     repo.gitCommonDir === undefined ? [] : [{ repo, gitCommonDir: repo.gitCommonDir }],
   );
 
-  if (repos.length === 0) {
+  if (repos.length === 0 && workspace.isGitRepo) {
     return NO_GIT_PLAN;
   }
 
   const protect = workspace.isGitRepo ? protectContext(context) : { ...protectContext(context), workspace };
+  const outer = () => outerOverlay(workspace, protect);
+
+  if (repos.length === 0) {
+    return { overlay: await outer(), ready: outer };
+  }
+
   const plans = await Promise.all(
     repos.map(({ repo, gitCommonDir }) => repoPlan(repo, gitCommonDir, protect)),
   );
@@ -212,8 +220,9 @@ export const planGitOverlay = async (workspace: Workspace, context: GitGuardCont
   return {
     overlay: merged(
       workspace,
+      await outer(),
       plans.map((plan) => plan.overlay),
     ),
-    ready: () => readied(workspace, context, plans),
+    ready: () => readied(workspace, context, plans, outer),
   };
 };

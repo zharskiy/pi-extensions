@@ -332,10 +332,19 @@ const stopProxy = async (repo) => {
 
 const stopLogins = async (stateDir) => {
   const logins = Object.values((await readJson(join(stateDir, "mcp-login.json"))) ?? {});
-  const groups = logins
+  const recorded = logins
     .map((login) => login?.running)
-    .filter((running) => Number.isInteger(running?.pgid) && running.pgid > 0 && Number.isFinite(running.boot))
+    .filter(
+      (running) =>
+        Number.isInteger(running?.pgid) &&
+        running.pgid > 0 &&
+        Number.isFinite(running.boot) &&
+        typeof running.start === "string" &&
+        running.start !== "",
+    )
     .filter((running) => sameBoot(running.boot) && alive(-running.pgid));
+  const starts = await Promise.all(recorded.map((running) => processStart(running.pgid)));
+  const groups = recorded.filter((running, index) => starts[index] === running.start);
 
   if (!dryRun) {
     groups.forEach((running) => {

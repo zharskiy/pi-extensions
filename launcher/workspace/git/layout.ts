@@ -24,6 +24,12 @@ export const isPinText = (text: string) => PIN.test(text);
 
 export const pointerPath = (base: string, text: string) => resolve(base, text.trimEnd());
 
+export const gitFileTarget = (base: string, text: string) => {
+  const [line = ""] = text.split("\n");
+
+  return line.startsWith(GIT_FILE_PREFIX) ? pointerPath(base, line.slice(GIT_FILE_PREFIX.length)) : undefined;
+};
+
 export const lstatKind = async (path: string, kind: "file" | "dir") => {
   const info = await lstatOrUndefined(path);
 
@@ -73,7 +79,7 @@ const realOrRefuse = (path: string, owner: string) =>
     throw gitRefusal(owner, `points at ${path}, which does not exist`);
   });
 
-const fillEmptyPin = async (path: string) => {
+export const fillEmptyPin = async (path: string) => {
   const handle = await open(path, constants.O_WRONLY | constants.O_NOFOLLOW).catch(() => undefined);
 
   if (handle === undefined) {
@@ -99,7 +105,9 @@ const fillEmptyPin = async (path: string) => {
   }
 };
 
-export const pinStateOf = async (gitDir: string) => {
+type PinState = "absent" | "empty" | "pinned";
+
+export const pinStateOf = async (gitDir: string): Promise<PinState> => {
   const path = join(gitDir, "commondir");
   const text = await readGitPointer(path);
 
@@ -108,9 +116,7 @@ export const pinStateOf = async (gitDir: string) => {
   }
 
   if (text === "") {
-    await fillEmptyPin(path);
-
-    return "pinned";
+    return "empty";
   }
 
   if (!isPinText(text)) {
@@ -120,20 +126,25 @@ export const pinStateOf = async (gitDir: string) => {
   return "pinned";
 };
 
-const ownGitDir = async (gitDir: string): Promise<GitLayout> => {
-  await pinStateOf(gitDir);
+interface LayoutOptions {
+  fillEmptyPin?: boolean;
+}
+
+const ownGitDir = async (gitDir: string, options: LayoutOptions): Promise<GitLayout> => {
+  if ((await pinStateOf(gitDir)) === "empty" && options.fillEmptyPin === true) {
+    await fillEmptyPin(join(gitDir, "commondir"));
+  }
 
   return { gitDir, gitCommonDir: gitDir };
 };
 
 const linkedGitDir = async (repoRoot: string, dotGit: string) => {
-  const [line = ""] = (await requiredPointer(dotGit)).split("\n");
+  const target = gitFileTarget(repoRoot, await requiredPointer(dotGit));
 
-  if (!line.startsWith(GIT_FILE_PREFIX)) {
+  if (target === undefined) {
     throw gitRefusal(dotGit, "is not a gitdir file");
   }
 
-  const target = pointerPath(repoRoot, line.slice(GIT_FILE_PREFIX.length));
   if ((await lstatKind(target, "dir")) !== "match") {
     throw gitRefusal(dotGit, `points at ${target}, which is not a directory`);
   }
@@ -170,7 +181,7 @@ const worktreeLayout = async (repoRoot: string, gitDir: string, pointer: string)
   return { gitDir, gitCommonDir };
 };
 
-export const gitLayoutAt = async (repoRoot: string): Promise<GitLayout> => {
+export const gitLayoutAt = async (repoRoot: string, options: LayoutOptions = {}): Promise<GitLayout> => {
   const dotGit = join(repoRoot, ".git");
   const kind = await lstatKind(dotGit, "dir");
 
@@ -179,14 +190,14 @@ export const gitLayoutAt = async (repoRoot: string): Promise<GitLayout> => {
   }
 
   if (kind === "match") {
-    return ownGitDir(dotGit);
+    return ownGitDir(dotGit, options);
   }
 
   const gitDir = await linkedGitDir(repoRoot, dotGit);
   const text = await readGitPointer(join(gitDir, "commondir"));
 
   return text === undefined || text === "" || isPinText(text)
-    ? ownGitDir(gitDir)
+    ? ownGitDir(gitDir, options)
     : worktreeLayout(repoRoot, gitDir, text);
 };
 
@@ -232,10 +243,56 @@ const moduleGitDirsUnder = async (dir: string): Promise<string[]> => {
   return found.flat();
 };
 
-export const findModuleGitDirs = (gitCommonDir: string) => moduleGitDirsUnder(join(gitCommonDir, "modules"));
-
 export const findWorktreeGitDirs = async (gitCommonDir: string) => {
   const dir = join(gitCommonDir, "worktrees");
 
   return (await isStructuralDir(dir)) ? realChildDirs(dir) : [];
+};
+
+export const findModuleGitDirs = async (gitCommonDir: string) => {
+  const owners = [gitCommonDir, ...(await findWorktreeGitDirs(gitCommonDir))];
+  const found = await Promise.all(owners.map((dir) => moduleGitDirsUnder(join(dir, "modules"))));
+
+  return found.flat();
+};
+
+const readQuietly = (path: string) =>
+  readRegularFile(path).then(
+    (file) => file.data.toString("utf8"),
+    () => undefined,
+  );
+
+export const lexicalGitLayout = async (repoRoot: string): Promise<GitLayout> => {
+  const dotGit = join(repoRoot, ".git");
+  const text = await readQuietly(dotGit);
+  const gitDir = (text === undefined ? undefined : gitFileTarget(repoRoot, text)) ?? dotGit;
+  const pointer = await readQuietly(join(gitDir, "commondir"));
+  const own = pointer === undefined || pointer === "" || isPinText(pointer);
+
+  return { gitDir, gitCommonDir: own ? gitDir : pointerPath(gitDir, pointer) };
+};
+
+export const isGitName = (name: string) => name.toLowerCase() === ".git";
+
+const SHAPE_NAMES = ["head", "commondir", "objects", "refs"];
+
+export const hasGitDirShape = (names: string[]) => {
+  const present = SHAPE_NAMES.filter((name) => names.some((entry) => entry.toLowerCase() === name));
+
+  return (
+    present.includes("head") &&
+    (present.includes("commondir") || (present.includes("objects") && present.includes("refs")))
+  );
+};
+
+const isGitDirAt = async (dir: string) => hasGitDirShape(await readdir(dir).catch(() => []));
+
+export const gitDirHolding = async (dir: string): Promise<string | undefined> => {
+  if (await isGitDirAt(dir)) {
+    return dir;
+  }
+
+  const parent = dirname(dir);
+
+  return parent === dir ? undefined : gitDirHolding(parent);
 };

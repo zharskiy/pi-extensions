@@ -1,4 +1,5 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, realpath, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createColimaVm } from "../../backend/colima/vm.ts";
 import { run } from "../../cli/index.ts";
@@ -6,7 +7,8 @@ import { registerLaunch } from "../../grants/index.ts";
 import { processMark, sha256Hex, stateLayout } from "../../shared/index.ts";
 import { createHarness, writeColimaMounts, writeLimaMounts } from "../cli/harness.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
-import { argvOf, type FakeCall } from "../support/fake-runner.ts";
+import { argvOf, createFakeRunner, type FakeCall } from "../support/fake-runner.ts";
+import { tempDir } from "../support/temp-dir.ts";
 
 interface ColimaAnswers {
   running?: boolean;
@@ -188,6 +190,83 @@ describe("a launch starts the stopped sandbox VM", () => {
     expect(status.harness.stdout()).toContain("runtime: none (the sandbox VM engine is unreachable");
     expect(gc.harness.stdout()).toContain("the engine step was skipped");
     expect([...status.colimaCalls(), ...gc.colimaCalls()]).toEqual([]);
+  });
+});
+
+const stoppedVm = async (detections: boolean[] = []) => {
+  const root = await realpath(await tempDir("vm"));
+  const home = join(root, "home");
+  const outside = join(root, "outside-share-repo");
+  const state = { running: false, detections: [...detections] };
+
+  await writeColimaMounts(home, [{ location: home, writable: true }]);
+
+  await writeLimaMounts(home, [{ location: home, writable: true }]);
+
+  const fake = createFakeRunner(async (call) => {
+    if (call.args[0] === "status") {
+      return { code: state.running ? 0 : 1 };
+    }
+
+    const mounts = call.args.flatMap((arg, index) => (call.args[index - 1] === "--mount" ? [arg] : []));
+
+    if (mounts.length > 0) {
+      await writeLimaMounts(
+        home,
+        mounts.map((mount) => ({ location: mount.replace(/:w$/, ""), writable: mount.endsWith(":w") })),
+      );
+    }
+
+    state.running = true;
+
+    return {};
+  });
+  const vm = createColimaVm({
+    home,
+    stateDir: join(home, "state"),
+    runner: fake.runner,
+    detect: async () => ({ available: state.detections.shift() ?? state.running }),
+    pause: async () => undefined,
+  });
+  const colimaCalls = () => fake.calls.map((call) => argvOf(call).join(" "));
+
+  return { home, outside, vm, colimaCalls };
+};
+
+describe("the stopped sandbox VM, started with the shares a launch needs", () => {
+  it("starts once with the missing share instead of starting and restarting", async () => {
+    const context = await stoppedVm();
+    const notices: string[] = [];
+
+    await context.vm.ensureRunning(
+      (notice) => notices.push(notice),
+      [{ path: context.outside, writable: true }],
+    );
+
+    expect(context.colimaCalls()).toEqual([
+      STATUS,
+      `${START} --mount ${context.home}:w --mount ${context.outside}:w`,
+    ]);
+    expect(notices).toEqual([`starting the sandbox VM, sharing ${context.outside} with it, one time`]);
+    expect(await context.vm.coverage([{ path: context.outside, writable: true }])).toMatchObject({
+      missing: [],
+    });
+  });
+
+  it("starts plainly when the saved shares already cover every path", async () => {
+    const context = await stoppedVm();
+
+    await context.vm.ensureRunning(() => undefined, [{ path: join(context.home, "repo"), writable: true }]);
+
+    expect(context.colimaCalls()).toEqual([STATUS, START]);
+  });
+
+  it("starts nothing when another launch brought the engine up while this one waited for the VM lock", async () => {
+    const context = await stoppedVm([false, true]);
+
+    await context.vm.ensureRunning(() => undefined, [{ path: context.outside, writable: true }]);
+
+    expect(context.colimaCalls()).toEqual([]);
   });
 });
 

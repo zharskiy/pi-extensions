@@ -34,6 +34,7 @@ export interface ToolsInput {
   runner: CommandRunner;
   salt: string;
   enabled: boolean;
+  excludedRoots: string[];
 }
 
 export interface ToolHost {
@@ -61,6 +62,16 @@ export interface DerivedTools {
   git: GitIdentity;
   env: Record<string, string>;
 }
+
+export const EMPTY_MAVEN: DerivedTools["maven"] = { servers: [], mirrors: [], passthrough: [] };
+
+export const emptyTools = (git: GitIdentity = {}): DerivedTools => ({
+  gh: [],
+  glab: [],
+  maven: EMPTY_MAVEN,
+  git,
+  env: {},
+});
 
 export interface ToolsSection {
   value: DerivedTools;

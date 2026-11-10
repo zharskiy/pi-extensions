@@ -1,36 +1,34 @@
 import { deriveGh, ghEnv } from "./tools/gh.ts";
 import { deriveGitIdentity } from "./tools/git.ts";
-import { deriveGlab, glabEnv } from "./tools/glab.ts";
+import { deriveGlab, glabBesideGh, glabEnv } from "./tools/glab.ts";
 import { deriveMaven } from "./tools/maven.ts";
 import { deriveNpmrc } from "./tools/npmrc.ts";
 import { derivePip } from "./tools/pip.ts";
-import type { ToolsInput, ToolsSection } from "./types.ts";
+import { emptyTools, type ToolsInput, type ToolsSection } from "./types.ts";
 
 const credentialsOf = async (input: ToolsInput) => {
-  const gh = await deriveGh(input);
-  const [glab, npmrc, pip, maven] = await Promise.all([
-    deriveGlab(input, new Set(gh.value.map((entry) => entry.host))),
+  const [git, gh, glabHosts, npmrc, pip, maven] = await Promise.all([
+    deriveGitIdentity(input),
+    deriveGh(input),
+    deriveGlab(input),
     deriveNpmrc(input),
     derivePip(input),
     deriveMaven(input),
   ]);
+  const glab = glabBesideGh(glabHosts, new Set(gh.value.map((entry) => entry.host)));
 
-  return { gh, glab, npmrc, pip, maven };
+  return { git, gh, glab, npmrc, pip, maven };
 };
 
 export const deriveHostTools = async (input: ToolsInput): Promise<ToolsSection> => {
-  const git = await deriveGitIdentity(input);
-
   if (!input.enabled) {
-    return {
-      value: { gh: [], glab: [], maven: { servers: [], mirrors: [], passthrough: [] }, git, env: {} },
-      rules: [],
-      notices: [],
-    };
+    const git = await deriveGitIdentity(input);
+
+    return { value: emptyTools(git.value), rules: [], notices: git.notices };
   }
 
-  const { gh, glab, npmrc, pip, maven } = await credentialsOf(input);
-  const sections = [gh, glab, npmrc, pip, maven];
+  const { git, gh, glab, npmrc, pip, maven } = await credentialsOf(input);
+  const sections = [git, gh, glab, npmrc, pip, maven];
 
   return {
     value: {
@@ -39,7 +37,7 @@ export const deriveHostTools = async (input: ToolsInput): Promise<ToolsSection> 
       ...(npmrc.value === undefined ? {} : { npmrc: npmrc.value }),
       ...(pip.value === undefined ? {} : { pip: pip.value }),
       maven: maven.value,
-      git,
+      git: git.value,
       env: { ...ghEnv(gh.value), ...glabEnv(glab.value) },
     },
     rules: sections.flatMap((section) => section.rules),

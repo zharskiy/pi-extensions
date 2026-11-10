@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { createColimaVm } from "../../backend/colima/vm.ts";
+import { createColimaVm, recommendedVmSize } from "../../backend/colima/vm.ts";
 import { launcherRoot } from "../../shared/index.ts";
 import { createFakeRunner, type FakeResponder } from "../support/fake-runner.ts";
 
@@ -61,11 +61,15 @@ const vmWith = (respond: FakeResponder) =>
 
 describe("the sandbox VM size", () => {
   it("recommends the size install.sh gives a Mac of the same size", () => {
-    const vm = vmWith(() => undefined);
-
     SAMPLES.forEach(([cpus, memGiB]) => {
-      expect(vm.recommendedSize(cpus, memGiB)).toEqual(installSize(cpus, memGiB));
+      expect(recommendedVmSize(cpus, memGiB)).toEqual(installSize(cpus, memGiB));
     });
+  });
+
+  it("names the colima commands that resize the profile", () => {
+    expect(vmWith(() => undefined).resizeCommand({ cpus: 6, memoryGiB: 8 })).toBe(
+      "colima stop --profile pi-sandbox && colima start --profile pi-sandbox --activate=false --cpu 6 --memory 8",
+    );
   });
 
   it("reads the size colima reports for the profile", async () => {

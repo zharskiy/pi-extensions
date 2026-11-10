@@ -2,8 +2,8 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { chmod, lstat, mkdir, writeFile } from "node:fs/promises";
 import { join, sep } from "node:path";
 import { describe, expect, it } from "vitest";
+import { LABELS } from "../../backend/index.ts";
 import { run } from "../../cli/index.ts";
-import { LABELS } from "../../container/index.ts";
 import { registerLaunch } from "../../grants/index.ts";
 import { processMark } from "../../shared/index.ts";
 import type { FakeCall } from "../support/fake-runner.ts";
@@ -117,6 +117,95 @@ describe("pi in a folder of repositories", () => {
     expect(await run(["--no-sandbox", "-p", "hi"], harness.deps)).toBe(0);
     expect(harness.stderr()).not.toContain("cannot be protected");
     expect(harness.calls.find((call) => call.interactive)?.file).toBe(hostPi);
+  });
+
+  it("refuses the home and a folder under a dotfiles home before searching them, and still runs status there", async () => {
+    const fake = createFakeBackend();
+    const harness = await workspaceHarness({ repos: [] }, { backend: () => fake.backend });
+    const home = harness.deps.home;
+    const project = join(home, "code", "project");
+    const gitCalls = () => harness.calls.filter((call) => call.file === "git").length;
+
+    await mkdir(join(home, "remote.git", "objects"), { recursive: true });
+    await mkdir(join(home, "remote.git", "refs"), { recursive: true });
+    await writeFile(join(home, "remote.git", "HEAD"), "ref: refs/heads/main\n");
+
+    harness.deps.cwd = home;
+
+    expect(await run([], harness.deps)).toBe(1);
+    expect(harness.stderr()).toContain(`pi-sandbox: ${home} would mount ${home} into the sandbox, refusing`);
+    expect(gitCalls()).toBe(0);
+
+    await mkdir(join(home, ".git"));
+    await mkdir(project, { recursive: true });
+
+    harness.deps.cwd = project;
+
+    expect(await run([], harness.deps)).toBe(1);
+    expect(
+      occurrences(harness.stderr(), `pi-sandbox: ${home} would mount ${home} into the sandbox, refusing`),
+    ).toBe(2);
+    expect(gitCalls()).toBe(0);
+    expect(await run(["sandbox", "status"], harness.deps)).toBe(0);
+    expect(fake.containers.size).toBe(0);
+  });
+
+  it.skipIf(process.getuid?.() === 0)(
+    "starts in a folder with an unreadable folder and build output, hiding both from the sandbox",
+    async () => {
+      const fake = createFakeBackend();
+      const harness = await workspaceHarness(
+        { repos: ["a", "b"], lockfiles: ["a/uv.lock"] },
+        { backend: () => fake.backend },
+      );
+      const locked = join(harness.work, "locked");
+      const venv = join(harness.work, "a", ".venv");
+
+      await mkdir(join(venv, "lib", "dep", ".git"), { recursive: true });
+      await mkdir(join(locked, "repo", ".git"), { recursive: true });
+
+      await chmod(locked, 0o000);
+
+      const code = await run([], harness.deps).finally(() => chmod(locked, 0o755));
+      const mounts = fake.created[0]?.spec?.mounts ?? [];
+
+      expect(code).toBe(0);
+      expect(harness.stderr()).toContain(
+        `pi-sandbox: cannot read ${locked}; the sandbox sees them as empty read-only folders`,
+      );
+      expect(mounts.find((mount) => mount.target === locked)).toEqual({
+        source: join(harness.stateDir, "empty"),
+        target: locked,
+        readOnly: true,
+        kind: "bind",
+      });
+      expect((await lstat(join(harness.stateDir, "empty"))).isDirectory()).toBe(true);
+      expect(mounts.find((mount) => mount.target === venv)).toMatchObject({ kind: "volume" });
+      expect(mounts.some((mount) => mount.target.startsWith(join(venv, "lib")))).toBe(false);
+    },
+  );
+
+  it("searches build output for repositories when mounts.autoOverlays is off", async () => {
+    const fake = createFakeBackend();
+    const harness = await workspaceHarness(
+      { repos: ["a", "b", "a/.venv/lib/dep"], lockfiles: ["a/uv.lock"] },
+      { backend: () => fake.backend },
+    );
+    const dep = join(harness.work, "a", ".venv", "lib", "dep");
+
+    await harness.writeJson(harness.userConfigFile, { mounts: { autoOverlays: false } });
+
+    expect(await run([], harness.deps)).toBe(0);
+
+    const mounts = fake.created[0]?.spec?.mounts ?? [];
+
+    expect(mounts.find((mount) => mount.target === join(dep, ".git", "hooks"))).toMatchObject({
+      readOnly: true,
+    });
+    expect(mounts.some((mount) => mount.kind === "volume" && mount.target.startsWith(harness.work))).toBe(
+      false,
+    );
+    expect(harness.stderr()).toContain("workspace with 3 repositories");
   });
 
   it("releases the pin of each nested repository unless another running sandbox mounts its git dir", async () => {

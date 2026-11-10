@@ -41,13 +41,32 @@ describe("pi sandbox egress allow", () => {
     expect(await readGrants(harness.stateDir)).toEqual([]);
   });
 
+  it("refuses a host that egress.deny blocks, at any depth under a bare domain, and stores nothing", async () => {
+    const harness = await createHarness();
+
+    await harness.writeJson(harness.userConfigFile, {
+      egress: { deny: ["paste.example.test", "*.files.test:8443"] },
+    });
+
+    expect(await run(["sandbox", "egress", "allow", "eu.paste.example.test"], harness.deps)).toBe(1);
+    expect(harness.stderr()).toContain(
+      "pi-sandbox: egress: eu.paste.example.test is denied by the egress.deny entry paste.example.test, which a grant cannot override\n  hint: pi sandbox config shows the layers that set egress.deny\n",
+    );
+    expect(await run(["sandbox", "egress", "allow", "a.files.test:8443"], harness.deps)).toBe(1);
+    expect(await readGrants(harness.stateDir)).toEqual([]);
+    expect(await run(["sandbox", "egress", "allow", "a.files.test"], harness.deps)).toBe(0);
+    expect(await run(["sandbox", "egress", "allow", "files.test:8443"], harness.deps)).toBe(0);
+  });
+
   it("refuses a target that is not a host name and an unknown option", async () => {
     const harness = await createHarness();
 
     expect(await run(["sandbox", "egress", "allow", "*.example.test"], harness.deps)).toBe(1);
     expect(harness.stderr()).toContain("egress: *.example.test is not a host or host:port");
     expect(await run(["sandbox", "egress", "allow", "a.test", "--bogus", "1"], harness.deps)).toBe(1);
-    expect(harness.stderr()).toContain("egress: unknown option --bogus");
+    expect(harness.stderr()).toContain(
+      'pi-sandbox: unknown egress allow option "--bogus"\n  hint: pi sandbox egress allow <host[:port]> [--user]\n',
+    );
   });
 });
 

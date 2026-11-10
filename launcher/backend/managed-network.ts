@@ -1,14 +1,13 @@
+import { shortHash } from "../shared/index.ts";
 import { LABELS } from "./labels.ts";
 
 const NETWORK_PREFIX = "pi-sandbox";
 
-const SHORT_REPO_HASH = 12;
+export const RELAY_PREFIX = `${NETWORK_PREFIX}-relay-`;
 
-export const repoNetworkName = (repoHash: string) =>
-  `${NETWORK_PREFIX}-${repoHash.slice(0, SHORT_REPO_HASH)}`;
+export const repoNetworkName = (repoHash: string) => `${NETWORK_PREFIX}-${shortHash(repoHash)}`;
 
-export const relayName = (repoHash: string) =>
-  `${NETWORK_PREFIX}-relay-${repoHash.slice(0, SHORT_REPO_HASH)}`;
+export const relayName = (repoHash: string) => `${RELAY_PREFIX}${shortHash(repoHash)}`;
 
 export const repoNetworkLabels = (repoHash: string) => ({
   [LABELS.managed]: "true",

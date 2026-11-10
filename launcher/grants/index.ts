@@ -1,4 +1,13 @@
-export { endLaunch, liveLaunches, newLaunchId, registerLaunch, withRepoLaunchLock } from "./launches.ts";
+export {
+  endLaunch,
+  launchState,
+  liveLaunches,
+  newLaunchId,
+  othersLive,
+  pruneLaunches,
+  registerLaunch,
+  withRepoLaunchLock,
+} from "./launches.ts";
 export {
   activeGrants,
   addGrant,

@@ -6,14 +6,15 @@ import {
   PROXY_LOG_LIMIT,
   parentProxyAuth,
   parentProxyEnv,
+  parentTarget,
   type RepoProxy,
   type RepoProxyInput,
   repoProxyToken,
 } from "../proxy/index.ts";
 import { errorMessage, LauncherError } from "../shared/index.ts";
+import type { LaunchContext } from "./context.ts";
 import { type CliDeps, writeLines, writeNotices } from "./deps.ts";
 import type { HostSide } from "./derive.ts";
-import type { LaunchContext } from "./launch.ts";
 import { othersLive } from "./launches.ts";
 
 export interface SandboxProxy {
@@ -46,6 +47,14 @@ const proxyInput = (deps: CliDeps, context: LaunchContext, host: HostSide): Inpu
   };
 };
 
+const parentNotices = (deps: CliDeps, context: LaunchContext) => {
+  const target = parentTarget(context.effective.config.egress.parentProxy, deps.env);
+
+  return target !== undefined && "unsupported" in target
+    ? [`egress.parentProxy: ${target.unsupported}; the proxy connects directly`]
+    : [];
+};
+
 const startProxy = async (deps: CliDeps, context: LaunchContext, parts: InputParts, launch: Launch) => {
   const token = await repoProxyToken(context.stateDir, context.repoHash);
   const started = await deps.proxy.ensure({
@@ -55,7 +64,7 @@ const startProxy = async (deps: CliDeps, context: LaunchContext, parts: InputPar
     othersLive: () => othersLive(context.stateDir, context.repoHash, launch.launchId),
   });
 
-  writeNotices(deps, started.notices);
+  writeNotices(deps, [...started.notices, ...parentNotices(deps, context)]);
 
   return { proxy: started.proxy, token };
 };
@@ -88,7 +97,7 @@ const deniedTargets = (denials: DenialRecord[]) => [
   ...new Map(denials.map((denial) => [authorityOf(denial.host, denial.port), denial])).values(),
 ];
 
-const NOT_ALLOWED = ["egress.allow", "egress.port", "egress.cap"];
+const NOT_ALLOWED = ["egress.allow", "egress.port"];
 
 const denialHint = (denial: DenialRecord, target: string, grants: boolean) => {
   if (NOT_ALLOWED.includes(denial.rule)) {

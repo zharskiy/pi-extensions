@@ -1,21 +1,18 @@
-import { repoHash, sha256Hex } from "../shared/index.ts";
+import { repoHash, sha256Hex, shortHash } from "../shared/index.ts";
 
-export { LABELS } from "../backend/index.ts";
-export { repoHash } from "../shared/index.ts";
+const CACHE_VOLUME_PREFIX = "pi-sandbox-cache-";
 
-const SHORT = 12;
-
-const shortRepoHash = (repoRoot: string) => repoHash(repoRoot).slice(0, SHORT);
+const shortRepoHash = (repoRoot: string) => shortHash(repoHash(repoRoot));
 
 export const containerName = (repoRoot: string) => `pi-sandbox-${shortRepoHash(repoRoot)}`;
 
 export const agentVolumeName = (user: string, repoRoot: string) =>
-  `pi-sandbox-agent-${sha256Hex(user).slice(0, SHORT)}-${shortRepoHash(repoRoot)}`;
+  `pi-sandbox-agent-${shortHash(sha256Hex(user))}-${shortRepoHash(repoRoot)}`;
 
 export const cacheVolumeName = (repoRoot: string, path: string) =>
-  `pi-sandbox-cache-${shortRepoHash(repoRoot)}-${sha256Hex(path).slice(0, 8)}`;
+  `${CACHE_VOLUME_PREFIX}${shortRepoHash(repoRoot)}-${sha256Hex(path).slice(0, 8)}`;
 
-export const userHashOf = (stateDir: string) => sha256Hex(stateDir).slice(0, SHORT);
+export const userHashOf = (stateDir: string) => shortHash(sha256Hex(stateDir));
 
 export const sharedVolumeName = (userHash: string, path: string) =>
   `pi-sandbox-shared-${userHash}-${sha256Hex(path).slice(0, 8)}`;

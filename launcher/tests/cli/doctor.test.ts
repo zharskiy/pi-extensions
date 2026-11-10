@@ -2,11 +2,11 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import type { ExecIo, ExecSpec, Vm } from "../../backend/index.ts";
+import { type ExecIo, type ExecSpec, LABELS, type Vm } from "../../backend/index.ts";
 import { run } from "../../cli/index.ts";
 import { testedPiVersion } from "../../cli/versions.ts";
 import { registerLaunch } from "../../grants/index.ts";
-import { LauncherError, processMark, sha256Hex } from "../../shared/index.ts";
+import { processMark, sha256Hex } from "../../shared/index.ts";
 import { createFakeBackend, createHarness, unreachable, writeManagedPi, writePathPi } from "./harness.ts";
 
 interface Probes {
@@ -63,7 +63,9 @@ const answering =
       node: () => write(`${probes.ruleAnswer ?? "200"}\n`),
     };
 
-    return answers[spec.command[0] ?? ""]?.() ?? 127;
+    const command = spec.command[0] === "timeout" ? spec.command.slice(2) : spec.command;
+
+    return answers[command[0] ?? ""]?.() ?? 127;
   };
 
 const GUEST_FILES: Array<[keyof Probes, string]> = [
@@ -88,6 +90,7 @@ const guestBackend = async (probes: Probes, vm?: Partial<Vm>) => {
 };
 
 const HOST_CHECK_LINES = [
+  "skip vm shares: colima has not written the shares of profile pi-sandbox yet",
   expect.stringMatching(/^ok host pi: pi \S+ next to the launcher; the image follows it$/),
   "ok provider hosts: 1 built-in providers with known hosts",
   "skip parent proxy: no parent proxy configured",
@@ -96,12 +99,9 @@ const HOST_CHECK_LINES = [
   expect.stringMatching(/^ok sessions: \/.+\/home\/\.pi\/agent\/sessions\/--.+-repo-- \(host pi lists them/),
 ];
 
-const PREPARED = ["ok vm", "ok shares", "ok host"];
+const PREPARED = ["ok vm", "ok host"];
 
-const VM_LINES = [
-  "skip vm shares: colima did not report the shares of profile pi-sandbox",
-  "skip vm size: colima did not report the size of profile pi-sandbox",
-];
+const VM_LINES = ["skip vm size: colima did not report the size of profile pi-sandbox"];
 
 const doctorWith = async (
   probes: Probes,
@@ -174,6 +174,7 @@ describe("pi sandbox doctor", () => {
       "fail rule derived:auth:example:key: https://models.example.test/ answered HTTP 401 with the placeholder",
     );
     expect(request?.spec.command.at(-1)).toMatch(/^Bearer pi-sandbox-[0-9a-f]{24}$/);
+    expect(request?.spec.command[2]).toContain("AbortSignal.timeout(15000)");
     expect(JSON.stringify(fake.execs.map((exec) => exec.spec))).not.toContain("real-secret-value");
   });
 
@@ -208,6 +209,84 @@ describe("pi sandbox doctor", () => {
     );
     expect(lines).toContain("fail mcp: pi mcp list exited 1: docs: connection refused");
     expect(code).toBe(1);
+  });
+
+  it("probes the session dir the running container was started with, not the planned one", async () => {
+    const fake = await guestBackend({});
+    const find = fake.backend.findContainers;
+
+    fake.backend.findContainers = async (labels) =>
+      (await find(labels)).map((summary) =>
+        fake.execs.length === 0
+          ? summary
+          : { ...summary, labels: { ...summary.labels, [LABELS.sessionDir]: "sessions.host is off" } },
+      );
+
+    const port = await healthServer(200);
+    const harness = await createHarness({
+      backend: () => fake.backend,
+      proxy: {
+        ensure: async () => ({ proxy: { pid: 77, port, boot: 0, start: "", inputHash: "h" }, notices: [] }),
+      },
+    });
+
+    await run(["sandbox", "doctor"], harness.deps);
+
+    expect(harness.stdout()).toContain("skip sessions share: in the sandbox volume (sessions.host is off)\n");
+  });
+
+  it("runs pi mcp list under a 30 s timeout and fails when it runs out", async () => {
+    const { code, lines, fake } = await doctorWith({ mcpListExit: 124 });
+
+    expect(fake.execs.map((exec) => exec.spec.command)).toContainEqual([
+      "timeout",
+      "30",
+      "pi",
+      "mcp",
+      "list",
+    ]);
+    expect(lines).toContain("fail mcp: pi mcp list did not finish in 30 s");
+    expect(code).toBe(1);
+  });
+
+  it("runs the probes at once and still prints them in table order", async () => {
+    const offlineAsked: Array<() => void> = [];
+    const offlineStarted = new Promise<void>((resolve) => {
+      offlineAsked.push(resolve);
+    });
+    const plain = answering({});
+    const fake = createFakeBackend({
+      exec: async (spec, io) => {
+        if (spec.command[0] === "printenv") {
+          offlineAsked.forEach((resolve) => {
+            resolve();
+          });
+        }
+
+        if (spec.command[0] === "sh") {
+          await Promise.race([offlineStarted, new Promise((resolve) => setTimeout(resolve, 2000))]);
+        }
+
+        return plain(spec, io);
+      },
+    });
+    const port = await healthServer(200);
+    const harness = await createHarness({
+      backend: () => fake.backend,
+      proxy: {
+        ensure: async () => ({ proxy: { pid: 77, port, boot: 0, start: "", inputHash: "h" }, notices: [] }),
+      },
+    });
+    const startedAt = Date.now();
+
+    await run(["sandbox", "doctor"], harness.deps);
+
+    const lines = harness.stdout().trim().split("\n");
+    const names = lines.map((line) => line.split(":")[0]);
+
+    expect(Date.now() - startedAt).toBeLessThan(2000);
+    expect(names.indexOf("ok no-route")).toBeLessThan(names.indexOf("ok offline"));
+    expect(names.indexOf("ok offline")).toBeLessThan(names.indexOf("ok mcp"));
   });
 
   it("fails the sweep on an mcp.json header or stdio env value that is not a placeholder", async () => {
@@ -341,20 +420,16 @@ describe("pi sandbox doctor", () => {
     expect(lines.slice(1)).toEqual(HOST_CHECK_LINES);
   });
 
-  it("shares a missing path through the shares stage and stops when sharing fails", async () => {
+  it("runs no shares stage, so it never restarts the VM to share a path", async () => {
     const shared: string[][] = [];
-    const { code, lines, fake } = await doctorWith({}, 200, undefined, undefined, {
+    const { lines } = await doctorWith({}, 200, undefined, undefined, {
       ensureShares: async (paths) => {
         shared.push(paths.map((entry) => entry.path));
-
-        throw new LauncherError("/elsewhere is not shared with the sandbox VM");
       },
     });
 
-    expect(lines.slice(0, 2)).toEqual(["ok vm", "fail shares: /elsewhere is not shared with the sandbox VM"]);
-    expect(shared).toHaveLength(1);
-    expect(fake.containers.size).toBe(0);
-    expect(code).toBe(1);
+    expect(lines.slice(0, 2)).toEqual(["ok vm", "ok host"]);
+    expect(shared).toEqual([]);
   });
 
   it("reports the org baseline file it loaded", async () => {
@@ -423,42 +498,6 @@ describe("pi sandbox doctor", () => {
   });
 });
 
-describe("pi sandbox doctor vm shares", () => {
-  const sharesLine = async (coverage: Vm["coverage"]) => {
-    const fake = createFakeBackend({ exec: answering({}), vm: { coverage } });
-    const harness = await createHarness({ backend: () => fake.backend });
-
-    await harness.writeJson(harness.userConfigFile, { egress: { allow: [], presets: [] } });
-
-    await run(["sandbox", "doctor"], harness.deps);
-
-    const line = harness
-      .stdout()
-      .split("\n")
-      .find((entry) => entry.includes(" vm shares: "));
-
-    return { line, harness };
-  };
-
-  it("passes when the profile shares every path of the repository", async () => {
-    const asked: string[][] = [];
-    const { line, harness } = await sharesLine(async (paths) => {
-      asked.push(paths.map((entry) => entry.path));
-
-      return { shares: [{ location: "/Users", writable: true }], missing: [] };
-    });
-
-    expect(line).toBe("ok vm shares: profile pi-sandbox shares /Users; this repository is covered");
-    expect(asked[0]).toContain(harness.repoRoot);
-  });
-
-  it("fails naming the paths the VM does not share", async () => {
-    const { line } = await sharesLine(async () => ({ shares: [], missing: ["/srv/repo"] }));
-
-    expect(line).toBe("fail vm shares: /srv/repo is not shared with profile pi-sandbox");
-  });
-});
-
 describe("pi sandbox doctor on the host pi", () => {
   const hostPiLine = async (
     prepare: (harness: Awaited<ReturnType<typeof createHarness>>) => Promise<void>,
@@ -520,6 +559,41 @@ describe("pi sandbox doctor on the host pi", () => {
 
     expect(line).toBe(
       "fail host pi: no pi on the host; install pi or reinstall the launcher with npm install -g pi-extensions-mz",
+    );
+  });
+});
+
+describe("pi sandbox doctor parent proxy", () => {
+  const parentLine = async (url: (port: number) => string) => {
+    const listener = createServer();
+
+    await new Promise<void>((resolve) => listener.listen(0, "::1", resolve));
+
+    cleanups.push(() => new Promise<void>((resolve) => listener.close(() => resolve())));
+
+    const port = (listener.address() as AddressInfo).port;
+    const down = unreachable(createFakeBackend().backend);
+    const harness = await createHarness({ backend: () => down });
+
+    harness.deps.env.HTTPS_PROXY = url(port);
+
+    await run(["sandbox", "doctor"], harness.deps);
+
+    return harness
+      .stdout()
+      .split("\n")
+      .find((line) => / parent proxy: /.test(line));
+  };
+
+  it("connects to an IPv6 http parent proxy without its brackets", async () => {
+    expect(await parentLine((port) => `http://[::1]:${port}`)).toMatch(
+      /^ok parent proxy: \[::1\]:\d+ accepts connections$/,
+    );
+  });
+
+  it("fails an https parent proxy, which the launcher proxy does not chain to", async () => {
+    expect(await parentLine(() => "https://proxy.example.test")).toBe(
+      "fail parent proxy: HTTPS_PROXY uses https, only http parent proxies are supported",
     );
   });
 });

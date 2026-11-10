@@ -1,12 +1,11 @@
 import { execFile, spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdir, mkdtemp, readdir, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, readdir, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import {
   bootTime,
   errorMessage,
@@ -14,16 +13,14 @@ import {
   processStart,
   withDirectoryLock,
   withFileLock,
+  withFileLockIfFree,
 } from "../../shared/index.ts";
+import { tempDir } from "../support/temp-dir.ts";
 
 const state = { dir: "" };
 
 beforeEach(async () => {
-  state.dir = await mkdtemp(join(tmpdir(), "pi-sandbox-lock-"));
-});
-
-afterEach(async () => {
-  await rm(state.dir, { recursive: true, force: true });
+  state.dir = await tempDir("lock");
 });
 
 const exists = (path: string) =>
@@ -217,6 +214,42 @@ describe("withFileLock", () => {
     }
   });
 
+  it("takes a dead holder's lock at once when a dead process also left the takeover guard", async () => {
+    const lockPath = join(state.dir, "store.json.lock");
+
+    await writeFile(lockPath, await ownerText(await deadPid(), bootTime(), "Mon-Nov-9-00:00:00-2026"));
+
+    await writeFile(
+      `${lockPath}.takeover`,
+      await ownerText(await deadPid(), bootTime(), "Mon-Nov-9-00:00:00-2026"),
+    );
+
+    expect(await withFileLockIfFree(lockPath, async () => "taken")).toEqual({ busy: false, value: "taken" });
+    expect(await readdir(state.dir)).toEqual([]);
+  });
+
+  it("waits within its timeout, without spinning, while a live process holds the takeover guard", async () => {
+    const lockPath = join(state.dir, "store.json.lock");
+    const guard = await spawned();
+
+    try {
+      await writeFile(lockPath, await ownerText(await deadPid(), bootTime(), "Mon-Nov-9-00:00:00-2026"));
+
+      await writeFile(`${lockPath}.takeover`, await ownerText(guard.pid));
+
+      const begun = Date.now();
+      const cpu = process.cpuUsage();
+      const problem = await lockError(withFileLock(lockPath, async () => "never", { timeoutMs: 300 }));
+      const used = process.cpuUsage(cpu);
+
+      expect(problem).toMatch(/lock is held by another process/);
+      expect(Date.now() - begun).toBeLessThan(3000);
+      expect((used.user + used.system) / 1000).toBeLessThan(250);
+    } finally {
+      guard.kill();
+    }
+  });
+
   it("lets processes racing for a lock left by a dead holder in one at a time", async () => {
     const lockPath = join(state.dir, "store.json.lock");
     const log = join(state.dir, "log");
@@ -274,21 +307,21 @@ describe("withDirectoryLock", () => {
       async () => {
         events.push("long in");
 
-        await sleep(250);
+        await sleep(1_000);
 
         events.push("long out");
       },
-      { staleMs: 100 },
+      { staleMs: 400 },
     );
 
-    await sleep(20);
+    await sleep(50);
 
     const short = withDirectoryLock(
       lockPath,
       async () => {
         events.push("short");
       },
-      { staleMs: 100, timeoutMs: 2_000, retryMs: 10 },
+      { staleMs: 400, timeoutMs: 5_000, retryMs: 10 },
     );
 
     await Promise.all([long, short]);

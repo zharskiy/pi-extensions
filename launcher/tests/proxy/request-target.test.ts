@@ -1,7 +1,36 @@
 import { describe, expect, it } from "vitest";
-import { parseRequestTarget } from "../../proxy/request-target.ts";
+import { parseAuthority, parseRequestTarget } from "../../proxy/request-target.ts";
 
 const parse = (target: string) => parseRequestTarget(target, "api.test", 443);
+
+describe("parseAuthority", () => {
+  it("reads the host and the written port, port 80 included", () => {
+    expect(parseAuthority("API.test:443")).toEqual({ host: "api.test", port: 443 });
+    expect(parseAuthority("api.test:80")).toEqual({ host: "api.test", port: 80 });
+    expect(parseAuthority("[::1]:80")).toEqual({ host: "[::1]", port: 80 });
+  });
+
+  it("uses the default port only when none is written", () => {
+    expect(parseAuthority("api.test")).toBeUndefined();
+    expect(parseAuthority("api.test", 443)).toEqual({ host: "api.test", port: 443 });
+    expect(parseAuthority("api.test:8443", 443)).toEqual({ host: "api.test", port: 8443 });
+  });
+
+  it("refuses userinfo, paths, queries and fragments", () => {
+    [
+      "u@api.test:443",
+      "u:p@api.test:443",
+      ":p@api.test:443",
+      "@api.test:443",
+      "api.test:443/x",
+      "api.test:443?q",
+      "api.test:443#f",
+      "",
+    ].forEach((authority) => {
+      expect(parseAuthority(authority, 443)).toBeUndefined();
+    });
+  });
+});
 
 describe("parseRequestTarget", () => {
   it("keeps an origin-form path and decodes it for rule matching", () => {

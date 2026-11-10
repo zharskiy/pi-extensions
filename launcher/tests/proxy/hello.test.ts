@@ -137,6 +137,39 @@ describe("ClientHello on a tunnel", () => {
     expect(receivedBytes().equals(hello)).toBe(true);
 
     socket.destroy();
+
+    expect(
+      await waitFor(() =>
+        state.test.log.find((entry) => entry.decision === "allow" && entry.host === "granted.test"),
+      ),
+    ).toMatchObject({ rule: "grant-or-derived" });
+  });
+
+  it("records an sni denial for a client that hangs up in the middle of its hello", async () => {
+    const hello = await captureHello("target.test");
+    const socket = await tunnelTo("target.test:443");
+    const before = state.test.log.length;
+
+    socket.write(hello.subarray(0, 20));
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    socket.destroy();
+
+    expect(
+      await waitFor(() => state.test.log.slice(before).find((entry) => entry.rule === "sni")),
+    ).toMatchObject({ host: "target.test", decision: "deny", reason: "no TLS server name" });
+  });
+
+  it("records no sni denial for a client that hangs up before its hello", async () => {
+    const socket = await tunnelTo("target.test:443");
+    const before = state.test.log.length;
+
+    socket.destroy();
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(state.test.log.slice(before).filter((entry) => entry.rule === "sni")).toEqual([]);
   });
 });
 

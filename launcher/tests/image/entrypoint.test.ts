@@ -1,29 +1,12 @@
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import {
-  chmod,
-  lstat,
-  mkdir,
-  mkdtemp,
-  readFile,
-  readlink,
-  realpath,
-  rm,
-  symlink,
-  writeFile,
-} from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { chmod, lstat, mkdir, readFile, readlink, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { launcherRoot } from "../../shared/index.ts";
+import { tempDir } from "../support/temp-dir.ts";
 
 const imageFile = (name: string) => readFile(join(launcherRoot(), "image", name), "utf8");
-
-const created: string[] = [];
-
-afterEach(async () => {
-  await Promise.all(created.splice(0).map((path) => rm(path, { recursive: true, force: true })));
-});
 
 const HOST_TOOLS = [
   "sh",
@@ -61,9 +44,7 @@ const hostToolsBin = async (bin: string) => {
 };
 
 const sandboxRoot = async () => {
-  const root = await realpath(await mkdtemp(join(tmpdir(), "pi-sandbox-entrypoint-")));
-
-  created.push(root);
+  const root = await realpath(await tempDir("entrypoint"));
   const paths = {
     root,
     home: join(root, "home"),
@@ -148,15 +129,20 @@ interface RunOptions {
   bin?: string;
 }
 
-const runEntrypoint = async (paths: Paths, options: RunOptions = {}) => {
+const spawnEntrypoint = async (paths: Paths, options: RunOptions = {}) => {
   await writeFile(join(paths.root, "bash-env.sh"), withGuestPaths(paths, await imageFile("bash-env.sh")));
 
   const script = withGuestPaths(paths, await imageFile("entrypoint.sh"));
   const path = [options.bin, paths.hostBin].filter((entry) => entry !== undefined).join(":");
-  const result = spawnSync("sh", ["-c", script, "entrypoint", ...(options.command ?? ["true"])], {
+
+  return spawnSync("sh", ["-c", script, "entrypoint", ...(options.command ?? ["true"])], {
     env: { PATH: path, HOME: paths.home, ...options.env },
     encoding: "utf8",
   });
+};
+
+const runEntrypoint = async (paths: Paths, options: RunOptions = {}) => {
+  const result = await spawnEntrypoint(paths, options);
 
   expect(result.stderr).toBe("");
   expect(result.status).toBe(0);
@@ -164,9 +150,12 @@ const runEntrypoint = async (paths: Paths, options: RunOptions = {}) => {
   return result.stdout;
 };
 
+const sourcingBashEnv = (paths: Paths, times: number) =>
+  `${`. '${join(paths.root, "bash-env.sh")}'; `.repeat(times)}printf %s "$JAVA_TOOL_OPTIONS"`;
+
 const javaOptionsAfterStart = (paths: Paths, bin?: string) =>
   runEntrypoint(paths, {
-    command: ["sh", "-c", 'printf %s "$JAVA_TOOL_OPTIONS"'],
+    command: ["sh", "-c", sourcingBashEnv(paths, 1)],
     env: { JAVA_TOOL_OPTIONS: PROXY_OPTIONS },
     bin,
   });
@@ -188,6 +177,45 @@ describe("image entrypoint", () => {
 
     expect(await readlink(join(agent, "auth.json"))).toBe(join(paths.render, "auth.json"));
     expect(await readlink(join(agent, "skills"))).toBe(join(paths.render, "skills"));
+  });
+
+  it("links hidden rendered entries too", async () => {
+    const paths = await sandboxRoot();
+
+    await writeFile(join(paths.render, ".hidden.json"), "{}\n");
+
+    await runEntrypoint(paths);
+
+    expect(await readlink(join(paths.home, ".pi", "agent", ".hidden.json"))).toBe(
+      join(paths.render, ".hidden.json"),
+    );
+  });
+
+  it("fails when an agent dir entry cannot be replaced by its render link", async () => {
+    const paths = await sandboxRoot();
+    const locked = join(paths.home, ".pi", "agent", "skills", "locked");
+
+    await mkdir(join(paths.render, "skills"));
+
+    await mkdir(locked, { recursive: true });
+
+    await writeFile(join(locked, "file"), "x\n");
+
+    await chmod(locked, 0o555);
+
+    const result = await spawnEntrypoint(paths);
+
+    await chmod(locked, 0o755);
+
+    expect(result.status).not.toBe(0);
+  });
+
+  it("idles with a plain sleep under the container's own init and leaves the bash env to the shells", async () => {
+    const script = await imageFile("entrypoint.sh");
+
+    expect(script.trimEnd().split("\n").at(-1)).toBe("exec sleep infinity");
+    expect(script).not.toContain("tini");
+    expect(script).not.toContain("bash-env.sh");
   });
 
   it("drops dangling links into the render dir", async () => {
@@ -277,7 +305,7 @@ describe("image entrypoint", () => {
     await writeFile(paths.trust, certificate("PROXY"));
 
     const options = await runEntrypoint(paths, {
-      command: ["sh", "-c", `. '${join(paths.root, "bash-env.sh")}'; printf %s "$JAVA_TOOL_OPTIONS"`],
+      command: ["sh", "-c", sourcingBashEnv(paths, 2)],
       env: { JAVA_TOOL_OPTIONS: PROXY_OPTIONS },
       bin,
     });

@@ -49,6 +49,7 @@ export interface FakeEngineOptions {
   socketPath?: string;
   vmShares?: string[];
   failBuild?: { output: string[]; error: string };
+  lingeringRemovals?: number;
 }
 
 interface FakeImage {
@@ -74,7 +75,7 @@ interface CreateBody {
 interface FakeContainer {
   Id: string;
   Name: string;
-  State: "created" | "running" | "exited";
+  State: "created" | "running" | "exited" | "removing";
   body: CreateBody;
 }
 
@@ -196,7 +197,17 @@ const referenceOf = (query: URLSearchParams) => {
   return `${query.get("fromImage")}${separator}${tag}`;
 };
 
-const repositoryOf = (reference: string) => reference.replace(/(@sha256:[0-9a-f]+|:[^/@:]*)$/, "");
+const repositoryOf = (reference: string) => {
+  const [name = ""] = reference.split("@");
+  const colon = name.lastIndexOf(":");
+
+  return colon > name.lastIndexOf("/") ? name.slice(0, colon) : name;
+};
+
+const pinOf = (reference: string) =>
+  reference.includes("@")
+    ? reference.slice(reference.indexOf("@") + 1)
+    : reference.slice(repositoryOf(reference).length + 1);
 
 export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
   const directory = options.socketPath === undefined ? await mkdtemp(join(tmpdir(), "pse-")) : undefined;
@@ -232,7 +243,7 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
 
   const publishedDigest = (reference: string) => {
     const repository = repositoryOf(reference);
-    const pinned = reference.slice(repository.length + 1);
+    const pinned = pinOf(reference);
     const byDigest = [...registry.entries()].find(
       ([published, digest]) => repositoryOf(published) === repository && digest === pinned,
     );
@@ -395,15 +406,43 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
     });
   };
 
+  const lingering = new Map<string, number>();
+
   const removeContainer = withContainer((container, { query }) => {
     if (container.State === "running" && query.get("force") !== "true") {
       return conflict("You cannot remove a running container");
+    }
+
+    if (container.State === "removing") {
+      return conflict(`removal of container ${container.Id} is already in progress`);
+    }
+
+    if ((options.lingeringRemovals ?? 0) > 0) {
+      container.State = "removing";
+
+      lingering.set(container.Id, options.lingeringRemovals ?? 0);
+
+      return { status: 204 };
     }
 
     dropContainer(container);
 
     return { status: 204 };
   });
+
+  const linger = (container: FakeContainer) => {
+    const left = (lingering.get(container.Id) ?? 0) - 1;
+
+    if (left > 0) {
+      lingering.set(container.Id, left);
+
+      return;
+    }
+
+    lingering.delete(container.Id);
+
+    dropContainer(container);
+  };
 
   const stopContainer = withContainer((container) => {
     if (container.State !== "running") {
@@ -470,15 +509,32 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
     return { status: 204 };
   };
 
-  const inspectContainer = withContainer((container) => ({
-    status: 200,
-    json: {
-      Id: container.Id,
-      Name: `/${container.Name}`,
-      State: { Running: container.State === "running", Status: container.State },
-      Config: { Labels: container.body.Labels ?? {}, Image: container.body.Image },
-    },
-  }));
+  const networksOf = (container: FakeContainer) =>
+    Object.fromEntries(
+      [...networks.entries()]
+        .filter(([, network]) => network.connected.some((entry) => entry.container === container.Id))
+        .map(([name, network]) => [
+          name,
+          { Aliases: network.connected.find((entry) => entry.container === container.Id)?.aliases ?? [] },
+        ]),
+    );
+
+  const inspectContainer = withContainer((container) => {
+    if (container.State === "removing") {
+      linger(container);
+    }
+
+    return {
+      status: 200,
+      json: {
+        Id: container.Id,
+        Name: `/${container.Name}`,
+        State: { Running: container.State === "running", Status: container.State },
+        Config: { Labels: container.body.Labels ?? {}, Image: container.body.Image },
+        NetworkSettings: { Networks: networksOf(container) },
+      },
+    };
+  });
 
   const createNetwork = ({ body }: RouteRequest): RouteResult => {
     const spec = parsed<FakeNetwork["body"] & { Name: string }>(body);
@@ -831,7 +887,6 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
     volumes,
     volumeLabels,
     networks,
-    publish: (reference: string, digest: string) => registry.set(reference, digest),
     close,
   };
 };

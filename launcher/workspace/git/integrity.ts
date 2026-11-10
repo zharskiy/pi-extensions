@@ -11,8 +11,9 @@ import {
   stateLayout,
   withFileLock,
 } from "../../shared/index.ts";
-import { gitDirOf, gitRepos, type Workspace } from "../types.ts";
+import { gitRepos, type Workspace } from "../types.ts";
 import {
+  fillEmptyPin,
   findModuleGitDirs,
   findWorktreeGitDirs,
   gitLayoutAt,
@@ -76,7 +77,7 @@ export const assertGitIntegrity = async (workspace: Workspace): Promise<string[]
   }
 
   const layout = await gitLayoutAt(workspace.repoRoot);
-  const gitDir = gitDirOf(workspace, gitCommonDir);
+  const gitDir = workspace.gitDir ?? gitCommonDir;
 
   if (layout.gitDir !== gitDir || layout.gitCommonDir !== gitCommonDir) {
     throw gitRefusal(join(workspace.repoRoot, ".git"), `now leads to ${layout.gitDir}, not ${gitDir}`);
@@ -96,11 +97,19 @@ export const assertGitIntegrity = async (workspace: Workspace): Promise<string[]
 type PinWritten = (path: string) => Promise<void>;
 
 const writeGitPin = async (gitDir: string, onPin: PinWritten): Promise<void> => {
-  if ((await pinStateOf(gitDir)) === "pinned") {
+  const path = join(gitDir, "commondir");
+  const state = await pinStateOf(gitDir);
+
+  if (state !== "absent") {
+    if (state === "empty") {
+      await fillEmptyPin(path);
+    }
+
+    await onPin(path);
+
     return;
   }
 
-  const path = join(gitDir, "commondir");
   const temporary = `${path}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
 
   await writeFile(temporary, PIN_TEXT, { flag: "wx", mode: PIN_MODE });
@@ -119,15 +128,11 @@ const writeGitPin = async (gitDir: string, onPin: PinWritten): Promise<void> => 
       () => false,
     ));
 
-  if (written) {
-    await onPin(path);
-
-    return;
-  }
-
-  if ((await pinStateOf(gitDir)) === "absent") {
+  if (!written && (await pinStateOf(gitDir)) === "absent") {
     throw new LauncherError(`git: could not write ${path}`);
   }
+
+  await onPin(path);
 };
 
 export const pinGitDirs = async (workspace: Workspace, modules: string[], onPin: PinWritten) => {

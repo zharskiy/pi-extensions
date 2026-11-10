@@ -118,14 +118,19 @@ const clearDeadGuard = async (guard: string) => {
   }
 };
 
-const takeOver = async (path: string, stale: LockSnapshot, staleMs: number | undefined) => {
+const takeOver = async (
+  path: string,
+  stale: LockSnapshot,
+  staleMs: number | undefined,
+  retried = false,
+): Promise<boolean> => {
   const guard = `${path}.takeover`;
   const mark = await createPidLock(guard);
 
   if (mark === undefined) {
     await clearDeadGuard(guard);
 
-    return;
+    return retried ? false : takeOver(path, stale, staleMs, true);
   }
 
   try {
@@ -134,6 +139,8 @@ const takeOver = async (path: string, stale: LockSnapshot, staleMs: number | und
     if (current !== undefined && sameLock(current, stale) && !(await isHeld(current, staleMs))) {
       await moveAside(path, stale, staleMs);
     }
+
+    return true;
   } finally {
     await release(guard, mark);
   }
@@ -161,9 +168,9 @@ const acquire = async (path: string, attempt: Attempt, settings: LockSettings): 
 
   const snapshot = await snapshotOf(path);
 
-  if (snapshot !== undefined && !(await stillHeld(snapshot, settings))) {
-    await takeOver(path, snapshot, settings.staleMs);
+  const dead = snapshot !== undefined && !(await stillHeld(snapshot, settings));
 
+  if (dead && (await takeOver(path, snapshot, settings.staleMs))) {
     return acquire(path, attempt, settings);
   }
 

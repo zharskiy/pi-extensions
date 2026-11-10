@@ -9,20 +9,21 @@ bundle_dir=/tmp/pi-sandbox
 system_bundle=/etc/ssl/certs/ca-certificates.crt
 trust_bundle=/etc/pi-sandbox/ca.pem
 truststore="$bundle_dir/truststore.p12"
-bash_env=/usr/local/lib/pi-sandbox/bash-env.sh
 
 mkdir -p "$agent_dir" "$bundle_dir"
 
 find "$agent_dir" -mindepth 1 -maxdepth 1 -type l -lname "$render_dir/*" ! -exec test -e {} \; -exec rm -f {} \;
 
-if [ -d "$render_dir" ]; then
-  find "$render_dir" -mindepth 1 -maxdepth 1 ! -name tools -exec sh -c '
-    link="$1/$(basename "$2")"
+for entry in "$render_dir"/* "$render_dir"/.[!.]* "$render_dir"/..?*; do
+  if [ ! -e "$entry" ] || [ "$(basename "$entry")" = tools ]; then
+    continue
+  fi
 
-    rm -rf "$link"
-    ln -s "$2" "$link"
-  ' sh "$agent_dir" {} \;
-fi
+  link="$agent_dir/$(basename "$entry")"
+
+  rm -rf "$link"
+  ln -s "$entry" "$link"
+done
 
 link_tool() {
   if [ -f "$tools_dir/$1" ]; then
@@ -84,12 +85,8 @@ if ! build_truststore; then
   rm -f "$truststore.tmp"
 fi
 
-if [ -f "$bash_env" ]; then
-  . "$bash_env"
-fi
-
 if [ "$#" -gt 0 ]; then
   exec "$@"
 fi
 
-exec tini -s -- sleep infinity
+exec sleep infinity

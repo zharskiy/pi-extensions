@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const AI_PACKAGE = join("@earendil-works", "pi-ai");
@@ -8,7 +8,35 @@ const PROVIDERS_EXPORT = "./providers/*";
 
 const PLAIN_HOST = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/;
 
-const packageDirFrom = (start) => {
+const installRoot = (dir) => {
+  const parent = dirname(dir);
+
+  if (parent === dir) {
+    return undefined;
+  }
+
+  return basename(dir) === "node_modules" ? parent : installRoot(parent);
+};
+
+const declaresWorkspaces = (dir) => {
+  try {
+    return JSON.parse(readFileSync(join(dir, "package.json"), "utf8")).workspaces !== undefined;
+  } catch {
+    return false;
+  }
+};
+
+const workspaceRoot = (dir) => {
+  if (declaresWorkspaces(dir)) {
+    return dir;
+  }
+
+  const parent = dirname(dir);
+
+  return parent === dir ? undefined : workspaceRoot(parent);
+};
+
+const packageDirFrom = (start, stop) => {
   const candidate = join(start, "node_modules", AI_PACKAGE);
 
   if (existsSync(join(candidate, "package.json"))) {
@@ -17,7 +45,7 @@ const packageDirFrom = (start) => {
 
   const parent = dirname(start);
 
-  return parent === start ? undefined : packageDirFrom(parent);
+  return start === stop || parent === start ? undefined : packageDirFrom(parent, stop);
 };
 
 const providersModule = (aiDir) => {
@@ -51,7 +79,10 @@ const hostsOf = (providers, id) => {
 };
 
 const main = async (piPackageDir) => {
-  const aiDir = packageDirFrom(piPackageDir);
+  const aiDir = packageDirFrom(
+    piPackageDir,
+    installRoot(piPackageDir) ?? workspaceRoot(piPackageDir) ?? piPackageDir,
+  );
 
   if (aiDir === undefined) {
     throw new Error(`${piPackageDir}: ${AI_PACKAGE} not found`);

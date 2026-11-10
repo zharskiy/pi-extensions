@@ -1,7 +1,6 @@
-import { chmod, mkdir, realpath, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { createProcessRunner } from "../../shared/index.ts";
 import {
   assertGitIntegrity,
   discoverWorkspace,
@@ -9,20 +8,17 @@ import {
   pinGitDirs,
   recordGitBaseline,
   unpinRecorded,
+  workspaceFolder,
 } from "../../workspace/index.ts";
+import { git, gitRunner } from "../support/git.ts";
 import { tempDir } from "../support/temp-dir.ts";
 
-const runner = createProcessRunner();
+const discoverAt = async (
+  cwd: string,
+  ...rest: Parameters<typeof discoverWorkspace> extends [unknown, ...infer R] ? R : never
+) => discoverWorkspace(await workspaceFolder(cwd), ...rest);
 
-const git = async (cwd: string, args: string[]) => {
-  const result = await runner.run(
-    "git",
-    ["-c", "user.name=test", "-c", "user.email=test@example.com", ...args],
-    { cwd },
-  );
-
-  expect(result.code, result.stderr).toBe(0);
-};
+const runner = gitRunner;
 
 const createRepo = async () => {
   const base = await realpath(await tempDir("git-integrity"));
@@ -39,7 +35,7 @@ const createRepo = async () => {
   await git(repo, ["commit", "--quiet", "-m", "init"]);
 
   const stateDir = join(base, "state");
-  const workspace = await discoverWorkspace(repo, runner, join(stateDir, "git", "no-hooks"));
+  const workspace = await discoverAt(repo, runner, join(stateDir, "git", "no-hooks"));
 
   return { base, repo, workspace, context: { runner, stateDir } };
 };
@@ -79,6 +75,26 @@ describe("the worktree pointers in the common git dir", () => {
     await expect(assertGitIntegrity(workspace)).rejects.toThrow(
       `git: ${join(planted, "commondir")} points at a missing directory, not ${join(repo, ".git")}`,
     );
+  });
+});
+
+describe("the pin checks", () => {
+  it("leaves an empty commondir for the pin write instead of filling it while checking", async () => {
+    const { repo, workspace } = await createRepo();
+    const commondir = join(repo, ".git", "commondir");
+    const pinned: string[] = [];
+
+    await writeFile(commondir, "");
+
+    expect(await assertGitIntegrity(workspace)).toEqual([]);
+    expect(await readFile(commondir, "utf8")).toBe("");
+
+    await pinGitDirs(workspace, [], async (path) => {
+      pinned.push(path);
+    });
+
+    expect(await readFile(commondir, "utf8")).toBe(".\n");
+    expect(pinned).toEqual([commondir]);
   });
 });
 

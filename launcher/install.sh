@@ -1,12 +1,11 @@
 #!/bin/sh
 set -eu
+unset CDPATH
 
 package_name=pi-extensions-mz
 colima_profile=pi-sandbox
 min_colima=0.8.0
 min_node=22.19.0
-marker_begin="# pi-sandbox begin"
-marker_end="# pi-sandbox end"
 wrapper_marker="launcher/bin/pi-sandbox"
 bin_dir="$HOME/.local/bin"
 user_config="${PI_SANDBOX_USER_CONFIG:-$HOME/.config/pi-sandbox/config.json}"
@@ -99,19 +98,26 @@ version_at_least() {
   }'
 }
 
+needs_value() {
+  if [ "$1" -lt 2 ]; then
+    usage >&2
+    fail "$2 needs a value"
+  fi
+}
+
 parse_args() {
   if [ "$#" -eq 0 ]; then
     return 0
   fi
 
   case "$1" in
-    --cpu) cpus="${2:-}"; shift 2 ;;
-    --memory) memory="${2:-}"; shift 2 ;;
-    --disk) disk="${2:-}"; shift 2 ;;
-    --version) version="${2:-}"; shift 2 ;;
-    --org) org_file="${2:-}"; shift 2 ;;
+    --cpu) needs_value "$#" "$1"; cpus=$2; shift 2 ;;
+    --memory) needs_value "$#" "$1"; memory=$2; shift 2 ;;
+    --disk) needs_value "$#" "$1"; disk=$2; shift 2 ;;
+    --version) needs_value "$#" "$1"; version=$2; shift 2 ;;
+    --org) needs_value "$#" "$1"; org_file=$2; shift 2 ;;
     --dry-run) dry_run=1; shift ;;
-    --bin-dir) bin_dir="${2:-}"; shift 2 ;;
+    --bin-dir) needs_value "$#" "$1"; bin_dir=$2; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) usage >&2; fail "unknown option $1" ;;
   esac
@@ -120,6 +126,11 @@ parse_args() {
 }
 
 parse_args "$@"
+
+case "$bin_dir" in
+  /*) ;;
+  *) fail "--bin-dir needs an absolute path, got $bin_dir" ;;
+esac
 
 shim_dir="$bin_dir"
 
@@ -136,6 +147,8 @@ esac
 
 script_dir=$(cd "$(dirname "$0")" && pwd)
 checkout=$(dirname "$script_dir")
+
+. "$script_dir/bin/path-block.sh"
 
 from_checkout=0
 if [ -f "$checkout/package.json" ] && [ -e "$checkout/.git" ] && grep -q "\"name\": \"$package_name\"" "$checkout/package.json"; then
@@ -298,29 +311,6 @@ if [ -n "$managed_root" ] && [ -n "$recorded_shim" ] && [ "$recorded_shim" != "$
   fail "$replaced_link records the replaced pi link of $recorded_shim, not $shim; run uninstall.sh --bin-dir $(dirname "$recorded_shim") first"
 fi
 
-act mkdir -p "$bin_dir"
-
-if [ -n "$managed_root" ] && [ "$dry_run" -eq 0 ]; then
-  mkdir -p "$state_dir"
-  printf '%s\n%s\n' "$shim" "$(readlink "$shim")" > "$replaced_link"
-fi
-
-if [ "$from_checkout" -eq 1 ]; then
-  if [ "$dry_run" -eq 0 ]; then
-    rm -f "$shim"
-    quoted_entry=$(printf '%s' "$checkout/launcher/bin/pi-sandbox-dev.js" | sed "s/'/'\\\\''/g")
-    printf '#!/bin/sh\nexec node '\''%s'\'' "$@"\n' "$quoted_entry" > "$shim"
-    chmod 0755 "$shim"
-  fi
-  installed="$(verb "write" "wrote") $shim running $checkout/launcher/bin/pi-sandbox-dev.js"
-else
-  step 5 "launcher: $(verb "install $package_name@$version with npm" "installing $package_name@$version with npm")"
-  act streamed npm install -g --legacy-peer-deps=false "$package_name@$version"
-  npm_bin="$(npm prefix -g)/bin/pi-sandbox"
-  act ln -sfn "$npm_bin" "$shim"
-  installed="$(verb "install" "installed") $package_name@$version and link $shim to $npm_bin"
-fi
-
 bundled_pi_package="node_modules/@earendil-works/pi-coding-agent/package.json"
 
 has_bundled_pi() {
@@ -345,49 +335,70 @@ bundled_pi_present() {
   fi
 }
 
-if [ "$dry_run" -eq 0 ] && ! is_managed_root "$agent_dir" && ! bundled_pi_present; then
+require_host_pi() {
+  if [ "$dry_run" -eq 1 ] || is_managed_root "$agent_dir" || bundled_pi_present; then
+    return 0
+  fi
+
   if [ "$from_checkout" -eq 1 ]; then
     fail "no managed pi in $agent_dir and pi is missing next to the launcher in $checkout, run npm install there and run this again"
   fi
 
   fail "no managed pi in $agent_dir and pi is missing next to the launcher, npm skipped the peer dependency; run npm install -g --legacy-peer-deps=false $package_name@$version and run this again"
+}
+
+record_replaced_link() {
+  if [ -n "$managed_root" ] && [ "$dry_run" -eq 0 ]; then
+    mkdir -p "$state_dir"
+    printf '%s\n%s\n' "$shim" "$(readlink "$shim")" > "$replaced_link"
+  fi
+}
+
+if [ "$from_checkout" -eq 1 ]; then
+  require_host_pi
+fi
+
+act mkdir -p "$bin_dir"
+
+if [ "$from_checkout" -eq 1 ]; then
+  record_replaced_link
+
+  if [ "$dry_run" -eq 0 ]; then
+    rm -f "$shim"
+    quoted_entry=$(printf '%s' "$checkout/launcher/bin/pi-sandbox-dev.js" | sed "s/'/'\\\\''/g")
+    printf '#!/bin/sh\nexec node '\''%s'\'' "$@"\n' "$quoted_entry" > "$shim"
+    chmod 0755 "$shim"
+  fi
+  installed="$(verb "write" "wrote") $shim running $checkout/launcher/bin/pi-sandbox-dev.js"
+else
+  step 5 "launcher: $(verb "install $package_name@$version with npm" "installing $package_name@$version with npm")"
+  act streamed npm install -g --legacy-peer-deps=false "$package_name@$version"
+  require_host_pi
+  npm_bin="$(npm prefix -g)/bin/pi-sandbox"
+  record_replaced_link
+  act ln -sfn "$npm_bin" "$shim"
+  installed="$(verb "install" "installed") $package_name@$version and link $shim to $npm_bin"
 fi
 
 snippet_files=""
 
-snippet_body="export PATH=\"$bin_dir:\$PATH\""
+snippet_body=$(path_block_line "$bin_dir")
 
-current_snippet() {
-  awk -v begin="$marker_begin" -v end="$marker_end" '
-    $0 == begin { inside = 1; next }
-    $0 == end { inside = 0; closed = 1; next }
-    inside { print }
-    END { if (!closed) exit 1 }
-  ' "$1"
-}
-
-has_block() {
-  [ -f "$1" ] && grep -qxF "$marker_begin" "$1" && grep -qxF "$marker_end" "$1"
-}
-
-without_block() {
-  awk -v begin="$marker_begin" -v end="$marker_end" '
-    $0 == begin { skip = 1; next }
-    $0 == end { skip = 0; next }
-    !skip { print }
-  ' "$1" > "$1.pi-sandbox.tmp"
-  cat "$1.pi-sandbox.tmp" > "$1"
-  rm -f "$1.pi-sandbox.tmp"
-}
+snippet_broken=""
 
 add_snippet() {
-  if has_block "$1" && [ "$(current_snippet "$1")" = "$snippet_body" ]; then
+  if path_block_present "$1" && ! path_block_intact "$1"; then
+    snippet_broken="$snippet_broken; $(path_block_broken_note "$1")"
+    return 0
+  fi
+
+  if path_block_present "$1" && [ "$(path_block_body "$1")" = "$snippet_body" ]; then
     return 0
   fi
 
   if [ "$dry_run" -eq 0 ]; then
-    if has_block "$1"; then
-      without_block "$1"
+    if path_block_present "$1"; then
+      path_block_strip "$1"
     fi
 
     printf '\n%s\n%s\n%s\n' "$marker_begin" "$snippet_body" "$marker_end" >> "$1"
@@ -408,6 +419,8 @@ fi
 
 if [ -n "$snippet_files" ]; then
   snippet="$(verb "add" "added") the PATH snippet to$snippet_files"
+elif [ -n "$snippet_broken" ]; then
+  snippet="no PATH snippet added"
 else
   snippet="PATH snippet already present"
 fi
@@ -419,7 +432,7 @@ elif [ -n "$host_pi" ] && [ "$host_pi" != "$shim" ]; then
   shadowed=", $host_pi is now shadowed (reach it with pi --no-sandbox when policy allows)"
 fi
 
-step 5 "launcher: $installed, $snippet$shadowed"
+step 5 "launcher: $installed, $snippet$snippet_broken$shadowed"
 
 if [ -n "$org_file" ]; then
   if [ "$dry_run" -eq 0 ]; then
@@ -447,9 +460,6 @@ smoke() {
   smoke_dir=$(mktemp -d "$smoke_parent/pi-sandbox-smoke.XXXXXX") || return 1
   smoke_status=0
 
-  smoke_real=$(cd "$smoke_dir" && pwd -P) || return 1
-  smoke_sessions="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/sessions"
-  smoke_slug="--$(printf '%s' "$smoke_real" | sed 's|^/||; s|[/\\:]|-|g')--"
   git -C "$smoke_dir" init -q || smoke_status=1
 
   if [ "$smoke_status" -eq 0 ]; then
@@ -457,7 +467,6 @@ smoke() {
     (cd "$smoke_dir" && PATH="$bin_dir:$PATH" PI_SANDBOX_SESSIONS_HOST=off "$shim" sandbox reset --volumes >/dev/null 2>&1) || true
   fi
 
-  rmdir "$smoke_sessions/$smoke_slug" 2>/dev/null || true
   rm -rf "$smoke_dir"
 
   return "$smoke_status"

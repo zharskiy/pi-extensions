@@ -3,8 +3,6 @@ import { LauncherError, urlPartOf } from "../../shared/index.ts";
 import type { CachedSecret } from "./cache.ts";
 import { unavailable } from "./errors.ts";
 
-export const PARENT_PROXY_SECRET_KEY = "egress.parentProxy";
-
 interface EnvSecretEntry {
   key: string;
   ref: SecretRef;
@@ -33,7 +31,7 @@ const envSecretEntries = (rules: CredentialRule[]): EnvSecretEntry[] =>
   rules.filter((rule) => "env" in rule.secret).map((rule) => ({ key: rule.id, ref: rule.secret }));
 
 const envProxyCredentials = (env: NodeJS.ProcessEnv) => {
-  const text = env.HTTPS_PROXY ?? env.https_proxy;
+  const text = env.HTTPS_PROXY || env.https_proxy;
 
   try {
     const url = text === undefined || text === "" ? undefined : new URL(text);

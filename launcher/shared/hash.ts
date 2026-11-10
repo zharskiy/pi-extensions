@@ -22,3 +22,7 @@ const canonical = (value: unknown): unknown => {
 export const stableHash = (value: unknown) => sha256Hex(JSON.stringify(canonical(value)));
 
 export const repoHash = (repoRoot: string) => sha256Hex(repoRoot);
+
+const SHORT_HASH = 12;
+
+export const shortHash = (hash: string) => hash.slice(0, SHORT_HASH);

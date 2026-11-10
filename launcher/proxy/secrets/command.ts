@@ -6,6 +6,10 @@ const DEFAULT_TTL_SECONDS = 300;
 
 const SECONDS_THRESHOLD = 1e12;
 
+const EXPIRY_SKEW_MS = 30_000;
+
+const COMMAND_TIMEOUT_MS = 30_000;
+
 const expiryOf = (value: unknown) => {
   if (typeof value === "number") {
     return value < SECONDS_THRESHOLD ? value * 1000 : value;
@@ -15,6 +19,9 @@ const expiryOf = (value: unknown) => {
 
   return Number.isNaN(parsed) ? undefined : parsed;
 };
+
+const usableUntil = (expiresAt: number | undefined) =>
+  expiresAt === undefined ? undefined : expiresAt - EXPIRY_SKEW_MS;
 
 const parseJson = (text: string) => {
   try {
@@ -35,7 +42,7 @@ const parseOutput = (stdout: string) => {
 
   return {
     token: typeof parsed?.token === "string" ? parsed.token.trim() : "",
-    expiresAt: expiryOf(parsed?.expiresAt),
+    expiresAt: usableUntil(expiryOf(parsed?.expiresAt)),
   };
 };
 
@@ -47,6 +54,7 @@ export interface CommandSecretInput {
   runner: CommandRunner;
   now: () => number;
   env?: Record<string, string>;
+  timeoutMs?: number;
 }
 
 export const commandSecret = async (input: CommandSecretInput): Promise<CachedSecret> => {
@@ -56,12 +64,17 @@ export const commandSecret = async (input: CommandSecretInput): Promise<CachedSe
     throw unavailable(`${input.kind} secret for ${input.key}: no command`);
   }
 
+  const timeoutMs = input.timeoutMs ?? COMMAND_TIMEOUT_MS;
   const result = await input.runner
-    .run(file, args, input.env === undefined ? {} : { env: input.env })
+    .run(file, args, { timeoutMs, ...(input.env === undefined ? {} : { env: input.env }) })
     .catch(() => undefined);
 
   if (result === undefined) {
     throw unavailable(`${input.kind} secret for ${input.key}: ${file} could not be started`);
+  }
+
+  if (result.timedOut === true) {
+    throw unavailable(`${input.kind} secret for ${input.key}: ${file} timed out after ${timeoutMs / 1000} s`);
   }
 
   if (result.code !== 0) {

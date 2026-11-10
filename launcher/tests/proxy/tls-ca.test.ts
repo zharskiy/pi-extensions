@@ -48,7 +48,7 @@ describe("launcher CA", () => {
     const second = await openLauncherCa({ stateDir: state.stateDir, runner: createProcessRunner() });
 
     expect(second.certPem).toBe(first.certPem);
-    expect((await first.leaf("llm.example.com")).cert).toBe(firstLeaf.cert);
+    expect(await first.leaf("llm.example.com")).toBe(firstLeaf);
     expect((await second.leaf("llm.example.com")).cert).not.toBe(firstLeaf.cert);
     expect((await readdir(join(state.stateDir, "ca"))).sort()).toEqual(["ca-cert.pem", "ca-key.pem"]);
   });

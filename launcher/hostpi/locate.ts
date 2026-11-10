@@ -1,7 +1,8 @@
-import { constants, existsSync } from "node:fs";
-import { access, readFile, realpath } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { readFile, realpath } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { isJsonObject, launcherRoot, readJsonObject } from "../shared/index.ts";
+import { isExecutable } from "./path-search.ts";
 import type { BundledPi, HostPi } from "./types.ts";
 
 interface PiManifest {
@@ -22,13 +23,7 @@ const MANAGED_LAYOUT = "releases-v1";
 
 export const SAFE_VERSION = /^[0-9A-Za-z][0-9A-Za-z.+-]*$/;
 
-const isExecutable = (path: string) =>
-  access(path, constants.X_OK).then(
-    () => true,
-    () => false,
-  );
-
-const packageDirFrom = (start: string): string | undefined => {
+const packageDirFrom = (start: string, stop: string): string | undefined => {
   const candidate = join(start, "node_modules", PI_PACKAGE);
 
   if (existsSync(join(candidate, "package.json"))) {
@@ -37,7 +32,7 @@ const packageDirFrom = (start: string): string | undefined => {
 
   const parent = dirname(start);
 
-  return parent === start ? undefined : packageDirFrom(parent);
+  return start === stop || parent === start ? undefined : packageDirFrom(parent, stop);
 };
 
 const binOf = (manifest: PiManifest) => {
@@ -53,8 +48,8 @@ const binOf = (manifest: PiManifest) => {
 const manifestOf = async (packageDir: string): Promise<PiManifest> =>
   (await readJsonObject(join(packageDir, "package.json"))) ?? {};
 
-export const locateBundledPi = async (): Promise<BundledPi | undefined> => {
-  const packageDir = packageDirFrom(launcherRoot());
+export const locateBundledPi = async (root = launcherRoot()): Promise<BundledPi | undefined> => {
+  const packageDir = packageDirFrom(root, dirname(root));
 
   if (packageDir === undefined) {
     return undefined;

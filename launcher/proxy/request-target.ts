@@ -18,20 +18,44 @@ const decode = (text: string) => {
 
 const isDotSegment = (segment: string) => segment === "." || segment === "..";
 
-const sameAuthority = (authority: string, host: string, port: number) => {
-  try {
-    const url = new URL(`https://${authority}`);
-    const urlPort = url.port === "" ? TLS_PORT : Number(url.port);
+export const HTTP_PORT = 80;
 
-    return (
+const WRITTEN_PORT = /:\d+$/;
+
+export interface Authority {
+  host: string;
+  port: number;
+}
+
+export const parseAuthority = (
+  authority: string | undefined,
+  defaultPort?: number,
+): Authority | undefined => {
+  const text = authority ?? "";
+
+  try {
+    const url = new URL(`http://${text}`);
+    const plain =
+      url.hostname !== "" &&
       url.username === "" &&
       url.password === "" &&
-      normalizeHost(url.hostname) === normalizeHost(host) &&
-      urlPort === port
-    );
+      url.pathname === "/" &&
+      url.search === "" &&
+      url.hash === "" &&
+      !text.includes("@");
+    const written = url.port !== "" ? Number(url.port) : WRITTEN_PORT.test(text) ? HTTP_PORT : undefined;
+    const port = written ?? defaultPort;
+
+    return plain && port !== undefined ? { host: url.hostname, port } : undefined;
   } catch {
-    return false;
+    return undefined;
   }
+};
+
+const sameAuthority = (authority: string, host: string, port: number) => {
+  const parsed = parseAuthority(authority, TLS_PORT);
+
+  return parsed !== undefined && normalizeHost(parsed.host) === normalizeHost(host) && parsed.port === port;
 };
 
 const originFormOf = (target: string, host: string, port: number) => {

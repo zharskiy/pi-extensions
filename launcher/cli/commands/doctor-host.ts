@@ -1,7 +1,6 @@
 import { constants } from "node:fs";
 import { access, lstat } from "node:fs/promises";
 import { connect } from "node:net";
-import type { ParentProxy } from "../../config/index.ts";
 import {
   type HostPi,
   type HostPiFiles,
@@ -9,8 +8,10 @@ import {
   mcpSignIns,
   readHostPiFiles,
 } from "../../hostpi/index.ts";
+import { parentTarget } from "../../proxy/index.ts";
 import { errorMessage, isFreshMcpToken } from "../../shared/index.ts";
 import { assertHostSessionsDir } from "../../workspace/index.ts";
+import type { LaunchContext } from "../context.ts";
 import { type CliDeps, hostAgentDirOf } from "../deps.ts";
 import { providerHostsOf } from "../derive.ts";
 import {
@@ -22,7 +23,6 @@ import {
   sandboxRoots,
 } from "../host-pi.ts";
 import { hostSessionsOf } from "../host-sessions.ts";
-import type { LaunchContext } from "../launch.ts";
 import { isOlderVersion, testedPiVersion } from "../versions.ts";
 import { failed, type NamedCheck, passed, skipped, warned } from "./doctor-probes.ts";
 import { grantLines } from "./egress.ts";
@@ -38,8 +38,6 @@ const DAY_MS = 86_400_000;
 const MINUTES_SHOWN_BELOW_MS = 2 * HOUR_MS;
 
 const HOURS_SHOWN_BELOW_MS = 2 * DAY_MS;
-
-const DEFAULT_PROXY_PORT = 80;
 
 const REINSTALL = "reinstall the launcher with npm install -g pi-extensions-mz";
 
@@ -80,9 +78,6 @@ const checkProviderHosts = async (deps: CliDeps, context: LaunchContext, pi: Hos
     : failed(notices[0] ?? "the provider host table is empty");
 };
 
-const parentUrl = (parent: ParentProxy, env: NodeJS.ProcessEnv) =>
-  parent === "none" ? undefined : (env.HTTPS_PROXY ?? env.https_proxy);
-
 const reachable = (host: string, port: number) =>
   new Promise<boolean>((resolve) => {
     const socket = connect({ host, port, timeout: CONNECT_TIMEOUT_MS });
@@ -102,30 +97,22 @@ const reachable = (host: string, port: number) =>
     socket.once("error", () => resolve(false));
   });
 
-const parsedUrl = (text: string) => {
-  try {
-    return new URL(text);
-  } catch {
-    return undefined;
-  }
-};
-
 const checkParentProxy = async (deps: CliDeps, context: LaunchContext) => {
-  const text = parentUrl(context.effective.config.egress.parentProxy, deps.env);
+  const target = parentTarget(context.effective.config.egress.parentProxy, deps.env);
 
-  if (text === undefined || text === "") {
+  if (target === undefined) {
     return skipped("no parent proxy configured");
   }
 
-  const url = parsedUrl(text);
-
-  if (url === undefined) {
-    return failed("the parent proxy URL does not parse");
+  if ("unsupported" in target) {
+    return failed(target.unsupported);
   }
 
-  const authority = `${url.hostname}:${url.port || DEFAULT_PROXY_PORT}`;
+  const authority = target.host.includes(":")
+    ? `[${target.host}]:${target.port}`
+    : `${target.host}:${target.port}`;
 
-  return (await reachable(url.hostname, Number(url.port || DEFAULT_PROXY_PORT)))
+  return (await reachable(target.host, target.port))
     ? passed(`${authority} accepts connections`)
     : failed(`${authority} does not accept connections`);
 };
@@ -229,7 +216,10 @@ const named = async (name: string, result: Promise<NamedCheck["result"]>): Promi
 });
 
 export const hostChecks = async (deps: CliDeps, context: LaunchContext): Promise<NamedCheck[]> => {
-  const [files, pi] = await Promise.all([readHostPiFiles(hostAgentDirOf(deps)), resolveJobPi(deps)]);
+  const [files, pi] = await Promise.all([
+    readHostPiFiles(hostAgentDirOf(deps)),
+    resolveJobPi(deps, sandboxRoots(deps, context)),
+  ]);
   const [checks, signIns] = await Promise.all([
     Promise.all([
       named("host pi", checkHostPi(deps, context, pi)),

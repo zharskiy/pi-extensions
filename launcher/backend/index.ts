@@ -1,8 +1,9 @@
 export { createColimaBackend } from "./colima/backend.ts";
-export { ENGINE_PROFILE, ENGINE_SOCKET_DISPLAY, engineSocketPath, VM_HOST_ALIAS } from "./colima/profile.ts";
-export { recommendedVmSize } from "./colima/vm.ts";
+export { ENGINE_PROFILE, engineSocketPath, VM_HOST_ALIAS } from "./colima/profile.ts";
+export { engineUnreachable, recommendedVmSize } from "./colima/vm.ts";
 export { execCapture } from "./exec-capture.ts";
 export { LABELS } from "./labels.ts";
+export { relayName, repoNetworkName } from "./managed-network.ts";
 export type {
   Backend,
   ContainerSpec,
@@ -14,7 +15,6 @@ export type {
   ImageSummary,
   MountSpec,
   NetworkRef,
-  ProxyRoute,
   ProxyRouteRequest,
   TerminalSize,
   Vm,

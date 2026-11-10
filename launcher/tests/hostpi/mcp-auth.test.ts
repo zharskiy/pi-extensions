@@ -60,3 +60,21 @@ describe("mcpSignInsNeeded", () => {
     ]);
   });
 });
+
+describe("mcpSignInsNeeded and the derived bearer", () => {
+  it("skips servers with their own credential header and names host pi cannot sign in to", async () => {
+    const agentDir = await tempDir("mcp-auth");
+    const files = {
+      agentDir,
+      mcp: {
+        mcpServers: {
+          keyed: { url: "https://keyed.example/mcp", headers: { "X-Api-Key": "x" } },
+          "dotted.name": { url: "https://dotted.example/mcp" },
+          plain: { url: "https://plain.example/mcp" },
+        },
+      },
+    };
+
+    expect(await mcpSignInsNeeded(files, NOW)).toEqual([{ name: "plain", url: "https://plain.example/mcp" }]);
+  });
+});

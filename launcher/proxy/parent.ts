@@ -1,12 +1,11 @@
 import { connect, type Socket } from "node:net";
-import { normalizeHost, type ParentProxy, type SecretRef } from "../config/index.ts";
-import { PARENT_PROXY_SECRET_KEY, type SecretResolver } from "./secrets/index.ts";
+import { normalizeHost, type ParentProxy } from "../config/index.ts";
 
 export interface ParentRoute {
   host: string;
   port: number;
   noProxy: string[];
-  authorization: (repoHash?: string) => Promise<string | undefined>;
+  authorization?: string;
   timeoutMs?: number;
 }
 
@@ -40,69 +39,65 @@ const matchesNoProxy = (host: string, entry: string) => {
 export const bypassesParent = (noProxy: string[], host: string) =>
   noProxy.some((entry) => entry.trim() !== "" && matchesNoProxy(normalizeHost(host), entry));
 
-const parentRouteFromUrl = (
-  url: string,
-  noProxy: string[],
-  authorization: ParentRoute["authorization"],
-): ParentRoute => {
-  const parsed = new URL(url);
-
-  return {
-    host: parsed.hostname.replace(/^\[(.*)\]$/, "$1"),
-    port: Number(parsed.port || DEFAULT_PARENT_PORT),
-    noProxy,
-    authorization,
-  };
-};
-
 const listOf = (value: string | undefined) =>
   (value ?? "")
     .split(",")
     .map((entry) => entry.trim())
     .filter((entry) => entry !== "");
 
-const parseUrl = (value: string | undefined) => {
+const setOf = (value: string | undefined) => (value === undefined || value === "" ? undefined : value);
+
+const parseUrl = (value: string) => {
   try {
-    return value === undefined || value === "" ? undefined : new URL(value);
+    return new URL(value);
   } catch {
     return undefined;
   }
 };
 
-const ENV_PARENT_SECRET: SecretRef = { env: "HTTPS_PROXY" };
+export type ParentTarget = { host: string; port: number } | { unsupported: string } | undefined;
 
-const memoryAuthorization = (resolver: SecretResolver, ref: SecretRef) => async (repoHash?: string) => {
-  const result = await resolver.resolve(PARENT_PROXY_SECRET_KEY, ref, repoHash);
+export const parentTarget = (parent: ParentProxy, env: Record<string, string | undefined>): ParentTarget => {
+  const text = parent === "none" ? undefined : (setOf(env.HTTPS_PROXY) ?? setOf(env.https_proxy));
 
-  return result.ok ? basicAuthorization(result.value) : undefined;
-};
-
-const envRoute = (env: Record<string, string | undefined>, resolver: SecretResolver) => {
-  const url = parseUrl(env.HTTPS_PROXY ?? env.https_proxy);
-
-  if (url === undefined || url.protocol !== "http:") {
+  if (text === undefined) {
     return undefined;
   }
 
-  const address = `${url.protocol}//${url.host}`;
+  const url = parseUrl(text);
 
-  return parentRouteFromUrl(
-    address,
-    listOf(env.NO_PROXY ?? env.no_proxy),
-    memoryAuthorization(resolver, ENV_PARENT_SECRET),
-  );
+  if (url === undefined) {
+    return { unsupported: "HTTPS_PROXY is not a URL" };
+  }
+
+  if (url.protocol !== "http:") {
+    return {
+      unsupported: `HTTPS_PROXY uses ${url.protocol.slice(0, -1)}, only http parent proxies are supported`,
+    };
+  }
+
+  return {
+    host: url.hostname.replace(/^\[(.*)\]$/, "$1"),
+    port: Number(url.port || DEFAULT_PARENT_PORT),
+  };
 };
 
 export const parentRouteFor = (
   parent: ParentProxy,
   env: Record<string, string | undefined>,
-  resolver: SecretResolver,
+  credentials?: string,
 ): ParentRoute | undefined => {
-  if (parent === "none") {
+  const target = parentTarget(parent, env);
+
+  if (target === undefined || "unsupported" in target) {
     return undefined;
   }
 
-  return envRoute(env, resolver);
+  return {
+    ...target,
+    noProxy: listOf(setOf(env.NO_PROXY) ?? env.no_proxy),
+    authorization: credentials === undefined ? undefined : basicAuthorization(credentials),
+  };
 };
 
 const readHead = (socket: Socket, timeoutMs: number) =>
@@ -136,17 +131,23 @@ const readHead = (socket: Socket, timeoutMs: number) =>
         return;
       }
 
+      if (end === -1) {
+        onError(new Error("the parent proxy sent an oversized response head"));
+
+        return;
+      }
+
       stop();
 
       socket.pause();
 
-      const rest = end === -1 ? Buffer.alloc(0) : state.buffer.subarray(end + HEAD_END.length);
+      const rest = state.buffer.subarray(end + HEAD_END.length);
 
       if (rest.length > 0) {
         socket.unshift(rest);
       }
 
-      resolve(state.buffer.subarray(0, end === -1 ? state.buffer.length : end).toString("latin1"));
+      resolve(state.buffer.subarray(0, end).toString("latin1"));
     };
 
     const timer = setTimeout(() => onError(new Error("the parent proxy did not answer in time")), timeoutMs);
@@ -185,12 +186,12 @@ const connectTo = (host: string, port: number, timeoutMs: number) =>
     socket.once("error", onError);
   });
 
-export const dialViaParent = async (parent: ParentRoute, host: string, port: number, repoHash?: string) => {
+export const dialViaParent = async (parent: ParentRoute, host: string, port: number) => {
   const timeoutMs = parent.timeoutMs ?? DIAL_TIMEOUT_MS;
-  const authorization = await parent.authorization(repoHash);
   const socket = await connectTo(parent.host, parent.port, timeoutMs);
   const authority = `${host}:${port}`;
-  const authLine = authorization === undefined ? "" : `Proxy-Authorization: ${authorization}\r\n`;
+  const authLine =
+    parent.authorization === undefined ? "" : `Proxy-Authorization: ${parent.authorization}\r\n`;
 
   socket.write(`CONNECT ${authority} HTTP/1.1\r\nHost: ${authority}\r\n${authLine}\r\n`);
 

@@ -1,13 +1,14 @@
 #!/bin/sh
 set -eu
+unset CDPATH
 
 package_name=pi-extensions-mz
 colima_profile=pi-sandbox
-marker_begin="# pi-sandbox begin"
-marker_end="# pi-sandbox end"
 wrapper_marker="launcher/bin/pi-sandbox"
-bin_dir="$HOME/.local/bin"
+bin_dir=""
 script_dir=$(cd "$(dirname "$0")" && pwd)
+
+. "$script_dir/bin/path-block.sh"
 state_dir="${PI_SANDBOX_STATE_DIR:-$HOME/.local/state/pi-sandbox}"
 
 dry_run=0
@@ -46,7 +47,19 @@ parse_args() {
     --volumes) volumes=1; shift ;;
     --keep-vm) keep_vm=1; shift ;;
     --dry-run) dry_run=1; shift ;;
-    --bin-dir) bin_dir="${2:-}"; shift 2 ;;
+    --bin-dir)
+      if [ "$#" -lt 2 ]; then
+        usage >&2
+        fail "$1 needs a value"
+      fi
+
+      case "$2" in
+        /*) bin_dir=$2 ;;
+        *) fail "--bin-dir needs an absolute path, got $2" ;;
+      esac
+
+      shift 2
+      ;;
     -h|--help) usage; exit 0 ;;
     *) usage >&2; fail "unknown option $1" ;;
   esac
@@ -55,6 +68,32 @@ parse_args() {
 }
 
 parse_args "$@"
+
+recorded_bin_dir() {
+  if [ "$#" -eq 0 ]; then
+    return 0
+  fi
+
+  if path_block_present "$1" && path_block_intact "$1"; then
+    found=$(path_block_bin_dir "$1")
+
+    if [ -n "$found" ]; then
+      echo "$found"
+      return 0
+    fi
+  fi
+
+  shift
+  recorded_bin_dir "$@"
+}
+
+if [ -z "$bin_dir" ]; then
+  bin_dir=$(recorded_bin_dir "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile")
+fi
+
+if [ -z "$bin_dir" ]; then
+  bin_dir="$HOME/.local/bin"
+fi
 
 dry_flag=""
 
@@ -75,19 +114,37 @@ if [ "$volumes" -eq 1 ] || [ "$keep_vm" -eq 0 ]; then
   engine_flags="$engine_flags --volumes"
 fi
 
-if [ -S "$engine_socket" ] && command -v node >/dev/null 2>&1; then
-  node "$script_dir/bin/uninstall-engine.mjs" "$engine_socket" $engine_flags
-else
-  echo "containers: the sandbox VM engine is not running, nothing removed"
+delete_profile=0
+
+if [ "$keep_vm" -eq 0 ] && command -v colima >/dev/null 2>&1 && colima list 2>/dev/null | grep -q "^$colima_profile "; then
+  delete_profile=1
+fi
+
+clean_engine() {
+  if [ -S "$engine_socket" ] && command -v node >/dev/null 2>&1; then
+    node "$script_dir/bin/uninstall-engine.mjs" "$engine_socket" $engine_flags
+  else
+    echo "containers: the sandbox VM engine is not running, nothing removed"
+  fi
+}
+
+colima_failed=0
+
+if [ "$delete_profile" -eq 0 ]; then
+  clean_engine
 fi
 
 if [ "$keep_vm" -eq 1 ]; then
   echo "colima: profile $colima_profile kept (--keep-vm)"
-elif command -v colima >/dev/null 2>&1 && colima list 2>/dev/null | grep -q "^$colima_profile "; then
-  act colima delete --profile "$colima_profile" --force >/dev/null
-  echo "colima: $(verb "delete" "deleted") profile $colima_profile"
-else
+elif [ "$delete_profile" -eq 0 ]; then
   echo "colima: no profile $colima_profile"
+elif act colima delete --profile "$colima_profile" --force >/dev/null; then
+  echo "colima: $(verb "delete" "deleted") profile $colima_profile"
+  echo "containers: $(verb "be removed" "removed") with the colima profile $colima_profile, volumes and images included"
+else
+  colima_failed=1
+  echo "colima: colima delete --profile $colima_profile failed, the profile stays; removing the containers through the engine instead"
+  clean_engine
 fi
 
 if [ -d "$bin_dir" ]; then
@@ -163,24 +220,18 @@ else
 fi
 
 remove_snippet() {
-  if [ ! -f "$1" ] || ! grep -qxF "$marker_begin" "$1"; then
+  if ! path_block_present "$1"; then
     echo "shell: no PATH snippet in $1"
     return 0
   fi
 
-  if ! grep -qxF "$marker_end" "$1"; then
-    echo "shell: $1 has \"$marker_begin\" without \"$marker_end\", left as it is"
+  if ! path_block_intact "$1"; then
+    echo "shell: $(path_block_broken_note "$1")"
     return 0
   fi
 
   if [ "$dry_run" -eq 0 ]; then
-    awk -v begin="$marker_begin" -v end="$marker_end" '
-      $0 == begin { skip = 1; next }
-      $0 == end { skip = 0; next }
-      !skip { print }
-    ' "$1" > "$1.pi-sandbox.tmp"
-    cat "$1.pi-sandbox.tmp" > "$1"
-    rm -f "$1.pi-sandbox.tmp"
+    path_block_strip "$1"
   fi
 
   echo "shell: $(verb "remove" "removed") the PATH snippet from $1"
@@ -194,3 +245,7 @@ remove_snippet "$HOME/.bash_profile"
 
 echo "kept: your repositories, ~/.pi and ~/.config/pi-sandbox"
 echo "kept: your pi sessions stay in ${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/sessions"
+
+if [ "$colima_failed" -eq 1 ]; then
+  fail "the colima profile $colima_profile could not be deleted; run colima delete --profile $colima_profile --force"
+fi

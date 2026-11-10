@@ -1,27 +1,25 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import type { SecretRef } from "../../config/index.ts";
+import { commandSecret } from "../../proxy/secrets/command.ts";
 import {
   createSecretResolver,
   envSecretsFor,
   parentProxyAuth,
   type SecretResolverDeps,
 } from "../../proxy/secrets/index.ts";
+import { createProcessRunner } from "../../shared/index.ts";
 import { createFakeClock } from "../support/fake-clock.ts";
 import { argvOf, createFakeRunner, type FakeResponder } from "../support/fake-runner.ts";
+import { tempDir } from "../support/temp-dir.ts";
 
 const PI = ["/usr/bin/node", "/opt/pi/cli.js"];
 
 const state = { home: "" };
 
 beforeEach(async () => {
-  state.home = await mkdtemp(join(tmpdir(), "pi-sandbox-secrets-"));
-});
-
-afterEach(async () => {
-  await rm(state.home, { recursive: true, force: true });
+  state.home = await tempDir("secrets");
 });
 
 const setup = (respond: FakeResponder = () => ({ stdout: "" }), extra: Partial<SecretResolverDeps> = {}) => {
@@ -34,7 +32,7 @@ const setup = (respond: FakeResponder = () => ({ stdout: "" }), extra: Partial<S
     piCommand: PI,
     stateDir: join(state.home, "state"),
     hostAgentDir: join(state.home, ".pi", "agent"),
-    envSecrets: async () => new Map(),
+    envSecrets: new Map(),
     ...extra,
   });
 
@@ -69,11 +67,11 @@ describe("command secrets", () => {
     ]);
   });
 
-  it("honours ttlSeconds and the expiry of JSON output", async () => {
+  it("honours ttlSeconds and the expiry of JSON output, less 30 s", async () => {
     const { fake, clock, resolver } = setup((call) =>
       call.file === "json-token"
         ? {
-            stdout: JSON.stringify({ token: "jwt", expiresAt: new Date(clock.now() + 10_000).toISOString() }),
+            stdout: JSON.stringify({ token: "jwt", expiresAt: new Date(clock.now() + 40_000).toISOString() }),
           }
         : { stdout: "short" },
     );
@@ -132,6 +130,59 @@ describe("command secrets", () => {
   });
 });
 
+describe("command secret failures", () => {
+  it("gives a command 30 s and names a timeout in the reason", async () => {
+    const { fake, resolver } = setup(() => ({ code: 124, timedOut: true, stdout: "partial" }));
+
+    expect(await resolver.resolve("rule", { command: ["slow-token"] })).toEqual({
+      ok: false,
+      reason: "command secret for rule: slow-token timed out after 30 s",
+    });
+    expect(fake.calls.map((call) => call.options.timeoutMs)).toEqual([30_000]);
+  });
+
+  it("kills a hanging command when its time is up", async () => {
+    const started = Date.now();
+    const outcome = commandSecret({
+      key: "rule",
+      kind: "command",
+      argv: ["sleep", "5"],
+      runner: createProcessRunner({ baseEnv: { PATH: process.env.PATH ?? "" } }),
+      now: Date.now,
+      timeoutMs: 200,
+    });
+
+    await expect(outcome).rejects.toThrow("command secret for rule: sleep timed out after 0.2 s");
+    expect(Date.now() - started).toBeLessThan(3_000);
+  });
+
+  it("runs a failing command again only after 5 s or an invalidate", async () => {
+    const { fake, clock, resolver } = setup(() => ({ code: 1 }));
+
+    await resolver.resolve("rule", { command: ["broken"] });
+
+    clock.advance(4_000);
+
+    expect(await resolver.resolve("rule", { command: ["broken"] })).toEqual({
+      ok: false,
+      reason: "command secret for rule: broken exited with 1",
+    });
+    expect(fake.calls).toHaveLength(1);
+
+    clock.advance(1_000);
+
+    await resolver.resolve("rule", { command: ["broken"] });
+
+    expect(fake.calls).toHaveLength(2);
+
+    resolver.invalidate("rule");
+
+    await resolver.resolve("rule", { command: ["broken"] });
+
+    expect(fake.calls).toHaveLength(3);
+  });
+});
+
 describe("rules sharing an id", () => {
   it("keeps separate cache entries for different references under one id", async () => {
     const { resolver } = setup((call) => ({ stdout: call.args[0] ?? "" }));
@@ -143,7 +194,7 @@ describe("rules sharing an id", () => {
 });
 
 describe("piAuth secrets", () => {
-  it("asks the bundled pi for an API key or a bearer token", async () => {
+  it("asks the bundled pi for an API key or a bearer token against the host agent dir", async () => {
     const { fake, resolver } = setup(() => ({ stdout: "key\n" }));
 
     await resolver.resolve("auth:a:key", { piAuth: "provider-a" });
@@ -153,6 +204,10 @@ describe("piAuth secrets", () => {
     expect(fake.calls.map(argvOf)).toEqual([
       [...PI, "auth", "print-api-key", "--provider", "provider-a"],
       [...PI, "auth", "print-bearer-token", "--provider", "provider-b", "--min-expiry", "5m"],
+    ]);
+    expect(fake.calls.map((call) => call.options.env)).toEqual([
+      { PI_CODING_AGENT_DIR: join(state.home, ".pi", "agent") },
+      { PI_CODING_AGENT_DIR: join(state.home, ".pi", "agent") },
     ]);
   });
 
@@ -167,7 +222,7 @@ describe("env and file secrets", () => {
   it("reads env secrets from the map handed over by the launcher, never from the environment", async () => {
     process.env.PI_SANDBOX_TEST_SECRET = "from-daemon-env";
 
-    const { resolver } = setup(undefined, { envSecrets: async () => new Map([["handed", "from-launcher"]]) });
+    const { resolver } = setup(undefined, { envSecrets: new Map([["handed", "from-launcher"]]) });
 
     expect(await secretOf(resolver, "handed", { env: "WHATEVER" })).toBe("from-launcher");
     expect(await resolver.resolve("other", { env: "PI_SANDBOX_TEST_SECRET" })).toMatchObject({ ok: false });
@@ -252,6 +307,9 @@ describe("env and file secrets", () => {
   it("hands the parent proxy credentials from HTTPS_PROXY", () => {
     expect(parentProxyAuth("env", { HTTPS_PROXY: "http://corp:p%40ss@proxy.test:3128" })).toBe("corp:p@ss");
     expect(parentProxyAuth("none", { HTTPS_PROXY: "http://corp:pass@proxy.test:3128" })).toBeUndefined();
+    expect(parentProxyAuth("env", { HTTPS_PROXY: "", https_proxy: "http://corp:pass@proxy.test:3128" })).toBe(
+      "corp:pass",
+    );
   });
 
   it("refuses an env credential that holds a line break", () => {
@@ -274,22 +332,8 @@ describe("line breaks in secrets", () => {
   });
 
   it("refuses an env secret holding a line break", async () => {
-    const { resolver } = setup(undefined, { envSecrets: async () => new Map([["rule", "value\n"]]) });
+    const { resolver } = setup(undefined, { envSecrets: new Map([["rule", "value\n"]]) });
 
     expect(await secretOf(resolver, "rule", { env: "RULE" })).toContain("line break");
-  });
-
-  it("looks env secrets up for the requesting repository", async () => {
-    const asked: Array<string | undefined> = [];
-    const { resolver } = setup(undefined, {
-      envSecrets: async (repoHash) => {
-        asked.push(repoHash);
-
-        return new Map([["rule", `for-${repoHash}`]]);
-      },
-    });
-
-    expect((await resolver.resolve("rule", { env: "RULE" }, "repo-a")).ok).toBe(true);
-    expect(asked).toEqual(["repo-a"]);
   });
 });

@@ -457,6 +457,33 @@ describe("the coverage of the VM shares", () => {
     });
   });
 
+  it("lets pi sandbox doctor name a path the VM lacks without sharing it or restarting the VM", async () => {
+    const context = await launchWith();
+
+    await run(["sandbox", "doctor"], context.harness.deps);
+
+    expect(context.harness.stdout()).toContain(
+      `warn vm shares: the sandbox VM does not share ${context.paths.repoRoot}; the next pi here shares it, restarting the VM once no pi session runs`,
+    );
+    expect(context.colimaCalls().filter((call) => /^colima (start|stop|restart)/.test(call))).toEqual([]);
+  });
+
+  it("lets pi sandbox doctor say the VM shares every path it needs", async () => {
+    const context = await launchWith({
+      lima: ({ home, stateDir, repoRoot }) => [
+        { location: home, writable: true },
+        { location: stateDir },
+        { location: repoRoot, writable: true },
+      ],
+    });
+
+    await run(["sandbox", "doctor"], context.harness.deps);
+
+    expect(context.harness.stdout()).toContain(
+      "ok vm shares: the sandbox VM shares every path this repository needs",
+    );
+  });
+
   it("knows no coverage before colima wrote the instance config", async () => {
     const context = await launchWith();
 

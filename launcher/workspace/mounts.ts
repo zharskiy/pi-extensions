@@ -1,5 +1,5 @@
 import { existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, statSync } from "node:fs";
-import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import type { HostCachePreset } from "../config/index.ts";
 import {
   expandHome,
@@ -113,7 +113,7 @@ const guardOf =
 
 const checkedMount = (given: string, context: ExtraMountContext, guard: PathGuard) => {
   const expanded = expandHome(given, context.home);
-  const absolute = isAbsolute(expanded) ? expanded : resolve(context.repoRoot, expanded);
+  const absolute = resolve(context.repoRoot, expanded);
   const kind = kindOf(absolute);
 
   if (kind === "missing") {

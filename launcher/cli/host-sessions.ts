@@ -1,6 +1,6 @@
 import type { Backend } from "../backend/index.ts";
 import { findRepoContainer } from "../container/index.ts";
-import { liveLaunches, withRepoLaunchLock } from "../grants/index.ts";
+import { othersLive, withRepoLaunchLock } from "../grants/index.ts";
 import { prepareHostSessions, probeHostSessions, sweepHostSessions } from "../provision/index.ts";
 import { errorMessage, LauncherError } from "../shared/index.ts";
 import {
@@ -10,8 +10,8 @@ import {
   hostSessionsDir,
   sessionsSwitchNotice,
 } from "../workspace/index.ts";
+import type { LaunchContext } from "./context.ts";
 import { type CliDeps, hostAgentDirOf, reachableBackend, writeLine, writeNotices } from "./deps.ts";
-import type { LaunchContext } from "./launch.ts";
 
 export const hostSessionsOf = (
   deps: CliDeps,
@@ -82,9 +82,7 @@ const sweepWhenIdle = async (
 ) => {
   try {
     return await withRepoLaunchLock(context.stateDir, context.repoHash, async () => {
-      const others = (await liveLaunches(context.stateDir, context.repoHash)).some(
-        (entry) => entry.launchId !== launchId,
-      );
+      const others = await othersLive(context.stateDir, context.repoHash, launchId);
 
       return sweep(deps, context.workspace.repoRoot, !others && !(await running()));
     });
@@ -92,6 +90,12 @@ const sweepWhenIdle = async (
     warnUnswept(deps, sweptDir(deps, context.workspace.repoRoot), error);
 
     return [];
+  }
+};
+
+export const prepareSessionsDir = async (sessions: HostSessions) => {
+  if ("dir" in sessions) {
+    await prepareHostSessions(sessions.dir);
   }
 };
 

@@ -28,6 +28,11 @@ const COMMANDS: Array<[string, string]> = [
   ["pi sandbox help", "show this help"],
 ];
 
+export const usageOf = (command: string) =>
+  COMMANDS.map(([usage]) => usage)
+    .filter((usage) => usage === `pi sandbox ${command}` || usage.startsWith(`pi sandbox ${command} `))
+    .join(" | ");
+
 const WIDTH = Math.max(...COMMANDS.map(([command]) => command.length));
 
 export const helpCommand = (deps: CliDeps) => {

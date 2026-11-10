@@ -33,37 +33,37 @@ const execBody = (spec: ExecSpec, io: ExecIo) => ({
 
 type Sink = (target: NodeJS.WritableStream, data: Buffer) => void;
 
-const demultiplexer = (io: ExecIo, sink: Sink) => {
+export const demultiplexer = (io: ExecIo, sink: Sink) => {
   const state = { header: Buffer.alloc(0), remaining: 0, target: io.stdout };
 
-  const deliver = (chunk: Buffer): void => {
-    if (chunk.length === 0) {
-      return;
+  const deliver = (chunk: Buffer) => {
+    const cursor = { offset: 0 };
+
+    while (cursor.offset < chunk.length) {
+      const rest = chunk.subarray(cursor.offset);
+
+      if (state.remaining > 0) {
+        const size = Math.min(state.remaining, rest.length);
+
+        state.remaining -= size;
+        cursor.offset += size;
+
+        sink(state.target, rest.subarray(0, size));
+
+        continue;
+      }
+
+      const needed = FRAME_HEADER - state.header.length;
+
+      state.header = Buffer.concat([state.header, rest.subarray(0, needed)]);
+      cursor.offset += Math.min(needed, rest.length);
+
+      if (state.header.length === FRAME_HEADER) {
+        state.target = state.header[0] === STDERR_STREAM ? io.stderr : io.stdout;
+        state.remaining = state.header.readUInt32BE(4);
+        state.header = Buffer.alloc(0);
+      }
     }
-
-    if (state.remaining > 0) {
-      const size = Math.min(state.remaining, chunk.length);
-
-      state.remaining -= size;
-
-      sink(state.target, chunk.subarray(0, size));
-
-      deliver(chunk.subarray(size));
-
-      return;
-    }
-
-    const needed = FRAME_HEADER - state.header.length;
-
-    state.header = Buffer.concat([state.header, chunk.subarray(0, needed)]);
-
-    if (state.header.length === FRAME_HEADER) {
-      state.target = state.header[0] === STDERR_STREAM ? io.stderr : io.stdout;
-      state.remaining = state.header.readUInt32BE(4);
-      state.header = Buffer.alloc(0);
-    }
-
-    deliver(chunk.subarray(needed));
   };
 
   return deliver;

@@ -1,13 +1,6 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { afterEach } from "vitest";
-
-const created: string[] = [];
-
-afterEach(async () => {
-  await Promise.all(created.splice(0).map((path) => rm(path, { recursive: true, force: true })));
-});
+import { tempDir } from "../support/temp-dir.ts";
 
 const writeJson = async (path: string, value: unknown) => {
   await mkdir(dirname(path), { recursive: true });
@@ -16,13 +9,11 @@ const writeJson = async (path: string, value: unknown) => {
 };
 
 export const createLayers = async () => {
-  const root = await mkdtemp(join(tmpdir(), "pi-sandbox-config-"));
+  const root = await tempDir("config");
   const repoRoot = join(root, "repo");
   const policyFile = join(root, "policy.json");
   const userFile = join(root, "user", "config.json");
   const projectFile = join(repoRoot, ".pi", "sandbox.json");
-
-  created.push(root);
 
   await mkdir(repoRoot, { recursive: true });
 

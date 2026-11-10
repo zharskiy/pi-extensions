@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { validateLayer } from "../../config/validate.ts";
+import { validateLayerFile } from "../../config/load.ts";
+import { splitProjectKeys, validateLayer } from "../../config/validate.ts";
 import { errorMessage } from "../../shared/index.ts";
 
 const SECRET_VALUE = "sk-live-value-that-must-not-leak";
@@ -86,7 +87,7 @@ describe("validateLayer with the credential, egress, tls, image and org keys", (
     expect(problemOf({ credentials: { kind: "static" } })).toBe("user: credentials.kind is not a known key");
   });
 
-  it("refuses every key outside the project allowlist, naming the key and the layer", () => {
+  it("drops every key outside the project allowlist from a project layer and names it", () => {
     const cases: Array<[unknown, string]> = [
       [{ credentials: { rules: [rule()] } }, "credentials.rules"],
       [{ credentials: { derive: { enabled: false } } }, "credentials.derive.enabled"],
@@ -107,7 +108,8 @@ describe("validateLayer with the credential, egress, tls, image and org keys", (
     ];
 
     cases.forEach(([layer, key]) => {
-      expect(problemOf(layer, "project")).toBe(`project: ${key} may not be set by a project config`);
+      expect(splitProjectKeys(layer).outside[0]).toBe(key);
+      expect(validateLayerFile(layer, "project", "/repo/.pi/sandbox.json")).toEqual({});
     });
   });
 
@@ -197,7 +199,7 @@ describe("validateLayer with the credential, egress, tls, image and org keys", (
       [{ egress: { deny: ["https://x.test"] } }, "egress.deny[0] must be a host name or host:port"],
       [{ tls: { extraCa: [{ hostStore: false }] } }, "tls.extraCa[0].hostStore must be true"],
       [{ tls: { extraCa: [{ url: "https://ca.test" }] } }, "tls.extraCa[0] must set one of file, hostStore"],
-      [{ image: { packages: ["Bad Name"] } }, "image.packages[0] must be a package name"],
+      [{ image: { packages: ["Bad Name"] } }, "image.packages[0] Bad Name must be a package name"],
       [
         { image: { npmGlobal: ["tool"] } },
         "image.npmGlobal[0] must be an npm name@version, no URL, path or git source",
@@ -212,7 +214,7 @@ describe("validateLayer with the credential, egress, tls, image and org keys", (
       ],
       [
         { image: { dockerfile: "layer.Dockerfile" } },
-        "image.dockerfile must be an absolute path or start with ~/",
+        "image.dockerfile layer.Dockerfile must be an absolute path or start with ~/",
       ],
       [{ org: { source: "/etc/org.json" } }, "org must be a string"],
       [{ org: "https://config.test/a.json" }, "org must be an absolute path"],

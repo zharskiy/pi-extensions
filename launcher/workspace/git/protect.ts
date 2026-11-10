@@ -1,11 +1,40 @@
-import { realpath } from "node:fs/promises";
-import { basename, dirname, join, relative, resolve, sep } from "node:path";
-import { type CommandRunner, expandHome, isWithin, lstatOrUndefined } from "../../shared/index.ts";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import {
+  type CommandRunner,
+  expandHome,
+  isWithin,
+  LauncherError,
+  lstatOrUndefined,
+} from "../../shared/index.ts";
 import { protectedRealPathGuard } from "../mounts.ts";
-import { gitDirOf, gitRepos, type Workspace } from "../types.ts";
-import { inertGitOptions } from "./command.ts";
-import { findModuleGitDirs, findWorktreeGitDirs, gitRefusal, lstatKind } from "./layout.ts";
-import { gitConfigFiles, nestedRepoDirs, outsideNestedRepos, workspaceConfigRefusal } from "./workspace.ts";
+import { byDepth, dirsBetween, realOrPending, unique } from "../paths.ts";
+import { gitRepos, type Workspace } from "../types.ts";
+import {
+  type ConfigSource,
+  configClosure,
+  configFilesOf,
+  type GitConfigListing,
+  type HooksPathValue,
+  isForeignPath,
+  missingInclude,
+  missingWorktreeConfig,
+  readGitConfig,
+} from "./config.ts";
+import {
+  findModuleGitDirs,
+  findWorktreeGitDirs,
+  gitRefusal,
+  lstatKind,
+  pointerPath,
+  readGitPointer,
+} from "./layout.ts";
+import {
+  nestedRepoDirs,
+  outsideNestedRepos,
+  ownConfigFiles,
+  workspaceConfigRefusal,
+  workspaceSelfBinds,
+} from "./workspace.ts";
 
 export interface GitOverlay {
   selfBinds: string[];
@@ -28,54 +57,55 @@ export interface ProtectedGitPaths {
   dirs: string[];
   pins: string[];
   files: string[];
+  required: RequiredFile[];
   workspaceRoot?: string;
+}
+
+interface RequiredFile {
+  path: string;
+  includedBy?: string;
 }
 
 export type GitPathGuard = (path: string) => string | undefined;
 
 const WORKTREE_FILES = ["commondir", "gitdir", "config.worktree"];
 
-const unique = (paths: string[]) => [...new Set(paths)];
+const gitConfigOf = (workspace: Workspace, context: GitProtectContext): Promise<GitConfigListing> =>
+  workspace.gitConfig !== undefined
+    ? Promise.resolve(workspace.gitConfig)
+    : readGitConfig(workspace.repoRoot, context.runner, context.emptyHooksDir, {
+        home: context.home,
+        ...(context.workspace === undefined ? { withoutGit: "empty" as const } : {}),
+      });
 
-const byDepth = (first: string, second: string) =>
-  first.split(sep).length - second.split(sep).length || first.localeCompare(second);
+const mountedRoots = (workspace: Workspace, gitCommonDir: string, context: GitProtectContext) => [
+  workspace.repoRoot,
+  gitCommonDir,
+  ...(context.workspace === undefined ? [] : [context.workspace.repoRoot]),
+];
 
-const realOrPending = (path: string): Promise<string> =>
-  realpath(path).catch(() => {
-    const parent = dirname(path);
+const worktreeRootOf = async (worktreeGitDir: string) => {
+  const text = await readGitPointer(join(worktreeGitDir, "gitdir"));
 
-    return parent === path ? path : realOrPending(parent).then((real) => join(real, basename(path)));
-  });
-
-const configuredHooksPath = async (workspace: Workspace, context: GitProtectContext) => {
-  const args = [
-    ...inertGitOptions(context.emptyHooksDir),
-    "config",
-    "--show-scope",
-    "--get-all",
-    "core.hooksPath",
-  ];
-  const result = await context.runner.run("git", args, { cwd: workspace.cwd }).catch(() => undefined);
-  const lines = result?.code === 0 ? result.stdout.split("\n") : [];
-  const values = lines.flatMap((line) => {
-    const tab = line.indexOf("\t");
-
-    return tab > 0 && line.slice(0, tab) !== "command" && line.length > tab + 1 ? [line.slice(tab + 1)] : [];
-  });
-
-  return values.at(-1);
-};
-
-const hooksPathDirs = async (workspace: Workspace, gitCommonDir: string, context: GitProtectContext) => {
-  const value = await configuredHooksPath(workspace, context);
-
-  if (value === undefined) {
-    return [];
+  if (text === undefined) {
+    return undefined;
   }
 
+  const dotGit = pointerPath(worktreeGitDir, text);
+
+  return (await lstatOrUndefined(dotGit)) === undefined ? undefined : realOrPending(dirname(dotGit));
+};
+
+const checkoutRoots = (worktrees: string[]) => Promise.all(worktrees.map(worktreeRootOf));
+
+const checkedHooksDir = async (
+  workspace: Workspace,
+  gitCommonDir: string,
+  lexical: string,
+  context: GitProtectContext,
+) => {
   const outer = context.workspace;
-  const roots = [workspace.repoRoot, gitCommonDir, ...(outer === undefined ? [] : [outer.repoRoot])];
-  const lexical = resolve(workspace.repoRoot, expandHome(value, context.home));
+  const roots = mountedRoots(workspace, gitCommonDir, context);
   const real = await realOrPending(lexical);
 
   if (outer !== undefined && (outsideNestedRepos(outer, real) || outsideNestedRepos(outer, lexical))) {
@@ -97,6 +127,42 @@ const hooksPathDirs = async (workspace: Workspace, gitCommonDir: string, context
   }
 
   return [real];
+};
+
+const hooksPathCandidates = (value: HooksPathValue, checkouts: string[], home: string) => {
+  if (isForeignPath(value.value)) {
+    return [];
+  }
+
+  const expanded = expandHome(value.value, home);
+
+  if (isAbsolute(expanded)) {
+    return [expanded];
+  }
+
+  if (value.base === null) {
+    throw gitRefusal(
+      value.origin,
+      `sets a relative core.hooksPath (${value.value}) but no core.worktree, so the launcher cannot tell where git runs it`,
+    );
+  }
+
+  return (value.base === undefined ? checkouts : [value.base]).map((base) => resolve(base, expanded));
+};
+
+const hooksPathDirs = async (
+  workspace: Workspace,
+  gitCommonDir: string,
+  values: HooksPathValue[],
+  checkouts: string[],
+  context: GitProtectContext,
+) => {
+  const candidates = unique(values.flatMap((value) => hooksPathCandidates(value, checkouts, context.home)));
+  const dirs = await Promise.all(
+    candidates.map((lexical) => checkedHooksDir(workspace, gitCommonDir, lexical, context)),
+  );
+
+  return dirs.flat();
 };
 
 export const gitPathGuard = (workspace: Workspace, context: GitProtectContext): GitPathGuard =>
@@ -127,12 +193,6 @@ const checkedLeaf = async (path: string, kind: "file" | "dir", guard: GitPathGua
   return found === "match";
 };
 
-const ancestorsBelow = (path: string, root: string) => {
-  const parts = relative(root, path).split(sep);
-
-  return parts.slice(0, -1).map((_, index) => join(root, ...parts.slice(0, index + 1)));
-};
-
 const selfBindsOf = async (
   leaves: string[],
   workspace: Workspace,
@@ -149,11 +209,11 @@ const selfBindsOf = async (
     roots.filter((root) => isWithin(path, root)).sort((first, second) => second.length - first.length)[0];
   const candidates = unique([
     gitCommonDir,
-    gitDirOf(workspace, gitCommonDir),
+    workspace.gitDir ?? gitCommonDir,
     ...leaves.flatMap((leaf) => {
       const root = rootOf(leaf);
 
-      return root === undefined ? [] : ancestorsBelow(leaf, root);
+      return root === undefined ? [] : dirsBetween(root, dirname(leaf));
     }),
   ]).filter((path) => !roots.includes(path) && rootOf(path) !== undefined);
   const real = await Promise.all(
@@ -169,11 +229,14 @@ const selfBindsOf = async (
   return kept.sort(byDepth);
 };
 
-const configFilesIn = async (workspace: Workspace, gitCommonDir: string, context: GitProtectContext) => {
-  const gitDirs = [...new Set([gitCommonDir, gitDirOf(workspace, gitCommonDir)])];
+const configFilesIn = async (
+  workspace: Workspace,
+  gitDirs: string[],
+  listing: GitConfigListing,
+  context: GitProtectContext,
+) => {
   const outer = context.workspace;
-  const listing = gitConfigFiles(workspace.repoRoot, gitDirs, context.runner, context.emptyHooksDir);
-  const files = outer === undefined ? await listing.catch((): string[] => []) : await listing;
+  const { files, included } = await configFilesOf(listing, ownConfigFiles(gitDirs));
   const refused = outer === undefined ? undefined : files.find((file) => outsideNestedRepos(outer, file));
 
   if (refused !== undefined) {
@@ -181,15 +244,60 @@ const configFilesIn = async (workspace: Workspace, gitCommonDir: string, context
   }
 
   const dirs = outer === undefined ? [workspace.repoRoot, ...gitDirs] : nestedRepoDirs(outer);
+  const writable = outer === undefined ? dirs : [outer.repoRoot, ...dirs];
+  const required = included
+    .filter((file) => writable.some((dir) => isWithin(file.path, dir) || isWithin(file.real, dir)))
+    .map((file) => ({ path: file.path, includedBy: file.origin }));
+  const within = (file: string) => dirs.some((dir) => isWithin(file, dir));
 
-  return files.filter((file) => dirs.some((dir) => isWithin(file, dir)));
+  return {
+    files: [...files, ...required.map((file) => file.path)].filter(within),
+    required,
+  };
 };
 
 const rootGitFile = (workspace: Workspace, gitCommonDir: string) => {
   const dotGit = join(workspace.repoRoot, ".git");
 
-  return gitDirOf(workspace, gitCommonDir) === dotGit ? [] : [dotGit];
+  return (workspace.gitDir ?? gitCommonDir) === dotGit ? [] : [dotGit];
 };
+
+const worktreeConfigFiles = (listing: GitConfigListing, gitCommonDir: string, worktrees: string[]) =>
+  listing.worktreeConfig
+    ? [gitCommonDir, ...worktrees].map((dir) => ({ path: join(dir, "config.worktree") }))
+    : [];
+
+const mainCheckoutOf = (workspace: Workspace, gitCommonDir: string) => {
+  if ((workspace.gitDir ?? gitCommonDir) === gitCommonDir) {
+    return workspace.repoRoot;
+  }
+
+  return basename(gitCommonDir) === ".git" ? dirname(gitCommonDir) : gitCommonDir;
+};
+
+const closureSources = (
+  listing: GitConfigListing,
+  workspace: Workspace,
+  gitCommonDir: string,
+  worktrees: string[],
+  checkouts: (string | undefined)[],
+  modules: string[],
+): ConfigSource[] => [
+  ...(listing.worktreeConfig
+    ? [
+        { file: join(gitCommonDir, "config.worktree"), base: mainCheckoutOf(workspace, gitCommonDir) },
+        ...worktrees.flatMap((dir, index) => {
+          const base = checkouts[index];
+
+          return base === undefined ? [] : [{ file: join(dir, "config.worktree"), base }];
+        }),
+      ]
+    : []),
+  ...modules.flatMap((dir) => [
+    { file: join(dir, "config"), worktreeFromFile: true },
+    { file: join(dir, "config.worktree"), worktreeFromFile: true },
+  ]),
+];
 
 export const findProtectedGitPaths = async (
   workspace: Workspace,
@@ -197,10 +305,39 @@ export const findProtectedGitPaths = async (
   context: GitProtectContext,
   knownModules?: string[],
 ): Promise<ProtectedGitPaths> => {
+  const gitDirs = unique([gitCommonDir, workspace.gitDir ?? gitCommonDir]);
+  const listing = await gitConfigOf(workspace, context);
   const modules = knownModules ?? (await findModuleGitDirs(gitCommonDir));
   const worktrees = await findWorktreeGitDirs(gitCommonDir);
-  const hooksPath = await hooksPathDirs(workspace, gitCommonDir, context);
-  const configFiles = await configFilesIn(workspace, gitCommonDir, context);
+  const checkouts = await checkoutRoots(worktrees);
+  const roots = mountedRoots(workspace, gitCommonDir, context);
+  const closure = await configClosure(
+    listing,
+    closureSources(listing, workspace, gitCommonDir, worktrees, checkouts, modules),
+    { runner: context.runner, emptyHooksDir: context.emptyHooksDir, home: context.home },
+  );
+  const hooksValues = [
+    ...(listing.hooksPath === undefined
+      ? []
+      : [{ value: listing.hooksPath, origin: "the git configuration" }]),
+    ...closure.hooksPaths,
+  ];
+  const linkedCheckouts = checkouts.flatMap((root) =>
+    root !== undefined && roots.some((dir) => isWithin(root, dir)) ? [root] : [],
+  );
+  const hooksPath = await hooksPathDirs(
+    workspace,
+    gitCommonDir,
+    hooksValues,
+    unique([workspace.repoRoot, ...linkedCheckouts]),
+    context,
+  );
+  const config = await configFilesIn(
+    workspace,
+    gitDirs,
+    { ...listing, includes: [...listing.includes, ...closure.includes] },
+    context,
+  );
   const pins = [gitCommonDir, ...modules].map((dir) => join(dir, "commondir"));
   const dirs = unique([
     join(gitCommonDir, "hooks"),
@@ -213,13 +350,28 @@ export const findProtectedGitPaths = async (
     ...modules.flatMap((dir) => [join(dir, "config"), join(dir, "config.worktree")]),
     ...worktrees.flatMap((dir) => WORKTREE_FILES.map((name) => join(dir, name))),
     ...rootGitFile(workspace, gitCommonDir),
-    ...configFiles,
+    ...config.files,
   ]).filter((path) => !pins.includes(path));
+  const required = [...worktreeConfigFiles(listing, gitCommonDir, worktrees), ...config.required];
   const workspaceRoot = context.workspace?.repoRoot;
 
   return workspaceRoot === undefined
-    ? { gitCommonDir, modules, dirs, pins, files }
-    : { gitCommonDir, modules, dirs, pins, files, workspaceRoot };
+    ? { gitCommonDir, modules, dirs, pins, files, required }
+    : { gitCommonDir, modules, dirs, pins, files, required, workspaceRoot };
+};
+
+const missingRequired = (file: RequiredFile) =>
+  file.includedBy === undefined
+    ? missingWorktreeConfig(file.path)
+    : missingInclude({ origin: file.includedBy, path: file.path });
+
+const assertRequiredPresent = async (required: RequiredFile[]) => {
+  const kinds = await Promise.all(required.map((file) => lstatKind(file.path, "file")));
+  const missing = required.find((_, index) => kinds[index] === "missing");
+
+  if (missing !== undefined) {
+    throw missingRequired(missing);
+  }
 };
 
 export const protectedGitOverlay = async (
@@ -227,6 +379,8 @@ export const protectedGitOverlay = async (
   paths: ProtectedGitPaths,
   guard: GitPathGuard,
 ): Promise<GitOverlay> => {
+  await assertRequiredPresent(paths.required);
+
   await Promise.all(paths.dirs.map((dir) => checkedLeaf(dir, "dir", guard)));
 
   await Promise.all(paths.pins.map((pin) => checkedLeaf(pin, "file", guard)));
@@ -245,4 +399,36 @@ export const protectedGitOverlay = async (
     readOnlyDirs: paths.dirs,
     readOnlyFiles,
   };
+};
+
+const changedWhileStarting = (path: string) =>
+  new LauncherError(`workspace: ${path} changed while pi was starting, refusing`, "run pi again");
+
+const unchangedLeaf = async (path: string, kind: "file" | "dir", guard: GitPathGuard) => {
+  const info = await lstatOrUndefined(path);
+
+  if (
+    info === undefined ||
+    info.isSymbolicLink() ||
+    (kind === "dir" ? !info.isDirectory() : !info.isFile())
+  ) {
+    throw changedWhileStarting(path);
+  }
+
+  await checkedLeaf(path, kind, guard);
+};
+
+export const protectedWorkspaceOverlay = async (
+  workspace: Workspace,
+  guard: GitPathGuard,
+): Promise<GitOverlay> => {
+  const dirs = workspace.bareDirs ?? [];
+  const files = (workspace.detached ?? []).map((checkout) => join(checkout.repoRoot, ".git"));
+
+  await Promise.all([
+    ...[...dirs, ...(workspace.masked ?? [])].map((dir) => unchangedLeaf(dir, "dir", guard)),
+    ...files.map((file) => unchangedLeaf(file, "file", guard)),
+  ]);
+
+  return { selfBinds: workspaceSelfBinds(workspace), readOnlyDirs: dirs, readOnlyFiles: files };
 };

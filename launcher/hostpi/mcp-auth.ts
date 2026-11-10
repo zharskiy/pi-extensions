@@ -6,7 +6,7 @@ import {
   readMcpAuthEntry,
 } from "../shared/index.ts";
 import { endpointOf, hasQueryCredential, hasUrlPassword, withoutUserinfo } from "./endpoints.ts";
-import { hasAuthorizationHeader } from "./headers.ts";
+import { carriesCredential } from "./headers.ts";
 import { objectOr } from "./json.ts";
 import type { HostPiFiles, McpOAuthServer } from "./types.ts";
 
@@ -14,7 +14,10 @@ export interface McpSignIn extends McpOAuthServer {
   entry?: McpAuthEntry;
 }
 
-const oauthUrl = (name: string, definition: unknown) => {
+const hasCredentialHeader = (headers: unknown) =>
+  isJsonObject(headers) && Object.entries(headers).some(([name, value]) => carriesCredential(name, value));
+
+export const oauthTarget = (name: string, definition: unknown) => {
   if (!MCP_SERVER_NAME.test(name) || !isJsonObject(definition) || typeof definition.url !== "string") {
     return undefined;
   }
@@ -22,14 +25,14 @@ const oauthUrl = (name: string, definition: unknown) => {
   const { url, headers } = definition;
   const reachable = "endpoint" in endpointOf(withoutUserinfo(url));
 
-  return reachable && !hasQueryCredential(url) && !hasUrlPassword(url) && !hasAuthorizationHeader(headers)
+  return reachable && !hasQueryCredential(url) && !hasUrlPassword(url) && !hasCredentialHeader(headers)
     ? withoutUserinfo(url)
     : undefined;
 };
 
 const mcpOAuthServers = (files: HostPiFiles): McpOAuthServer[] =>
   Object.entries(objectOr(files.mcp?.mcpServers)).flatMap(([name, definition]) => {
-    const url = oauthUrl(name, definition);
+    const url = oauthTarget(name, definition);
 
     return url === undefined ? [] : [{ name, url }];
   });

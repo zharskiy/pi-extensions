@@ -1,5 +1,7 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 import { defaultConfig } from "../../config/defaults.ts";
 import { egressAllowList, loadEffectiveConfig } from "../../config/index.ts";
@@ -200,6 +202,52 @@ describe("loadEffectiveConfig", () => {
       "policy: egress.blocked is not a known key",
     );
     await expect(loadWith({ user: () => "{ not json" })).rejects.toThrow("invalid JSON");
+  });
+});
+
+describe("loadEffectiveConfig with a project file that is not a regular file", () => {
+  const loadWithProject = async (place: (file: string) => Promise<unknown>) => {
+    const files = await createLayers();
+
+    await mkdir(join(files.repoRoot, ".pi"), { recursive: true });
+
+    await place(files.projectFile);
+
+    return loadEffectiveConfig({ repoRoot: files.repoRoot, env: files.env });
+  };
+
+  it("refuses a FIFO without opening it", async () => {
+    await expect(loadWithProject((file) => promisify(execFile)("/usr/bin/mkfifo", [file]))).rejects.toThrow(
+      /^project: .*\.pi\/sandbox\.json is not a regular file$/,
+    );
+  });
+
+  it("refuses a symlink, even to a device or a valid file", async () => {
+    await expect(loadWithProject((file) => symlink("/dev/zero", file))).rejects.toThrow(
+      "is not a regular file",
+    );
+    await expect(
+      loadWithProject(async (file) => {
+        await writeFile(`${file}.real`, JSON.stringify({ resources: { cpus: 2 } }));
+
+        await symlink(`${file}.real`, file);
+      }),
+    ).rejects.toThrow("is not a regular file");
+  });
+
+  it("refuses a file larger than the read cap", async () => {
+    await expect(
+      loadWithProject((file) => writeFile(file, `{"resources":{"cpus":2}}${" ".repeat(9 * 1024 * 1024)}`)),
+    ).rejects.toThrow(/^project: .* is larger than \d+ bytes$/);
+  });
+
+  it("reads a regular file and names the file of invalid JSON", async () => {
+    const { config } = await loadWithProject((file) =>
+      writeFile(file, JSON.stringify({ resources: { cpus: 2 } })),
+    );
+
+    expect(config.resources.cpus).toBe(2);
+    await expect(loadWithProject((file) => writeFile(file, "{ not json"))).rejects.toThrow("invalid JSON");
   });
 });
 

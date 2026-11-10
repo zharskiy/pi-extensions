@@ -242,7 +242,7 @@ export const openLauncherCa = async ({ stateDir, runner }: CaOptions): Promise<L
   await mkdir(directory, { recursive: true, mode: 0o700 });
 
   const { certPem } = await ensureCa(directory, runner);
-  const leaves = new Map<string, Promise<LeafCertificate>>();
+  const leaves = new Map<string, Promise<{ leaf: LeafCertificate; renewAt: number }>>();
 
   const checkHost = (host: string) => {
     if (!LEAF_HOST.test(host)) {
@@ -251,7 +251,10 @@ export const openLauncherCa = async ({ stateDir, runner }: CaOptions): Promise<L
   };
 
   const mint = (host: string) => {
-    const minted = signLeaf(directory, host, runner);
+    const minted = signLeaf(directory, host, runner).then((leaf) => ({
+      leaf,
+      renewAt: Date.parse(new X509Certificate(leaf.cert).validTo) - RENEW_MARGIN_MS,
+    }));
 
     leaves.set(host, minted);
 
@@ -276,7 +279,7 @@ export const openLauncherCa = async ({ stateDir, runner }: CaOptions): Promise<L
     const cached = leaves.get(host);
 
     if (cached === undefined) {
-      return mint(host);
+      return (await mint(host)).leaf;
     }
 
     leaves.delete(host);
@@ -285,7 +288,7 @@ export const openLauncherCa = async ({ stateDir, runner }: CaOptions): Promise<L
 
     const current = await cached;
 
-    return isFresh(parseCertificate(current.cert)) ? current : mint(host);
+    return Date.now() < current.renewAt ? current.leaf : (await mint(host)).leaf;
   };
 
   const ephemeralLeaf = async (host: string): Promise<LeafCertificate> => {

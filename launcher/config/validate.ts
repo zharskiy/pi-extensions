@@ -1,9 +1,9 @@
 import { isAbsolute } from "node:path";
 import {
   isJsonObject,
+  isLauncherSetVariable,
   isSecretName,
   isToolConfigKey,
-  LAUNCHER_SET_VARIABLES,
   LauncherError,
   PLACEHOLDER_PREFIX,
   TOOL_CONFIG_FORMATS,
@@ -12,7 +12,7 @@ import {
 import { getPath, setPath } from "./dotted.ts";
 import { isLoopbackName, SECRET_MARKER, TLS_PORT } from "./egress-entry.ts";
 import { EGRESS_PRESETS } from "./egress-presets.ts";
-import type { HostCachePreset, LayerConfig } from "./types.ts";
+import { FALLBACKS, HOST_CACHE_PRESETS, type LayerConfig, OUTSIDE_MODES, PARENT_PROXIES } from "./types.ts";
 
 type Check = (value: string) => string | undefined;
 
@@ -25,6 +25,7 @@ interface ObjectSpec {
   properties: Record<string, Spec>;
   required?: readonly string[];
   check?: ObjectCheck;
+  atomic?: true;
 }
 
 type Spec =
@@ -75,8 +76,6 @@ const PRIVATE_HOME_PATHS = [
   ".local/bin",
 ];
 
-const HOST_CACHE_PRESETS: readonly HostCachePreset[] = ["maven", "gradle", "npm", "pip", "go", "cargo"];
-
 const NPM_PACKAGE = /^(@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*@[0-9][0-9A-Za-z.+-]*$/;
 
 const nonEmpty: Check = (value) => (value.trim() === "" ? "must not be empty" : undefined);
@@ -85,52 +84,58 @@ const portOf = (value: string) => Number(value.split(":")[1] ?? TLS_PORT);
 
 const host: Check = (value) => {
   if (!HOST.test(value)) {
-    return `${value} is not a host name or host:port`;
+    return "must be a host name or host:port";
   }
 
   const port = portOf(value);
 
-  return port >= 1 && port <= MAX_PORT ? undefined : `${value} has a port outside 1-${MAX_PORT}`;
+  return port >= 1 && port <= MAX_PORT ? undefined : `has a port outside 1-${MAX_PORT}`;
 };
 
-const variable: Check = (value) =>
-  VARIABLE.test(value) ? undefined : `${value} is not an environment variable name`;
+const variable: Check = (value) => (VARIABLE.test(value) ? undefined : "is not an environment variable name");
 
 const launcherSet: Check = (value) =>
-  LAUNCHER_SET_VARIABLES.includes(value) ? `${value} is set by the launcher and is not forwarded` : undefined;
+  isLauncherSetVariable(value) ? "is set by the launcher and is not forwarded" : undefined;
 
 const forwardableVariable: Check = (value) =>
   variable(value) ??
   launcherSet(value) ??
-  (isSecretName(value) ? `${value} looks like a secret and stays on the host` : undefined);
+  (isSecretName(value) ? "looks like a secret and stays on the host" : undefined);
 
 const absolutePath: Check = (value) =>
   value.startsWith("/") || value === "~" || value.startsWith("~/")
     ? undefined
-    : `${value} must be an absolute path or start with ~/`;
+    : "must be an absolute path or start with ~/";
+
+const REFUSED_REPO_SEGMENTS = ["", ".", "..", ".git"];
+
+const withoutTrailingSlash = (value: string) => value.replace(/\/$/, "");
+
+const repoSegments = (value: string) => withoutTrailingSlash(value).split("/");
 
 const repoPath: Check = (value) =>
-  value !== "" && !isAbsolute(value) && !value.split("/").includes("..")
+  !isAbsolute(value) &&
+  !repoSegments(value).some((segment) => REFUSED_REPO_SEGMENTS.includes(segment.toLowerCase()))
     ? undefined
-    : `${value} must be a relative path inside the repository`;
+    : "must be a relative path inside the repository without empty, ., .. or .git segments";
 
-const homeSegments = (value: string) => value.slice(2).replace(/\/$/, "").split("/");
+const homeSegments = (value: string) => withoutTrailingSlash(value.slice(2)).split("/");
 
 const sharedCache: Check = (value) => {
   if (!value.startsWith("~/")) {
-    return `${value} must start with ~/`;
+    return "must start with ~/";
   }
 
   const segments = homeSegments(value);
 
   if (segments.some((segment) => segment === "" || segment === "." || segment === "..")) {
-    return `${value} must name a directory below ~ without empty, . or .. segments`;
+    return "must name a directory below ~ without empty, . or .. segments";
   }
 
   const path = segments.join("/");
   const privateDir = PRIVATE_HOME_PATHS.find((dir) => path === dir || path.startsWith(`${dir}/`));
 
-  return privateDir === undefined ? undefined : `${value} must not be or lie under ~/${privateDir}`;
+  return privateDir === undefined ? undefined : `must not be or lie under ~/${privateDir}`;
 };
 
 const httpsUrl: Check = (value) =>
@@ -145,11 +150,6 @@ const hostName: Check = (value) =>
 
 const hostPattern: Check = (value) =>
   HOST_PATTERN.test(value) ? undefined : "must be a host name or *.domain";
-
-const quietHost: Check = (value) =>
-  HOST.test(value) && portOf(value) >= 1 && portOf(value) <= MAX_PORT
-    ? undefined
-    : "must be a host name or host:port";
 
 const privateHost: Check = (value) => {
   if (!HOST_PATTERN.test(value) || IP_LITERAL.test(value)) {
@@ -174,9 +174,6 @@ const template: Check = (value) =>
 
 const jsonPointer: Check = (value) => (JSON_POINTER.test(value) ? undefined : "must be a JSON pointer");
 
-const quietAbsolutePath: Check = (value) =>
-  absolutePath(value) === undefined ? undefined : "must be an absolute path or start with ~/";
-
 const orgFile: Check = (value) => (isAbsolute(value) ? undefined : "must be an absolute path");
 
 const aptPackage: Check = (value) => (APT_PACKAGE.test(value) ? undefined : "must be a package name");
@@ -186,18 +183,20 @@ const npmPackage: Check = (value) =>
 
 const notEmptyList: ListCheck = (value) => (value.length === 0 ? "must not be empty" : undefined);
 
-const distinctCaches: ListCheck = (value) => {
-  const paths = value.map((item) => homeSegments(String(item)).join("/"));
-  const duplicate = paths.find((path, index) => paths.indexOf(path) !== index);
+const distinctPaths =
+  (segments: (value: string) => string[], prefix: string): ListCheck =>
+  (value) => {
+    const paths = value.map((item) => segments(String(item)).join("/"));
+    const duplicate = paths.find((path, index) => paths.indexOf(path) !== index);
 
-  if (duplicate !== undefined) {
-    return `lists ~/${duplicate} twice`;
-  }
+    if (duplicate !== undefined) {
+      return `lists ${prefix}${duplicate} twice`;
+    }
 
-  const nested = paths.find((path) => paths.some((other) => path.startsWith(`${other}/`)));
+    const nested = paths.find((path) => paths.some((other) => path.startsWith(`${other}/`)));
 
-  return nested === undefined ? undefined : `lists ~/${nested} inside another entry`;
-};
+    return nested === undefined ? undefined : `lists ${prefix}${nested} inside another entry`;
+  };
 
 const uniqueIds: ListCheck = (value) => {
   const ids = value.map((item) => (isJsonObject(item) ? item.id : undefined));
@@ -272,7 +271,7 @@ const SECRET_REF: Spec = {
     file: {
       ...shape(
         {
-          file: text(quietAbsolutePath),
+          file: text(absolutePath),
           pointer: text(jsonPointer),
           format: choice(TOOL_CONFIG_FORMATS),
           key: text(nonEmpty),
@@ -313,7 +312,7 @@ const CREDENTIAL_RULE: ObjectSpec = {
 const EXTRA_CA: Spec = {
   type: "keyed",
   variants: {
-    file: shape({ file: text(quietAbsolutePath) }, ["file"]),
+    file: shape({ file: text(absolutePath) }, ["file"]),
     hostStore: shape({ hostStore: { type: "true" } }, ["hostStore"]),
   },
 };
@@ -322,13 +321,13 @@ const LAYER_SPEC: ObjectSpec = {
   type: "object",
   properties: {
     $schema: text(),
-    fallback: choice(["refuse", "host"]),
+    fallback: choice(FALLBACKS),
     image: shape({
       reference: text(nonEmpty),
       digest: text(digest),
       packages: list(aptPackage),
       npmGlobal: list(npmPackage),
-      dockerfile: text(quietAbsolutePath),
+      dockerfile: text(absolutePath),
     }),
     credentials: shape({
       rules: { type: "array", items: CREDENTIAL_RULE, check: uniqueIds },
@@ -337,23 +336,24 @@ const LAYER_SPEC: ObjectSpec = {
     egress: shape({
       allow: list(host),
       presets: { type: "array", items: choice(Object.keys(EGRESS_PRESETS)) },
-      deny: list(quietHost),
+      deny: list(host),
       privateHosts: list(privateHost),
-      parentProxy: choice(["env", "none"]),
+      parentProxy: choice(PARENT_PROXIES),
       grants: flag,
     }),
     tls: shape({ extraCa: { type: "array", items: EXTRA_CA } }),
     workspaceRoots: {
       type: "object",
+      atomic: true,
       required: ["roots", "outside"],
-      properties: { roots: list(absolutePath), outside: choice(["refuse", "warn"]) },
+      properties: { roots: list(absolutePath), outside: choice(OUTSIDE_MODES) },
     },
     mounts: {
       type: "object",
       properties: {
         extraReadOnly: list(absolutePath),
-        cacheVolumes: list(repoPath),
-        sharedCaches: { type: "array", items: text(sharedCache), check: distinctCaches },
+        cacheVolumes: { type: "array", items: text(repoPath), check: distinctPaths(repoSegments, "") },
+        sharedCaches: { type: "array", items: text(sharedCache), check: distinctPaths(homeSegments, "~/") },
         hostCaches: { type: "array", items: choice(HOST_CACHE_PRESETS) },
         autoOverlays: flag,
       },
@@ -398,22 +398,6 @@ export const splitProjectKeys = (value: unknown) => {
   };
 };
 
-const projectKeyRefusal = (value: unknown, file?: string) => {
-  const refused = setKeys(value, "").find((key) => !isProjectKey(key));
-
-  if (refused === undefined) {
-    return undefined;
-  }
-
-  const where = file === undefined ? "" : ` (${file})`;
-  const from = file === undefined ? "" : ` from ${file}`;
-
-  return new LauncherError(
-    `project: ${refused} may not be set by a project config${where}`,
-    `remove ${refused}${from}; a project config may set only ${PROJECT_KEYS.join(", ")}`,
-  );
-};
-
 const ORG_KEY_LAYERS = ["policy", "user"];
 
 const at = (path: string, problem: string | undefined): Problem | undefined =>
@@ -421,6 +405,24 @@ const at = (path: string, problem: string | undefined): Problem | undefined =>
 
 const firstProblem = (problems: Array<() => Problem | undefined>) =>
   problems.reduce<Problem | undefined>((found, next) => found ?? next(), undefined);
+
+const MAX_SHOWN = 200;
+
+const PRINTABLE = /^[\x20-\x7e]*$/;
+
+const NAMED_PATHS =
+  /^(fallback|egress\.presets\[\d+\]|image\.(dockerfile|packages\[\d+\])|tls\.extraCa\[\d+\]\.file|workspaceRoots\.(roots\[\d+\]|outside)|mounts\.(extraReadOnly|cacheVolumes|sharedCaches|hostCaches)\[\d+\]|env\.allow\[\d+\])$/;
+
+const shown = (value: string) => {
+  const cut = value.length > MAX_SHOWN ? `${value.slice(0, MAX_SHOWN)}...` : value;
+
+  return PRINTABLE.test(cut) && cut.trim() !== "" ? cut : JSON.stringify(cut);
+};
+
+const named = (path: string, value: unknown, problem: string | undefined) =>
+  problem === undefined || typeof value !== "string" || !NAMED_PATHS.test(path)
+    ? problem
+    : `${shown(value)} ${problem}`;
 
 const stringProblem = (spec: { check?: Check; values?: readonly string[] }, value: unknown) => {
   if (typeof value !== "string") {
@@ -492,7 +494,7 @@ const keyedProblem = (variants: Record<string, ObjectSpec>, value: unknown, path
 
 const problemOf = (spec: Spec, value: unknown, path: string): Problem | undefined => {
   if (spec.type === "string") {
-    return at(path, stringProblem(spec, value));
+    return at(path, named(path, value, stringProblem(spec, value)));
   }
 
   if (spec.type === "number") {
@@ -524,6 +526,14 @@ const misplacedOrg = (value: unknown, layerName: string) =>
     ? new LauncherError(`${layerName}: org may only be set by the policy or user config`)
     : undefined;
 
+const normalized = (layer: LayerConfig): LayerConfig => {
+  const volumes = layer.mounts?.cacheVolumes;
+
+  return volumes === undefined
+    ? layer
+    : { ...layer, mounts: { ...layer.mounts, cacheVolumes: volumes.map(withoutTrailingSlash) } };
+};
+
 export const validateLayer = (value: unknown, layerName: string): LayerConfig => {
   const found = problemOf(LAYER_SPEC, value, "");
 
@@ -533,13 +543,13 @@ export const validateLayer = (value: unknown, layerName: string): LayerConfig =>
     );
   }
 
-  const misplaced = layerName === "project" ? projectKeyRefusal(value) : misplacedOrg(value, layerName);
+  const misplaced = misplacedOrg(value, layerName);
 
   if (misplaced !== undefined) {
     throw misplaced;
   }
 
-  return value as LayerConfig;
+  return normalized(value as LayerConfig);
 };
 
 const keysOf = (spec: Spec, path: string): string[] => {
@@ -558,3 +568,10 @@ const keysOf = (spec: Spec, path: string): string[] => {
 };
 
 export const layerKeys = () => keysOf(LAYER_SPEC, "");
+
+const leavesOf = (spec: Spec, path: string): string[] =>
+  spec.type === "object" && spec.atomic !== true
+    ? Object.entries(spec.properties).flatMap(([key, child]) => leavesOf(child, joinPath(path, key)))
+    : [path];
+
+export const leafKeys = () => leavesOf(LAYER_SPEC, "").filter((key) => key !== "$schema");

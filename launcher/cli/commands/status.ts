@@ -1,11 +1,11 @@
 import { isAbsolute } from "node:path";
-import type { Backend } from "../../backend/index.ts";
-import { findRepoContainer, LABELS, overlayVolumes, sharedCacheVolumes } from "../../container/index.ts";
+import { type Backend, LABELS } from "../../backend/index.ts";
+import { findRepoContainer, overlayVolumes, sharedCacheVolumes } from "../../container/index.ts";
 import { liveLaunches } from "../../grants/index.ts";
 import { recordedImage } from "../../image/index.ts";
 import { LauncherError } from "../../shared/index.ts";
+import { type LaunchContext, openContext } from "../context.ts";
 import { type CliDeps, reachableBackend, writeLines } from "../deps.ts";
-import { type LaunchContext, openContext } from "../launch.ts";
 import { launcherVersion } from "../versions.ts";
 import { grantLines } from "./egress.ts";
 
@@ -35,14 +35,9 @@ const containerLines = async (backend: Backend, context: LaunchContext) => {
 const runtimeLines = async (deps: CliDeps, context: LaunchContext) => {
   try {
     const backend = await reachableBackend(deps, context.effective.config);
-    const detection = await backend.detect();
     const details = Object.entries(await backend.status()).map(([key, value]) => `runtime ${key}: ${value}`);
 
-    return [
-      `runtime: colima ${detection.version ?? "unknown"}`,
-      ...details,
-      ...(await containerLines(backend, context)),
-    ];
+    return [...details, ...(await containerLines(backend, context))];
   } catch (error) {
     if (error instanceof LauncherError) {
       return [`runtime: none (${error.message})`];

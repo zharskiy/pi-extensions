@@ -1,14 +1,14 @@
 import { join } from "node:path";
 import type { Endpoint } from "../endpoints.ts";
-import { mergeSections, type Section } from "../rules.ts";
+import { findOnPath } from "../path-search.ts";
+import { mergeSections, noticeOnly, placeholderOf, rulesFor, type Section } from "../rules.ts";
 import type { ToolHost, ToolsInput } from "../types.ts";
 import {
   COMMAND_TTL_SECONDS,
-  emptySection,
-  onPath,
-  placeholderRules,
+  noCredentialsNotice,
+  PROBE_TIMEOUT_MS,
   readOptional,
-  toolPlaceholder,
+  sandboxedConfigNotice,
   xdgConfigHome,
 } from "./files.ts";
 
@@ -22,8 +22,21 @@ const GITHUB = "github.com";
 
 const ENTERPRISE_CLOUD = ".ghe.com";
 
-const hostsFile = (input: ToolsInput) =>
-  join(input.env.GH_CONFIG_DIR || join(xdgConfigHome(input), "gh"), "hosts.yml");
+const LABEL = "gh";
+
+const hostsFile = (input: ToolsInput) => {
+  const variable = ["GH_CONFIG_DIR", "XDG_CONFIG_HOME"].find((name) => input.env[name]) ?? "";
+  const path = join(input.env.GH_CONFIG_DIR || join(xdgConfigHome(input), "gh"), "hosts.yml");
+
+  return { path, variable };
+};
+
+const readHosts = async (input: ToolsInput): Promise<Section<string | undefined>> => {
+  const { path, variable } = hostsFile(input);
+  const notice = variable === "" ? undefined : await sandboxedConfigNotice(input, LABEL, variable, path);
+
+  return notice === undefined ? noticeOnly(await readOptional(path)) : noticeOnly(undefined, notice);
+};
 
 const hostsOf = (text: string) =>
   text.split(/\r?\n/).flatMap((line) => {
@@ -40,11 +53,20 @@ const endpointsOf = (host: string): Endpoint[] => {
   return host.endsWith(ENTERPRISE_CLOUD) ? [{ host }, { host: `api.${host}` }] : [{ host }];
 };
 
-const versionOf = async (input: ToolsInput, gh: string) => {
-  const result = await input.runner.run(gh, ["--version"]).catch(() => undefined);
+type VersionCheck = { version?: { major: number; minor: number }; timedOut?: true };
+
+const versionOf = async (input: ToolsInput, gh: string): Promise<VersionCheck> => {
+  const result = await input.runner
+    .run(gh, ["--version"], { timeoutMs: PROBE_TIMEOUT_MS })
+    .catch(() => undefined);
+
+  if (result?.timedOut === true) {
+    return { timedOut: true };
+  }
+
   const match = VERSION.exec(result?.stdout ?? "");
 
-  return match === null ? undefined : { major: Number(match[1]), minor: Number(match[2]) };
+  return match === null ? {} : { version: { major: Number(match[1]), minor: Number(match[2]) } };
 };
 
 const tooOld = (version: { major: number; minor: number }) =>
@@ -52,37 +74,38 @@ const tooOld = (version: { major: number; minor: number }) =>
 
 const hostSection = (input: ToolsInput, gh: string, host: string): Section<ToolHost> => {
   const identity = `gh:${host}:token`;
-  const token = toolPlaceholder(input, identity);
+  const token = placeholderOf(input, identity);
 
   return {
     value: { host, token },
-    rules: placeholderRules(identity, endpointsOf(host), token, {
-      command: [gh, "auth", "token", "--hostname", host],
-      ttlSeconds: COMMAND_TTL_SECONDS,
+    rules: rulesFor(identity, endpointsOf(host), {
+      placeholder: token,
+      secret: { command: [gh, "auth", "token", "--hostname", host], ttlSeconds: COMMAND_TTL_SECONDS },
     }),
     notices: [],
   };
 };
 
+const OUTDATED =
+  "gh on the host is older than 2.17 or did not report its version; update it to use gh and git push in the sandbox";
+
 export const deriveGh = async (input: ToolsInput): Promise<Section<ToolHost[]>> => {
-  const text = await readOptional(hostsFile(input));
-  const hosts = [...new Set(hostsOf(text ?? ""))];
-  const gh = hosts.length === 0 ? undefined : await onPath(input, "gh");
+  const file = await readHosts(input);
+  const hosts = [...new Set(hostsOf(file.value ?? ""))];
+  const gh = hosts.length === 0 ? undefined : await findOnPath(input.env, "gh", input.excludedRoots);
 
   if (gh === undefined) {
-    return emptySection([]);
+    return noticeOnly([], ...file.notices);
   }
 
-  const version = await versionOf(input, gh);
+  const { version, timedOut } = await versionOf(input, gh);
+
+  if (timedOut === true) {
+    return noticeOnly([], noCredentialsNotice(LABEL, `${gh} --version`, PROBE_TIMEOUT_MS));
+  }
 
   if (version === undefined || tooOld(version)) {
-    return {
-      value: [],
-      rules: [],
-      notices: [
-        "gh on the host is older than 2.17 or did not report its version; update it to use gh and git push in the sandbox",
-      ],
-    };
+    return noticeOnly([], OUTDATED);
   }
 
   const merged = mergeSections(hosts.map((host) => hostSection(input, gh, host)));

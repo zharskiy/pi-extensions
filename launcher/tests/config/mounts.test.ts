@@ -152,7 +152,7 @@ describe("mounts.hostCaches", () => {
 
   it("refuses an unknown preset", () => {
     expect(() => validateLayer({ mounts: { hostCaches: ["ssh"] } }, "user")).toThrow(
-      "user: mounts.hostCaches[0] must be one of maven, gradle, npm, pip, go, cargo",
+      "user: mounts.hostCaches[0] ssh must be one of maven, gradle, npm, pip, go, cargo",
     );
   });
 });
@@ -184,5 +184,62 @@ describe("mounts.autoOverlays", () => {
     expect(() => validateLayer({ mounts: { autoOverlays: "off" } }, "project")).toThrow(
       "project: mounts.autoOverlays must be true or false",
     );
+  });
+});
+
+describe("mounts.cacheVolumes", () => {
+  const volumesProblem = (cacheVolumes: unknown) => {
+    try {
+      validateLayer({ mounts: { cacheVolumes } }, "project");
+
+      return undefined;
+    } catch (error) {
+      return errorMessage(error);
+    }
+  };
+
+  const SEGMENTS = "must be a relative path inside the repository without empty, ., .. or .git segments";
+
+  it.each([
+    ["."],
+    ["./"],
+    [""],
+    ["/abs"],
+    ["../out"],
+    ["a/../b"],
+    ["a/./b"],
+    ["a//b"],
+    [".git"],
+    ["sub/.git/hooks"],
+    [".GIT/hooks/pre-commit"],
+    ["sub/.Git"],
+  ])("refuses %j", (path) => {
+    expect(volumesProblem([path])).toBe(
+      `project: mounts.cacheVolumes[0] ${path === "" ? '""' : path} ${SEGMENTS}`,
+    );
+  });
+
+  it("accepts relative directories, dot names included", () => {
+    expect(volumesProblem(["node_modules", ".venv", "packages/app/.gradle", ".github/cache", "build/"])).toBe(
+      undefined,
+    );
+  });
+
+  it("refuses an entry listed twice, with or without a trailing slash, and an entry inside another", () => {
+    expect(volumesProblem(["node_modules", "node_modules/"])).toBe(
+      "project: mounts.cacheVolumes lists node_modules twice",
+    );
+    expect(volumesProblem(["build", "build/cache"])).toBe(
+      "project: mounts.cacheVolumes lists build/cache inside another entry",
+    );
+  });
+
+  it("strips a trailing slash so one directory always names one volume", async () => {
+    expect(validateLayer({ mounts: { cacheVolumes: ["build/", "node_modules"] } }, "project")).toEqual({
+      mounts: { cacheVolumes: ["build", "node_modules"] },
+    });
+    expect(
+      (await loadWith({ project: { mounts: { cacheVolumes: ["target/"] } } })).config.mounts.cacheVolumes,
+    ).toEqual(["target"]);
   });
 });

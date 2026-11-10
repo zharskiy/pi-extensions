@@ -2,8 +2,10 @@ import {
   errorMessage,
   LauncherError,
   launcherPaths,
+  lstatOrUndefined,
   projectConfigFile,
   readJsonFile,
+  readRegularFile,
 } from "../shared/index.ts";
 import { defaultConfig } from "./defaults.ts";
 import { mergeLayers } from "./merge.ts";
@@ -42,8 +44,28 @@ const readLayer = async (layer: LayerName, file: string) => {
   return value === undefined ? undefined : validateLayerFile(value, layer, file);
 };
 
+const projectText = async (file: string) => {
+  if ((await lstatOrUndefined(file)) === undefined) {
+    return undefined;
+  }
+
+  try {
+    return (await readRegularFile(file)).data.toString("utf8");
+  } catch (error) {
+    throw new LauncherError(`project: ${errorMessage(error)}`, `make ${file} a regular file or remove it`);
+  }
+};
+
+const parsedProject = (text: string | undefined, file: string) => {
+  try {
+    return text === undefined ? undefined : (JSON.parse(text) as unknown);
+  } catch (error) {
+    throw new LauncherError(`${file}: invalid JSON (${errorMessage(error)})`, "fix or remove the file");
+  }
+};
+
 const readProject = async (file: string) => {
-  const value = await readJsonFile<unknown>(file);
+  const value = parsedProject(await projectText(file), file);
 
   if (value === undefined) {
     return { layer: undefined, ignored: [] };

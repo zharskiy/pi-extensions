@@ -7,12 +7,13 @@ import { LauncherError } from "../shared/index.ts";
 import type { AccessLogEntry } from "./access-log.ts";
 import { proxyTokenOf, sameText } from "./auth.ts";
 import { createDenialPages } from "./denial-page.ts";
-import { createDenials, isHinted } from "./denials.ts";
+import { createDenials, isHinted, type RecordAccess } from "./denials.ts";
 import { createDialer, type DialAccess, type Dialer } from "./dial.ts";
 import { createInterceptor } from "./intercept.ts";
-import { decideConnect, type EgressPolicy } from "./policy.ts";
+import { compilePolicy, type EgressPolicy } from "./policy.ts";
 import { PROXY_AGENT, rawReply, sendJson } from "./replies.ts";
-import { createRoutes, hostOf } from "./routes.ts";
+import { HTTP_PORT, parseAuthority } from "./request-target.ts";
+import { createRoutes, hostOf, PLAIN_HTTP } from "./routes.ts";
 import { isRuleHost } from "./rules.ts";
 import type { ProxyRuntime } from "./runtime.ts";
 import type { SecretResolver } from "./secrets/index.ts";
@@ -60,17 +61,6 @@ const currentUser = () => {
   }
 };
 
-const parseAuthority = (authority: string | undefined) => {
-  try {
-    const url = new URL(`http://${authority ?? ""}`);
-    const valid = url.username === "" && url.pathname === "/" && url.search === "" && url.port !== "";
-
-    return valid ? { host: url.hostname, port: Number(url.port) } : undefined;
-  } catch {
-    return undefined;
-  }
-};
-
 export const startProxyServer = async (options: ProxyServerOptions): Promise<ProxyServer> => {
   const dial = options.dial ?? createDialer();
   const { repoHash } = options;
@@ -84,15 +74,15 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
     socket.once("close", () => sockets.delete(socket));
   };
 
-  const record = (entry: Omit<AccessLogEntry, "time" | "user">) => {
-    options.log({ time: new Date().toISOString(), user, ...entry });
+  const record: RecordAccess = (entry) => {
+    options.log({ time: new Date().toISOString(), user, repo: repoHash, ...entry });
   };
 
   const terminator = createTerminator({
-    rules: async () => options.runtime.rules(),
+    rules: () => options.runtime.rules(),
     resolver: options.resolver,
-    dial: async (host, port, access, repo) => {
-      const socket = await dial(host, port, access, repo);
+    dial: async (host, port, access) => {
+      const socket = await dial(host, port, access);
 
       track(socket);
 
@@ -106,12 +96,13 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
     ca === undefined
       ? undefined
       : createDenialPages({ leaf: (host) => ca.ephemeralLeaf(host), ...options.denialPages });
-  const denials = createDenials(record, pages);
+  const denials = createDenials(repoHash, record, pages);
+
+  const privatePatterns = (options.privateHosts ?? []).map(normalizeHost);
+  const decideConnect = compilePolicy(options.policy);
 
   const accessOf = (host: string): DialAccess =>
-    (options.privateHosts ?? []).some((pattern) => matchesPattern(host, normalizeHost(pattern)))
-      ? "private"
-      : "public";
+    privatePatterns.some((pattern) => matchesPattern(host, pattern)) ? "private" : "public";
 
   const intercept = createInterceptor({
     ca,
@@ -122,7 +113,7 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
     denials,
   });
   const tunnel = createTunnel({ dial, accessOf, track, record, denials, helloTimeoutMs });
-  const routes = createRoutes(repoHash, denials);
+  const routes = createRoutes(denials);
 
   const isCaller = (request: IncomingMessage) => {
     const token = proxyTokenOf(request.headers["proxy-authorization"]);
@@ -131,13 +122,13 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
   };
 
   const decide = async (host: string, port: number) => {
-    const decision = decideConnect({ host, port }, options.policy);
+    const decision = decideConnect({ host, port });
 
     if (decision.allowed || !isHinted(decision.rule)) {
       return decision;
     }
 
-    return decideConnect({ host, port }, options.policy, await options.runtime.extras());
+    return decideConnect({ host, port }, await options.runtime.extras());
   };
 
   const isTerminated = (host: string, port: number) => isRuleHost(options.runtime.rules(), host, port);
@@ -146,11 +137,11 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
     const target = parseAuthority(request.url);
 
     if (!isCaller(request)) {
-      denials.note(target?.host ?? UNPARSEABLE, AUTH_DENIAL);
+      denials.log(target?.host ?? UNPARSEABLE, AUTH_DENIAL);
 
       client.end(
         rawReply("407 Proxy Authentication Required", { error: AUTH_DENIAL.reason }, [
-          `Proxy-Authenticate: ${AUTH_CHALLENGE}`,
+          ["Proxy-Authenticate", AUTH_CHALLENGE],
         ]),
       );
 
@@ -158,33 +149,35 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
     }
 
     if (target === undefined) {
-      denials.refuse(
-        client,
-        UNPARSEABLE,
-        { rule: "connect", reason: "CONNECT needs host:port" },
-        { repoHash },
-      );
+      denials.refuse(client, UNPARSEABLE, { rule: "connect", reason: "CONNECT needs host:port" });
 
       return;
     }
 
     const host = normalizeHost(target.host);
     const { port } = target;
+
+    if (port === HTTP_PORT) {
+      denials.refuse(client, host, PLAIN_HTTP, { port });
+
+      return;
+    }
+
     const decision = await decide(host, port);
 
     if (!decision.allowed && isHinted(decision.rule) && head.length === 0) {
-      await denials.show(client, host, decision, { port, repoHash });
+      await denials.show(client, host, decision, { port });
 
       return;
     }
 
     if (!decision.allowed) {
-      denials.refuse(client, host, decision, { port, repoHash });
+      denials.refuse(client, host, decision, { port });
 
       return;
     }
 
-    const connection: Connection = { host, port, repoHash, client };
+    const connection: Connection = { host, port, client, rule: decision.rule };
 
     if (isTerminated(host, port)) {
       await intercept(connection, head);
@@ -207,7 +200,7 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
 
   const handlePlain = (request: IncomingMessage, response: ServerResponse) => {
     if (!isCaller(request)) {
-      denials.note(hostOf(request.headers.host), AUTH_DENIAL);
+      denials.log(hostOf(request.headers.host), AUTH_DENIAL);
 
       sendJson(response, 407, { error: AUTH_DENIAL.reason }, { "proxy-authenticate": AUTH_CHALLENGE });
 

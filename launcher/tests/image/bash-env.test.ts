@@ -1,11 +1,11 @@
 import { spawnSync } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { loadEffectiveConfig } from "../../config/index.ts";
 import { forwardedEnv } from "../../container/index.ts";
 import { launcherRoot } from "../../shared/index.ts";
+import { tempDir } from "../support/temp-dir.ts";
 
 const BASH_ENV_FILE = join(launcherRoot(), "image", "bash-env.sh");
 
@@ -16,17 +16,9 @@ const bashVersion = spawnSync("bash", ["--version"], { encoding: "utf8" }).stdou
 
 const bashMajor = Number(/version (\d+)\./.exec(bashVersion)?.[1] ?? 0);
 
-const dirs: string[] = [];
-
-afterEach(async () => {
-  await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
-});
-
 const loadUserConfig = async (value: unknown) => {
-  const root = await mkdtemp(join(tmpdir(), "pi-sandbox-bash-env-"));
+  const root = await tempDir("bash-env");
   const userConfig = join(root, "config.json");
-
-  dirs.push(root);
 
   await writeFile(userConfig, JSON.stringify(value));
 
@@ -37,9 +29,7 @@ const loadUserConfig = async (value: unknown) => {
 };
 
 const emptyHome = async () => {
-  const home = await mkdtemp(join(tmpdir(), "pi-sandbox-bash-home-"));
-
-  dirs.push(home);
+  const home = await tempDir("bash-home");
 
   return home;
 };

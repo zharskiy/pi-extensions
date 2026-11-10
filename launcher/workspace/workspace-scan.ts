@@ -1,16 +1,16 @@
 import type { Dirent } from "node:fs";
 import { readdir, realpath } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { isWithin, readRegularFile } from "../shared/index.ts";
+import { gitFileTarget, hasGitDirShape, isGitName } from "./git/layout.ts";
 import { isNodeLockfile, NODE_OVERLAY, overlaysMarkedBy } from "./overlay-markers.ts";
+import { walkLevels } from "./walk.ts";
 
 const SCAN_BUDGET = 50_000;
 
 const PACKAGES_PER_REPO = 256;
 
-const GIT_FILE_PREFIX = "gitdir: ";
-
-const SKIPPED_DIRS = new Set([".git", ".pi", "node_modules"]);
+const SKIPPED_DIRS = new Set([".pi", "node_modules"]);
 
 interface UnreadableDir {
   dir: string;
@@ -19,7 +19,9 @@ interface UnreadableDir {
 
 export interface WorkspaceScan {
   repos: string[];
+  bare: string[];
   overlays: string[];
+  variants: string[];
   truncated: boolean;
   unreadable: UnreadableDir[];
 }
@@ -27,6 +29,7 @@ export interface WorkspaceScan {
 export interface ScanOptions {
   overlays?: boolean;
   budget?: number;
+  skipOverlays?: boolean;
 }
 
 export const scanBudgetOf = (budget = SCAN_BUDGET) => budget;
@@ -41,28 +44,33 @@ interface Listed extends Pending {
   entries: Dirent[];
   unreadable?: string;
   boundary: boolean;
+  bare: boolean;
   registered: boolean;
 }
 
-interface Walk extends WorkspaceScan {
-  budget: number;
+interface Walk {
+  repos: string[];
+  bare: string[];
+  overlays: string[];
+  variants: string[];
+  unreadable: UnreadableDir[];
   packages: Record<string, number>;
 }
 
 const realOrLexical = (path: string) => realpath(path).catch(() => path);
 
-const isSubmodule = async (dir: string, owners: string[]) => {
-  const text = await readRegularFile(join(dir, ".git")).then(
+const isSubmodule = async (dir: string, name: string, owners: string[]) => {
+  const text = await readRegularFile(join(dir, name)).then(
     (file) => file.data.toString("utf8"),
     () => "",
   );
-  const [line = ""] = text.split("\n");
+  const pointer = gitFileTarget(dir, text);
 
-  if (!line.startsWith(GIT_FILE_PREFIX)) {
+  if (pointer === undefined) {
     return false;
   }
 
-  const target = await realOrLexical(resolve(dir, line.slice(GIT_FILE_PREFIX.length).trim()));
+  const target = await realOrLexical(pointer);
 
   return owners.some((owner) => isWithin(target, join(owner, ".git", "modules")));
 };
@@ -72,7 +80,7 @@ const isRegistered = async (dotGit: Dirent | undefined, pending: Pending, findRe
     return false;
   }
 
-  return !dotGit.isFile() || !(await isSubmodule(pending.dir, pending.owners));
+  return !dotGit.isFile() || !(await isSubmodule(pending.dir, dotGit.name, pending.owners));
 };
 
 const ABSENT = new Set(["ENOENT", "ENOTDIR"]);
@@ -88,13 +96,15 @@ const readEntries = (dir: string) =>
 
 const listed = async (pending: Pending, findRepos: boolean): Promise<Listed> => {
   const { entries, unreadable } = await readEntries(pending.dir);
-  const dotGit = entries.find((entry) => entry.name === ".git");
+  const dotGit =
+    entries.find((entry) => entry.name === ".git") ?? entries.find((entry) => isGitName(entry.name));
 
   return {
     ...pending,
     entries,
     ...(unreadable === undefined ? {} : { unreadable }),
     boundary: dotGit !== undefined,
+    bare: dotGit === undefined && hasGitDirShape(entries.map((entry) => entry.name)),
     registered: await isRegistered(dotGit, pending, findRepos),
   };
 };
@@ -121,16 +131,24 @@ const isPackage = (level: Listed) =>
 
 const repoOf = (level: Listed, root: string) => (level.boundary ? level.dir : (level.owners.at(-1) ?? root));
 
-const isWalked = (entry: Dirent) => entry.isDirectory() && !SKIPPED_DIRS.has(entry.name);
+const isWalked = (entry: Dirent) =>
+  entry.isDirectory() && !SKIPPED_DIRS.has(entry.name) && !isGitName(entry.name);
 
-const childrenOf = (level: Listed): Pending[] => {
-  const owners = level.boundary ? [...level.owners, level.dir] : level.owners;
-  const underLockfile = hasNodeLockfile(level) || (!level.boundary && level.underLockfile);
+const childrenOf =
+  (skipOverlays: boolean) =>
+  (level: Listed): Pending[] => {
+    if (level.bare) {
+      return [];
+    }
 
-  return level.entries
-    .filter(isWalked)
-    .map((entry) => ({ dir: join(level.dir, entry.name), owners, underLockfile }));
-};
+    const owners = level.boundary ? [...level.owners, level.dir] : level.owners;
+    const underLockfile = hasNodeLockfile(level) || (!level.boundary && level.underLockfile);
+    const skipped = skipOverlays ? overlaysMarkedBy(level.entries.map((entry) => entry.name)) : [];
+
+    return level.entries
+      .filter((entry) => isWalked(entry) && !skipped.includes(entry.name))
+      .map((entry) => ({ dir: join(level.dir, entry.name), owners, underLockfile }));
+  };
 
 const withPackages = (levels: Listed[], root: string, walk: Walk) =>
   levels.filter(isPackage).reduce(
@@ -148,58 +166,60 @@ const withPackages = (levels: Listed[], root: string, walk: Walk) =>
     { overlays: walk.overlays, packages: walk.packages },
   );
 
-const walkLevel = async (dirs: Pending[], root: string, findRepos: boolean, walk: Walk): Promise<Walk> => {
-  if (dirs.length === 0) {
-    return walk;
-  }
+const folded =
+  (root: string) =>
+  (walk: Walk, levels: Listed[]): Walk => {
+    const packaged = withPackages(levels, root, {
+      ...walk,
+      overlays: [...walk.overlays, ...levels.flatMap(markedOverlays)],
+    });
 
-  if (walk.budget <= 0) {
-    return { ...walk, truncated: true };
-  }
-
-  const taken = dirs.slice(0, walk.budget);
-  const levels = await Promise.all(taken.map((pending) => listed(pending, findRepos)));
-  const marked = levels.flatMap(markedOverlays);
-  const packaged = withPackages(levels, root, { ...walk, overlays: [...walk.overlays, ...marked] });
-
-  return walkLevel(levels.flatMap(childrenOf), root, findRepos, {
-    repos: [...walk.repos, ...levels.filter((level) => level.registered).map((level) => level.dir)],
-    overlays: packaged.overlays,
-    packages: packaged.packages,
-    truncated: walk.truncated || taken.length < dirs.length,
-    unreadable: [
-      ...walk.unreadable,
-      ...levels.flatMap((level) =>
-        level.unreadable === undefined ? [] : [{ dir: level.dir, code: level.unreadable }],
-      ),
-    ],
-    budget: walk.budget - taken.length,
-  });
-};
+    return {
+      repos: [...walk.repos, ...levels.filter((level) => level.registered).map((level) => level.dir)],
+      variants: [
+        ...walk.variants,
+        ...levels.flatMap((level) =>
+          level.entries
+            .filter((entry) => entry.name !== ".git" && isGitName(entry.name))
+            .map((entry) => join(level.dir, entry.name)),
+        ),
+      ],
+      bare: [...walk.bare, ...levels.filter((level) => level.bare).map((level) => level.dir)],
+      overlays: packaged.overlays,
+      packages: packaged.packages,
+      unreadable: [
+        ...walk.unreadable,
+        ...levels.flatMap((level) =>
+          level.unreadable === undefined ? [] : [{ dir: level.dir, code: level.unreadable }],
+        ),
+      ],
+    };
+  };
 
 export const scanWorkspace = async (
   root: string,
   mode: "workspace" | "git",
   options: ScanOptions = {},
 ): Promise<WorkspaceScan> => {
-  const walk = await walkLevel(
+  const findRepos = mode === "workspace";
+  const skipOverlays = options.skipOverlays === true && options.overlays !== false;
+  const { state, complete } = await walkLevels(
     [{ dir: root, owners: [], underLockfile: false }],
-    root,
-    mode === "workspace",
+    scanBudgetOf(options.budget),
+    { repos: [], bare: [], overlays: [], variants: [], unreadable: [], packages: {} } as Walk,
     {
-      repos: [],
-      overlays: [],
-      truncated: false,
-      unreadable: [],
-      budget: scanBudgetOf(options.budget),
-      packages: {},
+      list: (pending: Pending) => listed(pending, findRepos),
+      children: childrenOf(skipOverlays),
+      fold: folded(root),
     },
   );
 
   return {
-    repos: walk.repos.sort(),
-    overlays: options.overlays === false ? [] : walk.overlays.sort(),
-    truncated: walk.truncated,
-    unreadable: walk.unreadable,
+    repos: state.repos.sort(),
+    bare: findRepos ? state.bare.sort() : [],
+    variants: state.variants.sort(),
+    overlays: options.overlays === false ? [] : state.overlays.sort(),
+    truncated: !complete,
+    unreadable: state.unreadable,
   };
 };

@@ -1,4 +1,5 @@
 import { type Backend, type ImageSummary, LABELS } from "../backend/index.ts";
+import { shortHash, stateLayout, withFileLockIfFree } from "../shared/index.ts";
 import { LAYER_TAG_PREFIX } from "./layer.ts";
 import { readBaseRecord, wantedLayers } from "./record.ts";
 
@@ -37,21 +38,34 @@ export const removeStaleImages = async (
   }
 };
 
-const isDangling = (image: ImageSummary, baseId: string | undefined) =>
-  image.tags.length === 0 && !image.inUse && image.labels[LABELS.managed] === "true" && image.id !== baseId;
+const isDangling = (image: ImageSummary, baseId: string | undefined, now: number) =>
+  image.tags.length === 0 &&
+  !image.inUse &&
+  image.labels[LABELS.managed] === "true" &&
+  image.id !== baseId &&
+  settled(image, now);
 
 const removeDangling = async (backend: Backend, stateDir: string) => {
   const baseId = (await readBaseRecord(stateDir))?.id;
-  const dangling = (await backend.listImages()).filter((image) => isDangling(image, baseId));
+  const now = nowSeconds();
+  const dangling = (await backend.listImages()).filter((image) => isDangling(image, baseId, now));
   const removed = await Promise.all(
     dangling.map(async (image) => ((await backend.removeImage(image.id)) ? [image.id] : [])),
   );
 
-  return removed.flat().map((id) => id.replace(/^sha256:/, "").slice(0, 12));
+  return removed.flat().map((id) => shortHash(id.replace(/^sha256:/, "")));
 };
 
-export const collectImages = async (backend: Backend, stateDir: string) => {
+const collectUnlocked = async (backend: Backend, stateDir: string) => {
   const tags = await removeLayerTags(backend, stateDir, await backend.listImages(), nowSeconds());
 
   return [...tags, ...(await removeDangling(backend, stateDir))];
+};
+
+export const collectImages = async (backend: Backend, stateDir: string) => {
+  const collected = await withFileLockIfFree(stateLayout(stateDir).buildLock, () =>
+    collectUnlocked(backend, stateDir),
+  );
+
+  return collected.busy ? [] : collected.value;
 };

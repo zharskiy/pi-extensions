@@ -1,10 +1,11 @@
 import { errorMessage, LauncherError } from "../shared/index.ts";
-import { configCommand } from "./commands/config.ts";
+import { configCommand, JSON_FLAG } from "./commands/config.ts";
 import { doctorCommand } from "./commands/doctor.ts";
 import { egressCommand } from "./commands/egress.ts";
-import { gcCommand } from "./commands/gc.ts";
+import { gcCommand, SHARED_CACHES } from "./commands/gc.ts";
 import { helpCommand } from "./commands/help.ts";
-import { resetCommand } from "./commands/reset.ts";
+import { assertOptions } from "./commands/options.ts";
+import { resetCommand, VOLUMES } from "./commands/reset.ts";
 import { statusCommand } from "./commands/status.ts";
 import { stopCommand } from "./commands/stop.ts";
 import { type CliDeps, writeLine } from "./deps.ts";
@@ -16,7 +17,7 @@ const UNEXPECTED_EXIT = 70;
 
 interface Command {
   run: (deps: CliDeps, args: string[]) => Promise<number> | number;
-  takesArguments: boolean;
+  options?: string[];
 }
 
 const printVersion = async (deps: CliDeps) => {
@@ -25,18 +26,18 @@ const printVersion = async (deps: CliDeps) => {
   return 0;
 };
 
-const help: Command = { run: helpCommand, takesArguments: true };
+const help: Command = { run: helpCommand };
 
-const version: Command = { run: printVersion, takesArguments: true };
+const version: Command = { run: printVersion };
 
 const COMMANDS: Record<string, Command> = {
-  status: { run: statusCommand, takesArguments: false },
-  gc: { run: gcCommand, takesArguments: true },
-  doctor: { run: doctorCommand, takesArguments: false },
-  config: { run: configCommand, takesArguments: true },
-  egress: { run: egressCommand, takesArguments: true },
-  reset: { run: resetCommand, takesArguments: true },
-  stop: { run: stopCommand, takesArguments: false },
+  status: { run: statusCommand, options: [] },
+  gc: { run: gcCommand, options: [SHARED_CACHES] },
+  doctor: { run: doctorCommand, options: [] },
+  config: { run: configCommand, options: [JSON_FLAG] },
+  egress: { run: egressCommand },
+  reset: { run: resetCommand, options: [VOLUMES] },
+  stop: { run: stopCommand, options: [] },
   help,
   "--help": help,
   "-h": help,
@@ -51,8 +52,12 @@ const sandbox = (deps: CliDeps, [name = "help", ...args]: string[]) => {
     throw new LauncherError(`unknown command "pi sandbox ${name}"`, "pi sandbox help");
   }
 
-  if (!command.takesArguments && args.length > 0) {
+  if (command.options?.length === 0 && args.length > 0) {
     throw new LauncherError(`pi sandbox ${name} takes no arguments`, "pi sandbox help");
+  }
+
+  if (command.options !== undefined) {
+    assertOptions(name, args, command.options);
   }
 
   return command.run(deps, args);

@@ -66,7 +66,7 @@ const withRawMode = async <T>(terminal: HostTerminal, action: () => Promise<T>) 
   }
 };
 
-export const listenFor = (source: SignalSource, names: NodeJS.Signals[]) => {
+const listenFor = (source: SignalSource, names: NodeJS.Signals[]) => {
   const stops: Array<() => void> = [];
   const received = new Promise<NodeJS.Signals>((resolve) => {
     names.forEach((name) => {

@@ -1,4 +1,4 @@
-import { appendFile, mkdir, readFile, rm } from "node:fs/promises";
+import { mkdir, readFile, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { rootCertificates } from "node:tls";
 import { parseArgs } from "node:util";
@@ -16,11 +16,11 @@ import {
 import { createAccessLog } from "./access-log.ts";
 import { minimalEnv } from "./child-env.ts";
 import { createDialer } from "./dial.ts";
-import type { DaemonInput, RepoProxy, RepoProxyInput } from "./files.ts";
+import { DAEMON_FAILURE_TAG, type DaemonInput, type RepoProxy, type RepoProxyInput } from "./files.ts";
 import { watchIdle } from "./idle.ts";
 import { parentRouteFor } from "./parent.ts";
 import { createProxyRuntime } from "./runtime.ts";
-import { createSecretResolver, PARENT_PROXY_SECRET_KEY } from "./secrets/index.ts";
+import { createSecretResolver } from "./secrets/index.ts";
 import { startProxyServer } from "./server.ts";
 import { proxyPolicy } from "./settings.ts";
 import { openLauncherCa } from "./tls-ca.ts";
@@ -74,26 +74,13 @@ const upstreamTrust = async (stateDir: string, extraCa: boolean) => {
   return extra.trim() === "" ? undefined : [...rootCertificates, extra];
 };
 
-const reportFailure = async (log: string | undefined, error: unknown) => {
+const reportFailure = (error: unknown): never => {
   const hint = error instanceof LauncherError && error.hint !== undefined ? ` (${error.hint})` : "";
-  const line = `${new Date().toISOString()} ${errorMessage(error)}${hint}\n`;
 
-  if (log !== undefined) {
-    await appendFile(log, line, { mode: PRIVATE_MODE }).catch(() => undefined);
-  }
-
-  process.stderr.write(line);
+  process.stderr.write(`${new Date().toISOString()} ${DAEMON_FAILURE_TAG} ${errorMessage(error)}${hint}\n`);
 
   process.exit(1);
 };
-
-const envSecretsOf = (input: RepoProxyInput): ReadonlyMap<string, string> =>
-  new Map(
-    Object.entries({
-      ...input.envSecrets,
-      ...(input.parentAuth === undefined ? {} : { [PARENT_PROXY_SECRET_KEY]: input.parentAuth }),
-    }),
-  );
 
 const run = async (args: DaemonArgs) => {
   const files = stateLayout(args.stateDir).repo(args.repoHash).proxy;
@@ -101,7 +88,7 @@ const run = async (args: DaemonArgs) => {
   const childEnv = { ...minimalEnv(process.env), ...input.parentEnv };
   const runner = createProcessRunner({ baseEnv: childEnv });
   const ca = await openLauncherCa({ stateDir: args.stateDir, runner });
-  const envSecrets = envSecretsOf(input);
+  const envSecrets: ReadonlyMap<string, string> = new Map(Object.entries(input.envSecrets));
   const resolver = createSecretResolver({
     runner,
     home: homedir(),
@@ -109,7 +96,7 @@ const run = async (args: DaemonArgs) => {
     piCommand: input.piCommand,
     stateDir: args.stateDir,
     hostAgentDir: input.hostAgentDir,
-    envSecrets: async () => envSecrets,
+    envSecrets,
     childEnv,
     logFile: files.log,
   });
@@ -130,7 +117,7 @@ const run = async (args: DaemonArgs) => {
     privateHosts: input.privateHosts,
     ca,
     log: log.write,
-    dial: createDialer({ parent: parentRouteFor(input.parent, input.parentEnv, resolver) }),
+    dial: createDialer({ parent: parentRouteFor(input.parent, input.parentEnv, input.parentAuth) }),
     upstreamCa: await upstreamTrust(args.stateDir, input.extraCa),
   });
   const record: RepoProxy = { ...(await processMark()), port: server.port, inputHash };
@@ -181,14 +168,12 @@ const run = async (args: DaemonArgs) => {
 };
 
 const startProxyDaemon = async () => {
-  const args = await Promise.resolve()
-    .then(parseDaemonArgs)
-    .catch((error: unknown) => reportFailure(undefined, error));
+  const args = await Promise.resolve().then(parseDaemonArgs).catch(reportFailure);
   const files = stateLayout(args.stateDir).repo(args.repoHash).proxy;
 
   await mkdir(files.directory, { recursive: true, mode: 0o700 });
 
-  await run(args).catch((error: unknown) => reportFailure(files.log, error));
+  await run(args).catch(reportFailure);
 };
 
 await startProxyDaemon();

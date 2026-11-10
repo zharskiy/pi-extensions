@@ -144,3 +144,23 @@ describe("pi --no-sandbox", () => {
     expect(harness.stderr()).toContain("--no-sandbox: no pi on the host");
   });
 });
+
+describe("the bundled pi", () => {
+  it("is not used for host jobs when its package lies inside the repository", async () => {
+    const fake = createFakeBackend();
+    const harness = await createHarness({ backend: () => fake.backend });
+    const planted = join(harness.repoRoot, "node_modules", "pi");
+
+    harness.deps.bundledPi = async () => ({
+      command: [process.execPath, join(planted, "dist", "cli.js")],
+      version: await testedPiVersion(),
+      packageDir: planted,
+    });
+
+    expect(await run([], harness.deps)).toBe(0);
+    expect(providerScriptCall(harness)).toBeUndefined();
+    expect(harness.proxyInputs.at(-1)?.piCommand).toEqual([]);
+    expect(await run(["--no-sandbox"], harness.deps)).toBe(1);
+    expect(harness.stderr()).toContain("pi-sandbox: --no-sandbox: no pi on the host");
+  });
+});

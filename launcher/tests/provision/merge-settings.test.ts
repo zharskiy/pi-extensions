@@ -88,7 +88,7 @@ describe("syncSettingsFile", () => {
     ]);
   });
 
-  it("keeps command settings from the host and drops the ones the volume planted", async () => {
+  it("drops command and session dir settings from both the host and the volume", async () => {
     const planted = {
       npmCommand: ["sh", "-c", "planted"],
       selfUpdateCommand: ["planted"],
@@ -100,12 +100,15 @@ describe("syncSettingsFile", () => {
     };
     const env = await setup({ "settings.json": planted });
 
-    await env.sync({ shellPath: "/bin/zsh" });
-
-    expect(await env.volume("settings.json")).toEqual({
-      theme: "volume",
-      shellPath: "/bin/zsh",
+    await env.sync({
+      shellPath: "/opt/homebrew/bin/bash",
+      npmCommand: ["/opt/homebrew/bin/npm"],
+      externalEditor: "code --wait",
+      sessionDir: "/Users/me/pi-sessions",
+      theme: "host",
     });
+
+    expect(await env.volume("settings.json")).toEqual({ theme: "host" });
   });
 
   it("never syncs the host httpProxy, which may carry the proxy password", async () => {

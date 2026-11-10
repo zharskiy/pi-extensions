@@ -9,12 +9,14 @@ interface InteractiveOptions {
 
 export interface RunOptions extends InteractiveOptions {
   input?: string;
+  timeoutMs?: number;
 }
 
 export interface RunResult {
   code: number;
   stdout: string;
   stderr: string;
+  timedOut?: true;
 }
 
 export interface CommandRunner {
@@ -23,6 +25,8 @@ export interface CommandRunner {
 }
 
 const SIGNAL_EXIT_BASE = 128;
+
+const TIMEOUT_EXIT_CODE = 124;
 
 const exitCode = (code: number | null, signal: NodeJS.Signals | null) => {
   if (code !== null) {
@@ -62,6 +66,24 @@ const settle = (file: string, child: ChildProcess) =>
     child.once("close", (code, signal) => resolve(exitCode(code, signal)));
   });
 
+const expiry = (child: ChildProcess, timeoutMs: number | undefined) => {
+  const timer = { handle: undefined as NodeJS.Timeout | undefined };
+  const expired = new Promise<"expired">((resolve) => {
+    if (timeoutMs === undefined) {
+      return;
+    }
+
+    timer.handle = setTimeout(() => {
+      child.kill("SIGKILL");
+      child.stdout?.destroy();
+      child.stderr?.destroy();
+      resolve("expired");
+    }, timeoutMs);
+  });
+
+  return { expired, clear: () => clearTimeout(timer.handle) };
+};
+
 const runWith =
   (baseEnv: NodeJS.ProcessEnv) =>
   async (file: string, args: string[], options: RunOptions = {}): Promise<RunResult> => {
@@ -75,13 +97,16 @@ const runWith =
     child.stdin?.on("error", () => undefined);
     child.stdin?.end(options.input);
 
-    const code = await settle(file, child);
-
-    return {
-      code,
+    const timeout = expiry(child, options.timeoutMs);
+    const outcome = await Promise.race([settle(file, child), timeout.expired]).finally(timeout.clear);
+    const output = {
       stdout: Buffer.concat(stdout).toString("utf8"),
       stderr: Buffer.concat(stderr).toString("utf8"),
     };
+
+    return outcome === "expired"
+      ? { code: TIMEOUT_EXIT_CODE, timedOut: true, ...output }
+      : { code: outcome, ...output };
   };
 
 const spawnInteractiveWith =

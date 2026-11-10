@@ -1,16 +1,10 @@
 import { join } from "node:path";
 import type { SecretRef } from "../../config/index.ts";
 import { isSecretName, type NpmrcEntry, parseNpmrc } from "../../shared/index.ts";
-import { type Endpoint, hasUrlUserinfo } from "../endpoints.ts";
-import { mergeSections, type Section } from "../rules.ts";
+import { endpointOf, hasUrlUserinfo } from "../endpoints.ts";
+import { mergeSections, noticeOnly, placeholderOf, rulesFor, type Section } from "../rules.ts";
 import type { ToolsInput } from "../types.ts";
-import {
-  emptySection,
-  placeholderRules,
-  readOptional,
-  toolPlaceholder,
-  urlCredentialSection,
-} from "./files.ts";
+import { readOptional, urlCredentialSection } from "./files.ts";
 
 const REGISTRY_CREDENTIAL = /^\/\/([^/]+)(\/.*)?:(_authToken|_auth|_password)$/;
 
@@ -32,23 +26,13 @@ const encode = (text: string) => Buffer.from(text, "utf8").toString("base64");
 
 const nameOf = (key: string) => key.slice(key.lastIndexOf(":") + 1).toLowerCase();
 
-const endpointOf = (authority: string): Endpoint => {
-  const [host = "", port] = authority.toLowerCase().split(":");
-
-  return port === undefined ? { host } : { host, port: Number(port) };
-};
-
 const pathPrefixOf = (path: string | undefined) => {
   const trimmed = (path ?? "/").replace(/\/+$/, "");
 
   return trimmed === "" ? undefined : trimmed;
 };
 
-const dropped = (key: string, reason: string): Section<NpmrcEntry[]> => ({
-  value: [],
-  rules: [],
-  notices: [`npmrc: ${key} ${reason}`],
-});
+const dropped = (key: string, reason: string) => noticeOnly<NpmrcEntry[]>([], `npmrc: ${key} ${reason}`);
 
 const renderedValue = (field: string, value: string, placeholder: string) => {
   if (field === "_authToken") {
@@ -80,8 +64,14 @@ const credentialSection = (
     );
   }
 
+  const target = endpointOf(`https://${authority}/`);
+
+  if (!("endpoint" in target)) {
+    return dropped(entry.key, "names a registry the sandbox cannot reach; the key stays on the host");
+  }
+
   const identity = `npmrc:${authority}${path ?? "/"}:${field}`;
-  const placeholder = toolPlaceholder(input, identity);
+  const placeholder = placeholderOf(input, identity);
   const value = renderedValue(field, entry.value, placeholder);
 
   if (value === undefined) {
@@ -96,7 +86,7 @@ const credentialSection = (
 
   return {
     value: [{ key: entry.key, value }],
-    rules: placeholderRules(identity, [endpointOf(authority)], placeholder, secret).map((rule) =>
+    rules: rulesFor(identity, [target.endpoint], { placeholder, secret }).map((rule) =>
       pathPrefix === undefined ? rule : { ...rule, pathPrefix },
     ),
     notices: [],
@@ -171,7 +161,7 @@ export const deriveNpmrc = async (input: ToolsInput): Promise<Section<NpmrcEntry
   const text = await readOptional(join(input.home, ".npmrc"));
 
   if (text === undefined) {
-    return emptySection(undefined);
+    return noticeOnly(undefined);
   }
 
   const merged = mergeSections(

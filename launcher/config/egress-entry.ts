@@ -25,6 +25,13 @@ export const matchesPattern = (host: string, pattern: string) => {
   return host === pattern;
 };
 
+export const matchesDenyEntry = (host: string, pattern: string) => {
+  const domain = pattern.startsWith("*.") ? pattern.slice(2) : pattern;
+  const below = host.endsWith(`.${domain}`);
+
+  return pattern.startsWith("*.") ? below : host === domain || below;
+};
+
 export const authorityOf = (host: string, port: number) => (port === TLS_PORT ? host : `${host}:${port}`);
 
 export const isLoopbackName = (host: string) => host === "localhost" || host.endsWith(".localhost");

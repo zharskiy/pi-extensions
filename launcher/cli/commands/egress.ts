@@ -1,16 +1,15 @@
-import { authorityOf } from "../../config/index.ts";
+import { authorityOf, matchesDenyEntry, parseEntry } from "../../config/index.ts";
 import { activeGrants, addGrant, type Grant, readGrants, revokeGrants } from "../../grants/index.ts";
 import { LauncherError } from "../../shared/index.ts";
+import { type LaunchContext, openContext } from "../context.ts";
 import { type CliDeps, writeLine, writeLines } from "../deps.ts";
-import { type LaunchContext, openContext } from "../launch.ts";
+import { usageOf } from "./help.ts";
+import { assertOptions } from "./options.ts";
 
 interface Target {
   host: string;
   port: number;
 }
-
-const USAGE =
-  "pi sandbox egress allow <host[:port]> [--user] | revoke <host[:port]> [--user] | list [--user] [--denied]";
 
 const HOST = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/;
 
@@ -18,7 +17,7 @@ const DEFAULT_PORT = 443;
 
 const MAX_PORT = 65_535;
 
-const usage = (problem: string) => new LauncherError(problem, USAGE);
+const usage = (problem: string) => new LauncherError(problem, usageOf("egress"));
 
 const parseTarget = (text: string | undefined): Target => {
   const [host = "", port, ...extra] = (text ?? "").trim().toLowerCase().split(":");
@@ -31,25 +30,35 @@ const parseTarget = (text: string | undefined): Target => {
   return { host, port: number };
 };
 
-const assertFlags = (flags: string[], known: string[]) => {
-  const unknown = flags.find((flag) => !known.includes(flag));
-
-  if (unknown !== undefined) {
-    throw usage(`egress: unknown option ${unknown}`);
-  }
-};
-
 const scopeText = (grant: Grant) => (grant.repoHash === undefined ? "every repository" : "this repository");
 
 const grantText = (grant: Grant) => `${authorityOf(grant.host, grant.port)} for ${scopeText(grant)}`;
 
+const assertNotDenied = (context: LaunchContext, target: Target) => {
+  const entry = context.effective.config.egress.deny.find((text) => {
+    const { pattern, port } = parseEntry(text);
+
+    return matchesDenyEntry(target.host, pattern) && (port ?? target.port) === target.port;
+  });
+
+  if (entry !== undefined) {
+    throw new LauncherError(
+      `egress: ${authorityOf(target.host, target.port)} is denied by the egress.deny entry ${entry}, which a grant cannot override`,
+      "pi sandbox config shows the layers that set egress.deny",
+    );
+  }
+};
+
 const allow = async (deps: CliDeps, args: string[]) => {
   const [text, ...flags] = args;
 
-  assertFlags(flags, ["--user"]);
+  assertOptions("egress allow", flags, ["--user"]);
 
   const target = parseTarget(text);
   const { context } = await openContext(deps, "host");
+
+  assertNotDenied(context, target);
+
   const grant = await addGrant(
     context.stateDir,
     { ...target, ...(flags.includes("--user") ? {} : { repoHash: context.repoHash }) },
@@ -65,7 +74,7 @@ const allow = async (deps: CliDeps, args: string[]) => {
 const revoke = async (deps: CliDeps, args: string[]) => {
   const [text, ...flags] = args;
 
-  assertFlags(flags, ["--user"]);
+  assertOptions("egress revoke", flags, ["--user"]);
 
   const target = parseTarget(text);
   const { context } = await openContext(deps, "host");
@@ -95,7 +104,7 @@ const deniedLines = async (deps: CliDeps, context: LaunchContext) => {
 };
 
 const list = async (deps: CliDeps, args: string[]) => {
-  assertFlags(args, ["--denied", "--user"]);
+  assertOptions("egress list", args, ["--denied", "--user"]);
 
   const { context } = await openContext(deps, "host");
   const lines = args.includes("--denied")

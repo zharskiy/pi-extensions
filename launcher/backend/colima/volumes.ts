@@ -40,12 +40,14 @@ export const createVolumeOperations = (client: EngineClient) => {
   };
 
   const listVolumes = async (): Promise<VolumeSummary[]> => {
-    const listed = await client.json<{ Volumes?: EngineVolume[] | null }>({
-      method: "GET",
-      path: "/volumes",
-      query: { filters: labelFilters({ [LABELS.managed]: "true" }) },
-    });
-    const mounted = await mountedVolumes();
+    const [listed, mounted] = await Promise.all([
+      client.json<{ Volumes?: EngineVolume[] | null }>({
+        method: "GET",
+        path: "/volumes",
+        query: { filters: labelFilters({ [LABELS.managed]: "true" }) },
+      }),
+      mountedVolumes(),
+    ]);
 
     return (listed.Volumes ?? []).map((volume) => ({
       name: volume.Name,

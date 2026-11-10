@@ -1,15 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { decideConnect, type EgressPolicy, restrictedAddress, sniDenial } from "../../proxy/policy.ts";
+import {
+  type ConnectRequest,
+  compilePolicy,
+  type EgressPolicy,
+  restrictedAddress,
+  sniDenial,
+} from "../../proxy/policy.ts";
 
 const policy: EgressPolicy = {
   allow: ["registry.npmjs.org", "*.githubusercontent.com", "example.test:8443", "mcp.example.com"],
   credentialHosts: ["llm.example.com:8443"],
 };
 
-const ruleFor = (host: string, port = 443, sni?: string) => {
-  const decision = decideConnect({ host, port, sni }, policy);
+const decideConnect = (request: ConnectRequest, egress: EgressPolicy, extra?: string[]) =>
+  compilePolicy(egress)(request, extra);
 
-  return decision.allowed ? "allowed" : decision.rule;
+const ruleFor = (host: string, port = 443, sni?: string) => {
+  const decision = decideConnect({ host, port }, policy);
+  const denial = decision.allowed && sni !== undefined ? sniDenial(host, sni) : undefined;
+
+  return decision.allowed ? (denial?.rule ?? "allowed") : decision.rule;
 };
 
 describe("decideConnect", () => {
@@ -133,6 +143,36 @@ describe("decideConnect with deny, rule hosts and extra entries", () => {
     expect(guardedRule("localhost", 443, ["localhost"])).toBe("loopback");
   });
 
+  it("names the entry that allowed the host", () => {
+    expect(decideConnect({ host: "registry.npmjs.org", port: 443 }, guarded)).toEqual({
+      allowed: true,
+      rule: "egress.allow",
+    });
+    expect(decideConnect({ host: "rules.test", port: 443 }, guarded)).toEqual({
+      allowed: true,
+      rule: "credential",
+    });
+    expect(decideConnect({ host: "granted.test", port: 443 }, guarded, ["granted.test"])).toEqual({
+      allowed: true,
+      rule: "grant-or-derived",
+    });
+  });
+
+  it("lets a denied domain block every name under it, even with a grant", () => {
+    const egress: EgressPolicy = { allow: [], deny: ["paste.example.com"] };
+
+    expect(
+      decideConnect({ host: "www.paste.example.com", port: 443 }, egress, ["www.paste.example.com"]),
+    ).toMatchObject({ allowed: false, rule: "egress.deny" });
+    expect(
+      decideConnect({ host: "paste.example.com", port: 443 }, egress, ["paste.example.com"]),
+    ).toMatchObject({
+      allowed: false,
+      rule: "egress.deny",
+    });
+    expect(decideConnect({ host: "example.com", port: 443 }, egress, ["example.com"]).allowed).toBe(true);
+  });
+
   it("carries the allow hint in the denial reason", () => {
     expect(decideConnect({ host: "new.test", port: 443 }, guarded)).toMatchObject({
       reason:
@@ -185,6 +225,9 @@ describe("restrictedAddress", () => {
     ["::8.8.8.8", "ipv4-compatible"],
     ["::7f00:1", "ipv4-compatible"],
     ["64:ff9b::a00:1", "translated-address"],
+    ["64:ff9b:1::a00:1", "translated-address"],
+    ["::ffff:0:a00:1", "translated-address"],
+    ["fec0::1", "private-address"],
     ["2002:c0a8:101::1", "translated-address"],
     ["198.18.0.1", "reserved-address"],
     ["198.19.255.255", "reserved-address"],

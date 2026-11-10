@@ -1,12 +1,19 @@
-import { mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, realpath, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
-import { createProcessRunner } from "../../shared/index.ts";
-import { discoverWorkspace } from "../../workspace/index.ts";
+import { describe, expect, it } from "vitest";
+import { LauncherError } from "../../shared/index.ts";
+import { discoverWorkspace, workspaceFolder } from "../../workspace/index.ts";
 import { createFakeRunner } from "../support/fake-runner.ts";
+import { git, gitRunner } from "../support/git.ts";
+import { tempDir } from "../support/temp-dir.ts";
 
-const runner = createProcessRunner();
+const discoverAt = async (
+  cwd: string,
+  ...rest: Parameters<typeof discoverWorkspace> extends [unknown, ...infer R] ? R : never
+) => discoverWorkspace(await workspaceFolder(cwd), ...rest);
+
+const runner = gitRunner;
 
 const NO_HOOKS = join(tmpdir(), "pi-sandbox-no-hooks");
 
@@ -24,38 +31,10 @@ const recording = () => {
   return { recorder, calls };
 };
 
-const created: string[] = [];
-
-afterEach(async () => {
-  await Promise.all(created.splice(0).map((path) => rm(path, { recursive: true, force: true })));
-});
-
 const temporaryFolder = async () => {
-  const folder = await realpath(await mkdtemp(join(tmpdir(), "pi-sandbox-workspace-")));
-
-  created.push(folder);
+  const folder = await realpath(await tempDir("workspace"));
 
   return folder;
-};
-
-const git = async (cwd: string, args: string[]) => {
-  const result = await runner.run(
-    "git",
-    [
-      "-c",
-      "user.name=test",
-      "-c",
-      "user.email=test@example.com",
-      "-c",
-      "protocol.file.allow=always",
-      ...args,
-    ],
-    {
-      cwd,
-    },
-  );
-
-  expect(result.code, result.stderr).toBe(0);
 };
 
 const createRepo = async () => {
@@ -73,12 +52,13 @@ describe("discoverWorkspace", () => {
   it("finds the toplevel and the .git common dir from the repository root", async () => {
     const repo = await createRepo();
 
-    expect(await discoverWorkspace(repo, runner, NO_HOOKS)).toEqual({
+    expect(await discoverAt(repo, runner, NO_HOOKS)).toEqual({
       cwd: repo,
       repoRoot: repo,
       gitDir: join(repo, ".git"),
       gitCommonDir: join(repo, ".git"),
       isGitRepo: true,
+      gitConfig: expect.objectContaining({ worktreeConfig: false }),
       overlays: [],
     });
   });
@@ -87,12 +67,13 @@ describe("discoverWorkspace", () => {
     const repo = await createRepo();
     const cwd = join(repo, "src", "deep");
 
-    expect(await discoverWorkspace(cwd, runner, NO_HOOKS)).toEqual({
+    expect(await discoverAt(cwd, runner, NO_HOOKS)).toEqual({
       cwd,
       repoRoot: repo,
       gitDir: join(repo, ".git"),
       gitCommonDir: join(repo, ".git"),
       isGitRepo: true,
+      gitConfig: expect.objectContaining({ worktreeConfig: false }),
       overlays: [],
     });
   });
@@ -103,12 +84,13 @@ describe("discoverWorkspace", () => {
 
     await git(repo, ["worktree", "add", "--quiet", "-b", "feature", worktree]);
 
-    expect(await discoverWorkspace(worktree, runner, NO_HOOKS)).toEqual({
+    expect(await discoverAt(worktree, runner, NO_HOOKS)).toEqual({
       cwd: worktree,
       repoRoot: worktree,
       gitDir: join(repo, ".git", "worktrees", "linked"),
       gitCommonDir: join(repo, ".git"),
       isGitRepo: true,
+      gitConfig: expect.objectContaining({ worktreeConfig: false }),
       overlays: [],
     });
   });
@@ -125,12 +107,12 @@ describe("discoverWorkspace", () => {
 
     await git(superproject, ["submodule", "add", "--quiet", library, "lib"]);
 
-    expect(await discoverWorkspace(separate, runner, NO_HOOKS)).toMatchObject({
+    expect(await discoverAt(separate, runner, NO_HOOKS)).toMatchObject({
       repoRoot: separate,
       gitDir,
       gitCommonDir: gitDir,
     });
-    expect(await discoverWorkspace(join(superproject, "lib"), runner, NO_HOOKS)).toMatchObject({
+    expect(await discoverAt(join(superproject, "lib"), runner, NO_HOOKS)).toMatchObject({
       repoRoot: join(superproject, "lib"),
       gitDir: join(superproject, ".git", "modules", "lib"),
       gitCommonDir: join(superproject, ".git", "modules", "lib"),
@@ -142,7 +124,7 @@ describe("discoverWorkspace", () => {
 
     await writeFile(join(repo, ".git", "commondir"), ".\n");
 
-    expect(await discoverWorkspace(repo, runner, NO_HOOKS)).toMatchObject({
+    expect(await discoverAt(repo, runner, NO_HOOKS)).toMatchObject({
       gitDir: join(repo, ".git"),
       gitCommonDir: join(repo, ".git"),
     });
@@ -156,7 +138,7 @@ describe("discoverWorkspace", () => {
 
     const before = await stat(commondir);
 
-    expect(await discoverWorkspace(repo, runner, NO_HOOKS)).toMatchObject({
+    expect(await discoverAt(repo, runner, NO_HOOKS)).toMatchObject({
       gitDir: join(repo, ".git"),
       gitCommonDir: join(repo, ".git"),
     });
@@ -173,13 +155,13 @@ describe("discoverWorkspace", () => {
 
     await writeFile(join(repo, ".git", "commondir"), "../.x\n");
 
-    await expect(discoverWorkspace(repo, recorder, NO_HOOKS)).rejects.toThrow(
+    await expect(discoverAt(repo, recorder, NO_HOOKS)).rejects.toThrow(
       `git: ${join(repo, ".git", "commondir")} was not written by git or the launcher`,
     );
 
     await writeFile(join(repo, ".git", "commondir"), `${join(other, ".git")}\n`);
 
-    await expect(discoverWorkspace(join(repo, "src"), recorder, NO_HOOKS)).rejects.toThrow(
+    await expect(discoverAt(join(repo, "src"), recorder, NO_HOOKS)).rejects.toThrow(
       "was not written by git or the launcher",
     );
     expect(calls).toEqual([]);
@@ -195,7 +177,7 @@ describe("discoverWorkspace", () => {
 
     await writeFile(join(repo, ".git", "worktrees", "linked", "commondir"), `${join(other, ".git")}\n`);
 
-    await expect(discoverWorkspace(worktree, recorder, NO_HOOKS)).rejects.toThrow(
+    await expect(discoverAt(worktree, recorder, NO_HOOKS)).rejects.toThrow(
       `git: ${join(repo, ".git", "worktrees", "linked", "commondir")} points at ${join(other, ".git")}`,
     );
     expect(calls).toEqual([]);
@@ -209,7 +191,7 @@ describe("discoverWorkspace", () => {
 
     await symlink(join(repo, ".git"), join(folder, ".git"));
 
-    await expect(discoverWorkspace(folder, runner, NO_HOOKS)).rejects.toThrow(
+    await expect(discoverAt(folder, runner, NO_HOOKS)).rejects.toThrow(
       `git: ${join(folder, ".git")} is a symbolic link`,
     );
   });
@@ -220,7 +202,7 @@ describe("discoverWorkspace", () => {
 
     await writeFile(join(repo, "src", ".git"), `gitdir: ${join(other, ".git")}\n`);
 
-    await expect(discoverWorkspace(join(repo, "src"), runner, NO_HOOKS)).rejects.toThrow(
+    await expect(discoverAt(join(repo, "src"), runner, NO_HOOKS)).rejects.toThrow(
       `git: ${join(repo, "src", ".git")} points at ${join(other, ".git")}, the git dir of another checkout`,
     );
   });
@@ -231,7 +213,7 @@ describe("discoverWorkspace", () => {
 
     await writeFile(join(repo, "src", ".git"), `gitdir: ${folder}\n`);
 
-    await expect(discoverWorkspace(join(repo, "src"), runner, NO_HOOKS)).rejects.toThrow(
+    await expect(discoverAt(join(repo, "src"), runner, NO_HOOKS)).rejects.toThrow(
       `git: ${join(repo, "src", ".git")} leads to ${folder}, but git does not open it as a repository`,
     );
   });
@@ -241,15 +223,83 @@ describe("discoverWorkspace", () => {
     const other = await createRepo();
     const { runner: fake } = createFakeRunner(() => ({ stdout: `${repo}\n${join(other, ".git")}\n` }));
 
-    await expect(discoverWorkspace(repo, fake, NO_HOOKS)).rejects.toThrow(
+    await expect(discoverAt(repo, fake, NO_HOOKS)).rejects.toThrow(
       `git: ${join(repo, ".git")} leads to ${join(repo, ".git")}, but git reports`,
     );
+  });
+
+  it("finds the layout without git and without writing in lenient mode, falling back to the files when refused", async () => {
+    const repo = await createRepo();
+    const commondir = join(repo, ".git", "commondir");
+    const { recorder, calls } = recording();
+
+    await writeFile(commondir, "");
+
+    expect(await discoverAt(repo, recorder, NO_HOOKS, { lenient: true })).toMatchObject({
+      repoRoot: repo,
+      gitDir: join(repo, ".git"),
+      gitCommonDir: join(repo, ".git"),
+    });
+    expect(await readFile(commondir, "utf8")).toBe("");
+
+    await writeFile(commondir, "../elsewhere\n");
+
+    expect(await discoverAt(repo, recorder, NO_HOOKS, { lenient: true })).toMatchObject({
+      repoRoot: repo,
+      gitDir: join(repo, ".git"),
+      gitCommonDir: join(repo, "elsewhere"),
+    });
+    expect(calls).toEqual([]);
+  });
+
+  it("says git is missing instead of blaming the repository", async () => {
+    const repo = await createRepo();
+    const { runner: missing } = createFakeRunner(() => undefined);
+
+    await expect(discoverAt(repo, missing, NO_HOOKS)).rejects.toThrow("git: command not found");
+  });
+
+  it("refuses a repository whose configuration git cannot list, and lists nothing only without git", async () => {
+    const repo = await createRepo();
+    const answering = (config: () => Promise<{ code: number; stdout: string; stderr: string }>) => ({
+      ...runner,
+      run: (file: string, args: string[], options?: Parameters<typeof runner.run>[2]) =>
+        args.includes("config") ? config() : runner.run(file, args, options),
+    });
+    const failing = answering(async () => ({ code: 128, stdout: "", stderr: "fatal: bad config line 3" }));
+    const missing = answering(async () => {
+      throw new LauncherError("git: command not found");
+    });
+
+    await expect(discoverAt(repo, failing, NO_HOOKS)).rejects.toThrow(
+      `git: could not list the git configuration of ${repo}: fatal: bad config line 3`,
+    );
+    expect((await discoverAt(repo, missing, NO_HOOKS)).gitConfig).toEqual({
+      files: [],
+      includes: [],
+      worktreeConfig: false,
+    });
+  });
+
+  it("asks git once for the layout and once for the configuration of a repository", async () => {
+    const repo = await createRepo();
+    const { recorder, calls } = recording();
+
+    await git(repo, ["config", "core.hooksPath", ".husky"]);
+
+    const workspace = await discoverAt(repo, recorder, NO_HOOKS);
+
+    expect(calls.map((call) => call.find((part) => part === "rev-parse" || part === "config"))).toEqual([
+      "rev-parse",
+      "config",
+    ]);
+    expect(workspace.gitConfig?.hooksPath).toBe(".husky");
   });
 
   it("uses the folder itself outside git", async () => {
     const folder = await temporaryFolder();
 
-    expect(await discoverWorkspace(folder, runner, NO_HOOKS)).toEqual({
+    expect(await discoverAt(folder, runner, NO_HOOKS)).toEqual({
       cwd: folder,
       repoRoot: folder,
       isGitRepo: false,
@@ -263,7 +313,7 @@ describe("discoverWorkspace", () => {
     const folder = await temporaryFolder();
     const linked = join(tmpdir(), folder.split("/").at(-1) ?? "");
 
-    const workspace = await discoverWorkspace(linked, fake, NO_HOOKS);
+    const workspace = await discoverAt(linked, fake, NO_HOOKS);
 
     expect(workspace.repoRoot).toBe(await realpath(linked));
   });
@@ -271,6 +321,6 @@ describe("discoverWorkspace", () => {
   it("reports a missing folder as a launcher error", async () => {
     const folder = await temporaryFolder();
 
-    await expect(discoverWorkspace(join(folder, "missing"), runner, NO_HOOKS)).rejects.toThrow("missing");
+    await expect(discoverAt(join(folder, "missing"), runner, NO_HOOKS)).rejects.toThrow("missing");
   });
 });

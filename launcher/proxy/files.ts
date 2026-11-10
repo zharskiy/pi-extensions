@@ -1,5 +1,7 @@
 import type { CredentialRule } from "../config/index.ts";
 
+export const DAEMON_FAILURE_TAG = "pi-sandbox-proxy failed:";
+
 export interface RepoProxyInput {
   repoHash: string;
   token: string;

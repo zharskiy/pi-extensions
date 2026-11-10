@@ -5,7 +5,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import type { CredentialRule } from "../../config/index.ts";
 import { createSecretResolver, type SecretResolver } from "../../proxy/secrets/index.ts";
 import type { LauncherCa } from "../../proxy/tls-ca.ts";
-import { mcpAuthKey } from "../../shared/index.ts";
+import { bootTime, mcpAuthKey, processStart } from "../../shared/index.ts";
 import { createFakeClock } from "../support/fake-clock.ts";
 import { createFakeRunner } from "../support/fake-runner.ts";
 import { closeServer, createStateDir, listen, openCa, portOf, removeDir, startTestProxy } from "./harness.ts";
@@ -88,7 +88,7 @@ const resolverWith = (mode: string, options: { now?: () => number; signInWaitMs?
     piCommand: [process.execPath, state.script],
     stateDir: state.stateDir,
     hostAgentDir: state.agentDir,
-    envSecrets: async () => new Map(),
+    envSecrets: new Map(),
     childEnv: { FAKE_PI_LOG: state.log, FAKE_PI_MODE: mode, FAKE_PI_KEY: KEY },
     signInWaitMs: options.signInWaitMs ?? 30_000,
   });
@@ -177,6 +177,40 @@ describe("mcpOAuth secrets read the host pi sign-in", () => {
       body: "pi-sandbox: sign-in to MCP server docs opened in the browser on the host; finish it there, then retry. If no browser opened, run pi mcp login docs on the host.",
     });
     expect(await piRuns()).toHaveLength(1);
+  });
+
+  it("records the running login with its process start and clears it when the resolver closes", async () => {
+    const resolver = resolverWith("hang", { signInWaitMs: 50 });
+
+    await resolver.resolve("mcp", REF);
+
+    const record = await waitUntil(
+      async () =>
+        ((await loginRecord()) as { running?: { pgid: number; boot: number; start: string } }).running,
+    );
+
+    expect(record).toEqual({
+      pgid: expect.any(Number),
+      boot: expect.any(Number),
+      start: await processStart(record.pgid),
+    });
+    expect(Math.abs(record.boot - bootTime())).toBeLessThanOrEqual(1);
+    expect(record.start).not.toBe("");
+
+    await resolver.close();
+
+    expect(await loginRecord()).not.toHaveProperty("running");
+  });
+
+  it("uses a token signed in on the host right after a sign-in reply, without waiting out the failure cache", async () => {
+    const resolver = resolverWith("noop", { signInWaitMs: 50 });
+    const first = await resolver.resolve("mcp", REF);
+
+    expect(first.ok ? undefined : first.reply?.status).toBe(503);
+
+    await writeEntry("signed-in-token", Date.now() + 3_600_000);
+
+    expect(await resolver.resolve("mcp", REF)).toMatchObject({ ok: true, value: "signed-in-token" });
   });
 
   it("starts nothing within 60 s of a start, even from a second resolver on the same state dir", async () => {

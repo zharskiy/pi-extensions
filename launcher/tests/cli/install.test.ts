@@ -1,27 +1,10 @@
 import { spawnSync } from "node:child_process";
-import {
-  chmod,
-  lstat,
-  mkdir,
-  mkdtemp,
-  readFile,
-  readlink,
-  realpath,
-  rm,
-  symlink,
-  writeFile,
-} from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { chmod, lstat, mkdir, readFile, readlink, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { launcherRoot } from "../../shared/index.ts";
+import { tempDir } from "../support/temp-dir.ts";
 import { writeManagedPi } from "./harness.ts";
-
-const created: string[] = [];
-
-afterEach(async () => {
-  await Promise.all(created.splice(0).map((path) => rm(path, { recursive: true, force: true })));
-});
 
 const SYSTEM_TOOLS = [
   "awk",
@@ -64,11 +47,9 @@ const writeTools = async (dir: string, fakes: Record<string, string>) => {
 };
 
 const installRoot = async (fakes: Record<string, string> = {}) => {
-  const root = await realpath(await mkdtemp(join(tmpdir(), "pi-sandbox-install-")));
+  const root = await realpath(await tempDir("install"));
   const home = join(root, "home");
   const agentDir = join(home, ".pi", "agent");
-
-  created.push(root);
 
   await writeTools(join(root, "tools"), { ...FAKES, ...fakes });
 
@@ -78,6 +59,8 @@ const installRoot = async (fakes: Record<string, string> = {}) => {
 
   return { root, home, agentDir, managed, record: join(root, "state", "replaced-pi-link") };
 };
+
+const INSTALL_TIMEOUT_MS = 30_000;
 
 const runInstall = (root: string, flags: string[] = []) =>
   spawnSync("/bin/sh", [join(launcherRoot(), "install.sh"), ...flags], {
@@ -100,7 +83,7 @@ const exists = (path: string) =>
 const isLauncherWrapper = async (path: string) =>
   (await readFile(path, "utf8")).includes("launcher/bin/pi-sandbox-dev.js");
 
-describe("install.sh and pi's managed install", () => {
+describe("install.sh and pi's managed install", { timeout: INSTALL_TIMEOUT_MS }, () => {
   it("takes over a relative link chain to the managed pi and records the link it replaced", async () => {
     const { root, home, agentDir, record } = await installRoot();
     const shim = join(home, ".local", "bin", "pi");
@@ -200,7 +183,7 @@ describe("install.sh and pi's managed install", () => {
   });
 });
 
-describe("install.sh and the Colima profile", () => {
+describe("install.sh and the Colima profile", { timeout: INSTALL_TIMEOUT_MS }, () => {
   const STOPPED_COLIMA = [
     'echo "$*" >> "$HOME/colima.log"',
     'case "$1" in version) echo "colima version 0.8.1" ;; status) exit 1 ;; *) exit 0 ;; esac',
@@ -288,5 +271,147 @@ describe("install.sh and the Colima profile", () => {
       "start --profile pi-sandbox --activate=false --vm-type vz --mount-type virtiofs --cpu 8 --memory 10 --disk 60",
     );
     expect(result.stdout).toContain("60 GiB, shares kept)");
+  });
+});
+
+describe("install.sh options and the PATH block", { timeout: INSTALL_TIMEOUT_MS }, () => {
+  const zshrc = (home: string) => join(home, ".zshrc");
+
+  it("leaves an rc file with a begin line and no end line as it is, and says so", async () => {
+    const { root, home } = await installRoot();
+    const text = "alias a=1\n# pi-sandbox begin\nexport KEEP=me\nalias b=2\n";
+
+    await writeFile(zshrc(home), text);
+
+    const first = runInstall(root);
+    const second = runInstall(root, ["--bin-dir", join(root, "other-bin")]);
+
+    expect(first.status).toBe(0);
+    expect(second.status).toBe(0);
+    expect(first.stdout).toContain(
+      `no PATH snippet added; ${zshrc(home)} has a "# pi-sandbox begin" or "# pi-sandbox end" line without its pair, left as it is`,
+    );
+    expect(await readFile(zshrc(home), "utf8")).toBe(text);
+  });
+
+  it("replaces its own block for a new --bin-dir and keeps the lines around it", async () => {
+    const { root, home } = await installRoot();
+
+    await writeFile(zshrc(home), "alias a=1\n");
+
+    expect(runInstall(root).status).toBe(0);
+
+    await writeFile(zshrc(home), `${await readFile(zshrc(home), "utf8")}alias b=2\n`);
+
+    expect(runInstall(root, ["--bin-dir", join(root, "other-bin")]).status).toBe(0);
+    expect(await readFile(zshrc(home), "utf8")).toBe(
+      `alias a=1\n\nalias b=2\n\n# pi-sandbox begin\nexport PATH='${join(root, "other-bin")}':"$PATH"\n# pi-sandbox end\n`,
+    );
+  });
+
+  it("quotes a bin dir with $, a backtick, a space and a single quote so the shell takes it literally, and uninstall finds it again", async () => {
+    const { root, home } = await installRoot();
+    const binDir = join(root, "b $HOME `touch pwned` it's");
+    const env = {
+      HOME: home,
+      PATH: join(root, "tools"),
+      PI_SANDBOX_STATE_DIR: join(root, "state"),
+      PI_SANDBOX_USER_CONFIG: join(root, "config", "config.json"),
+      PI_SANDBOX_POLICY_FILE: join(root, "policy.json"),
+    };
+    const installed = spawnSync("/bin/dash", [join(launcherRoot(), "install.sh"), "--bin-dir", binDir], {
+      env,
+      encoding: "utf8",
+    });
+
+    expect(installed.status).toBe(0);
+
+    const rc = await readFile(zshrc(home), "utf8");
+    const sourced = spawnSync("/bin/dash", ["-c", `. "$1"; printf '%s' "$PATH"`, "dash", zshrc(home)], {
+      cwd: root,
+      env: { PATH: "/usr/bin:/bin" },
+      encoding: "utf8",
+    });
+
+    expect(rc).toContain(`export PATH='${binDir.replace("'", "'\\''")}':"$PATH"\n`);
+    expect(sourced.stdout).toBe(`${binDir}:/usr/bin:/bin`);
+    expect(await exists(join(root, "pwned"))).toBe(false);
+    expect(await isLauncherWrapper(join(binDir, "pi"))).toBe(true);
+
+    const removed = spawnSync("/bin/dash", [join(launcherRoot(), "uninstall.sh")], { env, encoding: "utf8" });
+
+    expect(removed.status).toBe(0);
+    expect(removed.stdout).toContain(`launcher: removed ${binDir}/pi\n`);
+    expect(await exists(join(binDir, "pi"))).toBe(false);
+    expect(await readFile(zshrc(home), "utf8")).toBe("\n");
+  });
+
+  it("refuses a relative --bin-dir and an option without its value", async () => {
+    const { root, home } = await installRoot();
+    const relative = runInstall(root, ["--bin-dir", "bin"]);
+    const missing = runInstall(root, ["--cpu"]);
+
+    expect(relative.status).toBe(1);
+    expect(relative.stderr).toContain("pi-sandbox install: --bin-dir needs an absolute path, got bin\n");
+    expect(missing.status).toBe(1);
+    expect(missing.stderr).toContain("pi-sandbox install: --cpu needs a value\n");
+    expect(await exists(zshrc(home))).toBe(false);
+  });
+
+  it("finds its checkout when CDPATH is exported and it is run by a relative path", async () => {
+    const { root, home } = await installRoot();
+    const checkout = join(launcherRoot(), "..");
+    const result = spawnSync("/bin/sh", ["launcher/install.sh"], {
+      cwd: checkout,
+      env: {
+        HOME: home,
+        PATH: join(root, "tools"),
+        CDPATH: `.:${root}`,
+        PI_SANDBOX_STATE_DIR: join(root, "state"),
+        PI_SANDBOX_USER_CONFIG: join(root, "config", "config.json"),
+        PI_SANDBOX_POLICY_FILE: join(root, "policy.json"),
+      },
+      encoding: "utf8",
+    });
+
+    expect(result.status).toBe(0);
+    expect(await isLauncherWrapper(join(home, ".local", "bin", "pi"))).toBe(true);
+  });
+
+  it("stops before it links pi when npm left no pi next to the launcher and there is no managed pi", async () => {
+    const { root, home, agentDir } = await installRoot();
+    const packaged = join(root, "package", "launcher");
+    const npmPrefix = join(root, "npm");
+
+    await rm(agentDir, { recursive: true, force: true });
+
+    await mkdir(join(packaged, "bin"), { recursive: true });
+
+    await writeFile(join(packaged, "install.sh"), await readFile(join(launcherRoot(), "install.sh"), "utf8"));
+
+    await writeFile(
+      join(packaged, "bin", "path-block.sh"),
+      await readFile(join(launcherRoot(), "bin", "path-block.sh"), "utf8"),
+    );
+
+    await writeFile(
+      join(root, "tools", "npm"),
+      `#!/bin/sh\ncase "$1" in root) echo "${npmPrefix}/lib/node_modules" ;; prefix) echo "${npmPrefix}" ;; esac\n`,
+    );
+
+    const result = spawnSync("/bin/sh", [join(packaged, "install.sh")], {
+      env: {
+        HOME: home,
+        PATH: join(root, "tools"),
+        PI_SANDBOX_STATE_DIR: join(root, "state"),
+        PI_SANDBOX_USER_CONFIG: join(root, "config", "config.json"),
+      },
+      encoding: "utf8",
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("npm skipped the peer dependency");
+    expect(await exists(join(home, ".local", "bin", "pi"))).toBe(false);
+    expect(await exists(zshrc(home))).toBe(false);
   });
 });

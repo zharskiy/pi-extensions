@@ -1,4 +1,4 @@
-const SECRET_NAME = /(TOKEN|SECRET|KEY|PASSWORD|CREDENTIAL)/i;
+const SECRET_NAME = /(TOKEN|SECRET|KEY|PASSWORD|PASSWD|PASSPHRASE|CREDENTIAL|JWT)/i;
 
 export const isSecretName = (name: string) => SECRET_NAME.test(name);
 

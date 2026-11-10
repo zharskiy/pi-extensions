@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { type BundledPi, readProviderHosts } from "../../hostpi/index.ts";
+import { type BundledPi, locateBundledPi, readProviderHosts } from "../../hostpi/index.ts";
 import { createProcessRunner, launcherRoot, stateLayout } from "../../shared/index.ts";
 import { createScriptedRunner } from "../support/fake-runner.ts";
 import { tempDir, writeText } from "./fixtures.ts";
@@ -107,5 +107,73 @@ describe("provider-hosts.mjs", () => {
 
     expect(result.code).toBe(1);
     expect(result.stdout).toBe("");
+  });
+});
+
+describe("provider host lookups stay inside their install", () => {
+  it("gives up with a notice when the script does not answer within 30 s", async () => {
+    const stateDir = await tempDir("provider-hosts");
+    const fake = createScriptedRunner([{ argv: [process.execPath], result: { code: 124, timedOut: true } }]);
+    const result = await readProviderHosts({ stateDir, runner: fake.runner, pi: PI });
+
+    expect(result).toEqual({
+      hosts: {},
+      notices: [
+        "provider host table unavailable (no answer within 30 s); built-in providers get no credential rules",
+      ],
+    });
+    expect(fake.calls[0]?.options.timeoutMs).toBe(30_000);
+  });
+
+  it("does not take a pi-ai from above the pi install", async () => {
+    const dir = await tempDir("provider-hosts-above");
+
+    await writeText(join(dir, "node_modules", "@earendil-works", "pi-ai", "package.json"), "{}");
+
+    const result = await createProcessRunner().run(process.execPath, [SCRIPT, join(dir, "loose", "pi")]);
+
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("not found");
+  });
+
+  it("looks up to the workspace root of a pi checkout without node_modules above it", async () => {
+    const dir = await tempDir("provider-hosts-workspace");
+
+    await writeText(join(dir, "package.json"), JSON.stringify({ workspaces: ["packages/*"] }));
+
+    await writeText(join(dir, "node_modules", "@earendil-works", "pi-ai", "package.json"), "{}");
+
+    const result = await createProcessRunner().run(process.execPath, [
+      SCRIPT,
+      join(dir, "packages", "coding-agent"),
+    ]);
+
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("no ./providers/* export");
+  });
+
+  it("finds the bundled pi only inside the launcher's package", async () => {
+    const dir = await tempDir("bundled-pi");
+    const manifest = JSON.stringify({
+      name: "@earendil-works/pi-coding-agent",
+      version: "1.0.0",
+      bin: { pi: "cli.js" },
+    });
+
+    await writeText(
+      join(dir, "node_modules", "@earendil-works", "pi-coding-agent", "package.json"),
+      manifest,
+    );
+
+    expect(await locateBundledPi(join(dir, "app", "launcher"))).toBeUndefined();
+
+    await writeText(
+      join(dir, "app", "node_modules", "@earendil-works", "pi-coding-agent", "package.json"),
+      manifest,
+    );
+
+    expect((await locateBundledPi(join(dir, "app", "launcher")))?.packageDir).toBe(
+      join(dir, "app", "node_modules", "@earendil-works", "pi-coding-agent"),
+    );
   });
 });

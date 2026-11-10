@@ -9,7 +9,7 @@ import { fileSecret } from "./file.ts";
 import { createMcpOAuthSource } from "./mcp-oauth.ts";
 import { piAuthSecret } from "./pi-auth.ts";
 
-export { envSecretsFor, PARENT_PROXY_SECRET_KEY, parentProxyAuth } from "./env.ts";
+export { envSecretsFor, parentProxyAuth } from "./env.ts";
 export type { SecretReply } from "./errors.ts";
 
 export interface SecretResolverDeps {
@@ -19,7 +19,7 @@ export interface SecretResolverDeps {
   piCommand: string[];
   stateDir: string;
   hostAgentDir: string;
-  envSecrets: (repoHash: string | undefined) => Promise<ReadonlyMap<string, string>>;
+  envSecrets: ReadonlyMap<string, string>;
   childEnv?: Record<string, string>;
   logFile?: string;
   signInWaitMs?: number;
@@ -30,7 +30,7 @@ export type SecretResult =
   | { ok: false; reason: string; reply?: SecretReply };
 
 export interface SecretResolver {
-  resolve(key: string, ref: SecretRef, repoHash?: string): Promise<SecretResult>;
+  resolve(key: string, ref: SecretRef): Promise<SecretResult>;
   invalidate(key: string): void;
   rejected(key: string, ref: SecretRef, value: string): Promise<SecretReply | undefined>;
   close(): Promise<void>;
@@ -74,7 +74,13 @@ export const createSecretResolver = (deps: SecretResolverDeps): SecretResolver =
   const cacheKey = (key: string, ref: SecretRef) => {
     const composite = `${key}\n${JSON.stringify(ref)}`;
 
-    entries.set(key, new Set([...(entries.get(key) ?? []), composite]));
+    const known = entries.get(key);
+
+    if (known === undefined) {
+      entries.set(key, new Set([composite]));
+    } else {
+      known.add(composite);
+    }
 
     return composite;
   };
@@ -85,7 +91,7 @@ export const createSecretResolver = (deps: SecretResolverDeps): SecretResolver =
     });
   };
 
-  const load = (key: string, ref: SecretRef, repoHash?: string) => async () => {
+  const load = (key: string, ref: SecretRef) => async () => {
     if ("command" in ref) {
       return commandSecret({
         key,
@@ -109,19 +115,19 @@ export const createSecretResolver = (deps: SecretResolverDeps): SecretResolver =
       return fileSecret(key, ref, deps.home);
     }
 
-    return envSecret(key, await deps.envSecrets(repoHash));
+    return envSecret(key, deps.envSecrets);
   };
 
-  const fetch = (key: string, ref: SecretRef, repoHash?: string) => {
+  const fetch = (key: string, ref: SecretRef) => {
     if ("env" in ref || "file" in ref) {
-      return load(key, ref, repoHash)();
+      return load(key, ref)();
     }
 
     return cache.get(cacheKey(key, ref), load(key, ref));
   };
 
-  const resolve = async (key: string, ref: SecretRef, repoHash?: string) =>
-    fetch(key, ref, repoHash).then(success, (error: unknown) => failure(key, ref, error));
+  const resolve = async (key: string, ref: SecretRef) =>
+    fetch(key, ref).then(success, (error: unknown) => failure(key, ref, error));
 
   const rejected = async (key: string, ref: SecretRef, value: string) =>
     "mcpOAuth" in ref ? mcpOAuth.reject(key, ref, value).catch(() => undefined) : undefined;

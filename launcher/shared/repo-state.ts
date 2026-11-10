@@ -1,5 +1,6 @@
-import { access, readdir, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { access, readdir, rm, stat } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { LauncherError } from "./errors.ts";
 import { isJsonObject, readJsonFile, readJsonObject, writeJsonFile } from "./json-file.ts";
 import { stateLayout } from "./state-layout.ts";
 
@@ -32,13 +33,30 @@ const exists = (path: string) =>
     () => false,
   );
 
-export const writeRepoRecord = (stateDir: string, repoHash: string, root: string) =>
-  writeJsonFile(filesOf(stateDir, repoHash).record, { root }, { mode: PRIVATE_MODE });
+export interface RepoRecord {
+  root: string;
+  mountPoint: boolean;
+}
 
-export const repoRootOf = async (stateDir: string, repoHash: string) => {
+const isMountPoint = async (root: string) => {
+  const [own, parent] = await Promise.all([stat(root), stat(dirname(root))]).catch(() => []);
+
+  return own !== undefined && parent !== undefined && own.dev !== parent.dev;
+};
+
+export const writeRepoRecord = async (stateDir: string, repoHash: string, root: string) =>
+  writeJsonFile(
+    filesOf(stateDir, repoHash).record,
+    { root, ...((await isMountPoint(root)) ? { mountPoint: true } : {}) },
+    { mode: PRIVATE_MODE },
+  );
+
+export const repoRecordOf = async (stateDir: string, repoHash: string): Promise<RepoRecord | undefined> => {
   const record = await readJsonObject(filesOf(stateDir, repoHash).record);
 
-  return typeof record?.root === "string" ? record.root : undefined;
+  return typeof record?.root === "string"
+    ? { root: record.root, mountPoint: record.mountPoint === true }
+    : undefined;
 };
 
 export const knownRepos = async (stateDir: string) => {
@@ -50,9 +68,17 @@ export const knownRepos = async (stateDir: string) => {
 };
 
 const readList = async <T>(path: string, valid: (value: unknown) => value is T) => {
-  const stored = await readJsonFile<unknown>(path).catch(() => undefined);
+  const stored = await readJsonFile<unknown>(path);
 
-  return Array.isArray(stored) ? stored.filter(valid) : [];
+  if (stored === undefined) {
+    return [];
+  }
+
+  if (!Array.isArray(stored)) {
+    throw new LauncherError(`${path}: not a list`, "fix or remove the file");
+  }
+
+  return stored.filter(valid);
 };
 
 const writeList = async <T>(path: string, values: T[]) => {
@@ -91,10 +117,58 @@ export const recordPins = (stateDir: string, repoHash: string, pins: PinRecord[]
 export const readCreatedDirs = (stateDir: string, repoHash: string) =>
   readList(filesOf(stateDir, repoHash).created, isPath);
 
-export const writeCreatedDirs = (stateDir: string, repoHash: string, dirs: string[]) =>
-  writeList(filesOf(stateDir, repoHash).created, dirs);
+const gitDirsFile = (stateDir: string, repoHash: string) =>
+  join(filesOf(stateDir, repoHash).directory, "created-git.json");
 
-export const recordCreatedDirs = (stateDir: string, repoHash: string, dirs: string[]) =>
+export interface GitCreatedDir {
+  dir: string;
+  gitCommonDir?: string;
+}
+
+const gitCreatedOf = (value: unknown): GitCreatedDir[] => {
+  if (typeof value === "string") {
+    return [{ dir: value }];
+  }
+
+  if (!isJsonObject(value) || typeof value.dir !== "string") {
+    return [];
+  }
+
+  return [
+    typeof value.gitCommonDir === "string"
+      ? { dir: value.dir, gitCommonDir: value.gitCommonDir }
+      : { dir: value.dir },
+  ];
+};
+
+const isGitCreated = (value: unknown): value is unknown => gitCreatedOf(value).length > 0;
+
+export const readGitCreatedDirs = async (stateDir: string, repoHash: string): Promise<GitCreatedDir[]> =>
+  (await readList(gitDirsFile(stateDir, repoHash), isGitCreated)).flatMap(gitCreatedOf);
+
+export const writeCreatedDirs = async (stateDir: string, repoHash: string, dirs: string[]) => {
+  const git = await readGitCreatedDirs(stateDir, repoHash);
+
+  await writeList(
+    gitDirsFile(stateDir, repoHash),
+    git.filter((entry) => dirs.includes(entry.dir)),
+  );
+
+  await writeList(filesOf(stateDir, repoHash).created, dirs);
+};
+
+const recordGitDirs = async (stateDir: string, repoHash: string, added: GitCreatedDir[]) => {
+  const known = await readGitCreatedDirs(stateDir, repoHash);
+  const fresh = added.filter((entry) => !known.some((old) => old.dir === entry.dir));
+
+  await writeList(gitDirsFile(stateDir, repoHash), [...known, ...fresh]);
+};
+
+export interface CreatedKind {
+  gitCommonDir: string;
+}
+
+export const recordCreatedDirs = (stateDir: string, repoHash: string, dirs: string[], kind?: CreatedKind) =>
   queued(filesOf(stateDir, repoHash).created, async () => {
     if (dirs.length === 0) {
       return;
@@ -102,7 +176,15 @@ export const recordCreatedDirs = (stateDir: string, repoHash: string, dirs: stri
 
     const known = await readCreatedDirs(stateDir, repoHash);
 
-    await writeCreatedDirs(stateDir, repoHash, [...new Set([...known, ...dirs])]);
+    if (kind !== undefined) {
+      await recordGitDirs(
+        stateDir,
+        repoHash,
+        dirs.map((dir) => ({ dir, gitCommonDir: kind.gitCommonDir })),
+      );
+    }
+
+    await writeList(filesOf(stateDir, repoHash).created, [...new Set([...known, ...dirs])]);
   });
 
 const gitCopies = async (stateDir: string, repoHash: string) => {

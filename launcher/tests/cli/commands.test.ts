@@ -1,8 +1,9 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { LABELS } from "../../backend/index.ts";
 import { run } from "../../cli/index.ts";
-import { LABELS, repoVolumes } from "../../container/index.ts";
+import { repoVolumes } from "../../container/index.ts";
 import { registerLaunch } from "../../grants/index.ts";
 import { launcherRoot, processMark, sha256Hex, stateLayout } from "../../shared/index.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
@@ -25,7 +26,7 @@ describe("pi sandbox status", () => {
     const lines = harness.stdout().split("\n");
 
     expect(lines).toContain(`launcher: ${await packageVersion()}`);
-    expect(lines).toContain("runtime: colima fake");
+    expect(lines.filter((line) => line.startsWith("runtime: "))).toEqual([]);
     expect(lines).toContain("runtime socket: /fake/docker.sock");
     expect(lines).toContain("container: none");
     expect(lines).toContain("proxy: stopped");
@@ -144,7 +145,7 @@ describe("pi sandbox config", () => {
     const harness = await createHarness();
 
     expect(await run(["sandbox", "config", "set", "fallback", '"refuse"'], harness.deps)).toBe(1);
-    expect(harness.stderr()).toContain('pi-sandbox: unknown config option "set fallback "refuse""\n');
+    expect(harness.stderr()).toContain('pi-sandbox: unknown config option "set"\n');
     expect(harness.stderr()).toContain("  hint: pi sandbox config [--json]");
   });
 });
@@ -255,6 +256,8 @@ describe("pi sandbox gc and reset", () => {
     const dangling = await build("pi-sandbox-layer:old");
     const used = await build("pi-sandbox-layer:used");
     const current = await build("pi-sandbox:base");
+
+    fake.ageImages(2 * 60 * 60);
 
     await build("pi-sandbox-layer:old");
 
@@ -415,7 +418,6 @@ describe("pi sandbox gc and reset", () => {
     const [agent = "", cache = ""] = repoVolumes({
       workspace: { cwd: harness.repoRoot, repoRoot: harness.repoRoot, isGitRepo: true },
       config: sandboxConfig({ mounts: { extraReadOnly: [], cacheVolumes: ["node_modules"] } }),
-      hostEnv: harness.deps.env,
       uid: harness.deps.uid,
     });
 
@@ -460,7 +462,6 @@ describe("pi sandbox gc and reset", () => {
     const [agent = ""] = repoVolumes({
       workspace: { cwd: harness.repoRoot, repoRoot: harness.repoRoot, isGitRepo: true },
       config: sandboxConfig(),
-      hostEnv: harness.deps.env,
       uid: harness.deps.uid,
     });
 

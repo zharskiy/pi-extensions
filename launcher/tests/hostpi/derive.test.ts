@@ -506,3 +506,177 @@ describe("deriveSandboxPi safety and stability", () => {
     expect(result.rules).toEqual([]);
   });
 });
+
+describe("deriveSandboxPi fix round", () => {
+  const mcpOnly = (mcpServers: Record<string, unknown>) =>
+    deriveSandboxPi(input({ files: { agentDir: AGENT_DIR, mcp: { mcpServers } } }));
+
+  const serverOf = (result: ReturnType<typeof deriveSandboxPi>, name: string) =>
+    (result.files["mcp.json"].mcpServers as Record<string, Record<string, unknown>>)[name];
+
+  it("adds no OAuth bearer to a server that authenticates with its own credential header", () => {
+    const result = mcpOnly({
+      keyed: { url: "https://mcp.keyed.example/mcp", headers: { "X-Api-Key": "LITERAL" } },
+    });
+
+    expect(serverOf(result, "keyed")?.headers).toEqual({ "X-Api-Key": P("mcp:keyed:header:x-api-key") });
+    expect(rulesOf(result.rules, "derived:mcp:keyed:oauth")).toEqual([]);
+  });
+
+  it.each([
+    [{ "X-Api-Version": "2" }, true],
+    [{ "X-Access-Region": "eu" }, true],
+    [{ "X-Session-Mode": "fast" }, true],
+    [{ Authorization: "x" }, false],
+    [{ Cookie: "a=b" }, false],
+    [{ "X-Auth-Token": "x" }, false],
+    [{ "X-Tenant": "$TENANT" }, false],
+    [{ "X-Signed": "!sign" }, false],
+    [{ "X-Upstream": "Bearer x" }, false],
+  ])("gives the server headers %o an OAuth bearer: %s", (headers, oauth) => {
+    const result = mcpOnly({ srv: { url: "https://mcp.srv.example/mcp", headers } });
+
+    expect(rulesOf(result.rules, "derived:mcp:srv:oauth").length > 0).toBe(oauth);
+  });
+
+  it("adds no OAuth bearer to a server whose name host pi cannot sign in to", () => {
+    const result = mcpOnly({ "dotted.name": { url: "https://mcp.dot.example/mcp" } });
+
+    expect(serverOf(result, "dotted.name")).toEqual({ url: "https://mcp.dot.example/mcp" });
+    expect(result.rules.filter((rule) => rule.id.startsWith("derived:mcp:"))).toEqual([]);
+  });
+
+  it("binds an unbraced variable inside a credential header as pi interpolates it", () => {
+    const models = {
+      providers: {
+        gw: {
+          baseUrl: "https://gw.example/v1",
+          headers: { Authorization: "Bearer $GW_TOKEN", "X-Price": "$$5", "X-Escaped-Key": "a$$b" },
+        },
+      },
+    };
+    const result = deriveSandboxPi(input({ files: { agentDir: AGENT_DIR, models } }));
+    const headers = (result.files["models.json"].providers as Record<string, Record<string, unknown>>).gw
+      ?.headers;
+    const placeholder = P("models:gw:header:authorization");
+
+    expect(headers).toEqual({
+      Authorization: `Bearer ${placeholder}`,
+      "X-Price": "$$5",
+      "X-Escaped-Key": P("models:gw:header:x-escaped-key"),
+    });
+    expect(rulesOf(result.rules, "derived:models:gw:header:authorization")).toEqual([
+      {
+        id: "derived:models:gw:header:authorization",
+        host: "gw.example",
+        placeholder,
+        header: "Authorization",
+        template: "Bearer {secret}",
+        secret: { env: "GW_TOKEN" },
+      },
+    ]);
+    expect(rulesOf(result.rules, "derived:models:gw:header:x-escaped-key")).toEqual([]);
+    expect(result.notices.some((notice) => notice.startsWith("models gw: header X-Escaped-Key"))).toBe(true);
+  });
+
+  const JWT_VALUE = `${["eyJhbGciOiJIUzI1NiJ9", "eyJzdWIiOiIxIn0", "c2ln"].join(".")}`;
+
+  it.each([
+    ["AUTHORIZATION", "Bearer FAKE-live-1"],
+    ["PASSPHRASE", "FAKE-hunter2"],
+    ["SENTRY_JWT", JWT_VALUE],
+    ["GH_PAT", "FAKE-pat"],
+    ["DB_PASS", "FAKE-pass"],
+    ["clientSecret", "FAKE-camel"],
+    ["ACCESSTOKEN", "FAKE-fused"],
+    ["ENCRYPTION_KEY", "FAKE-key"],
+    ["SENTRY_DSN", "FAKE-dsn"],
+    ["SESSION_COOKIE", "FAKE-cookie"],
+    ["UPSTREAM", "Basic RkFLRTpGQUtF"],
+    ["CONFIG", JWT_VALUE],
+    ["DATABASE_URL", "postgres://u:FAKE-url@db.example/app"],
+  ])("puts a placeholder in the stdio env %s", (variable, value) => {
+    const result = mcpOnly({ s: { command: "srv", env: { [variable]: value } } });
+
+    expect(serverOf(result, "s")?.env).toEqual({ [variable]: P(`mcp:s:env:${variable}`) });
+  });
+
+  it.each([
+    ["PASS_THROUGH", "1"],
+    ["AUTH_MODE", "oauth"],
+    ["MAX_TOKENS", "4096"],
+    ["TOKEN_FILE", "/run/token"],
+    ["SESSION_DIR", "/tmp/s"],
+    ["API_KEY_PATH", "/etc/key"],
+    ["USE_TOKEN", "true"],
+    ["TOKENIZER", "bert"],
+    ["KEY_ID", "k-1"],
+    ["PWD", "/work"],
+    ["PATH", "/usr/bin"],
+    ["AUTHOR", "me"],
+    ["API_TOKEN", ""],
+  ])("keeps the stdio env %s", (variable, value) => {
+    const result = mcpOnly({ s: { command: "srv", env: { [variable]: value } } });
+
+    expect(serverOf(result, "s")?.env).toEqual({ [variable]: value });
+  });
+
+  it("puts placeholders in secret flag values and leaves ordinary flags alone", () => {
+    const args = [
+      "srv.js",
+      "--max-tokens",
+      "4096",
+      "--no-auth",
+      "server.js",
+      "--session-dir",
+      "/tmp/s",
+      "--token",
+      "FAKE-next",
+      "--api-key=FAKE-inline",
+      "--password=1234",
+      "--verbose",
+      "true",
+      `--upstream=https://u:FAKE-userinfo@db.example/x`,
+      JWT_VALUE,
+    ];
+    const result = mcpOnly({ cli: { command: "node", args } });
+
+    expect(JSON.stringify(result.files["mcp.json"])).not.toContain("FAKE");
+    expect(serverOf(result, "cli")?.args).toEqual([
+      "srv.js",
+      "--max-tokens",
+      "4096",
+      "--no-auth",
+      "server.js",
+      "--session-dir",
+      "/tmp/s",
+      "--token",
+      P("mcp:cli:arg:8"),
+      `--api-key=${P("mcp:cli:arg:9")}`,
+      "--password=1234",
+      "--verbose",
+      "true",
+      `--upstream=${P("mcp:cli:arg:13")}`,
+      P("mcp:cli:arg:14"),
+    ]);
+  });
+
+  it("copies only primitive non-secret fields of an OAuth entry", () => {
+    const auth = {
+      jwt: {
+        type: "oauth",
+        access: JWT_ACCESS,
+        refresh: SECRETS.refresh,
+        expires: 1,
+        accountId: "account-7",
+        extra: { id_token: SECRETS.idToken },
+        list: [SECRETS.idToken],
+      },
+    };
+    const result = deriveSandboxPi(input({ files: { agentDir: AGENT_DIR, auth } }));
+    const entry = result.files["auth.json"].jwt as Record<string, unknown>;
+
+    expect(Object.keys(entry).sort()).toEqual(["access", "accountId", "expires", "refresh", "type"]);
+    expect(JSON.stringify(result.files)).not.toContain(SECRETS.idToken);
+  });
+});

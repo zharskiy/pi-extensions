@@ -1,8 +1,9 @@
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { LABELS } from "../../backend/index.ts";
 import { run } from "../../cli/index.ts";
-import { LABELS, overlayVolumes, sharedCacheVolumes } from "../../container/index.ts";
+import { overlayVolumes, sharedCacheVolumes } from "../../container/index.ts";
 import { sha256Hex } from "../../shared/index.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
 import { createFakeBackend, createHarness, holdLaunch } from "./harness.ts";
@@ -97,6 +98,28 @@ describe("pi sandbox reset --volumes", () => {
     expect(harness.stdout()).toContain(`removed volume ${overlay}\n`);
     expect(harness.stdout()).toContain(`removed volume ${stale}\n`);
     expect(harness.stdout()).not.toContain(shared);
+  });
+
+  it("removes an agent volume of this repository under an older name, and leaves other repositories' volumes", async () => {
+    const { fake, harness } = await volumeHarness();
+    const short = sha256Hex(harness.repoRoot).slice(0, 12);
+    const orphan = `pi-sandbox-agent-0123456789ab-${short}`;
+    const foreign = "pi-sandbox-agent-0123456789ab-ffffffffffff";
+
+    await fake.backend.ensureVolume(orphan, {
+      [LABELS.repoHash]: sha256Hex(harness.repoRoot),
+      [LABELS.repoRoot]: harness.repoRoot,
+    });
+
+    await fake.backend.ensureVolume(foreign, {
+      [LABELS.repoHash]: "f".repeat(64),
+      [LABELS.repoRoot]: "/elsewhere",
+    });
+
+    expect(await run(["sandbox", "reset", "--volumes"], harness.deps)).toBe(0);
+    expect(fake.volumes.has(orphan)).toBe(false);
+    expect(fake.volumes.has(foreign)).toBe(true);
+    expect(harness.stdout()).toContain(`removed volume ${orphan}\n`);
   });
 });
 

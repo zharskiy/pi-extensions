@@ -31,6 +31,13 @@ const SECRET_FILES = new Set([
 
 const SKIPPED_DIRS = new Set([".git"]);
 
+const SECRET_DIRS = new Set(["secrets", ".secrets", "credentials", ".credentials"]);
+
+const PACKAGE_DIR = "node_modules";
+
+const isSecretDir = (name: string, relative: string) =>
+  SECRET_DIRS.has(name.toLowerCase()) && !relative.split("/").includes(PACKAGE_DIR);
+
 const SOURCE_FILES = new Set([".ts", ".tsx", ".mts", ".cts", ".js", ".mjs", ".cjs", ".md", ".css", ".html"]);
 
 const PRIVATE_KEY = /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/;
@@ -57,17 +64,28 @@ interface Candidate {
   relative: string;
 }
 
+interface Found {
+  files: Candidate[];
+  skipped: string[];
+}
+
+const NOTHING: Found = { files: [], skipped: [] };
+
 const PARALLEL_READS = 16;
 
-const candidates = async (path: string, relative: string, topLevel: boolean): Promise<Candidate[]> => {
+const candidates = async (path: string, relative: string, topLevel: boolean): Promise<Found> => {
   const info = await lstatOrUndefined(path);
 
   if (info === undefined || info.isSymbolicLink()) {
-    return [];
+    return NOTHING;
   }
 
   if (info.isDirectory() && !topLevel && SKIPPED_DIRS.has(basename(path))) {
-    return [];
+    return NOTHING;
+  }
+
+  if (info.isDirectory() && !topLevel && isSecretDir(basename(path), relative)) {
+    return { files: [], skipped: [relative] };
   }
 
   if (info.isDirectory()) {
@@ -76,12 +94,17 @@ const candidates = async (path: string, relative: string, topLevel: boolean): Pr
       names.map((name) => candidates(join(path, name), posix.join(relative, name), false)),
     );
 
-    return nested.flat();
+    return {
+      files: nested.flatMap((found) => found.files),
+      skipped: nested.flatMap((found) => found.skipped),
+    };
   }
 
   const excluded = !topLevel && isExcludedName(basename(path));
 
-  return !info.isFile() || info.size > MAX_FILE_BYTES || excluded ? [] : [{ path, relative }];
+  return !info.isFile() || info.size > MAX_FILE_BYTES || excluded
+    ? NOTHING
+    : { files: [{ path, relative }], skipped: [] };
 };
 
 const readCandidate = async (candidate: Candidate): Promise<[string, TreeFile] | undefined> => {
@@ -92,9 +115,22 @@ const readCandidate = async (candidate: Candidate): Promise<[string, TreeFile] |
     : [candidate.relative, { data: file.data, mode: modeOf(file.mode) }];
 };
 
-export const readHostEntries = async (hostAgentDir: string, names: readonly string[]): Promise<Tree> => {
-  const found = await Promise.all(names.map((name) => candidates(join(hostAgentDir, name), name, true)));
-  const files = await inPool(found.flat(), PARALLEL_READS, readCandidate);
+const skippedNotice = (relative: string) =>
+  `render: ${relative} looks like a secrets directory and stays out of the sandbox`;
 
-  return new Map(files.filter((file): file is [string, TreeFile] => file !== undefined));
+export const readHostEntries = async (
+  hostAgentDir: string,
+  names: readonly string[],
+): Promise<{ tree: Tree; notices: string[] }> => {
+  const found = await Promise.all(names.map((name) => candidates(join(hostAgentDir, name), name, true)));
+  const files = await inPool(
+    found.flatMap((entry) => entry.files),
+    PARALLEL_READS,
+    readCandidate,
+  );
+
+  return {
+    tree: new Map(files.filter((file): file is [string, TreeFile] => file !== undefined)),
+    notices: found.flatMap((entry) => entry.skipped).map(skippedNotice),
+  };
 };

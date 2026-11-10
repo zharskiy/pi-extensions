@@ -52,7 +52,7 @@ describe("pi [args]", () => {
     expect(last?.workdir).toBe(harness.cwd);
   });
 
-  it("mounts the repository at its host path, routes through the proxy and leaves out the CA without a credential rule", async () => {
+  it("mounts the repository at its host path, routes through the proxy and trusts the launcher CA without a credential rule, for the denial page", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
 
@@ -76,12 +76,12 @@ describe("pi [args]", () => {
       readOnly: false,
       kind: "bind",
     });
-    expect(mounts.some((mount) => mount.target === "/etc/pi-sandbox/ca.pem")).toBe(false);
+    expect(mounts.some((mount) => mount.target === "/etc/pi-sandbox/ca.pem")).toBe(true);
     expect(container?.spec?.env.HTTPS_PROXY).toMatch(
       /^http:\/\/pi-sandbox:[0-9a-f]{64}@pi-sandbox-proxy:3128$/,
     );
     expect(container?.spec?.env.HTTP_PROXY).toBe(container?.spec?.env.HTTPS_PROXY);
-    expect(container?.spec?.env.NODE_EXTRA_CA_CERTS).toBeUndefined();
+    expect(container?.spec?.env.NODE_EXTRA_CA_CERTS).toBe("/etc/pi-sandbox/ca.pem");
   });
 
   it("passes the terminal variables to pi's exec, not the container, and reuses it from another terminal", async () => {

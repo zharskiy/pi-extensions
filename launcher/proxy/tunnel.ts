@@ -8,8 +8,8 @@ import { clientHelloRecordLength, parseServerName } from "./sni.ts";
 export interface Connection {
   host: string;
   port: number;
-  repoHash: string;
   sni?: string;
+  rule?: string;
   client: Socket;
 }
 
@@ -90,11 +90,10 @@ export const createTunnel = (options: TunnelOptions) => {
 
     client.once("close", () => {
       options.record({
-        repo: connection.repoHash,
         host: connection.host,
         sni: connection.sni,
         decision: "allow",
-        rule: "egress.allow",
+        rule: connection.rule ?? "egress.allow",
         bytesIn: upstream.bytesRead - start.read,
         bytesOut: upstream.bytesWritten - start.written,
       });
@@ -114,8 +113,8 @@ export const createTunnel = (options: TunnelOptions) => {
   };
 
   const dialUpstream = async (connection: Connection) => {
-    const { host, port, repoHash } = connection;
-    const upstream = await dial(host, port, accessOf(host), repoHash).catch((error: Error) => error);
+    const { host, port } = connection;
+    const upstream = await dial(host, port, accessOf(host)).catch((error: Error) => error);
 
     if (!(upstream instanceof Error)) {
       return upstream;
@@ -123,7 +122,7 @@ export const createTunnel = (options: TunnelOptions) => {
 
     const rule = upstream instanceof RestrictedAddressError ? upstream.rule : "upstream";
 
-    denials.note(host, { rule, reason: upstream.message }, { port, repoHash });
+    denials.note(host, { rule, reason: upstream.message }, { port });
 
     return undefined;
   };
@@ -138,25 +137,36 @@ export const createTunnel = (options: TunnelOptions) => {
   };
 
   return async (connection: Connection, head: Buffer) => {
-    const { client, host, port, repoHash } = connection;
+    const { client, host, port } = connection;
     const restricted = await restrictedResolution(host);
 
     if (restricted !== undefined) {
-      denials.refuse(client, host, { rule: restricted.rule, reason: restricted.message }, { port, repoHash });
+      denials.refuse(client, host, { rule: restricted.rule, reason: restricted.message }, { port });
 
+      return;
+    }
+
+    if (client.destroyed) {
       return;
     }
 
     client.write(ESTABLISHED);
 
     const hello = await readClientHello(client, head, options.helloTimeoutMs);
+
+    if (hello.length === 0 && (client.destroyed || client.readableEnded)) {
+      client.destroy();
+
+      return;
+    }
+
     const sni = parseServerName(hello);
     const denial = sniDenial(host, sni);
 
     connection.sni = sni;
 
     if (denial !== undefined) {
-      denials.note(host, denial, { port, repoHash, sni });
+      denials.note(host, denial, { port, sni });
 
       client.destroy();
 

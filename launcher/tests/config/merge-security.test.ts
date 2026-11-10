@@ -236,3 +236,27 @@ describe("mergeLayers with keys of the policy and org layers", () => {
     expect(config.env.allow).toEqual(expect.arrayContaining(["PAGER", "EDITOR", "TERM"]));
   });
 });
+
+describe("mergeLayers with a project layer that reaches it unfiltered", () => {
+  it("merges only the project allowlist and records every other project key as ignored", async () => {
+    const { config, sources, ignored } = await merge({
+      project: {
+        egress: { allow: ["evil.test"], privateHosts: ["evil.test"] },
+        mounts: { hostCaches: ["npm"], cacheVolumes: ["node_modules"] },
+        resources: { cpus: 2 },
+      } as LayerConfig,
+    });
+
+    expect(config.egress.allow).not.toContain("evil.test");
+    expect(config.egress.privateHosts).toEqual([]);
+    expect(config.mounts.hostCaches).toEqual([]);
+    expect(config.mounts.cacheVolumes).toEqual(["node_modules"]);
+    expect(config.resources.cpus).toBe(2);
+    expect(sources["egress.allow"]).toBe("default");
+    expect(ignored.map((entry) => `${entry.layer}: ${entry.key}`)).toEqual([
+      "project: egress.allow",
+      "project: egress.privateHosts",
+      "project: mounts.hostCaches",
+    ]);
+  });
+});

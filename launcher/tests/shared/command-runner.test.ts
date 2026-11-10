@@ -1,18 +1,11 @@
-import { mkdtemp, realpath, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { realpath } from "node:fs/promises";
+import { describe, expect, it } from "vitest";
 import { createProcessRunner, LauncherError } from "../../shared/index.ts";
+import { tempDir } from "../support/temp-dir.ts";
 
 const runner = createProcessRunner();
 
 const node = process.execPath;
-
-const dirs: string[] = [];
-
-afterEach(async () => {
-  await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
-});
 
 describe("createProcessRunner run", () => {
   it("captures stdout, stderr and the exit code", async () => {
@@ -28,11 +21,9 @@ describe("createProcessRunner run", () => {
   });
 
   it("runs in the given cwd with the extra env on top of the host env", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "pi-sandbox-runner-"));
+    const cwd = await tempDir("runner");
     const script =
       "process.stdout.write(JSON.stringify([process.cwd(), process.env.EXTRA, !!process.env.PATH]))";
-
-    dirs.push(cwd);
 
     const result = await runner.run(node, ["-e", script], { cwd, env: { EXTRA: "yes" } });
 
@@ -43,6 +34,23 @@ describe("createProcessRunner run", () => {
     const script = "process.kill(process.pid, 'SIGTERM')";
 
     expect((await runner.run(node, ["-e", script])).code).toBe(143);
+  });
+
+  it("kills a child that outlives the timeout and reports code 124 with the output so far", async () => {
+    const script = "process.stdout.write('started'); setInterval(() => undefined, 1000)";
+    const begun = Date.now();
+    const result = await runner.run(node, ["-e", script], { timeoutMs: 500 });
+
+    expect(result).toEqual({ code: 124, timedOut: true, stdout: "started", stderr: "" });
+    expect(Date.now() - begun).toBeLessThan(5000);
+  });
+
+  it("returns the normal result when the child ends within the timeout", async () => {
+    expect(await runner.run(node, ["-e", "process.exit(2)"], { timeoutMs: 10_000 })).toEqual({
+      code: 2,
+      stdout: "",
+      stderr: "",
+    });
   });
 
   it("rejects with a LauncherError naming a missing command", async () => {

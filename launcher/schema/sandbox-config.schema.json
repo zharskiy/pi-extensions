@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/zharskiy/pi-extensions/launcher/schema/sandbox-config.schema.json",
   "title": "pi sandbox config layer",
-  "description": "One layer of the pi sandbox config: the policy file, the org baseline, the user config or a project's .pi/sandbox.json. A key set by the policy or the org baseline is final; egress.deny and env.allow add up across layers.",
+  "description": "One layer of the pi sandbox config: the policy file, the org baseline, the user config or a project's .pi/sandbox.json. A key set by the policy or the org baseline is final; egress.allow, egress.deny, egress.privateHosts, image.packages, credentials.rules and env.allow add up across layers. A project config may set only mounts.cacheVolumes, mounts.autoOverlays, resources.cpus and resources.memoryGiB; any other key in it is ignored. org may be set only by the policy or the user config.",
   "type": "object",
   "additionalProperties": false,
   "properties": {
@@ -18,7 +18,8 @@
       "properties": {
         "reference": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "pattern": "\\S"
         },
         "digest": {
           "type": "string",
@@ -64,7 +65,10 @@
               },
               "host": {
                 "type": "string",
-                "pattern": "^[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)*$"
+                "pattern": "^[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)*$",
+                "not": {
+                  "pattern": "^[0-9.]+$"
+                }
               },
               "port": {
                 "type": "integer",
@@ -106,7 +110,9 @@
                         "description": "The value is a URL; use the user name in it, for a token sent as the user name."
                       }
                     },
-                    "not": { "required": ["urlPassword", "urlUsername"] },
+                    "not": {
+                      "required": ["urlPassword", "urlUsername"]
+                    },
                     "required": ["env"],
                     "description": "An environment variable of the launcher, read at launch and handed to the proxy in memory."
                   },
@@ -140,7 +146,8 @@
                       "key": {
                         "type": "string",
                         "minLength": 1,
-                        "description": "json: a JSON pointer whose segments may be [field=value] to pick an array element; npmrc: the key, as //host/path/:_authToken; ini: section.name, with [n] for the nth word of the value; maven-servers: a server id, giving its password."
+                        "description": "json: a JSON pointer whose segments may be [field=value] to pick an array element; npmrc: the key, as //host/path/:_authToken; ini: section.name, with [n] for the nth word of the value; maven-servers: a server id, giving its password.",
+                        "pattern": "\\S"
                       },
                       "urlPassword": {
                         "const": true,
@@ -151,9 +158,61 @@
                         "description": "The value is a URL; use the user name in it, for a token sent as the user name."
                       }
                     },
-                    "not": { "required": ["urlPassword", "urlUsername"] },
+                    "not": {
+                      "required": ["urlPassword", "urlUsername"]
+                    },
                     "required": ["file", "format", "key"],
-                    "description": "A value in a host tool config file: JSON, .npmrc (_auth and _password decoded), ini (pip.conf) or the servers of a Maven settings.xml."
+                    "description": "A value in a host tool config file: JSON, .npmrc (_auth and _password decoded), ini (pip.conf) or the servers of a Maven settings.xml.",
+                    "allOf": [
+                      {
+                        "if": {
+                          "properties": {
+                            "format": {
+                              "const": "json"
+                            }
+                          }
+                        },
+                        "then": {
+                          "properties": {
+                            "key": {
+                              "pattern": "^(/([^~/]|~[01])*)+$"
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "if": {
+                          "properties": {
+                            "format": {
+                              "enum": ["npmrc", "maven-servers"]
+                            }
+                          }
+                        },
+                        "then": {
+                          "properties": {
+                            "key": {
+                              "pattern": "^[^\\s=]+$"
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "if": {
+                          "properties": {
+                            "format": {
+                              "const": "ini"
+                            }
+                          }
+                        },
+                        "then": {
+                          "properties": {
+                            "key": {
+                              "pattern": "^([^.\\s\\[\\]]+)\\.([^\\s\\[\\]]+)(\\[([0-9]+)\\])?$"
+                            }
+                          }
+                        }
+                      }
+                    ]
                   },
                   {
                     "type": "object",
@@ -164,7 +223,8 @@
                         "minItems": 1,
                         "items": {
                           "type": "string",
-                          "minLength": 1
+                          "minLength": 1,
+                          "pattern": "\\S"
                         }
                       },
                       "ttlSeconds": {
@@ -181,7 +241,8 @@
                     "properties": {
                       "piAuth": {
                         "type": "string",
-                        "minLength": 1
+                        "minLength": 1,
+                        "pattern": "\\S"
                       },
                       "bearer": {
                         "type": "boolean"
@@ -200,7 +261,8 @@
                         "properties": {
                           "server": {
                             "type": "string",
-                            "minLength": 1
+                            "minLength": 1,
+                            "pattern": "\\S"
                           },
                           "url": {
                             "type": "string",
@@ -225,9 +287,13 @@
               {
                 "required": ["header"]
               }
-            ]
+            ],
+            "dependentRequired": {
+              "template": ["header"]
+            }
           },
-          "description": "Credential rules. Not in a project config."
+          "description": "Credential rules, each with an id no other rule of the same layer uses (a rule whose id a higher layer already uses is ignored). Not in a project config.",
+          "uniqueItems": true
         },
         "derive": {
           "type": "object",
@@ -256,8 +322,9 @@
           "type": "array",
           "items": {
             "type": "string",
-            "pattern": "^(\\*\\.)?[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)*(:[0-9]{1,5})?$"
-          }
+            "pattern": "^(\\*\\.)?[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)*(:([1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?$"
+          },
+          "description": "Hosts the sandbox may reach: host, *.domain (exactly one label more, not the domain itself) or host:port; an entry without a port allows 443 only. Not in a project config."
         },
         "presets": {
           "type": "array",
@@ -270,15 +337,18 @@
           "type": "array",
           "items": {
             "type": "string",
-            "pattern": "^(\\*\\.)?[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)*(:[0-9]{1,5})?$"
+            "pattern": "^(\\*\\.)?[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)*(:([1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?$"
           },
-          "description": "Hosts never allowed, granted or derived; the union of every layer. Not in a project config."
+          "description": "Hosts never allowed, granted or derived; the union of every layer. A bare name denies that name and every name under it (paste.example.com denies www.paste.example.com and a.b.paste.example.com); *.domain denies every name under domain but not domain itself. An entry without a port denies every port. Not in a project config."
         },
         "privateHosts": {
           "type": "array",
           "items": {
             "type": "string",
-            "pattern": "^(\\*\\.)?[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)*$"
+            "pattern": "^(\\*\\.)?[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)*$",
+            "not": {
+              "pattern": "^[0-9.]+$|^localhost$|\\.localhost$"
+            }
           },
           "description": "Names that may resolve to private addresses, such as a private gateway host; never IP literals or loopback. Not in a project config."
         },
@@ -324,9 +394,10 @@
           "type": "array",
           "items": {
             "type": "string",
-            "minLength": 1,
-            "pattern": "^(?!/)(?!(.*/)?\\.\\.(/|$))"
-          }
+            "pattern": "^(?!(.*/)?(\\.{1,2}|\\.[Gg][Ii][Tt])(/|$))[^/]+(/[^/]+)*/?$"
+          },
+          "uniqueItems": true,
+          "description": "Relative directories inside the repository, each kept in its own volume; no empty, ., .. or .git segments, no entry listed twice (a trailing slash is dropped) or inside another."
         },
         "sharedCaches": {
           "type": "array",
@@ -335,7 +406,7 @@
             "type": "string",
             "pattern": "^~/(?!(\\.pi|\\.ssh|\\.gnupg|\\.aws|\\.docker|\\.colima|\\.kube|\\.config|\\.local/bin)(/|$))(?!(.*/)?\\.{1,2}(/|$))[^/]+(/[^/]+)*/?$"
           },
-          "description": "Directories under ~ kept in one volume per user and shared by every repository, mounted read-write at the same path in the container. Not ~/.pi, ~/.ssh, ~/.gnupg, ~/.aws, ~/.docker, ~/.colima, ~/.kube, ~/.config or ~/.local/bin, no nested entries. Not in a project config."
+          "description": "Directories under ~ kept in one volume per user and shared by every repository, mounted read-write at the same path in the container. Not ~/.pi, ~/.ssh, ~/.gnupg, ~/.aws, ~/.docker, ~/.colima, ~/.kube, ~/.config or ~/.local/bin, no entry listed twice (a trailing slash is dropped) or inside another. Not in a project config."
         },
         "hostCaches": {
           "type": "array",
@@ -369,11 +440,44 @@
               },
               {
                 "not": {
-                  "enum": ["PI_CODING_AGENT_DIR", "PI_CODING_AGENT_SESSION_DIR"]
+                  "enum": [
+                    "PI_CODING_AGENT_DIR",
+                    "PI_CODING_AGENT_SESSION_DIR",
+                    "BASH_ENV",
+                    "JAVA_TOOL_OPTIONS",
+                    "NODE_USE_ENV_PROXY",
+                    "PI_SANDBOX_PROXY_HOST",
+                    "PI_SANDBOX_PROXY_PORT",
+                    "PI_SANDBOX_PROXY_TOKEN",
+                    "NODE_EXTRA_CA_CERTS",
+                    "PI_SANDBOX_TRUST_HASH",
+                    "SSL_CERT_FILE",
+                    "REQUESTS_CA_BUNDLE",
+                    "PIP_CERT",
+                    "CARGO_HTTP_CAINFO",
+                    "GIT_SSL_CAINFO",
+                    "PI_SANDBOX",
+                    "PI_SANDBOX_LAUNCH_ID",
+                    "PI_SKIP_VERSION_CHECK",
+                    "PI_TELEMETRY",
+                    "PI_CLIPBOARD_OSC52",
+                    "GH_TOKEN",
+                    "GITLAB_TOKEN",
+                    "GITLAB_HOST",
+                    "GIT_TERMINAL_PROMPT",
+                    "HOME",
+                    "PATH",
+                    "PWD"
+                  ]
+                }
+              },
+              {
+                "not": {
+                  "pattern": "^([Hh][Tt][Tt][Pp][Ss]?|[Aa][Ll][Ll]|[Nn][Oo])_[Pp][Rr][Oo][Xx][Yy]$"
                 }
               }
             ],
-            "description": "Environment variable forwarded from the host; names that look like secrets, and the agent and session directory variables the launcher sets, are refused."
+            "description": "Environment variable forwarded from the host; names that look like secrets, and every variable the launcher sets inside the container (the proxy variables in any case, the CA bundle variables, PI_SANDBOX*, HOME, PATH, PWD and the rest), are refused."
           }
         }
       },

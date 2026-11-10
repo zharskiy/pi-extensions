@@ -52,11 +52,14 @@ const NO_ROUTE_PROBE = [
 
 const COMMAND_MISSING = 127;
 
+const RULE_TIMEOUT_MS = 15_000;
+
 const FETCH_SCRIPT = [
   "const [url, name, value] = process.argv.slice(1);",
-  "fetch(url, { headers: name ? { [name]: value } : {}, redirect: 'manual' }).then(",
+  `const signal = AbortSignal.timeout(${RULE_TIMEOUT_MS});`,
+  "fetch(url, { headers: name ? { [name]: value } : {}, redirect: 'manual', signal }).then(",
   "  async (response) => console.log(response.status === 502 ? '502 ' + (await response.text()).replace(/\\s+/g, ' ') : String(response.status)),",
-  "  (error) => console.log('error ' + String(error?.cause?.code ?? error?.code ?? error?.message)),",
+  `  (error) => console.log('error ' + (error?.name === 'TimeoutError' ? 'no answer within ${RULE_TIMEOUT_MS / 1000} s' : String(error?.cause?.code ?? error?.code ?? error?.message))),`,
   ");",
 ].join("\n");
 
@@ -70,7 +73,11 @@ const SECRET_TOKEN_FIELDS = ["access_token", "refresh_token", "id_token"];
 
 const OFFLINE_PROBE = ["printenv", "PI_OFFLINE"];
 
-const MCP_LIST_PROBE = ["pi", "mcp", "list"];
+const MCP_LIST_SECONDS = 30;
+
+const MCP_LIST_PROBE = ["timeout", String(MCP_LIST_SECONDS), "pi", "mcp", "list"];
+
+const TIMED_OUT = 124;
 
 export const passed = (detail: string): CheckResult => ({ status: "ok", detail });
 
@@ -161,9 +168,11 @@ const readGuestJson = async (target: ProbeTarget, path: string) => {
 };
 
 export const sweepCredentials = async (target: ProbeTarget) => {
-  const env = await execText(target, ["env"]);
-  const auth = await readGuestJson(target, GUEST_AUTH_FILE);
-  const mcp = await readGuestJson(target, GUEST_MCP_FILE);
+  const [env, auth, mcp] = await Promise.all([
+    execText(target, ["env"]),
+    readGuestJson(target, GUEST_AUTH_FILE),
+    readGuestJson(target, GUEST_MCP_FILE),
+  ]);
   const problems = [
     ...(env.code === 0 ? [] : [`env exited ${env.code}`]),
     ...(auth === undefined ? [`${GUEST_AUTH_FILE} is not JSON`] : []),
@@ -217,6 +226,10 @@ export const checkMcp = async (target: ProbeTarget) => {
 
   if (code === 0) {
     return passed("pi mcp list connects to every enabled server");
+  }
+
+  if (code === TIMED_OUT) {
+    return failed(`pi mcp list did not finish in ${MCP_LIST_SECONDS} s`);
   }
 
   const detail = lastLine(stderr) ?? lastLine(stdout) ?? "no output";

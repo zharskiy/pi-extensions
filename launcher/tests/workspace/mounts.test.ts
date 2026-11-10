@@ -1,26 +1,20 @@
-import { mkdir, mkdtemp, readdir, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { mkdir, readdir, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:net";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createHostCacheDirs, resolveExtraMounts, resolveHostCaches } from "../../workspace/index.ts";
-
-const created: string[] = [];
+import { tempDir } from "../support/temp-dir.ts";
 
 const servers: Server[] = [];
 
 afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) => new Promise((resolve) => server.close(resolve))));
-
-  await Promise.all(created.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 });
 
 const setup = async () => {
-  const base = await realpath(await mkdtemp(join(tmpdir(), "pi-sandbox-mounts-")));
+  const base = await realpath(await tempDir("mounts"));
   const home = join(base, "home");
   const repoRoot = join(home, "work", "repo");
-
-  created.push(base);
 
   await mkdir(repoRoot, { recursive: true });
 
@@ -58,6 +52,17 @@ describe("resolveExtraMounts", () => {
       { source: join(home, "tool.cfg"), target: join(home, "tool.cfg") },
       { source: join(libs, "sdk"), target: join(home, "sdk-link") },
     ]);
+  });
+
+  it("normalises the target, so a trailing dot, .. or slash cannot make a mount look deeper", async () => {
+    const { home, context } = await setup();
+    const libs = join(home, "libs");
+
+    await mkdir(join(libs, "x"), { recursive: true });
+
+    expect(
+      resolveExtraMounts([`${libs}/.`, `${libs}/x/..`, `${libs}/`], context).map((mount) => mount.target),
+    ).toEqual([libs, libs, libs]);
   });
 
   it("refuses a missing path and anything that is not a regular file or directory", async () => {

@@ -8,7 +8,7 @@ import {
   stateLayout,
   withDirectoryLock,
 } from "../../shared/index.ts";
-import type { Detection, Vm, VmReport, VmShareOptions, VmSize } from "../types.ts";
+import type { Detection, Vm, VmPath, VmReport, VmShareOptions, VmSize } from "../types.ts";
 import { type Colima, ENGINE_PROFILE, ENGINE_SOCKET_DISPLAY, logHint, plainStart } from "./profile.ts";
 import { createColimaShares } from "./shares.ts";
 
@@ -40,7 +40,7 @@ const STOP_FAILURE = "could not stop the sandbox VM";
 
 const startHint = `run ${plainStart(ENGINE_PROFILE)} and see ${logHint(ENGINE_PROFILE)}`;
 
-const unreachable = () =>
+export const engineUnreachable = () =>
   new LauncherError(
     `the sandbox VM engine is unreachable at ${ENGINE_SOCKET_DISPLAY}`,
     `run launcher/install.sh or ${plainStart(ENGINE_PROFILE)}`,
@@ -113,14 +113,18 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
     return result.code === 0;
   };
 
-  const startStopped = async (report: VmReport) => {
-    if ((await detect()).available) {
-      return;
-    }
+  const startStopped = async (report: VmReport, needs: VmPath[] | undefined) => {
+    const sharing = needs === undefined ? undefined : await shares.planStart(needs);
 
-    report("starting the sandbox VM");
+    report(
+      sharing === undefined
+        ? "starting the sandbox VM"
+        : `starting the sandbox VM, sharing ${sharing.shared} with it, one time`,
+    );
 
-    await run(START_FAILURE, ["start", "--profile", profile, "--activate=false"], startHint);
+    await run(START_FAILURE, sharing?.args ?? ["start", "--profile", profile, "--activate=false"], startHint);
+
+    await sharing?.verify();
 
     const detection = await detectAgain();
 
@@ -132,16 +136,22 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
     }
   };
 
-  const ensureRunning = async (report: VmReport) => {
+  const ensureRunning = async (report: VmReport, needs?: VmPath[]) => {
     if ((await detect()).available) {
       return;
     }
 
-    if (!(await profileExists()) || (await running(START_FAILURE))) {
-      throw unreachable();
-    }
+    await withLock(async () => {
+      if ((await detect()).available) {
+        return;
+      }
 
-    await withLock(() => startStopped(report));
+      if (!(await profileExists()) || (await running(START_FAILURE))) {
+        throw engineUnreachable();
+      }
+
+      await startStopped(report, needs);
+    });
   };
 
   const refuseBusy = async (busy: VmShareOptions["busy"]) => {
@@ -191,7 +201,8 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
     coverage: shares.coverage,
     ensureShares: shares.ensureShares,
     size,
-    recommendedSize: recommendedVmSize,
+    resizeCommand: (target) =>
+      `colima stop --profile ${profile} && ${plainStart(profile)} --cpu ${target.cpus} --memory ${target.memoryGiB}`,
     stop,
   };
 };

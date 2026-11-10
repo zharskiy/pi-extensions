@@ -4,6 +4,7 @@ import { createSecureContext } from "node:tls";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { CredentialRule } from "../../config/index.ts";
 import { createDialer } from "../../proxy/dial.ts";
+import type { SecretReply, SecretResolver } from "../../proxy/secrets/index.ts";
 import type { LauncherCa } from "../../proxy/tls-ca.ts";
 import {
   closeServer,
@@ -95,6 +96,7 @@ const state: {
   test: TestProxy;
   token: string;
   releaseStream: Array<() => void>;
+  expiredSockets: Duplex[];
   seen: Array<{ url?: string; authorization?: string }>;
   resolver: ReturnType<typeof fakeResolver>;
 } = {
@@ -104,6 +106,7 @@ const state: {
   test: undefined as unknown as TestProxy,
   token: "",
   releaseStream: [],
+  expiredSockets: [],
   seen: [],
   resolver: fakeResolver({
     llm: SECRET,
@@ -116,7 +119,7 @@ const state: {
 };
 
 const respond = (
-  request: { url?: string; headers: Record<string, unknown> },
+  request: { url?: string; headers: Record<string, unknown>; socket?: { destroy(): void } },
   response: {
     writeHead(status: number, headers: Record<string, string | string[]>): void;
     write(chunk: string): void;
@@ -131,6 +134,16 @@ const respond = (
     response.write("data: first\n\n");
 
     state.releaseStream.push(() => response.end("data: last\n\n"));
+
+    return;
+  }
+
+  if (request.url === "/cut") {
+    response.writeHead(200, { "content-type": "text/plain" });
+
+    response.write("partial");
+
+    setTimeout(() => request.socket?.destroy(), 50);
 
     return;
   }
@@ -190,6 +203,16 @@ const startUpstream = async () => {
   );
 
   server.on("upgrade", (request, socket: Duplex) => {
+    if (request.url === "/socket-expired") {
+      state.expiredSockets.push(socket);
+
+      socket.resume();
+
+      socket.write("HTTP/1.1 401 Unauthorized\r\ncontent-length: 2\r\n\r\n{}");
+
+      return;
+    }
+
     socket.write(
       `HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nX-Seen-Key: ${request.headers["x-api-key"]}\r\n\r\n`,
     );
@@ -381,11 +404,26 @@ describe("credential rules", () => {
     expect(state.test.log).toContainEqual(
       expect.objectContaining({
         rule: "credential",
-        reason: "unavailable",
+        reason: "unavailable: no secret for missing",
         credential: "missing",
         repo: REPO,
       }),
     );
+  });
+
+  it("ends the client response when the upstream dies in the middle of the body", async () => {
+    const response = await through("api.test", "/cut", { authorization: `Bearer ${API_PLACEHOLDER}` });
+    const outcome = await new Promise<string>((resolve) => {
+      response.resume();
+
+      response.once("end", () => resolve("end"));
+
+      response.once("close", () => resolve(response.complete ? "end" : "aborted"));
+
+      setTimeout(() => resolve("hang"), 3_000);
+    });
+
+    expect(outcome).toBe("aborted");
   });
 
   it("asks for a fresh secret after the upstream answers 401", async () => {
@@ -567,7 +605,11 @@ describe("unusable credential values", () => {
 
     expect(body.headers.authorization).toBeUndefined();
     expect(state.test.log).toContainEqual(
-      expect.objectContaining({ rule: "credential", reason: "unavailable", credential: "newline" }),
+      expect.objectContaining({
+        rule: "credential",
+        reason: "unavailable: the secret holds a line break",
+        credential: "newline",
+      }),
     );
   });
 });
@@ -663,5 +705,97 @@ describe("restricted addresses after DNS", () => {
     expect(response.statusCode).toBe(502);
     expect(body).toContain("restricted addresses");
     expect(body).not.toContain(API_SECRET);
+  });
+});
+
+describe("a rule that answers with a sign-in reply", () => {
+  const SIGN_IN: SecretReply = {
+    status: 503,
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ error: "finish the sign-in in the browser" }),
+  };
+  const local: { test?: TestProxy; stateDir: string; asked: string[] } = { stateDir: "", asked: [] };
+  const resolver: SecretResolver = {
+    resolve: async (key) => {
+      local.asked.push(key);
+
+      return key === "signin"
+        ? { ok: false, reason: "not signed in", reply: SIGN_IN }
+        : { ok: true, value: "key" };
+    },
+    invalidate: () => undefined,
+    rejected: async () => SIGN_IN,
+    close: async () => undefined,
+  };
+
+  beforeAll(async () => {
+    local.stateDir = await createStateDir();
+    local.test = await startTestProxy({
+      stateDir: local.stateDir,
+      policy: { allow: ["api.test"] },
+      ca: state.ca,
+      rules: [
+        {
+          id: "signin",
+          host: "api.test",
+          pathPrefix: "/mcp",
+          placeholder: MISSING_PLACEHOLDER,
+          secret: { env: "SIGN_IN" },
+        },
+        { id: "key", host: "api.test", header: "x-api-key", template: "{secret}", secret: { env: "KEY" } },
+      ],
+      resolver,
+      ports: () => ({ "api.test:443": portOf(state.upstream) }),
+    });
+  }, 30_000);
+
+  afterAll(async () => {
+    await local.test?.proxy.close();
+
+    await removeDir(local.stateDir);
+  });
+
+  const secure = () =>
+    secureTunnel(
+      local.test?.proxy.port ?? 0,
+      "api.test:443",
+      "api.test",
+      state.ca.certPem,
+      local.test?.token,
+    );
+
+  it("keeps the reply of the first rule when a later rule on the host resolves", async () => {
+    local.asked.length = 0;
+
+    const response = await requestThrough({
+      proxyPort: local.test?.proxy.port ?? 0,
+      token: local.test?.token,
+      host: "api.test",
+      ca: state.ca.certPem,
+      path: "/mcp/tools",
+      headers: { authorization: `Bearer ${MISSING_PLACEHOLDER}` },
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(await readBody(response)).toBe(SIGN_IN.body);
+    expect(local.asked).toEqual(["signin"]);
+  });
+
+  it("answers a rejected upgrade with the sign-in reply", async () => {
+    const tunnel = await secure();
+
+    tunnel.write(
+      "GET /socket-expired HTTP/1.1\r\nHost: api.test\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n",
+    );
+
+    const raw = await readRest(tunnel as never);
+
+    expect(raw.split("\r\n")[0]).toBe("HTTP/1.1 503 Service Unavailable");
+    expect(raw).toContain(SIGN_IN.body);
+    expect(
+      await waitFor(() =>
+        state.expiredSockets.every((socket) => socket.readableEnded || socket.destroyed) ? true : undefined,
+      ),
+    ).toBe(true);
   });
 });

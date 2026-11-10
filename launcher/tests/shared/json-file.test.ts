@@ -1,7 +1,6 @@
-import { mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   isJsonObject,
   LauncherError,
@@ -10,20 +9,9 @@ import {
   readJsonObject,
   writeJsonFile,
 } from "../../shared/index.ts";
+import { tempDir as sharedTempDir } from "../support/temp-dir.ts";
 
-const dirs: string[] = [];
-
-const tempDir = async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-sandbox-json-"));
-
-  dirs.push(dir);
-
-  return dir;
-};
-
-afterEach(async () => {
-  await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
-});
+const tempDir = () => sharedTempDir("json");
 
 describe("readJsonFile", () => {
   it("returns undefined when the file is missing", async () => {

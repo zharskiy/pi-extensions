@@ -1,10 +1,14 @@
 import type { Backend } from "../backend/index.ts";
-import { type GitGuardContext, gitLaunchEndNotices } from "../container/index.ts";
+import { type GitGuardContext, overlayVolumes } from "../container/index.ts";
 import { endLaunch, type Launch, liveLaunches, newLaunchId, registerLaunch } from "../grants/index.ts";
+import { gitLaunchEndNotices } from "../workspace/index.ts";
+
+export { othersLive } from "../grants/index.ts";
+
 import { errorMessage, processMark, writeRepoRecord } from "../shared/index.ts";
+import type { LaunchContext } from "./context.ts";
 import { type CliDeps, writeLine, writeNotices } from "./deps.ts";
 import { sweepRepoSessions } from "./host-sessions.ts";
-import type { LaunchContext } from "./launch.ts";
 import { removeRepoSandbox, sweepOrphans } from "./sweep.ts";
 
 export const beginLaunch = async (deps: CliDeps, context: LaunchContext): Promise<Launch> => {
@@ -27,6 +31,7 @@ export const gitGuardOf = (deps: CliDeps, context: LaunchContext): GitGuardConte
   home: deps.home,
   env: deps.env,
   stateDir: context.stateDir,
+  volumePaths: overlayVolumes(context.workspace, context.effective.config).map((volume) => volume.path),
 });
 
 const settleGit = async (deps: CliDeps, context: LaunchContext) => {
@@ -67,8 +72,5 @@ export const finishLaunch = async (
 
   await sweepOrphans(deps, backend);
 };
-
-export const othersLive = async (stateDir: string, repoHash: string, launchId?: string) =>
-  (await liveLaunches(stateDir, repoHash)).some((entry) => entry.launchId !== launchId);
 
 export const busyLaunches = async (stateDir: string) => (await liveLaunches(stateDir)).length;

@@ -236,11 +236,25 @@ export const createColimaShares = (colima: Colima) => {
     await colima.withLock(() => shareMissing(needs, options));
   };
 
+  const planStart = async (needs: VmPath[]) => {
+    const plan = await planShares(needs);
+
+    if ("reason" in plan || plan.added.length === 0) {
+      return undefined;
+    }
+
+    return {
+      args: startArgs(profile, plan.next),
+      shared: locationsOf(plan.added),
+      verify: () => assertShared(plan, needs),
+    };
+  };
+
   const coverage = async (needs: VmPath[]): Promise<VmCoverage | undefined> => {
     const shares = await runningShares();
 
     return shares === undefined ? undefined : { shares, missing: pathsOf(uncovered(shares, needs)) };
   };
 
-  return { ensureShares, coverage };
+  return { ensureShares, coverage, planStart };
 };

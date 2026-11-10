@@ -111,6 +111,33 @@ describe("ensureContainer", () => {
     expect(second.id).not.toBe(first.id);
   });
 
+  it("waits for the engine to finish removing an exited container before creating its successor", async () => {
+    const fake = createFakeBackend();
+    const exited = fake.addContainer({
+      name: specOf().name,
+      labels: { "pi-sandbox.managed": "true", "pi-sandbox.repo-hash": REPO_HASH },
+      state: "stopped",
+      image: "sha256:image-one",
+    });
+    const backend: typeof fake.backend = {
+      ...fake.backend,
+      removeContainer: async (id) => {
+        fake.removals.push(id);
+      },
+      waitRemoved: async (id) => {
+        fake.waits.push(id);
+
+        fake.containers.delete(id);
+      },
+    };
+    const created = await ensureContainer({ backend, spec: specOf() });
+
+    expect(created).toMatchObject({ created: true });
+    expect(fake.removals).toEqual([exited]);
+    expect(fake.waits).toEqual([exited]);
+    expect(fake.stops).toEqual([]);
+  });
+
   it("treats a container made for another proxy token as outdated", async () => {
     const fake = createFakeBackend();
     const network = { kind: "internal" as const, name: "pi-sandbox-net" };
@@ -466,6 +493,60 @@ describe("volumes the sandbox writes", () => {
     expect([...fake.containers.values()]).toEqual([]);
 
     await rm(link, { force: true });
+  });
+
+  it("creates no mount point inside the git dir through a path that resolves into it", async () => {
+    const fake = createFakeBackend();
+    const hooks = join(WORK, "repo", ".git", "hooks");
+    const alias = join(WORK, "repo", "git-alias");
+
+    await mkdir(hooks, { recursive: true });
+
+    await rm(alias, { force: true });
+
+    await symlink(join(WORK, "repo", ".git"), alias);
+
+    const spec = specOf({
+      config: sandboxConfig({ mounts: { cacheVolumes: ["git-alias/hooks/pre-commit"] } }),
+    });
+
+    await expect(ensureContainer({ backend: fake.backend, spec })).rejects.toThrow(
+      `the mount point ${join(alias, "hooks")} lies inside ${join(WORK, "repo", ".git")}, which the sandbox protects`,
+    );
+    expect(await stat(join(hooks, "pre-commit")).catch(() => undefined)).toBeUndefined();
+    expect([...fake.containers.values()]).toEqual([]);
+
+    await rm(alias, { force: true });
+  });
+
+  it("never creates a hook through a differently spelled git dir, whatever the filesystem's case rules", async () => {
+    const fake = createFakeBackend();
+    const hooks = join(WORK, "repo", ".git", "hooks");
+
+    await mkdir(hooks, { recursive: true });
+
+    const spec = specOf({ config: sandboxConfig({ mounts: { cacheVolumes: [".GIT/hooks/pre-commit"] } }) });
+
+    await ensureContainer({ backend: fake.backend, spec }).catch(() => undefined);
+
+    expect(await stat(join(hooks, "pre-commit")).catch(() => undefined)).toBeUndefined();
+
+    await rm(join(WORK, "repo", ".GIT"), { recursive: true, force: true }).catch(() => undefined);
+  });
+
+  it("passes on the notice for a build output overlay left out inside a protected path", async () => {
+    const fake = createFakeBackend();
+    const guardedDir = join(WORK, "repo", ".githooks");
+    const spec = specOf({
+      workspace: { ...workspace, overlays: [join(guardedDir, "node_modules")] },
+      gitOverlay: { selfBinds: [], readOnlyDirs: [guardedDir], readOnlyFiles: [] },
+    });
+    const ensured = await ensureContainer({ backend: fake.backend, spec });
+
+    expect(ensured.notices).toContain(
+      `${join(guardedDir, "node_modules")} is not overlaid: it lies inside ${guardedDir}, which the sandbox protects`,
+    );
+    expect(await stat(join(guardedDir, "node_modules")).catch(() => undefined)).toBeUndefined();
   });
 
   it("creates every missing directory of a nested mount point inside the repository", async () => {

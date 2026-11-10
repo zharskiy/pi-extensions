@@ -6,12 +6,12 @@ import {
   type ServerResponse,
 } from "node:http";
 import { Agent, request as httpsRequest } from "node:https";
-import type { Duplex } from "node:stream";
+import { type Duplex, pipeline } from "node:stream";
 import { type TLSSocket, connect as tlsConnect } from "node:tls";
 import { authorityOf, type CredentialRule } from "../config/index.ts";
-import type { AccessLogEntry } from "./access-log.ts";
+import type { RecordAccess } from "./denials.ts";
 import type { DialAccess, Dialer } from "./dial.ts";
-import { PROXY_AGENT } from "./replies.ts";
+import { PROXY_AGENT, rawHead, rawReply, rawResponse, statusLine } from "./replies.ts";
 import { parseRequestTarget } from "./request-target.ts";
 import {
   type HeaderPair,
@@ -27,16 +27,15 @@ import type { SecretReply, SecretResolver } from "./secrets/index.ts";
 export interface TerminatedTarget {
   host: string;
   port: number;
-  repoHash: string;
   access: DialAccess;
 }
 
 export interface TerminatorOptions {
-  rules: (repoHash: string) => Promise<CredentialRule[]>;
+  rules: () => CredentialRule[];
   resolver: SecretResolver;
   dial: Dialer;
   upstreamCa?: string | string[];
-  log: (entry: Omit<AccessLogEntry, "time" | "user">) => void;
+  log: RecordAccess;
 }
 
 interface Applied {
@@ -111,13 +110,8 @@ const headerObject = (pairs: HeaderPair[], host: string) =>
     { host },
   );
 
-const upstreamPath = (path: string | undefined) => path ?? "/";
-
-const statusBlock = (upstream: IncomingMessage, pairs: HeaderPair[]) => {
-  const lines = pairs.map(([name, value]) => `${name}: ${value}`);
-
-  return [`HTTP/1.1 ${upstream.statusCode} ${upstream.statusMessage}`, ...lines, "", ""].join("\r\n");
-};
+const statusBlock = (upstream: IncomingMessage, pairs: HeaderPair[]) =>
+  rawHead(statusLine(upstream.statusCode ?? 502, upstream.statusMessage), pairs);
 
 const sendLocal = (response: ServerResponse, reply: LocalReply, extra: HeaderPair[] = []) => {
   response.writeHead(
@@ -155,38 +149,21 @@ const sendAndClose = (response: ServerResponse, status: number, error: string) =
   sendLocal(response, errorReply(status, error), [["connection", "close"]]);
 };
 
-const rawError = (client: Duplex, status: string, error: string) => {
-  const body = JSON.stringify({ error });
-
-  client.end(
-    [
-      `HTTP/1.1 ${status}`,
-      "content-type: application/json",
-      `content-length: ${Buffer.byteLength(body)}`,
-      "connection: close",
-      "",
-      body,
-    ].join("\r\n"),
-  );
+const rawError = (client: Duplex, status: number, error: string) => {
+  client.end(rawReply(statusLine(status), { error }));
 };
 
 const rawLocal = (client: Duplex, reply: SecretReply) => {
-  const lines = Object.entries(reply.headers).map(([name, value]) => `${name}: ${value}`);
-
   client.end(
-    [
-      `HTTP/1.1 ${reply.status} Service Unavailable`,
-      ...lines,
-      `content-length: ${Buffer.byteLength(reply.body)}`,
-      "connection: close",
-      "",
+    rawResponse(
+      statusLine(reply.status),
+      [...Object.entries(reply.headers), ["proxy-agent", PROXY_AGENT]],
       reply.body,
-    ].join("\r\n"),
+    ),
   );
 };
 
-const poolKey = (target: TerminatedTarget) =>
-  `${target.repoHash}|${target.host}|${target.port}|${target.access}`;
+const poolKey = (target: TerminatedTarget) => `${target.host}|${target.port}|${target.access}`;
 
 const CERTIFICATE_ERROR = /certificate|self[- ]signed|issuer|CERT_/i;
 
@@ -227,7 +204,7 @@ export const createTerminator = (options: TerminatorOptions) => {
       return { ...state, headers };
     }
 
-    const result = await options.resolver.resolve(rule.id, rule.secret, target.repoHash);
+    const result = await options.resolver.resolve(rule.id, rule.secret);
     const injected = result.ok ? result.value : undefined;
 
     if (!result.ok && result.reply !== undefined) {
@@ -236,11 +213,10 @@ export const createTerminator = (options: TerminatorOptions) => {
 
     if (!result.ok || injected === undefined || HEADER_BREAK.test(injected)) {
       options.log({
-        repo: target.repoHash,
         host: target.host,
         decision: "allow",
         rule: "credential",
-        reason: "unavailable",
+        reason: `unavailable: ${result.ok ? "the secret holds a line break" : result.reason}`,
         credential: rule.id,
         bytesIn: 0,
         bytesOut: 0,
@@ -252,6 +228,7 @@ export const createTerminator = (options: TerminatorOptions) => {
     const rewritten = rewriteRequestHeaders(headers, rule, injected);
 
     return {
+      ...state,
       headers: rewritten.headers,
       secrets: [...state.secrets, { value: injected, placeholder: rule.placeholder }, ...rewritten.secrets],
       used: [...state.used, { rule, value: result.value }],
@@ -259,17 +236,18 @@ export const createTerminator = (options: TerminatorOptions) => {
   };
 
   const applyRules = async (pairs: HeaderPair[], target: TerminatedTarget, path: string) => {
-    const matching = matchRules(await options.rules(target.repoHash), target.host, target.port, path);
+    const matching = matchRules(options.rules(), target.host, target.port, path);
     const initial: Applied = { headers: pairs, secrets: [], used: [] };
 
-    return matching.reduce<Promise<Applied>>(
-      async (state, rule) => applyRule(await state, rule, target),
-      Promise.resolve(initial),
-    );
+    return matching.reduce<Promise<Applied>>(async (pending, rule) => {
+      const state = await pending;
+
+      return state.reply === undefined ? applyRule(state, rule, target) : state;
+    }, Promise.resolve(initial));
   };
 
   const upstreamSocket = async (target: TerminatedTarget) => {
-    const socket = await options.dial(target.host, target.port, target.access, target.repoHash);
+    const socket = await options.dial(target.host, target.port, target.access);
     const secure = tlsConnect({
       socket,
       servername: target.host,
@@ -317,7 +295,7 @@ export const createTerminator = (options: TerminatorOptions) => {
     hostname: target.host,
     port: target.port,
     method,
-    path: upstreamPath(path),
+    path,
     headers: headerObject(headers, authorityOf(target.host, target.port)),
   });
 
@@ -403,25 +381,27 @@ export const createTerminator = (options: TerminatorOptions) => {
     applied: Applied,
   ) => {
     request.on("response", (upstream) => {
-      void afterResponse(upstream, applied).then((reply) => {
-        if (reply !== undefined) {
-          upstream.resume();
+      void afterResponse(upstream, applied)
+        .then((reply) => {
+          if (reply !== undefined) {
+            upstream.resume();
 
-          sendLocal(response, localOf(reply));
+            sendLocal(response, localOf(reply));
 
-          return;
-        }
+            return;
+          }
 
-        response.writeHead(
-          upstream.statusCode ?? 502,
-          upstream.statusMessage,
-          responsePairs(upstream, applied).flat(),
-        );
+          response.writeHead(
+            upstream.statusCode ?? 502,
+            upstream.statusMessage,
+            responsePairs(upstream, applied).flat(),
+          );
 
-        response.flushHeaders();
+          response.flushHeaders();
 
-        upstream.pipe(response);
-      });
+          pipeline(upstream, response, () => undefined);
+        })
+        .catch(() => response.destroy());
     });
 
     wire(request, response);
@@ -485,7 +465,7 @@ export const createTerminator = (options: TerminatorOptions) => {
     const { target, routed } = found;
 
     if (!routed.ok) {
-      rawError(client, "400 Bad Request", routed.reason);
+      rawError(client, 400, routed.reason);
 
       return;
     }
@@ -493,7 +473,7 @@ export const createTerminator = (options: TerminatorOptions) => {
     const opened = await open(incoming, target, routed, true).catch(() => undefined);
 
     if (opened === undefined) {
-      rawError(client, "502 Bad Gateway", "pi-sandbox: upstream request failed");
+      rawError(client, 502, "pi-sandbox: upstream request failed");
 
       return;
     }
@@ -523,15 +503,27 @@ export const createTerminator = (options: TerminatorOptions) => {
     });
 
     request.on("response", (upstream) => {
-      void afterResponse(upstream, applied);
+      void afterResponse(upstream, applied)
+        .then((reply) => {
+          if (reply !== undefined) {
+            upstream.resume();
 
-      const pairs = responsePairs(upstream, applied).filter(
-        ([name]) => name.toLowerCase() !== "content-length",
-      );
+            rawLocal(client, reply);
 
-      client.write(statusBlock(upstream, [...pairs, ["connection", "close"]]));
+            upstream.socket.destroy();
 
-      upstream.pipe(client);
+            return;
+          }
+
+          const pairs = responsePairs(upstream, applied).filter(
+            ([name]) => name.toLowerCase() !== "content-length",
+          );
+
+          client.write(statusBlock(upstream, [...pairs, ["connection", "close"]]));
+
+          pipeline(upstream, client, () => upstream.socket.destroy());
+        })
+        .catch(() => client.destroy());
     });
 
     request.on("error", () => client.destroy());
@@ -546,7 +538,7 @@ export const createTerminator = (options: TerminatorOptions) => {
   });
 
   server.on("upgrade", (incoming: IncomingMessage, client: Duplex, head: Buffer) => {
-    void forwardUpgrade(incoming, client, head);
+    void forwardUpgrade(incoming, client, head).catch(() => client.destroy());
   });
 
   const serve = (socket: TLSSocket, target: TerminatedTarget) => {

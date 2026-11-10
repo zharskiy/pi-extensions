@@ -13,7 +13,7 @@ import type {
   TerminalSize,
   Vm,
 } from "../../backend/index.ts";
-import { LABELS, recommendedVmSize } from "../../backend/index.ts";
+import { LABELS, relayName, repoNetworkName } from "../../backend/index.ts";
 import { GUEST_PATHS, LauncherError } from "../../shared/index.ts";
 import { fakeUidOf } from "./fake-engine.ts";
 
@@ -60,20 +60,13 @@ interface FakeBackendOptions {
   registry?: Record<string, string>;
   exec?: (spec: ExecSpec, io: ExecIo) => Promise<number | undefined> | number | undefined;
   execScripts?: FakeExecScript[];
-  routeNotices?: string[];
   guestAgentDir?: string;
   vm?: Partial<Vm>;
 }
 
-const NETWORK_PREFIX = "pi-sandbox";
-
 const RELAY_ADDRESS = "pi-sandbox-proxy:3128";
 
-const SHORT_REPO_HASH = 12;
-
 const RESET_HINT = "run pi sandbox reset";
-
-const repoNetworkOf = (repoHash: string) => `${NETWORK_PREFIX}-${repoHash.slice(0, SHORT_REPO_HASH)}`;
 
 const imageIdOf = (digest: string) => `sha256:image-${digest.replace(/^sha256:/, "")}`;
 
@@ -339,7 +332,7 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
 
   const relaySummary = (repoHash: string, relay: FakeRelay): ContainerSummary => ({
     id: relay.id,
-    name: `${NETWORK_PREFIX}-relay-${repoHash.slice(0, SHORT_REPO_HASH)}`,
+    name: relayName(repoHash),
     labels: {
       [LABELS.managed]: "true",
       [LABELS.relay]: "true",
@@ -398,14 +391,15 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
     coverage: async () => undefined,
     ensureShares: async () => undefined,
     size: async () => undefined,
-    recommendedSize: recommendedVmSize,
+    resizeCommand: (size) =>
+      `colima stop --profile pi-sandbox && colima start --profile pi-sandbox --activate=false --cpu ${size.cpus} --memory ${size.memoryGiB}`,
     stop: async () => "stopped",
     ...options.vm,
   };
 
   const backend: Backend = {
     vm,
-    detect: async () => ({ available: true, version: "fake" }),
+    detect: async () => ({ available: true }),
     pullImage,
     resolveImage,
     buildImage: async (contextDir, tag, _args, progress) => {
@@ -512,7 +506,7 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
       volumeLabels.delete(name);
     },
     prepareProxyRoute: async ({ hostPort, repoHash, imageId }) => {
-      const name = repoNetworkOf(repoHash);
+      const name = repoNetworkName(repoHash);
 
       if (externalNetworks.has(name)) {
         throw new LauncherError(`network ${name} exists but is not internal`, "run pi sandbox gc");
@@ -537,11 +531,7 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
         relays.set(repoHash, { id: nextId("relay"), hostPort, imageId });
       }
 
-      return {
-        network: { kind: "internal", name },
-        address: RELAY_ADDRESS,
-        ...(options.routeNotices === undefined ? {} : { notices: options.routeNotices }),
-      };
+      return { network: { kind: "internal", name }, address: RELAY_ADDRESS };
     },
     listNetworks: async () =>
       [...networks.entries()].map(([name, repoHash]) => ({
@@ -549,7 +539,7 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
         labels: { [LABELS.managed]: "true", [LABELS.repoHash]: repoHash },
       })),
     removeRepoNetwork: async (repoHash) => {
-      const name = repoNetworkOf(repoHash);
+      const name = repoNetworkName(repoHash);
 
       if (!networks.has(name) || attached(name)) {
         return false;
@@ -609,7 +599,6 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
     volumes,
     volumeLabels,
     networks,
-    foreignNetworks,
     plantNetwork,
     hasNetwork,
     guestFile,

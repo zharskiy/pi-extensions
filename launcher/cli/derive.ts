@@ -6,14 +6,13 @@ import {
   deriveSandboxPi,
   type HostPi,
   type HostPiFiles,
-  readHostPiFiles,
   readProviderHosts,
 } from "../hostpi/index.ts";
 import { privateHostNotices, type TrustBundle } from "../proxy/index.ts";
 import { ensureSalt, settleAll } from "../shared/index.ts";
-import { type CliDeps, hostAgentDirOf, writeNotices } from "./deps.ts";
-import type { LaunchContext } from "./launch.ts";
-import { writeOnce } from "./notices.ts";
+import type { LaunchContext } from "./context.ts";
+import { type CliDeps, hostAgentDirOf } from "./deps.ts";
+import { sandboxRoots } from "./host-pi.ts";
 
 export interface HostSide {
   hostAgentDir: string;
@@ -22,6 +21,12 @@ export interface HostSide {
   derived: DerivedSandboxPi;
   trust?: TrustBundle;
   proxyNeeded: boolean;
+}
+
+export interface PreparedHost {
+  host: HostSide;
+  notices: string[];
+  privateNotices: Promise<string[]>;
 }
 
 const DNS_WAIT_MS = 2000;
@@ -46,18 +51,22 @@ const deriveFor = async (
   pi: HostPi | undefined,
 ) => {
   const { config } = context.effective;
-  const [providers, salt] = await settleAll([
+  const salting = ensureSalt(context.stateDir);
+  const [providers, salt, tools] = await settleAll([
     providerHostsOf(deps, context.stateDir, pi),
-    ensureSalt(context.stateDir),
+    salting,
+    salting.then((salt) =>
+      deriveHostTools({
+        home: deps.home,
+        env: deps.env,
+        platform: deps.platform,
+        runner: deps.runner,
+        salt,
+        enabled: config.credentials.derive.enabled,
+        excludedRoots: sandboxRoots(deps, context),
+      }),
+    ),
   ]);
-  const tools = await deriveHostTools({
-    home: deps.home,
-    env: deps.env,
-    platform: deps.platform,
-    runner: deps.runner,
-    salt,
-    enabled: config.credentials.derive.enabled,
-  });
   const derived = deriveSandboxPi({
     files,
     tools,
@@ -79,15 +88,8 @@ const hostStoreNotices = (deps: CliDeps, context: LaunchContext) =>
     ? [HOST_STORE_SKIPPED]
     : [];
 
-const trustFor = (deps: CliDeps, context: LaunchContext, derived: DerivedSandboxPi, proxyNeeded: boolean) => {
-  const sources = context.effective.config.tls.extraCa;
-
-  if (!proxyNeeded || (derived.rules.length === 0 && sources.length === 0)) {
-    return undefined;
-  }
-
-  return deps.proxy.trust(context.stateDir, sources);
-};
+const trustFor = (deps: CliDeps, context: LaunchContext, proxyNeeded: boolean) =>
+  proxyNeeded ? deps.proxy.trust(context.stateDir, context.effective.config.tls.extraCa) : undefined;
 
 const noticesWithin = async (pending: Promise<string[]>, waitMs: number) => {
   const abort = new AbortController();
@@ -103,32 +105,27 @@ const noticesWithin = async (pending: Promise<string[]>, waitMs: number) => {
 export const prepareHostSide = async (
   deps: CliDeps,
   context: LaunchContext,
+  files: HostPiFiles,
   pi: HostPi | undefined,
-): Promise<HostSide> => {
+): Promise<PreparedHost> => {
   const { config } = context.effective;
-  const hostAgentDir = hostAgentDirOf(deps);
-  const files = await readHostPiFiles(hostAgentDir);
   const { derived, notices } = await deriveFor(deps, context, files, pi);
   const proxyNeeded = needsProxy(config) || derived.rules.length > 0;
-  const [privateNotices, trust] = await settleAll([
-    noticesWithin(
-      privateHostNotices({
-        rules: derived.rules,
-        privateHosts: config.egress.privateHosts,
-        resolve: deps.resolveHost,
-      }),
-      deps.dnsWaitMs ?? DNS_WAIT_MS,
-    ),
-    trustFor(deps, context, derived, proxyNeeded),
-  ]);
+  const privateNotices = noticesWithin(
+    privateHostNotices({
+      rules: derived.rules,
+      privateHosts: config.egress.privateHosts,
+      resolve: deps.resolveHost,
+    }),
+    deps.dnsWaitMs ?? DNS_WAIT_MS,
+  )
+    .then((lines) => lines.map((notice) => `pi-sandbox: ${notice}`))
+    .catch(() => []);
+  const trust = await trustFor(deps, context, proxyNeeded);
 
-  writeNotices(deps, [...notices, ...hostStoreNotices(deps, context)]);
-
-  await writeOnce(
-    deps,
-    context,
-    privateNotices.map((notice) => `pi-sandbox: ${notice}`),
-  );
-
-  return { hostAgentDir, files, pi, derived, trust, proxyNeeded };
+  return {
+    host: { hostAgentDir: hostAgentDirOf(deps), files, pi, derived, trust, proxyNeeded },
+    notices: [...notices, ...hostStoreNotices(deps, context)],
+    privateNotices,
+  };
 };

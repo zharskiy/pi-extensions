@@ -1,14 +1,14 @@
 import { join } from "node:path";
 import { type Endpoint, endpointOf, uniqueEndpoints } from "../endpoints.ts";
-import { mergeSections, type Section } from "../rules.ts";
+import { findOnPath } from "../path-search.ts";
+import { mergeSections, noticeOnly, placeholderOf, rulesFor, type Section } from "../rules.ts";
 import type { GlabHost, ToolsInput } from "../types.ts";
 import {
   COMMAND_TTL_SECONDS,
-  emptySection,
   firstExisting,
-  onPath,
-  placeholderRules,
-  toolPlaceholder,
+  noCredentialsNotice,
+  sandboxedConfigNotice,
+  TOKEN_PROBE_TIMEOUT_MS,
 } from "./files.ts";
 
 interface ConfigHost {
@@ -33,9 +33,16 @@ const HOST_NAME = /^[A-Za-z0-9.-]+$/;
 const unquote = (value: string) =>
   /^"(.*)"$/.test(value) || /^'(.*)'$/.test(value) ? value.slice(1, -1) : value;
 
-const configPaths = (input: ToolsInput) => {
+const LABEL = "glab";
+
+interface ConfigPath {
+  path: string;
+  variable?: string;
+}
+
+const configPaths = (input: ToolsInput): ConfigPath[] => {
   if (input.env.GLAB_CONFIG_DIR) {
-    return [join(input.env.GLAB_CONFIG_DIR, "config.yml")];
+    return [{ path: join(input.env.GLAB_CONFIG_DIR, "config.yml"), variable: "GLAB_CONFIG_DIR" }];
   }
 
   const platformHome =
@@ -44,9 +51,29 @@ const configPaths = (input: ToolsInput) => {
       : join(input.home, ".config");
 
   return [
-    join(input.home, ".config", "glab-cli", "config.yml"),
-    join(input.env.XDG_CONFIG_HOME || platformHome, "glab-cli", "config.yml"),
+    { path: join(input.home, ".config", "glab-cli", "config.yml") },
+    {
+      path: join(input.env.XDG_CONFIG_HOME || platformHome, "glab-cli", "config.yml"),
+      ...(input.env.XDG_CONFIG_HOME ? { variable: "XDG_CONFIG_HOME" } : {}),
+    },
   ];
+};
+
+const checkedPath = async (input: ToolsInput, candidate: ConfigPath) => {
+  const notice =
+    candidate.variable === undefined
+      ? undefined
+      : await sandboxedConfigNotice(input, LABEL, candidate.variable, candidate.path);
+
+  return notice === undefined ? noticeOnly([candidate.path]) : noticeOnly([], notice);
+};
+
+const readConfig = async (input: ToolsInput) => {
+  const checked = mergeSections(
+    await Promise.all(configPaths(input).map((path) => checkedPath(input, path))),
+  );
+
+  return { config: await firstExisting(checked.values.flat()), notices: checked.notices };
 };
 
 const parseLine = (state: ParseState, line: string): ParseState => {
@@ -102,11 +129,23 @@ const apiEndpoint = (entry: ConfigHost): Endpoint[] => {
 
 const tokenCommand = (glab: string, host: string) => [glab, "config", "get", "token", "--host", host];
 
-const tokenOnHost = async (input: ToolsInput, glab: string, host: string) => {
-  const [file = glab, ...args] = tokenCommand(glab, host);
-  const result = await input.runner.run(file, args).catch(() => undefined);
+type TokenState = "present" | "missing" | "timedOut";
 
-  return result !== undefined && result.code === 0 && result.stdout.trim() !== "";
+const tokenOnHost = async (input: ToolsInput, glab: string, entry: ConfigHost): Promise<TokenState> => {
+  if ((entry.fields.token ?? "") !== "") {
+    return "present";
+  }
+
+  const [file = glab, ...args] = tokenCommand(glab, entry.host);
+  const result = await input.runner
+    .run(file, args, { timeoutMs: TOKEN_PROBE_TIMEOUT_MS })
+    .catch(() => undefined);
+
+  if (result?.timedOut === true) {
+    return "timedOut";
+  }
+
+  return result !== undefined && result.code === 0 && result.stdout.trim() !== "" ? "present" : "missing";
 };
 
 const rendered = (entry: ConfigHost, token: string): GlabHost => {
@@ -126,54 +165,71 @@ const hostSection = async (
   input: ToolsInput,
   glab: string,
   entry: ConfigHost,
-  ghHosts: Set<string>,
 ): Promise<Section<GlabHost[]>> => {
-  if (ghHosts.has(entry.host)) {
-    return {
-      value: [],
-      rules: [],
-      notices: [`glab ${entry.host}: gh on the host also signs in to it; the sandbox uses the gh credential`],
-    };
+  const state = await tokenOnHost(input, glab, entry);
+
+  if (state === "timedOut") {
+    return noticeOnly(
+      [],
+      noCredentialsNotice(`${LABEL} ${entry.host}`, `${glab} config get token`, TOKEN_PROBE_TIMEOUT_MS),
+    );
   }
 
-  if (!(await tokenOnHost(input, glab, entry.host))) {
-    return {
-      value: [],
-      rules: [],
-      notices: [
-        `glab ${entry.host}: no token on the host; run glab auth login --hostname ${entry.host} there`,
-      ],
-    };
+  if (state === "missing") {
+    return noticeOnly(
+      [],
+      `glab ${entry.host}: no token on the host; run glab auth login --hostname ${entry.host} there`,
+    );
   }
 
   const identity = `glab:${entry.host}:token`;
-  const token = toolPlaceholder(input, identity);
+  const token = placeholderOf(input, identity);
   const endpoints = uniqueEndpoints([{ host: entry.host }, ...apiEndpoint(entry)]);
 
   return {
     value: [rendered(entry, token)],
-    rules: placeholderRules(identity, endpoints, token, {
-      command: tokenCommand(glab, entry.host),
-      ttlSeconds: COMMAND_TTL_SECONDS,
+    rules: rulesFor(identity, endpoints, {
+      placeholder: token,
+      secret: { command: tokenCommand(glab, entry.host), ttlSeconds: COMMAND_TTL_SECONDS },
     }),
     notices: [],
   };
 };
 
-export const deriveGlab = async (input: ToolsInput, ghHosts: Set<string>): Promise<Section<GlabHost[]>> => {
-  const config = await firstExisting(configPaths(input));
-  const hosts = hostsOf(config?.text ?? "");
-  const glab = hosts.length === 0 ? undefined : await onPath(input, "glab");
+interface GlabHosts {
+  hosts: Array<{ host: string; section: Section<GlabHost[]> }>;
+  notices: string[];
+}
+
+export const deriveGlab = async (input: ToolsInput): Promise<GlabHosts> => {
+  const { config, notices } = await readConfig(input);
+  const entries = hostsOf(config?.text ?? "");
+  const glab = entries.length === 0 ? undefined : await findOnPath(input.env, "glab", input.excludedRoots);
 
   if (glab === undefined) {
-    return emptySection([]);
+    return { hosts: [], notices };
   }
 
-  const merged = mergeSections(
-    await Promise.all(hosts.map((entry) => hostSection(input, glab, entry, ghHosts))),
+  const sections = await Promise.all(entries.map((entry) => hostSection(input, glab, entry)));
+
+  return {
+    hosts: entries.map((entry, index) => ({ host: entry.host, section: sections[index] ?? noticeOnly([]) })),
+    notices,
+  };
+};
+
+const sharedWithGh = (host: string) =>
+  noticeOnly<GlabHost[]>(
+    [],
+    `glab ${host}: gh on the host also signs in to it; the sandbox uses the gh credential`,
   );
 
-  return { value: merged.values.flat(), rules: merged.rules, notices: merged.notices };
+export const glabBesideGh = (glab: GlabHosts, ghHosts: Set<string>): Section<GlabHost[]> => {
+  const merged = mergeSections(
+    glab.hosts.map(({ host, section }) => (ghHosts.has(host) ? sharedWithGh(host) : section)),
+  );
+
+  return { value: merged.values.flat(), rules: merged.rules, notices: [...glab.notices, ...merged.notices] };
 };
 
 export const glabEnv = (hosts: GlabHost[]): Record<string, string> => {

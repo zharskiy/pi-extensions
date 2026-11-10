@@ -1,7 +1,7 @@
 import { type ChildProcess, type SpawnOptions, spawn as spawnProcess } from "node:child_process";
 import { createHmac } from "node:crypto";
-import { closeSync, openSync } from "node:fs";
-import { mkdir, readFile, rm } from "node:fs/promises";
+import { closeSync, openSync, statSync } from "node:fs";
+import { mkdir, open, readFile, rm } from "node:fs/promises";
 import { setTimeout as sleep } from "node:timers/promises";
 import {
   type CommandRunner,
@@ -19,7 +19,7 @@ import {
 import { capLog } from "./access-log.ts";
 import { minimalEnv } from "./child-env.ts";
 import { type DenialRecord, fetchDenials, readHealth } from "./client.ts";
-import type { RepoProxy, RepoProxyInput } from "./files.ts";
+import { DAEMON_FAILURE_TAG, type RepoProxy, type RepoProxyInput } from "./files.ts";
 import { openLauncherCa } from "./tls-ca.ts";
 
 type SpawnProcess = (command: string, args: string[], options: SpawnOptions) => ChildProcess;
@@ -43,11 +43,17 @@ export const PROXY_LOG_LIMIT = 5 * 1024 * 1024;
 
 const PRIVATE_MODE = 0o600;
 
-const START_TIMEOUT_MS = 2000;
+const START_TIMEOUT_MS = 10_000;
 
-const STOP_GRACE_MS = 2000;
+const STOP_GRACE_MS = 4000;
 
 const POLL_MS = 50;
+
+const HEALTH_TRIES = 3;
+
+const HEALTH_RETRY_MS = 200;
+
+const LOG_TAIL_BYTES = 4096;
 
 const TOKEN_BYTES = 32;
 
@@ -107,18 +113,72 @@ const proxyInputHash = async (stateDir: string, input: RepoProxyInput) => {
 const isHealthy = async (record: RepoProxy, token: string) =>
   (await readHealth(record.port, token))?.pid === record.pid;
 
-const waitUntil = async (check: () => Promise<boolean>, deadline: number): Promise<boolean> => {
-  if (await check()) {
+const isHealthyWithRetries = async (
+  record: RepoProxy,
+  token: string,
+  tries = HEALTH_TRIES,
+): Promise<boolean> => {
+  if (await isHealthy(record, token)) {
     return true;
   }
 
-  if (Date.now() >= deadline) {
+  if (tries <= 1) {
     return false;
+  }
+
+  await sleep(HEALTH_RETRY_MS);
+
+  return isHealthyWithRetries(record, token, tries - 1);
+};
+
+const waitFor = async <T>(
+  check: () => Promise<T | undefined>,
+  stopped: () => boolean,
+  deadline: number,
+): Promise<T | undefined> => {
+  const value = await check();
+
+  if (value !== undefined || stopped() || Date.now() >= deadline) {
+    return value;
   }
 
   await sleep(POLL_MS);
 
-  return waitUntil(check, deadline);
+  return waitFor(check, stopped, deadline);
+};
+
+const sizeOf = (path: string) => {
+  try {
+    return statSync(path).size;
+  } catch {
+    return 0;
+  }
+};
+
+const failureSince = async (path: string, offset: number) => {
+  const handle = await open(path, "r").catch(() => undefined);
+
+  if (handle === undefined) {
+    return undefined;
+  }
+
+  try {
+    const { size } = await handle.stat();
+    const from = Math.max(offset, size - LOG_TAIL_BYTES);
+    const buffer = Buffer.alloc(Math.max(size - from, 0));
+
+    await handle.read(buffer, 0, buffer.length, from);
+
+    const line = buffer
+      .toString("utf8")
+      .split("\n")
+      .filter((entry) => entry.includes(DAEMON_FAILURE_TAG))
+      .at(-1);
+
+    return line?.slice(line.indexOf(DAEMON_FAILURE_TAG) + DAEMON_FAILURE_TAG.length).trim() || undefined;
+  } finally {
+    await handle.close();
+  }
 };
 
 const spawnDaemon = (options: EnsureRepoProxyOptions, inputHash: string) => {
@@ -127,11 +187,12 @@ const spawnDaemon = (options: EnsureRepoProxyOptions, inputHash: string) => {
 
   capLog(files.log, PROXY_LOG_LIMIT);
 
+  const offset = sizeOf(files.log);
   const log = openSync(files.log, "a", PRIVATE_MODE);
   const child = (options.spawn ?? spawnProcess)(
     process.execPath,
     [launcherEntry("proxy/daemon.ts"), "--repo", input.repoHash, "--state", stateDir],
-    { detached: true, stdio: ["pipe", "ignore", log], env: minimalEnv(options.env) },
+    { cwd: files.directory, detached: true, stdio: ["pipe", "ignore", log], env: minimalEnv(options.env) },
   );
 
   closeSync(log);
@@ -142,7 +203,7 @@ const spawnDaemon = (options: EnsureRepoProxyOptions, inputHash: string) => {
 
   child.unref();
 
-  return child;
+  return { child, offset };
 };
 
 const startDaemon = async (options: EnsureRepoProxyOptions, inputHash: string): Promise<RepoProxy> => {
@@ -151,7 +212,7 @@ const startDaemon = async (options: EnsureRepoProxyOptions, inputHash: string): 
 
   await mkdir(files.directory, { recursive: true, mode: 0o700 });
 
-  const child = spawnDaemon(options, inputHash);
+  const { child, offset } = spawnDaemon(options, inputHash);
   const exited = { done: false };
 
   child.once("exit", () => {
@@ -163,24 +224,28 @@ const startDaemon = async (options: EnsureRepoProxyOptions, inputHash: string): 
   });
 
   const started = async () => {
-    const record = await readRepoProxy(stateDir, input.repoHash);
+    const record = await readJsonObject(files.record);
 
-    return record !== undefined && record.pid === child.pid && (await isHealthy(record, input.token))
+    return isRecord(record) && record.pid === child.pid && (await isHealthy(record, input.token))
       ? record
       : undefined;
   };
 
-  await waitUntil(
-    async () => exited.done || (await started()) !== undefined,
+  const record = await waitFor(
+    started,
+    () => exited.done,
     Date.now() + (options.timeoutMs ?? START_TIMEOUT_MS),
   );
-
-  const record = await started();
 
   if (record === undefined) {
     child.kill("SIGKILL");
 
-    throw new LauncherError("the pi-sandbox egress proxy did not become healthy", `see ${files.log}`);
+    const reason = await failureSince(files.log, offset);
+
+    throw new LauncherError(
+      `the pi-sandbox egress proxy did not become healthy${reason === undefined ? "" : `: ${reason}`}`,
+      `see ${files.log}`,
+    );
   }
 
   return record;
@@ -195,7 +260,7 @@ const runningProxy = async (stateDir: string, input: RepoProxyInput) => {
     return undefined;
   }
 
-  if (await isHealthy(record, input.token)) {
+  if (await isHealthyWithRetries(record, input.token)) {
     return record;
   }
 

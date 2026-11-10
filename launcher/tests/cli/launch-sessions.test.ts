@@ -8,6 +8,20 @@ import { liveLaunches, registerLaunch } from "../../grants/index.ts";
 import { processMark, sha256Hex, stateLayout } from "../../shared/index.ts";
 import { createFakeBackend, createHarness, piSessions } from "./harness.ts";
 
+const POLL_MS = 5;
+
+const POLLS = 200;
+
+const waitFor = async (ready: () => boolean, left = POLLS): Promise<boolean> => {
+  if (ready() || left === 0) {
+    return ready();
+  }
+
+  await sleep(POLL_MS);
+
+  return waitFor(ready, left - 1);
+};
+
 const OUTDATED =
   "pi-sandbox: the sandbox config changed (overlays); it applies after every session in this repository exits";
 
@@ -93,13 +107,17 @@ describe("the end of a session", () => {
     expect(harness.stoppedProxies).toEqual([]);
   });
 
-  it("waits for the engine to remove the stopped container before it removes the network", async () => {
+  it("removes the container and the relay side by side, then the network", async () => {
     const fake = createFakeBackend();
     const order: string[] = [];
     const backend = {
       ...fake.backend,
       waitRemoved: async (id: string, timeoutMs: number) => {
         order.push(`wait ${id.split("-")[0]}`);
+
+        if (!(await waitFor(() => order.includes("wait container") && order.includes("wait relay")))) {
+          order.push("one at a time");
+        }
 
         await fake.backend.waitRemoved(id, timeoutMs);
       },
@@ -117,7 +135,14 @@ describe("the end of a session", () => {
     const harness = await createHarness({ backend: () => backend });
 
     expect(await run([], harness.deps)).toBe(0);
-    expect(order).toEqual(["wait container", "remove container", "wait relay", "remove relay", "network"]);
+    expect(order.at(-1)).toBe("network");
+    expect([...order].sort()).toEqual([
+      "network",
+      "remove container",
+      "remove relay",
+      "wait container",
+      "wait relay",
+    ]);
   });
 
   it("tolerates a container the engine already removed or is still removing", async () => {

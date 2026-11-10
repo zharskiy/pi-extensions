@@ -3,6 +3,7 @@ import {
   authorityOf,
   fillTemplate,
   isLoopbackName,
+  matchesDenyEntry,
   matchesPattern,
   normalizeHost,
   parseEntry,
@@ -39,6 +40,22 @@ describe("matchesPattern", () => {
     ["evilexample.com", "*.example.com", false],
   ])("%s against %s is %s", (host, pattern, expected) => {
     expect(matchesPattern(host, pattern)).toBe(expected);
+  });
+});
+
+describe("matchesDenyEntry", () => {
+  it.each([
+    ["paste.example.com", "paste.example.com", true],
+    ["www.paste.example.com", "paste.example.com", true],
+    ["a.b.paste.example.com", "paste.example.com", true],
+    ["evilpaste.example.com", "paste.example.com", false],
+    ["example.com", "paste.example.com", false],
+    ["www.paste.example.com", "*.paste.example.com", true],
+    ["a.b.paste.example.com", "*.paste.example.com", true],
+    ["paste.example.com", "*.paste.example.com", false],
+    ["evilpaste.example.com", "*.paste.example.com", false],
+  ])("%s against %s is %s", (host, pattern, expected) => {
+    expect(matchesDenyEntry(host, pattern)).toBe(expected);
   });
 });
 

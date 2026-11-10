@@ -1,10 +1,12 @@
 import type { Dirent } from "node:fs";
 import { readdir, readlink } from "node:fs/promises";
 import { join } from "node:path";
-import { type CommandRunner, readRegularFile } from "../../shared/index.ts";
-import { gitDirOf, gitRepos, type Workspace } from "../types.ts";
+import { type CommandRunner, isWithin, readRegularFile } from "../../shared/index.ts";
+import { gitDirsOf, gitRepos, type Workspace } from "../types.ts";
+import { walkLevels } from "../walk.ts";
 import { scanBudgetOf } from "../workspace-scan.ts";
 import { inertGitOptions } from "./command.ts";
+import { hasGitDirShape, isGitName } from "./layout.ts";
 
 export interface NestedGitEntry {
   path: string;
@@ -19,12 +21,6 @@ export interface GitBaseline {
   budget: number;
 }
 
-interface Walk {
-  found: NestedGitEntry[];
-  budget: number;
-  complete: boolean;
-}
-
 const GITLINK_PREFIX = "160000 ";
 
 const REVIEW = "review it before running host git tools in this repository";
@@ -37,7 +33,7 @@ const gitlinksOf = async (
 ) => {
   const args = [
     ...inertGitOptions(emptyHooksDir),
-    `--git-dir=${gitDirOf(workspace, gitCommonDir)}`,
+    `--git-dir=${workspace.gitDir ?? gitCommonDir}`,
     `--work-tree=${workspace.repoRoot}`,
     "ls-files",
     "--stage",
@@ -86,44 +82,34 @@ const describe = async (path: string, entry: Dirent): Promise<NestedGitEntry> =>
   return content === undefined ? { path, kind } : { path, kind, content };
 };
 
-const listed = async (dir: string) => ({
-  dir,
-  entries: await readdir(dir, { withFileTypes: true }).catch((): Dirent[] => []),
-});
+interface Level {
+  found: NestedGitEntry[];
+  next: string[];
+}
 
-const walkLevel = async (dirs: string[], skipped: Set<string>, walk: Walk): Promise<Walk> => {
-  if (dirs.length === 0) {
-    return walk;
-  }
+const listedIn =
+  (skipped: Set<string>) =>
+  async (dir: string): Promise<Level> => {
+    const entries = await readdir(dir, { withFileTypes: true }).catch((): Dirent[] => []);
 
-  if (walk.budget <= 0) {
-    return { ...walk, complete: false };
-  }
+    if (hasGitDirShape(entries.map((entry) => entry.name))) {
+      return { found: [{ path: dir, kind: "directory" }], next: [] };
+    }
 
-  const taken = dirs.slice(0, walk.budget);
-  const levels = await Promise.all(taken.map(listed));
-  const gitEntries = levels.flatMap(({ dir, entries }) =>
-    entries
-      .filter((entry) => entry.name === ".git" && !skipped.has(join(dir, entry.name)))
-      .map((entry) => ({ path: join(dir, entry.name), entry })),
-  );
-  const found = await Promise.all(gitEntries.map(({ path, entry }) => describe(path, entry)));
-  const next = levels.flatMap(({ dir, entries }) =>
-    entries
-      .filter((entry) => entry.isDirectory() && entry.name !== ".git")
+    const found = await Promise.all(
+      entries
+        .filter((entry) => isGitName(entry.name) && !skipped.has(join(dir, entry.name)))
+        .map((entry) => describe(join(dir, entry.name), entry)),
+    );
+    const next = entries
+      .filter((entry) => entry.isDirectory() && !isGitName(entry.name))
       .map((entry) => join(dir, entry.name))
-      .filter((path) => !skipped.has(path)),
-  );
+      .filter((path) => !skipped.has(path));
 
-  return walkLevel(next, skipped, {
-    found: [...walk.found, ...found],
-    budget: walk.budget - taken.length,
-    complete: walk.complete && taken.length === dirs.length,
-  });
-};
+    return { found, next };
+  };
 
-const gitDirsOf = (repo: Workspace) =>
-  [join(repo.repoRoot, ".git"), repo.gitCommonDir, repo.gitDir].filter((path) => path !== undefined);
+const gitPathsOf = (repo: Workspace) => [join(repo.repoRoot, ".git"), ...gitDirsOf(repo)];
 
 const repoGitlinks = (repo: Workspace, runner: CommandRunner, emptyHooksDir: string) =>
   repo.gitCommonDir === undefined
@@ -135,6 +121,7 @@ export const scanGitBaseline = async (
   runner: CommandRunner,
   emptyHooksDir: string,
   scanBudget?: number,
+  volumePaths: string[] = [],
 ): Promise<GitBaseline> => {
   const budget = scanBudgetOf(scanBudget);
 
@@ -143,15 +130,22 @@ export const scanGitBaseline = async (
   }
 
   const repos = gitRepos(workspace);
-  const skipped = new Set(repos.flatMap(gitDirsOf));
+  const volumes = volumePaths.filter(
+    (path) => path !== workspace.repoRoot && isWithin(path, workspace.repoRoot),
+  );
+  const skipped = new Set([...repos.flatMap(gitPathsOf), ...volumes, ...(workspace.bareDirs ?? [])]);
   const [walk, gitlinks] = await Promise.all([
-    walkLevel([workspace.repoRoot], skipped, { found: [], budget, complete: true }),
+    walkLevels([workspace.repoRoot], budget, [] as NestedGitEntry[], {
+      list: listedIn(skipped),
+      children: (level) => level.next,
+      fold: (found, levels) => [...found, ...levels.flatMap((level) => level.found)],
+    }),
     Promise.all(repos.map((repo) => repoGitlinks(repo, runner, emptyHooksDir))),
   ]);
 
   return {
     gitlinks: gitlinks.flat().sort(),
-    nested: walk.found,
+    nested: walk.state,
     complete: walk.complete,
     budget,
   };

@@ -1,6 +1,13 @@
 import { isJsonObject, isSecretName, jwtShapedPlaceholder } from "../shared/index.ts";
 import { noHostNotice, providerEndpoints } from "./provider-endpoints.ts";
-import { type DeriveContext, mergeSections, placeholderOf, rulesFor, type Section } from "./rules.ts";
+import {
+  type DeriveContext,
+  mergeSections,
+  noticeOnly,
+  placeholderOf,
+  rulesFor,
+  type Section,
+} from "./rules.ts";
 import type { JsonObject, ProviderHosts } from "./types.ts";
 
 export interface AuthSources {
@@ -15,6 +22,9 @@ const FAR_FUTURE_EXPIRES = 4102444800000;
 const OAUTH_SECRET_FIELDS = new Set(["access", "refresh", "expires"]);
 
 type Entry = [string, JsonObject];
+
+const isPrimitive = (value: unknown) =>
+  value === null || ["string", "number", "boolean"].includes(typeof value);
 
 const withRules = (
   sources: AuthSources,
@@ -54,7 +64,9 @@ const oauthEntry = (
   const identity = `auth:${id}:access`;
   const access = typeof entry.access === "string" ? entry.access : "";
   const placeholder = jwtShapedPlaceholder(access, context.salt, identity);
-  const kept = Object.entries(entry).filter(([key]) => !OAUTH_SECRET_FIELDS.has(key) && !isSecretName(key));
+  const kept = Object.entries(entry).filter(
+    ([key, value]) => isPrimitive(value) && !OAUTH_SECRET_FIELDS.has(key) && !isSecretName(key),
+  );
   const rendered = {
     ...Object.fromEntries(kept),
     access: placeholder,
@@ -87,7 +99,7 @@ const hostEntry = (
     return oauthEntry(context, sources, id, entry);
   }
 
-  return { value: [], rules: [], notices: [`auth ${id}: unsupported entry type, not copied`] };
+  return noticeOnly([], `auth ${id}: unsupported entry type, not copied`);
 };
 
 const hasEnvKey = (sources: AuthSources, envVars: string[] | undefined) =>

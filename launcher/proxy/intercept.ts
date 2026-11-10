@@ -22,17 +22,12 @@ interface InterceptOptions {
   denials: Denials;
 }
 
-interface CachedContext {
-  cert: string;
-  context: SecureContext;
-}
-
 const TLS_FAILED = { rule: "tls", reason: "TLS handshake with the client failed" };
 
 const handshakeDenial = (connection: Connection) => sniDenial(connection.host, connection.sni) ?? TLS_FAILED;
 
 export const createInterceptor = (options: InterceptOptions) => {
-  const contexts = new Map<string, CachedContext>();
+  const contexts = new WeakMap<LeafCertificate, SecureContext>();
   const { denials } = options;
 
   const secureContextFor = async (host: string) => {
@@ -41,15 +36,15 @@ export const createInterceptor = (options: InterceptOptions) => {
     }
 
     const leaf = await options.ca.leaf(host);
-    const known = contexts.get(host);
+    const known = contexts.get(leaf);
 
-    if (known?.cert === leaf.cert) {
-      return known.context;
+    if (known !== undefined) {
+      return known;
     }
 
     const context = createSecureContext(leaf);
 
-    contexts.set(host, { cert: leaf.cert, context });
+    contexts.set(leaf, context);
 
     return context;
   };
@@ -95,7 +90,6 @@ export const createInterceptor = (options: InterceptOptions) => {
       options.serve(secure, {
         host,
         port,
-        repoHash: connection.repoHash,
         access: options.accessOf(host),
       });
     });
@@ -105,7 +99,6 @@ export const createInterceptor = (options: InterceptOptions) => {
 
       if (state.secured) {
         options.record({
-          repo: connection.repoHash,
           host,
           sni: connection.sni,
           decision: "allow",
@@ -119,21 +112,20 @@ export const createInterceptor = (options: InterceptOptions) => {
 
       denials.note(host, handshakeDenial(connection), {
         port,
-        repoHash: connection.repoHash,
         sni: connection.sni,
       });
     });
   };
 
   return async (connection: Connection, head: Buffer) => {
-    const { client, host, port, repoHash } = connection;
+    const { client, host, port } = connection;
 
     if (head.length > 0) {
       denials.refuse(
         client,
         host,
         { rule: "sni", reason: "client sent data before the tunnel was established" },
-        { port, repoHash },
+        { port },
       );
 
       return;
@@ -146,7 +138,7 @@ export const createInterceptor = (options: InterceptOptions) => {
         client,
         host,
         { rule: "tls", reason: `no certificate can be issued for ${host}` },
-        { port, repoHash },
+        { port },
       );
 
       return;

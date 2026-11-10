@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -130,6 +130,115 @@ hooks.describe("colima volume ownership", () => {
 
       hooks.expect(ensured.notices).toEqual([]);
       hooks.expect(written).toEqual({ code: 0, stdout: "1000\n", stderr: "" });
+    },
+  );
+});
+
+const MASK_CONTAINER = `pi-sandbox-live-mask-${randomBytes(4).toString("hex")}`;
+
+hooks.describe("colima read-only binds on the share", () => {
+  const backend = createColimaBackend({
+    home: "",
+    stateDir: "",
+    socketPath: socketPath ?? "",
+    runner: createProcessRunner(),
+  });
+  const state = { dir: "", id: "", work: "" };
+
+  const spec = (work: string, empty: string): LauncherContainerSpec => ({
+    name: MASK_CONTAINER,
+    image: RUNNABLE,
+    labels: { [LABELS.repoHash]: randomBytes(32).toString("hex") },
+    mounts: [
+      { kind: "bind", source: work, target: work, readOnly: false },
+      { kind: "bind", source: empty, target: join(work, "locked"), readOnly: true },
+      {
+        kind: "bind",
+        source: join(work, "repo", ".git", "hooks"),
+        target: join(work, "repo", ".git", "hooks"),
+        readOnly: true,
+      },
+      {
+        kind: "bind",
+        source: join(work, "repo", ".git", "config"),
+        target: join(work, "repo", ".git", "config"),
+        readOnly: true,
+      },
+    ],
+    network: { kind: "none" },
+    env: {},
+    workdir: "/",
+    readOnlyRoot: true,
+    tmpfs: ["/tmp:mode=1777"],
+    init: true,
+    resources: { cpus: 1, memoryGiB: 0.25 },
+    volumeLabels: {},
+    ownedPaths: [],
+  });
+
+  const probe = (script: string) =>
+    execCapture(backend, { containerId: state.id, command: ["sh", "-c", script], env: {}, workdir: "/" });
+
+  hooks.beforeAll(async () => {
+    const root = join(homedir(), ".cache", "pi-sandbox-live");
+
+    await mkdir(root, { recursive: true });
+
+    state.dir = await mkdtemp(join(root, "binds-"));
+    state.work = join(state.dir, "work");
+
+    const empty = join(state.dir, "empty");
+
+    await mkdir(join(state.work, "locked", "repo", ".git"), { recursive: true });
+    await mkdir(join(state.work, "repo", ".git", "hooks"), { recursive: true });
+    await writeFile(join(state.work, "repo", ".git", "config"), "[core]\n");
+    await mkdir(empty);
+
+    await chmod(join(state.work, "locked"), 0o000);
+
+    await backend.pullImage(PULLABLE);
+
+    await buildFrom(backend.buildImage, RUNNABLE, `FROM ${PULLABLE}\nCMD ["sleep", "3600"]\n`);
+
+    state.id = (await ensureContainer({ backend, spec: spec(state.work, empty), stateDir: state.dir })).id;
+  }, 300_000);
+
+  hooks.afterAll(async () => {
+    if (state.id !== "") {
+      await backend.removeContainer(state.id);
+    }
+
+    await chmod(join(state.work, "locked"), 0o755).catch(() => undefined);
+
+    await rm(state.dir, { recursive: true, force: true });
+  });
+
+  hooks.it(
+    "a read-only bind of an empty folder hides a mode-000 folder on the share and stays closed",
+    async () => {
+      const locked = join(state.work, "locked");
+
+      hooks
+        .expect(
+          await probe(
+            `ls -A ${locked}; chmod 755 ${locked} 2>/dev/null && echo chmod; mkdir ${locked}/x 2>/dev/null && echo mkdir; echo done`,
+          ),
+        )
+        .toEqual({ code: 0, stdout: "done\n", stderr: "" });
+    },
+  );
+
+  hooks.it(
+    "a read-only file or folder bind cannot be written through another letter case of its name",
+    async () => {
+      const git = join(state.work, "repo", ".git");
+
+      await probe(
+        `echo planted >> ${git}/CONFIG 2>/dev/null; mkdir -p ${git}/HOOKS 2>/dev/null; echo planted > ${git}/HOOKS/x 2>/dev/null; true`,
+      );
+
+      hooks.expect(await readFile(join(git, "config"), "utf8")).toBe("[core]\n");
+      hooks.expect(existsSync(join(git, "hooks", "x"))).toBe(false);
     },
   );
 });

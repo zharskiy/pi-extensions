@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 const ROOT = resolve(import.meta.dirname, "..");
 const EXTENSION_DOCS = ["README.md", "ARCHITECTURE.md", "STRUCTURE.md"];
 const ROOT_DOCS = ["ARCHITECTURE.md", "STRUCTURE.md"];
+const LAUNCHER_ONLY_DOCS = ["THREAT-MODEL.md"];
 const UNIT_PATH = /^(extensions\/[^/]+|launcher)\/(.+)$/;
 
 type Gap = { extension: string; triggers: string[]; missing: string[] };
@@ -48,7 +49,9 @@ const isCode = (unit: string) => (path: string) => {
 
   const rest = match?.[2] ?? "";
 
-  return match?.[1] === unit && !EXTENSION_DOCS.includes(rest) && !rest.startsWith("tests/");
+  const docs = unit === "launcher" ? [...EXTENSION_DOCS, ...LAUNCHER_ONLY_DOCS] : EXTENSION_DOCS;
+
+  return match?.[1] === unit && !docs.includes(rest) && !rest.startsWith("tests/");
 };
 
 const unitDocs = (unit: string) => [...EXTENSION_DOCS.map((doc) => `${unit}/${doc}`), ...ROOT_DOCS];
@@ -160,6 +163,17 @@ describe("docs sync rule", () => {
     expect(
       missingDocs(["extensions/footer/tests/segments.test.ts", "launcher/tests/cli/launch.test.ts"]),
     ).toEqual([]);
+  });
+
+  it("treats launcher/THREAT-MODEL.md as a doc, not as code", () => {
+    expect(missingDocs(["launcher/THREAT-MODEL.md"])).toEqual([]);
+    expect(missingDocs(["extensions/footer/THREAT-MODEL.md"])).toEqual([
+      {
+        extension: "extensions/footer",
+        triggers: ["extensions/footer/THREAT-MODEL.md"],
+        missing: docsOf("footer"),
+      },
+    ]);
   });
 
   it("names only the shipped code when tests changed with it", () => {

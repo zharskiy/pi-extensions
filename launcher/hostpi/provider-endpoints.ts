@@ -3,7 +3,7 @@ import { type Endpoint, endpointOf, uniqueEndpoints } from "./endpoints.ts";
 import { objectOr } from "./json.ts";
 import type { JsonObject, ProviderHosts } from "./types.ts";
 
-const httpsEndpoint = (url: unknown): Endpoint[] => {
+export const httpsEndpoint = (url: unknown): Endpoint[] => {
   const result = endpointOf(url);
 
   return "endpoint" in result ? [result.endpoint] : [];

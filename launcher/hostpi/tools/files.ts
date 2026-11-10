@@ -1,13 +1,16 @@
-import { constants } from "node:fs";
-import { access, readFile, stat } from "node:fs/promises";
-import { delimiter, join } from "node:path";
-import type { CredentialRule } from "../../config/index.ts";
-import { placeholderFor, type ToolConfigFormat } from "../../shared/index.ts";
-import { type Endpoint, endpointOf, hasUrlUserinfo, withoutUserinfo } from "../endpoints.ts";
-import { rulesFor, type Section } from "../rules.ts";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import type { ToolConfigFormat } from "../../shared/index.ts";
+import { endpointOf, hasUrlUserinfo, withoutUserinfo } from "../endpoints.ts";
+import { isInsideRoots } from "../path-search.ts";
+import { noticeOnly, placeholderOf, rulesFor, type Section } from "../rules.ts";
 import type { ToolsInput } from "../types.ts";
 
 export const COMMAND_TTL_SECONDS = 300;
+
+export const PROBE_TIMEOUT_MS = 10_000;
+
+export const TOKEN_PROBE_TIMEOUT_MS = 30_000;
 
 export const readOptional = (path: string) => readFile(path, "utf8").catch(() => undefined);
 
@@ -18,40 +21,23 @@ export const firstExisting = async (paths: string[]) => {
   return index < 0 ? undefined : { path: paths[index] ?? "", text: texts[index] ?? "" };
 };
 
-const isExecutable = async (path: string) => {
-  const info = await stat(path).catch(() => undefined);
-
-  return (
-    info?.isFile() === true &&
-    (await access(path, constants.X_OK).then(
-      () => true,
-      () => false,
-    ))
-  );
-};
-
-export const onPath = async (input: ToolsInput, name: string) => {
-  const candidates = (input.env.PATH ?? "")
-    .split(delimiter)
-    .filter((dir) => dir.startsWith("/"))
-    .map((dir) => join(dir, name));
-  const found = await Promise.all(candidates.map(isExecutable));
-
-  return candidates.find((_, index) => found[index]);
-};
+export const sandboxedConfigNotice = async (
+  input: ToolsInput,
+  label: string,
+  variable: string,
+  path: string,
+) =>
+  (await isInsideRoots(path, input.excludedRoots))
+    ? `${label}: ${path} (from ${variable}) lies inside the sandbox, which can rewrite it; ignored`
+    : undefined;
 
 export const xdgConfigHome = (input: ToolsInput) => input.env.XDG_CONFIG_HOME || join(input.home, ".config");
 
-export const toolPlaceholder = (input: ToolsInput, identity: string) => placeholderFor(input.salt, identity);
+export const timedOutNotice = (label: string, command: string, timeoutMs = PROBE_TIMEOUT_MS) =>
+  `${label}: ${command} did not answer within ${timeoutMs / 1000} s on the host; skipped`;
 
-export const placeholderRules = (
-  identity: string,
-  endpoints: Endpoint[],
-  placeholder: string,
-  secret: CredentialRule["secret"],
-): CredentialRule[] => rulesFor(identity, endpoints, { placeholder, secret });
-
-export const emptySection = <T>(value: T): Section<T> => ({ value, rules: [], notices: [] });
+export const noCredentialsNotice = (label: string, command: string, timeoutMs: number) =>
+  `${label}: ${command} did not answer within ${timeoutMs / 1000} s on the host (a Keychain prompt may be waiting); it has no credentials in the sandbox this launch, run pi again once it answers`;
 
 export type UrlSecret = { file: string; format: ToolConfigFormat; key: string } | { env: string };
 
@@ -66,22 +52,19 @@ export interface UrlCredential {
 
 export const urlCredentialSection = (input: ToolsInput, credential: UrlCredential): Section<string> => {
   if (!hasUrlUserinfo(credential.url)) {
-    return emptySection(credential.url);
+    return noticeOnly(credential.url);
   }
 
   const result = endpointOf(credential.url);
 
   if (!("endpoint" in result)) {
-    return {
-      value: withoutUserinfo(credential.url),
-      rules: [],
-      notices: [
-        `${credential.label}: ${credential.key} is not an https URL; its credentials stay on the host`,
-      ],
-    };
+    return noticeOnly(
+      withoutUserinfo(credential.url),
+      `${credential.label}: ${credential.key} is not an https URL; its credentials stay on the host`,
+    );
   }
 
-  const placeholder = toolPlaceholder(input, credential.identity);
+  const placeholder = placeholderOf(input, credential.identity);
   const parsed = new URL(credential.url);
   const part = parsed.password === "" ? { urlUsername: true as const } : { urlPassword: true as const };
 
@@ -95,9 +78,9 @@ export const urlCredentialSection = (input: ToolsInput, credential: UrlCredentia
 
   return {
     value: parsed.href,
-    rules: placeholderRules(credential.identity, [result.endpoint], placeholder, {
-      ...credential.secret,
-      ...part,
+    rules: rulesFor(credential.identity, [result.endpoint], {
+      placeholder,
+      secret: { ...credential.secret, ...part },
     }).map((rule) => (pathPrefix === undefined ? rule : { ...rule, pathPrefix })),
     notices: [],
   };

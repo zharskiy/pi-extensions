@@ -5,19 +5,19 @@ import {
   spawn as spawnProcess,
 } from "node:child_process";
 import { closeSync, openSync } from "node:fs";
-import { rm } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import {
   bootTime,
   type McpLoginState,
-  makeMcpLoginDir,
   mcpAuthKey,
   mcpLoginCommand,
   PI_AGENT_DIR_VARIABLE,
+  processStart,
   readMcpLogins,
   stateLayout,
   updateMcpLogin,
   withFileLockIfFree,
+  withMcpLoginDir,
 } from "../shared/index.ts";
 
 type SpawnProcess = (command: string, args: string[], options: SpawnOptions) => ChildProcess;
@@ -78,6 +78,8 @@ const logStdio = (logFile: string | undefined) => {
 
 const CLOSE_WAIT_MS = 2_000;
 
+const KILL_WAIT_MS = 1_000;
+
 const signalGroup = (pid: number | undefined, signal: NodeJS.Signals) => {
   if (pid === undefined) {
     return;
@@ -87,6 +89,19 @@ const signalGroup = (pid: number | undefined, signal: NodeJS.Signals) => {
     process.kill(-pid, signal);
   } catch {
     return;
+  }
+};
+
+const settledWithin = async (done: Promise<unknown>, waitMs: number) => {
+  const abort = new AbortController();
+
+  try {
+    return await Promise.race([
+      done.then(() => true),
+      delay(waitMs, false, { signal: abort.signal }).catch(() => false),
+    ]);
+  } finally {
+    abort.abort();
   }
 };
 
@@ -100,26 +115,33 @@ export const createSignIn = (deps: SignInDeps): SignIn => {
   const spawn = deps.spawn ?? spawnProcess;
   const closing = { now: false };
 
-  const launch = async (server: string) => {
+  const spawnLogin = (server: string, cwd: string) => {
     const [file = "", ...args] = mcpLoginCommand(deps.piCommand, server, LOGIN_TIMEOUT_SECONDS);
-    const cwd = await makeMcpLoginDir(deps.stateDir);
     const output = logStdio(deps.logFile);
-    const child = spawn(file, args, {
-      cwd,
-      env: { ...deps.env, [PI_AGENT_DIR_VARIABLE]: deps.hostAgentDir },
-      stdio: output.stdio,
-      detached: true,
-    });
 
-    output.release();
+    try {
+      return spawn(file, args, {
+        cwd,
+        env: { ...deps.env, [PI_AGENT_DIR_VARIABLE]: deps.hostAgentDir },
+        stdio: output.stdio,
+        detached: true,
+      });
+    } finally {
+      output.release();
+    }
+  };
 
-    const exited = exitOf(child).then(async (code) => {
-      await rm(cwd, { recursive: true, force: true });
+  const recordRunning = async (key: string, pgid: number | undefined) => {
+    if (pgid === undefined) {
+      return;
+    }
 
-      return code;
-    });
+    const start = (await processStart(pgid)) ?? "";
 
-    return { child, exited };
+    await updateMcpLogin(deps.stateDir, key, (current) => ({
+      ...current,
+      running: { pgid, boot: bootTime(), start },
+    }));
   };
 
   const runLogin = async (
@@ -135,25 +157,32 @@ export const createSignIn = (deps: SignInDeps): SignIn => {
       return undefined;
     }
 
-    await updateMcpLogin(deps.stateDir, key, (current) => ({
-      ...current,
-      lastStart: now,
-      ...(rejected ? { rejectedStart: now } : {}),
-    }));
+    const claimed = { now: false };
 
-    const login = await launch(server);
-    const pgid = login.child.pid;
+    await updateMcpLogin(deps.stateDir, key, (current) => {
+      if (closing.now) {
+        return current;
+      }
 
-    if (pgid !== undefined) {
-      await updateMcpLogin(deps.stateDir, key, (current) => ({
-        ...current,
-        running: { pgid, boot: bootTime() },
-      }));
+      claimed.now = true;
+
+      return { ...current, lastStart: now, ...(rejected ? { rejectedStart: now } : {}) };
+    });
+
+    if (!claimed.now) {
+      return undefined;
     }
 
-    started(login.child);
+    const code = await withMcpLoginDir(deps.stateDir, async (cwd) => {
+      const child = spawnLogin(server, cwd);
+      const exited = exitOf(child);
 
-    const code = await login.exited;
+      started(child);
+
+      await recordRunning(key, child.pid).catch(() => undefined);
+
+      return exited;
+    });
 
     await updateMcpLogin(deps.stateDir, key, ({ running: _ended, ...rest }) =>
       code === 0 || closing.now ? rest : { ...rest, failedAt: deps.now() },
@@ -188,6 +217,16 @@ export const createSignIn = (deps: SignInDeps): SignIn => {
 
         void entry.done.then(() => running.delete(key));
 
+        if (closing.now) {
+          signalGroup(child.pid, "SIGTERM");
+
+          setTimeout(() => {
+            if (running.get(key) === entry) {
+              signalGroup(child.pid, "SIGKILL");
+            }
+          }, CLOSE_WAIT_MS).unref();
+        }
+
         resolve({ exited: entry.done });
       };
       const held = withFileLockIfFree(stateLayout(deps.stateDir).mcpLoginLock(key), () =>
@@ -201,27 +240,36 @@ export const createSignIn = (deps: SignInDeps): SignIn => {
     });
   };
 
-  const close = async () => {
-    closing.now = true;
-
+  const stopAll = async (): Promise<void> => {
     const logins = [...running.values()];
+
+    if (logins.length === 0) {
+      return;
+    }
+
+    const done = Promise.all(logins.map((login) => login.done));
 
     logins.forEach((login) => {
       signalGroup(login.pid, "SIGTERM");
     });
 
-    const abort = new AbortController();
-    const settled = Promise.all(logins.map((login) => login.done)).then(() => false);
-    const timeout = delay(CLOSE_WAIT_MS, true, { signal: abort.signal }).catch(() => false);
-    const late = await Promise.race([settled, timeout]);
-
-    abort.abort();
-
-    if (late) {
+    if (!(await settledWithin(done, CLOSE_WAIT_MS))) {
       logins.forEach((login) => {
         signalGroup(login.pid, "SIGKILL");
       });
+
+      await settledWithin(done, KILL_WAIT_MS);
     }
+
+    if ([...running.values()].some((login) => !logins.includes(login))) {
+      await stopAll();
+    }
+  };
+
+  const close = async () => {
+    closing.now = true;
+
+    await stopAll();
   };
 
   return { start, close };

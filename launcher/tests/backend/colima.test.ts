@@ -1,9 +1,12 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough, Writable } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createColimaBackend } from "../../backend/colima/backend.ts";
+import { createEngineClient } from "../../backend/colima/engine-client.ts";
+import { demultiplexer } from "../../backend/colima/exec-session.ts";
 import {
   type Backend,
   type ContainerSpec,
@@ -181,6 +184,93 @@ describe("colima adapter status", () => {
     expect(detection.available).toBe(false);
     expect(detection.reason).toContain(socketPath);
   });
+
+  it("hints at the plain profile start, which leaves the docker context alone", async () => {
+    const dir = await temporaryDir();
+    const backend = createColimaBackend({
+      home: "/nonexistent",
+      stateDir: "/nonexistent",
+      socketPath: join(dir, "missing.sock"),
+      runner: createFakeRunner(() => undefined).runner,
+    });
+
+    const failure = await backend.listVolumes().catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(LauncherError);
+    expect((failure as LauncherError).hint).toBe("run colima start --profile pi-sandbox --activate=false");
+  });
+
+  const hungSocket = async () => {
+    const dir = await mkdtemp(join("/tmp", "psb-"));
+    const socketPath = join(dir, "hung.sock");
+    const server = createServer(() => undefined).listen(socketPath);
+
+    cleanups.push(async () => {
+      server.close();
+
+      await rm(dir, { recursive: true, force: true });
+    });
+
+    return socketPath;
+  };
+
+  const hungBackend = (socketPath: string) =>
+    createColimaBackend({
+      home: "/nonexistent",
+      stateDir: "/nonexistent",
+      socketPath,
+      runner: createFakeRunner(() => undefined).runner,
+      timeouts: { callMs: 100, pingMs: 50, removalMs: 400 },
+    });
+
+  it("gives up on a socket that accepts but never answers, without advising a VM restart for a slow call", async () => {
+    const socketPath = await hungSocket();
+    const backend = hungBackend(socketPath);
+
+    expect(await backend.detect()).toEqual({
+      available: false,
+      reason: `engine socket ${socketPath} did not answer GET /_ping: no answer within 0.05 s`,
+    });
+
+    const failure = (await backend.listImages().catch((error: unknown) => error)) as LauncherError;
+
+    expect(failure.message).toBe(
+      `engine socket ${socketPath} did not answer GET /images/json: no answer within 0.1 s`,
+    );
+    expect(failure.hint).toBe(
+      "the engine may still be finishing it; run the command again later, and see ~/.colima/_lima/colima-pi-sandbox/ha.stderr.log if it keeps timing out",
+    );
+  });
+
+  it("advises restarting the VM only when the engine does not answer a ping", async () => {
+    const socketPath = await hungSocket();
+    const failure = (await createEngineClient(() => socketPath, { callMs: 50, removalMs: 50 })
+      .call({ method: "GET", path: "/_ping" })
+      .catch((error: unknown) => error)) as LauncherError;
+
+    expect(failure.hint).toBe(
+      "run colima stop --profile pi-sandbox && colima start --profile pi-sandbox --activate=false and see ~/.colima/_lima/colima-pi-sandbox/ha.stderr.log",
+    );
+  });
+
+  it("waits the long removal timeout, not the call timeout, for a volume, image or container removal", async () => {
+    const socketPath = await hungSocket();
+    const backend = hungBackend(socketPath);
+    const removals = [
+      backend.removeVolume("pi-sandbox-cache-big"),
+      backend.removeImage("pi-sandbox-layer:old"),
+      backend.removeContainer("abc"),
+    ];
+    const failures = (await Promise.all(
+      removals.map((removal) => removal.then(() => undefined).catch((error: unknown) => error)),
+    )) as LauncherError[];
+
+    expect(failures.map((failure) => failure.message)).toEqual([
+      `engine socket ${socketPath} did not answer DELETE /volumes/pi-sandbox-cache-big: no answer within 0.4 s`,
+      `engine socket ${socketPath} did not answer DELETE /images/pi-sandbox-layer%3Aold: no answer within 0.4 s`,
+      `engine socket ${socketPath} did not answer DELETE /containers/abc: no answer within 0.4 s`,
+    ]);
+  });
 });
 
 describe("colima container translation", () => {
@@ -252,7 +342,7 @@ describe("colima container translation", () => {
 
     await expect(backend.createContainer({ ...baseSpec, mounts })).rejects.toMatchObject({
       message: `the sandbox VM does not share ${host}`,
-      hint: "run pi sandbox doctor; its vm shares line names the command",
+      hint: "run pi sandbox doctor; its vm shares line names the folders the VM lacks",
     });
   });
 
@@ -378,6 +468,19 @@ describe("colima images", () => {
     );
   });
 
+  it("gives no certificate hint for a failure whose output only names the CA bundle in its steps", async () => {
+    const failure = await failingBuild(
+      [
+        "Step 6/12 : ARG NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt",
+        "Step 7/12 : RUN npm install --global pi && update-ca-certificates",
+        "npm error 404 Not Found - GET https://registry.npmjs.org/pi",
+      ],
+      "The command '/bin/sh -c npm install' returned a non-zero code: 1",
+    );
+
+    expect(failure?.hint).toBeUndefined();
+  });
+
   it("sends build args to the build and none when there are none", async () => {
     const engine = await startEngine();
     const context = await temporaryDir();
@@ -444,6 +547,28 @@ describe("colima images", () => {
     expect(await backend.removeImage("pi-sandbox-layer:idle")).toBe(true);
     expect(await backend.removeImage("pi-sandbox-layer:idle")).toBe(false);
     expect((await backend.listImages()).map((image) => image.id)).toEqual([used.id]);
+  });
+});
+
+describe("colima exec stream frames", () => {
+  it("splits a chunk of 10 000 tiny frames into stdout and stderr without deep recursion", () => {
+    const frame = (stream: number, text: string) =>
+      Buffer.concat([Buffer.from([stream, 0, 0, 0, 0, 0, 0, text.length]), Buffer.from(text)]);
+    const chunk = Buffer.concat(
+      Array.from({ length: 10_000 }, (_, index) => frame(index % 2 === 0 ? 1 : 2, "x")),
+    );
+    const stdout = new PassThrough();
+    const stderr = new PassThrough();
+    const written = { stdout: 0, stderr: 0 };
+    const deliver = demultiplexer({ stdout, stderr, tty: false }, (target, data) => {
+      written[target === stderr ? "stderr" : "stdout"] += data.length;
+    });
+
+    deliver(chunk.subarray(0, 5));
+
+    deliver(chunk.subarray(5));
+
+    expect(written).toEqual({ stdout: 5000, stderr: 5000 });
   });
 });
 
@@ -602,6 +727,7 @@ describe("colima egress relay", () => {
       Name: REPO_NETWORK,
       Driver: "bridge",
       Internal: true,
+      CheckDuplicate: true,
       Labels: { [LABELS.managed]: "true", [LABELS.repoHash]: REPO },
     });
     expect(engine.networks.get(REPO_NETWORK)?.connected).toEqual([
@@ -655,6 +781,157 @@ describe("colima egress relay", () => {
       expect.objectContaining({ container: relayOf(engine)?.Id, aliases: ["pi-sandbox-proxy"] }),
     );
     expect(engine.containers.get(sandbox.id)?.State).toBe("running");
+  });
+
+  it("lets two launches of one repository route at once, sharing one network and one relay", async () => {
+    const { engine, backend } = await readyBackend();
+    const routes = await Promise.all([routeOn(backend, 3128), routeOn(backend, 3128)]);
+
+    expect(routes).toEqual([
+      { network: { kind: "internal", name: REPO_NETWORK }, address: ALIAS_ADDRESS },
+      { network: { kind: "internal", name: REPO_NETWORK }, address: ALIAS_ADDRESS },
+    ]);
+    expect(await backend.findContainers({ [LABELS.relay]: "true" })).toHaveLength(1);
+    expect(engine.networks.get(REPO_NETWORK)?.connected).toEqual([
+      expect.objectContaining({ container: relayOf(engine)?.Id }),
+    ]);
+  });
+
+  it("lets two launches replace an outdated relay at once", async () => {
+    const { engine, backend } = await readyBackend();
+
+    await routeOn(backend, 3128);
+
+    await Promise.all([routeOn(backend, 4000), routeOn(backend, 4000)]);
+
+    expect(await backend.findContainers({ [LABELS.relay]: "true" })).toHaveLength(1);
+    expect(relayBody(engine)?.Cmd).toEqual(["TCP-LISTEN:3128,fork,reuseaddr", "TCP:host.lima.internal:4000"]);
+    expect(relayOf(engine)?.State).toBe("running");
+  });
+
+  it("replaces a relay that stays created or is no longer on the repository network", async () => {
+    const engine = await startEngine();
+    const pauses: number[] = [];
+    const backend = createColimaBackend({
+      home: "/nonexistent",
+      stateDir: "/nonexistent",
+      socketPath: engine.socketPath,
+      runner: createFakeRunner(() => undefined).runner,
+      pause: async (ms) => {
+        pauses.push(ms);
+      },
+    });
+
+    await backend.pullImage(IMAGE);
+
+    await routeOn(backend, 3128);
+
+    const created = relayOf(engine);
+
+    if (created !== undefined) {
+      created.State = "created";
+    }
+
+    await routeOn(backend, 3128);
+
+    const restarted = relayOf(engine);
+
+    expect(pauses).toHaveLength(149);
+    expect(restarted?.Id).not.toBe(created?.Id);
+    expect(restarted?.State).toBe("running");
+
+    const network = engine.networks.get(REPO_NETWORK);
+
+    if (network !== undefined) {
+      network.connected = [];
+    }
+
+    await routeOn(backend, 3128);
+
+    expect(relayOf(engine)?.Id).not.toBe(restarted?.Id);
+    expect(engine.networks.get(REPO_NETWORK)?.connected).toEqual([
+      expect.objectContaining({ container: relayOf(engine)?.Id, aliases: ["pi-sandbox-proxy"] }),
+    ]);
+  });
+
+  const pausedBackend = (engine: FakeEngine, pauses: number[]) =>
+    createColimaBackend({
+      home: "/nonexistent",
+      stateDir: "/nonexistent",
+      socketPath: engine.socketPath,
+      runner: createFakeRunner(() => undefined).runner,
+      pause: async (ms) => {
+        pauses.push(ms);
+      },
+    });
+
+  it("waits for its own dropped relay to go before it creates the replacement once more", async () => {
+    const engine = await startEngine({ lingeringRemovals: 5 });
+    const backend = pausedBackend(engine, []);
+
+    await backend.pullImage(IMAGE);
+
+    await routeOn(backend, 3128);
+
+    const old = relayOf(engine)?.Id;
+
+    await routeOn(backend, 4000);
+
+    expect(relayOf(engine)?.Id).not.toBe(old);
+    expect(relayOf(engine)?.State).toBe("running");
+    expect(relayBody(engine)?.Cmd).toEqual(["TCP-LISTEN:3128,fork,reuseaddr", "TCP:host.lima.internal:4000"]);
+  });
+
+  it("says the old relay is still being removed when the engine never finishes removing it", async () => {
+    const engine = await startEngine({ lingeringRemovals: 1000 });
+    const backend = pausedBackend(engine, []);
+
+    await backend.pullImage(IMAGE);
+
+    await routeOn(backend, 3128);
+
+    await expect(routeOn(backend, 4000)).rejects.toThrow(
+      `relay ${RELAY} is still being removed by the engine, so its replacement cannot be created`,
+    );
+  });
+
+  it("waits about 15 s for another launch's relay that is created but not yet started", async () => {
+    const engine = await startEngine();
+    const rival: { started: () => void } = { started: () => undefined };
+    const pauses: number[] = [];
+    const backend = createColimaBackend({
+      home: "/nonexistent",
+      stateDir: "/nonexistent",
+      socketPath: engine.socketPath,
+      runner: createFakeRunner(() => undefined).runner,
+      pause: async (ms) => {
+        pauses.push(ms);
+
+        if (pauses.length === 120) {
+          rival.started();
+        }
+      },
+    });
+
+    await backend.pullImage(IMAGE);
+
+    await routeOn(backend, 3128);
+
+    const created = relayOf(engine);
+
+    if (created !== undefined) {
+      created.State = "created";
+
+      rival.started = () => {
+        created.State = "running";
+      };
+    }
+
+    await routeOn(backend, 3128);
+
+    expect(pauses).toHaveLength(120);
+    expect(pauses.reduce((total, ms) => total + ms, 0)).toBe(12_000);
+    expect(relayOf(engine)?.Id).toBe(created?.Id);
   });
 
   it("creates no relay when the repository's network is refused", async () => {

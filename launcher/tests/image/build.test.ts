@@ -2,7 +2,7 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { ensureBuiltImage, prepareBuildContext } from "../../image/build.ts";
+import { ensureBuiltImage, prepareBuildContext, pullPinnedImage } from "../../image/build.ts";
 import { recordedImage } from "../../image/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
@@ -135,6 +135,19 @@ describe("prepareBuildContext", () => {
     expect(dockerfile).toMatch(/^ARG PI_VERSION=1\.5\.0$/m);
   });
 
+  it("declares the pi version right before the pi install, so a pi update reuses the earlier layers", async () => {
+    const dir = await tempDir();
+
+    await prepareBuildContext(versions, dir);
+
+    const steps = (await readFile(join(dir, "Dockerfile"), "utf8")).split(/\n\n+/);
+    const pinned = steps.indexOf("ARG PI_VERSION=1.5.0");
+
+    expect(steps.filter((step) => step.includes("PI_VERSION")).length).toBeGreaterThan(1);
+    expect(steps.slice(0, pinned).some((step) => step.includes("PI_VERSION"))).toBe(false);
+    expect(steps[pinned + 1]).toMatch(/^RUN test -n "\$\{PI_VERSION\}"[\s\S]*npm install --global/);
+  });
+
   it("refuses a version that is not a plain version string", async () => {
     const dir = await tempDir();
 
@@ -145,16 +158,14 @@ describe("prepareBuildContext", () => {
 });
 
 describe("ensureBuiltImage", () => {
-  it("pulls the pinned digest and never builds", async () => {
+  it("pullPinnedImage pulls the pinned digest and never builds", async () => {
     const reference = "ghcr.io/zharskiy/pi-sandbox:0.4.0";
     const fake = createFakeBackend({ registry: { [reference]: "sha256:pinned" } });
     const config = sandboxConfig({ image: { reference, digest: "sha256:pinned" } });
-    const result = await ensureBuiltImage({
-      backend: fake.backend,
-      config,
-      versions,
-      stateDir: await tempDir(),
-    });
+    const result = await pullPinnedImage(
+      { backend: fake.backend, config, stateDir: await tempDir() },
+      "sha256:pinned",
+    );
 
     expect(result).toEqual({ reference, digest: "sha256:pinned", id: "sha256:image-pinned", built: false });
     expect(fake.pulls).toEqual([reference]);
@@ -167,9 +178,9 @@ describe("ensureBuiltImage", () => {
     const backend = { ...fake.backend, pullImage: async () => ({ id: "sha256:x", digest: "sha256:other" }) };
     const config = sandboxConfig({ image: { reference, digest: "sha256:pinned" } });
 
-    await expect(ensureBuiltImage({ backend, config, versions, stateDir: await tempDir() })).rejects.toThrow(
-      "has digest sha256:other, expected sha256:pinned",
-    );
+    await expect(
+      pullPinnedImage({ backend, config, stateDir: await tempDir() }, "sha256:pinned"),
+    ).rejects.toThrow("has digest sha256:other, expected sha256:pinned");
   });
 
   it("builds locally when no digest is pinned and records the digest and the pi version", async () => {
@@ -266,6 +277,25 @@ describe("ensureBuiltImage", () => {
 
     expect(fake.builds).toHaveLength(2);
     expect(fake.builds[1]?.files["proxy-ca.pem"]).toBe("CA TWO\n");
+  });
+
+  it("adds the pi version to a reused record that names none, without rebuilding", async () => {
+    const fake = createFakeBackend();
+    const stateDir = await tempDir();
+    const config = sandboxConfig();
+    const recordFile = join(stateDir, "image.json");
+
+    await ensureBuiltImage({ backend: fake.backend, config, versions, stateDir });
+
+    const { pi: _pi, ...base } = JSON.parse(await readFile(recordFile, "utf8")).base;
+
+    await writeFile(recordFile, JSON.stringify({ base }));
+
+    const again = await ensureBuiltImage({ backend: fake.backend, config, versions, stateDir });
+
+    expect(again.built).toBe(false);
+    expect(fake.builds).toHaveLength(1);
+    expect(JSON.parse(await readFile(recordFile, "utf8")).base.pi).toBe("1.5.0");
   });
 
   it("rebuilds when the recorded image is gone from the engine", async () => {

@@ -1,8 +1,8 @@
 export { removeCreatedDirs } from "./created.ts";
-export { discoverWorkspace } from "./discover.ts";
+export { discoverWorkspace, workspaceFolder } from "./discover.ts";
 export { assertGitIntegrity, pinGitDirs, unpinRecorded, withGitPinLock } from "./git/integrity.ts";
 export { gitLaunchEndNotices, gitLaunchNotices, recordGitBaseline } from "./git/launch.ts";
-export { findGitRoot } from "./git/layout.ts";
+export { findGitRoot, PIN_TEXT } from "./git/layout.ts";
 export {
   findProtectedGitPaths,
   type GitOverlay,
@@ -11,9 +11,10 @@ export {
   gitPathGuard,
   type ProtectedGitPaths,
   protectedGitOverlay,
+  protectedWorkspaceOverlay,
 } from "./git/protect.ts";
 export { workspaceNotices, workspaceSelfBinds } from "./git/workspace.ts";
-export { assertHostSessionsDir, assertSafeWorkspace } from "./guard.ts";
+export { assertHostSessionsDir, assertSafeMounts, assertSafeWorkspace } from "./guard.ts";
 export {
   createHostCacheDirs,
   type HostCache,
@@ -21,6 +22,7 @@ export {
   resolveExtraMounts,
   resolveHostCaches,
 } from "./mounts.ts";
+export { byDepth, dirsBetween, unique } from "./paths.ts";
 export {
   type HostSessions,
   hostSessionsChoice,

@@ -75,7 +75,7 @@ describe("ensureLayerImage", () => {
     const order = [
       `FROM ${BASE_ID}`,
       "USER root",
-      "apt-get install -y --no-install-recommends jq chromium=120.0",
+      "apt-get install -y --no-install-recommends chromium=120.0 jq",
       "npm install --global typescript@5.6.0",
       "RUN echo extra > /opt/extra",
       "USER pi",
@@ -91,6 +91,28 @@ describe("ensureLayerImage", () => {
     ]);
     expect(text).toMatch(/^ARG NODE_EXTRA_CA_CERTS=/m);
     expect(Object.keys(fake.builds.at(-1)?.files ?? {}).sort()).toEqual(["Dockerfile", "trust.pem"]);
+  });
+
+  it("gives the same layer tag for the same packages in another order or repeated", async () => {
+    const fake = createFakeBackend();
+    const layerOf = async (image: Partial<ImageConfig>) =>
+      ensureLayerImage({
+        repoHash: REPO,
+        backend: fake.backend,
+        baseImageId: BASE_ID,
+        config: configWith(image),
+        stateDir: await tempDir(),
+      });
+    const first = await layerOf({ packages: ["jq", "chromium"], npmGlobal: ["b@1.0.0", "a@1.0.0"] });
+    const second = await layerOf({
+      packages: ["chromium", "jq", "jq"],
+      npmGlobal: ["a@1.0.0", "b@1.0.0", "a@1.0.0"],
+    });
+
+    expect(second.tag).toBe(first.tag);
+    expect(second.built).toBe(false);
+    expect(fake.builds).toHaveLength(1);
+    expect(layerDockerfile(fake)).toContain("npm install --global a@1.0.0 b@1.0.0");
   });
 
   it("reads an image.dockerfile path that starts with ~/ from the home", async () => {

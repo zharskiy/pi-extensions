@@ -2,6 +2,7 @@ export {
   authorityOf,
   fillTemplate,
   isLoopbackName,
+  matchesDenyEntry,
   matchesPattern,
   normalizeHost,
   parseEntry,

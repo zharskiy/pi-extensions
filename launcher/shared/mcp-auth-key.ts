@@ -1,5 +1,6 @@
-import { mkdir, mkdtemp, readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
+import { withFileLock } from "./file-lock.ts";
 import { isJsonObject, parseJsonObject, readJsonObject, writeJsonFile } from "./json-file.ts";
 import { stateLayout } from "./state-layout.ts";
 
@@ -13,7 +14,7 @@ export interface McpLoginState {
   lastStart?: number;
   failedAt?: number;
   rejectedStart?: number;
-  running?: { pgid: number; boot: number };
+  running?: { pgid: number; boot: number; start: string };
 }
 
 export type McpLogins = Record<string, McpLoginState>;
@@ -73,10 +74,20 @@ export const mcpLoginCommand = (piCommand: string[], server: string, timeoutSeco
   String(timeoutSeconds),
 ];
 
-export const makeMcpLoginDir = async (stateDir: string) => {
+const makeMcpLoginDir = async (stateDir: string) => {
   await mkdir(stateDir, { recursive: true, mode: 0o700 });
 
   return mkdtemp(stateLayout(stateDir).mcpLoginDirPrefix);
+};
+
+export const withMcpLoginDir = async <T>(stateDir: string, use: (cwd: string) => Promise<T>): Promise<T> => {
+  const cwd = await makeMcpLoginDir(stateDir);
+
+  try {
+    return await use(cwd);
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
 };
 
 const stateOf = (value: unknown): McpLoginState => (isJsonObject(value) ? (value as McpLoginState) : {});
@@ -89,15 +100,16 @@ export const readMcpLogins = async (stateDir: string): Promise<McpLogins> =>
     ]),
   );
 
-export const updateMcpLogin = async (
+export const updateMcpLogin = (
   stateDir: string,
   key: string,
   update: (current: McpLoginState) => McpLoginState,
-) => {
-  const logins = await readMcpLogins(stateDir);
-  const next = update(logins[key] ?? {});
+) =>
+  withFileLock(stateLayout(stateDir).mcpLoginFileLock, async () => {
+    const logins = await readMcpLogins(stateDir);
+    const next = update(logins[key] ?? {});
 
-  await writeJsonFile(stateLayout(stateDir).mcpLogin, { ...logins, [key]: next }, { mode: PRIVATE_MODE });
+    await writeJsonFile(stateLayout(stateDir).mcpLogin, { ...logins, [key]: next }, { mode: PRIVATE_MODE });
 
-  return next;
-};
+    return next;
+  });

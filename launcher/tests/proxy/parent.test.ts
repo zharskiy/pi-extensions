@@ -8,8 +8,7 @@ import {
 } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDialer, RestrictedAddressError } from "../../proxy/dial.ts";
-import { basicAuthorization, bypassesParent, parentRouteFor } from "../../proxy/parent.ts";
-import type { SecretResolver } from "../../proxy/secrets/index.ts";
+import { basicAuthorization, bypassesParent, parentRouteFor, parentTarget } from "../../proxy/parent.ts";
 
 const state: { parent: Server; echo: TcpServer; seen: Array<{ target?: string; auth?: string }> } = {
   parent: undefined as unknown as Server,
@@ -61,13 +60,6 @@ afterAll(async () => {
   await close(state.echo);
 });
 
-const resolverWith = (value: string | undefined): SecretResolver => ({
-  resolve: async () => (value === undefined ? { ok: false, reason: "none" } : { ok: true, value }),
-  invalidate: () => undefined,
-  rejected: async () => undefined,
-  close: async () => undefined,
-});
-
 const echoOnce = (socket: Socket, text: string) =>
   new Promise<string>((resolve) => {
     socket.once("data", (chunk: Buffer) => resolve(String(chunk)));
@@ -89,7 +81,7 @@ const loopbackSix = await new Promise<boolean>((resolve) => {
 
 describe("parent proxy", () => {
   it("dials a parent given as an IPv6 literal without its brackets", async () => {
-    const route = parentRouteFor("env", { HTTPS_PROXY: "http://[::1]:3128" }, resolverWith(undefined));
+    const route = parentRouteFor("env", { HTTPS_PROXY: "http://[::1]:3128" });
 
     expect([route?.host, route?.port]).toEqual(["::1", 3128]);
   });
@@ -110,11 +102,7 @@ describe("parent proxy", () => {
     await new Promise<void>((resolve) => parent.listen(0, "::1", () => resolve()));
 
     try {
-      const route = parentRouteFor(
-        "env",
-        { HTTPS_PROXY: `http://[::1]:${portOf(parent)}` },
-        resolverWith(undefined),
-      );
+      const route = parentRouteFor("env", { HTTPS_PROXY: `http://[::1]:${portOf(parent)}` });
       const socket = await createDialer({ parent: route, resolve: publicResolve })(
         "api.example.test",
         443,
@@ -135,7 +123,7 @@ describe("parent proxy", () => {
     const route = parentRouteFor(
       "env",
       { HTTPS_PROXY: `http://127.0.0.1:${portOf(state.parent)}` },
-      resolverWith("corp:pass"),
+      "corp:pass",
     );
     const socket = await createDialer({ parent: route, resolve: publicResolve })(
       "api.example.test",
@@ -153,11 +141,7 @@ describe("parent proxy", () => {
   });
 
   it("fails when the parent refuses the credentials", async () => {
-    const route = parentRouteFor(
-      "env",
-      { HTTPS_PROXY: `http://127.0.0.1:${portOf(state.parent)}` },
-      resolverWith(undefined),
-    );
+    const route = parentRouteFor("env", { HTTPS_PROXY: `http://127.0.0.1:${portOf(state.parent)}` });
 
     await expect(
       createDialer({ parent: route, resolve: publicResolve })("api.example.test", 443, "public"),
@@ -168,7 +152,7 @@ describe("parent proxy", () => {
     const route = parentRouteFor(
       "env",
       { HTTPS_PROXY: `http://127.0.0.1:${portOf(state.parent)}` },
-      resolverWith("corp:pass"),
+      "corp:pass",
     );
     const dial = createDialer({ parent: route, resolve: async () => [{ address: "10.0.0.5", family: 4 }] });
 
@@ -180,7 +164,7 @@ describe("parent proxy", () => {
     const route = parentRouteFor(
       "env",
       { HTTPS_PROXY: `http://127.0.0.1:${portOf(state.parent)}` },
-      resolverWith("corp:pass"),
+      "corp:pass",
     );
     const notFound = async () => {
       throw Object.assign(new Error("not found"), { code: "ENOTFOUND" });
@@ -201,14 +185,14 @@ describe("parent proxy", () => {
       HTTPS_PROXY: `http://corp:pass@127.0.0.1:${portOf(state.parent)}`,
       NO_PROXY: "internal.test,.corp.test",
     };
-    const sent = parentRouteFor("env", env, resolverWith("corp:sent-by-launcher"));
-    const unsent = parentRouteFor("env", env, resolverWith(undefined));
+    const sent = parentRouteFor("env", env, "corp:sent-by-launcher");
+    const unsent = parentRouteFor("env", env);
 
     expect(sent?.noProxy).toEqual(["internal.test", ".corp.test"]);
     expect(sent?.port).toBe(portOf(state.parent));
-    expect(await sent?.authorization()).toBe(basicAuthorization("corp:sent-by-launcher"));
-    expect(await unsent?.authorization()).toBeUndefined();
-    expect(parentRouteFor("none", { HTTPS_PROXY: "http://x:1" }, resolverWith(undefined))).toBeUndefined();
+    expect(sent?.authorization).toBe(basicAuthorization("corp:sent-by-launcher"));
+    expect(unsent?.authorization).toBeUndefined();
+    expect(parentRouteFor("none", { HTTPS_PROXY: "http://x:1" })).toBeUndefined();
   });
 
   it("gives up on a parent that accepts the connection but never answers the CONNECT", async () => {
@@ -218,11 +202,7 @@ describe("parent proxy", () => {
 
     await listen(silent);
 
-    const route = parentRouteFor(
-      "env",
-      { HTTPS_PROXY: `http://127.0.0.1:${portOf(silent)}` },
-      resolverWith(undefined),
-    );
+    const route = parentRouteFor("env", { HTTPS_PROXY: `http://127.0.0.1:${portOf(silent)}` });
     const started = Date.now();
     const outcome = await createDialer({
       parent: route && { ...route, timeoutMs: 200 },
@@ -235,33 +215,43 @@ describe("parent proxy", () => {
     expect(Date.now() - started).toBeLessThan(2_000);
   });
 
-  it("asks for the parent credentials of the repository that dials", async () => {
-    const asked: Array<string | undefined> = [];
-    const resolver: SecretResolver = {
-      resolve: async (_key, _ref, repoHash) => {
-        asked.push(repoHash);
+  it("refuses a parent whose response head never ends", async () => {
+    const chatty = createTcpServer((socket) => {
+      socket.once("data", () => socket.write(`HTTP/1.1 200 OK\r\nX-Pad: ${"a".repeat(20_000)}`));
+    });
 
-        return repoHash === "a".repeat(64) ? { ok: true, value: "corp:pass" } : { ok: false, reason: "none" };
-      },
-      invalidate: () => undefined,
-      rejected: async () => undefined,
-      close: async () => undefined,
-    };
-    const route = parentRouteFor(
-      "env",
-      { HTTPS_PROXY: `http://127.0.0.1:${portOf(state.parent)}` },
-      resolver,
-    );
-    const dial = createDialer({ parent: route, resolve: publicResolve });
-    const socket = await dial("api.example.test", 443, "public", "a".repeat(64));
-    const other = await dial("api.example.test", 443, "public", "b".repeat(64)).catch(
-      (error: Error) => error,
-    );
+    await listen(chatty);
 
-    socket.destroy();
+    const route = parentRouteFor("env", { HTTPS_PROXY: `http://127.0.0.1:${portOf(chatty)}` });
+    const outcome = await createDialer({ parent: route, resolve: publicResolve })(
+      "api.example.test",
+      443,
+      "public",
+    ).catch((error: Error) => error.message);
 
-    expect(asked).toEqual(["a".repeat(64), "b".repeat(64)]);
-    expect(other).toBeInstanceOf(Error);
+    await close(chatty);
+
+    expect(outcome).toBe("the parent proxy sent an oversized response head");
+  });
+
+  it("names the parent target, or why an env parent cannot be used", () => {
+    expect(parentTarget("env", { HTTPS_PROXY: "http://user:pw@[::1]:3128" })).toEqual({
+      host: "::1",
+      port: 3128,
+    });
+    expect(parentTarget("env", { HTTPS_PROXY: "", https_proxy: "http://proxy.test" })).toEqual({
+      host: "proxy.test",
+      port: 80,
+    });
+    expect(parentTarget("env", { HTTPS_PROXY: "https://proxy.test:443" })).toEqual({
+      unsupported: "HTTPS_PROXY uses https, only http parent proxies are supported",
+    });
+    expect(parentTarget("env", { HTTPS_PROXY: "not a url" })).toEqual({
+      unsupported: "HTTPS_PROXY is not a URL",
+    });
+    expect(parentTarget("env", {})).toBeUndefined();
+    expect(parentTarget("none", { HTTPS_PROXY: "http://proxy.test" })).toBeUndefined();
+    expect(parentRouteFor("env", { HTTPS_PROXY: "https://proxy.test:443" })).toBeUndefined();
   });
 
   it("honours noProxy entries", () => {

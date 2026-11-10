@@ -26,6 +26,7 @@ interface Setup {
   env?: Record<string, string>;
   respond?: FakeResponder;
   enabled?: boolean;
+  excludedRoots?: (home: string) => string[];
 }
 
 const derive = async (setup: Setup = {}) => {
@@ -46,6 +47,7 @@ const derive = async (setup: Setup = {}) => {
     runner: fake.runner,
     salt: SALT,
     enabled: setup.enabled ?? true,
+    excludedRoots: setup.excludedRoots?.(home) ?? [],
   });
 
   return { home, bin, tools, calls: fake.calls };
@@ -589,19 +591,19 @@ describe("URL userinfo in npmrc and pip.conf", () => {
 
 describe("git identity and the derive switch", () => {
   it("reads the host user name and email, also with derivation off", async () => {
-    const { tools, calls } = await derive({
-      bins: ["gh"],
+    const { bin, tools, calls } = await derive({
+      bins: ["gh", "git"],
       files: { ".config/gh/hosts.yml": GH_HOSTS, ".npmrc": "//npm.test/:_authToken=x\n" },
       enabled: false,
       respond: (call) =>
-        call.file === "git" ? { stdout: "user.name Max Z\nuser.email max@corp.test\n" } : undefined,
+        call.file.endsWith("/git") ? { stdout: "user.name Max Z\nuser.email max@corp.test\n" } : undefined,
     });
 
     expect(tools.value.git).toEqual({ name: "Max Z", email: "max@corp.test" });
     expect(tools.rules).toEqual([]);
     expect(tools.value.gh).toEqual([]);
     expect(tools.value.npmrc).toBeUndefined();
-    expect(calls.map((call) => call.file)).toEqual(["git"]);
+    expect(calls.map((call) => call.file)).toEqual([join(bin, "git")]);
   });
 });
 
@@ -685,6 +687,139 @@ describe("Maven settings in the sandbox", () => {
       "maven profiles: the property deploy.password looks like a secret and stays on the host",
       "maven profiles: a repository URL carried user credentials; they stay on the host, put them in a <server> with its id",
       "maven: localRepository /Users/me/m2repo is not used in the sandbox; Maven there uses ~/.m2/repository",
+    ]);
+  });
+});
+
+describe("host tools inside the sandbox roots", () => {
+  it("never runs a gh or git that lies inside the sandbox", async () => {
+    const { tools, calls } = await derive({
+      bins: ["gh", "git"],
+      files: { ".config/gh/hosts.yml": GH_HOSTS },
+      excludedRoots: (home) => [join(home, "bin")],
+      respond: ghVersion("2.40.0"),
+    });
+
+    expect(calls).toEqual([]);
+    expect(tools.rules).toEqual([]);
+    expect(tools.value.git).toEqual({});
+  });
+
+  it("ignores tool config files the environment points inside the sandbox", async () => {
+    const { home, tools, calls } = await derive({
+      bins: ["gh", "glab"],
+      files: {
+        "repo/gh/hosts.yml": "exfil-gh.example:\n    user: me\n",
+        "repo/glab/config.yml": "hosts:\n    exfil-glab.example:\n        token: x\n",
+        "repo/pip.conf": "[global]\nextra-index-url = https://u:p@exfil.example/simple\n",
+      },
+      envFromHome: (dir) => ({
+        GH_CONFIG_DIR: join(dir, "repo", "gh"),
+        GLAB_CONFIG_DIR: join(dir, "repo", "glab"),
+        PIP_CONFIG_FILE: join(dir, "repo", "pip.conf"),
+      }),
+      excludedRoots: (dir) => [join(dir, "repo")],
+      respond: (call) => ghVersion("2.40.0")(call) ?? glabToken(call),
+    });
+
+    expect(tools.rules).toEqual([]);
+    expect(tools.value.pip).toBeUndefined();
+    expect(calls.filter((call) => !call.file.endsWith("/git"))).toEqual([]);
+    expect(tools.notices).toEqual([
+      `gh: ${join(home, "repo", "gh", "hosts.yml")} (from GH_CONFIG_DIR) lies inside the sandbox, which can rewrite it; ignored`,
+      `glab: ${join(home, "repo", "glab", "config.yml")} (from GLAB_CONFIG_DIR) lies inside the sandbox, which can rewrite it; ignored`,
+      `pip: ${join(home, "repo", "pip.conf")} (from PIP_CONFIG_FILE) lies inside the sandbox, which can rewrite it; ignored`,
+    ]);
+  });
+});
+
+describe("host tool probes", () => {
+  it("asks glab only for hosts whose token is not in its config, with a timeout", async () => {
+    const { calls } = await derive({
+      bins: ["glab"],
+      files: { "Library/Application Support/glab-cli/config.yml": GLAB_CONFIG },
+      respond: glabToken,
+    });
+    const probes = calls.filter((call) => call.file.endsWith("glab"));
+
+    expect(probes.map((call) => call.args.at(-1))).toEqual(["empty.corp.test"]);
+    expect(probes[0]?.options.timeoutMs).toBe(30_000);
+  });
+
+  it("skips gh, glab and git with a notice when they do not answer in time", async () => {
+    const { bin, tools } = await derive({
+      bins: ["gh", "glab", "git"],
+      files: {
+        ".config/gh/hosts.yml": GH_HOSTS,
+        ".config/glab-cli/config.yml": "hosts:\n    gitlab.corp.test:\n        user: me\n",
+      },
+      respond: () => ({ code: 124, timedOut: true }),
+    });
+
+    expect(tools.rules).toEqual([]);
+    expect(tools.value.git).toEqual({});
+    expect(tools.notices).toEqual([
+      `git: ${join(bin, "git")} config --global did not answer within 10 s on the host; skipped`,
+      `gh: ${join(bin, "gh")} --version did not answer within 10 s on the host (a Keychain prompt may be waiting); it has no credentials in the sandbox this launch, run pi again once it answers`,
+      `glab gitlab.corp.test: ${join(bin, "glab")} config get token did not answer within 30 s on the host (a Keychain prompt may be waiting); it has no credentials in the sandbox this launch, run pi again once it answers`,
+    ]);
+  });
+});
+
+describe("tool config details", () => {
+  it("normalises pip option names as pip does", async () => {
+    const { tools } = await derive({
+      files: {
+        ".config/pip/pip.conf":
+          "[global]\nindex_url = https://me:PIP-REAL@pypi.corp.test/simple\n--proxy = http://corp:3128\n",
+      },
+    });
+
+    expect(tools.value.pip).toEqual([
+      {
+        name: "global",
+        entries: [["index_url", `https://me:${P("pip:global.index_url[0]")}@pypi.corp.test/simple`]],
+      },
+    ]);
+    expect(tools.rules.map((rule) => rule.host)).toEqual(["pypi.corp.test"]);
+    expect(tools.notices).toEqual([
+      "pip: global.--proxy stays on the host; the sandbox reaches the network through the launcher proxy",
+    ]);
+  });
+
+  it("keeps an npm token for a registry the sandbox cannot reach on the host", async () => {
+    const { tools } = await derive({ files: { ".npmrc": "//localhost:4873/:_authToken=NPM-REAL\n" } });
+
+    expect(tools.rules).toEqual([]);
+    expect(tools.value.npmrc).toEqual([]);
+    expect(tools.notices).toEqual([
+      "npmrc: //localhost:4873/:_authToken names a registry the sandbox cannot reach; the key stays on the host",
+    ]);
+  });
+
+  it("expands env usernames and keeps mixed env passwords on the host in Maven settings", async () => {
+    const settings = `<settings>
+  <servers>
+    <server><id>corp</id><username>${braced("env.MVN_USER")}</username><password>${braced("env.MVN_PASS")}</password></server>
+    <server><id>mixed</id><username>me</username><password>pre${braced("env.MVN_PASS")}</password></server>
+    <server><id>unset</id><username>${braced("env.NOT_SET")}</username><password>M2-REAL</password></server>
+  </servers>
+  <mirrors>
+    <mirror><id>corp</id><mirrorOf>central</mirrorOf><url>https://maven.corp.test/repo</url></mirror>
+    <mirror><id>mixed</id><mirrorOf>other</mirrorOf><url>https://mixed.corp.test/repo</url></mirror>
+    <mirror><id>unset</id><mirrorOf>third</mirrorOf><url>https://unset.corp.test/repo</url></mirror>
+  </mirrors>
+</settings>`;
+    const { tools } = await derive({ files: { ".m2/settings.xml": settings }, env: { MVN_USER: "ci-user" } });
+
+    expect(tools.value.maven.servers.map((server) => [server.id, server.username])).toEqual([
+      ["corp", "ci-user"],
+      ["unset", braced("env.NOT_SET")],
+    ]);
+    expect(rulesOf(tools.rules, "derived:maven:corp:password")[0]?.secret).toEqual({ env: "MVN_PASS" });
+    expect(tools.notices).toEqual([
+      `maven mixed: the password mixes ${braced("env.…")} with other text and stays on the host`,
+      "maven unset: the username reads an environment variable that is unset or secret on the host; it is copied unexpanded",
     ]);
   });
 });

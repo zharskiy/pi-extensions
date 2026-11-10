@@ -1,29 +1,14 @@
 import { userHashOf } from "../../container/index.ts";
-import { LauncherError } from "../../shared/index.ts";
 import { type CliDeps, pathsOf, writeLine, writeLines } from "../deps.ts";
-import { openContext } from "../launch.ts";
 import { sweepOrphans } from "../sweep.ts";
 
-const SHARED_CACHES = "--shared-caches";
+export const SHARED_CACHES = "--shared-caches";
 
 const ENGINE_SKIPPED =
   "the sandbox VM is not running, so the engine step was skipped; the next pi starts it and cleans its containers, volumes and images";
 
-const sharedOwnerOf = (args: string[], stateDir: string) => {
-  const unknown = args.find((arg) => arg !== SHARED_CACHES);
-
-  if (unknown !== undefined) {
-    throw new LauncherError(`unknown gc option "${unknown}"`, `pi sandbox gc [${SHARED_CACHES}]`);
-  }
-
-  return args.includes(SHARED_CACHES) ? userHashOf(stateDir) : undefined;
-};
-
 export const gcCommand = async (deps: CliDeps, args: string[]) => {
-  const sharedOwner = sharedOwnerOf(args, pathsOf(deps).stateDir);
-
-  await openContext(deps, "host");
-
+  const sharedOwner = args.includes(SHARED_CACHES) ? userHashOf(pathsOf(deps).stateDir) : undefined;
   const backend = deps.backend();
   const reachable = (await backend.detect()).available;
   const lines = await sweepOrphans(deps, backend, { collect: { sharedOwner } });
