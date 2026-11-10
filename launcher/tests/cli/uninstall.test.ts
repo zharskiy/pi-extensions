@@ -174,6 +174,38 @@ describe("the hidden uninstall command", () => {
     expect(harness.stdout()).toContain("host: released the created folders and proxies of 1 folders\n");
   });
 
+  it("leaves the sandbox of a folder whose pi session starts while the uninstall runs", async () => {
+    const fake = createFakeBackend();
+    const harness = await createHarness({
+      backend: () => ({
+        ...fake.backend,
+        detect: async () => {
+          await holdLaunch(harness);
+
+          return { available: true };
+        },
+      }),
+    });
+    const repo = sha256Hex(harness.repoRoot);
+
+    await fake.backend.prepareProxyRoute({ hostPort: 3128, repoHash: repo, imageId: "relay" });
+
+    const starting = fake.addContainer({
+      name: "pi-sandbox-starting",
+      labels: { [LABELS.managed]: "true", [LABELS.repoHash]: repo },
+      state: "running",
+      image: "x",
+    });
+
+    expect(await run(["__uninstall"], harness.deps)).toBe(0);
+    expect(fake.containers.has(starting)).toBe(true);
+    expect(fake.relays.has(repo)).toBe(true);
+    expect(fake.networks.has(`pi-sandbox-${repo.slice(0, 12)}`)).toBe(true);
+    expect(harness.stdout()).toContain(
+      `host: a pi session of ${repo.slice(0, 12)} started meanwhile; its sandbox stays\n`,
+    );
+  });
+
   it("releases the host side and leaves the engine objects to the profile when the VM is stopped", async () => {
     const harness = await createHarness({ backend: () => unreachable(createFakeBackend().backend) });
     const repo = "c".repeat(64);

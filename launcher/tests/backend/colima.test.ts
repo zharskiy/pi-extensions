@@ -285,7 +285,7 @@ describe("colima adapter status", () => {
     );
   });
 
-  it("waits the long removal timeout, not the call timeout, for a volume, image or container removal", async () => {
+  it("waits the long removal timeout for a volume or image removal, and only the call timeout for a container", async () => {
     const socketPath = await hungSocket();
     const backend = hungBackend(socketPath);
     const removals = [
@@ -300,7 +300,7 @@ describe("colima adapter status", () => {
     expect(failures.map((failure) => failure.message)).toEqual([
       `engine socket ${socketPath} did not answer DELETE /volumes/pi-sandbox-cache-big: no answer within 0.4 s`,
       `engine socket ${socketPath} did not answer DELETE /images/pi-sandbox-layer%3Aold: no answer within 0.4 s`,
-      `engine socket ${socketPath} did not answer DELETE /containers/abc: no answer within 0.4 s`,
+      `engine socket ${socketPath} did not answer DELETE /containers/abc: no answer within 0.1 s`,
     ]);
   });
 });
@@ -865,8 +865,16 @@ describe("colima egress relay", () => {
         [LABELS.repoHash]: REPO,
         [LABELS.relayPort]: "3128",
       },
-      HostConfig: { NetworkMode: "bridge", AutoRemove: true },
+      HostConfig: {
+        NetworkMode: "bridge",
+        AutoRemove: true,
+        ReadonlyRootfs: true,
+        CapDrop: ["ALL"],
+        SecurityOpt: ["no-new-privileges"],
+        PidsLimit: 1024,
+      },
     });
+    expect(relayBody(engine)).not.toHaveProperty("HostConfig.CapAdd");
   });
 
   it("reuses a running relay for the same host port", async () => {
@@ -906,46 +914,8 @@ describe("colima egress relay", () => {
     expect(engine.containers.get(sandbox.id)?.State).toBe("running");
   });
 
-  it("lets two launches of one repository route at once, sharing one network and one relay", async () => {
-    const { engine, backend } = await readyBackend();
-    const routes = await Promise.all([routeOn(backend, 3128), routeOn(backend, 3128)]);
-
-    expect(routes).toEqual([
-      { network: { kind: "internal", name: REPO_NETWORK }, address: ALIAS_ADDRESS },
-      { network: { kind: "internal", name: REPO_NETWORK }, address: ALIAS_ADDRESS },
-    ]);
-    expect(await backend.findContainers({ [LABELS.relay]: "true" })).toHaveLength(1);
-    expect(engine.networks.get(REPO_NETWORK)?.connected).toEqual([
-      expect.objectContaining({ container: relayOf(engine)?.Id }),
-    ]);
-  });
-
-  it("lets two launches replace an outdated relay at once", async () => {
-    const { engine, backend } = await readyBackend();
-
-    await routeOn(backend, 3128);
-
-    await Promise.all([routeOn(backend, 4000), routeOn(backend, 4000)]);
-
-    expect(await backend.findContainers({ [LABELS.relay]: "true" })).toHaveLength(1);
-    expect(relayBody(engine)?.Cmd).toEqual(["TCP-LISTEN:3128,fork,reuseaddr", "TCP:host.lima.internal:4000"]);
-    expect(relayOf(engine)?.State).toBe("running");
-  });
-
   it("replaces a relay that stays created or is no longer on the repository network", async () => {
-    const engine = await startEngine();
-    const pauses: number[] = [];
-    const backend = createColimaBackend({
-      home: "/nonexistent",
-      stateDir: "/nonexistent",
-      socketPath: engine.socketPath,
-      runner: createFakeRunner(() => undefined).runner,
-      pause: async (ms) => {
-        pauses.push(ms);
-      },
-    });
-
-    await backend.pullImage(IMAGE);
+    const { engine, backend } = await readyBackend();
 
     await routeOn(backend, 3128);
 
@@ -959,7 +929,6 @@ describe("colima egress relay", () => {
 
     const restarted = relayOf(engine);
 
-    expect(pauses).toHaveLength(149);
     expect(restarted?.Id).not.toBe(created?.Id);
     expect(restarted?.State).toBe("running");
 
@@ -977,20 +946,18 @@ describe("colima egress relay", () => {
     ]);
   });
 
-  const pausedBackend = (engine: FakeEngine, pauses: number[]) =>
+  const quickBackend = (engine: FakeEngine) =>
     createColimaBackend({
       home: "/nonexistent",
       stateDir: "/nonexistent",
       socketPath: engine.socketPath,
       runner: createFakeRunner(() => undefined).runner,
-      pause: async (ms) => {
-        pauses.push(ms);
-      },
+      timeouts: { callMs: 200, pingMs: 200, removalMs: 1000 },
     });
 
-  it("waits for its own dropped relay to go before it creates the replacement once more", async () => {
+  it("waits for the engine to finish removing the old relay before it creates the replacement", async () => {
     const engine = await startEngine({ lingeringRemovals: 5 });
-    const backend = pausedBackend(engine, []);
+    const backend = quickBackend(engine);
 
     await backend.pullImage(IMAGE);
 
@@ -1005,9 +972,22 @@ describe("colima egress relay", () => {
     expect(relayBody(engine)?.Cmd).toEqual(["TCP-LISTEN:3128,fork,reuseaddr", "TCP:host.lima.internal:4000"]);
   });
 
+  it("keeps the engine's own error when it refuses to remove the old relay", async () => {
+    const engine = await startEngine({ failContainerRemoval: "driver failed removing container" });
+    const backend = quickBackend(engine);
+
+    await backend.pullImage(IMAGE);
+
+    await routeOn(backend, 3128);
+
+    await expect(routeOn(backend, 4000)).rejects.toThrow(
+      /^engine: DELETE \/containers\/[0-9a-f]+ failed \(500\): driver failed removing container$/,
+    );
+  });
+
   it("says the old relay is still being removed when the engine never finishes removing it", async () => {
-    const engine = await startEngine({ lingeringRemovals: 1000 });
-    const backend = pausedBackend(engine, []);
+    const engine = await startEngine({ lingeringRemovals: Number.POSITIVE_INFINITY });
+    const backend = quickBackend(engine);
 
     await backend.pullImage(IMAGE);
 
@@ -1016,45 +996,6 @@ describe("colima egress relay", () => {
     await expect(routeOn(backend, 4000)).rejects.toThrow(
       `relay ${RELAY} is still being removed by the engine, so its replacement cannot be created`,
     );
-  });
-
-  it("waits about 15 s for another launch's relay that is created but not yet started", async () => {
-    const engine = await startEngine();
-    const rival: { started: () => void } = { started: () => undefined };
-    const pauses: number[] = [];
-    const backend = createColimaBackend({
-      home: "/nonexistent",
-      stateDir: "/nonexistent",
-      socketPath: engine.socketPath,
-      runner: createFakeRunner(() => undefined).runner,
-      pause: async (ms) => {
-        pauses.push(ms);
-
-        if (pauses.length === 120) {
-          rival.started();
-        }
-      },
-    });
-
-    await backend.pullImage(IMAGE);
-
-    await routeOn(backend, 3128);
-
-    const created = relayOf(engine);
-
-    if (created !== undefined) {
-      created.State = "created";
-
-      rival.started = () => {
-        created.State = "running";
-      };
-    }
-
-    await routeOn(backend, 3128);
-
-    expect(pauses).toHaveLength(120);
-    expect(pauses.reduce((total, ms) => total + ms, 0)).toBe(12_000);
-    expect(relayOf(engine)?.Id).toBe(created?.Id);
   });
 
   it("creates no relay when the repository's network is refused", async () => {

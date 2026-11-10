@@ -36,9 +36,13 @@ export interface EngineClient {
 
 export const segment = (value: string) => encodeURIComponent(value);
 
+export class EngineTimeout extends LauncherError {}
+
 const CONNECTION_ERRORS = new Set(["ENOENT", "ECONNREFUSED", "EACCES", "ENOTSOCK", "ECONNRESET"]);
 
 const PING_PATH = "/_ping";
+
+const CONTAINERS_PATH = "/containers/";
 
 const TIMED_OUT = "ETIMEDOUT_ENGINE";
 
@@ -159,17 +163,17 @@ export interface EngineTimeouts {
   removalMs: number;
 }
 
-const TIMEOUTS: EngineTimeouts = { callMs: 30_000, pingMs: 5000, removalMs: 600_000 };
+export const ENGINE_TIMEOUTS: EngineTimeouts = { callMs: 30_000, pingMs: 5000, removalMs: 600_000 };
 
 const RETRY_HINT = `the engine may still be finishing it; run the command again later, and see ${logHint(ENGINE_PROFILE)} if it keeps timing out`;
 
 export const createEngineClient = (
   socket: () => string,
-  timeouts: EngineTimeouts = TIMEOUTS,
+  timeouts: EngineTimeouts = ENGINE_TIMEOUTS,
 ): EngineClient => {
   const failure = (error: NodeJS.ErrnoException, request: EngineRequest, answered = false) => {
     if (error.code === TIMED_OUT) {
-      return new LauncherError(
+      return new EngineTimeout(
         `engine socket ${socket()} did not answer ${request.method} ${request.path}: ${error.message}`,
         RETRY_HINT,
       );
@@ -235,7 +239,9 @@ export const createEngineClient = (
       return timeouts.pingMs;
     }
 
-    return request.method === "DELETE" ? timeouts.removalMs : timeouts.callMs;
+    return request.method === "DELETE" && !request.path.startsWith(CONTAINERS_PATH)
+      ? timeouts.removalMs
+      : timeouts.callMs;
   };
 
   const call = async (request: EngineRequest, accepted: number[] = []) => {

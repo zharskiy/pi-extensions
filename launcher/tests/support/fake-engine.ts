@@ -51,6 +51,7 @@ export interface FakeEngineOptions {
   failBuild?: { output: string[]; error: string };
   failPull?: string;
   lingeringRemovals?: number;
+  failContainerRemoval?: string;
 }
 
 interface FakeImage {
@@ -434,6 +435,10 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
       return conflict(`removal of container ${container.Id} is already in progress`);
     }
 
+    if (options.failContainerRemoval !== undefined) {
+      return { status: 500, json: { message: options.failContainerRemoval } };
+    }
+
     if ((options.lingeringRemovals ?? 0) > 0) {
       container.State = "removing";
 
@@ -488,8 +493,33 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
     return { status: 204 };
   });
 
+  const lingered = (container: FakeContainer) =>
+    new Promise<void>((done) => {
+      const step = () => {
+        if (!containers.has(container.Id)) {
+          done();
+
+          return;
+        }
+
+        if (lingering.get(container.Id) === Number.POSITIVE_INFINITY) {
+          return;
+        }
+
+        linger(container);
+
+        setImmediate(step);
+      };
+
+      step();
+    });
+
   const waitContainer = withContainer(async (container) => {
     await autoRemovals.get(container.Id);
+
+    if (lingering.has(container.Id)) {
+      await lingered(container);
+    }
 
     return { status: 200, json: { StatusCode: 0 } };
   });

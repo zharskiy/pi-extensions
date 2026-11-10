@@ -2,7 +2,15 @@ import { existsSync } from "node:fs";
 import { type CommandRunner, errorMessage, LauncherError } from "../../shared/index.ts";
 import type { Backend, ContainerSpec, Detection } from "../types.ts";
 import { containerBody, type EngineContainer, labelFilters, summaryOf } from "./container-body.ts";
-import { createEngineClient, type EngineTimeouts, engineError, messageOf, segment } from "./engine-client.ts";
+import {
+  createEngineClient,
+  ENGINE_TIMEOUTS,
+  EngineTimeout,
+  type EngineTimeouts,
+  engineError,
+  messageOf,
+  segment,
+} from "./engine-client.ts";
 import { runExec } from "./exec-session.ts";
 import { createImageOperations } from "./images.ts";
 import { ENGINE_PROFILE, engineSocketPath } from "./profile.ts";
@@ -16,7 +24,6 @@ export interface ColimaBackendOptions {
   runner: CommandRunner;
   socketPath?: string;
   timeouts?: EngineTimeouts;
-  pause?: (ms: number) => Promise<void>;
 }
 
 interface EngineVersion {
@@ -28,7 +35,7 @@ interface EngineVersion {
 
 const STOP_TIMEOUT_SECONDS = 5;
 
-const REMOVAL_WAIT_MS = 30_000;
+const RELAY_REMOVAL_MS = 10_000;
 
 const MISSING_BIND_SOURCE = /bind source path does not exist: (.+)$/;
 
@@ -40,10 +47,13 @@ const unsharedSource = (body: Buffer) => {
 
 export const createColimaBackend = (options: ColimaBackendOptions): Backend => {
   const socket = () => options.socketPath ?? engineSocketPath(options.home);
-  const client = createEngineClient(socket, options.timeouts);
+  const timeouts = options.timeouts ?? ENGINE_TIMEOUTS;
+  const client = createEngineClient(socket, timeouts);
   const images = createImageOperations(client, options.runner);
   const volumes = createVolumeOperations(client);
-  const relay = createRelayOperations(client, options.pause);
+  const relay = createRelayOperations(client, (id) =>
+    removeContainer(id, Math.min(RELAY_REMOVAL_MS, timeouts.callMs)),
+  );
 
   const version = () => client.json<EngineVersion>({ method: "GET", path: "/version" });
 
@@ -109,9 +119,9 @@ export const createColimaBackend = (options: ColimaBackendOptions): Backend => {
     );
   };
 
-  const removeContainer = async (id: string) => {
+  const removeContainer = async (id: string, timeoutMs?: number) => {
     await client.call(
-      { method: "DELETE", path: `/containers/${segment(id)}`, query: { force: true } },
+      { method: "DELETE", path: `/containers/${segment(id)}`, query: { force: true }, timeoutMs },
       [404, 409],
     );
 
@@ -121,15 +131,17 @@ export const createColimaBackend = (options: ColimaBackendOptions): Backend => {
           method: "POST",
           path: `/containers/${segment(id)}/wait`,
           query: { condition: "removed" },
-          timeoutMs: REMOVAL_WAIT_MS,
+          timeoutMs,
         },
         [404],
       )
       .catch((error: unknown) => {
-        throw new LauncherError(
-          `container ${id} was not removed within ${REMOVAL_WAIT_MS / 1000} s: ${errorMessage(error)}`,
-          "the engine may still be finishing it; the next pi start removes what is left",
-        );
+        throw error instanceof EngineTimeout
+          ? new EngineTimeout(
+              `container ${id} is still being removed by the engine: ${error.message}`,
+              "the next pi start removes what is left",
+            )
+          : error;
       });
   };
 
@@ -162,7 +174,7 @@ export const createColimaBackend = (options: ColimaBackendOptions): Backend => {
     createContainer,
     startContainer,
     stopContainer,
-    removeContainer,
+    removeContainer: (id) => removeContainer(id),
     exec: (spec, io) => runExec(client, spec, io),
     ensureVolume: volumes.ensureVolume,
     listVolumes: volumes.listVolumes,

@@ -38,6 +38,13 @@ const tmpfsEntry = (entry: string) => {
 
 const networkModeOf = (network: NetworkRef) => (network.kind === "none" ? "none" : network.name);
 
+export const confined = (pidsLimit: number, capabilities: string[] = []) => ({
+  CapDrop: ["ALL"],
+  ...(capabilities.length === 0 ? {} : { CapAdd: capabilities }),
+  SecurityOpt: ["no-new-privileges"],
+  PidsLimit: pidsLimit,
+});
+
 export const envList = (env: Record<string, string>) =>
   Object.entries(env).map(([key, value]) => `${key}=${value}`);
 
@@ -56,10 +63,7 @@ export const containerBody = (spec: ContainerSpec) => ({
     Tmpfs: Object.fromEntries(spec.tmpfs.map(tmpfsEntry)),
     Init: spec.init,
     AutoRemove: true,
-    CapDrop: ["ALL"],
-    CapAdd: VOLUME_HANDOVER_CAPABILITIES,
-    SecurityOpt: ["no-new-privileges"],
-    PidsLimit: PIDS_LIMIT,
+    ...confined(PIDS_LIMIT, VOLUME_HANDOVER_CAPABILITIES),
     NanoCpus: scaled(spec.resources.cpus, NANO_CPUS),
     Memory: scaled(spec.resources.memoryGiB, GIB),
   },

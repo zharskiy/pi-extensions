@@ -9,7 +9,7 @@ import {
   runPi,
   startLaunchContainer,
 } from "../container/index.ts";
-import { type Launch, othersLive } from "../grants/index.ts";
+import { type Launch, othersLive, withRepoLaunchLock } from "../grants/index.ts";
 import { type HostPiFiles, readHostPiFiles } from "../hostpi/index.ts";
 import { ensureSandboxImage, type SandboxImage } from "../image/index.ts";
 import { renderAgentDir, syncSettingsFile } from "../provision/index.ts";
@@ -149,8 +149,16 @@ const prepareImage = (
     progress: (step) => writeLine(deps.stderr, `pi-sandbox: build: ${step}`),
   });
 
-const sandboxRoute = async (backend: Backend, proxy: SandboxProxy, imageId: string, repoHash: string) => {
-  const route = await backend.prepareProxyRoute({ hostPort: proxy.proxy.port, repoHash, imageId });
+const sandboxRoute = async (
+  backend: Backend,
+  proxy: SandboxProxy,
+  imageId: string,
+  context: LaunchContext,
+) => {
+  const { stateDir, repoHash } = context;
+  const route = await withRepoLaunchLock(stateDir, repoHash, () =>
+    backend.prepareProxyRoute({ hostPort: proxy.proxy.port, repoHash, imageId }),
+  );
 
   return { url: guestProxyUrl(route, proxy.token), network: route.network };
 };
@@ -198,10 +206,7 @@ const prepareContainer = async (
   const { deps, context, backend, launch, sessions, cancelled } = input;
   const { host } = input.prepared;
   const { proxy, image } = parts;
-  const [ground, route] = await settleAll([
-    parts.ground,
-    sandboxRoute(backend, proxy, image.id, context.repoHash),
-  ]);
+  const [ground, route] = await settleAll([parts.ground, sandboxRoute(backend, proxy, image.id, context)]);
   const { render, gitNotices, git } = ground;
 
   writeNotices(deps, gitNotices);
