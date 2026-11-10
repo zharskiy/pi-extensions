@@ -1,3 +1,4 @@
+import { writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import {
   type CommandRunner,
@@ -358,6 +359,34 @@ export const findProtectedGitPaths = async (
   return workspaceRoot === undefined
     ? { gitCommonDir, modules, dirs, pins, files, required }
     : { gitCommonDir, modules, dirs, pins, files, required, workspaceRoot };
+};
+
+const EMPTY_CONFIG_MODE = 0o644;
+
+const createdEmpty = async (path: string) => {
+  if ((await realOrPending(dirname(path))) !== dirname(path)) {
+    throw gitRefusal(path, "goes through a symbolic link");
+  }
+
+  return writeFile(path, "", { flag: "wx", mode: EMPTY_CONFIG_MODE }).then(
+    () => true,
+    (error: unknown) => {
+      const code = (error as NodeJS.ErrnoException).code;
+
+      if (code === "EEXIST") {
+        return false;
+      }
+
+      throw missingWorktreeConfig(path, code ?? String(error));
+    },
+  );
+};
+
+export const createWorktreeConfigs = async (paths: ProtectedGitPaths) => {
+  const worktreeConfigs = paths.required.filter((file) => file.includedBy === undefined);
+  const created = await Promise.all(worktreeConfigs.map((file) => createdEmpty(file.path)));
+
+  return created.includes(true);
 };
 
 const missingRequired = (file: RequiredFile) =>

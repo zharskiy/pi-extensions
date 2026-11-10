@@ -156,9 +156,9 @@ export const missingInclude = (include: GitInclude) =>
     `create it empty with touch ${shellWord(include.path)} (an empty file changes nothing for git), or remove the include from ${include.origin}`,
   );
 
-export const missingWorktreeConfig = (path: string) =>
+export const missingWorktreeConfig = (path: string, failure?: string) =>
   new LauncherError(
-    `git: ${path} is missing; extensions.worktreeConfig (which git sparse-checkout turns on) makes git read it, so the sandbox could create it with settings host git would then run`,
+    `git: ${path} is missing${failure === undefined ? "" : ` and could not be created (${failure})`}; extensions.worktreeConfig (which git sparse-checkout turns on) makes git read it, so the sandbox could create it with settings host git would then run`,
     `create it empty with touch ${shellWord(path)} (an empty file changes nothing for git)`,
   );
 

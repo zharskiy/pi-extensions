@@ -12,7 +12,10 @@ import {
 } from "../../container/index.ts";
 import { readPins, sha256Hex, stateLayout, writePins } from "../../shared/index.ts";
 import {
+  createWorktreeConfigs,
   discoverWorkspace,
+  findProtectedGitPaths,
+  type GitProtectContext,
   gitLaunchEndNotices,
   gitLaunchNotices,
   unpinRecorded,
@@ -67,6 +70,14 @@ const contextOf = (base: string, gitRunner = runner): GitGuardContext => ({
   home: join(base, "home"),
   env: {},
   stateDir: join(base, "state"),
+});
+
+const protectContextOf = (base: string): GitProtectContext => ({
+  runner,
+  home: join(base, "home"),
+  env: {},
+  emptyHooksDir: join(base, "state", "git", "no-hooks"),
+  engineSockets: [],
 });
 
 const idle = async () => false;
@@ -751,7 +762,7 @@ describe("the git paths only a repository's own layout reveals", () => {
     expect(overlay.readOnlyFiles.some((path) => path.includes("outside.gitconfig"))).toBe(false);
   });
 
-  it("refuses a missing config.worktree only while extensions.worktreeConfig is on", async () => {
+  it("creates a missing config.worktree empty only while extensions.worktreeConfig is on and binds it read-only", async () => {
     const base = await createBase();
     const repo = await createRepo(base);
     const worktree = join(base, "linked");
@@ -763,25 +774,99 @@ describe("the git paths only a repository's own layout reveals", () => {
     expect(
       (await discoverGitOverlay(await workspaceAt(base, repo), contextOf(base))).readOnlyFiles,
     ).not.toContain(ownConfig);
+    expect(await lstat(ownConfig).catch(() => undefined)).toBeUndefined();
 
     await git(repo, ["config", "extensions.worktreeConfig", "true"]);
 
-    await expect(discoverGitOverlay(await workspaceAt(base, repo), contextOf(base))).rejects.toMatchObject({
-      message: `git: ${ownConfig} is missing; extensions.worktreeConfig (which git sparse-checkout turns on) makes git read it, so the sandbox could create it with settings host git would then run`,
-      hint: `create it empty with touch ${ownConfig} (an empty file changes nothing for git)`,
-    });
+    const workspace = await workspaceAt(base, worktree);
+    const plan = await planGitOverlay(workspace, contextOf(base));
 
-    await writeFile(ownConfig, "");
+    expect(plan.overlay.readOnlyFiles).toEqual(expect.arrayContaining([ownConfig, linkedConfig]));
+    expect(await readFile(ownConfig, "utf8")).toBe("");
+    expect(await readFile(linkedConfig, "utf8")).toBe("");
 
-    await expect(discoverGitOverlay(await workspaceAt(base, worktree), contextOf(base))).rejects.toThrow(
-      `git: ${linkedConfig} is missing`,
-    );
-
-    await writeFile(linkedConfig, "");
+    const mounts = gitMountsOf(specOf(base, workspace, await plan.ready()), repo);
 
     expect(
-      (await discoverGitOverlay(await workspaceAt(base, worktree), contextOf(base))).readOnlyFiles,
-    ).toEqual(expect.arrayContaining([ownConfig, linkedConfig]));
+      mounts
+        .filter((mount) => [ownConfig, linkedConfig].includes(mount.target))
+        .map((mount) => describeMount(base, mount)),
+    ).toEqual([
+      { target: ownConfig, readOnly: true, copy: true },
+      { target: linkedConfig, readOnly: true, copy: true },
+    ]);
+  });
+
+  it("leaves a config.worktree that appeared before the create as it is and checks it like an existing one", async () => {
+    const base = await createBase();
+    const repo = await createRepo(base);
+    const ownConfig = join(repo, ".git", "config.worktree");
+    const hooks = join(repo, ".raced-hooks");
+    const planted = join(base, "home", "planted");
+
+    await git(repo, ["config", "extensions.worktreeConfig", "true"]);
+
+    const workspace = await workspaceAt(base, repo);
+    const paths = await findProtectedGitPaths(workspace, join(repo, ".git"), protectContextOf(base));
+
+    await mkdir(hooks);
+    await writeFile(ownConfig, "[core]\n\thooksPath = .raced-hooks\n");
+
+    expect(await createWorktreeConfigs(paths)).toBe(false);
+    expect(await readFile(ownConfig, "utf8")).toBe("[core]\n\thooksPath = .raced-hooks\n");
+
+    const overlay = await discoverGitOverlay(workspace, contextOf(base));
+
+    expect(overlay.readOnlyFiles).toContain(ownConfig);
+    expect(overlay.readOnlyDirs).toContain(hooks);
+
+    await rm(ownConfig);
+    await symlink(planted, ownConfig);
+
+    await expect(discoverGitOverlay(workspace, contextOf(base))).rejects.toThrow(
+      `git: ${ownConfig} is a symbolic link`,
+    );
+    expect(await lstat(planted).catch(() => undefined)).toBeUndefined();
+  });
+
+  it("refuses with the touch command when a missing config.worktree cannot be created", async () => {
+    const base = await createBase();
+    const repo = await createRepo(base);
+    const workspace = await workspaceAt(base, repo);
+    const paths = await findProtectedGitPaths(workspace, join(repo, ".git"), protectContextOf(base));
+    const gone = join(repo, ".git", "worktrees", "gone", "config.worktree");
+
+    await expect(createWorktreeConfigs({ ...paths, required: [{ path: gone }] })).rejects.toMatchObject({
+      message: `git: ${gone} is missing and could not be created (ENOENT); extensions.worktreeConfig (which git sparse-checkout turns on) makes git read it, so the sandbox could create it with settings host git would then run`,
+      hint: `create it empty with touch ${gone} (an empty file changes nothing for git)`,
+    });
+  });
+
+  it("creates no config.worktree while discovering, strict or lenient", async () => {
+    const base = await createBase();
+    const repo = await createRepo(base);
+    const ownConfig = join(repo, ".git", "config.worktree");
+
+    await git(repo, ["config", "extensions.worktreeConfig", "true"]);
+
+    await workspaceAt(base, repo);
+    await discoverAt(repo, runner, join(base, "state", "git", "no-hooks"), { lenient: true });
+
+    expect(await lstat(ownConfig).catch(() => undefined)).toBeUndefined();
+  });
+
+  it("refuses a config.worktree removed between the plan and the start", async () => {
+    const base = await createBase();
+    const repo = await createRepo(base);
+    const ownConfig = join(repo, ".git", "config.worktree");
+
+    await git(repo, ["config", "extensions.worktreeConfig", "true"]);
+
+    const plan = await planGitOverlay(await workspaceAt(base, repo), contextOf(base));
+
+    await rm(ownConfig);
+
+    await expect(plan.ready()).rejects.toThrow(`git: ${ownConfig} is missing; extensions.worktreeConfig`);
   });
 
   it("refuses a required file that disappears between the plan and the start", async () => {
@@ -874,7 +959,7 @@ describe("the git configuration a branch switch, a worktree or a submodule can b
     );
   });
 
-  it("refuses a sparse worktree's missing main config.worktree with the command that fixes it", async () => {
+  it("creates a sparse worktree's missing main config.worktree empty and git still reads the repository", async () => {
     const base = await createBase();
     const repo = await createRepo(base);
     const worktree = join(base, "wt");
@@ -885,21 +970,12 @@ describe("the git configuration a branch switch, a worktree or a submodule can b
 
     expect((await stat(join(repo, ".git", "worktrees", "wt", "config.worktree"))).isFile()).toBe(true);
 
-    const refusal = await discoverGitOverlay(await workspaceAt(base, repo), contextOf(base)).catch(
-      (error: unknown) => error as { message: string; hint: string },
-    );
-
-    expect(refusal).toMatchObject({
-      message: expect.stringContaining(`git: ${missing} is missing; extensions.worktreeConfig`),
-      hint: `create it empty with touch ${missing} (an empty file changes nothing for git)`,
-    });
-
-    await writeFile(missing, "");
-    await git(repo, ["status", "--short"]);
-
     expect(
       (await discoverGitOverlay(await workspaceAt(base, repo), contextOf(base))).readOnlyFiles,
     ).toContain(missing);
+    expect(await readFile(missing, "utf8")).toBe("");
+
+    await git(repo, ["status", "--short"]);
   });
 
   it("follows an include git reads only on another branch into its nested include and hooksPath", async () => {

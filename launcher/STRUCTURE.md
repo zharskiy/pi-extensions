@@ -90,7 +90,7 @@ workspace/roots.ts             the workspaceRoots check
 workspace/pi-session-dir.ts    pi's session slug and the host session dir choice
 workspace/created.ts           removal of recorded created folders
 workspace/git/layout.ts        git dir layout from the files, refusing links and foreign pointers; the git-dir shape and the .git name in any letter case
-workspace/git/protect.ts       the git paths bound read-only and their checks, a workspace's bare dirs and detached .git files included
+workspace/git/protect.ts       the git paths bound read-only and their checks, a workspace's bare dirs and detached .git files included, and the empty config.worktree files a launch creates
 workspace/git/integrity.ts     layout re-checks, commondir pins and the pin lock
 workspace/git/launch.ts        the nested-repository baseline and the launch and end notices
 workspace/git/scan.ts          nested .git entries in any letter case, git-dir-shaped folders and gitlinks
@@ -127,7 +127,7 @@ backend/colima/colima-yaml.ts  the colima.yaml and lima.yaml mounts reader
 container/index.ts             public surface
 container/spec.ts              the container spec: mounts (unreadable folders masked), env, labels, the refusal of a writable bind inside or over a skipped or masked folder
 container/volumes.ts           the volume plan: agent, cache, overlay and shared volume names, targets and labels
-container/git-overlay.ts       the git overlay plan and its ready() step before a create
+container/git-overlay.ts       the git overlay plan (it creates missing config.worktree files first) and its ready() step before a create
 container/names.ts             container and volume names, the cache volume prefix
 container/lifecycle.ts         ensureContainer: reuse, replace, create, and the notice naming the changed spec sections
 container/run-pi.ts            pi through exec, with signals and resize

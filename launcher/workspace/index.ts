@@ -4,6 +4,7 @@ export { assertGitIntegrity, pinGitDirs, unpinRecorded, withGitPinLock } from ".
 export { gitLaunchEndNotices, gitLaunchNotices, recordGitBaseline } from "./git/launch.ts";
 export { findGitRoot, PIN_TEXT } from "./git/layout.ts";
 export {
+  createWorktreeConfigs,
   findProtectedGitPaths,
   type GitOverlay,
   type GitPathGuard,

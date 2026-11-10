@@ -12,6 +12,7 @@ import {
 import {
   assertGitIntegrity,
   byDepth,
+  createWorktreeConfigs,
   dirsBetween,
   findProtectedGitPaths,
   type GitOverlay,
@@ -140,13 +141,19 @@ const readiedRepo = async (
   return protectedGitOverlay(repo, paths, guard);
 };
 
+const plannedPaths = async (repo: Workspace, gitCommonDir: string, protect: GitProtectContext) => {
+  const found = await findProtectedGitPaths(repo, gitCommonDir, protect);
+
+  return (await createWorktreeConfigs(found)) ? findProtectedGitPaths(repo, gitCommonDir, protect) : found;
+};
+
 const repoPlan = async (
   repo: Workspace,
   gitCommonDir: string,
   protect: GitProtectContext,
 ): Promise<RepoPlan> => {
   const guard = gitPathGuard(repo, protect);
-  const paths = await findProtectedGitPaths(repo, gitCommonDir, protect);
+  const paths = await plannedPaths(repo, gitCommonDir, protect);
 
   return {
     overlay: await protectedGitOverlay(repo, paths, guard),
