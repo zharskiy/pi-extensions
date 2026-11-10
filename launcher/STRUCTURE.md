@@ -210,14 +210,13 @@ proxy/index.ts                 public surface
 proxy/daemon.ts                the proxy process entry
 proxy/start.ts                 start, reuse and stop of a repository's proxy
 proxy/idle.ts                  the idle exit
-proxy/files.ts                 proxy input and record types
-proxy/settings.ts              the egress policy from the input
+proxy/files.ts                 proxy input, live egress settings and record types
 proxy/client.ts                the launcher's client to a proxy
 proxy/server.ts                the proxy server, CONNECT dispatch and the resolved-address check
 proxy/routes.ts                /healthz and /denials
 proxy/auth.ts                  the repository token and the guest proxy URL
 proxy/policy.ts                CONNECT decisions and restricted addresses
-proxy/runtime.ts               rules, derived hosts and live grants
+proxy/runtime.ts               rules, the live egress.json settings and live grants
 proxy/tunnel.ts                end-to-end tunnels with the SNI check
 proxy/sni.ts                   ClientHello completeness and server name parsing
 proxy/dial.ts                  the resolving dialer with the private-address filter

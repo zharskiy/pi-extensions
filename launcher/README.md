@@ -190,7 +190,7 @@ Start with `pi sandbox doctor`: it names the stage or check that fails. When the
 4. **`upstream request failed: ... certificate ...`** (an HTTP 502, also a failed `rule` line in `pi sandbox doctor`). A proxy or CA on your network signs the host; set `tls.extraCa`.
 5. **`<cmd> is not in the sandbox image`.** Add its Debian package to `image.packages` or its npm package to `image.npmGlobal` in the user config; the next launch builds the layer.
 6. **`the host pi is version X, which the npm registry does not have`.** The image installs the host pi's version from npm, so an unreleased pi cannot be built; install a published pi on the host.
-7. **`the egress settings or environment secrets changed; they apply after every session in this repository exits`.** The folder's proxy keeps its hosts and rules while another pi of the folder runs; exit them all. Other config changes apply at the next `pi`.
+7. **`the credential, parent proxy or CA settings changed; the pi sessions running in this folder keep the earlier ones until they all exit (egress allow and deny changes apply now)`.** Changes to `egress.allow`, `egress.deny`, `egress.presets`, `egress.privateHosts` and `egress.grants` reach the pi sessions already running in the folder once you start a new `pi` there (editing the config alone changes nothing for them), and that launch says so with `the network allow and deny settings changed and now apply to every pi running in this folder`; credential rules, `env` secrets, the parent proxy and `tls.extraCa` wait until the folder's other pi sessions exit. Other config changes apply at the next `pi`.
 8. A launcher killed with `kill -9` leaves its sandbox until the next `pi` in any folder.
 
 ## More
