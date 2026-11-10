@@ -2,9 +2,11 @@
 
 > Status: planned, not implemented. Date: 2026-10-18. Replaces the old spec 04: the workspace extension, `pi-workspace.json`, masters, worktrees per repo and the `/epic` commands are dropped; only `cwd` per agent survives.
 
+> Note, 2026-11-10: this spec now sits in [workflow-mechanics](../README.md). Its rule on `worktree: true` with `cwd` is subject to [../worktrees.md](../worktrees.md), which reopens how worktrees work; read the worktree rule below as provisional until that plan is decided.
+
 ## Goal
 
-A `run_agent` item can name the directory its agent runs in, so one agent can work in one repository below the session's directory and pick up that repository's `AGENTS.md`. Nothing else about workspaces is built in the harness; a company arranges its folders and workflows on its own side (../enterprise-workflow/company/company-side.md).
+A `run_agent` item can name the directory its agent runs in, so one agent can work in one repository below the session's directory and pick up that repository's `AGENTS.md`. Nothing else about workspaces is built in the harness; a company arranges its folders and workflows on its own side ([../../enterprise-workflow/company/company-side.md](../../enterprise-workflow/company/company-side.md)).
 
 ## Rules
 
@@ -19,7 +21,7 @@ A `run_agent` item can name the directory its agent runs in, so one agent can wo
 
 ## Details
 
-Contract, error texts, where it plugs in, alternatives considered, tests and size are in ../enterprise-workflow/harness/harness-side.md, section 2.2 and item 3 of section 1. Background on worktrees and cross-repo work is in research/workspace-and-epic.md and research/q2-q3-workspace.md; both describe the dropped workspace design and are kept as evidence only.
+Contract, error texts, where it plugs in, alternatives considered, tests and size are in [../../enterprise-workflow/harness/harness-side.md](../../enterprise-workflow/harness/harness-side.md), section 2.2 and item 3 of section 1. Background on worktrees and cross-repo work is in [research/workspace-and-epic.md](research/workspace-and-epic.md) and [research/q2-q3-workspace.md](research/q2-q3-workspace.md); both describe the dropped workspace design and are kept as evidence only.
 
 ## Acceptance checks
 
