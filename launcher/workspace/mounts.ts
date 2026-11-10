@@ -16,7 +16,7 @@ const PROTECTED_HOME = [".ssh", ".gnupg", ".aws", ".docker", ".colima", ".kube"]
 
 const SYSTEM_DIRS = ["/var/run", "/run", "/etc", "/proc", "/sys", "/dev"];
 
-const IMAGE_DIRS = ["/bin", "/sbin", "/lib", "/opt", "/usr/bin", "/usr/sbin", "/usr/lib", "/usr/local"];
+const IMAGE_DIRS = ["/usr/bin", "/usr/sbin", "/usr/lib", "/usr/local", "/bin", "/sbin", "/lib", "/opt"];
 
 const DEFAULT_CONFIG_DIR = [".config", "pi-sandbox"];
 
