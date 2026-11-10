@@ -104,7 +104,7 @@ describe.skipIf(!liveEnabled)(
 
       expect(list.code).toBe(0);
 
-      const { findings, scannedBytes } = await sweepSandbox(sandbox, secrets);
+      const { findings, scannedBytes } = await sweepSandbox(sandbox, secrets, env);
 
       expect(scannedBytes).toBeGreaterThan(10_000_000);
 

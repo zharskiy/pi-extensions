@@ -1,11 +1,15 @@
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createColimaBackend, engineSocketPath, execCapture, LABELS } from "../../backend/index.ts";
-import { ensureContainer, type LauncherContainerSpec } from "../../container/index.ts";
+import { createColimaBackend, execCapture, LABELS } from "../../backend/index.ts";
+import {
+  type LauncherContainerSpec,
+  removeLaunchContainer,
+  startLaunchContainer,
+} from "../../container/index.ts";
 import { ensureSandboxImage } from "../../image/index.ts";
 import { createProcessRunner, launcherRoot } from "../../shared/index.ts";
 import { runBackendConformance } from "../backend/conformance.ts";
@@ -18,13 +22,20 @@ const RUNNABLE = "pi-sandbox-conformance:busybox";
 
 const RELAY = "pi-sandbox-relay-test:alpine";
 
-const socketPath = [engineSocketPath(homedir())].find((path) => existsSync(path));
+const socketPath = [join(homedir(), ".colima", "pi-sandbox", "docker.sock")].find((path) => existsSync(path));
 
 const enabled = process.env.PI_SANDBOX_LIVE === "1" && socketPath !== undefined;
 
 const hooks = enabled
   ? { describe, it, expect, beforeAll, afterAll }
   : { describe: describe.skip, it, expect, beforeAll, afterAll };
+
+const launchLabels = (launchId: string) => ({
+  [LABELS.repoHash]: randomBytes(32).toString("hex"),
+  [LABELS.launchId]: launchId,
+});
+
+const newLaunch = () => randomBytes(8).toString("hex");
 
 const buildFrom = async (
   build: (contextDir: string, tag: string) => Promise<unknown>,
@@ -73,6 +84,8 @@ const OWNERSHIP_VOLUME = `pi-sandbox-live-ownership-${randomBytes(4).toString("h
 
 const OWNERSHIP_TARGET = "/home/pi/.cache/live";
 
+const SANDBOX_USER = "1000:1000";
+
 hooks.describe("colima volume ownership", () => {
   const backend = createColimaBackend({
     home: "",
@@ -80,12 +93,10 @@ hooks.describe("colima volume ownership", () => {
     socketPath: socketPath ?? "",
     runner: createProcessRunner(),
   });
-  const state = { dir: "", id: "" };
+  const state = { dir: "", launchId: newLaunch() };
 
   hooks.afterAll(async () => {
-    if (state.id !== "") {
-      await backend.removeContainer(state.id);
-    }
+    await removeLaunchContainer(backend, state.launchId);
 
     await backend.removeVolume(OWNERSHIP_VOLUME);
 
@@ -95,7 +106,7 @@ hooks.describe("colima volume ownership", () => {
   const spec = (): LauncherContainerSpec => ({
     name: OWNERSHIP_VOLUME,
     image: RUNNABLE,
-    labels: { [LABELS.repoHash]: randomBytes(32).toString("hex") },
+    labels: launchLabels(state.launchId),
     mounts: [{ kind: "volume", source: OWNERSHIP_VOLUME, target: OWNERSHIP_TARGET, readOnly: false }],
     network: { kind: "none" },
     env: {},
@@ -117,15 +128,14 @@ hooks.describe("colima volume ownership", () => {
 
       await buildFrom(backend.buildImage, RUNNABLE, `FROM ${PULLABLE}\nCMD ["sleep", "3600"]\n`);
 
-      const ensured = await ensureContainer({ backend, spec: spec(), stateDir: state.dir });
-
-      state.id = ensured.id;
+      const ensured = await startLaunchContainer({ backend, spec: spec(), stateDir: state.dir });
 
       const written = await execCapture(backend, {
         containerId: ensured.id,
         command: ["sh", "-c", `touch ${OWNERSHIP_TARGET}/probe /home/pi/.cache/beside && id -u`],
         env: {},
         workdir: "/",
+        user: SANDBOX_USER,
       });
 
       hooks.expect(ensured.notices).toEqual([]);
@@ -134,7 +144,7 @@ hooks.describe("colima volume ownership", () => {
   );
 });
 
-const MASK_CONTAINER = `pi-sandbox-live-mask-${randomBytes(4).toString("hex")}`;
+const BINDS_CONTAINER = `pi-sandbox-live-binds-${randomBytes(4).toString("hex")}`;
 
 hooks.describe("colima read-only binds on the share", () => {
   const backend = createColimaBackend({
@@ -143,27 +153,15 @@ hooks.describe("colima read-only binds on the share", () => {
     socketPath: socketPath ?? "",
     runner: createProcessRunner(),
   });
-  const state = { dir: "", id: "", work: "" };
+  const state = { dir: "", id: "", git: "", launchId: newLaunch() };
 
-  const spec = (work: string, empty: string): LauncherContainerSpec => ({
-    name: MASK_CONTAINER,
+  const spec = (work: string, git: string): LauncherContainerSpec => ({
+    name: BINDS_CONTAINER,
     image: RUNNABLE,
-    labels: { [LABELS.repoHash]: randomBytes(32).toString("hex") },
+    labels: launchLabels(state.launchId),
     mounts: [
       { kind: "bind", source: work, target: work, readOnly: false },
-      { kind: "bind", source: empty, target: join(work, "locked"), readOnly: true },
-      {
-        kind: "bind",
-        source: join(work, "repo", ".git", "hooks"),
-        target: join(work, "repo", ".git", "hooks"),
-        readOnly: true,
-      },
-      {
-        kind: "bind",
-        source: join(work, "repo", ".git", "config"),
-        target: join(work, "repo", ".git", "config"),
-        readOnly: true,
-      },
+      { kind: "bind", source: join(git, "hooks"), target: join(git, "hooks"), readOnly: true },
     ],
     network: { kind: "none" },
     env: {},
@@ -185,67 +183,50 @@ hooks.describe("colima read-only binds on the share", () => {
     await mkdir(root, { recursive: true });
 
     state.dir = await mkdtemp(join(root, "binds-"));
-    state.work = join(state.dir, "work");
 
-    const empty = join(state.dir, "empty");
+    const work = join(state.dir, "work");
 
-    await mkdir(join(state.work, "locked", "repo", ".git"), { recursive: true });
-    await mkdir(join(state.work, "repo", ".git", "hooks"), { recursive: true });
-    await writeFile(join(state.work, "repo", ".git", "config"), "[core]\n");
-    await mkdir(empty);
+    state.git = join(work, "repo", ".git");
 
-    await chmod(join(state.work, "locked"), 0o000);
+    await mkdir(join(state.git, "hooks"), { recursive: true });
+    await writeFile(join(state.git, "config"), "[core]\n");
 
     await backend.pullImage(PULLABLE);
 
     await buildFrom(backend.buildImage, RUNNABLE, `FROM ${PULLABLE}\nCMD ["sleep", "3600"]\n`);
 
-    state.id = (await ensureContainer({ backend, spec: spec(state.work, empty), stateDir: state.dir })).id;
+    state.id = (await startLaunchContainer({ backend, spec: spec(work, state.git), stateDir: state.dir })).id;
   }, 300_000);
 
   hooks.afterAll(async () => {
-    if (state.id !== "") {
-      await backend.removeContainer(state.id);
-    }
-
-    await chmod(join(state.work, "locked"), 0o755).catch(() => undefined);
+    await removeLaunchContainer(backend, state.launchId);
 
     await rm(state.dir, { recursive: true, force: true });
   });
 
   hooks.it(
-    "a read-only bind of an empty folder hides a mode-000 folder on the share and stays closed",
+    "a read-only folder bind refuses a write under its own name and under another letter case",
     async () => {
-      const locked = join(state.work, "locked");
-
-      hooks
-        .expect(
-          await probe(
-            `ls -A ${locked}; chmod 755 ${locked} 2>/dev/null && echo chmod; mkdir ${locked}/x 2>/dev/null && echo mkdir; echo done`,
-          ),
-        )
-        .toEqual({ code: 0, stdout: "done\n", stderr: "" });
-    },
-  );
-
-  hooks.it(
-    "a read-only file or folder bind cannot be written through another letter case of its name",
-    async () => {
-      const git = join(state.work, "repo", ".git");
-
-      await probe(
-        `echo planted >> ${git}/CONFIG 2>/dev/null; mkdir -p ${git}/HOOKS 2>/dev/null; echo planted > ${git}/HOOKS/x 2>/dev/null; true`,
+      const written = await probe(
+        `for name in hooks HOOKS; do (echo planted > ${state.git}/$name/x) 2>&1; done; true`,
       );
 
-      hooks.expect(await readFile(join(git, "config"), "utf8")).toBe("[core]\n");
-      hooks.expect(existsSync(join(git, "hooks", "x"))).toBe(false);
+      hooks.expect(written.stdout.match(/Read-only file system/g)).toHaveLength(2);
+      hooks.expect(existsSync(join(state.git, "hooks", "x"))).toBe(false);
     },
   );
+
+  hooks.it("the rest of the git dir stays writable through the folder's own bind", async () => {
+    hooks.expect(await probe(`printf '[user]\\n' >> ${state.git}/config`)).toEqual({
+      code: 0,
+      stdout: "",
+      stderr: "",
+    });
+    hooks.expect(await readFile(join(state.git, "config"), "utf8")).toBe("[core]\n[user]\n");
+  });
 });
 
 const HINT_CONTAINER = `pi-sandbox-live-bash-hint-${randomBytes(4).toString("hex")}`;
-
-const HINT_IMAGE = "pi-sandbox-live-bash-hint:test";
 
 const pinnedPi = async () => {
   const manifest = JSON.parse(await readFile(join(launcherRoot(), "..", "package.json"), "utf8")) as {
@@ -272,20 +253,18 @@ hooks.describe("colima sandbox image missing-command hint", () => {
     socketPath: socketPath ?? "",
     runner: createProcessRunner(),
   });
-  const state = { dir: "", id: "" };
+  const state = { dir: "", launchId: newLaunch() };
 
   hooks.afterAll(async () => {
-    if (state.id !== "") {
-      await backend.removeContainer(state.id);
-    }
+    await removeLaunchContainer(backend, state.launchId);
 
     await rm(state.dir, { recursive: true, force: true });
   });
 
-  const spec = (): LauncherContainerSpec => ({
+  const spec = (image: string): LauncherContainerSpec => ({
     name: HINT_CONTAINER,
-    image: HINT_IMAGE,
-    labels: { [LABELS.repoHash]: randomBytes(32).toString("hex") },
+    image,
+    labels: launchLabels(state.launchId),
     mounts: [],
     network: { kind: "none" },
     env: {},
@@ -303,18 +282,14 @@ hooks.describe("colima sandbox image missing-command hint", () => {
     async () => {
       state.dir = await mkdtemp(join(tmpdir(), "pi-sandbox-live-bash-hint-"));
 
-      await ensureSandboxImage({
+      const image = await ensureSandboxImage({
         backend,
-        config: sandboxConfig({ image: { reference: HINT_IMAGE } }),
+        config: sandboxConfig(),
         stateDir: state.dir,
-        repoHash: "a".repeat(64),
-        versions: async () => ({ pi: await pinnedPi(), extensions: { kind: "none" } }),
-        inUse: async () => false,
+        versions: async () => ({ pi: await pinnedPi() }),
       });
 
-      const ensured = await ensureContainer({ backend, spec: spec(), stateDir: state.dir });
-
-      state.id = ensured.id;
+      const ensured = await startLaunchContainer({ backend, spec: spec(image.id), stateDir: state.dir });
 
       const probed = await execCapture(backend, {
         containerId: ensured.id,
@@ -326,7 +301,7 @@ hooks.describe("colima sandbox image missing-command hint", () => {
       hooks.expect(probed.code).toBe(0);
       hooks.expect(JSON.parse(probed.stdout)).toEqual({
         stderr:
-          "bash: pi-sandbox-missing-tool: command not found\npi-sandbox: pi-sandbox-missing-tool is not in the sandbox image; add it with image.packages or image.npmGlobal in ~/.config/pi-sandbox/config.json (see pi sandbox doctor)\n",
+          "bash: pi-sandbox-missing-tool: command not found\npi-sandbox: pi-sandbox-missing-tool is not in the sandbox image; add its Debian package to image.packages or its npm package to image.npmGlobal in ~/.config/pi-sandbox/config.json on the host\n",
         status: 127,
       });
     },

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { Writable } from "node:stream";
 import { createColimaBackend } from "../../../backend/index.ts";
 import { createProcessRunner } from "../../../shared/index.ts";
-import { engineSocket, listContainers } from "./engine.ts";
+import { engineSocket } from "./engine.ts";
 import type { LiveSandbox } from "./sandbox.ts";
 
 export type Secrets = Record<string, string>;
@@ -46,14 +46,7 @@ const scanner = (secrets: Secrets) => {
   return { stream, found: () => [...found], bytes: () => state.bytes };
 };
 
-const scanContainer = async (repoHash: string, script: string, secrets: Secrets) => {
-  const containers = await listContainers({ "pi-sandbox.repo-hash": repoHash });
-  const agent = containers.find((container) => container.Labels["pi-sandbox.relay"] !== "true");
-
-  if (agent === undefined) {
-    throw new Error("no sandbox container to sweep");
-  }
-
+const scanContainer = async (containerId: string, script: string, secrets: Secrets) => {
   const backend = createColimaBackend({
     home: "",
     stateDir: "",
@@ -64,7 +57,7 @@ const scanContainer = async (repoHash: string, script: string, secrets: Secrets)
   const err = scanner(secrets);
 
   await backend.exec(
-    { containerId: agent.Id, command: ["sh", "-c", script], env: {}, workdir: "/" },
+    { containerId, command: ["sh", "-c", script], env: {}, workdir: "/" },
     { stdout: out.stream, stderr: err.stream, tty: false },
   );
 
@@ -97,9 +90,18 @@ const buildContextFindings = async (stateDir: string, secrets: Secrets): Promise
   );
 };
 
-export const sweepSandbox = async (sandbox: LiveSandbox, secrets: Secrets) => {
-  const filesystem = await scanContainer(sandbox.repoHash, FILESYSTEM, secrets);
-  const environment = await scanContainer(sandbox.repoHash, ENVIRONMENT, secrets);
+export const sweepSandbox = async (
+  sandbox: LiveSandbox,
+  secrets: Secrets,
+  env: Record<string, string> = {},
+) => {
+  const [filesystem, environment] = await sandbox.session(
+    async (id) => [
+      await scanContainer(id, FILESYSTEM, secrets),
+      await scanContainer(id, ENVIRONMENT, secrets),
+    ],
+    { env },
+  );
   const findings: Finding[] = [
     ...filesystem.found.map((secret) => ({ where: "container filesystem", secret })),
     ...environment.found.map((secret) => ({ where: "container env", secret })),

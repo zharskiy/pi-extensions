@@ -70,6 +70,8 @@ describe.skipIf(!liveEnabled)("behind a TLS-inspecting parent proxy with tls.ext
 
     expect(prebuild.code).toBe(0);
 
+    expect((await sandbox.lastExit()).code).toBe(0);
+
     state.llm.seen.splice(0);
 
     state.mcp.seen.splice(0);

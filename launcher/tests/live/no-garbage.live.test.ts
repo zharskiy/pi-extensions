@@ -18,7 +18,7 @@ describe.skipIf(!liveEnabled)("the last session leaves nothing behind (live)", (
     await state.sandbox?.cleanup();
   }, 120_000);
 
-  it("removes the container, relay, network, proxy, launch entry and repository state when pi exits", async () => {
+  it("removes each launch's container when its pi exits, and the relay, network, proxy and state after the last", async () => {
     const sandbox = state.sandbox as LiveSandbox;
     const network = `pi-sandbox-${sandbox.repoHash.slice(0, 12)}`;
     const first = await sandbox.pi(["--version"]).done;
@@ -27,10 +27,7 @@ describe.skipIf(!liveEnabled)("the last session leaves nothing behind (live)", (
 
     const running = await listContainers({ "pi-sandbox.repo-hash": sandbox.repoHash });
 
-    expect(running.map((container) => container.Labels["pi-sandbox.relay"] === "true").sort()).toEqual([
-      false,
-      true,
-    ]);
+    expect(running.map((container) => container.Labels["pi-sandbox.relay"] === "true")).toEqual([true]);
 
     const last = await sandbox.lastExit();
 

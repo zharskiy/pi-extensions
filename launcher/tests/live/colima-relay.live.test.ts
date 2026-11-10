@@ -5,7 +5,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { type Backend, createColimaBackend, engineSocketPath, LABELS } from "../../backend/index.ts";
+import { type Backend, createColimaBackend, LABELS } from "../../backend/index.ts";
 import { createProcessRunner } from "../../shared/index.ts";
 
 const RELAY_IMAGE = "pi-sandbox-relay-test:alpine";
@@ -16,7 +16,7 @@ const CLIENT_NAME = "pi-sandbox-relay-client";
 
 const REPO_HASH = "f".repeat(64);
 
-const socketPath = [engineSocketPath(homedir())].find((path) => existsSync(path));
+const socketPath = [join(homedir(), ".colima", "pi-sandbox", "docker.sock")].find((path) => existsSync(path));
 
 const enabled = process.env.PI_SANDBOX_LIVE === "1" && socketPath !== undefined;
 

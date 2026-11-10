@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { mcpAuthKey } from "../../shared/index.ts";
+import { mcpAuthKey, readMcpLogins } from "../../shared/index.ts";
 import { type McpFixture, startMcpFixture } from "./fixtures/mcp-fixture.ts";
 import { FIXTURE_HOSTS } from "./harness/names.ts";
 import { createLiveSandbox, type LiveSandbox, liveEnabled } from "./harness/sandbox.ts";
@@ -12,7 +12,9 @@ const SERVER = "host-login";
 
 const HOUR_MS = 3_600_000;
 
-const SIGN_IN_TEXT = `pi-sandbox: sign-in to MCP server ${SERVER} opened in the browser on the host; finish it there, then retry. If no browser opened, run pi mcp login ${SERVER} on the host.`;
+const OPENED_TEXT = `pi-sandbox: sign-in to MCP server ${SERVER} opened in the browser on the host; finish it there, then retry. If no browser opened, run pi mcp login ${SERVER} on the host.`;
+
+const NOT_SIGNED_IN_TEXT = `pi-sandbox: MCP server ${SERVER} is not signed in on the host; run pi mcp login ${SERVER} on the host, then retry.`;
 
 const FETCH_SCRIPT = [
   "const [url, authorization] = process.argv.slice(1);",
@@ -35,7 +37,10 @@ const renderedAuthorization = async (sandbox: LiveSandbox) => {
 
 describe.skipIf(!liveEnabled)("MCP sign-in owned by the host pi (live)", () => {
   const access = randomSecret("fixture-mcp-access");
-  const state: { sandbox?: LiveSandbox; mcp?: McpFixture; url: string } = { url: "" };
+  const state: { sandbox?: LiveSandbox; mcp?: McpFixture; url: string; accepting: boolean } = {
+    url: "",
+    accepting: false,
+  };
 
   const writeHostSignIn = (expiresAt: number) =>
     (state.sandbox as LiveSandbox).writeAgentFile("mcp-auth.json", {
@@ -52,7 +57,7 @@ describe.skipIf(!liveEnabled)("MCP sign-in owned by the host pi (live)", () => {
 
     state.mcp = await startMcpFixture(sandbox.certificate, {
       tool: TOOL,
-      authorize: (token) => token === access,
+      authorize: (token) => state.accepting && token === access,
     });
 
     state.url = state.mcp.endpoint(FIXTURE_HOSTS.oauthMcp);
@@ -68,7 +73,7 @@ describe.skipIf(!liveEnabled)("MCP sign-in owned by the host pi (live)", () => {
     await state.sandbox?.cleanup();
   }, 120_000);
 
-  it("answers 503 with the sign-in text and sends nothing upstream while the host sign-in has expired", async () => {
+  it("starts the host sign-in for an expired token and answers as the sign-in stands, never with the token", async () => {
     const sandbox = state.sandbox as LiveSandbox;
 
     await writeHostSignIn(Date.now() - HOUR_MS);
@@ -80,15 +85,29 @@ describe.skipIf(!liveEnabled)("MCP sign-in owned by the host pi (live)", () => {
       `node -e ${quoted(FETCH_SCRIPT)} ${quoted(state.url)} ${quoted(authorization)}`,
     );
 
-    expect(JSON.parse(reply.stdout)).toEqual({ status: 503, body: SIGN_IN_TEXT });
+    const login = (await readMcpLogins(sandbox.stateDir))[mcpAuthKey(SERVER, state.url)];
+    const failed = login?.failedAt !== undefined;
 
-    expect(state.mcp?.tokens()).toEqual([]);
+    expect(login?.lastStart).toEqual(expect.any(Number));
+
+    expect(JSON.parse(reply.stdout)).toEqual({
+      status: 503,
+      body: failed ? NOT_SIGNED_IN_TEXT : OPENED_TEXT,
+    });
+
+    if (failed) {
+      expect(state.mcp?.tokens()).toContain("");
+    }
   });
 
   it("injects the host's token into the container's requests once the host is signed in", async () => {
     const sandbox = state.sandbox as LiveSandbox;
 
     await writeHostSignIn(Date.now() + HOUR_MS);
+
+    state.accepting = true;
+
+    state.mcp?.seen.splice(0);
 
     const result = await sandbox.pi(["mcp", "list"]).done;
 

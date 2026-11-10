@@ -46,6 +46,7 @@ interface AccessEntry {
 interface PiOptions {
   timeoutMs?: number;
   env?: Record<string, string>;
+  holdStdin?: boolean;
 }
 
 export interface LiveSandbox {
@@ -62,7 +63,8 @@ export interface LiveSandbox {
   writeAgentFile(name: string, value: unknown): Promise<void>;
   writeFile(name: string, text: string): Promise<string>;
   pi(args: string[], options?: PiOptions): PiRun;
-  exec(script: string): Promise<PiResult>;
+  exec(script: string, options?: PiOptions): Promise<PiResult>;
+  session<T>(action: (containerId: string) => Promise<T>, options?: PiOptions): Promise<T>;
   accessLog(): Promise<AccessEntry[]>;
   lastExit(): Promise<PiResult>;
   leftovers(): Promise<string[]>;
@@ -82,6 +84,12 @@ const resolvePreload = () => {
 };
 
 const DEFAULT_TIMEOUT_MS = 540_000;
+
+const PI_PID_FILE = "/tmp/pi-sandbox-pi.pid";
+
+const SESSION_START_MS = 300_000;
+
+const SESSION_POLL_MS = 250;
 
 const liveRoot = () => process.env.PI_SANDBOX_LIVE_DIR ?? join(homedir(), ".cache", "pi-sandbox-live");
 
@@ -153,8 +161,6 @@ const readAccessLog = async (stateDir: string) => {
     .filter((line) => line.trim() !== "")
     .map((line) => JSON.parse(line) as AccessEntry);
 };
-
-const GIT_COPY = /^[0-9a-f]{16}$/;
 
 const nonEmptyList = async (path: string) => {
   const text = await readFile(path, "utf8").catch(() => "[]");
@@ -236,17 +242,11 @@ export const createLiveSandbox = async (name: string): Promise<LiveSandbox> => {
     runner: createProcessRunner(),
   });
 
-  const agentContainer = async () => {
-    const containers = await listContainers({ "pi-sandbox.repo-hash": repoHash });
-
-    return containers.find((container) => container.Labels["pi-sandbox.relay"] !== "true");
-  };
-
   const pi = (args: string[], options: PiOptions = {}): PiRun => {
     const child = spawn(process.execPath, [LAUNCHER_ENTRY, ...args], {
       cwd: repo,
       env: { ...env, ...options.env },
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: [options.holdStdin === true ? "pipe" : "ignore", "pipe", "pipe"],
     });
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
@@ -254,9 +254,9 @@ export const createLiveSandbox = async (name: string): Promise<LiveSandbox> => {
 
     children.add(child);
 
-    child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
+    child.stdout?.on("data", (chunk: Buffer) => stdout.push(chunk));
 
-    child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
+    child.stderr?.on("data", (chunk: Buffer) => stderr.push(chunk));
 
     const done = new Promise<PiResult>((resolve) => {
       child.once("close", (code) => {
@@ -285,22 +285,64 @@ export const createLiveSandbox = async (name: string): Promise<LiveSandbox> => {
     };
   };
 
-  const exec = async (script: string): Promise<PiResult> => {
-    const container = await agentContainer();
-
-    if (container === undefined) {
-      return { code: 127, stdout: "", stderr: "no sandbox container" };
-    }
-
+  const runIn = async (containerId: string, script: string): Promise<PiResult> => {
     const out = collect();
     const err = collect();
     const code = await backend.exec(
-      { containerId: container.Id, command: ["sh", "-c", script], env: {}, workdir: "/" },
+      { containerId, command: ["sh", "-c", script], env: {}, workdir: "/" },
       { stdout: out.stream, stderr: err.stream, tty: false },
     );
 
     return { code, stdout: out.text(), stderr: err.text() };
   };
+
+  const runningPi = async (run: PiRun, deadline: number): Promise<string> => {
+    const containers = await listContainers({ "pi-sandbox.repo-hash": repoHash });
+    const agents = containers.filter(
+      (container) => container.Labels["pi-sandbox.relay"] !== "true" && container.State === "running",
+    );
+    const started = await Promise.all(
+      agents.map(async (container) =>
+        (await runIn(container.Id, `test -e ${PI_PID_FILE}`)).code === 0 ? [container.Id] : [],
+      ),
+    );
+    const [id] = started.flat();
+
+    if (id !== undefined) {
+      return id;
+    }
+
+    if (Date.now() > deadline) {
+      throw new Error(`no launch container ran pi in time:\n${run.output()}`);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, SESSION_POLL_MS));
+
+    return runningPi(run, deadline);
+  };
+
+  const session = async <T>(action: (containerId: string) => Promise<T>, options: PiOptions = {}) => {
+    const held = pi(["-p"], { ...options, holdStdin: true });
+    const ended = held.done.then((result) => {
+      throw new Error(
+        `the held pi session ended early (exit ${result.code}):\n${result.stdout}${result.stderr}`,
+      );
+    });
+
+    try {
+      const id = await Promise.race([runningPi(held, Date.now() + SESSION_START_MS), ended]);
+
+      return await action(id);
+    } finally {
+      ended.catch(() => undefined);
+
+      held.stop();
+
+      await held.done;
+    }
+  };
+
+  const exec = (script: string, options: PiOptions = {}) => session((id) => runIn(id, script), options);
 
   const release = async () => {
     if (holder.released) {
@@ -326,13 +368,10 @@ export const createLiveSandbox = async (name: string): Promise<LiveSandbox> => {
     );
     const daemons = await daemonPids(stateDir);
     const launches = await readdir(files.launches).catch(() => [] as string[]);
-    const copies = (await readdir(files.git).catch(() => [] as string[])).filter((name) =>
-      GIT_COPY.test(name),
-    );
     const present = await Promise.all(
       [files.proxy.record, files.proxy.token].map((path) => (existsSync(path) ? [path] : [])),
     );
-    const lists = await Promise.all([files.pins, files.created].map(nonEmptyList));
+    const lists = await nonEmptyList(files.created);
 
     return {
       containers: owned,
@@ -342,9 +381,8 @@ export const createLiveSandbox = async (name: string): Promise<LiveSandbox> => {
         ...networks.map((candidate) => `network ${candidate.Name}`),
         ...daemons.map((pid) => `proxy pid ${pid}`),
         ...launches.map((name) => `launch entry ${name}`),
-        ...copies.map((name) => `git config copy ${name}`),
         ...present.flat(),
-        ...lists.flat(),
+        ...lists,
       ],
     };
   };
@@ -408,6 +446,7 @@ export const createLiveSandbox = async (name: string): Promise<LiveSandbox> => {
     },
     pi,
     exec,
+    session,
     accessLog: () => readAccessLog(stateDir),
     lastExit,
     leftovers: async () => (await leftovers()).named,
