@@ -1,10 +1,16 @@
 import { stat } from "node:fs/promises";
 import { authorityOf, type CredentialRule } from "../config/index.ts";
 import { activeGrants, type Grant, readGrants } from "../grants/index.ts";
-import { stateLayout } from "../shared/index.ts";
+import { readJsonObject, stateLayout } from "../shared/index.ts";
+import { type EgressSettings, parseEgressSettings } from "./files.ts";
+
+interface LiveEgress {
+  settings: EgressSettings;
+  extras: string[];
+}
 
 export interface ProxyRuntime {
-  extras(): Promise<string[]>;
+  egress(): Promise<LiveEgress>;
   rules(): CredentialRule[];
 }
 
@@ -12,8 +18,7 @@ export interface RuntimeOptions {
   stateDir: string;
   repoHash: string;
   rules: CredentialRule[];
-  derivedHosts: string[];
-  grantsEnabled: boolean;
+  settings: EgressSettings;
 }
 
 const stampOf = async (path: string) => {
@@ -22,31 +27,83 @@ const stampOf = async (path: string) => {
   return info === undefined ? "absent" : `${info.ino}:${info.mtimeMs}:${info.size}`;
 };
 
-const liveGrants = (stateDir: string) => {
-  const path = stateLayout(stateDir).grants;
-  const cache: { stamp: string; grants: Grant[] } = { stamp: "", grants: [] };
+interface LiveCache<T> {
+  stamp: string;
+  value: T;
+  pending?: { stamp: string; result: Promise<T> };
+}
+
+const liveFile = <T>(
+  path: string,
+  initial: T,
+  read: () => Promise<T | undefined>,
+  failed: (last: T) => T,
+) => {
+  const cache: LiveCache<T> = { stamp: "", value: initial };
+
+  const reload = async (stamp: string) => {
+    const value = await read().catch(() => undefined);
+
+    if (value === undefined) {
+      return failed(cache.value);
+    }
+
+    cache.stamp = stamp;
+    cache.value = value;
+
+    return value;
+  };
 
   return async () => {
     const stamp = await stampOf(path);
 
-    if (stamp !== cache.stamp) {
-      cache.stamp = stamp;
-      cache.grants = await readGrants(stateDir).catch(() => []);
+    if (stamp === cache.stamp) {
+      return cache.value;
     }
 
-    return cache.grants;
+    if (cache.pending?.stamp !== stamp) {
+      const result = reload(stamp).finally(() => {
+        if (cache.pending?.result === result) {
+          cache.pending = undefined;
+        }
+      });
+
+      cache.pending = { stamp, result };
+    }
+
+    return cache.pending.result;
   };
 };
 
 export const createProxyRuntime = (options: RuntimeOptions): ProxyRuntime => {
-  const grants = liveGrants(options.stateDir);
+  const layout = stateLayout(options.stateDir);
+  const egressPath = layout.repo(options.repoHash).proxy.egress;
+  const grants = liveFile<Grant[]>(
+    layout.grants,
+    [],
+    () => readGrants(options.stateDir),
+    () => [],
+  );
+  const settings = liveFile(
+    egressPath,
+    options.settings,
+    async () => parseEgressSettings(await readJsonObject(egressPath)),
+    (last) => last,
+  );
 
-  const grantEntries = async () =>
-    options.grantsEnabled
+  const grantEntries = async (enabled: boolean) =>
+    enabled
       ? activeGrants(await grants(), options.repoHash).map((grant) => authorityOf(grant.host, grant.port))
       : [];
 
-  const extras = async () => [...new Set(options.derivedHosts), ...(await grantEntries())];
+  const egress = async (): Promise<LiveEgress> => {
+    const current = await settings();
 
-  return { extras, rules: () => options.rules };
+    return {
+      settings: current,
+      extras: [...new Set(current.derivedHosts), ...(await grantEntries(current.grants))],
+    };
+  };
+
+  return { egress, rules: () => options.rules };
 };

@@ -15,11 +15,19 @@ import {
   stableHash,
   stateLayout,
   terminateProcess,
+  writeJsonFile,
 } from "../shared/index.ts";
 import { capLog } from "./access-log.ts";
 import { minimalEnv } from "./child-env.ts";
 import { type DenialRecord, fetchDenials, readHealth } from "./client.ts";
-import { DAEMON_FAILURE_TAG, type RepoProxy, type RepoProxyInput } from "./files.ts";
+import {
+  DAEMON_FAILURE_TAG,
+  type EgressSettings,
+  egressSettingsOf,
+  parseEgressSettings,
+  type RepoProxy,
+  type RepoProxyInput,
+} from "./files.ts";
 import { openLauncherCa } from "./tls-ca.ts";
 
 type SpawnProcess = (command: string, args: string[], options: SpawnOptions) => ChildProcess;
@@ -58,7 +66,10 @@ const LOG_TAIL_BYTES = 4096;
 const TOKEN_BYTES = 32;
 
 const CHANGED =
-  "the egress settings or environment secrets changed; they apply after every session in this repository exits";
+  "the credential, parent proxy or CA settings changed; the pi sessions running in this folder keep the earlier ones until they all exit (egress allow and deny changes apply now)";
+
+const EGRESS_CHANGED =
+  "the network allow and deny settings changed and now apply to every pi running in this folder";
 
 const proxyFiles = (stateDir: string, repoHash: string) => stateLayout(stateDir).repo(repoHash).proxy;
 
@@ -101,13 +112,26 @@ export const stopRepoProxy = async (stateDir: string, repoHash: string) => {
 };
 
 const proxyInputHash = async (stateDir: string, input: RepoProxyInput) => {
-  const { token: _token, envSecrets, parentAuth, ...rest } = input;
+  const {
+    token: _token,
+    envSecrets,
+    parentAuth,
+    allow: _allow,
+    deny: _deny,
+    privateHosts: _privateHosts,
+    grants: _grants,
+    derivedHosts: _derivedHosts,
+    ...rest
+  } = input;
   const salt = await ensureSalt(stateDir);
   const secrets = createHmac("sha256", salt)
     .update(JSON.stringify([Object.entries(envSecrets).sort(), parentAuth ?? null]))
     .digest("hex");
+  const extraCaPem = input.extraCa
+    ? await readFile(stateLayout(stateDir).extraPem, "utf8").catch(() => "")
+    : "";
 
-  return stableHash({ ...rest, secrets });
+  return stableHash({ ...rest, secrets, extraCaPem });
 };
 
 const isHealthy = async (record: RepoProxy, token: string) =>
@@ -269,27 +293,49 @@ const runningProxy = async (stateDir: string, input: RepoProxyInput) => {
   return undefined;
 };
 
+const egressChangedFor = async (
+  previous: EgressSettings | undefined,
+  settings: EgressSettings,
+  othersLive: () => Promise<boolean>,
+) => (previous === undefined || stableHash(previous) !== stableHash(settings)) && (await othersLive());
+
 export const ensureRepoProxy = async (options: EnsureRepoProxyOptions): Promise<RepoProxyStart> => {
   const { stateDir, input } = options;
 
   await openLauncherCa({ stateDir, runner: options.runner ?? createProcessRunner() });
 
+  const files = proxyFiles(stateDir, input.repoHash);
+  const settings = egressSettingsOf(input);
+
+  await mkdir(files.directory, { recursive: true, mode: 0o700 });
+
+  const previous = parseEgressSettings(await readJsonObject(files.egress));
+
+  await writeJsonFile(files.egress, settings, { mode: PRIVATE_MODE });
+
+  const others = { live: undefined as boolean | undefined };
+  const othersLive = async () => {
+    others.live ??= await options.othersLive();
+
+    return others.live;
+  };
+  const egressNotices = (await egressChangedFor(previous, settings, othersLive)) ? [EGRESS_CHANGED] : [];
   const inputHash = await proxyInputHash(stateDir, input);
   const current = await runningProxy(stateDir, input);
 
   if (current?.inputHash === inputHash) {
-    return { proxy: current, notices: [] };
+    return { proxy: current, notices: egressNotices };
   }
 
-  if (current !== undefined && (await options.othersLive())) {
-    return { proxy: current, notices: [CHANGED] };
+  if (current !== undefined && (await othersLive())) {
+    return { proxy: current, notices: [CHANGED, ...egressNotices] };
   }
 
   if (current !== undefined) {
     await stopRepoProxy(stateDir, input.repoHash);
   }
 
-  return { proxy: await startDaemon(options, inputHash), notices: [] };
+  return { proxy: await startDaemon(options, inputHash), notices: egressNotices };
 };
 
 const TOKEN = new RegExp(`^[0-9a-f]{${TOKEN_BYTES * 2}}$`);

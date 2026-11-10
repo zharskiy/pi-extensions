@@ -16,6 +16,7 @@ const repoProxyFiles = (directory: string) => ({
   token: join(directory, "token"),
   log: join(directory, "proxy.log"),
   accessLog: join(directory, "access.log"),
+  egress: join(directory, "egress.json"),
 });
 
 const repoFiles = (stateDir: string, repoHash: string) => {

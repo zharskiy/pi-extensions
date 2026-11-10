@@ -1,10 +1,13 @@
 import { execFile } from "node:child_process";
+import { mkdir, rename, writeFile } from "node:fs/promises";
 import { createServer as createHttpsServer, type Server } from "node:https";
 import { connect } from "node:net";
+import { dirname } from "node:path";
 import { type TLSSocket, connect as tlsConnect } from "node:tls";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { addGrant } from "../../grants/index.ts";
 import type { LauncherCa } from "../../proxy/tls-ca.ts";
+import { stateLayout } from "../../shared/index.ts";
 import {
   closeServer,
   createStateDir,
@@ -12,6 +15,7 @@ import {
   openCa,
   portOf,
   removeDir,
+  settingsOf,
   startTestProxy,
   type TestProxy,
   waitFor,
@@ -394,6 +398,43 @@ describe("the upstream of a spliced tunnel", () => {
       expect(dialled).toEqual(["target.test:443"]);
     } finally {
       await close();
+    }
+  });
+});
+
+describe("live egress settings", () => {
+  it("applies a tightened and a loosened egress.json to new CONNECTs and keeps the last good one", async () => {
+    const stateDir = await createStateDir();
+    const local = await startTestProxy({ stateDir, policy: { allow: ["target.test"] }, ca: state.ca, ports });
+    const path = stateLayout(stateDir).repo(local.repoHash).proxy.egress;
+    const write = async (text: string) => {
+      await mkdir(dirname(path), { recursive: true });
+
+      await writeFile(`${path}.tmp`, text);
+
+      await rename(`${path}.tmp`, path);
+    };
+    const status = async () =>
+      (await connectStatusOn(local.proxy.port, "target.test:443", local.token)).status;
+
+    try {
+      expect(await status()).toBe(200);
+
+      await write(JSON.stringify(settingsOf({ allow: ["target.test"], deny: ["target.test"] })));
+
+      expect(await status()).toBe(403);
+
+      await write("{ not json");
+
+      expect(await status()).toBe(403);
+
+      await write(JSON.stringify(settingsOf({ allow: ["target.test"] })));
+
+      expect(await status()).toBe(200);
+    } finally {
+      await local.proxy.close();
+
+      await removeDir(stateDir);
     }
   });
 });

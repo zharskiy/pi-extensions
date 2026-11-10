@@ -5,10 +5,10 @@ import type { Server } from "node:https";
 import { type AddressInfo, connect, isIP, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { authorityOf, type CredentialRule, TLS_PORT } from "../../config/index.ts";
+import type { CredentialRule } from "../../config/index.ts";
 import type { AccessLogEntry } from "../../proxy/access-log.ts";
 import type { Dialer } from "../../proxy/dial.ts";
-import type { EgressPolicy } from "../../proxy/policy.ts";
+import type { EgressSettings } from "../../proxy/files.ts";
 import { createProxyRuntime, type ProxyRuntime } from "../../proxy/runtime.ts";
 import type { SecretResolver, SecretResult } from "../../proxy/secrets/index.ts";
 import { type ProxyServer, startProxyServer } from "../../proxy/server.ts";
@@ -86,15 +86,31 @@ export const removeDir = (path: string) => rm(path, { recursive: true, force: tr
 export const openCa = (stateDir: string): Promise<LauncherCa> =>
   openLauncherCa({ stateDir, runner: createProcessRunner() });
 
+export interface TestPolicy {
+  allow: string[];
+  deny?: string[];
+  grants?: boolean;
+}
+
+export const settingsOf = (
+  policy: TestPolicy,
+  extra: { privateHosts?: string[]; derivedHosts?: string[] } = {},
+): EgressSettings => ({
+  allow: policy.allow,
+  deny: policy.deny ?? [],
+  privateHosts: extra.privateHosts ?? [],
+  grants: policy.grants !== false,
+  derivedHosts: extra.derivedHosts ?? [],
+});
+
 export interface TestProxyOptions {
   stateDir: string;
-  policy: EgressPolicy;
+  policy: TestPolicy;
   ca?: LauncherCa;
   upstreamCa?: string;
   rules?: CredentialRule[];
   derivedHosts?: string[];
   repoHash?: string;
-  grantsEnabled?: boolean;
   resolver?: SecretResolver;
   privateHosts?: string[];
   ports?: () => Record<string, number>;
@@ -117,23 +133,14 @@ export const startTestProxy = async (options: TestProxyOptions): Promise<TestPro
     stateDir: options.stateDir,
     repoHash,
     rules: options.rules ?? [],
-    derivedHosts: options.derivedHosts ?? [],
-    grantsEnabled: options.grantsEnabled ?? true,
+    settings: settingsOf(options.policy, options),
   });
   const proxy = await startProxyServer({
     listen: { host: "127.0.0.1", port: 0 },
-    policy: {
-      ...options.policy,
-      credentialHosts: [
-        ...(options.policy.credentialHosts ?? []),
-        ...(options.rules ?? []).map((rule) => authorityOf(rule.host, rule.port ?? TLS_PORT)),
-      ],
-    },
     repoHash,
     token: TEST_TOKEN,
     runtime,
     resolver: options.resolver ?? fakeResolver({}).resolver,
-    privateHosts: options.privateHosts,
     ca,
     log: (entry) => log.push(entry),
     dial: options.dial ?? mappedDial(options.ports ?? (() => ({}))),

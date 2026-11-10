@@ -418,7 +418,7 @@ describe("mcpOAuth sign-in through the proxy", () => {
     const resolver = resolverWith(mode, { signInWaitMs: 200 });
     const test = await startTestProxy({
       stateDir: state.stateDir,
-      policy: { allow: [], credentialHosts: ["mcp.test"] },
+      policy: { allow: [] },
       ca,
       rules: [RULE],
       resolver,

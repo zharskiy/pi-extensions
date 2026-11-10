@@ -16,13 +16,18 @@ import {
 import { createAccessLog } from "./access-log.ts";
 import { helperProxyEnv, minimalEnv } from "./child-env.ts";
 import { createDialer } from "./dial.ts";
-import { DAEMON_FAILURE_TAG, type DaemonInput, type RepoProxy, type RepoProxyInput } from "./files.ts";
+import {
+  DAEMON_FAILURE_TAG,
+  type DaemonInput,
+  egressSettingsOf,
+  type RepoProxy,
+  type RepoProxyInput,
+} from "./files.ts";
 import { watchIdle } from "./idle.ts";
 import { parentRouteFor } from "./parent.ts";
 import { createProxyRuntime } from "./runtime.ts";
 import { createSecretResolver } from "./secrets/index.ts";
 import { startProxyServer } from "./server.ts";
-import { proxyPolicy } from "./settings.ts";
 import { openLauncherCa } from "./tls-ca.ts";
 
 const LISTEN_HOST = "127.0.0.1";
@@ -104,18 +109,15 @@ const run = async (args: DaemonArgs) => {
   const log = createAccessLog(files.accessLog, input.accessLogLimit);
   const server = await startProxyServer({
     listen: { host: LISTEN_HOST, port: 0 },
-    policy: proxyPolicy(input),
     repoHash: input.repoHash,
     token: input.token,
     runtime: createProxyRuntime({
       stateDir: args.stateDir,
       repoHash: input.repoHash,
       rules: input.rules,
-      derivedHosts: input.derivedHosts,
-      grantsEnabled: input.grants,
+      settings: egressSettingsOf(input),
     }),
     resolver,
-    privateHosts: input.privateHosts,
     ca,
     log: log.write,
     dial: createDialer({ parent: parentRouteFor(input.parent, parentEnv) }),

@@ -8,6 +8,7 @@ import { isHelloComplete, parseServerName } from "./sni.ts";
 export interface Connection {
   host: string;
   port: number;
+  access: DialAccess;
   sni?: string;
   rule?: string;
   client: Socket;
@@ -15,7 +16,6 @@ export interface Connection {
 
 interface TunnelOptions {
   dial: Dial;
-  accessOf: (host: string) => DialAccess;
   track: (socket: Socket) => void;
   record: RecordAccess;
   denials: Denials;
@@ -64,7 +64,7 @@ const readClientHello = (socket: Socket, head: Buffer, timeoutMs: number) =>
   });
 
 export const createTunnel = (options: TunnelOptions) => {
-  const { dial, accessOf, denials } = options;
+  const { dial, denials } = options;
 
   const splice = (connection: Connection, upstream: Socket, hello: Buffer) => {
     const { client } = connection;
@@ -96,7 +96,7 @@ export const createTunnel = (options: TunnelOptions) => {
 
   const dialUpstream = async (connection: Connection) => {
     const { host, port } = connection;
-    const upstream = await dial(host, port, accessOf(host)).catch((error: Error) => error);
+    const upstream = await dial(host, port, connection.access).catch((error: Error) => error);
 
     if (!(upstream instanceof Error)) {
       return upstream;

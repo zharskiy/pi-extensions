@@ -78,6 +78,7 @@ describe("stateLayout", () => {
         token: "/state/repos/r1/proxy/token",
         log: "/state/repos/r1/proxy/proxy.log",
         accessLog: "/state/repos/r1/proxy/access.log",
+        egress: "/state/repos/r1/proxy/egress.json",
       },
     });
   });

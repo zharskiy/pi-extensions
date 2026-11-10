@@ -245,7 +245,6 @@ beforeAll(async () => {
     stateDir: state.stateDir,
     policy: {
       allow: ["api.test", "git.test", "npm.test", "broken.test", "newline.test"],
-      credentialHosts: ["llm.test"],
     },
     ca: state.ca,
     rules: RULES,
@@ -518,7 +517,7 @@ describe("a rule on a non-443 port", () => {
     local.stateDir = await createStateDir();
     local.test = await startTestProxy({
       stateDir: local.stateDir,
-      policy: { allow: [], credentialHosts: ["llm.test:8443"] },
+      policy: { allow: [] },
       ca: state.ca,
       rules: [{ ...RULES[0], port: 8443 } as CredentialRule],
       resolver: state.resolver.resolver,

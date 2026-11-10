@@ -1,7 +1,6 @@
 import { createSecureContext, type SecureContext, TLSSocket } from "node:tls";
 import { normalizeHost } from "../config/index.ts";
 import type { Denials, RecordAccess } from "./denials.ts";
-import type { DialAccess } from "./dial.ts";
 import { sniDenial } from "./policy.ts";
 import { ESTABLISHED } from "./replies.ts";
 import type { TerminatedTarget } from "./terminate.ts";
@@ -15,7 +14,6 @@ interface LeafSource {
 interface InterceptOptions {
   ca: LeafSource;
   helloTimeoutMs: number;
-  accessOf: (host: string) => DialAccess;
   serve: (socket: TLSSocket, target: TerminatedTarget) => void;
   record: RecordAccess;
   denials: Denials;
@@ -82,11 +80,7 @@ export const createInterceptor = (options: InterceptOptions) => {
 
       state.secured = true;
 
-      options.serve(secure, {
-        host,
-        port,
-        access: options.accessOf(host),
-      });
+      options.serve(secure, { host, port, access: connection.access });
     });
 
     client.once("close", () => {

@@ -2,15 +2,16 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import type { AddressInfo, Socket } from "node:net";
 import { userInfo } from "node:os";
 import type { Duplex } from "node:stream";
-import { matchesPattern, normalizeHost } from "../config/index.ts";
+import { authorityOf, matchesPattern, normalizeHost, TLS_PORT } from "../config/index.ts";
 import { LauncherError } from "../shared/index.ts";
 import type { AccessLogEntry } from "./access-log.ts";
 import { proxyTokenOf, sameText } from "./auth.ts";
 import { createDenialPages } from "./denial-page.ts";
 import { createDenials, isHinted, type RecordAccess } from "./denials.ts";
 import { type DialAccess, type Dialer, RestrictedAddressError } from "./dial.ts";
+import type { EgressSettings } from "./files.ts";
 import { createInterceptor } from "./intercept.ts";
-import { compilePolicy, type EgressPolicy } from "./policy.ts";
+import { compilePolicy, type EgressDecider } from "./policy.ts";
 import { PROXY_AGENT, rawReply, sendJson } from "./replies.ts";
 import { HTTP_PORT, parseAuthority } from "./request-target.ts";
 import { createRoutes, hostOf, PLAIN_HTTP } from "./routes.ts";
@@ -22,12 +23,10 @@ import { type Connection, createTunnel } from "./tunnel.ts";
 
 export interface ProxyServerOptions {
   listen: { host: string; port: number };
-  policy: EgressPolicy;
   repoHash: string;
   token: string;
   runtime: ProxyRuntime;
   resolver: SecretResolver;
-  privateHosts?: string[];
   ca: {
     leaf(host: string): Promise<LeafCertificate>;
     ephemeralLeaf(host: string): Promise<LeafCertificate>;
@@ -76,8 +75,32 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
     options.log({ time: new Date().toISOString(), user, repo: repoHash, ...entry });
   };
 
-  const privatePatterns = (options.privateHosts ?? []).map(normalizeHost);
-  const decideConnect = compilePolicy(options.policy);
+  const credentialHosts = [
+    ...new Set(options.runtime.rules().map((rule) => authorityOf(rule.host, rule.port ?? TLS_PORT))),
+  ];
+  const compiled = new WeakMap<EgressSettings, { decide: EgressDecider; privatePatterns: string[] }>();
+
+  const compiledFor = (settings: EgressSettings) => {
+    const known = compiled.get(settings);
+
+    if (known !== undefined) {
+      return known;
+    }
+
+    const fresh = {
+      decide: compilePolicy({
+        allow: settings.allow,
+        deny: settings.deny,
+        credentialHosts,
+        grants: settings.grants,
+      }),
+      privatePatterns: settings.privateHosts.map(normalizeHost),
+    };
+
+    compiled.set(settings, fresh);
+
+    return fresh;
+  };
   const pages = createDenialPages({ leaf: (host) => ca.ephemeralLeaf(host) });
   const denials = createDenials(repoHash, record, pages);
 
@@ -95,18 +118,14 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
     note: denials.note,
   });
 
-  const accessOf = (host: string): DialAccess =>
-    privatePatterns.some((pattern) => matchesPattern(host, pattern)) ? "private" : "public";
-
   const intercept = createInterceptor({
     ca,
     helloTimeoutMs,
-    accessOf,
     serve: terminator.serve,
     record,
     denials,
   });
-  const tunnel = createTunnel({ dial: dial.dial, accessOf, track, record, denials, helloTimeoutMs });
+  const tunnel = createTunnel({ dial: dial.dial, track, record, denials, helloTimeoutMs });
   const routes = createRoutes(denials);
 
   const isCaller = (request: IncomingMessage) => {
@@ -115,8 +134,8 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
     return token !== undefined && sameText(token, options.token);
   };
 
-  const restrictedResolution = async (host: string) => {
-    const problem = await dial.checkAddresses(host, accessOf(host)).then(
+  const restrictedResolution = async (host: string, access: DialAccess) => {
+    const problem = await dial.checkAddresses(host, access).then(
       () => undefined,
       (error: unknown) => error,
     );
@@ -154,7 +173,9 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
       return;
     }
 
-    const decision = decideConnect({ host, port }, await options.runtime.extras());
+    const { settings, extras } = await options.runtime.egress();
+    const { decide, privatePatterns } = compiledFor(settings);
+    const decision = decide({ host, port }, extras);
 
     if (!decision.allowed && isHinted(decision.rule) && head.length === 0) {
       await denials.show(client, host, decision, { port });
@@ -168,7 +189,10 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
       return;
     }
 
-    const restricted = await restrictedResolution(host);
+    const access: DialAccess = privatePatterns.some((pattern) => matchesPattern(host, pattern))
+      ? "private"
+      : "public";
+    const restricted = await restrictedResolution(host, access);
 
     if (restricted !== undefined) {
       denials.refuse(client, host, { rule: restricted.rule, reason: restricted.message }, { port });
@@ -176,7 +200,7 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
       return;
     }
 
-    const connection: Connection = { host, port, client, rule: decision.rule };
+    const connection: Connection = { host, port, access, client, rule: decision.rule };
 
     if (decision.rule === "credential") {
       await intercept(connection, head);
