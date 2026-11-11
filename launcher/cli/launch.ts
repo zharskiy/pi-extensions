@@ -19,7 +19,7 @@ import { gitLaunchNotices, type HostSessions } from "../workspace/index.ts";
 import { checkWorkspaceRoots, type LaunchContext, openContext } from "./context.ts";
 import { type CliDeps, hostAgentDirOf, writeLine, writeNotices } from "./deps.ts";
 import { type HostSide, type PreparedHost, prepareHostSide } from "./derive.ts";
-import { NO_SANDBOX, resolveJobPi, runHostPi, sandboxRoots } from "./host-pi.ts";
+import { NO_SANDBOX, resolveJobPi, runHostPi } from "./host-pi.ts";
 import {
   hostSessionsOf,
   noticeHostSessions,
@@ -109,9 +109,7 @@ const handled = <T>(pending: Promise<T>) => {
 };
 
 const startHostSide = (deps: CliDeps, context: LaunchContext, files: HostPiFiles) =>
-  handled(
-    resolveJobPi(deps, sandboxRoots(deps, context)).then((pi) => prepareHostSide(deps, context, files, pi)),
-  );
+  handled(resolveJobPi(deps).then((pi) => prepareHostSide(deps, context, files, pi)));
 
 const prepareHost = async (
   deps: CliDeps,

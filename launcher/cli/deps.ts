@@ -1,7 +1,6 @@
 import { type Backend, engineUnreachable } from "../backend/index.ts";
 import type { ExtraCa } from "../config/index.ts";
 import type { HostTerminal, SignalSource } from "../container/index.ts";
-import type { BundledPi } from "../hostpi/index.ts";
 import type { DenialRecord, RepoProxy, RepoProxyInput, RepoProxyStart, TrustBundle } from "../proxy/index.ts";
 import { type CommandRunner, hostAgentDir, launcherPaths } from "../shared/index.ts";
 
@@ -34,7 +33,6 @@ export interface CliDeps {
   machine: { cpus: number; memoryGiB: number };
   backend(): Backend;
   proxy: ProxyControl;
-  bundledPi(): Promise<BundledPi | undefined>;
   now(): number;
 }
 

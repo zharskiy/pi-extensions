@@ -33,11 +33,15 @@ You need:
 - Colima 0.8.0 or newer. The script installs it with Homebrew if it is missing.
 - Node 22.19 or newer, with npm.
 - git.
+- pi, installed with pi's own installer. The launcher runs only this managed install on the host (for provider credentials, host commands and `--no-sandbox`); a pi installed with npm or found on `PATH` is not used.
 
 ```bash
+curl -fsSL https://pi.dev/install.sh | sh
 npm install -g pi-extensions-mz
 "$(npm root -g)/pi-extensions-mz/launcher/install.sh"
 ```
+
+Without the managed install, `install.sh` stops before it changes anything and says to install pi this way and run it again.
 
 The script starts a Colima profile named `pi-sandbox` and puts `~/.local/bin` first on `PATH` in your shell startup files. Open a new terminal afterwards.
 
@@ -53,13 +57,14 @@ colima stop --profile pi-sandbox && colima start --profile pi-sandbox --activate
 <summary>Install from a checkout</summary>
 
 ```bash
+curl -fsSL https://pi.dev/install.sh | sh
 git clone https://github.com/zharskiy/pi-extensions.git
 cd pi-extensions
 npm install
 launcher/install.sh
 ```
 
-`npm install` comes first. The launcher uses pi's managed install if you have one, and otherwise the pi that npm puts next to it. The script writes a wrapper script at `~/.local/bin/pi` that runs this checkout.
+Pi's own installer comes first here too: the launcher runs only pi's managed install on the host, never the pi in the checkout's `node_modules` or a pi on `PATH`. The script writes a wrapper script at `~/.local/bin/pi` that runs this checkout. Without the managed install, the launch, `pi sandbox doctor`, `--no-sandbox` and the host commands say so in one line, with the same remedy.
 
 </details>
 
@@ -92,7 +97,7 @@ launcher/install.sh
 
 ## Everyday use
 
-In the table, *host pi* is the normal pi on your Mac, and `fallback` is the setting that allows `--no-sandbox`. A *grant* is a host you allowed. *Overlay* and *agent* volumes are storage the VM keeps for the folder's build output and pi's own files.
+In the table, *host pi* is pi's managed install on your Mac, and `fallback` is the setting that allows `--no-sandbox`. A *grant* is a host you allowed. *Overlay* and *agent* volumes are storage the VM keeps for the folder's build output and pi's own files.
 
 | command | what it does |
 | --- | --- |
@@ -118,7 +123,7 @@ In the table, *host pi* is the normal pi on your Mac, and `fallback` is the sett
 
 `pi uninstall <source>` also runs with host pi on the host. Host pi loads no extension for `pi --help` and `pi --list-models`, so help omits the flags extensions register and the list omits providers only an extension registers; `pi list`, `pi mcp list` and `pi config` run in the sandbox, and `pi --version` asks pi inside when `image.reference` and `image.digest` pin the image. `egress allow` uses port 443 unless you name one, and refuses wildcards, IP addresses and port 80 ([rules](CONFIGURATION.md#network-access)).
 
-With pi's managed install, `pi update` updates it, and the next launch rebuilds the image. If pi came with the launcher, `pi update` tells you to run `npm install -g pi-extensions-mz`.
+`pi update` runs the managed install's own update, and the next launch rebuilds the image. Without a managed install it says how to get one. To update the launcher itself, run `npm install -g pi-extensions-mz` (or `git pull` in a checkout).
 
 After a reboot or `pi sandbox stop`, the next `pi` starts the VM again. A failure prints `pi-sandbox: <message>`, often with a `hint:` line.
 

@@ -14,7 +14,7 @@ import { assertHostSessionsDir } from "../../workspace/index.ts";
 import type { LaunchContext } from "../context.ts";
 import { type CliDeps, hostAgentDirOf } from "../deps.ts";
 import { providerHostsOf } from "../derive.ts";
-import { hostPiPlace, hostPiText, resolveJobPi, sandboxRoots } from "../host-pi.ts";
+import { hostPiPlace, hostPiText, missingPiText, resolveJobPi } from "../host-pi.ts";
 import { hostSessionsOf } from "../host-sessions.ts";
 import { leftoverStateNotice, movedConfigNotice } from "../legacy-paths.ts";
 import { isOlderVersion, testedPiVersion } from "../versions.ts";
@@ -32,18 +32,16 @@ const MINUTES_SHOWN_BELOW_MS = 2 * HOUR_MS;
 
 const HOURS_SHOWN_BELOW_MS = 2 * DAY_MS;
 
-const REINSTALL = "reinstall the launcher with npm install -g pi-extensions-mz";
-
-const checkHostPi = async (context: LaunchContext, job: HostPi | undefined) => {
+const checkHostPi = async (deps: CliDeps, context: LaunchContext, job: HostPi | undefined) => {
   if (job === undefined) {
-    return failed(`no pi on the host; install pi or ${REINSTALL}`);
+    return failed(missingPiText(deps));
   }
 
   const tested = await testedPiVersion();
 
   if (isOlderVersion(job.version, tested)) {
     return warned(
-      `pi ${job.version} (${hostPiPlace(job)}) is older than ${tested}, the pi this launcher is tested with; ${job.source === "managed" ? "run pi update" : REINSTALL}`,
+      `pi ${job.version} (${hostPiPlace(job)}) is older than ${tested}, the pi this launcher is tested with; run pi update`,
     );
   }
 
@@ -56,7 +54,11 @@ const checkHostPi = async (context: LaunchContext, job: HostPi | undefined) => {
 };
 
 const checkProviderHosts = async (deps: CliDeps, context: LaunchContext, pi: HostPi | undefined) => {
-  const { hosts, notices } = await providerHostsOf(deps, context.stateDir, pi);
+  if (pi === undefined) {
+    return failed("no host pi to read the provider host table with");
+  }
+
+  const { hosts, notices } = await providerHostsOf(deps, context, pi);
   const count = Object.keys(hosts).length;
 
   return count > 0
@@ -195,14 +197,11 @@ const named = async (name: string, result: Promise<NamedCheck["result"]>): Promi
 });
 
 export const hostChecks = async (deps: CliDeps, context: LaunchContext): Promise<NamedCheck[]> => {
-  const [files, pi] = await Promise.all([
-    readHostPiFiles(hostAgentDirOf(deps)),
-    resolveJobPi(deps, sandboxRoots(deps, context)),
-  ]);
+  const [files, pi] = await Promise.all([readHostPiFiles(hostAgentDirOf(deps)), resolveJobPi(deps)]);
   const [legacy, checks, signIns] = await Promise.all([
     legacyChecks(deps),
     Promise.all([
-      named("host pi", checkHostPi(context, pi)),
+      named("host pi", checkHostPi(deps, context, pi)),
       named("provider hosts", checkProviderHosts(deps, context, pi)),
       named("parent proxy", checkParentProxy(deps, context)),
       named("sessions", checkSessions(deps, context, files)),

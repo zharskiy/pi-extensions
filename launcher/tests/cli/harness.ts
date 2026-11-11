@@ -10,7 +10,6 @@ import type { CliDeps } from "../../cli/index.ts";
 import { sweepOrphans } from "../../cli/sweep.ts";
 import { testedPiVersion } from "../../cli/versions.ts";
 import { newLaunchId, registerLaunch } from "../../grants/index.ts";
-import type { BundledPi } from "../../hostpi/index.ts";
 import type { DenialRecord, RepoProxy, RepoProxyInput } from "../../proxy/index.ts";
 import { LauncherError, processMark, type RunResult, sha256Hex, stateLayout } from "../../shared/index.ts";
 import { createFakeBackend as createBareBackend, type FakeExec } from "../support/fake-backend.ts";
@@ -26,7 +25,7 @@ export interface HarnessOptions {
   proxy?: Partial<CliDeps["proxy"]>;
   respond?: FakeResponder;
   env?: Record<string, string>;
-  bundledPi?: BundledPi | null;
+  hostPi?: false;
   providerHosts?: Record<string, { hosts: string[]; envVars?: string[] }>;
   denials?: DenialRecord[];
   machine?: CliDeps["machine"];
@@ -80,8 +79,6 @@ const collector = (): Collected => {
 };
 
 const RUNNING_PROXY: RepoProxy = { pid: 4242, boot: 0, start: "", port: 3128, inputHash: "input" };
-
-const FAKE_PI_DIR = "/fake/node_modules/@earendil-works/pi-coding-agent";
 
 const PROVIDER_HOSTS = { example: { hosts: ["models.example.test"] } };
 
@@ -138,6 +135,9 @@ export const holdLaunch = async (harness: HarnessPaths) => {
     startedAt: 1,
   });
 };
+
+export const noHostPiLine = (agentDir: string) =>
+  `no managed pi in ${agentDir} (a pi installed with npm or found on PATH is not used): the sandbox gets no provider credentials, and host commands and --no-sandbox are unavailable; install pi with pi's own installer (curl -fsSL https://pi.dev/install.sh | sh) and run the launcher's install.sh again`;
 
 interface ManagedPiOptions {
   marker?: unknown;
@@ -268,6 +268,10 @@ export const createHarness = async (options: HarnessOptions = {}) => {
   writeFileSync(join(stateDir, "ca", "extra.pem"), "");
   mkdirSync(cwd, { recursive: true });
 
+  if (options.hostPi !== false) {
+    await writeManagedPi(hostAgentDir, await testedPiVersion());
+  }
+
   const stdout = collector();
   const stderr = collector();
   const fake = createFakeRunner((call) => {
@@ -290,14 +294,6 @@ export const createHarness = async (options: HarnessOptions = {}) => {
   const terminalOut = new PassThrough();
   const stoppedProxies: string[] = [];
   const proxyInputs: RepoProxyInput[] = [];
-  const bundledPi =
-    options.bundledPi === null
-      ? undefined
-      : (options.bundledPi ?? {
-          command: [process.execPath, join(FAKE_PI_DIR, "dist", "cli.js")],
-          version: await testedPiVersion(),
-          packageDir: FAKE_PI_DIR,
-        });
   const deps: CliDeps = {
     runner: fake.runner,
     env: {
@@ -346,7 +342,6 @@ export const createHarness = async (options: HarnessOptions = {}) => {
       }),
       ...options.proxy,
     },
-    bundledPi: async () => bundledPi,
     now: () => 1_700_000_000_000,
   };
 

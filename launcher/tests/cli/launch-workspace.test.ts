@@ -102,7 +102,9 @@ describe("pi in a folder of repositories", () => {
 
     expect(await run(["--no-sandbox", "-p", "hi"], harness.deps)).toBe(0);
     expect(harness.stderr()).not.toContain("cannot be protected");
-    expect(harness.calls.find((call) => call.interactive)?.file).toBe(process.execPath);
+    expect(harness.calls.find((call) => call.interactive)?.file).toBe(
+      join(harness.hostAgentDir, "bin", "pi"),
+    );
   });
 
   it("refuses the home and a folder under a dotfiles home before searching them, and still runs status there", async () => {

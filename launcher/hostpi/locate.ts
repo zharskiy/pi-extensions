@@ -1,9 +1,8 @@
-import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
-import { isJsonObject, launcherRoot, readJsonObject } from "../shared/index.ts";
+import { join } from "node:path";
+import { isJsonObject, readJsonObject } from "../shared/index.ts";
 import { isExecutable } from "./path-search.ts";
-import type { BundledPi, HostPi } from "./types.ts";
+import type { HostPi } from "./types.ts";
 
 interface PiManifest {
   version?: unknown;
@@ -22,18 +21,6 @@ const MANAGED_LAYOUT = "releases-v1";
 
 export const SAFE_VERSION = /^[0-9A-Za-z][0-9A-Za-z.+-]*$/;
 
-const packageDirFrom = (start: string, stop: string): string | undefined => {
-  const candidate = join(start, "node_modules", PI_PACKAGE);
-
-  if (existsSync(join(candidate, "package.json"))) {
-    return candidate;
-  }
-
-  const parent = dirname(start);
-
-  return start === stop || parent === start ? undefined : packageDirFrom(parent, stop);
-};
-
 const binOf = (manifest: PiManifest) => {
   if (typeof manifest.bin === "string") {
     return manifest.bin;
@@ -46,23 +33,6 @@ const binOf = (manifest: PiManifest) => {
 
 const manifestOf = async (packageDir: string): Promise<PiManifest> =>
   (await readJsonObject(join(packageDir, "package.json"))) ?? {};
-
-export const locateBundledPi = async (root = launcherRoot()): Promise<BundledPi | undefined> => {
-  const packageDir = packageDirFrom(root, dirname(root));
-
-  if (packageDir === undefined) {
-    return undefined;
-  }
-
-  const manifest = await manifestOf(packageDir);
-  const bin = binOf(manifest);
-
-  if (typeof manifest.version !== "string" || bin === undefined) {
-    return undefined;
-  }
-
-  return { command: [process.execPath, join(packageDir, bin)], version: manifest.version, packageDir };
-};
 
 const isManagedMarker = (marker: unknown) =>
   isJsonObject(marker) &&
@@ -103,7 +73,6 @@ export const locateManagedPi = async (agentDir: string): Promise<HostPi | undefi
     command: [process.execPath, join(packageDir, bin)],
     version: manifest.version,
     packageDir,
-    source: "managed",
     wrapper,
   };
 };

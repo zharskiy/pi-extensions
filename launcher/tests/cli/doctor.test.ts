@@ -8,7 +8,14 @@ import { testedPiVersion } from "../../cli/versions.ts";
 import { registerLaunch } from "../../grants/index.ts";
 import type { DenialRecord } from "../../proxy/index.ts";
 import { processMark, sha256Hex } from "../../shared/index.ts";
-import { createFakeBackend, createHarness, unreachable, writeManagedPi } from "./harness.ts";
+import {
+  createFakeBackend,
+  createHarness,
+  noHostPiLine,
+  unreachable,
+  writeManagedPi,
+  writePathPi,
+} from "./harness.ts";
 
 interface Probes {
   env?: string;
@@ -95,7 +102,9 @@ const guestBackend = async (probes: Probes, vm?: Partial<Vm>) => {
 
 const HOST_CHECK_LINES = [
   "skip vm shares: colima has not written the shares of profile pi-sandbox yet",
-  expect.stringMatching(/^ok host pi: pi \S+ next to the launcher; the image follows it$/),
+  expect.stringMatching(
+    /^ok host pi: pi \S+, managed install \/.+\/home\/\.pi\/agent\/bin\/pi; the image follows it$/,
+  ),
   "ok provider hosts: 1 built-in providers with known hosts",
   "skip parent proxy: no parent proxy configured",
   expect.stringMatching(/^ok sessions: \/.+\/home\/\.pi\/agent\/sessions\/--.+-repo-- \(host pi lists them/),
@@ -555,10 +564,13 @@ describe("pi sandbox doctor", () => {
 describe("pi sandbox doctor on the host pi", () => {
   const hostPiLine = async (
     prepare: (harness: Awaited<ReturnType<typeof createHarness>>) => Promise<void>,
-    bundled = true,
+    hostPi = true,
   ) => {
     const down = unreachable(createFakeBackend().backend);
-    const harness = await createHarness({ backend: () => down, ...(bundled ? {} : { bundledPi: null }) });
+    const harness = await createHarness({
+      backend: () => down,
+      ...(hostPi ? {} : { hostPi: false as const }),
+    });
 
     await prepare(harness);
 
@@ -593,11 +605,14 @@ describe("pi sandbox doctor on the host pi", () => {
     );
   });
 
-  it("fails when the host has no pi", async () => {
-    const { line } = await hostPiLine(async () => undefined, false);
+  it("fails without a managed pi, even with a pi on PATH, with the missing-pi line", async () => {
+    const { harness, line } = await hostPiLine(async (harness) => {
+      harness.deps.env.PATH = (await writePathPi(join(harness.root, "brew"), "1.7.0")).bin;
+    }, false);
 
-    expect(line).toBe(
-      "fail host pi: no pi on the host; install pi or reinstall the launcher with npm install -g pi-extensions-mz",
+    expect(line).toBe(`fail host pi: ${noHostPiLine(harness.hostAgentDir)}`);
+    expect(harness.stdout()).toContain(
+      "fail provider hosts: no host pi to read the provider host table with\n",
     );
   });
 });

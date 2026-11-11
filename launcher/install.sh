@@ -154,6 +154,29 @@ version_at_least "$node_version" "$min_node" || fail "node $node_version is too 
 
 step 1 "preflight: $preflight, node $node_version"
 
+has_marker() {
+  [ -f "$1" ] && grep -Eq "$managed_kind" "$1" && grep -Eq "$managed_schema" "$1" && grep -Eq "$managed_layout" "$1"
+}
+
+is_safe_release() {
+  case "$1" in
+    ""|[!0-9A-Za-z]*|*[!0-9A-Za-z.+-]*) return 1 ;;
+  esac
+}
+
+is_managed_root() {
+  [ -x "$1/bin/pi" ] && has_marker "$1/install/managed-install.json" || return 1
+  release=$(cat "$1/install/current-version" 2>/dev/null) || return 1
+  is_safe_release "$release" && [ -f "$1/install/releases/$release/$managed_package" ]
+}
+
+require_host_pi() {
+  is_managed_root "$agent_dir" ||
+    fail "no managed pi in $agent_dir (a pi installed with npm or found on PATH is not used): the sandbox gets no provider credentials, and host commands and --no-sandbox are unavailable; install pi with pi's own installer (curl -fsSL https://pi.dev/install.sh | sh) and run this again"
+}
+
+require_host_pi
+
 if command -v colima >/dev/null 2>&1; then
   step 2 "runtime: colima is present"
 else
@@ -218,22 +241,6 @@ resolve_link() {
   resolve_link "$next" $(($2 - 1))
 }
 
-has_marker() {
-  [ -f "$1" ] && grep -Eq "$managed_kind" "$1" && grep -Eq "$managed_schema" "$1" && grep -Eq "$managed_layout" "$1"
-}
-
-is_safe_release() {
-  case "$1" in
-    ""|[!0-9A-Za-z]*|*[!0-9A-Za-z.+-]*) return 1 ;;
-  esac
-}
-
-is_managed_root() {
-  [ -x "$1/bin/pi" ] && has_marker "$1/install/managed-install.json" || return 1
-  release=$(cat "$1/install/current-version" 2>/dev/null) || return 1
-  is_safe_release "$release" && [ -f "$1/install/releases/$release/$managed_package" ]
-}
-
 managed_root=""
 
 is_managed_pi() {
@@ -260,42 +267,6 @@ if [ -n "$managed_root" ] && [ "$managed_root" != "$agent_root" ]; then
   fail "$shim is pi's managed install at $managed_root, outside the host agent dir $agent_dir; the launcher uses only the managed install in the agent dir, move it away and run this again"
 fi
 
-bundled_pi_package="node_modules/@earendil-works/pi-coding-agent/package.json"
-
-has_bundled_pi() {
-  if [ "$#" -eq 0 ]; then
-    return 1
-  fi
-
-  if [ -f "$1/$bundled_pi_package" ]; then
-    return 0
-  fi
-
-  shift
-  has_bundled_pi "$@"
-}
-
-bundled_pi_present() {
-  if [ "$from_checkout" -eq 1 ]; then
-    has_bundled_pi "$checkout"
-  else
-    npm_root=$(npm root -g)
-    has_bundled_pi "$npm_root/$package_name" "$(dirname "$npm_root")"
-  fi
-}
-
-require_host_pi() {
-  if is_managed_root "$agent_dir" || bundled_pi_present; then
-    return 0
-  fi
-
-  if [ "$from_checkout" -eq 1 ]; then
-    fail "no managed pi in $agent_dir and pi is missing next to the launcher in $checkout, run npm install there and run this again"
-  fi
-
-  fail "no managed pi in $agent_dir and pi is missing next to the launcher, npm skipped the peer dependency; run npm install -g --legacy-peer-deps=false $package_name@$version and run this again"
-}
-
 carry_replaced_link() {
   if [ ! -f "$replaced_link" ] && [ -f "$legacy_replaced_link" ] && [ "$legacy_replaced_link" != "$replaced_link" ]; then
     mkdir -p "$state_dir"
@@ -310,10 +281,6 @@ record_replaced_link() {
   fi
 }
 
-if [ "$from_checkout" -eq 1 ]; then
-  require_host_pi
-fi
-
 mkdir -p "$bin_dir"
 
 carry_replaced_link
@@ -327,8 +294,7 @@ if [ "$from_checkout" -eq 1 ]; then
   installed="wrote $shim running $checkout/launcher/bin/pi-sandbox-dev.js"
 else
   step 5 "launcher: installing $package_name@$version with npm"
-  streamed npm install -g --legacy-peer-deps=false "$package_name@$version"
-  require_host_pi
+  streamed npm install -g "$package_name@$version"
   npm_bin="$(npm prefix -g)/bin/pi-sandbox"
   record_replaced_link
   ln -sfn "$npm_bin" "$shim"

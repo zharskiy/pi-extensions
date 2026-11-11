@@ -427,10 +427,33 @@ describe("install.sh options and the PATH block", { timeout: INSTALL_TIMEOUT_MS 
     expect(await isLauncherWrapper(join(home, ".local", "bin", "pi"))).toBe(true);
   });
 
-  it("stops before it links pi when npm left no pi next to the launcher and there is no managed pi", async () => {
+  const noManagedPi = (agentDir: string) =>
+    `pi-sandbox install: no managed pi in ${agentDir} (a pi installed with npm or found on PATH is not used): the sandbox gets no provider credentials, and host commands and --no-sandbox are unavailable; install pi with pi's own installer (curl -fsSL https://pi.dev/install.sh | sh) and run this again\n`;
+
+  const writePiPackage = async (dir: string) => {
+    const packageDir = join(dir, "node_modules", "@earendil-works", "pi-coding-agent");
+
+    await mkdir(packageDir, { recursive: true });
+
+    await writeFile(join(packageDir, "package.json"), '{ "version": "1.6.0", "bin": { "pi": "cli.js" } }');
+  };
+
+  const withPathPi = async (root: string, calls: string) => {
+    await writeFile(join(root, "tools", "pi"), "#!/bin/sh\necho path pi\n");
+
+    await chmod(join(root, "tools", "pi"), 0o755);
+
+    await writeFile(
+      join(root, "tools", "colima"),
+      `#!/bin/sh\necho "colima $*" >> "${calls}"\ncase "$1" in version) echo "colima version 0.8.1" ;; *) exit 0 ;; esac\n`,
+    );
+  };
+
+  it("refuses from a published package without a managed pi, even with pi in node_modules or on PATH, before npm or colima run", async () => {
     const { root, home, agentDir } = await installRoot();
     const packaged = join(root, "package", "launcher");
     const npmPrefix = join(root, "npm");
+    const calls = join(root, "calls.log");
 
     await rm(agentDir, { recursive: true, force: true });
 
@@ -450,8 +473,14 @@ describe("install.sh options and the PATH block", { timeout: INSTALL_TIMEOUT_MS 
 
     await writeFile(
       join(root, "tools", "npm"),
-      `#!/bin/sh\ncase "$1" in root) echo "${npmPrefix}/lib/node_modules" ;; prefix) echo "${npmPrefix}" ;; esac\n`,
+      `#!/bin/sh\necho "npm $*" >> "${calls}"\ncase "$1" in root) echo "${npmPrefix}/lib/node_modules" ;; prefix) echo "${npmPrefix}" ;; esac\n`,
     );
+
+    await writePiPackage(join(root, "package"));
+
+    await writePiPackage(join(npmPrefix, "lib"));
+
+    await withPathPi(root, calls);
 
     const result = spawnSync("/bin/sh", [join(packaged, "install.sh")], {
       env: {
@@ -464,7 +493,28 @@ describe("install.sh options and the PATH block", { timeout: INSTALL_TIMEOUT_MS 
     });
 
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain("npm skipped the peer dependency");
+    expect(result.stderr).toBe(noManagedPi(agentDir));
+    expect(await readFile(calls, "utf8").catch(() => "")).not.toMatch(/npm install|colima start/);
+    expect(await exists(join(home, ".local", "bin", "pi"))).toBe(false);
+    expect(await exists(zshrc(home))).toBe(false);
+  });
+
+  it("refuses from a checkout without a managed pi, though the checkout's node_modules holds pi", async () => {
+    const { root, home, agentDir } = await installRoot();
+    const calls = join(root, "calls.log");
+
+    await rm(agentDir, { recursive: true, force: true });
+
+    await withPathPi(root, calls);
+
+    const result = runInstall(root);
+
+    expect(
+      await exists(join(launcherRoot(), "..", "node_modules", "@earendil-works", "pi-coding-agent")),
+    ).toBe(true);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toBe(noManagedPi(agentDir));
+    expect(await readFile(calls, "utf8").catch(() => "")).not.toContain("colima start");
     expect(await exists(join(home, ".local", "bin", "pi"))).toBe(false);
     expect(await exists(zshrc(home))).toBe(false);
   });

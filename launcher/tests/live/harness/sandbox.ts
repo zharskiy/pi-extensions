@@ -75,6 +75,36 @@ const run = promisify(execFile);
 
 const LAUNCHER_ENTRY = fileURLToPath(new URL("../../../bin/pi-sandbox-dev.js", import.meta.url));
 
+const REPO_MODULES = fileURLToPath(new URL("../../../../node_modules", import.meta.url));
+
+const REPO_PI = join(REPO_MODULES, "@earendil-works", "pi-coding-agent");
+
+const MANAGED_MARKER = { kind: "pi-managed-install", schemaVersion: 1, layout: "releases-v1" };
+
+const installRepoPiAsManaged = async (agentDir: string) => {
+  const manifest = JSON.parse(await readFile(join(REPO_PI, "package.json"), "utf8")) as {
+    version: string;
+    bin: Record<string, string>;
+  };
+  const install = join(agentDir, "install");
+  const release = join(install, "releases", manifest.version);
+  const entry = join(release, "node_modules", "@earendil-works", "pi-coding-agent", manifest.bin.pi ?? "");
+
+  await mkdir(release, { recursive: true });
+
+  await symlink(REPO_MODULES, join(release, "node_modules"));
+
+  await writeFile(join(install, "managed-install.json"), JSON.stringify(MANAGED_MARKER));
+
+  await writeFile(join(install, "current-version"), `${manifest.version}\n`);
+
+  await mkdir(join(agentDir, "bin"), { recursive: true });
+
+  await writeFile(join(agentDir, "bin", "pi"), `#!/bin/sh\nexec '${process.execPath}' '${entry}' "$@"\n`);
+
+  await chmod(join(agentDir, "bin", "pi"), 0o755);
+};
+
 const resolvePreload = () => {
   const url = new URL("./resolve-preload.mjs", import.meta.url);
 
@@ -197,6 +227,8 @@ export const createLiveSandbox = async (name: string): Promise<LiveSandbox> => {
   await Promise.all([agentDir, stateDir, bin, certs].map((dir) => mkdir(dir, { recursive: true })));
 
   await mkdir(join(agentDir, "pi-sandbox"), { recursive: true });
+
+  await installRepoPiAsManaged(agentDir);
 
   await symlink(join(homedir(), ".colima"), join(home, ".colima")).catch(() => undefined);
 

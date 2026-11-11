@@ -1,13 +1,12 @@
 export { deriveSandboxPi } from "./derive.ts";
 export { deriveHostTools } from "./derive-tools.ts";
 export { readHostPiFiles } from "./files.ts";
-export { locateBundledPi, locateManagedPi } from "./locate.ts";
+export { locateManagedPi } from "./locate.ts";
 export type { McpSignIn } from "./mcp-auth.ts";
 export { mcpSignIns } from "./mcp-auth.ts";
-export { findOnPath, isInsideRoots } from "./path-search.ts";
+export { findOnPath } from "./path-search.ts";
 export { readProviderHosts } from "./provider-hosts.ts";
 export type {
-  BundledPi,
   DerivedSandboxPi,
   DerivedTools,
   DeriveInput,

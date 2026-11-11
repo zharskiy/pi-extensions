@@ -1,43 +1,35 @@
-import { type HostPi, isInsideRoots, locateManagedPi } from "../hostpi/index.ts";
-import { LauncherError, realOrResolved } from "../shared/index.ts";
-import { findGitRoot } from "../workspace/index.ts";
+import { type HostPi, locateManagedPi } from "../hostpi/index.ts";
+import { LauncherError } from "../shared/index.ts";
 import type { LaunchContext } from "./context.ts";
 import { type CliDeps, hostAgentDirOf, writeLine } from "./deps.ts";
 import { sweepForHostPi } from "./host-sessions.ts";
 
 export const NO_SANDBOX = "--no-sandbox";
 
-const bundledOutside = async (deps: CliDeps, roots: string[]): Promise<HostPi | undefined> => {
-  const bundled = await deps.bundledPi();
-
-  if (bundled === undefined) {
-    return undefined;
-  }
-
-  return (await isInsideRoots(bundled.packageDir, roots)) ? undefined : { ...bundled, source: "bundled" };
-};
-
-export const sandboxRoots = (_deps: CliDeps, context: LaunchContext) => [
+export const sandboxRoots = (context: LaunchContext) => [
   context.workspace.repoRoot,
   ...(context.workspace.gitCommonDir === undefined ? [] : [context.workspace.gitCommonDir]),
 ];
 
-export const nearbyRoots = async (deps: CliDeps) => {
-  const repoRoot = await findGitRoot(await realOrResolved(deps.cwd));
+export const resolveJobPi = (deps: CliDeps): Promise<HostPi | undefined> =>
+  locateManagedPi(hostAgentDirOf(deps));
 
-  return repoRoot === undefined ? [deps.cwd] : [deps.cwd, repoRoot];
+export const missingPiText = (deps: CliDeps) =>
+  `no managed pi in ${hostAgentDirOf(deps)} (a pi installed with npm or found on PATH is not used): the sandbox gets no provider credentials, and host commands and --no-sandbox are unavailable; install pi with pi's own installer (curl -fsSL https://pi.dev/install.sh | sh) and run the launcher's install.sh again`;
+
+export const requireJobPi = async (deps: CliDeps, prefix?: string) => {
+  const pi = await resolveJobPi(deps);
+
+  if (pi === undefined) {
+    throw new LauncherError(prefix === undefined ? missingPiText(deps) : `${prefix}: ${missingPiText(deps)}`);
+  }
+
+  return pi;
 };
 
-export const resolveJobPi = async (deps: CliDeps, roots: string[]): Promise<HostPi | undefined> =>
-  (await locateManagedPi(hostAgentDirOf(deps))) ?? bundledOutside(deps, roots);
+export const hostPiPlace = (pi: HostPi) => `managed install ${pi.wrapper}`;
 
-export const interactiveCommand = (pi: HostPi) => (pi.wrapper === undefined ? pi.command : [pi.wrapper]);
-
-export const hostPiPlace = (pi: HostPi) =>
-  pi.source === "managed" ? `managed install ${pi.wrapper ?? ""}` : "next to the launcher";
-
-export const hostPiText = (pi: HostPi) =>
-  `pi ${pi.version}${pi.source === "managed" ? "," : ""} ${hostPiPlace(pi)}`;
+export const hostPiText = (pi: HostPi) => `pi ${pi.version}, ${hostPiPlace(pi)}`;
 
 export const runHostPi = async (deps: CliDeps, context: LaunchContext, piArgs: string[]) => {
   const { config, sources } = context.effective;
@@ -49,20 +41,11 @@ export const runHostPi = async (deps: CliDeps, context: LaunchContext, piArgs: s
     );
   }
 
-  const pi = await resolveJobPi(deps, sandboxRoots(deps, context));
-  const command = pi === undefined ? [] : interactiveCommand(pi);
-  const [file, ...prefix] = command;
+  const pi = await requireJobPi(deps, NO_SANDBOX);
 
-  if (file === undefined) {
-    throw new LauncherError(
-      `${NO_SANDBOX}: no pi on the host`,
-      "install pi on the host, or reinstall the launcher with npm install -g pi-extensions-mz",
-    );
-  }
-
-  writeLine(deps.stderr, `pi-sandbox: warning: running ${command.at(-1)} on the host, outside the sandbox`);
+  writeLine(deps.stderr, `pi-sandbox: warning: running ${pi.wrapper} on the host, outside the sandbox`);
 
   await sweepForHostPi(deps, context);
 
-  return deps.runner.spawnInteractive(file, [...prefix, ...piArgs], { cwd: deps.cwd });
+  return deps.runner.spawnInteractive(pi.wrapper, piArgs, { cwd: deps.cwd });
 };

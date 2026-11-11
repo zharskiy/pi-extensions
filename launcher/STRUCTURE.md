@@ -46,7 +46,7 @@ cli/mcp-sign-in.ts             the launch-start MCP sign-in on the host
 cli/host-sessions.ts           host sessions for a launch: choice, preparation, sweeps, share probe
 cli/intercept.ts               pi install, uninstall, remove, mcp, update, auth, help, --list-models, --export and --version run on the host
 cli/host-routes.ts             which command lines start no session: help, version, auth, --list-models, --export
-cli/host-pi.ts                 the one host pi (managed, else bundled) and --no-sandbox (runHostPi)
+cli/host-pi.ts                 the one host pi (pi's managed install only), the missing-pi line (missingPiText) and --no-sandbox (runHostPi)
 cli/notices.ts                 notices printed once per repository and text
 cli/versions.ts                launcher version and image pi version
 cli/commands/status.ts         pi sandbox status
@@ -169,7 +169,7 @@ hostpi/endpoints.ts            rule endpoints and URL credential checks
 hostpi/provider-endpoints.ts   a provider's hosts
 hostpi/provider-hosts.ts       the provider host table with its cache
 hostpi/provider-hosts.mjs      run against the host pi: the built-in provider hosts
-hostpi/locate.ts               finds the managed and bundled pi packages
+hostpi/locate.ts               finds pi's managed install in the host agent dir
 hostpi/path-search.ts          PATH lookup outside the sandbox roots and the executable check
 hostpi/mcp-auth.ts             MCP servers and their host sign-in state
 hostpi/json.ts                 small JSON helpers

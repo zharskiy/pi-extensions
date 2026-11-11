@@ -8,6 +8,7 @@ import { repoHash, writeRepoRecord } from "../../shared/index.ts";
 import {
   createFakeBackend,
   createHarness,
+  noHostPiLine,
   piArgsOf,
   piSessions,
   writeManagedPi,
@@ -148,7 +149,7 @@ describe("pi install and pi remove", () => {
 
     expect(await run(["install", "./tools/ext"], workspace.deps)).toBe(1);
     expect([...hostPiRuns(harness), ...hostPiRuns(workspace)]).toEqual([]);
-    expect(await readdir(harness.hostAgentDir).catch(() => [])).toEqual([]);
+    expect(await readdir(harness.hostAgentDir).catch(() => [])).toEqual(["bin", "install"]);
     expect(harness.stderr()).toContain(
       "pi-sandbox: ../ext lies in a git working tree or a sandboxed folder, which a sandbox can rewrite; not installed on the host\n",
     );
@@ -262,19 +263,6 @@ describe("pi mcp", () => {
 });
 
 describe("pi update", () => {
-  it("prints that pi follows the launcher for a bare pi update", async () => {
-    const harness = await createHarness({
-      backend: () => {
-        throw new Error("the backend must not be used");
-      },
-    });
-
-    expect(await run(["update"], harness.deps)).toBe(0);
-    expect(harness.stdout()).toBe(
-      "pi follows the launcher; update it with npm install -g pi-extensions-mz\n",
-    );
-  });
-
   it("runs the managed pi's own update on the host and names the version the sandbox follows", async () => {
     const holder: { agentDir?: string } = {};
     const harness = await createHarness({
@@ -303,8 +291,9 @@ describe("pi update", () => {
     expect(harness.stdout()).toBe("");
   });
 
-  it("never runs a PATH pi for pi update; without a managed install pi follows the launcher", async () => {
+  it("never runs a PATH pi for pi update; without a managed install it prints the missing-pi line", async () => {
     const harness = await createHarness({
+      hostPi: false,
       backend: () => {
         throw new Error("the backend must not be used");
       },
@@ -313,11 +302,10 @@ describe("pi update", () => {
 
     harness.deps.env.PATH = onPath.bin;
 
-    expect(await run(["update"], harness.deps)).toBe(0);
+    expect(await run(["update"], harness.deps)).toBe(1);
     expect(harness.calls.filter((call) => call.interactive)).toEqual([]);
-    expect(harness.stdout()).toBe(
-      "pi follows the launcher; update it with npm install -g pi-extensions-mz\n",
-    );
+    expect(harness.stdout()).toBe("");
+    expect(harness.stderr()).toBe(`pi-sandbox: ${noHostPiLine(harness.hostAgentDir)}\n`);
   });
 
   it("treats pi update pi, self and --self as the bare self-update", async () => {
@@ -326,12 +314,13 @@ describe("pi update", () => {
         throw new Error("the backend must not be used");
       },
     });
+    const wrapper = join(harness.hostAgentDir, "bin", "pi");
 
     expect(await run(["update", "pi"], harness.deps)).toBe(0);
     expect(await run(["update", "self"], harness.deps)).toBe(0);
     expect(await run(["update", "--self"], harness.deps)).toBe(0);
-    expect(harness.stdout()).toBe(
-      "pi follows the launcher; update it with npm install -g pi-extensions-mz\n".repeat(3),
+    expect(harness.calls.filter((call) => call.interactive).map((call) => [call.file, ...call.args])).toEqual(
+      [0, 1, 2].map(() => [wrapper, "update"]),
     );
   });
 
@@ -380,7 +369,7 @@ describe("pi commands that start no session", () => {
   });
 
   it("prints the tested pi version when no host pi resolves, as the image build does", async () => {
-    const harness = await createHarness({ backend: noBackend, bundledPi: null });
+    const harness = await createHarness({ backend: noBackend, hostPi: false });
 
     expect(await run(["--version"], harness.deps)).toBe(0);
     expect(harness.stdout()).toBe(`${await testedPiVersion()}\n`);
@@ -468,12 +457,13 @@ describe("pi commands that start no session", () => {
     ]);
   });
 
-  it("refuses a host job when no host pi resolves, as pi mcp login does", async () => {
-    const harness = await createHarness({ backend: noBackend, bundledPi: null });
+  it("refuses a host job with the missing-pi line when no managed pi resolves, as pi mcp login does", async () => {
+    const harness = await createHarness({ backend: noBackend, hostPi: false });
 
     expect(await run(["auth", "login", "provider-x"], harness.deps)).toBe(1);
     expect(await run(["--list-models"], harness.deps)).toBe(1);
-    expect(harness.stderr()).toContain("pi-sandbox: no pi on the host to run this with\n");
+    expect(hostPiJobs(harness)).toEqual([]);
+    expect(harness.stderr()).toBe(`pi-sandbox: ${noHostPiLine(harness.hostAgentDir)}\n`.repeat(2));
   });
 
   it("lets a subcommand win over a version or help flag, as pi does", async () => {

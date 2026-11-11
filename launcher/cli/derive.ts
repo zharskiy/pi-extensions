@@ -11,7 +11,7 @@ import type { TrustBundle } from "../proxy/index.ts";
 import { ensureSalt, settleAll } from "../shared/index.ts";
 import type { LaunchContext } from "./context.ts";
 import { type CliDeps, hostAgentDirOf } from "./deps.ts";
-import { sandboxRoots } from "./host-pi.ts";
+import { missingPiText, sandboxRoots } from "./host-pi.ts";
 
 export interface HostSide {
   hostAgentDir: string;
@@ -26,15 +26,12 @@ export interface PreparedHost {
   notices: string[];
 }
 
-const MISSING_PI =
-  "no pi on the host, built-in providers get no credential rules; install pi or reinstall the launcher with npm install -g pi-extensions-mz";
-
-export const providerHostsOf = async (deps: CliDeps, stateDir: string, pi: HostPi | undefined) => {
+export const providerHostsOf = async (deps: CliDeps, context: LaunchContext, pi: HostPi | undefined) => {
   if (pi === undefined) {
-    return { hosts: {}, notices: [MISSING_PI] };
+    return { hosts: {}, notices: [missingPiText(deps)] };
   }
 
-  return readProviderHosts({ stateDir, runner: deps.runner, pi });
+  return readProviderHosts({ stateDir: context.stateDir, runner: deps.runner, pi });
 };
 
 const deriveFor = async (
@@ -46,7 +43,7 @@ const deriveFor = async (
   const { config } = context.effective;
   const salting = ensureSalt(context.stateDir);
   const [providers, salt, tools] = await settleAll([
-    providerHostsOf(deps, context.stateDir, pi),
+    providerHostsOf(deps, context, pi),
     salting,
     salting.then((salt) =>
       deriveHostTools({
@@ -56,7 +53,7 @@ const deriveFor = async (
         runner: deps.runner,
         salt,
         enabled: config.credentials.derive.enabled,
-        excludedRoots: sandboxRoots(deps, context),
+        excludedRoots: sandboxRoots(context),
       }),
     ),
   ]);
