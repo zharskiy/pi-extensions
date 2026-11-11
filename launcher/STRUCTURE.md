@@ -37,11 +37,11 @@ cli/launch.ts                  the pi pipeline with its stages and progress line
 cli/context.ts                 the launch context: the folder to mount, the guard and workspaceRoots before the search, config, discovery and the checks after it
 cli/vm.ts                      VM start and shares, the VM paths a launch needs
 cli/launch-notices.ts          the launch notice texts, the host-file flag notice and the proxy stage detail
-cli/legacy-paths.ts            the launch notice and doctor warns for the config and state folders of earlier versions
+cli/legacy-paths.ts            the config and state folders of earlier versions, with the launch notice and doctor warns for them
 cli/terminal.ts                the host terminal: streams, size read at use, resize
 cli/launches.ts                begin and finish a launch (removing its container), the last-session removal, the live launch count
 cli/sweep.ts                   removeRepoSandbox, the sweep of ended launches' containers, the orphan sweep and the daily collection
-cli/derive.ts                  the host side of a launch: host pi files, derivation, trust bundle, notices
+cli/derive.ts                  the host side of a launch: host pi files, derivation (host tools exclude the sandbox roots), trust bundle, notices
 cli/sandbox-proxy.ts           the repository's proxy input and token, and the denial summary at exit with a reason and fix per kind (also the doctor's rule hints and blocked warnings)
 cli/mcp-sign-in.ts             the launch-start MCP sign-in on the host
 cli/host-sessions.ts           host sessions for a launch: choice, preparation, sweeps, share probe
@@ -261,7 +261,7 @@ shared/atomic-write.ts         atomic and random-hex file writes
 shared/file-lock.ts            the lock primitives
 shared/liveness.ts             the liveness rule: pid, boot time and process start
 shared/process-start.ts        a process's start time (ps on macOS, /proc on Linux), telling a failed tool from a process without one
-shared/paths.ts                host agent dir, the launcher folder <agent dir>/pi-sandbox/ (config.json, state/), the old folders, policy path, launcher root
+shared/paths.ts                host agent dir, the launcher folder <agent dir>/pi-sandbox/ (config.json, state/), policy path, launcher root
 shared/state-layout.ts         every path under the state dir
 shared/repo-state.ts           per-repository record files: repo.json with its mount root, created folders, leftovers
 shared/regular-file.ts         safe reads of regular files

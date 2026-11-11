@@ -6,11 +6,6 @@ import { sweepForHostPi } from "./host-sessions.ts";
 
 export const NO_SANDBOX = "--no-sandbox";
 
-export const sandboxRoots = (context: LaunchContext) => [
-  context.workspace.repoRoot,
-  ...(context.workspace.gitCommonDir === undefined ? [] : [context.workspace.gitCommonDir]),
-];
-
 export const resolveJobPi = (deps: CliDeps): Promise<HostPi | undefined> =>
   locateManagedPi(hostAgentDirOf(deps));
 
@@ -36,10 +31,6 @@ export const requireJobPi = async (deps: CliDeps, prefix?: string) => {
 
   return pi;
 };
-
-export const hostPiPlace = (pi: HostPi) => `managed install ${pi.wrapper}`;
-
-export const hostPiText = (pi: HostPi) => `pi ${pi.version}, ${hostPiPlace(pi)}`;
 
 export const runHostPi = async (deps: CliDeps, context: LaunchContext, piArgs: string[]) => {
   const { config, sources } = context.effective;

@@ -58,12 +58,7 @@ export const hostAgentDir = (home: string, env: NodeJS.ProcessEnv) => {
   return FILE_URL.test(expanded) ? fileURLToPath(expanded) : expanded;
 };
 
-export const launcherDir = (home: string, env: NodeJS.ProcessEnv) => join(hostAgentDir(home, env), APP);
-
-export const legacyLauncherPaths = (home: string) => ({
-  stateDir: join(home, ".local", "state", APP),
-  userConfigFile: join(home, ".config", APP, CONFIG_FILE),
-});
+const launcherDir = (home: string, env: NodeJS.ProcessEnv) => join(hostAgentDir(home, env), APP);
 
 const policyFileOf = (context: Partial<PathContext>, env: NodeJS.ProcessEnv) => {
   const standard = defaultPolicyFile(context.platform ?? process.platform);

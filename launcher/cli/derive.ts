@@ -11,7 +11,7 @@ import type { TrustBundle } from "../proxy/index.ts";
 import { ensureSalt, settleAll } from "../shared/index.ts";
 import type { LaunchContext } from "./context.ts";
 import { type CliDeps, hostAgentDirOf } from "./deps.ts";
-import { missingPiText, sandboxRoots } from "./host-pi.ts";
+import { missingPiText } from "./host-pi.ts";
 
 export interface HostSide {
   hostAgentDir: string;
@@ -25,6 +25,11 @@ export interface PreparedHost {
   host: HostSide;
   notices: string[];
 }
+
+const sandboxRoots = (context: LaunchContext) => [
+  context.workspace.repoRoot,
+  ...(context.workspace.gitCommonDir === undefined ? [] : [context.workspace.gitCommonDir]),
+];
 
 export const providerHostsOf = async (deps: CliDeps, context: LaunchContext, pi: HostPi | undefined) => {
   if (pi === undefined) {

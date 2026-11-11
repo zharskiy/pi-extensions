@@ -1,5 +1,5 @@
-import { dirname, join, resolve } from "node:path";
-import { hostAgentDir, isWithin, launcherDir, launcherPaths, realOrResolvedSync } from "../shared/index.ts";
+import { join, resolve } from "node:path";
+import { hostAgentDir, isWithin, launcherPaths, realOrResolvedSync } from "../shared/index.ts";
 
 interface ProtectedContext {
   home: string;
@@ -24,14 +24,6 @@ const dockerHostSocket = (env: NodeJS.ProcessEnv) => {
   return host?.startsWith("unix://") ? host.slice("unix://".length) : undefined;
 };
 
-const userConfigOf = (context: ProtectedContext, userConfigFile: string) => {
-  const defaultDir = resolve(launcherDir(context.home, context.env));
-
-  return resolve(dirname(userConfigFile)) === defaultDir
-    ? { path: defaultDir, reason: "the launcher folder", under: true }
-    : { path: userConfigFile, reason: "the launcher user config", under: true };
-};
-
 export const protectedPaths = (context: ProtectedContext): Protected[] => {
   const paths = launcherPaths({ env: context.env, home: context.home });
   const socket = dockerHostSocket(context.env);
@@ -40,7 +32,7 @@ export const protectedPaths = (context: ProtectedContext): Protected[] => {
     { path: join(context.home, ".pi"), reason: "pi's directory", under: true },
     { path: hostAgentDir(context.home, context.env), reason: "pi's agent directory", under: true },
     { path: paths.stateDir, reason: "the launcher state directory", under: true },
-    userConfigOf(context, paths.userConfigFile),
+    { path: paths.userConfigFile, reason: "the launcher user config", under: true },
     { path: join(context.home, ".config"), reason: "~/.config", under: false },
     { path: join(context.home, ".config", "pi-sandbox"), reason: "~/.config/pi-sandbox", under: true },
     ...PROTECTED_HOME.map((name) => ({ path: join(context.home, name), reason: `~/${name}`, under: true })),

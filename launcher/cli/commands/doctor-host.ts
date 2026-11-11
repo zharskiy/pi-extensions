@@ -14,7 +14,7 @@ import { assertHostSessionsDir } from "../../workspace/index.ts";
 import type { LaunchContext } from "../context.ts";
 import { type CliDeps, hostAgentDirOf } from "../deps.ts";
 import { providerHostsOf } from "../derive.ts";
-import { hostPiPlace, hostPiText, missingPi, resolveJobPi } from "../host-pi.ts";
+import { missingPi, resolveJobPi } from "../host-pi.ts";
 import { hostSessionsOf } from "../host-sessions.ts";
 import { leftoverState, movedConfig } from "../legacy-paths.ts";
 import { isOlderVersion, testedPiVersion } from "../versions.ts";
@@ -51,7 +51,7 @@ const checkHostPi = async (deps: CliDeps, context: LaunchContext, job: HostPi | 
 
   if (isOlderVersion(job.version, tested)) {
     return warned(
-      `pi ${job.version} (${hostPiPlace(job)}) is older than ${tested}, the pi this launcher is tested with`,
+      `pi ${job.version} (managed install ${job.wrapper}) is older than ${tested}, the pi this launcher is tested with`,
       { hint: "run pi update" },
     );
   }
@@ -61,7 +61,7 @@ const checkHostPi = async (deps: CliDeps, context: LaunchContext, job: HostPi | 
       ? "the image follows it"
       : "the image is pinned by image.digest";
 
-  return passed(`${hostPiText(job)}; ${image}`);
+  return passed(`pi ${job.version}, managed install ${job.wrapper}; ${image}`);
 };
 
 const checkProviderHosts = async (deps: CliDeps, context: LaunchContext, pi: HostPi | undefined) => {

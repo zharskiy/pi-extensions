@@ -119,7 +119,7 @@ fi
 
 rmdir "$agent_dir/pi-sandbox" 2>/dev/null || true
 
-if [ -d "$legacy_state_dir" ] && [ "$legacy_state_dir" != "$state_dir" ]; then
+if [ -d "$legacy_state_dir" ]; then
   rm -rf "$legacy_state_dir"
   echo "state: removed the old $legacy_state_dir"
 fi

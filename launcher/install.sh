@@ -267,7 +267,7 @@ if [ -n "$managed_root" ] && [ "$managed_root" != "$agent_root" ]; then
 fi
 
 carry_replaced_link() {
-  if [ ! -f "$replaced_link" ] && [ -f "$legacy_replaced_link" ] && [ "$legacy_replaced_link" != "$replaced_link" ]; then
+  if [ ! -f "$replaced_link" ] && [ -f "$legacy_replaced_link" ]; then
     mkdir -p "$state_dir"
     cat "$legacy_replaced_link" > "$replaced_link"
   fi
