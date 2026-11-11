@@ -3,7 +3,7 @@ import { type Backend, execCapture } from "../../backend/index.ts";
 import { type CredentialRule, fillTemplate, TLS_PORT } from "../../config/index.ts";
 import { credentialHosts, probeHostSessions, readVolumeFile } from "../../provision/index.ts";
 import { GUEST_PATHS, isAuthLikeHeader, isPlaceholder, isSecretName } from "../../shared/index.ts";
-import { failed, type NamedCheck, passed, skipped, warned } from "./doctor-report.ts";
+import { type CheckResult, failed, type NamedCheck, passed, skipped } from "./doctor-report.ts";
 
 export interface ProbeTarget {
   backend: Backend;
@@ -297,14 +297,9 @@ const gatewayReason = (body: string | undefined) => {
   }
 };
 
-export interface RuleAdvice {
-  reason: string;
-  fix?: string;
-}
-
 export interface RuleHint {
-  unresolved?: RuleAdvice;
-  refused?: RuleAdvice;
+  unresolved?: CheckResult;
+  refused?: CheckResult;
 }
 
 const fetchFailure = (subject: string, error: string | undefined) =>
@@ -315,13 +310,13 @@ const ruleResult = (answer: RuleAnswer, hint: RuleHint) => {
     return hint.refused === undefined
       ? fetchFailure(urlOf(answer.rule), answer.error)
       : failed(`${urlOf(answer.rule)}: the sandbox proxy refused it`, {
-          reasons: [hint.refused.reason],
-          hint: hint.refused.fix,
+          reasons: [hint.refused.detail],
+          hint: hint.refused.hint,
         });
   }
 
   if (hint.unresolved !== undefined) {
-    return warned(hint.unresolved.reason, { hint: hint.unresolved.fix });
+    return hint.unresolved;
   }
 
   if (answer.status === BAD_GATEWAY) {

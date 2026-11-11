@@ -1,11 +1,9 @@
 import {
   authorityOf,
-  type CredentialRule,
   egressAllowList,
   isEgressLocked,
   parentProxyOf,
   parseHostEntry,
-  TLS_PORT,
 } from "../config/index.ts";
 import { type Launch, othersLive, withRepoLaunchLock } from "../grants/index.ts";
 import {
@@ -163,16 +161,6 @@ const blockedText = (deps: CliDeps, context: LaunchContext) => (denial: DenialRe
   const target = authorityOf(denial.host, denial.port);
 
   return `${target} was blocked in this folder's sandbox; ${denialHint(deps, denial, target, context)}`;
-};
-
-export const ruleAuthority = (rule: CredentialRule) =>
-  authorityOf(rule.host.toLowerCase(), rule.port ?? TLS_PORT);
-
-export const explainedBy = (rules: CredentialRule[]) => {
-  const authorities = new Set(rules.map(ruleAuthority));
-
-  return (denial: DenialRecord) =>
-    denial.credentialRule !== undefined || authorities.has(authorityOf(denial.host, denial.port));
 };
 
 export const sandboxDenials = (deps: CliDeps, context: LaunchContext, since: number) =>

@@ -16,10 +16,7 @@ export interface NamedCheck {
   group?: "rules";
 }
 
-interface Explained {
-  reasons?: string[];
-  hint?: string;
-}
+type Explained = Pick<CheckResult, "reasons" | "hint">;
 
 export interface ReportOptions {
   verbose: boolean;
@@ -45,7 +42,7 @@ const LAYOUT: Array<[Section, string[]]> = [
     ["vm shares", "vm", "sandbox", "vm size", "image", "container", "sync", "sessions share", "probes"],
   ],
   ["network", ["proxy", "proxy health", "parent proxy", "no-route", "mcp", "blocked"]],
-  ["credentials", ["trust", "rule", "rules", "mcp"]],
+  ["credentials", ["trust", "rule", "mcp"]],
   ["leak sweep", ["credential sweep", "mcp-auth sweep", "settings sweep"]],
 ];
 
@@ -63,12 +60,7 @@ const VERDICT_STYLE = { ok: STYLE.ok, "ok with warnings": STYLE.warn, fail: STYL
 
 const resultOf =
   (status: CheckStatus) =>
-  (detail: string, more: Explained = {}): CheckResult => ({
-    status,
-    detail,
-    ...(more.reasons === undefined || more.reasons.length === 0 ? {} : { reasons: more.reasons }),
-    ...(more.hint === undefined ? {} : { hint: more.hint }),
-  });
+  (detail: string, more: Explained = {}): CheckResult => ({ status, detail, ...more });
 
 export const passed = resultOf("ok");
 
@@ -165,8 +157,15 @@ const noticesBlock = (notices: string[], options: ReportOptions) =>
         ],
       ];
 
-const countOf = (checks: NamedCheck[], status: CheckStatus) =>
-  checks.filter((check) => check.result.status === status).length;
+const tallyOf = (checks: NamedCheck[]) => {
+  const tally: Record<CheckStatus, number> = { ok: 0, warn: 0, fail: 0, skip: 0 };
+
+  checks.forEach((check) => {
+    tally[check.result.status] += 1;
+  });
+
+  return tally;
+};
 
 const COUNTS: Array<[CheckStatus, (count: number) => string]> = [
   ["fail", (count) => `${count} failed`],
@@ -175,19 +174,19 @@ const COUNTS: Array<[CheckStatus, (count: number) => string]> = [
   ["skip", (count) => `${count} skipped`],
 ];
 
-const verdictOf = (checks: NamedCheck[]) => {
-  if (countOf(checks, "fail") > 0) {
-    return "fail";
-  }
+export const verdictOf = (checks: NamedCheck[]) => {
+  const tally = tallyOf(checks);
 
-  return countOf(checks, "warn") > 0 ? "ok with warnings" : "ok";
+  return tally.fail > 0 ? "fail" : tally.warn > 0 ? "ok with warnings" : "ok";
 };
 
-const summaryOf = (checks: NamedCheck[]) =>
-  COUNTS.map(([status, text]) => [countOf(checks, status), text] as const)
-    .filter(([count]) => count > 0)
-    .map(([count, text]) => text(count))
+const summaryOf = (checks: NamedCheck[]) => {
+  const tally = tallyOf(checks);
+
+  return COUNTS.filter(([status]) => tally[status] > 0)
+    .map(([status, text]) => text(tally[status]))
     .join(", ");
+};
 
 const resultBlock = (checks: NamedCheck[], options: ReportOptions) => {
   const verdict = verdictOf(checks);

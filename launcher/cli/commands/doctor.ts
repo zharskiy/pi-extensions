@@ -1,5 +1,5 @@
 import { type Backend, ENGINE_PROFILE, LABELS, recommendedVmSize, type VmSize } from "../../backend/index.ts";
-import { authorityOf, type CredentialRule } from "../../config/index.ts";
+import { authorityOf, type CredentialRule, TLS_PORT } from "../../config/index.ts";
 import { readHostPiFiles } from "../../hostpi/index.ts";
 import { type DenialRecord, readHealth } from "../../proxy/index.ts";
 import { errorMessage, LauncherError } from "../../shared/index.ts";
@@ -8,14 +8,7 @@ import { type CliDeps, colorOf, hostAgentDirOf, isTerminal, lineSink, writeLines
 import { missingPiText } from "../host-pi.ts";
 import { hostSessionsOf } from "../host-sessions.ts";
 import { type Sandbox, type Stage, type StageOutcome, withSandbox } from "../launch.ts";
-import {
-  denialAdvice,
-  deniedTargets,
-  explainedBy,
-  ruleAuthority,
-  type SandboxProxy,
-  sandboxDenials,
-} from "../sandbox-proxy.ts";
+import { denialAdvice, deniedTargets, type SandboxProxy, sandboxDenials } from "../sandbox-proxy.ts";
 import { vmShareCoverage } from "../vm.ts";
 import { hostChecks } from "./doctor-host.ts";
 import {
@@ -26,7 +19,6 @@ import {
   checkSessionsShare,
   checkSettingsSweep,
   type ProbeTarget,
-  type RuleAdvice,
   type RuleHint,
   sweepCredentials,
 } from "./doctor-probes.ts";
@@ -39,6 +31,7 @@ import {
   type Section,
   skipped,
   VERBOSE_FLAG,
+  verdictOf,
   warned,
 } from "./doctor-report.ts";
 
@@ -65,25 +58,10 @@ const NOTICE_PREFIX = "pi-sandbox: ";
 
 const ERASE_LINE = "\r\u001b[2K";
 
-const STAGE_LABEL: Record<Stage, string> = {
-  vm: "vm",
-  shares: "shares",
-  host: "host side",
-  proxy: "proxy",
-  image: "image",
-  container: "container",
-  sync: "sync",
-};
+const stageLabel = (stage: Stage) => (stage === "host" ? "host side" : stage);
 
-const STAGE_SECTION: Record<Stage, Section> = {
-  vm: "sandbox",
-  shares: "sandbox",
-  host: "host",
-  proxy: "network",
-  image: "sandbox",
-  container: "sandbox",
-  sync: "sandbox",
-};
+const stageSection = (stage: Stage): Section =>
+  stage === "host" ? "host" : stage === "proxy" ? "network" : "sandbox";
 
 const withoutPrefix = (line: string) =>
   line.startsWith(NOTICE_PREFIX) ? line.slice(NOTICE_PREFIX.length) : line;
@@ -131,8 +109,8 @@ const stageResult = (outcome: StageOutcome) => {
 };
 
 const stageCheck = (stage: Stage, outcome: StageOutcome): NamedCheck => ({
-  name: STAGE_LABEL[stage],
-  section: STAGE_SECTION[stage],
+  name: stageLabel(stage),
+  section: stageSection(stage),
   result: stageResult(outcome),
 });
 
@@ -223,20 +201,17 @@ const inOrder =
       Promise.resolve([]),
     );
 
-const isRefusalOf = (rule: CredentialRule) => {
-  const authority = ruleAuthority(rule);
+const ruleAuthority = (rule: CredentialRule) => authorityOf(rule.host.toLowerCase(), rule.port ?? TLS_PORT);
 
-  return (denial: DenialRecord) =>
-    denial.credentialRule === undefined && authorityOf(denial.host, denial.port) === authority;
-};
+const denialAuthority = (denial: DenialRecord) => authorityOf(denial.host, denial.port);
+
+const isRefusalOf = (authority: string) => (denial: DenialRecord) =>
+  denial.credentialRule === undefined && denialAuthority(denial) === authority;
 
 const adviceOf = (deps: CliDeps, context: LaunchContext) => (denial: DenialRecord) => {
-  const advice = denialAdvice(deps, denial, authorityOf(denial.host, denial.port), context);
+  const advice = denialAdvice(deps, denial, denialAuthority(denial), context);
 
-  return {
-    reason: advice.reason ?? denial.reason,
-    ...(advice.fix === undefined ? {} : { fix: advice.fix }),
-  } satisfies RuleAdvice;
+  return warned(advice.reason ?? denial.reason, { hint: advice.fix });
 };
 
 const ruleHints =
@@ -249,7 +224,7 @@ const ruleHints =
     return new Map(
       rules.map((rule): [string, RuleHint] => {
         const unresolved = denials.findLast((denial) => denial.credentialRule === rule.id);
-        const refused = denials.findLast(isRefusalOf(rule));
+        const refused = denials.findLast(isRefusalOf(ruleAuthority(rule)));
 
         return [
           rule.id,
@@ -304,19 +279,21 @@ const probe = async (deps: CliDeps, context: LaunchContext, sandbox: Sandbox) =>
 };
 
 const blockedChecks = (deps: CliDeps, context: LaunchContext, rules: CredentialRule[]) => {
-  const explained = explainedBy(rules);
+  const authorities = new Set(rules.map(ruleAuthority));
   const advice = adviceOf(deps, context);
 
   return (denials: DenialRecord[]) =>
-    deniedTargets(denials.filter((denial) => !explained(denial))).map((denial): NamedCheck => {
-      const { reason, fix } = advice(denial);
-
-      return {
-        name: `blocked ${authorityOf(denial.host, denial.port)}`,
+    deniedTargets(
+      denials.filter(
+        (denial) => denial.credentialRule === undefined && !authorities.has(denialAuthority(denial)),
+      ),
+    ).map(
+      (denial): NamedCheck => ({
+        name: `blocked ${denialAuthority(denial)}`,
         section: "network",
-        result: warned(reason, { hint: fix }),
-      };
-    });
+        result: advice(denial),
+      }),
+    );
 };
 
 const notRun = (stage: Stage | undefined): NamedCheck => ({
@@ -325,7 +302,7 @@ const notRun = (stage: Stage | undefined): NamedCheck => ({
   result: skipped(
     stage === undefined
       ? "not run: the preparation was stopped"
-      : `not run: the ${STAGE_LABEL[stage]} stage failed`,
+      : `not run: the ${stageLabel(stage)} stage failed`,
   ),
 });
 
@@ -336,7 +313,7 @@ const sandboxChecks = async (deps: CliDeps, context: LaunchContext, backend: Bac
 
     run.checks.push(stageCheck(stage, outcome));
 
-    run.progress.line(`${STAGE_LABEL[stage]} ${outcome.ok ? "ready" : "failed"}`);
+    run.progress.line(`${stageLabel(stage)} ${outcome.ok ? "ready" : "failed"}`);
   };
   const use = async (sandbox: Sandbox) => {
     seen.rules = sandbox.host.derived.rules;
@@ -425,7 +402,7 @@ export const doctorCommand = async (deps: CliDeps, args: string[]) => {
 
     report(false);
 
-    return signal ?? (run.checks.some((check) => check.result.status === "fail") ? 1 : 0);
+    return signal ?? (verdictOf(run.checks) === "fail" ? 1 : 0);
   } catch (error) {
     run.progress.clear();
 
