@@ -357,7 +357,7 @@ export const createLiveSandbox = async (name: string): Promise<LiveSandbox> => {
   const lastExit = async () => {
     await release();
 
-    return pi(["--version"]).done;
+    return pi(["list"]).done;
   };
 
   const leftovers = async () => {

@@ -100,6 +100,11 @@ In the table, *host pi* is the normal pi on your Mac, and `fallback` is the sett
 | `pi --no-sandbox [args...]` | run host pi, when fallback is host |
 | `pi install\|remove <source>` | with host pi on the host (-l passes through into the sandbox) |
 | `pi mcp add\|remove\|login\|logout ...` | with host pi on the host |
+| `pi auth ...` | with host pi on the host, against the logins the proxy uses |
+| `pi [command] --help` | pi's help, with host pi on the host |
+| `pi --list-models [search]` | with host pi on the host |
+| `pi --export <file> [out]` | with host pi on the host |
+| `pi --version` | the pi version the sandbox runs, without starting a sandbox |
 | `pi update` | update host pi |
 | `pi sandbox status` | runtime, container, proxy, image, launches, grants, overlays, shared caches |
 | `pi sandbox config [--json]` | the effective config and the layer each key comes from |
@@ -111,7 +116,7 @@ In the table, *host pi* is the normal pi on your Mac, and `fallback` is the sett
 | `pi sandbox doctor` | prepare the sandbox like pi and print one ok, warn, fail or skip line per check |
 | `pi sandbox --version`, `pi sandbox help` | version and usage |
 
-`pi uninstall <source>` also runs with host pi on the host. `egress allow` uses port 443 unless you name one, and refuses wildcards, IP addresses and port 80 ([rules](CONFIGURATION.md#network-access)).
+`pi uninstall <source>` also runs with host pi on the host. Host pi loads no extension for `pi --help` and `pi --list-models`, so help omits the flags extensions register and the list omits providers only an extension registers; `pi list`, `pi mcp list` and `pi config` run in the sandbox, and `pi --version` asks pi inside when `image.reference` and `image.digest` pin the image. `egress allow` uses port 443 unless you name one, and refuses wildcards, IP addresses and port 80 ([rules](CONFIGURATION.md#network-access)).
 
 With pi's managed install, `pi update` updates it, and the next launch rebuilds the image. If pi came with the launcher, `pi update` tells you to run `npm install -g pi-extensions-mz`.
 
@@ -119,7 +124,7 @@ After a reboot or `pi sandbox stop`, the next `pi` starts the VM again. A failur
 
 ## What is different inside the sandbox
 
-- **Log in on the host.** Provider `/login` does not work inside. Run `pi --no-sandbox`, then `/login`.
+- **Log in on the host.** Provider `/login` does not work inside. Run `pi auth login <provider>`, or `pi --no-sandbox`, then `/login`.
 - **Packages and MCP servers change on the host.** The sandbox picks up `pi install` and `pi mcp add` at its next launch.
 - **No Docker.** `docker compose` and Testcontainers do not work. You can [run a database inside](CONFIGURATION.md#databases-and-other-services).
 - **Only https leaves, and your Mac's `localhost` is out of reach.** Servers you start inside answer on `127.0.0.1`.

@@ -183,13 +183,13 @@ describe("pi [args]", () => {
     expect(fake.builds).toHaveLength(0);
   });
 
-  it("passes pi --version through to pi inside", async () => {
+  it("passes pi list through to pi inside", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
 
-    await run(["--version"], harness.deps);
+    await run(["list"], harness.deps);
 
-    expect(piArgsOf(piSession(fake))).toEqual(["--version"]);
+    expect(piArgsOf(piSession(fake))).toEqual(["list"]);
   });
 
   it("refuses when no backend is available", async () => {

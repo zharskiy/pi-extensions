@@ -64,7 +64,7 @@ const sandbox = (deps: CliDeps, [name = "help", ...args]: string[]) => {
   return command.run(deps, args);
 };
 
-const route = (argv: string[], deps: CliDeps) => {
+const route = async (argv: string[], deps: CliDeps) => {
   const [first, ...rest] = argv;
 
   if (first === "sandbox") {
@@ -75,7 +75,9 @@ const route = (argv: string[], deps: CliDeps) => {
     return uninstallCommand(deps);
   }
 
-  return (argv.includes("--no-sandbox") ? undefined : intercept(argv, deps)) ?? launch(argv, deps);
+  const intercepted = argv.includes("--no-sandbox") ? undefined : await intercept(argv, deps);
+
+  return intercepted ?? launch(argv, deps);
 };
 
 export const renderFailure = (error: unknown, stderr: NodeJS.WritableStream) => {

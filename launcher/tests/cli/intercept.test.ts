@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { pathsOf } from "../../cli/deps.ts";
 import { run } from "../../cli/index.ts";
+import { testedPiVersion } from "../../cli/versions.ts";
 import { repoHash, writeRepoRecord } from "../../shared/index.ts";
 import {
   createFakeBackend,
@@ -340,5 +341,175 @@ describe("pi update", () => {
 
     expect(await run(["update", "--extensions"], harness.deps)).toBe(0);
     expect(piSessions(fake).map(piArgsOf)).toEqual([["update", "--extensions"]]);
+  });
+});
+
+const PINNED = `sha256:${"a".repeat(64)}`;
+
+const NO_RESOURCES = ["--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes", "--offline"];
+
+const hostPiJobs = (harness: Awaited<ReturnType<typeof createHarness>>) =>
+  harness.calls.filter((entry) => entry.interactive);
+
+const launched = async (argv: string[]) => {
+  const fake = createFakeBackend();
+  const harness = await createHarness({ backend: () => fake.backend });
+  const code = await run(argv, harness.deps);
+
+  return {
+    code,
+    inside: piSessions(fake).map(piArgsOf),
+    host: hostPiRuns(harness),
+    stdout: harness.stdout(),
+  };
+};
+
+const inTurn = <T>(forms: string[][], each: (argv: string[]) => Promise<T>) =>
+  forms.reduce<Promise<T[]>>(async (done, argv) => [...(await done), await each(argv)], Promise.resolve([]));
+
+describe("pi commands that start no session", () => {
+  it("prints the pi version the sandbox runs without starting pi or the sandbox", async () => {
+    const harness = await createHarness({ backend: noBackend });
+
+    await writeManagedPi(harness.hostAgentDir, "1.6.0");
+
+    expect(await run(["--version"], harness.deps)).toBe(0);
+    expect(await run(["-v"], harness.deps)).toBe(0);
+    expect(harness.stdout()).toBe("1.6.0\n1.6.0\n");
+    expect(harness.calls).toEqual([]);
+  });
+
+  it("prints the tested pi version when no host pi resolves, as the image build does", async () => {
+    const harness = await createHarness({ backend: noBackend, bundledPi: null });
+
+    expect(await run(["--version"], harness.deps)).toBe(0);
+    expect(harness.stdout()).toBe(`${await testedPiVersion()}\n`);
+  });
+
+  it("asks pi inside a pinned image for its version", async () => {
+    const fake = createFakeBackend({ registry: { "registry.example.test/pi-sandbox:1": PINNED } });
+    const harness = await createHarness({ backend: () => fake.backend });
+
+    await harness.writeJson(harness.userConfigFile, {
+      image: { reference: "registry.example.test/pi-sandbox:1", digest: PINNED },
+    });
+
+    expect(await run(["--version"], harness.deps)).toBe(0);
+    expect(piSessions(fake).map(piArgsOf)).toEqual([["--version"]]);
+  });
+
+  it("runs subcommand help and auth with the host pi from an empty directory against the host agent dir", async () => {
+    const harness = await createHarness({ backend: noBackend });
+    const forms = [
+      ["install", "--help"],
+      ["remove", "npm:old", "-h"],
+      ["uninstall", "--help"],
+      ["update", "--help"],
+      ["update", "--extensions", "-h"],
+      ["list", "--help"],
+      ["config", "-l", "--help"],
+      ["mcp"],
+      ["mcp", "help"],
+      ["mcp", "list", "--help"],
+      ["auth"],
+      ["auth", "help"],
+      ["auth", "login", "provider-x"],
+      ["auth", "logout", "provider-x"],
+      ["auth", "check", "--provider", "provider-x", "--json"],
+      ["auth", "print-api-key", "--provider", "provider-x"],
+      ["auth", "print-bearer-token", "--provider", "provider-x", "--min-expiry", "5m"],
+    ];
+
+    expect(await inTurn(forms, (argv) => run(argv, harness.deps))).toEqual(forms.map(() => 0));
+    expect(hostPiRuns(harness)).toEqual(forms);
+
+    const jobs = hostPiJobs(harness);
+    const cwds = jobs.map((entry) => entry.options.cwd ?? "");
+
+    expect(jobs.map((entry) => entry.options.env)).toEqual(
+      jobs.map(() => ({ PI_CODING_AGENT_DIR: harness.hostAgentDir })),
+    );
+    expect(cwds.every((cwd) => !cwd.startsWith(harness.repoRoot) && cwd.includes("mcp-login-"))).toBe(true);
+    expect(await Promise.all(cwds.map((cwd) => readdir(cwd).catch(() => "removed")))).toEqual(
+      cwds.map(() => "removed"),
+    );
+  });
+
+  it("runs pi's help and model listing on the host without extensions, package resources or installs", async () => {
+    const harness = await createHarness({ backend: noBackend });
+    const forms = [["--help"], ["-h"], ["--list-models"], ["--list-models", "fast"]];
+
+    expect(await inTurn(forms, (argv) => run(argv, harness.deps))).toEqual(forms.map(() => 0));
+    expect(hostPiRuns(harness)).toEqual(forms.map((argv) => [...argv, ...NO_RESOURCES]));
+    expect(hostPiJobs(harness).every((entry) => entry.options.cwd?.includes("mcp-login-"))).toBe(true);
+  });
+
+  it("passes the exit code of host pi auth through", async () => {
+    const harness = await createHarness({
+      backend: noBackend,
+      respond: (call) => (call.interactive && call.args.includes("check") ? { code: 2 } : undefined),
+    });
+
+    expect(await run(["auth", "check", "--provider", "provider-x"], harness.deps)).toBe(2);
+  });
+
+  it("exports a session with the host pi in the cwd, so relative paths resolve there", async () => {
+    const harness = await createHarness({ backend: noBackend });
+
+    expect(await run(["--export", "session.jsonl"], harness.deps)).toBe(0);
+    expect(await run(["--export", "session.jsonl", "out.html"], harness.deps)).toBe(0);
+    expect(hostPiRuns(harness)).toEqual([
+      ["--export", "session.jsonl"],
+      ["--export", "session.jsonl", "out.html"],
+    ]);
+    expect(hostPiJobs(harness).map((entry) => entry.options)).toEqual([
+      { cwd: harness.cwd, env: { PI_CODING_AGENT_DIR: harness.hostAgentDir } },
+      { cwd: harness.cwd, env: { PI_CODING_AGENT_DIR: harness.hostAgentDir } },
+    ]);
+  });
+
+  it("refuses a host job when no host pi resolves, as pi mcp login does", async () => {
+    const harness = await createHarness({ backend: noBackend, bundledPi: null });
+
+    expect(await run(["auth", "login", "provider-x"], harness.deps)).toBe(1);
+    expect(await run(["--list-models"], harness.deps)).toBe(1);
+    expect(harness.stderr()).toContain("pi-sandbox: no pi on the host to run this with\n");
+  });
+
+  it("lets a subcommand win over a version or help flag, as pi does", async () => {
+    const fake = createFakeBackend();
+    const harness = await createHarness({ backend: () => fake.backend });
+
+    expect(await run(["auth", "--version"], harness.deps)).toBe(0);
+    expect(await run(["install", "--version"], harness.deps)).toBe(0);
+    expect(await run(["mcp", "--version"], harness.deps)).toBe(0);
+    expect(hostPiRuns(harness)).toEqual([["auth", "--version"]]);
+    expect(piSessions(fake).map(piArgsOf)).toEqual([
+      ["install", "--version"],
+      ["mcp", "--version"],
+    ]);
+    expect(harness.stdout()).toBe("");
+  });
+
+  it("launches the sandbox for flag values, words after --, sessions and the commands that stay inside", async () => {
+    const forms = [
+      ["--system-prompt", "--version"],
+      ["--append-system-prompt", "-h"],
+      ["--", "--version"],
+      ["--", "--help"],
+      ["--export"],
+      ["--export", "session.jsonl", "--model", "x"],
+      ["--list-models", "--verbose"],
+      ["-p", "hello"],
+      ["list"],
+      ["mcp", "list"],
+      ["update", "--all"],
+      ["config"],
+      ["install", "npm:local", "-l"],
+    ];
+
+    expect(await inTurn(forms, launched)).toEqual(
+      forms.map((argv) => ({ code: 0, inside: [argv], host: [], stdout: "" })),
+    );
   });
 });
