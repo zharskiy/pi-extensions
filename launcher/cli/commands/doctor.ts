@@ -89,7 +89,7 @@ const withoutPrefix = (line: string) =>
   line.startsWith(NOTICE_PREFIX) ? line.slice(NOTICE_PREFIX.length) : line;
 
 const progressLine = (deps: CliDeps): Progress => {
-  if (!isTerminal(deps.stderr)) {
+  if (!isTerminal(deps.stderr) || deps.env.TERM === "dumb") {
     return { line: () => undefined, clear: () => undefined };
   }
 
