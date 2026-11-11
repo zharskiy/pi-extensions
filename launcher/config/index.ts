@@ -14,7 +14,7 @@ export {
 } from "./egress-entry.ts";
 export { egressAllowList } from "./egress-presets.ts";
 export { loadEffectiveConfig } from "./load.ts";
-export { ignoredNotice } from "./merge.ts";
+export { ignoredNotice, isEgressLocked } from "./merge.ts";
 export { parentProxyOf } from "./parent-proxy.ts";
 export type {
   CredentialRule,

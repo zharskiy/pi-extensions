@@ -143,7 +143,7 @@ A blocked request gets a 403 page that says what to do. When pi exits, the launc
 | why it was blocked | hint |
 | --- | --- |
 | not on any allow list | `run pi sandbox egress allow <host> on the host from <folder>`, or with grants off `ask your administrator to add <host> to egress.allow` |
-| it resolves to a private, loopback, link-local or reserved address | `add <host> to egress.privateHosts` |
+| it resolves to a private, loopback, link-local or reserved address | the proxy's reason with the address, then `add <host> to egress.privateHosts in <your config file>`, or with egress locked by the policy `ask your administrator to add <host> to egress.privateHosts` |
 | `egress.deny` names it | `denied by policy` |
 | plain HTTP | `plain HTTP is not proxied; use https` |
 | the host did not answer | `it could not be reached: <reason>` |
@@ -151,6 +151,8 @@ A blocked request gets a 403 page that says what to do. When pi exits, the launc
 | a provider login on the host is missing or expired | `log in again with pi --no-sandbox and /login`, or with `fallback` set to `refuse` `log in again with host pi` |
 
 Any other case prints the proxy's own reason.
+
+`pi sandbox doctor` prints the same hint on the `rule` line of a credential host the proxy refused, and leaves that host out of the lines printed when it exits.
 
 ## Image
 

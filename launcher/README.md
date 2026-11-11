@@ -195,7 +195,7 @@ Start with `pi sandbox doctor`, which names the failing check.
 
 | symptom | what to do |
 | --- | --- |
-| A host `was blocked in this folder's sandbox` | Follow the hint in that line. |
+| A host `was blocked in this folder's sandbox` | Follow the hint in that line. `pi sandbox doctor` puts the same hint on the `rule` line of a credential host the proxy refused, for example the address a host resolved to and the `egress.privateHosts` entry that allows it. |
 | A provider login is missing or expired | Run `pi --no-sandbox`, then `/login`. If `fallback` is `refuse`, log in with host pi itself. |
 | Pi says `the sandbox VM engine is unreachable` | Run `colima start --profile pi-sandbox --activate=false`, or `install.sh` if the profile is gone. |
 | The VM is running but its engine does not answer | Run `colima stop --profile pi-sandbox && colima start --profile pi-sandbox --activate=false`. |

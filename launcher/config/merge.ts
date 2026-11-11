@@ -77,10 +77,14 @@ const unite = (current: unknown[], added: unknown[]) => {
   return { list: [...current, ...fresh], repeated: repeated.map(identityOf), added: fresh.length };
 };
 
+const locksEgress = (source: string | undefined, grants: unknown) =>
+  source === FINAL_SOURCE && grants === false;
+
 const isLocked = (state: State, key: string) =>
-  LOCKED_KEYS.includes(key) &&
-  state.sources["egress.grants"] === FINAL_SOURCE &&
-  state.values["egress.grants"] === false;
+  LOCKED_KEYS.includes(key) && locksEgress(state.sources["egress.grants"], state.values["egress.grants"]);
+
+export const isEgressLocked = (effective: EffectiveConfig) =>
+  locksEgress(effective.sources["egress.grants"], effective.config.egress.grants);
 
 const finalReason = (state: State, key: string) => {
   if (isLocked(state, key)) {

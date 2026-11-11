@@ -302,13 +302,22 @@ const gatewayReason = (body: string | undefined) => {
   }
 };
 
-const ruleResult = (answer: RuleAnswer, unresolved: string | undefined) => {
+export interface RuleHint {
+  unresolved?: string;
+  refused?: string;
+}
+
+const ruleResult = (answer: RuleAnswer, hint: RuleHint) => {
   if (answer.status === undefined) {
-    return failed(`${urlOf(answer.rule)}: ${answer.error ?? "no answer"}`);
+    return failed(
+      hint.refused === undefined
+        ? `${urlOf(answer.rule)}: ${answer.error ?? "no answer"}`
+        : `${urlOf(answer.rule)}: the sandbox proxy refused it: ${hint.refused}`,
+    );
   }
 
-  if (unresolved !== undefined) {
-    return warned(unresolved);
+  if (hint.unresolved !== undefined) {
+    return warned(hint.unresolved);
   }
 
   if (answer.status === BAD_GATEWAY) {
@@ -341,16 +350,16 @@ const trustResult = (answers: RuleAnswer[]) => {
 export const checkRules = async (
   target: ProbeTarget,
   rules: CredentialRule[],
-  unresolvedHints: () => Promise<ReadonlyMap<string, string>> = async () => new Map(),
+  ruleHints: () => Promise<ReadonlyMap<string, RuleHint>> = async () => new Map(),
 ): Promise<NamedCheck[]> => {
   const answers = await Promise.all(rules.map((rule) => askRule(target, rule)));
-  const hints = await unresolvedHints();
+  const hints = await ruleHints();
 
   return [
     { name: "trust", result: trustResult(answers) },
     ...answers.map((answer) => ({
       name: `rule ${answer.rule.id}`,
-      result: ruleResult(answer, hints.get(answer.rule.id)),
+      result: ruleResult(answer, hints.get(answer.rule.id) ?? {}),
     })),
   ];
 };

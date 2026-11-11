@@ -59,7 +59,7 @@ interface SandboxOptions {
   report?: StageReport;
   signIn?: boolean;
   share?: boolean;
-  credentialDenials?: boolean;
+  ruleDenials?: boolean;
 }
 
 type Staged = <T>(stage: Stage, action: () => Promise<T>, detail?: (value: T) => string) => Promise<T>;
@@ -373,7 +373,7 @@ export const withSandbox = async (
   context: LaunchContext,
   backend: Backend,
   use: (sandbox: Sandbox) => Promise<number>,
-  { report = () => undefined, signIn = true, share = true, credentialDenials = true }: SandboxOptions = {},
+  { report = () => undefined, signIn = true, share = true, ruleDenials = true }: SandboxOptions = {},
 ) => {
   const staged = stagedWith(report);
   const files = await readHostPiFiles(hostAgentDirOf(deps));
@@ -386,7 +386,7 @@ export const withSandbox = async (
     { deps, context, backend, launch, sessions, cancelled: cancel.signal, staged },
     { deriving, signIn, share },
   );
-  const ended: { proxy?: SandboxProxy } = {};
+  const ended: { proxy?: SandboxProxy; host?: HostSide } = {};
 
   try {
     const outcome = await Promise.race([
@@ -407,13 +407,20 @@ export const withSandbox = async (
     const { prepared, proxy, host } = outcome.ready;
 
     ended.proxy = proxy;
+    ended.host = host;
 
     return await use({ ...prepared, backend, host, proxy, launch });
   } finally {
     signal.stop();
 
     await shielded(deps, async () => {
-      await reportDenials(deps, context, ended.proxy, launch.startedAt, credentialDenials);
+      await reportDenials(
+        deps,
+        context,
+        ended.proxy,
+        launch.startedAt,
+        ruleDenials ? undefined : (ended.host?.derived.rules ?? []),
+      );
 
       await finishLaunch(deps, context, backend, launch);
     });

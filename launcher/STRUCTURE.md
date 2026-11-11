@@ -55,8 +55,8 @@ cli/commands/egress.ts         pi sandbox egress allow, revoke and list
 cli/commands/reset.ts          pi sandbox reset: the folder's sandbox and volumes
 cli/commands/stop.ts           pi sandbox stop
 cli/commands/uninstall.ts      the hidden __uninstall command uninstall.sh runs: live-session refusal, engine objects by label, host-side release
-cli/commands/doctor.ts         pi sandbox doctor: stages, probes, host checks
-cli/commands/doctor-probes.ts  the doctor's checks inside the container; a rule whose credential was denied warns
+cli/commands/doctor.ts         pi sandbox doctor: stages, probes, host checks, and the denials matched to each rule
+cli/commands/doctor-probes.ts  the doctor's checks inside the container; a rule whose credential was denied warns, one the proxy refused says why
 cli/commands/doctor-host.ts    the doctor's checks on the host
 cli/commands/help.ts           usage
 cli/commands/options.ts        the option check of the sandbox commands and egress
@@ -69,7 +69,7 @@ config/index.ts                public surface
 config/types.ts                the config, layer and rule types
 config/defaults.ts             the default config and image reference
 config/load.ts                 loads the policy and user layers and merges them
-config/merge.ts                the layer merge: union and final keys, the egress lock, ignored keys and their warning, sources
+config/merge.ts                the layer merge: union and final keys, the egress lock (isEgressLocked), ignored keys and their warning, sources
 config/validate.ts             the key spec of every layer
 config/dotted.ts               dotted key access
 config/egress-entry.ts         the host entry grammar, entry parsing and host matching

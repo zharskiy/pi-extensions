@@ -238,6 +238,68 @@ describe("pi sandbox doctor", () => {
     expect(code).toBe(0);
   });
 
+  const refusal = (rule: string, reason: string, port = 443): DenialRecord => ({
+    time: 1_700_000_000_500,
+    host: "models.example.test",
+    port,
+    repoHash: "repo",
+    rule,
+    reason,
+  });
+
+  const doctorWithRefusals = (ruleAnswer: string, denials: DenialRecord[]) =>
+    doctorWith(
+      { ruleAnswer },
+      200,
+      undefined,
+      { example: { type: "api_key", key: "real-secret-value-1234567890" } },
+      undefined,
+      undefined,
+      denials,
+    );
+
+  it("says why the proxy refused a rule host that resolves to a private address, once, with the config to edit", async () => {
+    const { code, lines, harness } = await doctorWithRefusals("error 0", [
+      refusal(
+        "private-address",
+        "models.example.test resolves only to restricted addresses (10.1.2.3 is a private network address)",
+      ),
+    ]);
+
+    expect(lines).toContain(
+      `fail rule derived:auth:example:key: https://models.example.test/: the sandbox proxy refused it: models.example.test resolves only to restricted addresses (10.1.2.3 is a private network address); add models.example.test to egress.privateHosts in ${harness.userConfigFile}`,
+    );
+    expect(harness.stderr()).not.toContain("was blocked");
+    expect(code).toBe(1);
+  });
+
+  it("says a policy deny refused a rule host", async () => {
+    const { lines } = await doctorWithRefusals("error 0", [
+      refusal("egress.deny", "models.example.test is in egress.deny"),
+    ]);
+
+    expect(lines).toContain(
+      "fail rule derived:auth:example:key: https://models.example.test/: the sandbox proxy refused it: denied by policy",
+    );
+  });
+
+  it("keeps the fetch error when the only refusal is for another port of the host", async () => {
+    const { lines, harness } = await doctorWithRefusals("error 0", [
+      refusal("private-address", "models.example.test resolves only to restricted addresses", 8443),
+    ]);
+
+    expect(lines).toContain("fail rule derived:auth:example:key: https://models.example.test/: 0");
+    expect(harness.stderr()).toContain("pi-sandbox: models.example.test:8443 was blocked");
+  });
+
+  it("keeps the fetch error of a certificate problem", async () => {
+    const { lines } = await doctorWithRefusals("error CERT_NOT_YET_VALID", []);
+
+    expect(lines).toContain(
+      "fail rule derived:auth:example:key: https://models.example.test/: CERT_NOT_YET_VALID",
+    );
+  });
+
   it("fails the trust check on a certificate error and the mcp check inside", async () => {
     const { code, lines } = await doctorWith(
       { ruleAnswer: "error SELF_SIGNED_CERT_IN_CHAIN", mcpListExit: 1 },

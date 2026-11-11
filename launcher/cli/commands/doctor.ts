@@ -1,13 +1,13 @@
 import { type Backend, ENGINE_PROFILE, LABELS, recommendedVmSize, type VmSize } from "../../backend/index.ts";
-import { authorityOf } from "../../config/index.ts";
+import { authorityOf, type CredentialRule } from "../../config/index.ts";
 import { readHostPiFiles } from "../../hostpi/index.ts";
-import { readHealth } from "../../proxy/index.ts";
+import { type DenialRecord, readHealth } from "../../proxy/index.ts";
 import { errorMessage } from "../../shared/index.ts";
 import { type LaunchContext, openContext } from "../context.ts";
 import { type CliDeps, hostAgentDirOf, writeLine } from "../deps.ts";
 import { hostSessionsOf } from "../host-sessions.ts";
 import { type Sandbox, type Stage, type StageOutcome, withSandbox } from "../launch.ts";
-import { denialHint, type SandboxProxy } from "../sandbox-proxy.ts";
+import { denialHint, ruleAuthority, type SandboxProxy } from "../sandbox-proxy.ts";
 import { vmShareCoverage } from "../vm.ts";
 import { hostChecks } from "./doctor-host.ts";
 import {
@@ -22,6 +22,7 @@ import {
   type NamedCheck,
   type ProbeTarget,
   passed,
+  type RuleHint,
   skipped,
   sweepCredentials,
   warned,
@@ -147,29 +148,48 @@ const inOrder =
       Promise.resolve([]),
     );
 
-const unresolvedHints =
-  ({ deps, context, sandbox }: ProbeInput) =>
-  async (): Promise<ReadonlyMap<string, string>> => {
+const isRefusalOf = (rule: CredentialRule) => {
+  const authority = ruleAuthority(rule);
+
+  return (denial: DenialRecord) =>
+    denial.credentialRule === undefined && authorityOf(denial.host, denial.port) === authority;
+};
+
+const ruleHints =
+  ({ deps, context, sandbox }: ProbeInput, rules: CredentialRule[]) =>
+  async (): Promise<ReadonlyMap<string, RuleHint>> => {
     const denials =
       sandbox.proxy === undefined
         ? []
         : await deps.proxy
             .denials(context.stateDir, context.repoHash, sandbox.launch.startedAt)
             .catch(() => []);
+    const hint = (denial: DenialRecord) =>
+      denialHint(deps, denial, authorityOf(denial.host, denial.port), context);
 
     return new Map(
-      denials.flatMap((denial) =>
-        denial.credentialRule === undefined
-          ? []
-          : [[denial.credentialRule, denialHint(denial, authorityOf(denial.host, denial.port), context)]],
-      ),
+      rules.map((rule): [string, RuleHint] => {
+        const unresolved = denials.findLast((denial) => denial.credentialRule === rule.id);
+        const refused = denials.findLast(isRefusalOf(rule));
+
+        return [
+          rule.id,
+          {
+            ...(unresolved === undefined ? {} : { unresolved: hint(unresolved) }),
+            ...(refused === undefined ? {} : { refused: hint(refused) }),
+          },
+        ];
+      }),
     );
   };
 
-const ruleChecks: Probe = (input) =>
-  checkRules(input.target, input.sandbox.host.derived.rules, unresolvedHints(input)).catch(
-    (error: unknown) => [{ name: "trust", result: failed(errorMessage(error)) }],
-  );
+const ruleChecks: Probe = (input) => {
+  const { rules } = input.sandbox.host.derived;
+
+  return checkRules(input.target, rules, ruleHints(input, rules)).catch((error: unknown) => [
+    { name: "trust", result: failed(errorMessage(error)) },
+  ]);
+};
 
 const sessionsShareCheck = async (target: ProbeTarget) => {
   const containers = await target.backend.findContainers({ [LABELS.managed]: "true" });
@@ -217,7 +237,7 @@ const sandboxChecks = async (deps: CliDeps, context: LaunchContext, backend: Bac
     report,
     signIn: false,
     share: false,
-    credentialDenials: false,
+    ruleDenials: false,
   }).catch((error: unknown) => {
     if (failures.length === 0) {
       throw error;
