@@ -1,6 +1,17 @@
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { chmod, lstat, mkdir, readFile, readlink, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  lstat,
+  mkdir,
+  readdir,
+  readFile,
+  readlink,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { launcherRoot } from "../../shared/index.ts";
@@ -197,7 +208,7 @@ describe("image entrypoint", () => {
     expect(stats.isFile()).toBe(true);
     expect(stats.mode & 0o777).toBe(0o444);
     expect(await readFile(auth, "utf8")).toBe('{"rendered":2}\n');
-    expect(existsSync(`${auth}.tmp`)).toBe(false);
+    expect((await readdir(agent)).filter((name) => name.startsWith("auth.json."))).toEqual([]);
   });
 
   it("replaces a file, dir or link an agent put in place of the auth.json copy", async () => {
