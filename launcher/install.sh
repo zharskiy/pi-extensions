@@ -293,7 +293,7 @@ if [ "$from_checkout" -eq 1 ]; then
   installed="wrote $shim running $checkout/launcher/bin/pi-sandbox-dev.js"
 else
   step 5 "launcher: installing $package_name@$version with npm"
-  streamed npm install -g "$package_name@$version"
+  streamed npm install -g --omit=peer "$package_name@$version"
   npm_bin="$(npm prefix -g)/bin/pi-sandbox"
   record_replaced_link
   ln -sfn "$npm_bin" "$shim"

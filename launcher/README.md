@@ -37,7 +37,7 @@ You need:
 
 ```bash
 curl -fsSL https://pi.dev/install.sh | sh
-npm install -g pi-extensions-mz
+npm install -g --omit=peer pi-extensions-mz
 "$(npm root -g)/pi-extensions-mz/launcher/install.sh"
 ```
 
@@ -123,7 +123,7 @@ In the table, *host pi* is pi's managed install on your Mac, and `fallback` is t
 
 `pi uninstall <source>` also runs with host pi on the host. Host pi loads no extension for `pi --help` and `pi --list-models`, so help omits the flags extensions register and the list omits providers only an extension registers; `pi list`, `pi mcp list` and `pi config` run in the sandbox, and `pi --version` asks pi inside when `image.reference` and `image.digest` pin the image. `egress allow` uses port 443 unless you name one, and refuses wildcards, IP addresses and port 80 ([rules](CONFIGURATION.md#network-access)).
 
-`pi update` runs the managed install's own update, and the next launch rebuilds the image. Without a managed install it says how to get one. To update the launcher itself, run `npm install -g pi-extensions-mz` (or `git pull` in a checkout).
+`pi update` runs the managed install's own update, and the next launch rebuilds the image. Without a managed install it says how to get one. To update the launcher itself, run `npm install -g --omit=peer pi-extensions-mz` (or `git pull` in a checkout).
 
 After a reboot or `pi sandbox stop`, the next `pi` starts the VM again. A failure prints `pi-sandbox: <message>`, often with a `hint:` line.
 
