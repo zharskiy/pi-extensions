@@ -54,21 +54,15 @@ describe("the old config and state folders", () => {
 
     const checks = await doctorChecks(harness);
 
-    expect(checks.filter((check) => ["user config", "old state"].includes(check.name))).toEqual([
+    expect(checks.filter((check) => ["user config", "old state"].includes(check.name))).toMatchObject([
       {
-        section: "host",
         status: "warn",
-        name: "user config",
         detail: "~/.config/pi-sandbox/config.json is no longer read",
-        reasons: [],
         hint: `move it to ${harness.userConfigFile}`,
       },
       {
-        section: "host",
         status: "warn",
-        name: "old state",
         detail: `~/.local/state/pi-sandbox is no longer used, the launcher keeps its state in ${harness.stateDir}`,
-        reasons: [],
         hint: "delete it once no pi session started before the move runs",
       },
     ]);

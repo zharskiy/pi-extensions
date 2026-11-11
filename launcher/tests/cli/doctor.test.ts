@@ -1,6 +1,7 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
+import { stripVTControlCharacters } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import { type ExecIo, type ExecSpec, LABELS, type Vm } from "../../backend/index.ts";
 import { run } from "../../cli/index.ts";
@@ -13,12 +14,9 @@ import {
   createHarness,
   type DoctorCheck,
   doctorCheck,
-  doctorLines,
   doctorReport,
-  flat,
   noHostPiLine,
   unreachable,
-  withoutColour,
   writeManagedPi,
   writePathPi,
 } from "./harness.ts";
@@ -163,7 +161,7 @@ const doctorWith = async (options: DoctorOptions = {}) => {
   const code = await run(["sandbox", "doctor", ...(options.args ?? [])], harness.deps);
   const stdout = harness.stdout();
 
-  return { code, stdout, lines: doctorLines(stdout), report: doctorReport(stdout), fake, harness, port };
+  return { code, stdout, report: doctorReport(stdout), fake, harness, port };
 };
 
 const check = (stdout: string, name: string) => doctorCheck(stdout, name);
@@ -213,13 +211,17 @@ describe("pi sandbox doctor", () => {
   });
 
   it("checks trust and every credential rule host with its placeholder", async () => {
-    const { lines, fake } = await doctorWith({ probes: { ruleAnswer: "401" }, hostAuth: EXAMPLE_AUTH });
+    const { stdout, fake } = await doctorWith({ probes: { ruleAnswer: "401" }, hostAuth: EXAMPLE_AUTH });
     const request = fake.execs.find((exec) => exec.spec.command[0] === "node");
 
-    expect(lines).toContain("ok trust: the container trusts the proxy's certificate for models.example.test");
-    expect(lines).toContain(
-      `fail ${RULE}: https://models.example.test/ answered HTTP 401 with the placeholder`,
-    );
+    expect(check(stdout, "trust")).toMatchObject({
+      status: "ok",
+      detail: "the container trusts the proxy's certificate for models.example.test",
+    });
+    expect(check(stdout, RULE)).toMatchObject({
+      status: "fail",
+      detail: "https://models.example.test/ answered HTTP 401 with the placeholder",
+    });
     expect(request?.spec.command.at(-1)).toMatch(/^Bearer pi-sandbox-[0-9a-f]{24}$/);
     expect(request?.spec.command[2]).toContain("AbortSignal.timeout(15000)");
     expect(JSON.stringify(fake.execs.map((exec) => exec.spec))).not.toContain("real-secret-value");
@@ -229,12 +231,16 @@ describe("pi sandbox doctor", () => {
     const plain = await doctorWith({ hostAuth: EXAMPLE_AUTH });
     const verbose = await doctorWith({ hostAuth: EXAMPLE_AUTH, args: ["--verbose"] });
 
-    expect(plain.lines).toContain(
-      "ok rules: 1 credential host answered through the proxy (--verbose lists them)",
-    );
-    expect(plain.lines.filter((line) => line.includes(" rule "))).toEqual([]);
-    expect(verbose.lines).toContain(`ok ${RULE}: https://models.example.test/ answered HTTP 200`);
-    expect(verbose.lines.filter((line) => line.startsWith("ok rules"))).toEqual([]);
+    expect(check(plain.stdout, "rules")).toMatchObject({
+      status: "ok",
+      detail: "1 credential host answered through the proxy (--verbose lists them)",
+    });
+    expect(check(plain.stdout, RULE)).toBeUndefined();
+    expect(check(verbose.stdout, RULE)).toMatchObject({
+      status: "ok",
+      detail: "https://models.example.test/ answered HTTP 200",
+    });
+    expect(check(verbose.stdout, "rules")).toBeUndefined();
     expect(plain.report.result).toBe("ok (18 ok, 3 skipped)");
     expect(verbose.report.result).toBe(plain.report.result);
   });
@@ -258,10 +264,8 @@ describe("pi sandbox doctor", () => {
       hostAuth: EXAMPLE_AUTH,
     });
 
-    expect(check(stdout, RULE)).toEqual({
-      section: "credentials",
+    expect(check(stdout, RULE)).toMatchObject({
       status: "fail",
-      name: RULE,
       detail: "https://models.example.test/ answered HTTP 502",
       reasons: ["upstream request failed: unable to get local issuer certificate; set tls.extraCa"],
     });
@@ -284,12 +288,9 @@ describe("pi sandbox doctor", () => {
       denials: [login],
     });
 
-    expect(check(stdout, RULE)).toEqual({
-      section: "credentials",
+    expect(check(stdout, RULE)).toMatchObject({
       status: "warn",
-      name: RULE,
       detail: "the example login on the host is missing or expired",
-      reasons: [],
       hint: "log in again with pi --no-sandbox and /login",
     });
     expect(blocked(report.checks)).toEqual([]);
@@ -317,10 +318,8 @@ describe("pi sandbox doctor", () => {
       refusal("private-address", reason),
     ]);
 
-    expect(check(stdout, RULE)).toEqual({
-      section: "credentials",
+    expect(check(stdout, RULE)).toMatchObject({
       status: "fail",
-      name: RULE,
       detail: "https://models.example.test/: the sandbox proxy refused it",
       reasons: [reason],
       hint: `add models.example.test to egress.privateHosts in ${harness.userConfigFile}`,
@@ -344,24 +343,21 @@ describe("pi sandbox doctor", () => {
   });
 
   it("keeps the fetch error when the only refusal is for another port, and warns about that port as blocked", async () => {
-    const { lines, stdout, harness } = await doctorWithRefusals("error 0", [
+    const { stdout, harness } = await doctorWithRefusals("error 0", [
       refusal("private-address", "models.example.test resolves only to restricted addresses", 8443),
     ]);
 
-    expect(lines).toContain(`fail ${RULE}: https://models.example.test/: 0`);
-    expect(check(stdout, "blocked models.example.test:8443")).toEqual({
-      section: "network",
+    expect(check(stdout, RULE)).toMatchObject({ status: "fail", detail: "https://models.example.test/: 0" });
+    expect(check(stdout, "blocked models.example.test:8443")).toMatchObject({
       status: "warn",
-      name: "blocked models.example.test:8443",
       detail: "models.example.test resolves only to restricted addresses",
-      reasons: [],
       hint: `add models.example.test to egress.privateHosts in ${harness.userConfigFile}`,
     });
     expect(harness.stderr()).toBe("");
   });
 
   it("keeps the fetch error of a certificate not yet valid and says the VM clock is behind, with the restart", async () => {
-    const { lines, stdout } = await doctorWithRefusals("error CERT_NOT_YET_VALID", []);
+    const { stdout } = await doctorWithRefusals("error CERT_NOT_YET_VALID", []);
     const clock = {
       reasons: [
         "the sandbox VM's clock is behind the host's, so the proxy's certificate, dated by the host, is not valid there yet",
@@ -369,8 +365,11 @@ describe("pi sandbox doctor", () => {
       hint: "restart the VM to reset its clock: run pi sandbox stop once no pi session runs, then pi sandbox doctor again",
     };
 
-    expect(lines).toContain(`fail ${RULE}: https://models.example.test/: CERT_NOT_YET_VALID`);
-    expect(check(stdout, RULE)).toMatchObject(clock);
+    expect(check(stdout, RULE)).toMatchObject({
+      status: "fail",
+      detail: "https://models.example.test/: CERT_NOT_YET_VALID",
+      ...clock,
+    });
     expect(check(stdout, "trust")).toMatchObject({
       detail: "models.example.test: CERT_NOT_YET_VALID",
       ...clock,
@@ -378,15 +377,21 @@ describe("pi sandbox doctor", () => {
   });
 
   it("fails the trust check on a certificate error, without the clock hint, and the mcp check inside", async () => {
-    const { code, lines, stdout } = await doctorWith({
+    const { code, stdout } = await doctorWith({
       probes: { ruleAnswer: "error SELF_SIGNED_CERT_IN_CHAIN", mcpListExit: 1 },
       hostAuth: EXAMPLE_AUTH,
     });
 
-    expect(lines).toContain("fail trust: models.example.test: SELF_SIGNED_CERT_IN_CHAIN");
-    expect(check(stdout, "trust")).toMatchObject({ reasons: [] });
+    expect(check(stdout, "trust")).toMatchObject({
+      status: "fail",
+      detail: "models.example.test: SELF_SIGNED_CERT_IN_CHAIN",
+      reasons: [],
+    });
     expect(check(stdout, "trust")?.hint).toBeUndefined();
-    expect(lines).toContain("fail mcp: pi mcp list exited 1: docs: connection refused");
+    expect(check(stdout, "mcp")).toMatchObject({
+      status: "fail",
+      detail: "pi mcp list exited 1: docs: connection refused",
+    });
     expect(code).toBe(1);
   });
 
@@ -411,13 +416,14 @@ describe("pi sandbox doctor", () => {
 
     await run(["sandbox", "doctor"], harness.deps);
 
-    expect(doctorLines(harness.stdout())).toContain(
-      "skip sessions share: in the sandbox volume (sessions.host is off)",
-    );
+    expect(check(harness.stdout(), "sessions share")).toMatchObject({
+      status: "skip",
+      detail: "in the sandbox volume (sessions.host is off)",
+    });
   });
 
   it("runs pi mcp list under a 30 s timeout and fails when it runs out", async () => {
-    const { code, lines, fake } = await doctorWith({ probes: { mcpListExit: 124 } });
+    const { code, stdout, fake } = await doctorWith({ probes: { mcpListExit: 124 } });
 
     expect(fake.execs.map((exec) => exec.spec.command)).toContainEqual([
       "timeout",
@@ -426,11 +432,14 @@ describe("pi sandbox doctor", () => {
       "mcp",
       "list",
     ]);
-    expect(lines).toContain("fail mcp: pi mcp list did not finish in 30 s");
+    expect(check(stdout, "mcp")).toMatchObject({
+      status: "fail",
+      detail: "pi mcp list did not finish in 30 s",
+    });
     expect(code).toBe(1);
   });
 
-  it("runs the probes at once and still prints them in table order", async () => {
+  it("runs the probes at once", async () => {
     const mcpAsked: Array<() => void> = [];
     const mcpStarted = new Promise<void>((resolve) => {
       mcpAsked.push(resolve);
@@ -462,11 +471,8 @@ describe("pi sandbox doctor", () => {
 
     await run(["sandbox", "doctor"], harness.deps);
 
-    const names = doctorLines(harness.stdout()).map((line) => line.split(":")[0]);
-
     expect(Date.now() - startedAt).toBeLessThan(2000);
-    expect(names).toContain("ok no-route");
-    expect(names.indexOf("ok no-route")).toBeLessThan(names.indexOf("ok mcp"));
+    expect(check(harness.stdout(), "no-route")?.status).toBe("ok");
   });
 
   it("fails the sweep on an mcp.json header or stdio env value that is not a placeholder", async () => {
@@ -487,10 +493,8 @@ describe("pi sandbox doctor", () => {
       },
     });
 
-    expect(check(stdout, "credential sweep")).toEqual({
-      section: "leak sweep",
+    expect(check(stdout, "credential sweep")).toMatchObject({
       status: "fail",
-      name: "credential sweep",
       detail: "1 finding in the environment, auth.json or mcp.json",
       reasons: [
         "/home/pi/.pi/agent/mcp.json holds a value other than a placeholder at mcpServers.docs.headers.Authorization",
@@ -500,11 +504,14 @@ describe("pi sandbox doctor", () => {
   });
 
   it("passes the sweep over the container's own environment, whose proxy token is no placeholder", async () => {
-    const { lines, fake } = await doctorWith();
+    const { stdout, fake } = await doctorWith();
     const env = fake.created[0]?.spec?.env ?? {};
 
     expect(env.PI_SANDBOX_PROXY_TOKEN).toMatch(/^[0-9a-f]{64}$/);
-    expect(lines).toContain("ok credential sweep: no credential in the environment, auth.json or mcp.json");
+    expect(check(stdout, "credential sweep")).toMatchObject({
+      status: "ok",
+      detail: "no credential in the environment, auth.json or mcp.json",
+    });
   });
 
   it("fails the sweep on secret-named variables and auth.json values other than the placeholder", async () => {
@@ -528,14 +535,17 @@ describe("pi sandbox doctor", () => {
   });
 
   it("passes the sweep when secret-named variables and auth.json hold only the placeholder", async () => {
-    const { lines } = await doctorWith({
+    const { stdout } = await doctorWith({
       probes: {
         env: "TERM=xterm\nGATEWAY_API_KEY=pi-sandbox-0123456789abcdef01234567\nSESSION_TOKEN=\n",
         auth: JSON.stringify({ llm: { type: "api_key", key: "pi-sandbox-0123456789abcdef01234567" } }),
       },
     });
 
-    expect(lines).toContain("ok credential sweep: no credential in the environment, auth.json or mcp.json");
+    expect(check(stdout, "credential sweep")).toMatchObject({
+      status: "ok",
+      detail: "no credential in the environment, auth.json or mcp.json",
+    });
   });
 
   it("removes only its own container when another launch of the repository is live", async () => {
@@ -573,13 +583,16 @@ describe("pi sandbox doctor", () => {
   });
 
   it("strips a credential from a host settings package URL before the sync, says so in the notices, and the settings sweep passes", async () => {
-    const { lines, report, harness } = await doctorWith({
+    const { stdout, report, harness } = await doctorWith({
       hostSettings: {
         packages: ["npm:fine", { source: "git:https://user:hunter2@git.example.test/team/ext.git" }],
       },
     });
 
-    expect(lines).toContain("ok settings sweep: no settings.json package carries a credential in its URL");
+    expect(check(stdout, "settings sweep")).toMatchObject({
+      status: "ok",
+      detail: "no settings.json package carries a credential in its URL",
+    });
     expect(report.notices).toEqual([
       "settings.json package git.example.test carried a credential in its URL; it was removed inside the sandbox",
     ]);
@@ -588,7 +601,7 @@ describe("pi sandbox doctor", () => {
   });
 
   it("fails the mcp-auth sweep on a token that is not a placeholder", async () => {
-    const { code, lines, stdout } = await doctorWith({
+    const { code, stdout } = await doctorWith({
       probes: {
         mcpAuth: JSON.stringify({
           "mcp__docs|https://docs.example.test/mcp": {
@@ -598,24 +611,32 @@ describe("pi sandbox doctor", () => {
       },
     });
 
-    expect(lines).toContain(
-      "fail mcp-auth sweep: mcp-auth.json holds a token that is not a placeholder (mcp__docs|https://docs.example.test/mcp)",
-    );
+    expect(check(stdout, "mcp-auth sweep")).toMatchObject({
+      status: "fail",
+      detail:
+        "mcp-auth.json holds a token that is not a placeholder (mcp__docs|https://docs.example.test/mcp)",
+    });
     expect(stdout).not.toContain("real-access-token");
     expect(code).toBe(1);
   });
 
   it("fails when the container reaches the internet directly", async () => {
-    const { code, lines } = await doctorWith({ probes: { routeExit: 0 } });
+    const { code, stdout } = await doctorWith({ probes: { routeExit: 0 } });
 
-    expect(lines).toContain("fail no-route: 1.1.1.1:443 is reachable directly");
+    expect(check(stdout, "no-route")).toMatchObject({
+      status: "fail",
+      detail: "1.1.1.1:443 is reachable directly",
+    });
     expect(code).toBe(1);
   });
 
   it("fails the proxy check when /healthz does not answer", async () => {
-    const { code, lines } = await doctorWith({ health: 503 });
+    const { code, stdout } = await doctorWith({ health: 503 });
 
-    expect(lines).toContain("fail proxy health: /healthz does not answer");
+    expect(check(stdout, "proxy health")).toMatchObject({
+      status: "fail",
+      detail: "/healthz does not answer",
+    });
     expect(code).toBe(1);
   });
 
@@ -643,7 +664,7 @@ describe("pi sandbox doctor", () => {
 
   it("runs no shares stage, so it never restarts the VM to share a path", async () => {
     const shared: string[][] = [];
-    const { lines } = await doctorWith({
+    const { stdout } = await doctorWith({
       vm: {
         ensureShares: async (paths) => {
           shared.push(paths.map((entry) => entry.path));
@@ -651,14 +672,14 @@ describe("pi sandbox doctor", () => {
       },
     });
 
-    expect(lines).toEqual(expect.arrayContaining(["ok vm", "ok host side"]));
-    expect(lines.filter((line) => /^\S+ shares\b/.test(line))).toEqual([]);
+    expect([check(stdout, "vm")?.status, check(stdout, "host side")?.status]).toEqual(["ok", "ok"]);
+    expect(check(stdout, "shares")).toBeUndefined();
     expect(shared).toEqual([]);
   });
 
   it("skips the sandbox and names the paths to share when the VM lacks one, starting nothing", async () => {
     const started: string[] = [];
-    const { code, lines, stdout, fake } = await doctorWith({
+    const { code, stdout, fake } = await doctorWith({
       vm: {
         coverage: async () => ({ shares: [], missing: ["/Volumes/work"] }),
         ensureRunning: async () => {
@@ -667,16 +688,20 @@ describe("pi sandbox doctor", () => {
       },
     });
 
-    expect(check(stdout, "vm shares")).toEqual({
-      section: "sandbox",
+    expect(check(stdout, "vm shares")).toMatchObject({
       status: "warn",
-      name: "vm shares",
       detail: "the sandbox VM does not share /Volumes/work",
-      reasons: [],
       hint: "run pi once here while no other pi session runs, which shares it and restarts the VM, then pi sandbox doctor again",
     });
-    expect(lines).toContain("skip sandbox: not started until the VM shares /Volumes/work");
-    expect(lines.filter((line) => /^\S+ (vm|probes|host side)(:|$)/.test(line))).toEqual([]);
+    expect(check(stdout, "sandbox")).toMatchObject({
+      status: "skip",
+      detail: "not started until the VM shares /Volumes/work",
+    });
+    expect(["vm", "probes", "host side"].map((name) => check(stdout, name))).toEqual([
+      undefined,
+      undefined,
+      undefined,
+    ]);
     expect(started).toEqual([]);
     expect(fake.created).toEqual([]);
     expect(code).toBe(0);
@@ -736,7 +761,10 @@ describe("pi sandbox doctor", () => {
 
     const report = doctorReport(harness.stdout());
 
-    expect(doctorLines(harness.stdout())).toEqual(expect.arrayContaining(["ok container", "ok sync"]));
+    expect([check(harness.stdout(), "container")?.status, check(harness.stdout(), "sync")?.status]).toEqual([
+      "ok",
+      "ok",
+    ]);
     expect(report.notices).toEqual([
       "settings.json package git.example.test carried a credential in its URL; it was removed inside the sandbox",
     ]);
@@ -764,7 +792,7 @@ describe("pi sandbox doctor", () => {
       expect(stdout).toContain("\u001b[32mok\u001b[0m    host pi ");
       expect(stdout).toContain("\u001b[36mhint:\u001b[0m run launcher/install.sh");
       expect(stdout).toContain("result: \u001b[1;31mfail\u001b[0m (");
-      expect(doctorReport(withoutColour(stdout)).result).toBe("fail (1 failed, 3 ok, 3 skipped)");
+      expect(doctorReport(stripVTControlCharacters(stdout)).result).toBe("fail (1 failed, 3 ok, 3 skipped)");
       expect(harness.stderr().startsWith("\r\u001b[2Kpi sandbox doctor: preparing the sandbox")).toBe(true);
       expect(harness.stderr().endsWith("\r\u001b[2K")).toBe(true);
       expect(harness.stderr()).not.toContain("\n");
@@ -805,12 +833,9 @@ describe("pi sandbox doctor", () => {
     it("warns with the resize command for a 2 CPU, 4 GiB profile without failing doctor", async () => {
       const { code, found } = await sizeCheck(async () => ({ cpus: 2, memoryGiB: 4 }));
 
-      expect(found).toEqual({
-        section: "sandbox",
+      expect(found).toMatchObject({
         status: "warn",
-        name: "vm size",
         detail: "profile pi-sandbox has 2 CPUs and 4 GiB, below 8 CPUs and 10 GiB",
-        reasons: [],
         hint: `resize it with ${RESIZE}`,
       });
       expect(code).toBe(0);
@@ -819,7 +844,7 @@ describe("pi sandbox doctor", () => {
     it("measures the profile against the size install.sh gives this machine", async () => {
       const { found } = await sizeCheck(async () => ({ cpus: 4, memoryGiB: 4 }), { cpus: 4, memoryGiB: 8 });
 
-      expect(found && flat(found)).toBe("ok vm size: profile pi-sandbox has 4 CPUs and 4 GiB");
+      expect(found).toMatchObject({ status: "ok", detail: "profile pi-sandbox has 4 CPUs and 4 GiB" });
     });
   });
 });
@@ -847,9 +872,10 @@ describe("pi sandbox doctor on the host pi", () => {
       await writeManagedPi(harness.hostAgentDir, "1.6.0");
     });
 
-    expect(found && flat(found)).toBe(
-      "ok host pi: pi 1.6.0, managed install ~/.pi/agent/bin/pi; the image follows it",
-    );
+    expect(found).toMatchObject({
+      status: "ok",
+      detail: "pi 1.6.0, managed install ~/.pi/agent/bin/pi; the image follows it",
+    });
   });
 
   it("warns when the managed pi is older than the pi the launcher is tested with", async () => {
@@ -874,7 +900,7 @@ describe("pi sandbox doctor on the host pi", () => {
     expect(found).toMatchObject({ status: "fail", detail: "no managed pi in ~/.pi/agent" });
     expect(found?.reasons).toHaveLength(2);
     expect(joined.replace("~/", `${harness.deps.home}/`)).toBe(noHostPiLine(harness.hostAgentDir));
-    expect(doctorLines(harness.stdout())).toContain("skip provider hosts: no host pi");
+    expect(check(harness.stdout(), "provider hosts")).toMatchObject({ status: "skip", detail: "no host pi" });
   });
 
   it("says the missing pi once, in its check, not again in the notices of a run that prepares the sandbox", async () => {
@@ -894,7 +920,7 @@ describe("pi sandbox doctor on the host pi", () => {
       return { stdout: harness.stdout(), report: doctorReport(harness.stdout()) };
     })();
 
-    expect(report.checks.map(flat)).toContain("ok host side");
+    expect(check(stdout, "host side")?.status).toBe("ok");
     expect(stdout.split("no managed pi in")).toHaveLength(2);
     expect(report.notices.filter((notice) => notice.includes("no managed pi"))).toEqual([]);
   });
@@ -916,21 +942,25 @@ describe("pi sandbox doctor parent proxy", () => {
 
     await run(["sandbox", "doctor"], harness.deps);
 
-    const found = check(harness.stdout(), "parent proxy");
-
-    return found && `${found.section}: ${flat(found)}`;
+    return { port, found: check(harness.stdout(), "parent proxy") };
   };
 
   it("connects to an IPv6 http parent proxy without its brackets", async () => {
-    expect(await parentLine((port) => `http://[::1]:${port}`)).toMatch(
-      /^network: ok parent proxy: \[::1\]:\d+ accepts connections$/,
-    );
+    const { port, found } = await parentLine((listening) => `http://[::1]:${listening}`);
+
+    expect(found).toMatchObject({
+      section: "network",
+      status: "ok",
+      detail: `[::1]:${port} accepts connections`,
+    });
   });
 
   it("fails an https parent proxy, which the launcher proxy does not chain to", async () => {
-    expect(await parentLine(() => "https://proxy.example.test")).toBe(
-      "network: fail parent proxy: HTTPS_PROXY uses https, only http parent proxies are supported",
-    );
+    expect((await parentLine(() => "https://proxy.example.test")).found).toMatchObject({
+      section: "network",
+      status: "fail",
+      detail: "HTTPS_PROXY uses https, only http parent proxies are supported",
+    });
   });
 });
 
@@ -961,10 +991,11 @@ describe("pi sandbox doctor mcp sign-in checks", () => {
       (entry) => entry.section === "credentials" && entry.name.startsWith("mcp "),
     );
 
-    expect(servers.map((entry) => [flat(entry), entry.hint])).toEqual([
-      ["warn mcp docs: needs sign-in", "run pi mcp login docs"],
-      ["ok mcp signed: signed in on the host (expires in 2 h)", undefined],
+    expect(servers).toMatchObject([
+      { status: "warn", name: "mcp docs", detail: "needs sign-in", hint: "run pi mcp login docs" },
+      { status: "ok", name: "mcp signed", detail: "signed in on the host (expires in 2 h)" },
     ]);
+    expect(servers[1]?.hint).toBeUndefined();
     expect(harness.stdout()).not.toContain("real-access-token");
   });
 });

@@ -200,17 +200,6 @@ export const doctorReport = (stdout: string): DoctorReport => {
   return report;
 };
 
-export const flat = (check: DoctorCheck) =>
-  check.detail === "" ? `${check.status} ${check.name}` : `${check.status} ${check.name}: ${check.detail}`;
-
-export const withoutColour = (text: string) =>
-  text
-    .split("\u001b")
-    .map((part, index) => (index === 0 ? part : part.replace(/^\[[0-9;]*m/, "")))
-    .join("");
-
-export const doctorLines = (stdout: string) => doctorReport(stdout).checks.map(flat);
-
 export const doctorCheck = (stdout: string, name: string) =>
   doctorReport(stdout).checks.find((check) => check.name === name);
 

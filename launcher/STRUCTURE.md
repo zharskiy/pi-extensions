@@ -375,7 +375,7 @@ tests/proxy/child-env.test.ts        the minimal environment
 tests/cli/harness.ts                 the CLI test harness, the managed pi layout (also for the live harness) and the doctor report parser
 tests/cli/commands.test.ts           the pi sandbox commands
 tests/cli/doctor.test.ts             the doctor
-tests/cli/doctor-report.test.ts      the doctor report renderer: golden reports, collapsing, verdicts, ~, colour
+tests/cli/doctor-report.test.ts      the doctor report renderer: collapsing, --verbose, verdicts, partial reports, ~, colour (the whole-report goldens are in doctor.test.ts)
 tests/cli/egress.test.ts             egress grants
 tests/cli/errors.test.ts             error output
 tests/cli/host-pi.test.ts            host pi selection
