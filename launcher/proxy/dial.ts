@@ -1,9 +1,9 @@
 import { lookup as dnsLookup, type LookupAddress, type LookupOptions } from "node:dns";
 import { connect, type LookupFunction, type Socket } from "node:net";
 import { bypassesParent, dialViaParent, type ParentRoute } from "./parent.ts";
-import { restrictedAddress } from "./policy.ts";
+import { isPrivateNetworkAddress, restrictedAddress } from "./policy.ts";
 
-export type DialAccess = "public" | "private";
+export type DialAccess = "public" | "private-network" | "private";
 
 export type Dial = (host: string, port: number, access: DialAccess) => Promise<Socket>;
 
@@ -33,19 +33,32 @@ const PRIVATE_RESOLUTION = new Set(["loopback", "link-local", "reserved-address"
 const resolutionRule = (rule: string | undefined) =>
   rule !== undefined && PRIVATE_RESOLUTION.has(rule) ? "private-address" : (rule ?? "resolve");
 
-const publicAddresses = (hostname: string, addresses: LookupAddress[]) => {
-  const allowed = addresses.filter((address) => restrictedAddress(address.address) === undefined);
-  const denial = addresses.map((address) => restrictedAddress(address.address)).find(Boolean);
+type AddressFilter = (hostname: string, addresses: LookupAddress[]) => LookupAddress[] | Error;
 
-  if (allowed.length > 0) {
-    return allowed;
-  }
+const reachableBy = (access: DialAccess) => (address: LookupAddress) =>
+  restrictedAddress(address.address) === undefined ||
+  (access === "private-network" && isPrivateNetworkAddress(address.address));
 
-  return new RestrictedAddressError(
-    resolutionRule(denial?.rule),
-    `${hostname} resolves only to restricted addresses${denial === undefined ? "" : ` (${denial.reason})`}`,
-  );
-};
+const addressesFor =
+  (access: DialAccess): AddressFilter =>
+  (hostname, addresses) => {
+    if (access === "private") {
+      return addresses;
+    }
+
+    const allowed = addresses.filter(reachableBy(access));
+
+    if (allowed.length > 0) {
+      return allowed;
+    }
+
+    const denial = addresses.map((address) => restrictedAddress(address.address)).find(Boolean);
+
+    return new RestrictedAddressError(
+      resolutionRule(denial?.rule),
+      `${hostname} resolves only to restricted addresses${denial === undefined ? "" : ` (${denial.reason})`}`,
+    );
+  };
 
 const systemResolve: Resolve = (hostname) =>
   new Promise((resolve, reject) => {
@@ -65,10 +78,7 @@ const ofFamily = (addresses: LookupAddress[], family: LookupOptions["family"]) =
 };
 
 const lookupWith =
-  (
-    resolveHost: Resolve,
-    filter: (hostname: string, addresses: LookupAddress[]) => LookupAddress[] | Error,
-  ): LookupFunction =>
+  (resolveHost: Resolve, filter: AddressFilter): LookupFunction =>
   (hostname, options, callback) => {
     resolveHost(hostname).then(
       (addresses) => {
@@ -120,16 +130,15 @@ const connected = (socket: Socket, host: string, port: number, timeoutMs: number
   });
 
 const direct =
-  (lookups: { public: LookupFunction; private: LookupFunction }, timeoutMs: number) =>
-  (host: string, port: number, access: DialAccess) =>
+  (resolveHost: Resolve, timeoutMs: number) => (host: string, port: number, access: DialAccess) =>
     connected(
-      connect({ host, port, lookup: access === "public" ? lookups.public : lookups.private }),
+      connect({ host, port, lookup: lookupWith(resolveHost, addressesFor(access)) }),
       host,
       port,
       timeoutMs,
     );
 
-const checkResolved = async (resolve: Resolve, host: string) => {
+const checkResolved = async (resolve: Resolve, host: string, access: DialAccess) => {
   const addresses = await resolve(host).catch((error: NodeJS.ErrnoException) => {
     if (UNRESOLVED.has(error.code ?? "")) {
       return [];
@@ -138,7 +147,7 @@ const checkResolved = async (resolve: Resolve, host: string) => {
     throw error;
   });
 
-  const result = addresses.length === 0 ? addresses : publicAddresses(host, addresses);
+  const result = addresses.length === 0 ? addresses : addressesFor(access)(host, addresses);
 
   if (result instanceof Error) {
     throw result;
@@ -156,29 +165,20 @@ export const createDialer = ({
   resolve: resolveHost = systemResolve,
   connectTimeoutMs = CONNECT_TIMEOUT_MS,
 }: DialerOptions = {}): Dialer => {
-  const dialDirect = direct(
-    {
-      public: lookupWith(resolveHost, publicAddresses),
-      private: lookupWith(resolveHost, (_, addresses) => addresses),
-    },
-    connectTimeoutMs,
-  );
+  const dialDirect = direct(resolveHost, connectTimeoutMs);
+  const checkAddresses = async (host: string, access: DialAccess) => {
+    if (access !== "private") {
+      await checkResolved(resolveHost, host, access);
+    }
+  };
   const dial: Dial = async (host, port, access) => {
     if (parent === undefined || bypassesParent(parent.noProxy, host)) {
       return dialDirect(host, port, access);
     }
 
-    if (access === "public") {
-      await checkResolved(resolveHost, host);
-    }
+    await checkAddresses(host, access);
 
     return dialViaParent(parent, host, port);
-  };
-
-  const checkAddresses = async (host: string, access: DialAccess) => {
-    if (access === "public") {
-      await checkResolved(resolveHost, host);
-    }
   };
 
   return { dial, checkAddresses };

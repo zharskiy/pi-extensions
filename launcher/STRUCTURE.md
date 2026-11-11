@@ -41,7 +41,7 @@ cli/terminal.ts                the host terminal: streams, size read at use, res
 cli/launches.ts                begin and finish a launch (removing its container), the last-session removal, the live launch count
 cli/sweep.ts                   removeRepoSandbox, the sweep of ended launches' containers, the orphan sweep and the daily collection
 cli/derive.ts                  the host side of a launch: host pi files, derivation, trust bundle, notices
-cli/sandbox-proxy.ts           the repository's proxy input and token, and the denial summary at exit with a hint per kind (also the doctor's rule hints)
+cli/sandbox-proxy.ts           the repository's proxy input and token (derived private hosts dropped under the egress lock), and the denial summary at exit with a hint per kind (also the doctor's rule hints)
 cli/mcp-sign-in.ts             the launch-start MCP sign-in on the host
 cli/host-sessions.ts           host sessions for a launch: choice, preparation, sweeps, share probe
 cli/intercept.ts               pi install, uninstall, remove, mcp, update, auth, help, --list-models, --export and --version run on the host
@@ -158,15 +158,15 @@ image/build-proxy.ts           the parent proxy as build arguments, loopback pro
 hostpi/index.ts                public surface
 hostpi/types.ts                host pi file and derivation types
 hostpi/files.ts                reads the host pi files
-hostpi/derive.ts               deriveSandboxPi: sandbox files, rules and notices
+hostpi/derive.ts               deriveSandboxPi: sandbox files, rules, hosts, private model gateway hosts and notices
 hostpi/derive-auth.ts          auth.json entries and provider keys
-hostpi/derive-models.ts        models.json providers and models
+hostpi/derive-models.ts        models.json providers and models, and their baseUrl endpoints
 hostpi/derive-mcp.ts           mcp.json servers
 hostpi/derive-tools.ts         the host tool derivers together
 hostpi/headers.ts              header values to placeholders and secret sources, credential-shaped values
 hostpi/rules.ts                placeholders and rules per identity
 hostpi/endpoints.ts            rule endpoints and URL credential checks
-hostpi/provider-endpoints.ts   a provider's hosts
+hostpi/provider-endpoints.ts   a provider's hosts, and the ones its baseUrls name
 hostpi/provider-hosts.ts       the provider host table with its cache
 hostpi/provider-hosts.mjs      run against the host pi: the built-in provider hosts
 hostpi/locate.ts               finds pi's managed install in the host agent dir
@@ -215,14 +215,14 @@ proxy/start.ts                 start, reuse and stop of a repository's proxy
 proxy/idle.ts                  the idle exit
 proxy/files.ts                 proxy input, live egress settings and record types
 proxy/client.ts                the launcher's client to a proxy
-proxy/server.ts                the proxy server, CONNECT dispatch and the resolved-address check
+proxy/server.ts                the proxy server, CONNECT dispatch, the dial access of a host and the resolved-address check
 proxy/routes.ts                /healthz and /denials
 proxy/auth.ts                  the repository token and the guest proxy URL
-proxy/policy.ts                CONNECT decisions and restricted addresses
+proxy/policy.ts                CONNECT decisions, restricted addresses and private network ranges
 proxy/runtime.ts               rules, the live egress.json settings and live grants
 proxy/tunnel.ts                end-to-end tunnels with the SNI check
 proxy/sni.ts                   ClientHello completeness and server name parsing
-proxy/dial.ts                  the resolving dialer with the private-address filter
+proxy/dial.ts                  the resolving dialer with the private-address filter and the private-network access
 proxy/intercept.ts             TLS termination for rule hosts
 proxy/terminate.ts             credential injection on terminated streams
 proxy/rules.ts                 rule matching, header rewrite and response scrub
@@ -365,7 +365,8 @@ tests/proxy/tls-ca.test.ts           the CA and leaves
 tests/proxy/trust.test.ts            the trust bundle
 tests/proxy/sni.test.ts              ClientHello parsing
 tests/proxy/hello.test.ts            ClientHello reading and dial timeout
-tests/proxy/dial.test.ts             the dialer's restricted-address rules
+tests/proxy/dial.test.ts             the dialer's restricted-address rules and private-network access
+tests/proxy/private-network.test.ts  derived private hosts at the proxy: a private network address passes, loopback and metadata do not
 tests/proxy/keep-alive.test.ts       upstream connection reuse
 tests/proxy/request-target.test.ts   request target checks
 tests/proxy/child-env.test.ts        the minimal environment

@@ -436,6 +436,25 @@ describe("deriveSandboxPi rules and hosts", () => {
     expect(disabled.rules).toEqual([manual]);
   });
 
+  it("lists only the models.json baseUrl hosts of kept rules as private hosts", () => {
+    const all = deriveSandboxPi(input());
+    const limited = deriveSandboxPi(input({ derive: { enabled: true, hosts: ["model-a.custom.example"] } }));
+    const overridden = deriveSandboxPi(input({ manual: [{ ...manual, host: "llm.custom.example" }] }));
+
+    expect(all.privateHosts.slice().sort()).toEqual(["llm.custom.example", "model-a.custom.example"]);
+    expect(all.hosts).toEqual(expect.arrayContaining(["api.keyed.example", "mcp.docs.example"]));
+    expect(limited.privateHosts).toEqual(["model-a.custom.example"]);
+    expect(overridden.privateHosts).toEqual(["model-a.custom.example"]);
+    expect(deriveSandboxPi(input({ derive: { enabled: false } })).privateHosts).toEqual([]);
+  });
+
+  it("gives an mcp.json url host no private access even when it carries a credential rule", () => {
+    const result = deriveSandboxPi(input({ files: { agentDir: AGENT_DIR, mcp: hostMcp() } }));
+
+    expect(result.hosts).toContain("mcp.literal.example");
+    expect(result.privateHosts).toEqual([]);
+  });
+
   it("passes read notices through", () => {
     const result = deriveSandboxPi(
       input({ files: { agentDir: AGENT_DIR, notices: ["auth.json: invalid JSON, ignored"] } }),

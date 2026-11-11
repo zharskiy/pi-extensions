@@ -31,3 +31,47 @@ describe("a name that resolves only to restricted addresses", () => {
     );
   });
 });
+
+describe("a name allowed to resolve to private network addresses", () => {
+  const check = async (address: string) => {
+    const { checkAddresses } = createDialer({
+      resolve: async () => [{ address, family: address.includes(":") ? 6 : 4 }],
+    });
+
+    return checkAddresses("gateway.corp.test", "private-network").then(
+      () => "allowed",
+      (error: unknown) => (error instanceof RestrictedAddressError ? error.message : "failed"),
+    );
+  };
+
+  it.each(["10.1.2.3", "172.16.0.1", "192.168.1.1", "100.64.0.1", "fd00::1", "93.184.216.34"])(
+    "reaches %s",
+    async (address) => {
+      expect(await check(address)).toBe("allowed");
+    },
+  );
+
+  it.each([
+    ["127.0.0.1", "loopback address"],
+    ["169.254.169.254", "cloud metadata address"],
+    ["169.254.1.1", "link-local address"],
+    ["198.18.0.1", "reserved or special-purpose address"],
+    ["fec0::1", "private network address"],
+    ["::1", "loopback address"],
+  ])("still refuses %s", async (address, range) => {
+    expect(await check(address)).toBe(
+      `gateway.corp.test resolves only to restricted addresses (${address} is a ${range})`,
+    );
+  });
+
+  it("accepts a name whose answers mix a restricted and a private network address", async () => {
+    const { checkAddresses } = createDialer({
+      resolve: async () => [
+        { address: "127.0.0.1", family: 4 },
+        { address: "10.1.2.3", family: 4 },
+      ],
+    });
+
+    await expect(checkAddresses("gateway.corp.test", "private-network")).resolves.toBeUndefined();
+  });
+});

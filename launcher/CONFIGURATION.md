@@ -28,7 +28,7 @@ The message also shows the value for `fallback`, `egress.presets`, `image.docker
 Each launch gets a new container, so most changes apply at the next `pi`. Each folder also has one proxy on your Mac, shared by every pi session there. Some settings live in that proxy.
 
 - **Grants** from `pi sandbox egress allow` and `revoke` apply at once, also to running sessions.
-- **Network settings** reach running sessions when you start a new `pi` in that folder. These are `egress.allow`, `egress.deny`, `egress.presets`, `egress.privateHosts` and `egress.grants`. Editing the file alone changes nothing for them.
+- **Network settings** reach running sessions when you start a new `pi` in that folder. These are `egress.allow`, `egress.deny`, `egress.presets`, `egress.privateHosts` and `egress.grants`, and the derived hosts, private model gateways included. Editing the file alone changes nothing for them.
 - **Credential rules, `env` secrets, the parent proxy and `tls.extraCa`** wait until every pi of the folder has exited. An `env` secret is a credential rule whose secret comes from a variable of your shell.
 
 When other sessions run, a new launch says which case applies:
@@ -112,6 +112,8 @@ An `egress.deny` entry reaches further:
 - An entry without a port denies every port.
 
 The proxy refuses a name that resolves only to private, loopback, link-local or reserved addresses. If an internal host needs that, list it in `egress.privateHosts`. Entries are names or `*.domain`, without a port.
+
+A model gateway needs no entry when your host `models.json` names it in a `baseUrl` (a provider's or a model's) and that provider has a derived credential rule. Such a host and port may resolve to a private network address: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10 or fc00::/7. Loopback, link-local (the cloud metadata address 169.254.169.254 included), 198.18.0.0/15 and the other reserved ranges stay refused for it; list the name in `egress.privateHosts` if it really needs one of those. This covers only `models.json` in pi's agent folder on your Mac, never a file in the project, and never an MCP server's `url` from `mcp.json`. `credentials.derive.enabled: false`, a `credentials.derive.hosts` list that leaves the host out, or a rule of your own for the host turn it off for that host, and a policy that locks egress (`egress.grants: false`) turns it off entirely.
 
 ### Grants
 
@@ -379,7 +381,7 @@ pi-sandbox: warning: config keys ignored: user egress.allow (egress is locked: t
 ### Common settings
 
 - `egress.grants: false` locks egress. `pi sandbox egress allow` is refused, and the user's `egress.allow` and `egress.privateHosts` are ignored. The user's `egress.presets` still apply unless the policy sets them.
-- Even with egress locked, the hosts of `credentials.rules` from either file stay reachable, and so do derived credential hosts.
+- Even with egress locked, the hosts of `credentials.rules` from either file stay reachable, and so do derived credential hosts. A model gateway from the user's host `models.json` no longer gets private network addresses automatically, though: list it in the policy's `egress.privateHosts`.
 - `credentials.derive.enabled` or `credentials.derive.hosts` limits the derived hosts.
 - `fallback: "refuse"` turns `pi --no-sandbox` off.
 - `workspaceRoots`, as `{ "roots": ["/Users/you/work"] }`, refuses a launch outside those folders.

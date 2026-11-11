@@ -12,13 +12,15 @@ export const httpsEndpoint = (url: unknown): Endpoint[] => {
 const modelBaseUrls = (provider: JsonObject) =>
   (Array.isArray(provider.models) ? provider.models : []).filter(isJsonObject).map((model) => model.baseUrl);
 
+export const configuredEndpoints = (provider: JsonObject) =>
+  [provider.baseUrl, ...modelBaseUrls(provider)].flatMap(httpsEndpoint);
+
 export const providerEndpoints = (id: string, modelsProviders: JsonObject, providerHosts: ProviderHosts) => {
   const provider = objectOr(modelsProviders[id]);
   const builtin =
     provider.baseUrl === undefined ? (providerHosts[id]?.hosts ?? []).map((host) => ({ host })) : [];
-  const configured = [provider.baseUrl, ...modelBaseUrls(provider)].flatMap(httpsEndpoint);
 
-  return uniqueEndpoints([...configured, ...builtin]);
+  return uniqueEndpoints([...configuredEndpoints(provider), ...builtin]);
 };
 
 export const noHostNotice = (label: string) =>

@@ -98,13 +98,14 @@ export interface TestPolicy {
 
 export const settingsOf = (
   policy: TestPolicy,
-  extra: { privateHosts?: string[]; derivedHosts?: string[] } = {},
+  extra: { privateHosts?: string[]; derivedHosts?: string[]; derivedPrivateHosts?: string[] } = {},
 ): EgressSettings => ({
   allow: policy.allow,
   deny: policy.deny ?? [],
   privateHosts: extra.privateHosts ?? [],
   grants: policy.grants !== false,
   derivedHosts: extra.derivedHosts ?? [],
+  derivedPrivateHosts: extra.derivedPrivateHosts ?? [],
 });
 
 export interface TestProxyOptions {
@@ -117,6 +118,7 @@ export interface TestProxyOptions {
   repoHash?: string;
   resolver?: SecretResolver;
   privateHosts?: string[];
+  derivedPrivateHosts?: string[];
   ports?: () => Record<string, number>;
   dial?: Dialer;
 }

@@ -41,6 +41,7 @@ const proxyInput = (deps: CliDeps, context: LaunchContext, host: HostSide): Inpu
     grants: egress.grants,
     rules: host.derived.rules,
     derivedHosts: host.derived.hosts,
+    derivedPrivateHosts: isEgressLocked(context.effective) ? [] : host.derived.privateHosts,
     envSecrets: envSecretsFor(host.derived.rules, deps.env),
     parent: egress.parentProxy,
     parentEnv: parentProxyEnv(deps.env),
