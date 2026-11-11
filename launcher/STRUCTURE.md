@@ -39,7 +39,7 @@ cli/terminal.ts                the host terminal: streams, size read at use, res
 cli/launches.ts                begin and finish a launch (removing its container), the last-session removal, the live launch count
 cli/sweep.ts                   removeRepoSandbox, the sweep of ended launches' containers, the orphan sweep and the daily collection
 cli/derive.ts                  the host side of a launch: host pi files, derivation, trust bundle, notices
-cli/sandbox-proxy.ts           the repository's proxy input and token, and the denial summary at exit with a hint per kind
+cli/sandbox-proxy.ts           the repository's proxy input and token, and the denial summary at exit with a hint per kind (also the doctor's rule hints)
 cli/mcp-sign-in.ts             the launch-start MCP sign-in on the host
 cli/host-sessions.ts           host sessions for a launch: choice, preparation, sweeps, share probe
 cli/intercept.ts               pi install, uninstall, remove, mcp and update run on the host
@@ -53,7 +53,7 @@ cli/commands/reset.ts          pi sandbox reset: the folder's sandbox and volume
 cli/commands/stop.ts           pi sandbox stop
 cli/commands/uninstall.ts      the hidden __uninstall command uninstall.sh runs: live-session refusal, engine objects by label, host-side release
 cli/commands/doctor.ts         pi sandbox doctor: stages, probes, host checks
-cli/commands/doctor-probes.ts  the doctor's checks inside the container
+cli/commands/doctor-probes.ts  the doctor's checks inside the container; a rule whose credential was denied warns
 cli/commands/doctor-host.ts    the doctor's checks on the host
 cli/commands/help.ts           usage
 cli/commands/options.ts        the option check of the sandbox commands and egress
@@ -70,7 +70,7 @@ config/merge.ts                the layer merge: union and final keys, the egress
 config/validate.ts             the key spec of every layer
 config/dotted.ts               dotted key access
 config/egress-entry.ts         the host entry grammar, entry parsing and host matching
-config/egress-presets.ts       the egress preset hosts and the expanded allow list
+config/egress-presets.ts       the egress preset hosts, pi.dev, and the expanded allow list
 config/parent-proxy.ts         the parent proxy read from HTTPS_PROXY and NO_PROXY
 ```
 
@@ -224,7 +224,7 @@ proxy/intercept.ts             TLS termination for rule hosts
 proxy/terminate.ts             credential injection on terminated streams
 proxy/rules.ts                 rule matching, header rewrite and response scrub
 proxy/request-target.ts        authority parsing, request target and path checks on terminated hosts
-proxy/denials.ts               denial records and replies
+proxy/denials.ts               denial records (with the credential rule id) and replies
 proxy/denial-page.ts           the 403 page over TLS
 proxy/replies.ts               every raw HTTP reply and the JSON replies
 proxy/parent.ts                the parent proxy route
@@ -239,9 +239,9 @@ proxy/secrets/cache.ts         the secret cache
 proxy/secrets/env.ts           env secrets from the proxy input
 proxy/secrets/file.ts          file secrets
 proxy/secrets/command.ts       command secrets
-proxy/secrets/pi-auth.ts       host pi auth secrets
+proxy/secrets/pi-auth.ts       host pi auth secrets; a failed command is a missing or expired login
 proxy/secrets/mcp-oauth.ts     MCP OAuth tokens from host pi and the sign-in replies
-proxy/secrets/errors.ts        unavailable secrets and local replies
+proxy/secrets/errors.ts        unavailable secrets, missing logins and local replies
 ```
 
 ## shared/
