@@ -125,6 +125,16 @@ describe("install.sh and pi's managed install", { timeout: INSTALL_TIMEOUT_MS },
     expect(await readFile(record, "utf8")).toBe("kept\n");
   });
 
+  it("finds the managed pi of an agent dir given with ~ as pi does", async () => {
+    const { root, home } = await installRoot();
+
+    await writeManagedPi(join(home, "work", "agent"), "1.6.0");
+
+    await rm(join(home, ".pi"), { recursive: true, force: true });
+
+    expect(runInstall(root, [], { PI_CODING_AGENT_DIR: "~/work/agent" }).status).toBe(0);
+  });
+
   it("refuses a pi that is neither the launcher nor pi's managed install, and records nothing", async () => {
     const { root, home, record } = await installRoot();
     const shim = join(home, ".local", "bin", "pi");
@@ -466,9 +476,10 @@ describe("install.sh options and the PATH block", { timeout: INSTALL_TIMEOUT_MS 
       '{\n  "name": "pi-extensions-mz",\n  "version": "9.9.9"\n}\n',
     );
 
-    await writeFile(
-      join(packaged, "bin", "path-block.sh"),
-      await readFile(join(launcherRoot(), "bin", "path-block.sh"), "utf8"),
+    await Promise.all(
+      ["path-block.sh", "paths.sh"].map(async (name) =>
+        writeFile(join(packaged, "bin", name), await readFile(join(launcherRoot(), "bin", name), "utf8")),
+      ),
     );
 
     await writeFile(

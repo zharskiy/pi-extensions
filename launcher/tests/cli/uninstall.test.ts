@@ -296,9 +296,10 @@ describe("uninstall.sh", { timeout: UNINSTALL_TIMEOUT_MS }, () => {
 
     await writeFile(join(copy, "uninstall.sh"), await readFile(join(launcherRoot(), "uninstall.sh"), "utf8"));
 
-    await writeFile(
-      join(copy, "bin", "path-block.sh"),
-      await readFile(join(launcherRoot(), "bin", "path-block.sh"), "utf8"),
+    await Promise.all(
+      ["path-block.sh", "paths.sh"].map(async (name) =>
+        writeFile(join(copy, "bin", name), await readFile(join(launcherRoot(), "bin", name), "utf8")),
+      ),
     );
 
     await mkdir(paths.stateDir, { recursive: true });
@@ -335,6 +336,25 @@ describe("uninstall.sh", { timeout: UNINSTALL_TIMEOUT_MS }, () => {
     expect(result.stdout).toContain(`state: removed the old ${legacy}\n`);
     expect(result.stdout).toContain(
       `kept: your repositories, ~/.pi and your launcher config ${join(folder, "config.json")}\n`,
+    );
+  });
+
+  it("expands ~ in PI_CODING_AGENT_DIR as pi does", async () => {
+    const paths = await uninstallRoot();
+    const folder = join(paths.home, "work", "agent", "pi-sandbox");
+
+    await mkdir(join(folder, "state"), { recursive: true });
+
+    const result = await runUninstall(paths, {
+      PI_SANDBOX_STATE_DIR: "",
+      PI_CODING_AGENT_DIR: "~/work/agent",
+    });
+
+    expect(result.status).toBe(0);
+    expect(await exists(folder)).toBe(false);
+    expect(result.stdout).toContain(`state: removed ${join(folder, "state")}\n`);
+    expect(result.stdout).toContain(
+      `kept: your pi sessions stay in ${join(paths.home, "work", "agent", "sessions")}\n`,
     );
   });
 

@@ -11,10 +11,6 @@ min_node=22.19.0
 min_macos=13
 wrapper_marker="launcher/bin/pi-sandbox"
 bin_dir="$HOME/.local/bin"
-agent_dir="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
-state_dir="${PI_SANDBOX_STATE_DIR:-$agent_dir/pi-sandbox/state}"
-replaced_link="$state_dir/replaced-pi-link"
-legacy_replaced_link="$HOME/.local/state/pi-sandbox/replaced-pi-link"
 managed_kind='"kind"[[:space:]]*:[[:space:]]*"pi-managed-install"'
 managed_schema='"schemaVersion"[[:space:]]*:[[:space:]]*1([^0-9.]|$)'
 managed_layout='"layout"[[:space:]]*:[[:space:]]*"releases-v1"'
@@ -121,6 +117,9 @@ script_dir=$(cd "$(dirname "$0")" && pwd)
 checkout=$(dirname "$script_dir")
 
 . "$script_dir/bin/path-block.sh"
+. "$script_dir/bin/paths.sh"
+replaced_link="$state_dir/replaced-pi-link"
+legacy_replaced_link="$legacy_state_dir/replaced-pi-link"
 
 from_checkout=0
 if [ -f "$checkout/package.json" ] && [ -e "$checkout/.git" ] && grep -q "\"name\": \"$package_name\"" "$checkout/package.json"; then

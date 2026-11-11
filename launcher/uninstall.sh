@@ -11,10 +11,7 @@ sessions_live_exit=75
 script_dir=$(cd "$(dirname "$0")" && pwd)
 
 . "$script_dir/bin/path-block.sh"
-agent_dir="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
-state_dir="${PI_SANDBOX_STATE_DIR:-$agent_dir/pi-sandbox/state}"
-legacy_state_dir="$HOME/.local/state/pi-sandbox"
-user_config="${PI_SANDBOX_USER_CONFIG:-$agent_dir/pi-sandbox/config.json}"
+. "$script_dir/bin/paths.sh"
 bin_dir="$HOME/.local/bin"
 fish_file="$HOME/.config/fish/conf.d/pi-sandbox.fish"
 
