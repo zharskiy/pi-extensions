@@ -12,6 +12,18 @@ truststore="$bundle_dir/truststore.p12"
 
 mkdir -p "$agent_dir" "$bundle_dir"
 
+copy_read_only() {
+  rm -rf "$2.tmp"
+  cp "$1" "$2.tmp"
+  chmod 0444 "$2.tmp"
+
+  if [ -d "$2" ]; then
+    rm -rf "$2"
+  fi
+
+  mv -f "$2.tmp" "$2"
+}
+
 find "$agent_dir" -mindepth 1 -maxdepth 1 -type l -lname "$render_dir/*" ! -exec test -e {} \; -exec rm -f {} \;
 
 for entry in "$render_dir"/* "$render_dir"/.[!.]* "$render_dir"/..?*; do
@@ -20,6 +32,11 @@ for entry in "$render_dir"/* "$render_dir"/.[!.]* "$render_dir"/..?*; do
   fi
 
   link="$agent_dir/$(basename "$entry")"
+
+  if [ "$(basename "$entry")" = auth.json ]; then
+    copy_read_only "$entry" "$link"
+    continue
+  fi
 
   rm -rf "$link"
   ln -s "$entry" "$link"
