@@ -1,5 +1,5 @@
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { createRequire } from "node:module";
+import { createRequire, findPackageJSON } from "node:module";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { stripVTControlCharacters } from "node:util";
@@ -804,7 +804,10 @@ describe("pi adapter conformance", () => {
     };
 
     it("fills a new session through the adapter: editor text, the seed's run, then an expanded template follow-up with its image", async () => {
-      const image = { data: "aW1n", mimeType: "image/png" };
+      const image = {
+        data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+        mimeType: "image/png",
+      };
       const { edited, messages } = await fillNewSession(
         () => ({
           seed: { customType: "seed", text: "handoff" },
@@ -1378,18 +1381,20 @@ describe("pi adapter conformance", () => {
   });
 
   describe("MCP tool names", () => {
-    const piModule = (path: string) =>
-      import(new URL(path, import.meta.resolve("@earendil-works/pi-coding-agent")).href);
+    const piEntry = import.meta.resolve("@earendil-works/pi-coding-agent");
+    const piModule = (path: string) => import(new URL(path, piEntry).href);
+    const piDependency = (name: string, path: string) =>
+      import(new URL(path, pathToFileURL(findPackageJSON(name, piEntry) ?? "")).href);
 
     it("match pi's own names for codemode, tool search, server tools and resource tools", async () => {
       const servers = await piModule("core/mcp-servers.js");
       const codemode = await piModule("extensions/codemode/tool.js");
       const search = await piModule("extensions/tool-search/tool.js");
-      const mcpTools = await piModule("extensions/mcp/tools.js");
+      const mcp = await piDependency("@earendil-works/pi-mcp", "dist/index.js");
       const added = childToolNames({ tools: ["read"], customNames: [] }, noMainTools).filter(
         (name) => name !== "read",
       );
-      const serverTool = mcpTools.createMcpToolName("fixture", "code");
+      const serverTool = mcp.createMcpToolName("fixture", "code");
 
       expect(added.filter((name) => !name.includes("*")).toSorted()).toEqual(
         [
