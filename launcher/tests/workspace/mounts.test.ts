@@ -1,4 +1,4 @@
-import { mkdir, realpath, writeFile } from "node:fs/promises";
+import { mkdir, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { protectedRealPathGuard } from "../../workspace/mounts.ts";
@@ -37,10 +37,6 @@ describe("protectedRealPathGuard", () => {
     const state = join(base, "state");
     const config = join(base, "config", "sandbox.json");
 
-    await mkdir(join(home, ".config", "pi-sandbox"), { recursive: true });
-
-    await writeFile(join(home, ".config", "pi-sandbox", "config.json"), "{}");
-
     expect(reasonOf(join(home, ".pi"))).toBe("it is pi's directory");
     expect(reasonOf(join(home, ".pi", "agent"))).toBe("it is inside pi's directory");
     expect(reasonOf(join(agent, "skills"), { PI_CODING_AGENT_DIR: agent })).toBe(
@@ -58,7 +54,15 @@ describe("protectedRealPathGuard", () => {
     expect(reasonOf(join(base, "config"), { PI_SANDBOX_USER_CONFIG: config })).toBe(
       "it contains the launcher user config",
     );
-    expect(reasonOf(join(home, ".config"))).toBeUndefined();
+  });
+
+  it("names ~/.config and the old launcher config folder, and accepts its other subfolders", async () => {
+    const { home, reasonOf } = await setup();
+
+    expect(reasonOf(join(home, ".config"))).toBe("it is ~/.config");
+    expect(reasonOf(join(home, ".config", "pi-sandbox"))).toBe("it is ~/.config/pi-sandbox");
+    expect(reasonOf(join(home, ".config", "pi-sandbox", "repo"))).toBe("it is inside ~/.config/pi-sandbox");
+    expect(reasonOf(join(home, ".config", "nvim"))).toBeUndefined();
   });
 
   it("names credential and engine dirs in the home, and what lies inside them", async () => {

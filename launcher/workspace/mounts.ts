@@ -41,6 +41,8 @@ export const protectedPaths = (context: ProtectedContext): Protected[] => {
     { path: hostAgentDir(context.home, context.env), reason: "pi's agent directory", under: true },
     { path: paths.stateDir, reason: "the launcher state directory", under: true },
     userConfigOf(context, paths.userConfigFile),
+    { path: join(context.home, ".config"), reason: "~/.config", under: false },
+    { path: join(context.home, ".config", "pi-sandbox"), reason: "~/.config/pi-sandbox", under: true },
     ...PROTECTED_HOME.map((name) => ({ path: join(context.home, name), reason: `~/${name}`, under: true })),
     ...SYSTEM_DIRS.map((path) => ({ path, reason: path, under: true })),
     ...IMAGE_DIRS.map((path) => ({ path, reason: `${path}, which the sandbox image uses`, under: false })),
