@@ -37,12 +37,13 @@ describe("loadEffectiveConfig", () => {
     expect(sources["resources.cpus"]).toBeUndefined();
   });
 
-  it("allows the npm, pypi and github registry hosts by default through egress.presets", async () => {
+  it("allows pi.dev and the npm, pypi and github registry hosts by default", async () => {
     const { config, sources } = await loadWith({});
 
     expect(config.egress.allow).toEqual([]);
     expect(sources["egress.presets"]).toBe("default");
     expect(egressAllowList(config.egress)).toEqual([
+      "pi.dev",
       "registry.npmjs.org",
       "registry.yarnpkg.com",
       "repo.yarnpkg.com",
@@ -62,6 +63,7 @@ describe("loadEffectiveConfig", () => {
     });
 
     expect(egressAllowList(config.egress)).toEqual([
+      "pi.dev",
       "repo.maven.apache.org",
       "repo1.maven.org",
       "proxy.golang.org",
@@ -74,6 +76,7 @@ describe("loadEffectiveConfig", () => {
     const { config } = await loadWith({ user: { egress: { presets: ["gradle"] } } });
 
     expect(egressAllowList(config.egress)).toEqual([
+      "pi.dev",
       "plugins.gradle.org",
       "plugins-artifacts.gradle.org",
       "services.gradle.org",
@@ -81,16 +84,16 @@ describe("loadEffectiveConfig", () => {
     ]);
   });
 
-  it("lets the policy turn the presets off for good", async () => {
+  it("lets the policy turn the presets off for good, keeping pi.dev", async () => {
     const { config } = await loadWith({ policy: { egress: { presets: [] } } });
 
-    expect(egressAllowList(config.egress)).toEqual([]);
+    expect(egressAllowList(config.egress)).toEqual(["pi.dev"]);
     const kept = await loadWith({
       policy: { egress: { presets: [] } },
       user: { egress: { presets: ["npm"] } },
     });
 
-    expect(egressAllowList(kept.config.egress)).toEqual([]);
+    expect(egressAllowList(kept.config.egress)).toEqual(["pi.dev"]);
     expect(kept.ignored).toEqual([
       { layer: "user", key: "egress.presets", reason: "final in the policy config" },
     ]);

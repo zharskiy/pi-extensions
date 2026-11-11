@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { egressAllowList } from "../../config/index.ts";
 import {
   type ConnectRequest,
   compilePolicy,
@@ -185,6 +186,24 @@ describe("decideConnect with deny, rule hosts and extra entries", () => {
       rule: "egress.deny",
     });
     expect(decideConnect({ host: "example.com", port: 443 }, egress, ["example.com"]).allowed).toBe(true);
+  });
+
+  it("allows pi.dev on 443 by default, not its subdomains or other ports, unless egress.deny names it", () => {
+    const allow = egressAllowList({
+      allow: [],
+      presets: [],
+      deny: [],
+      privateHosts: [],
+      parentProxy: "env",
+      grants: true,
+    });
+    const decide = (host: string, port: number, deny: string[] = []) =>
+      decideConnect({ host, port }, { allow, deny });
+
+    expect(decide("pi.dev", 443)).toMatchObject({ allowed: true, rule: "egress.allow" });
+    expect(decide("www.pi.dev", 443).allowed).toBe(false);
+    expect(decide("pi.dev", 8443).allowed).toBe(false);
+    expect(decide("pi.dev", 443, ["pi.dev"])).toMatchObject({ allowed: false, rule: "egress.deny" });
   });
 
   it("carries the allow hint in the denial reason", () => {

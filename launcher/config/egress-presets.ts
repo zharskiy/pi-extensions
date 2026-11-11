@@ -21,6 +21,8 @@ export const EGRESS_PRESETS: Record<EgressPreset, readonly string[]> = {
   cargo: ["crates.io", "index.crates.io", "static.crates.io"],
 };
 
+const PI_HOSTS: readonly string[] = ["pi.dev"];
+
 export const egressAllowList = (egress: SandboxConfig["egress"]) => [
-  ...new Set([...egress.presets.flatMap((preset) => EGRESS_PRESETS[preset]), ...egress.allow]),
+  ...new Set([...PI_HOSTS, ...egress.presets.flatMap((preset) => EGRESS_PRESETS[preset]), ...egress.allow]),
 ];
