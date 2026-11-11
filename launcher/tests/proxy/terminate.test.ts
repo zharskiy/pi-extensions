@@ -22,6 +22,7 @@ import {
 import {
   openConnect,
   pageThrough,
+  plainGet,
   readBody,
   readRest,
   requestThrough,
@@ -33,6 +34,10 @@ const PLACEHOLDER = "pi-sandbox-0123456789abcdef01234567";
 const API_PLACEHOLDER = "pi-sandbox-89abcdef0123456789abcdef";
 
 const MISSING_PLACEHOLDER = "pi-sandbox-fedcba9876543210fedcba98";
+
+const EXPIRED_PLACEHOLDER = "pi-sandbox-0f1e2d3c4b5a69788796a5b4";
+
+const EXPIRED_LOGIN = "the provider-x login on the host is missing or expired";
 
 const SECRET = "real-llm-secret";
 
@@ -62,6 +67,13 @@ const RULES: CredentialRule[] = [
     pathPrefix: "/mcp",
     placeholder: MISSING_PLACEHOLDER,
     secret: { env: "NONE" },
+  },
+  {
+    id: "expired",
+    host: "api.test",
+    pathPrefix: "/expired",
+    placeholder: EXPIRED_PLACEHOLDER,
+    secret: { piAuth: "provider-x", bearer: true },
   },
   {
     id: "git",
@@ -108,14 +120,17 @@ const state: {
   releaseStream: [],
   expiredSockets: [],
   seen: [],
-  resolver: fakeResolver({
-    llm: SECRET,
-    api: API_SECRET,
-    git: GIT_SECRET,
-    "derived:gh": GH_SECRET,
-    broken: "value",
-    newline: "trailing\n",
-  }),
+  resolver: fakeResolver(
+    {
+      llm: SECRET,
+      api: API_SECRET,
+      git: GIT_SECRET,
+      "derived:gh": GH_SECRET,
+      broken: "value",
+      newline: "trailing\n",
+    },
+    { expired: { ok: false, reason: EXPIRED_LOGIN, login: true } },
+  ),
 };
 
 const respond = (
@@ -420,6 +435,22 @@ describe("credential rules", () => {
         reason: "credential missing is unavailable: no secret for missing",
         repo: REPO,
       }),
+    );
+  });
+
+  it("records a missing host login as a login denial naming the credential rule", async () => {
+    const since = Date.now();
+    const body = await echoed("api.test", "/expired/v1", { authorization: `Bearer ${EXPIRED_PLACEHOLDER}` });
+
+    expect(body.headers.authorization).toBeUndefined();
+    expect(state.test.log).toContainEqual(
+      expect.objectContaining({ host: "api.test", decision: "deny", rule: "login", reason: EXPIRED_LOGIN }),
+    );
+
+    const reply = await plainGet(state.test.proxy.port, `/denials?since=${since}`, "127.0.0.1", state.token);
+
+    expect(JSON.parse(reply.body).denials).toContainEqual(
+      expect.objectContaining({ host: "api.test", port: 443, rule: "login", credentialRule: "expired" }),
     );
   });
 

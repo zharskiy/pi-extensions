@@ -45,7 +45,7 @@ export const closeServer = (server: Server | undefined) =>
     server.close(() => resolve());
   });
 
-export const fakeResolver = (values: Record<string, string>) => {
+export const fakeResolver = (values: Record<string, string>, failures: Record<string, SecretResult> = {}) => {
   const invalidated: string[] = [];
   const asked: string[] = [];
 
@@ -55,7 +55,11 @@ export const fakeResolver = (values: Record<string, string>) => {
 
       const value = values[key];
 
-      return value === undefined ? { ok: false, reason: `no secret for ${key}` } : { ok: true, value };
+      if (value !== undefined) {
+        return { ok: true, value };
+      }
+
+      return failures[key] ?? { ok: false, reason: `no secret for ${key}` };
     },
     invalidate: (key) => {
       invalidated.push(key);

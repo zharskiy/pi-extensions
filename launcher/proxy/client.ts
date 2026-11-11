@@ -9,6 +9,7 @@ export interface DenialRecord {
   repoHash: string;
   rule: string;
   reason: string;
+  credentialRule?: string;
 }
 
 interface Health {

@@ -12,6 +12,7 @@ export type RecordAccess = (entry: Omit<AccessLogEntry, "time" | "user" | "repo"
 export interface DenialContext {
   port?: number;
   sni?: string;
+  credentialRule?: string;
 }
 
 const MAX_DENIALS = 200;
@@ -59,6 +60,7 @@ export const createDenials = (
       repoHash,
       rule: denial.rule,
       reason: denial.reason,
+      ...(context.credentialRule === undefined ? {} : { credentialRule: context.credentialRule }),
     };
 
     state.remembered = [...state.remembered, entry].slice(-MAX_DENIALS);

@@ -6,6 +6,7 @@ import { type ExecIo, type ExecSpec, LABELS, type Vm } from "../../backend/index
 import { run } from "../../cli/index.ts";
 import { testedPiVersion } from "../../cli/versions.ts";
 import { registerLaunch } from "../../grants/index.ts";
+import type { DenialRecord } from "../../proxy/index.ts";
 import { processMark, sha256Hex } from "../../shared/index.ts";
 import { createFakeBackend, createHarness, unreachable, writeManagedPi } from "./harness.ts";
 
@@ -111,11 +112,13 @@ const doctorWith = async (
   hostAuth?: unknown,
   vm?: Partial<Vm>,
   hostSettings?: unknown,
+  denials: DenialRecord[] = [],
 ) => {
   const port = await healthServer(healthStatus);
   const fake = await guestBackend(probes, vm);
   const harness = await createHarness({
     backend: () => fake.backend,
+    denials,
     proxy: {
       ensure: async () => ({ proxy: { pid: 77, port, boot: 0, start: "", inputHash: "h" }, notices: [] }),
     },
@@ -197,6 +200,33 @@ describe("pi sandbox doctor", () => {
       "fail rule derived:auth:example:key: https://models.example.test/ answered HTTP 502: upstream request failed: unable to get local issuer certificate; set tls.extraCa",
     );
     expect(code).toBe(1);
+  });
+
+  it("warns, without a stray notice, about a rule whose credential the proxy could not get", async () => {
+    const login: DenialRecord = {
+      time: 1_700_000_000_500,
+      host: "models.example.test",
+      port: 443,
+      repoHash: "repo",
+      rule: "login",
+      reason: "the example login on the host is missing or expired",
+      credentialRule: "derived:auth:example:key",
+    };
+    const { code, lines, harness } = await doctorWith(
+      { ruleAnswer: "404" },
+      200,
+      undefined,
+      { example: { type: "api_key", key: "real-secret-value-1234567890" } },
+      undefined,
+      undefined,
+      [login],
+    );
+
+    expect(lines).toContain(
+      "warn rule derived:auth:example:key: the example login on the host is missing or expired; log in again with pi --no-sandbox and /login",
+    );
+    expect(harness.stderr()).not.toContain("was blocked");
+    expect(code).toBe(0);
   });
 
   it("fails the trust check on a certificate error and the mcp check inside", async () => {

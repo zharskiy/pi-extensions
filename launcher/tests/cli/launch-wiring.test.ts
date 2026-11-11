@@ -333,6 +333,11 @@ describe("pi launch wiring", () => {
       "pi-sandbox: api.corp.test was blocked in this folder's sandbox; it could not authenticate: credential corp is unavailable: token expired\n",
     ],
     [
+      "a missing or expired host login",
+      denial("llm.corp.test", 443, "login", "the corp-llm login on the host is missing or expired"),
+      "pi-sandbox: llm.corp.test was blocked in this folder's sandbox; the corp-llm login on the host is missing or expired; log in again with pi --no-sandbox and /login\n",
+    ],
+    [
       "egress.deny",
       denial("paste.test", 443, "egress.deny", "paste.test is in egress.deny"),
       "pi-sandbox: paste.test was blocked in this folder's sandbox; denied by policy\n",
@@ -359,6 +364,23 @@ describe("pi launch wiring", () => {
 
     expect(harness.stderr()).toContain(line);
     expect(harness.stderr()).not.toContain("egress allow");
+  });
+
+  it("points at host pi instead of pi --no-sandbox for a missing login when fallback is refuse", async () => {
+    const harness = await createHarness({
+      backend: () => createFakeBackend().backend,
+      denials: [
+        denial("llm.corp.test", 443, "login", "the corp-llm login on the host is missing or expired"),
+      ],
+    });
+
+    await harness.writeJson(harness.policyFile, { fallback: "refuse" });
+
+    await run([], harness.deps);
+
+    expect(harness.stderr()).toContain(
+      "pi-sandbox: llm.corp.test was blocked in this folder's sandbox; the corp-llm login on the host is missing or expired; log in again with host pi\n",
+    );
   });
 
   it("says once that the host CA store was skipped when the launcher does not run on macOS", async () => {

@@ -302,9 +302,13 @@ const gatewayReason = (body: string | undefined) => {
   }
 };
 
-const ruleResult = (answer: RuleAnswer) => {
+const ruleResult = (answer: RuleAnswer, unresolved: string | undefined) => {
   if (answer.status === undefined) {
     return failed(`${urlOf(answer.rule)}: ${answer.error ?? "no answer"}`);
+  }
+
+  if (unresolved !== undefined) {
+    return warned(unresolved);
   }
 
   if (answer.status === BAD_GATEWAY) {
@@ -334,12 +338,20 @@ const trustResult = (answers: RuleAnswer[]) => {
     : passed(`the container trusts the proxy's certificate for ${verified.rule.host}`);
 };
 
-export const checkRules = async (target: ProbeTarget, rules: CredentialRule[]): Promise<NamedCheck[]> => {
+export const checkRules = async (
+  target: ProbeTarget,
+  rules: CredentialRule[],
+  unresolvedHints: () => Promise<ReadonlyMap<string, string>> = async () => new Map(),
+): Promise<NamedCheck[]> => {
   const answers = await Promise.all(rules.map((rule) => askRule(target, rule)));
+  const hints = await unresolvedHints();
 
   return [
     { name: "trust", result: trustResult(answers) },
-    ...answers.map((answer) => ({ name: `rule ${answer.rule.id}`, result: ruleResult(answer) })),
+    ...answers.map((answer) => ({
+      name: `rule ${answer.rule.id}`,
+      result: ruleResult(answer, hints.get(answer.rule.id)),
+    })),
   ];
 };
 

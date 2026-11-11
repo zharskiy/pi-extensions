@@ -219,6 +219,30 @@ describe("piAuth secrets", () => {
     ]);
   });
 
+  it("reports a failing host pi as a missing or expired login, without its output", async () => {
+    const { resolver } = setup(() => ({
+      code: 1,
+      stdout: "partial",
+      stderr: "Error: Failed to resolve credential",
+    }));
+    const result = await resolver.resolve("auth:a:access", { piAuth: "provider-a", bearer: true });
+
+    expect(result).toEqual({
+      ok: false,
+      reason: "the provider-a login on the host is missing or expired",
+      login: true,
+    });
+  });
+
+  it("keeps a host pi that could not be started a plain unavailable credential", async () => {
+    const { resolver } = setup(() => ({ timedOut: true, code: 1 }));
+
+    expect(await resolver.resolve("auth:a:key", { piAuth: "provider-a" })).toEqual({
+      ok: false,
+      reason: "piAuth secret for auth:a:key: /usr/bin/node timed out after 30 s",
+    });
+  });
+
   it("is unavailable without a pi command", async () => {
     const { resolver } = setup(undefined, { piCommand: [] });
 

@@ -1,6 +1,6 @@
 import type { CommandRunner } from "../../shared/index.ts";
 import type { CachedSecret } from "./cache.ts";
-import { unavailable } from "./errors.ts";
+import { type SecretUnavailable, unavailable } from "./errors.ts";
 
 const DEFAULT_TTL_SECONDS = 300;
 
@@ -49,6 +49,7 @@ export interface CommandSecretInput {
   now: () => number;
   env?: Record<string, string>;
   timeoutMs?: number;
+  exited?: () => SecretUnavailable;
 }
 
 export const commandSecret = async (input: CommandSecretInput): Promise<CachedSecret> => {
@@ -72,7 +73,10 @@ export const commandSecret = async (input: CommandSecretInput): Promise<CachedSe
   }
 
   if (result.code !== 0) {
-    throw unavailable(`${input.kind} secret for ${input.key}: ${file} exited with ${result.code}`);
+    throw (
+      input.exited?.() ??
+      unavailable(`${input.kind} secret for ${input.key}: ${file} exited with ${result.code}`)
+    );
   }
 
   const output = parseOutput(result.stdout);

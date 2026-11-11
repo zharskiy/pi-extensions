@@ -27,7 +27,7 @@ export interface SecretResolverDeps {
 
 export type SecretResult =
   | { ok: true; value: string; expiresAt?: number }
-  | { ok: false; reason: string; reply?: SecretReply };
+  | { ok: false; reason: string; reply?: SecretReply; login?: boolean };
 
 export interface SecretResolver {
   resolve(key: string, ref: SecretRef): Promise<SecretResult>;
@@ -48,9 +48,12 @@ const failure = (key: string, ref: SecretRef, error: unknown): SecretResult => {
     return { ok: false, reason: `${kindOf(ref)} secret for ${key} failed` };
   }
 
-  return error.reply === undefined
-    ? { ok: false, reason: error.message }
-    : { ok: false, reason: error.message, reply: error.reply };
+  return {
+    ok: false,
+    reason: error.message,
+    ...(error.reply === undefined ? {} : { reply: error.reply }),
+    ...(error.login ? { login: true } : {}),
+  };
 };
 
 export const createSecretResolver = (deps: SecretResolverDeps): SecretResolver => {

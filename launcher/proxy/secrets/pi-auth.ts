@@ -1,7 +1,7 @@
 import { type CommandRunner, PI_AGENT_DIR_VARIABLE } from "../../shared/index.ts";
 import type { CachedSecret } from "./cache.ts";
 import { commandSecret } from "./command.ts";
-import { unavailable } from "./errors.ts";
+import { loginMissing, unavailable } from "./errors.ts";
 
 const PI_AUTH_TTL_SECONDS = 240;
 
@@ -31,5 +31,6 @@ export const piAuthSecret = (
     runner: deps.runner,
     now: deps.now,
     env: { [PI_AGENT_DIR_VARIABLE]: deps.hostAgentDir },
+    exited: () => loginMissing(ref.piAuth),
   });
 };

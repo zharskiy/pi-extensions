@@ -58,6 +58,7 @@ interface SandboxOptions {
   report?: StageReport;
   signIn?: boolean;
   share?: boolean;
+  credentialDenials?: boolean;
 }
 
 type Staged = <T>(stage: Stage, action: () => Promise<T>, detail?: (value: T) => string) => Promise<T>;
@@ -373,7 +374,7 @@ export const withSandbox = async (
   context: LaunchContext,
   backend: Backend,
   use: (sandbox: Sandbox) => Promise<number>,
-  { report = () => undefined, signIn = true, share = true }: SandboxOptions = {},
+  { report = () => undefined, signIn = true, share = true, credentialDenials = true }: SandboxOptions = {},
 ) => {
   const staged = stagedWith(report);
   const files = await readHostPiFiles(hostAgentDirOf(deps));
@@ -413,7 +414,7 @@ export const withSandbox = async (
     signal.stop();
 
     await shielded(deps, async () => {
-      await reportDenials(deps, context, ended.proxy, launch.startedAt);
+      await reportDenials(deps, context, ended.proxy, launch.startedAt, credentialDenials);
 
       await finishLaunch(deps, context, backend, launch);
     });

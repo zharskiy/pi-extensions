@@ -98,7 +98,12 @@ const PRIVATE_KINDS: Record<string, string> = {
   "reserved-address": "reserved",
 };
 
-const denialHint = (denial: DenialRecord, target: string, context: LaunchContext) => {
+const loginHint = (context: LaunchContext) =>
+  context.effective.config.fallback === "host"
+    ? "log in again with pi --no-sandbox and /login"
+    : "log in again with host pi";
+
+export const denialHint = (denial: DenialRecord, target: string, context: LaunchContext) => {
   if (denial.rule === "egress.allow") {
     return context.effective.config.egress.grants
       ? `run pi sandbox egress allow ${target} on the host from ${context.workspace.repoRoot}`
@@ -116,6 +121,7 @@ const denialHint = (denial: DenialRecord, target: string, context: LaunchContext
     "plain-http": "plain HTTP is not proxied; use https",
     upstream: `it could not be reached: ${denial.reason}`,
     credential: `it could not authenticate: ${denial.reason}`,
+    login: `${denial.reason}; ${loginHint(context)}`,
   };
 
   return hints[denial.rule] ?? denial.reason;
@@ -132,12 +138,14 @@ export const reportDenials = async (
   context: LaunchContext,
   proxy: SandboxProxy | undefined,
   since: number,
+  credentials = true,
 ) => {
   if (proxy === undefined) {
     return;
   }
 
   const denials = await deps.proxy.denials(context.stateDir, context.repoHash, since).catch(() => []);
+  const reported = credentials ? denials : denials.filter((denial) => denial.credentialRule === undefined);
 
-  writeLines(deps.stderr, deniedTargets(denials).map(denialLine(context)));
+  writeLines(deps.stderr, deniedTargets(reported).map(denialLine(context)));
 };

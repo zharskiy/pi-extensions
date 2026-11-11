@@ -1,4 +1,5 @@
 import { type Backend, ENGINE_PROFILE, LABELS, recommendedVmSize, type VmSize } from "../../backend/index.ts";
+import { authorityOf } from "../../config/index.ts";
 import { readHostPiFiles } from "../../hostpi/index.ts";
 import { readHealth } from "../../proxy/index.ts";
 import { errorMessage } from "../../shared/index.ts";
@@ -6,7 +7,7 @@ import { type LaunchContext, openContext } from "../context.ts";
 import { type CliDeps, hostAgentDirOf, writeLine } from "../deps.ts";
 import { hostSessionsOf } from "../host-sessions.ts";
 import { type Sandbox, type Stage, type StageOutcome, withSandbox } from "../launch.ts";
-import type { SandboxProxy } from "../sandbox-proxy.ts";
+import { denialHint, type SandboxProxy } from "../sandbox-proxy.ts";
 import { vmShareCoverage } from "../vm.ts";
 import { hostChecks } from "./doctor-host.ts";
 import {
@@ -146,10 +147,29 @@ const inOrder =
       Promise.resolve([]),
     );
 
-const ruleChecks: Probe = ({ target, sandbox }) =>
-  checkRules(target, sandbox.host.derived.rules).catch((error: unknown) => [
-    { name: "trust", result: failed(errorMessage(error)) },
-  ]);
+const unresolvedHints =
+  ({ deps, context, sandbox }: ProbeInput) =>
+  async (): Promise<ReadonlyMap<string, string>> => {
+    const denials =
+      sandbox.proxy === undefined
+        ? []
+        : await deps.proxy
+            .denials(context.stateDir, context.repoHash, sandbox.launch.startedAt)
+            .catch(() => []);
+
+    return new Map(
+      denials.flatMap((denial) =>
+        denial.credentialRule === undefined
+          ? []
+          : [[denial.credentialRule, denialHint(denial, authorityOf(denial.host, denial.port), context)]],
+      ),
+    );
+  };
+
+const ruleChecks: Probe = (input) =>
+  checkRules(input.target, input.sandbox.host.derived.rules, unresolvedHints(input)).catch(
+    (error: unknown) => [{ name: "trust", result: failed(errorMessage(error)) }],
+  );
 
 const sessionsShareCheck = async (target: ProbeTarget) => {
   const containers = await target.backend.findContainers({ [LABELS.managed]: "true" });
@@ -197,6 +217,7 @@ const sandboxChecks = async (deps: CliDeps, context: LaunchContext, backend: Bac
     report,
     signIn: false,
     share: false,
+    credentialDenials: false,
   }).catch((error: unknown) => {
     if (failures.length === 0) {
       throw error;

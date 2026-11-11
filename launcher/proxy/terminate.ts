@@ -24,7 +24,7 @@ import {
   withoutOtherPlaceholders,
   withoutStrayPlaceholders,
 } from "./rules.ts";
-import type { SecretReply, SecretResolver } from "./secrets/index.ts";
+import type { SecretReply, SecretResolver, SecretResult } from "./secrets/index.ts";
 
 export interface TerminatedTarget {
   host: string;
@@ -190,6 +190,19 @@ const failure = (response: ServerResponse, error: unknown) => {
   response.end(body);
 };
 
+const credentialDenial = (rule: CredentialRule, result: SecretResult) => {
+  if (!result.ok) {
+    return result.login === true
+      ? { rule: "login", reason: result.reason }
+      : { rule: "credential", reason: `credential ${rule.id} is unavailable: ${result.reason}` };
+  }
+
+  return {
+    rule: "credential",
+    reason: `credential ${rule.id} is unavailable: the secret holds a line break`,
+  };
+};
+
 export const createTerminator = (options: TerminatorOptions) => {
   const targets = new WeakMap<object, TerminatedTarget>();
   const agents = new Map<string, Agent>();
@@ -227,14 +240,10 @@ export const createTerminator = (options: TerminatorOptions) => {
     }
 
     if (!result.ok || injected === undefined || HEADER_BREAK.test(injected)) {
-      options.note(
-        target.host,
-        {
-          rule: "credential",
-          reason: `credential ${rule.id} is unavailable: ${result.ok ? "the secret holds a line break" : result.reason}`,
-        },
-        { port: target.port },
-      );
+      options.note(target.host, credentialDenial(rule, result), {
+        port: target.port,
+        credentialRule: rule.id,
+      });
 
       return {
         ...state,
