@@ -144,6 +144,7 @@ A blocked request gets a 403 page that says what to do. When pi exits, the launc
 | --- | --- |
 | not on any allow list | `run pi sandbox egress allow <host> on the host from <folder>`, or with grants off `ask your administrator to add <host> to egress.allow` |
 | it resolves to a private, loopback, link-local or reserved address | the proxy's reason with the address, then `add <host> to egress.privateHosts in <your config file>`, or with egress locked by the policy `ask your administrator to add <host> to egress.privateHosts` |
+| it is an IP address or a loopback name (`localhost`) in such a range | the proxy's reason, then `IP addresses and loopback names are never reachable from the sandbox; use a host name`, since `egress.privateHosts` takes neither |
 | `egress.deny` names it | `denied by policy` |
 | plain HTTP | `plain HTTP is not proxied; use https` |
 | the host did not answer | `it could not be reached: <reason>` |

@@ -317,16 +317,6 @@ describe("pi launch wiring", () => {
       ),
       "nexus.corp.test resolves only to restricted addresses (10.1.2.3 is a private network address); add nexus.corp.test to egress.privateHosts in",
     ],
-    [
-      "a loopback address",
-      denial("dev.corp.test", 443, "loopback", "dev.corp.test is a loopback name"),
-      "it resolves to a loopback address; add dev.corp.test to egress.privateHosts in",
-    ],
-    [
-      "a reserved address",
-      denial("lab.corp.test", 443, "reserved-address", "reserved or special-purpose address"),
-      "it resolves to a reserved address; add lab.corp.test to egress.privateHosts in",
-    ],
   ])("names the user config to edit for %s when pi exits", async (_kind, record, hint) => {
     const harness = await createHarness({ backend: () => createFakeBackend().backend, denials: [record] });
 
@@ -335,6 +325,20 @@ describe("pi launch wiring", () => {
     expect(harness.stderr()).toContain(
       `pi-sandbox: ${record.host} was blocked in this folder's sandbox; ${hint} ${harness.userConfigFile}\n`,
     );
+  });
+
+  it.each([
+    ["an IP address", denial("10.1.2.3", 443, "private-address", "10.1.2.3 is a private network address")],
+    ["a loopback name", denial("localhost", 8443, "loopback", "localhost is a loopback name")],
+  ])("does not suggest egress.privateHosts for %s, which it rejects", async (_kind, record) => {
+    const harness = await createHarness({ backend: () => createFakeBackend().backend, denials: [record] });
+
+    await run([], harness.deps);
+
+    expect(harness.stderr()).toContain(
+      `; ${record.reason}; IP addresses and loopback names are never reachable from the sandbox; use a host name\n`,
+    );
+    expect(harness.stderr()).not.toContain("egress.privateHosts");
   });
 
   it("sends the user to the administrator for a private address when the policy locks egress", async () => {

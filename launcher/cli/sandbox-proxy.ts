@@ -4,6 +4,7 @@ import {
   egressAllowList,
   isEgressLocked,
   parentProxyOf,
+  parseHostEntry,
   TLS_PORT,
 } from "../config/index.ts";
 import { type Launch, othersLive, withRepoLaunchLock } from "../grants/index.ts";
@@ -98,22 +99,25 @@ export const deniedTargets = (denials: DenialRecord[]) => [
   ...new Map(denials.map((denial) => [authorityOf(denial.host, denial.port), denial])).values(),
 ];
 
-const PRIVATE_KINDS: Record<string, string> = {
-  "private-address": "private",
-  loopback: "loopback",
-  "link-local": "link-local",
-  "reserved-address": "reserved",
-};
+const RESTRICTED_RULES = new Set(["private-address", "loopback", "link-local", "reserved-address"]);
+
+const NEVER_REACHABLE =
+  "IP addresses and loopback names are never reachable from the sandbox; use a host name";
 
 const loginHint = (context: LaunchContext) =>
   context.effective.config.fallback === "host"
     ? "log in again with pi --no-sandbox and /login"
     : "log in again with host pi";
 
-const privateHostsHint = (deps: CliDeps, host: string, context: LaunchContext) =>
-  isEgressLocked(context.effective)
+const privateHostsHint = (deps: CliDeps, host: string, context: LaunchContext) => {
+  if ("problem" in parseHostEntry(host, { wildcard: false, port: false })) {
+    return NEVER_REACHABLE;
+  }
+
+  return isEgressLocked(context.effective)
     ? `egress is locked by the policy; ask your administrator to add ${host} to egress.privateHosts`
     : `add ${host} to egress.privateHosts in ${pathsOf(deps).userConfigFile}`;
+};
 
 export interface DenialAdvice {
   reason?: string;
@@ -134,14 +138,8 @@ export const denialAdvice = (
     };
   }
 
-  if (denial.rule === "private-address") {
+  if (RESTRICTED_RULES.has(denial.rule)) {
     return { reason: denial.reason, fix: privateHostsHint(deps, denial.host, context) };
-  }
-
-  const kind = PRIVATE_KINDS[denial.rule];
-
-  if (kind !== undefined) {
-    return { reason: `it resolves to a ${kind} address`, fix: privateHostsHint(deps, denial.host, context) };
   }
 
   const advice: Record<string, DenialAdvice> = {
