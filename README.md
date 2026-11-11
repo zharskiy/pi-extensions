@@ -91,7 +91,7 @@ Start pi and try:
 
 ## Sandbox launcher
 
-The package also ships `pi-sandbox`, a host-side launcher that runs pi in a per-repository Linux container on a Colima VM (macOS). After `launcher/install.sh`, `cd repo && pi` starts pi with your providers, MCP servers, settings and packages, but the container holds placeholders instead of credentials, and its only network exit is a proxy on the host that allows a list of hosts and injects the real credentials there. `pi --no-sandbox` runs host pi. See the [launcher README](launcher/README.md) and its [threat model](launcher/THREAT-MODEL.md).
+The package also ships `pi-sandbox`, a host-side launcher that runs pi in a per-repository Linux container on a Colima VM (macOS). After `launcher/install.sh`, `cd repo && pi` starts pi with your providers, MCP servers, settings and packages, but the container holds placeholders instead of credentials, and its only network exit is a proxy on the host that allows a list of hosts and injects the real credentials there. `pi --no-sandbox` runs host pi. See the [launcher README](launcher/README.md), its [configuration reference](launcher/CONFIGURATION.md) and its [threat model](launcher/THREAT-MODEL.md).
 
 ## Development
 

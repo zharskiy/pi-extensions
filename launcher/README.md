@@ -1,80 +1,98 @@
-<div align="center">
+# pi-sandbox
 
-# pi-sandbox launcher
+Run the pi coding agent on your Mac as you always do, with the agent kept in a sandbox.
 
-**Run pi on your Mac as you always do, with the agent kept in a box.**
+Part of [pi-extensions](../README.md).
 
-Part of [pi-extensions](../README.md) · [Install](#install) · [Run](#run) · [What is protected](#what-is-protected-and-what-is-not) · [Everyday use](#everyday-use) · [Configuration](#configuration) · [For administrators](#for-administrators) · [Troubleshooting](#troubleshooting) · [How it works](ARCHITECTURE.md) · [Threat model](THREAT-MODEL.md)
+## What it does
 
-</div>
+`pi-sandbox` installs itself as `pi`. You keep typing `cd <folder> && pi`, and your providers, MCP servers, settings, packages and skills work as before.
 
-## What it is
+Pi now runs in a Linux container inside a small virtual machine (Colima). The container sees the repository, or plain folder, you started pi in, and nothing else of your home.
 
-`pi-sandbox` is installed as `pi`. You keep typing `cd <folder> && pi`; your providers, MCP servers, settings, packages, agents and skills work as they do on the host. Pi runs in a sandbox that sees the folder you started it in and nothing else of your home, reaches only the hosts on an allow-list, and never holds your credentials: the launcher adds them on the way out. An administrator can pin the limits in a policy file.
+The container never holds your real keys. Its only way out is a proxy on your Mac. The proxy lets through only the hosts on an allow-list, and adds your credentials on the way out.
+
+```mermaid
+flowchart LR
+  subgraph mac["Your Mac"]
+    proxy["proxy: allow-list, adds credentials"]
+    subgraph vm["Colima VM"]
+      box["container: pi and its tools"]
+    end
+  end
+  box -- "every request" --> proxy
+  proxy -- "allowed hosts only" --> net["providers, registries, the web"]
+```
 
 ## Install
 
-macOS 13 or newer with Homebrew and Node 22.19 or newer. Run the script from a checkout, or from the npm package: after `npm install -g pi-extensions-mz` it is `$(npm root -g)/pi-extensions-mz/launcher/install.sh`.
+You need:
+
+- macOS 13 or newer.
+- [Homebrew](https://brew.sh).
+- Colima 0.8.0 or newer. The script installs it with Homebrew if it is missing.
+- Node 22.19 or newer, with npm.
+- git.
 
 ```bash
-launcher/install.sh [--cpu N] [--memory GiB] [--disk GiB]
+npm install -g pi-extensions-mz
+"$(npm root -g)/pi-extensions-mz/launcher/install.sh"
 ```
 
-`--cpu` and `--memory` size the Colima VM when the script starts it. They default to this Mac's CPUs and half its memory, between 2 and 8 CPUs and 4 and 10 GiB; values you pass are used as given. `--disk` defaults to 60 GiB. A VM that is already running keeps its size until you stop it.
+The script starts a Colima profile named `pi-sandbox` and puts `~/.local/bin` first on `PATH` in your shell startup files. Open a new terminal afterwards.
 
-The script prints each step and can be run again. It refuses to run as root. It installs Colima 0.8.0 or newer when missing (no Docker Desktop needed), starts a Colima profile named `pi-sandbox`, installs the launcher, links `~/.local/bin/pi` to it and puts `~/.local/bin` first on `PATH` in `~/.zshrc`, an existing `~/.bashrc` or `~/.bash_profile`, and for fish in `~/.config/fish/conf.d/pi-sandbox.fish`. It ends with `pi sandbox doctor` in a temporary repository. When `~/.local/bin/pi` is pi's own managed install, the script records the link and replaces it, and `uninstall.sh` puts it back; any other `pi` there stops the install. The launcher always uses the profile at `~/.colima/pi-sandbox`; `COLIMA_HOME` is ignored.
+If `~/.local/bin/pi` is pi's own managed install, the script replaces that link. An earlier pi-sandbox link or wrapper is replaced too. Any other file there stops the install.
 
-## Run
+The VM gets this Mac's CPU count, from 2 to 8, and half its memory, from 4 to 10 GiB, with a 60 GiB disk. To change that, pass `--cpu N`, `--memory GiB` or `--disk GiB` to `install.sh`. To resize the VM later, while no pi runs:
 
 ```bash
-cd <folder> && pi
+colima stop --profile pi-sandbox && colima start --profile pi-sandbox --activate=false --cpu 4 --memory 8
 ```
 
-The first launch prints `preparing pi sandbox, one time` and builds the sandbox image, which takes a few minutes. Later launches start in seconds. Each `pi` gets its own sandbox, removed when that pi exits; two `pi` in one folder share its volumes, its network exit and its session directory. After a reboot or `pi sandbox stop`, the next `pi` starts the VM again. A folder outside your home is shared with the VM at its first launch, which restarts the VM, so it waits until no other pi session runs.
+<details>
+<summary>Install from a checkout</summary>
 
-Pi starts in a repository or in a plain folder. In a folder that holds several repositories, the sandbox gets the whole folder and treats each repository found in it the same way.
+```bash
+git clone https://github.com/zharskiy/pi-extensions.git
+cd pi-extensions
+npm install
+launcher/install.sh
+```
 
-## What is protected and what is not
+`npm install` comes first. The launcher uses pi's managed install if you have one, and otherwise the pi that npm puts next to it. The script writes a wrapper script at `~/.local/bin/pi` that runs this checkout.
 
-Protected:
+</details>
 
-- Pi sees the folder you started it in, its git dir, host pi's session directory for that folder and its own volumes. The rest of your home, your other repositories, `~/.ssh` and `~/.pi` are not mounted.
-- No credential bytes enter the sandbox. Pi inside gets copies of your `auth.json`, `models.json` and `mcp.json`, and of the gh, glab, npm, pip, Maven and git configs, in which every key and token is a placeholder. The launcher's proxy on the host swaps a placeholder for the real value on the way out, only toward the host the credential belongs to.
-- The network exit is that proxy. It allows a list of hosts, refuses private and loopback addresses, and checks that each TLS connection goes to the host it named.
-- `.git/hooks` is read-only inside, so the agent cannot plant a hook there.
-- Pi runs as an unprivileged user with Linux capabilities dropped, no privilege gain through setuid, a read-only system and a process limit.
+## Quick start
 
-Not protected:
+1. Start pi in a project:
 
-- The agent can use your credentials. It cannot read them, but it can make any request to the hosts they belong to: push with your gh token, call your model provider, publish to your registry.
-- The agent can read and change every file in the folder, the rest of `.git` included (config, `core.hooksPath`, aliases). When the last pi of the folder exits, the launcher names the git files that changed; it does not prevent the change. Review them before you run git there on the host.
-- Data can leave through any allowed host.
-- Host pi's sessions of this folder are readable inside. They may hold secrets a tool printed outside the sandbox.
+   ```bash
+   cd ~/code/my-app && pi
+   ```
 
-The full list is in the [threat model](THREAT-MODEL.md#5-known-gaps).
+   The install script already built the sandbox image, so pi starts in seconds. When the image must be rebuilt, for example after a pi update, the launch prints `preparing pi sandbox, one time` and takes a few minutes.
 
-### Where pi can start
+2. Work as usual. A tool that reaches a host that is not allowed gets an error page saying what to do.
 
-The launcher refuses to start:
+3. Exit pi. The launcher names each host it blocked:
 
-- in your home, `/`, `~/.pi`, `~/.ssh` and similar credential folders, the launcher's own state and config folders, system folders such as `/etc`, or a folder that is or contains an image folder such as `/usr/local` or `/opt`; under a home that is itself a git repository; it checks this before it reads the folder;
-- outside the administrator's `workspaceRoots`, when they are set;
-- in a folder it cannot read, or in a folder that holds a folder of yours it cannot read;
-- in a git dir: a bare repository, anything shaped like a git dir (`HEAD` with `commondir`, or with `objects` and `refs`), or a folder inside one;
-- when a folder with several repositories, or a repository root, holds `.git` in another letter case (`.GIT`), which git opens as a repository on a case-insensitive volume;
-- in a folder with more than 50 000 directories to search, or more than 128 repositories and bare repositories;
-- when a repository's git files are not as git writes them: a linked `.git`, a `.git` file git did not write, git choosing another git dir, a `commondir` git did not write, or the folder's own `.git` pointing at a git dir that does not exist;
-- when git is not installed and the folder holds repositories;
-- when a bare repository changed between the search and the start;
-- when a writable mount would lie inside, or re-expose, build output that the search skipped.
+   ```
+   pi-sandbox: docs.example.com was blocked in this folder's sandbox; run pi sandbox egress allow docs.example.com on the host from /Users/you/code/my-app
+   ```
 
-In a folder with several repositories:
+4. To let pi reach that host, allow it. This applies at once, also to running sessions. Add `--user` to allow it for every folder.
 
-- a bare repository is read-only as a whole: clone and fetch from it work, push does not;
-- a checkout whose `.git` file leads outside the folder, or to a git dir that does not exist, is plain files and git does not work there;
-- `node_modules`, `.pi` and build output that gets its own volume (`.venv`, `target`, `.gradle`) are not searched for repositories.
+   ```console
+   $ pi sandbox egress allow docs.example.com
+   allowed docs.example.com for /Users/you/code/my-app
+   ```
+
+5. If something does not work, run `pi sandbox doctor`. It prints one line per check.
 
 ## Everyday use
+
+In the table, *host pi* is the normal pi on your Mac, and `fallback` is the setting that allows `--no-sandbox`. A *grant* is a host you allowed. *Overlay* and *agent* volumes are storage the VM keeps for the folder's build output and pi's own files.
 
 | command | what it does |
 | --- | --- |
@@ -93,26 +111,55 @@ In a folder with several repositories:
 | `pi sandbox doctor` | prepare the sandbox like pi and print one ok, warn, fail or skip line per check |
 | `pi sandbox --version`, `pi sandbox help` | version and usage |
 
-`pi sandbox <command> --help` prints the usage of one command. `egress allow` prints the folder the grant is for, and refuses a host that `egress.deny` names. `reset` keeps a volume a container still mounts and says so; with the VM stopped it cleans the host side and names the `colima start` command to run before you reset again. Volumes of deleted folders are removed by a daily collection.
+`pi uninstall <source>` also runs with host pi on the host. `egress allow` uses port 443 unless you name one, and refuses wildcards, IP addresses and port 80 ([rules](CONFIGURATION.md#network-access)).
 
-Failures print `pi-sandbox: <message>`, often followed by `  hint: <what to do>`, and exit 1 (70 for an unexpected error).
+With pi's managed install, `pi update` updates it, and the next launch rebuilds the image. If pi came with the launcher, `pi update` tells you to run `npm install -g pi-extensions-mz`.
 
-### What is different inside
+After a reboot or `pi sandbox stop`, the next `pi` starts the VM again. A failure prints `pi-sandbox: <message>`, often with a `hint:` line.
 
-- A blocked host gets a 403 page that says what to do. When pi exits, the launcher prints one line per blocked host, `<host> was blocked in this folder's sandbox; <hint>`: grant it with `pi sandbox egress allow`, or with grants off ask your administrator; add a host that resolves to a private, loopback, link-local or reserved address to `egress.privateHosts`; nothing for a host `egress.deny` names; use https instead of plain HTTP; log in again with host pi when a provider login on the host is missing or expired; or the reason the host could not be reached or a credential could not be supplied.
-- `NO_PROXY` holds `localhost,127.0.0.1,::1`, so tests reach servers you start inside without the proxy.
-- `pi install`, `uninstall` and `remove <source>`, `pi mcp add|remove|login|logout` and a bare `pi update` run with host pi on the host; the sandbox picks the change up at the next launch. A package source is remote only as a plain `npm:<name>[@version]`, an `http(s)://`, `ssh://` or `git://` git URL with owner and repository, or `git:git@host:owner/repo` and `git:host.tld/owner/repo`; anything else is a local path, and `pi install` refuses a local path inside a git working tree or a folder a sandbox has run in. These commands run before the config is read, so `fallback`, `workspaceRoots` and a missing policy file do not stop them.
-- Provider `/login` inside does not work; log in with host pi: `pi --no-sandbox`, then `/login` (with `fallback: "refuse"`, run host pi itself). When a provider login on the host is missing or expired, the launcher says `the <provider> login on the host is missing or expired; log in again with pi --no-sandbox and /login`.
-- `pi.dev`, where pi refreshes its model list at start, is allowed by default without a credential; an `egress.deny` entry still blocks it.
-- Build output gets its own volume, so Linux builds never mix with the host's: `node_modules` beside an npm, pnpm, yarn or bun lockfile, `.venv` beside `uv.lock`, `poetry.lock` or `Pipfile.lock`, `target` beside `Cargo.lock`, `.gradle` beside `settings.gradle(.kts)`. Maven `target/` and Gradle `build/` are shared with the host. Run the install once inside. In a folder too large to search, or with more than 512 such folders, nothing is overlaid and a notice says so.
-- `/home/pi` and `/tmp` live in memory: tool caches count against the container's memory and vanish when pi exits, unless `mounts.sharedCaches` keeps them.
-- Pi sessions live in host pi's own session directory for the folder, so `/resume` on the host lists them. `sessions.host: false` keeps them in the sandbox volume.
-- A pi flag that names a host file outside the folder (`--system-prompt`, `-e`, `@file`) prints a notice: the file is not visible inside.
-- Notices about overlays, workspaces, skipped secret files and ignored config keys print once per folder until their text changes.
+## What is different inside the sandbox
+
+- **Log in on the host.** Provider `/login` does not work inside. Run `pi --no-sandbox`, then `/login`.
+- **Packages and MCP servers change on the host.** The sandbox picks up `pi install` and `pi mcp add` at its next launch.
+- **No Docker.** `docker compose` and Testcontainers do not work. You can [run a database inside](CONFIGURATION.md#databases-and-other-services).
+- **Only https leaves, and your Mac's `localhost` is out of reach.** Servers you start inside answer on `127.0.0.1`.
+- **Home lives in memory.** `/home/pi` and `/tmp` are emptied when pi exits. Pi's own files survive in the folder's agent volume. To keep a tool cache, list it in `mounts.sharedCaches`.
+- **Build output has its own copy.** `node_modules`, `.venv`, `target` and `.gradle` get their own volume when a matching lockfile sits beside them ([list](CONFIGURATION.md#build-output-overlays)). Run your install command, such as `npm install`, once inside.
+- **Sessions are shared.** `/resume` on your Mac lists sandbox sessions.
+- **A folder outside your home restarts the VM** at its first launch. If other pi sessions run, the launch stops and asks you to exit them first.
+
+### Where pi can start
+
+Pi starts in a repository or in a plain folder. A folder with several repositories is checked repository by repository. Bare repositories in it are read-only: clone and fetch work, push does not.
+
+Pi does not start in your home folder, `/`, system folders or credential folders such as `~/.ssh`. It refuses git files that git did not write. A plain folder is refused when it holds over 128 repositories or 50,000 directories.
+
+If your home folder is a git repository, pi starts under it only inside a repository of its own.
+
+All checks are in [baseline guarantees](THREAT-MODEL.md#3-baseline-guarantees), under "Workspace guard" and "Workspace mode".
+
+## What it protects and what it does not
+
+It protects:
+
+- **Your files.** Pi sees the repository or plain folder, and its git data. The rest of your home, `~/.ssh` and `~/.pi` stay hidden.
+- **Your secrets.** Every key inside is a *placeholder*, a stand-in value. The proxy swaps it for the real one, only toward the host it belongs to.
+- **Your network.** Only listed hosts are reachable. Private and loopback addresses are refused.
+- **Your git hooks.** `.git/hooks` is read-only inside.
+
+It does not protect:
+
+- **Use of your credentials.** The agent cannot read them, but can use them: push with your gh token, call your provider, publish a package.
+- **The folder.** The agent can change any file in it, `.git/config` included. When pi exits, the launcher names changed git files. Review them before you run git there.
+- **Data sent to allowed hosts.** Anything can leave through them.
+- **Earlier sessions.** Host pi's sessions of this folder are readable inside, with any secret a tool printed in them. `sessions.host: false` keeps them apart.
+- **The rest of the VM.** The Colima VM can read and write your whole home. Only the container is limited.
+
+The full list is in [known gaps](THREAT-MODEL.md#5-known-gaps).
 
 ## Configuration
 
-Your settings go in `~/.config/pi-sandbox/config.json` (`PI_SANDBOX_USER_CONFIG` moves it; `PI_SANDBOX_STATE_DIR` moves the state dir). Nothing in the folder you start pi in configures the sandbox. The keys are in [schema/sandbox-config.schema.json](schema/sandbox-config.schema.json); `pi sandbox config` shows the result and where each key comes from. A user config for a Java developer:
+Your settings go in `~/.config/pi-sandbox/config.json`. Nothing in the project folder configures the sandbox. A Java developer might use:
 
 ```json
 {
@@ -121,79 +168,48 @@ Your settings go in `~/.config/pi-sandbox/config.json` (`PI_SANDBOX_USER_CONFIG`
 }
 ```
 
-- `egress.presets` (default `npm`, `pypi`, `github`) adds package registry and download hosts: `npm`, `pypi`, `github`, `maven`, `gradle`, `go`, `cargo`; `[]` turns them off. `pi.dev` is allowed on top of them (pi's own model list).
-- `egress.allow` adds `host`, `*.corp.example` (exactly one label more, not `corp.example` itself) or `host:port` entries; an entry without a port allows 443 only. Names may hold `_`; IP addresses, `localhost` and port 80 are refused. `egress.deny` always wins: `host` denies the host and every name under it, `*.domain` every name under the domain. `egress.privateHosts` names hosts that may resolve to private addresses, such as an internal gateway.
-- `mounts.autoOverlays` (default `true`) gives each build output folder its own volume; `false` lets the sandbox use the host's. `mounts.sharedCaches` lists `~/` folders that get one volume shared by all your sandboxes (never your host folder); no entry twice or inside another.
-- `image.packages` (Debian packages), `image.npmGlobal` (`name@version`) and `image.dockerfile` (an absolute or `~/` path to a file of Dockerfile lines, run as root) add a layer to the image. A command the image lacks prints a hint naming `image.packages` and `image.npmGlobal`.
-- `image.reference` and `image.digest` (`sha256:…`) go together: with both, the launcher pulls that prebuilt image instead of building one; the registry must allow anonymous pulls. The image layer above still builds.
-- `resources.cpus` and `resources.memoryGiB` limit the container.
-- `sessions.host` (default `true`), `fallback` (default `host`, which allows `pi --no-sandbox`; `refuse` turns it off), `egress.grants` (`false` turns grants off) and `env.allow` (terminal variables forwarded to each run; secret-looking names, the proxy variables and the variables the launcher sets inside are refused, and a value shaped like a credential stays on the host with a notice).
+- `egress.presets`: sets of package registry hosts. The default is `npm`, `pypi` and `github`.
+- `egress.allow`: more hosts the sandbox may reach.
+- `image.packages` and `image.npmGlobal`: Debian and npm packages to add to the image.
+- `mounts.sharedCaches`: cache folders such as `~/.npm`, kept in volumes that all your sandboxes share. Your Mac's own folder is not mounted.
 
-An invalid value stops the launch with a message naming the key and, for paths, names and choices, the value; host, credential and `npmGlobal` values are never shown.
+`pi sandbox config` shows the result. Every key, credentials and corporate proxies are in [CONFIGURATION.md](CONFIGURATION.md).
 
-### Corporate proxy and TLS inspection
+### For administrators
 
-- `egress.parentProxy: "env"` (the default) chains the launcher proxy to `HTTPS_PROXY` (else `https_proxy`) and `NO_PROXY` of the shell that runs `pi`, not to the macOS system proxy or a PAC file. Only an `http://` proxy URL is used; for anything else the launch warns and the proxy connects directly. NTLM or Kerberos proxies need a local relay such as `px` or `cntlm`.
-- The image build uses the same proxy, with a loopback address pointed at the host. A proxy URL with credentials is refused for builds, since they would be written into the image: use a proxy without them, or a prebuilt image with no image layer.
-- `tls.extraCa` (`[{ "file": "/path/corp-ca.pem" }]`, or `[{ "hostStore": true }]` for the macOS System keychain) is trusted by the launcher proxy, inside the container and during the image build steps.
-- `tls.extraCa` does not reach the VM's engine, so when the proxy inspects Docker Hub the base image pull fails with an x509 error, and the error says so. Add a `provision` script with `mode: system` to `~/.colima/pi-sandbox/colima.yaml` that copies the CA into `/usr/local/share/ca-certificates/`, runs `update-ca-certificates` and restarts docker, then restart the profile; or pull a prebuilt image from a registry the proxy does not inspect.
-
-### Credentials
-
-The launcher reads your host files at every launch (`credentials.derive`, on by default): each provider in `auth.json` and each provider key in the environment (read by the proxy from that variable, never copied inside), each `apiKey` and secret header of `models.json`, each enabled HTTP server of `mcp.json`, the hosts of `gh` and `glab` with their tokens, the registry credentials of `~/.npmrc`, `pip.conf` (`~/.config/pip`, `~/Library/Application Support/pip`, `~/.pip`) and `~/.m2/settings.xml`, and your git `user.name` and `user.email`. Inside, the matching files hold placeholders only, so `gh`, `glab`, `git push`, npm, pip and Maven work as on the host while the proxy fetches the real value on the host. A registry, mirror or index without credentials and without an `egress.allow` entry prints a notice naming the entry to add.
-
-- A derived gh or glab token reaches everything it can on its host; `credentials.derive.hosts` keeps only the hosts you list, and `credentials.derive.enabled: false` turns derivation off.
-- `credentials.rules` adds rules by hand, with a secret from `env`, a `file`, a `command` (a keychain or password manager CLI, cached 300 s or until the `expiresAt` of its JSON output less 30 s), `piAuth` or `mcpOAuth`.
-- A stdio MCP server's env or flag value becomes a placeholder by its name (a secret word such as token, secret, password, apikey, or `key` at the end) or by its shape (`Bearer …`, a JWT, a URL with userinfo); a secret under another name, or a purely numeric one, needs a clearer name or a `credentials.rules` entry.
-- MCP servers sign in on the host: host pi keeps the token in `~/.pi/agent/mcp-auth.json` and the proxy adds it. When it is missing or expired and cannot be refreshed, a launch whose input and output are both a terminal runs `pi mcp login <name>` on the host first; after a failed sign-in this is skipped for a day. Mid-session, when a token expires or is rejected, the proxy opens the sign-in in your browser (at most once per server per minute) and pi inside gets a message to retry. A server you never signed in to gets requests without a token, so servers that need no sign-in work. An MCP server defined only in a project's `.pi/mcp.json` gets no token; add it with `pi mcp add`.
-
-### Databases and other services
-
-The sandbox has no engine socket and cannot reach your `localhost`, so `docker compose` and Testcontainers do not work inside. Run the server inside the sandbox: add it to `image.packages` in the user config (for example `postgresql` and `redis-server`), start it with its data under `/tmp`, and point the tests at `127.0.0.1`:
-
-```bash
-PATH=/usr/lib/postgresql/15/bin:$PATH        # Debian bookworm's PostgreSQL
-initdb -D /tmp/pg --no-locale -E UTF8 -U postgres && pg_ctl -D /tmp/pg -o "-k /tmp" -l /tmp/pg.log start
-redis-server --dir /tmp --daemonize yes
-```
-
-`/tmp` is in memory: the data counts against the container's memory and is gone when pi exits.
-
-## For administrators
-
-The policy file is `/Library/Application Support/pi-sandbox/policy.json` (`/etc/pi-sandbox/policy.json` on Linux). It uses the same keys as the user config. Make it writable by root only; the launcher reads it at every launch and does not check its owner. `PI_SANDBOX_POLICY_FILE` names a policy file only while that file does not exist, so it never overrides yours.
-
-- A key the policy sets is final: the user's value is ignored with a warning, and `pi sandbox config` lists it.
-- List keys add up: `egress.allow`, `egress.deny`, `egress.privateHosts`, `image.packages`, `image.npmGlobal`, `credentials.rules` and `env.allow` collect the entries of both files, so the user adds to yours and removes none. `egress.deny` wins over every allow, and a user rule whose `id` the policy uses is ignored.
-- `egress.grants: false` locks egress: `pi sandbox egress allow` is refused, and the user's `egress.allow` and `egress.privateHosts` entries are ignored. Hosts of `credentials.rules` from either file still become reachable.
-- `fallback: "refuse"` turns `pi --no-sandbox` off. `workspaceRoots` (`{ "roots": [...] }`) refuses a launch outside those folders.
-- `credentials.derive`, `tls`, `sessions`, `resources`, `egress.presets`, `egress.parentProxy` and `mounts.sharedCaches` can be pinned like any other key. Finality is per key: pin `resources.cpus` and `resources.memoryGiB` each if both matter.
-
-[examples/policy.json](examples/policy.json) is a starting point: it refuses `--no-sandbox`, turns grants off (which locks egress to its own hosts), names the internal gateway, registry and git hosts (also as private hosts, since they resolve to internal addresses), denies a paste site, adds the corporate CA and a gateway and registry credential, and keeps credential derivation on so `gh`, `glab`, npm, pip and Maven work as on the host. Under that policy the Java user config above loses its `egress.allow` entry.
-
-`pi install`, `pi mcp …` and `pi update` run host pi on the host whatever the policy says.
-
-## Uninstall
-
-```bash
-launcher/uninstall.sh
-```
-
-It refuses while a pi session runs in the sandbox. Otherwise the launcher removes its containers, networks, volumes and images, the folders it created in your repositories and its proxies; then the script deletes the Colima profile `pi-sandbox`, removes the `pi` link (restoring pi's managed link when `install.sh` replaced it, or naming it when that path is taken), the state dir, the global package and the `PATH` blocks. If the launcher is missing or broken, the profile and the host files still go. A failed `colima delete` exits 1 naming the command to run. Your sessions in `~/.pi/agent/sessions`, `~/.pi` and `~/.config/pi-sandbox` stay.
+A policy file at `/Library/Application Support/pi-sandbox/policy.json` sets limits users cannot loosen. A value it sets is final, and lists such as `egress.allow` add up. Make it writable by root only. See [For administrators](CONFIGURATION.md#for-administrators).
 
 ## Troubleshooting
 
-Start with `pi sandbox doctor`: it names the stage or check that fails. When the VM lacks a folder this one needs, it prints `skip sandbox: run pi once here to share …` and only the host checks.
+Start with `pi sandbox doctor`, which names the failing check.
 
-1. **`<host> was blocked in this folder's sandbox; <hint>`.** Follow the hint (`pi sandbox doctor` prints a `warn rule` line with the same hint for a credential it could not get, such as an expired provider login): run `pi sandbox egress allow <host>` on the host (`--user` for every repository) or add the host or a preset to the user config; with grants off, ask your administrator to add it to `egress.allow`.
-2. **`the sandbox VM engine is unreachable`.** Run `colima start --profile pi-sandbox --activate=false`, or `install.sh` when the profile is missing. When the message says the VM is running but its engine does not answer, run `colima stop --profile pi-sandbox && colima start --profile pi-sandbox --activate=false`. `pi sandbox reset` still cleans the host side while the VM is stopped.
-3. **`<folder> is not shared with the sandbox VM`.** Sharing a folder outside your home restarts the VM; exit the other pi sessions and run `pi` again, or run the `colima` command the hint names.
-4. **`upstream request failed: ... certificate ...`** (an HTTP 502, also a failed `rule` line in `pi sandbox doctor`). A proxy or CA on your network signs the host; set `tls.extraCa`.
-5. **`<cmd> is not in the sandbox image`.** Add its Debian package to `image.packages` or its npm package to `image.npmGlobal` in the user config; the next launch builds the layer.
-6. **`the host pi is version X, which the npm registry does not have`.** The image installs the host pi's version from npm, so an unreleased pi cannot be built; install a published pi on the host.
-7. **`the credential, parent proxy or CA settings changed; the pi sessions running in this folder keep the earlier ones until they all exit (egress allow and deny changes apply now)`.** Changes to `egress.allow`, `egress.deny`, `egress.presets`, `egress.privateHosts` and `egress.grants` reach the pi sessions already running in the folder once you start a new `pi` there (editing the config alone changes nothing for them), and that launch says so with `the network allow and deny settings changed and now apply to every pi running in this folder`; credential rules, `env` secrets, the parent proxy and `tls.extraCa` wait until the folder's other pi sessions exit. Other config changes apply at the next `pi`.
-8. A launcher killed with `kill -9` leaves its sandbox until the next `pi` in any folder.
+| symptom | what to do |
+| --- | --- |
+| A host `was blocked in this folder's sandbox` | Follow the hint in that line. |
+| A provider login is missing or expired | Run `pi --no-sandbox`, then `/login`. If `fallback` is `refuse`, log in with host pi itself. |
+| Pi says `the sandbox VM engine is unreachable` | Run `colima start --profile pi-sandbox --activate=false`, or `install.sh` if the profile is gone. |
+| The VM is running but its engine does not answer | Run `colima stop --profile pi-sandbox && colima start --profile pi-sandbox --activate=false`. |
+| A folder is not shared with the VM | Exit your other pi sessions and run `pi` again. |
+| An HTTP 502 about a certificate | Add your network's CA with [`tls.extraCa`](CONFIGURATION.md#corporate-proxy-and-tls-inspection). |
+| A command `is not in the sandbox image` | Add it to `image.packages` or `image.npmGlobal`. |
+| The npm registry lacks your host pi version | Install a published pi version on your Mac. |
+| A running session missed a config change | See [when changes apply](CONFIGURATION.md#when-changes-apply). |
+
+## Uninstall
+
+Exit every pi session, then run the script from where you installed:
+
+```bash
+"$(npm root -g)/pi-extensions-mz/launcher/uninstall.sh"   # npm install
+launcher/uninstall.sh                                     # checkout
+```
+
+It deletes the `pi-sandbox` Colima profile, the launcher's state, the `pi` link, the npm package and the `PATH` lines. It restores pi's managed link if `install.sh` replaced it.
+
+Your repositories, `~/.pi` with its sessions, and `~/.config/pi-sandbox` stay. Colima stays installed. Remove it with `brew uninstall colima` if nothing else uses it.
 
 ## More
 
-How it works: [ARCHITECTURE.md](ARCHITECTURE.md), with every file it writes in [Files written](ARCHITECTURE.md#files-written). What each feature weakens and the known gaps: [THREAT-MODEL.md](THREAT-MODEL.md). Where things are: [STRUCTURE.md](STRUCTURE.md). Development: `npm run check` covers the launcher; from a checkout run `node launcher/bin/pi-sandbox-dev.js`; tests against a real Colima engine are in `tests/live/` and run with `PI_SANDBOX_LIVE=1 npm run test:live`.
+How it works and every file it writes: [ARCHITECTURE.md](ARCHITECTURE.md). Where the code is: [STRUCTURE.md](STRUCTURE.md).
+
+To work on the launcher, run `npm run check` from the repository root. `node launcher/bin/pi-sandbox-dev.js` runs a checkout. `PI_SANDBOX_LIVE=1 npm run test:live` tests against real Colima.

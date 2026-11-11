@@ -5,7 +5,8 @@ One line per file. Layer rules and behaviour are in [ARCHITECTURE.md](ARCHITECTU
 ## Top level
 
 ```
-README.md                      for users: install, everyday use, configuration, troubleshooting
+README.md                      for users: install, quick start, everyday use, what is protected, troubleshooting
+CONFIGURATION.md               every config key, the policy and user layers, credentials, corporate proxies, the administrator policy
 ARCHITECTURE.md                how it works, the files it writes
 STRUCTURE.md                   this file
 THREAT-MODEL.md                assets, trust boundaries, what each feature weakens, known gaps

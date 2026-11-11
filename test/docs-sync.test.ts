@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 const ROOT = resolve(import.meta.dirname, "..");
 const EXTENSION_DOCS = ["README.md", "ARCHITECTURE.md", "STRUCTURE.md"];
 const ROOT_DOCS = ["ARCHITECTURE.md", "STRUCTURE.md"];
-const LAUNCHER_ONLY_DOCS = ["THREAT-MODEL.md"];
+const LAUNCHER_ONLY_DOCS = ["THREAT-MODEL.md", "CONFIGURATION.md"];
 const UNIT_PATH = /^(extensions\/[^/]+|launcher)\/(.+)$/;
 
 type Gap = { extension: string; triggers: string[]; missing: string[] };
@@ -165,8 +165,9 @@ describe("docs sync rule", () => {
     ).toEqual([]);
   });
 
-  it("treats launcher/THREAT-MODEL.md as a doc, not as code", () => {
+  it("treats launcher/THREAT-MODEL.md and launcher/CONFIGURATION.md as docs, not as code", () => {
     expect(missingDocs(["launcher/THREAT-MODEL.md"])).toEqual([]);
+    expect(missingDocs(["launcher/CONFIGURATION.md"])).toEqual([]);
     expect(missingDocs(["extensions/footer/THREAT-MODEL.md"])).toEqual([
       {
         extension: "extensions/footer",
