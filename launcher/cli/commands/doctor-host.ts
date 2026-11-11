@@ -14,11 +14,19 @@ import { assertHostSessionsDir } from "../../workspace/index.ts";
 import type { LaunchContext } from "../context.ts";
 import { type CliDeps, hostAgentDirOf } from "../deps.ts";
 import { providerHostsOf } from "../derive.ts";
-import { hostPiPlace, hostPiText, missingPiText, resolveJobPi } from "../host-pi.ts";
+import { hostPiPlace, hostPiText, missingPi, resolveJobPi } from "../host-pi.ts";
 import { hostSessionsOf } from "../host-sessions.ts";
-import { leftoverStateNotice, movedConfigNotice } from "../legacy-paths.ts";
+import { leftoverState, movedConfig } from "../legacy-paths.ts";
 import { isOlderVersion, testedPiVersion } from "../versions.ts";
-import { failed, type NamedCheck, passed, skipped, warned } from "./doctor-probes.ts";
+import {
+  type CheckResult,
+  failed,
+  type NamedCheck,
+  passed,
+  type Section,
+  skipped,
+  warned,
+} from "./doctor-report.ts";
 
 const CONNECT_TIMEOUT_MS = 3000;
 
@@ -34,14 +42,17 @@ const HOURS_SHOWN_BELOW_MS = 2 * DAY_MS;
 
 const checkHostPi = async (deps: CliDeps, context: LaunchContext, job: HostPi | undefined) => {
   if (job === undefined) {
-    return failed(missingPiText(deps));
+    const missing = missingPi(deps);
+
+    return failed(missing.problem, { reasons: [missing.ignored, missing.effect], hint: missing.fix });
   }
 
   const tested = await testedPiVersion();
 
   if (isOlderVersion(job.version, tested)) {
     return warned(
-      `pi ${job.version} (${hostPiPlace(job)}) is older than ${tested}, the pi this launcher is tested with; run pi update`,
+      `pi ${job.version} (${hostPiPlace(job)}) is older than ${tested}, the pi this launcher is tested with`,
+      { hint: "run pi update" },
     );
   }
 
@@ -113,30 +124,32 @@ const durationText = (ms: number) => {
   return ms < HOURS_SHOWN_BELOW_MS ? `${Math.round(ms / HOUR_MS)} h` : `${Math.round(ms / DAY_MS)} days`;
 };
 
-const signInCheck = (deps: CliDeps, server: McpSignIn): NamedCheck => {
-  const name = `mcp ${server.name}`;
+const signInResult = (deps: CliDeps, server: McpSignIn) => {
   const { entry } = server;
   const usable = isFreshMcpToken(entry, deps.now()) || entry?.refresh !== undefined;
 
   if (!usable) {
-    return { name, result: warned(`needs sign-in: run pi mcp login ${server.name}`) };
+    return warned("needs sign-in", { hint: `run pi mcp login ${server.name}` });
   }
 
   const left = entry?.expiresAt === undefined ? undefined : entry.expiresAt - deps.now();
 
   if (left === undefined) {
-    return { name, result: passed("signed in on the host") };
+    return passed("signed in on the host");
   }
 
-  return {
-    name,
-    result: passed(
-      left > 0
-        ? `signed in on the host (expires in ${durationText(left)})`
-        : "signed in on the host (refreshed on use)",
-    ),
-  };
+  return passed(
+    left > 0
+      ? `signed in on the host (expires in ${durationText(left)})`
+      : "signed in on the host (refreshed on use)",
+  );
 };
+
+const signInCheck = (deps: CliDeps, server: McpSignIn): NamedCheck => ({
+  name: `mcp ${server.name}`,
+  section: "credentials",
+  result: signInResult(deps, server),
+});
 
 const signInChecks = async (deps: CliDeps, files: HostPiFiles): Promise<NamedCheck[]> =>
   (await mcpSignIns(files)).map((server) => signInCheck(deps, server));
@@ -183,16 +196,21 @@ const checkSessions = async (deps: CliDeps, context: LaunchContext, files: HostP
 };
 
 const legacyChecks = async (deps: CliDeps): Promise<NamedCheck[]> => {
-  const [config, state] = await Promise.all([movedConfigNotice(deps), leftoverStateNotice(deps)]);
+  const [config, state] = await Promise.all([movedConfig(deps), leftoverState(deps)]);
+  const legacyCheck =
+    (name: string) =>
+    (legacy: { problem: string; fix: string }): NamedCheck => ({
+      name,
+      section: "host",
+      result: warned(legacy.problem, { hint: legacy.fix }),
+    });
 
-  return [
-    ...config.map((notice) => ({ name: "user config", result: warned(notice) })),
-    ...state.map((notice) => ({ name: "old state", result: warned(notice) })),
-  ];
+  return [...config.map(legacyCheck("user config")), ...state.map(legacyCheck("old state"))];
 };
 
-const named = async (name: string, result: Promise<NamedCheck["result"]>): Promise<NamedCheck> => ({
+const named = async (name: string, section: Section, result: Promise<CheckResult>): Promise<NamedCheck> => ({
   name,
+  section,
   result: await result,
 });
 
@@ -201,10 +219,10 @@ export const hostChecks = async (deps: CliDeps, context: LaunchContext): Promise
   const [legacy, checks, signIns] = await Promise.all([
     legacyChecks(deps),
     Promise.all([
-      named("host pi", checkHostPi(deps, context, pi)),
-      named("provider hosts", checkProviderHosts(deps, context, pi)),
-      named("parent proxy", checkParentProxy(deps, context)),
-      named("sessions", checkSessions(deps, context, files)),
+      named("host pi", "host", checkHostPi(deps, context, pi)),
+      named("provider hosts", "host", checkProviderHosts(deps, context, pi)),
+      named("parent proxy", "network", checkParentProxy(deps, context)),
+      named("sessions", "host", checkSessions(deps, context, files)),
     ]),
     signInChecks(deps, files),
   ]);

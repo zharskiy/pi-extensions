@@ -154,7 +154,7 @@ A blocked request gets a 403 page that says what to do. When pi exits, the launc
 
 Any other case prints the proxy's own reason.
 
-`pi sandbox doctor` prints the same hint on the `rule` line of a credential host the proxy refused, and leaves that host out of the lines printed when it exits.
+`pi sandbox doctor` puts the same reason and hint under the `rule` check of a credential host the proxy refused. Every other host blocked during its run becomes a `blocked <host:port>` warning in the network section, with the same reason and hint, instead of a line printed when it exits; a run that stops before its probes lists them under its notices.
 
 ## Image
 

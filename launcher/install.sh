@@ -398,7 +398,7 @@ else
   if smoke; then
     step 6 "smoke: $shim sandbox doctor passed"
   else
-    fail "smoke check failed, see the doctor lines above, or run $shim sandbox doctor inside a repository"
+    fail "smoke check failed, see the doctor report above, or run $shim sandbox doctor inside a repository"
   fi
 fi
 

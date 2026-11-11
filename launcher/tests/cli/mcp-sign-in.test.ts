@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { run } from "../../cli/index.ts";
 import { mcpAuthKey, stateLayout, withFileLock } from "../../shared/index.ts";
 import type { FakeCall } from "../support/fake-runner.ts";
-import { createFakeBackend, createHarness } from "./harness.ts";
+import { createFakeBackend, createHarness, doctorCheck } from "./harness.ts";
 
 const URL_TEXT = "https://docs.example.test/mcp";
 
@@ -77,7 +77,11 @@ describe("MCP sign-in at launch start", () => {
 
     expect(logins()).toEqual([]);
     expect(harness.stderr()).not.toContain("signing in on the host");
-    expect(harness.stdout()).toContain("warn mcp docs: needs sign-in: run pi mcp login docs\n");
+    expect(doctorCheck(harness.stdout(), "mcp docs")).toMatchObject({
+      status: "warn",
+      detail: "needs sign-in",
+      hint: "run pi mcp login docs",
+    });
   });
 
   it("starts no login when a refresh token is stored", async () => {

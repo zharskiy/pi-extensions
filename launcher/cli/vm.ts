@@ -15,10 +15,10 @@ const vmPathsOf = (context: LaunchContext, sessions: HostSessions): VmPath[] =>
 
 const report = (deps: CliDeps) => (notice: string) => writeNotices(deps, [notice]);
 
-export const startVm = async (deps: CliDeps, backend: Backend, sessions: HostSessions) => {
+export const startVm = async (backend: Backend, sessions: HostSessions, progress: (line: string) => void) => {
   await prepareSessionsDir(sessions);
 
-  await backend.vm.ensureRunning(report(deps));
+  await backend.vm.ensureRunning((notice) => progress(`pi-sandbox: ${notice}`));
 };
 
 export const vmShareCoverage = (

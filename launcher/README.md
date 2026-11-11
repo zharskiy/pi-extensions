@@ -93,7 +93,7 @@ Pi's own installer comes first here too: the launcher runs only pi's managed ins
    allowed docs.example.com for /Users/you/code/my-app
    ```
 
-5. If something does not work, run `pi sandbox doctor`. It prints one line per check.
+5. If something does not work, run `pi sandbox doctor`. It reports each check by area (host, sandbox, network, credentials, leak sweep), puts the reasons and a `hint:` under each problem, lists the launch notices at the end and closes with one `result:` line. The credential rules that pass share one line; `--verbose` lists each.
 
 ## Everyday use
 
@@ -118,7 +118,7 @@ In the table, *host pi* is pi's managed install on your Mac, and `fallback` is t
 | `pi sandbox egress list [--denied]` | grants with their scope, or the hosts the proxy blocked |
 | `pi sandbox reset` | remove this folder's sandbox with its overlay and agent volumes once none of its sessions runs |
 | `pi sandbox stop` | stop the sandbox VM when no pi session runs |
-| `pi sandbox doctor` | prepare the sandbox like pi and print one ok, warn, fail or skip line per check |
+| `pi sandbox doctor [--verbose]` | prepare the sandbox like pi and report each check by area, with a hint per problem; --verbose lists every credential rule |
 | `pi sandbox --version`, `pi sandbox help` | version and usage |
 
 `pi uninstall <source>` also runs with host pi on the host. Host pi loads no extension for `pi --help` and `pi --list-models`, so help omits the flags extensions register and the list omits providers only an extension registers; `pi list`, `pi mcp list` and `pi config` run in the sandbox, and `pi --version` asks pi inside when `image.reference` and `image.digest` pin the image. `egress allow` uses port 443 unless you name one, and refuses wildcards, IP addresses and port 80 ([rules](CONFIGURATION.md#network-access)).
@@ -195,7 +195,8 @@ Start with `pi sandbox doctor`, which names the failing check.
 
 | symptom | what to do |
 | --- | --- |
-| A host `was blocked in this folder's sandbox` | Follow the hint in that line. `pi sandbox doctor` puts the same hint on the `rule` line of a credential host the proxy refused, for example the address a host resolved to and the `egress.privateHosts` entry that allows it. |
+| A host `was blocked in this folder's sandbox` | Follow the hint in that line. `pi sandbox doctor` puts the same hint under the `rule` check of a credential host the proxy refused, for example the address a host resolved to and the `egress.privateHosts` entry that allows it, and reports any other host blocked during its run as a `blocked <host:port>` warning. |
+| The doctor's `trust` or `rule` check fails with `CERT_NOT_YET_VALID` | The VM's clock is behind the host's. Run `pi sandbox stop` once no pi session runs, then `pi sandbox doctor` again, which starts the VM afresh. |
 | A provider login is missing or expired | Run `pi --no-sandbox`, then `/login`. If `fallback` is `refuse`, log in with host pi itself. |
 | Pi says `the sandbox VM engine is unreachable` | Run `colima start --profile pi-sandbox --activate=false`, or `install.sh` if the profile is gone. |
 | The VM is running but its engine does not answer | Run `colima stop --profile pi-sandbox && colima start --profile pi-sandbox --activate=false`. |

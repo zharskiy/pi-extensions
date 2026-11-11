@@ -30,9 +30,9 @@ bin/path-block.sh              the PATH block helpers and the sh and fish lines,
 ```
 cli/main.ts                    builds the real dependencies, the host git outside the started folder included, and runs
 cli/run.ts                     the command table, the hidden __uninstall route and error rendering
-cli/deps.ts                    the dependencies every command gets, and the shared terminal helpers
+cli/deps.ts                    the dependencies every command gets, and the shared terminal helpers (TTY and colour checks, a line sink)
 cli/index.ts                   public surface
-cli/launch.ts                  the pi pipeline with its stages, and withSandbox for the doctor
+cli/launch.ts                  the pi pipeline with its stages and progress lines, and withSandbox for the doctor
 cli/context.ts                 the launch context: the folder to mount, the guard and workspaceRoots before the search, config, discovery and the checks after it
 cli/vm.ts                      VM start and shares, the VM paths a launch needs
 cli/launch-notices.ts          the launch notice texts, the host-file flag notice and the proxy stage detail
@@ -41,12 +41,12 @@ cli/terminal.ts                the host terminal: streams, size read at use, res
 cli/launches.ts                begin and finish a launch (removing its container), the last-session removal, the live launch count
 cli/sweep.ts                   removeRepoSandbox, the sweep of ended launches' containers, the orphan sweep and the daily collection
 cli/derive.ts                  the host side of a launch: host pi files, derivation, trust bundle, notices
-cli/sandbox-proxy.ts           the repository's proxy input and token (derived private hosts dropped under the egress lock), and the denial summary at exit with a hint per kind (also the doctor's rule hints)
+cli/sandbox-proxy.ts           the repository's proxy input and token (derived private hosts dropped under the egress lock), and the denial summary at exit with a reason and fix per kind (also the doctor's rule hints and blocked warnings)
 cli/mcp-sign-in.ts             the launch-start MCP sign-in on the host
 cli/host-sessions.ts           host sessions for a launch: choice, preparation, sweeps, share probe
 cli/intercept.ts               pi install, uninstall, remove, mcp, update, auth, help, --list-models, --export and --version run on the host
 cli/host-routes.ts             which command lines start no session: help, version, auth, --list-models, --export
-cli/host-pi.ts                 the one host pi (pi's managed install only), the missing-pi line (missingPiText) and --no-sandbox (runHostPi)
+cli/host-pi.ts                 the one host pi (pi's managed install only), the missing-pi line (missingPiText, built from the parts of missingPi the doctor shows) and --no-sandbox (runHostPi)
 cli/notices.ts                 notices printed once per repository and text
 cli/versions.ts                launcher version and image pi version
 cli/commands/status.ts         pi sandbox status
@@ -55,9 +55,10 @@ cli/commands/egress.ts         pi sandbox egress allow, revoke and list
 cli/commands/reset.ts          pi sandbox reset: the folder's sandbox and volumes
 cli/commands/stop.ts           pi sandbox stop
 cli/commands/uninstall.ts      the hidden __uninstall command uninstall.sh runs: live-session refusal, engine objects by label, host-side release
-cli/commands/doctor.ts         pi sandbox doctor: stages, probes, host checks, and the denials matched to each rule
-cli/commands/doctor-probes.ts  the doctor's checks inside the container; a rule whose credential was denied warns, one the proxy refused says why
+cli/commands/doctor.ts         pi sandbox doctor: stages, probes and host checks as checks by section, the denials matched to each rule, the blocked warnings, captured notices and the progress line
+cli/commands/doctor-probes.ts  the doctor's checks inside the container; a rule whose credential was denied warns, one the proxy refused says why, a certificate not yet valid names the VM clock
 cli/commands/doctor-host.ts    the doctor's checks on the host
+cli/commands/doctor-report.ts  the check result types and the pure report renderer: sections, aligned columns, reasons and hints, collapsed rules, notices, result line, colour
 cli/commands/help.ts           usage
 cli/commands/options.ts        the option check of the sandbox commands and egress
 ```
@@ -370,9 +371,10 @@ tests/proxy/private-network.test.ts  derived private hosts at the proxy: a priva
 tests/proxy/keep-alive.test.ts       upstream connection reuse
 tests/proxy/request-target.test.ts   request target checks
 tests/proxy/child-env.test.ts        the minimal environment
-tests/cli/harness.ts                 the CLI test harness
+tests/cli/harness.ts                 the CLI test harness and the doctor report parser
 tests/cli/commands.test.ts           the pi sandbox commands
 tests/cli/doctor.test.ts             the doctor
+tests/cli/doctor-report.test.ts      the doctor report renderer: golden reports, collapsing, verdicts, ~, colour
 tests/cli/egress.test.ts             egress grants
 tests/cli/errors.test.ts             error output
 tests/cli/host-pi.test.ts            host pi selection

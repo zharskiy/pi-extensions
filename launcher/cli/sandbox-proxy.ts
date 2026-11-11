@@ -95,7 +95,7 @@ export const openSandboxProxy = async (
   }
 };
 
-const deniedTargets = (denials: DenialRecord[]) => [
+export const deniedTargets = (denials: DenialRecord[]) => [
   ...new Map(denials.map((denial) => [authorityOf(denial.host, denial.port), denial])).values(),
 ];
 
@@ -116,44 +116,62 @@ const privateHostsHint = (deps: CliDeps, host: string, context: LaunchContext) =
     ? `egress is locked by the policy; ask your administrator to add ${host} to egress.privateHosts`
     : `add ${host} to egress.privateHosts in ${pathsOf(deps).userConfigFile}`;
 
-export const denialHint = (deps: CliDeps, denial: DenialRecord, target: string, context: LaunchContext) => {
+export interface DenialAdvice {
+  reason?: string;
+  fix?: string;
+}
+
+export const denialAdvice = (
+  deps: CliDeps,
+  denial: DenialRecord,
+  target: string,
+  context: LaunchContext,
+): DenialAdvice => {
   if (denial.rule === "egress.allow") {
-    return context.effective.config.egress.grants
-      ? `run pi sandbox egress allow ${target} on the host from ${context.workspace.repoRoot}`
-      : `ask your administrator to add ${target} to egress.allow`;
+    return {
+      fix: context.effective.config.egress.grants
+        ? `run pi sandbox egress allow ${target} on the host from ${context.workspace.repoRoot}`
+        : `ask your administrator to add ${target} to egress.allow`,
+    };
   }
 
   if (denial.rule === "private-address") {
-    return `${denial.reason}; ${privateHostsHint(deps, denial.host, context)}`;
+    return { reason: denial.reason, fix: privateHostsHint(deps, denial.host, context) };
   }
 
   const kind = PRIVATE_KINDS[denial.rule];
 
   if (kind !== undefined) {
-    return `it resolves to a ${kind} address; ${privateHostsHint(deps, denial.host, context)}`;
+    return { reason: `it resolves to a ${kind} address`, fix: privateHostsHint(deps, denial.host, context) };
   }
 
-  const hints: Record<string, string> = {
-    "egress.deny": "denied by policy",
-    "plain-http": "plain HTTP is not proxied; use https",
-    upstream: `it could not be reached: ${denial.reason}`,
-    credential: `it could not authenticate: ${denial.reason}`,
-    login: `${denial.reason}; ${loginHint(context)}`,
+  const advice: Record<string, DenialAdvice> = {
+    "egress.deny": { reason: "denied by policy" },
+    "plain-http": { reason: "plain HTTP is not proxied", fix: "use https" },
+    upstream: { reason: `it could not be reached: ${denial.reason}` },
+    credential: { reason: `it could not authenticate: ${denial.reason}` },
+    login: { reason: denial.reason, fix: loginHint(context) },
   };
 
-  return hints[denial.rule] ?? denial.reason;
+  return advice[denial.rule] ?? { reason: denial.reason };
 };
 
-const denialLine = (deps: CliDeps, context: LaunchContext) => (denial: DenialRecord) => {
+const denialHint = (deps: CliDeps, denial: DenialRecord, target: string, context: LaunchContext) => {
+  const { reason, fix } = denialAdvice(deps, denial, target, context);
+
+  return [reason, fix].filter((part) => part !== undefined).join("; ");
+};
+
+export const blockedText = (deps: CliDeps, context: LaunchContext) => (denial: DenialRecord) => {
   const target = authorityOf(denial.host, denial.port);
 
-  return `pi-sandbox: ${target} was blocked in this folder's sandbox; ${denialHint(deps, denial, target, context)}`;
+  return `${target} was blocked in this folder's sandbox; ${denialHint(deps, denial, target, context)}`;
 };
 
 export const ruleAuthority = (rule: CredentialRule) =>
   authorityOf(rule.host.toLowerCase(), rule.port ?? TLS_PORT);
 
-const explainedBy = (rules: CredentialRule[]) => {
+export const explainedBy = (rules: CredentialRule[]) => {
   const authorities = new Set(rules.map(ruleAuthority));
 
   return (denial: DenialRecord) =>
@@ -165,17 +183,15 @@ export const reportDenials = async (
   context: LaunchContext,
   proxy: SandboxProxy | undefined,
   since: number,
-  explainedRules?: CredentialRule[],
 ) => {
   if (proxy === undefined) {
     return;
   }
 
   const denials = await deps.proxy.denials(context.stateDir, context.repoHash, since).catch(() => []);
-  const explained = explainedRules === undefined ? () => false : explainedBy(explainedRules);
 
   writeLines(
     deps.stderr,
-    deniedTargets(denials.filter((denial) => !explained(denial))).map(denialLine(deps, context)),
+    deniedTargets(denials).map((denial) => `pi-sandbox: ${blockedText(deps, context)(denial)}`),
   );
 };

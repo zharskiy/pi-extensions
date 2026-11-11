@@ -55,11 +55,14 @@ export type StageOutcome = { ok: true; detail?: string } | { ok: false; error: u
 
 type StageReport = (stage: Stage, outcome: StageOutcome) => void;
 
+type Progress = (line: string) => void;
+
 interface SandboxOptions {
   report?: StageReport;
+  progress?: Progress;
   signIn?: boolean;
   share?: boolean;
-  ruleDenials?: boolean;
+  denialReport?: boolean;
 }
 
 type Staged = <T>(stage: Stage, action: () => Promise<T>, detail?: (value: T) => string) => Promise<T>;
@@ -72,6 +75,7 @@ interface SandboxInput {
   sessions: HostSessions;
   cancelled: AbortSignal;
   staged: Staged;
+  progress: Progress;
 }
 
 interface PreparedInput extends SandboxInput {
@@ -134,19 +138,19 @@ const prepareImage = (
   deps: CliDeps,
   context: LaunchContext,
   backend: Backend,
-  host: HostSide,
+  parts: { host: HostSide; progress: Progress },
 ): Promise<SandboxImage> =>
   ensureSandboxImage({
     backend,
     config: context.effective.config,
     stateDir: context.stateDir,
     env: deps.env,
-    trustPem: host.trust.extraPemPath,
-    proxyCaPem: host.trust.caCertPath,
-    versions: async () => ({ pi: await imagePiVersion(host.pi) }),
-    preparing: () => writeLine(deps.stderr, PREPARING),
-    waiting: () => writeLine(deps.stderr, "pi-sandbox: waiting for the image build in another session"),
-    progress: (step) => writeLine(deps.stderr, `pi-sandbox: build: ${step}`),
+    trustPem: parts.host.trust.extraPemPath,
+    proxyCaPem: parts.host.trust.caCertPath,
+    versions: async () => ({ pi: await imagePiVersion(parts.host.pi) }),
+    preparing: () => parts.progress(PREPARING),
+    waiting: () => parts.progress("pi-sandbox: waiting for the image build in another session"),
+    progress: (step) => parts.progress(`pi-sandbox: build: ${step}`),
   });
 
 const sandboxRoute = async (
@@ -254,11 +258,11 @@ const prepareContainer = async (
 };
 
 const prepareSandbox = async (input: PreparedInput) => {
-  const { deps, context, backend, launch, cancelled, staged } = input;
+  const { deps, context, backend, launch, cancelled, staged, progress } = input;
   const { host } = input.prepared;
   const pending = [
     openSandboxProxy(deps, context, host, launch),
-    prepareImage(deps, context, backend, host),
+    prepareImage(deps, context, backend, { host, progress }),
   ] as const;
   const ground = handled(prepareGround(input));
 
@@ -333,9 +337,9 @@ const shielded = async <T>(deps: CliDeps, action: () => Promise<T>) => {
 };
 
 const prepareVm = async (input: SandboxInput, share: boolean) => {
-  const { deps, context, backend, sessions, launch, staged } = input;
+  const { deps, context, backend, sessions, launch, staged, progress } = input;
 
-  await staged("vm", () => startVm(deps, backend, sessions));
+  await staged("vm", () => startVm(backend, sessions, progress));
 
   if (share) {
     await staged("shares", () => shareVm(deps, context, backend, { sessions, launchId: launch.launchId }));
@@ -373,7 +377,13 @@ export const withSandbox = async (
   context: LaunchContext,
   backend: Backend,
   use: (sandbox: Sandbox) => Promise<number>,
-  { report = () => undefined, signIn = true, share = true, ruleDenials = true }: SandboxOptions = {},
+  {
+    report = () => undefined,
+    progress = (line) => writeLine(deps.stderr, line),
+    signIn = true,
+    share = true,
+    denialReport = true,
+  }: SandboxOptions = {},
 ) => {
   const staged = stagedWith(report);
   const files = await readHostPiFiles(hostAgentDirOf(deps));
@@ -383,10 +393,10 @@ export const withSandbox = async (
   const cancel = new AbortController();
   const deriving = startHostSide(deps, context, files);
   const preparation = prepareAll(
-    { deps, context, backend, launch, sessions, cancelled: cancel.signal, staged },
+    { deps, context, backend, launch, sessions, cancelled: cancel.signal, staged, progress },
     { deriving, signIn, share },
   );
-  const ended: { proxy?: SandboxProxy; host?: HostSide } = {};
+  const ended: { proxy?: SandboxProxy } = {};
 
   try {
     const outcome = await Promise.race([
@@ -407,20 +417,15 @@ export const withSandbox = async (
     const { prepared, proxy, host } = outcome.ready;
 
     ended.proxy = proxy;
-    ended.host = host;
 
     return await use({ ...prepared, backend, host, proxy, launch });
   } finally {
     signal.stop();
 
     await shielded(deps, async () => {
-      await reportDenials(
-        deps,
-        context,
-        ended.proxy,
-        launch.startedAt,
-        ruleDenials ? undefined : (ended.host?.derived.rules ?? []),
-      );
+      if (denialReport) {
+        await reportDenials(deps, context, ended.proxy, launch.startedAt);
+      }
 
       await finishLaunch(deps, context, backend, launch);
     });

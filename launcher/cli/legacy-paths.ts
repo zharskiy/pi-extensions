@@ -11,7 +11,14 @@ const kindOf = (path: string) =>
 
 const isOther = (path: string, current: string) => resolve(path) !== resolve(current);
 
-export const movedConfigNotice = async (deps: CliDeps) => {
+interface LegacyPath {
+  problem: string;
+  fix: string;
+}
+
+const noticeOf = (legacy: LegacyPath) => `${legacy.problem}; ${legacy.fix}`;
+
+export const movedConfig = async (deps: CliDeps): Promise<LegacyPath[]> => {
   const legacy = legacyLauncherPaths(deps.home).userConfigFile;
   const current = pathsOf(deps).userConfigFile;
 
@@ -21,10 +28,14 @@ export const movedConfigNotice = async (deps: CliDeps) => {
 
   const [old, now] = await Promise.all([kindOf(legacy), kindOf(current)]);
 
-  return old === "file" && now === undefined ? [`${legacy} is no longer read; move it to ${current}`] : [];
+  return old === "file" && now === undefined
+    ? [{ problem: `${legacy} is no longer read`, fix: `move it to ${current}` }]
+    : [];
 };
 
-export const leftoverStateNotice = async (deps: CliDeps) => {
+export const movedConfigNotice = async (deps: CliDeps) => (await movedConfig(deps)).map(noticeOf);
+
+export const leftoverState = async (deps: CliDeps): Promise<LegacyPath[]> => {
   const legacy = legacyLauncherPaths(deps.home).stateDir;
   const current = pathsOf(deps).stateDir;
 
@@ -33,6 +44,9 @@ export const leftoverStateNotice = async (deps: CliDeps) => {
   }
 
   return [
-    `${legacy} is no longer used, the launcher keeps its state in ${current}; delete it once no pi session started before the move runs`,
+    {
+      problem: `${legacy} is no longer used, the launcher keeps its state in ${current}`,
+      fix: "delete it once no pi session started before the move runs",
+    },
   ];
 };

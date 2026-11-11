@@ -139,6 +139,81 @@ export const holdLaunch = async (harness: HarnessPaths) => {
 export const noHostPiLine = (agentDir: string) =>
   `no managed pi in ${agentDir} (a pi installed with npm or found on PATH is not used): the sandbox gets no provider credentials, and host commands and --no-sandbox are unavailable; install pi with pi's own installer (curl -fsSL https://pi.dev/install.sh | sh) and run the launcher's install.sh again`;
 
+export interface DoctorCheck {
+  section: string;
+  status: string;
+  name: string;
+  detail: string;
+  reasons: string[];
+  hint?: string;
+}
+
+export interface DoctorReport {
+  sections: string[];
+  checks: DoctorCheck[];
+  notices: string[];
+  result?: string;
+}
+
+const CHECK_LINE = /^ {2}(ok|warn|fail|skip) +(\S+(?: \S+)*?)(?: {2,}(.*))?$/;
+
+const SUB_LINE = /^ {8}(\S.*)$/;
+
+const readLine = (report: DoctorReport, line: string) => {
+  const section = report.sections.at(-1) ?? "";
+  const check = CHECK_LINE.exec(line);
+  const sub = SUB_LINE.exec(line)?.[1];
+  const last = report.checks.at(-1);
+
+  if (line.startsWith("result: ")) {
+    report.result = line.slice("result: ".length);
+  } else if (/^\S/.test(line)) {
+    report.sections.push(line);
+  } else if (section === "notices" && /^ {2}\S/.test(line)) {
+    report.notices.push(line.slice(2));
+  } else if (sub !== undefined && last !== undefined) {
+    if (sub.startsWith("hint: ")) {
+      last.hint = sub.slice("hint: ".length);
+    } else {
+      last.reasons.push(sub);
+    }
+  } else if (check !== null) {
+    report.checks.push({
+      section,
+      status: check[1] ?? "",
+      name: check[2] ?? "",
+      detail: check[3] ?? "",
+      reasons: [],
+    });
+  } else if (line !== "") {
+    throw new Error(`not a doctor report line: ${JSON.stringify(line)}`);
+  }
+};
+
+export const doctorReport = (stdout: string): DoctorReport => {
+  const report: DoctorReport = { sections: [], checks: [], notices: [] };
+
+  stdout.split("\n").forEach((line) => {
+    readLine(report, line);
+  });
+
+  return report;
+};
+
+export const flat = (check: DoctorCheck) =>
+  check.detail === "" ? `${check.status} ${check.name}` : `${check.status} ${check.name}: ${check.detail}`;
+
+export const withoutColour = (text: string) =>
+  text
+    .split("\u001b")
+    .map((part, index) => (index === 0 ? part : part.replace(/^\[[0-9;]*m/, "")))
+    .join("");
+
+export const doctorLines = (stdout: string) => doctorReport(stdout).checks.map(flat);
+
+export const doctorCheck = (stdout: string, name: string) =>
+  doctorReport(stdout).checks.find((check) => check.name === name);
+
 interface ManagedPiOptions {
   marker?: unknown;
   release?: string;
