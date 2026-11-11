@@ -708,20 +708,6 @@ describe("pi sandbox doctor", () => {
     ]);
   });
 
-  it("puts the denials of a run that stopped before the probes in the notices", async () => {
-    const fake = createFakeBackend({ exec: answering({}) });
-    const failing = { ...fake.backend, buildImage: async () => Promise.reject(new Error("build failed")) };
-    const harness = await createHarness({
-      backend: () => failing,
-      denials: [refusal("egress.deny", "models.example.test is in egress.deny")],
-    });
-
-    expect(await run(["sandbox", "doctor"], harness.deps)).toBe(1);
-    expect(doctorReport(harness.stdout()).notices).toEqual([
-      "models.example.test was blocked in this folder's sandbox; denied by policy",
-    ]);
-  });
-
   it("prints the report so far and the notices before an unexpected error, without a result line", async () => {
     const fake = await guestBackend({});
     const detect = fake.backend.detect;

@@ -13,7 +13,7 @@ import { type Launch, othersLive, withRepoLaunchLock } from "../grants/index.ts"
 import { type HostPiFiles, readHostPiFiles } from "../hostpi/index.ts";
 import { ensureSandboxImage, type SandboxImage } from "../image/index.ts";
 import { renderAgentDir, syncSettingsFile } from "../provision/index.ts";
-import { guestProxyUrl } from "../proxy/index.ts";
+import { type DenialRecord, guestProxyUrl } from "../proxy/index.ts";
 import { errorMessage, settleAll } from "../shared/index.ts";
 import { gitLaunchNotices, type HostSessions } from "../workspace/index.ts";
 import { checkWorkspaceRoots, type LaunchContext, openContext } from "./context.ts";
@@ -31,7 +31,7 @@ import { beginLaunch, finishLaunch, gitGuardOf } from "./launches.ts";
 import { movedConfigNotice } from "./legacy-paths.ts";
 import { signInMcpServers } from "./mcp-sign-in.ts";
 import { writeOnce } from "./notices.ts";
-import { openSandboxProxy, reportDenials, type SandboxProxy } from "./sandbox-proxy.ts";
+import { openSandboxProxy, reportDenials, type SandboxProxy, sandboxDenials } from "./sandbox-proxy.ts";
 import { sweepOrphans } from "./sweep.ts";
 import { imagePiVersion } from "./versions.ts";
 import { shareVm, startVm } from "./vm.ts";
@@ -62,7 +62,7 @@ interface SandboxOptions {
   progress?: Progress;
   signIn?: boolean;
   share?: boolean;
-  denialReport?: boolean;
+  denials?: (records: DenialRecord[]) => void;
 }
 
 type Staged = <T>(stage: Stage, action: () => Promise<T>, detail?: (value: T) => string) => Promise<T>;
@@ -382,7 +382,7 @@ export const withSandbox = async (
     progress = (line) => writeLine(deps.stderr, line),
     signIn = true,
     share = true,
-    denialReport = true,
+    denials = reportDenials(deps, context),
   }: SandboxOptions = {},
 ) => {
   const staged = stagedWith(report);
@@ -423,8 +423,8 @@ export const withSandbox = async (
     signal.stop();
 
     await shielded(deps, async () => {
-      if (denialReport) {
-        await reportDenials(deps, context, ended.proxy, launch.startedAt);
+      if (ended.proxy !== undefined) {
+        denials(await sandboxDenials(deps, context, launch.startedAt));
       }
 
       await finishLaunch(deps, context, backend, launch);

@@ -369,6 +369,7 @@ export const createHarness = async (options: HarnessOptions = {}) => {
   const terminalOut = new PassThrough();
   const stoppedProxies: string[] = [];
   const proxyInputs: RepoProxyInput[] = [];
+  const proxyState = { stopped: false };
   const deps: CliDeps = {
     runner: fake.runner,
     env: {
@@ -400,15 +401,19 @@ export const createHarness = async (options: HarnessOptions = {}) => {
       ensure: async (request) => {
         proxyInputs.push(request.input);
 
+        proxyState.stopped = false;
+
         return { proxy: RUNNING_PROXY, notices: [] };
       },
       read: async () => undefined,
       stop: async (_stateDir, repoHash) => {
         stoppedProxies.push(repoHash);
 
+        proxyState.stopped = true;
+
         return false;
       },
-      denials: async () => options.denials ?? [],
+      denials: async () => (proxyState.stopped ? [] : (options.denials ?? [])),
       trust: async () => ({
         pemPath: trustPem,
         caCertPath: trustPem,

@@ -162,7 +162,7 @@ const denialHint = (deps: CliDeps, denial: DenialRecord, target: string, context
   return [reason, fix].filter((part) => part !== undefined).join("; ");
 };
 
-export const blockedText = (deps: CliDeps, context: LaunchContext) => (denial: DenialRecord) => {
+const blockedText = (deps: CliDeps, context: LaunchContext) => (denial: DenialRecord) => {
   const target = authorityOf(denial.host, denial.port);
 
   return `${target} was blocked in this folder's sandbox; ${denialHint(deps, denial, target, context)}`;
@@ -178,18 +178,10 @@ export const explainedBy = (rules: CredentialRule[]) => {
     denial.credentialRule !== undefined || authorities.has(authorityOf(denial.host, denial.port));
 };
 
-export const reportDenials = async (
-  deps: CliDeps,
-  context: LaunchContext,
-  proxy: SandboxProxy | undefined,
-  since: number,
-) => {
-  if (proxy === undefined) {
-    return;
-  }
+export const sandboxDenials = (deps: CliDeps, context: LaunchContext, since: number) =>
+  deps.proxy.denials(context.stateDir, context.repoHash, since).catch((): DenialRecord[] => []);
 
-  const denials = await deps.proxy.denials(context.stateDir, context.repoHash, since).catch(() => []);
-
+export const reportDenials = (deps: CliDeps, context: LaunchContext) => (denials: DenialRecord[]) => {
   writeLines(
     deps.stderr,
     deniedTargets(denials).map((denial) => `pi-sandbox: ${blockedText(deps, context)(denial)}`),

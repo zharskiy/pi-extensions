@@ -9,12 +9,12 @@ import { missingPiText } from "../host-pi.ts";
 import { hostSessionsOf } from "../host-sessions.ts";
 import { type Sandbox, type Stage, type StageOutcome, withSandbox } from "../launch.ts";
 import {
-  blockedText,
   denialAdvice,
   deniedTargets,
   explainedBy,
   ruleAuthority,
   type SandboxProxy,
+  sandboxDenials,
 } from "../sandbox-proxy.ts";
 import { vmShareCoverage } from "../vm.ts";
 import { hostChecks } from "./doctor-host.ts";
@@ -239,9 +239,6 @@ const adviceOf = (deps: CliDeps, context: LaunchContext) => (denial: DenialRecor
   } satisfies RuleAdvice;
 };
 
-const sandboxDenials = (deps: CliDeps, context: LaunchContext, since: number) =>
-  deps.proxy.denials(context.stateDir, context.repoHash, since).catch((): DenialRecord[] => []);
-
 const ruleHints =
   ({ deps, context, sandbox }: ProbeInput, rules: CredentialRule[]) =>
   async (): Promise<ReadonlyMap<string, RuleHint>> => {
@@ -333,11 +330,9 @@ const notRun = (stage: Stage | undefined): NamedCheck => ({
 });
 
 const sandboxChecks = async (deps: CliDeps, context: LaunchContext, backend: Backend, run: Run) => {
-  const since = deps.now();
-  const seen: { failed?: Stage; proxy: boolean; rules?: CredentialRule[] } = { proxy: false };
+  const seen: { failed?: Stage; rules?: CredentialRule[] } = {};
   const report = (stage: Stage, outcome: StageOutcome) => {
     seen.failed ??= outcome.ok ? undefined : stage;
-    seen.proxy ||= stage === "proxy" && outcome.ok;
 
     run.checks.push(stageCheck(stage, outcome));
 
@@ -357,7 +352,7 @@ const sandboxChecks = async (deps: CliDeps, context: LaunchContext, backend: Bac
     progress: run.progress.line,
     signIn: false,
     share: false,
-    denialReport: false,
+    denials: (records) => run.checks.push(...blockedChecks(deps, context, seen.rules ?? [])(records)),
   }).catch((error: unknown) => {
     if (seen.failed === undefined) {
       throw error;
@@ -365,17 +360,11 @@ const sandboxChecks = async (deps: CliDeps, context: LaunchContext, backend: Bac
 
     return undefined;
   });
-  const denials = seen.proxy ? await sandboxDenials(deps, context, since) : [];
-
   if (seen.rules !== undefined) {
-    run.checks.push(...blockedChecks(deps, context, seen.rules)(denials));
-
     return undefined;
   }
 
   run.checks.push(notRun(seen.failed));
-
-  writeLines(deps.stderr, deniedTargets(denials).map(blockedText(deps, context)));
 
   return code;
 };
