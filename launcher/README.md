@@ -154,7 +154,7 @@ It protects:
 
 - **Your files.** Pi sees the repository or plain folder, and its git data. The rest of your home, `~/.ssh` and `~/.pi` stay hidden.
 - **Your secrets.** Every key inside is a *placeholder*, a stand-in value. The proxy swaps it for the real one, only toward the host it belongs to.
-- **Your network.** Only listed hosts are reachable. Private and loopback addresses are refused, except that a model gateway named by a `baseUrl` in your host `models.json` may resolve to a private network address (10/8, 172.16/12, 192.168/16, 100.64/10, fc00::/7).
+- **Your network.** Only listed hosts are reachable. Private and loopback addresses are refused.
 - **Your git hooks.** `.git/hooks` is read-only inside.
 
 It does not protect:

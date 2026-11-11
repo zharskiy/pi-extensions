@@ -8,7 +8,6 @@ export interface EgressSettings {
   privateHosts: string[];
   grants: boolean;
   derivedHosts: string[];
-  derivedPrivateHosts: string[];
 }
 
 export interface RepoProxyInput extends EgressSettings {
@@ -39,7 +38,6 @@ export const egressSettingsOf = (input: EgressSettings): EgressSettings => ({
   privateHosts: input.privateHosts,
   grants: input.grants,
   derivedHosts: input.derivedHosts,
-  derivedPrivateHosts: input.derivedPrivateHosts,
 });
 
 const isTextList = (value: unknown): value is string[] =>
@@ -53,12 +51,8 @@ export const parseEgressSettings = (
   isTextList(value.deny) &&
   isTextList(value.privateHosts) &&
   typeof value.grants === "boolean" &&
-  isTextList(value.derivedHosts) &&
-  (value.derivedPrivateHosts === undefined || isTextList(value.derivedPrivateHosts))
-    ? egressSettingsOf({
-        ...value,
-        derivedPrivateHosts: value.derivedPrivateHosts ?? [],
-      } as unknown as EgressSettings)
+  isTextList(value.derivedHosts)
+    ? egressSettingsOf(value as unknown as EgressSettings)
     : undefined;
 
 export interface DaemonInput {

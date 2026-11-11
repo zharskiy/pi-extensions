@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import type { AddressInfo, Socket } from "node:net";
 import { userInfo } from "node:os";
 import type { Duplex } from "node:stream";
-import { authorityOf, matchesPattern, normalizeHost, parseEntry, TLS_PORT } from "../config/index.ts";
+import { authorityOf, matchesPattern, normalizeHost, TLS_PORT } from "../config/index.ts";
 import { LauncherError } from "../shared/index.ts";
 import type { AccessLogEntry } from "./access-log.ts";
 import { proxyTokenOf, sameText } from "./auth.ts";
@@ -58,28 +58,6 @@ const currentUser = () => {
   }
 };
 
-const privateNetworkKey = (entry: string) => {
-  const { pattern, port } = parseEntry(entry);
-
-  return authorityOf(pattern, port ?? TLS_PORT);
-};
-
-const accessOf = (
-  host: string,
-  port: number,
-  rule: string,
-  privatePatterns: string[],
-  privateNetworkHosts: Set<string>,
-): DialAccess => {
-  if (privatePatterns.some((pattern) => matchesPattern(host, pattern))) {
-    return "private";
-  }
-
-  return rule === "credential" && privateNetworkHosts.has(authorityOf(host, port))
-    ? "private-network"
-    : "public";
-};
-
 export const startProxyServer = async (options: ProxyServerOptions): Promise<ProxyServer> => {
   const { dial, ca } = options;
   const { repoHash } = options;
@@ -100,10 +78,7 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
   const credentialHosts = [
     ...new Set(options.runtime.rules().map((rule) => authorityOf(rule.host, rule.port ?? TLS_PORT))),
   ];
-  const compiled = new WeakMap<
-    EgressSettings,
-    { decide: EgressDecider; privatePatterns: string[]; privateNetworkHosts: Set<string> }
-  >();
+  const compiled = new WeakMap<EgressSettings, { decide: EgressDecider; privatePatterns: string[] }>();
 
   const compiledFor = (settings: EgressSettings) => {
     const known = compiled.get(settings);
@@ -120,7 +95,6 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
         grants: settings.grants,
       }),
       privatePatterns: settings.privateHosts.map(normalizeHost),
-      privateNetworkHosts: new Set(settings.derivedPrivateHosts.map(privateNetworkKey)),
     };
 
     compiled.set(settings, fresh);
@@ -200,7 +174,7 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
     }
 
     const { settings, extras } = await options.runtime.egress();
-    const { decide, privatePatterns, privateNetworkHosts } = compiledFor(settings);
+    const { decide, privatePatterns } = compiledFor(settings);
     const decision = decide({ host, port }, extras);
 
     if (!decision.allowed && isHinted(decision.rule) && head.length === 0) {
@@ -215,7 +189,9 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
       return;
     }
 
-    const access = accessOf(host, port, decision.rule, privatePatterns, privateNetworkHosts);
+    const access: DialAccess = privatePatterns.some((pattern) => matchesPattern(host, pattern))
+      ? "private"
+      : "public";
     const restricted = await restrictedResolution(host, access);
 
     if (restricted !== undefined) {

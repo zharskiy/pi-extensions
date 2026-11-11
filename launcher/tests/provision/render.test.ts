@@ -20,7 +20,6 @@ const derived = (
 ): DerivedSandboxPi => ({
   rules: [],
   hosts: [],
-  privateHosts: [],
   files: {
     "auth.json": { corp: { type: "api_key", key } },
     "models.json": { providers: {} },

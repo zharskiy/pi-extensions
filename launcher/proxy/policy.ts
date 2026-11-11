@@ -126,20 +126,6 @@ const blockLists = ADDRESS_RANGES.map((range) => {
   return { range, list };
 });
 
-const PRIVATE_NETWORK_RANGES: AddressRange["ranges"] = [
-  ["10.0.0.0", 8, "ipv4"],
-  ["172.16.0.0", 12, "ipv4"],
-  ["192.168.0.0", 16, "ipv4"],
-  ["100.64.0.0", 10, "ipv4"],
-  ["fc00::", 7, "ipv6"],
-];
-
-const privateNetworks = new BlockList();
-
-PRIVATE_NETWORK_RANGES.forEach(([network, prefix, family]) => {
-  privateNetworks.addSubnet(network, prefix, family);
-});
-
 const deny = (rule: string, reason: string): Denial => ({ allowed: false, rule, reason });
 
 export const restrictedAddress = (address: string): Denial | undefined => {
@@ -148,13 +134,6 @@ export const restrictedAddress = (address: string): Denial | undefined => {
   const match = blockLists.find(({ list }) => list.check(plain, family));
 
   return match === undefined ? undefined : deny(match.range.rule, `${plain} is a ${match.range.reason}`);
-};
-
-export const isPrivateNetworkAddress = (address: string) => {
-  const plain = address.replace(/^\[|\]$/g, "");
-  const family = isIP(plain);
-
-  return family !== 0 && privateNetworks.check(plain, family === 4 ? "ipv4" : "ipv6");
 };
 
 const notAllowed = (host: string, port: number, grants: boolean) => {

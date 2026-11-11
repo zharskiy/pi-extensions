@@ -105,7 +105,6 @@ interface DerivedFiles {
 export interface DerivedSandboxPi {
   rules: CredentialRule[];
   hosts: string[];
-  privateHosts: string[];
   files: DerivedFiles;
   tools: DerivedTools;
   oauthServers: McpOAuthServer[];

@@ -43,43 +43,6 @@ describe("pi launch wiring", () => {
     });
   });
 
-  it.each([
-    ["the user config", "userConfigFile", ["gateway.corp.test", "models.corp.test:8443"]],
-    ["a policy that locks egress", "policyFile", []],
-  ] as const)(
-    "hands the proxy the models.json baseUrl hosts as private-network hosts under %s",
-    async (_case, file, expected) => {
-      const harness = await createHarness({ backend: () => createFakeBackend().backend });
-
-      await harness.writeJson(join(harness.hostAgentDir, "models.json"), {
-        providers: {
-          gateway: {
-            baseUrl: "https://gateway.corp.test/v1",
-            apiKey: REAL_KEY,
-            models: [
-              { id: "m1", baseUrl: "https://models.corp.test:8443/v1", headers: { "x-api-key": REAL_KEY } },
-            ],
-          },
-        },
-      });
-
-      await harness.writeJson(join(harness.hostAgentDir, "mcp.json"), {
-        mcpServers: {
-          docs: { url: "https://mcp.corp.test/mcp", headers: { Authorization: `Bearer ${REAL_KEY}` } },
-        },
-      });
-
-      await harness.writeJson(harness[file], { egress: { grants: file === "userConfigFile" } });
-
-      expect(await run([], harness.deps)).toBe(0);
-
-      const [input] = harness.proxyInputs;
-
-      expect(input?.derivedHosts).toEqual(expect.arrayContaining(["gateway.corp.test", "mcp.corp.test"]));
-      expect(input?.derivedPrivateHosts.slice().sort()).toEqual(expected);
-    },
-  );
-
   it("hands env secrets to the proxy, not to the container", async () => {
     const fake = createFakeBackend({ registry: { "registry.example.test/pi-sandbox:1": PINNED } });
     const harness = await createHarness({

@@ -1,10 +1,10 @@
 import { join } from "node:path";
 import type { SecretRef } from "../config/index.ts";
 import { isJsonObject } from "../shared/index.ts";
-import { type Endpoint, endpointKey, endpointOf, hasQueryCredential, strippedUrl } from "./endpoints.ts";
+import { type Endpoint, endpointOf, hasQueryCredential, strippedUrl } from "./endpoints.ts";
 import { deriveHeaders, type HeaderTarget } from "./headers.ts";
 import { jsonPointer, objectOr } from "./json.ts";
-import { configuredEndpoints, httpsEndpoint, noHostNotice, providerEndpoints } from "./provider-endpoints.ts";
+import { httpsEndpoint, noHostNotice, providerEndpoints } from "./provider-endpoints.ts";
 import { type DeriveContext, mergeSections, placeholderOf, rulesFor, type Section } from "./rules.ts";
 import type { JsonObject, ProviderHosts } from "./types.ts";
 
@@ -204,6 +204,3 @@ export const deriveModels = (
     notices: merged.notices,
   };
 };
-
-export const baseUrlEndpointKeys = (providers: JsonObject) =>
-  new Set(Object.values(providers).filter(isJsonObject).flatMap(configuredEndpoints).map(endpointKey));

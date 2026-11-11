@@ -54,7 +54,6 @@ const inputFor = async (
   grants: true,
   rules: [],
   derivedHosts: [],
-  derivedPrivateHosts: [],
   envSecrets: { corp: SECRET },
   parent: "none",
   parentEnv: {},

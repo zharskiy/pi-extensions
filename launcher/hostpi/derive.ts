@@ -8,7 +8,7 @@ import {
 } from "../config/index.ts";
 import { deriveAuth } from "./derive-auth.ts";
 import { deriveMcp } from "./derive-mcp.ts";
-import { baseUrlEndpointKeys, deriveModels } from "./derive-models.ts";
+import { deriveModels } from "./derive-models.ts";
 import { type Endpoint, endpointKey } from "./endpoints.ts";
 import { objectOr } from "./json.ts";
 import { type DerivedSandboxPi, type DeriveInput, emptyTools, type ToolRegistry } from "./types.ts";
@@ -78,13 +78,9 @@ export const deriveSandboxPi = (input: DeriveInput): DerivedSandboxPi => {
     ...registryNotices(tools.registries, [...derived, ...manual], input.egress),
   ];
 
-  const hosts = [...new Set(derived.map(endpointKey))];
-  const baseUrlHosts = baseUrlEndpointKeys(providers);
-
   return {
     rules: [...derived, ...manual],
-    hosts,
-    privateHosts: hosts.filter((host) => baseUrlHosts.has(host)),
+    hosts: [...new Set(derived.map(endpointKey))],
     files: {
       "auth.json": auth.value,
       "models.json": modelsSection.value,

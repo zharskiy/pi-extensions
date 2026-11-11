@@ -69,13 +69,4 @@ describe("live egress settings", () => {
 
     expect((await runtime.egress()).settings.allow).toEqual(["new.test"]);
   });
-
-  it("reads an egress.json written before derived private hosts existed as having none", async () => {
-    const runtime = runtimeWith(["old.test"]);
-    const { derivedPrivateHosts: _dropped, ...older } = settingsOf({ allow: ["new.test"] });
-
-    await writeFile(egressPath(), JSON.stringify(older));
-
-    expect((await runtime.egress()).settings).toMatchObject({ allow: ["new.test"], derivedPrivateHosts: [] });
-  });
 });
