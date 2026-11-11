@@ -3,7 +3,7 @@ import { type Backend, execCapture } from "../../backend/index.ts";
 import { type CredentialRule, fillTemplate, TLS_PORT } from "../../config/index.ts";
 import { credentialHosts, probeHostSessions, readVolumeFile } from "../../provision/index.ts";
 import { GUEST_PATHS, isAuthLikeHeader, isPlaceholder, isSecretName } from "../../shared/index.ts";
-import { type CheckResult, failed, type NamedCheck, passed, skipped } from "./doctor-report.ts";
+import { type CheckResult, failed, type NamedCheck, passed, skipped } from "./doctor-checks.ts";
 
 export interface ProbeTarget {
   backend: Backend;

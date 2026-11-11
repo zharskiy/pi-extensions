@@ -10,6 +10,17 @@ import { hostSessionsOf } from "../host-sessions.ts";
 import { type Sandbox, type Stage, type StageOutcome, withSandbox } from "../launch.ts";
 import { denialAdvice, deniedTargets, type SandboxProxy, sandboxDenials } from "../sandbox-proxy.ts";
 import { vmShareCoverage } from "../vm.ts";
+import {
+  type CheckResult,
+  failed,
+  type NamedCheck,
+  passed,
+  type Section,
+  skipped,
+  VERBOSE_FLAG,
+  verdictOf,
+  warned,
+} from "./doctor-checks.ts";
 import { hostChecks } from "./doctor-host.ts";
 import {
   checkMcp,
@@ -22,18 +33,7 @@ import {
   type RuleHint,
   sweepCredentials,
 } from "./doctor-probes.ts";
-import {
-  type CheckResult,
-  failed,
-  type NamedCheck,
-  passed,
-  renderReport,
-  type Section,
-  skipped,
-  VERBOSE_FLAG,
-  verdictOf,
-  warned,
-} from "./doctor-report.ts";
+import { renderReport } from "./doctor-report.ts";
 
 interface ProbeInput {
   deps: CliDeps;

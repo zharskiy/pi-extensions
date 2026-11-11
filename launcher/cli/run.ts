@@ -1,7 +1,7 @@
 import { errorMessage, LauncherError } from "../shared/index.ts";
 import { configCommand, JSON_FLAG } from "./commands/config.ts";
 import { doctorCommand } from "./commands/doctor.ts";
-import { VERBOSE_FLAG } from "./commands/doctor-report.ts";
+import { VERBOSE_FLAG } from "./commands/doctor-checks.ts";
 import { egressCommand } from "./commands/egress.ts";
 import { helpCommand, usageOf } from "./commands/help.ts";
 import { assertOptions } from "./commands/options.ts";

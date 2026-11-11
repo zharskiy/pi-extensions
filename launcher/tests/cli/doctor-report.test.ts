@@ -1,13 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  failed,
-  type NamedCheck,
-  passed,
-  type ReportOptions,
-  renderReport,
-  skipped,
-  warned,
-} from "../../cli/commands/doctor-report.ts";
+import { failed, type NamedCheck, passed, skipped, warned } from "../../cli/commands/doctor-checks.ts";
+import { type ReportOptions, renderReport } from "../../cli/commands/doctor-report.ts";
 import { withoutColour } from "./harness.ts";
 
 const HOME = "/Users/you";

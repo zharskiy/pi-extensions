@@ -26,7 +26,7 @@ import {
   type Section,
   skipped,
   warned,
-} from "./doctor-report.ts";
+} from "./doctor-checks.ts";
 
 const CONNECT_TIMEOUT_MS = 3000;
 

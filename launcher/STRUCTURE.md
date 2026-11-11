@@ -59,7 +59,8 @@ cli/commands/uninstall.ts      the hidden __uninstall command uninstall.sh runs:
 cli/commands/doctor.ts         pi sandbox doctor: stages, probes and host checks as checks by section, the denials matched to each rule, the blocked warnings, captured notices and the progress line
 cli/commands/doctor-probes.ts  the doctor's checks inside the container; a rule whose credential was denied warns, one the proxy refused says why, a certificate not yet valid names the VM clock
 cli/commands/doctor-host.ts    the doctor's checks on the host
-cli/commands/doctor-report.ts  the check result types and the pure report renderer: sections, aligned columns, reasons and hints, collapsed rules, notices, result line, colour
+cli/commands/doctor-checks.ts  the check data model: result types and builders, the section and check order, the tally and verdict
+cli/commands/doctor-report.ts  the pure text renderer of the checks: aligned columns, reasons and hints, collapsed rules, notices, result line, ~, colour
 cli/commands/help.ts           usage
 cli/commands/options.ts        the option check of the sandbox commands and egress
 ```
