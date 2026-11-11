@@ -874,9 +874,7 @@ describe("pi sandbox doctor on the host pi", () => {
     expect(found).toMatchObject({ status: "fail", detail: "no managed pi in ~/.pi/agent" });
     expect(found?.reasons).toHaveLength(2);
     expect(joined.replace("~/", `${harness.deps.home}/`)).toBe(noHostPiLine(harness.hostAgentDir));
-    expect(doctorLines(harness.stdout())).toContain(
-      "fail provider hosts: no host pi to read the provider host table with",
-    );
+    expect(doctorLines(harness.stdout())).toContain("skip provider hosts: no host pi");
   });
 
   it("says the missing pi once, in its check, not again in the notices of a run that prepares the sandbox", async () => {

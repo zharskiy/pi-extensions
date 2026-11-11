@@ -66,7 +66,7 @@ const checkHostPi = async (deps: CliDeps, context: LaunchContext, job: HostPi | 
 
 const checkProviderHosts = async (deps: CliDeps, context: LaunchContext, pi: HostPi | undefined) => {
   if (pi === undefined) {
-    return failed("no host pi to read the provider host table with");
+    return skipped("no host pi");
   }
 
   const { hosts, notices } = await providerHostsOf(deps, context, pi);
