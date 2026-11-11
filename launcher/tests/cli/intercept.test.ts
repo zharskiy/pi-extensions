@@ -16,7 +16,7 @@ import {
 } from "./harness.ts";
 
 const hostPiRuns = (harness: Awaited<ReturnType<typeof createHarness>>) =>
-  harness.calls.filter((entry) => entry.interactive).map((entry) => entry.args.slice(1));
+  harness.calls.filter((entry) => entry.interactive).map((entry) => entry.args);
 
 const noBackend = () => {
   throw new Error("the backend must not be used");
@@ -220,8 +220,8 @@ describe("pi mcp", () => {
 
     const call = harness.calls.find((entry) => entry.interactive);
 
-    expect(call?.file).toBe(process.execPath);
-    expect(call?.args.slice(1)).toEqual(["mcp", "add", "docs", "--url", "https://docs.example.test/mcp"]);
+    expect(call?.file).toBe(join(harness.hostAgentDir, "bin", "pi"));
+    expect(call?.args).toEqual(["mcp", "add", "docs", "--url", "https://docs.example.test/mcp"]);
     expect(call?.options).toEqual({ cwd: harness.cwd, env: { PI_CODING_AGENT_DIR: harness.hostAgentDir } });
   });
 
@@ -244,7 +244,7 @@ describe("pi mcp", () => {
     const call = harness.calls.find((entry) => entry.interactive);
 
     expect(seen).toEqual([[]]);
-    expect(call?.args.slice(1)).toEqual(["mcp", "login", "docs"]);
+    expect(call?.args).toEqual(["mcp", "login", "docs"]);
     expect(call?.options.env).toEqual({ PI_CODING_AGENT_DIR: harness.hostAgentDir });
     expect(call?.options.cwd?.startsWith(harness.repoRoot)).toBe(false);
     expect(await readdir(call?.options.cwd ?? "").catch(() => "removed")).toBe("removed");
@@ -255,7 +255,7 @@ describe("pi mcp", () => {
 
     expect(await run(["mcp", "login", "docs", "--timeout", "30", "-l"], harness.deps)).toBe(0);
     expect(await run(["mcp", "logout", "docs"], harness.deps)).toBe(0);
-    expect(harness.calls.filter((entry) => entry.interactive).map((entry) => entry.args.slice(1))).toEqual([
+    expect(harness.calls.filter((entry) => entry.interactive).map((entry) => entry.args)).toEqual([
       ["mcp", "login", "docs", "--timeout", "30", "-l"],
       ["mcp", "logout", "docs"],
     ]);

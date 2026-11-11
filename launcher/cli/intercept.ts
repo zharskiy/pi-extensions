@@ -23,9 +23,9 @@ const runOnHost = async (
   args: string[],
   options: { cwd: string; env?: Record<string, string> },
 ) => {
-  const [file = "", ...prefix] = (await requireJobPi(deps)).command;
+  const pi = await requireJobPi(deps);
 
-  return deps.runner.spawnInteractive(file, [...prefix, ...args], options);
+  return deps.runner.spawnInteractive(pi.wrapper, args, options);
 };
 
 const inEmptyDir = (deps: CliDeps, args: string[], options: { env?: Record<string, string> } = {}) =>
