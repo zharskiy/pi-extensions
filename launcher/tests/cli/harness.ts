@@ -217,6 +217,8 @@ export const doctorCheck = (stdout: string, name: string) =>
 interface ManagedPiOptions {
   marker?: unknown;
   release?: string;
+  nodeModules?: string;
+  wrapper?: (packageDir: string) => string;
 }
 
 const MANAGED_MARKER = {
@@ -228,21 +230,28 @@ const MANAGED_MARKER = {
 
 export const writeManagedPi = async (agentDir: string, version: string, options: ManagedPiOptions = {}) => {
   const install = join(agentDir, "install");
-  const packageDir = join(install, "releases", version, "node_modules", "@earendil-works", "pi-coding-agent");
+  const releaseDir = join(install, "releases", version);
+  const packageDir = join(releaseDir, "node_modules", "@earendil-works", "pi-coding-agent");
   const wrapper = join(agentDir, "bin", "pi");
 
-  await mkdir(packageDir, { recursive: true });
+  if (options.nodeModules === undefined) {
+    await mkdir(packageDir, { recursive: true });
 
-  await writeFile(
-    join(packageDir, "package.json"),
-    JSON.stringify({ name: "@earendil-works/pi-coding-agent", version, bin: { pi: "dist/cli.js" } }),
-  );
+    await writeFile(
+      join(packageDir, "package.json"),
+      JSON.stringify({ name: "@earendil-works/pi-coding-agent", version, bin: { pi: "dist/cli.js" } }),
+    );
+  } else {
+    await mkdir(releaseDir, { recursive: true });
+
+    await symlink(options.nodeModules, join(releaseDir, "node_modules"));
+  }
 
   await writeFile(join(install, "managed-install.json"), JSON.stringify(options.marker ?? MANAGED_MARKER));
 
   await writeFile(join(install, "current-version"), `${options.release ?? version}\n`);
 
-  await writeScript(wrapper, 'echo managed pi "$@"');
+  await writeScript(wrapper, options.wrapper?.(packageDir) ?? 'echo managed pi "$@"');
 
   return { wrapper, packageDir, entry: join(packageDir, "dist", "cli.js") };
 };

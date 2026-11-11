@@ -371,7 +371,7 @@ tests/proxy/dial.test.ts             the dialer's restricted-address rules
 tests/proxy/keep-alive.test.ts       upstream connection reuse
 tests/proxy/request-target.test.ts   request target checks
 tests/proxy/child-env.test.ts        the minimal environment
-tests/cli/harness.ts                 the CLI test harness and the doctor report parser
+tests/cli/harness.ts                 the CLI test harness, the managed pi layout (also for the live harness) and the doctor report parser
 tests/cli/commands.test.ts           the pi sandbox commands
 tests/cli/doctor.test.ts             the doctor
 tests/cli/doctor-report.test.ts      the doctor report renderer: golden reports, collapsing, verdicts, ~, colour

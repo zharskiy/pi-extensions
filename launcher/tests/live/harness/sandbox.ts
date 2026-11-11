@@ -12,6 +12,7 @@ import { userHashOf } from "../../../container/index.ts";
 import { endLaunch, newLaunchId, registerLaunch } from "../../../grants/index.ts";
 import { stopRepoProxy } from "../../../proxy/index.ts";
 import { createProcessRunner, processMark, stateLayout } from "../../../shared/index.ts";
+import { writeManagedPi } from "../../cli/harness.ts";
 import { createTestCa, type TestCa, type TestCertificate } from "../fixtures/test-ca.ts";
 import {
   engineSocket,
@@ -79,30 +80,16 @@ const REPO_MODULES = fileURLToPath(new URL("../../../../node_modules", import.me
 
 const REPO_PI = join(REPO_MODULES, "@earendil-works", "pi-coding-agent");
 
-const MANAGED_MARKER = { kind: "pi-managed-install", schemaVersion: 1, layout: "releases-v1" };
-
 const installRepoPiAsManaged = async (agentDir: string) => {
   const manifest = JSON.parse(await readFile(join(REPO_PI, "package.json"), "utf8")) as {
     version: string;
     bin: Record<string, string>;
   };
-  const install = join(agentDir, "install");
-  const release = join(install, "releases", manifest.version);
-  const entry = join(release, "node_modules", "@earendil-works", "pi-coding-agent", manifest.bin.pi ?? "");
 
-  await mkdir(release, { recursive: true });
-
-  await symlink(REPO_MODULES, join(release, "node_modules"));
-
-  await writeFile(join(install, "managed-install.json"), JSON.stringify(MANAGED_MARKER));
-
-  await writeFile(join(install, "current-version"), `${manifest.version}\n`);
-
-  await mkdir(join(agentDir, "bin"), { recursive: true });
-
-  await writeFile(join(agentDir, "bin", "pi"), `#!/bin/sh\nexec '${process.execPath}' '${entry}' "$@"\n`);
-
-  await chmod(join(agentDir, "bin", "pi"), 0o755);
+  await writeManagedPi(agentDir, manifest.version, {
+    nodeModules: REPO_MODULES,
+    wrapper: (packageDir) => `exec '${process.execPath}' '${join(packageDir, manifest.bin.pi ?? "")}' "$@"`,
+  });
 };
 
 const resolvePreload = () => {
