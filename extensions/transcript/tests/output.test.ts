@@ -15,6 +15,12 @@ describe("shellResult", () => {
   it.each([
     ["out\n\nCommand exited with code 2", "out", "exit 2", false],
     ["out\n\nCommand timed out after 30 seconds", "out", "timed out after 30s", true],
+    [
+      "out\n\nCommand timed out after 30 seconds. The shell exited with code 0 after 2 seconds, but background processes it started kept writing output until the timeout.",
+      "out",
+      "timed out after 30s",
+      true,
+    ],
     ["out\n\nCommand aborted", "out", "stopped", false],
     ["Command exited with code 1", "", "exit 1", false],
   ] as const)("strips pi's status line from %j", (text, output, reason, timedOut) => {

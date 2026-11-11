@@ -18,7 +18,7 @@ extensions/transcript/
 │   ├── shell.ts                    bash and powershell rows
 │   ├── codemode.ts                 codemode rows and their call list
 │   ├── generic.ts                  MCP and unknown-tool rows
-│   ├── output.ts                   output cleaning, shell status line, previews and count lines
+│   ├── output.ts                   output cleaning, shell status line (both forms of pi's timeout line), previews and count lines
 │   └── diff.ts                     edit diff parsing, counts and rows
 ├── tests/
 │   ├── diff.test.ts                diff parsing and rows
