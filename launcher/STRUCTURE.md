@@ -43,7 +43,8 @@ cli/derive.ts                  the host side of a launch: host pi files, derivat
 cli/sandbox-proxy.ts           the repository's proxy input and token, and the denial summary at exit with a hint per kind (also the doctor's rule hints)
 cli/mcp-sign-in.ts             the launch-start MCP sign-in on the host
 cli/host-sessions.ts           host sessions for a launch: choice, preparation, sweeps, share probe
-cli/intercept.ts               pi install, uninstall, remove, mcp and update run on the host
+cli/intercept.ts               pi install, uninstall, remove, mcp, update, auth, help, --list-models, --export and --version run on the host
+cli/host-routes.ts             which command lines start no session: help, version, auth, --list-models, --export
 cli/host-pi.ts                 the one host pi (managed, else bundled) and --no-sandbox (runHostPi)
 cli/notices.ts                 notices printed once per repository and text
 cli/versions.ts                launcher version and image pi version
@@ -375,7 +376,7 @@ tests/cli/errors.test.ts             error output
 tests/cli/host-pi.test.ts            host pi selection
 tests/cli/install.test.ts            install.sh, run for real
 tests/cli/uninstall.test.ts          uninstall.sh, run for real
-tests/cli/intercept.test.ts          intercepted commands
+tests/cli/intercept.test.ts          intercepted commands, host routes and the command lines that still launch
 tests/cli/launch.test.ts             the launch
 tests/cli/launch-flow.test.ts        the signal guard, side-by-side stages and the VM shares of a launch
 tests/cli/launch-git.test.ts         the git layout check at launch

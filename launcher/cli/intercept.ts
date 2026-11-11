@@ -1,6 +1,7 @@
 import { realpath } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { loadEffectiveConfig } from "../config/index.ts";
 import {
   expandHome,
   isWithin,
@@ -13,6 +14,8 @@ import {
 import { assertSafeMounts, findGitRoot } from "../workspace/index.ts";
 import { type CliDeps, hostAgentDirOf, pathsOf, writeLine } from "./deps.ts";
 import { interactiveCommand, nearbyRoots, resolveJobPi } from "./host-pi.ts";
+import { type HostRoute, hostRoute } from "./host-routes.ts";
+import { imagePiVersion } from "./versions.ts";
 
 const SELF_UPDATE = "pi follows the launcher; update it with npm install -g pi-extensions-mz";
 
@@ -40,6 +43,11 @@ const runOnHost = async (
 
   return deps.runner.spawnInteractive(file, [...prefix, ...args], options);
 };
+
+const inEmptyDir = (deps: CliDeps, args: string[], options: { env?: Record<string, string> } = {}) =>
+  withMcpLoginDir(pathsOf(deps).stateDir, (cwd) => runOnHost(deps, args, { ...options, cwd }));
+
+const hostEnv = (deps: CliDeps) => ({ [PI_AGENT_DIR_VARIABLE]: hostAgentDirOf(deps) });
 
 const NPM_PREFIX = "npm:";
 
@@ -201,7 +209,7 @@ const packageCommand = async (deps: CliDeps, argv: string[], source: string) => 
 
   const args = argv.map((arg) => (arg === source && local !== undefined ? local.path : arg));
 
-  return withMcpLoginDir(pathsOf(deps).stateDir, (cwd) => runOnHost(deps, args, { cwd }));
+  return inEmptyDir(deps, args);
 };
 
 const MCP_HOST_ACTIONS = new Set(["add", "remove", "login", "logout"]);
@@ -215,13 +223,13 @@ const mcpCommand = (deps: CliDeps, args: string[]) => {
     return undefined;
   }
 
-  const env = { [PI_AGENT_DIR_VARIABLE]: hostAgentDirOf(deps) };
+  const env = hostEnv(deps);
 
   if (MCP_PROJECT_ACTIONS.has(action)) {
     return runOnHost(deps, ["mcp", ...args], { cwd: deps.cwd, env });
   }
 
-  return withMcpLoginDir(pathsOf(deps).stateDir, (cwd) => runOnHost(deps, ["mcp", ...args], { cwd, env }));
+  return inEmptyDir(deps, ["mcp", ...args], { env });
 };
 
 const packageSource = (args: string[]) => {
@@ -260,7 +268,38 @@ const selfUpdate = async (deps: CliDeps) => {
   return code;
 };
 
-export const intercept = (argv: string[], deps: CliDeps): Promise<number> | number | undefined => {
+const sandboxPiVersion = async (deps: CliDeps) => {
+  const { image } = (await loadEffectiveConfig({ env: deps.env })).config;
+
+  if (image.reference !== undefined && image.digest !== undefined) {
+    return undefined;
+  }
+
+  writeLine(deps.stdout, await imagePiVersion(await resolveJobPi(deps, await nearbyRoots(deps))));
+
+  return 0;
+};
+
+const routedJob = (deps: CliDeps, route: HostRoute) => {
+  if (route.kind === "version") {
+    return sandboxPiVersion(deps);
+  }
+
+  return route.kind === "cwd"
+    ? runOnHost(deps, route.args, { cwd: deps.cwd, env: hostEnv(deps) })
+    : inEmptyDir(deps, route.args, { env: hostEnv(deps) });
+};
+
+export const intercept = (
+  argv: string[],
+  deps: CliDeps,
+): Promise<number | undefined> | number | undefined => {
+  const route = hostRoute(argv);
+
+  if (route !== undefined) {
+    return routedJob(deps, route);
+  }
+
   const [command, ...rest] = argv;
 
   if (command === "install" || command === "remove" || command === "uninstall") {

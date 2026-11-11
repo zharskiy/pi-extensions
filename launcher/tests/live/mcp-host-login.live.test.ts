@@ -78,7 +78,7 @@ describe.skipIf(!liveEnabled)("MCP sign-in owned by the host pi (live)", () => {
 
     await writeHostSignIn(Date.now() - HOUR_MS);
 
-    expect((await sandbox.pi(["--version"]).done).code).toBe(0);
+    expect((await sandbox.pi(["list"]).done).code).toBe(0);
 
     const authorization = await renderedAuthorization(sandbox);
     const reply = await sandbox.exec(

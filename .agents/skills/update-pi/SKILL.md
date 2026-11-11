@@ -21,6 +21,8 @@ pi --version                                                                    
 npm view @earendil-works/pi-coding-agent version                                           # latest
 ```
 
+`pi` on PATH may be this repo's sandbox launcher (step 6). Then `pi --version` prints the pi version the sandbox runs without starting it: the managed install's (`~/.pi/agent/install/current-version`), else the repo floor. `~/.pi/agent/bin/pi --version` asks the managed install itself.
+
 If the user named a version, use that instead of latest. The three packages `pi-ai`, `pi-coding-agent` and `pi-tui` are released in lockstep, so they always move together to the same version.
 
 ## 2. Update the repo's dependency
@@ -37,7 +39,7 @@ The changelog ships with the package: `node_modules/@earendil-works/pi-coding-ag
 
 Sort every entry into one of three buckets. Be generous with the first two: an entry that looks unrelated often renames something the adapter imports.
 
-- **May break us.** Anything under Changed, Removed, Deprecated or Breaking, plus any Fixed entry about behaviour the adapter relies on (session files, usage figures, keybindings, theme, tool rendering, extension lifecycle). Check it against what we actually import: the named imports in `platform/pi-adapter/**` and `test/framework/pi/**` (grep for each symbol the entry mentions, including inside multi-line `import {` blocks), and the pi commands and files the extensions use (settings, session directory, agent dir).
+- **May break us.** Anything under Changed, Removed, Deprecated or Breaking, plus any Fixed entry about behaviour the adapter relies on (session files, usage figures, keybindings, theme, tool rendering, extension lifecycle). Check it against what we actually import: the named imports in `platform/pi-adapter/**` and `test/framework/pi/**` (grep for each symbol the entry mentions, including inside multi-line `import {` blocks), and the pi commands and files the extensions use (settings, session directory, agent dir). New or changed CLI flags and subcommands belong here too: the launcher runs only the command lines `launcher/cli/host-routes.ts` recognises with host pi and starts a sandbox for everything else, so a new command that starts no session silently costs a sandbox launch, and a changed one may no longer match.
 - **May replace something we built.** New Features and Added entries that overlap with an extension's job. The list of extensions and what each does is in the root `README.md` and `ARCHITECTURE.md`; compare each new capability against that list, not against your memory of pi.
 - **Irrelevant.** Everything else. Name them in the report with one word so the user can see they were considered.
 
@@ -64,10 +66,12 @@ The repo and the machine must agree, because the global pi loads this repository
 Check how pi is installed before touching it:
 
 ```sh
-readlink "$(command -v pi)"; cat ~/.pi/agent/install/managed-install.json 2>/dev/null
+readlink "$(command -v pi)"; head -2 "$(command -v pi)"; cat ~/.pi/agent/install/managed-install.json 2>/dev/null
 ```
 
-A managed install (symlink into `~/.pi/agent/install/`, `managed-install.json` present) updates itself with `pi update` (which is `pi update --self`; `--force` reinstalls when already current). An npm global install uses `npm install -g --ignore-scripts @earendil-works/pi-coding-agent@<v>`; a Nix install is the user's to update, say so. Afterwards `pi --version` must print the new version. Start `pi` once in this repo and quit, so that extension load errors against the real binary are seen rather than assumed.
+`pi` on PATH may be the sandbox launcher: `~/.local/bin/pi` a wrapper that execs `launcher/bin/pi-sandbox-dev.js` of a checkout, or a link to the npm `pi-sandbox`. Then `readlink` says nothing about pi; the real managed install is `~/.pi/agent/install/` (`current-version`, `releases/`) with its own entrypoint `~/.pi/agent/bin/pi`.
+
+A managed install (`managed-install.json` present) updates itself with `pi update` (which is `pi update --self`; `--force` reinstalls when already current). Through the launcher a bare `pi update` runs the managed install's own update on the host, and the sandbox image follows that version at the next launch, which rebuilds it for a few minutes. An npm global install uses `npm install -g --ignore-scripts @earendil-works/pi-coding-agent@<v>`; a Nix install is the user's to update, say so. Afterwards `pi --version` must print the new version. Then start the real binary once in this repo and quit, so that extension load errors against it are seen rather than assumed: `~/.pi/agent/bin/pi` (or `pi` when it is not the launcher), since `pi` through the launcher starts a sandbox instead.
 
 ## 7. Verify and hand over
 
