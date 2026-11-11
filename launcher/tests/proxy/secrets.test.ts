@@ -202,7 +202,7 @@ describe("command secret failures", () => {
 });
 
 describe("piAuth secrets", () => {
-  it("asks the bundled pi for an API key or a bearer token against the host agent dir", async () => {
+  it("asks the host pi for an API key or a bearer token against the host agent dir", async () => {
     const { fake, resolver } = setup(() => ({ stdout: "key\n" }));
 
     await resolver.resolve("auth:a:key", { piAuth: "provider-a" });

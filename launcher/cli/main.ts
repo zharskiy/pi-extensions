@@ -1,6 +1,6 @@
 import { cpus, homedir, totalmem } from "node:os";
 import { createColimaBackend } from "../backend/index.ts";
-import { findOnPath, locateBundledPi } from "../hostpi/index.ts";
+import { findOnPath } from "../hostpi/index.ts";
 import {
   ensureRepoProxy,
   ensureTrustBundle,
@@ -51,7 +51,6 @@ const realDeps = (): CliDeps => {
       trust: (stateDir, sources) =>
         ensureTrustBundle({ stateDir, runner, platform: process.platform, sources }),
     },
-    bundledPi: locateBundledPi,
     now: () => Date.now(),
   };
 };

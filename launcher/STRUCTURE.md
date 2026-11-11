@@ -23,6 +23,7 @@ schema/sandbox-config.schema.json  the config keys of every layer
 bin/pi-sandbox.js              the package bin: runs the built dist/
 bin/pi-sandbox-dev.js          checkout entry: runs the .ts sources, not published
 bin/path-block.sh              the PATH block helpers and the sh and fish lines, sourced by install.sh and uninstall.sh
+bin/paths.sh                   the agent dir (with ~ expanded as pi does), state dir, user config and old state folder, sourced by install.sh and uninstall.sh
 ```
 
 ## cli/
@@ -30,22 +31,23 @@ bin/path-block.sh              the PATH block helpers and the sh and fish lines,
 ```
 cli/main.ts                    builds the real dependencies, the host git outside the started folder included, and runs
 cli/run.ts                     the command table, the hidden __uninstall route and error rendering
-cli/deps.ts                    the dependencies every command gets, and the shared terminal helpers
+cli/deps.ts                    the dependencies every command gets, and the shared terminal helpers (TTY and colour checks, a line sink)
 cli/index.ts                   public surface
-cli/launch.ts                  the pi pipeline with its stages, and withSandbox for the doctor
+cli/launch.ts                  the pi pipeline with its stages and progress lines, and withSandbox for the doctor
 cli/context.ts                 the launch context: the folder to mount, the guard and workspaceRoots before the search, config, discovery and the checks after it
 cli/vm.ts                      VM start and shares, the VM paths a launch needs
 cli/launch-notices.ts          the launch notice texts, the host-file flag notice and the proxy stage detail
+cli/legacy-paths.ts            the config and state folders of earlier versions, with the launch notice and doctor warns for them
 cli/terminal.ts                the host terminal: streams, size read at use, resize
 cli/launches.ts                begin and finish a launch (removing its container), the last-session removal, the live launch count
 cli/sweep.ts                   removeRepoSandbox, the sweep of ended launches' containers, the orphan sweep and the daily collection
-cli/derive.ts                  the host side of a launch: host pi files, derivation, trust bundle, notices
-cli/sandbox-proxy.ts           the repository's proxy input and token, and the denial summary at exit with a hint per kind (also the doctor's rule hints)
+cli/derive.ts                  the host side of a launch: host pi files, derivation (host tools exclude the sandbox roots), trust bundle, notices
+cli/sandbox-proxy.ts           the repository's proxy input and token, and the denial summary at exit with a reason and fix per kind (also the doctor's rule hints and blocked warnings)
 cli/mcp-sign-in.ts             the launch-start MCP sign-in on the host
 cli/host-sessions.ts           host sessions for a launch: choice, preparation, sweeps, share probe
 cli/intercept.ts               pi install, uninstall, remove, mcp, update, auth, help, --list-models, --export and --version run on the host
 cli/host-routes.ts             which command lines start no session: help, version, auth, --list-models, --export
-cli/host-pi.ts                 the one host pi (managed, else bundled) and --no-sandbox (runHostPi)
+cli/host-pi.ts                 the one host pi (pi's managed install only), the missing-pi line (missingPiText, built from the parts of missingPi the doctor shows) and --no-sandbox (runHostPi)
 cli/notices.ts                 notices printed once per repository and text
 cli/versions.ts                launcher version and image pi version
 cli/commands/status.ts         pi sandbox status
@@ -54,9 +56,11 @@ cli/commands/egress.ts         pi sandbox egress allow, revoke and list
 cli/commands/reset.ts          pi sandbox reset: the folder's sandbox and volumes
 cli/commands/stop.ts           pi sandbox stop
 cli/commands/uninstall.ts      the hidden __uninstall command uninstall.sh runs: live-session refusal, engine objects by label, host-side release
-cli/commands/doctor.ts         pi sandbox doctor: stages, probes, host checks
-cli/commands/doctor-probes.ts  the doctor's checks inside the container; a rule whose credential was denied warns
+cli/commands/doctor.ts         pi sandbox doctor: stages, probes and host checks as checks by section, the denials matched to each rule, the blocked warnings, captured notices and the progress line
+cli/commands/doctor-probes.ts  the doctor's checks inside the container; a rule whose credential was denied warns, one the proxy refused says why, a certificate not yet valid names the VM clock
 cli/commands/doctor-host.ts    the doctor's checks on the host
+cli/commands/doctor-checks.ts  the check data model: result types and builders, the section and check order, the tally and verdict
+cli/commands/doctor-report.ts  the pure text renderer of the checks: aligned columns, reasons and hints, collapsed rules, notices, result line, ~, colour
 cli/commands/help.ts           usage
 cli/commands/options.ts        the option check of the sandbox commands and egress
 ```
@@ -68,7 +72,7 @@ config/index.ts                public surface
 config/types.ts                the config, layer and rule types
 config/defaults.ts             the default config and image reference
 config/load.ts                 loads the policy and user layers and merges them
-config/merge.ts                the layer merge: union and final keys, the egress lock, ignored keys and their warning, sources
+config/merge.ts                the layer merge: union and final keys, the egress lock (isEgressLocked), ignored keys and their warning, sources
 config/validate.ts             the key spec of every layer
 config/dotted.ts               dotted key access
 config/egress-entry.ts         the host entry grammar, entry parsing and host matching
@@ -139,7 +143,7 @@ container/run-pi.ts            pi through exec, the pty only for a terminal, sig
 ```
 image/index.ts                 public surface
 image/Dockerfile               the sandbox image
-image/entrypoint.sh            render links, CA bundle, JVM truststore, idle
+image/entrypoint.sh            render links, the read-only auth.json copy, CA bundle, JVM truststore, idle
 image/bash-env.sh              the missing-command hint and the JVM trust flags
 image/sandbox-image.ts         ensureSandboxImage under the build lock: pull or build, then the layer; build leftovers
 image/build.ts                 the base image build and pinned pull
@@ -168,7 +172,7 @@ hostpi/endpoints.ts            rule endpoints and URL credential checks
 hostpi/provider-endpoints.ts   a provider's hosts
 hostpi/provider-hosts.ts       the provider host table with its cache
 hostpi/provider-hosts.mjs      run against the host pi: the built-in provider hosts
-hostpi/locate.ts               finds the managed and bundled pi packages
+hostpi/locate.ts               finds pi's managed install in the host agent dir
 hostpi/path-search.ts          PATH lookup outside the sandbox roots and the executable check
 hostpi/mcp-auth.ts             MCP servers and their host sign-in state
 hostpi/json.ts                 small JSON helpers
@@ -258,7 +262,7 @@ shared/atomic-write.ts         atomic and random-hex file writes
 shared/file-lock.ts            the lock primitives
 shared/liveness.ts             the liveness rule: pid, boot time and process start
 shared/process-start.ts        a process's start time (ps on macOS, /proc on Linux), telling a failed tool from a process without one
-shared/paths.ts                state, config and policy paths, launcher root
+shared/paths.ts                host agent dir, the launcher folder <agent dir>/pi-sandbox/ (config.json, state/), policy path, launcher root
 shared/state-layout.ts         every path under the state dir
 shared/repo-state.ts           per-repository record files: repo.json with its mount root, created folders, leftovers
 shared/regular-file.ts         safe reads of regular files
@@ -368,9 +372,10 @@ tests/proxy/dial.test.ts             the dialer's restricted-address rules
 tests/proxy/keep-alive.test.ts       upstream connection reuse
 tests/proxy/request-target.test.ts   request target checks
 tests/proxy/child-env.test.ts        the minimal environment
-tests/cli/harness.ts                 the CLI test harness
+tests/cli/harness.ts                 the CLI test harness, the managed pi layout (also for the live harness) and the doctor report parser
 tests/cli/commands.test.ts           the pi sandbox commands
 tests/cli/doctor.test.ts             the doctor
+tests/cli/doctor-report.test.ts      the doctor report renderer: collapsing, --verbose, verdicts, partial reports, ~, colour (the whole-report goldens are in doctor.test.ts)
 tests/cli/egress.test.ts             egress grants
 tests/cli/errors.test.ts             error output
 tests/cli/host-pi.test.ts            host pi selection
@@ -384,6 +389,7 @@ tests/cli/launch-host-sessions.test.ts  host sessions at launch
 tests/cli/launch-sessions.test.ts    session end and the sweep
 tests/cli/sweep.test.ts              the sweep of unused repositories and of the state dir
 tests/cli/launch-wiring.test.ts      launch wiring and no leaks
+tests/cli/legacy-paths.test.ts       the old config and state folders: launch notice and doctor warns
 tests/cli/launch-workspace.test.ts   workspace launches
 tests/cli/mcp-sign-in.test.ts        the launch-start MCP sign-in
 tests/cli/sandbox-proxy.test.ts      the proxy input

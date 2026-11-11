@@ -1,4 +1,4 @@
-import { mkdir, realpath, writeFile } from "node:fs/promises";
+import { mkdir, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { protectedRealPathGuard } from "../../workspace/mounts.ts";
@@ -31,14 +31,11 @@ describe("protectedRealPathGuard", () => {
     expect(reasonOf("/")).toBe("it contains the home directory");
   });
 
-  it("names pi's dir, the configured agent dir, the state dir and the user config", async () => {
+  it("names pi's dir, the configured agent dir, the launcher folder, the state dir and the user config", async () => {
     const { base, home, reasonOf } = await setup();
     const agent = join(base, "agent");
     const state = join(base, "state");
-
-    await mkdir(join(home, ".config", "pi-sandbox"), { recursive: true });
-
-    await writeFile(join(home, ".config", "pi-sandbox", "config.json"), "{}");
+    const config = join(base, "config", "sandbox.json");
 
     expect(reasonOf(join(home, ".pi"))).toBe("it is pi's directory");
     expect(reasonOf(join(home, ".pi", "agent"))).toBe("it is inside pi's directory");
@@ -48,7 +45,24 @@ describe("protectedRealPathGuard", () => {
     expect(reasonOf(join(state, "proxy"), { PI_SANDBOX_STATE_DIR: state })).toBe(
       "it is inside the launcher state directory",
     );
-    expect(reasonOf(join(home, ".config"))).toBe("it contains the launcher user config");
+    expect(reasonOf(join(agent, "pi-sandbox", "state"), { PI_CODING_AGENT_DIR: agent })).toBe(
+      "it is inside pi's agent directory",
+    );
+    expect(reasonOf(join(base, "pi"), { PI_CODING_AGENT_DIR: join(base, "pi", "agent") })).toBe(
+      "it contains pi's agent directory",
+    );
+    expect(reasonOf(join(base, "config"), { PI_SANDBOX_USER_CONFIG: config })).toBe(
+      "it contains the launcher user config",
+    );
+  });
+
+  it("names ~/.config and the old launcher config folder, and accepts its other subfolders", async () => {
+    const { home, reasonOf } = await setup();
+
+    expect(reasonOf(join(home, ".config"))).toBe("it is ~/.config");
+    expect(reasonOf(join(home, ".config", "pi-sandbox"))).toBe("it is ~/.config/pi-sandbox");
+    expect(reasonOf(join(home, ".config", "pi-sandbox", "repo"))).toBe("it is inside ~/.config/pi-sandbox");
+    expect(reasonOf(join(home, ".config", "nvim"))).toBeUndefined();
   });
 
   it("names credential and engine dirs in the home, and what lies inside them", async () => {

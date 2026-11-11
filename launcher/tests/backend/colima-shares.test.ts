@@ -8,7 +8,13 @@ import type { Backend } from "../../backend/index.ts";
 import { run } from "../../cli/index.ts";
 import { registerLaunch } from "../../grants/index.ts";
 import { processMark, sha256Hex } from "../../shared/index.ts";
-import { createHarness, writeColimaMounts, writeLimaMounts, type YamlMount } from "../cli/harness.ts";
+import {
+  createHarness,
+  doctorCheck,
+  writeColimaMounts,
+  writeLimaMounts,
+  type YamlMount,
+} from "../cli/harness.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { argvOf, type FakeCall } from "../support/fake-runner.ts";
 import { tempDir } from "../support/temp-dir.ts";
@@ -191,7 +197,7 @@ describe("shareFor", () => {
   });
 
   it("shares the home itself for a path inside it", () => {
-    expect(shareFor("/Users/dev/.local/state/pi-sandbox", home)).toBe("/Users/dev");
+    expect(shareFor("/Users/dev/.pi/agent/pi-sandbox/state", home)).toBe("/Users/dev");
   });
 
   it("shares the path itself when the parent is shallow or holds the home", () => {
@@ -476,9 +482,11 @@ describe("the coverage of the VM shares", () => {
 
     await run(["sandbox", "doctor"], context.harness.deps);
 
-    expect(context.harness.stdout()).toContain(
-      `warn vm shares: the sandbox VM does not share ${context.paths.repoRoot}; the next pi here shares it, restarting the VM once no pi session runs`,
-    );
+    expect(doctorCheck(context.harness.stdout(), "vm shares")).toMatchObject({
+      status: "warn",
+      detail: `the sandbox VM does not share ${context.paths.repoRoot}`,
+      hint: "run pi once here while no other pi session runs, which shares it and restarts the VM, then pi sandbox doctor again",
+    });
     expect(context.colimaCalls().filter((call) => /^colima (start|stop|restart)/.test(call))).toEqual([]);
   });
 
@@ -493,9 +501,10 @@ describe("the coverage of the VM shares", () => {
 
     await run(["sandbox", "doctor"], context.harness.deps);
 
-    expect(context.harness.stdout()).toContain(
-      "ok vm shares: the sandbox VM shares every path this repository needs",
-    );
+    expect(doctorCheck(context.harness.stdout(), "vm shares")).toMatchObject({
+      status: "ok",
+      detail: "the sandbox VM shares every path this repository needs",
+    });
   });
 
   it("knows no coverage before colima wrote the instance config", async () => {

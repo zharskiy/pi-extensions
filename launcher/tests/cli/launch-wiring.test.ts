@@ -7,7 +7,7 @@ import type { DenialRecord } from "../../proxy/index.ts";
 import { isPlaceholder, sha256Hex } from "../../shared/index.ts";
 import { expectNoLeak } from "../support/expect-no-leak.ts";
 import { writeExecutable, writeText } from "../support/temp-dir.ts";
-import { createFakeBackend, createHarness, renderDirOf } from "./harness.ts";
+import { createFakeBackend, createHarness, noHostPiLine, renderDirOf } from "./harness.ts";
 
 const REAL_KEY = "real-secret-value-1234567890";
 
@@ -313,20 +313,57 @@ describe("pi launch wiring", () => {
         "nexus.corp.test",
         443,
         "private-address",
-        "nexus.corp.test resolves only to restricted addresses",
+        "nexus.corp.test resolves only to restricted addresses (10.1.2.3 is a private network address)",
       ),
-      "pi-sandbox: nexus.corp.test was blocked in this folder's sandbox; it resolves to a private address; add nexus.corp.test to egress.privateHosts\n",
+      "nexus.corp.test resolves only to restricted addresses (10.1.2.3 is a private network address); add nexus.corp.test to egress.privateHosts in",
     ],
-    [
-      "a loopback address",
-      denial("dev.corp.test", 443, "loopback", "dev.corp.test is a loopback name"),
-      "pi-sandbox: dev.corp.test was blocked in this folder's sandbox; it resolves to a loopback address; add dev.corp.test to egress.privateHosts\n",
-    ],
-    [
-      "a reserved address",
-      denial("lab.corp.test", 443, "reserved-address", "reserved or special-purpose address"),
-      "pi-sandbox: lab.corp.test was blocked in this folder's sandbox; it resolves to a reserved address; add lab.corp.test to egress.privateHosts\n",
-    ],
+  ])("names the user config to edit for %s when pi exits", async (_kind, record, hint) => {
+    const harness = await createHarness({ backend: () => createFakeBackend().backend, denials: [record] });
+
+    await run([], harness.deps);
+
+    expect(harness.stderr()).toContain(
+      `pi-sandbox: ${record.host} was blocked in this folder's sandbox; ${hint} ${harness.userConfigFile}\n`,
+    );
+  });
+
+  it.each([
+    ["an IP address", denial("10.1.2.3", 443, "private-address", "10.1.2.3 is a private network address")],
+    ["a loopback name", denial("localhost", 8443, "loopback", "localhost is a loopback name")],
+  ])("does not suggest egress.privateHosts for %s, which it rejects", async (_kind, record) => {
+    const harness = await createHarness({ backend: () => createFakeBackend().backend, denials: [record] });
+
+    await run([], harness.deps);
+
+    expect(harness.stderr()).toContain(
+      `; ${record.reason}; IP addresses and loopback names are never reachable from the sandbox; use a host name\n`,
+    );
+    expect(harness.stderr()).not.toContain("egress.privateHosts");
+  });
+
+  it("sends the user to the administrator for a private address when the policy locks egress", async () => {
+    const harness = await createHarness({
+      backend: () => createFakeBackend().backend,
+      denials: [
+        denial(
+          "nexus.corp.test",
+          443,
+          "private-address",
+          "nexus.corp.test resolves only to restricted addresses (10.1.2.3 is a private network address)",
+        ),
+      ],
+    });
+
+    await harness.writeJson(harness.policyFile, { egress: { grants: false } });
+
+    await run([], harness.deps);
+
+    expect(harness.stderr()).toContain(
+      "pi-sandbox: nexus.corp.test was blocked in this folder's sandbox; nexus.corp.test resolves only to restricted addresses (10.1.2.3 is a private network address); egress is locked by the policy; ask your administrator to add nexus.corp.test to egress.privateHosts\n",
+    );
+  });
+
+  it.each([
     [
       "an unavailable credential",
       denial("api.corp.test", 443, "credential", "credential corp is unavailable: token expired"),
@@ -404,7 +441,7 @@ describe("pi launch wiring", () => {
 
   it("prints derivation notices on stderr, one line each", async () => {
     const fake = createFakeBackend();
-    const harness = await createHarness({ backend: () => fake.backend, bundledPi: null });
+    const harness = await createHarness({ backend: () => fake.backend, hostPi: false });
 
     await harness.writeJson(join(harness.hostAgentDir, "mcp.json"), {
       mcpServers: { docs: { url: "https://docs.example.test/mcp" } },
@@ -413,9 +450,7 @@ describe("pi launch wiring", () => {
     await run([], harness.deps);
 
     expect(harness.stderr()).toContain("pi-sandbox: mcp docs: not signed in; run pi mcp login docs\n");
-    expect(harness.stderr()).toContain(
-      "pi-sandbox: no pi on the host, built-in providers get no credential rules; install pi or reinstall the launcher with npm install -g pi-extensions-mz\n",
-    );
+    expect(harness.stderr()).toContain(`pi-sandbox: ${noHostPiLine(harness.hostAgentDir)}\n`);
   });
 });
 

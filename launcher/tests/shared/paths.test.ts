@@ -24,8 +24,8 @@ const compiledModule = pathToFileURL("/opt/pkg/launcher/dist/shared/paths.js").h
 describe("launcherPaths", () => {
   it("uses the macOS policy location on darwin", () => {
     expect(launcherPaths({ env: {}, platform: "darwin", home, fileExists: missing })).toEqual({
-      stateDir: "/home/dev/.local/state/pi-sandbox",
-      userConfigFile: "/home/dev/.config/pi-sandbox/config.json",
+      stateDir: "/home/dev/.pi/agent/pi-sandbox/state",
+      userConfigFile: "/home/dev/.pi/agent/pi-sandbox/config.json",
       policyFile: "/Library/Application Support/pi-sandbox/policy.json",
     });
   });
@@ -62,8 +62,17 @@ describe("launcherPaths", () => {
     const env = { PI_SANDBOX_USER_CONFIG: "" };
 
     expect(launcherPaths({ env, platform: "linux", home }).userConfigFile).toBe(
-      "/home/dev/.config/pi-sandbox/config.json",
+      "/home/dev/.pi/agent/pi-sandbox/config.json",
     );
+  });
+
+  it("follows pi's agent dir for the config and the state", () => {
+    const env = { PI_CODING_AGENT_DIR: "~/work/agent" };
+
+    expect(launcherPaths({ env, platform: "linux", home, fileExists: missing })).toMatchObject({
+      stateDir: "/home/dev/work/agent/pi-sandbox/state",
+      userConfigFile: "/home/dev/work/agent/pi-sandbox/config.json",
+    });
   });
 });
 

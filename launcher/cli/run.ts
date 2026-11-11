@@ -1,6 +1,7 @@
 import { errorMessage, LauncherError } from "../shared/index.ts";
 import { configCommand, JSON_FLAG } from "./commands/config.ts";
 import { doctorCommand } from "./commands/doctor.ts";
+import { VERBOSE_FLAG } from "./commands/doctor-checks.ts";
 import { egressCommand } from "./commands/egress.ts";
 import { helpCommand, usageOf } from "./commands/help.ts";
 import { assertOptions } from "./commands/options.ts";
@@ -30,7 +31,7 @@ const help: Command = { run: helpCommand };
 
 const COMMANDS: Record<string, Command> = {
   status: { run: statusCommand, options: [] },
-  doctor: { run: doctorCommand, options: [] },
+  doctor: { run: doctorCommand, options: [VERBOSE_FLAG] },
   config: { run: configCommand, options: [JSON_FLAG] },
   egress: { run: egressCommand },
   reset: { run: resetCommand, options: [] },

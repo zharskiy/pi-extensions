@@ -10,7 +10,6 @@ import type { CliDeps } from "../../cli/index.ts";
 import { sweepOrphans } from "../../cli/sweep.ts";
 import { testedPiVersion } from "../../cli/versions.ts";
 import { newLaunchId, registerLaunch } from "../../grants/index.ts";
-import type { BundledPi } from "../../hostpi/index.ts";
 import type { DenialRecord, RepoProxy, RepoProxyInput } from "../../proxy/index.ts";
 import { LauncherError, processMark, type RunResult, sha256Hex, stateLayout } from "../../shared/index.ts";
 import { createFakeBackend as createBareBackend, type FakeExec } from "../support/fake-backend.ts";
@@ -26,7 +25,7 @@ export interface HarnessOptions {
   proxy?: Partial<CliDeps["proxy"]>;
   respond?: FakeResponder;
   env?: Record<string, string>;
-  bundledPi?: BundledPi | null;
+  hostPi?: false;
   providerHosts?: Record<string, { hosts: string[]; envVars?: string[] }>;
   denials?: DenialRecord[];
   machine?: CliDeps["machine"];
@@ -80,8 +79,6 @@ const collector = (): Collected => {
 };
 
 const RUNNING_PROXY: RepoProxy = { pid: 4242, boot: 0, start: "", port: 3128, inputHash: "input" };
-
-const FAKE_PI_DIR = "/fake/node_modules/@earendil-works/pi-coding-agent";
 
 const PROVIDER_HOSTS = { example: { hosts: ["models.example.test"] } };
 
@@ -139,9 +136,78 @@ export const holdLaunch = async (harness: HarnessPaths) => {
   });
 };
 
+export const noHostPiLine = (agentDir: string) =>
+  `no managed pi in ${agentDir} (a pi installed with npm or found on PATH is not used): the sandbox gets no provider credentials, and host commands and --no-sandbox are unavailable; install pi with pi's own installer (curl -fsSL https://pi.dev/install.sh | sh) and run the launcher's install.sh again`;
+
+export interface DoctorCheck {
+  section: string;
+  status: string;
+  name: string;
+  detail: string;
+  reasons: string[];
+  hint?: string;
+}
+
+export interface DoctorReport {
+  sections: string[];
+  checks: DoctorCheck[];
+  notices: string[];
+  result?: string;
+}
+
+const CHECK_LINE = /^ {2}(ok|warn|fail|skip) +(\S+(?: \S+)*?)(?: {2,}(.*))?$/;
+
+const SUB_LINE = /^ {8}(\S.*)$/;
+
+const readLine = (report: DoctorReport, line: string) => {
+  const section = report.sections.at(-1) ?? "";
+  const check = CHECK_LINE.exec(line);
+  const sub = SUB_LINE.exec(line)?.[1];
+  const last = report.checks.at(-1);
+
+  if (line.startsWith("result: ")) {
+    report.result = line.slice("result: ".length);
+  } else if (/^\S/.test(line)) {
+    report.sections.push(line);
+  } else if (section === "notices" && /^ {2}\S/.test(line)) {
+    report.notices.push(line.slice(2));
+  } else if (sub !== undefined && last !== undefined) {
+    if (sub.startsWith("hint: ")) {
+      last.hint = sub.slice("hint: ".length);
+    } else {
+      last.reasons.push(sub);
+    }
+  } else if (check !== null) {
+    report.checks.push({
+      section,
+      status: check[1] ?? "",
+      name: check[2] ?? "",
+      detail: check[3] ?? "",
+      reasons: [],
+    });
+  } else if (line !== "") {
+    throw new Error(`not a doctor report line: ${JSON.stringify(line)}`);
+  }
+};
+
+export const doctorReport = (stdout: string): DoctorReport => {
+  const report: DoctorReport = { sections: [], checks: [], notices: [] };
+
+  stdout.split("\n").forEach((line) => {
+    readLine(report, line);
+  });
+
+  return report;
+};
+
+export const doctorCheck = (stdout: string, name: string) =>
+  doctorReport(stdout).checks.find((check) => check.name === name);
+
 interface ManagedPiOptions {
   marker?: unknown;
   release?: string;
+  nodeModules?: string;
+  wrapper?: (packageDir: string) => string;
 }
 
 const MANAGED_MARKER = {
@@ -153,21 +219,28 @@ const MANAGED_MARKER = {
 
 export const writeManagedPi = async (agentDir: string, version: string, options: ManagedPiOptions = {}) => {
   const install = join(agentDir, "install");
-  const packageDir = join(install, "releases", version, "node_modules", "@earendil-works", "pi-coding-agent");
+  const releaseDir = join(install, "releases", version);
+  const packageDir = join(releaseDir, "node_modules", "@earendil-works", "pi-coding-agent");
   const wrapper = join(agentDir, "bin", "pi");
 
-  await mkdir(packageDir, { recursive: true });
+  if (options.nodeModules === undefined) {
+    await mkdir(packageDir, { recursive: true });
 
-  await writeFile(
-    join(packageDir, "package.json"),
-    JSON.stringify({ name: "@earendil-works/pi-coding-agent", version, bin: { pi: "dist/cli.js" } }),
-  );
+    await writeFile(
+      join(packageDir, "package.json"),
+      JSON.stringify({ name: "@earendil-works/pi-coding-agent", version, bin: { pi: "dist/cli.js" } }),
+    );
+  } else {
+    await mkdir(releaseDir, { recursive: true });
+
+    await symlink(options.nodeModules, join(releaseDir, "node_modules"));
+  }
 
   await writeFile(join(install, "managed-install.json"), JSON.stringify(options.marker ?? MANAGED_MARKER));
 
   await writeFile(join(install, "current-version"), `${options.release ?? version}\n`);
 
-  await writeScript(wrapper, 'echo managed pi "$@"');
+  await writeScript(wrapper, options.wrapper?.(packageDir) ?? 'echo managed pi "$@"');
 
   return { wrapper, packageDir, entry: join(packageDir, "dist", "cli.js") };
 };
@@ -268,6 +341,10 @@ export const createHarness = async (options: HarnessOptions = {}) => {
   writeFileSync(join(stateDir, "ca", "extra.pem"), "");
   mkdirSync(cwd, { recursive: true });
 
+  if (options.hostPi !== false) {
+    await writeManagedPi(hostAgentDir, await testedPiVersion());
+  }
+
   const stdout = collector();
   const stderr = collector();
   const fake = createFakeRunner((call) => {
@@ -290,14 +367,7 @@ export const createHarness = async (options: HarnessOptions = {}) => {
   const terminalOut = new PassThrough();
   const stoppedProxies: string[] = [];
   const proxyInputs: RepoProxyInput[] = [];
-  const bundledPi =
-    options.bundledPi === null
-      ? undefined
-      : (options.bundledPi ?? {
-          command: [process.execPath, join(FAKE_PI_DIR, "dist", "cli.js")],
-          version: await testedPiVersion(),
-          packageDir: FAKE_PI_DIR,
-        });
+  const proxyState = { stopped: false };
   const deps: CliDeps = {
     runner: fake.runner,
     env: {
@@ -329,15 +399,19 @@ export const createHarness = async (options: HarnessOptions = {}) => {
       ensure: async (request) => {
         proxyInputs.push(request.input);
 
+        proxyState.stopped = false;
+
         return { proxy: RUNNING_PROXY, notices: [] };
       },
       read: async () => undefined,
       stop: async (_stateDir, repoHash) => {
         stoppedProxies.push(repoHash);
 
+        proxyState.stopped = true;
+
         return false;
       },
-      denials: async () => options.denials ?? [],
+      denials: async () => (proxyState.stopped ? [] : (options.denials ?? [])),
       trust: async () => ({
         pemPath: trustPem,
         caCertPath: trustPem,
@@ -346,7 +420,6 @@ export const createHarness = async (options: HarnessOptions = {}) => {
       }),
       ...options.proxy,
     },
-    bundledPi: async () => bundledPi,
     now: () => 1_700_000_000_000,
   };
 

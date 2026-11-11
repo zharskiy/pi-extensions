@@ -3,16 +3,7 @@ import { type Backend, execCapture } from "../../backend/index.ts";
 import { type CredentialRule, fillTemplate, TLS_PORT } from "../../config/index.ts";
 import { credentialHosts, probeHostSessions, readVolumeFile } from "../../provision/index.ts";
 import { GUEST_PATHS, isAuthLikeHeader, isPlaceholder, isSecretName } from "../../shared/index.ts";
-
-export interface CheckResult {
-  status: "ok" | "warn" | "fail" | "skip";
-  detail: string;
-}
-
-export interface NamedCheck {
-  name: string;
-  result: CheckResult;
-}
+import { type CheckResult, failed, type NamedCheck, passed, skipped } from "./doctor-checks.ts";
 
 export interface ProbeTarget {
   backend: Backend;
@@ -69,6 +60,15 @@ const BAD_GATEWAY = 502;
 
 const TRUST_ERROR = /CERT|SELF_SIGNED|UNABLE_TO|ISSUER/;
 
+const NOT_YET_VALID = "CERT_NOT_YET_VALID";
+
+const CLOCK_BEHIND = {
+  reasons: [
+    "the sandbox VM's clock is behind the host's, so the proxy's certificate, dated by the host, is not valid there yet",
+  ],
+  hint: "restart the VM to reset its clock: run pi sandbox stop once no pi session runs, then pi sandbox doctor again",
+};
+
 const SECRET_TOKEN_FIELDS = ["access_token", "refresh_token", "id_token"];
 
 const MCP_LIST_SECONDS = 30;
@@ -76,14 +76,6 @@ const MCP_LIST_SECONDS = 30;
 const MCP_LIST_PROBE = ["timeout", String(MCP_LIST_SECONDS), "pi", "mcp", "list"];
 
 const TIMED_OUT = 124;
-
-export const passed = (detail: string): CheckResult => ({ status: "ok", detail });
-
-export const warned = (detail: string): CheckResult => ({ status: "warn", detail });
-
-export const failed = (detail: string): CheckResult => ({ status: "fail", detail });
-
-export const skipped = (detail: string): CheckResult => ({ status: "skip", detail });
 
 const execText = (target: ProbeTarget, command: string[]) =>
   execCapture(target.backend, {
@@ -188,7 +180,10 @@ export const sweepCredentials = async (target: ProbeTarget, proxyToken?: string)
 
   return problems.length === 0
     ? passed("no credential in the environment, auth.json or mcp.json")
-    : failed(problems.join("; "));
+    : failed(
+        `${problems.length} finding${problems.length === 1 ? "" : "s"} in the environment, auth.json or mcp.json`,
+        { reasons: problems },
+      );
 };
 
 export const checkNoRoute = async (target: ProbeTarget) => {
@@ -302,17 +297,32 @@ const gatewayReason = (body: string | undefined) => {
   }
 };
 
-const ruleResult = (answer: RuleAnswer, unresolved: string | undefined) => {
+export interface RuleHint {
+  unresolved?: CheckResult;
+  refused?: CheckResult;
+}
+
+const fetchFailure = (subject: string, error: string | undefined) =>
+  failed(`${subject}: ${error ?? "no answer"}`, error === NOT_YET_VALID ? CLOCK_BEHIND : {});
+
+const ruleResult = (answer: RuleAnswer, hint: RuleHint) => {
   if (answer.status === undefined) {
-    return failed(`${urlOf(answer.rule)}: ${answer.error ?? "no answer"}`);
+    return hint.refused === undefined
+      ? fetchFailure(urlOf(answer.rule), answer.error)
+      : failed(`${urlOf(answer.rule)}: the sandbox proxy refused it`, {
+          reasons: [hint.refused.detail],
+          hint: hint.refused.hint,
+        });
   }
 
-  if (unresolved !== undefined) {
-    return warned(unresolved);
+  if (hint.unresolved !== undefined) {
+    return hint.unresolved;
   }
 
   if (answer.status === BAD_GATEWAY) {
-    return failed(`${urlOf(answer.rule)} answered HTTP 502: ${gatewayReason(answer.body)}`);
+    return failed(`${urlOf(answer.rule)} answered HTTP 502`, {
+      reasons: [gatewayReason(answer.body) ?? "no reason given"],
+    });
   }
 
   return DENIED.includes(answer.status)
@@ -328,7 +338,7 @@ const trustResult = (answers: RuleAnswer[]) => {
   const broken = answers.find((answer) => answer.error !== undefined && TRUST_ERROR.test(answer.error));
 
   if (broken !== undefined) {
-    return failed(`${broken.rule.host}: ${broken.error}`);
+    return fetchFailure(broken.rule.host, broken.error);
   }
 
   const verified = answers.find((answer) => answer.status !== undefined);
@@ -341,17 +351,21 @@ const trustResult = (answers: RuleAnswer[]) => {
 export const checkRules = async (
   target: ProbeTarget,
   rules: CredentialRule[],
-  unresolvedHints: () => Promise<ReadonlyMap<string, string>> = async () => new Map(),
+  ruleHints: () => Promise<ReadonlyMap<string, RuleHint>> = async () => new Map(),
 ): Promise<NamedCheck[]> => {
   const answers = await Promise.all(rules.map((rule) => askRule(target, rule)));
-  const hints = await unresolvedHints();
+  const hints = await ruleHints();
 
   return [
-    { name: "trust", result: trustResult(answers) },
-    ...answers.map((answer) => ({
-      name: `rule ${answer.rule.id}`,
-      result: ruleResult(answer, hints.get(answer.rule.id)),
-    })),
+    { name: "trust", section: "credentials", result: trustResult(answers) },
+    ...answers.map(
+      (answer): NamedCheck => ({
+        name: `rule ${answer.rule.id}`,
+        section: "credentials",
+        group: "rules",
+        result: ruleResult(answer, hints.get(answer.rule.id) ?? {}),
+      }),
+    ),
   ];
 };
 
@@ -362,7 +376,7 @@ export const checkSessionsShare = async (target: ProbeTarget, sessionDir: string
 
   return (await probeHostSessions(target.backend, target.containerId, sessionDir))
     ? passed("writable at the host path")
-    : failed(
-        `${sessionDir} is not writable from the sandbox; set sessions.host: false or share it with the VM`,
-      );
+    : failed(`${sessionDir} is not writable from the sandbox`, {
+        hint: "set sessions.host: false or share it with the VM",
+      });
 };

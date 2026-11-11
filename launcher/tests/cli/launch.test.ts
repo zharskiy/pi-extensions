@@ -262,7 +262,7 @@ describe("pi [args]", () => {
     expect(harness.stderr()).toContain('--no-sandbox is refused: fallback is "refuse", set by policy');
   });
 
-  it("runs the launcher's own pi under fallback host, never a pi on PATH, and says so", async () => {
+  it("runs the managed pi under fallback host, never a pi on PATH, and says so", async () => {
     const harness = await createHarness();
     const hostDir = join(harness.root, "host-bin");
 
@@ -274,10 +274,10 @@ describe("pi [args]", () => {
 
     const call = harness.calls.find((entry) => entry.interactive);
 
-    expect(call?.file).toBe(process.execPath);
-    expect(call?.args.slice(1)).toEqual(["-p", "hi"]);
+    expect(call?.file).toBe(join(harness.hostAgentDir, "bin", "pi"));
+    expect(call?.args).toEqual(["-p", "hi"]);
     expect(harness.stderr()).toContain(
-      `pi-sandbox: warning: running ${call?.args[0]} on the host, outside the sandbox`,
+      `pi-sandbox: warning: running ${call?.file} on the host, outside the sandbox`,
     );
   });
 });

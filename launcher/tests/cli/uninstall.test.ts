@@ -296,9 +296,10 @@ describe("uninstall.sh", { timeout: UNINSTALL_TIMEOUT_MS }, () => {
 
     await writeFile(join(copy, "uninstall.sh"), await readFile(join(launcherRoot(), "uninstall.sh"), "utf8"));
 
-    await writeFile(
-      join(copy, "bin", "path-block.sh"),
-      await readFile(join(launcherRoot(), "bin", "path-block.sh"), "utf8"),
+    await Promise.all(
+      ["path-block.sh", "paths.sh"].map(async (name) =>
+        writeFile(join(copy, "bin", name), await readFile(join(launcherRoot(), "bin", name), "utf8")),
+      ),
     );
 
     await mkdir(paths.stateDir, { recursive: true });
@@ -312,6 +313,60 @@ describe("uninstall.sh", { timeout: UNINSTALL_TIMEOUT_MS }, () => {
     expect(await colimaLog(paths)).toContain("delete --profile pi-sandbox --force");
     expect(await exists(shim)).toBe(false);
     expect(await exists(paths.stateDir)).toBe(false);
+  });
+
+  it("removes the state under pi's agent dir and the old state folder, and keeps the user config", async () => {
+    const paths = await uninstallRoot();
+    const folder = join(paths.home, ".pi", "agent", "pi-sandbox");
+    const legacy = join(paths.home, ".local", "state", "pi-sandbox");
+
+    await mkdir(join(folder, "state", "ca"), { recursive: true });
+
+    await mkdir(join(legacy, "ca"), { recursive: true });
+
+    await writeFile(join(folder, "config.json"), "{}");
+
+    const result = await runUninstall(paths, { PI_SANDBOX_STATE_DIR: "" });
+
+    expect(result.status).toBe(0);
+    expect(await exists(join(folder, "state"))).toBe(false);
+    expect(await exists(legacy)).toBe(false);
+    expect(await readFile(join(folder, "config.json"), "utf8")).toBe("{}");
+    expect(result.stdout).toContain(`state: removed ${join(folder, "state")}\n`);
+    expect(result.stdout).toContain(`state: removed the old ${legacy}\n`);
+    expect(result.stdout).toContain(
+      `kept: your repositories, ~/.pi and your launcher config ${join(folder, "config.json")}\n`,
+    );
+  });
+
+  it("expands ~ in PI_CODING_AGENT_DIR as pi does", async () => {
+    const paths = await uninstallRoot();
+    const folder = join(paths.home, "work", "agent", "pi-sandbox");
+
+    await mkdir(join(folder, "state"), { recursive: true });
+
+    const result = await runUninstall(paths, {
+      PI_SANDBOX_STATE_DIR: "",
+      PI_CODING_AGENT_DIR: "~/work/agent",
+    });
+
+    expect(result.status).toBe(0);
+    expect(await exists(folder)).toBe(false);
+    expect(result.stdout).toContain(`state: removed ${join(folder, "state")}\n`);
+    expect(result.stdout).toContain(
+      `kept: your pi sessions stay in ${join(paths.home, "work", "agent", "sessions")}\n`,
+    );
+  });
+
+  it("removes the launcher folder under pi's agent dir when nothing is left in it", async () => {
+    const paths = await uninstallRoot();
+    const folder = join(paths.home, ".pi", "agent", "pi-sandbox");
+
+    await mkdir(join(folder, "state"), { recursive: true });
+
+    expect((await runUninstall(paths, { PI_SANDBOX_STATE_DIR: "" })).status).toBe(0);
+    expect(await exists(folder)).toBe(false);
+    expect(await exists(join(paths.home, ".pi", "agent"))).toBe(true);
   });
 
   it("fails naming the command when colima cannot delete the profile", async () => {

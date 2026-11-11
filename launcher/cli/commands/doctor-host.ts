@@ -14,10 +14,19 @@ import { assertHostSessionsDir } from "../../workspace/index.ts";
 import type { LaunchContext } from "../context.ts";
 import { type CliDeps, hostAgentDirOf } from "../deps.ts";
 import { providerHostsOf } from "../derive.ts";
-import { hostPiPlace, hostPiText, resolveJobPi, sandboxRoots } from "../host-pi.ts";
+import { missingPi, resolveJobPi } from "../host-pi.ts";
 import { hostSessionsOf } from "../host-sessions.ts";
+import { leftoverState, movedConfig } from "../legacy-paths.ts";
 import { isOlderVersion, testedPiVersion } from "../versions.ts";
-import { failed, type NamedCheck, passed, skipped, warned } from "./doctor-probes.ts";
+import {
+  type CheckResult,
+  failed,
+  type NamedCheck,
+  passed,
+  type Section,
+  skipped,
+  warned,
+} from "./doctor-checks.ts";
 
 const CONNECT_TIMEOUT_MS = 3000;
 
@@ -31,18 +40,19 @@ const MINUTES_SHOWN_BELOW_MS = 2 * HOUR_MS;
 
 const HOURS_SHOWN_BELOW_MS = 2 * DAY_MS;
 
-const REINSTALL = "reinstall the launcher with npm install -g pi-extensions-mz";
-
-const checkHostPi = async (context: LaunchContext, job: HostPi | undefined) => {
+const checkHostPi = async (deps: CliDeps, context: LaunchContext, job: HostPi | undefined) => {
   if (job === undefined) {
-    return failed(`no pi on the host; install pi or ${REINSTALL}`);
+    const missing = missingPi(deps);
+
+    return failed(missing.problem, { reasons: [missing.ignored, missing.effect], hint: missing.fix });
   }
 
   const tested = await testedPiVersion();
 
   if (isOlderVersion(job.version, tested)) {
     return warned(
-      `pi ${job.version} (${hostPiPlace(job)}) is older than ${tested}, the pi this launcher is tested with; ${job.source === "managed" ? "run pi update" : REINSTALL}`,
+      `pi ${job.version} (managed install ${job.wrapper}) is older than ${tested}, the pi this launcher is tested with`,
+      { hint: "run pi update" },
     );
   }
 
@@ -51,11 +61,15 @@ const checkHostPi = async (context: LaunchContext, job: HostPi | undefined) => {
       ? "the image follows it"
       : "the image is pinned by image.digest";
 
-  return passed(`${hostPiText(job)}; ${image}`);
+  return passed(`pi ${job.version}, managed install ${job.wrapper}; ${image}`);
 };
 
 const checkProviderHosts = async (deps: CliDeps, context: LaunchContext, pi: HostPi | undefined) => {
-  const { hosts, notices } = await providerHostsOf(deps, context.stateDir, pi);
+  if (pi === undefined) {
+    return skipped("no host pi");
+  }
+
+  const { hosts, notices } = await providerHostsOf(deps, context, pi);
   const count = Object.keys(hosts).length;
 
   return count > 0
@@ -110,30 +124,32 @@ const durationText = (ms: number) => {
   return ms < HOURS_SHOWN_BELOW_MS ? `${Math.round(ms / HOUR_MS)} h` : `${Math.round(ms / DAY_MS)} days`;
 };
 
-const signInCheck = (deps: CliDeps, server: McpSignIn): NamedCheck => {
-  const name = `mcp ${server.name}`;
+const signInResult = (deps: CliDeps, server: McpSignIn) => {
   const { entry } = server;
   const usable = isFreshMcpToken(entry, deps.now()) || entry?.refresh !== undefined;
 
   if (!usable) {
-    return { name, result: warned(`needs sign-in: run pi mcp login ${server.name}`) };
+    return warned("needs sign-in", { hint: `run pi mcp login ${server.name}` });
   }
 
   const left = entry?.expiresAt === undefined ? undefined : entry.expiresAt - deps.now();
 
   if (left === undefined) {
-    return { name, result: passed("signed in on the host") };
+    return passed("signed in on the host");
   }
 
-  return {
-    name,
-    result: passed(
-      left > 0
-        ? `signed in on the host (expires in ${durationText(left)})`
-        : "signed in on the host (refreshed on use)",
-    ),
-  };
+  return passed(
+    left > 0
+      ? `signed in on the host (expires in ${durationText(left)})`
+      : "signed in on the host (refreshed on use)",
+  );
 };
+
+const signInCheck = (deps: CliDeps, server: McpSignIn): NamedCheck => ({
+  name: `mcp ${server.name}`,
+  section: "credentials",
+  result: signInResult(deps, server),
+});
 
 const signInChecks = async (deps: CliDeps, files: HostPiFiles): Promise<NamedCheck[]> =>
   (await mcpSignIns(files)).map((server) => signInCheck(deps, server));
@@ -179,25 +195,37 @@ const checkSessions = async (deps: CliDeps, context: LaunchContext, files: HostP
     : failed(`${sessions.dir} is not writable`);
 };
 
-const named = async (name: string, result: Promise<NamedCheck["result"]>): Promise<NamedCheck> => ({
+const legacyChecks = async (deps: CliDeps): Promise<NamedCheck[]> => {
+  const [config, state] = await Promise.all([movedConfig(deps), leftoverState(deps)]);
+  const legacyCheck =
+    (name: string) =>
+    (legacy: { problem: string; fix: string }): NamedCheck => ({
+      name,
+      section: "host",
+      result: warned(legacy.problem, { hint: legacy.fix }),
+    });
+
+  return [...config.map(legacyCheck("user config")), ...state.map(legacyCheck("old state"))];
+};
+
+const named = async (name: string, section: Section, result: Promise<CheckResult>): Promise<NamedCheck> => ({
   name,
+  section,
   result: await result,
 });
 
 export const hostChecks = async (deps: CliDeps, context: LaunchContext): Promise<NamedCheck[]> => {
-  const [files, pi] = await Promise.all([
-    readHostPiFiles(hostAgentDirOf(deps)),
-    resolveJobPi(deps, sandboxRoots(deps, context)),
-  ]);
-  const [checks, signIns] = await Promise.all([
+  const [files, pi] = await Promise.all([readHostPiFiles(hostAgentDirOf(deps)), resolveJobPi(deps)]);
+  const [legacy, checks, signIns] = await Promise.all([
+    legacyChecks(deps),
     Promise.all([
-      named("host pi", checkHostPi(context, pi)),
-      named("provider hosts", checkProviderHosts(deps, context, pi)),
-      named("parent proxy", checkParentProxy(deps, context)),
-      named("sessions", checkSessions(deps, context, files)),
+      named("host pi", "host", checkHostPi(deps, context, pi)),
+      named("provider hosts", "host", checkProviderHosts(deps, context, pi)),
+      named("parent proxy", "network", checkParentProxy(deps, context)),
+      named("sessions", "host", checkSessions(deps, context, files)),
     ]),
     signInChecks(deps, files),
   ]);
 
-  return [...checks, ...signIns];
+  return [...legacy, ...checks, ...signIns];
 };

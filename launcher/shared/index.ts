@@ -33,19 +33,16 @@ export type { NpmrcEntry } from "./npmrc.ts";
 export { parseNpmrc } from "./npmrc.ts";
 export {
   expandHome,
+  hostAgentDir,
   isWithin,
   launcherEntry,
   launcherPaths,
   launcherRoot,
+  PI_AGENT_DIR_VARIABLE,
   realOrResolved,
   realOrResolvedSync,
 } from "./paths.ts";
-export {
-  hostAgentDir,
-  isLauncherSetVariable,
-  PI_AGENT_DIR_VARIABLE,
-  PI_SESSION_DIR_VARIABLE,
-} from "./pi-env.ts";
+export { isLauncherSetVariable, PI_SESSION_DIR_VARIABLE } from "./pi-env.ts";
 export {
   isPlaceholder,
   jwtShapedPlaceholder,

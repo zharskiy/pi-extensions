@@ -10,12 +10,12 @@ import {
   writeJsonFile,
 } from "../shared/index.ts";
 import { SAFE_VERSION } from "./locate.ts";
-import type { BundledPi, ProviderHosts } from "./types.ts";
+import type { HostPi, ProviderHosts } from "./types.ts";
 
 export interface ProviderHostsInput {
   stateDir: string;
   runner: CommandRunner;
-  pi: BundledPi;
+  pi: HostPi;
 }
 
 export interface ProviderHostsResult {

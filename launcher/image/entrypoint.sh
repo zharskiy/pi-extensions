@@ -12,14 +12,33 @@ truststore="$bundle_dir/truststore.p12"
 
 mkdir -p "$agent_dir" "$bundle_dir"
 
+copy_file() {
+  rm -rf "$2.tmp.$$"
+  cp "$1" "$2.tmp.$$"
+  chmod "$3" "$2.tmp.$$"
+
+  if [ -d "$2" ]; then
+    rm -rf "$2"
+  fi
+
+  mv -f "$2.tmp.$$" "$2"
+}
+
 find "$agent_dir" -mindepth 1 -maxdepth 1 -type l -lname "$render_dir/*" ! -exec test -e {} \; -exec rm -f {} \;
 
 for entry in "$render_dir"/* "$render_dir"/.[!.]* "$render_dir"/..?*; do
-  if [ ! -e "$entry" ] || [ "$(basename "$entry")" = tools ]; then
+  name=${entry##*/}
+
+  if [ ! -e "$entry" ] || [ "$name" = tools ]; then
     continue
   fi
 
-  link="$agent_dir/$(basename "$entry")"
+  link="$agent_dir/$name"
+
+  if [ "$name" = auth.json ]; then
+    copy_file "$entry" "$link" 0444
+    continue
+  fi
 
   rm -rf "$link"
   ln -s "$entry" "$link"
@@ -36,9 +55,7 @@ link_tool() {
 copy_tool() {
   if [ -f "$tools_dir/$1" ]; then
     mkdir -p "$(dirname "$home/$2")"
-    rm -rf "${home:?}/$2"
-    cp "$tools_dir/$1" "$home/$2"
-    chmod "$3" "$home/$2"
+    copy_file "$tools_dir/$1" "$home/$2" "$3"
   fi
 }
 

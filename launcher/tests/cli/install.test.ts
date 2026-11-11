@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { chmod, lstat, mkdir, readFile, readlink, realpath, rm, symlink, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { launcherRoot } from "../../shared/index.ts";
 import { tempDir } from "../support/temp-dir.ts";
@@ -105,6 +105,34 @@ describe("install.sh and pi's managed install", { timeout: INSTALL_TIMEOUT_MS },
     expect(result.stdout).toContain("[6/7] smoke: skipped, git is missing");
     expect(await readFile(record, "utf8")).toBe("../lib/pi-link\n");
     expect(await isLauncherWrapper(shim)).toBe(true);
+  });
+
+  it("carries over only the replaced-link record of the old state folder, and only when the new one is missing", async () => {
+    const { root, home, record } = await installRoot();
+    const legacy = join(home, ".local", "state", "pi-sandbox", "replaced-pi-link");
+
+    await mkdir(dirname(legacy), { recursive: true });
+
+    await writeFile(legacy, "../../.pi/agent/bin/pi\n");
+
+    expect(runInstall(root).status).toBe(0);
+    expect(await readFile(record, "utf8")).toBe("../../.pi/agent/bin/pi\n");
+    expect(await readFile(legacy, "utf8")).toBe("../../.pi/agent/bin/pi\n");
+
+    await writeFile(record, "kept\n");
+
+    expect(runInstall(root).status).toBe(0);
+    expect(await readFile(record, "utf8")).toBe("kept\n");
+  });
+
+  it("finds the managed pi of an agent dir given with ~ as pi does", async () => {
+    const { root, home } = await installRoot();
+
+    await writeManagedPi(join(home, "work", "agent"), "1.6.0");
+
+    await rm(join(home, ".pi"), { recursive: true, force: true });
+
+    expect(runInstall(root, [], { PI_CODING_AGENT_DIR: "~/work/agent" }).status).toBe(0);
   });
 
   it("refuses a pi that is neither the launcher nor pi's managed install, and records nothing", async () => {
@@ -409,44 +437,28 @@ describe("install.sh options and the PATH block", { timeout: INSTALL_TIMEOUT_MS 
     expect(await isLauncherWrapper(join(home, ".local", "bin", "pi"))).toBe(true);
   });
 
-  it("stops before it links pi when npm left no pi next to the launcher and there is no managed pi", async () => {
-    const { root, home, agentDir } = await installRoot();
-    const packaged = join(root, "package", "launcher");
-    const npmPrefix = join(root, "npm");
+  const noManagedPi = (agentDir: string) =>
+    `pi-sandbox install: no managed pi in ${agentDir} (a pi installed with npm or found on PATH is not used): the sandbox gets no provider credentials, and host commands and --no-sandbox are unavailable; install pi with pi's own installer (curl -fsSL https://pi.dev/install.sh | sh) and run this again\n`;
+
+  it("refuses without a managed pi, though pi is on PATH and in the checkout's node_modules, before npm or colima run", async () => {
+    const { root, home, agentDir } = await installRoot({
+      pi: "echo path pi",
+      npm: 'echo "npm $*" >> "$HOME/../calls.log"',
+      colima:
+        'echo "colima $*" >> "$HOME/../calls.log"\ncase "$1" in version) echo "colima version 0.8.1" ;; *) exit 0 ;; esac',
+    });
+    const calls = join(root, "calls.log");
 
     await rm(agentDir, { recursive: true, force: true });
 
-    await mkdir(join(packaged, "bin"), { recursive: true });
+    const result = runInstall(root);
 
-    await writeFile(join(packaged, "install.sh"), await readFile(join(launcherRoot(), "install.sh"), "utf8"));
-
-    await writeFile(
-      join(root, "package", "package.json"),
-      '{\n  "name": "pi-extensions-mz",\n  "version": "9.9.9"\n}\n',
-    );
-
-    await writeFile(
-      join(packaged, "bin", "path-block.sh"),
-      await readFile(join(launcherRoot(), "bin", "path-block.sh"), "utf8"),
-    );
-
-    await writeFile(
-      join(root, "tools", "npm"),
-      `#!/bin/sh\ncase "$1" in root) echo "${npmPrefix}/lib/node_modules" ;; prefix) echo "${npmPrefix}" ;; esac\n`,
-    );
-
-    const result = spawnSync("/bin/sh", [join(packaged, "install.sh")], {
-      env: {
-        HOME: home,
-        PATH: join(root, "tools"),
-        PI_SANDBOX_STATE_DIR: join(root, "state"),
-        PI_SANDBOX_USER_CONFIG: join(root, "config", "config.json"),
-      },
-      encoding: "utf8",
-    });
-
+    expect(
+      await exists(join(launcherRoot(), "..", "node_modules", "@earendil-works", "pi-coding-agent")),
+    ).toBe(true);
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain("npm skipped the peer dependency");
+    expect(result.stderr).toBe(noManagedPi(agentDir));
+    expect(await readFile(calls, "utf8").catch(() => "")).not.toMatch(/npm install|colima start/);
     expect(await exists(join(home, ".local", "bin", "pi"))).toBe(false);
     expect(await exists(zshrc(home))).toBe(false);
   });

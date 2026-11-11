@@ -1,6 +1,17 @@
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { chmod, lstat, mkdir, readFile, readlink, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  lstat,
+  mkdir,
+  readdir,
+  readFile,
+  readlink,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { launcherRoot } from "../../shared/index.ts";
@@ -165,18 +176,74 @@ describe("image entrypoint", () => {
     const paths = await sandboxRoot();
     const agent = join(paths.home, ".pi", "agent");
 
-    await writeFile(join(paths.render, "auth.json"), '{"rendered":true}\n');
+    await writeFile(join(paths.render, "models.json"), '{"rendered":true}\n');
 
     await mkdir(join(paths.render, "skills"));
 
     await mkdir(join(agent, "skills", "planted"), { recursive: true });
 
-    await writeFile(join(agent, "auth.json"), '{"planted":true}\n');
+    await writeFile(join(agent, "models.json"), '{"planted":true}\n');
 
     await runEntrypoint(paths);
 
-    expect(await readlink(join(agent, "auth.json"))).toBe(join(paths.render, "auth.json"));
+    expect(await readlink(join(agent, "models.json"))).toBe(join(paths.render, "models.json"));
     expect(await readlink(join(agent, "skills"))).toBe(join(paths.render, "skills"));
+  });
+
+  it("gives pi a read-only copy of auth.json, so its lock lands in the agent dir, not the read-only render dir", async () => {
+    const paths = await sandboxRoot();
+    const agent = join(paths.home, ".pi", "agent");
+    const auth = join(agent, "auth.json");
+
+    await writeFile(join(paths.render, "auth.json"), '{"rendered":true}\n');
+
+    await runEntrypoint(paths);
+
+    await writeFile(join(paths.render, "auth.json"), '{"rendered":2}\n');
+
+    await runEntrypoint(paths);
+
+    const stats = await lstat(auth);
+
+    expect(stats.isFile()).toBe(true);
+    expect(stats.mode & 0o777).toBe(0o444);
+    expect(await readFile(auth, "utf8")).toBe('{"rendered":2}\n');
+    expect((await readdir(agent)).filter((name) => name.startsWith("auth.json."))).toEqual([]);
+  });
+
+  it("replaces a file, dir or link an agent put in place of the auth.json copy", async () => {
+    const planted = async (plant: (auth: string, root: string) => Promise<void>) => {
+      const paths = await sandboxRoot();
+      const auth = join(paths.home, ".pi", "agent", "auth.json");
+
+      await writeFile(join(paths.render, "auth.json"), '{"rendered":true}\n');
+
+      await mkdir(join(paths.home, ".pi", "agent"), { recursive: true });
+
+      await plant(auth, paths.root);
+
+      await runEntrypoint(paths);
+
+      return { stats: await lstat(auth), text: await readFile(auth, "utf8") };
+    };
+
+    const results = await Promise.all([
+      planted((auth) => writeFile(auth, '{"planted":true}\n')),
+      planted(async (auth) => {
+        await mkdir(join(auth, "inner"), { recursive: true });
+      }),
+      planted(async (auth, root) => {
+        await mkdir(join(root, "elsewhere"));
+
+        await symlink(join(root, "elsewhere"), auth);
+      }),
+    ]);
+
+    expect(results.map(({ stats, text }) => [stats.isFile(), text])).toEqual([
+      [true, '{"rendered":true}\n'],
+      [true, '{"rendered":true}\n'],
+      [true, '{"rendered":true}\n'],
+    ]);
   });
 
   it("links hidden rendered entries too", async () => {

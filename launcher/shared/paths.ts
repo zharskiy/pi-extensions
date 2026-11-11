@@ -4,6 +4,8 @@ import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
+export const PI_AGENT_DIR_VARIABLE = "PI_CODING_AGENT_DIR";
+
 interface LauncherPaths {
   stateDir: string;
   userConfigFile: string;
@@ -28,7 +30,35 @@ const LINUX_POLICY_FILE = join("/etc", APP, "policy.json");
 const defaultPolicyFile = (platform: NodeJS.Platform) =>
   platform === "darwin" ? MACOS_POLICY_FILE : LINUX_POLICY_FILE;
 
+const STATE_DIR = "state";
+
+const CONFIG_FILE = "config.json";
+
+const FILE_URL = /^file:\/\//;
+
 const present = (value: string | undefined) => (value === undefined || value === "" ? undefined : value);
+
+export const expandHome = (path: string, home = homedir()) => {
+  if (path === "~") {
+    return home;
+  }
+
+  return path.startsWith("~/") ? join(home, path.slice(2)) : path;
+};
+
+export const hostAgentDir = (home: string, env: NodeJS.ProcessEnv) => {
+  const configured = env[PI_AGENT_DIR_VARIABLE];
+
+  if (typeof configured !== "string" || configured === "") {
+    return join(home, ".pi", "agent");
+  }
+
+  const expanded = expandHome(configured, home);
+
+  return FILE_URL.test(expanded) ? fileURLToPath(expanded) : expanded;
+};
+
+const launcherDir = (home: string, env: NodeJS.ProcessEnv) => join(hostAgentDir(home, env), APP);
 
 const policyFileOf = (context: Partial<PathContext>, env: NodeJS.ProcessEnv) => {
   const standard = defaultPolicyFile(context.platform ?? process.platform);
@@ -42,18 +72,10 @@ export const launcherPaths = (context: Partial<PathContext> = {}): LauncherPaths
   const home = context.home ?? homedir();
 
   return {
-    stateDir: present(env.PI_SANDBOX_STATE_DIR) ?? join(home, ".local", "state", APP),
-    userConfigFile: present(env.PI_SANDBOX_USER_CONFIG) ?? join(home, ".config", APP, "config.json"),
+    stateDir: present(env.PI_SANDBOX_STATE_DIR) ?? join(launcherDir(home, env), STATE_DIR),
+    userConfigFile: present(env.PI_SANDBOX_USER_CONFIG) ?? join(launcherDir(home, env), CONFIG_FILE),
     policyFile: policyFileOf(context, env),
   };
-};
-
-export const expandHome = (path: string, home = homedir()) => {
-  if (path === "~") {
-    return home;
-  }
-
-  return path.startsWith("~/") ? join(home, path.slice(2)) : path;
 };
 
 export const isWithin = (path: string, parent: string) => {

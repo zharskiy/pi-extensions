@@ -12,7 +12,7 @@ import {
   withMcpLoginDir,
 } from "../shared/index.ts";
 import type { LaunchContext } from "./context.ts";
-import { type CliDeps, hostAgentDirOf, writeLine } from "./deps.ts";
+import { type CliDeps, hostAgentDirOf, isTerminal, writeLine } from "./deps.ts";
 import type { HostSide } from "./derive.ts";
 import { writeOnce } from "./notices.ts";
 
@@ -86,8 +86,6 @@ const signIn = async (deps: CliDeps, context: LaunchContext, host: HostSide, ser
     await notSignedIn(deps, context, server.name);
   }
 };
-
-const isTerminal = (stream: object) => "isTTY" in stream && stream.isTTY === true;
 
 export const signInMcpServers = async (deps: CliDeps, context: LaunchContext, host: HostSide) => {
   const servers = host.derived.oauthServers;

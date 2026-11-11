@@ -33,11 +33,15 @@ You need:
 - Colima 0.8.0 or newer. The script installs it with Homebrew if it is missing.
 - Node 22.19 or newer, with npm.
 - git.
+- pi, installed with pi's own installer. The launcher runs only this managed install on the host (for provider credentials, host commands and `--no-sandbox`); a pi installed with npm or found on `PATH` is not used.
 
 ```bash
-npm install -g pi-extensions-mz
+curl -fsSL https://pi.dev/install.sh | sh
+npm install -g --omit=peer pi-extensions-mz
 "$(npm root -g)/pi-extensions-mz/launcher/install.sh"
 ```
+
+Without the managed install, `install.sh` stops before it changes anything and says to install pi this way and run it again.
 
 The script starts a Colima profile named `pi-sandbox` and puts `~/.local/bin` first on `PATH` in your shell startup files. Open a new terminal afterwards.
 
@@ -53,13 +57,14 @@ colima stop --profile pi-sandbox && colima start --profile pi-sandbox --activate
 <summary>Install from a checkout</summary>
 
 ```bash
+curl -fsSL https://pi.dev/install.sh | sh
 git clone https://github.com/zharskiy/pi-extensions.git
 cd pi-extensions
 npm install
 launcher/install.sh
 ```
 
-`npm install` comes first. The launcher uses pi's managed install if you have one, and otherwise the pi that npm puts next to it. The script writes a wrapper script at `~/.local/bin/pi` that runs this checkout.
+Pi's own installer comes first here too: the launcher runs only pi's managed install on the host, never the pi in the checkout's `node_modules` or a pi on `PATH`. The script writes a wrapper script at `~/.local/bin/pi` that runs this checkout. Without the managed install, the launch, `pi sandbox doctor`, `--no-sandbox` and the host commands say so in one line, with the same remedy.
 
 </details>
 
@@ -88,11 +93,11 @@ launcher/install.sh
    allowed docs.example.com for /Users/you/code/my-app
    ```
 
-5. If something does not work, run `pi sandbox doctor`. It prints one line per check.
+5. If something does not work, run `pi sandbox doctor`. It reports each check by area (host, sandbox, network, credentials, leak sweep), puts the reasons and a `hint:` under each problem, lists the launch notices at the end and closes with one `result:` line. The credential rules that pass share one line; `--verbose` lists each.
 
 ## Everyday use
 
-In the table, *host pi* is the normal pi on your Mac, and `fallback` is the setting that allows `--no-sandbox`. A *grant* is a host you allowed. *Overlay* and *agent* volumes are storage the VM keeps for the folder's build output and pi's own files.
+In the table, *host pi* is pi's managed install on your Mac, and `fallback` is the setting that allows `--no-sandbox`. A *grant* is a host you allowed. *Overlay* and *agent* volumes are storage the VM keeps for the folder's build output and pi's own files.
 
 | command | what it does |
 | --- | --- |
@@ -113,12 +118,12 @@ In the table, *host pi* is the normal pi on your Mac, and `fallback` is the sett
 | `pi sandbox egress list [--denied]` | grants with their scope, or the hosts the proxy blocked |
 | `pi sandbox reset` | remove this folder's sandbox with its overlay and agent volumes once none of its sessions runs |
 | `pi sandbox stop` | stop the sandbox VM when no pi session runs |
-| `pi sandbox doctor` | prepare the sandbox like pi and print one ok, warn, fail or skip line per check |
+| `pi sandbox doctor [--verbose]` | prepare the sandbox like pi and report each check by area, with a hint per problem; --verbose lists every credential rule |
 | `pi sandbox --version`, `pi sandbox help` | version and usage |
 
 `pi uninstall <source>` also runs with host pi on the host. Host pi loads no extension for `pi --help` and `pi --list-models`, so help omits the flags extensions register and the list omits providers only an extension registers; `pi list`, `pi mcp list` and `pi config` run in the sandbox, and `pi --version` asks pi inside when `image.reference` and `image.digest` pin the image. `egress allow` uses port 443 unless you name one, and refuses wildcards, IP addresses and port 80 ([rules](CONFIGURATION.md#network-access)).
 
-With pi's managed install, `pi update` updates it, and the next launch rebuilds the image. If pi came with the launcher, `pi update` tells you to run `npm install -g pi-extensions-mz`.
+`pi update` runs the managed install's own update, and the next launch rebuilds the image. Without a managed install it says how to get one. To update the launcher itself, run `npm install -g --omit=peer pi-extensions-mz` (or `git pull` in a checkout).
 
 After a reboot or `pi sandbox stop`, the next `pi` starts the VM again. A failure prints `pi-sandbox: <message>`, often with a `hint:` line.
 
@@ -164,7 +169,7 @@ The full list is in [known gaps](THREAT-MODEL.md#5-known-gaps).
 
 ## Configuration
 
-Your settings go in `~/.config/pi-sandbox/config.json`. Nothing in the project folder configures the sandbox. A Java developer might use:
+Your settings go in `~/.pi/agent/pi-sandbox/config.json` (inside pi's agent folder, so under `PI_CODING_AGENT_DIR` when you set it). An older `~/.config/pi-sandbox/config.json` is no longer read; the launch tells you to move it. Nothing in the project folder configures the sandbox. A Java developer might use:
 
 ```json
 {
@@ -190,7 +195,8 @@ Start with `pi sandbox doctor`, which names the failing check.
 
 | symptom | what to do |
 | --- | --- |
-| A host `was blocked in this folder's sandbox` | Follow the hint in that line. |
+| A host `was blocked in this folder's sandbox` | Follow the hint in that line. `pi sandbox doctor` puts the same hint under the `rule` check of a credential host the proxy refused, for example the address a host resolved to and the `egress.privateHosts` entry that allows it, and reports any other host blocked during its run as a `blocked <host:port>` warning. |
+| The doctor's `trust` or `rule` check fails with `CERT_NOT_YET_VALID` | The VM's clock is behind the host's. Run `pi sandbox stop` once no pi session runs, then `pi sandbox doctor` again, which starts the VM afresh. |
 | A provider login is missing or expired | Run `pi --no-sandbox`, then `/login`. If `fallback` is `refuse`, log in with host pi itself. |
 | Pi says `the sandbox VM engine is unreachable` | Run `colima start --profile pi-sandbox --activate=false`, or `install.sh` if the profile is gone. |
 | The VM is running but its engine does not answer | Run `colima stop --profile pi-sandbox && colima start --profile pi-sandbox --activate=false`. |
@@ -209,9 +215,9 @@ Exit every pi session, then run the script from where you installed:
 launcher/uninstall.sh                                     # checkout
 ```
 
-It deletes the `pi-sandbox` Colima profile, the launcher's state, the `pi` link, the npm package and the `PATH` lines. It restores pi's managed link if `install.sh` replaced it.
+It deletes the `pi-sandbox` Colima profile, the launcher's state (`~/.pi/agent/pi-sandbox/state`), the `pi` link, the npm package and the `PATH` lines. It restores pi's managed link if `install.sh` replaced it.
 
-Your repositories, `~/.pi` with its sessions, and `~/.config/pi-sandbox` stay. Colima stays installed. Remove it with `brew uninstall colima` if nothing else uses it.
+It also deletes the old state folder `~/.local/state/pi-sandbox` if an earlier version left one. Your repositories, `~/.pi` with its sessions, and your config `~/.pi/agent/pi-sandbox/config.json` stay. Colima stays installed. Remove it with `brew uninstall colima` if nothing else uses it.
 
 ## More
 

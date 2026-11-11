@@ -1,4 +1,10 @@
-import { authorityOf, egressAllowList, parentProxyOf } from "../config/index.ts";
+import {
+  authorityOf,
+  egressAllowList,
+  isEgressLocked,
+  parentProxyOf,
+  parseHostEntry,
+} from "../config/index.ts";
 import { type Launch, othersLive, withRepoLaunchLock } from "../grants/index.ts";
 import {
   type DenialRecord,
@@ -12,7 +18,7 @@ import {
 } from "../proxy/index.ts";
 import { errorMessage, LauncherError } from "../shared/index.ts";
 import type { LaunchContext } from "./context.ts";
-import { type CliDeps, writeLines, writeNotices } from "./deps.ts";
+import { type CliDeps, pathsOf, writeLines, writeNotices } from "./deps.ts";
 import type { HostSide } from "./derive.ts";
 
 export interface SandboxProxy {
@@ -87,65 +93,82 @@ export const openSandboxProxy = async (
   }
 };
 
-const deniedTargets = (denials: DenialRecord[]) => [
+export const deniedTargets = (denials: DenialRecord[]) => [
   ...new Map(denials.map((denial) => [authorityOf(denial.host, denial.port), denial])).values(),
 ];
 
-const PRIVATE_KINDS: Record<string, string> = {
-  "private-address": "private",
-  loopback: "loopback",
-  "link-local": "link-local",
-  "reserved-address": "reserved",
-};
+const RESTRICTED_RULES = new Set(["private-address", "loopback", "link-local", "reserved-address"]);
+
+const NEVER_REACHABLE =
+  "IP addresses and loopback names are never reachable from the sandbox; use a host name";
 
 const loginHint = (context: LaunchContext) =>
   context.effective.config.fallback === "host"
     ? "log in again with pi --no-sandbox and /login"
     : "log in again with host pi";
 
-export const denialHint = (denial: DenialRecord, target: string, context: LaunchContext) => {
+const privateHostsHint = (deps: CliDeps, host: string, context: LaunchContext) => {
+  if ("problem" in parseHostEntry(host, { wildcard: false, port: false })) {
+    return NEVER_REACHABLE;
+  }
+
+  return isEgressLocked(context.effective)
+    ? `egress is locked by the policy; ask your administrator to add ${host} to egress.privateHosts`
+    : `add ${host} to egress.privateHosts in ${pathsOf(deps).userConfigFile}`;
+};
+
+export interface DenialAdvice {
+  reason?: string;
+  fix?: string;
+}
+
+export const denialAdvice = (
+  deps: CliDeps,
+  denial: DenialRecord,
+  target: string,
+  context: LaunchContext,
+): DenialAdvice => {
   if (denial.rule === "egress.allow") {
-    return context.effective.config.egress.grants
-      ? `run pi sandbox egress allow ${target} on the host from ${context.workspace.repoRoot}`
-      : `ask your administrator to add ${target} to egress.allow`;
+    return {
+      fix: context.effective.config.egress.grants
+        ? `run pi sandbox egress allow ${target} on the host from ${context.workspace.repoRoot}`
+        : `ask your administrator to add ${target} to egress.allow`,
+    };
   }
 
-  const kind = PRIVATE_KINDS[denial.rule];
-
-  if (kind !== undefined) {
-    return `it resolves to a ${kind} address; add ${denial.host} to egress.privateHosts`;
+  if (RESTRICTED_RULES.has(denial.rule)) {
+    return { reason: denial.reason, fix: privateHostsHint(deps, denial.host, context) };
   }
 
-  const hints: Record<string, string> = {
-    "egress.deny": "denied by policy",
-    "plain-http": "plain HTTP is not proxied; use https",
-    upstream: `it could not be reached: ${denial.reason}`,
-    credential: `it could not authenticate: ${denial.reason}`,
-    login: `${denial.reason}; ${loginHint(context)}`,
+  const advice: Record<string, DenialAdvice> = {
+    "egress.deny": { reason: "denied by policy" },
+    "plain-http": { reason: "plain HTTP is not proxied", fix: "use https" },
+    upstream: { reason: `it could not be reached: ${denial.reason}` },
+    credential: { reason: `it could not authenticate: ${denial.reason}` },
+    login: { reason: denial.reason, fix: loginHint(context) },
   };
 
-  return hints[denial.rule] ?? denial.reason;
+  return advice[denial.rule] ?? { reason: denial.reason };
 };
 
-const denialLine = (context: LaunchContext) => (denial: DenialRecord) => {
+const denialHint = (deps: CliDeps, denial: DenialRecord, target: string, context: LaunchContext) => {
+  const { reason, fix } = denialAdvice(deps, denial, target, context);
+
+  return [reason, fix].filter((part) => part !== undefined).join("; ");
+};
+
+const blockedText = (deps: CliDeps, context: LaunchContext) => (denial: DenialRecord) => {
   const target = authorityOf(denial.host, denial.port);
 
-  return `pi-sandbox: ${target} was blocked in this folder's sandbox; ${denialHint(denial, target, context)}`;
+  return `${target} was blocked in this folder's sandbox; ${denialHint(deps, denial, target, context)}`;
 };
 
-export const reportDenials = async (
-  deps: CliDeps,
-  context: LaunchContext,
-  proxy: SandboxProxy | undefined,
-  since: number,
-  credentials = true,
-) => {
-  if (proxy === undefined) {
-    return;
-  }
+export const sandboxDenials = (deps: CliDeps, context: LaunchContext, since: number) =>
+  deps.proxy.denials(context.stateDir, context.repoHash, since).catch((): DenialRecord[] => []);
 
-  const denials = await deps.proxy.denials(context.stateDir, context.repoHash, since).catch(() => []);
-  const reported = credentials ? denials : denials.filter((denial) => denial.credentialRule === undefined);
-
-  writeLines(deps.stderr, deniedTargets(reported).map(denialLine(context)));
+export const reportDenials = (deps: CliDeps, context: LaunchContext) => (denials: DenialRecord[]) => {
+  writeLines(
+    deps.stderr,
+    deniedTargets(denials).map((denial) => `pi-sandbox: ${blockedText(deps, context)(denial)}`),
+  );
 };

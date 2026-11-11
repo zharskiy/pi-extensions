@@ -1,5 +1,5 @@
 command_not_found_handle() {
-  printf 'bash: %s: command not found\npi-sandbox: %s is not in the sandbox image; add its Debian package to image.packages or its npm package to image.npmGlobal in ~/.config/pi-sandbox/config.json on the host\n' "$1" "$1" >&2
+  printf 'bash: %s: command not found\npi-sandbox: %s is not in the sandbox image; add its Debian package to image.packages or its npm package to image.npmGlobal in pi-sandbox/config.json under pi'\''s agent dir on the host (~/.pi/agent unless PI_CODING_AGENT_DIR is set)\n' "$1" "$1" >&2
   return 127
 }
 

@@ -12,6 +12,7 @@ import { userHashOf } from "../../../container/index.ts";
 import { endLaunch, newLaunchId, registerLaunch } from "../../../grants/index.ts";
 import { stopRepoProxy } from "../../../proxy/index.ts";
 import { createProcessRunner, processMark, stateLayout } from "../../../shared/index.ts";
+import { writeManagedPi } from "../../cli/harness.ts";
 import { createTestCa, type TestCa, type TestCertificate } from "../fixtures/test-ca.ts";
 import {
   engineSocket,
@@ -74,6 +75,22 @@ export interface LiveSandbox {
 const run = promisify(execFile);
 
 const LAUNCHER_ENTRY = fileURLToPath(new URL("../../../bin/pi-sandbox-dev.js", import.meta.url));
+
+const REPO_MODULES = fileURLToPath(new URL("../../../../node_modules", import.meta.url));
+
+const REPO_PI = join(REPO_MODULES, "@earendil-works", "pi-coding-agent");
+
+const installRepoPiAsManaged = async (agentDir: string) => {
+  const manifest = JSON.parse(await readFile(join(REPO_PI, "package.json"), "utf8")) as {
+    version: string;
+    bin: Record<string, string>;
+  };
+
+  await writeManagedPi(agentDir, manifest.version, {
+    nodeModules: REPO_MODULES,
+    wrapper: (packageDir) => `exec '${process.execPath}' '${join(packageDir, manifest.bin.pi ?? "")}' "$@"`,
+  });
+};
 
 const resolvePreload = () => {
   const url = new URL("./resolve-preload.mjs", import.meta.url);
@@ -186,8 +203,8 @@ export const createLiveSandbox = async (name: string): Promise<LiveSandbox> => {
   const root = join(liveRoot(), `${name}-${randomBytes(3).toString("hex")}`);
   const home = join(root, "home");
   const agentDir = join(home, ".pi", "agent");
-  const stateDir = join(home, ".local", "state", "pi-sandbox");
-  const userConfigFile = join(home, ".config", "pi-sandbox", "config.json");
+  const stateDir = join(agentDir, "pi-sandbox", "state");
+  const userConfigFile = join(agentDir, "pi-sandbox", "config.json");
   const repoPath = join(root, "repos", name);
   const bin = join(root, "bin");
   const certs = join(root, "certs");
@@ -196,7 +213,9 @@ export const createLiveSandbox = async (name: string): Promise<LiveSandbox> => {
 
   await Promise.all([agentDir, stateDir, bin, certs].map((dir) => mkdir(dir, { recursive: true })));
 
-  await mkdir(join(home, ".config", "pi-sandbox"), { recursive: true });
+  await mkdir(join(agentDir, "pi-sandbox"), { recursive: true });
+
+  await installRepoPiAsManaged(agentDir);
 
   await symlink(join(homedir(), ".colima"), join(home, ".colima")).catch(() => undefined);
 

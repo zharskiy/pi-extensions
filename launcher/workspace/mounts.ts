@@ -1,4 +1,4 @@
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { hostAgentDir, isWithin, launcherPaths, realOrResolvedSync } from "../shared/index.ts";
 
 interface ProtectedContext {
@@ -18,18 +18,10 @@ const SYSTEM_DIRS = ["/var/run", "/run", "/etc", "/proc", "/sys", "/dev"];
 
 const IMAGE_DIRS = ["/usr/bin", "/usr/sbin", "/usr/lib", "/usr/local", "/bin", "/sbin", "/lib", "/opt"];
 
-const DEFAULT_CONFIG_DIR = [".config", "pi-sandbox"];
-
 const dockerHostSocket = (env: NodeJS.ProcessEnv) => {
   const host = env.DOCKER_HOST;
 
   return host?.startsWith("unix://") ? host.slice("unix://".length) : undefined;
-};
-
-const userConfigOf = (home: string, userConfigFile: string) => {
-  const defaultDir = resolve(home, ...DEFAULT_CONFIG_DIR);
-
-  return resolve(dirname(userConfigFile)) === defaultDir ? defaultDir : userConfigFile;
 };
 
 export const protectedPaths = (context: ProtectedContext): Protected[] => {
@@ -40,11 +32,9 @@ export const protectedPaths = (context: ProtectedContext): Protected[] => {
     { path: join(context.home, ".pi"), reason: "pi's directory", under: true },
     { path: hostAgentDir(context.home, context.env), reason: "pi's agent directory", under: true },
     { path: paths.stateDir, reason: "the launcher state directory", under: true },
-    {
-      path: userConfigOf(context.home, paths.userConfigFile),
-      reason: "the launcher user config",
-      under: true,
-    },
+    { path: paths.userConfigFile, reason: "the launcher user config", under: true },
+    { path: join(context.home, ".config"), reason: "~/.config", under: false },
+    { path: join(context.home, ".config", "pi-sandbox"), reason: "~/.config/pi-sandbox", under: true },
     ...PROTECTED_HOME.map((name) => ({ path: join(context.home, name), reason: `~/${name}`, under: true })),
     ...SYSTEM_DIRS.map((path) => ({ path, reason: path, under: true })),
     ...IMAGE_DIRS.map((path) => ({ path, reason: `${path}, which the sandbox image uses`, under: false })),

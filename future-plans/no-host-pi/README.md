@@ -8,6 +8,8 @@ The launcher (`launcher/`) runs pi in a container, yet a second pi on the host d
 
 Who has two pis:
 
+> Update 2026-11-11: the bundled fallback described in the two items below is gone. `resolveJobPi` (`launcher/cli/host-pi.ts`) now takes only pi's managed install in the host agent dir, `install.sh` requires it in both modes and installs without `--legacy-peer-deps=false`, and without it every host job prints one missing-pi line; the rest of this plan is unchanged.
+
 - **A normal install** (`npm install -g pi-extensions-mz`, then `install.sh`). The package declares pi only as a `peerDependencies: "*"` (root `package.json`; no `dependencies`), and `install.sh` installs with `--legacy-peer-deps=false` (`launcher/install.sh:320`) so npm brings the peer, then fails if none arrived (`require_host_pi`, line 287). The user installs no pi by hand, but a pi is on disk next to the launcher and runs every host job. A user who already had pi's managed install keeps using it: `resolveJobPi` prefers it (`launcher/cli/host-pi.ts:31-32`), and `install.sh` takes over its `~/.local/bin/pi` link. So these users have a host pi they manage and an image pi that follows it.
 - **The dev setup in this repository** (`launcher/bin/pi-sandbox-dev.js`, pi in the repo's own `node_modules`). `bundledOutside` (`host-pi.ts:10-18`) uses the bundled pi only when its package dir lies outside the repository and its git common dir, since otherwise sandbox-writable code would run on the host. Here it lies inside, so only a managed install can serve host jobs. Without one, credentials, MCP sign-in, the provider table and every intercepted command fail. That is where "two instances I have to keep in step" comes from.
 

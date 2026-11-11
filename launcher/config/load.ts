@@ -6,6 +6,7 @@ import { validateLayer } from "./validate.ts";
 
 interface LoadOptions {
   env?: NodeJS.ProcessEnv;
+  home?: string;
 }
 
 const validateLayerFile = (value: unknown, layer: LayerName, file: string) => {
@@ -23,7 +24,7 @@ const readLayer = async (layer: LayerName, file: string) => {
 };
 
 export const loadEffectiveConfig = async (options: LoadOptions = {}): Promise<EffectiveConfig> => {
-  const paths = launcherPaths({ env: options.env });
+  const paths = launcherPaths({ env: options.env, home: options.home });
   const [policy, user] = await Promise.all([
     readLayer("policy", paths.policyFile),
     readLayer("user", paths.userConfigFile),

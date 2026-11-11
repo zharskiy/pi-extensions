@@ -111,17 +111,11 @@ export interface DerivedSandboxPi {
   notices: string[];
 }
 
-export interface BundledPi {
+export interface HostPi {
   command: string[];
   version: string;
   packageDir: string;
-}
-
-type HostPiSource = "managed" | "bundled";
-
-export interface HostPi extends BundledPi {
-  source: HostPiSource;
-  wrapper?: string;
+  wrapper: string;
 }
 
 export interface McpOAuthServer {

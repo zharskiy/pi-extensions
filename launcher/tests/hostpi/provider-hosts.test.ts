@@ -1,17 +1,18 @@
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { type BundledPi, locateBundledPi, readProviderHosts } from "../../hostpi/index.ts";
+import { type HostPi, readProviderHosts } from "../../hostpi/index.ts";
 import { createProcessRunner, launcherRoot, stateLayout } from "../../shared/index.ts";
 import { createScriptedRunner } from "../support/fake-runner.ts";
 import { tempDir, writeText } from "./fixtures.ts";
 
 const SAMPLE = join(import.meta.dirname, "provider-hosts-sample.json");
 
-const PI: BundledPi = {
+const PI: HostPi = {
   command: [process.execPath, "/opt/pi/cli.js"],
   version: "1.5.0",
   packageDir: "/opt/pi",
+  wrapper: "/opt/agent/bin/pi",
 };
 
 const SCRIPT = join(launcherRoot(), "hostpi", "provider-hosts.mjs");
@@ -154,30 +155,5 @@ describe("provider host lookups stay inside their install", () => {
 
     expect(result.code).toBe(1);
     expect(result.stderr).toContain("no ./providers/* export");
-  });
-
-  it("finds the bundled pi only inside the launcher's package", async () => {
-    const dir = await tempDir("bundled-pi");
-    const manifest = JSON.stringify({
-      name: "@earendil-works/pi-coding-agent",
-      version: "1.0.0",
-      bin: { pi: "cli.js" },
-    });
-
-    await writeText(
-      join(dir, "node_modules", "@earendil-works", "pi-coding-agent", "package.json"),
-      manifest,
-    );
-
-    expect(await locateBundledPi(join(dir, "app", "launcher"))).toBeUndefined();
-
-    await writeText(
-      join(dir, "app", "node_modules", "@earendil-works", "pi-coding-agent", "package.json"),
-      manifest,
-    );
-
-    expect((await locateBundledPi(join(dir, "app", "launcher")))?.packageDir).toBe(
-      join(dir, "app", "node_modules", "@earendil-works", "pi-coding-agent"),
-    );
   });
 });

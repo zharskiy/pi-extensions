@@ -9,9 +9,11 @@ The sandbox reads two JSON files, called *layers*. Both use the same keys.
 | layer | path | written by |
 | --- | --- | --- |
 | policy | `/Library/Application Support/pi-sandbox/policy.json` (`/etc/pi-sandbox/policy.json` on Linux) | your administrator |
-| user | `~/.config/pi-sandbox/config.json` | you |
+| user | `~/.pi/agent/pi-sandbox/config.json` (`pi-sandbox/config.json` under `PI_CODING_AGENT_DIR` when set) | you |
 
 A missing file is simply skipped. The launcher reads both files at every launch and never writes them. Nothing in the project folder configures the sandbox.
+
+The user config used to live in `~/.config/pi-sandbox/config.json`. That file is no longer read: while it exists and the new one does not, every launch and `pi sandbox doctor` name both paths. Move it yourself; the launcher never touches the old folder.
 
 `pi sandbox config` prints the result and the layer each key comes from. Add `--json` for machine-readable output.
 
@@ -141,7 +143,8 @@ A blocked request gets a 403 page that says what to do. When pi exits, the launc
 | why it was blocked | hint |
 | --- | --- |
 | not on any allow list | `run pi sandbox egress allow <host> on the host from <folder>`, or with grants off `ask your administrator to add <host> to egress.allow` |
-| it resolves to a private, loopback, link-local or reserved address | `add <host> to egress.privateHosts` |
+| it resolves to a private, loopback, link-local or reserved address | the proxy's reason with the address, then `add <host> to egress.privateHosts in <your config file>`, or with egress locked by the policy `ask your administrator to add <host> to egress.privateHosts` |
+| it is an IP address or a loopback name (`localhost`) in such a range | the proxy's reason, then `IP addresses and loopback names are never reachable from the sandbox; use a host name`, since `egress.privateHosts` takes neither |
 | `egress.deny` names it | `denied by policy` |
 | plain HTTP | `plain HTTP is not proxied; use https` |
 | the host did not answer | `it could not be reached: <reason>` |
@@ -149,6 +152,8 @@ A blocked request gets a 403 page that says what to do. When pi exits, the launc
 | a provider login on the host is missing or expired | `log in again with pi --no-sandbox and /login`, or with `fallback` set to `refuse` `log in again with host pi` |
 
 Any other case prints the proxy's own reason.
+
+`pi sandbox doctor` puts the same reason and hint under the `rule` check of a credential host the proxy refused. Every other host blocked during its run becomes a `blocked <host:port>` warning in the network section, with the same reason and hint, instead of a line printed when it exits; a run that stops before its probes reports none.
 
 ## Image
 
@@ -403,9 +408,9 @@ Under that policy, the Java user config in the [README](README.md#configuration)
 | variable | effect |
 | --- | --- |
 | `PI_SANDBOX_USER_CONFIG` | Path of the user config. |
-| `PI_SANDBOX_STATE_DIR` | The launcher's state folder. The default is `~/.local/state/pi-sandbox`. |
+| `PI_SANDBOX_STATE_DIR` | The launcher's state folder. The default is `pi-sandbox/state` in host pi's agent folder. |
 | `PI_SANDBOX_POLICY_FILE` | A policy file, used only while the standard one does not exist. |
-| `PI_CODING_AGENT_DIR` | Host pi's agent folder. The default is `~/.pi/agent`. |
+| `PI_CODING_AGENT_DIR` | Host pi's agent folder. The default is `~/.pi/agent`. The user config and the state follow it, so two shells with different values use separate configs, CAs and state. |
 | `HTTPS_PROXY`, `https_proxy`, `NO_PROXY`, `no_proxy` | The parent proxy, with `egress.parentProxy` set to `env`. |
 | `GH_CONFIG_DIR`, `GLAB_CONFIG_DIR`, `XDG_CONFIG_HOME` | Where the gh and glab configs are read. A path inside the repository is ignored. |
 | Provider API key variables | Derived as credentials. The proxy reads them on your Mac. |

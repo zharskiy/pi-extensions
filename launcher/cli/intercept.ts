@@ -6,42 +6,26 @@ import {
   expandHome,
   isWithin,
   knownRepos,
-  LauncherError,
   PI_AGENT_DIR_VARIABLE,
   repoRecordOf,
   withMcpLoginDir,
 } from "../shared/index.ts";
 import { assertSafeMounts, findGitRoot } from "../workspace/index.ts";
 import { type CliDeps, hostAgentDirOf, pathsOf, writeLine } from "./deps.ts";
-import { interactiveCommand, nearbyRoots, resolveJobPi } from "./host-pi.ts";
+import { requireJobPi, resolveJobPi } from "./host-pi.ts";
 import { type HostRoute, hostRoute } from "./host-routes.ts";
 import { imagePiVersion } from "./versions.ts";
 
-const SELF_UPDATE = "pi follows the launcher; update it with npm install -g pi-extensions-mz";
-
 const LOCAL_FLAGS = ["-l", "--local"];
-
-const piOnHost = async (deps: CliDeps) => {
-  const pi = await resolveJobPi(deps, await nearbyRoots(deps));
-
-  if (pi === undefined) {
-    throw new LauncherError(
-      "no pi on the host to run this with",
-      "install pi or reinstall the launcher with npm install -g pi-extensions-mz",
-    );
-  }
-
-  return pi.command;
-};
 
 const runOnHost = async (
   deps: CliDeps,
   args: string[],
   options: { cwd: string; env?: Record<string, string> },
 ) => {
-  const [file = "", ...prefix] = await piOnHost(deps);
+  const pi = await requireJobPi(deps);
 
-  return deps.runner.spawnInteractive(file, [...prefix, ...args], options);
+  return deps.runner.spawnInteractive(pi.wrapper, args, options);
 };
 
 const inEmptyDir = (deps: CliDeps, args: string[], options: { env?: Record<string, string> } = {}) =>
@@ -248,18 +232,9 @@ const isSelfUpdate = (args: string[]) =>
   args.length === 0 || (args.length === 1 && SELF_TARGETS.includes(args[0] ?? ""));
 
 const selfUpdate = async (deps: CliDeps) => {
-  const roots = await nearbyRoots(deps);
-  const pi = await resolveJobPi(deps, roots);
-
-  if (pi === undefined || pi.source === "bundled") {
-    writeLine(deps.stdout, SELF_UPDATE);
-
-    return 0;
-  }
-
-  const [file = "", ...prefix] = interactiveCommand(pi);
-  const code = await deps.runner.spawnInteractive(file, [...prefix, "update"], { cwd: deps.cwd });
-  const followed = code === 0 ? await resolveJobPi(deps, roots) : undefined;
+  const pi = await requireJobPi(deps);
+  const code = await deps.runner.spawnInteractive(pi.wrapper, ["update"], { cwd: deps.cwd });
+  const followed = code === 0 ? await resolveJobPi(deps) : undefined;
 
   if (followed !== undefined) {
     writeLine(deps.stderr, `pi-sandbox: the sandbox follows pi ${followed.version} at the next launch`);
@@ -269,13 +244,13 @@ const selfUpdate = async (deps: CliDeps) => {
 };
 
 const sandboxPiVersion = async (deps: CliDeps) => {
-  const { image } = (await loadEffectiveConfig({ env: deps.env })).config;
+  const { image } = (await loadEffectiveConfig({ env: deps.env, home: deps.home })).config;
 
   if (image.reference !== undefined && image.digest !== undefined) {
     return undefined;
   }
 
-  writeLine(deps.stdout, await imagePiVersion(await resolveJobPi(deps, await nearbyRoots(deps))));
+  writeLine(deps.stdout, await imagePiVersion(await resolveJobPi(deps)));
 
   return 0;
 };

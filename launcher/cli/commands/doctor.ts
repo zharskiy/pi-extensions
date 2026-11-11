@@ -1,31 +1,39 @@
 import { type Backend, ENGINE_PROFILE, LABELS, recommendedVmSize, type VmSize } from "../../backend/index.ts";
-import { authorityOf } from "../../config/index.ts";
+import { authorityOf, type CredentialRule, TLS_PORT } from "../../config/index.ts";
 import { readHostPiFiles } from "../../hostpi/index.ts";
-import { readHealth } from "../../proxy/index.ts";
-import { errorMessage } from "../../shared/index.ts";
+import { type DenialRecord, readHealth } from "../../proxy/index.ts";
+import { errorMessage, LauncherError } from "../../shared/index.ts";
 import { type LaunchContext, openContext } from "../context.ts";
-import { type CliDeps, hostAgentDirOf, writeLine } from "../deps.ts";
+import { type CliDeps, colorOf, hostAgentDirOf, isTerminal, lineSink, writeLines } from "../deps.ts";
+import { missingPiText } from "../host-pi.ts";
 import { hostSessionsOf } from "../host-sessions.ts";
 import { type Sandbox, type Stage, type StageOutcome, withSandbox } from "../launch.ts";
-import { denialHint, type SandboxProxy } from "../sandbox-proxy.ts";
+import { denialAdvice, deniedTargets, type SandboxProxy, sandboxDenials } from "../sandbox-proxy.ts";
 import { vmShareCoverage } from "../vm.ts";
-import { hostChecks } from "./doctor-host.ts";
 import {
   type CheckResult,
+  failed,
+  type NamedCheck,
+  passed,
+  type Section,
+  skipped,
+  VERBOSE_FLAG,
+  verdictOf,
+  warned,
+} from "./doctor-checks.ts";
+import { hostChecks } from "./doctor-host.ts";
+import {
   checkMcp,
   checkMcpAuthSweep,
   checkNoRoute,
   checkRules,
   checkSessionsShare,
   checkSettingsSweep,
-  failed,
-  type NamedCheck,
   type ProbeTarget,
-  passed,
-  skipped,
+  type RuleHint,
   sweepCredentials,
-  warned,
 } from "./doctor-probes.ts";
+import { renderReport } from "./doctor-report.ts";
 
 interface ProbeInput {
   deps: CliDeps;
@@ -36,6 +44,52 @@ interface ProbeInput {
 
 type Probe = (input: ProbeInput) => Promise<NamedCheck[]>;
 
+interface Progress {
+  line: (text: string) => void;
+  clear: () => void;
+}
+
+interface Run {
+  checks: NamedCheck[];
+  progress: Progress;
+}
+
+const NOTICE_PREFIX = "pi-sandbox: ";
+
+const ERASE_LINE = "\r\u001b[2K";
+
+const stageLabel = (stage: Stage) => (stage === "host" ? "host side" : stage);
+
+const stageSection = (stage: Stage): Section =>
+  stage === "host" ? "host" : stage === "proxy" ? "network" : "sandbox";
+
+const withoutPrefix = (line: string) =>
+  line.startsWith(NOTICE_PREFIX) ? line.slice(NOTICE_PREFIX.length) : line;
+
+const progressLine = (deps: CliDeps): Progress => {
+  if (!isTerminal(deps.stderr) || deps.env.TERM === "dumb") {
+    return { line: () => undefined, clear: () => undefined };
+  }
+
+  const state = { shown: false };
+  const width = Math.max(1, deps.terminal.columns - 1);
+
+  return {
+    line: (text) => {
+      state.shown = true;
+
+      deps.stderr.write(`${ERASE_LINE}${`pi sandbox doctor: ${withoutPrefix(text)}`.slice(0, width)}`);
+    },
+    clear: () => {
+      if (state.shown) {
+        state.shown = false;
+
+        deps.stderr.write(ERASE_LINE);
+      }
+    },
+  };
+};
+
 const attempt = async (action: () => Promise<CheckResult>) => {
   try {
     return await action();
@@ -44,21 +98,21 @@ const attempt = async (action: () => Promise<CheckResult>) => {
   }
 };
 
-const print = (deps: CliDeps, name: string, result: CheckResult) => {
-  writeLine(deps.stdout, `${result.status} ${name}: ${result.detail}`);
-
-  return result.status !== "fail";
-};
-
-const printStage = (deps: CliDeps, stage: Stage, outcome: StageOutcome) => {
-  if (!outcome.ok) {
-    writeLine(deps.stdout, `fail ${stage}: ${errorMessage(outcome.error)}`);
-
-    return;
+const stageResult = (outcome: StageOutcome) => {
+  if (outcome.ok) {
+    return passed(outcome.detail ?? "");
   }
 
-  writeLine(deps.stdout, outcome.detail === undefined ? `ok ${stage}` : `ok ${stage}: ${outcome.detail}`);
+  return failed(errorMessage(outcome.error), {
+    hint: outcome.error instanceof LauncherError ? outcome.error.hint : undefined,
+  });
 };
+
+const stageCheck = (stage: Stage, outcome: StageOutcome): NamedCheck => ({
+  name: stageLabel(stage),
+  section: stageSection(stage),
+  result: stageResult(outcome),
+});
 
 const proxyHealth = async (proxy: SandboxProxy | undefined) => {
   if (proxy === undefined) {
@@ -87,9 +141,9 @@ const sizeCheck = async (deps: CliDeps, sandbox: Sandbox) => {
   const current = `profile ${ENGINE_PROFILE} has ${size.cpus} CPUs and ${gibText(size.memoryGiB)}`;
 
   return isBelow(size, recommended)
-    ? warned(
-        `${current}, below ${recommended.cpus} CPUs and ${recommended.memoryGiB} GiB; resize it with ${vm.resizeCommand(recommended)}`,
-      )
+    ? warned(`${current}, below ${recommended.cpus} CPUs and ${recommended.memoryGiB} GiB`, {
+        hint: `resize it with ${vm.resizeCommand(recommended)}`,
+      })
     : passed(current);
 };
 
@@ -122,9 +176,9 @@ const sharesCheck = async (
     result:
       coverage.missing.length === 0
         ? passed("the sandbox VM shares every path this repository needs")
-        : warned(
-            `the sandbox VM does not share ${coverage.missing.join(", ")}; the next pi here shares it, restarting the VM once no pi session runs`,
-          ),
+        : warned(`the sandbox VM does not share ${coverage.missing.join(", ")}`, {
+            hint: "run pi once here while no other pi session runs, which shares it and restarts the VM, then pi sandbox doctor again",
+          }),
     missing: coverage.missing,
   };
 };
@@ -136,8 +190,8 @@ const sharesOf = (deps: CliDeps, context: LaunchContext, backend: Backend) =>
   }));
 
 const single =
-  (name: string, check: (input: ProbeInput) => Promise<CheckResult>): Probe =>
-  async (input) => [{ name, result: await attempt(() => check(input)) }];
+  (name: string, section: Section, check: (input: ProbeInput) => Promise<CheckResult>): Probe =>
+  async (input) => [{ name, section, result: await attempt(() => check(input)) }];
 
 const inOrder =
   (...probes: Probe[]): Probe =>
@@ -147,29 +201,49 @@ const inOrder =
       Promise.resolve([]),
     );
 
-const unresolvedHints =
-  ({ deps, context, sandbox }: ProbeInput) =>
-  async (): Promise<ReadonlyMap<string, string>> => {
+const ruleAuthority = (rule: CredentialRule) => authorityOf(rule.host.toLowerCase(), rule.port ?? TLS_PORT);
+
+const denialAuthority = (denial: DenialRecord) => authorityOf(denial.host, denial.port);
+
+const isRefusalOf = (authority: string) => (denial: DenialRecord) =>
+  denial.credentialRule === undefined && denialAuthority(denial) === authority;
+
+const adviceOf = (deps: CliDeps, context: LaunchContext) => (denial: DenialRecord) => {
+  const advice = denialAdvice(deps, denial, denialAuthority(denial), context);
+
+  return warned(advice.reason ?? denial.reason, { hint: advice.fix });
+};
+
+const ruleHints =
+  ({ deps, context, sandbox }: ProbeInput, rules: CredentialRule[]) =>
+  async (): Promise<ReadonlyMap<string, RuleHint>> => {
     const denials =
-      sandbox.proxy === undefined
-        ? []
-        : await deps.proxy
-            .denials(context.stateDir, context.repoHash, sandbox.launch.startedAt)
-            .catch(() => []);
+      sandbox.proxy === undefined ? [] : await sandboxDenials(deps, context, sandbox.launch.startedAt);
+    const advice = adviceOf(deps, context);
 
     return new Map(
-      denials.flatMap((denial) =>
-        denial.credentialRule === undefined
-          ? []
-          : [[denial.credentialRule, denialHint(denial, authorityOf(denial.host, denial.port), context)]],
-      ),
+      rules.map((rule): [string, RuleHint] => {
+        const unresolved = denials.findLast((denial) => denial.credentialRule === rule.id);
+        const refused = denials.findLast(isRefusalOf(ruleAuthority(rule)));
+
+        return [
+          rule.id,
+          {
+            ...(unresolved === undefined ? {} : { unresolved: advice(unresolved) }),
+            ...(refused === undefined ? {} : { refused: advice(refused) }),
+          },
+        ];
+      }),
     );
   };
 
-const ruleChecks: Probe = (input) =>
-  checkRules(input.target, input.sandbox.host.derived.rules, unresolvedHints(input)).catch(
-    (error: unknown) => [{ name: "trust", result: failed(errorMessage(error)) }],
-  );
+const ruleChecks: Probe = (input) => {
+  const { rules } = input.sandbox.host.derived;
+
+  return checkRules(input.target, rules, ruleHints(input, rules)).catch((error: unknown) => [
+    { name: "trust", section: "credentials", result: failed(errorMessage(error)) },
+  ]);
+};
 
 const sessionsShareCheck = async (target: ProbeTarget) => {
   const containers = await target.backend.findContainers({ [LABELS.managed]: "true" });
@@ -179,17 +253,19 @@ const sessionsShareCheck = async (target: ProbeTarget) => {
 };
 
 const PROBES: Probe[] = [
-  single("proxy health", ({ sandbox }) => proxyHealth(sandbox.proxy)),
-  single("credential sweep", ({ target, sandbox }) => sweepCredentials(target, sandbox.proxy?.token)),
-  single("no-route", ({ target }) => checkNoRoute(target)),
-  inOrder(
-    single("mcp", ({ target }) => checkMcp(target)),
-    single("mcp-auth sweep", ({ target }) => checkMcpAuthSweep(target)),
-    single("settings sweep", ({ target }) => checkSettingsSweep(target)),
+  single("proxy health", "network", ({ sandbox }) => proxyHealth(sandbox.proxy)),
+  single("credential sweep", "leak sweep", ({ target, sandbox }) =>
+    sweepCredentials(target, sandbox.proxy?.token),
   ),
-  single("sessions share", ({ target }) => sessionsShareCheck(target)),
+  single("no-route", "network", ({ target }) => checkNoRoute(target)),
+  inOrder(
+    single("mcp", "network", ({ target }) => checkMcp(target)),
+    single("mcp-auth sweep", "leak sweep", ({ target }) => checkMcpAuthSweep(target)),
+    single("settings sweep", "leak sweep", ({ target }) => checkSettingsSweep(target)),
+  ),
+  single("sessions share", "sandbox", ({ target }) => sessionsShareCheck(target)),
   ruleChecks,
-  single("vm size", ({ deps, sandbox }) => sizeCheck(deps, sandbox)),
+  single("vm size", "sandbox", ({ deps, sandbox }) => sizeCheck(deps, sandbox)),
 ];
 
 const probe = async (deps: CliDeps, context: LaunchContext, sandbox: Sandbox) => {
@@ -198,61 +274,142 @@ const probe = async (deps: CliDeps, context: LaunchContext, sandbox: Sandbox) =>
     containerId: sandbox.containerId,
     workdir: sandbox.spec.workdir,
   };
-  const checks = (await Promise.all(PROBES.map((run) => run({ deps, context, sandbox, target })))).flat();
-  const results = checks.map((check) => print(deps, check.name, check.result));
 
-  return results.every(Boolean) ? 0 : 1;
+  return (await Promise.all(PROBES.map((run) => run({ deps, context, sandbox, target })))).flat();
 };
 
-const sandboxChecks = async (deps: CliDeps, context: LaunchContext, backend: Backend) => {
-  const failures: Stage[] = [];
-  const report = (stage: Stage, outcome: StageOutcome) => {
-    if (!outcome.ok) {
-      failures.push(stage);
-    }
+const blockedChecks = (deps: CliDeps, context: LaunchContext, rules: CredentialRule[]) => {
+  const authorities = new Set(rules.map(ruleAuthority));
+  const advice = adviceOf(deps, context);
 
-    printStage(deps, stage, outcome);
+  return (denials: DenialRecord[]) =>
+    deniedTargets(
+      denials.filter(
+        (denial) => denial.credentialRule === undefined && !authorities.has(denialAuthority(denial)),
+      ),
+    ).map(
+      (denial): NamedCheck => ({
+        name: `blocked ${denialAuthority(denial)}`,
+        section: "network",
+        result: advice(denial),
+      }),
+    );
+};
+
+const notRun = (stage: Stage | undefined): NamedCheck => ({
+  name: "probes",
+  section: "sandbox",
+  result: skipped(
+    stage === undefined
+      ? "not run: the preparation was stopped"
+      : `not run: the ${stageLabel(stage)} stage failed`,
+  ),
+});
+
+const sandboxChecks = async (deps: CliDeps, context: LaunchContext, backend: Backend, run: Run) => {
+  const seen: { failed?: Stage; rules?: CredentialRule[] } = {};
+  const report = (stage: Stage, outcome: StageOutcome) => {
+    seen.failed ??= outcome.ok ? undefined : stage;
+
+    run.checks.push(stageCheck(stage, outcome));
+
+    run.progress.line(`${stageLabel(stage)} ${outcome.ok ? "ready" : "failed"}`);
   };
-  const code = await withSandbox(deps, context, backend, (sandbox) => probe(deps, context, sandbox), {
+  const use = async (sandbox: Sandbox) => {
+    seen.rules = sandbox.host.derived.rules;
+
+    run.progress.line("checking inside the sandbox");
+
+    run.checks.push(...(await probe(deps, context, sandbox)));
+
+    return 0;
+  };
+  const code = await withSandbox(deps, context, backend, use, {
     report,
+    progress: run.progress.line,
     signIn: false,
     share: false,
-    credentialDenials: false,
+    denials: (records) => run.checks.push(...blockedChecks(deps, context, seen.rules ?? [])(records)),
   }).catch((error: unknown) => {
-    if (failures.length === 0) {
+    if (seen.failed === undefined) {
       throw error;
     }
 
-    return 1;
+    return undefined;
   });
-
-  return code === 0 && failures.length === 0 ? 0 : code || 1;
-};
-
-const skipSandbox = (deps: CliDeps, missing: string[]) => {
-  writeLine(
-    deps.stdout,
-    `skip sandbox: run pi once here to share ${missing.join(", ")}, then pi sandbox doctor again`,
-  );
-
-  return 0;
-};
-
-export const doctorCommand = async (deps: CliDeps) => {
-  const { context, backend } = await openContext(deps, "sandbox");
-  const shares = await sharesOf(deps, context, backend);
-  const code =
-    shares.missing.length === 0
-      ? await sandboxChecks(deps, context, backend)
-      : skipSandbox(deps, shares.missing);
-  const host = [
-    print(deps, "vm shares", shares.result),
-    ...(await hostChecks(deps, context)).map((check) => print(deps, check.name, check.result)),
-  ];
-
-  if (code !== 0) {
-    return code;
+  if (seen.rules !== undefined) {
+    return undefined;
   }
 
-  return host.every(Boolean) ? 0 : 1;
+  run.checks.push(notRun(seen.failed));
+
+  return code;
+};
+
+const skipSandbox = (run: Run, missing: string[]) => {
+  run.checks.push({
+    name: "sandbox",
+    section: "sandbox",
+    result: skipped(`not started until the VM shares ${missing.join(", ")}`),
+  });
+
+  return undefined;
+};
+
+const runChecks = async (deps: CliDeps, run: Run) => {
+  run.progress.line("preparing the sandbox");
+
+  const { context, backend } = await openContext(deps, "sandbox");
+  const shares = await sharesOf(deps, context, backend);
+
+  run.checks.push({ name: "vm shares", section: "sandbox", result: shares.result });
+
+  const signal =
+    shares.missing.length === 0
+      ? await sandboxChecks(deps, context, backend, run)
+      : skipSandbox(run, shares.missing);
+
+  run.progress.line("checking the host");
+
+  run.checks.push(...(await hostChecks(deps, context)));
+
+  return signal;
+};
+
+const noticesOf = (deps: CliDeps, lines: string[]) =>
+  [...new Set(lines.map(withoutPrefix))].filter((notice) => notice !== missingPiText(deps));
+
+export const doctorCommand = async (deps: CliDeps, args: string[]) => {
+  const run: Run = { checks: [], progress: progressLine(deps) };
+  const notices: string[] = [];
+  const quiet: CliDeps = { ...deps, stderr: lineSink((line) => notices.push(line)) };
+  const report = (partial: boolean) => {
+    run.progress.clear();
+
+    writeLines(
+      deps.stdout,
+      renderReport(run.checks, noticesOf(deps, notices), {
+        verbose: args.includes(VERBOSE_FLAG),
+        color: colorOf(deps),
+        home: deps.home,
+        partial,
+      }),
+    );
+  };
+
+  try {
+    const signal = await runChecks(quiet, run);
+
+    report(false);
+
+    return signal ?? (verdictOf(run.checks) === "fail" ? 1 : 0);
+  } catch (error) {
+    run.progress.clear();
+
+    if (run.checks.length > 0 || notices.length > 0) {
+      report(true);
+    }
+
+    throw error;
+  }
 };

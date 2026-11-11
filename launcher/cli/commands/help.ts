@@ -24,7 +24,10 @@ const COMMANDS: Array<[string, string]> = [
     "remove this folder's sandbox with its overlay and agent volumes once none of its sessions runs",
   ],
   ["pi sandbox stop", "stop the sandbox VM when no pi session runs"],
-  ["pi sandbox doctor", "prepare the sandbox like pi and print one ok, warn, fail or skip line per check"],
+  [
+    "pi sandbox doctor [--verbose]",
+    "prepare the sandbox like pi and report each check by area, with a hint per problem; --verbose lists every credential rule",
+  ],
   ["pi sandbox --version", "print the launcher version"],
   ["pi sandbox help", "show this help"],
 ];
