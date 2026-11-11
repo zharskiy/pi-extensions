@@ -67,6 +67,7 @@ const privateNetworkKey = (entry: string) => {
 const accessOf = (
   host: string,
   port: number,
+  rule: string,
   privatePatterns: string[],
   privateNetworkHosts: Set<string>,
 ): DialAccess => {
@@ -74,7 +75,9 @@ const accessOf = (
     return "private";
   }
 
-  return privateNetworkHosts.has(authorityOf(host, port)) ? "private-network" : "public";
+  return rule === "credential" && privateNetworkHosts.has(authorityOf(host, port))
+    ? "private-network"
+    : "public";
 };
 
 export const startProxyServer = async (options: ProxyServerOptions): Promise<ProxyServer> => {
@@ -212,7 +215,7 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
       return;
     }
 
-    const access = accessOf(host, port, privatePatterns, privateNetworkHosts);
+    const access = accessOf(host, port, decision.rule, privatePatterns, privateNetworkHosts);
     const restricted = await restrictedResolution(host, access);
 
     if (restricted !== undefined) {

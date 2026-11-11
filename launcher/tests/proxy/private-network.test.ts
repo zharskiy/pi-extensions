@@ -9,9 +9,12 @@ const ADDRESSES = {
   "loopback.corp.test": "127.0.0.1",
   "metadata.corp.test": "169.254.169.254",
   "listed.corp.test": "10.1.2.4",
+  "stale.corp.test": "10.1.2.5",
 };
 
-const RULES: CredentialRule[] = Object.keys(ADDRESSES).map((host) => ({
+const RULE_HOSTS = ["gateway.corp.test", "loopback.corp.test", "metadata.corp.test", "listed.corp.test"];
+
+const RULES: CredentialRule[] = RULE_HOSTS.map((host) => ({
   id: host,
   host,
   placeholder: "pi-sandbox-0123456789abcdef01234567",
@@ -41,7 +44,13 @@ describe("derived private network hosts", () => {
       stateDir: state.stateDir,
       policy: { allow: [] },
       rules: RULES,
-      derivedPrivateHosts: ["gateway.corp.test", "loopback.corp.test", "metadata.corp.test"],
+      derivedHosts: ["stale.corp.test"],
+      derivedPrivateHosts: [
+        "gateway.corp.test",
+        "loopback.corp.test",
+        "metadata.corp.test",
+        "stale.corp.test",
+      ],
       dial: createDialer({ resolve: resolveTo(ADDRESSES) }),
     });
   });
@@ -68,5 +77,9 @@ describe("derived private network hosts", () => {
 
   it("refuses a rule host that is not a derived private host", async () => {
     expect(await connectTo("listed.corp.test:443")).toMatchObject({ status: 403, rule: "private-address" });
+  });
+
+  it("refuses a derived private host the running proxy holds no credential rule for", async () => {
+    expect(await connectTo("stale.corp.test:443")).toMatchObject({ status: 403, rule: "private-address" });
   });
 });
