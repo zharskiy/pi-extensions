@@ -5,7 +5,8 @@ import { describe, expect, it } from "vitest";
 const ROOT = resolve(import.meta.dirname, "..");
 const EXTENSION_DOCS = ["README.md", "ARCHITECTURE.md", "STRUCTURE.md"];
 const ROOT_DOCS = ["ARCHITECTURE.md", "STRUCTURE.md"];
-const EXTENSION_PATH = /^extensions\/([^/]+)\/(.+)$/;
+const LAUNCHER_ONLY_DOCS = ["THREAT-MODEL.md"];
+const UNIT_PATH = /^(extensions\/[^/]+|launcher)\/(.+)$/;
 
 type Gap = { extension: string; triggers: string[]; missing: string[] };
 
@@ -43,32 +44,38 @@ const changedPaths = () => {
   return [...new Set([...diffed, ...untracked])];
 };
 
-const isCode = (name: string) => (path: string) => {
-  const match = EXTENSION_PATH.exec(path);
+const isCode = (unit: string) => (path: string) => {
+  const match = UNIT_PATH.exec(path);
 
-  return match?.[1] === name && !EXTENSION_DOCS.includes(match[2] ?? "");
+  const rest = match?.[2] ?? "";
+
+  const docs = unit === "launcher" ? [...EXTENSION_DOCS, ...LAUNCHER_ONLY_DOCS] : EXTENSION_DOCS;
+
+  return match?.[1] === unit && !docs.includes(rest) && !rest.startsWith("tests/");
 };
 
-const docsOf = (name: string) => [...EXTENSION_DOCS.map((doc) => `extensions/${name}/${doc}`), ...ROOT_DOCS];
+const unitDocs = (unit: string) => [...EXTENSION_DOCS.map((doc) => `${unit}/${doc}`), ...ROOT_DOCS];
+
+const docsOf = (name: string) => unitDocs(`extensions/${name}`);
 
 const missingDocs = (changed: string[]): Gap[] => {
-  const names = [
-    ...new Set(changed.map((path) => EXTENSION_PATH.exec(path)?.[1]).filter((name) => name !== undefined)),
+  const units = [
+    ...new Set(changed.map((path) => UNIT_PATH.exec(path)?.[1]).filter((unit) => unit !== undefined)),
   ];
 
-  return names
+  return units
     .sort()
-    .map((name) => ({
-      extension: `extensions/${name}`,
-      triggers: changed.filter(isCode(name)).sort(),
-      missing: docsOf(name).filter((doc) => !changed.includes(doc)),
+    .map((unit) => ({
+      extension: unit,
+      triggers: changed.filter(isCode(unit)).sort(),
+      missing: unitDocs(unit).filter((doc) => !changed.includes(doc)),
     }))
     .filter((gap) => gap.triggers.length > 0 && gap.missing.length > 0);
 };
 
 const report = (gaps: Gap[]) =>
   [
-    "Extension code changed without its docs. Update the listed docs:",
+    "Extension or launcher code changed without its docs. Update the listed docs:",
     ...gaps.map((gap) =>
       [
         gap.extension,
@@ -138,8 +145,45 @@ describe("docs sync rule", () => {
     ]);
   });
 
+  it("treats launcher/ as one unit with its own docs", () => {
+    expect(missingDocs(["launcher/shared/errors.ts", "launcher/README.md", "STRUCTURE.md"])).toEqual([
+      {
+        extension: "launcher",
+        triggers: ["launcher/shared/errors.ts"],
+        missing: ["launcher/ARCHITECTURE.md", "launcher/STRUCTURE.md", "ARCHITECTURE.md"],
+      },
+    ]);
+  });
+
   it("ignores changes under platform/ or test/", () => {
     expect(missingDocs(["platform/shared/index.ts", "test/architecture.test.ts"])).toEqual([]);
+  });
+
+  it("ignores test-only changes in an extension or the launcher", () => {
+    expect(
+      missingDocs(["extensions/footer/tests/segments.test.ts", "launcher/tests/cli/launch.test.ts"]),
+    ).toEqual([]);
+  });
+
+  it("treats launcher/THREAT-MODEL.md as a doc, not as code", () => {
+    expect(missingDocs(["launcher/THREAT-MODEL.md"])).toEqual([]);
+    expect(missingDocs(["extensions/footer/THREAT-MODEL.md"])).toEqual([
+      {
+        extension: "extensions/footer",
+        triggers: ["extensions/footer/THREAT-MODEL.md"],
+        missing: docsOf("footer"),
+      },
+    ]);
+  });
+
+  it("names only the shipped code when tests changed with it", () => {
+    expect(missingDocs(["launcher/shared/errors.ts", "launcher/tests/shared/errors.test.ts"])).toEqual([
+      {
+        extension: "launcher",
+        triggers: ["launcher/shared/errors.ts"],
+        missing: unitDocs("launcher"),
+      },
+    ]);
   });
 
   it("treats a nested path as code of its extension", () => {
@@ -161,7 +205,7 @@ describe("docs sync rule", () => {
 });
 
 describe("docs sync", () => {
-  it("updates the docs of every extension whose code changed since the base commit", () => {
+  it("updates the docs of every extension and of the launcher whose code changed since the base commit", () => {
     const gaps = missingDocs(changedPaths());
 
     expect(gaps, report(gaps)).toEqual([]);

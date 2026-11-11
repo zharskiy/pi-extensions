@@ -1,7 +1,13 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "entry": ["extensions/*/index.ts", "test/evals/**/*.eval.ts", "test/framework/live/fixture-mcp-server.ts"],
-  "project": ["platform/**/*.ts", "extensions/**/*.ts", "test/**/*.ts", "*.ts"],
+  "entry": [
+    "launcher/cli/main.ts",
+    "launcher/proxy/daemon.ts",
+    "extensions/*/index.ts",
+    "test/evals/**/*.eval.ts",
+    "test/framework/live/fixture-mcp-server.ts"
+  ],
+  "project": ["launcher/**/*.ts", "platform/**/*.ts", "extensions/**/*.ts", "test/**/*.ts", "*.ts"],
   "includeEntryExports": true,
   "vitest": { "config": ["vitest.config.ts"] }
 }

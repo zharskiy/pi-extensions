@@ -9,7 +9,7 @@ Fourteen extensions in one pi package (`pi-extensions-mz`), built on one small s
 [![CI](https://github.com/zharskiy/pi-extensions/actions/workflows/ci.yml/badge.svg)](https://github.com/zharskiy/pi-extensions/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-[Quick start](#quick-start) · [Development](#development) · [Contributing and licence](#contributing-and-licence)
+[Quick start](#quick-start) · [Sandbox launcher](#sandbox-launcher) · [Development](#development) · [Contributing and licence](#contributing-and-licence)
 
 </div>
 
@@ -88,6 +88,10 @@ Start pi and try:
 - **MCP servers:** `/mcp-import claude` or `/mcp-import cursor` (add `project` for the project's servers) shows what it would copy; add `apply` to write it, then `/reload`. OAuth sign-ins do not transfer: sign in again with `/mcp`.
 
 </details>
+
+## Sandbox launcher
+
+The package also ships `pi-sandbox`, a host-side launcher that runs pi in a per-repository Linux container on a Colima VM (macOS). After `launcher/install.sh`, `cd repo && pi` starts pi with your providers, MCP servers, settings and packages, but the container holds placeholders instead of credentials, and its only network exit is a proxy on the host that allows a list of hosts and injects the real credentials there. `pi --no-sandbox` runs host pi. See the [launcher README](launcher/README.md) and its [threat model](launcher/THREAT-MODEL.md).
 
 ## Development
 

@@ -1,5 +1,26 @@
 # Sandbox
 
+> Status: superseded by the launcher (`launcher/`), which runs the whole pi session in a per-repository container on Colima with credentials kept in a host proxy. The phases below are the original plan; phase 0 became the launcher, phases 1 and 2 are not planned. What the launcher left for later is listed under Deferred.
+
+## Deferred
+
+| Item | Why it waits |
+| --- | --- |
+| Project `image.packages`, with an approval prompt before a repository's packages are built | a new prompt, store and validation surface with no security need behind it; user-level `image.packages` covers it meanwhile |
+| Toolchains through mise | needs a toolchain story; waits with project packages |
+| Sidecar services and compose | spec in [sandbox-services/](../sandbox-services/README.md); the launcher README has the interim recipe |
+| Publishing dev-server ports to the host | a new network surface on top of the per-repository relay |
+| Stopping the idle VM | needs an idle signal across repositories; proxies already exit per repository |
+| The container exiting on its own when its proxy is gone after a `kill -9` | the sweep at the next launch of any repository cleans up |
+| Generating the config schema from the key spec | a test already keeps the two key sets equal |
+| Deriving Gradle credentials from `gradle.properties` | header rules in `credentials.rules` work meanwhile |
+| Deriving uv config (`uv.toml`, `UV_INDEX_URL`, `UV_DEFAULT_INDEX`) and its index credentials | a new deriver; until then uv resolves against public PyPI unless pointed at the index by hand (a known gap in the threat model) |
+| Placeholders for registry tokens read from environment variables (`${NPM_TOKEN}` in a project `.npmrc`, `UV_INDEX_<NAME>_PASSWORD`), through a rule field that sets the variable inside | a new rule field and a project `.npmrc` scan; only `~/.npmrc` is derived meanwhile |
+| Installing `tls.extraCa` into the VM's engine trust (lima `caCerts`, or `update-ca-certificates` and a docker restart in the VM) | touches the Colima profile beyond its mounts; the README gives the `provision` workaround and `image.digest` meanwhile |
+| Shared tool caches by default | kept opt-in by decision: `mounts.sharedCaches` is a write channel between repositories, so the user chooses it (or `mounts.hostCaches`) |
+
+## Original research
+
 Research date: 2026-10-20. Question: what it takes to run the pi main session and every agent in a sandbox, whether one sandbox per agent is worth it, what the industry does, and which options work for one developer on a laptop and for a company.
 
 - README.md (this file): findings, recommendation and phases.

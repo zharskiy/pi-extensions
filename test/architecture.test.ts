@@ -10,7 +10,45 @@ const EXTENSIONS = join(ROOT, "extensions");
 const LAYERS = ["pi-adapter", "shared", "ui-kit", "extension-manager"].map((name) =>
   join(ROOT, "platform", name),
 );
-const CODE_ROOTS = [...LAYERS, EXTENSIONS, TEST];
+const LAUNCHER = join(ROOT, "launcher");
+const LAUNCHER_ENTRY_FOLDERS = ["bin"];
+const LAUNCHER_BUILD = "dist";
+const LAUNCHER_ENTRY_TARGETS = [
+  join(LAUNCHER, "cli", "main.ts"),
+  join(LAUNCHER, LAUNCHER_BUILD, "cli", "main.js"),
+];
+const LAUNCHER_TEST_PACKAGES = ["vitest"];
+const PI_PACKAGE_REFERENCE =
+  /(?:from\s*|import\s*\(\s*|import\s+|require\s*\(\s*|\.resolve\s*\(\s*)["'`](?:@earendil-works\/|typebox["'`/])/;
+const LAUNCHER_PI_ASSET = /^hostpi\/[^/]+\.mjs$/;
+const LAUNCHER_TESTS = "tests";
+const LAUNCHER_TEST_SUPPORT = "support";
+const LAUNCHER_GRAPH: Record<string, string[]> = {
+  shared: [],
+  config: ["shared"],
+  workspace: ["shared"],
+  backend: ["shared"],
+  proxy: ["config", "grants", "shared"],
+  container: ["backend", "config", "shared", "workspace"],
+  image: ["backend", "config", "shared"],
+  hostpi: ["config", "shared"],
+  grants: ["shared"],
+  provision: ["backend", "hostpi", "shared"],
+  cli: [
+    "backend",
+    "config",
+    "container",
+    "grants",
+    "hostpi",
+    "image",
+    "provision",
+    "proxy",
+    "shared",
+    "workspace",
+  ],
+  bin: ["cli"],
+};
+const CODE_ROOTS = [...LAYERS, EXTENSIONS, TEST, LAUNCHER];
 const EXTENSION_ENTRIES = [
   "index.ts",
   "api",
@@ -65,14 +103,14 @@ const allFiles = () => CODE_ROOTS.flatMap(sourceFiles);
 
 const isInside = (dir: string) => (path: string) => path.startsWith(`${dir}${sep}`);
 
-const specifiersOf = (file: string) =>
+const allSpecifiersOf = (file: string) =>
   [
     ...readFileSync(file, "utf8").matchAll(
       /(?:import|export)[^"']*?from\s+["']([^"']+)["']|import\(\s*["']([^"']+)["']\s*\)|import\s+["']([^"']+)["']/g,
     ),
-  ]
-    .map((match) => match[1] ?? match[2] ?? match[3] ?? "")
-    .filter((specifier) => specifier.startsWith("."));
+  ].map((match) => match[1] ?? match[2] ?? match[3] ?? "");
+
+const specifiersOf = (file: string) => allSpecifiersOf(file).filter((specifier) => specifier.startsWith("."));
 
 const importsOf = (file: string) => specifiersOf(file).map((specifier) => resolve(dirname(file), specifier));
 
@@ -117,6 +155,107 @@ const crossPluginImports = (extension: string) => {
         })
         .map((target) => `${relative(ROOT, file)} imports ${relative(ROOT, target)}`);
     });
+};
+
+const launcherFiles = (dir: string): string[] =>
+  exists(dir)
+    ? entriesOf(dir).flatMap((path) => {
+        if (path === join(LAUNCHER, LAUNCHER_BUILD)) {
+          return [];
+        }
+
+        if (exists(path)) {
+          return launcherFiles(path);
+        }
+
+        return /\.(m?js|ts)$/.test(path) ? [path] : [];
+      })
+    : [];
+
+const launcherFolderOf = (path: string) => relative(LAUNCHER, path).split(sep)[0] ?? "";
+
+const isLauncherTest = (file: string) => launcherFolderOf(file) === "tests";
+
+const isLauncherPiAsset = (file: string) =>
+  LAUNCHER_PI_ASSET.test(relative(LAUNCHER, file).split(sep).join("/"));
+
+const launcherPiReferences = (files: Array<{ path: string; text: string }>) =>
+  files
+    .filter((file) => !isLauncherPiAsset(file.path) && PI_PACKAGE_REFERENCE.test(file.text))
+    .map((file) => relative(ROOT, file.path));
+
+const isAllowedLauncherSpecifier = (file: string) => (specifier: string) => {
+  if (specifier.startsWith("node:")) {
+    return true;
+  }
+
+  if (isLauncherPiAsset(file) && PI_PACKAGE_REFERENCE.test(`from "${specifier}"`)) {
+    return true;
+  }
+
+  if (specifier.startsWith(".")) {
+    return isInside(LAUNCHER)(resolve(dirname(file), specifier));
+  }
+
+  return isLauncherTest(file) && LAUNCHER_TEST_PACKAGES.includes(specifier);
+};
+
+const launcherTestFolderOf = (path: string) =>
+  relative(join(LAUNCHER, LAUNCHER_TESTS), path).split(sep)[0] ?? "";
+
+const isLauncherIndex = (target: string) => target === join(LAUNCHER, launcherFolderOf(target), "index.ts");
+
+const isInnerLauncherImport = (file: string) => (target: string) => {
+  const from = launcherFolderOf(file);
+  const to = launcherFolderOf(target);
+
+  if (from === LAUNCHER_TESTS) {
+    return to !== LAUNCHER_TESTS && to !== launcherTestFolderOf(file) && !isLauncherIndex(target);
+  }
+
+  if (LAUNCHER_ENTRY_FOLDERS.includes(from)) {
+    return !LAUNCHER_ENTRY_TARGETS.includes(target);
+  }
+
+  return from !== to && !isLauncherIndex(target);
+};
+
+const shippedLauncherFiles = () => launcherFiles(LAUNCHER).filter((file) => !isLauncherTest(file));
+
+const launcherEdges = () =>
+  shippedLauncherFiles().flatMap((file) => {
+    const from = launcherFolderOf(file);
+
+    return importsOf(file)
+      .map(launcherFolderOf)
+      .filter((to) => to !== from && to !== LAUNCHER_BUILD)
+      .map((to) => ({ from, to }));
+  });
+
+const launcherGraph = () => {
+  const edges = launcherEdges();
+  const folders = [...new Set(shippedLauncherFiles().map(launcherFolderOf))];
+
+  return Object.fromEntries(
+    folders.map((from) => [
+      from,
+      [...new Set(edges.filter((edge) => edge.from === from).map((edge) => edge.to))].sort(),
+    ]),
+  );
+};
+
+const testImportsOfOtherTestFolders = (file: string) => {
+  const own = launcherTestFolderOf(file);
+
+  return importsOf(file).filter((target) => {
+    const folder = launcherTestFolderOf(target);
+
+    return (
+      launcherFolderOf(target) === LAUNCHER_TESTS &&
+      own === LAUNCHER_TEST_SUPPORT &&
+      folder !== LAUNCHER_TEST_SUPPORT
+    );
+  });
 };
 
 const manifestExtensions = () =>
@@ -187,6 +326,81 @@ describe("architecture", () => {
       specifiersOf(file)
         .filter((specifier) => !isNormalised(specifier))
         .map((specifier) => `${relative(ROOT, file)} imports ${specifier}`),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps launcher/ standalone: node built-ins and launcher files only, vitest in its tests", () => {
+    const offenders = launcherFiles(LAUNCHER).flatMap((file) =>
+      allSpecifiersOf(file)
+        .filter((specifier) => !isAllowedLauncherSpecifier(file)(specifier))
+        .map((specifier) => `${relative(ROOT, file)} imports ${specifier}`),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("lets only launcher/hostpi/*.mjs reference a pi package anywhere under launcher/", () => {
+    const files = launcherFiles(LAUNCHER).map((path) => ({ path, text: readFileSync(path, "utf8") }));
+
+    expect(launcherPiReferences(files)).toEqual([]);
+  });
+
+  it("flags a launcher file other than a hostpi .mjs asset that references a pi package", () => {
+    const reference = 'createRequire(root).resolve("@earendil-works/pi-ai/providers/all")';
+    const files = [
+      { path: join(LAUNCHER, "hostpi", "provider-hosts.mjs"), text: reference },
+      { path: join(LAUNCHER, "hostpi", "derive.ts"), text: reference },
+      {
+        path: join(LAUNCHER, "proxy", "helper.mjs"),
+        text: `import x from "@earendil-works/pi-coding-agent";`,
+      },
+      { path: join(LAUNCHER, "hostpi", "nested", "deep.mjs"), text: "import 'typebox';" },
+      {
+        path: join(LAUNCHER, "cli", "versions.ts"),
+        text: 'const PI_PACKAGE = "@earendil-works/pi-coding-agent";',
+      },
+      { path: join(LAUNCHER, "cli", "late.ts"), text: 'await import("@earendil-works/pi-coding-agent");' },
+    ];
+
+    expect(launcherPiReferences(files)).toEqual([
+      "launcher/hostpi/derive.ts",
+      "launcher/proxy/helper.mjs",
+      "launcher/hostpi/nested/deep.mjs",
+      "launcher/cli/late.ts",
+    ]);
+  });
+
+  it("lets a launcher folder, or a test folder other than its own, reach a launcher folder only through its index.ts, and bin/ only cli/main", () => {
+    const offenders = launcherFiles(LAUNCHER).flatMap((file) =>
+      importsOf(file)
+        .filter(isInnerLauncherImport(file))
+        .map((target) => `${relative(ROOT, file)} imports ${relative(ROOT, target)}`),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps the launcher folder graph to exactly the documented edges", () => {
+    expect(launcherGraph()).toEqual(LAUNCHER_GRAPH);
+  });
+
+  it("never lets shipped launcher code import launcher/tests/", () => {
+    const offenders = shippedLauncherFiles().flatMap((file) =>
+      importsOf(file)
+        .filter((target) => launcherFolderOf(target) === LAUNCHER_TESTS)
+        .map((target) => `${relative(ROOT, file)} imports ${relative(ROOT, target)}`),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps launcher/tests/support/ free of imports from the per-folder test suites", () => {
+    const offenders = launcherFiles(join(LAUNCHER, LAUNCHER_TESTS)).flatMap((file) =>
+      testImportsOfOtherTestFolders(file).map(
+        (target) => `${relative(ROOT, file)} imports ${relative(ROOT, target)}`,
+      ),
     );
 
     expect(offenders).toEqual([]);

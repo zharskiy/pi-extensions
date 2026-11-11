@@ -22,7 +22,13 @@
     "transcript",
     "model-default"
   ],
+  "bin": {
+    "pi-sandbox": "launcher/bin/pi-sandbox.js"
+  },
   "files": [
+    "launcher",
+    "!launcher/bin/pi-sandbox-dev.js",
+    "!launcher/tsconfig.build.json",
     "platform",
     "extensions/*/index.ts",
     "extensions/*/api/**",
@@ -57,6 +63,8 @@
     ]
   },
   "scripts": {
+    "build:launcher": "rm -rf launcher/dist && tsc -p launcher/tsconfig.build.json",
+    "prepack": "npm run build:launcher",
     "test": "vitest run --project unit",
     "test:live": "vitest run --project live --reporter verbose",
     "evals": "vitest run --project evals --reporter verbose",

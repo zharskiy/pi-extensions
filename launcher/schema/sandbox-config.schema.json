@@ -1,0 +1,611 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/zharskiy/pi-extensions/launcher/schema/sandbox-config.schema.json",
+  "title": "pi sandbox config layer",
+  "description": "One layer of the pi sandbox config: the administrator's policy file or the user config. A key the policy sets is final; egress.allow, egress.deny, egress.privateHosts, image.packages, image.npmGlobal, credentials.rules and env.allow add up across the two layers, except that a policy setting egress.grants to false locks egress: the user config's egress.allow and egress.privateHosts entries are then ignored.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "fallback": {
+      "enum": ["refuse", "host"]
+    },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "reference": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "description": "A prebuilt image pulled by image.digest; set both or neither. Without them the image is built here."
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "description": "The digest image.reference is pulled by; set both or neither."
+        },
+        "packages": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9+.-]*(=[A-Za-z0-9.+:~-]+)?$"
+          },
+          "description": "System packages added to an image layer."
+        },
+        "npmGlobal": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^(@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*@[0-9][0-9A-Za-z.+-]*$"
+          },
+          "description": "npm packages (name@version) installed globally in an image layer; the entries of every layer add up."
+        },
+        "dockerfile": {
+          "type": "string",
+          "pattern": "^(/|~$|~/)",
+          "description": "Absolute path (or ~/ path) of a file with Dockerfile lines, without FROM, appended to the image layer and run as root."
+        }
+      },
+      "dependentRequired": {
+        "reference": ["digest"],
+        "digest": ["reference"]
+      }
+    },
+    "credentials": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+                "description": "Letters, digits, dot, dash or underscore; never derived:, the prefix of derived rules."
+              },
+              "host": {
+                "type": "string",
+                "allOf": [
+                  {
+                    "pattern": "^[A-Za-z0-9_]([A-Za-z0-9_-]{0,61}[A-Za-z0-9_])?(\\.[A-Za-z0-9_]([A-Za-z0-9_-]{0,61}[A-Za-z0-9_])?)*$"
+                  },
+                  {
+                    "pattern": "^[^:]{1,253}$"
+                  },
+                  {
+                    "not": {
+                      "pattern": "(^|\\.)(0[xX][0-9A-Fa-f]*|[0-9]+)$"
+                    }
+                  },
+                  {
+                    "not": {
+                      "pattern": "(^|\\.)[Ll][Oo][Cc][Aa][Ll][Hh][Oo][Ss][Tt]$"
+                    }
+                  }
+                ]
+              },
+              "port": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 65535
+              },
+              "pathPrefix": {
+                "type": "string",
+                "pattern": "^/"
+              },
+              "placeholder": {
+                "type": "string",
+                "pattern": "^pi-sandbox-.+"
+              },
+              "header": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9-]+$"
+              },
+              "template": {
+                "type": "string",
+                "pattern": "\\{secret\\}"
+              },
+              "secret": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "env": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                      },
+                      "urlPassword": {
+                        "const": true,
+                        "description": "The value is a URL; use the password in it."
+                      },
+                      "urlUsername": {
+                        "const": true,
+                        "description": "The value is a URL; use the user name in it, for a token sent as the user name."
+                      }
+                    },
+                    "not": {
+                      "required": ["urlPassword", "urlUsername"]
+                    },
+                    "required": ["env"],
+                    "description": "An environment variable of the launcher, read at launch and handed to the proxy in memory."
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "file": {
+                        "type": "string",
+                        "pattern": "^(/|~$|~/)"
+                      },
+                      "pointer": {
+                        "type": "string",
+                        "pattern": "^(/([^~/]|~[01])*)+$"
+                      }
+                    },
+                    "required": ["file", "pointer"],
+                    "description": "A JSON pointer into a host file."
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "file": {
+                        "type": "string",
+                        "pattern": "^(/|~$|~/)"
+                      },
+                      "format": {
+                        "enum": ["json", "npmrc", "ini", "maven-servers"]
+                      },
+                      "key": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "json: a JSON pointer whose segments may be [field=value] to pick an array element; npmrc: the key, as //host/path/:_authToken; ini: section.name, with [n] for the nth word of the value; maven-servers: a server id, giving its password.",
+                        "pattern": "\\S"
+                      },
+                      "urlPassword": {
+                        "const": true,
+                        "description": "The value is a URL; use the password in it."
+                      },
+                      "urlUsername": {
+                        "const": true,
+                        "description": "The value is a URL; use the user name in it, for a token sent as the user name."
+                      }
+                    },
+                    "not": {
+                      "required": ["urlPassword", "urlUsername"]
+                    },
+                    "required": ["file", "format", "key"],
+                    "description": "A value in a host tool config file: JSON, .npmrc (_auth and _password decoded), ini (pip.conf) or the servers of a Maven settings.xml.",
+                    "allOf": [
+                      {
+                        "if": {
+                          "properties": {
+                            "format": {
+                              "const": "json"
+                            }
+                          }
+                        },
+                        "then": {
+                          "properties": {
+                            "key": {
+                              "pattern": "^(/([^~/]|~[01])*)+$"
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "if": {
+                          "properties": {
+                            "format": {
+                              "enum": ["npmrc", "maven-servers"]
+                            }
+                          }
+                        },
+                        "then": {
+                          "properties": {
+                            "key": {
+                              "pattern": "^[^\\s=]+$"
+                            }
+                          }
+                        }
+                      },
+                      {
+                        "if": {
+                          "properties": {
+                            "format": {
+                              "const": "ini"
+                            }
+                          }
+                        },
+                        "then": {
+                          "properties": {
+                            "key": {
+                              "pattern": "^([^.\\s\\[\\]]+)\\.([^\\s\\[\\]]+)(\\[([0-9]+)\\])?$"
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "command": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "pattern": "\\S"
+                        }
+                      }
+                    },
+                    "required": ["command"],
+                    "description": "A host command; stdout trimmed, or JSON { token, expiresAt } with expiresAt an ISO 8601 time. Cached 300 s or until expiresAt less 30 s."
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "piAuth": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "\\S"
+                      },
+                      "bearer": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": ["piAuth"],
+                    "description": "The host pi credential of this provider id."
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "mcpOAuth": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "server": {
+                            "type": "string",
+                            "minLength": 1,
+                            "pattern": "\\S"
+                          },
+                          "url": {
+                            "type": "string",
+                            "format": "uri",
+                            "pattern": "^https://"
+                          }
+                        },
+                        "required": ["server", "url"]
+                      }
+                    },
+                    "required": ["mcpOAuth"],
+                    "description": "The OAuth token of an MCP server signed in with pi mcp login."
+                  }
+                ]
+              }
+            },
+            "required": ["id", "host", "secret"],
+            "anyOf": [
+              {
+                "required": ["placeholder"]
+              },
+              {
+                "required": ["header"]
+              }
+            ],
+            "dependentRequired": {
+              "template": ["header"]
+            }
+          },
+          "description": "Credential rules, each with an id no other rule of the same layer uses (a rule whose id a higher layer already uses is ignored).",
+          "uniqueItems": true
+        },
+        "derive": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "hosts": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "allOf": [
+                  {
+                    "pattern": "^(\\*\\.)?[A-Za-z0-9_]([A-Za-z0-9_-]{0,61}[A-Za-z0-9_])?(\\.[A-Za-z0-9_]([A-Za-z0-9_-]{0,61}[A-Za-z0-9_])?)*$"
+                  },
+                  {
+                    "pattern": "^(\\*\\.)?[^:]{1,253}$"
+                  },
+                  {
+                    "not": {
+                      "pattern": "(^|\\.)(0[xX][0-9A-Fa-f]*|[0-9]+)$"
+                    }
+                  },
+                  {
+                    "not": {
+                      "pattern": "(^|\\.)[Ll][Oo][Cc][Aa][Ll][Hh][Oo][Ss][Tt]$"
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "description": "Rules and hosts derived from the host pi files."
+        }
+      }
+    },
+    "egress": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allow": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "allOf": [
+              {
+                "pattern": "^(\\*\\.)?[A-Za-z0-9_]([A-Za-z0-9_-]{0,61}[A-Za-z0-9_])?(\\.[A-Za-z0-9_]([A-Za-z0-9_-]{0,61}[A-Za-z0-9_])?)*(:([1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?$"
+              },
+              {
+                "pattern": "^(\\*\\.)?[^:]{1,253}(:|$)"
+              },
+              {
+                "not": {
+                  "pattern": "(^|\\.)(0[xX][0-9A-Fa-f]*|[0-9]+)(:|$)"
+                }
+              },
+              {
+                "not": {
+                  "pattern": "(^|\\.)[Ll][Oo][Cc][Aa][Ll][Hh][Oo][Ss][Tt](:|$)"
+                }
+              },
+              {
+                "not": {
+                  "pattern": ":80$"
+                }
+              }
+            ]
+          },
+          "description": "Hosts the sandbox may reach: host, *.domain (exactly one label more, not the domain itself) or host:port; an entry without a port allows 443 only. No IP address, localhost or port 80. Ignored in the user config when the policy sets egress.grants to false."
+        },
+        "presets": {
+          "type": "array",
+          "items": {
+            "enum": ["npm", "pypi", "github", "maven", "gradle", "go", "cargo"]
+          },
+          "description": "Package registry host sets added to egress.allow. Default npm, pypi and github; [] turns them off."
+        },
+        "deny": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "allOf": [
+              {
+                "pattern": "^(\\*\\.)?[A-Za-z0-9_]([A-Za-z0-9_-]{0,61}[A-Za-z0-9_])?(\\.[A-Za-z0-9_]([A-Za-z0-9_-]{0,61}[A-Za-z0-9_])?)*(:([1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?$"
+              },
+              {
+                "pattern": "^(\\*\\.)?[^:]{1,253}(:|$)"
+              },
+              {
+                "not": {
+                  "pattern": "(^|\\.)(0[xX][0-9A-Fa-f]*|[0-9]+)(:|$)"
+                }
+              },
+              {
+                "not": {
+                  "pattern": "(^|\\.)[Ll][Oo][Cc][Aa][Ll][Hh][Oo][Ss][Tt](:|$)"
+                }
+              },
+              {
+                "not": {
+                  "pattern": ":80$"
+                }
+              }
+            ]
+          },
+          "description": "Hosts never allowed, granted or derived; the union of every layer. A bare name denies that name and every name under it (paste.example.com denies www.paste.example.com and a.b.paste.example.com); *.domain denies every name under domain but not domain itself. An entry without a port denies every port."
+        },
+        "privateHosts": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "allOf": [
+              {
+                "pattern": "^(\\*\\.)?[A-Za-z0-9_]([A-Za-z0-9_-]{0,61}[A-Za-z0-9_])?(\\.[A-Za-z0-9_]([A-Za-z0-9_-]{0,61}[A-Za-z0-9_])?)*$"
+              },
+              {
+                "pattern": "^(\\*\\.)?[^:]{1,253}$"
+              },
+              {
+                "not": {
+                  "pattern": "(^|\\.)(0[xX][0-9A-Fa-f]*|[0-9]+)$"
+                }
+              },
+              {
+                "not": {
+                  "pattern": "(^|\\.)[Ll][Oo][Cc][Aa][Ll][Hh][Oo][Ss][Tt]$"
+                }
+              }
+            ]
+          },
+          "description": "Names that may resolve to private addresses, such as a private gateway host; never IP literals or loopback. Ignored in the user config when the policy sets egress.grants to false."
+        },
+        "parentProxy": {
+          "enum": ["env", "none"],
+          "description": "Upstream proxy: env (host HTTPS_PROXY, the default) or none."
+        },
+        "grants": {
+          "type": "boolean",
+          "description": "Whether pi sandbox egress allow may add hosts. Default true. false in the policy also locks egress: the user config's egress.allow and egress.privateHosts are ignored."
+        }
+      }
+    },
+    "workspaceRoots": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "roots": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^(/|~$|~/)"
+          }
+        }
+      },
+      "required": ["roots"],
+      "description": "Folders pi may start in; a launch outside every root is refused."
+    },
+    "mounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sharedCaches": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^~/(?!(\\.pi|\\.ssh|\\.gnupg|\\.aws|\\.docker|\\.colima|\\.kube|\\.config|\\.local/bin)(/|$))(?!(.*/)?\\.{1,2}(/|$))[^/]+(/[^/]+)*/?$"
+          },
+          "description": "Directories under ~ kept in one volume per user and shared by every repository, mounted read-write at the same path in the container. Not ~/.pi, ~/.ssh, ~/.gnupg, ~/.aws, ~/.docker, ~/.colima, ~/.kube, ~/.config or ~/.local/bin, no entry listed twice (a trailing slash is dropped) or inside another."
+        },
+        "autoOverlays": {
+          "type": "boolean",
+          "description": "Give every folder with a lockfile or build marker its own volume for the build output (node_modules for npm, pnpm, yarn and bun lockfiles, .venv for uv.lock, poetry.lock and Pipfile.lock, target for Cargo.lock, .gradle for settings.gradle and settings.gradle.kts) so the sandbox never shares it with the host. On by default."
+        }
+      }
+    },
+    "env": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allow": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "allOf": [
+              {
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+              },
+              {
+                "not": {
+                  "pattern": "[Tt][Oo][Kk][Ee][Nn]|[Ss][Ee][Cc][Rr][Ee][Tt]|[Kk][Ee][Yy]|[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Pp][Aa][Ss][Ss][Ww][Dd]|[Pp][Aa][Ss][Ss][Pp][Hh][Rr][Aa][Ss][Ee]|[Cc][Rr][Ee][Dd][Ee][Nn][Tt][Ii][Aa][Ll]|[Jj][Ww][Tt]"
+                }
+              },
+              {
+                "not": {
+                  "enum": [
+                    "PI_CODING_AGENT_DIR",
+                    "PI_CODING_AGENT_SESSION_DIR",
+                    "BASH_ENV",
+                    "JAVA_TOOL_OPTIONS",
+                    "NODE_USE_ENV_PROXY",
+                    "PI_SANDBOX_PROXY_HOST",
+                    "PI_SANDBOX_PROXY_PORT",
+                    "PI_SANDBOX_PROXY_TOKEN",
+                    "NODE_EXTRA_CA_CERTS",
+                    "PI_SANDBOX_TRUST_HASH",
+                    "SSL_CERT_FILE",
+                    "REQUESTS_CA_BUNDLE",
+                    "PIP_CERT",
+                    "CARGO_HTTP_CAINFO",
+                    "GIT_SSL_CAINFO",
+                    "PI_SANDBOX",
+                    "PI_SANDBOX_LAUNCH_ID",
+                    "PI_SKIP_VERSION_CHECK",
+                    "PI_TELEMETRY",
+                    "PI_CLIPBOARD_OSC52",
+                    "GH_TOKEN",
+                    "GITLAB_TOKEN",
+                    "GITLAB_HOST",
+                    "GIT_TERMINAL_PROMPT",
+                    "HOME",
+                    "PATH",
+                    "PWD"
+                  ]
+                }
+              },
+              {
+                "not": {
+                  "pattern": "^([Hh][Tt][Tt][Pp][Ss]?|[Aa][Ll][Ll]|[Nn][Oo])_[Pp][Rr][Oo][Xx][Yy]$"
+                }
+              }
+            ],
+            "description": "Environment variable forwarded from the host; names that look like secrets (token, secret, key, password, passwd, passphrase, credential or jwt in any case), the proxy variables in any case and every variable listed here that the launcher sets inside the container are refused."
+          }
+        }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cpus": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "memoryGiB": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    },
+    "sessions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "type": "boolean",
+          "description": "Keep this repository's pi sessions in host pi's own session directory, so host pi lists them. On by default."
+        }
+      }
+    },
+    "tls": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "extraCa": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "pattern": "^(/|~$|~/)"
+                  }
+                },
+                "required": ["file"]
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "hostStore": {
+                    "const": true
+                  }
+                },
+                "required": ["hostStore"]
+              }
+            ]
+          }
+        }
+      },
+      "description": "Extra CA certificates trusted by the proxy, the container and image builds."
+    }
+  }
+}
