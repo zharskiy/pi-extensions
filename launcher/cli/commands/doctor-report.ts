@@ -81,8 +81,11 @@ export const skipped = resultOf("skip");
 const paint = (color: boolean) => (code: string, text: string) =>
   color ? `\u001b[${code}m${text}\u001b[0m` : text;
 
+const homeAt = (home: string) =>
+  new RegExp(`(^|[\\s(:=])${home.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/`, "g");
+
 const tilde = (home: string) => (text: string) =>
-  home === "" || home === "/" ? text : text.replaceAll(`${home}/`, "~/");
+  home === "" || home === "/" ? text : text.replace(homeAt(home), "$1~/");
 
 const sectionIndex = (section: Section) => LAYOUT.findIndex(([name]) => name === section);
 

@@ -275,7 +275,7 @@ describe("the doctor report", () => {
   it("shows only the home folder itself as ~ and drops the hint to run the doctor", () => {
     const lines = renderReport(
       [
-        host("sessions", passed(`${HOME}/a and ${HOME}2/b and /x${HOME}`)),
+        host("sessions", passed(`${HOME}/a and ${HOME}2/b and /x${HOME}/c (${HOME}/d, at:${HOME}/e`)),
         network("proxy", failed("the egress proxy could not start", { hint: "run pi sandbox doctor" })),
       ],
       [`see ${HOME}/notes`],
@@ -284,7 +284,7 @@ describe("the doctor report", () => {
 
     expect(lines).toEqual([
       "host",
-      `  ok    sessions          ~/a and ${HOME}2/b and /x${HOME}`,
+      `  ok    sessions          ~/a and ${HOME}2/b and /x${HOME}/c (~/d, at:~/e`,
       "",
       "network",
       "  fail  proxy             the egress proxy could not start",
