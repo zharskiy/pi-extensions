@@ -16,6 +16,7 @@ import { type CliDeps, hostAgentDirOf } from "../deps.ts";
 import { providerHostsOf } from "../derive.ts";
 import { hostPiPlace, hostPiText, resolveJobPi, sandboxRoots } from "../host-pi.ts";
 import { hostSessionsOf } from "../host-sessions.ts";
+import { leftoverStateNotice, movedConfigNotice } from "../legacy-paths.ts";
 import { isOlderVersion, testedPiVersion } from "../versions.ts";
 import { failed, type NamedCheck, passed, skipped, warned } from "./doctor-probes.ts";
 
@@ -179,6 +180,15 @@ const checkSessions = async (deps: CliDeps, context: LaunchContext, files: HostP
     : failed(`${sessions.dir} is not writable`);
 };
 
+const legacyChecks = async (deps: CliDeps): Promise<NamedCheck[]> => {
+  const [config, state] = await Promise.all([movedConfigNotice(deps), leftoverStateNotice(deps)]);
+
+  return [
+    ...config.map((notice) => ({ name: "user config", result: warned(notice) })),
+    ...state.map((notice) => ({ name: "old state", result: warned(notice) })),
+  ];
+};
+
 const named = async (name: string, result: Promise<NamedCheck["result"]>): Promise<NamedCheck> => ({
   name,
   result: await result,
@@ -189,7 +199,8 @@ export const hostChecks = async (deps: CliDeps, context: LaunchContext): Promise
     readHostPiFiles(hostAgentDirOf(deps)),
     resolveJobPi(deps, sandboxRoots(deps, context)),
   ]);
-  const [checks, signIns] = await Promise.all([
+  const [legacy, checks, signIns] = await Promise.all([
+    legacyChecks(deps),
     Promise.all([
       named("host pi", checkHostPi(context, pi)),
       named("provider hosts", checkProviderHosts(deps, context, pi)),
@@ -199,5 +210,5 @@ export const hostChecks = async (deps: CliDeps, context: LaunchContext): Promise
     signInChecks(deps, files),
   ]);
 
-  return [...checks, ...signIns];
+  return [...legacy, ...checks, ...signIns];
 };

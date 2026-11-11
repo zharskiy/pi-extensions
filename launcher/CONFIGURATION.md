@@ -9,9 +9,11 @@ The sandbox reads two JSON files, called *layers*. Both use the same keys.
 | layer | path | written by |
 | --- | --- | --- |
 | policy | `/Library/Application Support/pi-sandbox/policy.json` (`/etc/pi-sandbox/policy.json` on Linux) | your administrator |
-| user | `~/.config/pi-sandbox/config.json` | you |
+| user | `~/.pi/agent/pi-sandbox/config.json` (`pi-sandbox/config.json` under `PI_CODING_AGENT_DIR` when set) | you |
 
 A missing file is simply skipped. The launcher reads both files at every launch and never writes them. Nothing in the project folder configures the sandbox.
+
+The user config used to live in `~/.config/pi-sandbox/config.json`. That file is no longer read: while it exists and the new one does not, every launch and `pi sandbox doctor` name both paths. Move it yourself; the launcher never touches the old folder.
 
 `pi sandbox config` prints the result and the layer each key comes from. Add `--json` for machine-readable output.
 
@@ -403,9 +405,9 @@ Under that policy, the Java user config in the [README](README.md#configuration)
 | variable | effect |
 | --- | --- |
 | `PI_SANDBOX_USER_CONFIG` | Path of the user config. |
-| `PI_SANDBOX_STATE_DIR` | The launcher's state folder. The default is `~/.local/state/pi-sandbox`. |
+| `PI_SANDBOX_STATE_DIR` | The launcher's state folder. The default is `pi-sandbox/state` in host pi's agent folder. |
 | `PI_SANDBOX_POLICY_FILE` | A policy file, used only while the standard one does not exist. |
-| `PI_CODING_AGENT_DIR` | Host pi's agent folder. The default is `~/.pi/agent`. |
+| `PI_CODING_AGENT_DIR` | Host pi's agent folder. The default is `~/.pi/agent`. The user config and the state follow it, so two shells with different values use separate configs, CAs and state. |
 | `HTTPS_PROXY`, `https_proxy`, `NO_PROXY`, `no_proxy` | The parent proxy, with `egress.parentProxy` set to `env`. |
 | `GH_CONFIG_DIR`, `GLAB_CONFIG_DIR`, `XDG_CONFIG_HOME` | Where the gh and glab configs are read. A path inside the repository is ignored. |
 | Provider API key variables | Derived as credentials. The proxy reads them on your Mac. |

@@ -11,7 +11,10 @@ sessions_live_exit=75
 script_dir=$(cd "$(dirname "$0")" && pwd)
 
 . "$script_dir/bin/path-block.sh"
-state_dir="${PI_SANDBOX_STATE_DIR:-$HOME/.local/state/pi-sandbox}"
+agent_dir="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
+state_dir="${PI_SANDBOX_STATE_DIR:-$agent_dir/pi-sandbox/state}"
+legacy_state_dir="$HOME/.local/state/pi-sandbox"
+user_config="${PI_SANDBOX_USER_CONFIG:-$agent_dir/pi-sandbox/config.json}"
 bin_dir="$HOME/.local/bin"
 fish_file="$HOME/.config/fish/conf.d/pi-sandbox.fish"
 
@@ -117,6 +120,13 @@ if [ -d "$state_dir" ]; then
   echo "state: removed $state_dir"
 fi
 
+rmdir "$agent_dir/pi-sandbox" 2>/dev/null || true
+
+if [ -d "$legacy_state_dir" ] && [ "$legacy_state_dir" != "$state_dir" ]; then
+  rm -rf "$legacy_state_dir"
+  echo "state: removed the old $legacy_state_dir"
+fi
+
 if command -v npm >/dev/null 2>&1 && npm ls -g "$package_name" >/dev/null 2>&1; then
   npm uninstall -g "$package_name" >/dev/null
   echo "package: uninstalled the global $package_name"
@@ -150,8 +160,8 @@ if [ -f "$fish_file" ] && ! grep -q '[^[:space:]]' "$fish_file"; then
   rm -f "$fish_file"
 fi
 
-echo "kept: your repositories, ~/.pi and ~/.config/pi-sandbox"
-echo "kept: your pi sessions stay in ${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/sessions"
+echo "kept: your repositories, ~/.pi and your launcher config $user_config"
+echo "kept: your pi sessions stay in $agent_dir/sessions"
 
 if [ "$colima_failed" -eq 1 ]; then
   fail "the colima profile $colima_profile could not be deleted; run colima delete --profile $colima_profile --force"

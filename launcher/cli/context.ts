@@ -36,7 +36,7 @@ const discoverContext = async (deps: CliDeps, lenient: boolean, options: Context
   const stateDir = pathsOf(deps).stateDir;
   const folder = await workspaceFolder(deps.cwd);
   const mounted = folder.root ?? folder.realCwd;
-  const effective = await loadEffectiveConfig({ env: deps.env });
+  const effective = await loadEffectiveConfig({ env: deps.env, home: deps.home });
 
   if (!lenient) {
     assertSafeMounts([mounted], { home: deps.home, env: deps.env });

@@ -31,10 +31,11 @@ describe("protectedRealPathGuard", () => {
     expect(reasonOf("/")).toBe("it contains the home directory");
   });
 
-  it("names pi's dir, the configured agent dir, the state dir and the user config", async () => {
+  it("names pi's dir, the configured agent dir, the launcher folder, the state dir and the user config", async () => {
     const { base, home, reasonOf } = await setup();
     const agent = join(base, "agent");
     const state = join(base, "state");
+    const config = join(base, "config", "sandbox.json");
 
     await mkdir(join(home, ".config", "pi-sandbox"), { recursive: true });
 
@@ -48,7 +49,16 @@ describe("protectedRealPathGuard", () => {
     expect(reasonOf(join(state, "proxy"), { PI_SANDBOX_STATE_DIR: state })).toBe(
       "it is inside the launcher state directory",
     );
-    expect(reasonOf(join(home, ".config"))).toBe("it contains the launcher user config");
+    expect(reasonOf(join(agent, "pi-sandbox", "state"), { PI_CODING_AGENT_DIR: agent })).toBe(
+      "it is inside pi's agent directory",
+    );
+    expect(reasonOf(join(base, "pi"), { PI_CODING_AGENT_DIR: join(base, "pi", "agent") })).toBe(
+      "it contains pi's agent directory",
+    );
+    expect(reasonOf(join(base, "config"), { PI_SANDBOX_USER_CONFIG: config })).toBe(
+      "it contains the launcher user config",
+    );
+    expect(reasonOf(join(home, ".config"))).toBeUndefined();
   });
 
   it("names credential and engine dirs in the home, and what lies inside them", async () => {

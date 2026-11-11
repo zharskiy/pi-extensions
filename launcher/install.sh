@@ -11,9 +11,10 @@ min_node=22.19.0
 min_macos=13
 wrapper_marker="launcher/bin/pi-sandbox"
 bin_dir="$HOME/.local/bin"
-state_dir="${PI_SANDBOX_STATE_DIR:-$HOME/.local/state/pi-sandbox}"
 agent_dir="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
+state_dir="${PI_SANDBOX_STATE_DIR:-$agent_dir/pi-sandbox/state}"
 replaced_link="$state_dir/replaced-pi-link"
+legacy_replaced_link="$HOME/.local/state/pi-sandbox/replaced-pi-link"
 managed_kind='"kind"[[:space:]]*:[[:space:]]*"pi-managed-install"'
 managed_schema='"schemaVersion"[[:space:]]*:[[:space:]]*1([^0-9.]|$)'
 managed_layout='"layout"[[:space:]]*:[[:space:]]*"releases-v1"'
@@ -295,6 +296,13 @@ require_host_pi() {
   fail "no managed pi in $agent_dir and pi is missing next to the launcher, npm skipped the peer dependency; run npm install -g --legacy-peer-deps=false $package_name@$version and run this again"
 }
 
+carry_replaced_link() {
+  if [ ! -f "$replaced_link" ] && [ -f "$legacy_replaced_link" ] && [ "$legacy_replaced_link" != "$replaced_link" ]; then
+    mkdir -p "$state_dir"
+    cat "$legacy_replaced_link" > "$replaced_link"
+  fi
+}
+
 record_replaced_link() {
   if [ -n "$managed_root" ]; then
     mkdir -p "$state_dir"
@@ -307,6 +315,8 @@ if [ "$from_checkout" -eq 1 ]; then
 fi
 
 mkdir -p "$bin_dir"
+
+carry_replaced_link
 
 if [ "$from_checkout" -eq 1 ]; then
   record_replaced_link

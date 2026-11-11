@@ -36,13 +36,20 @@ describe("assertSafeWorkspace", () => {
     );
   });
 
-  it("refuses a repository that contains the home, ~/.pi, the state dir or the user config dir", async () => {
+  it("refuses a repository that contains the home, ~/.pi, the launcher folder, the state dir or the user config", async () => {
     const { base, home, context } = await createHome();
     const attempts = [
       { workspace: workspaceAt(base), context },
       { workspace: workspaceAt(join(home, ".pi")), context },
-      { workspace: workspaceAt(join(home, ".local")), context },
-      { workspace: workspaceAt(join(home, ".config", "pi-sandbox")), context },
+      { workspace: workspaceAt(join(home, ".pi", "agent", "pi-sandbox")), context },
+      {
+        workspace: workspaceAt("/srv/pi"),
+        context: { ...context, env: { PI_CODING_AGENT_DIR: "/srv/pi/agent" } },
+      },
+      {
+        workspace: workspaceAt("/srv/config"),
+        context: { ...context, env: { PI_SANDBOX_USER_CONFIG: "/srv/config/sandbox.json" } },
+      },
       {
         workspace: workspaceAt("/srv/state"),
         context: { ...context, env: { PI_SANDBOX_STATE_DIR: "/srv/state/x" } },
@@ -54,12 +61,15 @@ describe("assertSafeWorkspace", () => {
     });
   });
 
-  it("refuses a repository or git common dir inside ~/.pi, the state dir or the user config dir", async () => {
+  it("refuses a repository or git common dir inside ~/.pi, the launcher folder or the state dir", async () => {
     const { base, home, context } = await createHome();
     const attempts = [
       { workspace: workspaceAt(join(home, ".pi", "agent", "repo")), context },
-      { workspace: workspaceAt(join(home, ".local", "state", "pi-sandbox", "copies")), context },
-      { workspace: workspaceAt(join(home, ".config", "pi-sandbox", "repo")), context },
+      { workspace: workspaceAt(join(home, ".pi", "agent", "pi-sandbox", "state", "copies")), context },
+      {
+        workspace: workspaceAt("/srv/agent/pi-sandbox/repo"),
+        context: { ...context, env: { PI_CODING_AGENT_DIR: "/srv/agent" } },
+      },
       { workspace: workspaceAt(join(base, "worktree"), join(home, ".pi", "repo.git")), context },
       {
         workspace: workspaceAt("/srv/state/repo"),

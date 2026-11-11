@@ -186,8 +186,8 @@ export const createLiveSandbox = async (name: string): Promise<LiveSandbox> => {
   const root = join(liveRoot(), `${name}-${randomBytes(3).toString("hex")}`);
   const home = join(root, "home");
   const agentDir = join(home, ".pi", "agent");
-  const stateDir = join(home, ".local", "state", "pi-sandbox");
-  const userConfigFile = join(home, ".config", "pi-sandbox", "config.json");
+  const stateDir = join(agentDir, "pi-sandbox", "state");
+  const userConfigFile = join(agentDir, "pi-sandbox", "config.json");
   const repoPath = join(root, "repos", name);
   const bin = join(root, "bin");
   const certs = join(root, "certs");
@@ -196,7 +196,7 @@ export const createLiveSandbox = async (name: string): Promise<LiveSandbox> => {
 
   await Promise.all([agentDir, stateDir, bin, certs].map((dir) => mkdir(dir, { recursive: true })));
 
-  await mkdir(join(home, ".config", "pi-sandbox"), { recursive: true });
+  await mkdir(join(agentDir, "pi-sandbox"), { recursive: true });
 
   await symlink(join(homedir(), ".colima"), join(home, ".colima")).catch(() => undefined);
 

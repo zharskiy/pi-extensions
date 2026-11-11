@@ -191,7 +191,7 @@ describe("shareFor", () => {
   });
 
   it("shares the home itself for a path inside it", () => {
-    expect(shareFor("/Users/dev/.local/state/pi-sandbox", home)).toBe("/Users/dev");
+    expect(shareFor("/Users/dev/.pi/agent/pi-sandbox/state", home)).toBe("/Users/dev");
   });
 
   it("shares the path itself when the parent is shallow or holds the home", () => {

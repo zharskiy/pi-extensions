@@ -164,7 +164,7 @@ The full list is in [known gaps](THREAT-MODEL.md#5-known-gaps).
 
 ## Configuration
 
-Your settings go in `~/.config/pi-sandbox/config.json`. Nothing in the project folder configures the sandbox. A Java developer might use:
+Your settings go in `~/.pi/agent/pi-sandbox/config.json` (inside pi's agent folder, so under `PI_CODING_AGENT_DIR` when you set it). An older `~/.config/pi-sandbox/config.json` is no longer read; the launch tells you to move it. Nothing in the project folder configures the sandbox. A Java developer might use:
 
 ```json
 {
@@ -209,9 +209,9 @@ Exit every pi session, then run the script from where you installed:
 launcher/uninstall.sh                                     # checkout
 ```
 
-It deletes the `pi-sandbox` Colima profile, the launcher's state, the `pi` link, the npm package and the `PATH` lines. It restores pi's managed link if `install.sh` replaced it.
+It deletes the `pi-sandbox` Colima profile, the launcher's state (`~/.pi/agent/pi-sandbox/state`), the `pi` link, the npm package and the `PATH` lines. It restores pi's managed link if `install.sh` replaced it.
 
-Your repositories, `~/.pi` with its sessions, and `~/.config/pi-sandbox` stay. Colima stays installed. Remove it with `brew uninstall colima` if nothing else uses it.
+It also deletes the old state folder `~/.local/state/pi-sandbox` if an earlier version left one. Your repositories, `~/.pi` with its sessions, and your config `~/.pi/agent/pi-sandbox/config.json` stay. Colima stays installed. Remove it with `brew uninstall colima` if nothing else uses it.
 
 ## More
 

@@ -301,7 +301,7 @@ hooks.describe("colima sandbox image missing-command hint", () => {
       hooks.expect(probed.code).toBe(0);
       hooks.expect(JSON.parse(probed.stdout)).toEqual({
         stderr:
-          "bash: pi-sandbox-missing-tool: command not found\npi-sandbox: pi-sandbox-missing-tool is not in the sandbox image; add its Debian package to image.packages or its npm package to image.npmGlobal in ~/.config/pi-sandbox/config.json on the host\n",
+          "bash: pi-sandbox-missing-tool: command not found\npi-sandbox: pi-sandbox-missing-tool is not in the sandbox image; add its Debian package to image.packages or its npm package to image.npmGlobal in pi-sandbox/config.json under pi's agent dir on the host (~/.pi/agent unless PI_CODING_AGENT_DIR is set)\n",
         status: 127,
       });
     },

@@ -28,6 +28,7 @@ import {
 } from "./host-sessions.ts";
 import { hostPathNotices, launchNotices, proxyDetail } from "./launch-notices.ts";
 import { beginLaunch, finishLaunch, gitGuardOf } from "./launches.ts";
+import { movedConfigNotice } from "./legacy-paths.ts";
 import { signInMcpServers } from "./mcp-sign-in.ts";
 import { writeOnce } from "./notices.ts";
 import { openSandboxProxy, reportDenials, type SandboxProxy } from "./sandbox-proxy.ts";
@@ -438,6 +439,8 @@ const runSandboxPi = async (deps: CliDeps, context: LaunchContext, sandbox: Sand
 
 export const launch = async (args: string[], deps: CliDeps) => {
   const piArgs = args.filter((arg) => arg !== NO_SANDBOX);
+
+  writeNotices(deps, await movedConfigNotice(deps));
 
   if (piArgs.length !== args.length) {
     const { context } = await openContext(deps, "host");

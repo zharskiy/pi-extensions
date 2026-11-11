@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { chmod, lstat, mkdir, readFile, readlink, realpath, rm, symlink, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { launcherRoot } from "../../shared/index.ts";
 import { tempDir } from "../support/temp-dir.ts";
@@ -105,6 +105,24 @@ describe("install.sh and pi's managed install", { timeout: INSTALL_TIMEOUT_MS },
     expect(result.stdout).toContain("[6/7] smoke: skipped, git is missing");
     expect(await readFile(record, "utf8")).toBe("../lib/pi-link\n");
     expect(await isLauncherWrapper(shim)).toBe(true);
+  });
+
+  it("carries over only the replaced-link record of the old state folder, and only when the new one is missing", async () => {
+    const { root, home, record } = await installRoot();
+    const legacy = join(home, ".local", "state", "pi-sandbox", "replaced-pi-link");
+
+    await mkdir(dirname(legacy), { recursive: true });
+
+    await writeFile(legacy, "../../.pi/agent/bin/pi\n");
+
+    expect(runInstall(root).status).toBe(0);
+    expect(await readFile(record, "utf8")).toBe("../../.pi/agent/bin/pi\n");
+    expect(await readFile(legacy, "utf8")).toBe("../../.pi/agent/bin/pi\n");
+
+    await writeFile(record, "kept\n");
+
+    expect(runInstall(root).status).toBe(0);
+    expect(await readFile(record, "utf8")).toBe("kept\n");
   });
 
   it("refuses a pi that is neither the launcher nor pi's managed install, and records nothing", async () => {

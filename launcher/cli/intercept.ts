@@ -269,7 +269,7 @@ const selfUpdate = async (deps: CliDeps) => {
 };
 
 const sandboxPiVersion = async (deps: CliDeps) => {
-  const { image } = (await loadEffectiveConfig({ env: deps.env })).config;
+  const { image } = (await loadEffectiveConfig({ env: deps.env, home: deps.home })).config;
 
   if (image.reference !== undefined && image.digest !== undefined) {
     return undefined;
