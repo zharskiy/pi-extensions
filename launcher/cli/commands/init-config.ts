@@ -1,8 +1,8 @@
 import { isAbsolute, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import { isJsonObject, LauncherError, readJsonFile, writeJsonFile } from "../../shared/index.ts";
+import { isJsonObject, LauncherError, readJsonFile, writeNewFile } from "../../shared/index.ts";
 import { sharedRootsOf } from "../../workspace/index.ts";
-import { type CliDeps, hostAgentDirOf, pathsOf } from "../deps.ts";
+import { type CliDeps, pathsOf } from "../deps.ts";
 
 export const INIT_CONFIG = "__init-config";
 
@@ -15,9 +15,19 @@ const storedRoot = (deps: CliDeps, root: string) =>
 
 const rootsIn = (config: unknown) => {
   const workspaceRoots = isJsonObject(config) ? config.workspaceRoots : undefined;
+  const roots = isJsonObject(workspaceRoots) ? workspaceRoots.roots : undefined;
 
-  return isJsonObject(workspaceRoots) ? workspaceRoots.roots : undefined;
+  return Array.isArray(roots) && roots.every((root) => typeof root === "string") ? roots : undefined;
 };
+
+const sharedSet = (deps: CliDeps, roots: string[]) => {
+  const shared = sharedRootsOf({ roots }, { home: deps.home, env: deps.env });
+
+  return [...new Set([...shared.roots, ...shared.missing])].sort();
+};
+
+const existsError = (userConfigFile: string) =>
+  new LauncherError(`${userConfigFile} exists; set workspaceRoots in it, or install without --root`);
 
 export const initConfigCommand = async (deps: CliDeps, args: string[]) => {
   if (args.length === 0) {
@@ -25,21 +35,19 @@ export const initConfigCommand = async (deps: CliDeps, args: string[]) => {
   }
 
   const roots = args.map((root) => storedRoot(deps, root));
-  const { stateDir, userConfigFile } = pathsOf(deps);
+  const { userConfigFile } = pathsOf(deps);
+  const wanted = sharedSet(deps, roots);
+  const text = `${JSON.stringify({ workspaceRoots: { roots } }, null, 2)}\n`;
 
-  sharedRootsOf({ roots }, { home: deps.home, agentDir: hostAgentDirOf(deps), stateDir });
-
-  const existing = await readJsonFile<unknown>(userConfigFile);
-
-  if (existing === undefined) {
-    await writeJsonFile(userConfigFile, { workspaceRoots: { roots } }, { mode: CONFIG_MODE });
-
+  if (await writeNewFile(userConfigFile, text, { mode: CONFIG_MODE })) {
     return 0;
   }
 
-  if (isDeepStrictEqual(rootsIn(existing), roots)) {
+  const existing = rootsIn(await readJsonFile<unknown>(userConfigFile));
+
+  if (existing !== undefined && isDeepStrictEqual(sharedSet(deps, existing), wanted)) {
     return 0;
   }
 
-  throw new LauncherError(`${userConfigFile} exists; set workspaceRoots in it, or install without --root`);
+  throw existsError(userConfigFile);
 };

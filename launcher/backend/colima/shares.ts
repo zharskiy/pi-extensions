@@ -16,6 +16,9 @@ interface Restart {
   failure: string;
 }
 
+const UNREADABLE =
+  "the shares of the sandbox VM could not be read from colima's lima.yaml, so they were not changed";
+
 const SAFE_WORD = /^[A-Za-z0-9_@%+=:,./-]+$/;
 
 const segmentsOf = (path: string) => path.split(sep).filter((part) => part !== "");
@@ -92,7 +95,7 @@ export const shareText = (share: VmShare) => (share.writable ? `${share.location
 
 const mountFlags = (shares: VmShare[]) => shares.flatMap((share) => ["--mount", shareText(share)]);
 
-const startArgs = (profile: string, shares: VmShare[]) => [
+export const startArgs = (profile: string, shares: VmShare[]) => [
   "start",
   "--profile",
   profile,
@@ -145,6 +148,16 @@ export const createColimaShares = (colima: Colima) => {
     const text = await limaYaml();
 
     return text === undefined ? undefined : vmSharesOf(text, home);
+  };
+
+  const readShares = async () => {
+    const text = await limaYaml();
+
+    if (text === undefined) {
+      return undefined;
+    }
+
+    return vmSharesOf(text, home) ?? "unreadable";
   };
 
   const run = (failure: string, args: string[]) =>
@@ -280,7 +293,13 @@ export const createColimaShares = (colima: Colima) => {
   const reconcileShares = async (desired: VmShare[], needs: VmPath[], options: VmShareOptions) => {
     assertDesiredCovers(desired, needs);
 
-    const shares = await runningShares();
+    const shares = await readShares();
+
+    if (shares === "unreadable") {
+      options.report(UNREADABLE);
+
+      return;
+    }
 
     if (shares === undefined || !isDrifted(shares, desired)) {
       return;
@@ -289,10 +308,14 @@ export const createColimaShares = (colima: Colima) => {
     await colima.withLock(() => reconcileDrift(desired, needs, options));
   };
 
-  const coverage = async (needs: VmPath[]): Promise<VmCoverage | undefined> => {
-    const shares = await runningShares();
+  const coverage = async (needs: VmPath[]): Promise<VmCoverage | "unreadable" | undefined> => {
+    const shares = await readShares();
 
-    return shares === undefined ? undefined : { shares, missing: pathsOf(uncovered(shares, needs)) };
+    if (shares === undefined || shares === "unreadable") {
+      return shares;
+    }
+
+    return { shares, missing: pathsOf(uncovered(shares, needs)) };
   };
 
   return { ensureShares, reconcileShares, coverage };

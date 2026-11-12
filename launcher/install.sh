@@ -32,7 +32,7 @@ usage() {
 }
 
 fail() {
-  echo "pi-sandbox install: $1" >&2
+  printf '%s\n' "pi-sandbox install: $1" >&2
   exit 1
 }
 
@@ -68,7 +68,7 @@ size_to_host() {
 }
 
 step() {
-  echo "[$1/7] $2"
+  printf '%s\n' "[$1/7] $2"
 }
 
 streamed() {
@@ -87,6 +87,13 @@ needs_value() {
   if [ "$1" -lt 2 ]; then
     usage >&2
     fail "$2 needs a value"
+  fi
+}
+
+needs_root() {
+  if [ -z "$1" ]; then
+    usage >&2
+    fail "--root needs a non-empty value"
   fi
 }
 
@@ -110,10 +117,10 @@ add_env_roots() {
 
 expanded_root() {
   case "$1" in
-    "~") echo "$HOME" ;;
-    "~/"*) echo "$HOME/${1#"~/"}" ;;
-    /*) echo "$1" ;;
-    *) echo "$PWD/$1" ;;
+    "~") printf '%s\n' "$HOME" ;;
+    "~/"*) printf '%s\n' "$HOME/${1#"~/"}" ;;
+    /*) printf '%s\n' "$1" ;;
+    *) printf '%s\n' "$PWD/$1" ;;
   esac
 }
 
@@ -125,7 +132,7 @@ first_existing_root() {
   candidate=$(expanded_root "$1")
 
   if [ -d "$candidate" ]; then
-    echo "$candidate"
+    printf '%s\n' "$candidate"
     return 0
   fi
 
@@ -146,7 +153,7 @@ parse_args() {
     --cpu) needs_value "$#" "$1"; cpus=$2; shift 2 ;;
     --memory) needs_value "$#" "$1"; memory=$2; shift 2 ;;
     --disk) needs_value "$#" "$1"; disk=$2; shift 2 ;;
-    --root) needs_value "$#" "$1"; add_root "$2"; shift 2 ;;
+    --root) needs_value "$#" "$1"; needs_root "$2"; add_root "$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) usage >&2; fail "unknown option $1" ;;
   esac
@@ -457,20 +464,34 @@ if [ -n "$roots" ]; then
   smoke_where="a temporary git repository in $smoke_parent"
 fi
 
+smoke_log=""
+smoke_skipped=0
+
+smoke_doctor() {
+  { "$shim" sandbox doctor 2>&1; printf '%s\n' "$?" > "$smoke_log.status"; } | tee "$smoke_log"
+  return "$(cat "$smoke_log.status")"
+}
+
 smoke() {
   mkdir -p "$smoke_parent" || return 1
 
   smoke_dir=$(mktemp -d "$smoke_parent/pi-sandbox-smoke.XXXXXX") || return 1
+  smoke_log=$(mktemp "${TMPDIR:-/tmp}/pi-sandbox-smoke.XXXXXX") || smoke_log="$smoke_dir.log"
   smoke_status=0
 
   git -C "$smoke_dir" init -q || smoke_status=1
 
   if [ "$smoke_status" -eq 0 ]; then
-    (cd "$smoke_dir" && export PATH="$bin_dir:$PATH" && streamed "$shim" sandbox doctor) || smoke_status=1
+    (cd "$smoke_dir" && export PATH="$bin_dir:$PATH" && streamed smoke_doctor) || smoke_status=1
     (cd "$smoke_dir" && PATH="$bin_dir:$PATH" "$shim" sandbox reset >/dev/null 2>&1) || true
   fi
 
+  if grep -q "not started until the VM shares" "$smoke_log" 2>/dev/null; then
+    smoke_skipped=1
+  fi
+
   rm -rf "$smoke_dir"
+  rm -f "$smoke_log" "$smoke_log.status"
 
   return "$smoke_status"
 }
@@ -483,7 +504,11 @@ else
   step 6 "smoke: running $shim sandbox doctor in $smoke_where; the first image build takes a few minutes"
 
   if smoke; then
-    step 6 "smoke: $shim sandbox doctor passed"
+    if [ "$smoke_skipped" -eq 1 ]; then
+      step 6 "smoke: $shim sandbox doctor passed the host checks; the sandbox part was skipped because the VM does not share $smoke_parent yet, and runs at the first pi launch"
+    else
+      step 6 "smoke: $shim sandbox doctor passed"
+    fi
   else
     fail "smoke check failed, see the doctor report above, or run $shim sandbox doctor inside a repository"
   fi

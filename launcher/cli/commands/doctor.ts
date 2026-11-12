@@ -18,7 +18,7 @@ import { missingPiText } from "../host-pi.ts";
 import { hostSessionsOf } from "../host-sessions.ts";
 import { type Sandbox, type Stage, type StageOutcome, withSandbox } from "../launch.ts";
 import { denialAdvice, deniedTargets, type SandboxProxy, sandboxDenials } from "../sandbox-proxy.ts";
-import { vmShareCoverage, vmSharesFor } from "../vm.ts";
+import { type VmSharePlan, vmShareCoverage, vmSharesFor } from "../vm.ts";
 import {
   type CheckResult,
   failed,
@@ -189,25 +189,27 @@ const rootsCheck = (current: VmShare[], desired: VmShare[]): CheckResult => {
   });
 };
 
+const withNotices = (result: CheckResult, notices: string[]): CheckResult =>
+  notices.length === 0 ? result : { ...result, reasons: [...(result.reasons ?? []), ...notices] };
+
+type Coverage = Awaited<ReturnType<typeof vmShareCoverage>>;
+
 interface SharesOutcome {
   result: CheckResult;
   missing: string[];
 }
 
-const sharesCheck = async (
-  deps: CliDeps,
-  context: LaunchContext,
-  backend: Backend,
-): Promise<SharesOutcome> => {
-  const files = await readHostPiFiles(hostAgentDirOf(deps)).catch(() => undefined);
-  const coverage = await vmShareCoverage(
-    deps,
-    context,
-    backend,
-    hostSessionsOf(deps, context, files?.settings),
-  );
+const unreadableShares = warned(
+  `colima's lima.yaml of profile ${ENGINE_PROFILE} could not be read, so the shares of the sandbox VM are unknown`,
+  { hint: "check that colima can start the profile, then run pi once while no other pi session runs" },
+);
 
-  if (coverage === undefined) {
+const coverageOutcome = (coverage: Coverage, plan: VmSharePlan | undefined): SharesOutcome => {
+  if (coverage === "unreadable" && plan !== undefined) {
+    return { result: unreadableShares, missing: [] };
+  }
+
+  if (coverage === undefined || coverage === "unreadable") {
     return {
       result: skipped(`colima has not written the shares of profile ${ENGINE_PROFILE} yet`),
       missing: [],
@@ -223,12 +225,23 @@ const sharesCheck = async (
     };
   }
 
-  const plan = vmSharesFor(deps, context.effective.config.workspaceRoots);
-
   return {
     result: plan === undefined ? sharesPassed : rootsCheck(coverage.shares, plan.shares),
     missing: [],
   };
+};
+
+const sharesCheck = async (
+  deps: CliDeps,
+  context: LaunchContext,
+  backend: Backend,
+): Promise<SharesOutcome> => {
+  const files = await readHostPiFiles(hostAgentDirOf(deps)).catch(() => undefined);
+  const coverage = await vmShareCoverage(context, backend, hostSessionsOf(deps, context, files?.settings));
+  const plan = vmSharesFor(deps, context.effective.config.workspaceRoots);
+  const outcome = coverageOutcome(coverage, plan);
+
+  return { ...outcome, result: withNotices(outcome.result, plan?.notices ?? []) };
 };
 
 const sharesOf = (deps: CliDeps, context: LaunchContext, backend: Backend) =>

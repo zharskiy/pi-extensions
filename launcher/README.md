@@ -62,7 +62,7 @@ Without roots, the VM shares your whole home, writable, so a container escape re
 PI_SANDBOX_ROOTS="$HOME/Projects:/Volumes/Work" "$(npm root -g)/pi-extensions-mz/launcher/install.sh"
 ```
 
-`--root` wins over `PI_SANDBOX_ROOTS`. The script writes the roots to `workspaceRoots` in `~/.pi/agent/pi-sandbox/config.json`, and the VM then shares only these folders (writable), pi's session folder `~/.pi/agent/sessions` (writable) and the launcher's `state/vm` folder (read-only). Pi then starts only inside a root. If `config.json` exists with other roots, the install stops: edit `workspaceRoots` there, or install without `--root`. A VM created earlier keeps its shares until the first pi launch, which restarts it with the new ones. See [Workspace roots](CONFIGURATION.md#workspace-roots).
+`--root` wins over `PI_SANDBOX_ROOTS`. The script writes the roots to `workspaceRoots` in `~/.pi/agent/pi-sandbox/config.json`, and the VM then shares only these folders (writable), pi's session folder `~/.pi/agent/sessions` (writable) and the launcher's `state/vm` folder (read-only). Pi then starts only inside a root. `--root ""` is refused. If `config.json` exists, the install goes ahead only when its `workspaceRoots` name the same folders (order, a trailing `/` and `~` against the full path do not matter); otherwise, also when it has no `workspaceRoots`, the install stops and leaves it as it is: edit `workspaceRoots` there, or install without `--root`. When the VM does not share the first root yet, the smoke check runs only the host checks and says the sandbox part runs at the first pi launch. A VM created earlier keeps its shares until the first pi launch, which restarts it with the new ones. See [Workspace roots](CONFIGURATION.md#workspace-roots).
 
 <details>
 <summary>Install from a checkout</summary>
@@ -150,13 +150,13 @@ After a reboot or `pi sandbox stop`, the next `pi` starts the VM again. A failur
 - **A small image.** It has git, ripgrep, fd and pi, but no curl, python3, gh or glab. [REMOVED-DEFAULTS.md](REMOVED-DEFAULTS.md) lists what earlier versions shipped and how to add it back.
 - **Sessions are shared.** `/resume` on your Mac lists sandbox sessions.
 - **Some settings come back to your Mac.** When you change the default model, provider or thinking level, the enabled models, the theme or a few display and queue preferences inside (in `settings.json`), or the settings of the subagents, style, notifications and session-limits extensions (their `pi-*.json` files), the launcher copies the change to your Mac when pi exits, or at the next launch after a crash, and prints one line per change. A value of the wrong type, or a theme name that is not a plain file name, is not copied and a line says so; if a settings file is missing from the sandbox, nothing in it is removed on your Mac. If you changed the same setting on your Mac meanwhile, your Mac's value wins and a line says so. Nothing else comes back: packages, extensions, skills, commands, paths, proxy settings, logins, `models.json`, `mcp.json` and agent files change only on your Mac.
-- **A new share restarts the VM once.** The first launch in a folder outside your home restarts the VM to share it, and the share is kept for later launches. With `workspaceRoots` set, the VM shares only those folders, so the restart happens when the list changes. If other pi sessions run, the launch stops and asks you to exit them first.
+- **A new share restarts the VM once.** The first launch in a folder outside your home restarts the VM to share it, and the share is kept for later launches. With `workspaceRoots` set, the VM shares only those folders, so the restart happens when the list changes; a stopped VM starts with the new list directly. If other pi sessions run, also from another agent dir, the launch stops and asks you to exit them first.
 
 ### Where pi can start
 
 Pi starts in a repository or in a plain folder. A folder with several repositories is checked repository by repository. Bare repositories in it are read-only: clone and fetch work, push does not.
 
-Pi does not start in your home folder, `/`, system folders or credential folders such as `~/.ssh`. It refuses git files that git did not write. A plain folder is refused when it holds over 128 repositories or 50,000 directories.
+Pi does not start in your home folder, `/`, system folders, credential folders such as `~/.ssh`, `~/Library` or `~/.local/bin`. It refuses git files that git did not write. A plain folder is refused when it holds over 128 repositories or 50,000 directories.
 
 If your home folder is a git repository, pi starts under it only inside a repository of its own.
 

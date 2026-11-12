@@ -1,13 +1,14 @@
 import { execFile } from "node:child_process";
 import { X509Certificate } from "node:crypto";
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { endLaunch, registerLaunch } from "../../grants/index.ts";
 import { openLauncherCa } from "../../proxy/tls-ca.ts";
 import { ensureTrustBundle } from "../../proxy/trust.ts";
-import { createProcessRunner, LauncherError } from "../../shared/index.ts";
+import { createProcessRunner, LauncherError, processMark } from "../../shared/index.ts";
 import { argvOf, createScriptedRunner } from "../support/fake-runner.ts";
 
 const state = { stateDir: "", corpPem: "", otherPem: "", launcherPem: "", leafPem: "", plainRootPem: "" };
@@ -299,5 +300,54 @@ describe("ensureTrustBundle", () => {
         sources: [{ file: join(state.stateDir, "missing.pem") }],
       }),
     ).rejects.toThrow("is not readable");
+  });
+});
+
+describe("the legacy trust.pem", () => {
+  const legacyPem = () => join(state.stateDir, "ca", "trust.pem");
+
+  const bundleFor = (launchId: string) =>
+    ensureTrustBundle({
+      stateDir: state.stateDir,
+      runner: keychains("", "").runner,
+      platform: "darwin",
+      sources: [],
+      launchId,
+    });
+
+  it("stays while another launch may still bind it, and goes once only this launch is live", async () => {
+    const mark = await processMark();
+
+    await mkdir(join(state.stateDir, "ca"), { recursive: true });
+
+    await writeFile(legacyPem(), "old");
+
+    await registerLaunch(state.stateDir, {
+      launchId: "00000000000000a1",
+      ...mark,
+      repoHash: "a".repeat(64),
+      startedAt: 1,
+    });
+
+    await registerLaunch(state.stateDir, {
+      launchId: "00000000000000a2",
+      ...mark,
+      repoHash: "b".repeat(64),
+      startedAt: 1,
+    });
+
+    await bundleFor("00000000000000a1");
+
+    expect(await readFile(legacyPem(), "utf8")).toBe("old");
+
+    await endLaunch(state.stateDir, {
+      repoHash: "b".repeat(64),
+      launchId: "00000000000000a2",
+      onLast: async () => undefined,
+    });
+
+    await bundleFor("00000000000000a1");
+
+    expect(await stat(legacyPem()).catch(() => undefined)).toBeUndefined();
   });
 });

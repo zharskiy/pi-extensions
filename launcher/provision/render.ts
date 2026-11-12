@@ -281,7 +281,9 @@ export const renderAgentDir = async (input: RenderInput): Promise<RenderResult &
   const { render: renderDir, renderLock, legacyRender } = stateLayout(input.stateDir).repo(input.repoHash);
   const { tree, notices } = await desiredTree(input);
 
-  await rm(legacyRender, { recursive: true, force: true });
+  if (!(await input.othersLive?.())) {
+    await rm(legacyRender, { recursive: true, force: true });
+  }
 
   await mkdir(renderDir, { recursive: true });
 

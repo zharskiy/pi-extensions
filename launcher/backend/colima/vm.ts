@@ -8,9 +8,9 @@ import {
   stateLayout,
   withDirectoryLock,
 } from "../../shared/index.ts";
-import type { Detection, Vm, VmReport, VmShareOptions, VmSize } from "../types.ts";
+import type { Detection, Vm, VmReport, VmShare, VmShareOptions, VmSize } from "../types.ts";
 import { type Colima, ENGINE_PROFILE, ENGINE_SOCKET_DISPLAY, logHint, plainStart } from "./profile.ts";
-import { createColimaShares } from "./shares.ts";
+import { createColimaShares, startArgs } from "./shares.ts";
 import { createColimaTrust } from "./vm-trust.ts";
 
 export interface ColimaVmOptions {
@@ -125,10 +125,10 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
     return result.code === 0;
   };
 
-  const startStopped = async (report: VmReport) => {
+  const startStopped = async (report: VmReport, shares: VmShare[]) => {
     report("starting the sandbox VM");
 
-    await run(START_FAILURE, ["start", "--profile", profile, "--activate=false"], startHint);
+    await run(START_FAILURE, startArgs(profile, shares), startHint);
 
     const detection = await detectAgain();
 
@@ -140,7 +140,7 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
     }
   };
 
-  const ensureUp = async (report: VmReport) => {
+  const ensureUp = async (report: VmReport, shares: VmShare[]) => {
     if ((await detect()).available) {
       return;
     }
@@ -160,12 +160,12 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
         throw engineSilent(detection);
       }
 
-      await startStopped(report);
+      await startStopped(report, shares);
     });
   };
 
-  const ensureRunning = async (report: VmReport) => {
-    await ensureUp(report);
+  const ensureRunning = async (report: VmReport, shares: VmShare[] = []) => {
+    await ensureUp(report, shares);
 
     trust.readEarly();
   };

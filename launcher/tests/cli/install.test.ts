@@ -19,6 +19,7 @@ const SYSTEM_TOOLS = [
   "rm",
   "rmdir",
   "sed",
+  "tee",
 ];
 
 const FAKES: Record<string, string> = {
@@ -415,6 +416,16 @@ describe("install.sh options and the PATH block", { timeout: INSTALL_TIMEOUT_MS 
     expect(await exists(zshrc(home))).toBe(false);
   });
 
+  it("refuses an empty --root instead of sharing the whole home", async () => {
+    const { root, home } = await installRoot();
+    const result = runInstall(root, ["--root", ""]);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("pi-sandbox install: --root needs a non-empty value\n");
+    expect(await exists(join(root, "config", "config.json"))).toBe(false);
+    expect(await exists(zshrc(home))).toBe(false);
+  });
+
   it("finds its checkout when CDPATH is exported and it is run by a relative path", async () => {
     const { root, home } = await installRoot();
     const checkout = join(launcherRoot(), "..");
@@ -627,6 +638,48 @@ describe("install.sh and workspace roots", { timeout: INSTALL_TIMEOUT_MS }, () =
     );
     expect(await readFile(configFile(root), "utf8")).toBe(text);
     expect(await colimaCalls(root)).toEqual(["version"]);
+  });
+
+  it("keeps a backslash in a root path when it picks the smoke folder", async () => {
+    const { root } = await rootsSetup({ git: "exit 1" });
+    const slashed = join(root, "back\\tslash");
+
+    await mkdir(slashed);
+
+    const result = runInstall(root, ["--root", slashed]);
+
+    expect(result.stdout).toContain(`sandbox doctor in a temporary git repository in ${slashed};`);
+  });
+
+  it("says the sandbox part of the smoke check was skipped when the VM does not share the root yet", async () => {
+    const { root, work } = await rootsSetup({ git: "exit 0" });
+    const node = join(root, "tools", "node");
+
+    await rm(node);
+
+    await writeFile(
+      node,
+      [
+        "#!/bin/sh",
+        'if [ "$2" = sandbox ] && [ "$3" = doctor ]; then',
+        '  echo "  skip  sandbox  not started until the VM shares $PWD"',
+        "  exit 0",
+        "fi",
+        'if [ "$2" = sandbox ]; then exit 0; fi',
+        `exec '${process.execPath}' "$@"`,
+      ].join("\n"),
+    );
+
+    await chmod(node, 0o755);
+
+    const result = runInstall(root, ["--root", work]);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("not started until the VM shares");
+    expect(result.stdout).toContain(
+      `sandbox doctor passed the host checks; the sandbox part was skipped because the VM does not share ${work} yet, and runs at the first pi launch`,
+    );
+    expect(result.stdout).not.toContain("sandbox doctor passed\n");
   });
 
   it("runs the smoke check in a folder inside the first root that exists and removes it", async () => {
