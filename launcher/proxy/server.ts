@@ -92,7 +92,6 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
         allow: settings.allow,
         deny: settings.deny,
         credentialHosts,
-        grants: settings.grants,
       }),
       privatePatterns: settings.privateHosts.map(normalizeHost),
     };

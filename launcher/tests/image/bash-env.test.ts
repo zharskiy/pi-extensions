@@ -23,7 +23,7 @@ const loadUserConfig = async (value: unknown) => {
   await writeFile(userConfig, JSON.stringify(value));
 
   return loadEffectiveConfig({
-    env: { PI_SANDBOX_USER_CONFIG: userConfig, PI_SANDBOX_POLICY_FILE: join(root, "policy.json") },
+    env: { PI_SANDBOX_USER_CONFIG: userConfig },
   });
 };
 
@@ -113,7 +113,7 @@ describe("the missing-command hint", () => {
 describe("BASH_ENV is set by the launcher's image", () => {
   it("is refused in env.allow", async () => {
     await expect(loadUserConfig({ env: { allow: ["EDITOR", "BASH_ENV"] } })).rejects.toThrow(
-      "user: env.allow[1] BASH_ENV is set by the launcher and is not forwarded",
+      "config: env.allow[1] BASH_ENV is set by the launcher and is not forwarded",
     );
   });
 

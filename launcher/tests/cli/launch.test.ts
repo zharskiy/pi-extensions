@@ -226,7 +226,7 @@ describe("pi [args]", () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
 
-    await harness.writeJson(harness.policyFile, {
+    await harness.writeJson(harness.userConfigFile, {
       workspaceRoots: { roots: [join(harness.root, "elsewhere")] },
     });
 
@@ -253,16 +253,7 @@ describe("pi [args]", () => {
     expect(context.workspace.nested).toBeUndefined();
   });
 
-  it("refuses --no-sandbox under fallback refuse and names the layer that set it", async () => {
-    const harness = await createHarness();
-
-    await harness.writeJson(harness.policyFile, { fallback: "refuse" });
-
-    expect(await run(["--no-sandbox"], harness.deps)).toBe(1);
-    expect(harness.stderr()).toContain('--no-sandbox is refused: fallback is "refuse", set by policy');
-  });
-
-  it("runs the managed pi under fallback host, never a pi on PATH, and says so", async () => {
+  it("runs the managed pi for --no-sandbox, never a pi on PATH, and says so", async () => {
     const harness = await createHarness();
     const hostDir = join(harness.root, "host-bin");
 

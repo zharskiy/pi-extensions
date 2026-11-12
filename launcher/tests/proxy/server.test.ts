@@ -477,28 +477,23 @@ describe("grants", () => {
   it("allows a host with a grant of this repository, read live from grants.json", async () => {
     expect(await deniedPage("granted.test:443")).toBe(hint("granted.test"));
 
-    await addGrant(
-      state.stateDir,
-      { host: "granted.test", port: 443, repoHash: "2".repeat(64) },
-      true,
-      Date.now(),
-    );
+    await addGrant(state.stateDir, { host: "granted.test", port: 443, repoHash: "2".repeat(64) }, Date.now());
 
     expect(await deniedPage("granted.test:443")).toBe(hint("granted.test"));
 
-    await addGrant(state.stateDir, { host: "granted.test", port: 443, repoHash: REPO }, true, Date.now());
+    await addGrant(state.stateDir, { host: "granted.test", port: 443, repoHash: REPO }, Date.now());
 
     expect((await connectStatus("granted.test:443")).status).toBe(200);
   });
 
   it("keeps egress.deny above a grant", async () => {
-    await addGrant(state.stateDir, { host: "blocked.test", port: 443 }, true, Date.now());
+    await addGrant(state.stateDir, { host: "blocked.test", port: 443 }, Date.now());
 
     expect((await connectStatus("blocked.test:443")).body.rule).toBe("egress.deny");
   });
 
   it("keeps private addresses denied with a grant", async () => {
-    await addGrant(state.stateDir, { host: "10.0.0.1", port: 443 }, true, Date.now());
+    await addGrant(state.stateDir, { host: "10.0.0.1", port: 443 }, Date.now());
 
     expect((await connectStatus("10.0.0.1:443")).body.rule).toBe("private-address");
   });

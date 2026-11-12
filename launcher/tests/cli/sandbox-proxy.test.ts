@@ -42,7 +42,7 @@ describe("env parent proxy", () => {
 
     expect(await run([], harness.deps)).toBe(0);
     expect(harness.stderr()).toContain(
-      "pi-sandbox: egress.parentProxy: HTTPS_PROXY uses https, only http parent proxies are supported; the proxy connects directly\n",
+      "pi-sandbox: parent proxy: HTTPS_PROXY uses https, only http parent proxies are supported; the proxy connects directly\n",
     );
   });
 

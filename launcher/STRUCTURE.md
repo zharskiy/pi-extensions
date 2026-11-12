@@ -6,15 +6,16 @@ One line per file. Layer rules and behaviour are in [ARCHITECTURE.md](ARCHITECTU
 
 ```
 README.md                      for users: install, quick start, everyday use, what is protected, troubleshooting
-CONFIGURATION.md               every config key, the policy and user layers, credentials, corporate proxies, the administrator policy
+CONFIGURATION.md               every config key, the one config file, credentials, corporate proxies, sharing the file across a team
 ARCHITECTURE.md                how it works, the files it writes
 STRUCTURE.md                   this file
 THREAT-MODEL.md                assets, trust boundaries, what each feature weakens, known gaps
+REMOVED-DEFAULTS.md            the egress presets and config keys earlier versions shipped, and how to add them back
 install.sh                     macOS install: Colima profile, the launcher and its pi link, PATH blocks (zsh, bash, fish), smoke test
 uninstall.sh                   runs the launcher's cleanup, deletes the profile, removes the link, state, package and PATH blocks
 tsconfig.build.json            emits dist/ (gitignored) for the published bin
-examples/policy.json           a starting point for the administrator's policy file
-schema/sandbox-config.schema.json  the config keys of every layer
+examples/config.json           a sample config file for a team to start from
+schema/sandbox-config.schema.json  the config keys
 ```
 
 ## bin/
@@ -69,14 +70,14 @@ cli/commands/options.ts        the option check of the sandbox commands and egre
 
 ```
 config/index.ts                public surface
-config/types.ts                the config, layer and rule types
+config/types.ts                the config, config file and rule types
 config/defaults.ts             the default config and image reference
-config/load.ts                 loads the policy and user layers and merges them
-config/merge.ts                the layer merge: union and final keys, the egress lock (isEgressLocked), ignored keys and their warning, sources
-config/validate.ts             the key spec of every layer
+config/load.ts                 loads the config file and lays it over the defaults
+config/merge.ts                the config file over the defaults, env.allow added to the default list, the source of each key
+config/validate.ts             the key spec of the config file
 config/dotted.ts               dotted key access
 config/egress-entry.ts         the host entry grammar, entry parsing and host matching
-config/egress-presets.ts       the egress preset hosts, pi.dev, and the expanded allow list
+config/egress-allow.ts         pi.dev and the allow list
 config/parent-proxy.ts         the parent proxy read from HTTPS_PROXY and NO_PROXY
 ```
 
@@ -262,7 +263,7 @@ shared/atomic-write.ts         atomic and random-hex file writes
 shared/file-lock.ts            the lock primitives
 shared/liveness.ts             the liveness rule: pid, boot time and process start
 shared/process-start.ts        a process's start time (ps on macOS, /proc on Linux), telling a failed tool from a process without one
-shared/paths.ts                host agent dir, the launcher folder <agent dir>/pi-sandbox/ (config.json, state/), policy path, launcher root
+shared/paths.ts                host agent dir, the launcher folder <agent dir>/pi-sandbox/ (config.json, state/), launcher root
 shared/state-layout.ts         every path under the state dir
 shared/repo-state.ts           per-repository record files: repo.json with its mount root, created folders, leftovers
 shared/regular-file.ts         safe reads of regular files
@@ -302,9 +303,9 @@ tests/shared/pi-env.test.ts          the variables the launcher sets
 tests/shared/mcp-auth-key.test.ts    mcp-login.json updates and sign-in dirs
 tests/shared/state-layout.test.ts    the state layout
 tests/shared/tool-config.test.ts     tool config parsers
-tests/config/fixtures.ts             layer files in temp dirs
-tests/config/load.test.ts            loading the layers
-tests/config/merge-security.test.ts  final keys across layers
+tests/config/fixtures.ts             config files in temp dirs
+tests/config/load.test.ts            loading the config file and examples/config.json
+tests/config/merge.test.ts           the config over the defaults, key by key, with sources
 tests/config/security-keys.test.ts   credential and image keys
 tests/config/egress-entry.test.ts    the egress grammar
 tests/config/parent-proxy.test.ts    the parent proxy parser

@@ -1,34 +1,31 @@
 # pi-sandbox configuration
 
-Every setting of the sandbox, how two config files combine, and how credentials reach the proxy. For installing and everyday use, see [README.md](README.md). For what each setting weakens, see [THREAT-MODEL.md](THREAT-MODEL.md).
+Every setting of the sandbox, where its one config file lives, and how credentials reach the proxy. For installing and everyday use, see [README.md](README.md). For what each setting weakens, see [THREAT-MODEL.md](THREAT-MODEL.md).
 
 ## Where the config lives
 
-The sandbox reads two JSON files, called *layers*. Both use the same keys.
+The sandbox reads one JSON file: `~/.pi/agent/pi-sandbox/config.json` (`pi-sandbox/config.json` under `PI_CODING_AGENT_DIR` when set). It belongs to you, the user who runs the launcher; there is no other config file and no setting above yours. A key you set replaces its default; `env.allow` adds to the default terminal variables.
 
-| layer | path | written by |
-| --- | --- | --- |
-| policy | `/Library/Application Support/pi-sandbox/policy.json` (`/etc/pi-sandbox/policy.json` on Linux) | your administrator |
-| user | `~/.pi/agent/pi-sandbox/config.json` (`pi-sandbox/config.json` under `PI_CODING_AGENT_DIR` when set) | you |
+Without the file the defaults apply. The launcher reads it at every launch and never writes it. Nothing in the project folder configures the sandbox.
 
-A missing file is simply skipped. The launcher reads both files at every launch and never writes them. Nothing in the project folder configures the sandbox.
+The config used to live in `~/.config/pi-sandbox/config.json`. That file is no longer read: while it exists and the new one does not, every launch and `pi sandbox doctor` name both paths. Move it yourself; the launcher never touches the old folder.
 
-The user config used to live in `~/.config/pi-sandbox/config.json`. That file is no longer read: while it exists and the new one does not, every launch and `pi sandbox doctor` name both paths. Move it yourself; the launcher never touches the old folder.
+An administrator policy file (`/Library/Application Support/pi-sandbox/policy.json` on macOS, `/etc/pi-sandbox/policy.json` elsewhere, or the file `PI_SANDBOX_POLICY_FILE` names) is no longer read either, so its limits do not apply. While one exists, every launch and `pi sandbox doctor` say so; move what you need into the config file. The launcher only checks that the file exists and never reads it.
 
-`pi sandbox config` prints the result and the layer each key comes from. Add `--json` for machine-readable output.
+`pi sandbox config` prints the result and, for each key, whether it comes from the file (`config`) or the default. Add `--json` for machine-readable output.
 
 The keys are described in [schema/sandbox-config.schema.json](schema/sandbox-config.schema.json). A `$schema` key is allowed, so your editor can point at that file for completion.
 
 An invalid value or an unknown key stops the launch. The message names the key, and the hint names the file to fix.
 
-The message also shows the value for `fallback`, `egress.presets`, `image.dockerfile`, `image.packages`, `tls.extraCa` files, `workspaceRoots.roots`, `mounts.sharedCaches` and `env.allow`. Host, credential and `npmGlobal` values are never shown.
+The message also shows the value for `image.dockerfile`, `image.packages`, `tls.extraCa` files, `workspaceRoots.roots`, `mounts.sharedCaches` and `env.allow`. Host, credential and `npmGlobal` values are never shown.
 
 ## When changes apply
 
 Each launch gets a new container, so most changes apply at the next `pi`. Each folder also has one proxy on your Mac, shared by every pi session there. Some settings live in that proxy.
 
 - **Grants** from `pi sandbox egress allow` and `revoke` apply at once, also to running sessions.
-- **Network settings** reach running sessions when you start a new `pi` in that folder. These are `egress.allow`, `egress.deny`, `egress.presets`, `egress.privateHosts` and `egress.grants`. Editing the file alone changes nothing for them.
+- **Network settings** reach running sessions when you start a new `pi` in that folder. These are `egress.allow`, `egress.deny` and `egress.privateHosts`. Editing the file alone changes nothing for them.
 - **Credential rules, `env` secrets, the parent proxy and `tls.extraCa`** wait until every pi of the folder has exited. An `env` secret is a credential rule whose secret comes from a variable of your shell.
 
 When other sessions run, a new launch says which case applies:
@@ -44,13 +41,9 @@ Connections that are already open stay until they close.
 
 | key | what it does | default |
 | --- | --- | --- |
-| `fallback` | `host` lets `pi --no-sandbox` run host pi. `refuse` turns that off. | `"host"` |
-| `egress.presets` | Sets of package registry hosts to allow. | `["npm", "pypi", "github"]` |
-| `egress.allow` | More hosts the sandbox may reach. | `[]` |
+| `egress.allow` | The hosts the sandbox may reach, besides `pi.dev` and your credential hosts. | `[]` |
 | `egress.deny` | Hosts that are never reachable. | `[]` |
 | `egress.privateHosts` | Names that may resolve to private addresses. | `[]` |
-| `egress.grants` | Whether `pi sandbox egress allow` may add hosts. | `true` |
-| `egress.parentProxy` | `env` uses your `HTTPS_PROXY`. `none` ignores it. | `"env"` |
 | `image.packages` | Debian packages to add to the image. | none |
 | `image.npmGlobal` | npm packages to install globally, as `name@version`. | none |
 | `image.dockerfile` | A file of Dockerfile lines to add to the image. | none |
@@ -74,26 +67,13 @@ The sections below explain each group.
 The sandbox reaches a host only when one of these lists names it:
 
 - `pi.dev`, where pi reads its model list. It is always allowed on port 443, without a credential.
-- The hosts of `egress.presets`.
 - `egress.allow`.
 - The hosts of your credentials, derived or from `credentials.rules`.
 - Your grants.
 
 `egress.deny` wins over all of them, `pi.dev` included.
 
-### Presets
-
-| preset | hosts |
-| --- | --- |
-| `npm` | `registry.npmjs.org`, `registry.yarnpkg.com`, `repo.yarnpkg.com` |
-| `pypi` | `pypi.org`, `files.pythonhosted.org` |
-| `github` | `github.com`, `codeload.github.com`, `objects.githubusercontent.com`, `raw.githubusercontent.com`, `release-assets.githubusercontent.com` |
-| `maven` | `repo.maven.apache.org`, `repo1.maven.org` |
-| `gradle` | `plugins.gradle.org`, `plugins-artifacts.gradle.org`, `services.gradle.org`, `downloads.gradle.org` |
-| `go` | `proxy.golang.org`, `sum.golang.org` |
-| `cargo` | `crates.io`, `index.crates.io`, `static.crates.io` |
-
-Setting `egress.presets` replaces the default list. `[]` turns every preset off.
+No package registry is allowed by default: list the ones you use, such as `registry.npmjs.org`, `pypi.org` and `files.pythonhosted.org`, or `github.com` and `codeload.github.com`, in `egress.allow`.
 
 ### Allow, deny and private hosts
 
@@ -128,7 +108,6 @@ allowed git.example.com:8443 for every repository
 - It takes one host name and an optional port. The port defaults to 443.
 - It refuses wildcards, IP addresses, `localhost` and port 80.
 - It refuses a host that `egress.deny` names, since a grant cannot override a deny.
-- It is refused when `egress.grants` is `false`.
 
 `pi sandbox egress revoke <host>` removes the grant for every port of that host. Name a port to remove only that one.
 
@@ -142,14 +121,14 @@ A blocked request gets a 403 page that says what to do. When pi exits, the launc
 
 | why it was blocked | hint |
 | --- | --- |
-| not on any allow list | `run pi sandbox egress allow <host> on the host from <folder>`, or with grants off `ask your administrator to add <host> to egress.allow` |
-| it resolves to a private, loopback, link-local or reserved address | the proxy's reason with the address, then `add <host> to egress.privateHosts in <your config file>`, or with egress locked by the policy `ask your administrator to add <host> to egress.privateHosts` |
+| not on any allow list | `run pi sandbox egress allow <host> on the host from <folder>` |
+| it resolves to a private, loopback, link-local or reserved address | the proxy's reason with the address, then `add <host> to egress.privateHosts in <your config file>` |
 | it is an IP address or a loopback name (`localhost`) in such a range | the proxy's reason, then `IP addresses and loopback names are never reachable from the sandbox; use a host name`, since `egress.privateHosts` takes neither |
-| `egress.deny` names it | `denied by policy` |
+| `egress.deny` names it | `denied by egress.deny` |
 | plain HTTP | `plain HTTP is not proxied; use https` |
 | the host did not answer | `it could not be reached: <reason>` |
 | a credential could not be fetched | `it could not authenticate: <reason>` |
-| a provider login on the host is missing or expired | `log in again with pi --no-sandbox and /login`, or with `fallback` set to `refuse` `log in again with host pi` |
+| a provider login on the host is missing or expired | `log in again with pi --no-sandbox and /login` |
 
 Any other case prints the proxy's own reason.
 
@@ -209,7 +188,7 @@ The volumes stay until you uninstall. `pi sandbox reset` and the daily cleanup d
 
 ## Variables passed into the sandbox
 
-`env.allow` names the variables of your shell that reach each pi run. The default list is `TERM`, `COLORTERM`, `TERM_PROGRAM`, `TERM_PROGRAM_VERSION`, `LC_TERMINAL`, `LC_TERMINAL_VERSION`, `COLORFGBG` and `LANG`. Your entries add to it.
+`env.allow` names the variables of your shell that reach each pi run. The default list is `TERM`, `COLORTERM`, `TERM_PROGRAM`, `TERM_PROGRAM_VERSION`, `LC_TERMINAL`, `LC_TERMINAL_VERSION`, `COLORFGBG` and `LANG`. Your entries only extend it: the list cannot shrink, and `pi sandbox config` shows its source as `default+config`.
 
 Some names are refused when the config loads:
 
@@ -313,10 +292,10 @@ MCP servers sign in on your Mac. Host pi keeps the tokens in `~/.pi/agent/mcp-au
 
 ### Parent proxy
 
-With `egress.parentProxy` set to `env`, the default, the launcher's proxy forwards through your company proxy. It reads `HTTPS_PROXY`, else `https_proxy`, and `NO_PROXY`, else `no_proxy`, from the shell that runs `pi`. It does not read the macOS system proxy or a PAC file.
+The launcher's proxy forwards through your company proxy when the shell that runs `pi` sets one. It reads `HTTPS_PROXY`, else `https_proxy`, and `NO_PROXY`, else `no_proxy`, from the shell that runs `pi`. It does not read the macOS system proxy or a PAC file.
 
 - Only an `http://` proxy URL works. For anything else the launch prints a warning and connects directly.
-- Set `egress.parentProxy` to `none` to ignore `HTTPS_PROXY` and connect directly.
+- Unset `HTTPS_PROXY` and `https_proxy` for `pi` to connect directly.
 - NTLM and Kerberos proxies need a local relay such as `px` or `cntlm`.
 
 Image builds use the same proxy. A proxy address on `localhost` is pointed at your Mac. A proxy URL with a user name or password is refused for builds, since it would be written into the image. Use a proxy without credentials, or a prebuilt image with no extra layer.
@@ -344,7 +323,7 @@ They do not reach the VM's container engine. If the proxy inspects Docker Hub, t
 
 The sandbox has no container engine and cannot reach your Mac's `localhost`. So `docker compose` and Testcontainers do not work inside. Run the server inside the sandbox instead.
 
-1. Add it to `image.packages` in your user config, for example `postgresql` and `redis-server`.
+1. Add it to `image.packages` in your config, for example `postgresql` and `redis-server`.
 2. Start it with its data under `/tmp`:
 
    ```bash
@@ -357,61 +336,28 @@ The sandbox has no container engine and cannot reach your Mac's `localhost`. So 
 
 `/tmp` lives in memory. The data counts against the container's memory and is gone when pi exits.
 
-## For administrators
+## Sharing one config across a team
 
-The policy file is `/Library/Application Support/pi-sandbox/policy.json`. It takes the same keys as the user config. The launcher reads it at every launch.
+A team shares the config by giving everyone the same file: copy it to `~/.pi/agent/pi-sandbox/config.json` on each Mac. It is still each user's own file, and each user can change it. [examples/config.json](examples/config.json) is a starting point. It does the following:
 
-Make the file writable by root only. The launcher does not check its owner, and whoever can write it sets the limits. `PI_SANDBOX_POLICY_FILE` names another policy file only while the standard one does not exist, so it never overrides yours.
-
-### How the policy and the user config combine
-
-- **A key the policy sets is final.** The user's value is ignored with a warning, and `pi sandbox config` lists it.
-- **Each key counts on its own.** If both matter, set `resources.cpus` and `resources.memoryGiB` each in the policy file. `workspaceRoots` counts as one key.
-- **Lists add up.** `egress.allow`, `egress.deny`, `egress.privateHosts`, `image.packages`, `image.npmGlobal`, `credentials.rules` and `env.allow` collect the entries of both files. A user can add entries and remove none.
-- **Deny wins.** `egress.deny` wins over every allow, grant and credential host.
-- **Rule ids are yours.** A user rule with an `id` the policy uses is ignored.
-
-The user sees this warning at launch, once per folder:
-
-```
-pi-sandbox: warning: config keys ignored: user egress.allow (egress is locked: the policy config sets egress.grants to false); see pi sandbox config
-```
-
-### Common settings
-
-- `egress.grants: false` locks egress. `pi sandbox egress allow` is refused, and the user's `egress.allow` and `egress.privateHosts` are ignored. The user's `egress.presets` still apply unless the policy sets them.
-- Even with egress locked, the hosts of `credentials.rules` from either file stay reachable, and so do derived credential hosts.
-- `credentials.derive.enabled` or `credentials.derive.hosts` limits the derived hosts.
-- `fallback: "refuse"` turns `pi --no-sandbox` off.
-- `workspaceRoots`, as `{ "roots": ["/Users/you/work"] }`, refuses a launch outside those folders.
-- `egress.presets: []` turns the registry presets off for good.
-- `tls`, `sessions`, `resources`, `egress.parentProxy` and `mounts.sharedCaches` can be set in the policy file like any other key.
-
-`pi install`, `pi mcp …` and `pi update` run host pi on the host, whatever the policy says. They run before the config is read.
-
-### Sample policy
-
-[examples/policy.json](examples/policy.json) is a starting point. It does the following:
-
-- Refuses `pi --no-sandbox`.
-- Turns grants off, which drops the user's `egress.allow` and `egress.privateHosts`. The user's `egress.presets` still apply, since the policy does not set them.
-- Allows an internal gateway, registry and git host. It also lists them as private hosts, since they resolve to internal addresses.
+- Allows an internal gateway, registry and git hosts. It also lists them as private hosts, since they resolve to internal addresses.
 - Denies a paste site.
 - Adds the company CA.
 - Adds a credential for the gateway, from a host command, and one for the registry, from a variable.
-- Keeps credential derivation on, so `gh`, `glab`, npm, pip and Maven work as on the host.
+- Leaves credential derivation on, so `gh`, `glab`, npm, pip and Maven work as on the host.
 
-Under that policy, the Java user config in the [README](README.md#configuration) loses its `egress.allow` entry.
+Replace the `*.example.internal` names with your own hosts, and add the package registries your team uses to `egress.allow`.
+
+`pi install`, `pi mcp …` and `pi update` run host pi on the host. They run before the config is read.
 
 ## Environment variables the launcher reads
 
 | variable | effect |
 | --- | --- |
-| `PI_SANDBOX_USER_CONFIG` | Path of the user config. |
+| `PI_SANDBOX_USER_CONFIG` | Path of the config file. |
 | `PI_SANDBOX_STATE_DIR` | The launcher's state folder. The default is `pi-sandbox/state` in host pi's agent folder. |
-| `PI_SANDBOX_POLICY_FILE` | A policy file, used only while the standard one does not exist. |
-| `PI_CODING_AGENT_DIR` | Host pi's agent folder. The default is `~/.pi/agent`. The user config and the state follow it, so two shells with different values use separate configs, CAs and state. |
-| `HTTPS_PROXY`, `https_proxy`, `NO_PROXY`, `no_proxy` | The parent proxy, with `egress.parentProxy` set to `env`. |
+| `PI_CODING_AGENT_DIR` | Host pi's agent folder. The default is `~/.pi/agent`. The config file and the state follow it, so two shells with different values use separate configs, CAs and state. |
+| `HTTPS_PROXY`, `https_proxy`, `NO_PROXY`, `no_proxy` | The parent proxy. |
 | `GH_CONFIG_DIR`, `GLAB_CONFIG_DIR`, `XDG_CONFIG_HOME` | Where the gh and glab configs are read. A path inside the repository is ignored. |
 | Provider API key variables | Derived as credentials. The proxy reads them on your Mac. |
 | The names in `env.allow` | Passed into each pi run. |

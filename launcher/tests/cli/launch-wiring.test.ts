@@ -289,23 +289,6 @@ describe("pi launch wiring", () => {
     expect(harness.stderr().match(/blocked\.example\.test was blocked/g)).toHaveLength(1);
   });
 
-  it("points at egress.allow instead of a grant when egress grants are off", async () => {
-    const fake = createFakeBackend();
-    const harness = await createHarness({
-      backend: () => fake.backend,
-      denials: [denial("evil.test", 443)],
-    });
-
-    await harness.writeJson(harness.policyFile, { egress: { grants: false } });
-
-    await run([], harness.deps);
-
-    expect(harness.stderr()).toContain(
-      "pi-sandbox: evil.test was blocked in this folder's sandbox; ask your administrator to add evil.test to egress.allow\n",
-    );
-    expect(harness.stderr()).not.toContain("egress allow evil.test");
-  });
-
   it.each([
     [
       "a private address",
@@ -341,28 +324,6 @@ describe("pi launch wiring", () => {
     expect(harness.stderr()).not.toContain("egress.privateHosts");
   });
 
-  it("sends the user to the administrator for a private address when the policy locks egress", async () => {
-    const harness = await createHarness({
-      backend: () => createFakeBackend().backend,
-      denials: [
-        denial(
-          "nexus.corp.test",
-          443,
-          "private-address",
-          "nexus.corp.test resolves only to restricted addresses (10.1.2.3 is a private network address)",
-        ),
-      ],
-    });
-
-    await harness.writeJson(harness.policyFile, { egress: { grants: false } });
-
-    await run([], harness.deps);
-
-    expect(harness.stderr()).toContain(
-      "pi-sandbox: nexus.corp.test was blocked in this folder's sandbox; nexus.corp.test resolves only to restricted addresses (10.1.2.3 is a private network address); egress is locked by the policy; ask your administrator to add nexus.corp.test to egress.privateHosts\n",
-    );
-  });
-
   it.each([
     [
       "an unavailable credential",
@@ -377,7 +338,7 @@ describe("pi launch wiring", () => {
     [
       "egress.deny",
       denial("paste.test", 443, "egress.deny", "paste.test is in egress.deny"),
-      "pi-sandbox: paste.test was blocked in this folder's sandbox; denied by policy\n",
+      "pi-sandbox: paste.test was blocked in this folder's sandbox; denied by egress.deny\n",
     ],
     [
       "plain HTTP",
@@ -401,23 +362,6 @@ describe("pi launch wiring", () => {
 
     expect(harness.stderr()).toContain(line);
     expect(harness.stderr()).not.toContain("egress allow");
-  });
-
-  it("points at host pi instead of pi --no-sandbox for a missing login when fallback is refuse", async () => {
-    const harness = await createHarness({
-      backend: () => createFakeBackend().backend,
-      denials: [
-        denial("llm.corp.test", 443, "login", "the corp-llm login on the host is missing or expired"),
-      ],
-    });
-
-    await harness.writeJson(harness.policyFile, { fallback: "refuse" });
-
-    await run([], harness.deps);
-
-    expect(harness.stderr()).toContain(
-      "pi-sandbox: llm.corp.test was blocked in this folder's sandbox; the corp-llm login on the host is missing or expired; log in again with host pi\n",
-    );
   });
 
   it("says once that the host CA store was skipped when the launcher does not run on macOS", async () => {

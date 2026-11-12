@@ -93,7 +93,6 @@ export const openCa = (stateDir: string): Promise<LauncherCa> =>
 export interface TestPolicy {
   allow: string[];
   deny?: string[];
-  grants?: boolean;
 }
 
 export const settingsOf = (
@@ -103,7 +102,6 @@ export const settingsOf = (
   allow: policy.allow,
   deny: policy.deny ?? [],
   privateHosts: extra.privateHosts ?? [],
-  grants: policy.grants !== false,
   derivedHosts: extra.derivedHosts ?? [],
 });
 

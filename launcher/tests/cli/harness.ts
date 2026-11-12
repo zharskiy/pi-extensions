@@ -327,7 +327,6 @@ export const createHarness = async (options: HarnessOptions = {}) => {
   const cwd = join(repoRoot, "src");
   const stateDir = join(root, "state");
   const userConfigFile = join(root, "config", "config.json");
-  const policyFile = join(root, "policy.json");
 
   const hostAgentDir = join(root, "home", ".pi", "agent");
   const trustPem = join(stateDir, "ca", "trust.pem");
@@ -373,7 +372,6 @@ export const createHarness = async (options: HarnessOptions = {}) => {
     env: {
       PI_SANDBOX_STATE_DIR: stateDir,
       PI_SANDBOX_USER_CONFIG: userConfigFile,
-      PI_SANDBOX_POLICY_FILE: policyFile,
       USER: "dev",
       TERM: "xterm-256color",
       PATH: "",
@@ -437,7 +435,6 @@ export const createHarness = async (options: HarnessOptions = {}) => {
     hostAgentDir,
     trustPem,
     userConfigFile,
-    policyFile,
     deps,
     calls: fake.calls,
     stoppedProxies,

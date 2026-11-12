@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { setPath } from "../../config/dotted.ts";
-import { layerKeys, validateLayer } from "../../config/validate.ts";
+import { configKeys, validateConfig } from "../../config/validate.ts";
 
 interface SchemaNode {
   properties?: Record<string, SchemaNode>;
@@ -72,7 +72,7 @@ describe("sandbox-config.schema.json", () => {
     const schema = await readSchema();
 
     expect(schema.$schema).toBe("https://json-schema.org/draft/2020-12/schema");
-    expect(distinctSorted(schemaKeys(schema, ""))).toEqual(distinctSorted(layerKeys()));
+    expect(distinctSorted(schemaKeys(schema, ""))).toEqual(distinctSorted(configKeys()));
   });
 
   it("accepts and refuses the same shared cache paths as the validator", async () => {
@@ -81,7 +81,7 @@ describe("sandbox-config.schema.json", () => {
     );
     const accepted = (path: string) => {
       try {
-        validateLayer({ mounts: { sharedCaches: [path] } }, "user");
+        validateConfig({ mounts: { sharedCaches: [path] } });
 
         return true;
       } catch {
@@ -104,7 +104,7 @@ describe("sandbox-config.schema.json", () => {
 
   const validatorAccepts = (layer: unknown) => {
     try {
-      validateLayer(layer, "user");
+      validateConfig(layer);
 
       return true;
     } catch {

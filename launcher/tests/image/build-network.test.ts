@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import type { ParentProxy } from "../../config/index.ts";
 import { ensureBuiltImage } from "../../image/build.ts";
 import { ensureSandboxImage } from "../../image/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
@@ -25,19 +24,13 @@ const recordingBackend = () => {
   return { backend, buildArgs, fake };
 };
 
-const egressWith = (parentProxy: ParentProxy) => {
-  const base = sandboxConfig();
-
-  return sandboxConfig({ egress: { ...base.egress, parentProxy } });
-};
-
 describe("image build network", () => {
-  it("takes the proxy from the launcher env when the parent proxy is env", async () => {
+  it("takes the proxy from the launcher env", async () => {
     const recording = recordingBackend();
 
     await ensureBuiltImage({
       backend: recording.backend,
-      config: egressWith("env"),
+      config: sandboxConfig(),
       versions,
       stateDir: await tempDir(),
       env: { https_proxy: "http://proxy.corp.example:8080", NO_PROXY: "internal.example" },
@@ -66,7 +59,7 @@ describe("image build network", () => {
 
       await ensureBuiltImage({
         backend: recording.backend,
-        config: egressWith("env"),
+        config: sandboxConfig(),
         versions,
         stateDir: await tempDir(),
         env: { HTTPS_PROXY: local, HTTP_PROXY: "http://other.corp.example:8080" },
@@ -91,7 +84,7 @@ describe("image build network", () => {
 
     await ensureBuiltImage({
       backend: recording.backend,
-      config: egressWith("env"),
+      config: sandboxConfig(),
       versions,
       stateDir: await tempDir(),
       env,
@@ -105,7 +98,7 @@ describe("image build network", () => {
 
     await ensureBuiltImage({
       backend: recording.backend,
-      config: egressWith("env"),
+      config: sandboxConfig(),
       versions,
       stateDir: await tempDir(),
       env: { HTTPS_PROXY: "", https_proxy: "http://127.0.0.1:3128" },
@@ -119,27 +112,20 @@ describe("image build network", () => {
 
     await ensureBuiltImage({
       backend: recording.backend,
-      config: egressWith("none"),
+      config: sandboxConfig(),
       versions,
-      stateDir: await tempDir(),
-      env: { HTTPS_PROXY: "http://proxy.corp.example:8080" },
-    });
-    await ensureBuiltImage({
-      backend: recording.backend,
-      config: egressWith("env"),
-      versions: { ...versions, pi: "1.6.0" },
       stateDir: await tempDir(),
       env: {},
     });
 
-    expect(recording.buildArgs).toEqual([{ PI_VERSION: "1.5.0" }, { PI_VERSION: "1.6.0" }]);
+    expect(recording.buildArgs).toEqual([{ PI_VERSION: "1.5.0" }]);
   });
 
   it("refuses credentials in the env proxy URL without echoing them", async () => {
     const recording = recordingBackend();
     const failure = ensureBuiltImage({
       backend: recording.backend,
-      config: egressWith("env"),
+      config: sandboxConfig(),
       versions,
       stateDir: await tempDir(),
       env: { HTTPS_PROXY: "http://dev:hunter2@proxy.corp.example:8080" },
@@ -155,7 +141,7 @@ describe("image build network", () => {
   it("never refuses for credentials when the image is pinned and pulled", async () => {
     const reference = "ghcr.io/zharskiy/pi-sandbox:0.4.0";
     const fake = createFakeBackend({ registry: { [reference]: "sha256:pinned" } });
-    const base = egressWith("env");
+    const base = sandboxConfig();
     const config = { ...base, image: { reference, digest: "sha256:pinned" } };
     const result = await ensureSandboxImage({
       backend: fake.backend,

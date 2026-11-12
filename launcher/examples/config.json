@@ -1,16 +1,10 @@
 {
-  "fallback": "refuse",
   "egress": {
-    "allow": ["gateway.example.internal", "registry.example.internal", "git.example.internal"],
-    "deny": ["paste.example.com"],
-    "privateHosts": ["gateway.example.internal", "registry.example.internal", "git.example.internal"],
-    "parentProxy": "env",
-    "grants": false
+    "allow": ["gateway.example.internal", "registry.example.internal", "*.git.example.internal"],
+    "deny": ["paste.example.internal"],
+    "privateHosts": ["gateway.example.internal", "registry.example.internal", "*.git.example.internal"]
   },
   "credentials": {
-    "derive": {
-      "enabled": true
-    },
     "rules": [
       {
         "id": "llm-gateway",

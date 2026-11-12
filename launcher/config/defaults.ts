@@ -12,17 +12,9 @@ const TERMINAL_VARIABLES = [
 ];
 
 export const defaultConfig = (): SandboxConfig => ({
-  fallback: "host",
   image: {},
   credentials: { rules: [], derive: { enabled: true } },
-  egress: {
-    allow: [],
-    presets: ["npm", "pypi", "github"],
-    deny: [],
-    privateHosts: [],
-    parentProxy: "env",
-    grants: true,
-  },
+  egress: { allow: [], deny: [], privateHosts: [] },
   tls: { extraCa: [] },
   mounts: { sharedCaches: [], autoOverlays: true },
   env: { allow: TERMINAL_VARIABLES },

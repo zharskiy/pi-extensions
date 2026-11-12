@@ -1,5 +1,3 @@
-import type { ParentProxy } from "./types.ts";
-
 type Env = Record<string, string | undefined>;
 
 export type ParentProxyTarget =
@@ -41,8 +39,8 @@ const httpTarget = (url: URL, env: Env): ParentProxyTarget => {
   };
 };
 
-export const parentProxyOf = (parent: ParentProxy, env: Env): ParentProxyTarget | undefined => {
-  const text = parent === "none" ? undefined : (setOf(env.HTTPS_PROXY) ?? setOf(env.https_proxy));
+export const parentProxyOf = (env: Env): ParentProxyTarget | undefined => {
+  const text = setOf(env.HTTPS_PROXY) ?? setOf(env.https_proxy);
 
   if (text === undefined) {
     return undefined;

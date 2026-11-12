@@ -31,16 +31,6 @@ describe("pi sandbox egress allow", () => {
     expect(harness.stdout()).toBe("allowed git.example.test:8443 for every repository\n");
   });
 
-  it("refuses a grant when egress.grants is off and stores nothing", async () => {
-    const harness = await createHarness();
-
-    await harness.writeJson(harness.policyFile, { egress: { grants: false } });
-
-    expect(await run(["sandbox", "egress", "allow", "docs.example.test"], harness.deps)).toBe(1);
-    expect(harness.stderr()).toContain("egress grants are turned off by egress.grants");
-    expect(await readGrants(harness.stateDir)).toEqual([]);
-  });
-
   it("refuses a host that egress.deny blocks, at any depth under a bare domain, and stores nothing", async () => {
     const harness = await createHarness();
 
@@ -167,19 +157,6 @@ describe("pi sandbox egress revoke and list", () => {
     expect(await readGrants(harness.stateDir)).toHaveLength(1);
     expect(await run(["sandbox", "egress", "revoke", "other.example.test"], harness.deps)).toBe(0);
     expect(harness.stdout()).toContain("revoked 0 grants for other.example.test\n");
-  });
-
-  it("says grants are off instead of listing stored grants the proxy ignores", async () => {
-    const harness = await createHarness();
-
-    await writeFile(
-      join(harness.stateDir, "grants.json"),
-      JSON.stringify([{ host: "user.example.test", port: 443, createdAt: 1 }]),
-    );
-    await harness.writeJson(harness.policyFile, { egress: { grants: false } });
-
-    expect(await run(["sandbox", "egress", "list"], harness.deps)).toBe(0);
-    expect(harness.stdout()).toBe("grants are turned off by egress.grants\n");
   });
 
   it("takes no --user, since the list names each grant's scope", async () => {

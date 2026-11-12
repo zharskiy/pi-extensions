@@ -2,7 +2,7 @@ import { type CliDeps, writeLines } from "../deps.ts";
 
 const COMMANDS: Array<[string, string]> = [
   ["pi [args...]", "run pi in the sandbox for this repository; pi's exit code is the launcher's"],
-  ["pi --no-sandbox [args...]", "run host pi, when fallback is host"],
+  ["pi --no-sandbox [args...]", "run host pi, outside the sandbox"],
   ["pi install|remove <source>", "with host pi on the host (-l passes through into the sandbox)"],
   ["pi mcp add|remove|login|logout ...", "with host pi on the host"],
   ["pi auth ...", "with host pi on the host, against the logins the proxy uses"],
@@ -12,7 +12,10 @@ const COMMANDS: Array<[string, string]> = [
   ["pi --version", "the pi version the sandbox runs, without starting a sandbox"],
   ["pi update", "update host pi"],
   ["pi sandbox status", "runtime, container, proxy, image, launches, grants, overlays, shared caches"],
-  ["pi sandbox config [--json]", "the effective config and the layer each key comes from"],
+  [
+    "pi sandbox config [--json]",
+    "the effective config and whether each key comes from the config file or the default",
+  ],
   [
     "pi sandbox egress allow <host[:port]> [--user]",
     "allow a host for this repository, or with --user for every repository, until revoked",

@@ -1,5 +1,5 @@
 import { connect, type Socket } from "node:net";
-import { normalizeHost, type ParentProxy, parentProxyOf } from "../config/index.ts";
+import { normalizeHost, parentProxyOf } from "../config/index.ts";
 
 export interface ParentRoute {
   host: string;
@@ -37,11 +37,8 @@ const matchesNoProxy = (host: string, entry: string) => {
 export const bypassesParent = (noProxy: string[], host: string) =>
   noProxy.some((entry) => entry.trim() !== "" && matchesNoProxy(normalizeHost(host), entry));
 
-export const parentRouteFor = (
-  parent: ParentProxy,
-  env: Record<string, string | undefined>,
-): ParentRoute | undefined => {
-  const target = parentProxyOf(parent, env);
+export const parentRouteFor = (env: Record<string, string | undefined>): ParentRoute | undefined => {
+  const target = parentProxyOf(env);
 
   if (target === undefined || "unsupported" in target) {
     return undefined;

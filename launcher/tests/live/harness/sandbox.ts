@@ -240,7 +240,6 @@ export const createLiveSandbox = async (name: string): Promise<LiveSandbox> => {
     PI_CODING_AGENT_DIR: agentDir,
     PI_SANDBOX_STATE_DIR: stateDir,
     PI_SANDBOX_USER_CONFIG: userConfigFile,
-    PI_SANDBOX_POLICY_FILE: join(root, "no-policy.json"),
     NODE_OPTIONS: `--import=${resolvePreload()}`,
     NODE_EXTRA_CA_CERTS: ca.certPath,
     GIT_CONFIG_NOSYSTEM: "1",

@@ -15,7 +15,6 @@ export interface EgressPolicy {
   allow: string[];
   deny?: string[];
   credentialHosts?: string[];
-  grants?: boolean;
 }
 
 export interface ConnectRequest {
@@ -136,14 +135,12 @@ export const restrictedAddress = (address: string): Denial | undefined => {
   return match === undefined ? undefined : deny(match.range.rule, `${plain} is a ${match.range.reason}`);
 };
 
-const notAllowed = (host: string, port: number, grants: boolean) => {
+const notAllowed = (host: string, port: number) => {
   const target = authorityOf(host, port);
 
   return deny(
     "egress.allow",
-    grants
-      ? `${target} is not allowed by the sandbox. Ask the user to run pi sandbox egress allow ${target} on the host.`
-      : `${target} is not allowed by the sandbox. Egress grants are off; ask the user to have their administrator add ${target} to egress.allow.`,
+    `${target} is not allowed by the sandbox. Ask the user to run pi sandbox egress allow ${target} on the host.`,
   );
 };
 
@@ -174,7 +171,6 @@ const isLiteral = (host: string) => isIP(host.replace(/^\[|\]$/g, "")) !== 0;
 interface CompiledPolicy {
   allow: AllowEntry[];
   deny: ParsedEntry[];
-  grants: boolean;
 }
 
 const hostDecision = (
@@ -207,9 +203,7 @@ const hostDecision = (
     (entry) => entry.port === port && matchesPattern(host, entry.pattern),
   );
 
-  return allowing === undefined
-    ? notAllowed(host, port, policy.grants)
-    : { allowed: true, rule: allowing.rule };
+  return allowing === undefined ? notAllowed(host, port) : { allowed: true, rule: allowing.rule };
 };
 
 export const sniDenial = (host: string, sni: string | undefined): Denial | undefined => {
@@ -230,7 +224,6 @@ export const compilePolicy = (policy: EgressPolicy): EgressDecider => {
       ...allowEntries(policy.allow, "egress.allow"),
     ],
     deny: (policy.deny ?? []).map(parseEntry),
-    grants: policy.grants !== false,
   };
 
   return (request, extra = []) =>

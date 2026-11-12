@@ -136,19 +136,19 @@ describe("pi sandbox status", () => {
 });
 
 describe("pi sandbox config", () => {
-  it("prints the effective config followed by the source layer of each key", async () => {
+  it("prints the effective config followed by the source of each key", async () => {
     const harness = await createHarness();
 
-    await harness.writeJson(harness.userConfigFile, { fallback: "refuse" });
+    await harness.writeJson(harness.userConfigFile, { sessions: { host: false } });
 
     expect(await run(["sandbox", "config"], harness.deps)).toBe(0);
 
     const output = harness.stdout();
     const json = output.slice(0, output.indexOf("\n# "));
 
-    expect(JSON.parse(json).fallback).toBe("refuse");
-    expect(output).toContain("# fallback: user\n");
-    expect(output).toContain("# sessions.host: default\n");
+    expect(JSON.parse(json).sessions.host).toBe(false);
+    expect(output).toContain("# sessions.host: config\n");
+    expect(output).toContain("# mounts.autoOverlays: default\n");
     expect(JSON.parse(json).image.reference).toBeUndefined();
   });
 
@@ -158,18 +158,18 @@ describe("pi sandbox config", () => {
     expect(await run(["sandbox", "config", "--json"], harness.deps)).toBe(0);
 
     const parsed = JSON.parse(harness.stdout()) as {
-      config: { fallback: string };
+      config: { sessions: { host: boolean } };
       sources: Record<string, string>;
     };
 
-    expect(parsed.config.fallback).toBe("host");
-    expect(parsed.sources.fallback).toBe("default");
+    expect(parsed.config.sessions.host).toBe(true);
+    expect(parsed.sources["sessions.host"]).toBe("default");
   });
 
   it("only shows the config and refuses any other option", async () => {
     const harness = await createHarness();
 
-    expect(await run(["sandbox", "config", "set", "fallback", '"refuse"'], harness.deps)).toBe(1);
+    expect(await run(["sandbox", "config", "set", "sessions.host", "false"], harness.deps)).toBe(1);
     expect(harness.stderr()).toContain('pi-sandbox: unknown config option "set"\n');
     expect(harness.stderr()).toContain("  hint: pi sandbox config [--json]");
   });

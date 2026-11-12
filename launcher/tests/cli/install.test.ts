@@ -71,7 +71,6 @@ const runInstall = (root: string, flags: string[] = [], extraEnv: Record<string,
       PATH: join(root, "tools"),
       PI_SANDBOX_STATE_DIR: join(root, "state"),
       PI_SANDBOX_USER_CONFIG: join(root, "config", "config.json"),
-      PI_SANDBOX_POLICY_FILE: join(root, "policy.json"),
     },
     encoding: "utf8",
   });
@@ -376,7 +375,6 @@ describe("install.sh options and the PATH block", { timeout: INSTALL_TIMEOUT_MS 
       PATH: join(root, "tools"),
       PI_SANDBOX_STATE_DIR: join(root, "state"),
       PI_SANDBOX_USER_CONFIG: join(root, "config", "config.json"),
-      PI_SANDBOX_POLICY_FILE: join(root, "policy.json"),
     };
     const installed = spawnSync("/bin/dash", [join(launcherRoot(), "install.sh")], { env, encoding: "utf8" });
 
@@ -428,7 +426,6 @@ describe("install.sh options and the PATH block", { timeout: INSTALL_TIMEOUT_MS 
         CDPATH: `.:${root}`,
         PI_SANDBOX_STATE_DIR: join(root, "state"),
         PI_SANDBOX_USER_CONFIG: join(root, "config", "config.json"),
-        PI_SANDBOX_POLICY_FILE: join(root, "policy.json"),
       },
       encoding: "utf8",
     });

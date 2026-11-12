@@ -91,17 +91,15 @@ export const createProxyRuntime = (options: RuntimeOptions): ProxyRuntime => {
     (last) => last,
   );
 
-  const grantEntries = async (enabled: boolean) =>
-    enabled
-      ? activeGrants(await grants(), options.repoHash).map((grant) => authorityOf(grant.host, grant.port))
-      : [];
+  const grantEntries = async () =>
+    activeGrants(await grants(), options.repoHash).map((grant) => authorityOf(grant.host, grant.port));
 
   const egress = async (): Promise<LiveEgress> => {
     const current = await settings();
 
     return {
       settings: current,
-      extras: [...new Set(current.derivedHosts), ...(await grantEntries(current.grants))],
+      extras: [...new Set(current.derivedHosts), ...(await grantEntries())],
     };
   };
 

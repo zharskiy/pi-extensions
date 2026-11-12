@@ -1,5 +1,5 @@
 import type { Backend } from "../backend/index.ts";
-import { type EffectiveConfig, ignoredNotice, loadEffectiveConfig } from "../config/index.ts";
+import { type EffectiveConfig, loadEffectiveConfig } from "../config/index.ts";
 import { realOrResolvedSync, repoHash, stateLayout } from "../shared/index.ts";
 import {
   assertSafeMounts,
@@ -10,7 +10,6 @@ import {
   workspaceFolder,
 } from "../workspace/index.ts";
 import { type CliDeps, pathsOf } from "./deps.ts";
-import { writeOnce } from "./notices.ts";
 
 export interface LaunchContext {
   workspace: Workspace;
@@ -54,11 +53,7 @@ const discoverContext = async (deps: CliDeps, lenient: boolean, options: Context
     lenient,
     overlays,
   });
-  const context = { workspace, effective, stateDir, repoHash: repoHash(workspace.repoRoot) };
-
-  await writeOnce(deps, context, ignoredNotice(effective.ignored));
-
-  return context;
+  return { workspace, effective, stateDir, repoHash: repoHash(workspace.repoRoot) };
 };
 
 export const checkWorkspaceRoots = (context: LaunchContext) => {

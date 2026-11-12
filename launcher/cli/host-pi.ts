@@ -33,15 +33,6 @@ export const requireJobPi = async (deps: CliDeps, prefix?: string) => {
 };
 
 export const runHostPi = async (deps: CliDeps, context: LaunchContext, piArgs: string[]) => {
-  const { config, sources } = context.effective;
-
-  if (config.fallback === "refuse") {
-    throw new LauncherError(
-      `${NO_SANDBOX} is refused: fallback is "refuse", set by ${sources.fallback ?? "default"}`,
-      "run pi without --no-sandbox",
-    );
-  }
-
   const pi = await requireJobPi(deps, NO_SANDBOX);
 
   writeLine(deps.stderr, `pi-sandbox: warning: running ${pi.wrapper} on the host, outside the sandbox`);

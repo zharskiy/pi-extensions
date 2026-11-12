@@ -368,7 +368,7 @@ describe("the overlay notices", () => {
   it("says the overlays are off when the walk was cut short", () => {
     const notices = launchNotices({
       workspace: { cwd: "/work", repoRoot: "/work", isGitRepo: false, overlays: [], overlaysTruncated: true },
-      effective: { config: sandboxConfig(), sources: {}, ignored: [] },
+      effective: { config: sandboxConfig(), sources: {} },
       stateDir: "/state",
       repoHash: "r",
     });

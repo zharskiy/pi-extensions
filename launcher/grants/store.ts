@@ -1,11 +1,4 @@
-import {
-  isJsonObject,
-  LauncherError,
-  readJsonFile,
-  stateLayout,
-  withFileLock,
-  writeJsonFile,
-} from "../shared/index.ts";
+import { isJsonObject, readJsonFile, stateLayout, withFileLock, writeJsonFile } from "../shared/index.ts";
 import type { Grant, GrantMatch, GrantRequest } from "./types.ts";
 
 const PRIVATE_MODE = 0o600;
@@ -54,16 +47,7 @@ const grantFor = (request: GrantRequest, now: number): Grant => ({
 const sameTarget = (left: Grant, right: Grant) =>
   left.host === right.host && left.port === right.port && left.repoHash === right.repoHash;
 
-export const addGrant = async (
-  stateDir: string,
-  request: GrantRequest,
-  enabled: boolean,
-  now: number,
-): Promise<Grant> => {
-  if (!enabled) {
-    throw new LauncherError("egress grants are turned off by egress.grants");
-  }
-
+export const addGrant = async (stateDir: string, request: GrantRequest, now: number): Promise<Grant> => {
   const grant = grantFor(request, now);
 
   return updateGrants(stateDir, (grants) => ({

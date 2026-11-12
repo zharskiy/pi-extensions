@@ -31,7 +31,25 @@ export const movedConfig = async (deps: CliDeps): Promise<LegacyPath[]> => {
     : [];
 };
 
-export const movedConfigNotice = async (deps: CliDeps) => (await movedConfig(deps)).map(noticeOf);
+const LEGACY_POLICY_FILES = {
+  darwin: "/Library/Application Support/pi-sandbox/policy.json",
+  other: "/etc/pi-sandbox/policy.json",
+};
+
+export const ignoredPolicy = async (deps: CliDeps): Promise<LegacyPath[]> => {
+  const standard = deps.platform === "darwin" ? LEGACY_POLICY_FILES.darwin : LEGACY_POLICY_FILES.other;
+  const configured = deps.env.PI_SANDBOX_POLICY_FILE ?? "";
+  const present = (await kindOf(standard)) === "file" ? [standard] : [];
+  const files = [...new Set(configured === "" ? present : [...present, configured])];
+
+  return files.map((file) => ({
+    problem: `${file} is no longer read, so its limits do not apply`,
+    fix: `move what you need into ${pathsOf(deps).userConfigFile}`,
+  }));
+};
+
+export const legacyNotices = async (deps: CliDeps) =>
+  [...(await movedConfig(deps)), ...(await ignoredPolicy(deps))].map(noticeOf);
 
 export const leftoverState = async (deps: CliDeps): Promise<LegacyPath[]> => {
   const legacy = join(deps.home, ".local", "state", "pi-sandbox");
