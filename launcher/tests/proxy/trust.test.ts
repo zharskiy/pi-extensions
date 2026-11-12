@@ -1,25 +1,71 @@
+import { execFile } from "node:child_process";
 import { X509Certificate } from "node:crypto";
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { openLauncherCa } from "../../proxy/tls-ca.ts";
 import { ensureTrustBundle } from "../../proxy/trust.ts";
-import { createProcessRunner } from "../../shared/index.ts";
+import { createProcessRunner, LauncherError } from "../../shared/index.ts";
 import { argvOf, createScriptedRunner } from "../support/fake-runner.ts";
 
-const state = { stateDir: "", corpPem: "", otherPem: "", launcherPem: "" };
+const state = { stateDir: "", corpPem: "", otherPem: "", launcherPem: "", leafPem: "", plainRootPem: "" };
 
-const pemOf = async (stateDir: string) =>
-  (await openLauncherCa({ stateDir, runner: createProcessRunner() })).certPem;
+const openssl = promisify(execFile);
+
+const SYSTEM = "/Library/Keychains/System.keychain";
+
+const LOGIN = "login.keychain";
+
+const openCa = (stateDir: string) => openLauncherCa({ stateDir, runner: createProcessRunner() });
 
 const count = (text: string) => (text.match(/BEGIN CERTIFICATE/g) ?? []).length;
 
+const fingerprintOf = (pem: string) => new X509Certificate(pem).fingerprint256;
+
+const keychains = (system: string, login: string) =>
+  createScriptedRunner([
+    { argv: ["security", "find-certificate", "-a", "-p", SYSTEM], result: { stdout: system } },
+    { argv: ["security", "find-certificate", "-a", "-p", LOGIN], result: { stdout: login } },
+  ]);
+
+const plainSelfSigned = async (dir: string) => {
+  const key = join(dir, "plain.key");
+  const csr = join(dir, "plain.csr");
+  const pem = join(dir, "plain.pem");
+
+  await openssl("openssl", ["ecparam", "-name", "prime256v1", "-genkey", "-noout", "-out", key]);
+
+  await openssl("openssl", ["req", "-new", "-key", key, "-subj", "/CN=Plain Root", "-out", csr]);
+
+  await openssl("openssl", ["x509", "-req", "-in", csr, "-signkey", key, "-days", "2", "-out", pem]);
+
+  return readFile(pem, "utf8");
+};
+
+const failureOf = async (promise: Promise<unknown>) => {
+  try {
+    await promise;
+  } catch (error) {
+    return error instanceof LauncherError
+      ? { message: error.message, hint: error.hint }
+      : { message: String(error) };
+  }
+
+  return undefined;
+};
+
 beforeAll(async () => {
   state.stateDir = await mkdtemp(join(tmpdir(), "pi-sandbox-trust-"));
-  state.launcherPem = await pemOf(state.stateDir);
-  state.corpPem = await pemOf(join(state.stateDir, "corp"));
-  state.otherPem = await pemOf(join(state.stateDir, "other"));
+  state.launcherPem = (await openCa(state.stateDir)).certPem;
+  state.corpPem = (await openCa(join(state.stateDir, "corp"))).certPem;
+
+  const other = await openCa(join(state.stateDir, "other"));
+
+  state.otherPem = other.certPem;
+  state.leafPem = (await other.leaf("llm.example.com")).cert;
+  state.plainRootPem = await plainSelfSigned(state.stateDir);
 }, 30_000);
 
 afterAll(async () => {
@@ -27,50 +73,220 @@ afterAll(async () => {
 });
 
 describe("ensureTrustBundle", () => {
-  it("joins the launcher CA with the host store on macOS and a CA file", async () => {
+  it("finds a sha256 entry in the System keychain and joins it with the launcher CA and a CA file", async () => {
     const file = join(state.stateDir, "corp.pem");
 
     await writeFile(file, state.otherPem);
 
+    const fake = keychains(`${state.leafPem}\n${state.corpPem}`, "");
+    const bundle = await ensureTrustBundle({
+      stateDir: state.stateDir,
+      runner: fake.runner,
+      platform: "darwin",
+      sources: [{ sha256: fingerprintOf(state.corpPem) }, { file }],
+    });
+    const pem = await readFile(bundle.pemPath, "utf8");
+
+    expect(fake.calls.map(argvOf)).toEqual([
+      ["security", "find-certificate", "-a", "-p", SYSTEM],
+      ["security", "find-certificate", "-a", "-p", LOGIN],
+    ]);
+    expect(bundle.pemPath).toBe(join(state.stateDir, "ca", "trust.pem"));
+    expect(count(pem)).toBe(3);
+    expect(pem.startsWith(state.launcherPem.trim())).toBe(true);
+    expect(pem).not.toContain(state.leafPem.trim());
+    expect(count(await readFile(bundle.extraPemPath, "utf8"))).toBe(2);
+  });
+
+  it("finds a sha256 entry in the login keychain, without colons and in any case, reading the keychains once", async () => {
+    const fake = keychains(state.otherPem, state.corpPem);
+    const fingerprint = fingerprintOf(state.corpPem).replaceAll(":", "");
+    const bundle = await ensureTrustBundle({
+      stateDir: state.stateDir,
+      runner: fake.runner,
+      platform: "darwin",
+      sources: [{ sha256: fingerprint.toLowerCase() }, { sha256: fingerprint }],
+    });
+    const extra = await readFile(bundle.extraPemPath, "utf8");
+
+    expect(fake.calls).toHaveLength(2);
+    expect(count(extra)).toBe(1);
+    expect(extra.trim()).toBe(state.corpPem.trim());
+  });
+
+  it("names a fingerprint that is in no keychain and points at the doctor and a CA file", async () => {
+    const missing = "ab".repeat(32);
+
+    expect(
+      await failureOf(
+        ensureTrustBundle({
+          stateDir: state.stateDir,
+          runner: keychains(state.corpPem, state.otherPem).runner,
+          platform: "darwin",
+          sources: [{ sha256: missing }],
+        }),
+      ),
+    ).toEqual({
+      message: `tls.extraCa: no certificate with sha256 ${missing} in the macOS keychains`,
+      hint: `run pi sandbox doctor to get the sha256 of your network's CA; for a CA that is not in a keychain, export the CA to a PEM file and list it as { "file": "~/ca.pem" }`,
+    });
+  });
+
+  it("refuses a certificate that is not a CA, from a file or a keychain", async () => {
+    const file = join(state.stateDir, "leaf.pem");
+    const subject = new X509Certificate(state.leafPem).subject.split("\n").join(", ");
+
+    await writeFile(file, state.leafPem);
+
+    expect(
+      (
+        await failureOf(
+          ensureTrustBundle({
+            stateDir: state.stateDir,
+            runner: createScriptedRunner([]).runner,
+            platform: "linux",
+            sources: [{ file }],
+          }),
+        )
+      )?.message,
+    ).toBe(`tls.extraCa: ${file} holds ${subject}, which is not a CA`);
+    expect(
+      (
+        await failureOf(
+          ensureTrustBundle({
+            stateDir: state.stateDir,
+            runner: keychains(state.leafPem, "").runner,
+            platform: "darwin",
+            sources: [{ sha256: fingerprintOf(state.leafPem) }],
+          }),
+        )
+      )?.message,
+    ).toBe(`tls.extraCa: sha256 ${fingerprintOf(state.leafPem)} is ${subject}, which is not a CA`);
+  });
+
+  it("accepts a self-signed root that carries no CA flag", async () => {
+    const file = join(state.stateDir, "plain-root.pem");
+
+    await writeFile(file, state.plainRootPem);
+
+    expect(new X509Certificate(state.plainRootPem).ca).toBe(false);
+
+    const bundle = await ensureTrustBundle({
+      stateDir: state.stateDir,
+      runner: createScriptedRunner([]).runner,
+      platform: "linux",
+      sources: [{ file }],
+    });
+
+    expect((await readFile(bundle.extraPemPath, "utf8")).trim()).toBe(state.plainRootPem.trim());
+  });
+
+  it("finds the certificate in one keychain when the other cannot be read", async () => {
     const fake = createScriptedRunner([
-      { argv: ["security", "find-certificate"], result: { stdout: `${state.corpPem}\n${state.corpPem}` } },
+      { argv: ["security", "find-certificate", "-a", "-p", SYSTEM], result: { code: 50, stderr: "denied" } },
+      { argv: ["security", "find-certificate", "-a", "-p", LOGIN], result: { stdout: state.corpPem } },
     ]);
     const bundle = await ensureTrustBundle({
       stateDir: state.stateDir,
       runner: fake.runner,
       platform: "darwin",
-      sources: [{ hostStore: true }, { file }],
+      sources: [{ sha256: fingerprintOf(state.corpPem) }],
     });
-    const pem = await readFile(bundle.pemPath, "utf8");
 
-    expect(fake.calls.map(argvOf)).toEqual([
-      ["security", "find-certificate", "-a", "-p", "/Library/Keychains/System.keychain"],
-    ]);
-    expect(bundle.pemPath).toBe(join(state.stateDir, "ca", "trust.pem"));
-    expect(count(pem)).toBe(3);
-    expect(pem.startsWith(state.launcherPem.trim())).toBe(true);
-    expect(count(await readFile(bundle.extraPemPath, "utf8"))).toBe(2);
-    expect(new X509Certificate(state.corpPem).ca).toBe(true);
+    expect((await readFile(bundle.extraPemPath, "utf8")).trim()).toBe(state.corpPem.trim());
   });
 
-  it("skips the host store outside macOS and changes the hash with the content", async () => {
+  it("names the keychain it could not read when no keychain holds the certificate", async () => {
+    const missing = "cd".repeat(32);
+    const fake = createScriptedRunner([
+      { argv: ["security", "find-certificate", "-a", "-p", SYSTEM], result: { stdout: state.otherPem } },
+      { argv: ["security", "find-certificate", "-a", "-p", LOGIN], result: { code: 51 } },
+    ]);
+
+    expect(
+      (
+        await failureOf(
+          ensureTrustBundle({
+            stateDir: state.stateDir,
+            runner: fake.runner,
+            platform: "darwin",
+            sources: [{ sha256: missing }],
+          }),
+        )
+      )?.message,
+    ).toBe(
+      `tls.extraCa: no certificate with sha256 ${missing} in the macOS keychains (security find-certificate could not read ${LOGIN})`,
+    );
+  });
+
+  it("refuses an expired CA and names its subject and expiry date", async () => {
+    const file = join(state.stateDir, "expired.pem");
+    const certificate = new X509Certificate(state.corpPem);
+    const expiry = new Date(certificate.validTo);
+
+    await writeFile(file, state.corpPem);
+
+    expect(
+      (
+        await failureOf(
+          ensureTrustBundle({
+            stateDir: state.stateDir,
+            runner: createScriptedRunner([]).runner,
+            platform: "linux",
+            sources: [{ file }],
+            now: expiry.getTime() + 1000,
+          }),
+        )
+      )?.message,
+    ).toBe(
+      `tls.extraCa: ${file} holds ${certificate.subject.split("\n").join(", ")}, which expired on ${expiry.toISOString().slice(0, 10)}`,
+    );
+  });
+
+  it("refuses a sha256 entry outside macOS and points at a CA file", async () => {
     const fake = createScriptedRunner([]);
-    const plain = await ensureTrustBundle({
-      stateDir: state.stateDir,
-      runner: fake.runner,
-      platform: "linux",
-      sources: [{ hostStore: true }],
+    const fingerprint = fingerprintOf(state.corpPem);
+
+    expect(
+      await failureOf(
+        ensureTrustBundle({
+          stateDir: state.stateDir,
+          runner: fake.runner,
+          platform: "linux",
+          sources: [{ sha256: fingerprint }],
+        }),
+      ),
+    ).toEqual({
+      message: `tls.extraCa: sha256 ${fingerprint} is looked up in the macOS keychains, and this host is linux`,
+      hint: 'export the CA to a PEM file and list it as { "file": "~/ca.pem" }',
     });
-    const again = await ensureTrustBundle({
+    expect(fake.calls).toEqual([]);
+  });
+
+  it("writes only the launcher CA without extra sources and changes the hash with the content", async () => {
+    const fake = createScriptedRunner([]);
+    const file = join(state.stateDir, "other.pem");
+
+    await writeFile(file, state.otherPem);
+
+    const plain = await ensureTrustBundle({
       stateDir: state.stateDir,
       runner: fake.runner,
       platform: "linux",
       sources: [],
     });
+    const plainCount = count(await readFile(plain.pemPath, "utf8"));
+    const extended = await ensureTrustBundle({
+      stateDir: state.stateDir,
+      runner: fake.runner,
+      platform: "linux",
+      sources: [{ file }],
+    });
 
     expect(fake.calls).toEqual([]);
-    expect(count(await readFile(plain.pemPath, "utf8"))).toBe(1);
-    expect(again.hash).toBe(plain.hash);
+    expect(plainCount).toBe(1);
+    expect(count(await readFile(extended.pemPath, "utf8"))).toBe(2);
+    expect(extended.hash).not.toBe(plain.hash);
     expect((await stat(plain.pemPath)).mode & 0o777).toBe(0o644);
   });
 

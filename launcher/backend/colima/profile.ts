@@ -5,7 +5,7 @@ export interface Colima {
   home: string;
   profile: string;
   run(failure: string, args: string[], hint: string): Promise<void>;
-  detectAgain(): Promise<Detection | undefined>;
+  detectAgain(delaysMs?: number[]): Promise<Detection | undefined>;
   withLock<T>(action: () => Promise<T>): Promise<T>;
 }
 

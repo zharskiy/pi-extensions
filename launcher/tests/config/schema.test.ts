@@ -164,6 +164,22 @@ describe("sandbox-config.schema.json", () => {
       ],
     })),
     {
+      name: "tls.extraCa[].sha256",
+      node: (schema) => schema.properties?.tls?.properties?.extraCa?.items?.oneOf?.[1]?.properties?.sha256,
+      layer: (value) => ({ tls: { extraCa: [{ sha256: value }] } }),
+      samples: [
+        "ab".repeat(32),
+        "AB".repeat(32),
+        Array.from({ length: 32 }, () => "Ab").join(":"),
+        "ab".repeat(31),
+        "ab".repeat(33),
+        `${"ab".repeat(31)}zz`,
+        `:${"ab".repeat(32)}`,
+        `${"ab".repeat(32)}:`,
+        "",
+      ],
+    },
+    {
       name: "egress.privateHosts",
       node: (schema) => schema.properties?.egress?.properties?.privateHosts?.items,
       layer: (value) => ({ egress: { privateHosts: [value] } }),

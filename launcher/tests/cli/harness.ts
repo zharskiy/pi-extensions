@@ -85,6 +85,13 @@ const PROVIDER_HOSTS = { example: { hosts: ["models.example.test"] } };
 const isProviderHostsScript = (call: { file: string; args: string[] }) =>
   call.file === process.execPath && (call.args[0] ?? "").endsWith("provider-hosts.mjs");
 
+export const isTlsProbeScript = (call: { file: string; args: string[] }) =>
+  call.file === process.execPath &&
+  call.args[0] === "-e" &&
+  (call.args[1] ?? "").includes("getPeerCertificate");
+
+const NOT_INSPECTED = JSON.stringify({ chain: [], verdicts: [null] });
+
 const withoutOptions = (args: string[]): string[] =>
   args[0] === "-c" ? withoutOptions(args.slice(2)) : args;
 
@@ -173,7 +180,7 @@ const readLine = (report: DoctorReport, line: string) => {
     report.notices.push(line.slice(2));
   } else if (sub !== undefined && last !== undefined) {
     if (sub.startsWith("hint: ")) {
-      last.hint = sub.slice("hint: ".length);
+      last.hint = [last.hint, sub.slice("hint: ".length)].filter((text) => text !== undefined).join("\n");
     } else {
       last.reasons.push(sub);
     }
@@ -355,6 +362,10 @@ export const createHarness = async (options: HarnessOptions = {}) => {
 
     if (isProviderHostsScript(call)) {
       return { stdout: JSON.stringify(options.providerHosts ?? PROVIDER_HOSTS) };
+    }
+
+    if (isTlsProbeScript(call)) {
+      return { stdout: `${NOT_INSPECTED}\n` };
     }
 
     if (call.interactive) {

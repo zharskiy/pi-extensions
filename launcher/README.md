@@ -199,7 +199,8 @@ Start with `pi sandbox doctor`, which names the failing check.
 | Pi says `the sandbox VM engine is unreachable` | Run `colima start --profile pi-sandbox --activate=false`, or `install.sh` if the profile is gone. |
 | The VM is running but its engine does not answer | Run `colima stop --profile pi-sandbox && colima start --profile pi-sandbox --activate=false`. |
 | A folder is not shared with the VM | Exit your other pi sessions and run `pi` again. |
-| An HTTP 502 about a certificate | Add your network's CA with [`tls.extraCa`](CONFIGURATION.md#corporate-proxy-and-tls-inspection). |
+| An HTTP 502 about a certificate | Run `pi sandbox doctor` and add the `{ "sha256": … }` line it prints to [`tls.extraCa`](CONFIGURATION.md#corporate-proxy-and-tls-inspection). |
+| `unable to get local issuer certificate` or `self-signed certificate in certificate chain` while installing dependencies | Your network inspects TLS. Run `pi sandbox doctor`: its `tls inspection` check names the CA that signs pi.dev and prints the `{ "sha256": … }` line for [`tls.extraCa`](CONFIGURATION.md#corporate-proxy-and-tls-inspection), or, when that CA is in no macOS keychain, the issuer to ask your IT for, to add as `{ "file": … }`. |
 | A command `is not in the sandbox image` | Add it to `image.packages` or `image.npmGlobal`. |
 | The npm registry lacks your host pi version | Install a published pi version on your Mac. |
 | A running session missed a config change | See [when changes apply](CONFIGURATION.md#when-changes-apply). |

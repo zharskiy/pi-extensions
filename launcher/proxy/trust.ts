@@ -17,6 +17,7 @@ export interface TrustBundleInput {
   runner: CommandRunner;
   platform: NodeJS.Platform;
   sources: ExtraCa[];
+  now?: number;
 }
 
 export interface TrustBundle {
@@ -26,23 +27,69 @@ export interface TrustBundle {
   hash: string;
 }
 
-const SYSTEM_KEYCHAIN = "/Library/Keychains/System.keychain";
+interface Found {
+  pem: string;
+  certificate: X509Certificate;
+  label: string;
+}
+
+const MACOS_KEYCHAINS = ["/Library/Keychains/System.keychain", "login.keychain"];
 
 const PUBLIC_MODE = 0o644;
 
 const PEM_BLOCK = /-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g;
 
-const isCertificate = (pem: string) => {
+const FILE_HINT = 'export the CA to a PEM file and list it as { "file": "~/ca.pem" }';
+
+const parsed = (pem: string) => {
   try {
-    return new X509Certificate(pem).fingerprint256 !== "";
+    return new X509Certificate(pem);
   } catch {
-    return false;
+    return undefined;
   }
 };
 
-const certificatesIn = (text: string) => (text.match(PEM_BLOCK) ?? []).filter(isCertificate);
+const certificatesIn = (text: string) =>
+  (text.match(PEM_BLOCK) ?? []).flatMap((pem) => {
+    const certificate = parsed(pem);
 
-const fileCertificates = async (file: string) => {
+    return certificate === undefined ? [] : [{ pem, certificate }];
+  });
+
+const bareFingerprint = (value: string) => value.replaceAll(":", "").toUpperCase();
+
+const subjectOf = (certificate: X509Certificate) => certificate.subject.split("\n").join(", ");
+
+const dayOf = (date: string) => new Date(date).toISOString().slice(0, 10);
+
+const isSelfSigned = (certificate: X509Certificate) =>
+  certificate.issuer === certificate.subject && certificate.verify(certificate.publicKey);
+
+const usableProblem = (certificate: X509Certificate, now: number) => {
+  if (!certificate.ca && !isSelfSigned(certificate)) {
+    return "which is not a CA";
+  }
+
+  if (Date.parse(certificate.validTo) < now) {
+    return `which expired on ${dayOf(certificate.validTo)}`;
+  }
+
+  return Date.parse(certificate.validFrom) > now
+    ? `which is valid only from ${dayOf(certificate.validFrom)}`
+    : undefined;
+};
+
+const checkUsable = (now: number) => (found: Found) => {
+  const problem = usableProblem(found.certificate, now);
+
+  if (problem !== undefined) {
+    throw new LauncherError(`tls.extraCa: ${found.label} ${subjectOf(found.certificate)}, ${problem}`);
+  }
+
+  return found.pem;
+};
+
+const fileCertificates = async (file: string): Promise<Found[]> => {
   const path = expandHome(file, homedir());
   const text = await readFile(path, "utf8").catch(() => undefined);
 
@@ -56,28 +103,76 @@ const fileCertificates = async (file: string) => {
     throw new LauncherError(`tls.extraCa: ${path} holds no PEM certificate`);
   }
 
-  return found;
+  return found.map((entry) => ({ ...entry, label: `${path} holds` }));
 };
 
-const hostStoreCertificates = async (runner: CommandRunner, platform: NodeJS.Platform) => {
+interface KeychainReading {
+  certificates: ReturnType<typeof certificatesIn>;
+  unreadable: string[];
+}
+
+const keychainCertificates = async (runner: CommandRunner, keychain: string): Promise<KeychainReading> => {
+  const result = await runner
+    .run("security", ["find-certificate", "-a", "-p", keychain])
+    .catch(() => undefined);
+
+  return result?.code === 0
+    ? { certificates: certificatesIn(result.stdout), unreadable: [] }
+    : { certificates: [], unreadable: [keychain] };
+};
+
+const keychainReader = (input: TrustBundleInput) => {
+  let loaded: Promise<KeychainReading> | undefined;
+
+  return () => {
+    loaded ??= Promise.all(
+      MACOS_KEYCHAINS.map((keychain) => keychainCertificates(input.runner, keychain)),
+    ).then((readings) => ({
+      certificates: readings.flatMap((reading) => reading.certificates),
+      unreadable: readings.flatMap((reading) => reading.unreadable),
+    }));
+
+    return loaded;
+  };
+};
+
+const unreadableNote = (unreadable: string[]) =>
+  unreadable.length === 0 ? "" : ` (security find-certificate could not read ${unreadable.join(", ")})`;
+
+const fingerprintCertificates = async (
+  fingerprint: string,
+  platform: NodeJS.Platform,
+  keychains: ReturnType<typeof keychainReader>,
+): Promise<Found[]> => {
   if (platform !== "darwin") {
-    return [];
-  }
-
-  const result = await runner.run("security", ["find-certificate", "-a", "-p", SYSTEM_KEYCHAIN]);
-
-  if (result.code !== 0) {
     throw new LauncherError(
-      `tls.extraCa hostStore: security find-certificate exited with ${result.code}`,
-      "check the System keychain, or list the CA file with { file } instead",
+      `tls.extraCa: sha256 ${fingerprint} is looked up in the macOS keychains, and this host is ${platform}`,
+      FILE_HINT,
     );
   }
 
-  return certificatesIn(result.stdout);
+  const wanted = bareFingerprint(fingerprint);
+  const { certificates, unreadable } = await keychains();
+  const match = certificates.find((entry) => bareFingerprint(entry.certificate.fingerprint256) === wanted);
+
+  if (match === undefined) {
+    throw new LauncherError(
+      `tls.extraCa: no certificate with sha256 ${fingerprint} in the macOS keychains${unreadableNote(unreadable)}`,
+      `run pi sandbox doctor to get the sha256 of your network's CA; for a CA that is not in a keychain, ${FILE_HINT}`,
+    );
+  }
+
+  return [{ ...match, label: `sha256 ${fingerprint} is` }];
 };
 
-const sourceCertificates = (input: TrustBundleInput) => (source: ExtraCa) =>
-  "file" in source ? fileCertificates(source.file) : hostStoreCertificates(input.runner, input.platform);
+const sourceCertificates = (input: TrustBundleInput) => {
+  const keychains = keychainReader(input);
+
+  return (source: ExtraCa) =>
+    "file" in source
+      ? fileCertificates(source.file)
+      : fingerprintCertificates(source.sha256, input.platform, keychains);
+};
 
 const writeIfChanged = async (path: string, text: string) => {
   const current = await readFile(path, "utf8").catch(() => undefined);
@@ -90,9 +185,10 @@ const writeIfChanged = async (path: string, text: string) => {
 const pemText = (certificates: string[]) => certificates.map((pem) => `${pem.trim()}\n`).join("");
 
 export const ensureTrustBundle = async (input: TrustBundleInput): Promise<TrustBundle> => {
-  const ca = await openLauncherCa({ stateDir: input.stateDir, runner: input.runner });
   const found = await Promise.all(input.sources.map(sourceCertificates(input)));
-  const extras = [...new Set(found.flat().map((pem) => pem.trim()))];
+  const usable = found.flat().map(checkUsable(input.now ?? Date.now()));
+  const extras = [...new Set(usable.map((pem) => pem.trim()))];
+  const ca = await openLauncherCa({ stateDir: input.stateDir, runner: input.runner });
   const layout = stateLayout(input.stateDir);
   const pemPath = layout.trustPem;
   const extraPemPath = layout.extraPem;
