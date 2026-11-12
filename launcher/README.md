@@ -110,7 +110,8 @@ In the table, *host pi* is pi's managed install on your Mac. A *grant* is a host
 | `pi --list-models [search]` | with host pi on the host |
 | `pi --export <file> [out]` | with host pi on the host |
 | `pi --version` | the pi version the sandbox runs, without starting a sandbox |
-| `pi update` | update host pi |
+| `pi update [target]` | update host pi, its packages or its model catalogs, with host pi on the host |
+| `pi config` | the user resource config, with host pi on the host (-l passes through into the sandbox) |
 | `pi sandbox status` | runtime, container, proxy, image, launches, grants, overlays, shared caches |
 | `pi sandbox config [--json]` | the effective config and whether each key comes from the config file or the default |
 | `pi sandbox egress allow <host[:port]> [--user]` | allow a host for this repository, or with --user for every repository, until revoked |
@@ -121,9 +122,9 @@ In the table, *host pi* is pi's managed install on your Mac. A *grant* is a host
 | `pi sandbox doctor [--verbose]` | prepare the sandbox like pi and report each check by area, with a hint per problem; --verbose lists every credential rule |
 | `pi sandbox --version`, `pi sandbox help` | version and usage |
 
-`pi uninstall <source>` also runs with host pi on the host. Host pi loads no extension for `pi --help` and `pi --list-models`, so help omits the flags extensions register and the list omits providers only an extension registers; `pi list`, `pi mcp list` and `pi config` run in the sandbox, and `pi --version` asks pi inside when `image.reference` and `image.digest` pin the image. `egress allow` uses port 443 unless you name one, and refuses wildcards, IP addresses and port 80 ([rules](CONFIGURATION.md#network-access)).
+`pi uninstall <source>` also runs with host pi on the host. Host pi loads no extension for `pi --help` and `pi --list-models`, so help omits the flags extensions register and the list omits providers only an extension registers; `pi list`, `pi mcp list` and `pi config -l` run in the sandbox, and `pi --version` asks pi inside when `image.reference` and `image.digest` pin the image. `egress allow` uses port 443 unless you name one, and refuses wildcards, IP addresses and port 80 ([rules](CONFIGURATION.md#network-access)).
 
-`pi update` runs the managed install's own update, and the next launch rebuilds the image. Without a managed install it says how to get one. To update the launcher itself, run `npm install -g --omit=peer pi-extensions-mz` (or `git pull` in a checkout).
+`pi update` runs the managed install's own update from an empty folder, and the next launch rebuilds the image. A local path as the source (`./ext`, `~/ext`) is made absolute against your folder first. Every other `pi update` form (`--all`, `--extensions`, `--extension <source>`, `<source>`, `--models`, `--force`) runs host pi from an empty folder, so it updates the host's packages and the host pi, never a copy inside the sandbox; when the target includes pi itself it names the pi version the sandbox follows. Without a managed install it says how to get one. To update the launcher itself, run `npm install -g --omit=peer pi-extensions-mz` (or `git pull` in a checkout).
 
 After a reboot or `pi sandbox stop`, the next `pi` starts the VM again. A failure prints `pi-sandbox: <message>`, often with a `hint:` line.
 

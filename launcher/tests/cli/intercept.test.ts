@@ -324,12 +324,131 @@ describe("pi update", () => {
     );
   });
 
-  it("runs pi update --extensions inside the sandbox", async () => {
-    const fake = createFakeBackend();
-    const harness = await createHarness({ backend: () => fake.backend });
+  it("runs every other pi update form with the host pi from an empty directory against the host agent dir", async () => {
+    const harness = await createHarness({ backend: noBackend });
+    const forms = [
+      { argv: ["update", "--all"], self: true },
+      { argv: ["update", "--extensions"], self: false },
+      { argv: ["update", "--extension", "x"], self: false },
+      { argv: ["update", "npm:foo"], self: false },
+      { argv: ["update", "--models"], self: false },
+      { argv: ["update", "--force"], self: true },
+      { argv: ["update", "--self", "--force"], self: true },
+      { argv: ["update", "pi", "--approve"], self: true },
+      { argv: ["update", "--self", "--extensions"], self: true },
+    ];
 
-    expect(await run(["update", "--extensions"], harness.deps)).toBe(0);
-    expect(piSessions(fake).map(piArgsOf)).toEqual([["update", "--extensions"]]);
+    await writeManagedPi(harness.hostAgentDir, "1.6.0");
+
+    const notices = await inTurn(
+      forms.map((form) => form.argv),
+      async (argv) => {
+        const before = harness.stderr().length;
+
+        expect(await run(argv, harness.deps)).toBe(0);
+
+        return harness.stderr().slice(before);
+      },
+    );
+
+    expect(hostPiRuns(harness)).toEqual(forms.map((form) => form.argv));
+    expect(notices).toEqual(
+      forms.map((form) => (form.self ? "pi-sandbox: the sandbox follows pi 1.6.0 at the next launch\n" : "")),
+    );
+
+    const jobs = hostPiJobs(harness);
+    const cwds = jobs.map((entry) => entry.options.cwd ?? "");
+
+    expect(jobs.map((entry) => [entry.file, entry.options.env])).toEqual(
+      jobs.map(() => [
+        join(harness.hostAgentDir, "bin", "pi"),
+        { PI_CODING_AGENT_DIR: harness.hostAgentDir },
+      ]),
+    );
+    expect(cwds.every((cwd) => !cwd.startsWith(harness.repoRoot) && cwd.includes("mcp-login-"))).toBe(true);
+    expect(await Promise.all(cwds.map((cwd) => readdir(cwd).catch(() => "removed")))).toEqual(
+      cwds.map(() => "removed"),
+    );
+  });
+
+  it("makes a local update source absolute against the user's folder and leaves other arguments alone", async () => {
+    const harness = await createHarness({ backend: noBackend });
+
+    await writeManagedPi(harness.hostAgentDir, "1.6.0");
+
+    await run(["update", "./my-ext"], harness.deps);
+    await run(["update", "~/ext", "--force"], harness.deps);
+    await run(["update", "--extension", "x"], harness.deps);
+    await run(["update", "npm:foo"], harness.deps);
+
+    expect(hostPiRuns(harness)).toEqual([
+      ["update", join(harness.deps.cwd, "my-ext")],
+      ["update", join(harness.deps.home, "ext"), "--force"],
+      ["update", "--extension", "x"],
+      ["update", "npm:foo"],
+    ]);
+  });
+
+  it("runs the bare self-update from an empty directory against the host agent dir", async () => {
+    const harness = await createHarness({ backend: noBackend });
+
+    await writeManagedPi(harness.hostAgentDir, "1.6.0");
+    await run(["update"], harness.deps);
+
+    const [job] = hostPiJobs(harness);
+
+    expect(job?.options.env).toEqual({ PI_CODING_AGENT_DIR: harness.hostAgentDir });
+    expect(job?.options.cwd).toContain("mcp-login-");
+    expect(job?.options.cwd?.startsWith(harness.repoRoot)).toBe(false);
+  });
+
+  it("prints no follow notice when a host pi update fails", async () => {
+    const harness = await createHarness({
+      backend: noBackend,
+      respond: (call) => (call.interactive ? { code: 1 } : undefined),
+    });
+
+    expect(await run(["update", "--all"], harness.deps)).toBe(1);
+    expect(harness.stderr()).toBe("");
+  });
+
+  it("refuses the other update forms with the missing-pi line when no managed pi resolves", async () => {
+    const harness = await createHarness({ backend: noBackend, hostPi: false });
+
+    expect(await run(["update", "--extensions"], harness.deps)).toBe(1);
+    expect(await run(["update", "--all"], harness.deps)).toBe(1);
+    expect(hostPiJobs(harness)).toEqual([]);
+    expect(harness.stderr()).toBe(`pi-sandbox: ${noHostPiLine(harness.hostAgentDir)}\n`.repeat(2));
+  });
+});
+
+describe("pi config", () => {
+  it("edits the user config with the host pi from an empty directory against the host agent dir", async () => {
+    const harness = await createHarness({ backend: noBackend });
+
+    expect(await run(["config"], harness.deps)).toBe(0);
+    expect(await run(["config", "--approve"], harness.deps)).toBe(0);
+    expect(hostPiRuns(harness)).toEqual([["config"], ["config", "--approve"]]);
+    expect(hostPiJobs(harness).map((entry) => entry.options.env)).toEqual([
+      { PI_CODING_AGENT_DIR: harness.hostAgentDir },
+      { PI_CODING_AGENT_DIR: harness.hostAgentDir },
+    ]);
+    expect(hostPiJobs(harness).every((entry) => entry.options.cwd?.includes("mcp-login-"))).toBe(true);
+  });
+
+  it("edits the project config with -l inside the sandbox", async () => {
+    expect(await launched(["config", "-l"])).toEqual({
+      code: 0,
+      inside: [["config", "-l"]],
+      host: [],
+      stdout: "",
+    });
+    expect(await launched(["config", "--local", "--approve"])).toEqual({
+      code: 0,
+      inside: [["config", "--local", "--approve"]],
+      host: [],
+      stdout: "",
+    });
   });
 });
 
@@ -493,8 +612,6 @@ describe("pi commands that start no session", () => {
       ["-p", "hello"],
       ["list"],
       ["mcp", "list"],
-      ["update", "--all"],
-      ["config"],
       ["install", "npm:local", "-l"],
     ];
 

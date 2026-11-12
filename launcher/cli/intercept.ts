@@ -228,20 +228,83 @@ const packageSource = (args: string[]) => {
 
 const SELF_TARGETS = ["pi", "self", "--self"];
 
+const SELF_SOURCES = ["pi", "self"];
+
 const isSelfUpdate = (args: string[]) =>
   args.length === 0 || (args.length === 1 && SELF_TARGETS.includes(args[0] ?? ""));
 
-const selfUpdate = async (deps: CliDeps) => {
-  const pi = await requireJobPi(deps);
-  const code = await deps.runner.spawnInteractive(pi.wrapper, ["update"], { cwd: deps.cwd });
-  const followed = code === 0 ? await resolveJobPi(deps) : undefined;
+const isExtensionValue = (args: string[], index: number) =>
+  args[index - 1] === "--extension" && !(args[index] ?? "").startsWith("-");
+
+const updatesSelf = (args: string[]) => {
+  const flags = new Set(args.filter((arg) => arg.startsWith("-")));
+  const [source] = args.filter((arg, index) => !arg.startsWith("-") && !isExtensionValue(args, index));
+
+  if (flags.has("--models") || flags.has("--extension")) {
+    return false;
+  }
+
+  if (source !== undefined) {
+    return SELF_SOURCES.includes(source);
+  }
+
+  return flags.has("--self") || !flags.has("--extensions");
+};
+
+const noticeFollowedPi = async (deps: CliDeps) => {
+  const followed = await resolveJobPi(deps);
 
   if (followed !== undefined) {
     writeLine(deps.stderr, `pi-sandbox: the sandbox follows pi ${followed.version} at the next launch`);
   }
+};
+
+const selfUpdate = async (deps: CliDeps) => {
+  const code = await inEmptyDir(deps, ["update"], { env: hostEnv(deps) });
+
+  if (code === 0) {
+    await noticeFollowedPi(deps);
+  }
 
   return code;
 };
+
+const PATH_LIKE = /^(\.|~|file:\/\/|[^:]*\/)/;
+
+const updateSource = (args: string[]) =>
+  args.find(
+    (arg, index) =>
+      !arg.startsWith("-") &&
+      !isExtensionValue(args, index) &&
+      !SELF_SOURCES.includes(arg) &&
+      PATH_LIKE.test(arg),
+  );
+
+const updateArgv = async (deps: CliDeps, argv: string[], args: string[]) => {
+  const source = updateSource(args);
+  const classified = source === undefined ? undefined : classifySource(source);
+
+  if (source === undefined || classified?.kind !== "local") {
+    return argv;
+  }
+
+  const { path } = await resolvedLocal(deps, classified.text);
+
+  return argv.map((arg) => (arg === source ? path : arg));
+};
+
+const hostUpdate = async (deps: CliDeps, argv: string[], args: string[]) => {
+  const code = await inEmptyDir(deps, await updateArgv(deps, argv, args), { env: hostEnv(deps) });
+
+  if (code === 0 && updatesSelf(args)) {
+    await noticeFollowedPi(deps);
+  }
+
+  return code;
+};
+
+const updateCommand = (deps: CliDeps, argv: string[], args: string[]) =>
+  isSelfUpdate(args) ? selfUpdate(deps) : hostUpdate(deps, argv, args);
 
 const sandboxPiVersion = async (deps: CliDeps) => {
   const { image } = (await loadEffectiveConfig({ env: deps.env, home: deps.home })).config;
@@ -287,5 +350,5 @@ export const intercept = (
     return mcpCommand(deps, rest);
   }
 
-  return command === "update" && isSelfUpdate(rest) ? selfUpdate(deps) : undefined;
+  return command === "update" ? updateCommand(deps, argv, rest) : undefined;
 };

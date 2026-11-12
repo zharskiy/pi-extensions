@@ -46,8 +46,8 @@ cli/derive.ts                  the host side of a launch: host pi files, derivat
 cli/sandbox-proxy.ts           the repository's proxy input and token, and the denial summary at exit with a reason and fix per kind (also the doctor's rule hints and blocked warnings)
 cli/mcp-sign-in.ts             the launch-start MCP sign-in on the host
 cli/host-sessions.ts           host sessions for a launch: choice, preparation, sweeps, share probe
-cli/intercept.ts               pi install, uninstall, remove, mcp, update, auth, help, --list-models, --export and --version run on the host
-cli/host-routes.ts             which command lines start no session: help, version, auth, --list-models, --export
+cli/intercept.ts               pi install, uninstall, remove, mcp, every update, config, auth, help, --list-models, --export and --version run on the host
+cli/host-routes.ts             which command lines start no session: help, version, auth, config without -l, --list-models, --export
 cli/host-pi.ts                 the one host pi (pi's managed install only), the missing-pi line (missingPiText, built from the parts of missingPi the doctor shows) and --no-sandbox (runHostPi)
 cli/notices.ts                 notices printed once per repository and text
 cli/versions.ts                launcher version and image pi version

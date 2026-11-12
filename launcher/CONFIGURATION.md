@@ -348,7 +348,7 @@ A team shares the config by giving everyone the same file: copy it to `~/.pi/age
 
 Replace the `*.example.internal` names with your own hosts, and add the package registries your team uses to `egress.allow`.
 
-`pi install`, `pi mcp …` and `pi update` run host pi on the host. They run before the config is read.
+`pi install`, `pi mcp …`, every `pi update` and `pi config` without `-l` run host pi on the host. They run before the config is read.
 
 ## Environment variables the launcher reads
 
