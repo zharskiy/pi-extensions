@@ -7,7 +7,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createColimaBackend } from "../../backend/colima/backend.ts";
 import { demultiplexer } from "../../backend/colima/exec-session.ts";
 import { engineSocketPath } from "../../backend/colima/profile.ts";
-import { type Backend, type ContainerSpec, LABELS, type TerminalSize } from "../../backend/index.ts";
+import {
+  type Backend,
+  type ContainerSpec,
+  execCapture,
+  LABELS,
+  type TerminalSize,
+} from "../../backend/index.ts";
 import { createProcessRunner, LauncherError } from "../../shared/index.ts";
 import { createFakeEngine, type FakeEngine, type FakeEngineOptions } from "../support/fake-engine.ts";
 import { createFakeRunner } from "../support/fake-runner.ts";
@@ -796,6 +802,27 @@ describe("colima exec", () => {
         { stdout: failing, stderr: collected().stream, tty: false },
       ),
     ).rejects.toThrow("disk full");
+  });
+
+  it("drops the session when a capture runs past its timeout, and leaves other captures untimed", async () => {
+    const hung: { release: (code: number) => void } = { release: () => undefined };
+    const engine = await startEngine({
+      exec: (context) =>
+        context.command.includes("hang")
+          ? new Promise<number>((resolve) => {
+              hung.release = resolve;
+            })
+          : 0,
+    });
+    const { backend, id } = await startedContainer(engine);
+    const spec = (word: string) => ({ containerId: id, command: ["sh", "-c", word], env: {}, workdir: "/" });
+
+    await expect(execCapture(backend, spec("hang"), "", 50)).rejects.toThrow(
+      "the command in the sandbox did not finish within 50 ms",
+    );
+    expect(await execCapture(backend, spec("true"))).toEqual({ code: 0, stdout: "", stderr: "" });
+
+    hung.release(0);
   });
 
   it("refuses to exec in a container that is not running", async () => {
