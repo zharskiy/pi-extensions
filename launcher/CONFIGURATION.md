@@ -200,6 +200,8 @@ Without `workspaceRoots`, pi starts anywhere the guard allows, and the VM shares
 
 A root is refused when it holds `,` or `:`, is your home or a folder above it, or is, holds or lies inside the pi agent dir, the launcher state dir or `~/.ssh`. A root inside another root is dropped. A root that does not exist is skipped with `workspaceRoots: <root> does not exist, not shared`.
 
+To set the roots on a new machine before the VM exists, pass them to the installer: `install.sh --root <dir>` or `PI_SANDBOX_ROOTS` (see [Limit what the VM can see](README.md#limit-what-the-vm-can-see)).
+
 ## Variables passed into the sandbox
 
 `env.allow` names the variables of your shell that reach each pi run. The default list is `TERM`, `COLORTERM`, `TERM_PROGRAM`, `TERM_PROGRAM_VERSION`, `LC_TERMINAL`, `LC_TERMINAL_VERSION`, `COLORFGBG` and `LANG`. Your entries only extend it: the list cannot shrink, and `pi sandbox config` shows its source as `default+config`.

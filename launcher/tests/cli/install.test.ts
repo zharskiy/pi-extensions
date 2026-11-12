@@ -256,7 +256,7 @@ describe("install.sh and the Colima profile", { timeout: INSTALL_TIMEOUT_MS }, (
       `start --profile pi-sandbox --activate=false --vm-type vz --mount-type virtiofs --cpu 8 --memory 10 --disk 60 --mount ${home}:w`,
     );
     expect(result.stdout).toContain(
-      `[3/7] colima: starting profile pi-sandbox (vz, virtiofs, 8 CPUs, 10 GiB, 60 GiB, ${home} writable)`,
+      `[4/7] colima: starting profile pi-sandbox (vz, virtiofs, 8 CPUs, 10 GiB, 60 GiB, ${home} writable)`,
     );
   });
 
@@ -458,5 +458,186 @@ describe("install.sh options and the PATH block", { timeout: INSTALL_TIMEOUT_MS 
     expect(await readFile(calls, "utf8").catch(() => "")).not.toMatch(/npm install|colima start/);
     expect(await exists(join(home, ".local", "bin", "pi"))).toBe(false);
     expect(await exists(zshrc(home))).toBe(false);
+  });
+});
+
+describe("install.sh and workspace roots", { timeout: INSTALL_TIMEOUT_MS }, () => {
+  const RECORDING_COLIMA = [
+    'echo "$1" >> "$HOME/../colima-calls.log"',
+    'if [ "$1" = start ]; then printf "%s\\n" "$@" > "$HOME/../start-args"; fi',
+    'case "$1" in version) echo "colima version 0.8.1" ;; status) exit 1 ;; *) exit 0 ;; esac',
+  ].join("\n");
+
+  const BASE_START = [
+    "start",
+    "--profile",
+    "pi-sandbox",
+    "--activate=false",
+    "--vm-type",
+    "vz",
+    "--mount-type",
+    "virtiofs",
+    "--cpu",
+    "8",
+    "--memory",
+    "10",
+    "--disk",
+    "60",
+  ];
+
+  const startArgs = async (root: string) =>
+    (await readFile(join(root, "start-args"), "utf8").catch(() => ""))
+      .split("\n")
+      .filter((line) => line !== "");
+
+  const colimaCalls = async (root: string) =>
+    (await readFile(join(root, "colima-calls.log"), "utf8").catch(() => ""))
+      .split("\n")
+      .filter((line) => line !== "");
+
+  const configFile = (root: string) => join(root, "config", "config.json");
+
+  const readConfig = async (root: string) => JSON.parse(await readFile(configFile(root), "utf8"));
+
+  const rootsSetup = async (fakes: Record<string, string> = {}) => {
+    const setup = await installRoot({ colima: RECORDING_COLIMA, ...fakes });
+    const projects = join(setup.home, "Projects");
+    const work = join(setup.root, "my work");
+
+    await mkdir(projects, { recursive: true });
+
+    await mkdir(work, { recursive: true });
+
+    const vmMounts = (...roots: string[]) => [
+      ...roots.flatMap((path) => ["--mount", `${path}:w`]),
+      "--mount",
+      `${join(setup.agentDir, "sessions")}:w`,
+      "--mount",
+      join(setup.root, "state", "vm"),
+    ];
+
+    return { ...setup, projects, work, vmMounts };
+  };
+
+  it("starts the VM with the same colima arguments as before and writes no config without roots", async () => {
+    const { root, home } = await rootsSetup();
+    const result = runInstall(root);
+
+    expect(result.status).toBe(0);
+    expect(await startArgs(root)).toEqual([...BASE_START, "--mount", `${home}:w`]);
+    expect(await exists(configFile(root))).toBe(false);
+  });
+
+  it("writes the roots given with --root and shares only them, the sessions and the VM state with the new VM", async () => {
+    const { root, projects, work, vmMounts } = await rootsSetup();
+    const result = runInstall(root, ["--root", projects, "--root", work]);
+
+    expect(result.status).toBe(0);
+    expect(await readConfig(root)).toEqual({ workspaceRoots: { roots: [projects, work] } });
+    expect(await startArgs(root)).toEqual([...BASE_START, ...vmMounts(projects, work)]);
+    expect(result.stdout).toContain(`${projects} writable, ${work} writable, `);
+    expect(result.stdout).toContain(`${join(root, "state", "vm")} read-only)`);
+    expect(result.stdout).toContain(`; wrote workspaceRoots to ${configFile(root)}`);
+  });
+
+  it("takes the roots from PI_SANDBOX_ROOTS and keeps a ~ root as written", async () => {
+    const { root, projects, work, vmMounts } = await rootsSetup();
+    const result = runInstall(root, [], { PI_SANDBOX_ROOTS: `~/Projects:${work}:` });
+
+    expect(result.status).toBe(0);
+    expect(await readConfig(root)).toEqual({ workspaceRoots: { roots: ["~/Projects", work] } });
+    expect(await startArgs(root)).toEqual([...BASE_START, ...vmMounts(projects, work)]);
+  });
+
+  it("prefers --root over PI_SANDBOX_ROOTS", async () => {
+    const { root, projects, work, vmMounts } = await rootsSetup();
+    const result = runInstall(root, ["--root", work], { PI_SANDBOX_ROOTS: projects });
+
+    expect(result.status).toBe(0);
+    expect(await readConfig(root)).toEqual({ workspaceRoots: { roots: [work] } });
+    expect(await startArgs(root)).toEqual([...BASE_START, ...vmMounts(work)]);
+  });
+
+  it("keeps the shares of a profile that exists and says the first launch changes them", async () => {
+    const { root, home, work } = await rootsSetup();
+
+    await mkdir(join(home, ".colima", "pi-sandbox"), { recursive: true });
+
+    await writeFile(join(home, ".colima", "pi-sandbox", "colima.yaml"), "mounts: []\n");
+
+    const result = runInstall(root, ["--root", work]);
+
+    expect(result.status).toBe(0);
+    expect(await startArgs(root)).toEqual(BASE_START);
+    expect(result.stdout).toContain(
+      "shares kept); wrote workspaceRoots to " +
+        `${configFile(root)}; if its shares differ, the first pi launch restarts it with the new ones`,
+    );
+  });
+
+  it("goes ahead when the config already holds the same roots", async () => {
+    const { root, work } = await rootsSetup();
+
+    expect(runInstall(root, ["--root", work]).status).toBe(0);
+
+    const again = runInstall(root, ["--root", work]);
+
+    expect(again.status).toBe(0);
+    expect(again.stdout).toContain(`; workspaceRoots in ${configFile(root)} already match`);
+  });
+
+  it("stops before the VM step when __vm-shares fails on the config", async () => {
+    const { root, home } = await rootsSetup();
+
+    await mkdir(join(root, "config"), { recursive: true });
+
+    await writeFile(configFile(root), JSON.stringify({ workspaceRoots: { roots: [home] } }));
+
+    const result = runInstall(root);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("pi-sandbox: config: workspaceRoots.roots:");
+    expect(result.stdout).not.toContain("[4/7]");
+    expect(await colimaCalls(root)).toEqual(["version"]);
+  });
+
+  it("refuses a root workspaceRoots refuses and writes nothing", async () => {
+    const { root, home } = await rootsSetup();
+    const result = runInstall(root, ["--root", join(home, ".ssh")]);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("pi-sandbox: config: workspaceRoots.roots:");
+    expect(await exists(configFile(root))).toBe(false);
+    expect(await colimaCalls(root)).toEqual(["version"]);
+  });
+
+  it("stops when the config exists with other roots and leaves it as it is", async () => {
+    const { root, projects, work } = await rootsSetup();
+    const text = JSON.stringify({ workspaceRoots: { roots: [projects] } });
+
+    await mkdir(join(root, "config"), { recursive: true });
+
+    await writeFile(configFile(root), text);
+
+    const result = runInstall(root, ["--root", work]);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      `pi-sandbox: ${configFile(root)} exists; set workspaceRoots in it, or install without --root`,
+    );
+    expect(await readFile(configFile(root), "utf8")).toBe(text);
+    expect(await colimaCalls(root)).toEqual(["version"]);
+  });
+
+  it("runs the smoke check in a folder inside the first root that exists and removes it", async () => {
+    const { root, work } = await rootsSetup({ git: 'echo "$2" >> "$HOME/../git-dirs"\nexit 1' });
+
+    const result = runInstall(root, ["--root", join(root, "gone"), "--root", work]);
+    const smokeDir = (await readFile(join(root, "git-dirs"), "utf8")).trim();
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain(`sandbox doctor in a temporary git repository in ${work};`);
+    expect(dirname(smokeDir)).toBe(work);
+    expect(await exists(smokeDir)).toBe(false);
   });
 });

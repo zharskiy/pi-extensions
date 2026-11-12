@@ -23,9 +23,12 @@ cpus=""
 memory=""
 sizing=""
 disk=60
+nl='
+'
+roots=""
 
 usage() {
-  echo "usage: install.sh [--cpu N] [--memory GiB] [--disk GiB]"
+  echo "usage: install.sh [--cpu N] [--memory GiB] [--disk GiB] [--root DIR]..."
 }
 
 fail() {
@@ -87,6 +90,53 @@ needs_value() {
   fi
 }
 
+add_root() {
+  if [ -n "$1" ]; then
+    roots="$roots$1$nl"
+  fi
+}
+
+add_env_roots() {
+  if [ -z "$1" ]; then
+    return 0
+  fi
+
+  add_root "${1%%:*}"
+
+  case "$1" in
+    *:*) add_env_roots "${1#*:}" ;;
+  esac
+}
+
+expanded_root() {
+  case "$1" in
+    "~") echo "$HOME" ;;
+    "~/"*) echo "$HOME/${1#"~/"}" ;;
+    /*) echo "$1" ;;
+    *) echo "$PWD/$1" ;;
+  esac
+}
+
+first_existing_root() {
+  if [ "$#" -eq 0 ]; then
+    return 1
+  fi
+
+  candidate=$(expanded_root "$1")
+
+  if [ -d "$candidate" ]; then
+    echo "$candidate"
+    return 0
+  fi
+
+  shift
+  first_existing_root "$@"
+}
+
+with_roots() {
+  (IFS=$nl; set -f; set -- "$@" $roots; "$@")
+}
+
 parse_args() {
   if [ "$#" -eq 0 ]; then
     return 0
@@ -96,6 +146,7 @@ parse_args() {
     --cpu) needs_value "$#" "$1"; cpus=$2; shift 2 ;;
     --memory) needs_value "$#" "$1"; memory=$2; shift 2 ;;
     --disk) needs_value "$#" "$1"; disk=$2; shift 2 ;;
+    --root) needs_value "$#" "$1"; add_root "$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) usage >&2; fail "unknown option $1" ;;
   esac
@@ -104,6 +155,10 @@ parse_args() {
 }
 
 parse_args "$@"
+
+if [ -z "$roots" ]; then
+  add_env_roots "${PI_SANDBOX_ROOTS:-}"
+fi
 
 shim_dir="$bin_dir"
 
@@ -187,24 +242,6 @@ colima_version=$(colima version 2>/dev/null | sed -n 's/^colima version v\{0,1\}
 version_at_least "${colima_version:-0}" "$min_colima" || fail "colima ${colima_version:-unknown} is older than $min_colima, run brew upgrade colima"
 
 size_to_host
-
-if colima status --profile "$colima_profile" >/dev/null 2>&1; then
-  step 3 "colima: profile $colima_profile is running (colima stop --profile $colima_profile and run this again to apply new resources)"
-else
-  if [ -f "$HOME/.colima/$colima_profile/colima.yaml" ]; then
-    home_mount=""
-    shares="shares kept"
-  else
-    home_mount="$HOME:w"
-    shares="$HOME writable"
-  fi
-
-  step 3 "colima: starting profile $colima_profile (vz, virtiofs, $cpus CPUs, ${memory} GiB, ${disk} GiB$sizing, $shares)"
-  streamed colima start --profile "$colima_profile" --activate=false --vm-type vz --mount-type virtiofs \
-    --cpu "$cpus" --memory "$memory" --disk "$disk" ${home_mount:+--mount} ${home_mount:+"$home_mount"}
-fi
-
-step 4 "image: prepared and verified by the smoke check in step 6"
 
 host_pi=$(command -v pi 2>/dev/null || true)
 
@@ -292,7 +329,7 @@ if [ "$from_checkout" -eq 1 ]; then
   chmod 0755 "$shim"
   installed="wrote $shim running $checkout/launcher/bin/pi-sandbox-dev.js"
 else
-  step 5 "launcher: installing $package_name@$version with npm"
+  step 3 "launcher: installing $package_name@$version with npm"
   streamed npm install -g --omit=peer "$package_name@$version"
   npm_bin="$(npm prefix -g)/bin/pi-sandbox"
   record_replaced_link
@@ -367,9 +404,58 @@ case "$login_shell" in
     ;;
 esac
 
-step 5 "launcher: $installed, $snippet$snippet_broken$shadowed"
+step 3 "launcher: $installed, $snippet$snippet_broken$shadowed"
+
+share_list() {
+  printf '%s\n' "$1" | awk '{ if (!sub(/:w$/, " writable")) $0 = $0 " read-only"; printf "%s%s", (NR > 1 ? ", " : ""), $0 }'
+}
+
+start_vm() {
+  if [ "$1" != -- ]; then
+    mount=$1
+    shift
+    start_vm "$@" --mount "$mount"
+    return
+  fi
+
+  shift
+  streamed colima start --profile "$colima_profile" --activate=false --vm-type vz --mount-type virtiofs \
+    --cpu "$cpus" --memory "$memory" --disk "$disk" "$@"
+}
+
+roots_note=""
+
+if [ -n "$roots" ]; then
+  if [ -f "$user_config" ]; then
+    roots_note="; workspaceRoots in $user_config already match"
+  else
+    roots_note="; wrote workspaceRoots to $user_config"
+  fi
+
+  with_roots "$shim" __init-config || exit "$?"
+fi
+
+vm_shares=$("$shim" __vm-shares) || exit "$?"
+
+if colima status --profile "$colima_profile" >/dev/null 2>&1; then
+  step 4 "colima: profile $colima_profile is running (colima stop --profile $colima_profile and run this again to apply new resources)$roots_note${roots:+; if its shares differ, the first pi launch restarts it with the new ones}"
+elif [ -f "$HOME/.colima/$colima_profile/colima.yaml" ]; then
+  step 4 "colima: starting profile $colima_profile (vz, virtiofs, $cpus CPUs, ${memory} GiB, ${disk} GiB$sizing, shares kept)$roots_note${roots:+; if its shares differ, the first pi launch restarts it with the new ones}"
+  start_vm --
+else
+  step 4 "colima: starting profile $colima_profile (vz, virtiofs, $cpus CPUs, ${memory} GiB, ${disk} GiB$sizing, $(share_list "$vm_shares"))$roots_note"
+  (IFS=$nl; set -f; start_vm $vm_shares --)
+fi
+
+step 5 "image: prepared and verified by the smoke check in step 6"
 
 smoke_parent="$HOME/.cache"
+smoke_where="a temporary git repository"
+
+if [ -n "$roots" ]; then
+  smoke_parent=$(with_roots first_existing_root) || smoke_parent=""
+  smoke_where="a temporary git repository in $smoke_parent"
+fi
 
 smoke() {
   mkdir -p "$smoke_parent" || return 1
@@ -391,8 +477,10 @@ smoke() {
 
 if ! command -v git >/dev/null 2>&1; then
   step 6 "smoke: skipped, git is missing; run pi sandbox doctor inside a repository"
+elif [ -z "$smoke_parent" ]; then
+  step 6 "smoke: skipped, none of the workspace roots exists; run pi sandbox doctor inside a repository in one of them"
 else
-  step 6 "smoke: running $shim sandbox doctor in a temporary git repository; the first image build takes a few minutes"
+  step 6 "smoke: running $shim sandbox doctor in $smoke_where; the first image build takes a few minutes"
 
   if smoke; then
     step 6 "smoke: $shim sandbox doctor passed"

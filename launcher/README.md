@@ -53,6 +53,17 @@ The VM gets this Mac's CPU count, from 2 to 8, and half its memory, from 4 to 10
 colima stop --profile pi-sandbox && colima start --profile pi-sandbox --activate=false --cpu 4 --memory 8
 ```
 
+### Limit what the VM can see
+
+Without roots, the VM shares your whole home, writable, so a container escape reaches all of `~`. Name your project folders at install instead:
+
+```bash
+"$(npm root -g)/pi-extensions-mz/launcher/install.sh" --root ~/Projects --root /Volumes/Work
+PI_SANDBOX_ROOTS="$HOME/Projects:/Volumes/Work" "$(npm root -g)/pi-extensions-mz/launcher/install.sh"
+```
+
+`--root` wins over `PI_SANDBOX_ROOTS`. The script writes the roots to `workspaceRoots` in `~/.pi/agent/pi-sandbox/config.json`, and the VM then shares only these folders (writable), pi's session folder `~/.pi/agent/sessions` (writable) and the launcher's `state/vm` folder (read-only). Pi then starts only inside a root. If `config.json` exists with other roots, the install stops: edit `workspaceRoots` there, or install without `--root`. A VM created earlier keeps its shares until the first pi launch, which restarts it with the new ones. See [Workspace roots](CONFIGURATION.md#workspace-roots).
+
 <details>
 <summary>Install from a checkout</summary>
 
