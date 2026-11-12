@@ -9,6 +9,7 @@ export interface PackageRefreshInput {
   stampPath: string;
   pins: PackagePin[];
   othersLive: () => Promise<boolean>;
+  removeTimeoutMs?: number;
 }
 
 const PRIVATE_FILE_MODE = 0o600;
@@ -29,33 +30,47 @@ const DEFERRED_NOTICE =
 const refreshNotice = (count: number) =>
   `sandbox packages follow the host: reinstalling ${count} ${count === 1 ? "package" : "packages"}`;
 
+const changedSince = (previous: Map<string, string> | undefined) => (pin: PackagePin) => {
+  const before = previous?.get(pin.identity);
+
+  return before !== undefined && before !== pin.value;
+};
+
+const heldPins = (stale: PackagePin[], previous: Map<string, string> | undefined) =>
+  stale.flatMap((pin) => {
+    const before = previous?.get(pin.identity);
+
+    return before === undefined ? [] : [[pin.identity, before] as const];
+  });
+
 export const refreshPackages = async (input: PackageRefreshInput) => {
   const previous = await lastPins(input.stampPath);
-  const staleDirs = input.pins.flatMap((pin) =>
-    pin.guestDir !== undefined && isVolumeGitDir(pin.guestDir) && previous?.get(pin.identity) !== pin.value
-      ? [pin.guestDir]
-      : [],
+  const stale = input.pins.filter(
+    (pin) =>
+      pin.guestDir !== undefined && isVolumeGitDir(pin.guestDir) && previous?.get(pin.identity) !== pin.value,
   );
+  const deferred = stale.length > 0 && (await input.othersLive());
 
-  if (staleDirs.length > 0 && (await input.othersLive())) {
-    return [DEFERRED_NOTICE];
+  if (stale.length > 0 && !deferred) {
+    await removeVolumeDirs(
+      input.backend,
+      input.containerId,
+      stale.flatMap((pin) => (pin.guestDir === undefined ? [] : [pin.guestDir])),
+      input.removeTimeoutMs,
+    );
   }
 
-  if (staleDirs.length > 0) {
-    await removeVolumeDirs(input.backend, input.containerId, staleDirs);
-  }
+  const refreshed = deferred ? input.pins.filter((pin) => !stale.includes(pin)) : input.pins;
+  const held = deferred ? heldPins(stale, previous) : [];
 
   await writeJsonFile(
     input.stampPath,
-    Object.fromEntries(input.pins.map((pin) => [pin.identity, pin.value])),
+    Object.fromEntries([...held, ...refreshed.map((pin) => [pin.identity, pin.value] as const)]),
     { mode: PRIVATE_FILE_MODE },
   );
 
-  const changed = input.pins.filter((pin) => {
-    const before = previous?.get(pin.identity);
+  const changed = refreshed.filter(changedSince(previous));
+  const notices = changed.length === 0 ? [] : [refreshNotice(changed.length)];
 
-    return before !== undefined && before !== pin.value;
-  });
-
-  return changed.length === 0 ? [] : [refreshNotice(changed.length)];
+  return deferred ? [...notices, DEFERRED_NOTICE] : notices;
 };

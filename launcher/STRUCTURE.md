@@ -200,8 +200,8 @@ provision/sync.ts              the agent files sync under sync.lock: write-back 
 provision/write-back.ts        the fixed write-back allowlist, the settings.json value checks, the three-way merge per key and its lines (no I/O)
 provision/merge-settings.ts    the sandbox copy of the host settings: dropped keys, package sources and their notices
 provision/package-source.ts    package sources and their URL credentials
-provision/host-packages.ts     npm and git package sources pinned to the versions the host installed, read from host files
-provision/package-refresh.ts   the record of the last pins and the removal of outdated git checkouts from the volume
+provision/host-packages.ts     npm and git package sources pinned to the versions the host installed, read from host files (unversioned, range and tag npm sources; git commits on the remote)
+provision/package-refresh.ts   the record of the last pins and the removal of outdated git checkouts from the volume, deferred while another session runs
 provision/volume.ts            files in the agent volume through exec: read with a size cap, write, remove, remove package dirs
 provision/host-sessions.ts     host session dir preparation, sweep and share probe
 ```

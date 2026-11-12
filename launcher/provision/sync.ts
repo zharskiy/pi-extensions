@@ -156,6 +156,7 @@ const followHostPackages = (input: SyncInput, pins: PackagePin[]) =>
     stampPath: stateLayout(input.stateDir).repo(input.repoHash).syncPackages,
     pins,
     othersLive: input.othersLive ?? (() => Promise.resolve(false)),
+    removeTimeoutMs: input.removeTimeoutMs,
   }).catch((error: unknown) => [
     `warning: the sandbox packages were not refreshed to follow the host: ${errorMessage(error)}`,
   ]);
