@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { join, posix } from "node:path";
 import type { JsonObject } from "../hostpi/index.ts";
 import { isJsonObject, parseJsonObject } from "../shared/index.ts";
@@ -21,9 +21,26 @@ const NPM_NAME = /^(?:@[a-z0-9~][\w.~-]*\/)?[a-z0-9~][\w.~-]*$/i;
 
 const EXACT_VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 
+const EXACT_PIN = /^v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+
+const RANGE_OR_TAG = /^[0-9A-Za-z.^~<>=|* -]+$/;
+
 const COMMIT = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 
 const SYMBOLIC_REF = /^ref: (refs\/\S+)$/;
+
+const PACKED_REMOTE_REF = /^([0-9a-f]{40}(?:[0-9a-f]{24})?) refs\/(?:remotes\/origin|tags)\/\S+$/;
+
+const PEELED_TAG = /^\^([0-9a-f]{40}(?:[0-9a-f]{24})?)$/;
+
+const REMOTE_REF_DIRS = [
+  ["refs", "remotes", "origin"],
+  ["refs", "tags"],
+];
+
+const HOSTED_DOMAINS = new Set(["github.com", "gitlab.com", "bitbucket.org", "gist.github.com", "git.sr.ht"]);
+
+const UNPINNED_PREFIX = "unpinned:";
 
 const GIT_PROTOCOL = /^(?:https?|ssh|git):\/\//i;
 
@@ -53,15 +70,24 @@ export const isVolumeGitDir = (dir: string) => {
 const hostVersion = async (hostAgentDir: string, name: string) => {
   const text = await readText(join(hostAgentDir, "npm", "node_modules", ...name.split("/"), "package.json"));
   const manifest = text === undefined ? undefined : parseJsonObject(text);
-  const version = isJsonObject(manifest) ? manifest.version : undefined;
+
+  if (!isJsonObject(manifest) || manifest.name !== name) {
+    return undefined;
+  }
+
+  const version = manifest.version;
 
   return typeof version === "string" && EXACT_VERSION.test(version) ? version : undefined;
 };
 
-const npmPin = async (source: string, hostAgentDir: string) => {
-  const name = NPM_SPEC.exec(source.slice("npm:".length).trim())?.[1];
+const followsHost = (version: string | undefined) =>
+  version === undefined || (!EXACT_PIN.test(version.trim()) && RANGE_OR_TAG.test(version));
 
-  if (name === undefined || !NPM_NAME.test(name)) {
+const npmPin = async (source: string, hostAgentDir: string) => {
+  const spec = NPM_SPEC.exec(source.slice("npm:".length).trim());
+  const name = spec?.[1];
+
+  if (name === undefined || !NPM_NAME.test(name) || !followsHost(spec?.[2])) {
     return undefined;
   }
 
@@ -89,7 +115,7 @@ const withoutRef = (url: string, start: number) => {
   return at < 0 ? url : url.slice(0, at);
 };
 
-const hostOf = (repo: string, start: number) => {
+const writtenHost = (repo: string, start: number) => {
   if (SCP_LIKE.test(repo)) {
     return repo.slice("git@".length, start - 1);
   }
@@ -99,6 +125,13 @@ const hostOf = (repo: string, start: number) => {
   }
 
   return repo.slice(0, start - 1);
+};
+
+const hostOf = (repo: string, start: number) => {
+  const host = writtenHost(repo, start);
+  const hosted = host.toLowerCase().replace(/^www\./, "");
+
+  return HOSTED_DOMAINS.has(hosted) ? hosted : host;
 };
 
 const gitLocation = (url: string) => {
@@ -149,6 +182,31 @@ const checkoutHead = async (checkout: string) => {
     : packedRef(await readText(join(checkout, ".git", "packed-refs")), ref);
 };
 
+const looseCommits = async (dir: string) => {
+  const names = await readdir(dir, { recursive: true }).catch(() => []);
+  const texts = await Promise.all(names.map((name) => readText(join(dir, name))));
+
+  return texts.flatMap((text) => {
+    const sha = text?.trim() ?? "";
+
+    return COMMIT.test(sha) ? [sha] : [];
+  });
+};
+
+const packedCommits = (packed: string | undefined) =>
+  (packed ?? "").split("\n").flatMap((line) => {
+    const sha = PACKED_REMOTE_REF.exec(line.trim())?.[1] ?? PEELED_TAG.exec(line.trim())?.[1];
+
+    return sha === undefined ? [] : [sha];
+  });
+
+const isOnRemote = async (checkout: string, head: string) => {
+  const loose = await Promise.all(REMOTE_REF_DIRS.map((dir) => looseCommits(join(checkout, ".git", ...dir))));
+  const packed = packedCommits(await readText(join(checkout, ".git", "packed-refs")));
+
+  return [...loose.flat(), ...packed].includes(head);
+};
+
 const gitSource = async (url: string, hostAgentDir: string) => {
   const location = gitLocation(url);
 
@@ -156,31 +214,33 @@ const gitSource = async (url: string, hostAgentDir: string) => {
     return undefined;
   }
 
-  const head = await checkoutHead(join(hostAgentDir, "git", location.host, ...location.path.split("/")));
+  const checkout = join(hostAgentDir, "git", location.host, ...location.path.split("/"));
+  const head = await checkoutHead(checkout);
 
-  return head === undefined ? undefined : { ...location, head };
+  return head === undefined ? undefined : { ...location, head, onRemote: await isOnRemote(checkout, head) };
 };
 
 const gitPin = async (source: string, hostAgentDir: string) => {
-  const prefix = source.startsWith("git:") ? "git:" : "";
+  const shorthand = source.startsWith("git:") && !source.startsWith("git://");
+  const prefix = shorthand ? "git:" : "";
   const url = source.slice(prefix.length).trim();
 
-  if (prefix === "" && !GIT_PROTOCOL.test(url)) {
+  if (!shorthand && !GIT_PROTOCOL.test(url)) {
     return undefined;
   }
 
   const git = await gitSource(url, hostAgentDir);
 
-  return git === undefined
-    ? undefined
-    : {
-        source: `${prefix}${git.repo}@${git.head}`,
-        pin: {
-          identity: `git:${git.host}/${git.path}`,
-          value: git.head,
-          guestDir: posix.join("git", git.host, git.path),
-        },
-      };
+  if (git === undefined) {
+    return undefined;
+  }
+
+  const identity = `git:${git.host}/${git.path}`;
+  const guestDir = posix.join("git", git.host, git.path);
+
+  return git.onRemote
+    ? { source: `${prefix}${git.repo}@${git.head}`, pin: { identity, value: git.head, guestDir } }
+    : { pin: { identity, value: `${UNPINNED_PREFIX}${git.head}`, guestDir } };
 };
 
 const pinOf = (source: string, hostAgentDir: string) =>
@@ -195,7 +255,9 @@ export const pinHostPackages = async (packages: unknown[], hostAgentDir: string)
       const source = sourceOfEntry(entry);
       const pinned = source === undefined ? undefined : await pinOf(source, hostAgentDir);
 
-      return pinned === undefined ? { entry } : { entry: pinnedEntry(entry, pinned.source), pin: pinned.pin };
+      return pinned?.source === undefined
+        ? { entry, pin: pinned?.pin }
+        : { entry: pinnedEntry(entry, pinned.source), pin: pinned.pin };
     }),
   );
 
