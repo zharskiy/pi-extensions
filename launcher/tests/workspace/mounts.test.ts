@@ -68,7 +68,7 @@ describe("protectedRealPathGuard", () => {
   it("names credential and engine dirs in the home, and what lies inside them", async () => {
     const { home, reasonOf } = await setup();
 
-    [".ssh", ".gnupg", ".aws", ".docker", ".colima", ".kube", ".local/bin", "Library"].forEach((name) => {
+    [".ssh", ".gnupg", ".aws", ".docker", ".colima", ".kube"].forEach((name) => {
       expect(reasonOf(join(home, name))).toBe(`it is ~/${name}`);
       expect(reasonOf(join(home, name, "sub"))).toBe(`it is inside ~/${name}`);
     });

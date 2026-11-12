@@ -156,7 +156,7 @@ After a reboot or `pi sandbox stop`, the next `pi` starts the VM again. A failur
 
 Pi starts in a repository or in a plain folder. A folder with several repositories is checked repository by repository. Bare repositories in it are read-only: clone and fetch work, push does not.
 
-Pi does not start in your home folder, `/`, system folders, credential folders such as `~/.ssh`, `~/Library` or `~/.local/bin`. It refuses git files that git did not write. A plain folder is refused when it holds over 128 repositories or 50,000 directories.
+Pi does not start in your home folder, `/`, system folders or credential folders such as `~/.ssh`. It refuses git files that git did not write. A plain folder is refused when it holds over 128 repositories or 50,000 directories.
 
 If your home folder is a git repository, pi starts under it only inside a repository of its own.
 

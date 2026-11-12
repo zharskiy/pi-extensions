@@ -1,5 +1,5 @@
 import { statSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { expandHome, isWithin, LauncherError, launcherPaths, realOrResolvedSync } from "../shared/index.ts";
 import { protectedPaths } from "./mounts.ts";
 import { mountedGitDirs, type Workspace } from "./types.ts";
@@ -29,6 +29,8 @@ const MOUNT_SYNTAX = /[,:]/;
 
 const CONTROL_CHARACTER = /\p{Cc}/u;
 
+const ROOT_ONLY_HOME = [".local/bin", "Library"];
+
 const SYSTEM_DIRS = ["/etc", "/usr", "/opt", "/System", "/Library", "/bin", "/sbin"];
 
 const SYSTEM_PARENTS = ["/private", "/var"];
@@ -53,6 +55,7 @@ const guardedPaths = (context: RootGuardContext, homes: string[]): Guarded[] => 
     ...protectedPaths(context)
       .filter((entry) => !homes.includes(entry.path))
       .map((entry) => ({ path: entry.path, name: entry.reason, inside: true })),
+    ...ROOT_ONLY_HOME.map((name) => ({ path: join(context.home, name), name: `~/${name}`, inside: true })),
     { path: configDir, name: "the launcher config dir", inside: true },
     ...SYSTEM_DIRS.map((path) => ({ path, name: path, inside: true })),
     ...SYSTEM_PARENTS.map((path) => ({ path, name: path, inside: false })),

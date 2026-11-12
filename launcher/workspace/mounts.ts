@@ -12,7 +12,7 @@ export interface Protected {
   under: boolean;
 }
 
-const PROTECTED_HOME = [".ssh", ".gnupg", ".aws", ".docker", ".colima", ".kube", ".local/bin", "Library"];
+const PROTECTED_HOME = [".ssh", ".gnupg", ".aws", ".docker", ".colima", ".kube"];
 
 const SYSTEM_DIRS = ["/var/run", "/run", "/etc", "/proc", "/sys", "/dev"];
 
