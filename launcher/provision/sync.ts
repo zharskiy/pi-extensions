@@ -10,7 +10,9 @@ import {
   writeFileAtomic,
   writeJsonFile,
 } from "../shared/index.ts";
+import { type PackagePin, pinHostPackages } from "./host-packages.ts";
 import { prepareHostSettings, sandboxSettings } from "./merge-settings.ts";
+import { refreshPackages } from "./package-refresh.ts";
 import type { SyncInput, SyncResult } from "./types.ts";
 import { readVolumeText, removeVolumeFile, writeVolumeFile } from "./volume.ts";
 import {
@@ -135,12 +137,28 @@ const syncSettings = async (input: SyncInput) => {
     hostAgentDir: input.hostAgentDir,
     mountRoots: [input.repoRoot],
   });
-  const written = sandboxSettings(prepared.settings);
+  const pinned = Array.isArray(prepared.settings.packages)
+    ? await pinHostPackages(prepared.settings.packages, input.hostAgentDir)
+    : { packages: undefined, pins: [] };
+  const written = sandboxSettings(
+    pinned.packages === undefined ? prepared.settings : { ...prepared.settings, packages: pinned.packages },
+  );
 
   await writeVolumeFile(input.backend, input.containerId, SETTINGS_FILE.name, written);
 
-  return { values: syncedValues(SETTINGS_FILE, written), notices: prepared.notices };
+  return { values: syncedValues(SETTINGS_FILE, written), notices: prepared.notices, pins: pinned.pins };
 };
+
+const followHostPackages = (input: SyncInput, pins: PackagePin[]) =>
+  refreshPackages({
+    backend: input.backend,
+    containerId: input.containerId,
+    stampPath: stateLayout(input.stateDir).repo(input.repoHash).syncPackages,
+    pins,
+    othersLive: input.othersLive ?? (() => Promise.resolve(false)),
+  }).catch((error: unknown) => [
+    `warning: the sandbox packages were not refreshed to follow the host: ${errorMessage(error)}`,
+  ]);
 
 const syncExtensionFile = async (input: SyncInput, file: SyncedFile) => {
   const host = await readHostFile(input.hostAgentDir, file.name);
@@ -162,8 +180,9 @@ const syncExtensionFile = async (input: SyncInput, file: SyncedFile) => {
 };
 
 const syncIn = async (input: SyncInput, baselinePath: string) => {
+  const settings = syncSettings(input);
   const synced = await Promise.all([
-    syncSettings(input),
+    settings,
     ...EXTENSION_FILES.map((file) => syncExtensionFile(input, file)),
   ]);
   const baseline = Object.fromEntries(
@@ -172,7 +191,10 @@ const syncIn = async (input: SyncInput, baselinePath: string) => {
 
   await writeJsonFile(baselinePath, baselineRecord(baseline), { mode: PRIVATE_FILE_MODE });
 
-  return synced.flatMap((outcome) => outcome.notices);
+  const refreshed =
+    input.refreshPackages === true ? await followHostPackages(input, (await settings).pins) : [];
+
+  return [...synced.flatMap((outcome) => outcome.notices), ...refreshed];
 };
 
 const syncWithBaseline = async (input: SyncInput, baselinePath: string) => {

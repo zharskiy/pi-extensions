@@ -18,6 +18,8 @@ const CAT_SCRIPT = `${REGULAR_FILE_GUARD}; cat "$1"`;
 
 const REMOVE_SCRIPT = 'rm -f "$1"';
 
+const REMOVE_DIRS_SCRIPT = 'rm -rf -- "$@"';
+
 const MISSING_EXIT = 3;
 
 const NOT_REGULAR_EXIT = 4;
@@ -109,6 +111,21 @@ export const readVolumeText = async (
   }
 
   return result.stdout;
+};
+
+export const removeVolumeDirs = async (backend: Backend, containerId: string, names: string[]) => {
+  const result = await execCapture(backend, {
+    containerId,
+    command: ["sh", "-c", REMOVE_DIRS_SCRIPT, "sh", ...names.map(guestPath)],
+    env: {},
+    workdir: "/",
+  });
+
+  if (result.code !== 0) {
+    throw new LauncherError(
+      `could not remove the outdated packages from the sandbox volume (exit ${result.code})`,
+    );
+  }
 };
 
 export const removeVolumeFile = async (backend: Backend, containerId: string, name: string) => {
