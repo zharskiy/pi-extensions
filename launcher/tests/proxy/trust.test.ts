@@ -91,7 +91,7 @@ describe("ensureTrustBundle", () => {
       ["security", "find-certificate", "-a", "-p", SYSTEM],
       ["security", "find-certificate", "-a", "-p", LOGIN],
     ]);
-    expect(bundle.pemPath).toBe(join(state.stateDir, "ca", "trust.pem"));
+    expect(bundle.pemPath).toBe(join(state.stateDir, "vm", "trust.pem"));
     expect(count(pem)).toBe(3);
     expect(pem.startsWith(state.launcherPem.trim())).toBe(true);
     expect(pem).not.toContain(state.leafPem.trim());

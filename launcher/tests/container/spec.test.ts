@@ -25,7 +25,7 @@ const proxy = {
 
 const launchId = "0123456789abcdef";
 
-const trust = { pemPath: "/state/ca/trust.pem", hash: "trust-1" };
+const trust = { pemPath: "/state/vm/trust.pem", hash: "trust-1" };
 
 const specInput = (overrides: Partial<ContainerSpecInput> = {}): ContainerSpecInput => ({
   workspace: { cwd: "/work/repo/src", repoRoot, gitCommonDir: "/work/repo/.git", isGitRepo: true },
@@ -308,7 +308,7 @@ describe("buildContainerSpec", () => {
     const spec = buildContainerSpec(specInput());
 
     expect(spec.mounts.filter((mount) => mount.target === "/etc/pi-sandbox/ca.pem")).toEqual([
-      { source: "/state/ca/trust.pem", target: "/etc/pi-sandbox/ca.pem", readOnly: true, kind: "bind" },
+      { source: "/state/vm/trust.pem", target: "/etc/pi-sandbox/ca.pem", readOnly: true, kind: "bind" },
     ]);
     expect(spec.env).toMatchObject({
       NODE_EXTRA_CA_CERTS: "/etc/pi-sandbox/ca.pem",

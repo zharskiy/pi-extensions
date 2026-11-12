@@ -1,5 +1,5 @@
 import { X509Certificate } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import type { ExtraCa } from "../config/index.ts";
 import {
@@ -197,6 +197,8 @@ export const ensureTrustBundle = async (input: TrustBundleInput): Promise<TrustB
   await writeIfChanged(extraPemPath, pemText(extras));
 
   await writeIfChanged(pemPath, bundle);
+
+  await rm(layout.legacyTrustPem, { force: true });
 
   return { pemPath, caCertPath: ca.certPath, extraPemPath, hash: sha256Hex(bundle) };
 };

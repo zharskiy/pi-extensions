@@ -58,7 +58,7 @@ Connections that are already open stay until they close.
 | `resources.cpus` | CPU limit of the container. | no limit (the whole VM) |
 | `resources.memoryGiB` | Memory limit of the container, in GiB. | no limit (the whole VM) |
 | `sessions.host` | Keep sessions in host pi's own session folder. | `true` |
-| `workspaceRoots` | Folders pi may start in, as `{ "roots": [...] }`. | anywhere |
+| `workspaceRoots` | Folders pi may start in, as `{ "roots": [...] }`, and the only folders the VM shares ([below](#workspace-roots)). | anywhere; the VM shares your home |
 
 The sections below explain each group.
 
@@ -185,6 +185,20 @@ Your home inside the sandbox lives in memory, so tool caches are lost when pi ex
 Every sandbox can write to these volumes, so a bad package written in one folder reaches the others. Use them for package caches only.
 
 The volumes stay until you uninstall. `pi sandbox reset` and the daily cleanup do not remove them.
+
+## Workspace roots
+
+```json
+{ "workspaceRoots": { "roots": ["~/work", "/Volumes/code"] } }
+```
+
+Without `workspaceRoots`, pi starts anywhere the guard allows, and the VM shares your whole home, writable. With it:
+
+- **Pi starts only inside a root.** A launch is refused when the repository, or a git dir it mounts (a worktree's main `.git`, say), lies outside every root. The message names the folder and `workspaceRoots.roots`.
+- **The VM shares only the roots**, writable, plus pi's session folder `<agent dir>/sessions` (writable) and the launcher's `<state>/vm` folder (read-only, the rendered agent files and the CA bundle). Your home is no longer shared.
+- **The VM restarts when its shares differ.** At the first launch after you set or change the roots, the launcher restarts the VM with exactly this list and says so. While other pi sessions run, a launch the current shares already cover goes ahead and the VM is changed at the next launch with no session running; a launch they do not cover stops and asks you to exit the others. `pi sandbox doctor` warns while the shares differ.
+
+A root is refused when it holds `,` or `:`, is your home or a folder above it, or is, holds or lies inside the pi agent dir, the launcher state dir or `~/.ssh`. A root inside another root is dropped. A root that does not exist is skipped with `workspaceRoots: <root> does not exist, not shared`.
 
 ## Variables passed into the sandbox
 

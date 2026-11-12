@@ -214,6 +214,7 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
     ensureRunning,
     coverage: shares.coverage,
     ensureShares: shares.ensureShares,
+    reconcileShares: shares.reconcileShares,
     ensureTrust: trust.ensureTrust,
     size,
     resizeCommand: (target) =>

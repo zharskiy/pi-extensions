@@ -56,6 +56,23 @@ describe("stateLayout", () => {
     expect(layout.imageRecord).toBe("/state/image.json");
   });
 
+  it("puts only the rendered files and the trust bundle under vm/, the one dir the VM shares", () => {
+    const layout = stateLayout("/state");
+    const inVm = (path: string) => path.startsWith("/state/vm/");
+    const flat = (value: unknown): string[] =>
+      typeof value === "string"
+        ? [value]
+        : typeof value === "object" && value !== null
+          ? Object.values(value).flatMap(flat)
+          : [];
+    const hidden = [...flat(layout), ...flat(layout.repo("r1"))].filter(inVm);
+
+    expect(layout.vm).toBe("/state/vm");
+    expect(layout.trustPem).toBe("/state/vm/trust.pem");
+    expect(layout.legacyTrustPem).toBe("/state/ca/trust.pem");
+    expect(hidden.sort()).toEqual(["/state/vm/render/r1", "/state/vm/trust.pem"]);
+  });
+
   it("keeps every file of one repository under repos/<repo hash>, its proxy included", () => {
     const files = stateLayout("/state").repo("r1");
 
@@ -65,7 +82,8 @@ describe("stateLayout", () => {
       launches: "/state/repos/r1/launches",
       lock: "/state/repos/r1/lock",
       containerLock: "/state/repos/r1/container.lock",
-      render: "/state/repos/r1/render",
+      render: "/state/vm/render/r1",
+      legacyRender: "/state/repos/r1/render",
       renderLock: "/state/repos/r1/render.lock",
       sync: "/state/repos/r1/sync",
       syncLock: "/state/repos/r1/sync/sync.lock",

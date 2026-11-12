@@ -1,4 +1,13 @@
-import { type Backend, ENGINE_PROFILE, LABELS, recommendedVmSize, type VmSize } from "../../backend/index.ts";
+import {
+  type Backend,
+  ENGINE_PROFILE,
+  LABELS,
+  recommendedVmSize,
+  shareDrift,
+  shareText,
+  type VmShare,
+  type VmSize,
+} from "../../backend/index.ts";
 import { authorityOf, type CredentialRule, TLS_PORT } from "../../config/index.ts";
 import { readHostPiFiles } from "../../hostpi/index.ts";
 import { type DenialRecord, readHealth } from "../../proxy/index.ts";
@@ -9,7 +18,7 @@ import { missingPiText } from "../host-pi.ts";
 import { hostSessionsOf } from "../host-sessions.ts";
 import { type Sandbox, type Stage, type StageOutcome, withSandbox } from "../launch.ts";
 import { denialAdvice, deniedTargets, type SandboxProxy, sandboxDenials } from "../sandbox-proxy.ts";
-import { vmShareCoverage } from "../vm.ts";
+import { vmShareCoverage, vmSharesFor } from "../vm.ts";
 import {
   type CheckResult,
   failed,
@@ -156,6 +165,30 @@ const sizeCheck = async (deps: CliDeps, sandbox: Sandbox) => {
     : passed(current);
 };
 
+const sharesPassed = passed("the sandbox VM shares every path this repository needs");
+
+const listed = (shares: VmShare[]) => shares.map(shareText).join(", ");
+
+const driftText = (extra: VmShare[], lacking: VmShare[]) =>
+  [
+    ...(extra.length === 0 ? [] : [`shares ${listed(extra)}, which workspaceRoots leaves out`]),
+    ...(lacking.length === 0 ? [] : [`lacks ${listed(lacking)}`]),
+  ].join(" and ");
+
+const rootsCheck = (current: VmShare[], desired: VmShare[]): CheckResult => {
+  const { extra, lacking } = shareDrift(current, desired);
+
+  if (extra.length === 0 && lacking.length === 0) {
+    return passed(
+      "the sandbox VM shares exactly the workspaceRoots, the session dir and the launcher's vm dir",
+    );
+  }
+
+  return warned(`the sandbox VM ${driftText(extra, lacking)}`, {
+    hint: "run pi once while no other pi session runs; it restarts the VM with the shares workspaceRoots sets",
+  });
+};
+
 interface SharesOutcome {
   result: CheckResult;
   missing: string[];
@@ -181,14 +214,20 @@ const sharesCheck = async (
     };
   }
 
+  if (coverage.missing.length > 0) {
+    return {
+      result: warned(`the sandbox VM does not share ${coverage.missing.join(", ")}`, {
+        hint: "run pi once here while no other pi session runs, which shares it and restarts the VM, then pi sandbox doctor again",
+      }),
+      missing: coverage.missing,
+    };
+  }
+
+  const plan = vmSharesFor(deps, context.effective.config.workspaceRoots);
+
   return {
-    result:
-      coverage.missing.length === 0
-        ? passed("the sandbox VM shares every path this repository needs")
-        : warned(`the sandbox VM does not share ${coverage.missing.join(", ")}`, {
-            hint: "run pi once here while no other pi session runs, which shares it and restarts the VM, then pi sandbox doctor again",
-          }),
-    missing: coverage.missing,
+    result: plan === undefined ? sharesPassed : rootsCheck(coverage.shares, plan.shares),
+    missing: [],
   };
 };
 

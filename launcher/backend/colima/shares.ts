@@ -11,6 +11,11 @@ interface SharePlan {
   next: VmShare[];
 }
 
+interface Restart {
+  change: string;
+  failure: string;
+}
+
 const SAFE_WORD = /^[A-Za-z0-9_@%+=:,./-]+$/;
 
 const segmentsOf = (path: string) => path.split(sep).filter((part) => part !== "");
@@ -83,8 +88,9 @@ const planOf = (current: VmShare[], needs: VmPath[], home: string): SharePlan =>
 
 const shellWord = (word: string) => (SAFE_WORD.test(word) ? word : `'${word.replaceAll("'", "'\\''")}'`);
 
-const mountFlags = (shares: VmShare[]) =>
-  shares.flatMap((share) => ["--mount", share.writable ? `${share.location}:w` : share.location]);
+export const shareText = (share: VmShare) => (share.writable ? `${share.location}:w` : share.location);
+
+const mountFlags = (shares: VmShare[]) => shares.flatMap((share) => ["--mount", shareText(share)]);
 
 const startArgs = (profile: string, shares: VmShare[]) => [
   "start",
@@ -110,6 +116,26 @@ const notShared = (paths: string[]) =>
 const sessionsText = (count: number) =>
   count === 1 ? "1 running pi session" : `${count} running pi sessions`;
 
+const sameShare = (share: VmShare) => (other: VmShare) =>
+  other.location === share.location && other.writable === share.writable;
+
+export const shareDrift = (current: VmShare[], desired: VmShare[]) => ({
+  extra: current.filter((share) => !desired.some(sameShare(share))),
+  lacking: desired.filter((share) => !current.some(sameShare(share))),
+});
+
+const isDrifted = (current: VmShare[], desired: VmShare[]) => {
+  const { extra, lacking } = shareDrift(current, desired);
+
+  return extra.length > 0 || lacking.length > 0;
+};
+
+const exactPlan = (current: VmShare[], desired: VmShare[], needs: VmPath[]): SharePlan => ({
+  missing: pathsOf(uncovered(current, needs)),
+  added: shareDrift(current, desired).lacking,
+  next: desired,
+});
+
 export const createColimaShares = (colima: Colima) => {
   const { home, profile } = colima;
 
@@ -121,12 +147,8 @@ export const createColimaShares = (colima: Colima) => {
     return text === undefined ? undefined : vmSharesOf(text, home);
   };
 
-  const run = (plan: SharePlan, args: string[]) =>
-    colima.run(
-      `could not share ${locationsOf(plan.added)} with the sandbox VM`,
-      args,
-      `run ${plainStart(profile)} and see ${logHint(profile)}`,
-    );
+  const run = (failure: string, args: string[]) =>
+    colima.run(failure, args, `run ${plainStart(profile)} and see ${logHint(profile)}`);
 
   const assertShared = async (plan: SharePlan, needs: VmPath[]) => {
     const shares = await runningShares();
@@ -141,25 +163,16 @@ export const createColimaShares = (colima: Colima) => {
     }
   };
 
-  const assertIdle = async (plan: SharePlan, busy: VmShareOptions["busy"]) => {
-    const count = await busy();
+  const busyError = (plan: SharePlan, count: number, change: string) =>
+    new LauncherError(
+      `${notShared(plan.missing)}; ${change} restarts the VM and would stop ${sessionsText(count)}`,
+      `end them and run pi again, or share it yourself with ${restartCommand(profile, plan.next)}`,
+    );
 
-    if (count > 0) {
-      throw new LauncherError(
-        `${notShared(plan.missing)}; sharing ${locationsOf(plan.added)} restarts the VM and would stop ${sessionsText(count)}`,
-        `end them and run pi again, or share it yourself with ${restartCommand(profile, plan.next)}`,
-      );
-    }
-  };
+  const restartWith = async (plan: SharePlan, needs: VmPath[], { change, failure }: Restart) => {
+    await run(failure, ["stop", "--profile", profile]);
 
-  const restartWithShares = async (plan: SharePlan, needs: VmPath[], options: VmShareOptions) => {
-    await assertIdle(plan, options.busy);
-
-    options.report(`sharing ${locationsOf(plan.added)} with the sandbox VM, one time`);
-
-    await run(plan, ["stop", "--profile", profile]);
-
-    await run(plan, startArgs(profile, plan.next));
+    await run(failure, startArgs(profile, plan.next));
 
     await assertShared(plan, needs);
 
@@ -167,10 +180,26 @@ export const createColimaShares = (colima: Colima) => {
 
     if (detection?.available !== true) {
       throw new LauncherError(
-        `the sandbox VM did not come back after sharing ${locationsOf(plan.added)}: ${detection?.reason ?? "not detected"}`,
+        `the sandbox VM did not come back after ${change}: ${detection?.reason ?? "not detected"}`,
         `run ${plainStart(profile)}`,
       );
     }
+  };
+
+  const restartWithShares = async (plan: SharePlan, needs: VmPath[], options: VmShareOptions) => {
+    const change = `sharing ${locationsOf(plan.added)}`;
+    const count = await options.busy();
+
+    if (count > 0) {
+      throw busyError(plan, count, change);
+    }
+
+    options.report(`sharing ${locationsOf(plan.added)} with the sandbox VM, one time`);
+
+    await restartWith(plan, needs, {
+      change,
+      failure: `could not share ${locationsOf(plan.added)} with the sandbox VM`,
+    });
   };
 
   const shareMissing = async (needs: VmPath[], options: VmShareOptions) => {
@@ -203,11 +232,68 @@ export const createColimaShares = (colima: Colima) => {
     await colima.withLock(() => shareMissing(needs, options));
   };
 
+  const assertDesiredCovers = (desired: VmShare[], needs: VmPath[]) => {
+    const outside = pathsOf(uncovered(desired, needs));
+
+    if (outside.length > 0) {
+      throw new LauncherError(
+        `${outside.join(", ")} ${outside.length === 1 ? "lies" : "lie"} outside the shares workspaceRoots gives the sandbox VM`,
+        "start pi inside one of the workspaceRoots, or add the folder to workspaceRoots.roots",
+      );
+    }
+  };
+
+  const keepWhileBusy = (plan: SharePlan, count: number, report: VmShareOptions["report"]) => {
+    if (plan.missing.length > 0) {
+      throw busyError(plan, count, "changing its shares to the workspaceRoots");
+    }
+
+    report(
+      "the sandbox VM keeps its current shares while other pi sessions run; they change to the workspaceRoots at the next launch with no pi session running",
+    );
+  };
+
+  const reconcileDrift = async (desired: VmShare[], needs: VmPath[], options: VmShareOptions) => {
+    const shares = vmSharesOf((await limaYaml()) ?? "", home);
+
+    if (shares === undefined || !isDrifted(shares, desired)) {
+      return;
+    }
+
+    const plan = exactPlan(shares, desired, needs);
+    const count = await options.busy();
+
+    if (count > 0) {
+      keepWhileBusy(plan, count, options.report);
+
+      return;
+    }
+
+    options.report(`restarting the sandbox VM to change its shares to ${locationsOf(desired)}`);
+
+    await restartWith(plan, needs, {
+      change: "changing its shares",
+      failure: "could not change the shares of the sandbox VM",
+    });
+  };
+
+  const reconcileShares = async (desired: VmShare[], needs: VmPath[], options: VmShareOptions) => {
+    assertDesiredCovers(desired, needs);
+
+    const shares = await runningShares();
+
+    if (shares === undefined || !isDrifted(shares, desired)) {
+      return;
+    }
+
+    await colima.withLock(() => reconcileDrift(desired, needs, options));
+  };
+
   const coverage = async (needs: VmPath[]): Promise<VmCoverage | undefined> => {
     const shares = await runningShares();
 
     return shares === undefined ? undefined : { shares, missing: pathsOf(uncovered(shares, needs)) };
   };
 
-  return { ensureShares, coverage };
+  return { ensureShares, reconcileShares, coverage };
 };
