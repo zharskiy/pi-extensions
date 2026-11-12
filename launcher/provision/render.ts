@@ -158,10 +158,21 @@ const gitHost = (host: string, helper: string) => [
   `\tinsteadOf = ${gitValue(`ssh://git@${host}/`)}`,
 ];
 
+const shellQuote = (text: string) => `'${text.replaceAll("'", "'\\''")}'`;
+
+const credentialHelper = (username: string, password: string) =>
+  `!f() { if [ "$1" = get ]; then printf 'username=%s\\npassword=%s\\n' ${shellQuote(username)} ${shellQuote(password)}; fi; }; f`;
+
+const GITHUB_USERNAME = "x-access-token";
+
+const GITLAB_USERNAME = "oauth2";
+
 const gitConfig = (tools: DerivedTools) => [
   ...gitIdentity(tools.git),
-  ...tools.gh.flatMap((entry) => gitHost(entry.host, "!gh auth git-credential")),
-  ...tools.glab.flatMap((entry) => gitHost(entry.host, "!glab auth git-credential")),
+  ...tools.gh.flatMap((entry) => gitHost(entry.host, credentialHelper(GITHUB_USERNAME, entry.token))),
+  ...tools.glab.flatMap((entry) =>
+    gitHost(entry.host, credentialHelper(entry.user ?? GITLAB_USERNAME, entry.token)),
+  ),
 ];
 
 const npmrc = (entries: NpmrcEntry[]) => entries.map((entry) => `${entry.key}=${entry.value}`);

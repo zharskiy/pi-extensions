@@ -86,22 +86,20 @@ describe("prepareBuildContext", () => {
 
     const dockerfile = await readFile(join(dir, "Dockerfile"), "utf8");
     const packages =
-      /apt-get install -y --no-install-recommends ([^\\\n]+)/.exec(dockerfile)?.[1]?.split(" ") ?? [];
+      /apt-get install -y --no-install-recommends ([^\\\n]+)/.exec(dockerfile)?.[1]?.trim().split(" ") ?? [];
 
-    expect(packages).toEqual(
-      expect.arrayContaining([
-        "curl",
-        "jq",
-        "python3",
-        "python3-venv",
-        "make",
-        "unzip",
-        "less",
-        "procps",
-        "xz-utils",
-        "gh",
-      ]),
-    );
+    expect(packages.sort()).toEqual([
+      "ca-certificates",
+      "fd-find",
+      "git",
+      "less",
+      "ncurses-term",
+      "openssh-client",
+      "procps",
+      "ripgrep",
+      "socat",
+    ]);
+    expect(dockerfile).not.toContain("glab");
     expect(dockerfile).toContain(
       "pi sandbox commands run on the host; ask the user to run pi sandbox $* there",
     );
