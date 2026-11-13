@@ -1,3 +1,4 @@
+import { realpathSync } from "node:fs";
 import { mkdir, realpath, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -216,7 +217,7 @@ describe("sharedRootsOf", () => {
     ["a folder in /opt", "/opt/homebrew", "overlaps /opt"],
     ["/System", "/System", "overlaps /System"],
     ["a folder in /Library", "/Library/LaunchDaemons", "overlaps /Library"],
-    ["/bin", "/bin", "overlaps /bin"],
+    ["/bin", "/bin", `overlaps ${realpathSync("/bin")}`],
     ["a folder in /sbin", "/sbin/x", "overlaps /sbin"],
     ["/private", "/private", ""],
     ["/var", "/var", ""],
