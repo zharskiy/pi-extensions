@@ -205,7 +205,7 @@ Start with `pi sandbox doctor`, which names the failing check.
 | symptom | what to do |
 | --- | --- |
 | A host `was blocked in this folder's sandbox` | Follow the hint in that line. `pi sandbox doctor` puts the same hint under the `rule` check of a credential host the proxy refused, for example the address a host resolved to and the `egress.privateHosts` entry that allows it, and reports any other host blocked during its run as a `blocked <host:port>` warning. |
-| The doctor's `trust` or `rule` check fails with `CERT_NOT_YET_VALID` | The VM's clock is behind the host's. Run `pi sandbox stop` once no pi session runs, then `pi sandbox doctor` again, which starts the VM afresh. |
+| The doctor's `trust` or `rule` check fails with `CERT_NOT_YET_VALID` | The VM's clock is more than an hour behind the host's. Run `pi sandbox stop` once no pi session runs, then `pi sandbox doctor` again, which starts the VM afresh. |
 | A provider login is missing or expired | Run `pi --no-sandbox`, then `/login`. |
 | Pi says `the sandbox VM engine is unreachable` | Run `colima start --profile pi-sandbox --activate=false`, or `install.sh` if the profile is gone. |
 | The VM is running but its engine does not answer | Run `colima stop --profile pi-sandbox && colima start --profile pi-sandbox --activate=false`. |

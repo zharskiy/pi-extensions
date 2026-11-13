@@ -243,7 +243,7 @@ proxy/denial-page.ts           the 403 page over TLS
 proxy/replies.ts               every raw HTTP reply and the JSON replies
 proxy/parent.ts                the parent proxy route
 proxy/trust.ts                 the trust bundle: tls.extraCa by keychain fingerprint or PEM file, CA and expiry checks
-proxy/tls-ca.ts                the launcher CA and leaf certificates
+proxy/tls-ca.ts                the launcher CA and leaf certificates, both dated an hour back
 proxy/sign-in.ts               the proxy's host MCP sign-in
 proxy/single-flight.ts         one pending promise per key
 proxy/access-log.ts            the capped JSON-line logs

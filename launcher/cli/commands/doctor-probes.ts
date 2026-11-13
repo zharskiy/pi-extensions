@@ -64,7 +64,7 @@ const NOT_YET_VALID = "CERT_NOT_YET_VALID";
 
 const CLOCK_BEHIND = {
   reasons: [
-    "the sandbox VM's clock is behind the host's, so the proxy's certificate, dated by the host, is not valid there yet",
+    "the sandbox VM's clock is more than an hour behind the host's, so the proxy's certificate, dated by the host an hour back, is not valid there yet",
   ],
   hint: "restart the VM to reset its clock: run pi sandbox stop once no pi session runs, then pi sandbox doctor again",
 };
