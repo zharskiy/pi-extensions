@@ -376,6 +376,7 @@ tests/proxy/start.test.ts            proxy start, reuse, stop and idle exit
 tests/proxy/parent.test.ts           the parent proxy
 tests/proxy/denial-page.test.ts      the denial page
 tests/proxy/tls-ca.test.ts           the CA and leaves
+tests/proxy/intercept.test.ts        TLS termination: a client that closes during the handshake or before its hello, and one that is served
 tests/proxy/trust.test.ts            the trust bundle
 tests/proxy/sni.test.ts              ClientHello parsing
 tests/proxy/hello.test.ts            ClientHello reading and dial timeout
