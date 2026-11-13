@@ -232,7 +232,7 @@ describe("mcpOAuth secrets read the host pi sign-in", () => {
   it("answers a 401 to a request that carried no token with the not-signed-in text once its login ended", async () => {
     await writeEntry("old-token", Date.now() - 1);
 
-    const resolver = resolverWith("fail", { signInWaitMs: 2_000 });
+    const resolver = resolverWith("fail");
 
     expect((await resolver.resolve("mcp", REF)).ok).toBe(false);
 
@@ -409,13 +409,17 @@ describe("mcpOAuth sign-in through the proxy", () => {
     await closeServer(proxy.upstream);
   });
 
-  const started = async (mode: string, expiresAt: number | null = Date.now() + 3_600_000) => {
+  const started = async (
+    mode: string,
+    expiresAt: number | null = Date.now() + 3_600_000,
+    signInWaitMs?: number,
+  ) => {
     if (expiresAt !== null) {
       await writeEntry("stored-token", expiresAt);
     }
 
     const ca = proxy.ca as LauncherCa;
-    const resolver = resolverWith(mode, { signInWaitMs: 200 });
+    const resolver = resolverWith(mode, { signInWaitMs });
     const test = await startTestProxy({
       stateDir: state.stateDir,
       policy: { allow: [] },
@@ -532,7 +536,7 @@ describe("mcpOAuth sign-in through the proxy", () => {
   });
 
   it("kills the login's process group when the proxy stops", async () => {
-    const { test, send } = await started("hang", Date.now() - 1);
+    const { test, send } = await started("hang", Date.now() - 1, 200);
 
     expect((await send(`Bearer ${PLACEHOLDER}`)).status).toBe(503);
 
