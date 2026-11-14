@@ -130,18 +130,13 @@ const fileVm = (document: ConfigDocument) =>
     }),
   ) as Partial<VmSpec>;
 
-const initialVm = (document: ConfigDocument, facts: HostFacts, problems: OwnedProblem[]): Answers["vm"] => {
+const initialVm = (document: ConfigDocument, problems: OwnedProblem[]): Answers["vm"] => {
   const configured = fileVm(document);
   const valid = Object.fromEntries(
     Object.entries(configured).filter(([key]) => !isInvalid(problems, `vm.${key}`)),
   ) as Partial<VmSpec>;
-  const anyInvalid = VM_KEYS.some((key) => isInvalid(problems, `vm.${key}`));
 
-  if (anyInvalid) {
-    return { ...facts.automatic, ...valid };
-  }
-
-  return Object.keys(configured).length === 0 ? "automatic" : { kept: configured };
+  return Object.keys(valid).length === 0 ? "automatic" : { kept: valid };
 };
 
 const initialWriteBack = (document: ConfigDocument) => {
@@ -160,7 +155,7 @@ export const initialAnswers = (
 
   return {
     roots: initialRoots(document, facts, context),
-    vm: initialVm(document, facts, problems),
+    vm: initialVm(document, problems),
     writeBack: initialWriteBack(document),
   };
 };
@@ -174,7 +169,10 @@ const editedVm = (value: JsonObject, vm: Answers["vm"]) => {
   }
 
   if ("kept" in vm) {
-    return value;
+    return VM_KEYS.reduce(
+      (edited, key) => (key in vm.kept ? edited : withoutValue(edited, ["vm", key])),
+      value,
+    );
   }
 
   return VM_KEYS.reduce((edited, key) => withValue(edited, ["vm", key], vm[key]), value);

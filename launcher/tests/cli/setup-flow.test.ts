@@ -584,7 +584,7 @@ describe("an invalid config", () => {
     await run.keys(KEY.enter);
 
     expect(await run.exit).toBe(0);
-    expect(JSON.parse(run.writes[0] ?? "").vm).toEqual({ cpus: 8, memoryGiB: 10, diskGiB: 60 });
+    expect(JSON.parse(run.writes[0] ?? "").vm).toBeUndefined();
   });
 
   it("refuses Apply while the folders nest with a launcher path", async () => {

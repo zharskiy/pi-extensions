@@ -5,6 +5,7 @@ import type { VmShare } from "../../backend/index.ts";
 import { readDocument } from "../../cli/setup/document.ts";
 import {
   answersForYes,
+  editedConfig,
   FIRST_RUN_STEPS,
   firstRunSteps,
   initialAnswers,
@@ -148,11 +149,16 @@ describe("initialAnswers", () => {
         factsOf(),
         ENV,
       ).vm,
-    ).toEqual({
-      cpus: 4,
-      memoryGiB: 10,
-      diskGiB: 60,
-    });
+    ).toEqual({ kept: { cpus: 4 } });
+    expect(initialAnswers(documentOf({ vm: { memoryGiB: -3 } }), factsOf(), ENV).vm).toBe("automatic");
+  });
+
+  it("removes only the invalid VM key and keeps an untouched Automatic automatic", () => {
+    const document = documentOf({ workspaceRoots: { roots: ["~/w"] }, vm: { cpus: 4, memoryGiB: 1 } });
+    const answers = initialAnswers(document, factsOf(), ENV);
+
+    expect(editedConfig(document.value, answers).vm).toEqual({ cpus: 4 });
+    expect(editedConfig({ vm: { memoryGiB: -3 } }, { ...answers, vm: "automatic" }).vm).toBeUndefined();
   });
 });
 
