@@ -47,7 +47,7 @@ The script starts a Colima profile named `pi-sandbox` and puts `~/.local/bin` fi
 
 If `~/.local/bin/pi` is pi's own managed install, the script replaces that link. An earlier pi-sandbox link or wrapper is replaced too. Any other file there stops the install.
 
-The VM gets this Mac's CPU count, from 2 to 8, and half its memory, from 4 to 10 GiB, with a 60 GiB disk. To change that, pass `--cpu N`, `--memory GiB` or `--disk GiB` to `install.sh`. To resize the VM later, while no pi runs:
+The VM gets this Mac's CPU count, from 2 to 8, and half its memory, from 4 to 10 GiB, with a 60 GiB disk. To change that, pass `--cpu N`, `--memory GiB` or `--disk GiB` to `install.sh`. To resize the VM later, set `vm` in the config (see [VM size](CONFIGURATION.md#vm-size)); the next launch with no other pi session running restarts the VM to it. By hand, while no pi runs:
 
 ```bash
 colima stop --profile pi-sandbox && colima start --profile pi-sandbox --activate=false --cpu 4 --memory 8
@@ -148,7 +148,7 @@ After a reboot or `pi sandbox stop`, the next `pi` starts the VM again. A failur
 - **Home lives in memory.** `/home/pi` and `/tmp` are emptied when pi exits. Pi's own files survive in the folder's agent volume. To keep a tool cache, list it in `mounts.sharedCaches`.
 - **Build output has its own copy.** `node_modules`, `.venv`, `target` and `.gradle` get their own volume when a matching lockfile sits beside them ([list](CONFIGURATION.md#build-output-overlays)). Run your install command, such as `npm install`, once inside.
 - **Sessions are shared.** `/resume` on your Mac lists sandbox sessions.
-- **Some settings come back to your Mac.** When you change the default model, provider or thinking level, the enabled models, the theme or a few display and queue preferences inside (in `settings.json`), or the settings of the subagents, style, notifications and session-limits extensions (their `pi-*.json` files), the launcher copies the change to your Mac when pi exits, or at the next launch after a crash, and prints one line per change. A value of the wrong type, or a theme name that is not a plain file name, is not copied and a line says so; if a settings file is missing from the sandbox, nothing in it is removed on your Mac. If you changed the same setting on your Mac meanwhile, your Mac's value wins and a line says so. Nothing else comes back: packages, extensions, skills, commands, paths, proxy settings, logins, `models.json`, `mcp.json` and agent files change only on your Mac.
+- **Some settings come back to your Mac.** When you change the default model, provider or thinking level, the enabled models, the theme or a few display and queue preferences inside (in `settings.json`), or the settings of the subagents, style, notifications and session-limits extensions (their `pi-*.json` files), the launcher copies the change to your Mac when pi exits, or at the next launch after a crash, and prints one line per change. A value of the wrong type, or a theme name that is not a plain file name, is not copied and a line says so; if a settings file is missing from the sandbox, nothing in it is removed on your Mac. If you changed the same setting on your Mac meanwhile, your Mac's value wins and a line says so. `writeBack` in the config can take keys off this list, add plain preferences or turn it off ([Settings written back](CONFIGURATION.md#settings-written-back)). Nothing else comes back, whatever the config says: packages, extensions, skills, commands, paths, proxy settings, logins, `models.json`, `mcp.json` and agent files change only on your Mac.
 - **A new share restarts the VM once.** The first launch in a folder outside your home restarts the VM to share it, and the share is kept for later launches. With `workspaceRoots` set, the VM shares only those folders, so the restart happens when the list changes; a stopped VM starts with the new list directly. If other pi sessions run, also from another agent dir, the launch stops and asks you to exit them first.
 
 ### Where pi can start
@@ -194,6 +194,8 @@ Your settings go in `~/.pi/agent/pi-sandbox/config.json` (inside pi's agent fold
 - `egress.allow`: the hosts the sandbox may reach besides `pi.dev` and your providers. It is empty by default, so package registries such as `registry.npmjs.org` are reachable only once you list them or allow them with `pi sandbox egress allow`.
 - `image.packages` and `image.npmGlobal`: Debian and npm packages to add to the image.
 - `mounts.sharedCaches`: cache folders such as `~/.npm`, kept in volumes that all your sandboxes share. Your Mac's own folder is not mounted.
+- `vm`: the CPUs, memory and disk of the VM, applied at the next launch with no other pi session running. `resources` limits one container inside the VM instead.
+- `writeBack`: which settings changed inside come back to your Mac, inside limits the launcher keeps.
 
 `pi sandbox config` shows the result. Every key, credentials and corporate proxies are in [CONFIGURATION.md](CONFIGURATION.md), and [examples/config.json](examples/config.json) is a starting point for a team's shared file.
 

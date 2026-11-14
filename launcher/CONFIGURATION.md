@@ -26,7 +26,9 @@ Each launch gets a new container, so most changes apply at the next `pi`. Each f
 
 - **Grants** from `pi sandbox egress allow` and `revoke` apply at once, also to running sessions.
 - **Network settings** reach running sessions when you start a new `pi` in that folder. These are `egress.allow`, `egress.deny` and `egress.privateHosts`. Editing the file alone changes nothing for them.
-- **Credential rules, `env` secrets, the parent proxy and `tls.extraCa`** wait until every pi of the folder has exited. An `env` secret is a credential rule whose secret comes from a variable of your shell.
+- **Credential rules, `env` secrets, the parent proxy and `tls.extraCa`** wait until every pi of the folder has exited.
+- **`vm`** applies at the next launch with no other pi session running, which restarts the VM.
+- **`writeBack`** applies from the next launch. A running session keeps the list it started with, and the first launch after a change copies nothing back from before it (see [below](#settings-written-back)). An `env` secret is a credential rule whose secret comes from a variable of your shell.
 
 When other sessions run, a new launch says which case applies:
 
@@ -55,8 +57,10 @@ Connections that are already open stay until they close.
 | `mounts.autoOverlays` | Give build output folders their own volume. | `true` |
 | `mounts.sharedCaches` | Folders under `~` shared by all your sandboxes. | `[]` |
 | `env.allow` | Variables from your shell passed into each run. | terminal variables |
-| `resources.cpus` | CPU limit of the container. | no limit (the whole VM) |
-| `resources.memoryGiB` | Memory limit of the container, in GiB. | no limit (the whole VM) |
+| `resources.cpus` | CPU limit of each sandbox container, inside the VM. | no limit (the whole VM) |
+| `resources.memoryGiB` | Memory limit of each sandbox container, in GiB, inside the VM. | no limit (the whole VM) |
+| `vm.cpus`, `vm.memoryGiB`, `vm.diskGiB` | The size of the VM itself, which every container shares ([below](#vm-size)). | the size `install.sh` gave it |
+| `writeBack` | Which settings changed inside come back to your Mac ([below](#settings-written-back)). | the built-in list |
 | `sessions.host` | Keep sessions in host pi's own session folder. | `true` |
 | `workspaceRoots` | Folders pi may start in, as `{ "roots": [...] }`, and the only folders the VM shares ([below](#workspace-roots)). | anywhere; the VM shares your home |
 
@@ -185,6 +189,62 @@ Your home inside the sandbox lives in memory, so tool caches are lost when pi ex
 Every sandbox can write to these volumes, so a bad package written in one folder reaches the others. Use them for package caches only.
 
 The volumes stay until you uninstall. `pi sandbox reset` and the daily cleanup do not remove them.
+
+## VM size
+
+```json
+{ "vm": { "cpus": 4, "memoryGiB": 8, "diskGiB": 80 } }
+```
+
+Every key is optional. Without `vm` the VM keeps the size `install.sh` gave it: this Mac's CPU count from 2 to 8, half its memory from 4 to 10 GiB, and a 60 GiB disk. `cpus` is 1 to 64, `memoryGiB` 2 to 256 and `diskGiB` 20 to 2048, whole numbers.
+
+`vm` sizes the VM, which runs every sandbox container of every folder. `resources` limits one container inside it. A `resources` value above the matching `vm` value is a config error, since no container could get it.
+
+At a launch with no other pi session running, a VM whose size differs is restarted with the values that differ, and a line says so. While other sessions run, the launch goes on and a line says the size changes at the next launch with none running. Colima cannot shrink a disk: a `diskGiB` below the current disk is reported at each launch and ignored. A stopped VM first starts at its old size and is then restarted once. `pi sandbox doctor` compares the VM with `vm` and never restarts it. `install.sh` does not read `vm` yet; it sizes a new VM from your Mac or its own `--cpu`, `--memory` and `--disk` flags.
+
+## Settings written back
+
+When pi inside changes a setting on the list, the launcher copies the change to your Mac when pi exits (see [Some settings come back to your Mac](README.md#what-is-different-inside-the-sandbox)). By default the list is:
+
+- `settings.json`: `defaultProvider`, `defaultModel`, `defaultThinkingLevel`, `enabledModels`, `theme`, `hideThinkingBlock`, `quietStartup`, `collapseChangelog`, `doubleEscapeAction`, `treeFilterMode`, `steeringMode`, `followUpMode`, each with a check of its value.
+- `pi-subagents.json`, `pi-style.json`, `pi-notifications.json`, `pi-session-limits.json`: the top-level keys their extensions read, any JSON value.
+
+`writeBack` changes the list:
+
+```json
+{
+  "writeBack": {
+    "enabled": true,
+    "exclude": { "settings.json": ["theme"] },
+    "add": {
+      "settings.json": {
+        "editorPaddingX": { "type": "integer", "min": 0, "max": 8 },
+        "defaultThinkingLevel": { "type": "enum", "values": ["off", "low", "high"] }
+      },
+      "pi-footer.json": { "layout": { "type": "json" } }
+    }
+  }
+}
+```
+
+- `enabled: false` copies nothing back.
+- `exclude` names built-in keys, per file, to stop copying. A key that is not on the built-in list is an error.
+- `add` names keys, per file, with the check a value must pass. A built-in key gets your check instead of its own, for example when pi adds a value the built-in list does not know yet. A new `pi-<name>.json` file is copied from your Mac into the sandbox at each launch, like the built-in ones, and its listed keys come back.
+- A key both excluded and added is an error.
+
+The checks are `string` (optional `maxLength`, at most 512), `boolean`, `integer` and `number` (optional `min`, `max`), `enum` (`values`, a list of strings, numbers or booleans), `stringList` (optional `maxItems`), `fileName` (a plain file name, as for `theme`), `anyOf` (`of`, a list of checks) and `json` (any value). A value that fails its check is not copied and a line says so. There is no regular expression check.
+
+Some things no config can add, since your Mac would run or trust them:
+
+- Files other than `settings.json` and `pi-<lowercase letters, digits, dashes>.json` in the agent folder; never `auth.json`, `models.json`, `mcp.json`, `mcp-auth.json` or `trust.json`.
+- In `settings.json`: `packages`, `extensions`, `skills`, `prompts`, `themes`, `npmCommand`, `selfUpdateCommand`, `shellPath`, `shellCommandPrefix`, `externalEditor`, `httpProxy`, `sessionDir`, `defaultProjectTrust`, `modelOverrides` and `sessionShareDestination`, and any key with the `json` check. `theme` keeps the `fileName` check, since pi turns it into a path.
+- In `pi-subagents.json`: `disabledPlugins`.
+
+Size limits (1 MiB for `settings.json`, 64 KiB for a `pi-*.json`), the conflict rule (your Mac wins) and the printed lines stay as they are.
+
+Choose an added key with care: a sandboxed agent can set it to any value its check allows, and your Mac's pi reads that value. Add only plain preferences, and give each the narrowest check that fits.
+
+Every launch uses the list it started with. After you change `writeBack`, the next launch copies nothing back from earlier sessions, so a change made under the old list is never judged by the new one. `pi sandbox config` lists the keys of each file and whether they come from the default or your config.
 
 ## Workspace roots
 

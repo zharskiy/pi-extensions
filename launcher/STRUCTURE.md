@@ -36,7 +36,7 @@ cli/deps.ts                    the dependencies every command gets, and the shar
 cli/index.ts                   public surface
 cli/launch.ts                  the pi pipeline with its stages and progress lines, and withSandbox for the doctor
 cli/context.ts                 the launch context: the folder to mount, the guard and workspaceRoots before the search, config, discovery and the checks after it
-cli/vm.ts                      VM start (with the workspaceRoots shares when stopped), shares and trust store, the VM paths a launch needs, the workspaceRoots share list and its nesting check, the busy count with other agent dirs' containers
+cli/vm.ts                      VM start (with the workspaceRoots shares when stopped), shares, size and trust store, the VM paths a launch needs, the workspaceRoots share list and its nesting check, the busy count with other agent dirs' containers
 cli/launch-notices.ts          the launch notice texts, the host-file flag notice and the proxy stage detail
 cli/legacy-paths.ts            the config and state folders of earlier versions, with the launch notice and doctor warns for them
 cli/terminal.ts                the host terminal: streams, size read at use, resize
@@ -52,7 +52,7 @@ cli/host-pi.ts                 the one host pi (pi's managed install only), the 
 cli/notices.ts                 notices printed once per repository and text
 cli/versions.ts                launcher version and image pi version
 cli/commands/status.ts         pi sandbox status
-cli/commands/config.ts         pi sandbox config
+cli/commands/config.ts         pi sandbox config, with the effective write-back keys of each file and their source
 cli/commands/egress.ts         pi sandbox egress allow, revoke and list
 cli/commands/reset.ts          pi sandbox reset: the folder's sandbox and volumes
 cli/commands/stop.ts           pi sandbox stop
@@ -77,7 +77,8 @@ config/types.ts                the config, config file and rule types
 config/defaults.ts             the default config and image reference
 config/load.ts                 loads the config file and lays it over the defaults
 config/merge.ts                the config file over the defaults, env.allow added to the default list, the source of each key
-config/validate.ts             the key spec of the config file
+config/validate.ts             the key spec of the config file, with the writeBack value specs and ceiling and resources within vm
+config/write-back.ts           the effective write-back table: the built-in list with writeBack.exclude and writeBack.add, and each key's source
 config/dotted.ts               dotted key access
 config/egress-entry.ts         the host entry grammar, entry parsing and host matching
 config/egress-allow.ts         pi.dev and the allow list
@@ -117,6 +118,7 @@ backend/labels.ts              every pi-sandbox.* label key
 backend/image-reference.ts     image reference parsing
 backend/managed-network.ts     per-repository network and relay names and labels
 backend/exec-capture.ts        a non-tty exec with collected output
+backend/vm-size.ts             the VM size against the vm config: what differs, a disk below the current one, the size text
 backend/colima/backend.ts      the Colima backend
 backend/colima/profile.ts      the pi-sandbox profile, its socket and the VM's name for the host
 backend/colima/engine-client.ts  the engine HTTP client over the socket, with its timeouts
@@ -125,7 +127,7 @@ backend/colima/exec-session.ts exec streams with backpressure, ended quietly whe
 backend/colima/images.ts       image pull, build (with the output tail of a failed build) and removal
 backend/colima/volumes.ts      volume operations
 backend/colima/relay.ts        the per-repository network and relay
-backend/colima/vm.ts           VM start, size and stop
+backend/colima/vm.ts           VM start, size, the restart to the vm config size when idle, and stop
 backend/colima/shares.ts       VM shares, the share restart and the reconcile to the workspaceRoots list
 backend/colima/vm-trust.ts     the tls.extraCa certificates in the VM's trust store, engine restart when idle
 backend/colima/colima-yaml.ts  the lima.yaml mounts reader
@@ -199,7 +201,7 @@ provision/render.ts            the render dir and its tool files
 provision/tree.ts              filtered copy of host agent dir entries, with one notice for what was left out
 provision/pool.ts              bounded parallel work
 provision/sync.ts              the agent files sync under sync.lock: write-back to the host, then settings.json and pi-*.json into the volume, and the baseline
-provision/write-back.ts        the fixed write-back allowlist, the settings.json value checks, the three-way merge per key and its lines (no I/O)
+provision/write-back.ts        the write-back table compiled into value checks inside the ceiling, the allowlist hash of the baseline, the three-way merge per key and its lines (no I/O)
 provision/merge-settings.ts    the sandbox copy of the host settings: dropped keys, package sources and their notices
 provision/package-source.ts    package sources and their URL credentials
 provision/host-packages.ts     npm and git package sources pinned to the versions the host installed, read from host files (unversioned, range and tag npm sources; git commits on the remote)
@@ -283,6 +285,7 @@ shared/npmrc.ts                the .npmrc parser and value reader
 shared/ini.ts                  the ini parser and section.name[n] reader
 shared/maven-xml.ts            the XML tokenizer, the Maven settings model, the server secret reader and the XML writer
 shared/settle.ts               settleAll
+shared/write-back-table.ts     the built-in write-back table as value specs, the host-only settings keys and the ceiling no config passes
 ```
 
 ## tests/
@@ -320,6 +323,8 @@ tests/config/mounts.test.ts          mount keys
 tests/config/sessions.test.ts        sessions.host
 tests/config/schema.test.ts          schema and key spec agree
 tests/config/validate.test.ts        validation messages
+tests/config/write-back.test.ts      writeBack: defaults, exclude, add, override, enabled, the ceiling and the value specs
+tests/config/vm.test.ts              vm bounds and resources within vm
 tests/workspace/discover.test.ts     discovery and layout refusals
 tests/workspace/workspace-mode.test.ts  workspace mode
 tests/workspace/guard.test.ts        the workspace guard
@@ -335,7 +340,7 @@ tests/backend/fake-backend.conformance.test.ts  the suite on the fake backend
 tests/backend/colima.test.ts         Colima adapter specifics
 tests/backend/colima-vm.test.ts      VM start
 tests/backend/colima-shares.test.ts  VM shares, the workspaceRoots reconcile (foreign sessions, one-boot start, nested shares, unreadable lima.yaml), __vm-shares
-tests/backend/colima-size.test.ts    VM size
+tests/backend/colima-size.test.ts    VM size and the restart to the vm config size
 tests/container/spec.test.ts         the container spec
 tests/container/git-overlay.test.ts  the git overlay
 tests/container/lifecycle.test.ts    one container per launch, its removal and housekeeping
@@ -357,8 +362,8 @@ tests/hostpi/provider-hosts-sample.json  a sample provider host table
 tests/provision/fixtures.ts          provisioning fixtures
 tests/provision/render.test.ts       the render dir
 tests/provision/merge-settings.test.ts  the settings sync
-tests/provision/write-back.test.ts   the write-back allowlist, merge and lines
-tests/provision/sync.test.ts         write-back and sync against a fake volume
+tests/provision/write-back.test.ts   the write-back allowlist, value spec checks, the ceiling, baseline hash, merge and lines
+tests/provision/sync.test.ts         write-back and sync against a fake volume, with a configured allowlist
 tests/provision/package-refresh.test.ts  packages pinned to the host versions and the refresh of outdated checkouts
 tests/provision/host-sessions.test.ts  host session sweep and probe
 tests/grants/store.test.ts           grants
@@ -401,7 +406,7 @@ tests/cli/launch-flow.test.ts        the signal guard, side-by-side stages and t
 tests/cli/launch-git.test.ts         the git layout check at launch
 tests/cli/launch-host-sessions.test.ts  host sessions at launch
 tests/cli/launch-sessions.test.ts    session end and the sweep
-tests/cli/launch-write-back.test.ts  settings written back to the host at launch and at exit
+tests/cli/launch-write-back.test.ts  settings written back to the host at launch and at exit, with the allowlist the launch started with
 tests/cli/sweep.test.ts              the sweep of unused repositories and of the state dir
 tests/cli/launch-wiring.test.ts      launch wiring and no leaks
 tests/cli/legacy-paths.test.ts       the old config and state folders: launch notice and doctor warns
