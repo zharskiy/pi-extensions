@@ -281,14 +281,26 @@ const fragmentsOf = (word: string, width: number) =>
     (last) => last,
   );
 
+const DOT = " · ";
+
+const wordsWrapped = (text: string, room: number) =>
+  joinWhileFits(
+    text.split(" ").flatMap((word) => (widthOf(word) > room ? fragmentsOf(word, room) : [word])),
+    room,
+    " ",
+    (last) => last,
+  );
+
 export const wrap = (line: string, width: number) => {
   const indent = /^ */.exec(line)?.[0] ?? "";
   const room = Math.max(1, width - indent.length);
-  const words = line
-    .slice(indent.length)
-    .split(" ")
-    .flatMap((word) => (widthOf(word) > room ? fragmentsOf(word, room) : [word]));
-  const lines = joinWhileFits(words, room, " ", (last) => last);
+  const body = line.slice(indent.length);
+  const lines =
+    body.includes(DOT) && widthOf(body) > room
+      ? joinWhileFits(body.split(DOT), room, DOT, (last) => `${last}${DOT.trimEnd()}`).flatMap((part) =>
+          wordsWrapped(part, room),
+        )
+      : wordsWrapped(body, room);
 
   return lines.map((wrapped) => `${indent}${wrapped}`);
 };

@@ -484,23 +484,14 @@ const tagged = (head: string, tag: string, room: number) => {
   return gap >= 2 ? `${head}${" ".repeat(gap)}${tag}` : undefined;
 };
 
+const wideHead = (row: HubRow, room: number) =>
+  tagged(`${row.label.padEnd(LABEL_WIDTH)}  ${row.value}`, row.tag, room);
+
 const wideRowLines = (row: HubRow, room: number) => {
   const indent = " ".repeat(LABEL_WIDTH + 2);
   const problems = row.problems.flatMap((problem) => hanging(indent, printable(problem), room));
-  const head = tagged(`${row.label.padEnd(LABEL_WIDTH)}  ${row.value}`, row.tag, room);
 
-  if (head !== undefined) {
-    return [head, ...problems];
-  }
-
-  const [first = "", ...rest] = hanging(indent, row.value, room);
-
-  return [
-    `${row.label.padEnd(LABEL_WIDTH)}  ${first.trimStart()}`,
-    ...rest,
-    `${indent}${row.tag}`,
-    ...problems,
-  ];
+  return [wideHead(row, room) ?? "", ...problems];
 };
 
 const narrowRowLines = (row: HubRow, room: number) => {
@@ -520,9 +511,9 @@ export const hubRowLines = (rows: HubRow[], width: number, plain: boolean) => {
     return rows.flatMap((row) => hanging("  ", `${row.label}: ${row.value} (${row.tag})`, room));
   }
 
-  return rows.flatMap((row) =>
-    width < HUB_TAGS_INLINE ? narrowRowLines(row, room) : wideRowLines(row, room),
-  );
+  const wide = width >= HUB_TAGS_INLINE && rows.every((row) => wideHead(row, room) !== undefined);
+
+  return rows.flatMap((row) => (wide ? wideRowLines(row, room) : narrowRowLines(row, room)));
 };
 
 const phaseText = (phase: VmPhase, parts: VmPart[]) => {
@@ -629,8 +620,8 @@ export const successLines = (
   return [
     head,
     "",
-    ...rows.map(([label, value]) => `${label.padEnd(10)}${value}`),
-    `${" ".repeat(10)}every key: ${shown(facts.docsFile, facts.home)}`,
+    ...rows.map(([label, value]) => ({ label: label.padEnd(10), text: value })),
+    { label: " ".repeat(10), text: `every key: ${shown(facts.docsFile, facts.home)}` },
   ];
 };
 
