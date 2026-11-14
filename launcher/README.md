@@ -97,7 +97,7 @@ Without a terminal (CI, a provisioning script, `ssh host install.sh`), `pi sandb
 PI_SANDBOX_ROOTS="$HOME/Projects:/Volumes/Work" "$(npm root -g)/pi-extensions-mz/launcher/install.sh"
 ```
 
-A config whose `workspaceRoots` name other folders stops `--yes` (order, a trailing `/` and `~` against the full path do not matter). For the VM size, set `vm` in the config first (see [VM size](CONFIGURATION.md#vm-size)). When the VM does not share the first root yet, the install's smoke check runs only the host checks and says the sandbox part runs at the first pi launch. See [Workspace roots](CONFIGURATION.md#workspace-roots).
+A config whose `workspaceRoots` name other folders stops `--yes` (order, a trailing `/` and `~` against the full path do not matter). So does a config with any invalid key: `--yes` prints the error like every other command, writes nothing and exits 1, and never fixes a value for you. When colima does not answer in time, `--yes` saves the config, says the VM could not be checked and exits 0; the next pi start applies the size and the shares. For the VM size, set `vm` in the config first (see [VM size](CONFIGURATION.md#vm-size)). When the VM does not share the first root yet, the install's smoke check runs only the host checks and says the sandbox part runs at the first pi launch. See [Workspace roots](CONFIGURATION.md#workspace-roots).
 
 <details>
 <summary>Install from a checkout</summary>

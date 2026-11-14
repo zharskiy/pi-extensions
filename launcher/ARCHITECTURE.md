@@ -163,7 +163,7 @@ The root is read-only with tmpfs `/tmp` and `/home/pi` (exec allowed), under an 
 
 | situation | behaviour | exit |
 | --- | --- | --- |
-| `--yes` | asks nothing, whatever the terminal: keeps the file's settings, writes `workspaceRoots` from `PI_SANDBOX_ROOTS` into a config without them (a config with other roots is refused), applies the plan to the VM and reports in plain lines on stdout, notices on stderr | 0 / 1 |
+| `--yes` | asks nothing, whatever the terminal: keeps the file's settings, writes `workspaceRoots` from `PI_SANDBOX_ROOTS` into a config without them (a config with other roots is refused, and so is a config that `validateConfig` refuses anywhere, owned keys included, with nothing written), applies the plan to the VM (a VM colima does not answer for in time gets one notice that the next start applies the settings, exit 0) and reports in plain lines on stdout, notices on stderr | 0 / 1 |
 | `CI` set and non-empty | refuses: `pi sandbox init asks questions, and CI is set`, never opening `/dev/tty` | 1 |
 | no terminal | refuses: `pi sandbox init asks questions and needs a terminal` | 1 |
 | a terminal | the interactive setup, rich or plain | 0, 1, 130 |

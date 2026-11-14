@@ -2,6 +2,7 @@ import { type Dirent, readdirSync, statSync } from "node:fs";
 import { readFile, statfs } from "node:fs/promises";
 import { join } from "node:path";
 import { type Backend, type VmApplied, vmSizeText } from "../../backend/index.ts";
+import { validateConfig } from "../../config/index.ts";
 import { errorMessage, LauncherError, launcherRoot } from "../../shared/index.ts";
 import { type CliDeps, pathsOf, writeLine, writeNotices } from "../deps.ts";
 import { createPlainPrompts } from "../prompt/plain.ts";
@@ -136,6 +137,14 @@ const invalidConfig = (file: string, read: Extract<DocumentRead, { ok: false }>)
       )
     : new LauncherError(read.message, `fix that key in ${file}, then run pi sandbox init again`);
 
+const validFile = (document: ConfigDocument) => {
+  try {
+    validateConfig(document.value);
+  } catch (error) {
+    throw new LauncherError(errorMessage(error), `fix ${document.file}`);
+  }
+};
+
 const VERBS: Record<Change["kind"], string> = { add: "added", change: "changed", remove: "removed" };
 
 const changesText = (changes: Change[]) =>
@@ -207,10 +216,9 @@ const applyVmQuietly = async (
   }
 
   if (action.kind === "unknown") {
-    throw new LauncherError(
-      `could not check the sandbox VM: ${action.reason}`,
-      "run pi sandbox doctor, then pi sandbox init --yes again",
-    );
+    writeNotices(deps, [
+      `could not check the sandbox VM (${action.reason}); the next pi start applies the size and the shares`,
+    ]);
   }
 
   if (action.kind === "defer") {
@@ -231,6 +239,9 @@ const acceptAll = async (deps: CliDeps) => {
   }
 
   const document = read.document;
+
+  validFile(document);
+
   const facts = await detectFor(deps, context)(document);
   const { answers, notices } = answersForYes(document, facts, deps.env);
 

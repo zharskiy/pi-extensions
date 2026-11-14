@@ -305,6 +305,64 @@ describe("pi sandbox init --yes", () => {
     expect(harness.applied).toEqual([]);
   });
 
+  it("refuses an invalid owned key as other commands do and rewrites nothing", async () => {
+    const configs = [{ vm: { cpus: "4" } }, { writeBack: { enabled: "yes" } }];
+    const outcomes = await Promise.all(
+      configs.map(async (config) => {
+        const harness = await initSetup();
+
+        await harness.writeJson(harness.userConfigFile, config);
+
+        const text = await readFile(harness.userConfigFile, "utf8");
+        const code = await run(["sandbox", "init", "--yes"], harness.deps);
+        const kept = (await readFile(harness.userConfigFile, "utf8")) === text;
+
+        return {
+          code,
+          kept,
+          applied: harness.applied.length,
+          stderr: harness.stderr(),
+          hint: harness.userConfigFile,
+        };
+      }),
+    );
+
+    outcomes.forEach((outcome) => {
+      expect(outcome).toMatchObject({ code: 1, kept: true, applied: 0 });
+      expect(outcome.stderr).toMatch(
+        new RegExp(`^pi-sandbox: config: \\S+ .+\n  hint: fix ${outcome.hint}\n$`),
+      );
+    });
+    expect(outcomes.map((outcome) => outcome.stderr.split("\n")[0])).toEqual([
+      expect.stringContaining("config: vm.cpus "),
+      expect.stringContaining("config: writeBack.enabled "),
+    ]);
+  });
+
+  it("saves the config and exits 0 with one notice when the VM cannot be checked", async () => {
+    const harness = await initSetup();
+    const fake = createFakeBackend({
+      vm: {
+        inspect: async () => {
+          throw new LauncherError("colima did not answer within 3 seconds");
+        },
+      },
+    });
+    const deps = {
+      ...harness.deps,
+      env: { ...harness.deps.env, PI_SANDBOX_ROOTS: harness.repoRoot },
+      backend: () => fake.backend,
+    };
+
+    expect(await run(["sandbox", "init", "--yes"], deps)).toBe(0);
+    expect(JSON.parse(await readFile(harness.userConfigFile, "utf8"))).toEqual({
+      workspaceRoots: { roots: [harness.repoRoot] },
+    });
+    expect(harness.stderr()).toBe(
+      "pi-sandbox: could not check the sandbox VM (colima did not answer within 3 seconds); the next pi start applies the size and the shares\n",
+    );
+  });
+
   it("fails with the VM's error after saving the config", async () => {
     const harness = await initSetup({ env: { PI_SANDBOX_ROOTS: "" } });
     const fake = createFakeBackend({
