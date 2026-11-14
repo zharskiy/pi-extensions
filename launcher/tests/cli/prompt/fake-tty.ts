@@ -35,6 +35,22 @@ export const pasted = (text: string) => `\x1b[200~${text}\x1b[201~`;
 
 export const pause = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const UNTIL_LIMIT_MS = 2000;
+
+export const until = async (condition: () => boolean, started = Date.now()): Promise<void> => {
+  if (condition()) {
+    return;
+  }
+
+  if (Date.now() - started > UNTIL_LIMIT_MS) {
+    throw new Error("the awaited screen never appeared");
+  }
+
+  await pause(1);
+
+  return until(condition, started);
+};
+
 const ESCAPE_WAIT_MS = 30;
 
 export const fakeInput = (tty = true) => {

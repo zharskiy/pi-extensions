@@ -127,10 +127,11 @@ describe("initialAnswers", () => {
     expect(initialAnswers(documentOf(undefined), factsOf(), ENV).roots).toEqual([]);
   });
 
-  it("keeps home sharing when an existing file has no roots", () => {
+  it("pre-checks the detected folders when an existing file has no roots", () => {
     const usual = [candidate("~/Projects", "usual", 3)];
 
-    expect(initialAnswers(documentOf({}), factsOf({ candidates: usual }), ENV).roots).toBe("home");
+    expect(initialAnswers(documentOf({}), factsOf({ candidates: usual }), ENV).roots).toEqual(["~/Projects"]);
+    expect(initialAnswers(documentOf({ egress: { allow: [] } }), factsOf(), ENV).roots).toEqual([]);
   });
 
   it("starts a re-run from the file and replaces invalid owned values", () => {

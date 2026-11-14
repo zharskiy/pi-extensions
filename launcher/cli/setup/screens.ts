@@ -1,4 +1,6 @@
+import { dirname } from "node:path";
 import type { VmApplied, VmPhase, VmSpec } from "../../backend/index.ts";
+import { isWithin } from "../../shared/index.ts";
 import { printable, widthOf, wrap } from "../prompt/style.ts";
 import { tildeForm } from "./folders.ts";
 import type { VmBounds } from "./plan.ts";
@@ -51,6 +53,38 @@ export const FOLDERS_PLAIN_HELP = [
   "Type numbers to switch folders on or off (like 1 3), a path to add a folder,",
   "or press Enter to keep the selection.",
 ];
+
+const workspaceShares = (facts: HostFacts) => {
+  const vm = facts.vm;
+
+  if ((vm.state !== "running" && vm.state !== "stopped") || vm.shares === "unreadable") {
+    return undefined;
+  }
+
+  const agentDir = dirname(dirname(facts.configFile));
+
+  return vm.shares
+    .map((share) => share.location)
+    .filter((location) => location !== agentDir && !isWithin(location, agentDir));
+};
+
+export const sharesHome = (facts: HostFacts) => workspaceShares(facts)?.includes(facts.home) === true;
+
+export const sharedNowLine = (facts: HostFacts) => {
+  const locations = workspaceShares(facts);
+
+  if (locations === undefined) {
+    return undefined;
+  }
+
+  if (sharesHome(facts)) {
+    return "The sandbox VM shares your whole home (~) now.";
+  }
+
+  return locations.length === 0
+    ? "The sandbox VM shares no project folder now."
+    : `The sandbox VM shares ${rootsSummary(locations.map((location) => tildeForm(location, facts.home)))} now.`;
+};
 
 export const HOME_CONFIRM = {
   title: "Share your whole home with the sandbox VM instead?",

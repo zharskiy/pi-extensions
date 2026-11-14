@@ -6,7 +6,7 @@ import { readDocument } from "../../cli/setup/document.ts";
 import { runSetup, type SetupInput } from "../../cli/setup/flow.ts";
 import type { Answers, FolderCandidate, HostFacts, SetupIo, VmAction } from "../../cli/setup/types.ts";
 import { tempDir } from "../support/temp-dir.ts";
-import { fakeTimers, KEY, pause, plainPrompts, richPrompts } from "./prompt/fake-tty.ts";
+import { fakeTimers, KEY, pause, plainPrompts, richPrompts, until } from "./prompt/fake-tty.ts";
 
 const HOME = "/Users/me";
 
@@ -133,7 +133,11 @@ const setup = (options: Options = {}) => {
 
   const answer = (...lines: string[]) => keys(...lines.map((line) => `${line}\r`));
 
-  return { ...fake, exit, writes, vms, phases, keys, answer, text: () => fake.screen.lines().join("\n") };
+  const text = () => fake.screen.lines().join("\n");
+
+  const shown = (wanted: string) => until(() => text().includes(wanted));
+
+  return { ...fake, exit, writes, vms, phases, keys, answer, text, shown };
 };
 
 const STEPS_ACCEPTED = [KEY.enter, KEY.enter, KEY.enter];
@@ -288,6 +292,47 @@ describe("a first run", () => {
     expect(run.writes).toEqual([]);
     expect(run.screen.lines()).toContain("│  your whole home (~), not recommended");
     expect(run.vms[0]).toMatchObject({ kind: "create", shares: [{ location: HOME, writable: true }] });
+  });
+
+  it("treats a file without workspaceRoots as a first run and pre-checks the detected folders", async () => {
+    const run = setup({ text: "{}\n" });
+
+    await run.keys(...STEPS_ACCEPTED, KEY.enter);
+
+    expect(await run.exit).toBe(0);
+    expect(JSON.parse(run.writes[0] ?? "").workspaceRoots.roots).toEqual(["~/Projects", "~/work"]);
+  });
+
+  it("never shares the home of a file without workspaceRoots without the confirm", async () => {
+    const run = setup({
+      text: '{ "egress": { "allow": [] } }\n',
+      facts: { candidates: [candidate("src", 0)] },
+    });
+
+    await run.keys(KEY.enter);
+
+    expect(run.text()).toContain("Share your whole home with the sandbox VM instead?");
+
+    await run.keys(KEY.ctrlC);
+
+    expect(await run.exit).toBe(130);
+    expect(run.vms).toEqual([]);
+  });
+
+  it("says what the VM shares now and starts the confirm on Yes when it shares the home", async () => {
+    const vm = { ...RUNNING, shares: [{ location: HOME, writable: true }] } as HostFacts["vm"];
+    const run = setup({ text: "{}\n", facts: { vm } });
+
+    await run.shown("The sandbox VM shares your whole home (~) now.");
+
+    await run.keys(KEY.space, KEY.down, KEY.space, KEY.enter, KEY.enter);
+
+    expect(run.text()).toContain("│  your whole home (~), not recommended");
+    expect(run.text()).toContain("step 2 of 3");
+
+    await run.keys(KEY.ctrlC);
+
+    expect(await run.exit).toBe(130);
   });
 
   it("returns to the list unchanged when the add-folder input is left", async () => {

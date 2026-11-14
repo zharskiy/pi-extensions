@@ -108,14 +108,10 @@ const isInvalid = (problems: OwnedProblem[], key: string) => problems.some((prob
 const validRoots = (document: ConfigDocument, context: RootGuardContext) =>
   (configuredRoots(document) ?? []).filter((root) => checkRoot(root, context).ok);
 
-const detectedRoots = (document: ConfigDocument, facts: HostFacts) => {
-  const firstRun = document.text === undefined;
-  const checked = facts.candidates
-    .filter((candidate) => isPreChecked(candidate, firstRun))
+const detectedRoots = (document: ConfigDocument, facts: HostFacts) =>
+  facts.candidates
+    .filter((candidate) => isPreChecked(candidate, isFirstRun(document)))
     .map((candidate) => candidate.stored);
-
-  return checked.length === 0 && !firstRun ? "home" : checked;
-};
 
 const initialRoots = (document: ConfigDocument, facts: HostFacts, context: RootGuardContext) => {
   if (isFirstRun(document) || isInvalid(ownedProblems(document, context), "workspaceRoots")) {

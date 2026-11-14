@@ -33,6 +33,8 @@ import {
   roomOf,
   rootsSummary,
   type Step,
+  sharedNowLine,
+  sharesHome,
   shownSize,
   sizeText,
   stepTitle,
@@ -113,8 +115,8 @@ const createWizard = (io: SetupIo, context: WizardContext) => {
   const { prompts } = io;
   const { document, facts, env } = context;
   const problems = ownedProblems(document, { home: facts.home, env });
-  const initialRoots = initialAnswers(document, facts, env).roots;
-  const keptHome = initialRoots === "home";
+  const homeNow = sharesHome(facts);
+  const sharedNow = firstRunSteps(document).length > 0 ? sharedNowLine(facts) : undefined;
 
   const planFor = (answers: Answers): Plan =>
     planOf(document, answers, facts, context.sharePlan(answers.roots, facts));
@@ -167,7 +169,7 @@ const createWizard = (io: SetupIo, context: WizardContext) => {
       detail: [HOME_CONFIRM.detail],
       yes: HOME_CONFIRM.yes,
       no: HOME_CONFIRM.no,
-      initial: false,
+      initial: homeNow,
       collapsed: (yes) => (yes ? { title: SECTION_LABELS.folders, text: HOME_ROOTS } : undefined),
     });
 
@@ -183,9 +185,10 @@ const createWizard = (io: SetupIo, context: WizardContext) => {
       checked: [...checked],
     };
     const empty = choices.length === 0;
+    const now = sharedNow === undefined ? [] : [sharedNow];
     const reply = await prompts.multiselect<string>({
       title: stepTitle(FOLDERS_TITLE, step),
-      detail: empty ? [FOLDERS_DETAIL, "", NO_FOLDER_FOUND] : [FOLDERS_DETAIL],
+      detail: empty ? [FOLDERS_DETAIL, ...now, "", NO_FOLDER_FOUND] : [FOLDERS_DETAIL, ...now],
       choices: [
         ...choices,
         { value: ADD, label: empty ? "+ Add a folder…" : "+ Add another folder…", action: true },
@@ -193,13 +196,8 @@ const createWizard = (io: SetupIo, context: WizardContext) => {
       checked,
       onAction: () => addFolder(pending),
       escape: step?.index === 1 ? "cancel" : "back",
-      collapsed: (values) => {
-        if (values.length > 0) {
-          return { title: SECTION_LABELS.folders, text: rootsSummary(values) };
-        }
-
-        return keptHome ? { title: SECTION_LABELS.folders, text: HOME_ROOTS } : undefined;
-      },
+      collapsed: (values) =>
+        values.length > 0 ? { title: SECTION_LABELS.folders, text: rootsSummary(values) } : undefined,
       plain: { help: FOLDERS_PLAIN_HELP, label: "Folders" },
     });
 
@@ -213,7 +211,7 @@ const createWizard = (io: SetupIo, context: WizardContext) => {
       return touchedWith(next, "folders", { ...state.answers, roots: reply });
     }
 
-    if (keptHome || (await confirmHome())) {
+    if (await confirmHome()) {
       return touchedWith(next, "folders", { ...state.answers, roots: "home" });
     }
 
