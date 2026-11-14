@@ -239,6 +239,24 @@ describe("plain prompts", () => {
     expect((await third).error).toMatchObject({ cause: "end" });
   });
 
+  it("reads lines without raw mode or cursor sequences on a dumb or unset TERM", async () => {
+    const dumb = plainPrompts({ env: { TERM: "dumb" } });
+    const unset = plainPrompts({ env: { TERM: "" } });
+    const named = dumb.prompts.text({ title: "Name", initial: "pi" });
+    const other = unset.prompts.text({ title: "Name" });
+
+    await answer(dumb.input, "box");
+
+    await answer(unset.input, "vm");
+
+    expect(await named).toBe("box");
+    expect(await other).toBe("vm");
+    expect(dumb.input.rawCalls).toEqual([]);
+    expect(unset.input.rawCalls).toEqual([]);
+    expect(dumb.output.text()).not.toContain("\x1b");
+    expect(unset.output.text()).not.toContain("\x1b");
+  });
+
   it("prints notes as plain ASCII lines", () => {
     const { prompts, screen } = plainPrompts();
 

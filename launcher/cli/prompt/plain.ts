@@ -90,7 +90,7 @@ export const createPlainPrompts = (ui: Ui): Prompts => {
       const reader = createInterface({
         input: ui.input,
         output: ui.output,
-        terminal: true,
+        terminal: ui.cursorControl,
         historySize: 0,
         ...(completer === undefined ? {} : { completer }),
       });

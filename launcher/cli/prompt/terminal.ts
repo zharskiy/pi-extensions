@@ -59,10 +59,10 @@ export const realTimers: Timers = {
 
 const isSet = (value: string | undefined) => value !== undefined && value !== "";
 
+const cursorControlOf = (env: NodeJS.ProcessEnv) => isSet(env.TERM) && env.TERM !== "dumb";
+
 const modeOf = (env: NodeJS.ProcessEnv, columns: number): Ui["mode"] =>
-  !isSet(env.PI_SANDBOX_PLAIN) && isSet(env.TERM) && env.TERM !== "dumb" && columns >= RICH_COLUMNS
-    ? "rich"
-    : "plain";
+  !isSet(env.PI_SANDBOX_PLAIN) && cursorControlOf(env) && columns >= RICH_COLUMNS ? "rich" : "plain";
 
 const UTF8 = /utf-?8/i;
 
@@ -175,6 +175,7 @@ export const uiOf = (streams: { input: UiInput; output: UiOutput }, options: UiO
     input,
     output,
     mode: modeOf(options.env, columns()),
+    cursorControl: cursorControlOf(options.env),
     unicode: unicodeOf(options.env),
     colour: colourOf(options.env, output),
     columns,

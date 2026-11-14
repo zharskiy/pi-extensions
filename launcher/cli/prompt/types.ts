@@ -65,6 +65,7 @@ export interface Ui {
   input: UiInput;
   output: UiOutput;
   mode: "rich" | "plain";
+  cursorControl: boolean;
   unicode: boolean;
   colour: boolean;
   columns(): number;
