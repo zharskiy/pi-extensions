@@ -16,6 +16,8 @@ const EXIT_POLL_MS = 50;
 
 const EXIT_POLL_ATTEMPTS = 100;
 
+const ABORTED_EXIT = 1;
+
 const consoleSizeOf = (io: ExecIo) =>
   io.tty && io.size !== undefined ? [io.size.rows, io.size.columns] : undefined;
 
@@ -178,6 +180,22 @@ const pump = (hijacked: Hijacked, io: ExecIo) =>
     });
   });
 
+const abortWith = (signal: AbortSignal | undefined, abort: () => void) => {
+  if (signal === undefined) {
+    return () => undefined;
+  }
+
+  if (signal.aborted) {
+    abort();
+
+    return () => undefined;
+  }
+
+  signal.addEventListener("abort", abort, { once: true });
+
+  return () => signal.removeEventListener("abort", abort);
+};
+
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const exitCodeOf = async (
@@ -224,12 +242,15 @@ export const runExec = async (client: EngineClient, spec: ExecSpec, io: ExecIo) 
   }
 
   const stopResizing = io.tty && io.onResize !== undefined ? io.onResize(resize) : () => undefined;
+  const stopAborting = abortWith(io.signal, () => hijacked.socket.destroy());
 
   try {
     await pump(hijacked, io);
   } finally {
     stopResizing();
+
+    stopAborting();
   }
 
-  return exitCodeOf(client, created.Id);
+  return io.signal?.aborted === true ? ABORTED_EXIT : exitCodeOf(client, created.Id);
 };

@@ -194,10 +194,11 @@ provision/types.ts             render and sync types
 provision/render.ts            the render dir and its tool files
 provision/tree.ts              filtered copy of host agent dir entries, with one notice for what was left out
 provision/pool.ts              bounded parallel work
-provision/sync.ts              the filtered host settings.json written into the volume
+provision/sync.ts              the agent files sync under sync.lock: write-back to the host, then settings.json and pi-*.json into the volume, and the baseline
+provision/write-back.ts        the fixed write-back allowlist, the settings.json value checks, the three-way merge per key and its lines (no I/O)
 provision/merge-settings.ts    the sandbox copy of the host settings: dropped keys, package sources and their notices
 provision/package-source.ts    package sources and their URL credentials
-provision/volume.ts            files in the agent volume through exec
+provision/volume.ts            files in the agent volume through exec: read with a size cap, write, remove
 provision/host-sessions.ts     host session dir preparation, sweep and share probe
 ```
 
@@ -350,6 +351,8 @@ tests/hostpi/provider-hosts-sample.json  a sample provider host table
 tests/provision/fixtures.ts          provisioning fixtures
 tests/provision/render.test.ts       the render dir
 tests/provision/merge-settings.test.ts  the settings sync
+tests/provision/write-back.test.ts   the write-back allowlist, merge and lines
+tests/provision/sync.test.ts         write-back and sync against a fake volume
 tests/provision/host-sessions.test.ts  host session sweep and probe
 tests/grants/store.test.ts           grants
 tests/grants/launches.test.ts        the launch registry
@@ -388,6 +391,7 @@ tests/cli/launch-flow.test.ts        the signal guard, side-by-side stages and t
 tests/cli/launch-git.test.ts         the git layout check at launch
 tests/cli/launch-host-sessions.test.ts  host sessions at launch
 tests/cli/launch-sessions.test.ts    session end and the sweep
+tests/cli/launch-write-back.test.ts  settings written back to the host at launch and at exit
 tests/cli/sweep.test.ts              the sweep of unused repositories and of the state dir
 tests/cli/launch-wiring.test.ts      launch wiring and no leaks
 tests/cli/legacy-paths.test.ts       the old config and state folders: launch notice and doctor warns

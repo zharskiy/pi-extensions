@@ -32,6 +32,7 @@ const repoFiles = (stateDir: string, repoHash: string) => {
     renderLock: join(directory, "render.lock"),
     sync: join(directory, "sync"),
     syncLock: join(directory, "sync", "sync.lock"),
+    syncBaseline: join(directory, "sync", "baseline.json"),
     gitBaseline: join(directory, "git", "baseline.json"),
     created: join(directory, "created.json"),
     seen: join(directory, "seen.json"),

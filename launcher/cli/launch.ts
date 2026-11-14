@@ -12,7 +12,7 @@ import {
 import { type Launch, othersLive, withRepoLaunchLock } from "../grants/index.ts";
 import { type HostPiFiles, readHostPiFiles } from "../hostpi/index.ts";
 import { ensureSandboxImage, type SandboxImage } from "../image/index.ts";
-import { renderAgentDir, syncSettingsFile } from "../provision/index.ts";
+import { renderAgentDir, syncVolumeFiles } from "../provision/index.ts";
 import { type DenialRecord, guestProxyUrl } from "../proxy/index.ts";
 import { errorMessage, settleAll } from "../shared/index.ts";
 import { gitLaunchNotices, type HostSessions } from "../workspace/index.ts";
@@ -63,6 +63,7 @@ interface SandboxOptions {
   signIn?: boolean;
   share?: boolean;
   denials?: (records: DenialRecord[]) => void;
+  writeBack?: boolean;
 }
 
 type Staged = <T>(stage: Stage, action: () => Promise<T>, detail?: (value: T) => string) => Promise<T>;
@@ -76,6 +77,7 @@ interface SandboxInput {
   cancelled: AbortSignal;
   staged: Staged;
   progress: Progress;
+  writeBack: boolean;
 }
 
 interface PreparedInput extends SandboxInput {
@@ -167,21 +169,30 @@ const sandboxRoute = async (
   return { url: guestProxyUrl(route, proxy.token), network: route.network };
 };
 
-const syncAgentFiles = async (input: PreparedInput, id: string) => {
-  const { deps, context, backend } = input;
-  const { host } = input.prepared;
-  const { notices } = await syncSettingsFile({
+interface VolumeSync {
+  containerId: string;
+  hostAgentDir: string;
+  writeBack: boolean;
+}
+
+const syncVolume = async (deps: CliDeps, context: LaunchContext, backend: Backend, sync: VolumeSync) => {
+  const { changes, notices } = await syncVolumeFiles({
     backend,
-    containerId: id,
     stateDir: context.stateDir,
     repoHash: context.repoHash,
-    hostAgentDir: host.hostAgentDir,
     repoRoot: context.workspace.repoRoot,
-    hostSettings: host.files.settings,
+    ...sync,
   });
 
-  writeNotices(deps, notices);
+  writeNotices(deps, [...changes, ...notices]);
 };
+
+const syncAgentFiles = (input: PreparedInput, containerId: string) =>
+  syncVolume(input.deps, input.context, input.backend, {
+    containerId,
+    hostAgentDir: input.prepared.host.hostAgentDir,
+    writeBack: input.writeBack,
+  });
 
 const prepareGround = async (input: PreparedInput) => {
   const { deps, context, backend, launch, sessions } = input;
@@ -284,7 +295,7 @@ const prepareSandbox = async (input: PreparedInput) => {
   cancelled.throwIfAborted();
 
   await staged("sync", () => syncAgentFiles(input, prepared.containerId)).catch((error: unknown) => {
-    writeLine(deps.stderr, `pi-sandbox: warning: settings.json was not synced: ${errorMessage(error)}`);
+    writeLine(deps.stderr, `pi-sandbox: warning: the agent settings were not synced: ${errorMessage(error)}`);
   });
 
   return { prepared, proxy };
@@ -383,6 +394,7 @@ export const withSandbox = async (
     signIn = true,
     share = true,
     denials = reportDenials(deps, context),
+    writeBack = false,
   }: SandboxOptions = {},
 ) => {
   const staged = stagedWith(report);
@@ -393,10 +405,10 @@ export const withSandbox = async (
   const cancel = new AbortController();
   const deriving = startHostSide(deps, context, files);
   const preparation = prepareAll(
-    { deps, context, backend, launch, sessions, cancelled: cancel.signal, staged, progress },
+    { deps, context, backend, launch, sessions, cancelled: cancel.signal, staged, progress, writeBack },
     { deriving, signIn, share },
   );
-  const ended: { proxy?: SandboxProxy } = {};
+  const ended: { proxy?: SandboxProxy; sync?: VolumeSync } = {};
 
   try {
     const outcome = await Promise.race([
@@ -417,6 +429,7 @@ export const withSandbox = async (
     const { prepared, proxy, host } = outcome.ready;
 
     ended.proxy = proxy;
+    ended.sync = { containerId: prepared.containerId, hostAgentDir: host.hostAgentDir, writeBack };
 
     return await use({ ...prepared, backend, host, proxy, launch });
   } finally {
@@ -425,6 +438,15 @@ export const withSandbox = async (
     await shielded(deps, async () => {
       if (ended.proxy !== undefined) {
         denials(await sandboxDenials(deps, context, launch.startedAt));
+      }
+
+      if (ended.sync?.writeBack === true) {
+        await syncVolume(deps, context, backend, ended.sync).catch((error: unknown) => {
+          writeLine(
+            deps.stderr,
+            `pi-sandbox: warning: settings were not written back: ${errorMessage(error)}`,
+          );
+        });
       }
 
       await finishLaunch(deps, context, backend, launch);
@@ -462,5 +484,7 @@ export const launch = async (args: string[], deps: CliDeps) => {
 
   const { context, backend } = await openContext(deps, "sandbox");
 
-  return withSandbox(deps, context, backend, (sandbox) => runSandboxPi(deps, context, sandbox, piArgs));
+  return withSandbox(deps, context, backend, (sandbox) => runSandboxPi(deps, context, sandbox, piArgs), {
+    writeBack: true,
+  });
 };

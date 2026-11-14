@@ -67,6 +67,7 @@ export interface ExecIo {
   tty: boolean;
   size?: TerminalSize;
   onResize?: (listener: (size: TerminalSize) => void) => () => void;
+  signal?: AbortSignal;
 }
 
 export interface Detection {

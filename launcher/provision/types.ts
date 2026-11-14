@@ -1,5 +1,5 @@
 import type { Backend } from "../backend/index.ts";
-import type { DerivedSandboxPi, JsonObject } from "../hostpi/index.ts";
+import type { DerivedSandboxPi } from "../hostpi/index.ts";
 
 export interface RenderInput {
   stateDir: string;
@@ -19,9 +19,10 @@ export interface SyncInput {
   repoHash: string;
   hostAgentDir: string;
   repoRoot: string;
-  hostSettings?: JsonObject;
+  readTimeoutMs?: number;
 }
 
 export interface SyncResult {
   notices: string[];
+  changes: string[];
 }

@@ -69,6 +69,7 @@ describe("stateLayout", () => {
       renderLock: "/state/repos/r1/render.lock",
       sync: "/state/repos/r1/sync",
       syncLock: "/state/repos/r1/sync/sync.lock",
+      syncBaseline: "/state/repos/r1/sync/baseline.json",
       gitBaseline: "/state/repos/r1/git/baseline.json",
       created: "/state/repos/r1/created.json",
       seen: "/state/repos/r1/seen.json",

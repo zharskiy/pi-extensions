@@ -1,7 +1,7 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
-import { syncSettingsFile } from "../../provision/index.ts";
+import { syncVolumeFiles } from "../../provision/index.ts";
 import { processMark, stateLayout } from "../../shared/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { runningContainer, tempDir, writeText } from "./fixtures.ts";
@@ -26,23 +26,26 @@ const volumeBackend = async (files: Record<string, unknown>) => {
   return { fake, containerId, volume };
 };
 
-describe("syncSettingsFile", () => {
+describe("syncVolumeFiles for settings.json", () => {
   const setup = async (volume: Record<string, unknown>) => {
     const stateDir = await tempDir("sync-state");
     const repoRoot = await tempDir("sync-repo");
+    const hostAgentDir = await tempDir("sync-host");
     const { fake, containerId, volume: volumeFile } = await volumeBackend(volume);
-    const sync = (hostSettings: Record<string, unknown> | undefined) =>
-      syncSettingsFile({
+    const sync = async (hostSettings: Record<string, unknown>) => {
+      await writeText(join(hostAgentDir, "settings.json"), JSON.stringify(hostSettings));
+
+      return syncVolumeFiles({
         backend: fake.backend,
         containerId,
         stateDir,
         repoHash: "repo1",
-        hostAgentDir: "/host/.pi/agent",
+        hostAgentDir,
         repoRoot,
-        hostSettings,
       });
+    };
 
-    return { stateDir, repoRoot, fake, sync, volume: volumeFile };
+    return { stateDir, repoRoot, hostAgentDir, fake, sync, volume: volumeFile };
   };
 
   it("replaces the volume copy with the filtered host copy on every launch", async () => {
@@ -77,10 +80,9 @@ describe("syncSettingsFile", () => {
 
   it("hands kept local packages to the sandbox as absolute host paths, file URLs included", async () => {
     const env = await setup({});
-    const relative = join("..", "..", "..", env.repoRoot.slice(1), "ext");
     const result = await env.sync({
       packages: [
-        relative,
+        relative(env.hostAgentDir, join(env.repoRoot, "ext")),
         `file://${join(env.repoRoot, "tool")}`,
         { source: join(env.repoRoot, "y"), skills: [] },
         "file:///elsewhere/z",
