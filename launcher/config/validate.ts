@@ -341,9 +341,9 @@ const scalarProblem = (value: unknown, path: string): Problem | undefined => {
 const typed = (properties: Record<string, Spec>, required: readonly string[] = []) =>
   shape({ type: text(), ...properties }, ["type", ...required]);
 
-const VALUE_SPEC: Spec = { type: "custom", problem: (value, path) => valueSpecAt(value, path) };
+const MAX_ANY_OF_DEPTH = 4;
 
-const VALUE_SPECS: Record<ValueType, ObjectSpec> = {
+const VALUE_SPECS: Record<Exclude<ValueType, "anyOf">, ObjectSpec> = {
   string: typed({ maxLength: { type: "number", minimum: 1, maximum: MAX_WRITE_BACK_CHARS, integer: true } }),
   boolean: typed({}),
   integer: { ...typed({ min: wholeNumber, max: wholeNumber }), check: orderedRange },
@@ -354,20 +354,39 @@ const VALUE_SPECS: Record<ValueType, ObjectSpec> = {
   ),
   stringList: typed({ maxItems: { type: "number", minimum: 1, integer: true } }),
   fileName: typed({}),
-  anyOf: typed({ of: { type: "array", items: VALUE_SPEC, check: notEmptyList } }, ["of"]),
   json: typed({}),
 };
 
+const anyOfSpec = (depth: number): ObjectSpec =>
+  typed(
+    {
+      of: {
+        type: "array",
+        items: { type: "custom", problem: (value, path) => valueSpecAt(value, path, depth + 1) },
+        check: notEmptyList,
+      },
+    },
+    ["of"],
+  );
+
 const isValueType = (value: unknown): value is ValueType => VALUE_TYPES.includes(value as ValueType);
 
-const valueSpecAt = (value: unknown, path: string): Problem | undefined => {
+const valueSpecAt = (value: unknown, path: string, depth = 1): Problem | undefined => {
   if (!isJsonObject(value)) {
     return { path, problem: "must be an object" };
   }
 
-  return isValueType(value.type)
-    ? objectProblem(VALUE_SPECS[value.type], value, path)
-    : { path: joinPath(path, "type"), problem: `must be one of ${VALUE_TYPES.join(", ")}` };
+  if (!isValueType(value.type)) {
+    return { path: joinPath(path, "type"), problem: `must be one of ${VALUE_TYPES.join(", ")}` };
+  }
+
+  if (value.type !== "anyOf") {
+    return objectProblem(VALUE_SPECS[value.type], value, path);
+  }
+
+  return depth > MAX_ANY_OF_DEPTH
+    ? { path, problem: `nests anyOf more than ${MAX_ANY_OF_DEPTH} levels deep` }
+    : objectProblem(anyOfSpec(depth), value, path);
 };
 
 const excludedKeysAt = (file: string, keys: unknown, path: string): Problem | undefined => {

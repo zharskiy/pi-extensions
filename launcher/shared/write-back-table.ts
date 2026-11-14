@@ -56,6 +56,11 @@ const NEVER_WRITTEN_KEYS: Readonly<Record<string, readonly string[]>> = {
     "defaultProjectTrust",
     "modelOverrides",
     "sessionShareDestination",
+    "defaultTools",
+    "enableAnalytics",
+    "enableInstallTelemetry",
+    "trackingId",
+    "deviceId",
   ],
   "pi-subagents.json": ["disabledPlugins"],
 };

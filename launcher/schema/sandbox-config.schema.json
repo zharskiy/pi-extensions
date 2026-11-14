@@ -621,7 +621,7 @@
     "writeBack": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Which keys of the host agent files a sandbox session may write back to the host. The built-in list is the default; code keeps a ceiling no entry can pass (no credentials, commands, paths or package keys).",
+      "description": "Which keys of the host agent files a sandbox session may write back to the host. The built-in list is the default; code keeps a ceiling no entry can pass (no credentials, commands, paths or package keys). The launcher also refuses a key that is both excluded and added.",
       "properties": {
         "enabled": {
           "type": "boolean",
@@ -629,7 +629,7 @@
         },
         "exclude": {
           "type": "object",
-          "description": "Per built-in file, built-in keys to stop writing back.",
+          "description": "Per built-in file, built-in keys to stop writing back. The launcher refuses a key that is not on the built-in list of that file.",
           "propertyNames": {
             "enum": [
               "settings.json",
@@ -648,28 +648,152 @@
         },
         "add": {
           "type": "object",
-          "description": "Per file, keys to write back with the check their value must pass. A built-in key gets the new check; a new pi-<name>.json file is copied into the sandbox and written back.",
+          "description": "Per file, keys to write back with the check their value must pass. A built-in key gets the new check; a new pi-<name>.json file is copied whole into the sandbox and written back.",
           "propertyNames": {
             "type": "string",
             "pattern": "^(settings\\.json|pi-[a-z0-9-]+\\.json)$"
           },
-          "additionalProperties": {
-            "type": "object",
-            "propertyNames": {
-              "type": "string",
-              "pattern": "^[A-Za-z][A-Za-z0-9_-]*$",
-              "maxLength": 100
+          "patternProperties": {
+            "^settings\\.json$": {
+              "$ref": "#/$defs/writeBackSettingsKeys"
             },
-            "additionalProperties": {
-              "$ref": "#/$defs/writeBackValue"
+            "^pi-subagents\\.json$": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/writeBackKeys"
+                },
+                {
+                  "propertyNames": {
+                    "not": {
+                      "const": "disabledPlugins"
+                    }
+                  }
+                }
+              ]
             }
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/writeBackKeys"
           }
         }
       }
     }
   },
   "$defs": {
+    "writeBackKeys": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[A-Za-z][A-Za-z0-9_-]*$",
+        "maxLength": 100
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/writeBackValue"
+      }
+    },
+    "writeBackSettingsKeys": {
+      "type": "object",
+      "description": "Keys of settings.json: never a host-owned key, never the json check, and theme only with the fileName check.",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[A-Za-z][A-Za-z0-9_-]*$",
+        "maxLength": 100,
+        "not": {
+          "enum": [
+            "npmCommand",
+            "selfUpdateCommand",
+            "shellPath",
+            "shellCommandPrefix",
+            "externalEditor",
+            "httpProxy",
+            "sessionDir",
+            "packages",
+            "extensions",
+            "skills",
+            "prompts",
+            "themes",
+            "defaultProjectTrust",
+            "modelOverrides",
+            "sessionShareDestination",
+            "defaultTools",
+            "enableAnalytics",
+            "enableInstallTelemetry",
+            "trackingId",
+            "deviceId"
+          ]
+        }
+      },
+      "properties": {
+        "theme": {
+          "$ref": "#/$defs/writeBackFileName"
+        }
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/writeBackSettingsValue"
+      }
+    },
     "writeBackValue": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/writeBackCheck"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "of"],
+          "properties": {
+            "type": {
+              "const": "anyOf"
+            },
+            "of": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/writeBackValue"
+              }
+            }
+          },
+          "description": "Any one of the checks in of. The launcher refuses anyOf nested more than 4 levels deep."
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type"],
+          "properties": {
+            "type": {
+              "const": "json"
+            }
+          },
+          "description": "Any JSON value within the file's size limit; only in a pi-<name>.json file."
+        }
+      ]
+    },
+    "writeBackSettingsValue": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/writeBackCheck"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "of"],
+          "properties": {
+            "type": {
+              "const": "anyOf"
+            },
+            "of": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/writeBackSettingsValue"
+              }
+            }
+          },
+          "description": "Any one of the checks in of. The launcher refuses anyOf nested more than 4 levels deep."
+        }
+      ]
+    },
+    "writeBackCheck": {
       "oneOf": [
         {
           "type": "object",
@@ -711,7 +835,8 @@
             "max": {
               "type": "integer"
             }
-          }
+          },
+          "description": "A whole number from min to max. The launcher refuses min above max."
         },
         {
           "type": "object",
@@ -727,7 +852,8 @@
             "max": {
               "type": "number"
             }
-          }
+          },
+          "description": "A number from min to max. The launcher refuses min above max."
         },
         {
           "type": "object",
@@ -763,45 +889,20 @@
           "description": "A list of strings of at most 512 characters each."
         },
         {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["type"],
-          "properties": {
-            "type": {
-              "const": "fileName"
-            }
-          },
-          "description": "A file name of letters, digits, dot, dash and underscore, not . or .."
-        },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["type", "of"],
-          "properties": {
-            "type": {
-              "const": "anyOf"
-            },
-            "of": {
-              "type": "array",
-              "minItems": 1,
-              "items": {
-                "$ref": "#/$defs/writeBackValue"
-              }
-            }
-          }
-        },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["type"],
-          "properties": {
-            "type": {
-              "const": "json"
-            }
-          },
-          "description": "Any JSON value within the file's size limit; only in a pi-<name>.json file."
+          "$ref": "#/$defs/writeBackFileName"
         }
       ]
+    },
+    "writeBackFileName": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "const": "fileName"
+        }
+      },
+      "description": "A file name of letters, digits, dot, dash and underscore, not . or .."
     }
   }
 }

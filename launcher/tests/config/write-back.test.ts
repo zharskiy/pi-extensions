@@ -134,6 +134,11 @@ describe("the writeBack ceiling", () => {
     "defaultProjectTrust",
     "modelOverrides",
     "sessionShareDestination",
+    "defaultTools",
+    "enableAnalytics",
+    "enableInstallTelemetry",
+    "trackingId",
+    "deviceId",
   ])("never writes back settings.json %s", (key) => {
     expect(added("settings.json", key, { type: "string" })).toBe(
       `config: writeBack.add["settings.json"]["${key}"] is host-owned and never written back to the host`,
@@ -257,5 +262,18 @@ describe("writeBack value specs", () => {
     ["json", 'writeBack.add["pi-footer.json"]["k"] must be an object'],
   ])("refuses %j", (value, message) => {
     expect(spec(value)).toBe(`config: ${message}`);
+  });
+
+  it("accepts anyOf nested 4 levels deep and refuses a fifth level, naming its path", () => {
+    const nested = (levels: number): unknown =>
+      levels === 0 ? { type: "boolean" } : { type: "anyOf", of: [nested(levels - 1)] };
+
+    expect(spec(nested(4))).toBeUndefined();
+    expect(spec(nested(5))).toBe(
+      'config: writeBack.add["pi-footer.json"]["k"].of[0].of[0].of[0].of[0] nests anyOf more than 4 levels deep',
+    );
+    expect(spec(nested(2000))).toBe(
+      'config: writeBack.add["pi-footer.json"]["k"].of[0].of[0].of[0].of[0] nests anyOf more than 4 levels deep',
+    );
   });
 });

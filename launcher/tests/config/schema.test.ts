@@ -5,7 +5,12 @@ import { setPath } from "../../config/dotted.ts";
 import { configKeys, validateConfig } from "../../config/validate.ts";
 
 interface SchemaNode {
+  $ref?: string;
+  $defs?: Record<string, SchemaNode>;
   properties?: Record<string, SchemaNode>;
+  patternProperties?: Record<string, SchemaNode>;
+  propertyNames?: SchemaNode;
+  additionalProperties?: SchemaNode;
   items?: SchemaNode;
   oneOf?: SchemaNode[];
   allOf?: SchemaNode[];
@@ -331,5 +336,61 @@ describe("sandbox-config.schema.json", () => {
     expect(
       validatorAccepts(rule({ template: "Bearer {secret}", header: undefined, placeholder: "pi-sandbox-x" })),
     ).toBe(false);
+  });
+
+  describe("writeBack.add", () => {
+    const addOf = async () => {
+      const schema = await readSchema();
+      const add = schema.properties?.writeBack?.properties?.add;
+      const defs = schema.$defs ?? {};
+      const resolved = (node: SchemaNode | undefined) =>
+        node?.$ref === undefined ? node : defs[node.$ref.replace("#/$defs/", "")];
+
+      return { add, defs, resolved };
+    };
+
+    const addedKey = (file: string, key: string, spec: unknown) =>
+      validatorAccepts({ writeBack: { add: { [file]: { [key]: spec } } } });
+
+    it("refuses the same settings.json and pi-subagents.json key names as the validator", async () => {
+      const { add, resolved } = await addOf();
+      const settingsNames = resolved(add?.patternProperties?.["^settings\\.json$"])?.propertyNames ?? {};
+      const subagentNames =
+        add?.patternProperties?.["^pi-subagents\\.json$"]?.allOf?.[1]?.propertyNames ?? {};
+      const settingsKeys = [...(settingsNames.not?.enum ?? []), "defaultModel", "editorPaddingX", "1x"];
+      const subagentKeys = ["disabledPlugins", "maxDepth"];
+
+      expect(settingsNames.not?.enum).toContain("defaultTools");
+      expect(settingsKeys.map((key) => [key, stringAccepts(settingsNames, key)])).toEqual(
+        settingsKeys.map((key) => [key, addedKey("settings.json", key, { type: "boolean" })]),
+      );
+      expect(subagentKeys.map((key) => [key, stringAccepts(subagentNames, key)])).toEqual(
+        subagentKeys.map((key) => [key, addedKey("pi-subagents.json", key, { type: "json" })]),
+      );
+    });
+
+    it("offers settings.json no json check and theme only the fileName check, as the validator", async () => {
+      const { add, defs, resolved } = await addOf();
+      const settingsKeys = resolved(add?.patternProperties?.["^settings\\.json$"]);
+      const constsOf = (node: SchemaNode | undefined, seen: readonly string[]): string[] => {
+        if (node?.$ref !== undefined) {
+          return seen.includes(node.$ref) ? [] : constsOf(resolved(node), [...seen, node.$ref]);
+        }
+
+        return [
+          ...(node?.properties?.type?.const === undefined ? [] : [node.properties.type.const]),
+          ...(node?.oneOf ?? []).flatMap((variant) => constsOf(variant, seen)),
+          ...(node?.properties?.of?.items === undefined ? [] : constsOf(node.properties.of.items, seen)),
+        ];
+      };
+
+      expect(constsOf(defs.writeBackValue, [])).toContain("json");
+      expect(constsOf(settingsKeys?.additionalProperties, [])).not.toContain("json");
+      expect(constsOf(settingsKeys?.properties?.theme, [])).toEqual(["fileName"]);
+      expect(addedKey("settings.json", "layout", { type: "json" })).toBe(false);
+      expect(addedKey("settings.json", "theme", { type: "string" })).toBe(false);
+      expect(addedKey("settings.json", "theme", { type: "fileName" })).toBe(true);
+      expect(addedKey("pi-footer.json", "layout", { type: "json" })).toBe(true);
+    });
   });
 });

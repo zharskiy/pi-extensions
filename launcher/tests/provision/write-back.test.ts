@@ -50,6 +50,11 @@ describe("the write-back allowlist", () => {
       "sessionShareDestination",
       "httpProxy",
       "sessionDir",
+      "defaultTools",
+      "enableAnalytics",
+      "enableInstallTelemetry",
+      "trackingId",
+      "deviceId",
     ];
 
     expect(SETTINGS_FILE.keys.filter((key) => forbidden.includes(key))).toEqual([]);

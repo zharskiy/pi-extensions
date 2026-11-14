@@ -232,12 +232,12 @@ When pi inside changes a setting on the list, the launcher copies the change to 
 - `add` names keys, per file, with the check a value must pass. A built-in key gets your check instead of its own, for example when pi adds a value the built-in list does not know yet. A new `pi-<name>.json` file is copied whole from your Mac into the sandbox at each launch, like the built-in ones, and its listed keys come back. Every key in that file is readable inside the sandbox, not only the ones you list, so do not add a file that holds secrets. Once you take the file out of `add`, the next launch removes its copy from the sandbox.
 - A key both excluded and added is an error.
 
-The checks are `string` (optional `maxLength`, at most 512), `boolean`, `integer` and `number` (optional `min`, `max`), `enum` (`values`, a list of strings, numbers or booleans), `stringList` (optional `maxItems`), `fileName` (a plain file name, as for `theme`), `anyOf` (`of`, a list of checks) and `json` (any value). A value that fails its check is not copied and a line says so. There is no regular expression check.
+The checks are `string` (optional `maxLength`, at most 512), `boolean`, `integer` and `number` (optional `min`, `max`), `enum` (`values`, a list of strings, numbers or booleans), `stringList` (optional `maxItems`), `fileName` (a plain file name, as for `theme`), `anyOf` (`of`, a list of checks, nested at most 4 levels deep) and `json` (any value). A value that fails its check is not copied and a line says so. There is no regular expression check.
 
 Some things no config can add, since your Mac would run or trust them:
 
 - Files other than `settings.json` and `pi-<lowercase letters, digits, dashes>.json` in the agent folder; never `auth.json`, `models.json`, `mcp.json`, `mcp-auth.json` or `trust.json`.
-- In `settings.json`: `packages`, `extensions`, `skills`, `prompts`, `themes`, `npmCommand`, `selfUpdateCommand`, `shellPath`, `shellCommandPrefix`, `externalEditor`, `httpProxy`, `sessionDir`, `defaultProjectTrust`, `modelOverrides` and `sessionShareDestination`, and any key with the `json` check. `theme` keeps the `fileName` check, since pi turns it into a path.
+- In `settings.json`: `packages`, `extensions`, `skills`, `prompts`, `themes`, `npmCommand`, `selfUpdateCommand`, `shellPath`, `shellCommandPrefix`, `externalEditor`, `httpProxy`, `sessionDir`, `defaultProjectTrust`, `modelOverrides`, `sessionShareDestination`, `defaultTools`, `enableAnalytics`, `enableInstallTelemetry`, `trackingId` and `deviceId`, and any key with the `json` check. `theme` keeps the `fileName` check, since pi turns it into a path.
 - In `pi-subagents.json`: `disabledPlugins`.
 
 Size limits (1 MiB for `settings.json`, 64 KiB for a `pi-*.json`), the conflict rule (your Mac wins) and the printed lines stay as they are.
