@@ -118,7 +118,7 @@ describe("select", () => {
   });
 
   it("windows a long list around the cursor with more lines", async () => {
-    const { prompts, screen, input } = richPrompts({ rows: 4 });
+    const { prompts, screen, input } = richPrompts({ rows: 8 });
     const choices = ["a", "b", "c", "d", "e", "f"].map((value) => ({ value, label: `item ${value}` }));
     const reply = prompts.select({ title: "Pick", choices });
 
@@ -149,6 +149,28 @@ describe("select", () => {
     await press(input, KEY.enter);
 
     expect(await reply).toBe("a");
+  });
+
+  it("never draws a live frame taller than the screen, and keeps the pointer in it", async () => {
+    const { prompts, screen, input } = richPrompts({ rows: 10 });
+    const detail = Array.from({ length: 20 }, (_, index) => `detail line ${index + 1}`);
+    const choices = ["a", "b", "c", "d"].map((value) => ({ value, label: `item ${value}` }));
+    const reply = prompts.select({ title: "Pick", detail, choices });
+
+    await pause();
+
+    expect(screen.lines()).toHaveLength(9);
+    expect(screen.lines()[0]).toBe("◆  Pick");
+    expect(screen.lines()).toContain("│  › item a");
+
+    await press(input, KEY.down, KEY.down);
+
+    expect(screen.lines()).toHaveLength(9);
+    expect(screen.lines()).toContain("│  › item c");
+
+    await press(input, KEY.enter);
+
+    expect(await reply).toBe("c");
   });
 
   it("aligns tags in one column after the longest label and shows radio marks", async () => {

@@ -39,6 +39,8 @@ export const CHECKING = "Checking this Mac and the sandbox VM…";
 export const OTHER_SETTINGS =
   "Network access, image packages, credentials and the other settings are in the same file; this setup does not change them.";
 
+export const HUB_SUMMARY_TITLE = "Your settings:";
+
 export const HOME_ROOTS = "your whole home (~), not recommended";
 
 export const FOLDERS_TITLE = "Which folders hold your projects?";

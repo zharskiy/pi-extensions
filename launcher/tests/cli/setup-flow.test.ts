@@ -67,6 +67,7 @@ interface Options {
   facts?: Partial<HostFacts>;
   plain?: boolean;
   columns?: number;
+  rows?: number;
   vm?: Array<VmApplied | Error>;
   write?: () => Promise<void>;
   share?: SetupInput["sharePlan"];
@@ -77,7 +78,12 @@ const setup = (options: Options = {}) => {
   const clock = fakeTimers();
   const fake = options.plain
     ? plainPrompts({ timers: clock.timers, columns: options.columns ?? 80 })
-    : richPrompts({ timers: clock.timers, columns: options.columns ?? 80, rows: 60, env: options.env });
+    : richPrompts({
+        timers: clock.timers,
+        columns: options.columns ?? 80,
+        rows: options.rows ?? 60,
+        env: options.env,
+      });
   const writes: string[] = [];
   const vms: VmAction[] = [];
   const phases: VmPhase[] = [];
@@ -175,6 +181,8 @@ const setup = (options: Options = {}) => {
 
   return { ...fake, exit, writes, vms, phases, keys, answer, text, shown, settled };
 };
+
+const CURSOR_UP = new RegExp(`${String.fromCharCode(27)}\\[(\\d+)A`, "g");
 
 const STEPS_ACCEPTED = [KEY.enter, KEY.enter, KEY.enter];
 
@@ -593,6 +601,76 @@ describe("an invalid config", () => {
 
     expect(await run.exit).toBe(130);
     expect(run.writes).toEqual([]);
+  });
+});
+
+describe("the review hub on an 80x24 terminal", () => {
+  const MENU = ["Apply", "Change project folders", "Change VM size", "Change settings write-back", "Cancel"];
+
+  const liveHub = async (run: ReturnType<typeof setup>) => {
+    await run.shown("◆  Review");
+
+    const lines = run.screen.lines();
+    const live = lines.slice(lines.findLastIndex((line) => line.startsWith("◆  Review")));
+    const written = run.output.text().length;
+
+    await run.keys(KEY.down);
+
+    const ups = (run.output.text().slice(written).match(CURSOR_UP) ?? []).map((up) =>
+      Number(up.slice(2, -1)),
+    );
+
+    await run.keys(KEY.ctrlC);
+
+    return { live, ups };
+  };
+
+  it("keeps the whole menu of a first run visible in a live frame shorter than the screen", async () => {
+    const run = setup({ rows: 24 });
+
+    await run.keys(...STEPS_ACCEPTED);
+
+    const hub = await liveHub(run);
+
+    expect(hub.live.length).toBeLessThanOrEqual(23);
+    expect(MENU.every((item) => hub.live.some((line) => line.endsWith(` ${item}`)))).toBe(true);
+    expect(Math.max(...hub.ups)).toBeLessThan(23);
+    expect(run.text()).toContain("│  Your settings:");
+  });
+
+  it("prints a re-run's diff above the menu and keeps the menu whole", async () => {
+    const run = setup({
+      rows: 24,
+      text: '{"workspaceRoots": {"roots": ["~/Projects", "~/.ssh"]}, "vm": {"memoryGiB": -3}}\n',
+      facts: { vm: RUNNING },
+    });
+
+    const hub = await liveHub(run);
+
+    expect(hub.live.length).toBeLessThanOrEqual(23);
+    expect(MENU.every((item) => hub.live.some((line) => line.endsWith(` ${item}`)))).toBe(true);
+    expect(hub.live.some((line) => line.includes("vm.memoryGiB"))).toBe(false);
+    expect(run.text()).toContain("vm.memoryGiB");
+  });
+
+  it("prints the summary again after an edit, right above the menu", async () => {
+    const run = setup({ rows: 24 });
+
+    await run.keys(...STEPS_ACCEPTED, KEY.end, KEY.up, KEY.enter, KEY.right, KEY.enter);
+
+    await run.shown("◆  Review");
+
+    const lines = run.screen.lines();
+    const summaries = lines.flatMap((line, index) => (line === "│  Your settings:" ? [index] : []));
+    const menu = lines.findLastIndex((line) => line.startsWith("◆  Review"));
+    const latest = lines.slice(summaries.at(-1), menu);
+
+    expect(summaries).toHaveLength(2);
+    expect(latest.some((line) => /Settings write-back\s+off\s+chosen$/.test(line))).toBe(true);
+
+    await run.keys(KEY.ctrlC);
+
+    expect(await run.exit).toBe(130);
   });
 });
 

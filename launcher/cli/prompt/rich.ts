@@ -312,9 +312,16 @@ const choiceRows = <T>(
 const limitOf = (context: Context, detail: string[]) =>
   Math.max(SUMMARY_SHOWN, context.ui.rows() - 6 - (detail.length > 0 ? detail.length + 2 : 0));
 
-const windowed = (context: Context, rows: string[], cursor: number, view: { top: number }, limit: number) => {
+const windowed = (
+  context: Context,
+  rows: string[],
+  cursor: number,
+  view: { top: number; pointer: number },
+  limit: number,
+) => {
   if (rows.length <= limit) {
     view.top = 0;
+    view.pointer = cursor;
 
     return rows;
   }
@@ -325,6 +332,7 @@ const windowed = (context: Context, rows: string[], cursor: number, view: { top:
   const { glyphs, paint } = context;
 
   view.top = top;
+  view.pointer = cursor - top + (top > 0 ? 1 : 0);
 
   return [
     ...(top > 0 ? [paint("dim", glyphs.above(top))] : []),
@@ -356,7 +364,7 @@ const moved = (cursor: number, key: Key, count: number) => {
 const selectView = <T>(context: Context, spec: SelectSpec<T>): View<T> => {
   const { glyphs } = context;
   const initial = spec.choices.findIndex((choice) => choice.value === spec.initial);
-  const state = { cursor: Math.max(0, initial), top: 0 };
+  const state = { cursor: Math.max(0, initial), top: 0, pointer: 0 };
 
   const mark = (_choice: Choice<T>, index: number) =>
     spec.radio === true ? `${index === state.cursor ? glyphs.radioOn : glyphs.radioOff} ` : "";
@@ -371,7 +379,9 @@ const selectView = <T>(context: Context, spec: SelectSpec<T>): View<T> => {
       const words = wordsOf(spec, { enter: "choose", escape: "back", interrupt: "cancel" });
       const hints = hintsOf(context, [`${glyphs.upDown} move`, ...words], width);
 
-      return composed(context, { title: spec.title, detail, body, after: [], hints });
+      const parts = composed(context, { title: spec.title, detail, body, after: [], hints });
+
+      return { lines: parts.lines, focus: parts.bodyRow + state.pointer };
     },
     key: (key) => {
       const next = moved(state.cursor, key, spec.choices.length);
@@ -405,6 +415,7 @@ const multiView = <T>(context: Context, spec: MultiSpec<T>): View<T[]> => {
     checked: new Set(spec.checked),
     cursor: 0,
     top: 0,
+    pointer: 0,
     error: undefined as string | undefined,
   };
 
@@ -472,13 +483,15 @@ const multiView = <T>(context: Context, spec: MultiSpec<T>): View<T[]> => {
         width,
       );
 
-      return composed(context, {
+      const parts = composed(context, {
         title: spec.title,
         detail,
         body,
         after: errorLines(context, state.error, width),
         hints,
       });
+
+      return { lines: parts.lines, focus: parts.bodyRow + state.pointer };
     },
     key: (key) => {
       state.error = undefined;

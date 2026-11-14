@@ -17,6 +17,7 @@ import {
   folderTag,
   HOME_CONFIRM,
   HOME_ROOTS,
+  HUB_SUMMARY_TITLE,
   type HubRow,
   hubRowLines,
   INTRO_TITLE,
@@ -378,13 +379,25 @@ const createWizard = (io: SetupIo, context: WizardContext) => {
     const effect = done ? wrapped([NOTHING_TO_DO], room) : applyLines(plan, facts, shape, width, io.plain);
 
     return [
-      ...(io.plain ? [] : [""]),
+      ...(io.plain ? [] : [HUB_SUMMARY_TITLE]),
       ...hubRowLines(rowsOf(state, plan), width, io.plain),
       ...(io.plain ? [] : [""]),
-      ...(notice === undefined ? [] : [notice, ""]),
+      ...(notice === undefined ? [] : [...wrapped([notice], room), ""]),
       ...effect,
-      ...(io.plain ? [] : ["", ...wrapped([OTHER_SETTINGS], room)]),
+      ...(io.plain ? [] : ["", ...wrapped([OTHER_SETTINGS], room), ""]),
     ];
+  };
+
+  const hubSummary = (state: State, plan: Plan, notice: string | undefined) => {
+    const summary = hubDetail(state, plan, notice);
+
+    if (io.plain) {
+      return { detail: summary };
+    }
+
+    prompts.note(summary(io.columns()));
+
+    return {};
   };
 
   const leave = async (state: State, plan: Plan, hub: () => Promise<Outcome>): Promise<Outcome> => {
@@ -418,7 +431,7 @@ const createWizard = (io: SetupIo, context: WizardContext) => {
       : [{ value: "apply", label: "Apply" }, ...changes, { value: "cancel", label: "Cancel" }];
     const reply = await prompts.select<HubChoice>({
       title: "Review",
-      detail: hubDetail(state, plan, notice),
+      ...hubSummary(state, plan, notice),
       choices,
       escape: done ? "done" : "cancel",
       collapsed: (value) =>
