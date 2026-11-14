@@ -8,6 +8,8 @@ const NO_RESOURCES = ["--no-extensions", "--no-skills", "--no-prompt-templates",
 
 const HELP_COMMANDS = new Set(["install", "remove", "uninstall", "update", "list", "config"]);
 
+const LOCAL_FLAGS = ["-l", "--local"];
+
 const isHelpFlag = (arg: string) => HELP_FLAGS.includes(arg);
 
 const isValue = (arg: string) => !arg.startsWith("-") && !arg.startsWith("@");
@@ -27,6 +29,9 @@ const isExport = ([flag, file, output, ...extra]: string[]) =>
   (output === undefined || isValue(output)) &&
   extra.length === 0;
 
+const isUserConfig = (command: string, args: string[]) =>
+  command === "config" && !args.some((arg) => LOCAL_FLAGS.includes(arg));
+
 const onlyFlag = (argv: string[], flags: string[]) => argv.length === 1 && flags.includes(argv[0] ?? "");
 
 const topLevelRoute = (argv: string[]): HostRoute | undefined => {
@@ -44,7 +49,7 @@ const topLevelRoute = (argv: string[]): HostRoute | undefined => {
 export const hostRoute = (argv: string[]): HostRoute | undefined => {
   const [command = "", ...args] = argv;
 
-  if (command === "auth" || isSubcommandHelp(command, args)) {
+  if (command === "auth" || isSubcommandHelp(command, args) || isUserConfig(command, args)) {
     return { kind: "empty-dir", args: argv };
   }
 
