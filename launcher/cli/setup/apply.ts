@@ -1,3 +1,4 @@
+import type { VmPhase } from "../../backend/index.ts";
 import { errorMessage, LauncherError } from "../../shared/index.ts";
 import { elapsedOf } from "../prompt/style.ts";
 import { BACK, Cancelled, type NotePlace } from "../prompt/types.ts";
@@ -7,9 +8,9 @@ import {
   progressText,
   roomOf,
   STOPPED_VM,
-  STOPPED_WAITING,
   savedLine,
   saveFailedLine,
+  stoppedWaiting,
   successLines,
   VM_FAILURE_CHOICES,
   VM_INTERRUPT_WARNING,
@@ -106,12 +107,18 @@ const failedChoice = async (io: SetupIo, action: Running, elapsed: string, error
 
 const runVm = async (io: SetupIo, effects: ApplyEffects, action: Running): Promise<VmStep> => {
   const started = io.now();
+  const seen: { phase?: VmPhase } = {};
+  const progress = (update: (text: string) => void) => (phase: VmPhase) => {
+    seen.phase = phase;
+
+    update(progressText(phase, action));
+  };
 
   try {
     const applied = await io.prompts.task({
       title: VM_TITLE,
       interruptWarning: VM_INTERRUPT_WARNING,
-      run: (update) => effects.vm(action, (phase) => update(progressText(phase, action))),
+      run: (update) => effects.vm(action, progress(update)),
     });
 
     sectionNote(io, [vmDoneLine(applied, action, elapsedOf(io.now() - started), io.plain)]);
@@ -119,7 +126,7 @@ const runVm = async (io: SetupIo, effects: ApplyEffects, action: Running): Promi
     return { deferred: typeof applied === "object" };
   } catch (error) {
     if (error instanceof Cancelled) {
-      noteOf(io, STOPPED_WAITING, "end");
+      noteOf(io, stoppedWaiting(seen.phase), "end");
 
       return { exit: 130 };
     }

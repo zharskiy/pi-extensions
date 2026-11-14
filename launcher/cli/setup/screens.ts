@@ -77,8 +77,15 @@ export const CANCELLED = "Cancelled. Nothing was changed.";
 
 export const NOTHING_CHANGED = "Nothing changed.";
 
-export const STOPPED_WAITING = [
-  "Stopped waiting. Your settings are saved; the VM may still be starting.",
+const STILL_RUNNING: Record<VmPhase, string> = {
+  creating: "the VM may still be being created",
+  stopping: "the VM may be stopped now, and the next pi starts it",
+  starting: "the VM may still be starting",
+  waiting: "the VM may still be starting",
+};
+
+export const stoppedWaiting = (phase: VmPhase | undefined) => [
+  `Stopped waiting. Your settings are saved; ${STILL_RUNNING[phase ?? "starting"]}.`,
   "Check it with pi sandbox doctor, or run pi sandbox init again.",
 ];
 
