@@ -64,8 +64,8 @@ describe("the intro", () => {
     const facts = { ...FACTS, vm: RUNNING, sessions: 1 };
 
     expect(introLines(facts, false, false).slice(2)).toEqual([
-      "This Mac     12 CPUs · 32 GiB memory · 412 GiB free disk",
-      "Sandbox VM   running · 8 CPUs · 10 GiB memory · 100 GiB disk",
+      { label: "This Mac     ", text: "12 CPUs · 32 GiB memory · 412 GiB free disk" },
+      { label: "Sandbox VM   ", text: "running · 8 CPUs · 10 GiB memory · 100 GiB disk" },
       "             1 pi session is running",
       "",
     ]);
@@ -131,14 +131,18 @@ describe("the hub", () => {
     expect(hubRowLines(rows, 50 + 10, false)).toEqual([
       `Project folders      ~/Projects${" ".repeat(19)}chosen`,
       `VM size              8 CPUs${" ".repeat(22)}invalid`,
-      "                     config: vm.memoryGiB must be at least 2",
+      "                     config: vm.memoryGiB must be at",
+      "                     least 2",
     ]);
   });
 
-  it("moves the tags to their own line below 60 columns", () => {
-    expect(hubRowLines(rows, 50, false).slice(0, 2)).toEqual([
-      "Project folders      ~/Projects",
-      "                     chosen",
+  it("puts the values on their own lines below 60 columns", () => {
+    expect(hubRowLines(rows, 50, false)).toEqual([
+      `Project folders${" ".repeat(25)}chosen`,
+      "  ~/Projects",
+      `VM size${" ".repeat(32)}invalid`,
+      "  8 CPUs",
+      "  config: vm.memoryGiB must be at least 2",
     ]);
   });
 
@@ -169,7 +173,8 @@ describe("the hub", () => {
       '      ~ workspaceRoots.roots   ["~/Projects","~/work"]',
       '                               → ["~/Projects","~/work","~/oss"]',
       "      - vm.cpus                6   (back to automatic: 8)",
-      "      (the rest of the file is kept; its indentation is normalised to 2 spaces)",
+      "      (the rest of the file is kept; its indentation is normalised to 2",
+      "      spaces)",
     ]);
   });
 

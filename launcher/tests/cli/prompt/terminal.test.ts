@@ -167,7 +167,7 @@ describe("modes, glyphs and colour", () => {
     expect(screen.lines()).toEqual(["o  Folders...", "|  ~/a", "|"]);
   });
 
-  it("truncates live lines to the width minus one with an ellipsis and wraps detail", async () => {
+  it("wraps a long title and the detail at the width, keeping the rail", async () => {
     const { prompts, screen, input } = richPrompts({ columns: 40 });
 
     const reply = prompts.select({
@@ -178,8 +178,9 @@ describe("modes, glyphs and colour", () => {
 
     await press(input, KEY.ctrlL);
 
-    expect(screen.lines().slice(0, 4)).toEqual([
-      "◆  A title that is much longer than fo…",
+    expect(screen.lines().slice(0, 5)).toEqual([
+      "◆  A title that is much longer than",
+      "│  forty columns wide",
       "│  Every pi session runs in this VM.",
       "│  Automatic follows this Mac.",
       "│",

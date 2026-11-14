@@ -674,6 +674,51 @@ describe("the review hub on an 80x24 terminal", () => {
   });
 });
 
+describe("narrow terminals", () => {
+  const PROBLEMS = '{"workspaceRoots": {"roots": ["~/Projects", "~/.ssh"]}, "vm": {"memoryGiB": -3}}\n';
+
+  const framed = (lines: string[]) =>
+    lines.slice(
+      0,
+      lines.findIndex((line) => line.startsWith("└")),
+    );
+
+  it.each([40, 60, 80])(
+    "wraps every line of a first run at %i columns without cutting it",
+    async (columns) => {
+      const run = setup({ columns, rows: 24 });
+
+      await run.keys(...STEPS_ACCEPTED, KEY.enter);
+
+      expect(await run.exit).toBe(0);
+
+      const lines = run.screen.lines();
+
+      expect(lines.filter((line) => line.endsWith("…"))).toEqual([]);
+      expect(lines.filter((line) => line.length > columns - 1)).toEqual([]);
+      expect(framed(lines).filter((line) => !/^[┌│◇◆└]/.test(line))).toEqual([]);
+    },
+  );
+
+  it.each([40, 60, 80])("wraps the values, problems and diff of the hub at %i columns", async (columns) => {
+    const run = setup({ columns, rows: 24, text: PROBLEMS, facts: { vm: RUNNING } });
+
+    await run.shown("◆  Review");
+
+    const lines = run.screen.lines();
+
+    expect(lines.filter((line) => line.endsWith("…"))).toEqual([]);
+    expect(lines.filter((line) => line.length > columns - 1)).toEqual([]);
+    expect(lines.filter((line) => !/^[┌│◇◆]/.test(line))).toEqual([]);
+    expect(run.text()).toContain("config: workspaceRoots.roots:");
+    expect(run.text()).toContain("vm.memoryGiB");
+
+    await run.keys(KEY.ctrlC);
+
+    expect(await run.exit).toBe(130);
+  });
+});
+
 describe("an ASCII terminal", () => {
   it("runs the whole first run without a non-ASCII character", async () => {
     const run = setup({ env: { LANG: "C", LC_ALL: "C" } });

@@ -228,10 +228,13 @@ export const tailOf = (text: string, room: number) => {
   return cut.text;
 };
 
-const joinWhileFits = (pieces: string[], width: number, glue: string, carry: (last: string) => string) =>
-  pieces.reduce<string[]>((lines, piece, index) => {
+const joinWhileFits = (pieces: string[], width: number, glue: string, carry: (last: string) => string) => {
+  const reserve = widthOf(carry(""));
+
+  return pieces.reduce<string[]>((lines, piece, index) => {
     const last = lines.at(-1);
     const joined = `${last}${glue}${piece}`;
+    const trailing = index < pieces.length - 1 ? reserve : 0;
 
     if (last === undefined || index === 0) {
       lines.push(piece);
@@ -239,7 +242,7 @@ const joinWhileFits = (pieces: string[], width: number, glue: string, carry: (la
       return lines;
     }
 
-    if (widthOf(joined) <= width) {
+    if (widthOf(joined) + trailing <= width) {
       lines[lines.length - 1] = joined;
 
       return lines;
@@ -251,11 +254,41 @@ const joinWhileFits = (pieces: string[], width: number, glue: string, carry: (la
 
     return lines;
   }, []);
+};
+
+const BREAK_AFTER = /(?<=[/,])/;
+
+const hardSplit = (text: string, width: number) =>
+  Array.from(text).reduce<string[]>((lines, char) => {
+    const last = lines.at(-1);
+
+    if (last !== undefined && plainWidth(`${last}${char}`) <= width) {
+      lines[lines.length - 1] = `${last}${char}`;
+
+      return lines;
+    }
+
+    lines.push(char);
+
+    return lines;
+  }, []);
+
+const fragmentsOf = (word: string, width: number) =>
+  joinWhileFits(
+    word.split(BREAK_AFTER).flatMap((part) => (widthOf(part) > width ? hardSplit(part, width) : [part])),
+    width,
+    "",
+    (last) => last,
+  );
 
 export const wrap = (line: string, width: number) => {
   const indent = /^ */.exec(line)?.[0] ?? "";
-  const words = line.slice(indent.length).split(" ");
-  const lines = joinWhileFits(words, width - indent.length, " ", (last) => last);
+  const room = Math.max(1, width - indent.length);
+  const words = line
+    .slice(indent.length)
+    .split(" ")
+    .flatMap((word) => (widthOf(word) > room ? fragmentsOf(word, room) : [word]));
+  const lines = joinWhileFits(words, room, " ", (last) => last);
 
   return lines.map((wrapped) => `${indent}${wrapped}`);
 };

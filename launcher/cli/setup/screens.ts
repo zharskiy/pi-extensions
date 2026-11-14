@@ -182,8 +182,8 @@ export const introLines = (facts: HostFacts, firstRun: boolean, plain: boolean) 
   return [
     { text: lead },
     "",
-    `This Mac     ${macLine(facts)}`,
-    `Sandbox VM   ${vmLine(facts)}`,
+    { label: "This Mac     ", text: macLine(facts) },
+    { label: "Sandbox VM   ", text: vmLine(facts) },
     ...sessions.map((line) => `             ${line}`),
     "",
   ];
@@ -360,28 +360,43 @@ const automaticPart = (key: string, facts: HostFacts) => {
   return value === undefined ? "" : `   (back to automatic: ${value})`;
 };
 
+const keyedLines = (head: string, value: string, room: number) => {
+  const line = `${head}   ${value}`;
+
+  return widthOf(line) <= room ? [line] : [head, ...wrap(`    ${value}`, room)];
+};
+
 const richChangeLines = (change: Change, keyWidth: number, room: number, facts: HostFacts) => {
   const key = change.key.padEnd(keyWidth);
+  const mark = { add: "+", change: "~", remove: "-" }[change.kind];
+  const head = `${mark} ${key}`;
 
   if (change.kind === "add") {
-    return [`+ ${key}   ${json(change.after)}`];
+    return keyedLines(head, json(change.after), room);
   }
 
   if (change.kind === "remove" && change.key === "workspaceRoots") {
-    return [`- ${key}   (your whole home is shared again)`];
+    return keyedLines(head, "(your whole home is shared again)", room);
   }
 
   if (change.kind === "remove") {
-    return [`- ${key}   ${json(change.before)}${automaticPart(change.key, facts)}`];
+    return keyedLines(head, `${json(change.before)}${automaticPart(change.key, facts)}`, room);
   }
 
-  const line = `~ ${key}   ${json(change.before)} → ${json(change.after)}`;
+  const line = `${head}   ${json(change.before)} → ${json(change.after)}`;
 
   if (widthOf(line) <= room) {
     return [line];
   }
 
-  return [`~ ${key}   ${json(change.before)}`, `${" ".repeat(keyWidth + 5)}→ ${json(change.after)}`];
+  const arrow = `${" ".repeat(keyWidth + 5)}→ ${json(change.after)}`;
+  const before = `${head}   ${json(change.before)}`;
+
+  if (widthOf(before) <= room && widthOf(arrow) <= room) {
+    return [before, arrow];
+  }
+
+  return [head, ...wrap(`    ${json(change.before)}`, room), ...wrap(`    → ${json(change.after)}`, room)];
 };
 
 const plainChangeLine = (change: Change) => {
@@ -435,7 +450,7 @@ export const applyLines = (plan: Plan, facts: HostFacts, shape: FileShape, width
       ? []
       : [
           ...bullet(fileBullet(plan, facts, shape.existed), room, plain),
-          ...[...diff, ...reindent].map((line) => `      ${line}`),
+          ...[...diff, ...reindent].flatMap((line) => wrap(`      ${line}`, room)),
         ];
   const vmText = vmActionText(plan.vm);
   const vm = vmText === undefined ? [] : bullet(vmText, room, plain);
@@ -449,24 +464,53 @@ const indentText = (indent: string) =>
 export const NOTHING_TO_DO =
   "Everything is set up: the file and the sandbox VM already match these settings.";
 
+const hanging = (indent: string, text: string, room: number) => wrap(`${indent}${text}`, room);
+
+const tagged = (head: string, tag: string, room: number) => {
+  const gap = room - widthOf(head) - widthOf(tag);
+
+  return gap >= 2 ? `${head}${" ".repeat(gap)}${tag}` : undefined;
+};
+
+const wideRowLines = (row: HubRow, room: number) => {
+  const indent = " ".repeat(LABEL_WIDTH + 2);
+  const problems = row.problems.flatMap((problem) => hanging(indent, printable(problem), room));
+  const head = tagged(`${row.label.padEnd(LABEL_WIDTH)}  ${row.value}`, row.tag, room);
+
+  if (head !== undefined) {
+    return [head, ...problems];
+  }
+
+  const [first = "", ...rest] = hanging(indent, row.value, room);
+
+  return [
+    `${row.label.padEnd(LABEL_WIDTH)}  ${first.trimStart()}`,
+    ...rest,
+    `${indent}${row.tag}`,
+    ...problems,
+  ];
+};
+
+const narrowRowLines = (row: HubRow, room: number) => {
+  const head = tagged(row.label, row.tag, room);
+  const value = hanging("  ", row.value, room);
+  const problems = row.problems.flatMap((problem) => hanging("  ", printable(problem), room));
+
+  return head === undefined
+    ? [row.label, ...value, `  ${row.tag}`, ...problems]
+    : [head, ...value, ...problems];
+};
+
 export const hubRowLines = (rows: HubRow[], width: number, plain: boolean) => {
   const room = roomOf(width);
 
   if (plain) {
-    return rows.map((row) => `  ${row.label}: ${row.value} (${row.tag})`);
+    return rows.flatMap((row) => hanging("  ", `${row.label}: ${row.value} (${row.tag})`, room));
   }
 
-  return rows.flatMap((row) => {
-    const head = `${row.label.padEnd(LABEL_WIDTH)}  ${row.value}`;
-    const problems = row.problems.map((problem) => `${" ".repeat(LABEL_WIDTH + 2)}${printable(problem)}`);
-    const gap = room - widthOf(head) - row.tag.length;
-
-    if (width < HUB_TAGS_INLINE || gap < 2) {
-      return [head, `${" ".repeat(LABEL_WIDTH + 2)}${row.tag}`, ...problems];
-    }
-
-    return [`${head}${" ".repeat(gap)}${row.tag}`, ...problems];
-  });
+  return rows.flatMap((row) =>
+    width < HUB_TAGS_INLINE ? narrowRowLines(row, room) : wideRowLines(row, room),
+  );
 };
 
 const phaseText = (phase: VmPhase, parts: VmPart[]) => {
@@ -593,12 +637,21 @@ export const INVALID_JSON_END =
 
 export const INVALID_CONFIG_END = "Nothing was changed. Fix that key, then run pi sandbox init again.";
 
-export type Paragraph = string | { text: string; indent?: string };
+export type Paragraph = string | { text: string; indent?: string } | { label: string; text: string };
+
+const labelled = (label: string, text: string, room: number) =>
+  wrap(`${" ".repeat(label.length)}${text}`, room).map((line, index) =>
+    index === 0 ? `${label}${line.slice(label.length)}` : line,
+  );
 
 export const wrapped = (paragraphs: Paragraph[], room: number) =>
   paragraphs.flatMap((paragraph) => {
     if (typeof paragraph === "string") {
       return paragraph === "" ? [""] : wrap(paragraph, room);
+    }
+
+    if ("label" in paragraph) {
+      return labelled(paragraph.label, paragraph.text, room);
     }
 
     const indent = paragraph.indent ?? "";

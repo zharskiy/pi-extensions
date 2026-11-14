@@ -24,7 +24,7 @@ describe("text width and truncation", () => {
   it("wraps words keeping the indent, and key hints at their separators", () => {
     expect(wrap("  one two three", 9)).toEqual(["  one two", "  three"]);
 
-    expect(wrapSegments(["a b", "c d", "e"], 9, " · ")).toEqual(["a b · c d ·", "e"]);
+    expect(wrapSegments(["a b", "c d", "e"], 9, " · ")).toEqual(["a b ·", "c d · e"]);
   });
 });
 

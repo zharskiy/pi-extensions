@@ -87,16 +87,50 @@ const settle = <T>(value: T): Step<T> => ({ kind: "settle", value });
 
 const roomOf = (width: number) => Math.max(1, width - RAIL_WIDTH - 1);
 
+const TITLE_GAP = "   ";
+
+const titleLines = (context: Context, parts: Parts, width: number) => {
+  const { paint, fold } = context;
+  const room = roomOf(width);
+  const [title = "", ...extras] = fold(parts.title).split(TITLE_GAP);
+  const pieces = [...extras, ...(parts.note === undefined ? [] : [fold(parts.note)])];
+  const whole = [title, ...pieces].join(TITLE_GAP);
+
+  if (widthOf(whole) <= room) {
+    const tail = pieces.length === 0 ? "" : `${TITLE_GAP}${paint("dim", pieces.join(TITLE_GAP))}`;
+
+    return { head: `${title}${tail}`, more: [] };
+  }
+
+  const [first = "", ...rest] = wrap(title, room);
+
+  return {
+    head: first,
+    more: [...rest, ...pieces.flatMap((piece) => wrap(piece, room).map((line) => paint("dim", line)))],
+  };
+};
+
 const composed = (context: Context, parts: Parts) => {
   const { glyphs, paint } = context;
   const rail = paint("dim", glyphs.rail);
   const railed = (line: string) => (line === "" ? rail : `${rail}  ${line}`);
   const spacer = parts.detail.length > 0 ? [""] : [];
-  const note = parts.note === undefined ? "" : `   ${paint("dim", context.fold(parts.note))}`;
-  const head = `${paint("cyan", glyphs.active)}  ${context.fold(parts.title)}${note}`;
-  const rest = [...parts.detail, ...spacer, ...parts.body, ...parts.after, ...spacer, ...parts.hints];
+  const title = titleLines(context, parts, context.ui.columns());
+  const head = `${paint("cyan", glyphs.active)}  ${title.head}`;
+  const rest = [
+    ...title.more,
+    ...parts.detail,
+    ...spacer,
+    ...parts.body,
+    ...parts.after,
+    ...spacer,
+    ...parts.hints,
+  ];
 
-  return { lines: [head, ...rest.map(railed)], bodyRow: 1 + parts.detail.length + spacer.length };
+  return {
+    lines: [head, ...rest.map(railed)],
+    bodyRow: 1 + title.more.length + parts.detail.length + spacer.length,
+  };
 };
 
 const detailOf = (context: Context, detail: Detail | undefined, width: number) => {
@@ -145,11 +179,19 @@ const collapsedLines = (context: Context, title: string, collapse: Collapse) => 
   }
 
   const { glyphs, paint } = context;
+  const room = roomOf(context.ui.columns());
   const shown = typeof collapse === "string" ? { title, text: collapse } : collapse;
   const rail = paint("dim", glyphs.rail);
-  const text = shown.text.split("\n").map((line) => `${rail}  ${context.fold(printable(line))}`);
+  const text = shown.text
+    .split("\n")
+    .flatMap((line) => wrap(context.fold(printable(line)), room))
+    .map((line) => `${rail}  ${line}`);
+  const heads = wrap(context.fold(printable(shown.title)), room);
+  const head = heads.map((line, index) =>
+    index === 0 ? `${paint("dim", glyphs.answered)}  ${line}` : `${rail}  ${line}`,
+  );
 
-  return [`${paint("dim", glyphs.answered)}  ${context.fold(printable(shown.title))}`, ...text, rail];
+  return [...head, ...text, rail];
 };
 
 const writeLines = (context: Context, lines: string[]) => {
@@ -290,40 +332,55 @@ const choiceRows = <T>(
   cursor: number,
 ) => {
   const { glyphs, paint, fold } = context;
+  const room = roomOf(context.ui.columns());
   const heads = choices.map((choice, index) => `${mark(choice, index)}${fold(printable(choice.label))}`);
   const headWidth = Math.max(
     0,
     ...heads.filter((_head, index) => choices[index]?.tag !== undefined).map(widthOf),
   );
+  const tags = choices.map((choice) => (choice.tag === undefined ? "" : fold(printable(choice.tag))));
+  const inline = choices.every(
+    (choice, index) =>
+      choice.tag === undefined || POINTER_WIDTH + headWidth + 3 + widthOf(tags[index] ?? "") <= room,
+  );
 
   return choices.map((choice, index) => {
     const head = heads[index] ?? "";
     const pointer = index === cursor ? paint("cyan", glyphs.pointer) : " ";
+    const tag = tags[index] ?? "";
 
-    const tag =
-      choice.tag === undefined
-        ? ""
-        : `${" ".repeat(headWidth - widthOf(head))}   ${paint("dim", fold(printable(choice.tag)))}`;
+    if (choice.tag === undefined) {
+      return [`${pointer} ${head}`];
+    }
 
-    return `${pointer} ${head}${tag}`;
+    if (inline) {
+      return [`${pointer} ${head}${" ".repeat(headWidth - widthOf(head))}   ${paint("dim", tag)}`];
+    }
+
+    const indent = " ".repeat(POINTER_WIDTH + widthOf(mark(choice, index)) + 2);
+
+    return [`${pointer} ${head}`, ...wrap(`${indent}${tag}`, room).map((line) => paint("dim", line))];
   });
 };
 
 const limitOf = (context: Context, detail: string[]) =>
   Math.max(SUMMARY_SHOWN, context.ui.rows() - 6 - (detail.length > 0 ? detail.length + 2 : 0));
 
+const linesBefore = (rows: string[][], from: number, to: number) =>
+  rows.slice(from, to).reduce((sum, row) => sum + row.length, 0);
+
 const windowed = (
   context: Context,
-  rows: string[],
+  rows: string[][],
   cursor: number,
   view: { top: number; pointer: number },
   limit: number,
 ) => {
   if (rows.length <= limit) {
     view.top = 0;
-    view.pointer = cursor;
+    view.pointer = linesBefore(rows, 0, cursor);
 
-    return rows;
+    return rows.flat();
   }
 
   const followed = cursor < view.top ? cursor : Math.max(view.top, cursor - limit + 1);
@@ -332,11 +389,11 @@ const windowed = (
   const { glyphs, paint } = context;
 
   view.top = top;
-  view.pointer = cursor - top + (top > 0 ? 1 : 0);
+  view.pointer = linesBefore(rows, top, cursor) + (top > 0 ? 1 : 0);
 
   return [
     ...(top > 0 ? [paint("dim", glyphs.above(top))] : []),
-    ...rows.slice(top, top + limit),
+    ...rows.slice(top, top + limit).flat(),
     ...(below > 0 ? [paint("dim", glyphs.below(below))] : []),
   ];
 };
