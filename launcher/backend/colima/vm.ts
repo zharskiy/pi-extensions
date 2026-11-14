@@ -70,11 +70,16 @@ const CREATE_FLAGS = ["--vm-type", "vz", "--mount-type", "virtiofs"];
 
 const startHint = `run ${plainStart(ENGINE_PROFILE)} and see ${logHint(ENGINE_PROFILE)}`;
 
+const INIT_HINT = "run pi sandbox init, which creates it";
+
 export const engineUnreachable = (detection?: Detection) =>
   new LauncherError(
     `the sandbox VM engine is unreachable at ${ENGINE_SOCKET_DISPLAY}${detection?.reason === undefined ? "" : `: ${detection.reason}`}`,
-    `run launcher/install.sh or ${plainStart(ENGINE_PROFILE)}`,
+    `run ${plainStart(ENGINE_PROFILE)}, or pi sandbox init when ~/.colima/${ENGINE_PROFILE} does not exist`,
   );
+
+const profileAbsent = () =>
+  new LauncherError(`the sandbox VM does not exist: there is no colima profile ${ENGINE_PROFILE}`, INIT_HINT);
 
 const engineSilent = (detection: Detection) =>
   new LauncherError(
@@ -179,7 +184,10 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
 
   const running = async (failure: string) => {
     const result = await colimaRun(["status", "--profile", profile]).catch((error: unknown) => {
-      throw new LauncherError(`${failure}: ${errorMessage(error)}`, "run launcher/install.sh");
+      throw new LauncherError(
+        `${failure}: ${errorMessage(error)}`,
+        "install colima, then run pi sandbox init",
+      );
     });
 
     return result.code === 0;
@@ -215,7 +223,7 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
       }
 
       if (!(await profileExists())) {
-        throw engineUnreachable();
+        throw profileAbsent();
       }
 
       if (await running(START_FAILURE)) {

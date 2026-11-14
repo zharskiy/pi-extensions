@@ -135,8 +135,8 @@ describe("a launch starts the stopped sandbox VM", () => {
     expect(await run([], context.harness.deps)).toBe(1);
     expect(context.harness.stderr()).toContain(
       [
-        "pi-sandbox: the sandbox VM engine is unreachable at ~/.colima/pi-sandbox/docker.sock",
-        "  hint: run launcher/install.sh or colima start --profile pi-sandbox --activate=false",
+        "pi-sandbox: the sandbox VM does not exist: there is no colima profile pi-sandbox",
+        "  hint: run pi sandbox init, which creates it",
       ].join("\n"),
     );
     expect(context.colimaCalls()).toEqual([]);
@@ -186,7 +186,7 @@ describe("a launch starts the stopped sandbox VM", () => {
 
     expect(await run([], context.harness.deps)).toBe(1);
     expect(context.harness.stderr()).toContain(
-      "pi-sandbox: could not start the sandbox VM: colima: command not found\n  hint: run launcher/install.sh",
+      "pi-sandbox: could not start the sandbox VM: colima: command not found\n  hint: install colima, then run pi sandbox init",
     );
   });
 
