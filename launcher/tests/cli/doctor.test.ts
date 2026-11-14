@@ -875,7 +875,11 @@ describe("pi sandbox doctor", () => {
   });
 
   describe("vm size", () => {
-    const sizeCheck = async (size: Vm["size"], machine?: { cpus: number; memoryGiB: number }) => {
+    const sizeCheck = async (
+      size: Vm["size"],
+      machine?: { cpus: number; memoryGiB: number },
+      userConfig?: unknown,
+    ) => {
       const fake = createFakeBackend({ exec: answering({}), vm: { size } });
       const port = await healthServer(200);
       const harness = await createHarness({
@@ -885,6 +889,10 @@ describe("pi sandbox doctor", () => {
           ensure: async () => ({ proxy: { pid: 77, port, boot: 0, start: "", inputHash: "h" }, notices: [] }),
         },
       });
+
+      if (userConfig !== undefined) {
+        await harness.writeJson(harness.userConfigFile, userConfig);
+      }
 
       const code = await run(["sandbox", "doctor"], harness.deps);
 
@@ -897,9 +905,36 @@ describe("pi sandbox doctor", () => {
       expect(found).toMatchObject({
         status: "warn",
         detail: "profile pi-sandbox has 2 CPUs and 4 GiB, below 8 CPUs and 10 GiB",
-        hint: `resize it with ${RESIZE}`,
+        hint: `resize it with ${RESIZE}, or set vm in the config`,
       });
       expect(code).toBe(0);
+    });
+
+    it("measures the profile against the size vm sets instead of its own recommendation", async () => {
+      const small = await sizeCheck(async () => ({ cpus: 2, memoryGiB: 4, diskGiB: 60 }), undefined, {
+        vm: { cpus: 2, memoryGiB: 4 },
+      });
+      const differs = await sizeCheck(async () => ({ cpus: 8, memoryGiB: 10, diskGiB: 60 }), undefined, {
+        vm: { cpus: 4, diskGiB: 80 },
+      });
+      const shrunk = await sizeCheck(async () => ({ cpus: 4, memoryGiB: 8, diskGiB: 60 }), undefined, {
+        vm: { diskGiB: 40 },
+      });
+
+      expect(small.found).toMatchObject({
+        status: "ok",
+        detail: "profile pi-sandbox has 2 CPUs and 4 GiB, as vm sets",
+      });
+      expect(differs.found).toMatchObject({
+        status: "warn",
+        detail: "profile pi-sandbox has 8 CPUs and 10 GiB, not the 4 CPUs, 80 GiB disk vm sets",
+        hint: "run pi once while no other pi session runs; it restarts the VM with the size vm sets",
+      });
+      expect(shrunk.found).toMatchObject({
+        status: "warn",
+        detail: "profile pi-sandbox has 4 CPUs and 8 GiB; vm.diskGiB 40 is below its disk of 60 GiB",
+        hint: "colima cannot shrink a disk; raise vm.diskGiB or leave it out",
+      });
     });
 
     it("measures the profile against the size install.sh gives this machine", async () => {

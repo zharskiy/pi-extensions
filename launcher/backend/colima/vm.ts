@@ -8,7 +8,8 @@ import {
   stateLayout,
   withDirectoryLock,
 } from "../../shared/index.ts";
-import type { Detection, Vm, VmReport, VmShare, VmShareOptions, VmSize } from "../types.ts";
+import type { Detection, Vm, VmReport, VmShare, VmShareOptions, VmSize, VmTarget } from "../types.ts";
+import { hasSizeChanges, vmSizeDrift, vmSizeText } from "../vm-size.ts";
 import { type Colima, ENGINE_PROFILE, ENGINE_SOCKET_DISPLAY, logHint, plainStart } from "./profile.ts";
 import { createColimaShares, startArgs } from "./shares.ts";
 import { createColimaTrust } from "./vm-trust.ts";
@@ -39,6 +40,8 @@ const START_FAILURE = "could not start the sandbox VM";
 
 const STOP_FAILURE = "could not stop the sandbox VM";
 
+const RESIZE_FAILURE = "could not change the size of the sandbox VM";
+
 const startHint = `run ${plainStart(ENGINE_PROFILE)} and see ${logHint(ENGINE_PROFILE)}`;
 
 export const engineUnreachable = (detection?: Detection) =>
@@ -63,6 +66,12 @@ export const recommendedVmSize = (cpus: number, memGiB: number): VmSize => ({
   cpus: clamp(Math.floor(cpus), MIN_CPUS, MAX_CPUS),
   memoryGiB: clamp(Math.floor(memGiB / 2), MIN_GIB, MAX_GIB),
 });
+
+const sizeFlags = (target: VmTarget) => [
+  ...(target.cpus === undefined ? [] : ["--cpu", String(target.cpus)]),
+  ...(target.memoryGiB === undefined ? [] : ["--memory", String(target.memoryGiB)]),
+  ...(target.diskGiB === undefined ? [] : ["--disk", String(target.diskGiB)]),
+];
 
 const plural = (count: number) =>
   count === 1 ? "1 pi session is running" : `${count} pi sessions are running`;
@@ -205,9 +214,68 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
     const result = await colimaRun(["status", "--profile", profile, "--json"]).catch(() => undefined);
     const vm = result?.code === 0 ? parseJsonObject(result.stdout) : undefined;
 
-    return typeof vm?.cpu === "number" && typeof vm.memory === "number"
-      ? { cpus: vm.cpu, memoryGiB: vm.memory / GIB }
-      : undefined;
+    if (typeof vm?.cpu !== "number" || typeof vm.memory !== "number") {
+      return undefined;
+    }
+
+    const measured = { cpus: vm.cpu, memoryGiB: vm.memory / GIB };
+
+    return typeof vm.disk === "number" ? { ...measured, diskGiB: vm.disk / GIB } : measured;
+  };
+
+  const restartSized = async (changes: VmTarget) => {
+    await run(RESIZE_FAILURE, ["stop", "--profile", profile], `see ${logHint(profile)}`);
+
+    await run(RESIZE_FAILURE, [...startArgs(profile, []), ...sizeFlags(changes)], startHint);
+
+    const detection = await detectAgain();
+
+    if (detection?.available !== true) {
+      throw new LauncherError(
+        `the sandbox VM did not come back after changing its size: ${detection?.reason ?? "not detected"}`,
+        startHint,
+      );
+    }
+  };
+
+  const resizeDrifted = async (target: VmTarget, options: VmShareOptions) => {
+    const current = await size();
+    const drift = current === undefined ? undefined : vmSizeDrift(current, target);
+
+    if (drift === undefined || !hasSizeChanges(drift)) {
+      return;
+    }
+
+    const changes = vmSizeText(drift.changes);
+
+    if ((await options.busy()) > 0) {
+      options.report(
+        `the sandbox VM keeps its size while other pi sessions run; it changes to ${changes} at the next launch with no pi session running`,
+      );
+
+      return;
+    }
+
+    options.report(`restarting the sandbox VM to change its size to ${changes}`);
+
+    await restartSized(drift.changes);
+  };
+
+  const ensureSize: Vm["ensureSize"] = async (target, options) => {
+    const current = Object.keys(target).length === 0 ? undefined : await size();
+    const drift = current === undefined ? undefined : vmSizeDrift(current, target);
+
+    if (drift?.keptDiskGiB !== undefined) {
+      options.report(
+        `vm.diskGiB ${target.diskGiB} is below the sandbox VM's disk of ${drift.keptDiskGiB} GiB; colima cannot shrink a disk, so it stays`,
+      );
+    }
+
+    if (drift === undefined || !hasSizeChanges(drift)) {
+      return;
+    }
+
+    await withLock(() => resizeDrifted(target, options));
   };
 
   return {
@@ -216,9 +284,10 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
     ensureShares: shares.ensureShares,
     reconcileShares: shares.reconcileShares,
     ensureTrust: trust.ensureTrust,
+    ensureSize,
     size,
     resizeCommand: (target) =>
-      `colima stop --profile ${profile} && ${plainStart(profile)} --cpu ${target.cpus} --memory ${target.memoryGiB}`,
+      `colima stop --profile ${profile} && ${[plainStart(profile), ...sizeFlags(target)].join(" ")}`,
     stop,
   };
 };

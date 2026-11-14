@@ -533,6 +533,7 @@
     },
     "resources": {
       "type": "object",
+      "description": "Limits of each sandbox container inside the VM; vm sets the size of the VM itself. A limit above the matching vm value is a config error.",
       "additionalProperties": false,
       "properties": {
         "cpus": {
@@ -542,6 +543,31 @@
         "memoryGiB": {
           "type": "number",
           "exclusiveMinimum": 0
+        }
+      }
+    },
+    "vm": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The size of the sandbox VM, which every sandbox container shares. Unset keeps the size install.sh gave it. A launch with no other pi session running restarts the VM to this size; the disk only grows.",
+      "properties": {
+        "cpus": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64,
+          "description": "CPUs of the VM."
+        },
+        "memoryGiB": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 256,
+          "description": "Memory of the VM, in GiB."
+        },
+        "diskGiB": {
+          "type": "integer",
+          "minimum": 20,
+          "maximum": 2048,
+          "description": "Disk of the VM, in GiB. A value below the current disk is reported and ignored."
         }
       }
     },

@@ -134,6 +134,12 @@ export const shareVm = async (
   await backend.vm.reconcileShares(parts.plan.shares, needs, options);
 };
 
+export const sizeVm = (deps: CliDeps, context: LaunchContext, backend: Backend, launchId: string) =>
+  backend.vm.ensureSize(context.effective.config.vm, {
+    busy: vmBusy(context, backend, launchId),
+    report: report(deps),
+  });
+
 export const trustVm = (
   deps: CliDeps,
   context: LaunchContext,

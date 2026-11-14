@@ -72,6 +72,7 @@ export interface SandboxConfig {
   mounts: MountsConfig;
   env: { allow: string[] };
   resources: { cpus?: number; memoryGiB?: number };
+  vm: { cpus?: number; memoryGiB?: number; diskGiB?: number };
   sessions: { host: boolean };
   writeBack: WriteBackConfig;
 }
@@ -88,6 +89,7 @@ export interface UserConfig {
   mounts?: Partial<SandboxConfig["mounts"]>;
   env?: Partial<SandboxConfig["env"]>;
   resources?: SandboxConfig["resources"];
+  vm?: SandboxConfig["vm"];
   sessions?: Partial<SandboxConfig["sessions"]>;
   writeBack?: Partial<WriteBackConfig>;
 }

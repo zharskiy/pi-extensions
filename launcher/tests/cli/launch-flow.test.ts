@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { setTimeout as sleep } from "node:timers/promises";
 import { describe, expect, it } from "vitest";
-import type { Backend, MountSpec, VmPath } from "../../backend/index.ts";
+import type { Backend, MountSpec, VmPath, VmTarget } from "../../backend/index.ts";
 import { onClosedOutput } from "../../cli/deps.ts";
 import { run } from "../../cli/index.ts";
 import { hostPathNotices, launchNotices } from "../../cli/launch-notices.ts";
@@ -219,6 +219,51 @@ describe("the VM shares", () => {
     expect(asked.shared?.map((need) => need.path)).not.toContain(
       hostSessionsDir(harness.hostAgentDir, harness.repoRoot),
     );
+  });
+});
+
+describe("the VM size", () => {
+  const sizedHarness = async () => {
+    const fake = createFakeBackend();
+    const asked: { targets: VmTarget[]; busy: number[] } = { targets: [], busy: [] };
+    const harness = await createHarness({
+      backend: () => ({
+        ...fake.backend,
+        vm: {
+          ...fake.backend.vm,
+          ensureSize: async (target, options) => {
+            asked.targets.push(target);
+            asked.busy.push(await options.busy());
+
+            options.report("restarting the sandbox VM to change its size to 6 CPUs");
+          },
+        },
+      }),
+    });
+
+    return { harness, asked };
+  };
+
+  it("asks the VM for the size vm sets after its shares, with no other launch counted as busy", async () => {
+    const { harness, asked } = await sizedHarness();
+
+    await harness.writeJson(harness.userConfigFile, { vm: { cpus: 6, memoryGiB: 8, diskGiB: 80 } });
+
+    expect(await run([], harness.deps)).toBe(0);
+    expect(asked).toEqual({ targets: [{ cpus: 6, memoryGiB: 8, diskGiB: 80 }], busy: [0] });
+    expect(harness.stderr()).toContain(
+      "pi-sandbox: restarting the sandbox VM to change its size to 6 CPUs\n",
+    );
+  });
+
+  it("asks with an empty target when vm is unset, and never from the doctor", async () => {
+    const { harness, asked } = await sizedHarness();
+
+    expect(await run([], harness.deps)).toBe(0);
+
+    await run(["sandbox", "doctor"], harness.deps);
+
+    expect(asked.targets).toEqual([{}]);
   });
 });
 

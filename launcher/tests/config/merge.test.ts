@@ -37,6 +37,7 @@ const COMPLETE_CONFIG: UserConfig = {
   mounts: { sharedCaches: ["~/.cache/pip"], autoOverlays: false },
   env: { allow: ["EDITOR"] },
   resources: { cpus: 2, memoryGiB: 4 },
+  vm: { cpus: 4, memoryGiB: 8, diskGiB: 80 },
   sessions: { host: false },
   writeBack: {
     enabled: false,

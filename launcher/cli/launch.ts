@@ -35,7 +35,7 @@ import { writeOnce } from "./notices.ts";
 import { openSandboxProxy, reportDenials, type SandboxProxy, sandboxDenials } from "./sandbox-proxy.ts";
 import { sweepOrphans } from "./sweep.ts";
 import { imagePiVersion } from "./versions.ts";
-import { prepareVmShares, shareVm, startVm, trustVm } from "./vm.ts";
+import { prepareVmShares, shareVm, sizeVm, startVm, trustVm } from "./vm.ts";
 
 interface PreparedContainer {
   containerId: string;
@@ -372,6 +372,8 @@ const prepareVm = async (input: SandboxInput, share: boolean) => {
   await staged("shares", () =>
     shareVm(deps, context, backend, { sessions, launchId: launch.launchId, plan }),
   );
+
+  await sizeVm(deps, context, backend, launch.launchId);
 };
 
 const prepareAll = async (

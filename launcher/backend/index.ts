@@ -22,5 +22,7 @@ export type {
   VmPath,
   VmShare,
   VmSize,
+  VmTarget,
   VolumeSummary,
 } from "./types.ts";
+export { hasSizeChanges, vmSizeDrift, vmSizeText } from "./vm-size.ts";

@@ -117,6 +117,13 @@ export interface VmCoverage {
 export interface VmSize {
   cpus: number;
   memoryGiB: number;
+  diskGiB?: number;
+}
+
+export interface VmTarget {
+  cpus?: number;
+  memoryGiB?: number;
+  diskGiB?: number;
 }
 
 type VmStop = "absent" | "already stopped" | "stopped";
@@ -134,8 +141,9 @@ export interface Vm {
   ensureShares(paths: VmPath[], options: VmShareOptions): Promise<void>;
   reconcileShares(desired: VmShare[], paths: VmPath[], options: VmShareOptions): Promise<void>;
   ensureTrust(pemPath: string, options: VmShareOptions): Promise<void>;
+  ensureSize(target: VmTarget, options: VmShareOptions): Promise<void>;
   size(): Promise<VmSize | undefined>;
-  resizeCommand(size: VmSize): string;
+  resizeCommand(size: VmTarget): string;
   stop(options: Pick<VmShareOptions, "busy">): Promise<VmStop>;
 }
 

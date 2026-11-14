@@ -1,12 +1,16 @@
 import {
   type Backend,
   ENGINE_PROFILE,
+  hasSizeChanges,
   LABELS,
   recommendedVmSize,
   shareDrift,
   shareText,
   type VmShare,
   type VmSize,
+  type VmTarget,
+  vmSizeDrift,
+  vmSizeText,
 } from "../../backend/index.ts";
 import { authorityOf, type CredentialRule, TLS_PORT } from "../../config/index.ts";
 import { readHostPiFiles } from "../../hostpi/index.ts";
@@ -147,7 +151,23 @@ const gibText = (gib: number) => `${Math.round(gib * 10) / 10} GiB`;
 const isBelow = (size: VmSize, recommended: VmSize) =>
   size.cpus < recommended.cpus || size.memoryGiB < recommended.memoryGiB;
 
-const sizeCheck = async (deps: CliDeps, sandbox: Sandbox) => {
+const configuredSizeCheck = (size: VmSize, target: VmTarget, current: string) => {
+  const drift = vmSizeDrift(size, target);
+
+  if (hasSizeChanges(drift)) {
+    return warned(`${current}, not the ${vmSizeText(drift.changes)} vm sets`, {
+      hint: "run pi once while no other pi session runs; it restarts the VM with the size vm sets",
+    });
+  }
+
+  return drift.keptDiskGiB === undefined
+    ? passed(`${current}, as vm sets`)
+    : warned(`${current}; vm.diskGiB ${target.diskGiB} is below its disk of ${drift.keptDiskGiB} GiB`, {
+        hint: "colima cannot shrink a disk; raise vm.diskGiB or leave it out",
+      });
+};
+
+const sizeCheck = async (deps: CliDeps, context: LaunchContext, sandbox: Sandbox) => {
   const { vm } = sandbox.backend;
   const size = await vm.size();
 
@@ -155,12 +175,18 @@ const sizeCheck = async (deps: CliDeps, sandbox: Sandbox) => {
     return skipped(`colima did not report the size of profile ${ENGINE_PROFILE}`);
   }
 
-  const recommended = recommendedVmSize(deps.machine.cpus, deps.machine.memoryGiB);
   const current = `profile ${ENGINE_PROFILE} has ${size.cpus} CPUs and ${gibText(size.memoryGiB)}`;
+  const target = context.effective.config.vm;
+
+  if (Object.keys(target).length > 0) {
+    return configuredSizeCheck(size, target, current);
+  }
+
+  const recommended = recommendedVmSize(deps.machine.cpus, deps.machine.memoryGiB);
 
   return isBelow(size, recommended)
     ? warned(`${current}, below ${recommended.cpus} CPUs and ${recommended.memoryGiB} GiB`, {
-        hint: `resize it with ${vm.resizeCommand(recommended)}`,
+        hint: `resize it with ${vm.resizeCommand(recommended)}, or set vm in the config`,
       })
     : passed(current);
 };
@@ -329,7 +355,7 @@ const PROBES: Probe[] = [
   ),
   single("sessions share", "sandbox", ({ target }) => sessionsShareCheck(target)),
   ruleChecks,
-  single("vm size", "sandbox", ({ deps, sandbox }) => sizeCheck(deps, sandbox)),
+  single("vm size", "sandbox", ({ deps, context, sandbox }) => sizeCheck(deps, context, sandbox)),
 ];
 
 const probe = async (deps: CliDeps, context: LaunchContext, sandbox: Sandbox, run: Run) => {

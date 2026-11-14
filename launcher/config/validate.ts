@@ -470,8 +470,36 @@ const WRITE_BACK: ObjectSpec = {
   check: excludedAndAdded,
 };
 
+const MAX_VM_CPUS = 64;
+
+const MAX_VM_MEMORY_GIB = 256;
+
+const MIN_VM_DISK_GIB = 20;
+
+const MAX_VM_DISK_GIB = 2048;
+
+const vmSize = (minimum: number, maximum: number): Spec => ({
+  type: "number",
+  minimum,
+  maximum,
+  integer: true,
+});
+
+const RESOURCE_KEYS = ["cpus", "memoryGiB"] as const;
+
+const resourcesWithinVm: ObjectCheck = (value) => {
+  const resources = (value.resources ?? {}) as Record<string, number | undefined>;
+  const vm = (value.vm ?? {}) as Record<string, number | undefined>;
+  const larger = RESOURCE_KEYS.find((key) => (resources[key] ?? 0) > (vm[key] ?? Number.POSITIVE_INFINITY));
+
+  return larger === undefined
+    ? undefined
+    : `resources.${larger} ${resources[larger]} is larger than vm.${larger} ${vm[larger]}; resources limits one container inside the VM`;
+};
+
 const CONFIG_SPEC: ObjectSpec = {
   type: "object",
+  check: resourcesWithinVm,
   removed: { fallback: "was removed; --no-sandbox is always available" },
   properties: {
     $schema: text(),
@@ -518,6 +546,11 @@ const CONFIG_SPEC: ObjectSpec = {
     },
     env: { type: "object", properties: { allow: list(forwardableVariable) } },
     resources: { type: "object", properties: { cpus: positive, memoryGiB: positive } },
+    vm: shape({
+      cpus: vmSize(1, MAX_VM_CPUS),
+      memoryGiB: vmSize(2, MAX_VM_MEMORY_GIB),
+      diskGiB: vmSize(MIN_VM_DISK_GIB, MAX_VM_DISK_GIB),
+    }),
     sessions: shape({ host: flag }),
     writeBack: WRITE_BACK,
   },
