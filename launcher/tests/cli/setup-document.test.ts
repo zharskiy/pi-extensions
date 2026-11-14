@@ -249,4 +249,69 @@ describe("writing the config document", () => {
     expect(await readFile(target, "utf8")).toBe('{\n  "vm": {}\n}\n');
     expect((await stat(target)).mode & 0o777).toBe(0o640);
   });
+
+  it("writes a new file through a dangling link when the target's folder exists", async () => {
+    const { dir, file } = await fileIn();
+    const target = join(dir, "dotfiles", "config.json");
+
+    await mkdir(join(dir, "dotfiles"), { recursive: true });
+
+    await mkdir(join(file, ".."), { recursive: true });
+
+    await symlink("../dotfiles/config.json", file);
+
+    await writeDocument({ ...documentOf(undefined), file }, "{}\n");
+
+    expect((await lstat(file)).isSymbolicLink()).toBe(true);
+    expect(await readFile(target, "utf8")).toBe("{}\n");
+  });
+
+  it("refuses a dangling link whose target folder is missing, and keeps the link", async () => {
+    const { dir, file } = await fileIn();
+
+    await mkdir(join(file, ".."), { recursive: true });
+
+    await symlink(join(dir, "gone", "config.json"), file);
+
+    await expect(writeDocument({ ...documentOf(undefined), file }, "{}\n")).rejects.toThrow(
+      `could not save ${file}: it is a link to ${join(dir, "gone", "config.json")}, whose folder does not exist`,
+    );
+    expect((await lstat(file)).isSymbolicLink()).toBe(true);
+  });
+
+  it("names a folder that is not writable once, without the raw error", async () => {
+    const { file } = await fileIn();
+
+    await mkdir(join(file, ".."), { recursive: true });
+
+    await chmod(join(file, ".."), 0o500);
+
+    const failure = await writeDocument({ ...documentOf(undefined), file }, "{}\n").catch(
+      (error: unknown) => error as Error,
+    );
+
+    await chmod(join(file, ".."), 0o700);
+
+    expect(failure?.message).toBe(`could not save ${file}: its folder is not writable`);
+  });
+});
+
+describe("the bytes of the file", () => {
+  it("names a byte-order mark in words", () => {
+    expect(readDocument(FILE, '\uFEFF{ "vm": {} }\n')).toEqual({
+      ok: false,
+      kind: "json",
+      message: "the file starts with a byte-order mark (BOM); save it as UTF-8 without one",
+    });
+  });
+
+  it("keeps CRLF line endings", () => {
+    const text = '{\r\n  "egress": {}\r\n}\r\n';
+    const document = documentOf(text);
+
+    expect(isReindented(document)).toBe(false);
+    expect(serialise(document, { ...document.value, vm: { cpus: 4 } })).toBe(
+      '{\r\n  "egress": {},\r\n  "vm": {\r\n    "cpus": 4\r\n  }\r\n}\r\n',
+    );
+  });
 });

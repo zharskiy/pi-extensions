@@ -1,5 +1,5 @@
-import { mkdir, readFile, realpath, stat } from "node:fs/promises";
-import { dirname } from "node:path";
+import { lstat, mkdir, readFile, readlink, realpath, stat } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { validateConfig } from "../../config/index.ts";
 import {
@@ -20,6 +20,25 @@ const CONFIG_DIR_MODE = 0o700;
 const PERMISSION_BITS = 0o777;
 
 const INDENTED_LINE = /^([ \t]+)\S/m;
+
+const BYTE_ORDER_MARK = "\uFEFF";
+
+const BOM_MESSAGE = "the file starts with a byte-order mark (BOM); save it as UTF-8 without one";
+
+const WRITE_CODE = /\b(EACCES|EPERM|EROFS|ENOSPC)\b/;
+
+const WRITE_REASONS: Record<string, { reason: string; hint: string }> = {
+  EACCES: {
+    reason: "its folder is not writable",
+    hint: "fix the folder's permissions, then run pi sandbox init again",
+  },
+  EPERM: {
+    reason: "its folder is not writable",
+    hint: "fix the folder's permissions, then run pi sandbox init again",
+  },
+  EROFS: { reason: "its disk is read-only", hint: "make the disk writable, then run pi sandbox init again" },
+  ENOSPC: { reason: "its disk is full", hint: "free some space, then run pi sandbox init again" },
+};
 
 const OWNED_PATHS = [
   ["workspaceRoots"],
@@ -120,6 +139,10 @@ export const readDocument = (file: string, text: string | undefined): DocumentRe
     return { ok: true, document: { file, text, value: {}, indent: DEFAULT_INDENT, newline: true } };
   }
 
+  if (text.startsWith(BYTE_ORDER_MARK)) {
+    return { ok: false, kind: "json", message: BOM_MESSAGE };
+  }
+
   const result = parsed(text);
 
   if ("message" in result) {
@@ -136,13 +159,23 @@ export const readDocument = (file: string, text: string | undefined): DocumentRe
     return { ok: false, kind: "config", message: problem };
   }
 
-  const document = { file, text, value: result.value, indent: indentOf(text), newline: text.endsWith("\n") };
+  const document = {
+    file,
+    text,
+    value: result.value,
+    indent: indentOf(text),
+    newline: text.endsWith("\n"),
+    ...(text.includes("\r\n") ? { crlf: true } : {}),
+  };
 
   return { ok: true, document };
 };
 
-export const serialise = (document: ConfigDocument, value: JsonObject) =>
-  `${JSON.stringify(value, null, document.indent)}${document.newline ? "\n" : ""}`;
+export const serialise = (document: ConfigDocument, value: JsonObject) => {
+  const text = `${JSON.stringify(value, null, document.indent)}${document.newline ? "\n" : ""}`;
+
+  return document.crlf === true ? text.replaceAll("\n", "\r\n") : text;
+};
 
 export const isReindented = (document: ConfigDocument) =>
   document.text !== undefined && serialise(document, document.value) !== document.text;
@@ -191,6 +224,44 @@ const modeOf = async (file: string) => {
   return info === undefined ? CONFIG_MODE : info.mode & PERMISSION_BITS;
 };
 
+const isFolder = async (path: string) => (await stat(path).catch(() => undefined))?.isDirectory() === true;
+
+const targetOf = async (file: string) => {
+  const real = await realpath(file).catch(() => undefined);
+
+  if (real !== undefined) {
+    return real;
+  }
+
+  const info = await lstat(file).catch(() => undefined);
+
+  if (info?.isSymbolicLink() !== true) {
+    return file;
+  }
+
+  const target = resolve(dirname(file), await readlink(file));
+
+  if (!(await isFolder(dirname(target)))) {
+    throw new LauncherError(
+      `could not save ${file}: it is a link to ${target}, whose folder does not exist`,
+      "create that folder, or replace the link with a file",
+    );
+  }
+
+  return target;
+};
+
+const saveError = (file: string, target: string, error: unknown) => {
+  const message = errorMessage(error);
+  const known = WRITE_REASONS[WRITE_CODE.exec(message)?.[1] ?? ""];
+
+  if (known !== undefined) {
+    return new LauncherError(`could not save ${file}: ${known.reason}`, known.hint);
+  }
+
+  return new LauncherError(`could not save ${file}: ${message.replace(`${target}: `, "")}`);
+};
+
 export const writeDocument = async (document: ConfigDocument, text: string) => {
   if ((await currentText(document.file)) !== document.text) {
     throw new LauncherError(
@@ -199,10 +270,14 @@ export const writeDocument = async (document: ConfigDocument, text: string) => {
     );
   }
 
-  const target = await realpath(document.file).catch(() => document.file);
+  const target = await targetOf(document.file);
   const mode = await modeOf(target);
 
-  await mkdir(dirname(target), { recursive: true, mode: CONFIG_DIR_MODE });
+  try {
+    await mkdir(dirname(target), { recursive: true, mode: CONFIG_DIR_MODE });
 
-  await writeFileAtomic(target, text, { mode });
+    await writeFileAtomic(target, text, { mode });
+  } catch (error) {
+    throw saveError(document.file, target, error);
+  }
 };

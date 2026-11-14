@@ -37,6 +37,7 @@ export interface ConfigDocument {
   value: JsonObject;
   indent: string;
   newline: boolean;
+  crlf?: boolean;
 }
 
 export type DocumentRead =
