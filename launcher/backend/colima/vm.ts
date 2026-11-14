@@ -210,12 +210,8 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
     }
   };
 
-  const ensureUp = async (report: VmReport, shares: VmShare[], target: VmTarget) => {
-    if ((await detect()).available) {
-      return;
-    }
-
-    await withLock(async () => {
+  const ensureUp = (report: VmReport, shares: VmShare[], target: VmTarget) =>
+    withLock(async () => {
       const detection = await detect();
 
       if (detection.available) {
@@ -232,7 +228,6 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
 
       await startStopped(report, shares, target);
     });
-  };
 
   const ensureRunning = async (report: VmReport, shares: VmShare[] = [], target: VmTarget = {}) => {
     await ensureUp(report, shares, target);

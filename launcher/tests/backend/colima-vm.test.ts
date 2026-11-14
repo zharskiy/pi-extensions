@@ -1,10 +1,11 @@
 import { mkdir, realpath, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import { describe, expect, it } from "vitest";
 import { createColimaVm } from "../../backend/colima/vm.ts";
 import { run } from "../../cli/index.ts";
 import { registerLaunch } from "../../grants/index.ts";
-import { processMark, sha256Hex, stateLayout } from "../../shared/index.ts";
+import { processMark, sha256Hex, stateLayout, withDirectoryLock } from "../../shared/index.ts";
 import { createHarness, sweepNow, writeColimaMounts, writeLimaMounts } from "../cli/harness.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { argvOf, createFakeRunner, type FakeCall } from "../support/fake-runner.ts";
@@ -273,11 +274,42 @@ describe("the stopped sandbox VM", () => {
   });
 
   it("starts nothing when another launch brought the engine up while this one waited for the VM lock", async () => {
-    const context = await stoppedVm([false, true]);
+    const context = await stoppedVm([true]);
 
     await context.vm.ensureRunning(() => undefined);
 
     expect(context.colimaCalls()).toEqual([]);
+  });
+
+  it("waits for a VM change that holds the VM lock before it takes the engine as up", async () => {
+    const context = await stoppedVm([true]);
+    const order: string[] = [];
+    const gate: { open?: () => void; entered?: () => void } = {};
+    const opened = new Promise<void>((resolve) => {
+      gate.open = resolve;
+    });
+    const entered = new Promise<void>((resolve) => {
+      gate.entered = resolve;
+    });
+    const restart = withDirectoryLock(stateLayout(join(context.home, "state")).vmLock, async () => {
+      gate.entered?.();
+
+      await opened;
+
+      order.push("restarted");
+    });
+
+    await entered;
+
+    const ensured = context.vm.ensureRunning(() => undefined).then(() => order.push("ensured"));
+
+    await sleep(100);
+
+    gate.open?.();
+
+    await Promise.all([restart, ensured]);
+
+    expect(order).toEqual(["restarted", "ensured"]);
   });
 });
 
