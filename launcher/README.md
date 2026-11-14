@@ -136,7 +136,6 @@ After a reboot or `pi sandbox stop`, the next `pi` starts the VM again. A failur
 - **Only https leaves, and your Mac's `localhost` is out of reach.** Servers you start inside answer on `127.0.0.1`.
 - **Home lives in memory.** `/home/pi` and `/tmp` are emptied when pi exits. Pi's own files survive in the folder's agent volume. To keep a tool cache, list it in `mounts.sharedCaches`.
 - **Build output has its own copy.** `node_modules`, `.venv`, `target` and `.gradle` get their own volume when a matching lockfile sits beside them ([list](CONFIGURATION.md#build-output-overlays)). Run your install command, such as `npm install`, once inside.
-- **A small image.** It has git, ripgrep, fd and pi, but no curl, python3, gh or glab. [REMOVED-DEFAULTS.md](REMOVED-DEFAULTS.md) lists what earlier versions shipped and how to add it back.
 - **Sessions are shared.** `/resume` on your Mac lists sandbox sessions.
 - **A folder outside your home restarts the VM** at its first launch. If other pi sessions run, the launch stops and asks you to exit them first.
 
