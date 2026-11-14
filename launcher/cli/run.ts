@@ -4,11 +4,13 @@ import { doctorCommand } from "./commands/doctor.ts";
 import { VERBOSE_FLAG } from "./commands/doctor-checks.ts";
 import { egressCommand } from "./commands/egress.ts";
 import { helpCommand, usageOf } from "./commands/help.ts";
+import { INIT_CONFIG, initConfigCommand } from "./commands/init-config.ts";
 import { assertOptions } from "./commands/options.ts";
 import { resetCommand } from "./commands/reset.ts";
 import { statusCommand } from "./commands/status.ts";
 import { stopCommand } from "./commands/stop.ts";
 import { UNINSTALL, uninstallCommand } from "./commands/uninstall.ts";
+import { VM_SHARES, vmSharesCommand } from "./commands/vm-shares.ts";
 import { type CliDeps, writeLine } from "./deps.ts";
 import { intercept } from "./intercept.ts";
 import { launch } from "./launch.ts";
@@ -74,6 +76,14 @@ const route = async (argv: string[], deps: CliDeps) => {
 
   if (first === UNINSTALL && rest.length === 0) {
     return uninstallCommand(deps);
+  }
+
+  if (first === VM_SHARES && rest.length === 0) {
+    return vmSharesCommand(deps);
+  }
+
+  if (first === INIT_CONFIG) {
+    return initConfigCommand(deps, rest);
   }
 
   const intercepted = argv.includes("--no-sandbox") ? undefined : await intercept(argv, deps);

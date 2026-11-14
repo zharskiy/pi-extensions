@@ -399,3 +399,22 @@ describe("renderAgentDir fix round", () => {
     await expect(Promise.all(renders)).resolves.toHaveLength(6);
   });
 });
+
+describe("the legacy render dir", () => {
+  it("stays while another launch of the repository is live, and goes at a launch with none", async () => {
+    const stateDir = await tempDir("render-legacy");
+    const host = await hostAgentDir();
+    const legacy = stateLayout(stateDir).repo("repo1").legacyRender;
+    const input = { stateDir, repoHash: "repo1", hostAgentDir: host, derived: derived() };
+
+    await writeText(join(legacy, "AGENTS.md"), "old");
+
+    await renderAgentDir({ ...input, othersLive: async () => true });
+
+    expect(await readFile(join(legacy, "AGENTS.md"), "utf8")).toBe("old");
+
+    await renderAgentDir({ ...input, othersLive: async () => false });
+
+    expect(await stat(legacy).catch(() => undefined)).toBeUndefined();
+  });
+});

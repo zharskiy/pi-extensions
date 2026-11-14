@@ -80,11 +80,11 @@ export const prepareHostSide = async (
   deps: CliDeps,
   context: LaunchContext,
   files: HostPiFiles,
-  pi: HostPi | undefined,
+  { pi, launchId }: { pi: HostPi | undefined; launchId: string },
 ): Promise<PreparedHost> => {
   const [{ derived, notices }, trust] = await settleAll([
     deriveFor(deps, context, files, pi),
-    deps.proxy.trust(context.stateDir, context.effective.config.tls.extraCa),
+    deps.proxy.trust(context.stateDir, context.effective.config.tls.extraCa, launchId),
   ]);
 
   return {

@@ -34,7 +34,7 @@ import { writeOnce } from "./notices.ts";
 import { openSandboxProxy, reportDenials, type SandboxProxy, sandboxDenials } from "./sandbox-proxy.ts";
 import { sweepOrphans } from "./sweep.ts";
 import { imagePiVersion } from "./versions.ts";
-import { shareVm, startVm, trustVm } from "./vm.ts";
+import { prepareVmShares, shareVm, startVm, trustVm } from "./vm.ts";
 
 interface PreparedContainer {
   containerId: string;
@@ -114,8 +114,8 @@ const handled = <T>(pending: Promise<T>) => {
   return pending;
 };
 
-const startHostSide = (deps: CliDeps, context: LaunchContext, files: HostPiFiles) =>
-  handled(resolveJobPi(deps).then((pi) => prepareHostSide(deps, context, files, pi)));
+const startHostSide = (deps: CliDeps, context: LaunchContext, files: HostPiFiles, launchId: string) =>
+  handled(resolveJobPi(deps).then((pi) => prepareHostSide(deps, context, files, { pi, launchId })));
 
 const prepareHost = async (
   deps: CliDeps,
@@ -207,6 +207,7 @@ const prepareGround = async (input: PreparedInput) => {
       repoHash: context.repoHash,
       hostAgentDir: host.hostAgentDir,
       derived: host.derived,
+      othersLive: () => othersLive(context.stateDir, context.repoHash, launch.launchId),
     }),
     gitLaunchNotices(context.workspace),
     planGitOverlay(context.workspace, gitGuardOf(deps, context)),
@@ -354,11 +355,19 @@ const shielded = async <T>(deps: CliDeps, action: () => Promise<T>) => {
 const prepareVm = async (input: SandboxInput, share: boolean) => {
   const { deps, context, backend, sessions, launch, staged, progress } = input;
 
-  await staged("vm", () => startVm(backend, sessions, progress));
+  if (!share) {
+    await staged("vm", () => startVm(backend, sessions, progress));
 
-  if (share) {
-    await staged("shares", () => shareVm(deps, context, backend, { sessions, launchId: launch.launchId }));
+    return;
   }
+
+  const plan = await prepareVmShares(deps, context.effective.config.workspaceRoots);
+
+  await staged("vm", () => startVm(backend, sessions, progress, plan));
+
+  await staged("shares", () =>
+    shareVm(deps, context, backend, { sessions, launchId: launch.launchId, plan }),
+  );
 };
 
 const prepareAll = async (
@@ -412,7 +421,7 @@ export const withSandbox = async (
   const launch = await beginLaunch(deps, context);
   const signal = firstSignal(deps);
   const cancel = new AbortController();
-  const deriving = startHostSide(deps, context, files);
+  const deriving = startHostSide(deps, context, files, launch.launchId);
   const preparation = prepareAll(
     { deps, context, backend, launch, sessions, cancelled: cancel.signal, staged, progress, writeBack },
     { deriving, signIn, share },

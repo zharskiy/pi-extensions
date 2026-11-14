@@ -19,5 +19,5 @@ export { workspaceNotices, workspaceSelfBinds } from "./git/workspace.ts";
 export { assertHostSessionsDir, assertSafeMounts, assertSafeWorkspace } from "./guard.ts";
 export { byDepth, unique } from "./paths.ts";
 export { type HostSessions, hostSessionsChoice, hostSessionsDir } from "./pi-session-dir.ts";
-export { assertWithinWorkspaceRoots } from "./roots.ts";
+export { assertWithinWorkspaceRoots, sharedRootsOf } from "./roots.ts";
 export { gitRepos, mountedGitDirs, type Workspace } from "./types.ts";

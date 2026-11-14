@@ -133,5 +133,10 @@ export const hasRepoLeftovers = async (stateDir: string, repoHash: string) => {
   return present.some(Boolean);
 };
 
-export const forgetRepo = (stateDir: string, repoHash: string) =>
-  rm(filesOf(stateDir, repoHash).directory, { recursive: true, force: true });
+export const forgetRepo = async (stateDir: string, repoHash: string) => {
+  const files = filesOf(stateDir, repoHash);
+
+  await rm(files.render, { recursive: true, force: true });
+
+  await rm(files.directory, { recursive: true, force: true });
+};

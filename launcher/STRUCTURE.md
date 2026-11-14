@@ -11,7 +11,7 @@ ARCHITECTURE.md                how it works, the files it writes
 STRUCTURE.md                   this file
 THREAT-MODEL.md                assets, trust boundaries, what each feature weakens, known gaps
 REMOVED-DEFAULTS.md            the egress presets and config keys earlier versions shipped, and how to add them back
-install.sh                     macOS install: Colima profile, the launcher and its pi link, PATH blocks (zsh, bash, fish), smoke test
+install.sh                     macOS install: the launcher and its pi link, PATH blocks (zsh, bash, fish), workspace roots (--root), Colima profile, smoke test
 uninstall.sh                   runs the launcher's cleanup, deletes the profile, removes the link, state, package and PATH blocks
 tsconfig.build.json            emits dist/ (gitignored) for the published bin
 examples/config.json           a sample config file for a team to start from
@@ -31,12 +31,12 @@ bin/paths.sh                   the agent dir (with ~ expanded as pi does), state
 
 ```
 cli/main.ts                    builds the real dependencies, the host git outside the started folder included, and runs
-cli/run.ts                     the command table, the hidden __uninstall route and error rendering
+cli/run.ts                     the command table, the hidden __uninstall, __vm-shares and __init-config routes and error rendering
 cli/deps.ts                    the dependencies every command gets, and the shared terminal helpers (TTY and colour checks, a line sink)
 cli/index.ts                   public surface
 cli/launch.ts                  the pi pipeline with its stages and progress lines, and withSandbox for the doctor
 cli/context.ts                 the launch context: the folder to mount, the guard and workspaceRoots before the search, config, discovery and the checks after it
-cli/vm.ts                      VM start, shares and trust store, the VM paths a launch needs
+cli/vm.ts                      VM start (with the workspaceRoots shares when stopped), shares and trust store, the VM paths a launch needs, the workspaceRoots share list and its nesting check, the busy count with other agent dirs' containers
 cli/launch-notices.ts          the launch notice texts, the host-file flag notice and the proxy stage detail
 cli/legacy-paths.ts            the config and state folders of earlier versions, with the launch notice and doctor warns for them
 cli/terminal.ts                the host terminal: streams, size read at use, resize
@@ -57,6 +57,8 @@ cli/commands/egress.ts         pi sandbox egress allow, revoke and list
 cli/commands/reset.ts          pi sandbox reset: the folder's sandbox and volumes
 cli/commands/stop.ts           pi sandbox stop
 cli/commands/uninstall.ts      the hidden __uninstall command uninstall.sh runs: live-session refusal, engine objects by label, host-side release
+cli/commands/vm-shares.ts      the hidden __vm-shares command: the VM mount list for install.sh
+cli/commands/init-config.ts    the hidden __init-config command: install.sh --root creates a missing user config with workspaceRoots, exclusively
 cli/commands/doctor.ts         pi sandbox doctor: stages, probes and host checks as checks by section, the denials matched to each rule, the blocked warnings, captured notices and the progress line
 cli/commands/doctor-probes.ts  the doctor's checks inside the container; a rule whose credential was denied warns, one the proxy refused says why, a certificate not yet valid names the VM clock
 cli/commands/doctor-host.ts    the doctor's checks on the host
@@ -94,7 +96,7 @@ workspace/paths.ts             path ordering by depth and code unit, the dirs be
 workspace/overlay-markers.ts   which marker file gives which build output folder
 workspace/guard.ts             the refusal of protected folders and workspaces (home, pi and launcher dirs, credential, system and image dirs) and the host session dir check
 workspace/mounts.ts            the protected path table
-workspace/roots.ts             the workspaceRoots refusal
+workspace/roots.ts             the workspaceRoots refusal (the guard's protected paths and system dirs, nested roots dropped before links) and the checked roots the VM shares
 workspace/pi-session-dir.ts    pi's session slug and the host session dir choice
 workspace/created.ts           removal of recorded created folders
 workspace/git/layout.ts        git dir layout from the files, refusing links, foreign pointers and a foreign commondir; the git-dir shape and the .git name in any letter case
@@ -124,7 +126,7 @@ backend/colima/images.ts       image pull, build (with the output tail of a fail
 backend/colima/volumes.ts      volume operations
 backend/colima/relay.ts        the per-repository network and relay
 backend/colima/vm.ts           VM start, size and stop
-backend/colima/shares.ts       VM shares and the share restart
+backend/colima/shares.ts       VM shares, the share restart and the reconcile to the workspaceRoots list
 backend/colima/vm-trust.ts     the tls.extraCa certificates in the VM's trust store, engine restart when idle
 backend/colima/colima-yaml.ts  the lima.yaml mounts reader
 ```
@@ -264,7 +266,7 @@ shared/errors.ts               LauncherError and error messages
 shared/command-runner.ts       the CommandRunner interface and the real runner
 shared/hash.ts                 hashes and the 12-hex short hash
 shared/json-file.ts            JSON file reading and writing
-shared/atomic-write.ts         atomic and random-hex file writes
+shared/atomic-write.ts         atomic, create-only and random-hex file writes
 shared/file-lock.ts            the lock primitives
 shared/liveness.ts             the liveness rule: pid, boot time and process start
 shared/process-start.ts        a process's start time (ps on macOS, /proc on Linux), telling a failed tool from a process without one
@@ -323,7 +325,7 @@ tests/workspace/workspace-mode.test.ts  workspace mode
 tests/workspace/guard.test.ts        the workspace guard
 tests/workspace/mounts.test.ts       the protected path table
 tests/workspace/paths.test.ts        path ordering
-tests/workspace/roots.test.ts        workspaceRoots
+tests/workspace/roots.test.ts        workspaceRoots: the launch refusal, the checked roots, protected and system dirs, nested roots behind links
 tests/workspace/pi-session-dir.test.ts  slug and host session dir choice
 tests/workspace/git-integrity.test.ts  worktree pointers, commondir checks and the git notices after a session
 tests/workspace/created-dirs.test.ts  created folder removal
@@ -332,7 +334,7 @@ tests/backend/colima.conformance.test.ts  the suite on the in-memory engine
 tests/backend/fake-backend.conformance.test.ts  the suite on the fake backend
 tests/backend/colima.test.ts         Colima adapter specifics
 tests/backend/colima-vm.test.ts      VM start
-tests/backend/colima-shares.test.ts  VM shares
+tests/backend/colima-shares.test.ts  VM shares, the workspaceRoots reconcile (foreign sessions, one-boot start, nested shares, unreadable lima.yaml), __vm-shares
 tests/backend/colima-size.test.ts    VM size
 tests/container/spec.test.ts         the container spec
 tests/container/git-overlay.test.ts  the git overlay
@@ -390,6 +392,7 @@ tests/cli/egress.test.ts             egress grants
 tests/cli/errors.test.ts             error output
 tests/cli/host-pi.test.ts            host pi selection
 tests/cli/install.test.ts            install.sh, run for real
+tests/cli/init-config.test.ts        __init-config: missing, same (resolved) and other config, config without roots, exclusive create, refused root
 tests/cli/uninstall.test.ts          uninstall.sh, run for real
 tests/cli/intercept.test.ts          intercepted commands, host routes and the command lines that still launch
 tests/cli/launch.test.ts             the launch

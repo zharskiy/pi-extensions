@@ -1,4 +1,4 @@
-export { ensureRandomHexFile, writeFileAtomic } from "./atomic-write.ts";
+export { ensureRandomHexFile, writeFileAtomic, writeNewFile } from "./atomic-write.ts";
 export type { CommandRunner, RunOptions, RunResult } from "./command-runner.ts";
 export { createProcessRunner, withResolvedCommand } from "./command-runner.ts";
 export { errorMessage, LauncherError } from "./errors.ts";

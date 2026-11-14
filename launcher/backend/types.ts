@@ -129,9 +129,10 @@ export interface VmShareOptions {
 }
 
 export interface Vm {
-  ensureRunning(report: VmReport): Promise<void>;
-  coverage(paths: VmPath[]): Promise<VmCoverage | undefined>;
+  ensureRunning(report: VmReport, shares?: VmShare[]): Promise<void>;
+  coverage(paths: VmPath[]): Promise<VmCoverage | "unreadable" | undefined>;
   ensureShares(paths: VmPath[], options: VmShareOptions): Promise<void>;
+  reconcileShares(desired: VmShare[], paths: VmPath[], options: VmShareOptions): Promise<void>;
   ensureTrust(pemPath: string, options: VmShareOptions): Promise<void>;
   size(): Promise<VmSize | undefined>;
   resizeCommand(size: VmSize): string;

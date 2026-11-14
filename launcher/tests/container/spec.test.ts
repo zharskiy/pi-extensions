@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -25,7 +25,7 @@ const proxy = {
 
 const launchId = "0123456789abcdef";
 
-const trust = { pemPath: "/state/ca/trust.pem", hash: "trust-1" };
+const trust = { pemPath: "/state/vm/trust.pem", hash: "trust-1" };
 
 const specInput = (overrides: Partial<ContainerSpecInput> = {}): ContainerSpecInput => ({
   workspace: { cwd: "/work/repo/src", repoRoot, gitCommonDir: "/work/repo/.git", isGitRepo: true },
@@ -308,7 +308,7 @@ describe("buildContainerSpec", () => {
     const spec = buildContainerSpec(specInput());
 
     expect(spec.mounts.filter((mount) => mount.target === "/etc/pi-sandbox/ca.pem")).toEqual([
-      { source: "/state/ca/trust.pem", target: "/etc/pi-sandbox/ca.pem", readOnly: true, kind: "bind" },
+      { source: "/state/vm/trust.pem", target: "/etc/pi-sandbox/ca.pem", readOnly: true, kind: "bind" },
     ]);
     expect(spec.env).toMatchObject({
       NODE_EXTRA_CA_CERTS: "/etc/pi-sandbox/ca.pem",
@@ -540,5 +540,33 @@ describe("buildContainerSpec with host sessions", () => {
     expect(spec.mounts.some((mount) => mount.target.includes("/sessions/"))).toBe(false);
     expect(spec.env.PI_CODING_AGENT_SESSION_DIR).toBeUndefined();
     expect(spec.labels["pi-sandbox.session-dir"]).toBe("sessions.host is off");
+  });
+});
+
+describe("buildContainerSpec behind a linked agent dir", () => {
+  it("binds the real paths of the session dir, the render dir and trust.pem, which the VM shares", () => {
+    const real = join(scratch, "real-agent");
+    const linked = join(scratch, "linked-agent");
+
+    mkdirSync(join(real, "sessions", "--work-repo--"), { recursive: true });
+    mkdirSync(join(real, "state", "vm", "render"), { recursive: true });
+    writeFileSync(join(real, "state", "vm", "trust.pem"), "pem");
+    symlinkSync(real, linked);
+
+    const dir = join(linked, "sessions", "--work-repo--");
+    const spec = buildContainerSpec(
+      specInput({
+        hostSessions: { dir },
+        renderDir: join(linked, "state", "vm", "render"),
+        trust: { pemPath: join(linked, "state", "vm", "trust.pem"), hash: "trust-1" },
+      }),
+    );
+
+    expect(mountAt(spec.mounts, dir)?.source).toBe(join(real, "sessions", "--work-repo--"));
+    expect(mountAt(spec.mounts, "/opt/pi-sandbox/render")?.source).toBe(join(real, "state", "vm", "render"));
+    expect(spec.mounts.find((mount) => mount.source.endsWith("trust.pem"))?.source).toBe(
+      join(real, "state", "vm", "trust.pem"),
+    );
+    expect(spec.env.PI_CODING_AGENT_SESSION_DIR).toBe(dir);
   });
 });

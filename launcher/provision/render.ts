@@ -267,8 +267,12 @@ const writeChanged = async (dir: string, tree: Tree) => {
 };
 
 export const renderAgentDir = async (input: RenderInput): Promise<RenderResult & { notices: string[] }> => {
-  const { render: renderDir, renderLock } = stateLayout(input.stateDir).repo(input.repoHash);
+  const { render: renderDir, renderLock, legacyRender } = stateLayout(input.stateDir).repo(input.repoHash);
   const { tree, notices } = await desiredTree(input);
+
+  if (!(await input.othersLive?.())) {
+    await rm(legacyRender, { recursive: true, force: true });
+  }
 
   await mkdir(renderDir, { recursive: true });
 

@@ -53,6 +53,17 @@ The VM gets this Mac's CPU count, from 2 to 8, and half its memory, from 4 to 10
 colima stop --profile pi-sandbox && colima start --profile pi-sandbox --activate=false --cpu 4 --memory 8
 ```
 
+### Limit what the VM can see
+
+Without roots, the VM shares your whole home, writable, so a container escape reaches all of `~`. Name your project folders at install instead:
+
+```bash
+"$(npm root -g)/pi-extensions-mz/launcher/install.sh" --root ~/Projects --root /Volumes/Work
+PI_SANDBOX_ROOTS="$HOME/Projects:/Volumes/Work" "$(npm root -g)/pi-extensions-mz/launcher/install.sh"
+```
+
+`--root` wins over `PI_SANDBOX_ROOTS`. The script writes the roots to `workspaceRoots` in `~/.pi/agent/pi-sandbox/config.json`, and the VM then shares only these folders (writable), pi's session folder `~/.pi/agent/sessions` (writable) and the launcher's `state/vm` folder (read-only). Pi then starts only inside a root. `--root ""` is refused. If `config.json` exists, the install goes ahead only when its `workspaceRoots` name the same folders (order, a trailing `/` and `~` against the full path do not matter); otherwise, also when it has no `workspaceRoots`, the install stops and leaves it as it is: edit `workspaceRoots` there, or install without `--root`. When the VM does not share the first root yet, the smoke check runs only the host checks and says the sandbox part runs at the first pi launch. A VM created earlier keeps its shares until the first pi launch, which restarts it with the new ones. See [Workspace roots](CONFIGURATION.md#workspace-roots).
+
 <details>
 <summary>Install from a checkout</summary>
 
@@ -138,7 +149,7 @@ After a reboot or `pi sandbox stop`, the next `pi` starts the VM again. A failur
 - **Build output has its own copy.** `node_modules`, `.venv`, `target` and `.gradle` get their own volume when a matching lockfile sits beside them ([list](CONFIGURATION.md#build-output-overlays)). Run your install command, such as `npm install`, once inside.
 - **Sessions are shared.** `/resume` on your Mac lists sandbox sessions.
 - **Some settings come back to your Mac.** When you change the default model, provider or thinking level, the enabled models, the theme or a few display and queue preferences inside (in `settings.json`), or the settings of the subagents, style, notifications and session-limits extensions (their `pi-*.json` files), the launcher copies the change to your Mac when pi exits, or at the next launch after a crash, and prints one line per change. A value of the wrong type, or a theme name that is not a plain file name, is not copied and a line says so; if a settings file is missing from the sandbox, nothing in it is removed on your Mac. If you changed the same setting on your Mac meanwhile, your Mac's value wins and a line says so. Nothing else comes back: packages, extensions, skills, commands, paths, proxy settings, logins, `models.json`, `mcp.json` and agent files change only on your Mac.
-- **A folder outside your home restarts the VM** at its first launch. If other pi sessions run, the launch stops and asks you to exit them first.
+- **A new share restarts the VM once.** The first launch in a folder outside your home restarts the VM to share it, and the share is kept for later launches. With `workspaceRoots` set, the VM shares only those folders, so the restart happens when the list changes; a stopped VM starts with the new list directly. If other pi sessions run, also from another agent dir, the launch stops and asks you to exit them first.
 
 ### Where pi can start
 
@@ -165,7 +176,7 @@ It does not protect:
 - **The folder.** The agent can change any file in it, `.git/config` included. When pi exits, the launcher names changed git files. Review them before you run git there.
 - **Data sent to allowed hosts.** Anything can leave through them.
 - **Earlier sessions.** Host pi's sessions of this folder are readable inside, with any secret a tool printed in them. `sessions.host: false` keeps them apart.
-- **The rest of the VM.** The Colima VM can read and write your whole home. Only the container is limited.
+- **The rest of the VM.** Without `workspaceRoots`, the Colima VM can read and write your whole home; only the container is limited. With [`workspaceRoots`](CONFIGURATION.md#workspace-roots) set, the VM sees only those folders, pi's session folder and a read-only launcher folder.
 
 The full list is in [known gaps](THREAT-MODEL.md#5-known-gaps).
 

@@ -62,7 +62,7 @@ const specOf = (overrides: Partial<ContainerSpecInput> = {}) =>
       url: "http://pi-sandbox:t@pi-sandbox-proxy:3128",
       network: { kind: "internal", name: "pi-sandbox" },
     },
-    trust: { pemPath: "/state/ca/trust.pem", hash: "trust-1" },
+    trust: { pemPath: "/state/vm/trust.pem", hash: "trust-1" },
     ...overrides,
   });
 
