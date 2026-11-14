@@ -6,7 +6,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     NPM_CONFIG_AUDIT=false
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends git ripgrep fd-find ncurses-term openssh-client ca-certificates socat less procps \
+ && apt-get install -y --no-install-recommends git ripgrep fd-find ncurses-term openssh-client ca-certificates socat netcat-openbsd curl jq python3 python3-venv make unzip less procps xz-utils gh \
  && ln -s /usr/bin/fdfind /usr/local/bin/fd \
  && rm -rf /var/lib/apt/lists/*
 
@@ -19,6 +19,22 @@ COPY trust.pem proxy-ca.pem /build/
 RUN if [ -s /build/trust.pem ]; then \
       cp /build/trust.pem /usr/local/share/ca-certificates/pi-sandbox-build.crt && update-ca-certificates; \
     fi
+
+ARG GLAB_VERSION=1.128.0
+ARG GLAB_SHA256_AMD64=b42db1c339cb66df2dbdaf190b8c4e359cb2ea3f7ac53e46302b04777f2cf405
+ARG GLAB_SHA256_ARM64=88e68a179fc25c3751e7950aa4b1b47b184cade590b70d9ca4aafff6648c655e
+
+RUN arch="$(dpkg --print-architecture)" \
+ && case "$arch" in \
+      amd64) sum="${GLAB_SHA256_AMD64}" ;; \
+      arm64) sum="${GLAB_SHA256_ARM64}" ;; \
+      *) echo "no glab package for $arch" >&2; exit 1 ;; \
+    esac \
+ && deb="/tmp/glab_${GLAB_VERSION}_linux_${arch}.deb" \
+ && curl -fsSL -o "$deb" "https://gitlab.com/gitlab-org/cli/-/releases/v${GLAB_VERSION}/downloads/glab_${GLAB_VERSION}_linux_${arch}.deb" \
+ && echo "$sum  $deb" | sha256sum -c - \
+ && dpkg -i "$deb" \
+ && rm -f "$deb"
 
 ARG NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
 

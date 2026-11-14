@@ -10,7 +10,7 @@ CONFIGURATION.md               every config key, the one config file, credential
 ARCHITECTURE.md                how it works, the files it writes
 STRUCTURE.md                   this file
 THREAT-MODEL.md                assets, trust boundaries, what each feature weakens, known gaps
-REMOVED-DEFAULTS.md            the image packages, glab, egress presets and config keys earlier versions shipped, and how to add them back
+REMOVED-DEFAULTS.md            the egress presets and config keys earlier versions shipped, and how to add them back
 install.sh                     macOS install: Colima profile, the launcher and its pi link, PATH blocks (zsh, bash, fish), smoke test
 uninstall.sh                   runs the launcher's cleanup, deletes the profile, removes the link, state, package and PATH blocks
 tsconfig.build.json            emits dist/ (gitignored) for the published bin
@@ -145,7 +145,7 @@ container/run-pi.ts            pi through exec, the pty only for a terminal, sig
 
 ```
 image/index.ts                 public surface
-image/Dockerfile               the sandbox image: only what pi and the launcher need
+image/Dockerfile               the sandbox image
 image/entrypoint.sh            render links, the read-only auth.json copy, CA bundle, JVM truststore, idle
 image/bash-env.sh              the missing-command hint and the JVM trust flags
 image/sandbox-image.ts         ensureSandboxImage under the build lock: pull or build, then the layer; build leftovers
@@ -193,7 +193,7 @@ hostpi/tools/git.ts            git user name and email
 ```
 provision/index.ts             public surface
 provision/types.ts             render and sync types
-provision/render.ts            the render dir and its tool files, with a placeholder git credential helper for gh and glab hosts
+provision/render.ts            the render dir and its tool files
 provision/tree.ts              filtered copy of host agent dir entries, with one notice for what was left out
 provision/pool.ts              bounded parallel work
 provision/sync.ts              the agent files sync under sync.lock: write-back to the host, then settings.json and pi-*.json into the volume, and the baseline

@@ -136,7 +136,7 @@ Any other case prints the proxy's own reason.
 
 ## Image
 
-The sandbox image is Debian bookworm with Node 24, git, ripgrep, fd, socat, ssh and less, and nothing else opinionated: add curl, python3, gh and the like with `image.packages`. [REMOVED-DEFAULTS.md](REMOVED-DEFAULTS.md) lists what earlier versions shipped and how to add it back. It installs the same pi version as your host pi, from npm. When host pi changes version, the next launch rebuilds the image.
+The sandbox image is Debian bookworm with Node 24, git, search tools, curl, jq, python3, gh and glab. It installs the same pi version as your host pi, from npm. When host pi changes version, the next launch rebuilds the image.
 
 These keys add one layer on top of that image:
 
@@ -213,7 +213,7 @@ With `credentials.derive.enabled` on, the launcher reads these at every launch:
 - Registry credentials in `~/.npmrc`, `~/.m2/settings.xml` and `pip.conf`. For pip the first of `~/.config/pip/pip.conf`, `~/Library/Application Support/pip/pip.conf` and `~/.pip/pip.conf` is used.
 - Your git `user.name` and `user.email`.
 
-Inside, the matching files hold placeholders only. So `git push`, npm, pip and Maven work as on your Mac, and `gh` and `glab` too once you add them to the image, while the proxy fetches the real value on your Mac. HTTPS git to a gh or glab host needs neither tool in the image.
+Inside, the matching files hold placeholders only. So `gh`, `glab`, `git push`, npm, pip and Maven work as on your Mac, while the proxy fetches the real value on your Mac.
 
 A registry, mirror or index without a credential and without an `egress.allow` entry prints a notice. It names the entry to add.
 
@@ -362,7 +362,7 @@ A team shares the config by giving everyone the same file: copy it to `~/.pi/age
 - Denies a paste site.
 - Adds the company CA.
 - Adds a credential for the gateway, from a host command, and one for the registry, from a variable.
-- Leaves credential derivation on, so git, npm, pip and Maven work as on the host, and `gh` and `glab` once added to the image.
+- Leaves credential derivation on, so `gh`, `glab`, npm, pip and Maven work as on the host.
 
 Replace the `*.example.internal` names with your own hosts, and add the package registries your team uses to `egress.allow`.
 
