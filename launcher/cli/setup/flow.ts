@@ -33,6 +33,7 @@ import {
   OTHER_SETTINGS,
   roomOf,
   rootsSummary,
+  SEARCH_TIMED_OUT,
   type Step,
   sharedNowLine,
   sharesHome,
@@ -187,9 +188,10 @@ const createWizard = (io: SetupIo, context: WizardContext) => {
     };
     const empty = choices.length === 0;
     const now = sharedNow === undefined ? [] : [sharedNow];
+    const searchNote = facts.searchTimedOut === true ? SEARCH_TIMED_OUT : empty ? NO_FOLDER_FOUND : undefined;
     const reply = await prompts.multiselect<string>({
       title: stepTitle(FOLDERS_TITLE, step),
-      detail: empty ? [FOLDERS_DETAIL, ...now, "", NO_FOLDER_FOUND] : [FOLDERS_DETAIL, ...now],
+      detail: [FOLDERS_DETAIL, ...now, ...(searchNote === undefined ? [] : ["", searchNote])],
       choices: [
         ...choices,
         { value: ADD, label: empty ? "+ Add a folder…" : "+ Add another folder…", action: true },

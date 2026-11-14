@@ -401,6 +401,24 @@ describe("a first run", () => {
     expect(await run.exit).toBe(130);
   });
 
+  it("says when looking for folders took too long, unlike when nothing was found", async () => {
+    const late = setup({ facts: { candidates: [], searchTimedOut: true } });
+
+    await late.shown("Looking for project folders took too long.");
+
+    expect(late.text()).not.toContain("No usual project folder was found");
+
+    await late.keys(KEY.ctrlC);
+
+    const none = setup({ facts: { candidates: [] } });
+
+    await none.shown("No usual project folder was found in your home.");
+
+    await none.keys(KEY.ctrlC);
+
+    expect([await late.exit, await none.exit]).toEqual([130, 130]);
+  });
+
   it("returns to the list unchanged when the add-folder input is left", async () => {
     const run = setup();
 

@@ -42,9 +42,12 @@ export const completePath = (value: string, home: string, readdir: (dir: string)
     return { value, matches: [] };
   }
 
-  const names = listing(readdir, dir)
-    .filter((name) => name.startsWith(segment) && (segment.startsWith(".") || !name.startsWith(".")))
-    .sort();
+  const visible = listing(readdir, dir).filter((name) => segment.startsWith(".") || !name.startsWith("."));
+  const exact = visible.filter((name) => name.startsWith(segment));
+  const lowered = segment.toLowerCase();
+  const names = (
+    exact.length > 0 ? exact : visible.filter((name) => name.toLowerCase().startsWith(lowered))
+  ).sort();
 
   if (names.length === 0) {
     return { value, matches: [] };
@@ -54,7 +57,8 @@ export const completePath = (value: string, home: string, readdir: (dir: string)
     return { value: `${typedDir}${names[0]}/`, matches: [] };
   }
 
-  const prefix = names.reduce(sharedPrefix);
+  const shared = names.reduce(sharedPrefix);
+  const prefix = shared.length < segment.length ? segment : shared;
 
   return { value: `${typedDir}${prefix}`, matches: names.map((name) => `${typedDir}${name}/`) };
 };

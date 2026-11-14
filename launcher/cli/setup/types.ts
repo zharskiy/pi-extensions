@@ -29,6 +29,7 @@ export interface HostFacts {
   candidates: FolderCandidate[];
   configFile: string;
   docsFile: string;
+  searchTimedOut?: boolean;
 }
 
 export interface ConfigDocument {

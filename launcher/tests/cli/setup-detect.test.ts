@@ -110,6 +110,14 @@ describe("detectHost", () => {
     expect(facts).not.toHaveProperty("freeDiskGiB");
   });
 
+  it("says when the folder search ran out of time, and keeps the configured roots", async () => {
+    const deps = await depsOf({ budgetMs: 0, configRoots: ["~/w"], firstRun: false });
+    const facts = await detectHost(deps);
+
+    expect(facts.searchTimedOut).toBe(true);
+    expect(facts.candidates).toMatchObject([{ stored: "~/w", origin: "config", exists: true }]);
+  });
+
   it("counts the live pi sessions", async () => {
     const deps = await depsOf();
 

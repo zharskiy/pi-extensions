@@ -2,7 +2,7 @@ import { join } from "node:path";
 import { type Backend, recommendedVmSize } from "../../backend/index.ts";
 import { errorMessage } from "../../shared/index.ts";
 import { vmBusyCount } from "../vm.ts";
-import { folderCandidates } from "./folders.ts";
+import { folderCandidates, unscannedCandidates } from "./folders.ts";
 import type { FolderCandidate, HostFacts, VmFacts } from "./types.ts";
 
 interface DiskStats {
@@ -55,22 +55,20 @@ export const detectHost = async (deps: DetectDeps): Promise<HostFacts> => {
     state: "unknown",
     reason: `colima did not answer within ${budgetMs / 1000} seconds`,
   };
-  const [vm, sessions, freeDiskGiB, candidates] = await Promise.all([
+  const search = {
+    home: deps.home,
+    env: deps.env,
+    cwd: deps.cwd,
+    configRoots: deps.configRoots,
+    firstRun: deps.firstRun,
+  };
+  const [vm, sessions, freeDiskGiB, found] = await Promise.all([
     withinBudget(vmFactsOf(deps.backend), budgetMs, late),
     withinBudget(vmBusyCount(deps.backend, deps.stateDir), budgetMs, 0),
     withinBudget<number | undefined>(freeDiskOf(deps), budgetMs, undefined),
-    withinBudget<FolderCandidate[]>(
-      folderCandidates({
-        home: deps.home,
-        env: deps.env,
-        cwd: deps.cwd,
-        configRoots: deps.configRoots,
-        firstRun: deps.firstRun,
-      }),
-      budgetMs,
-      [],
-    ),
+    withinBudget<FolderCandidate[] | "late">(folderCandidates(search), budgetMs, "late"),
   ]);
+  const candidates = found === "late" ? unscannedCandidates(search) : found;
   const cpus = deps.machine.cpus;
   const memoryGiB = Math.floor(deps.machine.memoryGiB);
   const facts = {
@@ -84,6 +82,7 @@ export const detectHost = async (deps: DetectDeps): Promise<HostFacts> => {
     candidates,
     configFile: deps.configFile,
     docsFile: deps.docsFile,
+    ...(found === "late" ? { searchTimedOut: true } : {}),
   };
 
   return freeDiskGiB === undefined ? facts : { ...facts, freeDiskGiB };

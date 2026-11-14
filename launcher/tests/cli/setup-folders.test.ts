@@ -204,7 +204,11 @@ describe("addedRootProblem", () => {
     ["~/Projcts", "~/Projcts does not exist. Did you mean ~/Projects?"],
     ["~/nothing-like-it", "~/nothing-like-it does not exist."],
     ["~/notes.txt", "~/notes.txt is a file, not a folder."],
-    ["~", "Type the path of a folder."],
+    ["~", "~ is your whole home. Choose the folders inside it that hold projects."],
+    [
+      "~/tools/agent",
+      "~/tools/agent cannot be shared: the sandbox must never see it, since it holds secrets or system files. Choose another folder.",
+    ],
     ["/", "/ is your whole home. Choose the folders inside it that hold projects."],
     ["/etc/x", "/etc/x lies inside /etc, which the sandbox must never see."],
     [
@@ -236,10 +240,21 @@ describe("addedRootProblem", () => {
   });
 
   it("suggests a sibling folder that differs in case or by at most two letters", async () => {
-    const { home } = await homeWith([], ["Projects", "Pictures"]);
+    const context = await homeWith([], ["Projects", "Pictures", "a", ".ssh", "Library"]);
+    const suggested = (name: string) => suggestionFor(join(context.home, name), { ...context, env: {} });
 
-    expect(suggestionFor(join(home, "Projets"))).toBe(join(home, "Projects"));
-    expect(suggestionFor(join(home, "zzz"))).toBeUndefined();
+    expect(suggested("Projets")).toBe(join(context.home, "Projects"));
+    expect(suggested("projects")).toBe(join(context.home, "Projects"));
+    expect(suggested("zzz")).toBeUndefined();
+  });
+
+  it("never suggests a protected folder or an unrelated short name", async () => {
+    const context = await homeWith([], ["a", ".ssh", "Library"]);
+    const suggested = (name: string) => suggestionFor(join(context.home, name), { ...context, env: {} });
+
+    expect(suggested(".sshh")).toBeUndefined();
+    expect(suggested("Librar")).toBeUndefined();
+    expect(suggested("c")).toBeUndefined();
   });
 });
 

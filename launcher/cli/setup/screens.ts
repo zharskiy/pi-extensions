@@ -51,6 +51,9 @@ export const FOLDERS_DETAIL =
 export const NO_FOLDER_FOUND =
   "No usual project folder was found in your home. Add the folders that hold your projects.";
 
+export const SEARCH_TIMED_OUT =
+  "Looking for project folders took too long. Add the folders that hold your projects.";
+
 export const FOLDERS_PLAIN_HELP = [
   "Type numbers to switch folders on or off (like 1 3), a path to add a folder,",
   "or press Enter to keep the selection.",

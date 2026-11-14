@@ -1,6 +1,6 @@
 import type { Dirent } from "node:fs";
 import { readdirSync, statSync } from "node:fs";
-import { lstat, readdir } from "node:fs/promises";
+import { lstat, readdir, realpath, stat } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { expandHome, isWithin, realOrResolvedSync } from "../../shared/index.ts";
 import { checkRoot, type RootGuardContext, type RootProblem, sharedRootsOf } from "../../workspace/index.ts";
@@ -160,9 +160,19 @@ export const scanRepos = async (dir: string, limits: Partial<ScanLimits> = {}): 
     : { repos: state.repos, capped, latestRepo: state.latest.path };
 };
 
-const isFolder = (path: string) => statSync(path, { throwIfNoEntry: false })?.isDirectory() === true;
+const isFolder = async (path: string) => (await stat(path).catch(() => undefined))?.isDirectory() === true;
 
-const acceptable = (path: string, context: RootGuardContext) => {
+const resolvedLater = async (stored: string, home: string) => {
+  const path = resolve(expandHome(stored, home));
+
+  return realpath(path).catch(() => path);
+};
+
+const acceptable = async (path: string, context: RootGuardContext) => {
+  if (!(await isFolder(path))) {
+    return false;
+  }
+
   const verdict = checkRoot(path, context);
 
   return verdict.ok && verdict.exists;
@@ -177,7 +187,12 @@ export const rootsFromEnv = (env: NodeJS.ProcessEnv, cwd: string) =>
 const envRoots = (context: CandidateContext): Proposed[] =>
   rootsFromEnv(context.env, context.cwd).map((stored) => ({ stored, origin: "env" as const }));
 
-const cwdFolder = (context: CandidateContext): Proposed[] => {
+const fixedRoots = (context: CandidateContext): Proposed[] => [
+  ...(context.configRoots ?? []).map((stored) => ({ stored, origin: "config" as const })),
+  ...(context.firstRun ? envRoots(context) : []),
+];
+
+const cwdFolder = async (context: CandidateContext): Promise<Proposed[]> => {
   const below = relative(context.home, context.cwd);
 
   if (below === "" || !isWithin(context.cwd, context.home)) {
@@ -186,18 +201,23 @@ const cwdFolder = (context: CandidateContext): Proposed[] => {
 
   const top = join(context.home, below.split(sep)[0] ?? "");
 
-  return acceptable(top, context) ? [{ stored: tildeForm(top, context.home), origin: "cwd" }] : [];
+  return (await acceptable(top, context)) ? [{ stored: tildeForm(top, context.home), origin: "cwd" }] : [];
 };
 
-const usualFolders = (context: CandidateContext): Proposed[] =>
-  USUAL_FOLDERS.map((name) => join(context.home, name))
-    .filter((path) => acceptable(path, context))
+const usualFolders = async (context: CandidateContext): Promise<Proposed[]> => {
+  const paths = USUAL_FOLDERS.map((name) => join(context.home, name));
+  const kept = await Promise.all(paths.map((path) => acceptable(path, context)));
+
+  return paths
+    .filter((_path, index) => kept[index])
     .map((path) => ({ stored: tildeForm(path, context.home), origin: "usual" as const }));
+};
 
 const candidateOf = async (proposed: Proposed, context: CandidateContext): Promise<FolderCandidate> => {
-  const resolved = resolvedRoot(proposed.stored, context.home);
-  const exists = isFolder(resolved);
+  const resolved = await resolvedLater(proposed.stored, context.home);
+  const exists = await isFolder(resolved);
   const scan = exists ? await scanRepos(resolved, context.limits) : { repos: 0, capped: false };
+  const cwd = await realpath(context.cwd).catch(() => context.cwd);
 
   return {
     stored: proposed.stored,
@@ -206,10 +226,21 @@ const candidateOf = async (proposed: Proposed, context: CandidateContext): Promi
     repos: scan.repos,
     capped: scan.capped,
     origin: proposed.origin,
-    here: isWithin(realOrResolvedSync(context.cwd), resolved),
+    here: isWithin(cwd, resolved),
     ...(scan.latestRepo === undefined ? {} : { latestRepo: scan.latestRepo }),
   };
 };
+
+export const unscannedCandidates = (context: CandidateContext): FolderCandidate[] =>
+  fixedRoots(context).map((proposed) => ({
+    stored: proposed.stored,
+    resolved: resolve(expandHome(proposed.stored, context.home)),
+    exists: true,
+    repos: 0,
+    capped: false,
+    origin: proposed.origin,
+    here: false,
+  }));
 
 const distinct = (candidates: FolderCandidate[]) =>
   candidates.filter(
@@ -220,9 +251,7 @@ const byRepos = (left: FolderCandidate, right: FolderCandidate) =>
   right.repos - left.repos || left.stored.localeCompare(right.stored);
 
 export const folderCandidates = async (context: CandidateContext): Promise<FolderCandidate[]> => {
-  const configured = (context.configRoots ?? []).map((stored) => ({ stored, origin: "config" as const }));
-  const fromEnv = context.firstRun ? envRoots(context) : [];
-  const proposed = [...configured, ...fromEnv, ...cwdFolder(context), ...usualFolders(context)];
+  const proposed = [...fixedRoots(context), ...(await cwdFolder(context)), ...(await usualFolders(context))];
   const all = distinct(await Promise.all(proposed.map((entry) => candidateOf(entry, context))));
   const fixed = all.filter((candidate) => candidate.origin === "config" || candidate.origin === "env");
   const detected = all
@@ -281,18 +310,26 @@ const folderNames = (dir: string) => {
   }
 };
 
-export const suggestionFor = (path: string) => {
+const isRelated = (other: string, name: string) => {
+  if (other.toLowerCase() === name.toLowerCase()) {
+    return true;
+  }
+
+  const allowed = Math.min(MAX_SUGGESTION_DISTANCE, Math.floor(name.length / 3));
+
+  return (name.startsWith(".") || !other.startsWith(".")) && distance(other, name) <= allowed;
+};
+
+export const suggestionFor = (path: string, context: RootGuardContext) => {
   const name = basename(path);
-  const lowered = name.toLowerCase();
   const near = folderNames(dirname(path)).filter(
-    (other) =>
-      other !== name && (other.toLowerCase() === lowered || distance(other, name) <= MAX_SUGGESTION_DISTANCE),
+    (other) => other !== name && isRelated(other, name) && checkRoot(join(dirname(path), other), context).ok,
   );
 
   return near.length === 0 ? undefined : join(dirname(path), near.sort()[0] ?? "");
 };
 
-const guardMessage = (shown: string, problem: RootProblem) => {
+const guardMessage = (shown: string, problem: RootProblem, resolved = "") => {
   if (problem.kind === "control") {
     return "That path has a control character in it.";
   }
@@ -305,17 +342,21 @@ const guardMessage = (shown: string, problem: RootProblem) => {
     return `${shown} is your whole home. Choose the folders inside it that hold projects.`;
   }
 
+  if (problem.path === resolved) {
+    return `${shown} cannot be shared: the sandbox must never see it, since it holds secrets or system files. Choose another folder.`;
+  }
+
   return problem.kind === "inside"
     ? `${shown} lies inside ${problem.name}, which the sandbox must never see.`
     : `${shown} holds ${problem.name}, which the sandbox must never see. Choose a folder inside it.`;
 };
 
-const missingMessage = (shown: string, resolved: string, home: string) => {
-  const suggestion = suggestionFor(resolved);
+const missingMessage = (shown: string, resolved: string, context: RootGuardContext) => {
+  const suggestion = suggestionFor(resolved, context);
 
   return suggestion === undefined
     ? `${shown} does not exist.`
-    : `${shown} does not exist. Did you mean ${tildeForm(suggestion, home)}?`;
+    : `${shown} does not exist. Did you mean ${tildeForm(suggestion, context.home)}?`;
 };
 
 const nestingMessage = (shown: string, resolved: string, context: AddContext) => {
@@ -332,11 +373,11 @@ const nestingMessage = (shown: string, resolved: string, context: AddContext) =>
     : `${shown} holds ${inner}, which is selected. Unselect ${inner} first, or choose another folder.`;
 };
 
-const existingMessage = (shown: string, resolved: string, home: string) => {
+const existingMessage = (shown: string, resolved: string, context: RootGuardContext) => {
   const info = statSync(resolved, { throwIfNoEntry: false });
 
   if (info === undefined) {
-    return missingMessage(shown, resolved, home);
+    return missingMessage(shown, resolved, context);
   }
 
   return info.isDirectory() ? undefined : `${shown} is a file, not a folder.`;
@@ -345,7 +386,7 @@ const existingMessage = (shown: string, resolved: string, home: string) => {
 export const addedRootProblem = (typed: string, context: AddContext) => {
   const trimmed = typed.trim();
 
-  if (trimmed === "" || trimmed === "~" || trimmed === "~/") {
+  if (trimmed === "" || trimmed === "~/") {
     return "Type the path of a folder.";
   }
 
@@ -367,14 +408,14 @@ export const addedRootProblem = (typed: string, context: AddContext) => {
   const verdict = checkRoot(trimmed, context);
 
   if (!verdict.ok) {
-    return guardMessage(shown, verdict.problem);
+    return guardMessage(shown, verdict.problem, resolved);
   }
 
   if (context.listed.some((other) => resolvedRoot(other, context.home) === resolved)) {
     return `${shown} is already in the list.`;
   }
 
-  return existingMessage(shown, resolved, context.home) ?? nestingMessage(shown, resolved, context);
+  return existingMessage(shown, resolved, context) ?? nestingMessage(shown, resolved, context);
 };
 
 const sharedSet = (roots: string[], context: RootGuardContext) => {

@@ -17,6 +17,15 @@ describe("completePath", () => {
     expect(completePath("~", "/home/me", readdir)).toEqual({ value: "~/", matches: [] });
   });
 
+  it("falls back to a case-insensitive match and takes the name on disk", () => {
+    expect(completePath("~/proj", "/home/me", readdir)).toEqual({ value: "~/Projects/", matches: [] });
+
+    expect(completePath("~/p", "/home/me", readdir)).toEqual({
+      value: "~/P",
+      matches: ["~/Pictures/", "~/Projects/", "~/Public/"],
+    });
+  });
+
   it("completes the common prefix and returns every match", () => {
     expect(completePath("~/P", "/home/me", readdir)).toEqual({
       value: "~/P",
