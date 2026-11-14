@@ -64,15 +64,17 @@ const homeFirst = (shares: VmShare[], home: string) => [
   ...shares.filter((share) => share.location !== home),
 ];
 
+export const mountableShares = (shares: VmShare[], home: string) => homeFirst(merged(shares), home);
+
 const nextShares = (base: VmShare[], needs: VmPath[], home: string) =>
-  homeFirst(
-    merged([
+  mountableShares(
+    [
       ...base,
       ...uncovered(base, needs).map((need) => ({
         location: shareFor(need.path, home),
         writable: need.writable,
       })),
-    ]),
+    ],
     home,
   );
 
@@ -215,6 +217,19 @@ export const createColimaShares = (colima: Colima) => {
     });
   };
 
+  const refuseMoved = (text: string, problem: string) => {
+    const moved = movedMountsOf(text, home);
+
+    if (moved.length > 0) {
+      throw new LauncherError(
+        `${problem}; ${moved.join(", ")} ${moved.length === 1 ? "is" : "are"} mounted at another path in the VM, which colima's --mount cannot keep`,
+        editHint(profile),
+      );
+    }
+  };
+
+  const keepsMoved = async (problem: string) => refuseMoved((await limaYaml()) ?? "", problem);
+
   const shareMissing = async (needs: VmPath[], options: VmShareOptions) => {
     const text = (await limaYaml()) ?? "";
     const shares = vmSharesOf(text, home);
@@ -223,14 +238,7 @@ export const createColimaShares = (colima: Colima) => {
       return;
     }
 
-    const moved = movedMountsOf(text, home);
-
-    if (moved.length > 0) {
-      throw new LauncherError(
-        `${notShared(pathsOf(uncovered(shares, needs)))}; ${moved.join(", ")} ${moved.length === 1 ? "is" : "are"} mounted at another path in the VM, which colima's --mount cannot keep`,
-        editHint(profile),
-      );
-    }
+    refuseMoved(text, notShared(pathsOf(uncovered(shares, needs))));
 
     await restartWithShares(planOf(shares, needs, home), needs, options);
   };
@@ -318,5 +326,5 @@ export const createColimaShares = (colima: Colima) => {
     return { shares, missing: pathsOf(uncovered(shares, needs)) };
   };
 
-  return { ensureShares, reconcileShares, coverage, readShares };
+  return { ensureShares, reconcileShares, coverage, readShares, keepsMoved };
 };

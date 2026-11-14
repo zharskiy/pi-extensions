@@ -25,7 +25,7 @@ import type {
 import { hasSizeChanges, vmSizeDrift, vmSizeText } from "../vm-size.ts";
 import { vmSharesOf, vmSizeOfYaml } from "./colima-yaml.ts";
 import { type Colima, ENGINE_PROFILE, ENGINE_SOCKET_DISPLAY, logHint, plainStart } from "./profile.ts";
-import { createColimaShares, shareDrift, startArgs } from "./shares.ts";
+import { createColimaShares, mountableShares, shareDrift, startArgs } from "./shares.ts";
 import { createColimaTrust } from "./vm-trust.ts";
 
 export interface ColimaVmOptions {
@@ -59,6 +59,8 @@ const RESIZE_FAILURE = "could not change the size of the sandbox VM";
 const CREATE_FAILURE = "could not create the sandbox VM";
 
 const RESTART_FAILURE = "could not restart the sandbox VM";
+
+const MOVED_PROBLEM = "could not change the shares of the sandbox VM";
 
 const INSPECT_TIMEOUT_MS = 3000;
 
@@ -398,9 +400,12 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
   };
 
   const restartedShares = (current: VmShare[] | "unreadable", desired: VmDesired) =>
-    desired.exactShares || current === "unreadable"
-      ? desired.shares
-      : [...current, ...shareDrift(current, desired.shares).lacking];
+    mountableShares(
+      desired.exactShares || current === "unreadable"
+        ? desired.shares
+        : [...current, ...shareDrift(current, desired.shares).lacking],
+      home,
+    );
 
   const sharesDiffer = (current: VmShare[] | "unreadable", desired: VmDesired) => {
     if (current === "unreadable") {
@@ -426,8 +431,9 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
     }
 
     const drift = vmSizeDrift(found.size, desired.size);
+    const reshared = sharesDiffer(found.shares, desired);
 
-    if (!hasSizeChanges(drift) && !sharesDiffer(found.shares, desired)) {
+    if (!hasSizeChanges(drift) && !reshared) {
       return "unchanged";
     }
 
@@ -437,17 +443,19 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
       return { deferred: count };
     }
 
+    if (reshared && !desired.exactShares) {
+      await shares.keepsMoved(MOVED_PROBLEM);
+    }
+
+    const mounts = reshared ? restartedShares(found.shares, desired) : [];
+
     options.progress("stopping");
 
     await run(RESTART_FAILURE, ["stop", "--profile", profile], `see ${logHint(profile)}`);
 
     options.progress("starting");
 
-    await run(
-      RESTART_FAILURE,
-      [...startArgs(profile, restartedShares(found.shares, desired)), ...sizeFlags(drift.changes)],
-      startHint,
-    );
+    await run(RESTART_FAILURE, [...startArgs(profile, mounts), ...sizeFlags(drift.changes)], startHint);
 
     await waitForEngine("restarting it", options.progress);
 

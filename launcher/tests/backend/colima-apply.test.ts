@@ -9,21 +9,26 @@ import { tempDir } from "../support/temp-dir.ts";
 
 const GIB = 1024 ** 3;
 
+type Mount = VmShare & { mountPoint?: string };
+
 interface Setup {
   profile?: { cpu: number; memory: number; disk?: number; mounts?: VmShare[] };
   running?: { cpu: number; memory: number; disk: number };
-  lima?: VmShare[];
+  lima?: Mount[];
   status?: (call: FakeCall) => Partial<RunResult> | undefined;
   start?: Partial<RunResult>;
 }
 
-const mountsText = (shares: VmShare[], indent: string) =>
+const mountPointText = (share: Mount, indent: string) =>
+  share.mountPoint === undefined ? "" : `\n${indent}  mountPoint: ${share.mountPoint}`;
+
+const mountsText = (shares: Mount[], indent: string) =>
   shares.length === 0
     ? "mounts: []\n"
-    : `mounts:\n${shares.map((share) => `${indent}- location: ${share.location}\n${indent}  writable: ${share.writable}`).join("\n")}\n`;
+    : `mounts:\n${shares.map((share) => `${indent}- location: ${share.location}\n${indent}  writable: ${share.writable}${mountPointText(share, indent)}`).join("\n")}\n`;
 
-const setupWith = async (setup: Setup) => {
-  const home = await tempDir("colima-apply-home");
+const setupWith = async (setup: Setup & { home?: string }) => {
+  const home = setup.home ?? (await tempDir("colima-apply-home"));
   const stateDir = await tempDir("colima-apply-state");
   const profileDir = join(home, ".colima", "pi-sandbox");
   const limaDir = join(home, ".colima", "_lima", "colima-pi-sandbox");
@@ -238,6 +243,70 @@ describe("applying a size and shares to the sandbox VM", () => {
     expect(env.commands().at(-1)).toBe(
       `start --profile pi-sandbox --activate=false --mount /Volumes/old:w --mount ${join(env.home, "work")}:w`,
     );
+  });
+
+  it("absorbs the project shares into the whole home instead of nesting them", async () => {
+    const home = await tempDir("colima-apply-whole-home");
+    const env = await setupWith({
+      home,
+      profile: { cpu: 6, memory: 12 },
+      running: { cpu: 6, memory: 12, disk: 80 },
+      lima: [
+        { location: join(home, "code"), writable: true },
+        { location: join(home, ".pi", "agent", "sessions"), writable: true },
+        { location: "/Volumes/data", writable: false },
+      ],
+    });
+    const desired = { size: SIZE, shares: [{ location: home, writable: true }], exactShares: false };
+
+    expect((await applied(env, desired)).result).toBe("restarted");
+    expect(env.commands()).toEqual([
+      "stop --profile pi-sandbox",
+      `start --profile pi-sandbox --activate=false --mount ${home}:w --mount /Volumes/data`,
+    ]);
+  });
+
+  it("turns a read-only home share writable instead of mounting the home twice", async () => {
+    const home = await tempDir("colima-apply-read-only-home");
+    const env = await setupWith({
+      home,
+      profile: { cpu: 6, memory: 12 },
+      running: { cpu: 6, memory: 12, disk: 80 },
+      lima: [{ location: home, writable: false }],
+    });
+    const desired = { size: SIZE, shares: [{ location: home, writable: true }], exactShares: false };
+
+    await applied(env, desired);
+
+    expect(env.commands().at(-1)).toBe(`start --profile pi-sandbox --activate=false --mount ${home}:w`);
+  });
+
+  it("restarts for a size change without passing mounts, so colima keeps the ones it has", async () => {
+    const env = await setupWith({
+      profile: { cpu: 6, memory: 4 },
+      running: { cpu: 6, memory: 4, disk: 80 },
+      lima: [{ location: "/Volumes/old", writable: true, mountPoint: "/mnt/old" }],
+    });
+    const desired = { ...desiredOf(env.home, false), shares: [{ location: "/Volumes/old", writable: true }] };
+
+    await applied(env, desired);
+
+    expect(env.commands().at(-1)).toBe("start --profile pi-sandbox --activate=false --memory 12");
+  });
+
+  it("refuses to add a share when a mount sits at another path in the VM, before stopping it", async () => {
+    const env = await setupWith({
+      profile: { cpu: 6, memory: 12 },
+      running: { cpu: 6, memory: 12, disk: 80 },
+      lima: [{ location: "/Volumes/old", writable: true, mountPoint: "/mnt/old" }],
+    });
+
+    await expect(applied(env, desiredOf(env.home, false))).rejects.toMatchObject({
+      message:
+        "could not change the shares of the sandbox VM; /Volumes/old is mounted at another path in the VM, which colima's --mount cannot keep",
+      hint: "edit ~/.colima/pi-sandbox/colima.yaml mounts, then colima stop --profile pi-sandbox && colima start --profile pi-sandbox --activate=false",
+    });
+    expect(env.commands()).toEqual([]);
   });
 });
 
