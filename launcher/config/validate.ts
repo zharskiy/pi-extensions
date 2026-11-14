@@ -470,13 +470,11 @@ const WRITE_BACK: ObjectSpec = {
   check: excludedAndAdded,
 };
 
-const MAX_VM_CPUS = 64;
-
-const MAX_VM_MEMORY_GIB = 256;
-
-const MIN_VM_DISK_GIB = 20;
-
-const MAX_VM_DISK_GIB = 2048;
+export const VM_BOUNDS = {
+  cpus: { min: 1, max: 64 },
+  memoryGiB: { min: 2, max: 256 },
+  diskGiB: { min: 20, max: 2048 },
+} as const;
 
 const vmSize = (minimum: number, maximum: number): Spec => ({
   type: "number",
@@ -547,9 +545,9 @@ const CONFIG_SPEC: ObjectSpec = {
     env: { type: "object", properties: { allow: list(forwardableVariable) } },
     resources: { type: "object", properties: { cpus: positive, memoryGiB: positive } },
     vm: shape({
-      cpus: vmSize(1, MAX_VM_CPUS),
-      memoryGiB: vmSize(2, MAX_VM_MEMORY_GIB),
-      diskGiB: vmSize(MIN_VM_DISK_GIB, MAX_VM_DISK_GIB),
+      cpus: vmSize(VM_BOUNDS.cpus.min, VM_BOUNDS.cpus.max),
+      memoryGiB: vmSize(VM_BOUNDS.memoryGiB.min, VM_BOUNDS.memoryGiB.max),
+      diskGiB: vmSize(VM_BOUNDS.diskGiB.min, VM_BOUNDS.diskGiB.max),
     }),
     sessions: shape({ host: flag }),
     writeBack: WRITE_BACK,

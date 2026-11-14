@@ -24,4 +24,5 @@ export type {
   SandboxConfig,
   SecretRef,
 } from "./types.ts";
+export { VM_BOUNDS, validateConfig } from "./validate.ts";
 export { type WriteBackListing, writeBackListing, writeBackTableOf } from "./write-back.ts";
