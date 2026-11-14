@@ -459,5 +459,5 @@ Replace the `*.example.internal` names with your own hosts, and add the package 
 | The names in `env.allow` | Passed into each pi run. |
 | `COLIMA_HOME` | Ignored. The launcher always uses `~/.colima/pi-sandbox`. |
 | `PI_SANDBOX_ROOTS` | Read by `pi sandbox init`: project folders separated by `:` (a relative one counts from the current folder). On a first run the interactive setup lists them checked; `--yes` writes them to a config without `workspaceRoots`. |
-| `PI_SANDBOX_PLAIN` | When set, `pi sandbox init` asks its questions as numbered lines, with no cursor movement and no colour, for screen readers and plain terminals. |
+| `PI_SANDBOX_PLAIN` | When set, `pi sandbox init` asks its questions as numbered lines that you answer by typing, with no menu, no spinner and no colour, for screen readers and plain terminals. |
 | `CI` | When set, `pi sandbox init` without `--yes` refuses instead of asking, and never opens `/dev/tty`. |

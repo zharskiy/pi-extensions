@@ -89,7 +89,7 @@ Done. The sandbox is ready.
 
 Run again, `pi sandbox init` opens the review with your current settings. It writes only `workspaceRoots`, `vm.cpus`, `vm.memoryGiB`, `vm.diskGiB` and `writeBack.enabled` in `~/.pi/agent/pi-sandbox/config.json`, and keeps every other key and their order. Apply creates the VM, or restarts it with the new size or folders when no pi session runs; while sessions run, it keeps the VM as it is and the first pi you start after they all exit restarts it. Ctrl-c or Cancel leaves everything as it was, with exit status 130.
 
-`PI_SANDBOX_PLAIN=1` asks the same questions as numbered lines, with no cursor movement and no colour: for screen readers and plain terminals. A dumb or unset `TERM` gets plain mode too.
+`PI_SANDBOX_PLAIN=1` asks the same questions as numbered lines that you answer by typing, with no menu to move through, no spinner and no colour: for screen readers and plain terminals. A dumb or unset `TERM` gets plain mode too, read line by line without any cursor control (and so without Tab completion of paths).
 
 Without a terminal (CI, a provisioning script, `ssh host install.sh`), `pi sandbox init` refuses, and `pi sandbox init --yes` asks nothing: it keeps the settings in the file and applies them to the VM. `install.sh` uses `--yes` when it finds no terminal or `CI` is set. To name the project folders there, set `PI_SANDBOX_ROOTS`, which `--yes` writes to a config without `workspaceRoots`:
 
