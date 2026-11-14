@@ -158,7 +158,7 @@ describe("pi launch wiring", () => {
     expect(input?.derivedHosts).toEqual(expect.arrayContaining(["api.github.com", "uploads.github.com"]));
     expect(await readFile(join(tools, "gh-hosts.yml"), "utf8")).toContain(`oauth_token: "${env.GH_TOKEN}"`);
     expect(await readFile(join(tools, "gitconfig"), "utf8")).toContain(
-      `printf 'username=%s\\\\npassword=%s\\\\n' 'x-access-token' '${env.GH_TOKEN}'`,
+      '\thelper = "!gh auth git-credential"',
     );
 
     await expectNoLeak(fake, renderDir, [ghToken]);

@@ -1,4 +1,3 @@
-import { spawnSync } from "node:child_process";
 import { chmod, lstat, readdir, readFile, rm, stat, symlink } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -264,46 +263,19 @@ describe("renderAgentDir", () => {
         '\temail = "max@corp.test"',
         '[credential "https://github.com"]',
         '\thelper = ""',
-        `\thelper = "!f() { if [ \\"$1\\" = get ]; then printf 'username=%s\\\\npassword=%s\\\\n' 'x-access-token' '${P}'; fi; }; f"`,
+        '\thelper = "!gh auth git-credential"',
         '[url "https://github.com/"]',
         '\tinsteadOf = "git@github.com:"',
         '\tinsteadOf = "ssh://git@github.com/"',
         '[credential "https://gitlab.corp.test"]',
         '\thelper = ""',
-        `\thelper = "!f() { if [ \\"$1\\" = get ]; then printf 'username=%s\\\\npassword=%s\\\\n' 'me' '${P}'; fi; }; f"`,
+        '\thelper = "!glab auth git-credential"',
         '[url "https://gitlab.corp.test/"]',
         '\tinsteadOf = "git@gitlab.corp.test:"',
         '\tinsteadOf = "ssh://git@gitlab.corp.test/"',
         "",
       ].join("\n"),
     );
-  });
-
-  it("lets git present the GitHub and GitLab placeholders without gh or glab in the image", async () => {
-    const stateDir = await tempDir("render-state");
-    const host = await tempDir("render-host");
-    const P = "pi-sandbox-cccccccccccccccccccccccc";
-    const result = await renderAgentDir({
-      stateDir,
-      repoHash: "repo1",
-      hostAgentDir: host,
-      derived: derived(undefined, {
-        gh: [{ host: "github.com", token: P }],
-        glab: [{ host: "gitlab.corp.test", token: P }],
-      }),
-    });
-    const env = {
-      PATH: "/usr/bin:/bin",
-      HOME: host,
-      GIT_CONFIG_GLOBAL: join(result.renderDir, "tools", "gitconfig"),
-      GIT_CONFIG_NOSYSTEM: "1",
-      GIT_TERMINAL_PROMPT: "0",
-    };
-    const fill = (url: string) =>
-      spawnSync("git", ["credential", "fill"], { env, input: `url=${url}\n\n`, encoding: "utf8" }).stdout;
-
-    expect(fill("https://github.com/owner/repo.git")).toContain(`username=x-access-token\npassword=${P}\n`);
-    expect(fill("https://gitlab.corp.test/group/repo.git")).toContain(`username=oauth2\npassword=${P}\n`);
   });
 
   it("leaves out git dirs, key files, credential files and secret-named files of any extension", async () => {
