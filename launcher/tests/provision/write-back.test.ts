@@ -3,14 +3,15 @@ import {
   applyChanges,
   baselineRecord,
   changeLine,
-  EXTENSION_FILES,
   mergeFile,
   parseBaseline,
   parseVolumeText,
-  SETTINGS_FILE,
-  SYNCED_FILES,
+  syncedFilesOf,
   syncedValues,
 } from "../../provision/write-back.ts";
+import { BUILT_IN_WRITE_BACK } from "../../shared/index.ts";
+
+const SYNCED_FILES = syncedFilesOf(BUILT_IN_WRITE_BACK);
 
 const fileNamed = (name: string) => {
   const found = SYNCED_FILES.find((file) => file.name === name);
@@ -21,6 +22,10 @@ const fileNamed = (name: string) => {
 
   return found;
 };
+
+const SETTINGS_FILE = fileNamed("settings.json");
+
+const EXTENSION_FILES = SYNCED_FILES.filter((file) => file.name !== "settings.json");
 
 const SUBAGENTS = fileNamed("pi-subagents.json");
 
@@ -126,7 +131,7 @@ describe("checking settings.json values from the sandbox", () => {
   const accepted = (key: string, value: unknown) => written(key, value).changes.length === 1;
 
   it("gives every allowlisted settings.json key a check", () => {
-    expect(Object.keys(SETTINGS_FILE.checks ?? {}).sort()).toEqual([...SETTINGS_FILE.keys].sort());
+    expect(Object.keys(SETTINGS_FILE.checks).sort()).toEqual([...SETTINGS_FILE.keys].sort());
   });
 
   it("drops a value of the wrong type with a notice", () => {
@@ -219,16 +224,16 @@ describe("parseBaseline", () => {
     const files = Object.fromEntries(SYNCED_FILES.map((file) => [file.name, {}]));
     const recorded = baselineRecord({ ...files, "settings.json": { theme: "a", packages: [] } });
 
-    expect(parseBaseline(JSON.parse(JSON.stringify(recorded)))).toEqual({
+    expect(parseBaseline(JSON.parse(JSON.stringify(recorded)), SYNCED_FILES)).toEqual({
       ...files,
       "settings.json": { theme: "a" },
     });
   });
 
   it("treats a missing, malformed or partial baseline as none", () => {
-    expect(parseBaseline(undefined)).toBeUndefined();
-    expect(parseBaseline({ files: [] })).toBeUndefined();
-    expect(parseBaseline({ files: { "settings.json": {} } })).toBeUndefined();
+    expect(parseBaseline(undefined, SYNCED_FILES)).toBeUndefined();
+    expect(parseBaseline({ files: [] }, SYNCED_FILES)).toBeUndefined();
+    expect(parseBaseline({ files: { "settings.json": {} } }, SYNCED_FILES)).toBeUndefined();
   });
 });
 

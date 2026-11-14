@@ -68,3 +68,16 @@ export { settleAll } from "./settle.ts";
 export { ensureSalt, GUEST_PATHS, stateLayout } from "./state-layout.ts";
 export type { ToolConfigFormat, ToolConfigSelect } from "./tool-config.ts";
 export { isToolConfigKey, TOOL_CONFIG_FORMATS, toolConfigValue, urlPartOf } from "./tool-config.ts";
+export type { FileKeys, ValueSpec, ValueType, WriteBackTable } from "./write-back-table.ts";
+export {
+  BUILT_IN_EXTENSION_FILES,
+  BUILT_IN_WRITE_BACK,
+  HOST_ONLY_SETTINGS,
+  isNeverWritten,
+  MAX_WRITE_BACK_CHARS,
+  SETTINGS_FILE_NAME,
+  VALUE_TYPES,
+  valueSpecProblem,
+  withinCeiling,
+  writeBackFileProblem,
+} from "./write-back-table.ts";

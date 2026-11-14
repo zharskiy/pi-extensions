@@ -1,7 +1,7 @@
 import { isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { JsonObject } from "../hostpi/index.ts";
-import { expandHome, isWithin } from "../shared/index.ts";
+import { expandHome, HOST_ONLY_SETTINGS, isWithin } from "../shared/index.ts";
 import { sourceOfEntry, withoutSourceCredential } from "./package-source.ts";
 
 export interface HostSettingsContext {
@@ -10,24 +10,14 @@ export interface HostSettingsContext {
   home?: string;
 }
 
-const SANDBOX_DROPPED_SETTINGS = [
-  "npmCommand",
-  "selfUpdateCommand",
-  "shellPath",
-  "shellCommandPrefix",
-  "externalEditor",
-  "httpProxy",
-  "sessionDir",
-];
-
 const RESOURCE_ARRAYS = ["extensions", "skills", "prompts", "themes"];
 
 const FILE_URL = /^file:\/\//;
 
-const without = (settings: JsonObject, keys: string[]) =>
+const without = (settings: JsonObject, keys: readonly string[]) =>
   Object.fromEntries(Object.entries(settings).filter(([key]) => !keys.includes(key)));
 
-export const sandboxSettings = (host: JsonObject): JsonObject => without(host, SANDBOX_DROPPED_SETTINGS);
+export const sandboxSettings = (host: JsonObject): JsonObject => without(host, HOST_ONLY_SETTINGS);
 
 const isLocalSource = (source: string) =>
   source.startsWith("/") || source.startsWith("~") || source.startsWith(".") || FILE_URL.test(source);

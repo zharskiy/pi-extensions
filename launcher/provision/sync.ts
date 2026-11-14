@@ -2,9 +2,12 @@ import { readFile, realpath, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import type { JsonObject } from "../hostpi/index.ts";
 import {
+  BUILT_IN_EXTENSION_FILES,
+  BUILT_IN_WRITE_BACK,
   errorMessage,
   parseJsonObject,
   readJsonObject,
+  SETTINGS_FILE_NAME,
   stateLayout,
   withFileLock,
   writeFileAtomic,
@@ -20,13 +23,11 @@ import {
   type Baseline,
   baselineRecord,
   changeLine,
-  EXTENSION_FILES,
   mergeFile,
   parseBaseline,
   parseVolumeText,
-  SETTINGS_FILE,
-  SYNCED_FILES,
   type SyncedFile,
+  syncedFilesOf,
   syncedValues,
 } from "./write-back.ts";
 
@@ -35,6 +36,12 @@ interface HostFile {
   exists: boolean;
   value?: JsonObject;
   mode?: number;
+}
+
+interface CopiedFile {
+  name: string;
+  value?: JsonObject;
+  notices: string[];
 }
 
 interface FileOutcome {
@@ -116,14 +123,14 @@ const safeWriteBack = (input: SyncInput, baseline: Baseline, file: SyncedFile) =
     }),
   );
 
-const writeBack = async (input: SyncInput, baselinePath: string): Promise<FileOutcome> => {
-  const baseline = parseBaseline(await readJsonObject(baselinePath));
+const writeBack = async (input: SyncInput, synced: readonly SyncedFile[], baselinePath: string) => {
+  const baseline = parseBaseline(await readJsonObject(baselinePath), synced);
 
   if (baseline === undefined) {
     return { changes: [], notices: [] };
   }
 
-  const outcomes = await Promise.all(SYNCED_FILES.map((file) => safeWriteBack(input, baseline, file)));
+  const outcomes = await Promise.all(synced.map((file) => safeWriteBack(input, baseline, file)));
 
   return {
     changes: outcomes.flatMap((outcome) => outcome.changes),
@@ -132,7 +139,7 @@ const writeBack = async (input: SyncInput, baselinePath: string): Promise<FileOu
 };
 
 const syncSettings = async (input: SyncInput) => {
-  const host = await readHostFile(input.hostAgentDir, SETTINGS_FILE.name);
+  const host = await readHostFile(input.hostAgentDir, SETTINGS_FILE_NAME);
   const prepared = prepareHostSettings(host.value ?? {}, {
     hostAgentDir: input.hostAgentDir,
     mountRoots: [input.repoRoot],
@@ -144,9 +151,9 @@ const syncSettings = async (input: SyncInput) => {
     pinned.packages === undefined ? prepared.settings : { ...prepared.settings, packages: pinned.packages },
   );
 
-  await writeVolumeFile(input.backend, input.containerId, SETTINGS_FILE.name, written);
+  await writeVolumeFile(input.backend, input.containerId, SETTINGS_FILE_NAME, written);
 
-  return { values: syncedValues(SETTINGS_FILE, written), notices: prepared.notices, pins: pinned.pins };
+  return { name: SETTINGS_FILE_NAME, value: written, notices: prepared.notices, pins: pinned.pins };
 };
 
 const followHostPackages = (input: SyncInput, pins: PackagePin[]) =>
@@ -161,46 +168,56 @@ const followHostPackages = (input: SyncInput, pins: PackagePin[]) =>
     `warning: the sandbox packages were not refreshed to follow the host: ${errorMessage(error)}`,
   ]);
 
-const syncExtensionFile = async (input: SyncInput, file: SyncedFile) => {
-  const host = await readHostFile(input.hostAgentDir, file.name);
+const syncExtensionFile = async (input: SyncInput, name: string): Promise<CopiedFile> => {
+  const host = await readHostFile(input.hostAgentDir, name);
 
   if (host.value === undefined || !host.exists) {
-    await removeVolumeFile(input.backend, input.containerId, file.name);
+    await removeVolumeFile(input.backend, input.containerId, name);
 
     return {
-      values: {},
-      notices: host.exists
-        ? [`${file.name} on the host is not a JSON object; not copied into the sandbox`]
-        : [],
+      name,
+      notices: host.exists ? [`${name} on the host is not a JSON object; not copied into the sandbox`] : [],
     };
   }
 
-  await writeVolumeFile(input.backend, input.containerId, file.name, host.value);
+  await writeVolumeFile(input.backend, input.containerId, name, host.value);
 
-  return { values: syncedValues(file, host.value), notices: [] };
+  return { name, value: host.value, notices: [] };
 };
 
-const syncIn = async (input: SyncInput, baselinePath: string) => {
-  const settings = syncSettings(input);
-  const synced = await Promise.all([
-    settings,
-    ...EXTENSION_FILES.map((file) => syncExtensionFile(input, file)),
-  ]);
-  const baseline = Object.fromEntries(
-    SYNCED_FILES.map((file, index) => [file.name, synced[index]?.values ?? {}]),
+const copiedNames = (synced: readonly SyncedFile[]) => [
+  ...new Set([
+    ...BUILT_IN_EXTENSION_FILES,
+    ...synced.map((file) => file.name).filter((name) => name !== SETTINGS_FILE_NAME),
+  ]),
+];
+
+const baselineOf = (synced: readonly SyncedFile[], copied: readonly CopiedFile[]): Baseline =>
+  Object.fromEntries(
+    synced.map((file) => [
+      file.name,
+      syncedValues(file, copied.find((entry) => entry.name === file.name)?.value),
+    ]),
   );
 
-  await writeJsonFile(baselinePath, baselineRecord(baseline), { mode: PRIVATE_FILE_MODE });
+const syncIn = async (input: SyncInput, synced: readonly SyncedFile[], baselinePath: string) => {
+  const settings = syncSettings(input);
+  const copied = await Promise.all([
+    settings,
+    ...copiedNames(synced).map((name) => syncExtensionFile(input, name)),
+  ]);
+
+  await writeJsonFile(baselinePath, baselineRecord(baselineOf(synced, copied)), { mode: PRIVATE_FILE_MODE });
 
   const refreshed =
     input.refreshPackages === true ? await followHostPackages(input, (await settings).pins) : [];
 
-  return [...synced.flatMap((outcome) => outcome.notices), ...refreshed];
+  return [...copied.flatMap((outcome) => outcome.notices), ...refreshed];
 };
 
-const syncWithBaseline = async (input: SyncInput, baselinePath: string) => {
+const syncWithBaseline = async (input: SyncInput, synced: readonly SyncedFile[], baselinePath: string) => {
   try {
-    return await syncIn(input, baselinePath);
+    return await syncIn(input, synced, baselinePath);
   } catch (error) {
     await rm(baselinePath, { force: true });
 
@@ -210,8 +227,9 @@ const syncWithBaseline = async (input: SyncInput, baselinePath: string) => {
 
 const syncVolume = async (input: SyncInput): Promise<SyncResult> => {
   const baselinePath = stateLayout(input.stateDir).repo(input.repoHash).syncBaseline;
-  const returned = await writeBack(input, baselinePath);
-  const notices = await syncWithBaseline(input, baselinePath).catch((error: unknown) => [
+  const synced = syncedFilesOf(BUILT_IN_WRITE_BACK);
+  const returned = await writeBack(input, synced, baselinePath);
+  const notices = await syncWithBaseline(input, synced, baselinePath).catch((error: unknown) => [
     `warning: the sandbox copies of the agent settings were not refreshed: ${errorMessage(error)}`,
     "warning: preference changes made in the sandbox from now on will not be written back to the host",
   ]);
