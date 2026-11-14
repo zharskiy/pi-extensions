@@ -40,6 +40,15 @@ cli/vm.ts                      VM start (with the workspaceRoots shares when sto
 cli/launch-notices.ts          the launch notice texts, the host-file flag notice and the proxy stage detail
 cli/legacy-paths.ts            the config and state folders of earlier versions, with the launch notice and doctor warns for them
 cli/terminal.ts                the host terminal: streams, size read at use, resize
+cli/prompt/                    the terminal prompts of pi sandbox init: types, finding the terminal (/dev/tty) and its restore, keys, style and glyphs, the live frame, the line editor, path completion, the rich and plain prompt sets
+cli/setup/types.ts             the setup's facts, answers, plan, outcome, io and effects types
+cli/setup/document.ts          the config file read with its indent, owned-key edits keeping key order, the diff and the checked atomic write
+cli/setup/folders.ts           the candidate project folders, the repository scan, the storage form of a root and the add-folder messages
+cli/setup/plan.ts              the first-run steps, owned-key problems, initial answers, the edited config, the VM action, the plan and the VM size field bounds
+cli/setup/detect.ts            the host, VM, sessions, free disk and folders gathered in parallel within a budget
+cli/setup/screens.ts           every sentence of the setup screens, rich and plain, as functions of the facts and the plan
+cli/setup/flow.ts              runSetup: the intro, detection, the three first-run steps, the review hub with its section editors, cancel and the outros
+cli/setup/apply.ts             the file write and the VM step with progress, its failure screen with Try again, and the success screen
 cli/launches.ts                begin and finish a launch (removing its container), the last-session removal, the live launch count
 cli/sweep.ts                   removeRepoSandbox, the sweep of ended launches' containers, the orphan sweep and the daily collection
 cli/derive.ts                  the host side of a launch: host pi files, derivation (host tools exclude the sandbox roots), trust bundle, notices
@@ -399,6 +408,9 @@ tests/cli/egress.test.ts             egress grants
 tests/cli/errors.test.ts             error output
 tests/cli/host-pi.test.ts            host pi selection
 tests/cli/install.test.ts            install.sh, run for real
+tests/cli/setup-detect.test.ts       detectHost: the budget, an inspect failure, free disk and sessions
+tests/cli/setup-screens.test.ts      the setup screen texts
+tests/cli/setup-flow.test.ts         pi sandbox init's flow end to end over fake terminals, rich, ASCII and plain
 tests/cli/init-config.test.ts        __init-config: missing, same (resolved) and other config, config without roots, exclusive create, refused root
 tests/cli/uninstall.test.ts          uninstall.sh, run for real
 tests/cli/intercept.test.ts          intercepted commands, host routes and the command lines that still launch

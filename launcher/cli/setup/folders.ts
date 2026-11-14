@@ -94,8 +94,7 @@ export const tildeForm = (path: string, home: string) => {
   return isWithin(absolute, home) ? `~/${relative(home, absolute)}` : absolute;
 };
 
-const resolvedRoot = (stored: string, home: string) =>
-  realOrResolvedSync(resolve(expandHome(stored, home)));
+const resolvedRoot = (stored: string, home: string) => realOrResolvedSync(resolve(expandHome(stored, home)));
 
 const isScannable = (entry: Dirent) =>
   entry.isDirectory() && !entry.name.startsWith(".") && entry.name !== "node_modules";
