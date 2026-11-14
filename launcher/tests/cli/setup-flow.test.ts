@@ -2,11 +2,12 @@ import { mkdir, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { VmApplied, VmPhase } from "../../backend/index.ts";
+import type { Prompts } from "../../cli/prompt/types.ts";
 import { readDocument } from "../../cli/setup/document.ts";
 import { runSetup, type SetupInput } from "../../cli/setup/flow.ts";
 import type { Answers, FolderCandidate, HostFacts, SetupIo, VmAction } from "../../cli/setup/types.ts";
 import { tempDir } from "../support/temp-dir.ts";
-import { fakeTimers, KEY, pause, plainPrompts, richPrompts, until } from "./prompt/fake-tty.ts";
+import { fakeTimers, KEY, plainPrompts, richPrompts, until } from "./prompt/fake-tty.ts";
 
 const HOME = "/Users/me";
 
@@ -81,8 +82,28 @@ const setup = (options: Options = {}) => {
   const vms: VmAction[] = [];
   const phases: VmPhase[] = [];
   const results = [...(options.vm ?? ["created"])];
+  const live = { prompts: 0, tasks: 0, exited: false };
+  const counted =
+    <A extends unknown[], R>(kind: "prompts" | "tasks", ask: (...args: A) => Promise<R>) =>
+    (...args: A) => {
+      live[kind] += 1;
+
+      return ask(...args).finally(() => {
+        live[kind] -= 1;
+      });
+    };
+  const prompts: Prompts = {
+    select: counted("prompts", fake.prompts.select),
+    multiselect: counted("prompts", fake.prompts.multiselect),
+    confirm: counted("prompts", fake.prompts.confirm),
+    text: counted("prompts", fake.prompts.text),
+    path: counted("prompts", fake.prompts.path),
+    number: counted("prompts", fake.prompts.number),
+    task: counted("tasks", fake.prompts.task),
+    note: fake.prompts.note,
+  };
   const io: SetupIo = {
-    prompts: fake.prompts,
+    prompts,
     plain: options.plain === true,
     columns: () => fake.ui.columns(),
     now: () => clock.timers.now(),
@@ -116,20 +137,35 @@ const setup = (options: Options = {}) => {
       return result;
     },
   };
-  const exit = runSetup(io, input, effects);
+  const exit = runSetup(io, input, effects).finally(() => {
+    live.exited = true;
+  });
 
-  const keys = (...pressed: string[]) =>
-    pressed.reduce(
-      (chain, key) =>
-        chain.then(async () => {
-          await pause(15);
+  const waiting = () => live.exited || (live.prompts > 0 && live.tasks === 0);
 
-          fake.input.write(key);
+  const drained = () => fake.input.readableLength === 0 && fake.input.writableLength === 0;
 
-          await pause(key === KEY.escape ? 40 : 15);
-        }),
-      Promise.resolve(),
-    );
+  const press = async (key: string) => {
+    await until(waiting);
+
+    const written = fake.output.text().length;
+
+    fake.input.write(key);
+
+    await until(drained);
+
+    if (key === KEY.escape) {
+      await until(() => fake.output.text().length > written);
+    }
+  };
+
+  const keys = async (...pressed: string[]) => {
+    await pressed.reduce((chain, key) => chain.then(() => press(key)), Promise.resolve());
+
+    await until(waiting);
+  };
+
+  const settled = () => until(waiting);
 
   const answer = (...lines: string[]) => keys(...lines.map((line) => `${line}\r`));
 
@@ -137,7 +173,7 @@ const setup = (options: Options = {}) => {
 
   const shown = (wanted: string) => until(() => text().includes(wanted));
 
-  return { ...fake, exit, writes, vms, phases, keys, answer, text, shown };
+  return { ...fake, exit, writes, vms, phases, keys, answer, text, shown, settled };
 };
 
 const STEPS_ACCEPTED = [KEY.enter, KEY.enter, KEY.enter];
@@ -192,6 +228,28 @@ describe("a first run", () => {
     ]);
   });
 
+  it("takes a whole first run typed ahead as one chunk", async () => {
+    const run = setup();
+
+    await run.shown("step 1 of 3");
+
+    run.input.write(KEY.enter.repeat(4));
+
+    expect(await run.exit).toBe(0);
+    expect(run.writes).toEqual([SAVED_STANDARD]);
+  });
+
+  it("takes a whole plain first run typed ahead as one chunk", async () => {
+    const run = setup({ plain: true });
+
+    await run.shown("Folders [1 2]:");
+
+    run.input.write("\n\n\n\n");
+
+    expect(await run.exit).toBe(0);
+    expect(run.writes).toEqual([SAVED_STANDARD]);
+  });
+
   it("shows the step position in each step's title", async () => {
     const run = setup();
 
@@ -211,7 +269,7 @@ describe("a first run", () => {
   it("lists the detected folders with aligned repository counts", async () => {
     const run = setup();
 
-    await pause(60);
+    await run.settled();
 
     const lines = run.screen.lines();
 
@@ -380,7 +438,7 @@ describe("a re-run", () => {
   it("opens the hub and says when nothing needs to change", async () => {
     const run = setup({ text: SAVED, facts: { vm: RUNNING } });
 
-    await pause(60);
+    await run.settled();
 
     expect(run.text()).not.toContain("step 1 of 3");
     expect(run.screen.lines()).toContain(
@@ -437,7 +495,7 @@ describe("the VM step", () => {
 
     await run.keys(...STEPS_ACCEPTED, KEY.enter);
 
-    await pause(30);
+    await run.settled();
 
     const lines = run.screen.lines();
 
@@ -511,7 +569,7 @@ describe("an invalid config", () => {
       text: '{ "workspaceRoots": { "roots": ["~/Projects"] }, "vm": { "memoryGiB": -1 } }',
     });
 
-    await pause(60);
+    await run.settled();
 
     expect(run.screen.lines().some((line) => /VM size\s+.*invalid$/.test(line))).toBe(true);
 

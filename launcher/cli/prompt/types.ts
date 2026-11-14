@@ -59,6 +59,7 @@ export interface TerminalSession {
   cursor(visible: boolean): void;
   paste(on: boolean): void;
   restore(): void;
+  closed(): boolean;
 }
 
 export interface Ui {

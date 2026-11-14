@@ -38,6 +38,8 @@ const DEFAULT_COLUMNS = 80;
 
 const DEFAULT_ROWS = 24;
 
+const ESCAPE_WAIT_MS = 50;
+
 const RICH_COLUMNS = 40;
 
 const PASTE_ON = "\x1b[?2004h";
@@ -113,7 +115,7 @@ const createSession = (input: UiInput, output: UiOutput, close?: () => void): Te
 
   return {
     raw: (on) => {
-      if (input.isTTY !== true || input.setRawMode === undefined) {
+      if (state.restored || input.isTTY !== true || input.setRawMode === undefined) {
         return;
       }
 
@@ -122,7 +124,7 @@ const createSession = (input: UiInput, output: UiOutput, close?: () => void): Te
       state.raw = on;
     },
     cursor: (visible) => {
-      if (state.hidden === !visible) {
+      if (state.restored || state.hidden === !visible) {
         return;
       }
 
@@ -131,7 +133,7 @@ const createSession = (input: UiInput, output: UiOutput, close?: () => void): Te
       state.hidden = !visible;
     },
     paste: (on) => {
-      if (state.paste === on) {
+      if (state.restored || state.paste === on) {
         return;
       }
 
@@ -164,6 +166,7 @@ const createSession = (input: UiInput, output: UiOutput, close?: () => void): Te
         quietly(close);
       }
     },
+    closed: () => state.restored,
   };
 };
 
@@ -188,7 +191,7 @@ export const uiOf = (streams: { input: UiInput; output: UiOutput }, options: UiO
       };
     },
     session: createSession(input, output, options.close),
-    escapeCodeTimeout: options.escapeCodeTimeout,
+    escapeCodeTimeout: options.escapeCodeTimeout ?? ESCAPE_WAIT_MS,
     timers: options.timers ?? realTimers,
   };
 };

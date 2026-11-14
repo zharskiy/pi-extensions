@@ -1,6 +1,6 @@
 import { completePath } from "./complete.ts";
 import { createFrame, type FrameView } from "./frame.ts";
-import { isCtrl, listenKeys } from "./keys.ts";
+import { dropQueuedKeys, isCtrl, listenKeys } from "./keys.ts";
 import { DIGITS, editLine, type LineState, lineOf, numberProblem } from "./line-editor.ts";
 import {
   asciiOf,
@@ -230,6 +230,12 @@ const runView = <T>(context: Context, view: View<T>) =>
     };
 
     const enter = () => {
+      if (ui.session.closed()) {
+        fail(new Cancelled("end"));
+
+        return;
+      }
+
       ui.session.raw(true);
 
       ui.session.cursor(view.typing);
@@ -238,7 +244,11 @@ const runView = <T>(context: Context, view: View<T>) =>
 
       draw();
 
-      state.detach = listenKeys(ui, { key: onKey, end: () => fail(new Cancelled("end")) });
+      const keys = listenKeys(ui, { key: onKey, end: () => fail(new Cancelled("end")) });
+
+      state.detach = keys.detach;
+
+      keys.replay();
     };
 
     const start = () => {
@@ -883,7 +893,13 @@ const runTask = <T>(context: Context, spec: TaskSpec<T>) =>
         draw();
       });
 
-      state.detach = listenKeys(ui, { key: onKey, end: () => undefined });
+      if (ui.session.closed()) {
+        throw new Cancelled("end");
+      }
+
+      dropQueuedKeys(ui);
+
+      state.detach = listenKeys(ui, { key: onKey, end: () => undefined }).detach;
 
       Promise.resolve()
         .then(() => spec.run(update))

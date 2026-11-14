@@ -331,6 +331,20 @@ describe("terminal restore", () => {
     expect(input.isPaused()).toBe(true);
   });
 
+  it("refuses to start a prompt or a task once restored, and leaves the terminal restored", async () => {
+    const fake = richPrompts();
+
+    fake.ui.session.restore();
+
+    const reply = outcome(fake.prompts.select({ title: "Pick", choices: [{ value: 1, label: "one" }] }));
+    const task = outcome(fake.prompts.task({ title: "", interruptWarning: "", run: async () => 1 }));
+
+    expect((await reply).error).toMatchObject({ cause: "end" });
+    expect((await task).error).toMatchObject({ cause: "end" });
+    expect(fake.input.rawCalls).toEqual([]);
+    expect(fake.screen.flags()).toEqual({ cursorHidden: false, paste: false });
+  });
+
   it("restores on SIGTERM and SIGHUP, on exit and after the run, and removes its listeners", async () => {
     const { ui, input, screen } = fakeUi();
     const signals = new EventEmitter();

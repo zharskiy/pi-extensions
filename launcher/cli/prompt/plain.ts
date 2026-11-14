@@ -1,6 +1,6 @@
 import { type Completer, createInterface } from "node:readline/promises";
 import { completePath } from "./complete.ts";
-import { isCtrl, listenKeys } from "./keys.ts";
+import { dropQueuedKeys, isCtrl, listenKeys } from "./keys.ts";
 import { DIGITS, numberProblem } from "./line-editor.ts";
 import { asciiOf, elapsedOf, printable } from "./style.ts";
 import {
@@ -61,6 +61,7 @@ const pathLike = (answer: string) => answer.startsWith("/") || answer.startsWith
 
 export const createPlainPrompts = (ui: Ui): Prompts => {
   const queued: string[] = [];
+  const typedAhead: string[] = [];
 
   const print = (lines: string[]) => {
     ui.output.write(lines.map((line) => `${asciiOf(line)}\n`).join(""));
@@ -86,6 +87,18 @@ export const createPlainPrompts = (ui: Ui): Prompts => {
       return Promise.resolve(next);
     }
 
+    const ahead = typedAhead.shift();
+
+    if (ahead !== undefined) {
+      ui.output.write(`${asciiOf(query)}${asciiOf(printable(ahead))}\n`);
+
+      return Promise.resolve(ahead);
+    }
+
+    if (ui.session.closed()) {
+      return Promise.reject(new Cancelled("end"));
+    }
+
     return new Promise<string>((resolve, reject) => {
       const reader = createInterface({
         input: ui.input,
@@ -96,6 +109,10 @@ export const createPlainPrompts = (ui: Ui): Prompts => {
       });
 
       const state = { done: false };
+
+      reader.on("line", (line) => {
+        typedAhead.push(line);
+      });
 
       const finish = (done: () => void) => {
         if (state.done) {
@@ -324,11 +341,15 @@ export const createPlainPrompts = (ui: Ui): Prompts => {
         print([text]);
       };
 
+      typedAhead.length = 0;
+
       try {
         if (ui.input.isTTY === true) {
           ui.session.raw(true);
 
-          state.detach = listenKeys(ui, { key: onKey, end: () => undefined });
+          dropQueuedKeys(ui);
+
+          state.detach = listenKeys(ui, { key: onKey, end: () => undefined }).detach;
         }
 
         Promise.resolve()

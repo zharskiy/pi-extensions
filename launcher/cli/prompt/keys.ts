@@ -68,11 +68,34 @@ export interface KeyHandlers {
   end(): void;
 }
 
+interface KeySource {
+  queue: Key[];
+  handlers: KeyHandlers | undefined;
+  ended: boolean;
+}
+
+const sources = new WeakMap<Ui, KeySource>();
+
 const hasEnded = (input: object) => "readableEnded" in input && input.readableEnded === true;
 
-export const listenKeys = (ui: Ui, handlers: KeyHandlers) => {
+const attach = (ui: Ui): KeySource => {
   const input = ui.input;
+  const source: KeySource = { queue: [], handlers: undefined, ended: hasEnded(input) };
   const paste = { open: false, text: "" };
+
+  const deliver = (key: Key) => {
+    if (ui.session.closed()) {
+      return;
+    }
+
+    if (source.handlers === undefined) {
+      source.queue.push(key);
+
+      return;
+    }
+
+    source.handlers.key(key);
+  };
 
   const onKeypress = (text: string | undefined, press: Keypress | undefined) => {
     if (press?.name === "paste-start") {
@@ -85,7 +108,7 @@ export const listenKeys = (ui: Ui, handlers: KeyHandlers) => {
     if (press?.name === "paste-end") {
       paste.open = false;
 
-      handlers.key({ kind: "paste", text: paste.text });
+      deliver({ kind: "paste", text: paste.text });
 
       return;
     }
@@ -99,11 +122,16 @@ export const listenKeys = (ui: Ui, handlers: KeyHandlers) => {
     const key = keyOf(text, press);
 
     if (key !== undefined) {
-      handlers.key(key);
+      deliver(key);
     }
   };
 
-  const onEnd = () => handlers.end();
+  const onEnd = () => {
+    source.ended = true;
+
+    source.handlers?.end();
+  };
+
   const timeout = ui.escapeCodeTimeout === undefined ? {} : { escapeCodeTimeout: ui.escapeCodeTimeout };
 
   emitKeypressEvents(input, timeout as unknown as Interface);
@@ -112,21 +140,69 @@ export const listenKeys = (ui: Ui, handlers: KeyHandlers) => {
 
   input.on("end", onEnd);
 
-  const stopResize = ui.onResize(() => handlers.key({ kind: "resize" }));
+  sources.set(ui, source);
 
-  input.resume();
+  return source;
+};
 
-  if (hasEnded(input)) {
-    queueMicrotask(onEnd);
+const sourceOf = (ui: Ui) => sources.get(ui) ?? attach(ui);
+
+export const dropQueuedKeys = (ui: Ui) => {
+  const source = sources.get(ui);
+
+  if (source !== undefined) {
+    source.queue.length = 0;
+  }
+};
+
+const replay = (source: KeySource, handlers: KeyHandlers) => {
+  if (source.handlers !== handlers) {
+    return;
   }
 
-  return () => {
-    input.off("keypress", onKeypress);
+  const key = source.queue.shift();
 
-    input.off("end", onEnd);
+  if (key === undefined) {
+    if (source.ended) {
+      handlers.end();
+    }
 
-    stopResize();
+    return;
+  }
 
-    input.pause();
+  handlers.key(key);
+
+  replay(source, handlers);
+};
+
+export interface KeyListener {
+  replay(): void;
+  detach(): void;
+}
+
+export const listenKeys = (ui: Ui, handlers: KeyHandlers): KeyListener => {
+  if (ui.session.closed()) {
+    return { replay: () => handlers.end(), detach: () => {} };
+  }
+
+  const source = sourceOf(ui);
+
+  source.handlers = handlers;
+
+  const stopResize = ui.onResize(() => handlers.key({ kind: "resize" }));
+
+  ui.input.resume();
+
+  return {
+    replay: () => replay(source, handlers),
+    detach: () => {
+      if (source.handlers === handlers) {
+        source.handlers = undefined;
+      }
+
+      stopResize();
+
+      ui.input.pause();
+    },
   };
 };
