@@ -225,12 +225,19 @@ describe("the VM shares", () => {
 describe("the VM size", () => {
   const sizedHarness = async () => {
     const fake = createFakeBackend();
-    const asked: { targets: VmTarget[]; busy: number[] } = { targets: [], busy: [] };
+    const asked: { targets: VmTarget[]; busy: number[]; started: Array<VmTarget | undefined> } = {
+      targets: [],
+      busy: [],
+      started: [],
+    };
     const harness = await createHarness({
       backend: () => ({
         ...fake.backend,
         vm: {
           ...fake.backend.vm,
+          ensureRunning: async (_report, _shares, size) => {
+            asked.started.push(size);
+          },
           ensureSize: async (target, options) => {
             asked.targets.push(target);
             asked.busy.push(await options.busy());
@@ -250,7 +257,11 @@ describe("the VM size", () => {
     await harness.writeJson(harness.userConfigFile, { vm: { cpus: 6, memoryGiB: 8, diskGiB: 80 } });
 
     expect(await run([], harness.deps)).toBe(0);
-    expect(asked).toEqual({ targets: [{ cpus: 6, memoryGiB: 8, diskGiB: 80 }], busy: [0] });
+    expect(asked).toEqual({
+      targets: [{ cpus: 6, memoryGiB: 8, diskGiB: 80 }],
+      busy: [0],
+      started: [{ cpus: 6, memoryGiB: 8, diskGiB: 80 }],
+    });
     expect(harness.stderr()).toContain(
       "pi-sandbox: restarting the sandbox VM to change its size to 6 CPUs\n",
     );
@@ -264,6 +275,7 @@ describe("the VM size", () => {
     await run(["sandbox", "doctor"], harness.deps);
 
     expect(asked.targets).toEqual([{}]);
+    expect(asked.started).toEqual([{}, undefined]);
   });
 });
 

@@ -186,7 +186,7 @@ const sizeCheck = async (deps: CliDeps, context: LaunchContext, sandbox: Sandbox
 
   return isBelow(size, recommended)
     ? warned(`${current}, below ${recommended.cpus} CPUs and ${recommended.memoryGiB} GiB`, {
-        hint: `resize it with ${vm.resizeCommand(recommended)}, or set vm in the config`,
+        hint: `resize it with ${vm.resizeCommand({ cpus: recommended.cpus, memoryGiB: recommended.memoryGiB })}, or set vm in the config`,
       })
     : passed(current);
 };

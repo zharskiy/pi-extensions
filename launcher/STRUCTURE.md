@@ -127,10 +127,10 @@ backend/colima/exec-session.ts exec streams with backpressure, ended quietly whe
 backend/colima/images.ts       image pull, build (with the output tail of a failed build) and removal
 backend/colima/volumes.ts      volume operations
 backend/colima/relay.ts        the per-repository network and relay
-backend/colima/vm.ts           VM start, size, the restart to the vm config size when idle, and stop
+backend/colima/vm.ts           VM start (at the vm config size when stopped), size, the restart to the vm config size when idle, inspect and apply for the setup, and stop
 backend/colima/shares.ts       VM shares, the share restart and the reconcile to the workspaceRoots list
 backend/colima/vm-trust.ts     the tls.extraCa certificates in the VM's trust store, engine restart when idle
-backend/colima/colima-yaml.ts  the lima.yaml mounts reader
+backend/colima/colima-yaml.ts  the lima.yaml and colima.yaml mounts reader and the colima.yaml size reader
 ```
 
 ## container/
@@ -341,6 +341,7 @@ tests/backend/colima.test.ts         Colima adapter specifics
 tests/backend/colima-vm.test.ts      VM start
 tests/backend/colima-shares.test.ts  VM shares, the workspaceRoots reconcile (foreign sessions, one-boot start, nested shares, unreadable lima.yaml), __vm-shares
 tests/backend/colima-size.test.ts    VM size and the restart to the vm config size
+tests/backend/colima-apply.test.ts   VM inspect, apply (create, defer, restart) and the cold start at the vm config size
 tests/container/spec.test.ts         the container spec
 tests/container/git-overlay.test.ts  the git overlay
 tests/container/lifecycle.test.ts    one container per launch, its removal and housekeeping

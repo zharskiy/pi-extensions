@@ -64,7 +64,7 @@ const vmWith = (respond: FakeResponder) =>
 describe("the sandbox VM size", () => {
   it("recommends the size install.sh gives a Mac of the same size", () => {
     SAMPLES.forEach(([cpus, memGiB]) => {
-      expect(recommendedVmSize(cpus, memGiB)).toEqual(installSize(cpus, memGiB));
+      expect(recommendedVmSize(cpus, memGiB)).toEqual({ ...installSize(cpus, memGiB), diskGiB: 60 });
     });
   });
 

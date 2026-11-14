@@ -120,6 +120,31 @@ export interface VmSize {
   diskGiB?: number;
 }
 
+export interface VmSpec {
+  cpus: number;
+  memoryGiB: number;
+  diskGiB: number;
+}
+
+export interface VmDesired {
+  size: VmSpec;
+  shares: VmShare[];
+  exactShares: boolean;
+}
+
+export type VmInspect =
+  | { state: "absent" }
+  | { state: "stopped" | "running"; size: VmSpec; shares: VmShare[] | "unreadable" };
+
+export type VmApplied = "created" | "restarted" | "unchanged" | "stopped" | { deferred: number };
+
+export type VmPhase = "creating" | "stopping" | "starting" | "waiting";
+
+export interface VmApplyOptions {
+  busy: () => Promise<number>;
+  progress: (phase: VmPhase) => void;
+}
+
 export interface VmTarget {
   cpus?: number;
   memoryGiB?: number;
@@ -136,12 +161,14 @@ export interface VmShareOptions {
 }
 
 export interface Vm {
-  ensureRunning(report: VmReport, shares?: VmShare[]): Promise<void>;
+  ensureRunning(report: VmReport, shares?: VmShare[], size?: VmTarget): Promise<void>;
   coverage(paths: VmPath[]): Promise<VmCoverage | "unreadable" | undefined>;
   ensureShares(paths: VmPath[], options: VmShareOptions): Promise<void>;
   reconcileShares(desired: VmShare[], paths: VmPath[], options: VmShareOptions): Promise<void>;
   ensureTrust(pemPath: string, options: VmShareOptions): Promise<void>;
   ensureSize(target: VmTarget, options: VmShareOptions): Promise<void>;
+  inspect(): Promise<VmInspect>;
+  apply(desired: VmDesired, options: VmApplyOptions): Promise<VmApplied>;
   size(): Promise<VmSize | undefined>;
   resizeCommand(size: VmTarget): string;
   stop(options: Pick<VmShareOptions, "busy">): Promise<VmStop>;

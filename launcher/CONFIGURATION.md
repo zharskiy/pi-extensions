@@ -200,7 +200,7 @@ Every key is optional. Without `vm` the VM keeps the size `install.sh` gave it: 
 
 `vm` sizes the VM, which runs every sandbox container of every folder. `resources` limits one container inside it. A `resources` value above the matching `vm` value is a config error, since no container could get it.
 
-At a launch with no other pi session running, a VM whose size differs is restarted with the values that differ, and a line says so. While other sessions run, the launch goes on and a line says the size changes at the next launch with none running. Colima cannot shrink a disk: a `diskGiB` below the current disk is reported at each launch and ignored. A stopped VM first starts at its old size and is then restarted once. `pi sandbox doctor` compares the VM with `vm` and never restarts it. `install.sh` does not read `vm` yet; it sizes a new VM from your Mac or its own `--cpu`, `--memory` and `--disk` flags.
+At a launch with no other pi session running, a VM whose size differs is restarted with the values that differ, and a line says so. While other sessions run, the launch goes on and a line says the size changes at the next launch with none running. Colima cannot shrink a disk: a `diskGiB` below the current disk is reported at each launch and ignored. A stopped VM starts at the new size directly. `pi sandbox doctor` compares the VM with `vm` and never restarts it. `install.sh` does not read `vm` yet; it sizes a new VM from your Mac or its own `--cpu`, `--memory` and `--disk` flags.
 
 ## Settings written back
 

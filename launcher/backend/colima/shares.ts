@@ -318,5 +318,5 @@ export const createColimaShares = (colima: Colima) => {
     return { shares, missing: pathsOf(uncovered(shares, needs)) };
   };
 
-  return { ensureShares, reconcileShares, coverage };
+  return { ensureShares, reconcileShares, coverage, readShares };
 };

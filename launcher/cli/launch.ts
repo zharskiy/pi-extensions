@@ -366,8 +366,9 @@ const prepareVm = async (input: SandboxInput, share: boolean) => {
   }
 
   const plan = await prepareVmShares(deps, context.effective.config.workspaceRoots);
+  const size = context.effective.config.vm;
 
-  await staged("vm", () => startVm(backend, sessions, progress, plan));
+  await staged("vm", () => startVm(backend, sessions, progress, { plan, size }));
 
   await staged("shares", () =>
     shareVm(deps, context, backend, { sessions, launchId: launch.launchId, plan }),

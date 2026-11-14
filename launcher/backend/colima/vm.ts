@@ -1,4 +1,4 @@
-import { access } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   type CommandRunner,
@@ -8,10 +8,24 @@ import {
   stateLayout,
   withDirectoryLock,
 } from "../../shared/index.ts";
-import type { Detection, Vm, VmReport, VmShare, VmShareOptions, VmSize, VmTarget } from "../types.ts";
+import type {
+  Detection,
+  Vm,
+  VmApplied,
+  VmApplyOptions,
+  VmDesired,
+  VmInspect,
+  VmReport,
+  VmShare,
+  VmShareOptions,
+  VmSize,
+  VmSpec,
+  VmTarget,
+} from "../types.ts";
 import { hasSizeChanges, vmSizeDrift, vmSizeText } from "../vm-size.ts";
+import { vmSharesOf, vmSizeOfYaml } from "./colima-yaml.ts";
 import { type Colima, ENGINE_PROFILE, ENGINE_SOCKET_DISPLAY, logHint, plainStart } from "./profile.ts";
-import { createColimaShares, startArgs } from "./shares.ts";
+import { createColimaShares, shareDrift, startArgs } from "./shares.ts";
 import { createColimaTrust } from "./vm-trust.ts";
 
 export interface ColimaVmOptions {
@@ -42,6 +56,16 @@ const STOP_FAILURE = "could not stop the sandbox VM";
 
 const RESIZE_FAILURE = "could not change the size of the sandbox VM";
 
+const CREATE_FAILURE = "could not create the sandbox VM";
+
+const RESTART_FAILURE = "could not restart the sandbox VM";
+
+const INSPECT_TIMEOUT_MS = 3000;
+
+const AUTOMATIC_DISK_GIB = 60;
+
+const CREATE_FLAGS = ["--vm-type", "vz", "--mount-type", "virtiofs"];
+
 const startHint = `run ${plainStart(ENGINE_PROFILE)} and see ${logHint(ENGINE_PROFILE)}`;
 
 export const engineUnreachable = (detection?: Detection) =>
@@ -62,10 +86,14 @@ const realPause = (ms: number) => new Promise<void>((done) => setTimeout(done, m
 
 const clamp = (value: number, low: number, high: number) => Math.max(low, Math.min(high, value));
 
-export const recommendedVmSize = (cpus: number, memGiB: number): VmSize => ({
+export const recommendedVmSize = (cpus: number, memGiB: number): VmSpec => ({
   cpus: clamp(Math.floor(cpus), MIN_CPUS, MAX_CPUS),
   memoryGiB: clamp(Math.floor(memGiB / 2), MIN_GIB, MAX_GIB),
+  diskGiB: AUTOMATIC_DISK_GIB,
 });
+
+const shrinkNotice = (target: VmTarget, keptDiskGiB: number) =>
+  `vm.diskGiB ${target.diskGiB} is below the sandbox VM's disk of ${keptDiskGiB} GiB; colima cannot shrink a disk, so it stays`;
 
 const sizeFlags = (target: VmTarget) => [
   ...(target.cpus === undefined ? [] : ["--cpu", String(target.cpus)]),
@@ -120,11 +148,32 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
     colimaRun(["ssh", "--profile", profile, "--", ...command], extra),
   );
 
+  const profileYaml = join(home, ".colima", profile, "colima.yaml");
+
   const profileExists = () =>
-    access(join(home, ".colima", profile, "colima.yaml")).then(
+    access(profileYaml).then(
       () => true,
       () => false,
     );
+
+  const readProfileYaml = () => readFile(profileYaml, "utf8").catch(() => undefined);
+
+  const coldStartFlags = async (target: VmTarget, report: VmReport) => {
+    const text = await readProfileYaml();
+    const current = text === undefined ? undefined : vmSizeOfYaml(text);
+
+    if (current === undefined) {
+      return sizeFlags({ cpus: target.cpus, memoryGiB: target.memoryGiB });
+    }
+
+    const drift = vmSizeDrift(current, target);
+
+    if (drift.keptDiskGiB !== undefined) {
+      report(shrinkNotice(target, drift.keptDiskGiB));
+    }
+
+    return sizeFlags(drift.changes);
+  };
 
   const running = async (failure: string) => {
     const result = await colimaRun(["status", "--profile", profile]).catch((error: unknown) => {
@@ -134,10 +183,12 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
     return result.code === 0;
   };
 
-  const startStopped = async (report: VmReport, shares: VmShare[]) => {
+  const startStopped = async (report: VmReport, shares: VmShare[], target: VmTarget) => {
+    const flags = await coldStartFlags(target, report);
+
     report("starting the sandbox VM");
 
-    await run(START_FAILURE, startArgs(profile, shares), startHint);
+    await run(START_FAILURE, [...startArgs(profile, shares), ...flags], startHint);
 
     const detection = await detectAgain();
 
@@ -149,7 +200,7 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
     }
   };
 
-  const ensureUp = async (report: VmReport, shares: VmShare[]) => {
+  const ensureUp = async (report: VmReport, shares: VmShare[], target: VmTarget) => {
     if ((await detect()).available) {
       return;
     }
@@ -169,12 +220,12 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
         throw engineSilent(detection);
       }
 
-      await startStopped(report, shares);
+      await startStopped(report, shares, target);
     });
   };
 
-  const ensureRunning = async (report: VmReport, shares: VmShare[] = []) => {
-    await ensureUp(report, shares);
+  const ensureRunning = async (report: VmReport, shares: VmShare[] = [], target: VmTarget = {}) => {
+    await ensureUp(report, shares, target);
 
     trust.readEarly();
   };
@@ -208,19 +259,6 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
     });
 
     return "stopped";
-  };
-
-  const size = async (): Promise<VmSize | undefined> => {
-    const result = await colimaRun(["status", "--profile", profile, "--json"]).catch(() => undefined);
-    const vm = result?.code === 0 ? parseJsonObject(result.stdout) : undefined;
-
-    if (typeof vm?.cpu !== "number" || typeof vm.memory !== "number") {
-      return undefined;
-    }
-
-    const measured = { cpus: vm.cpu, memoryGiB: vm.memory / GIB };
-
-    return typeof vm.disk === "number" ? { ...measured, diskGiB: vm.disk / GIB } : measured;
   };
 
   const restartSized = async (changes: VmTarget) => {
@@ -266,9 +304,7 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
     const drift = current === undefined ? undefined : vmSizeDrift(current, target);
 
     if (drift?.keptDiskGiB !== undefined) {
-      options.report(
-        `vm.diskGiB ${target.diskGiB} is below the sandbox VM's disk of ${drift.keptDiskGiB} GiB; colima cannot shrink a disk, so it stays`,
-      );
+      options.report(shrinkNotice(target, drift.keptDiskGiB));
     }
 
     if (drift === undefined || !hasSizeChanges(drift)) {
@@ -278,7 +314,149 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
     await withLock(() => resizeDrifted(target, options));
   };
 
+  const statusSize = async (): Promise<VmSize | undefined> => {
+    const result = await colimaRun(["status", "--profile", profile, "--json"], {
+      timeoutMs: INSPECT_TIMEOUT_MS,
+    });
+
+    if (result.timedOut === true) {
+      throw new LauncherError(`colima did not answer within ${INSPECT_TIMEOUT_MS / 1000} seconds`);
+    }
+
+    const vm = result.code === 0 ? parseJsonObject(result.stdout) : undefined;
+
+    if (typeof vm?.cpu !== "number" || typeof vm.memory !== "number") {
+      return undefined;
+    }
+
+    const measured = { cpus: vm.cpu, memoryGiB: vm.memory / GIB };
+
+    return typeof vm.disk === "number" ? { ...measured, diskGiB: vm.disk / GIB } : measured;
+  };
+
+  const size = () => statusSize().catch(() => undefined);
+
+  const completeSize = (measured: VmSize | undefined, configured: VmSize | undefined): VmSpec => {
+    const diskGiB = measured?.diskGiB ?? configured?.diskGiB;
+    const known = measured ?? configured;
+
+    if (known === undefined || diskGiB === undefined) {
+      throw new LauncherError(`colima reported no size for profile ${profile}`);
+    }
+
+    return { cpus: known.cpus, memoryGiB: Math.round(known.memoryGiB), diskGiB: Math.round(diskGiB) };
+  };
+
+  const inspect = async (): Promise<VmInspect> => {
+    const text = await readProfileYaml();
+
+    if (text === undefined) {
+      return { state: "absent" };
+    }
+
+    const measured = await statusSize();
+    const configured = vmSizeOfYaml(text);
+
+    if (measured === undefined) {
+      return {
+        state: "stopped",
+        size: completeSize(undefined, configured),
+        shares: vmSharesOf(text, home) ?? "unreadable",
+      };
+    }
+
+    return {
+      state: "running",
+      size: completeSize(measured, configured),
+      shares: (await shares.readShares()) ?? "unreadable",
+    };
+  };
+
+  const waitForEngine = async (change: string, progress: VmApplyOptions["progress"]) => {
+    progress("waiting");
+
+    const detection = await detectAgain();
+
+    if (detection?.available !== true) {
+      throw new LauncherError(
+        `the sandbox VM did not come back after ${change}: ${detection?.reason ?? "not detected"}`,
+        startHint,
+      );
+    }
+  };
+
+  const create = async (desired: VmDesired, progress: VmApplyOptions["progress"]) => {
+    progress("creating");
+
+    await run(
+      CREATE_FAILURE,
+      [...startArgs(profile, desired.shares), ...CREATE_FLAGS, ...sizeFlags(desired.size)],
+      startHint,
+    );
+
+    await waitForEngine("creating it", progress);
+  };
+
+  const restartedShares = (current: VmShare[] | "unreadable", desired: VmDesired) =>
+    desired.exactShares || current === "unreadable"
+      ? desired.shares
+      : [...current, ...shareDrift(current, desired.shares).lacking];
+
+  const sharesDiffer = (current: VmShare[] | "unreadable", desired: VmDesired) => {
+    if (current === "unreadable") {
+      return true;
+    }
+
+    const drift = shareDrift(current, desired.shares);
+
+    return drift.lacking.length > 0 || (desired.exactShares && drift.extra.length > 0);
+  };
+
+  const applyLocked = async (desired: VmDesired, options: VmApplyOptions): Promise<VmApplied> => {
+    const found = await inspect();
+
+    if (found.state === "absent") {
+      await create(desired, options.progress);
+
+      return "created";
+    }
+
+    if (found.state === "stopped") {
+      return "stopped";
+    }
+
+    const drift = vmSizeDrift(found.size, desired.size);
+
+    if (!hasSizeChanges(drift) && !sharesDiffer(found.shares, desired)) {
+      return "unchanged";
+    }
+
+    const count = await options.busy();
+
+    if (count > 0) {
+      return { deferred: count };
+    }
+
+    options.progress("stopping");
+
+    await run(RESTART_FAILURE, ["stop", "--profile", profile], `see ${logHint(profile)}`);
+
+    options.progress("starting");
+
+    await run(
+      RESTART_FAILURE,
+      [...startArgs(profile, restartedShares(found.shares, desired)), ...sizeFlags(drift.changes)],
+      startHint,
+    );
+
+    await waitForEngine("restarting it", options.progress);
+
+    return "restarted";
+  };
+
   return {
+    inspect,
+    apply: (desired, options) => withLock(() => applyLocked(desired, options)),
     ensureRunning,
     coverage: shares.coverage,
     ensureShares: shares.ensureShares,

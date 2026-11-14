@@ -1,6 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { type Backend, LABELS, type VmPath, type VmShare } from "../backend/index.ts";
+import { type Backend, LABELS, type VmPath, type VmShare, type VmTarget } from "../backend/index.ts";
 import type { SandboxConfig } from "../config/index.ts";
 import { listLauncherContainers } from "../container/index.ts";
 import { liveLaunches } from "../grants/index.ts";
@@ -87,11 +87,15 @@ export const startVm = async (
   backend: Backend,
   sessions: HostSessions,
   progress: (line: string) => void,
-  plan?: VmSharePlan,
+  start: { plan?: VmSharePlan; size?: VmTarget } = {},
 ) => {
   await prepareSessionsDir(sessions);
 
-  await backend.vm.ensureRunning((notice) => progress(`pi-sandbox: ${notice}`), plan?.shares);
+  await backend.vm.ensureRunning(
+    (notice) => progress(`pi-sandbox: ${notice}`),
+    start.plan?.shares,
+    start.size,
+  );
 };
 
 const foreignSessions = async (backend: Backend, stateDir: string, launchId: string) => {
