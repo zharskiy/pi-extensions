@@ -19,6 +19,7 @@ export type {
   ProxyRouteRequest,
   TerminalSize,
   Vm,
+  VmApplied,
   VmDesired,
   VmInspect,
   VmPath,

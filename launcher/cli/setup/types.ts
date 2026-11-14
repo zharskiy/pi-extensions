@@ -1,5 +1,6 @@
-import type { VmInspect, VmShare, VmSpec } from "../../backend/index.ts";
+import type { VmApplied, VmInspect, VmPhase, VmShare, VmSpec } from "../../backend/index.ts";
 import type { JsonObject } from "../../shared/index.ts";
+import type { Prompts } from "../prompt/types.ts";
 
 export type Section = "folders" | "vm" | "writeBack";
 
@@ -79,4 +80,21 @@ export interface Plan {
   reindented: boolean;
   vm: VmAction;
   problems: string[];
+}
+
+export type Outcome =
+  | { kind: "apply"; plan: Plan; answers: Answers }
+  | { kind: "unchanged" }
+  | { kind: "cancelled" };
+
+export interface SetupIo {
+  prompts: Prompts;
+  plain: boolean;
+  columns(): number;
+  now(): number;
+}
+
+export interface ApplyEffects {
+  write(document: ConfigDocument, text: string): Promise<void>;
+  vm(action: VmAction, progress: (phase: VmPhase) => void): Promise<VmApplied>;
 }

@@ -1,0 +1,564 @@
+import type { VmApplied, VmPhase, VmSpec } from "../../backend/index.ts";
+import { printable, widthOf, wrap } from "../prompt/style.ts";
+import { tildeForm } from "./folders.ts";
+import type { VmBounds } from "./plan.ts";
+import type { Answers, Change, FolderCandidate, HostFacts, Plan, VmAction, VmPart } from "./types.ts";
+
+export type Tag = "chosen" | "current" | "changed" | "automatic" | "default" | "invalid";
+
+export interface HubRow {
+  label: string;
+  value: string;
+  tag: Tag;
+  problems: string[];
+}
+
+export interface Step {
+  index: number;
+  count: number;
+}
+
+const LABEL_WIDTH = 19;
+
+const SHOWN_ROOTS = 3;
+
+const HUB_TAGS_INLINE = 60;
+
+const PLAIN_WIDTH = 80;
+
+export const roomOf = (width: number) => Math.max(1, width - 4);
+
+export const widthFor = (width: number, plain: boolean) => (plain ? Math.min(width, PLAIN_WIDTH) : width);
+
+export const INTRO_TITLE = "pi sandbox setup";
+
+export const CHECKING = "Checking this Mac and the sandbox VM…";
+
+export const OTHER_SETTINGS =
+  "Network access, image packages, credentials and the other settings are in the same file; this setup does not change them.";
+
+export const HOME_ROOTS = "your whole home (~), not recommended";
+
+export const FOLDERS_TITLE = "Which folders hold your projects?";
+
+export const FOLDERS_DETAIL =
+  "Only these folders are shared with the sandbox VM, and pi starts only inside them.";
+
+export const NO_FOLDER_FOUND =
+  "No usual project folder was found in your home. Add the folders that hold your projects.";
+
+export const FOLDERS_PLAIN_HELP = [
+  "Type numbers to switch folders on or off (like 1 3), a path to add a folder,",
+  "or press Enter to keep the selection.",
+];
+
+export const HOME_CONFIRM = {
+  title: "Share your whole home with the sandbox VM instead?",
+  detail:
+    "With no project folder, pi starts in any folder, and a sandbox escape could reach every file in ~.",
+  no: "No, choose folders",
+  yes: "Yes, share ~",
+};
+
+export const DISCARD_CONFIRM = {
+  title: "Discard your changes and leave? Nothing has been saved.",
+  no: "No, back to review",
+  yes: "Yes, leave",
+};
+
+export const WRITE_BACK_TITLE = "Copy settings changed in the sandbox back to your pi?";
+
+export const WRITE_BACK_DETAIL =
+  "When on, preference changes made inside the sandbox (the default model, the theme, extension settings) are copied to your pi on this Mac when a session starts and ends. Your pi wins when both changed.";
+
+export const FIX_FOLDERS = "✖ Fix the project folders first.";
+
+export const CANCELLED = "Cancelled. Nothing was changed.";
+
+export const NOTHING_CHANGED = "Nothing changed.";
+
+export const STOPPED_WAITING = [
+  "Stopped waiting. Your settings are saved; the VM may still be starting.",
+  "Check it with pi sandbox doctor, or run pi sandbox init again.",
+];
+
+export const VM_NOT_READY =
+  "Your settings are saved, but the sandbox VM is not ready. Fix the problem above, then run pi sandbox init again. pi sandbox doctor checks everything.";
+
+export const VM_INTERRUPT_WARNING =
+  "The VM is still starting. Press ctrl-c again to stop waiting; your settings are already saved.";
+
+export const stepTitle = (title: string, step: Step | undefined) =>
+  step === undefined ? title : `${title}   step ${step.index} of ${step.count}`;
+
+const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
+
+export const sizeText = (size: VmSpec) =>
+  `${plural(size.cpus, "CPU", "CPUs")} · ${size.memoryGiB} GiB memory · ${size.diskGiB} GiB disk`;
+
+const shown = (path: string, home: string) => printable(tildeForm(path, home));
+
+const sessionsRunning = (count: number) =>
+  `${plural(count, "pi session", "pi sessions")} ${count === 1 ? "is" : "are"} running`;
+
+const vmLine = (facts: HostFacts) => {
+  if (facts.vm.state === "absent") {
+    return "not created yet";
+  }
+
+  if (facts.vm.state === "unknown") {
+    return `could not be checked: ${printable(facts.vm.reason)}`;
+  }
+
+  return `${facts.vm.state} · ${sizeText(facts.vm.size)}`;
+};
+
+const macLine = (facts: HostFacts) => {
+  const disk = facts.freeDiskGiB === undefined ? "" : ` · ${facts.freeDiskGiB} GiB free disk`;
+
+  return `${plural(facts.cpus, "CPU", "CPUs")} · ${facts.memoryGiB} GiB memory${disk}`;
+};
+
+export const introLines = (facts: HostFacts, firstRun: boolean, plain: boolean) => {
+  const sessions = facts.sessions > 0 ? [sessionsRunning(facts.sessions)] : [];
+
+  if (plain) {
+    return [
+      `This Mac: ${macLine(facts)}`,
+      `Sandbox VM: ${vmLine(facts)}`,
+      ...sessions.map((line) => `  ${line}`),
+      "Nothing is saved until you choose Apply.",
+      "",
+    ];
+  }
+
+  const lead = firstRun
+    ? "Sets up the sandbox pi runs in, in three short steps: the folders it may use, the size of its VM and the settings write-back. Nothing is saved until you choose Apply."
+    : `Your settings are in ${shown(facts.configFile, facts.home)}. Change what you need, then choose Apply. Nothing is saved before that.`;
+
+  return [
+    { text: lead },
+    "",
+    `This Mac     ${macLine(facts)}`,
+    `Sandbox VM   ${vmLine(facts)}`,
+    ...sessions.map((line) => `             ${line}`),
+    "",
+  ];
+};
+
+const repoTag = (candidate: FolderCandidate, digits: number) => {
+  if (candidate.repos === 0) {
+    return "no git repository found";
+  }
+
+  const count = String(candidate.repos).padStart(digits);
+
+  if (candidate.capped) {
+    return `${count}+ git repositories`;
+  }
+
+  return candidate.repos === 1 ? `${count} git repository` : `${count} git repositories`;
+};
+
+const originTags = (candidate: FolderCandidate, digits: number) => {
+  if (candidate.origin === "config") {
+    return candidate.exists ? ["current"] : ["current", "not found right now"];
+  }
+
+  return candidate.origin === "env" ? ["from PI_SANDBOX_ROOTS"] : [repoTag(candidate, digits)];
+};
+
+export const folderTag = (candidate: FolderCandidate, candidates: FolderCandidate[], plain: boolean) => {
+  const counts = candidates.filter((other) => other.repos > 0).map((other) => String(other.repos).length);
+  const digits = plain ? 0 : Math.max(0, ...counts);
+
+  return [...originTags(candidate, digits), ...(candidate.here ? ["you are here"] : [])].join(" · ");
+};
+
+export const rootsSummary = (roots: Answers["roots"]) => {
+  if (roots === "home") {
+    return HOME_ROOTS;
+  }
+
+  const listed = roots.slice(0, SHOWN_ROOTS).map(printable);
+  const more = roots.length - SHOWN_ROOTS;
+
+  return more > 0 ? `${listed.join(", ")} and ${more} more` : listed.join(", ");
+};
+
+const automaticSize = (facts: HostFacts) => {
+  const vm = facts.vm;
+
+  if (vm.state === "running" || vm.state === "stopped") {
+    return vm.size;
+  }
+
+  return facts.automatic;
+};
+
+export const shownSize = (vm: Answers["vm"], facts: HostFacts): VmSpec => {
+  if (vm === "automatic") {
+    return automaticSize(facts);
+  }
+
+  return "kept" in vm ? { ...automaticSize(facts), ...vm.kept } : vm;
+};
+
+export const automaticLabel = (facts: HostFacts) => {
+  const size = automaticSize(facts);
+  const grown = size.diskGiB > facts.automatic.diskGiB ? " (the VM's disk only grows)" : "";
+
+  return `${sizeText({ ...facts.automatic, diskGiB: size.diskGiB })}${grown}`;
+};
+
+export const vmEditorDetail = (facts: HostFacts) =>
+  `Every pi session runs in this VM. Automatic follows this Mac: CPUs from 2 to 8, half the memory from 4 to 10 GiB, and a ${facts.automatic.diskGiB} GiB disk.`;
+
+export const vmCollapsed = (vm: Answers["vm"], facts: HostFacts) =>
+  vm === "automatic" ? `Automatic: ${automaticLabel(facts)}` : `Custom: ${sizeText(shownSize(vm, facts))}`;
+
+const vmDiskOf = (facts: HostFacts) =>
+  facts.vm.state === "running" || facts.vm.state === "stopped" ? facts.vm.size.diskGiB : undefined;
+
+export const numberFields = (facts: HostFacts, bounds: VmBounds) => {
+  const disk = vmDiskOf(facts);
+  const free = facts.freeDiskGiB;
+
+  return {
+    cpus: {
+      title: "CPUs for the VM",
+      note: `this Mac has ${facts.cpus}`,
+      hint: `${bounds.cpus.min} to ${bounds.cpus.max}`,
+      step: 1,
+      tooLow: `Choose ${bounds.cpus.min} to ${bounds.cpus.max} CPUs: this Mac has ${facts.cpus}.`,
+      tooHigh: `Choose ${bounds.cpus.min} to ${bounds.cpus.max} CPUs: this Mac has ${facts.cpus}.`,
+      warn: () => undefined,
+    },
+    memoryGiB: {
+      title: "Memory for the VM, in GiB",
+      note: `this Mac has ${facts.memoryGiB} GiB`,
+      hint: `${bounds.memoryGiB.min} to ${bounds.memoryGiB.max}`,
+      step: 1,
+      tooLow: `Choose ${bounds.memoryGiB.min} to ${bounds.memoryGiB.max} GiB: this Mac has ${facts.memoryGiB} GiB and macOS needs the rest.`,
+      tooHigh: `Choose ${bounds.memoryGiB.min} to ${bounds.memoryGiB.max} GiB: this Mac has ${facts.memoryGiB} GiB and macOS needs the rest.`,
+      warn: (value: number) =>
+        value > (facts.memoryGiB * 3) / 4
+          ? "That leaves little memory for macOS. Press enter again to keep it."
+          : undefined,
+    },
+    diskGiB: {
+      title: "Disk for the VM, in GiB",
+      note: free === undefined ? "" : `${free} GiB free on this Mac`,
+      hint:
+        disk === undefined
+          ? `${bounds.diskGiB.min} to ${bounds.diskGiB.max}`
+          : `${bounds.diskGiB.min} to ${bounds.diskGiB.max} · the disk can only grow, it is ${disk} GiB now`,
+      step: 10,
+      tooLow:
+        disk === undefined
+          ? `Choose at least ${bounds.diskGiB.min} GiB.`
+          : `The VM's disk is ${disk} GiB now and can only grow. Choose ${bounds.diskGiB.min} or more.`,
+      tooHigh: `Choose at most ${bounds.diskGiB.max} GiB.`,
+      warn: (value: number) =>
+        free !== undefined && value > free + (disk ?? 0)
+          ? `This Mac has ${free} GiB free. The disk file grows only as the VM fills it. Press enter again to keep it.`
+          : undefined,
+    },
+  };
+};
+
+const partsText = (parts: VmPart[]) => {
+  if (parts.length === 2) {
+    return "size and folders";
+  }
+
+  return parts[0] === "size" ? "size" : "folders";
+};
+
+export const vmActionText = (action: VmAction) => {
+  if (action.kind === "create") {
+    return "create the sandbox VM with these folders; this takes a minute or two, longer the first time while colima downloads the VM's system image";
+  }
+
+  if (action.kind === "restart") {
+    return `restart the sandbox VM with the new ${partsText(action.parts)}; no pi session is running, and this usually takes under a minute`;
+  }
+
+  if (action.kind === "defer") {
+    return `keep the sandbox VM as it is for now: ${sessionsRunning(action.sessions)}. The first pi you start after they all exit restarts it with the new ${partsText(action.parts)}`;
+  }
+
+  if (action.kind === "on-next-start") {
+    return `the sandbox VM is stopped; the next pi starts it with the new ${partsText(action.parts)}`;
+  }
+
+  if (action.kind === "unknown") {
+    return `the sandbox VM could not be checked (${printable(action.reason)}); run pi sandbox doctor after applying`;
+  }
+
+  return undefined;
+};
+
+const json = (value: unknown) => printable(JSON.stringify(value));
+
+const isRootsKey = (key: string) => key === "workspaceRoots" || key.startsWith("workspaceRoots.");
+
+const shownChanges = (changes: Change[]) => {
+  const rootsRemoved = changes.some((change) => isRootsKey(change.key) && change.kind === "remove");
+  const rest = changes.filter((change) => !(rootsRemoved && isRootsKey(change.key)));
+
+  return rootsRemoved ? [...rest, { key: "workspaceRoots", kind: "remove" as const }] : rest;
+};
+
+const automaticPart = (key: string, facts: HostFacts) => {
+  const name = key.slice("vm.".length) as keyof VmSpec;
+  const value = facts.automatic[name];
+
+  return value === undefined ? "" : `   (back to automatic: ${value})`;
+};
+
+const richChangeLines = (change: Change, keyWidth: number, room: number, facts: HostFacts) => {
+  const key = change.key.padEnd(keyWidth);
+
+  if (change.kind === "add") {
+    return [`+ ${key}   ${json(change.after)}`];
+  }
+
+  if (change.kind === "remove" && change.key === "workspaceRoots") {
+    return [`- ${key}   (your whole home is shared again)`];
+  }
+
+  if (change.kind === "remove") {
+    return [`- ${key}   ${json(change.before)}${automaticPart(change.key, facts)}`];
+  }
+
+  const line = `~ ${key}   ${json(change.before)} → ${json(change.after)}`;
+
+  if (widthOf(line) <= room) {
+    return [line];
+  }
+
+  return [`~ ${key}   ${json(change.before)}`, `${" ".repeat(keyWidth + 5)}→ ${json(change.after)}`];
+};
+
+const plainChangeLine = (change: Change) => {
+  if (change.kind === "add") {
+    return `added ${change.key}: ${json(change.after)}`;
+  }
+
+  if (change.kind === "remove" && change.key === "workspaceRoots") {
+    return "removed workspaceRoots (your whole home is shared again)";
+  }
+
+  if (change.kind === "remove") {
+    return `removed ${change.key}`;
+  }
+
+  return `changed ${change.key}: ${json(change.before)} to ${json(change.after)}`;
+};
+
+const bullet = (text: string, room: number, plain: boolean) => {
+  const mark = plain ? "- " : "• ";
+  const [first = "", ...rest] = wrap(text, room - 4);
+
+  return [`  ${mark}${first}`, ...rest.map((line) => `    ${line}`)];
+};
+
+const fileBullet = (plan: Plan, facts: HostFacts, existed: boolean) => {
+  const verb = existed ? "change" : "create";
+  const writeBackOnly =
+    plan.vm.kind === "none" && plan.changes.every((change) => change.key.startsWith("writeBack."));
+
+  return `${verb} ${shown(facts.configFile, facts.home)}${writeBackOnly ? " (applies from the next pi)" : ""}`;
+};
+
+export interface FileShape {
+  existed: boolean;
+  indent: string;
+}
+
+export const applyLines = (plan: Plan, facts: HostFacts, shape: FileShape, width: number, plain: boolean) => {
+  const room = roomOf(width);
+  const changes = shownChanges(plan.changes);
+  const keyWidth = Math.max(0, ...changes.map((change) => change.key.length));
+  const diff = changes.flatMap((change) =>
+    plain ? [plainChangeLine(change)] : richChangeLines(change, keyWidth, room - 6, facts),
+  );
+  const reindent = plan.reindented
+    ? [`(the rest of the file is kept; its indentation is normalised to ${indentText(shape.indent)})`]
+    : [];
+  const file =
+    plan.changes.length === 0
+      ? []
+      : [
+          ...bullet(fileBullet(plan, facts, shape.existed), room, plain),
+          ...[...diff, ...reindent].map((line) => `      ${line}`),
+        ];
+  const vmText = vmActionText(plan.vm);
+  const vm = vmText === undefined ? [] : bullet(vmText, room, plain);
+
+  return ["When you apply:", ...file, ...vm];
+};
+
+const indentText = (indent: string) =>
+  indent.startsWith("\t") ? "tabs" : plural(indent.length, "space", "spaces");
+
+export const NOTHING_TO_DO =
+  "Everything is set up: the file and the sandbox VM already match these settings.";
+
+export const hubRowLines = (rows: HubRow[], width: number, plain: boolean) => {
+  const room = roomOf(width);
+
+  if (plain) {
+    return rows.map((row) => `  ${row.label}: ${row.value} (${row.tag})`);
+  }
+
+  return rows.flatMap((row) => {
+    const head = `${row.label.padEnd(LABEL_WIDTH)}  ${row.value}`;
+    const problems = row.problems.map((problem) => `${" ".repeat(LABEL_WIDTH + 2)}${printable(problem)}`);
+    const gap = room - widthOf(head) - row.tag.length;
+
+    if (width < HUB_TAGS_INLINE || gap < 2) {
+      return [head, `${" ".repeat(LABEL_WIDTH + 2)}${row.tag}`, ...problems];
+    }
+
+    return [`${head}${" ".repeat(gap)}${row.tag}`, ...problems];
+  });
+};
+
+const phaseText = (phase: VmPhase, parts: VmPart[]) => {
+  if (phase === "creating") {
+    return "Creating the VM…";
+  }
+
+  if (phase === "stopping") {
+    return "Stopping the VM…";
+  }
+
+  return phase === "starting"
+    ? `Starting the VM with the new ${partsText(parts)}…`
+    : "Waiting for the VM's engine…";
+};
+
+export const progressText = (phase: VmPhase, action: VmAction) =>
+  phaseText(phase, action.kind === "restart" ? action.parts : ["size", "folders"]);
+
+export const deferredLines = (sessions: number, parts: VmPart[]) => [
+  `▲ Kept as it is: ${sessionsRunning(sessions)}. The first pi you start after they all exit restarts it with the new ${partsText(parts)}.`,
+];
+
+export const STOPPED_VM = "The VM is stopped; the next pi starts it with these settings.";
+
+const STARTED_MEANWHILE =
+  "▲ Kept as it is: a pi session started meanwhile. The first pi you start after it exits restarts the VM with the new settings.";
+
+export const vmDoneLine = (applied: VmApplied, action: VmAction, elapsed: string, plain: boolean) => {
+  const mark = plain ? "" : "✔ ";
+  const what = plain ? " the VM" : "";
+
+  if (applied === "created" && action.kind === "create") {
+    return `${mark}Created${what} in ${elapsed}: ${sizeText(action.size)}`;
+  }
+
+  if (applied === "restarted" && action.kind === "restart") {
+    return `${mark}Restarted${what} in ${elapsed} with the new ${partsText(action.parts)}`;
+  }
+
+  if (applied === "stopped") {
+    return STOPPED_VM;
+  }
+
+  if (typeof applied === "object") {
+    return STARTED_MEANWHILE;
+  }
+
+  return `${mark}Nothing to do: the VM already matches`;
+};
+
+export const vmUnknownLine = (reason: string) =>
+  `▲ The VM could not be checked (${printable(reason)}). Run pi sandbox doctor to see why.`;
+
+const verbOf = (action: VmAction) => (action.kind === "create" ? "create" : "restart");
+
+export const vmFailureLines = (action: VmAction, elapsed: string, message: string) => {
+  const last = message.trim().split("\n").at(-1) ?? "";
+
+  return [`✖ Could not ${verbOf(action)} the VM after ${elapsed}.`, `  ${printable(last)}`];
+};
+
+export const VM_FAILURE_CHOICES = { retry: "Try again", exit: "Exit; your settings stay saved" };
+
+export const savedLine = (facts: HostFacts, plain: boolean) =>
+  `${plain ? "" : "✔ "}Saved ${shown(facts.configFile, facts.home)}`;
+
+export const saveFailedLine = (file: string, home: string, reason: string) =>
+  `✖ Could not save ${shown(file, home)}: ${printable(reason)}`;
+
+const nextCommand = (roots: Answers["roots"], facts: HostFacts) => {
+  if (roots === "home") {
+    return "cd <a project> && pi";
+  }
+
+  const chosen = facts.candidates.filter((candidate) => roots.includes(candidate.stored));
+  const latest = chosen.find((candidate) => candidate.latestRepo !== undefined)?.latestRepo;
+
+  if (latest !== undefined) {
+    return `cd ${shown(latest, facts.home)} && pi`;
+  }
+
+  return `cd <a project in ${printable(roots[0] ?? "~")}> && pi`;
+};
+
+export const successLines = (
+  roots: Answers["roots"],
+  facts: HostFacts,
+  deferred: boolean,
+  plain: boolean,
+) => {
+  const head = deferred ? "Done. Settings saved." : "Done. The sandbox is ready.";
+  const rows: Array<[string, string]> = [
+    ["Next", nextCommand(roots, facts)],
+    ["Change", "pi sandbox init"],
+    ["Check", "pi sandbox doctor"],
+    ["Settings", shown(facts.configFile, facts.home)],
+  ];
+
+  if (plain) {
+    return [head, ...rows.map(([label, value]) => `${label}: ${value}`)];
+  }
+
+  return [
+    head,
+    "",
+    ...rows.map(([label, value]) => `${label.padEnd(10)}${value}`),
+    `${" ".repeat(10)}every key: ${shown(facts.docsFile, facts.home)}`,
+  ];
+};
+
+export const invalidJsonLines = (file: string, home: string, message: string) => [
+  `✖ ${shown(file, home)} is not valid JSON:`,
+  { text: printable(message), indent: "  " },
+];
+
+export const invalidConfigLines = (file: string, home: string, message: string) => [
+  `✖ ${shown(file, home)} has a problem this setup does not fix:`,
+  { text: printable(message), indent: "  " },
+];
+
+export const INVALID_JSON_END =
+  "Nothing was changed. Fix the file, or move it away to start over, then run pi sandbox init again.";
+
+export const INVALID_CONFIG_END = "Nothing was changed. Fix that key, then run pi sandbox init again.";
+
+export type Paragraph = string | { text: string; indent?: string };
+
+export const wrapped = (paragraphs: Paragraph[], room: number) =>
+  paragraphs.flatMap((paragraph) => {
+    if (typeof paragraph === "string") {
+      return paragraph === "" ? [""] : wrap(paragraph, room);
+    }
+
+    const indent = paragraph.indent ?? "";
+
+    return wrap(paragraph.text, room - indent.length).map((line) => `${indent}${line}`);
+  });
