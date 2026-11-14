@@ -289,6 +289,22 @@ describe("pi sandbox init --yes", () => {
     expect(harness.applied).toEqual([]);
   });
 
+  it("refuses a vm above what this Mac has before it writes or touches the VM", async () => {
+    const harness = await initSetup({ env: { PI_SANDBOX_ROOTS: "" } });
+
+    await harness.writeJson(harness.userConfigFile, { vm: { cpus: 12 } });
+
+    const text = await readFile(harness.userConfigFile, "utf8");
+    const deps = { ...harness.deps, env: { ...harness.deps.env, PI_SANDBOX_ROOTS: harness.repoRoot } };
+
+    expect(await run(["sandbox", "init", "--yes"], deps)).toBe(1);
+    expect(harness.stderr()).toBe(
+      `pi-sandbox: config: vm.cpus 12 is more than the 8 CPUs of this Mac\n  hint: lower it in ${harness.userConfigFile}, or run pi sandbox init to choose a size\n`,
+    );
+    expect(await readFile(harness.userConfigFile, "utf8")).toBe(text);
+    expect(harness.applied).toEqual([]);
+  });
+
   it("fails with the VM's error after saving the config", async () => {
     const harness = await initSetup({ env: { PI_SANDBOX_ROOTS: "" } });
     const fake = createFakeBackend({

@@ -196,7 +196,7 @@ The volumes stay until you uninstall. `pi sandbox reset` and the daily cleanup d
 { "vm": { "cpus": 4, "memoryGiB": 8, "diskGiB": 80 } }
 ```
 
-Every key is optional; `pi sandbox init` sets them when you choose Custom, and removes them when you choose Automatic. Without `vm` the VM keeps the size it was created with, by default this Mac's CPU count from 2 to 8, half its memory from 4 to 10 GiB, and a 60 GiB disk. `cpus` is 1 to 64, `memoryGiB` 2 to 256 and `diskGiB` 20 to 2048, whole numbers.
+Every key is optional; `pi sandbox init` sets them when you choose Custom, and removes them when you choose Automatic. Without `vm` the VM keeps the size it was created with, by default this Mac's CPU count from 2 to 8, half its memory from 4 to 10 GiB, and a 60 GiB disk. `cpus` is 1 to 64, `memoryGiB` 2 to 256 and `diskGiB` 20 to 2048, whole numbers. On this Mac `cpus` may not be more than its CPU count and `memoryGiB` not more than its memory less 2 GiB: a launch and `pi sandbox init` refuse with a `config:` error before they stop or start the VM, and `pi sandbox doctor` fails its `vm size` check without starting anything. The file itself stays valid, so the same config works on a larger Mac.
 
 `vm` sizes the VM, which runs every sandbox container of every folder. `resources` limits one container inside it. A `resources` value above the matching `vm` value is a config error, since no container could get it.
 

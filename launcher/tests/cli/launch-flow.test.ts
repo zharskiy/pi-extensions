@@ -267,6 +267,21 @@ describe("the VM size", () => {
     );
   });
 
+  it("refuses a vm above what this Mac has before it starts or stops the VM", async () => {
+    const { harness, asked } = await sizedHarness();
+
+    await harness.writeJson(harness.userConfigFile, { vm: { cpus: 12, memoryGiB: 31 } });
+
+    expect(await run([], harness.deps)).toBe(1);
+    expect(harness.stderr()).toContain(
+      [
+        "pi-sandbox: config: vm.cpus 12 is more than the 8 CPUs of this Mac; config: vm.memoryGiB 31 is more than the 30 GiB this Mac can give the VM (32 GiB, less 2 for macOS)",
+        `  hint: lower it in ${harness.userConfigFile}, or run pi sandbox init to choose a size`,
+      ].join("\n"),
+    );
+    expect(asked).toEqual({ targets: [], busy: [], started: [] });
+  });
+
   it("asks with an empty target when vm is unset, and never from the doctor", async () => {
     const { harness, asked } = await sizedHarness();
 

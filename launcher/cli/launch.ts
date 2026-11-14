@@ -35,7 +35,7 @@ import { writeOnce } from "./notices.ts";
 import { openSandboxProxy, reportDenials, type SandboxProxy, sandboxDenials } from "./sandbox-proxy.ts";
 import { sweepOrphans } from "./sweep.ts";
 import { imagePiVersion } from "./versions.ts";
-import { prepareVmShares, shareVm, sizeVm, startVm, trustVm } from "./vm.ts";
+import { assertVmFitsHost, prepareVmShares, shareVm, sizeVm, startVm, trustVm } from "./vm.ts";
 
 interface PreparedContainer {
   containerId: string;
@@ -358,6 +358,8 @@ const shielded = async <T>(deps: CliDeps, action: () => Promise<T>) => {
 
 const prepareVm = async (input: SandboxInput, share: boolean) => {
   const { deps, context, backend, sessions, launch, staged, progress } = input;
+
+  assertVmFitsHost(deps, context.effective.config.vm);
 
   if (!share) {
     await staged("vm", () => startVm(backend, sessions, progress));

@@ -2,6 +2,7 @@ import { hasSizeChanges, shareDrift, type VmShare, type VmSpec, vmSizeDrift } fr
 import { VM_BOUNDS, validateConfig } from "../../config/index.ts";
 import { errorMessage, type JsonObject, LauncherError } from "../../shared/index.ts";
 import { checkRoot, type RootGuardContext, rootRefusal } from "../../workspace/index.ts";
+import { hostVmLimits } from "../vm.ts";
 import { diffOf, isReindented, serialise, valueAt, withoutValue, withValue } from "./document.ts";
 import { isPreChecked, rootsFromEnv, sameRootSet } from "./folders.ts";
 import type {
@@ -349,19 +350,17 @@ export const answersForYes = (
 const vmDiskOf = (facts: HostFacts) =>
   facts.vm.state === "running" || facts.vm.state === "stopped" ? facts.vm.size.diskGiB : 0;
 
-export const vmBounds = (facts: HostFacts): VmBounds => ({
-  cpus: {
-    min: VM_BOUNDS.cpus.min,
-    max: Math.min(VM_BOUNDS.cpus.max, Math.max(VM_BOUNDS.cpus.min, facts.cpus)),
-  },
-  memoryGiB: {
-    min: VM_BOUNDS.memoryGiB.min,
-    max: Math.min(VM_BOUNDS.memoryGiB.max, Math.max(VM_BOUNDS.memoryGiB.min, facts.memoryGiB - 2)),
-  },
-  diskGiB: {
-    min: Math.min(VM_BOUNDS.diskGiB.max, Math.max(VM_BOUNDS.diskGiB.min, vmDiskOf(facts))),
-    max: VM_BOUNDS.diskGiB.max,
-  },
-});
+export const vmBounds = (facts: HostFacts): VmBounds => {
+  const limits = hostVmLimits(facts);
+
+  return {
+    cpus: { min: VM_BOUNDS.cpus.min, max: limits.cpus },
+    memoryGiB: { min: VM_BOUNDS.memoryGiB.min, max: limits.memoryGiB },
+    diskGiB: {
+      min: Math.min(VM_BOUNDS.diskGiB.max, Math.max(VM_BOUNDS.diskGiB.min, vmDiskOf(facts))),
+      max: VM_BOUNDS.diskGiB.max,
+    },
+  };
+};
 
 export const isPlanEmpty = (plan: Plan) => plan.changes.length === 0 && plan.vm.kind === "none";

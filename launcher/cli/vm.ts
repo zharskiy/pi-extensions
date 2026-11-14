@@ -1,7 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { type Backend, LABELS, type VmPath, type VmShare, type VmTarget } from "../backend/index.ts";
-import type { SandboxConfig } from "../config/index.ts";
+import { type SandboxConfig, VM_BOUNDS } from "../config/index.ts";
 import { listLauncherContainers } from "../container/index.ts";
 import { liveLaunches } from "../grants/index.ts";
 import { isWithin, LauncherError, realOrResolvedSync, stateLayout } from "../shared/index.ts";
@@ -24,6 +24,43 @@ export interface VmSharePlan {
   shares: VmShare[];
   notices: string[];
 }
+
+const HOST_RESERVE_GIB = 2;
+
+export const hostVmLimits = (machine: CliDeps["machine"]) => ({
+  cpus: Math.min(VM_BOUNDS.cpus.max, Math.max(VM_BOUNDS.cpus.min, machine.cpus)),
+  memoryGiB: Math.min(
+    VM_BOUNDS.memoryGiB.max,
+    Math.max(VM_BOUNDS.memoryGiB.min, Math.floor(machine.memoryGiB) - HOST_RESERVE_GIB),
+  ),
+});
+
+const vmHostProblems = (machine: CliDeps["machine"], target: VmTarget) => {
+  const limits = hostVmLimits(machine);
+  const memory = Math.floor(machine.memoryGiB);
+
+  return [
+    ...(target.cpus !== undefined && target.cpus > limits.cpus
+      ? [`config: vm.cpus ${target.cpus} is more than the ${machine.cpus} CPUs of this Mac`]
+      : []),
+    ...(target.memoryGiB !== undefined && target.memoryGiB > limits.memoryGiB
+      ? [
+          `config: vm.memoryGiB ${target.memoryGiB} is more than the ${limits.memoryGiB} GiB this Mac can give the VM (${memory} GiB, less ${HOST_RESERVE_GIB} for macOS)`,
+        ]
+      : []),
+  ];
+};
+
+export const assertVmFitsHost = (deps: CliDeps, target: VmTarget) => {
+  const problems = vmHostProblems(deps.machine, target);
+
+  if (problems.length > 0) {
+    throw new LauncherError(
+      problems.join("; "),
+      `lower it in ${pathsOf(deps).userConfigFile}, or run pi sandbox init to choose a size`,
+    );
+  }
+};
 
 const vmDirsOf = (deps: CliDeps) => ({
   sessions: join(hostAgentDirOf(deps), "sessions"),

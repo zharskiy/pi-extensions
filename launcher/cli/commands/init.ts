@@ -24,7 +24,7 @@ import type {
   SharePlan,
   VmAction,
 } from "../setup/types.ts";
-import { prepareVmDirs, vmBusyCount, vmSharesFor } from "../vm.ts";
+import { assertVmFitsHost, prepareVmDirs, vmBusyCount, vmSharesFor } from "../vm.ts";
 
 export const YES_FLAG = "--yes";
 
@@ -102,6 +102,8 @@ const effectsFor = (deps: CliDeps, context: SetupContext): ApplyEffects => ({
     if (action.kind !== "create" && action.kind !== "restart") {
       return "unchanged";
     }
+
+    assertVmFitsHost(deps, action.size);
 
     await prepareVmDirs(deps);
 
@@ -238,6 +240,10 @@ const acceptAll = async (deps: CliDeps) => {
 
   if (plan.problems.length > 0) {
     throw new LauncherError(plan.problems.join("; "), `fix ${context.configFile}`);
+  }
+
+  if (plan.vm.kind === "create" || plan.vm.kind === "restart") {
+    assertVmFitsHost(deps, plan.vm.size);
   }
 
   if (isPlanEmpty(plan)) {

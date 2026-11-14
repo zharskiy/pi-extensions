@@ -937,6 +937,37 @@ describe("pi sandbox doctor", () => {
       });
     });
 
+    it("fails a vm above what this Mac has and starts nothing", async () => {
+      const fake = createFakeBackend({ exec: answering({}) });
+      const started: string[] = [];
+      const harness = await createHarness({
+        backend: () => ({
+          ...fake.backend,
+          vm: {
+            ...fake.backend.vm,
+            ensureRunning: async () => {
+              started.push("vm");
+            },
+          },
+        }),
+      });
+
+      await harness.writeJson(harness.userConfigFile, { vm: { cpus: 9 } });
+
+      const code = await run(["sandbox", "doctor"], harness.deps);
+
+      expect(code).toBe(1);
+      expect(started).toEqual([]);
+      expect(check(harness.stdout(), "vm size")).toMatchObject({
+        status: "fail",
+        detail: "config: vm.cpus 9 is more than the 8 CPUs of this Mac",
+      });
+      expect(check(harness.stdout(), "sandbox")).toMatchObject({
+        status: "skip",
+        detail: "not started: vm asks for more than this Mac has",
+      });
+    });
+
     it("measures the profile against the size install.sh gives this machine", async () => {
       const { found } = await sizeCheck(async () => ({ cpus: 4, memoryGiB: 4 }), { cpus: 4, memoryGiB: 8 });
 

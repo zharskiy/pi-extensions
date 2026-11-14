@@ -22,7 +22,7 @@ import { missingPiText } from "../host-pi.ts";
 import { hostSessionsOf } from "../host-sessions.ts";
 import { type Sandbox, type Stage, type StageOutcome, withSandbox } from "../launch.ts";
 import { denialAdvice, deniedTargets, type SandboxProxy, sandboxDenials } from "../sandbox-proxy.ts";
-import { type VmSharePlan, vmShareCoverage, vmSharesFor } from "../vm.ts";
+import { assertVmFitsHost, type VmSharePlan, vmShareCoverage, vmSharesFor } from "../vm.ts";
 import {
   type CheckResult,
   failed,
@@ -448,6 +448,27 @@ const skipSandbox = (run: Run, missing: string[]) => {
   return undefined;
 };
 
+const fitsHost = async (deps: CliDeps, context: LaunchContext, run: Run) => {
+  try {
+    assertVmFitsHost(deps, context.effective.config.vm);
+
+    return true;
+  } catch (error) {
+    const hint = error instanceof LauncherError ? error.hint : undefined;
+
+    run.checks.push(
+      { name: "vm size", section: "sandbox", result: failed(errorMessage(error), { hint }) },
+      {
+        name: "sandbox",
+        section: "sandbox",
+        result: skipped("not started: vm asks for more than this Mac has"),
+      },
+    );
+
+    return false;
+  }
+};
+
 const once = <T>(read: () => Promise<T>) => {
   const state: { reading?: Promise<T> } = {};
 
@@ -467,10 +488,11 @@ const runChecks = async (deps: CliDeps, progress: Progress, checks: NamedCheck[]
 
   run.checks.push({ name: "vm shares", section: "sandbox", result: shares.result });
 
-  const signal =
-    shares.missing.length === 0
+  const signal = (await fitsHost(deps, context, run))
+    ? shares.missing.length === 0
       ? await sandboxChecks(deps, context, backend, run)
-      : skipSandbox(run, shares.missing);
+      : skipSandbox(run, shares.missing)
+    : undefined;
 
   run.progress.line("checking the host");
 
