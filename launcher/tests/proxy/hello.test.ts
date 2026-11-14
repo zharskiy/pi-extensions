@@ -123,7 +123,7 @@ describe("ClientHello on a tunnel", () => {
   });
 
   it("forwards the hello of a host reachable only through a grant", async () => {
-    await addGrant(state.stateDir, { host: "granted.test", port: 443, repoHash: REPO }, true, Date.now());
+    await addGrant(state.stateDir, { host: "granted.test", port: 443, repoHash: REPO }, Date.now());
 
     const hello = await captureHello("granted.test");
     const socket = await tunnelTo("granted.test:443");

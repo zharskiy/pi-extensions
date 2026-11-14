@@ -45,6 +45,35 @@ describe("the old config and state folders", () => {
     expect(harness.stderr()).not.toContain("is no longer read");
   });
 
+  it("says at launch that an old policy file named by PI_SANDBOX_POLICY_FILE is no longer read", async () => {
+    const fake = createFakeBackend();
+    const harness = await createHarness({ backend: () => fake.backend });
+    const policy = join(harness.deps.home, "policy.json");
+
+    await writeFile(policy, "{}");
+
+    harness.deps.env.PI_SANDBOX_POLICY_FILE = policy;
+
+    expect(await run([], harness.deps)).toBe(0);
+    expect(harness.stderr()).toContain(
+      `pi-sandbox: ${policy} is no longer read, so its limits do not apply; move what you need into ${harness.userConfigFile}\n`,
+    );
+  });
+
+  it("warns in the doctor about an old policy file", async () => {
+    const harness = await createHarness({ backend: () => unreachable(createFakeBackend().backend) });
+
+    harness.deps.env.PI_SANDBOX_POLICY_FILE = "/old/policy.json";
+
+    const checks = await doctorChecks(harness);
+
+    expect(checks.find((check) => check.name === "old policy")).toMatchObject({
+      status: "warn",
+      detail: "/old/policy.json is no longer read, so its limits do not apply",
+      hint: `move what you need into ${harness.userConfigFile}`,
+    });
+  });
+
   it("warns in the doctor about the old user config and the old state folder", async () => {
     const harness = await createHarness({ backend: () => unreachable(createFakeBackend().backend) });
 

@@ -330,14 +330,14 @@ describe("pi sandbox doctor", () => {
     expect(code).toBe(1);
   });
 
-  it("says a policy deny refused a rule host", async () => {
+  it("says egress.deny refused a rule host", async () => {
     const { stdout } = await doctorWithRefusals("error 0", [
       refusal("egress.deny", "models.example.test is in egress.deny"),
     ]);
 
     expect(check(stdout, RULE)).toMatchObject({
       detail: "https://models.example.test/: the sandbox proxy refused it",
-      reasons: ["denied by policy"],
+      reasons: ["denied by egress.deny"],
     });
     expect(check(stdout, RULE)?.hint).toBeUndefined();
   });
@@ -712,7 +712,7 @@ describe("pi sandbox doctor", () => {
     const failing = { ...fake.backend, buildImage: async () => Promise.reject(new Error("build failed")) };
     const harness = await createHarness({ backend: () => failing });
 
-    await harness.writeJson(harness.userConfigFile, { egress: { allow: [], presets: [] } });
+    await harness.writeJson(harness.userConfigFile, { egress: { allow: [] } });
 
     expect(await run(["sandbox", "doctor"], harness.deps)).toBe(1);
     expect(harness.stdout().split("\n")).toEqual([

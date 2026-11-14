@@ -85,10 +85,6 @@ const volumeLines = (context: LaunchContext) => {
 };
 
 const grantStatus = async (context: LaunchContext) => {
-  if (!context.effective.config.egress.grants) {
-    return ["grants: turned off by egress.grants"];
-  }
-
   const lines = await grantLines(context);
 
   return [`grants: ${lines.length} active`, ...lines.map((line) => `grant: ${line}`)];

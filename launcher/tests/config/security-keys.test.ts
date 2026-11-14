@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { validateLayer } from "../../config/validate.ts";
+import { validateConfig } from "../../config/validate.ts";
 import { errorMessage } from "../../shared/index.ts";
 
 const SECRET_VALUE = "sk-live-value-that-must-not-leak";
 
-const problemOf = (value: unknown, layer = "user") => {
+const problemOf = (value: unknown) => {
   try {
-    validateLayer(value, layer);
+    validateConfig(value);
 
     return undefined;
   } catch (error) {
@@ -22,7 +22,7 @@ const rule = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-const FULL_LAYER = {
+const FULL_CONFIG = {
   credentials: {
     rules: [
       rule(),
@@ -55,8 +55,6 @@ const FULL_LAYER = {
   egress: {
     deny: ["paste.example.test", "*.tracker.test:8443"],
     privateHosts: ["*.corp.internal", "git.corp.internal"],
-    parentProxy: "none",
-    grants: true,
   },
   tls: { extraCa: [{ file: "/etc/corp/ca.pem" }, { hostStore: true }] },
   image: {
@@ -66,16 +64,17 @@ const FULL_LAYER = {
   },
 };
 
-describe("validateLayer with the credential, egress, tls and image keys", () => {
-  it("accepts every new key in the policy and user layers and returns the layer", () => {
-    expect(validateLayer(FULL_LAYER, "policy")).toEqual(FULL_LAYER);
-    expect(validateLayer(FULL_LAYER, "user")).toEqual(FULL_LAYER);
+describe("validateConfig with the credential, egress, tls and image keys", () => {
+  it("accepts every key and returns the config", () => {
+    expect(validateConfig(FULL_CONFIG)).toEqual(FULL_CONFIG);
   });
 
   it("accepts credentials as rules and derive only", () => {
     expect(problemOf({ credentials: { rules: [rule()] } })).toBeUndefined();
     expect(problemOf({ credentials: { derive: { enabled: false } } })).toBeUndefined();
-    expect(problemOf({ credentials: { kind: "static" } })).toBe("user: credentials.kind is not a known key");
+    expect(problemOf({ credentials: { kind: "static" } })).toBe(
+      "config: credentials.kind is not a known key",
+    );
   });
 
   it("refuses malformed rules with the dotted key", () => {
@@ -140,40 +139,37 @@ describe("validateLayer with the credential, egress, tls and image keys", () => 
 
     cases.forEach(([entry, message]) => {
       expect(problemOf({ credentials: { rules: [JSON.parse(JSON.stringify(entry))] } })).toBe(
-        `user: ${message}`,
+        `config: ${message}`,
       );
     });
   });
 
   it("refuses duplicate rule ids", () => {
     expect(problemOf({ credentials: { rules: [rule(), rule()] } })).toBe(
-      "user: credentials.rules has a duplicate id",
+      "config: credentials.rules has a duplicate id",
     );
   });
 
   it("refuses private hosts that are IP literals or loopback", () => {
     expect(problemOf({ egress: { privateHosts: ["10.1.2.3"] } })).toBe(
-      "user: egress.privateHosts[0] must not be an IP address",
+      "config: egress.privateHosts[0] must not be an IP address",
     );
     expect(problemOf({ egress: { privateHosts: ["::1"] } })).toBe(
-      "user: egress.privateHosts[0] must not be an IP address",
+      "config: egress.privateHosts[0] must not be an IP address",
     );
     expect(problemOf({ egress: { privateHosts: ["gw.corp.test:443"] } })).toBe(
-      "user: egress.privateHosts[0] must be a host name or *.domain",
+      "config: egress.privateHosts[0] must be a host name or *.domain",
     );
     expect(problemOf({ egress: { privateHosts: ["localhost"] } })).toBe(
-      "user: egress.privateHosts[0] must not name loopback",
+      "config: egress.privateHosts[0] must not name loopback",
     );
     expect(problemOf({ egress: { privateHosts: ["db.localhost"] } })).toBe(
-      "user: egress.privateHosts[0] must not name loopback",
+      "config: egress.privateHosts[0] must not name loopback",
     );
   });
 
-  it("checks the parent proxy, grants, extra CA and image shapes", () => {
+  it("checks the egress, extra CA and image shapes", () => {
     const cases: Array<[unknown, string]> = [
-      [{ egress: { parentProxy: "auto" } }, "egress.parentProxy must be one of env, none"],
-      [{ egress: { parentProxy: { url: "http://proxy.test:3128" } } }, "egress.parentProxy must be a string"],
-      [{ egress: { grants: { enabled: true } } }, "egress.grants must be true or false"],
       [{ egress: { deny: ["https://x.test"] } }, "egress.deny[0] must be a host name or host:port"],
       [{ tls: { extraCa: [{ hostStore: false }] } }, "tls.extraCa[0].hostStore must be true"],
       [{ tls: { extraCa: [{ url: "https://ca.test" }] } }, "tls.extraCa[0] must set one of file, hostStore"],
@@ -206,7 +202,7 @@ describe("validateLayer with the credential, egress, tls and image keys", () => 
     ];
 
     cases.forEach(([layer, message]) => {
-      expect(problemOf(layer)).toBe(`user: ${message}`);
+      expect(problemOf(layer)).toBe(`config: ${message}`);
     });
   });
 

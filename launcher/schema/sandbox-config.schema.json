@@ -1,16 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/zharskiy/pi-extensions/launcher/schema/sandbox-config.schema.json",
-  "title": "pi sandbox config layer",
-  "description": "One layer of the pi sandbox config: the administrator's policy file or the user config. A key the policy sets is final; egress.allow, egress.deny, egress.privateHosts, image.packages, image.npmGlobal, credentials.rules and env.allow add up across the two layers, except that a policy setting egress.grants to false locks egress: the user config's egress.allow and egress.privateHosts entries are then ignored.",
+  "title": "pi sandbox config",
+  "description": "The pi sandbox config file, owned by the user who runs the launcher. A key it sets replaces the built-in default; env.allow adds to the default terminal variables.",
   "type": "object",
   "additionalProperties": false,
   "properties": {
     "$schema": {
       "type": "string"
-    },
-    "fallback": {
-      "enum": ["refuse", "host"]
     },
     "image": {
       "type": "object",
@@ -41,7 +38,7 @@
             "type": "string",
             "pattern": "^(@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*@[0-9][0-9A-Za-z.+-]*$"
           },
-          "description": "npm packages (name@version) installed globally in an image layer; the entries of every layer add up."
+          "description": "npm packages (name@version) installed globally in an image layer."
         },
         "dockerfile": {
           "type": "string",
@@ -308,7 +305,7 @@
               "template": ["header"]
             }
           },
-          "description": "Credential rules, each with an id no other rule of the same layer uses (a rule whose id a higher layer already uses is ignored).",
+          "description": "Credential rules, each with an id no other rule uses.",
           "uniqueItems": true
         },
         "derive": {
@@ -379,14 +376,7 @@
               }
             ]
           },
-          "description": "Hosts the sandbox may reach: host, *.domain (exactly one label more, not the domain itself) or host:port; an entry without a port allows 443 only. No IP address, localhost or port 80. Ignored in the user config when the policy sets egress.grants to false."
-        },
-        "presets": {
-          "type": "array",
-          "items": {
-            "enum": ["npm", "pypi", "github", "maven", "gradle", "go", "cargo"]
-          },
-          "description": "Package registry host sets added to egress.allow. Default npm, pypi and github; [] turns them off."
+          "description": "Hosts the sandbox may reach: host, *.domain (exactly one label more, not the domain itself) or host:port; an entry without a port allows 443 only. No IP address, localhost or port 80. Empty by default; pi.dev is always allowed."
         },
         "deny": {
           "type": "array",
@@ -416,7 +406,7 @@
               }
             ]
           },
-          "description": "Hosts never allowed, granted or derived; the union of every layer. A bare name denies that name and every name under it (paste.example.com denies www.paste.example.com and a.b.paste.example.com); *.domain denies every name under domain but not domain itself. An entry without a port denies every port."
+          "description": "Hosts never allowed, granted or derived. A bare name denies that name and every name under it (paste.example.com denies www.paste.example.com and a.b.paste.example.com); *.domain denies every name under domain but not domain itself. An entry without a port denies every port."
         },
         "privateHosts": {
           "type": "array",
@@ -441,15 +431,7 @@
               }
             ]
           },
-          "description": "Names that may resolve to private addresses, such as a private gateway host; never IP literals or loopback. Ignored in the user config when the policy sets egress.grants to false."
-        },
-        "parentProxy": {
-          "enum": ["env", "none"],
-          "description": "Upstream proxy: env (host HTTPS_PROXY, the default) or none."
-        },
-        "grants": {
-          "type": "boolean",
-          "description": "Whether pi sandbox egress allow may add hosts. Default true. false in the policy also locks egress: the user config's egress.allow and egress.privateHosts are ignored."
+          "description": "Names that may resolve to private addresses, such as a private gateway host; never IP literals or loopback."
         }
       }
     },

@@ -52,8 +52,8 @@ describe("child environments", () => {
   it("hands the daemon's parent route the credentials the launcher sent on stdin", () => {
     const parentEnv = parentProxyEnv({ HTTPS_PROXY: "http://u%40corp:p%3Ass@corp.test:3128" });
 
-    expect(parentRouteFor("env", parentEnv)?.authorization).toBeUndefined();
-    expect(parentRouteFor("env", helperProxyEnv(parentEnv, "u@corp:p:ss"))).toEqual({
+    expect(parentRouteFor(parentEnv)?.authorization).toBeUndefined();
+    expect(parentRouteFor(helperProxyEnv(parentEnv, "u@corp:p:ss"))).toEqual({
       host: "corp.test",
       port: 3128,
       noProxy: [],

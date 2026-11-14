@@ -1,4 +1,4 @@
-import { type CredentialRule, type ParentProxy, parentProxyOf, type SecretRef } from "../../config/index.ts";
+import { type CredentialRule, parentProxyOf, type SecretRef } from "../../config/index.ts";
 import { LauncherError, urlPartOf } from "../../shared/index.ts";
 import type { CachedSecret } from "./cache.ts";
 import { unavailable } from "./errors.ts";
@@ -30,8 +30,8 @@ const envNameOf = (entry: EnvSecretEntry) =>
 const envSecretEntries = (rules: CredentialRule[]): EnvSecretEntry[] =>
   rules.filter((rule) => "env" in rule.secret).map((rule) => ({ key: rule.id, ref: rule.secret }));
 
-export const parentProxyAuth = (parent: ParentProxy, env: NodeJS.ProcessEnv) => {
-  const target = parentProxyOf(parent, env);
+export const parentProxyAuth = (env: NodeJS.ProcessEnv) => {
+  const target = parentProxyOf(env);
 
   return target === undefined || "unsupported" in target ? undefined : target.credentials;
 };

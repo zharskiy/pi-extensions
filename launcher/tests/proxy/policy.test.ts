@@ -93,19 +93,10 @@ describe("decideConnect", () => {
 });
 
 describe("denial hint", () => {
-  it("offers egress allow while grants are on", () => {
+  it("offers egress allow", () => {
     expect(decideConnect({ host: "tools.test", port: 8443 }, policy)).toMatchObject({
       reason:
         "tools.test:8443 is not allowed by the sandbox. Ask the user to run pi sandbox egress allow tools.test:8443 on the host.",
-    });
-  });
-
-  it("points at egress.allow when grants are off", () => {
-    expect(decideConnect({ host: "evil.test", port: 443 }, { ...policy, grants: false })).toEqual({
-      allowed: false,
-      rule: "egress.allow",
-      reason:
-        "evil.test is not allowed by the sandbox. Egress grants are off; ask the user to have their administrator add evil.test to egress.allow.",
     });
   });
 });
@@ -189,14 +180,7 @@ describe("decideConnect with deny, rule hosts and extra entries", () => {
   });
 
   it("allows pi.dev on 443 by default, not its subdomains or other ports, unless egress.deny names it", () => {
-    const allow = egressAllowList({
-      allow: [],
-      presets: [],
-      deny: [],
-      privateHosts: [],
-      parentProxy: "env",
-      grants: true,
-    });
+    const allow = egressAllowList({ allow: [], deny: [], privateHosts: [] });
     const decide = (host: string, port: number, deny: string[] = []) =>
       decideConnect({ host, port }, { allow, deny });
 

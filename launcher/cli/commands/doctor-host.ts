@@ -16,7 +16,7 @@ import { type CliDeps, hostAgentDirOf } from "../deps.ts";
 import { providerHostsOf } from "../derive.ts";
 import { missingPi, resolveJobPi } from "../host-pi.ts";
 import { hostSessionsOf } from "../host-sessions.ts";
-import { leftoverState, movedConfig } from "../legacy-paths.ts";
+import { ignoredPolicy, leftoverState, movedConfig } from "../legacy-paths.ts";
 import { isOlderVersion, testedPiVersion } from "../versions.ts";
 import {
   type CheckResult,
@@ -96,8 +96,8 @@ const reachable = (host: string, port: number) =>
     socket.once("error", () => resolve(false));
   });
 
-const checkParentProxy = async (deps: CliDeps, context: LaunchContext) => {
-  const target = parentProxyOf(context.effective.config.egress.parentProxy, deps.env);
+const checkParentProxy = async (deps: CliDeps) => {
+  const target = parentProxyOf(deps.env);
 
   if (target === undefined) {
     return skipped("no parent proxy configured");
@@ -196,7 +196,11 @@ const checkSessions = async (deps: CliDeps, context: LaunchContext, files: HostP
 };
 
 const legacyChecks = async (deps: CliDeps): Promise<NamedCheck[]> => {
-  const [config, state] = await Promise.all([movedConfig(deps), leftoverState(deps)]);
+  const [config, state, policy] = await Promise.all([
+    movedConfig(deps),
+    leftoverState(deps),
+    ignoredPolicy(deps),
+  ]);
   const legacyCheck =
     (name: string) =>
     (legacy: { problem: string; fix: string }): NamedCheck => ({
@@ -205,7 +209,11 @@ const legacyChecks = async (deps: CliDeps): Promise<NamedCheck[]> => {
       result: warned(legacy.problem, { hint: legacy.fix }),
     });
 
-  return [...config.map(legacyCheck("user config")), ...state.map(legacyCheck("old state"))];
+  return [
+    ...config.map(legacyCheck("user config")),
+    ...policy.map(legacyCheck("old policy")),
+    ...state.map(legacyCheck("old state")),
+  ];
 };
 
 const named = async (name: string, section: Section, result: Promise<CheckResult>): Promise<NamedCheck> => ({
@@ -221,7 +229,7 @@ export const hostChecks = async (deps: CliDeps, context: LaunchContext): Promise
     Promise.all([
       named("host pi", "host", checkHostPi(deps, context, pi)),
       named("provider hosts", "host", checkProviderHosts(deps, context, pi)),
-      named("parent proxy", "network", checkParentProxy(deps, context)),
+      named("parent proxy", "network", checkParentProxy(deps)),
       named("sessions", "host", checkSessions(deps, context, files)),
     ]),
     signInChecks(deps, files),

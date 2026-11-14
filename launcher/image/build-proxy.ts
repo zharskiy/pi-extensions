@@ -1,5 +1,5 @@
 import { VM_HOST_ALIAS } from "../backend/index.ts";
-import { type ParentProxy, parentProxyOf } from "../config/index.ts";
+import { parentProxyOf } from "../config/index.ts";
 import { LauncherError } from "../shared/index.ts";
 
 const LOOPBACK_HOSTS = ["127.0.0.1", "localhost", "::1"];
@@ -16,11 +16,8 @@ const urlHost = (host: string) => {
   return reachable.includes(":") ? `[${reachable}]` : reachable;
 };
 
-export const buildProxyArgs = (
-  parentProxy: ParentProxy,
-  env: Record<string, string | undefined>,
-): Record<string, string> => {
-  const target = parentProxyOf(parentProxy, env);
+export const buildProxyArgs = (env: Record<string, string | undefined>): Record<string, string> => {
+  const target = parentProxyOf(env);
 
   if (target === undefined || "unsupported" in target) {
     return {};

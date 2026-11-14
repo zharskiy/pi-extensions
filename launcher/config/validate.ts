@@ -9,8 +9,7 @@ import {
   type ToolConfigFormat,
 } from "../shared/index.ts";
 import { parseHostEntry, SECRET_MARKER } from "./egress-entry.ts";
-import { EGRESS_PRESETS } from "./egress-presets.ts";
-import { FALLBACKS, type LayerConfig, PARENT_PROXIES } from "./types.ts";
+import type { UserConfig } from "./types.ts";
 
 type Check = (value: string) => string | undefined;
 
@@ -24,6 +23,7 @@ interface ObjectSpec {
   required?: readonly string[];
   check?: ObjectCheck;
   atomic?: true;
+  removed?: Record<string, string>;
 }
 
 type Spec =
@@ -222,10 +222,15 @@ const port: Spec = { type: "number", exclusiveMinimum: 0, maximum: MAX_PORT, int
 
 const flag: Spec = { type: "boolean" };
 
-const shape = (properties: Record<string, Spec>, required?: readonly string[]): ObjectSpec => ({
+const shape = (
+  properties: Record<string, Spec>,
+  required?: readonly string[],
+  removed?: Record<string, string>,
+): ObjectSpec => ({
   type: "object",
   properties,
   required,
+  removed,
 });
 
 const SECRET_REF: Spec = {
@@ -283,11 +288,11 @@ const EXTRA_CA: Spec = {
   },
 };
 
-const LAYER_SPEC: ObjectSpec = {
+const CONFIG_SPEC: ObjectSpec = {
   type: "object",
+  removed: { fallback: "was removed; --no-sandbox is always available" },
   properties: {
     $schema: text(),
-    fallback: choice(FALLBACKS),
     image: {
       ...shape({
         reference: text(nonEmpty),
@@ -302,14 +307,19 @@ const LAYER_SPEC: ObjectSpec = {
       rules: { type: "array", items: CREDENTIAL_RULE, check: uniqueIds },
       derive: shape({ enabled: flag, hosts: list(hostPattern) }),
     }),
-    egress: shape({
-      allow: list(egressEntry),
-      presets: { type: "array", items: choice(Object.keys(EGRESS_PRESETS)) },
-      deny: list(egressEntry),
-      privateHosts: list(hostPattern),
-      parentProxy: choice(PARENT_PROXIES),
-      grants: flag,
-    }),
+    egress: shape(
+      {
+        allow: list(egressEntry),
+        deny: list(egressEntry),
+        privateHosts: list(hostPattern),
+      },
+      undefined,
+      {
+        presets: "was removed; list the hosts in egress.allow, see REMOVED-DEFAULTS.md",
+        grants: "was removed; grants are always on",
+        parentProxy: "was removed; the parent proxy is always taken from the environment",
+      },
+    ),
     tls: shape({ extraCa: { type: "array", items: EXTRA_CA } }),
     workspaceRoots: {
       type: "object",
@@ -343,7 +353,7 @@ const MAX_SHOWN = 200;
 const PRINTABLE = /^[\x20-\x7e]*$/;
 
 const NAMED_PATHS =
-  /^(fallback|egress\.presets\[\d+\]|image\.(dockerfile|packages\[\d+\])|tls\.extraCa\[\d+\]\.file|workspaceRoots\.roots\[\d+\]|mounts\.sharedCaches\[\d+\]|env\.allow\[\d+\])$/;
+  /^(image\.(dockerfile|packages\[\d+\])|tls\.extraCa\[\d+\]\.file|workspaceRoots\.roots\[\d+\]|mounts\.sharedCaches\[\d+\]|env\.allow\[\d+\])$/;
 
 const shown = (value: string) => {
   const cut = value.length > MAX_SHOWN ? `${value.slice(0, MAX_SHOWN)}...` : value;
@@ -390,6 +400,12 @@ const numberProblem = (
 const objectProblem = (spec: ObjectSpec, value: unknown, path: string): Problem | undefined => {
   if (!isJsonObject(value)) {
     return { path, problem: path === "" ? "must be a JSON object" : "must be an object" };
+  }
+
+  const removedKey = Object.entries(spec.removed ?? {}).find(([name]) => Object.hasOwn(value, name));
+
+  if (removedKey !== undefined) {
+    return { path: joinPath(path, removedKey[0]), problem: removedKey[1] };
   }
 
   const unknownKey = Object.keys(value).find((key) => !Object.hasOwn(spec.properties, key));
@@ -453,24 +469,24 @@ const problemOf = (spec: Spec, value: unknown, path: string): Problem | undefine
   return spec.type === "keyed" ? keyedProblem(spec.variants, value, path) : objectProblem(spec, value, path);
 };
 
-const normalized = (layer: LayerConfig): LayerConfig => {
-  const caches = layer.mounts?.sharedCaches;
+const normalized = (config: UserConfig): UserConfig => {
+  const caches = config.mounts?.sharedCaches;
 
   return caches === undefined
-    ? layer
-    : { ...layer, mounts: { ...layer.mounts, sharedCaches: caches.map(withoutTrailingSlash) } };
+    ? config
+    : { ...config, mounts: { ...config.mounts, sharedCaches: caches.map(withoutTrailingSlash) } };
 };
 
-export const validateLayer = (value: unknown, layerName: string): LayerConfig => {
-  const found = problemOf(LAYER_SPEC, value, "");
+export const validateConfig = (value: unknown): UserConfig => {
+  const found = problemOf(CONFIG_SPEC, value, "");
 
   if (found !== undefined) {
     throw new LauncherError(
-      found.path === "" ? `${layerName}: ${found.problem}` : `${layerName}: ${found.path} ${found.problem}`,
+      found.path === "" ? `config: ${found.problem}` : `config: ${found.path} ${found.problem}`,
     );
   }
 
-  return normalized(value as LayerConfig);
+  return normalized(value as UserConfig);
 };
 
 const keysOf = (spec: Spec, path: string): string[] => {
@@ -488,11 +504,11 @@ const keysOf = (spec: Spec, path: string): string[] => {
   return spec.type === "array" ? keysOf(spec.items, `${path}[]`) : [];
 };
 
-export const layerKeys = () => keysOf(LAYER_SPEC, "");
+export const configKeys = () => keysOf(CONFIG_SPEC, "");
 
 const leavesOf = (spec: Spec, path: string): string[] =>
   spec.type === "object" && spec.atomic !== true
     ? Object.entries(spec.properties).flatMap(([key, child]) => leavesOf(child, joinPath(path, key)))
     : [path];
 
-export const leafKeys = () => leavesOf(LAYER_SPEC, "").filter((key) => key !== "$schema");
+export const leafKeys = () => leavesOf(CONFIG_SPEC, "").filter((key) => key !== "$schema");

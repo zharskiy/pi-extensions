@@ -1,10 +1,4 @@
-import {
-  authorityOf,
-  egressAllowList,
-  isEgressLocked,
-  parentProxyOf,
-  parseHostEntry,
-} from "../config/index.ts";
+import { authorityOf, egressAllowList, parentProxyOf, parseHostEntry } from "../config/index.ts";
 import { type Launch, othersLive, withRepoLaunchLock } from "../grants/index.ts";
 import {
   type DenialRecord,
@@ -30,18 +24,16 @@ type InputParts = Omit<RepoProxyInput, "token">;
 
 const proxyInput = (deps: CliDeps, context: LaunchContext, host: HostSide): InputParts => {
   const { egress, tls } = context.effective.config;
-  const parentAuth = parentProxyAuth(egress.parentProxy, deps.env);
+  const parentAuth = parentProxyAuth(deps.env);
 
   return {
     repoHash: context.repoHash,
     allow: egressAllowList(egress),
     deny: egress.deny,
     privateHosts: egress.privateHosts,
-    grants: egress.grants,
     rules: host.derived.rules,
     derivedHosts: host.derived.hosts,
     envSecrets: envSecretsFor(host.derived.rules, deps.env),
-    parent: egress.parentProxy,
     parentEnv: parentProxyEnv(deps.env),
     ...(parentAuth === undefined ? {} : { parentAuth }),
     extraCa: tls.extraCa.length > 0,
@@ -51,11 +43,11 @@ const proxyInput = (deps: CliDeps, context: LaunchContext, host: HostSide): Inpu
   };
 };
 
-const parentNotices = (deps: CliDeps, context: LaunchContext) => {
-  const target = parentProxyOf(context.effective.config.egress.parentProxy, deps.env);
+const parentNotices = (deps: CliDeps) => {
+  const target = parentProxyOf(deps.env);
 
   return target !== undefined && "unsupported" in target
-    ? [`egress.parentProxy: ${target.unsupported}; the proxy connects directly`]
+    ? [`parent proxy: ${target.unsupported}; the proxy connects directly`]
     : [];
 };
 
@@ -68,7 +60,7 @@ const startProxy = async (deps: CliDeps, context: LaunchContext, parts: InputPar
     othersLive: () => othersLive(context.stateDir, context.repoHash, launch.launchId),
   });
 
-  writeNotices(deps, [...started.notices, ...parentNotices(deps, context)]);
+  writeNotices(deps, [...started.notices, ...parentNotices(deps)]);
 
   return { proxy: started.proxy, token };
 };
@@ -102,20 +94,12 @@ const RESTRICTED_RULES = new Set(["private-address", "loopback", "link-local", "
 const NEVER_REACHABLE =
   "IP addresses and loopback names are never reachable from the sandbox; use a host name";
 
-const loginHint = (context: LaunchContext) =>
-  context.effective.config.fallback === "host"
-    ? "log in again with pi --no-sandbox and /login"
-    : "log in again with host pi";
+const LOGIN_HINT = "log in again with pi --no-sandbox and /login";
 
-const privateHostsHint = (deps: CliDeps, host: string, context: LaunchContext) => {
-  if ("problem" in parseHostEntry(host, { wildcard: false, port: false })) {
-    return NEVER_REACHABLE;
-  }
-
-  return isEgressLocked(context.effective)
-    ? `egress is locked by the policy; ask your administrator to add ${host} to egress.privateHosts`
+const privateHostsHint = (deps: CliDeps, host: string) =>
+  "problem" in parseHostEntry(host, { wildcard: false, port: false })
+    ? NEVER_REACHABLE
     : `add ${host} to egress.privateHosts in ${pathsOf(deps).userConfigFile}`;
-};
 
 export interface DenialAdvice {
   reason?: string;
@@ -129,23 +113,19 @@ export const denialAdvice = (
   context: LaunchContext,
 ): DenialAdvice => {
   if (denial.rule === "egress.allow") {
-    return {
-      fix: context.effective.config.egress.grants
-        ? `run pi sandbox egress allow ${target} on the host from ${context.workspace.repoRoot}`
-        : `ask your administrator to add ${target} to egress.allow`,
-    };
+    return { fix: `run pi sandbox egress allow ${target} on the host from ${context.workspace.repoRoot}` };
   }
 
   if (RESTRICTED_RULES.has(denial.rule)) {
-    return { reason: denial.reason, fix: privateHostsHint(deps, denial.host, context) };
+    return { reason: denial.reason, fix: privateHostsHint(deps, denial.host) };
   }
 
   const advice: Record<string, DenialAdvice> = {
-    "egress.deny": { reason: "denied by policy" },
+    "egress.deny": { reason: "denied by egress.deny" },
     "plain-http": { reason: "plain HTTP is not proxied", fix: "use https" },
     upstream: { reason: `it could not be reached: ${denial.reason}` },
     credential: { reason: `it could not authenticate: ${denial.reason}` },
-    login: { reason: denial.reason, fix: loginHint(context) },
+    login: { reason: denial.reason, fix: LOGIN_HINT },
   };
 
   return advice[denial.rule] ?? { reason: denial.reason };

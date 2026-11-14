@@ -6,7 +6,6 @@ export interface EgressSettings {
   allow: string[];
   deny: string[];
   privateHosts: string[];
-  grants: boolean;
   derivedHosts: string[];
 }
 
@@ -15,7 +14,6 @@ export interface RepoProxyInput extends EgressSettings {
   token: string;
   rules: CredentialRule[];
   envSecrets: Record<string, string>;
-  parent: "env" | "none";
   parentEnv: Record<string, string>;
   parentAuth?: string;
   extraCa: boolean;
@@ -36,7 +34,6 @@ export const egressSettingsOf = (input: EgressSettings): EgressSettings => ({
   allow: input.allow,
   deny: input.deny,
   privateHosts: input.privateHosts,
-  grants: input.grants,
   derivedHosts: input.derivedHosts,
 });
 
@@ -50,7 +47,6 @@ export const parseEgressSettings = (
   isTextList(value.allow) &&
   isTextList(value.deny) &&
   isTextList(value.privateHosts) &&
-  typeof value.grants === "boolean" &&
   isTextList(value.derivedHosts)
     ? egressSettingsOf(value as unknown as EgressSettings)
     : undefined;

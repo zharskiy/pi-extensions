@@ -13,7 +13,7 @@ describe("error rendering", () => {
 
     const [message, hint, ...rest] = harness.stderr().split("\n");
 
-    expect(message).toMatch(/^pi-sandbox: user: backend /);
+    expect(message).toMatch(/^pi-sandbox: config: backend /);
     expect(hint).toBe(`  hint: fix ${harness.userConfigFile}`);
     expect(rest).toEqual([""]);
   });
@@ -24,8 +24,6 @@ describe("error rendering", () => {
         throw new LauncherError("engine refused");
       },
     });
-
-    await harness.writeJson(harness.userConfigFile, { fallback: "refuse" });
 
     expect(await run([], harness.deps)).toBe(1);
     expect(harness.stderr()).toBe("pi-sandbox: engine refused\n");

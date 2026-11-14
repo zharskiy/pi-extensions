@@ -1,3 +1,4 @@
+export { egressAllowList } from "./egress-allow.ts";
 export {
   authorityOf,
   fillTemplate,
@@ -12,9 +13,7 @@ export {
   SECRET_MARKER,
   TLS_PORT,
 } from "./egress-entry.ts";
-export { egressAllowList } from "./egress-presets.ts";
 export { loadEffectiveConfig } from "./load.ts";
-export { ignoredNotice, isEgressLocked } from "./merge.ts";
 export { parentProxyOf } from "./parent-proxy.ts";
 export type {
   CredentialRule,
@@ -22,7 +21,6 @@ export type {
   EffectiveConfig,
   ExtraCa,
   FileSecret,
-  ParentProxy,
   SandboxConfig,
   SecretRef,
 } from "./types.ts";

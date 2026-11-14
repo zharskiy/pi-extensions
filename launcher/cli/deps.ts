@@ -90,8 +90,8 @@ export const onClosedOutput = (streams: NodeJS.WritableStream[], closed: () => v
   });
 };
 
-export const pathsOf = (deps: Pick<CliDeps, "env" | "home" | "platform">) =>
-  launcherPaths({ env: deps.env, home: deps.home, platform: deps.platform });
+export const pathsOf = (deps: Pick<CliDeps, "env" | "home">) =>
+  launcherPaths({ env: deps.env, home: deps.home });
 
 export const hostAgentDirOf = (deps: CliDeps) => hostAgentDir(deps.home, deps.env);
 

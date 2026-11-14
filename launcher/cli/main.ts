@@ -29,7 +29,7 @@ const realDeps = (): CliDeps => {
   const runner = withResolvedCommand(createProcessRunner(), "git", hostGit(env, cwd));
   const home = homedir();
   const platform = process.platform;
-  const { stateDir } = pathsOf({ env, home, platform });
+  const { stateDir } = pathsOf({ env, home });
 
   return {
     runner,

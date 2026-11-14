@@ -18,8 +18,6 @@ const DENIED_FLAG = "--denied";
 
 const HELP_FLAGS = ["-h", "--help"];
 
-const GRANTS_OFF = "grants are turned off by egress.grants";
-
 const usage = (problem: string) => new LauncherError(problem, usageOf("egress"));
 
 const isFlag = (arg: string) => arg.startsWith("-");
@@ -79,7 +77,6 @@ const allow = async (deps: CliDeps, args: string[]) => {
   const grant = await addGrant(
     context.stateDir,
     { ...target, ...(user ? {} : { repoHash: context.repoHash }) },
-    context.effective.config.egress.grants,
     deps.now(),
   );
   const scope = user ? "every repository" : context.workspace.repoRoot;
@@ -137,10 +134,6 @@ const deniedLines = async (deps: CliDeps, context: LaunchContext) => {
 };
 
 const listedGrants = async (context: LaunchContext) => {
-  if (!context.effective.config.egress.grants) {
-    return [GRANTS_OFF];
-  }
-
   const lines = await grantLines(context);
 
   return lines.length === 0 ? ["no active grants"] : lines;

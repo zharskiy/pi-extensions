@@ -337,12 +337,11 @@ describe("env and file secrets", () => {
   });
 
   it("hands the parent proxy credentials from HTTPS_PROXY", () => {
-    expect(parentProxyAuth("env", { HTTPS_PROXY: "http://corp:p%40ss@proxy.test:3128" })).toBe("corp:p@ss");
-    expect(parentProxyAuth("none", { HTTPS_PROXY: "http://corp:pass@proxy.test:3128" })).toBeUndefined();
-    expect(parentProxyAuth("env", { HTTPS_PROXY: "", https_proxy: "http://corp:pass@proxy.test:3128" })).toBe(
+    expect(parentProxyAuth({ HTTPS_PROXY: "http://corp:p%40ss@proxy.test:3128" })).toBe("corp:p@ss");
+    expect(parentProxyAuth({ HTTPS_PROXY: "", https_proxy: "http://corp:pass@proxy.test:3128" })).toBe(
       "corp:pass",
     );
-    expect(parentProxyAuth("env", { HTTPS_PROXY: "socks5://corp:pass@proxy.test:1080" })).toBeUndefined();
+    expect(parentProxyAuth({ HTTPS_PROXY: "socks5://corp:pass@proxy.test:1080" })).toBeUndefined();
   });
 
   it("refuses an env credential that holds a line break", () => {

@@ -1,9 +1,5 @@
 import type { ToolConfigFormat } from "../shared/index.ts";
 
-export const FALLBACKS = ["refuse", "host"] as const;
-
-type Fallback = (typeof FALLBACKS)[number];
-
 export type FileSecret =
   | { file: string; pointer: string }
   | { file: string; format: ToolConfigFormat; key: string; urlPassword?: true; urlUsername?: true };
@@ -36,25 +32,16 @@ interface CredentialsConfig {
   derive: DeriveConfig;
 }
 
-export const PARENT_PROXIES = ["env", "none"] as const;
-
-export type ParentProxy = (typeof PARENT_PROXIES)[number];
-
 export type ExtraCa = { file: string } | { hostStore: true };
 
 interface WorkspaceRootsConfig {
   roots: string[];
 }
 
-export type EgressPreset = "npm" | "pypi" | "github" | "maven" | "gradle" | "go" | "cargo";
-
 interface EgressConfig {
   allow: string[];
-  presets: EgressPreset[];
   deny: string[];
   privateHosts: string[];
-  parentProxy: ParentProxy;
-  grants: boolean;
 }
 
 interface ImageConfig {
@@ -71,7 +58,6 @@ interface MountsConfig {
 }
 
 export interface SandboxConfig {
-  fallback: Fallback;
   image: ImageConfig;
   credentials: CredentialsConfig;
   egress: EgressConfig;
@@ -83,12 +69,7 @@ export interface SandboxConfig {
   sessions: { host: boolean };
 }
 
-export type LayerName = "policy" | "user";
-
-export type ConfigSource = "default" | LayerName;
-
-export interface LayerConfig {
-  fallback?: Fallback;
+export interface UserConfig {
   image?: Partial<ImageConfig>;
   credentials?: {
     rules?: CredentialRule[];
@@ -103,14 +84,9 @@ export interface LayerConfig {
   sessions?: Partial<SandboxConfig["sessions"]>;
 }
 
-export interface IgnoredKey {
-  layer: ConfigSource;
-  key: string;
-  reason: string;
-}
-
 export interface EffectiveConfig {
   config: SandboxConfig;
-  sources: Record<string, string>;
-  ignored: IgnoredKey[];
+  sources: Record<string, ConfigSource>;
 }
+
+export type ConfigSource = "default" | "config" | "default+config";

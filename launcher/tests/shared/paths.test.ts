@@ -15,61 +15,40 @@ import {
 
 const home = "/home/dev";
 
-const missing = () => false;
-
 const sourceRoot = resolve(import.meta.dirname, "..", "..");
 
 const compiledModule = pathToFileURL("/opt/pkg/launcher/dist/shared/paths.js").href;
 
 describe("launcherPaths", () => {
-  it("uses the macOS policy location on darwin", () => {
-    expect(launcherPaths({ env: {}, platform: "darwin", home, fileExists: missing })).toEqual({
+  it("keeps the config and the state under pi's default agent dir", () => {
+    expect(launcherPaths({ env: {}, home })).toEqual({
       stateDir: "/home/dev/.pi/agent/pi-sandbox/state",
       userConfigFile: "/home/dev/.pi/agent/pi-sandbox/config.json",
-      policyFile: "/Library/Application Support/pi-sandbox/policy.json",
     });
-  });
-
-  it("uses /etc for the policy on linux", () => {
-    expect(launcherPaths({ env: {}, platform: "linux", home, fileExists: missing }).policyFile).toBe(
-      "/etc/pi-sandbox/policy.json",
-    );
   });
 
   it("lets the environment override every path", () => {
     const env = {
       PI_SANDBOX_STATE_DIR: "/tmp/state",
       PI_SANDBOX_USER_CONFIG: "/tmp/user.json",
-      PI_SANDBOX_POLICY_FILE: "/tmp/policy.json",
     };
 
-    expect(launcherPaths({ env, platform: "darwin", home, fileExists: missing })).toEqual({
+    expect(launcherPaths({ env, home })).toEqual({
       stateDir: "/tmp/state",
       userConfigFile: "/tmp/user.json",
-      policyFile: "/tmp/policy.json",
     });
-  });
-
-  it("ignores the policy override when the standard policy file exists", () => {
-    const standard = "/Library/Application Support/pi-sandbox/policy.json";
-    const env = { PI_SANDBOX_POLICY_FILE: "/tmp/policy.json" };
-    const paths = launcherPaths({ env, platform: "darwin", home, fileExists: (path) => path === standard });
-
-    expect(paths.policyFile).toBe(standard);
   });
 
   it("ignores empty overrides", () => {
     const env = { PI_SANDBOX_USER_CONFIG: "" };
 
-    expect(launcherPaths({ env, platform: "linux", home }).userConfigFile).toBe(
-      "/home/dev/.pi/agent/pi-sandbox/config.json",
-    );
+    expect(launcherPaths({ env, home }).userConfigFile).toBe("/home/dev/.pi/agent/pi-sandbox/config.json");
   });
 
   it("follows pi's agent dir for the config and the state", () => {
     const env = { PI_CODING_AGENT_DIR: "~/work/agent" };
 
-    expect(launcherPaths({ env, platform: "linux", home, fileExists: missing })).toMatchObject({
+    expect(launcherPaths({ env, home })).toMatchObject({
       stateDir: "/home/dev/work/agent/pi-sandbox/state",
       userConfigFile: "/home/dev/work/agent/pi-sandbox/config.json",
     });

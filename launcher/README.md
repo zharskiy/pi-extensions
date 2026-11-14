@@ -97,12 +97,12 @@ Pi's own installer comes first here too: the launcher runs only pi's managed ins
 
 ## Everyday use
 
-In the table, *host pi* is pi's managed install on your Mac, and `fallback` is the setting that allows `--no-sandbox`. A *grant* is a host you allowed. *Overlay* and *agent* volumes are storage the VM keeps for the folder's build output and pi's own files.
+In the table, *host pi* is pi's managed install on your Mac. A *grant* is a host you allowed. *Overlay* and *agent* volumes are storage the VM keeps for the folder's build output and pi's own files.
 
 | command | what it does |
 | --- | --- |
 | `pi [args...]` | run pi in the sandbox for this repository; pi's exit code is the launcher's |
-| `pi --no-sandbox [args...]` | run host pi, when fallback is host |
+| `pi --no-sandbox [args...]` | run host pi, outside the sandbox |
 | `pi install\|remove <source>` | with host pi on the host (-l passes through into the sandbox) |
 | `pi mcp add\|remove\|login\|logout ...` | with host pi on the host |
 | `pi auth ...` | with host pi on the host, against the logins the proxy uses |
@@ -112,7 +112,7 @@ In the table, *host pi* is pi's managed install on your Mac, and `fallback` is t
 | `pi --version` | the pi version the sandbox runs, without starting a sandbox |
 | `pi update` | update host pi |
 | `pi sandbox status` | runtime, container, proxy, image, launches, grants, overlays, shared caches |
-| `pi sandbox config [--json]` | the effective config and the layer each key comes from |
+| `pi sandbox config [--json]` | the effective config and whether each key comes from the config file or the default |
 | `pi sandbox egress allow <host[:port]> [--user]` | allow a host for this repository, or with --user for every repository, until revoked |
 | `pi sandbox egress revoke <host[:port]> [--user]` | remove a grant |
 | `pi sandbox egress list [--denied]` | grants with their scope, or the hosts the proxy blocked |
@@ -169,25 +169,20 @@ The full list is in [known gaps](THREAT-MODEL.md#5-known-gaps).
 
 ## Configuration
 
-Your settings go in `~/.pi/agent/pi-sandbox/config.json` (inside pi's agent folder, so under `PI_CODING_AGENT_DIR` when you set it). An older `~/.config/pi-sandbox/config.json` is no longer read; the launch tells you to move it. Nothing in the project folder configures the sandbox. A Java developer might use:
+Your settings go in `~/.pi/agent/pi-sandbox/config.json` (inside pi's agent folder, so under `PI_CODING_AGENT_DIR` when you set it). An older `~/.config/pi-sandbox/config.json` is no longer read; the launch tells you to move it. This one file is the whole configuration: it belongs to you, and a team can share a copy of it as is. Nothing in the project folder configures the sandbox. A Java developer might use:
 
 ```json
 {
-  "egress": { "presets": ["npm", "pypi", "github", "maven", "gradle"], "allow": ["registry.corp.example"] },
+  "egress": { "allow": ["registry.npmjs.org", "repo1.maven.org", "plugins.gradle.org", "registry.corp.example"] },
   "image": { "packages": ["openjdk-17-jdk-headless", "maven"] }
 }
 ```
 
-- `egress.presets`: sets of package registry hosts. The default is `npm`, `pypi` and `github`.
-- `egress.allow`: more hosts the sandbox may reach.
+- `egress.allow`: the hosts the sandbox may reach besides `pi.dev` and your providers. It is empty by default, so package registries such as `registry.npmjs.org` are reachable only once you list them or allow them with `pi sandbox egress allow`.
 - `image.packages` and `image.npmGlobal`: Debian and npm packages to add to the image.
 - `mounts.sharedCaches`: cache folders such as `~/.npm`, kept in volumes that all your sandboxes share. Your Mac's own folder is not mounted.
 
-`pi sandbox config` shows the result. Every key, credentials and corporate proxies are in [CONFIGURATION.md](CONFIGURATION.md).
-
-### For administrators
-
-A policy file at `/Library/Application Support/pi-sandbox/policy.json` sets limits users cannot loosen. A value it sets is final, and lists such as `egress.allow` add up. Make it writable by root only. See [For administrators](CONFIGURATION.md#for-administrators).
+`pi sandbox config` shows the result. Every key, credentials and corporate proxies are in [CONFIGURATION.md](CONFIGURATION.md), and [examples/config.json](examples/config.json) is a starting point for a team's shared file.
 
 ## Troubleshooting
 
@@ -197,7 +192,7 @@ Start with `pi sandbox doctor`, which names the failing check.
 | --- | --- |
 | A host `was blocked in this folder's sandbox` | Follow the hint in that line. `pi sandbox doctor` puts the same hint under the `rule` check of a credential host the proxy refused, for example the address a host resolved to and the `egress.privateHosts` entry that allows it, and reports any other host blocked during its run as a `blocked <host:port>` warning. |
 | The doctor's `trust` or `rule` check fails with `CERT_NOT_YET_VALID` | The VM's clock is behind the host's. Run `pi sandbox stop` once no pi session runs, then `pi sandbox doctor` again, which starts the VM afresh. |
-| A provider login is missing or expired | Run `pi --no-sandbox`, then `/login`. If `fallback` is `refuse`, log in with host pi itself. |
+| A provider login is missing or expired | Run `pi --no-sandbox`, then `/login`. |
 | Pi says `the sandbox VM engine is unreachable` | Run `colima start --profile pi-sandbox --activate=false`, or `install.sh` if the profile is gone. |
 | The VM is running but its engine does not answer | Run `colima stop --profile pi-sandbox && colima start --profile pi-sandbox --activate=false`. |
 | A folder is not shared with the VM | Exit your other pi sessions and run `pi` again. |

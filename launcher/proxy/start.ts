@@ -119,7 +119,6 @@ const proxyInputHash = async (stateDir: string, input: RepoProxyInput) => {
     allow: _allow,
     deny: _deny,
     privateHosts: _privateHosts,
-    grants: _grants,
     derivedHosts: _derivedHosts,
     ...rest
   } = input;

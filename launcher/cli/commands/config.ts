@@ -14,10 +14,9 @@ const showConfig = async (deps: CliDeps, json: boolean) => {
 
   const listing = Object.entries(effective.sources)
     .sort(([left], [right]) => left.localeCompare(right))
-    .map(([key, layer]) => `# ${key}: ${layer}`);
-  const ignored = effective.ignored.map((entry) => `# ignored ${entry.layer} ${entry.key}: ${entry.reason}`);
+    .map(([key, source]) => `# ${key}: ${source}`);
 
-  writeLines(deps.stdout, [JSON.stringify(effective.config, null, 2), ...listing, ...ignored]);
+  writeLines(deps.stdout, [JSON.stringify(effective.config, null, 2), ...listing]);
 
   return 0;
 };

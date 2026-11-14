@@ -8,20 +8,16 @@ const writeJson = async (path: string, value: unknown) => {
   await writeFile(path, typeof value === "string" ? value : JSON.stringify(value));
 };
 
-export const createLayers = async () => {
+export const createConfigFile = async () => {
   const root = await tempDir("config");
-  const policyFile = join(root, "policy.json");
   const userFile = join(root, "user", "config.json");
 
   return {
-    policyFile,
     userFile,
     env: {
-      PI_SANDBOX_POLICY_FILE: policyFile,
       PI_SANDBOX_USER_CONFIG: userFile,
       PI_SANDBOX_STATE_DIR: join(root, "state"),
     },
-    policy: (value: unknown) => writeJson(policyFile, value),
-    user: (value: unknown) => writeJson(userFile, value),
+    write: (value: unknown) => writeJson(userFile, value),
   };
 };

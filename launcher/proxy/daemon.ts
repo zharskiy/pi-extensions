@@ -120,7 +120,7 @@ const run = async (args: DaemonArgs) => {
     resolver,
     ca,
     log: log.write,
-    dial: createDialer({ parent: parentRouteFor(input.parent, parentEnv) }),
+    dial: createDialer({ parent: parentRouteFor(parentEnv) }),
     upstreamCa: await upstreamTrust(args.stateDir, input.extraCa),
   });
   const record: RepoProxy = { ...(await processMark()), port: server.port, inputHash };

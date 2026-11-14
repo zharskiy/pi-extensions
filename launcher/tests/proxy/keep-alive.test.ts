@@ -116,7 +116,7 @@ const proxyWith = async (dial?: ReturnType<typeof createDialer>) => {
 
 const viaParent = () =>
   createDialer({
-    parent: parentRouteFor("env", {
+    parent: parentRouteFor({
       HTTPS_PROXY: `http://127.0.0.1:${portOf(state.parent as unknown as Server)}`,
     }),
     resolve: async () => [{ address: "93.184.216.34", family: 4 }],

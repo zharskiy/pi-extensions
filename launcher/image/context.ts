@@ -41,7 +41,7 @@ export const buildInContext = async (
 
     await build.fill(contextDir);
 
-    const buildArgs = { ...buildProxyArgs(input.config.egress.parentProxy, input.env ?? {}), ...build.args };
+    const buildArgs = { ...buildProxyArgs(input.env ?? {}), ...build.args };
 
     return await input.backend.buildImage(contextDir, build.tag, buildArgs, input.progress);
   } finally {

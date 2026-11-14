@@ -62,9 +62,7 @@ describe.skipIf(!liveEnabled)("behind a TLS-inspecting parent proxy with tls.ext
       },
     });
 
-    await sandbox.writeUserConfig(
-      fixtureConfig(sandbox, { extraCa: [parentCa.certPath], egress: { parentProxy: "none" } }),
-    );
+    await sandbox.writeUserConfig(fixtureConfig(sandbox, { extraCa: [parentCa.certPath] }));
 
     const prebuild = await sandbox.pi(["mcp", "list"]).done;
 
@@ -75,13 +73,6 @@ describe.skipIf(!liveEnabled)("behind a TLS-inspecting parent proxy with tls.ext
     state.llm.seen.splice(0);
 
     state.mcp.seen.splice(0);
-
-    await sandbox.writeUserConfig(
-      fixtureConfig(sandbox, {
-        extraCa: [parentCa.certPath],
-        egress: { parentProxy: "env" },
-      }),
-    );
   }, 600_000);
 
   afterAll(async () => {
