@@ -8,6 +8,8 @@ import { join } from "node:path";
 import { createServer as createTlsServer, type Server as TlsServer } from "node:tls";
 import { promisify } from "node:util";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import type { Backend, ExecIo, ExecSpec } from "../../backend/index.ts";
+import { readSandboxTls } from "../../cli/commands/doctor-tls.ts";
 import { run } from "../../cli/index.ts";
 import type { FakeCall } from "../support/fake-runner.ts";
 import { createFakeBackend, createHarness, doctorCheck, isTlsProbeScript, unreachable } from "./harness.ts";
@@ -243,6 +245,19 @@ const runForReal = (call: FakeCall) =>
     child.stdin.end(call.options.input ?? "");
   });
 
+const containerNode = (env: Record<string, string>) => (spec: ExecSpec, io: ExecIo) =>
+  new Promise<number>((resolve) => {
+    const child = spawn(process.execPath, spec.command.slice(1), { env, stdio: ["pipe", "pipe", "pipe"] });
+
+    child.stdout.on("data", (chunk: Buffer) => io.stdout.write(chunk));
+
+    child.stderr.on("data", (chunk: Buffer) => io.stderr.write(chunk));
+
+    child.on("close", (code) => resolve(code ?? 1));
+
+    io.stdin?.pipe(child.stdin);
+  });
+
 const KEYCHAINS = (home: string) => [
   "/Library/Keychains/System.keychain",
   join(home, "Library", "Keychains", "login.keychain-db"),
@@ -341,6 +356,7 @@ describe("pi sandbox doctor tls inspection", () => {
       host: "pi.dev",
       port: 443,
       trusts: ["builtin"],
+      timeoutMs: 10_000,
     });
     expect(harness.calls.filter((call) => call.file === "security")).toEqual([]);
   });
@@ -442,6 +458,26 @@ describe("pi sandbox doctor tls inspection", () => {
       expect(security).toEqual([]);
     },
   );
+
+  it("runs the container's probe command for real through HTTPS_PROXY with the container's NODE_EXTRA_CA_CERTS", async () => {
+    const { root, leaf, intermediate } = chainOf();
+    const proxy = await parentProxy();
+    const bundle = pathOf("root.pem");
+    const backend: Backend = {
+      ...unreachable(createFakeBackend().backend),
+      exec: containerNode({ HTTPS_PROXY: proxy.url, NODE_EXTRA_CA_CERTS: bundle }),
+    };
+
+    const reading = await readSandboxTls({ backend, containerId: "sandbox", workdir: state.dir });
+
+    const presented = "chain" in reading ? reading.chain.map(fingerprintOf) : [];
+
+    expect(reading).toMatchObject({ verdicts: [null], extraCaEnv: bundle });
+    expect(presented).toEqual([leaf.cert, intermediate.cert, root].map(fingerprintOf));
+    expect(proxy.connects).toEqual([
+      { target: "pi.dev:443", authorization: `Basic ${Buffer.from("corp:p@ss").toString("base64")}` },
+    ]);
+  });
 
   it("reports a network failure as an unreachable host, not as inspection", async () => {
     const { found, asked } = await doctorThroughInspection({ answer: "502" });
