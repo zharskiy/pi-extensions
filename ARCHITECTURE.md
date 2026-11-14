@@ -55,7 +55,7 @@ The launcher (`launcher/`, host side) is the one exception outside the extension
 
 ## Folders
 
-- [pi-adapter](platform/pi-adapter/ARCHITECTURE.md): the only shipped code that imports pi; the host, the agent runtime and the UI bridge. Its `KeyPress.shortcut` is what every letter hotkey matches, so the hotkeys fire on the same physical key in a Cyrillic layout.
+- [pi-adapter](platform/pi-adapter/ARCHITECTURE.md): the only shipped code that imports pi; the host, the agent runtime and the UI bridge. Its `KeyPress.shortcut` is what every letter hotkey matches, so the hotkeys fire on the same physical key in a Cyrillic layout. Every extension factory also installs, and has pi await, a process-wide guard on `FileHandle.prototype.createReadStream` that absorbs the orphaned `'error'` of a stream created on an already aborted signal: a workaround for pi's `read` tool (pi 1.5.1 and later, `readLocalFileChunks`), whose aborted reads otherwise end the whole pi with an `uncaughtException`, agents included; remove it once pi guards that call itself ([Aborted-read guard](platform/pi-adapter/ARCHITECTURE.md#aborted-read-guard)).
 - [shared](platform/shared/ARCHITECTURE.md): pi-free, theme-free, host-free helpers and the cross-extension formats.
 - [ui-kit](platform/ui-kit/ARCHITECTURE.md): theme-aware components: the row language, hints, lists, fixed-height scroll windows, forms and tabs, flat or grouped in labelled rows.
 - [extension-manager](platform/extension-manager/ARCHITECTURE.md): `createManagedExtension`, plugins, the bus and settings.
