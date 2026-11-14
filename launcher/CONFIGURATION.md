@@ -6,7 +6,7 @@ Every setting of the sandbox, where its one config file lives, and how credentia
 
 The sandbox reads one JSON file: `~/.pi/agent/pi-sandbox/config.json` (`pi-sandbox/config.json` under `PI_CODING_AGENT_DIR` when set). It belongs to you, the user who runs the launcher; there is no other config file and no setting above yours. A key you set replaces its default; `env.allow` adds to the default terminal variables.
 
-Without the file the defaults apply. The launcher reads it at every launch and never writes it. Nothing in the project folder configures the sandbox.
+Without the file the defaults apply. The launcher reads it at every launch and writes it only in `pi sandbox init`, which changes only the keys it asks about: `workspaceRoots`, `vm.cpus`, `vm.memoryGiB`, `vm.diskGiB` and `writeBack.enabled`. It keeps every other key and their order, and the file's indentation where it can. Nothing in the project folder configures the sandbox.
 
 The config used to live in `~/.config/pi-sandbox/config.json`. That file is no longer read: while it exists and the new one does not, every launch and `pi sandbox doctor` name both paths. Move it yourself; the launcher never touches the old folder.
 
@@ -59,10 +59,10 @@ Connections that are already open stay until they close.
 | `env.allow` | Variables from your shell passed into each run. | terminal variables |
 | `resources.cpus` | CPU limit of each sandbox container, inside the VM. | no limit (the whole VM) |
 | `resources.memoryGiB` | Memory limit of each sandbox container, in GiB, inside the VM. | no limit (the whole VM) |
-| `vm.cpus`, `vm.memoryGiB`, `vm.diskGiB` | The size of the VM itself, which every container shares ([below](#vm-size)). | the size `install.sh` gave it |
-| `writeBack` | Which settings changed inside come back to your Mac ([below](#settings-written-back)). | the built-in list |
+| `vm.cpus`, `vm.memoryGiB`, `vm.diskGiB` | The size of the VM itself, which every container shares ([below](#vm-size)). | the size the VM was created with; set by `pi sandbox init` |
+| `writeBack` | Which settings changed inside come back to your Mac ([below](#settings-written-back)); `pi sandbox init` sets `writeBack.enabled`. | the built-in list |
 | `sessions.host` | Keep sessions in host pi's own session folder. | `true` |
-| `workspaceRoots` | Folders pi may start in, as `{ "roots": [...] }`, and the only folders the VM shares ([below](#workspace-roots)). | anywhere; the VM shares your home |
+| `workspaceRoots` | Folders pi may start in, as `{ "roots": [...] }`, and the only folders the VM shares ([below](#workspace-roots)); set by `pi sandbox init`. | anywhere; the VM shares your home |
 
 The sections below explain each group.
 
@@ -196,11 +196,11 @@ The volumes stay until you uninstall. `pi sandbox reset` and the daily cleanup d
 { "vm": { "cpus": 4, "memoryGiB": 8, "diskGiB": 80 } }
 ```
 
-Every key is optional. Without `vm` the VM keeps the size `install.sh` gave it: this Mac's CPU count from 2 to 8, half its memory from 4 to 10 GiB, and a 60 GiB disk. `cpus` is 1 to 64, `memoryGiB` 2 to 256 and `diskGiB` 20 to 2048, whole numbers.
+Every key is optional; `pi sandbox init` sets them when you choose Custom, and removes them when you choose Automatic. Without `vm` the VM keeps the size it was created with, by default this Mac's CPU count from 2 to 8, half its memory from 4 to 10 GiB, and a 60 GiB disk. `cpus` is 1 to 64, `memoryGiB` 2 to 256 and `diskGiB` 20 to 2048, whole numbers.
 
 `vm` sizes the VM, which runs every sandbox container of every folder. `resources` limits one container inside it. A `resources` value above the matching `vm` value is a config error, since no container could get it.
 
-At a launch with no other pi session running, a VM whose size differs is restarted with the values that differ, and a line says so. While other sessions run, the launch goes on and a line says the size changes at the next launch with none running. Colima cannot shrink a disk: a `diskGiB` below the current disk is reported at each launch and ignored. A stopped VM starts at the new size directly. `pi sandbox doctor` compares the VM with `vm` and never restarts it. `install.sh` does not read `vm` yet; it sizes a new VM from your Mac or its own `--cpu`, `--memory` and `--disk` flags.
+At a launch with no other pi session running, a VM whose size differs is restarted with the values that differ, and a line says so. While other sessions run, the launch goes on and a line says the size changes at the next launch with none running. Colima cannot shrink a disk: a `diskGiB` below the current disk is reported at each launch and ignored. A stopped VM starts at the new size directly. `pi sandbox doctor` compares the VM with `vm` and never restarts it. `pi sandbox init` creates a new VM with `vm` where set and the automatic size otherwise, and applies a changed size at once when no pi session runs.
 
 ## Settings written back
 
@@ -262,7 +262,7 @@ A root is refused when it holds `,`, `:`, a newline or another control character
 
 The VM's shares follow the config of whichever agent dir launches pi, since every agent dir uses the same `pi-sandbox` VM. Two agent dirs with different roots therefore make the VM restart when you switch between them while no pi session runs; while a session of either runs, a launch counts it as a live session.
 
-To set the roots on a new machine before the VM exists, pass them to the installer: `install.sh --root <dir>` or `PI_SANDBOX_ROOTS` (see [Limit what the VM can see](README.md#limit-what-the-vm-can-see)).
+`pi sandbox init` chooses the roots with you and applies them to the VM at once, restarting it when no pi session runs. In a script, or on a machine without a terminal, set `PI_SANDBOX_ROOTS` and run `pi sandbox init --yes` (or `install.sh`, which does): it writes the roots into a config without `workspaceRoots`, and stops when the config names other roots (see [Set up the sandbox](README.md#set-up-the-sandbox)).
 
 ## Variables passed into the sandbox
 
@@ -458,3 +458,6 @@ Replace the `*.example.internal` names with your own hosts, and add the package 
 | Provider API key variables | Derived as credentials. The proxy reads them on your Mac. |
 | The names in `env.allow` | Passed into each pi run. |
 | `COLIMA_HOME` | Ignored. The launcher always uses `~/.colima/pi-sandbox`. |
+| `PI_SANDBOX_ROOTS` | Read by `pi sandbox init`: project folders separated by `:` (a relative one counts from the current folder). On a first run the interactive setup lists them checked; `--yes` writes them to a config without `workspaceRoots`. |
+| `PI_SANDBOX_PLAIN` | When set, `pi sandbox init` asks its questions as numbered lines, with no cursor movement and no colour, for screen readers and plain terminals. |
+| `CI` | When set, `pi sandbox init` without `--yes` refuses instead of asking, and never opens `/dev/tty`. |

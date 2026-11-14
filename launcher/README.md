@@ -43,26 +43,61 @@ npm install -g --omit=peer pi-extensions-mz
 
 Without the managed install, `install.sh` stops before it changes anything and says to install pi this way and run it again.
 
-The script starts a Colima profile named `pi-sandbox` and puts `~/.local/bin` first on `PATH` in your shell startup files. Open a new terminal afterwards.
+The script puts `~/.local/bin` first on `PATH` in your shell startup files, then runs `pi sandbox init`, which asks which folders hold your projects, shows the VM size it picked for this Mac, and creates the VM when you choose Apply. Open a new terminal afterwards.
 
 If `~/.local/bin/pi` is pi's own managed install, the script replaces that link. An earlier pi-sandbox link or wrapper is replaced too. Any other file there stops the install.
 
-The VM gets this Mac's CPU count, from 2 to 8, and half its memory, from 4 to 10 GiB, with a 60 GiB disk. To change that, pass `--cpu N`, `--memory GiB` or `--disk GiB` to `install.sh`. To resize the VM later, set `vm` in the config (see [VM size](CONFIGURATION.md#vm-size)); the next launch with no other pi session running restarts the VM to it. By hand, while no pi runs:
+To change the folders or the VM size later, run `pi sandbox init` again.
 
-```bash
-colima stop --profile pi-sandbox && colima start --profile pi-sandbox --activate=false --cpu 4 --memory 8
+### Set up the sandbox
+
+`pi sandbox init` sets up the sandbox in three short steps, then shows a review: the project folders, the VM size and the settings write-back. Nothing is saved until you choose Apply. A first run looks like this (in plain mode; a normal terminal draws the same as a menu you move through with the arrow keys):
+
+```
+pi sandbox setup
+This Mac: 12 CPUs, 32 GiB memory, 412 GiB free disk
+Sandbox VM: not created yet
+Nothing is saved until you choose Apply.
+
+Which folders hold your projects?   step 1 of 3
+  1) [x] ~/Projects (14 git repositories)
+  2) [x] ~/work (3 git repositories, you are here)
+  3) [ ] ~/src (no git repository found)
+Folders [1 2]:
+
+VM size   step 2 of 3
+  1) Automatic (8 CPUs, 10 GiB memory, 60 GiB disk)
+  2) Custom...
+Choose [1]:
+
+Copy settings changed in the sandbox back to your pi?   step 3 of 3 (Y/n):
+
+Review
+  Project folders: ~/Projects, ~/work (chosen)
+  VM size: 8 CPUs, 10 GiB memory, 60 GiB disk (automatic)
+  Settings write-back: on (default)
+  1) Apply
+  ...
+Saved ~/.pi/agent/pi-sandbox/config.json
+Created the VM in 54s: 8 CPUs, 10 GiB memory, 60 GiB disk
+Done. The sandbox is ready.
 ```
 
-### Limit what the VM can see
+- **Project folders.** The list holds the usual project folders of your home (`~/Projects`, `~/Developer`, `~/code` and the like) and the top folder of where you are, with the number of git repositories in each; those with repositories start checked, and you can add any other folder. Pi starts only inside a chosen folder, and the VM shares only these folders (writable), pi's session folder `~/.pi/agent/sessions` (writable) and the launcher's `state/vm` folder (read-only, the rendered files and the trust bundle). With no folder chosen, the VM shares your whole home, writable, so a container escape reaches all of `~`; setup asks before it allows that.
+- **VM size.** Automatic follows this Mac: its CPU count from 2 to 8, half its memory from 4 to 10 GiB, and a 60 GiB disk. Custom asks for each value; the disk can only grow.
+- **Settings write-back.** On by default: preference changes made inside the sandbox are copied to your pi on this Mac (see [Settings written back](CONFIGURATION.md#settings-written-back)).
 
-Without roots, the VM shares your whole home, writable, so a container escape reaches all of `~`. Name your project folders at install instead:
+Run again, `pi sandbox init` opens the review with your current settings. It writes only `workspaceRoots`, `vm.cpus`, `vm.memoryGiB`, `vm.diskGiB` and `writeBack.enabled` in `~/.pi/agent/pi-sandbox/config.json`, and keeps every other key and their order. Apply creates the VM, or restarts it with the new size or folders when no pi session runs; while sessions run, it keeps the VM as it is and the first pi you start after they all exit restarts it. Ctrl-c or Cancel leaves everything as it was, with exit status 130.
+
+`PI_SANDBOX_PLAIN=1` asks the same questions as numbered lines, with no cursor movement and no colour: for screen readers and plain terminals. A dumb or unset `TERM` gets plain mode too.
+
+Without a terminal (CI, a provisioning script, `ssh host install.sh`), `pi sandbox init` refuses, and `pi sandbox init --yes` asks nothing: it keeps the settings in the file and applies them to the VM. `install.sh` uses `--yes` when it finds no terminal or `CI` is set. To name the project folders there, set `PI_SANDBOX_ROOTS`, which `--yes` writes to a config without `workspaceRoots`:
 
 ```bash
-"$(npm root -g)/pi-extensions-mz/launcher/install.sh" --root ~/Projects --root /Volumes/Work
 PI_SANDBOX_ROOTS="$HOME/Projects:/Volumes/Work" "$(npm root -g)/pi-extensions-mz/launcher/install.sh"
 ```
 
-`--root` wins over `PI_SANDBOX_ROOTS`. The script writes the roots to `workspaceRoots` in `~/.pi/agent/pi-sandbox/config.json`, and the VM then shares only these folders (writable), pi's session folder `~/.pi/agent/sessions` (writable) and the launcher's `state/vm` folder (read-only, the rendered files and the trust bundle). Pi then starts only inside a root. `--root ""` is refused. If `config.json` exists, the install goes ahead only when its `workspaceRoots` name the same folders (order, a trailing `/` and `~` against the full path do not matter); otherwise, also when it has no `workspaceRoots`, the install stops and leaves it as it is: edit `workspaceRoots` there, or install without `--root`. When the VM does not share the first root yet, the smoke check runs only the host checks and says the sandbox part runs at the first pi launch. A VM created earlier keeps its shares until the first pi launch, which restarts it with the new ones. See [Workspace roots](CONFIGURATION.md#workspace-roots).
+A config whose `workspaceRoots` name other folders stops `--yes` (order, a trailing `/` and `~` against the full path do not matter). For the VM size, set `vm` in the config first (see [VM size](CONFIGURATION.md#vm-size)). When the VM does not share the first root yet, the install's smoke check runs only the host checks and says the sandbox part runs at the first pi launch. See [Workspace roots](CONFIGURATION.md#workspace-roots).
 
 <details>
 <summary>Install from a checkout</summary>
