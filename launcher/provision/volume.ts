@@ -18,11 +18,27 @@ const CAT_SCRIPT = `${REGULAR_FILE_GUARD}; cat "$1"`;
 
 const REMOVE_SCRIPT = 'rm -f "$1"';
 
+const REMOVE_DIRS_SCRIPT = [
+  'root=$1; shift; refused=""; failed=0; set -f',
+  'for name in "$@"; do',
+  "  dir=$root; linked=0; IFS=/",
+  '  for part in $(dirname -- "$name"); do dir=$dir/$part; [ -L "$dir" ] && linked=1; done',
+  "  unset IFS",
+  '  if [ "$linked" = 1 ]; then refused="$refused $name"; elif ! rm -rf -- "$root/$name"; then failed=1; fi',
+  "done",
+  '[ -z "$refused" ] || { echo "$refused"; exit 5; }',
+  'exit "$failed"',
+].join("\n");
+
+const SYMLINKED_EXIT = 5;
+
 const MISSING_EXIT = 3;
 
 const NOT_REGULAR_EXIT = 4;
 
 const READ_TIMEOUT_MS = 5000;
+
+const REMOVE_TIMEOUT_MS = 60_000;
 
 const guestPath = (name: string) => posix.join(GUEST_PATHS.agentDir, name);
 
@@ -109,6 +125,41 @@ export const readVolumeText = async (
   }
 
   return result.stdout;
+};
+
+export const removeVolumeDirs = async (
+  backend: Backend,
+  containerId: string,
+  names: string[],
+  timeoutMs = REMOVE_TIMEOUT_MS,
+) => {
+  const result = await execCapture(
+    backend,
+    {
+      containerId,
+      command: ["sh", "-c", REMOVE_DIRS_SCRIPT, "sh", GUEST_PATHS.agentDir, ...names],
+      env: {},
+      workdir: "/",
+    },
+    "",
+    timeoutMs,
+  ).catch((error: unknown) => {
+    throw new LauncherError(
+      `could not remove the outdated packages from the sandbox volume: ${errorMessage(error)}`,
+    );
+  });
+
+  if (result.code === SYMLINKED_EXIT) {
+    throw new LauncherError(
+      `refused to remove ${result.stdout.trim()} from the sandbox volume: a parent folder is a symbolic link`,
+    );
+  }
+
+  if (result.code !== 0) {
+    throw new LauncherError(
+      `could not remove the outdated packages from the sandbox volume (exit ${result.code})`,
+    );
+  }
 };
 
 export const removeVolumeFile = async (backend: Backend, containerId: string, name: string) => {
