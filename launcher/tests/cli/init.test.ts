@@ -2,6 +2,7 @@ import { EventEmitter } from "node:events";
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { PassThrough } from "node:stream";
+import { stripVTControlCharacters } from "node:util";
 import { describe, expect, it } from "vitest";
 import type { VmDesired, VmInspect } from "../../backend/index.ts";
 import { type CliDeps, run } from "../../cli/index.ts";
@@ -62,21 +63,37 @@ const withTty = (deps: CliDeps, extra: Partial<CliDeps> = {}) => {
   return { input, output, deps: ttyDeps };
 };
 
-const typed = (input: ReturnType<typeof fakeInput>, ...keys: string[]) =>
-  keys.reduce(
-    (chain, key) =>
-      chain.then(async () => {
-        await pause(30);
+const until = async (ready: () => boolean): Promise<void> => {
+  if (ready()) {
+    return;
+  }
 
-        input.write(key);
+  await pause(5);
+  return until(ready);
+};
 
-        await pause(30);
+const PLAIN_QUESTION = /: $/;
+
+const answered = (
+  input: ReturnType<typeof fakeInput>,
+  output: ReturnType<typeof fakeOutput>,
+  ...lines: string[]
+) =>
+  lines.reduce(
+    (chain, line) =>
+      chain.then(async (shown) => {
+        await until(
+          () => output.text().length > shown && PLAIN_QUESTION.test(stripVTControlCharacters(output.text())),
+        );
+
+        const asked = output.text().length;
+
+        input.write(`${line}\r`);
+
+        return asked;
       }),
-    Promise.resolve(),
+    Promise.resolve(0),
   );
-
-const answered = (input: ReturnType<typeof fakeInput>, ...lines: string[]) =>
-  typed(input, ...lines.map((line) => `${line}\r`));
 
 describe("pi sandbox init without a terminal", () => {
   it("refuses without a terminal, and with CI set even on one, and changes nothing", async () => {
@@ -398,7 +415,7 @@ describe("pi sandbox init at a terminal", () => {
     const tty = withTty(harness.deps);
     const exit = run(["sandbox", "init"], tty.deps);
 
-    await answered(tty.input, "", "", "", "");
+    await answered(tty.input, tty.output, "", "", "", "");
 
     expect(await exit).toBe(0);
     expect(JSON.parse(await readFile(harness.userConfigFile, "utf8"))).toEqual({
@@ -433,7 +450,9 @@ describe("pi sandbox init at a terminal", () => {
     const before = await listed(harness.root);
     const exit = run(["sandbox", "init"], deps);
 
-    await typed(streams.input, KEY.ctrlC);
+    await until(() => streams.input.isRaw && streams.output.text().includes("step 1 of 3"));
+
+    streams.input.write(KEY.ctrlC);
 
     expect(await exit).toBe(130);
     expect(streams.output.text()).toContain("Cancelled. Nothing was changed.");
@@ -450,7 +469,7 @@ describe("pi sandbox init at a terminal", () => {
         const tty = withTty(harness.deps, { signals });
         const exit = run(["sandbox", "init"], tty.deps);
 
-        await pause(150);
+        await until(() => signals.listenerCount(signal) > 0);
 
         signals.emit(signal);
 
