@@ -321,9 +321,18 @@ export const partsText = (parts: VmPart[]) => {
   return parts[0] === "size" ? "size" : "folders";
 };
 
-export const vmActionText = (action: VmAction) => {
+const afterExit = (sessions: number) => (sessions === 1 ? "after it exits" : "after they all exit");
+
+const CREATE_TAIL =
+  "this takes a minute or two, longer the first time while colima downloads the VM's system image";
+
+export const vmActionText = (action: VmAction, home: string) => {
   if (action.kind === "create") {
-    return "create the sandbox VM with these folders; this takes a minute or two, longer the first time while colima downloads the VM's system image";
+    const sharesHome = action.shares.some((share) => share.location === home);
+
+    return sharesHome
+      ? `create the sandbox VM sharing your whole home (~), writable; ${CREATE_TAIL}`
+      : `create the sandbox VM with these folders; ${CREATE_TAIL}`;
   }
 
   if (action.kind === "restart") {
@@ -331,7 +340,7 @@ export const vmActionText = (action: VmAction) => {
   }
 
   if (action.kind === "defer") {
-    return `keep the sandbox VM as it is for now: ${sessionsRunning(action.sessions)}. The first pi you start after they all exit restarts it with the new ${partsText(action.parts)}`;
+    return `keep the sandbox VM as it is for now: ${sessionsRunning(action.sessions)}. The first pi you start ${afterExit(action.sessions)} restarts it with the new ${partsText(action.parts)}`;
   }
 
   if (action.kind === "on-next-start") {
@@ -455,7 +464,7 @@ export const applyLines = (plan: Plan, facts: HostFacts, shape: FileShape, width
           ...bullet(fileBullet(plan, facts, shape.existed), room, plain),
           ...[...diff, ...reindent].flatMap((line) => wrap(`      ${line}`, room)),
         ];
-  const vmText = vmActionText(plan.vm);
+  const vmText = vmActionText(plan.vm, facts.home);
   const vm = vmText === undefined ? [] : bullet(vmText, room, plain);
 
   return ["When you apply:", ...file, ...vm];
@@ -534,7 +543,7 @@ export const progressText = (phase: VmPhase, action: VmAction) =>
   phaseText(phase, action.kind === "restart" ? action.parts : ["size", "folders"]);
 
 export const deferredLines = (sessions: number, parts: VmPart[]) => [
-  `▲ Kept as it is: ${sessionsRunning(sessions)}. The first pi you start after they all exit restarts it with the new ${partsText(parts)}.`,
+  `▲ Kept as it is: ${sessionsRunning(sessions)}. The first pi you start ${afterExit(sessions)} restarts it with the new ${partsText(parts)}.`,
 ];
 
 export const STOPPED_VM = "The VM is stopped; the next pi starts it with these settings.";

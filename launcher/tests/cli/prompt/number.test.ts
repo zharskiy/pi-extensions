@@ -26,7 +26,7 @@ describe("number", () => {
     expect(screen.lines()).toEqual([
       "◆  Memory for the VM, in GiB   this Mac has 32 GiB",
       "│  › 10",
-      "│  2 to 30 · ↑↓ change by 1 · enter next · esc back",
+      "│  2 to 30 · ↑↓ change by 1 · enter next · esc back · ctrl-c cancel",
     ]);
 
     await press(input, KEY.enter);

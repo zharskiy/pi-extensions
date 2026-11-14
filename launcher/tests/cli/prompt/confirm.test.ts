@@ -23,7 +23,7 @@ describe("confirm", () => {
       "│",
       "│  › No, choose folders     Yes, share ~",
       "│",
-      "│  ←→ choose · y/n · enter confirm · esc back",
+      "│  ←→ choose · y/n · enter confirm · esc back · ctrl-c cancel",
     ]);
 
     await press(input, KEY.enter);

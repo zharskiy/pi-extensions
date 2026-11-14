@@ -2,7 +2,7 @@ import { type Completer, createInterface } from "node:readline/promises";
 import { completePath } from "./complete.ts";
 import { dropQueuedKeys, isCtrl, listenKeys } from "./keys.ts";
 import { DIGITS, numberProblem } from "./line-editor.ts";
-import { asciiOf, elapsedOf, printable } from "./style.ts";
+import { asciiOf, elapsedOf, printable, wrap } from "./style.ts";
 import {
   BACK,
   Cancelled,
@@ -22,6 +22,8 @@ import {
 type Parsed<T> = { value: T } | { error: string };
 
 const HEARTBEAT_MS = 15_000;
+
+const PLAIN_WIDTH = 80;
 
 const PICKS = /[\s,]+/;
 
@@ -67,8 +69,12 @@ export const createPlainPrompts = (ui: Ui): Prompts => {
     ui.output.write(lines.map((line) => `${asciiOf(line)}\n`).join(""));
   };
 
+  const width = () => Math.min(ui.columns(), PLAIN_WIDTH);
+
   const detailOf = (detail: Detail | undefined) =>
-    typeof detail === "function" ? detail(ui.columns()) : (detail ?? []);
+    typeof detail === "function"
+      ? detail(ui.columns())
+      : (detail ?? []).flatMap((line) => (line === "" ? [""] : wrap(asciiOf(line), width() - 1)));
 
   const printCollapse = (title: string, collapse: Collapse) => {
     if (collapse === undefined) {

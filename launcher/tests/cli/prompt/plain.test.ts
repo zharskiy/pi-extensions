@@ -41,7 +41,8 @@ describe("plain prompts", () => {
 
     expect(screen.lines()).toEqual([
       "Which folders hold your projects?",
-      "Only these folders are shared with the sandbox VM, and pi starts only inside them.",
+      "Only these folders are shared with the sandbox VM, and pi starts only inside",
+      "them.",
       "  1) [x] ~/Projects (14 git repositories)",
       "  2) [x] ~/work (3 git repositories, you are here)",
       "  3) [ ] ~/src (no git repository found)",

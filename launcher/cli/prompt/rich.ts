@@ -604,7 +604,7 @@ const confirmView = (context: Context, spec: ConfirmSpec): View<boolean> => {
     frame: (width) => {
       const detail = detailOf(context, spec.detail, width);
       const body = [`${option(spec.initial)}   ${option(!spec.initial)}`];
-      const words = wordsOf(spec, { enter: "confirm", escape: "back", interrupt: false });
+      const words = wordsOf(spec, { enter: "confirm", escape: "back", interrupt: "cancel" });
       const hints = hintsOf(context, [`${glyphs.leftRight} choose`, "y/n", ...words], width);
 
       return composed(context, { title: spec.title, detail, body, after: [], hints });
@@ -831,7 +831,7 @@ const numberView = (context: Context, spec: NumberSpec): View<number> => {
     typing: true,
     frame: (width) => {
       const input = inputRow(context, state.line, width);
-      const words = wordsOf(spec, { enter: "next", escape: "back", interrupt: false });
+      const words = wordsOf(spec, { enter: "next", escape: "back", interrupt: "cancel" });
       const steps = `${context.glyphs.upDown} change by ${spec.step}`;
       const hints = hintsOf(context, [spec.hint, steps, ...words], width);
       const after = [

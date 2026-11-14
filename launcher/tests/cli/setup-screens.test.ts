@@ -201,14 +201,18 @@ describe("the hub", () => {
     const actions: VmAction[] = [
       { kind: "restart", size: SIZE, shares: [], exactShares: true, parts: ["size", "folders"] },
       { kind: "defer", sessions: 2, parts: ["folders"] },
+      { kind: "defer", sessions: 1, parts: ["size"] },
+      { kind: "create", size: SIZE, shares: [{ location: "/Users/me", writable: true }] },
       { kind: "on-next-start", parts: ["size"] },
       { kind: "unknown", reason: "colima status failed" },
       { kind: "none" },
     ];
 
-    expect(actions.map(vmActionText)).toEqual([
+    expect(actions.map((action) => vmActionText(action, "/Users/me"))).toEqual([
       "restart the sandbox VM with the new size and folders; no pi session is running, and this usually takes under a minute",
       "keep the sandbox VM as it is for now: 2 pi sessions are running. The first pi you start after they all exit restarts it with the new folders",
+      "keep the sandbox VM as it is for now: 1 pi session is running. The first pi you start after it exits restarts it with the new size",
+      "create the sandbox VM sharing your whole home (~), writable; this takes a minute or two, longer the first time while colima downloads the VM's system image",
       "the sandbox VM is stopped; the next pi starts it with the new size",
       "the sandbox VM could not be checked (colima status failed); run pi sandbox doctor after applying",
       undefined,
