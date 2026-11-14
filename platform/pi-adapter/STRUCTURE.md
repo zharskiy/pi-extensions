@@ -13,7 +13,8 @@
 - `types/usage.ts`: `UsageTotals`, `emptyUsage`, `addUsage`.
 - `types/view.ts`: view components, overlay and form APIs, transcript and scroll panes, editor frame, footer and entry renderers (`EntryRender`, `EntryOptions`).
 - `types/messages.ts`: `CommandSpec`, `CustomMessage` (displayed and hidden messages and seeds), `ImageAttachment` and `UserMessage` (a user's text with its images; the seed carries none), `RoutedMessage` (sender and text), `PromptTool`, `SkillInfo`, `SessionRecord`, `CodemodeShortfall`.
-- `runtime/extension.ts`: `createPiExtension`; boots the contract on pi; the child runtime's parent source.
+- `runtime/extension.ts`: `createPiExtension`; installs the aborted-read guard and returns its promise for pi to await, boots the contract on pi; the child runtime's parent source.
+- `runtime/aborted-read-guard.ts`: `guardAbortedReads`; the process-wide `FileHandle.prototype.createReadStream` wrapper that absorbs the orphaned `'error'` of a stream created on an already aborted signal, a workaround for pi's `read` tool (pi 1.5.1 and later) to remove once pi guards it.
 - `runtime/host.ts`: `createPiHost`; `Host` over the pi API, phase events, held hidden messages, the input hook, the new session's fill (editor text, seed, follow-ups) run inside `withSession`.
 - `runtime/phase.ts`: the turn phase reducer (waiting, thinking, writing, toolArgs, tool, idle).
 - `runtime/child-scope.ts`: the child scope in which no extension boots.
@@ -61,6 +62,7 @@
 - `context/usage-events.ts`: last and main request usage, the main one memoised on session and leaf.
 - `prompt/main-prompt.ts`: rebuilds the main session's system prompt.
 - `tests/conformance.test.ts`: pi internals the adapter relies on, checked offline (including the order of a model switch's thinking reset and `model_select`, an `input` handler swallowing a prompt, and a new session filled through the adapter's `newSession`: editor text, the seed's run, then a `/template` follow-up expanded with its image behind it, and two follow-ups delivered in order as separate user messages, one turn each).
+- `tests/aborted-read-guard.test.ts`: `runtime/aborted-read-guard.ts`, each test starting from the unguarded prototype: an aborted read rejects with no `uncaughtException`, a live one reads with no added error listener, an explicit listener still gets the error, the wrapper's name, length and flags, one wrap per process, the factory's returned install on the main-session and child-session paths, and, in child `node` processes, the crash without the guard and its absence with it, for a bare `FileHandle` stream and for pi's real `read` tool.
 - `tests/host.test.ts`: `runtime/host.ts` and `runtime/extension.ts` over pi, offline.
 - `tests/read-only-auth.test.ts`: the sandbox launcher's guest agent dir layout (a 0444 `auth.json` copy, `models.json` linked into a read-only render dir) against pi's real model runtime, so a pi update that locks or writes those files differently fails `npm run check`.
 - `tests/kept-selection.test.ts`: `runtime/kept-selection.ts` over a real pi session runtime with two adapter hosts: the model and thinking level kept across `newSession`, set before the seed and restored once, with no `onModelSelect` or `onThinkingSelect` call or default saved during the restore and later choices passed through, and the seed starting the first run with `continueWithSeed`.
