@@ -2,7 +2,13 @@ import { realpathSync } from "node:fs";
 import { mkdir, realpath, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { assertWithinWorkspaceRoots, sharedRootsOf, type Workspace } from "../../workspace/index.ts";
+import {
+  assertWithinWorkspaceRoots,
+  checkRoot,
+  rootRefusal,
+  sharedRootsOf,
+  type Workspace,
+} from "../../workspace/index.ts";
 import { tempDir } from "../support/temp-dir.ts";
 
 const createTree = async () => {
@@ -227,6 +233,58 @@ describe("sharedRootsOf", () => {
 
     expect(() => sharedRootsOf({ roots: [root] }, paths)).toThrow(
       `config: workspaceRoots.roots: ${root} ${problem}`,
+    );
+  });
+});
+
+describe("checkRoot", () => {
+  const contextOf = async () => {
+    const home = await realpath(await tempDir("check-root-home"));
+
+    await mkdir(join(home, "work"), { recursive: true });
+
+    await mkdir(join(home, ".ssh", "keys"), { recursive: true });
+
+    return { home, env: { PI_CODING_AGENT_DIR: join(home, "tools", "agent") } };
+  };
+
+  it("accepts a folder under the home, resolved, and says whether it exists", async () => {
+    const context = await contextOf();
+
+    expect(checkRoot("~/work", context)).toEqual({
+      ok: true,
+      resolved: join(context.home, "work"),
+      exists: true,
+    });
+    expect(checkRoot("~/later", context)).toEqual({
+      ok: true,
+      resolved: join(context.home, "later"),
+      exists: false,
+    });
+  });
+
+  it("names each kind of refusal", async () => {
+    const context = await contextOf();
+
+    expect(checkRoot("~/a\u0007b", context)).toEqual({ ok: false, problem: { kind: "control" } });
+    expect(checkRoot("~/a,b", context)).toEqual({ ok: false, problem: { kind: "mount-syntax" } });
+    expect(checkRoot("~", context)).toEqual({ ok: false, problem: { kind: "home" } });
+    expect(checkRoot("/", context)).toEqual({ ok: false, problem: { kind: "home" } });
+    expect(checkRoot("~/.ssh/keys", context)).toMatchObject({ ok: false, problem: { kind: "inside" } });
+    expect(checkRoot("/etc/x", context)).toEqual({
+      ok: false,
+      problem: { kind: "inside", name: "/etc", path: "/etc" },
+    });
+    expect(checkRoot("~/tools", context)).toMatchObject({ ok: false, problem: { kind: "holds" } });
+  });
+
+  it("gives the launch's own refusal text for a problem", async () => {
+    const context = await contextOf();
+    const verdict = checkRoot("~/.ssh/keys", context);
+
+    expect(verdict.ok).toBe(false);
+    expect(() => sharedRootsOf({ roots: ["~/.ssh/keys"] }, context)).toThrow(
+      verdict.ok ? "" : rootRefusal("~/.ssh/keys", verdict.problem),
     );
   });
 });

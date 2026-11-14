@@ -8,10 +8,21 @@ interface WorkspaceRoots {
   roots: string[];
 }
 
-interface RootGuardContext {
+export interface RootGuardContext {
   home: string;
   env: NodeJS.ProcessEnv;
 }
+
+export type RootProblem =
+  | { kind: "control" }
+  | { kind: "mount-syntax" }
+  | { kind: "home" }
+  | { kind: "inside"; name: string; path: string }
+  | { kind: "holds"; name: string; path: string };
+
+export type RootVerdict =
+  | { ok: true; resolved: string; exists: boolean }
+  | { ok: false; problem: RootProblem };
 
 interface SharedRoots {
   roots: string[];
@@ -67,27 +78,55 @@ const guardedPaths = (context: RootGuardContext, homes: string[]): Guarded[] => 
 const clashes = (resolved: string) => (entry: Guarded) =>
   isWithin(entry.path, resolved) || (entry.inside && isWithin(resolved, entry.path));
 
-const assertShareable = (root: string, resolved: string, context: RootGuardContext) => {
+const problemOf = (resolved: string, context: RootGuardContext): RootProblem | undefined => {
   if (CONTROL_CHARACTER.test(resolved)) {
-    throw refusal(JSON.stringify(root), "holds a newline or another control character");
+    return { kind: "control" };
   }
 
   if (MOUNT_SYNTAX.test(resolved)) {
-    throw refusal(root, 'holds "," or ":", which colima\'s --mount cannot take');
+    return { kind: "mount-syntax" };
   }
 
   const homes = [resolve(context.home), realOrResolvedSync(context.home)];
 
   if (homes.some((home) => isWithin(home, resolved))) {
-    throw refusal(root, "is the home dir or holds it, which would share all of it with the sandbox VM");
+    return { kind: "home" };
   }
 
   const clash = guardedPaths(context, homes).find(clashes(resolved));
 
-  if (clash !== undefined) {
-    throw refusal(root, `overlaps ${clash.name} (${clash.path}), which the sandbox VM must not see`);
+  if (clash === undefined) {
+    return undefined;
+  }
+
+  return isWithin(clash.path, resolved)
+    ? { kind: "holds", name: clash.name, path: clash.path }
+    : { kind: "inside", name: clash.name, path: clash.path };
+};
+
+const refusalOf = (root: string, problem: RootProblem) => {
+  if (problem.kind === "control") {
+    return refusal(JSON.stringify(root), "holds a newline or another control character");
+  }
+
+  if (problem.kind === "mount-syntax") {
+    return refusal(root, 'holds "," or ":", which colima\'s --mount cannot take');
+  }
+
+  return problem.kind === "home"
+    ? refusal(root, "is the home dir or holds it, which would share all of it with the sandbox VM")
+    : refusal(root, `overlaps ${problem.name} (${problem.path}), which the sandbox VM must not see`);
+};
+
+const assertShareable = (root: string, resolved: string, context: RootGuardContext) => {
+  const problem = problemOf(resolved, context);
+
+  if (problem !== undefined) {
+    throw refusalOf(root, problem);
   }
 };
+
+export const rootRefusal = (root: string, problem: RootProblem) => refusalOf(root, problem).message;
 
 const isFolder = (path: string) => statSync(path, { throwIfNoEntry: false })?.isDirectory() === true;
 
@@ -105,6 +144,13 @@ const configuredRoots = (roots: string[], home?: string) => {
     .filter((entry) => kept.has(entry.lexical))
     .filter((entry, index, all) => all.findIndex((other) => other.lexical === entry.lexical) === index)
     .map((entry) => ({ root: entry.root, resolved: realOrResolvedSync(entry.lexical) }));
+};
+
+export const checkRoot = (root: string, context: RootGuardContext): RootVerdict => {
+  const resolved = realOrResolvedSync(lexicalRoot(root, context.home));
+  const problem = problemOf(resolved, context);
+
+  return problem === undefined ? { ok: true, resolved, exists: isFolder(resolved) } : { ok: false, problem };
 };
 
 export const sharedRootsOf = (workspaceRoots: WorkspaceRoots, context: RootGuardContext): SharedRoots => {
