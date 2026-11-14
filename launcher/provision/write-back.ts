@@ -103,7 +103,11 @@ const checkOf = (spec: ValueSpec): ValueCheck => {
     return (value) => typeof value === "boolean";
   }
 
-  return spec.type === "fileName" ? isThemeName : () => true;
+  if (spec.type === "json") {
+    return () => true;
+  }
+
+  return spec.type === "fileName" ? isThemeName : () => false;
 };
 
 const maxBytesOf = (name: string) =>

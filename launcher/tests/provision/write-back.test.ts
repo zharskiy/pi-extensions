@@ -330,6 +330,17 @@ describe("compiling write-back value specs into checks", () => {
     expect(bad.map((value) => acceptedBy(spec, value))).toEqual(bad.map(() => false));
   });
 
+  it("refuses every value of a spec type it does not know", () => {
+    const spec = { type: "regex" } as unknown as ValueSpec;
+
+    expect([null, "a", 1, true].map((value) => acceptedBy(spec, value))).toEqual([
+      false,
+      false,
+      false,
+      false,
+    ]);
+  });
+
   it("drops a loosened theme check, even when handed past the config check", () => {
     expect(
       syncedFilesOf({ "settings.json": { theme: { type: "string" } } }).map((file) => file.keys),
