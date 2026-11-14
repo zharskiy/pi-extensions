@@ -13,6 +13,7 @@ import {
   ownedProblems,
   planOf,
   vmActionOf,
+  vmBounds,
 } from "../../cli/setup/plan.ts";
 import type { Answers, ConfigDocument, FolderCandidate, HostFacts, VmFacts } from "../../cli/setup/types.ts";
 import { tempDir } from "../support/temp-dir.ts";
@@ -323,6 +324,30 @@ describe("answersForYes", () => {
       notices: [
         "no workspaceRoots, so the sandbox VM shares your whole home; run pi sandbox init in a terminal to choose project folders",
       ],
+    });
+  });
+});
+
+describe("vmBounds", () => {
+  it("bounds the fields by this Mac and the validator", () => {
+    expect(vmBounds(factsOf())).toEqual({
+      cpus: { min: 1, max: 12 },
+      memoryGiB: { min: 2, max: 30 },
+      diskGiB: { min: 20, max: 2048 },
+    });
+  });
+
+  it("starts the disk at the VM's disk, which only grows", () => {
+    expect(vmBounds(factsOf({ vm: running({ ...SIZE, diskGiB: 100 }) })).diskGiB).toEqual({
+      min: 100,
+      max: 2048,
+    });
+  });
+
+  it("keeps the minimums on a small Mac", () => {
+    expect(vmBounds(factsOf({ cpus: 1, memoryGiB: 3 }))).toMatchObject({
+      cpus: { min: 1, max: 1 },
+      memoryGiB: { min: 2, max: 2 },
     });
   });
 });

@@ -1,5 +1,5 @@
 import { hasSizeChanges, shareDrift, type VmShare, type VmSpec, vmSizeDrift } from "../../backend/index.ts";
-import { validateConfig } from "../../config/index.ts";
+import { VM_BOUNDS, validateConfig } from "../../config/index.ts";
 import { errorMessage, type JsonObject, LauncherError } from "../../shared/index.ts";
 import { checkRoot, type RootGuardContext, rootRefusal } from "../../workspace/index.ts";
 import { diffOf, isReindented, serialise, valueAt, withoutValue, withValue } from "./document.ts";
@@ -17,6 +17,13 @@ import type {
 } from "./types.ts";
 
 type VmKey = keyof VmSpec;
+
+interface Bound {
+  min: number;
+  max: number;
+}
+
+export type VmBounds = Record<VmKey, Bound>;
 
 interface YesAnswers {
   answers: Answers;
@@ -338,5 +345,23 @@ export const answersForYes = (
 
   return { answers, notices: roots.notices };
 };
+
+const vmDiskOf = (facts: HostFacts) =>
+  facts.vm.state === "running" || facts.vm.state === "stopped" ? facts.vm.size.diskGiB : 0;
+
+export const vmBounds = (facts: HostFacts): VmBounds => ({
+  cpus: {
+    min: VM_BOUNDS.cpus.min,
+    max: Math.min(VM_BOUNDS.cpus.max, Math.max(VM_BOUNDS.cpus.min, facts.cpus)),
+  },
+  memoryGiB: {
+    min: VM_BOUNDS.memoryGiB.min,
+    max: Math.min(VM_BOUNDS.memoryGiB.max, Math.max(VM_BOUNDS.memoryGiB.min, facts.memoryGiB - 2)),
+  },
+  diskGiB: {
+    min: Math.min(VM_BOUNDS.diskGiB.max, Math.max(VM_BOUNDS.diskGiB.min, vmDiskOf(facts))),
+    max: VM_BOUNDS.diskGiB.max,
+  },
+});
 
 export const isPlanEmpty = (plan: Plan) => plan.changes.length === 0 && plan.vm.kind === "none";

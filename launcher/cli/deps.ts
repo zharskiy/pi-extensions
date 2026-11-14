@@ -32,6 +32,7 @@ export interface CliDeps {
   platform: NodeJS.Platform;
   uid: number;
   machine: { cpus: number; memoryGiB: number };
+  statfs?: (path: string) => Promise<{ bavail: number | bigint; bsize: number | bigint }>;
   backend(): Backend;
   proxy: ProxyControl;
   now(): number;

@@ -98,12 +98,13 @@ export const startVm = async (
   );
 };
 
-const foreignSessions = async (backend: Backend, stateDir: string, launchId: string) => {
+const foreignSessions = async (backend: Backend, stateDir: string, launchId?: string) => {
   if (!(await backend.detect()).available) {
     return 0;
   }
 
-  const known = new Set([launchId, ...(await liveLaunches(stateDir)).map((launch) => launch.launchId)]);
+  const live = (await liveLaunches(stateDir)).map((launch) => launch.launchId);
+  const known = new Set([...(launchId === undefined ? [] : [launchId]), ...live]);
   const containers = await listLauncherContainers(backend);
 
   return containers.filter(
@@ -111,9 +112,13 @@ const foreignSessions = async (backend: Backend, stateDir: string, launchId: str
   ).length;
 };
 
-const vmBusy = (context: LaunchContext, backend: Backend, launchId: string) => async () =>
-  (await busyLaunches(context.stateDir, launchId)) +
-  (await foreignSessions(backend, context.stateDir, launchId));
+const busyCount = async (backend: Backend, stateDir: string, launchId?: string) =>
+  (await busyLaunches(stateDir, launchId)) + (await foreignSessions(backend, stateDir, launchId));
+
+export const vmBusyCount = (backend: Backend, stateDir: string) => busyCount(backend, stateDir);
+
+const vmBusy = (context: LaunchContext, backend: Backend, launchId: string) => () =>
+  busyCount(backend, context.stateDir, launchId);
 
 export const vmShareCoverage = (context: LaunchContext, backend: Backend, sessions: HostSessions) =>
   backend.vm.coverage(vmPathsOf(context, sessions));
