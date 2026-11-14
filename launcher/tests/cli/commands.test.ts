@@ -484,7 +484,8 @@ describe("pi sandbox help and version", () => {
 
   const readmeRows = async () => {
     const readme = await readFile(join(launcherRoot(), "README.md"), "utf8");
-    const table = readme.slice(readme.indexOf("| command | what it does |"));
+    const start = readme.indexOf("| command | what it does |");
+    const table = readme.slice(start, readme.indexOf("\n\n", start));
     const rows = table
       .split("\n")
       .slice(2)

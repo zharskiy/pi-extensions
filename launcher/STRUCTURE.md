@@ -36,7 +36,7 @@ cli/deps.ts                    the dependencies every command gets, and the shar
 cli/index.ts                   public surface
 cli/launch.ts                  the pi pipeline with its stages and progress lines, and withSandbox for the doctor
 cli/context.ts                 the launch context: the folder to mount, the guard and workspaceRoots before the search, config, discovery and the checks after it
-cli/vm.ts                      VM start and shares, the VM paths a launch needs
+cli/vm.ts                      VM start, shares and trust store, the VM paths a launch needs
 cli/launch-notices.ts          the launch notice texts, the host-file flag notice and the proxy stage detail
 cli/legacy-paths.ts            the config and state folders of earlier versions, with the launch notice and doctor warns for them
 cli/terminal.ts                the host terminal: streams, size read at use, resize
@@ -62,6 +62,7 @@ cli/commands/doctor-probes.ts  the doctor's checks inside the container; a rule 
 cli/commands/doctor-host.ts    the doctor's checks on the host
 cli/commands/doctor-checks.ts  the check data model: result types and builders, the section and check order, the tally and verdict
 cli/commands/doctor-report.ts  the pure text renderer of the checks: aligned columns, reasons and hints, collapsed rules, notices, result line, ~, colour
+cli/commands/doctor-tls.ts     the tls inspection checks: the node handshake to pi.dev on the host and in the container, the keychain lookup of the root CA, the outcomes
 cli/commands/help.ts           usage
 cli/commands/options.ts        the option check of the sandbox commands and egress
 ```
@@ -124,6 +125,7 @@ backend/colima/volumes.ts      volume operations
 backend/colima/relay.ts        the per-repository network and relay
 backend/colima/vm.ts           VM start, size and stop
 backend/colima/shares.ts       VM shares and the share restart
+backend/colima/vm-trust.ts     the tls.extraCa certificates in the VM's trust store, engine restart when idle
 backend/colima/colima-yaml.ts  the lima.yaml mounts reader
 ```
 
@@ -236,7 +238,7 @@ proxy/denials.ts               denial records (with the credential rule id) and 
 proxy/denial-page.ts           the 403 page over TLS
 proxy/replies.ts               every raw HTTP reply and the JSON replies
 proxy/parent.ts                the parent proxy route
-proxy/trust.ts                 the trust bundle
+proxy/trust.ts                 the trust bundle: tls.extraCa by keychain fingerprint or PEM file, CA and expiry checks
 proxy/tls-ca.ts                the launcher CA and leaf certificates
 proxy/sign-in.ts               the proxy's host MCP sign-in
 proxy/single-flight.ts         one pending promise per key
@@ -380,6 +382,7 @@ tests/cli/harness.ts                 the CLI test harness, the managed pi layout
 tests/cli/commands.test.ts           the pi sandbox commands
 tests/cli/doctor.test.ts             the doctor
 tests/cli/doctor-report.test.ts      the doctor report renderer: collapsing, --verbose, verdicts, partial reports, ~, colour (the whole-report goldens are in doctor.test.ts)
+tests/cli/doctor-tls.test.ts         the tls inspection check against a local TLS server signed by a test CA behind a parent proxy: not inspected, trusted via extras, root in a keychain, root not found, network failure
 tests/cli/egress.test.ts             egress grants
 tests/cli/errors.test.ts             error output
 tests/cli/host-pi.test.ts            host pi selection

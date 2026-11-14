@@ -56,7 +56,7 @@ const FULL_CONFIG = {
     deny: ["paste.example.test", "*.tracker.test:8443"],
     privateHosts: ["*.corp.internal", "git.corp.internal"],
   },
-  tls: { extraCa: [{ file: "/etc/corp/ca.pem" }, { hostStore: true }] },
+  tls: { extraCa: [{ file: "/etc/corp/ca.pem" }, { sha256: "0123456789abcdef".repeat(4) }] },
   image: {
     packages: ["chromium", "libnss3=2:3.87-1"],
     npmGlobal: ["@scope/tool@1.2.3", "plain@0.1.0-beta.1"],
@@ -171,8 +171,8 @@ describe("validateConfig with the credential, egress, tls and image keys", () =>
   it("checks the egress, extra CA and image shapes", () => {
     const cases: Array<[unknown, string]> = [
       [{ egress: { deny: ["https://x.test"] } }, "egress.deny[0] must be a host name or host:port"],
-      [{ tls: { extraCa: [{ hostStore: false }] } }, "tls.extraCa[0].hostStore must be true"],
-      [{ tls: { extraCa: [{ url: "https://ca.test" }] } }, "tls.extraCa[0] must set one of file, hostStore"],
+      [{ tls: { extraCa: [{ sha256: 1 }] } }, "tls.extraCa[0].sha256 must be a string"],
+      [{ tls: { extraCa: [{ url: "https://ca.test" }] } }, "tls.extraCa[0] must set one of sha256, file"],
       [{ image: { packages: ["Bad Name"] } }, "image.packages[0] Bad Name must be a package name"],
       [
         { image: { npmGlobal: ["tool"] } },

@@ -9,6 +9,7 @@ import { testedPiVersion } from "../../cli/versions.ts";
 import { registerLaunch } from "../../grants/index.ts";
 import type { DenialRecord } from "../../proxy/index.ts";
 import { processMark, sha256Hex } from "../../shared/index.ts";
+import { stdinOf } from "../support/fake-backend.ts";
 import {
   createFakeBackend,
   createHarness,
@@ -30,7 +31,10 @@ interface Probes {
   ruleAnswer?: string;
   mcpAuth?: string;
   settings?: string;
+  sandboxTls?: string;
 }
+
+const SANDBOX_TRUSTS = JSON.stringify({ chain: [], verdicts: [null], extraCaEnv: "/etc/pi-sandbox/ca.pem" });
 
 const cleanups: Array<() => Promise<void>> = [];
 
@@ -68,7 +72,10 @@ const answering =
 
         return probes.mcpListExit ?? 0;
       },
-      node: () => write(`${probes.ruleAnswer ?? "200"}\n`),
+      node: () =>
+        (spec.command[2] ?? "").includes("getPeerCertificate")
+          ? write(`${probes.sandboxTls ?? SANDBOX_TRUSTS}\n`)
+          : write(`${probes.ruleAnswer ?? "200"}\n`),
     };
 
     const command = spec.command[0] === "timeout" ? spec.command.slice(2) : spec.command;
@@ -119,6 +126,8 @@ const SHARES_UNKNOWN =
   "  skip  vm shares         colima has not written the shares of profile pi-sandbox yet";
 
 const NO_PARENT = "  skip  parent proxy      no parent proxy configured";
+
+const NOT_INSPECTED = "  ok    tls inspection    not inspected";
 
 const EXAMPLE_AUTH = { example: { type: "api_key", key: "real-secret-value-1234567890" } };
 
@@ -189,6 +198,8 @@ describe("pi sandbox doctor", () => {
       `  ok    proxy             pid 77 port ${port}`,
       "  ok    proxy health      /healthz answers",
       NO_PARENT,
+      NOT_INSPECTED,
+      "  ok    tls in sandbox    the container trusts TLS to pi.dev through the sandbox proxy",
       "  ok    no-route          no direct route to 1.1.1.1:443",
       "  ok    mcp               pi mcp list connects to every enabled server",
       "",
@@ -200,7 +211,7 @@ describe("pi sandbox doctor", () => {
       "  ok    mcp-auth sweep    no mcp-auth.json in the sandbox yet",
       "  ok    settings sweep    no settings.json package carries a credential in its URL",
       "",
-      "result: ok (16 ok, 4 skipped)",
+      "result: ok (18 ok, 4 skipped)",
       "",
     ]);
     expect(harness.stderr()).toBe("");
@@ -212,7 +223,9 @@ describe("pi sandbox doctor", () => {
 
   it("checks trust and every credential rule host with its placeholder", async () => {
     const { stdout, fake } = await doctorWith({ probes: { ruleAnswer: "401" }, hostAuth: EXAMPLE_AUTH });
-    const request = fake.execs.find((exec) => exec.spec.command[0] === "node");
+    const request = fake.execs.find(
+      (exec) => exec.spec.command[0] === "node" && (exec.spec.command[2] ?? "").includes("AbortSignal"),
+    );
 
     expect(check(stdout, "trust")).toMatchObject({
       status: "ok",
@@ -241,7 +254,7 @@ describe("pi sandbox doctor", () => {
       detail: "https://models.example.test/ answered HTTP 200",
     });
     expect(check(verbose.stdout, "rules")).toBeUndefined();
-    expect(plain.report.result).toBe("ok (18 ok, 3 skipped)");
+    expect(plain.report.result).toBe("ok (20 ok, 3 skipped)");
     expect(verbose.report.result).toBe(plain.report.result);
   });
 
@@ -419,6 +432,52 @@ describe("pi sandbox doctor", () => {
     expect(check(harness.stdout(), "sessions share")).toMatchObject({
       status: "skip",
       detail: "in the sandbox volume (sessions.host is off)",
+    });
+  });
+
+  it("handshakes with pi.dev from inside through the sandbox proxy with node and the container's trust", async () => {
+    const { fake } = await doctorWith();
+    const probe = fake.execs.find((exec) => (exec.spec.command[2] ?? "").includes("getPeerCertificate"));
+
+    const input = probe === undefined ? "{}" : stdinOf(probe).toString();
+
+    expect(probe?.spec.command.slice(0, 2)).toEqual(["node", "-e"]);
+    expect(JSON.parse(input)).toEqual({
+      host: "pi.dev",
+      port: 443,
+      proxy: "env",
+      trusts: ["default"],
+    });
+  });
+
+  it("fails the sandbox layer when the host trusts pi.dev and the container does not", async () => {
+    const { code, stdout } = await doctorWith({
+      probes: {
+        sandboxTls: JSON.stringify({
+          chain: [],
+          verdicts: ["UNABLE_TO_GET_ISSUER_CERT_LOCALLY"],
+          extraCaEnv: "/etc/pi-sandbox/ca.pem",
+        }),
+      },
+    });
+
+    expect(check(stdout, "tls inspection")?.status).toBe("ok");
+    expect(check(stdout, "tls in sandbox")).toMatchObject({
+      status: "fail",
+      detail: "the host trusts TLS to pi.dev, the container does not: UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+      reasons: [
+        "the container's trust (NODE_EXTRA_CA_CERTS=/etc/pi-sandbox/ca.pem) does not hold the public roots",
+      ],
+    });
+    expect(code).toBe(1);
+  });
+
+  it("reports a sandbox proxy that does not tunnel to pi.dev as a network failure", async () => {
+    const { stdout } = await doctorWith({ probes: { sandboxTls: '{"failure":"the proxy answered 403"}' } });
+
+    expect(check(stdout, "tls in sandbox")).toMatchObject({
+      status: "fail",
+      detail: "pi.dev:443 through the sandbox proxy: the proxy answered 403",
     });
   });
 
@@ -655,8 +714,9 @@ describe("pi sandbox doctor", () => {
       "",
       "network",
       NO_PARENT,
+      NOT_INSPECTED,
       "",
-      "result: fail (1 failed, 3 ok, 3 skipped)",
+      "result: fail (1 failed, 4 ok, 3 skipped)",
       "",
     ]);
     expect(harness.stderr()).toBe("");
@@ -727,8 +787,9 @@ describe("pi sandbox doctor", () => {
       "network",
       "  ok    proxy             pid 4242 port 3128",
       NO_PARENT,
+      NOT_INSPECTED,
       "",
-      "result: fail (1 failed, 6 ok, 3 skipped)",
+      "result: fail (1 failed, 7 ok, 3 skipped)",
       "",
     ]);
   });
@@ -792,7 +853,7 @@ describe("pi sandbox doctor", () => {
       expect(stdout).toContain("\u001b[32mok\u001b[0m    host pi ");
       expect(stdout).toContain("\u001b[36mhint:\u001b[0m run launcher/install.sh");
       expect(stdout).toContain("result: \u001b[1;31mfail\u001b[0m (");
-      expect(doctorReport(stripVTControlCharacters(stdout)).result).toBe("fail (1 failed, 3 ok, 3 skipped)");
+      expect(doctorReport(stripVTControlCharacters(stdout)).result).toBe("fail (1 failed, 4 ok, 3 skipped)");
       expect(harness.stderr().startsWith("\r\u001b[2Kpi sandbox doctor: preparing the sandbox")).toBe(true);
       expect(harness.stderr().endsWith("\r\u001b[2K")).toBe(true);
       expect(harness.stderr()).not.toContain("\n");
@@ -805,8 +866,8 @@ describe("pi sandbox doctor", () => {
       const outputs = runs.map((harness) => harness.stdout());
 
       expect(outputs.map((stdout) => doctorReport(stdout).result)).toEqual([
-        "fail (1 failed, 3 ok, 3 skipped)",
-        "fail (1 failed, 3 ok, 3 skipped)",
+        "fail (1 failed, 4 ok, 3 skipped)",
+        "fail (1 failed, 4 ok, 3 skipped)",
       ]);
       expect(outputs.filter((stdout) => stdout.includes("\u001b["))).toEqual([]);
       expect(runs[1]?.stderr()).toBe("");

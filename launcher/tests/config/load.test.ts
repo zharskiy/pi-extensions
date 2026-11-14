@@ -109,6 +109,8 @@ describe("loadEffectiveConfig with the example config", () => {
     expect(config.egress).toEqual(example.egress);
     expect(config.credentials.rules).toEqual(example.credentials.rules);
     expect(config.credentials.derive.enabled).toBe(true);
-    expect(config.tls.extraCa).toEqual([{ file: "/etc/ssl/certs/example-root-ca.pem" }]);
+    expect(config.tls.extraCa).toEqual([
+      { sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" },
+    ]);
   });
 });

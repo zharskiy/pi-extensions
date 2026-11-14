@@ -11,6 +11,7 @@ import {
 import type { Detection, Vm, VmReport, VmShareOptions, VmSize } from "../types.ts";
 import { type Colima, ENGINE_PROFILE, ENGINE_SOCKET_DISPLAY, logHint, plainStart } from "./profile.ts";
 import { createColimaShares } from "./shares.ts";
+import { createColimaTrust } from "./vm-trust.ts";
 
 export interface ColimaVmOptions {
   home: string;
@@ -69,8 +70,8 @@ const plural = (count: number) =>
 export const createColimaVm = (options: ColimaVmOptions): Vm => {
   const { home, runner, detect, pause = realPause } = options;
   const profile = ENGINE_PROFILE;
-  const colimaRun = (args: string[]) =>
-    runner.run("colima", args, { env: { COLIMA_HOME: join(home, ".colima") } });
+  const colimaRun = (args: string[], extra: { input?: string; timeoutMs?: number } = {}) =>
+    runner.run("colima", args, { env: { COLIMA_HOME: join(home, ".colima") }, ...extra });
 
   const run = async (failure: string, args: string[], hint: string) => {
     const result = await colimaRun(args).catch((error: unknown) => {
@@ -88,8 +89,8 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
     }
   };
 
-  const detectAgain = () =>
-    DETECT_DELAYS_MS.reduce<Promise<Detection | undefined>>(async (previous, delay) => {
+  const detectAgain = (delaysMs = DETECT_DELAYS_MS) =>
+    delaysMs.reduce<Promise<Detection | undefined>>(async (previous, delay) => {
       const last = await previous;
 
       if (last?.available === true) {
@@ -106,6 +107,9 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
 
   const colima: Colima = { home, profile, run, detectAgain, withLock };
   const shares = createColimaShares(colima);
+  const trust = createColimaTrust(colima, (command, extra) =>
+    colimaRun(["ssh", "--profile", profile, "--", ...command], extra),
+  );
 
   const profileExists = () =>
     access(join(home, ".colima", profile, "colima.yaml")).then(
@@ -136,7 +140,7 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
     }
   };
 
-  const ensureRunning = async (report: VmReport) => {
+  const ensureUp = async (report: VmReport) => {
     if ((await detect()).available) {
       return;
     }
@@ -158,6 +162,12 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
 
       await startStopped(report);
     });
+  };
+
+  const ensureRunning = async (report: VmReport) => {
+    await ensureUp(report);
+
+    trust.readEarly();
   };
 
   const refuseBusy = async (busy: VmShareOptions["busy"]) => {
@@ -204,6 +214,7 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
     ensureRunning,
     coverage: shares.coverage,
     ensureShares: shares.ensureShares,
+    ensureTrust: trust.ensureTrust,
     size,
     resizeCommand: (target) =>
       `colima stop --profile ${profile} && ${plainStart(profile)} --cpu ${target.cpus} --memory ${target.memoryGiB}`,

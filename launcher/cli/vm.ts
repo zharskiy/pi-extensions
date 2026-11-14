@@ -38,3 +38,14 @@ export const shareVm = (
     busy: () => busyLaunches(context.stateDir, parts.launchId),
     report: report(deps),
   });
+
+export const trustVm = (
+  deps: CliDeps,
+  context: LaunchContext,
+  backend: Backend,
+  parts: { extraPemPath: string; launchId: string },
+) =>
+  backend.vm.ensureTrust(parts.extraPemPath, {
+    busy: () => busyLaunches(context.stateDir, parts.launchId),
+    report: report(deps),
+  });

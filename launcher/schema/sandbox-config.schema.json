@@ -500,6 +500,7 @@
                     "NODE_EXTRA_CA_CERTS",
                     "PI_SANDBOX_TRUST_HASH",
                     "SSL_CERT_FILE",
+                    "CURL_CA_BUNDLE",
                     "REQUESTS_CA_BUNDLE",
                     "PIP_CERT",
                     "CARGO_HTTP_CAINFO",
@@ -577,11 +578,13 @@
                 "type": "object",
                 "additionalProperties": false,
                 "properties": {
-                  "hostStore": {
-                    "const": true
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^([0-9A-Fa-f]:?){63}[0-9A-Fa-f]$",
+                    "description": "SHA-256 fingerprint of a CA certificate in the macOS System or login keychain, 64 hex digits; colons and case are optional. pi sandbox doctor prints it for the CA that signs this network's TLS."
                   }
                 },
-                "required": ["hostStore"]
+                "required": ["sha256"]
               }
             ]
           }
