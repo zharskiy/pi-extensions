@@ -391,7 +391,7 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
     await run(
       CREATE_FAILURE,
       [...startArgs(profile, desired.shares), ...CREATE_FLAGS, ...sizeFlags(desired.size)],
-      startHint,
+      `see ${logHint(profile)}, then run pi sandbox init again`,
     );
 
     await waitForEngine("creating it", progress);

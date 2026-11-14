@@ -14,6 +14,7 @@ interface Setup {
   running?: { cpu: number; memory: number; disk: number };
   lima?: VmShare[];
   status?: (call: FakeCall) => Partial<RunResult> | undefined;
+  start?: Partial<RunResult>;
 }
 
 const mountsText = (shares: VmShare[], indent: string) =>
@@ -46,6 +47,10 @@ const setupWith = async (setup: Setup) => {
 
   const state = { up: setup.running !== undefined };
   const fake = createFakeRunner((call) => {
+    if (call.args[0] === "start" && setup.start !== undefined) {
+      return setup.start;
+    }
+
     if (call.args[0] === "start") {
       state.up = true;
     }
@@ -162,6 +167,17 @@ describe("applying a size and shares to the sandbox VM", () => {
     expect(env.commands()).toEqual([
       `start --profile pi-sandbox --activate=false --mount ${join(env.home, "work")}:w --vm-type vz --mount-type virtiofs --cpu 6 --memory 12 --disk 80`,
     ]);
+  });
+
+  it("points a failed create at colima's log and pi sandbox init, not at a bare colima start", async () => {
+    const env = await setupWith({ start: { code: 1, stderr: "disk full\n" } });
+
+    await expect(
+      env.vm.apply(desiredOf(env.home), { busy: async () => 0, progress: () => undefined }),
+    ).rejects.toMatchObject({
+      message: "could not create the sandbox VM: colima start failed: disk full",
+      hint: "see ~/.colima/_lima/colima-pi-sandbox/ha.stderr.log, then run pi sandbox init again",
+    });
   });
 
   it("leaves a stopped VM to the next launch", async () => {
