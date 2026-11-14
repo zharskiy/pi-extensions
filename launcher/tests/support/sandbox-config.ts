@@ -11,5 +11,6 @@ export const sandboxConfig = ({ mounts, ...overrides }: ConfigOverrides = {}): S
   env: { allow: ["TERM", "LANG"] },
   resources: {},
   sessions: { host: true },
+  writeBack: { enabled: true, exclude: {}, add: {} },
   ...overrides,
 });

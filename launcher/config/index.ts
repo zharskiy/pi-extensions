@@ -24,3 +24,4 @@ export type {
   SandboxConfig,
   SecretRef,
 } from "./types.ts";
+export { type WriteBackListing, writeBackListing, writeBackTableOf } from "./write-back.ts";

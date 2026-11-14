@@ -6,6 +6,7 @@ import {
   MAX_WRITE_BACK_CHARS,
   parseJsonObject,
   SETTINGS_FILE_NAME,
+  stableHash,
   type ValueSpec,
   type WriteBackTable,
   withinCeiling,
@@ -144,8 +145,19 @@ export const parseVolumeText = (file: SyncedFile, text: string | undefined): Vol
     : { value };
 };
 
-export const parseBaseline = (value: unknown, synced: readonly SyncedFile[]): Baseline | undefined => {
-  const files = isJsonObject(value) ? value.files : undefined;
+export const allowlistHash = (table: WriteBackTable) => stableHash(withinCeiling(table));
+
+export const parseBaseline = (
+  value: unknown,
+  synced: readonly SyncedFile[],
+  allowlist: string,
+): Baseline | undefined => {
+  const record = isJsonObject(value) ? value : {};
+  const files = record.files;
+
+  if (record.allowlist !== allowlist) {
+    return undefined;
+  }
 
   if (!isJsonObject(files) || !synced.every((file) => isJsonObject(files[file.name]))) {
     return undefined;
@@ -156,7 +168,7 @@ export const parseBaseline = (value: unknown, synced: readonly SyncedFile[]): Ba
   );
 };
 
-export const baselineRecord = (baseline: Baseline) => ({ files: baseline });
+export const baselineRecord = (baseline: Baseline, allowlist: string) => ({ allowlist, files: baseline });
 
 const keyValue = (object: JsonObject, key: string) => (Object.hasOwn(object, key) ? object[key] : undefined);
 

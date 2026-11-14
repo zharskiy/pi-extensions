@@ -38,6 +38,11 @@ const COMPLETE_CONFIG: UserConfig = {
   env: { allow: ["EDITOR"] },
   resources: { cpus: 2, memoryGiB: 4 },
   sessions: { host: false },
+  writeBack: {
+    enabled: false,
+    exclude: { "settings.json": ["theme"] },
+    add: { "pi-footer.json": { layout: { type: "json" } } },
+  },
 };
 
 const settableKeys = () => configKeys().filter((key) => key !== "$schema" && !key.includes("[]"));

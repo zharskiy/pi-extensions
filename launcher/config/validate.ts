@@ -1,15 +1,22 @@
 import {
   isJsonObject,
   isLauncherSetVariable,
+  isNeverWritten,
   isSecretName,
   isToolConfigKey,
   LauncherError,
+  MAX_WRITE_BACK_CHARS,
   PLACEHOLDER_PREFIX,
   TOOL_CONFIG_FORMATS,
   type ToolConfigFormat,
+  VALUE_TYPES,
+  type ValueType,
+  valueSpecProblem,
+  writeBackFileProblem,
 } from "../shared/index.ts";
 import { parseHostEntry, SECRET_MARKER } from "./egress-entry.ts";
 import type { UserConfig } from "./types.ts";
+import { builtInKeysOf } from "./write-back.ts";
 
 type Check = (value: string) => string | undefined;
 
@@ -26,14 +33,23 @@ interface ObjectSpec {
   removed?: Record<string, string>;
 }
 
+interface NumberSpec {
+  type: "number";
+  exclusiveMinimum?: number;
+  minimum?: number;
+  maximum?: number;
+  integer?: boolean;
+}
+
 type Spec =
   | { type: "string"; check?: Check; values?: readonly string[] }
-  | { type: "number"; exclusiveMinimum: number; maximum?: number; integer?: boolean }
+  | NumberSpec
   | { type: "true" }
   | { type: "boolean" }
   | { type: "array"; items: Spec; check?: ListCheck }
   | ObjectSpec
-  | { type: "keyed"; variants: Record<string, ObjectSpec>; removed?: Record<string, string> };
+  | { type: "keyed"; variants: Record<string, ObjectSpec>; removed?: Record<string, string> }
+  | { type: "custom"; problem: (value: unknown, path: string) => Problem | undefined };
 
 interface Problem {
   path: string;
@@ -294,6 +310,166 @@ const EXTRA_CA: Spec = {
   removed: { hostStore: "was removed; run pi sandbox doctor to get the sha256 of your network's CA" },
 };
 
+const WRITE_BACK_KEY = /^[A-Za-z][A-Za-z0-9_-]*$/;
+
+const MAX_KEY_CHARS = 100;
+
+const keyPath = (prefix: string, key: string) => `${prefix}[${JSON.stringify(key)}]`;
+
+const anyNumber: Spec = { type: "number" };
+
+const wholeNumber: Spec = { type: "number", integer: true };
+
+const orderedRange: ObjectCheck = (value) =>
+  typeof value.min === "number" && typeof value.max === "number" && value.min > value.max
+    ? "sets min above max"
+    : undefined;
+
+const scalarProblem = (value: unknown, path: string): Problem | undefined => {
+  if (typeof value === "string") {
+    return at(
+      path,
+      value.length > MAX_WRITE_BACK_CHARS ? `must be at most ${MAX_WRITE_BACK_CHARS} characters` : undefined,
+    );
+  }
+
+  return typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value))
+    ? undefined
+    : { path, problem: "must be a string, a number or true or false" };
+};
+
+const typed = (properties: Record<string, Spec>, required: readonly string[] = []) =>
+  shape({ type: text(), ...properties }, ["type", ...required]);
+
+const VALUE_SPEC: Spec = { type: "custom", problem: (value, path) => valueSpecAt(value, path) };
+
+const VALUE_SPECS: Record<ValueType, ObjectSpec> = {
+  string: typed({ maxLength: { type: "number", minimum: 1, maximum: MAX_WRITE_BACK_CHARS, integer: true } }),
+  boolean: typed({}),
+  integer: { ...typed({ min: wholeNumber, max: wholeNumber }), check: orderedRange },
+  number: { ...typed({ min: anyNumber, max: anyNumber }), check: orderedRange },
+  enum: typed(
+    { values: { type: "array", items: { type: "custom", problem: scalarProblem }, check: notEmptyList } },
+    ["values"],
+  ),
+  stringList: typed({ maxItems: { type: "number", minimum: 1, integer: true } }),
+  fileName: typed({}),
+  anyOf: typed({ of: { type: "array", items: VALUE_SPEC, check: notEmptyList } }, ["of"]),
+  json: typed({}),
+};
+
+const isValueType = (value: unknown): value is ValueType => VALUE_TYPES.includes(value as ValueType);
+
+const valueSpecAt = (value: unknown, path: string): Problem | undefined => {
+  if (!isJsonObject(value)) {
+    return { path, problem: "must be an object" };
+  }
+
+  return isValueType(value.type)
+    ? objectProblem(VALUE_SPECS[value.type], value, path)
+    : { path: joinPath(path, "type"), problem: `must be one of ${VALUE_TYPES.join(", ")}` };
+};
+
+const excludedKeysAt = (file: string, keys: unknown, path: string): Problem | undefined => {
+  const builtIn = builtInKeysOf(file);
+
+  if (builtIn === undefined) {
+    return { path, problem: "is not a file of the built-in write-back list" };
+  }
+
+  const listed = problemOf(list(), keys, path);
+
+  if (listed !== undefined) {
+    return listed;
+  }
+
+  return firstProblem(
+    (keys as string[]).map(
+      (key, index) => () =>
+        Object.hasOwn(builtIn, key)
+          ? undefined
+          : {
+              path: `${path}[${index}]`,
+              problem: `${shown(key)} is not a built-in write-back key of ${file}`,
+            },
+    ),
+  );
+};
+
+const excludeAt = (value: unknown, path: string): Problem | undefined =>
+  isJsonObject(value)
+    ? firstProblem(
+        Object.entries(value).map(
+          ([file, keys]) =>
+            () =>
+              excludedKeysAt(file, keys, keyPath(path, file)),
+        ),
+      )
+    : { path, problem: "must be an object" };
+
+const addedKeyProblem = (file: string, key: string) => {
+  if (!WRITE_BACK_KEY.test(key) || key.length > MAX_KEY_CHARS) {
+    return "must be a key name of letters, digits, dash or underscore, starting with a letter";
+  }
+
+  return isNeverWritten(file, key) ? `is host-owned and never written back to the host` : undefined;
+};
+
+const addedKeyAt = (file: string, key: string, spec: unknown, path: string) =>
+  firstProblem([
+    () => at(path, addedKeyProblem(file, key)),
+    () => valueSpecAt(spec, path),
+    () => at(path, valueSpecProblem(file, key, spec as never)),
+  ]);
+
+const addedFileAt = (file: string, keys: unknown, path: string): Problem | undefined => {
+  const fileProblem = writeBackFileProblem(file);
+
+  if (fileProblem !== undefined) {
+    return { path, problem: fileProblem };
+  }
+
+  return isJsonObject(keys)
+    ? firstProblem(
+        Object.entries(keys).map(
+          ([key, spec]) =>
+            () =>
+              addedKeyAt(file, key, spec, keyPath(path, key)),
+        ),
+      )
+    : { path, problem: "must be an object" };
+};
+
+const addAt = (value: unknown, path: string): Problem | undefined =>
+  isJsonObject(value)
+    ? firstProblem(
+        Object.entries(value).map(
+          ([file, keys]) =>
+            () =>
+              addedFileAt(file, keys, keyPath(path, file)),
+        ),
+      )
+    : { path, problem: "must be an object" };
+
+const excludedAndAdded: ObjectCheck = (value) => {
+  const exclude = (value.exclude ?? {}) as Record<string, string[]>;
+  const add = (value.add ?? {}) as Record<string, Record<string, unknown>>;
+  const clash = Object.entries(exclude)
+    .flatMap(([file, keys]) => keys.map((key) => [file, key] as const))
+    .find(([file, key]) => Object.hasOwn(add, file) && Object.hasOwn(add[file], key));
+
+  return clash === undefined ? undefined : `excludes and adds ${clash[1]} of ${clash[0]}`;
+};
+
+const WRITE_BACK: ObjectSpec = {
+  ...shape({
+    enabled: flag,
+    exclude: { type: "custom", problem: excludeAt },
+    add: { type: "custom", problem: addAt },
+  }),
+  check: excludedAndAdded,
+};
+
 const CONFIG_SPEC: ObjectSpec = {
   type: "object",
   removed: { fallback: "was removed; --no-sandbox is always available" },
@@ -343,6 +519,7 @@ const CONFIG_SPEC: ObjectSpec = {
     env: { type: "object", properties: { allow: list(forwardableVariable) } },
     resources: { type: "object", properties: { cpus: positive, memoryGiB: positive } },
     sessions: shape({ host: flag }),
+    writeBack: WRITE_BACK,
   },
 };
 
@@ -384,10 +561,7 @@ const stringProblem = (spec: { check?: Check; values?: readonly string[] }, valu
   return spec.check?.(value);
 };
 
-const numberProblem = (
-  spec: { exclusiveMinimum: number; maximum?: number; integer?: boolean },
-  value: unknown,
-) => {
+const numberProblem = (spec: NumberSpec, value: unknown) => {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     return "must be a number";
   }
@@ -400,7 +574,13 @@ const numberProblem = (
     return `must be at most ${spec.maximum}`;
   }
 
-  return value <= spec.exclusiveMinimum ? `must be greater than ${spec.exclusiveMinimum}` : undefined;
+  if (spec.minimum !== undefined && value < spec.minimum) {
+    return `must be at least ${spec.minimum}`;
+  }
+
+  return spec.exclusiveMinimum !== undefined && value <= spec.exclusiveMinimum
+    ? `must be greater than ${spec.exclusiveMinimum}`
+    : undefined;
 };
 
 const objectProblem = (spec: ObjectSpec, value: unknown, path: string): Problem | undefined => {
@@ -476,6 +656,10 @@ const problemOf = (spec: Spec, value: unknown, path: string): Problem | undefine
           () => at(path, spec.check?.(value)),
         ])
       : { path, problem: "must be an array" };
+  }
+
+  if (spec.type === "custom") {
+    return spec.problem(value, path);
   }
 
   return spec.type === "keyed" ? keyedProblem(spec, value, path) : objectProblem(spec, value, path);

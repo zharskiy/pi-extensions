@@ -129,15 +129,22 @@ export const isNeverWritten = (file: string, key: string) => NEVER_WRITTEN_KEYS[
 const holdsJson = (spec: ValueSpec): boolean =>
   spec.type === "json" || (spec.type === "anyOf" && spec.of.some(holdsJson));
 
-export const valueSpecProblem = (file: string, spec: ValueSpec) =>
-  file === SETTINGS_FILE_NAME && holdsJson(spec)
+const PATH_KEYS: Readonly<Record<string, readonly string[]>> = { [SETTINGS_FILE_NAME]: ["theme"] };
+
+export const valueSpecProblem = (file: string, key: string, spec: ValueSpec) => {
+  if (PATH_KEYS[file]?.includes(key) === true && spec.type !== "fileName") {
+    return "must use type fileName, since host pi turns it into a path";
+  }
+
+  return file === SETTINGS_FILE_NAME && holdsJson(spec)
     ? `uses type json, which only a pi-<name>.json file may use`
     : undefined;
+};
 
 const keyAllowed =
   (file: string) =>
   ([key, spec]: [string, ValueSpec]) =>
-    !isNeverWritten(file, key) && valueSpecProblem(file, spec) === undefined;
+    !isNeverWritten(file, key) && valueSpecProblem(file, key, spec) === undefined;
 
 export const withinCeiling = (table: WriteBackTable): WriteBackTable =>
   Object.fromEntries(

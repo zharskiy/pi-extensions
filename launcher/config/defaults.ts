@@ -20,4 +20,5 @@ export const defaultConfig = (): SandboxConfig => ({
   env: { allow: TERMINAL_VARIABLES },
   resources: {},
   sessions: { host: true },
+  writeBack: { enabled: true, exclude: {}, add: {} },
 });
