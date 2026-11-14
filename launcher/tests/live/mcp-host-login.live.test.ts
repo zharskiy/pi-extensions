@@ -20,7 +20,7 @@ const FETCH_SCRIPT = [
   "const [url, authorization] = process.argv.slice(1);",
   "fetch(url, { method: 'POST', headers: { authorization, 'content-type': 'application/json' }, body: '{}' }).then(",
   "  async (response) => console.log(JSON.stringify({ status: response.status, body: await response.text() })),",
-  "  (error) => console.log(JSON.stringify({ status: 0, body: String(error) })),",
+  "  (error) => console.log(JSON.stringify({ status: 0, body: String(error), code: error.cause?.code ?? error.code ?? null, cause: error.cause?.message ?? null })),",
   ");",
 ].join("\n");
 
@@ -85,12 +85,18 @@ describe.skipIf(!liveEnabled)("MCP sign-in owned by the host pi (live)", () => {
       `node -e ${quoted(FETCH_SCRIPT)} ${quoted(state.url)} ${quoted(authorization)}`,
     );
 
+    expect(reply.code, reply.stderr).toBe(0);
+
+    const answer = JSON.parse(reply.stdout);
+
+    expect(answer.status, reply.stdout).toBe(503);
+
     const login = (await readMcpLogins(sandbox.stateDir))[mcpAuthKey(SERVER, state.url)];
     const failed = login?.failedAt !== undefined;
 
     expect(login?.lastStart).toEqual(expect.any(Number));
 
-    expect(JSON.parse(reply.stdout)).toEqual({
+    expect(answer).toEqual({
       status: 503,
       body: failed ? NOT_SIGNED_IN_TEXT : OPENED_TEXT,
     });

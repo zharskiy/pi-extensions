@@ -135,6 +135,9 @@ const waitUntil = async <T>(find: () => Promise<T | undefined>, attempts = 200):
   return waitUntil(find, attempts - 1);
 };
 
+const loggedRuns = (count: number) =>
+  waitUntil(async () => ((await piRuns()).length >= count ? true : undefined));
+
 const childPid = async () => {
   const text = await readFile(state.log, "utf8").catch(() => "");
   const line = text.split("\n").find((entry) => entry.includes('"child"'));
@@ -181,6 +184,9 @@ describe("mcpOAuth secrets read the host pi sign-in", () => {
       headers: { "retry-after": "30", "content-type": "text/plain" },
       body: "pi-sandbox: sign-in to MCP server docs opened in the browser on the host; finish it there, then retry. If no browser opened, run pi mcp login docs on the host.",
     });
+
+    await loggedRuns(1);
+
     expect(await piRuns()).toHaveLength(1);
   });
 
@@ -226,6 +232,9 @@ describe("mcpOAuth secrets read the host pi sign-in", () => {
     expect(reply?.body).toBe(
       "pi-sandbox: sign-in to MCP server docs opened in the browser on the host; finish it there, then retry. If no browser opened, run pi mcp login docs on the host.",
     );
+
+    await loggedRuns(1);
+
     expect(await piRuns()).toHaveLength(1);
   });
 
@@ -288,25 +297,30 @@ describe("mcpOAuth secrets read the host pi sign-in", () => {
 
     await writeEntry("old-token", Date.now() - 1);
 
-    const tryLogin = async () => {
+    const tryLogin = async (runsBefore: number) => {
       const resolver = resolverWith("hang", { now: clock.now, signInWaitMs: 50 });
       const result = await resolver.resolve("mcp", REF);
+      const record = (await loginRecord()) as { lastStart?: number };
+
+      if (record.lastStart === clock.now()) {
+        await loggedRuns(runsBefore + 1);
+      }
 
       await resolver.close();
 
       return result.ok;
     };
 
-    expect(await tryLogin()).toBe(false);
+    expect(await tryLogin(0)).toBe(false);
 
     clock.advance(30_000);
 
-    expect(await tryLogin()).toBe(false);
+    expect(await tryLogin(1)).toBe(false);
     expect(await piRuns()).toHaveLength(1);
 
     clock.advance(31_000);
 
-    await tryLogin();
+    await tryLogin(1);
 
     expect(await piRuns()).toHaveLength(2);
   });

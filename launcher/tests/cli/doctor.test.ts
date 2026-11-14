@@ -369,11 +369,11 @@ describe("pi sandbox doctor", () => {
     expect(harness.stderr()).toBe("");
   });
 
-  it("keeps the fetch error of a certificate not yet valid and says the VM clock is behind, with the restart", async () => {
+  it("keeps the fetch error of a certificate not yet valid and says the VM clock is more than an hour behind, with the restart", async () => {
     const { stdout } = await doctorWithRefusals("error CERT_NOT_YET_VALID", []);
     const clock = {
       reasons: [
-        "the sandbox VM's clock is behind the host's, so the proxy's certificate, dated by the host, is not valid there yet",
+        "the sandbox VM's clock is more than an hour behind the host's, so the proxy's certificate, dated by the host an hour back, is not valid there yet",
       ],
       hint: "restart the VM to reset its clock: run pi sandbox stop once no pi session runs, then pi sandbox doctor again",
     };
