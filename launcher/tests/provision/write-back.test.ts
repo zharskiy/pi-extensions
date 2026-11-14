@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  allowlistChanged,
   allowlistHash,
   applyChanges,
   baselineRecord,
   changeLine,
+  copiedOf,
   mergeFile,
   parseBaseline,
   parseVolumeText,
@@ -225,7 +227,7 @@ describe("parseBaseline", () => {
 
   it("round-trips a record of every synced file, keeping allowlisted keys only", () => {
     const files = Object.fromEntries(SYNCED_FILES.map((file) => [file.name, {}]));
-    const recorded = baselineRecord({ ...files, "settings.json": { theme: "a", packages: [] } }, HASH);
+    const recorded = baselineRecord({ ...files, "settings.json": { theme: "a", packages: [] } }, HASH, []);
 
     expect(parseBaseline(JSON.parse(JSON.stringify(recorded)), SYNCED_FILES, HASH)).toEqual({
       ...files,
@@ -247,8 +249,28 @@ describe("parseBaseline", () => {
 
     expect(changed).not.toBe(HASH);
     expect(parseBaseline({ files }, SYNCED_FILES, HASH)).toBeUndefined();
-    expect(parseBaseline(baselineRecord(files, changed), SYNCED_FILES, HASH)).toBeUndefined();
-    expect(parseBaseline(baselineRecord(files, HASH), SYNCED_FILES, HASH)).toEqual(files);
+    expect(parseBaseline(baselineRecord(files, changed, []), SYNCED_FILES, HASH)).toBeUndefined();
+    expect(parseBaseline(baselineRecord(files, HASH, []), SYNCED_FILES, HASH)).toEqual(files);
+  });
+
+  it("tells a baseline of another allowlist from a missing or older one", () => {
+    expect(allowlistChanged({ allowlist: "other", files: {} }, HASH)).toBe(true);
+    expect(allowlistChanged({ allowlist: HASH, files: {} }, HASH)).toBe(false);
+    expect(allowlistChanged({ files: {} }, HASH)).toBe(false);
+    expect(allowlistChanged(undefined, HASH)).toBe(false);
+  });
+
+  it("reads the files the last sync copied, and none from a record without that list", () => {
+    expect(copiedOf(baselineRecord({}, HASH, ["pi-footer.json", "pi-style.json"]))).toEqual([
+      "pi-footer.json",
+      "pi-style.json",
+    ]);
+    expect(copiedOf({ copied: ["settings.json", "auth.json", "../x", 1, "pi-a.json"] })).toEqual([
+      "pi-a.json",
+    ]);
+    expect(copiedOf({ allowlist: HASH, files: {} })).toEqual([]);
+    expect(copiedOf({ copied: "pi-a.json" })).toEqual([]);
+    expect(copiedOf(undefined)).toEqual([]);
   });
 });
 

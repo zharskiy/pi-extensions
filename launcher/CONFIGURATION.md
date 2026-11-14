@@ -28,7 +28,7 @@ Each launch gets a new container, so most changes apply at the next `pi`. Each f
 - **Network settings** reach running sessions when you start a new `pi` in that folder. These are `egress.allow`, `egress.deny` and `egress.privateHosts`. Editing the file alone changes nothing for them.
 - **Credential rules, `env` secrets, the parent proxy and `tls.extraCa`** wait until every pi of the folder has exited.
 - **`vm`** applies at the next launch with no other pi session running, which restarts the VM.
-- **`writeBack`** applies from the next launch. A running session keeps the list it started with, and the first launch after a change copies nothing back from before it (see [below](#settings-written-back)). An `env` secret is a credential rule whose secret comes from a variable of your shell.
+- **`writeBack`** applies from the next launch. Nothing is copied back from sessions started under the old list, not even from one still running, and a line says so (see [below](#settings-written-back)). An `env` secret is a credential rule whose secret comes from a variable of your shell.
 
 When other sessions run, a new launch says which case applies:
 
@@ -227,9 +227,9 @@ When pi inside changes a setting on the list, the launcher copies the change to 
 }
 ```
 
-- `enabled: false` copies nothing back.
+- `enabled: false` copies nothing back. `settings.json` and the four built-in `pi-*.json` files are still copied into the sandbox, since pi there reads them; a file you added is not, and its earlier copy is removed from the sandbox at the next launch.
 - `exclude` names built-in keys, per file, to stop copying. A key that is not on the built-in list is an error.
-- `add` names keys, per file, with the check a value must pass. A built-in key gets your check instead of its own, for example when pi adds a value the built-in list does not know yet. A new `pi-<name>.json` file is copied from your Mac into the sandbox at each launch, like the built-in ones, and its listed keys come back.
+- `add` names keys, per file, with the check a value must pass. A built-in key gets your check instead of its own, for example when pi adds a value the built-in list does not know yet. A new `pi-<name>.json` file is copied whole from your Mac into the sandbox at each launch, like the built-in ones, and its listed keys come back. Every key in that file is readable inside the sandbox, not only the ones you list, so do not add a file that holds secrets. Once you take the file out of `add`, the next launch removes its copy from the sandbox.
 - A key both excluded and added is an error.
 
 The checks are `string` (optional `maxLength`, at most 512), `boolean`, `integer` and `number` (optional `min`, `max`), `enum` (`values`, a list of strings, numbers or booleans), `stringList` (optional `maxItems`), `fileName` (a plain file name, as for `theme`), `anyOf` (`of`, a list of checks) and `json` (any value). A value that fails its check is not copied and a line says so. There is no regular expression check.
@@ -244,7 +244,7 @@ Size limits (1 MiB for `settings.json`, 64 KiB for a `pi-*.json`), the conflict 
 
 Choose an added key with care: a sandboxed agent can set it to any value its check allows, and your Mac's pi reads that value. Add only plain preferences, and give each the narrowest check that fits.
 
-Every launch uses the list it started with. After you change `writeBack`, the next launch copies nothing back from earlier sessions, so a change made under the old list is never judged by the new one. `pi sandbox config` lists the keys of each file and whether they come from the default or your config.
+Every launch uses the list it started with. After you change `writeBack`, the next launch copies nothing back from earlier sessions, including one still running, so a change made under the old list is never judged by the new one; it prints `pi-sandbox: the write-back list changed; nothing is written back from sessions started under the old list`. `pi sandbox config` lists the keys of each file and whether they come from the default or your config.
 
 ## Workspace roots
 

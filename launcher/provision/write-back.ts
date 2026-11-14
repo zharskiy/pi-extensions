@@ -10,6 +10,7 @@ import {
   type ValueSpec,
   type WriteBackTable,
   withinCeiling,
+  writeBackFileProblem,
 } from "../shared/index.ts";
 
 type ValueCheck = (value: unknown) => boolean;
@@ -168,7 +169,23 @@ export const parseBaseline = (
   );
 };
 
-export const baselineRecord = (baseline: Baseline, allowlist: string) => ({ allowlist, files: baseline });
+export const allowlistChanged = (value: unknown, allowlist: string) =>
+  isJsonObject(value) && typeof value.allowlist === "string" && value.allowlist !== allowlist;
+
+const isCopyName = (name: unknown): name is string =>
+  typeof name === "string" && name !== SETTINGS_FILE_NAME && writeBackFileProblem(name) === undefined;
+
+export const copiedOf = (value: unknown): string[] => {
+  const copied = isJsonObject(value) ? value.copied : undefined;
+
+  return Array.isArray(copied) ? copied.filter(isCopyName) : [];
+};
+
+export const baselineRecord = (baseline: Baseline, allowlist: string, copied: readonly string[]) => ({
+  allowlist,
+  files: baseline,
+  copied,
+});
 
 const keyValue = (object: JsonObject, key: string) => (Object.hasOwn(object, key) ? object[key] : undefined);
 

@@ -18,11 +18,13 @@ import { refreshPackages } from "./package-refresh.ts";
 import type { SyncInput, SyncResult } from "./types.ts";
 import { readVolumeText, removeVolumeFile, writeVolumeFile } from "./volume.ts";
 import {
+  allowlistChanged,
   allowlistHash,
   applyChanges,
   type Baseline,
   baselineRecord,
   changeLine,
+  copiedOf,
   mergeFile,
   parseBaseline,
   parseVolumeText,
@@ -42,6 +44,11 @@ interface CopiedFile {
   name: string;
   value?: JsonObject;
   notices: string[];
+}
+
+interface PriorSync {
+  path: string;
+  copied: readonly string[];
 }
 
 interface FileOutcome {
@@ -128,11 +135,14 @@ interface Allowlist {
   hash: string;
 }
 
-const writeBack = async (input: SyncInput, allowlist: Allowlist, baselinePath: string) => {
-  const baseline = parseBaseline(await readJsonObject(baselinePath), allowlist.synced, allowlist.hash);
+const LIST_CHANGED =
+  "the write-back list changed; nothing is written back from sessions started under the old list";
+
+const writeBack = async (input: SyncInput, allowlist: Allowlist, record: unknown) => {
+  const baseline = parseBaseline(record, allowlist.synced, allowlist.hash);
 
   if (baseline === undefined) {
-    return { changes: [], notices: [] };
+    return { changes: [], notices: allowlistChanged(record, allowlist.hash) ? [LIST_CHANGED] : [] };
   }
 
   const outcomes = await Promise.all(allowlist.synced.map((file) => safeWriteBack(input, baseline, file)));
@@ -205,15 +215,27 @@ const baselineOf = (synced: readonly SyncedFile[], copied: readonly CopiedFile[]
     ]),
   );
 
-const syncIn = async (input: SyncInput, allowlist: Allowlist, baselinePath: string) => {
+const removeStale = (input: SyncInput, stale: readonly string[]) =>
+  Promise.all(stale.map((name) => removeVolumeFile(input.backend, input.containerId, name)));
+
+const syncIn = async (input: SyncInput, allowlist: Allowlist, prior: PriorSync) => {
+  const names = copiedNames(allowlist.synced);
   const settings = syncSettings(input);
-  const copied = await Promise.all([
-    settings,
-    ...copiedNames(allowlist.synced).map((name) => syncExtensionFile(input, name)),
+  const [copied] = await Promise.all([
+    Promise.all([settings, ...names.map((name) => syncExtensionFile(input, name))]),
+    removeStale(
+      input,
+      prior.copied.filter((name) => !names.includes(name)),
+    ),
   ]);
   const baseline = baselineOf(allowlist.synced, copied);
+  const kept = copied
+    .filter((file) => file.value !== undefined && file.name !== SETTINGS_FILE_NAME)
+    .map((file) => file.name);
 
-  await writeJsonFile(baselinePath, baselineRecord(baseline, allowlist.hash), { mode: PRIVATE_FILE_MODE });
+  await writeJsonFile(prior.path, baselineRecord(baseline, allowlist.hash, kept), {
+    mode: PRIVATE_FILE_MODE,
+  });
 
   const refreshed =
     input.refreshPackages === true ? await followHostPackages(input, (await settings).pins) : [];
@@ -221,11 +243,18 @@ const syncIn = async (input: SyncInput, allowlist: Allowlist, baselinePath: stri
   return [...copied.flatMap((outcome) => outcome.notices), ...refreshed];
 };
 
-const syncWithBaseline = async (input: SyncInput, allowlist: Allowlist, baselinePath: string) => {
+const keepCopiedOnly = (prior: PriorSync, names: readonly string[]) =>
+  writeJsonFile(
+    prior.path,
+    { copied: [...new Set([...prior.copied, ...names])] },
+    { mode: PRIVATE_FILE_MODE },
+  ).catch(() => rm(prior.path, { force: true }));
+
+const syncWithBaseline = async (input: SyncInput, allowlist: Allowlist, prior: PriorSync) => {
   try {
-    return await syncIn(input, allowlist, baselinePath);
+    return await syncIn(input, allowlist, prior);
   } catch (error) {
-    await rm(baselinePath, { force: true });
+    await keepCopiedOnly(prior, copiedNames(allowlist.synced));
 
     throw error;
   }
@@ -233,9 +262,11 @@ const syncWithBaseline = async (input: SyncInput, allowlist: Allowlist, baseline
 
 const syncVolume = async (input: SyncInput): Promise<SyncResult> => {
   const baselinePath = stateLayout(input.stateDir).repo(input.repoHash).syncBaseline;
+  const record = await readJsonObject(baselinePath);
   const allowlist = { synced: syncedFilesOf(input.allowlist), hash: allowlistHash(input.allowlist) };
-  const returned = await writeBack(input, allowlist, baselinePath);
-  const notices = await syncWithBaseline(input, allowlist, baselinePath).catch((error: unknown) => [
+  const returned = await writeBack(input, allowlist, record);
+  const prior = { path: baselinePath, copied: copiedOf(record) };
+  const notices = await syncWithBaseline(input, allowlist, prior).catch((error: unknown) => [
     `warning: the sandbox copies of the agent settings were not refreshed: ${errorMessage(error)}`,
     "warning: preference changes made in the sandbox from now on will not be written back to the host",
   ]);
