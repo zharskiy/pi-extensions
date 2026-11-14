@@ -13,10 +13,10 @@ import {
   stoppedWaiting,
   successLines,
   VM_FAILURE_CHOICES,
-  VM_INTERRUPT_WARNING,
   VM_NOT_READY,
   vmDoneLine,
   vmFailureLines,
+  vmInterruptWarning,
   vmUnknownLine,
   widthFor,
   wrapped,
@@ -117,7 +117,7 @@ const runVm = async (io: SetupIo, effects: ApplyEffects, action: Running): Promi
   try {
     const applied = await io.prompts.task({
       title: VM_TITLE,
-      interruptWarning: VM_INTERRUPT_WARNING,
+      interruptWarning: () => vmInterruptWarning(seen.phase),
       run: (update) => effects.vm(action, progress(update)),
     });
 

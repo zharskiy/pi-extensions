@@ -33,7 +33,7 @@ describe("multiselect", () => {
       "│    □ ~/src        no git repository found",
       "│    + Add another folder…",
       "│",
-      "│  ↑↓ move · space select · enter continue · esc cancel · ctrl-c cancel",
+      "│  ↑↓ move · space select · enter continue · esc/ctrl-c cancel",
     ]);
 
     await press(input, KEY.enter);
@@ -161,7 +161,7 @@ describe("multiselect", () => {
 
     expect(screen.lines()).toContain("│  › + Add another folder…");
 
-    expect(screen.lines().at(-1)).toBe("│  ↑↓ move · enter choose · esc cancel · ctrl-c cancel");
+    expect(screen.lines().at(-1)).toBe("│  ↑↓ move · enter choose · esc/ctrl-c cancel");
 
     await press(input, KEY.ctrlC);
 

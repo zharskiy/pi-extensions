@@ -348,7 +348,7 @@ describe("a first run", () => {
 
     await run.keys(KEY.space, KEY.down, KEY.space, KEY.enter);
 
-    expect(run.text()).toContain("Share your whole home with the sandbox VM instead?");
+    expect(run.text()).toContain("◆  Share your whole home with the sandbox VM instead?   step 1 of 3");
 
     await run.keys(KEY.enter, KEY.enter);
 
@@ -461,12 +461,34 @@ describe("a first run", () => {
 });
 
 describe("a re-run", () => {
+  it("asks the home confirm from the review without a step counter", async () => {
+    const run = setup({ text: SAVED, facts: { vm: RUNNING } });
+
+    await run.settled();
+
+    await run.keys(KEY.down, KEY.enter);
+
+    await run.shown("Which folders hold your projects?");
+
+    await run.keys(KEY.space, KEY.down, KEY.space, KEY.enter);
+
+    await run.shown("Share your whole home with the sandbox VM instead?");
+
+    expect(run.screen.lines()).toContain("◆  Share your whole home with the sandbox VM instead?");
+    expect(run.text()).not.toContain("step 1 of 3");
+
+    await run.keys(KEY.ctrlC);
+
+    expect(await run.exit).toBe(130);
+  });
+
   it("opens the hub and says when nothing needs to change", async () => {
     const run = setup({ text: SAVED, facts: { vm: RUNNING } });
 
     await run.settled();
 
     expect(run.text()).not.toContain("step 1 of 3");
+    expect(run.text()).toContain("│  Your settings:");
     expect(run.screen.lines()).toContain(
       "│  Everything is set up: the file and the sandbox VM already match these",
     );
@@ -527,7 +549,7 @@ describe("the VM step", () => {
 
     expect(lines).toContain("│  ✖ Could not create the VM after 54s.");
     expect(lines).toContain("│    exit status 1");
-    expect(lines).toContain("│  ↑↓ move · enter choose · esc exit · ctrl-c exit");
+    expect(lines).toContain("│  ↑↓ move · enter choose · esc/ctrl-c exit");
 
     await run.keys(KEY.enter);
 
@@ -653,7 +675,8 @@ describe("the review hub on an 80x24 terminal", () => {
     expect(hub.live.length).toBeLessThanOrEqual(23);
     expect(MENU.every((item) => hub.live.some((line) => line.endsWith(` ${item}`)))).toBe(true);
     expect(Math.max(...hub.ups)).toBeLessThan(23);
-    expect(run.text()).toContain("│  Your settings:");
+    expect(run.text()).not.toContain("│  Your settings:");
+    expect(run.text()).toContain("│  When you apply:");
   });
 
   it("prints a re-run's diff above the menu and keeps the menu whole", async () => {
@@ -683,7 +706,7 @@ describe("the review hub on an 80x24 terminal", () => {
     const menu = lines.findLastIndex((line) => line.startsWith("◆  Review"));
     const latest = lines.slice(summaries.at(-1), menu);
 
-    expect(summaries).toHaveLength(2);
+    expect(summaries).toHaveLength(1);
     expect(latest.some((line) => /Settings write-back\s+off\s+chosen$/.test(line))).toBe(true);
 
     await run.keys(KEY.ctrlC);
@@ -780,7 +803,7 @@ describe("plain mode", () => {
       "  1) Automatic (8 CPUs, 10 GiB memory, 60 GiB disk)",
       "  2) Custom...",
       "Choose [1]:",
-      "VM size: Automatic: 8 CPUs, 10 GiB memory, 60 GiB disk",
+      "VM size: Automatic (8 CPUs, 10 GiB memory, 60 GiB disk)",
       "",
       "When on, preference changes made inside the sandbox (the default model, the",
       "theme, extension settings) are copied to your pi on this Mac when a session",

@@ -37,6 +37,7 @@ import {
   type TaskSpec,
   type TextSpec,
   type Ui,
+  warningOf,
 } from "./types.ts";
 
 interface Context {
@@ -149,6 +150,10 @@ const hintsOf = (context: Context, segments: string[], width: number) =>
 const wordsOf = (spec: KeyWords, defaults: { enter: string; escape: string; interrupt: string | false }) => {
   const back = spec.escape ?? defaults.escape;
   const interrupt = spec.interrupt ?? defaults.interrupt;
+
+  if (back !== false && back === interrupt) {
+    return [`enter ${spec.enter ?? defaults.enter}`, `esc/ctrl-c ${back}`];
+  }
 
   return [
     `enter ${spec.enter ?? defaults.enter}`,
@@ -899,7 +904,7 @@ const runTask = <T>(context: Context, spec: TaskSpec<T>) =>
       const status = [spinner, ...(state.text === "" ? [] : [fold(state.text)]), elapsed].join(" ");
       const head = spec.title === "" ? [] : [`${paint("cyan", glyphs.active)}  ${fold(spec.title)}`];
       const stops = spec.interruptWarning === "" ? [] : [paint("dim", "ctrl-c stops waiting")];
-      const hint = state.warned ? warningLines(context, spec.interruptWarning, width) : stops;
+      const hint = state.warned ? warningLines(context, warningOf(spec), width) : stops;
 
       return { lines: [...head, `${rail}  ${status}`, ...hint.map((line) => `${rail}  ${line}`)] };
     };

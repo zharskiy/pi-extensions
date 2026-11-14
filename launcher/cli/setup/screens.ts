@@ -131,8 +131,15 @@ export const stoppedWaiting = (phase: VmPhase | undefined) => [
 export const VM_NOT_READY =
   "Your settings are saved, but the sandbox VM is not ready. Fix the problem above, then run pi sandbox init again. pi sandbox doctor checks everything.";
 
-export const VM_INTERRUPT_WARNING =
-  "The VM is still starting. Press ctrl-c again to stop waiting; your settings are already saved.";
+const STILL_BUSY: Record<VmPhase, string> = {
+  creating: "The VM is still being created",
+  stopping: "The VM is still stopping",
+  starting: "The VM is still starting",
+  waiting: "The VM is still starting",
+};
+
+export const vmInterruptWarning = (phase: VmPhase | undefined) =>
+  `${STILL_BUSY[phase ?? "starting"]}. Press ctrl-c again to stop waiting; your settings are already saved.`;
 
 export const stepTitle = (title: string, step: Step | undefined) =>
   step === undefined ? title : `${title}   step ${step.index} of ${step.count}`;
@@ -250,18 +257,45 @@ export const shownSize = (vm: Answers["vm"], facts: HostFacts): VmSpec => {
   return "kept" in vm ? { ...automaticSize(facts), ...vm.kept } : vm;
 };
 
-export const automaticLabel = (facts: HostFacts) => {
-  const size = automaticSize(facts);
-  const grown = size.diskGiB > facts.automatic.diskGiB ? " (the VM's disk only grows)" : "";
+const GROWN = "the VM's disk only grows";
 
-  return `${sizeText({ ...facts.automatic, diskGiB: size.diskGiB })}${grown}`;
+const automaticParts = (facts: HostFacts) => {
+  const size = automaticSize(facts);
+
+  return {
+    text: sizeText({ ...facts.automatic, diskGiB: size.diskGiB }),
+    grown: size.diskGiB > facts.automatic.diskGiB,
+  };
+};
+
+export const automaticLabel = (facts: HostFacts) => {
+  const { text, grown } = automaticParts(facts);
+
+  return grown ? `${text} (${GROWN})` : text;
 };
 
 export const vmEditorDetail = (facts: HostFacts) =>
   `Every pi session runs in this VM. Automatic follows this Mac: CPUs from 2 to 8, half the memory from 4 to 10 GiB, and a ${facts.automatic.diskGiB} GiB disk.`;
 
-export const vmCollapsed = (vm: Answers["vm"], facts: HostFacts) =>
-  vm === "automatic" ? `Automatic: ${automaticLabel(facts)}` : `Custom: ${sizeText(shownSize(vm, facts))}`;
+const plainCollapsed = (vm: Answers["vm"], facts: HostFacts) => {
+  if (vm !== "automatic") {
+    return `Custom (${sizeText(shownSize(vm, facts))})`;
+  }
+
+  const { text, grown } = automaticParts(facts);
+
+  return `Automatic (${grown ? `${text}; ${GROWN}` : text})`;
+};
+
+export const vmCollapsed = (vm: Answers["vm"], facts: HostFacts, plain: boolean) => {
+  if (plain) {
+    return plainCollapsed(vm, facts);
+  }
+
+  return vm === "automatic"
+    ? `Automatic: ${automaticLabel(facts)}`
+    : `Custom: ${sizeText(shownSize(vm, facts))}`;
+};
 
 const vmDiskOf = (facts: HostFacts) =>
   facts.vm.state === "running" || facts.vm.state === "stopped" ? facts.vm.size.diskGiB : undefined;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { VmPhase } from "../../backend/index.ts";
-import { Cancelled, type Prompts } from "../../cli/prompt/types.ts";
+import { Cancelled, type Prompts, warningOf } from "../../cli/prompt/types.ts";
 import { applyPlan } from "../../cli/setup/apply.ts";
 import { readDocument } from "../../cli/setup/document.ts";
 import type { HostFacts, Plan } from "../../cli/setup/types.ts";
@@ -18,9 +18,12 @@ const PLAN: Plan = {
 
 const interrupted = async (phases: VmPhase[]) => {
   const notes: string[] = [];
+  const warnings: string[] = [];
   const prompts = {
     task: async (spec: Parameters<Prompts["task"]>[0]) => {
       await spec.run(() => undefined);
+
+      warnings.push(warningOf(spec));
 
       throw new Cancelled("interrupt");
     },
@@ -50,28 +53,33 @@ const interrupted = async (phases: VmPhase[]) => {
     },
   );
 
-  return { code, said: notes.join("\n") };
+  return { code, said: notes.join("\n"), warned: warnings.join("\n") };
 };
 
 describe("stopping waiting for the VM step", () => {
   it("says the VM may be stopped when the wait ends while it stops", async () => {
-    const { code, said } = await interrupted(["stopping"]);
+    const { code, said, warned } = await interrupted(["stopping"]);
 
     expect(code).toBe(130);
+    expect(warned).toBe(
+      "The VM is still stopping. Press ctrl-c again to stop waiting; your settings are already saved.",
+    );
     expect(said).toContain(
       "Stopped waiting. Your settings are saved; the VM may be stopped now, and the next pi starts it.",
     );
   });
 
   it("says the VM may still be starting once the start began", async () => {
-    const { said } = await interrupted(["stopping", "starting"]);
+    const { said, warned } = await interrupted(["stopping", "starting"]);
 
+    expect(warned).toContain("The VM is still starting.");
     expect(said).toContain("Stopped waiting. Your settings are saved; the VM may still be starting.");
   });
 
   it("says the VM may still be being created during a create", async () => {
-    const { said } = await interrupted(["creating"]);
+    const { said, warned } = await interrupted(["creating"]);
 
+    expect(warned).toContain("The VM is still being created.");
     expect(said).toContain("Stopped waiting. Your settings are saved; the VM may still be being created.");
   });
 });

@@ -31,7 +31,7 @@ describe("select", () => {
       "│    Change VM size",
       "│    Cancel",
       "│",
-      "│  ↑↓ move · enter choose · esc cancel · ctrl-c cancel",
+      "│  ↑↓ move · enter choose · esc/ctrl-c cancel",
     ]);
 
     await press(input, KEY.enter);

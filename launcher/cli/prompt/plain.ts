@@ -17,6 +17,7 @@ import {
   type Reply,
   type TaskSpec,
   type Ui,
+  warningOf,
 } from "./types.ts";
 
 type Parsed<T> = { value: T } | { error: string };
@@ -334,7 +335,7 @@ export const createPlainPrompts = (ui: Ui): Prompts => {
 
         state.warned = true;
 
-        print([`Warning: ${spec.interruptWarning}`]);
+        print([`Warning: ${warningOf(spec)}`]);
       };
 
       const update = (text: string) => {

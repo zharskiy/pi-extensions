@@ -152,8 +152,11 @@ export interface NumberSpec extends KeyWords {
 export interface TaskSpec<T> {
   title: string;
   run: (update: (text: string) => void) => Promise<T>;
-  interruptWarning: string;
+  interruptWarning: string | (() => string);
 }
+
+export const warningOf = (spec: TaskSpec<unknown>) =>
+  typeof spec.interruptWarning === "string" ? spec.interruptWarning : spec.interruptWarning();
 
 export type NotePlace = "rail" | "start" | "step" | "end";
 

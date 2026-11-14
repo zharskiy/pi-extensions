@@ -165,9 +165,9 @@ const createWizard = (io: SetupIo, context: WizardContext) => {
     return { value: stored, label: stored };
   };
 
-  const confirmHome = async () => {
+  const confirmHome = async (step: Step | undefined) => {
     const reply = await prompts.confirm({
-      title: HOME_CONFIRM.title,
+      title: stepTitle(HOME_CONFIRM.title, step),
       detail: [HOME_CONFIRM.detail],
       yes: HOME_CONFIRM.yes,
       no: HOME_CONFIRM.no,
@@ -214,7 +214,7 @@ const createWizard = (io: SetupIo, context: WizardContext) => {
       return touchedWith(next, "folders", { ...state.answers, roots: reply });
     }
 
-    if (await confirmHome()) {
+    if (await confirmHome(step)) {
       return touchedWith(next, "folders", { ...state.answers, roots: "home" });
     }
 
@@ -260,7 +260,7 @@ const createWizard = (io: SetupIo, context: WizardContext) => {
       initial: state.answers.vm === "automatic" ? "automatic" : "custom",
       radio: true,
       collapsed: (value) =>
-        value === "automatic" ? { title, text: vmCollapsed("automatic", facts) } : undefined,
+        value === "automatic" ? { title, text: vmCollapsed("automatic", facts, io.plain) } : undefined,
     });
 
     if (reply === BACK) {
@@ -277,7 +277,7 @@ const createWizard = (io: SetupIo, context: WizardContext) => {
       return editVm(state, step);
     }
 
-    const text = vmCollapsed(size, facts);
+    const text = vmCollapsed(size, facts, io.plain);
 
     noteOf(io, io.plain ? [`${title}: ${text}`, ""] : [title, text, ""], io.plain ? "rail" : "step");
 
@@ -373,25 +373,28 @@ const createWizard = (io: SetupIo, context: WizardContext) => {
       problems: sectionProblems(section, state, plan).map((problem) => problem.message),
     }));
 
-  const hubDetail = (state: State, plan: Plan, notice: string | undefined) => (columns: number) => {
-    const width = widthFor(columns, io.plain);
-    const room = roomOf(width);
-    const done = isPlanEmpty(plan) && plan.problems.length === 0;
-    const shape = { existed: document.text !== undefined, indent: document.indent };
-    const effect = done ? wrapped([NOTHING_TO_DO], room) : applyLines(plan, facts, shape, width, io.plain);
+  const hubDetail =
+    (state: State, plan: Plan, notice: string | undefined, table: boolean) => (columns: number) => {
+      const width = widthFor(columns, io.plain);
+      const room = roomOf(width);
+      const done = isPlanEmpty(plan) && plan.problems.length === 0;
+      const shape = { existed: document.text !== undefined, indent: document.indent };
+      const effect = done ? wrapped([NOTHING_TO_DO], room) : applyLines(plan, facts, shape, width, io.plain);
+      const rows = table || io.plain ? hubRowLines(rowsOf(state, plan), width, io.plain) : [];
+      const framed = table && !io.plain;
 
-    return [
-      ...(io.plain ? [] : [HUB_SUMMARY_TITLE]),
-      ...hubRowLines(rowsOf(state, plan), width, io.plain),
-      ...(io.plain ? [] : [""]),
-      ...(notice === undefined ? [] : [...wrapped([notice], room), ""]),
-      ...effect,
-      ...(io.plain ? [] : ["", ...wrapped([OTHER_SETTINGS], room), ""]),
-    ];
-  };
+      return [
+        ...(framed ? [HUB_SUMMARY_TITLE] : []),
+        ...rows,
+        ...(framed ? [""] : []),
+        ...(notice === undefined ? [] : [...wrapped([notice], room), ""]),
+        ...effect,
+        ...(io.plain ? [] : ["", ...wrapped([OTHER_SETTINGS], room), ""]),
+      ];
+    };
 
-  const hubSummary = (state: State, plan: Plan, notice: string | undefined) => {
-    const summary = hubDetail(state, plan, notice);
+  const hubSummary = (state: State, plan: Plan, notice: string | undefined, table: boolean) => {
+    const summary = hubDetail(state, plan, notice, table);
 
     if (io.plain) {
       return { detail: summary };
@@ -420,7 +423,7 @@ const createWizard = (io: SetupIo, context: WizardContext) => {
     return sure === true ? { kind: "cancelled" } : hub();
   };
 
-  const hub = async (state: State, notice?: string): Promise<Outcome> => {
+  const hub = async (state: State, notice?: string, table = true): Promise<Outcome> => {
     const plan = planFor(state.answers);
     const done = isPlanEmpty(plan) && plan.problems.length === 0;
     const changes: Choice<HubChoice>[] = [
@@ -433,7 +436,7 @@ const createWizard = (io: SetupIo, context: WizardContext) => {
       : [{ value: "apply", label: "Apply" }, ...changes, { value: "cancel", label: "Cancel" }];
     const reply = await prompts.select<HubChoice>({
       title: "Review",
-      ...hubSummary(state, plan, notice),
+      ...hubSummary(state, plan, notice, table),
       choices,
       escape: done ? "done" : "cancel",
       collapsed: (value) =>
@@ -463,9 +466,10 @@ const createWizard = (io: SetupIo, context: WizardContext) => {
 
   const run = async (): Promise<Outcome> => {
     const start: State = { answers: initialAnswers(document, facts, env), touched: new Set(), added: [] };
-    const stepped = await runSteps(start, firstRunSteps(document), 0);
+    const steps = firstRunSteps(document);
+    const stepped = await runSteps(start, steps, 0);
 
-    return stepped === "leave" ? { kind: "cancelled" } : hub(stepped);
+    return stepped === "leave" ? { kind: "cancelled" } : hub(stepped, undefined, steps.length === 0);
   };
 
   return { run };

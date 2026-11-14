@@ -10,6 +10,7 @@ import {
   rootsSummary,
   successLines,
   vmActionText,
+  vmCollapsed,
   vmDoneLine,
   vmFailureLines,
   wrapped,
@@ -224,6 +225,17 @@ describe("the VM size editor", () => {
   it("shows the VM's own disk when it is bigger than automatic", () => {
     expect(automaticLabel({ ...FACTS, vm: RUNNING })).toBe(
       "8 CPUs · 10 GiB memory · 100 GiB disk (the VM's disk only grows)",
+    );
+  });
+
+  it("words the chosen size with one colon in plain mode", () => {
+    expect(vmCollapsed("automatic", FACTS, false)).toBe("Automatic: 8 CPUs · 10 GiB memory · 60 GiB disk");
+    expect(vmCollapsed("automatic", FACTS, true)).toBe("Automatic (8 CPUs · 10 GiB memory · 60 GiB disk)");
+    expect(vmCollapsed("automatic", { ...FACTS, vm: RUNNING }, true)).toBe(
+      "Automatic (8 CPUs · 10 GiB memory · 100 GiB disk; the VM's disk only grows)",
+    );
+    expect(vmCollapsed({ cpus: 6, memoryGiB: 30, diskGiB: 60 }, FACTS, true)).toBe(
+      "Custom (6 CPUs · 30 GiB memory · 60 GiB disk)",
     );
   });
 
