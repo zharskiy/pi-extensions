@@ -310,6 +310,31 @@ describe("applying a size and shares to the sandbox VM", () => {
   });
 });
 
+describe("a launch's share restart", () => {
+  it("applies a size change in the same restart", async () => {
+    const env = await setupWith({
+      profile: { cpu: 6, memory: 12 },
+      running: { cpu: 6, memory: 12, disk: 80 },
+      lima: [{ location: "/Volumes/old", writable: true }],
+    });
+    const notices: string[] = [];
+
+    await env.vm.reconcileShares([{ location: "/Volumes/new", writable: true }], [], {
+      busy: async () => 0,
+      report: (notice) => notices.push(notice),
+      size: { cpus: 8, memoryGiB: 12 },
+    });
+
+    expect(env.commands()).toEqual([
+      "stop --profile pi-sandbox",
+      "start --profile pi-sandbox --activate=false --mount /Volumes/new:w --cpu 8",
+    ]);
+    expect(notices).toEqual([
+      "restarting the sandbox VM to change its shares to /Volumes/new, and its size to 8 CPUs",
+    ]);
+  });
+});
+
 describe("starting a stopped VM at the configured size", () => {
   it("passes the values that differ from colima.yaml, and the disk only when it grows", async () => {
     const env = await setupWith({ profile: { cpu: 2, memory: 4, disk: 100 } });

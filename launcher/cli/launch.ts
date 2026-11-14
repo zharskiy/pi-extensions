@@ -362,7 +362,7 @@ const prepareVm = async (input: SandboxInput, share: boolean) => {
   assertVmFitsHost(deps, context.effective.config.vm);
 
   if (!share) {
-    await staged("vm", () => startVm(backend, sessions, progress));
+    await staged("vm", () => startVm(backend, sessions, progress, { size: context.effective.config.vm }));
 
     return;
   }

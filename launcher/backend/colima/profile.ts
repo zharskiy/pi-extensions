@@ -1,5 +1,10 @@
 import { join } from "node:path";
-import type { Detection } from "../types.ts";
+import type { Detection, VmTarget } from "../types.ts";
+
+export interface SizeChange {
+  flags: string[];
+  text?: string;
+}
 
 export interface Colima {
   home: string;
@@ -7,6 +12,7 @@ export interface Colima {
   run(failure: string, args: string[], hint: string): Promise<void>;
   detectAgain(delaysMs?: number[]): Promise<Detection | undefined>;
   withLock<T>(action: () => Promise<T>): Promise<T>;
+  sizeChange(target?: VmTarget): Promise<SizeChange>;
 }
 
 export const ENGINE_PROFILE = "pi-sandbox";

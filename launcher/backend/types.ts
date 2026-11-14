@@ -158,6 +158,7 @@ export type VmReport = (notice: string) => void;
 export interface VmShareOptions {
   busy: () => Promise<number>;
   report: VmReport;
+  size?: VmTarget;
 }
 
 export interface Vm {

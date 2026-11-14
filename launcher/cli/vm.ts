@@ -171,7 +171,11 @@ export const shareVm = async (
   parts: { sessions: HostSessions; launchId: string; plan: VmSharePlan | undefined },
 ) => {
   const needs = vmPathsOf(context, parts.sessions);
-  const options = { busy: vmBusy(context, backend, parts.launchId), report: report(deps) };
+  const options = {
+    busy: vmBusy(context, backend, parts.launchId),
+    report: report(deps),
+    size: context.effective.config.vm,
+  };
 
   if (parts.plan === undefined) {
     await backend.vm.ensureShares(needs, options);

@@ -24,7 +24,14 @@ import type {
 } from "../types.ts";
 import { hasSizeChanges, vmSizeDrift, vmSizeText } from "../vm-size.ts";
 import { vmSharesOf, vmSizeOfYaml } from "./colima-yaml.ts";
-import { type Colima, ENGINE_PROFILE, ENGINE_SOCKET_DISPLAY, logHint, plainStart } from "./profile.ts";
+import {
+  type Colima,
+  ENGINE_PROFILE,
+  ENGINE_SOCKET_DISPLAY,
+  logHint,
+  plainStart,
+  type SizeChange,
+} from "./profile.ts";
 import { createColimaShares, mountableShares, shareDrift, startArgs } from "./shares.ts";
 import { createColimaTrust } from "./vm-trust.ts";
 
@@ -149,7 +156,14 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
   const withLock = <T>(action: () => Promise<T>) =>
     withDirectoryLock(stateLayout(options.stateDir).vmLock, action, { timeoutMs: LOCK_TIMEOUT_MS });
 
-  const colima: Colima = { home, profile, run, detectAgain, withLock };
+  const colima: Colima = {
+    home,
+    profile,
+    run,
+    detectAgain,
+    withLock,
+    sizeChange: (target) => sizeChange(target),
+  };
   const shares = createColimaShares(colima);
   const trust = createColimaTrust(colima, (command, extra) =>
     colimaRun(["ssh", "--profile", profile, "--", ...command], extra),
@@ -340,6 +354,15 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
   };
 
   const size = () => statusSize().catch(() => undefined);
+
+  const sizeChange = async (target: VmTarget = {}): Promise<SizeChange> => {
+    const current = Object.keys(target).length === 0 ? undefined : await size();
+    const drift = current === undefined ? undefined : vmSizeDrift(current, target);
+
+    return drift === undefined || !hasSizeChanges(drift)
+      ? { flags: [] }
+      : { flags: sizeFlags(drift.changes), text: vmSizeText(drift.changes) };
+  };
 
   const completeSize = (measured: VmSize | undefined, configured: VmSize | undefined): VmSpec => {
     const diskGiB = measured?.diskGiB ?? configured?.diskGiB;

@@ -237,6 +237,7 @@ const sharesWith = async (lima: string) => {
     },
     detectAgain: async () => ({ available: true }),
     withLock: (action) => action(),
+    sizeChange: async () => ({ flags: [] }),
   });
   const mounts = () => (calls.at(-1) ?? []).filter((_arg, index, all) => all[index - 1] === "--mount");
 

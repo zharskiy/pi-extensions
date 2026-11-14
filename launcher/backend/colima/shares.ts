@@ -3,7 +3,7 @@ import { dirname, join, sep } from "node:path";
 import { isWithin, LauncherError } from "../../shared/index.ts";
 import type { VmCoverage, VmPath, VmShare, VmShareOptions } from "../types.ts";
 import { movedMountsOf, vmSharesOf } from "./colima-yaml.ts";
-import { type Colima, instanceOf, logHint, plainStart } from "./profile.ts";
+import { type Colima, instanceOf, logHint, plainStart, type SizeChange } from "./profile.ts";
 
 interface SharePlan {
   missing: string[];
@@ -121,6 +121,9 @@ const notShared = (paths: string[]) =>
 const sessionsText = (count: number) =>
   count === 1 ? "1 running pi session" : `${count} running pi sessions`;
 
+const resizedText = (resize: SizeChange) =>
+  resize.text === undefined ? "" : `, and its size to ${resize.text}`;
+
 const sameShare = (share: VmShare) => (other: VmShare) =>
   other.location === share.location && other.writable === share.writable;
 
@@ -184,10 +187,15 @@ export const createColimaShares = (colima: Colima) => {
       `end them and run pi again, or share it yourself with ${restartCommand(profile, plan.next)}`,
     );
 
-  const restartWith = async (plan: SharePlan, needs: VmPath[], { change, failure }: Restart) => {
+  const restartWith = async (
+    plan: SharePlan,
+    needs: VmPath[],
+    { change, failure }: Restart,
+    resize: SizeChange,
+  ) => {
     await run(failure, ["stop", "--profile", profile]);
 
-    await run(failure, startArgs(profile, plan.next));
+    await run(failure, [...startArgs(profile, plan.next), ...resize.flags]);
 
     await assertShared(plan, needs);
 
@@ -209,12 +217,16 @@ export const createColimaShares = (colima: Colima) => {
       throw busyError(plan, count, change);
     }
 
-    options.report(`sharing ${locationsOf(plan.added)} with the sandbox VM, one time`);
+    const resize = await colima.sizeChange(options.size);
 
-    await restartWith(plan, needs, {
-      change,
-      failure: `could not share ${locationsOf(plan.added)} with the sandbox VM`,
-    });
+    options.report(`sharing ${locationsOf(plan.added)} with the sandbox VM, one time${resizedText(resize)}`);
+
+    await restartWith(
+      plan,
+      needs,
+      { change, failure: `could not share ${locationsOf(plan.added)} with the sandbox VM` },
+      resize,
+    );
   };
 
   const refuseMoved = (text: string, problem: string) => {
@@ -290,12 +302,18 @@ export const createColimaShares = (colima: Colima) => {
       return;
     }
 
-    options.report(`restarting the sandbox VM to change its shares to ${locationsOf(desired)}`);
+    const resize = await colima.sizeChange(options.size);
 
-    await restartWith(plan, needs, {
-      change: "changing its shares",
-      failure: "could not change the shares of the sandbox VM",
-    });
+    options.report(
+      `restarting the sandbox VM to change its shares to ${locationsOf(desired)}${resizedText(resize)}`,
+    );
+
+    await restartWith(
+      plan,
+      needs,
+      { change: "changing its shares", failure: "could not change the shares of the sandbox VM" },
+      resize,
+    );
   };
 
   const reconcileShares = async (desired: VmShare[], needs: VmPath[], options: VmShareOptions) => {

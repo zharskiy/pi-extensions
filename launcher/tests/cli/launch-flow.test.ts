@@ -290,7 +290,18 @@ describe("the VM size", () => {
     await run(["sandbox", "doctor"], harness.deps);
 
     expect(asked.targets).toEqual([{}]);
-    expect(asked.started).toEqual([{}, undefined]);
+    expect(asked.started).toEqual([{}, {}]);
+  });
+
+  it("has the doctor start a stopped VM at the size vm sets, without resizing a running one", async () => {
+    const { harness, asked } = await sizedHarness();
+
+    await harness.writeJson(harness.userConfigFile, { vm: { cpus: 6 } });
+
+    await run(["sandbox", "doctor"], harness.deps);
+
+    expect(asked.targets).toEqual([]);
+    expect(asked.started).toEqual([{ cpus: 6 }]);
   });
 });
 
