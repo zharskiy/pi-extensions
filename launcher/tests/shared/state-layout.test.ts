@@ -68,9 +68,12 @@ describe("stateLayout", () => {
     const hidden = [...flat(layout), ...flat(layout.repo("r1"))].filter(inVm);
 
     expect(layout.vm).toBe("/state/vm");
-    expect(layout.trustPem).toBe("/state/vm/trust.pem");
+    expect(layout.trustPem("ab".repeat(32), "0123456789abcdef")).toBe(
+      "/state/vm/trust-abababababab-0123456789abcdef.pem",
+    );
+    expect(layout.trustPemPrefix("ab".repeat(32))).toBe("trust-abababababab-");
     expect(layout.legacyTrustPem).toBe("/state/ca/trust.pem");
-    expect(hidden.sort()).toEqual(["/state/vm/render/r1", "/state/vm/trust.pem"]);
+    expect(hidden.sort()).toEqual(["/state/vm/render/r1"]);
   });
 
   it("keeps every file of one repository under repos/<repo hash>, its proxy included", () => {

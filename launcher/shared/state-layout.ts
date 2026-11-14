@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { ensureRandomHexFile } from "./atomic-write.ts";
-import { sha256Hex } from "./hash.ts";
+import { sha256Hex, shortHash } from "./hash.ts";
 
 const SALT_BYTES = 32;
 
@@ -62,7 +62,8 @@ export const stateLayout = (stateDir: string) => ({
   ca: join(stateDir, "ca"),
   caLock: join(stateDir, "ca", "ca.lock"),
   extraPem: join(stateDir, "ca", "extra.pem"),
-  trustPem: join(stateDir, "vm", "trust.pem"),
+  trustPemPrefix: (hash: string) => `trust-${shortHash(hash)}-`,
+  trustPem: (hash: string, id: string) => join(stateDir, "vm", `trust-${shortHash(hash)}-${id}.pem`),
   legacyTrustPem: join(stateDir, "ca", "trust.pem"),
   imageRecord: join(stateDir, "image.json"),
   gcRecord: join(stateDir, "gc.json"),

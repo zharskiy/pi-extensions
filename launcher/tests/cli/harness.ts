@@ -336,7 +336,7 @@ export const createHarness = async (options: HarnessOptions = {}) => {
   const userConfigFile = join(root, "config", "config.json");
 
   const hostAgentDir = join(root, "home", ".pi", "agent");
-  const trustPem = stateLayout(stateDir).trustPem;
+  const trustPem = stateLayout(stateDir).trustPem(sha256Hex("trust bundle\n"), "0".repeat(16));
 
   mkdirSync(join(repoRoot, ".git", "hooks"), { recursive: true });
 
