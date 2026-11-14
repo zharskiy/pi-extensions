@@ -12,6 +12,7 @@ import {
 import { createProcessRunner, realOrResolved, withResolvedCommand } from "../shared/index.ts";
 import { findGitRoot } from "../workspace/index.ts";
 import { type CliDeps, onClosedOutput, pathsOf } from "./deps.ts";
+import { openDevTty } from "./prompt/terminal.ts";
 import { renderFailure, run } from "./run.ts";
 import { hostTerminal } from "./terminal.ts";
 
@@ -40,6 +41,7 @@ const realDeps = (): CliDeps => {
     stdout: process.stdout,
     stderr: process.stderr,
     terminal: hostTerminal(),
+    openTty: openDevTty,
     platform,
     uid: process.getuid?.() ?? 0,
     machine: { cpus: availableParallelism(), memoryGiB: totalmem() / GIB },

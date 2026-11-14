@@ -8,12 +8,12 @@ export interface TtyStreams {
   close?(): void;
 }
 
-export interface SignalSource {
+interface SignalSource {
   on(signal: NodeJS.Signals, listener: () => void): unknown;
   off(signal: NodeJS.Signals, listener: () => void): unknown;
 }
 
-export interface ExitSource {
+interface ExitSource {
   on(event: "exit", listener: () => void): unknown;
   off(event: "exit", listener: () => void): unknown;
 }

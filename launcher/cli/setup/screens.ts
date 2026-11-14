@@ -267,7 +267,7 @@ export const numberFields = (facts: HostFacts, bounds: VmBounds) => {
   };
 };
 
-const partsText = (parts: VmPart[]) => {
+export const partsText = (parts: VmPart[]) => {
   if (parts.length === 2) {
     return "size and folders";
   }

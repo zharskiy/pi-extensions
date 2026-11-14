@@ -67,16 +67,20 @@ export const vmSharesFor = (deps: CliDeps, workspaceRoots: WorkspaceRoots): VmSh
   return { shares, notices };
 };
 
-export const prepareVmShares = async (deps: CliDeps, workspaceRoots: WorkspaceRoots) => {
-  if (workspaceRoots === undefined) {
-    return undefined;
-  }
-
+export const prepareVmDirs = async (deps: CliDeps) => {
   const dirs = vmDirsOf(deps);
 
   await mkdir(dirs.sessions, { recursive: true, mode: 0o700 });
 
   await mkdir(dirs.state, { recursive: true });
+};
+
+export const prepareVmShares = async (deps: CliDeps, workspaceRoots: WorkspaceRoots) => {
+  if (workspaceRoots === undefined) {
+    return undefined;
+  }
+
+  await prepareVmDirs(deps);
 
   return vmSharesFor(deps, workspaceRoots);
 };

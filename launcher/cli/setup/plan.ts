@@ -54,7 +54,7 @@ export const isFirstRun = (document: ConfigDocument) =>
 export const firstRunSteps = (document: ConfigDocument): readonly Section[] =>
   isFirstRun(document) ? FIRST_RUN_STEPS : [];
 
-const configuredRoots = (document: ConfigDocument) => {
+export const configuredRoots = (document: ConfigDocument) => {
   const roots = valueAt(document.value, ROOTS_PATH);
 
   return Array.isArray(roots) && roots.every((root) => typeof root === "string") ? roots : undefined;

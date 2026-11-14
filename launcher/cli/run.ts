@@ -4,6 +4,7 @@ import { doctorCommand } from "./commands/doctor.ts";
 import { VERBOSE_FLAG } from "./commands/doctor-checks.ts";
 import { egressCommand } from "./commands/egress.ts";
 import { helpCommand, usageOf } from "./commands/help.ts";
+import { initCommand, YES_FLAG } from "./commands/init.ts";
 import { INIT_CONFIG, initConfigCommand } from "./commands/init-config.ts";
 import { assertOptions } from "./commands/options.ts";
 import { resetCommand } from "./commands/reset.ts";
@@ -32,6 +33,7 @@ const printVersion = async (deps: CliDeps) => {
 const help: Command = { run: helpCommand };
 
 const COMMANDS: Record<string, Command> = {
+  init: { run: initCommand, options: [YES_FLAG] },
   status: { run: statusCommand, options: [] },
   doctor: { run: doctorCommand, options: [VERBOSE_FLAG] },
   config: { run: configCommand, options: [JSON_FLAG] },

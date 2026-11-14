@@ -4,6 +4,7 @@ import type { ExtraCa } from "../config/index.ts";
 import type { HostTerminal, SignalSource } from "../container/index.ts";
 import type { DenialRecord, RepoProxy, RepoProxyInput, RepoProxyStart, TrustBundle } from "../proxy/index.ts";
 import { type CommandRunner, hostAgentDir, launcherPaths } from "../shared/index.ts";
+import type { TtyStreams } from "./prompt/terminal.ts";
 
 interface ProxyRequest {
   stateDir: string;
@@ -29,6 +30,7 @@ export interface CliDeps {
   stderr: NodeJS.WritableStream;
   terminal: HostTerminal;
   signals?: SignalSource;
+  openTty?: () => TtyStreams | undefined;
   platform: NodeJS.Platform;
   uid: number;
   machine: { cpus: number; memoryGiB: number };

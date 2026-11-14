@@ -12,6 +12,10 @@ const COMMANDS: Array<[string, string]> = [
   ["pi --version", "the pi version the sandbox runs, without starting a sandbox"],
   ["pi update [target]", "update host pi, its packages or its model catalogs, with host pi on the host"],
   ["pi config", "the user resource config, with host pi on the host (-l passes through into the sandbox)"],
+  [
+    "pi sandbox init [--yes]",
+    "set up or change the project folders, VM size and settings write-back, then apply them to the sandbox VM; --yes asks nothing and applies the current settings",
+  ],
   ["pi sandbox status", "runtime, container, proxy, image, launches, grants, overlays, shared caches"],
   [
     "pi sandbox config [--json]",
