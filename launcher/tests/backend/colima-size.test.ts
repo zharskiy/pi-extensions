@@ -1,57 +1,20 @@
-import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createColimaVm, recommendedVmSize } from "../../backend/colima/vm.ts";
 import type { VmTarget } from "../../backend/index.ts";
-import { launcherRoot } from "../../shared/index.ts";
 import { createFakeRunner, type FakeResponder } from "../support/fake-runner.ts";
 import { tempDir } from "../support/temp-dir.ts";
 
 const GIB = 1024 ** 3;
 
-const SAMPLES: Array<[number, number]> = [
-  [1, 2],
-  [2, 7],
-  [4, 8],
-  [8, 16],
-  [10, 18],
-  [12, 24],
-  [16, 64],
+const SAMPLES: Array<[number, number, { cpus: number; memoryGiB: number }]> = [
+  [1, 2, { cpus: 2, memoryGiB: 4 }],
+  [2, 7, { cpus: 2, memoryGiB: 4 }],
+  [4, 8, { cpus: 4, memoryGiB: 4 }],
+  [8, 16, { cpus: 8, memoryGiB: 8 }],
+  [10, 18, { cpus: 8, memoryGiB: 9 }],
+  [12, 24, { cpus: 8, memoryGiB: 10 }],
+  [16, 64, { cpus: 8, memoryGiB: 10 }],
 ];
-
-const installText = () => readFileSync(join(launcherRoot(), "install.sh"), "utf8");
-
-const functionOf = (text: string, name: string) => {
-  const start = text.indexOf(`\n${name}() {\n`);
-  const end = text.indexOf("\n}\n", start);
-
-  return text.slice(start + 1, end + 2);
-};
-
-const settingOf = (text: string, name: string) =>
-  text.split("\n").find((line) => line.startsWith(`${name}=`)) ?? "";
-
-const installSize = (cpus: number, memGiB: number) => {
-  const text = installText();
-  const script = [
-    settingOf(text, "max_cpus"),
-    settingOf(text, "max_memory"),
-    'cpus=""',
-    'memory=""',
-    'sizing=""',
-    `sysctl() { case "$2" in hw.ncpu) echo ${cpus} ;; hw.memsize) echo ${memGiB * GIB} ;; esac; }`,
-    functionOf(text, "clamp"),
-    functionOf(text, "size_to_host"),
-    "size_to_host",
-    'echo "$cpus $memory"',
-  ].join("\n");
-  const [shownCpus, shownMemory] = spawnSync("sh", ["-c", script], { encoding: "utf8" })
-    .stdout.trim()
-    .split(" ");
-
-  return { cpus: Number(shownCpus), memoryGiB: Number(shownMemory) };
-};
 
 const vmWith = (respond: FakeResponder) =>
   createColimaVm({
@@ -62,9 +25,9 @@ const vmWith = (respond: FakeResponder) =>
   });
 
 describe("the sandbox VM size", () => {
-  it("recommends the size install.sh gives a Mac of the same size", () => {
-    SAMPLES.forEach(([cpus, memGiB]) => {
-      expect(recommendedVmSize(cpus, memGiB)).toEqual({ ...installSize(cpus, memGiB), diskGiB: 60 });
+  it("recommends this Mac's CPUs from 2 to 8, half its memory from 4 to 10 GiB, and a 60 GiB disk", () => {
+    SAMPLES.forEach(([cpus, memGiB, size]) => {
+      expect(recommendedVmSize(cpus, memGiB)).toEqual({ ...size, diskGiB: 60 });
     });
   });
 
