@@ -60,7 +60,7 @@ export const createPiExtension =
       {
         ctx: () => liveCtx(state),
         settings: () => pi.getSettings(),
-        thinking: () => pi.getThinkingLevel(),
+        thinking: host.thinkingLevel,
         inventorySkillFiles: inventory.files,
         sessionSkillFiles: () => sessionSkillFiles(pi),
         activeTools: () => parentTools(pi),
