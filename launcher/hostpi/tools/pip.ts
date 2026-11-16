@@ -2,7 +2,14 @@ import { join } from "node:path";
 import { hasUrlUserinfo, type IniSection, iniWords, parseIni } from "../../shared/index.ts";
 import { mergeSections, noticeOnly, type Section } from "../rules.ts";
 import type { Registry, ToolsInput } from "../types.ts";
-import { firstExisting, registriesOf, type UrlSecret, urlCredentialSection } from "./files.ts";
+import {
+  firstExisting,
+  PROXY_KEY_REASON,
+  registriesOf,
+  URL_CREDENTIAL_REASON,
+  type UrlSecret,
+  urlCredentialSection,
+} from "./files.ts";
 
 const INDEX_KEYS = new Set(["index-url", "extra-index-url"]);
 
@@ -32,12 +39,12 @@ const entrySection = (
   const normalized = pipName(name);
 
   if (normalized === PROXY_KEY) {
-    return dropped(key, "stays on the host; the sandbox reaches the network through the launcher proxy");
+    return dropped(key, PROXY_KEY_REASON);
   }
 
   if (!INDEX_KEYS.has(normalized)) {
     return iniWords(value).some(hasUrlUserinfo)
-      ? dropped(key, "carries credentials in a URL and stays on the host")
+      ? dropped(key, URL_CREDENTIAL_REASON)
       : noticeOnly([[name, value]]);
   }
 

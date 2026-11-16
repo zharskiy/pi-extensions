@@ -8,7 +8,14 @@ import {
   placeholderFor,
 } from "../shared/index.ts";
 import type { ProviderCredentials } from "./derive-auth.ts";
-import { type Endpoint, endpointOf, hasQueryCredential, strippedUrl } from "./endpoints.ts";
+import {
+  type Endpoint,
+  endpointOf,
+  hasQueryCredential,
+  localEndpointReason,
+  queryCredentialNotice,
+  strippedUrl,
+} from "./endpoints.ts";
 import { deriveHeaders } from "./headers.ts";
 import { objectOr } from "./json.ts";
 import { isDisabledServer, oauthTarget, providerAuthOf } from "./mcp-auth.ts";
@@ -99,10 +106,7 @@ const httpServer = (
   );
 
   if (!("endpoint" in result)) {
-    const reason =
-      "local" in result
-        ? `${result.local} is a host-local or plain-http endpoint, not reachable from the sandbox`
-        : "the url is not valid";
+    const reason = "local" in result ? localEndpointReason(result.local) : "the url is not valid";
 
     return noticeOnly(
       [name, headers.value === undefined ? rest : { ...rest, headers: headers.value }],
@@ -238,7 +242,7 @@ const serverSection = (
     return {
       value: [name, undefined],
       rules: [],
-      notices: [`mcp ${name}: the url carries a credential in its query string; add a header rule instead`],
+      notices: [queryCredentialNotice(`mcp ${name}`, "the url", "the server")],
       dropped: true,
     };
   }

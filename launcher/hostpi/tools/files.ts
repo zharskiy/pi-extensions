@@ -15,6 +15,11 @@ export const PROBE_TIMEOUT_MS = 10_000;
 
 export const TOKEN_PROBE_TIMEOUT_MS = 30_000;
 
+export const PROXY_KEY_REASON =
+  "stays on the host; the sandbox reaches the network through the launcher proxy";
+
+export const URL_CREDENTIAL_REASON = "carries credentials in a URL and stays on the host";
+
 export const readOptional = (path: string) => readFile(path, "utf8").catch(() => undefined);
 
 export const firstExisting = async (paths: string[]) => {

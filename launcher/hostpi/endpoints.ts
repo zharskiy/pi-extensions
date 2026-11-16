@@ -52,6 +52,12 @@ export const hasQueryCredential = (url: unknown) =>
     (name) => isSecretName(name) || SECRET_QUERY_NAME.test(name),
   );
 
+export const queryCredentialNotice = (label: string, key: string, what: string) =>
+  `${label}: ${key} carries a credential in its query string; ${what} stays out of the sandbox, use a header instead`;
+
+export const localEndpointReason = (host: string) =>
+  `${host} is a host-local or plain-http endpoint, not reachable from the sandbox`;
+
 export const hasUrlPassword = (url: unknown) => (parsed(url)?.password ?? "") !== "";
 
 export const withoutUserinfo = (url: unknown) => {

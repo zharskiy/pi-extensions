@@ -10,7 +10,14 @@ import {
 import { endpointOf } from "../endpoints.ts";
 import { mergeSections, noticeOnly, rulesFor, type Section } from "../rules.ts";
 import type { Registry, ToolsInput } from "../types.ts";
-import { expandPublicVariables, readOptional, registriesOf, urlCredentialSection } from "./files.ts";
+import {
+  expandPublicVariables,
+  PROXY_KEY_REASON,
+  readOptional,
+  registriesOf,
+  URL_CREDENTIAL_REASON,
+  urlCredentialSection,
+} from "./files.ts";
 
 const REGISTRY_CREDENTIAL = /^\/\/([^/]+)(\/.*)?:(_authToken|_auth|_password)$/;
 
@@ -122,10 +129,7 @@ const plainSection = (input: ToolsInput, entry: NpmrcEntry): Section<NpmrcEntry[
   }
 
   if (PROXY_KEYS.has(name)) {
-    return dropped(
-      entry.key,
-      "stays on the host; the sandbox reaches the network through the launcher proxy",
-    );
+    return dropped(entry.key, PROXY_KEY_REASON);
   }
 
   if (isPathKey(name)) {
@@ -146,7 +150,7 @@ const plainSection = (input: ToolsInput, entry: NpmrcEntry): Section<NpmrcEntry[
   }
 
   if (name !== REGISTRY_KEY || value !== entry.value) {
-    return dropped(entry.key, "carries credentials in a URL and stays on the host");
+    return dropped(entry.key, URL_CREDENTIAL_REASON);
   }
 
   const section = urlCredentialSection(input, {

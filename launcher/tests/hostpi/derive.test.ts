@@ -383,10 +383,10 @@ describe("deriveSandboxPi mcp.json", () => {
     expect(JSON.stringify(result.files)).not.toMatch(/QUERY-/);
     expect(result.rules.filter((rule) => rule.id.startsWith("derived:mcp:keyed"))).toEqual([]);
     expect(result.notices).toContain(
-      "mcp keyed: the url carries a credential in its query string; add a header rule instead",
+      "mcp keyed: the url carries a credential in its query string; the server stays out of the sandbox, use a header instead",
     );
     expect(result.notices).toContain(
-      "mcp signed: the url carries a credential in its query string; add a header rule instead",
+      "mcp signed: the url carries a credential in its query string; the server stays out of the sandbox, use a header instead",
     );
   });
 

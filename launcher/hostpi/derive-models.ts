@@ -1,7 +1,15 @@
 import { join } from "node:path";
 import type { SecretRef } from "../config/index.ts";
 import { isJsonObject, placeholderFor } from "../shared/index.ts";
-import { type Endpoint, endpointOf, hasQueryCredential, httpsEndpoint, strippedUrl } from "./endpoints.ts";
+import {
+  type Endpoint,
+  endpointOf,
+  hasQueryCredential,
+  httpsEndpoint,
+  localEndpointReason,
+  queryCredentialNotice,
+  strippedUrl,
+} from "./endpoints.ts";
 import { deriveHeaders, type HeaderTarget } from "./headers.ts";
 import { jsonPointer, objectOr } from "./json.ts";
 import { noHostNotice, providerEndpoints } from "./provider-endpoints.ts";
@@ -44,10 +52,7 @@ const modelEndpoints = (scope: ProviderScope, model: JsonObject) =>
   model.baseUrl === undefined ? scope.endpoints : httpsEndpoint(model.baseUrl);
 
 const queryCredential = (label: string, key: string, what: string) =>
-  noticeOnly(
-    [],
-    `${label}: ${key} carries a credential in its query string; ${what} stays out of the sandbox, use a header instead`,
-  );
+  noticeOnly([], queryCredentialNotice(label, key, what));
 
 const modelSection = (scope: ProviderScope, model: unknown, index: number): Section<unknown[]> => {
   if (!isJsonObject(model)) {
@@ -103,9 +108,7 @@ const localNotices = (id: string, provider: JsonObject) => {
     .map(endpointOf)
     .flatMap((result) => ("local" in result ? [result.local] : []));
 
-  return [...new Set(local)].map(
-    (host) => `models ${id}: ${host} is a host-local or plain-http endpoint, not reachable from the sandbox`,
-  );
+  return [...new Set(local)].map((host) => `models ${id}: ${localEndpointReason(host)}`);
 };
 
 const apiKeySection = (scope: ProviderScope, provider: JsonObject): Section<JsonObject> => {
