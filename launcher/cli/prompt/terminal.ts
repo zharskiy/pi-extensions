@@ -23,8 +23,6 @@ export interface TerminalDeps {
   stderr: UiOutput;
   env: NodeJS.ProcessEnv;
   openTty?: () => TtyStreams | undefined;
-  escapeCodeTimeout?: number;
-  timers?: Timers;
 }
 
 export interface UiOptions {
@@ -229,7 +227,7 @@ const openedTty = (openTty: TerminalDeps["openTty"]) => {
 };
 
 export const findTerminal = (deps: TerminalDeps): Ui | undefined => {
-  const options = { env: deps.env, escapeCodeTimeout: deps.escapeCodeTimeout, timers: deps.timers };
+  const options = { env: deps.env };
 
   if (deps.stdin.isTTY === true && deps.stderr.isTTY === true) {
     return uiOf({ input: deps.stdin, output: deps.stderr }, options);

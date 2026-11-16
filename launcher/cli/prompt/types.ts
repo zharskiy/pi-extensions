@@ -73,7 +73,7 @@ export interface Ui {
   rows(): number;
   onResize(listener: () => void): () => void;
   session: TerminalSession;
-  escapeCodeTimeout?: number;
+  escapeCodeTimeout: number;
   timers: Timers;
 }
 

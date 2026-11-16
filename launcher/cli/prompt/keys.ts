@@ -132,9 +132,7 @@ const attach = (ui: Ui): KeySource => {
     source.handlers?.end();
   };
 
-  const timeout = ui.escapeCodeTimeout === undefined ? {} : { escapeCodeTimeout: ui.escapeCodeTimeout };
-
-  emitKeypressEvents(input, timeout as unknown as Interface);
+  emitKeypressEvents(input, { escapeCodeTimeout: ui.escapeCodeTimeout } as unknown as Interface);
 
   input.on("keypress", onKeypress);
 
