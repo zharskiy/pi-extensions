@@ -131,7 +131,7 @@ backend/exec-capture.ts        a non-tty exec with collected output
 backend/vm-size.ts             the VM size against the vm config: what differs, a disk below the current one, the size text
 backend/vm-decision.ts         the one VM decision from what the VM has and what is wanted: create, nothing, on next start, restart or defer while busy, for a launch and the setup
 backend/colima/backend.ts      the Colima backend
-backend/colima/profile.ts      the pi-sandbox profile, its socket, the VM's name for the host, and the running-sessions and deferred-until-idle texts
+backend/colima/profile.ts      the pi-sandbox profile, its socket, the VM's name for the host, the one colima start argv and its stop-and-start hint text, and the running-sessions and deferred-until-idle texts
 backend/colima/engine-client.ts  the engine HTTP client over the socket, with its timeouts
 backend/colima/container-body.ts  container create bodies from a spec, with the capability, privilege and process limits
 backend/colima/exec-session.ts exec streams with backpressure, ended quietly when the host output closes
@@ -139,7 +139,7 @@ backend/colima/images.ts       image pull, build (with the output tail of a fail
 backend/colima/volumes.ts      volume operations
 backend/colima/relay.ts        the per-repository network and relay
 backend/colima/vm.ts           VM start (at the vm config size when stopped), size, inspect, apply for the setup, the launch reconcile of shares and size in one restart, and stop
-backend/colima/size.ts         the VM size colima reports (status --json, colima.yaml), the size flags of a start, the cold-start flags and the shrink notice
+backend/colima/size.ts         the VM size colima reports (status --json, colima.yaml), the size flags of a start, the cold-start size and the shrink notice
 backend/colima/shares.ts       VM shares: coverage, the shares a launch adds, the mount list of a restart and its check
 backend/colima/vm-trust.ts     the tls.extraCa certificates in the VM's trust store, engine restart when idle
 backend/colima/colima-yaml.ts  the lima.yaml and colima.yaml mounts reader and the colima.yaml size reader

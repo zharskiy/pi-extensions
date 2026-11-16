@@ -18,11 +18,11 @@ export const sizeFlags = (target: VmTarget) => [
 export const shrinkNotice = (target: VmTarget, keptDiskGiB: number) =>
   `vm.diskGiB ${target.diskGiB} is below the sandbox VM's disk of ${keptDiskGiB} GiB; colima cannot shrink a disk, so it stays`;
 
-export const coldStartFlags = (profileYaml: string | undefined, target: VmTarget, report: VmReport) => {
+export const coldStartSize = (profileYaml: string | undefined, target: VmTarget, report: VmReport) => {
   const current = profileYaml === undefined ? undefined : vmSizeOfYaml(profileYaml);
 
   if (current === undefined) {
-    return sizeFlags({ cpus: target.cpus, memoryGiB: target.memoryGiB });
+    return { cpus: target.cpus, memoryGiB: target.memoryGiB };
   }
 
   const drift = vmSizeDrift(current, target);
@@ -31,7 +31,7 @@ export const coldStartFlags = (profileYaml: string | undefined, target: VmTarget
     report(shrinkNotice(target, drift.keptDiskGiB));
   }
 
-  return sizeFlags(drift.changes);
+  return drift.changes;
 };
 
 export const statusSize = async (run: StatusRun, profile: string): Promise<VmSize | undefined> => {

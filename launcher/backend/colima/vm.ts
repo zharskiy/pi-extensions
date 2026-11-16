@@ -39,21 +39,21 @@ import {
   ENGINE_SOCKET_DISPLAY,
   logHint,
   plainStart,
+  restartText,
   sessionsRunning,
+  startArgs,
 } from "./profile.ts";
 import {
   assertDesiredCovers,
   createColimaShares,
   locationsOf,
   notShared,
-  restartCommand,
   restartedShares,
   sharesFor,
-  startArgs,
   UNREADABLE,
   uncoveredPaths,
 } from "./shares.ts";
-import { coldStartFlags, completeSize, shrinkNotice, sizeFlags, statusSize } from "./size.ts";
+import { coldStartSize, completeSize, shrinkNotice, statusSize } from "./size.ts";
 import { createColimaTrust } from "./vm-trust.ts";
 
 export interface ColimaVmOptions {
@@ -88,8 +88,6 @@ const MOVED_PROBLEM = "could not change the shares of the sandbox VM";
 
 const AUTOMATIC_DISK_GIB = 60;
 
-const CREATE_FLAGS = ["--vm-type", "vz", "--mount-type", "virtiofs"];
-
 const startHint = `run ${plainStart(ENGINE_PROFILE)} and see ${logHint(ENGINE_PROFILE)}`;
 
 const INIT_HINT = "run pi sandbox init, which creates it";
@@ -106,7 +104,7 @@ const profileAbsent = () =>
 const engineSilent = (detection: Detection) =>
   new LauncherError(
     `the sandbox VM is running but its engine at ${ENGINE_SOCKET_DISPLAY} does not answer: ${detection.reason ?? "not detected"}`,
-    `run colima stop --profile ${ENGINE_PROFILE} && ${plainStart(ENGINE_PROFILE)} and see ${logHint(ENGINE_PROFILE)}`,
+    `run ${restartText(ENGINE_PROFILE)} and see ${logHint(ENGINE_PROFILE)}`,
   );
 
 const lastLine = (text: string) => text.trim().split("\n").at(-1) ?? "";
@@ -213,11 +211,11 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
   };
 
   const startStopped = async (report: VmReport, shares: VmShare[], target: VmTarget) => {
-    const flags = coldStartFlags(await readProfileYaml(), target, report);
+    const coldSize = coldStartSize(await readProfileYaml(), target, report);
 
     report("starting the sandbox VM");
 
-    await run(START_FAILURE, [...startArgs(profile, shares), ...flags], startHint);
+    await run(START_FAILURE, startArgs(profile, { shares, size: coldSize }), startHint);
 
     const detection = await detectAgain();
 
@@ -330,7 +328,7 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
 
     await run(
       CREATE_FAILURE,
-      [...startArgs(profile, desired.shares), ...CREATE_FLAGS, ...sizeFlags(desired.size)],
+      startArgs(profile, { shares: desired.shares, size: desired.size, create: true }),
       `see ${logHint(profile)}, then run pi sandbox init again`,
     );
 
@@ -372,7 +370,7 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
 
     await run(
       RESTART_FAILURE,
-      [...startArgs(profile, planned.mounts), ...sizeFlags(planned.resize)],
+      startArgs(profile, { shares: planned.mounts, size: planned.resize }),
       startHint,
     );
 
@@ -419,7 +417,7 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
   const refused = (missing: string[], sessions: number, text: string, mounts: VmShare[]) =>
     new LauncherError(
       `${notShared(missing)}; ${sessionsRunning(sessions)}, and restarting the VM to ${text} would end them`,
-      `end them and run pi again, or share it yourself with ${restartCommand(profile, mounts)}`,
+      `end them and run pi again, or share it yourself with ${restartText(profile, { shares: mounts })}`,
     );
 
   const reconcileLocked = async (target: VmReconcile, options: VmShareOptions) => {
@@ -478,8 +476,7 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
     reconcile: (target, options) => withLock(() => reconcileLocked(target, options)),
     ensureTrust: trust.ensureTrust,
     size,
-    resizeCommand: (target) =>
-      `colima stop --profile ${profile} && ${[plainStart(profile), ...sizeFlags(target)].join(" ")}`,
+    resizeCommand: (size) => restartText(profile, { size }),
     stop,
   };
 };

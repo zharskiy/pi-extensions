@@ -4,12 +4,10 @@ import { isWithin, LauncherError } from "../../shared/index.ts";
 import type { VmCoverage, VmPath, VmShare } from "../types.ts";
 import { shareDrift } from "../vm-decision.ts";
 import { movedMountsOf, vmSharesOf } from "./colima-yaml.ts";
-import { type Colima, instanceOf, plainStart } from "./profile.ts";
+import { type Colima, instanceOf, restartText } from "./profile.ts";
 
 export const UNREADABLE =
   "the shares of the sandbox VM could not be read from colima's lima.yaml, so they were not changed";
-
-const SAFE_WORD = /^[A-Za-z0-9_@%+=:,./-]+$/;
 
 const segmentsOf = (path: string) => path.split(sep).filter((part) => part !== "");
 
@@ -56,27 +54,9 @@ const homeFirst = (shares: VmShare[], home: string) => [
 
 const mountableShares = (shares: VmShare[], home: string) => homeFirst(merged(shares), home);
 
-const shellWord = (word: string) => (SAFE_WORD.test(word) ? word : `'${word.replaceAll("'", "'\\''")}'`);
-
-export const shareText = (share: VmShare) => (share.writable ? `${share.location}:w` : share.location);
-
-const mountFlags = (shares: VmShare[]) => shares.flatMap((share) => ["--mount", shareText(share)]);
-
-export const startArgs = (profile: string, shares: VmShare[]) => [
-  "start",
-  "--profile",
-  profile,
-  "--activate=false",
-  ...mountFlags(shares),
-];
-
-export const restartCommand = (profile: string, shares: VmShare[]) =>
-  `colima stop --profile ${profile} && colima ${startArgs(profile, shares).map(shellWord).join(" ")}`;
-
 const colimaYaml = (profile: string) => `~/.colima/${profile}/colima.yaml`;
 
-const editHint = (profile: string) =>
-  `edit ${colimaYaml(profile)} mounts, then colima stop --profile ${profile} && ${plainStart(profile)}`;
+const editHint = (profile: string) => `edit ${colimaYaml(profile)} mounts, then ${restartText(profile)}`;
 
 export const locationsOf = (shares: VmShare[]) => shares.map((share) => share.location).join(", ");
 
@@ -134,7 +114,7 @@ export const createColimaShares = (colima: Colima) => {
     if (missing.length > 0) {
       throw new LauncherError(
         `colima did not share ${missing.join(", ")} with the sandbox VM`,
-        `run ${restartCommand(profile, mounts)}`,
+        `run ${restartText(profile, { shares: mounts })}`,
       );
     }
   };
