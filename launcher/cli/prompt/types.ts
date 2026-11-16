@@ -109,7 +109,6 @@ export interface MultiSpec<T> extends KeyWords {
   choices: Choice<T>[];
   checked: T[];
   onAction?: (value: T) => Promise<Choice<T> | undefined>;
-  validate?: (values: T[]) => string | undefined;
   collapsed: (values: T[]) => Collapse;
   plain?: { help: string[]; label: string };
 }

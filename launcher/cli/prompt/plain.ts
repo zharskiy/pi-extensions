@@ -213,15 +213,7 @@ export const createPlainPrompts = (ui: Ui): Prompts => {
       const answer = (await ask(`${label} [${marked.join(" ") || "none"}]: `)).trim();
 
       if (answer === "") {
-        const problem = spec.validate?.(values());
-
-        if (problem === undefined) {
-          return values();
-        }
-
-        print([`Error: ${problem}`]);
-
-        return round();
+        return values();
       }
 
       if (action !== undefined && pathLike(answer)) {

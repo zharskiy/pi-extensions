@@ -466,7 +466,6 @@ const multiView = <T>(context: Context, spec: MultiSpec<T>): View<T[]> => {
     cursor: 0,
     top: 0,
     pointer: 0,
-    error: undefined as string | undefined,
   };
 
   const checkedChoices = () =>
@@ -506,11 +505,7 @@ const multiView = <T>(context: Context, spec: MultiSpec<T>): View<T[]> => {
       };
     }
 
-    const values = checkedChoices().map((checked) => checked.value);
-
-    state.error = spec.validate?.(values);
-
-    return state.error === undefined ? settle(values) : STAY;
+    return settle(checkedChoices().map((checked) => checked.value));
   };
 
   return {
@@ -536,15 +531,13 @@ const multiView = <T>(context: Context, spec: MultiSpec<T>): View<T[]> => {
         title: spec.title,
         detail,
         body,
-        after: errorLines(context, state.error, width),
+        after: [],
         hints,
       });
 
       return { lines: parts.lines, focus: parts.bodyRow + state.pointer };
     },
     key: (key) => {
-      state.error = undefined;
-
       const next = moved(state.cursor, key, state.choices.length);
 
       if (next !== undefined) {
