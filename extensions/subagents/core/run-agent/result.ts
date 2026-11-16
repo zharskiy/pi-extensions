@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { errorText } from "../../../../platform/shared/index.ts";
 import { cutChars, elapsedOf, plainReceipt, receipt, singleLine } from "../components/receipt.ts";
 import { isTerminal } from "../components/tree.ts";
-import { type AgentRecord, chainLinks, worktreeText } from "../model/agent-record.ts";
+import { type AgentRecord, chainLinks, chainText, handoffText, worktreeText } from "../model/agent-record.ts";
 
 const SUMMARY_WORDS: Partial<Record<AgentRecord["state"], string>> = {
   done: "Done",
@@ -107,9 +107,6 @@ export const chainTotals = (links: AgentRecord[]): AgentRecord => {
   };
 };
 
-const chainLine = (links: AgentRecord[]) =>
-  `Chain: ${links.map((link) => link.id).join(" → ")} (${links.length} sessions)`;
-
 const resultEntry = (record: AgentRecord, inlineLimit: number, links: AgentRecord[]) => {
   const chained = links.length > 1;
   const lines = [
@@ -118,7 +115,7 @@ const resultEntry = (record: AgentRecord, inlineLimit: number, links: AgentRecor
   ];
 
   if (chained) {
-    lines.push(chainLine(links));
+    lines.push(`Chain: ${chainText(links.map((link) => link.id))}`);
   }
 
   lines.push(finishSummary(chained ? chainTotals(links) : record));
@@ -128,7 +125,7 @@ const resultEntry = (record: AgentRecord, inlineLimit: number, links: AgentRecor
   }
 
   if (record.state === "handoff") {
-    lines.push(`Handoff file: ${record.handoffPath}${record.error ? ` (invalid: ${record.error})` : ""}`);
+    lines.push(`Handoff file: ${handoffText(record)}`);
 
     return lines.join("\n");
   }

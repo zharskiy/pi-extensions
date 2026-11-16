@@ -24,6 +24,8 @@ A long task fills the main session's context with searches, edits and test outpu
        Stopped · 3s · 0 calls · worktree removed
 ```
 
+An agent that ran in a worktree ends its row with what became of it: `worktree removed`, `worktree removed; branch <branch> kept` or `worktree kept`; its view's header words it the same way after `Worktree`.
+
 ## Quick start
 
 ```bash

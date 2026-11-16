@@ -484,7 +484,9 @@ describe("run_agent block rows", () => {
       ]).draw()[2];
 
     expect(status("removed")).toBe("      1s · worktree removed");
-    expect(status("branch kept", "handoff")).toBe("      Handed off · 1s · branch pi-agents/x-1 kept");
+    expect(status("branch kept", "handoff")).toBe(
+      "      Handed off · 1s · worktree removed; branch pi-agents/x-1 kept",
+    );
     expect(status("kept")).toBe("      1s · worktree kept");
     expect(
       batch([

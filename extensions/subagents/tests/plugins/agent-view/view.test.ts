@@ -444,7 +444,7 @@ describe("agent view", () => {
     const lines = plainLines(view.render(100));
 
     expect(lines[4]).toBe(
-      " Worktree /project/.pi/worktrees/explorer-1-abc · branch pi-agents/explorer-1-abc",
+      " Worktree /project/.pi/worktrees/explorer-1-abc (branch pi-agents/explorer-1-abc)",
     );
     expect(lines[5]).toBe(RULE(100));
 
@@ -453,7 +453,7 @@ describe("agent view", () => {
     const again = await harness.openView(record.id);
 
     expect(plainLines(again.view.render(100))[4]).toBe(
-      " Worktree removed · branch pi-agents/explorer-1-abc kept",
+      " Worktree removed; branch pi-agents/explorer-1-abc kept",
     );
   });
 });
@@ -508,9 +508,9 @@ describe("agent view header", () => {
       " tests failed twice",
       " stack",
     ]);
-    expect(header(base({ state: "handoff", handoffPath: "/tmp/h.md" }))[3]).toBe(" handoff file /tmp/h.md");
+    expect(header(base({ state: "handoff", handoffPath: "/tmp/h.md" }))[3]).toBe(" Handoff file /tmp/h.md");
     expect(header(base({ state: "handoff", handoffPath: "/tmp/h.md", error: "missing Status" }))[3]).toBe(
-      " handoff file /tmp/h.md (invalid: missing Status)",
+      " Handoff file /tmp/h.md (invalid: missing Status)",
     );
 
     const painted = header(

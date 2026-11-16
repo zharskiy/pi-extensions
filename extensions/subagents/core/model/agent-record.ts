@@ -49,19 +49,29 @@ export type WorktreeCleanup = "removed" | "branch kept" | "kept";
 
 export type Worktree = { path: string; branch: string; base: string; cwd: string; cleanup?: WorktreeCleanup };
 
+const CLEANUP_TEXT: Record<WorktreeCleanup, (branch: string) => string> = {
+  removed: () => "removed",
+  "branch kept": (branch) => `removed; branch ${branch} kept`,
+  kept: () => "kept",
+};
+
+export const cleanupText = (worktree: Worktree) =>
+  worktree.cleanup ? CLEANUP_TEXT[worktree.cleanup](worktree.branch) : undefined;
+
 export const worktreeText = (worktree: Worktree) => {
   const checkout = `${worktree.path} (branch ${worktree.branch})`;
 
-  if (worktree.cleanup === "removed") {
-    return "removed";
+  if (worktree.cleanup === "kept") {
+    return `kept: ${checkout}`;
   }
 
-  if (worktree.cleanup === "branch kept") {
-    return `removed; branch ${worktree.branch} kept`;
-  }
-
-  return worktree.cleanup === "kept" ? `kept: ${checkout}` : checkout;
+  return cleanupText(worktree) ?? checkout;
 };
+
+export const chainText = (names: string[]) => `${names.join(" → ")} (${names.length} sessions)`;
+
+export const handoffText = (record: Pick<AgentRecord, "handoffPath" | "error">) =>
+  `${record.handoffPath}${record.error ? ` (invalid: ${record.error})` : ""}`;
 
 export type AgentRecord = {
   id: string;
