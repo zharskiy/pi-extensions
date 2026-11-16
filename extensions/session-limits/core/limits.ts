@@ -21,10 +21,10 @@ import {
   type Limits,
   limitLevel,
   mainLimit,
-  parseBusySignal,
   parseHeldResults,
   seamLabel,
   seedText,
+  trackBusy,
 } from "../../../platform/shared/index.ts";
 import {
   HANDOFF_COMMAND,
@@ -92,7 +92,10 @@ type RequestOrigin = { manual: boolean; focus?: string };
 const textsOf = (messages: UserMessage[]) => messages.map((message) => message.text);
 
 export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: LimitWatchOptions) => {
-  const sources = new Set<string>();
+  const busy = trackBusy({
+    onBusy: () => cancelRelease(),
+    onQuiet: () => state.phase === "waiting" && release(),
+  });
   const held = new Map<string, string>();
   const captured: UserMessage[] = [];
   let state: LimitsState = {
@@ -284,7 +287,7 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
     const step = handoffStep({
       phase: state.phase,
       saved: state.saved?.validation,
-      busy: sources.size > 0 && !state.manual,
+      busy: busy.sources().length > 0 && !state.manual,
       settled,
       instructions: state.instructions,
     });
@@ -329,17 +332,17 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
 
     refresh();
 
-    if (sources.size === 0) {
+    if (busy.sources().length === 0) {
       release();
     }
   };
 
   const confirmBusy = async () => {
-    if (sources.size === 0) {
+    const names = busy.sources().join(", ");
+
+    if (!names) {
       return true;
     }
-
-    const names = Array.from(sources).join(", ");
 
     return host.ui.confirm(
       "Switch to a new session?",
@@ -526,25 +529,7 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
     run: handOff,
   });
 
-  host.subscribe(BUSY_CHANNEL, (data) => {
-    const signal = parseBusySignal(data);
-
-    if (!signal) {
-      return;
-    }
-
-    if (signal.busy) {
-      sources.add(signal.source);
-      cancelRelease();
-      return;
-    }
-
-    const released = sources.delete(signal.source);
-
-    if (released && sources.size === 0 && state.phase === "waiting") {
-      release();
-    }
-  });
+  host.subscribe(BUSY_CHANNEL, busy.receive);
 
   host.onInput((input) => {
     abandonStalledSwitch();

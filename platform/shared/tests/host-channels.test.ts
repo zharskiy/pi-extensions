@@ -15,7 +15,29 @@ import {
   parseLimits,
   parseTotals,
   parseUsageReport,
+  trackBusy,
 } from "../channels/host-channels.ts";
+
+describe("trackBusy", () => {
+  it("keeps the busy sources and calls onQuiet only when a known source ends the last one", () => {
+    const events: string[] = [];
+    const busy = trackBusy({ onBusy: () => events.push("busy"), onQuiet: () => events.push("quiet") });
+
+    busy.receive({ source: "a", busy: true });
+    busy.receive({ source: "b", busy: true });
+    busy.receive({ source: "a", busy: false });
+
+    expect(busy.sources()).toEqual(["b"]);
+
+    busy.receive({ source: "x", busy: false });
+    busy.receive({ source: "b", busy: false });
+    busy.receive({ source: "b", busy: false });
+    busy.receive({ busy: true });
+
+    expect(events).toEqual(["busy", "busy", "quiet"]);
+    expect(busy.sources()).toEqual([]);
+  });
+});
 
 describe("parseBusySignal", () => {
   it("names the channel pi:busy", () => {

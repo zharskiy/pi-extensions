@@ -53,6 +53,30 @@ export const parseBusySignal = (data: unknown): BusySignal | undefined => {
   return { source: data.source, busy: data.busy };
 };
 
+export const trackBusy = ({ onBusy, onQuiet }: { onBusy: () => void; onQuiet: () => void }) => {
+  const sources = new Set<string>();
+
+  const receive = (data: unknown) => {
+    const signal = parseBusySignal(data);
+
+    if (!signal) {
+      return;
+    }
+
+    if (signal.busy) {
+      sources.add(signal.source);
+      onBusy();
+      return;
+    }
+
+    if (sources.delete(signal.source) && sources.size === 0) {
+      onQuiet();
+    }
+  };
+
+  return { receive, sources: () => Array.from(sources) };
+};
+
 export const parseBackgroundWork = (data: unknown): BackgroundWork | undefined => {
   if (
     !isPlainObject(data) ||
