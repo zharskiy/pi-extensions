@@ -158,16 +158,19 @@ export type VmReport = (notice: string) => void;
 export interface VmShareOptions {
   busy: () => Promise<number>;
   report: VmReport;
-  size?: VmTarget;
+}
+
+export interface VmReconcile {
+  size: VmTarget;
+  shares?: VmShare[];
+  needs: VmPath[];
 }
 
 export interface Vm {
   ensureRunning(report: VmReport, shares?: VmShare[], size?: VmTarget): Promise<void>;
   coverage(paths: VmPath[]): Promise<VmCoverage | "unreadable" | undefined>;
-  ensureShares(paths: VmPath[], options: VmShareOptions): Promise<void>;
-  reconcileShares(desired: VmShare[], paths: VmPath[], options: VmShareOptions): Promise<void>;
+  reconcile(wanted: VmReconcile, options: VmShareOptions): Promise<void>;
   ensureTrust(pemPath: string, options: VmShareOptions): Promise<void>;
-  ensureSize(target: VmTarget, options: VmShareOptions): Promise<void>;
   inspect(): Promise<VmInspect>;
   apply(desired: VmDesired, options: VmApplyOptions): Promise<VmApplied>;
   size(): Promise<VmSize | undefined>;

@@ -16,10 +16,10 @@ const SAMPLES: Array<[number, number, { cpus: number; memoryGiB: number }]> = [
   [16, 64, { cpus: 8, memoryGiB: 10 }],
 ];
 
-const vmWith = (respond: FakeResponder) =>
+const vmWith = (respond: FakeResponder, stateDir = "/nonexistent") =>
   createColimaVm({
     home: "/nonexistent",
-    stateDir: "/nonexistent",
+    stateDir,
     runner: createFakeRunner(respond).runner,
     detect: async () => ({ available: true }),
   });
@@ -92,7 +92,10 @@ describe("resizing the sandbox VM to the configured size", () => {
     });
     const notices: string[] = [];
     const resize = (target: VmTarget) =>
-      colima.ensureSize(target, { busy: async () => busy, report: (notice) => notices.push(notice) });
+      colima.reconcile(
+        { size: target, needs: [] },
+        { busy: async () => busy, report: (notice) => notices.push(notice) },
+      );
     const changes = () =>
       fake.calls.map((call) => call.args.join(" ")).filter((line) => !line.startsWith("status"));
 
@@ -149,15 +152,18 @@ describe("resizing the sandbox VM to the configured size", () => {
 
     expect(env.changes()).toEqual([]);
     expect(env.notices).toEqual([
-      "the sandbox VM keeps its size while other pi sessions run; it changes to 12 GiB memory at the next launch with no pi session running",
+      "the sandbox VM will change its size to 12 GiB memory at the next launch with no other pi session running",
     ]);
   });
 
   it("skips a profile colima reports no size for", async () => {
-    const vm = vmWith(() => ({ code: 1, stderr: "not running" }));
+    const vm = vmWith(() => ({ code: 1, stderr: "not running" }), await tempDir("colima-size"));
     const notices: string[] = [];
 
-    await vm.ensureSize({ cpus: 2 }, { busy: async () => 0, report: (notice) => notices.push(notice) });
+    await vm.reconcile(
+      { size: { cpus: 2 }, needs: [] },
+      { busy: async () => 0, report: (notice) => notices.push(notice) },
+    );
 
     expect(notices).toEqual([]);
   });

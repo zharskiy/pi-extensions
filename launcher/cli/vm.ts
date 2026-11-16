@@ -164,35 +164,23 @@ const vmBusy = (context: LaunchContext, backend: Backend, launchId: string) => (
 export const vmShareCoverage = (context: LaunchContext, backend: Backend, sessions: HostSessions) =>
   backend.vm.coverage(vmPathsOf(context, sessions));
 
-export const shareVm = async (
+export const reconcileVm = async (
   deps: CliDeps,
   context: LaunchContext,
   backend: Backend,
   parts: { sessions: HostSessions; launchId: string; plan: VmSharePlan | undefined },
 ) => {
-  const needs = vmPathsOf(context, parts.sessions);
-  const options = {
-    busy: vmBusy(context, backend, parts.launchId),
-    report: report(deps),
-    size: context.effective.config.vm,
-  };
+  writeNotices(deps, parts.plan?.notices ?? []);
 
-  if (parts.plan === undefined) {
-    await backend.vm.ensureShares(needs, options);
-
-    return;
-  }
-
-  writeNotices(deps, parts.plan.notices);
-
-  await backend.vm.reconcileShares(parts.plan.shares, needs, options);
+  await backend.vm.reconcile(
+    {
+      size: context.effective.config.vm,
+      shares: parts.plan?.shares,
+      needs: vmPathsOf(context, parts.sessions),
+    },
+    { busy: vmBusy(context, backend, parts.launchId), report: report(deps) },
+  );
 };
-
-export const sizeVm = (deps: CliDeps, context: LaunchContext, backend: Backend, launchId: string) =>
-  backend.vm.ensureSize(context.effective.config.vm, {
-    busy: vmBusy(context, backend, launchId),
-    report: report(deps),
-  });
 
 export const trustVm = (
   deps: CliDeps,

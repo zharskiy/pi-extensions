@@ -388,10 +388,8 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
   const vm: Vm = {
     ensureRunning: async () => undefined,
     coverage: async () => undefined,
-    ensureShares: async () => undefined,
-    reconcileShares: async () => undefined,
+    reconcile: async () => undefined,
     ensureTrust: async () => undefined,
-    ensureSize: async () => undefined,
     inspect: async () => ({ state: "absent" }),
     apply: async () => "created",
     size: async () => undefined,

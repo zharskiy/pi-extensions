@@ -727,8 +727,8 @@ describe("pi sandbox doctor", () => {
     const shared: string[][] = [];
     const { stdout } = await doctorWith({
       vm: {
-        ensureShares: async (paths) => {
-          shared.push(paths.map((entry) => entry.path));
+        reconcile: async ({ needs }) => {
+          shared.push(needs.map((entry) => entry.path));
         },
       },
     });

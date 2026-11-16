@@ -1,10 +1,5 @@
 import { join } from "node:path";
-import type { Detection, VmTarget } from "../types.ts";
-
-export interface SizeChange {
-  flags: string[];
-  text?: string;
-}
+import type { Detection } from "../types.ts";
 
 export interface Colima {
   home: string;
@@ -12,7 +7,6 @@ export interface Colima {
   run(failure: string, args: string[], hint: string): Promise<void>;
   detectAgain(delaysMs?: number[]): Promise<Detection | undefined>;
   withLock<T>(action: () => Promise<T>): Promise<T>;
-  sizeChange(target?: VmTarget): Promise<SizeChange>;
 }
 
 export const ENGINE_PROFILE = "pi-sandbox";
@@ -28,3 +22,9 @@ export const instanceOf = (profile: string) => `colima-${profile}`;
 export const plainStart = (profile: string) => `colima start --profile ${profile} --activate=false`;
 
 export const logHint = (profile: string) => `~/.colima/_lima/${instanceOf(profile)}/ha.stderr.log`;
+
+export const sessionsRunning = (count: number) =>
+  count === 1 ? "1 pi session is running" : `${count} pi sessions are running`;
+
+export const deferredUntilIdle = (change: string) =>
+  `the sandbox VM will ${change} at the next launch with no other pi session running`;

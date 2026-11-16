@@ -15,6 +15,8 @@ import type {
   VmApplyOptions,
   VmDesired,
   VmInspect,
+  VmPath,
+  VmReconcile,
   VmReport,
   VmShare,
   VmShareOptions,
@@ -22,17 +24,37 @@ import type {
   VmSpec,
   VmTarget,
 } from "../types.ts";
-import { hasSizeChanges, vmSizeDrift, vmSizeText } from "../vm-size.ts";
+import {
+  shareDrift,
+  type VmChange,
+  type VmFound,
+  type VmWanted,
+  vmDecision,
+  whenBusy,
+} from "../vm-decision.ts";
+import { vmSizeDrift, vmSizeText } from "../vm-size.ts";
 import { vmSharesOf, vmSizeOfYaml } from "./colima-yaml.ts";
 import {
   type Colima,
+  deferredUntilIdle,
   ENGINE_PROFILE,
   ENGINE_SOCKET_DISPLAY,
   logHint,
   plainStart,
-  type SizeChange,
+  sessionsRunning,
 } from "./profile.ts";
-import { createColimaShares, mountableShares, shareDrift, startArgs } from "./shares.ts";
+import {
+  assertDesiredCovers,
+  createColimaShares,
+  locationsOf,
+  notShared,
+  restartCommand,
+  restartedShares,
+  sharesFor,
+  startArgs,
+  UNREADABLE,
+  uncoveredPaths,
+} from "./shares.ts";
 import { createColimaTrust } from "./vm-trust.ts";
 
 export interface ColimaVmOptions {
@@ -60,8 +82,6 @@ const GIB = 1024 ** 3;
 const START_FAILURE = "could not start the sandbox VM";
 
 const STOP_FAILURE = "could not stop the sandbox VM";
-
-const RESIZE_FAILURE = "could not change the size of the sandbox VM";
 
 const CREATE_FAILURE = "could not create the sandbox VM";
 
@@ -115,8 +135,25 @@ const sizeFlags = (target: VmTarget) => [
   ...(target.diskGiB === undefined ? [] : ["--disk", String(target.diskGiB)]),
 ];
 
-const plural = (count: number) =>
-  count === 1 ? "1 pi session is running" : `${count} pi sessions are running`;
+interface Restart {
+  mounts: VmShare[];
+  added: VmShare[];
+  resize: VmTarget;
+}
+
+const changeText = (wanted: VmWanted, restart: Restart) => {
+  const reshared = restart.mounts.length > 0;
+  const resized = Object.keys(restart.resize).length > 0;
+  const changed = [
+    ...(reshared && wanted.exactShares ? [`its shares to ${locationsOf(restart.mounts)}`] : []),
+    ...(resized ? [`its size to ${vmSizeText(restart.resize)}`] : []),
+  ];
+
+  return [
+    ...(reshared && !wanted.exactShares ? [`share ${locationsOf(restart.added)}`] : []),
+    ...(changed.length > 0 ? [`change ${changed.join(", and ")}`] : []),
+  ].join(", and ");
+};
 
 export const createColimaVm = (options: ColimaVmOptions): Vm => {
   const { home, runner, detect, pause = realPause } = options;
@@ -162,7 +199,6 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
     run,
     detectAgain,
     withLock,
-    sizeChange: (target) => sizeChange(target),
   };
   const shares = createColimaShares(colima);
   const trust = createColimaTrust(colima, (command, extra) =>
@@ -254,7 +290,7 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
 
     if (count > 0) {
       throw new LauncherError(
-        `${plural(count)}; stopping the sandbox VM would end them`,
+        `${sessionsRunning(count)}; stopping the sandbox VM would end them`,
         "exit them and run pi sandbox stop again",
       );
     }
@@ -280,59 +316,6 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
     return "stopped";
   };
 
-  const restartSized = async (changes: VmTarget) => {
-    await run(RESIZE_FAILURE, ["stop", "--profile", profile], `see ${logHint(profile)}`);
-
-    await run(RESIZE_FAILURE, [...startArgs(profile, []), ...sizeFlags(changes)], startHint);
-
-    const detection = await detectAgain();
-
-    if (detection?.available !== true) {
-      throw new LauncherError(
-        `the sandbox VM did not come back after changing its size: ${detection?.reason ?? "not detected"}`,
-        startHint,
-      );
-    }
-  };
-
-  const resizeDrifted = async (target: VmTarget, options: VmShareOptions) => {
-    const current = await size();
-    const drift = current === undefined ? undefined : vmSizeDrift(current, target);
-
-    if (drift === undefined || !hasSizeChanges(drift)) {
-      return;
-    }
-
-    const changes = vmSizeText(drift.changes);
-
-    if ((await options.busy()) > 0) {
-      options.report(
-        `the sandbox VM keeps its size while other pi sessions run; it changes to ${changes} at the next launch with no pi session running`,
-      );
-
-      return;
-    }
-
-    options.report(`restarting the sandbox VM to change its size to ${changes}`);
-
-    await restartSized(drift.changes);
-  };
-
-  const ensureSize: Vm["ensureSize"] = async (target, options) => {
-    const current = Object.keys(target).length === 0 ? undefined : await size();
-    const drift = current === undefined ? undefined : vmSizeDrift(current, target);
-
-    if (drift?.keptDiskGiB !== undefined) {
-      options.report(shrinkNotice(target, drift.keptDiskGiB));
-    }
-
-    if (drift === undefined || !hasSizeChanges(drift)) {
-      return;
-    }
-
-    await withLock(() => resizeDrifted(target, options));
-  };
-
   const statusSize = async (): Promise<VmSize | undefined> => {
     const result = await colimaRun(["status", "--profile", profile, "--json"], {
       timeoutMs: INSPECT_TIMEOUT_MS,
@@ -354,15 +337,6 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
   };
 
   const size = () => statusSize().catch(() => undefined);
-
-  const sizeChange = async (target: VmTarget = {}): Promise<SizeChange> => {
-    const current = Object.keys(target).length === 0 ? undefined : await size();
-    const drift = current === undefined ? undefined : vmSizeDrift(current, target);
-
-    return drift === undefined || !hasSizeChanges(drift)
-      ? { flags: [] }
-      : { flags: sizeFlags(drift.changes), text: vmSizeText(drift.changes) };
-  };
 
   const completeSize = (measured: VmSize | undefined, configured: VmSize | undefined): VmSpec => {
     const diskGiB = measured?.diskGiB ?? configured?.diskGiB;
@@ -425,67 +399,137 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
     await waitForEngine("creating it", progress);
   };
 
-  const restartedShares = (current: VmShare[] | "unreadable", desired: VmDesired) =>
-    mountableShares(
-      desired.exactShares || current === "unreadable"
-        ? desired.shares
-        : [...current, ...shareDrift(current, desired.shares).lacking],
-      home,
-    );
+  const decide = async (found: VmFound, wanted: VmWanted, busy: () => Promise<number>) => {
+    const decision = vmDecision(found, wanted);
 
-  const sharesDiffer = (current: VmShare[] | "unreadable", desired: VmDesired) => {
-    if (current === "unreadable") {
-      return true;
+    return decision.kind === "restart" ? whenBusy(decision, await busy()) : decision;
+  };
+
+  const restartOf = (found: VmFound, wanted: VmWanted, change: VmChange): Restart => {
+    if (!change.reshare || wanted.shares === undefined || found.state === "absent") {
+      return { mounts: [], added: [], resize: change.resize };
     }
 
-    const drift = shareDrift(current, desired.shares);
+    const mounts = restartedShares(found.shares, wanted.shares, wanted.exactShares, home);
+    const added = found.shares === "unreadable" ? mounts : shareDrift(found.shares, mounts).lacking;
 
-    return drift.lacking.length > 0 || (desired.exactShares && drift.extra.length > 0);
+    return { mounts, added, resize: change.resize };
+  };
+
+  const restart = async (
+    wanted: VmWanted,
+    planned: Restart,
+    needs: VmPath[],
+    progress: VmApplyOptions["progress"],
+  ) => {
+    if (planned.mounts.length > 0 && !wanted.exactShares) {
+      await shares.keepsMoved(MOVED_PROBLEM);
+    }
+
+    progress("stopping");
+
+    await run(RESTART_FAILURE, ["stop", "--profile", profile], `see ${logHint(profile)}`);
+
+    progress("starting");
+
+    await run(
+      RESTART_FAILURE,
+      [...startArgs(profile, planned.mounts), ...sizeFlags(planned.resize)],
+      startHint,
+    );
+
+    if (planned.mounts.length > 0) {
+      await shares.assertShared(planned.added, needs, planned.mounts);
+    }
+
+    await waitForEngine("restarting it", progress);
   };
 
   const applyLocked = async (desired: VmDesired, options: VmApplyOptions): Promise<VmApplied> => {
     const found = await inspect();
+    const decision = await decide(found, desired, options.busy);
 
-    if (found.state === "absent") {
+    if (decision.kind === "create") {
       await create(desired, options.progress);
 
       return "created";
     }
 
-    if (found.state === "stopped") {
-      return "stopped";
+    if (decision.kind === "defer") {
+      return { deferred: decision.sessions };
     }
 
-    const drift = vmSizeDrift(found.size, desired.size);
-    const reshared = sharesDiffer(found.shares, desired);
-
-    if (!hasSizeChanges(drift) && !reshared) {
-      return "unchanged";
+    if (decision.kind !== "restart") {
+      return decision.kind === "stopped" ? "stopped" : "unchanged";
     }
 
-    const count = await options.busy();
-
-    if (count > 0) {
-      return { deferred: count };
-    }
-
-    if (reshared && !desired.exactShares) {
-      await shares.keepsMoved(MOVED_PROBLEM);
-    }
-
-    const mounts = reshared ? restartedShares(found.shares, desired) : [];
-
-    options.progress("stopping");
-
-    await run(RESTART_FAILURE, ["stop", "--profile", profile], `see ${logHint(profile)}`);
-
-    options.progress("starting");
-
-    await run(RESTART_FAILURE, [...startArgs(profile, mounts), ...sizeFlags(drift.changes)], startHint);
-
-    await waitForEngine("restarting it", options.progress);
+    await restart(desired, restartOf(found, desired, decision), [], options.progress);
 
     return "restarted";
+  };
+
+  const launchWanted = (target: VmReconcile, current: VmShare[] | undefined): VmWanted => {
+    if (current === undefined) {
+      return { size: target.size, exactShares: false };
+    }
+
+    return target.shares === undefined
+      ? { size: target.size, shares: sharesFor(current, target.needs, home), exactShares: false }
+      : { size: target.size, shares: target.shares, exactShares: true };
+  };
+
+  const refused = (missing: string[], sessions: number, text: string, mounts: VmShare[]) =>
+    new LauncherError(
+      `${notShared(missing)}; ${sessionsRunning(sessions)}, and restarting the VM to ${text} would end them`,
+      `end them and run pi again, or share it yourself with ${restartCommand(profile, mounts)}`,
+    );
+
+  const reconcileLocked = async (target: VmReconcile, options: VmShareOptions) => {
+    if (target.shares !== undefined) {
+      assertDesiredCovers(target.shares, target.needs);
+    }
+
+    const read = await shares.readShares();
+
+    if (read === "unreadable") {
+      options.report(UNREADABLE);
+    }
+
+    const current = Array.isArray(read) ? read : undefined;
+    const wanted = launchWanted(target, current);
+    const found: VmFound = {
+      state: "running",
+      size: Object.keys(target.size).length === 0 ? undefined : await size(),
+      shares: current ?? "unreadable",
+    };
+    const decision = await decide(found, wanted, options.busy);
+
+    if ("keptDiskGiB" in decision && decision.keptDiskGiB !== undefined) {
+      options.report(shrinkNotice(target.size, decision.keptDiskGiB));
+    }
+
+    if (decision.kind !== "restart" && decision.kind !== "defer") {
+      return;
+    }
+
+    const planned = restartOf(found, wanted, decision);
+    const text = changeText(wanted, planned);
+
+    if (decision.kind === "defer") {
+      const missing = current === undefined ? [] : uncoveredPaths(current, target.needs);
+
+      if (missing.length > 0) {
+        throw refused(missing, decision.sessions, text, planned.mounts);
+      }
+
+      options.report(deferredUntilIdle(text));
+
+      return;
+    }
+
+    options.report(`restarting the sandbox VM to ${text}`);
+
+    await restart(wanted, planned, target.needs, () => undefined);
   };
 
   return {
@@ -493,10 +537,8 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
     apply: (desired, options) => withLock(() => applyLocked(desired, options)),
     ensureRunning,
     coverage: shares.coverage,
-    ensureShares: shares.ensureShares,
-    reconcileShares: shares.reconcileShares,
+    reconcile: (target, options) => withLock(() => reconcileLocked(target, options)),
     ensureTrust: trust.ensureTrust,
-    ensureSize,
     size,
     resizeCommand: (target) =>
       `colima stop --profile ${profile} && ${[plainStart(profile), ...sizeFlags(target)].join(" ")}`,

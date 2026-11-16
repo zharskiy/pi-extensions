@@ -319,11 +319,10 @@ describe("a launch's share restart", () => {
     });
     const notices: string[] = [];
 
-    await env.vm.reconcileShares([{ location: "/Volumes/new", writable: true }], [], {
-      busy: async () => 0,
-      report: (notice) => notices.push(notice),
-      size: { cpus: 8, memoryGiB: 12 },
-    });
+    await env.vm.reconcile(
+      { size: { cpus: 8, memoryGiB: 12 }, shares: [{ location: "/Volumes/new", writable: true }], needs: [] },
+      { busy: async () => 0, report: (notice) => notices.push(notice) },
+    );
 
     expect(env.commands()).toEqual([
       "stop --profile pi-sandbox",
