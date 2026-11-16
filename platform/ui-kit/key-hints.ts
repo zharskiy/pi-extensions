@@ -1,5 +1,5 @@
 import { PAD, type ThemeLike } from "../pi-adapter/index.ts";
-import { DOT, ELLIPSIS, noun } from "../shared/index.ts";
+import { DOT, ELLIPSIS, noun, padded } from "../shared/index.ts";
 import type { Styled } from "./row.ts";
 
 export const EXPAND_BINDING = "app.tools.expand";
@@ -103,3 +103,11 @@ export const framed = (
   ...(oneRow ? [hintRow(theme, hints, width)] : hintLines(theme, hints, width)),
   rule(theme, width),
 ];
+
+export const titledFrame = (
+  theme: ThemeLike,
+  width: number,
+  title: string,
+  lines: string[],
+  hints: readonly KeyHint[],
+) => framed(theme, width, [...padded(theme, theme.fg("text", title), width), "", ...lines], hints);
