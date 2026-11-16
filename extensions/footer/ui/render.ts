@@ -7,10 +7,12 @@ import {
   type ThemeToken,
 } from "../../../platform/pi-adapter/index.ts";
 import {
+  agentsSpend,
   DOT,
   formatMoney,
   formatTokens,
   type SpendingTotals,
+  sessionSpend,
   WORKING_CONTEXT,
 } from "../../../platform/shared/index.ts";
 import { keyHints, limitFigure, limitTail } from "../../../platform/ui-kit/index.ts";
@@ -20,7 +22,6 @@ import {
   type FooterState,
   folderName,
   hintTexts,
-  sessionSpend,
   statusLines,
 } from "../core/segments.ts";
 import { type Segment, spread } from "./layout.ts";
@@ -101,7 +102,7 @@ const moneySegments = (theme: ThemeLike, totals: SpendingTotals | undefined): Se
     return [];
   }
 
-  const agentsCost = totals.sources.reduce((sum, spend) => sum + spend.cost, 0);
+  const agentsCost = agentsSpend(totals).cost;
   const tokens = {
     text: `${theme.fg("muted", formatTokens(sessionSpend(totals).tokens))}${theme.fg("dim", " tokens")}`,
     drop: 1,

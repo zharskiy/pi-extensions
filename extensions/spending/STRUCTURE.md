@@ -5,7 +5,7 @@
 - `api/plugin.ts`: `spendingPlugin`; subscribes to the usage channel and the session hooks, sets the `mirror:spending` status and publishes the totals.
 - `core/spending.ts`: `NAMESPACE`, `createSpending`; main offsets, parent inheritance (only for a created session), resume, report recording and the totals.
 - `core/ledger.ts`: `createLedger`; high-water figures per `(source, id)`, persistence as `pi-spending:usage` entries, continuation marker.
-- `ui/footer-text.ts`: `footerText`; the `main $x · agents $y · total $z (sub)` segment.
+- `ui/footer-text.ts`: `footerText`; the `main $x · agents $y · total $z (sub)` segment from a `SpendingTotals`.
 - `tests/spending.test.ts`: the extension booted on a fake host (channels, persistence, lineage).
 - `tests/ledger.test.ts`: ledger unit tests.
 - `tests/footer.test.ts`: footer segment text.

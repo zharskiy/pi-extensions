@@ -1,6 +1,7 @@
 export { cacheHitPercent, reportedCache, sessionCacheHit } from "./cache-hit.ts";
 export {
   AWAITING_INPUT_CHANNEL,
+  agentsSpend,
   BACKGROUND_WORK_CHANNEL,
   BUSY_CHANNEL,
   HANDOFF_PENDING_CHANNEL,
@@ -14,6 +15,7 @@ export {
   parseTotals,
   parseUsageReport,
   type SpendingTotals,
+  sessionSpend,
   TOTALS_CHANNEL,
   trackBusy,
   USAGE_CHANNEL,

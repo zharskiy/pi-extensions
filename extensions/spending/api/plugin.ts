@@ -20,10 +20,7 @@ export const spendingPlugin: Plugin<never, never, undefined> = {
     const refresh = () => {
       const current = spending.totals();
 
-      host.ui.setStatus(
-        STATUS_KEY,
-        footerText({ main: current.main.cost, sources: current.sources, subscription: current.subscription }),
-      );
+      host.ui.setStatus(STATUS_KEY, footerText(current));
       host.publish(TOTALS_CHANNEL, current);
     };
 

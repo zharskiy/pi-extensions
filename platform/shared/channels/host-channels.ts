@@ -139,6 +139,15 @@ type SourceSpend = Spend & { source: string };
 
 export type SpendingTotals = { main: Spend; sources: SourceSpend[]; subscription: boolean };
 
+const sumSpend = (spends: readonly Spend[]): Spend => ({
+  cost: spends.reduce((sum, spend) => sum + spend.cost, 0),
+  tokens: spends.reduce((sum, spend) => sum + spend.tokens, 0),
+});
+
+export const agentsSpend = (totals: SpendingTotals) => sumSpend(totals.sources);
+
+export const sessionSpend = (totals: SpendingTotals) => sumSpend([totals.main, ...totals.sources]);
+
 const isSpend = (value: unknown): value is Spend =>
   isPlainObject(value) && isAmount(value.cost) && isAmount(value.tokens);
 
