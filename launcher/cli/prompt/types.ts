@@ -138,9 +138,9 @@ export interface NumberSpec extends KeyWords {
   min: number;
   max: number;
   step: number;
-  hint: string;
+  hint?: string;
   tooLow: string;
-  tooHigh: string;
+  tooHigh?: string;
   warn?: (value: number) => string | undefined;
   collapsed: (value: number) => Collapse;
 }

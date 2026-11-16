@@ -9,9 +9,7 @@ const MEMORY = {
   min: 2,
   max: 30,
   step: 1,
-  hint: "2 to 30",
   tooLow: "Choose 2 to 30 GiB: this Mac has 32 GiB and macOS needs the rest.",
-  tooHigh: "Choose 2 to 30 GiB: this Mac has 32 GiB and macOS needs the rest.",
   warn: (value: number) =>
     value > 24 ? "That leaves little memory for macOS. Press enter again to keep it." : undefined,
   collapsed: (value: number) => ({ title: "Memory for the VM, in GiB", text: String(value) }),

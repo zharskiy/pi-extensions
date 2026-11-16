@@ -245,19 +245,16 @@ describe("the VM size editor", () => {
 
     expect(fields.cpus).toMatchObject({
       note: "this Mac has 12",
-      hint: "1 to 12",
-      tooHigh: "Choose 1 to 12 CPUs: this Mac has 12.",
+      tooLow: "Choose 1 to 12 CPUs: this Mac has 12.",
     });
-    expect(fields.memoryGiB.tooHigh).toBe(
-      "Choose 2 to 30 GiB: this Mac has 32 GiB and macOS needs the rest.",
-    );
+    expect(fields.memoryGiB.tooLow).toBe("Choose 2 to 30 GiB: this Mac has 32 GiB and macOS needs the rest.");
     expect(fields.memoryGiB.warn(25)).toBe(
       "That leaves little memory for macOS. Press enter again to keep it.",
     );
     expect(fields.memoryGiB.warn(24)).toBeUndefined();
     expect(fields.diskGiB).toMatchObject({
       note: "412 GiB free on this Mac",
-      hint: "100 to 2048 · the disk can only grow, it is 100 GiB now",
+      hint: "the disk can only grow, it is 100 GiB now",
       tooLow: "The VM's disk is 100 GiB now and can only grow. Choose 100 or more.",
       tooHigh: "Choose at most 2048 GiB.",
     });

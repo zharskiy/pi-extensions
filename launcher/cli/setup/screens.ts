@@ -308,19 +308,15 @@ export const numberFields = (facts: HostFacts, bounds: VmBounds) => {
     cpus: {
       title: "CPUs for the VM",
       note: `this Mac has ${facts.cpus}`,
-      hint: `${bounds.cpus.min} to ${bounds.cpus.max}`,
       step: 1,
       tooLow: `Choose ${bounds.cpus.min} to ${bounds.cpus.max} CPUs: this Mac has ${facts.cpus}.`,
-      tooHigh: `Choose ${bounds.cpus.min} to ${bounds.cpus.max} CPUs: this Mac has ${facts.cpus}.`,
       warn: () => undefined,
     },
     memoryGiB: {
       title: "Memory for the VM, in GiB",
       note: `this Mac has ${facts.memoryGiB} GiB`,
-      hint: `${bounds.memoryGiB.min} to ${bounds.memoryGiB.max}`,
       step: 1,
       tooLow: `Choose ${bounds.memoryGiB.min} to ${bounds.memoryGiB.max} GiB: this Mac has ${facts.memoryGiB} GiB and macOS needs the rest.`,
-      tooHigh: `Choose ${bounds.memoryGiB.min} to ${bounds.memoryGiB.max} GiB: this Mac has ${facts.memoryGiB} GiB and macOS needs the rest.`,
       warn: (value: number) =>
         value > (facts.memoryGiB * 3) / 4
           ? "That leaves little memory for macOS. Press enter again to keep it."
@@ -328,11 +324,8 @@ export const numberFields = (facts: HostFacts, bounds: VmBounds) => {
     },
     diskGiB: {
       title: "Disk for the VM, in GiB",
-      note: free === undefined ? "" : `${free} GiB free on this Mac`,
-      hint:
-        disk === undefined
-          ? `${bounds.diskGiB.min} to ${bounds.diskGiB.max}`
-          : `${bounds.diskGiB.min} to ${bounds.diskGiB.max} · the disk can only grow, it is ${disk} GiB now`,
+      note: free === undefined ? undefined : `${free} GiB free on this Mac`,
+      hint: disk === undefined ? undefined : `the disk can only grow, it is ${disk} GiB now`,
       step: 10,
       tooLow:
         disk === undefined

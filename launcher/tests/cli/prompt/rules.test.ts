@@ -14,6 +14,8 @@ describe("numberProblem", () => {
     expect(numberProblem(spec, "13")).toBe("high");
 
     expect(numberProblem(spec, "012")).toBeUndefined();
+
+    expect(numberProblem({ ...spec, tooHigh: undefined }, "13")).toBe("low");
   });
 });
 

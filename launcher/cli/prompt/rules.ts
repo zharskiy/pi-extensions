@@ -20,7 +20,7 @@ export const numberProblem = (
     return spec.tooLow;
   }
 
-  return value > spec.max ? spec.tooHigh : undefined;
+  return value > spec.max ? (spec.tooHigh ?? spec.tooLow) : undefined;
 };
 
 export const warningFor = (spec: Pick<NumberSpec, "warn">, value: number, warned: number | undefined) =>

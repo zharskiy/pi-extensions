@@ -799,7 +799,8 @@ const numberView = (context: Context, spec: NumberSpec): View<number> => {
       const input = inputRow(context, state.line, width);
       const words = wordsOf(spec, "next");
       const steps = `${context.glyphs.upDown} change by ${spec.step}`;
-      const hints = hintsOf(context, [spec.hint, steps, ...words], width);
+      const extra = spec.hint === undefined ? [] : [spec.hint];
+      const hints = hintsOf(context, [`${spec.min} to ${spec.max}`, ...extra, steps, ...words], width);
       const after = [
         ...errorLines(context, state.error, width),
         ...warningLines(context, state.warning, width),

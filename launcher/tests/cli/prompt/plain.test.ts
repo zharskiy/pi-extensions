@@ -157,7 +157,6 @@ describe("plain prompts", () => {
       min: 2,
       max: 30,
       step: 1,
-      hint: "2 to 30",
       tooLow: "too low",
       tooHigh: "too high",
       warn: (value) => (value > 24 ? "That leaves little memory for macOS." : undefined),

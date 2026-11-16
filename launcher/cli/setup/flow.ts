@@ -254,7 +254,6 @@ const createWizard = (io: SetupIo, context: WizardContext) => {
     const last = index === VM_FIELDS.length - 1;
     const value = await prompts.number({
       ...field,
-      ...(field.note === "" ? { note: undefined } : {}),
       initial: withinBounds(size[key], bounds[key]),
       min: bounds[key].min,
       max: bounds[key].max,
