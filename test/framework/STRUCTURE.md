@@ -12,7 +12,7 @@
 - `waiting.ts`: `flushMicrotasks`, `flushTimers`, `pause`, `waitUntil`.
 - `temp-dirs.ts`: `useTempDirs`; temporary directories removed after the suite.
 - `recorded-sessions.ts`: session `.jsonl` line builders (user, assistant tool call, tool result, custom).
-- `valid-handoff.ts`: `VALID_HANDOFF`, a handoff document that passes validation.
+- `valid-handoff.ts`: `VALID_HANDOFF`, a handoff document that passes validation; `handoffDocument(sections)` and `HANDOFF_SECTIONS`, the complete section set, for tests that vary one section.
 - `live/seed-project.ts`: `seedProjectFromCommit`, `applyCommitDiff`, `replaceExactlyOnce`, `repoGit`.
 - `live/session-reading.ts`: `bashCommands`, `commandsLine`, `largestToolOutput`.
 - `live/cost.ts`: `totalCost`, `reportCost`.

@@ -35,5 +35,5 @@ export { plainLines, plainText, visibleWidth } from "./rendered-text.ts";
 export { useTempDirs } from "./temp-dirs.ts";
 export { paintRecordingTheme, plainTheme, tokenTaggingTheme } from "./themes.ts";
 export { promptTokens, usageTotals } from "./usage-builders.ts";
-export { VALID_HANDOFF } from "./valid-handoff.ts";
+export { HANDOFF_SECTIONS, handoffDocument, VALID_HANDOFF } from "./valid-handoff.ts";
 export { flushMicrotasks, flushTimers, pause, waitUntil } from "./waiting.ts";
