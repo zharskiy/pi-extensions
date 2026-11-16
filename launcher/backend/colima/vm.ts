@@ -4,6 +4,7 @@ import {
   type CommandRunner,
   errorMessage,
   LauncherError,
+  lastLine,
   stateLayout,
   withDirectoryLock,
 } from "../../shared/index.ts";
@@ -36,7 +37,6 @@ import {
   deferredUntilIdle,
   ENGINE_PROFILE,
   ENGINE_SOCKET_DISPLAY,
-  lastLine,
   logHint,
   plainStart,
   restartText,

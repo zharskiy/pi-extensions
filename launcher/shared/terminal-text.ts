@@ -20,3 +20,10 @@ export const printable = (text: string) =>
   Array.from(text)
     .map((char) => (isControlChar(char) ? escaped(char) : char))
     .join("");
+
+export const lastLine = (text: string) =>
+  text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== "")
+    .at(-1);
