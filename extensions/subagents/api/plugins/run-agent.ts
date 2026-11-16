@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import type { AnyToolSpec } from "../../../../platform/pi-adapter/index.ts";
 import {
   BACKGROUND_WORK_CHANNEL,
@@ -27,7 +25,7 @@ import {
   MAIN_CALLER,
 } from "../../core/model/agent-record.ts";
 import { handoffService } from "../../core/model/handoff.ts";
-import { NAMESPACE } from "../../core/model/paths.ts";
+import { NAMESPACE, readPrompt } from "../../core/model/paths.ts";
 import type { Plugin } from "../../core/model/plugin.ts";
 import { createBackgroundWork } from "../../core/run-agent/background-work.ts";
 import { joinTexts, wakeMessage } from "../../core/run-agent/outbox.ts";
@@ -39,8 +37,6 @@ import {
   stopAgentTool,
 } from "../../core/run-agent/tools.ts";
 import { pendingRows } from "../../ui/run-agent/pending-rows.ts";
-
-const readPrompt = (root: string, file: string) => readFileSync(join(root, "prompts", file), "utf8").trim();
 
 export const runAgentPlugin: Plugin = {
   id: "run-agent",

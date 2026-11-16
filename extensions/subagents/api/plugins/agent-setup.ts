@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import type { SessionInfo, ToolSpec } from "../../../../platform/pi-adapter/index.ts";
 import { AWAITING_INPUT_CHANNEL, type SettingsScope } from "../../../../platform/shared/index.ts";
 import { type SelectOption, selectForm } from "../../../../platform/ui-kit/index.ts";
@@ -30,7 +28,7 @@ import { overriddenFields, writeChanges } from "../../core/agent-setup/write.ts"
 import { type AgentDefinition, isLead } from "../../core/model/agent-record.ts";
 import { INHERIT_MODEL } from "../../core/model/agent-schema.ts";
 import { resolutionProblem } from "../../core/model/model-resolution.ts";
-import { NAMESPACE } from "../../core/model/paths.ts";
+import { NAMESPACE, readPrompt } from "../../core/model/paths.ts";
 import type { Plugin } from "../../core/model/plugin.ts";
 import { settingsPaths } from "../../core/model/settings.ts";
 import type { SetupContext } from "../../ui/agent-setup/form.ts";
@@ -60,8 +58,8 @@ export const agentSetupPlugin: Plugin = {
   requires: ["agent-definitions"],
   enable: ({ host, runtime, services, settings, paths }) => {
     const definitions = services.require("definitions");
-    const createPrompt = readFileSync(join(paths.root, "prompts", "create-agent.md"), "utf8").trim();
-    const autosetupPrompt = readFileSync(join(paths.root, "prompts", "autosetup-skills.md"), "utf8").trim();
+    const createPrompt = readPrompt(paths.root, "create-agent.md");
+    const autosetupPrompt = readPrompt(paths.root, "autosetup-skills.md");
 
     let pending: { candidates: string[]; interactive: string[] } | undefined;
 

@@ -839,7 +839,7 @@ describe("prompt assembly", () => {
 
     expect(
       assemblePromptAppend(
-        "# Base\nShared rules.\n",
+        "# Base\nShared rules.",
         parsed.definition as NonNullable<typeof parsed.definition>,
       ),
     ).toMatchInlineSnapshot(`

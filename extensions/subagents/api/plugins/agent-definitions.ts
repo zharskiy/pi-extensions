@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { reportSettingsErrors } from "../../../../platform/extension-manager/index.ts";
 import type { SessionInfo } from "../../../../platform/pi-adapter/index.ts";
@@ -6,14 +5,14 @@ import { type DefinitionDir, loadDefinitions } from "../../core/agent-definition
 import { assemblePromptAppend } from "../../core/agent-definitions/prompt.ts";
 import type { AgentDefinitions } from "../../core/model/agent-record.ts";
 import { resolutionProblem } from "../../core/model/model-resolution.ts";
-import { NAMESPACE, projectAgentsDir, userAgentsDir } from "../../core/model/paths.ts";
+import { NAMESPACE, projectAgentsDir, readPrompt, userAgentsDir } from "../../core/model/paths.ts";
 import type { Plugin } from "../../core/model/plugin.ts";
 import { reloadSettings } from "../../core/model/settings.ts";
 
 export const agentDefinitionsPlugin: Plugin = {
   id: "agent-definitions",
   enable: ({ host, runtime, services, settings, paths }) => {
-    const basePrompt = readFileSync(join(paths.root, "prompts", "base-system-prompt.md"), "utf8");
+    const basePrompt = readPrompt(paths.root, "base-system-prompt.md");
     const builtin: DefinitionDir = { path: join(paths.root, "agents"), source: "builtin" };
     const reported = new Set<string>();
     const reportSettings = reportSettingsErrors(host, NAMESPACE);
