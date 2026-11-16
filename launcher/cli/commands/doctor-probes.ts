@@ -224,8 +224,11 @@ const leaksToken = (entry: unknown) => {
   });
 };
 
+const readSandboxFile = (target: ProbeTarget, name: string) =>
+  readVolumeFile(target.backend, target.containerId, name).catch(() => ({ value: undefined, invalid: true }));
+
 export const checkMcpAuthSweep = async (target: ProbeTarget) => {
-  const { value: store, invalid } = await readVolumeFile(target.backend, target.containerId, "mcp-auth.json");
+  const { value: store, invalid } = await readSandboxFile(target, "mcp-auth.json");
 
   if (invalid) {
     return failed("mcp-auth.json in the sandbox is not a JSON object");
@@ -243,7 +246,7 @@ export const checkMcpAuthSweep = async (target: ProbeTarget) => {
 };
 
 export const checkSettingsSweep = async (target: ProbeTarget) => {
-  const { value, invalid } = await readVolumeFile(target.backend, target.containerId, "settings.json");
+  const { value, invalid } = await readSandboxFile(target, "settings.json");
 
   if (value === undefined && !invalid) {
     return passed("no settings.json in the sandbox yet");
