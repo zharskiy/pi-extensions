@@ -175,12 +175,13 @@ export const sharedRootsOf = (workspaceRoots: WorkspaceRoots, context: RootGuard
 export const assertWithinWorkspaceRoots = (
   workspace: Workspace,
   workspaceRoots: WorkspaceRoots | undefined,
+  home: string,
 ) => {
   if (workspaceRoots === undefined) {
     return;
   }
 
-  const roots = configuredRoots(workspaceRoots.roots).map((entry) => entry.resolved);
+  const roots = configuredRoots(workspaceRoots.roots, home).map((entry) => entry.resolved);
   const outside = mountedGitDirs(workspace).find((path) => !roots.some((root) => isWithin(path, root)));
 
   if (outside !== undefined) {

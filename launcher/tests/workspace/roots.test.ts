@@ -28,9 +28,11 @@ const workspaceAt = (repoRoot: string, gitCommonDir?: string): Workspace => ({
   isGitRepo: gitCommonDir !== undefined,
 });
 
+const NO_HOME = "/nonexistent-home";
+
 describe("assertWithinWorkspaceRoots", () => {
   it("allows everything when no roots are configured", () => {
-    expect(() => assertWithinWorkspaceRoots(workspaceAt("/"), undefined)).not.toThrow();
+    expect(() => assertWithinWorkspaceRoots(workspaceAt("/"), undefined, NO_HOME)).not.toThrow();
   });
 
   it("accepts a repository inside a root, comparing real paths", async () => {
@@ -38,9 +40,11 @@ describe("assertWithinWorkspaceRoots", () => {
     const repo = join(base, "work", "repo");
 
     expect(() =>
-      assertWithinWorkspaceRoots(workspaceAt(repo, join(repo, ".git")), {
-        roots: [join(unresolved, "work")],
-      }),
+      assertWithinWorkspaceRoots(
+        workspaceAt(repo, join(repo, ".git")),
+        { roots: [join(unresolved, "work")] },
+        NO_HOME,
+      ),
     ).not.toThrow();
   });
 
@@ -48,18 +52,20 @@ describe("assertWithinWorkspaceRoots", () => {
     const { base } = await createTree();
     const outside = join(base, "elsewhere");
 
-    expect(() => assertWithinWorkspaceRoots(workspaceAt(outside), { roots: [join(base, "work")] })).toThrow(
-      `${outside} is outside the allowed workspace roots`,
-    );
+    expect(() =>
+      assertWithinWorkspaceRoots(workspaceAt(outside), { roots: [join(base, "work")] }, NO_HOME),
+    ).toThrow(`${outside} is outside the allowed workspace roots`);
   });
 
   it("refuses a linked worktree whose common dir is outside the roots", async () => {
     const { base } = await createTree();
 
     expect(() =>
-      assertWithinWorkspaceRoots(workspaceAt(join(base, "work", "repo"), join(base, "elsewhere", ".git")), {
-        roots: [join(base, "work")],
-      }),
+      assertWithinWorkspaceRoots(
+        workspaceAt(join(base, "work", "repo"), join(base, "elsewhere", ".git")),
+        { roots: [join(base, "work")] },
+        NO_HOME,
+      ),
     ).toThrow("elsewhere");
   });
 
@@ -73,9 +79,16 @@ describe("assertWithinWorkspaceRoots", () => {
       nested: [nested],
     };
 
-    expect(() => assertWithinWorkspaceRoots(workspace, { roots: [join(base, "work")] })).toThrow(
+    expect(() => assertWithinWorkspaceRoots(workspace, { roots: [join(base, "work")] }, NO_HOME)).toThrow(
       `${join(base, "elsewhere", ".git")} is outside the allowed workspace roots (workspaceRoots.roots: ${join(base, "work")})`,
     );
+  });
+
+  it("expands a ~ root against the given home, as the VM shares do", async () => {
+    const { base } = await createTree();
+    const repo = join(base, "work", "repo");
+
+    expect(() => assertWithinWorkspaceRoots(workspaceAt(repo), { roots: ["~/work"] }, base)).not.toThrow();
   });
 
   it("does not treat a sibling with the same prefix as inside", async () => {
@@ -84,9 +97,9 @@ describe("assertWithinWorkspaceRoots", () => {
 
     await mkdir(sibling);
 
-    expect(() => assertWithinWorkspaceRoots(workspaceAt(sibling), { roots: [join(base, "work")] })).toThrow(
-      `${sibling} is outside the allowed workspace roots`,
-    );
+    expect(() =>
+      assertWithinWorkspaceRoots(workspaceAt(sibling), { roots: [join(base, "work")] }, NO_HOME),
+    ).toThrow(`${sibling} is outside the allowed workspace roots`);
   });
 });
 
@@ -163,7 +176,11 @@ describe("sharedRootsOf", () => {
 
     expect(sharedRootsOf({ roots: [join(base, "work"), data] }, paths).roots).toEqual([join(base, "work")]);
     expect(() =>
-      assertWithinWorkspaceRoots(workspaceAt(join(base, "other")), { roots: [join(base, "work"), data] }),
+      assertWithinWorkspaceRoots(
+        workspaceAt(join(base, "other")),
+        { roots: [join(base, "work"), data] },
+        NO_HOME,
+      ),
     ).toThrow(`${join(base, "other")} is outside the allowed workspace roots`);
   });
 

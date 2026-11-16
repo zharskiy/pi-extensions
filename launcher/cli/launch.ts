@@ -514,7 +514,7 @@ export const launch = async (args: string[], deps: CliDeps) => {
   if (piArgs.length !== args.length) {
     const { context } = await openContext(deps, "host");
 
-    checkWorkspaceRoots(context);
+    checkWorkspaceRoots(deps, context);
 
     return runHostPi(deps, context, piArgs);
   }
