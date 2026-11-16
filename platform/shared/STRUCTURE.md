@@ -30,4 +30,4 @@ Modules are grouped by concern; `index.ts` is the only import surface, so a move
 - `tests/handoff-document.test.ts`: `validateHandoff`, `handoffPath` and the details parsers.
 - `tests/host-channels.test.ts`: the channel payload parsers.
 - `tests/text-layout.test.ts`: `fixedBlock` and `padRows`.
-- `tests/project-dir.test.ts`: `writeProjectFile`, `ensureProjectSubdir` and `writeSettingsFile` on fresh and existing folders, a `.pi` file and a git repo.
+- `tests/project-dir.test.ts`: `writeProjectFile`, `ensureProjectSubdir` (also `ignored`) and `writeSettingsFile` on fresh and existing folders, a `.pi` file and a git repo.

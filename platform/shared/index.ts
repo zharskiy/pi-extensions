@@ -64,7 +64,7 @@ export {
   settingsPath,
   writeSettingsFile,
 } from "./plugin/settings-files.ts";
-export { ensureProjectSubdir } from "./project-dir.ts";
+export { ensureProjectSubdir, projectPath } from "./project-dir.ts";
 export {
   counted,
   errorText,
