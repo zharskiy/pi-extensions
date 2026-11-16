@@ -9,7 +9,7 @@ import {
   parseMavenSettings,
   type XmlElement,
 } from "../../shared/index.ts";
-import { type Endpoint, endpointOf, uniqueEndpoints, withoutUserinfo } from "../endpoints.ts";
+import { type Endpoint, httpsEndpoint, uniqueEndpoints, withoutUserinfo } from "../endpoints.ts";
 import { mergeSections, noticeOnly, placeholderOf, rulesFor, type Section } from "../rules.ts";
 import type { DerivedTools, Registry, ToolsInput } from "../types.ts";
 import { EMPTY_MAVEN } from "../types.ts";
@@ -29,11 +29,7 @@ const endpointsFor = (settings: MavenSettings, id: string): Endpoint[] =>
   uniqueEndpoints(
     [...settings.mirrors, ...settings.repositories]
       .filter((repository) => repository.id === id)
-      .flatMap((repository) => {
-        const result = endpointOf(repository.url);
-
-        return "endpoint" in result ? [result.endpoint] : [];
-      }),
+      .flatMap((repository) => httpsEndpoint(repository.url)),
   );
 
 interface ServerContext {

@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { type Endpoint, endpointOf, uniqueEndpoints } from "../endpoints.ts";
+import { type Endpoint, httpsEndpoint, uniqueEndpoints } from "../endpoints.ts";
 import { findOnPath } from "../path-search.ts";
 import { mergeSections, noticeOnly, placeholderOf, rulesFor, type Section } from "../rules.ts";
 import type { GlabHost, ToolsInput } from "../types.ts";
@@ -121,9 +121,7 @@ const apiEndpoint = (entry: ConfigHost): Endpoint[] => {
     return [];
   }
 
-  const result = endpointOf(`https://${apiHost}`);
-
-  return "endpoint" in result ? [result.endpoint] : [];
+  return httpsEndpoint(`https://${apiHost}`);
 };
 
 const tokenCommand = (glab: string, host: string) => [glab, "config", "get", "token", "--host", host];

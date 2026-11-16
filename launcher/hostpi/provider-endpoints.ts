@@ -1,13 +1,7 @@
 import { isJsonObject } from "../shared/index.ts";
-import { type Endpoint, endpointOf, uniqueEndpoints } from "./endpoints.ts";
+import { httpsEndpoint, uniqueEndpoints } from "./endpoints.ts";
 import { objectOr } from "./json.ts";
 import type { JsonObject, ProviderHosts } from "./types.ts";
-
-export const httpsEndpoint = (url: unknown): Endpoint[] => {
-  const result = endpointOf(url);
-
-  return "endpoint" in result ? [result.endpoint] : [];
-};
 
 const modelBaseUrls = (provider: JsonObject) =>
   (Array.isArray(provider.models) ? provider.models : []).filter(isJsonObject).map((model) => model.baseUrl);

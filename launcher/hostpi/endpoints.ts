@@ -31,6 +31,12 @@ export const endpointOf = (url: unknown): EndpointResult => {
   }
 };
 
+export const httpsEndpoint = (url: unknown): Endpoint[] => {
+  const result = endpointOf(url);
+
+  return "endpoint" in result ? [result.endpoint] : [];
+};
+
 export const endpointKey = (endpoint: Endpoint) => authorityOf(endpoint.host, endpoint.port ?? TLS_PORT);
 
 export const uniqueEndpoints = (endpoints: Endpoint[]) => [

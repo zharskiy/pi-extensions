@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { hasUrlUserinfo, isSecretEnvName, type ToolConfigFormat } from "../../shared/index.ts";
-import { endpointOf, withoutUserinfo } from "../endpoints.ts";
+import { endpointOf, httpsEndpoint, withoutUserinfo } from "../endpoints.ts";
 import { isInsideRoots } from "../path-search.ts";
 import { noticeOnly, placeholderOf, rulesFor, type Section } from "../rules.ts";
 import type { Registry, ToolsInput } from "../types.ts";
@@ -46,11 +46,7 @@ export const expandPublicVariables = (text: string, references: RegExp, env: Too
 };
 
 export const registriesOf = (label: string, urls: string[]): Registry[] =>
-  urls.flatMap((url) => {
-    const result = endpointOf(withoutUserinfo(url));
-
-    return "endpoint" in result ? [{ label, endpoint: result.endpoint }] : [];
-  });
+  urls.flatMap((url) => httpsEndpoint(withoutUserinfo(url)).map((endpoint) => ({ label, endpoint })));
 
 export type UrlSecret = { file: string; format: ToolConfigFormat; key: string };
 
