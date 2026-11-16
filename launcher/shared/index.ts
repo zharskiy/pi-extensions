@@ -68,7 +68,7 @@ export {
 } from "./repo-state.ts";
 export { hasUrlUserinfo, isAuthLikeHeader, isSecretName, isSecretShapedValue } from "./secret-name.ts";
 export { settleAll } from "./settle.ts";
-export { ensureSalt, GUEST_PATHS, stateLayout } from "./state-layout.ts";
+export { ensureSalt, GUEST_PATHS, isTrustBundleName, stateLayout } from "./state-layout.ts";
 export type { ToolConfigFormat, ToolConfigSelect } from "./tool-config.ts";
 export { isToolConfigKey, TOOL_CONFIG_FORMATS, toolConfigValue, urlPartOf } from "./tool-config.ts";
 export type { FileKeys, ValueSpec, ValueType, WriteBackTable } from "./write-back-table.ts";

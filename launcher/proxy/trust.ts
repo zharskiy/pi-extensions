@@ -7,6 +7,7 @@ import { liveLaunches } from "../grants/index.ts";
 import {
   type CommandRunner,
   expandHome,
+  isTrustBundleName,
   LauncherError,
   sha256Hex,
   stateLayout,
@@ -187,14 +188,12 @@ const writeIfChanged = async (path: string, text: string) => {
   }
 };
 
-const TRUST_BUNDLE_NAME = /^trust(-[0-9a-f]+){0,2}\.pem$/;
-
 const BUNDLE_ID_BYTES = 8;
 
 const BUNDLE_LOCK_TIMEOUT_MS = 30_000;
 
 const reusableBundle = async (directory: string, names: string[], prefix: string, text: string) => {
-  const candidates = names.filter((name) => name.startsWith(prefix) && name.endsWith(".pem"));
+  const candidates = names.filter((name) => name.startsWith(prefix) && isTrustBundleName(name));
   const contents = await Promise.all(
     candidates.map((name) => readFile(join(directory, name), "utf8").catch(() => undefined)),
   );
@@ -211,7 +210,7 @@ const writeBundle = async (pathFor: (id: string) => string, text: string): Promi
 };
 
 const removeOldBundles = async (directory: string, names: string[], keep: string) => {
-  const old = names.filter((name) => TRUST_BUNDLE_NAME.test(name) && name !== keep);
+  const old = names.filter((name) => isTrustBundleName(name) && name !== keep);
 
   await Promise.all(old.map((name) => rm(join(directory, name), { force: true })));
 };
