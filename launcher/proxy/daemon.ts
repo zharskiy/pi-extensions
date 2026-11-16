@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { rootCertificates } from "node:tls";
 import { parseArgs } from "node:util";
@@ -23,6 +23,7 @@ import {
   LISTEN_HOST,
   type RepoProxy,
   type RepoProxyInput,
+  readExtraCaPem,
 } from "./files.ts";
 import { watchIdle } from "./idle.ts";
 import { parentRouteFor } from "./parent.ts";
@@ -73,7 +74,7 @@ const readInput = async (repoHash: string): Promise<DaemonInput> => {
 };
 
 const upstreamTrust = async (stateDir: string, extraCa: boolean) => {
-  const extra = extraCa ? await readFile(stateLayout(stateDir).extraPem, "utf8").catch(() => "") : "";
+  const extra = await readExtraCaPem(stateDir, extraCa);
 
   return extra.trim() === "" ? undefined : [...rootCertificates, extra];
 };

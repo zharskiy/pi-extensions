@@ -14,7 +14,7 @@ import { createInterceptor } from "./intercept.ts";
 import { compilePolicy, type EgressDecider } from "./policy.ts";
 import { PROXY_AGENT, type RawHeader, rawReply, sendJson, statusLine } from "./replies.ts";
 import { HTTP_PORT, parseAuthority } from "./request-target.ts";
-import { createRoutes, hostOf, PLAIN_HTTP } from "./routes.ts";
+import { createRoutes, hostOf, PLAIN_HTTP, UNPARSEABLE } from "./routes.ts";
 import type { ProxyRuntime } from "./runtime.ts";
 import type { SecretResolver } from "./secrets/index.ts";
 import { createTerminator } from "./terminate.ts";
@@ -53,8 +53,6 @@ const AUTH_REPLY = {
 };
 
 const DEFAULT_HELLO_TIMEOUT_MS = 10_000;
-
-const UNPARSEABLE = "unparseable";
 
 const currentUser = () => {
   try {

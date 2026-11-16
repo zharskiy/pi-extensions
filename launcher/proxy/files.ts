@@ -1,4 +1,6 @@
+import { readFile } from "node:fs/promises";
 import type { CredentialRule } from "../config/index.ts";
+import { stateLayout } from "../shared/index.ts";
 
 export const DAEMON_FAILURE_TAG = "pi-sandbox-proxy failed:";
 
@@ -46,6 +48,9 @@ export const parseEgressSettings = (
   value !== undefined && EGRESS_KEYS.every((key) => isTextList(value[key]))
     ? egressSettingsOf(value as unknown as EgressSettings)
     : undefined;
+
+export const readExtraCaPem = async (stateDir: string, extraCa: boolean) =>
+  extraCa ? readFile(stateLayout(stateDir).extraPem, "utf8").catch(() => "") : "";
 
 export interface DaemonInput {
   input: RepoProxyInput;

@@ -1,7 +1,7 @@
 import { type ChildProcess, type SpawnOptions, spawn as spawnProcess } from "node:child_process";
 import { createHmac } from "node:crypto";
-import { closeSync, openSync, statSync } from "node:fs";
-import { mkdir, open, readFile, rm } from "node:fs/promises";
+import { closeSync, openSync } from "node:fs";
+import { mkdir, open, rm } from "node:fs/promises";
 import { setTimeout as sleep } from "node:timers/promises";
 import {
   type CommandRunner,
@@ -12,12 +12,13 @@ import {
   LauncherError,
   launcherEntry,
   readJsonObject,
+  readRandomHexFile,
   stableHash,
   stateLayout,
   terminateProcess,
   writeJsonFile,
 } from "../shared/index.ts";
-import { capLog } from "./access-log.ts";
+import { capLog, sizeOf } from "./access-log.ts";
 import { minimalEnv } from "./child-env.ts";
 import { type DenialRecord, fetchDenials, readHealth } from "./client.ts";
 import {
@@ -27,6 +28,7 @@ import {
   parseEgressSettings,
   type RepoProxy,
   type RepoProxyInput,
+  readExtraCaPem,
   withoutEgressSettings,
 } from "./files.ts";
 import { openLauncherCa } from "./tls-ca.ts";
@@ -118,9 +120,7 @@ const proxyInputHash = async (stateDir: string, input: RepoProxyInput) => {
   const secrets = createHmac("sha256", salt)
     .update(JSON.stringify([Object.entries(envSecrets).sort(), parentAuth ?? null]))
     .digest("hex");
-  const extraCaPem = input.extraCa
-    ? await readFile(stateLayout(stateDir).extraPem, "utf8").catch(() => "")
-    : "";
+  const extraCaPem = await readExtraCaPem(stateDir, input.extraCa);
 
   return stableHash({ ...withoutEgressSettings(rest), secrets, extraCaPem });
 };
@@ -160,14 +160,6 @@ const waitFor = async <T>(
   await sleep(POLL_MS);
 
   return waitFor(check, stopped, deadline);
-};
-
-const sizeOf = (path: string) => {
-  try {
-    return statSync(path).size;
-  } catch {
-    return 0;
-  }
 };
 
 const failureSince = async (path: string, offset: number) => {
@@ -329,13 +321,8 @@ export const ensureRepoProxy = async (options: EnsureRepoProxyOptions): Promise<
   return { proxy: await startDaemon(options, inputHash), notices: egressNotices };
 };
 
-const TOKEN = new RegExp(`^[0-9a-f]{${TOKEN_BYTES * 2}}$`);
-
-const readToken = async (stateDir: string, repoHash: string) => {
-  const text = await readFile(proxyFiles(stateDir, repoHash).token, "utf8").catch(() => "");
-
-  return TOKEN.test(text) ? text : undefined;
-};
+const readToken = (stateDir: string, repoHash: string) =>
+  readRandomHexFile(proxyFiles(stateDir, repoHash).token, TOKEN_BYTES);
 
 export const readDenials = async (
   stateDir: string,
