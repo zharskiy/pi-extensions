@@ -2,6 +2,8 @@ import type { CredentialRule } from "../config/index.ts";
 
 export const DAEMON_FAILURE_TAG = "pi-sandbox-proxy failed:";
 
+export const LISTEN_HOST = "127.0.0.1";
+
 const EGRESS_KEYS = ["allow", "deny", "privateHosts", "derivedHosts"] as const;
 
 export type EgressSettings = Record<(typeof EGRESS_KEYS)[number], string[]>;

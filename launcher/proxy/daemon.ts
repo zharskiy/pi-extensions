@@ -20,6 +20,7 @@ import {
   DAEMON_FAILURE_TAG,
   type DaemonInput,
   egressSettingsOf,
+  LISTEN_HOST,
   type RepoProxy,
   type RepoProxyInput,
 } from "./files.ts";
@@ -29,8 +30,6 @@ import { createProxyRuntime } from "./runtime.ts";
 import { createSecretResolver } from "./secrets/index.ts";
 import { startProxyServer } from "./server.ts";
 import { openLauncherCa } from "./tls-ca.ts";
-
-const LISTEN_HOST = "127.0.0.1";
 
 const PRIVATE_MODE = 0o600;
 
