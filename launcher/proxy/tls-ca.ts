@@ -41,9 +41,11 @@ const LEAF_VALIDITY_MS = 397 * DAY_MS;
 
 const BACKDATE_MS = 60 * 60 * 1000;
 
+export const CERTIFICATE_BACKDATE = "an hour";
+
 const GENERALIZED_TIME_YEAR = 2050;
 
-const RENEW_MARGIN_MS = 24 * 60 * 60 * 1000;
+const RENEW_MARGIN_MS = DAY_MS;
 
 const PRIVATE_MODE = 0o600;
 

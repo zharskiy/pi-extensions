@@ -3,7 +3,7 @@ import type { Denials, RecordAccess } from "./denials.ts";
 import { sniDenial } from "./policy.ts";
 import { ESTABLISHED } from "./replies.ts";
 import type { TerminatedTarget } from "./terminate.ts";
-import type { LeafCertificate } from "./tls-ca.ts";
+import { CERTIFICATE_BACKDATE, type LeafCertificate } from "./tls-ca.ts";
 import type { Connection } from "./tunnel.ts";
 
 interface LeafSource {
@@ -20,16 +20,16 @@ interface InterceptOptions {
 
 const TLS_FAILED = { rule: "tls", reason: "TLS handshake with the client failed" };
 
+const UNTRUSTED_CAUSES = `so it may not trust the launcher CA or the VM's clock may be more than ${CERTIFICATE_BACKDATE} behind the host's`;
+
 const CLIENT_CLOSED = {
   rule: "tls",
-  reason:
-    "the client closed the connection during the TLS handshake, so it may not trust the launcher CA or the VM's clock may be more than an hour behind the host's",
+  reason: `the client closed the connection during the TLS handshake, ${UNTRUSTED_CAUSES}`,
 };
 
 const CLIENT_REJECTED = {
   rule: "tls",
-  reason:
-    "the client rejected the proxy's certificate, so it may not trust the launcher CA or the VM's clock may be more than an hour behind the host's",
+  reason: `the client rejected the proxy's certificate, ${UNTRUSTED_CAUSES}`,
 };
 
 const CLIENT_LEFT = { rule: "tls", reason: "the client closed the connection before its TLS hello" };

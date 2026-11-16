@@ -14,5 +14,6 @@ export {
   repoProxyToken,
   stopRepoProxy,
 } from "./start.ts";
+export { CERTIFICATE_BACKDATE } from "./tls-ca.ts";
 export type { TrustBundle } from "./trust.ts";
 export { ensureTrustBundle } from "./trust.ts";
