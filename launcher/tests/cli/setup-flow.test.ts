@@ -8,21 +8,12 @@ import { runSetup, type SetupInput } from "../../cli/setup/flow.ts";
 import type { Answers, FolderCandidate, HostFacts, SetupIo, VmAction } from "../../cli/setup/types.ts";
 import { tempDir } from "../support/temp-dir.ts";
 import { fakeTimers, KEY, plainPrompts, richPrompts, until } from "./prompt/fake-tty.ts";
-
-const HOME = "/Users/me";
+import { AUTOMATIC_SIZE, candidateOf, factsOf, HOME, runningVm } from "./setup-fixtures.ts";
 
 const FILE = `${HOME}/.pi/agent/pi-sandbox/config.json`;
 
-const candidate = (name: string, repos: number, extra: Partial<FolderCandidate> = {}): FolderCandidate => ({
-  stored: `~/${name}`,
-  resolved: `${HOME}/${name}`,
-  exists: true,
-  repos,
-  capped: false,
-  origin: "usual",
-  here: false,
-  ...extra,
-});
+const candidate = (name: string, repos: number, extra: Partial<FolderCandidate> = {}) =>
+  candidateOf({ stored: `~/${name}`, resolved: `${HOME}/${name}`, repos, ...extra });
 
 const CANDIDATES = [
   candidate("Projects", 14, { latestRepo: `${HOME}/Projects/my-app` }),
@@ -30,28 +21,12 @@ const CANDIDATES = [
   candidate("src", 0),
 ];
 
-const FACTS: HostFacts = {
-  home: HOME,
-  cwd: `${HOME}/work`,
-  cpus: 12,
-  memoryGiB: 32,
-  freeDiskGiB: 412,
-  automatic: { cpus: 8, memoryGiB: 10, diskGiB: 60 },
-  vm: { state: "absent" },
-  sessions: 0,
-  candidates: CANDIDATES,
-  configFile: FILE,
-  docsFile: "/opt/launcher/CONFIGURATION.md",
-};
+const FACTS = factsOf({ cwd: `${HOME}/work`, candidates: CANDIDATES });
 
-const RUNNING: HostFacts["vm"] = {
-  state: "running",
-  size: { cpus: 8, memoryGiB: 10, diskGiB: 60 },
-  shares: [
-    { location: `${HOME}/Projects`, writable: true },
-    { location: `${HOME}/work`, writable: true },
-  ],
-};
+const RUNNING = runningVm(AUTOMATIC_SIZE, [
+  { location: `${HOME}/Projects`, writable: true },
+  { location: `${HOME}/work`, writable: true },
+]);
 
 const SAVED = `{\n  "workspaceRoots": {\n    "roots": ["~/Projects", "~/work"]\n  }\n}\n`;
 

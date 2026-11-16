@@ -1,4 +1,4 @@
-import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach } from "vitest";
@@ -30,3 +30,9 @@ export const writeExecutable = async (path: string) => {
 
   await chmod(path, 0o755);
 };
+
+export const exists = (path: string) =>
+  lstat(path).then(
+    () => true,
+    () => false,
+  );

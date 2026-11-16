@@ -10,20 +10,13 @@ import {
   writeDocument,
 } from "../../cli/setup/document.ts";
 import { editedConfig } from "../../cli/setup/plan.ts";
-import type { Answers, ConfigDocument } from "../../cli/setup/types.ts";
+import type { Answers } from "../../cli/setup/types.ts";
 import { tempDir } from "../support/temp-dir.ts";
+import { documentOf as fixtureDocument } from "./setup-fixtures.ts";
 
 const FILE = "/config/config.json";
 
-const documentOf = (text: string | undefined): ConfigDocument => {
-  const read = readDocument(FILE, text);
-
-  if (!read.ok) {
-    throw new Error(read.message);
-  }
-
-  return read.document;
-};
+const documentOf = (text: string | undefined) => fixtureDocument(text, FILE);
 
 const KEEP: Answers = { roots: ["~/work"], vm: "automatic", writeBack: true };
 

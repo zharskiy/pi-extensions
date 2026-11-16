@@ -311,7 +311,7 @@ tests/support/fake-engine.ts         an in-memory engine HTTP server
 tests/support/fake-runner.ts         the scripted CommandRunner
 tests/support/fake-clock.ts          a controllable clock
 tests/support/sandbox-config.ts      config builders
-tests/support/temp-dir.ts            temp dir helpers
+tests/support/temp-dir.ts            temp dir helpers and exists
 tests/support/git.ts                 git for tests, isolated from the developer's git config
 tests/support/fakes.test.ts          the fakes' own contract
 tests/shared/atomic-write.test.ts    atomic writes
@@ -415,6 +415,7 @@ tests/cli/egress.test.ts             egress grants
 tests/cli/errors.test.ts             error output
 tests/cli/host-pi.test.ts            host pi selection
 tests/cli/install.test.ts            install.sh, run for real
+tests/cli/setup-fixtures.ts          host facts, folder candidates, the automatic size, a running VM and config documents for the setup tests
 tests/cli/setup-detect.test.ts       detectHost: the budget, an inspect failure, free disk and sessions
 tests/cli/setup-screens.test.ts      the setup screen texts
 tests/cli/setup-flow.test.ts         pi sandbox init's flow end to end over fake terminals, rich, ASCII and plain

@@ -5,15 +5,14 @@ import { Cancelled, type Detail, type Prompts } from "../../cli/prompt/types.ts"
 import { applyPlan } from "../../cli/setup/apply.ts";
 import { readDocument } from "../../cli/setup/document.ts";
 import type { HostFacts, Plan } from "../../cli/setup/types.ts";
-
-const SIZE = { cpus: 8, memoryGiB: 10, diskGiB: 60 };
+import { AUTOMATIC_SIZE } from "./setup-fixtures.ts";
 
 const PLAN: Plan = {
   next: {},
   text: "",
   changes: [],
   reindented: false,
-  vm: { kind: "restart", size: SIZE, shares: [], exactShares: true, parts: ["size"] },
+  vm: { kind: "restart", size: AUTOMATIC_SIZE, shares: [], exactShares: true, parts: ["size"] },
   problems: [],
 };
 

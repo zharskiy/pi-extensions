@@ -7,19 +7,13 @@ import { describe, expect, it } from "vitest";
 import type { VmDesired, VmInspect } from "../../backend/index.ts";
 import { type CliDeps, run } from "../../cli/index.ts";
 import { LauncherError, stateLayout } from "../../shared/index.ts";
+import { exists } from "../support/temp-dir.ts";
 import { createFakeBackend, createHarness, holdLaunch } from "./harness.ts";
 import { fakeInput, fakeOutput, KEY, pause } from "./prompt/fake-tty.ts";
+import { AUTOMATIC_SIZE } from "./setup-fixtures.ts";
 
 const HINT =
   "  hint: pass --yes to keep the current settings and apply them; PI_SANDBOX_ROOTS names project folders\n";
-
-const AUTOMATIC = { cpus: 8, memoryGiB: 10, diskGiB: 60 };
-
-const exists = (path: string) =>
-  stat(path).then(
-    () => true,
-    () => false,
-  );
 
 const listed = async (dir: string): Promise<string[]> => {
   const entries = await readdir(dir, { withFileTypes: true, recursive: true });
@@ -169,7 +163,7 @@ describe("pi sandbox init --yes", () => {
     expect((await stat(dirname(harness.userConfigFile))).mode & 0o777).toBe(0o700);
     expect(harness.applied).toEqual([
       {
-        size: AUTOMATIC,
+        size: AUTOMATIC_SIZE,
         shares: [
           { location: work, writable: true },
           { location: harness.repoRoot, writable: true },
@@ -214,7 +208,7 @@ describe("pi sandbox init --yes", () => {
       vm: {
         inspect: async () => ({
           state: "running",
-          size: AUTOMATIC,
+          size: AUTOMATIC_SIZE,
           shares: [
             { location: harness.repoRoot, writable: true },
             { location: harness.sessions, writable: true },
@@ -257,7 +251,7 @@ describe("pi sandbox init --yes", () => {
     expect(await run(["sandbox", "init", "--yes"], harness.deps)).toBe(0);
     expect(await exists(harness.userConfigFile)).toBe(false);
     expect(harness.applied).toEqual([
-      { size: AUTOMATIC, shares: [{ location: harness.deps.home, writable: true }], exactShares: true },
+      { size: AUTOMATIC_SIZE, shares: [{ location: harness.deps.home, writable: true }], exactShares: true },
     ]);
     expect(harness.stderr()).toBe(
       "pi-sandbox: no workspaceRoots, so the sandbox VM shares your whole home; run pi sandbox init in a terminal to choose project folders\n",
@@ -268,7 +262,7 @@ describe("pi sandbox init --yes", () => {
   it("keeps the running VM while pi sessions run", async () => {
     const harness = await initSetup({
       env: { PI_SANDBOX_ROOTS: "" },
-      inspect: { state: "running", size: AUTOMATIC, shares: [] },
+      inspect: { state: "running", size: AUTOMATIC_SIZE, shares: [] },
     });
 
     await harness.writeJson(harness.userConfigFile, { workspaceRoots: { roots: [harness.repoRoot] } });
@@ -423,7 +417,7 @@ describe("pi sandbox init at a terminal", () => {
     });
     expect(harness.applied).toEqual([
       {
-        size: AUTOMATIC,
+        size: AUTOMATIC_SIZE,
         shares: [
           { location: projects, writable: true },
           { location: harness.sessions, writable: true },

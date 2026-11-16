@@ -1,9 +1,9 @@
 import { spawnSync } from "node:child_process";
-import { chmod, lstat, mkdir, readFile, readlink, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, readlink, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { launcherRoot } from "../../shared/index.ts";
-import { tempDir } from "../support/temp-dir.ts";
+import { exists, tempDir } from "../support/temp-dir.ts";
 import { writeManagedPi } from "./harness.ts";
 
 const SYSTEM_TOOLS = [
@@ -90,12 +90,6 @@ const runInstall = (root: string, flags: string[] = [], extraEnv: Record<string,
     env: installEnv(root, extraEnv),
     encoding: "utf8",
   });
-
-const exists = (path: string) =>
-  lstat(path).then(
-    () => true,
-    () => false,
-  );
 
 const isLauncherWrapper = async (path: string) =>
   (await readFile(path, "utf8")).includes("launcher/bin/pi-sandbox-dev.js");
