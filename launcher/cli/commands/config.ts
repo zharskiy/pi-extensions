@@ -1,6 +1,7 @@
 import { type WriteBackListing, writeBackListing } from "../../config/index.ts";
+import { jsonText } from "../../shared/index.ts";
 import { openContext } from "../context.ts";
-import { type CliDeps, writeLine, writeLines } from "../deps.ts";
+import { type CliDeps, writeLines } from "../deps.ts";
 
 export const JSON_FLAG = "--json";
 
@@ -27,7 +28,7 @@ const showConfig = async (deps: CliDeps, json: boolean) => {
   const writeBack = writeBackListing(effective.config.writeBack);
 
   if (json) {
-    writeLine(deps.stdout, JSON.stringify({ ...effective, writeBack }, null, 2));
+    deps.stdout.write(jsonText({ ...effective, writeBack }));
 
     return 0;
   }
