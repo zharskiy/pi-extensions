@@ -1,8 +1,8 @@
-import { hasSizeChanges, shareDrift, type VmShare, type VmSpec, vmSizeDrift } from "../../backend/index.ts";
+import { type VmShare, type VmSpec, vmDecision, whenBusy } from "../../backend/index.ts";
 import { VM_BOUNDS, validateConfig } from "../../config/index.ts";
 import { errorMessage, type JsonObject, LauncherError } from "../../shared/index.ts";
 import { checkRoot, type RootGuardContext, rootRefusal } from "../../workspace/index.ts";
-import { hostVmLimits } from "../vm.ts";
+import { clamp, hostVmLimits } from "../vm.ts";
 import { diffOf, isReindented, serialise, valueAt, withoutValue, withValue } from "./document.ts";
 import { isPreChecked, rootsFromEnv, sameRootSet } from "./folders.ts";
 import type {
@@ -199,15 +199,10 @@ const wantedSize = (vm: Answers["vm"]) => {
   return "kept" in vm ? vm.kept : vm;
 };
 
-const sharesDiffer = (current: VmShare[] | "unreadable", shares: VmShare[], exact: boolean) => {
-  if (current === "unreadable") {
-    return true;
-  }
-
-  const drift = shareDrift(current, shares);
-
-  return drift.lacking.length > 0 || (exact && drift.extra.length > 0);
-};
+const partsOf = (change: { resize: object; reshare: boolean }): VmPart[] => [
+  ...(Object.keys(change.resize).length > 0 ? ["size" as const] : []),
+  ...(change.reshare ? ["folders" as const] : []),
+];
 
 export const vmActionOf = (
   answers: Answers,
@@ -216,31 +211,31 @@ export const vmActionOf = (
 ): VmAction => {
   const wanted = wantedSize(answers.vm);
 
-  if (facts.vm.state === "absent") {
-    return { kind: "create", size: { ...facts.automatic, ...wanted }, shares: share.shares };
-  }
-
   if (facts.vm.state === "unknown") {
     return { kind: "unknown", reason: facts.vm.reason };
   }
 
   const current = facts.vm;
-  const sized = wanted !== undefined && hasSizeChanges(vmSizeDrift(current.size, wanted));
-  const parts: VmPart[] = [
-    ...(sized ? ["size" as const] : []),
-    ...(sharesDiffer(current.shares, share.shares, share.exact) ? ["folders" as const] : []),
-  ];
 
-  if (parts.length === 0) {
+  if (current.state === "absent") {
+    return { kind: "create", size: { ...facts.automatic, ...wanted }, shares: share.shares };
+  }
+
+  const decision = whenBusy(
+    vmDecision(current, { size: wanted ?? {}, shares: share.shares, exactShares: share.exact }),
+    facts.sessions,
+  );
+
+  if (decision.kind === "stopped") {
+    return { kind: "on-next-start", parts: partsOf(decision) };
+  }
+
+  if (decision.kind === "defer") {
+    return { kind: "defer", sessions: decision.sessions, parts: partsOf(decision) };
+  }
+
+  if (decision.kind !== "restart") {
     return { kind: "none" };
-  }
-
-  if (current.state === "stopped") {
-    return { kind: "on-next-start", parts };
-  }
-
-  if (facts.sessions > 0) {
-    return { kind: "defer", sessions: facts.sessions, parts };
   }
 
   return {
@@ -248,7 +243,7 @@ export const vmActionOf = (
     size: { ...current.size, ...wanted },
     shares: share.shares,
     exactShares: share.exact,
-    parts,
+    parts: partsOf(decision),
   };
 };
 
@@ -351,7 +346,7 @@ export const vmBounds = (facts: HostFacts): VmBounds => {
     cpus: { min: VM_BOUNDS.cpus.min, max: limits.cpus },
     memoryGiB: { min: VM_BOUNDS.memoryGiB.min, max: limits.memoryGiB },
     diskGiB: {
-      min: Math.min(VM_BOUNDS.diskGiB.max, Math.max(VM_BOUNDS.diskGiB.min, vmDiskOf(facts))),
+      min: clamp(vmDiskOf(facts), VM_BOUNDS.diskGiB),
       max: VM_BOUNDS.diskGiB.max,
     },
   };

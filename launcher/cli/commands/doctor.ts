@@ -3,7 +3,6 @@ import {
   ENGINE_PROFILE,
   hasSizeChanges,
   LABELS,
-  recommendedVmSize,
   shareDrift,
   shareText,
   type VmShare,
@@ -22,7 +21,13 @@ import { missingPiText } from "../host-pi.ts";
 import { hostSessionsOf } from "../host-sessions.ts";
 import { type Sandbox, type Stage, type StageOutcome, withSandbox } from "../launch.ts";
 import { denialAdvice, deniedTargets, type SandboxProxy, sandboxDenials } from "../sandbox-proxy.ts";
-import { assertVmFitsHost, type VmSharePlan, vmShareCoverage, vmSharesFor } from "../vm.ts";
+import {
+  assertVmFitsHost,
+  recommendedVmSize,
+  type VmSharePlan,
+  vmShareCoverage,
+  vmSharesFor,
+} from "../vm.ts";
 import {
   type CheckResult,
   failed,

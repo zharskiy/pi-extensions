@@ -36,7 +36,7 @@ cli/deps.ts                    the dependencies every command gets, and the shar
 cli/index.ts                   public surface
 cli/launch.ts                  the pi pipeline with its stages and progress lines, and withSandbox for the doctor
 cli/context.ts                 the launch context: the folder to mount, the guard and workspaceRoots before the search, config, discovery and the checks after it
-cli/vm.ts                      VM start (with the workspaceRoots shares when stopped), shares, size and trust store, the VM paths a launch needs, the workspaceRoots share list and its nesting check, the busy count with other agent dirs' containers
+cli/vm.ts                      VM start (with the workspaceRoots shares when stopped), the one reconcile of shares and size, trust store, the automatic VM size and the host limits (one clamp), the VM paths a launch needs, the workspaceRoots share list and its nesting check, the busy count with other agent dirs' containers
 cli/launch-notices.ts          the launch notice texts, the host-file flag notice and the proxy stage detail
 cli/legacy-paths.ts            the config and state folders of earlier versions, with the launch notice and doctor warns for them
 cli/terminal.ts                the host terminal: streams, size read at use, resize
@@ -129,16 +129,18 @@ backend/image-reference.ts     image reference parsing
 backend/managed-network.ts     per-repository network and relay names and labels
 backend/exec-capture.ts        a non-tty exec with collected output
 backend/vm-size.ts             the VM size against the vm config: what differs, a disk below the current one, the size text
+backend/vm-decision.ts         the one VM decision from what the VM has and what is wanted: create, nothing, on next start, restart or defer while busy, for a launch and the setup
 backend/colima/backend.ts      the Colima backend
-backend/colima/profile.ts      the pi-sandbox profile, its socket and the VM's name for the host
+backend/colima/profile.ts      the pi-sandbox profile, its socket, the VM's name for the host, the one colima start argv and its stop-and-start hint text, and the running-sessions and deferred-until-idle texts
 backend/colima/engine-client.ts  the engine HTTP client over the socket, with its timeouts
 backend/colima/container-body.ts  container create bodies from a spec, with the capability, privilege and process limits
 backend/colima/exec-session.ts exec streams with backpressure, ended quietly when the host output closes
 backend/colima/images.ts       image pull, build (with the output tail of a failed build) and removal
 backend/colima/volumes.ts      volume operations
 backend/colima/relay.ts        the per-repository network and relay
-backend/colima/vm.ts           VM start (at the vm config size when stopped), size, the restart to the vm config size when idle, inspect and apply for the setup, and stop
-backend/colima/shares.ts       VM shares, the share restart and the reconcile to the workspaceRoots list
+backend/colima/vm.ts           VM start (at the vm config size when stopped), size, inspect, apply for the setup, the launch reconcile of shares and size in one restart, and stop
+backend/colima/size.ts         the VM size colima reports (status --json, colima.yaml), the size flags of a start, the cold-start size and the shrink notice
+backend/colima/shares.ts       VM shares: coverage, the shares a launch adds, the mount list of a restart and its check
 backend/colima/vm-trust.ts     the tls.extraCa certificates in the VM's trust store, engine restart when idle
 backend/colima/colima-yaml.ts  the lima.yaml and colima.yaml mounts reader and the colima.yaml size reader
 ```
@@ -282,7 +284,7 @@ shared/atomic-write.ts         atomic, create-only and random-hex file writes
 shared/file-lock.ts            the lock primitives
 shared/liveness.ts             the liveness rule: pid, boot time and process start
 shared/process-start.ts        a process's start time (ps on macOS, /proc on Linux), telling a failed tool from a process without one
-shared/paths.ts                host agent dir, the launcher folder <agent dir>/pi-sandbox/ (config.json, state/), launcher root
+shared/paths.ts                host agent dir, the launcher folder <agent dir>/pi-sandbox/ (config.json, state/), launcher root, path containment and the outermost of a path list
 shared/state-layout.ts         every path under the state dir
 shared/repo-state.ts           per-repository record files: repo.json with its mount root, created folders, leftovers
 shared/regular-file.ts         safe reads of regular files
@@ -352,7 +354,8 @@ tests/backend/colima.test.ts         Colima adapter specifics
 tests/backend/colima-vm.test.ts      VM start
 tests/backend/colima-shares.test.ts  VM shares, the workspaceRoots reconcile (foreign sessions, one-boot start, nested shares, unreadable lima.yaml), __vm-shares
 tests/backend/colima-size.test.ts    VM size and the restart to the vm config size
-tests/backend/colima-apply.test.ts   VM inspect, apply (create, defer, restart) and the cold start at the vm config size
+tests/backend/colima-apply.test.ts   VM inspect, apply (create, defer, restart), the launch reconcile of shares and size together, and the cold start at the vm config size
+tests/backend/vm-decision.test.ts    each outcome of vmDecision and whenBusy
 tests/container/spec.test.ts         the container spec
 tests/container/git-overlay.test.ts  the git overlay
 tests/container/lifecycle.test.ts    one container per launch, its removal and housekeeping

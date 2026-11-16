@@ -1,6 +1,13 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { type Backend, LABELS, type VmPath, type VmShare, type VmTarget } from "../backend/index.ts";
+import {
+  type Backend,
+  LABELS,
+  type VmPath,
+  type VmShare,
+  type VmSpec,
+  type VmTarget,
+} from "../backend/index.ts";
 import { type SandboxConfig, VM_BOUNDS } from "../config/index.ts";
 import { listLauncherContainers } from "../container/index.ts";
 import { liveLaunches } from "../grants/index.ts";
@@ -27,12 +34,20 @@ export interface VmSharePlan {
 
 const HOST_RESERVE_GIB = 2;
 
+const AUTOMATIC = { cpus: { min: 2, max: 8 }, memoryGiB: { min: 4, max: 10 }, diskGiB: 60 };
+
+export const clamp = (value: number, bounds: { min: number; max: number }) =>
+  Math.max(bounds.min, Math.min(bounds.max, value));
+
 export const hostVmLimits = (machine: CliDeps["machine"]) => ({
-  cpus: Math.min(VM_BOUNDS.cpus.max, Math.max(VM_BOUNDS.cpus.min, machine.cpus)),
-  memoryGiB: Math.min(
-    VM_BOUNDS.memoryGiB.max,
-    Math.max(VM_BOUNDS.memoryGiB.min, Math.floor(machine.memoryGiB) - HOST_RESERVE_GIB),
-  ),
+  cpus: clamp(machine.cpus, VM_BOUNDS.cpus),
+  memoryGiB: clamp(Math.floor(machine.memoryGiB) - HOST_RESERVE_GIB, VM_BOUNDS.memoryGiB),
+});
+
+export const recommendedVmSize = (cpus: number, memoryGiB: number): VmSpec => ({
+  cpus: clamp(Math.floor(cpus), AUTOMATIC.cpus),
+  memoryGiB: clamp(Math.floor(memoryGiB / 2), AUTOMATIC.memoryGiB),
+  diskGiB: AUTOMATIC.diskGiB,
 });
 
 const vmHostProblems = (machine: CliDeps["machine"], target: VmTarget) => {
@@ -164,35 +179,23 @@ const vmBusy = (context: LaunchContext, backend: Backend, launchId: string) => (
 export const vmShareCoverage = (context: LaunchContext, backend: Backend, sessions: HostSessions) =>
   backend.vm.coverage(vmPathsOf(context, sessions));
 
-export const shareVm = async (
+export const reconcileVm = async (
   deps: CliDeps,
   context: LaunchContext,
   backend: Backend,
   parts: { sessions: HostSessions; launchId: string; plan: VmSharePlan | undefined },
 ) => {
-  const needs = vmPathsOf(context, parts.sessions);
-  const options = {
-    busy: vmBusy(context, backend, parts.launchId),
-    report: report(deps),
-    size: context.effective.config.vm,
-  };
+  writeNotices(deps, parts.plan?.notices ?? []);
 
-  if (parts.plan === undefined) {
-    await backend.vm.ensureShares(needs, options);
-
-    return;
-  }
-
-  writeNotices(deps, parts.plan.notices);
-
-  await backend.vm.reconcileShares(parts.plan.shares, needs, options);
+  await backend.vm.reconcile(
+    {
+      size: context.effective.config.vm,
+      shares: parts.plan?.shares,
+      needs: vmPathsOf(context, parts.sessions),
+    },
+    { busy: vmBusy(context, backend, parts.launchId), report: report(deps) },
+  );
 };
-
-export const sizeVm = (deps: CliDeps, context: LaunchContext, backend: Backend, launchId: string) =>
-  backend.vm.ensureSize(context.effective.config.vm, {
-    busy: vmBusy(context, backend, launchId),
-    report: report(deps),
-  });
 
 export const trustVm = (
   deps: CliDeps,

@@ -66,6 +66,12 @@ export const isWithin = (path: string, parent: string) => {
   return rest === "" || (rest !== ".." && !rest.startsWith(`..${sep}`) && !isAbsolute(rest));
 };
 
+export const outermostPaths = (paths: string[]) => {
+  const unique = [...new Set(paths)];
+
+  return unique.filter((path) => !unique.some((other) => other !== path && isWithin(path, other)));
+};
+
 export const realOrResolved = async (path: string) => {
   const absolute = resolve(path);
 

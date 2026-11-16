@@ -1,6 +1,13 @@
 import { statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { expandHome, isWithin, LauncherError, launcherPaths, realOrResolvedSync } from "../shared/index.ts";
+import {
+  expandHome,
+  isWithin,
+  LauncherError,
+  launcherPaths,
+  outermostPaths,
+  realOrResolvedSync,
+} from "../shared/index.ts";
 import { protectedPaths } from "./mounts.ts";
 import { mountedGitDirs, type Workspace } from "./types.ts";
 
@@ -130,15 +137,9 @@ export const rootRefusal = (root: string, problem: RootProblem) => refusalOf(roo
 
 const isFolder = (path: string) => statSync(path, { throwIfNoEntry: false })?.isDirectory() === true;
 
-const outermost = (paths: string[]) => {
-  const unique = [...new Set(paths)];
-
-  return unique.filter((path) => !unique.some((other) => other !== path && isWithin(path, other)));
-};
-
 const configuredRoots = (roots: string[], home?: string) => {
   const entries = roots.map((root) => ({ root, lexical: lexicalRoot(root, home) }));
-  const kept = new Set(outermost(entries.map((entry) => entry.lexical)));
+  const kept = new Set(outermostPaths(entries.map((entry) => entry.lexical)));
 
   return entries
     .filter((entry) => kept.has(entry.lexical))
@@ -165,7 +166,7 @@ export const sharedRootsOf = (workspaceRoots: WorkspaceRoots, context: RootGuard
   const notices = absent.map((entry) => `workspaceRoots: ${entry.root} does not exist, not shared`);
 
   return {
-    roots: outermost(present.map((entry) => entry.resolved)),
+    roots: outermostPaths(present.map((entry) => entry.resolved)),
     missing: absent.map((entry) => entry.resolved),
     notices,
   };
@@ -174,12 +175,13 @@ export const sharedRootsOf = (workspaceRoots: WorkspaceRoots, context: RootGuard
 export const assertWithinWorkspaceRoots = (
   workspace: Workspace,
   workspaceRoots: WorkspaceRoots | undefined,
+  home: string,
 ) => {
   if (workspaceRoots === undefined) {
     return;
   }
 
-  const roots = configuredRoots(workspaceRoots.roots).map((entry) => entry.resolved);
+  const roots = configuredRoots(workspaceRoots.roots, home).map((entry) => entry.resolved);
   const outside = mountedGitDirs(workspace).find((path) => !roots.some((root) => isWithin(path, root)));
 
   if (outside !== undefined) {

@@ -114,17 +114,15 @@ export interface VmCoverage {
   missing: string[];
 }
 
-export interface VmSize {
-  cpus: number;
-  memoryGiB: number;
-  diskGiB?: number;
-}
-
 export interface VmSpec {
   cpus: number;
   memoryGiB: number;
   diskGiB: number;
 }
+
+export type VmTarget = Partial<VmSpec>;
+
+export type VmSize = Omit<VmSpec, "diskGiB"> & Pick<VmTarget, "diskGiB">;
 
 export interface VmDesired {
   size: VmSpec;
@@ -145,12 +143,6 @@ export interface VmApplyOptions {
   progress: (phase: VmPhase) => void;
 }
 
-export interface VmTarget {
-  cpus?: number;
-  memoryGiB?: number;
-  diskGiB?: number;
-}
-
 type VmStop = "absent" | "already stopped" | "stopped";
 
 export type VmReport = (notice: string) => void;
@@ -158,16 +150,19 @@ export type VmReport = (notice: string) => void;
 export interface VmShareOptions {
   busy: () => Promise<number>;
   report: VmReport;
-  size?: VmTarget;
+}
+
+export interface VmReconcile {
+  size: VmTarget;
+  shares?: VmShare[];
+  needs: VmPath[];
 }
 
 export interface Vm {
   ensureRunning(report: VmReport, shares?: VmShare[], size?: VmTarget): Promise<void>;
   coverage(paths: VmPath[]): Promise<VmCoverage | "unreadable" | undefined>;
-  ensureShares(paths: VmPath[], options: VmShareOptions): Promise<void>;
-  reconcileShares(desired: VmShare[], paths: VmPath[], options: VmShareOptions): Promise<void>;
+  reconcile(wanted: VmReconcile, options: VmShareOptions): Promise<void>;
   ensureTrust(pemPath: string, options: VmShareOptions): Promise<void>;
-  ensureSize(target: VmTarget, options: VmShareOptions): Promise<void>;
   inspect(): Promise<VmInspect>;
   apply(desired: VmDesired, options: VmApplyOptions): Promise<VmApplied>;
   size(): Promise<VmSize | undefined>;

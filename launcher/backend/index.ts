@@ -1,7 +1,6 @@
 export { createColimaBackend } from "./colima/backend.ts";
-export { ENGINE_PROFILE, VM_HOST_ALIAS } from "./colima/profile.ts";
-export { shareDrift, shareText } from "./colima/shares.ts";
-export { engineUnreachable, recommendedVmSize } from "./colima/vm.ts";
+export { ENGINE_PROFILE, shareText, VM_HOST_ALIAS } from "./colima/profile.ts";
+export { engineUnreachable } from "./colima/vm.ts";
 export { execCapture } from "./exec-capture.ts";
 export { LABELS } from "./labels.ts";
 export { relayName, repoNetworkName } from "./managed-network.ts";
@@ -30,4 +29,5 @@ export type {
   VmTarget,
   VolumeSummary,
 } from "./types.ts";
+export { shareDrift, vmDecision, whenBusy } from "./vm-decision.ts";
 export { hasSizeChanges, vmSizeDrift, vmSizeText } from "./vm-size.ts";

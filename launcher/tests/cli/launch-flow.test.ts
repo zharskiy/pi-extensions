@@ -183,8 +183,8 @@ describe("the VM shares", () => {
         ...fake.backend,
         vm: {
           ...fake.backend.vm,
-          ensureShares: async (paths) => {
-            asked.shared = paths;
+          reconcile: async ({ needs }) => {
+            asked.shared = needs;
             asked.existed = await exists(hostSessionsDir(harness.hostAgentDir, harness.repoRoot));
           },
         },
@@ -206,8 +206,8 @@ describe("the VM shares", () => {
         ...fake.backend,
         vm: {
           ...fake.backend.vm,
-          ensureShares: async (paths) => {
-            asked.shared = paths;
+          reconcile: async ({ needs }) => {
+            asked.shared = needs;
           },
         },
       }),
@@ -238,8 +238,8 @@ describe("the VM size", () => {
           ensureRunning: async (_report, _shares, size) => {
             asked.started.push(size);
           },
-          ensureSize: async (target, options) => {
-            asked.targets.push(target);
+          reconcile: async ({ size }, options) => {
+            asked.targets.push(size);
             asked.busy.push(await options.busy());
 
             options.report("restarting the sandbox VM to change its size to 6 CPUs");
@@ -251,7 +251,7 @@ describe("the VM size", () => {
     return { harness, asked };
   };
 
-  it("asks the VM for the size vm sets after its shares, with no other launch counted as busy", async () => {
+  it("asks the VM for the size vm sets with its shares, with no other launch counted as busy", async () => {
     const { harness, asked } = await sizedHarness();
 
     await harness.writeJson(harness.userConfigFile, { vm: { cpus: 6, memoryGiB: 8, diskGiB: 80 } });
@@ -343,7 +343,7 @@ describe("the launch registration", () => {
           ensureRunning: async () => {
             seen.running = (await liveLaunches(harness.stateDir)).length;
           },
-          ensureShares: async (_paths, options) => {
+          reconcile: async (_wanted, options) => {
             seen.busy = await options.busy();
 
             throw new LauncherError("the share failed", "share it by hand");

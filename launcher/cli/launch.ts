@@ -35,7 +35,7 @@ import { writeOnce } from "./notices.ts";
 import { openSandboxProxy, reportDenials, type SandboxProxy, sandboxDenials } from "./sandbox-proxy.ts";
 import { sweepOrphans } from "./sweep.ts";
 import { imagePiVersion } from "./versions.ts";
-import { assertVmFitsHost, prepareVmShares, shareVm, sizeVm, startVm, trustVm } from "./vm.ts";
+import { assertVmFitsHost, prepareVmShares, reconcileVm, startVm, trustVm } from "./vm.ts";
 
 interface PreparedContainer {
   containerId: string;
@@ -373,10 +373,8 @@ const prepareVm = async (input: SandboxInput, share: boolean) => {
   await staged("vm", () => startVm(backend, sessions, progress, { plan, size }));
 
   await staged("shares", () =>
-    shareVm(deps, context, backend, { sessions, launchId: launch.launchId, plan }),
+    reconcileVm(deps, context, backend, { sessions, launchId: launch.launchId, plan }),
   );
-
-  await sizeVm(deps, context, backend, launch.launchId);
 };
 
 const prepareAll = async (
@@ -516,7 +514,7 @@ export const launch = async (args: string[], deps: CliDeps) => {
   if (piArgs.length !== args.length) {
     const { context } = await openContext(deps, "host");
 
-    checkWorkspaceRoots(context);
+    checkWorkspaceRoots(deps, context);
 
     return runHostPi(deps, context, piArgs);
   }
