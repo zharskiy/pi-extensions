@@ -1,6 +1,7 @@
 import {
   type CredentialRule,
   type DeriveConfig,
+  matchesAllowEntry,
   matchesPattern,
   normalizeHost,
   parseEntry,
@@ -25,11 +26,9 @@ const keptDerived = (derived: CredentialRule[], manual: CredentialRule[], derive
 };
 
 const allowedBy = (endpoint: Endpoint, entries: string[]) =>
-  entries.some((entry) => {
-    const { pattern, port } = parseEntry(entry);
-
-    return (port ?? TLS_PORT) === (endpoint.port ?? TLS_PORT) && matchesPattern(endpoint.host, pattern);
-  });
+  entries.some((entry) =>
+    matchesAllowEntry(parseEntry(entry), normalizeHost(endpoint.host), endpoint.port ?? TLS_PORT),
+  );
 
 const registryNotices = (
   registries: ToolRegistry[],

@@ -5,11 +5,10 @@ import {
   isIpLiteral,
   isLoopbackName,
   isNumericName,
+  matchesAllowEntry,
   matchesDenyEntry,
-  matchesPattern,
   normalizeHost,
   parseEntry,
-  TLS_PORT,
   unbracketed,
 } from "../config/index.ts";
 
@@ -146,16 +145,15 @@ const notAllowed = (host: string, port: number) => {
   );
 };
 
+type ParsedEntry = ReturnType<typeof parseEntry>;
+
 interface AllowEntry {
-  pattern: string;
-  port: number;
+  entry: ParsedEntry;
   rule: AllowRule;
 }
 
-type ParsedEntry = ReturnType<typeof parseEntry>;
-
 const allowEntries = (entries: string[], rule: AllowRule): AllowEntry[] =>
-  entries.map(parseEntry).map((entry) => ({ pattern: entry.pattern, port: entry.port ?? TLS_PORT, rule }));
+  entries.map((entry) => ({ entry: parseEntry(entry), rule }));
 
 const isDenied = (host: string, port: number, deny: ParsedEntry[]) =>
   deny.some((entry) => matchesDenyEntry(host, entry.pattern) && (entry.port ?? port) === port);
@@ -199,9 +197,7 @@ const hostDecision = (
     return deny("egress.deny", `${host} is in egress.deny`);
   }
 
-  const allowing = [...policy.allow, ...extra].find(
-    (entry) => entry.port === port && matchesPattern(host, entry.pattern),
-  );
+  const allowing = [...policy.allow, ...extra].find(({ entry }) => matchesAllowEntry(entry, host, port));
 
   return allowing === undefined ? notAllowed(host, port) : { allowed: true, rule: allowing.rule };
 };

@@ -817,6 +817,7 @@ describe("deriveSandboxPi fix wave", () => {
       { label: "npmrc", endpoint: { host: "npm.corp.example" } },
       { label: "maven", endpoint: { host: "nexus.corp.example", port: 8443 } },
       { label: "pip", endpoint: { host: "pypi.org" } },
+      { label: "pip", endpoint: { host: "pypi.org." } },
       { label: "npmrc", endpoint: { host: "api.keyed.example" } },
     ];
     const tools = {

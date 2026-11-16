@@ -45,6 +45,9 @@ export const matchesPattern = (host: string, pattern: string) => {
   return host === pattern;
 };
 
+export const matchesAllowEntry = (entry: ReturnType<typeof parseEntry>, host: string, port: number) =>
+  (entry.port ?? TLS_PORT) === port && matchesPattern(host, entry.pattern);
+
 export const matchesDenyEntry = (host: string, pattern: string) => {
   const domain = pattern.startsWith("*.") ? pattern.slice(2) : pattern;
   const below = host.endsWith(`.${domain}`);

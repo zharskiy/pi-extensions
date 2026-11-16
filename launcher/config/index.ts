@@ -7,6 +7,7 @@ export {
   isIpLiteral,
   isLoopbackName,
   isNumericName,
+  matchesAllowEntry,
   matchesDenyEntry,
   matchesPattern,
   normalizeHost,
