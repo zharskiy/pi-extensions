@@ -173,6 +173,8 @@ interface VolumeSync {
   containerId: string;
   hostAgentDir: string;
   writeBack: boolean;
+  refreshPackages?: boolean;
+  othersLive?: () => Promise<boolean>;
 }
 
 const syncVolume = async (deps: CliDeps, context: LaunchContext, backend: Backend, sync: VolumeSync) => {
@@ -192,6 +194,8 @@ const syncAgentFiles = (input: PreparedInput, containerId: string) =>
     containerId,
     hostAgentDir: input.prepared.host.hostAgentDir,
     writeBack: input.writeBack,
+    refreshPackages: true,
+    othersLive: () => othersLive(input.context.stateDir, input.context.repoHash, input.launch.launchId),
   });
 
 const prepareGround = async (input: PreparedInput) => {

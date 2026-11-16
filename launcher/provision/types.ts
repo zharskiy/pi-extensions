@@ -19,7 +19,10 @@ export interface SyncInput {
   repoHash: string;
   hostAgentDir: string;
   repoRoot: string;
+  refreshPackages?: boolean;
+  othersLive?: () => Promise<boolean>;
   readTimeoutMs?: number;
+  removeTimeoutMs?: number;
 }
 
 export interface SyncResult {
