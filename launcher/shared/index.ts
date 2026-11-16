@@ -38,6 +38,7 @@ export {
   launcherEntry,
   launcherPaths,
   launcherRoot,
+  outermostPaths,
   PI_AGENT_DIR_VARIABLE,
   realOrResolved,
   realOrResolvedSync,

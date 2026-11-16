@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { dirname, join, sep } from "node:path";
-import { isWithin, LauncherError } from "../../shared/index.ts";
+import { isWithin, LauncherError, outermostPaths } from "../../shared/index.ts";
 import type { VmCoverage, VmPath, VmShare } from "../types.ts";
 import { shareDrift } from "../vm-decision.ts";
 import { movedMountsOf, vmSharesOf } from "./colima-yaml.ts";
@@ -30,22 +30,13 @@ const covers = (shares: VmShare[], need: VmPath) =>
 
 const uncovered = (shares: VmShare[], needs: VmPath[]) => needs.filter((need) => !covers(shares, need));
 
-const pathsOf = (needs: VmPath[]) => {
-  const paths = [...new Set(needs.map((need) => need.path))];
-
-  return paths.filter((path) => !paths.some((other) => other !== path && isWithin(path, other)));
-};
+const pathsOf = (needs: VmPath[]) => outermostPaths(needs.map((need) => need.path));
 
 const merged = (shares: VmShare[]) =>
-  [...new Set(shares.map((share) => share.location))]
-    .filter(
-      (location) =>
-        !shares.some((other) => other.location !== location && isWithin(location, other.location)),
-    )
-    .map((location) => ({
-      location,
-      writable: shares.some((share) => share.writable && isWithin(share.location, location)),
-    }));
+  outermostPaths(shares.map((share) => share.location)).map((location) => ({
+    location,
+    writable: shares.some((share) => share.writable && isWithin(share.location, location)),
+  }));
 
 const homeFirst = (shares: VmShare[], home: string) => [
   ...shares.filter((share) => share.location === home),
