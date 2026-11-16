@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { basicAuthorization } from "../../proxy/auth.ts";
 import { helperProxyEnv, minimalEnv, parentProxyEnv } from "../../proxy/child-env.ts";
-import { basicAuthorization, parentRouteFor } from "../../proxy/parent.ts";
+import { parentRouteFor } from "../../proxy/parent.ts";
 
 describe("child environments", () => {
   it("keeps only the variables a child needs and never a secret", () => {

@@ -7,8 +7,9 @@ import {
   type Server as TcpServer,
 } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { basicAuthorization } from "../../proxy/auth.ts";
 import { createDialer, RestrictedAddressError } from "../../proxy/dial.ts";
-import { basicAuthorization, bypassesParent, parentRouteFor } from "../../proxy/parent.ts";
+import { bypassesParent, parentRouteFor } from "../../proxy/parent.ts";
 
 const state: { parent: Server; echo: TcpServer; seen: Array<{ target?: string; auth?: string }> } = {
   parent: undefined as unknown as Server,

@@ -1,5 +1,6 @@
 import { connect, type Socket } from "node:net";
 import { normalizeHost, parentProxyOf } from "../config/index.ts";
+import { basicAuthorization } from "./auth.ts";
 import { CONNECT_TIMEOUT_MS, connected } from "./connect.ts";
 
 export interface ParentRoute {
@@ -13,9 +14,6 @@ export interface ParentRoute {
 const HEAD_END = "\r\n\r\n";
 
 const MAX_HEAD_BYTES = 16_384;
-
-export const basicAuthorization = (credentials: string) =>
-  `Basic ${Buffer.from(credentials).toString("base64")}`;
 
 const matchesNoProxy = (host: string, entry: string) => {
   const pattern = normalizeHost(entry);
