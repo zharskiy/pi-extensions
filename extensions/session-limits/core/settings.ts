@@ -1,6 +1,8 @@
 import type { Limits, SettingsSchema } from "../../../platform/shared/index.ts";
 
-export const SETTINGS_FILE = "pi-session-limits.json";
+export const NAMESPACE = "pi-session-limits";
+
+export const SETTINGS_FILE = `${NAMESPACE}.json`;
 
 export const DEFAULT_LIMITS: Limits = {
   softRatio: 0.45,

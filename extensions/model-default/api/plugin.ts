@@ -1,6 +1,8 @@
 import type { Host } from "../../../platform/pi-adapter/index.ts";
 import type { Plugin } from "../../../platform/shared/index.ts";
 
+export const NAMESPACE = "pi-model-default";
+
 export const createModelDefault = (host: Host) => {
   let chosen: string | undefined;
   let landed: string | undefined;
@@ -20,7 +22,7 @@ export const createModelDefault = (host: Host) => {
     const failure = await host.saveDefaultModel(ref);
 
     if (failure) {
-      host.ui.notify(`pi-model-default: ${ref} is not saved as the default model: ${failure}`, "warning");
+      host.ui.notify(`${NAMESPACE}: ${ref} is not saved as the default model: ${failure}`, "warning");
     }
   });
 
@@ -36,7 +38,7 @@ export const createModelDefault = (host: Host) => {
 
     if (failure) {
       host.ui.notify(
-        `pi-model-default: ${level} is not saved as the default thinking level: ${failure}`,
+        `${NAMESPACE}: ${level} is not saved as the default thinking level: ${failure}`,
         "warning",
       );
     }

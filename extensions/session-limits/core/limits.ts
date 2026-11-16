@@ -42,6 +42,7 @@ import {
   type KeptRule,
   keptRuleFor,
 } from "./kept-entries.ts";
+import { NAMESPACE } from "./settings.ts";
 import {
   type ContextTokens,
   handoffInFlight,
@@ -50,8 +51,6 @@ import {
   type Phase,
   shouldRequest,
 } from "./thresholds.ts";
-
-const NAMESPACE = "pi-session-limits";
 
 const AUTOMATIC_REASON = "Your context window is nearly full.";
 

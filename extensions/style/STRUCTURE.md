@@ -9,7 +9,7 @@ extensions/style/
 ├── core/
 │   ├── style.ts           # SECTION, createStyleSection (style names, default fallback, current style, setPromptSection)
 │   ├── styles.ts          # Style, NORMAL, DEFAULT_STYLE (concise), parseStyle (front matter), loadStyles
-│   └── settings.ts        # SETTINGS_FILE, readStyleSettings (user and project), saveStyle (user file, through writeSettingsFile)
+│   └── settings.ts        # NAMESPACE, SETTINGS_FILE, readStyleSettings (user and project), saveStyle (user file, through writeSettingsFile)
 ├── ui/
 │   └── pick.ts            # pickStyle: the selectForm list shown through showForm
 ├── prompts/

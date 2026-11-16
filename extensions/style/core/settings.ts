@@ -9,7 +9,9 @@ import {
 
 type StyleSettings = { style: string };
 
-export const SETTINGS_FILE = "pi-style.json";
+export const NAMESPACE = "pi-style";
+
+export const SETTINGS_FILE = `${NAMESPACE}.json`;
 
 const styleSchema = (names: readonly string[]): SettingsSchema<StyleSettings> => ({
   style: { type: "choice", values: names },

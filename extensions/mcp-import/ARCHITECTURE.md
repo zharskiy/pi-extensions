@@ -2,7 +2,7 @@
 
 ## Boot
 
-`index.ts` exports `api/extension.ts`, a `createManagedExtension` call with namespace `pi-mcp-import` and one plugin, `mcpImportPlugin` (`api/plugin.ts`). Its `enable` calls `createMcpImport(host, homedir())`, which registers the `/mcp-import` command and returns nothing to undo. No settings, no channels, no session entries.
+`index.ts` exports `api/extension.ts`, a `createManagedExtension` call with namespace `NAMESPACE` (`pi-mcp-import`, from `ui/report.ts`, which prefixes every report) and one plugin, `mcpImportPlugin` (`api/plugin.ts`). Its `enable` calls `createMcpImport(host, homedir())`, which registers the `/mcp-import` command and returns nothing to undo. No settings, no channels, no session entries.
 
 `api/plugin.ts` owns the command: argument dispatch, the trust check for a project write, the notifications and the picker call. The flow itself is in `core/import-flow.ts`: `prepareImport` reads the sources and the target and plans one source and scope pair, `surveyImports` prepares all four pairs for the interactive pick and scans them (`pairs`, `untrusted` or `empty`), `selectedPlan` re-plans a pair for the picked servers and reports the unchecked ones as skipped (`not selected`), and `writeImport` writes the target, creating its folder. It writes only the target: `<agentDir>/mcp.json`, or `<cwd>/.pi/mcp.json` with `project` in a trusted project, plus `<cwd>/.pi/.gitignore` (`*`) when that write creates `.pi/`: `prepareImport` takes the target path from the shared `settingsPath`, `writeImport` hands the pair's scope (the shared `SettingsScope`) to `writeSettingsFile` from `platform/shared`, and neither builds the `.pi` path itself, and returns a failed write as a `cannot write <path>: <error>` string.
 

@@ -51,6 +51,8 @@ npm run test -- extensions/session-limits   # this extension's unit tests
 npm run check                               # typecheck, biome, knip, unit tests
 ```
 
+The extension's name `pi-session-limits` is written once, as `NAMESPACE` in `core/settings.ts`; the settings file, the notice slot and the handoff-pending source all derive from it.
+
 The full set of commands is in the root README's [Development](../../README.md#development) section; rules for coding agents are in [AGENTS.md](../../AGENTS.md).
 
 ## Contributing
