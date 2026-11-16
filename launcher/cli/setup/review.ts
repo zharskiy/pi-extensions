@@ -1,4 +1,5 @@
-import { valueAt } from "./document.ts";
+import { getPath } from "../../config/index.ts";
+import { isInSection, SECTIONS, WRITE_BACK_PATH } from "./document.ts";
 import { isPlanEmpty, ownedProblems } from "./plan.ts";
 import {
   applyLines,
@@ -26,12 +27,6 @@ export interface ReviewView {
   notice?: string;
 }
 
-const SECTION_KEYS: Record<Section, (key: string) => boolean> = {
-  folders: (key) => key === "workspaceRoots" || key.startsWith("workspaceRoots."),
-  vm: (key) => key.startsWith("vm."),
-  writeBack: (key) => key.startsWith("writeBack."),
-};
-
 export const SECTION_LABELS: Record<Section, string> = {
   folders: "Project folders",
   vm: "VM size",
@@ -44,7 +39,7 @@ export const createReview = (document: ConfigDocument, facts: HostFacts, env: No
   const sectionProblems = (section: Section, state: ReviewState, plan: Plan): OwnedProblem[] => {
     const owned = state.touched.has(section)
       ? []
-      : problems.filter((problem) => SECTION_KEYS[section](problem.key));
+      : problems.filter((problem) => isInSection(section, problem.key));
     const planned =
       section === "folders" ? plan.problems.map((message) => ({ key: "workspaceRoots", message })) : [];
 
@@ -62,11 +57,11 @@ export const createReview = (document: ConfigDocument, facts: HostFacts, env: No
       return "automatic";
     }
 
-    if (section === "writeBack" && valueAt(plan.next, ["writeBack", "enabled"]) === undefined) {
+    if (section === "writeBack" && getPath(plan.next, WRITE_BACK_PATH) === undefined) {
       return "default";
     }
 
-    const changes = plan.changes.filter((change) => SECTION_KEYS[section](change.key));
+    const changes = plan.changes.filter((change) => isInSection(section, change.key));
 
     if (changes.length === 0) {
       return touched ? "chosen" : "current";
@@ -84,7 +79,7 @@ export const createReview = (document: ConfigDocument, facts: HostFacts, env: No
   };
 
   const rowsOf = (state: ReviewState, plan: Plan): HubRow[] =>
-    (["folders", "vm", "writeBack"] as const).map((section) => ({
+    SECTIONS.map((section) => ({
       label: SECTION_LABELS[section],
       value: sectionValue(section, state.answers),
       tag: tagOf(section, state, plan),

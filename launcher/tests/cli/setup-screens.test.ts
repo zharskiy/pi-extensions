@@ -14,45 +14,12 @@ import {
   vmCollapsed,
   wrapped,
 } from "../../cli/setup/screens.ts";
-import type {
-  Answers,
-  FolderCandidate,
-  HostFacts,
-  Plan,
-  RunningVm,
-  VmAction,
-} from "../../cli/setup/types.ts";
+import type { Answers, Plan, RunningVm, VmAction } from "../../cli/setup/types.ts";
+import { AUTOMATIC_SIZE, candidateOf, factsOf, runningVm } from "./setup-fixtures.ts";
 
-const HOME = "/Users/me";
+const FACTS = factsOf();
 
-const SIZE = { cpus: 8, memoryGiB: 10, diskGiB: 60 };
-
-const FACTS: HostFacts = {
-  home: HOME,
-  cwd: HOME,
-  cpus: 12,
-  memoryGiB: 32,
-  freeDiskGiB: 412,
-  automatic: SIZE,
-  vm: { state: "absent" },
-  sessions: 0,
-  candidates: [],
-  configFile: `${HOME}/.pi/agent/pi-sandbox/config.json`,
-  docsFile: "/opt/launcher/CONFIGURATION.md",
-};
-
-const RUNNING: HostFacts["vm"] = { state: "running", size: { ...SIZE, diskGiB: 100 }, shares: [] };
-
-const candidate = (overrides: Partial<FolderCandidate>): FolderCandidate => ({
-  stored: "~/x",
-  resolved: `${HOME}/x`,
-  exists: true,
-  repos: 0,
-  capped: false,
-  origin: "usual",
-  here: false,
-  ...overrides,
-});
+const RUNNING = runningVm({ ...AUTOMATIC_SIZE, diskGiB: 100 });
 
 const planOf = (overrides: Partial<Plan>): Plan => ({
   next: {},
@@ -95,24 +62,24 @@ describe("the intro", () => {
 });
 
 describe("the folder tags", () => {
-  const many = candidate({ stored: "~/Projects", repos: 14 });
-  const few = candidate({ stored: "~/work", repos: 3, origin: "cwd", here: true });
-  const capped = candidate({ repos: 50, capped: true });
+  const many = candidateOf({ stored: "~/Projects", repos: 14 });
+  const few = candidateOf({ stored: "~/work", repos: 3, origin: "cwd", here: true });
+  const capped = candidateOf({ repos: 50, capped: true });
   const all = [many, few, capped];
 
   it("pads the counts so they line up, except in plain mode", () => {
     expect(folderTag(few, all, false)).toBe(" 3 git repositories · you are here");
     expect(folderTag(few, all, true)).toBe("3 git repositories · you are here");
     expect(folderTag(capped, all, false)).toBe("50+ git repositories");
-    expect(folderTag(candidate({ repos: 1 }), [candidate({ repos: 1 })], false)).toBe("1 git repository");
-    expect(folderTag(candidate({}), all, false)).toBe("no git repository found");
+    expect(folderTag(candidateOf({ repos: 1 }), [candidateOf({ repos: 1 })], false)).toBe("1 git repository");
+    expect(folderTag(candidateOf({}), all, false)).toBe("no git repository found");
   });
 
   it("tags configured and environment roots by where they come from", () => {
-    expect(folderTag(candidate({ origin: "config", exists: false }), all, false)).toBe(
+    expect(folderTag(candidateOf({ origin: "config", exists: false }), all, false)).toBe(
       "current · not found right now",
     );
-    expect(folderTag(candidate({ origin: "env" }), all, false)).toBe("from PI_SANDBOX_ROOTS");
+    expect(folderTag(candidateOf({ origin: "env" }), all, false)).toBe("from PI_SANDBOX_ROOTS");
   });
 
   it("summarises more than three roots", () => {
@@ -206,10 +173,10 @@ describe("the hub", () => {
 
   it("words every VM action", () => {
     const actions: VmAction[] = [
-      { kind: "restart", size: SIZE, shares: [], exactShares: true, parts: ["size", "folders"] },
+      { kind: "restart", size: AUTOMATIC_SIZE, shares: [], exactShares: true, parts: ["size", "folders"] },
       { kind: "defer", sessions: 2, parts: ["folders"] },
       { kind: "defer", sessions: 1, parts: ["size"] },
-      { kind: "create", size: SIZE, shares: [{ location: "/Users/me", writable: true }] },
+      { kind: "create", size: AUTOMATIC_SIZE, shares: [{ location: "/Users/me", writable: true }] },
       { kind: "on-next-start", parts: ["size"] },
       { kind: "unknown", reason: "colima status failed" },
       { kind: "none" },
@@ -271,10 +238,10 @@ describe("the VM size editor", () => {
 });
 
 describe("the VM step", () => {
-  const create: RunningVm = { kind: "create", size: SIZE, shares: [] };
+  const create: RunningVm = { kind: "create", size: AUTOMATIC_SIZE, shares: [] };
   const restart: RunningVm = {
     kind: "restart",
-    size: SIZE,
+    size: AUTOMATIC_SIZE,
     shares: [],
     exactShares: true,
     parts: ["folders"],

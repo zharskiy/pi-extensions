@@ -3,18 +3,16 @@ import type { VmPhase } from "../../backend/index.ts";
 import { warningOf } from "../../cli/prompt/task.ts";
 import { Cancelled, type Detail, type Prompts } from "../../cli/prompt/types.ts";
 import { applyPlan, lineFrontEnd, wizardFrontEnd } from "../../cli/setup/apply.ts";
-import { readDocument } from "../../cli/setup/document.ts";
-import type { HostFacts, Plan } from "../../cli/setup/types.ts";
+import type { Plan } from "../../cli/setup/types.ts";
 import { fakeTimers } from "./prompt/fake-tty.ts";
-
-const SIZE = { cpus: 8, memoryGiB: 10, diskGiB: 60 };
+import { AUTOMATIC_SIZE, documentOf, factsOf } from "./setup-fixtures.ts";
 
 const PLAN: Plan = {
   next: {},
   text: "",
   changes: [],
   reindented: false,
-  vm: { kind: "restart", size: SIZE, shares: [], exactShares: true, parts: ["size"] },
+  vm: { kind: "restart", size: AUTOMATIC_SIZE, shares: [], exactShares: true, parts: ["size"] },
   problems: [],
 };
 
@@ -33,9 +31,8 @@ const interrupted = async (phases: VmPhase[]) => {
       notes.push((typeof lines === "function" ? lines(76) : lines).join(" "));
     },
   } as unknown as Prompts;
-  const read = readDocument("/Users/me/config.json", undefined);
-  const document = read.ok ? read.document : undefined;
-  const facts = { home: "/Users/me" } as HostFacts;
+  const document = documentOf(undefined, "/Users/me/config.json");
+  const facts = factsOf();
   const effects = {
     write: async () => undefined,
     vm: async (_action: unknown, progress: (phase: VmPhase) => void) => {
@@ -45,7 +42,7 @@ const interrupted = async (phases: VmPhase[]) => {
     },
   };
   const io = { prompts, plain: true, now: () => 0 };
-  const code = await applyPlan(wizardFrontEnd(io, facts), effects, document as NonNullable<typeof document>, {
+  const code = await applyPlan(wizardFrontEnd(io, facts), effects, document, {
     plan: PLAN,
     answers: { roots: "home", vm: "automatic", writeBack: true },
   });
@@ -93,9 +90,8 @@ describe("applying a plan as lines", () => {
     const clock = fakeTimers();
     const out = collected();
     const err = collected();
-    const read = readDocument("/Users/me/config.json", undefined);
-    const document = read.ok ? read.document : undefined;
-    const facts = { home: "/Users/me", configFile: "/Users/me/config.json" } as HostFacts;
+    const document = documentOf(undefined, "/Users/me/config.json");
+    const facts = factsOf({ configFile: "/Users/me/config.json" });
     const effects = {
       write: async () => undefined,
       vm: async (_action: unknown, progress: (phase: VmPhase) => void) => {
@@ -112,7 +108,7 @@ describe("applying a plan as lines", () => {
       "When you apply:",
       "  • restart the sandbox VM",
     ]);
-    const code = await applyPlan(front, effects, document as NonNullable<typeof document>, {
+    const code = await applyPlan(front, effects, document, {
       plan: PLAN,
       answers: { roots: "home", vm: "automatic", writeBack: true },
     });

@@ -294,7 +294,7 @@ describe("changeLine", () => {
 
     expect(line).toBe(`pi-subagents.json agents: {} → {"long":"${"y".repeat(50)}… written to the host`);
     expect(changeLine(SETTINGS_FILE, { key: "theme", from: "a", to: "\u001b[2Jx\u009b" })).toBe(
-      "settings.json theme: a → ?[2Jx? written to the host",
+      "settings.json theme: a → \\u001B[2Jx\\u009B written to the host",
     );
   });
 
@@ -302,7 +302,7 @@ describe("changeLine", () => {
     const planted = "a\u202ab\u202ec\u2066d\u2069e\u2028f\u2029g";
 
     expect(changeLine(SUBAGENTS, { key: "agents", from: undefined, to: planted })).toBe(
-      "pi-subagents.json agents: (unset) → a?b?c?d?e?f?g written to the host",
+      "pi-subagents.json agents: (unset) → a\\u202Ab\\u202Ec\\u2066d\\u2069e\\u2028f\\u2029g written to the host",
     );
   });
 });

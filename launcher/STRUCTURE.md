@@ -24,7 +24,8 @@ schema/sandbox-config.schema.json  the config keys
 bin/pi-sandbox.js              the package bin: runs the built dist/
 bin/pi-sandbox-dev.js          checkout entry: runs the .ts sources, not published
 bin/path-block.sh              the PATH block helpers and the sh and fish lines, sourced by install.sh and uninstall.sh
-bin/paths.sh                   the agent dir (with ~ expanded as pi does), state dir, user config and old state folder, sourced by install.sh and uninstall.sh
+bin/paths.sh                   COLIMA_HOME, the agent dir (with ~ expanded as pi does), state dir, user config and old state folder, sourced by install.sh and uninstall.sh
+bin/shim.sh                    the package name, the pi shim in ~/.local/bin with is_ours, and the fish file, sourced by install.sh and uninstall.sh
 ```
 
 ## cli/
@@ -43,7 +44,7 @@ cli/terminal.ts                the host terminal: streams, size read at use, res
 cli/prompt/                    the terminal prompts of pi sandbox init: types, finding the terminal (/dev/tty) and its restore, keys, style and glyphs, the live frame, the line editor, the input rules both prompt sets share (number checks, warn once, initial choice, toggle), the task runner both share (raw mode, ctrl-c, settling once; each set only draws) and the still-working heartbeat, path completion, the rich and plain prompt sets
 cli/setup/types.ts             the setup's facts, answers, plan, outcome, io, effects, apply event and front end types
 cli/setup/document.ts          the config file read with its indent, owned-key edits keeping key order, the diff and the checked atomic write
-cli/setup/folders.ts           the candidate project folders, the repository scan, the storage form of a root and the add-folder messages
+cli/setup/folders.ts           the candidate project folders, the repository scan, the storage form of a root and the wizard's refused-folder messages, for Add a folder and the hub's folders row
 cli/setup/plan.ts              the first-run steps, owned-key problems, initial answers, the edited config, the VM action, the plan and the VM size field bounds
 cli/setup/detect.ts            the host, VM, sessions, free disk and folders gathered in parallel within a budget
 cli/setup/screens.ts           every sentence of the setup screens, rich and plain, as functions of the facts and the plan, and one text per apply event
@@ -67,7 +68,7 @@ cli/commands/egress.ts         pi sandbox egress allow, revoke and list
 cli/commands/reset.ts          pi sandbox reset: the folder's sandbox and volumes
 cli/commands/stop.ts           pi sandbox stop
 cli/commands/uninstall.ts      the hidden __uninstall command uninstall.sh runs: live-session refusal, engine objects by label, host-side release
-cli/commands/vm-shares.ts      the hidden __vm-shares command: the VM mount list, from which install.sh picks the smoke folder
+cli/commands/vm-shares.ts      the hidden __vm-shares command: the shared workspace roots that exist, or the home, whose first line install.sh takes as the smoke folder
 cli/commands/init.ts           pi sandbox init: --yes, CI and terminal checks, builds the UI and effects, and picks the front end (the wizard, rich or plain, or the lines of --yes)
 cli/commands/doctor.ts         pi sandbox doctor: stages, probes and host checks as checks by section, the denials matched to each rule, the blocked warnings, captured notices and the progress line
 cli/commands/doctor-probes.ts  the doctor's checks inside the container; a rule whose credential was denied warns, one the proxy refused says why, a certificate not yet valid names the VM clock
@@ -298,6 +299,7 @@ shared/npmrc.ts                the .npmrc parser and value reader
 shared/ini.ts                  the ini parser and section.name[n] reader
 shared/maven-xml.ts            the XML tokenizer, the Maven settings model, the server secret reader and the XML writer
 shared/settle.ts               settleAll
+shared/terminal-text.ts        control, bidi and line separator characters shown as \uXXXX escapes, and the last non-empty line of command output
 shared/write-back-table.ts     the built-in write-back table as value specs, the host-only settings keys and the ceiling no config passes
 ```
 
@@ -310,7 +312,7 @@ tests/support/fake-engine.ts         an in-memory engine HTTP server
 tests/support/fake-runner.ts         the scripted CommandRunner
 tests/support/fake-clock.ts          a controllable clock
 tests/support/sandbox-config.ts      config builders
-tests/support/temp-dir.ts            temp dir helpers
+tests/support/temp-dir.ts            temp dir helpers and exists
 tests/support/git.ts                 git for tests, isolated from the developer's git config
 tests/support/fakes.test.ts          the fakes' own contract
 tests/shared/atomic-write.test.ts    atomic writes
@@ -414,6 +416,7 @@ tests/cli/egress.test.ts             egress grants
 tests/cli/errors.test.ts             error output
 tests/cli/host-pi.test.ts            host pi selection
 tests/cli/install.test.ts            install.sh, run for real
+tests/cli/setup-fixtures.ts          host facts, folder candidates, the automatic size, a running VM and config documents for the setup tests
 tests/cli/setup-detect.test.ts       detectHost: the budget, an inspect failure, free disk and sessions
 tests/cli/setup-screens.test.ts      the setup screen texts
 tests/cli/setup-flow.test.ts         pi sandbox init's flow end to end over fake terminals, rich, ASCII and plain

@@ -2,7 +2,7 @@ import { posix } from "node:path";
 import { type Backend, execCapture } from "../../backend/index.ts";
 import { type CredentialRule, fillTemplate, TLS_PORT } from "../../config/index.ts";
 import { credentialHosts, probeHostSessions, readVolumeFile } from "../../provision/index.ts";
-import { GUEST_PATHS, isAuthLikeHeader, isPlaceholder, isSecretName } from "../../shared/index.ts";
+import { GUEST_PATHS, isAuthLikeHeader, isPlaceholder, isSecretName, lastLine } from "../../shared/index.ts";
 import { type CheckResult, failed, type NamedCheck, passed, skipped } from "./doctor-checks.ts";
 
 export interface ProbeTarget {
@@ -84,13 +84,6 @@ const execText = (target: ProbeTarget, command: string[]) =>
     env: {},
     workdir: target.workdir,
   });
-
-const lastLine = (text: string) =>
-  text
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line !== "")
-    .at(-1);
 
 const stringLeaves = (value: unknown, path: string): Leaf[] => {
   if (typeof value === "string") {

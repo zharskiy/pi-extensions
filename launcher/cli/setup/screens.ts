@@ -50,7 +50,7 @@ export const HOME_ROOTS = "your whole home (~), not recommended";
 export const FOLDERS_TITLE = "Which folders hold your projects?";
 
 export const FOLDERS_DETAIL =
-  "Only these folders are shared with the sandbox VM, and pi starts only inside them.";
+  "Only these folders are shared with the sandbox VM, besides pi's sessions folder and the launcher's read-only state/vm folder, and pi starts only inside them.";
 
 export const NO_FOLDER_FOUND =
   "No usual project folder was found in your home. Add the folders that hold your projects.";
@@ -352,7 +352,7 @@ export const vmActionText = (action: VmAction, home: string) => {
 
     return sharesHome
       ? `create the sandbox VM sharing your whole home (~), writable; ${CREATE_TAIL}`
-      : `create the sandbox VM with these folders; ${CREATE_TAIL}`;
+      : `create the sandbox VM with these folders, pi's sessions folder and the launcher's read-only state/vm folder; ${CREATE_TAIL}`;
   }
 
   if (action.kind === "restart") {

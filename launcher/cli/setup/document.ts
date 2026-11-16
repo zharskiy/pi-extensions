@@ -1,15 +1,17 @@
-import { lstat, mkdir, readFile, readlink, realpath, stat } from "node:fs/promises";
+import { lstat, mkdir, readlink, realpath, stat } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import { validateConfig } from "../../config/index.ts";
+import type { VmSpec } from "../../backend/index.ts";
+import { configProblem, withoutPath } from "../../config/index.ts";
 import {
   errorMessage,
   isJsonObject,
   type JsonObject,
   LauncherError,
+  readText,
   writeFileAtomic,
 } from "../../shared/index.ts";
-import type { Change, ConfigDocument, DocumentRead } from "./types.ts";
+import type { Change, ConfigDocument, DocumentRead, Section } from "./types.ts";
 
 const DEFAULT_INDENT = "  ";
 
@@ -40,71 +42,24 @@ const WRITE_REASONS: Record<string, { reason: string; hint: string }> = {
   ENOSPC: { reason: "its disk is full", hint: "free some space, then run pi sandbox init again" },
 };
 
-const OWNED_PATHS = [
-  ["workspaceRoots"],
-  ["vm", "cpus"],
-  ["vm", "memoryGiB"],
-  ["vm", "diskGiB"],
-  ["writeBack", "enabled"],
-] as const;
+export const VM_KEYS: readonly (keyof VmSpec)[] = ["cpus", "memoryGiB", "diskGiB"];
 
-const childOf = (value: JsonObject, key: string) => {
-  const child = value[key];
+export const WRITE_BACK_PATH = "writeBack.enabled";
 
-  return isJsonObject(child) ? child : undefined;
+const SECTION_PATHS: Record<Section, readonly string[]> = {
+  folders: ["workspaceRoots"],
+  vm: VM_KEYS.map((key) => `vm.${key}`),
+  writeBack: [WRITE_BACK_PATH],
 };
 
-export const valueAt = (value: JsonObject, path: readonly string[]): unknown => {
-  const [head, ...rest] = path;
+export const SECTIONS = Object.keys(SECTION_PATHS) as readonly Section[];
 
-  if (rest.length === 0) {
-    return Object.hasOwn(value, head) ? value[head] : undefined;
-  }
+const OWNED_PATHS = SECTIONS.flatMap((section) => SECTION_PATHS[section]);
 
-  const child = childOf(value, head);
+export const isInSection = (section: Section, key: string) =>
+  SECTION_PATHS[section].some((path) => key === path || key.startsWith(`${path}.`));
 
-  return child === undefined ? undefined : valueAt(child, rest);
-};
-
-export const withValue = (value: JsonObject, path: readonly string[], next: unknown): JsonObject => {
-  const [head, ...rest] = path;
-
-  if (rest.length === 0) {
-    return { ...value, [head]: next };
-  }
-
-  return { ...value, [head]: withValue(childOf(value, head) ?? {}, rest, next) };
-};
-
-export const withoutValue = (value: JsonObject, path: readonly string[]): JsonObject => {
-  const [head, ...rest] = path;
-
-  if (!Object.hasOwn(value, head)) {
-    return value;
-  }
-
-  const kept = Object.fromEntries(Object.entries(value).filter(([key]) => key !== head));
-
-  if (rest.length === 0) {
-    return kept;
-  }
-
-  const child = childOf(value, head);
-
-  if (child === undefined) {
-    return value;
-  }
-
-  const trimmed = withoutValue(child, rest);
-
-  if (trimmed === child) {
-    return value;
-  }
-
-  return Object.keys(trimmed).length === 0 ? kept : { ...value, [head]: trimmed };
-};
-
-export const withoutOwned = (value: JsonObject) => OWNED_PATHS.reduce(withoutValue, value);
+export const withoutOwned = (value: JsonObject) => OWNED_PATHS.reduce(withoutPath, value);
 
 const indentOf = (text: string) => {
   const leading = INDENTED_LINE.exec(text)?.[1];
@@ -114,16 +69,6 @@ const indentOf = (text: string) => {
   }
 
   return leading.startsWith("\t") ? "\t" : leading;
-};
-
-const outsideProblem = (value: JsonObject) => {
-  try {
-    validateConfig(withoutOwned(value));
-
-    return undefined;
-  } catch (error) {
-    return errorMessage(error);
-  }
 };
 
 const parsed = (text: string): { value: unknown } | { message: string } => {
@@ -153,7 +98,7 @@ export const readDocument = (file: string, text: string | undefined): DocumentRe
     return { ok: false, kind: "json", message: "the file holds JSON, but not an object" };
   }
 
-  const problem = outsideProblem(result.value);
+  const problem = configProblem(withoutOwned(result.value));
 
   if (problem !== undefined) {
     return { ok: false, kind: "config", message: problem };
@@ -216,8 +161,6 @@ const diffBetween = (before: JsonObject, after: JsonObject, prefix: string): Cha
 
 export const diffOf = (before: JsonObject, after: JsonObject) => diffBetween(before, after, "");
 
-const currentText = (file: string) => readFile(file, "utf8").catch(() => undefined);
-
 const modeOf = async (file: string) => {
   const info = await stat(file).catch(() => undefined);
 
@@ -263,7 +206,7 @@ const saveError = (file: string, target: string, error: unknown) => {
 };
 
 export const writeDocument = async (document: ConfigDocument, text: string) => {
-  if ((await currentText(document.file)) !== document.text) {
+  if ((await readText(document.file)) !== document.text) {
     throw new LauncherError(
       `could not save ${document.file}: the file changed while setup ran`,
       "run pi sandbox init again to see the new content",

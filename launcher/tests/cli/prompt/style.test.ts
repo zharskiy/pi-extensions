@@ -31,6 +31,7 @@ describe("text width and truncation", () => {
 describe("control characters and ASCII", () => {
   it("shows control characters as escapes", () => {
     expect(printable("a\x1b[2Jb\x7f\u009b")).toBe("a\\u001B[2Jb\\u007F\\u009B");
+    expect(printable("a\u202eb\u2066c\u2028d")).toBe("a\\u202Eb\\u2066c\\u2028d");
   });
 
   it("folds the Unicode punctuation to ASCII", () => {

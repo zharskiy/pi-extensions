@@ -2,11 +2,9 @@ import { mkdir, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { VmShare } from "../../backend/index.ts";
-import { readDocument } from "../../cli/setup/document.ts";
 import {
   answersForYes,
   editedConfig,
-  FIRST_RUN_STEPS,
   firstRunSteps,
   initialAnswers,
   isFirstRun,
@@ -16,53 +14,30 @@ import {
   vmActionOf,
   vmBounds,
 } from "../../cli/setup/plan.ts";
-import type { Answers, ConfigDocument, FolderCandidate, HostFacts, VmFacts } from "../../cli/setup/types.ts";
+import type { Answers, FolderCandidate, HostFacts } from "../../cli/setup/types.ts";
 import { tempDir } from "../support/temp-dir.ts";
+import {
+  AUTOMATIC_SIZE,
+  candidateOf,
+  documentOf as fixtureDocument,
+  factsOf as fixtureFacts,
+  HOME,
+  runningVm,
+} from "./setup-fixtures.ts";
 
-const documentOf = (value: unknown, file = "/c/config.json"): ConfigDocument => {
-  const read = readDocument(file, value === undefined ? undefined : `${JSON.stringify(value, null, 2)}\n`);
+const FILE = "/c/config.json";
 
-  if (!read.ok) {
-    throw new Error(read.message);
-  }
+const documentOf = (value: unknown, file = FILE) =>
+  fixtureDocument(value === undefined ? undefined : `${JSON.stringify(value, null, 2)}\n`, file);
 
-  return read.document;
-};
+const candidate = (stored: string, origin: FolderCandidate["origin"], repos = 0) =>
+  candidateOf({ stored, resolved: `${HOME}/${stored.slice(2)}`, origin, repos });
 
-const candidate = (stored: string, origin: FolderCandidate["origin"], repos = 0): FolderCandidate => ({
-  stored,
-  resolved: `/Users/me/${stored.slice(2)}`,
-  exists: true,
-  repos,
-  capped: false,
-  origin,
-  here: false,
-});
+const factsOf = (overrides: Partial<HostFacts> = {}) => fixtureFacts({ configFile: FILE, ...overrides });
 
-const SIZE = { cpus: 8, memoryGiB: 10, diskGiB: 60 };
+const WORK = [{ location: `${HOME}/work`, writable: true }];
 
-const factsOf = (overrides: Partial<HostFacts> = {}): HostFacts => ({
-  home: "/Users/me",
-  cwd: "/Users/me",
-  cpus: 12,
-  memoryGiB: 32,
-  freeDiskGiB: 412,
-  automatic: SIZE,
-  vm: { state: "absent" },
-  sessions: 0,
-  candidates: [],
-  configFile: "/c/config.json",
-  docsFile: "/l/CONFIGURATION.md",
-  ...overrides,
-});
-
-const WORK = [{ location: "/Users/me/work", writable: true }];
-
-const running = (size = SIZE, shares: VmShare[] | "unreadable" = WORK): VmFacts => ({
-  state: "running",
-  size,
-  shares,
-});
+const running = (size = AUTOMATIC_SIZE, shares: VmShare[] | "unreadable" = WORK) => runningVm(size, shares);
 
 const answersOf = (overrides: Partial<Answers> = {}): Answers => ({
   roots: ["~/work"],
@@ -82,7 +57,6 @@ describe("first run", () => {
     expect(isFirstRun(documentOf({ workspaceRoots: { roots: ["~/w"] } }))).toBe(false);
     expect(firstRunSteps(documentOf(undefined))).toEqual(["folders", "vm", "writeBack"]);
     expect(firstRunSteps(documentOf({ workspaceRoots: { roots: ["~/w"] } }))).toEqual([]);
-    expect(FIRST_RUN_STEPS).toEqual(["folders", "vm", "writeBack"]);
   });
 });
 
@@ -98,7 +72,10 @@ describe("ownedProblems", () => {
     });
 
     expect(ownedProblems(document, context)).toEqual([
-      { key: "workspaceRoots.roots", message: expect.stringContaining("~/.ssh/keys overlaps") },
+      {
+        key: "workspaceRoots.roots",
+        message: "~/.ssh/keys lies inside ~/.ssh, which the sandbox must never see.",
+      },
       { key: "vm.cpus", message: expect.stringContaining("resources.cpus 4 is larger than vm.cpus 2") },
       { key: "vm.memoryGiB", message: "config: vm.memoryGiB must be at least 2" },
     ]);
@@ -166,7 +143,7 @@ describe("vmActionOf", () => {
   const custom = { cpus: 8, memoryGiB: 12, diskGiB: 60 };
 
   it.each<[string, Partial<HostFacts>, Answers, unknown]>([
-    ["absent", {}, answersOf(), { kind: "create", size: SIZE, shares: WORK }],
+    ["absent", {}, answersOf(), { kind: "create", size: AUTOMATIC_SIZE, shares: WORK }],
     ["absent, custom", {}, answersOf({ vm: custom }), { kind: "create", size: custom, shares: WORK }],
     ["running and equal", { vm: running() }, answersOf(), { kind: "none" }],
     [
@@ -183,15 +160,21 @@ describe("vmActionOf", () => {
     ],
     [
       "running, shares differ",
-      { vm: running(SIZE, [{ location: "/Users/me", writable: true }]) },
+      { vm: running(AUTOMATIC_SIZE, [{ location: "/Users/me", writable: true }]) },
       answersOf(),
-      { kind: "restart", size: SIZE, shares: WORK, exactShares: true, parts: ["folders"] },
+      { kind: "restart", size: AUTOMATIC_SIZE, shares: WORK, exactShares: true, parts: ["folders"] },
     ],
     [
       "running, disk grows",
       { vm: running() },
       answersOf({ vm: { kept: { diskGiB: 100 } } }),
-      { kind: "restart", size: { ...SIZE, diskGiB: 100 }, shares: WORK, exactShares: true, parts: ["size"] },
+      {
+        kind: "restart",
+        size: { ...AUTOMATIC_SIZE, diskGiB: 100 },
+        shares: WORK,
+        exactShares: true,
+        parts: ["size"],
+      },
     ],
     [
       "running, disk would shrink",
@@ -207,7 +190,7 @@ describe("vmActionOf", () => {
     ],
     [
       "stopped and different",
-      { vm: { state: "stopped", size: SIZE, shares: "unreadable" } },
+      { vm: { state: "stopped", size: AUTOMATIC_SIZE, shares: "unreadable" } },
       answersOf({ vm: custom }),
       { kind: "on-next-start", parts: ["size", "folders"] },
     ],
@@ -222,7 +205,7 @@ describe("vmActionOf", () => {
   });
 
   it("asks only for missing shares when the shares need not be exact", () => {
-    const wider = running(SIZE, [...WORK, { location: "/Volumes/x", writable: true }]);
+    const wider = running(AUTOMATIC_SIZE, [...WORK, { location: "/Volumes/x", writable: true }]);
 
     expect(vmActionOf(answersOf(), factsOf({ vm: wider }), { shares: WORK, exact: false })).toEqual({
       kind: "none",
@@ -243,7 +226,7 @@ describe("planOf", () => {
       text: '{\n  "workspaceRoots": {\n    "roots": [\n      "~/work"\n    ]\n  }\n}\n',
       changes: [{ key: "workspaceRoots.roots", kind: "add", after: ["~/work"] }],
       reindented: false,
-      vm: { kind: "create", size: SIZE, shares: WORK },
+      vm: { kind: "create", size: AUTOMATIC_SIZE, shares: WORK },
       problems: [],
     });
     expect(isPlanEmpty(plan)).toBe(false);
@@ -345,7 +328,7 @@ describe("vmBounds", () => {
   });
 
   it("starts the disk at the VM's disk, which only grows", () => {
-    expect(vmBounds(factsOf({ vm: running({ ...SIZE, diskGiB: 100 }) })).diskGiB).toEqual({
+    expect(vmBounds(factsOf({ vm: running({ ...AUTOMATIC_SIZE, diskGiB: 100 }) })).diskGiB).toEqual({
       min: 100,
       max: 2048,
     });

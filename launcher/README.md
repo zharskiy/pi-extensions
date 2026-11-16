@@ -122,7 +122,7 @@ Pi's own installer comes first here too: the launcher runs only pi's managed ins
    cd ~/code/my-app && pi
    ```
 
-   The install script already built the sandbox image, so pi starts in seconds. When the image must be rebuilt, for example after a pi update, the launch prints `preparing pi sandbox, one time` and takes a few minutes.
+   When the install script's smoke check ran, it already built the sandbox image, so pi starts in seconds; when it was skipped, the first launch builds it. Behind a proxy that inspects TLS the smoke check fails until [`tls.extraCa`](CONFIGURATION.md#corporate-proxy-and-tls-inspection) names the proxy's CA, which `pi sandbox doctor` prints. When the image must be rebuilt, for example after a pi update, the launch prints `preparing pi sandbox, one time` and takes a few minutes.
 
 2. Work as usual. A tool that reaches a host that is not allowed gets an error page saying what to do.
 
@@ -230,7 +230,7 @@ Your settings go in `~/.pi/agent/pi-sandbox/config.json` (inside pi's agent fold
 - `egress.allow`: the hosts the sandbox may reach besides `pi.dev` and your providers. It is empty by default, so package registries such as `registry.npmjs.org` are reachable only once you list them or allow them with `pi sandbox egress allow`.
 - `image.packages` and `image.npmGlobal`: Debian and npm packages to add to the image.
 - `mounts.sharedCaches`: cache folders such as `~/.npm`, kept in volumes that all your sandboxes share. Your Mac's own folder is not mounted.
-- `vm`: the CPUs, memory and disk of the VM, applied at the next launch with no other pi session running. `resources` limits one container inside the VM instead.
+- `vm`: the CPUs, memory and disk of the VM, applied at the next launch with no other pi session running, or at once by `pi sandbox init` when none runs. `resources` limits one container inside the VM instead.
 - `writeBack`: which settings changed inside come back to your Mac, inside limits the launcher keeps.
 
 `pi sandbox config` shows the result. Every key, credentials and corporate proxies are in [CONFIGURATION.md](CONFIGURATION.md), and [examples/config.json](examples/config.json) is a starting point for a team's shared file.

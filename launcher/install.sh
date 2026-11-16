@@ -1,15 +1,9 @@
 #!/bin/sh
 set -eu
 unset CDPATH
-COLIMA_HOME="$HOME/.colima"
-export COLIMA_HOME
-
-package_name=pi-extensions-mz
 min_colima=0.8.0
 min_node=22.19.0
 min_macos=13
-wrapper_marker="launcher/bin/pi-sandbox"
-bin_dir="$HOME/.local/bin"
 managed_kind='"kind"[[:space:]]*:[[:space:]]*"pi-managed-install"'
 managed_schema='"schemaVersion"[[:space:]]*:[[:space:]]*1([^0-9.]|$)'
 managed_layout='"layout"[[:space:]]*:[[:space:]]*"releases-v1"'
@@ -61,19 +55,12 @@ parse_args() {
   esac
 }
 
-shim_dir="$bin_dir"
-
-if [ -d "$bin_dir" ]; then
-  shim_dir=$(cd -P "$bin_dir" && pwd)
-fi
-
-shim="$shim_dir/pi"
-
 script_dir=$(cd "$(dirname "$0")" && pwd)
 checkout=$(dirname "$script_dir")
 
 . "$script_dir/bin/path-block.sh"
 . "$script_dir/bin/paths.sh"
+. "$script_dir/bin/shim.sh"
 
 parse_args "$@"
 
@@ -146,16 +133,6 @@ colima_version=$(colima version 2>/dev/null | sed -n 's/^colima version v\{0,1\}
 version_at_least "${colima_version:-0}" "$min_colima" || fail "colima ${colima_version:-unknown} is older than $min_colima, run brew upgrade colima"
 
 host_pi=$(command -v pi 2>/dev/null || true)
-
-is_ours() {
-  if [ -L "$shim" ]; then
-    case "$(readlink "$shim")" in
-      */pi-sandbox|*/pi-sandbox.js) return 0 ;;
-    esac
-  fi
-
-  [ -f "$shim" ] && grep -q "$wrapper_marker" "$shim"
-}
 
 link_target=""
 
@@ -246,7 +223,6 @@ snippet_broken=""
 login_shell=${SHELL:-zsh}
 login_shell=${login_shell##*/}
 
-fish_file="$HOME/.config/fish/conf.d/pi-sandbox.fish"
 
 add_snippet() {
   if path_block_present "$1" && ! path_block_intact "$1"; then
@@ -324,23 +300,14 @@ case "$setup_status" in
   *) fail_with "$setup_status" "setup failed, see above; the launcher is installed, run pi sandbox init to try again" ;;
 esac
 
-vm_shares=$("$shim" __vm-shares) || exit "$?"
+smoke_root=$("$shim" __vm-shares) || exit "$?"
+smoke_root=$(printf '%s\n' "$smoke_root" | head -n 1)
+smoke_parent=$smoke_root
+smoke_where="a temporary git repository in $smoke_parent"
 
-first_root_share() {
-  printf '%s\n' "$vm_shares" |
-    sessions="$agent_dir/sessions:w" real_sessions="$agent_root/sessions:w" home_share="$HOME:w" awk '
-      /:w$/ && $0 != ENVIRON["sessions"] && $0 != ENVIRON["real_sessions"] && $0 != ENVIRON["home_share"] {
-        sub(/:w$/, ""); print; exit
-      }'
-}
-
-smoke_where="a temporary git repository"
-
-if [ "$vm_shares" = "$HOME:w" ]; then
+if [ "$smoke_root" = "$HOME" ]; then
   smoke_parent="$HOME/.cache"
-else
-  smoke_parent=$(first_root_share)
-  smoke_where="a temporary git repository in $smoke_parent"
+  smoke_where="a temporary git repository"
 fi
 
 smoke_log=""

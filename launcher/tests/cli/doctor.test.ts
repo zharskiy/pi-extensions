@@ -111,9 +111,6 @@ const guestBackend = async (probes: Probes, vm?: Partial<Vm>) => {
   return fake;
 };
 
-const RESIZE =
-  "colima stop --profile pi-sandbox && colima start --profile pi-sandbox --activate=false --cpu 8 --memory 10";
-
 const hostSection = async (prepared: boolean) => [
   "host",
   `  ok    host pi           pi ${await testedPiVersion()}, managed install ~/.pi/agent/bin/pi; the image follows it`,
@@ -919,7 +916,7 @@ describe("pi sandbox doctor", () => {
       expect(found).toMatchObject({
         status: "warn",
         detail: "profile pi-sandbox has 2 CPUs and 4 GiB, below 8 CPUs and 10 GiB",
-        hint: `resize it with ${RESIZE}, or set vm in the config`,
+        hint: "run pi sandbox init to choose a size, while no other pi session runs",
       });
       expect(code).toBe(0);
     });
@@ -942,7 +939,7 @@ describe("pi sandbox doctor", () => {
       expect(differs.found).toMatchObject({
         status: "warn",
         detail: "profile pi-sandbox has 8 CPUs and 10 GiB, not the 4 CPUs, 80 GiB disk vm sets",
-        hint: "run pi once while no other pi session runs; it restarts the VM with the size vm sets",
+        hint: "run pi sandbox init, or pi, while no other pi session runs; either restarts the VM with the size vm sets",
       });
       expect(shrunk.found).toMatchObject({
         status: "warn",

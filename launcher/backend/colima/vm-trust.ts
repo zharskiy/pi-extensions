@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
-import { errorMessage, LauncherError, type RunResult, sha256Hex } from "../../shared/index.ts";
+import { errorMessage, LauncherError, lastLine, type RunResult, sha256Hex } from "../../shared/index.ts";
 import type { VmShareOptions } from "../types.ts";
-import { type Colima, deferredUntilIdle, lastLine, logHint } from "./profile.ts";
+import { type Colima, deferredUntilIdle, logHint } from "./profile.ts";
 
 interface ShellOptions {
   input?: string;

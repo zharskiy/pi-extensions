@@ -5,6 +5,7 @@ import {
   isJsonObject,
   MAX_WRITE_BACK_CHARS,
   parseJsonObject,
+  printable,
   SETTINGS_FILE_NAME,
   stableHash,
   type ValueSpec,
@@ -45,14 +46,6 @@ const EXTENSION_FILE_BYTES = 64 * KIB;
 const SETTINGS_FILE_BYTES = 1024 * KIB;
 
 const SHOWN_CHARS = 60;
-
-const PRINTABLE_FROM = 0x20;
-
-const C1_FROM = 0x7f;
-
-const C1_TO = 0x9f;
-
-const BIDI_CONTROL = /[\u2028\u2029\u202a-\u202e\u2066-\u2069]/u;
 
 const THEME_NAME = /^[A-Za-z0-9._-]+$/;
 
@@ -233,17 +226,6 @@ export const applyChanges = (host: JsonObject, changes: readonly KeyChange[]): J
 
   return { ...kept, ...Object.fromEntries(updates) };
 };
-
-const isControl = (char: string) => {
-  const code = char.codePointAt(0) ?? 0;
-
-  return code < PRINTABLE_FROM || (code >= C1_FROM && code <= C1_TO) || BIDI_CONTROL.test(char);
-};
-
-const printable = (text: string) =>
-  Array.from(text)
-    .map((char) => (isControl(char) ? "?" : char))
-    .join("");
 
 const shown = (value: unknown) => {
   if (value === undefined) {

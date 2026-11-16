@@ -2,7 +2,7 @@ import type { Dirent } from "node:fs";
 import { readdirSync, statSync } from "node:fs";
 import { lstat, readdir, realpath, stat } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { expandHome, isWithin, realOrResolvedSync } from "../../shared/index.ts";
+import { expandHome, isWithin, realOrResolved, realOrResolvedSync } from "../../shared/index.ts";
 import { checkRoot, type RootGuardContext, type RootProblem, sharedRootsOf } from "../../workspace/index.ts";
 import type { FolderCandidate } from "./types.ts";
 
@@ -70,10 +70,6 @@ const MAX_SUGGESTION_DISTANCE = 2;
 
 const ROOTS_SEPARATOR = ":";
 
-const CONTROL_CHARACTER = /\p{Cc}/u;
-
-const MOUNT_SYNTAX = /[,:]/;
-
 const DEFAULT_LIMITS: ScanLimits = { maxRepos: 50, maxEntries: 4000, budgetMs: 400, now: Date.now };
 
 const isHomeForm = (path: string) => path === "~" || path.startsWith("~/");
@@ -94,7 +90,21 @@ export const tildeForm = (path: string, home: string) => {
   return isWithin(absolute, home) ? `~/${relative(home, absolute)}` : absolute;
 };
 
-const resolvedRoot = (stored: string, home: string) => realOrResolvedSync(resolve(expandHome(stored, home)));
+const isFolder = (path: string) => statSync(path, { throwIfNoEntry: false })?.isDirectory() === true;
+
+const refusedRoot = (stored: string, home: string) => realOrResolvedSync(resolve(expandHome(stored, home)));
+
+const rootOf = (stored: string, context: RootGuardContext) => {
+  const verdict = checkRoot(stored, context);
+
+  if (verdict.ok) {
+    return { resolved: verdict.resolved, exists: verdict.exists };
+  }
+
+  const resolved = refusedRoot(stored, context.home);
+
+  return { resolved, exists: isFolder(resolved) };
+};
 
 const isScannable = (entry: Dirent) =>
   entry.isDirectory() && !entry.name.startsWith(".") && entry.name !== "node_modules";
@@ -160,16 +170,11 @@ export const scanRepos = async (dir: string, limits: Partial<ScanLimits> = {}): 
     : { repos: state.repos, capped, latestRepo: state.latest.path };
 };
 
-const isFolder = async (path: string) => (await stat(path).catch(() => undefined))?.isDirectory() === true;
-
-const resolvedLater = async (stored: string, home: string) => {
-  const path = resolve(expandHome(stored, home));
-
-  return realpath(path).catch(() => path);
-};
+const isFolderLater = async (path: string) =>
+  (await stat(path).catch(() => undefined))?.isDirectory() === true;
 
 const acceptable = async (path: string, context: RootGuardContext) => {
-  if (!(await isFolder(path))) {
+  if (!(await isFolderLater(path))) {
     return false;
   }
 
@@ -214,8 +219,8 @@ const usualFolders = async (context: CandidateContext): Promise<Proposed[]> => {
 };
 
 const candidateOf = async (proposed: Proposed, context: CandidateContext): Promise<FolderCandidate> => {
-  const resolved = await resolvedLater(proposed.stored, context.home);
-  const exists = await isFolder(resolved);
+  const resolved = await realOrResolved(expandHome(proposed.stored, context.home));
+  const exists = await isFolderLater(resolved);
   const scan = exists ? await scanRepos(resolved, context.limits) : { repos: 0, capped: false };
   const cwd = await realpath(context.cwd).catch(() => context.cwd);
 
@@ -234,8 +239,7 @@ const candidateOf = async (proposed: Proposed, context: CandidateContext): Promi
 export const unscannedCandidates = (context: CandidateContext): FolderCandidate[] =>
   fixedRoots(context).map((proposed) => ({
     stored: proposed.stored,
-    resolved: resolve(expandHome(proposed.stored, context.home)),
-    exists: true,
+    ...rootOf(proposed.stored, context),
     repos: 0,
     capped: false,
     origin: proposed.origin,
@@ -351,6 +355,14 @@ const guardMessage = (shown: string, problem: RootProblem, resolved = "") => {
     : `${shown} holds ${problem.name}, which the sandbox must never see. Choose a folder inside it.`;
 };
 
+export const refusedRootMessage = (stored: string, context: RootGuardContext) => {
+  const verdict = checkRoot(stored, context);
+
+  return verdict.ok
+    ? undefined
+    : guardMessage(tildeForm(stored, context.home), verdict.problem, refusedRoot(stored, context.home));
+};
+
 const missingMessage = (shown: string, resolved: string, context: RootGuardContext) => {
   const suggestion = suggestionFor(resolved, context);
 
@@ -360,13 +372,13 @@ const missingMessage = (shown: string, resolved: string, context: RootGuardConte
 };
 
 const nestingMessage = (shown: string, resolved: string, context: AddContext) => {
-  const outer = context.checked.find((other) => isWithin(resolved, resolvedRoot(other, context.home)));
+  const outer = context.checked.find((other) => isWithin(resolved, rootOf(other, context).resolved));
 
   if (outer !== undefined) {
     return `${shown} lies inside ${outer}, which is already selected.`;
   }
 
-  const inner = context.checked.find((other) => isWithin(resolvedRoot(other, context.home), resolved));
+  const inner = context.checked.find((other) => isWithin(rootOf(other, context).resolved, resolved));
 
   return inner === undefined
     ? undefined
@@ -394,28 +406,20 @@ export const addedRootProblem = (typed: string, context: AddContext) => {
     return "Type a full path, starting with / or ~/.";
   }
 
-  if (CONTROL_CHARACTER.test(trimmed)) {
-    return "That path has a control character in it.";
-  }
-
   const shown = tildeForm(trimmed, context.home);
-
-  if (MOUNT_SYNTAX.test(trimmed)) {
-    return guardMessage(shown, { kind: "mount-syntax" });
-  }
-
-  const resolved = resolvedRoot(trimmed, context.home);
   const verdict = checkRoot(trimmed, context);
 
   if (!verdict.ok) {
-    return guardMessage(shown, verdict.problem, resolved);
+    return guardMessage(shown, verdict.problem, refusedRoot(trimmed, context.home));
   }
 
-  if (context.listed.some((other) => resolvedRoot(other, context.home) === resolved)) {
+  if (context.listed.some((other) => rootOf(other, context).resolved === verdict.resolved)) {
     return `${shown} is already in the list.`;
   }
 
-  return existingMessage(shown, resolved, context) ?? nestingMessage(shown, resolved, context);
+  return (
+    existingMessage(shown, verdict.resolved, context) ?? nestingMessage(shown, verdict.resolved, context)
+  );
 };
 
 const sharedSet = (roots: string[], context: RootGuardContext) => {

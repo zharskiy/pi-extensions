@@ -1,6 +1,7 @@
 import type { VmSpec } from "../../backend/index.ts";
 import { BACK, Cancelled, type Choice, type Reply } from "../prompt/types.ts";
 import { applyPlan, noteOf, wizardFrontEnd } from "./apply.ts";
+import { VM_KEYS } from "./document.ts";
 import { addedRootProblem, tildeForm } from "./folders.ts";
 import { firstRunSteps, initialAnswers, isPlanEmpty, planOf, vmBounds } from "./plan.ts";
 import { createReview, SECTION_LABELS } from "./review.ts";
@@ -80,8 +81,6 @@ interface Pending {
 type HubChoice = "apply" | "done" | "cancel" | Section;
 
 const ADD = "\u0000add";
-
-const VM_FIELDS: readonly (keyof VmSpec)[] = ["cpus", "memoryGiB", "diskGiB"];
 
 const touchedWith = (state: State, section: Section, answers: Answers): State => ({
   ...state,
@@ -216,7 +215,7 @@ const createWizard = (io: SetupIo, context: WizardContext) => {
   };
 
   const customSize = async (size: VmSpec, index: number): Promise<Reply<VmSpec>> => {
-    const key = VM_FIELDS[index];
+    const key = VM_KEYS[index];
 
     if (key === undefined) {
       return size;
@@ -224,7 +223,7 @@ const createWizard = (io: SetupIo, context: WizardContext) => {
 
     const bounds = vmBounds(facts);
     const field = numberFields(facts, bounds)[key];
-    const last = index === VM_FIELDS.length - 1;
+    const last = index === VM_KEYS.length - 1;
     const value = await prompts.number({
       ...field,
       initial: withinBounds(size[key], bounds[key]),
