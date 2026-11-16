@@ -1,4 +1,4 @@
-import type { Key, NumberSpec } from "./types.ts";
+import type { Key } from "./types.ts";
 
 export interface LineState {
   value: string;
@@ -70,27 +70,4 @@ export const editLine = (state: LineState, key: Key, options: EditOptions = {}):
     default:
       return state;
   }
-};
-
-export const DIGITS = /^[0-9]+$/;
-
-export const numberProblem = (
-  spec: Pick<NumberSpec, "initial" | "min" | "max" | "tooLow" | "tooHigh">,
-  text: string,
-) => {
-  if (text === "") {
-    return "Type a number.";
-  }
-
-  if (!DIGITS.test(text)) {
-    return `Type a whole number, like ${spec.initial}.`;
-  }
-
-  const value = Number(text);
-
-  if (value < spec.min) {
-    return spec.tooLow;
-  }
-
-  return value > spec.max ? spec.tooHigh : undefined;
 };

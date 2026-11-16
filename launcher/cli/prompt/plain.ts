@@ -1,7 +1,7 @@
 import { type Completer, createInterface } from "node:readline/promises";
 import { completePath } from "./complete.ts";
 import { dropQueuedKeys, isCtrl, listenKeys } from "./keys.ts";
-import { DIGITS, numberProblem } from "./line-editor.ts";
+import { DIGITS, initialIndex, numberProblem, toggle, warningFor } from "./rules.ts";
 import { asciiOf, elapsedOf, printable, wrap } from "./style.ts";
 import {
   BACK,
@@ -177,12 +177,6 @@ export const createPlainPrompts = (ui: Ui): Prompts => {
       state.checked.add(choice.value);
     };
 
-    const toggle = (choice: Choice<T> | undefined) => {
-      if (choice !== undefined && !state.checked.delete(choice.value)) {
-        state.checked.add(choice.value);
-      }
-    };
-
     const picksOf = (answer: string) => {
       const picks = answer.split(PICKS);
       const count = state.choices.length;
@@ -222,7 +216,11 @@ export const createPlainPrompts = (ui: Ui): Prompts => {
       }
 
       picks.forEach((pick) => {
-        toggle(state.choices[pick - 1]);
+        const choice = state.choices[pick - 1];
+
+        if (choice !== undefined) {
+          toggle(state.checked, choice.value);
+        }
       });
 
       print(list());
@@ -251,7 +249,7 @@ export const createPlainPrompts = (ui: Ui): Prompts => {
     }
 
     const value = Number(text);
-    const warning = warned === value ? undefined : spec.warn?.(value);
+    const warning = warningFor(spec, value, warned);
 
     if (warning !== undefined) {
       print([`Warning: ${warning}`]);
@@ -370,11 +368,7 @@ export const createPlainPrompts = (ui: Ui): Prompts => {
   return {
     select: async (spec) => {
       const count = spec.choices.length;
-      const fallback =
-        Math.max(
-          0,
-          spec.choices.findIndex((choice) => choice.value === spec.initial),
-        ) + 1;
+      const fallback = initialIndex(spec.choices, spec.initial) + 1;
       const list = spec.choices.map(
         (choice, index) => `  ${index + 1}) ${printable(choice.label)}${tagOf(choice)}`,
       );

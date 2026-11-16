@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { editLine, lineOf, numberProblem } from "../../../cli/prompt/line-editor.ts";
+import { editLine, lineOf } from "../../../cli/prompt/line-editor.ts";
 import type { Key } from "../../../cli/prompt/types.ts";
 
 const typed = (text: string): Key => ({ kind: "text", text });
@@ -33,21 +33,5 @@ describe("editLine", () => {
     expect(editLine(lineOf("~/Projects/"), word, { segments: true }).value).toBe("~/");
 
     expect(editLine(lineOf("~/"), word, { segments: true }).value).toBe("");
-  });
-});
-
-describe("numberProblem", () => {
-  const spec = { initial: 8, min: 1, max: 12, tooLow: "low", tooHigh: "high" };
-
-  it("names the first problem of a typed number", () => {
-    expect(numberProblem(spec, "")).toBe("Type a number.");
-
-    expect(numberProblem(spec, "-1")).toBe("Type a whole number, like 8.");
-
-    expect(numberProblem(spec, "0")).toBe("low");
-
-    expect(numberProblem(spec, "13")).toBe("high");
-
-    expect(numberProblem(spec, "012")).toBeUndefined();
   });
 });

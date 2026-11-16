@@ -1,7 +1,8 @@
 import { completePath } from "./complete.ts";
 import { createFrame, type FrameView } from "./frame.ts";
 import { dropQueuedKeys, isCtrl, listenKeys } from "./keys.ts";
-import { DIGITS, editLine, type LineState, lineOf, numberProblem } from "./line-editor.ts";
+import { editLine, type LineState, lineOf } from "./line-editor.ts";
+import { DIGITS, initialIndex, numberProblem, toggle, warningFor } from "./rules.ts";
 import {
   asciiOf,
   elapsedOf,
@@ -412,8 +413,7 @@ const moved = (cursor: number, key: Key, count: number) => {
 
 const selectView = <T>(context: Context, spec: SelectSpec<T>): View<T> => {
   const { glyphs } = context;
-  const initial = spec.choices.findIndex((choice) => choice.value === spec.initial);
-  const state = { cursor: Math.max(0, initial), top: 0, pointer: 0 };
+  const state = { cursor: initialIndex(spec.choices, spec.initial), top: 0, pointer: 0 };
 
   const mark = (_choice: Choice<T>, index: number) =>
     spec.radio === true ? `${index === state.cursor ? glyphs.radioOn : glyphs.radioOff} ` : "";
@@ -544,9 +544,7 @@ const multiView = <T>(context: Context, spec: MultiSpec<T>): View<T[]> => {
       }
 
       if (key.kind === "space" && choice.action !== true) {
-        if (!state.checked.delete(choice.value)) {
-          state.checked.add(choice.value);
-        }
+        toggle(state.checked, choice.value);
 
         return STAY;
       }
@@ -762,7 +760,7 @@ const numberView = (context: Context, spec: NumberSpec): View<number> => {
     }
 
     const value = Number(state.line.value);
-    const warning = state.warned === value ? undefined : spec.warn?.(value);
+    const warning = warningFor(spec, value, state.warned);
 
     state.warning = warning;
     state.warned = warning === undefined ? undefined : value;
