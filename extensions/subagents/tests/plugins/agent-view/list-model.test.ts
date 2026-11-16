@@ -39,6 +39,24 @@ describe("list model", () => {
     expect(listSections([])).toEqual([]);
   });
 
+  it("lists records whose restored chain links form a cycle without recursing forever", () => {
+    const predecessors = [
+      done("x", NOW, { predecessorId: "y", createdAt: 1 }),
+      done("y", NOW, { predecessorId: "x", createdAt: 2 }),
+    ];
+    const successors = [
+      done("c", NOW, { successorId: "d", createdAt: 1 }),
+      done("d", NOW, { successorId: "c", createdAt: 2 }),
+      done("k", NOW, { callerId: "c", createdAt: 3 }),
+    ];
+
+    const listedIds = (records: AgentRecord[]) =>
+      new Set(listSections(visible(records)).flatMap((section) => section.rows.map((row) => row.record.id)));
+
+    expect(listedIds(predecessors)).toEqual(new Set(["x", "y"]));
+    expect(() => listedIds(successors)).not.toThrow();
+  });
+
   it("orders each section as a tree", () => {
     const records = [
       agentRecord({ id: "b", createdAt: 2 }),
