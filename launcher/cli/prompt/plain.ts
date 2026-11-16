@@ -16,7 +16,6 @@ import {
   type Prompts,
   type Reply,
   type TaskSpec,
-  type TextSpec,
   type Ui,
   warningOf,
 } from "./types.ts";
@@ -383,7 +382,7 @@ export const createPlainPrompts = (ui: Ui): Prompts => {
       return [completion.value === line ? [] : [completion.value], line];
     };
 
-  const text = async (spec: TextSpec, completer?: Completer) => {
+  const path = async (spec: PathSpec) => {
     const fallback = spec.initial ?? "";
     const query = fallback === "" ? `${spec.title}: ` : `${spec.title} [${fallback}]: `;
 
@@ -395,7 +394,7 @@ export const createPlainPrompts = (ui: Ui): Prompts => {
 
         return error === undefined ? { value: chosen } : { error };
       },
-      completer,
+      completerOf(spec),
     );
 
     printCollapse(spec.title, spec.collapsed === undefined ? value : spec.collapsed(value));
@@ -440,8 +439,7 @@ export const createPlainPrompts = (ui: Ui): Prompts => {
 
       return value;
     },
-    text: (spec) => text(spec),
-    path: (spec) => text(spec, completerOf(spec)),
+    path,
     number: async (spec) => {
       const value = await numberRound(spec, spec.initial);
 

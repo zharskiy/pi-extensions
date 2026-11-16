@@ -123,14 +123,11 @@ export interface ConfirmSpec extends KeyWords {
   collapsed?: (value: boolean) => Collapse;
 }
 
-export interface TextSpec extends KeyWords {
+export interface PathSpec extends KeyWords {
   title: string;
   initial?: string;
   validate?: (value: string) => string | undefined;
   collapsed?: (value: string) => Collapse;
-}
-
-export interface PathSpec extends TextSpec {
   readdir: (dir: string) => string[];
   home: string;
 }
@@ -164,7 +161,6 @@ export interface Prompts {
   select<T>(spec: SelectSpec<T>): Promise<Reply<T>>;
   multiselect<T>(spec: MultiSpec<T>): Promise<Reply<T[]>>;
   confirm(spec: ConfirmSpec): Promise<Reply<boolean>>;
-  text(spec: TextSpec): Promise<Reply<string>>;
   path(spec: PathSpec): Promise<Reply<string>>;
   number(spec: NumberSpec): Promise<Reply<number>>;
   task<T>(spec: TaskSpec<T>): Promise<T>;

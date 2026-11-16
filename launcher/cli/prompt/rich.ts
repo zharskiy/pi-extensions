@@ -35,7 +35,6 @@ import {
   type Reply,
   type SelectSpec,
   type TaskSpec,
-  type TextSpec,
   type Ui,
   warningOf,
 } from "./types.ts";
@@ -647,13 +646,13 @@ const unquoted = (text: string) => {
   return text.length >= 2 && QUOTES.has(first) && text.at(-1) === first ? text.slice(1, -1) : text;
 };
 
-const cleanedPaste = (text: string, path: boolean) => {
+const cleanedPaste = (text: string) => {
   const [first = "", ...rest] = text.split(LINE_BREAK);
   const several = rest.some((line) => line.trim() !== "");
   const kept = withoutControls(first);
 
   return {
-    text: path ? unquoted(kept.trim()).replaceAll("\\ ", " ") : kept,
+    text: unquoted(kept.trim()).replaceAll("\\ ", " "),
     several,
   };
 };
@@ -686,7 +685,7 @@ const matchLines = (context: Context, matches: string[], width: number) => {
   return wrapSegments([...shown, ...more], roomOf(width) - 2, "   ").map((line) => `  ${line}`);
 };
 
-const textView = (context: Context, spec: TextSpec, path?: PathSpec): View<string> => {
+const pathView = (context: Context, spec: PathSpec): View<string> => {
   const state = {
     line: lineOf(spec.initial ?? ""),
     error: undefined as string | undefined,
@@ -695,8 +694,8 @@ const textView = (context: Context, spec: TextSpec, path?: PathSpec): View<strin
     tabbed: false,
   };
 
-  const complete = (complete: PathSpec) => {
-    const completion = completePath(state.line.value, complete.home, complete.readdir);
+  const complete = () => {
+    const completion = completePath(state.line.value, spec.home, spec.readdir);
     const unchanged = completion.value === state.line.value;
 
     state.matches = unchanged && state.tabbed ? completion.matches : [];
@@ -706,12 +705,12 @@ const textView = (context: Context, spec: TextSpec, path?: PathSpec): View<strin
 
   const edit = (key: Key) => {
     if (key.kind !== "paste") {
-      state.line = editLine(state.line, key, { segments: path !== undefined });
+      state.line = editLine(state.line, key, { segments: true });
 
       return;
     }
 
-    const pasted = cleanedPaste(key.text, path !== undefined);
+    const pasted = cleanedPaste(key.text);
 
     state.notice = pasted.several ? PASTE_NOTE : undefined;
     state.line = editLine(state.line, { kind: "paste", text: pasted.text });
@@ -723,7 +722,7 @@ const textView = (context: Context, spec: TextSpec, path?: PathSpec): View<strin
     frame: (width) => {
       const input = inputRow(context, state.line, width);
       const words = wordsOf(spec, { enter: "continue", escape: "back", interrupt: "cancel" });
-      const hints = hintsOf(context, [...(path === undefined ? [] : ["tab completes"]), ...words], width);
+      const hints = hintsOf(context, ["tab completes", ...words], width);
 
       const after = [
         ...matchLines(context, state.matches, width),
@@ -754,11 +753,9 @@ const textView = (context: Context, spec: TextSpec, path?: PathSpec): View<strin
       }
 
       if (key.kind === "tab") {
-        if (path !== undefined) {
-          state.tabbed = tabbed;
+        state.tabbed = tabbed;
 
-          complete(path);
-        }
+        complete();
 
         return STAY;
       }
@@ -1026,8 +1023,7 @@ export const createRichPrompts = (ui: Ui): Prompts => {
     select: (spec) => runView(context, selectView(context, spec)),
     multiselect: (spec) => runView(context, multiView(context, spec)),
     confirm: (spec) => runView(context, confirmView(context, spec)),
-    text: (spec) => runView(context, textView(context, spec)),
-    path: (spec) => runView(context, textView(context, spec, spec)),
+    path: (spec) => runView(context, pathView(context, spec)),
     number: (spec) => runView(context, numberView(context, spec)),
     task: (spec) => runTask(context, spec),
     note: (lines, place = "rail") => writeLines(context, noteLines(context, lines, place)),

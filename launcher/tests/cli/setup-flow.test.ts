@@ -102,7 +102,6 @@ const setup = (options: Options = {}) => {
     select: counted("prompts", fake.prompts.select),
     multiselect: counted("prompts", fake.prompts.multiselect),
     confirm: counted("prompts", fake.prompts.confirm),
-    text: counted("prompts", fake.prompts.text),
     path: counted("prompts", fake.prompts.path),
     number: counted("prompts", fake.prompts.number),
     task: counted("tasks", fake.prompts.task),

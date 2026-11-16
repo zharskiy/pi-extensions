@@ -260,7 +260,7 @@ describe("terminal restore", () => {
 
   it("leaves raw mode, shows the cursor and turns paste off after a value, BACK and Cancelled", async () => {
     const valued = richPrompts();
-    const first = valued.prompts.text({ title: "Name" });
+    const first = valued.prompts.path({ title: "Name", home: "/home/me", readdir: () => [] });
 
     await press(valued.input, "x", KEY.enter);
 
@@ -291,8 +291,10 @@ describe("terminal restore", () => {
     const fake = richPrompts();
 
     const reply = outcome(
-      fake.prompts.text({
+      fake.prompts.path({
         title: "Name",
+        home: "/home/me",
+        readdir: () => [],
         validate: () => {
           throw new Error("validator broke");
         },
