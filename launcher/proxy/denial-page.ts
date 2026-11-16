@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import type { Socket } from "node:net";
 import type { Duplex } from "node:stream";
 import { createSecureContext, type SecureContext, TLSSocket } from "node:tls";
+import { boundedCache } from "./bounded-cache.ts";
 import { type RawHeader, rawResponse, sendReply, withAgent } from "./replies.ts";
 import type { LeafCertificate } from "./tls-ca.ts";
 
@@ -22,7 +23,7 @@ const PAGE_HEADERS: RawHeader[] = [["content-type", "text/plain; charset=utf-8"]
 
 export const createDenialPages = (options: DenialPageOptions) => {
   const now = options.now ?? Date.now;
-  const contexts = new Map<string, Promise<SecureContext | undefined>>();
+  const contexts = boundedCache<string, SecureContext>(MAX_NAMES);
   const mints = { times: [] as number[] };
   const texts = new WeakMap<object, string>();
 
@@ -40,18 +41,6 @@ export const createDenialPages = (options: DenialPageOptions) => {
     socket.destroy();
   });
 
-  const remember = (host: string, context: Promise<SecureContext | undefined>) => {
-    contexts.delete(host);
-
-    contexts.set(host, context);
-
-    const excess = [...contexts.keys()].slice(0, Math.max(0, contexts.size - MAX_NAMES));
-
-    excess.forEach((name) => {
-      contexts.delete(name);
-    });
-  };
-
   const mayMint = () => {
     const current = now();
 
@@ -66,12 +55,10 @@ export const createDenialPages = (options: DenialPageOptions) => {
     return true;
   };
 
-  const context = (host: string) => {
+  const cachedContext = (host: string) => {
     const known = contexts.get(host);
 
     if (known !== undefined) {
-      remember(host, known);
-
       return known;
     }
 
@@ -79,21 +66,13 @@ export const createDenialPages = (options: DenialPageOptions) => {
       return Promise.resolve(undefined);
     }
 
-    const created = options.leaf(host).then(
-      (leaf) => createSecureContext(leaf),
-      () => undefined,
+    return contexts.set(
+      host,
+      options.leaf(host).then((leaf) => createSecureContext(leaf)),
     );
-
-    remember(host, created);
-
-    void created.then((value) => {
-      if (value === undefined) {
-        contexts.delete(host);
-      }
-    });
-
-    return created;
   };
+
+  const context = (host: string) => cachedContext(host).catch(() => undefined);
 
   const serve = (client: Socket, secureContext: SecureContext, text: string) => {
     const secure = new TLSSocket(client, { isServer: true, secureContext, ALPNProtocols: ["http/1.1"] });
