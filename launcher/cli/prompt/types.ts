@@ -108,9 +108,9 @@ export interface MultiSpec<T> extends KeyWords {
   detail?: Detail;
   choices: Choice<T>[];
   checked: T[];
-  onAction?: (value: T) => Promise<Choice<T> | undefined>;
+  onAction?: (value: T, typed?: string) => Promise<Choice<T> | undefined>;
   collapsed: (values: T[]) => Collapse;
-  plain?: { help: string[]; label: string };
+  plain: { help: string[]; label: string };
 }
 
 export interface ConfirmSpec extends KeyWords {

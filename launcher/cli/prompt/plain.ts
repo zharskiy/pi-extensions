@@ -28,6 +28,8 @@ const PLAIN_WIDTH = 80;
 
 const PICKS = /[\s,]+/;
 
+const NUMBERS = /^[\d\s,]+$/;
+
 const YES = new Set(["y", "yes"]);
 
 const NO = new Set(["n", "no"]);
@@ -60,10 +62,7 @@ const yesNoOf = (answer: string, fallback: boolean): Parsed<boolean> => {
   return { error: "Type y or n." };
 };
 
-const pathLike = (answer: string) => answer.startsWith("/") || answer.startsWith("~");
-
 export const createPlainPrompts = (ui: Ui): Prompts => {
-  const queued: string[] = [];
   const typedAhead: string[] = [];
 
   const print = (lines: string[]) => {
@@ -84,12 +83,6 @@ export const createPlainPrompts = (ui: Ui): Prompts => {
   };
 
   const ask = (query: string, completer?: Completer) => {
-    const next = queued.shift();
-
-    if (next !== undefined) {
-      return Promise.resolve(next);
-    }
-
     const ahead = typedAhead.shift();
 
     if (ahead !== undefined) {
@@ -162,12 +155,6 @@ export const createPlainPrompts = (ui: Ui): Prompts => {
       checked: new Set(spec.checked),
     };
     const action = spec.choices.find((choice) => choice.action === true);
-    const label = spec.plain?.label ?? "Choose";
-    const adds = action === undefined ? "" : ", a path to add one";
-
-    const help = spec.plain?.help ?? [
-      `Type numbers to switch items on or off (like 1 3)${adds}, or press Enter to keep the selection.`,
-    ];
 
     const list = () =>
       state.choices.map(
@@ -210,30 +197,26 @@ export const createPlainPrompts = (ui: Ui): Prompts => {
         state.checked.has(choice.value) ? [String(index + 1)] : [],
       );
 
-      const answer = (await ask(`${label} [${marked.join(" ") || "none"}]: `)).trim();
+      const answer = (await ask(`${spec.plain.label} [${marked.join(" ") || "none"}]: `)).trim();
 
       if (answer === "") {
         return values();
       }
 
-      if (action !== undefined && pathLike(answer)) {
-        queued.push(answer);
+      const picks = picksOf(answer);
 
-        add(await spec.onAction?.(action.value));
-
-        queued.length = 0;
+      if (picks === undefined && action !== undefined && !NUMBERS.test(answer)) {
+        add(await spec.onAction?.(action.value, answer));
 
         print(list());
 
         return round();
       }
 
-      const picks = picksOf(answer);
-
       if (picks === undefined) {
         const range = state.choices.length === 0 ? "" : `numbers from 1 to ${state.choices.length}, `;
 
-        print([`Error: Type ${range}${action === undefined ? "" : "a path, "}or press Enter.`]);
+        print([`Error: Type ${range}or press Enter.`]);
 
         return round();
       }
@@ -247,7 +230,7 @@ export const createPlainPrompts = (ui: Ui): Prompts => {
       return round();
     };
 
-    print([spec.title, ...detailOf(spec.detail), ...list(), ...help]);
+    print([spec.title, ...detailOf(spec.detail), ...list(), ...spec.plain.help]);
 
     const chosen = await round();
 

@@ -152,6 +152,7 @@ describe("modes, glyphs and colour", () => {
         { value: "b", label: "~/b" },
       ],
       checked: ["a"],
+      plain: { help: [], label: "Folders" },
     });
 
     await press(input, KEY.end);

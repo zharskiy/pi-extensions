@@ -86,6 +86,12 @@ interface State {
   added: readonly string[];
 }
 
+interface Pending {
+  added: string[];
+  listed: string[];
+  checked: string[];
+}
+
 type HubChoice = "apply" | "done" | "cancel" | Section;
 
 const ADD = "\u0000add";
@@ -138,22 +144,10 @@ const createWizard = (io: SetupIo, context: WizardContext) => {
     return [...listed, ...extra];
   };
 
-  const addFolder = async (state: { added: string[]; listed: string[]; checked: string[] }) => {
-    const typed = await prompts.path({
-      title: "Add a folder",
-      initial: "~/",
-      home: facts.home,
-      readdir: context.readdir,
-      enter: "add",
-      validate: (value) =>
-        addedRootProblem(value, { home: facts.home, env, checked: state.checked, listed: state.listed }),
-      collapsed: () => undefined,
-    });
+  const rootProblem = (typed: string, state: Pending) =>
+    addedRootProblem(typed, { home: facts.home, env, checked: state.checked, listed: state.listed });
 
-    if (typed === BACK) {
-      return undefined;
-    }
-
+  const added = (typed: string, state: Pending) => {
     const stored = tildeForm(typed.trim(), facts.home);
 
     state.added.push(stored);
@@ -163,6 +157,32 @@ const createWizard = (io: SetupIo, context: WizardContext) => {
     state.checked.push(stored);
 
     return { value: stored, label: stored };
+  };
+
+  const addFolder = async (state: Pending) => {
+    const typed = await prompts.path({
+      title: "Add a folder",
+      initial: "~/",
+      home: facts.home,
+      readdir: context.readdir,
+      enter: "add",
+      validate: (value) => rootProblem(value, state),
+      collapsed: () => undefined,
+    });
+
+    return typed === BACK ? undefined : added(typed, state);
+  };
+
+  const addTyped = (typed: string, state: Pending) => {
+    const problem = rootProblem(typed, state);
+
+    if (problem === undefined) {
+      return added(typed, state);
+    }
+
+    prompts.note([`Error: ${problem}`]);
+
+    return undefined;
   };
 
   const confirmHome = async (step: Step | undefined) => {
@@ -197,7 +217,8 @@ const createWizard = (io: SetupIo, context: WizardContext) => {
         { value: ADD, label: empty ? "+ Add a folder…" : "+ Add another folder…", action: true },
       ],
       checked,
-      onAction: () => addFolder(pending),
+      onAction: async (_value, typed) =>
+        typed === undefined ? addFolder(pending) : addTyped(typed, pending),
       escape: step?.index === 1 ? "cancel" : "back",
       collapsed: (values) =>
         values.length > 0 ? { title: SECTION_LABELS.folders, text: rootsSummary(values) } : undefined,

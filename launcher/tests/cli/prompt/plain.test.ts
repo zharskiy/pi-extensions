@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BACK, type Choice } from "../../../cli/prompt/types.ts";
+import type { Choice } from "../../../cli/prompt/types.ts";
 import { KEY, outcome, pause, plainPrompts, press } from "./fake-tty.ts";
 
 const answer = async (input: ReturnType<typeof plainPrompts>["input"], line: string) => {
@@ -55,22 +55,14 @@ describe("plain prompts", () => {
     expect(input.isRaw).toBe(false);
   });
 
-  it("toggles by numbers, re-asks after an invalid answer, and adds a typed path through the action", async () => {
+  it("toggles by numbers, re-asks after an invalid number, and hands other text to the action", async () => {
     const { prompts, screen, input } = plainPrompts();
     const asked: string[] = [];
 
-    const onAction = async (): Promise<Choice<string> | undefined> => {
-      const typed = await prompts.path({
-        title: "Add a folder",
-        home: "/home/me",
-        readdir: () => [],
-        validate: (value) => (value === "~/nope" ? "~/nope does not exist." : undefined),
-        collapsed: () => undefined,
-      });
-
+    const onAction = async (_value: string, typed?: string): Promise<Choice<string> | undefined> => {
       asked.push(String(typed));
 
-      return typed === BACK ? undefined : { value: typed, label: typed };
+      return typed === undefined || typed === "~/nope" ? undefined : { value: typed, label: typed };
     };
 
     const reply = prompts.multiselect({ ...FOLDERS, onAction });
@@ -87,15 +79,13 @@ describe("plain prompts", () => {
 
     expect(await reply).toEqual(["~/work", "~/src", "~/oss"]);
 
-    expect(asked).toEqual(["~/oss"]);
+    expect(asked).toEqual(["~/nope", "~/oss"]);
 
     const lines = screen.lines();
 
     expect(lines).toContain("Folders [2 3]: 7");
 
-    expect(lines).toContain("Error: Type numbers from 1 to 3, a path, or press Enter.");
-
-    expect(lines).toContain("Error: ~/nope does not exist.");
+    expect(lines).toContain("Error: Type numbers from 1 to 3, or press Enter.");
 
     expect(lines).toContain("  4) [x] ~/oss");
 

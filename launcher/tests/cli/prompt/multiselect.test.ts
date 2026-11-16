@@ -15,6 +15,7 @@ const FOLDERS = {
   ],
   checked: ["~/Projects", "~/work"],
   escape: "cancel",
+  plain: { help: ["Type numbers to switch folders on or off."], label: "Folders" },
   collapsed: (values: string[]) => ({
     title: "Which folders hold your projects?",
     text: values.join(", ") || "none",
