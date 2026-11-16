@@ -1,8 +1,7 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
-import { createFakeHost } from "../../../test/framework/index.ts";
+import { describe, expect, it } from "vitest";
+import { createFakeHost, useTempDirs } from "../../../test/framework/index.ts";
 import {
   loadSettingsFiles,
   parseSettings,
@@ -20,6 +19,8 @@ const schema: SettingsSchema<Example> = {
   ratio: { type: "number", min: 0, max: 1, minExclusive: true },
   names: { type: "list", of: "names" },
 };
+
+const temp = useTempDirs();
 
 describe("settings helpers", () => {
   it("validates numbers and lists, keeps valid values and ignores unknown keys", () => {
@@ -74,10 +75,7 @@ describe("settings helpers", () => {
   });
 
   it("reads files, treats a missing file as empty and reports unreadable JSON", () => {
-    const root = mkdtempSync(join(tmpdir(), "pi-core-settings-"));
-
-    roots.push(root);
-
+    const root = temp.make("pi-core-settings-");
     const where = { agentDir: join(root, "agent"), cwd: join(root, "project") };
     const user = settingsPath(where, "user", "example.json");
     const project = settingsPath(where, "project", "example.json");
@@ -101,12 +99,8 @@ const FILE = "example.json";
 
 const DEFAULTS: Example = { count: 5, ratio: 0.5, names: [] };
 
-const roots: string[] = [];
-
 const location = (projectTrusted: boolean) => {
-  const root = mkdtempSync(join(tmpdir(), "pi-core-settings-"));
-
-  roots.push(root);
+  const root = temp.make("pi-core-settings-");
 
   return { agentDir: join(root, "agent"), cwd: join(root, "project"), projectTrusted };
 };
@@ -124,12 +118,6 @@ const withFiles = (projectTrusted: boolean) => {
 
   return where;
 };
-
-afterEach(() => {
-  roots.splice(0).forEach((root) => {
-    rmSync(root, { recursive: true, force: true });
-  });
-});
 
 describe("settings files", () => {
   it("merges defaults, the user file and a trusted project file, project last", () => {

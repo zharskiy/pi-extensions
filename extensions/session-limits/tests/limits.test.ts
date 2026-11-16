@@ -13,6 +13,7 @@ import {
   flushTimers as flush,
   requestTexts,
   useTempDirs,
+  VALID_HANDOFF,
 } from "../../../test/framework/index.ts";
 import { createLimits } from "../api/plugin.ts";
 import { conversationOnly } from "../core/conversation-host.ts";
@@ -29,26 +30,6 @@ const tempRoot = () => {
 };
 
 const LIMITS = DEFAULT_LIMITS;
-
-const VALID_HANDOFF = [
-  "## Status",
-  "partial",
-  "",
-  "## Outcome",
-  "- goal: migrate the auth module; the user asked for a test plan last",
-  "",
-  "## Evidence",
-  "- background search: done, results in /tmp/result.md",
-  "",
-  "## Blocker",
-  "none",
-  "",
-  "## Next",
-  "- write the test plan",
-  "",
-  "## Files touched",
-  "none",
-].join("\n");
 
 const afterHandoff = (seed = "") => {
   const at = seed.indexOf(VALID_HANDOFF);
