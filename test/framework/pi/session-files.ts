@@ -1,9 +1,10 @@
 import { readFileSync } from "node:fs";
-import { contentParts, messageText } from "../../../platform/pi-adapter/runtime/message-text.ts";
+import { messageText } from "../../../platform/pi-adapter/runtime/message-text.ts";
 import {
   readSessionEntries,
   replaySystemMessages,
 } from "../../../platform/pi-adapter/runtime/session-file.ts";
+import { sessionEvents } from "./live/session-events.ts";
 
 export {
   parseSessionLines,
@@ -18,11 +19,8 @@ export const sessionFacts = (file: string) => {
     .filter((entry) => entry.type === "message" && entry.message)
     .map((entry) => entry.message as RawMessage);
 
-  const calls = messages
-    .filter((message) => message.role === "assistant")
-    .flatMap((message) => contentParts(message.content))
-    .filter((part) => part.type === "toolCall")
-    .map((part) => (part.name as string | undefined) ?? "tool");
+  const events = sessionEvents(messages);
+  const calls = events.flatMap((event) => (event.type === "tool_call" ? [event.name] : []));
 
   const results = messages
     .filter((message) => message.role === "toolResult")
@@ -32,7 +30,7 @@ export const sessionFacts = (file: string) => {
       details: message.details,
     }));
 
-  return { tools: [...replaySystemMessages(messages).tools.keys()], calls, results };
+  return { tools: [...replaySystemMessages(messages).tools.keys()], events, calls, results };
 };
 
 type SessionLine = { type?: string; parentSession?: string; message?: { role?: string; content?: unknown } };

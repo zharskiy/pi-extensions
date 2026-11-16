@@ -33,7 +33,7 @@ A few unit tests need pi's real rendering: `render-theme.ts` initialises pi's th
 
 `*.live.test.ts` and evals spawn real agents, locally only. `describeLive` (`pi/live/live-model.ts`) needs `PI_LIVE_MODEL=provider/id[:thinking]` and the credentials; it fails, never skips, when either is missing. In `beforeAll` it builds a temporary agent dir (`live-agent-dir.ts`: a link to the real `auth.json`, a copy of `models.json`, `PI_CODING_AGENT_DIR` pointed at it), and in `afterAll` removes it and restores the variable, so the user's own instructions, skills, extensions and MCP config stay out. `liveAgentModel()` returns the model from `PI_LIVE_MODEL`, `liveChoreModel()` the one from the optional `PI_LIVE_CHORE_MODEL` (else the same). `startLiveExtension` boots a plugin list or a managed extension on the real runtime (`live-runtime.ts`) over the fake host, with the extension's namespace and resolved `childExclude`; `openPiSession` opens a real pi session; `session-events.ts` fills a `RunRecord` from a live session.
 
-The pi-free half in `live/` seeds a project from a commit (`seed-project.ts`), reads tool calls and outputs out of a session (`session-reading.ts`), sums and reports cost from pi's own figures (`cost.ts`) and serves the MCP fixture server (`fixture-mcp-server.ts`, spawned by path).
+The pi-free half in `live/` seeds a project from a commit (`seed-project.ts`), lists the bash commands and the largest tool output of a session (`session-reading.ts`, over the `RunEvent`s of `sessionEvents`, the one walker of session messages, which `sessionFacts` also derives its tool calls from), sums and reports cost from pi's own figures (`cost.ts`) and serves the MCP fixture server (`fixture-mcp-server.ts`, spawned by path).
 
 ## Evals (`eval-runs/`)
 
