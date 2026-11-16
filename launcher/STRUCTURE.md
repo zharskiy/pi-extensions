@@ -63,6 +63,7 @@ cli/commands/doctor-host.ts    the doctor's checks on the host
 cli/commands/doctor-checks.ts  the check data model: result types and builders, the section and check order, the tally and verdict
 cli/commands/doctor-report.ts  the pure text renderer of the checks: aligned columns, reasons and hints, collapsed rules, notices, result line, ~, colour
 cli/commands/doctor-tls.ts     the tls inspection checks: the node handshake to pi.dev on the host and in the container, the keychain lookup of the root CA, the outcomes
+cli/commands/tls-probe.ts      the typed TLS handshake script those checks run as their own node process: request on stdin, chain and verdicts on stdout
 cli/commands/help.ts           usage
 cli/commands/options.ts        the option check of the sandbox commands and egress
 ```

@@ -3,11 +3,12 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { execCapture } from "../../backend/index.ts";
 import { bypassesParent, parentRouteFor } from "../../proxy/index.ts";
-import { errorMessage, stateLayout } from "../../shared/index.ts";
+import { errorMessage, launcherEntry, stateLayout } from "../../shared/index.ts";
 import type { LaunchContext } from "../context.ts";
 import { type CliDeps, pathsOf } from "../deps.ts";
 import { type CheckResult, failed, passed } from "./doctor-checks.ts";
 import type { ProbeTarget } from "./doctor-probes.ts";
+import type { ProbeRequest, Trust } from "./tls-probe.ts";
 
 interface Presented {
   chain: string[];
@@ -21,15 +22,6 @@ export interface HostTls {
   reading: TlsReading;
   keychain: string[];
   configFile: string;
-}
-
-type Trust = "default" | "builtin" | { extraFile: string };
-
-interface ProbeRequest {
-  host: string;
-  port: number;
-  proxy?: { host: string; port: number; authorization?: string } | "env";
-  trusts: Trust[];
 }
 
 const TLS_PROBE_HOST = "pi.dev";
@@ -57,71 +49,17 @@ const ISSUER_ERRORS = new Set([
   "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
 ]);
 
-const TLS_PROBE_SCRIPT = [
-  "const fs = require('node:fs');",
-  "const net = require('node:net');",
-  "const tls = require('node:tls');",
-  "const input = JSON.parse(fs.readFileSync(0, 'utf8'));",
-  `const timeoutMs = ${HANDSHAKE_TIMEOUT_MS};`,
-  "const authority = input.host + ':' + input.port;",
-  "const envProxy = () => {",
-  "  const text = process.env.HTTPS_PROXY || process.env.https_proxy;",
-  "  if (!text) return undefined;",
-  "  const url = new URL(text);",
-  "  const user = decodeURIComponent(url.username) + ':' + decodeURIComponent(url.password);",
-  "  const authorization = url.username || url.password ? 'Basic ' + Buffer.from(user).toString('base64') : undefined;",
-  "  return { host: url.hostname.replace(/^\\[|\\]$/g, ''), port: Number(url.port || 80), authorization };",
-  "};",
-  "const proxy = input.proxy === 'env' ? envProxy() : input.proxy;",
-  "const tunnel = () => new Promise((resolve, reject) => {",
-  "  const socket = net.connect({ host: proxy.host, port: proxy.port });",
-  "  const state = { head: '' };",
-  "  const auth = proxy.authorization ? 'Proxy-Authorization: ' + proxy.authorization + '\\r\\n' : '';",
-  "  const onData = (chunk) => {",
-  "    state.head += chunk.toString('latin1');",
-  "    if (!state.head.includes('\\r\\n\\r\\n')) return;",
-  "    socket.off('data', onData);",
-  "    socket.setTimeout(0);",
-  "    const status = state.head.split(' ')[1];",
-  "    if (status === '200') return resolve(socket);",
-  "    socket.destroy();",
-  "    reject(new Error('the proxy answered ' + status));",
-  "  };",
-  "  socket.setTimeout(timeoutMs, () => socket.destroy(new Error('the proxy did not answer within ' + timeoutMs / 1000 + ' s')));",
-  "  socket.once('error', reject);",
-  "  socket.on('data', onData);",
-  "  socket.once('connect', () => socket.write('CONNECT ' + authority + ' HTTP/1.1\\r\\nHost: ' + authority + '\\r\\n' + auth + '\\r\\n'));",
-  "});",
-  "const pemOf = (raw) => '-----BEGIN CERTIFICATE-----\\n' + raw.toString('base64').match(/.{1,64}/g).join('\\n') + '\\n-----END CERTIFICATE-----\\n';",
-  "const chainOf = (cert, seen) => {",
-  "  if (!cert || !cert.raw || seen.some((entry) => entry.fingerprint256 === cert.fingerprint256)) return seen;",
-  "  return chainOf(cert.issuerCertificate, [...seen, cert]);",
-  "};",
-  "const caOf = (trust) => {",
-  "  if (trust === 'default') return {};",
-  "  const extra = trust === 'builtin' ? [] : [fs.readFileSync(trust.extraFile, 'utf8')];",
-  "  return { ca: [...tls.rootCertificates, ...extra] };",
-  "};",
-  "const handshake = async (trust) => {",
-  "  const socket = proxy ? await tunnel() : undefined;",
-  "  return new Promise((resolve, reject) => {",
-  "    const target = socket ? { socket } : { host: input.host, port: input.port };",
-  "    const secure = tls.connect({ ...target, servername: input.host, rejectUnauthorized: false, ...caOf(trust) });",
-  "    secure.setTimeout(timeoutMs, () => secure.destroy(new Error('no TLS handshake within ' + timeoutMs / 1000 + ' s')));",
-  "    secure.once('error', reject);",
-  "    secure.once('secureConnect', () => {",
-  "      const chain = chainOf(secure.getPeerCertificate(true), []).map((cert) => pemOf(cert.raw));",
-  "      const verdict = secure.authorized ? null : String(secure.authorizationError);",
-  "      secure.destroy();",
-  "      resolve({ chain, verdict });",
-  "    });",
-  "  });",
-  "};",
-  "Promise.all(input.trusts.map(handshake)).then(",
-  "  (results) => console.log(JSON.stringify({ chain: results[0].chain, verdicts: results.map((result) => result.verdict), extraCaEnv: process.env.NODE_EXTRA_CA_CERTS ?? null })),",
-  "  (error) => console.log(JSON.stringify({ failure: String(error?.code ?? error?.message ?? error) })),",
-  ");",
-].join("\n");
+const TLS_PROBE_SCRIPT = "cli/commands/tls-probe.ts";
+
+const tlsProbePath = () => launcherEntry(TLS_PROBE_SCRIPT);
+
+const inputTypeOf = (path: string) => (path.endsWith(".ts") ? "module-typescript" : "module");
+
+const sandboxProbeCommand = async () => {
+  const path = tlsProbePath();
+
+  return ["node", `--input-type=${inputTypeOf(path)}`, "-e", await readFile(path, "utf8")];
+};
 
 const lastLine = (text: string) =>
   text
@@ -199,13 +137,19 @@ const hostRequest = async (deps: CliDeps, context: LaunchContext): Promise<Probe
         };
   const extras: Trust[] = (await hasCertificate(extraFile)) ? [{ extraFile }] : [];
 
-  return { host: TLS_PROBE_HOST, port: TLS_PROBE_PORT, ...proxy, trusts: ["builtin", ...extras] };
+  return {
+    host: TLS_PROBE_HOST,
+    port: TLS_PROBE_PORT,
+    ...proxy,
+    trusts: ["builtin", ...extras],
+    timeoutMs: HANDSHAKE_TIMEOUT_MS,
+  };
 };
 
 const hostReading = async (deps: CliDeps, context: LaunchContext): Promise<TlsReading> => {
   try {
     const request = await hostRequest(deps, context);
-    const { stdout, stderr } = await deps.runner.run(process.execPath, ["-e", TLS_PROBE_SCRIPT], {
+    const { stdout, stderr } = await deps.runner.run(process.execPath, [tlsProbePath()], {
       input: JSON.stringify(request),
       timeoutMs: PROBE_TIMEOUT_MS,
     });
@@ -234,12 +178,13 @@ export const readSandboxTls = async (target: ProbeTarget): Promise<TlsReading> =
     port: TLS_PROBE_PORT,
     proxy: "env",
     trusts: ["default"],
+    timeoutMs: HANDSHAKE_TIMEOUT_MS,
   };
   const { stdout, stderr } = await execCapture(
     target.backend,
     {
       containerId: target.containerId,
-      command: ["node", "-e", TLS_PROBE_SCRIPT],
+      command: await sandboxProbeCommand(),
       env: {},
       workdir: target.workdir,
     },
