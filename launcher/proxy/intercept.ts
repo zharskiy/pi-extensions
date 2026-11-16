@@ -1,5 +1,4 @@
 import { createSecureContext, type SecureContext, TLSSocket } from "node:tls";
-import { normalizeHost } from "../config/index.ts";
 import type { Denials, RecordAccess } from "./denials.ts";
 import { sniDenial } from "./policy.ts";
 import { ESTABLISHED } from "./replies.ts";
@@ -96,8 +95,10 @@ export const createInterceptor = (options: InterceptOptions) => {
       SNICallback: (servername, callback) => {
         connection.sni = servername;
 
-        if (normalizeHost(servername) !== host) {
-          callback(new Error(`TLS server name ${servername} does not match ${host}`));
+        const denial = sniDenial(host, servername);
+
+        if (denial !== undefined) {
+          callback(new Error(denial.reason));
 
           return;
         }
