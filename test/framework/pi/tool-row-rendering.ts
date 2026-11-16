@@ -19,21 +19,8 @@ import type { ToolRows, TranscriptItem } from "../../../platform/pi-adapter/inde
 import type { PiToolRenderContext } from "../../../platform/pi-adapter/tools/tool-bridge.ts";
 import { rowRenderers, toolRowsHost } from "../../../platform/pi-adapter/tools/tool-rows.ts";
 import { createTranscriptPane } from "../../../platform/pi-adapter/tools/transcript.ts";
+import { plainText } from "../rendered-text.ts";
 import { initPiRenderTheme, livePiTheme, piKeyHints } from "./render-theme.ts";
-
-const SGR = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
-
-const APC = new RegExp(
-  `${String.fromCharCode(27)}_[^${String.fromCharCode(7)}]*${String.fromCharCode(7)}`,
-  "g",
-);
-
-const OSC = new RegExp(
-  `${String.fromCharCode(27)}\\][^${String.fromCharCode(7)}${String.fromCharCode(27)}]*(?:${String.fromCharCode(7)}|${String.fromCharCode(27)}\\\\)`,
-  "g",
-);
-
-export const visible = (line: string) => line.replace(APC, "").replace(OSC, "").replace(SGR, "");
 
 type EditRender = { diff: string; outputPad: number; width: number };
 
@@ -132,7 +119,7 @@ export type ToolInput = {
 };
 
 const dropLeadingBlanks = (lines: string[]) => {
-  const start = lines.findIndex((line) => visible(line).trim() !== "");
+  const start = lines.findIndex((line) => plainText(line).trim() !== "");
 
   return start < 0 ? [] : lines.slice(start);
 };
@@ -173,7 +160,7 @@ export const renderToolRows = (rows: ToolRows, input: ToolInput) => {
 
   const painted = dropLeadingBlanks(tool.render(input.width));
 
-  return { painted, lines: painted.map(visible) };
+  return { painted, lines: painted.map(plainText) };
 };
 
 export type PaneInput = Omit<ToolInput, "isPartial" | "outputPad" | "started"> & {
@@ -213,7 +200,7 @@ export const renderPaneToolRows = (rows: ToolRows, input: PaneInput) => {
   pane.sync(stopReason === "toolUse" && input.result !== undefined ? [assistant, tool] : [assistant]);
   pane.setToolsExpanded(input.expanded ?? false);
 
-  const lines = dropLeadingBlanks(pane.render(input.width)).map(visible);
+  const lines = dropLeadingBlanks(pane.render(input.width)).map(plainText);
 
   host.release();
 

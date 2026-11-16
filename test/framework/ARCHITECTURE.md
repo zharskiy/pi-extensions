@@ -23,7 +23,7 @@ Unit tests run against fakes with no network and no pi session (`npm run check`,
 - The fake `showForm` (`fake-form.ts`) keeps each form (`host.forms`, `host.form()`) so tests render it, press keys (`key-presses.ts`) and type into a fake text input (`backspace` deletes); it honours the abort signal.
 - The fake themes (`themes.ts`: `plainTheme`, `tokenTaggingTheme`, `paintRecordingTheme`) measure, cut and wrap with the adapter's `textMetrics`, so fixtures are measured as pi would measure them.
 - `startExtension` (`extension-harness.ts`) boots either a plugin list or a managed extension (`{ extension }`, running its own `boot`) on the extension manager over the fake host.
-- Small helpers: `rendered-text.ts` (strip escapes), `usage-builders.ts`, `waiting.ts` (`flushMicrotasks`, `flushTimers`, `waitUntil`, `pause`), `temp-dirs.ts`, `recorded-sessions.ts` (session `.jsonl` line builders) and `valid-handoff.ts`.
+- Small helpers: `rendered-text.ts` (strip escapes, pi's APC markers too, the one stripper every helper under `pi/` uses), `usage-builders.ts`, `waiting.ts` (`flushMicrotasks`, `flushTimers`, `waitUntil`, `pause`), `temp-dirs.ts`, `recorded-sessions.ts` (session `.jsonl` line builders) and `valid-handoff.ts`.
 
 ## Real pi offline (`pi/`)
 

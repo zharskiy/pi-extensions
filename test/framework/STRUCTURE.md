@@ -7,7 +7,7 @@
 - `themes.ts`: `plainTheme`, `tokenTaggingTheme`, `paintRecordingTheme`.
 - `extension-harness.ts`: `startExtension`; a plugin list or a managed extension on the extension manager over the fakes.
 - `key-presses.ts`: `key`, `char`; `KeyPress` builders (`char` sets `shortcut` to the character itself).
-- `rendered-text.ts`: `plainText`, `plainLines`, `visibleWidth`; rendered lines without escapes.
+- `rendered-text.ts`: `plainText`, `plainLines`, `visibleWidth`; rendered lines without escapes, pi's APC markers included (the one stripper, `pi/` uses it too).
 - `usage-builders.ts`: `usageTotals`, `promptTokens`.
 - `waiting.ts`: `flushMicrotasks`, `flushTimers`, `pause`, `waitUntil`.
 - `temp-dirs.ts`: `useTempDirs`; temporary directories removed after the suite.
