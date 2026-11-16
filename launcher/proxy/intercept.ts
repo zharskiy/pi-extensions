@@ -21,7 +21,50 @@ interface InterceptOptions {
 
 const TLS_FAILED = { rule: "tls", reason: "TLS handshake with the client failed" };
 
-const handshakeDenial = (connection: Connection) => sniDenial(connection.host, connection.sni) ?? TLS_FAILED;
+const CLIENT_CLOSED = {
+  rule: "tls",
+  reason:
+    "the client closed the connection during the TLS handshake, so it may not trust the launcher CA or the VM's clock may be more than an hour behind the host's",
+};
+
+const CLIENT_REJECTED = {
+  rule: "tls",
+  reason:
+    "the client rejected the proxy's certificate, so it may not trust the launcher CA or the VM's clock may be more than an hour behind the host's",
+};
+
+const CLIENT_LEFT = { rule: "tls", reason: "the client closed the connection before its TLS hello" };
+
+const CERTIFICATE_ALERTS = [
+  "_ALERT_UNKNOWN_CA",
+  "_ALERT_BAD_CERTIFICATE",
+  "_ALERT_CERTIFICATE_EXPIRED",
+  "_ALERT_CERTIFICATE_UNKNOWN",
+];
+
+interface HandshakeEnd {
+  ended: boolean;
+  silent: boolean;
+  timedOut?: boolean;
+  errorCode?: string;
+}
+
+const isCertificateAlert = (code: string | undefined) =>
+  code !== undefined && CERTIFICATE_ALERTS.some((alert) => code.endsWith(alert));
+
+export const handshakeDenial = (connection: Pick<Connection, "host" | "sni">, end: HandshakeEnd) => {
+  if (end.silent && end.timedOut !== true) {
+    return CLIENT_LEFT;
+  }
+
+  const fallback = isCertificateAlert(end.errorCode)
+    ? CLIENT_REJECTED
+    : end.ended
+      ? CLIENT_CLOSED
+      : TLS_FAILED;
+
+  return sniDenial(connection.host, connection.sni) ?? fallback;
+};
 
 export const createInterceptor = (options: InterceptOptions) => {
   const contexts = new WeakMap<LeafCertificate, SecureContext>();
@@ -42,7 +85,7 @@ export const createInterceptor = (options: InterceptOptions) => {
     return context;
   };
 
-  const startTls = (connection: Connection, secureContext: SecureContext) => {
+  const startTls = (connection: Connection, secureContext: SecureContext, helloStart: number) => {
     const { client, host, port } = connection;
     client.write(ESTABLISHED);
 
@@ -62,10 +105,30 @@ export const createInterceptor = (options: InterceptOptions) => {
         callback(null, secureContext);
       },
     });
-    const state = { secured: false };
-    const handshake = setTimeout(() => client.destroy(), options.helloTimeoutMs);
+    const state: { secured: boolean; ended: boolean; timedOut: boolean; errorCode?: string } = {
+      secured: false,
+      ended: false,
+      timedOut: false,
+    };
+    const handshake = setTimeout(() => {
+      state.timedOut = true;
 
-    secure.on("error", () => client.destroy());
+      client.destroy();
+    }, options.helloTimeoutMs);
+
+    secure.on("error", (error: NodeJS.ErrnoException) => {
+      state.errorCode ??= error.code;
+
+      client.destroy();
+    });
+
+    secure.once("end", () => {
+      if (!state.secured) {
+        state.ended = true;
+
+        client.destroy();
+      }
+    });
 
     secure.once("secure", () => {
       clearTimeout(handshake);
@@ -99,7 +162,9 @@ export const createInterceptor = (options: InterceptOptions) => {
         return;
       }
 
-      denials.note(host, handshakeDenial(connection), {
+      const end = { ...state, silent: client.bytesRead === helloStart };
+
+      denials.note(host, handshakeDenial(connection, end), {
         port,
         sni: connection.sni,
       });
@@ -108,6 +173,7 @@ export const createInterceptor = (options: InterceptOptions) => {
 
   return async (connection: Connection, head: Buffer) => {
     const { client, host, port } = connection;
+    const helloStart = client.bytesRead;
 
     if (head.length > 0) {
       denials.refuse(
@@ -133,6 +199,6 @@ export const createInterceptor = (options: InterceptOptions) => {
       return;
     }
 
-    startTls(connection, secureContext);
+    startTls(connection, secureContext, helloStart);
   };
 };

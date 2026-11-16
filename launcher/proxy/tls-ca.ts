@@ -6,9 +6,15 @@ import {
   X509Certificate,
 } from "node:crypto";
 import { chmod, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { isHostName } from "../config/index.ts";
-import { type CommandRunner, LauncherError, stateLayout, withFileLock } from "../shared/index.ts";
+import {
+  type CommandRunner,
+  LauncherError,
+  type RunOptions,
+  stateLayout,
+  withFileLock,
+} from "../shared/index.ts";
 
 export interface LeafCertificate {
   key: string;
@@ -27,9 +33,15 @@ interface CaOptions {
   runner: CommandRunner;
 }
 
-const CA_DAYS = "3650";
+const DAY_MS = 24 * 60 * 60 * 1000;
 
-const LEAF_DAYS = "397";
+const CA_VALIDITY_MS = 3650 * DAY_MS;
+
+const LEAF_VALIDITY_MS = 397 * DAY_MS;
+
+const BACKDATE_MS = 60 * 60 * 1000;
+
+const GENERALIZED_TIME_YEAR = 2050;
 
 const RENEW_MARGIN_MS = 24 * 60 * 60 * 1000;
 
@@ -43,16 +55,29 @@ const CA_KEY = "ca-key.pem";
 
 const CA_CERT = "ca-cert.pem";
 
+const issueSections = `[ca]
+default_ca = issue
+[issue]
+database = index.txt
+new_certs_dir = .
+serial = serial
+default_md = sha256
+policy = policy
+unique_subject = no
+[policy]
+commonName = supplied
+`;
+
 const caConfig = `[req]
 distinguished_name = dn
 prompt = no
 [dn]
 CN = pi-sandbox launcher CA
-[ca]
+[authority]
 basicConstraints = critical,CA:TRUE
 keyUsage = critical,keyCertSign,cRLSign
 subjectKeyIdentifier = hash
-`;
+${issueSections}`;
 
 const leafConfig = (host: string) => `[req]
 distinguished_name = dn
@@ -65,7 +90,14 @@ keyUsage = critical,digitalSignature
 extendedKeyUsage = serverAuth
 subjectAltName = DNS:${host}
 authorityKeyIdentifier = keyid
-`;
+${issueSections}`;
+
+export const certificateTime = (time: number) => {
+  const date = new Date(time);
+  const stamp = date.toISOString().replace(/[-:T]/g, "").slice(0, 14);
+
+  return date.getUTCFullYear() < GENERALIZED_TIME_YEAR ? `${stamp.slice(2)}Z` : `${stamp}Z`;
+};
 
 const readOptional = async (path: string) => readFile(path, "utf8").catch(() => undefined);
 
@@ -105,8 +137,8 @@ const keyMatches = (key: string, certificate: X509Certificate) => {
   }
 };
 
-const openssl = async (runner: CommandRunner, args: string[]) => {
-  const result = await runner.run("openssl", args);
+const openssl = async (runner: CommandRunner, args: string[], options?: RunOptions) => {
+  const result = await runner.run("openssl", args, options);
 
   if (result.code !== 0) {
     throw new LauncherError(
@@ -116,37 +148,62 @@ const openssl = async (runner: CommandRunner, args: string[]) => {
   }
 };
 
+const signRequest = async (
+  runner: CommandRunner,
+  work: string,
+  signer: string[],
+  extensions: string,
+  validityMs: number,
+) => {
+  await writeFile(join(work, "index.txt"), "");
+
+  await writeFile(join(work, "serial"), `${randomBytes(16).toString("hex")}\n`);
+
+  await openssl(runner, ["req", "-new", "-key", "key.pem", "-config", "issue.cnf", "-out", "request.csr"], {
+    cwd: work,
+  });
+
+  const now = Date.now();
+
+  await openssl(
+    runner,
+    [
+      "ca",
+      "-batch",
+      "-notext",
+      "-config",
+      "issue.cnf",
+      ...signer,
+      "-in",
+      "request.csr",
+      "-out",
+      "cert.pem",
+      "-startdate",
+      certificateTime(now - BACKDATE_MS),
+      "-enddate",
+      certificateTime(now + validityMs),
+      "-extfile",
+      "issue.cnf",
+      "-extensions",
+      extensions,
+    ],
+    { cwd: work },
+  );
+};
+
 const generateCa = async (directory: string, runner: CommandRunner) => {
   const work = await mkdtemp(join(directory, "new-"));
-  const keyPath = join(work, "ca-key.pem");
-  const certPath = join(work, "ca-cert.pem");
-  const configPath = join(work, "ca.cnf");
 
   try {
-    await writePrivateKey(keyPath);
+    await writePrivateKey(join(work, "key.pem"));
 
-    await writeFile(configPath, caConfig);
+    await writeFile(join(work, "issue.cnf"), caConfig);
 
-    await openssl(runner, [
-      "req",
-      "-x509",
-      "-new",
-      "-key",
-      keyPath,
-      "-config",
-      configPath,
-      "-extensions",
-      "ca",
-      "-days",
-      CA_DAYS,
-      "-sha256",
-      "-out",
-      certPath,
-    ]);
+    await signRequest(runner, work, ["-selfsign", "-keyfile", "key.pem"], "authority", CA_VALIDITY_MS);
 
-    await rename(keyPath, join(directory, CA_KEY));
+    await rename(join(work, "key.pem"), join(directory, CA_KEY));
 
-    await rename(certPath, join(directory, CA_CERT));
+    await rename(join(work, "cert.pem"), join(directory, CA_CERT));
   } finally {
     await rm(work, { recursive: true, force: true });
   }
@@ -194,41 +251,19 @@ const ensureCa = async (directory: string, lockPath: string, runner: CommandRunn
 
 const signLeaf = async (directory: string, host: string, runner: CommandRunner): Promise<LeafCertificate> => {
   const work = await mkdtemp(join(directory, "work-"));
-  const keyPath = join(work, "key.pem");
-  const configPath = join(work, "leaf.cnf");
-  const requestPath = join(work, "leaf.csr");
-  const certPath = join(work, "cert.pem");
+  const signer = ["-cert", resolve(join(directory, CA_CERT)), "-keyfile", resolve(join(directory, CA_KEY))];
 
   try {
-    await writePrivateKey(keyPath);
+    await writePrivateKey(join(work, "key.pem"));
 
-    await writeFile(configPath, leafConfig(host));
+    await writeFile(join(work, "issue.cnf"), leafConfig(host));
 
-    await openssl(runner, ["req", "-new", "-key", keyPath, "-config", configPath, "-out", requestPath]);
+    await signRequest(runner, work, signer, "leaf", LEAF_VALIDITY_MS);
 
-    await openssl(runner, [
-      "x509",
-      "-req",
-      "-in",
-      requestPath,
-      "-CA",
-      join(directory, CA_CERT),
-      "-CAkey",
-      join(directory, CA_KEY),
-      "-set_serial",
-      `0x${randomBytes(16).toString("hex")}`,
-      "-days",
-      LEAF_DAYS,
-      "-sha256",
-      "-extfile",
-      configPath,
-      "-extensions",
-      "leaf",
-      "-out",
-      certPath,
-    ]);
-
-    return { key: await readFile(keyPath, "utf8"), cert: await readFile(certPath, "utf8") };
+    return {
+      key: await readFile(join(work, "key.pem"), "utf8"),
+      cert: await readFile(join(work, "cert.pem"), "utf8"),
+    };
   } finally {
     await rm(work, { recursive: true, force: true });
   }

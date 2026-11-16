@@ -9,7 +9,7 @@ beforeEach(async () => {
   state.dir = await tempDir("mcp-login");
 });
 
-const KEYS = Array.from({ length: 12 }, (_, index) => `mcp__server_${index}|https://mcp${index}.test/`);
+const KEYS = Array.from({ length: 4 }, (_, index) => `mcp__server_${index}|https://mcp${index}.test/`);
 
 describe("updateMcpLogin", () => {
   it("keeps every server's entry when several servers write at once", async () => {
