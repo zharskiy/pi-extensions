@@ -4,6 +4,7 @@ import {
   formatCost,
   formatDuration,
   formatMoney,
+  formatPercent,
   formatTokens,
   formatWindow,
   homeRelative,
@@ -66,5 +67,10 @@ describe("costs and calls", () => {
     expect(formatCost(0)).toBeUndefined();
     expect(formatMoney(0)).toBe("$0.00");
     expect(formatMoney(12.3)).toBe("$12.30");
+  });
+
+  it("formats percentages whole by default and with the digits asked for", () => {
+    expect([0, 41.6, 99.5].map((percent) => formatPercent(percent))).toEqual(["0%", "42%", "100%"]);
+    expect(formatPercent(12.34, 1)).toBe("12.3%");
   });
 });

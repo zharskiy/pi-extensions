@@ -1,4 +1,5 @@
 import type { StatusToken, ThemeLike } from "../pi-adapter/index.ts";
+import { formatPercent } from "../shared/index.ts";
 
 export const cacheTone = (percent: number): StatusToken => {
   if (percent >= 70) {
@@ -9,4 +10,4 @@ export const cacheTone = (percent: number): StatusToken => {
 };
 
 export const cachePercentText = (theme: ThemeLike, percent: number) =>
-  theme.fg(cacheTone(percent), `${Math.round(percent)}%`);
+  theme.fg(cacheTone(percent), formatPercent(percent));

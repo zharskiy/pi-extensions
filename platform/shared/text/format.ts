@@ -63,6 +63,8 @@ export const formatCost = (usd: number): string | undefined => {
 
 export const formatMoney = (usd: number) => formatCost(usd) ?? "$0.00";
 
+export const formatPercent = (percent: number, digits = 0) => `${percent.toFixed(digits)}%`;
+
 export const noun = (count: number, word: string, plural = `${word}s`) => (count === 1 ? word : plural);
 
 export const counted = (count: number, word: string, plural?: string) =>

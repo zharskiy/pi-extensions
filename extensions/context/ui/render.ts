@@ -1,5 +1,5 @@
 import { CHILD_COLUMN, type ThemeLike } from "../../../platform/pi-adapter/index.ts";
-import { DOT, formatTokens } from "../../../platform/shared/index.ts";
+import { DOT, formatPercent, formatTokens } from "../../../platform/shared/index.ts";
 import { cachePercentText, countLine, markGlyph } from "../../../platform/ui-kit/index.ts";
 import {
   type CacheFigures,
@@ -29,11 +29,9 @@ const LABELS: Record<CategoryKey, string> = {
 
 const INDENT = " ".repeat(CHILD_COLUMN);
 
-const percentText = (percent: number) => `${percent.toFixed(1)}%`;
-
 const legendText = (theme: ThemeLike, category: Category, full: boolean) => {
   const amount = formatTokens(category.tokens);
-  const share = `(${percentText(category.percent)})`;
+  const share = `(${formatPercent(category.percent, 1)})`;
 
   if (category.key !== "free") {
     return `${LABELS[category.key]}: ${amount} tokens ${share}`;
@@ -59,7 +57,7 @@ const fittedHeader = (theme: ThemeLike, model: UsageModel, room: number) => {
 };
 
 const lastTurnText = (theme: ThemeLike, lastTurn: number, missed: boolean) =>
-  missed ? theme.fg("warning", `${Math.round(lastTurn)}%`) : cachePercentText(theme, lastTurn);
+  missed ? theme.fg("warning", formatPercent(lastTurn)) : cachePercentText(theme, lastTurn);
 
 const cacheText = (theme: ThemeLike, cache: CacheFigures) => {
   const last =

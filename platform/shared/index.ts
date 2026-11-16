@@ -74,6 +74,7 @@ export {
   formatCost,
   formatDuration,
   formatMoney,
+  formatPercent,
   formatTokens,
   formatWindow,
   homeRelative,
