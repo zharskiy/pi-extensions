@@ -135,6 +135,7 @@ describe("plain prompts", () => {
       yes: "Yes",
       no: "No",
       initial: false,
+      collapsed: () => undefined,
     };
     const first = prompts.confirm(spec);
 
@@ -220,7 +221,14 @@ describe("plain prompts", () => {
 
   it("maps ctrl-c to Cancelled interrupt and ctrl-d or input end to Cancelled end", async () => {
     const interrupted = plainPrompts();
-    const first = outcome(interrupted.prompts.path({ title: "Name", home: "/home/me", readdir: () => [] }));
+    const first = outcome(
+      interrupted.prompts.path({
+        collapsed: () => undefined,
+        title: "Name",
+        home: "/home/me",
+        readdir: () => [],
+      }),
+    );
 
     await pause();
 
@@ -231,7 +239,9 @@ describe("plain prompts", () => {
     expect(interrupted.input.isRaw).toBe(false);
 
     const ended = plainPrompts();
-    const second = outcome(ended.prompts.path({ title: "Name", home: "/home/me", readdir: () => [] }));
+    const second = outcome(
+      ended.prompts.path({ collapsed: () => undefined, title: "Name", home: "/home/me", readdir: () => [] }),
+    );
 
     await pause();
 
@@ -240,7 +250,9 @@ describe("plain prompts", () => {
     expect((await second).error).toMatchObject({ cause: "end" });
 
     const closed = plainPrompts();
-    const third = outcome(closed.prompts.path({ title: "Name", home: "/home/me", readdir: () => [] }));
+    const third = outcome(
+      closed.prompts.path({ collapsed: () => undefined, title: "Name", home: "/home/me", readdir: () => [] }),
+    );
 
     await pause();
 
@@ -252,8 +264,19 @@ describe("plain prompts", () => {
   it("reads lines without raw mode or cursor sequences on a dumb or unset TERM", async () => {
     const dumb = plainPrompts({ env: { TERM: "dumb" } });
     const unset = plainPrompts({ env: { TERM: "" } });
-    const named = dumb.prompts.path({ title: "Name", home: "/home/me", readdir: () => [], initial: "pi" });
-    const other = unset.prompts.path({ title: "Name", home: "/home/me", readdir: () => [] });
+    const named = dumb.prompts.path({
+      collapsed: () => undefined,
+      title: "Name",
+      home: "/home/me",
+      readdir: () => [],
+      initial: "pi",
+    });
+    const other = unset.prompts.path({
+      collapsed: () => undefined,
+      title: "Name",
+      home: "/home/me",
+      readdir: () => [],
+    });
 
     await answer(dumb.input, "box");
 

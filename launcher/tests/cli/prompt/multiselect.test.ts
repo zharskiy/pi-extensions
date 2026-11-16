@@ -15,6 +15,10 @@ const FOLDERS = {
   ],
   checked: ["~/Projects", "~/work"],
   escape: "cancel",
+  collapsed: (values: string[]) => ({
+    title: "Which folders hold your projects?",
+    text: values.join(", ") || "none",
+  }),
 };
 
 describe("multiselect", () => {
@@ -115,22 +119,6 @@ describe("multiselect", () => {
     await press(input, KEY.enter);
 
     expect(await reply).toEqual(["~/Projects", "~/work", "~/oss"]);
-  });
-
-  it("collapses to the first three labels and the count of the rest", async () => {
-    const { prompts, screen, input } = richPrompts();
-    const choices = ["~/a", "~/b", "~/c", "~/d", "~/e"].map((value) => ({ value, label: value }));
-    const reply = prompts.multiselect({
-      title: "Project folders",
-      choices,
-      checked: choices.map((c) => c.value),
-    });
-
-    await press(input, KEY.enter);
-
-    await reply;
-
-    expect(screen.lines()).toEqual(["◇  Project folders", "│  ~/a, ~/b, ~/c and 2 more", "│"]);
   });
 
   it("shows a validation error under the list until the next key", async () => {

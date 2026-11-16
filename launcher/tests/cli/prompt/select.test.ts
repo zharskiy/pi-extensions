@@ -2,16 +2,22 @@ import { describe, expect, it } from "vitest";
 import { BACK, Cancelled } from "../../../cli/prompt/types.ts";
 import { KEY, outcome, pause, press, richPrompts } from "./fake-tty.ts";
 
+const CHOICES = [
+  { value: "apply", label: "Apply" },
+  { value: "folders", label: "Change project folders" },
+  { value: "vm", label: "Change VM size" },
+  { value: "cancel", label: "Cancel" },
+];
+
 const HUB = {
   title: "Review",
   detail: ["When you apply:", "  • create the config file"],
-  choices: [
-    { value: "apply", label: "Apply" },
-    { value: "folders", label: "Change project folders" },
-    { value: "vm", label: "Change VM size" },
-    { value: "cancel", label: "Cancel" },
-  ],
+  choices: CHOICES,
   escape: "cancel",
+  collapsed: (value: string) => ({
+    title: "Review",
+    text: CHOICES.find((choice) => choice.value === value)?.label ?? "",
+  }),
 };
 
 describe("select", () => {
@@ -120,7 +126,7 @@ describe("select", () => {
   it("windows a long list around the cursor with more lines", async () => {
     const { prompts, screen, input } = richPrompts({ rows: 8 });
     const choices = ["a", "b", "c", "d", "e", "f"].map((value) => ({ value, label: `item ${value}` }));
-    const reply = prompts.select({ title: "Pick", choices });
+    const reply = prompts.select({ collapsed: () => undefined, title: "Pick", choices });
 
     await pause();
 
@@ -155,7 +161,7 @@ describe("select", () => {
     const { prompts, screen, input } = richPrompts({ rows: 10 });
     const detail = Array.from({ length: 20 }, (_, index) => `detail line ${index + 1}`);
     const choices = ["a", "b", "c", "d"].map((value) => ({ value, label: `item ${value}` }));
-    const reply = prompts.select({ title: "Pick", detail, choices });
+    const reply = prompts.select({ collapsed: () => undefined, title: "Pick", detail, choices });
 
     await pause();
 
@@ -177,6 +183,7 @@ describe("select", () => {
     const { prompts, screen, input } = richPrompts();
 
     const reply = prompts.select({
+      collapsed: () => undefined,
       title: "VM size",
       choices: [
         { value: "auto", label: "Automatic", tag: "8 CPUs" },
@@ -226,7 +233,11 @@ describe("select", () => {
 
   it("escapes control characters in labels so a crafted name cannot move the cursor", async () => {
     const { prompts, screen, input } = richPrompts();
-    const reply = prompts.select({ title: "Pick", choices: [{ value: 1, label: "evil\x1b[2Jname" }] });
+    const reply = prompts.select({
+      collapsed: () => undefined,
+      title: "Pick",
+      choices: [{ value: 1, label: "evil\x1b[2Jname" }],
+    });
 
     await pause();
 

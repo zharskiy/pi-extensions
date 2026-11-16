@@ -19,9 +19,14 @@ const readdir = (dir: string) => {
   return names;
 };
 
-const NAME = { title: "Name", home: HOME, readdir };
+const NAME = {
+  title: "Name",
+  home: HOME,
+  readdir,
+  collapsed: (value: string) => ({ title: "Name", text: value }),
+};
 
-const FOLDER = { title: "Add a folder", initial: "~/", home: HOME, readdir, enter: "add" };
+const FOLDER = { ...NAME, title: "Add a folder", initial: "~/", enter: "add" };
 
 describe("path", () => {
   it("pre-fills the initial value, places the cursor after it and submits on Enter", async () => {

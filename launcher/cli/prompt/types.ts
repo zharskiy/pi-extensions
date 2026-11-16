@@ -77,7 +77,7 @@ export interface Ui {
   timers: Timers;
 }
 
-export type Collapse = string | { title: string; text: string } | undefined;
+export type Collapse = { title: string; text: string } | undefined;
 
 export type Detail = string[] | ((width: number) => string[]);
 
@@ -100,7 +100,7 @@ export interface SelectSpec<T> extends KeyWords {
   choices: Choice<T>[];
   initial?: T;
   radio?: boolean;
-  collapsed?: (value: T) => Collapse;
+  collapsed: (value: T) => Collapse;
 }
 
 export interface MultiSpec<T> extends KeyWords {
@@ -110,7 +110,7 @@ export interface MultiSpec<T> extends KeyWords {
   checked: T[];
   onAction?: (value: T) => Promise<Choice<T> | undefined>;
   validate?: (values: T[]) => string | undefined;
-  collapsed?: (values: T[]) => Collapse;
+  collapsed: (values: T[]) => Collapse;
   plain?: { help: string[]; label: string };
 }
 
@@ -120,14 +120,14 @@ export interface ConfirmSpec extends KeyWords {
   yes: string;
   no: string;
   initial: boolean;
-  collapsed?: (value: boolean) => Collapse;
+  collapsed: (value: boolean) => Collapse;
 }
 
 export interface PathSpec extends KeyWords {
   title: string;
   initial?: string;
   validate?: (value: string) => string | undefined;
-  collapsed?: (value: string) => Collapse;
+  collapsed: (value: string) => Collapse;
   readdir: (dir: string) => string[];
   home: string;
 }
@@ -143,7 +143,7 @@ export interface NumberSpec extends KeyWords {
   tooLow: string;
   tooHigh: string;
   warn?: (value: number) => string | undefined;
-  collapsed?: (value: number) => Collapse;
+  collapsed: (value: number) => Collapse;
 }
 
 export interface TaskSpec<T> {

@@ -53,7 +53,6 @@ type Step<T> =
   | { kind: "suspend"; run: () => Promise<void> };
 
 interface View<T> {
-  title: string;
   typing: boolean;
   frame(width: number): FrameView;
   key(key: Key): Step<T>;
@@ -81,7 +80,7 @@ const MATCHES_SHOWN = 8;
 
 const SPIN_MS = 100;
 
-const SUMMARY_SHOWN = 3;
+const MIN_ROWS = 3;
 
 const settle = <T>(value: T): Step<T> => ({ kind: "settle", value });
 
@@ -172,19 +171,13 @@ const errorLines = (context: Context, message: string | undefined, width: number
 const warningLines = (context: Context, message: string | undefined, width: number) =>
   message === undefined ? [] : messageLines(context, "yellow", context.glyphs.warning, message, width);
 
-const summaryOf = (labels: string[]) =>
-  labels.length <= SUMMARY_SHOWN
-    ? labels.join(", ")
-    : `${labels.slice(0, SUMMARY_SHOWN).join(", ")} and ${labels.length - SUMMARY_SHOWN} more`;
-
-const collapsedLines = (context: Context, title: string, collapse: Collapse) => {
-  if (collapse === undefined) {
+const collapsedLines = (context: Context, shown: Collapse) => {
+  if (shown === undefined) {
     return [];
   }
 
   const { glyphs, paint } = context;
   const room = roomOf(context.ui.columns());
-  const shown = typeof collapse === "string" ? { title, text: collapse } : collapse;
   const rail = paint("dim", glyphs.rail);
   const text = shown.text
     .split("\n")
@@ -240,7 +233,7 @@ const runView = <T>(context: Context, view: View<T>) =>
 
     const settleWith = (value: T) =>
       finish(() => {
-        writeLines(context, collapsedLines(context, view.title, view.collapse(value)));
+        writeLines(context, collapsedLines(context, view.collapse(value)));
 
         resolve(value);
       });
@@ -368,7 +361,7 @@ const choiceRows = <T>(
 };
 
 const limitOf = (context: Context, detail: string[]) =>
-  Math.max(SUMMARY_SHOWN, context.ui.rows() - 6 - (detail.length > 0 ? detail.length + 2 : 0));
+  Math.max(MIN_ROWS, context.ui.rows() - 6 - (detail.length > 0 ? detail.length + 2 : 0));
 
 const linesBefore = (rows: string[][], from: number, to: number) =>
   rows.slice(from, to).reduce((sum, row) => sum + row.length, 0);
@@ -431,7 +424,6 @@ const selectView = <T>(context: Context, spec: SelectSpec<T>): View<T> => {
     spec.radio === true ? `${index === state.cursor ? glyphs.radioOn : glyphs.radioOff} ` : "";
 
   return {
-    title: spec.title,
     typing: false,
     frame: (width) => {
       const detail = detailOf(context, spec.detail, width);
@@ -461,10 +453,7 @@ const selectView = <T>(context: Context, spec: SelectSpec<T>): View<T> => {
 
       return isCtrl(key, "d") ? END : STAY;
     },
-    collapse: (value) =>
-      spec.collapsed === undefined
-        ? spec.choices.find((choice) => choice.value === value)?.label
-        : spec.collapsed(value),
+    collapse: spec.collapsed,
   };
 };
 
@@ -525,7 +514,6 @@ const multiView = <T>(context: Context, spec: MultiSpec<T>): View<T[]> => {
   };
 
   return {
-    title: spec.title,
     typing: false,
     frame: (width) => {
       const detail = detailOf(context, spec.detail, width);
@@ -585,10 +573,7 @@ const multiView = <T>(context: Context, spec: MultiSpec<T>): View<T[]> => {
 
       return isCtrl(key, "d") ? END : STAY;
     },
-    collapse: (values) =>
-      spec.collapsed === undefined
-        ? summaryOf(checkedChoices().map((choice) => choice.label)) || "none"
-        : spec.collapsed(values),
+    collapse: spec.collapsed,
   };
 };
 
@@ -603,7 +588,6 @@ const confirmView = (context: Context, spec: ConfirmSpec): View<boolean> => {
     `${state.yes === yes ? paint("cyan", glyphs.pointer) : " "} ${labelOf(yes)}`;
 
   return {
-    title: spec.title,
     typing: false,
     frame: (width) => {
       const detail = detailOf(context, spec.detail, width);
@@ -632,7 +616,7 @@ const confirmView = (context: Context, spec: ConfirmSpec): View<boolean> => {
 
       return isCtrl(key, "d") ? END : STAY;
     },
-    collapse: (value) => (spec.collapsed === undefined ? labelOf(value) : spec.collapsed(value)),
+    collapse: spec.collapsed,
   };
 };
 
@@ -717,7 +701,6 @@ const pathView = (context: Context, spec: PathSpec): View<string> => {
   };
 
   return {
-    title: spec.title,
     typing: true,
     frame: (width) => {
       const input = inputRow(context, state.line, width);
@@ -764,7 +747,7 @@ const pathView = (context: Context, spec: PathSpec): View<string> => {
 
       return STAY;
     },
-    collapse: (value) => (spec.collapsed === undefined ? value : spec.collapsed(value)),
+    collapse: spec.collapsed,
   };
 };
 
@@ -829,7 +812,6 @@ const numberView = (context: Context, spec: NumberSpec): View<number> => {
   };
 
   return {
-    title: spec.title,
     typing: true,
     frame: (width) => {
       const input = inputRow(context, state.line, width);
@@ -875,7 +857,7 @@ const numberView = (context: Context, spec: NumberSpec): View<number> => {
 
       return STAY;
     },
-    collapse: (value) => (spec.collapsed === undefined ? String(value) : spec.collapsed(value)),
+    collapse: spec.collapsed,
   };
 };
 

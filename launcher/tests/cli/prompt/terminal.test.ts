@@ -116,6 +116,7 @@ describe("modes, glyphs and colour", () => {
   it("writes no SGR sequence with NO_COLOR", async () => {
     const plainColour = richPrompts({ env: { NO_COLOR: "1" } });
     const reply = plainColour.prompts.select({
+      collapsed: () => undefined,
       title: "Pick",
       choices: [{ value: 1, label: "one", tag: "tag" }],
     });
@@ -128,6 +129,7 @@ describe("modes, glyphs and colour", () => {
 
     const coloured = richPrompts();
     const again = coloured.prompts.select({
+      collapsed: () => undefined,
       title: "Pick",
       choices: [{ value: 1, label: "one", tag: "tag" }],
     });
@@ -143,6 +145,7 @@ describe("modes, glyphs and colour", () => {
     const { prompts, screen, input } = richPrompts({ env: { LANG: "C" } });
 
     const reply = prompts.multiselect({
+      collapsed: () => ({ title: "Folders…", text: "~/a" }),
       title: "Folders…",
       choices: [
         { value: "a", label: "~/a", tag: "1 git repository · you are here" },
@@ -171,6 +174,7 @@ describe("modes, glyphs and colour", () => {
     const { prompts, screen, input } = richPrompts({ columns: 40 });
 
     const reply = prompts.select({
+      collapsed: () => undefined,
       title: "A title that is much longer than forty columns wide",
       detail: ["Every pi session runs in this VM. Automatic follows this Mac."],
       choices: [{ value: 1, label: "one" }],
@@ -205,7 +209,12 @@ describe("modes, glyphs and colour", () => {
       return [width < 60 ? "narrow" : "wide"];
     };
 
-    const reply = prompts.select({ title: "Review", detail, choices: [{ value: 1, label: "Apply" }] });
+    const reply = prompts.select({
+      collapsed: () => ({ title: "Review", text: "Apply" }),
+      title: "Review",
+      detail,
+      choices: [{ value: 1, label: "Apply" }],
+    });
 
     await press(input, KEY.ctrlL);
 
@@ -260,7 +269,12 @@ describe("terminal restore", () => {
 
   it("leaves raw mode, shows the cursor and turns paste off after a value, BACK and Cancelled", async () => {
     const valued = richPrompts();
-    const first = valued.prompts.path({ title: "Name", home: "/home/me", readdir: () => [] });
+    const first = valued.prompts.path({
+      collapsed: () => undefined,
+      title: "Name",
+      home: "/home/me",
+      readdir: () => [],
+    });
 
     await press(valued.input, "x", KEY.enter);
 
@@ -269,7 +283,11 @@ describe("terminal restore", () => {
     expect(restored(valued)).toEqual(RESTORED);
 
     const backed = richPrompts();
-    const second = backed.prompts.select({ title: "Pick", choices: [{ value: 1, label: "one" }] });
+    const second = backed.prompts.select({
+      collapsed: () => undefined,
+      title: "Pick",
+      choices: [{ value: 1, label: "one" }],
+    });
 
     await press(backed.input, KEY.escape);
 
@@ -278,7 +296,9 @@ describe("terminal restore", () => {
     expect(restored(backed)).toEqual(RESTORED);
 
     const cancelled = richPrompts();
-    const third = outcome(cancelled.prompts.path({ title: "Add", home: "/", readdir: () => [] }));
+    const third = outcome(
+      cancelled.prompts.path({ collapsed: () => undefined, title: "Add", home: "/", readdir: () => [] }),
+    );
 
     await press(cancelled.input, KEY.ctrlC);
 
@@ -292,6 +312,7 @@ describe("terminal restore", () => {
 
     const reply = outcome(
       fake.prompts.path({
+        collapsed: () => undefined,
         title: "Name",
         home: "/home/me",
         readdir: () => [],
@@ -339,7 +360,13 @@ describe("terminal restore", () => {
 
     fake.ui.session.restore();
 
-    const reply = outcome(fake.prompts.select({ title: "Pick", choices: [{ value: 1, label: "one" }] }));
+    const reply = outcome(
+      fake.prompts.select({
+        collapsed: () => undefined,
+        title: "Pick",
+        choices: [{ value: 1, label: "one" }],
+      }),
+    );
     const task = outcome(fake.prompts.task({ title: "", interruptWarning: "", run: async () => 1 }));
 
     expect((await reply).error).toMatchObject({ cause: "end" });

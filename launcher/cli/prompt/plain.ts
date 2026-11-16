@@ -77,14 +77,10 @@ export const createPlainPrompts = (ui: Ui): Prompts => {
       ? detail(ui.columns())
       : (detail ?? []).flatMap((line) => (line === "" ? [""] : wrap(asciiOf(line), width() - 1)));
 
-  const printCollapse = (title: string, collapse: Collapse) => {
-    if (collapse === undefined) {
-      return;
+  const printCollapse = (collapse: Collapse) => {
+    if (collapse !== undefined) {
+      print([`${printable(collapse.title)}: ${printable(collapse.text.split("\n").join(" "))}`, ""]);
     }
-
-    const shown = typeof collapse === "string" ? { title, text: collapse } : collapse;
-
-    print([`${printable(shown.title)}: ${printable(shown.text.split("\n").join(" "))}`, ""]);
   };
 
   const ask = (query: string, completer?: Completer) => {
@@ -262,14 +258,8 @@ export const createPlainPrompts = (ui: Ui): Prompts => {
     print([spec.title, ...detailOf(spec.detail), ...list(), ...help]);
 
     const chosen = await round();
-    const labels = state.choices
-      .filter((choice) => state.checked.has(choice.value))
-      .map((choice) => choice.label);
 
-    printCollapse(
-      spec.title,
-      spec.collapsed === undefined ? labels.join(", ") || "none" : spec.collapsed(chosen),
-    );
+    printCollapse(spec.collapsed(chosen));
 
     return chosen;
   };
@@ -397,7 +387,7 @@ export const createPlainPrompts = (ui: Ui): Prompts => {
       completerOf(spec),
     );
 
-    printCollapse(spec.title, spec.collapsed === undefined ? value : spec.collapsed(value));
+    printCollapse(spec.collapsed(value));
 
     return value;
   };
@@ -423,7 +413,7 @@ export const createPlainPrompts = (ui: Ui): Prompts => {
         return BACK;
       }
 
-      printCollapse(spec.title, spec.collapsed === undefined ? choice.label : spec.collapsed(choice.value));
+      printCollapse(spec.collapsed(choice.value));
 
       return choice.value;
     },
@@ -433,9 +423,8 @@ export const createPlainPrompts = (ui: Ui): Prompts => {
 
       const query = `${spec.title} (${spec.initial ? "Y/n" : "y/N"}): `;
       const value = await askUntil(query, (answer) => yesNoOf(answer, spec.initial));
-      const label = value ? spec.yes : spec.no;
 
-      printCollapse(spec.title, spec.collapsed === undefined ? label : spec.collapsed(value));
+      printCollapse(spec.collapsed(value));
 
       return value;
     },
@@ -443,7 +432,7 @@ export const createPlainPrompts = (ui: Ui): Prompts => {
     number: async (spec) => {
       const value = await numberRound(spec, spec.initial);
 
-      printCollapse(spec.title, spec.collapsed === undefined ? String(value) : spec.collapsed(value));
+      printCollapse(spec.collapsed(value));
 
       return value;
     },

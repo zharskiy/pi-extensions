@@ -14,6 +14,7 @@ const MEMORY = {
   tooHigh: "Choose 2 to 30 GiB: this Mac has 32 GiB and macOS needs the rest.",
   warn: (value: number) =>
     value > 24 ? "That leaves little memory for macOS. Press enter again to keep it." : undefined,
+  collapsed: (value: number) => ({ title: "Memory for the VM, in GiB", text: String(value) }),
 };
 
 describe("number", () => {
