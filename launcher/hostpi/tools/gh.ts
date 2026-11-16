@@ -65,9 +65,7 @@ export const deriveGh = async (input: ToolsInput): Promise<Section<ToolHost[]>> 
     return noticeOnly([], ...file.notices);
   }
 
-  const merged = mergeSections(hosts.map((host) => hostSection(input, gh, host)));
-
-  return { value: merged.values, rules: merged.rules, notices: merged.notices };
+  return mergeSections(hosts.map((host) => hostSection(input, gh, host)));
 };
 
 export const ghEnv = (hosts: ToolHost[]): Record<string, string> => {

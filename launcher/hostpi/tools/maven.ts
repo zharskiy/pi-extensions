@@ -98,7 +98,7 @@ const credentialSection = (
     (server.headers ?? []).map((header) => headerSection(context, server, header)),
   );
   const sections = [...(secured === undefined ? [] : [secured]), headers];
-  const kept = headers.values.flat();
+  const kept = headers.value.flat();
   const { headers: _headers, ...rest } = server;
 
   return {
@@ -196,7 +196,7 @@ const sanitized = (element: XmlElement): Section<XmlElement> => {
       : element.children;
   const children = mergeSections(kept.map(sanitized));
 
-  return { value: { ...element, children: children.values }, rules: [], notices: children.notices };
+  return noticeOnly({ ...element, children: children.value }, ...children.notices);
 };
 
 const localRepositoryNotices = (settings: MavenSettings) =>
@@ -237,7 +237,7 @@ export const deriveMaven = async (
   const passthrough = mergeSections(settings.passthrough.map(sanitized));
 
   return {
-    value: { servers: merged.values.flat(), mirrors: mirrors.values, passthrough: passthrough.values },
+    value: { servers: merged.value.flat(), mirrors: mirrors.value, passthrough: passthrough.value },
     rules: merged.rules,
     notices: [
       ...merged.notices,

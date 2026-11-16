@@ -4,7 +4,7 @@ import { deriveGlab, glabEnv } from "./tools/glab.ts";
 import { deriveMaven } from "./tools/maven.ts";
 import { deriveNpmrc } from "./tools/npmrc.ts";
 import { derivePip } from "./tools/pip.ts";
-import { emptyTools, type ToolsInput, type ToolsSection } from "./types.ts";
+import { emptyToolsSection, type ToolsInput, type ToolsSection } from "./types.ts";
 
 const credentialsOf = async (input: ToolsInput) => {
   const [git, gh, glab, npmrc, pip, maven] = await Promise.all([
@@ -22,7 +22,7 @@ export const deriveHostTools = async (input: ToolsInput): Promise<ToolsSection> 
   if (!input.enabled) {
     const git = await deriveGitIdentity(input);
 
-    return { value: emptyTools(git.value), rules: [], notices: git.notices, registries: [] };
+    return emptyToolsSection(git.value, git.notices);
   }
 
   const { git, gh, glab, npmrc, pip, maven } = await credentialsOf(input);

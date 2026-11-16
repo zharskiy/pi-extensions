@@ -12,7 +12,7 @@ import { deriveMcp } from "./derive-mcp.ts";
 import { deriveModels } from "./derive-models.ts";
 import { type Endpoint, endpointKey } from "./endpoints.ts";
 import { objectOr } from "./json.ts";
-import { type DerivedSandboxPi, type DeriveInput, emptyTools, type Registry } from "./types.ts";
+import { type DerivedSandboxPi, type DeriveInput, emptyToolsSection, type Registry } from "./types.ts";
 
 const allowedByDerive = (derive: DeriveConfig, host: string) =>
   derive.enabled &&
@@ -58,7 +58,7 @@ export const deriveSandboxPi = (input: DeriveInput): DerivedSandboxPi => {
   const modelsSection = deriveModels(context, { ...models, providers }, input.providerHosts);
   const mcp = deriveMcp(context, objectOr(input.files.mcp), auth.credentials);
   const manual = input.manual;
-  const tools = input.tools ?? { value: emptyTools(), rules: [], notices: [], registries: [] };
+  const tools = input.tools ?? emptyToolsSection();
   const derived = keptDerived(
     [...auth.rules, ...modelsSection.rules, ...mcp.rules, ...tools.rules],
     manual,

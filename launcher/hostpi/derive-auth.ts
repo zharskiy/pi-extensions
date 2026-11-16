@@ -148,9 +148,8 @@ export const deriveAuth = (context: DeriveContext, sources: AuthSources): AuthSe
   const merged = mergeSections(sections);
 
   return {
-    value: Object.fromEntries(merged.values.flat()),
-    rules: merged.rules,
-    notices: merged.notices,
+    ...merged,
+    value: Object.fromEntries(merged.value.flat()),
     credentials: Object.fromEntries(
       sections.flatMap((section) => (section.credential ? [section.credential] : [])),
     ),

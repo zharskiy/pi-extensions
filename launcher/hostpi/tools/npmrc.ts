@@ -136,7 +136,7 @@ const plainSection = (input: ToolsInput, entry: NpmrcEntry): Section<NpmrcEntry[
   }
 
   if (!hasUrlUserinfo(value)) {
-    return { value: [{ key: entry.key, value }], rules: [], notices: [] };
+    return noticeOnly([{ key: entry.key, value }]);
   }
 
   if (name !== REGISTRY_KEY || value !== entry.value) {
@@ -174,11 +174,11 @@ export const deriveNpmrc = async (
 
   const registries = registriesOf(
     "npmrc",
-    merged.values
+    merged.value
       .flat()
       .filter((entry) => nameOf(entry.key) === REGISTRY_KEY)
       .map((entry) => entry.value),
   );
 
-  return { value: merged.values.flat(), rules: merged.rules, notices: merged.notices, registries };
+  return { ...merged, value: merged.value.flat(), registries };
 };

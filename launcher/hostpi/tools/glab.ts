@@ -72,7 +72,7 @@ const readConfig = async (input: ToolsInput) => {
     await Promise.all(configPaths(input).map((path) => checkedPath(input, path))),
   );
 
-  return { config: await firstExisting(checked.values.flat()), notices: checked.notices };
+  return { config: await firstExisting(checked.value.flat()), notices: checked.notices };
 };
 
 const parseLine = (state: ParseState, line: string): ParseState => {
@@ -204,7 +204,7 @@ export const deriveGlab = async (input: ToolsInput): Promise<Section<GlabHost[]>
 
   const merged = mergeSections(await Promise.all(entries.map((entry) => hostSection(input, glab, entry))));
 
-  return { value: merged.values.flat(), rules: merged.rules, notices: [...notices, ...merged.notices] };
+  return { value: merged.value.flat(), rules: merged.rules, notices: [...notices, ...merged.notices] };
 };
 
 export const glabEnv = (hosts: GlabHost[]): Record<string, string> => {

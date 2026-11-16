@@ -38,7 +38,7 @@ const entrySection = (
   if (!INDEX_KEYS.has(normalized)) {
     return iniWords(value).some(hasUrlUserinfo)
       ? dropped(key, "carries credentials in a URL and stays on the host")
-      : { value: [[name, value]], rules: [], notices: [] };
+      : noticeOnly([[name, value]]);
   }
 
   const words = mergeSections(
@@ -47,7 +47,7 @@ const entrySection = (
     ),
   );
 
-  return { value: [[name, words.values.join("\n")]], rules: words.rules, notices: words.notices };
+  return { ...words, value: [[name, words.value.join("\n")]] };
 };
 
 const sectionOf = (input: ToolsInput, file: string, section: IniSection): Section<IniSection> => {
@@ -55,11 +55,7 @@ const sectionOf = (input: ToolsInput, file: string, section: IniSection): Sectio
     section.entries.map((entry) => entrySection(input, file, section.name, entry)),
   );
 
-  return {
-    value: { name: section.name, entries: merged.values.flat() },
-    rules: merged.rules,
-    notices: merged.notices,
-  };
+  return { ...merged, value: { name: section.name, entries: merged.value.flat() } };
 };
 
 const indexUrls = (sections: IniSection[]) =>
@@ -81,9 +77,7 @@ export const derivePip = async (
   );
 
   return {
-    value: sections.values,
-    rules: sections.rules,
-    notices: sections.notices,
-    registries: registriesOf("pip", indexUrls(sections.values)),
+    ...sections,
+    registries: registriesOf("pip", indexUrls(sections.value)),
   };
 };

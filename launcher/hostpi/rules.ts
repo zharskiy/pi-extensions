@@ -30,8 +30,8 @@ export const rulesFor = (identity: string, endpoints: Endpoint[], body: RuleBody
     ...body,
   }));
 
-export const mergeSections = <T>(sections: Array<Section<T>>) => ({
-  values: sections.map((section) => section.value),
+export const mergeSections = <T>(sections: Array<Section<T>>): Section<T[]> => ({
+  value: sections.map((section) => section.value),
   rules: sections.flatMap((section) => section.rules),
   notices: sections.flatMap((section) => section.notices),
 });

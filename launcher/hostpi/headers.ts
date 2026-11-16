@@ -2,7 +2,14 @@ import { SECRET_MARKER, type SecretRef } from "../config/index.ts";
 import { isAuthLikeHeader, isJsonObject, isSecretShapedValue } from "../shared/index.ts";
 import type { Endpoint } from "./endpoints.ts";
 import { jsonPointer } from "./json.ts";
-import { type DeriveContext, mergeSections, placeholderOf, rulesFor, type Section } from "./rules.ts";
+import {
+  type DeriveContext,
+  mergeSections,
+  noticeOnly,
+  placeholderOf,
+  rulesFor,
+  type Section,
+} from "./rules.ts";
 import type { JsonObject } from "./types.ts";
 
 type Binding =
@@ -165,17 +172,14 @@ const headerSection = (
   const binding = bindingOf(name, value, literal);
 
   if (binding.kind === "keep") {
-    return { value: [name, value], rules: [], notices: [] };
+    return noticeOnly([name, value]);
   }
 
   if (binding.kind === "unbound") {
-    return {
-      value: [name, placeholder],
-      rules: [],
-      notices: [
-        `${target.label}: header ${name} combines several variables or escapes; it is a placeholder in the sandbox, add credentials.rules for it`,
-      ],
-    };
+    return noticeOnly(
+      [name, placeholder],
+      `${target.label}: header ${name} combines several variables or escapes; it is a placeholder in the sandbox, add credentials.rules for it`,
+    );
   }
 
   return {
@@ -196,7 +200,7 @@ export const deriveHeaders = (
   headers: unknown,
 ): Section<JsonObject | undefined> => {
   if (!isJsonObject(headers)) {
-    return { value: undefined, rules: [], notices: [] };
+    return noticeOnly(undefined);
   }
 
   const lastByName = new Map(Object.entries(headers).map((entry) => [entry[0].toLowerCase(), entry]));
@@ -204,5 +208,5 @@ export const deriveHeaders = (
     [...lastByName.values()].map(([name, value]) => headerSection(context, target, name, value)),
   );
 
-  return { value: Object.fromEntries(merged.values), rules: merged.rules, notices: merged.notices };
+  return { ...merged, value: Object.fromEntries(merged.value) };
 };

@@ -5,7 +5,14 @@ import { type Endpoint, endpointOf, hasQueryCredential, httpsEndpoint, strippedU
 import { deriveHeaders, type HeaderTarget } from "./headers.ts";
 import { jsonPointer, objectOr } from "./json.ts";
 import { noHostNotice, providerEndpoints } from "./provider-endpoints.ts";
-import { type DeriveContext, mergeSections, placeholderOf, rulesFor, type Section } from "./rules.ts";
+import {
+  type DeriveContext,
+  mergeSections,
+  noticeOnly,
+  placeholderOf,
+  rulesFor,
+  type Section,
+} from "./rules.ts";
 import type { JsonObject, ProviderHosts } from "./types.ts";
 
 interface ProviderScope {
@@ -21,7 +28,7 @@ const withHeaders = (
   target: Omit<HeaderTarget, "label" | "file">,
 ): Section<JsonObject> => {
   if (object.headers === undefined) {
-    return { value: object, rules: [], notices: [] };
+    return noticeOnly(object);
   }
 
   const section = deriveHeaders(
@@ -31,11 +38,7 @@ const withHeaders = (
   );
   const { headers: _dropped, ...rest } = object;
 
-  return {
-    value: section.value === undefined ? rest : { ...rest, headers: section.value },
-    rules: section.rules,
-    notices: section.notices,
-  };
+  return { ...section, value: section.value === undefined ? rest : { ...rest, headers: section.value } };
 };
 
 const modelSecret = (scope: ProviderScope, id: string, name: string): SecretRef => ({
@@ -47,17 +50,15 @@ const modelSecret = (scope: ProviderScope, id: string, name: string): SecretRef 
 const modelEndpoints = (scope: ProviderScope, model: JsonObject) =>
   model.baseUrl === undefined ? scope.endpoints : httpsEndpoint(model.baseUrl);
 
-const queryCredential = (label: string, key: string, what: string) => ({
-  value: [],
-  rules: [],
-  notices: [
+const queryCredential = (label: string, key: string, what: string) =>
+  noticeOnly(
+    [],
     `${label}: ${key} carries a credential in its query string; ${what} stays out of the sandbox, use a header instead`,
-  ],
-});
+  );
 
 const modelSection = (scope: ProviderScope, model: unknown, index: number): Section<unknown[]> => {
   if (!isJsonObject(model)) {
-    return { value: [model], rules: [], notices: [] };
+    return noticeOnly([model]);
   }
 
   const key = `providers.${scope.id}.models[${index}].baseUrl`;
@@ -90,7 +91,7 @@ const overrideSection = (
   override: unknown,
 ): Section<[string, unknown]> => {
   if (!isJsonObject(override)) {
-    return { value: [modelId, override], rules: [], notices: [] };
+    return noticeOnly([modelId, override]);
   }
 
   const section = withHeaders(scope, override, {
@@ -116,7 +117,7 @@ const localNotices = (id: string, provider: JsonObject) => {
 
 const apiKeySection = (scope: ProviderScope, provider: JsonObject): Section<JsonObject> => {
   if (typeof provider.apiKey !== "string") {
-    return { value: provider, rules: [], notices: [] };
+    return noticeOnly(provider);
   }
 
   const identity = `models:${scope.id}:apiKey`;
@@ -159,8 +160,8 @@ const providerSection = (scope: ProviderScope, provider: JsonObject): Section<Ar
   const rendered = {
     ...headed.value,
     ...(provider.baseUrl === undefined ? {} : { baseUrl: stripped.value }),
-    ...(models === undefined ? {} : { models: models.values.flat() }),
-    ...(overrides === undefined ? {} : { modelOverrides: Object.fromEntries(overrides.values) }),
+    ...(models === undefined ? {} : { models: models.value.flat() }),
+    ...(overrides === undefined ? {} : { modelOverrides: Object.fromEntries(overrides.value) }),
   };
   const hostless =
     scope.endpoints.length === 0 && needsHost(provider) ? [noHostNotice(`models ${scope.id}`)] : [];
@@ -189,7 +190,7 @@ export const deriveModels = (
   const merged = mergeSections(
     Object.entries(providers).map(([id, provider]): Section<Array<[string, unknown]>> => {
       if (!isJsonObject(provider)) {
-        return { value: [[id, provider]], rules: [], notices: [] };
+        return noticeOnly([[id, provider]]);
       }
 
       const endpoints = providerEndpoints(id, providers, providerHosts);
@@ -198,9 +199,5 @@ export const deriveModels = (
     }),
   );
 
-  return {
-    value: { ...models, providers: Object.fromEntries(merged.values.flat()) },
-    rules: merged.rules,
-    notices: merged.notices,
-  };
+  return { ...merged, value: { ...models, providers: Object.fromEntries(merged.value.flat()) } };
 };

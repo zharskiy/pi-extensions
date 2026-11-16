@@ -66,14 +66,6 @@ export interface DerivedTools {
 
 export const EMPTY_MAVEN: DerivedTools["maven"] = { servers: [], mirrors: [], passthrough: [] };
 
-export const emptyTools = (git: GitIdentity = {}): DerivedTools => ({
-  gh: [],
-  glab: [],
-  maven: EMPTY_MAVEN,
-  git,
-  env: {},
-});
-
 export interface Registry {
   label: string;
   endpoint: Endpoint;
@@ -85,6 +77,13 @@ export interface ToolsSection {
   notices: string[];
   registries: Registry[];
 }
+
+export const emptyToolsSection = (git: GitIdentity = {}, notices: string[] = []): ToolsSection => ({
+  value: { gh: [], glab: [], maven: EMPTY_MAVEN, git, env: {} },
+  rules: [],
+  notices,
+  registries: [],
+});
 
 export interface DeriveInput {
   files: HostPiFiles;
