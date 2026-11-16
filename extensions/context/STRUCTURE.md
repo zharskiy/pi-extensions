@@ -14,7 +14,7 @@ extensions/context/
 │   ├── grid.ts                      grid layout and painting, legend glyphs
 │   ├── details.ts                   section titles, summaries and expanded item lines
 │   ├── render.ts                    composes the transcript row from a snapshot
-│   └── summary.ts                   plain one-line summary for modes without a transcript
+│   └── summary.ts                   header and cache line (plain or painted), the one-line summary for modes without a transcript
 ├── tests/
 │   ├── breakdown.test.ts            usage model and apportioning
 │   ├── context.test.ts              command and entry renderer on a fake host
