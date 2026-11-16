@@ -674,7 +674,7 @@ describe("the VM shares with workspaceRoots set", () => {
     expect(doctorCheck(context.harness.stdout(), "vm shares")).toMatchObject({
       status: "warn",
       detail: `the sandbox VM shares ${home}:w, ${stateDir}, which workspaceRoots leaves out and lacks ~/.pi/agent/sessions:w, ${join(stateDir, "vm")}`,
-      hint: "run pi once while no other pi session runs; it restarts the VM with the shares workspaceRoots sets",
+      hint: "run pi sandbox init, or pi, while no other pi session runs; either restarts the VM with the shares workspaceRoots sets",
     });
     expect(context.colimaCalls().filter((call) => /^colima (start|stop|restart)/.test(call))).toEqual([]);
   });

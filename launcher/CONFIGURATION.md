@@ -27,7 +27,8 @@ Each launch gets a new container, so most changes apply at the next `pi`. Each f
 - **Grants** from `pi sandbox egress allow` and `revoke` apply at once, also to running sessions.
 - **Network settings** reach running sessions when you start a new `pi` in that folder. These are `egress.allow`, `egress.deny` and `egress.privateHosts`. Editing the file alone changes nothing for them.
 - **Credential rules, `env` secrets, the parent proxy and `tls.extraCa`** wait until every pi of the folder has exited.
-- **`vm`** applies at the next launch with no other pi session running, which restarts the VM.
+- **`vm`** applies at the next launch with no other pi session running, which restarts the VM, or at once through `pi sandbox init` when no pi session runs.
+- **`workspaceRoots`** limits where pi starts from the next launch. The VM's shares follow at the next launch with no other pi session running, which restarts the VM, or at once through `pi sandbox init` when no pi session runs (see [below](#workspace-roots)).
 - **`writeBack`** applies from the next launch. Nothing is copied back from sessions started under the old list, not even from one still running, and a line says so (see [below](#settings-written-back)). An `env` secret is a credential rule whose secret comes from a variable of your shell.
 
 When other sessions run, a new launch says which case applies:

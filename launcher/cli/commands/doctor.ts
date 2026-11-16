@@ -161,7 +161,7 @@ const configuredSizeCheck = (size: VmSize, target: VmTarget, current: string) =>
 
   if (hasSizeChanges(drift)) {
     return warned(`${current}, not the ${vmSizeText(drift.changes)} vm sets`, {
-      hint: "run pi once while no other pi session runs; it restarts the VM with the size vm sets",
+      hint: "run pi sandbox init, or pi, while no other pi session runs; either restarts the VM with the size vm sets",
     });
   }
 
@@ -191,7 +191,7 @@ const sizeCheck = async (deps: CliDeps, context: LaunchContext, sandbox: Sandbox
 
   return isBelow(size, recommended)
     ? warned(`${current}, below ${recommended.cpus} CPUs and ${recommended.memoryGiB} GiB`, {
-        hint: `resize it with ${vm.resizeCommand({ cpus: recommended.cpus, memoryGiB: recommended.memoryGiB })}, or set vm in the config`,
+        hint: "run pi sandbox init to choose a size, while no other pi session runs",
       })
     : passed(current);
 };
@@ -216,7 +216,7 @@ const rootsCheck = (current: VmShare[], desired: VmShare[]): CheckResult => {
   }
 
   return warned(`the sandbox VM ${driftText(extra, lacking)}`, {
-    hint: "run pi once while no other pi session runs; it restarts the VM with the shares workspaceRoots sets",
+    hint: "run pi sandbox init, or pi, while no other pi session runs; either restarts the VM with the shares workspaceRoots sets",
   });
 };
 
