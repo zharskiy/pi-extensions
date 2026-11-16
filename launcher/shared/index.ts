@@ -66,7 +66,16 @@ export {
   writeCreatedDirs,
   writeRepoRecord,
 } from "./repo-state.ts";
-export { hasUrlUserinfo, isAuthLikeHeader, isSecretName, isSecretShapedValue } from "./secret-name.ts";
+export {
+  hasSecretSegment,
+  hasUrlUserinfo,
+  isAuthLikeHeader,
+  isInertValue,
+  isSecretEnvEntry,
+  isSecretEnvName,
+  isSecretName,
+  isSecretShapedValue,
+} from "./secret-name.ts";
 export { settleAll } from "./settle.ts";
 export { ensureSalt, GUEST_PATHS, isTrustBundleName, stateLayout } from "./state-layout.ts";
 export type { ToolConfigFormat, ToolConfigSelect } from "./tool-config.ts";

@@ -2,7 +2,7 @@ import { join } from "node:path";
 import type { SecretRef } from "../../config/index.ts";
 import {
   hasUrlUserinfo,
-  isSecretName,
+  isSecretEnvName,
   type MavenHeader,
   type MavenRepository,
   type MavenServer,
@@ -122,7 +122,7 @@ const credentialSection = (
 const expandedUsername = (input: ToolsInput, username: string) => {
   const names = [...username.matchAll(ENV_REFERENCES)].map((reference) => reference[1] ?? "");
 
-  return names.some((name) => isSecretName(name) || input.env[name] === undefined)
+  return names.some((name) => isSecretEnvName(name) || input.env[name] === undefined)
     ? undefined
     : username.replace(ENV_REFERENCES, (_, name: string) => input.env[name] ?? "");
 };

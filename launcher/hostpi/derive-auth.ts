@@ -1,5 +1,5 @@
 import type { SecretRef } from "../config/index.ts";
-import { isJsonObject, isSecretName, isSecretShapedValue, jwtShapedPlaceholder } from "../shared/index.ts";
+import { isJsonObject, isSecretEnvEntry, isSecretName, jwtShapedPlaceholder } from "../shared/index.ts";
 import { noHostNotice, providerEndpoints } from "./provider-endpoints.ts";
 import {
   type DeriveContext,
@@ -58,9 +58,7 @@ const envOf = (context: DeriveContext, id: string, env: unknown) => {
 
   const entries = Object.entries(env).map(([name, value]) => [
     name,
-    typeof value === "string" && (isSecretName(name) || isSecretShapedValue(value))
-      ? placeholderOf(context, `auth:${id}:env:${name}`)
-      : value,
+    isSecretEnvEntry(name, value) ? placeholderOf(context, `auth:${id}:env:${name}`) : value,
   ]);
 
   return { env: Object.fromEntries(entries) };

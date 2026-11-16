@@ -1,6 +1,12 @@
 import { join } from "node:path";
 import type { SecretRef } from "../../config/index.ts";
-import { hasUrlUserinfo, isSecretName, type NpmrcEntry, parseNpmrc } from "../../shared/index.ts";
+import {
+  hasUrlUserinfo,
+  isSecretEnvName,
+  isSecretName,
+  type NpmrcEntry,
+  parseNpmrc,
+} from "../../shared/index.ts";
 import { endpointOf } from "../endpoints.ts";
 import { mergeSections, noticeOnly, placeholderOf, rulesFor, type Section } from "../rules.ts";
 import type { ToolsInput } from "../types.ts";
@@ -100,7 +106,7 @@ const credentialSection = (
 const expanded = (input: ToolsInput, entry: NpmrcEntry) => {
   const names = [...entry.value.matchAll(VARIABLE)].map((reference) => reference[1] ?? "");
 
-  if (names.some((name) => isSecretName(name) || input.env[name] === undefined)) {
+  if (names.some((name) => isSecretEnvName(name) || input.env[name] === undefined)) {
     return undefined;
   }
 

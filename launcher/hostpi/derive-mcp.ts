@@ -1,5 +1,11 @@
 import { isAbsolute, join } from "node:path";
-import { isJsonObject, isSecretShapedValue } from "../shared/index.ts";
+import {
+  hasSecretSegment,
+  isInertValue,
+  isJsonObject,
+  isSecretEnvEntry,
+  isSecretShapedValue,
+} from "../shared/index.ts";
 import type { ProviderCredentials } from "./derive-auth.ts";
 import { type Endpoint, endpointOf, hasQueryCredential, strippedUrl } from "./endpoints.ts";
 import { deriveHeaders } from "./headers.ts";
@@ -124,78 +130,6 @@ const httpServer = (
   };
 };
 
-const SECRET_WORDS = [
-  "token",
-  "tokens",
-  "secret",
-  "secrets",
-  "password",
-  "passwd",
-  "passphrase",
-  "authorization",
-  "cookie",
-  "credential",
-  "credentials",
-  "apikey",
-  "privatekey",
-];
-
-const SHORT_SECRET_SEGMENTS = new Set(["pass", "pat", "jwt", "dsn"]);
-
-const isSecretSegment = (segment: string) =>
-  SHORT_SECRET_SEGMENTS.has(segment) || SECRET_WORDS.some((word) => segment.endsWith(word));
-
-const QUALIFIERS = new Set([
-  "no",
-  "max",
-  "min",
-  "count",
-  "limit",
-  "size",
-  "length",
-  "file",
-  "dir",
-  "path",
-  "mode",
-  "url",
-  "timeout",
-  "ttl",
-  "type",
-  "name",
-  "header",
-  "env",
-  "var",
-]);
-
-const INERT_WORDS = new Set(["", "true", "false", "yes", "no", "on", "off"]);
-
-const segmentsOf = (name: string) =>
-  name
-    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter((segment) => segment !== "");
-
-const isMcpSecretName = (name: string) => {
-  const segments = segmentsOf(name);
-  const first = segments[0] ?? "";
-  const last = segments.at(-1) ?? "";
-
-  if (segments.length === 0 || QUALIFIERS.has(first) || QUALIFIERS.has(last)) {
-    return false;
-  }
-
-  return segments.some(isSecretSegment) || last.endsWith("key");
-};
-
-const isInertValue = (value: string) =>
-  INERT_WORDS.has(value.trim().toLowerCase()) || /^-?\d+(\.\d+)?$/.test(value.trim());
-
-const isSecretEnvValue = (variable: string, value: unknown) =>
-  typeof value === "string" &&
-  !isInertValue(value) &&
-  (value.includes("${") || value.startsWith("!") || isMcpSecretName(variable) || isSecretShapedValue(value));
-
 const FLAG_WITH_VALUE = /^(--?[A-Za-z0-9][A-Za-z0-9_.-]*)=(.*)$/s;
 
 const BARE_FLAG = /^--?([A-Za-z0-9][A-Za-z0-9_.-]*)$/;
@@ -203,7 +137,7 @@ const BARE_FLAG = /^--?([A-Za-z0-9][A-Za-z0-9_.-]*)$/;
 const isSecretFlag = (arg: unknown) => {
   const name = typeof arg === "string" ? BARE_FLAG.exec(arg)?.[1] : undefined;
 
-  return name !== undefined && isMcpSecretName(name);
+  return name !== undefined && hasSecretSegment(name);
 };
 
 const placeholderNotice = (name: string, label: string) =>
@@ -226,7 +160,7 @@ const stdioArg = (context: DeriveContext, name: string, args: unknown[], index: 
   const flagName = flag?.[1] ?? "";
   const flagValue = flag?.[2] ?? "";
 
-  if (flag !== null && isMcpSecretName(flagName.replace(/^-+/, "")) && !isInertValue(flagValue)) {
+  if (flag !== null && hasSecretSegment(flagName.replace(/^-+/, "")) && !isInertValue(flagValue)) {
     return { value: `${flagName}=${placeholder}`, notices: [placeholderNotice(name, flagName)] };
   }
 
@@ -276,7 +210,7 @@ const stdioServer = (context: DeriveContext, name: string, original: JsonObject)
 
   const entries = Object.entries(server.env);
   const secret = entries
-    .filter(([variable, value]) => isSecretEnvValue(variable, value))
+    .filter(([variable, value]) => isSecretEnvEntry(variable, value))
     .map(([variable]) => variable);
   const env = Object.fromEntries(
     entries.map(([variable, value]) => [
