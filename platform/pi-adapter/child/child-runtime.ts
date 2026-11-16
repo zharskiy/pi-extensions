@@ -402,7 +402,6 @@ export const createPiRuntime = (
       abort: () => session.abort(),
       dispose,
       ownUsage: (): UsageTotals => sumUsage(session.sessionManager.getEntries()),
-      lastText: () => session.getLastAssistantText() ?? "",
       runTexts: () => finalRunTexts(session.sessionManager.getEntries()),
     };
   };

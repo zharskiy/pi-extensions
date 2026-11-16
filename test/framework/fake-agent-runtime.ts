@@ -91,7 +91,6 @@ const createFakeChild = (spec: SpawnSpec): FakeChildSession => {
       child.disposed = true;
     },
     ownUsage: () => child.usage,
-    lastText: () => child.text,
     runTexts: () => child.texts ?? (child.text.trim() ? [child.text.trim()] : []),
     emit: (event) => {
       [...listeners].forEach((listener) => {

@@ -39,7 +39,6 @@ export type ChildSession = {
   abort(): Promise<void>;
   dispose(): Promise<void>;
   ownUsage(): UsageTotals;
-  lastText(): string;
   runTexts(): string[];
 };
 
