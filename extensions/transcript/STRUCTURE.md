@@ -16,7 +16,7 @@ extensions/transcript/
 │   ├── tool-look.ts                Look, Context, Outcome types and the shared look helpers
 │   ├── skill.ts                    collapsed skill-read row: [skill] label, name, range, one-line failure
 │   ├── shell.ts                    bash and powershell rows
-│   ├── codemode.ts                 codemode rows and their call list
+│   ├── codemode.ts                 codemode rows and their call list (durations and costs in the shared formats)
 │   ├── generic.ts                  MCP and unknown-tool rows
 │   ├── output.ts                   output cleaning, shell status line (both forms of pi's timeout line), previews and count lines
 │   └── diff.ts                     edit diff parsing, counts and rows

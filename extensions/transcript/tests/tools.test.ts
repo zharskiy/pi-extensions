@@ -396,7 +396,7 @@ describe("S8 codemode", () => {
   const code =
     'const hits = await tools.grep({ pattern: "login" });\nconst file = await tools.read({ path: hits[0].path });\nreturn file.slice(0, 200);';
   const calls = [
-    { name: "grep", args: '{"pattern":"login"}', status: "ok", durationMs: 12 },
+    { name: "grep", args: '{"pattern":"login"}', status: "ok", durationMs: 1_250 },
     {
       name: "read",
       args: '{"path":"src/old.ts"}',
@@ -454,17 +454,17 @@ describe("S8 codemode", () => {
       "     const file = await tools.read({ path: hits[0].path });",
       "     return file.slice(0, 200);",
       "",
-      '     ✓ grep {"pattern":"login"} 12ms',
-      '     ✗ read {"path":"src/old.ts"} 3ms',
+      '     ✓ grep {"pattern":"login"} 1s',
+      '     ✗ read {"path":"src/old.ts"}',
       "       ENOENT: no such file or directory, open 'src/old.ts'",
-      '     ⊘ jira/search_issues {"query":"auth"} $0.0012',
+      '     ⊘ jira/search_issues {"query":"auth"} <$0.01',
       '     ◌ models.classify {"text":"..."}',
       "",
       "     export function login(user: User) {",
       "     ...",
     ]);
     expect(drawn.piBody).toBe(false);
-    expect(tokenOf(drawn.painted, "12ms")).toBe("dim");
+    expect(tokenOf(drawn.painted, "1s")).toBe("dim");
     expect(tokenOf(drawn.painted, '{"pattern":"login"}')).toBe("muted");
   });
 
