@@ -194,19 +194,34 @@ describe("plain prompts", () => {
     ]);
   });
 
-  it("takes the default text on Enter, and a path's empty answer means back", async () => {
-    const { prompts, input } = plainPrompts();
+  it("takes the default text on Enter, and validates a path's empty answer as its initial text", async () => {
+    const { prompts, screen, input } = plainPrompts();
     const text = prompts.text({ title: "Name", initial: "box" });
 
     await answer(input, "");
 
     expect(await text).toBe("box");
 
-    const path = prompts.path({ title: "Add a folder", home: "/home/me", readdir: () => [] });
+    const path = prompts.path({
+      title: "Add a folder",
+      initial: "~/",
+      home: "/home/me",
+      readdir: () => [],
+      validate: (value) => (value === "~/" ? "Type the path of a folder." : undefined),
+      collapsed: () => undefined,
+    });
 
     await answer(input, "");
 
-    expect(await path).toBe(BACK);
+    await answer(input, "~/oss");
+
+    expect(await path).toBe("~/oss");
+
+    expect(screen.lines().slice(-3)).toEqual([
+      "Add a folder [~/]:",
+      "Error: Type the path of a folder.",
+      "Add a folder [~/]: ~/oss",
+    ]);
   });
 
   it("maps ctrl-c to Cancelled interrupt and ctrl-d or input end to Cancelled end", async () => {

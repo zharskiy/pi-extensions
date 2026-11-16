@@ -16,6 +16,7 @@ import {
   type Prompts,
   type Reply,
   type TaskSpec,
+  type TextSpec,
   type Ui,
   warningOf,
 } from "./types.ts";
@@ -382,6 +383,26 @@ export const createPlainPrompts = (ui: Ui): Prompts => {
       return [completion.value === line ? [] : [completion.value], line];
     };
 
+  const text = async (spec: TextSpec, completer?: Completer) => {
+    const fallback = spec.initial ?? "";
+    const query = fallback === "" ? `${spec.title}: ` : `${spec.title} [${fallback}]: `;
+
+    const value = await askUntil(
+      query,
+      (answer): Parsed<string> => {
+        const chosen = answer === "" ? fallback : answer;
+        const error = spec.validate?.(chosen);
+
+        return error === undefined ? { value: chosen } : { error };
+      },
+      completer,
+    );
+
+    printCollapse(spec.title, spec.collapsed === undefined ? value : spec.collapsed(value));
+
+    return value;
+  };
+
   return {
     select: async (spec) => {
       const count = spec.choices.length;
@@ -419,42 +440,8 @@ export const createPlainPrompts = (ui: Ui): Prompts => {
 
       return value;
     },
-    text: async (spec) => {
-      const fallback = spec.initial ?? "";
-      const query = fallback === "" ? `${spec.title}: ` : `${spec.title} [${fallback}]: `;
-
-      const value = await askUntil(query, (answer): Parsed<string> => {
-        const chosen = answer === "" ? fallback : answer;
-        const error = spec.validate?.(chosen);
-
-        return error === undefined ? { value: chosen } : { error };
-      });
-
-      printCollapse(spec.title, spec.collapsed === undefined ? value : spec.collapsed(value));
-
-      return value;
-    },
-    path: async (spec) => {
-      const value = await askUntil(
-        `${spec.title}: `,
-        (answer): Parsed<Reply<string>> => {
-          if (answer === "") {
-            return { value: BACK };
-          }
-
-          const error = spec.validate?.(answer);
-
-          return error === undefined ? { value: answer } : { error };
-        },
-        completerOf(spec),
-      );
-
-      if (value !== BACK) {
-        printCollapse(spec.title, spec.collapsed === undefined ? value : spec.collapsed(value));
-      }
-
-      return value;
-    },
+    text: (spec) => text(spec),
+    path: (spec) => text(spec, completerOf(spec)),
     number: async (spec) => {
       const value = await numberRound(spec, spec.initial);
 
