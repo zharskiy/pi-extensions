@@ -12,7 +12,7 @@ extensions/session-limits/
 │   ├── thresholds.ts           handoff step, retry decisions
 │   ├── kept-entries.ts         kept-rule and kept-message entry names, data types, parsers and keptRuleFor (which rule the state calls for)
 │   ├── handoff.ts              HANDOFF_COMMAND, MAIN_AUDIENCE, sessionPreface, withLateResults (held results under a fixed heading), userPrompts (kept messages as the new session's user prompts), handoff path, handoff validation
-│   └── settings.ts             NAMESPACE, settings file name, defaults and schema
+│   └── settings.ts             NAMESPACE, settings file name and defaults (the schema is platform/shared's limitsSchema)
 ├── ui/
 │   ├── kept-entries.ts         keptRule (the adapter's labelledRule and its labels) and keptMessage (pi's user message look, full width with pi's pad as its margin) entry renderers
 │   └── threshold-text.ts       segmentFor: threshold warning (ui-kit handoffNotice) and failure notice text and token

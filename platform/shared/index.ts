@@ -37,6 +37,7 @@ export {
   type LimitLevel,
   type Limits,
   limitLevel,
+  limitsSchema,
   mainLimit,
   WORKING_CONTEXT,
   workingContextText,

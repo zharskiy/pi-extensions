@@ -1,6 +1,7 @@
 import type { UsageTotals } from "../../pi-adapter/index.ts";
-import type { Limits } from "../handoff/handoff-limit.ts";
+import { type Limits, limitsSchema } from "../handoff/handoff-limit.ts";
 import { isPlainObject } from "../plain-object.ts";
+import { parseSettings } from "../plugin/settings-files.ts";
 
 export const BUSY_CHANNEL = "pi:busy";
 
@@ -143,26 +144,9 @@ export const parseTotals = (data: unknown): SpendingTotals | undefined => {
 
 export const LIMITS_CHANNEL = "session-limits:limits";
 
-const isPositive = (value: unknown): value is number =>
-  typeof value === "number" && Number.isFinite(value) && value > 0;
-
-const isRatio = (value: unknown): value is number => isPositive(value) && value <= 1;
-
 export const parseLimits = (data: unknown): Limits | undefined => {
-  if (
-    !isPlainObject(data) ||
-    !isRatio(data.softRatio) ||
-    !isRatio(data.hardRatio) ||
-    !isPositive(data.softTokens) ||
-    !isPositive(data.hardTokens)
-  ) {
-    return undefined;
-  }
+  const { patch, errors } = parseSettings(limitsSchema, data, LIMITS_CHANNEL);
+  const complete = Object.keys(limitsSchema).every((key) => key in patch);
 
-  return {
-    softRatio: data.softRatio,
-    hardRatio: data.hardRatio,
-    softTokens: data.softTokens,
-    hardTokens: data.hardTokens,
-  };
+  return errors.length === 0 && complete ? (patch as Limits) : undefined;
 };

@@ -208,5 +208,10 @@ describe("parseLimits", () => {
     expect(parseLimits({ ...limits, hardRatio: 1.1 })).toBeUndefined();
     expect(parseLimits({ ...limits, hardTokens: -1 })).toBeUndefined();
     expect(parseLimits({ ...limits, hardTokens: Number.NaN })).toBeUndefined();
+    expect(parseLimits({ ...limits, hardTokens: 100_000_001 })).toBeUndefined();
+    expect(parseLimits({ ...limits, hardTokens: 100_000_000 })).toEqual({
+      ...limits,
+      hardTokens: 100_000_000,
+    });
   });
 });

@@ -51,7 +51,7 @@ npm run test -- extensions/session-limits   # this extension's unit tests
 npm run check                               # typecheck, biome, knip, unit tests
 ```
 
-The extension's name `pi-session-limits` is written once, as `NAMESPACE` in `core/settings.ts`; the settings file, the notice slot and the handoff-pending source all derive from it.
+The extension's name `pi-session-limits` is written once, as `NAMESPACE` in `core/settings.ts`; the settings file, the notice slot and the handoff-pending source all derive from it. The settings `softRatio` and `hardRatio` (above 0, at most 1) and `softTokens` and `hardTokens` (above 0, at most 100,000,000) follow `limitsSchema` from `platform/shared`, the same rule the footer applies to the limits it receives.
 
 The full set of commands is in the root README's [Development](../../README.md#development) section; rules for coding agents are in [AGENTS.md](../../AGENTS.md).
 

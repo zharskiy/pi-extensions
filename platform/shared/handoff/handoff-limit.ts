@@ -1,6 +1,18 @@
+import type { SettingsSchema } from "../plugin/settings-files.ts";
 import { formatTokens, formatWindow } from "../text/format.ts";
 
 export type Limits = { softRatio: number; hardRatio: number; softTokens: number; hardTokens: number };
+
+const ratio = { type: "number", min: 0, max: 1, minExclusive: true } as const;
+
+const tokens = { type: "number", min: 0, max: 100_000_000, minExclusive: true } as const;
+
+export const limitsSchema: Required<SettingsSchema<Limits>> = {
+  softRatio: ratio,
+  hardRatio: ratio,
+  softTokens: tokens,
+  hardTokens: tokens,
+};
 
 export type HandoffLimit = { request: number; warn: number };
 
