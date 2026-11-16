@@ -86,17 +86,17 @@ const settle = <T>(value: T): Step<T> => ({ kind: "settle", value });
 
 const roomOf = (width: number) => Math.max(1, width - RAIL_WIDTH - 1);
 
-const TITLE_GAP = "   ";
+const GAP = "   ";
 
 const titleLines = (context: Context, parts: Parts, width: number) => {
   const { paint, fold } = context;
   const room = roomOf(width);
-  const [title = "", ...extras] = fold(parts.title).split(TITLE_GAP);
+  const [title = "", ...extras] = fold(parts.title).split(GAP);
   const pieces = [...extras, ...(parts.note === undefined ? [] : [fold(parts.note)])];
-  const whole = [title, ...pieces].join(TITLE_GAP);
+  const whole = [title, ...pieces].join(GAP);
 
   if (widthOf(whole) <= room) {
-    const tail = pieces.length === 0 ? "" : `${TITLE_GAP}${paint("dim", pieces.join(TITLE_GAP))}`;
+    const tail = pieces.length === 0 ? "" : `${GAP}${paint("dim", pieces.join(GAP))}`;
 
     return { head: `${title}${tail}`, more: [] };
   }
@@ -650,7 +650,7 @@ const matchLines = (context: Context, matches: string[], width: number) => {
   const hidden = matches.length - shown.length;
   const more = hidden > 0 ? [context.fold(`…and ${hidden} more`)] : [];
 
-  return wrapSegments([...shown, ...more], roomOf(width) - 2, "   ").map((line) => `  ${line}`);
+  return wrapSegments([...shown, ...more], roomOf(width) - 2, GAP).map((line) => `  ${line}`);
 };
 
 const pathView = (context: Context, spec: PathSpec): View<string> => {

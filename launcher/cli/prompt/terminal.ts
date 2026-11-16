@@ -32,9 +32,9 @@ export interface UiOptions {
   timers?: Timers;
 }
 
-const DEFAULT_COLUMNS = 80;
+export const DEFAULT_COLUMNS = 80;
 
-const DEFAULT_ROWS = 24;
+export const DEFAULT_ROWS = 24;
 
 const ESCAPE_WAIT_MS = 50;
 

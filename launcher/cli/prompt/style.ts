@@ -272,7 +272,7 @@ const fragmentsOf = (word: string, width: number) =>
     (last) => last,
   );
 
-const DOT = " · ";
+const DOT = UNICODE.separator;
 
 const wordsWrapped = (text: string, room: number) =>
   joinWhileFits(
