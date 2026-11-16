@@ -229,11 +229,11 @@ describe("writeBack value specs", () => {
   it.each([
     [
       {},
-      'writeBack.add["pi-footer.json"]["k"].type must be one of string, boolean, integer, number, enum, stringList, fileName, anyOf, json',
+      'writeBack.add["pi-footer.json"]["k"].type must be one of string, boolean, integer, number, enum, stringList, fileName, json, anyOf',
     ],
     [
       { type: "regex", pattern: ".*" },
-      'writeBack.add["pi-footer.json"]["k"].type must be one of string, boolean, integer, number, enum, stringList, fileName, anyOf, json',
+      'writeBack.add["pi-footer.json"]["k"].type must be one of string, boolean, integer, number, enum, stringList, fileName, json, anyOf',
     ],
     [{ type: "string", pattern: ".*" }, 'writeBack.add["pi-footer.json"]["k"].pattern is not a known key'],
     [
@@ -257,7 +257,7 @@ describe("writeBack value specs", () => {
     [{ type: "anyOf", of: [] }, 'writeBack.add["pi-footer.json"]["k"].of must not be empty'],
     [
       { type: "anyOf", of: [{ type: "nope" }] },
-      'writeBack.add["pi-footer.json"]["k"].of[0].type must be one of string, boolean, integer, number, enum, stringList, fileName, anyOf, json',
+      'writeBack.add["pi-footer.json"]["k"].of[0].type must be one of string, boolean, integer, number, enum, stringList, fileName, json, anyOf',
     ],
     ["json", 'writeBack.add["pi-footer.json"]["k"] must be an object'],
   ])("refuses %j", (value, message) => {

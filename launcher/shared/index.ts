@@ -76,7 +76,6 @@ export {
   isNeverWritten,
   MAX_WRITE_BACK_CHARS,
   SETTINGS_FILE_NAME,
-  VALUE_TYPES,
   valueSpecProblem,
   withinCeiling,
   writeBackFileProblem,

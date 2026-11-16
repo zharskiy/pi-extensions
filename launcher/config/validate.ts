@@ -9,7 +9,6 @@ import {
   PLACEHOLDER_PREFIX,
   TOOL_CONFIG_FORMATS,
   type ToolConfigFormat,
-  VALUE_TYPES,
   type ValueType,
   valueSpecProblem,
   writeBackFileProblem,
@@ -368,6 +367,8 @@ const anyOfSpec = (depth: number): ObjectSpec =>
     },
     ["of"],
   );
+
+const VALUE_TYPES: readonly ValueType[] = [...(Object.keys(VALUE_SPECS) as ValueType[]), "anyOf"];
 
 const isValueType = (value: unknown): value is ValueType => VALUE_TYPES.includes(value as ValueType);
 
