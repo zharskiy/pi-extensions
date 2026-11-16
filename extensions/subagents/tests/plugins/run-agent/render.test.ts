@@ -4,6 +4,7 @@ import type { ThemeLike, ToolRender, ToolResult } from "../../../../../platform/
 import { flushMicrotasks, plainTheme, tokenTaggingTheme } from "../../../../../test/framework/index.ts";
 import { agentDefinitionsPlugin } from "../../../api/plugins/agent-definitions.ts";
 import { agentRegistryPlugin } from "../../../api/plugins/agent-registry.ts";
+import { agentViewPlugin } from "../../../api/plugins/agent-view.ts";
 import { runAgentPlugin } from "../../../api/plugins/run-agent.ts";
 import { createRegistry } from "../../../core/agent-registry/registry.ts";
 import type { AgentRecord, AgentRegistry, AgentState } from "../../../core/model/agent-record.ts";
@@ -46,7 +47,12 @@ const toolDeps = (runner: Runner, registry: AgentRegistry) => ({
 });
 
 const setup = (overrides = {}) => {
-  const harness = createHarness([agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin], { overrides });
+  const harness = createHarness(
+    [agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin, agentViewPlugin],
+    {
+      overrides,
+    },
+  );
   const registry = harness.services.require("registry");
   const runner = harness.services.require("runner") as Runner;
   const tool = runAgentTool(toolDeps(runner, registry), "run agents");

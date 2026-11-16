@@ -51,7 +51,7 @@ export const runAgentPlugin: Plugin = {
     });
     const hints = {
       manage: () => !settings.disabledPlugins.includes("agent-panel"),
-      list: () => !settings.disabledPlugins.includes("agent-view"),
+      list: () => services.has("agentView"),
       expandKey: () => host.ui.keyText(EXPAND_BINDING),
     };
 
