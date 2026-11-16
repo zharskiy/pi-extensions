@@ -86,9 +86,7 @@ const isProviderHostsScript = (call: { file: string; args: string[] }) =>
   call.file === process.execPath && (call.args[0] ?? "").endsWith("provider-hosts.mjs");
 
 export const isTlsProbeScript = (call: { file: string; args: string[] }) =>
-  call.file === process.execPath &&
-  call.args[0] === "-e" &&
-  (call.args[1] ?? "").includes("getPeerCertificate");
+  call.file === process.execPath && (call.args[0] ?? "").endsWith(join("cli", "commands", "tls-probe.ts"));
 
 const NOT_INSPECTED = JSON.stringify({ chain: [], verdicts: [null] });
 
