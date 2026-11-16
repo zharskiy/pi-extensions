@@ -3,9 +3,11 @@ import type { Host, UsageTotals } from "../../../platform/pi-adapter/index.ts";
 import { parseUsageReport, type SpendingTotals } from "../../../platform/shared/index.ts";
 import { CONTINUATION_MARKER, createLedger, USAGE_ENTRY } from "./ledger.ts";
 
-const MAIN_OFFSET_ENTRY = "pi-spending:main-offset";
+export const NAMESPACE = "pi-spending";
 
-const MAIN_TOKENS_OFFSET_ENTRY = "pi-spending:main-tokens-offset";
+const MAIN_OFFSET_ENTRY = `${NAMESPACE}:main-offset`;
+
+const MAIN_TOKENS_OFFSET_ENTRY = `${NAMESPACE}:main-tokens-offset`;
 
 const chargeable = (usage: UsageTotals) => usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
 
@@ -45,7 +47,7 @@ export const createSpending = (host: Host) => {
 
     if (!previous) {
       host.ui.notify(
-        `spending: could not read the parent session ${basename(parent)}; totals cover this session only`,
+        `${NAMESPACE}: could not read the parent session ${basename(parent)}; totals cover this session only`,
         "warning",
       );
       resume();
