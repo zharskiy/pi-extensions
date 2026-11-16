@@ -43,7 +43,7 @@ pi-extensions/
   - `unit` (`npm run test`): every `tests/` folder (`launcher/tests/` included) and `test/`, without `*.live.test.ts`.
   - `live` (`npm run test:live`): only live tests (`extensions/*/tests/live/`, `platform/pi-adapter/tests/live/`, `launcher/tests/live/`), serial, long timeouts.
   - `evals` (`npm run evals`): only evals (`test/evals/**/*.eval.ts`), one forked worker, serial, 30 minutes per test, results under `test/evals/.results/<timestamp>/`.
-- `biome.json`: format and lint, the import-cycle and unused-code rules, and the per-folder `noRestrictedImports` overrides that hold each layer to its imports (`launcher/**` may not import pi packages, `platform/`, `extensions/` or `test/`).
+- `biome.json`: format and lint, the import-cycle and unused-code rules, and the per-folder `noRestrictedImports` overrides that hold each layer to its imports (`launcher/**` may not import `platform/`, `extensions/` or `test/`; where pi packages may be referenced is checked by `test/architecture.test.ts`).
 - `knip.json`: unused exports, types, files and dependencies; entries are the 14 extension `index.ts` files, the evals, the MCP fixture server, `launcher/cli/main.ts` and `launcher/proxy/daemon.ts`.
 - `.github/workflows/ci.yml`: Node 22, `npm run check` and the pack contents check; no credentials, no live tests, no evals.
 - `.gitignore`: `node_modules`, `.DS_Store`, `.claude`, `test/evals/.results`, `launcher/dist`.

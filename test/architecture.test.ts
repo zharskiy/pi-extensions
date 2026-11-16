@@ -179,9 +179,14 @@ const isLauncherTest = (file: string) => launcherFolderOf(file) === "tests";
 const isLauncherPiAsset = (file: string) =>
   LAUNCHER_PI_ASSET.test(relative(LAUNCHER, file).split(sep).join("/"));
 
-const launcherPiReferences = (files: Array<{ path: string; text: string }>) =>
+const PI_PACKAGE_DIRS = [join(ROOT, "platform", "pi-adapter"), join(FRAMEWORK, "pi")];
+
+const mayReferencePi = (path: string) =>
+  isLauncherPiAsset(path) || PI_PACKAGE_DIRS.some((dir) => isInside(dir)(path));
+
+const piReferences = (files: Array<{ path: string; text: string }>) =>
   files
-    .filter((file) => !isLauncherPiAsset(file.path) && PI_PACKAGE_REFERENCE.test(file.text))
+    .filter((file) => !mayReferencePi(file.path) && PI_PACKAGE_REFERENCE.test(file.text))
     .map((file) => relative(ROOT, file.path));
 
 const isAllowedLauncherSpecifier = (file: string) => (specifier: string) => {
@@ -341,13 +346,16 @@ describe("architecture", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("lets only launcher/hostpi/*.mjs reference a pi package anywhere under launcher/", () => {
-    const files = launcherFiles(LAUNCHER).map((path) => ({ path, text: readFileSync(path, "utf8") }));
+  it("lets only platform/pi-adapter/, test/framework/pi/ and launcher/hostpi/*.mjs reference a pi package", () => {
+    const paths = new Set([...allFiles(), ...launcherFiles(LAUNCHER)]);
+    const files = Array.from(paths)
+      .filter((path) => path !== import.meta.filename)
+      .map((path) => ({ path, text: readFileSync(path, "utf8") }));
 
-    expect(launcherPiReferences(files)).toEqual([]);
+    expect(piReferences(files)).toEqual([]);
   });
 
-  it("flags a launcher file other than a hostpi .mjs asset that references a pi package", () => {
+  it("flags a file outside the pi package places that references a pi package", () => {
     const reference = 'createRequire(root).resolve("@earendil-works/pi-ai/providers/all")';
     const files = [
       { path: join(LAUNCHER, "hostpi", "provider-hosts.mjs"), text: reference },
@@ -362,13 +370,22 @@ describe("architecture", () => {
         text: 'const PI_PACKAGE = "@earendil-works/pi-coding-agent";',
       },
       { path: join(LAUNCHER, "cli", "late.ts"), text: 'await import("@earendil-works/pi-coding-agent");' },
+      { path: join(EXTENSIONS, "style", "core", "a.ts"), text: 'import { Type } from "typebox";' },
+      { path: join(FRAMEWORK, "fake-host.ts"), text: 'import type { X } from "@earendil-works/pi-tui";' },
+      {
+        path: join(ROOT, "platform", "pi-adapter", "runtime", "a.ts"),
+        text: 'import { Type } from "typebox";',
+      },
+      { path: join(FRAMEWORK, "pi", "a.ts"), text: 'import x from "@earendil-works/pi-coding-agent";' },
     ];
 
-    expect(launcherPiReferences(files)).toEqual([
+    expect(piReferences(files)).toEqual([
       "launcher/hostpi/derive.ts",
       "launcher/proxy/helper.mjs",
       "launcher/hostpi/nested/deep.mjs",
       "launcher/cli/late.ts",
+      "extensions/style/core/a.ts",
+      "test/framework/fake-host.ts",
     ]);
   });
 
