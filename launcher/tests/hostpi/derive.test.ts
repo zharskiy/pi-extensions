@@ -421,6 +421,26 @@ describe("deriveSandboxPi rules and hosts", () => {
     expect(result.hosts).not.toContain("api.keyed.example");
   });
 
+  it("compares manual and derived hosts in normal form", () => {
+    const mcp = {
+      mcpServers: { dotted: { url: "https://mcp.dotted.example./mcp", headers: { "X-Api-Key": "LIT" } } },
+    };
+    const dotted = { ...manual, id: "corp-dotted", host: "MCP.Dotted.Example" };
+    const registries = [{ label: "npmrc", endpoint: { host: "mcp.dotted.example." } }];
+    const tools = {
+      value: { gh: [], glab: [], maven: { servers: [], mirrors: [], passthrough: [] }, git: {}, env: {} },
+      rules: [],
+      notices: [],
+      registries,
+    };
+    const result = deriveSandboxPi(
+      input({ files: { agentDir: AGENT_DIR, mcp }, manual: [dotted], tools, egress: [] }),
+    );
+
+    expect(result.rules.filter((rule) => rule.host.toLowerCase().startsWith("mcp.dotted"))).toEqual([dotted]);
+    expect(result.notices.filter((notice) => notice.includes("egress.allow"))).toEqual([]);
+  });
+
   it("lists derived hosts once and honours derive.enabled and derive.hosts", () => {
     const all = deriveSandboxPi(input());
     const limited = deriveSandboxPi(input({ derive: { enabled: true, hosts: ["*.custom.example"] } }));

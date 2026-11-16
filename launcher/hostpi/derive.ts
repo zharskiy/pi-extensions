@@ -20,9 +20,11 @@ const allowedByDerive = (derive: DeriveConfig, host: string) =>
     derive.hosts.some((pattern) => matchesPattern(normalizeHost(host), normalizeHost(pattern))));
 
 const keptDerived = (derived: CredentialRule[], manual: CredentialRule[], derive: DeriveConfig) => {
-  const manualHosts = new Set(manual.map((rule) => rule.host.toLowerCase()));
+  const manualHosts = new Set(manual.map((rule) => normalizeHost(rule.host)));
 
-  return derived.filter((rule) => !manualHosts.has(rule.host) && allowedByDerive(derive, rule.host));
+  return derived.filter(
+    (rule) => !manualHosts.has(normalizeHost(rule.host)) && allowedByDerive(derive, rule.host),
+  );
 };
 
 const allowedBy = (endpoint: Endpoint, entries: string[]) =>
@@ -35,10 +37,10 @@ const registryNotices = (registries: Registry[], rules: CredentialRule[], egress
     return [];
   }
 
-  const ruleHosts = new Set(rules.map((rule) => rule.host.toLowerCase()));
+  const ruleHosts = new Set(rules.map((rule) => normalizeHost(rule.host)));
 
   return registries
-    .filter(({ endpoint }) => !ruleHosts.has(endpoint.host) && !allowedBy(endpoint, egress))
+    .filter(({ endpoint }) => !ruleHosts.has(normalizeHost(endpoint.host)) && !allowedBy(endpoint, egress))
     .map(
       ({ label, endpoint }) =>
         `${label}: ${endpointKey(endpoint)} has no credential rule and is not in the egress allowlist; add "${endpointKey(endpoint)}" to egress.allow to reach it`,
