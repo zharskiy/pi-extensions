@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { defaultConfig } from "../../config/defaults.ts";
-import { getPath } from "../../config/dotted.ts";
+import { getPath } from "../../config/index.ts";
 import { mergeConfig } from "../../config/merge.ts";
 import type { UserConfig } from "../../config/types.ts";
 import { configKeys, validateConfig } from "../../config/validate.ts";

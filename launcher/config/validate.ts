@@ -1,4 +1,5 @@
 import {
+  errorMessage,
   isJsonObject,
   isLauncherSetVariable,
   isNeverWritten,
@@ -9,7 +10,6 @@ import {
   PLACEHOLDER_PREFIX,
   TOOL_CONFIG_FORMATS,
   type ToolConfigFormat,
-  VALUE_TYPES,
   type ValueType,
   valueSpecProblem,
   writeBackFileProblem,
@@ -56,7 +56,7 @@ interface Problem {
   problem: string;
 }
 
-const MAX_PORT = 65535;
+export const MAX_PORT = 65535;
 
 const VARIABLE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
@@ -312,7 +312,7 @@ const EXTRA_CA: Spec = {
 
 const WRITE_BACK_KEY = /^[A-Za-z][A-Za-z0-9_-]*$/;
 
-const MAX_KEY_CHARS = 100;
+export const MAX_KEY_CHARS = 100;
 
 const keyPath = (prefix: string, key: string) => `${prefix}[${JSON.stringify(key)}]`;
 
@@ -341,7 +341,7 @@ const scalarProblem = (value: unknown, path: string): Problem | undefined => {
 const typed = (properties: Record<string, Spec>, required: readonly string[] = []) =>
   shape({ type: text(), ...properties }, ["type", ...required]);
 
-const MAX_ANY_OF_DEPTH = 4;
+export const MAX_ANY_OF_DEPTH = 4;
 
 const VALUE_SPECS: Record<Exclude<ValueType, "anyOf">, ObjectSpec> = {
   string: typed({ maxLength: { type: "number", minimum: 1, maximum: MAX_WRITE_BACK_CHARS, integer: true } }),
@@ -368,6 +368,8 @@ const anyOfSpec = (depth: number): ObjectSpec =>
     },
     ["of"],
   );
+
+const VALUE_TYPES: readonly ValueType[] = [...(Object.keys(VALUE_SPECS) as ValueType[]), "anyOf"];
 
 const isValueType = (value: unknown): value is ValueType => VALUE_TYPES.includes(value as ValueType);
 
@@ -733,6 +735,16 @@ export const validateConfig = (value: unknown): UserConfig => {
   }
 
   return normalized(value as UserConfig);
+};
+
+export const configProblem = (value: unknown) => {
+  try {
+    validateConfig(value);
+
+    return undefined;
+  } catch (error) {
+    return errorMessage(error);
+  }
 };
 
 const keysOf = (spec: Spec, path: string): string[] => {

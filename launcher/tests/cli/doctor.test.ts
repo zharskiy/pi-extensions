@@ -680,6 +680,18 @@ describe("pi sandbox doctor", () => {
     expect(code).toBe(1);
   });
 
+  it("fails the mcp-auth sweep on a file larger than the volume read bound", async () => {
+    const { code, stdout } = await doctorWith({
+      probes: { mcpAuth: JSON.stringify({ padding: "a".repeat(1024 * 1024) }) },
+    });
+
+    expect(check(stdout, "mcp-auth sweep")).toMatchObject({
+      status: "fail",
+      detail: "mcp-auth.json in the sandbox is not a JSON object",
+    });
+    expect(code).toBe(1);
+  });
+
   it("fails when the container reaches the internet directly", async () => {
     const { code, stdout } = await doctorWith({ probes: { routeExit: 0 } });
 

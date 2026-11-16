@@ -2,7 +2,7 @@ import { isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { JsonObject } from "../hostpi/index.ts";
 import { expandHome, HOST_ONLY_SETTINGS, isWithin } from "../shared/index.ts";
-import { sourceOfEntry, withoutSourceCredential } from "./package-source.ts";
+import { sourceOfEntry, withoutSourceCredential, withSource } from "./package-source.ts";
 
 export interface HostSettingsContext {
   hostAgentDir: string;
@@ -30,9 +30,6 @@ const localPathOf = (source: string, context: HostSettingsContext) => {
 
 const isMounted = (path: string, context: HostSettingsContext) =>
   context.mountRoots.some((root) => isWithin(path, root));
-
-const withSource = (entry: unknown, source: string) =>
-  typeof entry === "string" ? source : { ...(entry as JsonObject), source };
 
 const withoutCredential = (entry: unknown) => {
   const source = sourceOfEntry(entry);

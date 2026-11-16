@@ -1,18 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { validateConfig } from "../../config/validate.ts";
-import { errorMessage } from "../../shared/index.ts";
+import { configProblem, validateConfig } from "../../config/validate.ts";
 
 const SECRET_VALUE = "sk-live-value-that-must-not-leak";
-
-const problemOf = (value: unknown) => {
-  try {
-    validateConfig(value);
-
-    return undefined;
-  } catch (error) {
-    return errorMessage(error);
-  }
-};
 
 const rule = (overrides: Record<string, unknown> = {}) => ({
   id: "corp-llm",
@@ -70,9 +59,9 @@ describe("validateConfig with the credential, egress, tls and image keys", () =>
   });
 
   it("accepts credentials as rules and derive only", () => {
-    expect(problemOf({ credentials: { rules: [rule()] } })).toBeUndefined();
-    expect(problemOf({ credentials: { derive: { enabled: false } } })).toBeUndefined();
-    expect(problemOf({ credentials: { kind: "static" } })).toBe(
+    expect(configProblem({ credentials: { rules: [rule()] } })).toBeUndefined();
+    expect(configProblem({ credentials: { derive: { enabled: false } } })).toBeUndefined();
+    expect(configProblem({ credentials: { kind: "static" } })).toBe(
       "config: credentials.kind is not a known key",
     );
   });
@@ -138,32 +127,32 @@ describe("validateConfig with the credential, egress, tls and image keys", () =>
     ];
 
     cases.forEach(([entry, message]) => {
-      expect(problemOf({ credentials: { rules: [JSON.parse(JSON.stringify(entry))] } })).toBe(
+      expect(configProblem({ credentials: { rules: [JSON.parse(JSON.stringify(entry))] } })).toBe(
         `config: ${message}`,
       );
     });
   });
 
   it("refuses duplicate rule ids", () => {
-    expect(problemOf({ credentials: { rules: [rule(), rule()] } })).toBe(
+    expect(configProblem({ credentials: { rules: [rule(), rule()] } })).toBe(
       "config: credentials.rules has a duplicate id",
     );
   });
 
   it("refuses private hosts that are IP literals or loopback", () => {
-    expect(problemOf({ egress: { privateHosts: ["10.1.2.3"] } })).toBe(
+    expect(configProblem({ egress: { privateHosts: ["10.1.2.3"] } })).toBe(
       "config: egress.privateHosts[0] must not be an IP address",
     );
-    expect(problemOf({ egress: { privateHosts: ["::1"] } })).toBe(
+    expect(configProblem({ egress: { privateHosts: ["::1"] } })).toBe(
       "config: egress.privateHosts[0] must not be an IP address",
     );
-    expect(problemOf({ egress: { privateHosts: ["gw.corp.test:443"] } })).toBe(
+    expect(configProblem({ egress: { privateHosts: ["gw.corp.test:443"] } })).toBe(
       "config: egress.privateHosts[0] must be a host name or *.domain",
     );
-    expect(problemOf({ egress: { privateHosts: ["localhost"] } })).toBe(
+    expect(configProblem({ egress: { privateHosts: ["localhost"] } })).toBe(
       "config: egress.privateHosts[0] must not name loopback",
     );
-    expect(problemOf({ egress: { privateHosts: ["db.localhost"] } })).toBe(
+    expect(configProblem({ egress: { privateHosts: ["db.localhost"] } })).toBe(
       "config: egress.privateHosts[0] must not name loopback",
     );
   });
@@ -202,7 +191,7 @@ describe("validateConfig with the credential, egress, tls and image keys", () =>
     ];
 
     cases.forEach(([layer, message]) => {
-      expect(problemOf(layer)).toBe(`config: ${message}`);
+      expect(configProblem(layer)).toBe(`config: ${message}`);
     });
   });
 
@@ -217,7 +206,7 @@ describe("validateConfig with the credential, egress, tls and image keys", () =>
     ];
 
     layers.forEach((layer) => {
-      const message = problemOf(layer) ?? "";
+      const message = configProblem(layer) ?? "";
 
       expect(message).not.toBe("");
       expect(message).not.toContain(SECRET_VALUE);

@@ -89,7 +89,7 @@ config/load.ts                 loads the config file and lays it over the defaul
 config/merge.ts                the config file over the defaults, env.allow added to the default list, the source of each key
 config/validate.ts             the key spec of the config file, with the writeBack value specs and ceiling and resources within vm
 config/write-back.ts           the effective write-back table: the built-in list with writeBack.exclude and writeBack.add, and each key's source
-config/dotted.ts               dotted key access
+config/dotted.ts               dotted key read, set and remove (own keys only)
 config/egress-entry.ts         the host entry grammar, entry parsing and host matching
 config/egress-allow.ts         pi.dev and the allow list
 config/parent-proxy.ts         the parent proxy read from HTTPS_PROXY and NO_PROXY
@@ -326,12 +326,13 @@ tests/shared/tool-config.test.ts     tool config parsers
 tests/config/fixtures.ts             config files in temp dirs
 tests/config/load.test.ts            loading the config file and examples/config.json
 tests/config/merge.test.ts           the config over the defaults, key by key, with sources
+tests/config/dotted.test.ts          dotted key read, set and remove
 tests/config/security-keys.test.ts   credential and image keys
 tests/config/egress-entry.test.ts    the egress grammar
 tests/config/parent-proxy.test.ts    the parent proxy parser
 tests/config/mounts.test.ts          mount keys
 tests/config/sessions.test.ts        sessions.host
-tests/config/schema.test.ts          schema and key spec agree
+tests/config/schema.test.ts          schema and key spec agree, bounds included
 tests/config/validate.test.ts        validation messages
 tests/config/write-back.test.ts      writeBack: defaults, exclude, add, override, enabled, the ceiling and the value specs
 tests/config/vm.test.ts              vm bounds and resources within vm

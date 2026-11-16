@@ -9,7 +9,6 @@ import {
   SETTINGS_FILE_NAME,
   stateLayout,
   withFileLock,
-  writeFileAtomic,
   writeJsonFile,
 } from "../shared/index.ts";
 import { type PackagePin, pinHostPackages } from "./host-packages.ts";
@@ -81,8 +80,6 @@ const readHostFile = async (hostAgentDir: string, name: string): Promise<HostFil
   }
 };
 
-const jsonText = (value: JsonObject) => `${JSON.stringify(value, null, 2)}\n`;
-
 const writeBackFile = async (
   input: SyncInput,
   baseline: Baseline,
@@ -117,7 +114,7 @@ const writeBackFile = async (
     return { changes: [], notices: merged.notices };
   }
 
-  await writeFileAtomic(host.path, jsonText(applyChanges(host.value, merged.changes)), { mode: host.mode });
+  await writeJsonFile(host.path, applyChanges(host.value, merged.changes), { mode: host.mode });
 
   return { changes: merged.changes.map((change) => changeLine(file, change)), notices: merged.notices };
 };

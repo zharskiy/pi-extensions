@@ -19,18 +19,6 @@ export const SETTINGS_FILE_NAME = "settings.json";
 
 export const MAX_WRITE_BACK_CHARS = 512;
 
-export const VALUE_TYPES: readonly ValueType[] = [
-  "string",
-  "boolean",
-  "integer",
-  "number",
-  "enum",
-  "stringList",
-  "fileName",
-  "anyOf",
-  "json",
-];
-
 const EXTENSION_FILE = /^pi-[a-z0-9-]+\.json$/;
 
 const NEVER_WRITTEN_FILES = ["auth.json", "models.json", "mcp.json", "mcp-auth.json", "trust.json"];

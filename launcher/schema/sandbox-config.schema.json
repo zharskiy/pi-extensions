@@ -809,7 +809,7 @@
               "maximum": 512
             }
           },
-          "description": "A string of at most maxLength characters, never more than 512."
+          "description": "A string of at most maxLength characters."
         },
         {
           "type": "object",

@@ -9,9 +9,11 @@ export { iniWords, parseIni } from "./ini.ts";
 export type { JsonObject } from "./json-file.ts";
 export {
   isJsonObject,
+  jsonText,
   parseJsonObject,
   readJsonFile,
   readJsonObject,
+  readText,
   writeJsonFile,
 } from "./json-file.ts";
 export { bootTime, isLive, processMark, terminateProcess } from "./liveness.ts";
@@ -76,7 +78,6 @@ export {
   isNeverWritten,
   MAX_WRITE_BACK_CHARS,
   SETTINGS_FILE_NAME,
-  VALUE_TYPES,
   valueSpecProblem,
   withinCeiling,
   writeBackFileProblem,

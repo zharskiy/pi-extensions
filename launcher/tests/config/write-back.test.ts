@@ -2,19 +2,11 @@ import { describe, expect, it } from "vitest";
 import { defaultConfig } from "../../config/defaults.ts";
 import { mergeConfig } from "../../config/merge.ts";
 import type { UserConfig } from "../../config/types.ts";
-import { validateConfig } from "../../config/validate.ts";
+import { configProblem, validateConfig } from "../../config/validate.ts";
 import { writeBackListing, writeBackTableOf } from "../../config/write-back.ts";
-import { BUILT_IN_WRITE_BACK, errorMessage } from "../../shared/index.ts";
+import { BUILT_IN_WRITE_BACK } from "../../shared/index.ts";
 
-const problemOf = (writeBack: unknown) => {
-  try {
-    validateConfig({ writeBack });
-
-    return undefined;
-  } catch (error) {
-    return errorMessage(error);
-  }
-};
+const problemOf = (writeBack: unknown) => configProblem({ writeBack });
 
 const added = (file: string, key: string, spec: unknown) => problemOf({ add: { [file]: { [key]: spec } } });
 
@@ -229,11 +221,11 @@ describe("writeBack value specs", () => {
   it.each([
     [
       {},
-      'writeBack.add["pi-footer.json"]["k"].type must be one of string, boolean, integer, number, enum, stringList, fileName, anyOf, json',
+      'writeBack.add["pi-footer.json"]["k"].type must be one of string, boolean, integer, number, enum, stringList, fileName, json, anyOf',
     ],
     [
       { type: "regex", pattern: ".*" },
-      'writeBack.add["pi-footer.json"]["k"].type must be one of string, boolean, integer, number, enum, stringList, fileName, anyOf, json',
+      'writeBack.add["pi-footer.json"]["k"].type must be one of string, boolean, integer, number, enum, stringList, fileName, json, anyOf',
     ],
     [{ type: "string", pattern: ".*" }, 'writeBack.add["pi-footer.json"]["k"].pattern is not a known key'],
     [
@@ -257,7 +249,7 @@ describe("writeBack value specs", () => {
     [{ type: "anyOf", of: [] }, 'writeBack.add["pi-footer.json"]["k"].of must not be empty'],
     [
       { type: "anyOf", of: [{ type: "nope" }] },
-      'writeBack.add["pi-footer.json"]["k"].of[0].type must be one of string, boolean, integer, number, enum, stringList, fileName, anyOf, json',
+      'writeBack.add["pi-footer.json"]["k"].of[0].type must be one of string, boolean, integer, number, enum, stringList, fileName, json, anyOf',
     ],
     ["json", 'writeBack.add["pi-footer.json"]["k"] must be an object'],
   ])("refuses %j", (value, message) => {

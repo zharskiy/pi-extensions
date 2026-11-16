@@ -40,15 +40,23 @@ describe("readVolumeFile", () => {
     expect(await env.read("settings.json")).toEqual({ invalid: true });
   });
 
-  it("reports a FIFO as invalid without opening it", async () => {
+  it("reports a file larger than 1 MiB as invalid", async () => {
+    const env = await setup();
+
+    await env.fake.writeGuestFile("settings.json", JSON.stringify({ theme: "a".repeat(1024 * 1024) }));
+
+    expect(await env.read("settings.json")).toEqual({ invalid: true });
+  });
+
+  it("refuses a FIFO without opening it", async () => {
     const env = await setup();
 
     await env.guestShell('mkfifo "$1"', "mcp-auth.json");
 
-    expect(await env.read("mcp-auth.json")).toEqual({ invalid: true });
+    await expect(env.read("mcp-auth.json")).rejects.toThrow("mcp-auth.json: it is not a regular file");
   });
 
-  it("reports a read that does not finish as invalid", async () => {
+  it("gives up on a read that does not finish", async () => {
     const env = await setup();
     const exec = env.fake.backend.exec;
 
@@ -57,6 +65,6 @@ describe("readVolumeFile", () => {
         ? new Promise<number>(() => undefined)
         : exec(spec, io);
 
-    expect(await env.read("settings.json", 50)).toEqual({ invalid: true });
+    await expect(env.read("settings.json", 50)).rejects.toThrow("settings.json: could not read it");
   });
 });

@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { defaultConfig } from "../../config/defaults.ts";
-import { egressAllowList, loadEffectiveConfig } from "../../config/index.ts";
+import { egressAllowList, loadEffectiveConfig, validateConfigFile } from "../../config/index.ts";
 import { launcherRoot } from "../../shared/index.ts";
 import { createConfigFile } from "./fixtures.ts";
 
@@ -15,6 +15,16 @@ const loadWith = async (config?: unknown) => {
 
   return loadEffectiveConfig({ env: file.env });
 };
+
+describe("validateConfigFile", () => {
+  it("returns a valid config and names the file in the hint of a problem", () => {
+    expect(validateConfigFile({ vm: { cpus: 4 } }, "/home/u/config.json")).toEqual({ vm: { cpus: 4 } });
+
+    expect(() => validateConfigFile({ vm: { cpus: 0 } }, "/home/u/config.json")).toThrow(
+      expect.objectContaining({ name: "LauncherError", hint: "fix /home/u/config.json" }),
+    );
+  });
+});
 
 describe("loadEffectiveConfig", () => {
   it("returns the defaults when no config file exists", async () => {

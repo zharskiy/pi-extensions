@@ -1,8 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join, posix } from "node:path";
-import type { JsonObject } from "../hostpi/index.ts";
-import { isJsonObject, parseJsonObject } from "../shared/index.ts";
-import { sourceOfEntry } from "./package-source.ts";
+import { readJsonObject } from "../shared/index.ts";
+import { sourceOfEntry, withSource } from "./package-source.ts";
 
 export interface PackagePin {
   identity: string;
@@ -68,10 +67,11 @@ export const isVolumeGitDir = (dir: string) => {
 };
 
 const hostVersion = async (hostAgentDir: string, name: string) => {
-  const text = await readText(join(hostAgentDir, "npm", "node_modules", ...name.split("/"), "package.json"));
-  const manifest = text === undefined ? undefined : parseJsonObject(text);
+  const manifest = await readJsonObject(
+    join(hostAgentDir, "npm", "node_modules", ...name.split("/"), "package.json"),
+  );
 
-  if (!isJsonObject(manifest) || manifest.name !== name) {
+  if (manifest?.name !== name) {
     return undefined;
   }
 
@@ -246,9 +246,6 @@ const gitPin = async (source: string, hostAgentDir: string) => {
 const pinOf = (source: string, hostAgentDir: string) =>
   source.startsWith("npm:") ? npmPin(source, hostAgentDir) : gitPin(source, hostAgentDir);
 
-const pinnedEntry = (entry: unknown, source: string) =>
-  typeof entry === "string" ? source : { ...(entry as JsonObject), source };
-
 export const pinHostPackages = async (packages: unknown[], hostAgentDir: string): Promise<PinnedPackages> => {
   const outcomes = await Promise.all(
     packages.map(async (entry) => {
@@ -257,7 +254,7 @@ export const pinHostPackages = async (packages: unknown[], hostAgentDir: string)
 
       return pinned?.source === undefined
         ? { entry, pin: pinned?.pin }
-        : { entry: pinnedEntry(entry, pinned.source), pin: pinned.pin };
+        : { entry: withSource(entry, pinned.source), pin: pinned.pin };
     }),
   );
 

@@ -132,7 +132,10 @@ export const syncedValues = (file: SyncedFile, value: JsonObject | undefined): J
 
 const sizeText = (bytes: number) => `${bytes / KIB} KiB`;
 
-export const parseVolumeText = (file: SyncedFile, text: string | undefined): VolumeParse => {
+export const parseVolumeText = (
+  file: Pick<SyncedFile, "name" | "maxBytes">,
+  text: string | undefined,
+): VolumeParse => {
   if (text === undefined) {
     return { notices: [] };
   }
