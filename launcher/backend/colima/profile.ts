@@ -51,6 +51,8 @@ export const restartText = (profile: string, parts: StartParts = {}) =>
 
 export const logHint = (profile: string) => `~/.colima/_lima/${instanceOf(profile)}/ha.stderr.log`;
 
+export const lastLine = (text: string) => text.trim().split("\n").at(-1) ?? "";
+
 export const sessionsRunning = (count: number) =>
   count === 1 ? "1 pi session is running" : `${count} pi sessions are running`;
 

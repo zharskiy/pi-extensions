@@ -36,6 +36,7 @@ import {
   deferredUntilIdle,
   ENGINE_PROFILE,
   ENGINE_SOCKET_DISPLAY,
+  lastLine,
   logHint,
   plainStart,
   restartText,
@@ -95,8 +96,6 @@ const engineSilent = (detection: Detection) =>
     `the sandbox VM is running but its engine at ${ENGINE_SOCKET_DISPLAY} does not answer: ${detection.reason ?? "not detected"}`,
     `run ${restartText(ENGINE_PROFILE)} and see ${logHint(ENGINE_PROFILE)}`,
   );
-
-const lastLine = (text: string) => text.trim().split("\n").at(-1) ?? "";
 
 const realPause = (ms: number) => new Promise<void>((done) => setTimeout(done, ms));
 
