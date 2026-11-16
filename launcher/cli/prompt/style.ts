@@ -11,16 +11,13 @@ export interface Glyphs {
   unchecked: string;
   radioOn: string;
   radioOff: string;
-  ok: string;
   warning: string;
   error: string;
   spinner: string[];
   ellipsis: string;
   upDown: string;
   leftRight: string;
-  arrow: string;
   separator: string;
-  bullet: string;
   above: (count: number) => string;
   below: (count: number) => string;
 }
@@ -36,16 +33,13 @@ const UNICODE: Glyphs = {
   unchecked: "□",
   radioOn: "●",
   radioOff: "○",
-  ok: "✔",
   warning: "▲",
   error: "✖",
   spinner: ["◐", "◓", "◑", "◒"],
   ellipsis: "…",
   upDown: "↑↓",
   leftRight: "←→",
-  arrow: "→",
   separator: " · ",
-  bullet: "•",
   above: (count) => `↑ ${count} more`,
   below: (count) => `↓ ${count} more`,
 };
@@ -61,16 +55,13 @@ const ASCII: Glyphs = {
   unchecked: "[ ]",
   radioOn: "(*)",
   radioOff: "( )",
-  ok: "ok",
   warning: "!",
   error: "x",
   spinner: ["|", "/", "-", "\\"],
   ellipsis: "...",
   upDown: "up/down",
   leftRight: "left/right",
-  arrow: "->",
   separator: ", ",
-  bullet: "-",
   above: (count) => `${count} more above`,
   below: (count) => `${count} more below`,
 };
@@ -82,9 +73,9 @@ const FOLDS: Array<[string, string]> = [
   [UNICODE.ellipsis, ASCII.ellipsis],
   [UNICODE.upDown, ASCII.upDown],
   [UNICODE.leftRight, ASCII.leftRight],
-  [UNICODE.arrow, ASCII.arrow],
-  [UNICODE.bullet, ASCII.bullet],
-  [UNICODE.ok, ASCII.ok],
+  ["→", "->"],
+  ["•", "-"],
+  ["✔", "ok"],
   [UNICODE.warning, ASCII.warning],
   [UNICODE.error, ASCII.error],
 ];
@@ -92,7 +83,7 @@ const FOLDS: Array<[string, string]> = [
 export const asciiOf = (text: string) =>
   FOLDS.reduce((folded, [unicode, ascii]) => folded.replaceAll(unicode, ascii), text);
 
-export type Tone = "cyan" | "green" | "yellow" | "red" | "dim" | "bold";
+export type Tone = "cyan" | "yellow" | "red" | "dim";
 
 export type Paint = (tone: Tone, text: string) => string;
 
