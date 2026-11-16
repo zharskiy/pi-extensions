@@ -18,6 +18,7 @@ import { finalRunTexts, formatRoutedMessage, messageText, toolCallCount } from "
 import { promptRecordEntry, readSessionFile } from "../runtime/session-file.ts";
 import { settleWithin } from "../runtime/settle-within.ts";
 import { toPiTool } from "../tools/tool-bridge.ts";
+import { MCP_PREFIX } from "../tools/tool-source.ts";
 import type { CustomMessage, SkillInfo } from "../types/messages.ts";
 import type {
   AgentRuntime,
@@ -50,8 +51,6 @@ export const childSettings = (snapshot: Settings, reserveTokens: number): Settin
   compaction: { ...snapshot.compaction, enabled: false, reserveTokens },
   cacheWarming: "off",
 });
-
-const MCP_PREFIX = "mcp__";
 
 const MCP_DISCOVERY_TOOLS = ["codemode", "tool_search"];
 
