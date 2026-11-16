@@ -165,7 +165,7 @@ describe("subagents settings", () => {
 
     const loaded = loadSettings({ agentDir, cwd, projectTrusted: false });
 
-    expect(loaded.errors).toEqual([]);
+    expect(loaded.errors).toEqual([`${userFile}: agents.planner.skills lists entries more than once: docs`]);
     expect(loaded.settings.agents).toEqual({
       scout: { model: "acme/x", thinking: "high" },
       planner: { model: "acme/y", thinking: "low", skills: ["docs"] },
@@ -178,7 +178,7 @@ describe("subagents settings", () => {
 
     writeJson(userFile, {
       agents: {
-        scout: { model: "a b", thinking: "loud", skills: "some", tools: ["read"] },
+        scout: { model: "a b", thinking: "loud", skills: ["bad name!"], tools: ["read"] },
         planner: "fast",
         reviewer: { model: "acme/x:extreme", thinking: "max" },
       },
@@ -191,7 +191,7 @@ describe("subagents settings", () => {
       `${userFile}: agents.scout.tools cannot be overridden (only model, thinking, skills); create an own agent instead`,
       `${userFile}: agents.scout.model must be provider/id[:thinking] or inherit, without spaces`,
       `${userFile}: agents.scout.thinking must be one of off, minimal, low, medium, high, xhigh, max`,
-      `${userFile}: agents.scout.skills must be "all" or a list of skill names`,
+      `${userFile}: agents.scout.skills entries must be plain names of letters, digits, '_' and '-', not starting with '-', got: bad name!`,
       `${userFile}: agents.planner must be an object with model, thinking, skills`,
       `${userFile}: agents.reviewer.model: invalid thinking level "extreme" in "acme/x:extreme"; use one of off, minimal, low, medium, high, xhigh, max`,
     ]);

@@ -1,32 +1,15 @@
-import {
-  isThinkingLevel,
-  splitModelRequest,
-  THINKING_LEVELS,
-} from "../../../../platform/pi-adapter/index.ts";
-import { AGENT_SCOPE_ALL, type AgentOverride, INHERIT_MODEL } from "./agent-schema.ts";
+import { isThinkingLevel, THINKING_LEVELS } from "../../../../platform/pi-adapter/index.ts";
+import type { AgentOverride } from "./agent-schema.ts";
+import { checkGrant, checkModel } from "./agent-values.ts";
 
 export type OverrideField = { patch: AgentOverride; error?: string };
 
 export const OVERRIDE_FIELDS = ["model", "thinking", "skills"] as const;
 
-const MODEL_FORMAT = `provider/id[:thinking] or ${INHERIT_MODEL}, without spaces`;
-
 export const overrideModel = (value: unknown): OverrideField => {
-  const text = typeof value === "string" ? value.trim() : "";
+  const { error, ...patch } = checkModel(value);
 
-  if (text.length === 0 || /\s/.test(text)) {
-    return { patch: {}, error: `model must be ${MODEL_FORMAT}` };
-  }
-
-  const request = splitModelRequest(text);
-
-  if (request.error) {
-    return { patch: {}, error: `model: ${request.error}` };
-  }
-
-  const thinking = request.thinking ? { thinking: request.thinking } : {};
-
-  return request.name.length === 0 ? { patch: thinking } : { patch: { model: request.name, ...thinking } };
+  return { patch, error };
 };
 
 export const overrideThinking = (value: unknown): OverrideField =>
@@ -35,15 +18,9 @@ export const overrideThinking = (value: unknown): OverrideField =>
     : { patch: {}, error: `thinking must be one of ${THINKING_LEVELS.join(", ")}` };
 
 export const overrideSkills = (value: unknown): OverrideField => {
-  if (value === AGENT_SCOPE_ALL) {
-    return { patch: { skills: AGENT_SCOPE_ALL } };
-  }
+  const { grant, error, warning } = checkGrant("skills", value);
 
-  if (Array.isArray(value) && value.every((entry) => typeof entry === "string" && entry.trim().length > 0)) {
-    return { patch: { skills: Array.from(new Set(value.map((entry: string) => entry.trim()))) } };
-  }
-
-  return { patch: {}, error: `skills must be "${AGENT_SCOPE_ALL}" or a list of skill names` };
+  return grant === undefined ? { patch: {}, error } : { patch: { skills: grant }, error: warning };
 };
 
 export const unknownSkillsProblem = (skills: string[], loaded: string[]) => {

@@ -120,8 +120,8 @@ describe("agent definition parsing", () => {
         "description is required",
         "name must be a plain name of letters, digits, '_' and '-', not starting with '-'",
         "limit must be an integer of at least 5000",
-        "subagents must be a list or a comma-separated string",
-        'model must be name[:thinking] without spaces, got "nova 6"',
+        "subagents must be all or a list of names, as a list or a comma-separated string",
+        "model must be provider/id[:thinking] or inherit, without spaces",
         "worktree must be true or false",
       ]),
     );

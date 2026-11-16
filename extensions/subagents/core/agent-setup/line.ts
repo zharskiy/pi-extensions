@@ -6,7 +6,7 @@ import {
   overrideThinking,
   unknownSkillsProblem,
 } from "../model/agent-override.ts";
-import { AGENT_SCOPE_ALL, type AgentOverride, INHERIT_MODEL } from "../model/agent-schema.ts";
+import { type AgentOverride, INHERIT_MODEL } from "../model/agent-schema.ts";
 import { SCOPES, type SetupChange } from "./scope.ts";
 
 export const SETUP_USAGE = [
@@ -41,23 +41,8 @@ const parseModel = (value: string, check: LineCheck): Parsed => {
     : { patch: { ...field.patch, model: resolved.ref } };
 };
 
-const skillsValue = (value: string) => {
-  if (value === AGENT_SCOPE_ALL) {
-    return AGENT_SCOPE_ALL;
-  }
-
-  if (value === "none") {
-    return [];
-  }
-
-  return value
-    .split(",")
-    .map((name) => name.trim())
-    .filter(Boolean);
-};
-
 const parseSkills = (value: string, check: LineCheck): Parsed => {
-  const field = overrideSkills(skillsValue(value));
+  const field = overrideSkills(value === "none" ? [] : value);
   const skills = field.patch.skills;
   const problem = Array.isArray(skills) ? unknownSkillsProblem(skills, check.skills) : undefined;
 

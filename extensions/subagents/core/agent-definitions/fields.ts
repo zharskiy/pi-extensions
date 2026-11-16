@@ -1,12 +1,11 @@
-import { splitModelRequest } from "../../../../platform/pi-adapter/index.ts";
 import {
-  AGENT_SCOPE_ALL,
   type AgentFrontmatter,
   ALL_SKILLS_TEXT,
   INHERIT_MODEL,
   PLAIN_NAME,
   PLAIN_NAME_TEXT,
 } from "../model/agent-schema.ts";
+import { checkGrant, checkModel } from "../model/agent-values.ts";
 import type { FrontmatterValue } from "./yaml-lite.ts";
 
 type FieldKey = keyof AgentFrontmatter;
@@ -90,28 +89,14 @@ const nameField: FieldParser = (spec, value) => {
   return field;
 };
 
-const modelField: FieldParser = (spec, value) => {
-  const field = textField(spec, value);
+const modelField: FieldParser = (_spec, value) => {
+  const { model, thinking, error } = checkModel(value);
 
-  if (typeof field.value !== "string") {
-    return field;
+  if (error) {
+    return { error };
   }
 
-  if (/\s/.test(field.value)) {
-    return { error: `${spec.key} must be name[:thinking] without spaces, got "${field.value}"` };
-  }
-
-  const request = splitModelRequest(field.value);
-
-  if (request.error) {
-    return { error: `${spec.key}: ${request.error}` };
-  }
-
-  if (request.name.length === 0 || request.name === INHERIT_MODEL) {
-    return { thinking: request.thinking };
-  }
-
-  return { value: request.name, thinking: request.thinking };
+  return { value: model === INHERIT_MODEL ? undefined : model, thinking };
 };
 
 const integerField: FieldParser = (spec, value) => {
@@ -124,54 +109,10 @@ const integerField: FieldParser = (spec, value) => {
   return { value };
 };
 
-const listOf = (value: FrontmatterValue) => {
-  if (typeof value === "string") {
-    return value
-      .split(",")
-      .map((item) => item.trim())
-      .filter(Boolean);
-  }
-
-  return Array.isArray(value) ? value : undefined;
-};
-
 const listField: FieldParser = (spec, value) => {
-  const names = listOf(value);
+  const { grant, error, warning } = checkGrant(spec.key, value);
 
-  if (!names) {
-    return { error: `${spec.key} must be a list or a comma-separated string` };
-  }
-
-  const misspelled = names.filter(
-    (name) => name !== AGENT_SCOPE_ALL && name.toLowerCase() === AGENT_SCOPE_ALL,
-  );
-
-  if (misspelled.length > 0) {
-    return { error: `${spec.key} takes all in lowercase, got: ${misspelled.join(", ")}` };
-  }
-
-  if (names.includes(AGENT_SCOPE_ALL)) {
-    return names.length > 1
-      ? { error: `${spec.key} must be all on its own or a list of names, got: ${names.join(", ")}` }
-      : { value: AGENT_SCOPE_ALL };
-  }
-
-  const invalid = names.filter((name) => !PLAIN_NAME.test(name));
-
-  if (invalid.length > 0) {
-    return {
-      error: `${spec.key} entries must be plain names of ${PLAIN_NAME_TEXT}, got: ${invalid.join(", ")}`,
-    };
-  }
-
-  const unique = Array.from(new Set(names));
-  const duplicates = Array.from(new Set(names.filter((name, index) => names.indexOf(name) !== index)));
-
-  if (duplicates.length > 0) {
-    return { value: unique, warning: `${spec.key} lists entries more than once: ${duplicates.join(", ")}` };
-  }
-
-  return { value: unique };
+  return { value: grant, error, warning };
 };
 
 const switchField: FieldParser = (spec, value) =>

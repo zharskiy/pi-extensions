@@ -39,6 +39,15 @@ describe("/agents setup one-line parser", () => {
     });
   });
 
+  it("checks skills by the agent file's grant rule", () => {
+    expect(parseSetupLine("scout skills=All", check())).toEqual({
+      error: "skills takes all in lowercase, got: All",
+    });
+    expect(parseSetupLine("scout skills=docs,docs", check())).toEqual({
+      error: "skills lists entries more than once: docs",
+    });
+  });
+
   it("returns a usage error without pairs or for an unknown agent", () => {
     expect(parseSetupLine("scout", check())).toHaveProperty("error");
     expect(parseSetupLine("ghost thinking=low", check())).toEqual({

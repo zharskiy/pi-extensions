@@ -41,7 +41,8 @@ extensions/subagents/
 │   │   ├── agent-record.ts                # AgentRecord, AgentDefinition, registry, definitions and runner types (AgentMessage: routed or custom), chain helpers (chainTerminal, chainLinks; both stop at a predecessor or successor cycle), grantText, grantOrNone, sameGrant, isLead
 │   │   ├── settings.ts                    # Settings schema, defaults, settings files, disabledPlugins, reloadSettings
 │   │   ├── agent-schema.ts                # frontmatter and override field types, AGENT_SCOPE_ALL, INHERIT_MODEL, PLAIN_NAME
-│   │   ├── agent-override.ts              # override value checks for model, thinking and skills
+│   │   ├── agent-values.ts                # checkModel and checkGrant: the one model value rule and grant rule
+│   │   ├── agent-override.ts              # override patches for model, thinking and skills
 │   │   ├── model-resolution.ts            # resolutionProblem: the one text for a model that does not resolve
 │   │   ├── context-limit.ts               # effectiveContextLimit, agentLimit, recordLimit, contextUse (tokens, request, level), StepLimit, limitStep (request or abort; nothing below the limit)
 │   │   ├── handoff.ts                     # handoffService: the agent audience's handoff instruction, validation and successor preface, shared by the runner and the limits plugin
@@ -53,7 +54,7 @@ extensions/subagents/
 │   │   └── tree.ts                        # isTerminal, stoppableAgents, withLinks, carrySelection, treeOrder
 │   ├── agent-definitions/
 │   │   ├── loader.ts                      # parseDefinition (with the path relative to its agents dir), loadDefinitions: files, then the agents.<name> overrides and their checks
-│   │   ├── fields.ts                      # frontmatter field rules
+│   │   ├── fields.ts                      # frontmatter field rules (required, kinds; model and lists through agent-values.ts)
 │   │   ├── yaml-lite.ts                   # the frontmatter parser
 │   │   └── prompt.ts                      # assemblePromptAppend: base prompt plus the agent body
 │   ├── agent-registry/
