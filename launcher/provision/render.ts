@@ -4,6 +4,7 @@ import type { DerivedTools, GlabHost, ToolHost } from "../hostpi/index.ts";
 import {
   escapeXml,
   type IniSection,
+  jsonText,
   type MavenHeader,
   type MavenRepository,
   type MavenServer,
@@ -35,8 +36,6 @@ interface Existing {
   relative: string;
   directory: boolean;
 }
-
-const jsonBytes = (value: unknown) => Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
 
 const xmlElement = (indent: string, name: string, value: string | undefined) =>
   value === undefined ? [] : [`${indent}<${name}>${escapeXml(value)}</${name}>`];
@@ -200,7 +199,7 @@ const desiredTree = async (input: RenderInput): Promise<{ tree: Tree; notices: s
   const tree: Tree = new Map([
     ...rendered.map(([name, value]): [string, { data: Buffer; mode: number }] => [
       name,
-      { data: jsonBytes(value), mode: FILE_MODE },
+      { data: Buffer.from(jsonText(value)), mode: FILE_MODE },
     ]),
     ...toolFiles(input.derived.tools).map(([name, data]): [string, { data: Buffer; mode: number }] => [
       name,

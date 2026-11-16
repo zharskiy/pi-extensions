@@ -9,6 +9,7 @@ export { iniWords, parseIni } from "./ini.ts";
 export type { JsonObject } from "./json-file.ts";
 export {
   isJsonObject,
+  jsonText,
   parseJsonObject,
   readJsonFile,
   readJsonObject,

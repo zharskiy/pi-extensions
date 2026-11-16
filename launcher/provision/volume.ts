@@ -1,7 +1,7 @@
 import { posix } from "node:path";
 import { type Backend, ExecTimeoutError, execCapture } from "../backend/index.ts";
 import type { JsonObject } from "../hostpi/index.ts";
-import { errorMessage, GUEST_PATHS, LauncherError, parseJsonObject } from "../shared/index.ts";
+import { errorMessage, GUEST_PATHS, jsonText, LauncherError, parseJsonObject } from "../shared/index.ts";
 
 export interface VolumeRead {
   value?: JsonObject;
@@ -83,7 +83,7 @@ export const writeVolumeFile = async (
   const result = await execCapture(
     backend,
     { containerId, command: ["sh", "-c", WRITE_SCRIPT, "sh", guestPath(name)], env: {}, workdir: "/" },
-    `${JSON.stringify(value, null, 2)}\n`,
+    jsonText(value),
   );
 
   if (result.code !== 0) {

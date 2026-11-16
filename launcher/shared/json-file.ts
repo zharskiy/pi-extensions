@@ -55,5 +55,7 @@ export const readJsonFile = async <T>(path: string): Promise<T | undefined> => {
   }
 };
 
+export const jsonText = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`;
+
 export const writeJsonFile = (path: string, value: unknown, options: WriteJsonOptions = {}) =>
-  writeFileAtomic(path, `${JSON.stringify(value, null, 2)}\n`, options);
+  writeFileAtomic(path, jsonText(value), options);
