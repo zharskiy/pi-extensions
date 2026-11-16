@@ -1,10 +1,10 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { hasUrlUserinfo, isSecretEnvName, type ToolConfigFormat } from "../../shared/index.ts";
-import { type Endpoint, endpointOf, withoutUserinfo } from "../endpoints.ts";
+import { endpointOf, withoutUserinfo } from "../endpoints.ts";
 import { isInsideRoots } from "../path-search.ts";
 import { noticeOnly, placeholderOf, rulesFor, type Section } from "../rules.ts";
-import type { ToolsInput } from "../types.ts";
+import type { Registry, ToolsInput } from "../types.ts";
 
 export const PROBE_TIMEOUT_MS = 10_000;
 
@@ -44,11 +44,6 @@ export const expandPublicVariables = (text: string, references: RegExp, env: Too
     ? undefined
     : text.replace(references, (_, name: string) => env[name] ?? "");
 };
-
-export interface Registry {
-  label: string;
-  endpoint: Endpoint;
-}
 
 export const registriesOf = (label: string, urls: string[]): Registry[] =>
   urls.flatMap((url) => {

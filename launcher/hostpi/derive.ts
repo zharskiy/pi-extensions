@@ -12,7 +12,7 @@ import { deriveMcp } from "./derive-mcp.ts";
 import { deriveModels } from "./derive-models.ts";
 import { type Endpoint, endpointKey } from "./endpoints.ts";
 import { objectOr } from "./json.ts";
-import { type DerivedSandboxPi, type DeriveInput, emptyTools, type ToolRegistry } from "./types.ts";
+import { type DerivedSandboxPi, type DeriveInput, emptyTools, type Registry } from "./types.ts";
 
 const allowedByDerive = (derive: DeriveConfig, host: string) =>
   derive.enabled &&
@@ -30,11 +30,7 @@ const allowedBy = (endpoint: Endpoint, entries: string[]) =>
     matchesAllowEntry(parseEntry(entry), normalizeHost(endpoint.host), endpoint.port ?? TLS_PORT),
   );
 
-const registryNotices = (
-  registries: ToolRegistry[],
-  rules: CredentialRule[],
-  egress: string[] | undefined,
-) => {
+const registryNotices = (registries: Registry[], rules: CredentialRule[], egress: string[] | undefined) => {
   if (egress === undefined) {
     return [];
   }

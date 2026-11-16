@@ -8,6 +8,7 @@ import type {
   NpmrcEntry,
   XmlElement,
 } from "../shared/index.ts";
+import type { Endpoint } from "./endpoints.ts";
 
 export type { JsonObject } from "../shared/index.ts";
 
@@ -73,16 +74,16 @@ export const emptyTools = (git: GitIdentity = {}): DerivedTools => ({
   env: {},
 });
 
-export interface ToolRegistry {
+export interface Registry {
   label: string;
-  endpoint: { host: string; port?: number };
+  endpoint: Endpoint;
 }
 
 export interface ToolsSection {
   value: DerivedTools;
   rules: CredentialRule[];
   notices: string[];
-  registries: ToolRegistry[];
+  registries: Registry[];
 }
 
 export interface DeriveInput {

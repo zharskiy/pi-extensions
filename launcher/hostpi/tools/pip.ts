@@ -1,8 +1,8 @@
 import { join } from "node:path";
 import { hasUrlUserinfo, type IniSection, iniWords, parseIni } from "../../shared/index.ts";
 import { mergeSections, noticeOnly, type Section } from "../rules.ts";
-import type { ToolsInput } from "../types.ts";
-import { firstExisting, type Registry, registriesOf, type UrlSecret, urlCredentialSection } from "./files.ts";
+import type { Registry, ToolsInput } from "../types.ts";
+import { firstExisting, registriesOf, type UrlSecret, urlCredentialSection } from "./files.ts";
 
 const INDEX_KEYS = new Set(["index-url", "extra-index-url"]);
 

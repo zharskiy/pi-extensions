@@ -3,14 +3,8 @@ import type { SecretRef } from "../../config/index.ts";
 import { hasUrlUserinfo, isSecretName, type NpmrcEntry, parseNpmrc } from "../../shared/index.ts";
 import { endpointOf } from "../endpoints.ts";
 import { mergeSections, noticeOnly, placeholderOf, rulesFor, type Section } from "../rules.ts";
-import type { ToolsInput } from "../types.ts";
-import {
-  expandPublicVariables,
-  type Registry,
-  readOptional,
-  registriesOf,
-  urlCredentialSection,
-} from "./files.ts";
+import type { Registry, ToolsInput } from "../types.ts";
+import { expandPublicVariables, readOptional, registriesOf, urlCredentialSection } from "./files.ts";
 
 const REGISTRY_CREDENTIAL = /^\/\/([^/]+)(\/.*)?:(_authToken|_auth|_password)$/;
 

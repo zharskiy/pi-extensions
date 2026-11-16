@@ -11,9 +11,9 @@ import {
 } from "../../shared/index.ts";
 import { type Endpoint, endpointOf, uniqueEndpoints, withoutUserinfo } from "../endpoints.ts";
 import { mergeSections, noticeOnly, placeholderOf, rulesFor, type Section } from "../rules.ts";
-import type { DerivedTools, ToolsInput } from "../types.ts";
+import type { DerivedTools, Registry, ToolsInput } from "../types.ts";
 import { EMPTY_MAVEN } from "../types.ts";
-import { expandPublicVariables, type Registry, readOptional, registriesOf } from "./files.ts";
+import { expandPublicVariables, readOptional, registriesOf } from "./files.ts";
 
 type MavenRender = DerivedTools["maven"];
 
