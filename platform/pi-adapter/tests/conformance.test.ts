@@ -15,7 +15,12 @@ import * as tui from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useTempDirs } from "../../../test/framework/index.ts";
-import { initPiRenderTheme, piRenderContext, startPiSession } from "../../../test/framework/pi/index.ts";
+import {
+  initPiRenderTheme,
+  piRenderContext,
+  startPiRuntime,
+  startPiSession,
+} from "../../../test/framework/pi/index.ts";
 import { createChildExtension } from "../child/child-extension.ts";
 import { childSettings, childToolNames } from "../child/child-runtime.ts";
 import { CODEMODE_WORKERS_SETTING } from "../child/codemode.ts";
@@ -707,17 +712,12 @@ describe("pi adapter conformance", () => {
       const dir = temp.make("pi-session-fill-");
       const edited: string[] = [];
 
-      vi.stubEnv("PI_CODING_AGENT_DIR", dir);
       mkdirSync(join(dir, "prompts"));
       writeFileSync(join(dir, "prompts", "review.md"), "Review $1 closely.");
 
       const faux = fauxProvider();
-      const modelRuntime = await pi.ModelRuntime.create();
 
-      modelRuntime.registerNativeProvider(faux.provider);
       faux.setResponses(replies.map((reply) => fauxAssistantMessage(fauxText(reply))));
-
-      const settingsManager = pi.SettingsManager.inMemory({});
 
       const handoff: pi.ExtensionFactory = (api) => {
         createPiHost(api, { tools: new Map() }).registerCommand("handoff", {
@@ -728,59 +728,19 @@ describe("pi adapter conformance", () => {
         });
       };
 
-      const createRuntime: pi.CreateAgentSessionRuntimeFactory = async ({
-        cwd,
-        agentDir,
-        sessionManager,
-        sessionStartEvent,
-      }) => {
-        const services = await pi.createAgentSessionServices({
-          cwd,
-          agentDir,
-          settingsManager,
-          modelRuntime,
-          resourceLoaderOptions: { extensionFactories: [{ name: "handoff", factory: handoff }] },
-        });
-        const created = await pi.createAgentSessionFromServices({
-          services,
-          sessionManager,
-          sessionStartEvent,
-          model: faux.getModel() as never,
-        });
-
-        return { ...created, services, diagnostics: services.diagnostics };
-      };
-
-      const runtime = await pi.createAgentSessionRuntime(createRuntime, {
-        cwd: dir,
-        agentDir: dir,
-        sessionManager: pi.SessionManager.inMemory(dir),
+      const { runtime } = await startPiRuntime({
+        dir,
+        providers: [faux],
+        settings: {},
+        factories: { handoff },
+        model: faux.getModel() as never,
+        ui: {
+          setEditorText: (text) => {
+            edited.push(text);
+          },
+        },
       });
 
-      const uiContext = {
-        notify: () => {},
-        setEditorText: (text: string) => {
-          edited.push(text);
-        },
-      } as unknown as pi.ExtensionUIContext;
-
-      const bind = async () => {
-        await runtime.session.bindExtensions({
-          mode: "print",
-          uiContext,
-          commandContextActions: {
-            waitForIdle: () => runtime.session.waitForIdle(),
-            newSession: (options) => runtime.newSession(options),
-            fork: (entryId, options) => runtime.fork(entryId, options),
-            navigateTree: async () => ({ cancelled: true }),
-            switchSession: (sessionPath, options) => runtime.switchSession(sessionPath, options),
-            reload: async () => {},
-          },
-        });
-      };
-
-      runtime.setRebindSession(bind);
-      await bind();
       await runtime.session.prompt("/handoff");
       await vi.waitFor(() => {
         expect(faux.state.callCount).toBe(replies.length);

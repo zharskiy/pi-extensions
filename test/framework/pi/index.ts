@@ -1,6 +1,6 @@
 export { formatRoutedMessage } from "../../../platform/pi-adapter/runtime/message-text.ts";
 export { registerPiMessageRenderer, renderPiEntry, renderPiUserMessage } from "./entry-rendering.ts";
-export { startPiSession } from "./offline-session.ts";
+export { startPiRuntime, startPiSession } from "./offline-session.ts";
 export { createOverlayApi, disposeOverlays, openLastOverlay } from "./overlay-api.ts";
 export { initPiKeybindings, initPiRenderTheme, piKeyHints, plainPiTheme } from "./render-theme.ts";
 export {
