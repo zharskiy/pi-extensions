@@ -1,23 +1,27 @@
 import { describe, expect, it } from "vitest";
 import { bashCommands, commandsLine, largestToolOutput } from "../index.ts";
+import { sessionEvents } from "../pi/live/index.ts";
 
 describe("bashCommands", () => {
-  it("lists the bash commands of assistant tool calls in order", () => {
-    const items = [
-      { kind: "user", text: "go" },
+  it("lists the commands of the bash tool calls in a session's events in order", () => {
+    const events = sessionEvents([
+      { role: "user", content: "go" },
       {
-        kind: "assistant",
-        toolCalls: [
-          { name: "bash", args: { command: "git diff --stat" } },
-          { name: "read", args: { path: "a.ts" } },
+        role: "assistant",
+        content: [
+          { type: "toolCall", name: "bash", arguments: { command: "git diff --stat" } },
+          { type: "toolCall", name: "read", arguments: { path: "a.ts" } },
         ],
       },
-      { kind: "tool", text: "output" },
-      { kind: "assistant", toolCalls: [{ name: "bash", args: { command: "npm test" } }] },
-      { kind: "assistant", toolCalls: [{ name: "bash", args: {} }] },
-    ];
+      { role: "toolResult", toolName: "bash", content: "output" },
+      {
+        role: "assistant",
+        content: [{ type: "toolCall", name: "bash", arguments: { command: "npm test" } }],
+      },
+      { role: "assistant", content: [{ type: "toolCall", name: "bash", arguments: {} }] },
+    ]);
 
-    expect(bashCommands(items)).toEqual(["git diff --stat", "npm test"]);
+    expect(bashCommands(events)).toEqual(["git diff --stat", "npm test"]);
   });
 });
 

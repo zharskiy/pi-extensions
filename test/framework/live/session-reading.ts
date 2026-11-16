@@ -1,4 +1,4 @@
-type SessionItem = { kind: string; text?: string; toolCalls?: { name: string; args: unknown }[] };
+import type { RunEvent } from "../eval-runs/index.ts";
 
 type ToolOutput = { toolName: string; text: string };
 
@@ -6,14 +6,15 @@ const COMMAND_MAX = 80;
 
 const COMMANDS_MAX = 8;
 
-export const bashCommands = (items: SessionItem[]) =>
-  items.flatMap((item) =>
-    (item.kind === "assistant" ? (item.toolCalls ?? []) : []).flatMap((call) => {
-      const command = (call.args as { command?: unknown } | undefined)?.command;
+export const bashCommands = (events: RunEvent[]) =>
+  events.flatMap((event) => {
+    const command =
+      event.type === "tool_call" && event.name === "bash"
+        ? (event.arguments as { command?: unknown } | undefined)?.command
+        : undefined;
 
-      return call.name === "bash" && typeof command === "string" ? [command] : [];
-    }),
-  );
+    return typeof command === "string" ? [command] : [];
+  });
 
 const oneLine = (text: string) => text.replace(/\s+/g, " ").trim();
 

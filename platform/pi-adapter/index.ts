@@ -1,6 +1,7 @@
 export { type CatalogModel, type ModelPreferences, resolveModel } from "./child/model-resolver.ts";
 export { createPiExtension } from "./runtime/extension.ts";
 export { settleWithin } from "./runtime/settle-within.ts";
+export { padEntry } from "./tools/entry-renderers.ts";
 export type {
   ContextFacts,
   ContextMessage,
@@ -28,6 +29,8 @@ export {
   type ModelChoice,
   type ModelInfo,
   type ModelResolution,
+  modelChoiceOf,
+  splitModelRef,
   splitModelRequest,
   THINKING_LEVELS,
 } from "./types/model.ts";

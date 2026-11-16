@@ -33,7 +33,7 @@ const RETRIES_ABORTED = /^Aborted after \d+ retry attempts?$/;
 
 const SHELL_ABORTED = "Command aborted";
 
-const SHELLS: readonly string[] = ["bash", "powershell"];
+export const SHELLS: readonly string[] = ["bash", "powershell"];
 
 export const abortNotice = (text: string) => {
   const trimmed = text.trim();

@@ -4,30 +4,18 @@ import { join } from "node:path";
 import * as pi from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { namedTool, offlineModel } from "../../../test/framework/pi/index.ts";
 import { contextHost } from "../context/context-facts.ts";
 import type { HostState } from "../ui/tui-context.ts";
 
-const offlineModel = {
-  id: "offline",
-  name: "Offline",
-  api: "openai-completions",
-  provider: "fake",
-  baseUrl: "http://127.0.0.1:9",
-  reasoning: false,
-  input: ["text"],
-  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-  contextWindow: 100_000,
-  maxTokens: 100,
-};
+const factsModel = { ...offlineModel, name: "Offline", contextWindow: 100_000 };
 
-const namedTool = (name: string, exposure?: pi.ToolExposure) => ({
-  name,
-  label: name,
-  description: `${name} tool`,
-  parameters: Type.Object({ query: Type.String() }),
-  ...(exposure ? { exposure } : {}),
-  execute: async () => ({ content: [], details: undefined }),
-});
+const queryTool = (name: string, exposure?: pi.ToolExposure) =>
+  namedTool(name, {
+    description: `${name} tool`,
+    parameters: Type.Object({ query: Type.String() }),
+    ...(exposure ? { exposure } : {}),
+  });
 
 const usage = (input: number, cacheRead: number, cacheWrite: number) => ({
   input,
@@ -100,7 +88,7 @@ const fakeApi = (
 const ctxOf = (session: pi.SessionManager, prompt = "") =>
   ({
     sessionManager: session,
-    model: { ...offlineModel },
+    model: { ...factsModel },
     getContextUsage: () => ({ tokens: 5_000, contextWindow: 100_000, percent: 5 }),
     getSystemPrompt: () => prompt,
   }) as unknown as pi.ExtensionContext;
@@ -295,12 +283,12 @@ describe("pi context against a real session", () => {
           factory: (probe) => {
             api = probe;
             probe.registerProvider("fake", {
-              baseUrl: offlineModel.baseUrl,
+              baseUrl: factsModel.baseUrl,
               apiKey: "offline-key",
               api: "openai-completions",
-              models: [{ ...offlineModel, id: offlineModel.id }] as never,
+              models: [{ ...factsModel, id: factsModel.id }] as never,
             });
-            probe.registerTool(namedTool("probe_tool") as never);
+            probe.registerTool(queryTool("probe_tool") as never);
             probe.on("session_start", (_event, ctx) => {
               captured = ctx;
             });
@@ -314,8 +302,8 @@ describe("pi context against a real session", () => {
           builtin: true,
           replaceable: true,
           factory: (mcp) => {
-            mcp.registerTool(namedTool("mcp_direct") as never);
-            mcp.registerTool(namedTool("mcp_deferred", "deferred") as never);
+            mcp.registerTool(queryTool("mcp_direct") as never);
+            mcp.registerTool(queryTool("mcp_deferred", "deferred") as never);
           },
         },
       ],
@@ -329,7 +317,7 @@ describe("pi context against a real session", () => {
       cwd: dir,
       agentDir: dir,
       modelRuntime,
-      model: offlineModel as never,
+      model: factsModel as never,
       resourceLoader: loader,
       settingsManager,
       sessionManager: pi.SessionManager.inMemory(dir),

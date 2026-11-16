@@ -1,4 +1,3 @@
-import { stripVTControlCharacters } from "node:util";
 import {
   type EntryRenderer,
   type ExtensionAPI,
@@ -7,9 +6,8 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { EntryRender, MessageRender } from "../../../platform/pi-adapter/index.ts";
 import { entryHost } from "../../../platform/pi-adapter/tools/entry-renderers.ts";
+import { plainText } from "../rendered-text.ts";
 import { initPiRenderTheme, livePiTheme, piKeyHints } from "./render-theme.ts";
-
-const plainLines = (lines: string[]) => lines.map((line) => stripVTControlCharacters(line));
 
 type RendererApi = Pick<ExtensionAPI, "registerEntryRenderer" | "registerMessageRenderer">;
 
@@ -40,13 +38,13 @@ export const renderPiEntry = (
     livePiTheme,
   );
 
-  return plainLines(component?.render(width) ?? []);
+  return (component?.render(width) ?? []).map(plainText);
 };
 
 export const renderPiUserMessage = (text: string, { width, pad }: { width: number; pad: number }) => {
   initPiRenderTheme();
 
-  return plainLines(new UserMessageComponent(text, getMarkdownTheme(), pad).render(width));
+  return new UserMessageComponent(text, getMarkdownTheme(), pad).render(width).map(plainText);
 };
 
 export const registerPiMessageRenderer = (customType: string, render: MessageRender) => {

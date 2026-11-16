@@ -1,6 +1,6 @@
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { AvailableModel, ModelResolution } from "../types/model.ts";
+import { type AvailableModel, type ModelResolution, modelChoiceOf, modelRefOf } from "../types/model.ts";
 import { type CatalogModel, resolveModel as matchCatalog } from "./model-resolver.ts";
 
 type PiModel = NonNullable<ExtensionContext["model"]>;
@@ -29,12 +29,7 @@ export const availableModels = (ctx: ExtensionContext): AvailableModel[] => {
   return ctx.modelRegistry
     .getAll()
     .filter(hasAuth)
-    .map((model) => ({
-      ref: `${model.provider}/${model.id}`,
-      contextWindow: model.contextWindow,
-      cost: { input: model.cost.input, output: model.cost.output },
-      thinking: getSupportedThinkingLevels(model),
-    }))
+    .map((model) => ({ ...modelChoiceOf(model), thinking: getSupportedThinkingLevels(model) }))
     .sort((left, right) => left.ref.localeCompare(right.ref));
 };
 
@@ -68,18 +63,8 @@ export const resolveFromCatalog = (
       };
     }
 
-    const ref = `${ctx.model.provider}/${ctx.model.id}`;
-
     return {
-      resolution: {
-        kind: "resolved",
-        request: "inherit",
-        model: {
-          ref,
-          contextWindow: ctx.model.contextWindow,
-          cost: { input: ctx.model.cost.input, output: ctx.model.cost.output },
-        },
-      },
+      resolution: { kind: "resolved", request: "inherit", model: modelChoiceOf(ctx.model) },
       model: ctx.model,
     };
   }
@@ -94,7 +79,7 @@ export const resolveFromCatalog = (
     return { resolution };
   }
 
-  const model = models.find((candidate) => `${candidate.provider}/${candidate.id}` === resolution.model.ref);
+  const model = models.find((candidate) => modelRefOf(candidate) === resolution.model.ref);
 
   return { resolution, model };
 };

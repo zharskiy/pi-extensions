@@ -1,8 +1,8 @@
 import { stripVTControlCharacters } from "node:util";
 import { createCodemodeExtension, createToolSearchExtension } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
-import { plainLines, plainTheme } from "../../../test/framework/index.ts";
-import { initPiRenderTheme, renderPaneToolRows, visible } from "../../../test/framework/pi/index.ts";
+import { plainLines, plainText, plainTheme } from "../../../test/framework/index.ts";
+import { initPiRenderTheme, renderPaneToolRows } from "../../../test/framework/pi/index.ts";
 import type { AnyToolSpec, ToolCallView, TranscriptItem } from "../index.ts";
 import { entryHost } from "../tools/entry-renderers.ts";
 import { toolRowsHost } from "../tools/tool-rows.ts";
@@ -13,7 +13,7 @@ initPiRenderTheme();
 
 const ESC = String.fromCharCode(27);
 
-const visibleText = (lines: string[]) => visible(lines.join("\n"));
+const visibleText = (lines: string[]) => plainText(lines.join("\n"));
 
 const tui = { requestRender: () => {} } as never;
 

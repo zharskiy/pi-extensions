@@ -22,7 +22,7 @@ import { toolRowsHost } from "../tools/tool-rows.ts";
 import type { ContextSnapshot } from "../types/context.ts";
 import type { Host } from "../types/host-capabilities.ts";
 import type { CommandSpec, CustomMessage, UserMessage } from "../types/messages.ts";
-import { isThinkingLevel } from "../types/model.ts";
+import { isThinkingLevel, modelRefOf } from "../types/model.ts";
 import type {
   AssistantEnd,
   DialogEvent,
@@ -50,7 +50,7 @@ import {
   restoredSelection,
   restoreSelection,
 } from "./kept-selection.ts";
-import { toolCallCount } from "./message-text.ts";
+import { type PiCustom, piCustom, startQueued, toolCallCount } from "./message-text.ts";
 import { deltaEvent, initialPhase, type PhaseEvent, reducePhase } from "./phase.ts";
 import { readSessionEntries } from "./session-file.ts";
 
@@ -105,10 +105,7 @@ const fillSession = async (
     fresh.ui.setEditorText(editorText);
   }
 
-  const sent = fresh.sendMessage(
-    { customType: seed.customType, content: seed.text, display: true, details: seed.details },
-    { triggerTurn: run },
-  );
+  const sent = fresh.sendMessage(piCustom(seed, true), { triggerTurn: run });
 
   if (run) {
     void sent.catch(warnOf(fresh, "The new session could not continue the handoff"));
@@ -147,15 +144,13 @@ export const liveCtx = (state: HostState) => {
   return state.ctx;
 };
 
-type HeldCustom = { customType: string; content: string; display: boolean; details: unknown };
-
 const HELD_POLL_MS = 100;
 
 const sessionOf = (ctx: ExtensionContext) => ctx.sessionManager.getSessionId();
 
 const hostStates = () => globalRecord<Set<HostState>>("host-states", () => new Set());
 
-const modelRef = (model: ExtensionContext["model"]) => model && `${model.provider}/${model.id}`;
+const modelRef = (model: ExtensionContext["model"]) => model && modelRefOf(model);
 
 export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   let mainPrompt: string | undefined;
@@ -174,7 +169,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   const thinkingSelectHandlers: ((level: string) => void | Promise<void>)[] = [];
   let phaseState = initialPhase();
   let runActive = false;
-  const held: HeldCustom[] = [];
+  const held: PiCustom[] = [];
   let heldTimer: ReturnType<typeof setTimeout> | undefined;
   const editor = createEditorHooks(() => tuiContext(state));
   const notices = createNotices(state);
@@ -241,25 +236,13 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
     pi.sendUserMessage(text, { expandPromptTemplates: true, deliverAs: "followUp" });
   };
 
-  const followUp = (ctx: ExtensionContext, custom: HeldCustom) => {
+  const followUp = (ctx: ExtensionContext, custom: PiCustom) => {
     queueFollowUp(sessionOf(ctx), custom.customType);
     pi.sendMessage(custom, { deliverAs: "followUp", triggerTurn: true });
   };
 
   const endsRun = (ctx: ExtensionContext, stopReason: string, toolCalls: number) =>
     toolCalls === 0 && stopReason === "stop" && !ctx.hasPendingMessages() && !followUpsQueued(sessionOf(ctx));
-
-  const startHeld = (customs: HeldCustom[]) => {
-    const [first, ...rest] = customs;
-
-    rest.forEach((custom) => {
-      pi.sendMessage(custom, { deliverAs: "nextTurn" });
-    });
-
-    if (first) {
-      pi.sendMessage(first, { triggerTurn: true });
-    }
-  };
 
   const stopHeldPoll = () => {
     clearTimeout(heldTimer);
@@ -283,7 +266,15 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
       return;
     }
 
-    startHeld(held.splice(0));
+    startQueued(
+      held.splice(0),
+      (custom) => {
+        pi.sendMessage(custom, { triggerTurn: true });
+      },
+      (custom) => {
+        pi.sendMessage(custom, { deliverAs: "nextTurn" });
+      },
+    );
   };
 
   const deliver = (message: CustomMessage, display: boolean) => {
@@ -293,12 +284,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
       return;
     }
 
-    const custom: HeldCustom = {
-      customType: message.customType,
-      content: message.text,
-      display,
-      details: message.details,
-    };
+    const custom = piCustom(message, display);
 
     if (runActive) {
       followUp(ctx, custom);
@@ -555,7 +541,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
       return;
     }
 
-    const ref = `${event.model.provider}/${event.model.id}`;
+    const ref = modelRefOf(event.model);
     const restored = restoredSelection(ctx);
 
     if (restored?.model === ref) {
