@@ -2,6 +2,7 @@ import { BlockList, isIP } from "node:net";
 import {
   authorityOf,
   isHostName,
+  isIpLiteral,
   isLoopbackName,
   isNumericName,
   matchesDenyEntry,
@@ -9,6 +10,7 @@ import {
   normalizeHost,
   parseEntry,
   TLS_PORT,
+  unbracketed,
 } from "../config/index.ts";
 
 export interface EgressPolicy {
@@ -128,7 +130,7 @@ const blockLists = ADDRESS_RANGES.map((range) => {
 const deny = (rule: string, reason: string): Denial => ({ allowed: false, rule, reason });
 
 export const restrictedAddress = (address: string): Denial | undefined => {
-  const plain = address.replace(/^\[|\]$/g, "");
+  const plain = unbracketed(address);
   const family = isIP(plain) === 4 ? "ipv4" : "ipv6";
   const match = blockLists.find(({ list }) => list.check(plain, family));
 
@@ -166,8 +168,6 @@ const literalDecision = (host: string): Denial => {
   );
 };
 
-const isLiteral = (host: string) => isIP(host.replace(/^\[|\]$/g, "")) !== 0;
-
 interface CompiledPolicy {
   allow: AllowEntry[];
   deny: ParsedEntry[];
@@ -179,7 +179,7 @@ const hostDecision = (
   policy: CompiledPolicy,
   extra: AllowEntry[],
 ): ConnectDecision => {
-  if (isLiteral(host)) {
+  if (isIpLiteral(host)) {
     return literalDecision(host);
   }
 

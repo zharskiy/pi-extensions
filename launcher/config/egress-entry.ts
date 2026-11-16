@@ -2,6 +2,10 @@ import { isIP } from "node:net";
 
 export const TLS_PORT = 443;
 
+export const unbracketed = (host: string) => host.replace(/^\[|\]$/g, "");
+
+export const isIpLiteral = (host: string) => isIP(unbracketed(host)) !== 0;
+
 const PLAIN_HTTP_PORT = 80;
 
 const MAX_PORT = 65_535;
@@ -95,7 +99,7 @@ const nameProblem = (name: string, shape: EntryShape) => {
 export const parseHostEntry = (text: string, shape: EntryShape): HostEntry => {
   const lower = text.toLowerCase();
 
-  if (isIP(lower.replace(/^\[|\]$/g, "")) !== 0) {
+  if (isIpLiteral(lower)) {
     return { problem: "must not be an IP address" };
   }
 

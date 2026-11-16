@@ -4,6 +4,7 @@ export {
   authorityOf,
   fillTemplate,
   isHostName,
+  isIpLiteral,
   isLoopbackName,
   isNumericName,
   matchesDenyEntry,
@@ -13,6 +14,7 @@ export {
   parseHostEntry,
   SECRET_MARKER,
   TLS_PORT,
+  unbracketed,
 } from "./egress-entry.ts";
 export { loadEffectiveConfig, validateConfigFile } from "./load.ts";
 export { parentProxyOf } from "./parent-proxy.ts";
