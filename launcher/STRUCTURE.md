@@ -44,7 +44,7 @@ cli/terminal.ts                the host terminal: streams, size read at use, res
 cli/prompt/                    the terminal prompts of pi sandbox init: types, finding the terminal (/dev/tty) and its restore, keys, style and glyphs, the live frame, the line editor, the input rules both prompt sets share (number checks, warn once, initial choice, toggle), the task runner both share (raw mode, ctrl-c, settling once; each set only draws), path completion, the rich and plain prompt sets
 cli/setup/types.ts             the setup's facts, answers, plan, outcome, io and effects types
 cli/setup/document.ts          the config file read with its indent, owned-key edits keeping key order, the diff and the checked atomic write
-cli/setup/folders.ts           the candidate project folders, the repository scan, the storage form of a root and the add-folder messages
+cli/setup/folders.ts           the candidate project folders, the repository scan, the storage form of a root and the wizard's refused-folder messages, for Add a folder and the hub's folders row
 cli/setup/plan.ts              the first-run steps, owned-key problems, initial answers, the edited config, the VM action, the plan and the VM size field bounds
 cli/setup/detect.ts            the host, VM, sessions, free disk and folders gathered in parallel within a budget
 cli/setup/screens.ts           every sentence of the setup screens, rich and plain, as functions of the facts and the plan

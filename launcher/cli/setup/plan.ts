@@ -4,7 +4,7 @@ import { type JsonObject, LauncherError } from "../../shared/index.ts";
 import { checkRoot, type RootGuardContext, rootRefusal } from "../../workspace/index.ts";
 import { clamp, hostVmLimits } from "../vm.ts";
 import { diffOf, isReindented, SECTIONS, serialise, VM_KEYS, WRITE_BACK_PATH } from "./document.ts";
-import { isPreChecked, rootsFromEnv, sameRootSet } from "./folders.ts";
+import { isPreChecked, refusedRootMessage, rootsFromEnv, sameRootSet } from "./folders.ts";
 import type {
   Answers,
   ConfigDocument,
@@ -59,9 +59,9 @@ const rootProblems = (document: ConfigDocument, context: RootGuardContext): Owne
   }
 
   return (configuredRoots(document) ?? []).flatMap((root) => {
-    const verdict = checkRoot(root, context);
+    const message = refusedRootMessage(root, context);
 
-    return verdict.ok ? [] : [{ key: "workspaceRoots.roots", message: rootRefusal(root, verdict.problem) }];
+    return message === undefined ? [] : [{ key: "workspaceRoots.roots", message }];
   });
 };
 

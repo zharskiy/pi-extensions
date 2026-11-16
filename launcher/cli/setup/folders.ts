@@ -355,6 +355,14 @@ const guardMessage = (shown: string, problem: RootProblem, resolved = "") => {
     : `${shown} holds ${problem.name}, which the sandbox must never see. Choose a folder inside it.`;
 };
 
+export const refusedRootMessage = (stored: string, context: RootGuardContext) => {
+  const verdict = checkRoot(stored, context);
+
+  return verdict.ok
+    ? undefined
+    : guardMessage(tildeForm(stored, context.home), verdict.problem, refusedRoot(stored, context.home));
+};
+
 const missingMessage = (shown: string, resolved: string, context: RootGuardContext) => {
   const suggestion = suggestionFor(resolved, context);
 

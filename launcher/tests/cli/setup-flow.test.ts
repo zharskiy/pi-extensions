@@ -750,7 +750,7 @@ describe("narrow terminals", () => {
     expect(lines.filter((line) => line.endsWith("…"))).toEqual([]);
     expect(lines.filter((line) => line.length > columns - 1)).toEqual([]);
     expect(lines.filter((line) => !/^[┌│◇◆]/.test(line))).toEqual([]);
-    expect(run.text()).toContain("config: workspaceRoots.roots:");
+    expect(run.text()).toContain("~/.ssh cannot be shared");
     expect(run.text()).toContain("vm.memoryGiB");
 
     await run.keys(KEY.ctrlC);

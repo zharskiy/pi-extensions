@@ -96,7 +96,10 @@ describe("ownedProblems", () => {
     });
 
     expect(ownedProblems(document, context)).toEqual([
-      { key: "workspaceRoots.roots", message: expect.stringContaining("~/.ssh/keys overlaps") },
+      {
+        key: "workspaceRoots.roots",
+        message: "~/.ssh/keys lies inside ~/.ssh, which the sandbox must never see.",
+      },
       { key: "vm.cpus", message: expect.stringContaining("resources.cpus 4 is larger than vm.cpus 2") },
       { key: "vm.memoryGiB", message: "config: vm.memoryGiB must be at least 2" },
     ]);
