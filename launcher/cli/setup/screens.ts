@@ -24,13 +24,7 @@ const LABEL_WIDTH = 19;
 
 const SHOWN_ROOTS = 3;
 
-const HUB_TAGS_INLINE = 60;
-
-const PLAIN_WIDTH = 80;
-
-export const roomOf = (width: number) => Math.max(1, width - 4);
-
-export const widthFor = (width: number, plain: boolean) => (plain ? Math.min(width, PLAIN_WIDTH) : width);
+const HUB_TAGS_INLINE = 56;
 
 export const INTRO_TITLE = "pi sandbox setup";
 
@@ -474,8 +468,7 @@ export interface FileShape {
   indent: string;
 }
 
-export const applyLines = (plan: Plan, facts: HostFacts, shape: FileShape, width: number, plain: boolean) => {
-  const room = roomOf(width);
+export const applyLines = (plan: Plan, facts: HostFacts, shape: FileShape, room: number, plain: boolean) => {
   const changes = shownChanges(plan.changes);
   const keyWidth = Math.max(0, ...changes.map((change) => change.key.length));
   const diff = changes.flatMap((change) =>
@@ -531,14 +524,12 @@ const narrowRowLines = (row: HubRow, room: number) => {
     : [head, ...value, ...problems];
 };
 
-export const hubRowLines = (rows: HubRow[], width: number, plain: boolean) => {
-  const room = roomOf(width);
-
+export const hubRowLines = (rows: HubRow[], room: number, plain: boolean) => {
   if (plain) {
     return rows.flatMap((row) => hanging("  ", `${row.label}: ${row.value} (${row.tag})`, room));
   }
 
-  const wide = width >= HUB_TAGS_INLINE && rows.every((row) => wideHead(row, room) !== undefined);
+  const wide = room >= HUB_TAGS_INLINE && rows.every((row) => wideHead(row, room) !== undefined);
 
   return rows.flatMap((row) => (wide ? wideRowLines(row, room) : narrowRowLines(row, room)));
 };

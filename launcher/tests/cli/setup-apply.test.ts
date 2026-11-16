@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { VmPhase } from "../../backend/index.ts";
-import { Cancelled, type Prompts, warningOf } from "../../cli/prompt/types.ts";
+import { Cancelled, type Detail, type Prompts, warningOf } from "../../cli/prompt/types.ts";
 import { applyPlan } from "../../cli/setup/apply.ts";
 import { readDocument } from "../../cli/setup/document.ts";
 import type { HostFacts, Plan } from "../../cli/setup/types.ts";
@@ -27,8 +27,8 @@ const interrupted = async (phases: VmPhase[]) => {
 
       throw new Cancelled("interrupt");
     },
-    note: (lines: string[]) => {
-      notes.push(lines.join(" "));
+    note: (lines: Detail) => {
+      notes.push((typeof lines === "function" ? lines(76) : lines).join(" "));
     },
   } as unknown as Prompts;
   const read = readDocument("/Users/me/config.json", undefined);

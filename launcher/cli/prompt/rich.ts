@@ -135,7 +135,7 @@ const composed = (context: Context, parts: Parts) => {
 
 const detailOf = (context: Context, detail: Detail | undefined, width: number) => {
   if (typeof detail === "function") {
-    return detail(width);
+    return detail(roomOf(width));
   }
 
   return (detail ?? []).flatMap((line) => wrap(context.fold(line), roomOf(width)));
@@ -991,6 +991,10 @@ export const createRichPrompts = (ui: Ui): Prompts => {
     path: (spec) => runView(context, pathView(context, spec)),
     number: (spec) => runView(context, numberView(context, spec)),
     task: (spec) => runTask(context, spec),
-    note: (lines, place = "rail") => writeLines(context, noteLines(context, lines, place)),
+    note: (lines, place = "rail") => {
+      const shown = typeof lines === "function" ? lines(roomOf(ui.columns())) : lines;
+
+      writeLines(context, noteLines(context, shown, place));
+    },
   };
 };

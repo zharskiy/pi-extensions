@@ -129,7 +129,7 @@ describe("the hub", () => {
   ];
 
   it("aligns the labels and puts the tags at the right edge", () => {
-    expect(hubRowLines(rows, 50 + 10, false)).toEqual([
+    expect(hubRowLines(rows, 56, false)).toEqual([
       `Project folders      ~/Projects${" ".repeat(19)}chosen`,
       `VM size              8 CPUs${" ".repeat(22)}invalid`,
       "                     config: vm.memoryGiB must be at",
@@ -138,7 +138,7 @@ describe("the hub", () => {
   });
 
   it("puts the values on their own lines below 60 columns", () => {
-    expect(hubRowLines(rows, 50, false)).toEqual([
+    expect(hubRowLines(rows, 46, false)).toEqual([
       `Project folders${" ".repeat(25)}chosen`,
       "  ~/Projects",
       `VM size${" ".repeat(32)}invalid`,
@@ -148,7 +148,7 @@ describe("the hub", () => {
   });
 
   it("writes the rows as words in plain mode", () => {
-    expect(hubRowLines(rows, 80, true)).toEqual([
+    expect(hubRowLines(rows, 76, true)).toEqual([
       "  Project folders: ~/Projects (chosen)",
       "  VM size: 8 CPUs (invalid)",
     ]);
@@ -168,7 +168,7 @@ describe("the hub", () => {
       reindented: true,
     });
 
-    expect(applyLines(plan, FACTS, SHAPE, 80, false)).toEqual([
+    expect(applyLines(plan, FACTS, SHAPE, 76, false)).toEqual([
       "When you apply:",
       "  • change ~/.pi/agent/pi-sandbox/config.json",
       '      ~ workspaceRoots.roots   ["~/Projects","~/work"]',
@@ -182,7 +182,7 @@ describe("the hub", () => {
   it("says that removed roots share the whole home again", () => {
     const plan = planOf({ changes: [{ key: "workspaceRoots.roots", kind: "remove", before: ["~/a"] }] });
 
-    expect(applyLines(plan, FACTS, SHAPE, 80, true)).toEqual([
+    expect(applyLines(plan, FACTS, SHAPE, 76, true)).toEqual([
       "When you apply:",
       "  - change ~/.pi/agent/pi-sandbox/config.json",
       "      removed workspaceRoots (your whole home is shared again)",
@@ -192,7 +192,7 @@ describe("the hub", () => {
   it("notes that a write-back change applies from the next pi", () => {
     const plan = planOf({ changes: [{ key: "writeBack.enabled", kind: "add", after: false }] });
 
-    expect(applyLines(plan, FACTS, { existed: false, indent: "\t" }, 80, false).slice(0, 2)).toEqual([
+    expect(applyLines(plan, FACTS, { existed: false, indent: "\t" }, 76, false).slice(0, 2)).toEqual([
       "When you apply:",
       "  • create ~/.pi/agent/pi-sandbox/config.json (applies from the next pi)",
     ]);

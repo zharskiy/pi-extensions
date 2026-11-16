@@ -79,7 +79,7 @@ export interface Ui {
 
 export type Collapse = { title: string; text: string } | undefined;
 
-export type Detail = string[] | ((width: number) => string[]);
+export type Detail = string[] | ((room: number) => string[]);
 
 export interface KeyWords {
   enter?: string;
@@ -163,5 +163,5 @@ export interface Prompts {
   path(spec: PathSpec): Promise<Reply<string>>;
   number(spec: NumberSpec): Promise<Reply<number>>;
   task<T>(spec: TaskSpec<T>): Promise<T>;
-  note(lines: string[], place?: NotePlace): void;
+  note(lines: Detail, place?: NotePlace): void;
 }

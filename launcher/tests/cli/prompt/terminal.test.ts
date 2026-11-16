@@ -200,14 +200,14 @@ describe("modes, glyphs and colour", () => {
     await reply;
   });
 
-  it("lets a detail function lay the lines out for the current width", async () => {
+  it("lets a detail function lay the lines out for the current text room", async () => {
     const { prompts, screen, input, output } = richPrompts();
     const widths: number[] = [];
 
-    const detail = (width: number) => {
-      widths.push(width);
+    const detail = (room: number) => {
+      widths.push(room);
 
-      return [width < 60 ? "narrow" : "wide"];
+      return [room < 60 ? "narrow" : "wide"];
     };
 
     const reply = prompts.select({
@@ -225,9 +225,9 @@ describe("modes, glyphs and colour", () => {
 
     await reply;
 
-    expect(widths.at(0)).toBe(80);
+    expect(widths.at(0)).toBe(76);
 
-    expect(widths.at(-1)).toBe(50);
+    expect(widths.at(-1)).toBe(46);
 
     expect(screen.lines()).toEqual(["◇  Review", "│  Apply", "│"]);
   });

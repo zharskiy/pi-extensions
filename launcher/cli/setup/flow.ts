@@ -31,7 +31,6 @@ import {
   NOTHING_TO_DO,
   numberFields,
   OTHER_SETTINGS,
-  roomOf,
   rootsSummary,
   SEARCH_TIMED_OUT,
   type Step,
@@ -45,7 +44,6 @@ import {
   vmEditorDetail,
   WRITE_BACK_DETAIL,
   WRITE_BACK_TITLE,
-  widthFor,
   wrapped,
 } from "./screens.ts";
 import type {
@@ -394,13 +392,11 @@ const createWizard = (io: SetupIo, context: WizardContext) => {
     }));
 
   const hubDetail =
-    (state: State, plan: Plan, notice: string | undefined, table: boolean) => (columns: number) => {
-      const width = widthFor(columns, io.plain);
-      const room = roomOf(width);
+    (state: State, plan: Plan, notice: string | undefined, table: boolean) => (room: number) => {
       const done = isPlanEmpty(plan) && plan.problems.length === 0;
       const shape = { existed: document.text !== undefined, indent: document.indent };
-      const effect = done ? wrapped([NOTHING_TO_DO], room) : applyLines(plan, facts, shape, width, io.plain);
-      const rows = table || io.plain ? hubRowLines(rowsOf(state, plan), width, io.plain) : [];
+      const effect = done ? wrapped([NOTHING_TO_DO], room) : applyLines(plan, facts, shape, room, io.plain);
+      const rows = table || io.plain ? hubRowLines(rowsOf(state, plan), room, io.plain) : [];
       const framed = table && !io.plain;
 
       return [
@@ -420,7 +416,7 @@ const createWizard = (io: SetupIo, context: WizardContext) => {
       return { detail: summary };
     }
 
-    prompts.note(summary(io.columns()));
+    prompts.note(summary);
 
     return {};
   };

@@ -69,12 +69,12 @@ export const createPlainPrompts = (ui: Ui): Prompts => {
     ui.output.write(lines.map((line) => `${asciiOf(line)}\n`).join(""));
   };
 
-  const width = () => Math.min(ui.columns(), PLAIN_WIDTH);
+  const room = () => Math.min(ui.columns(), PLAIN_WIDTH) - 1;
 
   const detailOf = (detail: Detail | undefined) =>
     typeof detail === "function"
-      ? detail(ui.columns())
-      : (detail ?? []).flatMap((line) => (line === "" ? [""] : wrap(asciiOf(line), width() - 1)));
+      ? detail(room())
+      : (detail ?? []).flatMap((line) => (line === "" ? [""] : wrap(asciiOf(line), room())));
 
   const printCollapse = (collapse: Collapse) => {
     if (collapse !== undefined) {
@@ -406,6 +406,6 @@ export const createPlainPrompts = (ui: Ui): Prompts => {
       return value;
     },
     task,
-    note: (lines) => print(lines),
+    note: (lines) => print(typeof lines === "function" ? lines(room()) : lines),
   };
 };
