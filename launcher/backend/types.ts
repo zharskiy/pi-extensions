@@ -114,17 +114,15 @@ export interface VmCoverage {
   missing: string[];
 }
 
-export interface VmSize {
-  cpus: number;
-  memoryGiB: number;
-  diskGiB?: number;
-}
-
 export interface VmSpec {
   cpus: number;
   memoryGiB: number;
   diskGiB: number;
 }
+
+export type VmTarget = Partial<VmSpec>;
+
+export type VmSize = Omit<VmSpec, "diskGiB"> & Pick<VmTarget, "diskGiB">;
 
 export interface VmDesired {
   size: VmSpec;
@@ -143,12 +141,6 @@ export type VmPhase = "creating" | "stopping" | "starting" | "waiting";
 export interface VmApplyOptions {
   busy: () => Promise<number>;
   progress: (phase: VmPhase) => void;
-}
-
-export interface VmTarget {
-  cpus?: number;
-  memoryGiB?: number;
-  diskGiB?: number;
 }
 
 type VmStop = "absent" | "already stopped" | "stopped";
