@@ -7,6 +7,7 @@ import type {
 } from "../../../platform/pi-adapter/index.ts";
 import {
   BUSY_CHANNEL,
+  errorText,
   HANDOFF_PENDING_CHANNEL,
   HANDOFF_REQUEST_TYPE,
   HANDOFF_SEED_TYPE,
@@ -376,7 +377,7 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
         : { seed, followUps: userPrompts(messages) };
     };
 
-    const accepted = await control
+    const outcome = await control
       .newSession({
         parentSession: previous,
         keepSelection: true,
@@ -384,14 +385,17 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
         continueWithSeed: !handedOff,
         fill,
       })
-      .catch((error: unknown) => (error instanceof Error ? error : new Error(String(error))));
+      .then(
+        (accepted) => ({ accepted }),
+        (error: unknown) => ({ failure: errorText(error) }),
+      );
 
-    if (accepted instanceof Error) {
-      failSwitch(`Switching to a new session failed: ${accepted.message}. The handoff stays at ${path}.`);
+    if ("failure" in outcome) {
+      failSwitch(`Switching to a new session failed: ${outcome.failure}. The handoff stays at ${path}.`);
       return;
     }
 
-    if (!accepted) {
+    if (!outcome.accepted) {
       failSwitch(
         `Switching to a new session was cancelled. The handoff stays at ${path}; run /${HANDOFF_COMMAND} to retry.`,
       );
