@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { RunMode } from "../../../platform/pi-adapter/index.ts";
-import { LIMITS_CHANNEL, userSettingsPath } from "../../../platform/shared/index.ts";
+import { LIMITS_CHANNEL } from "../../../platform/shared/index.ts";
 import {
   createFakeAgentRuntime,
   createFakeHost,
@@ -44,10 +44,7 @@ describe("session-limits publishing", () => {
 
     startExtension({ extension: sessionLimits, runtime: createFakeAgentRuntime(), host });
     mkdirSync(agentDir, { recursive: true });
-    writeFileSync(
-      userSettingsPath(agentDir, SETTINGS_FILE),
-      JSON.stringify({ softRatio: 0.3, hardRatio: 0.4 }),
-    );
+    writeFileSync(join(agentDir, SETTINGS_FILE), JSON.stringify({ softRatio: 0.3, hardRatio: 0.4 }));
     host.start();
 
     expect(published(host)).toEqual([DEFAULT_LIMITS, { ...DEFAULT_LIMITS, softRatio: 0.3, hardRatio: 0.4 }]);

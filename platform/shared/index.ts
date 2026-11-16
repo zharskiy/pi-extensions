@@ -55,14 +55,14 @@ export {
   loadSettingsFiles,
   type ObjectParse,
   parseSettings,
-  projectSettingsPath,
   readSettingsFile,
   readSettingsFiles,
   readText,
   type SettingsLocation,
   type SettingsParse,
   type SettingsSchema,
-  userSettingsPath,
+  type SettingsScope,
+  settingsPath,
   writeSettingsFile,
 } from "./plugin/settings-files.ts";
 export { ensureProjectSubdir } from "./project-dir.ts";

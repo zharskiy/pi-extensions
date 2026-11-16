@@ -1,7 +1,6 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { userSettingsPath } from "../../../platform/shared/index.ts";
 import {
   createFakeAgentRuntime,
   createFakeHost,
@@ -17,7 +16,7 @@ const load = (settings: object) => {
   const root = temp.make("pi-session-limits-settings-");
 
   const agentDir = join(root, "agent");
-  const file = userSettingsPath(agentDir, SETTINGS_FILE);
+  const file = join(agentDir, SETTINGS_FILE);
   const host = createFakeHost({ id: "s", cwd: join(root, "project"), agentDir, projectTrusted: false });
 
   mkdirSync(agentDir, { recursive: true });

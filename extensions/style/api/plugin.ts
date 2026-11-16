@@ -22,7 +22,7 @@ export const createStyle = (host: Host, styles: ReadonlyMap<string, Style>) => {
   });
 
   const choose = (name: string) => {
-    const failure = saveStyle(host.session().agentDir, name);
+    const failure = saveStyle(host.session(), name);
 
     if (failure) {
       host.ui.notify(`pi-style: ${failure}`, "warning");

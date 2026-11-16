@@ -1,3 +1,4 @@
+import type { SettingsScope } from "../../../../platform/shared/index.ts";
 import {
   type OverrideField,
   overrideModel,
@@ -6,7 +7,7 @@ import {
   unknownSkillsProblem,
 } from "../model/agent-override.ts";
 import { AGENT_SCOPE_ALL, type AgentOverride, INHERIT_MODEL } from "../model/agent-schema.ts";
-import { SCOPES, type Scope, type SetupChange } from "./scope.ts";
+import { SCOPES, type SetupChange } from "./scope.ts";
 
 export const SETUP_USAGE = [
   "/agents setup [<agent> model=<provider/id[:thinking]|inherit> thinking=<level>",
@@ -17,13 +18,13 @@ export type LineCheck = {
   agents: string[];
   chores: string[];
   skills: string[];
-  defaultScope: Scope;
+  defaultScope: SettingsScope;
   resolveModel(request: string): { ref: string } | { error: string };
 };
 
-type LineRequest = { change: SetupChange; scope: Scope };
+type LineRequest = { change: SetupChange; scope: SettingsScope };
 
-type Parsed = OverrideField & { scope?: Scope };
+type Parsed = OverrideField & { scope?: SettingsScope };
 
 const parseModel = (value: string, check: LineCheck): Parsed => {
   const field = overrideModel(value);
@@ -68,8 +69,8 @@ const PARSERS: Record<string, (value: string, check: LineCheck) => Parsed> = {
   thinking: (value) => overrideThinking(value),
   skills: parseSkills,
   scope: (value) =>
-    SCOPES.includes(value as Scope)
-      ? { patch: {}, scope: value as Scope }
+    SCOPES.includes(value as SettingsScope)
+      ? { patch: {}, scope: value as SettingsScope }
       : { patch: {}, error: `scope must be ${SCOPES.join(" or ")}` },
 };
 
@@ -110,7 +111,7 @@ export const parseSetupLine = (args: string, check: LineCheck): LineRequest | { 
   }
 
   const patch: AgentOverride = Object.assign({}, ...parsed.map((entry) => entry.patch));
-  const scope = parsed.reduce<Scope>((chosen, entry) => entry.scope ?? chosen, check.defaultScope);
+  const scope = parsed.reduce<SettingsScope>((chosen, entry) => entry.scope ?? chosen, check.defaultScope);
 
   if (Object.keys(patch).length === 0) {
     return { error: `nothing to set; usage: ${SETUP_USAGE}` };

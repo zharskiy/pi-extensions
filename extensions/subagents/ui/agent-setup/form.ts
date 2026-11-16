@@ -4,9 +4,10 @@ import {
   type SkillInfo,
   THINKING_LEVELS,
 } from "../../../../platform/pi-adapter/index.ts";
+import type { SettingsScope } from "../../../../platform/shared/index.ts";
 import { clampIndex, type MultiState, multiKey, tabStep } from "../../../../platform/ui-kit/index.ts";
 import type { AgentKind } from "../../core/agent-setup/agent-template.ts";
-import { SCOPES, type Scope, type SetupChange } from "../../core/agent-setup/scope.ts";
+import { SCOPES, type SetupChange } from "../../core/agent-setup/scope.ts";
 import { grantOrNone, sameGrant } from "../../core/model/agent-record.ts";
 import {
   AGENT_SCOPE_ALL,
@@ -112,7 +113,7 @@ type SetupOutcome = { state: SetupState; done?: "save" | "cancel" };
 
 export const BLOCK_ROWS = blockRows(FIELD_ROWS, PRESETS.length);
 
-export const scopeOptions = (context: SetupContext): readonly Scope[] =>
+export const scopeOptions = (context: SetupContext): readonly SettingsScope[] =>
   context.trusted ? SCOPES : ["user"];
 
 export const initialSetup = (context: SetupContext): SetupState => ({

@@ -7,7 +7,7 @@ extensions/mcp-import/
 │   ├── extension.ts         createManagedExtension: namespace pi-mcp-import, mcpImportPlugin
 │   └── plugin.ts            mcpImportPlugin, createMcpImport: /mcp-import command, dry run, apply, interactive pick, notices
 ├── core/
-│   ├── args.ts              argument parsing, completion, usage
+│   ├── args.ts              argument parsing, completion, usage (the scope is the shared `SettingsScope`)
 │   ├── sources.ts           finds and reads Claude Code and Cursor files per scope (`findServers` only)
 │   ├── convert.ts           one entry to pi's shape, with notes and skip reasons
 │   ├── plan.ts              merges converted entries into the target text without overwriting

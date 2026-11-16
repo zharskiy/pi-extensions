@@ -1,14 +1,14 @@
 import type { Host } from "../../../platform/pi-adapter/index.ts";
-import { counted, DOT, ELLIPSIS } from "../../../platform/shared/index.ts";
+import { counted, DOT, ELLIPSIS, type SettingsScope } from "../../../platform/shared/index.ts";
 import { multiSelectForm, selectForm } from "../../../platform/ui-kit/index.ts";
-import type { Scope, Source } from "../core/args.ts";
+import type { Source } from "../core/args.ts";
 import { needsSignIn } from "../core/convert.ts";
 import type { Pair } from "../core/import-flow.ts";
 import type { Entry, Plan } from "../core/plan.ts";
 
 const SOURCE_NAMES: Record<Source, string> = { claude: "Claude Code", cursor: "Cursor" };
 
-const SCOPE_NAMES: Record<Scope, string> = { user: "user", project: "this project" };
+const SCOPE_NAMES: Record<SettingsScope, string> = { user: "user", project: "this project" };
 
 const NAMES_ROOM = 40;
 

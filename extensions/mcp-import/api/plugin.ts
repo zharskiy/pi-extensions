@@ -1,12 +1,11 @@
 import { homedir } from "node:os";
 import type { Host } from "../../../platform/pi-adapter/index.ts";
-import type { Plugin } from "../../../platform/shared/index.ts";
+import type { Plugin, SettingsScope } from "../../../platform/shared/index.ts";
 import {
   completeArgs,
   type ImportArgs,
   MISSING_SOURCE,
   parseArgs,
-  type Scope,
   type Source,
   USAGE,
 } from "../core/args.ts";
@@ -45,7 +44,7 @@ export const createMcpImport = (host: Host, home: string) => {
     return { home, cwd, agentDir };
   };
 
-  const prepare = (source: Source, scope: Scope) => prepareImport(source, scope, places());
+  const prepare = (source: Source, scope: SettingsScope) => prepareImport(source, scope, places());
 
   const write = (pair: Pair, text: string | undefined) => {
     const problem = writeImport(pair, text, places());

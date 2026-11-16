@@ -109,13 +109,15 @@ export const readSettingsFile = <T>(schema: SettingsSchema<T>, path: string): Se
   }
 };
 
-export const userSettingsPath = (agentDir: string, file: string) => join(agentDir, file);
-
-export const projectSettingsPath = (cwd: string, file: string) => projectPath(cwd, file);
-
 export type SettingsLocation = { agentDir: string; cwd: string; projectTrusted: boolean };
 
-type SettingsScope = "user" | "project";
+export type SettingsScope = "user" | "project";
+
+export const settingsPath = (
+  location: Pick<SettingsLocation, "agentDir" | "cwd">,
+  scope: SettingsScope,
+  file: string,
+) => (scope === "project" ? projectPath(location.cwd, file) : join(location.agentDir, file));
 
 export const writeSettingsFile = (
   location: Pick<SettingsLocation, "agentDir" | "cwd">,
@@ -127,7 +129,7 @@ export const writeSettingsFile = (
     return writeProjectFile(location.cwd, file, text);
   }
 
-  const path = userSettingsPath(location.agentDir, file);
+  const path = settingsPath(location, scope, file);
 
   mkdirSync(dirname(path), { recursive: true });
 
@@ -137,10 +139,10 @@ export const writeSettingsFile = (
 };
 
 export const readSettingsFiles = <T>(schema: SettingsSchema<T>, file: string, location: SettingsLocation) => {
-  const user = readSettingsFile(schema, userSettingsPath(location.agentDir, file));
+  const user = readSettingsFile(schema, settingsPath(location, "user", file));
 
   const project: SettingsParse<T> = location.projectTrusted
-    ? readSettingsFile(schema, projectSettingsPath(location.cwd, file))
+    ? readSettingsFile(schema, settingsPath(location, "project", file))
     : { patch: {}, errors: [] };
 
   return { user: user.patch, project: project.patch, errors: [...user.errors, ...project.errors] };

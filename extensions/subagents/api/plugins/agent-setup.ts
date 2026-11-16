@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { SessionInfo, ToolSpec } from "../../../../platform/pi-adapter/index.ts";
-import { AWAITING_INPUT_CHANNEL } from "../../../../platform/shared/index.ts";
+import { AWAITING_INPUT_CHANNEL, type SettingsScope } from "../../../../platform/shared/index.ts";
 import { type SelectOption, selectForm } from "../../../../platform/ui-kit/index.ts";
 import {
   AUTOSETUP_TYPE,
@@ -25,7 +25,7 @@ import {
   proposalUnchanged,
   savedText,
 } from "../../core/agent-setup/proposal.ts";
-import type { Scope, SetupChange } from "../../core/agent-setup/scope.ts";
+import type { SetupChange } from "../../core/agent-setup/scope.ts";
 import { overriddenFields, writeChanges } from "../../core/agent-setup/write.ts";
 import { type AgentDefinition, isLead } from "../../core/model/agent-record.ts";
 import { INHERIT_MODEL } from "../../core/model/agent-schema.ts";
@@ -68,7 +68,7 @@ export const agentSetupPlugin: Plugin = {
     const notify = (message: string, level: "info" | "warning" | "error") =>
       host.ui.notify(`${NAMESPACE}: ${message}`, level);
 
-    const save = (scope: Scope, changes: SetupChange[], announce = true): SaveOutcome => {
+    const save = (scope: SettingsScope, changes: SetupChange[], announce = true): SaveOutcome => {
       const info = host.session();
       const paths = settingsPaths(info);
 

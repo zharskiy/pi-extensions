@@ -2,11 +2,10 @@ import type { AgentRuntime, CodemodeShortfall } from "../../../../platform/pi-ad
 import {
   isPlainObject,
   type ObjectParse,
-  projectSettingsPath,
   readSettingsFile,
   type SettingsParse,
   type SettingsSchema,
-  userSettingsPath,
+  settingsPath,
 } from "../../../../platform/shared/index.ts";
 import {
   OVERRIDE_FIELDS,
@@ -129,12 +128,12 @@ const settingsSchema: SettingsSchema<Settings> = {
 export const settingsWarning = (message: string) => `${NAMESPACE} settings: ${message}`;
 
 export const settingsPaths = (info: { agentDir: string; cwd: string }) => ({
-  project: projectSettingsPath(info.cwd, SETTINGS_FILE),
-  user: userSettingsPath(info.agentDir, SETTINGS_FILE),
+  project: settingsPath(info, "project", SETTINGS_FILE),
+  user: settingsPath(info, "user", SETTINGS_FILE),
 });
 
 const readUser = (agentDir: string) =>
-  readSettingsFile(settingsSchema, userSettingsPath(agentDir, SETTINGS_FILE));
+  readSettingsFile(settingsSchema, settingsPath({ agentDir, cwd: "" }, "user", SETTINGS_FILE));
 
 export const disabledPlugins = (agentDir: string) => readUser(agentDir).patch.disabledPlugins ?? [];
 

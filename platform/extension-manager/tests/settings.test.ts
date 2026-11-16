@@ -6,11 +6,10 @@ import { createFakeHost } from "../../../test/framework/index.ts";
 import {
   loadSettingsFiles,
   parseSettings,
-  projectSettingsPath,
   readSettingsFile,
   readSettingsFiles,
   type SettingsSchema,
-  userSettingsPath,
+  settingsPath,
 } from "../../shared/index.ts";
 import { reportSettingsErrors } from "../settings-errors.ts";
 
@@ -79,8 +78,9 @@ describe("settings helpers", () => {
 
     roots.push(root);
 
-    const user = userSettingsPath(join(root, "agent"), "example.json");
-    const project = projectSettingsPath(join(root, "project"), "example.json");
+    const where = { agentDir: join(root, "agent"), cwd: join(root, "project") };
+    const user = settingsPath(where, "user", "example.json");
+    const project = settingsPath(where, "project", "example.json");
 
     expect(user).toBe(join(root, "agent", "example.json"));
     expect(project).toBe(join(root, "project", ".pi", "example.json"));
@@ -119,8 +119,8 @@ const write = (path: string, content: unknown) => {
 const withFiles = (projectTrusted: boolean) => {
   const where = location(projectTrusted);
 
-  write(userSettingsPath(where.agentDir, FILE), { count: 2, ratio: 0.2 });
-  write(projectSettingsPath(where.cwd, FILE), { ratio: 0.9 });
+  write(settingsPath(where, "user", FILE), { count: 2, ratio: 0.2 });
+  write(settingsPath(where, "project", FILE), { ratio: 0.9 });
 
   return where;
 };

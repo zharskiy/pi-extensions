@@ -7,7 +7,7 @@ Modules are grouped by concern; `index.ts` is the only import surface, so a move
 - `index.ts`: the public surface.
 - `plugin/`: what the extension manager and every plugin agree on.
   - `plugin-contract.ts`: the plugin, disable, bus, service registry, event map and extension paths types.
-  - `settings-files.ts`: the settings schema, file parsing and the user-then-project merge, `readText`, `writeSettingsFile`.
+  - `settings-files.ts`: the settings schema, file parsing and `SettingsScope` and `settingsPath`, the user-then-project merge, `readText`, `writeSettingsFile`.
 - `handoff/`: the handoff format session-limits and subagents share.
   - `handoff-document.ts`: the handoff sections, `validateHandoff`, `HandoffToolRows`, the seed and request details types and their parsers `parseSeedDetails` and `parseRequestDetails`, `handoffPath`.
   - `handoff-limit.ts`: `Limits`, `HandoffLimit` (request and warn lines), `mainLimit`, `limitLevel`, `WORKING_CONTEXT`, `workingContextText`.
