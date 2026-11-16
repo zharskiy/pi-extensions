@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { CredentialRule } from "../../config/index.ts";
 import type { DeriveInput } from "../../hostpi/index.ts";
 import { deriveSandboxPi } from "../../hostpi/index.ts";
-import { isPlaceholder, jwtShapedPlaceholder, placeholderFor, toolConfigValue } from "../../shared/index.ts";
+import { isPlaceholder, jwtShapedPlaceholder, toolConfigValue } from "../../shared/index.ts";
 import {
   AGENT_DIR,
   braced,
@@ -12,7 +12,9 @@ import {
   hostMcp,
   hostModels,
   JWT_ACCESS,
+  placeholderOfSalt,
   providerHosts,
+  rulesOf,
   SECRETS,
   tempDir,
   writeJson,
@@ -30,9 +32,7 @@ const input = (overrides: Partial<DeriveInput> = {}): DeriveInput => ({
   ...overrides,
 });
 
-const P = (identity: string) => placeholderFor(SALT, identity);
-
-const rulesOf = (rules: CredentialRule[], id: string) => rules.filter((rule) => rule.id === id);
+const P = placeholderOfSalt(SALT);
 
 describe("deriveSandboxPi auth.json", () => {
   it("turns api_key entries into placeholders bound to the host pi credential", () => {

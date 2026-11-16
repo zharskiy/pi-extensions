@@ -1,4 +1,11 @@
+import type { CredentialRule } from "../../config/index.ts";
+import { placeholderFor } from "../../shared/index.ts";
+
 export { tempDir, writeExecutable, writeJson, writeText } from "../support/temp-dir.ts";
+
+export const placeholderOfSalt = (salt: string) => (identity: string) => placeholderFor(salt, identity);
+
+export const rulesOf = (rules: CredentialRule[], id: string) => rules.filter((rule) => rule.id === id);
 
 export const braced = (name: string) => ["$", "{", name, "}"].join("");
 
