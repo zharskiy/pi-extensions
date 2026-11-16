@@ -600,23 +600,19 @@ describe("pi commands that start no session", () => {
     expect(harness.stdout()).toBe("");
   });
 
-  it("launches the sandbox for flag values, words after --, sessions and the commands that stay inside", async () => {
-    const forms = [
-      ["--system-prompt", "--version"],
-      ["--append-system-prompt", "-h"],
-      ["--", "--version"],
-      ["--", "--help"],
-      ["--export"],
-      ["--export", "session.jsonl", "--model", "x"],
-      ["--list-models", "--verbose"],
-      ["-p", "hello"],
-      ["list"],
-      ["mcp", "list"],
-      ["install", "npm:local", "-l"],
-    ];
-
-    expect(await inTurn(forms, launched)).toEqual(
-      forms.map((argv) => ({ code: 0, inside: [argv], host: [], stdout: "" })),
-    );
+  it.each([
+    ["a flag value", ["--system-prompt", "--version"]],
+    ["a flag value", ["--append-system-prompt", "-h"]],
+    ["a word after --", ["--", "--version"]],
+    ["a word after --", ["--", "--help"]],
+    ["a session", ["--export"]],
+    ["a session", ["--export", "session.jsonl", "--model", "x"]],
+    ["a session", ["--list-models", "--verbose"]],
+    ["a session", ["-p", "hello"]],
+    ["a command that stays inside", ["list"]],
+    ["a command that stays inside", ["mcp", "list"]],
+    ["a command that stays inside", ["install", "npm:local", "-l"]],
+  ])("launches the sandbox for %s: %j", async (_kind, argv) => {
+    expect(await launched(argv)).toEqual({ code: 0, inside: [argv], host: [], stdout: "" });
   });
 });
