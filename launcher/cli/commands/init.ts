@@ -1,9 +1,9 @@
 import { type Dirent, readdirSync, statSync } from "node:fs";
-import { readFile, statfs } from "node:fs/promises";
+import { statfs } from "node:fs/promises";
 import { join } from "node:path";
 import { type Backend, type VmApplied, vmSizeText } from "../../backend/index.ts";
-import { validateConfig } from "../../config/index.ts";
-import { errorMessage, LauncherError, launcherRoot } from "../../shared/index.ts";
+import { validateConfigFile } from "../../config/index.ts";
+import { errorMessage, LauncherError, launcherRoot, readText } from "../../shared/index.ts";
 import { type CliDeps, pathsOf, writeLine, writeNotices } from "../deps.ts";
 import { createPlainPrompts } from "../prompt/plain.ts";
 import { createRichPrompts } from "../prompt/rich.ts";
@@ -56,17 +56,7 @@ const contextOf = (deps: CliDeps): SetupContext => {
   return { backend: deps.backend(), stateDir: paths.stateDir, configFile: paths.userConfigFile };
 };
 
-const readConfig = async (file: string): Promise<DocumentRead> => {
-  const text = await readFile(file, "utf8").catch((error: NodeJS.ErrnoException) => {
-    if (error.code === "ENOENT") {
-      return undefined;
-    }
-
-    throw new LauncherError(`could not read ${file}: ${errorMessage(error)}`);
-  });
-
-  return readDocument(file, text);
-};
+const readConfig = async (file: string): Promise<DocumentRead> => readDocument(file, await readText(file));
 
 const detectFor = (deps: CliDeps, context: SetupContext) => (document: ConfigDocument) =>
   detectHost({
@@ -136,14 +126,6 @@ const invalidConfig = (file: string, read: Extract<DocumentRead, { ok: false }>)
         "fix the file, or move it away to start over, then run pi sandbox init again",
       )
     : new LauncherError(read.message, `fix that key in ${file}, then run pi sandbox init again`);
-
-const validFile = (document: ConfigDocument) => {
-  try {
-    validateConfig(document.value);
-  } catch (error) {
-    throw new LauncherError(errorMessage(error), `fix ${document.file}`);
-  }
-};
 
 const VERBS: Record<Change["kind"], string> = { add: "added", change: "changed", remove: "removed" };
 
@@ -240,7 +222,7 @@ const acceptAll = async (deps: CliDeps) => {
 
   const document = read.document;
 
-  validFile(document);
+  validateConfigFile(document.value, document.file);
 
   const facts = await detectFor(deps, context)(document);
   const { answers, notices } = answersForYes(document, facts, deps.env);

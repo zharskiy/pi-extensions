@@ -1,12 +1,13 @@
-import { lstat, mkdir, readFile, readlink, realpath, stat } from "node:fs/promises";
+import { lstat, mkdir, readlink, realpath, stat } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import { validateConfig } from "../../config/index.ts";
+import { configProblem } from "../../config/index.ts";
 import {
   errorMessage,
   isJsonObject,
   type JsonObject,
   LauncherError,
+  readText,
   writeFileAtomic,
 } from "../../shared/index.ts";
 import type { Change, ConfigDocument, DocumentRead } from "./types.ts";
@@ -116,16 +117,6 @@ const indentOf = (text: string) => {
   return leading.startsWith("\t") ? "\t" : leading;
 };
 
-const outsideProblem = (value: JsonObject) => {
-  try {
-    validateConfig(withoutOwned(value));
-
-    return undefined;
-  } catch (error) {
-    return errorMessage(error);
-  }
-};
-
 const parsed = (text: string): { value: unknown } | { message: string } => {
   try {
     return { value: JSON.parse(text) as unknown };
@@ -153,7 +144,7 @@ export const readDocument = (file: string, text: string | undefined): DocumentRe
     return { ok: false, kind: "json", message: "the file holds JSON, but not an object" };
   }
 
-  const problem = outsideProblem(result.value);
+  const problem = configProblem(withoutOwned(result.value));
 
   if (problem !== undefined) {
     return { ok: false, kind: "config", message: problem };
@@ -216,8 +207,6 @@ const diffBetween = (before: JsonObject, after: JsonObject, prefix: string): Cha
 
 export const diffOf = (before: JsonObject, after: JsonObject) => diffBetween(before, after, "");
 
-const currentText = (file: string) => readFile(file, "utf8").catch(() => undefined);
-
 const modeOf = async (file: string) => {
   const info = await stat(file).catch(() => undefined);
 
@@ -263,7 +252,7 @@ const saveError = (file: string, target: string, error: unknown) => {
 };
 
 export const writeDocument = async (document: ConfigDocument, text: string) => {
-  if ((await currentText(document.file)) !== document.text) {
+  if ((await readText(document.file)) !== document.text) {
     throw new LauncherError(
       `could not save ${document.file}: the file changed while setup ran`,
       "run pi sandbox init again to see the new content",

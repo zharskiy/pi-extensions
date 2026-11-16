@@ -1,6 +1,6 @@
 import { type VmShare, type VmSpec, vmDecision, whenBusy } from "../../backend/index.ts";
-import { VM_BOUNDS, validateConfig } from "../../config/index.ts";
-import { errorMessage, type JsonObject, LauncherError } from "../../shared/index.ts";
+import { configProblem, VM_BOUNDS } from "../../config/index.ts";
+import { type JsonObject, LauncherError } from "../../shared/index.ts";
 import { checkRoot, type RootGuardContext, rootRefusal } from "../../workspace/index.ts";
 import { clamp, hostVmLimits } from "../vm.ts";
 import { diffOf, isReindented, serialise, valueAt, withoutValue, withValue } from "./document.ts";
@@ -39,16 +39,6 @@ const ROOTS_PATH = ["workspaceRoots", "roots"];
 
 const WRITE_BACK_PATH = ["writeBack", "enabled"];
 
-const problemIn = (layer: unknown) => {
-  try {
-    validateConfig(layer);
-
-    return undefined;
-  } catch (error) {
-    return errorMessage(error);
-  }
-};
-
 export const isFirstRun = (document: ConfigDocument) =>
   valueAt(document.value, ["workspaceRoots"]) === undefined;
 
@@ -68,7 +58,7 @@ const rootProblems = (document: ConfigDocument, context: RootGuardContext): Owne
     return [];
   }
 
-  const shape = problemIn({ workspaceRoots });
+  const shape = configProblem({ workspaceRoots });
 
   if (shape !== undefined) {
     return [{ key: "workspaceRoots", message: shape }];
@@ -85,14 +75,14 @@ const vmProblems = (document: ConfigDocument): OwnedProblem[] =>
   VM_KEYS.flatMap((key) => {
     const value = valueAt(document.value, ["vm", key]);
     const resources = document.value.resources === undefined ? {} : { resources: document.value.resources };
-    const problem = value === undefined ? undefined : problemIn({ vm: { [key]: value }, ...resources });
+    const problem = value === undefined ? undefined : configProblem({ vm: { [key]: value }, ...resources });
 
     return problem === undefined ? [] : [{ key: `vm.${key}`, message: problem }];
   });
 
 const writeBackProblems = (document: ConfigDocument): OwnedProblem[] => {
   const enabled = valueAt(document.value, WRITE_BACK_PATH);
-  const problem = enabled === undefined ? undefined : problemIn({ writeBack: { enabled } });
+  const problem = enabled === undefined ? undefined : configProblem({ writeBack: { enabled } });
 
   return problem === undefined ? [] : [{ key: "writeBack.enabled", message: problem }];
 };
@@ -260,7 +250,7 @@ export const planOf = (
 ): Plan => {
   const next = editedConfig(document.value, answers);
   const changes = diffOf(document.value, next);
-  const invalid = problemIn(next);
+  const invalid = configProblem(next);
   const problems = [
     ...("problem" in share ? [share.problem] : []),
     ...rootsProblem(answers.roots),
