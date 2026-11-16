@@ -1,7 +1,7 @@
 import { join } from "node:path";
-import { type Backend, recommendedVmSize } from "../../backend/index.ts";
+import type { Backend } from "../../backend/index.ts";
 import { errorMessage } from "../../shared/index.ts";
-import { vmBusyCount } from "../vm.ts";
+import { recommendedVmSize, vmBusyCount } from "../vm.ts";
 import { folderCandidates, unscannedCandidates } from "./folders.ts";
 import type { FolderCandidate, HostFacts, VmFacts } from "./types.ts";
 

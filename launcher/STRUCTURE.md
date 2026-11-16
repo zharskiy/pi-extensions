@@ -36,7 +36,7 @@ cli/deps.ts                    the dependencies every command gets, and the shar
 cli/index.ts                   public surface
 cli/launch.ts                  the pi pipeline with its stages and progress lines, and withSandbox for the doctor
 cli/context.ts                 the launch context: the folder to mount, the guard and workspaceRoots before the search, config, discovery and the checks after it
-cli/vm.ts                      VM start (with the workspaceRoots shares when stopped), shares, size and trust store, the VM paths a launch needs, the workspaceRoots share list and its nesting check, the busy count with other agent dirs' containers
+cli/vm.ts                      VM start (with the workspaceRoots shares when stopped), the one reconcile of shares and size, trust store, the automatic VM size and the host limits (one clamp), the VM paths a launch needs, the workspaceRoots share list and its nesting check, the busy count with other agent dirs' containers
 cli/launch-notices.ts          the launch notice texts, the host-file flag notice and the proxy stage detail
 cli/legacy-paths.ts            the config and state folders of earlier versions, with the launch notice and doctor warns for them
 cli/terminal.ts                the host terminal: streams, size read at use, resize

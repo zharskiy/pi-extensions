@@ -2,7 +2,7 @@ import { type VmShare, type VmSpec, vmDecision, whenBusy } from "../../backend/i
 import { VM_BOUNDS, validateConfig } from "../../config/index.ts";
 import { errorMessage, type JsonObject, LauncherError } from "../../shared/index.ts";
 import { checkRoot, type RootGuardContext, rootRefusal } from "../../workspace/index.ts";
-import { hostVmLimits } from "../vm.ts";
+import { clamp, hostVmLimits } from "../vm.ts";
 import { diffOf, isReindented, serialise, valueAt, withoutValue, withValue } from "./document.ts";
 import { isPreChecked, rootsFromEnv, sameRootSet } from "./folders.ts";
 import type {
@@ -346,7 +346,7 @@ export const vmBounds = (facts: HostFacts): VmBounds => {
     cpus: { min: VM_BOUNDS.cpus.min, max: limits.cpus },
     memoryGiB: { min: VM_BOUNDS.memoryGiB.min, max: limits.memoryGiB },
     diskGiB: {
-      min: Math.min(VM_BOUNDS.diskGiB.max, Math.max(VM_BOUNDS.diskGiB.min, vmDiskOf(facts))),
+      min: clamp(vmDiskOf(facts), VM_BOUNDS.diskGiB),
       max: VM_BOUNDS.diskGiB.max,
     },
   };

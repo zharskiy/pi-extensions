@@ -19,7 +19,6 @@ import type {
   VmReport,
   VmShare,
   VmShareOptions,
-  VmSpec,
   VmTarget,
 } from "../types.ts";
 import {
@@ -68,14 +67,6 @@ const LOCK_TIMEOUT_MS = 180_000;
 
 const DETECT_DELAYS_MS = [0, 500, 1000, 1500, 2000];
 
-const MIN_CPUS = 2;
-
-const MAX_CPUS = 8;
-
-const MIN_GIB = 4;
-
-const MAX_GIB = 10;
-
 const START_FAILURE = "could not start the sandbox VM";
 
 const STOP_FAILURE = "could not stop the sandbox VM";
@@ -85,8 +76,6 @@ const CREATE_FAILURE = "could not create the sandbox VM";
 const RESTART_FAILURE = "could not restart the sandbox VM";
 
 const MOVED_PROBLEM = "could not change the shares of the sandbox VM";
-
-const AUTOMATIC_DISK_GIB = 60;
 
 const startHint = `run ${plainStart(ENGINE_PROFILE)} and see ${logHint(ENGINE_PROFILE)}`;
 
@@ -110,14 +99,6 @@ const engineSilent = (detection: Detection) =>
 const lastLine = (text: string) => text.trim().split("\n").at(-1) ?? "";
 
 const realPause = (ms: number) => new Promise<void>((done) => setTimeout(done, ms));
-
-const clamp = (value: number, low: number, high: number) => Math.max(low, Math.min(high, value));
-
-export const recommendedVmSize = (cpus: number, memGiB: number): VmSpec => ({
-  cpus: clamp(Math.floor(cpus), MIN_CPUS, MAX_CPUS),
-  memoryGiB: clamp(Math.floor(memGiB / 2), MIN_GIB, MAX_GIB),
-  diskGiB: AUTOMATIC_DISK_GIB,
-});
 
 interface Restart {
   mounts: VmShare[];

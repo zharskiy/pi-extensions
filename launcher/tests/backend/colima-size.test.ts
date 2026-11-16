@@ -1,20 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { createColimaVm, recommendedVmSize } from "../../backend/colima/vm.ts";
+import { createColimaVm } from "../../backend/colima/vm.ts";
 import type { VmTarget } from "../../backend/index.ts";
 import { createFakeRunner, type FakeResponder } from "../support/fake-runner.ts";
 import { tempDir } from "../support/temp-dir.ts";
 
 const GIB = 1024 ** 3;
-
-const SAMPLES: Array<[number, number, { cpus: number; memoryGiB: number }]> = [
-  [1, 2, { cpus: 2, memoryGiB: 4 }],
-  [2, 7, { cpus: 2, memoryGiB: 4 }],
-  [4, 8, { cpus: 4, memoryGiB: 4 }],
-  [8, 16, { cpus: 8, memoryGiB: 8 }],
-  [10, 18, { cpus: 8, memoryGiB: 9 }],
-  [12, 24, { cpus: 8, memoryGiB: 10 }],
-  [16, 64, { cpus: 8, memoryGiB: 10 }],
-];
 
 const vmWith = (respond: FakeResponder, stateDir = "/nonexistent") =>
   createColimaVm({
@@ -25,12 +15,6 @@ const vmWith = (respond: FakeResponder, stateDir = "/nonexistent") =>
   });
 
 describe("the sandbox VM size", () => {
-  it("recommends this Mac's CPUs from 2 to 8, half its memory from 4 to 10 GiB, and a 60 GiB disk", () => {
-    SAMPLES.forEach(([cpus, memGiB, size]) => {
-      expect(recommendedVmSize(cpus, memGiB)).toEqual({ ...size, diskGiB: 60 });
-    });
-  });
-
   it("names the colima commands that resize the profile", () => {
     expect(vmWith(() => undefined).resizeCommand({ cpus: 6, memoryGiB: 8 })).toBe(
       "colima stop --profile pi-sandbox && colima start --profile pi-sandbox --activate=false --cpu 6 --memory 8",
