@@ -59,8 +59,11 @@ export const createStyle = (host: Host, styles: ReadonlyMap<string, Style>) => {
 
   host.registerCommand("style", {
     description: `Pick the output style of the main session from a list, or set it directly: /style [${names.join("|")}]`,
-    complete: (prefix) =>
-      names.filter((name) => name.startsWith(prefix)).map((name) => ({ value: name, label: name })),
+    complete: (prefix) => {
+      const matches = names.filter((name) => name.startsWith(prefix));
+
+      return matches.length > 0 ? matches.map((name) => ({ value: name, label: name })) : null;
+    },
     run: async (args) => {
       const name = args.trim();
 

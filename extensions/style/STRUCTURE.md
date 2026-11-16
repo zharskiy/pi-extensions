@@ -15,7 +15,7 @@ extensions/style/
 ├── prompts/
 │   └── concise.md         # one file per style, front matter `description:`
 ├── tests/
-│   └── style.test.ts      # default style, command, picker, settings files, style loading
+│   └── style.test.ts      # default style, command and its completion, picker, settings files, style loading
 ├── README.md
 ├── ARCHITECTURE.md
 └── STRUCTURE.md
