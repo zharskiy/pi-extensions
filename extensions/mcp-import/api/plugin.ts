@@ -9,14 +9,7 @@ import {
   type Source,
   USAGE,
 } from "../core/args.ts";
-import {
-  MCP_FILE,
-  type Pair,
-  prepareImport,
-  selectedPlan,
-  surveyImports,
-  writeImport,
-} from "../core/import-flow.ts";
+import { type Pair, prepareImport, selectedPlan, surveyImports, writeImport } from "../core/import-flow.ts";
 import { pickImport } from "../ui/pick.ts";
 import {
   appliedReport,
@@ -26,6 +19,7 @@ import {
   NOTHING_SELECTED,
   nothingToImport,
   pickedReport,
+  UNTRUSTED,
   UNTRUSTED_ONLY,
 } from "../ui/report.ts";
 
@@ -61,7 +55,7 @@ export const createMcpImport = (host: Host, home: string) => {
     const project = args.scope === "project";
 
     if (project && args.apply && !host.session().projectTrusted) {
-      fail(`trust this project first; pi reads .pi/${MCP_FILE} only in trusted projects`);
+      fail(UNTRUSTED);
       return;
     }
 
@@ -108,10 +102,10 @@ export const createMcpImport = (host: Host, home: string) => {
       return;
     }
 
-    const plan = selectedPlan(pair, names, home);
+    const { plan, problem } = selectedPlan(pair, names, home);
 
-    if (plan.error) {
-      fail(`${plan.error}; fix it first, nothing written`);
+    if (problem) {
+      fail(problem);
       return;
     }
 

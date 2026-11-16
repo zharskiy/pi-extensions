@@ -43,6 +43,8 @@ const PAIRS: readonly { source: Source; scope: SettingsScope }[] = [
 
 const hasServers = (found: Found) => found.origins.some((origin) => Object.keys(origin.servers).length > 0);
 
+const fixFirst = (error: string) => `${error}; fix it first, nothing written`;
+
 export const prepareImport = (
   source: Source,
   scope: SettingsScope,
@@ -67,7 +69,7 @@ export const prepareImport = (
   const plan = planImport(source, found.origins, { label: target, text }, { home, sep });
 
   if (plan.error) {
-    return { found, problem: `${plan.error}; fix it first, nothing written` };
+    return { found, problem: fixFirst(plan.error) };
   }
 
   return { found, pair: { source, scope, found, plan, path, target, text } };
@@ -87,7 +89,7 @@ export const writeImport = (pair: Pair, text: string | undefined, places: Omit<P
   }
 };
 
-export const selectedPlan = (pair: Pair, names: readonly string[], home: string): Plan => {
+export const selectedPlan = (pair: Pair, names: readonly string[], home: string) => {
   const chosen = new Set(names);
   const origins = pair.found.origins.map((origin) => ({
     ...origin,
@@ -98,7 +100,10 @@ export const selectedPlan = (pair: Pair, names: readonly string[], home: string)
     .filter((entry) => !chosen.has(entry.name))
     .map((entry) => ({ name: entry.name, origin: entry.origin, reason: NOT_SELECTED }));
 
-  return { ...plan, skipped: [...pair.plan.skipped, ...unchecked] };
+  return {
+    plan: { ...plan, skipped: [...pair.plan.skipped, ...unchecked] },
+    problem: plan.error ? fixFirst(plan.error) : undefined,
+  };
 };
 
 const foundNames = (pair: Pair) => [

@@ -14,7 +14,7 @@ extensions/mcp-import/
 │   └── import-flow.ts       prepare a pair, survey and scan all pairs, narrow to the picked servers, write the target (a new `.pi/` gets its `.gitignore`)
 ├── ui/
 │   ├── pick.ts              source select form and server multi-select form
-│   └── report.ts            dry-run, applied, picked and nothing-to-import messages
+│   └── report.ts            dry-run, applied, picked and nothing-to-import messages, the untrusted-project texts
 ├── tests/
 │   ├── args.test.ts         argument parsing and completion
 │   ├── convert.test.ts      entry conversion

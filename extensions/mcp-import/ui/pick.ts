@@ -40,7 +40,7 @@ const strings = (value: unknown) =>
 const transport = ({ server }: Entry) =>
   typeof server.url === "string"
     ? `http${DOT}${server.url}`
-    : `stdio${DOT}${[server.command, ...strings(server.args)].filter((part) => typeof part === "string").join(" ")}`;
+    : `stdio${DOT}${[...strings([server.command]), ...strings(server.args)].join(" ")}`;
 
 const serverDescription = (entry: Entry) => {
   const notes = entry.notes.length;
