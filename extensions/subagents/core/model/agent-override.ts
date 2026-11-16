@@ -6,6 +6,13 @@ export type OverrideField = { patch: AgentOverride; error?: string };
 
 export const OVERRIDE_FIELDS = ["model", "thinking", "skills"] as const;
 
+type OverrideKey = (typeof OVERRIDE_FIELDS)[number];
+
+const CHORE_FIELDS = OVERRIDE_FIELDS.filter((field) => field !== "skills");
+
+export const editableFields = (chore: boolean): readonly OverrideKey[] =>
+  chore ? CHORE_FIELDS : OVERRIDE_FIELDS;
+
 export const overrideModel = (value: unknown): OverrideField => {
   const { error, ...patch } = checkModel(value);
 

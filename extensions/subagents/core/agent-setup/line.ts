@@ -1,5 +1,7 @@
 import type { SettingsScope } from "../../../../platform/shared/index.ts";
 import {
+  editableFields,
+  OVERRIDE_FIELDS,
   type OverrideField,
   overrideModel,
   overrideSkills,
@@ -84,8 +86,11 @@ export const parseSetupLine = (args: string, check: LineCheck): LineRequest | { 
     return { error: `no agent named "${name}" (agents: ${check.agents.join(", ")})` };
   }
 
-  if (check.chores.includes(name) && pairs.some((pair) => pair.startsWith("skills="))) {
-    return { error: `${name} is a chore; /agents setup changes only its model and thinking` };
+  const editable = editableFields(check.chores.includes(name));
+  const fixed = OVERRIDE_FIELDS.filter((field) => !editable.includes(field));
+
+  if (pairs.some((pair) => fixed.some((field) => pair.startsWith(`${field}=`)))) {
+    return { error: `${name} is a chore; /agents setup changes only its ${editable.join(" and ")}` };
   }
 
   const parsed = pairs.map((pair) => parsePair(pair, check));

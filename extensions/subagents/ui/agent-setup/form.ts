@@ -8,6 +8,7 @@ import type { SettingsScope } from "../../../../platform/shared/index.ts";
 import { clampIndex, type MultiState, multiKey, tabStep } from "../../../../platform/ui-kit/index.ts";
 import type { AgentKind } from "../../core/agent-setup/agent-template.ts";
 import { SCOPES, type SetupChange } from "../../core/agent-setup/scope.ts";
+import { editableFields, OVERRIDE_FIELDS } from "../../core/model/agent-override.ts";
 import { grantOrNone, sameGrant } from "../../core/model/agent-record.ts";
 import {
   AGENT_SCOPE_ALL,
@@ -39,18 +40,14 @@ export type SetupContext = {
   project?: string;
 };
 
-const FIELDS = ["model", "thinking", "skills"] as const;
+export type Field = (typeof OVERRIDE_FIELDS)[number];
 
-export type Field = (typeof FIELDS)[number];
-
-export const FIELD_ROWS = FIELDS.length;
+export const FIELD_ROWS = OVERRIDE_FIELDS.length;
 
 const PRESET_ORDER: readonly Field[] = ["skills", "model", "thinking"];
 
-const CHORE_FIELDS = FIELDS.filter((field) => field !== "skills");
-
 export const fieldsOf = (agent: SetupAgent | undefined): readonly Field[] =>
-  agent?.role === "chore" ? CHORE_FIELDS : FIELDS;
+  editableFields(agent?.role === "chore");
 
 export const presetFieldsOf = (agent: SetupAgent) =>
   PRESET_ORDER.filter((field) => fieldsOf(agent).includes(field));
