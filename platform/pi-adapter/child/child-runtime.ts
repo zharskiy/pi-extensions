@@ -14,7 +14,15 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { contextOf, sumUsage } from "../context/usage-math.ts";
 import { childScope } from "../runtime/child-scope.ts";
-import { finalRunTexts, formatRoutedMessage, messageText, toolCallCount } from "../runtime/message-text.ts";
+import {
+  finalRunTexts,
+  formatRoutedMessage,
+  messageText,
+  type PiCustom,
+  piCustom,
+  startQueued,
+  toolCallCount,
+} from "../runtime/message-text.ts";
 import { promptRecordEntry, readSessionFile } from "../runtime/session-file.ts";
 import { settleWithin } from "../runtime/settle-within.ts";
 import { toPiTool } from "../tools/tool-bridge.ts";
@@ -34,15 +42,6 @@ import { reserveCodemodeWorkers } from "./codemode.ts";
 import { availableModels, resolutionFailure, resolveFromCatalog } from "./model-catalog.ts";
 
 const SHUTDOWN_TIMEOUT_MS = 2_000;
-
-type QueuedCustom = { customType: string; content: string; details?: unknown; display: boolean };
-
-const queuedCustom = (message: CustomMessage, display: boolean): QueuedCustom => ({
-  customType: message.customType,
-  content: message.text,
-  details: message.details,
-  display,
-});
 
 type Settings = ReturnType<ExtensionAPI["getSettings"]>;
 
@@ -132,7 +131,7 @@ export const createPiRuntime = (
     const listeners = new Set<(event: ChildEvent) => void>();
     let running = false;
     let disposed = false;
-    const customsInPiQueue: QueuedCustom[] = [];
+    const customsInPiQueue: PiCustom[] = [];
 
     const report = (step: string, error: unknown) => {
       const reason = error instanceof Error ? error.message : String(error);
@@ -244,8 +243,8 @@ export const createPiRuntime = (
       }
     };
 
-    const resumeWith = (texts: string, customs: QueuedCustom[]) => {
-      const queueNext = (custom: QueuedCustom) => {
+    const resumeWith = (texts: string, customs: PiCustom[]) => {
+      const queueNext = (custom: PiCustom) => {
         void session.sendCustomMessage(custom, { deliverAs: "nextTurn" });
       };
 
@@ -255,13 +254,7 @@ export const createPiRuntime = (
         return;
       }
 
-      const [first, ...rest] = customs;
-
-      rest.forEach(queueNext);
-
-      if (first) {
-        sendCustomNow(first);
-      }
+      startQueued(customs, sendCustomNow, queueNext);
     };
 
     session.subscribe((event) => {
@@ -333,7 +326,7 @@ export const createPiRuntime = (
       session.prompt(text, { expandPromptTemplates: false, source: "extension" }).catch(failStart);
     };
 
-    const sendCustomNow = (custom: QueuedCustom) => {
+    const sendCustomNow = (custom: PiCustom) => {
       running = true;
       session.sendCustomMessage(custom, { triggerTurn: true }).catch(failStart);
     };
@@ -344,7 +337,7 @@ export const createPiRuntime = (
         return;
       }
 
-      sendCustomNow(queuedCustom(opening, true));
+      sendCustomNow(piCustom(opening, true));
     };
 
     const deliver = async (text: string, delivery: MessageDelivery) => {
@@ -365,7 +358,7 @@ export const createPiRuntime = (
       await session.followUp(text, undefined, { source: "extension" });
     };
 
-    const deliverCustom = async (custom: QueuedCustom, delivery: MessageDelivery) => {
+    const deliverCustom = async (custom: PiCustom, delivery: MessageDelivery) => {
       if (disposed) {
         return;
       }
@@ -403,8 +396,8 @@ export const createPiRuntime = (
         };
       },
       send: (message, delivery) => deliver(formatRoutedMessage(message), delivery),
-      sendCustom: (message, delivery) => deliverCustom(queuedCustom(message, true), delivery),
-      sendHidden: (message) => deliverCustom(queuedCustom(message, false), "followUp"),
+      sendCustom: (message, delivery) => deliverCustom(piCustom(message, true), delivery),
+      sendHidden: (message) => deliverCustom(piCustom(message, false), "followUp"),
       abort: () => session.abort(),
       dispose,
       ownUsage: (): UsageTotals => sumUsage(session.sessionManager.getEntries()),

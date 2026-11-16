@@ -22,7 +22,7 @@
 - `runtime/global-record.ts`: `globalRecord(name, init)`; one record per name on `globalThis`, shared by adapter copies.
 - `runtime/follow-ups.ts`: the custom follow-ups adapter hosts queued per session and not yet started, read for `AssistantEnd.final`.
 - `runtime/session-file.ts`: reads session `.jsonl` files through pi's parser and migration: entries, transcripts (whole, for child sessions, or one branch through pi's context entries, with its custom entries, compaction or branch summaries and bash executions).
-- `runtime/message-text.ts`: message text (`finalRunTexts`, a child's final run, with every custom message, hidden ones included, as a run start), `formatRoutedMessage`.
+- `runtime/message-text.ts`: message text (`finalRunTexts`, a child's final run, with every custom message, hidden ones included, as a run start), `formatRoutedMessage`, and `piCustom` and `startQueued`, the one mapping of a `CustomMessage` to pi's custom message and the one start of held customs (the first triggers a turn, the rest wait for the next) for the main host and a child.
 - `runtime/default-model.ts`: `writeDefaultModel` and `writeDefaultThinkingLevel`; save a `provider/id` ref as pi's global default model, widening a model scope as Ctrl+S does, and a level as pi's global default thinking level, both through pi's `SettingsManager`.
 - `runtime/settle-within.ts`: `settleWithin`; waits for a promise at most a given time.
 - `child/child-runtime.ts`: the runtime that starts child agent sessions (`send` for routed messages, `sendCustom` for displayed custom ones, `sendHidden` for a hidden one, and their re-queue at settle, `start` from a task or from a seed alone).
