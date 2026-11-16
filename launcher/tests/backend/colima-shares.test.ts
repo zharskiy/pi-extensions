@@ -405,6 +405,27 @@ describe("the launch shares a repository the VM does not see", () => {
     expect(context.colimaCalls()).toEqual([]);
   });
 
+  it("refuses a share mounted at another path before the busy refusal while another pi session is live", async () => {
+    const context = await launchWith({
+      lima: ({ home }) => [{ location: home, writable: true, mountPoint: "/mnt/home" }],
+    });
+
+    await registerLaunch(context.harness.stateDir, {
+      launchId: "00000000000000dd",
+      ...(await processMark()),
+      repoHash: sha256Hex("/elsewhere"),
+      startedAt: 1,
+    });
+
+    expect(await run0(context)).toBe(1);
+    expect(context.harness.stderr()).toContain(
+      `pi-sandbox: could not change the shares of the sandbox VM; ${context.paths.home} is mounted at another path in the VM, which colima's --mount cannot keep\n`,
+    );
+    expect(context.harness.stderr()).toContain("  hint: edit ~/.colima/pi-sandbox/colima.yaml mounts");
+    expect(context.harness.stderr()).not.toContain("would end them");
+    expect(context.colimaCalls()).toEqual([]);
+  });
+
   it("names the missing colima", async () => {
     const context = await launchWith({ answers: { missing: true } });
 

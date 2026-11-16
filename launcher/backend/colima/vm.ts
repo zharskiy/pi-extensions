@@ -434,6 +434,10 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
     if (decision.kind === "defer") {
       const missing = current === undefined ? [] : uncoveredPaths(current, target.needs);
 
+      if (missing.length > 0 && !wanted.exactShares) {
+        await shares.keepsMoved(MOVED_PROBLEM);
+      }
+
       if (missing.length > 0) {
         throw refused(missing, decision.sessions, text, planned.mounts);
       }
