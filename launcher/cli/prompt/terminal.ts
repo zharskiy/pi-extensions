@@ -74,7 +74,7 @@ const unicodeOf = (env: NodeJS.ProcessEnv) => {
 
 const FORCE_OFF = new Set(["0", "false"]);
 
-const colourOf = (env: NodeJS.ProcessEnv, output: UiOutput) => {
+export const colourOf = (env: NodeJS.ProcessEnv, output: object) => {
   if (env.TERM === "dumb") {
     return false;
   }
@@ -87,7 +87,7 @@ const colourOf = (env: NodeJS.ProcessEnv, output: UiOutput) => {
     return false;
   }
 
-  return output.isTTY === true;
+  return "isTTY" in output && output.isTTY === true;
 };
 
 const quietly = (action: () => void) => {

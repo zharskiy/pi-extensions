@@ -861,12 +861,13 @@ describe("pi sandbox doctor", () => {
       expect(code).toBe(1);
     });
 
-    it("prints no colour with NO_COLOR or a dumb TERM, and no progress line on a dumb TERM", async () => {
-      const envs: Array<Record<string, string>> = [{ NO_COLOR: "1" }, { TERM: "dumb" }];
+    it("prints no colour with NO_COLOR, FORCE_COLOR=0 or a dumb TERM, and no progress line on a dumb TERM", async () => {
+      const envs: Array<Record<string, string>> = [{ NO_COLOR: "1" }, { TERM: "dumb" }, { FORCE_COLOR: "0" }];
       const runs = await Promise.all(envs.map(async (env) => (await terminalDoctor(env)).harness));
       const outputs = runs.map((harness) => harness.stdout());
 
       expect(outputs.map((stdout) => doctorReport(stdout).result)).toEqual([
+        "fail (1 failed, 4 ok, 3 skipped)",
         "fail (1 failed, 4 ok, 3 skipped)",
         "fail (1 failed, 4 ok, 3 skipped)",
       ]);
