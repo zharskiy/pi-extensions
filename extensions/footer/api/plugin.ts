@@ -33,7 +33,5 @@ export const footerPlugin: Plugin<never, never, undefined> = {
     });
 
     host.onIdle(refresh);
-
-    return undefined;
   },
 };

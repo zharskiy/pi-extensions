@@ -42,6 +42,8 @@ npm run test -- extensions/working-indicator   # this extension's unit tests
 npm run check                                  # typecheck, biome, knip, unit tests
 ```
 
+The extension keeps nothing to undo: its timer stops when pi shuts the session down.
+
 The full set of commands is in the root README's [Development](../../README.md#development) section; rules for coding agents are in [AGENTS.md](../../AGENTS.md).
 
 ## Contributing

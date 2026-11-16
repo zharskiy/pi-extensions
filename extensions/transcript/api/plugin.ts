@@ -98,6 +98,5 @@ export const transcriptPlugin: Plugin<never, never, undefined> = {
   id: "transcript",
   enable({ host }) {
     createTranscript(host);
-    return undefined;
   },
 };

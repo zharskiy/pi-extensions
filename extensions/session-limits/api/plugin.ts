@@ -52,7 +52,5 @@ export const sessionLimitsPlugin: Plugin<never, never, Limits> = {
     host.onSessionStart(() => {
       host.publish(LIMITS_CHANNEL, { ...settings });
     });
-
-    return undefined;
   },
 };

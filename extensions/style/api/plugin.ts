@@ -83,7 +83,5 @@ export const stylePlugin: Plugin<never, never, undefined> = {
   id: "style",
   enable({ host, paths }) {
     createStyle(host, loadStyles(join(paths.root, "prompts")));
-
-    return undefined;
   },
 };

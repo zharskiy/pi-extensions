@@ -5,7 +5,7 @@ extensions/working-indicator/
 ├── index.ts                        # pi entry: re-exports the default of api/extension.ts
 ├── api/
 │   ├── extension.ts                # createManagedExtension (namespace pi-working-indicator, one plugin)
-│   └── plugin.ts                   # createWorkingIndicator (agent start, phase and shutdown handlers, the tick), workingIndicatorPlugin
+│   └── plugin.ts                   # createWorkingIndicator (agent start, phase and shutdown handlers, the tick), workingIndicatorPlugin (no teardown)
 ├── core/
 │   └── indicator-state.ts          # TICK_MS, VERB_MS, Run, startRun, elapsedOf, rotateVerb, isVisibleIn
 ├── ui/

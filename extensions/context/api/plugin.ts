@@ -66,6 +66,5 @@ export const contextPlugin: Plugin<never, never, undefined> = {
   id: "context",
   enable({ host }) {
     createContext(host, { home: homedir(), now: Date.now });
-    return undefined;
   },
 };

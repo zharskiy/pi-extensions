@@ -56,7 +56,5 @@ export const spendingPlugin: Plugin<never, never, undefined> = {
       spending.persist();
       closed = true;
     });
-
-    return undefined;
   },
 };

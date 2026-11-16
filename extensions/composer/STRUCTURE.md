@@ -5,7 +5,7 @@ extensions/composer/
 ├── index.ts                  # pi entry: re-exports the default of api/extension.ts
 ├── api/
 │   ├── extension.ts          # createManagedExtension (namespace pi-composer, one plugin)
-│   └── plugin.ts             # createComposer (sets the frame on session start), composerPlugin
+│   └── plugin.ts             # createComposer (sets the frame on session start), composerPlugin (no teardown)
 ├── ui/
 │   └── frame.ts              # createFrame: decorates the editor's rendered lines (gutter, rule extensions)
 ├── tests/

@@ -191,6 +191,5 @@ export const mcpImportPlugin: Plugin<never, never, undefined> = {
   id: "mcp-import",
   enable({ host }) {
     createMcpImport(host, homedir());
-    return undefined;
   },
 };

@@ -49,7 +49,5 @@ export const modelDefaultPlugin: Plugin<never, never, undefined> = {
   id: "model-default",
   enable({ host }) {
     createModelDefault(host);
-
-    return undefined;
   },
 };
