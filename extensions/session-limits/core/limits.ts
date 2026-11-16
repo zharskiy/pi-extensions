@@ -87,6 +87,8 @@ type LimitsState = {
   focus?: string;
 };
 
+const INITIAL_STATE: LimitsState = { phase: "watching", instructions: 0, manual: false, handedOff: false };
+
 type RequestOrigin = { manual: boolean; focus?: string };
 
 const textsOf = (messages: UserMessage[]) => messages.map((message) => message.text);
@@ -98,12 +100,7 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
   });
   const held = new Map<string, string>();
   const captured: UserMessage[] = [];
-  let state: LimitsState = {
-    phase: "watching",
-    instructions: 0,
-    manual: false,
-    handedOff: false,
-  };
+  let state = INITIAL_STATE;
   let turns = 0;
   let running = false;
   let switchRunning = false;
@@ -588,16 +585,7 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
   });
 
   const cancelManual = () => {
-    state = {
-      ...state,
-      phase: "watching",
-      instructions: 0,
-      path: undefined,
-      saved: undefined,
-      manual: false,
-      handedOff: false,
-      focus: undefined,
-    };
+    state = { ...INITIAL_STATE, context: state.context };
 
     host.ui.notify("Session handoff cancelled.", "info");
     refresh();
