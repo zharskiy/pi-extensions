@@ -1,11 +1,9 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getAgentDir, SettingsManager } from "@earendil-works/pi-coding-agent";
-import type { ThinkingLevel } from "../types/model.ts";
-
-const refOf = (model: { provider: string; id: string }) => `${model.provider}/${model.id}`;
+import { modelRefOf, type ThinkingLevel } from "../types/model.ts";
 
 const widenScope = (settings: SettingsManager, ctx: ExtensionContext, ref: string) => {
-  const scoped = ctx.scopedModels.map(({ model }) => refOf(model));
+  const scoped = ctx.scopedModels.map(({ model }) => modelRefOf(model));
 
   if (scoped.length === 0 || scoped.includes(ref)) {
     return;

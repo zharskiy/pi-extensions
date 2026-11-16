@@ -5,6 +5,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { ContextFacts } from "../types/context.ts";
 import type { SessionHost } from "../types/host-capabilities.ts";
+import { modelRefOf } from "../types/model.ts";
 import type { HostState } from "../ui/tui-context.ts";
 import { messageFacts } from "./context-messages.ts";
 import { type PromptApi, promptFacts } from "./context-prompt.ts";
@@ -25,9 +26,7 @@ const reserveOf = (pi: ContextApi, model: ExtensionContext["model"]) => {
     return 0;
   }
 
-  const override = model
-    ? compaction?.modelOverrides?.[`${model.provider}/${model.id}`]?.reserveTokens
-    : undefined;
+  const override = model ? compaction?.modelOverrides?.[modelRefOf(model)]?.reserveTokens : undefined;
 
   return override ?? compaction?.reserveTokens ?? DEFAULT_COMPACTION_SETTINGS.reserveTokens;
 };

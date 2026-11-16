@@ -1,6 +1,6 @@
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { AvailableModel, ModelResolution } from "../types/model.ts";
+import { type AvailableModel, type ModelResolution, modelRefOf } from "../types/model.ts";
 import { type CatalogModel, resolveModel as matchCatalog } from "./model-resolver.ts";
 
 type PiModel = NonNullable<ExtensionContext["model"]>;
@@ -30,7 +30,7 @@ export const availableModels = (ctx: ExtensionContext): AvailableModel[] => {
     .getAll()
     .filter(hasAuth)
     .map((model) => ({
-      ref: `${model.provider}/${model.id}`,
+      ref: modelRefOf(model),
       contextWindow: model.contextWindow,
       cost: { input: model.cost.input, output: model.cost.output },
       thinking: getSupportedThinkingLevels(model),
@@ -68,7 +68,7 @@ export const resolveFromCatalog = (
       };
     }
 
-    const ref = `${ctx.model.provider}/${ctx.model.id}`;
+    const ref = modelRefOf(ctx.model);
 
     return {
       resolution: {
@@ -94,7 +94,7 @@ export const resolveFromCatalog = (
     return { resolution };
   }
 
-  const model = models.find((candidate) => `${candidate.provider}/${candidate.id}` === resolution.model.ref);
+  const model = models.find((candidate) => modelRefOf(candidate) === resolution.model.ref);
 
   return { resolution, model };
 };

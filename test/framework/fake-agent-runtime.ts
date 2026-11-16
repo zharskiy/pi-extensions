@@ -9,6 +9,7 @@ import {
   emptyUsage,
   type MessageDelivery,
   type ModelPreferences,
+  modelRefOf,
   type RoutedMessage,
   resolveModel,
   type SessionRecord,
@@ -171,7 +172,7 @@ export const createFakeAgentRuntime = (extraModels: CatalogModel[] = []): FakeAg
       runtime.catalog
         .filter((model) => model.authenticated)
         .map((model) => ({
-          ref: `${model.provider}/${model.id}`,
+          ref: modelRefOf(model),
           contextWindow: model.contextWindow,
           cost: model.cost,
           thinking: [...THINKING_LEVELS],

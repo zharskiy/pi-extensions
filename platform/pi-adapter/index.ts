@@ -28,6 +28,7 @@ export {
   type ModelChoice,
   type ModelInfo,
   type ModelResolution,
+  modelRefOf,
   splitModelRequest,
   THINKING_LEVELS,
 } from "./types/model.ts";

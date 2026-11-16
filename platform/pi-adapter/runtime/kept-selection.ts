@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionContext, SessionManager } from "@earendil-works/pi-coding-agent";
-import { isThinkingLevel } from "../types/model.ts";
+import { isThinkingLevel, modelRefOf } from "../types/model.ts";
 import { globalRecord } from "./global-record.ts";
 
 const KEPT_SELECTION_TYPE = "pi-adapter:kept-selection";
@@ -59,7 +59,7 @@ export const forgetSessionSelection = (ctx: ExtensionContext) => {
 };
 
 export const restoreSelection = async (pi: SelectionApi, ctx: ExtensionContext, kept: KeptSelection) => {
-  const ref = `${kept.provider}/${kept.id}`;
+  const ref = modelRefOf(kept);
 
   restoredSelections().set(sessionOf(ctx), { model: ref, thinking: kept.thinking, applied: false });
 
@@ -67,7 +67,7 @@ export const restoreSelection = async (pi: SelectionApi, ctx: ExtensionContext, 
   const restored = model !== undefined && (await pi.setModel(model).catch(() => false));
 
   if (!restored) {
-    const fallback = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "the default model";
+    const fallback = ctx.model ? modelRefOf(ctx.model) : "the default model";
 
     releaseRestoredSelection(ctx);
     ctx.ui.notify(`Could not keep ${ref} after the handoff; the new session uses ${fallback}.`, "warning");

@@ -5,6 +5,8 @@ export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
 export const isThinkingLevel = (value: string): value is ThinkingLevel =>
   THINKING_LEVELS.some((level) => level === value);
 
+export const modelRefOf = (model: { provider: string; id: string }) => `${model.provider}/${model.id}`;
+
 export const splitModelRequest = (request: string): { name: string; thinking?: string; error?: string } => {
   const trimmed = request.trim();
   const colon = trimmed.lastIndexOf(":");

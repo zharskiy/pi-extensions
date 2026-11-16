@@ -22,7 +22,7 @@ import { toolRowsHost } from "../tools/tool-rows.ts";
 import type { ContextSnapshot } from "../types/context.ts";
 import type { Host } from "../types/host-capabilities.ts";
 import type { CommandSpec, CustomMessage, UserMessage } from "../types/messages.ts";
-import { isThinkingLevel } from "../types/model.ts";
+import { isThinkingLevel, modelRefOf } from "../types/model.ts";
 import type {
   AssistantEnd,
   DialogEvent,
@@ -150,7 +150,7 @@ const sessionOf = (ctx: ExtensionContext) => ctx.sessionManager.getSessionId();
 
 const hostStates = () => globalRecord<Set<HostState>>("host-states", () => new Set());
 
-const modelRef = (model: ExtensionContext["model"]) => model && `${model.provider}/${model.id}`;
+const modelRef = (model: ExtensionContext["model"]) => model && modelRefOf(model);
 
 export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
   let mainPrompt: string | undefined;
@@ -541,7 +541,7 @@ export const createPiHost = (pi: ExtensionAPI, state: HostState): Host => {
       return;
     }
 
-    const ref = `${event.model.provider}/${event.model.id}`;
+    const ref = modelRefOf(event.model);
     const restored = restoredSelection(ctx);
 
     if (restored?.model === ref) {
