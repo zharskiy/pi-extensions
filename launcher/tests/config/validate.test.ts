@@ -101,6 +101,9 @@ describe("validateConfig", () => {
       "config: workspaceRoots.outside is not a known key",
     );
     expect(problemOf({ workspaceRoots: {} })).toBe("config: workspaceRoots.roots is required");
+    expect(problemOf({ tls: { extraCa: [{ hostStore: true }] } })).toBe(
+      "config: tls.extraCa[0].hostStore was removed; run pi sandbox doctor to get the sha256 of your network's CA",
+    );
   });
 
   it("says what replaces each removed key", () => {
@@ -115,6 +118,27 @@ describe("validateConfig", () => {
     );
     expect(problemOf({ egress: { parentProxy: "auto" } })).toBe(
       "config: egress.parentProxy was removed; the parent proxy is always taken from the environment",
+    );
+  });
+
+  it("takes an extra CA by sha256 fingerprint, colons and case optional", () => {
+    const bare = "ab".repeat(32);
+    const colons = Array.from({ length: 32 }, () => "AB").join(":");
+
+    expect(
+      problemOf({ tls: { extraCa: [{ sha256: bare }, { sha256: colons }, { file: "~/ca.pem" }] } }),
+    ).toBe(undefined);
+    expect(problemOf({ tls: { extraCa: [{ sha256: "ab".repeat(31) }] } })).toBe(
+      "config: tls.extraCa[0].sha256 must be 64 hex digits, colons optional",
+    );
+    expect(problemOf({ tls: { extraCa: [{ sha256: `${"ab".repeat(31)}zz` }] } })).toBe(
+      "config: tls.extraCa[0].sha256 must be 64 hex digits, colons optional",
+    );
+    expect(problemOf({ tls: { extraCa: [{ sha256: `:${bare}` }] } })).toBe(
+      "config: tls.extraCa[0].sha256 must be 64 hex digits, colons optional",
+    );
+    expect(problemOf({ tls: { extraCa: [{ sha256: bare, file: "~/ca.pem" }] } })).toBe(
+      "config: tls.extraCa[0].file is not a known key",
     );
   });
 

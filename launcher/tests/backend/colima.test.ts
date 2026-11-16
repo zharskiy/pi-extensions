@@ -418,7 +418,7 @@ describe("colima container translation", () => {
 });
 
 const ENGINE_CERTIFICATE_HINT =
-  "a proxy or CA on this network signs the registry, and the VM's engine does not trust it (tls.extraCa does not reach the engine); install the CA in the VM with a provision script in ~/.colima/pi-sandbox/colima.yaml, or use a registry the proxy does not inspect";
+  "a proxy or CA on this network signs the registry and its CA is not declared in tls.extraCa; run pi sandbox doctor, which prints the tls.extraCa line to add";
 
 describe("colima images", () => {
   it("names the reference when the registry refuses the pull", async () => {

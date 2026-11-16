@@ -389,6 +389,7 @@ describe("buildContainerSpec", () => {
       NODE_EXTRA_CA_CERTS: "/etc/pi-sandbox/ca.pem",
       PI_SANDBOX_TRUST_HASH: "trust-1",
       SSL_CERT_FILE: "/tmp/pi-sandbox/ca-bundle.pem",
+      CURL_CA_BUNDLE: "/tmp/pi-sandbox/ca-bundle.pem",
       REQUESTS_CA_BUNDLE: "/tmp/pi-sandbox/ca-bundle.pem",
       PIP_CERT: "/tmp/pi-sandbox/ca-bundle.pem",
       CARGO_HTTP_CAINFO: "/tmp/pi-sandbox/ca-bundle.pem",

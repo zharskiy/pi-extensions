@@ -34,7 +34,7 @@ import { writeOnce } from "./notices.ts";
 import { openSandboxProxy, reportDenials, type SandboxProxy, sandboxDenials } from "./sandbox-proxy.ts";
 import { sweepOrphans } from "./sweep.ts";
 import { imagePiVersion } from "./versions.ts";
-import { shareVm, startVm } from "./vm.ts";
+import { shareVm, startVm, trustVm } from "./vm.ts";
 
 interface PreparedContainer {
   containerId: string;
@@ -377,6 +377,11 @@ const prepareAll = async (
   const prepared = await staged("host", () =>
     prepareHost(deps, context, backend, { deriving, sessions, signIn }),
   );
+
+  await trustVm(deps, context, backend, {
+    extraPemPath: prepared.host.trust.extraPemPath,
+    launchId: input.launch.launchId,
+  });
 
   cancelled.throwIfAborted();
 

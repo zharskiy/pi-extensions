@@ -113,6 +113,33 @@ describe("the doctor report", () => {
     ]);
   });
 
+  it("prints each line of a hint as its own hint line, with the home shortened, and ranks the tls checks after the parent proxy", () => {
+    const lines = renderReport(
+      [
+        named("network", "tls in sandbox", passed("the container trusts it")),
+        named(
+          "network",
+          "tls inspection",
+          failed("not trusted", { hint: `add it in ${HOME}/config.json\nor use a PEM file` }),
+        ),
+        named("network", "parent proxy", skipped("no parent proxy configured")),
+      ],
+      [],
+      PLAIN,
+    );
+
+    expect(lines).toEqual([
+      "network",
+      "  skip  parent proxy      no parent proxy configured",
+      "  fail  tls inspection    not trusted",
+      "        hint: add it in ~/config.json",
+      "        hint: or use a PEM file",
+      "  ok    tls in sandbox    the container trusts it",
+      "",
+      "result: fail (1 failed, 1 ok, 1 skipped)",
+    ]);
+  });
+
   it("colours the words only, keeping the plain text and its alignment", () => {
     const checks = [
       named("sandbox", "vm size", warned("below the recommended size", { hint: "resize it" })),

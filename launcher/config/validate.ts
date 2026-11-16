@@ -33,7 +33,7 @@ type Spec =
   | { type: "boolean" }
   | { type: "array"; items: Spec; check?: ListCheck }
   | ObjectSpec
-  | { type: "keyed"; variants: Record<string, ObjectSpec> };
+  | { type: "keyed"; variants: Record<string, ObjectSpec>; removed?: Record<string, string> };
 
 interface Problem {
   path: string;
@@ -47,6 +47,8 @@ const VARIABLE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const HEADER = /^[A-Za-z0-9-]+$/;
 
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
+
+const FINGERPRINT = /^([0-9A-Fa-f]:?){63}[0-9A-Fa-f]$/;
 
 const RULE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
@@ -126,6 +128,9 @@ const httpsUrl: Check = (value) =>
 const header: Check = (value) => (HEADER.test(value) ? undefined : "must be a header name");
 
 const digest: Check = (value) => (DIGEST.test(value) ? undefined : "must look like sha256:<64 hex digits>");
+
+const fingerprint: Check = (value) =>
+  FINGERPRINT.test(value) ? undefined : "must be 64 hex digits, colons optional";
 
 const ruleId: Check = (value) =>
   RULE_ID.test(value) ? undefined : "must be letters, digits, dot, dash or underscore";
@@ -283,9 +288,10 @@ const CREDENTIAL_RULE: ObjectSpec = {
 const EXTRA_CA: Spec = {
   type: "keyed",
   variants: {
+    sha256: shape({ sha256: text(fingerprint) }, ["sha256"]),
     file: shape({ file: text(absolutePath) }, ["file"]),
-    hostStore: shape({ hostStore: { type: "true" } }, ["hostStore"]),
   },
+  removed: { hostStore: "was removed; run pi sandbox doctor to get the sha256 of your network's CA" },
 };
 
 const CONFIG_SPEC: ObjectSpec = {
@@ -427,17 +433,23 @@ const objectProblem = (spec: ObjectSpec, value: unknown, path: string): Problem 
   ]);
 };
 
-const keyedProblem = (variants: Record<string, ObjectSpec>, value: unknown, path: string) => {
+const keyedProblem = (spec: Extract<Spec, { type: "keyed" }>, value: unknown, path: string) => {
   if (!isJsonObject(value)) {
     return { path, problem: "must be an object" };
   }
 
-  const names = Object.keys(variants);
+  const removed = Object.entries(spec.removed ?? {}).find(([name]) => Object.hasOwn(value, name));
+
+  if (removed !== undefined) {
+    return { path: joinPath(path, removed[0]), problem: removed[1] };
+  }
+
+  const names = Object.keys(spec.variants);
   const chosen = names.find((name) => Object.hasOwn(value, name));
 
   return chosen === undefined
     ? { path, problem: `must set one of ${names.join(", ")}` }
-    : objectProblem(variants[chosen], value, path);
+    : objectProblem(spec.variants[chosen], value, path);
 };
 
 const problemOf = (spec: Spec, value: unknown, path: string): Problem | undefined => {
@@ -466,7 +478,7 @@ const problemOf = (spec: Spec, value: unknown, path: string): Problem | undefine
       : { path, problem: "must be an array" };
   }
 
-  return spec.type === "keyed" ? keyedProblem(spec.variants, value, path) : objectProblem(spec, value, path);
+  return spec.type === "keyed" ? keyedProblem(spec, value, path) : objectProblem(spec, value, path);
 };
 
 const normalized = (config: UserConfig): UserConfig => {

@@ -76,14 +76,6 @@ const deriveFor = async (
   return { derived, notices: [...providers.notices, ...derived.notices] };
 };
 
-const HOST_STORE_SKIPPED =
-  "tls.extraCa hostStore reads the macOS System keychain only and was skipped here; list the CA with { file } instead";
-
-const hostStoreNotices = (deps: CliDeps, context: LaunchContext) =>
-  deps.platform !== "darwin" && context.effective.config.tls.extraCa.some((source) => "hostStore" in source)
-    ? [HOST_STORE_SKIPPED]
-    : [];
-
 export const prepareHostSide = async (
   deps: CliDeps,
   context: LaunchContext,
@@ -97,6 +89,6 @@ export const prepareHostSide = async (
 
   return {
     host: { hostAgentDir: hostAgentDirOf(deps), files, pi, derived, trust },
-    notices: [...notices, ...hostStoreNotices(deps, context)],
+    notices,
   };
 };

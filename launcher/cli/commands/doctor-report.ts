@@ -77,7 +77,9 @@ const checkLines = (check: NamedCheck, options: ReportOptions) => {
   const { status, detail, reasons = [], hint } = check.result;
   const head = `${check.name.padEnd(NAME_WIDTH)}  ${shown(detail)}`.trimEnd();
   const fix =
-    hint === undefined || hint === CIRCULAR_HINT ? [] : [`${style(STYLE.hint, "hint:")} ${shown(hint)}`];
+    hint === undefined || hint === CIRCULAR_HINT
+      ? []
+      : hint.split("\n").map((line) => `${style(STYLE.hint, "hint:")} ${shown(line)}`);
 
   return [
     `  ${style(STYLE[status], status)}${" ".repeat(STATUS_WIDTH - status.length)}  ${head}`,

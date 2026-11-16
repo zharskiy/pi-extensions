@@ -32,7 +32,7 @@ interface CredentialsConfig {
   derive: DeriveConfig;
 }
 
-export type ExtraCa = { file: string } | { hostStore: true };
+export type ExtraCa = { file: string } | { sha256: string };
 
 interface WorkspaceRootsConfig {
   roots: string[];

@@ -34,12 +34,20 @@ import {
   sweepCredentials,
 } from "./doctor-probes.ts";
 import { renderReport } from "./doctor-report.ts";
+import {
+  type HostTls,
+  readHostTls,
+  readSandboxTls,
+  sandboxTlsResult,
+  tlsInspectionResult,
+} from "./doctor-tls.ts";
 
 interface ProbeInput {
   deps: CliDeps;
   context: LaunchContext;
   sandbox: Sandbox;
   target: ProbeTarget;
+  hostTls: () => Promise<HostTls>;
 }
 
 type Probe = (input: ProbeInput) => Promise<NamedCheck[]>;
@@ -52,6 +60,7 @@ interface Progress {
 interface Run {
   checks: NamedCheck[];
   progress: Progress;
+  hostTls: () => Promise<HostTls>;
 }
 
 const NOTICE_PREFIX = "pi-sandbox: ";
@@ -258,6 +267,9 @@ const PROBES: Probe[] = [
     sweepCredentials(target, sandbox.proxy?.token),
   ),
   single("no-route", "network", ({ target }) => checkNoRoute(target)),
+  single("tls in sandbox", "network", async ({ target, hostTls }) =>
+    sandboxTlsResult(await readSandboxTls(target), await hostTls()),
+  ),
   inOrder(
     single("mcp", "network", ({ target }) => checkMcp(target)),
     single("mcp-auth sweep", "leak sweep", ({ target }) => checkMcpAuthSweep(target)),
@@ -268,14 +280,16 @@ const PROBES: Probe[] = [
   single("vm size", "sandbox", ({ deps, sandbox }) => sizeCheck(deps, sandbox)),
 ];
 
-const probe = async (deps: CliDeps, context: LaunchContext, sandbox: Sandbox) => {
+const probe = async (deps: CliDeps, context: LaunchContext, sandbox: Sandbox, run: Run) => {
   const target = {
     backend: sandbox.backend,
     containerId: sandbox.containerId,
     workdir: sandbox.spec.workdir,
   };
 
-  return (await Promise.all(PROBES.map((run) => run({ deps, context, sandbox, target })))).flat();
+  const input = { deps, context, sandbox, target, hostTls: run.hostTls };
+
+  return (await Promise.all(PROBES.map((check) => check(input)))).flat();
 };
 
 const blockedChecks = (deps: CliDeps, context: LaunchContext, rules: CredentialRule[]) => {
@@ -320,7 +334,7 @@ const sandboxChecks = async (deps: CliDeps, context: LaunchContext, backend: Bac
 
     run.progress.line("checking inside the sandbox");
 
-    run.checks.push(...(await probe(deps, context, sandbox)));
+    run.checks.push(...(await probe(deps, context, sandbox, run)));
 
     return 0;
   };
@@ -356,10 +370,21 @@ const skipSandbox = (run: Run, missing: string[]) => {
   return undefined;
 };
 
-const runChecks = async (deps: CliDeps, run: Run) => {
-  run.progress.line("preparing the sandbox");
+const once = <T>(read: () => Promise<T>) => {
+  const state: { reading?: Promise<T> } = {};
+
+  return () => {
+    state.reading ??= read();
+
+    return state.reading;
+  };
+};
+
+const runChecks = async (deps: CliDeps, progress: Progress, checks: NamedCheck[]) => {
+  progress.line("preparing the sandbox");
 
   const { context, backend } = await openContext(deps, "sandbox");
+  const run: Run = { checks, progress, hostTls: once(() => readHostTls(deps, context)) };
   const shares = await sharesOf(deps, context, backend);
 
   run.checks.push({ name: "vm shares", section: "sandbox", result: shares.result });
@@ -371,7 +396,11 @@ const runChecks = async (deps: CliDeps, run: Run) => {
 
   run.progress.line("checking the host");
 
-  run.checks.push(...(await hostChecks(deps, context)));
+  run.checks.push(...(await hostChecks(deps, context)), {
+    name: "tls inspection",
+    section: "network",
+    result: tlsInspectionResult(await run.hostTls()),
+  });
 
   return signal;
 };
@@ -380,15 +409,16 @@ const noticesOf = (deps: CliDeps, lines: string[]) =>
   [...new Set(lines.map(withoutPrefix))].filter((notice) => notice !== missingPiText(deps));
 
 export const doctorCommand = async (deps: CliDeps, args: string[]) => {
-  const run: Run = { checks: [], progress: progressLine(deps) };
+  const checks: NamedCheck[] = [];
+  const progress = progressLine(deps);
   const notices: string[] = [];
   const quiet: CliDeps = { ...deps, stderr: lineSink((line) => notices.push(line)) };
   const report = (partial: boolean) => {
-    run.progress.clear();
+    progress.clear();
 
     writeLines(
       deps.stdout,
-      renderReport(run.checks, noticesOf(deps, notices), {
+      renderReport(checks, noticesOf(deps, notices), {
         verbose: args.includes(VERBOSE_FLAG),
         color: colorOf(deps),
         home: deps.home,
@@ -398,15 +428,15 @@ export const doctorCommand = async (deps: CliDeps, args: string[]) => {
   };
 
   try {
-    const signal = await runChecks(quiet, run);
+    const signal = await runChecks(quiet, progress, checks);
 
     report(false);
 
-    return signal ?? (verdictOf(run.checks) === "fail" ? 1 : 0);
+    return signal ?? (verdictOf(checks) === "fail" ? 1 : 0);
   } catch (error) {
-    run.progress.clear();
+    progress.clear();
 
-    if (run.checks.length > 0 || notices.length > 0) {
+    if (checks.length > 0 || notices.length > 0) {
       report(true);
     }
 

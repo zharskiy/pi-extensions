@@ -32,7 +32,7 @@
   "tls": {
     "extraCa": [
       {
-        "file": "/etc/ssl/certs/example-root-ca.pem"
+        "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
       }
     ]
   }

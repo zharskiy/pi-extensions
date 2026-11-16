@@ -302,22 +302,40 @@ Image builds use the same proxy. A proxy address on `localhost` is pointed at yo
 
 ### Extra CA certificates
 
-If a proxy on your network inspects TLS, add its CA certificate:
+If a proxy on your network inspects TLS, add its CA certificate. An entry takes one of two forms:
 
 ```json
-{ "tls": { "extraCa": [{ "file": "/Users/you/corp-ca.pem" }] } }
+{
+  "tls": {
+    "extraCa": [
+      { "sha256": "3F:A1:...:9C" },
+      { "file": "~/corp-ca.pem" }
+    ]
+  }
+}
 ```
 
-`{ "hostStore": true }` instead reads the CAs of the macOS System keychain. The CAs are trusted by the launcher's proxy, inside the container and during the image build.
+- `{ "sha256": "<fingerprint>" }` names a CA in the macOS System or login keychain by its SHA-256 fingerprint: 64 hex digits, colons and case optional. The launcher reads both keychains with `security find-certificate -a -p` and takes the certificate whose fingerprint matches; a keychain it cannot read is skipped. The fingerprint is the same on every Mac that has the CA, so a team can share the line. On a host other than macOS use `file`.
+- `{ "file": "<path>" }` reads a PEM file, absolute or under `~`. Use it for a CA that is not in a keychain.
 
-They do not reach the VM's container engine. If the proxy inspects Docker Hub, the first image pull fails with an x509 error, and the error says so. Two fixes work:
+Every certificate must be a CA (or a self-signed root without the CA flag) and within its validity dates. A launch stops when a fingerprint is in neither keychain, a file is missing, a certificate is not a CA, or it has expired; the message names the entry and the certificate's subject. `{ "hostStore": true }` was removed; the config check names its replacement.
 
-- Install the CA in the VM:
-  1. Add a `provision` entry with `mode: system` to `~/.colima/pi-sandbox/colima.yaml`.
-  2. In its script, copy the CA into `/usr/local/share/ca-certificates/` and run `update-ca-certificates`.
-  3. End the script by restarting docker.
-  4. Restart the profile while no pi runs.
-- Or use `image.reference` and `image.digest` with a registry the proxy does not inspect.
+The CAs are trusted by the launcher's proxy, inside the container (`SSL_CERT_FILE`, `CURL_CA_BUNDLE`, `REQUESTS_CA_BUNDLE`, `PIP_CERT`, `CARGO_HTTP_CAINFO` and `GIT_SSL_CAINFO` point at one bundle of the system roots and these CAs, and `NODE_EXTRA_CA_CERTS` adds them to Node's roots) and during the image build.
+
+Behind Zscaler or another inspecting proxy:
+
+1. Run `pi sandbox doctor`. When it sees TLS interception its `tls inspection` check fails and prints the line to add, `{ "sha256": "<fp>" }`, with the fingerprint of the root CA it found in the System or login keychain. When the root is in neither, it names the issuer instead, even when the proxy sends the root itself: get that CA as PEM from your IT and add `{ "file": "<path>" }`.
+2. Copy that line into `tls.extraCa` in `~/.pi/agent/pi-sandbox/config.json`.
+3. Quit every pi of the folder and launch again.
+
+What trusting the CA means:
+
+- A CA certificate is public. Mounting it into the sandbox leaks nothing.
+- Trusting it lets whoever holds its key read the sandbox's TLS traffic, as the corporate proxy already does for every program on your Mac.
+- The launcher's proxy trusts these CAs for credential-rule hosts too, so the inspecting proxy sees the real tokens the launcher injects, exactly as it does when pi runs on the host.
+- Only the launcher's own config file can add a CA. No project file can.
+
+The launcher also installs them in the VM's trust store, so the VM's container engine pulls images through the inspecting proxy. That restarts the engine, so it waits for a launch with no other pi session running; until then a notice says so. The engine gets up to a minute to come back. If an image pull still fails with an x509 error, the CA is not declared yet: run `pi sandbox doctor` and add the line it prints.
 
 ## Databases and other services
 

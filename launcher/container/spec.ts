@@ -197,6 +197,7 @@ const sandboxEnv = (input: ContainerSpecInput) => ({
   ...trustEnv(input),
   ...sessionsEnv(input),
   SSL_CERT_FILE: GUEST_CA_BUNDLE,
+  CURL_CA_BUNDLE: GUEST_CA_BUNDLE,
   REQUESTS_CA_BUNDLE: GUEST_CA_BUNDLE,
   PIP_CERT: GUEST_CA_BUNDLE,
   CARGO_HTTP_CAINFO: GUEST_CA_BUNDLE,

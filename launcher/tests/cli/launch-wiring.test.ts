@@ -364,25 +364,6 @@ describe("pi launch wiring", () => {
     expect(harness.stderr()).not.toContain("egress allow");
   });
 
-  it("says once that the host CA store was skipped when the launcher does not run on macOS", async () => {
-    const fake = createFakeBackend();
-    const linux = await createHarness({ backend: () => fake.backend });
-    const mac = await createHarness({ backend: () => createFakeBackend().backend });
-    const notice =
-      "pi-sandbox: tls.extraCa hostStore reads the macOS System keychain only and was skipped here";
-
-    linux.deps.platform = "linux";
-
-    await linux.writeJson(linux.userConfigFile, { tls: { extraCa: [{ hostStore: true }] } });
-
-    await mac.writeJson(mac.userConfigFile, { tls: { extraCa: [{ hostStore: true }] } });
-
-    expect(await run([], linux.deps)).toBe(0);
-    expect(await run([], mac.deps)).toBe(0);
-    expect(linux.stderr().split(notice)).toHaveLength(2);
-    expect(mac.stderr()).not.toContain(notice);
-  });
-
   it("prints derivation notices on stderr, one line each", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend, hostPi: false });

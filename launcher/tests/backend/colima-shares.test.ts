@@ -117,7 +117,9 @@ const launchWith = async (setup: Setup = {}) => {
     paths,
     pauses,
     colimaCalls: () =>
-      harness.calls.filter((call) => call.file === "colima").map((call) => argvOf(call).join(" ")),
+      harness.calls
+        .filter((call) => call.file === "colima" && call.args[0] !== "ssh")
+        .map((call) => argvOf(call).join(" ")),
   };
 };
 

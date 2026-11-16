@@ -42,6 +42,10 @@ const setupWith = async (setup: Setup = {}) => {
   const answer = (call: FakeCall) => {
     const command = call.args[0];
 
+    if (command === "ssh") {
+      return { code: 1, stderr: "cat: /etc/pi-sandbox/extra.sha256: No such file or directory" };
+    }
+
     events.push(argvOf(call).join(" "));
 
     if (command === "status") {
@@ -101,7 +105,9 @@ const setupWith = async (setup: Setup = {}) => {
     events,
     pauses,
     colimaCalls: () =>
-      harness.calls.filter((call) => call.file === "colima").map((call) => argvOf(call).join(" ")),
+      harness.calls
+        .filter((call) => call.file === "colima" && call.args[0] !== "ssh")
+        .map((call) => argvOf(call).join(" ")),
   };
 };
 
@@ -230,7 +236,8 @@ const stoppedVm = async (detections: boolean[] = []) => {
     detect: async () => ({ available: state.detections.shift() ?? state.running }),
     pause: async () => undefined,
   });
-  const colimaCalls = () => fake.calls.map((call) => argvOf(call).join(" "));
+  const outsideVm = () => fake.calls.filter((call) => call.args[0] !== "ssh");
+  const colimaCalls = () => outsideVm().map((call) => argvOf(call).join(" "));
   const colimaEnvs = () => fake.calls.map((call) => call.options.env);
 
   return { home, outside, vm, colimaCalls, colimaEnvs };
@@ -258,6 +265,7 @@ describe("the stopped sandbox VM", () => {
     await context.vm.size();
 
     expect(context.colimaEnvs()).toEqual([
+      { COLIMA_HOME: join(context.home, ".colima") },
       { COLIMA_HOME: join(context.home, ".colima") },
       { COLIMA_HOME: join(context.home, ".colima") },
       { COLIMA_HOME: join(context.home, ".colima") },

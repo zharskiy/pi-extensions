@@ -26,7 +26,19 @@ const LAYOUT: Array<[Section, string[]]> = [
     "sandbox",
     ["vm shares", "vm", "sandbox", "vm size", "image", "container", "sync", "sessions share", "probes"],
   ],
-  ["network", ["proxy", "proxy health", "parent proxy", "no-route", "mcp", "blocked"]],
+  [
+    "network",
+    [
+      "proxy",
+      "proxy health",
+      "parent proxy",
+      "tls inspection",
+      "tls in sandbox",
+      "no-route",
+      "mcp",
+      "blocked",
+    ],
+  ],
   ["credentials", ["trust", "rule", "mcp"]],
   ["leak sweep", ["credential sweep", "mcp-auth sweep", "settings sweep"]],
 ];

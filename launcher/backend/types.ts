@@ -132,6 +132,7 @@ export interface Vm {
   ensureRunning(report: VmReport): Promise<void>;
   coverage(paths: VmPath[]): Promise<VmCoverage | undefined>;
   ensureShares(paths: VmPath[], options: VmShareOptions): Promise<void>;
+  ensureTrust(pemPath: string, options: VmShareOptions): Promise<void>;
   size(): Promise<VmSize | undefined>;
   resizeCommand(size: VmSize): string;
   stop(options: Pick<VmShareOptions, "busy">): Promise<VmStop>;
