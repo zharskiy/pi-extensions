@@ -803,24 +803,30 @@ describe("the VM shares with workspaceRoots set, at the edges", () => {
 });
 
 describe("pi-sandbox __vm-shares", () => {
-  it("prints the home share when workspaceRoots is unset", async () => {
+  it("prints the home when workspaceRoots is unset", async () => {
     const context = await launchWith();
 
     expect(await run(["__vm-shares"], context.harness.deps)).toBe(0);
-    expect(context.harness.stdout()).toBe(`${context.paths.home}:w\n`);
+    expect(context.harness.stdout()).toBe(`${context.paths.home}\n`);
     expect(context.colimaCalls()).toEqual([]);
   });
 
-  it("prints one --mount value per line for the configured roots and creates the dirs they name", async () => {
+  it("prints the configured roots that exist, one per line, and creates the dirs the VM shares", async () => {
     const context = await launchWithRoots({ roots: ({ root, repoRoot }) => [repoRoot, join(root, "gone")] });
     const { home, stateDir, repoRoot } = context.paths;
 
     expect(await run(["__vm-shares"], context.harness.deps)).toBe(0);
-    expect(context.harness.stdout()).toBe(
-      `${repoRoot}:w\n${join(home, ".pi", "agent", "sessions")}:w\n${join(stateDir, "vm")}\n`,
-    );
+    expect(context.harness.stdout()).toBe(`${repoRoot}\n`);
     expect(context.harness.stderr()).toContain("does not exist, not shared");
     expect(await stat(join(home, ".pi", "agent", "sessions"))).toBeDefined();
+    expect(await stat(join(stateDir, "vm"))).toBeDefined();
+  });
+
+  it("prints nothing when none of the configured roots exists", async () => {
+    const context = await launchWithRoots({ roots: ({ root }) => [join(root, "gone")] });
+
+    expect(await run(["__vm-shares"], context.harness.deps)).toBe(0);
+    expect(context.harness.stdout()).toBe("");
   });
 
   it("fails with the config error for a refused root", async () => {

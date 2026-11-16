@@ -324,23 +324,14 @@ case "$setup_status" in
   *) fail_with "$setup_status" "setup failed, see above; the launcher is installed, run pi sandbox init to try again" ;;
 esac
 
-vm_shares=$("$shim" __vm-shares) || exit "$?"
+smoke_root=$("$shim" __vm-shares) || exit "$?"
+smoke_root=$(printf '%s\n' "$smoke_root" | head -n 1)
+smoke_parent=$smoke_root
+smoke_where="a temporary git repository in $smoke_parent"
 
-first_root_share() {
-  printf '%s\n' "$vm_shares" |
-    sessions="$agent_dir/sessions:w" real_sessions="$agent_root/sessions:w" home_share="$HOME:w" awk '
-      /:w$/ && $0 != ENVIRON["sessions"] && $0 != ENVIRON["real_sessions"] && $0 != ENVIRON["home_share"] {
-        sub(/:w$/, ""); print; exit
-      }'
-}
-
-smoke_where="a temporary git repository"
-
-if [ "$vm_shares" = "$HOME:w" ]; then
+if [ "$smoke_root" = "$HOME" ]; then
   smoke_parent="$HOME/.cache"
-else
-  smoke_parent=$(first_root_share)
-  smoke_where="a temporary git repository in $smoke_parent"
+  smoke_where="a temporary git repository"
 fi
 
 smoke_log=""
