@@ -2,7 +2,6 @@ import { join } from "node:path";
 import type { SecretRef } from "../../config/index.ts";
 import {
   hasUrlUserinfo,
-  isSecretEnvName,
   type MavenHeader,
   type MavenRepository,
   type MavenServer,
@@ -14,7 +13,7 @@ import { type Endpoint, endpointOf, uniqueEndpoints, withoutUserinfo } from "../
 import { mergeSections, noticeOnly, placeholderOf, rulesFor, type Section } from "../rules.ts";
 import type { DerivedTools, ToolsInput } from "../types.ts";
 import { EMPTY_MAVEN } from "../types.ts";
-import { type Registry, readOptional, registriesOf } from "./files.ts";
+import { expandPublicVariables, type Registry, readOptional, registriesOf } from "./files.ts";
 
 type MavenRender = DerivedTools["maven"];
 
@@ -119,20 +118,12 @@ const credentialSection = (
   };
 };
 
-const expandedUsername = (input: ToolsInput, username: string) => {
-  const names = [...username.matchAll(ENV_REFERENCES)].map((reference) => reference[1] ?? "");
-
-  return names.some((name) => isSecretEnvName(name) || input.env[name] === undefined)
-    ? undefined
-    : username.replace(ENV_REFERENCES, (_, name: string) => input.env[name] ?? "");
-};
-
 const usernameOf = (input: ToolsInput, server: MavenServer): { server: MavenServer; notices: string[] } => {
   if (server.username === undefined || !server.username.includes("${env.")) {
     return { server, notices: [] };
   }
 
-  const username = expandedUsername(input, server.username);
+  const username = expandPublicVariables(server.username, ENV_REFERENCES, input.env);
 
   return username === undefined
     ? {

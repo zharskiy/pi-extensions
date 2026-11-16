@@ -1,16 +1,16 @@
 import { join } from "node:path";
 import type { SecretRef } from "../../config/index.ts";
-import {
-  hasUrlUserinfo,
-  isSecretEnvName,
-  isSecretName,
-  type NpmrcEntry,
-  parseNpmrc,
-} from "../../shared/index.ts";
+import { hasUrlUserinfo, isSecretName, type NpmrcEntry, parseNpmrc } from "../../shared/index.ts";
 import { endpointOf } from "../endpoints.ts";
 import { mergeSections, noticeOnly, placeholderOf, rulesFor, type Section } from "../rules.ts";
 import type { ToolsInput } from "../types.ts";
-import { type Registry, readOptional, registriesOf, urlCredentialSection } from "./files.ts";
+import {
+  expandPublicVariables,
+  type Registry,
+  readOptional,
+  registriesOf,
+  urlCredentialSection,
+} from "./files.ts";
 
 const REGISTRY_CREDENTIAL = /^\/\/([^/]+)(\/.*)?:(_authToken|_auth|_password)$/;
 
@@ -103,16 +103,6 @@ const credentialSection = (
   };
 };
 
-const expanded = (input: ToolsInput, entry: NpmrcEntry) => {
-  const names = [...entry.value.matchAll(VARIABLE)].map((reference) => reference[1] ?? "");
-
-  if (names.some((name) => isSecretEnvName(name) || input.env[name] === undefined)) {
-    return undefined;
-  }
-
-  return entry.value.replace(VARIABLE, (_, name: string) => input.env[name] ?? "");
-};
-
 const plainSection = (input: ToolsInput, entry: NpmrcEntry): Section<NpmrcEntry[]> => {
   const name = nameOf(entry.key);
 
@@ -142,7 +132,7 @@ const plainSection = (input: ToolsInput, entry: NpmrcEntry): Section<NpmrcEntry[
     return dropped(entry.key, "names a host path and stays on the host");
   }
 
-  const value = expanded(input, entry);
+  const value = expandPublicVariables(entry.value, VARIABLE, input.env);
 
   if (value === undefined) {
     return dropped(

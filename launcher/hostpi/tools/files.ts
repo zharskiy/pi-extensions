@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { hasUrlUserinfo, type ToolConfigFormat } from "../../shared/index.ts";
+import { hasUrlUserinfo, isSecretEnvName, type ToolConfigFormat } from "../../shared/index.ts";
 import { type Endpoint, endpointOf, withoutUserinfo } from "../endpoints.ts";
 import { isInsideRoots } from "../path-search.ts";
 import { noticeOnly, placeholderOf, rulesFor, type Section } from "../rules.ts";
@@ -36,6 +36,14 @@ export const timedOutNotice = (label: string, command: string, timeoutMs = PROBE
 
 export const noCredentialsNotice = (label: string, command: string, timeoutMs: number) =>
   `${label}: ${command} did not answer within ${timeoutMs / 1000} s on the host (a Keychain prompt may be waiting); it has no credentials in the sandbox this launch, run pi again once it answers`;
+
+export const expandPublicVariables = (text: string, references: RegExp, env: ToolsInput["env"]) => {
+  const names = [...text.matchAll(references)].map((reference) => reference[1] ?? "");
+
+  return names.some((name) => isSecretEnvName(name) || env[name] === undefined)
+    ? undefined
+    : text.replace(references, (_, name: string) => env[name] ?? "");
+};
 
 export interface Registry {
   label: string;
