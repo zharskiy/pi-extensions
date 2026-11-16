@@ -2,7 +2,15 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { setPath } from "../../config/dotted.ts";
-import { configKeys, validateConfig } from "../../config/validate.ts";
+import {
+  configKeys,
+  MAX_ANY_OF_DEPTH,
+  MAX_KEY_CHARS,
+  MAX_PORT,
+  VM_BOUNDS,
+  validateConfig,
+} from "../../config/validate.ts";
+import { BUILT_IN_WRITE_BACK, MAX_WRITE_BACK_CHARS } from "../../shared/index.ts";
 
 interface SchemaNode {
   $ref?: string;
@@ -21,6 +29,10 @@ interface SchemaNode {
   then?: SchemaNode;
   pattern?: string;
   minLength?: number;
+  maxLength?: number;
+  minimum?: number;
+  maximum?: number;
+  description?: string;
   uniqueItems?: boolean;
   dependentRequired?: Record<string, string[]>;
 }
@@ -336,6 +348,38 @@ describe("sandbox-config.schema.json", () => {
     expect(
       validatorAccepts(rule({ template: "Bearer {secret}", header: undefined, placeholder: "pi-sandbox-x" })),
     ).toBe(false);
+  });
+
+  it("states the numeric bounds and built-in files of the validator", async () => {
+    const schema = await readSchema();
+    const defs = schema.$defs ?? {};
+    const vm = schema.properties?.vm?.properties ?? {};
+    const port = schema.properties?.credentials?.properties?.rules?.items?.properties?.port;
+    const checks = defs.writeBackCheck?.oneOf ?? [];
+    const anyOfs = [defs.writeBackValue, defs.writeBackSettingsValue].map((value) =>
+      value?.oneOf?.find((option) => option.properties?.type?.const === "anyOf"),
+    );
+    const checkOf = (type: string) => checks.find((option) => option.properties?.type?.const === type);
+
+    expect(
+      Object.fromEntries(
+        Object.entries(vm).map(([key, node]) => [key, { min: node.minimum, max: node.maximum }]),
+      ),
+    ).toEqual(VM_BOUNDS);
+    expect([port?.minimum, port?.maximum]).toEqual([1, MAX_PORT]);
+    expect(
+      [defs.writeBackKeys, defs.writeBackSettingsKeys].map((keys) => keys?.propertyNames?.maxLength),
+    ).toEqual([MAX_KEY_CHARS, MAX_KEY_CHARS]);
+    expect(checkOf("string")?.properties?.maxLength?.maximum).toBe(MAX_WRITE_BACK_CHARS);
+    expect(checkOf("enum")?.properties?.values?.items?.maxLength).toBe(MAX_WRITE_BACK_CHARS);
+    expect(checkOf("stringList")?.description).toContain(`at most ${MAX_WRITE_BACK_CHARS} characters`);
+    expect(anyOfs.map((option) => option?.description)).toEqual([
+      expect.stringContaining(`more than ${MAX_ANY_OF_DEPTH} levels`),
+      expect.stringContaining(`more than ${MAX_ANY_OF_DEPTH} levels`),
+    ]);
+    expect(schema.properties?.writeBack?.properties?.exclude?.propertyNames?.enum).toEqual(
+      Object.keys(BUILT_IN_WRITE_BACK),
+    );
   });
 
   describe("writeBack.add", () => {

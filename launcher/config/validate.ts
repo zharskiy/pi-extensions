@@ -55,7 +55,7 @@ interface Problem {
   problem: string;
 }
 
-const MAX_PORT = 65535;
+export const MAX_PORT = 65535;
 
 const VARIABLE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
@@ -311,7 +311,7 @@ const EXTRA_CA: Spec = {
 
 const WRITE_BACK_KEY = /^[A-Za-z][A-Za-z0-9_-]*$/;
 
-const MAX_KEY_CHARS = 100;
+export const MAX_KEY_CHARS = 100;
 
 const keyPath = (prefix: string, key: string) => `${prefix}[${JSON.stringify(key)}]`;
 
@@ -340,7 +340,7 @@ const scalarProblem = (value: unknown, path: string): Problem | undefined => {
 const typed = (properties: Record<string, Spec>, required: readonly string[] = []) =>
   shape({ type: text(), ...properties }, ["type", ...required]);
 
-const MAX_ANY_OF_DEPTH = 4;
+export const MAX_ANY_OF_DEPTH = 4;
 
 const VALUE_SPECS: Record<Exclude<ValueType, "anyOf">, ObjectSpec> = {
   string: typed({ maxLength: { type: "number", minimum: 1, maximum: MAX_WRITE_BACK_CHARS, integer: true } }),
