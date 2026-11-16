@@ -83,8 +83,8 @@ export type Detail = string[] | ((width: number) => string[]);
 
 export interface KeyWords {
   enter?: string;
-  escape?: string | false;
-  interrupt?: string | false;
+  escape?: string;
+  interrupt?: string;
 }
 
 export interface Choice<T> {

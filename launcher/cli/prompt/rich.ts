@@ -145,19 +145,14 @@ const hintsOf = (context: Context, segments: string[], width: number) =>
     context.paint("dim", line),
   );
 
-const wordsOf = (spec: KeyWords, defaults: { enter: string; escape: string; interrupt: string | false }) => {
-  const back = spec.escape ?? defaults.escape;
-  const interrupt = spec.interrupt ?? defaults.interrupt;
+const wordsOf = (spec: KeyWords, enter: string) => {
+  const back = spec.escape ?? "back";
+  const interrupt = spec.interrupt ?? "cancel";
+  const enterHint = `enter ${spec.enter ?? enter}`;
 
-  if (back !== false && back === interrupt) {
-    return [`enter ${spec.enter ?? defaults.enter}`, `esc/ctrl-c ${back}`];
-  }
-
-  return [
-    `enter ${spec.enter ?? defaults.enter}`,
-    ...(back === false ? [] : [`esc ${back}`]),
-    ...(interrupt === false ? [] : [`ctrl-c ${interrupt}`]),
-  ];
+  return back === interrupt
+    ? [enterHint, `esc/ctrl-c ${back}`]
+    : [enterHint, `esc ${back}`, `ctrl-c ${interrupt}`];
 };
 
 const messageLines = (context: Context, tone: Tone, glyph: string, text: string, width: number) =>
@@ -429,7 +424,7 @@ const selectView = <T>(context: Context, spec: SelectSpec<T>): View<T> => {
       const detail = detailOf(context, spec.detail, width);
       const rows = choiceRows(context, spec.choices, mark, state.cursor);
       const body = windowed(context, rows, state.cursor, state, limitOf(context, detail));
-      const words = wordsOf(spec, { enter: "choose", escape: "back", interrupt: "cancel" });
+      const words = wordsOf(spec, "choose");
       const hints = hintsOf(context, [`${glyphs.upDown} move`, ...words], width);
 
       const parts = composed(context, { title: spec.title, detail, body, after: [], hints });
@@ -515,11 +510,7 @@ const multiView = <T>(context: Context, spec: MultiSpec<T>): View<T[]> => {
       const rows = choiceRows(context, state.choices, mark, state.cursor);
       const body = windowed(context, rows, state.cursor, state, limitOf(context, detail));
       const toggles = state.choices.some((choice) => choice.action !== true);
-      const words = wordsOf(spec, {
-        enter: toggles ? "continue" : "choose",
-        escape: "back",
-        interrupt: "cancel",
-      });
+      const words = wordsOf(spec, toggles ? "continue" : "choose");
 
       const hints = hintsOf(
         context,
@@ -585,7 +576,7 @@ const confirmView = (context: Context, spec: ConfirmSpec): View<boolean> => {
     frame: (width) => {
       const detail = detailOf(context, spec.detail, width);
       const body = [`${option(spec.initial)}   ${option(!spec.initial)}`];
-      const words = wordsOf(spec, { enter: "confirm", escape: "back", interrupt: "cancel" });
+      const words = wordsOf(spec, "confirm");
       const hints = hintsOf(context, [`${glyphs.leftRight} choose`, "y/n", ...words], width);
 
       return composed(context, { title: spec.title, detail, body, after: [], hints });
@@ -697,7 +688,7 @@ const pathView = (context: Context, spec: PathSpec): View<string> => {
     typing: true,
     frame: (width) => {
       const input = inputRow(context, state.line, width);
-      const words = wordsOf(spec, { enter: "continue", escape: "back", interrupt: "cancel" });
+      const words = wordsOf(spec, "continue");
       const hints = hintsOf(context, ["tab completes", ...words], width);
 
       const after = [
@@ -808,7 +799,7 @@ const numberView = (context: Context, spec: NumberSpec): View<number> => {
     typing: true,
     frame: (width) => {
       const input = inputRow(context, state.line, width);
-      const words = wordsOf(spec, { enter: "next", escape: "back", interrupt: "cancel" });
+      const words = wordsOf(spec, "next");
       const steps = `${context.glyphs.upDown} change by ${spec.step}`;
       const hints = hintsOf(context, [spec.hint, steps, ...words], width);
       const after = [
