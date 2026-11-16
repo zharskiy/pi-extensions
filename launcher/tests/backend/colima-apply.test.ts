@@ -15,6 +15,7 @@ interface Setup {
   profile?: { cpu: number; memory: number; disk?: number; mounts?: VmShare[] };
   running?: { cpu: number; memory: number; disk: number };
   lima?: Mount[];
+  limaText?: string;
   status?: (call: FakeCall) => Partial<RunResult> | undefined;
   start?: Partial<RunResult>;
 }
@@ -50,7 +51,14 @@ const setupWith = async (setup: Setup & { home?: string }) => {
     await writeFile(join(limaDir, "lima.yaml"), `vmType: vz\n${mountsText(setup.lima, "")}`);
   }
 
+  if (setup.limaText !== undefined) {
+    await mkdir(limaDir, { recursive: true });
+
+    await writeFile(join(limaDir, "lima.yaml"), setup.limaText);
+  }
+
   const state = { up: setup.running !== undefined };
+  const detections = { count: 0 };
   const fake = createFakeRunner((call) => {
     if (call.args[0] === "start" && setup.start !== undefined) {
       return setup.start;
@@ -88,7 +96,11 @@ const setupWith = async (setup: Setup & { home?: string }) => {
     home,
     stateDir,
     runner: fake.runner,
-    detect: async () => (state.up ? { available: true } : { available: false, reason: "socket missing" }),
+    detect: async () => {
+      detections.count += 1;
+
+      return state.up ? { available: true } : { available: false, reason: "socket missing" };
+    },
     pause: async () => undefined,
   });
   const commands = () =>
@@ -96,7 +108,9 @@ const setupWith = async (setup: Setup & { home?: string }) => {
       .map((call) => call.args.join(" "))
       .filter((line) => !line.startsWith("status") && !line.startsWith("ssh"));
 
-  return { home, vm, commands };
+  const waited = () => detections.count;
+
+  return { home, vm, commands, waited };
 };
 
 const SIZE = { cpus: 6, memoryGiB: 12, diskGiB: 80 };
@@ -307,6 +321,27 @@ describe("applying a size and shares to the sandbox VM", () => {
       hint: "edit ~/.colima/pi-sandbox/colima.yaml mounts, then colima stop --profile pi-sandbox && colima start --profile pi-sandbox --activate=false",
     });
     expect(env.commands()).toEqual([]);
+  });
+});
+
+const UNPARSED_LIMA = "mounts: [ { location: /x } ]\n";
+
+describe("applying to a VM whose shares cannot be read", () => {
+  it("restarts with the desired shares, waits for the engine and reports the restart", async () => {
+    const env = await setupWith({
+      profile: { cpu: 6, memory: 12, disk: 80 },
+      running: { cpu: 6, memory: 12, disk: 80 },
+      limaText: UNPARSED_LIMA,
+    });
+    const { result, phases } = await applied(env, desiredOf(env.home));
+
+    expect(result).toBe("restarted");
+    expect(env.commands()).toEqual([
+      "stop --profile pi-sandbox",
+      `start --profile pi-sandbox --activate=false --mount ${join(env.home, "work")}:w`,
+    ]);
+    expect(phases).toEqual(["stopping", "starting", "waiting"]);
+    expect(env.waited()).toBeGreaterThan(0);
   });
 });
 

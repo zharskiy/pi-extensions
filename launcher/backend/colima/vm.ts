@@ -335,8 +335,8 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
   const restart = async (
     wanted: VmWanted,
     planned: Restart,
-    needs: VmPath[],
     progress: VmApplyOptions["progress"],
+    needs?: VmPath[],
   ) => {
     if (planned.mounts.length > 0 && !wanted.exactShares) {
       await shares.keepsMoved(MOVED_PROBLEM);
@@ -354,7 +354,7 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
       startHint,
     );
 
-    if (planned.mounts.length > 0) {
+    if (needs !== undefined && planned.mounts.length > 0) {
       await shares.assertShared(planned.added, needs, planned.mounts);
     }
 
@@ -379,7 +379,7 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
       return found.state === "stopped" ? "stopped" : "unchanged";
     }
 
-    await restart(desired, restartOf(found, desired, decision), [], options.progress);
+    await restart(desired, restartOf(found, desired, decision), options.progress);
 
     return "restarted";
   };
@@ -445,7 +445,7 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
 
     options.report(`restarting the sandbox VM to ${text}`);
 
-    await restart(wanted, planned, target.needs, () => undefined);
+    await restart(wanted, planned, () => undefined, target.needs);
   };
 
   return {
