@@ -73,7 +73,7 @@ const answering =
         return probes.mcpListExit ?? 0;
       },
       node: () =>
-        (spec.command[2] ?? "").includes("getPeerCertificate")
+        (spec.command.at(-1) ?? "").includes("getPeerCertificate")
           ? write(`${probes.sandboxTls ?? SANDBOX_TRUSTS}\n`)
           : write(`${probes.ruleAnswer ?? "200"}\n`),
     };
@@ -437,16 +437,17 @@ describe("pi sandbox doctor", () => {
 
   it("handshakes with pi.dev from inside through the sandbox proxy with node and the container's trust", async () => {
     const { fake } = await doctorWith();
-    const probe = fake.execs.find((exec) => (exec.spec.command[2] ?? "").includes("getPeerCertificate"));
+    const probe = fake.execs.find((exec) => (exec.spec.command.at(-1) ?? "").includes("getPeerCertificate"));
 
     const input = probe === undefined ? "{}" : stdinOf(probe).toString();
 
-    expect(probe?.spec.command.slice(0, 2)).toEqual(["node", "-e"]);
+    expect(probe?.spec.command.slice(0, 3)).toEqual(["node", "--input-type=module-typescript", "-e"]);
     expect(JSON.parse(input)).toEqual({
       host: "pi.dev",
       port: 443,
       proxy: "env",
       trusts: ["default"],
+      timeoutMs: 10_000,
     });
   });
 
