@@ -115,7 +115,9 @@ describe("detectHost", () => {
     const facts = await detectHost(deps);
 
     expect(facts.searchTimedOut).toBe(true);
-    expect(facts.candidates).toMatchObject([{ stored: "~/w", origin: "config", exists: true }]);
+    expect(facts.candidates).toMatchObject([
+      { stored: "~/w", origin: "config", resolved: join(deps.home, "w"), exists: false },
+    ]);
   });
 
   it("counts the live pi sessions", async () => {

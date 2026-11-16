@@ -10,6 +10,7 @@ import {
   suggestionFor,
   tildeForm,
   USUAL_FOLDERS,
+  unscannedCandidates,
 } from "../../cli/setup/folders.ts";
 import { tempDir } from "../support/temp-dir.ts";
 
@@ -120,6 +121,24 @@ describe("folderCandidates", () => {
     });
 
     expect(candidates).toEqual([]);
+  });
+});
+
+describe("unscannedCandidates", () => {
+  it("resolves configured roots to their real paths and says which exist, as a full search does", async () => {
+    const context = await homeWith([], ["Projects"]);
+
+    await symlink(join(context.home, "Projects"), join(context.home, "code"));
+
+    const search = { ...context, cwd: "/", configRoots: ["~/code", "~/gone"], firstRun: false };
+    const shown = (candidates: { stored: string; resolved: string; exists: boolean }[]) =>
+      candidates.map((candidate) => [candidate.stored, candidate.resolved, candidate.exists]);
+
+    expect(shown(unscannedCandidates(search))).toEqual([
+      ["~/code", join(context.home, "Projects"), true],
+      ["~/gone", join(context.home, "gone"), false],
+    ]);
+    expect(shown(unscannedCandidates(search))).toEqual(shown(await folderCandidates(search)));
   });
 });
 

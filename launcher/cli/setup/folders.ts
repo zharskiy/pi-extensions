@@ -96,6 +96,8 @@ export const tildeForm = (path: string, home: string) => {
 
 const resolvedRoot = (stored: string, home: string) => realOrResolvedSync(resolve(expandHome(stored, home)));
 
+const isFolderSync = (path: string) => statSync(path, { throwIfNoEntry: false })?.isDirectory() === true;
+
 const isScannable = (entry: Dirent) =>
   entry.isDirectory() && !entry.name.startsWith(".") && entry.name !== "node_modules";
 
@@ -232,15 +234,19 @@ const candidateOf = async (proposed: Proposed, context: CandidateContext): Promi
 };
 
 export const unscannedCandidates = (context: CandidateContext): FolderCandidate[] =>
-  fixedRoots(context).map((proposed) => ({
-    stored: proposed.stored,
-    resolved: resolve(expandHome(proposed.stored, context.home)),
-    exists: true,
-    repos: 0,
-    capped: false,
-    origin: proposed.origin,
-    here: false,
-  }));
+  fixedRoots(context).map((proposed) => {
+    const resolved = resolvedRoot(proposed.stored, context.home);
+
+    return {
+      stored: proposed.stored,
+      resolved,
+      exists: isFolderSync(resolved),
+      repos: 0,
+      capped: false,
+      origin: proposed.origin,
+      here: false,
+    };
+  });
 
 const distinct = (candidates: FolderCandidate[]) =>
   candidates.filter(
