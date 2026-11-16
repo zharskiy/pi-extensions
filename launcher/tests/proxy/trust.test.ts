@@ -1,8 +1,8 @@
 import { execFile } from "node:child_process";
 import { X509Certificate } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { endLaunch, registerLaunch } from "../../grants/index.ts";
@@ -92,7 +92,9 @@ describe("ensureTrustBundle", () => {
       ["security", "find-certificate", "-a", "-p", SYSTEM],
       ["security", "find-certificate", "-a", "-p", LOGIN],
     ]);
-    expect(bundle.pemPath).toBe(join(state.stateDir, "vm", "trust.pem"));
+    expect(bundle.pemPath).toMatch(
+      new RegExp(`^${join(state.stateDir, "vm")}/trust-${bundle.hash.slice(0, 12)}-[0-9a-f]{16}\\.pem$`),
+    );
     expect(count(pem)).toBe(3);
     expect(pem.startsWith(state.launcherPem.trim())).toBe(true);
     expect(pem).not.toContain(state.leafPem.trim());
@@ -288,7 +290,7 @@ describe("ensureTrustBundle", () => {
     expect(plainCount).toBe(1);
     expect(count(await readFile(extended.pemPath, "utf8"))).toBe(2);
     expect(extended.hash).not.toBe(plain.hash);
-    expect((await stat(plain.pemPath)).mode & 0o777).toBe(0o644);
+    expect((await stat(extended.pemPath)).mode & 0o777).toBe(0o644);
   });
 
   it("refuses a CA file that is missing", async () => {
@@ -350,4 +352,136 @@ describe("the legacy trust.pem", () => {
 
     expect(await stat(legacyPem()).catch(() => undefined)).toBeUndefined();
   });
+});
+
+describe("the trust bundle files", () => {
+  const SELF = "00000000000000b1";
+
+  const OTHER = "00000000000000b2";
+
+  const bundleIn = (stateDir: string, sources: Array<{ file: string }>, launchId = SELF) =>
+    ensureTrustBundle({
+      stateDir,
+      runner: createProcessRunner(),
+      platform: "linux",
+      sources,
+      launchId,
+    });
+
+  const register = async (stateDir: string, launchId: string, repoHash: string) =>
+    registerLaunch(stateDir, { launchId, ...(await processMark()), repoHash, startedAt: 1 });
+
+  const endOther = (stateDir: string) =>
+    endLaunch(stateDir, { repoHash: "d".repeat(64), launchId: OTHER, onLast: async () => undefined });
+
+  const trustFiles = async (stateDir: string) =>
+    (await readdir(join(stateDir, "vm"))).filter((name) => name.startsWith("trust")).sort();
+
+  const withStateDir = async (action: (stateDir: string) => Promise<void>) => {
+    const stateDir = await mkdtemp(join(tmpdir(), "pi-sandbox-trust-files-"));
+
+    try {
+      await action(stateDir);
+    } finally {
+      await rm(stateDir, { recursive: true, force: true });
+    }
+  };
+
+  it("leaves an earlier bundle untouched while another launch is live and removes it once alone", () =>
+    withStateDir(async (stateDir) => {
+      const file = join(stateDir, "corp.pem");
+
+      await writeFile(file, state.corpPem);
+
+      await register(stateDir, SELF, "c".repeat(64));
+
+      await register(stateDir, OTHER, "d".repeat(64));
+
+      const first = await bundleIn(stateDir, []);
+      const firstText = await readFile(first.pemPath, "utf8");
+      const firstInode = (await stat(first.pemPath)).ino;
+
+      await writeFile(join(stateDir, "vm", "trust.pem"), "unversioned");
+
+      await writeFile(join(stateDir, "vm", `trust-${first.hash.slice(0, 12)}.pem`), "first version");
+
+      const second = await bundleIn(stateDir, [{ file }]);
+
+      expect(second.pemPath).not.toBe(first.pemPath);
+      expect(await readFile(first.pemPath, "utf8")).toBe(firstText);
+      expect((await stat(first.pemPath)).ino).toBe(firstInode);
+      expect(count(await readFile(second.pemPath, "utf8"))).toBe(2);
+
+      await endOther(stateDir);
+
+      const third = await bundleIn(stateDir, [{ file }]);
+
+      expect(third.pemPath).toBe(second.pemPath);
+      expect(await trustFiles(stateDir)).toEqual([basename(second.pemPath)]);
+    }));
+
+  it("gives concurrent launches with the same content one file", () =>
+    withStateDir(async (stateDir) => {
+      await openCa(stateDir);
+
+      await register(stateDir, SELF, "c".repeat(64));
+
+      await register(stateDir, OTHER, "d".repeat(64));
+
+      const bundles = await Promise.all([bundleIn(stateDir, []), bundleIn(stateDir, [], OTHER)]);
+
+      expect(new Set(bundles.map((bundle) => bundle.pemPath)).size).toBe(1);
+      expect(await trustFiles(stateDir)).toEqual([basename(bundles[0]?.pemPath ?? "")]);
+    }));
+
+  it("reuses the file of the same content while it exists", () =>
+    withStateDir(async (stateDir) => {
+      const first = await bundleIn(stateDir, []);
+      const before = await stat(first.pemPath);
+      const second = await bundleIn(stateDir, []);
+      const after = await stat(second.pemPath);
+
+      expect(second.pemPath).toBe(first.pemPath);
+      expect(after.ino).toBe(before.ino);
+      expect(after.mtimeMs).toBe(before.mtimeMs);
+    }));
+
+  it("never writes a path twice when a content comes back after its file was removed", () =>
+    withStateDir(async (stateDir) => {
+      const file = join(stateDir, "corp.pem");
+
+      await writeFile(file, state.corpPem);
+
+      const first = await bundleIn(stateDir, []);
+      const second = await bundleIn(stateDir, [{ file }]);
+      const third = await bundleIn(stateDir, []);
+
+      expect(third.hash).toBe(first.hash);
+      expect(new Set([first.pemPath, second.pemPath, third.pemPath]).size).toBe(3);
+      expect(await trustFiles(stateDir)).toEqual([basename(third.pemPath)]);
+    }));
+
+  it("writes a new file instead of rewriting a damaged one", () =>
+    withStateDir(async (stateDir) => {
+      await register(stateDir, SELF, "c".repeat(64));
+
+      await register(stateDir, OTHER, "d".repeat(64));
+
+      const first = await bundleIn(stateDir, []);
+      const text = await readFile(first.pemPath, "utf8");
+
+      await writeFile(first.pemPath, "damaged");
+
+      const second = await bundleIn(stateDir, []);
+
+      expect(second.pemPath).not.toBe(first.pemPath);
+      expect(await readFile(second.pemPath, "utf8")).toBe(text);
+      expect(await readFile(first.pemPath, "utf8")).toBe("damaged");
+
+      await endOther(stateDir);
+
+      await bundleIn(stateDir, []);
+
+      expect(await trustFiles(stateDir)).toEqual([basename(second.pemPath)]);
+    }));
 });
