@@ -50,7 +50,7 @@ export const createStyle = (host: Host, styles: ReadonlyMap<string, Style>) => {
       return;
     }
 
-    const picked = await pickStyle(host, styles, current());
+    const picked = await pickStyle(host, styles, names, current());
 
     if (picked !== undefined) {
       choose(picked);

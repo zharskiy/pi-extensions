@@ -1,6 +1,6 @@
 import { type FormFactory, type KeyPress, PAD, type ThemeLike } from "../pi-adapter/index.ts";
 import { padded, padRows, prefixed } from "../shared/index.ts";
-import { pointerMark } from "./glyphs.ts";
+import { MARKS, pointerMark } from "./glyphs.ts";
 import { type KeyHint, titledFrame } from "./key-hints.ts";
 import { CANCEL_HINT, cursorKey, MOVE_HINT } from "./list.ts";
 
@@ -100,7 +100,7 @@ export const multiKey = (key: KeyPress, state: MultiState): MultiState | undefin
   return undefined;
 };
 
-const ROW_MARKS = "› [ ] ";
+const ROW_MARKS = `${MARKS.pointer} [ ] `;
 
 const descriptionRoom = (theme: ThemeLike, label: string, width: number) =>
   width - theme.width(`${PAD}${ROW_MARKS}`) - theme.width(label) - 2;

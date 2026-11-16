@@ -21,7 +21,7 @@ const nameList = (names: readonly string[]) => {
 };
 
 const pairLabel = (pair: Pick<Pair, "source" | "scope">) =>
-  `${SOURCE_NAMES[pair.source]} · ${SCOPE_NAMES[pair.scope]}`;
+  `${SOURCE_NAMES[pair.source]}${DOT}${SCOPE_NAMES[pair.scope]}`;
 
 const sourceOptions = (pairs: readonly Pair[]) =>
   pairs.map((pair) => {

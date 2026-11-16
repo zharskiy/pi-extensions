@@ -11,7 +11,7 @@ extensions/style/
 │   ├── styles.ts          # Style, NORMAL, DEFAULT_STYLE (concise), parseStyle (front matter), loadStyles
 │   └── settings.ts        # NAMESPACE, SETTINGS_FILE, readStyleSettings (user and project), saveStyle (user file, through writeSettingsFile)
 ├── ui/
-│   └── pick.ts            # pickStyle: the selectForm list shown through showForm
+│   └── pick.ts            # pickStyle: the selectForm list shown through showForm, over the names from createStyleSection
 ├── prompts/
 │   └── concise.md         # one file per style, front matter `description:`
 ├── tests/

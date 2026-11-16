@@ -1,4 +1,5 @@
 import { DOT, formatPercent, formatTokens, formatWindow } from "../../../platform/shared/index.ts";
+import { NO_MODEL } from "../../../platform/ui-kit/index.ts";
 import { type CacheFigures, type UsageModel, usageModel } from "../core/breakdown.ts";
 import type { Snapshot } from "../core/snapshot.ts";
 
@@ -13,7 +14,7 @@ const plain = (text: string) => text;
 
 const PLAIN: SummaryPaint = { name: plain, note: plain, percent: (value) => formatPercent(value), dot: DOT };
 
-const modelName = (model: UsageModel) => model.model ?? "no model";
+const modelName = (model: UsageModel) => model.model ?? NO_MODEL;
 
 const figuresText = (model: UsageModel, unit: boolean) => {
   const mark = model.estimated ? "~" : "";

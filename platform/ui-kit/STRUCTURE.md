@@ -10,7 +10,7 @@
 - `tabs.ts`: the tab bar, the grouped tab bar and Tab/←→ keys (questionnaire, `/agents setup`).
 - `multi-select.ts`: the checkbox list (Space, `a` all, `n` none, scroll window, `{ slots: true, empty }` for a fixed-height window with its `(none available)` or other empty text, `moreRow` for one `↑ N more`/`↓ N more` row) and `multiSelectForm`; `initialMulti`, `scrollWindow` and the hints are private to the file.
 - `cache-tone.ts`: the cache rate's colour thresholds and the coloured percentage.
-- `context-limit.ts`: the context limit's look shared by the footer, session-limits and the subagents agent view: `limitFigure` (the token figure in `text`, `warning` at soft, bold `error` at hard), `limitTail` (`of <limit>`, dim or the figure's tone), `limitLine` (the whole `working context X of Y`, label dim; the plain text is `workingContextText` in `platform/shared`) and `handoffNotice` (`» handoff at <limit> tokens · <used> used` in `warning` from the soft level on, otherwise undefined).
+- `context-limit.ts`: the context limit's look shared by the footer, session-limits and the subagents agent view: `limitFigure` (the token figure in `text`, `warning` at soft, bold `error` at hard), `limitTail` (`of <limit>`, dim or the figure's tone), `limitLine` (the whole `working context X of Y`, label dim; the plain text is `workingContextText` in `platform/shared`) and `handoffNotice` (`» handoff at <limit> tokens · <used> used` in `warning` from the soft level on, otherwise undefined). It also exports `NO_MODEL`, the `no model` text footer and context show when no model is set.
 - `tests/handoff-rows.test.ts`: `handoff-rows.ts`.
 - `tests/row.test.ts`: `row.ts` and `glyphs.ts`.
 - `tests/layout.test.ts`: `key-hints.ts` and the `shared` text layout it builds on.

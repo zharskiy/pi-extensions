@@ -16,7 +16,7 @@ import {
   sessionSpend,
   WORKING_CONTEXT,
 } from "../../../platform/shared/index.ts";
-import { keyHints, limitFigure, limitTail } from "../../../platform/ui-kit/index.ts";
+import { keyHints, limitFigure, limitTail, NO_MODEL } from "../../../platform/ui-kit/index.ts";
 import {
   type ContextBase,
   contextBase,
@@ -62,7 +62,7 @@ const modelSegments = (theme: ThemeLike, model: ModelInfo | undefined, thinking:
     `${theme.fg("dim", "thinking ")}${theme.fg(LEVEL_TOKENS[level] ?? "thinkingOff", level)}`;
 
   return [
-    { text: theme.fg("muted", model?.name ?? "no model"), drop: NEVER },
+    { text: theme.fg("muted", model?.name ?? NO_MODEL), drop: NEVER },
     ...(model?.reasoning ? [{ text: levelText(), drop: 2 }] : []),
   ];
 };
