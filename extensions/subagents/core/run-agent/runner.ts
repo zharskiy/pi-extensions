@@ -28,12 +28,13 @@ import {
   type AgentRegistry,
   type AgentRunner,
   allowlist,
+  canNest,
   chainLinks,
   chainTerminal,
+  grantedSubagents,
   isClosed,
   MAIN_CALLER,
   type RouteResult,
-  subagentNames,
 } from "../model/agent-record.ts";
 import { AGENT_SCOPE_ALL } from "../model/agent-schema.ts";
 import type { Bus } from "../model/events.ts";
@@ -841,16 +842,8 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     }
 
     const caller = deps.registry.get(callerId);
-    const definition = caller && deps.definitions.get(caller.agent);
 
-    if (!definition) {
-      return [];
-    }
-
-    return subagentNames(
-      definition,
-      deps.definitions.list().map((agent) => agent.name),
-    );
+    return caller ? grantedSubagents(deps.definitions, caller.agent) : [];
   };
 
   const callerSkills = (callerId: string) =>
@@ -927,9 +920,10 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       );
     }
 
-    const depth = (deps.registry.get(options.callerId)?.depth ?? 1) + 1;
+    const callerDepth = deps.registry.get(options.callerId)?.depth ?? 1;
+    const depth = callerDepth + 1;
 
-    if (depth > deps.settings.maxDepth) {
+    if (!canNest(callerDepth, deps.settings.maxDepth)) {
       throw new Error(`maximum agent depth ${deps.settings.maxDepth} reached`);
     }
 

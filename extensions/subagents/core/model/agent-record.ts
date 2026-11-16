@@ -175,6 +175,15 @@ export type AgentDefinitions = {
   reload(): void;
 };
 
+export const grantedSubagents = (definitions: Pick<AgentDefinitions, "get" | "list">, agent: string) => {
+  const definition = definitions.get(agent);
+  const names = definitions.list().map((known) => known.name);
+
+  return definition ? subagentNames(definition, names) : [];
+};
+
+export const canNest = (depth: number, maxDepth: number) => depth < maxDepth;
+
 export type AgentMessage = RoutedMessage | CustomMessage;
 
 export type RouteResult =

@@ -21,9 +21,10 @@ import {
   type AgentDefinition,
   type AgentRecord,
   allowlist,
+  canNest,
+  grantedSubagents,
   isClosed,
   MAIN_CALLER,
-  subagentNames,
 } from "../../core/model/agent-record.ts";
 import { handoffService } from "../../core/model/handoff.ts";
 import { NAMESPACE } from "../../core/model/paths.ts";
@@ -109,8 +110,7 @@ export const runAgentPlugin: Plugin = {
 
     const childTools = (record: AgentRecord): AnyToolSpec[] => {
       const own = definitions.get(record.agent);
-      const names = definitions.list().map((definition) => definition.name);
-      const allowed = (own ? subagentNames(own, names) : [])
+      const allowed = grantedSubagents(definitions, record.agent)
         .map((name) => definitions.get(name))
         .filter((definition): definition is AgentDefinition => definition !== undefined);
 
@@ -128,7 +128,7 @@ export const runAgentPlugin: Plugin = {
         ...(granted ? [services.require("fetchTool").tool()] : []),
       ];
 
-      if (allowed.length === 0 || record.depth >= settings.maxDepth) {
+      if (allowed.length === 0 || !canNest(record.depth, settings.maxDepth)) {
         return extra;
       }
 
