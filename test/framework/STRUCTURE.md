@@ -28,7 +28,7 @@
 - `pi/index.ts`: the surface of the helpers that load pi offline, plus the adapter's `formatRoutedMessage`, so extension tests build a routed message the way a child receives it.
 - `pi/render-theme.ts`: `initPiRenderTheme`, `initPiKeybindings`, `plainPiTheme`.
 - `pi/entry-rendering.ts`: `renderPiEntry` (an entry renderer drawn through the adapter's entry host with pi's theme) and `renderPiUserMessage` (pi's own user message), both without ANSI codes, and `registerPiMessageRenderer` (a message renderer put in the adapter's renderer record; returns its release). Both build on one typed stub of pi's renderer registration.
-- `pi/offline-session.ts`: `startPiSession`; a real pi session on faux models with one extension factory, plus any `extraFactories`. `startPiRuntime`: a pi session runtime whose commands can start a new session.
+- `pi/offline-session.ts`: `startPiSession`; a real pi session on faux models with one extension factory, plus any `extraFactories`. `startPiRuntime`: a pi session runtime whose commands can start a new session. `offlineModel` and `namedTool`: the unreachable model and the do-nothing tool that hand-wired sessions in the adapter's tests share.
 - `pi/tool-row-rendering.ts`: tool rows and edit diffs drawn through pi's renderers, inline and in a pane.
 - `pi/overlay-api.ts`: `createOverlayApi`, `openLastOverlay`, `disposeOverlays` on pi's TUI.
 - `pi/session-files.ts`: real session files: read, parse, header, facts, prompt record.

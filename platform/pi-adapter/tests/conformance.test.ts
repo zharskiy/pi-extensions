@@ -12,11 +12,12 @@ import {
 } from "@earendil-works/pi-ai";
 import * as pi from "@earendil-works/pi-coding-agent";
 import * as tui from "@earendil-works/pi-tui";
-import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useTempDirs } from "../../../test/framework/index.ts";
 import {
   initPiRenderTheme,
+  namedTool,
+  offlineModel,
   piRenderContext,
   startPiRuntime,
   startPiSession,
@@ -64,27 +65,6 @@ type Handler = (event: unknown) => unknown;
 
 const noMainTools = () => [];
 
-const offlineModel = {
-  id: "offline",
-  name: "offline",
-  api: "openai-completions",
-  provider: "fake",
-  baseUrl: "http://127.0.0.1:9",
-  reasoning: false,
-  input: ["text"],
-  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-  contextWindow: 1_000,
-  maxTokens: 100,
-};
-
-const namedTool = (name: string) => ({
-  name,
-  label: name,
-  description: name,
-  parameters: Type.Object({}),
-  execute: async () => ({ content: [], details: undefined }),
-});
-
 const lateMcpTools: pi.ExtensionFactory = (api) => {
   api.on("session_start", () => {
     [
@@ -94,7 +74,7 @@ const lateMcpTools: pi.ExtensionFactory = (api) => {
       "mcp__my_docs__delete",
       "mcp__slack__post",
     ]
-      .map(namedTool)
+      .map((name) => namedTool(name))
       .forEach((tool) => {
         api.registerTool(tool as never);
       });

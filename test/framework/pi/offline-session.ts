@@ -2,8 +2,31 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { type FauxProviderHandle, fauxProvider } from "@earendil-works/pi-ai";
 import * as pi from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
 import { vi } from "vitest";
 import { childScope } from "../../../platform/pi-adapter/runtime/child-scope.ts";
+
+export const offlineModel = {
+  id: "offline",
+  name: "offline",
+  api: "openai-completions",
+  provider: "fake",
+  baseUrl: "http://127.0.0.1:9",
+  reasoning: false,
+  input: ["text"],
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  contextWindow: 1_000,
+  maxTokens: 100,
+};
+
+export const namedTool = (name: string, patch: object = {}) => ({
+  name,
+  label: name,
+  description: name,
+  parameters: Type.Object({}),
+  execute: async () => ({ content: [], details: undefined }),
+  ...patch,
+});
 
 type PiSessionOptions = {
   agentDir: string;
