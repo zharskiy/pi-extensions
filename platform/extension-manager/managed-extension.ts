@@ -8,12 +8,12 @@ import {
   type SettingsSchema,
 } from "../shared/index.ts";
 import { createExtensionManager, type ExtensionManager } from "./extension-manager.ts";
-import { reportSettingsErrors } from "./settings-errors.ts";
+import { reportSettingsErrors, type SettingsReport } from "./settings-errors.ts";
 
 type SettingsFiles<C> = { schema: SettingsSchema<C>; file: string };
 
 type SettingsReload<C> = {
-  reload(settings: C, info: SessionInfo, runtime: AgentRuntime, notify: (message: string) => void): void;
+  reload(settings: C, info: SessionInfo, runtime: AgentRuntime, report: SettingsReport): void;
 };
 
 type ManagedSettings<C> = (SettingsFiles<C> | SettingsReload<C>) & { defaults(paths: ExtensionPaths): C };
@@ -58,13 +58,9 @@ const watchManagedSettings = <C>(
   const settings = Object.assign({}, initial, overrides);
   const report = reportSettingsErrors(host, label);
 
-  const notify = (message: string) => {
-    report([message]);
-  };
-
   host.onSessionStart((info) => {
     if ("reload" in spec) {
-      spec.reload(settings, info, runtime, notify);
+      spec.reload(settings, info, runtime, report);
     } else {
       const loaded = loadSettingsFiles(spec.schema, initial, spec.file, info);
 

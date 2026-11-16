@@ -88,9 +88,9 @@ describe("createManagedExtension", () => {
       plugins: [] as TestPlugin[],
       settings: {
         defaults: ({ agentDir }) => ({ count: agentDir.length, off: [] }),
-        reload: (settings, info, _runtime, notify) => {
+        reload: (settings, info, _runtime, report) => {
           settings.count = 7;
-          notify(`reloaded in ${info.cwd}`);
+          report([`reloaded in ${info.cwd}`]);
         },
       },
     });

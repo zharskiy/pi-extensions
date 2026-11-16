@@ -165,6 +165,20 @@ describe("settings files", () => {
     ]);
   });
 
+  it("shares one record of reported errors per host and label, at the level given", () => {
+    const host = createFakeHost({ id: "s" });
+
+    reportSettingsErrors(host, "example")(["a"]);
+    reportSettingsErrors(host, "example")(["a", "b"], "info");
+    reportSettingsErrors(host, "other")(["a"]);
+
+    expect(host.notices).toEqual([
+      { message: "example settings: a", level: "warning" },
+      { message: "example settings: b", level: "info" },
+      { message: "other settings: a", level: "warning" },
+    ]);
+  });
+
   it("ignores the project file when the project is not trusted", () => {
     expect(loadSettingsFiles(schema, DEFAULTS, FILE, withFiles(false)).settings).toEqual({
       count: 2,

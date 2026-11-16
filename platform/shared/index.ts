@@ -59,7 +59,6 @@ export {
   readSettingsFiles,
   readText,
   type SettingsLocation,
-  type SettingsParse,
   type SettingsSchema,
   type SettingsScope,
   settingsPath,

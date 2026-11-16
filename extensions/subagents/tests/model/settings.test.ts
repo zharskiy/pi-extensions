@@ -1,7 +1,9 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { createFakeAgentRuntime } from "../../../../test/framework/index.ts";
+import { reportSettingsErrors } from "../../../../platform/extension-manager/index.ts";
+import { createFakeAgentRuntime, createFakeHost } from "../../../../test/framework/index.ts";
+import { NAMESPACE } from "../../core/model/paths.ts";
 import { defaultSettings, disabledPlugins, loadSettings, reloadSettings } from "../../core/model/settings.ts";
 import { tempDir } from "../support/subagents-harness.ts";
 
@@ -35,7 +37,7 @@ describe("subagents settings", () => {
       somethingElse: 50_000,
     });
 
-    const loaded = loadSettings(agentDir, cwd, false);
+    const loaded = loadSettings({ agentDir, cwd, projectTrusted: false });
 
     expect(loaded.settings).toMatchObject({ maxConcurrent: 8, maxDepth: 3, softContextRatio: 0.8 });
     expect(loaded.errors).toEqual([
@@ -50,7 +52,7 @@ describe("subagents settings", () => {
 
     writeJson(userFile, { disabledPlugins: "agent-view" });
 
-    expect(loadSettings(agentDir, cwd, false).errors).toEqual([
+    expect(loadSettings({ agentDir, cwd, projectTrusted: false }).errors).toEqual([
       `${userFile}: disabledPlugins must be a list of plugin ids`,
     ]);
     expect(disabledPlugins(agentDir)).toEqual([]);
@@ -72,7 +74,7 @@ describe("subagents settings", () => {
 
     writeJson(userFile, { doneLingerMs: -1 });
 
-    const loaded = loadSettings(agentDir, cwd, false);
+    const loaded = loadSettings({ agentDir, cwd, projectTrusted: false });
 
     expect(loaded.settings).toMatchObject({ doneLingerMs: 10_000 });
     expect(loaded.errors).toEqual([`${userFile}: doneLingerMs must be a number between 0 and 3600000`]);
@@ -98,7 +100,7 @@ describe("subagents settings", () => {
 
     writeJson(userFile, values);
 
-    const loaded = loadSettings(agentDir, cwd, false);
+    const loaded = loadSettings({ agentDir, cwd, projectTrusted: false });
 
     expect(loaded.settings).toMatchObject(values);
     expect(loaded.errors).toEqual([]);
@@ -114,7 +116,7 @@ describe("subagents settings", () => {
       fetchMaxChars: "lots",
     });
 
-    const loaded = loadSettings(agentDir, cwd, false);
+    const loaded = loadSettings({ agentDir, cwd, projectTrusted: false });
 
     expect(loaded.settings).toMatchObject({
       maxChildrenPerAgent: 6,
@@ -136,8 +138,14 @@ describe("subagents settings", () => {
     writeJson(userFile, { maxConcurrent: 2, maxDepth: 4 });
     writeJson(projectFile, { maxConcurrent: 6 });
 
-    expect(loadSettings(agentDir, cwd, true).settings).toMatchObject({ maxConcurrent: 6, maxDepth: 4 });
-    expect(loadSettings(agentDir, cwd, false).settings).toMatchObject({ maxConcurrent: 2, maxDepth: 4 });
+    expect(loadSettings({ agentDir, cwd, projectTrusted: true }).settings).toMatchObject({
+      maxConcurrent: 6,
+      maxDepth: 4,
+    });
+    expect(loadSettings({ agentDir, cwd, projectTrusted: false }).settings).toMatchObject({
+      maxConcurrent: 2,
+      maxDepth: 4,
+    });
   });
 
   it("has no agent overrides by default", () => {
@@ -155,7 +163,7 @@ describe("subagents settings", () => {
       },
     });
 
-    const loaded = loadSettings(agentDir, cwd, false);
+    const loaded = loadSettings({ agentDir, cwd, projectTrusted: false });
 
     expect(loaded.errors).toEqual([]);
     expect(loaded.settings.agents).toEqual({
@@ -176,7 +184,7 @@ describe("subagents settings", () => {
       },
     });
 
-    const loaded = loadSettings(agentDir, cwd, false);
+    const loaded = loadSettings({ agentDir, cwd, projectTrusted: false });
 
     expect(loaded.settings.agents).toEqual({ scout: {}, reviewer: { thinking: "max" } });
     expect(loaded.errors).toEqual([
@@ -194,7 +202,7 @@ describe("subagents settings", () => {
 
     writeJson(userFile, { agents: ["scout"] });
 
-    expect(loadSettings(agentDir, cwd, false).errors).toEqual([
+    expect(loadSettings({ agentDir, cwd, projectTrusted: false }).errors).toEqual([
       `${userFile}: agents must be an object of agent overrides`,
     ]);
   });
@@ -207,12 +215,12 @@ describe("subagents settings", () => {
     });
     writeJson(projectFile, { agents: { scout: { model: "acme/p:high" }, reviewer: { skills: [] } } });
 
-    expect(loadSettings(agentDir, cwd, true).settings.agents).toEqual({
+    expect(loadSettings({ agentDir, cwd, projectTrusted: true }).settings.agents).toEqual({
       scout: { model: "acme/p", thinking: "high", skills: ["docs"] },
       planner: { thinking: "low" },
       reviewer: { skills: [] },
     });
-    expect(loadSettings(agentDir, cwd, false).settings.agents).toEqual({
+    expect(loadSettings({ agentDir, cwd, projectTrusted: false }).settings.agents).toEqual({
       scout: { model: "acme/u", skills: ["docs"] },
       planner: { thinking: "low" },
     });
@@ -224,7 +232,7 @@ describe("subagents settings", () => {
     writeJson(userFile, { disabledPlugins: ["agent-view"] });
     writeJson(projectFile, { disabledPlugins: ["run-agent"] });
 
-    const loaded = loadSettings(agentDir, cwd, true);
+    const loaded = loadSettings({ agentDir, cwd, projectTrusted: true });
 
     expect(disabledPlugins(agentDir)).toEqual(["agent-view"]);
     expect(loaded.settings.disabledPlugins).toEqual(["agent-view"]);
@@ -241,28 +249,27 @@ describe("codemode workers on settings reload", () => {
     const warnings: string[] = [];
 
     writeJson(userFile, { maxConcurrent: 5, maxDepth: 4 });
-    reloadSettings(defaultSettings(), { agentDir, cwd, projectTrusted: false }, runtime, (message) =>
-      warnings.push(message),
+    reloadSettings(defaultSettings(), { agentDir, cwd, projectTrusted: false }, runtime, (errors) =>
+      warnings.push(...errors),
     );
 
     expect(runtime.workerRequests).toEqual([5]);
     expect(warnings).toEqual([]);
   });
 
-  it("warns about a shortfall once per settings object, applying the request on every reload", () => {
+  it("warns about a shortfall once per host, applying the request on every reload", () => {
     const { agentDir, cwd } = dirs();
     const runtime = createFakeAgentRuntime();
     const settings = defaultSettings();
-    const warnings: string[] = [];
-    const info = { agentDir, cwd, projectTrusted: false };
+    const host = createFakeHost({ agentDir, cwd, projectTrusted: false });
 
     runtime.codemodeShortfall = { setting: "FAKE_WORKERS", workers: 3, wanted: 14 };
-    reloadSettings(settings, info, runtime, (message) => warnings.push(message));
-    reloadSettings(settings, info, runtime, (message) => warnings.push(message));
+    reloadSettings(settings, host.info, runtime, reportSettingsErrors(host, NAMESPACE));
+    reloadSettings(settings, host.info, runtime, reportSettingsErrors(host, NAMESPACE));
 
     expect(runtime.workerRequests).toEqual([12, 12]);
-    expect(warnings).toEqual([
-      "FAKE_WORKERS=3 is below the 14 codemode workers the agents may need; agents' codemode scripts may wait or fail",
+    expect(host.notices.map((notice) => notice.message)).toEqual([
+      "pi-subagents settings: FAKE_WORKERS=3 is below the 14 codemode workers the agents may need; agents' codemode scripts may wait or fail",
     ]);
   });
 });
