@@ -144,10 +144,10 @@ extensions/subagents/
     │   └── usage-report/                  # usage-report.test.ts
     ├── live/                              # local-only, PI_LIVE_MODEL: run-agent, nesting, grants, handoff, worktree
     └── support/                           # the one support folder test/evals/subagents/ may import
-        ├── subagents-harness.ts           # startPlugins, createHarness, spawnAgents, tempDir, pluginSettings over test/framework
+        ├── subagents-harness.ts           # startPlugins, createHarness, spawnAgents, tempDir, pluginSettings over test/framework; agentFile and writeUserAgent for a user agent file
         ├── live-harness.ts                # createLiveHarness over the default export: seed, agents, wakes, chains
         ├── routing-session.ts             # mainSessionPrompt, recordingTools: the routing eval's main prompt and run_agent stubs
-        ├── agent-records.ts               # agentRecord, newAgentInput fixtures; AgentRecord and chain helpers for evals
+        ├── agent-records.ts               # agentRecord, newAgentInput, agentDefinition fixtures; AgentRecord and chain helpers for evals
         ├── agent-patch.ts                 # patchAgentFile, shippedGroup, modelForGroup: agent files for live tests
         ├── agent-patch.test.ts            # the agent file patcher
         ├── overlay-rows.ts                # selectedRow: the selected overlay row

@@ -1,5 +1,5 @@
 import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { StopReason, ToolSpec } from "../../../../../platform/pi-adapter/index.ts";
 import { flushMicrotasks, hiddenMessageTexts, VALID_HANDOFF } from "../../../../../test/framework/index.ts";
@@ -8,7 +8,7 @@ import { agentRegistryPlugin } from "../../../api/plugins/agent-registry.ts";
 import { limitsPlugin } from "../../../api/plugins/limits.ts";
 import { runAgentPlugin } from "../../../api/plugins/run-agent.ts";
 import type { RunAgentParams } from "../../../core/run-agent/tools.ts";
-import { createHarness } from "../../support/subagents-harness.ts";
+import { createHarness, writeUserAgent } from "../../support/subagents-harness.ts";
 
 const WIDE_AGENT = [
   "---",
@@ -28,10 +28,7 @@ const setup = async (overrides = {}, agent = "scout") => {
   });
 
   if (agent === "wide") {
-    const userAgentsDir = join(harness.host.info.agentDir, "agents");
-
-    mkdirSync(userAgentsDir, { recursive: true });
-    writeFileSync(join(userAgentsDir, "wide.md"), WIDE_AGENT);
+    writeUserAgent(harness.host, "wide", WIDE_AGENT);
     harness.host.start();
   }
 

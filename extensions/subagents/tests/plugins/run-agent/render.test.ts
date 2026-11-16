@@ -1,4 +1,3 @@
-import { mkdirSync, writeFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ThemeLike, ToolRender, ToolResult } from "../../../../../platform/pi-adapter/index.ts";
 import { flushMicrotasks, plainTheme, tokenTaggingTheme } from "../../../../../test/framework/index.ts";
@@ -12,7 +11,7 @@ import type { Runner } from "../../../core/run-agent/runner.ts";
 import { type RunAgentDetails, type RunAgentParams, runAgentTool } from "../../../core/run-agent/tools.ts";
 import { pendingRows } from "../../../ui/run-agent/pending-rows.ts";
 import { newAgentInput } from "../../support/agent-records.ts";
-import { createHarness, tempDir } from "../../support/subagents-harness.ts";
+import { createHarness, tempDir, writeUserAgent } from "../../support/subagents-harness.ts";
 
 type Agent = RunAgentParams["agents"][number];
 
@@ -62,10 +61,8 @@ const setup = (overrides = {}) => {
 
 const withWorker = (overrides = {}) => {
   const harness = setup(overrides);
-  const dir = `${harness.host.info.agentDir}/agents`;
 
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(`${dir}/worker.md`, WORKER);
+  writeUserAgent(harness.host, "worker", WORKER);
   harness.host.start();
 
   return harness;
