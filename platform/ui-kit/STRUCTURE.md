@@ -2,7 +2,7 @@
 
 - `index.ts`: the public surface.
 - `row.ts`: the pi-native row layout: the 0/2/4 grid, `row`/`rowChildren`, `titleLine`, `failureSuffix`, `wrapChild`, `preview`, `rowText`.
-- `handoff-rows.ts`: `handoffRequestMessage`, `handoffSeedMessage`, `handoffToolRows`.
+- `handoff-rows.ts`: `handoffRequestMessage`, `handoffSeedMessage` (both one private `handoffRow`: bold title, the text when expanded, the first sentence or nothing when collapsed), `handoffToolRows`.
 - `glyphs.ts`: the state marks `MARKS` (`◌ ✓ ✗ ⊘ » ↳ › ∴`), `Mark`, `markGlyph`, `markOf`, `pointerMark`.
 - `key-hints.ts`: the hint grammar: `EXPAND_BINDING`, `expandHint`, `appendHint`, `countLine`, `keyHints`, `hintRow` (one hint row cut to the width) and the private `hintLines` (bottom strips), `framed` (rule, lines, hints, rule, with the accent `rule` it keeps to itself; `{ oneRow: true }` cuts the hints to one row), `titledFrame` (`framed` with a title and a blank line on top, for the select and multi-select forms).
 - `list.ts`: the selectable list: lines, keys (`cursorKey` shared with the multi-select), the shared hints.

@@ -10,7 +10,7 @@ import {
 } from "../shared/index.ts";
 import { markOf } from "./glyphs.ts";
 import { EXPAND_BINDING, expandHint } from "./key-hints.ts";
-import { type RowRender, row, rowChildren, rowText, wrapChild } from "./row.ts";
+import { type RowChild, type RowRender, row, rowChildren, rowText, wrapChild } from "./row.ts";
 
 const SEED_TITLE = "handoff";
 
@@ -35,13 +35,13 @@ const seedTitle = (details: unknown) => {
 
 const summary = (text: string) => (theme: ThemeLike) => theme.fg("muted", firstSentence(text));
 
-const seedRow =
-  (title: string, text: string, expanded: boolean, expandKey: string): RowRender =>
+const handoffRow =
+  (title: string, text: string, collapsed: RowChild[], expanded: boolean, expandKey: string): RowRender =>
   (width, theme) =>
     row({
       mark: "info",
       title: theme.bold(title),
-      children: expanded ? [wrapChild(text.trim(), width, CHILD_COLUMN, theme).join("\n")] : [summary(text)],
+      children: expanded ? [wrapChild(text.trim(), width, CHILD_COLUMN, theme).join("\n")] : collapsed,
       hint: expanded ? undefined : expandHint(expandKey),
       hintCuts: true,
     })(width, theme);
@@ -49,7 +49,13 @@ const seedRow =
 export const handoffSeedMessage =
   (keyText: (binding: string) => string): MessageRender =>
   (message, width, expanded, theme) =>
-    seedRow(seedTitle(message.details), message.text, expanded, keyText(EXPAND_BINDING))(width, theme);
+    handoffRow(
+      seedTitle(message.details),
+      message.text,
+      [summary(message.text)],
+      expanded,
+      keyText(EXPAND_BINDING),
+    )(width, theme);
 
 const REQUEST_TITLE = "handoff requested";
 
@@ -68,13 +74,13 @@ const requestTitle = (details: unknown) => {
 export const handoffRequestMessage =
   (keyText: (binding: string) => string): MessageRender =>
   (message, width, expanded, theme) =>
-    row({
-      mark: "info",
-      title: theme.bold(requestTitle(message.details)),
-      children: expanded ? [wrapChild(message.text.trim(), width, CHILD_COLUMN, theme).join("\n")] : [],
-      hint: expanded ? undefined : expandHint(keyText(EXPAND_BINDING)),
-      hintCuts: true,
-    })(width, theme);
+    handoffRow(
+      requestTitle(message.details),
+      message.text,
+      [],
+      expanded,
+      keyText(EXPAND_BINDING),
+    )(width, theme);
 
 export const handoffToolRows = (savedPath: () => string | undefined): HandoffToolRows => ({
   renderCall: (_params, theme, state) =>
