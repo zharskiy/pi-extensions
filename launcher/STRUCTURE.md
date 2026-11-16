@@ -139,6 +139,7 @@ backend/colima/images.ts       image pull, build (with the output tail of a fail
 backend/colima/volumes.ts      volume operations
 backend/colima/relay.ts        the per-repository network and relay
 backend/colima/vm.ts           VM start (at the vm config size when stopped), size, inspect, apply for the setup, the launch reconcile of shares and size in one restart, and stop
+backend/colima/size.ts         the VM size colima reports (status --json, colima.yaml), the size flags of a start, the cold-start flags and the shrink notice
 backend/colima/shares.ts       VM shares: coverage, the shares a launch adds, the mount list of a restart and its check
 backend/colima/vm-trust.ts     the tls.extraCa certificates in the VM's trust store, engine restart when idle
 backend/colima/colima-yaml.ts  the lima.yaml and colima.yaml mounts reader and the colima.yaml size reader

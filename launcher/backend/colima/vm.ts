@@ -4,7 +4,6 @@ import {
   type CommandRunner,
   errorMessage,
   LauncherError,
-  parseJsonObject,
   stateLayout,
   withDirectoryLock,
 } from "../../shared/index.ts";
@@ -20,7 +19,6 @@ import type {
   VmReport,
   VmShare,
   VmShareOptions,
-  VmSize,
   VmSpec,
   VmTarget,
 } from "../types.ts";
@@ -32,7 +30,7 @@ import {
   vmDecision,
   whenBusy,
 } from "../vm-decision.ts";
-import { vmSizeDrift, vmSizeText } from "../vm-size.ts";
+import { vmSizeText } from "../vm-size.ts";
 import { vmSharesOf, vmSizeOfYaml } from "./colima-yaml.ts";
 import {
   type Colima,
@@ -55,6 +53,7 @@ import {
   UNREADABLE,
   uncoveredPaths,
 } from "./shares.ts";
+import { coldStartFlags, completeSize, shrinkNotice, sizeFlags, statusSize } from "./size.ts";
 import { createColimaTrust } from "./vm-trust.ts";
 
 export interface ColimaVmOptions {
@@ -77,8 +76,6 @@ const MIN_GIB = 4;
 
 const MAX_GIB = 10;
 
-const GIB = 1024 ** 3;
-
 const START_FAILURE = "could not start the sandbox VM";
 
 const STOP_FAILURE = "could not stop the sandbox VM";
@@ -88,8 +85,6 @@ const CREATE_FAILURE = "could not create the sandbox VM";
 const RESTART_FAILURE = "could not restart the sandbox VM";
 
 const MOVED_PROBLEM = "could not change the shares of the sandbox VM";
-
-const INSPECT_TIMEOUT_MS = 3000;
 
 const AUTOMATIC_DISK_GIB = 60;
 
@@ -125,15 +120,6 @@ export const recommendedVmSize = (cpus: number, memGiB: number): VmSpec => ({
   memoryGiB: clamp(Math.floor(memGiB / 2), MIN_GIB, MAX_GIB),
   diskGiB: AUTOMATIC_DISK_GIB,
 });
-
-const shrinkNotice = (target: VmTarget, keptDiskGiB: number) =>
-  `vm.diskGiB ${target.diskGiB} is below the sandbox VM's disk of ${keptDiskGiB} GiB; colima cannot shrink a disk, so it stays`;
-
-const sizeFlags = (target: VmTarget) => [
-  ...(target.cpus === undefined ? [] : ["--cpu", String(target.cpus)]),
-  ...(target.memoryGiB === undefined ? [] : ["--memory", String(target.memoryGiB)]),
-  ...(target.diskGiB === undefined ? [] : ["--disk", String(target.diskGiB)]),
-];
 
 interface Restart {
   mounts: VmShare[];
@@ -215,23 +201,6 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
 
   const readProfileYaml = () => readFile(profileYaml, "utf8").catch(() => undefined);
 
-  const coldStartFlags = async (target: VmTarget, report: VmReport) => {
-    const text = await readProfileYaml();
-    const current = text === undefined ? undefined : vmSizeOfYaml(text);
-
-    if (current === undefined) {
-      return sizeFlags({ cpus: target.cpus, memoryGiB: target.memoryGiB });
-    }
-
-    const drift = vmSizeDrift(current, target);
-
-    if (drift.keptDiskGiB !== undefined) {
-      report(shrinkNotice(target, drift.keptDiskGiB));
-    }
-
-    return sizeFlags(drift.changes);
-  };
-
   const running = async (failure: string) => {
     const result = await colimaRun(["status", "--profile", profile]).catch((error: unknown) => {
       throw new LauncherError(
@@ -244,7 +213,7 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
   };
 
   const startStopped = async (report: VmReport, shares: VmShare[], target: VmTarget) => {
-    const flags = await coldStartFlags(target, report);
+    const flags = coldStartFlags(await readProfileYaml(), target, report);
 
     report("starting the sandbox VM");
 
@@ -316,38 +285,7 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
     return "stopped";
   };
 
-  const statusSize = async (): Promise<VmSize | undefined> => {
-    const result = await colimaRun(["status", "--profile", profile, "--json"], {
-      timeoutMs: INSPECT_TIMEOUT_MS,
-    });
-
-    if (result.timedOut === true) {
-      throw new LauncherError(`colima did not answer within ${INSPECT_TIMEOUT_MS / 1000} seconds`);
-    }
-
-    const vm = result.code === 0 ? parseJsonObject(result.stdout) : undefined;
-
-    if (typeof vm?.cpu !== "number" || typeof vm.memory !== "number") {
-      return undefined;
-    }
-
-    const measured = { cpus: vm.cpu, memoryGiB: vm.memory / GIB };
-
-    return typeof vm.disk === "number" ? { ...measured, diskGiB: vm.disk / GIB } : measured;
-  };
-
-  const size = () => statusSize().catch(() => undefined);
-
-  const completeSize = (measured: VmSize | undefined, configured: VmSize | undefined): VmSpec => {
-    const diskGiB = measured?.diskGiB ?? configured?.diskGiB;
-    const known = measured ?? configured;
-
-    if (known === undefined || diskGiB === undefined) {
-      throw new LauncherError(`colima reported no size for profile ${profile}`);
-    }
-
-    return { cpus: known.cpus, memoryGiB: Math.round(known.memoryGiB), diskGiB: Math.round(diskGiB) };
-  };
+  const size = () => statusSize(colimaRun, profile).catch(() => undefined);
 
   const inspect = async (): Promise<VmInspect> => {
     const text = await readProfileYaml();
@@ -356,20 +294,20 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
       return { state: "absent" };
     }
 
-    const measured = await statusSize();
+    const measured = await statusSize(colimaRun, profile);
     const configured = vmSizeOfYaml(text);
 
     if (measured === undefined) {
       return {
         state: "stopped",
-        size: completeSize(undefined, configured),
+        size: completeSize(profile, undefined, configured),
         shares: vmSharesOf(text, home) ?? "unreadable",
       };
     }
 
     return {
       state: "running",
-      size: completeSize(measured, configured),
+      size: completeSize(profile, measured, configured),
       shares: (await shares.readShares()) ?? "unreadable",
     };
   };
@@ -460,7 +398,7 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
     }
 
     if (decision.kind !== "restart") {
-      return decision.kind === "stopped" ? "stopped" : "unchanged";
+      return found.state === "stopped" ? "stopped" : "unchanged";
     }
 
     await restart(desired, restartOf(found, desired, decision), [], options.progress);
