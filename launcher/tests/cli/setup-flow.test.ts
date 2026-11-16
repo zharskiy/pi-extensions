@@ -102,7 +102,6 @@ const setup = (options: Options = {}) => {
     select: counted("prompts", fake.prompts.select),
     multiselect: counted("prompts", fake.prompts.multiselect),
     confirm: counted("prompts", fake.prompts.confirm),
-    text: counted("prompts", fake.prompts.text),
     path: counted("prompts", fake.prompts.path),
     number: counted("prompts", fake.prompts.number),
     task: counted("tasks", fake.prompts.task),
@@ -838,5 +837,29 @@ describe("plain mode", () => {
       "Check: pi sandbox doctor",
       "Settings: ~/.pi/agent/pi-sandbox/config.json",
     ]);
+  });
+
+  it("adds a typed path to the folders, re-asking the folders after a refused one", async () => {
+    const home = await realpath(await tempDir("setup-flow-plain-home"));
+
+    await mkdir(join(home, "oss"));
+
+    const run = setup({
+      plain: true,
+      facts: { home, candidates: [candidate("work", 3, { resolved: join(home, "work") })] },
+    });
+
+    await run.answer("~/missing", "~/oss", "", "", "", "");
+
+    expect(await run.exit).toBe(0);
+    expect(JSON.parse(run.writes[0] ?? "").workspaceRoots.roots).toEqual(["~/work", "~/oss"]);
+
+    const lines = run.screen.lines();
+    const refused = lines.findIndex((line) => line.startsWith("Folders [1]: ~/missing"));
+
+    expect(lines[refused + 1]).toMatch(/^Error: /);
+    expect(lines).toContain("  2) [x] ~/oss");
+    expect(lines).toContain("Folders [1 2]:");
+    expect(run.text()).not.toContain("Add a folder");
   });
 });

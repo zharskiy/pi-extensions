@@ -8,6 +8,10 @@ const HOME = {
   yes: "Yes, share ~",
   no: "No, choose folders",
   initial: false,
+  collapsed: (yes: boolean) => ({
+    title: "Share your whole home with the sandbox VM instead?",
+    text: yes ? "Yes, share ~" : "No, choose folders",
+  }),
 };
 
 describe("confirm", () => {

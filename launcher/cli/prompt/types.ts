@@ -73,18 +73,18 @@ export interface Ui {
   rows(): number;
   onResize(listener: () => void): () => void;
   session: TerminalSession;
-  escapeCodeTimeout?: number;
+  escapeCodeTimeout: number;
   timers: Timers;
 }
 
-export type Collapse = string | { title: string; text: string } | undefined;
+export type Collapse = { title: string; text: string } | undefined;
 
-export type Detail = string[] | ((width: number) => string[]);
+export type Detail = string[] | ((room: number) => string[]);
 
 export interface KeyWords {
   enter?: string;
-  escape?: string | false;
-  interrupt?: string | false;
+  escape?: string;
+  interrupt?: string;
 }
 
 export interface Choice<T> {
@@ -100,7 +100,7 @@ export interface SelectSpec<T> extends KeyWords {
   choices: Choice<T>[];
   initial?: T;
   radio?: boolean;
-  collapsed?: (value: T) => Collapse;
+  collapsed: (value: T) => Collapse;
 }
 
 export interface MultiSpec<T> extends KeyWords {
@@ -108,10 +108,9 @@ export interface MultiSpec<T> extends KeyWords {
   detail?: Detail;
   choices: Choice<T>[];
   checked: T[];
-  onAction?: (value: T) => Promise<Choice<T> | undefined>;
-  validate?: (values: T[]) => string | undefined;
-  collapsed?: (values: T[]) => Collapse;
-  plain?: { help: string[]; label: string };
+  onAction?: (value: T, typed?: string) => Promise<Choice<T> | undefined>;
+  collapsed: (values: T[]) => Collapse;
+  plain: { help: string[]; label: string };
 }
 
 export interface ConfirmSpec extends KeyWords {
@@ -120,17 +119,14 @@ export interface ConfirmSpec extends KeyWords {
   yes: string;
   no: string;
   initial: boolean;
-  collapsed?: (value: boolean) => Collapse;
+  collapsed: (value: boolean) => Collapse;
 }
 
-export interface TextSpec extends KeyWords {
+export interface PathSpec extends KeyWords {
   title: string;
   initial?: string;
   validate?: (value: string) => string | undefined;
-  collapsed?: (value: string) => Collapse;
-}
-
-export interface PathSpec extends TextSpec {
+  collapsed: (value: string) => Collapse;
   readdir: (dir: string) => string[];
   home: string;
 }
@@ -142,11 +138,11 @@ export interface NumberSpec extends KeyWords {
   min: number;
   max: number;
   step: number;
-  hint: string;
+  hint?: string;
   tooLow: string;
-  tooHigh: string;
+  tooHigh?: string;
   warn?: (value: number) => string | undefined;
-  collapsed?: (value: number) => Collapse;
+  collapsed: (value: number) => Collapse;
 }
 
 export interface TaskSpec<T> {
@@ -155,18 +151,14 @@ export interface TaskSpec<T> {
   interruptWarning: string | (() => string);
 }
 
-export const warningOf = (spec: TaskSpec<unknown>) =>
-  typeof spec.interruptWarning === "string" ? spec.interruptWarning : spec.interruptWarning();
-
 export type NotePlace = "rail" | "start" | "step" | "end";
 
 export interface Prompts {
   select<T>(spec: SelectSpec<T>): Promise<Reply<T>>;
   multiselect<T>(spec: MultiSpec<T>): Promise<Reply<T[]>>;
   confirm(spec: ConfirmSpec): Promise<Reply<boolean>>;
-  text(spec: TextSpec): Promise<Reply<string>>;
   path(spec: PathSpec): Promise<Reply<string>>;
   number(spec: NumberSpec): Promise<Reply<number>>;
   task<T>(spec: TaskSpec<T>): Promise<T>;
-  note(lines: string[], place?: NotePlace): void;
+  note(lines: Detail, place?: NotePlace): void;
 }

@@ -1,7 +1,8 @@
 import { completePath } from "./complete.ts";
 import { createFrame, type FrameView } from "./frame.ts";
-import { dropQueuedKeys, isCtrl, listenKeys } from "./keys.ts";
-import { DIGITS, editLine, type LineState, lineOf, numberProblem } from "./line-editor.ts";
+import { isCtrl, listenKeys } from "./keys.ts";
+import { editLine, type LineState, lineOf } from "./line-editor.ts";
+import { DIGITS, initialIndex, numberProblem, toggle, warningFor } from "./rules.ts";
 import {
   asciiOf,
   elapsedOf,
@@ -17,6 +18,7 @@ import {
   wrap,
   wrapSegments,
 } from "./style.ts";
+import { runTask, type TaskView, warningOf } from "./task.ts";
 import {
   BACK,
   type CancelCause,
@@ -35,9 +37,7 @@ import {
   type Reply,
   type SelectSpec,
   type TaskSpec,
-  type TextSpec,
   type Ui,
-  warningOf,
 } from "./types.ts";
 
 interface Context {
@@ -54,7 +54,6 @@ type Step<T> =
   | { kind: "suspend"; run: () => Promise<void> };
 
 interface View<T> {
-  title: string;
   typing: boolean;
   frame(width: number): FrameView;
   key(key: Key): Step<T>;
@@ -82,23 +81,23 @@ const MATCHES_SHOWN = 8;
 
 const SPIN_MS = 100;
 
-const SUMMARY_SHOWN = 3;
+const MIN_ROWS = 3;
 
 const settle = <T>(value: T): Step<T> => ({ kind: "settle", value });
 
 const roomOf = (width: number) => Math.max(1, width - RAIL_WIDTH - 1);
 
-const TITLE_GAP = "   ";
+const GAP = "   ";
 
 const titleLines = (context: Context, parts: Parts, width: number) => {
   const { paint, fold } = context;
   const room = roomOf(width);
-  const [title = "", ...extras] = fold(parts.title).split(TITLE_GAP);
+  const [title = "", ...extras] = fold(parts.title).split(GAP);
   const pieces = [...extras, ...(parts.note === undefined ? [] : [fold(parts.note)])];
-  const whole = [title, ...pieces].join(TITLE_GAP);
+  const whole = [title, ...pieces].join(GAP);
 
   if (widthOf(whole) <= room) {
-    const tail = pieces.length === 0 ? "" : `${TITLE_GAP}${paint("dim", pieces.join(TITLE_GAP))}`;
+    const tail = pieces.length === 0 ? "" : `${GAP}${paint("dim", pieces.join(GAP))}`;
 
     return { head: `${title}${tail}`, more: [] };
   }
@@ -136,7 +135,7 @@ const composed = (context: Context, parts: Parts) => {
 
 const detailOf = (context: Context, detail: Detail | undefined, width: number) => {
   if (typeof detail === "function") {
-    return detail(width);
+    return detail(roomOf(width));
   }
 
   return (detail ?? []).flatMap((line) => wrap(context.fold(line), roomOf(width)));
@@ -147,19 +146,14 @@ const hintsOf = (context: Context, segments: string[], width: number) =>
     context.paint("dim", line),
   );
 
-const wordsOf = (spec: KeyWords, defaults: { enter: string; escape: string; interrupt: string | false }) => {
-  const back = spec.escape ?? defaults.escape;
-  const interrupt = spec.interrupt ?? defaults.interrupt;
+const wordsOf = (spec: KeyWords, enter: string) => {
+  const back = spec.escape ?? "back";
+  const interrupt = spec.interrupt ?? "cancel";
+  const enterHint = `enter ${spec.enter ?? enter}`;
 
-  if (back !== false && back === interrupt) {
-    return [`enter ${spec.enter ?? defaults.enter}`, `esc/ctrl-c ${back}`];
-  }
-
-  return [
-    `enter ${spec.enter ?? defaults.enter}`,
-    ...(back === false ? [] : [`esc ${back}`]),
-    ...(interrupt === false ? [] : [`ctrl-c ${interrupt}`]),
-  ];
+  return back === interrupt
+    ? [enterHint, `esc/ctrl-c ${back}`]
+    : [enterHint, `esc ${back}`, `ctrl-c ${interrupt}`];
 };
 
 const messageLines = (context: Context, tone: Tone, glyph: string, text: string, width: number) =>
@@ -173,19 +167,13 @@ const errorLines = (context: Context, message: string | undefined, width: number
 const warningLines = (context: Context, message: string | undefined, width: number) =>
   message === undefined ? [] : messageLines(context, "yellow", context.glyphs.warning, message, width);
 
-const summaryOf = (labels: string[]) =>
-  labels.length <= SUMMARY_SHOWN
-    ? labels.join(", ")
-    : `${labels.slice(0, SUMMARY_SHOWN).join(", ")} and ${labels.length - SUMMARY_SHOWN} more`;
-
-const collapsedLines = (context: Context, title: string, collapse: Collapse) => {
-  if (collapse === undefined) {
+const collapsedLines = (context: Context, shown: Collapse) => {
+  if (shown === undefined) {
     return [];
   }
 
   const { glyphs, paint } = context;
   const room = roomOf(context.ui.columns());
-  const shown = typeof collapse === "string" ? { title, text: collapse } : collapse;
   const rail = paint("dim", glyphs.rail);
   const text = shown.text
     .split("\n")
@@ -241,7 +229,7 @@ const runView = <T>(context: Context, view: View<T>) =>
 
     const settleWith = (value: T) =>
       finish(() => {
-        writeLines(context, collapsedLines(context, view.title, view.collapse(value)));
+        writeLines(context, collapsedLines(context, view.collapse(value)));
 
         resolve(value);
       });
@@ -369,7 +357,7 @@ const choiceRows = <T>(
 };
 
 const limitOf = (context: Context, detail: string[]) =>
-  Math.max(SUMMARY_SHOWN, context.ui.rows() - 6 - (detail.length > 0 ? detail.length + 2 : 0));
+  Math.max(MIN_ROWS, context.ui.rows() - 6 - (detail.length > 0 ? detail.length + 2 : 0));
 
 const linesBefore = (rows: string[][], from: number, to: number) =>
   rows.slice(from, to).reduce((sum, row) => sum + row.length, 0);
@@ -425,20 +413,18 @@ const moved = (cursor: number, key: Key, count: number) => {
 
 const selectView = <T>(context: Context, spec: SelectSpec<T>): View<T> => {
   const { glyphs } = context;
-  const initial = spec.choices.findIndex((choice) => choice.value === spec.initial);
-  const state = { cursor: Math.max(0, initial), top: 0, pointer: 0 };
+  const state = { cursor: initialIndex(spec.choices, spec.initial), top: 0, pointer: 0 };
 
   const mark = (_choice: Choice<T>, index: number) =>
     spec.radio === true ? `${index === state.cursor ? glyphs.radioOn : glyphs.radioOff} ` : "";
 
   return {
-    title: spec.title,
     typing: false,
     frame: (width) => {
       const detail = detailOf(context, spec.detail, width);
       const rows = choiceRows(context, spec.choices, mark, state.cursor);
       const body = windowed(context, rows, state.cursor, state, limitOf(context, detail));
-      const words = wordsOf(spec, { enter: "choose", escape: "back", interrupt: "cancel" });
+      const words = wordsOf(spec, "choose");
       const hints = hintsOf(context, [`${glyphs.upDown} move`, ...words], width);
 
       const parts = composed(context, { title: spec.title, detail, body, after: [], hints });
@@ -462,10 +448,7 @@ const selectView = <T>(context: Context, spec: SelectSpec<T>): View<T> => {
 
       return isCtrl(key, "d") ? END : STAY;
     },
-    collapse: (value) =>
-      spec.collapsed === undefined
-        ? spec.choices.find((choice) => choice.value === value)?.label
-        : spec.collapsed(value),
+    collapse: spec.collapsed,
   };
 };
 
@@ -478,7 +461,6 @@ const multiView = <T>(context: Context, spec: MultiSpec<T>): View<T[]> => {
     cursor: 0,
     top: 0,
     pointer: 0,
-    error: undefined as string | undefined,
   };
 
   const checkedChoices = () =>
@@ -518,26 +500,17 @@ const multiView = <T>(context: Context, spec: MultiSpec<T>): View<T[]> => {
       };
     }
 
-    const values = checkedChoices().map((checked) => checked.value);
-
-    state.error = spec.validate?.(values);
-
-    return state.error === undefined ? settle(values) : STAY;
+    return settle(checkedChoices().map((checked) => checked.value));
   };
 
   return {
-    title: spec.title,
     typing: false,
     frame: (width) => {
       const detail = detailOf(context, spec.detail, width);
       const rows = choiceRows(context, state.choices, mark, state.cursor);
       const body = windowed(context, rows, state.cursor, state, limitOf(context, detail));
       const toggles = state.choices.some((choice) => choice.action !== true);
-      const words = wordsOf(spec, {
-        enter: toggles ? "continue" : "choose",
-        escape: "back",
-        interrupt: "cancel",
-      });
+      const words = wordsOf(spec, toggles ? "continue" : "choose");
 
       const hints = hintsOf(
         context,
@@ -549,15 +522,13 @@ const multiView = <T>(context: Context, spec: MultiSpec<T>): View<T[]> => {
         title: spec.title,
         detail,
         body,
-        after: errorLines(context, state.error, width),
+        after: [],
         hints,
       });
 
       return { lines: parts.lines, focus: parts.bodyRow + state.pointer };
     },
     key: (key) => {
-      state.error = undefined;
-
       const next = moved(state.cursor, key, state.choices.length);
 
       if (next !== undefined) {
@@ -573,9 +544,7 @@ const multiView = <T>(context: Context, spec: MultiSpec<T>): View<T[]> => {
       }
 
       if (key.kind === "space" && choice.action !== true) {
-        if (!state.checked.delete(choice.value)) {
-          state.checked.add(choice.value);
-        }
+        toggle(state.checked, choice.value);
 
         return STAY;
       }
@@ -586,10 +555,7 @@ const multiView = <T>(context: Context, spec: MultiSpec<T>): View<T[]> => {
 
       return isCtrl(key, "d") ? END : STAY;
     },
-    collapse: (values) =>
-      spec.collapsed === undefined
-        ? summaryOf(checkedChoices().map((choice) => choice.label)) || "none"
-        : spec.collapsed(values),
+    collapse: spec.collapsed,
   };
 };
 
@@ -604,12 +570,11 @@ const confirmView = (context: Context, spec: ConfirmSpec): View<boolean> => {
     `${state.yes === yes ? paint("cyan", glyphs.pointer) : " "} ${labelOf(yes)}`;
 
   return {
-    title: spec.title,
     typing: false,
     frame: (width) => {
       const detail = detailOf(context, spec.detail, width);
       const body = [`${option(spec.initial)}   ${option(!spec.initial)}`];
-      const words = wordsOf(spec, { enter: "confirm", escape: "back", interrupt: "cancel" });
+      const words = wordsOf(spec, "confirm");
       const hints = hintsOf(context, [`${glyphs.leftRight} choose`, "y/n", ...words], width);
 
       return composed(context, { title: spec.title, detail, body, after: [], hints });
@@ -633,7 +598,7 @@ const confirmView = (context: Context, spec: ConfirmSpec): View<boolean> => {
 
       return isCtrl(key, "d") ? END : STAY;
     },
-    collapse: (value) => (spec.collapsed === undefined ? labelOf(value) : spec.collapsed(value)),
+    collapse: spec.collapsed,
   };
 };
 
@@ -647,13 +612,13 @@ const unquoted = (text: string) => {
   return text.length >= 2 && QUOTES.has(first) && text.at(-1) === first ? text.slice(1, -1) : text;
 };
 
-const cleanedPaste = (text: string, path: boolean) => {
+const cleanedPaste = (text: string) => {
   const [first = "", ...rest] = text.split(LINE_BREAK);
   const several = rest.some((line) => line.trim() !== "");
   const kept = withoutControls(first);
 
   return {
-    text: path ? unquoted(kept.trim()).replaceAll("\\ ", " ") : kept,
+    text: unquoted(kept.trim()).replaceAll("\\ ", " "),
     several,
   };
 };
@@ -683,10 +648,10 @@ const matchLines = (context: Context, matches: string[], width: number) => {
   const hidden = matches.length - shown.length;
   const more = hidden > 0 ? [context.fold(`…and ${hidden} more`)] : [];
 
-  return wrapSegments([...shown, ...more], roomOf(width) - 2, "   ").map((line) => `  ${line}`);
+  return wrapSegments([...shown, ...more], roomOf(width) - 2, GAP).map((line) => `  ${line}`);
 };
 
-const textView = (context: Context, spec: TextSpec, path?: PathSpec): View<string> => {
+const pathView = (context: Context, spec: PathSpec): View<string> => {
   const state = {
     line: lineOf(spec.initial ?? ""),
     error: undefined as string | undefined,
@@ -695,8 +660,8 @@ const textView = (context: Context, spec: TextSpec, path?: PathSpec): View<strin
     tabbed: false,
   };
 
-  const complete = (complete: PathSpec) => {
-    const completion = completePath(state.line.value, complete.home, complete.readdir);
+  const complete = () => {
+    const completion = completePath(state.line.value, spec.home, spec.readdir);
     const unchanged = completion.value === state.line.value;
 
     state.matches = unchanged && state.tabbed ? completion.matches : [];
@@ -706,24 +671,23 @@ const textView = (context: Context, spec: TextSpec, path?: PathSpec): View<strin
 
   const edit = (key: Key) => {
     if (key.kind !== "paste") {
-      state.line = editLine(state.line, key, { segments: path !== undefined });
+      state.line = editLine(state.line, key, { segments: true });
 
       return;
     }
 
-    const pasted = cleanedPaste(key.text, path !== undefined);
+    const pasted = cleanedPaste(key.text);
 
     state.notice = pasted.several ? PASTE_NOTE : undefined;
     state.line = editLine(state.line, { kind: "paste", text: pasted.text });
   };
 
   return {
-    title: spec.title,
     typing: true,
     frame: (width) => {
       const input = inputRow(context, state.line, width);
-      const words = wordsOf(spec, { enter: "continue", escape: "back", interrupt: "cancel" });
-      const hints = hintsOf(context, [...(path === undefined ? [] : ["tab completes"]), ...words], width);
+      const words = wordsOf(spec, "continue");
+      const hints = hintsOf(context, ["tab completes", ...words], width);
 
       const after = [
         ...matchLines(context, state.matches, width),
@@ -754,11 +718,9 @@ const textView = (context: Context, spec: TextSpec, path?: PathSpec): View<strin
       }
 
       if (key.kind === "tab") {
-        if (path !== undefined) {
-          state.tabbed = tabbed;
+        state.tabbed = tabbed;
 
-          complete(path);
-        }
+        complete();
 
         return STAY;
       }
@@ -767,7 +729,7 @@ const textView = (context: Context, spec: TextSpec, path?: PathSpec): View<strin
 
       return STAY;
     },
-    collapse: (value) => (spec.collapsed === undefined ? value : spec.collapsed(value)),
+    collapse: spec.collapsed,
   };
 };
 
@@ -798,7 +760,7 @@ const numberView = (context: Context, spec: NumberSpec): View<number> => {
     }
 
     const value = Number(state.line.value);
-    const warning = state.warned === value ? undefined : spec.warn?.(value);
+    const warning = warningFor(spec, value, state.warned);
 
     state.warning = warning;
     state.warned = warning === undefined ? undefined : value;
@@ -832,13 +794,13 @@ const numberView = (context: Context, spec: NumberSpec): View<number> => {
   };
 
   return {
-    title: spec.title,
     typing: true,
     frame: (width) => {
       const input = inputRow(context, state.line, width);
-      const words = wordsOf(spec, { enter: "next", escape: "back", interrupt: "cancel" });
+      const words = wordsOf(spec, "next");
       const steps = `${context.glyphs.upDown} change by ${spec.step}`;
-      const hints = hintsOf(context, [spec.hint, steps, ...words], width);
+      const extra = spec.hint === undefined ? [] : [spec.hint];
+      const hints = hintsOf(context, [`${spec.min} to ${spec.max}`, ...extra, steps, ...words], width);
       const after = [
         ...errorLines(context, state.error, width),
         ...warningLines(context, state.warning, width),
@@ -878,114 +840,61 @@ const numberView = (context: Context, spec: NumberSpec): View<number> => {
 
       return STAY;
     },
-    collapse: (value) => (spec.collapsed === undefined ? String(value) : spec.collapsed(value)),
+    collapse: spec.collapsed,
   };
 };
 
-const runTask = <T>(context: Context, spec: TaskSpec<T>) =>
-  new Promise<T>((resolve, reject) => {
-    const { ui, glyphs, paint, fold } = context;
-    const frame = createFrame(ui, glyphs.ellipsis);
-    const started = ui.timers.now();
+const taskView = (context: Context, spec: TaskSpec<unknown>) => (): TaskView => {
+  const { ui, glyphs, paint, fold } = context;
+  const frame = createFrame(ui, glyphs.ellipsis);
+  const started = ui.timers.now();
+  const state = { text: "", tick: 0, warned: false };
 
-    const state = {
-      text: "",
-      tick: 0,
-      warned: false,
-      done: false,
-      stopTimer: () => {},
-      detach: () => {},
-    };
+  const view = (width: number): FrameView => {
+    const rail = paint("dim", glyphs.rail);
+    const spinner = paint("cyan", glyphs.spinner[state.tick % glyphs.spinner.length] ?? "");
+    const elapsed = paint("dim", elapsedOf(ui.timers.now() - started));
+    const status = [spinner, ...(state.text === "" ? [] : [fold(state.text)]), elapsed].join(" ");
+    const head = spec.title === "" ? [] : [`${paint("cyan", glyphs.active)}  ${fold(spec.title)}`];
+    const stops = spec.interruptWarning === "" ? [] : [paint("dim", "ctrl-c stops waiting")];
+    const hint = state.warned ? warningLines(context, warningOf(spec), width) : stops;
 
-    const view = (width: number): FrameView => {
-      const rail = paint("dim", glyphs.rail);
-      const spinner = paint("cyan", glyphs.spinner[state.tick % glyphs.spinner.length] ?? "");
-      const elapsed = paint("dim", elapsedOf(ui.timers.now() - started));
-      const status = [spinner, ...(state.text === "" ? [] : [fold(state.text)]), elapsed].join(" ");
-      const head = spec.title === "" ? [] : [`${paint("cyan", glyphs.active)}  ${fold(spec.title)}`];
-      const stops = spec.interruptWarning === "" ? [] : [paint("dim", "ctrl-c stops waiting")];
-      const hint = state.warned ? warningLines(context, warningOf(spec), width) : stops;
+    return { lines: [...head, `${rail}  ${status}`, ...hint.map((line) => `${rail}  ${line}`)] };
+  };
 
-      return { lines: [...head, `${rail}  ${status}`, ...hint.map((line) => `${rail}  ${line}`)] };
-    };
+  const draw = () => frame.draw(view(ui.columns()));
 
-    const draw = () => {
-      if (!state.done) {
-        frame.draw(view(ui.columns()));
-      }
-    };
+  ui.session.cursor(false);
 
-    const finish = (done: () => void) => {
-      if (state.done) {
-        return;
-      }
+  draw();
 
-      state.done = true;
+  const stopTimer = ui.timers.every(SPIN_MS, () => {
+    state.tick += 1;
 
-      state.stopTimer();
+    draw();
+  });
 
-      state.detach();
+  return {
+    update: (text) => {
+      state.text = text;
+
+      draw();
+    },
+    warn: () => {
+      state.warned = true;
+
+      draw();
+    },
+    redraw: draw,
+    stop: () => {
+      stopTimer();
 
       frame.clear();
 
       ui.session.cursor(true);
-
-      ui.session.raw(false);
-
-      done();
-    };
-
-    const onKey = (key: Key) => {
-      if (isCtrl(key, "c") && (spec.interruptWarning === "" || state.warned)) {
-        finish(() => reject(new Cancelled("interrupt")));
-
-        return;
-      }
-
-      state.warned = state.warned || isCtrl(key, "c");
-
-      if (isCtrl(key, "c") || key.kind === "resize" || isCtrl(key, "l")) {
-        draw();
-      }
-    };
-
-    const update = (text: string) => {
-      state.text = text;
-
-      draw();
-    };
-
-    try {
-      ui.session.raw(true);
-
-      ui.session.cursor(false);
-
-      draw();
-
-      state.stopTimer = ui.timers.every(SPIN_MS, () => {
-        state.tick += 1;
-
-        draw();
-      });
-
-      if (ui.session.closed()) {
-        throw new Cancelled("end");
-      }
-
-      dropQueuedKeys(ui);
-
-      state.detach = listenKeys(ui, { key: onKey, end: () => undefined }).detach;
-
-      Promise.resolve()
-        .then(() => spec.run(update))
-        .then(
-          (value) => finish(() => resolve(value)),
-          (error: unknown) => finish(() => reject(error)),
-        );
-    } catch (error) {
-      finish(() => reject(error));
-    }
-  });
+    },
+  };
+};
 
 const LEADS: Record<NotePlace, "header" | "answered" | "end" | undefined> = {
   rail: undefined,
@@ -1026,10 +935,13 @@ export const createRichPrompts = (ui: Ui): Prompts => {
     select: (spec) => runView(context, selectView(context, spec)),
     multiselect: (spec) => runView(context, multiView(context, spec)),
     confirm: (spec) => runView(context, confirmView(context, spec)),
-    text: (spec) => runView(context, textView(context, spec)),
-    path: (spec) => runView(context, textView(context, spec, spec)),
+    path: (spec) => runView(context, pathView(context, spec)),
     number: (spec) => runView(context, numberView(context, spec)),
-    task: (spec) => runTask(context, spec),
-    note: (lines, place = "rail") => writeLines(context, noteLines(context, lines, place)),
+    task: (spec) => runTask(ui, spec, taskView(context, spec)),
+    note: (lines, place = "rail") => {
+      const shown = typeof lines === "function" ? lines(roomOf(ui.columns())) : lines;
+
+      writeLines(context, noteLines(context, shown, place));
+    },
   };
 };

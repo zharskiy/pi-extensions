@@ -19,16 +19,27 @@ const readdir = (dir: string) => {
   return names;
 };
 
-const FOLDER = { title: "Add a folder", initial: "~/", home: HOME, readdir, enter: "add" };
+const NAME = {
+  title: "Name",
+  home: HOME,
+  readdir,
+  collapsed: (value: string) => ({ title: "Name", text: value }),
+};
 
-describe("text", () => {
+const FOLDER = { ...NAME, title: "Add a folder", initial: "~/", enter: "add" };
+
+describe("path", () => {
   it("pre-fills the initial value, places the cursor after it and submits on Enter", async () => {
     const { prompts, screen, input } = richPrompts();
-    const reply = prompts.text({ title: "Name", initial: "box" });
+    const reply = prompts.path({ ...NAME, initial: "box" });
 
     await pause();
 
-    expect(screen.lines()).toEqual(["◆  Name", "│  › box", "│  enter continue · esc back · ctrl-c cancel"]);
+    expect(screen.lines()).toEqual([
+      "◆  Name",
+      "│  › box",
+      "│  tab completes · enter continue · esc back · ctrl-c cancel",
+    ]);
 
     expect(screen.cursor()).toEqual({ row: 1, column: 8 });
 
@@ -45,7 +56,7 @@ describe("text", () => {
 
   it("handles every editing key", async () => {
     const { prompts, input } = richPrompts();
-    const reply = prompts.text({ title: "Name" });
+    const reply = prompts.path({ ...NAME });
 
     await press(input, "hello world");
 
@@ -60,7 +71,7 @@ describe("text", () => {
 
   it("deletes right with ctrl-d and cancels with it only on an empty line", async () => {
     const { prompts, input } = richPrompts();
-    const reply = outcome(prompts.text({ title: "Name", initial: "ab" }));
+    const reply = outcome(prompts.path({ ...NAME, initial: "ab" }));
 
     await press(input, KEY.home, KEY.ctrlD, KEY.ctrlD, KEY.ctrlD);
 
@@ -96,7 +107,7 @@ describe("text", () => {
 
   it("inserts a one-line paste as one edit and strips control characters", async () => {
     const { prompts, input } = richPrompts();
-    const reply = prompts.text({ title: "Name" });
+    const reply = prompts.path({ ...NAME });
 
     await press(input, "a", pasted("b\x07c\td"), "e", KEY.enter);
 
@@ -105,7 +116,7 @@ describe("text", () => {
 
   it("keeps only the first line of a paste and says so until the next edit", async () => {
     const { prompts, screen, input } = richPrompts();
-    const reply = prompts.text({ title: "Name" });
+    const reply = prompts.path({ ...NAME });
 
     await press(input, pasted("one\rtwo\r\nthree"));
 
@@ -139,7 +150,7 @@ describe("text", () => {
 
   it("assembles a paste split across two chunks", async () => {
     const { prompts, input } = richPrompts();
-    const reply = prompts.text({ title: "Name" });
+    const reply = prompts.path({ ...NAME });
 
     await press(input, "\x1b[200~ab", "cd\x1b[20", "1~", KEY.enter);
 
@@ -207,7 +218,7 @@ describe("text", () => {
 
   it("scrolls a long value so the cursor stays on screen", async () => {
     const { prompts, screen, input } = richPrompts({ columns: 40 });
-    const reply = prompts.text({ title: "Name" });
+    const reply = prompts.path({ ...NAME });
 
     await press(input, "a".repeat(60));
 

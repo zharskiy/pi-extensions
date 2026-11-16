@@ -116,6 +116,7 @@ describe("modes, glyphs and colour", () => {
   it("writes no SGR sequence with NO_COLOR", async () => {
     const plainColour = richPrompts({ env: { NO_COLOR: "1" } });
     const reply = plainColour.prompts.select({
+      collapsed: () => undefined,
       title: "Pick",
       choices: [{ value: 1, label: "one", tag: "tag" }],
     });
@@ -128,6 +129,7 @@ describe("modes, glyphs and colour", () => {
 
     const coloured = richPrompts();
     const again = coloured.prompts.select({
+      collapsed: () => undefined,
       title: "Pick",
       choices: [{ value: 1, label: "one", tag: "tag" }],
     });
@@ -143,12 +145,14 @@ describe("modes, glyphs and colour", () => {
     const { prompts, screen, input } = richPrompts({ env: { LANG: "C" } });
 
     const reply = prompts.multiselect({
+      collapsed: () => ({ title: "Folders…", text: "~/a" }),
       title: "Folders…",
       choices: [
         { value: "a", label: "~/a", tag: "1 git repository · you are here" },
         { value: "b", label: "~/b" },
       ],
       checked: ["a"],
+      plain: { help: [], label: "Folders" },
     });
 
     await press(input, KEY.end);
@@ -171,6 +175,7 @@ describe("modes, glyphs and colour", () => {
     const { prompts, screen, input } = richPrompts({ columns: 40 });
 
     const reply = prompts.select({
+      collapsed: () => undefined,
       title: "A title that is much longer than forty columns wide",
       detail: ["Every pi session runs in this VM. Automatic follows this Mac."],
       choices: [{ value: 1, label: "one" }],
@@ -195,17 +200,22 @@ describe("modes, glyphs and colour", () => {
     await reply;
   });
 
-  it("lets a detail function lay the lines out for the current width", async () => {
+  it("lets a detail function lay the lines out for the current text room", async () => {
     const { prompts, screen, input, output } = richPrompts();
     const widths: number[] = [];
 
-    const detail = (width: number) => {
-      widths.push(width);
+    const detail = (room: number) => {
+      widths.push(room);
 
-      return [width < 60 ? "narrow" : "wide"];
+      return [room < 60 ? "narrow" : "wide"];
     };
 
-    const reply = prompts.select({ title: "Review", detail, choices: [{ value: 1, label: "Apply" }] });
+    const reply = prompts.select({
+      collapsed: () => ({ title: "Review", text: "Apply" }),
+      title: "Review",
+      detail,
+      choices: [{ value: 1, label: "Apply" }],
+    });
 
     await press(input, KEY.ctrlL);
 
@@ -215,9 +225,9 @@ describe("modes, glyphs and colour", () => {
 
     await reply;
 
-    expect(widths.at(0)).toBe(80);
+    expect(widths.at(0)).toBe(76);
 
-    expect(widths.at(-1)).toBe(50);
+    expect(widths.at(-1)).toBe(46);
 
     expect(screen.lines()).toEqual(["◇  Review", "│  Apply", "│"]);
   });
@@ -260,7 +270,12 @@ describe("terminal restore", () => {
 
   it("leaves raw mode, shows the cursor and turns paste off after a value, BACK and Cancelled", async () => {
     const valued = richPrompts();
-    const first = valued.prompts.text({ title: "Name" });
+    const first = valued.prompts.path({
+      collapsed: () => undefined,
+      title: "Name",
+      home: "/home/me",
+      readdir: () => [],
+    });
 
     await press(valued.input, "x", KEY.enter);
 
@@ -269,7 +284,11 @@ describe("terminal restore", () => {
     expect(restored(valued)).toEqual(RESTORED);
 
     const backed = richPrompts();
-    const second = backed.prompts.select({ title: "Pick", choices: [{ value: 1, label: "one" }] });
+    const second = backed.prompts.select({
+      collapsed: () => undefined,
+      title: "Pick",
+      choices: [{ value: 1, label: "one" }],
+    });
 
     await press(backed.input, KEY.escape);
 
@@ -278,7 +297,9 @@ describe("terminal restore", () => {
     expect(restored(backed)).toEqual(RESTORED);
 
     const cancelled = richPrompts();
-    const third = outcome(cancelled.prompts.path({ title: "Add", home: "/", readdir: () => [] }));
+    const third = outcome(
+      cancelled.prompts.path({ collapsed: () => undefined, title: "Add", home: "/", readdir: () => [] }),
+    );
 
     await press(cancelled.input, KEY.ctrlC);
 
@@ -291,8 +312,11 @@ describe("terminal restore", () => {
     const fake = richPrompts();
 
     const reply = outcome(
-      fake.prompts.text({
+      fake.prompts.path({
+        collapsed: () => undefined,
         title: "Name",
+        home: "/home/me",
+        readdir: () => [],
         validate: () => {
           throw new Error("validator broke");
         },
@@ -337,7 +361,13 @@ describe("terminal restore", () => {
 
     fake.ui.session.restore();
 
-    const reply = outcome(fake.prompts.select({ title: "Pick", choices: [{ value: 1, label: "one" }] }));
+    const reply = outcome(
+      fake.prompts.select({
+        collapsed: () => undefined,
+        title: "Pick",
+        choices: [{ value: 1, label: "one" }],
+      }),
+    );
     const task = outcome(fake.prompts.task({ title: "", interruptWarning: "", run: async () => 1 }));
 
     expect((await reply).error).toMatchObject({ cause: "end" });

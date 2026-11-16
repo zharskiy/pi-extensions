@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BACK, type Choice } from "../../../cli/prompt/types.ts";
+import type { Choice } from "../../../cli/prompt/types.ts";
 import { KEY, outcome, pause, plainPrompts, press } from "./fake-tty.ts";
 
 const answer = async (input: ReturnType<typeof plainPrompts>["input"], line: string) => {
@@ -55,22 +55,14 @@ describe("plain prompts", () => {
     expect(input.isRaw).toBe(false);
   });
 
-  it("toggles by numbers, re-asks after an invalid answer, and adds a typed path through the action", async () => {
+  it("toggles by numbers, re-asks after an invalid number, and hands other text to the action", async () => {
     const { prompts, screen, input } = plainPrompts();
     const asked: string[] = [];
 
-    const onAction = async (): Promise<Choice<string> | undefined> => {
-      const typed = await prompts.path({
-        title: "Add a folder",
-        home: "/home/me",
-        readdir: () => [],
-        validate: (value) => (value === "~/nope" ? "~/nope does not exist." : undefined),
-        collapsed: () => undefined,
-      });
-
+    const onAction = async (_value: string, typed?: string): Promise<Choice<string> | undefined> => {
       asked.push(String(typed));
 
-      return typed === BACK ? undefined : { value: typed, label: typed };
+      return typed === undefined || typed === "~/nope" ? undefined : { value: typed, label: typed };
     };
 
     const reply = prompts.multiselect({ ...FOLDERS, onAction });
@@ -87,15 +79,13 @@ describe("plain prompts", () => {
 
     expect(await reply).toEqual(["~/work", "~/src", "~/oss"]);
 
-    expect(asked).toEqual(["~/oss"]);
+    expect(asked).toEqual(["~/nope", "~/oss"]);
 
     const lines = screen.lines();
 
     expect(lines).toContain("Folders [2 3]: 7");
 
-    expect(lines).toContain("Error: Type numbers from 1 to 3, a path, or press Enter.");
-
-    expect(lines).toContain("Error: ~/nope does not exist.");
+    expect(lines).toContain("Error: Type numbers from 1 to 3, or press Enter.");
 
     expect(lines).toContain("  4) [x] ~/oss");
 
@@ -135,6 +125,7 @@ describe("plain prompts", () => {
       yes: "Yes",
       no: "No",
       initial: false,
+      collapsed: () => undefined,
     };
     const first = prompts.confirm(spec);
 
@@ -166,7 +157,6 @@ describe("plain prompts", () => {
       min: 2,
       max: 30,
       step: 1,
-      hint: "2 to 30",
       tooLow: "too low",
       tooHigh: "too high",
       warn: (value) => (value > 24 ? "That leaves little memory for macOS." : undefined),
@@ -194,24 +184,40 @@ describe("plain prompts", () => {
     ]);
   });
 
-  it("takes the default text on Enter, and a path's empty answer means back", async () => {
-    const { prompts, input } = plainPrompts();
-    const text = prompts.text({ title: "Name", initial: "box" });
+  it("validates a path's empty answer as its initial text", async () => {
+    const { prompts, screen, input } = plainPrompts();
+    const path = prompts.path({
+      title: "Add a folder",
+      initial: "~/",
+      home: "/home/me",
+      readdir: () => [],
+      validate: (value) => (value === "~/" ? "Type the path of a folder." : undefined),
+      collapsed: () => undefined,
+    });
 
     await answer(input, "");
 
-    expect(await text).toBe("box");
+    await answer(input, "~/oss");
 
-    const path = prompts.path({ title: "Add a folder", home: "/home/me", readdir: () => [] });
+    expect(await path).toBe("~/oss");
 
-    await answer(input, "");
-
-    expect(await path).toBe(BACK);
+    expect(screen.lines().slice(-3)).toEqual([
+      "Add a folder [~/]:",
+      "Error: Type the path of a folder.",
+      "Add a folder [~/]: ~/oss",
+    ]);
   });
 
   it("maps ctrl-c to Cancelled interrupt and ctrl-d or input end to Cancelled end", async () => {
     const interrupted = plainPrompts();
-    const first = outcome(interrupted.prompts.text({ title: "Name" }));
+    const first = outcome(
+      interrupted.prompts.path({
+        collapsed: () => undefined,
+        title: "Name",
+        home: "/home/me",
+        readdir: () => [],
+      }),
+    );
 
     await pause();
 
@@ -222,7 +228,9 @@ describe("plain prompts", () => {
     expect(interrupted.input.isRaw).toBe(false);
 
     const ended = plainPrompts();
-    const second = outcome(ended.prompts.text({ title: "Name" }));
+    const second = outcome(
+      ended.prompts.path({ collapsed: () => undefined, title: "Name", home: "/home/me", readdir: () => [] }),
+    );
 
     await pause();
 
@@ -231,7 +239,9 @@ describe("plain prompts", () => {
     expect((await second).error).toMatchObject({ cause: "end" });
 
     const closed = plainPrompts();
-    const third = outcome(closed.prompts.text({ title: "Name" }));
+    const third = outcome(
+      closed.prompts.path({ collapsed: () => undefined, title: "Name", home: "/home/me", readdir: () => [] }),
+    );
 
     await pause();
 
@@ -243,8 +253,19 @@ describe("plain prompts", () => {
   it("reads lines without raw mode or cursor sequences on a dumb or unset TERM", async () => {
     const dumb = plainPrompts({ env: { TERM: "dumb" } });
     const unset = plainPrompts({ env: { TERM: "" } });
-    const named = dumb.prompts.text({ title: "Name", initial: "pi" });
-    const other = unset.prompts.text({ title: "Name" });
+    const named = dumb.prompts.path({
+      collapsed: () => undefined,
+      title: "Name",
+      home: "/home/me",
+      readdir: () => [],
+      initial: "pi",
+    });
+    const other = unset.prompts.path({
+      collapsed: () => undefined,
+      title: "Name",
+      home: "/home/me",
+      readdir: () => [],
+    });
 
     await answer(dumb.input, "box");
 

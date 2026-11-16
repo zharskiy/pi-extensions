@@ -4,7 +4,7 @@ import type { ExtraCa } from "../config/index.ts";
 import type { HostTerminal, SignalSource } from "../container/index.ts";
 import type { DenialRecord, RepoProxy, RepoProxyInput, RepoProxyStart, TrustBundle } from "../proxy/index.ts";
 import { type CommandRunner, hostAgentDir, launcherPaths } from "../shared/index.ts";
-import type { TtyStreams } from "./prompt/terminal.ts";
+import { colourOf, type TtyStreams } from "./prompt/terminal.ts";
 
 interface ProxyRequest {
   stateDir: string;
@@ -57,8 +57,7 @@ export const writeNotices = (deps: CliDeps, notices: string[]) => {
 
 export const isTerminal = (stream: object) => "isTTY" in stream && stream.isTTY === true;
 
-export const colorOf = (deps: Pick<CliDeps, "stdout" | "env">) =>
-  isTerminal(deps.stdout) && (deps.env.NO_COLOR ?? "") === "" && deps.env.TERM !== "dumb";
+export const colorOf = (deps: Pick<CliDeps, "stdout" | "env">) => colourOf(deps.env, deps.stdout);
 
 export const lineSink = (onLine: (line: string) => void) =>
   new Writable({

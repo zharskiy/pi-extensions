@@ -197,4 +197,31 @@ describe("task", () => {
 
     expect(input.rawCalls).toEqual([true, false]);
   });
+
+  it("ends without running the job once the session is closed, in both modes", async () => {
+    const fakes = [richPrompts(), plainPrompts()];
+    const runs: string[] = [];
+
+    const replies = fakes.map((fake) => {
+      fake.ui.session.restore();
+
+      return outcome(
+        fake.prompts.task({
+          title: "Sandbox VM",
+          interruptWarning: WARNING,
+          run: async () => {
+            runs.push("ran");
+          },
+        }),
+      );
+    });
+
+    const errors = (await Promise.all(replies)).map((reply) => reply.error);
+
+    expect(errors).toMatchObject([{ cause: "end" }, { cause: "end" }]);
+
+    expect(runs).toEqual([]);
+
+    expect(fakes.map((fake) => fake.screen.lines())).toEqual([[], []]);
+  });
 });

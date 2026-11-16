@@ -1,15 +1,14 @@
 import { type Completer, createInterface } from "node:readline/promises";
 import { completePath } from "./complete.ts";
-import { dropQueuedKeys, isCtrl, listenKeys } from "./keys.ts";
-import { DIGITS, numberProblem } from "./line-editor.ts";
+import { DIGITS, initialIndex, numberProblem, toggle, warningFor } from "./rules.ts";
 import { asciiOf, elapsedOf, printable, wrap } from "./style.ts";
+import { runTask, type TaskView, warningOf } from "./task.ts";
 import {
   BACK,
   Cancelled,
   type Choice,
   type Collapse,
   type Detail,
-  type Key,
   type MultiSpec,
   type NumberSpec,
   type PathSpec,
@@ -17,7 +16,6 @@ import {
   type Reply,
   type TaskSpec,
   type Ui,
-  warningOf,
 } from "./types.ts";
 
 type Parsed<T> = { value: T } | { error: string };
@@ -27,6 +25,8 @@ const HEARTBEAT_MS = 15_000;
 const PLAIN_WIDTH = 80;
 
 const PICKS = /[\s,]+/;
+
+const NUMBERS = /^[\d\s,]+$/;
 
 const YES = new Set(["y", "yes"]);
 
@@ -60,40 +60,27 @@ const yesNoOf = (answer: string, fallback: boolean): Parsed<boolean> => {
   return { error: "Type y or n." };
 };
 
-const pathLike = (answer: string) => answer.startsWith("/") || answer.startsWith("~");
-
 export const createPlainPrompts = (ui: Ui): Prompts => {
-  const queued: string[] = [];
   const typedAhead: string[] = [];
 
   const print = (lines: string[]) => {
     ui.output.write(lines.map((line) => `${asciiOf(line)}\n`).join(""));
   };
 
-  const width = () => Math.min(ui.columns(), PLAIN_WIDTH);
+  const room = () => Math.min(ui.columns(), PLAIN_WIDTH) - 1;
 
   const detailOf = (detail: Detail | undefined) =>
     typeof detail === "function"
-      ? detail(ui.columns())
-      : (detail ?? []).flatMap((line) => (line === "" ? [""] : wrap(asciiOf(line), width() - 1)));
+      ? detail(room())
+      : (detail ?? []).flatMap((line) => (line === "" ? [""] : wrap(asciiOf(line), room())));
 
-  const printCollapse = (title: string, collapse: Collapse) => {
-    if (collapse === undefined) {
-      return;
+  const printCollapse = (collapse: Collapse) => {
+    if (collapse !== undefined) {
+      print([`${printable(collapse.title)}: ${printable(collapse.text.split("\n").join(" "))}`, ""]);
     }
-
-    const shown = typeof collapse === "string" ? { title, text: collapse } : collapse;
-
-    print([`${printable(shown.title)}: ${printable(shown.text.split("\n").join(" "))}`, ""]);
   };
 
   const ask = (query: string, completer?: Completer) => {
-    const next = queued.shift();
-
-    if (next !== undefined) {
-      return Promise.resolve(next);
-    }
-
     const ahead = typedAhead.shift();
 
     if (ahead !== undefined) {
@@ -166,12 +153,6 @@ export const createPlainPrompts = (ui: Ui): Prompts => {
       checked: new Set(spec.checked),
     };
     const action = spec.choices.find((choice) => choice.action === true);
-    const label = spec.plain?.label ?? "Choose";
-    const adds = action === undefined ? "" : ", a path to add one";
-
-    const help = spec.plain?.help ?? [
-      `Type numbers to switch items on or off (like 1 3)${adds}, or press Enter to keep the selection.`,
-    ];
 
     const list = () =>
       state.choices.map(
@@ -194,12 +175,6 @@ export const createPlainPrompts = (ui: Ui): Prompts => {
       state.checked.add(choice.value);
     };
 
-    const toggle = (choice: Choice<T> | undefined) => {
-      if (choice !== undefined && !state.checked.delete(choice.value)) {
-        state.checked.add(choice.value);
-      }
-    };
-
     const picksOf = (answer: string) => {
       const picks = answer.split(PICKS);
       const count = state.choices.length;
@@ -214,44 +189,36 @@ export const createPlainPrompts = (ui: Ui): Prompts => {
         state.checked.has(choice.value) ? [String(index + 1)] : [],
       );
 
-      const answer = (await ask(`${label} [${marked.join(" ") || "none"}]: `)).trim();
+      const answer = (await ask(`${spec.plain.label} [${marked.join(" ") || "none"}]: `)).trim();
 
       if (answer === "") {
-        const problem = spec.validate?.(values());
-
-        if (problem === undefined) {
-          return values();
-        }
-
-        print([`Error: ${problem}`]);
-
-        return round();
+        return values();
       }
 
-      if (action !== undefined && pathLike(answer)) {
-        queued.push(answer);
+      const picks = picksOf(answer);
 
-        add(await spec.onAction?.(action.value));
-
-        queued.length = 0;
+      if (picks === undefined && action !== undefined && !NUMBERS.test(answer)) {
+        add(await spec.onAction?.(action.value, answer));
 
         print(list());
 
         return round();
       }
 
-      const picks = picksOf(answer);
-
       if (picks === undefined) {
         const range = state.choices.length === 0 ? "" : `numbers from 1 to ${state.choices.length}, `;
 
-        print([`Error: Type ${range}${action === undefined ? "" : "a path, "}or press Enter.`]);
+        print([`Error: Type ${range}or press Enter.`]);
 
         return round();
       }
 
       picks.forEach((pick) => {
-        toggle(state.choices[pick - 1]);
+        const choice = state.choices[pick - 1];
+
+        if (choice !== undefined) {
+          toggle(state.checked, choice.value);
+        }
       });
 
       print(list());
@@ -259,17 +226,11 @@ export const createPlainPrompts = (ui: Ui): Prompts => {
       return round();
     };
 
-    print([spec.title, ...detailOf(spec.detail), ...list(), ...help]);
+    print([spec.title, ...detailOf(spec.detail), ...list(), ...spec.plain.help]);
 
     const chosen = await round();
-    const labels = state.choices
-      .filter((choice) => state.checked.has(choice.value))
-      .map((choice) => choice.label);
 
-    printCollapse(
-      spec.title,
-      spec.collapsed === undefined ? labels.join(", ") || "none" : spec.collapsed(chosen),
-    );
+    printCollapse(spec.collapsed(chosen));
 
     return chosen;
   };
@@ -286,7 +247,7 @@ export const createPlainPrompts = (ui: Ui): Prompts => {
     }
 
     const value = Number(text);
-    const warning = warned === value ? undefined : spec.warn?.(value);
+    const warning = warningFor(spec, value, warned);
 
     if (warning !== undefined) {
       print([`Warning: ${warning}`]);
@@ -297,78 +258,26 @@ export const createPlainPrompts = (ui: Ui): Prompts => {
     return value;
   };
 
-  const task = <T>(spec: TaskSpec<T>) =>
-    new Promise<T>((resolve, reject) => {
-      const started = ui.timers.now();
-      const state = { text: "", warned: false, done: false, detach: () => {} };
+  const taskView = (spec: TaskSpec<unknown>) => (): TaskView => {
+    const started = ui.timers.now();
 
-      const stopHeartbeat = ui.timers.every(HEARTBEAT_MS, () =>
-        print([`  still working (${elapsedOf(ui.timers.now() - started)})`]),
-      );
+    const stop = ui.timers.every(HEARTBEAT_MS, () =>
+      print([`  still working (${elapsedOf(ui.timers.now() - started)})`]),
+    );
 
-      const finish = (done: () => void) => {
-        if (state.done) {
-          return;
-        }
+    return {
+      update: (text) => print([text]),
+      warn: () => print([`Warning: ${warningOf(spec)}`]),
+      redraw: () => undefined,
+      stop,
+    };
+  };
 
-        state.done = true;
+  const task = <T>(spec: TaskSpec<T>) => {
+    typedAhead.length = 0;
 
-        stopHeartbeat();
-
-        state.detach();
-
-        ui.session.raw(false);
-
-        done();
-      };
-
-      const onKey = (key: Key) => {
-        if (!isCtrl(key, "c")) {
-          return;
-        }
-
-        if (spec.interruptWarning === "" || state.warned) {
-          finish(() => reject(new Cancelled("interrupt")));
-
-          return;
-        }
-
-        state.warned = true;
-
-        print([`Warning: ${warningOf(spec)}`]);
-      };
-
-      const update = (text: string) => {
-        if (state.done || text === state.text) {
-          return;
-        }
-
-        state.text = text;
-
-        print([text]);
-      };
-
-      typedAhead.length = 0;
-
-      try {
-        if (ui.input.isTTY === true) {
-          ui.session.raw(true);
-
-          dropQueuedKeys(ui);
-
-          state.detach = listenKeys(ui, { key: onKey, end: () => undefined }).detach;
-        }
-
-        Promise.resolve()
-          .then(() => spec.run(update))
-          .then(
-            (value) => finish(() => resolve(value)),
-            (error: unknown) => finish(() => reject(error)),
-          );
-      } catch (error) {
-        finish(() => reject(error));
-      }
-    });
+    return runTask(ui, spec, taskView(spec));
+  };
 
   const completerOf =
     (spec: PathSpec): Completer =>
@@ -382,14 +291,30 @@ export const createPlainPrompts = (ui: Ui): Prompts => {
       return [completion.value === line ? [] : [completion.value], line];
     };
 
+  const path = async (spec: PathSpec) => {
+    const fallback = spec.initial ?? "";
+    const query = fallback === "" ? `${spec.title}: ` : `${spec.title} [${fallback}]: `;
+
+    const value = await askUntil(
+      query,
+      (answer): Parsed<string> => {
+        const chosen = answer === "" ? fallback : answer;
+        const error = spec.validate?.(chosen);
+
+        return error === undefined ? { value: chosen } : { error };
+      },
+      completerOf(spec),
+    );
+
+    printCollapse(spec.collapsed(value));
+
+    return value;
+  };
+
   return {
     select: async (spec) => {
       const count = spec.choices.length;
-      const fallback =
-        Math.max(
-          0,
-          spec.choices.findIndex((choice) => choice.value === spec.initial),
-        ) + 1;
+      const fallback = initialIndex(spec.choices, spec.initial) + 1;
       const list = spec.choices.map(
         (choice, index) => `  ${index + 1}) ${printable(choice.label)}${tagOf(choice)}`,
       );
@@ -403,7 +328,7 @@ export const createPlainPrompts = (ui: Ui): Prompts => {
         return BACK;
       }
 
-      printCollapse(spec.title, spec.collapsed === undefined ? choice.label : spec.collapsed(choice.value));
+      printCollapse(spec.collapsed(choice.value));
 
       return choice.value;
     },
@@ -413,56 +338,20 @@ export const createPlainPrompts = (ui: Ui): Prompts => {
 
       const query = `${spec.title} (${spec.initial ? "Y/n" : "y/N"}): `;
       const value = await askUntil(query, (answer) => yesNoOf(answer, spec.initial));
-      const label = value ? spec.yes : spec.no;
 
-      printCollapse(spec.title, spec.collapsed === undefined ? label : spec.collapsed(value));
-
-      return value;
-    },
-    text: async (spec) => {
-      const fallback = spec.initial ?? "";
-      const query = fallback === "" ? `${spec.title}: ` : `${spec.title} [${fallback}]: `;
-
-      const value = await askUntil(query, (answer): Parsed<string> => {
-        const chosen = answer === "" ? fallback : answer;
-        const error = spec.validate?.(chosen);
-
-        return error === undefined ? { value: chosen } : { error };
-      });
-
-      printCollapse(spec.title, spec.collapsed === undefined ? value : spec.collapsed(value));
+      printCollapse(spec.collapsed(value));
 
       return value;
     },
-    path: async (spec) => {
-      const value = await askUntil(
-        `${spec.title}: `,
-        (answer): Parsed<Reply<string>> => {
-          if (answer === "") {
-            return { value: BACK };
-          }
-
-          const error = spec.validate?.(answer);
-
-          return error === undefined ? { value: answer } : { error };
-        },
-        completerOf(spec),
-      );
-
-      if (value !== BACK) {
-        printCollapse(spec.title, spec.collapsed === undefined ? value : spec.collapsed(value));
-      }
-
-      return value;
-    },
+    path,
     number: async (spec) => {
       const value = await numberRound(spec, spec.initial);
 
-      printCollapse(spec.title, spec.collapsed === undefined ? String(value) : spec.collapsed(value));
+      printCollapse(spec.collapsed(value));
 
       return value;
     },
     task,
-    note: (lines) => print(lines),
+    note: (lines) => print(typeof lines === "function" ? lines(room()) : lines),
   };
 };

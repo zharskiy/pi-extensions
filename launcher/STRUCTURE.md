@@ -40,7 +40,7 @@ cli/vm.ts                      VM start (with the workspaceRoots shares when sto
 cli/launch-notices.ts          the launch notice texts, the host-file flag notice and the proxy stage detail
 cli/legacy-paths.ts            the config and state folders of earlier versions, with the launch notice and doctor warns for them
 cli/terminal.ts                the host terminal: streams, size read at use, resize
-cli/prompt/                    the terminal prompts of pi sandbox init: types, finding the terminal (/dev/tty) and its restore, keys, style and glyphs, the live frame, the line editor, path completion, the rich and plain prompt sets
+cli/prompt/                    the terminal prompts of pi sandbox init: types, finding the terminal (/dev/tty) and its restore, keys, style and glyphs, the live frame, the line editor, the input rules both prompt sets share (number checks, warn once, initial choice, toggle), the task runner both share (raw mode, ctrl-c, settling once; each set only draws), path completion, the rich and plain prompt sets
 cli/setup/types.ts             the setup's facts, answers, plan, outcome, io and effects types
 cli/setup/document.ts          the config file read with its indent, owned-key edits keeping key order, the diff and the checked atomic write
 cli/setup/folders.ts           the candidate project folders, the repository scan, the storage form of a root and the add-folder messages

@@ -23,8 +23,6 @@ export interface TerminalDeps {
   stderr: UiOutput;
   env: NodeJS.ProcessEnv;
   openTty?: () => TtyStreams | undefined;
-  escapeCodeTimeout?: number;
-  timers?: Timers;
 }
 
 export interface UiOptions {
@@ -34,9 +32,9 @@ export interface UiOptions {
   timers?: Timers;
 }
 
-const DEFAULT_COLUMNS = 80;
+export const DEFAULT_COLUMNS = 80;
 
-const DEFAULT_ROWS = 24;
+export const DEFAULT_ROWS = 24;
 
 const ESCAPE_WAIT_MS = 50;
 
@@ -76,7 +74,7 @@ const unicodeOf = (env: NodeJS.ProcessEnv) => {
 
 const FORCE_OFF = new Set(["0", "false"]);
 
-const colourOf = (env: NodeJS.ProcessEnv, output: UiOutput) => {
+export const colourOf = (env: NodeJS.ProcessEnv, output: object) => {
   if (env.TERM === "dumb") {
     return false;
   }
@@ -89,7 +87,7 @@ const colourOf = (env: NodeJS.ProcessEnv, output: UiOutput) => {
     return false;
   }
 
-  return output.isTTY === true;
+  return "isTTY" in output && output.isTTY === true;
 };
 
 const quietly = (action: () => void) => {
@@ -229,7 +227,7 @@ const openedTty = (openTty: TerminalDeps["openTty"]) => {
 };
 
 export const findTerminal = (deps: TerminalDeps): Ui | undefined => {
-  const options = { env: deps.env, escapeCodeTimeout: deps.escapeCodeTimeout, timers: deps.timers };
+  const options = { env: deps.env };
 
   if (deps.stdin.isTTY === true && deps.stderr.isTTY === true) {
     return uiOf({ input: deps.stdin, output: deps.stderr }, options);

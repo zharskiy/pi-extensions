@@ -6,7 +6,6 @@ import {
   deferredLines,
   type Paragraph,
   progressText,
-  roomOf,
   STOPPED_VM,
   savedLine,
   saveFailedLine,
@@ -18,7 +17,6 @@ import {
   vmFailureLines,
   vmInterruptWarning,
   vmUnknownLine,
-  widthFor,
   wrapped,
 } from "./screens.ts";
 import type { Answers, ApplyEffects, ConfigDocument, HostFacts, Plan, SetupIo, VmAction } from "./types.ts";
@@ -32,9 +30,7 @@ const VM_TITLE = "Sandbox VM";
 const SAVE_PREFIX = /^could not save [^:]*: /;
 
 export const noteOf = (io: SetupIo, paragraphs: Paragraph[], place: NotePlace = "rail") => {
-  const room = roomOf(widthFor(io.columns(), io.plain));
-
-  io.prompts.note(wrapped(paragraphs, room), place);
+  io.prompts.note((room) => wrapped(paragraphs, room), place);
 };
 
 const sectionNote = (io: SetupIo, lines: string[]) => {
@@ -76,16 +72,12 @@ const savePlan = async (io: SetupIo, effects: ApplyEffects, target: Target, plan
 };
 
 const failedChoice = async (io: SetupIo, action: Running, elapsed: string, error: unknown) => {
-  const room = roomOf(widthFor(io.columns(), io.plain));
-  const detail = wrapped(
-    vmFailureLines(action, elapsed, errorMessage(error)).map((text) => ({ text })),
-    room,
-  );
+  const lines = vmFailureLines(action, elapsed, errorMessage(error)).map((text) => ({ text }));
 
   try {
     const choice = await io.prompts.select({
       title: VM_TITLE,
-      detail,
+      detail: (room) => wrapped(lines, room),
       choices: [
         { value: "retry", label: VM_FAILURE_CHOICES.retry },
         { value: "exit", label: VM_FAILURE_CHOICES.exit },

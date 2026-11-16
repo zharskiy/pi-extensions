@@ -7,7 +7,7 @@ const CHOICES = [
 ];
 
 const pick = (prompts: ReturnType<typeof richPrompts>["prompts"], title: string) =>
-  prompts.select({ title, choices: CHOICES });
+  prompts.select({ title, choices: CHOICES, collapsed: () => undefined });
 
 describe("keys typed ahead in one chunk", () => {
   it("reach the following rich prompts in order", async () => {

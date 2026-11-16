@@ -31,7 +31,6 @@ import {
   NOTHING_TO_DO,
   numberFields,
   OTHER_SETTINGS,
-  roomOf,
   rootsSummary,
   SEARCH_TIMED_OUT,
   type Step,
@@ -45,7 +44,6 @@ import {
   vmEditorDetail,
   WRITE_BACK_DETAIL,
   WRITE_BACK_TITLE,
-  widthFor,
   wrapped,
 } from "./screens.ts";
 import type {
@@ -84,6 +82,12 @@ interface State {
   answers: Answers;
   touched: ReadonlySet<Section>;
   added: readonly string[];
+}
+
+interface Pending {
+  added: string[];
+  listed: string[];
+  checked: string[];
 }
 
 type HubChoice = "apply" | "done" | "cancel" | Section;
@@ -138,22 +142,10 @@ const createWizard = (io: SetupIo, context: WizardContext) => {
     return [...listed, ...extra];
   };
 
-  const addFolder = async (state: { added: string[]; listed: string[]; checked: string[] }) => {
-    const typed = await prompts.path({
-      title: "Add a folder",
-      initial: "~/",
-      home: facts.home,
-      readdir: context.readdir,
-      enter: "add",
-      validate: (value) =>
-        addedRootProblem(value, { home: facts.home, env, checked: state.checked, listed: state.listed }),
-      collapsed: () => undefined,
-    });
+  const rootProblem = (typed: string, state: Pending) =>
+    addedRootProblem(typed, { home: facts.home, env, checked: state.checked, listed: state.listed });
 
-    if (typed === BACK) {
-      return undefined;
-    }
-
+  const added = (typed: string, state: Pending) => {
     const stored = tildeForm(typed.trim(), facts.home);
 
     state.added.push(stored);
@@ -163,6 +155,32 @@ const createWizard = (io: SetupIo, context: WizardContext) => {
     state.checked.push(stored);
 
     return { value: stored, label: stored };
+  };
+
+  const addFolder = async (state: Pending) => {
+    const typed = await prompts.path({
+      title: "Add a folder",
+      initial: "~/",
+      home: facts.home,
+      readdir: context.readdir,
+      enter: "add",
+      validate: (value) => rootProblem(value, state),
+      collapsed: () => undefined,
+    });
+
+    return typed === BACK ? undefined : added(typed, state);
+  };
+
+  const addTyped = (typed: string, state: Pending) => {
+    const problem = rootProblem(typed, state);
+
+    if (problem === undefined) {
+      return added(typed, state);
+    }
+
+    prompts.note([`Error: ${problem}`]);
+
+    return undefined;
   };
 
   const confirmHome = async (step: Step | undefined) => {
@@ -197,7 +215,8 @@ const createWizard = (io: SetupIo, context: WizardContext) => {
         { value: ADD, label: empty ? "+ Add a folder…" : "+ Add another folder…", action: true },
       ],
       checked,
-      onAction: () => addFolder(pending),
+      onAction: async (_value, typed) =>
+        typed === undefined ? addFolder(pending) : addTyped(typed, pending),
       escape: step?.index === 1 ? "cancel" : "back",
       collapsed: (values) =>
         values.length > 0 ? { title: SECTION_LABELS.folders, text: rootsSummary(values) } : undefined,
@@ -233,7 +252,6 @@ const createWizard = (io: SetupIo, context: WizardContext) => {
     const last = index === VM_FIELDS.length - 1;
     const value = await prompts.number({
       ...field,
-      ...(field.note === "" ? { note: undefined } : {}),
       initial: withinBounds(size[key], bounds[key]),
       min: bounds[key].min,
       max: bounds[key].max,
@@ -374,13 +392,11 @@ const createWizard = (io: SetupIo, context: WizardContext) => {
     }));
 
   const hubDetail =
-    (state: State, plan: Plan, notice: string | undefined, table: boolean) => (columns: number) => {
-      const width = widthFor(columns, io.plain);
-      const room = roomOf(width);
+    (state: State, plan: Plan, notice: string | undefined, table: boolean) => (room: number) => {
       const done = isPlanEmpty(plan) && plan.problems.length === 0;
       const shape = { existed: document.text !== undefined, indent: document.indent };
-      const effect = done ? wrapped([NOTHING_TO_DO], room) : applyLines(plan, facts, shape, width, io.plain);
-      const rows = table || io.plain ? hubRowLines(rowsOf(state, plan), width, io.plain) : [];
+      const effect = done ? wrapped([NOTHING_TO_DO], room) : applyLines(plan, facts, shape, room, io.plain);
+      const rows = table || io.plain ? hubRowLines(rowsOf(state, plan), room, io.plain) : [];
       const framed = table && !io.plain;
 
       return [
@@ -400,7 +416,7 @@ const createWizard = (io: SetupIo, context: WizardContext) => {
       return { detail: summary };
     }
 
-    prompts.note(summary(io.columns()));
+    prompts.note(summary);
 
     return {};
   };
