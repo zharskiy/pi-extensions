@@ -1,4 +1,4 @@
-import { type ModelChoice, type ModelResolution, modelRefOf } from "../types/model.ts";
+import { type ModelResolution, modelChoiceOf, modelRefOf } from "../types/model.ts";
 
 export type CatalogModel = {
   provider: string;
@@ -72,12 +72,6 @@ const editDistance = (left: string, right: string) => {
 
   return rows[left.length][right.length];
 };
-
-const choiceOf = (model: CatalogModel): ModelChoice => ({
-  ref: modelRefOf(model),
-  contextWindow: model.contextWindow,
-  cost: model.cost,
-});
 
 const versionSource = (id: string) => id.toLowerCase().replace(/-v\d+(:\d+)?$/, "");
 
@@ -263,7 +257,7 @@ const fromExact = (
     .map((model): Match => ({ model, tier: 3, score: 1 }))
     .sort(compareMatches(preferences));
 
-  return { kind: "resolved", request, model: choiceOf(ranked[0].model) };
+  return { kind: "resolved", request, model: modelChoiceOf(ranked[0].model) };
 };
 
 const scopeOf = (name: string, catalog: CatalogModel[]) => {
@@ -288,7 +282,7 @@ const unknownResult = (request: string, query: string, pool: CatalogModel[], mat
     .filter((match) => !match.model.authenticated)
     .sort((left, right) => right.tier - left.tier || compareMatches({})(left, right))
     .slice(0, MAX_CANDIDATES)
-    .map((match) => choiceOf(match.model));
+    .map((match) => modelChoiceOf(match.model));
 
   if (withoutCredentials.length > 0) {
     return { kind: "unknown" as const, request, candidates: [], withoutCredentials };
@@ -303,7 +297,7 @@ const unknownResult = (request: string, query: string, pool: CatalogModel[], mat
         right.score - left.score || modelRefOf(left.model).localeCompare(modelRefOf(right.model)),
     )
     .slice(0, MAX_SUGGESTIONS)
-    .map((entry) => choiceOf(entry.model));
+    .map((entry) => modelChoiceOf(entry.model));
 
   return { kind: "unknown" as const, request, candidates, withoutCredentials };
 };
@@ -358,13 +352,13 @@ export const resolveModel = (
     return {
       kind: "ambiguous",
       request,
-      candidates: contenders.slice(0, MAX_CANDIDATES).map((members) => choiceOf(members[0].model)),
+      candidates: contenders.slice(0, MAX_CANDIDATES).map((members) => modelChoiceOf(members[0].model)),
     };
   }
 
   return {
     kind: "resolved",
     request,
-    model: choiceOf(contenders[0][0].model),
+    model: modelChoiceOf(contenders[0][0].model),
   };
 };

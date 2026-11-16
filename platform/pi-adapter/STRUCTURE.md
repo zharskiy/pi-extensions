@@ -5,7 +5,7 @@
 - `types/host-ui.ts`: `HostUi` = `NoticeUi & ClipboardUi & OverlayUi & WidgetUi & EditorUi & KeysUi & { style }`, `NotifyChannel`.
 - `types/theme.ts`: `ThemeToken` (`PaintToken`, `StatusToken`, `ThinkingToken`, `MessageToken`), `BgToken`, `ThemeLike`.
 - `types/keys.ts`: `KeyPress` (with `shortcut`), `KeyName` (`NavigationKey`, `EditKey`, `AppKey`, `"other"`).
-- `types/model.ts`: `THINKING_LEVELS`, `ThinkingLevel`, `isThinkingLevel`, `modelRefOf` (a model's `provider/id` ref, the one place it is built) and its inverse `splitModelRequest`, model choice and resolution types.
+- `types/model.ts`: `THINKING_LEVELS`, `ThinkingLevel`, `isThinkingLevel`, `modelRefOf` (a model's `provider/id` ref, the one place it is built) and its inverse `splitModelRef`, `modelChoiceOf` (a model's ref, window and price, for pi's models and catalogue entries alike), `splitModelRequest`, model choice and resolution types.
 - `types/runtime.ts`: `AgentRuntime`, `ChildSession`, `ChildEvent`, `SpawnSpec`, `StopReason`, `MessageDelivery`.
 - `types/tools.ts`: `ToolSpec`, `ToolResult`, `ToolRenderState`, `ToolCallView`, `ToolRow(s)`, `RowLines`.
 - `types/session.ts`: `SessionInfo`, `SessionControl` (`NewSessionOptions` with the `fill` thunk returning a `SessionFill`: the seed, optional follow-ups and editor text), `RunMode`, `ShutdownReason`, `Phase`, `AssistantEnd` (tool calls and whether the run ends with the message), `UserInput` (what `onInput` passes), dialog and idle events.

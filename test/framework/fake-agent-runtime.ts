@@ -9,12 +9,13 @@ import {
   emptyUsage,
   type MessageDelivery,
   type ModelPreferences,
-  modelRefOf,
+  modelChoiceOf,
   type RoutedMessage,
   resolveModel,
   type SessionRecord,
   type SpawnSpec,
   type StopReason,
+  splitModelRef,
   THINKING_LEVELS,
   type UsageTotals,
 } from "../../platform/pi-adapter/index.ts";
@@ -129,8 +130,7 @@ export const catalogModel = (
   authenticated = true,
   patch: Partial<CatalogModel> = {},
 ): CatalogModel => ({
-  provider: ref.slice(0, ref.indexOf("/")),
-  id: ref.slice(ref.indexOf("/") + 1),
+  ...splitModelRef(ref),
   contextWindow: 200_000,
   cost: { input: 1, output: 5 },
   authenticated,
@@ -170,12 +170,7 @@ export const createFakeAgentRuntime = (extraModels: CatalogModel[] = []): FakeAg
     availableModels: () =>
       runtime.catalog
         .filter((model) => model.authenticated)
-        .map((model) => ({
-          ref: modelRefOf(model),
-          contextWindow: model.contextWindow,
-          cost: model.cost,
-          thinking: [...THINKING_LEVELS],
-        }))
+        .map((model) => ({ ...modelChoiceOf(model), thinking: [...THINKING_LEVELS] }))
         .sort((left, right) => left.ref.localeCompare(right.ref)),
     defaultThinking: () => "medium",
     skills: [],

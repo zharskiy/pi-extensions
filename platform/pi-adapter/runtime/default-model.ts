@@ -1,6 +1,6 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getAgentDir, SettingsManager } from "@earendil-works/pi-coding-agent";
-import { modelRefOf, type ThinkingLevel } from "../types/model.ts";
+import { modelRefOf, splitModelRef, type ThinkingLevel } from "../types/model.ts";
 
 const widenScope = (settings: SettingsManager, ctx: ExtensionContext, ref: string) => {
   const scoped = ctx.scopedModels.map(({ model }) => modelRefOf(model));
@@ -48,9 +48,9 @@ const writeGlobalSettings = async (
 
 export const writeDefaultModel = (ctx: ExtensionContext, ref: string) =>
   writeGlobalSettings(ctx, (settings) => {
-    const slash = ref.indexOf("/");
+    const { provider, id } = splitModelRef(ref);
 
-    settings.setDefaultModelAndProvider(ref.slice(0, slash), ref.slice(slash + 1));
+    settings.setDefaultModelAndProvider(provider, id);
     widenScope(settings, ctx, ref);
   });
 
