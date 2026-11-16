@@ -14,6 +14,7 @@ import { type Dial, type DialAccess, RestrictedAddressError } from "./dial.ts";
 import { rawHead, rawReply, rawResponse, sendJson, sendReply, statusLine, withAgent } from "./replies.ts";
 import { parseRequestTarget } from "./request-target.ts";
 import {
+  HEADER_BREAK,
   type HeaderPair,
   matchRules,
   rewriteRequestHeaders,
@@ -63,8 +64,6 @@ const HOP_BY_HOP = new Set([
 const UPGRADE_HEADERS = new Set(["connection", "upgrade"]);
 
 const UNAUTHORIZED = 401;
-
-const HEADER_BREAK = /[\r\n\0]/;
 
 const IDLE_MS = 4_000;
 

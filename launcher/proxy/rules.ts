@@ -9,6 +9,8 @@ export interface ScrubSecret {
   placeholder?: string;
 }
 
+export const HEADER_BREAK = /[\r\n\0]/;
+
 const REDACTED = "pi-sandbox-redacted";
 
 const FETCH_RESERVED = "sec-";
