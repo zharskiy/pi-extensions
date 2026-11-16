@@ -71,6 +71,20 @@ const linkNew = async (temporary: string, path: string) => {
   }
 };
 
+export const writeNewFile = async (path: string, data: string, options: AtomicWriteOptions = {}) => {
+  const temporary = temporaryOf(path);
+
+  await mkdir(dirname(path), { recursive: true });
+
+  try {
+    await writeAndSync(temporary, data, options.mode);
+
+    return await linkNew(temporary, path);
+  } finally {
+    await rm(temporary, { force: true });
+  }
+};
+
 const createHexFile = async (path: string, pattern: RegExp, bytes: number) => {
   const value = randomBytes(bytes).toString("hex");
   const temporary = temporaryOf(path);

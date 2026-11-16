@@ -17,7 +17,7 @@ interface ProxyControl {
   read(stateDir: string, repoHash: string): Promise<RepoProxy | undefined>;
   stop(stateDir: string, repoHash: string): Promise<boolean>;
   denials(stateDir: string, repoHash: string, since: number): Promise<DenialRecord[]>;
-  trust(stateDir: string, sources: ExtraCa[]): Promise<TrustBundle>;
+  trust(stateDir: string, sources: ExtraCa[], launchId?: string): Promise<TrustBundle>;
 }
 
 export interface CliDeps {

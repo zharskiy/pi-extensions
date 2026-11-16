@@ -14,6 +14,7 @@ import {
   isWithin,
   LauncherError,
   PI_SESSION_DIR_VARIABLE,
+  realOrResolvedSync,
   repoHash,
 } from "../shared/index.ts";
 import {
@@ -180,7 +181,7 @@ const sessionsEnv = (input: ContainerSpecInput): Record<string, string> => {
 const sessionsMounts = (input: ContainerSpecInput) => {
   const dir = hostSessionsDirOf(input);
 
-  return dir === undefined ? [] : [bind(dir, dir, false)];
+  return dir === undefined ? [] : [bind(realOrResolvedSync(dir), dir, false)];
 };
 
 const sessionsLabel = (sessions: HostSessions | undefined): Record<string, string> => {
@@ -232,10 +233,12 @@ export const forwardedEnv = (
     }),
   );
 
-const trustMounts = (input: ContainerSpecInput) => [bind(input.trust.pemPath, GUEST_PATHS.trustPem, true)];
+const trustMounts = (input: ContainerSpecInput) => [
+  bind(realOrResolvedSync(input.trust.pemPath), GUEST_PATHS.trustPem, true),
+];
 
 const renderMounts = (renderDir: string | undefined) =>
-  renderDir === undefined ? [] : [bind(renderDir, GUEST_PATHS.renderDir, true)];
+  renderDir === undefined ? [] : [bind(realOrResolvedSync(renderDir), GUEST_PATHS.renderDir, true)];
 
 const baseLabels = (input: ContainerSpecInput) => ({
   [LABELS.managed]: "true",

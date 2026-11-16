@@ -48,8 +48,8 @@ const realDeps = (): CliDeps => {
       read: readRepoProxy,
       stop: stopRepoProxy,
       denials: readDenials,
-      trust: (stateDir, sources) =>
-        ensureTrustBundle({ stateDir, runner, platform: process.platform, sources }),
+      trust: (stateDir, sources, launchId) =>
+        ensureTrustBundle({ stateDir, runner, platform: process.platform, sources, launchId }),
     },
     now: () => Date.now(),
   };

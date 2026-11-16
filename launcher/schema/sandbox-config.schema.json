@@ -448,7 +448,7 @@
         }
       },
       "required": ["roots"],
-      "description": "Folders pi may start in; a launch outside every root is refused."
+      "description": "Folders pi may start in, and the only folders the sandbox VM shares (with the session dir and the launcher's vm dir); a launch outside every root is refused."
     },
     "mounts": {
       "type": "object",

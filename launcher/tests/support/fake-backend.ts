@@ -389,6 +389,7 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
     ensureRunning: async () => undefined,
     coverage: async () => undefined,
     ensureShares: async () => undefined,
+    reconcileShares: async () => undefined,
     ensureTrust: async () => undefined,
     size: async () => undefined,
     resizeCommand: (size) =>

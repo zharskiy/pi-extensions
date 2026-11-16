@@ -1,7 +1,8 @@
 import { X509Certificate } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import type { ExtraCa } from "../config/index.ts";
+import { liveLaunches } from "../grants/index.ts";
 import {
   type CommandRunner,
   expandHome,
@@ -17,6 +18,7 @@ export interface TrustBundleInput {
   runner: CommandRunner;
   platform: NodeJS.Platform;
   sources: ExtraCa[];
+  launchId?: string;
   now?: number;
 }
 
@@ -184,6 +186,9 @@ const writeIfChanged = async (path: string, text: string) => {
 
 const pemText = (certificates: string[]) => certificates.map((pem) => `${pem.trim()}\n`).join("");
 
+const othersRunning = async (stateDir: string, launchId: string | undefined) =>
+  (await liveLaunches(stateDir)).some((launch) => launch.launchId !== launchId);
+
 export const ensureTrustBundle = async (input: TrustBundleInput): Promise<TrustBundle> => {
   const found = await Promise.all(input.sources.map(sourceCertificates(input)));
   const usable = found.flat().map(checkUsable(input.now ?? Date.now()));
@@ -197,6 +202,10 @@ export const ensureTrustBundle = async (input: TrustBundleInput): Promise<TrustB
   await writeIfChanged(extraPemPath, pemText(extras));
 
   await writeIfChanged(pemPath, bundle);
+
+  if (!(await othersRunning(input.stateDir, input.launchId))) {
+    await rm(layout.legacyTrustPem, { force: true });
+  }
 
   return { pemPath, caCertPath: ca.certPath, extraPemPath, hash: sha256Hex(bundle) };
 };

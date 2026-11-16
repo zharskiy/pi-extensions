@@ -6,6 +6,7 @@ export interface RenderInput {
   repoHash: string;
   hostAgentDir: string;
   derived: DerivedSandboxPi;
+  othersLive?: () => Promise<boolean>;
 }
 
 export interface RenderResult {
