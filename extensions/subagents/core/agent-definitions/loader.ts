@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { parseFrontmatter } from "../../../../platform/shared/index.ts";
 import { unknownSkillsProblem } from "../model/agent-override.ts";
 import {
   type AgentDefinition,
@@ -15,7 +16,6 @@ import {
   INHERIT_MODEL,
 } from "../model/agent-schema.ts";
 import { FRONTMATTER_FIELDS, readField } from "./fields.ts";
-import { parseFrontmatter } from "./yaml-lite.ts";
 
 export type DefinitionDir = { path: string; source: AgentSource };
 

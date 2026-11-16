@@ -10,7 +10,7 @@ Plugins (`api/plugins.ts`, one entry each in `api/plugins/`; requirements in bra
 
 ## Agent definitions and prompts
 
-- Markdown files with frontmatter are loaded from the built-in `agents/` when the plugin enables, and from the built-in `agents/`, then `<agentDir>/agents/`, then `<cwd>/.pi/agents/` (trusted projects) at session start. Later files override earlier ones by `name`. Invalid files, unknown `subagents` references and `subagents` cycles remove the offending definitions and produce warnings.
+- Markdown files with frontmatter (parsed by `parseFrontmatter` from `platform/shared`, which the autosetup skill scan also uses to drop a skill's header) are loaded from the built-in `agents/` when the plugin enables, and from the built-in `agents/`, then `<agentDir>/agents/`, then `<cwd>/.pi/agents/` (trusted projects) at session start. Later files override earlier ones by `name`. Invalid files, unknown `subagents` references and `subagents` cycles remove the offending definitions and produce warnings.
 
 These are the frontmatter fields of an agent file:
 

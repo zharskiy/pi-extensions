@@ -1,7 +1,7 @@
 import { readdirSync } from "node:fs";
 import { basename } from "node:path";
 import type { SkillInfo } from "../../../../platform/pi-adapter/index.ts";
-import { errorText, readText } from "../../../../platform/shared/index.ts";
+import { errorText, parseFrontmatter, readText } from "../../../../platform/shared/index.ts";
 import { cutChars } from "../components/receipt.ts";
 import { type AgentDefinition, grantOrNone } from "../model/agent-record.ts";
 import { AGENT_SCOPE_ALL, type AgentOverrides, ALL_SKILLS_TEXT } from "../model/agent-schema.ts";
@@ -24,8 +24,6 @@ const LISTING_LIMIT = 60;
 
 const SKIPPED_ENTRIES = [".git", "node_modules"];
 
-const FRONTMATTER = /^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/;
-
 type BriefInput = {
   template: string;
   cwd: string;
@@ -47,7 +45,7 @@ export const candidateSkills = (catalog: SkillInfo[]) => {
   const classified = catalog.map((skill) => {
     const text = readText(skill.path);
 
-    return { skill, interactive: text !== undefined && isInteractive(text.replace(FRONTMATTER, "")) };
+    return { skill, interactive: text !== undefined && isInteractive(parseFrontmatter(text).body) };
   });
 
   return {

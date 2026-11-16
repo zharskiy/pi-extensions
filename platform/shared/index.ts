@@ -81,4 +81,5 @@ export {
   noun,
   shortPath,
 } from "./text/format.ts";
+export { type FrontmatterValue, parseFrontmatter } from "./text/front-matter.ts";
 export { cutStart, DOT, ELLIPSIS, fixedBlock, padded, padRows, prefixed } from "./text/text-layout.ts";

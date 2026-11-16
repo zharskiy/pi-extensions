@@ -1,3 +1,4 @@
+import type { FrontmatterValue } from "../../../../platform/shared/index.ts";
 import {
   type AgentFrontmatter,
   ALL_SKILLS_TEXT,
@@ -6,7 +7,6 @@ import {
   PLAIN_NAME_TEXT,
 } from "../model/agent-schema.ts";
 import { checkGrant, checkModel } from "../model/agent-values.ts";
-import type { FrontmatterValue } from "./yaml-lite.ts";
 
 type FieldKey = keyof AgentFrontmatter;
 

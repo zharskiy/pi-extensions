@@ -55,7 +55,6 @@ extensions/subagents/
 │   ├── agent-definitions/
 │   │   ├── loader.ts                      # parseDefinition (with the path relative to its agents dir), loadDefinitions: files, then the agents.<name> overrides and their checks
 │   │   ├── fields.ts                      # frontmatter field rules (required, kinds; model and lists through agent-values.ts)
-│   │   ├── yaml-lite.ts                   # the frontmatter parser
 │   │   └── prompt.ts                      # assemblePromptAppend: base prompt plus the agent body
 │   ├── agent-registry/
 │   │   └── registry.ts                    # createRegistry: records, manifests, events

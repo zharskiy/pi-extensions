@@ -1,6 +1,7 @@
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { parseFrontmatter } from "../../../../../platform/shared/index.ts";
 import { agentDefinitionsPlugin } from "../../../api/plugins/agent-definitions.ts";
 import { FRONTMATTER_FIELDS } from "../../../core/agent-definitions/fields.ts";
 import {
@@ -9,7 +10,6 @@ import {
   parseDefinition,
 } from "../../../core/agent-definitions/loader.ts";
 import { assemblePromptAppend } from "../../../core/agent-definitions/prompt.ts";
-import { parseFrontmatter } from "../../../core/agent-definitions/yaml-lite.ts";
 import { createHarness, PACKAGE_ROOT, tempDir } from "../../support/subagents-harness.ts";
 
 const writeAgent = (dir: string, file: string, content: string) => {
@@ -27,45 +27,6 @@ const lists = (extra: string, defaults = DEFAULT_LISTS) =>
 
 const agentFile = (name: string, description: string, extra = "subagents: []", body = "") =>
   `---\nname: ${name}\ndescription: ${description}\nlimit: 50000\n${lists(extra)}${extra}\n---\n${body}`;
-
-describe("frontmatter", () => {
-  it("parses scalars, inline lists, block lists and block text", () => {
-    const parsed = parseFrontmatter(
-      [
-        "---",
-        "name: scout",
-        'description: "Finds things: fast"',
-        "tools: [read, grep]",
-        "skills:",
-        "  - search",
-        "  - 'docs'",
-        "limit: 12000",
-        "prompt: |",
-        "  line one",
-        "  line two",
-        "unknownKey: ignored-but-kept",
-        "---",
-        "Body text.",
-      ].join("\n"),
-    );
-
-    expect(parsed.data).toEqual({
-      name: "scout",
-      description: "Finds things: fast",
-      tools: ["read", "grep"],
-      skills: ["search", "docs"],
-      limit: 12000,
-      prompt: "line one\nline two",
-      unknownKey: "ignored-but-kept",
-    });
-
-    expect(parsed.body).toBe("Body text.");
-  });
-
-  it("treats a file without frontmatter as body only", () => {
-    expect(parseFrontmatter("just text")).toEqual({ data: {}, body: "just text" });
-  });
-});
 
 describe("agent definition parsing", () => {
   it("accepts comma-separated tools", () => {
