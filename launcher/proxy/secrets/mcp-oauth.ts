@@ -1,4 +1,3 @@
-import { setTimeout as delay } from "node:timers/promises";
 import {
   isFreshMcpToken,
   MCP_SERVER_NAME,
@@ -7,7 +6,7 @@ import {
   mcpAuthKey,
   readMcpAuthEntry,
 } from "../../shared/index.ts";
-import type { SignIn } from "../sign-in.ts";
+import { type SignIn, within } from "../sign-in.ts";
 import type { CachedSecret } from "./cache.ts";
 import { notSignedIn, type SecretReply, signInReply, unavailable } from "./errors.ts";
 
@@ -42,17 +41,6 @@ const cachedOf = (entry: McpAuthEntry & { access: string }): CachedSecret => ({
   value: entry.access,
   expiresAt: entry.expiresAt === undefined ? undefined : entry.expiresAt - MCP_TOKEN_SKEW_MS,
 });
-
-const within = async (exited: Promise<number>, waitMs: number) => {
-  const abort = new AbortController();
-  const late = delay(waitMs, undefined, { signal: abort.signal }).catch(() => undefined);
-
-  try {
-    return await Promise.race([exited, late]);
-  } finally {
-    abort.abort();
-  }
-};
 
 export const createMcpOAuthSource = (deps: McpOAuthDeps) => {
   const rejected = new Map<string, string>();

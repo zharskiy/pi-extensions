@@ -89,14 +89,12 @@ const signalGroup = (pid: number | undefined, signal: NodeJS.Signals) => {
   }
 };
 
-const settledWithin = async (done: Promise<unknown>, waitMs: number) => {
+export const within = async <T>(promise: Promise<T>, waitMs: number) => {
   const abort = new AbortController();
+  const late = delay(waitMs, undefined, { signal: abort.signal }).catch(() => undefined);
 
   try {
-    return await Promise.race([
-      done.then(() => true),
-      delay(waitMs, false, { signal: abort.signal }).catch(() => false),
-    ]);
+    return await Promise.race([promise, late]);
   } finally {
     abort.abort();
   }
@@ -239,18 +237,18 @@ export const createSignIn = (deps: SignInDeps): SignIn => {
       return;
     }
 
-    const done = Promise.all(logins.map((login) => login.done));
+    const done = Promise.all(logins.map((login) => login.done)).then(() => true);
 
     logins.forEach((login) => {
       signalGroup(login.pid, "SIGTERM");
     });
 
-    if (!(await settledWithin(done, CLOSE_WAIT_MS))) {
+    if ((await within(done, CLOSE_WAIT_MS)) === undefined) {
       logins.forEach((login) => {
         signalGroup(login.pid, "SIGKILL");
       });
 
-      await settledWithin(done, KILL_WAIT_MS);
+      await within(done, KILL_WAIT_MS);
     }
 
     if ([...running.values()].some((login) => !logins.includes(login))) {
