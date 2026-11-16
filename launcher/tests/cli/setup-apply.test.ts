@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { VmPhase } from "../../backend/index.ts";
-import { Cancelled, type Detail, type Prompts, warningOf } from "../../cli/prompt/types.ts";
+import { warningOf } from "../../cli/prompt/task.ts";
+import { Cancelled, type Detail, type Prompts } from "../../cli/prompt/types.ts";
 import { applyPlan } from "../../cli/setup/apply.ts";
 import { readDocument } from "../../cli/setup/document.ts";
 import type { HostFacts, Plan } from "../../cli/setup/types.ts";

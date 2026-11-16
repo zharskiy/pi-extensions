@@ -151,9 +151,6 @@ export interface TaskSpec<T> {
   interruptWarning: string | (() => string);
 }
 
-export const warningOf = (spec: TaskSpec<unknown>) =>
-  typeof spec.interruptWarning === "string" ? spec.interruptWarning : spec.interruptWarning();
-
 export type NotePlace = "rail" | "start" | "step" | "end";
 
 export interface Prompts {

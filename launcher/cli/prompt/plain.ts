@@ -1,15 +1,14 @@
 import { type Completer, createInterface } from "node:readline/promises";
 import { completePath } from "./complete.ts";
-import { dropQueuedKeys, isCtrl, listenKeys } from "./keys.ts";
 import { DIGITS, initialIndex, numberProblem, toggle, warningFor } from "./rules.ts";
 import { asciiOf, elapsedOf, printable, wrap } from "./style.ts";
+import { runTask, type TaskView, warningOf } from "./task.ts";
 import {
   BACK,
   Cancelled,
   type Choice,
   type Collapse,
   type Detail,
-  type Key,
   type MultiSpec,
   type NumberSpec,
   type PathSpec,
@@ -17,7 +16,6 @@ import {
   type Reply,
   type TaskSpec,
   type Ui,
-  warningOf,
 } from "./types.ts";
 
 type Parsed<T> = { value: T } | { error: string };
@@ -260,78 +258,26 @@ export const createPlainPrompts = (ui: Ui): Prompts => {
     return value;
   };
 
-  const task = <T>(spec: TaskSpec<T>) =>
-    new Promise<T>((resolve, reject) => {
-      const started = ui.timers.now();
-      const state = { text: "", warned: false, done: false, detach: () => {} };
+  const taskView = (spec: TaskSpec<unknown>) => (): TaskView => {
+    const started = ui.timers.now();
 
-      const stopHeartbeat = ui.timers.every(HEARTBEAT_MS, () =>
-        print([`  still working (${elapsedOf(ui.timers.now() - started)})`]),
-      );
+    const stop = ui.timers.every(HEARTBEAT_MS, () =>
+      print([`  still working (${elapsedOf(ui.timers.now() - started)})`]),
+    );
 
-      const finish = (done: () => void) => {
-        if (state.done) {
-          return;
-        }
+    return {
+      update: (text) => print([text]),
+      warn: () => print([`Warning: ${warningOf(spec)}`]),
+      redraw: () => undefined,
+      stop,
+    };
+  };
 
-        state.done = true;
+  const task = <T>(spec: TaskSpec<T>) => {
+    typedAhead.length = 0;
 
-        stopHeartbeat();
-
-        state.detach();
-
-        ui.session.raw(false);
-
-        done();
-      };
-
-      const onKey = (key: Key) => {
-        if (!isCtrl(key, "c")) {
-          return;
-        }
-
-        if (spec.interruptWarning === "" || state.warned) {
-          finish(() => reject(new Cancelled("interrupt")));
-
-          return;
-        }
-
-        state.warned = true;
-
-        print([`Warning: ${warningOf(spec)}`]);
-      };
-
-      const update = (text: string) => {
-        if (state.done || text === state.text) {
-          return;
-        }
-
-        state.text = text;
-
-        print([text]);
-      };
-
-      typedAhead.length = 0;
-
-      try {
-        if (ui.input.isTTY === true) {
-          ui.session.raw(true);
-
-          dropQueuedKeys(ui);
-
-          state.detach = listenKeys(ui, { key: onKey, end: () => undefined }).detach;
-        }
-
-        Promise.resolve()
-          .then(() => spec.run(update))
-          .then(
-            (value) => finish(() => resolve(value)),
-            (error: unknown) => finish(() => reject(error)),
-          );
-      } catch (error) {
-        finish(() => reject(error));
-      }
-    });
+    return runTask(ui, spec, taskView(spec));
+  };
 
   const completerOf =
     (spec: PathSpec): Completer =>

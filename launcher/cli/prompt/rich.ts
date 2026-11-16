@@ -1,6 +1,6 @@
 import { completePath } from "./complete.ts";
 import { createFrame, type FrameView } from "./frame.ts";
-import { dropQueuedKeys, isCtrl, listenKeys } from "./keys.ts";
+import { isCtrl, listenKeys } from "./keys.ts";
 import { editLine, type LineState, lineOf } from "./line-editor.ts";
 import { DIGITS, initialIndex, numberProblem, toggle, warningFor } from "./rules.ts";
 import {
@@ -18,6 +18,7 @@ import {
   wrap,
   wrapSegments,
 } from "./style.ts";
+import { runTask, type TaskView, warningOf } from "./task.ts";
 import {
   BACK,
   type CancelCause,
@@ -37,7 +38,6 @@ import {
   type SelectSpec,
   type TaskSpec,
   type Ui,
-  warningOf,
 } from "./types.ts";
 
 interface Context {
@@ -844,110 +844,57 @@ const numberView = (context: Context, spec: NumberSpec): View<number> => {
   };
 };
 
-const runTask = <T>(context: Context, spec: TaskSpec<T>) =>
-  new Promise<T>((resolve, reject) => {
-    const { ui, glyphs, paint, fold } = context;
-    const frame = createFrame(ui, glyphs.ellipsis);
-    const started = ui.timers.now();
+const taskView = (context: Context, spec: TaskSpec<unknown>) => (): TaskView => {
+  const { ui, glyphs, paint, fold } = context;
+  const frame = createFrame(ui, glyphs.ellipsis);
+  const started = ui.timers.now();
+  const state = { text: "", tick: 0, warned: false };
 
-    const state = {
-      text: "",
-      tick: 0,
-      warned: false,
-      done: false,
-      stopTimer: () => {},
-      detach: () => {},
-    };
+  const view = (width: number): FrameView => {
+    const rail = paint("dim", glyphs.rail);
+    const spinner = paint("cyan", glyphs.spinner[state.tick % glyphs.spinner.length] ?? "");
+    const elapsed = paint("dim", elapsedOf(ui.timers.now() - started));
+    const status = [spinner, ...(state.text === "" ? [] : [fold(state.text)]), elapsed].join(" ");
+    const head = spec.title === "" ? [] : [`${paint("cyan", glyphs.active)}  ${fold(spec.title)}`];
+    const stops = spec.interruptWarning === "" ? [] : [paint("dim", "ctrl-c stops waiting")];
+    const hint = state.warned ? warningLines(context, warningOf(spec), width) : stops;
 
-    const view = (width: number): FrameView => {
-      const rail = paint("dim", glyphs.rail);
-      const spinner = paint("cyan", glyphs.spinner[state.tick % glyphs.spinner.length] ?? "");
-      const elapsed = paint("dim", elapsedOf(ui.timers.now() - started));
-      const status = [spinner, ...(state.text === "" ? [] : [fold(state.text)]), elapsed].join(" ");
-      const head = spec.title === "" ? [] : [`${paint("cyan", glyphs.active)}  ${fold(spec.title)}`];
-      const stops = spec.interruptWarning === "" ? [] : [paint("dim", "ctrl-c stops waiting")];
-      const hint = state.warned ? warningLines(context, warningOf(spec), width) : stops;
+    return { lines: [...head, `${rail}  ${status}`, ...hint.map((line) => `${rail}  ${line}`)] };
+  };
 
-      return { lines: [...head, `${rail}  ${status}`, ...hint.map((line) => `${rail}  ${line}`)] };
-    };
+  const draw = () => frame.draw(view(ui.columns()));
 
-    const draw = () => {
-      if (!state.done) {
-        frame.draw(view(ui.columns()));
-      }
-    };
+  ui.session.cursor(false);
 
-    const finish = (done: () => void) => {
-      if (state.done) {
-        return;
-      }
+  draw();
 
-      state.done = true;
+  const stopTimer = ui.timers.every(SPIN_MS, () => {
+    state.tick += 1;
 
-      state.stopTimer();
+    draw();
+  });
 
-      state.detach();
+  return {
+    update: (text) => {
+      state.text = text;
+
+      draw();
+    },
+    warn: () => {
+      state.warned = true;
+
+      draw();
+    },
+    redraw: draw,
+    stop: () => {
+      stopTimer();
 
       frame.clear();
 
       ui.session.cursor(true);
-
-      ui.session.raw(false);
-
-      done();
-    };
-
-    const onKey = (key: Key) => {
-      if (isCtrl(key, "c") && (spec.interruptWarning === "" || state.warned)) {
-        finish(() => reject(new Cancelled("interrupt")));
-
-        return;
-      }
-
-      state.warned = state.warned || isCtrl(key, "c");
-
-      if (isCtrl(key, "c") || key.kind === "resize" || isCtrl(key, "l")) {
-        draw();
-      }
-    };
-
-    const update = (text: string) => {
-      state.text = text;
-
-      draw();
-    };
-
-    try {
-      ui.session.raw(true);
-
-      ui.session.cursor(false);
-
-      draw();
-
-      state.stopTimer = ui.timers.every(SPIN_MS, () => {
-        state.tick += 1;
-
-        draw();
-      });
-
-      if (ui.session.closed()) {
-        throw new Cancelled("end");
-      }
-
-      dropQueuedKeys(ui);
-
-      state.detach = listenKeys(ui, { key: onKey, end: () => undefined }).detach;
-
-      Promise.resolve()
-        .then(() => spec.run(update))
-        .then(
-          (value) => finish(() => resolve(value)),
-          (error: unknown) => finish(() => reject(error)),
-        );
-    } catch (error) {
-      finish(() => reject(error));
-    }
-  });
+    },
+  };
+};
 
 const LEADS: Record<NotePlace, "header" | "answered" | "end" | undefined> = {
   rail: undefined,
@@ -990,7 +937,7 @@ export const createRichPrompts = (ui: Ui): Prompts => {
     confirm: (spec) => runView(context, confirmView(context, spec)),
     path: (spec) => runView(context, pathView(context, spec)),
     number: (spec) => runView(context, numberView(context, spec)),
-    task: (spec) => runTask(context, spec),
+    task: (spec) => runTask(ui, spec, taskView(context, spec)),
     note: (lines, place = "rail") => {
       const shown = typeof lines === "function" ? lines(roomOf(ui.columns())) : lines;
 
