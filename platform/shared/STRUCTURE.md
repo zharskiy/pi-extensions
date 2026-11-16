@@ -21,7 +21,7 @@ Modules are grouped by concern; `index.ts` is the only import surface, so a move
   - `format.ts`: token, window, duration, error-text, `~/` and short path formatters, `noun`/`counted`, `formatCost` and `formatMoney`.
   - `text-layout.ts`: `DOT`, `ELLIPSIS`, `cutStart`, `prefixed`, `padded`, `fixedBlock`, `padRows`.
 - `cache-hit.ts`: the cache hit rate of a request and of the session.
-- `plain-object.ts`: `isPlainObject`.
+- `guards.ts`: `isPlainObject`, `isStringArray`, `isFiniteNumber`.
 - `project-dir.ts`: `projectPath`, `ensureProjectSubdir`, `writeProjectFile`; the `.pi/.gitignore` of a new `.pi/`.
 - `tests/format.test.ts`: `format.ts`.
 - `tests/handoff-limit.test.ts`: `limitLevel`, `mainLimit` and `workingContextText`.

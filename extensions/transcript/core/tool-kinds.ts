@@ -1,5 +1,5 @@
 import type { ToolCallView } from "../../../platform/pi-adapter/index.ts";
-import { formatDuration, isPlainObject } from "../../../platform/shared/index.ts";
+import { formatDuration, isFiniteNumber, isPlainObject } from "../../../platform/shared/index.ts";
 
 const SLOW_MS = 5000;
 
@@ -21,7 +21,7 @@ export const listedCount = (text: string, empty: RegExp) =>
 const numberArg = (value: unknown) => {
   const parsed = typeof value === "string" && value.trim() !== "" ? Number(value) : value;
 
-  return typeof parsed === "number" && Number.isFinite(parsed) ? parsed : undefined;
+  return isFiniteNumber(parsed) ? parsed : undefined;
 };
 
 export const readRange = (args: Args) => {

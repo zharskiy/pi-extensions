@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { isPlainObject } from "../plain-object.ts";
+import { isFiniteNumber, isPlainObject, isStringArray } from "../guards.ts";
 import { projectPath, writeProjectFile } from "../project-dir.ts";
 import { errorText } from "../text/format.ts";
 
@@ -21,13 +21,7 @@ export type SettingsSchema<T> = { [K in keyof T]?: SettingsRule };
 export type SettingsParse<T> = { patch: Partial<T>; errors: string[] };
 
 const validNumber = (rule: NumberRule, value: unknown) =>
-  typeof value === "number" &&
-  Number.isFinite(value) &&
-  (rule.minExclusive ? value > rule.min : value >= rule.min) &&
-  value <= rule.max;
-
-const validList = (value: unknown) =>
-  Array.isArray(value) && value.every((entry) => typeof entry === "string");
+  isFiniteNumber(value) && (rule.minExclusive ? value > rule.min : value >= rule.min) && value <= rule.max;
 
 const isValid = (rule: SettingsRule, value: unknown) => {
   if (rule.type === "choice") {
@@ -38,7 +32,7 @@ const isValid = (rule: SettingsRule, value: unknown) => {
     return isPlainObject(value);
   }
 
-  return rule.type === "number" ? validNumber(rule, value) : validList(value);
+  return rule.type === "number" ? validNumber(rule, value) : isStringArray(value);
 };
 
 const expectation = (rule: SettingsRule) => {

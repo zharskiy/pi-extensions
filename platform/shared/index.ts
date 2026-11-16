@@ -22,6 +22,7 @@ export {
   type UsageReport,
 } from "./channels/host-channels.ts";
 export { HINT_STATUS_PREFIX, MIRROR_STATUS_PREFIX } from "./channels/status-keys.ts";
+export { isFiniteNumber, isPlainObject, isStringArray } from "./guards.ts";
 export {
   HANDOFF_REQUEST_TYPE,
   HANDOFF_SEED_TYPE,
@@ -52,7 +53,6 @@ export {
 } from "./handoff/handoff-prompt.ts";
 export { LIMIT_SEAM, seamLabel } from "./handoff/handoff-seam.ts";
 export { type HandoffTarget, handoffTool } from "./handoff/handoff-tool.ts";
-export { isPlainObject } from "./plain-object.ts";
 export type { Bus, Disable, EventMap, ExtensionPaths, Plugin, Services } from "./plugin/plugin-contract.ts";
 export {
   loadSettingsFiles,

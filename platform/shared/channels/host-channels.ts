@@ -1,6 +1,6 @@
 import type { UsageTotals } from "../../pi-adapter/index.ts";
+import { isFiniteNumber, isPlainObject } from "../guards.ts";
 import { type Limits, limitsSchema } from "../handoff/handoff-limit.ts";
-import { isPlainObject } from "../plain-object.ts";
 import { parseSettings } from "../plugin/settings-files.ts";
 
 export const BUSY_CHANNEL = "pi:busy";
@@ -31,7 +31,7 @@ const COUNTS = ["input", "output", "cacheRead", "cacheWrite", "totalTokens"] as 
 
 const COSTS = ["input", "output", "cacheRead", "cacheWrite", "total"] as const;
 
-const isAmount = (value: unknown) => typeof value === "number" && Number.isFinite(value) && value >= 0;
+const isAmount = (value: unknown) => isFiniteNumber(value) && value >= 0;
 
 const isLabel = (value: unknown): value is string => typeof value === "string" && value.length > 0;
 

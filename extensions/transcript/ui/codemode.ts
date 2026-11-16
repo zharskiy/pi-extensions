@@ -1,5 +1,5 @@
 import type { ThemeLike } from "../../../platform/pi-adapter/index.ts";
-import { DOT, formatCost, formatDuration } from "../../../platform/shared/index.ts";
+import { DOT, formatCost, formatDuration, isPlainObject } from "../../../platform/shared/index.ts";
 import { type Mark, row, TITLE_COLUMN } from "../../../platform/ui-kit/index.ts";
 import { errorRows, outputLines, wrappedRows } from "./output.ts";
 import { bold, type Context, counted, failed, type Look, MORE, resultText, textArg } from "./tool-look.ts";
@@ -26,8 +26,7 @@ const STATUS_MARKS: Record<string, Mark> = {
 
 const scriptOutput = (context: Context) => resultText(context).replace(SCRIPT_HEADER, "");
 
-const isCall = (value: unknown): value is Call =>
-  typeof value === "object" && value !== null && typeof (value as Call).name === "string";
+const isCall = (value: unknown): value is Call => isPlainObject(value) && typeof value.name === "string";
 
 const callsOf = (context: Context) => {
   const calls = (context.view.result?.details as { calls?: unknown } | undefined)?.calls;

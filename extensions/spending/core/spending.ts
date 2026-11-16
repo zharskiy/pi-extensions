@@ -1,6 +1,6 @@
 import { basename } from "node:path";
 import type { Host, UsageTotals } from "../../../platform/pi-adapter/index.ts";
-import { parseUsageReport, type SpendingTotals } from "../../../platform/shared/index.ts";
+import { isFiniteNumber, parseUsageReport, type SpendingTotals } from "../../../platform/shared/index.ts";
 import { CONTINUATION_MARKER, createLedger, USAGE_ENTRY } from "./ledger.ts";
 
 export const NAMESPACE = "pi-spending";
@@ -20,7 +20,7 @@ export const createSpending = (host: Host) => {
   const lastOffset = (customType: string, file?: string) => {
     const value = host.readEntries<unknown>(customType, file).at(-1);
 
-    return typeof value === "number" && Number.isFinite(value) ? value : 0;
+    return isFiniteNumber(value) ? value : 0;
   };
 
   const resume = () => {
