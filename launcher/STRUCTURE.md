@@ -254,7 +254,7 @@ proxy/rules.ts                 rule matching, header rewrite and response scrub
 proxy/request-target.ts        authority parsing, request target and path checks on terminated hosts
 proxy/denials.ts               denial records (with the credential rule id) and replies
 proxy/denial-page.ts           the 403 page over TLS
-proxy/replies.ts               every raw HTTP reply and the JSON replies
+proxy/replies.ts               every reply the proxy answers itself, raw or through a ServerResponse
 proxy/parent.ts                the parent proxy route
 proxy/trust.ts                 the trust bundle: tls.extraCa by keychain fingerprint or PEM file, CA and expiry checks, a bundle path never written twice, under the CA lock
 proxy/tls-ca.ts                the launcher CA and leaf certificates, both dated an hour back

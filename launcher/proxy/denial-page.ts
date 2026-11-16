@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import type { Socket } from "node:net";
 import type { Duplex } from "node:stream";
 import { createSecureContext, type SecureContext, TLSSocket } from "node:tls";
-import { PROXY_AGENT, rawResponse } from "./replies.ts";
+import { type RawHeader, rawResponse, sendReply, withAgent } from "./replies.ts";
 import type { LeafCertificate } from "./tls-ca.ts";
 
 export interface DenialPageOptions {
@@ -18,22 +18,7 @@ const MINT_WINDOW_MS = 60_000;
 
 const IDLE_MS = 10_000;
 
-const pageHeaders = (text: string) => ({
-  "content-type": "text/plain; charset=utf-8",
-  "content-length": String(Buffer.byteLength(text)),
-  connection: "close",
-  "proxy-agent": PROXY_AGENT,
-});
-
-const rawPage = (text: string) =>
-  rawResponse(
-    "403 Forbidden",
-    [
-      ["content-type", "text/plain; charset=utf-8"],
-      ["proxy-agent", PROXY_AGENT],
-    ],
-    text,
-  );
+const PAGE_HEADERS: RawHeader[] = [["content-type", "text/plain; charset=utf-8"]];
 
 export const createDenialPages = (options: DenialPageOptions) => {
   const now = options.now ?? Date.now;
@@ -44,13 +29,11 @@ export const createDenialPages = (options: DenialPageOptions) => {
   const server = createServer((request, response) => {
     const text = texts.get(request.socket) ?? "";
 
-    response.writeHead(403, pageHeaders(text));
-
-    response.end(text);
+    sendReply(response, 403, [...PAGE_HEADERS, ["connection", "close"]], text);
   });
 
   server.on("upgrade", (request, socket: Duplex) => {
-    socket.end(rawPage(texts.get(request.socket) ?? ""));
+    socket.end(rawResponse("403 Forbidden", withAgent(PAGE_HEADERS), texts.get(request.socket) ?? ""));
   });
 
   server.on("clientError", (_error, socket: Duplex) => {
