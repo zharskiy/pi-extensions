@@ -67,12 +67,7 @@ type Segment = { token: ThemeToken; text: string };
 type LimitWatchOptions = {
   host: Host;
   limits: () => Limits;
-  segment: (
-    context: ContextTokens | undefined,
-    stuck: boolean,
-    limits: Limits,
-    command: string,
-  ) => Segment | undefined;
+  segment: (context: ContextTokens | undefined, stuck: boolean, limits: Limits) => Segment | undefined;
   releaseDelayMs?: number;
 };
 
@@ -224,7 +219,7 @@ export const watchLimits = ({ host, limits, segment, releaseDelayMs = 1_000 }: L
   const refresh = () => {
     syncPending();
 
-    const notice = segment(state.context, state.phase === "stuck", limits(), HANDOFF_COMMAND);
+    const notice = segment(state.context, state.phase === "stuck", limits());
 
     host.ui.setNotice(NAMESPACE, notice ? host.ui.style(notice.token, notice.text) : undefined);
   };
