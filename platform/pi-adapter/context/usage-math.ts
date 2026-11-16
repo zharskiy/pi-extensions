@@ -38,32 +38,24 @@ const entryUsage = (entry: RawEntry) => {
     : undefined;
 };
 
-export const sumUsage = (entries: readonly unknown[]): UsageTotals =>
+const assistantUsage = (entry: RawEntry) =>
+  entry.type === "message" && entry.message?.role === "assistant" ? entry.message.usage : undefined;
+
+export const sumUsage = (entries: readonly unknown[], usageOf = entryUsage): UsageTotals =>
   entries
-    .map((entry) => entryUsage(entry as RawEntry))
+    .map((entry) => usageOf(entry as RawEntry))
     .filter((usage) => usage !== undefined)
     .map(totalsOf)
     .reduce(addUsage, emptyUsage());
 
-export const requestUsageOf = (usage: Partial<PromptTokens> | undefined): PromptTokens => ({
-  input: usage?.input ?? 0,
-  cacheRead: usage?.cacheRead ?? 0,
-  cacheWrite: usage?.cacheWrite ?? 0,
-  output: usage?.output ?? 0,
-});
+export const requestUsageOf = (usage: RawUsage | undefined): PromptTokens => {
+  const { input, cacheRead, cacheWrite, output } = totalsOf(usage ?? {});
 
-const addPromptTokens = (left: PromptTokens, right: PromptTokens): PromptTokens => ({
-  input: left.input + right.input,
-  cacheRead: left.cacheRead + right.cacheRead,
-  cacheWrite: left.cacheWrite + right.cacheWrite,
-  output: left.output + right.output,
-});
+  return { input, cacheRead, cacheWrite, output };
+};
 
 export const sumAssistantUsage = (entries: readonly unknown[]): PromptTokens =>
-  (entries as RawEntry[])
-    .filter((entry) => entry.type === "message" && entry.message?.role === "assistant")
-    .map((entry) => requestUsageOf(entry.message?.usage))
-    .reduce(addPromptTokens, requestUsageOf(undefined));
+  requestUsageOf(sumUsage(entries, assistantUsage));
 
 type ContextSource = {
   getContextUsage(): { tokens: number | null; contextWindow: number; percent: number | null } | undefined;
