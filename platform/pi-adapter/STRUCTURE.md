@@ -53,7 +53,7 @@
 - `tools/skill-reads.ts`: `skillOfRead`, pi's `SKILL.md` folder rule and path resolution.
 - `tools/tool-source.ts`: where a pi tool comes from (`builtin`, `mcp`, `extension`) by its source path, and the MCP tool name prefix.
 - `tools/row-component.ts`: `RowComponent`, the tool-rows record on `globalThis` and the shared output pad.
-- `tools/entry-renderers.ts`: `Host.registerEntryRenderer` (with the `flush` option) and `registerMessageRenderer` over pi's renderers, the owner-keyed message and entry renderer records, `messageRendererFor` and `previousEntryComponent` (the transcript pane's lookups).
+- `tools/entry-renderers.ts`: `Host.registerEntryRenderer` (with the `flush` option) and `registerMessageRenderer` over pi's renderers, the owner-keyed message and entry renderer records, `messageRendererFor` and `previousEntryComponent` (the transcript pane's lookups), and `padEntry`, the pad and `flush` layout every entry is drawn with (the fake host's `renderEntry` calls it too).
 - `tools/transcript.ts`: the transcript pane (including the `rule` item, a `labelledRule` after the shared pad) and pi renderer capture.
 - `tools/previous-session.ts`: the `pi-adapter:previous-session` entry `newSession({ showPrevious })` writes, and its renderer over `registerEntryRenderer`'s `flush` option, which draws the previous sessions of a handoff chain with the transcript pane.
 - `context/context-facts.ts`: `Host.contextFacts` and request usage, composed.
