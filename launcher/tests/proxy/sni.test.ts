@@ -1,7 +1,6 @@
-import { createServer, type Socket } from "node:net";
-import { connect } from "node:tls";
 import { describe, expect, it } from "vitest";
 import { parseServerName } from "../../proxy/sni.ts";
+import { captureClientHello } from "./harness.ts";
 
 const u16 = (value: number) => Buffer.from([value >> 8, value & 0xff]);
 
@@ -27,27 +26,6 @@ const clientHello = (extensions: Buffer[]) => {
 
   return Buffer.concat([Buffer.from([0x16, 0x03, 0x01]), u16(handshake.length), handshake]);
 };
-
-const captureClientHello = (servername: string) =>
-  new Promise<Buffer>((resolve) => {
-    const server = createServer((socket: Socket) => {
-      socket.once("data", (chunk: Buffer) => {
-        resolve(chunk);
-
-        socket.destroy();
-
-        server.close();
-      });
-    });
-
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
-      const port = typeof address === "object" && address !== null ? address.port : 0;
-      const client = connect({ host: "127.0.0.1", port, servername });
-
-      client.on("error", () => undefined);
-    });
-  });
 
 describe("parseServerName", () => {
   it("reads the server name after other extensions", () => {

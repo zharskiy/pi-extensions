@@ -1,26 +1,16 @@
 import { createServer, type Server } from "node:http";
-import {
-  type AddressInfo,
-  connect,
-  createServer as createTcpServer,
-  type Socket,
-  type Server as TcpServer,
-} from "node:net";
+import { connect, createServer as createTcpServer, type Socket, type Server as TcpServer } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { basicAuthorization } from "../../proxy/auth.ts";
 import { createDialer, RestrictedAddressError } from "../../proxy/dial.ts";
 import { bypassesParent, parentRouteFor } from "../../proxy/parent.ts";
+import { listen, portOf } from "./harness.ts";
 
 const state: { parent: Server; echo: TcpServer; seen: Array<{ target?: string; auth?: string }> } = {
   parent: undefined as unknown as Server,
   echo: undefined as unknown as TcpServer,
   seen: [],
 };
-
-const portOf = (server: Server | TcpServer) => (server.address() as AddressInfo).port;
-
-const listen = (server: Server | TcpServer) =>
-  new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
 
 const close = (server: Server | TcpServer | undefined) =>
   new Promise<void>((resolve) => (server === undefined ? resolve() : server.close(() => resolve())));

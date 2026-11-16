@@ -2,9 +2,17 @@ import type { LookupAddress } from "node:dns";
 import { lookup } from "node:dns/promises";
 import { mkdtemp, rm } from "node:fs/promises";
 import type { Server } from "node:https";
-import { type AddressInfo, connect, isIP, type Socket } from "node:net";
+import {
+  type AddressInfo,
+  connect,
+  createServer,
+  isIP,
+  type Server as NetServer,
+  type Socket,
+} from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { connect as connectTls } from "node:tls";
 import type { CredentialRule } from "../../config/index.ts";
 import type { AccessLogEntry } from "../../proxy/access-log.ts";
 import type { Dialer } from "../../proxy/dial.ts";
@@ -27,10 +35,53 @@ export const resolveTo =
     return address === undefined ? lookup(hostname, { all: true }) : [{ address, family: isIP(address) }];
   };
 
-export const portOf = (server: Server) => (server.address() as AddressInfo).port;
+export const portOf = (server: NetServer) => (server.address() as AddressInfo).port;
 
-export const listen = (server: Server) =>
+export const listen = (server: NetServer) =>
   new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+
+export const captureClientHello = async (servername: string) => {
+  const capture = createServer();
+
+  await listen(capture);
+
+  const hello = new Promise<Buffer>((resolve) => {
+    capture.once("connection", (socket: Socket) => {
+      socket.once("data", (chunk: Buffer) => {
+        socket.destroy();
+
+        resolve(chunk);
+      });
+    });
+  });
+  const client = connectTls({ host: "127.0.0.1", port: portOf(capture), servername });
+
+  client.on("error", () => undefined);
+
+  const bytes = await hello;
+
+  client.destroy();
+
+  await new Promise<void>((resolve) => capture.close(() => resolve()));
+
+  return bytes;
+};
+
+export const isRunning = (pid: number | undefined) => {
+  if (pid === undefined) {
+    return false;
+  }
+
+  try {
+    process.kill(pid, 0);
+
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+export const b64 = (text: string) => Buffer.from(text).toString("base64");
 
 export const closeServer = (server: Server | undefined) =>
   new Promise<void>((resolve) => {

@@ -7,6 +7,7 @@ import { createDialer } from "../../proxy/dial.ts";
 import type { SecretReply, SecretResolver } from "../../proxy/secrets/index.ts";
 import type { LauncherCa } from "../../proxy/tls-ca.ts";
 import {
+  b64,
   closeServer,
   createStateDir,
   fakeResolver,
@@ -98,8 +99,6 @@ const RULES: CredentialRule[] = [
   },
   { id: "derived:gh", host: "npm.test", placeholder: GH_PLACEHOLDER, secret: { command: ["gh-token"] } },
 ];
-
-const b64 = (text: string) => Buffer.from(text).toString("base64");
 
 const state: {
   stateDir: string;

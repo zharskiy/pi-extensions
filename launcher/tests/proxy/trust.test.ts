@@ -6,10 +6,10 @@ import { basename, join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { endLaunch, registerLaunch } from "../../grants/index.ts";
-import { openLauncherCa } from "../../proxy/tls-ca.ts";
 import { ensureTrustBundle } from "../../proxy/trust.ts";
 import { createProcessRunner, LauncherError, processMark } from "../../shared/index.ts";
 import { argvOf, createScriptedRunner } from "../support/fake-runner.ts";
+import { openCa } from "./harness.ts";
 
 const state = { stateDir: "", corpPem: "", otherPem: "", launcherPem: "", leafPem: "", plainRootPem: "" };
 
@@ -18,8 +18,6 @@ const openssl = promisify(execFile);
 const SYSTEM = "/Library/Keychains/System.keychain";
 
 const LOGIN = "login.keychain";
-
-const openCa = (stateDir: string) => openLauncherCa({ stateDir, runner: createProcessRunner() });
 
 const count = (text: string) => (text.match(/BEGIN CERTIFICATE/g) ?? []).length;
 
