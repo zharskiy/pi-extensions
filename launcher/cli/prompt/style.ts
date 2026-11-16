@@ -1,4 +1,5 @@
 import { stripVTControlCharacters, styleText } from "node:util";
+import { isControlChar } from "../../shared/index.ts";
 
 export interface Glyphs {
   header: string;
@@ -92,20 +93,13 @@ export const painterOf =
   (tone, text) =>
     colour && text !== "" ? styleText(tone, text, { validateStream: false }) : text;
 
-const isControl = (code: number) => code < 0x20 || (code >= 0x7f && code <= 0x9f);
+export { printable } from "../../shared/index.ts";
 
 const codeOf = (char: string) => char.codePointAt(0) ?? 0;
 
-export const printable = (text: string) =>
-  Array.from(text)
-    .map((char) =>
-      isControl(codeOf(char)) ? `\\u${codeOf(char).toString(16).padStart(4, "0").toUpperCase()}` : char,
-    )
-    .join("");
-
 export const withoutControls = (text: string) =>
   Array.from(text)
-    .filter((char) => !isControl(codeOf(char)))
+    .filter((char) => !isControlChar(char))
     .join("");
 
 const WIDE: Array<[number, number]> = [
