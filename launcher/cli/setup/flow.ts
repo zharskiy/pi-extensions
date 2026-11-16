@@ -1,6 +1,6 @@
 import type { VmSpec } from "../../backend/index.ts";
 import { BACK, Cancelled, type Choice, type Reply } from "../prompt/types.ts";
-import { applyPlan, noteOf } from "./apply.ts";
+import { applyPlan, noteOf, wizardFrontEnd } from "./apply.ts";
 import { valueAt } from "./document.ts";
 import { addedRootProblem, tildeForm } from "./folders.ts";
 import { firstRunSteps, initialAnswers, isPlanEmpty, ownedProblems, planOf, vmBounds } from "./plan.ts";
@@ -21,11 +21,8 @@ import {
   type HubRow,
   hubRowLines,
   INTRO_TITLE,
-  INVALID_CONFIG_END,
-  INVALID_JSON_END,
   introLines,
-  invalidConfigLines,
-  invalidJsonLines,
+  invalidLines,
   NO_FOLDER_FOUND,
   NOTHING_CHANGED,
   NOTHING_TO_DO,
@@ -494,14 +491,11 @@ const createWizard = (io: SetupIo, context: WizardContext) => {
 const runWizard = (io: SetupIo, context: WizardContext): Promise<Outcome> => createWizard(io, context).run();
 
 const invalidScreen = (io: SetupIo, input: SetupInput, read: Extract<DocumentRead, { ok: false }>) => {
-  const json = read.kind === "json";
-  const lines = json
-    ? invalidJsonLines(input.configFile, input.home, read.message)
-    : invalidConfigLines(input.configFile, input.home, read.message);
+  const { lines, end } = invalidLines(read, input.configFile, input.home);
 
   noteOf(io, [...lines, ""]);
 
-  noteOf(io, [json ? INVALID_JSON_END : INVALID_CONFIG_END], "end");
+  noteOf(io, [end], "end");
 
   return 1;
 };
@@ -547,7 +541,7 @@ const wizardExit = async (
     return 0;
   }
 
-  return applyPlan(io, effects, { document, facts }, outcome);
+  return applyPlan(wizardFrontEnd(io, facts), effects, document, outcome);
 };
 
 export const runSetup = async (io: SetupIo, input: SetupInput, effects: ApplyEffects): Promise<number> => {

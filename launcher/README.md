@@ -91,7 +91,7 @@ Run again, `pi sandbox init` opens the review with your current settings; a conf
 
 `PI_SANDBOX_PLAIN=1` asks the same questions as numbered lines that you answer by typing, with no menu to move through, no spinner and no colour: for screen readers and plain terminals. A dumb or unset `TERM` gets plain mode too, read line by line without any cursor control (and so without Tab completion of paths).
 
-Without a terminal (CI, a provisioning script, `ssh host install.sh`), `pi sandbox init` refuses, and `pi sandbox init --yes` asks nothing: it keeps the settings in the file and applies them to the VM. `install.sh` uses `--yes` when it finds no terminal or `CI` is set. To name the project folders there, set `PI_SANDBOX_ROOTS`, which `--yes` writes to a config without `workspaceRoots`:
+Without a terminal (CI, a provisioning script, `ssh host install.sh`), `pi sandbox init` refuses, and `pi sandbox init --yes` asks nothing: it keeps the settings in the file and applies them to the VM, printing the same lines as the plain setup. `install.sh` uses `--yes` when it finds no terminal or `CI` is set. To name the project folders there, set `PI_SANDBOX_ROOTS`, which `--yes` writes to a config without `workspaceRoots`:
 
 ```bash
 PI_SANDBOX_ROOTS="$HOME/Projects:/Volumes/Work" "$(npm root -g)/pi-extensions-mz/launcher/install.sh"

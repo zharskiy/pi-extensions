@@ -1,46 +1,56 @@
 import type { VmPhase } from "../../backend/index.ts";
 import { errorMessage, LauncherError } from "../../shared/index.ts";
-import { elapsedOf } from "../prompt/style.ts";
-import { BACK, Cancelled, type NotePlace } from "../prompt/types.ts";
+import { asciiOf, elapsedOf } from "../prompt/style.ts";
+import { heartbeat } from "../prompt/task.ts";
+import { Cancelled, type NotePlace, type Timers } from "../prompt/types.ts";
+import { isPlanEmpty } from "./plan.ts";
 import {
-  deferredLines,
+  eventLines,
   type Paragraph,
   progressText,
-  STOPPED_VM,
-  savedLine,
-  saveFailedLine,
-  stoppedWaiting,
-  successLines,
   VM_FAILURE_CHOICES,
-  VM_NOT_READY,
-  vmDoneLine,
-  vmFailureLines,
   vmInterruptWarning,
-  vmUnknownLine,
   wrapped,
 } from "./screens.ts";
-import type { Answers, ApplyEffects, ConfigDocument, HostFacts, Plan, SetupIo, VmAction } from "./types.ts";
-
-type Running = Extract<VmAction, { kind: "create" | "restart" }>;
-
-type VmStep = { deferred: boolean } | { exit: number };
+import type {
+  Answers,
+  ApplyEffects,
+  ApplyEvent,
+  ApplyFrontEnd,
+  ConfigDocument,
+  HostFacts,
+  Plan,
+  RunningVm,
+  SetupIo,
+  VmFailure,
+} from "./types.ts";
 
 const VM_TITLE = "Sandbox VM";
 
 const SAVE_PREFIX = /^could not save [^:]*: /;
 
+const PROBLEMS = new Set<ApplyEvent["kind"]>([
+  "save-failed",
+  "nothing-changed",
+  "vm-unknown",
+  "vm-failed",
+  "vm-not-ready",
+]);
+
+const VM_SECTION = new Set<ApplyEvent["kind"]>(["vm-unknown", "vm-stopped", "vm-deferred", "vm-done"]);
+
 export const noteOf = (io: SetupIo, paragraphs: Paragraph[], place: NotePlace = "rail") => {
   io.prompts.note((room) => wrapped(paragraphs, room), place);
 };
 
-const sectionNote = (io: SetupIo, lines: string[]) => {
+const sectionNote = (io: SetupIo, lines: Paragraph[]) => {
   if (io.plain) {
     noteOf(io, lines);
 
     return;
   }
 
-  noteOf(io, [VM_TITLE, ...lines.map((text) => ({ text, indent: "" })), ""], "step");
+  noteOf(io, [VM_TITLE, ...lines, ""], "step");
 };
 
 const reasonOf = (error: unknown) => {
@@ -50,29 +60,32 @@ const reasonOf = (error: unknown) => {
   return `${message}${hint}`;
 };
 
-interface Target {
-  document: ConfigDocument;
-  facts: HostFacts;
-}
+const drawEvent = (io: SetupIo, facts: HostFacts) => (event: ApplyEvent) => {
+  const lines = eventLines(event, facts, io.plain);
 
-const savePlan = async (io: SetupIo, effects: ApplyEffects, target: Target, plan: Plan) => {
-  try {
-    await effects.write(target.document, plan.text);
-  } catch (error) {
-    noteOf(io, [saveFailedLine(target.document.file, target.facts.home, reasonOf(error)), ""]);
+  if (VM_SECTION.has(event.kind)) {
+    sectionNote(io, lines);
 
-    noteOf(io, ["Nothing was changed."], "end");
-
-    return false;
+    return;
   }
 
-  noteOf(io, [savedLine(target.facts, io.plain), ...(io.plain ? [] : [""])]);
+  if (event.kind === "saved") {
+    noteOf(io, [...lines, ...(io.plain ? [] : [""])]);
 
-  return true;
+    return;
+  }
+
+  if (event.kind === "save-failed") {
+    noteOf(io, [...lines, ""]);
+
+    return;
+  }
+
+  noteOf(io, lines, "end");
 };
 
-const failedChoice = async (io: SetupIo, action: Running, elapsed: string, error: unknown) => {
-  const lines = vmFailureLines(action, elapsed, errorMessage(error)).map((text) => ({ text }));
+const failedChoice = async (io: SetupIo, facts: HostFacts, failure: VmFailure) => {
+  const lines = eventLines(failure, facts, io.plain);
 
   try {
     const choice = await io.prompts.select({
@@ -87,18 +100,91 @@ const failedChoice = async (io: SetupIo, action: Running, elapsed: string, error
       collapsed: () => undefined,
     });
 
-    return choice === BACK ? "exit" : choice;
+    return choice === "retry";
   } catch (failure) {
     if (failure instanceof Cancelled) {
-      return "exit";
+      return false;
     }
 
     throw failure;
   }
 };
 
-const runVm = async (io: SetupIo, effects: ApplyEffects, action: Running): Promise<VmStep> => {
-  const started = io.now();
+export const wizardFrontEnd = (io: SetupIo, facts: HostFacts): ApplyFrontEnd => ({
+  now: io.now,
+  report: drawEvent(io, facts),
+  task: (spec) => io.prompts.task({ title: VM_TITLE, ...spec }),
+  retry: (failure) => failedChoice(io, facts, failure),
+});
+
+interface LineStreams {
+  out: NodeJS.WritableStream;
+  err: NodeJS.WritableStream;
+  timers: Timers;
+}
+
+const printed = (stream: NodeJS.WritableStream, paragraphs: Paragraph[]) => {
+  stream.write(
+    wrapped(paragraphs, Number.POSITIVE_INFINITY)
+      .map((line) => `${asciiOf(line)}\n`)
+      .join(""),
+  );
+};
+
+export const lineFrontEnd = (streams: LineStreams, facts: HostFacts): ApplyFrontEnd => {
+  const report = (event: ApplyEvent) => {
+    printed(PROBLEMS.has(event.kind) ? streams.err : streams.out, eventLines(event, facts, true));
+  };
+
+  const task = async (spec: Parameters<ApplyFrontEnd["task"]>[0]) => {
+    const stop = heartbeat(streams.timers, (line) => printed(streams.out, [line]));
+
+    try {
+      return await spec.run((text) => printed(streams.out, [text]));
+    } finally {
+      stop();
+    }
+  };
+
+  return {
+    now: streams.timers.now,
+    report,
+    task,
+    retry: async (failure) => {
+      report(failure);
+
+      return false;
+    },
+  };
+};
+
+const savePlan = async (
+  front: ApplyFrontEnd,
+  effects: ApplyEffects,
+  document: ConfigDocument,
+  plan: Plan,
+) => {
+  try {
+    await effects.write(document, plan.text);
+  } catch (error) {
+    front.report({ kind: "save-failed", reason: reasonOf(error) });
+
+    front.report({ kind: "nothing-changed" });
+
+    return false;
+  }
+
+  front.report({ kind: "saved" });
+
+  return true;
+};
+
+const runVm = async (
+  front: ApplyFrontEnd,
+  effects: ApplyEffects,
+  action: RunningVm,
+): Promise<number | boolean> => {
+  const started = front.now();
   const seen: { phase?: VmPhase } = {};
   const progress = (update: (text: string) => void) => (phase: VmPhase) => {
     seen.phase = phase;
@@ -107,73 +193,85 @@ const runVm = async (io: SetupIo, effects: ApplyEffects, action: Running): Promi
   };
 
   try {
-    const applied = await io.prompts.task({
-      title: VM_TITLE,
+    const applied = await front.task({
       interruptWarning: () => vmInterruptWarning(seen.phase),
       run: (update) => effects.vm(action, progress(update)),
     });
 
-    sectionNote(io, [vmDoneLine(applied, action, elapsedOf(io.now() - started), io.plain)]);
+    front.report({ kind: "vm-done", applied, action, elapsed: elapsedOf(front.now() - started) });
 
-    return { deferred: typeof applied === "object" };
+    return typeof applied === "object";
   } catch (error) {
     if (error instanceof Cancelled) {
-      noteOf(io, stoppedWaiting(seen.phase), "end");
+      front.report({ kind: "vm-cancelled", phase: seen.phase });
 
-      return { exit: 130 };
+      return 130;
     }
 
-    const choice = await failedChoice(io, action, elapsedOf(io.now() - started), error);
+    const failure: VmFailure = {
+      kind: "vm-failed",
+      action,
+      elapsed: elapsedOf(front.now() - started),
+      reason: reasonOf(error),
+    };
 
-    if (choice === "retry") {
-      return runVm(io, effects, action);
+    if (await front.retry(failure)) {
+      return runVm(front, effects, action);
     }
 
-    noteOf(io, [VM_NOT_READY], "end");
+    front.report({ kind: "vm-not-ready" });
 
-    return { exit: 1 };
+    return 1;
   }
 };
 
-const applyVm = async (io: SetupIo, effects: ApplyEffects, action: VmAction): Promise<VmStep> => {
+const applyVm = async (front: ApplyFrontEnd, effects: ApplyEffects, plan: Plan) => {
+  const action = plan.vm;
+
   if (action.kind === "create" || action.kind === "restart") {
-    return runVm(io, effects, action);
+    return runVm(front, effects, action);
   }
 
   if (action.kind === "unknown") {
-    sectionNote(io, [vmUnknownLine(action.reason)]);
+    front.report({ kind: "vm-unknown", reason: action.reason });
   }
 
   if (action.kind === "on-next-start") {
-    sectionNote(io, [STOPPED_VM]);
+    front.report({ kind: "vm-stopped" });
   }
 
   if (action.kind === "defer") {
-    sectionNote(io, deferredLines(action.sessions, action.parts));
+    front.report({ kind: "vm-deferred", sessions: action.sessions, parts: action.parts });
   }
 
-  return { deferred: action.kind === "defer" };
+  return action.kind === "defer";
 };
 
 export const applyPlan = async (
-  io: SetupIo,
+  front: ApplyFrontEnd,
   effects: ApplyEffects,
-  target: Target,
+  document: ConfigDocument,
   chosen: { plan: Plan; answers: Answers },
 ) => {
-  const saved = chosen.plan.changes.length === 0 || (await savePlan(io, effects, target, chosen.plan));
+  if (isPlanEmpty(chosen.plan)) {
+    front.report({ kind: "nothing-to-do" });
+
+    return 0;
+  }
+
+  const saved = chosen.plan.changes.length === 0 || (await savePlan(front, effects, document, chosen.plan));
 
   if (!saved) {
     return 1;
   }
 
-  const step = await applyVm(io, effects, chosen.plan.vm);
+  const step = await applyVm(front, effects, chosen.plan);
 
-  if ("exit" in step) {
-    return step.exit;
+  if (typeof step === "number") {
+    return step;
   }
 
-  noteOf(io, successLines(chosen.answers.roots, target.facts, step.deferred, io.plain), "end");
+  front.report({ kind: "done", roots: chosen.answers.roots, deferred: step });
 
   return 0;
 };

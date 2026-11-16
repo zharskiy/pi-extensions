@@ -40,15 +40,15 @@ cli/vm.ts                      VM start (with the workspaceRoots shares when sto
 cli/launch-notices.ts          the launch notice texts, the host-file flag notice and the proxy stage detail
 cli/legacy-paths.ts            the config and state folders of earlier versions, with the launch notice and doctor warns for them
 cli/terminal.ts                the host terminal: streams, size read at use, resize
-cli/prompt/                    the terminal prompts of pi sandbox init: types, finding the terminal (/dev/tty) and its restore, keys, style and glyphs, the live frame, the line editor, the input rules both prompt sets share (number checks, warn once, initial choice, toggle), the task runner both share (raw mode, ctrl-c, settling once; each set only draws), path completion, the rich and plain prompt sets
-cli/setup/types.ts             the setup's facts, answers, plan, outcome, io and effects types
+cli/prompt/                    the terminal prompts of pi sandbox init: types, finding the terminal (/dev/tty) and its restore, keys, style and glyphs, the live frame, the line editor, the input rules both prompt sets share (number checks, warn once, initial choice, toggle), the task runner both share (raw mode, ctrl-c, settling once; each set only draws) and the still-working heartbeat, path completion, the rich and plain prompt sets
+cli/setup/types.ts             the setup's facts, answers, plan, outcome, io, effects, apply event and front end types
 cli/setup/document.ts          the config file read with its indent, owned-key edits keeping key order, the diff and the checked atomic write
 cli/setup/folders.ts           the candidate project folders, the repository scan, the storage form of a root and the add-folder messages
 cli/setup/plan.ts              the first-run steps, owned-key problems, initial answers, the edited config, the VM action, the plan and the VM size field bounds
 cli/setup/detect.ts            the host, VM, sessions, free disk and folders gathered in parallel within a budget
-cli/setup/screens.ts           every sentence of the setup screens, rich and plain, as functions of the facts and the plan
+cli/setup/screens.ts           every sentence of the setup screens, rich and plain, as functions of the facts and the plan, and one text per apply event
 cli/setup/flow.ts              runSetup: the intro, detection, the three first-run steps, the review hub with its section editors, cancel and the outros
-cli/setup/apply.ts             the file write and the VM step with progress, its failure screen with Try again, and the success screen
+cli/setup/apply.ts             applyPlan: the file write and the VM step as typed events, and the two front ends: the wizard's (progress, failure screen with Try again, success screen) and the lines of --yes
 cli/launches.ts                begin and finish a launch (removing its container), the last-session removal, the live launch count
 cli/sweep.ts                   removeRepoSandbox, the sweep of ended launches' containers, the orphan sweep and the daily collection
 cli/derive.ts                  the host side of a launch: host pi files, derivation (host tools exclude the sandbox roots), trust bundle, notices
@@ -67,7 +67,7 @@ cli/commands/reset.ts          pi sandbox reset: the folder's sandbox and volume
 cli/commands/stop.ts           pi sandbox stop
 cli/commands/uninstall.ts      the hidden __uninstall command uninstall.sh runs: live-session refusal, engine objects by label, host-side release
 cli/commands/vm-shares.ts      the hidden __vm-shares command: the VM mount list, from which install.sh picks the smoke folder
-cli/commands/init.ts           pi sandbox init: --yes, CI and terminal checks, builds the UI and effects, maps outcomes to exit codes, and the plain lines of --yes
+cli/commands/init.ts           pi sandbox init: --yes, CI and terminal checks, builds the UI and effects, and picks the front end (the wizard, rich or plain, or the lines of --yes)
 cli/commands/doctor.ts         pi sandbox doctor: stages, probes and host checks as checks by section, the denials matched to each rule, the blocked warnings, captured notices and the progress line
 cli/commands/doctor-probes.ts  the doctor's checks inside the container; a rule whose credential was denied warns, one the proxy refused says why, a certificate not yet valid names the VM clock
 cli/commands/doctor-host.ts    the doctor's checks on the host
@@ -416,6 +416,7 @@ tests/cli/install.test.ts            install.sh, run for real
 tests/cli/setup-detect.test.ts       detectHost: the budget, an inspect failure, free disk and sessions
 tests/cli/setup-screens.test.ts      the setup screen texts
 tests/cli/setup-flow.test.ts         pi sandbox init's flow end to end over fake terminals, rich, ASCII and plain
+tests/cli/setup-apply.test.ts        applyPlan: stopping waiting for the VM step, and the lines --yes prints to stdout and stderr
 tests/cli/init.test.ts               pi sandbox init: the no-terminal and CI refusals, /dev/tty, --yes with PI_SANDBOX_ROOTS, signals and exit codes
 tests/cli/uninstall.test.ts          uninstall.sh, run for real
 tests/cli/intercept.test.ts          intercepted commands, host routes and the command lines that still launch

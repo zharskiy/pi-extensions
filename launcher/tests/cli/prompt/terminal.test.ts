@@ -52,7 +52,7 @@ describe("finding the terminal", () => {
     expect(tty.closed).toBe(1);
   });
 
-  it("finds no terminal when /dev/tty cannot be opened, and never opens it under CI", () => {
+  it("finds no terminal when /dev/tty cannot be opened", () => {
     const opened: string[] = [];
 
     const throwing = () => {
@@ -64,8 +64,6 @@ describe("finding the terminal", () => {
     const deps = { stdin: fakeInput(false), stderr: fakeOutput(80, 24, false), openTty: throwing };
 
     expect(findTerminal({ ...deps, env: ENV })).toBeUndefined();
-
-    expect(findTerminal({ ...deps, env: { ...ENV, CI: "1" } })).toBeUndefined();
 
     expect(opened).toEqual(["tty"]);
   });

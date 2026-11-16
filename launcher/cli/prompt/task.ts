@@ -1,5 +1,8 @@
 import { dropQueuedKeys, isCtrl, listenKeys } from "./keys.ts";
-import { Cancelled, type Key, type TaskSpec, type Ui } from "./types.ts";
+import { elapsedOf } from "./style.ts";
+import { Cancelled, type Key, type TaskSpec, type Timers, type Ui } from "./types.ts";
+
+const HEARTBEAT_MS = 15_000;
 
 export interface TaskView {
   update(text: string): void;
@@ -9,6 +12,12 @@ export interface TaskView {
 }
 
 const IDLE: TaskView = { update: () => {}, warn: () => {}, redraw: () => {}, stop: () => {} };
+
+export const heartbeat = (timers: Timers, print: (line: string) => void) => {
+  const started = timers.now();
+
+  return timers.every(HEARTBEAT_MS, () => print(`  still working (${elapsedOf(timers.now() - started)})`));
+};
 
 export const warningOf = (spec: TaskSpec<unknown>) =>
   typeof spec.interruptWarning === "string" ? spec.interruptWarning : spec.interruptWarning();
