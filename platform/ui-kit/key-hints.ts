@@ -6,8 +6,13 @@ export const EXPAND_BINDING = "app.tools.expand";
 
 const MIN_SUMMARY = 20;
 
-export const expandHint = (key: string): Styled | undefined =>
-  key === "" ? undefined : (theme) => theme.fg("dim", `(${key} to expand)`);
+export const keyHintText = (key: string | undefined, verb: string) => (key ? `(${key} to ${verb})` : "");
+
+export const expandHint = (key: string): Styled | undefined => {
+  const text = keyHintText(key, "expand");
+
+  return text === "" ? undefined : (theme) => theme.fg("dim", text);
+};
 
 export const paint = (text: Styled, theme: ThemeLike) => (typeof text === "function" ? text(theme) : text);
 

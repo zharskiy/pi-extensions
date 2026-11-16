@@ -1,7 +1,7 @@
 import { homedir } from "node:os";
 import type { Host } from "../../../platform/pi-adapter/index.ts";
 import { BACKGROUND_WORK_CHANNEL, type Plugin, parseBackgroundWork } from "../../../platform/shared/index.ts";
-import { EXPAND_BINDING, MARKS } from "../../../platform/ui-kit/index.ts";
+import { EXPAND_BINDING, keyHintText, MARKS } from "../../../platform/ui-kit/index.ts";
 import { countTools, openTurn, settledAnswer, type TurnWork } from "../core/turn-summary.ts";
 import { answerRule } from "../ui/answer-rule.ts";
 import { transcriptRows } from "../ui/tools.ts";
@@ -40,9 +40,9 @@ export const createTranscript = (host: Host, home = homedir()) => {
       return;
     }
 
-    const key = host.ui.keyText(THINKING_BINDING);
+    const hint = keyHintText(host.ui.keyText(THINKING_BINDING), "expand");
 
-    host.ui.setHiddenThinkingLabel(THINKING_LABEL, key ? `(${key} to expand)` : undefined);
+    host.ui.setHiddenThinkingLabel(THINKING_LABEL, hint || undefined);
   });
 
   host.onAgentStart(() => {

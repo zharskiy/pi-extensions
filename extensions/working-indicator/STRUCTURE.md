@@ -9,7 +9,7 @@ extensions/working-indicator/
 ├── core/
 │   └── indicator-state.ts          # TICK_MS, VERB_MS, Run, startRun, elapsedOf, rotateVerb, isVisibleIn
 ├── ui/
-│   └── indicator-text.ts           # VERBS, pickVerb, workingText, interruptHint
+│   └── indicator-text.ts           # VERBS, pickVerb, workingText, interruptHint (ui-kit keyHintText)
 ├── tests/
 │   └── working-indicator.test.ts   # message, rotation, visibility, idle and shutdown, modes
 ├── README.md

@@ -1,4 +1,5 @@
 import { DOT, formatDuration } from "../../../platform/shared/index.ts";
+import { keyHintText } from "../../../platform/ui-kit/index.ts";
 import { TICK_MS } from "../core/indicator-state.ts";
 
 export const VERBS = [
@@ -70,5 +71,8 @@ export const workingText = (verb: string, elapsedMs: number, hint: string) => {
   return `${verb}${elapsed}${hint}`;
 };
 
-export const interruptHint = (key: string | undefined, dim: (text: string) => string) =>
-  key ? dim(` (${key} to interrupt)`) : "";
+export const interruptHint = (key: string | undefined, dim: (text: string) => string) => {
+  const hint = keyHintText(key, "interrupt");
+
+  return hint ? dim(` ${hint}`) : "";
+};

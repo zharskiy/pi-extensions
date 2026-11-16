@@ -11,6 +11,7 @@ export {
   hintRow,
   type KeyHint,
   keyHints,
+  keyHintText,
 } from "./key-hints.ts";
 export {
   CANCEL_HINT,
