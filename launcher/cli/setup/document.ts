@@ -1,6 +1,7 @@
 import { lstat, mkdir, readlink, realpath, stat } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
+import type { VmSpec } from "../../backend/index.ts";
 import { configProblem, withoutPath } from "../../config/index.ts";
 import {
   errorMessage,
@@ -10,7 +11,7 @@ import {
   readText,
   writeFileAtomic,
 } from "../../shared/index.ts";
-import type { Change, ConfigDocument, DocumentRead } from "./types.ts";
+import type { Change, ConfigDocument, DocumentRead, Section } from "./types.ts";
 
 const DEFAULT_INDENT = "  ";
 
@@ -41,7 +42,22 @@ const WRITE_REASONS: Record<string, { reason: string; hint: string }> = {
   ENOSPC: { reason: "its disk is full", hint: "free some space, then run pi sandbox init again" },
 };
 
-const OWNED_PATHS = ["workspaceRoots", "vm.cpus", "vm.memoryGiB", "vm.diskGiB", "writeBack.enabled"];
+export const VM_KEYS: readonly (keyof VmSpec)[] = ["cpus", "memoryGiB", "diskGiB"];
+
+export const WRITE_BACK_PATH = "writeBack.enabled";
+
+const SECTION_PATHS: Record<Section, readonly string[]> = {
+  folders: ["workspaceRoots"],
+  vm: VM_KEYS.map((key) => `vm.${key}`),
+  writeBack: [WRITE_BACK_PATH],
+};
+
+export const SECTIONS = Object.keys(SECTION_PATHS) as readonly Section[];
+
+const OWNED_PATHS = SECTIONS.flatMap((section) => SECTION_PATHS[section]);
+
+export const isInSection = (section: Section, key: string) =>
+  SECTION_PATHS[section].some((path) => key === path || key.startsWith(`${path}.`));
 
 export const withoutOwned = (value: JsonObject) => OWNED_PATHS.reduce(withoutPath, value);
 

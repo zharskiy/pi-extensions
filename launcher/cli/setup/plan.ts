@@ -3,7 +3,7 @@ import { configProblem, getPath, setPath, VM_BOUNDS, withoutPath } from "../../c
 import { type JsonObject, LauncherError } from "../../shared/index.ts";
 import { checkRoot, type RootGuardContext, rootRefusal } from "../../workspace/index.ts";
 import { clamp, hostVmLimits } from "../vm.ts";
-import { diffOf, isReindented, serialise } from "./document.ts";
+import { diffOf, isReindented, SECTIONS, serialise, VM_KEYS, WRITE_BACK_PATH } from "./document.ts";
 import { isPreChecked, rootsFromEnv, sameRootSet } from "./folders.ts";
 import type {
   Answers,
@@ -31,19 +31,13 @@ interface YesAnswers {
   notices: string[];
 }
 
-const VM_KEYS: readonly VmKey[] = ["cpus", "memoryGiB", "diskGiB"];
-
-export const FIRST_RUN_STEPS: readonly Section[] = ["folders", "vm", "writeBack"];
-
 const ROOTS_PATH = "workspaceRoots.roots";
-
-const WRITE_BACK_PATH = "writeBack.enabled";
 
 export const isFirstRun = (document: ConfigDocument) =>
   getPath(document.value, "workspaceRoots") === undefined;
 
 export const firstRunSteps = (document: ConfigDocument): readonly Section[] =>
-  isFirstRun(document) ? FIRST_RUN_STEPS : [];
+  isFirstRun(document) ? SECTIONS : [];
 
 export const configuredRoots = (document: ConfigDocument) => {
   const roots = getPath(document.value, ROOTS_PATH);
@@ -84,7 +78,7 @@ const writeBackProblems = (document: ConfigDocument): OwnedProblem[] => {
   const enabled = getPath(document.value, WRITE_BACK_PATH);
   const problem = enabled === undefined ? undefined : configProblem({ writeBack: { enabled } });
 
-  return problem === undefined ? [] : [{ key: "writeBack.enabled", message: problem }];
+  return problem === undefined ? [] : [{ key: WRITE_BACK_PATH, message: problem }];
 };
 
 export const ownedProblems = (document: ConfigDocument, context: RootGuardContext): OwnedProblem[] => [

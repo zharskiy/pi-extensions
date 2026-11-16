@@ -2,6 +2,7 @@ import type { VmSpec } from "../../backend/index.ts";
 import { getPath } from "../../config/index.ts";
 import { BACK, Cancelled, type Choice, type Reply } from "../prompt/types.ts";
 import { applyPlan, noteOf } from "./apply.ts";
+import { isInSection, SECTIONS, VM_KEYS, WRITE_BACK_PATH } from "./document.ts";
 import { addedRootProblem, tildeForm } from "./folders.ts";
 import { firstRunSteps, initialAnswers, isPlanEmpty, ownedProblems, planOf, vmBounds } from "./plan.ts";
 import {
@@ -93,14 +94,6 @@ interface Pending {
 type HubChoice = "apply" | "done" | "cancel" | Section;
 
 const ADD = "\u0000add";
-
-const VM_FIELDS: readonly (keyof VmSpec)[] = ["cpus", "memoryGiB", "diskGiB"];
-
-const SECTION_KEYS: Record<Section, (key: string) => boolean> = {
-  folders: (key) => key === "workspaceRoots" || key.startsWith("workspaceRoots."),
-  vm: (key) => key.startsWith("vm."),
-  writeBack: (key) => key.startsWith("writeBack."),
-};
 
 const SECTION_LABELS: Record<Section, string> = {
   folders: "Project folders",
@@ -241,7 +234,7 @@ const createWizard = (io: SetupIo, context: WizardContext) => {
   };
 
   const customSize = async (size: VmSpec, index: number): Promise<Reply<VmSpec>> => {
-    const key = VM_FIELDS[index];
+    const key = VM_KEYS[index];
 
     if (key === undefined) {
       return size;
@@ -249,7 +242,7 @@ const createWizard = (io: SetupIo, context: WizardContext) => {
 
     const bounds = vmBounds(facts);
     const field = numberFields(facts, bounds)[key];
-    const last = index === VM_FIELDS.length - 1;
+    const last = index === VM_KEYS.length - 1;
     const value = await prompts.number({
       ...field,
       initial: withinBounds(size[key], bounds[key]),
@@ -344,7 +337,7 @@ const createWizard = (io: SetupIo, context: WizardContext) => {
   const sectionProblems = (section: Section, state: State, plan: Plan): OwnedProblem[] => {
     const owned = state.touched.has(section)
       ? []
-      : problems.filter((problem) => SECTION_KEYS[section](problem.key));
+      : problems.filter((problem) => isInSection(section, problem.key));
     const planned =
       section === "folders" ? plan.problems.map((message) => ({ key: "workspaceRoots", message })) : [];
 
@@ -362,11 +355,11 @@ const createWizard = (io: SetupIo, context: WizardContext) => {
       return "automatic";
     }
 
-    if (section === "writeBack" && getPath(plan.next, "writeBack.enabled") === undefined) {
+    if (section === "writeBack" && getPath(plan.next, WRITE_BACK_PATH) === undefined) {
       return "default";
     }
 
-    const changes = plan.changes.filter((change) => SECTION_KEYS[section](change.key));
+    const changes = plan.changes.filter((change) => isInSection(section, change.key));
 
     if (changes.length === 0) {
       return touched ? "chosen" : "current";
@@ -384,7 +377,7 @@ const createWizard = (io: SetupIo, context: WizardContext) => {
   };
 
   const rowsOf = (state: State, plan: Plan): HubRow[] =>
-    (["folders", "vm", "writeBack"] as const).map((section) => ({
+    SECTIONS.map((section) => ({
       label: SECTION_LABELS[section],
       value: sectionValue(section, state.answers),
       tag: tagOf(section, state, plan),

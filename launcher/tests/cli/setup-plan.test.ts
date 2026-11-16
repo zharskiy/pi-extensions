@@ -6,7 +6,6 @@ import { readDocument } from "../../cli/setup/document.ts";
 import {
   answersForYes,
   editedConfig,
-  FIRST_RUN_STEPS,
   firstRunSteps,
   initialAnswers,
   isFirstRun,
@@ -82,7 +81,6 @@ describe("first run", () => {
     expect(isFirstRun(documentOf({ workspaceRoots: { roots: ["~/w"] } }))).toBe(false);
     expect(firstRunSteps(documentOf(undefined))).toEqual(["folders", "vm", "writeBack"]);
     expect(firstRunSteps(documentOf({ workspaceRoots: { roots: ["~/w"] } }))).toEqual([]);
-    expect(FIRST_RUN_STEPS).toEqual(["folders", "vm", "writeBack"]);
   });
 });
 
