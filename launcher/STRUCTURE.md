@@ -248,6 +248,7 @@ proxy/runtime.ts               rules, the live egress.json settings and live gra
 proxy/tunnel.ts                end-to-end tunnels with the SNI check
 proxy/sni.ts                   ClientHello completeness and server name parsing
 proxy/dial.ts                  the resolving dialer with the private-address filter
+proxy/connect.ts               a TCP connect with its timeout, for the direct and the parent proxy dial
 proxy/intercept.ts             TLS termination for rule hosts
 proxy/terminate.ts             credential injection on terminated streams
 proxy/rules.ts                 rule matching, header rewrite and response scrub
