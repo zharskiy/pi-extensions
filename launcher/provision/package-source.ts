@@ -1,4 +1,4 @@
-import { isJsonObject } from "../shared/index.ts";
+import { isJsonObject, type JsonObject } from "../shared/index.ts";
 
 export const sourceOfEntry = (entry: unknown) => {
   if (typeof entry === "string") {
@@ -7,6 +7,9 @@ export const sourceOfEntry = (entry: unknown) => {
 
   return isJsonObject(entry) && typeof entry.source === "string" ? entry.source : undefined;
 };
+
+export const withSource = (entry: unknown, source: string) =>
+  typeof entry === "string" ? source : { ...(entry as JsonObject), source };
 
 const URL_IN_SOURCE = /^((?:git:)?)([a-z][a-z0-9+.-]*:\/\/.*)$/i;
 
