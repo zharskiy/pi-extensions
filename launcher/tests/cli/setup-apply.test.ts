@@ -89,7 +89,7 @@ const collected = () => {
 };
 
 describe("applying a plan as lines", () => {
-  it("prints progress and the heartbeat to stdout, and a failure to stderr", async () => {
+  it("prints the review, progress and the heartbeat to stdout, and a failure to stderr", async () => {
     const clock = fakeTimers();
     const out = collected();
     const err = collected();
@@ -108,7 +108,10 @@ describe("applying a plan as lines", () => {
         throw new Error("colima start failed");
       },
     };
-    const front = lineFrontEnd({ out: out.stream, err: err.stream, timers: clock.timers }, facts);
+    const front = lineFrontEnd({ out: out.stream, err: err.stream, timers: clock.timers }, facts, [
+      "When you apply:",
+      "  • restart the sandbox VM",
+    ]);
     const code = await applyPlan(front, effects, document as NonNullable<typeof document>, {
       plan: PLAN,
       answers: { roots: "home", vm: "automatic", writeBack: true },
@@ -117,6 +120,8 @@ describe("applying a plan as lines", () => {
     expect(code).toBe(1);
     expect(out.text()).toBe(
       [
+        "When you apply:",
+        "  - restart the sandbox VM",
         "Stopping the VM...",
         "  still working (15s)",
         "  still working (30s)",

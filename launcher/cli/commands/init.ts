@@ -14,6 +14,7 @@ import { detectHost } from "../setup/detect.ts";
 import { readDocument, writeDocument } from "../setup/document.ts";
 import { runSetup, type SetupInput } from "../setup/flow.ts";
 import { answersForYes, configuredRoots, isFirstRun, planOf } from "../setup/plan.ts";
+import { createReview } from "../setup/review.ts";
 import { invalidText } from "../setup/screens.ts";
 import type {
   Answers,
@@ -159,8 +160,12 @@ const acceptAll = async (deps: CliDeps) => {
   }
 
   const streams = { out: deps.stdout, err: deps.stderr, timers: { ...realTimers, now: deps.now } };
+  const state = { answers, touched: new Set<never>() };
+  const review = createReview(document, facts, deps.env).lines(state, plan, { plain: true, table: true });
 
-  return applyPlan(lineFrontEnd(streams, facts), effectsFor(deps, context), document, { plan, answers });
+  const front = lineFrontEnd(streams, facts, review(Number.POSITIVE_INFINITY));
+
+  return applyPlan(front, effectsFor(deps, context), document, { plan, answers });
 };
 
 const ioOf = (ui: Ui): SetupIo => ({

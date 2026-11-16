@@ -181,6 +181,13 @@ describe("pi sandbox init --yes", () => {
     ]);
     expect(harness.stdout()).toBe(
       [
+        `  Project folders: ~/work, ${harness.repoRoot} (changed)`,
+        "  VM size: 8 CPUs, 10 GiB memory, 60 GiB disk (automatic)",
+        "  Settings write-back: on (default)",
+        "When you apply:",
+        `  - create ${harness.userConfigFile}`,
+        `      added workspaceRoots.roots: ["~/work","${harness.repoRoot}"]`,
+        "  - create the sandbox VM with these folders; this takes a minute or two, longer the first time while colima downloads the VM's system image",
         `Saved ${harness.userConfigFile}`,
         "Created the VM in 0s: 8 CPUs, 10 GiB memory, 60 GiB disk",
         "Done. The sandbox is ready.",
@@ -284,7 +291,12 @@ describe("pi sandbox init --yes", () => {
     await holdLaunch(harness);
 
     expect(await run(["sandbox", "init", "--yes"], harness.deps)).toBe(0);
-    expect(harness.stdout().split("\n").slice(0, 2)).toEqual([
+    expect(harness.stdout().split("\n").slice(0, 7)).toEqual([
+      `  Project folders: ${harness.repoRoot} (current)`,
+      "  VM size: 8 CPUs, 10 GiB memory, 60 GiB disk (automatic)",
+      "  Settings write-back: on (default)",
+      "When you apply:",
+      "  - keep the sandbox VM as it is for now: 1 pi session is running. The first pi you start after it exits restarts it with the new folders",
       "! Kept as it is: 1 pi session is running. The first pi you start after it exits restarts it with the new folders.",
       "Done. Settings saved.",
     ]);
@@ -387,7 +399,10 @@ describe("pi sandbox init --yes", () => {
     expect(harness.stderr()).toBe(
       "! The VM could not be checked (colima did not answer within 3 seconds). Run pi sandbox doctor to see why.\n",
     );
-    expect(harness.stdout()).toMatch(/^Saved .+\nDone\. The sandbox is ready\.\n/);
+    expect(harness.stdout()).toContain(
+      "  - the sandbox VM could not be checked (colima did not answer within 3 seconds); run pi sandbox doctor after applying\nSaved ",
+    );
+    expect(harness.stdout()).toMatch(/\nSaved .+\nDone\. The sandbox is ready\.\n/);
   });
 
   it("fails with the VM's error after saving the config", async () => {
@@ -418,7 +433,46 @@ describe("pi sandbox init --yes", () => {
         "",
       ].join("\n"),
     );
-    expect(harness.stdout()).toBe(`Saved ${harness.userConfigFile}\n`);
+    expect(harness.stdout()).toMatch(
+      /^ {2}Project folders: [\s\S]*\nWhen you apply:\n[\s\S]*\nSaved [^\n]+\n$/,
+    );
+  });
+
+  it("prints the review with the changed share before restarting a running VM", async () => {
+    const harness = await initSetup();
+    const old = join(harness.root, "old");
+
+    await mkdir(old);
+
+    await harness.writeJson(harness.userConfigFile, { workspaceRoots: { roots: [harness.repoRoot] } });
+
+    const fake = createFakeBackend({
+      vm: {
+        inspect: async () => ({
+          state: "running",
+          size: AUTOMATIC,
+          shares: [
+            { location: old, writable: true },
+            { location: harness.sessions, writable: true },
+            { location: harness.vmState, writable: false },
+          ],
+        }),
+        apply: async () => "restarted",
+      },
+    });
+    const deps = { ...harness.deps, backend: () => fake.backend };
+
+    expect(await run(["sandbox", "init", "--yes"], deps)).toBe(0);
+    expect(harness.stdout().split("\n").slice(0, 7)).toEqual([
+      `  Project folders: ${harness.repoRoot} (current)`,
+      "  VM size: 8 CPUs, 10 GiB memory, 60 GiB disk (automatic)",
+      "  Settings write-back: on (default)",
+      "When you apply:",
+      "  - restart the sandbox VM with the new folders; no pi session is running, and this usually takes under a minute",
+      "Restarted the VM in 0s with the new folders",
+      "Done. The sandbox is ready.",
+    ]);
+    expect(harness.stderr()).toBe("");
   });
 });
 

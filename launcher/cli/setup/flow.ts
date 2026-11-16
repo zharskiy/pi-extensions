@@ -1,11 +1,10 @@
 import type { VmSpec } from "../../backend/index.ts";
 import { BACK, Cancelled, type Choice, type Reply } from "../prompt/types.ts";
 import { applyPlan, noteOf, wizardFrontEnd } from "./apply.ts";
-import { valueAt } from "./document.ts";
 import { addedRootProblem, tildeForm } from "./folders.ts";
-import { firstRunSteps, initialAnswers, isPlanEmpty, ownedProblems, planOf, vmBounds } from "./plan.ts";
+import { firstRunSteps, initialAnswers, isPlanEmpty, planOf, vmBounds } from "./plan.ts";
+import { createReview, SECTION_LABELS } from "./review.ts";
 import {
-  applyLines,
   automaticLabel,
   CANCELLED,
   CHECKING,
@@ -17,31 +16,23 @@ import {
   folderTag,
   HOME_CONFIRM,
   HOME_ROOTS,
-  HUB_SUMMARY_TITLE,
-  type HubRow,
-  hubRowLines,
   INTRO_TITLE,
   introLines,
   invalidLines,
   NO_FOLDER_FOUND,
   NOTHING_CHANGED,
-  NOTHING_TO_DO,
   numberFields,
-  OTHER_SETTINGS,
   rootsSummary,
   SEARCH_TIMED_OUT,
   type Step,
   sharedNowLine,
   sharesHome,
   shownSize,
-  sizeText,
   stepTitle,
-  type Tag,
   vmCollapsed,
   vmEditorDetail,
   WRITE_BACK_DETAIL,
   WRITE_BACK_TITLE,
-  wrapped,
 } from "./screens.ts";
 import type {
   Answers,
@@ -50,7 +41,6 @@ import type {
   DocumentRead,
   HostFacts,
   Outcome,
-  OwnedProblem,
   Plan,
   Section,
   SetupIo,
@@ -93,18 +83,6 @@ const ADD = "\u0000add";
 
 const VM_FIELDS: readonly (keyof VmSpec)[] = ["cpus", "memoryGiB", "diskGiB"];
 
-const SECTION_KEYS: Record<Section, (key: string) => boolean> = {
-  folders: (key) => key === "workspaceRoots" || key.startsWith("workspaceRoots."),
-  vm: (key) => key.startsWith("vm."),
-  writeBack: (key) => key.startsWith("writeBack."),
-};
-
-const SECTION_LABELS: Record<Section, string> = {
-  folders: "Project folders",
-  vm: "VM size",
-  writeBack: "Settings write-back",
-};
-
 const touchedWith = (state: State, section: Section, answers: Answers): State => ({
   ...state,
   answers,
@@ -117,7 +95,7 @@ const withinBounds = (value: number, bound: { min: number; max: number }) =>
 const createWizard = (io: SetupIo, context: WizardContext) => {
   const { prompts } = io;
   const { document, facts, env } = context;
-  const problems = ownedProblems(document, { home: facts.home, env });
+  const review = createReview(document, facts, env);
   const homeNow = sharesHome(facts);
   const sharedNow = firstRunSteps(document).length > 0 ? sharedNowLine(facts) : undefined;
 
@@ -338,76 +316,8 @@ const createWizard = (io: SetupIo, context: WizardContext) => {
     return runSteps(reply, steps, index + 1);
   };
 
-  const sectionProblems = (section: Section, state: State, plan: Plan): OwnedProblem[] => {
-    const owned = state.touched.has(section)
-      ? []
-      : problems.filter((problem) => SECTION_KEYS[section](problem.key));
-    const planned =
-      section === "folders" ? plan.problems.map((message) => ({ key: "workspaceRoots", message })) : [];
-
-    return [...owned, ...planned];
-  };
-
-  const tagOf = (section: Section, state: State, plan: Plan): Tag => {
-    const touched = state.touched.has(section);
-
-    if (sectionProblems(section, state, plan).length > 0) {
-      return "invalid";
-    }
-
-    if (section === "vm" && state.answers.vm === "automatic") {
-      return "automatic";
-    }
-
-    if (section === "writeBack" && valueAt(plan.next, ["writeBack", "enabled"]) === undefined) {
-      return "default";
-    }
-
-    const changes = plan.changes.filter((change) => SECTION_KEYS[section](change.key));
-
-    if (changes.length === 0) {
-      return touched ? "chosen" : "current";
-    }
-
-    return touched && changes.every((change) => change.kind === "add") ? "chosen" : "changed";
-  };
-
-  const sectionValue = (section: Section, answers: Answers) => {
-    if (section === "folders") {
-      return rootsSummary(answers.roots);
-    }
-
-    return section === "vm" ? sizeText(shownSize(answers.vm, facts)) : answers.writeBack ? "on" : "off";
-  };
-
-  const rowsOf = (state: State, plan: Plan): HubRow[] =>
-    (["folders", "vm", "writeBack"] as const).map((section) => ({
-      label: SECTION_LABELS[section],
-      value: sectionValue(section, state.answers),
-      tag: tagOf(section, state, plan),
-      problems: sectionProblems(section, state, plan).map((problem) => problem.message),
-    }));
-
-  const hubDetail =
-    (state: State, plan: Plan, notice: string | undefined, table: boolean) => (room: number) => {
-      const done = isPlanEmpty(plan) && plan.problems.length === 0;
-      const shape = { existed: document.text !== undefined, indent: document.indent };
-      const effect = done ? wrapped([NOTHING_TO_DO], room) : applyLines(plan, facts, shape, room, io.plain);
-      const rows = table || io.plain ? hubRowLines(rowsOf(state, plan), room, io.plain) : [];
-      const framed = table && !io.plain;
-
-      return [
-        ...(framed ? [HUB_SUMMARY_TITLE] : []),
-        ...rows,
-        ...(framed ? [""] : []),
-        ...(notice === undefined ? [] : [...wrapped([notice], room), ""]),
-        ...effect,
-        ...(io.plain ? [] : ["", ...wrapped([OTHER_SETTINGS], room), ""]),
-      ];
-    };
-
   const hubSummary = (state: State, plan: Plan, notice: string | undefined, table: boolean) => {
-    const summary = hubDetail(state, plan, notice, table);
+    const summary = review.lines(state, plan, { plain: io.plain, table, notice });
 
     if (io.plain) {
       return { detail: summary };

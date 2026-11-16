@@ -120,6 +120,7 @@ interface VmTask {
 
 export interface ApplyFrontEnd {
   now(): number;
+  review(): void;
   report(event: ApplyEvent): void;
   task(spec: VmTask): Promise<VmApplied>;
   retry(failure: VmFailure): Promise<boolean>;

@@ -48,6 +48,7 @@ cli/setup/plan.ts              the first-run steps, owned-key problems, initial 
 cli/setup/detect.ts            the host, VM, sessions, free disk and folders gathered in parallel within a budget
 cli/setup/screens.ts           every sentence of the setup screens, rich and plain, as functions of the facts and the plan, and one text per apply event
 cli/setup/flow.ts              runSetup: the intro, detection, the three first-run steps, the review hub with its section editors, cancel and the outros
+cli/setup/review.ts            the review summary: the rows of the three settings with their tags and problems, the file changes and the VM action, as lines for the hub and for --yes
 cli/setup/apply.ts             applyPlan: the file write and the VM step as typed events, and the two front ends: the wizard's (progress, failure screen with Try again, success screen) and the lines of --yes
 cli/launches.ts                begin and finish a launch (removing its container), the last-session removal, the live launch count
 cli/sweep.ts                   removeRepoSandbox, the sweep of ended launches' containers, the orphan sweep and the daily collection
@@ -416,7 +417,7 @@ tests/cli/install.test.ts            install.sh, run for real
 tests/cli/setup-detect.test.ts       detectHost: the budget, an inspect failure, free disk and sessions
 tests/cli/setup-screens.test.ts      the setup screen texts
 tests/cli/setup-flow.test.ts         pi sandbox init's flow end to end over fake terminals, rich, ASCII and plain
-tests/cli/setup-apply.test.ts        applyPlan: stopping waiting for the VM step, and the lines --yes prints to stdout and stderr
+tests/cli/setup-apply.test.ts        applyPlan: stopping waiting for the VM step, and the lines --yes prints to stdout and stderr, the review first
 tests/cli/init.test.ts               pi sandbox init: the no-terminal and CI refusals, /dev/tty, --yes with PI_SANDBOX_ROOTS, signals and exit codes
 tests/cli/uninstall.test.ts          uninstall.sh, run for real
 tests/cli/intercept.test.ts          intercepted commands, host routes and the command lines that still launch

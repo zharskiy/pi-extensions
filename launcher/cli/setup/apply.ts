@@ -112,6 +112,7 @@ const failedChoice = async (io: SetupIo, facts: HostFacts, failure: VmFailure) =
 
 export const wizardFrontEnd = (io: SetupIo, facts: HostFacts): ApplyFrontEnd => ({
   now: io.now,
+  review: () => undefined,
   report: drawEvent(io, facts),
   task: (spec) => io.prompts.task({ title: VM_TITLE, ...spec }),
   retry: (failure) => failedChoice(io, facts, failure),
@@ -131,7 +132,7 @@ const printed = (stream: NodeJS.WritableStream, paragraphs: Paragraph[]) => {
   );
 };
 
-export const lineFrontEnd = (streams: LineStreams, facts: HostFacts): ApplyFrontEnd => {
+export const lineFrontEnd = (streams: LineStreams, facts: HostFacts, review: string[]): ApplyFrontEnd => {
   const report = (event: ApplyEvent) => {
     printed(PROBLEMS.has(event.kind) ? streams.err : streams.out, eventLines(event, facts, true));
   };
@@ -148,6 +149,7 @@ export const lineFrontEnd = (streams: LineStreams, facts: HostFacts): ApplyFront
 
   return {
     now: streams.timers.now,
+    review: () => printed(streams.out, review),
     report,
     task,
     retry: async (failure) => {
@@ -258,6 +260,8 @@ export const applyPlan = async (
 
     return 0;
   }
+
+  front.review();
 
   const saved = chosen.plan.changes.length === 0 || (await savePlan(front, effects, document, chosen.plan));
 
