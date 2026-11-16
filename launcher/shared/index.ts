@@ -13,6 +13,7 @@ export {
   parseJsonObject,
   readJsonFile,
   readJsonObject,
+  readText,
   writeJsonFile,
 } from "./json-file.ts";
 export { bootTime, isLive, processMark, terminateProcess } from "./liveness.ts";

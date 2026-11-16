@@ -2,19 +2,11 @@ import { describe, expect, it } from "vitest";
 import { defaultConfig } from "../../config/defaults.ts";
 import { mergeConfig } from "../../config/merge.ts";
 import type { UserConfig } from "../../config/types.ts";
-import { validateConfig } from "../../config/validate.ts";
+import { configProblem, validateConfig } from "../../config/validate.ts";
 import { writeBackListing, writeBackTableOf } from "../../config/write-back.ts";
-import { BUILT_IN_WRITE_BACK, errorMessage } from "../../shared/index.ts";
+import { BUILT_IN_WRITE_BACK } from "../../shared/index.ts";
 
-const problemOf = (writeBack: unknown) => {
-  try {
-    validateConfig({ writeBack });
-
-    return undefined;
-  } catch (error) {
-    return errorMessage(error);
-  }
-};
+const problemOf = (writeBack: unknown) => configProblem({ writeBack });
 
 const added = (file: string, key: string, spec: unknown) => problemOf({ add: { [file]: { [key]: spec } } });
 

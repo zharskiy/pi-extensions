@@ -1,4 +1,5 @@
 import {
+  errorMessage,
   isJsonObject,
   isLauncherSetVariable,
   isNeverWritten,
@@ -734,6 +735,16 @@ export const validateConfig = (value: unknown): UserConfig => {
   }
 
   return normalized(value as UserConfig);
+};
+
+export const configProblem = (value: unknown) => {
+  try {
+    validateConfig(value);
+
+    return undefined;
+  } catch (error) {
+    return errorMessage(error);
+  }
 };
 
 const keysOf = (spec: Spec, path: string): string[] => {

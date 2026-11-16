@@ -29,7 +29,7 @@ export const readJsonObject = async (path: string): Promise<JsonObject | undefin
   return text === undefined ? undefined : parseJsonObject(text);
 };
 
-const readText = async (path: string) => {
+export const readText = async (path: string) => {
   try {
     return await readFile(path, "utf8");
   } catch (error) {

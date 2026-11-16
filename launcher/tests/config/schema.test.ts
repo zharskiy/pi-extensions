@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { setPath } from "../../config/dotted.ts";
+import { setPath } from "../../config/index.ts";
 import {
   configKeys,
   MAX_ANY_OF_DEPTH,
