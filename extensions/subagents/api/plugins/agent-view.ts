@@ -2,7 +2,7 @@ import type { OverlayApi } from "../../../../platform/pi-adapter/index.ts";
 import { DOT, errorText } from "../../../../platform/shared/index.ts";
 import { listedTerminals, subtitle, visibleRecords } from "../../core/agent-view/list-model.ts";
 import { createAgentSource } from "../../core/agent-view/source.ts";
-import { cutChars } from "../../core/components/receipt.ts";
+import { cutChars, stateWord } from "../../core/components/receipt.ts";
 import { watchAgents } from "../../core/components/refresh.ts";
 import { type AgentRecord, chainLinks } from "../../core/model/agent-record.ts";
 import { recordLimit } from "../../core/model/context-limit.ts";
@@ -23,7 +23,6 @@ import {
   subcommandPicker,
 } from "../../ui/agent-view/picker.ts";
 import { createAgentView } from "../../ui/agent-view/view.ts";
-import { stateWord } from "../../ui/components/state-text.ts";
 
 const SETUP_PREFIX = "setup ";
 

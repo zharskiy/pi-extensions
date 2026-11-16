@@ -49,7 +49,7 @@ extensions/subagents/
 │   │   ├── manifest.ts                    # pastRecords: manifest.json read and restore (own and parent session)
 │   │   └── paths.ts                       # NAMESPACE, MANIFEST_FILE, agents dir, handoff path, builtin, user and project agent dirs
 │   ├── components/
-│   │   ├── receipt.ts                     # formatCalls, receipt segments, plainReceipt, agentReceipt, firstLine, cutChars
+│   │   ├── receipt.ts                     # formatCalls, stateWord and receiptWord (the one state word map), receipt segments, plainReceipt, agentReceipt, firstLine, cutChars
 │   │   ├── refresh.ts                     # tickFor (tick cadence) and watchAgents (throttled refresh and ticker)
 │   │   └── tree.ts                        # isTerminal, stoppableAgents, withLinks, carrySelection, treeOrder
 │   ├── agent-definitions/
@@ -92,7 +92,7 @@ extensions/subagents/
 ├── ui/
 │   ├── components/
 │   │   ├── format.ts                      # receiptText (per-kind painters; drops activity, cost, calls, tokens, then context), truncatePainted, padEndCols, innerWidth, padLine, alignRight, wrapCols
-│   │   ├── state-text.ts                  # state marks, glyphs, spinner, state words, stopWords
+│   │   ├── state-text.ts                  # state marks, glyphs, spinner, stopWords
 │   │   ├── agent-row.ts                   # the shared agent row: rowLayout, renderRow, renderRows, modelLabel
 │   │   └── tree-glyphs.ts                 # nestPrefix: the tree connector glyphs
 │   ├── run-agent/

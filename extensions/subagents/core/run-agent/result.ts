@@ -1,22 +1,25 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { errorText } from "../../../../platform/shared/index.ts";
-import { cutChars, elapsedOf, plainReceipt, receipt, singleLine } from "../components/receipt.ts";
+import {
+  cutChars,
+  elapsedOf,
+  plainReceipt,
+  receipt,
+  receiptWord,
+  singleLine,
+} from "../components/receipt.ts";
 import { isTerminal } from "../components/tree.ts";
 import { type AgentRecord, chainLinks, chainText, handoffText, worktreeText } from "../model/agent-record.ts";
 
-const SUMMARY_WORDS: Partial<Record<AgentRecord["state"], string>> = {
-  done: "Done",
-  handoff: "Handed off",
-  stopped: "Stopped",
-};
+const SUMMARIZED: readonly AgentRecord["state"][] = ["done", "handoff", "stopped"];
 
 const finishSummary = (record: AgentRecord) => {
-  const word = SUMMARY_WORDS[record.state];
+  const word = SUMMARIZED.includes(record.state) ? receiptWord(record.state) : undefined;
 
   return plainReceipt(
     receipt({
-      word: word ?? "Failed",
+      word: word ?? receiptWord("failed"),
       reason: word ? undefined : (record.error ?? "unknown error"),
       elapsedMs: elapsedOf(record, record.endedAt ?? record.createdAt),
       running: false,
