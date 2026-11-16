@@ -66,6 +66,8 @@ npm run test -- extensions/context   # this extension's unit tests
 npm run check                        # typecheck, biome, knip, unit tests
 ```
 
+Memory file paths read as in the transcript: `AGENTS.md` for a file under the working folder, `~/.pi/agent/AGENTS.md` under your home folder, with Windows separators on Windows.
+
 The full set of commands is in the root README's [Development](../../README.md#development) section; rules for coding agents are in [AGENTS.md](../../AGENTS.md).
 
 ## Contributing
