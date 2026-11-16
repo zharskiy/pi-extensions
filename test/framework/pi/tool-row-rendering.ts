@@ -15,7 +15,7 @@ import {
   ToolExecutionComponent,
   type ToolRenderers,
 } from "@earendil-works/pi-coding-agent";
-import type { ToolRows } from "../../../platform/pi-adapter/index.ts";
+import type { ToolRows, TranscriptItem } from "../../../platform/pi-adapter/index.ts";
 import type { PiToolRenderContext } from "../../../platform/pi-adapter/tools/tool-bridge.ts";
 import { rowRenderers, toolRowsHost } from "../../../platform/pi-adapter/tools/tool-rows.ts";
 import { createTranscriptPane } from "../../../platform/pi-adapter/tools/transcript.ts";
@@ -75,50 +75,15 @@ export const renderEditDiff = (rows: ToolRows, { diff, outputPad, width }: EditR
   return lines;
 };
 
-export const renderPaneEditDiff = (rows: ToolRows, diff: string, width: number) => {
-  const host = toolRowsHost({ registerToolRenderer: () => {} } as never);
-
-  host.registerToolRows(rows);
-
-  const pane = createTranscriptPane({ requestRender: () => {} } as never, "/repo");
-  const args = { path: "/repo/a.ts" };
-
-  pane.sync([
-    {
-      kind: "assistant",
-      text: "",
-      toolCalls: [{ name: "edit", args }],
-      raw: {
-        role: "assistant",
-        content: [{ type: "toolCall", id: "call-1", name: "edit", arguments: args }],
-        stopReason: "toolUse",
-        timestamp: 0,
-      },
-    },
-    {
-      kind: "tool",
-      toolName: "edit",
-      toolCallId: "call-1",
-      text: "ok",
-      isError: false,
-      raw: {
-        role: "toolResult",
-        toolCallId: "call-1",
-        toolName: "edit",
-        content: [{ type: "text", text: "ok" }],
-        details: { diff },
-        isError: false,
-      },
-    },
-  ] as never);
-  pane.setToolsExpanded(true);
-
-  const lines = pane.render(width).map(visible);
-
-  host.release();
-
-  return lines;
-};
+export const renderPaneEditDiff = (rows: ToolRows, diff: string, width: number) =>
+  renderPaneToolRows(rows, {
+    name: "edit",
+    args: { path: "/repo/a.ts" },
+    result: "ok",
+    details: { diff },
+    expanded: true,
+    width,
+  });
 
 export const piEditDiff = async (content: string, edits: { oldText: string; newText: string }[]) => {
   const dir = mkdtempSync(join(tmpdir(), "pi-edit-"));
@@ -222,10 +187,8 @@ export const renderPaneToolRows = (rows: ToolRows, input: PaneInput) => {
 
   const pane = createTranscriptPane({ requestRender: () => {} } as never, "/repo");
   const stopReason = input.stopReason ?? "toolUse";
-  const assistant = {
+  const assistant: TranscriptItem = {
     kind: "assistant",
-    text: "",
-    toolCalls: [{ name: input.name, args: input.args }],
     raw: {
       role: "assistant",
       content: [{ type: "toolCall", id: "call-1", name: input.name, arguments: input.args }],
@@ -233,12 +196,9 @@ export const renderPaneToolRows = (rows: ToolRows, input: PaneInput) => {
       timestamp: 0,
     },
   };
-  const tool = {
+  const tool: TranscriptItem = {
     kind: "tool",
-    toolName: input.name,
     toolCallId: "call-1",
-    text: input.result ?? "",
-    isError: input.isError ?? false,
     raw: {
       role: "toolResult",
       toolCallId: "call-1",
@@ -250,9 +210,7 @@ export const renderPaneToolRows = (rows: ToolRows, input: PaneInput) => {
     },
   };
 
-  pane.sync(
-    (stopReason === "toolUse" && input.result !== undefined ? [assistant, tool] : [assistant]) as never,
-  );
+  pane.sync(stopReason === "toolUse" && input.result !== undefined ? [assistant, tool] : [assistant]);
   pane.setToolsExpanded(input.expanded ?? false);
 
   const lines = dropLeadingBlanks(pane.render(input.width)).map(visible);
