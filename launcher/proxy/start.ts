@@ -27,6 +27,7 @@ import {
   parseEgressSettings,
   type RepoProxy,
   type RepoProxyInput,
+  withoutEgressSettings,
 } from "./files.ts";
 import { openLauncherCa } from "./tls-ca.ts";
 
@@ -112,16 +113,7 @@ export const stopRepoProxy = async (stateDir: string, repoHash: string) => {
 };
 
 const proxyInputHash = async (stateDir: string, input: RepoProxyInput) => {
-  const {
-    token: _token,
-    envSecrets,
-    parentAuth,
-    allow: _allow,
-    deny: _deny,
-    privateHosts: _privateHosts,
-    derivedHosts: _derivedHosts,
-    ...rest
-  } = input;
+  const { token: _token, envSecrets, parentAuth, ...rest } = input;
   const salt = await ensureSalt(stateDir);
   const secrets = createHmac("sha256", salt)
     .update(JSON.stringify([Object.entries(envSecrets).sort(), parentAuth ?? null]))
@@ -130,7 +122,7 @@ const proxyInputHash = async (stateDir: string, input: RepoProxyInput) => {
     ? await readFile(stateLayout(stateDir).extraPem, "utf8").catch(() => "")
     : "";
 
-  return stableHash({ ...rest, secrets, extraCaPem });
+  return stableHash({ ...withoutEgressSettings(rest), secrets, extraCaPem });
 };
 
 const isHealthy = async (record: RepoProxy, token: string) =>
