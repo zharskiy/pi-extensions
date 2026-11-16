@@ -1,3 +1,6 @@
+COLIMA_HOME="$HOME/.colima"
+export COLIMA_HOME
+
 agent_dir="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
 
 case "$agent_dir" in

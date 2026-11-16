@@ -1,19 +1,13 @@
 #!/bin/sh
 set -eu
 unset CDPATH
-COLIMA_HOME="$HOME/.colima"
-export COLIMA_HOME
-
-package_name=pi-extensions-mz
 colima_profile=pi-sandbox
-wrapper_marker="launcher/bin/pi-sandbox"
 sessions_live_exit=75
 script_dir=$(cd "$(dirname "$0")" && pwd)
 
 . "$script_dir/bin/path-block.sh"
 . "$script_dir/bin/paths.sh"
-bin_dir="$HOME/.local/bin"
-fish_file="$HOME/.config/fish/conf.d/pi-sandbox.fish"
+. "$script_dir/bin/shim.sh"
 
 usage() {
   echo "usage: uninstall.sh"
@@ -68,24 +62,7 @@ else
   echo "colima: colima delete --profile $colima_profile failed, the profile stays"
 fi
 
-shim_dir="$bin_dir"
-
-if [ -d "$bin_dir" ]; then
-  shim_dir=$(cd -P "$bin_dir" && pwd)
-fi
-
-shim="$shim_dir/pi"
 replaced_link="$state_dir/replaced-pi-link"
-
-is_ours() {
-  if [ -L "$shim" ]; then
-    case "$(readlink "$shim")" in
-      */pi-sandbox|*/pi-sandbox.js) return 0 ;;
-    esac
-  fi
-
-  [ -f "$shim" ] && grep -q "$wrapper_marker" "$shim"
-}
 
 shim_free=1
 

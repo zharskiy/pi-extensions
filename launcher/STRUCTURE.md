@@ -24,7 +24,8 @@ schema/sandbox-config.schema.json  the config keys
 bin/pi-sandbox.js              the package bin: runs the built dist/
 bin/pi-sandbox-dev.js          checkout entry: runs the .ts sources, not published
 bin/path-block.sh              the PATH block helpers and the sh and fish lines, sourced by install.sh and uninstall.sh
-bin/paths.sh                   the agent dir (with ~ expanded as pi does), state dir, user config and old state folder, sourced by install.sh and uninstall.sh
+bin/paths.sh                   COLIMA_HOME, the agent dir (with ~ expanded as pi does), state dir, user config and old state folder, sourced by install.sh and uninstall.sh
+bin/shim.sh                    the package name, the pi shim in ~/.local/bin with is_ours, and the fish file, sourced by install.sh and uninstall.sh
 ```
 
 ## cli/

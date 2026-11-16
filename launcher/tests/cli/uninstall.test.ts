@@ -297,7 +297,7 @@ describe("uninstall.sh", { timeout: UNINSTALL_TIMEOUT_MS }, () => {
     await writeFile(join(copy, "uninstall.sh"), await readFile(join(launcherRoot(), "uninstall.sh"), "utf8"));
 
     await Promise.all(
-      ["path-block.sh", "paths.sh"].map(async (name) =>
+      ["path-block.sh", "paths.sh", "shim.sh"].map(async (name) =>
         writeFile(join(copy, "bin", name), await readFile(join(launcherRoot(), "bin", name), "utf8")),
       ),
     );
