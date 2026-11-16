@@ -1,7 +1,8 @@
 import { join } from "node:path";
+import { placeholderFor } from "../../shared/index.ts";
 import { type Endpoint, httpsEndpoint, uniqueEndpoints } from "../endpoints.ts";
 import { findOnPath } from "../path-search.ts";
-import { mergeSections, noticeOnly, placeholderOf, rulesFor, type Section } from "../rules.ts";
+import { mergeSections, noticeOnly, rulesFor, type Section } from "../rules.ts";
 import type { GlabHost, ToolsInput } from "../types.ts";
 import {
   firstExisting,
@@ -180,7 +181,7 @@ const hostSection = async (
   }
 
   const identity = `glab:${entry.host}:token`;
-  const token = placeholderOf(input, identity);
+  const token = placeholderFor(input.salt, identity);
   const endpoints = uniqueEndpoints([{ host: entry.host }, ...apiEndpoint(entry)]);
 
   return {

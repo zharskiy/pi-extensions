@@ -1,11 +1,16 @@
 import type { SecretRef } from "../config/index.ts";
-import { isJsonObject, isSecretEnvEntry, isSecretName, jwtShapedPlaceholder } from "../shared/index.ts";
+import {
+  isJsonObject,
+  isSecretEnvEntry,
+  isSecretName,
+  jwtShapedPlaceholder,
+  placeholderFor,
+} from "../shared/index.ts";
 import { noHostNotice, providerEndpoints } from "./provider-endpoints.ts";
 import {
   type DeriveContext,
   mergeSections,
   noticeOnly,
-  placeholderOf,
   type RuleBody,
   rulesFor,
   type Section,
@@ -58,7 +63,7 @@ const envOf = (context: DeriveContext, id: string, env: unknown) => {
 
   const entries = Object.entries(env).map(([name, value]) => [
     name,
-    isSecretEnvEntry(name, value) ? placeholderOf(context, `auth:${id}:env:${name}`) : value,
+    isSecretEnvEntry(name, value) ? placeholderFor(context.salt, `auth:${id}:env:${name}`) : value,
   ]);
 
   return { env: Object.fromEntries(entries) };
@@ -71,7 +76,7 @@ const apiKeyEntry = (
   extra: { env?: unknown; secret?: SecretRef } = {},
 ): EntrySection => {
   const identity = `auth:${id}:key`;
-  const placeholder = placeholderOf(context, identity);
+  const placeholder = placeholderFor(context.salt, identity);
 
   return withRules(
     sources,
@@ -98,7 +103,7 @@ const oauthEntry = (
     ...Object.fromEntries(kept),
     ...envOf(context, id, entry.env),
     access: placeholder,
-    refresh: placeholderOf(context, `auth:${id}:refresh`),
+    refresh: placeholderFor(context.salt, `auth:${id}:refresh`),
     expires: FAR_FUTURE_EXPIRES,
   };
 

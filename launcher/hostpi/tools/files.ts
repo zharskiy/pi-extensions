@@ -1,9 +1,14 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { hasUrlUserinfo, isSecretEnvName, type ToolConfigFormat } from "../../shared/index.ts";
+import {
+  hasUrlUserinfo,
+  isSecretEnvName,
+  placeholderFor,
+  type ToolConfigFormat,
+} from "../../shared/index.ts";
 import { endpointOf, httpsEndpoint, withoutUserinfo } from "../endpoints.ts";
 import { isInsideRoots } from "../path-search.ts";
-import { noticeOnly, placeholderOf, rulesFor, type Section } from "../rules.ts";
+import { noticeOnly, rulesFor, type Section } from "../rules.ts";
 import type { Registry, ToolsInput } from "../types.ts";
 
 export const PROBE_TIMEOUT_MS = 10_000;
@@ -73,7 +78,7 @@ export const urlCredentialSection = (input: ToolsInput, credential: UrlCredentia
     );
   }
 
-  const placeholder = placeholderOf(input, credential.identity);
+  const placeholder = placeholderFor(input.salt, credential.identity);
   const parsed = new URL(credential.url);
   const part = parsed.password === "" ? { urlUsername: true as const } : { urlPassword: true as const };
 

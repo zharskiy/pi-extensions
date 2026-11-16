@@ -1,18 +1,11 @@
 import { join } from "node:path";
 import type { SecretRef } from "../config/index.ts";
-import { isJsonObject } from "../shared/index.ts";
+import { isJsonObject, placeholderFor } from "../shared/index.ts";
 import { type Endpoint, endpointOf, hasQueryCredential, httpsEndpoint, strippedUrl } from "./endpoints.ts";
 import { deriveHeaders, type HeaderTarget } from "./headers.ts";
 import { jsonPointer, objectOr } from "./json.ts";
 import { noHostNotice, providerEndpoints } from "./provider-endpoints.ts";
-import {
-  type DeriveContext,
-  mergeSections,
-  noticeOnly,
-  placeholderOf,
-  rulesFor,
-  type Section,
-} from "./rules.ts";
+import { type DeriveContext, mergeSections, noticeOnly, rulesFor, type Section } from "./rules.ts";
 import type { JsonObject, ProviderHosts } from "./types.ts";
 
 interface ProviderScope {
@@ -121,7 +114,7 @@ const apiKeySection = (scope: ProviderScope, provider: JsonObject): Section<Json
   }
 
   const identity = `models:${scope.id}:apiKey`;
-  const placeholder = placeholderOf(scope.context, identity);
+  const placeholder = placeholderFor(scope.context.salt, identity);
 
   return {
     value: { ...provider, apiKey: placeholder },

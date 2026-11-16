@@ -1,15 +1,8 @@
 import { SECRET_MARKER, type SecretRef } from "../config/index.ts";
-import { isAuthLikeHeader, isJsonObject, isSecretShapedValue } from "../shared/index.ts";
+import { isAuthLikeHeader, isJsonObject, isSecretShapedValue, placeholderFor } from "../shared/index.ts";
 import type { Endpoint } from "./endpoints.ts";
 import { jsonPointer } from "./json.ts";
-import {
-  type DeriveContext,
-  mergeSections,
-  noticeOnly,
-  placeholderOf,
-  rulesFor,
-  type Section,
-} from "./rules.ts";
+import { type DeriveContext, mergeSections, noticeOnly, rulesFor, type Section } from "./rules.ts";
 import type { JsonObject } from "./types.ts";
 
 type Binding =
@@ -164,7 +157,7 @@ const headerSection = (
   value: unknown,
 ): Section<[string, unknown]> => {
   const identity = `${target.identity}:header:${name.toLowerCase()}`;
-  const placeholder = placeholderOf(context, identity);
+  const placeholder = placeholderFor(context.salt, identity);
   const literal = target.literalSecret?.(name) ?? {
     file: target.file,
     pointer: jsonPointer([...target.pointer, name]),

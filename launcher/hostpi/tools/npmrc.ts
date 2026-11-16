@@ -1,8 +1,14 @@
 import { join } from "node:path";
 import type { SecretRef } from "../../config/index.ts";
-import { hasUrlUserinfo, isSecretName, type NpmrcEntry, parseNpmrc } from "../../shared/index.ts";
+import {
+  hasUrlUserinfo,
+  isSecretName,
+  type NpmrcEntry,
+  parseNpmrc,
+  placeholderFor,
+} from "../../shared/index.ts";
 import { endpointOf } from "../endpoints.ts";
-import { mergeSections, noticeOnly, placeholderOf, rulesFor, type Section } from "../rules.ts";
+import { mergeSections, noticeOnly, rulesFor, type Section } from "../rules.ts";
 import type { Registry, ToolsInput } from "../types.ts";
 import { expandPublicVariables, readOptional, registriesOf, urlCredentialSection } from "./files.ts";
 
@@ -75,7 +81,7 @@ const credentialSection = (
   }
 
   const identity = `npmrc:${authority}${path ?? "/"}:${field}`;
-  const placeholder = placeholderOf(input, identity);
+  const placeholder = placeholderFor(input.salt, identity);
   const value = renderedValue(field, entry.value, placeholder);
 
   if (value === undefined) {

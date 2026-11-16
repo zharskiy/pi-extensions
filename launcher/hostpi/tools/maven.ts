@@ -7,10 +7,11 @@ import {
   type MavenServer,
   type MavenSettings,
   parseMavenSettings,
+  placeholderFor,
   type XmlElement,
 } from "../../shared/index.ts";
 import { type Endpoint, httpsEndpoint, uniqueEndpoints, withoutUserinfo } from "../endpoints.ts";
-import { mergeSections, noticeOnly, placeholderOf, rulesFor, type Section } from "../rules.ts";
+import { mergeSections, noticeOnly, rulesFor, type Section } from "../rules.ts";
 import type { DerivedTools, Registry, ToolsInput } from "../types.ts";
 import { EMPTY_MAVEN } from "../types.ts";
 import { expandPublicVariables, readOptional, registriesOf } from "./files.ts";
@@ -46,7 +47,7 @@ const secretOf = (value: string, file: string, key: string): SecretRef => {
 
 const passwordSection = (context: ServerContext, server: MavenServer, password: string): Section<string> => {
   const identity = `maven:${server.id}:password`;
-  const placeholder = placeholderOf(context.input, identity);
+  const placeholder = placeholderFor(context.input.salt, identity);
 
   return {
     value: placeholder,
@@ -78,7 +79,7 @@ const headerSection = (
   }
 
   const identity = `maven:${server.id}:header:${header.name}`;
-  const placeholder = placeholderOf(context.input, identity);
+  const placeholder = placeholderFor(context.input.salt, identity);
   const secret = secretOf(header.value, context.file, `${server.id}/httpHeaders/${header.name}`);
 
   return {

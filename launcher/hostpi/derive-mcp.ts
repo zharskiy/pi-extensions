@@ -5,20 +5,14 @@ import {
   isJsonObject,
   isSecretEnvEntry,
   isSecretShapedValue,
+  placeholderFor,
 } from "../shared/index.ts";
 import type { ProviderCredentials } from "./derive-auth.ts";
 import { type Endpoint, endpointOf, hasQueryCredential, strippedUrl } from "./endpoints.ts";
 import { deriveHeaders } from "./headers.ts";
 import { objectOr } from "./json.ts";
 import { isDisabledServer, oauthTarget, providerAuthOf } from "./mcp-auth.ts";
-import {
-  type DeriveContext,
-  mergeSections,
-  noticeOnly,
-  placeholderOf,
-  rulesFor,
-  type Section,
-} from "./rules.ts";
+import { type DeriveContext, mergeSections, noticeOnly, rulesFor, type Section } from "./rules.ts";
 import type { JsonObject } from "./types.ts";
 
 type ServerSection = Section<[string, unknown]> & { dropped?: boolean };
@@ -36,7 +30,7 @@ const oauthSection = (
   endpoints: Endpoint[],
 ): Section<JsonObject> => {
   const identity = `mcp:${name}:oauth`;
-  const placeholder = placeholderOf(context, identity);
+  const placeholder = placeholderFor(context.salt, identity);
 
   return {
     value: { Authorization: `Bearer ${placeholder}` },
@@ -154,7 +148,7 @@ const stdioArg = (context: DeriveContext, name: string, args: unknown[], index: 
     return { value: arg, notices: [] };
   }
 
-  const placeholder = placeholderOf(context, `mcp:${name}:arg:${index}`);
+  const placeholder = placeholderFor(context.salt, `mcp:${name}:arg:${index}`);
 
   if (index > 0 && isSecretFlag(args[index - 1]) && !arg.startsWith("-") && !isInertValue(arg)) {
     return { value: placeholder, notices: [placeholderNotice(name, `args[${index}]`)] };
@@ -219,7 +213,7 @@ const stdioServer = (context: DeriveContext, name: string, original: JsonObject)
   const env = Object.fromEntries(
     entries.map(([variable, value]) => [
       variable,
-      secret.includes(variable) ? placeholderOf(context, `mcp:${name}:env:${variable}`) : value,
+      secret.includes(variable) ? placeholderFor(context.salt, `mcp:${name}:env:${variable}`) : value,
     ]),
   );
 
