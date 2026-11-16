@@ -1,10 +1,20 @@
 import { dirname } from "node:path";
-import type { VmApplied, VmPhase, VmSpec } from "../../backend/index.ts";
+import { sessionsRunning, type VmApplied, type VmPhase, type VmSpec } from "../../backend/index.ts";
 import { isWithin } from "../../shared/index.ts";
 import { printable, widthOf, wrap } from "../prompt/style.ts";
 import { tildeForm } from "./folders.ts";
 import type { VmBounds } from "./plan.ts";
-import type { Answers, Change, FolderCandidate, HostFacts, Plan, VmAction, VmPart } from "./types.ts";
+import type {
+  Answers,
+  ApplyEvent,
+  Change,
+  DocumentRead,
+  FolderCandidate,
+  HostFacts,
+  Plan,
+  VmAction,
+  VmPart,
+} from "./types.ts";
 
 export type Tag = "chosen" | "current" | "changed" | "automatic" | "default" | "invalid";
 
@@ -53,10 +63,13 @@ export const FOLDERS_PLAIN_HELP = [
   "or press Enter to keep the selection.",
 ];
 
-const workspaceShares = (facts: HostFacts) => {
-  const vm = facts.vm;
+const existingVm = (facts: HostFacts) =>
+  facts.vm.state === "running" || facts.vm.state === "stopped" ? facts.vm : undefined;
 
-  if ((vm.state !== "running" && vm.state !== "stopped") || vm.shares === "unreadable") {
+const workspaceShares = (facts: HostFacts) => {
+  const vm = existingVm(facts);
+
+  if (vm === undefined || vm.shares === "unreadable") {
     return undefined;
   }
 
@@ -117,12 +130,12 @@ const STILL_RUNNING: Record<VmPhase, string> = {
   waiting: "the VM may still be starting",
 };
 
-export const stoppedWaiting = (phase: VmPhase | undefined) => [
+const stoppedWaiting = (phase: VmPhase | undefined) => [
   `Stopped waiting. Your settings are saved; ${STILL_RUNNING[phase ?? "starting"]}.`,
   "Check it with pi sandbox doctor, or run pi sandbox init again.",
 ];
 
-export const VM_NOT_READY =
+const VM_NOT_READY =
   "Your settings are saved, but the sandbox VM is not ready. Fix the problem above, then run pi sandbox init again. pi sandbox doctor checks everything.";
 
 const STILL_BUSY: Record<VmPhase, string> = {
@@ -144,9 +157,6 @@ export const sizeText = (size: VmSpec) =>
   `${plural(size.cpus, "CPU", "CPUs")} · ${size.memoryGiB} GiB memory · ${size.diskGiB} GiB disk`;
 
 const shown = (path: string, home: string) => printable(tildeForm(path, home));
-
-const sessionsRunning = (count: number) =>
-  `${plural(count, "pi session", "pi sessions")} ${count === 1 ? "is" : "are"} running`;
 
 const vmLine = (facts: HostFacts) => {
   if (facts.vm.state === "absent") {
@@ -233,15 +243,7 @@ export const rootsSummary = (roots: Answers["roots"]) => {
   return more > 0 ? `${listed.join(", ")} and ${more} more` : listed.join(", ");
 };
 
-const automaticSize = (facts: HostFacts) => {
-  const vm = facts.vm;
-
-  if (vm.state === "running" || vm.state === "stopped") {
-    return vm.size;
-  }
-
-  return facts.automatic;
-};
+const automaticSize = (facts: HostFacts) => existingVm(facts)?.size ?? facts.automatic;
 
 export const shownSize = (vm: Answers["vm"], facts: HostFacts): VmSpec => {
   if (vm === "automatic") {
@@ -291,11 +293,8 @@ export const vmCollapsed = (vm: Answers["vm"], facts: HostFacts, plain: boolean)
     : `Custom: ${sizeText(shownSize(vm, facts))}`;
 };
 
-const vmDiskOf = (facts: HostFacts) =>
-  facts.vm.state === "running" || facts.vm.state === "stopped" ? facts.vm.size.diskGiB : undefined;
-
 export const numberFields = (facts: HostFacts, bounds: VmBounds) => {
-  const disk = vmDiskOf(facts);
+  const disk = existingVm(facts)?.size.diskGiB;
   const free = facts.freeDiskGiB;
 
   return {
@@ -334,7 +333,7 @@ export const numberFields = (facts: HostFacts, bounds: VmBounds) => {
   };
 };
 
-export const partsText = (parts: VmPart[]) => {
+const partsText = (parts: VmPart[]) => {
   if (parts.length === 2) {
     return "size and folders";
   }
@@ -551,16 +550,16 @@ const phaseText = (phase: VmPhase, parts: VmPart[]) => {
 export const progressText = (phase: VmPhase, action: VmAction) =>
   phaseText(phase, action.kind === "restart" ? action.parts : ["size", "folders"]);
 
-export const deferredLines = (sessions: number, parts: VmPart[]) => [
+const deferredLines = (sessions: number, parts: VmPart[]) => [
   `▲ Kept as it is: ${sessionsRunning(sessions)}. The first pi you start ${afterExit(sessions)} restarts it with the new ${partsText(parts)}.`,
 ];
 
-export const STOPPED_VM = "The VM is stopped; the next pi starts it with these settings.";
+const STOPPED_VM = "The VM is stopped; the next pi starts it with these settings.";
 
 const STARTED_MEANWHILE =
   "▲ Kept as it is: a pi session started meanwhile. The first pi you start after it exits restarts the VM with the new settings.";
 
-export const vmDoneLine = (applied: VmApplied, action: VmAction, elapsed: string, plain: boolean) => {
+const vmDoneLine = (applied: VmApplied, action: VmAction, elapsed: string, plain: boolean) => {
   const mark = plain ? "" : "✔ ";
   const what = plain ? " the VM" : "";
 
@@ -583,12 +582,12 @@ export const vmDoneLine = (applied: VmApplied, action: VmAction, elapsed: string
   return `${mark}Nothing to do: the VM already matches`;
 };
 
-export const vmUnknownLine = (reason: string) =>
+const vmUnknownLine = (reason: string) =>
   `▲ The VM could not be checked (${printable(reason)}). Run pi sandbox doctor to see why.`;
 
 const verbOf = (action: VmAction) => (action.kind === "create" ? "create" : "restart");
 
-export const vmFailureLines = (action: VmAction, elapsed: string, message: string) => {
+const vmFailureLines = (action: VmAction, elapsed: string, message: string) => {
   const last = message.trim().split("\n").at(-1) ?? "";
 
   return [`✖ Could not ${verbOf(action)} the VM after ${elapsed}.`, `  ${printable(last)}`];
@@ -596,10 +595,10 @@ export const vmFailureLines = (action: VmAction, elapsed: string, message: strin
 
 export const VM_FAILURE_CHOICES = { retry: "Try again", exit: "Exit; your settings stay saved" };
 
-export const savedLine = (facts: HostFacts, plain: boolean) =>
+const savedLine = (facts: HostFacts, plain: boolean) =>
   `${plain ? "" : "✔ "}Saved ${shown(facts.configFile, facts.home)}`;
 
-export const saveFailedLine = (file: string, home: string, reason: string) =>
+const saveFailedLine = (file: string, home: string, reason: string) =>
   `✖ Could not save ${shown(file, home)}: ${printable(reason)}`;
 
 const nextCommand = (roots: Answers["roots"], facts: HostFacts) => {
@@ -617,12 +616,7 @@ const nextCommand = (roots: Answers["roots"], facts: HostFacts) => {
   return `cd <a project in ${printable(roots[0] ?? "~")}> && pi`;
 };
 
-export const successLines = (
-  roots: Answers["roots"],
-  facts: HostFacts,
-  deferred: boolean,
-  plain: boolean,
-) => {
+const successLines = (roots: Answers["roots"], facts: HostFacts, deferred: boolean, plain: boolean) => {
   const head = deferred ? "Done. Settings saved." : "Done. The sandbox is ready.";
   const rows: Array<[string, string]> = [
     ["Next", nextCommand(roots, facts)],
@@ -643,20 +637,58 @@ export const successLines = (
   ];
 };
 
-export const invalidJsonLines = (file: string, home: string, message: string) => [
-  `✖ ${shown(file, home)} is not valid JSON:`,
-  { text: printable(message), indent: "  " },
-];
+const NOTHING_WAS_CHANGED = "Nothing was changed.";
 
-export const invalidConfigLines = (file: string, home: string, message: string) => [
-  `✖ ${shown(file, home)} has a problem this setup does not fix:`,
-  { text: printable(message), indent: "  " },
-];
+type InvalidRead = Extract<DocumentRead, { ok: false }>;
 
-export const INVALID_JSON_END =
-  "Nothing was changed. Fix the file, or move it away to start over, then run pi sandbox init again.";
+export const invalidText = (read: InvalidRead) =>
+  read.kind === "json"
+    ? {
+        problem: "is not valid JSON",
+        fix: "fix the file, or move it away to start over, then run pi sandbox init again",
+      }
+    : {
+        problem: "has a problem this setup does not fix",
+        fix: "fix that key, then run pi sandbox init again",
+      };
 
-export const INVALID_CONFIG_END = "Nothing was changed. Fix that key, then run pi sandbox init again.";
+export const invalidLines = (read: InvalidRead, file: string, home: string) => {
+  const { problem, fix } = invalidText(read);
+
+  return {
+    lines: [`✖ ${shown(file, home)} ${problem}:`, { text: printable(read.message), indent: "  " }],
+    end: `${NOTHING_WAS_CHANGED} ${fix[0]?.toUpperCase()}${fix.slice(1)}.`,
+  };
+};
+
+export const eventLines = (event: ApplyEvent, facts: HostFacts, plain: boolean): Paragraph[] => {
+  switch (event.kind) {
+    case "nothing-to-do":
+      return [NOTHING_TO_DO];
+    case "saved":
+      return [savedLine(facts, plain)];
+    case "save-failed":
+      return [saveFailedLine(facts.configFile, facts.home, event.reason)];
+    case "nothing-changed":
+      return [NOTHING_WAS_CHANGED];
+    case "vm-unknown":
+      return [vmUnknownLine(event.reason)];
+    case "vm-stopped":
+      return [STOPPED_VM];
+    case "vm-deferred":
+      return deferredLines(event.sessions, event.parts);
+    case "vm-done":
+      return [vmDoneLine(event.applied, event.action, event.elapsed, plain)];
+    case "vm-failed":
+      return vmFailureLines(event.action, event.elapsed, event.reason);
+    case "vm-not-ready":
+      return [VM_NOT_READY];
+    case "vm-cancelled":
+      return stoppedWaiting(event.phase);
+    case "done":
+      return successLines(event.roots, facts, event.deferred, plain);
+  }
+};
 
 export type Paragraph = string | { text: string; indent?: string } | { label: string; text: string };
 

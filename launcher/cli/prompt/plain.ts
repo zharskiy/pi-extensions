@@ -1,8 +1,8 @@
 import { type Completer, createInterface } from "node:readline/promises";
 import { completePath } from "./complete.ts";
 import { DIGITS, initialIndex, numberProblem, toggle, warningFor } from "./rules.ts";
-import { asciiOf, elapsedOf, printable, wrap } from "./style.ts";
-import { runTask, type TaskView, warningOf } from "./task.ts";
+import { asciiOf, printable, wrap } from "./style.ts";
+import { heartbeat, runTask, type TaskView, warningOf } from "./task.ts";
 import {
   BACK,
   Cancelled,
@@ -19,8 +19,6 @@ import {
 } from "./types.ts";
 
 type Parsed<T> = { value: T } | { error: string };
-
-const HEARTBEAT_MS = 15_000;
 
 const PLAIN_WIDTH = 80;
 
@@ -259,11 +257,7 @@ export const createPlainPrompts = (ui: Ui): Prompts => {
   };
 
   const taskView = (spec: TaskSpec<unknown>) => (): TaskView => {
-    const started = ui.timers.now();
-
-    const stop = ui.timers.every(HEARTBEAT_MS, () =>
-      print([`  still working (${elapsedOf(ui.timers.now() - started)})`]),
-    );
+    const stop = heartbeat(ui.timers, (line) => print([line]));
 
     return {
       update: (text) => print([text]),

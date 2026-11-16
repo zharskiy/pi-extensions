@@ -1,21 +1,27 @@
 import { describe, expect, it } from "vitest";
+import type { VmApplied } from "../../backend/index.ts";
 import { vmBounds } from "../../cli/setup/plan.ts";
 import {
   applyLines,
   automaticLabel,
+  eventLines,
   folderTag,
   hubRowLines,
   introLines,
   numberFields,
   rootsSummary,
-  successLines,
   vmActionText,
   vmCollapsed,
-  vmDoneLine,
-  vmFailureLines,
   wrapped,
 } from "../../cli/setup/screens.ts";
-import type { FolderCandidate, HostFacts, Plan, VmAction } from "../../cli/setup/types.ts";
+import type {
+  Answers,
+  FolderCandidate,
+  HostFacts,
+  Plan,
+  RunningVm,
+  VmAction,
+} from "../../cli/setup/types.ts";
 
 const HOME = "/Users/me";
 
@@ -265,8 +271,8 @@ describe("the VM size editor", () => {
 });
 
 describe("the VM step", () => {
-  const create: VmAction = { kind: "create", size: SIZE, shares: [] };
-  const restart: VmAction = {
+  const create: RunningVm = { kind: "create", size: SIZE, shares: [] };
+  const restart: RunningVm = {
     kind: "restart",
     size: SIZE,
     shares: [],
@@ -275,18 +281,26 @@ describe("the VM step", () => {
   };
 
   it("words each result", () => {
-    expect(vmDoneLine("created", create, "54s", false)).toBe(
+    const done = (applied: VmApplied, action: RunningVm, elapsed: string, plain: boolean) =>
+      eventLines({ kind: "vm-done", applied, action, elapsed }, FACTS, plain);
+
+    expect(done("created", create, "54s", false)).toEqual([
       "✔ Created in 54s: 8 CPUs · 10 GiB memory · 60 GiB disk",
-    );
-    expect(vmDoneLine("restarted", restart, "31s", true)).toBe(
-      "Restarted the VM in 31s with the new folders",
-    );
-    expect(vmDoneLine("unchanged", restart, "1s", false)).toBe("✔ Nothing to do: the VM already matches");
-    expect(vmDoneLine({ deferred: 1 }, restart, "1s", false)).toMatch(/a pi session started meanwhile/);
+    ]);
+    expect(done("restarted", restart, "31s", true)).toEqual(["Restarted the VM in 31s with the new folders"]);
+    expect(done("unchanged", restart, "1s", false)).toEqual(["✔ Nothing to do: the VM already matches"]);
+    expect(done({ deferred: 1 }, restart, "1s", false)[0]).toMatch(/a pi session started meanwhile/);
   });
 
   it("names the verb and the last line of the error", () => {
-    expect(vmFailureLines(restart, "1m 05s", "colima stop failed\nsome detail")).toEqual([
+    const failure = {
+      kind: "vm-failed",
+      action: restart,
+      elapsed: "1m 05s",
+      reason: "colima stop failed\nsome detail",
+    } as const;
+
+    expect(eventLines(failure, FACTS, false)).toEqual([
       "✖ Could not restart the VM after 1m 05s.",
       "  some detail",
     ]);
@@ -295,10 +309,11 @@ describe("the VM step", () => {
 
 describe("the success screen", () => {
   it("falls back to a placeholder project", () => {
-    expect(successLines(["~/Projects"], FACTS, false, true)[1]).toBe(
-      "Next: cd <a project in ~/Projects> && pi",
-    );
-    expect(successLines("home", FACTS, true, true).slice(0, 2)).toEqual([
+    const success = (roots: Answers["roots"], deferred: boolean) =>
+      eventLines({ kind: "done", roots, deferred }, FACTS, true);
+
+    expect(success(["~/Projects"], false)[1]).toBe("Next: cd <a project in ~/Projects> && pi");
+    expect(success("home", true).slice(0, 2)).toEqual([
       "Done. Settings saved.",
       "Next: cd <a project> && pi",
     ]);

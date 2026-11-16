@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { VmPhase } from "../../backend/index.ts";
 import { warningOf } from "../../cli/prompt/task.ts";
 import { Cancelled, type Detail, type Prompts } from "../../cli/prompt/types.ts";
-import { applyPlan } from "../../cli/setup/apply.ts";
+import { applyPlan, lineFrontEnd, wizardFrontEnd } from "../../cli/setup/apply.ts";
 import { readDocument } from "../../cli/setup/document.ts";
 import type { HostFacts, Plan } from "../../cli/setup/types.ts";
+import { fakeTimers } from "./prompt/fake-tty.ts";
 
 const SIZE = { cpus: 8, memoryGiB: 10, diskGiB: 60 };
 
@@ -43,16 +44,11 @@ const interrupted = async (phases: VmPhase[]) => {
       return "restarted" as const;
     },
   };
-  const io = { prompts, plain: true, columns: () => 200, now: () => 0 };
-  const code = await applyPlan(
-    io,
-    effects,
-    { document: document as NonNullable<typeof document>, facts },
-    {
-      plan: PLAN,
-      answers: { roots: "home", vm: "automatic", writeBack: true },
-    },
-  );
+  const io = { prompts, plain: true, now: () => 0 };
+  const code = await applyPlan(wizardFrontEnd(io, facts), effects, document as NonNullable<typeof document>, {
+    plan: PLAN,
+    answers: { roots: "home", vm: "automatic", writeBack: true },
+  });
 
   return { code, said: notes.join("\n"), warned: warnings.join("\n") };
 };
@@ -82,5 +78,65 @@ describe("stopping waiting for the VM step", () => {
 
     expect(warned).toContain("The VM is still being created.");
     expect(said).toContain("Stopped waiting. Your settings are saved; the VM may still be being created.");
+  });
+});
+
+const collected = () => {
+  const lines: string[] = [];
+  const stream = { write: (text: string) => lines.push(text) } as unknown as NodeJS.WritableStream;
+
+  return { stream, text: () => lines.join("") };
+};
+
+describe("applying a plan as lines", () => {
+  it("prints the review, progress and the heartbeat to stdout, and a failure to stderr", async () => {
+    const clock = fakeTimers();
+    const out = collected();
+    const err = collected();
+    const read = readDocument("/Users/me/config.json", undefined);
+    const document = read.ok ? read.document : undefined;
+    const facts = { home: "/Users/me", configFile: "/Users/me/config.json" } as HostFacts;
+    const effects = {
+      write: async () => undefined,
+      vm: async (_action: unknown, progress: (phase: VmPhase) => void) => {
+        progress("stopping");
+
+        clock.advance(31_000);
+
+        progress("starting");
+
+        throw new Error("colima start failed");
+      },
+    };
+    const front = lineFrontEnd({ out: out.stream, err: err.stream, timers: clock.timers }, facts, [
+      "When you apply:",
+      "  • restart the sandbox VM",
+    ]);
+    const code = await applyPlan(front, effects, document as NonNullable<typeof document>, {
+      plan: PLAN,
+      answers: { roots: "home", vm: "automatic", writeBack: true },
+    });
+
+    expect(code).toBe(1);
+    expect(out.text()).toBe(
+      [
+        "When you apply:",
+        "  - restart the sandbox VM",
+        "Stopping the VM...",
+        "  still working (15s)",
+        "  still working (30s)",
+        "Starting the VM with the new size...",
+        "",
+      ].join("\n"),
+    );
+    expect(err.text()).toBe(
+      [
+        "x Could not restart the VM after 31s.",
+        "  colima start failed",
+        "Your settings are saved, but the sandbox VM is not ready. Fix the problem above, then run pi sandbox init again. pi sandbox doctor checks everything.",
+        "",
+      ].join("\n"),
+    );
+    expect(clock.live()).toBe(0);
   });
 });

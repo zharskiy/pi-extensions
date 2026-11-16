@@ -57,7 +57,7 @@ export const realTimers: Timers = {
   },
 };
 
-const isSet = (value: string | undefined) => value !== undefined && value !== "";
+export const isSet = (value: string | undefined) => value !== undefined && value !== "";
 
 const cursorControlOf = (env: NodeJS.ProcessEnv) => isSet(env.TERM) && env.TERM !== "dumb";
 
@@ -231,10 +231,6 @@ export const findTerminal = (deps: TerminalDeps): Ui | undefined => {
 
   if (deps.stdin.isTTY === true && deps.stderr.isTTY === true) {
     return uiOf({ input: deps.stdin, output: deps.stderr }, options);
-  }
-
-  if (isSet(deps.env.CI)) {
-    return undefined;
   }
 
   const tty = openedTty(deps.openTty);

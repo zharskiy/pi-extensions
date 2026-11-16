@@ -1,29 +1,28 @@
 import { type Dirent, readdirSync, statSync } from "node:fs";
 import { readFile, statfs } from "node:fs/promises";
 import { join } from "node:path";
-import { type Backend, type VmApplied, vmSizeText } from "../../backend/index.ts";
+import type { Backend, VmApplied } from "../../backend/index.ts";
 import { validateConfig } from "../../config/index.ts";
 import { errorMessage, LauncherError, launcherRoot } from "../../shared/index.ts";
-import { type CliDeps, pathsOf, writeLine, writeNotices } from "../deps.ts";
+import { type CliDeps, pathsOf, writeNotices } from "../deps.ts";
 import { createPlainPrompts } from "../prompt/plain.ts";
 import { createRichPrompts } from "../prompt/rich.ts";
-import { findTerminal, realTimers, withTerminal } from "../prompt/terminal.ts";
+import { findTerminal, isSet, realTimers, withTerminal } from "../prompt/terminal.ts";
 import type { Ui } from "../prompt/types.ts";
+import { applyPlan, lineFrontEnd } from "../setup/apply.ts";
 import { detectHost } from "../setup/detect.ts";
 import { readDocument, writeDocument } from "../setup/document.ts";
 import { runSetup, type SetupInput } from "../setup/flow.ts";
-import { tildeForm } from "../setup/folders.ts";
-import { answersForYes, configuredRoots, isFirstRun, isPlanEmpty, planOf } from "../setup/plan.ts";
-import { partsText } from "../setup/screens.ts";
+import { answersForYes, configuredRoots, isFirstRun, planOf } from "../setup/plan.ts";
+import { createReview } from "../setup/review.ts";
+import { invalidText } from "../setup/screens.ts";
 import type {
   Answers,
   ApplyEffects,
-  Change,
   ConfigDocument,
   DocumentRead,
   SetupIo,
   SharePlan,
-  VmAction,
 } from "../setup/types.ts";
 import { assertVmFitsHost, prepareVmDirs, vmBusyCount, vmSharesFor } from "../vm.ts";
 
@@ -34,21 +33,11 @@ const SETUP_HINT =
 
 const SIGNAL_EXITS = { SIGTERM: 143, SIGHUP: 129 } as const;
 
-const HEARTBEAT_MS = 15_000;
-
-const NOTHING_TO_CHANGE = "nothing to change: the config and the sandbox VM match";
-
-const STOPPED_LINE = "the sandbox VM is stopped; the next pi starts it with these settings";
-
-type Running = Extract<VmAction, { kind: "create" | "restart" }>;
-
 interface SetupContext {
   backend: Backend;
   stateDir: string;
   configFile: string;
 }
-
-const isSet = (value: string | undefined) => value !== undefined && value !== "";
 
 const contextOf = (deps: CliDeps): SetupContext => {
   const paths = pathsOf(deps);
@@ -129,104 +118,17 @@ const folderNames = (dir: string) =>
     .filter((entry) => isFolderEntry(dir, entry))
     .map((entry) => entry.name);
 
-const invalidConfig = (file: string, read: Extract<DocumentRead, { ok: false }>) =>
-  read.kind === "json"
-    ? new LauncherError(
-        `${file} is not valid JSON: ${read.message}`,
-        "fix the file, or move it away to start over, then run pi sandbox init again",
-      )
-    : new LauncherError(read.message, `fix that key in ${file}, then run pi sandbox init again`);
+const invalidConfig = (file: string, read: Extract<DocumentRead, { ok: false }>) => {
+  const { problem, fix } = invalidText(read);
+
+  return new LauncherError(`${file} ${problem}: ${read.message}`, fix);
+};
 
 const validFile = (document: ConfigDocument) => {
   try {
     validateConfig(document.value);
   } catch (error) {
     throw new LauncherError(errorMessage(error), `fix ${document.file}`);
-  }
-};
-
-const VERBS: Record<Change["kind"], string> = { add: "added", change: "changed", remove: "removed" };
-
-const changesText = (changes: Change[]) =>
-  changes.map((change) => `${VERBS[change.kind]} ${change.key}`).join(", ");
-
-const sessionsText = (count: number) =>
-  count === 1 ? "1 pi session is running" : `${count} pi sessions are running`;
-
-const keptLine = (sessions: number) =>
-  `kept the sandbox VM as it is: ${sessionsText(sessions)}; the first pi started after they exit applies the new settings`;
-
-const sharedText = (roots: Answers["roots"]) => (roots === "home" ? "your whole home (~)" : roots.join(", "));
-
-const startLine = (action: Running, roots: Answers["roots"]) => {
-  const target = `${vmSizeText(action.size)}, sharing ${sharedText(roots)}`;
-
-  return action.kind === "create"
-    ? `creating the sandbox VM: ${target}`
-    : `restarting the sandbox VM with the new ${partsText(action.parts)}: ${target}`;
-};
-
-const secondsOf = (ms: number) => `${Math.max(0, Math.round(ms / 1000))}s`;
-
-const doneLine = (applied: VmApplied, action: Running, elapsed: string) => {
-  if (applied === "created") {
-    return `created the sandbox VM in ${elapsed}`;
-  }
-
-  if (applied === "restarted") {
-    const parts = action.kind === "restart" ? action.parts : ["size" as const, "folders" as const];
-
-    return `restarted the sandbox VM in ${elapsed} with the new ${partsText(parts)}`;
-  }
-
-  if (applied === "stopped") {
-    return STOPPED_LINE;
-  }
-
-  return typeof applied === "object" ? keptLine(applied.deferred) : "the sandbox VM already matches";
-};
-
-const runVm = async (deps: CliDeps, effects: ApplyEffects, action: Running, roots: Answers["roots"]) => {
-  writeLine(deps.stdout, startLine(action, roots));
-
-  const started = deps.now();
-  const stopHeartbeat = realTimers.every(HEARTBEAT_MS, () =>
-    writeLine(deps.stdout, `  still working (${secondsOf(deps.now() - started)})`),
-  );
-
-  try {
-    const applied = await effects.vm(action, () => undefined);
-
-    writeLine(deps.stdout, doneLine(applied, action, secondsOf(deps.now() - started)));
-  } finally {
-    stopHeartbeat();
-  }
-};
-
-const applyVmQuietly = async (
-  deps: CliDeps,
-  effects: ApplyEffects,
-  action: VmAction,
-  roots: Answers["roots"],
-) => {
-  if (action.kind === "create" || action.kind === "restart") {
-    await runVm(deps, effects, action, roots);
-
-    return;
-  }
-
-  if (action.kind === "unknown") {
-    writeNotices(deps, [
-      `could not check the sandbox VM (${action.reason}); the next pi start applies the size and the shares`,
-    ]);
-  }
-
-  if (action.kind === "defer") {
-    writeLine(deps.stdout, keptLine(action.sessions));
-  }
-
-  if (action.kind === "on-next-start") {
-    writeLine(deps.stdout, STOPPED_LINE);
   }
 };
 
@@ -257,29 +159,18 @@ const acceptAll = async (deps: CliDeps) => {
     assertVmFitsHost(deps, plan.vm.size);
   }
 
-  if (isPlanEmpty(plan)) {
-    writeLine(deps.stdout, NOTHING_TO_CHANGE);
+  const streams = { out: deps.stdout, err: deps.stderr, timers: { ...realTimers, now: deps.now } };
+  const state = { answers, touched: new Set<never>() };
+  const review = createReview(document, facts, deps.env).lines(state, plan, { plain: true, table: true });
 
-    return 0;
-  }
+  const front = lineFrontEnd(streams, facts, review(Number.POSITIVE_INFINITY));
 
-  const effects = effectsFor(deps, context);
-
-  if (plan.changes.length > 0) {
-    await effects.write(document, plan.text);
-
-    writeLine(deps.stdout, `saved ${tildeForm(context.configFile, deps.home)}: ${changesText(plan.changes)}`);
-  }
-
-  await applyVmQuietly(deps, effects, plan.vm, answers.roots);
-
-  return 0;
+  return applyPlan(front, effectsFor(deps, context), document, { plan, answers });
 };
 
 const ioOf = (ui: Ui): SetupIo => ({
   prompts: ui.mode === "rich" ? createRichPrompts(ui) : createPlainPrompts(ui),
   plain: ui.mode === "plain",
-  columns: ui.columns,
   now: ui.timers.now,
 });
 

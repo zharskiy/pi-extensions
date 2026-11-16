@@ -110,7 +110,6 @@ const setup = (options: Options = {}) => {
   const io: SetupIo = {
     prompts,
     plain: options.plain === true,
-    columns: () => fake.ui.columns(),
     now: () => clock.timers.now(),
   };
   const input: SetupInput = {
