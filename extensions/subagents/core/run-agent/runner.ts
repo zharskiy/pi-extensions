@@ -247,6 +247,12 @@ export const createRunner = (deps: RunnerDeps): Runner => {
   const sendHeld = (live: Live, child: ChildSession) =>
     Promise.all(live.pending.splice(0).map((message) => child.send(message, "steer")));
 
+  const isOpen = (id: string) => {
+    const record = deps.registry.get(id);
+
+    return record !== undefined && !isClosed(record.state);
+  };
+
   const resume = async (id: string, send: (child: ChildSession) => Promise<void>) => {
     const live = lives.get(id);
 
@@ -257,10 +263,9 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     live.turn = "waiting";
 
     const release = await semaphore.acquire();
-    const record = deps.registry.get(id);
     const child = live.child;
 
-    if (!record || isClosed(record.state) || shuttingDown || !child) {
+    if (!isOpen(id) || shuttingDown || !child) {
       release();
       live.turn = "idle";
       return;
@@ -283,10 +288,9 @@ export const createRunner = (deps: RunnerDeps): Runner => {
       return deps.outbox;
     }
 
-    const record = deps.registry.get(callerId);
     const live = lives.get(callerId);
 
-    if (!record || isClosed(record.state) || !live) {
+    if (!isOpen(callerId) || !live) {
       return undefined;
     }
 
@@ -734,12 +738,9 @@ export const createRunner = (deps: RunnerDeps): Runner => {
 
     live.release = await semaphore.acquire();
 
-    const current = deps.registry.get(record.id);
-
-    if (!current || isClosed(current.state) || shuttingDown) {
+    if (!isOpen(record.id) || shuttingDown) {
       releaseSlot(live);
-      await releaseLive(record.id);
-      return;
+      return releaseLive(record.id);
     }
 
     const session = deps.session();
@@ -749,15 +750,11 @@ export const createRunner = (deps: RunnerDeps): Runner => {
 
     if ("error" in placement) {
       deps.registry.close(record.id, { state: "failed", error: placement.error });
-      await releaseLive(record.id);
-      return;
+      return releaseLive(record.id);
     }
 
-    const placed = deps.registry.get(record.id);
-
-    if (!placed || isClosed(placed.state) || shuttingDown) {
-      await releaseLive(record.id);
-      return;
+    if (!isOpen(record.id) || shuttingDown) {
+      return releaseLive(record.id);
     }
 
     live.spawning = deps.runtime
@@ -786,18 +783,14 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     const child = await live.spawning;
 
     if (!child || lives.get(record.id) !== live) {
-      await releaseLive(record.id);
-      return;
+      return releaseLive(record.id);
     }
 
     live.child = child;
     live.unsubscribe = child.subscribe((event) => handleEvent(record.id, live, child, event));
 
-    const afterSpawn = deps.registry.get(record.id);
-
-    if (!afterSpawn || isClosed(afterSpawn.state)) {
-      await releaseLive(record.id);
-      return;
+    if (!isOpen(record.id)) {
+      return releaseLive(record.id);
     }
 
     deps.registry.update(record.id, {
