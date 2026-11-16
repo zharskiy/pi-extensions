@@ -16,6 +16,7 @@ import {
   overrideThinking,
 } from "./agent-override.ts";
 import type { AgentOverride, AgentOverrides } from "./agent-schema.ts";
+import { NAMESPACE } from "./paths.ts";
 
 export type Settings = {
   maxConcurrent: number;
@@ -37,7 +38,7 @@ export type Settings = {
   agents: AgentOverrides;
 };
 
-export const SETTINGS_FILE = "pi-subagents.json";
+export const SETTINGS_FILE = `${NAMESPACE}.json`;
 
 export const defaultSettings = (): Settings => ({
   maxConcurrent: 12,

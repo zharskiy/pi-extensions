@@ -47,7 +47,7 @@ extensions/subagents/
 │   │   ├── context-limit.ts               # effectiveContextLimit, agentLimit, recordLimit, contextUse (tokens, request, level), StepLimit, limitStep (request or abort; nothing below the limit)
 │   │   ├── handoff.ts                     # handoffService: the agent audience's handoff instruction, validation and successor preface, shared by the runner and the limits plugin
 │   │   ├── manifest.ts                    # pastRecords: manifest.json read and restore (own and parent session)
-│   │   └── paths.ts                       # NAMESPACE, MANIFEST_FILE, agents dir, handoff path, builtin, user and project agent dirs
+│   │   └── paths.ts                       # NAMESPACE (every source, custom message type, widget key and the settings file name derive from it), MANIFEST_FILE, agents dir, handoff path, builtin, user and project agent dirs
 │   ├── components/
 │   │   ├── receipt.ts                     # formatCalls, stateWord and receiptWord (the one state word map), receipt segments, plainReceipt, agentReceipt, firstLine, cutChars
 │   │   ├── refresh.ts                     # tickFor (tick cadence) and watchAgents (throttled refresh and ticker)

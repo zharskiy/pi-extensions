@@ -1,6 +1,7 @@
 import type { Host, RowLines, WidgetHandle } from "../../../../platform/pi-adapter/index.ts";
+import { NAMESPACE } from "../../core/model/paths.ts";
 
-const WIDGET_KEY = "pi-subagents-agents";
+const WIDGET_KEY = `${NAMESPACE}-agents`;
 
 type PanelWidget = { show(): void; hide(): void };
 

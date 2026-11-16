@@ -5,9 +5,10 @@ import { errorText, readText } from "../../../../platform/shared/index.ts";
 import { cutChars } from "../components/receipt.ts";
 import { type AgentDefinition, grantOrNone } from "../model/agent-record.ts";
 import { AGENT_SCOPE_ALL, type AgentOverrides, ALL_SKILLS_TEXT } from "../model/agent-schema.ts";
+import { NAMESPACE } from "../model/paths.ts";
 import { fillTemplate } from "./template.ts";
 
-export const AUTOSETUP_TYPE = "pi-subagents-autosetup";
+export const AUTOSETUP_TYPE = `${NAMESPACE}-autosetup`;
 
 export const INTERACTIVE_TERMS = [
   "AskUserQuestion",
