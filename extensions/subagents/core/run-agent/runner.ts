@@ -7,7 +7,6 @@ import {
   type ChildEvent,
   type ChildSession,
   type CustomMessage,
-  type MessageDelivery,
   type SessionInfo,
   type StopReason,
   settleWithin,
@@ -244,11 +243,8 @@ export const createRunner = (deps: RunnerDeps): Runner => {
   const hasOpenBatches = (callerId: string) =>
     Array.from(batches.values()).some((batch) => batch.callerId === callerId);
 
-  const deliver = (child: ChildSession, message: AgentMessage, delivery: MessageDelivery) =>
-    "customType" in message ? child.sendCustom(message, delivery) : child.send(message, delivery);
-
   const sendHeld = (live: Live, child: ChildSession) =>
-    Promise.all(live.pending.splice(0).map((message) => deliver(child, message, "steer")));
+    Promise.all(live.pending.splice(0).map((message) => child.send(message, "steer")));
 
   const resume = async (id: string, send: (child: ChildSession) => Promise<void>) => {
     const live = lives.get(id);
@@ -296,7 +292,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     live.outbox ??= createOutbox({
       isBusy: () => live.turn !== "idle",
       deliver: (items) => {
-        void resume(callerId, (child) => child.sendHidden(wakeMessage(items)));
+        void resume(callerId, (child) => child.send(wakeMessage(items), "followUp", { hidden: true }));
       },
       onIdle: (handler) => {
         live.idleHandlers.push(handler);
@@ -1110,11 +1106,11 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     }
 
     if (live.turn === "running") {
-      await deliver(live.child, message, "steer");
+      await live.child.send(message, "steer");
       return { ok: true, delivery: "steer" };
     }
 
-    void resume(id, (child) => deliver(child, message, "followUp"));
+    void resume(id, (child) => child.send(message, "followUp"));
 
     return { ok: true, delivery: "followUp" };
   };

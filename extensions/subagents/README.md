@@ -59,6 +59,8 @@ PI_LIVE_MODEL=provider/id[:thinking] npm run test:live    # real agents, local o
 PI_LIVE_MODEL=provider/id[:thinking] npm run evals        # prompt-quality evals, local only, costs money
 ```
 
+The runner sends every message to an agent through the adapter's one `ChildSession.send` (routed or custom, shown or hidden); its tests read what was sent from the fake child's `messages` and `hidden` lists.
+
 The full set of commands is in the root README's [Development](../../README.md#development) section; rules for coding agents are in [AGENTS.md](../../AGENTS.md).
 
 ## Contributing

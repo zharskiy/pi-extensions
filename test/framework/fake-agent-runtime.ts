@@ -66,14 +66,13 @@ const createFakeChild = (spec: SpawnSpec): FakeChildSession => {
         listeners.delete(listener);
       };
     },
-    send: async (message, delivery) => {
+    send: async (message, delivery, options) => {
+      if (options?.hidden && "customType" in message) {
+        child.hidden.push(message);
+        return;
+      }
+
       child.messages.push({ message, delivery });
-    },
-    sendCustom: async (message, delivery) => {
-      child.messages.push({ message, delivery });
-    },
-    sendHidden: async (message) => {
-      child.hidden.push(message);
     },
     abort: async () => {
       if (child.abortHangs) {

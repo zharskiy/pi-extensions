@@ -395,9 +395,10 @@ export const createPiRuntime = (
           listeners.delete(listener);
         };
       },
-      send: (message, delivery) => deliver(formatRoutedMessage(message), delivery),
-      sendCustom: (message, delivery) => deliverCustom(piCustom(message, true), delivery),
-      sendHidden: (message) => deliverCustom(piCustom(message, false), "followUp"),
+      send: (message, delivery, options) =>
+        "customType" in message
+          ? deliverCustom(piCustom(message, !options?.hidden), delivery)
+          : deliver(formatRoutedMessage(message), delivery),
       abort: () => session.abort(),
       dispose,
       ownUsage: (): UsageTotals => sumUsage(session.sessionManager.getEntries()),
