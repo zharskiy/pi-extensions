@@ -1,9 +1,9 @@
 import { type VmShare, type VmSpec, vmDecision, whenBusy } from "../../backend/index.ts";
-import { configProblem, VM_BOUNDS } from "../../config/index.ts";
+import { configProblem, getPath, setPath, VM_BOUNDS, withoutPath } from "../../config/index.ts";
 import { type JsonObject, LauncherError } from "../../shared/index.ts";
 import { checkRoot, type RootGuardContext, rootRefusal } from "../../workspace/index.ts";
 import { clamp, hostVmLimits } from "../vm.ts";
-import { diffOf, isReindented, serialise, valueAt, withoutValue, withValue } from "./document.ts";
+import { diffOf, isReindented, serialise } from "./document.ts";
 import { isPreChecked, rootsFromEnv, sameRootSet } from "./folders.ts";
 import type {
   Answers,
@@ -35,24 +35,24 @@ const VM_KEYS: readonly VmKey[] = ["cpus", "memoryGiB", "diskGiB"];
 
 export const FIRST_RUN_STEPS: readonly Section[] = ["folders", "vm", "writeBack"];
 
-const ROOTS_PATH = ["workspaceRoots", "roots"];
+const ROOTS_PATH = "workspaceRoots.roots";
 
-const WRITE_BACK_PATH = ["writeBack", "enabled"];
+const WRITE_BACK_PATH = "writeBack.enabled";
 
 export const isFirstRun = (document: ConfigDocument) =>
-  valueAt(document.value, ["workspaceRoots"]) === undefined;
+  getPath(document.value, "workspaceRoots") === undefined;
 
 export const firstRunSteps = (document: ConfigDocument): readonly Section[] =>
   isFirstRun(document) ? FIRST_RUN_STEPS : [];
 
 export const configuredRoots = (document: ConfigDocument) => {
-  const roots = valueAt(document.value, ROOTS_PATH);
+  const roots = getPath(document.value, ROOTS_PATH);
 
   return Array.isArray(roots) && roots.every((root) => typeof root === "string") ? roots : undefined;
 };
 
 const rootProblems = (document: ConfigDocument, context: RootGuardContext): OwnedProblem[] => {
-  const workspaceRoots = valueAt(document.value, ["workspaceRoots"]);
+  const workspaceRoots = getPath(document.value, "workspaceRoots");
 
   if (workspaceRoots === undefined) {
     return [];
@@ -73,7 +73,7 @@ const rootProblems = (document: ConfigDocument, context: RootGuardContext): Owne
 
 const vmProblems = (document: ConfigDocument): OwnedProblem[] =>
   VM_KEYS.flatMap((key) => {
-    const value = valueAt(document.value, ["vm", key]);
+    const value = getPath(document.value, `vm.${key}`);
     const resources = document.value.resources === undefined ? {} : { resources: document.value.resources };
     const problem = value === undefined ? undefined : configProblem({ vm: { [key]: value }, ...resources });
 
@@ -81,7 +81,7 @@ const vmProblems = (document: ConfigDocument): OwnedProblem[] =>
   });
 
 const writeBackProblems = (document: ConfigDocument): OwnedProblem[] => {
-  const enabled = valueAt(document.value, WRITE_BACK_PATH);
+  const enabled = getPath(document.value, WRITE_BACK_PATH);
   const problem = enabled === undefined ? undefined : configProblem({ writeBack: { enabled } });
 
   return problem === undefined ? [] : [{ key: "writeBack.enabled", message: problem }];
@@ -114,7 +114,7 @@ const initialRoots = (document: ConfigDocument, facts: HostFacts, context: RootG
 const fileVm = (document: ConfigDocument) =>
   Object.fromEntries(
     VM_KEYS.flatMap((key) => {
-      const value = valueAt(document.value, ["vm", key]);
+      const value = getPath(document.value, `vm.${key}`);
 
       return typeof value === "number" ? [[key, value]] : [];
     }),
@@ -130,7 +130,7 @@ const initialVm = (document: ConfigDocument, problems: OwnedProblem[]): Answers[
 };
 
 const initialWriteBack = (document: ConfigDocument) => {
-  const enabled = valueAt(document.value, WRITE_BACK_PATH);
+  const enabled = getPath(document.value, WRITE_BACK_PATH);
 
   return typeof enabled === "boolean" ? enabled : true;
 };
@@ -151,31 +151,31 @@ export const initialAnswers = (
 };
 
 const editedRoots = (value: JsonObject, roots: Answers["roots"]) =>
-  roots === "home" ? withoutValue(value, ["workspaceRoots"]) : withValue(value, ROOTS_PATH, roots);
+  roots === "home" ? withoutPath(value, "workspaceRoots") : setPath(value, ROOTS_PATH, roots);
 
 const editedVm = (value: JsonObject, vm: Answers["vm"]) => {
   if (vm === "automatic") {
-    return VM_KEYS.reduce((edited, key) => withoutValue(edited, ["vm", key]), value);
+    return VM_KEYS.reduce((edited, key) => withoutPath(edited, `vm.${key}`), value);
   }
 
   if ("kept" in vm) {
     return VM_KEYS.reduce(
-      (edited, key) => (key in vm.kept ? edited : withoutValue(edited, ["vm", key])),
+      (edited, key) => (key in vm.kept ? edited : withoutPath(edited, `vm.${key}`)),
       value,
     );
   }
 
-  return VM_KEYS.reduce((edited, key) => withValue(edited, ["vm", key], vm[key]), value);
+  return VM_KEYS.reduce((edited, key) => setPath(edited, `vm.${key}`, vm[key]), value);
 };
 
 const editedWriteBack = (value: JsonObject, enabled: boolean) => {
-  const current = valueAt(value, WRITE_BACK_PATH);
+  const current = getPath(value, WRITE_BACK_PATH);
 
   if (current === undefined && enabled) {
     return value;
   }
 
-  return withValue(value, WRITE_BACK_PATH, enabled);
+  return setPath(value, WRITE_BACK_PATH, enabled);
 };
 
 export const editedConfig = (value: JsonObject, answers: Answers) =>

@@ -1,7 +1,7 @@
 import type { VmSpec } from "../../backend/index.ts";
+import { getPath } from "../../config/index.ts";
 import { BACK, Cancelled, type Choice, type Reply } from "../prompt/types.ts";
 import { applyPlan, noteOf } from "./apply.ts";
-import { valueAt } from "./document.ts";
 import { addedRootProblem, tildeForm } from "./folders.ts";
 import { firstRunSteps, initialAnswers, isPlanEmpty, ownedProblems, planOf, vmBounds } from "./plan.ts";
 import {
@@ -362,7 +362,7 @@ const createWizard = (io: SetupIo, context: WizardContext) => {
       return "automatic";
     }
 
-    if (section === "writeBack" && valueAt(plan.next, ["writeBack", "enabled"]) === undefined) {
+    if (section === "writeBack" && getPath(plan.next, "writeBack.enabled") === undefined) {
       return "default";
     }
 

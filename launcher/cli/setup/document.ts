@@ -1,7 +1,7 @@
 import { lstat, mkdir, readlink, realpath, stat } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import { configProblem } from "../../config/index.ts";
+import { configProblem, withoutPath } from "../../config/index.ts";
 import {
   errorMessage,
   isJsonObject,
@@ -41,71 +41,9 @@ const WRITE_REASONS: Record<string, { reason: string; hint: string }> = {
   ENOSPC: { reason: "its disk is full", hint: "free some space, then run pi sandbox init again" },
 };
 
-const OWNED_PATHS = [
-  ["workspaceRoots"],
-  ["vm", "cpus"],
-  ["vm", "memoryGiB"],
-  ["vm", "diskGiB"],
-  ["writeBack", "enabled"],
-] as const;
+const OWNED_PATHS = ["workspaceRoots", "vm.cpus", "vm.memoryGiB", "vm.diskGiB", "writeBack.enabled"];
 
-const childOf = (value: JsonObject, key: string) => {
-  const child = value[key];
-
-  return isJsonObject(child) ? child : undefined;
-};
-
-export const valueAt = (value: JsonObject, path: readonly string[]): unknown => {
-  const [head, ...rest] = path;
-
-  if (rest.length === 0) {
-    return Object.hasOwn(value, head) ? value[head] : undefined;
-  }
-
-  const child = childOf(value, head);
-
-  return child === undefined ? undefined : valueAt(child, rest);
-};
-
-export const withValue = (value: JsonObject, path: readonly string[], next: unknown): JsonObject => {
-  const [head, ...rest] = path;
-
-  if (rest.length === 0) {
-    return { ...value, [head]: next };
-  }
-
-  return { ...value, [head]: withValue(childOf(value, head) ?? {}, rest, next) };
-};
-
-export const withoutValue = (value: JsonObject, path: readonly string[]): JsonObject => {
-  const [head, ...rest] = path;
-
-  if (!Object.hasOwn(value, head)) {
-    return value;
-  }
-
-  const kept = Object.fromEntries(Object.entries(value).filter(([key]) => key !== head));
-
-  if (rest.length === 0) {
-    return kept;
-  }
-
-  const child = childOf(value, head);
-
-  if (child === undefined) {
-    return value;
-  }
-
-  const trimmed = withoutValue(child, rest);
-
-  if (trimmed === child) {
-    return value;
-  }
-
-  return Object.keys(trimmed).length === 0 ? kept : { ...value, [head]: trimmed };
-};
-
-export const withoutOwned = (value: JsonObject) => OWNED_PATHS.reduce(withoutValue, value);
+export const withoutOwned = (value: JsonObject) => OWNED_PATHS.reduce(withoutPath, value);
 
 const indentOf = (text: string) => {
   const leading = INDENTED_LINE.exec(text)?.[1];
