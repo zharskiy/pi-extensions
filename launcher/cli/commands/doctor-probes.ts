@@ -107,7 +107,7 @@ const stringLeaves = (value: unknown, path: string): Leaf[] => {
   );
 };
 
-const parsedJson = (output: string) => {
+export const parsedJson = (output: string) => {
   try {
     return JSON.parse(output) as unknown;
   } catch {
