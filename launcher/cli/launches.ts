@@ -1,10 +1,10 @@
 import type { Backend } from "../backend/index.ts";
 import { type GitGuardContext, overlayVolumes, removeLaunchContainer } from "../container/index.ts";
 import { endLaunch, type Launch, liveLaunches, newLaunchId, registerLaunch } from "../grants/index.ts";
-import { errorMessage, processMark, writeRepoRecord } from "../shared/index.ts";
+import { processMark, writeRepoRecord } from "../shared/index.ts";
 import { gitLaunchEndNotices } from "../workspace/index.ts";
 import type { LaunchContext } from "./context.ts";
-import { type CliDeps, reachableEngine, writeNotices } from "./deps.ts";
+import { type CliDeps, reachableEngine, warningText, writeNotices, writeWarning } from "./deps.ts";
 import { sweepRepoSessions } from "./host-sessions.ts";
 import { removeRepoSandbox, sweepOrphans } from "./sweep.ts";
 
@@ -31,7 +31,7 @@ export const gitGuardOf = (deps: CliDeps, context: LaunchContext): GitGuardConte
 
 const gitEndNotices = (deps: CliDeps, context: LaunchContext) =>
   gitLaunchEndNotices(context.workspace, gitGuardOf(deps, context)).catch((error: unknown) => [
-    `warning: git: the check after the session failed: ${errorMessage(error)}`,
+    warningText("git: the check after the session failed", error),
   ]);
 
 const removeOwnContainer = async (deps: CliDeps, engine: Backend | undefined, launch: Launch) => {
@@ -40,7 +40,7 @@ const removeOwnContainer = async (deps: CliDeps, engine: Backend | undefined, la
   }
 
   await removeLaunchContainer(engine, launch.launchId).catch((error: unknown) => {
-    writeNotices(deps, [`warning: the launch's container was not removed: ${errorMessage(error)}`]);
+    writeWarning(deps, "the launch's container was not removed", error);
   });
 };
 
@@ -68,7 +68,7 @@ export const finishLaunch = async (
       },
     });
   } catch (error) {
-    writeNotices(deps, [`warning: could not end the launch: ${errorMessage(error)}`]);
+    writeWarning(deps, "could not end the launch", error);
   }
 
   if (last.gitNotices === undefined) {

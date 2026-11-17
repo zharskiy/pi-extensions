@@ -33,7 +33,7 @@ bin/shim.sh                    the package name, the pi shim in ~/.local/bin wit
 ```
 cli/main.ts                    builds the real dependencies, the host git outside the started folder and the /dev/tty opener of pi sandbox init included, and runs
 cli/run.ts                     the command table with egress's actions, help and option checks, the hidden __uninstall and __vm-shares routes and error rendering
-cli/deps.ts                    the dependencies every command gets, and the shared terminal helpers (TTY and colour checks, a line sink)
+cli/deps.ts                    the dependencies every command gets, and the shared terminal helpers (TTY and colour checks, a line sink, notices and warnings)
 cli/index.ts                   public surface
 cli/launch.ts                  the pi pipeline with its stages and progress lines, and withSandbox for the doctor
 cli/context.ts                 the launch context: the folder to mount, the guard and workspaceRoots before the search, config, discovery and the checks after it

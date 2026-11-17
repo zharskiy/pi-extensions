@@ -2,7 +2,7 @@ import { type Backend, LABELS } from "../backend/index.ts";
 import { agentContainers } from "../container/index.ts";
 import { othersLive, withRepoLaunchLock } from "../grants/index.ts";
 import { prepareHostSessions, probeHostSessions, sweepHostSessions } from "../provision/index.ts";
-import { errorMessage, LauncherError } from "../shared/index.ts";
+import { LauncherError } from "../shared/index.ts";
 import {
   assertHostSessionsDir,
   type HostSessions,
@@ -10,7 +10,7 @@ import {
   hostSessionsDir,
 } from "../workspace/index.ts";
 import type { LaunchContext } from "./context.ts";
-import { type CliDeps, hostAgentDirOf, reachableBackend, writeNotices } from "./deps.ts";
+import { type CliDeps, hostAgentDirOf, reachableBackend, writeNotices, writeWarning } from "./deps.ts";
 
 export const hostSessionsOf = (
   deps: CliDeps,
@@ -39,7 +39,7 @@ const containerRunning = async (backend: Backend, context: LaunchContext) =>
   );
 
 const warnUnswept = (deps: CliDeps, dir: string, error: unknown) => {
-  writeNotices(deps, [`warning: sessions: ${dir} was not swept: ${errorMessage(error)}`]);
+  writeWarning(deps, `sessions: ${dir} was not swept`, error);
 };
 
 const sweep = async (deps: CliDeps, repoRoot: string, full: boolean): Promise<string[]> => {

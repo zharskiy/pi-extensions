@@ -12,7 +12,6 @@ import {
 import { collectImages, removeBuildLeftovers } from "../image/index.ts";
 import { removeRepoToken } from "../proxy/index.ts";
 import {
-  errorMessage,
   forgetRepo,
   hasRepoLeftovers,
   isMounted,
@@ -28,7 +27,7 @@ import {
   writeJsonFile,
 } from "../shared/index.ts";
 import { removeCreatedDirs } from "../workspace/index.ts";
-import { type CliDeps, pathsOf, writeNotices } from "./deps.ts";
+import { type CliDeps, pathsOf, writeWarning } from "./deps.ts";
 import { sweepRepoSessions } from "./host-sessions.ts";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -61,10 +60,6 @@ const rootState = async (record: RepoRecord | undefined) => {
   return (await presenceOf(dirname(record.root))) === "present" ? "gone" : "unreachable";
 };
 
-const warn = (deps: CliDeps, what: string, error: unknown) => {
-  writeNotices(deps, [`warning: ${what}: ${errorMessage(error)}`]);
-};
-
 const removeRelays = async (backend: Backend, repoHash: string) => {
   const relays = await backend.findContainers({ ...RELAYS, [LABELS.repoHash]: repoHash });
 
@@ -95,7 +90,7 @@ const clearEngine = async (deps: CliDeps, engine: Backend | undefined, repoHash:
   try {
     return await removeEngineSide(engine, repoHash);
   } catch (error) {
-    warn(deps, "the sandbox containers were not removed", error);
+    writeWarning(deps, "the sandbox containers were not removed", error);
 
     return [];
   }
@@ -283,7 +278,7 @@ const sweepAll = async (deps: CliDeps, engine: Backend | undefined) => {
   const lines = await Promise.all(
     hashes.map((hash) =>
       sweepRepo(deps, engine, hash, agentsOf(hash), fromEngine.has(hash)).catch((error: unknown) => {
-        warn(deps, `the sandbox of ${shortHash(hash)} was not swept`, error);
+        writeWarning(deps, `the sandbox of ${shortHash(hash)} was not swept`, error);
 
         return [];
       }),
@@ -294,7 +289,7 @@ const sweepAll = async (deps: CliDeps, engine: Backend | undefined) => {
 };
 
 export const sweepFailed = (deps: CliDeps, error: unknown): string[] => {
-  warn(deps, "the sweep of leftover sandboxes failed", error);
+  writeWarning(deps, "the sweep of leftover sandboxes failed", error);
 
   return [];
 };

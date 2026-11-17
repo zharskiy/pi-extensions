@@ -16,10 +16,10 @@ import { type HostPiFiles, readHostPiFiles } from "../hostpi/index.ts";
 import { ensureSandboxImage, type SandboxImage } from "../image/index.ts";
 import { renderAgentDir, syncVolumeFiles } from "../provision/index.ts";
 import { type DenialRecord, guestProxyUrl } from "../proxy/index.ts";
-import { errorMessage, settleAll, signalExit, type WriteBackTable } from "../shared/index.ts";
+import { settleAll, signalExit, type WriteBackTable } from "../shared/index.ts";
 import { gitLaunchNotices, type HostSessions } from "../workspace/index.ts";
 import { checkWorkspaceRoots, type LaunchContext, openContext } from "./context.ts";
-import { type CliDeps, hostAgentDirOf, reachableEngine, writeNotices } from "./deps.ts";
+import { type CliDeps, hostAgentDirOf, reachableEngine, writeNotices, writeWarning } from "./deps.ts";
 import { type HostSide, type PreparedHost, prepareHostSide } from "./derive.ts";
 import { NO_SANDBOX, resolveJobPi, runHostPi } from "./host-pi.ts";
 import {
@@ -308,7 +308,7 @@ const prepareSandbox = async (input: PreparedInput) => {
   cancelled.throwIfAborted();
 
   await staged("sync", () => syncAgentFiles(input, prepared.containerId)).catch((error: unknown) => {
-    writeNotices(deps, [`warning: the agent settings were not synced: ${errorMessage(error)}`]);
+    writeWarning(deps, "the agent settings were not synced", error);
   });
 
   return { prepared, proxy };
@@ -457,7 +457,7 @@ export const withSandbox = async (
 
       if (ended.sync?.writeBack === true) {
         await syncVolume(deps, context, backend, ended.sync).catch((error: unknown) => {
-          writeNotices(deps, [`warning: settings were not written back: ${errorMessage(error)}`]);
+          writeWarning(deps, "settings were not written back", error);
         });
       }
 

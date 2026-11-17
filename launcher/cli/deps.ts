@@ -2,7 +2,7 @@ import { type Backend, engineUnreachable } from "../backend/index.ts";
 import type { ExtraCa } from "../config/index.ts";
 import type { HostTerminal, SignalSource } from "../container/index.ts";
 import type { DenialRecord, RepoProxy, RepoProxyInput, RepoProxyStart, TrustBundle } from "../proxy/index.ts";
-import { type CommandRunner, hostAgentDir, launcherPaths } from "../shared/index.ts";
+import { type CommandRunner, errorMessage, hostAgentDir, launcherPaths } from "../shared/index.ts";
 import { colourOf, type TtyStreams } from "./prompt/terminal.ts";
 
 interface ProxyRequest {
@@ -60,6 +60,12 @@ export const writeNotices = (deps: CliDeps, notices: string[]) => {
   }
 
   writeLines(deps.stderr, unique.map(noticeLine));
+};
+
+export const warningText = (what: string, error: unknown) => `warning: ${what}: ${errorMessage(error)}`;
+
+export const writeWarning = (deps: CliDeps, what: string, error: unknown) => {
+  writeNotices(deps, [warningText(what, error)]);
 };
 
 export const isTerminal = (stream: object) => "isTTY" in stream && stream.isTTY === true;
