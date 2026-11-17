@@ -766,6 +766,31 @@ describe("tool config details", () => {
     ]);
   });
 
+  it("expands no variable whose name has only a secret segment into npmrc or Maven settings", async () => {
+    const settings = `<settings>
+  <servers>
+    <server><id>corp</id><username>${braced("env.DB_PASS")}</username><password>M2-REAL</password></server>
+  </servers>
+  <mirrors><mirror><id>corp</id><mirrorOf>central</mirrorOf><url>https://maven.corp.test/repo</url></mirror></mirrors>
+</settings>`;
+    const { tools } = await derive({
+      files: { ".npmrc": `init-author-name=${braced("GITHUB_PAT")}\n`, ".m2/settings.xml": settings },
+      env: { GITHUB_PAT: "ghp-real-pat", DB_PASS: "real-db-pass" },
+    });
+
+    expect(tools.value.npmrc).toEqual([]);
+    expect(tools.value.maven.servers.map((server) => [server.id, server.username])).toEqual([
+      ["corp", braced("env.DB_PASS")],
+    ]);
+    expect(tools.notices).toEqual(
+      expect.arrayContaining([
+        "npmrc: init-author-name reads an environment variable that is unset or secret; the key stays on the host",
+        "maven corp: the username reads an environment variable that is unset or secret on the host; it is copied unexpanded",
+      ]),
+    );
+    expect(JSON.stringify(tools)).not.toMatch(/ghp-real-pat|real-db-pass/);
+  });
+
   it("expands env usernames and keeps mixed env passwords on the host in Maven settings", async () => {
     const settings = `<settings>
   <servers>
