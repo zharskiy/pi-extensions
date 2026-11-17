@@ -25,7 +25,7 @@ import { type Component, Container, Spacer, type TUI } from "@earendil-works/pi-
 import type { ThemeLike } from "../types/theme.ts";
 import type { AnyToolSpec } from "../types/tools.ts";
 import type { TranscriptItem, TranscriptPane } from "../types/view.ts";
-import { labelledRule } from "../ui/rules.ts";
+import { paddedRule } from "../ui/rules.ts";
 import { hiddenThinkingLabel, OSC133_ZONE_PREFIX } from "../ui/thinking-label.ts";
 import { messageRendererFor, previousEntryComponent } from "./entry-renderers.ts";
 import { sharedPad } from "./row-component.ts";
@@ -252,11 +252,7 @@ export const createTranscriptPane = (
       spaceAfterContent();
 
       container.addChild({
-        render: (width) => {
-          const pad = sharedPad();
-
-          return [`${" ".repeat(pad)}${labelledRule(theme(), width - pad, item.label)}`];
-        },
+        render: (width) => [paddedRule(theme(), width, sharedPad(), item.label)],
         invalidate: () => {},
       });
       return;
