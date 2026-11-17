@@ -61,6 +61,9 @@ const matches = (grant: Grant, match: GrantMatch) =>
   (match.port === undefined || grant.port === match.port) &&
   grant.repoHash === match.repoHash;
 
+export const hasGrant = async (stateDir: string, match: GrantMatch) =>
+  (await readGrants(stateDir)).some((grant) => matches(grant, match));
+
 export const revokeGrants = (stateDir: string, match: GrantMatch): Promise<number> =>
   updateGrants(stateDir, (grants) => {
     const kept = grants.filter((grant) => !matches(grant, match));

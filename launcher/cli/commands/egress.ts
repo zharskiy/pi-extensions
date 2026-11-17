@@ -1,5 +1,12 @@
 import { authorityOf, matchesDenyEntry, parseEntry, parseHostEntry, TLS_PORT } from "../../config/index.ts";
-import { activeGrants, addGrant, type Grant, readGrants, revokeGrants } from "../../grants/index.ts";
+import {
+  activeGrants,
+  addGrant,
+  type Grant,
+  hasGrant,
+  readGrants,
+  revokeGrants,
+} from "../../grants/index.ts";
 import { LauncherError } from "../../shared/index.ts";
 import { assertSafeMounts } from "../../workspace/index.ts";
 import { type LaunchContext, openContext } from "../context.ts";
@@ -79,30 +86,18 @@ const allow = async (deps: CliDeps, args: string[]) => {
   return 0;
 };
 
-const otherScopeHolds = async (
-  context: LaunchContext,
-  target: Target,
-  port: number | undefined,
-  user: boolean,
-) =>
-  (await readGrants(context.stateDir)).some(
-    (grant) =>
-      grant.host === target.host &&
-      (port === undefined || grant.port === port) &&
-      grant.repoHash === (user ? context.repoHash : undefined),
-  );
-
 const revoke = async (deps: CliDeps, args: string[]) => {
   const { text, target, user } = targetArgs("egress revoke", args);
   const { context } = await openContext(deps, "host");
   const port = text?.includes(":") ? target.port : undefined;
+  const match = { host: target.host, ...(port === undefined ? {} : { port }) };
   const count = await revokeGrants(context.stateDir, {
-    host: target.host,
-    ...(port === undefined ? {} : { port }),
+    ...match,
     ...(user ? {} : { repoHash: context.repoHash }),
   });
+  const other = { ...match, ...(user ? { repoHash: context.repoHash } : {}) };
 
-  if (count === 0 && (await otherScopeHolds(context, target, port, user))) {
+  if (count === 0 && (await hasGrant(context.stateDir, other))) {
     throw new LauncherError(
       `egress: ${text} has no grant for ${user ? "every repository" : "this repository"}; its grant is for ${user ? "this repository" : "every repository"}`,
       `pi sandbox egress revoke ${text}${user ? "" : ` ${USER_FLAG}`}`,

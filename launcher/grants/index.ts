@@ -12,6 +12,7 @@ export {
   activeGrants,
   addGrant,
   forgetRepoGrants,
+  hasGrant,
   readGrants,
   revokeGrants,
 } from "./store.ts";
