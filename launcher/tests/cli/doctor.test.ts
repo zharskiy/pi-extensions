@@ -532,6 +532,45 @@ describe("pi sandbox doctor", () => {
     expect(stdout).not.toContain("real-secret");
   });
 
+  it("fails the sweep on an mcp.json or auth.json env entry that derivation would have masked", async () => {
+    const placeholder = "pi-sandbox-0123456789abcdef01234567";
+    const { stdout } = await doctorWith({
+      probes: {
+        mcp: JSON.stringify({
+          mcpServers: {
+            tool: {
+              command: "tool",
+              env: {
+                SESSION_COOKIE: "real-cookie-value",
+                GITHUB_PAT: "real-pat-value",
+                CONFIG_HOME: `\${HOME}/tool`,
+                LOOKUP: "!pass show tool",
+                MODE: "fast",
+                RETRIES: "3",
+                OTHER_COOKIE: placeholder,
+              },
+            },
+          },
+        }),
+        auth: JSON.stringify({
+          llm: { type: "api_key", key: placeholder, env: { DB_PASS: "real-pass", DB_USER: placeholder } },
+        }),
+      },
+    });
+
+    expect(check(stdout, "credential sweep")).toMatchObject({
+      status: "fail",
+      detail: "5 findings in the environment, auth.json or mcp.json",
+      reasons: [
+        "/home/pi/.pi/agent/auth.json holds a value other than the placeholder at llm.env.DB_PASS",
+        "/home/pi/.pi/agent/mcp.json holds a value other than a placeholder at mcpServers.tool.env.SESSION_COOKIE",
+        "/home/pi/.pi/agent/mcp.json holds a value other than a placeholder at mcpServers.tool.env.GITHUB_PAT",
+        "/home/pi/.pi/agent/mcp.json holds a value other than a placeholder at mcpServers.tool.env.CONFIG_HOME",
+        "/home/pi/.pi/agent/mcp.json holds a value other than a placeholder at mcpServers.tool.env.LOOKUP",
+      ],
+    });
+  });
+
   it("passes the sweep over the container's own environment, whose proxy token is no placeholder", async () => {
     const { stdout, fake } = await doctorWith();
     const env = fake.created[0]?.spec?.env ?? {};

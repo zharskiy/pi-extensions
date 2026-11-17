@@ -8,6 +8,7 @@ import {
   GUEST_PATHS,
   isAuthLikeHeader,
   isPlaceholder,
+  isSecretEnvEntry,
   isSecretName,
   lastLine,
 } from "../../shared/index.ts";
@@ -120,28 +121,23 @@ const lastSegment = (path: string) => path.split(".").at(-1) ?? "";
 const isPlaceholderValue = (value: string) =>
   value === "" || isPlaceholder(value) || isPlaceholder(value.trim().split(/\s+/).at(-1) ?? "");
 
-const isSecretField = (path: string) => {
-  const name = lastSegment(path);
+const sectionOf = (path: string) => path.split(".").at(-2);
 
-  return name !== "type" && (TOKEN_FIELDS.includes(name) || isSecretName(name));
+const isEnvSecret = (leaf: Leaf) =>
+  sectionOf(leaf.path) === "env" && isSecretEnvEntry(lastSegment(leaf.path), leaf.value);
+
+const isAuthSecret = (leaf: Leaf) => {
+  const name = lastSegment(leaf.path);
+
+  return isEnvSecret(leaf) || (name !== "type" && (TOKEN_FIELDS.includes(name) || isSecretName(name)));
 };
 
-const foreignAuthPaths = (auth: unknown) =>
-  stringLeaves(auth, "")
-    .filter((leaf) => isSecretField(leaf.path) && !isPlaceholderValue(leaf.value))
-    .map((leaf) => leaf.path);
+const isMcpSecret = (leaf: Leaf) =>
+  isEnvSecret(leaf) || (sectionOf(leaf.path) === "headers" && isAuthLikeHeader(lastSegment(leaf.path)));
 
-const isMcpSecret = (path: string) => {
-  const parts = path.split(".");
-  const section = parts.at(-2);
-  const name = parts.at(-1) ?? "";
-
-  return (section === "headers" && isAuthLikeHeader(name)) || (section === "env" && isSecretName(name));
-};
-
-const foreignMcpPaths = (mcp: unknown) =>
-  stringLeaves(mcp, "")
-    .filter((leaf) => isMcpSecret(leaf.path) && !isPlaceholderValue(leaf.value))
+const foreignPaths = (value: unknown, isSecret: (leaf: Leaf) => boolean) =>
+  stringLeaves(value, "")
+    .filter((leaf) => isSecret(leaf) && !isPlaceholderValue(leaf.value))
     .map((leaf) => leaf.path);
 
 const secretEnvNames = (output: string, proxyToken: string | undefined) =>
@@ -171,10 +167,10 @@ export const sweepCredentials = async (target: ProbeTarget, proxyToken?: string)
     ...secretEnvNames(env.stdout, proxyToken).map(
       (name) => `environment variable ${name} holds a value other than the placeholder`,
     ),
-    ...foreignAuthPaths(auth).map(
+    ...foreignPaths(auth, isAuthSecret).map(
       (path) => `${GUEST_AUTH_FILE} holds a value other than the placeholder at ${path}`,
     ),
-    ...foreignMcpPaths(mcp).map(
+    ...foreignPaths(mcp, isMcpSecret).map(
       (path) => `${GUEST_MCP_FILE} holds a value other than a placeholder at ${path}`,
     ),
   ];
