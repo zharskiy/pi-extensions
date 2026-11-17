@@ -39,7 +39,7 @@ export interface VmSharePlan {
 
 const HOST_RESERVE_GIB = 2;
 
-const AUTOMATIC = { cpus: { min: 2, max: 8 }, memoryGiB: { min: 4, max: 10 }, diskGiB: 60 };
+export const AUTOMATIC_VM_SIZE = { cpus: { min: 2, max: 8 }, memoryGiB: { min: 4, max: 10 }, diskGiB: 60 };
 
 export const clamp = (value: number, bounds: { min: number; max: number }) =>
   Math.max(bounds.min, Math.min(bounds.max, value));
@@ -50,9 +50,9 @@ export const hostVmLimits = (machine: CliDeps["machine"]) => ({
 });
 
 export const recommendedVmSize = (cpus: number, memoryGiB: number): VmSpec => ({
-  cpus: clamp(Math.floor(cpus), AUTOMATIC.cpus),
-  memoryGiB: clamp(Math.floor(memoryGiB / 2), AUTOMATIC.memoryGiB),
-  diskGiB: AUTOMATIC.diskGiB,
+  cpus: clamp(Math.floor(cpus), AUTOMATIC_VM_SIZE.cpus),
+  memoryGiB: clamp(Math.floor(memoryGiB / 2), AUTOMATIC_VM_SIZE.memoryGiB),
+  diskGiB: AUTOMATIC_VM_SIZE.diskGiB,
 });
 
 const vmHostProblems = (machine: CliDeps["machine"], target: VmTarget) => {
