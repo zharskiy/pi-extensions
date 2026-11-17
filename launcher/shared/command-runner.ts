@@ -1,6 +1,6 @@
 import { type ChildProcess, type StdioOptions, spawn } from "node:child_process";
 import { constants } from "node:os";
-import { LauncherError } from "./errors.ts";
+import { isMissing, LauncherError } from "./errors.ts";
 import { withTimeout } from "./settle.ts";
 
 interface InteractiveOptions {
@@ -40,7 +40,7 @@ const exitCode = (code: number | null, signal: NodeJS.Signals | null) => {
 };
 
 const launchError = (file: string, error: NodeJS.ErrnoException) =>
-  error.code === "ENOENT"
+  isMissing(error)
     ? new LauncherError(`${file}: command not found`, `install ${file} or add it to PATH`)
     : new LauncherError(`${file}: ${error.message}`);
 
