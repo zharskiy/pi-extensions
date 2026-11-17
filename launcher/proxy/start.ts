@@ -14,7 +14,9 @@ import {
   MIB,
   PRIVATE_DIR_MODE,
   PRIVATE_FILE_MODE,
+  parseJsonObject,
   readJsonObject,
+  readOptionalText,
   readRandomHexFile,
   stableHash,
   stateLayout,
@@ -95,12 +97,14 @@ const isRecord = (value: unknown): value is RepoProxy => {
   );
 };
 
-export const readRepoProxy = async (stateDir: string, repoHash: string): Promise<RepoProxy | undefined> => {
-  const path = proxyFiles(stateDir, repoHash).record;
-  const record = await readJsonObject(path);
+const liveRecord = async (text: string | undefined) => {
+  const record = text === undefined ? undefined : parseJsonObject(text);
 
   return isRecord(record) && (await isLive(record)) ? record : undefined;
 };
+
+export const readRepoProxy = async (stateDir: string, repoHash: string): Promise<RepoProxy | undefined> =>
+  liveRecord(await readOptionalText(proxyFiles(stateDir, repoHash).record));
 
 export const stopRepoProxy = async (stateDir: string, repoHash: string) => {
   const files = proxyFiles(stateDir, repoHash);
@@ -260,30 +264,32 @@ const startDaemon = async (options: EnsureRepoProxyOptions, inputHash: string): 
 };
 
 const runningProxy = async (stateDir: string, input: RepoProxyInput) => {
-  const record = await readRepoProxy(stateDir, input.repoHash);
+  const path = proxyFiles(stateDir, input.repoHash).record;
+  const text = await readOptionalText(path);
+  const record = await liveRecord(text);
+  const found = text !== undefined;
 
   if (record === undefined) {
-    await rm(proxyFiles(stateDir, input.repoHash).record, { force: true });
+    await rm(path, { force: true });
 
-    return undefined;
+    return { found };
   }
 
   if (await isHealthyWithRetries(record, input.token)) {
-    return record;
+    return { proxy: record, found };
   }
 
   await stopRepoProxy(stateDir, input.repoHash);
 
-  return undefined;
+  return { found };
 };
 
 const egressChangedFor = async (
   previous: EgressSettings | undefined,
   settings: EgressSettings,
-  running: boolean,
+  found: boolean,
   othersLive: () => Promise<boolean>,
-) =>
-  (previous === undefined ? running : stableHash(previous) !== stableHash(settings)) && (await othersLive());
+) => (previous === undefined ? found : stableHash(previous) !== stableHash(settings)) && (await othersLive());
 
 export const ensureRepoProxy = async (options: EnsureRepoProxyOptions): Promise<RepoProxyStart> => {
   const { stateDir, input } = options;
@@ -305,8 +311,9 @@ export const ensureRepoProxy = async (options: EnsureRepoProxyOptions): Promise<
 
     return others.live;
   };
-  const current = await runningProxy(stateDir, input);
-  const changed = await egressChangedFor(previous, settings, current !== undefined, othersLive);
+  const running = await runningProxy(stateDir, input);
+  const current = running.proxy;
+  const changed = await egressChangedFor(previous, settings, running.found, othersLive);
   const egressNotices = changed ? [EGRESS_CHANGED] : [];
   const inputHash = await proxyInputHash(stateDir, input);
 
