@@ -473,6 +473,20 @@ describe("a re-run", () => {
     expect(run.writes).toEqual([]);
   });
 
+  it("names a root that another root shares in the review", async () => {
+    const notice = "workspaceRoots: ~/work/a is inside ~/work and is shared through it";
+    const share = (roots: Answers["roots"]) => ({ ...sharesOf(roots), notices: [notice] });
+    const run = setup({ text: SAVED, facts: { vm: RUNNING }, share });
+
+    await run.settled();
+
+    expect(run.screen.lines()).toContain(`│  ${notice}`);
+
+    await run.keys(KEY.enter);
+
+    expect(await run.exit).toBe(0);
+  });
+
   it("shows the change and restarts the idle VM", async () => {
     const run = setup({ text: SAVED, facts: { vm: RUNNING }, vm: ["restarted"] });
 

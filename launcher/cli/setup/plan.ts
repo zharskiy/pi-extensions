@@ -258,6 +258,7 @@ export const planOf = (
     reindented: changes.length > 0 && isReindented(document),
     vm: "problem" in share ? { kind: "none" } : vmActionOf(answers, facts, share),
     problems,
+    notices: "problem" in share ? [] : (share.notices ?? []),
   };
 };
 

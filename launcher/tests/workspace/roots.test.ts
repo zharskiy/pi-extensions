@@ -126,10 +126,24 @@ describe("sharedRootsOf", () => {
 
     expect(
       sharedRootsOf(
-        { roots: [join(base, "work", "a"), join(base, "work"), "~/code", join(base, "work")] },
+        {
+          roots: [
+            join(base, "work", "a"),
+            join(base, "work"),
+            "~/code",
+            join(base, "work"),
+            join(base, "work", "a"),
+          ],
+        },
         paths,
       ),
-    ).toEqual({ roots: [join(base, "work"), join(paths.home, "code")], missing: [], notices: [] });
+    ).toEqual({
+      roots: [join(base, "work"), join(paths.home, "code")],
+      missing: [],
+      notices: [
+        `workspaceRoots: ${join(base, "work", "a")} is inside ${join(base, "work")} and is shared through it`,
+      ],
+    });
   });
 
   it("skips a root that does not exist with a notice", async () => {
@@ -158,6 +172,19 @@ describe("sharedRootsOf", () => {
     );
   });
 
+  it("names a root that a link puts inside another root as shared through it", async () => {
+    const { base, paths } = await createHome();
+    const link = join(base, "other", "inner");
+
+    await symlink(join(base, "work", "a"), link);
+
+    expect(sharedRootsOf({ roots: [join(base, "work"), link] }, paths)).toEqual({
+      roots: [join(base, "work")],
+      missing: [],
+      notices: [`workspaceRoots: ${link} is inside ${join(base, "work")} and is shared through it`],
+    });
+  });
+
   it("accepts a root next to the protected home paths", async () => {
     const { paths } = await createHome();
 
@@ -173,7 +200,7 @@ describe("sharedRootsOf", () => {
     expect(sharedRootsOf({ roots: [join(base, "work"), data] }, paths)).toEqual({
       roots: [join(base, "work")],
       missing: [],
-      notices: [],
+      notices: [`workspaceRoots: ${data} is inside ${join(base, "work")} and is shared through it`],
     });
   });
 
@@ -183,7 +210,10 @@ describe("sharedRootsOf", () => {
 
     await symlink(join(base, "other"), data);
 
-    expect(sharedRootsOf({ roots: [join(base, "work"), data] }, paths).roots).toEqual([join(base, "work")]);
+    expect(sharedRootsOf({ roots: [join(base, "work"), data] }, paths)).toMatchObject({
+      roots: [join(base, "work")],
+      notices: [`workspaceRoots: ${data} is inside ${join(base, "work")} and is shared through it`],
+    });
     expect(() =>
       assertWithinWorkspaceRoots(
         workspaceAt(join(base, "other")),

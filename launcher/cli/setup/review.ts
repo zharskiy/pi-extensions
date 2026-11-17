@@ -97,6 +97,7 @@ export const createReview = (document: ConfigDocument, facts: HostFacts, env: No
       ...(framed ? [HUB_SUMMARY_TITLE] : []),
       ...rows,
       ...(framed ? [""] : []),
+      ...(plan.notices.length === 0 ? [] : [...wrapped(plan.notices, room), ""]),
       ...(view.notice === undefined ? [] : [...wrapped([view.notice], room), ""]),
       ...effect,
       ...(view.plain ? [] : ["", ...wrapped([OTHER_SETTINGS], room), ""]),

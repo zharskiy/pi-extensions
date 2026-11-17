@@ -67,11 +67,13 @@ const sharePlanFor =
   (deps: CliDeps) =>
   (roots: Answers["roots"], facts: { home: string }): SharePlan => {
     if (roots === "home") {
-      return { shares: [{ location: facts.home, writable: true }], exact: false };
+      return { shares: [{ location: facts.home, writable: true }], exact: false, notices: [] };
     }
 
     try {
-      return { shares: vmSharesFor(deps, { roots })?.shares ?? [], exact: true };
+      const planned = vmSharesFor(deps, { roots });
+
+      return { shares: planned?.shares ?? [], exact: true, notices: planned?.notices ?? [] };
     } catch (error) {
       return { problem: errorMessage(error) };
     }
@@ -130,9 +132,9 @@ const acceptAll = async (deps: CliDeps) => {
   const facts = await detectFor(deps, context)(document);
   const { answers, notices } = answersForYes(document, facts, deps.env);
 
-  writeNotices(deps, notices);
-
   const plan = planOf(document, answers, facts, sharePlanFor(deps)(answers.roots, facts));
+
+  writeNotices(deps, [...notices, ...plan.notices]);
 
   if (plan.problems.length > 0) {
     throw new LauncherError(plan.problems.join("; "), `fix ${context.configFile}`);
@@ -144,7 +146,11 @@ const acceptAll = async (deps: CliDeps) => {
 
   const streams = { out: deps.stdout, err: deps.stderr, timers: { ...realTimers, now: deps.now } };
   const state = { answers, touched: new Set<never>() };
-  const review = createReview(document, facts, deps.env).lines(state, plan, { plain: true, table: true });
+  const review = createReview(document, facts, deps.env).lines(
+    state,
+    { ...plan, notices: [] },
+    { plain: true, table: true },
+  );
 
   const front = lineFrontEnd(streams, facts, review(Number.POSITIVE_INFINITY));
 

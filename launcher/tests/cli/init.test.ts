@@ -195,6 +195,56 @@ describe("pi sandbox init --yes", () => {
     expect(harness.stderr()).toBe("");
   });
 
+  it("says once that a root inside another root is shared through it, and keeps both in the file", async () => {
+    const harness = await initSetup();
+    const work = join(harness.deps.home, "work");
+    const inner = join(work, "inner");
+
+    await mkdir(inner, { recursive: true });
+
+    const deps = { ...harness.deps, env: { ...harness.deps.env, PI_SANDBOX_ROOTS: `~/work:${inner}` } };
+
+    expect(await run(["sandbox", "init", "--yes"], deps)).toBe(0);
+    expect(harness.stderr()).toBe(
+      `pi-sandbox: workspaceRoots: ${inner} is inside ~/work and is shared through it\n`,
+    );
+    expect(harness.stdout()).not.toContain("is shared through it");
+    expect(JSON.parse(await readFile(harness.userConfigFile, "utf8"))).toEqual({
+      workspaceRoots: { roots: ["~/work", inner] },
+    });
+    expect(harness.applied.map((desired) => desired.shares[0])).toEqual([{ location: work, writable: true }]);
+  });
+
+  it("says that a root inside another root is shared through it when nothing changes", async () => {
+    const harness = await initSetup();
+    const inner = join(harness.repoRoot, "inner");
+
+    await mkdir(inner, { recursive: true });
+    await harness.writeJson(harness.userConfigFile, { workspaceRoots: { roots: [harness.repoRoot, inner] } });
+
+    const fake = createFakeBackend({
+      vm: {
+        inspect: async () => ({
+          state: "running",
+          size: AUTOMATIC_SIZE,
+          shares: [
+            { location: harness.repoRoot, writable: true },
+            { location: harness.sessions, writable: true },
+            { location: harness.vmState, writable: false },
+          ],
+        }),
+      },
+    });
+
+    expect(await run(["sandbox", "init", "--yes"], { ...harness.deps, backend: () => fake.backend })).toBe(0);
+    expect(harness.stderr()).toBe(
+      `pi-sandbox: workspaceRoots: ${inner} is inside ${harness.repoRoot} and is shared through it\n`,
+    );
+    expect(harness.stdout()).toBe(
+      "Everything is set up: the file and the sandbox VM already match these settings.\n",
+    );
+  });
+
   it("resolves a relative PI_SANDBOX_ROOTS entry against the current folder", async () => {
     const harness = await initSetup({ env: { PI_SANDBOX_ROOTS: ".." } });
 

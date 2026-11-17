@@ -801,6 +801,25 @@ describe("the VM shares with workspaceRoots set, at the edges", () => {
   });
 });
 
+describe("a root inside another root", () => {
+  it("is named once under the vm shares check of pi sandbox doctor", async () => {
+    const context = await launchWithRoots({
+      lima: rootsShares,
+      roots: ({ repoRoot }) => [repoRoot, join(repoRoot, "src")],
+    });
+
+    await mkdir(join(context.paths.repoRoot, "src"), { recursive: true });
+    await run(["sandbox", "doctor"], context.harness.deps);
+
+    expect(doctorCheck(context.harness.stdout(), "vm shares")).toMatchObject({
+      status: "ok",
+      reasons: [
+        `workspaceRoots: ${join(context.paths.repoRoot, "src")} is inside ${context.paths.repoRoot} and is shared through it`,
+      ],
+    });
+  });
+});
+
 describe("pi-sandbox __vm-shares", () => {
   it("prints the home when workspaceRoots is unset", async () => {
     const context = await launchWith();

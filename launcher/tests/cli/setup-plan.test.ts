@@ -228,8 +228,16 @@ describe("planOf", () => {
       reindented: false,
       vm: { kind: "create", size: AUTOMATIC_SIZE, shares: WORK },
       problems: [],
+      notices: [],
     });
     expect(isPlanEmpty(plan)).toBe(false);
+  });
+
+  it("carries the notices of the share plan", () => {
+    const notice = "workspaceRoots: ~/work/a is inside ~/work and is shared through it";
+    const share = { ...EXACT, notices: [notice] };
+
+    expect(planOf(documentOf(undefined), answersOf(), factsOf(), share).notices).toEqual([notice]);
   });
 
   it("is empty when the file and the VM already match", () => {

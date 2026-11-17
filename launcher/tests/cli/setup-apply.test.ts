@@ -15,6 +15,7 @@ const PLAN: Plan = {
   reindented: false,
   vm: { kind: "restart", size: AUTOMATIC_SIZE, shares: [], exactShares: true, parts: ["size"] },
   problems: [],
+  notices: [],
 };
 
 const interrupted = async (phases: VmPhase[]) => {

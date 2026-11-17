@@ -148,6 +148,19 @@ export const checkRoot = (root: string, context: RootGuardContext): RootVerdict 
   return problem === undefined ? { ok: true, resolved, exists: isFolder(resolved) } : { ok: false, problem };
 };
 
+const nestingNotices = <T extends { root: string }>(entries: T[], pathOf: (entry: T) => string) =>
+  entries.flatMap((entry) => {
+    const outer = entries.find(
+      (other) => pathOf(other) !== pathOf(entry) && isWithin(pathOf(entry), pathOf(other)),
+    );
+
+    return outer === undefined
+      ? []
+      : [
+          `workspaceRoots: ${printable(entry.root)} is inside ${printable(outer.root)} and is shared through it`,
+        ];
+  });
+
 export const sharedRootsOf = (workspaceRoots: WorkspaceRoots, context: RootGuardContext): SharedRoots => {
   const entries = configuredRoots(workspaceRoots.roots, context.home);
 
@@ -155,11 +168,16 @@ export const sharedRootsOf = (workspaceRoots: WorkspaceRoots, context: RootGuard
     assertShareable(entry.root, entry.resolved, context);
   });
 
+  const listed = workspaceRoots.roots.map((root) => ({ root, lexical: lexicalRoot(root, context.home) }));
   const present = entries.filter((entry) => isFolder(entry.resolved));
   const absent = entries.filter((entry) => !isFolder(entry.resolved));
-  const notices = absent.map(
-    (entry) => `workspaceRoots: ${printable(entry.root)} does not exist, not shared`,
-  );
+  const notices = [
+    ...new Set([
+      ...nestingNotices(listed, (entry) => entry.lexical),
+      ...nestingNotices(present, (entry) => entry.resolved),
+      ...absent.map((entry) => `workspaceRoots: ${printable(entry.root)} does not exist, not shared`),
+    ]),
+  ];
 
   return {
     roots: outermostPaths(present.map((entry) => entry.resolved)),

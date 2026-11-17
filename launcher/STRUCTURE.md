@@ -109,7 +109,7 @@ workspace/paths.ts             path ordering by depth and code unit, the dirs be
 workspace/overlay-markers.ts   which marker file gives which build output folder
 workspace/guard.ts             the refusal of protected folders and workspaces (home, pi and launcher dirs, credential, system and image dirs) and the host session dir check
 workspace/mounts.ts            the protected path table and the one overlap rule over it
-workspace/roots.ts             the workspaceRoots refusal (the guard's protected paths and system dirs, nested roots dropped before links) and the checked roots the VM shares
+workspace/roots.ts             the workspaceRoots refusal (the guard's protected paths and system dirs, nested roots dropped before links, with a notice) and the checked roots the VM shares
 workspace/pi-session-dir.ts    pi's session slug, the sessions dir of an agent dir and the host session dir choice
 workspace/created.ts           removal of recorded created folders
 workspace/git/layout.ts        git dir layout from the files, refusing links, foreign pointers and a foreign commondir; the git-dir shape and the .git name in any letter case

@@ -28,6 +28,7 @@ const planOf = (overrides: Partial<Plan>): Plan => ({
   reindented: false,
   vm: { kind: "none" },
   problems: [],
+  notices: [],
   ...overrides,
 });
 
