@@ -4,7 +4,7 @@ const C1_FROM = 0x7f;
 
 const C1_TO = 0x9f;
 
-const BIDI_CONTROL = /[\u2028\u2029\u202a-\u202e\u2066-\u2069]/u;
+const BIDI_CONTROL = /[\u061c\u200e\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069]/u;
 
 const codeOf = (char: string) => char.codePointAt(0) ?? 0;
 

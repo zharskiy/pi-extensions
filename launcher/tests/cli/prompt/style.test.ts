@@ -32,6 +32,7 @@ describe("control characters and ASCII", () => {
   it("shows control characters as escapes", () => {
     expect(printable("a\x1b[2Jb\x7f\u009b")).toBe("a\\u001B[2Jb\\u007F\\u009B");
     expect(printable("a\u202eb\u2066c\u2028d")).toBe("a\\u202Eb\\u2066c\\u2028d");
+    expect(printable("a\u200eb\u200fc\u061cd")).toBe("a\\u200Eb\\u200Fc\\u061Cd");
   });
 
   it("folds the Unicode punctuation to ASCII", () => {
