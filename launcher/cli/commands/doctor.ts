@@ -2,7 +2,6 @@ import {
   type Backend,
   ENGINE_PROFILE,
   hasSizeChanges,
-  LABELS,
   shareDrift,
   shareText,
   type VmShare,
@@ -45,7 +44,6 @@ import {
   checkMcpAuthSweep,
   checkNoRoute,
   checkRules,
-  checkSessionsShare,
   checkSettingsSweep,
   type ProbeTarget,
   type RuleHint,
@@ -332,13 +330,6 @@ const ruleChecks: Probe = (input) => {
   ]);
 };
 
-const sessionsShareCheck = async (target: ProbeTarget) => {
-  const containers = await target.backend.findContainers({ [LABELS.managed]: "true" });
-  const running = containers.find((container) => container.id === target.containerId);
-
-  return checkSessionsShare(target, running?.labels[LABELS.sessionDir]);
-};
-
 const PROBES: Probe[] = [
   single("proxy health", "network", ({ sandbox }) => proxyHealth(sandbox.proxy)),
   single("credential sweep", "leak sweep", ({ target, sandbox }) =>
@@ -353,7 +344,6 @@ const PROBES: Probe[] = [
     single("mcp-auth sweep", "leak sweep", ({ target }) => checkMcpAuthSweep(target)),
     single("settings sweep", "leak sweep", ({ target }) => checkSettingsSweep(target)),
   ),
-  single("sessions share", "sandbox", ({ target }) => sessionsShareCheck(target)),
   ruleChecks,
   single("vm size", "sandbox", ({ deps, context, sandbox }) => sizeCheck(deps, context, sandbox)),
 ];

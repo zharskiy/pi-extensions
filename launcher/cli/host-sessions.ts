@@ -122,7 +122,8 @@ export const readyHostSessions = async (
 
 const notShared = (dir: string) =>
   new LauncherError(
-    `sessions: ${dir} is not writable from the sandbox; set sessions.host: false or share it with the VM`,
+    `sessions: ${dir} is not writable from the sandbox`,
+    "set sessions.host: false or share it with the VM",
   );
 
 export const probeSessionsShare = async (backend: Backend, containerId: string, sessions: HostSessions) => {

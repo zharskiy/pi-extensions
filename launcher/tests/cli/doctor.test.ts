@@ -189,7 +189,6 @@ describe("pi sandbox doctor", () => {
       "  ok    image             pi-sandbox-base:local sha256:built-1",
       "  ok    container",
       "  ok    sync",
-      "  ok    sessions share    writable at the host path",
       "",
       "network",
       `  ok    proxy             pid 77 port ${port}`,
@@ -208,7 +207,7 @@ describe("pi sandbox doctor", () => {
       "  ok    mcp-auth sweep    no mcp-auth.json in the sandbox yet",
       "  ok    settings sweep    no settings.json package carries a credential in its URL",
       "",
-      "result: ok (18 ok, 4 skipped)",
+      "result: ok (17 ok, 4 skipped)",
       "",
     ]);
     expect(harness.stderr()).toBe("");
@@ -251,7 +250,7 @@ describe("pi sandbox doctor", () => {
       detail: "https://models.example.test/ answered HTTP 200",
     });
     expect(check(verbose.stdout, "rules")).toBeUndefined();
-    expect(plain.report.result).toBe("ok (20 ok, 3 skipped)");
+    expect(plain.report.result).toBe("ok (19 ok, 3 skipped)");
     expect(verbose.report.result).toBe(plain.report.result);
   });
 
@@ -403,33 +402,6 @@ describe("pi sandbox doctor", () => {
       detail: "pi mcp list exited 1: docs: connection refused",
     });
     expect(code).toBe(1);
-  });
-
-  it("probes the session dir the running container was started with, not the planned one", async () => {
-    const fake = await guestBackend({});
-    const find = fake.backend.findContainers;
-
-    fake.backend.findContainers = async (labels) =>
-      (await find(labels)).map((summary) =>
-        fake.execs.length === 0
-          ? summary
-          : { ...summary, labels: { ...summary.labels, [LABELS.sessionDir]: "sessions.host is off" } },
-      );
-
-    const port = await healthServer(200);
-    const harness = await createHarness({
-      backend: () => fake.backend,
-      proxy: {
-        ensure: async () => ({ proxy: { pid: 77, port, boot: 0, start: "", inputHash: "h" }, notices: [] }),
-      },
-    });
-
-    await run(["sandbox", "doctor"], harness.deps);
-
-    expect(check(harness.stdout(), "sessions share")).toMatchObject({
-      status: "skip",
-      detail: "in the sandbox volume (sessions.host is off)",
-    });
   });
 
   it("handshakes with pi.dev from inside through the sandbox proxy with node and the container's trust", async () => {

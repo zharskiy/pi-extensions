@@ -1,7 +1,7 @@
 import { posix } from "node:path";
 import { type Backend, execCapture } from "../../backend/index.ts";
 import { type CredentialRule, fillTemplate, TLS_PORT } from "../../config/index.ts";
-import { credentialHosts, probeHostSessions, readVolumeFile } from "../../provision/index.ts";
+import { credentialHosts, readVolumeFile } from "../../provision/index.ts";
 import { CERTIFICATE_BACKDATE } from "../../proxy/index.ts";
 import {
   errorMessage,
@@ -381,16 +381,4 @@ export const checkRules = async (
       }),
     ),
   ];
-};
-
-export const checkSessionsShare = async (target: ProbeTarget, sessionDir: string | undefined) => {
-  if (sessionDir === undefined || !posix.isAbsolute(sessionDir)) {
-    return skipped(`in the sandbox volume${sessionDir === undefined ? "" : ` (${sessionDir})`}`);
-  }
-
-  return (await probeHostSessions(target.backend, target.containerId, sessionDir))
-    ? passed("writable at the host path")
-    : failed(`${sessionDir} is not writable from the sandbox`, {
-        hint: "set sessions.host: false or share it with the VM",
-      });
 };
