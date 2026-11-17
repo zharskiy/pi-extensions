@@ -66,7 +66,8 @@ export const VERBS = [
 export const pickVerb = () => VERBS[Math.floor(Math.random() * VERBS.length)] ?? "Working";
 
 export const workingText = (verb: string, elapsedMs: number, hint: string) => {
-  const elapsed = elapsedMs >= TICK_MS ? `${DOT}${formatDuration(elapsedMs)}` : "";
+  const duration = elapsedMs >= TICK_MS ? formatDuration(elapsedMs) : "";
+  const elapsed = duration === "" ? "" : `${DOT}${duration}`;
 
   return `${verb}${elapsed}${hint}`;
 };

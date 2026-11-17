@@ -31,7 +31,7 @@ Send a prompt in the interactive TUI:
 
 | Try | What you see |
 |---|---|
-| Send a prompt | A verb such as `Pondering`, the elapsed time and the interrupt hint, next to pi's spinner. |
+| Send a prompt | A verb such as `Pondering`, the elapsed time and the interrupt hint, next to pi's spinner. | An elapsed time that cannot be computed is left out with its separator.
 | Wait while it runs | The time advances every second; the verb changes every 8 s. |
 | Let the answer text stream in | The line hides, and comes back as soon as the text stops. |
 

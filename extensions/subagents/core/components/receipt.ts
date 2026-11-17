@@ -71,6 +71,10 @@ const timeText = (facts: ReceiptFacts) => {
 
   const duration = formatDuration(facts.elapsedMs);
 
+  if (duration === "") {
+    return undefined;
+  }
+
   return facts.running ? `Elapsed ${duration}` : duration;
 };
 

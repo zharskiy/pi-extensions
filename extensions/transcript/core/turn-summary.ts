@@ -12,8 +12,11 @@ export const countTools = (work: TurnWork, info: AssistantEnd): TurnWork => ({
   tools: work.tools + info.toolCalls,
 });
 
-export const settledAnswer = (work: TurnWork, now: number): AnswerData | undefined =>
-  work.tools > 0 ? { ms: now - work.startedAt } : undefined;
+export const settledAnswer = (work: TurnWork, now: number): AnswerData | undefined => {
+  const ms = now - work.startedAt;
+
+  return work.tools > 0 && isFiniteNumber(ms) ? { ms } : undefined;
+};
 
 export const parseAnswer = (data: unknown): AnswerData | undefined => {
   const ms = (data as { ms?: unknown } | null)?.ms;

@@ -16,10 +16,13 @@ const PLAIN: SummaryPaint = { name: plain, note: plain, percent: (value) => form
 
 const modelName = (model: UsageModel) => model.model ?? NO_MODEL;
 
+export const bracketed = (text: string) => (text === "" ? "" : ` (${text})`);
+
 const figuresText = (model: UsageModel, unit: boolean) => {
   const mark = model.estimated ? "~" : "";
+  const percent = bracketed(formatPercent(model.percent));
 
-  return `${mark}${formatTokens(model.used)}/${formatWindow(model.window)}${unit ? " tokens" : ""} (${formatPercent(model.percent)})`;
+  return `${mark}${formatTokens(model.used)}/${formatWindow(model.window)}${unit ? " tokens" : ""}${percent}`;
 };
 
 export const headerText = (model: UsageModel, unit = true, paint = PLAIN) =>

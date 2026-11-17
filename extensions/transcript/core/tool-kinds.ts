@@ -50,7 +50,8 @@ export const slowDuration = (view: ToolCallView, timedOut: boolean | undefined) 
     return undefined;
   }
 
-  return view.durationMs !== undefined && view.durationMs >= SLOW_MS
-    ? formatDuration(view.durationMs)
-    : undefined;
+  const duration =
+    view.durationMs !== undefined && view.durationMs >= SLOW_MS ? formatDuration(view.durationMs) : "";
+
+  return duration === "" ? undefined : duration;
 };

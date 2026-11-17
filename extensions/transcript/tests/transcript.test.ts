@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BACKGROUND_WORK_CHANNEL } from "../../../platform/shared/index.ts";
 import { createFakeHost, plainTheme } from "../../../test/framework/index.ts";
 import { createTranscript } from "../api/plugin.ts";
+import { settledAnswer } from "../core/turn-summary.ts";
 
 const ANSWER = "pi-transcript:answer";
 
@@ -366,5 +367,9 @@ describe("transcript", () => {
 
       expect(host.renderEntry(ANSWER, data, { width: 40 })).toEqual([]);
     });
+  });
+
+  it("settles no answer rule when the turn's start time is not finite", () => {
+    expect(settledAnswer({ startedAt: Number.NaN, tools: 2 }, 5_000)).toBeUndefined();
   });
 });

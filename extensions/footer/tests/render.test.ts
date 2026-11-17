@@ -446,4 +446,8 @@ describe("renderFooter with handoff limits", () => {
       text: "250.0k",
     });
   });
+
+  it("leaves out a cache rate that is not finite", () => {
+    expect(render({ cache: Number.NaN }).join("\n")).not.toContain("cache");
+  });
 });

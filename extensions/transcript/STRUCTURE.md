@@ -7,8 +7,8 @@ extensions/transcript/
 │   ├── extension.ts                createManagedExtension: namespace pi-transcript, transcriptPlugin
 │   └── plugin.ts                   transcriptPlugin, createTranscript: tool rows, thinking label, answer rule and its turn
 ├── core/
-│   ├── turn-summary.ts             turn work count from the tool calls of each assistant end (the final one carries the rule), the answer entry's data, label and parsing
-│   ├── tool-kinds.ts               call classification: arguments, read range, listed counts, missing file, edit diff text, duration
+│   ├── turn-summary.ts             turn work count from the tool calls of each assistant end (the final one carries the rule), the answer entry's data, label and parsing (no answer for a length that is not finite)
+│   ├── tool-kinds.ts               call classification: arguments, read range, listed counts, missing file, edit diff text, duration (none when it formats as empty)
 │   └── word-spans.ts               changed-word spans of a removed/added line pair
 ├── ui/
 │   ├── answer-rule.ts              answerRule: the dim labelled rule of an answer entry (the adapter's labelledRule)

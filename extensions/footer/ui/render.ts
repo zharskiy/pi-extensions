@@ -80,10 +80,13 @@ const contextSegments = (theme: ThemeLike, context: ContextSnapshot, base: Conte
   ];
 };
 
-const cacheSegments = (theme: ThemeLike, cache: number | undefined): Segment[] =>
-  cache === undefined
+const cacheSegments = (theme: ThemeLike, cache: number | undefined): Segment[] => {
+  const percent = cache === undefined ? "" : formatPercent(cache);
+
+  return percent === ""
     ? []
-    : [{ text: `${theme.fg("dim", "cache ")}${theme.fg("muted", formatPercent(cache))}`, drop: 3 }];
+    : [{ text: `${theme.fg("dim", "cache ")}${theme.fg("muted", percent)}`, drop: 3 }];
+};
 
 const totalSegment = (theme: ThemeLike, totals: SpendingTotals, labelled: boolean): Segment => {
   const { subscription } = totals;

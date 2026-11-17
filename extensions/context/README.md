@@ -10,7 +10,7 @@ Part of [pi-extensions](../../README.md) · [Quick start](#quick-start) · [Deve
 
 ## Why
 
-A context window fills with more than the conversation. The system prompt, tool declarations, memory files and skills all take their share. `/context` shows what fills the main session's window, as a grid of one cell per percent and a legend of tokens per category. It also shows how much of the prompt the provider's cache served, for the last turn and the whole session.
+A context window fills with more than the conversation. The system prompt, tool declarations, memory files and skills all take their share. `/context` shows what fills the main session's window, as a grid of one cell per percent and a legend of tokens per category. It also shows how much of the prompt the provider's cache served, for the last turn and the whole session. A percentage that cannot be computed is left out with its brackets, and a cache rate that cannot be computed is left out with its label.
 
 ## What it looks like
 

@@ -5,7 +5,7 @@ import { type Category, type CategoryKey, type UsageModel, usageModel } from "..
 import type { Snapshot } from "../core/snapshot.ts";
 import { detailLines, itemCount } from "./details.ts";
 import { GAP, gridOf, legendGlyph } from "./grid.ts";
-import { cacheText, headerText, type SummaryPaint } from "./summary.ts";
+import { bracketed, cacheText, headerText, type SummaryPaint } from "./summary.ts";
 
 type RenderOptions = { width: number; expanded: boolean; expandKey: string };
 
@@ -25,13 +25,13 @@ const INDENT = " ".repeat(CHILD_COLUMN);
 
 const legendText = (theme: ThemeLike, category: Category, full: boolean) => {
   const amount = formatTokens(category.tokens);
-  const share = `(${formatPercent(category.percent, 1)})`;
+  const share = bracketed(formatPercent(category.percent, 1));
 
   if (category.key !== "free") {
-    return `${LABELS[category.key]}: ${amount} tokens ${share}`;
+    return `${LABELS[category.key]}: ${amount} tokens${share}`;
   }
 
-  return full ? theme.fg("warning", `${LABELS.free}: 0 (0%)`) : `${LABELS.free}: ${amount} ${share}`;
+  return full ? theme.fg("warning", `${LABELS.free}: 0 (0%)`) : `${LABELS.free}: ${amount}${share}`;
 };
 
 const legendLine = (theme: ThemeLike, category: Category, full: boolean) =>

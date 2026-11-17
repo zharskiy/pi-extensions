@@ -49,7 +49,7 @@ extensions/subagents/
 │   │   ├── manifest.ts                    # pastRecords: manifest.json read and restore (own and parent session); repairLinks: one-sided links paired, link and caller cycles cut
 │   │   └── paths.ts                       # NAMESPACE (every source, custom message type, widget key and the settings file name derive from it), MANIFEST_FILE, agents dir, handoff path, builtin, user and project agent dirs, readPrompt (a trimmed `prompts/` file)
 │   ├── components/
-│   │   ├── receipt.ts                     # formatCalls, stateWord and receiptWord (the one state word map), receipt segments, plainReceipt, agentReceipt, firstLine, cutChars
+│   │   ├── receipt.ts                     # formatCalls, stateWord and receiptWord (the one state word map), receipt segments, plainReceipt, agentReceipt, firstLine, cutChars (no time segment when the elapsed time formats as empty)
 │   │   ├── refresh.ts                     # tickFor (tick cadence) and watchAgents (throttled refresh and ticker)
 │   │   └── tree.ts                        # isTerminal, stoppableAgents, withLinks, carrySelection, treeOrder
 │   ├── agent-definitions/

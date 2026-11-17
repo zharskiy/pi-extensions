@@ -57,7 +57,7 @@ npm run test -- extensions/transcript   # this extension's unit tests
 npm run check                           # typecheck, biome, knip, unit tests
 ```
 
-An expanded codemode row lists each call with its duration (from one second, as `1s` or `1m 5s`) and cost (`<$0.01` below a cent), in the same formats as the footer.
+An expanded codemode row lists each call with its duration (from one second, as `1s` or `1m 5s`) and cost (`<$0.01` below a cent), in the same formats as the footer. A duration that cannot be computed is left off a row with its separator, and a turn whose length cannot be computed gets no `worked` rule.
 
 The full set of commands is in the root README's [Development](../../README.md#development) section; rules for coding agents are in [AGENTS.md](../../AGENTS.md).
 

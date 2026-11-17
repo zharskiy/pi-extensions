@@ -65,6 +65,9 @@ describe("S1 tool row states", () => {
     expect(draw(read(done("x", { durationMs: 4999 }))).lines[0]).toBe(" ✓ read src/auth/session.ts");
     expect(draw(read(done("x", { durationMs: 12_400 }))).lines[0]).toBe(" ✓ read src/auth/session.ts · 12s");
     expect(draw(read({ isPartial: true, durationMs: 12_400 })).lines[0]).toBe(" ◌ read src/auth/session.ts");
+    expect(draw(read(done("x", { durationMs: Number.POSITIVE_INFINITY }))).lines[0]).toBe(
+      " ✓ read src/auth/session.ts",
+    );
   });
 
   it("marks a stopped call with a muted state word and its duration", () => {
