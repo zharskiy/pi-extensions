@@ -23,14 +23,20 @@ const listed = async (dir: string): Promise<string[]> => {
 
 interface SetupOptions {
   env?: Record<string, string>;
-  inspect?: VmInspect;
+  inspect?: VmInspect | Error;
 }
 
 const initSetup = async (options: SetupOptions = {}) => {
   const applied: VmDesired[] = [];
   const fake = createFakeBackend({
     vm: {
-      inspect: async () => options.inspect ?? { state: "absent" },
+      inspect: async () => {
+        if (options.inspect instanceof Error) {
+          throw options.inspect;
+        }
+
+        return options.inspect ?? { state: "absent" };
+      },
       apply: async (desired) => {
         applied.push(desired);
 
@@ -347,9 +353,12 @@ describe("pi sandbox init --yes", () => {
     expect(harness.applied).toEqual([]);
   });
 
-  it.each<[string, VmInspect]>([
+  it.each<[string, VmInspect | Error]>([
     ["from the file", { state: "absent" }],
+    ["from the file", new Error("colima is not installed")],
+    ["from the file", { state: "running", size: { cpus: 4, memoryGiB: 8, diskGiB: 30 }, shares: [] }],
     ["current", { state: "running", size: { cpus: 2, memoryGiB: 4, diskGiB: 30 }, shares: [] }],
+    ["current", { state: "stopped", size: { cpus: 2, memoryGiB: 4, diskGiB: 30 }, shares: [] }],
   ])("tags a VM size the file sets as %s", async (tag, inspect) => {
     const harness = await initSetup({ inspect });
 

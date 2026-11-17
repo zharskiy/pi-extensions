@@ -14,7 +14,7 @@ import {
   type Tag,
   wrapped,
 } from "./screens.ts";
-import type { Answers, ConfigDocument, HostFacts, OwnedProblem, Plan, Section } from "./types.ts";
+import type { Answers, ConfigDocument, HostFacts, OwnedProblem, Plan, Section, VmAction } from "./types.ts";
 
 export interface ReviewState {
   answers: Answers;
@@ -32,6 +32,8 @@ export const SECTION_LABELS: Record<Section, string> = {
   vm: "VM size",
   writeBack: "Settings write-back",
 };
+
+const keepsSize = (vm: VmAction) => ("parts" in vm ? !vm.parts.includes("size") : vm.kind === "none");
 
 export const createReview = (document: ConfigDocument, facts: HostFacts, env: NodeJS.ProcessEnv) => {
   const problems = ownedProblems(document, { home: facts.home, env });
@@ -68,7 +70,7 @@ export const createReview = (document: ConfigDocument, facts: HostFacts, env: No
     }
 
     if (changes.length === 0) {
-      return section === "vm" && facts.vm.state === "absent" ? "from the file" : "current";
+      return section === "vm" && !keepsSize(plan.vm) ? "from the file" : "current";
     }
 
     return touched && changes.every((change) => change.kind === "add") ? "chosen" : "changed";
