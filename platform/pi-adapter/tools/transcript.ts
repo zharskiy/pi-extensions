@@ -168,11 +168,15 @@ export const createTranscriptPane = (
     pendingTools.set(call.id, component);
   };
 
+  const spaceAfterContent = () => {
+    if (container.children.length > 0) {
+      container.addChild(new Spacer(1));
+    }
+  };
+
   const addItem = (item: TranscriptItem) => {
     if (item.kind === "user") {
-      if (container.children.length > 0) {
-        container.addChild(new Spacer(1));
-      }
+      spaceAfterContent();
 
       container.addChild(new UserMessageComponent(item.text, getMarkdownTheme()));
       return;
@@ -245,9 +249,7 @@ export const createTranscriptPane = (
         return;
       }
 
-      if (container.children.length > 0) {
-        container.addChild(new Spacer(1));
-      }
+      spaceAfterContent();
 
       container.addChild({
         render: (width) => {
