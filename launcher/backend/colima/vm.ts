@@ -407,10 +407,6 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
 
     const read = await shares.readShares();
 
-    if (read === "unreadable") {
-      options.report(UNREADABLE);
-    }
-
     const current = Array.isArray(read) ? read : undefined;
     const wanted = launchWanted(target, current);
     const found: VmFound = {
@@ -419,12 +415,17 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
       shares: current ?? "unreadable",
     };
     const decision = await decide(found, wanted, options.busy);
+    const changesVm = decision.kind === "restart" || decision.kind === "defer";
+
+    if (read === "unreadable" && (target.shares !== undefined || changesVm)) {
+      options.report(UNREADABLE);
+    }
 
     if ("keptDiskGiB" in decision && decision.keptDiskGiB !== undefined) {
       options.report(shrinkNotice(target.size, decision.keptDiskGiB));
     }
 
-    if (decision.kind !== "restart" && decision.kind !== "defer") {
+    if (!changesVm) {
       return;
     }
 

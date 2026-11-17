@@ -269,6 +269,16 @@ describe("the launch shares a repository the VM does not see", () => {
     expect(context.fake.created).toHaveLength(1);
   });
 
+  it("launches without a notice and leaves the VM alone when lima.yaml does not parse", async () => {
+    const context = await launchWith();
+
+    await writeFile(limaYaml(context.paths.home), "mounts: [ { location: /x } ]\n");
+
+    expect(await run0(context)).toBe(0);
+    expect(context.colimaCalls()).toEqual([]);
+    expect(context.harness.stderr()).not.toContain("could not be read");
+  });
+
   it("restarts the VM with the full mount list and prints one notice", async () => {
     const context = await launchWith();
     const { home, stateDir, repoRoot } = context.paths;
