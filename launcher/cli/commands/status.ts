@@ -20,7 +20,7 @@ const sessionDirLine = (label: string | undefined) => {
 const containerLines = async (backend: Backend, context: LaunchContext) => {
   const containers = (
     await backend.findContainers({ [LABELS.managed]: "true", [LABELS.repoHash]: context.repoHash })
-  ).filter((container) => container.labels[LABELS.relay] === undefined);
+  ).filter((container) => container.labels[LABELS.relay] !== "true");
 
   return [
     `containers: ${containers.length}`,

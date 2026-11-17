@@ -83,6 +83,30 @@ describe("pi sandbox status", () => {
     expect(lines).toContain(`container: ${id} running launch 00000000000000aa digest sha256:one`);
   });
 
+  it("counts a container whose relay label is not true as a launch container, like the sweep does", async () => {
+    const fake = createFakeBackend();
+    const harness = await createHarness({ backend: () => fake.backend });
+    const id = fake.addContainer({
+      name: "pi-sandbox-repo",
+      labels: {
+        [LABELS.managed]: "true",
+        [LABELS.repoHash]: sha256Hex(harness.repoRoot),
+        [LABELS.relay]: "false",
+        [LABELS.imageDigest]: "sha256:one",
+        [LABELS.launchId]: "00000000000000aa",
+      },
+      state: "running",
+      image: "sha256:image-one",
+    });
+
+    expect(await run(["sandbox", "status"], harness.deps)).toBe(0);
+
+    const lines = harness.stdout().split("\n");
+
+    expect(lines).toContain("containers: 1");
+    expect(lines).toContain(`container: ${id} running launch 00000000000000aa digest sha256:one`);
+  });
+
   it("reports the proxy of this repository without its token", async () => {
     const harness = await createHarness({
       proxy: { read: async () => ({ pid: 11, port: 4001, boot: 1, start: "", inputHash: "input" }) },
