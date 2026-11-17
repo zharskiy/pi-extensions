@@ -40,8 +40,8 @@ extensions/subagents/
 │   │   ├── events.ts                      # BusEvents and Bus (the shared contract's Bus): agent:changed, agent:closed, agent:turn, agent:usage, batch:started, batch:settled
 │   │   ├── agent-record.ts                # AgentRecord, AgentDefinition, registry, definitions and runner types (AgentMessage: routed or custom), chain helpers (chainTerminal, chainLinks; both stop at a predecessor or successor cycle), the plain fact texts (cleanupText, worktreeText, chainText, handoffText), the start rule (grantedSubagents, canNest), grantText, grantOrNone, sameGrant, isLead
 │   │   ├── settings.ts                    # Settings schema, defaults, settings files, disabledPlugins, reloadSettings
-│   │   ├── agent-schema.ts                # frontmatter and override field types, AGENT_SCOPE_ALL, INHERIT_MODEL, PLAIN_NAME
-│   │   ├── agent-values.ts                # checkModel and checkGrant: the one model value rule and grant rule (a reported grant keeps its valid part)
+│   │   ├── agent-schema.ts                # frontmatter and override field types, AGENT_SCOPE_ALL, INHERIT_MODEL, PLAIN_NAME, SKILL_NAME
+│   │   ├── agent-values.ts                # checkModel and checkGrant: the one model value rule and grant rule (a reported grant keeps its valid part; skill names follow SKILL_NAME, tool and agent names PLAIN_NAME)
 │   │   ├── agent-override.ts              # override patches for model, thinking and skills, OVERRIDE_FIELDS and editableFields (a chore's exclude skills), read by the setup form and line
 │   │   ├── model-resolution.ts            # resolutionProblem: the one text for a model that does not resolve
 │   │   ├── context-limit.ts               # effectiveContextLimit, agentLimit, recordLimit, contextUse (tokens, request, level), StepLimit, limitStep (request or abort; nothing below the limit)

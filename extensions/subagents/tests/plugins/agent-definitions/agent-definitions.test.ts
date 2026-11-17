@@ -709,7 +709,6 @@ describe("list fields", () => {
     ["tools", "+read, grep", "+read"],
     ["tools", "~", "~"],
     ["tools", "[read, web_*]", "web_*"],
-    ["skills", "[docs, ./style]", "./style"],
     ["subagents", "[scout, -reviewer]", "-reviewer"],
   ])("rejects %s entries that are not plain names", (key, value, shown) => {
     const parsed = parse({ [key]: value });
@@ -718,6 +717,12 @@ describe("list fields", () => {
     expect(parsed.errors).toEqual([
       `${key} entries must be plain names of letters, digits, '_' and '-', not starting with '-', got: ${shown}`,
     ]);
+  });
+
+  it("takes every skill name pi loads that keeps the list readable", () => {
+    expect(
+      parse({ skills: "[docs, ./style, foo.bar, ns:skill, -lint, web_*, Ünï]" }).definition?.skills,
+    ).toEqual(["docs", "./style", "foo.bar", "ns:skill", "-lint", "web_*", "Ünï"]);
   });
 
   it.each([

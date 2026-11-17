@@ -191,7 +191,7 @@ describe("subagents settings", () => {
       `${userFile}: agents.scout.tools cannot be overridden (only model, thinking, skills); create an own agent instead`,
       `${userFile}: agents.scout.model must be provider/id[:thinking] or inherit, without spaces`,
       `${userFile}: agents.scout.thinking must be one of off, minimal, low, medium, high, xhigh, max`,
-      `${userFile}: agents.scout.skills entries must be plain names of letters, digits, '_' and '-', not starting with '-', got: bad name!`,
+      `${userFile}: agents.scout.skills entries must be names without commas, whitespace or control characters, got: bad name!`,
       `${userFile}: agents.planner must be an object with model, thinking, skills`,
       `${userFile}: agents.reviewer.model: invalid thinking level "extreme" in "acme/x:extreme"; use one of off, minimal, low, medium, high, xhigh, max`,
     ]);
@@ -220,11 +220,32 @@ describe("subagents settings", () => {
       worker: { skills: [] },
     });
     expect(loaded.errors).toEqual([
-      `${userFile}: agents.scout.skills entries must be plain names of letters, digits, '_' and '-', not starting with '-', got: bad name!`,
-      `${userFile}: agents.planner.skills entries must be plain names of letters, digits, '_' and '-', not starting with '-', got: bad name!`,
+      `${userFile}: agents.scout.skills entries must be names without commas, whitespace or control characters, got: bad name!`,
+      `${userFile}: agents.planner.skills entries must be names without commas, whitespace or control characters, got: bad name!`,
       `${userFile}: agents.reviewer.skills must be all or a list of names, as a list or a comma-separated string`,
       `${userFile}: agents.general.skills must be all on its own or a list of names, got: all, docs`,
       `${userFile}: agents.worker.skills takes all in lowercase, got: ALL`,
+    ]);
+  });
+
+  it("takes skill names pi loads and refuses those a list cannot carry", () => {
+    const { agentDir, cwd, userFile } = dirs();
+
+    writeJson(userFile, {
+      agents: {
+        scout: { skills: ["foo.bar", "ns:skill", "./style", "-lint"] },
+        planner: { skills: ["docs", "", "a b", "a,b", "a\u0007b"] },
+      },
+    });
+
+    const loaded = loadSettings({ agentDir, cwd, projectTrusted: false });
+
+    expect(loaded.settings.agents).toEqual({
+      scout: { skills: ["foo.bar", "ns:skill", "./style", "-lint"] },
+      planner: { skills: ["docs"] },
+    });
+    expect(loaded.errors).toEqual([
+      `${userFile}: agents.planner.skills entries must be names without commas, whitespace or control characters, got: , a b, a,b, a\u0007b`,
     ]);
   });
 
