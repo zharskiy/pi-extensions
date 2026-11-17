@@ -347,6 +347,21 @@ describe("pi sandbox init --yes", () => {
     expect(harness.applied).toEqual([]);
   });
 
+  it.each<[string, VmInspect]>([
+    ["from the file", { state: "absent" }],
+    ["current", { state: "running", size: { cpus: 2, memoryGiB: 4, diskGiB: 30 }, shares: [] }],
+  ])("tags a VM size the file sets as %s", async (tag, inspect) => {
+    const harness = await initSetup({ inspect });
+
+    await harness.writeJson(harness.userConfigFile, {
+      workspaceRoots: { roots: [harness.repoRoot] },
+      vm: { cpus: 2, memoryGiB: 4, diskGiB: 30 },
+    });
+
+    expect(await run(["sandbox", "init", "--yes"], harness.deps)).toBe(0);
+    expect(harness.stdout().split("\n")[1]).toBe(`  VM size: 2 CPUs, 4 GiB memory, 30 GiB disk (${tag})`);
+  });
+
   it("refuses a config that is not JSON or has a bad key, and leaves it untouched", async () => {
     const harness = await initSetup();
 

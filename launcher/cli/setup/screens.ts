@@ -17,7 +17,7 @@ import type {
   VmPart,
 } from "./types.ts";
 
-export type Tag = "chosen" | "current" | "changed" | "automatic" | "default" | "invalid";
+export type Tag = "chosen" | "current" | "from the file" | "changed" | "automatic" | "default" | "invalid";
 
 export interface HubRow {
   label: string;

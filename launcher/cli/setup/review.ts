@@ -63,8 +63,12 @@ export const createReview = (document: ConfigDocument, facts: HostFacts, env: No
 
     const changes = plan.changes.filter((change) => isInSection(section, change.key));
 
+    if (changes.length === 0 && touched) {
+      return "chosen";
+    }
+
     if (changes.length === 0) {
-      return touched ? "chosen" : "current";
+      return section === "vm" && facts.vm.state === "absent" ? "from the file" : "current";
     }
 
     return touched && changes.every((change) => change.kind === "add") ? "chosen" : "changed";
