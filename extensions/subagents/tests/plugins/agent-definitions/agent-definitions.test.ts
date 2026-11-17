@@ -314,8 +314,22 @@ describe("agent overrides", () => {
       { level: "warning", message: 'agents.a.model "other/x": matches no available model; dropped' },
       {
         level: "warning",
-        message: "agents.a.skills names unknown skill(s) lint (available skills: docs, git); dropped",
+        message:
+          "agents.a.skills names unknown skill(s) lint (available skills: docs, git); those are dropped",
       },
+    ]);
+  });
+
+  it("keeps only the known skills of an override over a file that grants all, none when no name is known", () => {
+    const { list } = dirs();
+
+    const result = loadDefinitions(list, check({ a: { skills: ["lint"] }, b: { skills: ["git", "lint"] } }));
+
+    expect(result.definitions.get("a")).toMatchObject({ skills: [] });
+    expect(result.definitions.get("b")).toMatchObject({ skills: ["git"] });
+    expect(result.notices.map((notice) => notice.message)).toEqual([
+      "agents.a.skills names unknown skill(s) lint (available skills: docs, git); those are dropped",
+      "agents.b.skills names unknown skill(s) lint (available skills: docs, git); those are dropped",
     ]);
   });
 

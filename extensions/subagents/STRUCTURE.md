@@ -41,7 +41,7 @@ extensions/subagents/
 │   │   ├── agent-record.ts                # AgentRecord, AgentDefinition, registry, definitions and runner types (AgentMessage: routed or custom), chain helpers (chainTerminal, chainLinks; both stop at a predecessor or successor cycle), the plain fact texts (cleanupText, worktreeText, chainText, handoffText), the start rule (grantedSubagents, canNest), grantText, grantOrNone, sameGrant, isLead
 │   │   ├── settings.ts                    # Settings schema, defaults, settings files, disabledPlugins, reloadSettings
 │   │   ├── agent-schema.ts                # frontmatter and override field types, AGENT_SCOPE_ALL, INHERIT_MODEL, PLAIN_NAME
-│   │   ├── agent-values.ts                # checkModel and checkGrant: the one model value rule and grant rule
+│   │   ├── agent-values.ts                # checkModel and checkGrant: the one model value rule and grant rule (a reported grant keeps its valid part)
 │   │   ├── agent-override.ts              # override patches for model, thinking and skills, OVERRIDE_FIELDS and editableFields (a chore's exclude skills), read by the setup form and line
 │   │   ├── model-resolution.ts            # resolutionProblem: the one text for a model that does not resolve
 │   │   ├── context-limit.ts               # effectiveContextLimit, agentLimit, recordLimit, contextUse (tokens, request, level), StepLimit, limitStep (request or abort; nothing below the limit)
@@ -75,7 +75,7 @@ extensions/subagents/
 │   │   └── panel-state.ts                 # createPanelState, panelRows, selectedIndex, reconcile (drops a gone selection, lifts a collapsed child to its lead), panelView (shown rows and hidden count, PANEL_ROWS private)
 │   ├── agent-setup/
 │   │   ├── scope.ts                       # SCOPES (over shared SettingsScope), SetupChange
-│   │   ├── line.ts                        # parseSetupLine: the one-line /agents setup form (refuses skills= on a chore; duplicate skills come back as a notice), SETUP_USAGE
+│   │   ├── line.ts                        # parseSetupLine: the one-line /agents setup form (refuses skills= on a chore and any invalid name; duplicate skills come back as a notice), SETUP_USAGE
 │   │   ├── write.ts                       # mergeChanges, writeChanges (through writeSettingsFile, so a new .pi/ gets its .gitignore), overriddenFields
 │   │   ├── create.ts                      # createAgentCommand: /agents create checks and the brief, CREATE_USAGE
 │   │   ├── autosetup.ts                   # AUTOSETUP_TYPE, INTERACTIVE_TERMS, hasSkillsOverride, candidateSkills, projectListing, autosetupBrief

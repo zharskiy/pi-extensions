@@ -27,7 +27,7 @@ export const overrideThinking = (value: unknown): OverrideField =>
 export const overrideSkills = (value: unknown): OverrideField => {
   const { grant, error, warning } = checkGrant("skills", value);
 
-  return grant === undefined ? { patch: {}, error } : { patch: { skills: grant }, notice: warning };
+  return { patch: { skills: grant }, error, notice: warning };
 };
 
 export const unknownSkillsProblem = (skills: string[], loaded: string[]) => {

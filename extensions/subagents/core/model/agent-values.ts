@@ -3,7 +3,7 @@ import { AGENT_SCOPE_ALL, type Grant, INHERIT_MODEL, PLAIN_NAME, PLAIN_NAME_TEXT
 
 type ModelCheck = { model?: string; thinking?: string; error?: string };
 
-type GrantCheck = { grant?: Grant; error?: string; warning?: string };
+type GrantCheck = { grant: Grant; error?: string; warning?: string };
 
 const MODEL_FORMAT = `provider/id[:thinking] or ${INHERIT_MODEL}, without spaces`;
 
@@ -38,41 +38,46 @@ const namesOf = (value: unknown) => {
   return strings ? value.map((name: string) => name.trim()) : undefined;
 };
 
+const grantProblems = (key: string, names: string[]) => {
+  const misspelled = names.filter(
+    (name) => name !== AGENT_SCOPE_ALL && name.toLowerCase() === AGENT_SCOPE_ALL,
+  );
+  const invalid = names.filter((name) => name.toLowerCase() !== AGENT_SCOPE_ALL && !PLAIN_NAME.test(name));
+
+  return [
+    misspelled.length > 0
+      ? `${key} takes ${AGENT_SCOPE_ALL} in lowercase, got: ${misspelled.join(", ")}`
+      : "",
+    names.includes(AGENT_SCOPE_ALL)
+      ? `${key} must be ${AGENT_SCOPE_ALL} on its own or a list of names, got: ${names.join(", ")}`
+      : "",
+    invalid.length > 0
+      ? `${key} entries must be plain names of ${PLAIN_NAME_TEXT}, got: ${invalid.join(", ")}`
+      : "",
+  ].filter(Boolean);
+};
+
 export const checkGrant = (key: string, value: unknown): GrantCheck => {
   const names = namesOf(value);
 
   if (!names) {
     return {
+      grant: [],
       error: `${key} must be ${AGENT_SCOPE_ALL} or a list of names, as a list or a comma-separated string`,
     };
   }
 
-  const misspelled = names.filter(
-    (name) => name !== AGENT_SCOPE_ALL && name.toLowerCase() === AGENT_SCOPE_ALL,
-  );
-
-  if (misspelled.length > 0) {
-    return { error: `${key} takes ${AGENT_SCOPE_ALL} in lowercase, got: ${misspelled.join(", ")}` };
+  if (names.length === 1 && names[0] === AGENT_SCOPE_ALL) {
+    return { grant: AGENT_SCOPE_ALL };
   }
 
-  if (names.includes(AGENT_SCOPE_ALL)) {
-    return names.length > 1
-      ? { error: `${key} must be ${AGENT_SCOPE_ALL} on its own or a list of names, got: ${names.join(", ")}` }
-      : { grant: AGENT_SCOPE_ALL };
-  }
+  const problems = grantProblems(key, names);
+  const valid = names.filter((name) => name.toLowerCase() !== AGENT_SCOPE_ALL && PLAIN_NAME.test(name));
+  const grant = Array.from(new Set(valid));
+  const duplicates = Array.from(new Set(valid.filter((name, index) => valid.indexOf(name) !== index)));
+  const warning =
+    duplicates.length > 0 ? `${key} lists entries more than once: ${duplicates.join(", ")}` : undefined;
+  const error = problems.length > 0 ? problems.join("; ") : undefined;
 
-  const invalid = names.filter((name) => !PLAIN_NAME.test(name));
-
-  if (invalid.length > 0) {
-    return { error: `${key} entries must be plain names of ${PLAIN_NAME_TEXT}, got: ${invalid.join(", ")}` };
-  }
-
-  const grant = Array.from(new Set(names));
-  const duplicates = Array.from(new Set(names.filter((name, index) => names.indexOf(name) !== index)));
-
-  if (duplicates.length > 0) {
-    return { grant, warning: `${key} lists entries more than once: ${duplicates.join(", ")}` };
-  }
-
-  return { grant };
+  return { grant, ...(error ? { error } : {}), ...(warning ? { warning } : {}) };
 };

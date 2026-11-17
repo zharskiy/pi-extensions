@@ -186,7 +186,7 @@ describe("subagents settings", () => {
 
     const loaded = loadSettings({ agentDir, cwd, projectTrusted: false });
 
-    expect(loaded.settings.agents).toEqual({ scout: {}, reviewer: { thinking: "max" } });
+    expect(loaded.settings.agents).toEqual({ scout: { skills: [] }, reviewer: { thinking: "max" } });
     expect(loaded.errors).toEqual([
       `${userFile}: agents.scout.tools cannot be overridden (only model, thinking, skills); create an own agent instead`,
       `${userFile}: agents.scout.model must be provider/id[:thinking] or inherit, without spaces`,
@@ -194,6 +194,37 @@ describe("subagents settings", () => {
       `${userFile}: agents.scout.skills entries must be plain names of letters, digits, '_' and '-', not starting with '-', got: bad name!`,
       `${userFile}: agents.planner must be an object with model, thinking, skills`,
       `${userFile}: agents.reviewer.model: invalid thinking level "extreme" in "acme/x:extreme"; use one of off, minimal, low, medium, high, xhigh, max`,
+    ]);
+  });
+
+  it("keeps only the valid part of a skills grant it reports, never falling back to the agent file's", () => {
+    const { agentDir, cwd, userFile } = dirs();
+
+    writeJson(userFile, {
+      agents: {
+        scout: { skills: ["docs", "bad name!", "lint"] },
+        planner: { skills: ["bad name!"] },
+        reviewer: { skills: 5 },
+        general: { skills: ["all", "docs"] },
+        worker: { skills: ["ALL"] },
+      },
+    });
+
+    const loaded = loadSettings({ agentDir, cwd, projectTrusted: false });
+
+    expect(loaded.settings.agents).toEqual({
+      scout: { skills: ["docs", "lint"] },
+      planner: { skills: [] },
+      reviewer: { skills: [] },
+      general: { skills: ["docs"] },
+      worker: { skills: [] },
+    });
+    expect(loaded.errors).toEqual([
+      `${userFile}: agents.scout.skills entries must be plain names of letters, digits, '_' and '-', not starting with '-', got: bad name!`,
+      `${userFile}: agents.planner.skills entries must be plain names of letters, digits, '_' and '-', not starting with '-', got: bad name!`,
+      `${userFile}: agents.reviewer.skills must be all or a list of names, as a list or a comma-separated string`,
+      `${userFile}: agents.general.skills must be all on its own or a list of names, got: all, docs`,
+      `${userFile}: agents.worker.skills takes all in lowercase, got: ALL`,
     ]);
   });
 
