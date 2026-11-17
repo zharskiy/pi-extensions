@@ -1,4 +1,3 @@
-import { Writable } from "node:stream";
 import { type Backend, engineUnreachable } from "../backend/index.ts";
 import type { ExtraCa } from "../config/index.ts";
 import type { HostTerminal, SignalSource } from "../container/index.ts";
@@ -28,6 +27,7 @@ export interface CliDeps {
   cwd: string;
   stdout: NodeJS.WritableStream;
   stderr: NodeJS.WritableStream;
+  notify?: (notices: string[]) => void;
   terminal: HostTerminal;
   signals?: SignalSource;
   openTty?: () => TtyStreams | undefined;
@@ -51,25 +51,20 @@ export const writeLines = (stream: NodeJS.WritableStream, lines: string[]) => {
 export const noticeLine = (notice: string) => `pi-sandbox: ${notice}`;
 
 export const writeNotices = (deps: CliDeps, notices: string[]) => {
-  writeLines(deps.stderr, [...new Set(notices)].map(noticeLine));
+  const unique = [...new Set(notices)];
+
+  if (deps.notify !== undefined) {
+    deps.notify(unique);
+
+    return;
+  }
+
+  writeLines(deps.stderr, unique.map(noticeLine));
 };
 
 export const isTerminal = (stream: object) => "isTTY" in stream && stream.isTTY === true;
 
 export const colorOf = (deps: Pick<CliDeps, "stdout" | "env">) => colourOf(deps.env, deps.stdout);
-
-export const lineSink = (onLine: (line: string) => void) =>
-  new Writable({
-    write: (chunk: Buffer | string, _encoding, done) => {
-      chunk
-        .toString()
-        .split("\n")
-        .filter((line) => line !== "")
-        .forEach(onLine);
-
-      done();
-    },
-  });
 
 const CLOSED_OUTPUT = new Set(["EPIPE", "EIO", "ERR_STREAM_DESTROYED"]);
 

@@ -16,7 +16,7 @@ import { readHostPiFiles } from "../../hostpi/index.ts";
 import { type DenialRecord, readHealth } from "../../proxy/index.ts";
 import { errorMessage, LauncherError } from "../../shared/index.ts";
 import { type LaunchContext, openContext } from "../context.ts";
-import { type CliDeps, colorOf, hostAgentDirOf, isTerminal, lineSink, writeLines } from "../deps.ts";
+import { type CliDeps, colorOf, hostAgentDirOf, isTerminal, writeLines } from "../deps.ts";
 import { missingPiText } from "../host-pi.ts";
 import { hostSessionsOf } from "../host-sessions.ts";
 import { type Sandbox, type Stage, type StageOutcome, withSandbox } from "../launch.ts";
@@ -81,17 +81,12 @@ interface Run {
   hostTls: () => Promise<HostTls>;
 }
 
-const NOTICE_PREFIX = "pi-sandbox: ";
-
 const ERASE_LINE = "\r\u001b[2K";
 
 const stageLabel = (stage: Stage) => (stage === "host" ? "host side" : stage);
 
 const stageSection = (stage: Stage): Section =>
   stage === "host" ? "host" : stage === "proxy" ? "network" : "sandbox";
-
-const withoutPrefix = (line: string) =>
-  line.startsWith(NOTICE_PREFIX) ? line.slice(NOTICE_PREFIX.length) : line;
 
 const progressLine = (deps: CliDeps): Progress => {
   if (!isTerminal(deps.stderr) || deps.env.TERM === "dumb") {
@@ -510,14 +505,14 @@ const runChecks = async (deps: CliDeps, progress: Progress, checks: NamedCheck[]
   return signal;
 };
 
-const noticesOf = (deps: CliDeps, lines: string[]) =>
-  [...new Set(lines.map(withoutPrefix))].filter((notice) => notice !== missingPiText(deps));
+const noticesOf = (deps: CliDeps, notices: string[]) =>
+  [...new Set(notices)].filter((notice) => notice !== missingPiText(deps));
 
 export const doctorCommand = async (deps: CliDeps, args: string[]) => {
   const checks: NamedCheck[] = [];
   const progress = progressLine(deps);
   const notices: string[] = [];
-  const quiet: CliDeps = { ...deps, stderr: lineSink((line) => notices.push(line)) };
+  const quiet: CliDeps = { ...deps, notify: (lines) => notices.push(...lines) };
   const report = (partial: boolean) => {
     progress.clear();
 
