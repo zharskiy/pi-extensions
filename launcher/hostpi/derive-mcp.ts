@@ -203,11 +203,13 @@ const hostPathNotices = (name: string, server: JsonObject) =>
 
 const stdioServer = (context: DeriveContext, name: string, original: JsonObject): ServerSection => {
   const stdio = stdioArgs(context, name, original);
-  const { server } = stdio;
-  const argNotices = [...hostPathNotices(name, server), ...stdio.notices];
 
+  return noticeOnly([name, stdio.server], ...hostPathNotices(name, stdio.server), ...stdio.notices);
+};
+
+const maskedEnv = (context: DeriveContext, name: string, server: JsonObject) => {
   if (!isJsonObject(server.env)) {
-    return { value: [name, server], rules: [], notices: argNotices };
+    return { server, notices: [] };
   }
 
   const entries = Object.entries(server.env);
@@ -221,11 +223,20 @@ const stdioServer = (context: DeriveContext, name: string, original: JsonObject)
     ]),
   );
 
-  return noticeOnly(
-    [name, { ...server, env }],
-    ...argNotices,
-    ...secret.map((variable) => placeholderNotice(name, variable)),
-  );
+  return { server: { ...server, env }, notices: secret.map((variable) => placeholderNotice(name, variable)) };
+};
+
+const shapedServer = (
+  context: DeriveContext,
+  name: string,
+  server: JsonObject,
+  credentials: ProviderCredentials,
+): ServerSection => {
+  if (isHttpServer(server)) {
+    return httpServer(context, name, server, credentials);
+  }
+
+  return isStdioServer(server) ? stdioServer(context, name, server) : noticeOnly([name, server]);
 };
 
 const serverSection = (
@@ -247,11 +258,10 @@ const serverSection = (
     };
   }
 
-  if (isHttpServer(server)) {
-    return httpServer(context, name, server, credentials);
-  }
+  const masked = maskedEnv(context, name, server);
+  const section = shapedServer(context, name, masked.server, credentials);
 
-  return isStdioServer(server) ? stdioServer(context, name, server) : noticeOnly([name, server]);
+  return { ...section, notices: [...section.notices, ...masked.notices] };
 };
 
 export const deriveMcp = (

@@ -354,7 +354,7 @@ A run that takes longer than 30 seconds fails. It runs with a minimal environmen
 
 ### Secrets of stdio MCP servers
 
-A stdio MCP server's env values and flag values become placeholders in two cases. The first is a secret-like name: one with token, secret, password or apikey in it, or ending in `key`. The second is a secret-like value: `Bearer …`, a JWT, or a URL with a user name or password.
+A stdio MCP server's flag values and any MCP server's env values become placeholders in two cases. The first is a secret-like name: one with token, secret, password or apikey in it, or ending in `key`. The second is a secret-like value: `Bearer …`, a JWT, or a URL with a user name or password.
 
 Nothing swaps these placeholders until a `credentials.rules` entry covers the host the server calls. A secret under a plain name, or a purely numeric one, is copied as it is. Give it a clearer name or a rule.
 

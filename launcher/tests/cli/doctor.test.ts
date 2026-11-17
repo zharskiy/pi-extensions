@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { type ExecIo, type ExecSpec, LABELS, type Vm } from "../../backend/index.ts";
 import { run } from "../../cli/index.ts";
 import { testedPiVersion } from "../../cli/versions.ts";
+import { deriveSandboxPi } from "../../hostpi/index.ts";
 import type { DenialRecord } from "../../proxy/index.ts";
 import { sha256Hex } from "../../shared/index.ts";
 import { stdinOf } from "../support/fake-backend.ts";
@@ -568,6 +569,33 @@ describe("pi sandbox doctor", () => {
         "/home/pi/.pi/agent/mcp.json holds a value other than a placeholder at mcpServers.tool.env.CONFIG_HOME",
         "/home/pi/.pi/agent/mcp.json holds a value other than a placeholder at mcpServers.tool.env.LOOKUP",
       ],
+    });
+  });
+
+  it("passes the sweep on the mcp.json derivation wrote for stdio, HTTP and bare servers with secret env", async () => {
+    const env = { GITHUB_PAT: "real-pat-value", SESSION_COOKIE: "real-cookie-value", MODE: "fast" };
+    const derived = deriveSandboxPi({
+      files: {
+        agentDir: "/home/user/.pi/agent",
+        mcp: {
+          mcpServers: {
+            tool: { command: "tool", env },
+            web: { url: "https://mcp.web.example/mcp", env },
+            bare: { env },
+          },
+        },
+      },
+      providerHosts: {},
+      manual: [],
+      salt: "c".repeat(64),
+      env: {},
+      derive: { enabled: true },
+    });
+    const { stdout } = await doctorWith({ probes: { mcp: JSON.stringify(derived.files["mcp.json"]) } });
+
+    expect(check(stdout, "credential sweep")).toMatchObject({
+      status: "ok",
+      detail: "no credential in the environment, auth.json or mcp.json",
     });
   });
 

@@ -673,6 +673,21 @@ describe("deriveSandboxPi fix round", () => {
     expect(serverOf(result, "s")?.env).toEqual({ [variable]: value });
   });
 
+  it("masks the env of an HTTP server and of a server with neither command nor url as a stdio server's", () => {
+    const env = { GITHUB_PAT: "FAKE-pat", MODE: "fast" };
+    const result = mcpOnly({ web: { url: "https://mcp.web.example/mcp", env }, bare: { env } });
+
+    expect(serverOf(result, "web")?.env).toEqual({ GITHUB_PAT: P("mcp:web:env:GITHUB_PAT"), MODE: "fast" });
+    expect(serverOf(result, "bare")?.env).toEqual({ GITHUB_PAT: P("mcp:bare:env:GITHUB_PAT"), MODE: "fast" });
+    expect(JSON.stringify(result.files)).not.toContain("FAKE-pat");
+    expect(result.notices).toEqual(
+      expect.arrayContaining([
+        "mcp web: GITHUB_PAT is a placeholder in the sandbox; add credentials.rules for the host it calls",
+        "mcp bare: GITHUB_PAT is a placeholder in the sandbox; add credentials.rules for the host it calls",
+      ]),
+    );
+  });
+
   it("puts placeholders in secret flag values and leaves ordinary flags alone", () => {
     const args = [
       "srv.js",
