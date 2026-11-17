@@ -13,7 +13,7 @@ type ModelCheck = { model?: string; thinking?: string; error?: string };
 
 type GrantCheck = { grant: Grant; error?: string; warning?: string };
 
-const MODEL_FORMAT = `provider/id[:thinking] or ${INHERIT_MODEL}, without spaces`;
+const MODEL_FORMAT = `[provider/]id[:thinking] or ${INHERIT_MODEL}[:thinking], without spaces`;
 
 export const checkModel = (value: unknown): ModelCheck => {
   const text = typeof value === "string" ? value.trim() : "";
