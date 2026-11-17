@@ -40,9 +40,11 @@ const CA_VALIDITY_MS = 3650 * DAY_MS;
 
 const LEAF_VALIDITY_MS = 397 * DAY_MS;
 
-const BACKDATE_MS = 60 * 60 * 1000;
+const BACKDATE_HOURS = 1;
 
-export const CERTIFICATE_BACKDATE = "an hour";
+const BACKDATE_MS = BACKDATE_HOURS * 60 * 60 * 1000;
+
+export const CERTIFICATE_BACKDATE = BACKDATE_HOURS === 1 ? "an hour" : `${BACKDATE_HOURS} hours`;
 
 const GENERALIZED_TIME_YEAR = 2050;
 
