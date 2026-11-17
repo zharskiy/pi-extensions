@@ -502,7 +502,11 @@ export const doctorCommand = async (deps: CliDeps, args: string[]) => {
   const checks: NamedCheck[] = [];
   const progress = progressLine(deps);
   const notices: string[] = [];
-  const quiet: CliDeps = { ...deps, notify: (lines) => notices.push(...lines) };
+  const quiet: CliDeps = {
+    ...deps,
+    notify: (texts) =>
+      notices.push(...texts.flatMap((text) => text.split("\n")).filter((line) => line !== "")),
+  };
   const report = (partial: boolean) => {
     progress.clear();
 

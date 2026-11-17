@@ -857,6 +857,24 @@ describe("pi sandbox doctor", () => {
     expect(harness.stderr()).toBe("pi-sandbox: unexpected error: engine gone\n");
   });
 
+  it("indents each line of a notice that spans several lines", async () => {
+    const port = await healthServer(200);
+    const fake = await guestBackend({});
+    const harness = await createHarness({
+      backend: () => fake.backend,
+      proxy: {
+        ensure: async () => ({
+          proxy: { pid: 77, port, boot: 0, start: "", inputHash: "h" },
+          notices: ["first line of a notice\nsecond line of it"],
+        }),
+      },
+    });
+
+    await run(["sandbox", "doctor"], harness.deps);
+
+    expect(harness.stdout()).toContain("\nnotices\n  first line of a notice\n  second line of it\n");
+  });
+
   describe("on a terminal", () => {
     const terminalDoctor = async (env: Record<string, string> = {}) => {
       const harness = await createHarness({ backend: () => unreachable(createFakeBackend().backend), env });
