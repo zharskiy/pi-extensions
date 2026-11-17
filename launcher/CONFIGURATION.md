@@ -346,7 +346,7 @@ The `secret` takes one of these forms:
 | `{ "piAuth": "<provider>" }` | host pi's credential for that provider; add `"bearer": true` for its bearer token |
 | `{ "mcpOAuth": { "server": "<name>", "url": "https://…" } }` | the OAuth token of an MCP server you signed in to with `pi mcp login` |
 
-The `env` form and the `file` form with `format` accept `"urlPassword": true` or `"urlUsername": true`. The value is then a URL, and the secret is its password or its user name. That part must be valid percent-encoding: an `env` URL whose credentials are not fails the launch, naming the variable, and a `file` URL fails that rule at its first use. The `file` form with `pointer` refuses them.
+The `env` form and the `file` form with `format` accept `"urlPassword": true` or `"urlUsername": true`. The value is then a URL, and the secret is its password or its user name. That part must be valid percent-encoding: an `env` URL whose credentials are not fails the launch, naming the variable, and a `file` URL fails that rule at its first use. An `env` secret that holds a CR, LF or NUL, or whose URL password or user name decodes to one, also fails the launch. The `file` form with `pointer` refuses them.
 
 A `command` prints the secret, or JSON `{ "token": "…", "expiresAt": "<ISO 8601 time>" }`. Its result is kept for 300 seconds, or until 30 seconds before `expiresAt`.
 
