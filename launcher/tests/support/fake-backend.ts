@@ -393,8 +393,6 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
     inspect: async () => ({ state: "absent" }),
     apply: async () => "created",
     size: async () => undefined,
-    resizeCommand: (size) =>
-      `colima stop --profile pi-sandbox && colima start --profile pi-sandbox --activate=false --cpu ${size.cpus} --memory ${size.memoryGiB}`,
     stop: async () => "stopped",
     ...options.vm,
   };

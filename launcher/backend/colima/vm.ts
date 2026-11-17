@@ -461,7 +461,6 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
     reconcile: (target, options) => withLock(() => reconcileLocked(target, options)),
     ensureTrust: trust.ensureTrust,
     size,
-    resizeCommand: (size) => restartText(profile, { size }),
     stop,
   };
 };

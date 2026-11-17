@@ -15,12 +15,6 @@ const vmWith = (respond: FakeResponder, stateDir = "/nonexistent") =>
   });
 
 describe("the sandbox VM size", () => {
-  it("names the colima commands that resize the profile", () => {
-    expect(vmWith(() => undefined).resizeCommand({ cpus: 6, memoryGiB: 8 })).toBe(
-      "colima stop --profile pi-sandbox && colima start --profile pi-sandbox --activate=false --cpu 6 --memory 8",
-    );
-  });
-
   it("reads the size colima reports for the profile", async () => {
     const vm = vmWith((call) =>
       call.args.join(" ") === "status --profile pi-sandbox --json"

@@ -166,7 +166,6 @@ export interface Vm {
   inspect(): Promise<VmInspect>;
   apply(desired: VmDesired, options: VmApplyOptions): Promise<VmApplied>;
   size(): Promise<VmSize | undefined>;
-  resizeCommand(size: VmTarget): string;
   stop(options: Pick<VmShareOptions, "busy">): Promise<VmStop>;
 }
 
