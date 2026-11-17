@@ -13,15 +13,12 @@ import {
   type RowSlot,
   recordPad,
   rowComponent,
-  SHELLS,
   slotFor,
   toolRowsRecord,
 } from "./row-component.ts";
 import { skillOfRead } from "./skill-reads.ts";
 import { fromPiResult, type PiToolRenderContext } from "./tool-bridge.ts";
-import { MCP_PREFIX, MCP_SOURCE_PATH, piShippedSource } from "./tool-source.ts";
-
-export const BUILTIN_TOOLS: readonly string[] = ["read", ...SHELLS, "edit", "write", "grep", "find", "ls"];
+import { isBuiltinTool, MCP_PREFIX, MCP_SOURCE_PATH, piShippedSource } from "./tool-source.ts";
 
 type PiResult = Parameters<NonNullable<ToolRenderers["renderResult"]>>[0];
 
@@ -161,7 +158,7 @@ const hasOwnRenderer = (base: ToolRenderers | undefined) =>
   base?.renderShell === "self" || base?.renderCall !== undefined || base?.renderResult !== undefined;
 
 const keepsBase = (name: string, base: ToolRenderers | undefined, shipped: () => boolean) =>
-  !BUILTIN_TOOLS.includes(name) && hasOwnRenderer(base) && !shipped();
+  !isBuiltinTool(name) && hasOwnRenderer(base) && !shipped();
 
 export const rowRenderers = (
   rows: ToolRows | undefined,

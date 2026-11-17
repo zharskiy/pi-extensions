@@ -7,6 +7,21 @@ export const MCP_SOURCE_PATH = `${BUILTIN_PATH_PREFIX}mcp`;
 
 export const MCP_PREFIX = "mcp__";
 
+const SHELL_TOOLS = ["bash", "powershell"] as const;
+
+const SEARCH_TOOLS = ["grep", "find", "ls"] as const;
+
+export const BUILTIN_TOOLS = ["read", ...SHELL_TOOLS, "edit", "write", ...SEARCH_TOOLS] as const;
+
+export const SHELLS: readonly string[] = SHELL_TOOLS;
+
+export const FILE_SEARCH_TOOLS: readonly string[] = SEARCH_TOOLS;
+
+export type BuiltinTool = (typeof BUILTIN_TOOLS)[number];
+
+export const isBuiltinTool = (name: string): name is BuiltinTool =>
+  (BUILTIN_TOOLS as readonly string[]).includes(name);
+
 type SourcePath = Pick<SourceInfo, "path">;
 
 export const piShippedSource = (info: SourcePath | undefined) =>

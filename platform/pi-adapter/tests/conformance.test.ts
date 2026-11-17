@@ -34,7 +34,8 @@ import { finalRunTexts } from "../runtime/message-text.ts";
 import { ASSISTANT_DELTA_TYPES } from "../runtime/phase.ts";
 import { promptRecordEntry } from "../runtime/session-file.ts";
 import type { PiToolRenderContext } from "../tools/tool-bridge.ts";
-import { BUILTIN_TOOLS, piShipped } from "../tools/tool-rows.ts";
+import { piShipped } from "../tools/tool-rows.ts";
+import { BUILTIN_TOOLS } from "../tools/tool-source.ts";
 import { capturePiRenderers } from "../tools/transcript.ts";
 import { composeLabel, OSC133_ZONE_PREFIX } from "../ui/thinking-label.ts";
 

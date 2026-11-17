@@ -31,8 +31,9 @@ import { messageRendererFor, previousEntryComponent } from "./entry-renderers.ts
 import { sharedPad } from "./row-component.ts";
 import { toPiTool } from "./tool-bridge.ts";
 import { applyToolRows } from "./tool-rows.ts";
+import { type BuiltinTool, isBuiltinTool } from "./tool-source.ts";
 
-const toolDefinitionFactories: Record<string, (cwd: string) => object> = {
+const toolDefinitionFactories: Record<BuiltinTool, (cwd: string) => object> = {
   read: createReadToolDefinition,
   bash: createBashToolDefinition,
   powershell: createPowerShellToolDefinition,
@@ -108,10 +109,8 @@ export const createTranscriptPane = (
   let rendered = 0;
 
   const baseDefinition = (name: string): ToolRenderers | undefined => {
-    const builtin = toolDefinitionFactories[name];
-
-    if (builtin) {
-      return builtin(cwd) as ToolRenderers;
+    if (isBuiltinTool(name)) {
+      return toolDefinitionFactories[name](cwd) as ToolRenderers;
     }
 
     const spec = options.tools?.find((tool) => tool.name === name);

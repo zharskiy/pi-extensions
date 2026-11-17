@@ -51,7 +51,7 @@
 - `tools/tool-bridge.ts`: tool wrapping: `toPiTool`, `fromPiResult`.
 - `tools/tool-rows.ts`: `Host.registerToolRows`; a pi tool renderer resolver that draws rows, shared with transcript panes.
 - `tools/skill-reads.ts`: `skillOfRead`, pi's `SKILL.md` folder rule and path resolution.
-- `tools/tool-source.ts`: where a pi tool comes from (`builtin`, `mcp`, `extension`) by its source path, and the MCP tool name prefix.
+- `tools/tool-source.ts`: where a pi tool comes from (`builtin`, `mcp`, `extension`) by its source path, the MCP tool name prefix, and `BUILTIN_TOOLS`, the one list of pi's built-in tools (with `SHELLS` and the file search tools) that the transcript's tool definitions, the tool rows and the main prompt's file tool rule read.
 - `tools/row-component.ts`: `RowComponent`, the tool-rows record on `globalThis` and the shared output pad.
 - `tools/entry-renderers.ts`: `Host.registerEntryRenderer` (with the `flush` option) and `registerMessageRenderer` over pi's renderers, the owner-keyed message and entry renderer records, `messageRendererFor` and `previousEntryComponent` (the transcript pane's lookups), and `padEntry`, the pad and `flush` layout every entry is drawn with (the fake host's `renderEntry` calls it too).
 - `tools/transcript.ts`: the transcript pane (including the `rule` item, a `labelledRule` after the shared pad) and pi renderer capture.
