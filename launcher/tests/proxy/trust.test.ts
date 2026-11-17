@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { X509Certificate } from "node:crypto";
-import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { promisify } from "node:util";
@@ -442,6 +442,19 @@ describe("the trust bundle files", () => {
       expect(second.pemPath).toBe(first.pemPath);
       expect(after.ino).toBe(before.ino);
       expect(after.mtimeMs).toBe(before.mtimeMs);
+    }));
+
+  it("does not reuse a file of the same content whose name is no bundle name", () =>
+    withStateDir(async (stateDir) => {
+      const first = await bundleIn(stateDir, []);
+      const foreign = join(stateDir, "vm", `trust-${first.hash.slice(0, 12)}-foo.pem`);
+
+      await rename(first.pemPath, foreign);
+
+      const second = await bundleIn(stateDir, []);
+
+      expect(second.pemPath).not.toBe(foreign);
+      expect(basename(second.pemPath)).toMatch(/^trust-[0-9a-f]{12}-[0-9a-f]{16}\.pem$/);
     }));
 
   it("never writes a path twice when a content comes back after its file was removed", () =>
