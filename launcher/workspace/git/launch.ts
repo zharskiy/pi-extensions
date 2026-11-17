@@ -2,6 +2,7 @@ import { rm } from "node:fs/promises";
 import {
   type CommandRunner,
   errorMessage,
+  PRIVATE_FILE_MODE,
   readJsonFile,
   repoHash,
   stateLayout,
@@ -66,7 +67,9 @@ export const recordGitBaseline = async (
   ]);
   const pending = previous === undefined || othersLive ? [] : changedSince(previous, scan, alternates);
 
-  await writeJsonFile(paths.record, { scan, alternates } satisfies BaselineRecord);
+  await writeJsonFile(paths.record, { scan, alternates } satisfies BaselineRecord, {
+    mode: PRIVATE_FILE_MODE,
+  });
 
   return pending.length === 0 ? [] : [PENDING, ...pending];
 };

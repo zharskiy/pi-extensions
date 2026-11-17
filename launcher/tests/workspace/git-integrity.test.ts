@@ -1,6 +1,7 @@
-import { mkdir, realpath, writeFile } from "node:fs/promises";
+import { mkdir, realpath, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { repoHash, stateLayout } from "../../shared/index.ts";
 import {
   assertGitIntegrity,
   discoverWorkspace,
@@ -86,6 +87,18 @@ describe("the commondir checks", () => {
     await writeFile(commondir, "../elsewhere\n");
 
     await expect(assertGitIntegrity(workspace)).rejects.toThrow(`git: ${commondir} was not written by git`);
+  });
+});
+
+describe("the git baseline", () => {
+  it("is written readable by the owner only", async () => {
+    const { repo, workspace, context } = await createRepo();
+
+    await recordGitBaseline(workspace, context);
+
+    const record = stateLayout(context.stateDir).repo(repoHash(repo)).gitBaseline;
+
+    expect((await stat(record)).mode & 0o777).toBe(0o600);
   });
 });
 
