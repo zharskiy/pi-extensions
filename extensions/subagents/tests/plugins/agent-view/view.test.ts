@@ -1136,8 +1136,10 @@ describe("agent view past sessions", () => {
       .execute({ ids: ["explorer-old", "explorer-dead"] }, {});
     const [stored, unknown] = status.text.split("\n").filter((line) => line.startsWith("explorer-"));
 
-    expect(await header("explorer-old")).toMatch(/ · working context 21\.0k of 70k$/);
-    expect(stored).toMatch(/ · working context 21\.0k of 70k$/);
+    expect(await header("explorer-old")).toMatch(/^ +working context 21\.0k of 70k$/);
+    expect(stored).toBe(
+      "explorer-old (scout, model n/a) done · 0 calls · 0 tokens · working context 21.0k of 70k",
+    );
     expect(await header("explorer-dead")).not.toContain("context");
     expect(unknown).toMatch(/ · context n\/a$/);
   });

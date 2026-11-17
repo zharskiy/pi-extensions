@@ -70,7 +70,7 @@ extensions/subagents/
 │   │   ├── model-text.ts                  # resolutionError: run_agent's model error text
 │   │   └── semaphore.ts                   # createSemaphore: the maxConcurrent slots
 │   ├── agent-status/
-│   │   └── snapshot.ts                    # AgentSnapshot, snapshotOf (with the effective limit), snapshotLine (working context X of Y), agent_status params and details, unknownText
+│   │   └── snapshot.ts                    # AgentSnapshot, snapshotOf (with the effective limit), snapshotLine (working context X of Y, empty figures left out), agent_status params and details, unknownText
 │   ├── agent-panel/
 │   │   └── panel-state.ts                 # createPanelState, panelRows, selectedIndex, reconcile (drops a gone selection, lifts a collapsed child to its lead), panelView (shown rows and hidden count, PANEL_ROWS private)
 │   ├── agent-setup/

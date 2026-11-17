@@ -25,6 +25,10 @@ export const formatWindow = (count: number): string => {
 };
 
 export const formatDuration = (ms: number): string => {
+  if (!Number.isFinite(ms)) {
+    return "";
+  }
+
   const seconds = Math.max(0, Math.floor(ms / 1_000));
 
   if (seconds < 60) {
@@ -54,7 +58,7 @@ export const shortPath = (path: string, cwd: string, home: string): string => {
 };
 
 export const formatCost = (usd: number): string | undefined => {
-  if (usd <= 0) {
+  if (!Number.isFinite(usd) || usd <= 0) {
     return undefined;
   }
 
@@ -63,7 +67,15 @@ export const formatCost = (usd: number): string | undefined => {
 
 export const formatMoney = (usd: number) => formatCost(usd) ?? "$0.00";
 
-export const formatPercent = (percent: number, digits = 0) => `${percent.toFixed(digits)}%`;
+export const formatPercent = (percent: number, digits = 0) => {
+  if (!Number.isFinite(percent)) {
+    return "";
+  }
+
+  const text = percent.toFixed(digits);
+
+  return `${Number(text) === 0 ? text.replace("-", "") : text}%`;
+};
 
 export const noun = (count: number, word: string, plural = `${word}s`) => (count === 1 ? word : plural);
 

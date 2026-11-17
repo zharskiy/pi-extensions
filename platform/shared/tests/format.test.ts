@@ -42,6 +42,15 @@ describe("shared formatters", () => {
     expect(formatDuration(-5)).toBe("0s");
   });
 
+  it("formats a duration, cost or percentage that is not a finite number as empty", () => {
+    const broken = [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY];
+
+    expect(broken.map(formatDuration)).toEqual(["", "", ""]);
+    expect(broken.map((usd) => formatCost(usd))).toEqual([undefined, undefined, undefined]);
+    expect(broken.map((usd) => formatMoney(usd))).toEqual(["$0.00", "$0.00", "$0.00"]);
+    expect(broken.map((percent) => formatPercent(percent))).toEqual(["", "", ""]);
+  });
+
   it("reads the message of an error and stringifies anything else", () => {
     expect(errorText(new Error("boom"))).toBe("boom");
     expect(errorText("plain")).toBe("plain");
@@ -72,5 +81,11 @@ describe("costs and calls", () => {
   it("formats percentages whole by default and with the digits asked for", () => {
     expect([0, 41.6, 99.5].map((percent) => formatPercent(percent))).toEqual(["0%", "42%", "100%"]);
     expect(formatPercent(12.34, 1)).toBe("12.3%");
+  });
+
+  it("never formats a percentage as minus zero", () => {
+    expect([-0, -0.4, -0.49].map((percent) => formatPercent(percent))).toEqual(["0%", "0%", "0%"]);
+    expect(formatPercent(-0.04, 1)).toBe("0.0%");
+    expect(formatPercent(-3, 1)).toBe("-3.0%");
   });
 });
