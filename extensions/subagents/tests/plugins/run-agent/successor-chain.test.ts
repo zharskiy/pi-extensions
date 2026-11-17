@@ -512,8 +512,8 @@ describe("successor chain", () => {
     await flushMicrotasks();
 
     expect(caller.hidden).toHaveLength(1);
-    expect(caller.hidden[0]?.text).toContain(`Chain: ${link.id} → ${second} (2 sessions)`);
-    expect(caller.hidden[0]?.text).toContain("token store is in src/store.ts");
+    expect(caller.hidden[0]?.message.text).toContain(`Chain: ${link.id} → ${second} (2 sessions)`);
+    expect(caller.hidden[0]?.message.text).toContain("token store is in src/store.ts");
   });
 
   it("fails a successor whose launch throws and still wakes the caller with the failed link", async () => {

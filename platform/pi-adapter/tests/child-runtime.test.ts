@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { flushMicrotasks } from "../../../test/framework/index.ts";
 import type { ParentSource } from "../child/child-extension.ts";
 import { childToolNames, createPiRuntime } from "../child/child-runtime.ts";
-import type { SkillInfo, SpawnSpec } from "../index.ts";
+import type { ChildSession, SkillInfo, SpawnSpec } from "../index.ts";
 
 type InlineEntry = {
   name: string;
@@ -448,6 +448,20 @@ describe("child prompting", () => {
       expect.stringMatching(/^steer .*hi/s),
       "custom pi-subagents:wake nextTurn more (hidden)",
     ]);
+  });
+
+  it("takes the hidden option only with a custom message", async () => {
+    const sent: unknown[][] = [];
+
+    const send: ChildSession["send"] = async (...args: unknown[]) => {
+      sent.push(args);
+    };
+
+    await send(wake("more"), "followUp", { hidden: true });
+    // @ts-expect-error
+    await send({ sender: "main", text: "hi" }, "steer", { hidden: true });
+
+    expect(sent).toHaveLength(2);
   });
 
   it("wakes an idle child with a hidden custom message that starts a run", async () => {

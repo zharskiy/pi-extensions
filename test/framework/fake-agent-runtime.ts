@@ -25,7 +25,7 @@ export type FakeChildSession = ChildSession & {
   task?: string;
   seed?: CustomMessage;
   messages: { message: RoutedMessage | CustomMessage; delivery: MessageDelivery }[];
-  hidden: CustomMessage[];
+  hidden: { message: CustomMessage; delivery: MessageDelivery }[];
   aborted: boolean;
   abortDelayMs?: number;
   abortHangs?: boolean;
@@ -68,9 +68,13 @@ const createFakeChild = (spec: SpawnSpec): FakeChildSession => {
         listeners.delete(listener);
       };
     },
-    send: async (message, delivery, options) => {
+    send: async (
+      message: RoutedMessage | CustomMessage,
+      delivery: MessageDelivery,
+      options?: { hidden?: boolean },
+    ) => {
       if (options?.hidden && "customType" in message) {
-        child.hidden.push(message);
+        child.hidden.push({ message, delivery });
         return;
       }
 

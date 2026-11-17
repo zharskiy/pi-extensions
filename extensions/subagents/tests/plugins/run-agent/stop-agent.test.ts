@@ -279,7 +279,7 @@ describe("stop_agent in nested agents", () => {
       error: `stopped by ${record.id}`,
     });
     expect(child.hidden).toHaveLength(1);
-    expect(child.hidden[0]?.text).toContain("finished: 1 stopped.");
+    expect(child.hidden[0]?.message.text).toContain("finished: 1 stopped.");
     expect(hiddenMessageTexts(harness.host)).toEqual([]);
     expect(harness.registry.get(record.id)?.state).toBe("running");
   });

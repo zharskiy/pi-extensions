@@ -1739,7 +1739,7 @@ describe("agent view nested run_agent calls", () => {
     child.finish("Started batch, waiting.");
     await finishAll();
 
-    expect(child.hidden.map((wake) => wake.customType)).toEqual(["pi-subagents:wake"]);
+    expect(child.hidden.map((wake) => wake.message.customType)).toEqual(["pi-subagents:wake"]);
     expect(shown()).toContain(" ✓ 2 scout agents");
     expect(shown()).not.toContain("◌");
     expect(shown()).not.toContain("[pi-subagents] Batch");

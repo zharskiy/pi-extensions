@@ -31,11 +31,8 @@ export type ChildSession = {
   readonly sessionFile: string | undefined;
   start(opening: string | CustomMessage): void;
   subscribe(listener: (event: ChildEvent) => void): () => void;
-  send(
-    message: RoutedMessage | CustomMessage,
-    delivery: MessageDelivery,
-    options?: { hidden?: boolean },
-  ): Promise<void>;
+  send(message: RoutedMessage | CustomMessage, delivery: MessageDelivery): Promise<void>;
+  send(message: CustomMessage, delivery: MessageDelivery, options: { hidden?: boolean }): Promise<void>;
   abort(): Promise<void>;
   dispose(): Promise<void>;
   ownUsage(): UsageTotals;

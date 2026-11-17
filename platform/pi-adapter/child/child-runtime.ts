@@ -27,7 +27,7 @@ import { promptRecordEntry, readSessionFile } from "../runtime/session-file.ts";
 import { settleWithin } from "../runtime/settle-within.ts";
 import { toPiTool } from "../tools/tool-bridge.ts";
 import { MCP_PREFIX } from "../tools/tool-source.ts";
-import type { CustomMessage, SkillInfo } from "../types/messages.ts";
+import type { CustomMessage, RoutedMessage, SkillInfo } from "../types/messages.ts";
 import type {
   AgentRuntime,
   ChildEvent,
@@ -395,7 +395,11 @@ export const createPiRuntime = (
           listeners.delete(listener);
         };
       },
-      send: (message, delivery, options) =>
+      send: (
+        message: RoutedMessage | CustomMessage,
+        delivery: MessageDelivery,
+        options?: { hidden?: boolean },
+      ) =>
         "customType" in message
           ? deliverCustom(piCustom(message, !options?.hidden), delivery)
           : deliver(formatRoutedMessage(message), delivery),
