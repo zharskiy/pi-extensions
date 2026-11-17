@@ -280,8 +280,10 @@ const runningProxy = async (stateDir: string, input: RepoProxyInput) => {
 const egressChangedFor = async (
   previous: EgressSettings | undefined,
   settings: EgressSettings,
+  running: boolean,
   othersLive: () => Promise<boolean>,
-) => (previous === undefined || stableHash(previous) !== stableHash(settings)) && (await othersLive());
+) =>
+  (previous === undefined ? running : stableHash(previous) !== stableHash(settings)) && (await othersLive());
 
 export const ensureRepoProxy = async (options: EnsureRepoProxyOptions): Promise<RepoProxyStart> => {
   const { stateDir, input } = options;
@@ -303,9 +305,10 @@ export const ensureRepoProxy = async (options: EnsureRepoProxyOptions): Promise<
 
     return others.live;
   };
-  const egressNotices = (await egressChangedFor(previous, settings, othersLive)) ? [EGRESS_CHANGED] : [];
-  const inputHash = await proxyInputHash(stateDir, input);
   const current = await runningProxy(stateDir, input);
+  const changed = await egressChangedFor(previous, settings, current !== undefined, othersLive);
+  const egressNotices = changed ? [EGRESS_CHANGED] : [];
+  const inputHash = await proxyInputHash(stateDir, input);
 
   if (current?.inputHash === inputHash) {
     return { proxy: current, notices: egressNotices };
