@@ -236,6 +236,10 @@ export const agentSetupPlugin: Plugin = {
         return;
       }
 
+      if (request.notice) {
+        notify(request.notice, "warning");
+      }
+
       save(request.scope, [request.change]);
     };
 

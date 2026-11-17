@@ -75,7 +75,7 @@ extensions/subagents/
 │   │   └── panel-state.ts                 # createPanelState, panelRows, selectedIndex, reconcile (drops a gone selection, lifts a collapsed child to its lead), panelView (shown rows and hidden count, PANEL_ROWS private)
 │   ├── agent-setup/
 │   │   ├── scope.ts                       # SCOPES (over shared SettingsScope), SetupChange
-│   │   ├── line.ts                        # parseSetupLine: the one-line /agents setup form (refuses skills= on a chore), SETUP_USAGE
+│   │   ├── line.ts                        # parseSetupLine: the one-line /agents setup form (refuses skills= on a chore; duplicate skills come back as a notice), SETUP_USAGE
 │   │   ├── write.ts                       # mergeChanges, writeChanges (through writeSettingsFile, so a new .pi/ gets its .gitignore), overriddenFields
 │   │   ├── create.ts                      # createAgentCommand: /agents create checks and the brief, CREATE_USAGE
 │   │   ├── autosetup.ts                   # AUTOSETUP_TYPE, INTERACTIVE_TERMS, hasSkillsOverride, candidateSkills, projectListing, autosetupBrief

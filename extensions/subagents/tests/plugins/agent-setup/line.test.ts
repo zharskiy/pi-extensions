@@ -43,8 +43,13 @@ describe("/agents setup one-line parser", () => {
     expect(parseSetupLine("scout skills=All", check())).toEqual({
       error: "skills takes all in lowercase, got: All",
     });
+  });
+
+  it("de-duplicates skills and reports the duplicates as a notice", () => {
     expect(parseSetupLine("scout skills=docs,docs", check())).toEqual({
-      error: "skills lists entries more than once: docs",
+      change: { name: "scout", patch: { skills: ["docs"] } },
+      scope: "project",
+      notice: "skills lists entries more than once: docs",
     });
   });
 

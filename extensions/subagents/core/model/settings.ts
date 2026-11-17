@@ -82,7 +82,11 @@ const parseOverride = (name: string, raw: unknown) => {
     OVERRIDE_PARSERS[key](raw[key]),
   );
 
-  errors.push(...fields.flatMap((field) => (field.error ? [`${name}.${field.error}`] : [])));
+  errors.push(
+    ...fields.flatMap((field) =>
+      [field.error, field.notice].flatMap((text) => (text ? [`${name}.${text}`] : [])),
+    ),
+  );
 
   const override: AgentOverride = Object.assign({}, ...fields.map((field) => field.patch));
 

@@ -2,7 +2,7 @@ import { isThinkingLevel, THINKING_LEVELS } from "../../../../platform/pi-adapte
 import type { AgentOverride } from "./agent-schema.ts";
 import { checkGrant, checkModel } from "./agent-values.ts";
 
-export type OverrideField = { patch: AgentOverride; error?: string };
+export type OverrideField = { patch: AgentOverride; error?: string; notice?: string };
 
 export const OVERRIDE_FIELDS = ["model", "thinking", "skills"] as const;
 
@@ -27,7 +27,7 @@ export const overrideThinking = (value: unknown): OverrideField =>
 export const overrideSkills = (value: unknown): OverrideField => {
   const { grant, error, warning } = checkGrant("skills", value);
 
-  return grant === undefined ? { patch: {}, error } : { patch: { skills: grant }, error: warning };
+  return grant === undefined ? { patch: {}, error } : { patch: { skills: grant }, notice: warning };
 };
 
 export const unknownSkillsProblem = (skills: string[], loaded: string[]) => {

@@ -24,7 +24,7 @@ export type LineCheck = {
   resolveModel(request: string): { ref: string } | { error: string };
 };
 
-type LineRequest = { change: SetupChange; scope: SettingsScope };
+type LineRequest = { change: SetupChange; scope: SettingsScope; notice?: string };
 
 type Parsed = OverrideField & { scope?: SettingsScope };
 
@@ -107,5 +107,9 @@ export const parseSetupLine = (args: string, check: LineCheck): LineRequest | { 
     return { error: `nothing to set; usage: ${SETUP_USAGE}` };
   }
 
-  return { change: { name, patch }, scope };
+  const notices = parsed.flatMap((entry) => (entry.notice ? [entry.notice] : []));
+
+  return notices.length > 0
+    ? { change: { name, patch }, scope, notice: notices.join("; ") }
+    : { change: { name, patch }, scope };
 };
