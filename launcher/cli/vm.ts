@@ -14,7 +14,7 @@ import { liveLaunches } from "../grants/index.ts";
 import { isWithin, LauncherError, realOrResolvedSync, stateLayout } from "../shared/index.ts";
 import { type HostSessions, mountedGitDirs, sharedRootsOf } from "../workspace/index.ts";
 import type { LaunchContext } from "./context.ts";
-import { type CliDeps, hostAgentDirOf, pathsOf, writeNotices } from "./deps.ts";
+import { type CliDeps, hostAgentDirOf, pathsOf, reachableEngine, writeNotices } from "./deps.ts";
 import { prepareSessionsDir } from "./host-sessions.ts";
 import { busyLaunches } from "./launches.ts";
 
@@ -151,13 +151,15 @@ export const startVm = async (
 };
 
 const foreignSessions = async (backend: Backend, stateDir: string, launchId?: string) => {
-  if (!(await backend.detect()).available) {
+  const engine = await reachableEngine(backend);
+
+  if (engine === undefined) {
     return 0;
   }
 
   const live = (await liveLaunches(stateDir)).map((launch) => launch.launchId);
   const known = new Set([...(launchId === undefined ? [] : [launchId]), ...live]);
-  const containers = await listLauncherContainers(backend);
+  const containers = await listLauncherContainers(engine);
 
   return containers.filter(
     (container) => container.state === "running" && !known.has(container.labels[LABELS.launchId] ?? ""),

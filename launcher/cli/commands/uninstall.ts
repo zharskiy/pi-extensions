@@ -1,7 +1,7 @@
 import { type Backend, LABELS } from "../../backend/index.ts";
 import { liveLaunches, withRepoLaunchLock } from "../../grants/index.ts";
 import { errorMessage, knownRepos } from "../../shared/index.ts";
-import { type CliDeps, pathsOf, writeLine, writeLines } from "../deps.ts";
+import { type CliDeps, pathsOf, reachableEngine, writeLine, writeLines } from "../deps.ts";
 import { removeRepoSandbox } from "../sweep.ts";
 
 export const UNINSTALL = "__uninstall";
@@ -52,9 +52,6 @@ const removeStored = async (backend: Backend) => {
 
   return [`engine: removed ${removedVolumes} volumes and ${removedImages} images`];
 };
-
-const reachableEngine = async (backend: Backend) =>
-  (await backend.detect()).available ? backend : undefined;
 
 export const uninstallCommand = async (deps: CliDeps) => {
   const { stateDir } = pathsOf(deps);

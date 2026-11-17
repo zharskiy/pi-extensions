@@ -4,7 +4,7 @@ import { endLaunch, type Launch, liveLaunches, newLaunchId, registerLaunch } fro
 import { errorMessage, processMark, writeRepoRecord } from "../shared/index.ts";
 import { gitLaunchEndNotices } from "../workspace/index.ts";
 import type { LaunchContext } from "./context.ts";
-import { type CliDeps, writeNotices } from "./deps.ts";
+import { type CliDeps, reachableEngine, writeNotices } from "./deps.ts";
 import { sweepRepoSessions } from "./host-sessions.ts";
 import { removeRepoSandbox, sweepOrphans } from "./sweep.ts";
 
@@ -34,12 +34,12 @@ const gitEndNotices = (deps: CliDeps, context: LaunchContext) =>
     `warning: git: the check after the session failed: ${errorMessage(error)}`,
   ]);
 
-const removeOwnContainer = async (deps: CliDeps, backend: Backend, launch: Launch) => {
-  if (!(await backend.detect()).available) {
+const removeOwnContainer = async (deps: CliDeps, engine: Backend | undefined, launch: Launch) => {
+  if (engine === undefined) {
     return;
   }
 
-  await removeLaunchContainer(backend, launch.launchId).catch((error: unknown) => {
+  await removeLaunchContainer(engine, launch.launchId).catch((error: unknown) => {
     writeNotices(deps, [`warning: the launch's container was not removed: ${errorMessage(error)}`]);
   });
 };
@@ -51,8 +51,9 @@ export const finishLaunch = async (
   launch: Launch,
 ) => {
   const last: { gitNotices?: string[] } = {};
+  const engine = await reachableEngine(backend);
 
-  await removeOwnContainer(deps, backend, launch);
+  await removeOwnContainer(deps, engine, launch);
 
   try {
     await endLaunch(context.stateDir, {
@@ -60,7 +61,7 @@ export const finishLaunch = async (
       launchId: launch.launchId,
       onLast: async () => {
         try {
-          await removeRepoSandbox(deps, backend, context.repoHash);
+          await removeRepoSandbox(deps, engine, context.repoHash);
         } finally {
           last.gitNotices = await gitEndNotices(deps, context);
         }
@@ -76,7 +77,7 @@ export const finishLaunch = async (
     writeNotices(deps, last.gitNotices);
   }
 
-  await sweepOrphans(deps, backend);
+  await sweepOrphans(deps, engine);
 };
 
 export const busyLaunches = async (stateDir: string, except?: string) =>

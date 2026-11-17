@@ -18,7 +18,7 @@ import { type DenialRecord, guestProxyUrl } from "../proxy/index.ts";
 import { errorMessage, settleAll, type WriteBackTable } from "../shared/index.ts";
 import { gitLaunchNotices, type HostSessions } from "../workspace/index.ts";
 import { checkWorkspaceRoots, type LaunchContext, openContext } from "./context.ts";
-import { type CliDeps, hostAgentDirOf, writeNotices } from "./deps.ts";
+import { type CliDeps, hostAgentDirOf, reachableEngine, writeNotices } from "./deps.ts";
 import { type HostSide, type PreparedHost, prepareHostSide } from "./derive.ts";
 import { NO_SANDBOX, resolveJobPi, runHostPi } from "./host-pi.ts";
 import {
@@ -125,7 +125,10 @@ const prepareHost = async (
   backend: Backend,
   parts: { deriving: Promise<PreparedHost>; sessions: HostSessions; signIn: boolean },
 ) => {
-  const [prepared] = await settleAll([parts.deriving, sweepOrphans(deps, backend)]);
+  const [prepared] = await settleAll([
+    parts.deriving,
+    reachableEngine(backend).then((engine) => sweepOrphans(deps, engine)),
+  ]);
 
   writeNotices(deps, prepared.notices);
 

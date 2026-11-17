@@ -91,6 +91,9 @@ export const pathsOf = (deps: Pick<CliDeps, "env" | "home">) =>
 
 export const hostAgentDirOf = (deps: CliDeps) => hostAgentDir(deps.home, deps.env);
 
+export const reachableEngine = async (backend: Backend) =>
+  (await backend.detect()).available ? backend : undefined;
+
 export const reachableBackend = async (deps: CliDeps) => {
   const backend = deps.backend();
   const detection = await backend.detect();
