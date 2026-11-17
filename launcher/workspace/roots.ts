@@ -85,13 +85,19 @@ const guardedPaths = (context: RootGuardContext, homes: string[]): Guarded[] => 
 const clashes = (resolved: string) => (entry: Guarded) =>
   isWithin(entry.path, resolved) || (entry.inside && isWithin(resolved, entry.path));
 
-const problemOf = (resolved: string, context: RootGuardContext): RootProblem | undefined => {
-  if (CONTROL_CHARACTER.test(resolved)) {
+export const pathTextProblem = (path: string): RootProblem | undefined => {
+  if (CONTROL_CHARACTER.test(path)) {
     return { kind: "control" };
   }
 
-  if (MOUNT_SYNTAX.test(resolved)) {
-    return { kind: "mount-syntax" };
+  return MOUNT_SYNTAX.test(path) ? { kind: "mount-syntax" } : undefined;
+};
+
+const problemOf = (resolved: string, context: RootGuardContext): RootProblem | undefined => {
+  const textProblem = pathTextProblem(resolved);
+
+  if (textProblem !== undefined) {
+    return textProblem;
   }
 
   const homes = [resolve(context.home), realOrResolvedSync(context.home)];

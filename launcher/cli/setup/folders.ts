@@ -3,7 +3,13 @@ import { readdirSync, statSync } from "node:fs";
 import { lstat, readdir, realpath, stat } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { expandHome, isWithin, realOrResolved, realOrResolvedSync } from "../../shared/index.ts";
-import { checkRoot, type RootGuardContext, type RootProblem, sharedRootsOf } from "../../workspace/index.ts";
+import {
+  checkRoot,
+  pathTextProblem,
+  type RootGuardContext,
+  type RootProblem,
+  sharedRootsOf,
+} from "../../workspace/index.ts";
 import type { FolderCandidate } from "./types.ts";
 
 interface ScanLimits {
@@ -407,6 +413,12 @@ export const addedRootProblem = (typed: string, context: AddContext) => {
   }
 
   const shown = tildeForm(trimmed, context.home);
+  const textProblem = pathTextProblem(trimmed);
+
+  if (textProblem !== undefined) {
+    return guardMessage(shown, textProblem);
+  }
+
   const verdict = checkRoot(trimmed, context);
 
   if (!verdict.ok) {

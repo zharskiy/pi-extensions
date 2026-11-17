@@ -22,6 +22,7 @@ export { type HostSessions, hostSessionsChoice, hostSessionsDir } from "./pi-ses
 export {
   assertWithinWorkspaceRoots,
   checkRoot,
+  pathTextProblem,
   type RootGuardContext,
   type RootProblem,
   rootRefusal,

@@ -258,6 +258,19 @@ describe("addedRootProblem", () => {
     expect(addedRootProblem("~/Projects", context)).toBeUndefined();
   });
 
+  it("refuses typed text the VM cannot share even when it links to a clean folder", async () => {
+    const context = await setup();
+
+    await symlink(join(context.home, "Projects", "app"), join(context.home, "x:y"));
+
+    await symlink(join(context.home, "Projects", "app"), join(context.home, "x\u0007"));
+
+    expect(addedRootProblem("~/x:y", context)).toBe(
+      '~/x:y has a "," or ":" in its name, which the VM cannot share. Rename it or choose another folder.',
+    );
+    expect(addedRootProblem("~/x\u0007", context)).toBe("That path has a control character in it.");
+  });
+
   it("suggests a sibling folder that differs in case or by at most two letters", async () => {
     const context = await homeWith([], ["Projects", "Pictures", "a", ".ssh", "Library"]);
     const suggested = (name: string) => suggestionFor(join(context.home, name), { ...context, env: {} });
