@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { flushMicrotasks } from "../../../test/framework/index.ts";
 import type { ParentSource } from "../child/child-extension.ts";
 import { childToolNames, createPiRuntime } from "../child/child-runtime.ts";
-import type { SkillInfo, SpawnSpec } from "../index.ts";
+import type { ChildSession, SkillInfo, SpawnSpec } from "../index.ts";
 
 type InlineEntry = {
   name: string;
@@ -441,7 +441,7 @@ describe("child prompting", () => {
 
     child.start("task");
     await child.send({ sender: "main", text: "hi" }, "steer");
-    await child.sendHidden(wake("more"));
+    await child.send(wake("more"), "followUp", { hidden: true });
 
     expect(calls).toEqual([
       "prompt task",
@@ -450,12 +450,26 @@ describe("child prompting", () => {
     ]);
   });
 
+  it("takes the hidden option only with a custom message", async () => {
+    const sent: unknown[][] = [];
+
+    const send: ChildSession["send"] = async (...args: unknown[]) => {
+      sent.push(args);
+    };
+
+    await send(wake("more"), "followUp", { hidden: true });
+    // @ts-expect-error
+    await send({ sender: "main", text: "hi" }, "steer", { hidden: true });
+
+    expect(sent).toHaveLength(2);
+  });
+
   it("wakes an idle child with a hidden custom message that starts a run", async () => {
     const { child, calls, settle } = await spawnScripted();
 
     child.start("task");
     settle();
-    await child.sendHidden(wake("again"));
+    await child.send(wake("again"), "followUp", { hidden: true });
 
     expect(calls.at(-1)).toBe("custom pi-subagents:wake trigger again (hidden)");
   });
@@ -464,7 +478,7 @@ describe("child prompting", () => {
     const { child, calls, events, settle } = await spawnScripted();
 
     child.start("task");
-    await child.sendHidden(wake("more"));
+    await child.send(wake("more"), "followUp", { hidden: true });
     settle();
 
     expect(calls.at(-1)).toBe("custom pi-subagents:wake trigger more (hidden)");
@@ -477,7 +491,7 @@ describe("child prompting", () => {
     child.start("task");
     settle();
     failNextRun(new Error("auth expired"));
-    await child.sendHidden(wake("go on"));
+    await child.send(wake("go on"), "followUp", { hidden: true });
     await flushMicrotasks(1);
 
     expect(events).toEqual(["settled", "error Error: auth expired", "settled"]);
@@ -571,7 +585,7 @@ describe("child prompting", () => {
 
     child.start("task");
     session.isStreaming = true;
-    await child.sendCustom(request, "steer");
+    await child.send(request, "steer");
 
     expect(calls.at(-1)).toBe("custom pi-handoff-request steer hand off");
   });
@@ -580,7 +594,7 @@ describe("child prompting", () => {
     const { child, calls, settle, seen } = await spawnScripted();
 
     child.start("task");
-    await child.sendCustom(request, "steer");
+    await child.send(request, "steer");
 
     expect(calls.at(-1)).toBe("custom pi-handoff-request nextTurn hand off");
     expect(calls.some((call) => call.includes("trigger"))).toBe(false);
@@ -596,7 +610,7 @@ describe("child prompting", () => {
 
     child.start("task");
     settle();
-    await child.sendCustom(request, "steer");
+    await child.send(request, "steer");
     settle();
 
     expect(calls.at(-1)).toBe("custom pi-handoff-request trigger hand off");
@@ -608,7 +622,7 @@ describe("child prompting", () => {
 
     child.start("task");
     leaveQueued("late");
-    await child.sendCustom(request, "steer");
+    await child.send(request, "steer");
     settle();
 
     expect(agentQueue).toEqual([]);
@@ -622,7 +636,7 @@ describe("child prompting", () => {
     child.start("task");
     leaveQueued("late");
     session.isStreaming = true;
-    await child.sendHidden(wake("results"));
+    await child.send(wake("results"), "followUp", { hidden: true });
     session.isStreaming = false;
     settle();
 
@@ -638,7 +652,7 @@ describe("child prompting", () => {
     const { child, calls, events, settle } = await spawnScripted();
 
     child.start("task");
-    await child.sendCustom(request, "steer");
+    await child.send(request, "steer");
     settle();
 
     expect(calls.at(-1)).toBe("custom pi-handoff-request trigger hand off");
@@ -650,8 +664,8 @@ describe("child prompting", () => {
 
     child.start("task");
     session.isStreaming = true;
-    await child.sendCustom(request, "steer");
-    await child.sendCustom(request, "steer");
+    await child.send(request, "steer");
+    await child.send(request, "steer");
     seen("pi-handoff-request", "hand off");
     settle();
 
@@ -665,7 +679,7 @@ describe("child prompting", () => {
 
     child.start("task");
     session.isStreaming = true;
-    await child.sendCustom(request, "steer");
+    await child.send(request, "steer");
     await child.dispose();
     settle();
 
@@ -676,10 +690,7 @@ describe("child prompting", () => {
     const { child, calls } = await spawnScripted();
 
     child.start({ customType: "pi-handoff-seed", text: "the handoff", details: { from: "agent" } });
-    await Promise.all([
-      child.send({ sender: "main", text: "hi" }, "steer"),
-      child.sendCustom(request, "steer"),
-    ]);
+    await Promise.all([child.send({ sender: "main", text: "hi" }, "steer"), child.send(request, "steer")]);
     await flushMicrotasks(2);
 
     expect(calls).toEqual([
@@ -694,7 +705,7 @@ describe("child prompting", () => {
     const { child, calls } = await spawnScripted();
 
     await child.dispose();
-    await child.sendHidden(wake("too late"));
+    await child.send(wake("too late"), "followUp", { hidden: true });
     await child.send({ sender: "main", text: "hi" }, "steer");
 
     expect(calls).toEqual(["emit session_shutdown", "dispose"]);

@@ -1,12 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { plainTheme } from "../../../test/framework/index.ts";
+import { plainText, plainTheme } from "../../../test/framework/index.ts";
 import {
   piEditDiff,
   renderEditDiff,
   renderPaneEditDiff,
   renderPaneToolRows,
   renderToolRows,
-  visible,
 } from "../../../test/framework/pi/index.ts";
 import { parseDiff } from "../ui/diff.ts";
 import { numbered, rows } from "./support/transcript-rows.ts";
@@ -28,7 +27,7 @@ describe("diff rows through pi", () => {
 
   it("hangs the drawn diff at column 4 after pi's output pad, under the ↳ summary", () => {
     const shown = (outputPad: number) =>
-      renderEditDiff(rows, { diff, outputPad, width: 40 }).map((line) => visible(line).trimEnd());
+      renderEditDiff(rows, { diff, outputPad, width: 40 }).map((line) => plainText(line).trimEnd());
 
     expect(shown(1)).toEqual([
       "   ↳ Added 2 lines, removed 1 line",
@@ -58,7 +57,7 @@ describe("diff rows through pi", () => {
       "- 1 let total = sum(values[1:]) if values else 0\n+ 1 let total = sum(values) if values else 0";
     const drawn = renderEditDiff(rows, { diff: long, outputPad: 1, width: 40 }).slice(1);
 
-    expect(drawn.map((line) => visible(line).trimEnd())).toEqual([
+    expect(drawn.map((line) => plainText(line).trimEnd())).toEqual([
       "     -1 let total = sum(values[1:]) if",
       "        values else 0",
       "     +1 let total = sum(values) if",

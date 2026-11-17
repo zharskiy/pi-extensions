@@ -1,6 +1,7 @@
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { parseFrontmatter } from "../../../../../platform/shared/index.ts";
 import { agentDefinitionsPlugin } from "../../../api/plugins/agent-definitions.ts";
 import { FRONTMATTER_FIELDS } from "../../../core/agent-definitions/fields.ts";
 import {
@@ -9,7 +10,6 @@ import {
   parseDefinition,
 } from "../../../core/agent-definitions/loader.ts";
 import { assemblePromptAppend } from "../../../core/agent-definitions/prompt.ts";
-import { parseFrontmatter } from "../../../core/agent-definitions/yaml-lite.ts";
 import { createHarness, PACKAGE_ROOT, tempDir } from "../../support/subagents-harness.ts";
 
 const writeAgent = (dir: string, file: string, content: string) => {
@@ -27,45 +27,6 @@ const lists = (extra: string, defaults = DEFAULT_LISTS) =>
 
 const agentFile = (name: string, description: string, extra = "subagents: []", body = "") =>
   `---\nname: ${name}\ndescription: ${description}\nlimit: 50000\n${lists(extra)}${extra}\n---\n${body}`;
-
-describe("frontmatter", () => {
-  it("parses scalars, inline lists, block lists and block text", () => {
-    const parsed = parseFrontmatter(
-      [
-        "---",
-        "name: scout",
-        'description: "Finds things: fast"',
-        "tools: [read, grep]",
-        "skills:",
-        "  - search",
-        "  - 'docs'",
-        "limit: 12000",
-        "prompt: |",
-        "  line one",
-        "  line two",
-        "unknownKey: ignored-but-kept",
-        "---",
-        "Body text.",
-      ].join("\n"),
-    );
-
-    expect(parsed.data).toEqual({
-      name: "scout",
-      description: "Finds things: fast",
-      tools: ["read", "grep"],
-      skills: ["search", "docs"],
-      limit: 12000,
-      prompt: "line one\nline two",
-      unknownKey: "ignored-but-kept",
-    });
-
-    expect(parsed.body).toBe("Body text.");
-  });
-
-  it("treats a file without frontmatter as body only", () => {
-    expect(parseFrontmatter("just text")).toEqual({ data: {}, body: "just text" });
-  });
-});
 
 describe("agent definition parsing", () => {
   it("accepts comma-separated tools", () => {
@@ -120,8 +81,8 @@ describe("agent definition parsing", () => {
         "description is required",
         "name must be a plain name of letters, digits, '_' and '-', not starting with '-'",
         "limit must be an integer of at least 5000",
-        "subagents must be a list or a comma-separated string",
-        'model must be name[:thinking] without spaces, got "nova 6"',
+        "subagents must be all or a list of names, as a list or a comma-separated string",
+        "model must be [provider/]id[:thinking] or inherit[:thinking], without spaces",
         "worktree must be true or false",
       ]),
     );
@@ -353,8 +314,22 @@ describe("agent overrides", () => {
       { level: "warning", message: 'agents.a.model "other/x": matches no available model; dropped' },
       {
         level: "warning",
-        message: "agents.a.skills names unknown skill(s) lint (available skills: docs, git); dropped",
+        message:
+          "agents.a.skills names unknown skill(s) lint (available skills: docs, git); those are dropped",
       },
+    ]);
+  });
+
+  it("keeps only the known skills of an override over a file that grants all, none when no name is known", () => {
+    const { list } = dirs();
+
+    const result = loadDefinitions(list, check({ a: { skills: ["lint"] }, b: { skills: ["git", "lint"] } }));
+
+    expect(result.definitions.get("a")).toMatchObject({ skills: [] });
+    expect(result.definitions.get("b")).toMatchObject({ skills: ["git"] });
+    expect(result.notices.map((notice) => notice.message)).toEqual([
+      "agents.a.skills names unknown skill(s) lint (available skills: docs, git); those are dropped",
+      "agents.b.skills names unknown skill(s) lint (available skills: docs, git); those are dropped",
     ]);
   });
 
@@ -734,7 +709,6 @@ describe("list fields", () => {
     ["tools", "+read, grep", "+read"],
     ["tools", "~", "~"],
     ["tools", "[read, web_*]", "web_*"],
-    ["skills", "[docs, ./style]", "./style"],
     ["subagents", "[scout, -reviewer]", "-reviewer"],
   ])("rejects %s entries that are not plain names", (key, value, shown) => {
     const parsed = parse({ [key]: value });
@@ -743,6 +717,12 @@ describe("list fields", () => {
     expect(parsed.errors).toEqual([
       `${key} entries must be plain names of letters, digits, '_' and '-', not starting with '-', got: ${shown}`,
     ]);
+  });
+
+  it("takes every skill name pi loads that keeps the list readable", () => {
+    expect(
+      parse({ skills: "[docs, ./style, foo.bar, ns:skill, -lint, web_*, Ünï]" }).definition?.skills,
+    ).toEqual(["docs", "./style", "foo.bar", "ns:skill", "-lint", "web_*", "Ünï"]);
   });
 
   it.each([
@@ -839,7 +819,7 @@ describe("prompt assembly", () => {
 
     expect(
       assemblePromptAppend(
-        "# Base\nShared rules.\n",
+        "# Base\nShared rules.",
         parsed.definition as NonNullable<typeof parsed.definition>,
       ),
     ).toMatchInlineSnapshot(`

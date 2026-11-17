@@ -9,21 +9,8 @@ import {
   INTERACTIVE_TERMS,
   projectListing,
 } from "../../../core/agent-setup/autosetup.ts";
-import type { AgentDefinition } from "../../../core/model/agent-record.ts";
+import { agentDefinition } from "../../support/agent-records.ts";
 import { tempDir } from "../../support/subagents-harness.ts";
-
-const definition = (patch: Partial<AgentDefinition> & Pick<AgentDefinition, "name">) =>
-  ({
-    description: `${patch.name} does its job`,
-    limit: 100_000,
-    tools: ["read", "bash"],
-    skills: [],
-    subagents: ["scout"],
-    prompt: "",
-    source: "builtin",
-    path: `/pkg/agents/leads/${patch.name}.md`,
-    ...patch,
-  }) as AgentDefinition;
 
 const skill = (name: string, patch: Partial<SkillInfo> = {}): SkillInfo => ({
   name,
@@ -106,8 +93,8 @@ describe("autosetupBrief", () => {
     cwd: "/work/app",
     listing: "src/",
     leads: [
-      definition({ name: "reviewer", skills: ["docs"] }),
-      definition({ name: "general", skills: "all" }),
+      agentDefinition({ name: "reviewer", skills: ["docs"] }),
+      agentDefinition({ name: "general", skills: "all" }),
     ],
     candidates: [
       skill("docs", { scope: "project" }),

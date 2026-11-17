@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import type { AgentRuntime } from "../../../../platform/pi-adapter/index.ts";
@@ -12,7 +12,7 @@ import {
   startExtension,
   useTempDirs,
 } from "../../../../test/framework/index.ts";
-import { NAMESPACE } from "../../core/model/paths.ts";
+import { NAMESPACE, userAgentsDir } from "../../core/model/paths.ts";
 import type { Plugin } from "../../core/model/plugin.ts";
 import { defaultSettings, type Settings } from "../../core/model/settings.ts";
 import type { RunAgentParams } from "../../core/run-agent/tools.ts";
@@ -35,6 +35,23 @@ const shippedModels = () =>
         ),
     ),
   ].map((ref) => catalogModel(ref));
+
+const AGENT_FIELDS = { description: "d", limit: "50000", tools: "all", skills: "all", subagents: "[]" };
+
+export const agentFile = (name: string, fields: Record<string, string> = {}, body = "") => {
+  const lines = Object.entries({ name, ...AGENT_FIELDS, ...fields }).map(
+    ([key, value]) => `${key}: ${value}`,
+  );
+
+  return `---\n${lines.join("\n")}\n---\n${body}`;
+};
+
+export const writeUserAgent = (host: Pick<FakeHost, "info">, name: string, text = agentFile(name)) => {
+  const dir = userAgentsDir(host.info);
+
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, `${name}.md`), text);
+};
 
 export const pluginSettings = (overrides: Partial<Settings> = {}): Settings => ({
   ...defaultSettings(),

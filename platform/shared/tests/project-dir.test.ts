@@ -101,6 +101,17 @@ describe("ensureProjectSubdir", () => {
 
     expect(readdirSync(join(cwd, ".pi"))).toEqual(["worktrees"]);
   });
+  it("ignores an ignored folder from git without replacing its own .gitignore", () => {
+    const cwd = temp.make("pi-project-dir-");
+    const dir = ensureProjectSubdir(cwd, "worktrees", { ignored: true });
+
+    expect(readFileSync(join(dir, ".gitignore"), "utf8")).toBe("*\n");
+
+    writeFileSync(join(dir, ".gitignore"), "custom\n");
+    ensureProjectSubdir(cwd, "worktrees", { ignored: true });
+
+    expect(readFileSync(join(dir, ".gitignore"), "utf8")).toBe("custom\n");
+  });
 });
 
 describe("writeSettingsFile", () => {

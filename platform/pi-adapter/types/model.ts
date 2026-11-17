@@ -5,6 +5,14 @@ export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
 export const isThinkingLevel = (value: string): value is ThinkingLevel =>
   THINKING_LEVELS.some((level) => level === value);
 
+export const modelRefOf = (model: { provider: string; id: string }) => `${model.provider}/${model.id}`;
+
+export const splitModelRef = (ref: string) => {
+  const slash = ref.indexOf("/");
+
+  return { provider: ref.slice(0, slash), id: ref.slice(slash + 1) };
+};
+
 export const splitModelRequest = (request: string): { name: string; thinking?: string; error?: string } => {
   const trimmed = request.trim();
   const colon = trimmed.lastIndexOf(":");
@@ -35,6 +43,14 @@ export type ModelChoice = {
   contextWindow: number;
   cost: { input: number; output: number };
 };
+
+type PricedModel = { provider: string; id: string; contextWindow: number; cost: ModelChoice["cost"] };
+
+export const modelChoiceOf = (model: PricedModel): ModelChoice => ({
+  ref: modelRefOf(model),
+  contextWindow: model.contextWindow,
+  cost: { input: model.cost.input, output: model.cost.output },
+});
 
 export type ModelResolution =
   | { kind: "resolved"; request: string; model: ModelChoice }

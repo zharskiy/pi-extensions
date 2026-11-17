@@ -20,11 +20,8 @@ type StatusScope = {
   expandKey: () => string;
 };
 
-const MAIN_DESCRIPTION =
-  "Report state, model, elapsed time, tokens, context use, last output line and result path for one or several agents in one call. Omit ids to list every agent of this session. Does not wake or disturb agents. You are woken when a batch you started is done; do not call this in a loop.";
-
-const CHILD_DESCRIPTION =
-  "Report state, model, elapsed time, tokens, context use, last output line and result path for one or several agents in one call. Omit ids to list the agents you started. Does not wake or disturb agents. You are woken when a batch you started is done; do not call this in a loop.";
+const description = (listed: string) =>
+  `Report state, model, elapsed time, tokens, context use, last output line and result path for one or several agents in one call. Omit ids to list ${listed}. Does not wake or disturb agents. You are woken when a batch you started is done; do not call this in a loop.`;
 
 const defaultIds = ({ registry, callerId }: StatusScope) =>
   registry
@@ -35,7 +32,9 @@ const defaultIds = ({ registry, callerId }: StatusScope) =>
 const statusTool = (scope: StatusScope): ToolSpec<AgentStatusParams, AgentStatusDetails> => ({
   name: "agent_status",
   label: "Agent status",
-  description: scope.callerId === undefined ? MAIN_DESCRIPTION : CHILD_DESCRIPTION,
+  description: description(
+    scope.callerId === undefined ? "every agent of this session" : "the agents you started",
+  ),
   promptSnippet: "check one or several agents without disturbing them",
   parameters: {
     type: "object",

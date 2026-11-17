@@ -38,6 +38,16 @@ type RawEntry = {
 
 type PromptRecordData = { providerPayload?: unknown };
 
+export const promptToolOf = (tool: {
+  name: string;
+  description?: string;
+  parameters: PromptTool["parameters"];
+}): PromptTool => ({
+  name: tool.name,
+  description: tool.description ?? "",
+  parameters: tool.parameters,
+});
+
 export type Replay = { sections: Map<string, string>; tools: Map<string, PromptTool> };
 
 const replaySystemMessage = (replay: Replay, message: RawMessage) => {
@@ -55,11 +65,7 @@ const replaySystemMessage = (replay: Replay, message: RawMessage) => {
   });
 
   (message.toolsAdded ?? []).forEach((tool) => {
-    replay.tools.set(tool.name, {
-      name: tool.name,
-      description: tool.description ?? "",
-      parameters: tool.parameters,
-    });
+    replay.tools.set(tool.name, promptToolOf(tool));
   });
 };
 

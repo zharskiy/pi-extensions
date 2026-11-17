@@ -3,7 +3,7 @@ import type { RunMode } from "../../../platform/pi-adapter/index.ts";
 import { createFakeHost } from "../../../test/framework/index.ts";
 import { createWorkingIndicator } from "../api/plugin.ts";
 import { TICK_MS, VERB_MS } from "../core/indicator-state.ts";
-import { VERBS } from "../ui/indicator-text.ts";
+import { VERBS, workingText } from "../ui/indicator-text.ts";
 
 const setup = (mode: RunMode = "tui") => {
   const host = createFakeHost({ mode });
@@ -315,5 +315,9 @@ describe("working indicator", () => {
     expect(host.workingVisibility).toEqual([false]);
     expect(host.workingMessages.at(-1)).toBeUndefined();
     expect(host.workingMessages).toHaveLength(written);
+  });
+
+  it("leaves out an elapsed time that is not finite", () => {
+    expect(workingText("Working", Number.POSITIVE_INFINITY, "")).toBe("Working");
   });
 });

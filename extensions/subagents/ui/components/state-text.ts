@@ -26,16 +26,6 @@ const TOKENS: Record<AgentState, ThemeToken> = {
   handoff: "muted",
 };
 
-const WORDS: Record<AgentState, string> = {
-  queued: "queued",
-  running: "running",
-  grace: "stopping",
-  done: "done",
-  failed: "failed",
-  stopped: "stopped",
-  handoff: "handed off",
-};
-
 export const stateMark = (state: AgentState): Mark => STATE_MARKS[state];
 
 export const stateGlyph = (state: AgentState, now: number): string =>
@@ -48,8 +38,6 @@ export const liveGlyph = (state: AgentState, now: number, theme: ThemeLike): str
 
 export const scrollGlyph = (state: AgentState, theme: ThemeLike): string =>
   markGlyph(stateMark(state), theme);
-
-export const stateWord = (state: AgentState): string => WORDS[state];
 
 export const stopWords = (state: AgentState): string =>
   isClosed(state) ? "to clear" : state === "grace" ? "to close now" : "to stop";

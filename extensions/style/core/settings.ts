@@ -1,15 +1,17 @@
-import { mkdirSync, writeFileSync } from "node:fs";
 import {
   errorText,
   readSettingsFiles,
   type SettingsLocation,
   type SettingsSchema,
-  userSettingsPath,
+  settingsPath,
+  writeSettingsFile,
 } from "../../../platform/shared/index.ts";
 
 type StyleSettings = { style: string };
 
-export const SETTINGS_FILE = "pi-style.json";
+export const NAMESPACE = "pi-style";
+
+export const SETTINGS_FILE = `${NAMESPACE}.json`;
 
 const styleSchema = (names: readonly string[]): SettingsSchema<StyleSettings> => ({
   style: { type: "choice", values: names },
@@ -21,14 +23,11 @@ export const readStyleSettings = (names: readonly string[], location: SettingsLo
   return { user: user.style, project: project.style, errors };
 };
 
-export const saveStyle = (agentDir: string, style: string): string | undefined => {
-  const path = userSettingsPath(agentDir, SETTINGS_FILE);
-
+export const saveStyle = (location: SettingsLocation, style: string): string | undefined => {
   try {
-    mkdirSync(agentDir, { recursive: true });
-    writeFileSync(path, `${JSON.stringify({ style }, null, 2)}\n`);
+    writeSettingsFile(location, "user", SETTINGS_FILE, `${JSON.stringify({ style }, null, 2)}\n`);
     return undefined;
   } catch (error) {
-    return `cannot save ${path}: ${errorText(error)}`;
+    return `cannot save ${settingsPath(location, "user", SETTINGS_FILE)}: ${errorText(error)}`;
   }
 };

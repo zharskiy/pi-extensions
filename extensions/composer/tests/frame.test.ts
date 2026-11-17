@@ -4,10 +4,7 @@ import { plainTheme, tokenTaggingTheme, visibleWidth } from "../../../test/frame
 import { createFrame } from "../ui/frame.ts";
 
 const ESC = String.fromCharCode(27);
-const recording: ThemeLike = {
-  ...tokenTaggingTheme({ close: (token) => `</${token}>` }),
-  bold: (text) => `<b>${text}</b>`,
-};
+const recording: ThemeLike = tokenTaggingTheme({ close: (token) => `</${token}>`, bold: true });
 
 const plain = (text: string) => text;
 const bracketed = (text: string) => `[${text}]`;

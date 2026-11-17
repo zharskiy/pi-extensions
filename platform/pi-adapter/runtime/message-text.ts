@@ -1,4 +1,27 @@
-import type { RoutedMessage } from "../types/messages.ts";
+import type { CustomMessage, RoutedMessage } from "../types/messages.ts";
+
+export type PiCustom = { customType: string; content: string; details?: unknown; display: boolean };
+
+export const piCustom = (message: CustomMessage, display: boolean): PiCustom => ({
+  customType: message.customType,
+  content: message.text,
+  details: message.details,
+  display,
+});
+
+export const startQueued = (
+  customs: PiCustom[],
+  startNow: (custom: PiCustom) => void,
+  queueNext: (custom: PiCustom) => void,
+) => {
+  const [first, ...rest] = customs;
+
+  rest.forEach(queueNext);
+
+  if (first) {
+    startNow(first);
+  }
+};
 
 export const contentParts = (content: unknown) => (Array.isArray(content) ? content : []);
 

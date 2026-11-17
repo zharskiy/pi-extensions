@@ -5,7 +5,7 @@
 - `types/host-ui.ts`: `HostUi` = `NoticeUi & ClipboardUi & OverlayUi & WidgetUi & EditorUi & KeysUi & { style }`, `NotifyChannel`.
 - `types/theme.ts`: `ThemeToken` (`PaintToken`, `StatusToken`, `ThinkingToken`, `MessageToken`), `BgToken`, `ThemeLike`.
 - `types/keys.ts`: `KeyPress` (with `shortcut`), `KeyName` (`NavigationKey`, `EditKey`, `AppKey`, `"other"`).
-- `types/model.ts`: `THINKING_LEVELS`, `ThinkingLevel`, `isThinkingLevel`, `splitModelRequest`, model choice and resolution types.
+- `types/model.ts`: `THINKING_LEVELS`, `ThinkingLevel`, `isThinkingLevel`, `modelRefOf` (a model's `provider/id` ref, the one place it is built) and its inverse `splitModelRef`, `modelChoiceOf` (a model's ref, window and price, for pi's models and catalogue entries alike), `splitModelRequest`, model choice and resolution types.
 - `types/runtime.ts`: `AgentRuntime`, `ChildSession`, `ChildEvent`, `SpawnSpec`, `StopReason`, `MessageDelivery`.
 - `types/tools.ts`: `ToolSpec`, `ToolResult`, `ToolRenderState`, `ToolCallView`, `ToolRow(s)`, `RowLines`.
 - `types/session.ts`: `SessionInfo`, `SessionControl` (`NewSessionOptions` with the `fill` thunk returning a `SessionFill`: the seed, optional follow-ups and editor text), `RunMode`, `ShutdownReason`, `Phase`, `AssistantEnd` (tool calls and whether the run ends with the message), `UserInput` (what `onInput` passes), dialog and idle events.
@@ -22,10 +22,10 @@
 - `runtime/global-record.ts`: `globalRecord(name, init)`; one record per name on `globalThis`, shared by adapter copies.
 - `runtime/follow-ups.ts`: the custom follow-ups adapter hosts queued per session and not yet started, read for `AssistantEnd.final`.
 - `runtime/session-file.ts`: reads session `.jsonl` files through pi's parser and migration: entries, transcripts (whole, for child sessions, or one branch through pi's context entries, with its custom entries, compaction or branch summaries and bash executions).
-- `runtime/message-text.ts`: message text (`finalRunTexts`, a child's final run, with every custom message, hidden ones included, as a run start), `formatRoutedMessage`.
+- `runtime/message-text.ts`: message text (`finalRunTexts`, a child's final run, with every custom message, hidden ones included, as a run start), `formatRoutedMessage`, and `piCustom` and `startQueued`, the one mapping of a `CustomMessage` to pi's custom message and the one start of held customs (the first triggers a turn, the rest wait for the next) for the main host and a child.
 - `runtime/default-model.ts`: `writeDefaultModel` and `writeDefaultThinkingLevel`; save a `provider/id` ref as pi's global default model, widening a model scope as Ctrl+S does, and a level as pi's global default thinking level, both through pi's `SettingsManager`.
 - `runtime/settle-within.ts`: `settleWithin`; waits for a promise at most a given time.
-- `child/child-runtime.ts`: the runtime that starts child agent sessions (`send` for routed messages, `sendCustom` for displayed custom ones, `sendHidden` for a hidden one, and their re-queue at settle, `start` from a task or from a seed alone).
+- `child/child-runtime.ts`: the runtime that starts child agent sessions (`send` for routed messages and custom ones, displayed or `hidden`, the `hidden` option typed for custom messages only, and their re-queue at settle, `start` from a task or from a seed alone).
 - `child/child-extension.ts`: the hidden child extension (no compaction, prompt record), `ParentSource` (with `reportError`, the main session's error notice).
 - `child/skills.ts`: the skill inventory: loaded skill commands plus pi's default discovery, each with its scope and path.
 - `child/model-catalog.ts`: `availableModels`; credentialed models with their window, price and thinking levels.
@@ -34,6 +34,7 @@
 - `ui/create-ui.ts`: `HostUi`: widgets, overlay, notify, copyText, key observation, thinking label, editor text, columns.
 - `ui/tui-context.ts`: `HostState` (current context and tools) and `tuiContext` (the context in tui mode).
 - `ui/form.ts`: `HostUi.showForm`, the inline form shell.
+- `ui/custom-view.ts`: `showCustomView`, the one `ctx.ui.custom` adapter of the overlay and the form (fitted lines, keys as `KeyPress`, dispose), with the mouse handler and the focus as options.
 - `ui/overlay.ts`: `overlaysCleared`; waits until no overlay is visible.
 - `ui/text-input.ts`: the form `TextInput` over pi-tui's `Editor`, its theme and focus.
 - `ui/key-events.ts`: `KeyPress` naming through pi keybinding ids, and the layout-independent `shortcut`.
@@ -44,15 +45,16 @@
 - `ui/working-message.ts`: the working message and its visibility.
 - `ui/theme-bridge.ts`: `themeLike` (role tokens to pi colours, background tokens to pi's diff and user message backgrounds), `textMetrics` (width, truncate, wrap), `fitLines`.
 - `ui/row-layout.ts`: `PAD`, `CHILD_COLUMN`, `CHILD_MARK`, `isBlankLine`, `childLead`; the row geometry.
-- `ui/rules.ts`: `labelledRule` (with a token, dim by default), exported through `index.ts` for the previous-session seam and the transcript pane's `rule` item, session-limits' kept rule and the transcript's answer rule.
+- `ui/rules.ts`: `labelledRule` (with a token, dim by default) and `paddedRule`, the rule behind a left pad that the previous-session seam and the transcript pane's `rule` item draw; `labelledRule` is exported through `index.ts` for session-limits' kept rule and the transcript's answer rule.
 - `editor/editor.ts`: the editor subclass: optional `EditorFrame`, empty-editor ←/↓/Esc hooks, key capture.
 - `editor/history.ts`: the ↑ input history shared by every editor, seeded on resume and fork.
 - `editor/input.ts`: the editor submit key, command completion, re-submit.
 - `tools/tool-bridge.ts`: tool wrapping: `toPiTool`, `fromPiResult`.
 - `tools/tool-rows.ts`: `Host.registerToolRows`; a pi tool renderer resolver that draws rows, shared with transcript panes.
 - `tools/skill-reads.ts`: `skillOfRead`, pi's `SKILL.md` folder rule and path resolution.
+- `tools/tool-source.ts`: where a pi tool comes from (`builtin`, `mcp`, `extension`) by its source path, the MCP tool name prefix, and `BUILTIN_TOOLS`, the one list of pi's built-in tools (with `SHELLS` and the file search tools) that the transcript's tool definitions, the tool rows and the main prompt's file tool rule read.
 - `tools/row-component.ts`: `RowComponent`, the tool-rows record on `globalThis` and the shared output pad.
-- `tools/entry-renderers.ts`: `Host.registerEntryRenderer` (with the `flush` option) and `registerMessageRenderer` over pi's renderers, the owner-keyed message and entry renderer records, `messageRendererFor` and `previousEntryComponent` (the transcript pane's lookups).
+- `tools/entry-renderers.ts`: `Host.registerEntryRenderer` (with the `flush` option) and `registerMessageRenderer` over pi's renderers, the owner-keyed message and entry renderer records, `messageRendererFor` and `previousEntryComponent` (the transcript pane's lookups), and `padEntry`, the pad and `flush` layout every entry is drawn with (the fake host's `renderEntry` calls it too).
 - `tools/transcript.ts`: the transcript pane (including the `rule` item, a `labelledRule` after the shared pad) and pi renderer capture.
 - `tools/previous-session.ts`: the `pi-adapter:previous-session` entry `newSession({ showPrevious })` writes, and its renderer over `registerEntryRenderer`'s `flush` option, which draws the previous sessions of a handoff chain with the transcript pane.
 - `context/context-facts.ts`: `Host.contextFacts` and request usage, composed.

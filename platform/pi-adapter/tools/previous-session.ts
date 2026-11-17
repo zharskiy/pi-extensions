@@ -5,7 +5,7 @@ import { readSessionBranch } from "../runtime/session-file.ts";
 import type { ThemeLike, ThemeToken } from "../types/theme.ts";
 import type { AnyToolSpec } from "../types/tools.ts";
 import type { EntryRender } from "../types/view.ts";
-import { labelledRule } from "../ui/rules.ts";
+import { paddedRule } from "../ui/rules.ts";
 import { createTranscriptPane } from "./transcript.ts";
 
 export const PREVIOUS_SESSION_TYPE = "pi-adapter:previous-session";
@@ -126,7 +126,6 @@ export const previousSessionRenderer = (deps: RendererDeps) => {
     current = theme;
 
     const parts = partsFor(data);
-    const margin = " ".repeat(pad);
 
     return parts.flatMap(({ token, label, pane }) => {
       if (pane && applied.get(pane) !== expanded) {
@@ -136,11 +135,7 @@ export const previousSessionRenderer = (deps: RendererDeps) => {
 
       const lines = pane?.render(width) ?? [];
 
-      return [
-        ...lines,
-        ...(lines.length > 0 ? [""] : []),
-        `${margin}${labelledRule(theme, width - pad, label, token)}`,
-      ];
+      return [...lines, ...(lines.length > 0 ? [""] : []), paddedRule(theme, width, pad, label, token)];
     });
   };
 

@@ -1,6 +1,7 @@
 export { cacheHitPercent, reportedCache, sessionCacheHit } from "./cache-hit.ts";
 export {
   AWAITING_INPUT_CHANNEL,
+  agentsSpend,
   BACKGROUND_WORK_CHANNEL,
   BUSY_CHANNEL,
   HANDOFF_PENDING_CHANNEL,
@@ -8,18 +9,20 @@ export {
   LIMITS_CHANNEL,
   parseAwaitingInput,
   parseBackgroundWork,
-  parseBusySignal,
   parseHandoffPending,
   parseHeldResults,
   parseLimits,
   parseTotals,
   parseUsageReport,
   type SpendingTotals,
+  sessionSpend,
   TOTALS_CHANNEL,
+  trackBusy,
   USAGE_CHANNEL,
   type UsageReport,
 } from "./channels/host-channels.ts";
 export { HINT_STATUS_PREFIX, MIRROR_STATUS_PREFIX } from "./channels/status-keys.ts";
+export { isFiniteNumber, isPlainObject, isStringArray } from "./guards.ts";
 export {
   HANDOFF_REQUEST_TYPE,
   HANDOFF_SEED_TYPE,
@@ -37,6 +40,7 @@ export {
   type LimitLevel,
   type Limits,
   limitLevel,
+  limitsSchema,
   mainLimit,
   WORKING_CONTEXT,
   workingContextText,
@@ -49,33 +53,33 @@ export {
 } from "./handoff/handoff-prompt.ts";
 export { LIMIT_SEAM, seamLabel } from "./handoff/handoff-seam.ts";
 export { type HandoffTarget, handoffTool } from "./handoff/handoff-tool.ts";
-export { isPlainObject } from "./plain-object.ts";
 export type { Bus, Disable, EventMap, ExtensionPaths, Plugin, Services } from "./plugin/plugin-contract.ts";
 export {
   loadSettingsFiles,
   type ObjectParse,
   parseSettings,
-  projectSettingsPath,
   readSettingsFile,
   readSettingsFiles,
   readText,
   type SettingsLocation,
-  type SettingsParse,
   type SettingsSchema,
-  userSettingsPath,
+  type SettingsScope,
+  settingsPath,
   writeSettingsFile,
 } from "./plugin/settings-files.ts";
-export { ensureProjectSubdir } from "./project-dir.ts";
+export { ensureProjectSubdir, projectPath } from "./project-dir.ts";
 export {
   counted,
   errorText,
   formatCost,
   formatDuration,
   formatMoney,
+  formatPercent,
   formatTokens,
   formatWindow,
   homeRelative,
   noun,
   shortPath,
 } from "./text/format.ts";
+export { type FrontmatterValue, parseFrontmatter } from "./text/front-matter.ts";
 export { cutStart, DOT, ELLIPSIS, fixedBlock, padded, padRows, prefixed } from "./text/text-layout.ts";

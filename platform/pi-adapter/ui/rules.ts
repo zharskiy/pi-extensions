@@ -12,3 +12,6 @@ export const labelledRule = (theme: ThemeLike, width: number, label: string, tok
 
   return theme.fg(token, `── ${shown} ${fill}`);
 };
+
+export const paddedRule = (theme: ThemeLike, width: number, pad: number, label: string, token?: ThemeToken) =>
+  `${" ".repeat(pad)}${labelledRule(theme, width - pad, label, token)}`;

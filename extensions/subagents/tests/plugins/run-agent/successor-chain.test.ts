@@ -13,7 +13,7 @@ import type { AgentRecord } from "../../../core/model/agent-record.ts";
 import { MANIFEST_FILE } from "../../../core/model/paths.ts";
 import type { Runner } from "../../../core/run-agent/runner.ts";
 import type { RunAgentParams, StopAgentDetails, StopAgentParams } from "../../../core/run-agent/tools.ts";
-import { createHarness } from "../../support/subagents-harness.ts";
+import { createHarness, writeUserAgent } from "../../support/subagents-harness.ts";
 
 const handoffText = (status: string) =>
   [
@@ -55,10 +55,7 @@ const setup = async (overrides = {}, agent = "scout") => {
   );
 
   if (agent === "blind") {
-    const userAgentsDir = join(harness.host.info.agentDir, "agents");
-
-    mkdirSync(userAgentsDir, { recursive: true });
-    writeFileSync(join(userAgentsDir, "blind.md"), BLIND_AGENT);
+    writeUserAgent(harness.host, "blind", BLIND_AGENT);
     harness.host.start();
   }
 
@@ -515,8 +512,8 @@ describe("successor chain", () => {
     await flushMicrotasks();
 
     expect(caller.hidden).toHaveLength(1);
-    expect(caller.hidden[0]?.text).toContain(`Chain: ${link.id} → ${second} (2 sessions)`);
-    expect(caller.hidden[0]?.text).toContain("token store is in src/store.ts");
+    expect(caller.hidden[0]?.message.text).toContain(`Chain: ${link.id} → ${second} (2 sessions)`);
+    expect(caller.hidden[0]?.message.text).toContain("token store is in src/store.ts");
   });
 
   it("fails a successor whose launch throws and still wakes the caller with the failed link", async () => {

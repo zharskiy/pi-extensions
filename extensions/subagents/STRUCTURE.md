@@ -38,28 +38,28 @@ extensions/subagents/
 │   ├── model/
 │   │   ├── plugin.ts                      # Plugin: the shared contract's Plugin over the subagents services, settings and events
 │   │   ├── events.ts                      # BusEvents and Bus (the shared contract's Bus): agent:changed, agent:closed, agent:turn, agent:usage, batch:started, batch:settled
-│   │   ├── agent-record.ts                # AgentRecord, AgentDefinition, registry, definitions and runner types (AgentMessage: routed or custom), chain helpers (chainTerminal, chainLinks; both stop at a predecessor or successor cycle), grantText, grantOrNone, sameGrant, isLead
+│   │   ├── agent-record.ts                # AgentRecord, AgentDefinition, registry, definitions and runner types (AgentMessage: routed or custom), chain helpers (chainTerminal, chainLinks; both stop at a predecessor or successor cycle), the plain fact texts (cleanupText, worktreeText, chainText, handoffText), the start rule (grantedSubagents, canNest), grantText, grantOrNone, sameGrant, isLead
 │   │   ├── settings.ts                    # Settings schema, defaults, settings files, disabledPlugins, reloadSettings
-│   │   ├── agent-schema.ts                # frontmatter and override field types, AGENT_SCOPE_ALL, INHERIT_MODEL, PLAIN_NAME
-│   │   ├── agent-override.ts              # override value checks for model, thinking and skills
+│   │   ├── agent-schema.ts                # frontmatter and override field types, AGENT_SCOPE_ALL, INHERIT_MODEL, PLAIN_NAME, SKILL_NAME
+│   │   ├── agent-values.ts                # checkModel ([provider/]id[:thinking] or inherit[:thinking]) and checkGrant: the one model value rule and grant rule (a reported grant keeps its valid part; skill names follow SKILL_NAME, tool and agent names PLAIN_NAME)
+│   │   ├── agent-override.ts              # override patches for model, thinking and skills, OVERRIDE_FIELDS and editableFields (a chore's exclude skills), read by the setup form and line
 │   │   ├── model-resolution.ts            # resolutionProblem: the one text for a model that does not resolve
 │   │   ├── context-limit.ts               # effectiveContextLimit, agentLimit, recordLimit, contextUse (tokens, request, level), StepLimit, limitStep (request or abort; nothing below the limit)
 │   │   ├── handoff.ts                     # handoffService: the agent audience's handoff instruction, validation and successor preface, shared by the runner and the limits plugin
-│   │   ├── manifest.ts                    # pastRecords: manifest.json read and restore (own and parent session)
-│   │   └── paths.ts                       # NAMESPACE, MANIFEST_FILE, agents dir, handoff path, builtin, user and project agent dirs
+│   │   ├── manifest.ts                    # pastRecords: manifest.json read and restore (own and parent session); repairLinks: one-sided links paired, link and caller cycles cut
+│   │   └── paths.ts                       # NAMESPACE (every source, custom message type, widget key and the settings file name derive from it), MANIFEST_FILE, agents dir, handoff path, builtin, user and project agent dirs, readPrompt (a trimmed `prompts/` file)
 │   ├── components/
-│   │   ├── receipt.ts                     # formatCalls, receipt segments, plainReceipt, agentReceipt, firstLine, cutChars
+│   │   ├── receipt.ts                     # formatCalls, stateWord and receiptWord (the one state word map), receipt segments, plainReceipt, agentReceipt, firstLine, cutChars (no time segment when the elapsed time formats as empty)
 │   │   ├── refresh.ts                     # tickFor (tick cadence) and watchAgents (throttled refresh and ticker)
 │   │   └── tree.ts                        # isTerminal, stoppableAgents, withLinks, carrySelection, treeOrder
 │   ├── agent-definitions/
 │   │   ├── loader.ts                      # parseDefinition (with the path relative to its agents dir), loadDefinitions: files, then the agents.<name> overrides and their checks
-│   │   ├── fields.ts                      # frontmatter field rules
-│   │   ├── yaml-lite.ts                   # the frontmatter parser
+│   │   ├── fields.ts                      # frontmatter field rules (required, kinds; model and lists through agent-values.ts)
 │   │   └── prompt.ts                      # assemblePromptAppend: base prompt plus the agent body
 │   ├── agent-registry/
-│   │   └── registry.ts                    # createRegistry: records, manifests, events
+│   │   └── registry.ts                    # createRegistry: records, manifests, events; restore repairs the links of the restored records
 │   ├── run-agent/
-│   │   ├── runner.ts                      # createRunner: batches, launch, spawn, events, close, stop, wake, routing (send or sendCustom), the successor seed with its agent details and its task, the handoff hold until the agent's own batches settle (heldHandoff, releaseHold, unhold; the `held` turn), the launch and settle guards (startLaunch, failRun)
+│   │   ├── runner.ts                      # createRunner: batches, launch, spawn, events, close, stop, wake, routing (one ChildSession.send for routed and custom messages), the successor seed with its agent details and its task, the handoff hold until the agent's own batches settle (heldHandoff, releaseHold, unhold; the `held` turn), the launch and settle guards (startLaunch, failRun)
 │   │   ├── tools.ts                       # run_agent, message_agent and stop_agent specs, params and details types, describeRunAgent
 │   │   ├── outbox.ts                      # createOutbox: wake texts for the main session and agent callers; wakeMessage, the hidden pi-subagents:wake both get
 │   │   ├── background-work.ts             # createBackgroundWork: the main session's background batches until a reply starts after their wake
@@ -70,12 +70,12 @@ extensions/subagents/
 │   │   ├── model-text.ts                  # resolutionError: run_agent's model error text
 │   │   └── semaphore.ts                   # createSemaphore: the maxConcurrent slots
 │   ├── agent-status/
-│   │   └── snapshot.ts                    # AgentSnapshot, snapshotOf (with the effective limit), snapshotLine (working context X of Y), agent_status params and details, unknownText
+│   │   └── snapshot.ts                    # AgentSnapshot, snapshotOf (with the effective limit), snapshotLine (working context X of Y, empty figures left out), agent_status params and details, unknownText
 │   ├── agent-panel/
 │   │   └── panel-state.ts                 # createPanelState, panelRows, selectedIndex, reconcile (drops a gone selection, lifts a collapsed child to its lead), panelView (shown rows and hidden count, PANEL_ROWS private)
 │   ├── agent-setup/
-│   │   ├── scope.ts                       # Scope, SCOPES, SetupChange
-│   │   ├── line.ts                        # parseSetupLine: the one-line /agents setup form (refuses skills= on a chore), SETUP_USAGE
+│   │   ├── scope.ts                       # SCOPES (over shared SettingsScope), SetupChange
+│   │   ├── line.ts                        # parseSetupLine: the one-line /agents setup form (refuses skills= on a chore and any invalid name; duplicate skills come back as a notice), SETUP_USAGE
 │   │   ├── write.ts                       # mergeChanges, writeChanges (through writeSettingsFile, so a new .pi/ gets its .gitignore), overriddenFields
 │   │   ├── create.ts                      # createAgentCommand: /agents create checks and the brief, CREATE_USAGE
 │   │   ├── autosetup.ts                   # AUTOSETUP_TYPE, INTERACTIVE_TERMS, hasSkillsOverride, candidateSkills, projectListing, autosetupBrief
@@ -91,7 +91,7 @@ extensions/subagents/
 ├── ui/
 │   ├── components/
 │   │   ├── format.ts                      # receiptText (per-kind painters; drops activity, cost, calls, tokens, then context), truncatePainted, padEndCols, innerWidth, padLine, alignRight, wrapCols
-│   │   ├── state-text.ts                  # state marks, glyphs, spinner, state words, stopWords
+│   │   ├── state-text.ts                  # state marks, glyphs, spinner, stopWords
 │   │   ├── agent-row.ts                   # the shared agent row: rowLayout, renderRow, renderRows, modelLabel
 │   │   └── tree-glyphs.ts                 # nestPrefix: the tree connector glyphs
 │   ├── run-agent/
@@ -143,10 +143,10 @@ extensions/subagents/
     │   └── usage-report/                  # usage-report.test.ts
     ├── live/                              # local-only, PI_LIVE_MODEL: run-agent, nesting, grants, handoff, worktree
     └── support/                           # the one support folder test/evals/subagents/ may import
-        ├── subagents-harness.ts           # startPlugins, createHarness, spawnAgents, tempDir, pluginSettings over test/framework
+        ├── subagents-harness.ts           # startPlugins, createHarness, spawnAgents, tempDir, pluginSettings over test/framework; agentFile and writeUserAgent for a user agent file
         ├── live-harness.ts                # createLiveHarness over the default export: seed, agents, wakes, chains
         ├── routing-session.ts             # mainSessionPrompt, recordingTools: the routing eval's main prompt and run_agent stubs
-        ├── agent-records.ts               # agentRecord, newAgentInput fixtures; AgentRecord and chain helpers for evals
+        ├── agent-records.ts               # agentRecord, newAgentInput, agentDefinition fixtures; AgentRecord and chain helpers for evals
         ├── agent-patch.ts                 # patchAgentFile, shippedGroup, modelForGroup: agent files for live tests
         ├── agent-patch.test.ts            # the agent file patcher
         ├── overlay-rows.ts                # selectedRow: the selected overlay row

@@ -19,14 +19,27 @@ type ReceiptFacts = {
   activity?: string;
 };
 
-const STOPPED_WORD = "Stopped";
-
-const DISPLAY_WORDS: Partial<Record<AgentState, string>> = {
-  queued: "Queued",
-  grace: "Stopping",
-  stopped: "Stopped",
-  handoff: "Handed off",
+const STATE_WORDS: Record<AgentState, string> = {
+  queued: "queued",
+  running: "running",
+  grace: "stopping",
+  done: "done",
+  failed: "failed",
+  stopped: "stopped",
+  handoff: "handed off",
 };
+
+const DISPLAYED: readonly AgentState[] = ["queued", "grace", "stopped", "handoff"];
+
+export const stateWord = (state: AgentState): string => STATE_WORDS[state];
+
+export const receiptWord = (state: AgentState): string => {
+  const word = stateWord(state);
+
+  return word.charAt(0).toUpperCase() + word.slice(1);
+};
+
+const STOPPED_WORD = receiptWord("stopped");
 
 const STARTING = "Starting";
 
@@ -35,7 +48,13 @@ const isStarting = (record: Pick<AgentRecord, "state" | "turns" | "toolCalls" | 
 
 export const displayWord = (
   record: Pick<AgentRecord, "state" | "turns" | "toolCalls" | "activity">,
-): string | undefined => (isStarting(record) ? STARTING : DISPLAY_WORDS[record.state]);
+): string | undefined => {
+  if (isStarting(record)) {
+    return STARTING;
+  }
+
+  return DISPLAYED.includes(record.state) ? receiptWord(record.state) : undefined;
+};
 
 const callsText = (facts: ReceiptFacts) => {
   if (facts.calls === undefined || (facts.calls === 0 && facts.word !== STOPPED_WORD)) {
@@ -51,6 +70,10 @@ const timeText = (facts: ReceiptFacts) => {
   }
 
   const duration = formatDuration(facts.elapsedMs);
+
+  if (duration === "") {
+    return undefined;
+  }
 
   return facts.running ? `Elapsed ${duration}` : duration;
 };

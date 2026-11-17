@@ -7,12 +7,12 @@
 - `themes.ts`: `plainTheme`, `tokenTaggingTheme`, `paintRecordingTheme`.
 - `extension-harness.ts`: `startExtension`; a plugin list or a managed extension on the extension manager over the fakes.
 - `key-presses.ts`: `key`, `char`; `KeyPress` builders (`char` sets `shortcut` to the character itself).
-- `rendered-text.ts`: `plainText`, `plainLines`, `visibleWidth`; rendered lines without escapes.
+- `rendered-text.ts`: `plainText`, `plainLines`, `visibleWidth`; rendered lines without escapes (the one stripper, `pi/` uses it too).
 - `usage-builders.ts`: `usageTotals`, `promptTokens`.
 - `waiting.ts`: `flushMicrotasks`, `flushTimers`, `pause`, `waitUntil`.
 - `temp-dirs.ts`: `useTempDirs`; temporary directories removed after the suite.
 - `recorded-sessions.ts`: session `.jsonl` line builders (user, assistant tool call, tool result, custom).
-- `valid-handoff.ts`: `VALID_HANDOFF`, a handoff document that passes validation.
+- `valid-handoff.ts`: `VALID_HANDOFF`, a handoff document that passes validation; `handoffDocument(sections)` and `HANDOFF_SECTIONS`, the complete section set, frozen so no test can change it for the next, for tests that vary one section.
 - `live/seed-project.ts`: `seedProjectFromCommit`, `applyCommitDiff`, `replaceExactlyOnce`, `repoGit`.
 - `live/session-reading.ts`: `bashCommands`, `commandsLine`, `largestToolOutput`.
 - `live/cost.ts`: `totalCost`, `reportCost`.
@@ -28,7 +28,7 @@
 - `pi/index.ts`: the surface of the helpers that load pi offline, plus the adapter's `formatRoutedMessage`, so extension tests build a routed message the way a child receives it.
 - `pi/render-theme.ts`: `initPiRenderTheme`, `initPiKeybindings`, `plainPiTheme`.
 - `pi/entry-rendering.ts`: `renderPiEntry` (an entry renderer drawn through the adapter's entry host with pi's theme) and `renderPiUserMessage` (pi's own user message), both without ANSI codes, and `registerPiMessageRenderer` (a message renderer put in the adapter's renderer record; returns its release). Both build on one typed stub of pi's renderer registration.
-- `pi/offline-session.ts`: `startPiSession`; a real pi session on faux models with one extension factory, plus any `extraFactories`.
+- `pi/offline-session.ts`: `startPiSession`; a real pi session on faux models with one extension factory, plus any `extraFactories`. `startPiRuntime`: a pi session runtime whose commands can start a new session. `offlineModel` and `namedTool`: the unreachable model and the do-nothing tool that hand-wired sessions in the adapter's tests share.
 - `pi/tool-row-rendering.ts`: tool rows and edit diffs drawn through pi's renderers, inline and in a pane.
 - `pi/overlay-api.ts`: `createOverlayApi`, `openLastOverlay`, `disposeOverlays` on pi's TUI.
 - `pi/session-files.ts`: real session files: read, parse, header, facts, prompt record.
@@ -46,3 +46,4 @@
 - `tests/eval-runs.test.ts`: the eval runner, thresholds, reports and results.
 - `tests/live-agent-dir.test.ts`: the temporary agent dir and its restore.
 - `tests/session-events.test.ts`: `pi/live/session-events.ts`.
+- `tests/valid-handoff.test.ts`: `HANDOFF_SECTIONS` stays frozen.

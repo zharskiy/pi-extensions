@@ -1,27 +1,16 @@
-import { DOT, formatMoney } from "../../../platform/shared/index.ts";
+import { DOT, formatMoney, type SpendingTotals, sessionSpend } from "../../../platform/shared/index.ts";
 
-type SourceCost = { source: string; cost: number };
-
-export const footerText = ({
-  main,
-  sources,
-  subscription,
-}: {
-  main: number;
-  sources: SourceCost[];
-  subscription: boolean;
-}) => {
-  if (!sources.some((entry) => entry.cost > 0)) {
+export const footerText = (totals: SpendingTotals) => {
+  if (!totals.sources.some((entry) => entry.cost > 0)) {
     return undefined;
   }
 
-  const suffix = subscription ? " (sub)" : "";
-  const total = sources.reduce((sum, entry) => sum + entry.cost, main);
+  const suffix = totals.subscription ? " (sub)" : "";
 
   const parts = [
-    `main ${formatMoney(main)}`,
-    ...sources.map((entry) => `${entry.source} ${formatMoney(entry.cost)}`),
-    `total ${formatMoney(total)}`,
+    `main ${formatMoney(totals.main.cost)}`,
+    ...totals.sources.map((entry) => `${entry.source} ${formatMoney(entry.cost)}`),
+    `total ${formatMoney(sessionSpend(totals).cost)}`,
   ];
 
   return `${parts.join(DOT)}${suffix}`;

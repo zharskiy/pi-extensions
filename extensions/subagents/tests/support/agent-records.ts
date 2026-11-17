@@ -1,4 +1,4 @@
-import type { AgentRecord, NewAgent } from "../../core/model/agent-record.ts";
+import type { AgentDefinition, AgentRecord, NewAgent } from "../../core/model/agent-record.ts";
 
 export { type AgentRecord, chainLinks, chainTerminal, isClosed } from "../../core/model/agent-record.ts";
 
@@ -34,3 +34,16 @@ export const newAgentInput = (dir: string, patch: Partial<NewAgent> = {}): NewAg
   contextLimit: 100_000,
   ...patch,
 });
+
+export const agentDefinition = (patch: Partial<AgentDefinition> & Pick<AgentDefinition, "name">) =>
+  ({
+    description: `${patch.name} does its job`,
+    limit: 100_000,
+    tools: ["read", "bash"],
+    skills: [],
+    subagents: ["scout"],
+    prompt: "",
+    source: "builtin",
+    path: `/pkg/agents/leads/${patch.name}.md`,
+    ...patch,
+  }) as AgentDefinition;

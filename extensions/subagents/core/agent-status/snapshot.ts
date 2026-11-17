@@ -112,7 +112,7 @@ export const snapshotLine = (snapshot: AgentSnapshot) => {
     formatCalls(snapshot.toolCalls),
     `${formatTokens(snapshot.tokens)} tokens`,
     contextText(snapshot.context),
-  ];
+  ].filter((part) => part !== "");
 
   const extras = [
     chainText(snapshot),

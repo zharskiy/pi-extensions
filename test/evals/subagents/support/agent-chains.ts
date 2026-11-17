@@ -8,6 +8,7 @@ import {
 import type { LiveHarness } from "../../../../extensions/subagents/tests/support/live-harness.ts";
 import { type RunRecord, snapshotSessions } from "../../../framework/eval-runs/index.ts";
 import { bashCommands, commandsLine, totalCost, waitUntil } from "../../../framework/index.ts";
+import { sessionFacts } from "../../../framework/pi/index.ts";
 
 const subtree = (records: AgentRecord[], rootId: string): AgentRecord[] => {
   const children = records.filter((record) => record.callerId === rootId);
@@ -142,6 +143,9 @@ const sessionItems = (live: LiveHarness, record: AgentRecord) =>
     ? live.runtime.readSession(record.sessionFile).items
     : [];
 
+const linkEvents = (record: AgentRecord) =>
+  record.sessionFile && existsSync(record.sessionFile) ? sessionFacts(record.sessionFile).events : [];
+
 export const handoverLines = (live: LiveHarness, chain: ChainOutcome, commands: boolean) => {
   const helpers = chain.helperRecords.map((record) => {
     const prompt = sessionItems(live, record).find((item) => item.kind === "user")?.text;
@@ -155,6 +159,6 @@ export const handoverLines = (live: LiveHarness, chain: ChainOutcome, commands: 
   });
 
   return commands
-    ? [...helpers, commandsLine(chain.links.flatMap((link) => bashCommands(sessionItems(live, link))))]
+    ? [...helpers, commandsLine(chain.links.flatMap((link) => bashCommands(linkEvents(link))))]
     : helpers;
 };

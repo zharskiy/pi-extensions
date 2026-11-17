@@ -1,6 +1,7 @@
 import type { UsageTotals } from "../../pi-adapter/index.ts";
-import type { Limits } from "../handoff/handoff-limit.ts";
-import { isPlainObject } from "../plain-object.ts";
+import { isFiniteNumber, isPlainObject } from "../guards.ts";
+import { type Limits, limitsSchema } from "../handoff/handoff-limit.ts";
+import { parseSettings } from "../plugin/settings-files.ts";
 
 export const BUSY_CHANNEL = "pi:busy";
 
@@ -30,7 +31,7 @@ const COUNTS = ["input", "output", "cacheRead", "cacheWrite", "totalTokens"] as 
 
 const COSTS = ["input", "output", "cacheRead", "cacheWrite", "total"] as const;
 
-const isAmount = (value: unknown) => typeof value === "number" && Number.isFinite(value) && value >= 0;
+const isAmount = (value: unknown) => isFiniteNumber(value) && value >= 0;
 
 const isLabel = (value: unknown): value is string => typeof value === "string" && value.length > 0;
 
@@ -50,6 +51,30 @@ export const parseBusySignal = (data: unknown): BusySignal | undefined => {
   }
 
   return { source: data.source, busy: data.busy };
+};
+
+export const trackBusy = ({ onBusy, onQuiet }: { onBusy: () => void; onQuiet: () => void }) => {
+  const sources = new Set<string>();
+
+  const receive = (data: unknown) => {
+    const signal = parseBusySignal(data);
+
+    if (!signal) {
+      return;
+    }
+
+    if (signal.busy) {
+      sources.add(signal.source);
+      onBusy();
+      return;
+    }
+
+    if (sources.delete(signal.source) && sources.size === 0) {
+      onQuiet();
+    }
+  };
+
+  return { receive, sources: () => Array.from(sources) };
 };
 
 export const parseBackgroundWork = (data: unknown): BackgroundWork | undefined => {
@@ -114,6 +139,15 @@ type SourceSpend = Spend & { source: string };
 
 export type SpendingTotals = { main: Spend; sources: SourceSpend[]; subscription: boolean };
 
+const sumSpend = (spends: readonly Spend[]): Spend => ({
+  cost: spends.reduce((sum, spend) => sum + spend.cost, 0),
+  tokens: spends.reduce((sum, spend) => sum + spend.tokens, 0),
+});
+
+export const agentsSpend = (totals: SpendingTotals) => sumSpend(totals.sources);
+
+export const sessionSpend = (totals: SpendingTotals) => sumSpend([totals.main, ...totals.sources]);
+
 const isSpend = (value: unknown): value is Spend =>
   isPlainObject(value) && isAmount(value.cost) && isAmount(value.tokens);
 
@@ -143,26 +177,9 @@ export const parseTotals = (data: unknown): SpendingTotals | undefined => {
 
 export const LIMITS_CHANNEL = "session-limits:limits";
 
-const isPositive = (value: unknown): value is number =>
-  typeof value === "number" && Number.isFinite(value) && value > 0;
-
-const isRatio = (value: unknown): value is number => isPositive(value) && value <= 1;
-
 export const parseLimits = (data: unknown): Limits | undefined => {
-  if (
-    !isPlainObject(data) ||
-    !isRatio(data.softRatio) ||
-    !isRatio(data.hardRatio) ||
-    !isPositive(data.softTokens) ||
-    !isPositive(data.hardTokens)
-  ) {
-    return undefined;
-  }
+  const { patch, errors } = parseSettings(limitsSchema, data, LIMITS_CHANNEL);
+  const complete = Object.keys(limitsSchema).every((key) => key in patch);
 
-  return {
-    softRatio: data.softRatio,
-    hardRatio: data.hardRatio,
-    softTokens: data.softTokens,
-    hardTokens: data.hardTokens,
-  };
+  return errors.length === 0 && complete ? (patch as Limits) : undefined;
 };

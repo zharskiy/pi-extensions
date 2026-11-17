@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { parseFrontmatter } from "../../../../platform/shared/index.ts";
 import { unknownSkillsProblem } from "../model/agent-override.ts";
 import {
   type AgentDefinition,
@@ -15,7 +16,6 @@ import {
   INHERIT_MODEL,
 } from "../model/agent-schema.ts";
 import { FRONTMATTER_FIELDS, readField } from "./fields.ts";
-import { parseFrontmatter } from "./yaml-lite.ts";
 
 export type DefinitionDir = { path: string; source: AgentSource };
 
@@ -201,11 +201,20 @@ const modelNotice = (name: string, model: string | undefined, check: OverrideChe
   return problem ? `agents.${name}.model "${model}": ${problem}; dropped` : undefined;
 };
 
-const skillsNotice = (name: string, skills: AgentOverride["skills"], loaded: () => string[]) => {
-  const problem =
-    Array.isArray(skills) && skills.length > 0 ? unknownSkillsProblem(skills, loaded()) : undefined;
+const checkedSkills = (name: string, skills: AgentOverride["skills"], loaded: () => string[]) => {
+  if (!Array.isArray(skills) || skills.length === 0) {
+    return { skills };
+  }
 
-  return problem ? `agents.${name}.skills ${problem}; dropped` : undefined;
+  const known = loaded();
+  const problem = unknownSkillsProblem(skills, known);
+
+  return problem
+    ? {
+        skills: skills.filter((skill) => known.includes(skill)),
+        notice: `agents.${name}.skills ${problem}; those are dropped`,
+      }
+    : { skills };
 };
 
 const checkedOverride = (
@@ -215,12 +224,8 @@ const checkedOverride = (
   loaded: () => string[],
 ) => {
   const badModel = modelNotice(name, override.model, check);
-  const badSkills = skillsNotice(name, override.skills, loaded);
-  const kept: AgentOverride = {
-    ...override,
-    model: badModel ? undefined : override.model,
-    skills: badSkills ? undefined : override.skills,
-  };
+  const { skills, notice: badSkills } = checkedSkills(name, override.skills, loaded);
+  const kept: AgentOverride = { ...override, model: badModel ? undefined : override.model, skills };
   const notices = [badModel, badSkills]
     .filter((message): message is string => message !== undefined)
     .map((message): OverrideNotice => ({ level: "warning", message }));

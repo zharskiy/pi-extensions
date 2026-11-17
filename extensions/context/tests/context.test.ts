@@ -45,7 +45,7 @@ describe("/context", () => {
 
     expect(lines.slice(lines.indexOf("    Memory files · AGENTS.md"))).toEqual([
       "    Memory files · AGENTS.md",
-      "    ↳ ./AGENTS.md: 2.1k tokens",
+      "    ↳ AGENTS.md: 2.1k tokens",
       "      ~/.pi/agent/AGENTS.md: 1.1k tokens",
       "    Skills · /skill:<name>",
       "    ↳ code & style: 900 tokens",

@@ -9,7 +9,7 @@ import {
   questionsError,
 } from "./questions.ts";
 
-export const QUESTIONNAIRE_SOURCE = "pi-questionnaire";
+export const NAMESPACE = "pi-questionnaire";
 
 const DESCRIPTION =
   "Ask the user a batch of mutually independent multiple-choice questions in one interactive form. Each question also accepts a typed answer unless allowOther is false, and the user may cancel. Interactive sessions only: it errors in non-interactive runs.";
@@ -103,7 +103,7 @@ export const checkCall = (params: QuestionnaireParams, mode: () => RunMode) => {
 
 export const awaitingInput = (host: Host) => (waiting: boolean) =>
   host.publish(AWAITING_INPUT_CHANNEL, {
-    source: QUESTIONNAIRE_SOURCE,
+    source: NAMESPACE,
     waiting,
     title: "questionnaire",
   });

@@ -10,7 +10,7 @@ Part of [pi-extensions](../../README.md) · [Quick start](#quick-start) · [Deve
 
 ## Why
 
-This extension replaces pi's footer with a status block right below the editor. Besides the main session's figures, it shows the cost of the whole session, subagents at every depth included, as reported to the [spending](../spending/README.md) extension. The status texts other extensions set get a line each; a status keyed under `hint:` joins the hint row instead, and one keyed under `mirror:` (a figure the footer already shows, such as spending's totals) is left out.
+This extension replaces pi's footer with a status block right below the editor. Besides the main session's figures, it shows the cost of the whole session, subagents at every depth included, as reported to the [spending](../spending/README.md) extension, and its total always matches the one spending shows. The status texts other extensions set get a line each; a status keyed under `hint:` joins the hint row instead, and one keyed under `mirror:` (a figure the footer already shows, such as spending's totals) is left out.
 
 ## What it looks like
 
@@ -38,7 +38,7 @@ Start pi in a git checkout and read the block line by line:
 | Try | What you see |
 |---|---|
 | Line 1 | The folder, the git branch and the session name when one is set, then the model and its thinking level on the right. |
-| Line 2 | How full the context is (`working context` against the handoff point when session-limits is installed, `context` against the window otherwise) and the cache hit rate, then the tokens and cost of the whole session, agents included, on the right (with the main and agents cost split when agents spent something). The right side is hidden until spending reports. |
+| Line 2 | How full the context is (`working context` against the handoff point when session-limits is installed, `context` against the window otherwise) and the cache hit rate, then the tokens and cost of the whole session, agents included, on the right (with the main and agents cost split when agents spent something). The right side is hidden until spending reports. | A cache rate that cannot be computed is left out with its `cache` label.
 | Line 3 | Key hints: how to cycle the thinking level (hidden when the model does not reason) and how to list agents. The row is left out when it would be empty. |
 | Narrow terminal | Each line drops its least important parts first: session name, thinking level, branch on line 1; token total, `on subscription` shortening to `on sub`, cache, the cost split, then `of <base>` on line 2. |
 | Press `shift+tab` | The thinking level on line 1 changes. |

@@ -7,21 +7,22 @@ Modules are grouped by concern; `index.ts` is the only import surface, so a move
 - `index.ts`: the public surface.
 - `plugin/`: what the extension manager and every plugin agree on.
   - `plugin-contract.ts`: the plugin, disable, bus, service registry, event map and extension paths types.
-  - `settings-files.ts`: the settings schema, file parsing and the user-then-project merge, `readText`, `writeSettingsFile`.
+  - `settings-files.ts`: the settings schema, file parsing and `SettingsScope` and `settingsPath`, the user-then-project merge, `readText`, `writeSettingsFile`.
 - `handoff/`: the handoff format session-limits and subagents share.
   - `handoff-document.ts`: the handoff sections, `validateHandoff`, `HandoffToolRows`, the seed and request details types and their parsers `parseSeedDetails` and `parseRequestDetails`, `handoffPath`.
-  - `handoff-limit.ts`: `Limits`, `HandoffLimit` (request and warn lines), `mainLimit`, `limitLevel`, `WORKING_CONTEXT`, `workingContextText`.
+  - `handoff-limit.ts`: `Limits`, `limitsSchema`, `HandoffLimit` (request and warn lines), `mainLimit`, `limitLevel`, `WORKING_CONTEXT`, `workingContextText`.
   - `handoff-prompt.ts`, `handoff-prompt.md`: the handoff instruction template, `HandoffAudience` and the builder, retry text and seed text.
   - `handoff-seam.ts`: `seamLabel` and `LIMIT_SEAM`, the handoff seam rule's label.
   - `handoff-tool.ts`: `handoffTool`, `HandoffTarget`.
 - `channels/`: how extensions talk without importing each other.
-  - `host-channels.ts`: the busy and background-work (side by side), awaiting-input, handoff-pending and held-results, usage, totals and limits (`LIMITS_CHANNEL`, `parseLimits`) channel names, payloads and parsers.
+  - `host-channels.ts`: the busy and background-work (side by side), awaiting-input, handoff-pending and held-results, usage, totals and limits (`LIMITS_CHANNEL`, `parseLimits` over `limitsSchema`) `trackBusy` (the busy sources a consumer keeps), and `agentsSpend` and `sessionSpend` over `SpendingTotals` channel names, payloads and parsers.
   - `status-keys.ts`: `HINT_STATUS_PREFIX`, `MIRROR_STATUS_PREFIX`, the status-key roles the footer reads.
 - `text/`: theme-free text helpers.
-  - `format.ts`: token, window, duration, error-text, `~/` and short path formatters, `noun`/`counted`, `formatCost` and `formatMoney`.
+  - `format.ts`: token, window, duration, error-text, `~/` and short path formatters, `noun`/`counted`, `formatCost`, `formatMoney` and `formatPercent` (a duration, cost or percentage that is not a finite number formats as empty; a percentage never reads `-0%` and rounds to whole as `Math.round` does).
+  - `front-matter.ts`: `parseFrontmatter`, the one `.md` front matter parser (scalars, inline and block lists, block text) for agent files, skill files and styles.
   - `text-layout.ts`: `DOT`, `ELLIPSIS`, `cutStart`, `prefixed`, `padded`, `fixedBlock`, `padRows`.
 - `cache-hit.ts`: the cache hit rate of a request and of the session.
-- `plain-object.ts`: `isPlainObject`.
+- `guards.ts`: `isPlainObject`, `isStringArray`, `isFiniteNumber`.
 - `project-dir.ts`: `projectPath`, `ensureProjectSubdir`, `writeProjectFile`; the `.pi/.gitignore` of a new `.pi/`.
 - `tests/format.test.ts`: `format.ts`.
 - `tests/handoff-limit.test.ts`: `limitLevel`, `mainLimit` and `workingContextText`.
@@ -30,4 +31,5 @@ Modules are grouped by concern; `index.ts` is the only import surface, so a move
 - `tests/handoff-document.test.ts`: `validateHandoff`, `handoffPath` and the details parsers.
 - `tests/host-channels.test.ts`: the channel payload parsers.
 - `tests/text-layout.test.ts`: `fixedBlock` and `padRows`.
-- `tests/project-dir.test.ts`: `writeProjectFile`, `ensureProjectSubdir` and `writeSettingsFile` on fresh and existing folders, a `.pi` file and a git repo.
+- `tests/front-matter.test.ts`: `parseFrontmatter`.
+- `tests/project-dir.test.ts`: `writeProjectFile`, `ensureProjectSubdir` (also `ignored`) and `writeSettingsFile` on fresh and existing folders, a `.pi` file and a git repo.

@@ -122,9 +122,10 @@ describe("nested agents", () => {
     await flushMicrotasks();
 
     expect(child.hidden).toHaveLength(1);
-    expect(child.hidden[0]?.customType).toBe("pi-subagents:wake");
-    expect(child.hidden[0]?.text).toContain("a is in src/a.ts");
-    expect(child.hidden[0]?.text).toContain("b looks fine");
+    expect(child.hidden[0]?.message.customType).toBe("pi-subagents:wake");
+    expect(child.hidden[0]?.delivery).toBe("followUp");
+    expect(child.hidden[0]?.message.text).toContain("a is in src/a.ts");
+    expect(child.hidden[0]?.message.text).toContain("b looks fine");
     expect(hiddenMessageTexts(host)).toEqual([]);
 
     host.settle();
@@ -240,7 +241,7 @@ describe("nested agents", () => {
     await flushMicrotasks();
 
     expect(child.hidden).toHaveLength(1);
-    expect(child.hidden[0]?.text).toContain(`${scout.id} (scout) - stopped`);
+    expect(child.hidden[0]?.message.text).toContain(`${scout.id} (scout) - stopped`);
 
     await runMain([{ agent: "scout", task: "later" }]);
 
@@ -314,7 +315,7 @@ describe("nested agents", () => {
     await flushMicrotasks();
 
     expect(child.hidden).toHaveLength(1);
-    expect(child.hidden[0]?.text).toContain("found a");
+    expect(child.hidden[0]?.message.text).toContain("found a");
   });
 
   it("lets a child message only the agents it started", async () => {

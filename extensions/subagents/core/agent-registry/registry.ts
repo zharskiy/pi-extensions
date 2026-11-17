@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { errorText } from "../../../../platform/shared/index.ts";
 import { type AgentRecord, type AgentRegistry, isClosed, type NewAgent } from "../model/agent-record.ts";
 import type { Bus } from "../model/events.ts";
+import { repairLinks } from "../model/manifest.ts";
 import { MANIFEST_FILE } from "../model/paths.ts";
 
 type RegistryOptions = {
@@ -144,6 +145,8 @@ export const createRegistry = (options: RegistryOptions): AgentRegistry => {
       .forEach((record) => {
         records.set(record.id, record);
       });
+
+    repairLinks([...records.values()]);
   };
 
   return {

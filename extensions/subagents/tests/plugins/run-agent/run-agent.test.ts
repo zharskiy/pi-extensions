@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { flushMicrotasks, hiddenMessageTexts } from "../../../../../test/framework/index.ts";
@@ -10,7 +10,7 @@ import { createOutbox, joinTexts } from "../../../core/run-agent/outbox.ts";
 import type { Runner } from "../../../core/run-agent/runner.ts";
 import { createSemaphore } from "../../../core/run-agent/semaphore.ts";
 import type { RunAgentDetails, RunAgentParams } from "../../../core/run-agent/tools.ts";
-import { createHarness, PACKAGE_ROOT } from "../../support/subagents-harness.ts";
+import { agentFile, createHarness, PACKAGE_ROOT, writeUserAgent } from "../../support/subagents-harness.ts";
 
 const setup = (overrides = {}) => {
   const harness = createHarness([agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin], { overrides });
@@ -408,13 +408,8 @@ describe("run_agent batches", () => {
 
   it("passes the agent's named tools at spawn", async () => {
     const harness = setup();
-    const dir = join(harness.host.info.agentDir, "agents");
 
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(
-      join(dir, "tracker.md"),
-      `---\nname: tracker\ndescription: Files issues.\nlimit: 50000\ntools: read, ls\nskills: all\nsubagents: []\n---\n`,
-    );
+    writeUserAgent(harness.host, "tracker", agentFile("tracker", { tools: "read, ls" }));
     harness.host.start();
 
     await harness.run([{ agent: "tracker", task: "file it" }]);
@@ -424,12 +419,9 @@ describe("run_agent batches", () => {
 
   it("passes no tool allowlist for all and empty lists for [] at spawn", async () => {
     const harness = setup();
-    const dir = join(harness.host.info.agentDir, "agents");
-    const header = "description: d\nlimit: 50000\nsubagents: []\n";
 
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, "open.md"), `---\nname: open\n${header}tools: all\nskills: all\n---\n`);
-    writeFileSync(join(dir, "closed.md"), `---\nname: closed\n${header}tools: []\nskills: []\n---\n`);
+    writeUserAgent(harness.host, "open");
+    writeUserAgent(harness.host, "closed", agentFile("closed", { tools: "[]", skills: "[]" }));
     harness.host.start();
 
     await harness.run([
@@ -446,17 +438,13 @@ describe("run_agent batches", () => {
 
   it("passes named skills, all as the main session's skills and [] as none at spawn", async () => {
     const harness = setup();
-    const dir = join(harness.host.info.agentDir, "agents");
-    const header = "description: d\nlimit: 50000\ntools: all\nsubagents: []\n";
-
-    mkdirSync(dir, { recursive: true });
 
     [
       ["named", "[docs, git]"],
       ["every", "all"],
       ["none", "[]"],
     ].forEach(([name, skills]) => {
-      writeFileSync(join(dir, `${name}.md`), `---\nname: ${name}\n${header}skills: ${skills}\n---\n`);
+      writeUserAgent(harness.host, name, agentFile(name, { skills }));
     });
 
     harness.host.start();
@@ -579,10 +567,8 @@ describe("allowed subagents", () => {
 
   const setupLead = async () => {
     const harness = setup({ maxDepth: 3 });
-    const userAgentsDir = join(harness.host.info.agentDir, "agents");
 
-    mkdirSync(userAgentsDir, { recursive: true });
-    writeFileSync(join(userAgentsDir, "lead.md"), LEAD_AGENT);
+    writeUserAgent(harness.host, "lead", LEAD_AGENT);
     harness.host.start();
 
     await harness.run([{ agent: "lead", task: "coordinate" }]);
@@ -637,11 +623,10 @@ describe("allowed subagents", () => {
 
   it("lets a caller with subagents: all start every other agent but not itself", async () => {
     const harness = setup({ maxDepth: 3 });
-    const dir = join(harness.host.info.agentDir, "agents");
 
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(
-      join(dir, "lead.md"),
+    writeUserAgent(
+      harness.host,
+      "lead",
       LEAD_AGENT.replace("subagents: [scout]", "subagents: all").replace(
         "description: Test agent that may only spawn the scout.",
         "description: Lead.",

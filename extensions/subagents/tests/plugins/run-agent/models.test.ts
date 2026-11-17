@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { catalogModel, flushMicrotasks } from "../../../../../test/framework/index.ts";
@@ -6,7 +6,7 @@ import { agentDefinitionsPlugin } from "../../../api/plugins/agent-definitions.t
 import { agentRegistryPlugin } from "../../../api/plugins/agent-registry.ts";
 import { runAgentPlugin } from "../../../api/plugins/run-agent.ts";
 import type { RunAgentDetails, RunAgentParams } from "../../../core/run-agent/tools.ts";
-import { createHarness } from "../../support/subagents-harness.ts";
+import { agentFile, createHarness, writeUserAgent } from "../../support/subagents-harness.ts";
 
 const setup = () => {
   const harness = createHarness([agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin]);
@@ -61,13 +61,8 @@ describe("per-call model override", () => {
 
   it("runs an agent file without a model line on the main session's model and thinking", async () => {
     const { run, runtime, host } = setup();
-    const dir = join(host.info.agentDir, "agents");
 
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(
-      join(dir, "plain.md"),
-      "---\nname: plain\ndescription: d\nlimit: 50000\ntools: all\nskills: all\nsubagents: []\n---\n",
-    );
+    writeUserAgent(host, "plain");
     host.start();
 
     await run([{ agent: "plain", task: "a" }]);
@@ -77,14 +72,9 @@ describe("per-call model override", () => {
 
   it("takes the thinking level from a provider/id:level in the frontmatter or the per-call model override", async () => {
     const { run, runtime, host } = setup();
-    const dir = join(host.info.agentDir, "agents");
 
     runtime.catalog.push(catalogModel("acme/model-a"));
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(
-      join(dir, "tuned.md"),
-      "---\nname: tuned\ndescription: d\nmodel: acme/model-a:minimal\nlimit: 50000\ntools: all\nskills: all\nsubagents: []\n---\n",
-    );
+    writeUserAgent(host, "tuned", agentFile("tuned", { model: "acme/model-a:minimal" }));
     host.start();
 
     await run([
@@ -141,13 +131,8 @@ describe("per-call model override", () => {
 
   it("rejects an agent file whose model provider has no credentials before spawning", async () => {
     const { runtime, host } = setup();
-    const dir = join(host.info.agentDir, "agents");
 
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(
-      join(dir, "locked.md"),
-      "---\nname: locked\ndescription: d\nmodel: locked/lyra-9-0\nlimit: 50000\ntools: all\nskills: all\nsubagents: []\n---\n",
-    );
+    writeUserAgent(host, "locked", agentFile("locked", { model: "locked/lyra-9-0" }));
     host.start();
 
     await expect(

@@ -93,12 +93,14 @@ const cacheFigures = (
 ): CacheFigures | undefined => {
   const sessionHit = sessionCacheHit(session);
 
-  if (sessionHit === undefined) {
+  if (sessionHit === undefined || !Number.isFinite(sessionHit)) {
     return undefined;
   }
 
+  const lastTurn = lastRequest ? (cacheHitPercent(lastRequest) ?? 0) : undefined;
+
   return {
-    lastTurn: lastRequest ? (cacheHitPercent(lastRequest) ?? 0) : undefined,
+    lastTurn: lastTurn !== undefined && Number.isFinite(lastTurn) ? lastTurn : undefined,
     lastMissed: lastRequest !== undefined && !reportedCache(lastRequest),
     session: sessionHit,
   };

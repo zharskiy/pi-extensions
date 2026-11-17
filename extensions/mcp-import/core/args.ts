@@ -1,10 +1,10 @@
+import type { SettingsScope } from "../../../platform/shared/index.ts";
+
 const SOURCES = ["claude", "cursor"] as const;
 
 export type Source = (typeof SOURCES)[number];
 
-export type Scope = "user" | "project";
-
-export type ImportArgs = { source: Source; scope: Scope; apply: boolean };
+export type ImportArgs = { source: Source; scope: SettingsScope; apply: boolean };
 
 const FLAGS = ["project", "apply"];
 

@@ -306,4 +306,10 @@ describe("style", () => {
 
     expect(complete?.("n")).toEqual([{ value: "normal", label: "normal" }]);
   });
+
+  it("offers no completion when no style matches, like the other commands", () => {
+    const { host } = setup();
+
+    expect(host.commands.get("style")?.complete?.("zzz")).toBeNull();
+  });
 });

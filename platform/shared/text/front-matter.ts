@@ -95,7 +95,7 @@ const parseEntry = (lines: string[], state: ParseState) => {
 
 export const parseFrontmatter = (source: string): Frontmatter => {
   const normalized = source.replace(/\r\n/g, "\n");
-  const match = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/.exec(normalized);
+  const match = /^---\n([\s\S]*?)\n---[^\S\n]*(?:\n|$)([\s\S]*)$/.exec(normalized);
 
   if (!match) {
     return { data: {}, body: normalized.trim() };
