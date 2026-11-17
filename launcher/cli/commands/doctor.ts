@@ -191,7 +191,7 @@ const sizeCheck = async (deps: CliDeps, context: LaunchContext, sandbox: Sandbox
 
   return isBelow(size, recommended)
     ? warned(`${current}, below ${recommended.cpus} CPUs and ${recommended.memoryGiB} GiB`, {
-        hint: "run pi sandbox init to choose a size, while no other pi session runs",
+        hint: "choose Custom for the VM size in pi sandbox init, or set vm in the config, while no other pi session runs",
       })
     : passed(current);
 };

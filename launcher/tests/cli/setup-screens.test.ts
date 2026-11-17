@@ -201,6 +201,14 @@ describe("the VM size editor", () => {
     );
   });
 
+  it("shows the size a smaller VM keeps under automatic, not this Mac's automatic size", () => {
+    const small = { ...FACTS, vm: runningVm({ cpus: 2, memoryGiB: 4, diskGiB: 60 }) };
+
+    expect(automaticLabel(small)).toBe("2 CPUs · 4 GiB memory · 60 GiB disk");
+    expect(vmCollapsed("automatic", small, false)).toBe("Automatic: 2 CPUs · 4 GiB memory · 60 GiB disk");
+    expect(vmCollapsed("automatic", small, true)).toBe("Automatic (2 CPUs · 4 GiB memory · 60 GiB disk)");
+  });
+
   it("words the chosen size with one colon in plain mode", () => {
     expect(vmCollapsed("automatic", FACTS, false)).toBe("Automatic: 8 CPUs · 10 GiB memory · 60 GiB disk");
     expect(vmCollapsed("automatic", FACTS, true)).toBe("Automatic (8 CPUs · 10 GiB memory · 60 GiB disk)");

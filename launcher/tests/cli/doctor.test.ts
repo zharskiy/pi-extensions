@@ -919,13 +919,13 @@ describe("pi sandbox doctor", () => {
       return { code, found: check(harness.stdout(), "vm size") };
     };
 
-    it("warns with the resize command for a 2 CPU, 4 GiB profile without failing doctor", async () => {
+    it("warns with how to choose a size for a 2 CPU, 4 GiB profile without failing doctor", async () => {
       const { code, found } = await sizeCheck(async () => ({ cpus: 2, memoryGiB: 4 }));
 
       expect(found).toMatchObject({
         status: "warn",
         detail: "profile pi-sandbox has 2 CPUs and 4 GiB, below 8 CPUs and 10 GiB",
-        hint: "run pi sandbox init to choose a size, while no other pi session runs",
+        hint: "choose Custom for the VM size in pi sandbox init, or set vm in the config, while no other pi session runs",
       });
       expect(code).toBe(0);
     });

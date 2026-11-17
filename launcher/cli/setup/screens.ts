@@ -259,7 +259,7 @@ const automaticParts = (facts: HostFacts) => {
   const size = automaticSize(facts);
 
   return {
-    text: sizeText({ ...facts.automatic, diskGiB: size.diskGiB }),
+    text: sizeText(size),
     grown: size.diskGiB > facts.automatic.diskGiB,
   };
 };
