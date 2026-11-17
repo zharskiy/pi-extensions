@@ -320,8 +320,8 @@ export const answersForYes = (
   return { answers, notices: roots.notices };
 };
 
-const vmDiskOf = (facts: HostFacts) =>
-  facts.vm.state === "running" || facts.vm.state === "stopped" ? facts.vm.size.diskGiB : 0;
+export const existingVm = (facts: HostFacts) =>
+  facts.vm.state === "running" || facts.vm.state === "stopped" ? facts.vm : undefined;
 
 export const vmBounds = (facts: HostFacts): VmBounds => {
   const limits = hostVmLimits(facts);
@@ -330,7 +330,7 @@ export const vmBounds = (facts: HostFacts): VmBounds => {
     cpus: { min: VM_BOUNDS.cpus.min, max: limits.cpus },
     memoryGiB: { min: VM_BOUNDS.memoryGiB.min, max: limits.memoryGiB },
     diskGiB: {
-      min: clamp(vmDiskOf(facts), VM_BOUNDS.diskGiB),
+      min: clamp(existingVm(facts)?.size.diskGiB ?? 0, VM_BOUNDS.diskGiB),
       max: VM_BOUNDS.diskGiB.max,
     },
   };

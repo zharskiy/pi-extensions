@@ -3,7 +3,7 @@ import { sessionsRunning, type VmApplied, type VmPhase, type VmSpec } from "../.
 import { isWithin } from "../../shared/index.ts";
 import { printable, widthOf, wrap } from "../prompt/style.ts";
 import { tildeForm } from "./folders.ts";
-import type { VmBounds } from "./plan.ts";
+import { existingVm, type VmBounds } from "./plan.ts";
 import type {
   Answers,
   ApplyEvent,
@@ -62,9 +62,6 @@ export const FOLDERS_PLAIN_HELP = [
   "Type numbers to switch folders on or off (like 1 3), a path to add a folder,",
   "or press Enter to keep the selection.",
 ];
-
-const existingVm = (facts: HostFacts) =>
-  facts.vm.state === "running" || facts.vm.state === "stopped" ? facts.vm : undefined;
 
 const workspaceShares = (facts: HostFacts) => {
   const vm = existingVm(facts);
