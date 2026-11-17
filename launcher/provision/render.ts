@@ -1,10 +1,11 @@
-import { lstat, mkdir, readdir, readFile, rm } from "node:fs/promises";
+import { lstat, mkdir, readdir, readFile, realpath, rm } from "node:fs/promises";
 import { join, posix } from "node:path";
 import type { DerivedTools, GlabHost, ToolHost } from "../hostpi/index.ts";
 import {
   escapeXml,
   type IniSection,
   jsonText,
+  lstatOrUndefined,
   type MavenHeader,
   type MavenRepository,
   type MavenServer,
@@ -14,7 +15,7 @@ import {
   writeFileAtomic,
   xmlLines,
 } from "../shared/index.ts";
-import { readHostEntries, type Tree } from "./tree.ts";
+import { type HostSource, readHostEntries, type Tree } from "./tree.ts";
 import type { RenderInput, RenderResult } from "./types.ts";
 
 const RENDER_COPIED_ENTRIES = [
@@ -27,6 +28,10 @@ const RENDER_COPIED_ENTRIES = [
   "SYSTEM.md",
   "keybindings.json",
 ] as const;
+
+const AGENTS_SKILLS_KEY = "agents-skills";
+
+const AGENTS_SKILLS_LABEL = "~/.agents/skills";
 
 const FILE_MODE = 0o644;
 
@@ -187,8 +192,31 @@ const toolFiles = (tools: DerivedTools): Array<[string, Buffer]> => [
   ...optional("tools/pip.conf", pipConfig(tools.pip ?? [])),
 ];
 
+export const hostAgentsSkillsDir = (hostHome: string) => join(hostHome, ".agents", "skills");
+
+const realDirectory = async (path: string) => {
+  const info = await lstatOrUndefined(path);
+
+  return info?.isDirectory() ? realpath(path) : undefined;
+};
+
+const hostSources = async (input: RenderInput): Promise<HostSource[]> => {
+  const agentsSkills = hostAgentsSkillsDir(input.hostHome);
+  const agentsSkillsRoot = await realDirectory(agentsSkills);
+
+  return [
+    ...RENDER_COPIED_ENTRIES.map((name) => ({
+      path: join(input.hostAgentDir, name),
+      key: name,
+      label: name,
+      agentsSkillsRoot: name === "skills" ? agentsSkillsRoot : undefined,
+    })),
+    { path: agentsSkills, key: AGENTS_SKILLS_KEY, label: AGENTS_SKILLS_LABEL },
+  ];
+};
+
 const desiredTree = async (input: RenderInput): Promise<{ tree: Tree; notices: string[] }> => {
-  const copied = await readHostEntries(input.hostAgentDir, RENDER_COPIED_ENTRIES);
+  const copied = await readHostEntries(await hostSources(input));
   const files = input.derived.files;
   const rendered: Array<[string, unknown]> = [
     ["auth.json", files["auth.json"]],

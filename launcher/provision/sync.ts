@@ -155,6 +155,7 @@ const syncSettings = async (input: SyncInput) => {
   const prepared = prepareHostSettings(host.value ?? {}, {
     hostAgentDir: input.hostAgentDir,
     mountRoots: [input.repoRoot],
+    home: input.hostHome,
   });
   const pinned = Array.isArray(prepared.settings.packages)
     ? await pinHostPackages(prepared.settings.packages, input.hostAgentDir)

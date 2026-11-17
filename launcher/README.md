@@ -6,7 +6,7 @@ Part of [pi-extensions](../README.md).
 
 ## What it does
 
-`pi-sandbox` installs itself as `pi`. You keep typing `cd <folder> && pi`, and your providers, MCP servers, settings, packages and skills work as before.
+`pi-sandbox` installs itself as `pi`. You keep typing `cd <folder> && pi`, and your providers, MCP servers, settings, packages and skills work as before, with the exceptions listed under [What is different inside the sandbox](#what-is-different-inside-the-sandbox) (a symlinked skill, for one, stays out).
 
 Pi now runs in a Linux container inside a small virtual machine (Colima). The container sees the repository, or plain folder, you started pi in, and nothing else of your home.
 
@@ -44,6 +44,8 @@ npm install -g --omit=peer pi-extensions-mz
 Without the managed install, `install.sh` stops before it changes anything and says to install pi this way and run it again.
 
 The script puts `~/.local/bin` first on `PATH` in your shell startup files, then runs `pi sandbox init`, which asks which folders hold your projects, shows the VM size it picked for this Mac, and creates the VM when you choose Apply. Open a new terminal afterwards.
+
+In a terminal, Homebrew, npm, `pi sandbox init` and the smoke `pi sandbox doctor` print as if you ran them yourself, and each step starts after a blank line and a rule. Piped or redirected, their output is indented under plain `[n/6]` lines.
 
 If `~/.local/bin/pi` is pi's own managed install, the script replaces that link. An earlier pi-sandbox link or wrapper is replaced too. Any other file there stops the install.
 
@@ -179,6 +181,8 @@ After a reboot or `pi sandbox stop`, the next `pi` starts the VM again. A failur
 
 - **Log in on the host.** Provider `/login` does not work inside. Run `pi auth login <provider>`, or `pi --no-sandbox`, then `/login`.
 - **Packages and MCP servers change on the host.** The sandbox picks up `pi install` and `pi mcp add` at its next launch. Npm and git packages inside follow the versions installed on your Mac: after `pi update` (or any other change on the host) the next launch says `sandbox packages follow the host: reinstalling <n> packages` and pi inside installs those versions. An npm source without a version or with a range or tag (`npm:x`, `npm:x@^1`, `npm:x@latest`) is pinned to the host's version; an exact pin, an alias (`npm:x@npm:other@2`) and a git, URL or file spec stay as you wrote them. A git source is pinned to the host checkout's commit only when that commit is on the remote (a remote branch or tag); with local commits or after an upstream force-push it stays unpinned, and a `#ref` source is never pinned. When another session of the folder is running, git checkouts are not refreshed and the launch says `sandbox packages follow the host: git packages refresh at the next launch (another session is running)`. The first launch after upgrading the launcher re-clones every git package once. The reinstall needs the registry or git host in `egress.allow`; without it pi reports the package as failed to install instead of running an old copy.
+- **Skills come as copies, and links stay out.** The sandbox gets a copy of `~/.pi/agent/skills` and of `~/.agents/skills` (and of the agents, prompts, themes and extensions in `~/.pi/agent`), refreshed at every launch, without secret-looking files, files over 8 MiB and private keys. The copy follows no symlink: a linked skill dir or file, or a linked `~/.agents/skills`, is missing inside, and the first launch that finds it names it (`render: missing in the sandbox, because the launcher follows no symlinks: …`). Make it a real directory to carry it. One link needs nothing: a skill dir directly in `~/.pi/agent/skills` that links to a skill dir directly in `~/.agents/skills`, as `npx skills add` makes, when `~/.agents/skills` is a real directory. That skill arrives through `~/.agents/skills`. Every other link is named, a nested one or one inside `~/.agents/skills` included. The line is printed once per folder for the same set of links, so a skill still missing later says nothing more.
+- **Resource paths in `settings.json` are rewritten.** An `extensions`, `skills`, `prompts` or `themes` entry inside the repository becomes its absolute path, one anywhere inside `~/.pi/agent` (pi's package checkouts under `git/` and `npm/` included) or `~/.agents/skills` points at the same path inside the sandbox, and any other path is left out with a line naming it. Relative patterns (`!old-*`, `-skills/x`) and `builtin:` entries stay as written.
 - **No Docker.** `docker compose` and Testcontainers do not work. You can [run a database inside](CONFIGURATION.md#databases-and-other-services).
 - **Only https leaves, and your Mac's `localhost` is out of reach.** Servers you start inside answer on `127.0.0.1`.
 - **Home lives in memory.** `/home/pi` and `/tmp` are emptied when pi exits. Pi's own files survive in the folder's agent volume. To keep a tool cache, list it in `mounts.sharedCaches`.

@@ -7,6 +7,7 @@ import { helpCommand, usageOf } from "./commands/help.ts";
 import { initCommand, YES_FLAG } from "./commands/init.ts";
 import { assertOptions } from "./commands/options.ts";
 import { resetCommand } from "./commands/reset.ts";
+import { SMOKE_DOCTOR, smokeDoctorCommand } from "./commands/smoke-doctor.ts";
 import { statusCommand } from "./commands/status.ts";
 import { stopCommand } from "./commands/stop.ts";
 import { UNINSTALL, uninstallCommand } from "./commands/uninstall.ts";
@@ -81,6 +82,10 @@ const route = async (argv: string[], deps: CliDeps) => {
 
   if (first === VM_SHARES && rest.length === 0) {
     return vmSharesCommand(deps);
+  }
+
+  if (first === SMOKE_DOCTOR && rest.length === 0) {
+    return smokeDoctorCommand(deps);
   }
 
   const intercepted = argv.includes("--no-sandbox") ? undefined : await intercept(argv, deps);

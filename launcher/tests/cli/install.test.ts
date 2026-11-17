@@ -19,7 +19,6 @@ const SYSTEM_TOOLS = [
   "rm",
   "rmdir",
   "sed",
-  "tee",
 ];
 
 const FAKES: Record<string, string> = {
@@ -90,6 +89,57 @@ const runInstall = (root: string, flags: string[] = [], extraEnv: Record<string,
     env: installEnv(root, extraEnv),
     encoding: "utf8",
   });
+
+const TERMINAL_RUNNER = [
+  "import os, pty, sys",
+  "pid, fd = pty.fork()",
+  "if pid == 0:",
+  "    os.dup2(os.open(os.devnull, os.O_RDONLY), 0)",
+  "    os.execv(sys.argv[1], sys.argv[1:])",
+  "chunks = []",
+  "while True:",
+  "    try:",
+  "        chunk = os.read(fd, 65536)",
+  "    except OSError:",
+  "        break",
+  "    if not chunk:",
+  "        break",
+  "    chunks.append(chunk)",
+  "sys.stdout.buffer.write(b''.join(chunks))",
+  "sys.exit(os.waitstatus_to_exitcode(os.waitpid(pid, 0)[1]))",
+].join("\n");
+
+const python = toolPath("python3");
+
+const runInstallOnTerminal = (root: string, flags: string[] = [], extraEnv: Record<string, string> = {}) => {
+  const result = spawnSync(
+    python,
+    ["-c", TERMINAL_RUNNER, "/bin/sh", join(launcherRoot(), "install.sh"), ...flags],
+    { env: { TERM: "xterm-256color", ...installEnv(root, extraEnv) }, encoding: "utf8" },
+  );
+
+  return { status: result.status, output: result.stdout.replaceAll("\r\n", "\n") };
+};
+
+const stubDoctor = async (root: string, doctor: string[]) => {
+  const node = join(root, "tools", "node");
+
+  await rm(node);
+
+  await writeFile(
+    node,
+    [
+      "#!/bin/sh",
+      'if [ "$2" = __smoke-doctor ]; then',
+      ...doctor.map((line) => `  ${line}`),
+      "fi",
+      'if [ "$2" = sandbox ]; then exit 0; fi',
+      `exec '${process.execPath}' "$@"`,
+    ].join("\n"),
+  );
+
+  await chmod(node, 0o755);
+};
 
 const isLauncherWrapper = async (path: string) =>
   (await readFile(path, "utf8")).includes("launcher/bin/pi-sandbox-dev.js");
@@ -282,6 +332,58 @@ describe("install.sh and Homebrew", { timeout: INSTALL_TIMEOUT_MS }, () => {
     );
     expect(result.stdout).not.toContain("[3/6]");
   });
+
+  const TERMINAL_BREW = [
+    'if [ -t 1 ] && [ -t 2 ]; then echo "brew on a terminal"; fi',
+    'if [ ! -t 0 ]; then echo "brew stdin kept"; fi',
+    INSTALLING_BREW,
+  ].join("\n");
+
+  it("runs brew on the terminal unindented, under a dim rule and a bold step header", async () => {
+    const { root } = await installRoot({ brew: TERMINAL_BREW });
+
+    await rm(join(root, "tools", "colima"));
+
+    const result = runInstallOnTerminal(root);
+    const rule = `\u001b[2m${"─".repeat(64)}\u001b[0m`;
+
+    expect(result.status).toBe(0);
+    expect(result.output).toContain(
+      `\n\n${rule}\n\u001b[1m[2/6] runtime: installing colima with Homebrew\u001b[0m\nbrew on a terminal\nbrew stdin kept\n==> Pouring colima\nbrew warning\n\n${rule}\n\u001b[1m[3/6] launcher: `,
+    );
+  });
+
+  it("draws the step headers without colour on a terminal that asks for none", async () => {
+    const plain = await installRoot();
+    const dumb = await installRoot();
+    const rule = "-".repeat(64);
+    const results = [
+      runInstallOnTerminal(plain.root, [], { NO_COLOR: "1" }),
+      runInstallOnTerminal(dumb.root, [], { TERM: "dumb" }),
+    ];
+
+    expect(results.map((result) => result.status)).toEqual([0, 0]);
+    expect(results.map((result) => result.output.includes("\u001b"))).toEqual([false, false]);
+    expect(
+      results.map((result) =>
+        result.output.includes(`\n\n${rule}\n[2/6] runtime: colima is present\n\n${rule}\n[3/6]`),
+      ),
+    ).toEqual([true, true]);
+  });
+
+  it("stops with brew's exit status on the terminal too", async () => {
+    const { root } = await installRoot({ brew: 'echo "Error: no bottle"\nexit 3' });
+
+    await rm(join(root, "tools", "colima"));
+
+    const result = runInstallOnTerminal(root);
+
+    expect(result.status).toBe(3);
+    expect(result.output).toContain(
+      "[2/6] runtime: installing colima with Homebrew\u001b[0m\nError: no bottle\n",
+    );
+    expect(result.output).not.toContain("[3/6]");
+  });
 });
 
 describe("install.sh and pi sandbox init", { timeout: INSTALL_TIMEOUT_MS }, () => {
@@ -322,7 +424,7 @@ describe("install.sh and pi sandbox init", { timeout: INSTALL_TIMEOUT_MS }, () =
         expect.stringMatching(/pi-sandbox-dev\.js sandbox init terminal$/),
       ]);
       expect(result.stdout).toContain(
-        "[4/6] setup: running pi sandbox init\r\ninit said 0\r\n[4/6] setup: done",
+        "[4/6] setup: running pi sandbox init\r\ninit said 0\r\n\r\n[4/6] setup: done",
       );
     },
   );
@@ -593,24 +695,8 @@ describe("install.sh and the smoke folder", { timeout: INSTALL_TIMEOUT_MS }, () 
 
   it("says the sandbox part of the smoke check was skipped when the VM does not share the root yet", async () => {
     const { root, work } = await rootsSetup({ git: "exit 0" }, ({ root }) => [join(root, "my work")]);
-    const node = join(root, "tools", "node");
 
-    await rm(node);
-
-    await writeFile(
-      node,
-      [
-        "#!/bin/sh",
-        'if [ "$2" = sandbox ] && [ "$3" = doctor ]; then',
-        '  echo "  skip  sandbox  not started until the VM shares $PWD"',
-        "  exit 0",
-        "fi",
-        'if [ "$2" = sandbox ]; then exit 0; fi',
-        `exec '${process.execPath}' "$@"`,
-      ].join("\n"),
-    );
-
-    await chmod(node, 0o755);
+    await stubDoctor(root, ['echo "  skip  sandbox  not started until the VM shares $PWD"', "exit 3"]);
 
     const result = runInstall(root);
 
@@ -620,6 +706,40 @@ describe("install.sh and the smoke folder", { timeout: INSTALL_TIMEOUT_MS }, () 
       `sandbox doctor passed the host checks; the sandbox part was skipped because the VM does not share ${work} yet, and runs at the first pi launch`,
     );
     expect(result.stdout).not.toContain("sandbox doctor passed\n");
+  });
+
+  it("fails the install when the smoke doctor fails, after showing its report indented", async () => {
+    const { root } = await rootsSetup({ git: "exit 0" }, ({ root }) => [join(root, "my work")]);
+
+    await stubDoctor(root, ['echo "result: fail (1 failed)"', "exit 1"]);
+
+    const result = runInstall(root);
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain(
+      "the first image build takes a few minutes\n      result: fail (1 failed)\n",
+    );
+    expect(result.stderr).toContain("pi-sandbox install: smoke check failed");
+  });
+
+  it("runs the smoke doctor on the terminal and still says the sandbox part was skipped", async () => {
+    const { root } = await rootsSetup({ git: "exit 0" }, ({ root }) => [join(root, "my work")]);
+
+    await stubDoctor(root, [
+      'if [ -t 1 ] && [ -t 2 ]; then echo "doctor on a terminal"; fi',
+      'echo "  skip  sandbox  not started until the VM shares $PWD"',
+      "exit 3",
+    ]);
+
+    const result = runInstallOnTerminal(root, [], { NO_COLOR: "1" });
+
+    expect(result.status).toBe(0);
+    expect(result.output).toContain(
+      "the first image build takes a few minutes\ndoctor on a terminal\n  skip  sandbox",
+    );
+    expect(result.output).toContain(
+      `\n\n[5/6] smoke: ${join(root, "home", ".local", "bin", "pi")} sandbox doctor passed the host checks; the sandbox part was skipped`,
+    );
   });
 
   it("runs the smoke check in a folder inside the first root that exists and removes it", async () => {

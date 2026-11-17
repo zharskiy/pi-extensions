@@ -139,6 +139,7 @@ interface DoctorOptions {
   hostSettings?: unknown;
   denials?: DenialRecord[];
   args?: string[];
+  command?: string[];
 }
 
 const doctorWith = async (options: DoctorOptions = {}) => {
@@ -164,7 +165,10 @@ const doctorWith = async (options: DoctorOptions = {}) => {
     await harness.writeJson(join(harness.hostAgentDir, "settings.json"), options.hostSettings);
   }
 
-  const code = await run(["sandbox", "doctor", ...(options.args ?? [])], harness.deps);
+  const code = await run(
+    [...(options.command ?? ["sandbox", "doctor"]), ...(options.args ?? [])],
+    harness.deps,
+  );
   const stdout = harness.stdout();
 
   return { code, stdout, report: doctorReport(stdout), fake, harness, port };
@@ -784,6 +788,26 @@ describe("pi sandbox doctor", () => {
     expect(started).toEqual([]);
     expect(fake.created).toEqual([]);
     expect(code).toBe(0);
+  });
+
+  it("exits 3 from the hidden __smoke-doctor when the sandbox part is skipped, with the same report", async () => {
+    const vm = { coverage: async () => ({ shares: [], missing: ["/Volumes/work"] }) };
+    const doctor = await doctorWith({ vm });
+    const smoke = await doctorWith({ vm, command: ["__smoke-doctor"] });
+
+    expect(smoke.code).toBe(3);
+    expect(check(smoke.stdout, "sandbox")).toEqual(check(doctor.stdout, "sandbox"));
+    expect(smoke.report.checks.map((entry) => entry.name)).toEqual(
+      doctor.report.checks.map((entry) => entry.name),
+    );
+    expect(doctor.code).toBe(0);
+  });
+
+  it("exits as the doctor does from the hidden __smoke-doctor when the sandbox part runs", async () => {
+    const passing = await doctorWith({ command: ["__smoke-doctor"] });
+    const failing = await doctorWith({ command: ["__smoke-doctor"], probes: { routeExit: 0 } });
+
+    expect([passing.code, failing.code]).toEqual([0, 1]);
   });
 
   it("reports the proxy and image stages both, then stops after a failed image and says the probes did not run", async () => {

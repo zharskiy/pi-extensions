@@ -186,6 +186,7 @@ const syncVolume = async (deps: CliDeps, context: LaunchContext, backend: Backen
     stateDir: context.stateDir,
     repoHash: context.repoHash,
     repoRoot: context.workspace.repoRoot,
+    hostHome: deps.home,
     ...sync,
   });
 
@@ -210,6 +211,7 @@ const prepareGround = async (input: PreparedInput) => {
       stateDir: context.stateDir,
       repoHash: context.repoHash,
       hostAgentDir: host.hostAgentDir,
+      hostHome: deps.home,
       derived: host.derived,
       othersLive: () => othersLive(context.stateDir, context.repoHash, launch.launchId),
     }),

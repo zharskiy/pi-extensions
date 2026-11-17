@@ -6,6 +6,7 @@ export interface RenderInput {
   stateDir: string;
   repoHash: string;
   hostAgentDir: string;
+  hostHome: string;
   derived: DerivedSandboxPi;
   othersLive?: () => Promise<boolean>;
 }
@@ -22,6 +23,7 @@ export interface SyncInput {
   hostAgentDir: string;
   repoRoot: string;
   allowlist: WriteBackTable;
+  hostHome?: string;
   refreshPackages?: boolean;
   othersLive?: () => Promise<boolean>;
   readTimeoutMs?: number;
