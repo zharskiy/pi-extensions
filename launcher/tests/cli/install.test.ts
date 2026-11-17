@@ -1,86 +1,10 @@
 import { spawnSync } from "node:child_process";
-import { chmod, lstat, mkdir, readFile, readlink, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, readlink, rm, symlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { launcherRoot } from "../../shared/index.ts";
-import { tempDir } from "../support/temp-dir.ts";
 import { writeManagedPi } from "./harness.ts";
-
-const SYSTEM_TOOLS = [
-  "awk",
-  "cat",
-  "chmod",
-  "dirname",
-  "grep",
-  "head",
-  "mkdir",
-  "mktemp",
-  "readlink",
-  "rm",
-  "rmdir",
-  "sed",
-  "tee",
-];
-
-const FAKES: Record<string, string> = {
-  id: "echo 501",
-  uname: 'case "$1" in -s) echo Darwin ;; -m) echo arm64 ;; *) echo Darwin ;; esac',
-  sw_vers: "echo 15.0",
-  brew: "exit 0",
-  npm: "exit 0",
-  colima: 'case "$1" in version) echo "colima version 0.8.1" ;; *) exit 0 ;; esac',
-};
-
-const toolPath = (name: string) =>
-  spawnSync("sh", ["-c", `command -v ${name}`], { encoding: "utf8" }).stdout.trim();
-
-const writeTools = async (dir: string, fakes: Record<string, string>) => {
-  await mkdir(dir, { recursive: true });
-
-  await Promise.all([
-    ...SYSTEM_TOOLS.map((name) => symlink(toolPath(name), join(dir, name))),
-    symlink(process.execPath, join(dir, "node")),
-    ...Object.entries(fakes).map(async ([name, body]) => {
-      await writeFile(join(dir, name), `#!/bin/sh\n${body}\n`);
-
-      await chmod(join(dir, name), 0o755);
-    }),
-  ]);
-};
-
-const installRoot = async (fakes: Record<string, string> = {}, homeName = "home") => {
-  const root = await realpath(await tempDir("install"));
-  const home = join(root, homeName);
-  const agentDir = join(home, ".pi", "agent");
-
-  await writeTools(join(root, "tools"), { ...FAKES, ...fakes });
-
-  await mkdir(join(home, ".local", "bin"), { recursive: true });
-
-  const managed = await writeManagedPi(agentDir, "1.6.0");
-
-  return { root, home, agentDir, managed, record: join(root, "state", "replaced-pi-link") };
-};
-
-const INSTALL_TIMEOUT_MS = 30_000;
-
-const runInstall = (root: string, flags: string[] = [], extraEnv: Record<string, string> = {}) =>
-  spawnSync("/bin/sh", [join(launcherRoot(), "install.sh"), ...flags], {
-    env: {
-      ...extraEnv,
-      HOME: join(root, "home"),
-      PATH: join(root, "tools"),
-      PI_SANDBOX_STATE_DIR: join(root, "state"),
-      PI_SANDBOX_USER_CONFIG: join(root, "config", "config.json"),
-    },
-    encoding: "utf8",
-  });
-
-const exists = (path: string) =>
-  lstat(path).then(
-    () => true,
-    () => false,
-  );
+import { exists, INSTALL_TIMEOUT_MS, installRoot, packageVersion, runInstall } from "./install-harness.ts";
 
 const isLauncherWrapper = async (path: string) =>
   (await readFile(path, "utf8")).includes("launcher/bin/pi-sandbox-dev.js");
@@ -102,7 +26,7 @@ describe("install.sh and pi's managed install", { timeout: INSTALL_TIMEOUT_MS },
     expect(result.stdout).toContain(
       `; the managed pi at ${agentDir}/bin/pi stays the host pi for host jobs and pi --no-sandbox (uninstall.sh restores the link)`,
     );
-    expect(result.stdout).toContain("[6/7] smoke: skipped, git is missing");
+    expect(result.stdout).toContain("[8/9] smoke: skipped, git is missing");
     expect(await readFile(record, "utf8")).toBe("../lib/pi-link\n");
     expect(await isLauncherWrapper(shim)).toBe(true);
   });
@@ -143,9 +67,9 @@ describe("install.sh and pi's managed install", { timeout: INSTALL_TIMEOUT_MS },
 
     const result = runInstall(root);
 
-    expect(result.status).toBe(1);
+    expect(result.status).toBe(73);
     expect(result.stderr).toContain(
-      `${shim} exists and is not the pi-sandbox launcher, move it away and run this again`,
+      `launcher: ${shim} exists and is not the pi-sandbox launcher, move it away and run this again`,
     );
     expect(await readFile(shim, "utf8")).toBe("#!/bin/sh\necho mine\n");
     expect(await exists(record)).toBe(false);
@@ -162,9 +86,9 @@ describe("install.sh and pi's managed install", { timeout: INSTALL_TIMEOUT_MS },
 
     const result = runInstall(root);
 
-    expect(result.status).toBe(1);
+    expect(result.status).toBe(73);
     expect(result.stderr).toContain(
-      `${shim} is pi's managed install at ${elsewhere}, outside the host agent dir ${join(home, ".pi", "agent")}; the launcher uses only the managed install in the agent dir, move it away and run this again`,
+      `launcher: ${shim} is pi's managed install at ${elsewhere}, outside the host agent dir ${join(home, ".pi", "agent")}; the launcher uses only the managed install in the agent dir, move it away and run this again`,
     );
     expect(await readlink(shim)).toBe(join(elsewhere, "bin", "pi"));
     expect(await exists(record)).toBe(false);
@@ -192,8 +116,8 @@ describe("install.sh preflight and shells", { timeout: INSTALL_TIMEOUT_MS }, () 
     const { root, home } = await installRoot({ id: "echo 0" });
     const result = runInstall(root);
 
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain("run install.sh as your own user, not as root or with sudo");
+    expect(result.status).toBe(69);
+    expect(result.stderr).toContain("preflight: run install.sh as your own user, not as root or with sudo");
     expect(await exists(join(home, ".zshrc"))).toBe(false);
   });
 
@@ -201,9 +125,9 @@ describe("install.sh preflight and shells", { timeout: INSTALL_TIMEOUT_MS }, () 
     const { root } = await installRoot({ sw_vers: "echo 12.7.4" });
     const result = runInstall(root);
 
-    expect(result.status).toBe(1);
+    expect(result.status).toBe(69);
     expect(result.stderr).toContain(
-      "macOS 12.7.4 is too old, the sandbox VM (vz with virtiofs) needs macOS 13 or newer",
+      "preflight: macOS 12.7.4 is too old, the sandbox VM (vz with virtiofs) needs macOS 13 or newer",
     );
   });
 
@@ -257,7 +181,7 @@ describe("install.sh and the Colima profile", { timeout: INSTALL_TIMEOUT_MS }, (
       `start --profile pi-sandbox --activate=false --vm-type vz --mount-type virtiofs --cpu 8 --memory 10 --disk 60 --mount ${home}:w`,
     );
     expect(result.stdout).toContain(
-      `[4/7] colima: starting profile pi-sandbox (vz, virtiofs, 8 CPUs, 10 GiB, 60 GiB, ${home} writable)`,
+      `[6/9] colima: starting profile pi-sandbox (vz, virtiofs, 8 CPUs, 10 GiB, 60 GiB, ${home} writable)`,
     );
   });
 
@@ -277,22 +201,23 @@ describe("install.sh and the Colima profile", { timeout: INSTALL_TIMEOUT_MS }, (
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain(
-      "[2/7] runtime: installing colima with Homebrew\n      ==> Pouring colima\n      brew warning\n",
+      "[2/9] runtime: installing colima with Homebrew\n      ==> Pouring colima\n      brew warning\n",
     );
   });
 
-  it("stops with brew's exit status when brew fails, after showing its output", async () => {
+  it("stops with 70, not brew's own status, when brew fails, after showing its output", async () => {
     const { root } = await installRoot({ brew: 'echo "Error: no bottle"\nexit 3' });
 
     await rm(join(root, "tools", "colima"));
 
     const result = runInstall(root);
 
-    expect(result.status).toBe(3);
+    expect(result.status).toBe(70);
     expect(result.stdout).toContain(
-      "[2/7] runtime: installing colima with Homebrew\n      Error: no bottle\n",
+      "[2/9] runtime: installing colima with Homebrew\n      Error: no bottle\n",
     );
-    expect(result.stdout).not.toContain("[3/7]");
+    expect(result.stderr).toContain("pi-sandbox install: runtime: brew install colima failed (exit 3)\n");
+    expect(result.stdout).not.toContain("[3/9]");
   });
 
   const sysctl = (cpus: number, bytes: number) =>
@@ -401,18 +326,16 @@ describe("install.sh options and the PATH block", { timeout: INSTALL_TIMEOUT_MS 
     expect(await readFile(zshrc(home), "utf8")).toBe("\n");
   });
 
-  it("refuses the removed options and an option without its value", async () => {
+  it("refuses the removed options and an option without its value with 64, naming the installer version", async () => {
     const { root, home } = await installRoot();
     const binDir = runInstall(root, ["--bin-dir", "/opt/bin"]);
-    const dryRun = runInstall(root, ["--dry-run"]);
     const missing = runInstall(root, ["--cpu"]);
+    const api = `(@zharskiy/pinata ${await packageVersion()}, installer api 1)`;
 
-    expect(binDir.status).toBe(1);
-    expect(binDir.stderr).toContain("pi-sandbox install: unknown option --bin-dir\n");
-    expect(dryRun.status).toBe(1);
-    expect(dryRun.stderr).toContain("pi-sandbox install: unknown option --dry-run\n");
-    expect(missing.status).toBe(1);
-    expect(missing.stderr).toContain("pi-sandbox install: --cpu needs a value\n");
+    expect(binDir.status).toBe(64);
+    expect(binDir.stderr).toContain(`pi-sandbox install: options: unknown option --bin-dir ${api}\n`);
+    expect(missing.status).toBe(64);
+    expect(missing.stderr).toContain(`pi-sandbox install: options: --cpu needs a value ${api}\n`);
     expect(await exists(zshrc(home))).toBe(false);
   });
 
@@ -420,8 +343,8 @@ describe("install.sh options and the PATH block", { timeout: INSTALL_TIMEOUT_MS 
     const { root, home } = await installRoot();
     const result = runInstall(root, ["--root", ""]);
 
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain("pi-sandbox install: --root needs a non-empty value\n");
+    expect(result.status).toBe(64);
+    expect(result.stderr).toContain("pi-sandbox install: options: --root needs a non-empty value (");
     expect(await exists(join(root, "config", "config.json"))).toBe(false);
     expect(await exists(zshrc(home))).toBe(false);
   });
@@ -446,7 +369,7 @@ describe("install.sh options and the PATH block", { timeout: INSTALL_TIMEOUT_MS 
   });
 
   const noManagedPi = (agentDir: string) =>
-    `pi-sandbox install: no managed pi in ${agentDir} (a pi installed with npm or found on PATH is not used): the sandbox gets no provider credentials, and host commands and --no-sandbox are unavailable; install pi with pi's own installer (curl -fsSL https://pi.dev/install.sh | sh) and run this again\n`;
+    `pi-sandbox install: preflight: no managed pi in ${agentDir} (a pi installed with npm or found on PATH is not used): the sandbox gets no provider credentials, and host commands and --no-sandbox are unavailable; install pi with pi's own installer (curl -fsSL https://pi.dev/install.sh | sh) and run this again\n`;
 
   it("refuses without a managed pi, though pi is on PATH and in the checkout's node_modules, before npm or colima run", async () => {
     const { root, home, agentDir } = await installRoot({
@@ -464,7 +387,7 @@ describe("install.sh options and the PATH block", { timeout: INSTALL_TIMEOUT_MS 
     expect(
       await exists(join(launcherRoot(), "..", "node_modules", "@earendil-works", "pi-coding-agent")),
     ).toBe(true);
-    expect(result.status).toBe(1);
+    expect(result.status).toBe(69);
     expect(result.stderr).toBe(noManagedPi(agentDir));
     expect(await readFile(calls, "utf8").catch(() => "")).not.toMatch(/npm install|colima start/);
     expect(await exists(join(home, ".local", "bin", "pi"))).toBe(false);
@@ -548,7 +471,7 @@ describe("install.sh and workspace roots", { timeout: INSTALL_TIMEOUT_MS }, () =
     expect(await startArgs(root)).toEqual([...BASE_START, ...vmMounts(projects, work)]);
     expect(result.stdout).toContain(`${projects} writable, ${work} writable, `);
     expect(result.stdout).toContain(`${join(root, "state", "vm")} read-only)`);
-    expect(result.stdout).toContain(`; wrote workspaceRoots to ${configFile(root)}`);
+    expect(result.stdout).toContain(`[5/9] config: wrote workspaceRoots to ${configFile(root)}\n`);
   });
 
   it("takes the roots from PI_SANDBOX_ROOTS and keeps a ~ root as written", async () => {
@@ -580,9 +503,9 @@ describe("install.sh and workspace roots", { timeout: INSTALL_TIMEOUT_MS }, () =
 
     expect(result.status).toBe(0);
     expect(await startArgs(root)).toEqual(BASE_START);
+    expect(result.stdout).toContain(`[5/9] config: wrote workspaceRoots to ${configFile(root)}\n`);
     expect(result.stdout).toContain(
-      "shares kept); wrote workspaceRoots to " +
-        `${configFile(root)}; if its shares differ, the first pi launch restarts it with the new ones`,
+      "shares kept); if its shares differ, the first pi launch restarts it with the new ones\n",
     );
   });
 
@@ -594,7 +517,7 @@ describe("install.sh and workspace roots", { timeout: INSTALL_TIMEOUT_MS }, () =
     const again = runInstall(root, ["--root", work]);
 
     expect(again.status).toBe(0);
-    expect(again.stdout).toContain(`; workspaceRoots in ${configFile(root)} already match`);
+    expect(again.stdout).toContain(`[5/9] config: workspaceRoots in ${configFile(root)} already match\n`);
   });
 
   it("stops before the VM step when __vm-shares fails on the config", async () => {
@@ -606,9 +529,9 @@ describe("install.sh and workspace roots", { timeout: INSTALL_TIMEOUT_MS }, () =
 
     const result = runInstall(root);
 
-    expect(result.status).toBe(1);
+    expect(result.status).toBe(78);
     expect(result.stderr).toContain("pi-sandbox: config: workspaceRoots.roots:");
-    expect(result.stdout).not.toContain("[4/7]");
+    expect(result.stdout).not.toContain("[6/9]");
     expect(await colimaCalls(root)).toEqual(["version"]);
   });
 
@@ -616,10 +539,14 @@ describe("install.sh and workspace roots", { timeout: INSTALL_TIMEOUT_MS }, () =
     const { root, home } = await rootsSetup();
     const result = runInstall(root, ["--root", join(home, ".ssh")]);
 
-    expect(result.status).toBe(1);
+    expect(result.status).toBe(78);
     expect(result.stderr).toContain("pi-sandbox: config: workspaceRoots.roots:");
+    expect(result.stderr).toContain(
+      "pi-sandbox install: config: rejected, see the message above; nothing was written\n",
+    );
     expect(await exists(configFile(root))).toBe(false);
-    expect(await colimaCalls(root)).toEqual(["version"]);
+    expect(await colimaCalls(root)).toEqual([]);
+    expect(await exists(join(home, ".zshrc"))).toBe(false);
   });
 
   it("stops when the config exists with other roots and leaves it as it is", async () => {
@@ -632,12 +559,12 @@ describe("install.sh and workspace roots", { timeout: INSTALL_TIMEOUT_MS }, () =
 
     const result = runInstall(root, ["--root", work]);
 
-    expect(result.status).toBe(1);
+    expect(result.status).toBe(78);
     expect(result.stderr).toContain(
       `pi-sandbox: ${configFile(root)} exists; set workspaceRoots in it, or install without --root`,
     );
     expect(await readFile(configFile(root), "utf8")).toBe(text);
-    expect(await colimaCalls(root)).toEqual(["version"]);
+    expect(await colimaCalls(root)).toEqual([]);
   });
 
   it("keeps a backslash in a root path when it picks the smoke folder", async () => {
@@ -688,7 +615,7 @@ describe("install.sh and workspace roots", { timeout: INSTALL_TIMEOUT_MS }, () =
     const result = runInstall(root, ["--root", join(root, "gone"), "--root", work]);
     const smokeDir = (await readFile(join(root, "git-dirs"), "utf8")).trim();
 
-    expect(result.status).toBe(1);
+    expect(result.status).toBe(79);
     expect(result.stdout).toContain(`sandbox doctor in a temporary git repository in ${work};`);
     expect(dirname(smokeDir)).toBe(work);
     expect(await exists(smokeDir)).toBe(false);

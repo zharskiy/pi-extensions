@@ -24,3 +24,4 @@ export type {
   SandboxConfig,
   SecretRef,
 } from "./types.ts";
+export { validateConfig } from "./validate.ts";

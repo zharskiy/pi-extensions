@@ -9,6 +9,8 @@ export interface SyncedFile {
   keys: readonly string[];
   maxBytes: number;
   checks?: Readonly<Record<string, ValueCheck>>;
+  entryMerged?: readonly string[];
+  entryNameChecks?: Readonly<Record<string, (name: string) => boolean>>;
 }
 
 interface KeyChange {
@@ -60,6 +62,47 @@ const isBoundedString = (value: unknown): value is string =>
 
 const isBoolean = (value: unknown) => typeof value === "boolean";
 
+const isControl = (char: string) => {
+  const code = char.codePointAt(0) ?? 0;
+
+  return code < PRINTABLE_FROM || (code >= C1_FROM && code <= C1_TO) || BIDI_CONTROL.test(char);
+};
+
+const VERSION = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.+-]{1,64})?$/;
+
+const MAX_SOURCE_CHARS = 512;
+
+const MARKER_SCOPES = ["user", "project", "temporary"];
+
+const isVersion = (value: unknown) => typeof value === "string" && VERSION.test(value);
+
+const parsedObject = (text: string) => {
+  try {
+    const value: unknown = JSON.parse(text);
+
+    return isJsonObject(value) ? value : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+const isPrintableText = (text: string) => !Array.from(text).some((char) => isControl(char));
+
+const isChangelogMarkerName = (name: string) => {
+  const marker = parsedObject(name);
+  const source = marker?.source;
+
+  return (
+    marker !== undefined &&
+    Object.keys(marker).length === 2 &&
+    typeof source === "string" &&
+    source.length > 0 &&
+    source.length <= MAX_SOURCE_CHARS &&
+    isPrintableText(source) &&
+    MARKER_SCOPES.includes(marker.scope as string)
+  );
+};
+
 const oneOf =
   (allowed: readonly unknown[]): ValueCheck =>
   (value) =>
@@ -85,8 +128,10 @@ export const SETTINGS_FILE: SyncedFile = {
     "treeFilterMode",
     "steeringMode",
     "followUpMode",
+    "extensionChangelogVersions",
   ],
   maxBytes: SETTINGS_FILE_BYTES,
+  entryMerged: ["extensionChangelogVersions"],
   checks: {
     defaultProvider: isBoundedString,
     defaultModel: isBoundedString,
@@ -100,7 +145,9 @@ export const SETTINGS_FILE: SyncedFile = {
     treeFilterMode: oneOf(TREE_FILTER_MODES),
     steeringMode: oneOf(QUEUE_MODES),
     followUpMode: oneOf(QUEUE_MODES),
+    extensionChangelogVersions: isVersion,
   },
+  entryNameChecks: { extensionChangelogVersions: isChangelogMarkerName },
 };
 
 export const EXTENSION_FILES: readonly SyncedFile[] = [
@@ -187,24 +234,71 @@ const keyValue = (object: JsonObject, key: string) => (Object.hasOwn(object, key
 const isAccepted = (file: SyncedFile, key: string, value: unknown) =>
   value === undefined || (file.checks?.[key]?.(value) ?? true);
 
+interface Decision {
+  change?: KeyChange;
+  notice?: string;
+}
+
+const decideKey = (file: SyncedFile, key: string, sides: FileSides, shownKey = key): Decision => {
+  const baseline = keyValue(sides.baseline, key);
+  const volume = keyValue(sides.volume, key);
+  const host = keyValue(sides.host, key);
+
+  if (isDeepStrictEqual(volume, baseline) || isDeepStrictEqual(host, volume)) {
+    return {};
+  }
+
+  const badName =
+    shownKey !== key && volume !== undefined && file.entryNameChecks?.[shownKey]?.(key) === false;
+
+  if (badName || !isAccepted(file, shownKey, volume)) {
+    return { notice: `${file.name}: ${shownKey} in the sandbox is not a valid value; not written back` };
+  }
+
+  return isDeepStrictEqual(host, baseline)
+    ? { change: { key, from: host, to: volume } }
+    : { notice: `${file.name}: ${shownKey} changed on the host and in the sandbox; kept the host value` };
+};
+
+const objectSide = (side: JsonObject, key: string) => {
+  const value = keyValue(side, key);
+
+  return isJsonObject(value) ? value : {};
+};
+
+const decideEntries = (file: SyncedFile, key: string, sides: FileSides): Decision[] => {
+  const volume = keyValue(sides.volume, key);
+
+  if (volume !== undefined && !isJsonObject(volume)) {
+    return [{ notice: `${file.name}: ${key} in the sandbox is not a valid value; not written back` }];
+  }
+
+  const entries = {
+    baseline: objectSide(sides.baseline, key),
+    volume: objectSide(sides.volume, key),
+    host: objectSide(sides.host, key),
+  };
+  const names = [...new Set([...Object.keys(entries.baseline), ...Object.keys(entries.volume)])];
+  const decided = names.map((name) => decideKey(file, name, entries, key));
+  const changes = decided.flatMap((entry) => (entry.change === undefined ? [] : [entry.change]));
+  const notices = decided
+    .filter((entry) => entry.notice !== undefined)
+    .map((entry) => ({ notice: entry.notice }));
+
+  if (changes.length === 0) {
+    return notices;
+  }
+
+  const from = keyValue(sides.host, key);
+  const merged = applyChanges(entries.host, changes);
+
+  return [{ change: { key, from, to: Object.keys(merged).length === 0 ? undefined : merged } }, ...notices];
+};
+
 export const mergeFile = (file: SyncedFile, sides: FileSides) => {
-  const decided = file.keys.map((key) => {
-    const baseline = keyValue(sides.baseline, key);
-    const volume = keyValue(sides.volume, key);
-    const host = keyValue(sides.host, key);
-
-    if (isDeepStrictEqual(volume, baseline) || isDeepStrictEqual(host, volume)) {
-      return {};
-    }
-
-    if (!isAccepted(file, key, volume)) {
-      return { notice: `${file.name}: ${key} in the sandbox is not a valid value; not written back` };
-    }
-
-    return isDeepStrictEqual(host, baseline)
-      ? { change: { key, from: host, to: volume } }
-      : { notice: `${file.name}: ${key} changed on the host and in the sandbox; kept the host value` };
-  });
+  const decided = file.keys.flatMap((key) =>
+    file.entryMerged?.includes(key) ? decideEntries(file, key, sides) : [decideKey(file, key, sides)],
+  );
 
   return {
     changes: decided.flatMap((entry) => (entry.change === undefined ? [] : [entry.change])),
@@ -220,12 +314,6 @@ export const applyChanges = (host: JsonObject, changes: readonly KeyChange[]): J
     .map((change) => [change.key, change.to]);
 
   return { ...kept, ...Object.fromEntries(updates) };
-};
-
-const isControl = (char: string) => {
-  const code = char.codePointAt(0) ?? 0;
-
-  return code < PRINTABLE_FROM || (code >= C1_FROM && code <= C1_TO) || BIDI_CONTROL.test(char);
 };
 
 const printable = (text: string) =>

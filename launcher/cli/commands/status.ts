@@ -7,6 +7,7 @@ import { LauncherError } from "../../shared/index.ts";
 import { type LaunchContext, openContext } from "../context.ts";
 import { type CliDeps, reachableBackend, writeLines } from "../deps.ts";
 import { launcherVersion } from "../versions.ts";
+import { installStatusLine } from "./doctor-install.ts";
 import { grantLines } from "./egress.ts";
 
 const sessionDirLine = (label: string | undefined) => {
@@ -94,6 +95,7 @@ export const statusCommand = async (deps: CliDeps) => {
   const { context } = await openContext(deps, "host", { overlays: true });
   const lines = [
     `launcher: ${await launcherVersion()}`,
+    await installStatusLine(deps),
     `${context.workspace.isGitRepo ? "repo" : "workspace"}: ${context.workspace.repoRoot}`,
     ...(await runtimeLines(deps, context)),
     ...(await proxyLines(deps, context)),

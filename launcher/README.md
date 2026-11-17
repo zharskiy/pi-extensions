@@ -2,7 +2,7 @@
 
 Run the pi coding agent on your Mac as you always do, with the agent kept in a sandbox.
 
-Part of [pi-extensions](../README.md).
+Part of [pinata](../README.md) (`@zharskiy/pinata`).
 
 ## What it does
 
@@ -37,9 +37,11 @@ You need:
 
 ```bash
 curl -fsSL https://pi.dev/install.sh | sh
-npm install -g --omit=peer pi-extensions-mz
-"$(npm root -g)/pi-extensions-mz/launcher/install.sh"
+npm install -g --omit=peer @zharskiy/pinata
+"$(npm root -g)/@zharskiy/pinata/launcher/install.sh"
 ```
+
+The [one-step installer](../README.md#quick-start) runs these steps for you and installs the extensions into pi too. To pin a release here, name it: `@zharskiy/pinata@0.5.0`. <!-- x-release-please-version -->
 
 Without the managed install, `install.sh` stops before it changes anything and says to install pi this way and run it again.
 
@@ -53,13 +55,23 @@ The VM gets this Mac's CPU count, from 2 to 8, and half its memory, from 4 to 10
 colima stop --profile pi-sandbox && colima start --profile pi-sandbox --activate=false --cpu 4 --memory 8
 ```
 
+### Install options
+
+An organisation rolls this out with one command; see [INSTALL.md](../INSTALL.md). The options it uses work here too:
+
+- `--with-extensions` also installs this package's pi extensions into host pi, as `npm:@zharskiy/pinata@<version>`, and moves an earlier source of them to that one. `--extensions-source SPEC` installs another `npm:` or `git:` source instead. `--no-extensions` wins over both. A checkout has no default source and skips the step with a notice.
+- `--config FILE` installs an organisation's `config.json`. It is checked first, and a rejected file stops the install with exit 78 before anything changes. Later runs update it while you have not edited it; once you have, yours stays and the organisation's file goes to `config.proposed.json` beside it. `--config-conflict replace` replaces yours instead (the old one goes to `config.json.bak`), `--config-conflict fail` stops.
+- `--no-smoke` skips the smoke check. `--dry-run` checks everything and prints the plan without changing anything. `--version` prints the version and the installer api.
+
+The script records what it installed in `~/.pi/agent/pi-sandbox/state/install.json`. `pi sandbox status` shows it on one line, and the doctor's `install` check warns when the launcher, the extensions and that record disagree, or when `config.proposed.json` waits for you. Every failure names its step and exits with a fixed code, listed in [INSTALL.md](../INSTALL.md#exit-codes).
+
 ### Limit what the VM can see
 
 Without roots, the VM shares your whole home, writable, so a container escape reaches all of `~`. Name your project folders at install instead:
 
 ```bash
-"$(npm root -g)/pi-extensions-mz/launcher/install.sh" --root ~/Projects --root /Volumes/Work
-PI_SANDBOX_ROOTS="$HOME/Projects:/Volumes/Work" "$(npm root -g)/pi-extensions-mz/launcher/install.sh"
+"$(npm root -g)/@zharskiy/pinata/launcher/install.sh" --root ~/Projects --root /Volumes/Work
+PI_SANDBOX_ROOTS="$HOME/Projects:/Volumes/Work" "$(npm root -g)/@zharskiy/pinata/launcher/install.sh"
 ```
 
 `--root` wins over `PI_SANDBOX_ROOTS`. The script writes the roots to `workspaceRoots` in `~/.pi/agent/pi-sandbox/config.json`, and the VM then shares only these folders (writable), pi's session folder `~/.pi/agent/sessions` (writable) and the launcher's `state/vm` folder (read-only, the rendered files and the trust bundle). Pi then starts only inside a root. `--root ""` is refused. If `config.json` exists, the install goes ahead only when its `workspaceRoots` name the same folders (order, a trailing `/` and `~` against the full path do not matter); otherwise, also when it has no `workspaceRoots`, the install stops and leaves it as it is: edit `workspaceRoots` there, or install without `--root`. When the VM does not share the first root yet, the smoke check runs only the host checks and says the sandbox part runs at the first pi launch. A VM created earlier keeps its shares until the first pi launch, which restarts it with the new ones. See [Workspace roots](CONFIGURATION.md#workspace-roots).
@@ -135,7 +147,7 @@ In the table, *host pi* is pi's managed install on your Mac. A *grant* is a host
 
 `pi uninstall <source>` also runs with host pi on the host. Host pi loads no extension for `pi --help` and `pi --list-models`, so help omits the flags extensions register and the list omits providers only an extension registers; `pi list`, `pi mcp list` and `pi config -l` run in the sandbox, and `pi --version` asks pi inside when `image.reference` and `image.digest` pin the image. `egress allow` uses port 443 unless you name one, and refuses wildcards, IP addresses and port 80 ([rules](CONFIGURATION.md#network-access)).
 
-`pi update` runs the managed install's own update from an empty folder, and the next launch rebuilds the image. A local path as the source (`./ext`, `~/ext`) is made absolute against your folder first. Every other `pi update` form (`--all`, `--extensions`, `--extension <source>`, `<source>`, `--models`, `--force`) runs host pi from an empty folder, so it updates the host's packages and the host pi, never a copy inside the sandbox; when the target includes pi itself it names the pi version the sandbox follows. Without a managed install it says how to get one. To update the launcher itself, run `npm install -g --omit=peer pi-extensions-mz` (or `git pull` in a checkout).
+`pi update` runs the managed install's own update from an empty folder, and the next launch rebuilds the image. A local path as the source (`./ext`, `~/ext`) is made absolute against your folder first. Every other `pi update` form (`--all`, `--extensions`, `--extension <source>`, `<source>`, `--models`, `--force`) runs host pi from an empty folder, so it updates the host's packages and the host pi, never a copy inside the sandbox; when the target includes pi itself it names the pi version the sandbox follows. Without a managed install it says how to get one. To update the launcher itself after a one-step or an organisation install, run the install command again with the new release (or your company's install command): it moves the launcher, the extensions pin and the config together. After the manual install above, run `npm install -g --omit=peer @zharskiy/pinata` (or `git pull` in a checkout).
 
 After a reboot or `pi sandbox stop`, the next `pi` starts the VM again. A failure prints `pi-sandbox: <message>`, often with a `hint:` line.
 
@@ -220,9 +232,11 @@ Start with `pi sandbox doctor`, which names the failing check.
 Exit every pi session, then run the script from where you installed:
 
 ```bash
-"$(npm root -g)/pi-extensions-mz/launcher/uninstall.sh"   # npm install
+"$(npm root -g)/@zharskiy/pinata/launcher/uninstall.sh"   # npm install
 launcher/uninstall.sh                                     # checkout
 ```
+
+`uninstall.sh --with-extensions` also removes the extensions that `install.sh` installed into host pi.
 
 It deletes the `pi-sandbox` Colima profile, the launcher's state (`~/.pi/agent/pi-sandbox/state`), the `pi` link, the npm package and the `PATH` lines. It restores pi's managed link if `install.sh` replaced it.
 

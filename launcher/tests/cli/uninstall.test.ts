@@ -26,7 +26,7 @@ import {
   stateLayout,
 } from "../../shared/index.ts";
 import { tempDir } from "../support/temp-dir.ts";
-import { createFakeBackend, createHarness, holdLaunch, unreachable } from "./harness.ts";
+import { createFakeBackend, createHarness, holdLaunch, unreachable, writeManagedPi } from "./harness.ts";
 
 const created: string[] = [];
 
@@ -80,8 +80,13 @@ const uninstallRoot = async (): Promise<Root> => {
   return { root, home, stateDir: join(root, "state"), tools };
 };
 
-const runUninstall = async (paths: Root, env: Record<string, string> = {}, script = launcherRoot()) => {
-  const child = spawn("sh", [join(script, "uninstall.sh")], {
+const runUninstall = async (
+  paths: Root,
+  env: Record<string, string> = {},
+  script = launcherRoot(),
+  args: string[] = [],
+) => {
+  const child = spawn("sh", [join(script, "uninstall.sh"), ...args], {
     env: {
       HOME: paths.home,
       PATH: `${paths.tools}:${dirname(process.execPath)}:/usr/bin:/bin`,
@@ -304,7 +309,7 @@ describe("uninstall.sh", { timeout: UNINSTALL_TIMEOUT_MS }, () => {
 
     await mkdir(paths.stateDir, { recursive: true });
 
-    await symlink("../lib/node_modules/pi-extensions-mz/launcher/bin/pi-sandbox", shim);
+    await symlink("../lib/node_modules/@zharskiy/pinata/launcher/bin/pi-sandbox", shim);
 
     const result = await runUninstall(paths, {}, copy);
 
@@ -388,7 +393,7 @@ describe("uninstall.sh", { timeout: UNINSTALL_TIMEOUT_MS }, () => {
 
     await writeFile(record, "../../.pi/agent/bin/pi\n");
 
-    await symlink("../lib/node_modules/pi-extensions-mz/launcher/bin/pi-sandbox", shim);
+    await symlink("../lib/node_modules/@zharskiy/pinata/launcher/bin/pi-sandbox", shim);
 
     const restored = await runUninstall(paths);
 
@@ -442,7 +447,93 @@ describe("uninstall.sh", { timeout: UNINSTALL_TIMEOUT_MS }, () => {
     expect(result.stdout).toContain("left as it is");
   });
 
-  it("takes no options", async () => {
+  const RECORDING_PI = 'printf "%s\\n" "$PI_CODING_AGENT_DIR $*" >> "$HOME/pi.log"';
+
+  const withReceipt = async (paths: Root, source: string) => {
+    await mkdir(paths.stateDir, { recursive: true });
+
+    await writeFile(
+      join(paths.stateDir, "install.json"),
+      JSON.stringify({ schemaVersion: 1, extensions: { source }, future: true }),
+    );
+  };
+
+  it("removes the extensions the receipt names from host pi before it removes the state, with --with-extensions", async () => {
+    const paths = await uninstallRoot();
+    const agentDir = join(paths.home, ".pi", "agent");
+
+    await writeManagedPi(agentDir, "1.6.0", { wrapper: () => RECORDING_PI });
+
+    await withReceipt(paths, "npm:@zharskiy/pinata@0.4.0");
+
+    const result = await runUninstall(paths, {}, launcherRoot(), ["--with-extensions"]);
+
+    expect(result.status).toBe(0);
+    expect(await readFile(join(paths.home, "pi.log"), "utf8")).toBe(
+      `${agentDir} remove npm:@zharskiy/pinata@0.4.0\n`,
+    );
+    expect(result.stdout).toContain("removed npm:@zharskiy/pinata@0.4.0 from host pi\n");
+    expect(await exists(paths.stateDir)).toBe(false);
+  });
+
+  it("leaves host pi's packages alone without --with-extensions, and says so when no receipt names a source", async () => {
+    const paths = await uninstallRoot();
+    const agentDir = join(paths.home, ".pi", "agent");
+
+    await writeManagedPi(agentDir, "1.6.0", { wrapper: () => RECORDING_PI });
+
+    await withReceipt(paths, "npm:@zharskiy/pinata@0.4.0");
+
+    expect((await runUninstall(paths)).status).toBe(0);
+    expect(await exists(join(paths.home, "pi.log"))).toBe(false);
+
+    const again = await runUninstall(paths, {}, launcherRoot(), ["--with-extensions"]);
+
+    expect(again.status).toBe(0);
+    expect(again.stdout).toContain("no install receipt names an extensions source, nothing removed\n");
+    expect(await exists(join(paths.home, "pi.log"))).toBe(false);
+  });
+
+  it("removes everything else and fails at the end when pi remove fails", async () => {
+    const paths = await uninstallRoot();
+    const agentDir = join(paths.home, ".pi", "agent");
+
+    await writeManagedPi(agentDir, "1.6.0", { wrapper: () => "exit 4" });
+
+    await withReceipt(paths, "npm:@zharskiy/pinata@0.4.0");
+
+    const result = await runUninstall(paths, {}, launcherRoot(), ["--with-extensions"]);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("pi-sandbox: pi remove npm:@zharskiy/pinata@0.4.0 failed (exit 4)\n");
+    expect(result.stderr).toContain("pi-sandbox uninstall: the extensions could not be removed from host pi");
+    expect(await exists(paths.stateDir)).toBe(false);
+  });
+
+  it("uninstalls the global package and its pre-release name", async () => {
+    const paths = await uninstallRoot();
+
+    await writeFile(
+      join(paths.tools, "npm"),
+      '#!/bin/sh\necho "npm $*" >> "$HOME/npm.log"\ncase "$1" in ls|uninstall) exit 0 ;; esac\nexit 1\n',
+    );
+
+    const result = await runUninstall(paths);
+
+    expect(result.status).toBe(0);
+    expect(await readFile(join(paths.home, "npm.log"), "utf8")).toBe(
+      [
+        "npm ls -g @zharskiy/pinata",
+        "npm uninstall -g @zharskiy/pinata",
+        "npm ls -g pi-extensions-mz",
+        "npm uninstall -g pi-extensions-mz",
+        "",
+      ].join("\n"),
+    );
+    expect(result.stdout).toContain("package: uninstalled the global pi-extensions-mz, the pre-release name");
+  });
+
+  it("takes only --with-extensions", async () => {
     const paths = await uninstallRoot();
     const result = await runUninstall(paths, {}, launcherRoot());
     const keepVm = await new Promise<number | null>((resolve) => {

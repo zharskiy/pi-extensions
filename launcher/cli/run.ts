@@ -1,12 +1,16 @@
 import { errorMessage, LauncherError } from "../shared/index.ts";
+import { BUSY, busyCommand } from "./commands/busy.ts";
 import { configCommand, JSON_FLAG } from "./commands/config.ts";
 import { doctorCommand } from "./commands/doctor.ts";
 import { VERBOSE_FLAG } from "./commands/doctor-checks.ts";
 import { egressCommand } from "./commands/egress.ts";
+import { EXTENSIONS, extensionsCommand } from "./commands/extensions.ts";
 import { helpCommand, usageOf } from "./commands/help.ts";
 import { INIT_CONFIG, initConfigCommand } from "./commands/init-config.ts";
 import { assertOptions } from "./commands/options.ts";
+import { RECEIPT, receiptCommand } from "./commands/receipt.ts";
 import { resetCommand } from "./commands/reset.ts";
+import { SEED_CONFIG, seedConfigCommand } from "./commands/seed-config.ts";
 import { statusCommand } from "./commands/status.ts";
 import { stopCommand } from "./commands/stop.ts";
 import { UNINSTALL, uninstallCommand } from "./commands/uninstall.ts";
@@ -44,6 +48,13 @@ const COMMANDS: Record<string, Command> = {
 };
 
 const HELP_FLAGS = ["-h", "--help"];
+
+const INSTALL_STEPS: Record<string, Command["run"]> = {
+  [BUSY]: busyCommand,
+  [SEED_CONFIG]: seedConfigCommand,
+  [EXTENSIONS]: extensionsCommand,
+  [RECEIPT]: receiptCommand,
+};
 
 const sandbox = (deps: CliDeps, [name = "help", ...args]: string[]) => {
   const command = Object.hasOwn(COMMANDS, name) ? COMMANDS[name] : undefined;
@@ -84,6 +95,13 @@ const route = async (argv: string[], deps: CliDeps) => {
 
   if (first === INIT_CONFIG) {
     return initConfigCommand(deps, rest);
+  }
+
+  const installStep =
+    first !== undefined && Object.hasOwn(INSTALL_STEPS, first) ? INSTALL_STEPS[first] : undefined;
+
+  if (installStep !== undefined) {
+    return installStep(deps, rest);
   }
 
   const intercepted = argv.includes("--no-sandbox") ? undefined : await intercept(argv, deps);

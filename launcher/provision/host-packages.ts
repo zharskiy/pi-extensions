@@ -243,6 +243,28 @@ const gitPin = async (source: string, hostAgentDir: string) => {
     : { pin: { identity, value: `${UNPINNED_PREFIX}${git.head}`, guestDir } };
 };
 
+const npmIdentity = (source: string) => {
+  const name = NPM_SPEC.exec(source.slice("npm:".length).trim())?.[1];
+
+  return name !== undefined && NPM_NAME.test(name) ? `npm:${name}` : undefined;
+};
+
+const gitIdentity = (source: string) => {
+  const shorthand = source.startsWith("git:") && !source.startsWith("git://");
+  const url = source.slice(shorthand ? "git:".length : 0).trim();
+
+  if (!shorthand && !GIT_PROTOCOL.test(url)) {
+    return undefined;
+  }
+
+  const location = gitLocation(url);
+
+  return location === undefined ? undefined : `git:${location.host.toLowerCase()}/${location.path}`;
+};
+
+export const packageIdentity = (source: string) =>
+  source.startsWith("npm:") ? npmIdentity(source) : gitIdentity(source);
+
 const pinOf = (source: string, hostAgentDir: string) =>
   source.startsWith("npm:") ? npmPin(source, hostAgentDir) : gitPin(source, hostAgentDir);
 

@@ -27,6 +27,7 @@ import {
   skipped,
   warned,
 } from "./doctor-checks.ts";
+import { checkInstall } from "./doctor-install.ts";
 
 const CONNECT_TIMEOUT_MS = 3000;
 
@@ -227,6 +228,7 @@ export const hostChecks = async (deps: CliDeps, context: LaunchContext): Promise
   const [legacy, checks, signIns] = await Promise.all([
     legacyChecks(deps),
     Promise.all([
+      named("install", "host", checkInstall(deps)),
       named("host pi", "host", checkHostPi(deps, context, pi)),
       named("provider hosts", "host", checkProviderHosts(deps, context, pi)),
       named("parent proxy", "network", checkParentProxy(deps)),

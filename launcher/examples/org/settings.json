@@ -1,0 +1,5 @@
+{
+  "selfUpdateCommand": ["/usr/local/libexec/example-corp/company-update.sh", "{version}"],
+  "collapseChangelog": false,
+  "quietStartup": false
+}

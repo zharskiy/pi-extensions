@@ -114,8 +114,11 @@ const guestBackend = async (probes: Probes, vm?: Partial<Vm>) => {
 const RESIZE =
   "colima stop --profile pi-sandbox && colima start --profile pi-sandbox --activate=false --cpu 8 --memory 10";
 
+const NO_RECEIPT = "  skip  install           installed without a receipt";
+
 const hostSection = async (prepared: boolean) => [
   "host",
+  NO_RECEIPT,
   `  ok    host pi           pi ${await testedPiVersion()}, managed install ~/.pi/agent/bin/pi; the image follows it`,
   "  ok    provider hosts    1 built-in providers with known hosts",
   expect.stringMatching(/^ {2}ok {4}sessions {10}~\/\.pi\/agent\/sessions\/--.+-repo-- \(host pi lists them/),
@@ -211,7 +214,7 @@ describe("pi sandbox doctor", () => {
       "  ok    mcp-auth sweep    no mcp-auth.json in the sandbox yet",
       "  ok    settings sweep    no settings.json package carries a credential in its URL",
       "",
-      "result: ok (18 ok, 4 skipped)",
+      "result: ok (18 ok, 5 skipped)",
       "",
     ]);
     expect(harness.stderr()).toBe("");
@@ -254,7 +257,7 @@ describe("pi sandbox doctor", () => {
       detail: "https://models.example.test/ answered HTTP 200",
     });
     expect(check(verbose.stdout, "rules")).toBeUndefined();
-    expect(plain.report.result).toBe("ok (20 ok, 3 skipped)");
+    expect(plain.report.result).toBe("ok (20 ok, 4 skipped)");
     expect(verbose.report.result).toBe(plain.report.result);
   });
 
@@ -717,7 +720,7 @@ describe("pi sandbox doctor", () => {
       NO_PARENT,
       NOT_INSPECTED,
       "",
-      "result: fail (1 failed, 4 ok, 3 skipped)",
+      "result: fail (1 failed, 4 ok, 4 skipped)",
       "",
     ]);
     expect(harness.stderr()).toBe("");
@@ -790,7 +793,7 @@ describe("pi sandbox doctor", () => {
       NO_PARENT,
       NOT_INSPECTED,
       "",
-      "result: fail (1 failed, 7 ok, 3 skipped)",
+      "result: fail (1 failed, 7 ok, 4 skipped)",
       "",
     ]);
   });
@@ -854,7 +857,7 @@ describe("pi sandbox doctor", () => {
       expect(stdout).toContain("\u001b[32mok\u001b[0m    host pi ");
       expect(stdout).toContain("\u001b[36mhint:\u001b[0m run launcher/install.sh");
       expect(stdout).toContain("result: \u001b[1;31mfail\u001b[0m (");
-      expect(doctorReport(stripVTControlCharacters(stdout)).result).toBe("fail (1 failed, 4 ok, 3 skipped)");
+      expect(doctorReport(stripVTControlCharacters(stdout)).result).toBe("fail (1 failed, 4 ok, 4 skipped)");
       expect(harness.stderr().startsWith("\r\u001b[2Kpi sandbox doctor: preparing the sandbox")).toBe(true);
       expect(harness.stderr().endsWith("\r\u001b[2K")).toBe(true);
       expect(harness.stderr()).not.toContain("\n");
@@ -867,8 +870,8 @@ describe("pi sandbox doctor", () => {
       const outputs = runs.map((harness) => harness.stdout());
 
       expect(outputs.map((stdout) => doctorReport(stdout).result)).toEqual([
-        "fail (1 failed, 4 ok, 3 skipped)",
-        "fail (1 failed, 4 ok, 3 skipped)",
+        "fail (1 failed, 4 ok, 4 skipped)",
+        "fail (1 failed, 4 ok, 4 skipped)",
       ]);
       expect(outputs.filter((stdout) => stdout.includes("\u001b["))).toEqual([]);
       expect(runs[1]?.stderr()).toBe("");

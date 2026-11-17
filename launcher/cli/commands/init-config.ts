@@ -10,7 +10,7 @@ const CONFIG_MODE = 0o600;
 
 const isHomeForm = (root: string) => root === "~" || root.startsWith("~/");
 
-const storedRoot = (deps: CliDeps, root: string) =>
+export const storedRoot = (deps: CliDeps, root: string) =>
   isAbsolute(root) || isHomeForm(root) ? root : resolve(deps.cwd, root);
 
 const rootsIn = (config: unknown) => {
@@ -29,6 +29,32 @@ const sharedSet = (deps: CliDeps, roots: string[]) => {
 const existsError = (userConfigFile: string) =>
   new LauncherError(`${userConfigFile} exists; set workspaceRoots in it, or install without --root`);
 
+const assertMatching = async (deps: CliDeps, userConfigFile: string, wanted: string[]) => {
+  const existing = rootsIn(await readJsonFile<unknown>(userConfigFile));
+
+  if (existing === undefined || !isDeepStrictEqual(sharedSet(deps, existing), wanted)) {
+    throw existsError(userConfigFile);
+  }
+};
+
+export const plannedRootsOutcome = async (
+  deps: CliDeps,
+  args: string[],
+): Promise<"created" | "unchanged"> => {
+  const roots = args.map((root) => storedRoot(deps, root));
+  const { userConfigFile } = pathsOf(deps);
+  const wanted = sharedSet(deps, roots);
+  const current = await readJsonFile<unknown>(userConfigFile);
+
+  if (current === undefined) {
+    return "created";
+  }
+
+  await assertMatching(deps, userConfigFile, wanted);
+
+  return "unchanged";
+};
+
 export const initConfigCommand = async (deps: CliDeps, args: string[]) => {
   if (args.length === 0) {
     throw new LauncherError(`${INIT_CONFIG} needs at least one root`);
@@ -43,11 +69,7 @@ export const initConfigCommand = async (deps: CliDeps, args: string[]) => {
     return 0;
   }
 
-  const existing = rootsIn(await readJsonFile<unknown>(userConfigFile));
+  await assertMatching(deps, userConfigFile, wanted);
 
-  if (existing !== undefined && isDeepStrictEqual(sharedSet(deps, existing), wanted)) {
-    return 0;
-  }
-
-  throw existsError(userConfigFile);
+  return 0;
 };
