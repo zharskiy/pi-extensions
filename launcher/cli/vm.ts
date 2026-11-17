@@ -100,7 +100,7 @@ const assertApart = (shares: VmShare[]) => {
 
   if (pair !== undefined) {
     throw new LauncherError(
-      `config: workspaceRoots: the sandbox VM shares ${pair[0].location} and ${pair[1].location}, which nest, and colima refuses nested shares`,
+      `config: workspaceRoots: the sandbox VM shares ${pair[0].location} and ${pair[1].location}, which nest, and the launcher never passes the VM a share inside another one`,
       "keep <agent dir>/sessions and the launcher state dir outside every workspace root, and the roots apart from each other",
     );
   }

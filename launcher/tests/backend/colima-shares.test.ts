@@ -755,7 +755,7 @@ describe("the VM shares with workspaceRoots set, at the edges", () => {
 
     expect(await run0(context)).toBe(1);
     expect(context.harness.stderr()).toContain(
-      `pi-sandbox: config: workspaceRoots: the sandbox VM shares ${repoRoot} and ${store}, which nest`,
+      `pi-sandbox: config: workspaceRoots: the sandbox VM shares ${repoRoot} and ${store}, which nest, and the launcher never passes the VM a share inside another one\n`,
     );
     expect(context.colimaCalls()).toEqual([]);
   });
