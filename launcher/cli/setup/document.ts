@@ -1,4 +1,4 @@
-import { lstat, mkdir, readlink, realpath, stat } from "node:fs/promises";
+import { lstat, mkdir, readFile, readlink, realpath, stat } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import type { VmSpec } from "../../backend/index.ts";
@@ -8,7 +8,6 @@ import {
   isJsonObject,
   type JsonObject,
   LauncherError,
-  readText,
   writeFileAtomic,
 } from "../../shared/index.ts";
 import type { Change, ConfigDocument, DocumentRead, Section } from "./types.ts";
@@ -28,6 +27,10 @@ const BYTE_ORDER_MARK = "\uFEFF";
 const BOM_MESSAGE = "the file starts with a byte-order mark (BOM); save it as UTF-8 without one";
 
 const WRITE_CODE = /\b(EACCES|EPERM|EROFS|ENOSPC)\b/;
+
+const PATH_SUFFIX = /, \w+ '[^']*'( -> '[^']*')?$/;
+
+const LEADING_PATH = /^\/[^:]*: /;
 
 const WRITE_REASONS: Record<string, { reason: string; hint: string }> = {
   EACCES: {
@@ -194,19 +197,41 @@ const targetOf = async (file: string) => {
   return target;
 };
 
-const saveError = (file: string, target: string, error: unknown) => {
-  const message = errorMessage(error);
-  const known = WRITE_REASONS[WRITE_CODE.exec(message)?.[1] ?? ""];
+const reasonOf = (error: unknown) => errorMessage(error).replace(LEADING_PATH, "").replace(PATH_SUFFIX, "");
+
+const currentText = async (file: string) => {
+  try {
+    return await readFile(file, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return undefined;
+    }
+
+    throw error;
+  }
+};
+
+export const readConfigText = (file: string) =>
+  currentText(file).catch((error: unknown) => {
+    throw new LauncherError(`could not read ${file}: ${reasonOf(error)}`);
+  });
+
+const saveError = (file: string, error: unknown) => {
+  const known = WRITE_REASONS[WRITE_CODE.exec(errorMessage(error))?.[1] ?? ""];
 
   if (known !== undefined) {
     return new LauncherError(`could not save ${file}: ${known.reason}`, known.hint);
   }
 
-  return new LauncherError(`could not save ${file}: ${message.replace(`${target}: `, "")}`);
+  return new LauncherError(`could not save ${file}: ${reasonOf(error)}`);
 };
 
 export const writeDocument = async (document: ConfigDocument, text: string) => {
-  if ((await readText(document.file)) !== document.text) {
+  const current = await currentText(document.file).catch((error: unknown) => {
+    throw new LauncherError(`could not save ${document.file}: could not read it: ${reasonOf(error)}`);
+  });
+
+  if (current !== document.text) {
     throw new LauncherError(
       `could not save ${document.file}: the file changed while setup ran`,
       "run pi sandbox init again to see the new content",
@@ -221,6 +246,6 @@ export const writeDocument = async (document: ConfigDocument, text: string) => {
 
     await writeFileAtomic(target, text, { mode });
   } catch (error) {
-    throw saveError(document.file, target, error);
+    throw saveError(document.file, error);
   }
 };

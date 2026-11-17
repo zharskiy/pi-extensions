@@ -27,8 +27,6 @@ import type {
 
 const VM_TITLE = "Sandbox VM";
 
-const SAVE_PREFIX = /^could not save [^:]*: /;
-
 const PROBLEMS = new Set<ApplyEvent["kind"]>([
   "save-failed",
   "nothing-changed",
@@ -53,8 +51,9 @@ const sectionNote = (io: SetupIo, lines: Paragraph[]) => {
   noteOf(io, [VM_TITLE, ...lines, ""], "step");
 };
 
-const reasonOf = (error: unknown) => {
-  const message = errorMessage(error).replace(SAVE_PREFIX, "");
+const reasonOf = (error: unknown, prefix = "") => {
+  const full = errorMessage(error);
+  const message = full.startsWith(prefix) ? full.slice(prefix.length) : full;
   const hint = error instanceof LauncherError && error.hint !== undefined ? `; ${error.hint}` : "";
 
   return `${message}${hint}`;
@@ -173,7 +172,7 @@ const savePlan = async (
   try {
     await effects.write(document, plan.text);
   } catch (error) {
-    front.report({ kind: "save-failed", reason: reasonOf(error) });
+    front.report({ kind: "save-failed", reason: reasonOf(error, `could not save ${document.file}: `) });
 
     front.report({ kind: "nothing-changed" });
 

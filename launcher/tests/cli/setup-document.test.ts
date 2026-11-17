@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   diffOf,
   isReindented,
+  readConfigText,
   readDocument,
   serialise,
   withoutOwned,
@@ -286,6 +287,29 @@ describe("writing the config document", () => {
     await chmod(join(file, ".."), 0o700);
 
     expect(failure?.message).toBe(`could not save ${file}: its folder is not writable`);
+  });
+
+  it("names an unreadable config once when reading it and when saving over it", async () => {
+    const { file } = await fileIn();
+
+    await mkdir(join(file, ".."), { recursive: true });
+
+    await writeFile(file, "{}\n");
+
+    await chmod(file, 0o000);
+
+    const read = await readConfigText(file).then(
+      () => undefined,
+      (error: unknown) => error as Error,
+    );
+    const saved = await writeDocument({ ...documentOf("{}\n"), file }, "{}\n").catch(
+      (error: unknown) => error as Error,
+    );
+
+    await chmod(file, 0o600);
+
+    expect(read?.message).toBe(`could not read ${file}: EACCES: permission denied`);
+    expect(saved?.message).toBe(`could not save ${file}: could not read it: EACCES: permission denied`);
   });
 });
 

@@ -559,7 +559,7 @@ describe("the VM step", () => {
   it("reports a save failure and leaves the VM alone", async () => {
     const run = setup({
       write: async () => {
-        throw new Error("could not save x: the file changed while setup ran");
+        throw new Error(`could not save ${FILE}: the file changed while setup ran`);
       },
     });
 

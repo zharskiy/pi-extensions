@@ -3,7 +3,7 @@ import { statfs } from "node:fs/promises";
 import { join } from "node:path";
 import type { Backend, VmApplied } from "../../backend/index.ts";
 import { validateConfigFile } from "../../config/index.ts";
-import { errorMessage, LauncherError, launcherRoot, readText } from "../../shared/index.ts";
+import { errorMessage, LauncherError, launcherRoot } from "../../shared/index.ts";
 import { type CliDeps, pathsOf, writeNotices } from "../deps.ts";
 import { createPlainPrompts } from "../prompt/plain.ts";
 import { createRichPrompts } from "../prompt/rich.ts";
@@ -11,7 +11,7 @@ import { findTerminal, isSet, realTimers, withTerminal } from "../prompt/termina
 import type { Ui } from "../prompt/types.ts";
 import { applyPlan, lineFrontEnd } from "../setup/apply.ts";
 import { detectHost } from "../setup/detect.ts";
-import { readDocument, writeDocument } from "../setup/document.ts";
+import { readConfigText, readDocument, writeDocument } from "../setup/document.ts";
 import { runSetup, type SetupInput } from "../setup/flow.ts";
 import { answersForYes, configuredRoots, isFirstRun, planOf } from "../setup/plan.ts";
 import { createReview } from "../setup/review.ts";
@@ -45,7 +45,8 @@ const contextOf = (deps: CliDeps): SetupContext => {
   return { backend: deps.backend(), stateDir: paths.stateDir, configFile: paths.userConfigFile };
 };
 
-const readConfig = async (file: string): Promise<DocumentRead> => readDocument(file, await readText(file));
+const readConfig = async (file: string): Promise<DocumentRead> =>
+  readDocument(file, await readConfigText(file));
 
 const detectFor = (deps: CliDeps, context: SetupContext) => (document: ConfigDocument) =>
   detectHost({
