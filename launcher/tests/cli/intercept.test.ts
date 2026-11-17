@@ -191,6 +191,19 @@ describe("pi install and pi remove", () => {
     expect(hostPiRuns(harness)).toEqual([["install", ext]]);
   });
 
+  it("runs pi install, remove and uninstall against the host agent dir the launcher resolved", async () => {
+    const harness = await createHarness({ backend: noBackend });
+
+    expect(await run(["install", "npm:fresh"], harness.deps)).toBe(0);
+    expect(await run(["remove", "npm:old"], harness.deps)).toBe(0);
+    expect(await run(["uninstall", "npm:foo"], harness.deps)).toBe(0);
+    expect(harness.calls.filter((entry) => entry.interactive).map((entry) => entry.options.env)).toEqual([
+      { PI_CODING_AGENT_DIR: harness.hostAgentDir },
+      { PI_CODING_AGENT_DIR: harness.hostAgentDir },
+      { PI_CODING_AGENT_DIR: harness.hostAgentDir },
+    ]);
+  });
+
   it("runs pi uninstall on the host like remove and takes git:// URLs as git sources", async () => {
     const harness = await createHarness({ backend: noBackend });
 

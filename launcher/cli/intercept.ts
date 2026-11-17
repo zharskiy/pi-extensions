@@ -176,7 +176,7 @@ const packageCommand = async (deps: CliDeps, argv: string[], source: string) => 
 
   const args = argv.map((arg) => (arg === source && local !== undefined ? local.path : arg));
 
-  return runOnHost(deps, args, "empty");
+  return runOnHost(deps, args, "empty", hostPiEnv(deps));
 };
 
 const MCP_HOST_ACTIONS = new Set(["add", "remove", "login", "logout"]);
