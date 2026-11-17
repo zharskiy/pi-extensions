@@ -1,7 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { realpathSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
@@ -9,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import type { ExecIo, ExecSpec, TerminalSize } from "../../backend/index.ts";
 import { type HostTerminal, runPi } from "../../container/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
+import { tempDir } from "../support/temp-dir.ts";
 
 const workspace = {
   cwd: "/work/repo/src",
@@ -218,7 +218,7 @@ describe("runPi", () => {
   it("starts pi in the repository root with a notice when the cwd is hidden in the sandbox", async () => {
     const fake = createFakeBackend();
     const { terminal } = fakeTerminal(false);
-    const root = realpathSync(await mkdtemp(join(tmpdir(), "pi-sandbox-run-pi-")));
+    const root = realpathSync(await tempDir("run-pi"));
     const elsewhere = realpathSync(tmpdir());
 
     await runPi({
@@ -236,8 +236,6 @@ describe("runPi", () => {
       spawnSync("sh", ["-c", script, "sh", cwd, "pwd"], { cwd: root, encoding: "utf8" });
     const hidden = shell(join(root, "node_modules", "pkg"));
     const present = shell(elsewhere);
-
-    await rm(root, { recursive: true, force: true });
 
     expect(hidden.stdout.trim()).toBe(root);
     expect(hidden.stderr).toBe(

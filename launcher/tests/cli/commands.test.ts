@@ -4,11 +4,11 @@ import { describe, expect, it } from "vitest";
 import { LABELS } from "../../backend/index.ts";
 import { run } from "../../cli/index.ts";
 import { repoVolumes } from "../../container/index.ts";
-import { registerLaunch } from "../../grants/index.ts";
-import { launcherRoot, processMark, sha256Hex, stateLayout } from "../../shared/index.ts";
+import { launcherRoot, sha256Hex, stateLayout } from "../../shared/index.ts";
+import { registerLiveLaunch } from "../support/launches.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
 import { tempDir } from "../support/temp-dir.ts";
-import { createFakeBackend, createHarness, sweepNow, unreachable } from "./harness.ts";
+import { createFakeBackend, createHarness, holdLaunch, sweepNow, unreachable } from "./harness.ts";
 
 const packageVersion = async () =>
   (JSON.parse(await readFile(join(launcherRoot(), "..", "package.json"), "utf8")) as { version: string })
@@ -125,13 +125,7 @@ describe("pi sandbox status", () => {
   it("reports live launches and active grants of this repository", async () => {
     const harness = await createHarness();
 
-    await registerLaunch(harness.stateDir, {
-      ...(await processMark()),
-      launchId: "0123456789abcdef",
-      pid: process.pid,
-      repoHash: sha256Hex(harness.repoRoot),
-      startedAt: 1_700_000_000_000,
-    });
+    await holdLaunch(harness, { launchId: "0123456789abcdef", startedAt: 1_700_000_000_000 });
 
     await run(["sandbox", "egress", "allow", "docs.example.test"], harness.deps);
 
@@ -276,13 +270,7 @@ describe("the sweep and pi sandbox reset", () => {
     const harness = await createHarness({ backend: () => fake.backend });
     const repo = sha256Hex(harness.repoRoot);
 
-    await registerLaunch(harness.stateDir, {
-      ...(await processMark()),
-      launchId: "00000000000000bb",
-      pid: process.pid,
-      repoHash: repo,
-      startedAt: 1,
-    });
+    await registerLiveLaunch(harness.stateDir, repo, { launchId: "00000000000000bb" });
 
     const id = await orphanOf(fake, repo, "00000000000000bb");
 
@@ -371,11 +359,10 @@ describe("the sweep and pi sandbox reset", () => {
     const harness = await createHarness({ backend: () => fake.backend });
     const repo = sha256Hex(harness.repoRoot);
     const id = await orphanOf(fake, repo);
-    const launch = { ...(await processMark()), repoHash: repo, startedAt: 1 };
 
-    await registerLaunch(harness.stateDir, { ...launch, launchId: "00000000000000a1" });
+    await registerLiveLaunch(harness.stateDir, repo, { launchId: "00000000000000a1" });
 
-    await registerLaunch(harness.stateDir, { ...launch, launchId: "00000000000000a2" });
+    await registerLiveLaunch(harness.stateDir, repo, { launchId: "00000000000000a2" });
 
     expect(await run(["sandbox", "reset"], harness.deps)).toBe(1);
     expect(harness.stderr()).toContain(`2 sessions are running in ${harness.repoRoot}`);

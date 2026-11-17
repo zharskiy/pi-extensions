@@ -7,8 +7,7 @@ import { restartedShares, shareFor, sharesFor } from "../../backend/colima/share
 import { createColimaVm } from "../../backend/colima/vm.ts";
 import { type Backend, LABELS, type VmPath, type VmShare } from "../../backend/index.ts";
 import { run } from "../../cli/index.ts";
-import { registerLaunch } from "../../grants/index.ts";
-import { processMark, sha256Hex } from "../../shared/index.ts";
+import { sha256Hex } from "../../shared/index.ts";
 import {
   createHarness,
   doctorCheck,
@@ -18,6 +17,7 @@ import {
 } from "../cli/harness.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { argvOf, type FakeCall } from "../support/fake-runner.ts";
+import { registerLiveLaunch } from "../support/launches.ts";
 
 const PROFILE = { status: async () => ({ socket: "/fake/docker.sock", profile: "pi-sandbox" }) };
 
@@ -357,11 +357,8 @@ describe("the launch shares a repository the VM does not see", () => {
     const context = await launchWith();
     const { home, stateDir, repoRoot } = context.paths;
 
-    await registerLaunch(context.harness.stateDir, {
+    await registerLiveLaunch(context.harness.stateDir, sha256Hex("/elsewhere"), {
       launchId: "00000000000000dd",
-      ...(await processMark()),
-      repoHash: sha256Hex("/elsewhere"),
-      startedAt: 1,
     });
 
     expect(await run0(context)).toBe(1);
@@ -420,11 +417,8 @@ describe("the launch shares a repository the VM does not see", () => {
       lima: ({ home }) => [{ location: home, writable: true, mountPoint: "/mnt/home" }],
     });
 
-    await registerLaunch(context.harness.stateDir, {
+    await registerLiveLaunch(context.harness.stateDir, sha256Hex("/elsewhere"), {
       launchId: "00000000000000dd",
-      ...(await processMark()),
-      repoHash: sha256Hex("/elsewhere"),
-      startedAt: 1,
     });
 
     expect(await run0(context)).toBe(1);
@@ -540,12 +534,7 @@ const rootsLocations = ({ home, stateDir, repoRoot }: Paths) =>
 const rootsConfig = (...roots: string[]) => ({ workspaceRoots: { roots } });
 
 const holdOtherLaunch = async (stateDir: string) => {
-  await registerLaunch(stateDir, {
-    launchId: "00000000000000dd",
-    ...(await processMark()),
-    repoHash: sha256Hex("/elsewhere"),
-    startedAt: 1,
-  });
+  await registerLiveLaunch(stateDir, sha256Hex("/elsewhere"), { launchId: "00000000000000dd" });
 };
 
 const launchWithRoots = async (

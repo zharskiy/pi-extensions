@@ -6,9 +6,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { type ExecIo, type ExecSpec, LABELS, type Vm } from "../../backend/index.ts";
 import { run } from "../../cli/index.ts";
 import { testedPiVersion } from "../../cli/versions.ts";
-import { registerLaunch } from "../../grants/index.ts";
 import type { DenialRecord } from "../../proxy/index.ts";
-import { processMark, sha256Hex } from "../../shared/index.ts";
+import { sha256Hex } from "../../shared/index.ts";
 import { stdinOf } from "../support/fake-backend.ts";
 import {
   createFakeBackend,
@@ -16,6 +15,7 @@ import {
   type DoctorCheck,
   doctorCheck,
   doctorReport,
+  holdLaunch,
   noHostPiLine,
   unreachable,
   writeManagedPi,
@@ -587,13 +587,7 @@ describe("pi sandbox doctor", () => {
       },
     });
 
-    await registerLaunch(harness.stateDir, {
-      ...(await processMark()),
-      launchId: "00000000000000cc",
-      pid: process.pid,
-      repoHash: sha256Hex(harness.repoRoot),
-      startedAt: 1,
-    });
+    await holdLaunch(harness, { launchId: "00000000000000cc" });
 
     const other = fake.addContainer({
       name: "other-launch",

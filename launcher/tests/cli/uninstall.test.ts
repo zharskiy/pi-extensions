@@ -1,17 +1,6 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { once } from "node:events";
-import {
-  chmod,
-  mkdir,
-  mkdtemp,
-  readFile,
-  readlink,
-  realpath,
-  rm,
-  symlink,
-  writeFile,
-} from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { chmod, mkdir, readFile, readlink, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { LABELS } from "../../backend/index.ts";
@@ -27,16 +16,12 @@ import {
 import { exists, tempDir } from "../support/temp-dir.ts";
 import { createFakeBackend, createHarness, holdLaunch, unreachable } from "./harness.ts";
 
-const created: string[] = [];
-
 const children: ChildProcess[] = [];
 
 afterEach(async () => {
   children.splice(0).forEach((child) => {
     child.kill("SIGKILL");
   });
-
-  await Promise.all(created.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 });
 
 const UNINSTALL_TIMEOUT_MS = 30_000;
@@ -54,11 +39,9 @@ interface Root {
 }
 
 const uninstallRoot = async (): Promise<Root> => {
-  const root = await realpath(await mkdtemp(join(tmpdir(), "pi-sandbox-uninstall-")));
+  const root = await realpath(await tempDir("uninstall"));
   const home = join(root, "home");
   const tools = join(root, "tools");
-
-  created.push(root);
 
   await mkdir(join(home, ".local", "bin"), { recursive: true });
 
