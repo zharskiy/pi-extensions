@@ -295,7 +295,7 @@ shared/repo-state.ts           per-repository record files: repo.json with its m
 shared/regular-file.ts         safe reads of regular files
 shared/placeholder.ts          the placeholder format and the JWT shape
 shared/secret-name.ts          secret-looking names, auth-like headers, URL userinfo and credential-shaped values
-shared/pi-env.ts               pi variable names the launcher sets and pi's npm package name (PI_PACKAGE)
+shared/pi-env.ts               pi variable names the launcher sets, the fixed part of the sandbox env (FIXED_SANDBOX_ENV) and pi's npm package name (PI_PACKAGE)
 shared/mcp-auth-key.ts         host pi's mcp-auth.json parser, mcp-login.json under a file lock, and sign-in dirs
 shared/tool-config.ts          the tool config format dispatcher and the JSON pointer reader
 shared/npmrc.ts                the .npmrc parser and value reader

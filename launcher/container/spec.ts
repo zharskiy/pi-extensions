@@ -8,6 +8,7 @@ import {
 } from "../backend/index.ts";
 import type { SandboxConfig } from "../config/index.ts";
 import {
+  FIXED_SANDBOX_ENV,
   GUEST_PATHS,
   isLauncherSetVariable,
   isSecretShapedValue,
@@ -58,8 +59,6 @@ export interface ContainerSpecInput {
   hostSessions?: HostSessions;
   toolEnv?: Record<string, string>;
 }
-
-const GUEST_CA_BUNDLE = "/tmp/pi-sandbox/ca-bundle.pem";
 
 const SHARED_TMPFS = "mode=1777,exec";
 
@@ -197,17 +196,7 @@ const sandboxEnv = (input: ContainerSpecInput) => ({
   ...input.toolEnv,
   ...trustEnv(input),
   ...sessionsEnv(input),
-  SSL_CERT_FILE: GUEST_CA_BUNDLE,
-  CURL_CA_BUNDLE: GUEST_CA_BUNDLE,
-  REQUESTS_CA_BUNDLE: GUEST_CA_BUNDLE,
-  PIP_CERT: GUEST_CA_BUNDLE,
-  CARGO_HTTP_CAINFO: GUEST_CA_BUNDLE,
-  GIT_SSL_CAINFO: GUEST_CA_BUNDLE,
-  GIT_TERMINAL_PROMPT: "0",
-  PI_SANDBOX: "1",
-  PI_SKIP_VERSION_CHECK: "1",
-  PI_TELEMETRY: "0",
-  PI_CLIPBOARD_OSC52: "1",
+  ...FIXED_SANDBOX_ENV,
 });
 
 export const forwardedEnv = (
