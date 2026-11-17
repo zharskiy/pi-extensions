@@ -1,6 +1,13 @@
 import { stripVTControlCharacters } from "node:util";
 import { describe, expect, it } from "vitest";
-import { failed, type NamedCheck, passed, skipped, warned } from "../../cli/commands/doctor-checks.ts";
+import {
+  failed,
+  inLayout,
+  type NamedCheck,
+  passed,
+  skipped,
+  warned,
+} from "../../cli/commands/doctor-checks.ts";
 import { type ReportOptions, renderReport } from "../../cli/commands/doctor-report.ts";
 
 const HOME = "/Users/you";
@@ -138,6 +145,17 @@ describe("the doctor report", () => {
       "",
       "result: fail (1 failed, 1 ok, 1 skipped)",
     ]);
+  });
+
+  it("ranks the old policy check beside the other leftovers, before host pi", () => {
+    const checks = inLayout([
+      named("host", "host pi", passed("pi 1.0.0")),
+      named("host", "old state", warned("left over")),
+      named("host", "old policy", warned("left over")),
+      named("host", "user config", warned("left over")),
+    ]);
+
+    expect(checks.map((check) => check.name)).toEqual(["user config", "old policy", "old state", "host pi"]);
   });
 
   it("colours the words only, keeping the plain text and its alignment", () => {
