@@ -1,5 +1,12 @@
 import { readFile } from "node:fs/promises";
-import { errorMessage, LauncherError, lastLine, type RunResult, sha256Hex } from "../../shared/index.ts";
+import {
+  errorMessage,
+  LauncherError,
+  lastLine,
+  MINUTE_MS,
+  type RunResult,
+  sha256Hex,
+} from "../../shared/index.ts";
 import type { VmShareOptions } from "../types.ts";
 import { type Colima, deferredUntilIdle, logHint } from "./profile.ts";
 
@@ -18,7 +25,7 @@ const MARKER = `${MARKER_DIR}/extra.sha256`;
 
 const ENGINE_SERVICES = ["containerd.service", "docker.service"];
 
-const RESTART_TIMEOUT_MS = 60_000;
+const RESTART_TIMEOUT_MS = MINUTE_MS;
 
 const ENGINE_RESTART_DELAYS_MS = [0, ...Array.from({ length: 59 }, () => 1000)];
 

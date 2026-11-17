@@ -7,6 +7,7 @@ import {
 import { closeSync, openSync } from "node:fs";
 import {
   type McpLoginState,
+  MINUTE_MS,
   mcpAuthKey,
   mcpLoginCommand,
   PI_AGENT_DIR_VARIABLE,
@@ -41,11 +42,11 @@ export interface SignIn {
   close(): Promise<void>;
 }
 
-const START_COOLDOWN_MS = 60_000;
+const START_COOLDOWN_MS = MINUTE_MS;
 
-const FAILURE_COOLDOWN_MS = 10 * 60_000;
+const FAILURE_COOLDOWN_MS = 10 * MINUTE_MS;
 
-const REJECTED_COOLDOWN_MS = 10 * 60_000;
+const REJECTED_COOLDOWN_MS = 10 * MINUTE_MS;
 
 const since = (at: number | undefined, now: number, cooldownMs: number) =>
   at === undefined || now - at >= cooldownMs;

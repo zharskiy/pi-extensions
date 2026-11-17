@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import type { Socket } from "node:net";
 import type { Duplex } from "node:stream";
 import { createSecureContext, type SecureContext, TLSSocket } from "node:tls";
+import { MINUTE_MS } from "../shared/index.ts";
 import { boundedCache } from "./bounded-cache.ts";
 import { type RawHeader, rawResponse, sendReply, withAgent } from "./replies.ts";
 import type { LeafCertificate } from "./tls-ca.ts";
@@ -15,7 +16,7 @@ const MAX_NAMES = 256;
 
 const MINTS_PER_MINUTE = 30;
 
-const MINT_WINDOW_MS = 60_000;
+const MINT_WINDOW_MS = MINUTE_MS;
 
 const IDLE_MS = 10_000;
 

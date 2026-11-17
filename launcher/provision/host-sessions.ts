@@ -18,6 +18,7 @@ import {
   isMissing,
   isWithin,
   lstatOrUndefined,
+  MIB,
   PI_SESSION_DIR_VARIABLE,
   PRIVATE_DIR_MODE,
   PRIVATE_FILE_MODE,
@@ -48,13 +49,11 @@ interface Scan {
   scanned: number;
 }
 
-const HEADER_LIMIT = 1024 * 1024;
+const HEADER_LIMIT = MIB;
 
 const CHUNK_SIZE = 64 * 1024;
 
 const PARALLEL_FILES = 8;
-
-const MIB = 1024 * 1024;
 
 const LARGE_FILE_MIB = 256;
 

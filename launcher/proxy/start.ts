@@ -11,6 +11,7 @@ import {
   isLive,
   LauncherError,
   launcherEntry,
+  MIB,
   PRIVATE_DIR_MODE,
   PRIVATE_FILE_MODE,
   readJsonObject,
@@ -52,7 +53,7 @@ export interface RepoProxyStart {
   notices: string[];
 }
 
-export const PROXY_LOG_LIMIT = 5 * 1024 * 1024;
+export const PROXY_LOG_LIMIT = 5 * MIB;
 
 const START_TIMEOUT_MS = 10_000;
 

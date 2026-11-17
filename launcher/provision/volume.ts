@@ -1,7 +1,7 @@
 import { posix } from "node:path";
 import { type Backend, execCapture } from "../backend/index.ts";
 import type { JsonObject } from "../hostpi/index.ts";
-import { errorMessage, GUEST_PATHS, jsonText, LauncherError } from "../shared/index.ts";
+import { errorMessage, GUEST_PATHS, jsonText, LauncherError, MIB, MINUTE_MS } from "../shared/index.ts";
 import { parseVolumeText } from "./write-back.ts";
 
 export interface VolumeRead {
@@ -37,9 +37,9 @@ const NOT_REGULAR_EXIT = 4;
 
 const READ_TIMEOUT_MS = 5000;
 
-const REMOVE_TIMEOUT_MS = 60_000;
+const REMOVE_TIMEOUT_MS = MINUTE_MS;
 
-const CHECKED_FILE_BYTES = 1024 * 1024;
+const CHECKED_FILE_BYTES = MIB;
 
 const guestPath = (name: string) => posix.join(GUEST_PATHS.agentDir, name);
 
