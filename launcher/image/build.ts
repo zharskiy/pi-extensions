@@ -85,12 +85,14 @@ const inputsHash = async (input: EnsureImageInput) => {
   return stableHash({ pi: input.versions.pi, assets, proxyCa });
 };
 
+export const imageReference = (config: SandboxConfig) => config.image.reference ?? BASE_TAG;
+
 export const recordedImage = async (stateDir: string, config: SandboxConfig) => {
   const base = await readBaseRecord(stateDir);
-  const { reference = BASE_TAG, digest } = config.image;
+  const { digest } = config.image;
   const current = digest === undefined ? base?.inputsHash !== PINNED : base?.digest === digest;
 
-  return base === undefined || !current ? undefined : { reference, ...base };
+  return base === undefined || !current ? undefined : { reference: imageReference(config), ...base };
 };
 
 const reusableBuild = (backend: Backend, base: BaseRecord | undefined, hash: string) =>

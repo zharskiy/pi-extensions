@@ -5,7 +5,6 @@ import { overlayVolumes } from "../container/index.ts";
 import { isWithin, realOrResolved } from "../shared/index.ts";
 import { workspaceNotices } from "../workspace/index.ts";
 import type { LaunchContext } from "./context.ts";
-import type { SandboxProxy } from "./sandbox-proxy.ts";
 
 const CAPPED_NOTICE = "more than 512 build output directories; overlays disabled, the host copies are used";
 
@@ -40,7 +39,7 @@ export const launchNotices = (context: LaunchContext) => [
   ...overlayNotices(context),
 ];
 
-export const proxyDetail = (proxy: SandboxProxy) => `pid ${proxy.proxy.pid} port ${proxy.proxy.port}`;
+export const proxyDetail = (proxy: { pid: number; port: number }) => `pid ${proxy.pid} port ${proxy.port}`;
 
 const PATH_FLAGS = new Set(["--system-prompt", "--append-system-prompt", "--extension", "-e", "--session"]);
 

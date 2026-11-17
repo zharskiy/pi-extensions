@@ -286,7 +286,11 @@ const prepareSandbox = async (input: PreparedInput) => {
   await Promise.allSettled([...pending, ground]);
 
   const [proxy, image] = await settleAll([
-    staged("proxy", () => pending[0], proxyDetail),
+    staged(
+      "proxy",
+      () => pending[0],
+      (opened) => proxyDetail(opened.proxy),
+    ),
     staged(
       "image",
       () => pending[1],
