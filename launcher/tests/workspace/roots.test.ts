@@ -9,7 +9,8 @@ import {
   sharedRootsOf,
   type Workspace,
 } from "../../workspace/index.ts";
-import { tempDir } from "../support/temp-dir.ts";
+import { workspaceAt } from "../support/git.ts";
+import { realTempDir, tempDir } from "../support/temp-dir.ts";
 
 const createTree = async () => {
   const unresolved = await tempDir("roots");
@@ -20,13 +21,6 @@ const createTree = async () => {
 
   return { unresolved, base };
 };
-
-const workspaceAt = (repoRoot: string, gitCommonDir?: string): Workspace => ({
-  cwd: repoRoot,
-  repoRoot,
-  gitCommonDir,
-  isGitRepo: gitCommonDir !== undefined,
-});
 
 const NO_HOME = "/nonexistent-home";
 
@@ -104,7 +98,7 @@ describe("assertWithinWorkspaceRoots", () => {
 });
 
 const createHome = async () => {
-  const base = await realpath(await tempDir("shared-roots"));
+  const base = await realTempDir("shared-roots");
   const home = join(base, "home");
   const env = {
     PI_CODING_AGENT_DIR: join(home, ".pi", "agent"),
@@ -132,10 +126,25 @@ describe("sharedRootsOf", () => {
 
     expect(
       sharedRootsOf(
-        { roots: [join(base, "work", "a"), join(base, "work"), "~/code", join(base, "work")] },
+        {
+          roots: [
+            join(base, "work", "a"),
+            join(base, "work"),
+            "~/code",
+            join(base, "work"),
+            join(base, "work", "a"),
+          ],
+        },
         paths,
       ),
-    ).toEqual({ roots: [join(base, "work"), join(paths.home, "code")], missing: [], notices: [] });
+    ).toEqual({
+      roots: [join(base, "work"), join(paths.home, "code")],
+      missing: [],
+      nested: [
+        `workspaceRoots: ${join(base, "work", "a")} is inside ${join(base, "work")} and is shared through it`,
+      ],
+      notices: [],
+    });
   });
 
   it("skips a root that does not exist with a notice", async () => {
@@ -145,6 +154,7 @@ describe("sharedRootsOf", () => {
     expect(sharedRootsOf({ roots: [missing, join(base, "other")] }, paths)).toEqual({
       roots: [join(base, "other")],
       missing: [missing],
+      nested: [],
       notices: [`workspaceRoots: ${missing} does not exist, not shared`],
     });
   });
@@ -164,6 +174,59 @@ describe("sharedRootsOf", () => {
     );
   });
 
+  it("names a root that a link puts inside another root as shared through it", async () => {
+    const { base, paths } = await createHome();
+    const link = join(base, "other", "inner");
+
+    await symlink(join(base, "work", "a"), link);
+
+    expect(sharedRootsOf({ roots: [join(base, "work"), link] }, paths)).toEqual({
+      roots: [join(base, "work")],
+      missing: [],
+      nested: [`workspaceRoots: ${link} is inside ${join(base, "work")} and is shared through it`],
+      notices: [],
+    });
+  });
+
+  it("names an inner root once, however it is spelled", async () => {
+    const { base, paths } = await createHome();
+    const inner = join(base, "work", "a");
+
+    expect(
+      sharedRootsOf({ roots: [join(base, "work"), inner, `${inner}/`, `${inner}/../a`] }, paths),
+    ).toEqual({
+      roots: [join(base, "work")],
+      missing: [],
+      nested: [`workspaceRoots: ${inner} is inside ${join(base, "work")} and is shared through it`],
+      notices: [],
+    });
+  });
+
+  it("names a missing root once, however it is spelled", async () => {
+    const { base, paths } = await createHome();
+    const missing = join(base, "gone");
+
+    expect(sharedRootsOf({ roots: [missing, `${missing}/`] }, paths).notices).toEqual([
+      `workspaceRoots: ${missing} does not exist, not shared`,
+    ]);
+  });
+
+  it("says a root inside a missing root does not exist rather than that it is shared", async () => {
+    const { base, paths } = await createHome();
+    const outer = join(base, "gone");
+    const inner = join(outer, "b");
+
+    expect(sharedRootsOf({ roots: [outer, inner] }, paths)).toEqual({
+      roots: [],
+      missing: [outer],
+      nested: [],
+      notices: [
+        `workspaceRoots: ${outer} does not exist, not shared`,
+        `workspaceRoots: ${inner} does not exist, not shared`,
+      ],
+    });
+  });
+
   it("accepts a root next to the protected home paths", async () => {
     const { paths } = await createHome();
 
@@ -174,12 +237,17 @@ describe("sharedRootsOf", () => {
     const { base, paths } = await createHome();
     const data = join(base, "work", "a", "data");
 
+    await mkdir(join(paths.home, ".ssh"), { recursive: true });
+
     await symlink(join(paths.home, ".ssh"), data);
 
     expect(sharedRootsOf({ roots: [join(base, "work"), data] }, paths)).toEqual({
       roots: [join(base, "work")],
       missing: [],
-      notices: [],
+      nested: [],
+      notices: [
+        `workspaceRoots: ${data} leads to ${join(paths.home, ".ssh")}, outside the shared roots, not shared`,
+      ],
     });
   });
 
@@ -189,7 +257,13 @@ describe("sharedRootsOf", () => {
 
     await symlink(join(base, "other"), data);
 
-    expect(sharedRootsOf({ roots: [join(base, "work"), data] }, paths).roots).toEqual([join(base, "work")]);
+    expect(sharedRootsOf({ roots: [join(base, "work"), data] }, paths)).toMatchObject({
+      roots: [join(base, "work")],
+      nested: [],
+      notices: [
+        `workspaceRoots: ${data} leads to ${join(base, "other")}, outside the shared roots, not shared`,
+      ],
+    });
     expect(() =>
       assertWithinWorkspaceRoots(
         workspaceAt(join(base, "other")),
@@ -271,7 +345,7 @@ describe("sharedRootsOf", () => {
 
 describe("checkRoot", () => {
   const contextOf = async () => {
-    const home = await realpath(await tempDir("check-root-home"));
+    const home = await realTempDir("check-root-home");
 
     await mkdir(join(home, "work"), { recursive: true });
 

@@ -8,9 +8,12 @@ import {
   type MountSpec,
 } from "../backend/index.ts";
 import {
+  errnoCode,
   errorMessage,
+  isMissing,
   isWithin,
   LauncherError,
+  realOrResolved,
   recordCreatedDirs,
   stateLayout,
   withFileLock,
@@ -59,10 +62,6 @@ const ROOT_USER = "0";
 
 const MOUNT_POINT_HINT = "replace it with a directory, or remove it so the launcher can create one";
 
-const isMissing = (error: unknown) => (error as NodeJS.ErrnoException).code === "ENOENT";
-
-const isTaken = (error: unknown) => (error as NodeJS.ErrnoException).code === "EEXIST";
-
 const foundAt = (path: string) =>
   lstat(path).catch((error: unknown) => (isMissing(error) ? undefined : Promise.reject(error)));
 
@@ -74,8 +73,6 @@ interface MountPointGuard {
 }
 
 const PROTECTED_HINT = "choose a path outside the git dirs and the read-only mounts";
-
-const realOrSelf = (path: string) => realpath(path).catch(() => path);
 
 const realTarget = async (path: string, exists: boolean) =>
   exists ? realpath(path) : join(await realpath(dirname(path)), basename(path));
@@ -123,7 +120,8 @@ const ensureMountPoint = async (root: string, path: string, guard: MountPointGua
 
   await mkdir(path).then(
     () => guard.onMade(path),
-    (error: unknown) => (isTaken(error) ? ensureMountPoint(root, path, guard) : Promise.reject(error)),
+    (error: unknown) =>
+      errnoCode(error) === "EEXIST" ? ensureMountPoint(root, path, guard) : Promise.reject(error),
   );
 };
 
@@ -139,7 +137,10 @@ const writableRootOf = (mounts: MountSpec[], target: string) =>
 
 const ensureMountPoints = async (spec: LauncherContainerSpec, onMade: DirMade) => {
   const { mounts } = spec;
-  const guard = { onMade, guarded: await Promise.all((spec.guardedPaths ?? []).map(realOrSelf)) };
+  const guard = {
+    onMade,
+    guarded: await Promise.all((spec.guardedPaths ?? []).map((path) => realOrResolved(path))),
+  };
   const outcomes = await Promise.allSettled(
     mounts
       .filter((mount) => mount.kind === "volume")
@@ -228,7 +229,7 @@ const create = async (input: LaunchContainerInput, spec: LauncherContainerSpec):
 
 const isAgent = (container: ContainerSummary) => container.labels[LABELS.relay] !== "true";
 
-const agentContainers = async (backend: Backend, labels: Record<string, string>) =>
+export const agentContainers = async (backend: Backend, labels: Record<string, string>) =>
   (await backend.findContainers(labels)).filter(isAgent);
 
 export const startLaunchContainer = (input: LaunchContainerInput) =>

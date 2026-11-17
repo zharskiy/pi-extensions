@@ -1,5 +1,4 @@
 import type { CredentialRule } from "../config/index.ts";
-import { placeholderFor } from "../shared/index.ts";
 import type { Endpoint } from "./endpoints.ts";
 
 export type RuleBody = Omit<CredentialRule, "id" | "host" | "port">;
@@ -17,9 +16,6 @@ export interface DeriveContext {
 
 const DERIVED_PREFIX = "derived:";
 
-export const placeholderOf = (context: { salt: string }, identity: string) =>
-  placeholderFor(context.salt, identity);
-
 export const noticeOnly = <T>(value: T, ...notices: string[]): Section<T> => ({ value, rules: [], notices });
 
 export const rulesFor = (identity: string, endpoints: Endpoint[], body: RuleBody): CredentialRule[] =>
@@ -30,8 +26,8 @@ export const rulesFor = (identity: string, endpoints: Endpoint[], body: RuleBody
     ...body,
   }));
 
-export const mergeSections = <T>(sections: Array<Section<T>>) => ({
-  values: sections.map((section) => section.value),
+export const mergeSections = <T>(sections: Array<Section<T>>): Section<T[]> => ({
+  value: sections.map((section) => section.value),
   rules: sections.flatMap((section) => section.rules),
   notices: sections.flatMap((section) => section.notices),
 });

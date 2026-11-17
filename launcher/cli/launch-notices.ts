@@ -5,13 +5,11 @@ import { overlayVolumes } from "../container/index.ts";
 import { isWithin, realOrResolved } from "../shared/index.ts";
 import { workspaceNotices } from "../workspace/index.ts";
 import type { LaunchContext } from "./context.ts";
-import type { SandboxProxy } from "./sandbox-proxy.ts";
 
-const CAPPED_NOTICE =
-  "pi-sandbox: more than 512 build output directories; overlays disabled, the host copies are used";
+const CAPPED_NOTICE = "more than 512 build output directories; overlays disabled, the host copies are used";
 
 const TRUNCATED_NOTICE =
-  "pi-sandbox: the folder is too large to search for build output; overlays disabled, the host copies are used";
+  "the folder is too large to search for build output; overlays disabled, the host copies are used";
 
 const overlayNotices = (context: LaunchContext) => {
   if (context.workspace.overlaysCapped === true) {
@@ -32,7 +30,7 @@ const overlayNotices = (context: LaunchContext) => {
   const kinds = [...new Set(paths.map((path) => basename(path)))].sort().join(", ");
 
   return [
-    `pi-sandbox: ${kinds} overlaid in ${places}; the host copies are hidden; set mounts.autoOverlays=false to keep them`,
+    `${kinds} overlaid in ${places}; the host copies are hidden; set mounts.autoOverlays=false to keep them`,
   ];
 };
 
@@ -41,7 +39,7 @@ export const launchNotices = (context: LaunchContext) => [
   ...overlayNotices(context),
 ];
 
-export const proxyDetail = (proxy: SandboxProxy) => `pid ${proxy.proxy.pid} port ${proxy.proxy.port}`;
+export const proxyDetail = (proxy: { pid: number; port: number }) => `pid ${proxy.pid} port ${proxy.port}`;
 
 const PATH_FLAGS = new Set(["--system-prompt", "--append-system-prompt", "--extension", "-e", "--session"]);
 

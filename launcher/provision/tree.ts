@@ -1,6 +1,14 @@
-import { readdir, realpath, stat } from "node:fs/promises";
+import { readdir, stat } from "node:fs/promises";
 import { basename, dirname, extname, join, posix } from "node:path";
-import { isSecretName, lstatOrUndefined, readRegularFile } from "../shared/index.ts";
+import {
+  isSecretName,
+  lstatOrUndefined,
+  MAX_REGULAR_FILE_BYTES,
+  MIB,
+  PUBLIC_FILE_MODE,
+  readRegularFile,
+  realOrUndefined,
+} from "../shared/index.ts";
 import { inPool } from "./pool.ts";
 
 interface TreeFile {
@@ -17,11 +25,7 @@ export interface HostSource {
   agentsSkillsRoot?: string;
 }
 
-const MAX_FILE_BYTES = 8 * 1024 * 1024;
-
 const EXECUTABLE_BITS = 0o111;
-
-const FILE_MODE = 0o644;
 
 const EXECUTABLE_MODE = 0o755;
 
@@ -64,7 +68,7 @@ const isExcludedName = (name: string) => {
 const holdsPrivateKey = (name: string, data: Buffer) =>
   extname(name).toLowerCase() === ".crt" && PRIVATE_KEY.test(data.toString("latin1"));
 
-const modeOf = (mode: number) => ((mode & EXECUTABLE_BITS) === 0 ? FILE_MODE : EXECUTABLE_MODE);
+const modeOf = (mode: number) => ((mode & EXECUTABLE_BITS) === 0 ? PUBLIC_FILE_MODE : EXECUTABLE_MODE);
 
 interface Candidate {
   path: string;
@@ -90,7 +94,7 @@ const isAgentsSkillLink = async (path: string, source: HostSource, rest: string)
     return false;
   }
 
-  const target = await realpath(path).catch(() => undefined);
+  const target = await realOrUndefined(path);
   const info = target === undefined ? undefined : await stat(target).catch(() => undefined);
 
   return target !== undefined && info?.isDirectory() === true && dirname(target) === root;
@@ -141,8 +145,8 @@ const candidates = async (source: HostSource, path: string, rest: string): Promi
     return { ...NOTHING, left: [`${label} (secret-looking name)`] };
   }
 
-  return info.size > MAX_FILE_BYTES
-    ? { ...NOTHING, left: [`${label} (over 8 MiB)`] }
+  return info.size > MAX_REGULAR_FILE_BYTES
+    ? { ...NOTHING, left: [`${label} (over ${MAX_REGULAR_FILE_BYTES / MIB} MiB)`] }
     : { ...NOTHING, files: [{ path, key, label }] };
 };
 

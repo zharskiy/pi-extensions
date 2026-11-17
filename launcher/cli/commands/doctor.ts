@@ -2,7 +2,6 @@ import {
   type Backend,
   ENGINE_PROFILE,
   hasSizeChanges,
-  LABELS,
   shareDrift,
   shareText,
   type VmShare,
@@ -16,7 +15,7 @@ import { readHostPiFiles } from "../../hostpi/index.ts";
 import { type DenialRecord, readHealth } from "../../proxy/index.ts";
 import { errorMessage, LauncherError } from "../../shared/index.ts";
 import { type LaunchContext, openContext } from "../context.ts";
-import { type CliDeps, colorOf, hostAgentDirOf, isTerminal, lineSink, writeLines } from "../deps.ts";
+import { type CliDeps, colorOf, hostAgentDirOf, isTerminal, writeLines } from "../deps.ts";
 import { missingPiText } from "../host-pi.ts";
 import { hostSessionsOf } from "../host-sessions.ts";
 import { type Sandbox, type Stage, type StageOutcome, withSandbox } from "../launch.ts";
@@ -45,7 +44,6 @@ import {
   checkMcpAuthSweep,
   checkNoRoute,
   checkRules,
-  checkSessionsShare,
   checkSettingsSweep,
   type ProbeTarget,
   type RuleHint,
@@ -81,17 +79,12 @@ interface Run {
   hostTls: () => Promise<HostTls>;
 }
 
-const NOTICE_PREFIX = "pi-sandbox: ";
-
 const ERASE_LINE = "\r\u001b[2K";
 
 const stageLabel = (stage: Stage) => (stage === "host" ? "host side" : stage);
 
 const stageSection = (stage: Stage): Section =>
   stage === "host" ? "host" : stage === "proxy" ? "network" : "sandbox";
-
-const withoutPrefix = (line: string) =>
-  line.startsWith(NOTICE_PREFIX) ? line.slice(NOTICE_PREFIX.length) : line;
 
 const progressLine = (deps: CliDeps): Progress => {
   if (!isTerminal(deps.stderr) || deps.env.TERM === "dumb") {
@@ -105,7 +98,7 @@ const progressLine = (deps: CliDeps): Progress => {
     line: (text) => {
       state.shown = true;
 
-      deps.stderr.write(`${ERASE_LINE}${`pi sandbox doctor: ${withoutPrefix(text)}`.slice(0, width)}`);
+      deps.stderr.write(`${ERASE_LINE}${`pi sandbox doctor: ${text}`.slice(0, width)}`);
     },
     clear: () => {
       if (state.shown) {
@@ -272,7 +265,10 @@ const sharesCheck = async (
   const plan = vmSharesFor(deps, context.effective.config.workspaceRoots);
   const outcome = coverageOutcome(coverage, plan);
 
-  return { ...outcome, result: withNotices(outcome.result, plan?.notices ?? []) };
+  return {
+    ...outcome,
+    result: withNotices(outcome.result, [...(plan?.nested ?? []), ...(plan?.notices ?? [])]),
+  };
 };
 
 const sharesOf = (deps: CliDeps, context: LaunchContext, backend: Backend) =>
@@ -337,13 +333,6 @@ const ruleChecks: Probe = (input) => {
   ]);
 };
 
-const sessionsShareCheck = async (target: ProbeTarget) => {
-  const containers = await target.backend.findContainers({ [LABELS.managed]: "true" });
-  const running = containers.find((container) => container.id === target.containerId);
-
-  return checkSessionsShare(target, running?.labels[LABELS.sessionDir]);
-};
-
 const PROBES: Probe[] = [
   single("proxy health", "network", ({ sandbox }) => proxyHealth(sandbox.proxy)),
   single("credential sweep", "leak sweep", ({ target, sandbox }) =>
@@ -358,7 +347,6 @@ const PROBES: Probe[] = [
     single("mcp-auth sweep", "leak sweep", ({ target }) => checkMcpAuthSweep(target)),
     single("settings sweep", "leak sweep", ({ target }) => checkSettingsSweep(target)),
   ),
-  single("sessions share", "sandbox", ({ target }) => sessionsShareCheck(target)),
   ruleChecks,
   single("vm size", "sandbox", ({ deps, context, sandbox }) => sizeCheck(deps, context, sandbox)),
 ];
@@ -512,14 +500,18 @@ const runChecks = async (deps: CliDeps, progress: Progress, checks: NamedCheck[]
   return { signal, skipsSandbox };
 };
 
-const noticesOf = (deps: CliDeps, lines: string[]) =>
-  [...new Set(lines.map(withoutPrefix))].filter((notice) => notice !== missingPiText(deps));
+const noticesOf = (deps: CliDeps, notices: string[]) =>
+  [...new Set(notices)].filter((notice) => notice !== missingPiText(deps));
 
 export const runDoctor = async (deps: CliDeps, args: string[]) => {
   const checks: NamedCheck[] = [];
   const progress = progressLine(deps);
   const notices: string[] = [];
-  const quiet: CliDeps = { ...deps, stderr: lineSink((line) => notices.push(line)) };
+  const quiet: CliDeps = {
+    ...deps,
+    notify: (texts) =>
+      notices.push(...texts.flatMap((text) => text.split("\n")).filter((line) => line !== "")),
+  };
   const report = (partial: boolean) => {
     progress.clear();
 

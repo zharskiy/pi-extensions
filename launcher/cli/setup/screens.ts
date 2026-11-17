@@ -2,6 +2,7 @@ import { dirname } from "node:path";
 import { sessionsRunning, type VmApplied, type VmPhase, type VmSpec } from "../../backend/index.ts";
 import { isWithin } from "../../shared/index.ts";
 import { printable, widthOf, wrap } from "../prompt/style.ts";
+import { AUTOMATIC_VM_SIZE } from "../vm.ts";
 import { tildeForm } from "./folders.ts";
 import { existingVm, type VmBounds } from "./plan.ts";
 import type {
@@ -16,7 +17,7 @@ import type {
   VmPart,
 } from "./types.ts";
 
-export type Tag = "chosen" | "current" | "changed" | "automatic" | "default" | "invalid";
+export type Tag = "chosen" | "current" | "from the file" | "changed" | "automatic" | "default" | "invalid";
 
 export interface HubRow {
   label: string;
@@ -267,8 +268,11 @@ export const automaticLabel = (facts: HostFacts) => {
   return grown ? `${text} (${GROWN})` : text;
 };
 
-export const vmEditorDetail = (facts: HostFacts) =>
-  `Every pi session runs in this VM. Automatic follows this Mac: CPUs from 2 to 8, half the memory from 4 to 10 GiB, and a ${facts.automatic.diskGiB} GiB disk.`;
+export const vmEditorDetail = (facts: HostFacts) => {
+  const { cpus, memoryGiB } = AUTOMATIC_VM_SIZE;
+
+  return `Every pi session runs in this VM. Automatic follows this Mac: CPUs from ${cpus.min} to ${cpus.max}, half the memory from ${memoryGiB.min} to ${memoryGiB.max} GiB, and a ${facts.automatic.diskGiB} GiB disk.`;
+};
 
 const plainCollapsed = (vm: Answers["vm"], facts: HostFacts) => {
   if (vm !== "automatic") {

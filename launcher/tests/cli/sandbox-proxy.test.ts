@@ -25,7 +25,7 @@ describe("env-sourced credentials", () => {
 
     expect(await run([], harness.deps)).toBe(1);
     expect(harness.stderr()).toContain(
-      "pi-sandbox: CORP_TOKEN contains a line break and cannot be used as a credential",
+      "pi-sandbox: CORP_TOKEN holds a line break or NUL and cannot be used as a credential",
     );
     expect(harness.proxyInputs).toEqual([]);
     expect(fake.containers.size).toBe(0);

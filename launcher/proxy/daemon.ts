@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { rootCertificates } from "node:tls";
 import { parseArgs } from "node:util";
@@ -7,6 +7,8 @@ import {
   errorMessage,
   isJsonObject,
   LauncherError,
+  PRIVATE_DIR_MODE,
+  PRIVATE_FILE_MODE,
   parseJsonObject,
   processMark,
   readJsonObject,
@@ -20,8 +22,10 @@ import {
   DAEMON_FAILURE_TAG,
   type DaemonInput,
   egressSettingsOf,
+  LISTEN_HOST,
   type RepoProxy,
   type RepoProxyInput,
+  readExtraCaPem,
 } from "./files.ts";
 import { watchIdle } from "./idle.ts";
 import { parentRouteFor } from "./parent.ts";
@@ -29,10 +33,6 @@ import { createProxyRuntime } from "./runtime.ts";
 import { createSecretResolver } from "./secrets/index.ts";
 import { startProxyServer } from "./server.ts";
 import { openLauncherCa } from "./tls-ca.ts";
-
-const LISTEN_HOST = "127.0.0.1";
-
-const PRIVATE_MODE = 0o600;
 
 const REPO_HASH = /^[0-9a-f]{64}$/;
 
@@ -74,7 +74,7 @@ const readInput = async (repoHash: string): Promise<DaemonInput> => {
 };
 
 const upstreamTrust = async (stateDir: string, extraCa: boolean) => {
-  const extra = extraCa ? await readFile(stateLayout(stateDir).extraPem, "utf8").catch(() => "") : "";
+  const extra = await readExtraCaPem(stateDir, extraCa);
 
   return extra.trim() === "" ? undefined : [...rootCertificates, extra];
 };
@@ -125,7 +125,7 @@ const run = async (args: DaemonArgs) => {
   });
   const record: RepoProxy = { ...(await processMark()), port: server.port, inputHash };
 
-  await writeJsonFile(files.record, record, { mode: PRIVATE_MODE });
+  await writeJsonFile(files.record, record, { mode: PRIVATE_FILE_MODE });
 
   const removeRecord = async () => {
     const current = await readJsonObject(files.record);
@@ -174,7 +174,7 @@ const startProxyDaemon = async () => {
   const args = await Promise.resolve().then(parseDaemonArgs).catch(reportFailure);
   const files = stateLayout(args.stateDir).repo(args.repoHash).proxy;
 
-  await mkdir(files.directory, { recursive: true, mode: 0o700 });
+  await mkdir(files.directory, { recursive: true, mode: PRIVATE_DIR_MODE });
 
   await run(args).catch(reportFailure);
 };

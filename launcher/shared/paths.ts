@@ -36,6 +36,11 @@ export const expandHome = (path: string, home = homedir()) => {
   return path.startsWith("~/") ? join(home, path.slice(2)) : path;
 };
 
+export const isFileUrl = (text: string) => FILE_URL.test(text);
+
+export const pathFromSetting = (text: string, home = homedir()) =>
+  isFileUrl(text) ? fileURLToPath(text) : expandHome(text, home);
+
 export const hostAgentDir = (home: string, env: NodeJS.ProcessEnv) => {
   const configured = env[PI_AGENT_DIR_VARIABLE];
 
@@ -43,9 +48,7 @@ export const hostAgentDir = (home: string, env: NodeJS.ProcessEnv) => {
     return join(home, ".pi", "agent");
   }
 
-  const expanded = expandHome(configured, home);
-
-  return FILE_URL.test(expanded) ? fileURLToPath(expanded) : expanded;
+  return pathFromSetting(configured, home);
 };
 
 const launcherDir = (home: string, env: NodeJS.ProcessEnv) => join(hostAgentDir(home, env), APP);
@@ -78,6 +81,16 @@ export const realOrResolved = async (path: string) => {
   return realpath(absolute).catch(() => absolute);
 };
 
+export const realOrUndefined = (path: string) => realpath(path).catch(() => undefined);
+
+export const realOrUndefinedSync = (path: string) => {
+  try {
+    return realpathSync.native(path);
+  } catch {
+    return undefined;
+  }
+};
+
 export const realOrResolvedSync = (path: string) => {
   const absolute = resolve(path);
 
@@ -102,3 +115,5 @@ export const launcherEntry = (relativeTsPath: string, moduleUrl = import.meta.ur
   isCompiled(moduleUrl)
     ? join(launcherRoot(moduleUrl), BUILD_DIR, relativeTsPath.replace(/\.ts$/, ".js"))
     : join(launcherRoot(moduleUrl), relativeTsPath);
+
+export const PRIVATE_HOME_DIRS: readonly string[] = [".ssh", ".gnupg", ".aws", ".docker", ".colima", ".kube"];

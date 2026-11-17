@@ -1,7 +1,8 @@
 import { type Backend, LABELS } from "../backend/index.ts";
+import { agentContainers } from "../container/index.ts";
 import { othersLive, withRepoLaunchLock } from "../grants/index.ts";
 import { prepareHostSessions, probeHostSessions, sweepHostSessions } from "../provision/index.ts";
-import { errorMessage, LauncherError } from "../shared/index.ts";
+import { LauncherError } from "../shared/index.ts";
 import {
   assertHostSessionsDir,
   type HostSessions,
@@ -9,7 +10,7 @@ import {
   hostSessionsDir,
 } from "../workspace/index.ts";
 import type { LaunchContext } from "./context.ts";
-import { type CliDeps, hostAgentDirOf, reachableBackend, writeLine, writeNotices } from "./deps.ts";
+import { type CliDeps, hostAgentDirOf, reachableBackend, writeNotices, writeWarning } from "./deps.ts";
 
 export const hostSessionsOf = (
   deps: CliDeps,
@@ -33,12 +34,12 @@ export const noticeHostSessions = (deps: CliDeps, sessions: HostSessions) => {
 const sweptDir = (deps: CliDeps, repoRoot: string) => hostSessionsDir(hostAgentDirOf(deps), repoRoot);
 
 const containerRunning = async (backend: Backend, context: LaunchContext) =>
-  (await backend.findContainers({ [LABELS.repoHash]: context.repoHash })).some(
-    (container) => container.labels[LABELS.relay] !== "true" && container.state === "running",
+  (await agentContainers(backend, { [LABELS.repoHash]: context.repoHash })).some(
+    (container) => container.state === "running",
   );
 
 const warnUnswept = (deps: CliDeps, dir: string, error: unknown) => {
-  writeLine(deps.stderr, `pi-sandbox: warning: sessions: ${dir} was not swept: ${errorMessage(error)}`);
+  writeWarning(deps, `sessions: ${dir} was not swept`, error);
 };
 
 const sweep = async (deps: CliDeps, repoRoot: string, full: boolean): Promise<string[]> => {
@@ -122,7 +123,8 @@ export const readyHostSessions = async (
 
 const notShared = (dir: string) =>
   new LauncherError(
-    `sessions: ${dir} is not writable from the sandbox; set sessions.host: false or share it with the VM`,
+    `sessions: ${dir} is not writable from the sandbox`,
+    "set sessions.host: false or share it with the VM",
   );
 
 export const probeSessionsShare = async (backend: Backend, containerId: string, sessions: HostSessions) => {

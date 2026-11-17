@@ -1,6 +1,6 @@
-import { readdir, readFile } from "node:fs/promises";
+import { readdir } from "node:fs/promises";
 import { join, posix } from "node:path";
-import { readJsonObject } from "../shared/index.ts";
+import { readJsonObject, readOptionalText } from "../shared/index.ts";
 import { sourceOfEntry, withSource } from "./package-source.ts";
 
 export interface PackagePin {
@@ -46,8 +46,6 @@ const GIT_PROTOCOL = /^(?:https?|ssh|git):\/\//i;
 const SCP_LIKE = /^git@[^:/]+:/;
 
 const GIT_LOCATION_PART = /^[A-Za-z0-9._-]+$/;
-
-const readText = (path: string) => readFile(path, "utf8").catch(() => undefined);
 
 const isSafePart = (part: string) =>
   part !== "" && part !== "." && part !== ".." && !part.includes("\0") && !part.includes("\\");
@@ -163,7 +161,7 @@ const packedRef = (packed: string | undefined, ref: string) =>
     .find(([sha, name]) => name === ref && COMMIT.test(sha ?? ""))?.[0];
 
 const checkoutHead = async (checkout: string) => {
-  const head = (await readText(join(checkout, ".git", "HEAD")))?.trim() ?? "";
+  const head = (await readOptionalText(join(checkout, ".git", "HEAD")))?.trim() ?? "";
 
   if (COMMIT.test(head)) {
     return head;
@@ -175,16 +173,16 @@ const checkoutHead = async (checkout: string) => {
     return undefined;
   }
 
-  const loose = (await readText(join(checkout, ".git", ...ref.split("/"))))?.trim();
+  const loose = (await readOptionalText(join(checkout, ".git", ...ref.split("/"))))?.trim();
 
   return loose !== undefined && COMMIT.test(loose)
     ? loose
-    : packedRef(await readText(join(checkout, ".git", "packed-refs")), ref);
+    : packedRef(await readOptionalText(join(checkout, ".git", "packed-refs")), ref);
 };
 
 const looseCommits = async (dir: string) => {
   const names = await readdir(dir, { recursive: true }).catch(() => []);
-  const texts = await Promise.all(names.map((name) => readText(join(dir, name))));
+  const texts = await Promise.all(names.map((name) => readOptionalText(join(dir, name))));
 
   return texts.flatMap((text) => {
     const sha = text?.trim() ?? "";
@@ -202,7 +200,7 @@ const packedCommits = (packed: string | undefined) =>
 
 const isOnRemote = async (checkout: string, head: string) => {
   const loose = await Promise.all(REMOTE_REF_DIRS.map((dir) => looseCommits(join(checkout, ".git", ...dir))));
-  const packed = packedCommits(await readText(join(checkout, ".git", "packed-refs")));
+  const packed = packedCommits(await readOptionalText(join(checkout, ".git", "packed-refs")));
 
   return [...loose.flat(), ...packed].includes(head);
 };

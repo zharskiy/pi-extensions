@@ -1,9 +1,8 @@
-import { Writable } from "node:stream";
 import { type Backend, engineUnreachable } from "../backend/index.ts";
 import type { ExtraCa } from "../config/index.ts";
 import type { HostTerminal, SignalSource } from "../container/index.ts";
 import type { DenialRecord, RepoProxy, RepoProxyInput, RepoProxyStart, TrustBundle } from "../proxy/index.ts";
-import { type CommandRunner, hostAgentDir, launcherPaths } from "../shared/index.ts";
+import { type CommandRunner, errorMessage, hostAgentDir, launcherPaths } from "../shared/index.ts";
 import { colourOf, type TtyStreams } from "./prompt/terminal.ts";
 
 interface ProxyRequest {
@@ -28,6 +27,7 @@ export interface CliDeps {
   cwd: string;
   stdout: NodeJS.WritableStream;
   stderr: NodeJS.WritableStream;
+  notify?: (notices: string[]) => void;
   terminal: HostTerminal;
   signals?: SignalSource;
   openTty?: () => TtyStreams | undefined;
@@ -48,29 +48,29 @@ export const writeLines = (stream: NodeJS.WritableStream, lines: string[]) => {
   stream.write(lines.map((line) => `${line}\n`).join(""));
 };
 
+export const noticeLine = (notice: string) => `pi-sandbox: ${notice}`;
+
 export const writeNotices = (deps: CliDeps, notices: string[]) => {
-  writeLines(
-    deps.stderr,
-    [...new Set(notices)].map((notice) => `pi-sandbox: ${notice}`),
-  );
+  const unique = [...new Set(notices)];
+
+  if (deps.notify !== undefined) {
+    deps.notify(unique);
+
+    return;
+  }
+
+  writeLines(deps.stderr, unique.map(noticeLine));
+};
+
+export const warningText = (what: string, error: unknown) => `warning: ${what}: ${errorMessage(error)}`;
+
+export const writeWarning = (deps: CliDeps, what: string, error: unknown) => {
+  writeNotices(deps, [warningText(what, error)]);
 };
 
 export const isTerminal = (stream: object) => "isTTY" in stream && stream.isTTY === true;
 
 export const colorOf = (deps: Pick<CliDeps, "stdout" | "env">) => colourOf(deps.env, deps.stdout);
-
-export const lineSink = (onLine: (line: string) => void) =>
-  new Writable({
-    write: (chunk: Buffer | string, _encoding, done) => {
-      chunk
-        .toString()
-        .split("\n")
-        .filter((line) => line !== "")
-        .forEach(onLine);
-
-      done();
-    },
-  });
 
 const CLOSED_OUTPUT = new Set(["EPIPE", "EIO", "ERR_STREAM_DESTROYED"]);
 
@@ -96,6 +96,9 @@ export const pathsOf = (deps: Pick<CliDeps, "env" | "home">) =>
   launcherPaths({ env: deps.env, home: deps.home });
 
 export const hostAgentDirOf = (deps: CliDeps) => hostAgentDir(deps.home, deps.env);
+
+export const reachableEngine = async (backend: Backend) =>
+  (await backend.detect()).available ? backend : undefined;
 
 export const reachableBackend = async (deps: CliDeps) => {
   const backend = deps.backend();

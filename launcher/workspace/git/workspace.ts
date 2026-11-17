@@ -16,7 +16,7 @@ const listOf = (paths: string[]) =>
     : paths.join(", ");
 
 const listNotice = (paths: string[], text: (list: string) => string) =>
-  paths.length === 0 ? [] : [`pi-sandbox: ${text(listOf(paths))}`];
+  paths.length === 0 ? [] : [text(listOf(paths))];
 
 const detachedRoots = (workspace: Workspace, missing: boolean) =>
   (workspace.detached ?? [])
@@ -28,7 +28,7 @@ export const workspaceNotices = (workspace: Workspace) => {
   const noun = count === 1 ? "repository" : "repositories";
 
   return [
-    ...(count > 0 ? [`pi-sandbox: workspace with ${count} ${noun}`] : []),
+    ...(count > 0 ? [`workspace with ${count} ${noun}`] : []),
     ...listNotice(
       detachedRoots(workspace, false),
       (list) =>

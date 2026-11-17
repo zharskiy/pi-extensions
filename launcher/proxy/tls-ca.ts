@@ -1,20 +1,21 @@
-import {
-  createPrivateKey,
-  createPublicKey,
-  generateKeyPairSync,
-  randomBytes,
-  X509Certificate,
-} from "node:crypto";
+import { createPrivateKey, createPublicKey, generateKeyPairSync, X509Certificate } from "node:crypto";
 import { chmod, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { isHostName } from "../config/index.ts";
 import {
   type CommandRunner,
+  DAY_MS,
+  HOUR_MS,
   LauncherError,
+  PRIVATE_DIR_MODE,
+  PRIVATE_FILE_MODE,
   type RunOptions,
+  randomHex,
+  readOptionalText,
   stateLayout,
   withFileLock,
 } from "../shared/index.ts";
+import { boundedCache } from "./bounded-cache.ts";
 
 export interface LeafCertificate {
   key: string;
@@ -33,19 +34,19 @@ interface CaOptions {
   runner: CommandRunner;
 }
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-
 const CA_VALIDITY_MS = 3650 * DAY_MS;
 
 const LEAF_VALIDITY_MS = 397 * DAY_MS;
 
-const BACKDATE_MS = 60 * 60 * 1000;
+const BACKDATE_HOURS = 1;
+
+const BACKDATE_MS = BACKDATE_HOURS * HOUR_MS;
+
+export const CERTIFICATE_BACKDATE = BACKDATE_HOURS === 1 ? "an hour" : `${BACKDATE_HOURS} hours`;
 
 const GENERALIZED_TIME_YEAR = 2050;
 
-const RENEW_MARGIN_MS = 24 * 60 * 60 * 1000;
-
-const PRIVATE_MODE = 0o600;
+const RENEW_MARGIN_MS = DAY_MS;
 
 const MINT_LOCK_TIMEOUT_MS = 30_000;
 
@@ -99,8 +100,6 @@ export const certificateTime = (time: number) => {
   return date.getUTCFullYear() < GENERALIZED_TIME_YEAR ? `${stamp.slice(2)}Z` : `${stamp}Z`;
 };
 
-const readOptional = async (path: string) => readFile(path, "utf8").catch(() => undefined);
-
 const parseCertificate = (pem: string | undefined) => {
   try {
     return pem === undefined ? undefined : new X509Certificate(pem);
@@ -118,9 +117,9 @@ const newPrivateKey = () =>
   );
 
 const writePrivateKey = async (path: string) => {
-  await writeFile(path, newPrivateKey(), { mode: PRIVATE_MODE });
+  await writeFile(path, newPrivateKey(), { mode: PRIVATE_FILE_MODE });
 
-  await chmod(path, PRIVATE_MODE);
+  await chmod(path, PRIVATE_FILE_MODE);
 };
 
 const publicDer = (key: string | X509Certificate) => {
@@ -157,7 +156,7 @@ const signRequest = async (
 ) => {
   await writeFile(join(work, "index.txt"), "");
 
-  await writeFile(join(work, "serial"), `${randomBytes(16).toString("hex")}\n`);
+  await writeFile(join(work, "serial"), `${randomHex(16)}\n`);
 
   await openssl(runner, ["req", "-new", "-key", "key.pem", "-config", "issue.cnf", "-out", "request.csr"], {
     cwd: work,
@@ -210,8 +209,8 @@ const generateCa = async (directory: string, runner: CommandRunner) => {
 };
 
 const storedCa = async (directory: string) => {
-  const key = await readOptional(join(directory, CA_KEY));
-  const certPem = await readOptional(join(directory, CA_CERT));
+  const key = await readOptionalText(join(directory, CA_KEY));
+  const certPem = await readOptionalText(join(directory, CA_CERT));
   const certificate = parseCertificate(certPem);
 
   return key !== undefined && certPem !== undefined && isFresh(certificate) && keyMatches(key, certificate)
@@ -274,10 +273,10 @@ export const openLauncherCa = async ({ stateDir, runner }: CaOptions): Promise<L
   const directory = layout.ca;
   const certPath = join(directory, CA_CERT);
 
-  await mkdir(directory, { recursive: true, mode: 0o700 });
+  await mkdir(directory, { recursive: true, mode: PRIVATE_DIR_MODE });
 
   const { certPem } = await ensureCa(directory, layout.caLock, runner);
-  const leaves = new Map<string, Promise<{ leaf: LeafCertificate; renewAt: number }>>();
+  const leaves = boundedCache<string, { leaf: LeafCertificate; renewAt: number }>(MAX_LEAVES);
 
   const checkHost = (host: string) => {
     if (!isHostName(host)) {
@@ -285,28 +284,14 @@ export const openLauncherCa = async ({ stateDir, runner }: CaOptions): Promise<L
     }
   };
 
-  const mint = (host: string) => {
-    const minted = signLeaf(directory, host, runner).then((leaf) => ({
-      leaf,
-      renewAt: Date.parse(new X509Certificate(leaf.cert).validTo) - RENEW_MARGIN_MS,
-    }));
-
-    leaves.set(host, minted);
-
-    minted.catch(() => {
-      if (leaves.get(host) === minted) {
-        leaves.delete(host);
-      }
-    });
-
-    const [oldest] = leaves.keys();
-
-    if (leaves.size > MAX_LEAVES && oldest !== undefined) {
-      leaves.delete(oldest);
-    }
-
-    return minted;
-  };
+  const mint = (host: string) =>
+    leaves.set(
+      host,
+      signLeaf(directory, host, runner).then((leaf) => ({
+        leaf,
+        renewAt: Date.parse(new X509Certificate(leaf.cert).validTo) - RENEW_MARGIN_MS,
+      })),
+    );
 
   const leaf = async (host: string): Promise<LeafCertificate> => {
     checkHost(host);
@@ -316,10 +301,6 @@ export const openLauncherCa = async ({ stateDir, runner }: CaOptions): Promise<L
     if (cached === undefined) {
       return (await mint(host)).leaf;
     }
-
-    leaves.delete(host);
-
-    leaves.set(host, cached);
 
     const current = await cached;
 

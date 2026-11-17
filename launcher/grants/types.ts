@@ -5,17 +5,13 @@ export interface Grant {
   createdAt: number;
 }
 
-export interface GrantRequest {
-  host: string;
-  port: number;
-  repoHash?: string;
-}
-
 export interface GrantMatch {
   host: string;
   port?: number;
   repoHash?: string;
 }
+
+export type GrantRequest = GrantMatch & { port: number };
 
 export interface Launch {
   launchId: string;

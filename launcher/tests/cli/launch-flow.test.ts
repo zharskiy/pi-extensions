@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { lstat, mkdir, realpath, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -12,7 +12,7 @@ import { liveLaunches } from "../../grants/index.ts";
 import { LauncherError } from "../../shared/index.ts";
 import { hostSessionsDir } from "../../workspace/index.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
-import { tempDir } from "../support/temp-dir.ts";
+import { exists, realTempDir } from "../support/temp-dir.ts";
 import { createFakeBackend, createHarness, piSessions, renderDirOf } from "./harness.ts";
 
 const STOPPING = "pi-sandbox: stopping after the current step\n";
@@ -30,12 +30,6 @@ const waitFor = async (ready: () => boolean, left = POLLS): Promise<boolean> => 
 
   return waitFor(ready, left - 1);
 };
-
-const exists = (path: string) =>
-  lstat(path).then(
-    () => true,
-    () => false,
-  );
 
 const occurrences = (text: string, part: string) => text.split(part).length - 1;
 
@@ -171,6 +165,32 @@ describe("work that runs side by side", () => {
 
     expect(await run([], harness.deps)).toBe(0);
     expect(started).toEqual([true]);
+  });
+});
+
+describe("the sweep at launch", () => {
+  it("turns an engine detection that throws into the sweep warning and launches", async () => {
+    const fake = createFakeBackend();
+    const detections: string[] = [];
+    const harness = await createHarness({
+      backend: () => ({
+        ...fake.backend,
+        detect: async () => {
+          detections.push("detect");
+
+          if (detections.length === 1) {
+            throw new Error("detection broke");
+          }
+
+          return fake.backend.detect();
+        },
+      }),
+    });
+
+    expect(await run([], harness.deps)).toBe(0);
+    expect(harness.stderr()).toContain(
+      "pi-sandbox: warning: the sweep of leftover sandboxes failed: detection broke\n",
+    );
   });
 });
 
@@ -404,7 +424,7 @@ describe("a closed output", () => {
 
 describe("pi arguments that name host files", () => {
   it("names a file argument that lies outside the folders mounted at their own path", async () => {
-    const root = await realpath(await tempDir("host-paths"));
+    const root = await realTempDir("host-paths");
     const repo = join(root, "repo");
     const outside = join(root, "notes");
 
@@ -457,7 +477,7 @@ describe("the overlay notices", () => {
     });
 
     expect(notices).toEqual([
-      "pi-sandbox: the folder is too large to search for build output; overlays disabled, the host copies are used",
+      "the folder is too large to search for build output; overlays disabled, the host copies are used",
     ]);
   });
 });

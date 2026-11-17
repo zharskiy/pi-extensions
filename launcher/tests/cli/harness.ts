@@ -5,15 +5,15 @@ import { join } from "node:path";
 import { PassThrough, Writable } from "node:stream";
 import { afterEach } from "vitest";
 import type { Backend, ExecSpec } from "../../backend/index.ts";
-import { pathsOf } from "../../cli/deps.ts";
+import { pathsOf, reachableEngine, writeLines } from "../../cli/deps.ts";
 import type { CliDeps } from "../../cli/index.ts";
 import { sweepOrphans } from "../../cli/sweep.ts";
 import { testedPiVersion } from "../../cli/versions.ts";
-import { newLaunchId, registerLaunch } from "../../grants/index.ts";
 import type { DenialRecord, RepoProxy, RepoProxyInput } from "../../proxy/index.ts";
-import { LauncherError, processMark, type RunResult, sha256Hex, stateLayout } from "../../shared/index.ts";
+import { LauncherError, type RunResult, sha256Hex, stateLayout } from "../../shared/index.ts";
 import { createFakeBackend as createBareBackend, type FakeExec } from "../support/fake-backend.ts";
 import { createFakeRunner, type FakeResponder } from "../support/fake-runner.ts";
+import { type HeldLaunch, registerLiveLaunch } from "../support/launches.ts";
 
 interface Collected {
   stream: NodeJS.WritableStream;
@@ -125,21 +125,15 @@ export const renderDirOf = (harness: HarnessPaths) =>
 export const sweepNow = async (deps: CliDeps) => {
   await rm(stateLayout(pathsOf(deps).stateDir).gcRecord, { force: true });
 
-  const lines = await sweepOrphans(deps, deps.backend());
+  const lines = await sweepOrphans(deps, await reachableEngine(deps.backend()));
 
-  deps.stdout.write(lines.map((line) => `${line}\n`).join(""));
+  writeLines(deps.stdout, lines);
 
   return 0;
 };
 
-export const holdLaunch = async (harness: HarnessPaths) => {
-  await registerLaunch(harness.stateDir, {
-    launchId: newLaunchId(),
-    ...(await processMark()),
-    repoHash: sha256Hex(harness.repoRoot),
-    startedAt: 1,
-  });
-};
+export const holdLaunch = (harness: HarnessPaths, held: HeldLaunch = {}) =>
+  registerLiveLaunch(harness.stateDir, sha256Hex(harness.repoRoot), held);
 
 export const noHostPiLine = (agentDir: string) =>
   `no managed pi in ${agentDir} (a pi installed with npm or found on PATH is not used): the sandbox gets no provider credentials, and host commands and --no-sandbox are unavailable; install pi with pi's own installer (curl -fsSL https://pi.dev/install.sh | sh) and run the launcher's install.sh again`;

@@ -7,8 +7,7 @@ import { restartedShares, shareFor, sharesFor } from "../../backend/colima/share
 import { createColimaVm } from "../../backend/colima/vm.ts";
 import { type Backend, LABELS, type VmPath, type VmShare } from "../../backend/index.ts";
 import { run } from "../../cli/index.ts";
-import { registerLaunch } from "../../grants/index.ts";
-import { processMark, sha256Hex } from "../../shared/index.ts";
+import { sha256Hex } from "../../shared/index.ts";
 import {
   createHarness,
   doctorCheck,
@@ -18,6 +17,7 @@ import {
 } from "../cli/harness.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { argvOf, type FakeCall } from "../support/fake-runner.ts";
+import { registerLiveLaunch } from "../support/launches.ts";
 
 const PROFILE = { status: async () => ({ socket: "/fake/docker.sock", profile: "pi-sandbox" }) };
 
@@ -357,11 +357,8 @@ describe("the launch shares a repository the VM does not see", () => {
     const context = await launchWith();
     const { home, stateDir, repoRoot } = context.paths;
 
-    await registerLaunch(context.harness.stateDir, {
+    await registerLiveLaunch(context.harness.stateDir, sha256Hex("/elsewhere"), {
       launchId: "00000000000000dd",
-      ...(await processMark()),
-      repoHash: sha256Hex("/elsewhere"),
-      startedAt: 1,
     });
 
     expect(await run0(context)).toBe(1);
@@ -420,11 +417,8 @@ describe("the launch shares a repository the VM does not see", () => {
       lima: ({ home }) => [{ location: home, writable: true, mountPoint: "/mnt/home" }],
     });
 
-    await registerLaunch(context.harness.stateDir, {
+    await registerLiveLaunch(context.harness.stateDir, sha256Hex("/elsewhere"), {
       launchId: "00000000000000dd",
-      ...(await processMark()),
-      repoHash: sha256Hex("/elsewhere"),
-      startedAt: 1,
     });
 
     expect(await run0(context)).toBe(1);
@@ -540,12 +534,7 @@ const rootsLocations = ({ home, stateDir, repoRoot }: Paths) =>
 const rootsConfig = (...roots: string[]) => ({ workspaceRoots: { roots } });
 
 const holdOtherLaunch = async (stateDir: string) => {
-  await registerLaunch(stateDir, {
-    launchId: "00000000000000dd",
-    ...(await processMark()),
-    repoHash: sha256Hex("/elsewhere"),
-    startedAt: 1,
-  });
+  await registerLiveLaunch(stateDir, sha256Hex("/elsewhere"), { launchId: "00000000000000dd" });
 };
 
 const launchWithRoots = async (
@@ -627,6 +616,31 @@ describe("the VM shares with workspaceRoots set", () => {
     expect(await run0(context)).toBe(0);
     expect(context.harness.stderr()).toContain(
       `pi-sandbox: workspaceRoots: ${join(context.paths.root, "gone")} does not exist, not shared\n`,
+    );
+    expect(context.colimaCalls()).toEqual(restart(rootsMounts(context.paths)));
+  });
+
+  it("launches with a root inside another root without naming it", async () => {
+    const context = await launchWithRoots({ roots: ({ repoRoot }) => [repoRoot, join(repoRoot, "src")] });
+
+    await mkdir(join(context.paths.repoRoot, "src"), { recursive: true });
+
+    expect(await run0(context)).toBe(0);
+    expect(context.harness.stderr()).not.toContain("is shared through it");
+    expect(context.colimaCalls()).toEqual(restart(rootsMounts(context.paths)));
+  });
+
+  it("says at launch that a root a link leads out of the shared roots is not shared", async () => {
+    const context = await launchWithRoots({ roots: ({ repoRoot }) => [repoRoot, join(repoRoot, "link")] });
+    const elsewhere = join(context.paths.home, "elsewhere");
+
+    await mkdir(elsewhere, { recursive: true });
+
+    await symlink(elsewhere, join(context.paths.repoRoot, "link"));
+
+    expect(await run0(context)).toBe(0);
+    expect(context.harness.stderr()).toContain(
+      `pi-sandbox: workspaceRoots: ${join(context.paths.repoRoot, "link")} leads to ${elsewhere}, outside the shared roots, not shared\n`,
     );
     expect(context.colimaCalls()).toEqual(restart(rootsMounts(context.paths)));
   });
@@ -766,7 +780,7 @@ describe("the VM shares with workspaceRoots set, at the edges", () => {
 
     expect(await run0(context)).toBe(1);
     expect(context.harness.stderr()).toContain(
-      `pi-sandbox: config: workspaceRoots: the sandbox VM shares ${repoRoot} and ${store}, which nest`,
+      `pi-sandbox: config: workspaceRoots: the sandbox VM shares ${repoRoot} and ${store}, which nest, and the launcher never passes the VM a share inside another one\n`,
     );
     expect(context.colimaCalls()).toEqual([]);
   });
@@ -808,6 +822,25 @@ describe("the VM shares with workspaceRoots set, at the edges", () => {
     expect(doctorCheck(context.harness.stdout(), "vm shares")).toMatchObject({
       status: "ok",
       reasons: [`workspaceRoots: ${join(context.paths.root, "gone")} does not exist, not shared`],
+    });
+  });
+});
+
+describe("a root inside another root", () => {
+  it("is named once under the vm shares check of pi sandbox doctor", async () => {
+    const context = await launchWithRoots({
+      lima: rootsShares,
+      roots: ({ repoRoot }) => [repoRoot, join(repoRoot, "src")],
+    });
+
+    await mkdir(join(context.paths.repoRoot, "src"), { recursive: true });
+    await run(["sandbox", "doctor"], context.harness.deps);
+
+    expect(doctorCheck(context.harness.stdout(), "vm shares")).toMatchObject({
+      status: "ok",
+      reasons: [
+        `workspaceRoots: ${join(context.paths.repoRoot, "src")} is inside ${context.paths.repoRoot} and is shared through it`,
+      ],
     });
   });
 });

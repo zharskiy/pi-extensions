@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { errorMessage, parseJsonObject } from "../shared/index.ts";
+import { errorMessage, isMissing, parseJsonObject } from "../shared/index.ts";
 import type { HostPiFiles, JsonObject } from "./types.ts";
 
 type FileKey = "auth" | "models" | "mcp" | "settings";
@@ -27,7 +27,7 @@ const readObject = async (path: string): Promise<ReadOutcome> => {
   try {
     return parseObject(path, await readFile(path, "utf8"));
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+    if (isMissing(error)) {
       return {};
     }
 

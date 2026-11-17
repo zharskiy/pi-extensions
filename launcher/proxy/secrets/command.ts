@@ -1,10 +1,8 @@
-import type { CommandRunner } from "../../shared/index.ts";
+import { type CommandRunner, parseJson, tokenUsableUntil } from "../../shared/index.ts";
 import type { CachedSecret } from "./cache.ts";
 import { type SecretUnavailable, unavailable } from "./errors.ts";
 
 const DEFAULT_TTL_SECONDS = 300;
-
-const EXPIRY_SKEW_MS = 30_000;
 
 const COMMAND_TIMEOUT_MS = 30_000;
 
@@ -14,17 +12,6 @@ const expiryOf = (value: unknown) => {
   return Number.isNaN(parsed) ? undefined : parsed;
 };
 
-const usableUntil = (expiresAt: number | undefined) =>
-  expiresAt === undefined ? undefined : expiresAt - EXPIRY_SKEW_MS;
-
-const parseJson = (text: string) => {
-  try {
-    return JSON.parse(text) as { token?: unknown; expiresAt?: unknown };
-  } catch {
-    return undefined;
-  }
-};
-
 const parseOutput = (stdout: string) => {
   const text = stdout.trim();
 
@@ -32,11 +19,11 @@ const parseOutput = (stdout: string) => {
     return { token: text, expiresAt: undefined };
   }
 
-  const parsed = parseJson(text);
+  const parsed = parseJson(text) as { token?: unknown; expiresAt?: unknown } | null | undefined;
 
   return {
     token: typeof parsed?.token === "string" ? parsed.token.trim() : "",
-    expiresAt: usableUntil(expiryOf(parsed?.expiresAt)),
+    expiresAt: tokenUsableUntil(expiryOf(parsed?.expiresAt)),
   };
 };
 

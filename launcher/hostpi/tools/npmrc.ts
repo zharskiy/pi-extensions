@@ -1,10 +1,23 @@
 import { join } from "node:path";
 import type { SecretRef } from "../../config/index.ts";
-import { hasUrlUserinfo, isSecretName, type NpmrcEntry, parseNpmrc } from "../../shared/index.ts";
+import {
+  hasUrlUserinfo,
+  isSecretName,
+  type NpmrcEntry,
+  parseNpmrc,
+  placeholderFor,
+  readOptionalText,
+} from "../../shared/index.ts";
 import { endpointOf } from "../endpoints.ts";
-import { mergeSections, noticeOnly, placeholderOf, rulesFor, type Section } from "../rules.ts";
-import type { ToolsInput } from "../types.ts";
-import { type Registry, readOptional, registriesOf, urlCredentialSection } from "./files.ts";
+import { mergeSections, noticeOnly, rulesFor, type Section } from "../rules.ts";
+import type { Registry, ToolsInput } from "../types.ts";
+import {
+  expandPublicVariables,
+  PROXY_KEY_REASON,
+  registriesOf,
+  URL_CREDENTIAL_REASON,
+  urlCredentialSection,
+} from "./files.ts";
 
 const REGISTRY_CREDENTIAL = /^\/\/([^/]+)(\/.*)?:(_authToken|_auth|_password)$/;
 
@@ -75,7 +88,7 @@ const credentialSection = (
   }
 
   const identity = `npmrc:${authority}${path ?? "/"}:${field}`;
-  const placeholder = placeholderOf(input, identity);
+  const placeholder = placeholderFor(input.salt, identity);
   const value = renderedValue(field, entry.value, placeholder);
 
   if (value === undefined) {
@@ -97,16 +110,6 @@ const credentialSection = (
   };
 };
 
-const expanded = (input: ToolsInput, entry: NpmrcEntry) => {
-  const names = [...entry.value.matchAll(VARIABLE)].map((reference) => reference[1] ?? "");
-
-  if (names.some((name) => isSecretName(name) || input.env[name] === undefined)) {
-    return undefined;
-  }
-
-  return entry.value.replace(VARIABLE, (_, name: string) => input.env[name] ?? "");
-};
-
 const plainSection = (input: ToolsInput, entry: NpmrcEntry): Section<NpmrcEntry[]> => {
   const name = nameOf(entry.key);
 
@@ -126,17 +129,14 @@ const plainSection = (input: ToolsInput, entry: NpmrcEntry): Section<NpmrcEntry[
   }
 
   if (PROXY_KEYS.has(name)) {
-    return dropped(
-      entry.key,
-      "stays on the host; the sandbox reaches the network through the launcher proxy",
-    );
+    return dropped(entry.key, PROXY_KEY_REASON);
   }
 
   if (isPathKey(name)) {
     return dropped(entry.key, "names a host path and stays on the host");
   }
 
-  const value = expanded(input, entry);
+  const value = expandPublicVariables(entry.value, VARIABLE, input.env);
 
   if (value === undefined) {
     return dropped(
@@ -146,11 +146,11 @@ const plainSection = (input: ToolsInput, entry: NpmrcEntry): Section<NpmrcEntry[
   }
 
   if (!hasUrlUserinfo(value)) {
-    return { value: [{ key: entry.key, value }], rules: [], notices: [] };
+    return noticeOnly([{ key: entry.key, value }]);
   }
 
   if (name !== REGISTRY_KEY || value !== entry.value) {
-    return dropped(entry.key, "carries credentials in a URL and stays on the host");
+    return dropped(entry.key, URL_CREDENTIAL_REASON);
   }
 
   const section = urlCredentialSection(input, {
@@ -168,7 +168,7 @@ const plainSection = (input: ToolsInput, entry: NpmrcEntry): Section<NpmrcEntry[
 export const deriveNpmrc = async (
   input: ToolsInput,
 ): Promise<Section<NpmrcEntry[] | undefined> & { registries: Registry[] }> => {
-  const text = await readOptional(join(input.home, ".npmrc"));
+  const text = await readOptionalText(join(input.home, ".npmrc"));
 
   if (text === undefined) {
     return { ...noticeOnly(undefined), registries: [] };
@@ -184,11 +184,11 @@ export const deriveNpmrc = async (
 
   const registries = registriesOf(
     "npmrc",
-    merged.values
+    merged.value
       .flat()
       .filter((entry) => nameOf(entry.key) === REGISTRY_KEY)
       .map((entry) => entry.value),
   );
 
-  return { value: merged.values.flat(), rules: merged.rules, notices: merged.notices, registries };
+  return { ...merged, value: merged.value.flat(), registries };
 };

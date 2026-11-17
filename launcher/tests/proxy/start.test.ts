@@ -210,6 +210,45 @@ describe("ensureRepoProxy", () => {
     expect(changedShared.notices).toEqual([EGRESS_CHANGED]);
   }, 20_000);
 
+  it("names no change when no proxy runs yet and egress.json is missing, though another launch is live", async () => {
+    await rm(files().egress, { force: true });
+
+    const started = await ensure(await inputFor({ allow: ["a.invalid"] }), true);
+
+    expect(started.notices).toEqual([]);
+  }, 20_000);
+
+  it("names a change when egress.json is missing while a proxy runs for other live launches", async () => {
+    const first = await ensure(await inputFor({ allow: ["a.invalid"] }));
+
+    await rm(files().egress, { force: true });
+
+    const joined = await ensure(await inputFor({ allow: ["a.invalid"] }), true);
+
+    expect(joined).toEqual({ proxy: first.proxy, notices: [EGRESS_CHANGED] });
+  }, 20_000);
+
+  it("names a change when egress.json is missing and a stale proxy record is replaced", async () => {
+    await mkdir(files().directory, { recursive: true });
+
+    await rm(files().egress, { force: true });
+
+    await writeFile(
+      files().record,
+      JSON.stringify({
+        pid: 2 ** 22,
+        boot: bootTime(),
+        start: "Thu-Jan-1-00:00:00-1970",
+        port: 9,
+        inputHash: "old",
+      }),
+    );
+
+    const started = await ensure(await inputFor({ allow: ["a.invalid"] }), true);
+
+    expect(started.notices).toEqual([EGRESS_CHANGED]);
+  }, 20_000);
+
   it("restarts when the extra CA file changed", async () => {
     const extraPem = stateLayout(state.stateDir).extraPem;
 

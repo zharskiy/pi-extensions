@@ -1,21 +1,10 @@
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import {
-  chmod,
-  lstat,
-  mkdir,
-  readdir,
-  readFile,
-  readlink,
-  realpath,
-  rm,
-  symlink,
-  writeFile,
-} from "node:fs/promises";
+import { chmod, lstat, mkdir, readdir, readFile, readlink, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { launcherRoot } from "../../shared/index.ts";
-import { tempDir } from "../support/temp-dir.ts";
+import { realTempDir } from "../support/temp-dir.ts";
 
 const imageFile = (name: string) => readFile(join(launcherRoot(), "image", name), "utf8");
 
@@ -55,7 +44,7 @@ const hostToolsBin = async (bin: string) => {
 };
 
 const sandboxRoot = async () => {
-  const root = await realpath(await tempDir("entrypoint"));
+  const root = await realTempDir("entrypoint");
   const paths = {
     root,
     home: join(root, "home"),

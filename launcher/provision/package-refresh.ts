@@ -1,5 +1,5 @@
 import type { Backend } from "../backend/index.ts";
-import { readJsonObject, writeJsonFile } from "../shared/index.ts";
+import { PRIVATE_FILE_MODE, readJsonObject, writeJsonFile } from "../shared/index.ts";
 import { isVolumeGitDir, type PackagePin } from "./host-packages.ts";
 import { removeVolumeDirs } from "./volume.ts";
 
@@ -11,8 +11,6 @@ export interface PackageRefreshInput {
   othersLive: () => Promise<boolean>;
   removeTimeoutMs?: number;
 }
-
-const PRIVATE_FILE_MODE = 0o600;
 
 const lastPins = async (stampPath: string) => {
   const stamp = await readJsonObject(stampPath);

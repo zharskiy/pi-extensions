@@ -1,6 +1,6 @@
-import { constants } from "node:os";
 import { Writable } from "node:stream";
 import type { Backend, TerminalSize } from "../backend/index.ts";
+import { signalExit } from "../shared/index.ts";
 import type { Workspace } from "../workspace/index.ts";
 
 export interface HostTerminal {
@@ -29,11 +29,9 @@ export interface RunPiInput {
   graceMs?: number;
 }
 
-const SIGNAL_EXIT_BASE = 128;
-
 const GRACE_MS = 5000;
 
-const SIGNALS: NodeJS.Signals[] = ["SIGINT", "SIGTERM", "SIGHUP"];
+export const STOP_SIGNALS: NodeJS.Signals[] = ["SIGINT", "SIGTERM", "SIGHUP"];
 
 const PID_FILE = "/tmp/pi-sandbox-pi.pid";
 
@@ -61,11 +59,19 @@ const withRawMode = async <T>(terminal: HostTerminal, interactive: boolean, acti
   }
 };
 
-const listenFor = (source: SignalSource, names: NodeJS.Signals[]) => {
+export const listenFor = (
+  source: SignalSource,
+  names: NodeJS.Signals[],
+  heard: (name: NodeJS.Signals) => void = () => undefined,
+) => {
   const stops: Array<() => void> = [];
   const received = new Promise<NodeJS.Signals>((resolve) => {
     names.forEach((name) => {
-      const listener = () => resolve(name);
+      const listener = () => {
+        heard(name);
+
+        resolve(name);
+      };
 
       source.on(name, listener);
 
@@ -105,7 +111,7 @@ const quietExec = (input: RunPiInput, script: string) =>
 
 const settleSignal = async (input: RunPiInput, running: Promise<number>, signal: NodeJS.Signals) => {
   const grace = input.graceMs ?? GRACE_MS;
-  const signalled = SIGNAL_EXIT_BASE + constants.signals[signal];
+  const signalled = signalExit(signal);
   const code = running.catch(() => signalled);
 
   await quietExec(input, `kill -TERM "$(cat ${PID_FILE})"`);
@@ -143,7 +149,7 @@ export const runPi = (input: RunPiInput) => {
   const interactive = isInteractive(input.terminal);
 
   return withRawMode(input.terminal, interactive, async () => {
-    const watch = listenFor(input.signals ?? process, SIGNALS);
+    const watch = listenFor(input.signals ?? process, STOP_SIGNALS);
 
     try {
       const running = execPi(input, interactive);

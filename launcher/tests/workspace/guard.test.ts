@@ -1,24 +1,18 @@
-import { mkdir, realpath } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { assertSafeMounts, assertSafeWorkspace, type Workspace } from "../../workspace/index.ts";
-import { tempDir } from "../support/temp-dir.ts";
+import { assertSafeMounts, assertSafeWorkspace } from "../../workspace/index.ts";
+import { workspaceAt } from "../support/git.ts";
+import { realTempDir } from "../support/temp-dir.ts";
 
 const createHome = async () => {
-  const base = await realpath(await tempDir("guard"));
+  const base = await realTempDir("guard");
   const home = join(base, "home");
 
   await mkdir(join(home, "work", "repo"), { recursive: true });
 
   return { base, home, context: { home, env: {}, platform: "linux" as const } };
 };
-
-const workspaceAt = (repoRoot: string, gitCommonDir?: string): Workspace => ({
-  cwd: repoRoot,
-  repoRoot,
-  gitCommonDir,
-  isGitRepo: gitCommonDir !== undefined,
-});
 
 describe("assertSafeWorkspace", () => {
   it("accepts a project directory under the home", async () => {

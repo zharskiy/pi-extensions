@@ -1,9 +1,10 @@
 import { join } from "node:path";
+import { placeholderFor, readOptionalText } from "../../shared/index.ts";
 import type { Endpoint } from "../endpoints.ts";
 import { findOnPath } from "../path-search.ts";
-import { mergeSections, noticeOnly, placeholderOf, rulesFor, type Section } from "../rules.ts";
+import { mergeSections, noticeOnly, rulesFor, type Section } from "../rules.ts";
 import type { ToolHost, ToolsInput } from "../types.ts";
-import { readOptional, sandboxedConfigNotice, xdgConfigHome } from "./files.ts";
+import { sandboxedConfigNotice, xdgConfigHome } from "./files.ts";
 
 const HOST_LINE = /^([A-Za-z0-9.-]+):\s*$/;
 
@@ -24,7 +25,7 @@ const readHosts = async (input: ToolsInput): Promise<Section<string | undefined>
   const { path, variable } = hostsFile(input);
   const notice = variable === "" ? undefined : await sandboxedConfigNotice(input, LABEL, variable, path);
 
-  return notice === undefined ? noticeOnly(await readOptional(path)) : noticeOnly(undefined, notice);
+  return notice === undefined ? noticeOnly(await readOptionalText(path)) : noticeOnly(undefined, notice);
 };
 
 const hostsOf = (text: string) =>
@@ -44,7 +45,7 @@ const endpointsOf = (host: string): Endpoint[] => {
 
 const hostSection = (input: ToolsInput, gh: string, host: string): Section<ToolHost> => {
   const identity = `gh:${host}:token`;
-  const token = placeholderOf(input, identity);
+  const token = placeholderFor(input.salt, identity);
 
   return {
     value: { host, token },
@@ -65,9 +66,7 @@ export const deriveGh = async (input: ToolsInput): Promise<Section<ToolHost[]>> 
     return noticeOnly([], ...file.notices);
   }
 
-  const merged = mergeSections(hosts.map((host) => hostSection(input, gh, host)));
-
-  return { value: merged.values, rules: merged.rules, notices: merged.notices };
+  return mergeSections(hosts.map((host) => hostSection(input, gh, host)));
 };
 
 export const ghEnv = (hosts: ToolHost[]): Record<string, string> => {

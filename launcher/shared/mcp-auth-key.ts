@@ -1,7 +1,8 @@
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { withFileLock } from "./file-lock.ts";
-import { isJsonObject, parseJsonObject, readJsonObject, writeJsonFile } from "./json-file.ts";
+import { isJsonObject, readJsonObject, writeJsonFile } from "./json-file.ts";
+import { PRIVATE_DIR_MODE, PRIVATE_FILE_MODE } from "./modes.ts";
 import { stateLayout } from "./state-layout.ts";
 
 export interface McpAuthEntry {
@@ -20,11 +21,12 @@ export type McpLogins = Record<string, McpLoginState>;
 
 export const MCP_SERVER_NAME = /^[A-Za-z0-9_-]+$/;
 
-export const MCP_TOKEN_SKEW_MS = 30_000;
+const TOKEN_SKEW_MS = 30_000;
+
+export const tokenUsableUntil = (expiresAt: number | undefined) =>
+  expiresAt === undefined ? undefined : expiresAt - TOKEN_SKEW_MS;
 
 const HOST_STORE = "mcp-auth.json";
-
-const PRIVATE_MODE = 0o600;
 
 export const mcpAuthKey = (server: string, url: string) =>
   `mcp__${server.replaceAll("-", "_")}|${new URL(url).href}`;
@@ -53,8 +55,7 @@ export const readMcpAuthEntry = async (
   server: string,
   url: string,
 ): Promise<McpAuthEntry | undefined> => {
-  const text = await readFile(join(hostAgentDir, HOST_STORE), "utf8").catch(() => undefined);
-  const store = text === undefined ? undefined : parseJsonObject(text);
+  const store = await readJsonObject(join(hostAgentDir, HOST_STORE));
 
   return store === undefined
     ? undefined
@@ -62,7 +63,7 @@ export const readMcpAuthEntry = async (
 };
 
 export const isFreshMcpToken = (entry: McpAuthEntry | undefined, now: number) =>
-  entry?.access !== undefined && (entry.expiresAt === undefined || entry.expiresAt - MCP_TOKEN_SKEW_MS > now);
+  entry?.access !== undefined && (entry.expiresAt === undefined || entry.expiresAt - TOKEN_SKEW_MS > now);
 
 const LOGIN_TIMEOUT_SECONDS = 300;
 
@@ -76,7 +77,7 @@ export const mcpLoginCommand = (piCommand: string[], server: string) => [
 ];
 
 const makeMcpLoginDir = async (stateDir: string) => {
-  await mkdir(stateDir, { recursive: true, mode: 0o700 });
+  await mkdir(stateDir, { recursive: true, mode: PRIVATE_DIR_MODE });
 
   return mkdtemp(stateLayout(stateDir).mcpLoginDirPrefix);
 };
@@ -110,7 +111,11 @@ export const updateMcpLogin = (
     const logins = await readMcpLogins(stateDir);
     const next = update(logins[key] ?? {});
 
-    await writeJsonFile(stateLayout(stateDir).mcpLogin, { ...logins, [key]: next }, { mode: PRIVATE_MODE });
+    await writeJsonFile(
+      stateLayout(stateDir).mcpLogin,
+      { ...logins, [key]: next },
+      { mode: PRIVATE_FILE_MODE },
+    );
 
     return next;
   });

@@ -1,7 +1,7 @@
 import { rm } from "node:fs/promises";
 import type { Backend } from "../backend/index.ts";
 import type { SandboxConfig } from "../config/index.ts";
-import { stateLayout, withFileLock, withFileLockIfFree } from "../shared/index.ts";
+import { HOUR_MS, stateLayout, withFileLock, withFileLockIfFree } from "../shared/index.ts";
 import { type BuiltImage, ensureBuiltImage, type ImageVersions, pullPinnedImage } from "./build.ts";
 import { ensureLayerImage } from "./layer.ts";
 import { removeStaleImages } from "./prune.ts";
@@ -25,7 +25,7 @@ export interface SandboxImage {
   id: string;
 }
 
-const BUILD_LOCK_TIMEOUT_MS = 60 * 60 * 1000;
+const BUILD_LOCK_TIMEOUT_MS = HOUR_MS;
 
 const baseImage = async (input: SandboxImageInput, trustPem: string | undefined): Promise<BuiltImage> => {
   const { reference, digest } = input.config.image;

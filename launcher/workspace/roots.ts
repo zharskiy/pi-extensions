@@ -9,7 +9,7 @@ import {
   printable,
   realOrResolvedSync,
 } from "../shared/index.ts";
-import { protectedPaths } from "./mounts.ts";
+import { overlapOf, type Protected, protectedPaths, withRealForm } from "./mounts.ts";
 import { mountedGitDirs, type Workspace } from "./types.ts";
 
 interface WorkspaceRoots {
@@ -35,13 +35,8 @@ export type RootVerdict =
 interface SharedRoots {
   roots: string[];
   missing: string[];
+  nested: string[];
   notices: string[];
-}
-
-interface Guarded {
-  path: string;
-  name: string;
-  inside: boolean;
 }
 
 const MOUNT_SYNTAX = /[,:]/;
@@ -62,29 +57,20 @@ const refusal = (root: string, problem: string) =>
     "name the project folders themselves in workspaceRoots.roots",
   );
 
-const bothForms = (entry: Guarded) => {
-  const real = realOrResolvedSync(entry.path);
-
-  return real === entry.path ? [entry] : [entry, { ...entry, path: real }];
-};
-
-const guardedPaths = (context: RootGuardContext, homes: string[]): Guarded[] => {
+const guardedPaths = (context: RootGuardContext, homes: string[]): Protected[] => {
   const configDir = dirname(launcherPaths(context).userConfigFile);
   const listed = [
-    ...protectedPaths(context)
-      .filter((entry) => !homes.includes(entry.path))
-      .map((entry) => ({ path: entry.path, name: entry.reason, inside: true })),
-    ...ROOT_ONLY_HOME.map((name) => ({ path: join(context.home, name), name: `~/${name}`, inside: true })),
-    { path: configDir, name: "the launcher config dir", inside: true },
-    ...SYSTEM_DIRS.map((path) => ({ path, name: path, inside: true })),
-    ...SYSTEM_PARENTS.map((path) => ({ path, name: path, inside: false })),
+    ...ROOT_ONLY_HOME.map((name) => ({ path: join(context.home, name), reason: `~/${name}`, under: true })),
+    { path: configDir, reason: "the launcher config dir", under: true },
+    ...SYSTEM_DIRS.map((path) => ({ path, reason: path, under: true })),
+    ...SYSTEM_PARENTS.map((path) => ({ path, reason: path, under: false })),
   ];
+  const workspaceGuard = protectedPaths(context)
+    .filter((entry) => !homes.includes(entry.path))
+    .map((entry) => ({ ...entry, under: true }));
 
-  return listed.flatMap(bothForms);
+  return [...workspaceGuard, ...listed.flatMap(withRealForm)];
 };
-
-const clashes = (resolved: string) => (entry: Guarded) =>
-  isWithin(entry.path, resolved) || (entry.inside && isWithin(resolved, entry.path));
 
 export const pathTextProblem = (path: string): RootProblem | undefined => {
   if (CONTROL_CHARACTER.test(path)) {
@@ -107,15 +93,17 @@ const problemOf = (resolved: string, context: RootGuardContext): RootProblem | u
     return { kind: "home" };
   }
 
-  const clash = guardedPaths(context, homes).find(clashes(resolved));
+  const clash = guardedPaths(context, homes)
+    .map((entry) => ({ entry, overlap: overlapOf(resolved, entry) }))
+    .find((found) => found.overlap !== undefined);
 
   if (clash === undefined) {
     return undefined;
   }
 
-  return isWithin(clash.path, resolved)
-    ? { kind: "holds", name: clash.name, path: clash.path }
-    : { kind: "inside", name: clash.name, path: clash.path };
+  const kind = clash.overlap === "inside" ? "inside" : "holds";
+
+  return { kind, name: clash.entry.reason, path: clash.entry.path };
 };
 
 const refusalOf = (root: string, problem: RootProblem) => {
@@ -161,6 +149,45 @@ export const checkRoot = (root: string, context: RootGuardContext): RootVerdict 
   return problem === undefined ? { ok: true, resolved, exists: isFolder(resolved) } : { ok: false, problem };
 };
 
+interface RootEntry {
+  root: string;
+  resolved: string;
+}
+
+const notShared = (root: string, reason: string) =>
+  `workspaceRoots: ${printable(root)} ${reason}, not shared`;
+
+const rootNotices = (listed: RootEntry[], present: RootEntry[], shared: string[]) => {
+  const inner = listed
+    .filter((entry) => !shared.includes(entry.resolved))
+    .filter((entry, index, all) => all.findIndex((other) => other.resolved === entry.resolved) === index);
+  const outerOf = (entry: RootEntry) => {
+    const share = shared.find((root) => isWithin(entry.resolved, root));
+
+    return present.find((other) => other.resolved === share);
+  };
+  const nestedOf = (entry: RootEntry) => {
+    const outer = isFolder(entry.resolved) ? outerOf(entry) : undefined;
+
+    return outer === undefined
+      ? []
+      : [
+          `workspaceRoots: ${printable(entry.root)} is inside ${printable(outer.root)} and is shared through it`,
+        ];
+  };
+  const noticesOf = (entry: RootEntry) => {
+    if (!isFolder(entry.resolved)) {
+      return [notShared(entry.root, "does not exist")];
+    }
+
+    return outerOf(entry) === undefined
+      ? [notShared(entry.root, `leads to ${printable(entry.resolved)}, outside the shared roots`)]
+      : [];
+  };
+
+  return { nested: inner.flatMap(nestedOf), notices: inner.flatMap(noticesOf) };
+};
+
 export const sharedRootsOf = (workspaceRoots: WorkspaceRoots, context: RootGuardContext): SharedRoots => {
   const entries = configuredRoots(workspaceRoots.roots, context.home);
 
@@ -168,17 +195,15 @@ export const sharedRootsOf = (workspaceRoots: WorkspaceRoots, context: RootGuard
     assertShareable(entry.root, entry.resolved, context);
   });
 
+  const listed = workspaceRoots.roots.map((root) => ({
+    root,
+    resolved: realOrResolvedSync(lexicalRoot(root, context.home)),
+  }));
   const present = entries.filter((entry) => isFolder(entry.resolved));
   const absent = entries.filter((entry) => !isFolder(entry.resolved));
-  const notices = absent.map(
-    (entry) => `workspaceRoots: ${printable(entry.root)} does not exist, not shared`,
-  );
+  const roots = outermostPaths(present.map((entry) => entry.resolved));
 
-  return {
-    roots: outermostPaths(present.map((entry) => entry.resolved)),
-    missing: absent.map((entry) => entry.resolved),
-    notices,
-  };
+  return { roots, missing: absent.map((entry) => entry.resolved), ...rootNotices(listed, present, roots) };
 };
 
 export const assertWithinWorkspaceRoots = (

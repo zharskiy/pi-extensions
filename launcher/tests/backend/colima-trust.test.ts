@@ -139,6 +139,7 @@ describe("the sandbox VM trusts the tls.extraCa certificates", () => {
     expect(context.inputs()).toEqual([FIRST, `${sha256Hex(FIRST)}\n`]);
 
     expect(state.marker).toBe(`${sha256Hex(FIRST)}\n`);
+    expect(context.notices).toEqual(["installing the tls.extraCa certificates in the sandbox VM, one time"]);
 
     expect(context.calls.every((call) => call.file === "colima" && call.args[0] === "ssh")).toBe(true);
   });
@@ -187,6 +188,9 @@ describe("the sandbox VM trusts the tls.extraCa certificates", () => {
     ]);
 
     expect(state.marker).toBeUndefined();
+    expect(context.notices).toEqual([
+      "removing the earlier tls.extraCa certificates from the sandbox VM, one time",
+    ]);
   });
 
   it("defers the change with one notice while another pi session is live", async () => {
@@ -276,6 +280,26 @@ describe("the sandbox VM trusts the tls.extraCa certificates", () => {
     await again.ensure();
 
     expect(again.commands()).toEqual([`cat ${MARKER}`]);
+  });
+
+  it("says the removal failed when a VM command fails while the bundle is emptied", async () => {
+    const state: VmState = { marker: "old\n", failing: "sudo update-ca-certificates" };
+    const context = await setup(state);
+    const failure = await context.ensure().catch((error: unknown) => error as Error);
+
+    expect(failure?.message).toBe(
+      "could not remove the earlier tls.extraCa certificates from the sandbox VM: update-ca-certificates --fresh failed: update-ca-certificates: boom",
+    );
+  });
+
+  it("says the engine did not come back after the removal", async () => {
+    const state: VmState = { marker: "old\n", engineUpAfter: 1000 };
+    const context = await setup(state);
+    const failure = await context.ensure().catch((error: unknown) => error as Error);
+
+    expect(failure?.message).toBe(
+      "the sandbox VM engine did not come back after removing the earlier tls.extraCa certificates: engine socket refused",
+    );
   });
 
   it("fails clearly and leaves no marker when a VM command fails", async () => {

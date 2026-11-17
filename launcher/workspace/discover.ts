@@ -6,7 +6,8 @@ import {
   isWithin,
   LauncherError,
   lstatOrUndefined,
-  readRegularFile,
+  readRegularText,
+  realOrUndefined,
 } from "../shared/index.ts";
 import { inertGitOptions } from "./git/command.ts";
 import { findGitRoot, gitDirHolding, gitLayoutAt, isGitName, lexicalGitLayout } from "./git/layout.ts";
@@ -92,8 +93,6 @@ const insideGitDir = (cwd: string, gitDir: string) =>
     `workspace: ${cwd} lies inside the git dir ${gitDir}, refusing`,
     "start pi in a repository's checkout or in a folder outside its git dir",
   );
-
-const realOrUndefined = (path: string) => realpath(path).catch(() => undefined);
 
 const splitsOf = (stdout: string) => {
   const lines = stdout.replace(/\n$/, "").split("\n");
@@ -188,10 +187,7 @@ const singleRepo = async (root: string, cwd: string, runner: CommandRunner, empt
 const GIT_FILE_PREFIX = "gitdir: ";
 
 const pointerText = async (path: string) => {
-  const text = await readRegularFile(path).then(
-    (file) => file.data.toString("utf8"),
-    () => "",
-  );
+  const text = (await readRegularText(path)) ?? "";
 
   return text.startsWith(GIT_FILE_PREFIX)
     ? text.slice(GIT_FILE_PREFIX.length).replace(/[\r\n]+$/, "")
@@ -206,10 +202,7 @@ const reachedPaths = async (base: string, text: string) => {
 };
 
 const commonDirPaths = async (gitDir: string) => {
-  const text = await readRegularFile(join(gitDir, "commondir")).then(
-    (file) => file.data.toString("utf8").trimEnd(),
-    () => "",
-  );
+  const text = (await readRegularText(join(gitDir, "commondir")))?.trimEnd() ?? "";
 
   return text === "" || text === "." ? [] : (await reachedPaths(gitDir, text)).paths;
 };

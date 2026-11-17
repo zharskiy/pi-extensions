@@ -93,7 +93,7 @@ Run again, `pi sandbox init` opens the review with your current settings; a conf
 
 `PI_SANDBOX_PLAIN=1` asks the same questions as numbered lines that you answer by typing, with no menu to move through, no spinner and no colour: for screen readers and plain terminals. A dumb or unset `TERM` gets plain mode too, read line by line without any cursor control (and so without Tab completion of paths).
 
-Without a terminal (CI, a provisioning script, `ssh host install.sh`), `pi sandbox init` refuses, and `pi sandbox init --yes` asks nothing: it keeps the settings in the file and applies them to the VM, printing the same lines as the plain setup: the review of the settings, the file changes and the VM action first, then the progress and the result. `install.sh` uses `--yes` when it finds no terminal or `CI` is set. To name the project folders there, set `PI_SANDBOX_ROOTS`, which `--yes` writes to a config without `workspaceRoots`:
+Without a terminal (CI, a provisioning script, `ssh host install.sh`), `pi sandbox init` refuses, and `pi sandbox init --yes` asks nothing: it keeps the settings in the file and applies them to the VM, printing the same lines as the plain setup: the review of the settings, the file changes and the VM action first, then the progress and the result. When the file and the VM already match, it prints only `Everything is set up: the file and the sandbox VM already match these settings.` `install.sh` uses `--yes` when it finds no terminal or `CI` is set. To name the project folders there, set `PI_SANDBOX_ROOTS`, which `--yes` writes to a config without `workspaceRoots`:
 
 ```bash
 PI_SANDBOX_ROOTS="$HOME/Projects:/Volumes/Work" "$(npm root -g)/pi-extensions-mz/launcher/install.sh"
@@ -124,7 +124,7 @@ Pi's own installer comes first here too: the launcher runs only pi's managed ins
    cd ~/code/my-app && pi
    ```
 
-   When the install script's smoke check ran, it already built the sandbox image, so pi starts in seconds; when it was skipped, the first launch builds it. Behind a proxy that inspects TLS the smoke check fails until [`tls.extraCa`](CONFIGURATION.md#corporate-proxy-and-tls-inspection) names the proxy's CA, which `pi sandbox doctor` prints. When the image must be rebuilt, for example after a pi update, the launch prints `preparing pi sandbox, one time` and takes a few minutes.
+   When the install script's smoke check ran, it already built the sandbox image, so pi starts in seconds; when it was skipped, the first launch builds it. Behind a proxy that inspects TLS the smoke check fails until [`tls.extraCa`](CONFIGURATION.md#corporate-proxy-and-tls-inspection) names the proxy's CA, which `pi sandbox doctor` prints. When the image must be rebuilt, for example after a pi update, the launch prints `pi-sandbox: preparing pi sandbox, one time` and takes a few minutes.
 
 2. Work as usual. A tool that reaches a host that is not allowed gets an error page saying what to do.
 
@@ -276,3 +276,5 @@ It also deletes the old state folder `~/.local/state/pi-sandbox` if an earlier v
 How it works and every file it writes: [ARCHITECTURE.md](ARCHITECTURE.md). Where the code is: [STRUCTURE.md](STRUCTURE.md).
 
 To work on the launcher, run `npm run check` from the repository root. `node launcher/bin/pi-sandbox-dev.js` runs a checkout. `PI_SANDBOX_LIVE=1 npm run test:live` tests against real Colima.
+
+The live tests skip unless `PI_SANDBOX_LIVE=1` is set and `~/.colima/pi-sandbox/docker.sock` exists, need the `pi-sandbox` VM running, and never restart it: each test registers a launch of its own, which holds every restart, so the VM must already share `PI_SANDBOX_LIVE_DIR` (default `~/.cache/pi-sandbox-live`). Each test makes a folder `<that dir>/<test>-<random>` with its own home, agent dir, launcher state, config and repository, and the launches it runs need that folder shared. Without `workspaceRoots` in your own config the VM shares your whole home, which holds the default dir. With `workspaceRoots`, create the dir (`mkdir -p ~/.cache/pi-sandbox-live`; a root that does not exist is not shared), add it to `workspaceRoots.roots`, and run `pi sandbox init` while no pi session runs. The tests put their test CA in `tls.extraCa`, so it stays in the VM's trust store after they end, until the next launch without `tls.extraCa` and with no other pi session running removes it.

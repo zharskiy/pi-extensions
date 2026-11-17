@@ -8,6 +8,7 @@ import {
   scrubResponseHeaders,
   withoutStrayPlaceholders,
 } from "../../proxy/rules.ts";
+import { b64 } from "./harness.ts";
 
 const PLACEHOLDER = "pi-sandbox-0123456789abcdef01234567";
 
@@ -157,8 +158,6 @@ describe("scrubResponseHeaders", () => {
 });
 
 describe("Basic credentials", () => {
-  const b64 = (text: string) => Buffer.from(text).toString("base64");
-
   it("substitutes the placeholder inside a Basic value and re-encodes it", () => {
     const sent = b64(`x-access-token:${PLACEHOLDER}`);
     const rewritten = rewriteRequestHeaders([["Authorization", `Basic ${sent}`]], rule(), "gho_real");

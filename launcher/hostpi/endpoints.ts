@@ -1,3 +1,4 @@
+import { authorityOf, TLS_PORT } from "../config/index.ts";
 import { hasUrlUserinfo, isSecretName } from "../shared/index.ts";
 
 export interface Endpoint {
@@ -8,8 +9,6 @@ export interface Endpoint {
 export type EndpointResult = { endpoint: Endpoint } | { local: string } | { invalid: true };
 
 const LOOPBACK = /^(localhost|.*\.localhost|127(\.\d+){3}|\[::1\]|::1|0\.0\.0\.0)$/;
-
-const TLS_PORT = 443;
 
 export const endpointOf = (url: unknown): EndpointResult => {
   if (typeof url !== "string") {
@@ -32,8 +31,13 @@ export const endpointOf = (url: unknown): EndpointResult => {
   }
 };
 
-export const endpointKey = (endpoint: Endpoint) =>
-  endpoint.port === undefined ? endpoint.host : `${endpoint.host}:${endpoint.port}`;
+export const httpsEndpoint = (url: unknown): Endpoint[] => {
+  const result = endpointOf(url);
+
+  return "endpoint" in result ? [result.endpoint] : [];
+};
+
+export const endpointKey = (endpoint: Endpoint) => authorityOf(endpoint.host, endpoint.port ?? TLS_PORT);
 
 export const uniqueEndpoints = (endpoints: Endpoint[]) => [
   ...new Map(endpoints.map((endpoint) => [endpointKey(endpoint), endpoint])).values(),
@@ -47,6 +51,12 @@ export const hasQueryCredential = (url: unknown) =>
   [...(parsed(url)?.searchParams.keys() ?? [])].some(
     (name) => isSecretName(name) || SECRET_QUERY_NAME.test(name),
   );
+
+export const queryCredentialNotice = (label: string, key: string, what: string) =>
+  `${label}: ${key} carries a credential in its query string; ${what} stays out of the sandbox, use a header instead`;
+
+export const localEndpointReason = (host: string) =>
+  `${host} is a host-local or plain-http endpoint, not reachable from the sandbox`;
 
 export const hasUrlPassword = (url: unknown) => (parsed(url)?.password ?? "") !== "";
 

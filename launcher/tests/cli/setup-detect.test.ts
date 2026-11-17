@@ -1,12 +1,11 @@
-import { mkdir, realpath } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { VmInspect } from "../../backend/index.ts";
 import { type DetectDeps, detectHost } from "../../cli/setup/detect.ts";
-import { registerLaunch } from "../../grants/index.ts";
-import { processMark } from "../../shared/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
-import { tempDir } from "../support/temp-dir.ts";
+import { registerLiveLaunch } from "../support/launches.ts";
+import { realTempDir } from "../support/temp-dir.ts";
 
 const GIB = 1024 ** 3;
 
@@ -17,7 +16,7 @@ const running: VmInspect = {
 };
 
 const depsOf = async (overrides: Partial<DetectDeps> = {}): Promise<DetectDeps> => {
-  const home = await realpath(await tempDir("detect-home"));
+  const home = await realTempDir("detect-home");
 
   await mkdir(join(home, "Projects", "app", ".git"), { recursive: true });
 
@@ -123,12 +122,7 @@ describe("detectHost", () => {
   it("counts the live pi sessions", async () => {
     const deps = await depsOf();
 
-    await registerLaunch(deps.stateDir, {
-      launchId: "0123456789abcdef",
-      ...(await processMark()),
-      repoHash: "a".repeat(64),
-      startedAt: 1,
-    });
+    await registerLiveLaunch(deps.stateDir, "a".repeat(64), { launchId: "0123456789abcdef" });
 
     expect((await detectHost(deps)).sessions).toBe(1);
   });

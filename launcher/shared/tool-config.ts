@@ -1,4 +1,5 @@
 import { INI_KEY, iniValue } from "./ini.ts";
+import { parseJson } from "./json-file.ts";
 import { mavenServerSecret } from "./maven-xml.ts";
 import { npmrcValue } from "./npmrc.ts";
 
@@ -19,35 +20,45 @@ const PLAIN_KEY = /^[^\s=]+$/;
 
 const SELECTOR = /^\[([^=\]]+)=(.*)\]$/;
 
-const urlPasswordOf = (value: string | undefined) => {
-  if (value === undefined || !URL.canParse(value)) {
-    return undefined;
+export class MalformedUrlCredentials extends Error {
+  constructor() {
+    super("a URL whose credentials are not valid percent-encoding");
+    this.name = "MalformedUrlCredentials";
   }
+}
 
-  const password = new URL(value).password;
-
-  return password === "" ? undefined : decodeURIComponent(password);
+const decodedUserinfo = (text: string) => {
+  try {
+    return decodeURIComponent(text);
+  } catch {
+    throw new MalformedUrlCredentials();
+  }
 };
 
-const urlUsernameOf = (value: string | undefined) => {
+const userinfoOf = (value: string | undefined, part: "password" | "username") => {
   if (value === undefined || !URL.canParse(value)) {
     return undefined;
   }
 
-  const username = new URL(value).username;
+  const text = new URL(value)[part];
 
-  return username === "" ? undefined : decodeURIComponent(username);
+  return text === "" ? undefined : decodedUserinfo(text);
 };
 
 export const urlPartOf = (value: string | undefined, select: { urlPassword?: true; urlUsername?: true }) => {
   if (select.urlPassword === true) {
-    return urlPasswordOf(value);
+    return userinfoOf(value, "password");
   }
 
-  return select.urlUsername === true ? urlUsernameOf(value) : value;
+  return select.urlUsername === true ? userinfoOf(value, "username") : value;
 };
 
 const unescapeToken = (token: string) => token.replaceAll("~1", "/").replaceAll("~0", "~");
+
+const escapeToken = (token: string) => token.replaceAll("~", "~0").replaceAll("/", "~1");
+
+export const jsonPointer = (tokens: Array<string | number>) =>
+  tokens.map((token) => `/${escapeToken(String(token))}`).join("");
 
 const jsonStep = (value: unknown, token: string) => {
   const selector = SELECTOR.exec(token);
@@ -63,14 +74,6 @@ const jsonStep = (value: unknown, token: string) => {
   return typeof value === "object" && value !== null && Object.hasOwn(value, token)
     ? (value as Record<string, unknown>)[token]
     : undefined;
-};
-
-const parseJson = (text: string) => {
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    return undefined;
-  }
 };
 
 const jsonValue = (text: string, key: string) => {

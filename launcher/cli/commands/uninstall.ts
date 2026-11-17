@@ -1,7 +1,7 @@
 import { type Backend, LABELS } from "../../backend/index.ts";
 import { liveLaunches, withRepoLaunchLock } from "../../grants/index.ts";
-import { errorMessage, knownRepos } from "../../shared/index.ts";
-import { type CliDeps, pathsOf, writeLine, writeLines } from "../deps.ts";
+import { errorMessage, knownRepos, LauncherError, shortHash } from "../../shared/index.ts";
+import { type CliDeps, pathsOf, reachableEngine, writeLines } from "../deps.ts";
 import { removeRepoSandbox } from "../sweep.ts";
 
 export const UNINSTALL = "__uninstall";
@@ -29,10 +29,10 @@ const engineRepos = async (backend: Backend) => {
 const releaseRepo = (deps: CliDeps, stateDir: string, backend: Backend | undefined, repoHash: string) =>
   withRepoLaunchLock(stateDir, repoHash, async () =>
     (await liveLaunches(stateDir, repoHash)).length > 0
-      ? [`host: a pi session of ${repoHash.slice(0, 12)} started meanwhile; its sandbox stays`]
+      ? [`host: a pi session of ${shortHash(repoHash)} started meanwhile; its sandbox stays`]
       : removeRepoSandbox(deps, backend, repoHash),
   ).catch((error: unknown) => [
-    `host: the sandbox of ${repoHash.slice(0, 12)} was not released: ${errorMessage(error)}`,
+    `host: the sandbox of ${shortHash(repoHash)} was not released: ${errorMessage(error)}`,
   ]);
 
 const releaseRepos = async (deps: CliDeps, stateDir: string, backend: Backend | undefined) => {
@@ -53,17 +53,16 @@ const removeStored = async (backend: Backend) => {
   return [`engine: removed ${removedVolumes} volumes and ${removedImages} images`];
 };
 
-const reachableEngine = async (backend: Backend) =>
-  (await backend.detect()).available ? backend : undefined;
-
 export const uninstallCommand = async (deps: CliDeps) => {
   const { stateDir } = pathsOf(deps);
   const live = (await liveLaunches(stateDir)).length;
 
   if (live > 0) {
-    writeLine(deps.stderr, `pi-sandbox: ${live} pi sessions still run in the sandbox; exit them first`);
-
-    return SESSIONS_LIVE_EXIT;
+    throw new LauncherError(
+      `${live} pi sessions still run in the sandbox; exit them first`,
+      undefined,
+      SESSIONS_LIVE_EXIT,
+    );
   }
 
   const backend = await reachableEngine(deps.backend());

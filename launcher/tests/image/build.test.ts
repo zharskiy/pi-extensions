@@ -1,32 +1,18 @@
-import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { BASE_TAG, ensureBuiltImage, prepareBuildContext, pullPinnedImage } from "../../image/build.ts";
 import { recordedImage } from "../../image/index.ts";
-import { LauncherError } from "../../shared/index.ts";
+import { LauncherError, stateLayout } from "../../shared/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
+import { tempDir } from "../support/temp-dir.ts";
 
 const versions = { pi: "1.5.0" };
 
-const dirs: string[] = [];
-
-const tempDir = async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-sandbox-image-"));
-
-  dirs.push(dir);
-
-  return dir;
-};
-
-afterEach(async () => {
-  await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
-});
-
 describe("prepareBuildContext", () => {
   it("writes the Dockerfile, the entrypoint, the bash hint and an empty trust file, and no pi auth or models", async () => {
-    const dir = await tempDir();
+    const dir = await tempDir("image");
 
     await prepareBuildContext(dir);
 
@@ -46,7 +32,7 @@ describe("prepareBuildContext", () => {
   });
 
   it("sources the bash hint from the first line of the system bashrc", async () => {
-    const dir = await tempDir();
+    const dir = await tempDir("image");
 
     await prepareBuildContext(dir);
 
@@ -56,8 +42,8 @@ describe("prepareBuildContext", () => {
   });
 
   it("copies the trust bundle into the context", async () => {
-    const dir = await tempDir();
-    const trust = join(await tempDir(), "trust.pem");
+    const dir = await tempDir("image");
+    const trust = join(await tempDir("image"), "trust.pem");
 
     await writeFile(trust, "-----BEGIN CERTIFICATE-----\n");
     await prepareBuildContext(dir, { trustPem: trust });
@@ -66,8 +52,8 @@ describe("prepareBuildContext", () => {
   });
 
   it("copies the proxy CA into the context and keeps it in the system store after the build", async () => {
-    const dir = await tempDir();
-    const ca = join(await tempDir(), "ca-cert.pem");
+    const dir = await tempDir("image");
+    const ca = join(await tempDir("image"), "ca-cert.pem");
 
     await writeFile(ca, "PROXY CA\n");
     await prepareBuildContext(dir, { proxyCaPem: ca });
@@ -80,7 +66,7 @@ describe("prepareBuildContext", () => {
   });
 
   it("installs the base tools and a pi-sandbox command that points back to the host", async () => {
-    const dir = await tempDir();
+    const dir = await tempDir("image");
 
     await prepareBuildContext(dir);
 
@@ -109,7 +95,7 @@ describe("prepareBuildContext", () => {
   });
 
   it("installs the trust bundle for the build only and wires the self-update command", async () => {
-    const dir = await tempDir();
+    const dir = await tempDir("image");
 
     await prepareBuildContext(dir);
 
@@ -126,7 +112,7 @@ describe("prepareBuildContext", () => {
   });
 
   it("declares the pi version without a default right before the pi install, so a pi update reuses the earlier layers", async () => {
-    const dir = await tempDir();
+    const dir = await tempDir("image");
 
     await prepareBuildContext(dir);
 
@@ -146,7 +132,7 @@ describe("ensureBuiltImage", () => {
     const fake = createFakeBackend({ registry: { [reference]: "sha256:pinned" } });
     const config = sandboxConfig({ image: { reference, digest: "sha256:pinned" } });
     const result = await pullPinnedImage(
-      { backend: fake.backend, config, stateDir: await tempDir() },
+      { backend: fake.backend, config, stateDir: await tempDir("image") },
       reference,
       "sha256:pinned",
     );
@@ -163,13 +149,13 @@ describe("ensureBuiltImage", () => {
     const config = sandboxConfig({ image: { reference, digest: "sha256:pinned" } });
 
     await expect(
-      pullPinnedImage({ backend, config, stateDir: await tempDir() }, reference, "sha256:pinned"),
+      pullPinnedImage({ backend, config, stateDir: await tempDir("image") }, reference, "sha256:pinned"),
     ).rejects.toThrow("has digest sha256:other, expected sha256:pinned");
   });
 
   it("builds locally when no digest is pinned, with the pi version as a build argument, and records the digest", async () => {
     const fake = createFakeBackend();
-    const stateDir = await tempDir();
+    const stateDir = await tempDir("image");
     const config = sandboxConfig();
     const result = await ensureBuiltImage({ backend: fake.backend, config, versions, stateDir });
 
@@ -201,7 +187,7 @@ describe("ensureBuiltImage", () => {
 
   it("reuses the recorded build while its inputs are unchanged, whatever the credential rules", async () => {
     const fake = createFakeBackend();
-    const stateDir = await tempDir();
+    const stateDir = await tempDir("image");
     const config = sandboxConfig();
 
     await ensureBuiltImage({ backend: fake.backend, config, versions, stateDir });
@@ -231,7 +217,7 @@ describe("ensureBuiltImage", () => {
 
   it("rebuilds when the versions change", async () => {
     const fake = createFakeBackend();
-    const stateDir = await tempDir();
+    const stateDir = await tempDir("image");
     const config = sandboxConfig();
 
     await ensureBuiltImage({ backend: fake.backend, config, versions, stateDir });
@@ -247,9 +233,9 @@ describe("ensureBuiltImage", () => {
 
   it("rebuilds when the proxy CA changes", async () => {
     const fake = createFakeBackend();
-    const stateDir = await tempDir();
+    const stateDir = await tempDir("image");
     const config = sandboxConfig();
-    const proxyCaPem = join(await tempDir(), "ca-cert.pem");
+    const proxyCaPem = join(await tempDir("image"), "ca-cert.pem");
 
     await writeFile(proxyCaPem, "CA ONE\n");
     await ensureBuiltImage({ backend: fake.backend, config, versions, stateDir, proxyCaPem });
@@ -270,7 +256,7 @@ describe("ensureBuiltImage", () => {
         backend: fake.backend,
         config: sandboxConfig(),
         versions: { pi: "1.5.0; rm -rf /" },
-        stateDir: await tempDir(),
+        stateDir: await tempDir("image"),
       }),
     ).rejects.toThrow(/invalid pi version/);
     expect(fake.builds).toEqual([]);
@@ -291,7 +277,7 @@ describe("ensureBuiltImage", () => {
       backend,
       config: sandboxConfig(),
       versions: { pi: "9.9.9-dev" },
-      stateDir: await tempDir(),
+      stateDir: await tempDir("image"),
     }).then(
       () => undefined,
       (error: LauncherError) => error,
@@ -316,7 +302,7 @@ describe("ensureBuiltImage", () => {
       backend,
       config: sandboxConfig(),
       versions,
-      stateDir: await tempDir(),
+      stateDir: await tempDir("image"),
     }).then(
       () => undefined,
       (error: LauncherError) => error,
@@ -327,7 +313,7 @@ describe("ensureBuiltImage", () => {
 
   it("rebuilds when the recorded image is gone from the engine", async () => {
     const fake = createFakeBackend();
-    const stateDir = await tempDir();
+    const stateDir = await tempDir("image");
     const config = sandboxConfig();
 
     await ensureBuiltImage({ backend: fake.backend, config, versions, stateDir });
@@ -344,7 +330,7 @@ describe("ensureBuiltImage", () => {
 describe("recordedImage", () => {
   it("returns the recorded base image only while the config asks for it", async () => {
     const fake = createFakeBackend();
-    const stateDir = await tempDir();
+    const stateDir = await tempDir("image");
     const config = sandboxConfig();
 
     expect(await recordedImage(stateDir, config)).toBeUndefined();
@@ -371,5 +357,25 @@ describe("recordedImage", () => {
 
     expect(await recordedImage(stateDir, pinnedConfig)).toMatchObject({ reference, digest: "sha256:pinned" });
     expect(await recordedImage(stateDir, config)).toBeUndefined();
+  });
+
+  it("names the configured image even when the stored record carries a reference", async () => {
+    const fake = createFakeBackend();
+    const stateDir = await tempDir("image");
+    const config = sandboxConfig();
+
+    await ensureBuiltImage({ backend: fake.backend, config, versions, stateDir });
+
+    const recordFile = stateLayout(stateDir).imageRecord;
+    const record = JSON.parse(await readFile(recordFile, "utf8"));
+
+    expect((await stat(recordFile)).mode & 0o777).toBe(0o600);
+
+    await writeFile(
+      recordFile,
+      JSON.stringify({ ...record, base: { ...record.base, reference: "evil.example/pi:1" } }),
+    );
+
+    expect((await recordedImage(stateDir, config))?.reference).toBe(BASE_TAG);
   });
 });

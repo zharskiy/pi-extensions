@@ -3,7 +3,7 @@ import { type Backend, ENGINE_PROFILE, LABELS } from "../../backend/index.ts";
 import { liveLaunches, withRepoLaunchLock } from "../../grants/index.ts";
 import { LauncherError, stateLayout } from "../../shared/index.ts";
 import { type LaunchContext, openContext } from "../context.ts";
-import { type CliDeps, writeLines } from "../deps.ts";
+import { type CliDeps, reachableEngine, writeLines } from "../deps.ts";
 import { removeRepoSandbox } from "../sweep.ts";
 
 const ownVolumes = async (context: LaunchContext, backend: Backend) =>
@@ -43,18 +43,18 @@ const reset = async (deps: CliDeps, context: LaunchContext, backend: Backend) =>
 
   await refuseLive(stateDir, context);
 
-  const reachable = (await backend.detect()).available;
-  const removed = await removeRepoSandbox(deps, backend, repoHash);
+  const engine = await reachableEngine(backend);
+  const removed = await removeRepoSandbox(deps, engine, repoHash);
 
   await rm(stateLayout(stateDir).repo(repoHash).render, { recursive: true, force: true });
 
-  if (!reachable) {
+  if (engine === undefined) {
     writeLines(deps.stdout, [...removed, ENGINE_SKIPPED]);
 
     return;
   }
 
-  const lines = [...removed, ...(await removeVolumes(context, backend))];
+  const lines = [...removed, ...(await removeVolumes(context, engine))];
 
   writeLines(deps.stdout, lines.length === 0 ? [`no sandbox for ${workspace.repoRoot}`] : lines);
 };

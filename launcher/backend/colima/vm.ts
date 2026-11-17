@@ -1,10 +1,11 @@
-import { access, readFile } from "node:fs/promises";
+import { access } from "node:fs/promises";
 import { join } from "node:path";
 import {
   type CommandRunner,
   errorMessage,
   LauncherError,
   lastLine,
+  readOptionalText,
   stateLayout,
   withDirectoryLock,
 } from "../../shared/index.ts";
@@ -177,7 +178,7 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
       () => false,
     );
 
-  const readProfileYaml = () => readFile(profileYaml, "utf8").catch(() => undefined);
+  const readProfileYaml = () => readOptionalText(profileYaml);
 
   const running = async (failure: string) => {
     const result = await colimaRun(["status", "--profile", profile]).catch((error: unknown) => {

@@ -1,5 +1,6 @@
 import { type CredentialRule, fillTemplate, normalizeHost, TLS_PORT } from "../config/index.ts";
 import { isAuthLikeHeader } from "../shared/index.ts";
+import { BASIC_HEADER } from "./auth.ts";
 
 export type HeaderPair = readonly [string, string];
 
@@ -7,6 +8,10 @@ export interface ScrubSecret {
   value: string;
   placeholder?: string;
 }
+
+export const HEADER_BREAK = /[\r\n\0]/;
+
+export const HEADER_BREAK_PROBLEM = "holds a line break or NUL";
 
 const REDACTED = "pi-sandbox-redacted";
 
@@ -26,10 +31,8 @@ export const matchRules = (rules: CredentialRule[], host: string, port: number, 
     .filter((rule) => pathMatches(rule.pathPrefix, path))
     .sort((left, right) => prefixLength(right) - prefixLength(left));
 
-const BASIC = /^Basic\s+([A-Za-z0-9+/=]+)$/i;
-
 const basicText = (value: string) => {
-  const encoded = BASIC.exec(value)?.[1];
+  const encoded = BASIC_HEADER.exec(value)?.[1];
 
   return encoded === undefined ? undefined : Buffer.from(encoded, "base64").toString("latin1");
 };
@@ -98,7 +101,10 @@ const substituteOne = (pair: HeaderPair, rule: CredentialRule, secret: string): 
 
   const encoded = Buffer.from(decoded.replaceAll(placeholder, latin1(secret)), "latin1").toString("base64");
 
-  return { pair: [name, `Basic ${encoded}`], sent: { value: encoded, placeholder: BASIC.exec(value)?.[1] } };
+  return {
+    pair: [name, `Basic ${encoded}`],
+    sent: { value: encoded, placeholder: BASIC_HEADER.exec(value)?.[1] },
+  };
 };
 
 const substitute = (headers: HeaderPair[], rule: CredentialRule, secret: string): RewrittenHeaders => {

@@ -1,5 +1,11 @@
 import { join, resolve } from "node:path";
-import { hostAgentDir, isWithin, launcherPaths, realOrResolvedSync } from "../shared/index.ts";
+import {
+  hostAgentDir,
+  isWithin,
+  launcherPaths,
+  PRIVATE_HOME_DIRS,
+  realOrResolvedSync,
+} from "../shared/index.ts";
 
 interface ProtectedContext {
   home: string;
@@ -11,8 +17,6 @@ export interface Protected {
   reason: string;
   under: boolean;
 }
-
-const PROTECTED_HOME = [".ssh", ".gnupg", ".aws", ".docker", ".colima", ".kube"];
 
 const SYSTEM_DIRS = ["/var/run", "/run", "/etc", "/proc", "/sys", "/dev"];
 
@@ -35,31 +39,31 @@ export const protectedPaths = (context: ProtectedContext): Protected[] => {
     { path: paths.userConfigFile, reason: "the launcher user config", under: true },
     { path: join(context.home, ".config"), reason: "~/.config", under: false },
     { path: join(context.home, ".config", "pi-sandbox"), reason: "~/.config/pi-sandbox", under: true },
-    ...PROTECTED_HOME.map((name) => ({ path: join(context.home, name), reason: `~/${name}`, under: true })),
+    ...PRIVATE_HOME_DIRS.map((name) => ({
+      path: join(context.home, name),
+      reason: `~/${name}`,
+      under: true,
+    })),
     ...SYSTEM_DIRS.map((path) => ({ path, reason: path, under: true })),
     ...IMAGE_DIRS.map((path) => ({ path, reason: `${path}, which the sandbox image uses`, under: false })),
     ...(socket === undefined ? [] : [{ path: socket, reason: "the container engine socket", under: true }]),
   ];
 
-  return listed.flatMap((entry) => {
-    const real = realOrResolvedSync(entry.path);
-    const resolved = resolve(entry.path);
-
-    return real === resolved ? [{ ...entry, path: real }] : [entry, { ...entry, path: real }];
-  });
+  return listed.flatMap(withRealForm);
 };
 
-const conflictOf = (real: string, entry: Protected) => {
-  if (isWithin(entry.path, real)) {
-    return real === entry.path ? `it is ${entry.reason}` : `it contains ${entry.reason}`;
+export const withRealForm = (entry: Protected): Protected[] => {
+  const real = realOrResolvedSync(entry.path);
+
+  return real === resolve(entry.path) ? [{ ...entry, path: real }] : [entry, { ...entry, path: real }];
+};
+
+export type Overlap = "is" | "contains" | "inside";
+
+export const overlapOf = (path: string, entry: Pick<Protected, "path" | "under">): Overlap | undefined => {
+  if (isWithin(entry.path, path)) {
+    return path === entry.path ? "is" : "contains";
   }
 
-  return entry.under && isWithin(real, entry.path) ? `it is inside ${entry.reason}` : undefined;
-};
-
-export const protectedRealPathGuard = (context: ProtectedContext) => {
-  const guarded = protectedPaths(context);
-
-  return (real: string) =>
-    guarded.map((entry) => conflictOf(real, entry)).find((found) => found !== undefined);
+  return entry.under && isWithin(path, entry.path) ? "inside" : undefined;
 };

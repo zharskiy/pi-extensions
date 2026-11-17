@@ -1,4 +1,3 @@
-import { randomBytes } from "node:crypto";
 import { constants, type Stats } from "node:fs";
 import {
   chmod,
@@ -16,9 +15,14 @@ import { StringDecoder } from "node:string_decoder";
 import { type Backend, execCapture } from "../backend/index.ts";
 import {
   errorMessage,
+  isMissing,
   isWithin,
   lstatOrUndefined,
+  MIB,
   PI_SESSION_DIR_VARIABLE,
+  PRIVATE_DIR_MODE,
+  PRIVATE_FILE_MODE,
+  randomHex,
   sameEntry,
 } from "../shared/index.ts";
 import { inPool } from "./pool.ts";
@@ -45,23 +49,17 @@ interface Scan {
   scanned: number;
 }
 
-const PRIVATE_DIR = 0o700;
-
-const HEADER_LIMIT = 1024 * 1024;
+const HEADER_LIMIT = MIB;
 
 const CHUNK_SIZE = 64 * 1024;
 
 const PARALLEL_FILES = 8;
-
-const MIB = 1024 * 1024;
 
 const LARGE_FILE_MIB = 256;
 
 const SESSION_SUFFIX = ".jsonl";
 
 const REJECTED_SUFFIX = ".rejected";
-
-const OWNER_ACCESS = 0o700;
 
 const MODE_BITS = 0o7777;
 
@@ -81,7 +79,7 @@ const NO_REMOVAL: Removal = { removed: 0, failures: [] };
 const KEEP: Verdict = { keep: true };
 
 export const prepareHostSessions = async (dir: string) => {
-  await mkdir(dir, { recursive: true, mode: PRIVATE_DIR });
+  await mkdir(dir, { recursive: true, mode: PRIVATE_DIR_MODE });
 };
 
 const isSpecial = (info: Stats) => !info.isFile() && !info.isDirectory();
@@ -106,11 +104,11 @@ const removeSpecial = async (path: string, info: Stats): Promise<Removal> => {
 };
 
 const ownerAccess = async (dir: string, info: Stats) => {
-  if (info.uid !== process.getuid?.() || (info.mode & OWNER_ACCESS) === OWNER_ACCESS) {
+  if (info.uid !== process.getuid?.() || (info.mode & PRIVATE_DIR_MODE) === PRIVATE_DIR_MODE) {
     return;
   }
 
-  await chmod(dir, (info.mode & MODE_BITS) | OWNER_ACCESS).catch(() => undefined);
+  await chmod(dir, (info.mode & MODE_BITS) | PRIVATE_DIR_MODE).catch(() => undefined);
 };
 
 const parsedEntry = (line: string): unknown => {
@@ -204,14 +202,12 @@ const readVerdict = async (path: string, info: Stats, repoRoot: string): Promise
   }
 };
 
-const isGone = (error: unknown) => (error as NodeJS.ErrnoException | undefined)?.code === "ENOENT";
-
 const verdictOf = (path: string, info: Stats, repoRoot: string): Promise<Verdict | undefined> =>
   readVerdict(path, info, repoRoot).catch((error: unknown) =>
-    isGone(error) ? undefined : { keep: false, reason: `could not be read (${errorMessage(error)})` },
+    isMissing(error) ? undefined : { keep: false, reason: `could not be read (${errorMessage(error)})` },
   );
 
-const rejectedName = (path: string) => `${path}${REJECTED_SUFFIX}-${randomBytes(4).toString("hex")}`;
+const rejectedName = (path: string) => `${path}${REJECTED_SUFFIX}-${randomHex(4)}`;
 
 const rejectFile = async (path: string, info: Stats, reason: string): Promise<EntryOutcome> => {
   if (!(await unchanged(path, info))) {
@@ -324,10 +320,10 @@ export const sweepHostSessions = async (input: SweepInput) => {
 };
 
 export const probeHostSessions = async (backend: Backend, containerId: string, dir: string) => {
-  const marker = `.pi-sandbox-probe-${randomBytes(6).toString("hex")}`;
+  const marker = `.pi-sandbox-probe-${randomHex(6)}`;
   const path = join(dir, marker);
 
-  await writeFile(path, "", { flag: "wx", mode: 0o600 });
+  await writeFile(path, "", { flag: "wx", mode: PRIVATE_FILE_MODE });
 
   try {
     const result = await execCapture(backend, {

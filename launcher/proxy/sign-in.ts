@@ -5,17 +5,19 @@ import {
   spawn as spawnProcess,
 } from "node:child_process";
 import { closeSync, openSync } from "node:fs";
-import { setTimeout as delay } from "node:timers/promises";
 import {
   type McpLoginState,
+  MINUTE_MS,
   mcpAuthKey,
   mcpLoginCommand,
   PI_AGENT_DIR_VARIABLE,
+  PRIVATE_FILE_MODE,
   readMcpLogins,
   stateLayout,
   updateMcpLogin,
   withFileLockIfFree,
   withMcpLoginDir,
+  withTimeout,
 } from "../shared/index.ts";
 
 type SpawnProcess = (command: string, args: string[], options: SpawnOptions) => ChildProcess;
@@ -40,11 +42,11 @@ export interface SignIn {
   close(): Promise<void>;
 }
 
-const START_COOLDOWN_MS = 60_000;
+const START_COOLDOWN_MS = MINUTE_MS;
 
-const FAILURE_COOLDOWN_MS = 10 * 60_000;
+const FAILURE_COOLDOWN_MS = 10 * MINUTE_MS;
 
-const REJECTED_COOLDOWN_MS = 10 * 60_000;
+const REJECTED_COOLDOWN_MS = 10 * MINUTE_MS;
 
 const since = (at: number | undefined, now: number, cooldownMs: number) =>
   at === undefined || now - at >= cooldownMs;
@@ -61,7 +63,7 @@ const exitOf = (child: ChildProcess) =>
   });
 
 const logStdio = (logFile: string | undefined) => {
-  const fd = logFile === undefined ? undefined : openSync(logFile, "a", 0o600);
+  const fd = logFile === undefined ? undefined : openSync(logFile, "a", PRIVATE_FILE_MODE);
 
   return {
     stdio: (fd === undefined ? "ignore" : ["ignore", fd, fd]) as StdioOptions,
@@ -89,18 +91,7 @@ const signalGroup = (pid: number | undefined, signal: NodeJS.Signals) => {
   }
 };
 
-const settledWithin = async (done: Promise<unknown>, waitMs: number) => {
-  const abort = new AbortController();
-
-  try {
-    return await Promise.race([
-      done.then(() => true),
-      delay(waitMs, false, { signal: abort.signal }).catch(() => false),
-    ]);
-  } finally {
-    abort.abort();
-  }
-};
+export const within = <T>(promise: Promise<T>, waitMs: number) => withTimeout(promise, waitMs, undefined);
 
 interface Running {
   pid?: number;
@@ -239,18 +230,18 @@ export const createSignIn = (deps: SignInDeps): SignIn => {
       return;
     }
 
-    const done = Promise.all(logins.map((login) => login.done));
+    const done = Promise.all(logins.map((login) => login.done)).then(() => true);
 
     logins.forEach((login) => {
       signalGroup(login.pid, "SIGTERM");
     });
 
-    if (!(await settledWithin(done, CLOSE_WAIT_MS))) {
+    if ((await within(done, CLOSE_WAIT_MS)) === undefined) {
       logins.forEach((login) => {
         signalGroup(login.pid, "SIGKILL");
       });
 
-      await settledWithin(done, KILL_WAIT_MS);
+      await within(done, KILL_WAIT_MS);
     }
 
     if ([...running.values()].some((login) => !logins.includes(login))) {

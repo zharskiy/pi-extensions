@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
+import { errnoCode } from "./errors.ts";
 
 export type StartReading = { start: string } | { failed: "tool" | "process" };
 
@@ -26,7 +27,7 @@ const procText = async (pid: number): Promise<{ text: string } | { failed: "tool
   try {
     return { text: await readFile(`/proc/${pid}/stat`, "utf8") };
   } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code ?? "";
+    const code = errnoCode(error) ?? "";
 
     return { failed: PROCESS_ERRORS.includes(code) ? ("process" as const) : ("tool" as const) };
   }

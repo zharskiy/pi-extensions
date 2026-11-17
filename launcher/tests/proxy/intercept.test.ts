@@ -1,6 +1,6 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
-import { type AddressInfo, connect, createServer as createNetServer, type Socket } from "node:net";
+import { type AddressInfo, connect, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { connect as connectTls, type TLSSocket } from "node:tls";
@@ -11,6 +11,7 @@ import { createDenials, type RecordAccess } from "../../proxy/denials.ts";
 import { createInterceptor, handshakeDenial } from "../../proxy/intercept.ts";
 import { type LauncherCa, type LeafCertificate, openLauncherCa } from "../../proxy/tls-ca.ts";
 import { createProcessRunner } from "../../shared/index.ts";
+import { captureClientHello } from "./harness.ts";
 
 const HOST = "intercept.test";
 
@@ -36,29 +37,6 @@ interface ProxyOptions {
   helloTimeoutMs?: number;
   leaf?: (host: string) => Promise<LeafCertificate>;
 }
-
-const captureClientHello = (servername: string) =>
-  new Promise<Buffer>((resolve) => {
-    const server = createNetServer((socket) => {
-      socket.once("data", (chunk: Buffer) => {
-        resolve(chunk);
-
-        socket.destroy();
-
-        server.close();
-      });
-    });
-
-    server.listen(0, "127.0.0.1", () => {
-      const client = connectTls({
-        host: "127.0.0.1",
-        port: (server.address() as AddressInfo).port,
-        servername,
-      });
-
-      client.on("error", () => undefined);
-    });
-  });
 
 const startProxy = async (options: ProxyOptions = {}) => {
   const ca = state.ca as LauncherCa;

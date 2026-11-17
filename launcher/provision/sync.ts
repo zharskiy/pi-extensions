@@ -1,11 +1,15 @@
-import { readFile, realpath, rm, stat } from "node:fs/promises";
+import { readFile, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import type { JsonObject } from "../hostpi/index.ts";
 import {
   BUILT_IN_EXTENSION_FILES,
   errorMessage,
+  isMissing,
+  PERMISSION_BITS,
+  PRIVATE_FILE_MODE,
   parseJsonObject,
   readJsonObject,
+  realOrResolved,
   SETTINGS_FILE_NAME,
   stateLayout,
   withFileLock,
@@ -57,15 +61,8 @@ interface FileOutcome {
 
 const LOCK_TIMEOUT_MS = 30_000;
 
-const PRIVATE_FILE_MODE = 0o600;
-
-const PERMISSION_BITS = 0o777;
-
-const isMissing = (error: unknown) => (error as NodeJS.ErrnoException).code === "ENOENT";
-
 const readHostFile = async (hostAgentDir: string, name: string): Promise<HostFile> => {
-  const linked = join(hostAgentDir, name);
-  const path = await realpath(linked).catch(() => linked);
+  const path = await realOrResolved(join(hostAgentDir, name));
 
   try {
     const [text, info] = await Promise.all([readFile(path, "utf8"), stat(path)]);

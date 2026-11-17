@@ -1,7 +1,13 @@
 import type { Dirent } from "node:fs";
-import { lstat, readdir, readlink } from "node:fs/promises";
+import { readdir, readlink } from "node:fs/promises";
 import { join } from "node:path";
-import { type CommandRunner, isWithin, readRegularFile, sha256Hex } from "../../shared/index.ts";
+import {
+  type CommandRunner,
+  isWithin,
+  lstatOrUndefined,
+  readRegularText,
+  sha256Hex,
+} from "../../shared/index.ts";
 import { gitDirsOf, gitRepos, type Workspace } from "../types.ts";
 import { walkLevels } from "../walk.ts";
 import { SCAN_BUDGET } from "../workspace-scan.ts";
@@ -58,7 +64,9 @@ const gitlinksOf = async (
     .sort();
 };
 
-const kindOf = (entry: Dirent): NestedGitEntry["kind"] => {
+type EntryKind = Pick<Dirent, "isFile" | "isSymbolicLink" | "isDirectory">;
+
+const kindOf = (entry: EntryKind): NestedGitEntry["kind"] => {
   if (entry.isDirectory()) {
     return "directory";
   }
@@ -72,13 +80,9 @@ const kindOf = (entry: Dirent): NestedGitEntry["kind"] => {
 
 const RUN_FILES = ["config", "config.worktree", "commondir"];
 
-const fileText = (path: string) =>
-  readRegularFile(path).then(
-    (file) => file.data.toString("utf8"),
-    () => "",
-  );
+const fileText = async (path: string) => (await readRegularText(path)) ?? "";
 
-const entryDigest = async (path: string, entry: Dirent) => {
+const entryDigest = async (path: string, entry: EntryKind) => {
   if (entry.isFile()) {
     return `file ${sha256Hex(await fileText(path))}`;
   }
@@ -101,22 +105,14 @@ const gitDirDigest = async (dir: string) => {
 const MISSING = "missing";
 
 const pathDigest = async (path: string): Promise<string> => {
-  const info = await lstat(path).catch(() => undefined);
+  const info = await lstatOrUndefined(path);
 
   if (info === undefined) {
     return MISSING;
   }
 
-  if (info.isFile()) {
-    return `file ${sha256Hex(await fileText(path))}`;
-  }
-
-  if (info.isSymbolicLink()) {
-    return `link ${await readlink(path).catch(() => "")}`;
-  }
-
   if (!info.isDirectory()) {
-    return "other";
+    return entryDigest(path, info);
   }
 
   const entries = await readdir(path, { withFileTypes: true }).catch((): Dirent[] => []);

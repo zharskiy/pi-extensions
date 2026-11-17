@@ -1,6 +1,6 @@
 import { uptime } from "node:os";
 import { setTimeout as sleep } from "node:timers/promises";
-import { LauncherError } from "./errors.ts";
+import { errnoCode, LauncherError } from "./errors.ts";
 import { processStart, readProcessStart } from "./process-start.ts";
 
 export interface ProcessMark {
@@ -56,7 +56,7 @@ export const isRunning = (pid: number) => {
 
     return true;
   } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
+    return errnoCode(error) === "EPERM";
   }
 };
 

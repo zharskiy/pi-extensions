@@ -6,9 +6,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import { type ExecIo, type ExecSpec, LABELS, type Vm } from "../../backend/index.ts";
 import { run } from "../../cli/index.ts";
 import { testedPiVersion } from "../../cli/versions.ts";
-import { registerLaunch } from "../../grants/index.ts";
+import { deriveSandboxPi } from "../../hostpi/index.ts";
 import type { DenialRecord } from "../../proxy/index.ts";
-import { processMark, sha256Hex } from "../../shared/index.ts";
+import { sha256Hex } from "../../shared/index.ts";
 import { stdinOf } from "../support/fake-backend.ts";
 import {
   createFakeBackend,
@@ -16,6 +16,7 @@ import {
   type DoctorCheck,
   doctorCheck,
   doctorReport,
+  holdLaunch,
   noHostPiLine,
   unreachable,
   writeManagedPi,
@@ -193,7 +194,6 @@ describe("pi sandbox doctor", () => {
       "  ok    image             pi-sandbox-base:local sha256:built-1",
       "  ok    container",
       "  ok    sync",
-      "  ok    sessions share    writable at the host path",
       "",
       "network",
       `  ok    proxy             pid 77 port ${port}`,
@@ -212,7 +212,7 @@ describe("pi sandbox doctor", () => {
       "  ok    mcp-auth sweep    no mcp-auth.json in the sandbox yet",
       "  ok    settings sweep    no settings.json package carries a credential in its URL",
       "",
-      "result: ok (18 ok, 4 skipped)",
+      "result: ok (17 ok, 4 skipped)",
       "",
     ]);
     expect(harness.stderr()).toBe("");
@@ -255,7 +255,7 @@ describe("pi sandbox doctor", () => {
       detail: "https://models.example.test/ answered HTTP 200",
     });
     expect(check(verbose.stdout, "rules")).toBeUndefined();
-    expect(plain.report.result).toBe("ok (20 ok, 3 skipped)");
+    expect(plain.report.result).toBe("ok (19 ok, 3 skipped)");
     expect(verbose.report.result).toBe(plain.report.result);
   });
 
@@ -409,33 +409,6 @@ describe("pi sandbox doctor", () => {
     expect(code).toBe(1);
   });
 
-  it("probes the session dir the running container was started with, not the planned one", async () => {
-    const fake = await guestBackend({});
-    const find = fake.backend.findContainers;
-
-    fake.backend.findContainers = async (labels) =>
-      (await find(labels)).map((summary) =>
-        fake.execs.length === 0
-          ? summary
-          : { ...summary, labels: { ...summary.labels, [LABELS.sessionDir]: "sessions.host is off" } },
-      );
-
-    const port = await healthServer(200);
-    const harness = await createHarness({
-      backend: () => fake.backend,
-      proxy: {
-        ensure: async () => ({ proxy: { pid: 77, port, boot: 0, start: "", inputHash: "h" }, notices: [] }),
-      },
-    });
-
-    await run(["sandbox", "doctor"], harness.deps);
-
-    expect(check(harness.stdout(), "sessions share")).toMatchObject({
-      status: "skip",
-      detail: "in the sandbox volume (sessions.host is off)",
-    });
-  });
-
   it("handshakes with pi.dev from inside through the sandbox proxy with node and the container's trust", async () => {
     const { fake } = await doctorWith();
     const probe = fake.execs.find((exec) => (exec.spec.command.at(-1) ?? "").includes("getPeerCertificate"));
@@ -564,6 +537,72 @@ describe("pi sandbox doctor", () => {
     expect(stdout).not.toContain("real-secret");
   });
 
+  it("fails the sweep on an mcp.json or auth.json env entry that derivation would have masked", async () => {
+    const placeholder = "pi-sandbox-0123456789abcdef01234567";
+    const { stdout } = await doctorWith({
+      probes: {
+        mcp: JSON.stringify({
+          mcpServers: {
+            tool: {
+              command: "tool",
+              env: {
+                SESSION_COOKIE: "real-cookie-value",
+                GITHUB_PAT: "real-pat-value",
+                CONFIG_HOME: `\${HOME}/tool`,
+                LOOKUP: "!pass show tool",
+                MODE: "fast",
+                RETRIES: "3",
+                OTHER_COOKIE: placeholder,
+              },
+            },
+          },
+        }),
+        auth: JSON.stringify({
+          llm: { type: "api_key", key: placeholder, env: { DB_PASS: "real-pass", DB_USER: placeholder } },
+        }),
+      },
+    });
+
+    expect(check(stdout, "credential sweep")).toMatchObject({
+      status: "fail",
+      detail: "5 findings in the environment, auth.json or mcp.json",
+      reasons: [
+        "/home/pi/.pi/agent/auth.json holds a value other than the placeholder at llm.env.DB_PASS",
+        "/home/pi/.pi/agent/mcp.json holds a value other than a placeholder at mcpServers.tool.env.SESSION_COOKIE",
+        "/home/pi/.pi/agent/mcp.json holds a value other than a placeholder at mcpServers.tool.env.GITHUB_PAT",
+        "/home/pi/.pi/agent/mcp.json holds a value other than a placeholder at mcpServers.tool.env.CONFIG_HOME",
+        "/home/pi/.pi/agent/mcp.json holds a value other than a placeholder at mcpServers.tool.env.LOOKUP",
+      ],
+    });
+  });
+
+  it("passes the sweep on the mcp.json derivation wrote for stdio, HTTP and bare servers with secret env", async () => {
+    const env = { GITHUB_PAT: "real-pat-value", SESSION_COOKIE: "real-cookie-value", MODE: "fast" };
+    const derived = deriveSandboxPi({
+      files: {
+        agentDir: "/home/user/.pi/agent",
+        mcp: {
+          mcpServers: {
+            tool: { command: "tool", env },
+            web: { url: "https://mcp.web.example/mcp", env },
+            bare: { env },
+          },
+        },
+      },
+      providerHosts: {},
+      manual: [],
+      salt: "c".repeat(64),
+      env: {},
+      derive: { enabled: true },
+    });
+    const { stdout } = await doctorWith({ probes: { mcp: JSON.stringify(derived.files["mcp.json"]) } });
+
+    expect(check(stdout, "credential sweep")).toMatchObject({
+      status: "ok",
+      detail: "no credential in the environment, auth.json or mcp.json",
+    });
+  });
+
   it("passes the sweep over the container's own environment, whose proxy token is no placeholder", async () => {
     const { stdout, fake } = await doctorWith();
     const env = fake.created[0]?.spec?.env ?? {};
@@ -619,13 +658,7 @@ describe("pi sandbox doctor", () => {
       },
     });
 
-    await registerLaunch(harness.stateDir, {
-      ...(await processMark()),
-      launchId: "00000000000000cc",
-      pid: process.pid,
-      repoHash: sha256Hex(harness.repoRoot),
-      startedAt: 1,
-    });
+    await holdLaunch(harness, { launchId: "00000000000000cc" });
 
     const other = fake.addContainer({
       name: "other-launch",
@@ -874,6 +907,24 @@ describe("pi sandbox doctor", () => {
     ]);
     expect(report.result).toBeUndefined();
     expect(harness.stderr()).toBe("pi-sandbox: unexpected error: engine gone\n");
+  });
+
+  it("indents each line of a notice that spans several lines", async () => {
+    const port = await healthServer(200);
+    const fake = await guestBackend({});
+    const harness = await createHarness({
+      backend: () => fake.backend,
+      proxy: {
+        ensure: async () => ({
+          proxy: { pid: 77, port, boot: 0, start: "", inputHash: "h" },
+          notices: ["first line of a notice\nsecond line of it"],
+        }),
+      },
+    });
+
+    await run(["sandbox", "doctor"], harness.deps);
+
+    expect(harness.stdout()).toContain("\nnotices\n  first line of a notice\n  second line of it\n");
   });
 
   describe("on a terminal", () => {

@@ -8,6 +8,7 @@ import {
   LauncherError,
   MAX_WRITE_BACK_CHARS,
   PLACEHOLDER_PREFIX,
+  PRIVATE_HOME_DIRS,
   printable,
   TOOL_CONFIG_FORMATS,
   type ToolConfigFormat,
@@ -69,21 +70,9 @@ const FINGERPRINT = /^([0-9A-Fa-f]:?){63}[0-9A-Fa-f]$/;
 
 const RULE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
-const JSON_POINTER = /^(\/([^~/]|~[01])*)+$/;
-
 const APT_PACKAGE = /^[a-z0-9][a-z0-9+.-]*(=[A-Za-z0-9.+:~-]+)?$/;
 
-const PRIVATE_HOME_PATHS = [
-  ".pi",
-  ".ssh",
-  ".gnupg",
-  ".aws",
-  ".docker",
-  ".colima",
-  ".kube",
-  ".config",
-  ".local/bin",
-];
+const PRIVATE_HOME_PATHS = [".pi", ...PRIVATE_HOME_DIRS, ".config", ".local/bin"];
 
 const NPM_PACKAGE = /^(@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*@[0-9][0-9A-Za-z.+-]*$/;
 
@@ -162,7 +151,7 @@ const placeholder: Check = (value) =>
 const template: Check = (value) =>
   value.includes(SECRET_MARKER) ? undefined : `must contain ${SECRET_MARKER}`;
 
-const jsonPointer: Check = (value) => (JSON_POINTER.test(value) ? undefined : "must be a JSON pointer");
+const jsonPointer: Check = (value) => (isToolConfigKey("json", value) ? undefined : "must be a JSON pointer");
 
 const aptPackage: Check = (value) => (APT_PACKAGE.test(value) ? undefined : "must be a package name");
 

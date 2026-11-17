@@ -1,4 +1,4 @@
-import { mkdir, realpath } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { VmApplied, VmPhase } from "../../backend/index.ts";
@@ -6,7 +6,7 @@ import type { Prompts } from "../../cli/prompt/types.ts";
 import { readDocument } from "../../cli/setup/document.ts";
 import { runSetup, type SetupInput } from "../../cli/setup/flow.ts";
 import type { Answers, FolderCandidate, HostFacts, SetupIo, VmAction } from "../../cli/setup/types.ts";
-import { tempDir } from "../support/temp-dir.ts";
+import { realTempDir } from "../support/temp-dir.ts";
 import { fakeTimers, KEY, plainPrompts, richPrompts, until } from "./prompt/fake-tty.ts";
 import { AUTOMATIC_SIZE, candidateOf, factsOf, HOME, runningVm } from "./setup-fixtures.ts";
 
@@ -34,8 +34,12 @@ const SAVED_STANDARD = `${JSON.stringify({ workspaceRoots: { roots: ["~/Projects
 
 const sharesOf = (roots: Answers["roots"]) =>
   roots === "home"
-    ? { shares: [{ location: HOME, writable: true }], exact: false }
-    : { shares: roots.map((root) => ({ location: root.replace("~", HOME), writable: true })), exact: true };
+    ? { shares: [{ location: HOME, writable: true }], exact: false, notices: [] }
+    : {
+        shares: roots.map((root) => ({ location: root.replace("~", HOME), writable: true })),
+        exact: true,
+        notices: [],
+      };
 
 interface Options {
   text?: string;
@@ -403,7 +407,7 @@ describe("a first run", () => {
   });
 
   it("adds a typed folder to the list, checked, and saves it after the others", async () => {
-    const home = await realpath(await tempDir("setup-flow-home"));
+    const home = await realTempDir("setup-flow-home");
 
     await mkdir(join(home, "oss"));
 
@@ -471,6 +475,20 @@ describe("a re-run", () => {
     expect(await run.exit).toBe(0);
     expect(run.screen.lines().at(-1)).toBe("└  Nothing changed.");
     expect(run.writes).toEqual([]);
+  });
+
+  it("names a root that another root shares in the review", async () => {
+    const notice = "workspaceRoots: ~/work/a is inside ~/work and is shared through it";
+    const share = (roots: Answers["roots"]) => ({ ...sharesOf(roots), notices: [notice] });
+    const run = setup({ text: SAVED, facts: { vm: RUNNING }, share });
+
+    await run.settled();
+
+    expect(run.screen.lines()).toContain(`│  ${notice}`);
+
+    await run.keys(KEY.enter);
+
+    expect(await run.exit).toBe(0);
   });
 
   it("shows the change and restarts the idle VM", async () => {
@@ -830,7 +848,7 @@ describe("plain mode", () => {
   });
 
   it("adds a typed path to the folders, re-asking the folders after a refused one", async () => {
-    const home = await realpath(await tempDir("setup-flow-plain-home"));
+    const home = await realTempDir("setup-flow-plain-home");
 
     await mkdir(join(home, "oss"));
 

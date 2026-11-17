@@ -4,6 +4,12 @@ import { sha256Hex, shortHash } from "./hash.ts";
 
 const SALT_BYTES = 32;
 
+const TRUST_BUNDLE_NAME = /^trust(-[0-9a-f]+){0,2}\.pem$/;
+
+const trustPemPrefix = (hash: string) => `trust-${shortHash(hash)}-`;
+
+export const isTrustBundleName = (name: string) => TRUST_BUNDLE_NAME.test(name);
+
 export const GUEST_PATHS = {
   agentDir: "/home/pi/.pi/agent",
   agentsSkills: "/home/pi/.agents/skills",
@@ -63,8 +69,8 @@ export const stateLayout = (stateDir: string) => ({
   ca: join(stateDir, "ca"),
   caLock: join(stateDir, "ca", "ca.lock"),
   extraPem: join(stateDir, "ca", "extra.pem"),
-  trustPemPrefix: (hash: string) => `trust-${shortHash(hash)}-`,
-  trustPem: (hash: string, id: string) => join(stateDir, "vm", `trust-${shortHash(hash)}-${id}.pem`),
+  trustPemPrefix,
+  trustPem: (hash: string, id: string) => join(stateDir, "vm", `${trustPemPrefix(hash)}${id}.pem`),
   legacyTrustPem: join(stateDir, "ca", "trust.pem"),
   imageRecord: join(stateDir, "image.json"),
   gcRecord: join(stateDir, "gc.json"),

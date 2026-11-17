@@ -1,9 +1,7 @@
-import { LauncherError, parseJsonObject, type RunResult } from "../../shared/index.ts";
+import { GIB, LauncherError, parseJsonObject, type RunResult } from "../../shared/index.ts";
 import type { VmReport, VmSize, VmSpec, VmTarget } from "../types.ts";
 import { vmSizeDrift } from "../vm-size.ts";
 import { vmSizeOfYaml } from "./colima-yaml.ts";
-
-const GIB = 1024 ** 3;
 
 const STATUS_TIMEOUT_MS = 3000;
 

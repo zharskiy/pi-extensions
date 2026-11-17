@@ -1,4 +1,4 @@
-import { lstat, mkdir, readFile, readlink, realpath, stat } from "node:fs/promises";
+import { mkdir, readFile, readlink, stat } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import type { VmSpec } from "../../backend/index.ts";
@@ -6,19 +6,19 @@ import { configProblem, withoutPath } from "../../config/index.ts";
 import {
   errorMessage,
   isJsonObject,
+  isMissing,
   type JsonObject,
   LauncherError,
+  lstatOrUndefined,
+  PERMISSION_BITS,
+  PRIVATE_DIR_MODE,
+  PRIVATE_FILE_MODE,
+  realOrUndefined,
   writeFileAtomic,
 } from "../../shared/index.ts";
 import type { Change, ConfigDocument, DocumentRead, Section } from "./types.ts";
 
 const DEFAULT_INDENT = "  ";
-
-const CONFIG_MODE = 0o600;
-
-const CONFIG_DIR_MODE = 0o700;
-
-const PERMISSION_BITS = 0o777;
 
 const INDENTED_LINE = /^([ \t]+)\S/m;
 
@@ -167,19 +167,19 @@ export const diffOf = (before: JsonObject, after: JsonObject) => diffBetween(bef
 const modeOf = async (file: string) => {
   const info = await stat(file).catch(() => undefined);
 
-  return info === undefined ? CONFIG_MODE : info.mode & PERMISSION_BITS;
+  return info === undefined ? PRIVATE_FILE_MODE : info.mode & PERMISSION_BITS;
 };
 
 const isFolder = async (path: string) => (await stat(path).catch(() => undefined))?.isDirectory() === true;
 
 const targetOf = async (file: string) => {
-  const real = await realpath(file).catch(() => undefined);
+  const real = await realOrUndefined(file);
 
   if (real !== undefined) {
     return real;
   }
 
-  const info = await lstat(file).catch(() => undefined);
+  const info = await lstatOrUndefined(file);
 
   if (info?.isSymbolicLink() !== true) {
     return file;
@@ -203,7 +203,7 @@ const currentText = async (file: string) => {
   try {
     return await readFile(file, "utf8");
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+    if (isMissing(error)) {
       return undefined;
     }
 
@@ -242,7 +242,7 @@ export const writeDocument = async (document: ConfigDocument, text: string) => {
   const mode = await modeOf(target);
 
   try {
-    await mkdir(dirname(target), { recursive: true, mode: CONFIG_DIR_MODE });
+    await mkdir(dirname(target), { recursive: true, mode: PRIVATE_DIR_MODE });
 
     await writeFileAtomic(target, text, { mode });
   } catch (error) {

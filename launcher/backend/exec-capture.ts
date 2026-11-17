@@ -1,5 +1,5 @@
 import { Readable, Writable } from "node:stream";
-import { LauncherError } from "../shared/index.ts";
+import { LauncherError, withTimeout } from "../shared/index.ts";
 import type { Backend, ExecSpec } from "./types.ts";
 
 interface ExecCaptureResult {
@@ -26,22 +26,13 @@ const collector = () => {
 };
 
 const withDeadline = async (running: Promise<number>, timeoutMs: number, abort: AbortController) => {
-  const timer: { id?: NodeJS.Timeout } = {};
-  const deadline = new Promise<typeof TIMED_OUT>((resolve) => {
-    timer.id = setTimeout(() => resolve(TIMED_OUT), timeoutMs);
-  });
+  const outcome = await withTimeout(running, timeoutMs, TIMED_OUT);
 
-  try {
-    const outcome = await Promise.race([running, deadline]);
-
-    if (outcome === TIMED_OUT) {
-      abort.abort();
-    }
-
-    return outcome;
-  } finally {
-    clearTimeout(timer.id);
+  if (outcome === TIMED_OUT) {
+    abort.abort();
   }
+
+  return outcome;
 };
 
 export const execCapture = async (

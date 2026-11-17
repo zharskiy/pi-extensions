@@ -23,11 +23,11 @@ const writeBackLines = (listing: WriteBackListing) => {
   );
 };
 
-const showConfig = async (deps: CliDeps, json: boolean) => {
+export const configCommand = async (deps: CliDeps, args: string[]) => {
   const { effective } = (await openContext(deps, "host")).context;
   const writeBack = writeBackListing(effective.config.writeBack);
 
-  if (json) {
+  if (args.includes(JSON_FLAG)) {
     deps.stdout.write(jsonText({ ...effective, writeBack }));
 
     return 0;
@@ -44,8 +44,4 @@ const showConfig = async (deps: CliDeps, json: boolean) => {
   ]);
 
   return 0;
-};
-
-export const configCommand = async (deps: CliDeps, args: string[]) => {
-  return showConfig(deps, args.includes(JSON_FLAG));
 };

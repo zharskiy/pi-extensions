@@ -9,14 +9,12 @@ import {
   readRepoProxy,
   stopRepoProxy,
 } from "../proxy/index.ts";
-import { createProcessRunner, realOrResolved, withResolvedCommand } from "../shared/index.ts";
+import { createProcessRunner, GIB, realOrResolved, withResolvedCommand } from "../shared/index.ts";
 import { findGitRoot } from "../workspace/index.ts";
 import { type CliDeps, onClosedOutput, pathsOf } from "./deps.ts";
 import { openDevTty } from "./prompt/terminal.ts";
 import { renderFailure, run } from "./run.ts";
 import { hostTerminal } from "./terminal.ts";
-
-const GIB = 1024 ** 3;
 
 const hostGit = (env: NodeJS.ProcessEnv, cwd: string) => async () => {
   const folder = await realOrResolved(cwd);

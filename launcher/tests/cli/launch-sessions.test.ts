@@ -4,9 +4,11 @@ import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { describe, expect, it } from "vitest";
 import { run } from "../../cli/index.ts";
-import { liveLaunches, registerLaunch } from "../../grants/index.ts";
+import { liveLaunches } from "../../grants/index.ts";
 import { processMark, sha256Hex, stateLayout } from "../../shared/index.ts";
-import { createFakeBackend, createHarness, piSessions, sweepNow } from "./harness.ts";
+import { registerLiveLaunch } from "../support/launches.ts";
+import { exists } from "../support/temp-dir.ts";
+import { createFakeBackend, createHarness, holdLaunch, piSessions, sweepNow } from "./harness.ts";
 
 const POLL_MS = 5;
 
@@ -23,12 +25,6 @@ const _waitFor = async (ready: () => boolean, left = POLLS): Promise<boolean> =>
 };
 
 const OTHER_LAUNCH = "00000000000000aa";
-
-const exists = (path: string) =>
-  lstat(path).then(
-    () => true,
-    () => false,
-  );
 
 const filesUnder = async (dir: string): Promise<string[]> => {
   const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
@@ -85,13 +81,7 @@ describe("the end of a session", () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
 
-    await registerLaunch(harness.stateDir, {
-      ...(await processMark()),
-      launchId: "0123456789abcdef",
-      pid: process.pid,
-      repoHash: sha256Hex(harness.repoRoot),
-      startedAt: 1,
-    });
+    await holdLaunch(harness, { launchId: "0123456789abcdef" });
 
     await run([], harness.deps);
 
@@ -184,11 +174,9 @@ describe("the git report at the last session's end", () => {
           seen.ending = true;
           seen.atEnd = await exists(baseline());
 
-          seen.registered = registerLaunch(harness.stateDir, {
+          seen.registered = registerLiveLaunch(harness.stateDir, repoHash, {
             launchId: OTHER_LAUNCH,
-            repoHash,
             startedAt: 2,
-            ...(await processMark()),
           }).then(async () => {
             seen.atRegistration = await exists(baseline());
           });
@@ -247,12 +235,7 @@ describe("the sweep of what a killed launcher left", () => {
     const other = "c".repeat(64);
     const old = new Date(Date.now() - 6 * 60 * 60 * 1000);
 
-    await registerLaunch(harness.stateDir, {
-      launchId: "00000000000000ff",
-      ...(await processMark()),
-      repoHash: other,
-      startedAt: 1,
-    });
+    await registerLiveLaunch(harness.stateDir, other, { launchId: "00000000000000ff" });
 
     await utimes(join(stateLayout(harness.stateDir).repo(other).launches, "00000000000000ff.json"), old, old);
 
@@ -278,12 +261,7 @@ describe("a config change while other sessions of the repository are live", () =
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
 
-    await registerLaunch(harness.stateDir, {
-      launchId: OTHER_LAUNCH,
-      repoHash: sha256Hex(harness.repoRoot),
-      startedAt: 1,
-      ...(await processMark()),
-    });
+    await holdLaunch(harness, { launchId: OTHER_LAUNCH });
 
     expect(await run([], harness.deps)).toBe(0);
 

@@ -1,9 +1,18 @@
-import { type AddressInfo, createServer, type Server, type Socket } from "node:net";
-import { connect as tlsConnect } from "node:tls";
+import { createServer, type Server } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { addGrant } from "../../grants/index.ts";
 import { createDialer } from "../../proxy/dial.ts";
-import { createStateDir, removeDir, resolveTo, startTestProxy, type TestProxy, waitFor } from "./harness.ts";
+import {
+  captureClientHello,
+  createStateDir,
+  listen,
+  portOf,
+  removeDir,
+  resolveTo,
+  startTestProxy,
+  type TestProxy,
+  waitFor,
+} from "./harness.ts";
 import { openConnect, readRest } from "./proxy-client.ts";
 
 const REPO = "1".repeat(64);
@@ -14,38 +23,6 @@ const state: { stateDir: string; recorder: Server; received: Buffer[]; test: Tes
   received: [],
   test: undefined as unknown as TestProxy,
   token: "",
-};
-
-const portOf = (server: Server) => (server.address() as AddressInfo).port;
-
-const listen = (server: Server) =>
-  new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
-
-const captureHello = async (servername: string) => {
-  const capture = createServer();
-
-  await listen(capture);
-
-  const hello = new Promise<Buffer>((resolve) => {
-    capture.once("connection", (socket: Socket) => {
-      socket.once("data", (chunk: Buffer) => {
-        socket.destroy();
-
-        resolve(chunk);
-      });
-    });
-  });
-  const client = tlsConnect({ host: "127.0.0.1", port: portOf(capture), servername });
-
-  client.on("error", () => undefined);
-
-  const bytes = await hello;
-
-  client.destroy();
-
-  await new Promise<void>((resolve) => capture.close(() => resolve()));
-
-  return bytes;
 };
 
 const receivedBytes = () => Buffer.concat(state.received);
@@ -84,7 +61,7 @@ const tunnelTo = async (authority: string) => {
 
 describe("ClientHello on a tunnel", () => {
   it("reassembles a hello split across two writes and forwards it whole", async () => {
-    const hello = await captureHello("target.test");
+    const hello = await captureClientHello("target.test");
     const socket = await tunnelTo("target.test:443");
 
     state.received = [];
@@ -125,7 +102,7 @@ describe("ClientHello on a tunnel", () => {
   it("forwards the hello of a host reachable only through a grant", async () => {
     await addGrant(state.stateDir, { host: "granted.test", port: 443, repoHash: REPO }, Date.now());
 
-    const hello = await captureHello("granted.test");
+    const hello = await captureClientHello("granted.test");
     const socket = await tunnelTo("granted.test:443");
 
     state.received = [];
@@ -146,7 +123,7 @@ describe("ClientHello on a tunnel", () => {
   });
 
   it("records an sni denial for a client that hangs up in the middle of its hello", async () => {
-    const hello = await captureHello("target.test");
+    const hello = await captureClientHello("target.test");
     const socket = await tunnelTo("target.test:443");
     const before = state.test.log.length;
 
@@ -193,7 +170,7 @@ describe("upstream that never accepts the connection", () => {
   });
 
   it("gives up on the dial and records an upstream denial", async () => {
-    const hello = await captureHello("slow.test");
+    const hello = await captureClientHello("slow.test");
     const reply = await openConnect(local.test?.proxy.port ?? 0, "slow.test:443", local.test?.token);
     const started = Date.now();
     const closed = readRest(reply.socket);

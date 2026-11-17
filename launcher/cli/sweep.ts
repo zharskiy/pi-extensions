@@ -12,11 +12,13 @@ import {
 import { collectImages, removeBuildLeftovers } from "../image/index.ts";
 import { removeRepoToken } from "../proxy/index.ts";
 import {
-  errorMessage,
+  DAY_MS,
   forgetRepo,
   hasRepoLeftovers,
+  isMissing,
   isMounted,
   knownRepos,
+  PRIVATE_FILE_MODE,
   type RepoRecord,
   readCreatedDirs,
   readJsonObject,
@@ -27,10 +29,8 @@ import {
   writeJsonFile,
 } from "../shared/index.ts";
 import { removeCreatedDirs } from "../workspace/index.ts";
-import { type CliDeps, pathsOf, writeLine } from "./deps.ts";
+import { type CliDeps, pathsOf, writeWarning } from "./deps.ts";
 import { sweepRepoSessions } from "./host-sessions.ts";
-
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 const RELAYS = { [LABELS.relay]: "true" };
 
@@ -39,7 +39,7 @@ type Presence = "present" | "missing" | "unknown";
 const presenceOf = (path: string): Promise<Presence> =>
   stat(path).then(
     () => "present",
-    (error: unknown) => ((error as NodeJS.ErrnoException).code === "ENOENT" ? "missing" : "unknown"),
+    (error: unknown) => (isMissing(error) ? "missing" : "unknown"),
   );
 
 const rootState = async (record: RepoRecord | undefined) => {
@@ -59,13 +59,6 @@ const rootState = async (record: RepoRecord | undefined) => {
 
   return (await presenceOf(dirname(record.root))) === "present" ? "gone" : "unreachable";
 };
-
-const warn = (deps: CliDeps, what: string, error: unknown) => {
-  writeLine(deps.stderr, `pi-sandbox: warning: ${what}: ${errorMessage(error)}`);
-};
-
-const reachable = async (backend: Backend | undefined) =>
-  backend !== undefined && (await backend.detect()).available ? backend : undefined;
 
 const removeRelays = async (backend: Backend, repoHash: string) => {
   const relays = await backend.findContainers({ ...RELAYS, [LABELS.repoHash]: repoHash });
@@ -89,23 +82,15 @@ const removeEngineSide = async (backend: Backend, repoHash: string) => {
   ];
 };
 
-interface Engine {
-  reachable?: Backend;
-}
-
-const engineOf = async (backend: Backend | undefined): Promise<Engine> => ({
-  reachable: await reachable(backend),
-});
-
-const clearEngine = async (deps: CliDeps, engine: Engine, repoHash: string) => {
-  if (engine.reachable === undefined) {
+const clearEngine = async (deps: CliDeps, engine: Backend | undefined, repoHash: string) => {
+  if (engine === undefined) {
     return [];
   }
 
   try {
-    return await removeEngineSide(engine.reachable, repoHash);
+    return await removeEngineSide(engine, repoHash);
   } catch (error) {
-    warn(deps, "the sandbox containers were not removed", error);
+    writeWarning(deps, "the sandbox containers were not removed", error);
 
     return [];
   }
@@ -119,7 +104,7 @@ const stopProxy = async (deps: CliDeps, stateDir: string, repoHash: string) => {
   return stopped ? [`stopped the proxy of ${shortHash(repoHash)}`] : [];
 };
 
-const removeSandbox = async (deps: CliDeps, engine: Engine, repoHash: string) => {
+export const removeRepoSandbox = async (deps: CliDeps, engine: Backend | undefined, repoHash: string) => {
   const stateDir = pathsOf(deps).stateDir;
   const [cleared, proxy] = await Promise.all([
     clearEngine(deps, engine, repoHash),
@@ -141,32 +126,32 @@ const removeSandbox = async (deps: CliDeps, engine: Engine, repoHash: string) =>
   return [...cleared, ...proxy];
 };
 
-export const removeRepoSandbox = async (deps: CliDeps, backend: Backend | undefined, repoHash: string) =>
-  removeSandbox(deps, await engineOf(backend), repoHash);
-
 const forget = async (stateDir: string, repoHash: string) => {
   await forgetRepo(stateDir, repoHash);
 
   await forgetRepoGrants(stateDir, repoHash);
 };
 
-const removeDeadLaunches = async (engine: Engine, agents: ContainerSummary[], live: Launch[]) => {
-  const backend = engine.reachable;
+const removeDeadLaunches = async (
+  engine: Backend | undefined,
+  agents: ContainerSummary[],
+  live: Launch[],
+) => {
   const liveIds = new Set(live.map((launch) => launch.launchId));
   const dead = agents.filter((agent) => !liveIds.has(agent.labels[LABELS.launchId] ?? ""));
 
-  if (backend === undefined) {
+  if (engine === undefined) {
     return [];
   }
 
-  await Promise.all(dead.map((agent) => discardContainer(backend, agent).catch(() => undefined)));
+  await Promise.all(dead.map((agent) => discardContainer(engine, agent).catch(() => undefined)));
 
   return dead.map((agent) => `removed container ${agent.name} (${agent.id}) of an ended launch`);
 };
 
 const sweepRepo = async (
   deps: CliDeps,
-  engine: Engine,
+  engine: Backend | undefined,
   repoHash: string,
   agents: ContainerSummary[],
   inEngine: boolean,
@@ -192,7 +177,7 @@ const sweepRepo = async (
       return [];
     }
 
-    const lines = leftovers ? await removeSandbox(deps, engine, repoHash) : [];
+    const lines = leftovers ? await removeRepoSandbox(deps, engine, repoHash) : [];
 
     if (record === undefined && inEngine && (await repoRecordOf(stateDir, repoHash)) === undefined) {
       await forget(stateDir, repoHash);
@@ -270,9 +255,8 @@ const gcDue = async (deps: CliDeps) => {
   return deps.now() - lastRun >= DAY_MS;
 };
 
-const collectGarbage = async (deps: CliDeps, backend: Backend | undefined) => {
+const collectGarbage = async (deps: CliDeps, engine: Backend | undefined) => {
   const stateDir = pathsOf(deps).stateDir;
-  const engine = await reachable(backend);
 
   if (engine === undefined) {
     return [];
@@ -281,21 +265,20 @@ const collectGarbage = async (deps: CliDeps, backend: Backend | undefined) => {
   const volumes = await pruneVolumes(stateDir, engine);
   const images = await collectImages(engine, stateDir);
 
-  await writeJsonFile(stateLayout(stateDir).gcRecord, { lastRun: deps.now() });
+  await writeJsonFile(stateLayout(stateDir).gcRecord, { lastRun: deps.now() }, { mode: PRIVATE_FILE_MODE });
 
   return [...volumes, ...images.map((image) => `removed image ${image}`)];
 };
 
-const sweepAll = async (deps: CliDeps, backend: Backend | undefined) => {
-  const engine = await engineOf(backend);
-  const listed = await engineObjects(engine.reachable);
+const sweepAll = async (deps: CliDeps, engine: Backend | undefined) => {
+  const listed = await engineObjects(engine);
   const fromEngine = new Set(listed.hashes);
   const hashes = [...new Set([...fromEngine, ...(await knownRepos(pathsOf(deps).stateDir))])];
   const agentsOf = (hash: string) => listed.agents.filter((agent) => agent.labels[LABELS.repoHash] === hash);
   const lines = await Promise.all(
     hashes.map((hash) =>
       sweepRepo(deps, engine, hash, agentsOf(hash), fromEngine.has(hash)).catch((error: unknown) => {
-        warn(deps, `the sandbox of ${shortHash(hash)} was not swept`, error);
+        writeWarning(deps, `the sandbox of ${shortHash(hash)} was not swept`, error);
 
         return [];
       }),
@@ -305,18 +288,22 @@ const sweepAll = async (deps: CliDeps, backend: Backend | undefined) => {
   return lines.flat();
 };
 
-export const sweepOrphans = async (deps: CliDeps, backend: Backend | undefined): Promise<string[]> => {
+export const sweepFailed = (deps: CliDeps, error: unknown): string[] => {
+  writeWarning(deps, "the sweep of leftover sandboxes failed", error);
+
+  return [];
+};
+
+export const sweepOrphans = async (deps: CliDeps, engine: Backend | undefined): Promise<string[]> => {
   try {
-    const swept = await sweepAll(deps, backend);
+    const swept = await sweepAll(deps, engine);
 
     await removeBuildLeftovers(pathsOf(deps).stateDir);
 
-    const collected = (await gcDue(deps)) ? await collectGarbage(deps, backend) : [];
+    const collected = (await gcDue(deps)) ? await collectGarbage(deps, engine) : [];
 
     return [...swept, ...collected];
   } catch (error) {
-    warn(deps, "the sweep of leftover sandboxes failed", error);
-
-    return [];
+    return sweepFailed(deps, error);
   }
 };

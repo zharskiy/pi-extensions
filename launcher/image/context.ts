@@ -1,8 +1,7 @@
-import { randomBytes } from "node:crypto";
 import { mkdir, rm, rmdir } from "node:fs/promises";
 import type { Backend, ImageInfo } from "../backend/index.ts";
 import type { SandboxConfig } from "../config/index.ts";
-import { stateLayout } from "../shared/index.ts";
+import { randomHex, stateLayout } from "../shared/index.ts";
 import { buildProxyArgs } from "./build-proxy.ts";
 
 export interface BuildContextInput {
@@ -32,9 +31,7 @@ export const buildInContext = async (
     fill: (dir: string) => Promise<unknown>;
   },
 ) => {
-  const contextDir = stateLayout(input.stateDir).buildContext(
-    `${build.prefix}-${randomBytes(4).toString("hex")}`,
-  );
+  const contextDir = stateLayout(input.stateDir).buildContext(`${build.prefix}-${randomHex(4)}`);
 
   try {
     await mkdir(contextDir, { recursive: true });

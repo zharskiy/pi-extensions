@@ -1,41 +1,24 @@
-import { chmod, mkdir, realpath, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, symlink, writeFile } from "node:fs/promises";
 
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { createProcessRunner } from "../../shared/index.ts";
 import {
-  discoverWorkspace,
   gitLaunchEndNotices,
   mountedGitDirs,
   recordGitBaseline,
   type Workspace,
-  workspaceFolder,
   workspaceNotices,
   workspaceSelfBinds,
 } from "../../workspace/index.ts";
 import { scanWorkspace } from "../../workspace/workspace-scan.ts";
 import { createFakeRunner } from "../support/fake-runner.ts";
-import { git, gitRunner } from "../support/git.ts";
-import { tempDir } from "../support/temp-dir.ts";
-
-const discoverAt = async (
-  cwd: string,
-  ...rest: Parameters<typeof discoverWorkspace> extends [unknown, ...infer R] ? R : never
-) => discoverWorkspace(await workspaceFolder(cwd), ...rest);
+import { createGitRepo, discoverAt, git, gitRunner } from "../support/git.ts";
+import { realTempDir } from "../support/temp-dir.ts";
 
 const runner = gitRunner;
 
-const createRoot = async () => realpath(await tempDir("workspace-mode"));
-
-const createRepo = async (path: string) => {
-  await mkdir(path, { recursive: true });
-
-  await git(path, ["init", "--quiet"]);
-
-  await git(path, ["commit", "--quiet", "--allow-empty", "-m", "init"]);
-
-  return path;
-};
+const createRoot = async () => realTempDir("workspace-mode");
 
 const markRepo = (path: string) => mkdir(join(path, ".git"), { recursive: true });
 
@@ -56,9 +39,9 @@ describe("the workspace scan", () => {
   it("lists repositories at depth 1 and 3 of a plain folder, sorted", async () => {
     const root = await createRoot();
 
-    await createRepo(join(root, "x", "y", "deep"));
+    await createGitRepo(join(root, "x", "y", "deep"));
 
-    await createRepo(join(root, "alpha"));
+    await createGitRepo(join(root, "alpha"));
 
     const workspace = await discover(root);
 
@@ -101,12 +84,12 @@ describe("the workspace scan", () => {
 
   it("lists a repository inside a nested repository but not a submodule checkout", async () => {
     const root = await createRoot();
-    const library = await createRepo(join(await createRoot(), "library"));
-    const outer = await createRepo(join(root, "outer"));
+    const library = await createGitRepo(join(await createRoot(), "library"));
+    const outer = await createGitRepo(join(root, "outer"));
 
     await git(outer, ["-c", "protocol.file.allow=always", "submodule", "add", "--quiet", library, "lib"]);
 
-    await createRepo(join(outer, "vendor", "inner"));
+    await createGitRepo(join(outer, "vendor", "inner"));
 
     expect((await discover(root)).nested?.map((repo) => repo.repoRoot)).toEqual([
       outer,
@@ -129,7 +112,7 @@ describe("the workspace scan", () => {
 
   it("overlays the build output each marker names, skipping a marker folder whose output is a file", async () => {
     const root = await createRoot();
-    const repo = await createRepo(join(root, "repo"));
+    const repo = await createGitRepo(join(root, "repo"));
     const folders = ["api", "cli", "app", "plain"].map((name) => join(repo, name));
 
     await Promise.all(folders.map((dir) => mkdir(dir)));
@@ -154,7 +137,7 @@ describe("the workspace scan", () => {
 
   it("finds lockfile folders in a workspace and in a repository, skipping a linked node_modules", async () => {
     const root = await createRoot();
-    const repo = await createRepo(join(root, "repo"));
+    const repo = await createGitRepo(join(root, "repo"));
 
     await Promise.all(
       [join(root, "app"), join(root, "linked"), join(repo, "web"), join(root, "app", "node_modules")].map(
@@ -322,7 +305,7 @@ describe("the workspace scan", () => {
 
     await Promise.all(apps.map((dir) => writeFile(join(dir, "uv.lock"), "")));
 
-    await createRepo(join(root, "app0", ".venv", "dep"));
+    await createGitRepo(join(root, "app0", ".venv", "dep"));
 
     const workspace = await discover(root);
 
@@ -348,7 +331,7 @@ describe("the workspace scan", () => {
 
   it("collects no overlays when asked not to, still listing repositories", async () => {
     const root = await createRoot();
-    const repo = await createRepo(join(root, "repo"));
+    const repo = await createGitRepo(join(root, "repo"));
 
     await writeFile(join(repo, "package-lock.json"), "{}");
 
@@ -362,7 +345,7 @@ describe("the workspace scan", () => {
 
   it("walks nothing in lenient discovery without overlays", async () => {
     const root = await createRoot();
-    const repo = await createRepo(join(root, "repo"));
+    const repo = await createGitRepo(join(root, "repo"));
 
     await writeFile(join(repo, "package-lock.json"), "{}");
 
@@ -377,7 +360,7 @@ describe("the workspace scan", () => {
 
   it("drops the overlays of a repository too large to search, and says so", async () => {
     const root = await createRoot();
-    const repo = await createRepo(join(root, "repo"));
+    const repo = await createGitRepo(join(root, "repo"));
 
     await Promise.all(["a", "b", "c"].map((name) => mkdir(join(repo, name, "deep"), { recursive: true })));
 
@@ -427,7 +410,7 @@ describe("the workspace scan", () => {
 describe("the nested repository checks", () => {
   it("refuses a nested repository whose .git is a symbolic link, naming it", async () => {
     const root = await createRoot();
-    const source = await createRepo(join(root, "source"));
+    const source = await createGitRepo(join(root, "source"));
     const linked = join(root, "linked");
 
     await mkdir(linked);
@@ -456,7 +439,7 @@ describe("the nested repository checks", () => {
 
   it("leaves a nested checkout whose git dir lies outside the folder as plain files, without asking git about it", async () => {
     const root = await createRoot();
-    const main = await createRepo(join(await createRoot(), "main"));
+    const main = await createGitRepo(join(await createRoot(), "main"));
     const worktree = join(root, "linked");
     const separate = join(root, "separate");
     const store = join(await createRoot(), "separate.git");
@@ -484,13 +467,13 @@ describe("the nested repository checks", () => {
     expect(mountedGitDirs(workspace)).toEqual([root]);
     expect(cwds).toEqual([]);
     expect(workspaceNotices(workspace)).toEqual([
-      `pi-sandbox: ${worktree}, ${separate}: the git dir lies outside this folder, so git does not work there in the sandbox; start pi inside the checkout to use git there`,
+      `${worktree}, ${separate}: the git dir lies outside this folder, so git does not work there in the sandbox; start pi inside the checkout to use git there`,
     ]);
   });
 
   it("leaves a nested checkout that reaches an outside git dir through a link inside the folder as plain files", async () => {
     const root = await createRoot();
-    const main = await createRepo(join(await createRoot(), "main"));
+    const main = await createGitRepo(join(await createRoot(), "main"));
     const checkout = join(root, "checkout");
 
     await git(main, ["worktree", "add", "--quiet", "-b", "feature", checkout]);
@@ -518,13 +501,13 @@ describe("the nested repository checks", () => {
 
     expect(workspace.detached).toEqual([{ repoRoot: stale, missing: true }]);
     expect(workspaceNotices(workspace)).toEqual([
-      `pi-sandbox: ${stale}: .git points at a git dir that no longer exists, so the sandbox sees a plain folder; delete the .git file, or run git worktree prune in the repository that owned it`,
+      `${stale}: .git points at a git dir that no longer exists, so the sandbox sees a plain folder; delete the .git file, or run git worktree prune in the repository that owned it`,
     ]);
   });
 
   it("leaves a nested .git file whose missing git dir lies inside the folder as a plain folder", async () => {
     const root = await createRoot();
-    const repo = await createRepo(join(root, "repo"));
+    const repo = await createGitRepo(join(root, "repo"));
     const stale = join(root, "stale");
     const gone = join(repo, ".git", "worktrees", "stale");
 
@@ -569,7 +552,7 @@ describe("the nested repository checks", () => {
 
   it("keeps a nested worktree whose .git file holds a plain relative pointer", async () => {
     const root = await createRoot();
-    const main = await createRepo(join(root, "main"));
+    const main = await createGitRepo(join(root, "main"));
     const worktree = join(root, "wt");
 
     await git(main, ["worktree", "add", "--quiet", "-b", "feature", worktree]);
@@ -641,14 +624,14 @@ describe("bare repositories around a workspace", () => {
 
     await mkdir(root, { recursive: true });
     await git(root, ["init", "--quiet", "--bare", bare]);
-    await createRepo(join(root, "checkout"));
+    await createGitRepo(join(root, "checkout"));
 
     return { root, bare };
   };
 
   it("accepts a bare repository inside a nested repository, as launching that repository alone does", async () => {
     const root = await createRoot();
-    const repo = await createRepo(join(root, "repoA"));
+    const repo = await createGitRepo(join(root, "repoA"));
     const fixture = join(repo, "test", "fixtures", "remote.git");
 
     await mkdir(join(repo, "test", "fixtures"), { recursive: true });
@@ -676,7 +659,7 @@ describe("bare repositories around a workspace", () => {
     expect(workspace.bareDirs).toEqual([bare]);
     expect(mountedGitDirs(workspace)).toEqual([root, join(root, "checkout", ".git")]);
     expect(workspaceNotices(workspace)).toContain(
-      `pi-sandbox: ${bare}: bare repositories, read-only in the sandbox; clone and fetch from them work, push does not`,
+      `${bare}: bare repositories, read-only in the sandbox; clone and fetch from them work, push does not`,
     );
 
     await discoverAt(root, fake, noHooksOf(root)).catch(() => undefined);
@@ -700,7 +683,7 @@ describe("bare repositories around a workspace", () => {
 
   it("keeps the git dir of a bare-plus-worktrees layout with its repository", async () => {
     const root = await createRoot();
-    const source = await createRepo(join(await createRoot(), "source"));
+    const source = await createGitRepo(join(await createRoot(), "source"));
     const store = join(root, "project", ".bare");
     const main = join(root, "project", "main");
 
@@ -753,7 +736,7 @@ describe("bare repositories around a workspace", () => {
 
   it("refuses to start inside a repository's git dir or in a bare repository in its working tree", async () => {
     const root = await createRoot();
-    const repo = await createRepo(join(root, "repo"));
+    const repo = await createGitRepo(join(root, "repo"));
     const inner = join(repo, "vendor", "inner.git");
     const dotGit = join(repo, ".git");
 
@@ -799,9 +782,9 @@ describe("the workspace mounts and notices", () => {
       nested: [repoAt("/w/a"), repoAt("/w/b")],
     };
 
-    expect(workspaceNotices(workspace)).toEqual(["pi-sandbox: workspace with 2 repositories"]);
+    expect(workspaceNotices(workspace)).toEqual(["workspace with 2 repositories"]);
     expect(workspaceNotices({ ...workspace, nested: [repoAt("/w/a")] })).toEqual([
-      "pi-sandbox: workspace with 1 repository",
+      "workspace with 1 repository",
     ]);
     expect(workspaceNotices({ ...workspace, nested: [] })).toEqual([]);
     expect(workspaceNotices(repoAt("/w/a"))).toEqual([]);
@@ -811,7 +794,7 @@ describe("the workspace mounts and notices", () => {
 describe("the workspace session end", () => {
   it("reports a git dir, a bare repository or a letter-case .git created during the session, in a workspace and a repository", async () => {
     const root = await createRoot();
-    const repo = await createRepo(join(root, "repo"));
+    const repo = await createGitRepo(join(root, "repo"));
     const shared = join(root, "shared");
     const context = { runner, stateDir: join(root, "state") };
     const review = "review it before running host git tools in this repository";
@@ -850,7 +833,7 @@ describe("the workspace session end", () => {
 
   it("reports a .git created in the workspace and inside a nested repository during the session", async () => {
     const root = await createRoot();
-    const repo = await createRepo(join(root, "repo"));
+    const repo = await createGitRepo(join(root, "repo"));
     const workspace = await discover(root);
     const context = { runner, stateDir: join(root, "state") };
     await recordGitBaseline(workspace, context);

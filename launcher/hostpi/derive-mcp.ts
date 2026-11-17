@@ -1,11 +1,25 @@
 import { isAbsolute, join } from "node:path";
-import { isJsonObject, isSecretShapedValue } from "../shared/index.ts";
+import {
+  hasSecretSegment,
+  isInertValue,
+  isJsonObject,
+  isSecretEnvEntry,
+  isSecretShapedValue,
+  placeholderFor,
+} from "../shared/index.ts";
 import type { ProviderCredentials } from "./derive-auth.ts";
-import { type Endpoint, endpointOf, hasQueryCredential, strippedUrl } from "./endpoints.ts";
+import {
+  type Endpoint,
+  endpointOf,
+  hasQueryCredential,
+  localEndpointReason,
+  queryCredentialNotice,
+  strippedUrl,
+} from "./endpoints.ts";
 import { deriveHeaders } from "./headers.ts";
 import { objectOr } from "./json.ts";
 import { isDisabledServer, oauthTarget, providerAuthOf } from "./mcp-auth.ts";
-import { type DeriveContext, mergeSections, placeholderOf, rulesFor, type Section } from "./rules.ts";
+import { type DeriveContext, mergeSections, noticeOnly, rulesFor, type Section } from "./rules.ts";
 import type { JsonObject } from "./types.ts";
 
 type ServerSection = Section<[string, unknown]> & { dropped?: boolean };
@@ -23,7 +37,7 @@ const oauthSection = (
   endpoints: Endpoint[],
 ): Section<JsonObject> => {
   const identity = `mcp:${name}:oauth`;
-  const placeholder = placeholderOf(context, identity);
+  const placeholder = placeholderFor(context.salt, identity);
 
   return {
     value: { Authorization: `Bearer ${placeholder}` },
@@ -41,11 +55,7 @@ const providerSection = (
   const body = Object.hasOwn(credentials, provider) ? credentials[provider] : undefined;
 
   return body === undefined
-    ? {
-        value: {},
-        rules: [],
-        notices: [`mcp ${name}: auth.provider ${provider} has no host credential, so no rule`],
-      }
+    ? noticeOnly({}, `mcp ${name}: auth.provider ${provider} has no host credential, so no rule`)
     : { value: {}, rules: rulesFor(`mcp:${name}:auth`, endpoints, body), notices: [] };
 };
 
@@ -96,16 +106,14 @@ const httpServer = (
   );
 
   if (!("endpoint" in result)) {
-    const reason =
-      "local" in result
-        ? `${result.local} is a host-local or plain-http endpoint, not reachable from the sandbox`
-        : "the url is not valid";
+    const reason = "local" in result ? localEndpointReason(result.local) : "the url is not valid";
 
-    return {
-      value: [name, headers.value === undefined ? rest : { ...rest, headers: headers.value }],
-      rules: [],
-      notices: [...stripped.notices, `mcp ${name}: ${reason}`, ...headers.notices],
-    };
+    return noticeOnly(
+      [name, headers.value === undefined ? rest : { ...rest, headers: headers.value }],
+      ...stripped.notices,
+      `mcp ${name}: ${reason}`,
+      ...headers.notices,
+    );
   }
 
   const bearer = authSection(context, name, server, endpoints, credentials);
@@ -124,78 +132,6 @@ const httpServer = (
   };
 };
 
-const SECRET_WORDS = [
-  "token",
-  "tokens",
-  "secret",
-  "secrets",
-  "password",
-  "passwd",
-  "passphrase",
-  "authorization",
-  "cookie",
-  "credential",
-  "credentials",
-  "apikey",
-  "privatekey",
-];
-
-const SHORT_SECRET_SEGMENTS = new Set(["pass", "pat", "jwt", "dsn"]);
-
-const isSecretSegment = (segment: string) =>
-  SHORT_SECRET_SEGMENTS.has(segment) || SECRET_WORDS.some((word) => segment.endsWith(word));
-
-const QUALIFIERS = new Set([
-  "no",
-  "max",
-  "min",
-  "count",
-  "limit",
-  "size",
-  "length",
-  "file",
-  "dir",
-  "path",
-  "mode",
-  "url",
-  "timeout",
-  "ttl",
-  "type",
-  "name",
-  "header",
-  "env",
-  "var",
-]);
-
-const INERT_WORDS = new Set(["", "true", "false", "yes", "no", "on", "off"]);
-
-const segmentsOf = (name: string) =>
-  name
-    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter((segment) => segment !== "");
-
-const isMcpSecretName = (name: string) => {
-  const segments = segmentsOf(name);
-  const first = segments[0] ?? "";
-  const last = segments.at(-1) ?? "";
-
-  if (segments.length === 0 || QUALIFIERS.has(first) || QUALIFIERS.has(last)) {
-    return false;
-  }
-
-  return segments.some(isSecretSegment) || last.endsWith("key");
-};
-
-const isInertValue = (value: string) =>
-  INERT_WORDS.has(value.trim().toLowerCase()) || /^-?\d+(\.\d+)?$/.test(value.trim());
-
-const isSecretEnvValue = (variable: string, value: unknown) =>
-  typeof value === "string" &&
-  !isInertValue(value) &&
-  (value.includes("${") || value.startsWith("!") || isMcpSecretName(variable) || isSecretShapedValue(value));
-
 const FLAG_WITH_VALUE = /^(--?[A-Za-z0-9][A-Za-z0-9_.-]*)=(.*)$/s;
 
 const BARE_FLAG = /^--?([A-Za-z0-9][A-Za-z0-9_.-]*)$/;
@@ -203,7 +139,7 @@ const BARE_FLAG = /^--?([A-Za-z0-9][A-Za-z0-9_.-]*)$/;
 const isSecretFlag = (arg: unknown) => {
   const name = typeof arg === "string" ? BARE_FLAG.exec(arg)?.[1] : undefined;
 
-  return name !== undefined && isMcpSecretName(name);
+  return name !== undefined && hasSecretSegment(name);
 };
 
 const placeholderNotice = (name: string, label: string) =>
@@ -216,7 +152,7 @@ const stdioArg = (context: DeriveContext, name: string, args: unknown[], index: 
     return { value: arg, notices: [] };
   }
 
-  const placeholder = placeholderOf(context, `mcp:${name}:arg:${index}`);
+  const placeholder = placeholderFor(context.salt, `mcp:${name}:arg:${index}`);
 
   if (index > 0 && isSecretFlag(args[index - 1]) && !arg.startsWith("-") && !isInertValue(arg)) {
     return { value: placeholder, notices: [placeholderNotice(name, `args[${index}]`)] };
@@ -226,7 +162,7 @@ const stdioArg = (context: DeriveContext, name: string, args: unknown[], index: 
   const flagName = flag?.[1] ?? "";
   const flagValue = flag?.[2] ?? "";
 
-  if (flag !== null && isMcpSecretName(flagName.replace(/^-+/, "")) && !isInertValue(flagValue)) {
+  if (flag !== null && hasSecretSegment(flagName.replace(/^-+/, "")) && !isInertValue(flagValue)) {
     return { value: `${flagName}=${placeholder}`, notices: [placeholderNotice(name, flagName)] };
   }
 
@@ -267,29 +203,40 @@ const hostPathNotices = (name: string, server: JsonObject) =>
 
 const stdioServer = (context: DeriveContext, name: string, original: JsonObject): ServerSection => {
   const stdio = stdioArgs(context, name, original);
-  const { server } = stdio;
-  const argNotices = [...hostPathNotices(name, server), ...stdio.notices];
 
+  return noticeOnly([name, stdio.server], ...hostPathNotices(name, stdio.server), ...stdio.notices);
+};
+
+const maskedEnv = (context: DeriveContext, name: string, server: JsonObject) => {
   if (!isJsonObject(server.env)) {
-    return { value: [name, server], rules: [], notices: argNotices };
+    return { server, notices: [] };
   }
 
   const entries = Object.entries(server.env);
   const secret = entries
-    .filter(([variable, value]) => isSecretEnvValue(variable, value))
+    .filter(([variable, value]) => isSecretEnvEntry(variable, value))
     .map(([variable]) => variable);
   const env = Object.fromEntries(
     entries.map(([variable, value]) => [
       variable,
-      secret.includes(variable) ? placeholderOf(context, `mcp:${name}:env:${variable}`) : value,
+      secret.includes(variable) ? placeholderFor(context.salt, `mcp:${name}:env:${variable}`) : value,
     ]),
   );
 
-  return {
-    value: [name, { ...server, env }],
-    rules: [],
-    notices: [...argNotices, ...secret.map((variable) => placeholderNotice(name, variable))],
-  };
+  return { server: { ...server, env }, notices: secret.map((variable) => placeholderNotice(name, variable)) };
+};
+
+const shapedServer = (
+  context: DeriveContext,
+  name: string,
+  server: JsonObject,
+  credentials: ProviderCredentials,
+): ServerSection => {
+  if (isHttpServer(server)) {
+    return httpServer(context, name, server, credentials);
+  }
+
+  return isStdioServer(server) ? stdioServer(context, name, server) : noticeOnly([name, server]);
 };
 
 const serverSection = (
@@ -299,25 +246,22 @@ const serverSection = (
   credentials: ProviderCredentials,
 ): ServerSection => {
   if (!isJsonObject(server)) {
-    return { value: [name, server], rules: [], notices: [] };
+    return noticeOnly([name, server]);
   }
 
   if (isHttpServer(server) && hasQueryCredential(server.url)) {
     return {
       value: [name, undefined],
       rules: [],
-      notices: [`mcp ${name}: the url carries a credential in its query string; add a header rule instead`],
+      notices: [queryCredentialNotice(`mcp ${name}`, "the url", "the server")],
       dropped: true,
     };
   }
 
-  if (isHttpServer(server)) {
-    return httpServer(context, name, server, credentials);
-  }
+  const masked = maskedEnv(context, name, server);
+  const section = shapedServer(context, name, masked.server, credentials);
 
-  return isStdioServer(server)
-    ? stdioServer(context, name, server)
-    : { value: [name, server], rules: [], notices: [] };
+  return { ...section, notices: [...section.notices, ...masked.notices] };
 };
 
 export const deriveMcp = (
@@ -331,7 +275,7 @@ export const deriveMcp = (
   const merged = mergeSections(sections.filter((section) => section.dropped !== true));
 
   return {
-    value: { ...mcp, mcpServers: Object.fromEntries(merged.values) },
+    value: { ...mcp, mcpServers: Object.fromEntries(merged.value) },
     notices: sections.flatMap((section) => section.notices),
     rules: merged.rules,
   };

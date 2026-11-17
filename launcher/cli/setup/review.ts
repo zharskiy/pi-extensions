@@ -14,7 +14,7 @@ import {
   type Tag,
   wrapped,
 } from "./screens.ts";
-import type { Answers, ConfigDocument, HostFacts, OwnedProblem, Plan, Section } from "./types.ts";
+import type { Answers, ConfigDocument, HostFacts, OwnedProblem, Plan, Section, VmAction } from "./types.ts";
 
 export interface ReviewState {
   answers: Answers;
@@ -24,6 +24,7 @@ export interface ReviewState {
 export interface ReviewView {
   plain: boolean;
   table: boolean;
+  notices: boolean;
   notice?: string;
 }
 
@@ -32,6 +33,8 @@ export const SECTION_LABELS: Record<Section, string> = {
   vm: "VM size",
   writeBack: "Settings write-back",
 };
+
+const keepsSize = (vm: VmAction) => ("parts" in vm ? !vm.parts.includes("size") : vm.kind === "none");
 
 export const createReview = (document: ConfigDocument, facts: HostFacts, env: NodeJS.ProcessEnv) => {
   const problems = ownedProblems(document, { home: facts.home, env });
@@ -63,8 +66,12 @@ export const createReview = (document: ConfigDocument, facts: HostFacts, env: No
 
     const changes = plan.changes.filter((change) => isInSection(section, change.key));
 
+    if (changes.length === 0 && touched) {
+      return "chosen";
+    }
+
     if (changes.length === 0) {
-      return touched ? "chosen" : "current";
+      return section === "vm" && !keepsSize(plan.vm) ? "from the file" : "current";
     }
 
     return touched && changes.every((change) => change.kind === "add") ? "chosen" : "changed";
@@ -97,6 +104,7 @@ export const createReview = (document: ConfigDocument, facts: HostFacts, env: No
       ...(framed ? [HUB_SUMMARY_TITLE] : []),
       ...rows,
       ...(framed ? [""] : []),
+      ...(view.notices && plan.notices.length > 0 ? [...wrapped(plan.notices, room), ""] : []),
       ...(view.notice === undefined ? [] : [...wrapped([view.notice], room), ""]),
       ...effect,
       ...(view.plain ? [] : ["", ...wrapped([OTHER_SETTINGS], room), ""]),

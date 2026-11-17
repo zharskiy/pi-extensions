@@ -12,9 +12,9 @@ import { type DialAccess, type Dialer, RestrictedAddressError } from "./dial.ts"
 import type { EgressSettings } from "./files.ts";
 import { createInterceptor } from "./intercept.ts";
 import { compilePolicy, type EgressDecider } from "./policy.ts";
-import { PROXY_AGENT, rawReply, sendJson } from "./replies.ts";
+import { PROXY_AGENT, type RawHeader, rawReply, sendJson, statusLine } from "./replies.ts";
 import { HTTP_PORT, parseAuthority } from "./request-target.ts";
-import { createRoutes, hostOf, PLAIN_HTTP } from "./routes.ts";
+import { createRoutes, hostOf, PLAIN_HTTP, UNPARSEABLE } from "./routes.ts";
 import type { ProxyRuntime } from "./runtime.ts";
 import type { SecretResolver } from "./secrets/index.ts";
 import { createTerminator } from "./terminate.ts";
@@ -46,9 +46,13 @@ const AUTH_CHALLENGE = `Basic realm="${PROXY_AGENT}"`;
 
 const AUTH_DENIAL = { rule: "auth", reason: "missing or wrong Proxy-Authorization" };
 
-const DEFAULT_HELLO_TIMEOUT_MS = 10_000;
+const AUTH_REPLY = {
+  status: 407,
+  body: { error: AUTH_DENIAL.reason },
+  headers: [["proxy-authenticate", AUTH_CHALLENGE]] as RawHeader[],
+};
 
-const UNPARSEABLE = "unparseable";
+const DEFAULT_HELLO_TIMEOUT_MS = 10_000;
 
 const currentUser = () => {
   try {
@@ -148,11 +152,7 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
     if (!isCaller(request)) {
       denials.log(target?.host ?? UNPARSEABLE, AUTH_DENIAL);
 
-      client.end(
-        rawReply("407 Proxy Authentication Required", { error: AUTH_DENIAL.reason }, [
-          ["Proxy-Authenticate", AUTH_CHALLENGE],
-        ]),
-      );
+      client.end(rawReply(statusLine(AUTH_REPLY.status), AUTH_REPLY.body, AUTH_REPLY.headers));
 
       return;
     }
@@ -224,7 +224,7 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
     if (!isCaller(request)) {
       denials.log(hostOf(request.headers.host), AUTH_DENIAL);
 
-      sendJson(response, 407, { error: AUTH_DENIAL.reason }, { "proxy-authenticate": AUTH_CHALLENGE });
+      sendJson(response, AUTH_REPLY.status, AUTH_REPLY.body, AUTH_REPLY.headers);
 
       return;
     }

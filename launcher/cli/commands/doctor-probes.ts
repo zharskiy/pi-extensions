@@ -1,12 +1,14 @@
 import { posix } from "node:path";
 import { type Backend, execCapture } from "../../backend/index.ts";
 import { type CredentialRule, fillTemplate, TLS_PORT } from "../../config/index.ts";
-import { credentialHosts, probeHostSessions, readVolumeFile } from "../../provision/index.ts";
+import { credentialHosts, readVolumeFile } from "../../provision/index.ts";
+import { CERTIFICATE_BACKDATE } from "../../proxy/index.ts";
 import {
   errorMessage,
   GUEST_PATHS,
   isAuthLikeHeader,
   isPlaceholder,
+  isSecretEnvEntry,
   isSecretName,
   lastLine,
 } from "../../shared/index.ts";
@@ -71,7 +73,7 @@ const NOT_YET_VALID = "CERT_NOT_YET_VALID";
 
 const CLOCK_BEHIND = {
   reasons: [
-    "the sandbox VM's clock is more than an hour behind the host's, so the proxy's certificate, dated by the host an hour back, is not valid there yet",
+    `the sandbox VM's clock is more than ${CERTIFICATE_BACKDATE} behind the host's, so the proxy's certificate, dated by the host ${CERTIFICATE_BACKDATE} back, is not valid there yet`,
   ],
   hint: "restart the VM to reset its clock: run pi sandbox stop once no pi session runs, then pi sandbox doctor again",
 };
@@ -106,7 +108,7 @@ const stringLeaves = (value: unknown, path: string): Leaf[] => {
   );
 };
 
-const parsedJson = (output: string) => {
+export const parsedJson = (output: string) => {
   try {
     return JSON.parse(output) as unknown;
   } catch {
@@ -119,28 +121,23 @@ const lastSegment = (path: string) => path.split(".").at(-1) ?? "";
 const isPlaceholderValue = (value: string) =>
   value === "" || isPlaceholder(value) || isPlaceholder(value.trim().split(/\s+/).at(-1) ?? "");
 
-const isSecretField = (path: string) => {
-  const name = lastSegment(path);
+const sectionOf = (path: string) => path.split(".").at(-2);
 
-  return name !== "type" && (TOKEN_FIELDS.includes(name) || isSecretName(name));
+const isEnvSecret = (leaf: Leaf) =>
+  sectionOf(leaf.path) === "env" && isSecretEnvEntry(lastSegment(leaf.path), leaf.value);
+
+const isAuthSecret = (leaf: Leaf) => {
+  const name = lastSegment(leaf.path);
+
+  return isEnvSecret(leaf) || (name !== "type" && (TOKEN_FIELDS.includes(name) || isSecretName(name)));
 };
 
-const foreignAuthPaths = (auth: unknown) =>
-  stringLeaves(auth, "")
-    .filter((leaf) => isSecretField(leaf.path) && !isPlaceholderValue(leaf.value))
-    .map((leaf) => leaf.path);
+const isMcpSecret = (leaf: Leaf) =>
+  isEnvSecret(leaf) || (sectionOf(leaf.path) === "headers" && isAuthLikeHeader(lastSegment(leaf.path)));
 
-const isMcpSecret = (path: string) => {
-  const parts = path.split(".");
-  const section = parts.at(-2);
-  const name = parts.at(-1) ?? "";
-
-  return (section === "headers" && isAuthLikeHeader(name)) || (section === "env" && isSecretName(name));
-};
-
-const foreignMcpPaths = (mcp: unknown) =>
-  stringLeaves(mcp, "")
-    .filter((leaf) => isMcpSecret(leaf.path) && !isPlaceholderValue(leaf.value))
+const foreignPaths = (value: unknown, isSecret: (leaf: Leaf) => boolean) =>
+  stringLeaves(value, "")
+    .filter((leaf) => isSecret(leaf) && !isPlaceholderValue(leaf.value))
     .map((leaf) => leaf.path);
 
 const secretEnvNames = (output: string, proxyToken: string | undefined) =>
@@ -170,10 +167,10 @@ export const sweepCredentials = async (target: ProbeTarget, proxyToken?: string)
     ...secretEnvNames(env.stdout, proxyToken).map(
       (name) => `environment variable ${name} holds a value other than the placeholder`,
     ),
-    ...foreignAuthPaths(auth).map(
+    ...foreignPaths(auth, isAuthSecret).map(
       (path) => `${GUEST_AUTH_FILE} holds a value other than the placeholder at ${path}`,
     ),
-    ...foreignMcpPaths(mcp).map(
+    ...foreignPaths(mcp, isMcpSecret).map(
       (path) => `${GUEST_MCP_FILE} holds a value other than a placeholder at ${path}`,
     ),
   ];
@@ -380,16 +377,4 @@ export const checkRules = async (
       }),
     ),
   ];
-};
-
-export const checkSessionsShare = async (target: ProbeTarget, sessionDir: string | undefined) => {
-  if (sessionDir === undefined || !posix.isAbsolute(sessionDir)) {
-    return skipped(`in the sandbox volume${sessionDir === undefined ? "" : ` (${sessionDir})`}`);
-  }
-
-  return (await probeHostSessions(target.backend, target.containerId, sessionDir))
-    ? passed("writable at the host path")
-    : failed(`${sessionDir} is not writable from the sandbox`, {
-        hint: "set sessions.host: false or share it with the VM",
-      });
 };

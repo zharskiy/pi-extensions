@@ -21,11 +21,8 @@ type Explained = Pick<CheckResult, "reasons" | "hint">;
 export const VERBOSE_FLAG = "--verbose";
 
 const LAYOUT: Array<[Section, string[]]> = [
-  ["host", ["user config", "old state", "host pi", "provider hosts", "sessions", "host side"]],
-  [
-    "sandbox",
-    ["vm shares", "vm", "sandbox", "vm size", "image", "container", "sync", "sessions share", "probes"],
-  ],
+  ["host", ["user config", "old policy", "old state", "host pi", "provider hosts", "sessions", "host side"]],
+  ["sandbox", ["vm shares", "vm", "sandbox", "vm size", "image", "container", "sync", "probes"]],
   [
     "network",
     [

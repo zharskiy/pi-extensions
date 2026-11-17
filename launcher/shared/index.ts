@@ -1,7 +1,7 @@
-export { ensureRandomHexFile, writeFileAtomic, writeNewFile } from "./atomic-write.ts";
+export { ensureRandomHexFile, readRandomHexFile, writeFileAtomic, writeNewFile } from "./atomic-write.ts";
 export type { CommandRunner, RunOptions, RunResult } from "./command-runner.ts";
-export { createProcessRunner, withResolvedCommand } from "./command-runner.ts";
-export { errorMessage, LauncherError } from "./errors.ts";
+export { createProcessRunner, signalExit, withResolvedCommand } from "./command-runner.ts";
+export { errnoCode, errorMessage, isMissing, LauncherError } from "./errors.ts";
 export { withDirectoryLock, withFileLock, withFileLockIfFree } from "./file-lock.ts";
 export { repoHash, sha256Hex, shortHash, stableHash } from "./hash.ts";
 export type { IniSection } from "./ini.ts";
@@ -10,9 +10,11 @@ export type { JsonObject } from "./json-file.ts";
 export {
   isJsonObject,
   jsonText,
+  parseJson,
   parseJsonObject,
   readJsonFile,
   readJsonObject,
+  readOptionalText,
   readText,
   writeJsonFile,
 } from "./json-file.ts";
@@ -23,29 +25,35 @@ export type { McpAuthEntry, McpLoginState } from "./mcp-auth-key.ts";
 export {
   isFreshMcpToken,
   MCP_SERVER_NAME,
-  MCP_TOKEN_SKEW_MS,
   mcpAuthKey,
   mcpLoginCommand,
   readMcpAuthEntry,
   readMcpLogins,
+  tokenUsableUntil,
   updateMcpLogin,
   withMcpLoginDir,
 } from "./mcp-auth-key.ts";
+export { PERMISSION_BITS, PRIVATE_DIR_MODE, PRIVATE_FILE_MODE, PUBLIC_FILE_MODE } from "./modes.ts";
 export type { NpmrcEntry } from "./npmrc.ts";
 export { parseNpmrc } from "./npmrc.ts";
 export {
   expandHome,
   hostAgentDir,
+  isFileUrl,
   isWithin,
   launcherEntry,
   launcherPaths,
   launcherRoot,
   outermostPaths,
   PI_AGENT_DIR_VARIABLE,
+  PRIVATE_HOME_DIRS,
+  pathFromSetting,
   realOrResolved,
   realOrResolvedSync,
+  realOrUndefined,
+  realOrUndefinedSync,
 } from "./paths.ts";
-export { isLauncherSetVariable, PI_SESSION_DIR_VARIABLE } from "./pi-env.ts";
+export { FIXED_SANDBOX_ENV, isLauncherSetVariable, PI_PACKAGE, PI_SESSION_DIR_VARIABLE } from "./pi-env.ts";
 export {
   isPlaceholder,
   jwtShapedPlaceholder,
@@ -53,7 +61,14 @@ export {
   placeholderFor,
 } from "./placeholder.ts";
 export { processStart } from "./process-start.ts";
-export { lstatOrUndefined, readRegularFile, sameEntry } from "./regular-file.ts";
+export { randomHex } from "./random.ts";
+export {
+  lstatOrUndefined,
+  MAX_REGULAR_FILE_BYTES,
+  readRegularFile,
+  readRegularText,
+  sameEntry,
+} from "./regular-file.ts";
 export type { RepoRecord } from "./repo-state.ts";
 export {
   forgetRepo,
@@ -66,12 +81,29 @@ export {
   writeCreatedDirs,
   writeRepoRecord,
 } from "./repo-state.ts";
-export { hasUrlUserinfo, isAuthLikeHeader, isSecretName, isSecretShapedValue } from "./secret-name.ts";
-export { settleAll } from "./settle.ts";
-export { ensureSalt, GUEST_PATHS, stateLayout } from "./state-layout.ts";
+export {
+  hasSecretSegment,
+  hasUrlUserinfo,
+  isAuthLikeHeader,
+  isInertValue,
+  isSecretEnvEntry,
+  isSecretEnvName,
+  isSecretName,
+  isSecretShapedValue,
+} from "./secret-name.ts";
+export { settleAll, withTimeout } from "./settle.ts";
+export { ensureSalt, GUEST_PATHS, isTrustBundleName, stateLayout } from "./state-layout.ts";
 export { isControlChar, lastLine, printable } from "./terminal-text.ts";
 export type { ToolConfigFormat, ToolConfigSelect } from "./tool-config.ts";
-export { isToolConfigKey, TOOL_CONFIG_FORMATS, toolConfigValue, urlPartOf } from "./tool-config.ts";
+export {
+  isToolConfigKey,
+  jsonPointer,
+  MalformedUrlCredentials,
+  TOOL_CONFIG_FORMATS,
+  toolConfigValue,
+  urlPartOf,
+} from "./tool-config.ts";
+export { DAY_MS, GIB, HOUR_MS, MIB, MINUTE_MS } from "./units.ts";
 export type { FileKeys, ValueSpec, ValueType, WriteBackTable } from "./write-back-table.ts";
 export {
   BUILT_IN_EXTENSION_FILES,

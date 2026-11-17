@@ -1,28 +1,29 @@
+import { listenFor } from "../container/index.ts";
 import type { HostPi, McpOAuthServer } from "../hostpi/index.ts";
 import {
+  DAY_MS,
   isFreshMcpToken,
   mcpAuthKey,
   mcpLoginCommand,
-  PI_AGENT_DIR_VARIABLE,
   readMcpAuthEntry,
   readMcpLogins,
   stateLayout,
   updateMcpLogin,
   withFileLockIfFree,
-  withMcpLoginDir,
 } from "../shared/index.ts";
 import type { LaunchContext } from "./context.ts";
-import { type CliDeps, hostAgentDirOf, isTerminal, writeLine } from "./deps.ts";
+import { type CliDeps, isTerminal, writeNotices } from "./deps.ts";
 import type { HostSide } from "./derive.ts";
+import { hostPiEnv, runHostJob } from "./host-pi.ts";
 import { writeOnce } from "./notices.ts";
 
-const FAILURE_QUIET_MS = 24 * 60 * 60_000;
+const FAILURE_QUIET_MS = DAY_MS;
 
 const notice = (deps: CliDeps, name: string, text: string) => {
-  writeLine(deps.stderr, `pi-sandbox: mcp ${name}: ${text}`);
+  writeNotices(deps, [`mcp ${name}: ${text}`]);
 };
 
-const notSignedInLine = (name: string) => `pi-sandbox: mcp ${name}: not signed in; run pi mcp login ${name}`;
+const notSignedInLine = (name: string) => `mcp ${name}: not signed in; run pi mcp login ${name}`;
 
 const notSignedIn = (deps: CliDeps, context: LaunchContext, name: string) =>
   writeOnce(deps, context, [notSignedInLine(name)]);
@@ -33,23 +34,15 @@ const needsSignIn = async (host: HostSide, server: McpOAuthServer, now: number) 
   return entry?.refresh === undefined && !isFreshMcpToken(entry, now);
 };
 
-const runLogin = (deps: CliDeps, stateDir: string, pi: HostPi, server: McpOAuthServer) =>
-  withMcpLoginDir(stateDir, async (cwd) => {
-    const [file = "", ...args] = mcpLoginCommand(pi.command, server.name);
-    const signals = deps.signals ?? process;
-    const keepAlive = () => undefined;
+const runLogin = async (deps: CliDeps, pi: HostPi, server: McpOAuthServer) => {
+  const keepAlive = listenFor(deps.signals ?? process, ["SIGINT"]);
 
-    signals.on("SIGINT", keepAlive);
-
-    try {
-      return await deps.runner.spawnInteractive(file, args, {
-        cwd,
-        env: { [PI_AGENT_DIR_VARIABLE]: hostAgentDirOf(deps) },
-      });
-    } finally {
-      signals.off("SIGINT", keepAlive);
-    }
-  });
+  try {
+    return await runHostJob(deps, mcpLoginCommand(pi.command, server.name), "empty", hostPiEnv(deps));
+  } finally {
+    keepAlive.stop();
+  }
+};
 
 const signInOnce = async (deps: CliDeps, context: LaunchContext, host: HostSide, server: McpOAuthServer) => {
   const key = mcpAuthKey(server.name, server.url);
@@ -63,7 +56,7 @@ const signInOnce = async (deps: CliDeps, context: LaunchContext, host: HostSide,
 
   notice(deps, server.name, "signing in on the host; your browser opens");
 
-  const code = await runLogin(deps, context.stateDir, host.pi, server);
+  const code = await runLogin(deps, host.pi, server);
 
   await updateMcpLogin(context.stateDir, key, ({ failedAt: _failed, ...rest }) =>
     code === 0 ? rest : { ...rest, failedAt: deps.now() },

@@ -8,7 +8,7 @@ const NO_RESOURCES = ["--no-extensions", "--no-skills", "--no-prompt-templates",
 
 const HELP_COMMANDS = new Set(["install", "remove", "uninstall", "update", "list", "config"]);
 
-const LOCAL_FLAGS = ["-l", "--local"];
+export const LOCAL_FLAGS = ["-l", "--local"];
 
 const isHelpFlag = (arg: string) => HELP_FLAGS.includes(arg);
 

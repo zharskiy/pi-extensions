@@ -1,4 +1,3 @@
-import { randomBytes } from "node:crypto";
 import { readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import {
@@ -6,6 +5,8 @@ import {
   isLive,
   knownRepos,
   LauncherError,
+  PRIVATE_FILE_MODE,
+  randomHex,
   readJsonObject,
   stateLayout,
   withFileLock,
@@ -17,11 +18,9 @@ const LAUNCH_ID = /^[0-9a-f]{16}$/;
 
 const ENTRY_SUFFIX = ".json";
 
-const PRIVATE_MODE = 0o600;
-
 const LOCK_TIMEOUT_MS = 120_000;
 
-export const newLaunchId = (): string => randomBytes(8).toString("hex");
+export const newLaunchId = (): string => randomHex(8);
 
 const checkedLaunchId = (launchId: string) => {
   if (!LAUNCH_ID.test(launchId)) {
@@ -105,7 +104,9 @@ export const withRepoLaunchLock = <T>(stateDir: string, repoHash: string, action
 
 export const registerLaunch = (stateDir: string, entry: Launch): Promise<number> =>
   withRepoLaunchLock(stateDir, entry.repoHash, async () => {
-    await writeJsonFile(entryFile(stateDir, entry.repoHash, entry.launchId), entry, { mode: PRIVATE_MODE });
+    await writeJsonFile(entryFile(stateDir, entry.repoHash, entry.launchId), entry, {
+      mode: PRIVATE_FILE_MODE,
+    });
 
     return (await pruneLaunches(stateDir, entry.repoHash)).length;
   });

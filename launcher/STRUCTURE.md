@@ -32,8 +32,8 @@ bin/shim.sh                    the package name, the pi shim in ~/.local/bin wit
 
 ```
 cli/main.ts                    builds the real dependencies, the host git outside the started folder and the /dev/tty opener of pi sandbox init included, and runs
-cli/run.ts                     the command table, the hidden __uninstall and __vm-shares routes and error rendering
-cli/deps.ts                    the dependencies every command gets, and the shared terminal helpers (TTY and colour checks, a line sink)
+cli/run.ts                     the command table with egress's actions, help and option checks, the hidden __uninstall and __vm-shares routes and error rendering
+cli/deps.ts                    the dependencies every command gets, and the shared terminal helpers (TTY and colour checks, a line sink, notices and warnings)
 cli/index.ts                   public surface
 cli/launch.ts                  the pi pipeline with its stages and progress lines, and withSandbox for the doctor
 cli/context.ts                 the launch context: the folder to mount, the guard and workspaceRoots before the search, config, discovery and the checks after it
@@ -59,7 +59,7 @@ cli/mcp-sign-in.ts             the launch-start MCP sign-in on the host
 cli/host-sessions.ts           host sessions for a launch: choice, preparation, sweeps, share probe
 cli/intercept.ts               pi install, uninstall, remove, mcp, every update, config, auth, help, --list-models, --export and --version run on the host
 cli/host-routes.ts             which command lines start no session: help, version, auth, config without -l, --list-models, --export
-cli/host-pi.ts                 the one host pi (pi's managed install only), the missing-pi line (missingPiText, built from the parts of missingPi the doctor shows) and --no-sandbox (runHostPi)
+cli/host-pi.ts                 the one host pi (pi's managed install only), the missing-pi line (missingPiText, built from the parts of missingPi the doctor shows), the one way to start a host job (runHostJob: in the cwd or an empty dir, with the host agent dir when asked) and --no-sandbox (runHostPi)
 cli/notices.ts                 notices printed once per repository and text
 cli/versions.ts                launcher version and image pi version
 cli/commands/status.ts         pi sandbox status
@@ -79,7 +79,7 @@ cli/commands/doctor-report.ts  the pure text renderer of the checks: aligned col
 cli/commands/doctor-tls.ts     the tls inspection checks: the node handshake to pi.dev on the host and in the container, the keychain lookup of the root CA, the outcomes
 cli/commands/tls-probe.ts      the typed TLS handshake script those checks run as their own node process: request on stdin, chain and verdicts on stdout
 cli/commands/help.ts           usage
-cli/commands/options.ts        the option check of the sandbox commands and egress
+cli/commands/options.ts        the command type and the option check of the sandbox commands
 ```
 
 ## config/
@@ -109,9 +109,9 @@ workspace/walk.ts              the budgeted level-by-level directory walk
 workspace/paths.ts             path ordering by depth and code unit, the dirs between a root and a path, the real path of a missing path, a pointer resolved through links as the filesystem does
 workspace/overlay-markers.ts   which marker file gives which build output folder
 workspace/guard.ts             the refusal of protected folders and workspaces (home, pi and launcher dirs, credential, system and image dirs) and the host session dir check
-workspace/mounts.ts            the protected path table
-workspace/roots.ts             the workspaceRoots refusal (the guard's protected paths and system dirs, nested roots dropped before links) and the checked roots the VM shares
-workspace/pi-session-dir.ts    pi's session slug and the host session dir choice
+workspace/mounts.ts            the protected path table and the one overlap rule over it
+workspace/roots.ts             the workspaceRoots refusal (the guard's protected paths and system dirs, nested roots dropped before links, with a notice) and the checked roots the VM shares
+workspace/pi-session-dir.ts    pi's session slug, the sessions dir of an agent dir and the host session dir choice
 workspace/created.ts           removal of recorded created folders
 workspace/git/layout.ts        git dir layout from the files, refusing links, foreign pointers and a foreign commondir; the git-dir shape and the .git name in any letter case
 workspace/git/protect.ts       the hooks dirs bound read-only, the self binds and the workspace bare-dir check
@@ -156,7 +156,7 @@ container/spec.ts              the container spec: mounts, env, labels, the moun
 container/volumes.ts           the volume plan: agent, overlay and shared volume names, targets and labels
 container/git-overlay.ts       the git overlay plan and its ready() step before a start: layout re-check, hooks dirs, the baseline and the pending report
 container/names.ts             container and volume names
-container/lifecycle.ts         startLaunchContainer and removeLaunchContainer: one container per launch, mount points, volume hand-over
+container/lifecycle.ts         startLaunchContainer and removeLaunchContainer: one container per launch, mount points, volume hand-over; agentContainers, the one "launch containers, not relays" filter
 container/run-pi.ts            pi through exec, the pty only for a terminal, signals and resize
 ```
 
@@ -197,7 +197,7 @@ hostpi/provider-hosts.mjs      run against the host pi: the built-in provider ho
 hostpi/locate.ts               finds pi's managed install in the host agent dir
 hostpi/path-search.ts          PATH lookup outside the sandbox roots and the executable check
 hostpi/mcp-auth.ts             MCP servers and their host sign-in state
-hostpi/json.ts                 small JSON helpers
+hostpi/json.ts                 objectOr
 hostpi/tools/files.ts          shared helpers of the tool derivers
 hostpi/tools/gh.ts             gh hosts and tokens
 hostpi/tools/glab.ts           glab hosts and tokens
@@ -251,18 +251,20 @@ proxy/runtime.ts               rules, the live egress.json settings and live gra
 proxy/tunnel.ts                end-to-end tunnels with the SNI check
 proxy/sni.ts                   ClientHello completeness and server name parsing
 proxy/dial.ts                  the resolving dialer with the private-address filter
+proxy/connect.ts               a TCP connect with its timeout, for the direct and the parent proxy dial
 proxy/intercept.ts             TLS termination for rule hosts
 proxy/terminate.ts             credential injection on terminated streams
 proxy/rules.ts                 rule matching, header rewrite and response scrub
 proxy/request-target.ts        authority parsing, request target and path checks on terminated hosts
 proxy/denials.ts               denial records (with the credential rule id) and replies
 proxy/denial-page.ts           the 403 page over TLS
-proxy/replies.ts               every raw HTTP reply and the JSON replies
+proxy/replies.ts               every reply the proxy answers itself, raw or through a ServerResponse
 proxy/parent.ts                the parent proxy route
 proxy/trust.ts                 the trust bundle: tls.extraCa by keychain fingerprint or PEM file, CA and expiry checks, a bundle path never written twice, under the CA lock
 proxy/tls-ca.ts                the launcher CA and leaf certificates, both dated an hour back
 proxy/sign-in.ts               the proxy's host MCP sign-in
 proxy/single-flight.ts         one pending promise per key
+proxy/bounded-cache.ts         the most recently used promises up to a limit, a failed one dropped
 proxy/access-log.ts            the capped JSON-line logs
 proxy/child-env.ts             the minimal environment of the proxy and its children
 proxy/secrets/index.ts         the secret resolver
@@ -279,27 +281,30 @@ proxy/secrets/errors.ts        unavailable secrets, missing logins and local rep
 
 ```
 shared/index.ts                public surface
-shared/errors.ts               LauncherError and error messages
+shared/errors.ts               LauncherError, error messages and errno codes
 shared/command-runner.ts       the CommandRunner interface and the real runner
 shared/hash.ts                 hashes and the 12-hex short hash
-shared/json-file.ts            JSON file reading and writing
+shared/random.ts               random hex ids
+shared/json-file.ts            JSON file reading and writing, and the strict and lenient text readers
 shared/atomic-write.ts         atomic, create-only and random-hex file writes
+shared/modes.ts                the file and directory modes: owner-only, world-readable and the permission mask
 shared/file-lock.ts            the lock primitives
 shared/liveness.ts             the liveness rule: pid, boot time and process start
 shared/process-start.ts        a process's start time (ps on macOS, /proc on Linux), telling a failed tool from a process without one
-shared/paths.ts                host agent dir, the launcher folder <agent dir>/pi-sandbox/ (config.json, state/), launcher root, path containment and the outermost of a path list
+shared/paths.ts                host agent dir, the launcher folder <agent dir>/pi-sandbox/ (config.json, state/), launcher root, real paths (or resolved, or nothing), a pi path setting as a path (home and file URLs), path containment, the outermost of a path list and the private home dirs
 shared/state-layout.ts         every path under the state dir
 shared/repo-state.ts           per-repository record files: repo.json with its mount root, created folders, leftovers
-shared/regular-file.ts         safe reads of regular files
+shared/regular-file.ts         safe reads of regular files, as bytes or as text or nothing, and their size limit
+shared/units.ts                the byte, minute, hour and day units
 shared/placeholder.ts          the placeholder format and the JWT shape
 shared/secret-name.ts          secret-looking names, auth-like headers, URL userinfo and credential-shaped values
-shared/pi-env.ts               pi variable names the launcher sets
-shared/mcp-auth-key.ts         host pi's mcp-auth.json parser, mcp-login.json under a file lock, and sign-in dirs
-shared/tool-config.ts          the tool config format dispatcher and the JSON pointer reader
+shared/pi-env.ts               pi variable names the launcher sets, the fixed part of the sandbox env (FIXED_SANDBOX_ENV) and pi's npm package name (PI_PACKAGE)
+shared/mcp-auth-key.ts         host pi's mcp-auth.json parser, mcp-login.json under a file lock, sign-in dirs and the token expiry skew
+shared/tool-config.ts          the tool config format dispatcher, the JSON pointer reader and writer
 shared/npmrc.ts                the .npmrc parser and value reader
 shared/ini.ts                  the ini parser and section.name[n] reader
 shared/maven-xml.ts            the XML tokenizer, the Maven settings model, the server secret reader and the XML writer
-shared/settle.ts               settleAll
+shared/settle.ts               settleAll and withTimeout
 shared/terminal-text.ts        control, bidi and line separator characters shown as \uXXXX escapes, and the last non-empty line of command output
 shared/write-back-table.ts     the built-in write-back table as value specs, the host-only settings keys and the ceiling no config passes
 ```
@@ -313,8 +318,9 @@ tests/support/fake-engine.ts         an in-memory engine HTTP server
 tests/support/fake-runner.ts         the scripted CommandRunner
 tests/support/fake-clock.ts          a controllable clock
 tests/support/sandbox-config.ts      config builders
-tests/support/temp-dir.ts            temp dir helpers and exists
-tests/support/git.ts                 git for tests, isolated from the developer's git config
+tests/support/temp-dir.ts            temp dir helpers (also with the real path) and exists
+tests/support/launches.ts            registers a live launch of this process (registerLiveLaunch)
+tests/support/git.ts                 git for tests, isolated from the developer's git config, a fresh repository, discoverAt and workspaceAt
 tests/support/fakes.test.ts          the fakes' own contract
 tests/shared/atomic-write.test.ts    atomic writes
 tests/shared/command-runner.test.ts  the real runner
@@ -437,6 +443,7 @@ tests/cli/launch-wiring.test.ts      launch wiring and no leaks
 tests/cli/legacy-paths.test.ts       the old config and state folders: launch notice and doctor warns
 tests/cli/launch-workspace.test.ts   workspace launches
 tests/cli/mcp-sign-in.test.ts        the launch-start MCP sign-in
+tests/cli/notices.test.ts            notices shown once per repository and the file that remembers them
 tests/cli/sandbox-proxy.test.ts      the proxy input
 tests/cli/terminal.test.ts           the host terminal
 tests/cli/volumes.test.ts            volumes in the sweep, reset and status

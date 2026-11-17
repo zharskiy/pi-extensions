@@ -2,6 +2,7 @@ import { request as httpRequest, type IncomingMessage } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { connect, type Socket } from "node:net";
 import { type TLSSocket, connect as tlsConnect } from "node:tls";
+import { basicAuthorization } from "../../proxy/auth.ts";
 
 export interface ConnectReply {
   status: number;
@@ -13,11 +14,8 @@ const HEAD_END = "\r\n\r\n";
 
 const REPO_USER = "pi-sandbox";
 
-const authorization = (token: string, user = REPO_USER) =>
-  `Basic ${Buffer.from(`${user}:${token}`).toString("base64")}`;
-
 const authLine = (token: string | undefined, user: string) =>
-  token === undefined ? "" : `Proxy-Authorization: ${authorization(token, user)}\r\n`;
+  token === undefined ? "" : `Proxy-Authorization: ${basicAuthorization(`${user}:${token}`)}\r\n`;
 
 export const openConnect = (proxyPort: number, authority: string, token?: string, user = REPO_USER) =>
   new Promise<ConnectReply>((resolve, reject) => {
@@ -152,7 +150,10 @@ export const plainRequest = (proxyPort: number, path: string, options: PlainOpti
         headers:
           options.token === undefined
             ? { host }
-            : { host, "proxy-authorization": authorization(options.token, options.user) },
+            : {
+                host,
+                "proxy-authorization": basicAuthorization(`${options.user ?? REPO_USER}:${options.token}`),
+              },
       },
       (response) => {
         void readBody(response).then((body) =>

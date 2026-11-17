@@ -1,7 +1,7 @@
 import { type ChildProcess, type SpawnOptions, spawn as spawnProcess } from "node:child_process";
 import { createHmac } from "node:crypto";
-import { closeSync, openSync, statSync } from "node:fs";
-import { mkdir, open, readFile, rm } from "node:fs/promises";
+import { closeSync, openSync } from "node:fs";
+import { mkdir, open, rm } from "node:fs/promises";
 import { setTimeout as sleep } from "node:timers/promises";
 import {
   type CommandRunner,
@@ -11,13 +11,19 @@ import {
   isLive,
   LauncherError,
   launcherEntry,
+  MIB,
+  PRIVATE_DIR_MODE,
+  PRIVATE_FILE_MODE,
+  parseJsonObject,
   readJsonObject,
+  readOptionalText,
+  readRandomHexFile,
   stableHash,
   stateLayout,
   terminateProcess,
   writeJsonFile,
 } from "../shared/index.ts";
-import { capLog } from "./access-log.ts";
+import { capLog, sizeOf } from "./access-log.ts";
 import { minimalEnv } from "./child-env.ts";
 import { type DenialRecord, fetchDenials, readHealth } from "./client.ts";
 import {
@@ -27,6 +33,8 @@ import {
   parseEgressSettings,
   type RepoProxy,
   type RepoProxyInput,
+  readExtraCaPem,
+  withoutEgressSettings,
 } from "./files.ts";
 import { openLauncherCa } from "./tls-ca.ts";
 
@@ -47,9 +55,7 @@ export interface RepoProxyStart {
   notices: string[];
 }
 
-export const PROXY_LOG_LIMIT = 5 * 1024 * 1024;
-
-const PRIVATE_MODE = 0o600;
+export const PROXY_LOG_LIMIT = 5 * MIB;
 
 const START_TIMEOUT_MS = 10_000;
 
@@ -91,12 +97,14 @@ const isRecord = (value: unknown): value is RepoProxy => {
   );
 };
 
-export const readRepoProxy = async (stateDir: string, repoHash: string): Promise<RepoProxy | undefined> => {
-  const path = proxyFiles(stateDir, repoHash).record;
-  const record = await readJsonObject(path);
+const liveRecord = async (text: string | undefined) => {
+  const record = text === undefined ? undefined : parseJsonObject(text);
 
   return isRecord(record) && (await isLive(record)) ? record : undefined;
 };
+
+export const readRepoProxy = async (stateDir: string, repoHash: string): Promise<RepoProxy | undefined> =>
+  liveRecord(await readOptionalText(proxyFiles(stateDir, repoHash).record));
 
 export const stopRepoProxy = async (stateDir: string, repoHash: string) => {
   const files = proxyFiles(stateDir, repoHash);
@@ -112,25 +120,14 @@ export const stopRepoProxy = async (stateDir: string, repoHash: string) => {
 };
 
 const proxyInputHash = async (stateDir: string, input: RepoProxyInput) => {
-  const {
-    token: _token,
-    envSecrets,
-    parentAuth,
-    allow: _allow,
-    deny: _deny,
-    privateHosts: _privateHosts,
-    derivedHosts: _derivedHosts,
-    ...rest
-  } = input;
+  const { token: _token, envSecrets, parentAuth, ...rest } = input;
   const salt = await ensureSalt(stateDir);
   const secrets = createHmac("sha256", salt)
     .update(JSON.stringify([Object.entries(envSecrets).sort(), parentAuth ?? null]))
     .digest("hex");
-  const extraCaPem = input.extraCa
-    ? await readFile(stateLayout(stateDir).extraPem, "utf8").catch(() => "")
-    : "";
+  const extraCaPem = await readExtraCaPem(stateDir, input.extraCa);
 
-  return stableHash({ ...rest, secrets, extraCaPem });
+  return stableHash({ ...withoutEgressSettings(rest), secrets, extraCaPem });
 };
 
 const isHealthy = async (record: RepoProxy, token: string) =>
@@ -170,14 +167,6 @@ const waitFor = async <T>(
   return waitFor(check, stopped, deadline);
 };
 
-const sizeOf = (path: string) => {
-  try {
-    return statSync(path).size;
-  } catch {
-    return 0;
-  }
-};
-
 const failureSince = async (path: string, offset: number) => {
   const handle = await open(path, "r").catch(() => undefined);
 
@@ -211,7 +200,7 @@ const spawnDaemon = (options: EnsureRepoProxyOptions, inputHash: string) => {
   capLog(files.log, PROXY_LOG_LIMIT);
 
   const offset = sizeOf(files.log);
-  const log = openSync(files.log, "a", PRIVATE_MODE);
+  const log = openSync(files.log, "a", PRIVATE_FILE_MODE);
   const child = (options.spawn ?? spawnProcess)(
     process.execPath,
     [launcherEntry("proxy/daemon.ts"), "--repo", input.repoHash, "--state", stateDir],
@@ -233,7 +222,7 @@ const startDaemon = async (options: EnsureRepoProxyOptions, inputHash: string): 
   const { stateDir, input } = options;
   const files = proxyFiles(stateDir, input.repoHash);
 
-  await mkdir(files.directory, { recursive: true, mode: 0o700 });
+  await mkdir(files.directory, { recursive: true, mode: PRIVATE_DIR_MODE });
 
   const { child, offset } = spawnDaemon(options, inputHash);
   const exited = { done: false };
@@ -275,28 +264,32 @@ const startDaemon = async (options: EnsureRepoProxyOptions, inputHash: string): 
 };
 
 const runningProxy = async (stateDir: string, input: RepoProxyInput) => {
-  const record = await readRepoProxy(stateDir, input.repoHash);
+  const path = proxyFiles(stateDir, input.repoHash).record;
+  const text = await readOptionalText(path);
+  const record = await liveRecord(text);
+  const found = text !== undefined;
 
   if (record === undefined) {
-    await rm(proxyFiles(stateDir, input.repoHash).record, { force: true });
+    await rm(path, { force: true });
 
-    return undefined;
+    return { found };
   }
 
   if (await isHealthyWithRetries(record, input.token)) {
-    return record;
+    return { proxy: record, found };
   }
 
   await stopRepoProxy(stateDir, input.repoHash);
 
-  return undefined;
+  return { found };
 };
 
 const egressChangedFor = async (
   previous: EgressSettings | undefined,
   settings: EgressSettings,
+  found: boolean,
   othersLive: () => Promise<boolean>,
-) => (previous === undefined || stableHash(previous) !== stableHash(settings)) && (await othersLive());
+) => (previous === undefined ? found : stableHash(previous) !== stableHash(settings)) && (await othersLive());
 
 export const ensureRepoProxy = async (options: EnsureRepoProxyOptions): Promise<RepoProxyStart> => {
   const { stateDir, input } = options;
@@ -306,11 +299,11 @@ export const ensureRepoProxy = async (options: EnsureRepoProxyOptions): Promise<
   const files = proxyFiles(stateDir, input.repoHash);
   const settings = egressSettingsOf(input);
 
-  await mkdir(files.directory, { recursive: true, mode: 0o700 });
+  await mkdir(files.directory, { recursive: true, mode: PRIVATE_DIR_MODE });
 
   const previous = parseEgressSettings(await readJsonObject(files.egress));
 
-  await writeJsonFile(files.egress, settings, { mode: PRIVATE_MODE });
+  await writeJsonFile(files.egress, settings, { mode: PRIVATE_FILE_MODE });
 
   const others = { live: undefined as boolean | undefined };
   const othersLive = async () => {
@@ -318,9 +311,11 @@ export const ensureRepoProxy = async (options: EnsureRepoProxyOptions): Promise<
 
     return others.live;
   };
-  const egressNotices = (await egressChangedFor(previous, settings, othersLive)) ? [EGRESS_CHANGED] : [];
+  const running = await runningProxy(stateDir, input);
+  const current = running.proxy;
+  const changed = await egressChangedFor(previous, settings, running.found, othersLive);
+  const egressNotices = changed ? [EGRESS_CHANGED] : [];
   const inputHash = await proxyInputHash(stateDir, input);
-  const current = await runningProxy(stateDir, input);
 
   if (current?.inputHash === inputHash) {
     return { proxy: current, notices: egressNotices };
@@ -337,13 +332,8 @@ export const ensureRepoProxy = async (options: EnsureRepoProxyOptions): Promise<
   return { proxy: await startDaemon(options, inputHash), notices: egressNotices };
 };
 
-const TOKEN = new RegExp(`^[0-9a-f]{${TOKEN_BYTES * 2}}$`);
-
-const readToken = async (stateDir: string, repoHash: string) => {
-  const text = await readFile(proxyFiles(stateDir, repoHash).token, "utf8").catch(() => "");
-
-  return TOKEN.test(text) ? text : undefined;
-};
+const readToken = (stateDir: string, repoHash: string) =>
+  readRandomHexFile(proxyFiles(stateDir, repoHash).token, TOKEN_BYTES);
 
 export const readDenials = async (
   stateDir: string,

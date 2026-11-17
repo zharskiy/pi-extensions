@@ -1,37 +1,22 @@
-import { realpath } from "node:fs/promises";
 import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { loadEffectiveConfig } from "../config/index.ts";
-import {
-  expandHome,
-  isWithin,
-  knownRepos,
-  PI_AGENT_DIR_VARIABLE,
-  repoRecordOf,
-  withMcpLoginDir,
-} from "../shared/index.ts";
+import { isWithin, knownRepos, pathFromSetting, realOrResolved, repoRecordOf } from "../shared/index.ts";
 import { assertSafeMounts, findGitRoot } from "../workspace/index.ts";
-import { type CliDeps, hostAgentDirOf, pathsOf, writeLine } from "./deps.ts";
-import { requireJobPi, resolveJobPi } from "./host-pi.ts";
-import { type HostRoute, hostRoute } from "./host-routes.ts";
+import { type CliDeps, pathsOf, writeLine, writeNotices } from "./deps.ts";
+import { hostPiEnv, requireJobPi, resolveJobPi, runHostJob } from "./host-pi.ts";
+import { type HostRoute, hostRoute, LOCAL_FLAGS } from "./host-routes.ts";
 import { imagePiVersion } from "./versions.ts";
-
-const LOCAL_FLAGS = ["-l", "--local"];
 
 const runOnHost = async (
   deps: CliDeps,
   args: string[],
-  options: { cwd: string; env?: Record<string, string> },
+  where: "cwd" | "empty",
+  env?: Record<string, string>,
 ) => {
   const pi = await requireJobPi(deps);
 
-  return deps.runner.spawnInteractive(pi.wrapper, args, options);
+  return runHostJob(deps, [pi.wrapper, ...args], where, env);
 };
-
-const inEmptyDir = (deps: CliDeps, args: string[], options: { env?: Record<string, string> } = {}) =>
-  withMcpLoginDir(pathsOf(deps).stateDir, (cwd) => runOnHost(deps, args, { ...options, cwd }));
-
-const hostEnv = (deps: CliDeps) => ({ [PI_AGENT_DIR_VARIABLE]: hostAgentDirOf(deps) });
 
 const NPM_PREFIX = "npm:";
 
@@ -48,8 +33,6 @@ const GIT_REF = /^[A-Za-z0-9._/-]+$/;
 const SCP_SOURCE = /^git@([^:]+):(.+)$/;
 
 const SHORT_SOURCE = /^([^/]+)\/(.+)$/;
-
-const FILE_URL = /^file:\/\//;
 
 const isRepoPath = (path: string) => {
   const parts = path.replace(/\.git$/, "").split("/");
@@ -127,20 +110,20 @@ const classifySource = (source: string): PackageSource => {
   return isGitSource(source) ? { kind: "remote" } : { kind: "local", text: source.trim() };
 };
 
-const localPathOf = (text: string) => {
+const localPathOf = (text: string, home: string) => {
   try {
-    return FILE_URL.test(text) ? fileURLToPath(text) : text;
+    return pathFromSetting(text, home);
   } catch {
     return text;
   }
 };
 
-const realOf = (path: string) => realpath(path).catch(() => path);
-
 const sandboxedRoots = async (stateDir: string) => {
   const records = await Promise.all((await knownRepos(stateDir)).map((hash) => repoRecordOf(stateDir, hash)));
 
-  return Promise.all(records.flatMap((record) => (record === undefined ? [] : [realOf(record.root)])));
+  return Promise.all(
+    records.flatMap((record) => (record === undefined ? [] : [realOrResolved(record.root)])),
+  );
 };
 
 const canHoldSandbox = (deps: CliDeps, root: string) => {
@@ -164,13 +147,13 @@ const isSandboxable = async (deps: CliDeps, candidates: string[]) => {
 };
 
 const resolvedLocal = async (deps: CliDeps, text: string) => {
-  const path = resolve(deps.cwd, expandHome(localPathOf(text), deps.home));
+  const path = resolve(deps.cwd, localPathOf(text, deps.home));
 
-  return { path, inRepository: await isSandboxable(deps, [path, await realOf(path)]) };
+  return { path, inRepository: await isSandboxable(deps, [path, await realOrResolved(path)]) };
 };
 
 const refuse = (deps: CliDeps, source: string, reason: string) => {
-  writeLine(deps.stderr, `pi-sandbox: ${source} ${reason}; not installed on the host`);
+  writeNotices(deps, [`${source} ${reason}; not installed on the host`]);
 
   return 1;
 };
@@ -193,7 +176,7 @@ const packageCommand = async (deps: CliDeps, argv: string[], source: string) => 
 
   const args = argv.map((arg) => (arg === source && local !== undefined ? local.path : arg));
 
-  return inEmptyDir(deps, args);
+  return runOnHost(deps, args, "empty", hostPiEnv(deps));
 };
 
 const MCP_HOST_ACTIONS = new Set(["add", "remove", "login", "logout"]);
@@ -207,13 +190,13 @@ const mcpCommand = (deps: CliDeps, args: string[]) => {
     return undefined;
   }
 
-  const env = hostEnv(deps);
+  const env = hostPiEnv(deps);
 
   if (MCP_PROJECT_ACTIONS.has(action)) {
-    return runOnHost(deps, ["mcp", ...args], { cwd: deps.cwd, env });
+    return runOnHost(deps, ["mcp", ...args], "cwd", env);
   }
 
-  return inEmptyDir(deps, ["mcp", ...args], { env });
+  return runOnHost(deps, ["mcp", ...args], "empty", env);
 };
 
 const packageSource = (args: string[]) => {
@@ -255,12 +238,12 @@ const noticeFollowedPi = async (deps: CliDeps) => {
   const followed = await resolveJobPi(deps);
 
   if (followed !== undefined) {
-    writeLine(deps.stderr, `pi-sandbox: the sandbox follows pi ${followed.version} at the next launch`);
+    writeNotices(deps, [`the sandbox follows pi ${followed.version} at the next launch`]);
   }
 };
 
 const selfUpdate = async (deps: CliDeps) => {
-  const code = await inEmptyDir(deps, ["update"], { env: hostEnv(deps) });
+  const code = await runOnHost(deps, ["update"], "empty", hostPiEnv(deps));
 
   if (code === 0) {
     await noticeFollowedPi(deps);
@@ -294,7 +277,7 @@ const updateArgv = async (deps: CliDeps, argv: string[], args: string[]) => {
 };
 
 const hostUpdate = async (deps: CliDeps, argv: string[], args: string[]) => {
-  const code = await inEmptyDir(deps, await updateArgv(deps, argv, args), { env: hostEnv(deps) });
+  const code = await runOnHost(deps, await updateArgv(deps, argv, args), "empty", hostPiEnv(deps));
 
   if (code === 0 && updatesSelf(args)) {
     await noticeFollowedPi(deps);
@@ -323,9 +306,7 @@ const routedJob = (deps: CliDeps, route: HostRoute) => {
     return sandboxPiVersion(deps);
   }
 
-  return route.kind === "cwd"
-    ? runOnHost(deps, route.args, { cwd: deps.cwd, env: hostEnv(deps) })
-    : inEmptyDir(deps, route.args, { env: hostEnv(deps) });
+  return runOnHost(deps, route.args, route.kind === "cwd" ? "cwd" : "empty", hostPiEnv(deps));
 };
 
 export const intercept = (

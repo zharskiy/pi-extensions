@@ -1,5 +1,4 @@
 import { mkdir } from "node:fs/promises";
-import { join } from "node:path";
 import {
   type Backend,
   LABELS,
@@ -11,10 +10,16 @@ import {
 import { type SandboxConfig, VM_BOUNDS } from "../config/index.ts";
 import { listLauncherContainers } from "../container/index.ts";
 import { liveLaunches } from "../grants/index.ts";
-import { isWithin, LauncherError, realOrResolvedSync, stateLayout } from "../shared/index.ts";
-import { type HostSessions, mountedGitDirs, sharedRootsOf } from "../workspace/index.ts";
+import {
+  isWithin,
+  LauncherError,
+  PRIVATE_DIR_MODE,
+  realOrResolvedSync,
+  stateLayout,
+} from "../shared/index.ts";
+import { type HostSessions, mountedGitDirs, sessionsRootOf, sharedRootsOf } from "../workspace/index.ts";
 import type { LaunchContext } from "./context.ts";
-import { type CliDeps, hostAgentDirOf, pathsOf, writeNotices } from "./deps.ts";
+import { type CliDeps, hostAgentDirOf, pathsOf, reachableEngine, writeNotices } from "./deps.ts";
 import { prepareSessionsDir } from "./host-sessions.ts";
 import { busyLaunches } from "./launches.ts";
 
@@ -29,12 +34,13 @@ type WorkspaceRoots = SandboxConfig["workspaceRoots"];
 
 export interface VmSharePlan {
   shares: VmShare[];
+  nested: string[];
   notices: string[];
 }
 
 const HOST_RESERVE_GIB = 2;
 
-const AUTOMATIC = { cpus: { min: 2, max: 8 }, memoryGiB: { min: 4, max: 10 }, diskGiB: 60 };
+export const AUTOMATIC_VM_SIZE = { cpus: { min: 2, max: 8 }, memoryGiB: { min: 4, max: 10 }, diskGiB: 60 };
 
 export const clamp = (value: number, bounds: { min: number; max: number }) =>
   Math.max(bounds.min, Math.min(bounds.max, value));
@@ -45,9 +51,9 @@ export const hostVmLimits = (machine: CliDeps["machine"]) => ({
 });
 
 export const recommendedVmSize = (cpus: number, memoryGiB: number): VmSpec => ({
-  cpus: clamp(Math.floor(cpus), AUTOMATIC.cpus),
-  memoryGiB: clamp(Math.floor(memoryGiB / 2), AUTOMATIC.memoryGiB),
-  diskGiB: AUTOMATIC.diskGiB,
+  cpus: clamp(Math.floor(cpus), AUTOMATIC_VM_SIZE.cpus),
+  memoryGiB: clamp(Math.floor(memoryGiB / 2), AUTOMATIC_VM_SIZE.memoryGiB),
+  diskGiB: AUTOMATIC_VM_SIZE.diskGiB,
 });
 
 const vmHostProblems = (machine: CliDeps["machine"], target: VmTarget) => {
@@ -66,19 +72,20 @@ const vmHostProblems = (machine: CliDeps["machine"], target: VmTarget) => {
   ];
 };
 
-export const assertVmFitsHost = (deps: CliDeps, target: VmTarget) => {
+export const assertVmFitsHost = (deps: CliDeps, target: VmTarget, inInit = false) => {
   const problems = vmHostProblems(deps.machine, target);
+  const lower = `lower it in ${pathsOf(deps).userConfigFile}`;
 
   if (problems.length > 0) {
     throw new LauncherError(
       problems.join("; "),
-      `lower it in ${pathsOf(deps).userConfigFile}, or run pi sandbox init to choose a size`,
+      inInit ? lower : `${lower}, or run pi sandbox init to choose a size`,
     );
   }
 };
 
 const vmDirsOf = (deps: CliDeps) => ({
-  sessions: join(hostAgentDirOf(deps), "sessions"),
+  sessions: sessionsRootOf(hostAgentDirOf(deps)),
   state: stateLayout(pathsOf(deps).stateDir).vm,
 });
 
@@ -95,7 +102,7 @@ const assertApart = (shares: VmShare[]) => {
 
   if (pair !== undefined) {
     throw new LauncherError(
-      `config: workspaceRoots: the sandbox VM shares ${pair[0].location} and ${pair[1].location}, which nest, and colima refuses nested shares`,
+      `config: workspaceRoots: the sandbox VM shares ${pair[0].location} and ${pair[1].location}, which nest, and the launcher never passes the VM a share inside another one`,
       "keep <agent dir>/sessions and the launcher state dir outside every workspace root, and the roots apart from each other",
     );
   }
@@ -107,7 +114,7 @@ export const vmSharesFor = (deps: CliDeps, workspaceRoots: WorkspaceRoots): VmSh
   }
 
   const dirs = vmDirsOf(deps);
-  const { roots, notices } = sharedRootsOf(workspaceRoots, { home: deps.home, env: deps.env });
+  const { roots, nested, notices } = sharedRootsOf(workspaceRoots, { home: deps.home, env: deps.env });
   const shares = [
     ...roots.map((location) => ({ location, writable: true })),
     { location: realOrResolvedSync(dirs.sessions), writable: true },
@@ -116,13 +123,13 @@ export const vmSharesFor = (deps: CliDeps, workspaceRoots: WorkspaceRoots): VmSh
 
   assertApart(shares);
 
-  return { shares, notices };
+  return { shares, nested, notices };
 };
 
 export const prepareVmDirs = async (deps: CliDeps) => {
   const dirs = vmDirsOf(deps);
 
-  await mkdir(dirs.sessions, { recursive: true, mode: 0o700 });
+  await mkdir(dirs.sessions, { recursive: true, mode: PRIVATE_DIR_MODE });
 
   await mkdir(dirs.state, { recursive: true });
 };
@@ -147,21 +154,19 @@ export const startVm = async (
 ) => {
   await prepareSessionsDir(sessions);
 
-  await backend.vm.ensureRunning(
-    (notice) => progress(`pi-sandbox: ${notice}`),
-    start.plan?.shares,
-    start.size,
-  );
+  await backend.vm.ensureRunning(progress, start.plan?.shares, start.size);
 };
 
 const foreignSessions = async (backend: Backend, stateDir: string, launchId?: string) => {
-  if (!(await backend.detect()).available) {
+  const engine = await reachableEngine(backend);
+
+  if (engine === undefined) {
     return 0;
   }
 
   const live = (await liveLaunches(stateDir)).map((launch) => launch.launchId);
   const known = new Set([...(launchId === undefined ? [] : [launchId]), ...live]);
-  const containers = await listLauncherContainers(backend);
+  const containers = await listLauncherContainers(engine);
 
   return containers.filter(
     (container) => container.state === "running" && !known.has(container.labels[LABELS.launchId] ?? ""),

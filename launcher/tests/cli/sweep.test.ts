@@ -1,4 +1,4 @@
-import { chmod, lstat, mkdir, readFile, realpath } from "node:fs/promises";
+import { chmod, mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Backend } from "../../backend/index.ts";
@@ -13,19 +13,13 @@ import {
   stateLayout,
   writeRepoRecord,
 } from "../../shared/index.ts";
-import { tempDir } from "../support/temp-dir.ts";
+import { exists, realTempDir } from "../support/temp-dir.ts";
 import { createFakeBackend, createHarness, sweepNow } from "./harness.ts";
-
-const exists = (path: string) =>
-  lstat(path).then(
-    () => true,
-    () => false,
-  );
 
 const DEAD_PID = 2 ** 22 + 4321;
 
 const leftRepo = async (harness: Awaited<ReturnType<typeof createHarness>>, name: string) => {
-  const root = join(await realpath(await tempDir(name)), "repo");
+  const root = join(await realTempDir(name), "repo");
   const hash = sha256Hex(root);
   const files = stateLayout(harness.stateDir).repo(hash);
   const mountPoint = join(root, "node_modules");
@@ -62,7 +56,7 @@ describe("the sweep of what is left in the state dir", () => {
   it("keeps a repository under a mount point that is not mounted, though its empty folder is there", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
-    const mountRoot = join(await realpath(await tempDir("volumes")), "share");
+    const mountRoot = join(await realTempDir("volumes"), "share");
     const root = join(mountRoot, "repo");
     const hash = sha256Hex(root);
     const files = stateLayout(harness.stateDir).repo(hash);
@@ -84,7 +78,7 @@ describe("the sweep of what is left in the state dir", () => {
   it("forgets a repository whose folder is gone at the sweep, with its grants, and leaves its volumes to the collection", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
-    const root = join(await realpath(await tempDir("gone")), "repo");
+    const root = join(await realTempDir("gone"), "repo");
     const hash = sha256Hex(root);
     const layout = stateLayout(harness.stateDir);
 
@@ -116,7 +110,7 @@ describe("the sweep of what is left in the state dir", () => {
   it("keeps a repository whose root cannot be checked for another reason than it is missing", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
-    const locked = await realpath(await tempDir("locked"));
+    const locked = await realTempDir("locked");
     const root = join(locked, "inner", "repo");
     const hash = sha256Hex(root);
     const files = stateLayout(harness.stateDir).repo(hash);

@@ -1,5 +1,5 @@
-import { randomBytes, X509Certificate } from "node:crypto";
-import { readdir, readFile, rm } from "node:fs/promises";
+import { X509Certificate } from "node:crypto";
+import { readdir, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import type { ExtraCa } from "../config/index.ts";
@@ -7,7 +7,11 @@ import { liveLaunches } from "../grants/index.ts";
 import {
   type CommandRunner,
   expandHome,
+  isTrustBundleName,
   LauncherError,
+  PUBLIC_FILE_MODE,
+  randomHex,
+  readOptionalText,
   sha256Hex,
   stateLayout,
   withFileLock,
@@ -39,8 +43,6 @@ interface Found {
 }
 
 const MACOS_KEYCHAINS = ["/Library/Keychains/System.keychain", "login.keychain"];
-
-const PUBLIC_MODE = 0o644;
 
 const PEM_BLOCK = /-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g;
 
@@ -96,7 +98,7 @@ const checkUsable = (now: number) => (found: Found) => {
 
 const fileCertificates = async (file: string): Promise<Found[]> => {
   const path = expandHome(file, homedir());
-  const text = await readFile(path, "utf8").catch(() => undefined);
+  const text = await readOptionalText(path);
 
   if (text === undefined) {
     throw new LauncherError(`tls.extraCa: ${path} is not readable`, "fix the path or remove the entry");
@@ -180,38 +182,34 @@ const sourceCertificates = (input: TrustBundleInput) => {
 };
 
 const writeIfChanged = async (path: string, text: string) => {
-  const current = await readFile(path, "utf8").catch(() => undefined);
+  const current = await readOptionalText(path);
 
   if (current !== text) {
-    await writeFileAtomic(path, text, { mode: PUBLIC_MODE });
+    await writeFileAtomic(path, text, { mode: PUBLIC_FILE_MODE });
   }
 };
-
-const TRUST_BUNDLE_NAME = /^trust(-[0-9a-f]+){0,2}\.pem$/;
 
 const BUNDLE_ID_BYTES = 8;
 
 const BUNDLE_LOCK_TIMEOUT_MS = 30_000;
 
 const reusableBundle = async (directory: string, names: string[], prefix: string, text: string) => {
-  const candidates = names.filter((name) => name.startsWith(prefix) && name.endsWith(".pem"));
-  const contents = await Promise.all(
-    candidates.map((name) => readFile(join(directory, name), "utf8").catch(() => undefined)),
-  );
+  const candidates = names.filter((name) => name.startsWith(prefix) && isTrustBundleName(name));
+  const contents = await Promise.all(candidates.map((name) => readOptionalText(join(directory, name))));
   const match = candidates[contents.indexOf(text)];
 
   return match === undefined ? undefined : join(directory, match);
 };
 
 const writeBundle = async (pathFor: (id: string) => string, text: string): Promise<string> => {
-  const path = pathFor(randomBytes(BUNDLE_ID_BYTES).toString("hex"));
-  const written = await writeNewFile(path, text, { mode: PUBLIC_MODE });
+  const path = pathFor(randomHex(BUNDLE_ID_BYTES));
+  const written = await writeNewFile(path, text, { mode: PUBLIC_FILE_MODE });
 
   return written ? path : writeBundle(pathFor, text);
 };
 
 const removeOldBundles = async (directory: string, names: string[], keep: string) => {
-  const old = names.filter((name) => TRUST_BUNDLE_NAME.test(name) && name !== keep);
+  const old = names.filter((name) => isTrustBundleName(name) && name !== keep);
 
   await Promise.all(old.map((name) => rm(join(directory, name), { force: true })));
 };

@@ -7,7 +7,7 @@ import { errorMessage, lastLine, launcherEntry, stateLayout } from "../../shared
 import type { LaunchContext } from "../context.ts";
 import { type CliDeps, pathsOf } from "../deps.ts";
 import { type CheckResult, failed, passed } from "./doctor-checks.ts";
-import type { ProbeTarget } from "./doctor-probes.ts";
+import { type ProbeTarget, parsedJson } from "./doctor-probes.ts";
 import type { ProbeRequest, Trust } from "./tls-probe.ts";
 
 interface Presented {
@@ -61,16 +61,11 @@ const sandboxProbeCommand = async () => {
   return ["node", `--input-type=${inputTypeOf(path)}`, "-e", await readFile(path, "utf8")];
 };
 
-const parsedLine = (line: string | undefined) => {
-  try {
-    return JSON.parse(line ?? "") as (Partial<Presented> & { failure?: unknown }) | null;
-  } catch {
-    return undefined;
-  }
-};
-
 const readingOf = (stdout: string, stderr: string): TlsReading => {
-  const parsed = parsedLine(lastLine(stdout));
+  const parsed = parsedJson(lastLine(stdout) ?? "") as
+    | (Partial<Presented> & { failure?: unknown })
+    | null
+    | undefined;
 
   if (typeof parsed?.failure === "string") {
     return { failure: parsed.failure };

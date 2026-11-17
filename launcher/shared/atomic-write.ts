@@ -1,15 +1,12 @@
-import { randomBytes } from "node:crypto";
 import { link, mkdir, open, readFile, rename, rm } from "node:fs/promises";
 import { dirname } from "node:path";
-import { errorMessage, LauncherError } from "./errors.ts";
+import { errnoCode, errorMessage, LauncherError } from "./errors.ts";
+import { PRIVATE_DIR_MODE, PRIVATE_FILE_MODE } from "./modes.ts";
+import { randomHex } from "./random.ts";
 
 interface AtomicWriteOptions {
   mode?: number;
 }
-
-const PRIVATE_FILE_MODE = 0o600;
-
-const PRIVATE_DIR_MODE = 0o700;
 
 const writeAndSync = async (path: string, data: string | Uint8Array, mode: number | undefined) => {
   const handle = await open(path, "wx", mode);
@@ -55,7 +52,7 @@ const readHexFile = async (path: string, pattern: RegExp) => {
   return pattern.test(text) ? text : undefined;
 };
 
-const temporaryOf = (path: string) => `${path}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
+const temporaryOf = (path: string) => `${path}.${process.pid}.${randomHex(4)}.tmp`;
 
 const linkNew = async (temporary: string, path: string) => {
   try {
@@ -63,7 +60,7 @@ const linkNew = async (temporary: string, path: string) => {
 
     return true;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+    if (errnoCode(error) === "EEXIST") {
       return false;
     }
 
@@ -86,7 +83,7 @@ export const writeNewFile = async (path: string, data: string, options: AtomicWr
 };
 
 const createHexFile = async (path: string, pattern: RegExp, bytes: number) => {
-  const value = randomBytes(bytes).toString("hex");
+  const value = randomHex(bytes);
   const temporary = temporaryOf(path);
 
   await mkdir(dirname(path), { recursive: true, mode: PRIVATE_DIR_MODE });
@@ -111,6 +108,8 @@ const createHexFile = async (path: string, pattern: RegExp, bytes: number) => {
 
   return value;
 };
+
+export const readRandomHexFile = (path: string, bytes: number) => readHexFile(path, HEX_PATTERN(bytes));
 
 export const ensureRandomHexFile = async (path: string, bytes: number): Promise<string> => {
   const pattern = HEX_PATTERN(bytes);

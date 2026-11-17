@@ -1,9 +1,10 @@
-import { randomBytes } from "node:crypto";
 import { link, mkdir, open, rename, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { errorMessage, LauncherError } from "./errors.ts";
+import { errnoCode, errorMessage, LauncherError } from "./errors.ts";
 import { isLive, isRunning, processMark } from "./liveness.ts";
+import { PRIVATE_DIR_MODE, PRIVATE_FILE_MODE } from "./modes.ts";
+import { randomHex } from "./random.ts";
 
 export interface FileLockOptions {
   staleMs?: number;
@@ -34,18 +35,13 @@ const DEFAULT_RETRY_MS = 25;
 
 const DIRECTORY_REFRESH_MS = 1_000;
 
-const PRIVATE_MODE = 0o600;
-
-const isCode = (error: unknown, code: string) => (error as NodeJS.ErrnoException).code === code;
-
 const settingsOf = (options: FileLockOptions, byAge: boolean): LockSettings => ({
   staleMs: byAge ? (options.staleMs ?? DEFAULT_STALE_MS) : undefined,
   retryMs: options.retryMs ?? DEFAULT_RETRY_MS,
   deadline: Date.now() + (options.timeoutMs ?? DEFAULT_TIMEOUT_MS),
 });
 
-const sibling = (path: string, kind: string) =>
-  `${path}.${kind}.${process.pid}.${randomBytes(4).toString("hex")}`;
+const sibling = (path: string, kind: string) => `${path}.${kind}.${process.pid}.${randomHex(4)}`;
 
 const snapshotOf = async (path: string): Promise<LockSnapshot | undefined> => {
   const info = await stat(path).catch(() => undefined);
@@ -190,8 +186,8 @@ const createPidLock: Attempt = async (path) => {
 
   const self = await processMark();
 
-  await writeFile(draft, `${self.pid} ${self.boot} ${self.start} ${randomBytes(8).toString("hex")}`, {
-    mode: PRIVATE_MODE,
+  await writeFile(draft, `${self.pid} ${self.boot} ${self.start} ${randomHex(8)}`, {
+    mode: PRIVATE_FILE_MODE,
     flag: "wx",
   });
 
@@ -200,7 +196,7 @@ const createPidLock: Attempt = async (path) => {
 
     return (await snapshotOf(draft))?.mark;
   } catch (error) {
-    if (isCode(error, "EEXIST")) {
+    if (errnoCode(error) === "EEXIST") {
       return undefined;
     }
 
@@ -216,7 +212,7 @@ const createDirectoryLock: Attempt = async (path) => {
 
     return (await snapshotOf(path))?.mark;
   } catch (error) {
-    if (isCode(error, "EEXIST")) {
+    if (errnoCode(error) === "EEXIST") {
       return undefined;
     }
 
@@ -242,7 +238,7 @@ const holding = async <T>(
   options: FileLockOptions,
   action: () => Promise<T>,
 ) => {
-  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+  await mkdir(dirname(path), { recursive: true, mode: PRIVATE_DIR_MODE });
 
   const mark = await acquire(path, kind.attempt, settingsOf(options, kind.byAge));
   const refresher =

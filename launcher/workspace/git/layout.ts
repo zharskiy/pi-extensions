@@ -1,6 +1,12 @@
 import { readdir, realpath } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
-import { isWithin, LauncherError, lstatOrUndefined, readRegularFile } from "../../shared/index.ts";
+import {
+  isWithin,
+  LauncherError,
+  lstatOrUndefined,
+  readRegularFile,
+  readRegularText,
+} from "../../shared/index.ts";
 
 export interface GitLayout {
   gitDir: string;
@@ -208,17 +214,11 @@ export const findModuleGitDirs = async (gitCommonDir: string) => {
   return found.flat();
 };
 
-const readQuietly = (path: string) =>
-  readRegularFile(path).then(
-    (file) => file.data.toString("utf8"),
-    () => undefined,
-  );
-
 export const lexicalGitLayout = async (repoRoot: string): Promise<GitLayout> => {
   const dotGit = join(repoRoot, ".git");
-  const text = await readQuietly(dotGit);
+  const text = await readRegularText(dotGit);
   const gitDir = (text === undefined ? undefined : gitFileTarget(repoRoot, text)) ?? dotGit;
-  const pointer = await readQuietly(join(gitDir, "commondir"));
+  const pointer = await readRegularText(join(gitDir, "commondir"));
   return {
     gitDir,
     gitCommonDir:

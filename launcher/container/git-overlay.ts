@@ -1,5 +1,5 @@
 import { mkdir } from "node:fs/promises";
-import { errorMessage, LauncherError } from "../shared/index.ts";
+import { errnoCode, errorMessage, LauncherError } from "../shared/index.ts";
 import {
   assertGitIntegrity,
   byDepth,
@@ -52,13 +52,13 @@ const outerOverlay = (workspace: Workspace) =>
 
 const uncreatable = (dir: string, error: unknown) =>
   new LauncherError(
-    `git: ${dir} could not be created as a hooks dir (${(error as NodeJS.ErrnoException).code ?? errorMessage(error)}), so it cannot be bound read-only`,
+    `git: ${dir} could not be created as a hooks dir (${errnoCode(error) ?? errorMessage(error)}), so it cannot be bound read-only`,
     "create it as a directory",
   );
 
 const createHooksDir = async (dir: string) => {
   await mkdir(dir, { recursive: true }).catch((error: unknown) => {
-    if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+    if (errnoCode(error) !== "EEXIST") {
       throw uncreatable(dir, error);
     }
   });

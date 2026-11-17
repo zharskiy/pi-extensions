@@ -23,14 +23,20 @@ const listed = async (dir: string): Promise<string[]> => {
 
 interface SetupOptions {
   env?: Record<string, string>;
-  inspect?: VmInspect;
+  inspect?: VmInspect | Error;
 }
 
 const initSetup = async (options: SetupOptions = {}) => {
   const applied: VmDesired[] = [];
   const fake = createFakeBackend({
     vm: {
-      inspect: async () => options.inspect ?? { state: "absent" },
+      inspect: async () => {
+        if (options.inspect instanceof Error) {
+          throw options.inspect;
+        }
+
+        return options.inspect ?? { state: "absent" };
+      },
       apply: async (desired) => {
         applied.push(desired);
 
@@ -195,6 +201,56 @@ describe("pi sandbox init --yes", () => {
     expect(harness.stderr()).toBe("");
   });
 
+  it("says once that a root inside another root is shared through it, and keeps both in the file", async () => {
+    const harness = await initSetup();
+    const work = join(harness.deps.home, "work");
+    const inner = join(work, "inner");
+
+    await mkdir(inner, { recursive: true });
+
+    const deps = { ...harness.deps, env: { ...harness.deps.env, PI_SANDBOX_ROOTS: `~/work:${inner}` } };
+
+    expect(await run(["sandbox", "init", "--yes"], deps)).toBe(0);
+    expect(harness.stderr()).toBe(
+      `pi-sandbox: workspaceRoots: ${inner} is inside ~/work and is shared through it\n`,
+    );
+    expect(harness.stdout()).not.toContain("is shared through it");
+    expect(JSON.parse(await readFile(harness.userConfigFile, "utf8"))).toEqual({
+      workspaceRoots: { roots: ["~/work", inner] },
+    });
+    expect(harness.applied.map((desired) => desired.shares[0])).toEqual([{ location: work, writable: true }]);
+  });
+
+  it("says that a root inside another root is shared through it when nothing changes", async () => {
+    const harness = await initSetup();
+    const inner = join(harness.repoRoot, "inner");
+
+    await mkdir(inner, { recursive: true });
+    await harness.writeJson(harness.userConfigFile, { workspaceRoots: { roots: [harness.repoRoot, inner] } });
+
+    const fake = createFakeBackend({
+      vm: {
+        inspect: async () => ({
+          state: "running",
+          size: AUTOMATIC_SIZE,
+          shares: [
+            { location: harness.repoRoot, writable: true },
+            { location: harness.sessions, writable: true },
+            { location: harness.vmState, writable: false },
+          ],
+        }),
+      },
+    });
+
+    expect(await run(["sandbox", "init", "--yes"], { ...harness.deps, backend: () => fake.backend })).toBe(0);
+    expect(harness.stderr()).toBe(
+      `pi-sandbox: workspaceRoots: ${inner} is inside ${harness.repoRoot} and is shared through it\n`,
+    );
+    expect(harness.stdout()).toBe(
+      "Everything is set up: the file and the sandbox VM already match these settings.\n",
+    );
+  });
+
   it("resolves a relative PI_SANDBOX_ROOTS entry against the current folder", async () => {
     const harness = await initSetup({ env: { PI_SANDBOX_ROOTS: ".." } });
 
@@ -297,6 +353,24 @@ describe("pi sandbox init --yes", () => {
     expect(harness.applied).toEqual([]);
   });
 
+  it.each<[string, VmInspect | Error]>([
+    ["from the file", { state: "absent" }],
+    ["from the file", new Error("colima is not installed")],
+    ["from the file", { state: "running", size: { cpus: 4, memoryGiB: 8, diskGiB: 30 }, shares: [] }],
+    ["current", { state: "running", size: { cpus: 2, memoryGiB: 4, diskGiB: 30 }, shares: [] }],
+    ["current", { state: "stopped", size: { cpus: 2, memoryGiB: 4, diskGiB: 30 }, shares: [] }],
+  ])("tags a VM size the file sets as %s", async (tag, inspect) => {
+    const harness = await initSetup({ inspect });
+
+    await harness.writeJson(harness.userConfigFile, {
+      workspaceRoots: { roots: [harness.repoRoot] },
+      vm: { cpus: 2, memoryGiB: 4, diskGiB: 30 },
+    });
+
+    expect(await run(["sandbox", "init", "--yes"], harness.deps)).toBe(0);
+    expect(harness.stdout().split("\n")[1]).toBe(`  VM size: 2 CPUs, 4 GiB memory, 30 GiB disk (${tag})`);
+  });
+
   it("refuses a config that is not JSON or has a bad key, and leaves it untouched", async () => {
     const harness = await initSetup();
 
@@ -331,7 +405,7 @@ describe("pi sandbox init --yes", () => {
 
     expect(await run(["sandbox", "init", "--yes"], deps)).toBe(1);
     expect(harness.stderr()).toBe(
-      `pi-sandbox: config: vm.cpus 12 is more than the 8 CPUs of this Mac\n  hint: lower it in ${harness.userConfigFile}, or run pi sandbox init to choose a size\n`,
+      `pi-sandbox: config: vm.cpus 12 is more than the 8 CPUs of this Mac\n  hint: lower it in ${harness.userConfigFile}\n`,
     );
     expect(await readFile(harness.userConfigFile, "utf8")).toBe(text);
     expect(harness.applied).toEqual([]);

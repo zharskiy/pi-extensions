@@ -1,4 +1,4 @@
-import { mkdir, realpath } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { VmShare } from "../../backend/index.ts";
@@ -15,7 +15,7 @@ import {
   vmBounds,
 } from "../../cli/setup/plan.ts";
 import type { Answers, FolderCandidate, HostFacts } from "../../cli/setup/types.ts";
-import { tempDir } from "../support/temp-dir.ts";
+import { realTempDir } from "../support/temp-dir.ts";
 import {
   AUTOMATIC_SIZE,
   candidateOf,
@@ -46,7 +46,7 @@ const answersOf = (overrides: Partial<Answers> = {}): Answers => ({
   ...overrides,
 });
 
-const EXACT = { shares: WORK, exact: true };
+const EXACT = { shares: WORK, exact: true, notices: [] };
 
 const ENV = {};
 
@@ -62,7 +62,7 @@ describe("first run", () => {
 
 describe("ownedProblems", () => {
   it("names a bad vm value, a refused root and a container limit above the VM", async () => {
-    const home = await realpath(await tempDir("plan-home"));
+    const home = await realTempDir("plan-home");
     const context = { home, env: { PI_CODING_AGENT_DIR: join(home, "agent") } };
     const document = documentOf({
       workspaceRoots: { roots: ["~/work", "~/.ssh/keys"] },
@@ -228,8 +228,16 @@ describe("planOf", () => {
       reindented: false,
       vm: { kind: "create", size: AUTOMATIC_SIZE, shares: WORK },
       problems: [],
+      notices: [],
     });
     expect(isPlanEmpty(plan)).toBe(false);
+  });
+
+  it("carries the notices of the share plan", () => {
+    const notice = "workspaceRoots: ~/work/a is inside ~/work and is shared through it";
+    const share = { ...EXACT, notices: [notice] };
+
+    expect(planOf(documentOf(undefined), answersOf(), factsOf(), share).notices).toEqual([notice]);
   });
 
   it("is empty when the file and the VM already match", () => {
@@ -261,7 +269,7 @@ describe("planOf", () => {
 
 describe("answersForYes", () => {
   const setup = async () => {
-    const home = await realpath(await tempDir("yes-home"));
+    const home = await realTempDir("yes-home");
 
     await mkdir(join(home, "a"), { recursive: true });
 

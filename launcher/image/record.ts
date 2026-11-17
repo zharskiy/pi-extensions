@@ -1,4 +1,4 @@
-import { readJsonObject, stateLayout, writeJsonFile } from "../shared/index.ts";
+import { PRIVATE_FILE_MODE, readJsonObject, stateLayout, writeJsonFile } from "../shared/index.ts";
 
 export interface BaseRecord {
   id: string;
@@ -33,7 +33,11 @@ const readRecord = async (stateDir: string): Promise<ImageRecord> => {
 };
 
 const updateRecord = async (stateDir: string, change: ImageRecord) =>
-  writeJsonFile(recordFileOf(stateDir), { ...(await readRecord(stateDir)), ...change });
+  writeJsonFile(
+    recordFileOf(stateDir),
+    { ...(await readRecord(stateDir)), ...change },
+    { mode: PRIVATE_FILE_MODE },
+  );
 
 export const readBaseRecord = async (stateDir: string) => (await readRecord(stateDir)).base;
 

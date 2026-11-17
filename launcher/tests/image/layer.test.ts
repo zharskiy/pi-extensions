@@ -1,35 +1,21 @@
-import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { SandboxConfig } from "../../config/index.ts";
 import { ensureBuiltImage } from "../../image/build.ts";
 import { ensureLayerImage } from "../../image/layer.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
+import { tempDir } from "../support/temp-dir.ts";
 
 type ImageConfig = SandboxConfig["image"];
 
 const BASE_ID = "sha256:image-base";
 
-const dirs: string[] = [];
-
-const tempDir = async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-sandbox-layer-"));
-
-  dirs.push(dir);
-
-  return dir;
-};
-
-afterEach(async () => {
-  await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
-});
-
 const configWith = (image: Partial<ImageConfig>) => sandboxConfig({ image });
 
 const extraDockerfile = async (text: string) => {
-  const path = join(await tempDir(), "extra.Dockerfile");
+  const path = join(await tempDir("layer"), "extra.Dockerfile");
 
   await writeFile(path, text);
 
@@ -46,7 +32,7 @@ describe("ensureLayerImage", () => {
       backend: fake.backend,
       baseImageId: BASE_ID,
       config: configWith({}),
-      stateDir: await tempDir(),
+      stateDir: await tempDir("layer"),
     });
 
     expect(result).toEqual({ id: BASE_ID, built: false });
@@ -61,7 +47,7 @@ describe("ensureLayerImage", () => {
       backend: fake.backend,
       baseImageId: BASE_ID,
       config: configWith({ packages: ["jq", "chromium=120.0"], npmGlobal: ["typescript@5.6.0"], dockerfile }),
-      stateDir: await tempDir(),
+      stateDir: await tempDir("layer"),
     });
 
     const text = layerDockerfile(fake);
@@ -93,7 +79,7 @@ describe("ensureLayerImage", () => {
         backend: fake.backend,
         baseImageId: BASE_ID,
         config: configWith(image),
-        stateDir: await tempDir(),
+        stateDir: await tempDir("layer"),
       });
     const first = await layerOf({ packages: ["jq", "chromium"], npmGlobal: ["b@1.0.0", "a@1.0.0"] });
     const second = await layerOf({
@@ -109,7 +95,7 @@ describe("ensureLayerImage", () => {
 
   it("reads an image.dockerfile path that starts with ~/ from the home", async () => {
     const fake = createFakeBackend();
-    const home = await tempDir();
+    const home = await tempDir("layer");
 
     await writeFile(join(home, "layer.Dockerfile"), "RUN echo from-home > /opt/home\n");
 
@@ -117,7 +103,7 @@ describe("ensureLayerImage", () => {
       backend: fake.backend,
       baseImageId: BASE_ID,
       config: configWith({ dockerfile: "~/layer.Dockerfile" }),
-      stateDir: await tempDir(),
+      stateDir: await tempDir("layer"),
       env: { HOME: home },
     });
 
@@ -131,7 +117,7 @@ describe("ensureLayerImage", () => {
       backend: fake.backend,
       baseImageId: BASE_ID,
       config: configWith({ npmGlobal: ["typescript@5.6.0"] }),
-      stateDir: await tempDir(),
+      stateDir: await tempDir("layer"),
     });
 
     expect(layerDockerfile(fake)).not.toContain("apt-get");
@@ -140,14 +126,14 @@ describe("ensureLayerImage", () => {
 
   it("puts the trust bundle into the build context", async () => {
     const fake = createFakeBackend();
-    const trustPem = join(await tempDir(), "trust.pem");
+    const trustPem = join(await tempDir("layer"), "trust.pem");
 
     await writeFile(trustPem, "corporate root\n");
     await ensureLayerImage({
       backend: fake.backend,
       baseImageId: BASE_ID,
       config: configWith({ packages: ["jq"] }),
-      stateDir: await tempDir(),
+      stateDir: await tempDir("layer"),
       trustPem,
     });
 
@@ -156,7 +142,7 @@ describe("ensureLayerImage", () => {
 
   it("tags the layer by its inputs hash and records it as the current layer next to the base in image.json", async () => {
     const fake = createFakeBackend();
-    const stateDir = await tempDir();
+    const stateDir = await tempDir("layer");
     const config = configWith({ packages: ["jq"] });
     const base = await ensureBuiltImage({
       backend: fake.backend,
@@ -185,7 +171,7 @@ describe("ensureLayerImage", () => {
 
   it("reuses the layer tagged by its inputs and rebuilds when a key or the base changes", async () => {
     const fake = createFakeBackend();
-    const stateDir = await tempDir();
+    const stateDir = await tempDir("layer");
     const config = configWith({ packages: ["jq"] });
     const base = await ensureBuiltImage({
       backend: fake.backend,
@@ -221,7 +207,7 @@ describe("ensureLayerImage", () => {
         backend: fake.backend,
         baseImageId: BASE_ID,
         config,
-        stateDir: await tempDir(),
+        stateDir: await tempDir("layer"),
         env: { HTTPS_PROXY: "http://dev:secret@proxy.corp.example:3128" },
       }),
     ).rejects.toThrow(/parent proxy needs credentials/);

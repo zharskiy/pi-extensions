@@ -2,7 +2,9 @@ import { createServer } from "node:http";
 import type { Socket } from "node:net";
 import type { Duplex } from "node:stream";
 import { createSecureContext, type SecureContext, TLSSocket } from "node:tls";
-import { PROXY_AGENT, rawResponse } from "./replies.ts";
+import { MINUTE_MS } from "../shared/index.ts";
+import { boundedCache } from "./bounded-cache.ts";
+import { type RawHeader, rawResponse, sendReply, withAgent } from "./replies.ts";
 import type { LeafCertificate } from "./tls-ca.ts";
 
 export interface DenialPageOptions {
@@ -14,60 +16,31 @@ const MAX_NAMES = 256;
 
 const MINTS_PER_MINUTE = 30;
 
-const MINT_WINDOW_MS = 60_000;
+const MINT_WINDOW_MS = MINUTE_MS;
 
 const IDLE_MS = 10_000;
 
-const pageHeaders = (text: string) => ({
-  "content-type": "text/plain; charset=utf-8",
-  "content-length": String(Buffer.byteLength(text)),
-  connection: "close",
-  "proxy-agent": PROXY_AGENT,
-});
-
-const rawPage = (text: string) =>
-  rawResponse(
-    "403 Forbidden",
-    [
-      ["content-type", "text/plain; charset=utf-8"],
-      ["proxy-agent", PROXY_AGENT],
-    ],
-    text,
-  );
+const PAGE_HEADERS: RawHeader[] = [["content-type", "text/plain; charset=utf-8"]];
 
 export const createDenialPages = (options: DenialPageOptions) => {
   const now = options.now ?? Date.now;
-  const contexts = new Map<string, Promise<SecureContext | undefined>>();
+  const contexts = boundedCache<string, SecureContext>(MAX_NAMES);
   const mints = { times: [] as number[] };
   const texts = new WeakMap<object, string>();
 
   const server = createServer((request, response) => {
     const text = texts.get(request.socket) ?? "";
 
-    response.writeHead(403, pageHeaders(text));
-
-    response.end(text);
+    sendReply(response, 403, [...PAGE_HEADERS, ["connection", "close"]], text);
   });
 
   server.on("upgrade", (request, socket: Duplex) => {
-    socket.end(rawPage(texts.get(request.socket) ?? ""));
+    socket.end(rawResponse("403 Forbidden", withAgent(PAGE_HEADERS), texts.get(request.socket) ?? ""));
   });
 
   server.on("clientError", (_error, socket: Duplex) => {
     socket.destroy();
   });
-
-  const remember = (host: string, context: Promise<SecureContext | undefined>) => {
-    contexts.delete(host);
-
-    contexts.set(host, context);
-
-    const excess = [...contexts.keys()].slice(0, Math.max(0, contexts.size - MAX_NAMES));
-
-    excess.forEach((name) => {
-      contexts.delete(name);
-    });
-  };
 
   const mayMint = () => {
     const current = now();
@@ -83,12 +56,10 @@ export const createDenialPages = (options: DenialPageOptions) => {
     return true;
   };
 
-  const context = (host: string) => {
+  const cachedContext = (host: string) => {
     const known = contexts.get(host);
 
     if (known !== undefined) {
-      remember(host, known);
-
       return known;
     }
 
@@ -96,21 +67,13 @@ export const createDenialPages = (options: DenialPageOptions) => {
       return Promise.resolve(undefined);
     }
 
-    const created = options.leaf(host).then(
-      (leaf) => createSecureContext(leaf),
-      () => undefined,
+    return contexts.set(
+      host,
+      options.leaf(host).then((leaf) => createSecureContext(leaf)),
     );
-
-    remember(host, created);
-
-    void created.then((value) => {
-      if (value === undefined) {
-        contexts.delete(host);
-      }
-    });
-
-    return created;
   };
+
+  const context = (host: string) => cachedContext(host).catch(() => undefined);
 
   const serve = (client: Socket, secureContext: SecureContext, text: string) => {
     const secure = new TLSSocket(client, { isServer: true, secureContext, ALPNProtocols: ["http/1.1"] });

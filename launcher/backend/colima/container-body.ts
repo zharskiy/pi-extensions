@@ -1,3 +1,4 @@
+import { GIB } from "../../shared/index.ts";
 import type { ContainerSpec, ContainerState, ContainerSummary, MountSpec, NetworkRef } from "../types.ts";
 
 export interface EngineContainer {
@@ -9,8 +10,6 @@ export interface EngineContainer {
 }
 
 const NANO_CPUS = 1_000_000_000;
-
-const GIB = 1024 ** 3;
 
 const PIDS_LIMIT = 4096;
 

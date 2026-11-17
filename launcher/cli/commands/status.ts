@@ -1,11 +1,12 @@
 import { isAbsolute } from "node:path";
 import { type Backend, LABELS } from "../../backend/index.ts";
-import { overlayVolumes, sharedCacheVolumes } from "../../container/index.ts";
+import { agentContainers, overlayVolumes, sharedCacheVolumes } from "../../container/index.ts";
 import { liveLaunches } from "../../grants/index.ts";
-import { recordedImage } from "../../image/index.ts";
+import { imageReference, recordedImage } from "../../image/index.ts";
 import { LauncherError } from "../../shared/index.ts";
 import { type LaunchContext, openContext } from "../context.ts";
 import { type CliDeps, reachableBackend, writeLines } from "../deps.ts";
+import { proxyDetail } from "../launch-notices.ts";
 import { launcherVersion } from "../versions.ts";
 import { grantLines } from "./egress.ts";
 
@@ -18,9 +19,10 @@ const sessionDirLine = (label: string | undefined) => {
 };
 
 const containerLines = async (backend: Backend, context: LaunchContext) => {
-  const containers = (
-    await backend.findContainers({ [LABELS.managed]: "true", [LABELS.repoHash]: context.repoHash })
-  ).filter((container) => container.labels[LABELS.relay] === undefined);
+  const containers = await agentContainers(backend, {
+    [LABELS.managed]: "true",
+    [LABELS.repoHash]: context.repoHash,
+  });
 
   return [
     `containers: ${containers.length}`,
@@ -49,14 +51,14 @@ const runtimeLines = async (deps: CliDeps, context: LaunchContext) => {
 const proxyLines = async (deps: CliDeps, context: LaunchContext) => {
   const proxy = await deps.proxy.read(context.stateDir, context.repoHash);
 
-  return [proxy === undefined ? "proxy: stopped" : `proxy: pid ${proxy.pid} port ${proxy.port}`];
+  return [proxy === undefined ? "proxy: stopped" : `proxy: ${proxyDetail(proxy)}`];
 };
 
 const imageLine = async (context: LaunchContext) => {
   const { image } = context.effective.config;
   const record = await recordedImage(context.stateDir, context.effective.config);
 
-  return `image: ${record?.reference ?? image.reference ?? "pi-sandbox-base:local"} ${image.digest ?? record?.digest ?? "(not built yet)"}`;
+  return `image: ${imageReference(context.effective.config)} ${image.digest ?? record?.digest ?? "(not built yet)"}`;
 };
 
 const launchLines = async (context: LaunchContext) => {

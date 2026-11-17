@@ -3,7 +3,7 @@ import { type Denials, denialBody } from "./denials.ts";
 import { sendJson } from "./replies.ts";
 import { HTTP_PORT, parseAuthority } from "./request-target.ts";
 
-const UNPARSEABLE = "unparseable";
+export const UNPARSEABLE = "unparseable";
 
 export const PLAIN_HTTP = { rule: "plain-http", reason: "only HTTPS through CONNECT is proxied" };
 

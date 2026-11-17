@@ -1,6 +1,7 @@
 import { type ChildProcess, type StdioOptions, spawn } from "node:child_process";
 import { constants } from "node:os";
-import { LauncherError } from "./errors.ts";
+import { isMissing, LauncherError } from "./errors.ts";
+import { withTimeout } from "./settle.ts";
 
 interface InteractiveOptions {
   cwd?: string;
@@ -28,18 +29,18 @@ const SIGNAL_EXIT_BASE = 128;
 
 const TIMEOUT_EXIT_CODE = 124;
 
+export const signalExit = (signal: NodeJS.Signals) => SIGNAL_EXIT_BASE + constants.signals[signal];
+
 const exitCode = (code: number | null, signal: NodeJS.Signals | null) => {
   if (code !== null) {
     return code;
   }
 
-  const number = signal === null ? undefined : constants.signals[signal];
-
-  return number === undefined ? 1 : SIGNAL_EXIT_BASE + number;
+  return signal === null || constants.signals[signal] === undefined ? 1 : signalExit(signal);
 };
 
 const launchError = (file: string, error: NodeJS.ErrnoException) =>
-  error.code === "ENOENT"
+  isMissing(error)
     ? new LauncherError(`${file}: command not found`, `install ${file} or add it to PATH`)
     : new LauncherError(`${file}: ${error.message}`);
 
@@ -66,22 +67,21 @@ const settle = (file: string, child: ChildProcess) =>
     child.once("close", (code, signal) => resolve(exitCode(code, signal)));
   });
 
-const expiry = (child: ChildProcess, timeoutMs: number | undefined) => {
-  const timer = { handle: undefined as NodeJS.Timeout | undefined };
-  const expired = new Promise<"expired">((resolve) => {
-    if (timeoutMs === undefined) {
-      return;
-    }
+const EXPIRED = Symbol("expired");
 
-    timer.handle = setTimeout(() => {
-      child.kill("SIGKILL");
-      child.stdout?.destroy();
-      child.stderr?.destroy();
-      resolve("expired");
-    }, timeoutMs);
-  });
+const settleWithin = async (file: string, child: ChildProcess, timeoutMs: number | undefined) => {
+  const settled = settle(file, child);
+  const outcome = timeoutMs === undefined ? await settled : await withTimeout(settled, timeoutMs, EXPIRED);
 
-  return { expired, clear: () => clearTimeout(timer.handle) };
+  if (outcome === EXPIRED) {
+    child.kill("SIGKILL");
+
+    child.stdout?.destroy();
+
+    child.stderr?.destroy();
+  }
+
+  return outcome;
 };
 
 const runWith =
@@ -97,14 +97,13 @@ const runWith =
     child.stdin?.on("error", () => undefined);
     child.stdin?.end(options.input);
 
-    const timeout = expiry(child, options.timeoutMs);
-    const outcome = await Promise.race([settle(file, child), timeout.expired]).finally(timeout.clear);
+    const outcome = await settleWithin(file, child, options.timeoutMs);
     const output = {
       stdout: Buffer.concat(stdout).toString("utf8"),
       stderr: Buffer.concat(stderr).toString("utf8"),
     };
 
-    return outcome === "expired"
+    return outcome === EXPIRED
       ? { code: TIMEOUT_EXIT_CODE, timedOut: true, ...output }
       : { code: outcome, ...output };
   };

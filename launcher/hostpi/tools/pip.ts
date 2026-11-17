@@ -1,8 +1,15 @@
 import { join } from "node:path";
 import { hasUrlUserinfo, type IniSection, iniWords, parseIni } from "../../shared/index.ts";
 import { mergeSections, noticeOnly, type Section } from "../rules.ts";
-import type { ToolsInput } from "../types.ts";
-import { firstExisting, type Registry, registriesOf, type UrlSecret, urlCredentialSection } from "./files.ts";
+import type { Registry, ToolsInput } from "../types.ts";
+import {
+  firstExisting,
+  PROXY_KEY_REASON,
+  registriesOf,
+  URL_CREDENTIAL_REASON,
+  type UrlSecret,
+  urlCredentialSection,
+} from "./files.ts";
 
 const INDEX_KEYS = new Set(["index-url", "extra-index-url"]);
 
@@ -32,13 +39,13 @@ const entrySection = (
   const normalized = pipName(name);
 
   if (normalized === PROXY_KEY) {
-    return dropped(key, "stays on the host; the sandbox reaches the network through the launcher proxy");
+    return dropped(key, PROXY_KEY_REASON);
   }
 
   if (!INDEX_KEYS.has(normalized)) {
     return iniWords(value).some(hasUrlUserinfo)
-      ? dropped(key, "carries credentials in a URL and stays on the host")
-      : { value: [[name, value]], rules: [], notices: [] };
+      ? dropped(key, URL_CREDENTIAL_REASON)
+      : noticeOnly([[name, value]]);
   }
 
   const words = mergeSections(
@@ -47,7 +54,7 @@ const entrySection = (
     ),
   );
 
-  return { value: [[name, words.values.join("\n")]], rules: words.rules, notices: words.notices };
+  return { ...words, value: [[name, words.value.join("\n")]] };
 };
 
 const sectionOf = (input: ToolsInput, file: string, section: IniSection): Section<IniSection> => {
@@ -55,11 +62,7 @@ const sectionOf = (input: ToolsInput, file: string, section: IniSection): Sectio
     section.entries.map((entry) => entrySection(input, file, section.name, entry)),
   );
 
-  return {
-    value: { name: section.name, entries: merged.values.flat() },
-    rules: merged.rules,
-    notices: merged.notices,
-  };
+  return { ...merged, value: { name: section.name, entries: merged.value.flat() } };
 };
 
 const indexUrls = (sections: IniSection[]) =>
@@ -81,9 +84,7 @@ export const derivePip = async (
   );
 
   return {
-    value: sections.values,
-    rules: sections.rules,
-    notices: sections.notices,
-    registries: registriesOf("pip", indexUrls(sections.values)),
+    ...sections,
+    registries: registriesOf("pip", indexUrls(sections.value)),
   };
 };
