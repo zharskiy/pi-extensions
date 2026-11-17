@@ -20,6 +20,7 @@ import {
 } from "./style.ts";
 import { runTask, type TaskView, warningOf } from "./task.ts";
 import {
+  type AddedChoice,
   BACK,
   type CancelCause,
   Cancelled,
@@ -466,20 +467,25 @@ const multiView = <T>(context: Context, spec: MultiSpec<T>): View<T[]> => {
   const checkedChoices = () =>
     state.choices.filter((choice) => choice.action !== true && state.checked.has(choice.value));
 
-  const add = (choice: Choice<T> | undefined) => {
+  const add = (choice: AddedChoice<T> | undefined) => {
     if (choice === undefined) {
       return;
     }
 
-    const existing = state.choices.findIndex((known) => known.value === choice.value);
+    const { unchecks = [], ...shown } = choice;
+    const existing = state.choices.findIndex((known) => known.value === shown.value);
     const firstAction = state.choices.findIndex((known) => known.action === true);
     const at = firstAction < 0 ? state.choices.length : firstAction;
 
     if (existing < 0) {
-      state.choices = [...state.choices.slice(0, at), choice, ...state.choices.slice(at)];
+      state.choices = [...state.choices.slice(0, at), shown, ...state.choices.slice(at)];
     }
 
-    state.checked.add(choice.value);
+    unchecks.forEach((value) => {
+      state.checked.delete(value);
+    });
+
+    state.checked.add(shown.value);
 
     state.cursor = existing < 0 ? at : existing;
   };
@@ -496,7 +502,11 @@ const multiView = <T>(context: Context, spec: MultiSpec<T>): View<T[]> => {
     if (choice.action === true) {
       return {
         kind: "suspend",
-        run: async () => add(await spec.onAction?.(choice.value)),
+        run: async () => {
+          const checked = checkedChoices().map((known) => known.value);
+
+          add(await spec.onAction?.(choice.value, undefined, checked));
+        },
       };
     }
 
