@@ -60,7 +60,7 @@ export const withRealForm = (entry: Protected): Protected[] => {
 
 export type Overlap = "is" | "contains" | "inside";
 
-export const overlapOf = (path: string, entry: Protected): Overlap | undefined => {
+export const overlapOf = (path: string, entry: Pick<Protected, "path" | "under">): Overlap | undefined => {
   if (isWithin(entry.path, path)) {
     return path === entry.path ? "is" : "contains";
   }

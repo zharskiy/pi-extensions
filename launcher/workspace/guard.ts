@@ -1,6 +1,6 @@
 import { lstatSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { isWithin, LauncherError, realOrResolvedSync, realOrUndefinedSync } from "../shared/index.ts";
+import { LauncherError, realOrResolvedSync, realOrUndefinedSync } from "../shared/index.ts";
 import { type Overlap, overlapOf, type Protected, protectedPaths } from "./mounts.ts";
 import { hostSessionsDir, sessionSlug, sessionsRootOf } from "./pi-session-dir.ts";
 import type { Workspace } from "./types.ts";
@@ -75,9 +75,12 @@ const protectedPiPaths = (context: HostSessionsContext) => {
   const agentDir = resolve(context.agentDir);
 
   return [
-    { path: realOrResolvedSync(join(context.home, ".pi")), both: false },
-    { path: realOrResolvedSync(agentDir), both: false },
-    ...agentEntries(agentDir).map((name) => ({ path: realOrResolvedSync(join(agentDir, name)), both: true })),
+    { path: realOrResolvedSync(join(context.home, ".pi")), under: false },
+    { path: realOrResolvedSync(agentDir), under: false },
+    ...agentEntries(agentDir).map((name) => ({
+      path: realOrResolvedSync(join(agentDir, name)),
+      under: true,
+    })),
   ];
 };
 
@@ -102,9 +105,7 @@ export const assertHostSessionsDir = (dir: string, context: HostSessionsContext)
     throw refuseSessions(dir, "resolves outside pi's sessions directory");
   }
 
-  const overlap = protectedPiPaths(context).find(
-    ({ path, both }) => isWithin(path, real) || (both && isWithin(real, path)),
-  );
+  const overlap = protectedPiPaths(context).find((entry) => overlapOf(real, entry) !== undefined);
 
   if (overlap !== undefined) {
     throw refuseSessions(dir, `resolves to a path that overlaps ${overlap.path}`);
