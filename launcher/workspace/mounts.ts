@@ -1,5 +1,11 @@
 import { join, resolve } from "node:path";
-import { hostAgentDir, isWithin, launcherPaths, realOrResolvedSync } from "../shared/index.ts";
+import {
+  hostAgentDir,
+  isWithin,
+  launcherPaths,
+  PRIVATE_HOME_DIRS,
+  realOrResolvedSync,
+} from "../shared/index.ts";
 
 interface ProtectedContext {
   home: string;
@@ -11,8 +17,6 @@ export interface Protected {
   reason: string;
   under: boolean;
 }
-
-const PROTECTED_HOME = [".ssh", ".gnupg", ".aws", ".docker", ".colima", ".kube"];
 
 const SYSTEM_DIRS = ["/var/run", "/run", "/etc", "/proc", "/sys", "/dev"];
 
@@ -35,7 +39,11 @@ export const protectedPaths = (context: ProtectedContext): Protected[] => {
     { path: paths.userConfigFile, reason: "the launcher user config", under: true },
     { path: join(context.home, ".config"), reason: "~/.config", under: false },
     { path: join(context.home, ".config", "pi-sandbox"), reason: "~/.config/pi-sandbox", under: true },
-    ...PROTECTED_HOME.map((name) => ({ path: join(context.home, name), reason: `~/${name}`, under: true })),
+    ...PRIVATE_HOME_DIRS.map((name) => ({
+      path: join(context.home, name),
+      reason: `~/${name}`,
+      under: true,
+    })),
     ...SYSTEM_DIRS.map((path) => ({ path, reason: path, under: true })),
     ...IMAGE_DIRS.map((path) => ({ path, reason: `${path}, which the sandbox image uses`, under: false })),
     ...(socket === undefined ? [] : [{ path: socket, reason: "the container engine socket", under: true }]),

@@ -43,6 +43,7 @@ export {
   launcherRoot,
   outermostPaths,
   PI_AGENT_DIR_VARIABLE,
+  PRIVATE_HOME_DIRS,
   realOrResolved,
   realOrResolvedSync,
 } from "./paths.ts";

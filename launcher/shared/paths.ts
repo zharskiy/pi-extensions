@@ -102,3 +102,5 @@ export const launcherEntry = (relativeTsPath: string, moduleUrl = import.meta.ur
   isCompiled(moduleUrl)
     ? join(launcherRoot(moduleUrl), BUILD_DIR, relativeTsPath.replace(/\.ts$/, ".js"))
     : join(launcherRoot(moduleUrl), relativeTsPath);
+
+export const PRIVATE_HOME_DIRS: readonly string[] = [".ssh", ".gnupg", ".aws", ".docker", ".colima", ".kube"];

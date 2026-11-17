@@ -8,6 +8,7 @@ import {
   LauncherError,
   MAX_WRITE_BACK_CHARS,
   PLACEHOLDER_PREFIX,
+  PRIVATE_HOME_DIRS,
   printable,
   TOOL_CONFIG_FORMATS,
   type ToolConfigFormat,
@@ -73,17 +74,7 @@ const JSON_POINTER = /^(\/([^~/]|~[01])*)+$/;
 
 const APT_PACKAGE = /^[a-z0-9][a-z0-9+.-]*(=[A-Za-z0-9.+:~-]+)?$/;
 
-const PRIVATE_HOME_PATHS = [
-  ".pi",
-  ".ssh",
-  ".gnupg",
-  ".aws",
-  ".docker",
-  ".colima",
-  ".kube",
-  ".config",
-  ".local/bin",
-];
+const PRIVATE_HOME_PATHS = [".pi", ...PRIVATE_HOME_DIRS, ".config", ".local/bin"];
 
 const NPM_PACKAGE = /^(@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*@[0-9][0-9A-Za-z.+-]*$/;
 
