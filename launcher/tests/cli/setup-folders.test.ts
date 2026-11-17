@@ -5,6 +5,8 @@ import {
   addedRootProblem,
   folderCandidates,
   isPreChecked,
+  replacedNotice,
+  replacedRoots,
   sameRootSet,
   scanRepos,
   suggestionFor,
@@ -244,12 +246,12 @@ describe("addedRootProblem", () => {
     expect(addedRootProblem(typed, context)).toBe(message);
   });
 
-  it("refuses a folder that nests with a checked one, and accepts a plain one", async () => {
+  it("accepts a folder inside a checked one, refuses one holding a checked one, and accepts a plain one", async () => {
     const context = await setup();
 
     expect(
       addedRootProblem("~/Projects/app", { ...context, checked: ["~/Projects"], listed: ["~/Projects"] }),
-    ).toBe("~/Projects/app lies inside ~/Projects, which is already selected.");
+    ).toBeUndefined();
     expect(
       addedRootProblem("~/Projects", { ...context, checked: ["~/Projects/app"], listed: ["~/Projects/app"] }),
     ).toBe(
@@ -276,12 +278,40 @@ describe("addedRootProblem", () => {
 
     expect(addedRootProblem("~/gone\u202e", context)).toBe("~/gone\\u202E does not exist.");
     expect(
-      addedRootProblem("~/Projects/app", { ...context, checked: ["~/Projects\u009b/.."], listed: [] }),
-    ).toBe("~/Projects/app lies inside ~/Projects\\u009B/.., which is already selected.");
-    expect(
       addedRootProblem("~/Projects", { ...context, checked: ["~/Projects/app\u200f"], listed: [] }),
     ).toBe(
       "~/Projects holds ~/Projects/app\\u200F, which is selected. Unselect ~/Projects/app\\u200F first, or choose another folder.",
+    );
+  });
+
+  it("names every checked folder that holds the typed one, through links too", async () => {
+    const context = await setup();
+
+    await symlink(join(context.home, "Projects"), join(context.home, "link"));
+
+    const checked = ["~/Projects", "~/link", "~/work"];
+    const listed = [...checked, "~/Projects/app"];
+
+    expect(replacedRoots("~/Projects/app ", { ...context, checked, listed })).toEqual([
+      "~/Projects",
+      "~/link",
+    ]);
+    expect(replacedRoots("~/Projects", { ...context, checked: ["~/work"], listed: ["~/work"] })).toEqual([]);
+    expect(replacedRoots("~/.ssh", { ...context, checked: ["~"], listed: [] })).toEqual([]);
+    expect(addedRootProblem("~/Projects/app", { ...context, checked, listed })).toBe(
+      "~/Projects/app is already in the list.",
+    );
+  });
+
+  it("tells which checked folders the typed one replaces, escaping their names", () => {
+    expect(replacedNotice("~/Projects/app", ["~/Projects"], "/home/me")).toBe(
+      "~/Projects/app replaces ~/Projects, which holds it.",
+    );
+    expect(replacedNotice("/home/me/Projects/app\u202e", ["~/Projects\u009b/..", "~/link"], "/home/me")).toBe(
+      "~/Projects/app\\u202E replaces ~/Projects\\u009B/.. and ~/link, which hold it.",
+    );
+    expect(replacedNotice("~/a/b/c", ["~/a", "~/link", "/Volumes/a"], "/home/me")).toBe(
+      "~/a/b/c replaces ~/a, ~/link and /Volumes/a, which hold it.",
     );
   });
 

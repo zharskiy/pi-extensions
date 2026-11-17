@@ -2,7 +2,7 @@ import type { VmSpec } from "../../backend/index.ts";
 import { BACK, Cancelled, type Choice, type Reply } from "../prompt/types.ts";
 import { applyPlan, noteOf, wizardFrontEnd } from "./apply.ts";
 import { VM_KEYS } from "./document.ts";
-import { addedRootProblem, tildeForm } from "./folders.ts";
+import { addedRootProblem, replacedNotice, replacedRoots, tildeForm } from "./folders.ts";
 import { firstRunSteps, initialAnswers, isPlanEmpty, planOf, vmBounds } from "./plan.ts";
 import { createReview, SECTION_LABELS } from "./review.ts";
 import {
@@ -75,7 +75,6 @@ interface State {
 interface Pending {
   added: string[];
   listed: string[];
-  checked: string[];
 }
 
 type HubChoice = "apply" | "done" | "cancel" | Section;
@@ -116,40 +115,50 @@ const createWizard = (io: SetupIo, context: WizardContext) => {
     return [...listed, ...extra];
   };
 
-  const rootProblem = (typed: string, state: Pending) =>
-    addedRootProblem(typed, { home: facts.home, env, checked: state.checked, listed: state.listed });
+  const addContext = (state: Pending, checked: string[]) => ({
+    home: facts.home,
+    env,
+    checked,
+    listed: state.listed,
+  });
 
-  const added = (typed: string, state: Pending) => {
+  const rootProblem = (typed: string, state: Pending, checked: string[]) =>
+    addedRootProblem(typed, addContext(state, checked));
+
+  const added = (typed: string, state: Pending, checked: string[]) => {
     const stored = tildeForm(typed.trim(), facts.home);
+    const unchecks = replacedRoots(typed, addContext(state, checked));
 
     state.added.push(stored);
 
     state.listed.push(stored);
 
-    state.checked.push(stored);
+    if (unchecks.length > 0) {
+      prompts.note([replacedNotice(typed, unchecks, facts.home)]);
+    }
 
-    return { value: stored, label: stored };
+    return { value: stored, label: stored, unchecks };
   };
 
-  const addFolder = async (state: Pending) => {
+  const addFolder = async (state: Pending, checked: string[]) => {
     const typed = await prompts.path({
       title: "Add a folder",
       initial: "~/",
       home: facts.home,
       readdir: context.readdir,
       enter: "add",
-      validate: (value) => rootProblem(value, state),
+      validate: (value) => rootProblem(value, state, checked),
       collapsed: () => undefined,
     });
 
-    return typed === BACK ? undefined : added(typed, state);
+    return typed === BACK ? undefined : added(typed, state, checked);
   };
 
-  const addTyped = (typed: string, state: Pending) => {
-    const problem = rootProblem(typed, state);
+  const addTyped = (typed: string, state: Pending, checked: string[]) => {
+    const problem = rootProblem(typed, state, checked);
 
     if (problem === undefined) {
-      return added(typed, state);
+      return added(typed, state, checked);
     }
 
     prompts.note([`Error: ${problem}`]);
@@ -176,7 +185,6 @@ const createWizard = (io: SetupIo, context: WizardContext) => {
     const pending = {
       added: [...state.added],
       listed: choices.map((choice) => choice.value),
-      checked: [...checked],
     };
     const empty = choices.length === 0;
     const now = sharedNow === undefined ? [] : [sharedNow];
@@ -189,8 +197,8 @@ const createWizard = (io: SetupIo, context: WizardContext) => {
         { value: ADD, label: empty ? "+ Add a folder…" : "+ Add another folder…", action: true },
       ],
       checked,
-      onAction: async (_value, typed) =>
-        typed === undefined ? addFolder(pending) : addTyped(typed, pending),
+      onAction: async (_value, typed, ticked) =>
+        typed === undefined ? addFolder(pending, ticked) : addTyped(typed, pending, ticked),
       escape: step?.index === 1 ? "cancel" : "back",
       collapsed: (values) =>
         values.length > 0 ? { title: SECTION_LABELS.folders, text: rootsSummary(values) } : undefined,
