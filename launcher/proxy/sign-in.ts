@@ -5,7 +5,6 @@ import {
   spawn as spawnProcess,
 } from "node:child_process";
 import { closeSync, openSync } from "node:fs";
-import { setTimeout as delay } from "node:timers/promises";
 import {
   type McpLoginState,
   mcpAuthKey,
@@ -17,6 +16,7 @@ import {
   updateMcpLogin,
   withFileLockIfFree,
   withMcpLoginDir,
+  withTimeout,
 } from "../shared/index.ts";
 
 type SpawnProcess = (command: string, args: string[], options: SpawnOptions) => ChildProcess;
@@ -90,16 +90,7 @@ const signalGroup = (pid: number | undefined, signal: NodeJS.Signals) => {
   }
 };
 
-export const within = async <T>(promise: Promise<T>, waitMs: number) => {
-  const abort = new AbortController();
-  const late = delay(waitMs, undefined, { signal: abort.signal }).catch(() => undefined);
-
-  try {
-    return await Promise.race([promise, late]);
-  } finally {
-    abort.abort();
-  }
-};
+export const within = <T>(promise: Promise<T>, waitMs: number) => withTimeout(promise, waitMs, undefined);
 
 interface Running {
   pid?: number;

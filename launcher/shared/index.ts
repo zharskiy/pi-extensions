@@ -78,7 +78,7 @@ export {
   isSecretName,
   isSecretShapedValue,
 } from "./secret-name.ts";
-export { settleAll } from "./settle.ts";
+export { settleAll, withTimeout } from "./settle.ts";
 export { ensureSalt, GUEST_PATHS, isTrustBundleName, stateLayout } from "./state-layout.ts";
 export { isControlChar, lastLine, printable } from "./terminal-text.ts";
 export type { ToolConfigFormat, ToolConfigSelect } from "./tool-config.ts";

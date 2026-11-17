@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import type { Backend } from "../../backend/index.ts";
-import { errorMessage } from "../../shared/index.ts";
+import { errorMessage, withTimeout } from "../../shared/index.ts";
 import { recommendedVmSize, vmBusyCount } from "../vm.ts";
 import { folderCandidates, unscannedCandidates } from "./folders.ts";
 import type { FolderCandidate, HostFacts, VmFacts } from "./types.ts";
@@ -29,14 +29,12 @@ const BUDGET_MS = 3000;
 
 const GIB = 1024 ** 3;
 
-const withinBudget = <T>(pending: Promise<T>, budgetMs: number, fallback: T) => {
-  const timer = { handle: undefined as NodeJS.Timeout | undefined };
-  const late = new Promise<T>((resolve) => {
-    timer.handle = setTimeout(() => resolve(fallback), budgetMs);
-  });
-
-  return Promise.race([pending.catch(() => fallback), late]).finally(() => clearTimeout(timer.handle));
-};
+const withinBudget = <T>(pending: Promise<T>, budgetMs: number, fallback: T) =>
+  withTimeout(
+    pending.catch(() => fallback),
+    budgetMs,
+    fallback,
+  );
 
 const freeDiskOf = async (deps: DetectDeps) => {
   const stats = await deps.statfs(join(deps.home, ".colima")).catch(() => deps.statfs(deps.home));
