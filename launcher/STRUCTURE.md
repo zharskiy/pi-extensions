@@ -32,7 +32,7 @@ bin/shim.sh                    the package name, the pi shim in ~/.local/bin wit
 
 ```
 cli/main.ts                    builds the real dependencies, the host git outside the started folder and the /dev/tty opener of pi sandbox init included, and runs
-cli/run.ts                     the command table, the hidden __uninstall and __vm-shares routes and error rendering
+cli/run.ts                     the command table with egress's actions, help and option checks, the hidden __uninstall and __vm-shares routes and error rendering
 cli/deps.ts                    the dependencies every command gets, and the shared terminal helpers (TTY and colour checks, a line sink)
 cli/index.ts                   public surface
 cli/launch.ts                  the pi pipeline with its stages and progress lines, and withSandbox for the doctor
@@ -78,7 +78,7 @@ cli/commands/doctor-report.ts  the pure text renderer of the checks: aligned col
 cli/commands/doctor-tls.ts     the tls inspection checks: the node handshake to pi.dev on the host and in the container, the keychain lookup of the root CA, the outcomes
 cli/commands/tls-probe.ts      the typed TLS handshake script those checks run as their own node process: request on stdin, chain and verdicts on stdout
 cli/commands/help.ts           usage
-cli/commands/options.ts        the option check of the sandbox commands and egress
+cli/commands/options.ts        the command type and the option check of the sandbox commands
 ```
 
 ## config/

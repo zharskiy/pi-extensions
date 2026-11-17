@@ -13,10 +13,8 @@ import {
 import { assertSafeMounts, findGitRoot } from "../workspace/index.ts";
 import { type CliDeps, hostAgentDirOf, pathsOf, writeLine, writeNotices } from "./deps.ts";
 import { requireJobPi, resolveJobPi } from "./host-pi.ts";
-import { type HostRoute, hostRoute } from "./host-routes.ts";
+import { type HostRoute, hostRoute, LOCAL_FLAGS } from "./host-routes.ts";
 import { imagePiVersion } from "./versions.ts";
-
-const LOCAL_FLAGS = ["-l", "--local"];
 
 const runOnHost = async (
   deps: CliDeps,

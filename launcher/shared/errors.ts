@@ -1,10 +1,12 @@
 export class LauncherError extends Error {
   readonly hint?: string;
+  readonly exitCode?: number;
 
-  constructor(message: string, hint?: string) {
+  constructor(message: string, hint?: string, exitCode?: number) {
     super(message);
     this.name = "LauncherError";
     this.hint = hint;
+    this.exitCode = exitCode;
   }
 }
 

@@ -5,7 +5,7 @@ import { assertSafeMounts } from "../../workspace/index.ts";
 import { type LaunchContext, openContext } from "../context.ts";
 import { type CliDeps, writeLine, writeLines } from "../deps.ts";
 import { usageOf } from "./help.ts";
-import { assertOptions } from "./options.ts";
+import { type Command, isFlag } from "./options.ts";
 
 interface Target {
   host: string;
@@ -16,11 +16,7 @@ const USER_FLAG = "--user";
 
 const DENIED_FLAG = "--denied";
 
-const HELP_FLAGS = ["-h", "--help"];
-
 const usage = (problem: string) => new LauncherError(problem, usageOf("egress"));
-
-const isFlag = (arg: string) => arg.startsWith("-");
 
 const parseTarget = (text: string | undefined): Target => {
   const entry = parseHostEntry((text ?? "").trim(), { wildcard: false, port: true });
@@ -33,16 +29,13 @@ const parseTarget = (text: string | undefined): Target => {
 };
 
 const targetArgs = (command: string, args: string[]) => {
-  const flags = args.filter(isFlag);
   const [text, ...extra] = args.filter((arg) => !isFlag(arg));
-
-  assertOptions(command, flags, [USER_FLAG]);
 
   if (extra.length > 0) {
     throw usage(`${command}: takes one host, got ${[text, ...extra].join(" ")}`);
   }
 
-  return { text, target: parseTarget(text), user: flags.includes(USER_FLAG) };
+  return { text, target: parseTarget(text), user: args.includes(USER_FLAG) };
 };
 
 const scopeText = (grant: Grant) => (grant.repoHash === undefined ? "every repository" : "this repository");
@@ -146,8 +139,6 @@ const listedDenials = async (deps: CliDeps, context: LaunchContext) => {
 };
 
 const list = async (deps: CliDeps, args: string[]) => {
-  assertOptions("egress list", args, [DENIED_FLAG]);
-
   const { context } = await openContext(deps, "host");
   const lines = args.includes(DENIED_FLAG) ? await listedDenials(deps, context) : await listedGrants(context);
 
@@ -156,28 +147,8 @@ const list = async (deps: CliDeps, args: string[]) => {
   return 0;
 };
 
-const ACTIONS: Record<string, (deps: CliDeps, args: string[]) => Promise<number>> = { allow, revoke, list };
-
-export const egressCommand = (deps: CliDeps, args: string[]) => {
-  const [action = "", ...rest] = args;
-
-  if (HELP_FLAGS.includes(action)) {
-    writeLine(deps.stdout, `usage: ${usageOf("egress")}`);
-
-    return Promise.resolve(0);
-  }
-
-  const run = Object.hasOwn(ACTIONS, action) ? ACTIONS[action] : undefined;
-
-  if (run === undefined) {
-    throw usage(`unknown egress action "${action}"`);
-  }
-
-  if (rest.some((arg) => HELP_FLAGS.includes(arg))) {
-    writeLine(deps.stdout, `usage: ${usageOf(`egress ${action}`)}`);
-
-    return Promise.resolve(0);
-  }
-
-  return run(deps, rest);
+export const EGRESS_ACTIONS: Record<string, Command> = {
+  allow: { run: allow, options: [USER_FLAG], operands: true },
+  revoke: { run: revoke, options: [USER_FLAG], operands: true },
+  list: { run: list, options: [DENIED_FLAG] },
 };

@@ -1,7 +1,7 @@
 import { type Backend, LABELS } from "../../backend/index.ts";
 import { liveLaunches, withRepoLaunchLock } from "../../grants/index.ts";
-import { errorMessage, knownRepos } from "../../shared/index.ts";
-import { type CliDeps, pathsOf, reachableEngine, writeLine, writeLines } from "../deps.ts";
+import { errorMessage, knownRepos, LauncherError } from "../../shared/index.ts";
+import { type CliDeps, pathsOf, reachableEngine, writeLines } from "../deps.ts";
 import { removeRepoSandbox } from "../sweep.ts";
 
 export const UNINSTALL = "__uninstall";
@@ -58,9 +58,11 @@ export const uninstallCommand = async (deps: CliDeps) => {
   const live = (await liveLaunches(stateDir)).length;
 
   if (live > 0) {
-    writeLine(deps.stderr, `pi-sandbox: ${live} pi sessions still run in the sandbox; exit them first`);
-
-    return SESSIONS_LIVE_EXIT;
+    throw new LauncherError(
+      `${live} pi sessions still run in the sandbox; exit them first`,
+      undefined,
+      SESSIONS_LIVE_EXIT,
+    );
   }
 
   const backend = await reachableEngine(deps.backend());
