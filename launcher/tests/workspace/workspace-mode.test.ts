@@ -484,7 +484,7 @@ describe("the nested repository checks", () => {
     expect(mountedGitDirs(workspace)).toEqual([root]);
     expect(cwds).toEqual([]);
     expect(workspaceNotices(workspace)).toEqual([
-      `pi-sandbox: ${worktree}, ${separate}: the git dir lies outside this folder, so git does not work there in the sandbox; start pi inside the checkout to use git there`,
+      `${worktree}, ${separate}: the git dir lies outside this folder, so git does not work there in the sandbox; start pi inside the checkout to use git there`,
     ]);
   });
 
@@ -518,7 +518,7 @@ describe("the nested repository checks", () => {
 
     expect(workspace.detached).toEqual([{ repoRoot: stale, missing: true }]);
     expect(workspaceNotices(workspace)).toEqual([
-      `pi-sandbox: ${stale}: .git points at a git dir that no longer exists, so the sandbox sees a plain folder; delete the .git file, or run git worktree prune in the repository that owned it`,
+      `${stale}: .git points at a git dir that no longer exists, so the sandbox sees a plain folder; delete the .git file, or run git worktree prune in the repository that owned it`,
     ]);
   });
 
@@ -676,7 +676,7 @@ describe("bare repositories around a workspace", () => {
     expect(workspace.bareDirs).toEqual([bare]);
     expect(mountedGitDirs(workspace)).toEqual([root, join(root, "checkout", ".git")]);
     expect(workspaceNotices(workspace)).toContain(
-      `pi-sandbox: ${bare}: bare repositories, read-only in the sandbox; clone and fetch from them work, push does not`,
+      `${bare}: bare repositories, read-only in the sandbox; clone and fetch from them work, push does not`,
     );
 
     await discoverAt(root, fake, noHooksOf(root)).catch(() => undefined);
@@ -799,9 +799,9 @@ describe("the workspace mounts and notices", () => {
       nested: [repoAt("/w/a"), repoAt("/w/b")],
     };
 
-    expect(workspaceNotices(workspace)).toEqual(["pi-sandbox: workspace with 2 repositories"]);
+    expect(workspaceNotices(workspace)).toEqual(["workspace with 2 repositories"]);
     expect(workspaceNotices({ ...workspace, nested: [repoAt("/w/a")] })).toEqual([
-      "pi-sandbox: workspace with 1 repository",
+      "workspace with 1 repository",
     ]);
     expect(workspaceNotices({ ...workspace, nested: [] })).toEqual([]);
     expect(workspaceNotices(repoAt("/w/a"))).toEqual([]);

@@ -11,7 +11,7 @@ import {
   withMcpLoginDir,
 } from "../shared/index.ts";
 import { assertSafeMounts, findGitRoot } from "../workspace/index.ts";
-import { type CliDeps, hostAgentDirOf, pathsOf, writeLine } from "./deps.ts";
+import { type CliDeps, hostAgentDirOf, pathsOf, writeLine, writeNotices } from "./deps.ts";
 import { requireJobPi, resolveJobPi } from "./host-pi.ts";
 import { type HostRoute, hostRoute } from "./host-routes.ts";
 import { imagePiVersion } from "./versions.ts";
@@ -170,7 +170,7 @@ const resolvedLocal = async (deps: CliDeps, text: string) => {
 };
 
 const refuse = (deps: CliDeps, source: string, reason: string) => {
-  writeLine(deps.stderr, `pi-sandbox: ${source} ${reason}; not installed on the host`);
+  writeNotices(deps, [`${source} ${reason}; not installed on the host`]);
 
   return 1;
 };
@@ -255,7 +255,7 @@ const noticeFollowedPi = async (deps: CliDeps) => {
   const followed = await resolveJobPi(deps);
 
   if (followed !== undefined) {
-    writeLine(deps.stderr, `pi-sandbox: the sandbox follows pi ${followed.version} at the next launch`);
+    writeNotices(deps, [`the sandbox follows pi ${followed.version} at the next launch`]);
   }
 };
 

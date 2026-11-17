@@ -9,7 +9,7 @@ import {
   hostSessionsDir,
 } from "../workspace/index.ts";
 import type { LaunchContext } from "./context.ts";
-import { type CliDeps, hostAgentDirOf, reachableBackend, writeLine, writeNotices } from "./deps.ts";
+import { type CliDeps, hostAgentDirOf, reachableBackend, writeNotices } from "./deps.ts";
 
 export const hostSessionsOf = (
   deps: CliDeps,
@@ -38,7 +38,7 @@ const containerRunning = async (backend: Backend, context: LaunchContext) =>
   );
 
 const warnUnswept = (deps: CliDeps, dir: string, error: unknown) => {
-  writeLine(deps.stderr, `pi-sandbox: warning: sessions: ${dir} was not swept: ${errorMessage(error)}`);
+  writeNotices(deps, [`warning: sessions: ${dir} was not swept: ${errorMessage(error)}`]);
 };
 
 const sweep = async (deps: CliDeps, repoRoot: string, full: boolean): Promise<string[]> => {

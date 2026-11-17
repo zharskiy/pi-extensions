@@ -27,7 +27,7 @@ import {
   writeJsonFile,
 } from "../shared/index.ts";
 import { removeCreatedDirs } from "../workspace/index.ts";
-import { type CliDeps, pathsOf, writeLine } from "./deps.ts";
+import { type CliDeps, pathsOf, writeNotices } from "./deps.ts";
 import { sweepRepoSessions } from "./host-sessions.ts";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -61,7 +61,7 @@ const rootState = async (record: RepoRecord | undefined) => {
 };
 
 const warn = (deps: CliDeps, what: string, error: unknown) => {
-  writeLine(deps.stderr, `pi-sandbox: warning: ${what}: ${errorMessage(error)}`);
+  writeNotices(deps, [`warning: ${what}: ${errorMessage(error)}`]);
 };
 
 const reachable = async (backend: Backend | undefined) =>

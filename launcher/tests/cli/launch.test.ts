@@ -16,7 +16,7 @@ import {
   unreachable,
 } from "./harness.ts";
 
-const PREPARING = "preparing pi sandbox, one time";
+const PREPARING = "pi-sandbox: preparing pi sandbox, one time";
 
 const occurrences = (text: string, line: string) => text.split("\n").filter((entry) => entry === line).length;
 

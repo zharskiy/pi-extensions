@@ -457,7 +457,7 @@ describe("the overlay notices", () => {
     });
 
     expect(notices).toEqual([
-      "pi-sandbox: the folder is too large to search for build output; overlays disabled, the host copies are used",
+      "the folder is too large to search for build output; overlays disabled, the host copies are used",
     ]);
   });
 });

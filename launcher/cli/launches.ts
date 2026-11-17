@@ -4,7 +4,7 @@ import { endLaunch, type Launch, liveLaunches, newLaunchId, registerLaunch } fro
 import { errorMessage, processMark, writeRepoRecord } from "../shared/index.ts";
 import { gitLaunchEndNotices } from "../workspace/index.ts";
 import type { LaunchContext } from "./context.ts";
-import { type CliDeps, writeLine, writeNotices } from "./deps.ts";
+import { type CliDeps, writeNotices } from "./deps.ts";
 import { sweepRepoSessions } from "./host-sessions.ts";
 import { removeRepoSandbox, sweepOrphans } from "./sweep.ts";
 
@@ -40,10 +40,7 @@ const removeOwnContainer = async (deps: CliDeps, backend: Backend, launch: Launc
   }
 
   await removeLaunchContainer(backend, launch.launchId).catch((error: unknown) => {
-    writeLine(
-      deps.stderr,
-      `pi-sandbox: warning: the launch's container was not removed: ${errorMessage(error)}`,
-    );
+    writeNotices(deps, [`warning: the launch's container was not removed: ${errorMessage(error)}`]);
   });
 };
 
@@ -70,7 +67,7 @@ export const finishLaunch = async (
       },
     });
   } catch (error) {
-    writeLine(deps.stderr, `pi-sandbox: warning: could not end the launch: ${errorMessage(error)}`);
+    writeNotices(deps, [`warning: could not end the launch: ${errorMessage(error)}`]);
   }
 
   if (last.gitNotices === undefined) {

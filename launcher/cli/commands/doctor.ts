@@ -105,7 +105,7 @@ const progressLine = (deps: CliDeps): Progress => {
     line: (text) => {
       state.shown = true;
 
-      deps.stderr.write(`${ERASE_LINE}${`pi sandbox doctor: ${withoutPrefix(text)}`.slice(0, width)}`);
+      deps.stderr.write(`${ERASE_LINE}${`pi sandbox doctor: ${text}`.slice(0, width)}`);
     },
     clear: () => {
       if (state.shown) {

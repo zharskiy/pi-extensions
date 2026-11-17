@@ -48,11 +48,10 @@ export const writeLines = (stream: NodeJS.WritableStream, lines: string[]) => {
   stream.write(lines.map((line) => `${line}\n`).join(""));
 };
 
+export const noticeLine = (notice: string) => `pi-sandbox: ${notice}`;
+
 export const writeNotices = (deps: CliDeps, notices: string[]) => {
-  writeLines(
-    deps.stderr,
-    [...new Set(notices)].map((notice) => `pi-sandbox: ${notice}`),
-  );
+  writeLines(deps.stderr, [...new Set(notices)].map(noticeLine));
 };
 
 export const isTerminal = (stream: object) => "isTTY" in stream && stream.isTTY === true;

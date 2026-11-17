@@ -147,11 +147,7 @@ export const startVm = async (
 ) => {
   await prepareSessionsDir(sessions);
 
-  await backend.vm.ensureRunning(
-    (notice) => progress(`pi-sandbox: ${notice}`),
-    start.plan?.shares,
-    start.size,
-  );
+  await backend.vm.ensureRunning(progress, start.plan?.shares, start.size);
 };
 
 const foreignSessions = async (backend: Backend, stateDir: string, launchId?: string) => {

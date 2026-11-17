@@ -7,11 +7,10 @@ import { workspaceNotices } from "../workspace/index.ts";
 import type { LaunchContext } from "./context.ts";
 import type { SandboxProxy } from "./sandbox-proxy.ts";
 
-const CAPPED_NOTICE =
-  "pi-sandbox: more than 512 build output directories; overlays disabled, the host copies are used";
+const CAPPED_NOTICE = "more than 512 build output directories; overlays disabled, the host copies are used";
 
 const TRUNCATED_NOTICE =
-  "pi-sandbox: the folder is too large to search for build output; overlays disabled, the host copies are used";
+  "the folder is too large to search for build output; overlays disabled, the host copies are used";
 
 const overlayNotices = (context: LaunchContext) => {
   if (context.workspace.overlaysCapped === true) {
@@ -32,7 +31,7 @@ const overlayNotices = (context: LaunchContext) => {
   const kinds = [...new Set(paths.map((path) => basename(path)))].sort().join(", ");
 
   return [
-    `pi-sandbox: ${kinds} overlaid in ${places}; the host copies are hidden; set mounts.autoOverlays=false to keep them`,
+    `${kinds} overlaid in ${places}; the host copies are hidden; set mounts.autoOverlays=false to keep them`,
   ];
 };
 

@@ -11,7 +11,7 @@ import { statusCommand } from "./commands/status.ts";
 import { stopCommand } from "./commands/stop.ts";
 import { UNINSTALL, uninstallCommand } from "./commands/uninstall.ts";
 import { VM_SHARES, vmSharesCommand } from "./commands/vm-shares.ts";
-import { type CliDeps, writeLine } from "./deps.ts";
+import { type CliDeps, noticeLine, writeLine } from "./deps.ts";
 import { intercept } from "./intercept.ts";
 import { launch } from "./launch.ts";
 import { launcherVersion } from "./versions.ts";
@@ -90,7 +90,7 @@ const route = async (argv: string[], deps: CliDeps) => {
 
 export const renderFailure = (error: unknown, stderr: NodeJS.WritableStream) => {
   if (error instanceof LauncherError) {
-    writeLine(stderr, `pi-sandbox: ${error.message}`);
+    writeLine(stderr, noticeLine(error.message));
 
     if (error.hint !== undefined) {
       writeLine(stderr, `  hint: ${error.hint}`);
@@ -99,7 +99,7 @@ export const renderFailure = (error: unknown, stderr: NodeJS.WritableStream) => 
     return 1;
   }
 
-  writeLine(stderr, `pi-sandbox: unexpected error: ${errorMessage(error)}`);
+  writeLine(stderr, noticeLine(`unexpected error: ${errorMessage(error)}`));
 
   return UNEXPECTED_EXIT;
 };

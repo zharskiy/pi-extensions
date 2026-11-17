@@ -12,17 +12,17 @@ import {
   withMcpLoginDir,
 } from "../shared/index.ts";
 import type { LaunchContext } from "./context.ts";
-import { type CliDeps, hostAgentDirOf, isTerminal, writeLine } from "./deps.ts";
+import { type CliDeps, hostAgentDirOf, isTerminal, writeNotices } from "./deps.ts";
 import type { HostSide } from "./derive.ts";
 import { writeOnce } from "./notices.ts";
 
 const FAILURE_QUIET_MS = 24 * 60 * 60_000;
 
 const notice = (deps: CliDeps, name: string, text: string) => {
-  writeLine(deps.stderr, `pi-sandbox: mcp ${name}: ${text}`);
+  writeNotices(deps, [`mcp ${name}: ${text}`]);
 };
 
-const notSignedInLine = (name: string) => `pi-sandbox: mcp ${name}: not signed in; run pi mcp login ${name}`;
+const notSignedInLine = (name: string) => `mcp ${name}: not signed in; run pi mcp login ${name}`;
 
 const notSignedIn = (deps: CliDeps, context: LaunchContext, name: string) =>
   writeOnce(deps, context, [notSignedInLine(name)]);

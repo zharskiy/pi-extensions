@@ -12,7 +12,7 @@ import {
 } from "../proxy/index.ts";
 import { errorMessage, LauncherError } from "../shared/index.ts";
 import type { LaunchContext } from "./context.ts";
-import { type CliDeps, pathsOf, writeLines, writeNotices } from "./deps.ts";
+import { type CliDeps, pathsOf, writeNotices } from "./deps.ts";
 import type { HostSide } from "./derive.ts";
 
 export interface SandboxProxy {
@@ -147,8 +147,5 @@ export const sandboxDenials = (deps: CliDeps, context: LaunchContext, since: num
   deps.proxy.denials(context.stateDir, context.repoHash, since).catch((): DenialRecord[] => []);
 
 export const reportDenials = (deps: CliDeps, context: LaunchContext) => (denials: DenialRecord[]) => {
-  writeLines(
-    deps.stderr,
-    deniedTargets(denials).map((denial) => `pi-sandbox: ${blockedText(deps, context)(denial)}`),
-  );
+  writeNotices(deps, deniedTargets(denials).map(blockedText(deps, context)));
 };

@@ -18,7 +18,7 @@ import { type DenialRecord, guestProxyUrl } from "../proxy/index.ts";
 import { errorMessage, settleAll, type WriteBackTable } from "../shared/index.ts";
 import { gitLaunchNotices, type HostSessions } from "../workspace/index.ts";
 import { checkWorkspaceRoots, type LaunchContext, openContext } from "./context.ts";
-import { type CliDeps, hostAgentDirOf, writeLine, writeNotices } from "./deps.ts";
+import { type CliDeps, hostAgentDirOf, writeNotices } from "./deps.ts";
 import { type HostSide, type PreparedHost, prepareHostSide } from "./derive.ts";
 import { NO_SANDBOX, resolveJobPi, runHostPi } from "./host-pi.ts";
 import {
@@ -88,7 +88,7 @@ interface PreparedInput extends SandboxInput {
 
 const PREPARING = "preparing pi sandbox, one time";
 
-const STOPPING = "pi-sandbox: stopping after the current step";
+const STOPPING = "stopping after the current step";
 
 const PREPARATION_SIGNALS: NodeJS.Signals[] = ["SIGINT", "SIGTERM", "SIGHUP"];
 
@@ -153,8 +153,8 @@ const prepareImage = (
     proxyCaPem: parts.host.trust.caCertPath,
     versions: async () => ({ pi: await imagePiVersion(parts.host.pi) }),
     preparing: () => parts.progress(PREPARING),
-    waiting: () => parts.progress("pi-sandbox: waiting for the image build in another session"),
-    progress: (step) => parts.progress(`pi-sandbox: build: ${step}`),
+    waiting: () => parts.progress("waiting for the image build in another session"),
+    progress: (step) => parts.progress(`build: ${step}`),
   });
 
 const sandboxRoute = async (
@@ -235,10 +235,7 @@ const prepareContainer = async (
 
   writeNotices(deps, gitNotices);
 
-  await writeOnce(deps, context, [
-    ...render.notices.map((notice) => `pi-sandbox: ${notice}`),
-    ...launchNotices(context),
-  ]);
+  await writeOnce(deps, context, [...render.notices, ...launchNotices(context)]);
 
   const specWith = (gitOverlay: GitOverlay) =>
     buildContainerSpec({
@@ -304,7 +301,7 @@ const prepareSandbox = async (input: PreparedInput) => {
   cancelled.throwIfAborted();
 
   await staged("sync", () => syncAgentFiles(input, prepared.containerId)).catch((error: unknown) => {
-    writeLine(deps.stderr, `pi-sandbox: warning: the agent settings were not synced: ${errorMessage(error)}`);
+    writeNotices(deps, [`warning: the agent settings were not synced: ${errorMessage(error)}`]);
   });
 
   return { prepared, proxy };
@@ -325,7 +322,7 @@ const firstSignal = (deps: CliDeps) => {
       const listener = () => {
         stop();
 
-        writeLine(deps.stderr, STOPPING);
+        writeNotices(deps, [STOPPING]);
 
         resolve(name);
       };
@@ -415,7 +412,7 @@ export const withSandbox = async (
   use: (sandbox: Sandbox) => Promise<number>,
   {
     report = () => undefined,
-    progress = (line) => writeLine(deps.stderr, line),
+    progress = (line) => writeNotices(deps, [line]),
     signIn = true,
     share = true,
     denials = reportDenials(deps, context),
@@ -479,10 +476,7 @@ export const withSandbox = async (
 
       if (ended.sync?.writeBack === true) {
         await syncVolume(deps, context, backend, ended.sync).catch((error: unknown) => {
-          writeLine(
-            deps.stderr,
-            `pi-sandbox: warning: settings were not written back: ${errorMessage(error)}`,
-          );
+          writeNotices(deps, [`warning: settings were not written back: ${errorMessage(error)}`]);
         });
       }
 
