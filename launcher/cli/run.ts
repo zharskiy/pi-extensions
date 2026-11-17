@@ -7,6 +7,7 @@ import { helpCommand, usageOf } from "./commands/help.ts";
 import { initCommand, YES_FLAG } from "./commands/init.ts";
 import { assertOptions, type Command, isFlag } from "./commands/options.ts";
 import { resetCommand } from "./commands/reset.ts";
+import { SMOKE_DOCTOR, smokeDoctorCommand } from "./commands/smoke-doctor.ts";
 import { statusCommand } from "./commands/status.ts";
 import { stopCommand } from "./commands/stop.ts";
 import { UNINSTALL, uninstallCommand } from "./commands/uninstall.ts";
@@ -43,6 +44,7 @@ const COMMANDS: Record<string, Command> = {
 const HIDDEN: Record<string, (deps: CliDeps) => Promise<number>> = {
   [UNINSTALL]: uninstallCommand,
   [VM_SHARES]: vmSharesCommand,
+  [SMOKE_DOCTOR]: smokeDoctorCommand,
 };
 
 const HELP_FLAGS = ["-h", "--help"];

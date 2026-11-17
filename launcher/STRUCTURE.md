@@ -11,7 +11,7 @@ ARCHITECTURE.md                how it works, the files it writes
 STRUCTURE.md                   this file
 THREAT-MODEL.md                assets, trust boundaries, what each feature weakens, known gaps
 REMOVED-DEFAULTS.md            the egress presets and config keys earlier versions shipped, and how to add them back
-install.sh                     macOS install: the launcher and its pi link, PATH blocks (zsh, bash, fish), then pi sandbox init (on the terminal, or --yes without one), smoke test
+install.sh                     macOS install: the launcher and its pi link, PATH blocks (zsh, bash, fish), then pi sandbox init (on the terminal, or --yes without one), smoke test; on a terminal the children run on it under ruled step headers
 uninstall.sh                   runs the launcher's cleanup, deletes the profile, removes the link, state, package and PATH blocks
 tsconfig.build.json            emits dist/ (gitignored) for the published bin
 examples/config.json           a sample config file for a team to start from
@@ -69,6 +69,7 @@ cli/commands/reset.ts          pi sandbox reset: the folder's sandbox and volume
 cli/commands/stop.ts           pi sandbox stop
 cli/commands/uninstall.ts      the hidden __uninstall command uninstall.sh runs: live-session refusal, engine objects by label, host-side release
 cli/commands/vm-shares.ts      the hidden __vm-shares command: the shared workspace roots that exist, or the home, whose first line install.sh takes as the smoke folder
+cli/commands/smoke-doctor.ts   the hidden __smoke-doctor command install.sh runs: the doctor, exit 3 when the sandbox part was skipped
 cli/commands/init.ts           pi sandbox init: --yes, CI and terminal checks, builds the UI and effects, and picks the front end (the wizard, rich or plain, or the lines of --yes)
 cli/commands/doctor.ts         pi sandbox doctor: stages, probes and host checks as checks by section, the denials matched to each rule, the blocked warnings, captured notices and the progress line
 cli/commands/doctor-probes.ts  the doctor's checks inside the container; a rule whose credential was denied warns, one the proxy refused says why, a certificate not yet valid names the VM clock
@@ -164,7 +165,7 @@ container/run-pi.ts            pi through exec, the pty only for a terminal, sig
 ```
 image/index.ts                 public surface
 image/Dockerfile               the sandbox image
-image/entrypoint.sh            render links, the read-only auth.json copy, CA bundle, JVM truststore, idle
+image/entrypoint.sh            render links (~/.agents/skills included), the read-only auth.json copy, CA bundle, JVM truststore, idle
 image/bash-env.sh              the missing-command hint and the JVM trust flags
 image/sandbox-image.ts         ensureSandboxImage under the build lock: pull or build, then the layer; build leftovers
 image/build.ts                 the base image build and pinned pull
@@ -211,12 +212,12 @@ hostpi/tools/git.ts            git user name and email
 ```
 provision/index.ts             public surface
 provision/types.ts             render and sync types
-provision/render.ts            the render dir and its tool files
-provision/tree.ts              filtered copy of host agent dir entries, with one notice for what was left out
+provision/render.ts            the render dir, its tool files and its host sources (agent dir entries and ~/.agents/skills)
+provision/tree.ts              filtered copy of host sources, following no link, with one notice for what was left out and one for skipped links
 provision/pool.ts              bounded parallel work
 provision/sync.ts              the agent files sync under sync.lock: write-back to the host, then settings.json and pi-*.json into the volume, and the baseline
 provision/write-back.ts        the write-back table compiled into value checks inside the ceiling, the allowlist hash of the baseline, the three-way merge per key and its lines (no I/O)
-provision/merge-settings.ts    the sandbox copy of the host settings: dropped keys, package sources and their notices
+provision/merge-settings.ts    the sandbox copy of the host settings: dropped keys, package sources, resource entries placed for the container, and their notices
 provision/package-source.ts    package sources and their URL credentials
 provision/host-packages.ts     npm and git package sources pinned to the versions the host installed, read from host files (unversioned, range and tag npm sources; git commits on the remote)
 provision/package-refresh.ts   the record of the last pins and the removal of outdated git checkouts from the volume, deferred while another session runs

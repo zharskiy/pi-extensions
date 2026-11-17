@@ -291,6 +291,35 @@ describe("image entrypoint", () => {
     await expect(lstat(join(agent, "models.json"))).rejects.toThrow();
   });
 
+  it("links the rendered ~/.agents/skills into the home and keeps it out of the agent dir", async () => {
+    const paths = await sandboxRoot();
+    const agentsSkills = join(paths.home, ".agents", "skills");
+
+    await mkdir(join(paths.render, "agents-skills", "deploy"), { recursive: true });
+
+    await mkdir(join(agentsSkills, "planted"), { recursive: true });
+
+    await runEntrypoint(paths);
+
+    expect(await readlink(agentsSkills)).toBe(join(paths.render, "agents-skills"));
+    await expect(lstat(join(paths.home, ".pi", "agent", "agents-skills"))).rejects.toThrow();
+  });
+
+  it("drops the ~/.agents/skills link once the render dir has none", async () => {
+    const paths = await sandboxRoot();
+    const agentsSkills = join(paths.home, ".agents", "skills");
+
+    await mkdir(join(paths.render, "agents-skills"));
+
+    await runEntrypoint(paths);
+
+    await rm(join(paths.render, "agents-skills"), { recursive: true });
+
+    await runEntrypoint(paths);
+
+    await expect(lstat(agentsSkills)).rejects.toThrow();
+  });
+
   it("links the rendered tool files into the home and keeps them out of the agent dir", async () => {
     const paths = await sandboxRoot();
 

@@ -481,10 +481,12 @@ const runChecks = async (deps: CliDeps, progress: Progress, checks: NamedCheck[]
 
   run.checks.push({ name: "vm shares", section: "sandbox", result: shares.result });
 
+  const skipsSandbox = shares.missing.length > 0;
+
   const signal = (await fitsHost(deps, context, run))
-    ? shares.missing.length === 0
-      ? await sandboxChecks(deps, context, backend, run)
-      : skipSandbox(run, shares.missing)
+    ? skipsSandbox
+      ? skipSandbox(run, shares.missing)
+      : await sandboxChecks(deps, context, backend, run)
     : undefined;
 
   run.progress.line("checking the host");
@@ -495,13 +497,13 @@ const runChecks = async (deps: CliDeps, progress: Progress, checks: NamedCheck[]
     result: tlsInspectionResult(await run.hostTls()),
   });
 
-  return signal;
+  return { signal, skipsSandbox };
 };
 
 const noticesOf = (deps: CliDeps, notices: string[]) =>
   [...new Set(notices)].filter((notice) => notice !== missingPiText(deps));
 
-export const doctorCommand = async (deps: CliDeps, args: string[]) => {
+export const runDoctor = async (deps: CliDeps, args: string[]) => {
   const checks: NamedCheck[] = [];
   const progress = progressLine(deps);
   const notices: string[] = [];
@@ -525,11 +527,11 @@ export const doctorCommand = async (deps: CliDeps, args: string[]) => {
   };
 
   try {
-    const signal = await runChecks(quiet, progress, checks);
+    const { signal, skipsSandbox } = await runChecks(quiet, progress, checks);
 
     report(false);
 
-    return signal ?? (verdictOf(checks) === "fail" ? 1 : 0);
+    return { code: signal ?? (verdictOf(checks) === "fail" ? 1 : 0), skipsSandbox };
   } catch (error) {
     progress.clear();
 
@@ -540,3 +542,5 @@ export const doctorCommand = async (deps: CliDeps, args: string[]) => {
     throw error;
   }
 };
+
+export const doctorCommand = async (deps: CliDeps, args: string[]) => (await runDoctor(deps, args)).code;
