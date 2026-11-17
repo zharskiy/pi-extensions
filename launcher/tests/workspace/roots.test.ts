@@ -188,6 +188,29 @@ describe("sharedRootsOf", () => {
     });
   });
 
+  it("names an inner root once, however it is spelled", async () => {
+    const { base, paths } = await createHome();
+    const inner = join(base, "work", "a");
+
+    expect(
+      sharedRootsOf({ roots: [join(base, "work"), inner, `${inner}/`, `${inner}/../a`] }, paths),
+    ).toEqual({
+      roots: [join(base, "work")],
+      missing: [],
+      nested: [`workspaceRoots: ${inner} is inside ${join(base, "work")} and is shared through it`],
+      notices: [],
+    });
+  });
+
+  it("names a missing root once, however it is spelled", async () => {
+    const { base, paths } = await createHome();
+    const missing = join(base, "gone");
+
+    expect(sharedRootsOf({ roots: [missing, `${missing}/`] }, paths).notices).toEqual([
+      `workspaceRoots: ${missing} does not exist, not shared`,
+    ]);
+  });
+
   it("says a root inside a missing root does not exist rather than that it is shared", async () => {
     const { base, paths } = await createHome();
     const outer = join(base, "gone");

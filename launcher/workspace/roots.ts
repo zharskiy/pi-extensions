@@ -158,7 +158,9 @@ const notShared = (root: string, reason: string) =>
   `workspaceRoots: ${printable(root)} ${reason}, not shared`;
 
 const rootNotices = (listed: RootEntry[], present: RootEntry[], shared: string[]) => {
-  const inner = listed.filter((entry) => !shared.includes(entry.resolved));
+  const inner = listed
+    .filter((entry) => !shared.includes(entry.resolved))
+    .filter((entry, index, all) => all.findIndex((other) => other.resolved === entry.resolved) === index);
   const outerOf = (entry: RootEntry) => {
     const share = shared.find((root) => isWithin(entry.resolved, root));
 
@@ -183,7 +185,7 @@ const rootNotices = (listed: RootEntry[], present: RootEntry[], shared: string[]
       : [];
   };
 
-  return { nested: [...new Set(inner.flatMap(nestedOf))], notices: [...new Set(inner.flatMap(noticesOf))] };
+  return { nested: inner.flatMap(nestedOf), notices: inner.flatMap(noticesOf) };
 };
 
 export const sharedRootsOf = (workspaceRoots: WorkspaceRoots, context: RootGuardContext): SharedRoots => {
