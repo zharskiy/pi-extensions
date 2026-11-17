@@ -58,7 +58,9 @@ const gitlinksOf = async (
     .sort();
 };
 
-const kindOf = (entry: Dirent): NestedGitEntry["kind"] => {
+type EntryKind = Pick<Dirent, "isFile" | "isSymbolicLink" | "isDirectory">;
+
+const kindOf = (entry: EntryKind): NestedGitEntry["kind"] => {
   if (entry.isDirectory()) {
     return "directory";
   }
@@ -74,7 +76,7 @@ const RUN_FILES = ["config", "config.worktree", "commondir"];
 
 const fileText = async (path: string) => (await readRegularText(path)) ?? "";
 
-const entryDigest = async (path: string, entry: Dirent) => {
+const entryDigest = async (path: string, entry: EntryKind) => {
   if (entry.isFile()) {
     return `file ${sha256Hex(await fileText(path))}`;
   }
@@ -103,16 +105,8 @@ const pathDigest = async (path: string): Promise<string> => {
     return MISSING;
   }
 
-  if (info.isFile()) {
-    return `file ${sha256Hex(await fileText(path))}`;
-  }
-
-  if (info.isSymbolicLink()) {
-    return `link ${await readlink(path).catch(() => "")}`;
-  }
-
   if (!info.isDirectory()) {
-    return "other";
+    return entryDigest(path, info);
   }
 
   const entries = await readdir(path, { withFileTypes: true }).catch((): Dirent[] => []);
