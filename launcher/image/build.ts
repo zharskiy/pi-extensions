@@ -92,7 +92,7 @@ export const recordedImage = async (stateDir: string, config: SandboxConfig) => 
   const { digest } = config.image;
   const current = digest === undefined ? base?.inputsHash !== PINNED : base?.digest === digest;
 
-  return base === undefined || !current ? undefined : { reference: imageReference(config), ...base };
+  return base === undefined || !current ? undefined : { ...base, reference: imageReference(config) };
 };
 
 const reusableBuild = (backend: Backend, base: BaseRecord | undefined, hash: string) =>

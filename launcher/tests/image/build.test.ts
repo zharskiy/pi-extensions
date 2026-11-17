@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { BASE_TAG, ensureBuiltImage, prepareBuildContext, pullPinnedImage } from "../../image/build.ts";
 import { recordedImage } from "../../image/index.ts";
-import { LauncherError } from "../../shared/index.ts";
+import { LauncherError, stateLayout } from "../../shared/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
 import { tempDir } from "../support/temp-dir.ts";
@@ -357,5 +357,23 @@ describe("recordedImage", () => {
 
     expect(await recordedImage(stateDir, pinnedConfig)).toMatchObject({ reference, digest: "sha256:pinned" });
     expect(await recordedImage(stateDir, config)).toBeUndefined();
+  });
+
+  it("names the configured image even when the stored record carries a reference", async () => {
+    const fake = createFakeBackend();
+    const stateDir = await tempDir("image");
+    const config = sandboxConfig();
+
+    await ensureBuiltImage({ backend: fake.backend, config, versions, stateDir });
+
+    const recordFile = stateLayout(stateDir).imageRecord;
+    const record = JSON.parse(await readFile(recordFile, "utf8"));
+
+    await writeFile(
+      recordFile,
+      JSON.stringify({ ...record, base: { ...record.base, reference: "evil.example/pi:1" } }),
+    );
+
+    expect((await recordedImage(stateDir, config))?.reference).toBe(BASE_TAG);
   });
 });
