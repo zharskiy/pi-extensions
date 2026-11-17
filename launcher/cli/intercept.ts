@@ -2,34 +2,23 @@ import { realpath } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadEffectiveConfig } from "../config/index.ts";
-import {
-  expandHome,
-  isWithin,
-  knownRepos,
-  PI_AGENT_DIR_VARIABLE,
-  repoRecordOf,
-  withMcpLoginDir,
-} from "../shared/index.ts";
+import { expandHome, isWithin, knownRepos, repoRecordOf } from "../shared/index.ts";
 import { assertSafeMounts, findGitRoot } from "../workspace/index.ts";
-import { type CliDeps, hostAgentDirOf, pathsOf, writeLine, writeNotices } from "./deps.ts";
-import { requireJobPi, resolveJobPi } from "./host-pi.ts";
+import { type CliDeps, pathsOf, writeLine, writeNotices } from "./deps.ts";
+import { hostPiEnv, requireJobPi, resolveJobPi, runHostJob } from "./host-pi.ts";
 import { type HostRoute, hostRoute, LOCAL_FLAGS } from "./host-routes.ts";
 import { imagePiVersion } from "./versions.ts";
 
 const runOnHost = async (
   deps: CliDeps,
   args: string[],
-  options: { cwd: string; env?: Record<string, string> },
+  where: "cwd" | "empty",
+  env?: Record<string, string>,
 ) => {
   const pi = await requireJobPi(deps);
 
-  return deps.runner.spawnInteractive(pi.wrapper, args, options);
+  return runHostJob(deps, [pi.wrapper, ...args], where, env);
 };
-
-const inEmptyDir = (deps: CliDeps, args: string[], options: { env?: Record<string, string> } = {}) =>
-  withMcpLoginDir(pathsOf(deps).stateDir, (cwd) => runOnHost(deps, args, { ...options, cwd }));
-
-const hostEnv = (deps: CliDeps) => ({ [PI_AGENT_DIR_VARIABLE]: hostAgentDirOf(deps) });
 
 const NPM_PREFIX = "npm:";
 
@@ -191,7 +180,7 @@ const packageCommand = async (deps: CliDeps, argv: string[], source: string) => 
 
   const args = argv.map((arg) => (arg === source && local !== undefined ? local.path : arg));
 
-  return inEmptyDir(deps, args);
+  return runOnHost(deps, args, "empty");
 };
 
 const MCP_HOST_ACTIONS = new Set(["add", "remove", "login", "logout"]);
@@ -205,13 +194,13 @@ const mcpCommand = (deps: CliDeps, args: string[]) => {
     return undefined;
   }
 
-  const env = hostEnv(deps);
+  const env = hostPiEnv(deps);
 
   if (MCP_PROJECT_ACTIONS.has(action)) {
-    return runOnHost(deps, ["mcp", ...args], { cwd: deps.cwd, env });
+    return runOnHost(deps, ["mcp", ...args], "cwd", env);
   }
 
-  return inEmptyDir(deps, ["mcp", ...args], { env });
+  return runOnHost(deps, ["mcp", ...args], "empty", env);
 };
 
 const packageSource = (args: string[]) => {
@@ -258,7 +247,7 @@ const noticeFollowedPi = async (deps: CliDeps) => {
 };
 
 const selfUpdate = async (deps: CliDeps) => {
-  const code = await inEmptyDir(deps, ["update"], { env: hostEnv(deps) });
+  const code = await runOnHost(deps, ["update"], "empty", hostPiEnv(deps));
 
   if (code === 0) {
     await noticeFollowedPi(deps);
@@ -292,7 +281,7 @@ const updateArgv = async (deps: CliDeps, argv: string[], args: string[]) => {
 };
 
 const hostUpdate = async (deps: CliDeps, argv: string[], args: string[]) => {
-  const code = await inEmptyDir(deps, await updateArgv(deps, argv, args), { env: hostEnv(deps) });
+  const code = await runOnHost(deps, await updateArgv(deps, argv, args), "empty", hostPiEnv(deps));
 
   if (code === 0 && updatesSelf(args)) {
     await noticeFollowedPi(deps);
@@ -321,9 +310,7 @@ const routedJob = (deps: CliDeps, route: HostRoute) => {
     return sandboxPiVersion(deps);
   }
 
-  return route.kind === "cwd"
-    ? runOnHost(deps, route.args, { cwd: deps.cwd, env: hostEnv(deps) })
-    : inEmptyDir(deps, route.args, { env: hostEnv(deps) });
+  return runOnHost(deps, route.args, route.kind === "cwd" ? "cwd" : "empty", hostPiEnv(deps));
 };
 
 export const intercept = (

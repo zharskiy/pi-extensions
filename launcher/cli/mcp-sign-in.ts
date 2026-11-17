@@ -4,17 +4,16 @@ import {
   isFreshMcpToken,
   mcpAuthKey,
   mcpLoginCommand,
-  PI_AGENT_DIR_VARIABLE,
   readMcpAuthEntry,
   readMcpLogins,
   stateLayout,
   updateMcpLogin,
   withFileLockIfFree,
-  withMcpLoginDir,
 } from "../shared/index.ts";
 import type { LaunchContext } from "./context.ts";
-import { type CliDeps, hostAgentDirOf, isTerminal, writeNotices } from "./deps.ts";
+import { type CliDeps, isTerminal, writeNotices } from "./deps.ts";
 import type { HostSide } from "./derive.ts";
+import { hostPiEnv, runHostJob } from "./host-pi.ts";
 import { writeOnce } from "./notices.ts";
 
 const FAILURE_QUIET_MS = 24 * 60 * 60_000;
@@ -34,20 +33,15 @@ const needsSignIn = async (host: HostSide, server: McpOAuthServer, now: number) 
   return entry?.refresh === undefined && !isFreshMcpToken(entry, now);
 };
 
-const runLogin = (deps: CliDeps, stateDir: string, pi: HostPi, server: McpOAuthServer) =>
-  withMcpLoginDir(stateDir, async (cwd) => {
-    const [file = "", ...args] = mcpLoginCommand(pi.command, server.name);
-    const keepAlive = listenFor(deps.signals ?? process, ["SIGINT"]);
+const runLogin = async (deps: CliDeps, pi: HostPi, server: McpOAuthServer) => {
+  const keepAlive = listenFor(deps.signals ?? process, ["SIGINT"]);
 
-    try {
-      return await deps.runner.spawnInteractive(file, args, {
-        cwd,
-        env: { [PI_AGENT_DIR_VARIABLE]: hostAgentDirOf(deps) },
-      });
-    } finally {
-      keepAlive.stop();
-    }
-  });
+  try {
+    return await runHostJob(deps, mcpLoginCommand(pi.command, server.name), "empty", hostPiEnv(deps));
+  } finally {
+    keepAlive.stop();
+  }
+};
 
 const signInOnce = async (deps: CliDeps, context: LaunchContext, host: HostSide, server: McpOAuthServer) => {
   const key = mcpAuthKey(server.name, server.url);
@@ -61,7 +55,7 @@ const signInOnce = async (deps: CliDeps, context: LaunchContext, host: HostSide,
 
   notice(deps, server.name, "signing in on the host; your browser opens");
 
-  const code = await runLogin(deps, context.stateDir, host.pi, server);
+  const code = await runLogin(deps, host.pi, server);
 
   await updateMcpLogin(context.stateDir, key, ({ failedAt: _failed, ...rest }) =>
     code === 0 ? rest : { ...rest, failedAt: deps.now() },

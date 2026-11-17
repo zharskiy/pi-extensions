@@ -1,10 +1,24 @@
 import { type HostPi, locateManagedPi } from "../hostpi/index.ts";
-import { LauncherError } from "../shared/index.ts";
+import { LauncherError, PI_AGENT_DIR_VARIABLE, withMcpLoginDir } from "../shared/index.ts";
 import type { LaunchContext } from "./context.ts";
-import { type CliDeps, hostAgentDirOf, writeNotices } from "./deps.ts";
+import { type CliDeps, hostAgentDirOf, pathsOf, writeNotices } from "./deps.ts";
 import { sweepForHostPi } from "./host-sessions.ts";
 
 export const NO_SANDBOX = "--no-sandbox";
+
+export const hostPiEnv = (deps: CliDeps) => ({ [PI_AGENT_DIR_VARIABLE]: hostAgentDirOf(deps) });
+
+export const runHostJob = (
+  deps: CliDeps,
+  [file = "", ...args]: string[],
+  where: "cwd" | "empty",
+  env?: Record<string, string>,
+) =>
+  where === "cwd"
+    ? deps.runner.spawnInteractive(file, args, { cwd: deps.cwd, env })
+    : withMcpLoginDir(pathsOf(deps).stateDir, (cwd) =>
+        deps.runner.spawnInteractive(file, args, { cwd, env }),
+      );
 
 export const resolveJobPi = (deps: CliDeps): Promise<HostPi | undefined> =>
   locateManagedPi(hostAgentDirOf(deps));
@@ -39,5 +53,5 @@ export const runHostPi = async (deps: CliDeps, context: LaunchContext, piArgs: s
 
   await sweepForHostPi(deps, context);
 
-  return deps.runner.spawnInteractive(pi.wrapper, piArgs, { cwd: deps.cwd });
+  return runHostJob(deps, [pi.wrapper, ...piArgs], "cwd");
 };
