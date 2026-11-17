@@ -34,7 +34,7 @@ import { legacyNotices } from "./legacy-paths.ts";
 import { signInMcpServers } from "./mcp-sign-in.ts";
 import { writeOnce } from "./notices.ts";
 import { openSandboxProxy, reportDenials, type SandboxProxy, sandboxDenials } from "./sandbox-proxy.ts";
-import { sweepOrphans } from "./sweep.ts";
+import { sweepFailed, sweepOrphans } from "./sweep.ts";
 import { imagePiVersion } from "./versions.ts";
 import { assertVmFitsHost, prepareVmShares, reconcileVm, startVm, trustVm } from "./vm.ts";
 
@@ -124,7 +124,10 @@ const prepareHost = async (
 ) => {
   const [prepared] = await settleAll([
     parts.deriving,
-    reachableEngine(backend).then((engine) => sweepOrphans(deps, engine)),
+    reachableEngine(backend).then(
+      (engine) => sweepOrphans(deps, engine),
+      (error: unknown) => sweepFailed(deps, error),
+    ),
   ]);
 
   writeNotices(deps, prepared.notices);

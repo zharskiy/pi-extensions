@@ -174,6 +174,32 @@ describe("work that runs side by side", () => {
   });
 });
 
+describe("the sweep at launch", () => {
+  it("turns an engine detection that throws into the sweep warning and launches", async () => {
+    const fake = createFakeBackend();
+    const detections: string[] = [];
+    const harness = await createHarness({
+      backend: () => ({
+        ...fake.backend,
+        detect: async () => {
+          detections.push("detect");
+
+          if (detections.length === 1) {
+            throw new Error("detection broke");
+          }
+
+          return fake.backend.detect();
+        },
+      }),
+    });
+
+    expect(await run([], harness.deps)).toBe(0);
+    expect(harness.stderr()).toContain(
+      "pi-sandbox: warning: the sweep of leftover sandboxes failed: detection broke\n",
+    );
+  });
+});
+
 describe("the VM shares", () => {
   it("creates the host session dir before the VM is asked to share it", async () => {
     const fake = createFakeBackend();

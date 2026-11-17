@@ -292,6 +292,12 @@ const sweepAll = async (deps: CliDeps, engine: Backend | undefined) => {
   return lines.flat();
 };
 
+export const sweepFailed = (deps: CliDeps, error: unknown): string[] => {
+  warn(deps, "the sweep of leftover sandboxes failed", error);
+
+  return [];
+};
+
 export const sweepOrphans = async (deps: CliDeps, engine: Backend | undefined): Promise<string[]> => {
   try {
     const swept = await sweepAll(deps, engine);
@@ -302,8 +308,6 @@ export const sweepOrphans = async (deps: CliDeps, engine: Backend | undefined): 
 
     return [...swept, ...collected];
   } catch (error) {
-    warn(deps, "the sweep of leftover sandboxes failed", error);
-
-    return [];
+    return sweepFailed(deps, error);
   }
 };
