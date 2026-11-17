@@ -12,7 +12,7 @@
 - `waiting.ts`: `flushMicrotasks`, `flushTimers`, `pause`, `waitUntil`.
 - `temp-dirs.ts`: `useTempDirs`; temporary directories removed after the suite.
 - `recorded-sessions.ts`: session `.jsonl` line builders (user, assistant tool call, tool result, custom).
-- `valid-handoff.ts`: `VALID_HANDOFF`, a handoff document that passes validation; `handoffDocument(sections)` and `HANDOFF_SECTIONS`, the complete section set, for tests that vary one section.
+- `valid-handoff.ts`: `VALID_HANDOFF`, a handoff document that passes validation; `handoffDocument(sections)` and `HANDOFF_SECTIONS`, the complete section set, frozen so no test can change it for the next, for tests that vary one section.
 - `live/seed-project.ts`: `seedProjectFromCommit`, `applyCommitDiff`, `replaceExactlyOnce`, `repoGit`.
 - `live/session-reading.ts`: `bashCommands`, `commandsLine`, `largestToolOutput`.
 - `live/cost.ts`: `totalCost`, `reportCost`.
@@ -46,3 +46,4 @@
 - `tests/eval-runs.test.ts`: the eval runner, thresholds, reports and results.
 - `tests/live-agent-dir.test.ts`: the temporary agent dir and its restore.
 - `tests/session-events.test.ts`: `pi/live/session-events.ts`.
+- `tests/valid-handoff.test.ts`: `HANDOFF_SECTIONS` stays frozen.
