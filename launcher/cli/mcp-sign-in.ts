@@ -1,3 +1,4 @@
+import { listenFor } from "../container/index.ts";
 import type { HostPi, McpOAuthServer } from "../hostpi/index.ts";
 import {
   isFreshMcpToken,
@@ -36,10 +37,7 @@ const needsSignIn = async (host: HostSide, server: McpOAuthServer, now: number) 
 const runLogin = (deps: CliDeps, stateDir: string, pi: HostPi, server: McpOAuthServer) =>
   withMcpLoginDir(stateDir, async (cwd) => {
     const [file = "", ...args] = mcpLoginCommand(pi.command, server.name);
-    const signals = deps.signals ?? process;
-    const keepAlive = () => undefined;
-
-    signals.on("SIGINT", keepAlive);
+    const keepAlive = listenFor(deps.signals ?? process, ["SIGINT"]);
 
     try {
       return await deps.runner.spawnInteractive(file, args, {
@@ -47,7 +45,7 @@ const runLogin = (deps: CliDeps, stateDir: string, pi: HostPi, server: McpOAuthS
         env: { [PI_AGENT_DIR_VARIABLE]: hostAgentDirOf(deps) },
       });
     } finally {
-      signals.off("SIGINT", keepAlive);
+      keepAlive.stop();
     }
   });
 

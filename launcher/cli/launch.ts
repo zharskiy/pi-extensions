@@ -1,4 +1,3 @@
-import { constants } from "node:os";
 import type { Backend } from "../backend/index.ts";
 import { writeBackTableOf } from "../config/index.ts";
 import {
@@ -6,8 +5,10 @@ import {
   forwardedEnv,
   type GitOverlay,
   type LauncherContainerSpec,
+  listenFor,
   planGitOverlay,
   runPi,
+  STOP_SIGNALS,
   startLaunchContainer,
 } from "../container/index.ts";
 import { type Launch, othersLive, withRepoLaunchLock } from "../grants/index.ts";
@@ -15,7 +16,7 @@ import { type HostPiFiles, readHostPiFiles } from "../hostpi/index.ts";
 import { ensureSandboxImage, type SandboxImage } from "../image/index.ts";
 import { renderAgentDir, syncVolumeFiles } from "../provision/index.ts";
 import { type DenialRecord, guestProxyUrl } from "../proxy/index.ts";
-import { errorMessage, settleAll, type WriteBackTable } from "../shared/index.ts";
+import { errorMessage, settleAll, signalExit, type WriteBackTable } from "../shared/index.ts";
 import { gitLaunchNotices, type HostSessions } from "../workspace/index.ts";
 import { checkWorkspaceRoots, type LaunchContext, openContext } from "./context.ts";
 import { type CliDeps, hostAgentDirOf, reachableEngine, writeNotices } from "./deps.ts";
@@ -89,10 +90,6 @@ interface PreparedInput extends SandboxInput {
 const PREPARING = "preparing pi sandbox, one time";
 
 const STOPPING = "stopping after the current step";
-
-const PREPARATION_SIGNALS: NodeJS.Signals[] = ["SIGINT", "SIGTERM", "SIGHUP"];
-
-const SIGNAL_EXIT_BASE = 128;
 
 const stagedWith =
   (report: StageReport): Staged =>
@@ -311,48 +308,22 @@ const prepareSandbox = async (input: PreparedInput) => {
 };
 
 const firstSignal = (deps: CliDeps) => {
-  const source = deps.signals ?? process;
-  const listeners = new Map<NodeJS.Signals, () => void>();
-  const stop = () => {
-    listeners.forEach((listener, name) => {
-      source.off(name, listener);
-    });
+  const watch = listenFor(deps.signals ?? process, STOP_SIGNALS, () => {
+    watch.stop();
 
-    listeners.clear();
-  };
-  const received = new Promise<NodeJS.Signals>((resolve) => {
-    PREPARATION_SIGNALS.forEach((name) => {
-      const listener = () => {
-        stop();
-
-        writeNotices(deps, [STOPPING]);
-
-        resolve(name);
-      };
-
-      listeners.set(name, listener);
-
-      source.on(name, listener);
-    });
+    writeNotices(deps, [STOPPING]);
   });
 
-  return { received, stop };
+  return watch;
 };
 
 const shielded = async <T>(deps: CliDeps, action: () => Promise<T>) => {
-  const source = deps.signals ?? process;
-  const ignore = () => undefined;
-
-  PREPARATION_SIGNALS.forEach((name) => {
-    source.on(name, ignore);
-  });
+  const watch = listenFor(deps.signals ?? process, STOP_SIGNALS);
 
   try {
     return await action();
   } finally {
-    PREPARATION_SIGNALS.forEach((name) => {
-      source.off(name, ignore);
-    });
+    watch.stop();
   }
 };
 
@@ -458,7 +429,7 @@ export const withSandbox = async (
 
       await preparation.catch(() => undefined);
 
-      return SIGNAL_EXIT_BASE + constants.signals[outcome.name];
+      return signalExit(outcome.name);
     }
 
     signal.stop();

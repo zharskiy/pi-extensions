@@ -28,14 +28,14 @@ const SIGNAL_EXIT_BASE = 128;
 
 const TIMEOUT_EXIT_CODE = 124;
 
+export const signalExit = (signal: NodeJS.Signals) => SIGNAL_EXIT_BASE + constants.signals[signal];
+
 const exitCode = (code: number | null, signal: NodeJS.Signals | null) => {
   if (code !== null) {
     return code;
   }
 
-  const number = signal === null ? undefined : constants.signals[signal];
-
-  return number === undefined ? 1 : SIGNAL_EXIT_BASE + number;
+  return signal === null || constants.signals[signal] === undefined ? 1 : signalExit(signal);
 };
 
 const launchError = (file: string, error: NodeJS.ErrnoException) =>

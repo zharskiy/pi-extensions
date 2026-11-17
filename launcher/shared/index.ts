@@ -1,6 +1,6 @@
 export { ensureRandomHexFile, readRandomHexFile, writeFileAtomic, writeNewFile } from "./atomic-write.ts";
 export type { CommandRunner, RunOptions, RunResult } from "./command-runner.ts";
-export { createProcessRunner, withResolvedCommand } from "./command-runner.ts";
+export { createProcessRunner, signalExit, withResolvedCommand } from "./command-runner.ts";
 export { errorMessage, LauncherError } from "./errors.ts";
 export { withDirectoryLock, withFileLock, withFileLockIfFree } from "./file-lock.ts";
 export { repoHash, sha256Hex, shortHash, stableHash } from "./hash.ts";
