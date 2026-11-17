@@ -7,9 +7,8 @@ const TEST = join(ROOT, "test");
 const FRAMEWORK = join(TEST, "framework");
 const EVALS = join(TEST, "evals");
 const EXTENSIONS = join(ROOT, "extensions");
-const LAYERS = ["pi-adapter", "shared", "ui-kit", "extension-manager"].map((name) =>
-  join(ROOT, "platform", name),
-);
+const PLATFORM = join(ROOT, "platform");
+const LAYERS = ["pi-adapter", "shared", "ui-kit", "extension-manager"].map((name) => join(PLATFORM, name));
 const LAUNCHER = join(ROOT, "launcher");
 const LAUNCHER_ENTRY_FOLDERS = ["bin"];
 const LAUNCHER_BUILD = "dist";
@@ -62,6 +61,7 @@ const EXTENSION_ENTRIES = [
   "STRUCTURE.md",
 ];
 const MAX_DEPTH = 3;
+const SOURCE_FILE = /\.(?:[cm]?[jt]s|[jt]sx)$/;
 
 const exists = (path: string) => {
   try {
@@ -88,14 +88,20 @@ const foldersIn = (dir: string): string[] =>
         .flatMap((path) => [path, ...foldersIn(path)])
     : [];
 
+const isSourceFile = (path: string) => SOURCE_FILE.test(path);
+
 const sourceFiles = (dir: string): string[] =>
   exists(dir)
     ? entriesOf(dir).flatMap((path) => {
+        if (path === join(LAUNCHER, LAUNCHER_BUILD)) {
+          return [];
+        }
+
         if (exists(path)) {
           return sourceFiles(path);
         }
 
-        return path.endsWith(".ts") ? [path] : [];
+        return isSourceFile(path) ? [path] : [];
       })
     : [];
 
@@ -157,20 +163,7 @@ const crossPluginImports = (extension: string) => {
     });
 };
 
-const launcherFiles = (dir: string): string[] =>
-  exists(dir)
-    ? entriesOf(dir).flatMap((path) => {
-        if (path === join(LAUNCHER, LAUNCHER_BUILD)) {
-          return [];
-        }
-
-        if (exists(path)) {
-          return launcherFiles(path);
-        }
-
-        return /\.(m?js|ts)$/.test(path) ? [path] : [];
-      })
-    : [];
+const launcherFiles = sourceFiles;
 
 const launcherFolderOf = (path: string) => relative(LAUNCHER, path).split(sep)[0] ?? "";
 
@@ -277,6 +270,22 @@ describe("architecture", () => {
     expect(offenders).toEqual([]);
   });
 
+  it("knows every platform folder as a layer", () => {
+    const folders = entriesOf(PLATFORM).filter(exists);
+
+    expect(
+      folders.filter((folder) => !LAYERS.includes(folder)).map((folder) => relative(ROOT, folder)),
+    ).toEqual([]);
+  });
+
+  it("reads every TypeScript and JavaScript source file and nothing else", () => {
+    const names = ["a.ts", "a.tsx", "a.mts", "a.cts", "a.js", "a.jsx", "a.mjs", "a.cjs", "a.d.ts"];
+    const others = ["a.json", "a.md", "a.tsbuildinfo", "a.ts.map", "a.sh", "a.mtsx"];
+
+    expect(names.filter((name) => !isSourceFile(name))).toEqual([]);
+    expect(others.filter(isSourceFile)).toEqual([]);
+  });
+
   it("has no src folder anywhere", () => {
     const offenders = CODE_ROOTS.flatMap(foldersIn)
       .filter((dir) => basename(dir) === "src")
@@ -370,6 +379,11 @@ describe("architecture", () => {
         text: 'const PI_PACKAGE = "@earendil-works/pi-coding-agent";',
       },
       { path: join(LAUNCHER, "cli", "late.ts"), text: 'await import("@earendil-works/pi-coding-agent");' },
+      {
+        path: join(EXTENSIONS, "style", "ui", "panel.tsx"),
+        text: 'import { Text } from "@earendil-works/pi-tui";',
+      },
+      { path: join(TEST, "tools", "load.cjs"), text: 'require("@earendil-works/pi-coding-agent");' },
       { path: join(EXTENSIONS, "style", "core", "a.ts"), text: 'import { Type } from "typebox";' },
       { path: join(FRAMEWORK, "fake-host.ts"), text: 'import type { X } from "@earendil-works/pi-tui";' },
       {
@@ -384,6 +398,8 @@ describe("architecture", () => {
       "launcher/proxy/helper.mjs",
       "launcher/hostpi/nested/deep.mjs",
       "launcher/cli/late.ts",
+      "extensions/style/ui/panel.tsx",
+      "test/tools/load.cjs",
       "extensions/style/core/a.ts",
       "test/framework/fake-host.ts",
     ]);
