@@ -5,6 +5,8 @@ home="${HOME:-/home/pi}"
 agent_dir="$home/.pi/agent"
 render_dir=/opt/pi-sandbox/render
 tools_dir="$render_dir/tools"
+agents_skills_render="$render_dir/agents-skills"
+agents_skills="$home/.agents/skills"
 bundle_dir=/tmp/pi-sandbox
 system_bundle=/etc/ssl/certs/ca-certificates.crt
 trust_bundle=/etc/pi-sandbox/ca.pem
@@ -29,7 +31,7 @@ find "$agent_dir" -mindepth 1 -maxdepth 1 -type l -lname "$render_dir/*" ! -exec
 for entry in "$render_dir"/* "$render_dir"/.[!.]* "$render_dir"/..?*; do
   name=${entry##*/}
 
-  if [ ! -e "$entry" ] || [ "$name" = tools ]; then
+  if [ ! -e "$entry" ] || [ "$name" = tools ] || [ "$name" = agents-skills ]; then
     continue
   fi
 
@@ -43,6 +45,14 @@ for entry in "$render_dir"/* "$render_dir"/.[!.]* "$render_dir"/..?*; do
   rm -rf "$link"
   ln -s "$entry" "$link"
 done
+
+if [ -d "$agents_skills_render" ]; then
+  mkdir -p "$(dirname "$agents_skills")"
+  rm -rf "$agents_skills"
+  ln -s "$agents_skills_render" "$agents_skills"
+elif [ -L "$agents_skills" ] && [ ! -e "$agents_skills" ]; then
+  rm -f "$agents_skills"
+fi
 
 link_tool() {
   if [ -f "$tools_dir/$1" ]; then

@@ -1,4 +1,4 @@
-import { chmod, lstat, readdir, readFile, rm, stat, symlink } from "node:fs/promises";
+import { chmod, lstat, mkdir, readdir, readFile, rm, stat, symlink } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { DerivedSandboxPi, DerivedTools } from "../../hostpi/index.ts";
@@ -90,6 +90,7 @@ describe("renderAgentDir", () => {
       stateDir,
       repoHash: "repo1",
       hostAgentDir: host,
+      hostHome: host,
       derived: derived(),
     });
 
@@ -123,7 +124,13 @@ describe("renderAgentDir", () => {
     const stateDir = await tempDir("render-state");
     const host = await hostAgentDir();
     const render = (key?: string) =>
-      renderAgentDir({ stateDir, repoHash: "repo1", hostAgentDir: host, derived: derived(key) });
+      renderAgentDir({
+        stateDir,
+        repoHash: "repo1",
+        hostAgentDir: host,
+        hostHome: host,
+        derived: derived(key),
+      });
     const first = await render();
     const auth = join(first.renderDir, "auth.json");
     const agents = join(first.renderDir, "AGENTS.md");
@@ -151,12 +158,19 @@ describe("renderAgentDir", () => {
       stateDir,
       repoHash: "repo1",
       hostAgentDir: host,
+      hostHome: host,
       derived: derived(),
     });
 
     await writeText(join(result.renderDir, "AGENTS.md"), "RULES\n");
 
-    await renderAgentDir({ stateDir, repoHash: "repo1", hostAgentDir: host, derived: derived() });
+    await renderAgentDir({
+      stateDir,
+      repoHash: "repo1",
+      hostAgentDir: host,
+      hostHome: host,
+      derived: derived(),
+    });
 
     expect(await readFile(join(result.renderDir, "AGENTS.md"), "utf8")).toBe("rules\n");
   });
@@ -165,7 +179,13 @@ describe("renderAgentDir", () => {
     const stateDir = await tempDir("render-state");
     const host = await hostAgentDir();
 
-    await renderAgentDir({ stateDir, repoHash: "repo1", hostAgentDir: host, derived: derived() });
+    await renderAgentDir({
+      stateDir,
+      repoHash: "repo1",
+      hostAgentDir: host,
+      hostHome: host,
+      derived: derived(),
+    });
 
     await rm(join(host, "skills"), { recursive: true });
 
@@ -175,6 +195,7 @@ describe("renderAgentDir", () => {
       stateDir,
       repoHash: "repo1",
       hostAgentDir: host,
+      hostHome: host,
       derived: derived(),
     });
     const tree = await listTree(result.renderDir);
@@ -189,6 +210,7 @@ describe("renderAgentDir", () => {
       stateDir,
       repoHash: "repo1",
       hostAgentDir: host,
+      hostHome: host,
       derived: derived(),
     });
 
@@ -208,6 +230,7 @@ describe("renderAgentDir", () => {
       stateDir,
       repoHash: "repo1",
       hostAgentDir: host,
+      hostHome: host,
       derived: derived(),
     });
     const settings = await readFile(join(result.renderDir, "tools", "m2-settings.xml"), "utf8");
@@ -228,6 +251,7 @@ describe("renderAgentDir", () => {
       stateDir,
       repoHash: "repo1",
       hostAgentDir: host,
+      hostHome: host,
       derived: derived(undefined, {
         gh: [{ host: "github.com", token: P }],
         glab: [{ host: "gitlab.corp.test", token: P, user: "me", apiHost: "api.gitlab.corp.test" }],
@@ -319,6 +343,7 @@ describe("renderAgentDir", () => {
       stateDir,
       repoHash: "repo1",
       hostAgentDir: host,
+      hostHome: host,
       derived: derived(),
     });
     const files = await listTree(result.renderDir);
@@ -354,6 +379,7 @@ describe("renderAgentDir fix round", () => {
       stateDir,
       repoHash: "r1",
       hostAgentDir: host,
+      hostHome: host,
       derived: derived(),
     });
     const tree = await listTree(renderDir);
@@ -373,13 +399,20 @@ describe("renderAgentDir fix round", () => {
       stateDir,
       repoHash: "r1",
       hostAgentDir: host,
+      hostHome: host,
       derived: derived(),
     });
     const leftover = join(renderDir, `auth.json.${process.pid}.abcd1234.tmp`);
 
     await writeText(leftover, "partial");
 
-    await renderAgentDir({ stateDir, repoHash: "r1", hostAgentDir: host, derived: derived() });
+    await renderAgentDir({
+      stateDir,
+      repoHash: "r1",
+      hostAgentDir: host,
+      hostHome: host,
+      derived: derived(),
+    });
 
     expect(await listTree(renderDir)).not.toContain(basename(leftover));
   });
@@ -392,6 +425,7 @@ describe("renderAgentDir fix round", () => {
         stateDir,
         repoHash: "r1",
         hostAgentDir: host,
+        hostHome: host,
         derived: derived(`pi-sandbox-${String(index).repeat(24)}`),
       }),
     );
@@ -405,7 +439,7 @@ describe("the legacy render dir", () => {
     const stateDir = await tempDir("render-legacy");
     const host = await hostAgentDir();
     const legacy = stateLayout(stateDir).repo("repo1").legacyRender;
-    const input = { stateDir, repoHash: "repo1", hostAgentDir: host, derived: derived() };
+    const input = { stateDir, repoHash: "repo1", hostAgentDir: host, hostHome: host, derived: derived() };
 
     await writeText(join(legacy, "AGENTS.md"), "old");
 
@@ -416,5 +450,153 @@ describe("the legacy render dir", () => {
     await renderAgentDir({ ...input, othersLive: async () => false });
 
     expect(await stat(legacy).catch(() => undefined)).toBeUndefined();
+  });
+});
+
+describe("the user skills of ~/.agents/skills", () => {
+  const render = async (host: string, hostHome: string) =>
+    renderAgentDir({
+      stateDir: await tempDir("render-state"),
+      repoHash: "repo1",
+      hostAgentDir: host,
+      hostHome,
+      derived: derived(),
+    });
+
+  it("renders them into their own render subdir with the agent dir filters", async () => {
+    const host = await tempDir("render-host");
+    const home = await tempDir("render-home");
+    const skills = join(home, ".agents", "skills");
+
+    await writeText(join(skills, "deploy", "SKILL.md"), "deploy\n");
+
+    await writeText(join(skills, "deploy", ".env"), "TOKEN=SECRET\n");
+
+    await writeText(join(skills, "deploy", "secrets", "prod.json"), "{}\n");
+
+    await writeText(join(skills, "deploy", "huge.bin"), Buffer.alloc(8 * 1024 * 1024 + 1));
+
+    const { renderDir, notices } = await render(host, home);
+    const tree = await listTree(renderDir);
+
+    expect(tree.filter((path) => path.startsWith("agents-skills"))).toEqual([
+      "agents-skills/",
+      "agents-skills/deploy/",
+      "agents-skills/deploy/SKILL.md",
+    ]);
+    expect(notices).toEqual([
+      "render: ~/.agents/skills/deploy/secrets looks like a secrets directory and stays out of the sandbox",
+      "render: left out of the sandbox: ~/.agents/skills/deploy/.env (secret-looking name), ~/.agents/skills/deploy/huge.bin (over 8 MiB)",
+    ]);
+  });
+
+  it("renders nothing for them when the host has no ~/.agents/skills", async () => {
+    const { renderDir, notices } = await render(await tempDir("render-host"), await tempDir("render-home"));
+
+    expect((await listTree(renderDir)).filter((path) => path.startsWith("agents-skills"))).toEqual([]);
+    expect(notices).toEqual([]);
+  });
+});
+
+describe("symlinks in the rendered host entries", () => {
+  const render = async (host: string, hostHome: string) =>
+    renderAgentDir({
+      stateDir: await tempDir("render-state"),
+      repoHash: "repo1",
+      hostAgentDir: host,
+      hostHome,
+      derived: derived(),
+    });
+
+  it("are left out and named in a notice that says why and what to do", async () => {
+    const host = await hostAgentDir();
+    const { renderDir, notices } = await render(host, await tempDir("render-home"));
+    const tree = await listTree(renderDir);
+
+    expect(tree.filter((path) => path.startsWith("prompts") || path === "agents/linked.md")).toEqual([]);
+    expect(notices).toContain(
+      "render: missing in the sandbox, because the launcher follows no symlinks: agents/linked.md, prompts; replace each link with a real directory or file to carry it",
+    );
+  });
+
+  it("stay unreported for a skill linked into ~/.agents/skills, which the sandbox carries on its own", async () => {
+    const host = await tempDir("render-host");
+    const home = await tempDir("render-home");
+    const skills = join(home, ".agents", "skills");
+
+    await writeText(join(skills, "deploy", "SKILL.md"), "deploy\n");
+
+    await writeText(join(home, "elsewhere", "review", "SKILL.md"), "review\n");
+
+    await writeText(join(host, "skills", "own", "SKILL.md"), "own\n");
+
+    await symlink(join(skills, "deploy"), join(host, "skills", "deploy"));
+
+    await symlink(join(home, "elsewhere", "review"), join(host, "skills", "review"));
+
+    const { renderDir, notices } = await render(host, home);
+    const tree = await listTree(renderDir);
+
+    expect(tree.filter((path) => path.endsWith("SKILL.md"))).toEqual([
+      "agents-skills/deploy/SKILL.md",
+      "skills/own/SKILL.md",
+    ]);
+    expect(notices).toEqual([
+      "render: missing in the sandbox, because the launcher follows no symlinks: skills/review; replace each link with a real directory or file to carry it",
+    ]);
+  });
+
+  it("are reported at any depth and for files, even when they point into ~/.agents/skills", async () => {
+    const host = await tempDir("render-host");
+    const home = await tempDir("render-home");
+    const skills = join(home, ".agents", "skills");
+
+    await writeText(join(skills, "_shared", "ref.md"), "ref\n");
+
+    await writeText(join(skills, "deploy", "SKILL.md"), "deploy\n");
+
+    await writeText(join(skills, "foo.md"), "foo\n");
+
+    await writeText(join(host, "skills", "own", "SKILL.md"), "own\n");
+
+    await symlink("../_shared", join(skills, "deploy", "shared"));
+
+    await symlink(join(skills, "_shared", "ref.md"), join(host, "skills", "own", "ref.md"));
+
+    await symlink(join(skills, "foo.md"), join(host, "skills", "foo.md"));
+
+    const { renderDir, notices } = await render(host, home);
+    const tree = await listTree(renderDir);
+
+    expect(tree.filter((path) => !path.endsWith("/") && /^(agents-)?skills\//.test(path))).toEqual([
+      "agents-skills/_shared/ref.md",
+      "agents-skills/deploy/SKILL.md",
+      "agents-skills/foo.md",
+      "skills/own/SKILL.md",
+    ]);
+    expect(notices).toEqual([
+      "render: missing in the sandbox, because the launcher follows no symlinks: skills/foo.md, skills/own/ref.md, ~/.agents/skills/deploy/shared; replace each link with a real directory or file to carry it",
+    ]);
+  });
+
+  it("name ~/.agents/skills itself when it is a link, and the skills linked into it", async () => {
+    const host = await tempDir("render-host");
+    const home = await tempDir("render-home");
+
+    await writeText(join(home, "dotfiles", "skills", "deploy", "SKILL.md"), "deploy\n");
+
+    await writeText(join(host, "skills", ".keep"), "\n");
+
+    await mkdir(join(home, ".agents"));
+
+    await symlink(join(home, "dotfiles", "skills"), join(home, ".agents", "skills"));
+
+    await symlink(join(home, ".agents", "skills", "deploy"), join(host, "skills", "deploy"));
+
+    const { notices } = await render(host, home);
+
+    expect(notices).toEqual([
+      "render: missing in the sandbox, because the launcher follows no symlinks: skills/deploy, ~/.agents/skills; replace each link with a real directory or file to carry it",
+    ]);
   });
 });
