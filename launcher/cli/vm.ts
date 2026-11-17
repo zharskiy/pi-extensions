@@ -1,5 +1,4 @@
 import { mkdir } from "node:fs/promises";
-import { join } from "node:path";
 import {
   type Backend,
   LABELS,
@@ -18,7 +17,7 @@ import {
   realOrResolvedSync,
   stateLayout,
 } from "../shared/index.ts";
-import { type HostSessions, mountedGitDirs, sharedRootsOf } from "../workspace/index.ts";
+import { type HostSessions, mountedGitDirs, sessionsRootOf, sharedRootsOf } from "../workspace/index.ts";
 import type { LaunchContext } from "./context.ts";
 import { type CliDeps, hostAgentDirOf, pathsOf, reachableEngine, writeNotices } from "./deps.ts";
 import { prepareSessionsDir } from "./host-sessions.ts";
@@ -84,7 +83,7 @@ export const assertVmFitsHost = (deps: CliDeps, target: VmTarget) => {
 };
 
 const vmDirsOf = (deps: CliDeps) => ({
-  sessions: join(hostAgentDirOf(deps), "sessions"),
+  sessions: sessionsRootOf(hostAgentDirOf(deps)),
   state: stateLayout(pathsOf(deps).stateDir).vm,
 });
 

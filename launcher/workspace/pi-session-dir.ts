@@ -18,8 +18,10 @@ export const sessionSlug = (path: string) =>
     .replace(/^[/\\]/, "")
     .replace(/[/\\:]/g, "-")}--`;
 
+export const sessionsRootOf = (agentDir: string) => join(resolve(agentDir), "sessions");
+
 export const hostSessionsDir = (agentDir: string, repoRoot: string) =>
-  join(resolve(agentDir), "sessions", sessionSlug(repoRoot));
+  join(sessionsRootOf(agentDir), sessionSlug(repoRoot));
 
 export const hostSessionsChoice = (input: HostSessionsInput): HostSessions => {
   if (!input.enabled) {

@@ -2,7 +2,7 @@ import { lstatSync, readdirSync, realpathSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { isWithin, LauncherError, realOrResolvedSync } from "../shared/index.ts";
 import { type Overlap, overlapOf, type Protected, protectedPaths } from "./mounts.ts";
-import { sessionSlug } from "./pi-session-dir.ts";
+import { hostSessionsDir, sessionSlug, sessionsRootOf } from "./pi-session-dir.ts";
 import type { Workspace } from "./types.ts";
 
 interface GuardContext {
@@ -90,10 +90,9 @@ const protectedPiPaths = (context: HostSessionsContext) => {
 };
 
 export const assertHostSessionsDir = (dir: string, context: HostSessionsContext) => {
-  const sessions = join(resolve(context.agentDir), "sessions");
   const slug = sessionSlug(context.repoRoot);
 
-  if (!SLUG.test(slug) || dir !== join(sessions, slug)) {
+  if (!SLUG.test(slug) || dir !== hostSessionsDir(context.agentDir, context.repoRoot)) {
     throw refuseSessions(dir, "is not pi's session directory of this repository");
   }
 
@@ -103,7 +102,7 @@ export const assertHostSessionsDir = (dir: string, context: HostSessionsContext)
     throw refuseSessions(dir, "is not a real directory");
   }
 
-  const realSessions = realSessionsDir(sessions);
+  const realSessions = realSessionsDir(sessionsRootOf(context.agentDir));
 
   const real = realOrResolvedSync(dir);
 
