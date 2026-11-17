@@ -10,6 +10,8 @@ export const sandboxConfig = ({ mounts, ...overrides }: ConfigOverrides = {}): S
   mounts: { sharedCaches: [], autoOverlays: true, ...mounts },
   env: { allow: ["TERM", "LANG"] },
   resources: {},
+  vm: {},
   sessions: { host: true },
+  writeBack: { enabled: true, exclude: {}, add: {} },
   ...overrides,
 });

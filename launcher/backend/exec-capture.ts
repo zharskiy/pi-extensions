@@ -10,7 +10,7 @@ interface ExecCaptureResult {
 
 const TIMED_OUT = Symbol("timed out");
 
-export class ExecTimeoutError extends LauncherError {}
+class ExecTimeoutError extends LauncherError {}
 
 const collector = () => {
   const chunks: Buffer[] = [];

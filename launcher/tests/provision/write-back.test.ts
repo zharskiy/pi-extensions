@@ -1,16 +1,20 @@
 import { describe, expect, it } from "vitest";
 import {
+  allowlistChanged,
+  allowlistHash,
   applyChanges,
   baselineRecord,
   changeLine,
-  EXTENSION_FILES,
+  copiedOf,
   mergeFile,
   parseBaseline,
   parseVolumeText,
-  SETTINGS_FILE,
-  SYNCED_FILES,
+  syncedFilesOf,
   syncedValues,
 } from "../../provision/write-back.ts";
+import { BUILT_IN_WRITE_BACK, type ValueSpec } from "../../shared/index.ts";
+
+const SYNCED_FILES = syncedFilesOf(BUILT_IN_WRITE_BACK);
 
 const fileNamed = (name: string) => {
   const found = SYNCED_FILES.find((file) => file.name === name);
@@ -21,6 +25,10 @@ const fileNamed = (name: string) => {
 
   return found;
 };
+
+const SETTINGS_FILE = fileNamed("settings.json");
+
+const EXTENSION_FILES = SYNCED_FILES.filter((file) => file.name !== "settings.json");
 
 const SUBAGENTS = fileNamed("pi-subagents.json");
 
@@ -42,6 +50,11 @@ describe("the write-back allowlist", () => {
       "sessionShareDestination",
       "httpProxy",
       "sessionDir",
+      "defaultTools",
+      "enableAnalytics",
+      "enableInstallTelemetry",
+      "trackingId",
+      "deviceId",
     ];
 
     expect(SETTINGS_FILE.keys.filter((key) => forbidden.includes(key))).toEqual([]);
@@ -126,7 +139,7 @@ describe("checking settings.json values from the sandbox", () => {
   const accepted = (key: string, value: unknown) => written(key, value).changes.length === 1;
 
   it("gives every allowlisted settings.json key a check", () => {
-    expect(Object.keys(SETTINGS_FILE.checks ?? {}).sort()).toEqual([...SETTINGS_FILE.keys].sort());
+    expect(Object.keys(SETTINGS_FILE.checks).sort()).toEqual([...SETTINGS_FILE.keys].sort());
   });
 
   it("drops a value of the wrong type with a notice", () => {
@@ -215,20 +228,54 @@ describe("parseVolumeText", () => {
 });
 
 describe("parseBaseline", () => {
+  const HASH = allowlistHash(BUILT_IN_WRITE_BACK);
+
   it("round-trips a record of every synced file, keeping allowlisted keys only", () => {
     const files = Object.fromEntries(SYNCED_FILES.map((file) => [file.name, {}]));
-    const recorded = baselineRecord({ ...files, "settings.json": { theme: "a", packages: [] } });
+    const recorded = baselineRecord({ ...files, "settings.json": { theme: "a", packages: [] } }, HASH, []);
 
-    expect(parseBaseline(JSON.parse(JSON.stringify(recorded)))).toEqual({
+    expect(parseBaseline(JSON.parse(JSON.stringify(recorded)), SYNCED_FILES, HASH)).toEqual({
       ...files,
       "settings.json": { theme: "a" },
     });
   });
 
   it("treats a missing, malformed or partial baseline as none", () => {
-    expect(parseBaseline(undefined)).toBeUndefined();
-    expect(parseBaseline({ files: [] })).toBeUndefined();
-    expect(parseBaseline({ files: { "settings.json": {} } })).toBeUndefined();
+    expect(parseBaseline(undefined, SYNCED_FILES, HASH)).toBeUndefined();
+    expect(parseBaseline({ allowlist: HASH, files: [] }, SYNCED_FILES, HASH)).toBeUndefined();
+    expect(
+      parseBaseline({ allowlist: HASH, files: { "settings.json": {} } }, SYNCED_FILES, HASH),
+    ).toBeUndefined();
+  });
+
+  it("treats a baseline recorded under another allowlist, or under none, as none", () => {
+    const files = Object.fromEntries(SYNCED_FILES.map((file) => [file.name, {}]));
+    const changed = allowlistHash({ ...BUILT_IN_WRITE_BACK, "pi-extra.json": { mode: { type: "json" } } });
+
+    expect(changed).not.toBe(HASH);
+    expect(parseBaseline({ files }, SYNCED_FILES, HASH)).toBeUndefined();
+    expect(parseBaseline(baselineRecord(files, changed, []), SYNCED_FILES, HASH)).toBeUndefined();
+    expect(parseBaseline(baselineRecord(files, HASH, []), SYNCED_FILES, HASH)).toEqual(files);
+  });
+
+  it("tells a baseline of another allowlist from a missing or older one", () => {
+    expect(allowlistChanged({ allowlist: "other", files: {} }, HASH)).toBe(true);
+    expect(allowlistChanged({ allowlist: HASH, files: {} }, HASH)).toBe(false);
+    expect(allowlistChanged({ files: {} }, HASH)).toBe(false);
+    expect(allowlistChanged(undefined, HASH)).toBe(false);
+  });
+
+  it("reads the files the last sync copied, and none from a record without that list", () => {
+    expect(copiedOf(baselineRecord({}, HASH, ["pi-footer.json", "pi-style.json"]))).toEqual([
+      "pi-footer.json",
+      "pi-style.json",
+    ]);
+    expect(copiedOf({ copied: ["settings.json", "auth.json", "../x", 1, "pi-a.json"] })).toEqual([
+      "pi-a.json",
+    ]);
+    expect(copiedOf({ allowlist: HASH, files: {} })).toEqual([]);
+    expect(copiedOf({ copied: "pi-a.json" })).toEqual([]);
+    expect(copiedOf(undefined)).toEqual([]);
   });
 });
 
@@ -247,7 +294,7 @@ describe("changeLine", () => {
 
     expect(line).toBe(`pi-subagents.json agents: {} → {"long":"${"y".repeat(50)}… written to the host`);
     expect(changeLine(SETTINGS_FILE, { key: "theme", from: "a", to: "\u001b[2Jx\u009b" })).toBe(
-      "settings.json theme: a → ?[2Jx? written to the host",
+      "settings.json theme: a → \\u001B[2Jx\\u009B written to the host",
     );
   });
 
@@ -255,7 +302,77 @@ describe("changeLine", () => {
     const planted = "a\u202ab\u202ec\u2066d\u2069e\u2028f\u2029g";
 
     expect(changeLine(SUBAGENTS, { key: "agents", from: undefined, to: planted })).toBe(
-      "pi-subagents.json agents: (unset) → a?b?c?d?e?f?g written to the host",
+      "pi-subagents.json agents: (unset) → a\\u202Ab\\u202Ec\\u2066d\\u2069e\\u2028f\\u2029g written to the host",
     );
+  });
+});
+
+describe("compiling write-back value specs into checks", () => {
+  const acceptedBy = (spec: ValueSpec, value: unknown) => {
+    const [file] = syncedFilesOf({ "pi-extra.json": { key: spec } });
+
+    return file?.checks.key?.(value) === true;
+  };
+
+  it.each<[ValueSpec, unknown[], unknown[]]>([
+    [{ type: "string" }, ["", "x".repeat(512)], [1, "x".repeat(513)]],
+    [{ type: "string", maxLength: 3 }, ["abc"], ["abcd"]],
+    [{ type: "string", maxLength: 9999 }, ["x".repeat(512)], ["x".repeat(513)]],
+    [{ type: "boolean" }, [true, false], ["true", 0]],
+    [{ type: "integer", min: 0, max: 8 }, [0, 8], [-1, 9, 1.5, "1"]],
+    [{ type: "number", min: 0.5 }, [0.5, 99.9], [0.4, Number.NaN, "1"]],
+    [{ type: "enum", values: ["a", 2, false] }, ["a", 2, false], ["b", 3, true, null]],
+    [{ type: "stringList", maxItems: 2 }, [[], ["a", "b"]], [["a", "b", "c"], [1], "a"]],
+    [{ type: "fileName" }, ["dark-1.x", "..."], [".", "..", "a/b", ""]],
+    [
+      { type: "anyOf", of: [{ type: "boolean" }, { type: "enum", values: ["header"] }] },
+      [true, "header"],
+      ["loud"],
+    ],
+    [{ type: "json" }, [null, { a: [1] }, "x".repeat(600)], []],
+  ])("checks %j", (spec, good, bad) => {
+    expect(good.map((value) => acceptedBy(spec, value))).toEqual(good.map(() => true));
+    expect(bad.map((value) => acceptedBy(spec, value))).toEqual(bad.map(() => false));
+  });
+
+  it("refuses every value of a spec type it does not know", () => {
+    const spec = { type: "regex" } as unknown as ValueSpec;
+
+    expect([null, "a", 1, true].map((value) => acceptedBy(spec, value))).toEqual([
+      false,
+      false,
+      false,
+      false,
+    ]);
+  });
+
+  it("drops a loosened theme check, even when handed past the config check", () => {
+    expect(
+      syncedFilesOf({ "settings.json": { theme: { type: "string" } } }).map((file) => file.keys),
+    ).toEqual([[]]);
+  });
+
+  it("drops whatever passes the ceiling, even when handed past the config check", () => {
+    const files = syncedFilesOf({
+      "settings.json": {
+        theme: { type: "fileName" },
+        packages: { type: "stringList" },
+        layout: { type: "json" },
+      },
+      "auth.json": { token: { type: "json" } },
+      "../pi-x.json": { a: { type: "json" } },
+      "pi-subagents.json": { disabledPlugins: { type: "json" }, maxDepth: { type: "json" } },
+    });
+
+    expect(files.map((file) => [file.name, file.keys])).toEqual([
+      ["settings.json", ["theme"]],
+      ["pi-subagents.json", ["maxDepth"]],
+    ]);
+  });
+
+  it("gives an added pi-*.json the 64 KiB limit and settings.json 1 MiB", () => {
+    expect(syncedFilesOf({ "pi-extra.json": {}, "settings.json": {} }).map((file) => file.maxBytes)).toEqual([
+      65_536, 1_048_576,
+    ]);
   });
 });

@@ -1,19 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { defaultConfig } from "../../config/defaults.ts";
 import { loadEffectiveConfig } from "../../config/index.ts";
-import { validateConfig } from "../../config/validate.ts";
-import { errorMessage } from "../../shared/index.ts";
+import { configProblem, validateConfig } from "../../config/validate.ts";
 import { createConfigFile } from "./fixtures.ts";
 
-const problemOf = (sharedCaches: unknown) => {
-  try {
-    validateConfig({ mounts: { sharedCaches } });
-
-    return undefined;
-  } catch (error) {
-    return errorMessage(error);
-  }
-};
+const problemOf = (sharedCaches: unknown) => configProblem({ mounts: { sharedCaches } });
 
 const loadWith = async (config?: unknown) => {
   const file = await createConfigFile();

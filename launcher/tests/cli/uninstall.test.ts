@@ -2,7 +2,6 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { once } from "node:events";
 import {
   chmod,
-  lstat,
   mkdir,
   mkdtemp,
   readFile,
@@ -25,7 +24,7 @@ import {
   sha256Hex,
   stateLayout,
 } from "../../shared/index.ts";
-import { tempDir } from "../support/temp-dir.ts";
+import { exists, tempDir } from "../support/temp-dir.ts";
 import { createFakeBackend, createHarness, holdLaunch, unreachable } from "./harness.ts";
 
 const created: string[] = [];
@@ -41,12 +40,6 @@ afterEach(async () => {
 });
 
 const UNINSTALL_TIMEOUT_MS = 30_000;
-
-const exists = (path: string) =>
-  lstat(path).then(
-    () => true,
-    () => false,
-  );
 
 const FAKE_COLIMA = [
   'echo "$COLIMA_HOME $*" >> "$HOME/colima.log"',
@@ -297,7 +290,7 @@ describe("uninstall.sh", { timeout: UNINSTALL_TIMEOUT_MS }, () => {
     await writeFile(join(copy, "uninstall.sh"), await readFile(join(launcherRoot(), "uninstall.sh"), "utf8"));
 
     await Promise.all(
-      ["path-block.sh", "paths.sh"].map(async (name) =>
+      ["path-block.sh", "paths.sh", "shim.sh"].map(async (name) =>
         writeFile(join(copy, "bin", name), await readFile(join(launcherRoot(), "bin", name), "utf8")),
       ),
     );

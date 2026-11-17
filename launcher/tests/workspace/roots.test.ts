@@ -2,7 +2,13 @@ import { realpathSync } from "node:fs";
 import { mkdir, realpath, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { assertWithinWorkspaceRoots, sharedRootsOf, type Workspace } from "../../workspace/index.ts";
+import {
+  assertWithinWorkspaceRoots,
+  checkRoot,
+  rootRefusal,
+  sharedRootsOf,
+  type Workspace,
+} from "../../workspace/index.ts";
 import { tempDir } from "../support/temp-dir.ts";
 
 const createTree = async () => {
@@ -22,9 +28,11 @@ const workspaceAt = (repoRoot: string, gitCommonDir?: string): Workspace => ({
   isGitRepo: gitCommonDir !== undefined,
 });
 
+const NO_HOME = "/nonexistent-home";
+
 describe("assertWithinWorkspaceRoots", () => {
   it("allows everything when no roots are configured", () => {
-    expect(() => assertWithinWorkspaceRoots(workspaceAt("/"), undefined)).not.toThrow();
+    expect(() => assertWithinWorkspaceRoots(workspaceAt("/"), undefined, NO_HOME)).not.toThrow();
   });
 
   it("accepts a repository inside a root, comparing real paths", async () => {
@@ -32,9 +40,11 @@ describe("assertWithinWorkspaceRoots", () => {
     const repo = join(base, "work", "repo");
 
     expect(() =>
-      assertWithinWorkspaceRoots(workspaceAt(repo, join(repo, ".git")), {
-        roots: [join(unresolved, "work")],
-      }),
+      assertWithinWorkspaceRoots(
+        workspaceAt(repo, join(repo, ".git")),
+        { roots: [join(unresolved, "work")] },
+        NO_HOME,
+      ),
     ).not.toThrow();
   });
 
@@ -42,18 +52,20 @@ describe("assertWithinWorkspaceRoots", () => {
     const { base } = await createTree();
     const outside = join(base, "elsewhere");
 
-    expect(() => assertWithinWorkspaceRoots(workspaceAt(outside), { roots: [join(base, "work")] })).toThrow(
-      `${outside} is outside the allowed workspace roots`,
-    );
+    expect(() =>
+      assertWithinWorkspaceRoots(workspaceAt(outside), { roots: [join(base, "work")] }, NO_HOME),
+    ).toThrow(`${outside} is outside the allowed workspace roots`);
   });
 
   it("refuses a linked worktree whose common dir is outside the roots", async () => {
     const { base } = await createTree();
 
     expect(() =>
-      assertWithinWorkspaceRoots(workspaceAt(join(base, "work", "repo"), join(base, "elsewhere", ".git")), {
-        roots: [join(base, "work")],
-      }),
+      assertWithinWorkspaceRoots(
+        workspaceAt(join(base, "work", "repo"), join(base, "elsewhere", ".git")),
+        { roots: [join(base, "work")] },
+        NO_HOME,
+      ),
     ).toThrow("elsewhere");
   });
 
@@ -67,9 +79,16 @@ describe("assertWithinWorkspaceRoots", () => {
       nested: [nested],
     };
 
-    expect(() => assertWithinWorkspaceRoots(workspace, { roots: [join(base, "work")] })).toThrow(
+    expect(() => assertWithinWorkspaceRoots(workspace, { roots: [join(base, "work")] }, NO_HOME)).toThrow(
       `${join(base, "elsewhere", ".git")} is outside the allowed workspace roots (workspaceRoots.roots: ${join(base, "work")})`,
     );
+  });
+
+  it("expands a ~ root against the given home, as the VM shares do", async () => {
+    const { base } = await createTree();
+    const repo = join(base, "work", "repo");
+
+    expect(() => assertWithinWorkspaceRoots(workspaceAt(repo), { roots: ["~/work"] }, base)).not.toThrow();
   });
 
   it("does not treat a sibling with the same prefix as inside", async () => {
@@ -78,9 +97,9 @@ describe("assertWithinWorkspaceRoots", () => {
 
     await mkdir(sibling);
 
-    expect(() => assertWithinWorkspaceRoots(workspaceAt(sibling), { roots: [join(base, "work")] })).toThrow(
-      `${sibling} is outside the allowed workspace roots`,
-    );
+    expect(() =>
+      assertWithinWorkspaceRoots(workspaceAt(sibling), { roots: [join(base, "work")] }, NO_HOME),
+    ).toThrow(`${sibling} is outside the allowed workspace roots`);
   });
 });
 
@@ -130,6 +149,21 @@ describe("sharedRootsOf", () => {
     });
   });
 
+  it("escapes control and bidi characters of a stored root it echoes", async () => {
+    const { base, paths } = await createHome();
+    const planted = join(base, "gone\u202e\u200f");
+
+    expect(sharedRootsOf({ roots: [planted] }, paths).notices).toEqual([
+      `workspaceRoots: ${join(base, "gone\\u202E\\u200F")} does not exist, not shared`,
+    ]);
+    expect(() =>
+      assertWithinWorkspaceRoots(workspaceAt(join(base, "other")), { roots: [planted] }, NO_HOME),
+    ).toThrow(`(workspaceRoots.roots: ${join(base, "gone\\u202E\\u200F")})`);
+    expect(() => sharedRootsOf({ roots: ["~/a:b\u202e"] }, paths)).toThrow(
+      'config: workspaceRoots.roots: ~/a:b\\u202E holds ","',
+    );
+  });
+
   it("accepts a root next to the protected home paths", async () => {
     const { paths } = await createHome();
 
@@ -157,7 +191,11 @@ describe("sharedRootsOf", () => {
 
     expect(sharedRootsOf({ roots: [join(base, "work"), data] }, paths).roots).toEqual([join(base, "work")]);
     expect(() =>
-      assertWithinWorkspaceRoots(workspaceAt(join(base, "other")), { roots: [join(base, "work"), data] }),
+      assertWithinWorkspaceRoots(
+        workspaceAt(join(base, "other")),
+        { roots: [join(base, "work"), data] },
+        NO_HOME,
+      ),
     ).toThrow(`${join(base, "other")} is outside the allowed workspace roots`);
   });
 
@@ -227,6 +265,58 @@ describe("sharedRootsOf", () => {
 
     expect(() => sharedRootsOf({ roots: [root] }, paths)).toThrow(
       `config: workspaceRoots.roots: ${root} ${problem}`,
+    );
+  });
+});
+
+describe("checkRoot", () => {
+  const contextOf = async () => {
+    const home = await realpath(await tempDir("check-root-home"));
+
+    await mkdir(join(home, "work"), { recursive: true });
+
+    await mkdir(join(home, ".ssh", "keys"), { recursive: true });
+
+    return { home, env: { PI_CODING_AGENT_DIR: join(home, "tools", "agent") } };
+  };
+
+  it("accepts a folder under the home, resolved, and says whether it exists", async () => {
+    const context = await contextOf();
+
+    expect(checkRoot("~/work", context)).toEqual({
+      ok: true,
+      resolved: join(context.home, "work"),
+      exists: true,
+    });
+    expect(checkRoot("~/later", context)).toEqual({
+      ok: true,
+      resolved: join(context.home, "later"),
+      exists: false,
+    });
+  });
+
+  it("names each kind of refusal", async () => {
+    const context = await contextOf();
+
+    expect(checkRoot("~/a\u0007b", context)).toEqual({ ok: false, problem: { kind: "control" } });
+    expect(checkRoot("~/a,b", context)).toEqual({ ok: false, problem: { kind: "mount-syntax" } });
+    expect(checkRoot("~", context)).toEqual({ ok: false, problem: { kind: "home" } });
+    expect(checkRoot("/", context)).toEqual({ ok: false, problem: { kind: "home" } });
+    expect(checkRoot("~/.ssh/keys", context)).toMatchObject({ ok: false, problem: { kind: "inside" } });
+    expect(checkRoot("/etc/x", context)).toEqual({
+      ok: false,
+      problem: { kind: "inside", name: "/etc", path: "/etc" },
+    });
+    expect(checkRoot("~/tools", context)).toMatchObject({ ok: false, problem: { kind: "holds" } });
+  });
+
+  it("gives the launch's own refusal text for a problem", async () => {
+    const context = await contextOf();
+    const verdict = checkRoot("~/.ssh/keys", context);
+
+    expect(verdict.ok).toBe(false);
+    expect(() => sharedRootsOf({ roots: ["~/.ssh/keys"] }, context)).toThrow(
+      verdict.ok ? "" : rootRefusal("~/.ssh/keys", verdict.problem),
     );
   });
 });

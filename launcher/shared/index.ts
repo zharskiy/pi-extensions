@@ -9,9 +9,11 @@ export { iniWords, parseIni } from "./ini.ts";
 export type { JsonObject } from "./json-file.ts";
 export {
   isJsonObject,
+  jsonText,
   parseJsonObject,
   readJsonFile,
   readJsonObject,
+  readText,
   writeJsonFile,
 } from "./json-file.ts";
 export { bootTime, isLive, processMark, terminateProcess } from "./liveness.ts";
@@ -38,6 +40,7 @@ export {
   launcherEntry,
   launcherPaths,
   launcherRoot,
+  outermostPaths,
   PI_AGENT_DIR_VARIABLE,
   realOrResolved,
   realOrResolvedSync,
@@ -66,5 +69,18 @@ export {
 export { hasUrlUserinfo, isAuthLikeHeader, isSecretName, isSecretShapedValue } from "./secret-name.ts";
 export { settleAll } from "./settle.ts";
 export { ensureSalt, GUEST_PATHS, stateLayout } from "./state-layout.ts";
+export { isControlChar, lastLine, printable } from "./terminal-text.ts";
 export type { ToolConfigFormat, ToolConfigSelect } from "./tool-config.ts";
 export { isToolConfigKey, TOOL_CONFIG_FORMATS, toolConfigValue, urlPartOf } from "./tool-config.ts";
+export type { FileKeys, ValueSpec, ValueType, WriteBackTable } from "./write-back-table.ts";
+export {
+  BUILT_IN_EXTENSION_FILES,
+  BUILT_IN_WRITE_BACK,
+  HOST_ONLY_SETTINGS,
+  isNeverWritten,
+  MAX_WRITE_BACK_CHARS,
+  SETTINGS_FILE_NAME,
+  valueSpecProblem,
+  withinCeiling,
+  writeBackFileProblem,
+} from "./write-back-table.ts";

@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import { expandHome } from "../../shared/index.ts";
-import type { VmShare } from "../types.ts";
+import type { VmShare, VmSize } from "../types.ts";
 
 type MountEntry = Record<string, string>;
 
@@ -107,4 +107,22 @@ export const movedMountsOf = (text: string, home: string) => {
   return entries === undefined || entries === "flow"
     ? []
     : entries.filter((entry) => isMoved(entry, home)).map((entry) => entry.location ?? "");
+};
+
+const sizeValue = (text: string, key: string) => {
+  const match = new RegExp(`^${key}:\\s*(\\d+(?:\\.\\d+)?)\\s*(?:#.*)?$`, "m").exec(text);
+
+  return match === null ? undefined : Number(match[1]);
+};
+
+export const vmSizeOfYaml = (text: string): VmSize | undefined => {
+  const cpus = sizeValue(text, "cpu");
+  const memoryGiB = sizeValue(text, "memory");
+  const diskGiB = sizeValue(text, "disk");
+
+  if (cpus === undefined || memoryGiB === undefined) {
+    return undefined;
+  }
+
+  return diskGiB === undefined ? { cpus, memoryGiB } : { cpus, memoryGiB, diskGiB };
 };

@@ -43,28 +43,63 @@ npm install -g --omit=peer pi-extensions-mz
 
 Without the managed install, `install.sh` stops before it changes anything and says to install pi this way and run it again.
 
-The script starts a Colima profile named `pi-sandbox` and puts `~/.local/bin` first on `PATH` in your shell startup files. Open a new terminal afterwards.
+The script puts `~/.local/bin` first on `PATH` in your shell startup files, then runs `pi sandbox init`, which asks which folders hold your projects, shows the VM size it picked for this Mac, and creates the VM when you choose Apply. Open a new terminal afterwards.
 
-In a terminal, Homebrew, npm, Colima and the smoke `pi sandbox doctor` print as if you ran them yourself, and each step starts after a blank line and a rule. Piped or redirected, their output is indented under plain `[n/7]` lines.
+In a terminal, Homebrew, npm, `pi sandbox init` and the smoke `pi sandbox doctor` print as if you ran them yourself, and each step starts after a blank line and a rule. Piped or redirected, their output is indented under plain `[n/6]` lines.
 
 If `~/.local/bin/pi` is pi's own managed install, the script replaces that link. An earlier pi-sandbox link or wrapper is replaced too. Any other file there stops the install.
 
-The VM gets this Mac's CPU count, from 2 to 8, and half its memory, from 4 to 10 GiB, with a 60 GiB disk. To change that, pass `--cpu N`, `--memory GiB` or `--disk GiB` to `install.sh`. To resize the VM later, while no pi runs:
+To change the folders or the VM size later, run `pi sandbox init` again.
 
-```bash
-colima stop --profile pi-sandbox && colima start --profile pi-sandbox --activate=false --cpu 4 --memory 8
+### Set up the sandbox
+
+`pi sandbox init` sets up the sandbox in three short steps, then shows a review: the project folders, the VM size and the settings write-back. Nothing is saved until you choose Apply. A first run looks like this (in plain mode; a normal terminal draws the same as a menu you move through with the arrow keys):
+
+```
+pi sandbox setup
+This Mac: 12 CPUs, 32 GiB memory, 412 GiB free disk
+Sandbox VM: not created yet
+Nothing is saved until you choose Apply.
+
+Which folders hold your projects?   step 1 of 3
+  1) [x] ~/Projects (14 git repositories)
+  2) [x] ~/work (3 git repositories, you are here)
+  3) [ ] ~/src (no git repository found)
+Folders [1 2]:
+
+VM size   step 2 of 3
+  1) Automatic (8 CPUs, 10 GiB memory, 60 GiB disk)
+  2) Custom...
+Choose [1]:
+
+Copy settings changed in the sandbox back to your pi?   step 3 of 3 (Y/n):
+
+Review
+  Project folders: ~/Projects, ~/work (chosen)
+  VM size: 8 CPUs, 10 GiB memory, 60 GiB disk (automatic)
+  Settings write-back: on (default)
+  1) Apply
+  ...
+Saved ~/.pi/agent/pi-sandbox/config.json
+Created the VM in 54s: 8 CPUs, 10 GiB memory, 60 GiB disk
+Done. The sandbox is ready.
 ```
 
-### Limit what the VM can see
+- **Project folders.** The list holds the usual project folders of your home (`~/Projects`, `~/Developer`, `~/code` and the like) and the top folder of where you are, with the number of git repositories in each; those with repositories start checked, and you can add any other folder. Pi starts only inside a chosen folder, and the VM shares only these folders (writable), pi's session folder `~/.pi/agent/sessions` (writable) and the launcher's `state/vm` folder (read-only, the rendered files and the trust bundle). With no folder chosen, the VM shares your whole home, writable, so a container escape reaches all of `~`; setup asks before it allows that.
+- **VM size.** Automatic follows this Mac: its CPU count from 2 to 8, half its memory from 4 to 10 GiB, and a 60 GiB disk. Custom asks for each value; the disk can only grow.
+- **Settings write-back.** On by default: preference changes made inside the sandbox are copied to your pi on this Mac (see [Settings written back](CONFIGURATION.md#settings-written-back)).
 
-Without roots, the VM shares your whole home, writable, so a container escape reaches all of `~`. Name your project folders at install instead:
+Run again, `pi sandbox init` opens the review with your current settings; a config without `workspaceRoots` (you chose to share your whole home, or wrote the file by hand) asks the three steps again first. It writes only `workspaceRoots`, `vm.cpus`, `vm.memoryGiB`, `vm.diskGiB` and `writeBack.enabled` in `~/.pi/agent/pi-sandbox/config.json`, and keeps every other key, their order, the line endings and a symlinked file's link; the file is re-indented to its own first indent, and a key written twice keeps its last value. The review shows the re-indent before you apply. Apply creates the VM, or restarts it with the new size or folders when no pi session runs; while sessions run, it keeps the VM as it is and the first pi you start after they all exit restarts it. Before Apply, ctrl-c or Cancel writes nothing and exits with status 130. During the VM step after Apply the config is already saved: ctrl-c twice stops waiting (also exit 130) while colima goes on, and running `pi sandbox init` again, or the next pi start, finishes the VM step.
+
+`PI_SANDBOX_PLAIN=1` asks the same questions as numbered lines that you answer by typing, with no menu to move through, no spinner and no colour: for screen readers and plain terminals. A dumb or unset `TERM` gets plain mode too, read line by line without any cursor control (and so without Tab completion of paths).
+
+Without a terminal (CI, a provisioning script, `ssh host install.sh`), `pi sandbox init` refuses, and `pi sandbox init --yes` asks nothing: it keeps the settings in the file and applies them to the VM, printing the same lines as the plain setup: the review of the settings, the file changes and the VM action first, then the progress and the result. `install.sh` uses `--yes` when it finds no terminal or `CI` is set. To name the project folders there, set `PI_SANDBOX_ROOTS`, which `--yes` writes to a config without `workspaceRoots`:
 
 ```bash
-"$(npm root -g)/pi-extensions-mz/launcher/install.sh" --root ~/Projects --root /Volumes/Work
 PI_SANDBOX_ROOTS="$HOME/Projects:/Volumes/Work" "$(npm root -g)/pi-extensions-mz/launcher/install.sh"
 ```
 
-`--root` wins over `PI_SANDBOX_ROOTS`. The script writes the roots to `workspaceRoots` in `~/.pi/agent/pi-sandbox/config.json`, and the VM then shares only these folders (writable), pi's session folder `~/.pi/agent/sessions` (writable) and the launcher's `state/vm` folder (read-only, the rendered files and the trust bundle). Pi then starts only inside a root. `--root ""` is refused. If `config.json` exists, the install goes ahead only when its `workspaceRoots` name the same folders (order, a trailing `/` and `~` against the full path do not matter); otherwise, also when it has no `workspaceRoots`, the install stops and leaves it as it is: edit `workspaceRoots` there, or install without `--root`. When the VM does not share the first root yet, the smoke check runs only the host checks and says the sandbox part runs at the first pi launch. A VM created earlier keeps its shares until the first pi launch, which restarts it with the new ones. See [Workspace roots](CONFIGURATION.md#workspace-roots).
+A config whose `workspaceRoots` name other folders stops `--yes` (order, a trailing `/` and `~` against the full path do not matter). So does a config with any invalid key: `--yes` prints the error like every other command, writes nothing and exits 1, and never fixes a value for you. When colima does not answer in time, `--yes` saves the config, says the VM could not be checked and exits 0; the next pi start applies the size and the shares. For the VM size, set `vm` in the config first (see [VM size](CONFIGURATION.md#vm-size)). When the VM does not share the first root yet, the install's smoke check runs only the host checks and says the sandbox part runs at the first pi launch. See [Workspace roots](CONFIGURATION.md#workspace-roots).
 
 <details>
 <summary>Install from a checkout</summary>
@@ -89,7 +124,7 @@ Pi's own installer comes first here too: the launcher runs only pi's managed ins
    cd ~/code/my-app && pi
    ```
 
-   The install script already built the sandbox image, so pi starts in seconds. When the image must be rebuilt, for example after a pi update, the launch prints `preparing pi sandbox, one time` and takes a few minutes.
+   When the install script's smoke check ran, it already built the sandbox image, so pi starts in seconds; when it was skipped, the first launch builds it. Behind a proxy that inspects TLS the smoke check fails until [`tls.extraCa`](CONFIGURATION.md#corporate-proxy-and-tls-inspection) names the proxy's CA, which `pi sandbox doctor` prints. When the image must be rebuilt, for example after a pi update, the launch prints `preparing pi sandbox, one time` and takes a few minutes.
 
 2. Work as usual. A tool that reaches a host that is not allowed gets an error page saying what to do.
 
@@ -125,6 +160,7 @@ In the table, *host pi* is pi's managed install on your Mac. A *grant* is a host
 | `pi --version` | the pi version the sandbox runs, without starting a sandbox |
 | `pi update [target]` | update host pi, its packages or its model catalogs, with host pi on the host |
 | `pi config` | the user resource config, with host pi on the host (-l passes through into the sandbox) |
+| `pi sandbox init [--yes]` | set up or change the project folders, VM size and settings write-back, then apply them to the sandbox VM; --yes asks nothing and applies the current settings |
 | `pi sandbox status` | runtime, container, proxy, image, launches, grants, overlays, shared caches |
 | `pi sandbox config [--json]` | the effective config and whether each key comes from the config file or the default |
 | `pi sandbox egress allow <host[:port]> [--user]` | allow a host for this repository, or with --user for every repository, until revoked |
@@ -152,8 +188,8 @@ After a reboot or `pi sandbox stop`, the next `pi` starts the VM again. A failur
 - **Home lives in memory.** `/home/pi` and `/tmp` are emptied when pi exits. Pi's own files survive in the folder's agent volume. To keep a tool cache, list it in `mounts.sharedCaches`.
 - **Build output has its own copy.** `node_modules`, `.venv`, `target` and `.gradle` get their own volume when a matching lockfile sits beside them ([list](CONFIGURATION.md#build-output-overlays)). Run your install command, such as `npm install`, once inside.
 - **Sessions are shared.** `/resume` on your Mac lists sandbox sessions.
-- **Some settings come back to your Mac.** When you change the default model, provider or thinking level, the enabled models, the theme or a few display and queue preferences inside (in `settings.json`), or the settings of the subagents, style, notifications and session-limits extensions (their `pi-*.json` files), the launcher copies the change to your Mac when pi exits, or at the next launch after a crash, and prints one line per change. A value of the wrong type, or a theme name that is not a plain file name, is not copied and a line says so; if a settings file is missing from the sandbox, nothing in it is removed on your Mac. If you changed the same setting on your Mac meanwhile, your Mac's value wins and a line says so. Nothing else comes back: packages, extensions, skills, commands, paths, proxy settings, logins, `models.json`, `mcp.json` and agent files change only on your Mac.
-- **A new share restarts the VM once.** The first launch in a folder outside your home restarts the VM to share it, and the share is kept for later launches. With `workspaceRoots` set, the VM shares only those folders, so the restart happens when the list changes; a stopped VM starts with the new list directly. If other pi sessions run, also from another agent dir, the launch stops and asks you to exit them first.
+- **Some settings come back to your Mac.** When you change the default model, provider or thinking level, the enabled models, the theme or a few display and queue preferences inside (in `settings.json`), or the settings of the subagents, style, notifications and session-limits extensions (their `pi-*.json` files), the launcher copies the change to your Mac when pi exits, or at the next launch after a crash, and prints one line per change. A value of the wrong type, or a theme name that is not a plain file name, is not copied and a line says so; if a settings file is missing from the sandbox, nothing in it is removed on your Mac. If you changed the same setting on your Mac meanwhile, your Mac's value wins and a line says so. `writeBack` in the config can take keys off this list, add plain preferences or turn it off ([Settings written back](CONFIGURATION.md#settings-written-back)). Nothing else comes back, whatever the config says: packages, extensions, skills, commands, paths, proxy settings, logins, `models.json`, `mcp.json` and agent files change only on your Mac.
+- **A new share restarts the VM once.** The first launch in a folder outside your home restarts the VM to share it, and the share is kept for later launches. With `workspaceRoots` set, the VM shares only those folders, so the restart happens when the list changes; a stopped VM starts with the new list directly. If other pi sessions run, also from another agent dir, a launch whose folder the VM does not share yet stops and asks you to exit them first; when the current shares already cover the launch, it goes ahead and says the VM changes at the next launch with no other pi session running.
 
 ### Where pi can start
 
@@ -198,6 +234,8 @@ Your settings go in `~/.pi/agent/pi-sandbox/config.json` (inside pi's agent fold
 - `egress.allow`: the hosts the sandbox may reach besides `pi.dev` and your providers. It is empty by default, so package registries such as `registry.npmjs.org` are reachable only once you list them or allow them with `pi sandbox egress allow`.
 - `image.packages` and `image.npmGlobal`: Debian and npm packages to add to the image.
 - `mounts.sharedCaches`: cache folders such as `~/.npm`, kept in volumes that all your sandboxes share. Your Mac's own folder is not mounted.
+- `vm`: the CPUs, memory and disk of the VM, applied at the next launch with no other pi session running, or at once by `pi sandbox init` when none runs. `resources` limits one container inside the VM instead.
+- `writeBack`: which settings changed inside come back to your Mac, inside limits the launcher keeps.
 
 `pi sandbox config` shows the result. Every key, credentials and corporate proxies are in [CONFIGURATION.md](CONFIGURATION.md), and [examples/config.json](examples/config.json) is a starting point for a team's shared file.
 
@@ -210,7 +248,8 @@ Start with `pi sandbox doctor`, which names the failing check.
 | A host `was blocked in this folder's sandbox` | Follow the hint in that line. `pi sandbox doctor` puts the same hint under the `rule` check of a credential host the proxy refused, for example the address a host resolved to and the `egress.privateHosts` entry that allows it, and reports any other host blocked during its run as a `blocked <host:port>` warning. |
 | The doctor's `trust` or `rule` check fails with `CERT_NOT_YET_VALID` | The VM's clock is more than an hour behind the host's. Run `pi sandbox stop` once no pi session runs, then `pi sandbox doctor` again, which starts the VM afresh. |
 | A provider login is missing or expired | Run `pi --no-sandbox`, then `/login`. |
-| Pi says `the sandbox VM engine is unreachable` | Run `colima start --profile pi-sandbox --activate=false`, or `install.sh` if the profile is gone. |
+| Pi says `the sandbox VM does not exist` | Run `pi sandbox init`, which creates the VM with its size, shares and VM type. A bare `colima start` would create it with colima's defaults instead. |
+| Pi says `the sandbox VM engine is unreachable` | Run `colima start --profile pi-sandbox --activate=false` when the profile exists, else `pi sandbox init`. |
 | The VM is running but its engine does not answer | Run `colima stop --profile pi-sandbox && colima start --profile pi-sandbox --activate=false`. |
 | A folder is not shared with the VM | Exit your other pi sessions and run `pi` again. |
 | An HTTP 502 about a certificate | Run `pi sandbox doctor` and add the `{ "sha256": … }` line it prints to [`tls.extraCa`](CONFIGURATION.md#corporate-proxy-and-tls-inspection). |

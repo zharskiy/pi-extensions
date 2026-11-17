@@ -2,7 +2,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 import { syncVolumeFiles } from "../../provision/index.ts";
-import { processMark, stateLayout } from "../../shared/index.ts";
+import { BUILT_IN_WRITE_BACK, processMark, stateLayout } from "../../shared/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { runningContainer, tempDir, writeText } from "./fixtures.ts";
 
@@ -43,6 +43,7 @@ describe("syncVolumeFiles for settings.json", () => {
         repoHash: "repo1",
         hostAgentDir,
         repoRoot,
+        allowlist: BUILT_IN_WRITE_BACK,
         hostHome,
       });
     };

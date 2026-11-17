@@ -19,5 +19,7 @@ export const defaultConfig = (): SandboxConfig => ({
   mounts: { sharedCaches: [], autoOverlays: true },
   env: { allow: TERMINAL_VARIABLES },
   resources: {},
+  vm: {},
   sessions: { host: true },
+  writeBack: { enabled: true, exclude: {}, add: {} },
 });

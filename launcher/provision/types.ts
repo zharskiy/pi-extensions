@@ -1,5 +1,6 @@
 import type { Backend } from "../backend/index.ts";
 import type { DerivedSandboxPi } from "../hostpi/index.ts";
+import type { WriteBackTable } from "../shared/index.ts";
 
 export interface RenderInput {
   stateDir: string;
@@ -21,6 +22,7 @@ export interface SyncInput {
   repoHash: string;
   hostAgentDir: string;
   repoRoot: string;
+  allowlist: WriteBackTable;
   hostHome?: string;
   refreshPackages?: boolean;
   othersLive?: () => Promise<boolean>;

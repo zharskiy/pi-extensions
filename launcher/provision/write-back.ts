@@ -1,6 +1,18 @@
 import { isDeepStrictEqual } from "node:util";
 import type { JsonObject } from "../hostpi/index.ts";
-import { isJsonObject, parseJsonObject } from "../shared/index.ts";
+import {
+  type FileKeys,
+  isJsonObject,
+  MAX_WRITE_BACK_CHARS,
+  parseJsonObject,
+  printable,
+  SETTINGS_FILE_NAME,
+  stableHash,
+  type ValueSpec,
+  type WriteBackTable,
+  withinCeiling,
+  writeBackFileProblem,
+} from "../shared/index.ts";
 
 type ValueCheck = (value: unknown) => boolean;
 
@@ -8,7 +20,7 @@ export interface SyncedFile {
   name: string;
   keys: readonly string[];
   maxBytes: number;
-  checks?: Readonly<Record<string, ValueCheck>>;
+  checks: Readonly<Record<string, ValueCheck>>;
 }
 
 interface KeyChange {
@@ -35,111 +47,74 @@ const SETTINGS_FILE_BYTES = 1024 * KIB;
 
 const SHOWN_CHARS = 60;
 
-const PRINTABLE_FROM = 0x20;
-
-const C1_FROM = 0x7f;
-
-const C1_TO = 0x9f;
-
-const BIDI_CONTROL = /[\u2028\u2029\u202a-\u202e\u2066-\u2069]/u;
-
-const MAX_STRING_CHARS = 512;
-
 const THEME_NAME = /^[A-Za-z0-9._-]+$/;
 
-const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+const stringWithin =
+  (maxLength = MAX_WRITE_BACK_CHARS) =>
+  (value: unknown): value is string =>
+    typeof value === "string" && value.length <= Math.min(maxLength, MAX_WRITE_BACK_CHARS);
 
-const QUEUE_MODES = ["all", "one-at-a-time"];
-
-const DOUBLE_ESCAPE_ACTIONS = ["fork", "tree", "none"];
-
-const TREE_FILTER_MODES = ["default", "no-tools", "user-only", "labeled-only", "all"];
-
-const isBoundedString = (value: unknown): value is string =>
-  typeof value === "string" && value.length <= MAX_STRING_CHARS;
-
-const isBoolean = (value: unknown) => typeof value === "boolean";
-
-const oneOf =
-  (allowed: readonly unknown[]): ValueCheck =>
-  (value) =>
-    allowed.includes(value);
-
-const isStringList = (value: unknown) => Array.isArray(value) && value.every(isBoundedString);
+const isBoundedString = stringWithin();
 
 const isThemeName = (value: unknown) =>
   isBoundedString(value) && THEME_NAME.test(value) && value !== "." && value !== "..";
 
-export const SETTINGS_FILE: SyncedFile = {
-  name: "settings.json",
-  keys: [
-    "defaultProvider",
-    "defaultModel",
-    "defaultThinkingLevel",
-    "enabledModels",
-    "theme",
-    "hideThinkingBlock",
-    "quietStartup",
-    "collapseChangelog",
-    "doubleEscapeAction",
-    "treeFilterMode",
-    "steeringMode",
-    "followUpMode",
-  ],
-  maxBytes: SETTINGS_FILE_BYTES,
-  checks: {
-    defaultProvider: isBoundedString,
-    defaultModel: isBoundedString,
-    defaultThinkingLevel: oneOf(THINKING_LEVELS),
-    enabledModels: isStringList,
-    theme: isThemeName,
-    hideThinkingBlock: isBoolean,
-    quietStartup: (value) => isBoolean(value) || value === "header",
-    collapseChangelog: isBoolean,
-    doubleEscapeAction: oneOf(DOUBLE_ESCAPE_ACTIONS),
-    treeFilterMode: oneOf(TREE_FILTER_MODES),
-    steeringMode: oneOf(QUEUE_MODES),
-    followUpMode: oneOf(QUEUE_MODES),
-  },
+const inRange = (value: number, spec: { min?: number; max?: number }) =>
+  (spec.min === undefined || value >= spec.min) && (spec.max === undefined || value <= spec.max);
+
+const checkOf = (spec: ValueSpec): ValueCheck => {
+  if (spec.type === "string") {
+    return stringWithin(spec.maxLength);
+  }
+
+  if (spec.type === "integer") {
+    return (value) => Number.isInteger(value) && inRange(value as number, spec);
+  }
+
+  if (spec.type === "number") {
+    return (value) => typeof value === "number" && Number.isFinite(value) && inRange(value, spec);
+  }
+
+  if (spec.type === "enum") {
+    return (value) => (spec.values as readonly unknown[]).includes(value);
+  }
+
+  if (spec.type === "stringList") {
+    return (value) =>
+      Array.isArray(value) &&
+      value.every(isBoundedString) &&
+      (spec.maxItems === undefined || value.length <= spec.maxItems);
+  }
+
+  if (spec.type === "anyOf") {
+    const checks = spec.of.map(checkOf);
+
+    return (value) => checks.some((check) => check(value));
+  }
+
+  if (spec.type === "boolean") {
+    return (value) => typeof value === "boolean";
+  }
+
+  if (spec.type === "json") {
+    return () => true;
+  }
+
+  return spec.type === "fileName" ? isThemeName : () => false;
 };
 
-export const EXTENSION_FILES: readonly SyncedFile[] = [
-  {
-    name: "pi-subagents.json",
-    keys: [
-      "maxConcurrent",
-      "maxDepth",
-      "softContextRatio",
-      "hardContextRatio",
-      "reserveTokens",
-      "inlineResultChars",
-      "failedLingerMs",
-      "doneLingerMs",
-      "renderThrottleMs",
-      "stopGraceSeconds",
-      "maxChainLength",
-      "maxChildrenPerAgent",
-      "fetchTimeoutSeconds",
-      "fetchMaxBytes",
-      "fetchMaxChars",
-      "agents",
-    ],
-    maxBytes: EXTENSION_FILE_BYTES,
-  },
-  { name: "pi-style.json", keys: ["style"], maxBytes: EXTENSION_FILE_BYTES },
-  {
-    name: "pi-notifications.json",
-    keys: ["channel", "idleDelayMs", "dialogDelayMs"],
-    maxBytes: EXTENSION_FILE_BYTES,
-  },
-  {
-    name: "pi-session-limits.json",
-    keys: ["softRatio", "hardRatio", "softTokens", "hardTokens"],
-    maxBytes: EXTENSION_FILE_BYTES,
-  },
-];
+const maxBytesOf = (name: string) =>
+  name === SETTINGS_FILE_NAME ? SETTINGS_FILE_BYTES : EXTENSION_FILE_BYTES;
 
-export const SYNCED_FILES: readonly SyncedFile[] = [SETTINGS_FILE, ...EXTENSION_FILES];
+const syncedFileOf = ([name, keys]: [string, FileKeys]): SyncedFile => ({
+  name,
+  keys: Object.keys(keys),
+  maxBytes: maxBytesOf(name),
+  checks: Object.fromEntries(Object.entries(keys).map(([key, spec]) => [key, checkOf(spec)])),
+});
+
+export const syncedFilesOf = (table: WriteBackTable): SyncedFile[] =>
+  Object.entries(withinCeiling(table)).map(syncedFileOf);
 
 export const syncedValues = (file: SyncedFile, value: JsonObject | undefined): JsonObject =>
   value === undefined
@@ -150,7 +125,10 @@ export const syncedValues = (file: SyncedFile, value: JsonObject | undefined): J
 
 const sizeText = (bytes: number) => `${bytes / KIB} KiB`;
 
-export const parseVolumeText = (file: SyncedFile, text: string | undefined): VolumeParse => {
+export const parseVolumeText = (
+  file: Pick<SyncedFile, "name" | "maxBytes">,
+  text: string | undefined,
+): VolumeParse => {
   if (text === undefined) {
     return { notices: [] };
   }
@@ -168,24 +146,51 @@ export const parseVolumeText = (file: SyncedFile, text: string | undefined): Vol
     : { value };
 };
 
-export const parseBaseline = (value: unknown): Baseline | undefined => {
-  const files = isJsonObject(value) ? value.files : undefined;
+export const allowlistHash = (table: WriteBackTable) => stableHash(withinCeiling(table));
 
-  if (!isJsonObject(files) || !SYNCED_FILES.every((file) => isJsonObject(files[file.name]))) {
+export const parseBaseline = (
+  value: unknown,
+  synced: readonly SyncedFile[],
+  allowlist: string,
+): Baseline | undefined => {
+  const record = isJsonObject(value) ? value : {};
+  const files = record.files;
+
+  if (record.allowlist !== allowlist) {
+    return undefined;
+  }
+
+  if (!isJsonObject(files) || !synced.every((file) => isJsonObject(files[file.name]))) {
     return undefined;
   }
 
   return Object.fromEntries(
-    SYNCED_FILES.map((file) => [file.name, syncedValues(file, files[file.name] as JsonObject)]),
+    synced.map((file) => [file.name, syncedValues(file, files[file.name] as JsonObject)]),
   );
 };
 
-export const baselineRecord = (baseline: Baseline) => ({ files: baseline });
+export const allowlistChanged = (value: unknown, allowlist: string) =>
+  isJsonObject(value) && typeof value.allowlist === "string" && value.allowlist !== allowlist;
+
+const isCopyName = (name: unknown): name is string =>
+  typeof name === "string" && name !== SETTINGS_FILE_NAME && writeBackFileProblem(name) === undefined;
+
+export const copiedOf = (value: unknown): string[] => {
+  const copied = isJsonObject(value) ? value.copied : undefined;
+
+  return Array.isArray(copied) ? copied.filter(isCopyName) : [];
+};
+
+export const baselineRecord = (baseline: Baseline, allowlist: string, copied: readonly string[]) => ({
+  allowlist,
+  files: baseline,
+  copied,
+});
 
 const keyValue = (object: JsonObject, key: string) => (Object.hasOwn(object, key) ? object[key] : undefined);
 
 const isAccepted = (file: SyncedFile, key: string, value: unknown) =>
-  value === undefined || (file.checks?.[key]?.(value) ?? true);
+  value === undefined || (file.checks[key]?.(value) ?? true);
 
 export const mergeFile = (file: SyncedFile, sides: FileSides) => {
   const decided = file.keys.map((key) => {
@@ -221,17 +226,6 @@ export const applyChanges = (host: JsonObject, changes: readonly KeyChange[]): J
 
   return { ...kept, ...Object.fromEntries(updates) };
 };
-
-const isControl = (char: string) => {
-  const code = char.codePointAt(0) ?? 0;
-
-  return code < PRINTABLE_FROM || (code >= C1_FROM && code <= C1_TO) || BIDI_CONTROL.test(char);
-};
-
-const printable = (text: string) =>
-  Array.from(text)
-    .map((char) => (isControl(char) ? "?" : char))
-    .join("");
 
 const shown = (value: unknown) => {
   if (value === undefined) {

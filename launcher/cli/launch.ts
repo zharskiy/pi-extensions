@@ -1,5 +1,6 @@
 import { constants } from "node:os";
 import type { Backend } from "../backend/index.ts";
+import { writeBackTableOf } from "../config/index.ts";
 import {
   buildContainerSpec,
   forwardedEnv,
@@ -14,7 +15,7 @@ import { type HostPiFiles, readHostPiFiles } from "../hostpi/index.ts";
 import { ensureSandboxImage, type SandboxImage } from "../image/index.ts";
 import { renderAgentDir, syncVolumeFiles } from "../provision/index.ts";
 import { type DenialRecord, guestProxyUrl } from "../proxy/index.ts";
-import { errorMessage, settleAll } from "../shared/index.ts";
+import { errorMessage, settleAll, type WriteBackTable } from "../shared/index.ts";
 import { gitLaunchNotices, type HostSessions } from "../workspace/index.ts";
 import { checkWorkspaceRoots, type LaunchContext, openContext } from "./context.ts";
 import { type CliDeps, hostAgentDirOf, writeLine, writeNotices } from "./deps.ts";
@@ -34,7 +35,7 @@ import { writeOnce } from "./notices.ts";
 import { openSandboxProxy, reportDenials, type SandboxProxy, sandboxDenials } from "./sandbox-proxy.ts";
 import { sweepOrphans } from "./sweep.ts";
 import { imagePiVersion } from "./versions.ts";
-import { prepareVmShares, shareVm, startVm, trustVm } from "./vm.ts";
+import { assertVmFitsHost, prepareVmShares, reconcileVm, startVm, trustVm } from "./vm.ts";
 
 interface PreparedContainer {
   containerId: string;
@@ -78,6 +79,7 @@ interface SandboxInput {
   staged: Staged;
   progress: Progress;
   writeBack: boolean;
+  allowlist: WriteBackTable;
 }
 
 interface PreparedInput extends SandboxInput {
@@ -173,6 +175,7 @@ interface VolumeSync {
   containerId: string;
   hostAgentDir: string;
   writeBack: boolean;
+  allowlist: WriteBackTable;
   refreshPackages?: boolean;
   othersLive?: () => Promise<boolean>;
 }
@@ -195,6 +198,7 @@ const syncAgentFiles = (input: PreparedInput, containerId: string) =>
     containerId,
     hostAgentDir: input.prepared.host.hostAgentDir,
     writeBack: input.writeBack,
+    allowlist: input.allowlist,
     refreshPackages: true,
     othersLive: () => othersLive(input.context.stateDir, input.context.repoHash, input.launch.launchId),
   });
@@ -357,18 +361,21 @@ const shielded = async <T>(deps: CliDeps, action: () => Promise<T>) => {
 const prepareVm = async (input: SandboxInput, share: boolean) => {
   const { deps, context, backend, sessions, launch, staged, progress } = input;
 
+  assertVmFitsHost(deps, context.effective.config.vm);
+
   if (!share) {
-    await staged("vm", () => startVm(backend, sessions, progress));
+    await staged("vm", () => startVm(backend, sessions, progress, { size: context.effective.config.vm }));
 
     return;
   }
 
   const plan = await prepareVmShares(deps, context.effective.config.workspaceRoots);
+  const size = context.effective.config.vm;
 
-  await staged("vm", () => startVm(backend, sessions, progress, plan));
+  await staged("vm", () => startVm(backend, sessions, progress, { plan, size }));
 
   await staged("shares", () =>
-    shareVm(deps, context, backend, { sessions, launchId: launch.launchId, plan }),
+    reconcileVm(deps, context, backend, { sessions, launchId: launch.launchId, plan }),
   );
 };
 
@@ -424,8 +431,20 @@ export const withSandbox = async (
   const signal = firstSignal(deps);
   const cancel = new AbortController();
   const deriving = startHostSide(deps, context, files, launch.launchId);
+  const allowlist = writeBackTableOf(context.effective.config.writeBack);
   const preparation = prepareAll(
-    { deps, context, backend, launch, sessions, cancelled: cancel.signal, staged, progress, writeBack },
+    {
+      deps,
+      context,
+      backend,
+      launch,
+      sessions,
+      cancelled: cancel.signal,
+      staged,
+      progress,
+      writeBack,
+      allowlist,
+    },
     { deriving, signIn, share },
   );
   const ended: { proxy?: SandboxProxy; sync?: VolumeSync } = {};
@@ -449,7 +468,7 @@ export const withSandbox = async (
     const { prepared, proxy, host } = outcome.ready;
 
     ended.proxy = proxy;
-    ended.sync = { containerId: prepared.containerId, hostAgentDir: host.hostAgentDir, writeBack };
+    ended.sync = { containerId: prepared.containerId, hostAgentDir: host.hostAgentDir, writeBack, allowlist };
 
     return await use({ ...prepared, backend, host, proxy, launch });
   } finally {
@@ -497,7 +516,7 @@ export const launch = async (args: string[], deps: CliDeps) => {
   if (piArgs.length !== args.length) {
     const { context } = await openContext(deps, "host");
 
-    checkWorkspaceRoots(context);
+    checkWorkspaceRoots(deps, context);
 
     return runHostPi(deps, context, piArgs);
   }

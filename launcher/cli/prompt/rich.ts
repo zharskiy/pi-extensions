@@ -1,0 +1,947 @@
+import { completePath } from "./complete.ts";
+import { createFrame, type FrameView } from "./frame.ts";
+import { isCtrl, listenKeys } from "./keys.ts";
+import { editLine, type LineState, lineOf } from "./line-editor.ts";
+import { DIGITS, initialIndex, numberProblem, toggle, warningFor } from "./rules.ts";
+import {
+  asciiOf,
+  elapsedOf,
+  type Glyphs,
+  glyphsOf,
+  type Paint,
+  painterOf,
+  printable,
+  type Tone,
+  tailOf,
+  widthOf,
+  withoutControls,
+  wrap,
+  wrapSegments,
+} from "./style.ts";
+import { runTask, type TaskView, warningOf } from "./task.ts";
+import {
+  BACK,
+  type CancelCause,
+  Cancelled,
+  type Choice,
+  type Collapse,
+  type ConfirmSpec,
+  type Detail,
+  type Key,
+  type KeyWords,
+  type MultiSpec,
+  type NotePlace,
+  type NumberSpec,
+  type PathSpec,
+  type Prompts,
+  type Reply,
+  type SelectSpec,
+  type TaskSpec,
+  type Ui,
+} from "./types.ts";
+
+interface Context {
+  ui: Ui;
+  glyphs: Glyphs;
+  paint: Paint;
+  fold: (text: string) => string;
+}
+
+type Step<T> =
+  | { kind: "stay" }
+  | { kind: "settle"; value: T }
+  | { kind: "cancel"; cause: CancelCause }
+  | { kind: "suspend"; run: () => Promise<void> };
+
+interface View<T> {
+  typing: boolean;
+  frame(width: number): FrameView;
+  key(key: Key): Step<T>;
+  collapse(value: T): Collapse;
+}
+
+interface Parts {
+  title: string;
+  note?: string;
+  detail: string[];
+  body: string[];
+  after: string[];
+  hints: string[];
+}
+
+const STAY = { kind: "stay" } as const;
+
+const END: Step<never> = { kind: "cancel", cause: "end" };
+
+const RAIL_WIDTH = 3;
+
+const POINTER_WIDTH = 2;
+
+const MATCHES_SHOWN = 8;
+
+const SPIN_MS = 100;
+
+const MIN_ROWS = 3;
+
+const settle = <T>(value: T): Step<T> => ({ kind: "settle", value });
+
+const roomOf = (width: number) => Math.max(1, width - RAIL_WIDTH - 1);
+
+const GAP = "   ";
+
+const titleLines = (context: Context, parts: Parts, width: number) => {
+  const { paint, fold } = context;
+  const room = roomOf(width);
+  const [title = "", ...extras] = fold(parts.title).split(GAP);
+  const pieces = [...extras, ...(parts.note === undefined ? [] : [fold(parts.note)])];
+  const whole = [title, ...pieces].join(GAP);
+
+  if (widthOf(whole) <= room) {
+    const tail = pieces.length === 0 ? "" : `${GAP}${paint("dim", pieces.join(GAP))}`;
+
+    return { head: `${title}${tail}`, more: [] };
+  }
+
+  const [first = "", ...rest] = wrap(title, room);
+
+  return {
+    head: first,
+    more: [...rest, ...pieces.flatMap((piece) => wrap(piece, room).map((line) => paint("dim", line)))],
+  };
+};
+
+const composed = (context: Context, parts: Parts) => {
+  const { glyphs, paint } = context;
+  const rail = paint("dim", glyphs.rail);
+  const railed = (line: string) => (line === "" ? rail : `${rail}  ${line}`);
+  const spacer = parts.detail.length > 0 ? [""] : [];
+  const title = titleLines(context, parts, context.ui.columns());
+  const head = `${paint("cyan", glyphs.active)}  ${title.head}`;
+  const rest = [
+    ...title.more,
+    ...parts.detail,
+    ...spacer,
+    ...parts.body,
+    ...parts.after,
+    ...spacer,
+    ...parts.hints,
+  ];
+
+  return {
+    lines: [head, ...rest.map(railed)],
+    bodyRow: 1 + title.more.length + parts.detail.length + spacer.length,
+  };
+};
+
+const detailOf = (context: Context, detail: Detail | undefined, width: number) => {
+  if (typeof detail === "function") {
+    return detail(roomOf(width));
+  }
+
+  return (detail ?? []).flatMap((line) => wrap(context.fold(line), roomOf(width)));
+};
+
+const hintsOf = (context: Context, segments: string[], width: number) =>
+  wrapSegments(segments.map(context.fold), roomOf(width), context.glyphs.separator).map((line) =>
+    context.paint("dim", line),
+  );
+
+const wordsOf = (spec: KeyWords, enter: string) => {
+  const back = spec.escape ?? "back";
+  const interrupt = spec.interrupt ?? "cancel";
+  const enterHint = `enter ${spec.enter ?? enter}`;
+
+  return back === interrupt
+    ? [enterHint, `esc/ctrl-c ${back}`]
+    : [enterHint, `esc ${back}`, `ctrl-c ${interrupt}`];
+};
+
+const messageLines = (context: Context, tone: Tone, glyph: string, text: string, width: number) =>
+  wrap(`${glyph} ${context.fold(text)}`, roomOf(width) - 2).map((line, index) =>
+    context.paint(tone, index === 0 ? line : `  ${line}`),
+  );
+
+const errorLines = (context: Context, message: string | undefined, width: number) =>
+  message === undefined ? [] : messageLines(context, "red", context.glyphs.error, message, width);
+
+const warningLines = (context: Context, message: string | undefined, width: number) =>
+  message === undefined ? [] : messageLines(context, "yellow", context.glyphs.warning, message, width);
+
+const collapsedLines = (context: Context, shown: Collapse) => {
+  if (shown === undefined) {
+    return [];
+  }
+
+  const { glyphs, paint } = context;
+  const room = roomOf(context.ui.columns());
+  const rail = paint("dim", glyphs.rail);
+  const text = shown.text
+    .split("\n")
+    .flatMap((line) => wrap(context.fold(printable(line)), room))
+    .map((line) => `${rail}  ${line}`);
+  const heads = wrap(context.fold(printable(shown.title)), room);
+  const head = heads.map((line, index) =>
+    index === 0 ? `${paint("dim", glyphs.answered)}  ${line}` : `${rail}  ${line}`,
+  );
+
+  return [...head, ...text, rail];
+};
+
+const writeLines = (context: Context, lines: string[]) => {
+  if (lines.length > 0) {
+    context.ui.output.write(lines.map((line) => `${line}\n`).join(""));
+  }
+};
+
+const runView = <T>(context: Context, view: View<T>) =>
+  new Promise<Reply<T>>((resolve, reject) => {
+    const { ui } = context;
+    const frame = createFrame(ui, context.glyphs.ellipsis);
+    const state = { done: false, detach: () => {} };
+
+    const draw = () => frame.draw(view.frame(ui.columns()));
+
+    const leave = () => {
+      state.detach();
+
+      frame.clear();
+
+      ui.session.paste(false);
+
+      ui.session.cursor(true);
+
+      ui.session.raw(false);
+    };
+
+    const finish = (done: () => void) => {
+      if (state.done) {
+        return;
+      }
+
+      state.done = true;
+
+      leave();
+
+      done();
+    };
+
+    const fail = (error: unknown) => finish(() => reject(error));
+
+    const settleWith = (value: T) =>
+      finish(() => {
+        writeLines(context, collapsedLines(context, view.collapse(value)));
+
+        resolve(value);
+      });
+
+    const onKey = (key: Key) => {
+      if (state.done) {
+        return;
+      }
+
+      if (isCtrl(key, "c")) {
+        fail(new Cancelled("interrupt"));
+
+        return;
+      }
+
+      if (key.kind === "resize" || isCtrl(key, "l")) {
+        draw();
+
+        return;
+      }
+
+      if (key.kind === "escape") {
+        finish(() => resolve(BACK));
+
+        return;
+      }
+
+      try {
+        apply(view.key(key));
+      } catch (error) {
+        fail(error);
+      }
+    };
+
+    const enter = () => {
+      if (ui.session.closed()) {
+        fail(new Cancelled("end"));
+
+        return;
+      }
+
+      ui.session.raw(true);
+
+      ui.session.cursor(view.typing);
+
+      ui.session.paste(view.typing);
+
+      draw();
+
+      const keys = listenKeys(ui, { key: onKey, end: () => fail(new Cancelled("end")) });
+
+      state.detach = keys.detach;
+
+      keys.replay();
+    };
+
+    const start = () => {
+      try {
+        enter();
+      } catch (error) {
+        fail(error);
+      }
+    };
+
+    const apply = (step: Step<T>) => {
+      switch (step.kind) {
+        case "settle":
+          settleWith(step.value);
+
+          return;
+        case "cancel":
+          fail(new Cancelled(step.cause));
+
+          return;
+        case "suspend":
+          leave();
+
+          step.run().then(start, fail);
+
+          return;
+        default:
+          draw();
+      }
+    };
+
+    start();
+  });
+
+const choiceRows = <T>(
+  context: Context,
+  choices: Choice<T>[],
+  mark: (choice: Choice<T>, index: number) => string,
+  cursor: number,
+) => {
+  const { glyphs, paint, fold } = context;
+  const room = roomOf(context.ui.columns());
+  const heads = choices.map((choice, index) => `${mark(choice, index)}${fold(printable(choice.label))}`);
+  const headWidth = Math.max(
+    0,
+    ...heads.filter((_head, index) => choices[index]?.tag !== undefined).map(widthOf),
+  );
+  const tags = choices.map((choice) => (choice.tag === undefined ? "" : fold(printable(choice.tag))));
+  const inline = choices.every(
+    (choice, index) =>
+      choice.tag === undefined || POINTER_WIDTH + headWidth + 3 + widthOf(tags[index] ?? "") <= room,
+  );
+
+  return choices.map((choice, index) => {
+    const head = heads[index] ?? "";
+    const pointer = index === cursor ? paint("cyan", glyphs.pointer) : " ";
+    const tag = tags[index] ?? "";
+
+    if (choice.tag === undefined) {
+      return [`${pointer} ${head}`];
+    }
+
+    if (inline) {
+      return [`${pointer} ${head}${" ".repeat(headWidth - widthOf(head))}   ${paint("dim", tag)}`];
+    }
+
+    const indent = " ".repeat(POINTER_WIDTH + widthOf(mark(choice, index)) + 2);
+
+    return [`${pointer} ${head}`, ...wrap(`${indent}${tag}`, room).map((line) => paint("dim", line))];
+  });
+};
+
+const limitOf = (context: Context, detail: string[]) =>
+  Math.max(MIN_ROWS, context.ui.rows() - 6 - (detail.length > 0 ? detail.length + 2 : 0));
+
+const linesBefore = (rows: string[][], from: number, to: number) =>
+  rows.slice(from, to).reduce((sum, row) => sum + row.length, 0);
+
+const windowed = (
+  context: Context,
+  rows: string[][],
+  cursor: number,
+  view: { top: number; pointer: number },
+  limit: number,
+) => {
+  if (rows.length <= limit) {
+    view.top = 0;
+    view.pointer = linesBefore(rows, 0, cursor);
+
+    return rows.flat();
+  }
+
+  const followed = cursor < view.top ? cursor : Math.max(view.top, cursor - limit + 1);
+  const top = Math.min(followed, rows.length - limit);
+  const below = rows.length - top - limit;
+  const { glyphs, paint } = context;
+
+  view.top = top;
+  view.pointer = linesBefore(rows, top, cursor) + (top > 0 ? 1 : 0);
+
+  return [
+    ...(top > 0 ? [paint("dim", glyphs.above(top))] : []),
+    ...rows.slice(top, top + limit).flat(),
+    ...(below > 0 ? [paint("dim", glyphs.below(below))] : []),
+  ];
+};
+
+const moved = (cursor: number, key: Key, count: number) => {
+  if (count === 0) {
+    return undefined;
+  }
+
+  if (key.kind === "up" || isCtrl(key, "p")) {
+    return (cursor - 1 + count) % count;
+  }
+
+  if (key.kind === "down" || isCtrl(key, "n")) {
+    return (cursor + 1) % count;
+  }
+
+  if (key.kind === "home") {
+    return 0;
+  }
+
+  return key.kind === "end" ? count - 1 : undefined;
+};
+
+const selectView = <T>(context: Context, spec: SelectSpec<T>): View<T> => {
+  const { glyphs } = context;
+  const state = { cursor: initialIndex(spec.choices, spec.initial), top: 0, pointer: 0 };
+
+  const mark = (_choice: Choice<T>, index: number) =>
+    spec.radio === true ? `${index === state.cursor ? glyphs.radioOn : glyphs.radioOff} ` : "";
+
+  return {
+    typing: false,
+    frame: (width) => {
+      const detail = detailOf(context, spec.detail, width);
+      const rows = choiceRows(context, spec.choices, mark, state.cursor);
+      const body = windowed(context, rows, state.cursor, state, limitOf(context, detail));
+      const words = wordsOf(spec, "choose");
+      const hints = hintsOf(context, [`${glyphs.upDown} move`, ...words], width);
+
+      const parts = composed(context, { title: spec.title, detail, body, after: [], hints });
+
+      return { lines: parts.lines, focus: parts.bodyRow + state.pointer };
+    },
+    key: (key) => {
+      const next = moved(state.cursor, key, spec.choices.length);
+
+      if (next !== undefined) {
+        state.cursor = next;
+
+        return STAY;
+      }
+
+      const choice = spec.choices[state.cursor];
+
+      if (key.kind === "enter" && choice !== undefined) {
+        return settle(choice.value);
+      }
+
+      return isCtrl(key, "d") ? END : STAY;
+    },
+    collapse: spec.collapsed,
+  };
+};
+
+const multiView = <T>(context: Context, spec: MultiSpec<T>): View<T[]> => {
+  const { glyphs, paint } = context;
+
+  const state = {
+    choices: [...spec.choices],
+    checked: new Set(spec.checked),
+    cursor: 0,
+    top: 0,
+    pointer: 0,
+  };
+
+  const checkedChoices = () =>
+    state.choices.filter((choice) => choice.action !== true && state.checked.has(choice.value));
+
+  const add = (choice: Choice<T> | undefined) => {
+    if (choice === undefined) {
+      return;
+    }
+
+    const existing = state.choices.findIndex((known) => known.value === choice.value);
+    const firstAction = state.choices.findIndex((known) => known.action === true);
+    const at = firstAction < 0 ? state.choices.length : firstAction;
+
+    if (existing < 0) {
+      state.choices = [...state.choices.slice(0, at), choice, ...state.choices.slice(at)];
+    }
+
+    state.checked.add(choice.value);
+
+    state.cursor = existing < 0 ? at : existing;
+  };
+
+  const mark = (choice: Choice<T>) => {
+    if (choice.action === true) {
+      return "";
+    }
+
+    return state.checked.has(choice.value) ? `${paint("cyan", glyphs.checked)} ` : `${glyphs.unchecked} `;
+  };
+
+  const enter = (choice: Choice<T>): Step<T[]> => {
+    if (choice.action === true) {
+      return {
+        kind: "suspend",
+        run: async () => add(await spec.onAction?.(choice.value)),
+      };
+    }
+
+    return settle(checkedChoices().map((checked) => checked.value));
+  };
+
+  return {
+    typing: false,
+    frame: (width) => {
+      const detail = detailOf(context, spec.detail, width);
+      const rows = choiceRows(context, state.choices, mark, state.cursor);
+      const body = windowed(context, rows, state.cursor, state, limitOf(context, detail));
+      const toggles = state.choices.some((choice) => choice.action !== true);
+      const words = wordsOf(spec, toggles ? "continue" : "choose");
+
+      const hints = hintsOf(
+        context,
+        [`${glyphs.upDown} move`, ...(toggles ? ["space select"] : []), ...words],
+        width,
+      );
+
+      const parts = composed(context, {
+        title: spec.title,
+        detail,
+        body,
+        after: [],
+        hints,
+      });
+
+      return { lines: parts.lines, focus: parts.bodyRow + state.pointer };
+    },
+    key: (key) => {
+      const next = moved(state.cursor, key, state.choices.length);
+
+      if (next !== undefined) {
+        state.cursor = next;
+
+        return STAY;
+      }
+
+      const choice = state.choices[state.cursor];
+
+      if (choice === undefined) {
+        return isCtrl(key, "d") ? END : STAY;
+      }
+
+      if (key.kind === "space" && choice.action !== true) {
+        toggle(state.checked, choice.value);
+
+        return STAY;
+      }
+
+      if (key.kind === "enter") {
+        return enter(choice);
+      }
+
+      return isCtrl(key, "d") ? END : STAY;
+    },
+    collapse: spec.collapsed,
+  };
+};
+
+const TOGGLES = new Set(["left", "right", "tab"]);
+
+const confirmView = (context: Context, spec: ConfirmSpec): View<boolean> => {
+  const { glyphs, paint, fold } = context;
+  const state = { yes: spec.initial };
+  const labelOf = (yes: boolean) => fold(yes ? spec.yes : spec.no);
+
+  const option = (yes: boolean) =>
+    `${state.yes === yes ? paint("cyan", glyphs.pointer) : " "} ${labelOf(yes)}`;
+
+  return {
+    typing: false,
+    frame: (width) => {
+      const detail = detailOf(context, spec.detail, width);
+      const body = [`${option(spec.initial)}   ${option(!spec.initial)}`];
+      const words = wordsOf(spec, "confirm");
+      const hints = hintsOf(context, [`${glyphs.leftRight} choose`, "y/n", ...words], width);
+
+      return composed(context, { title: spec.title, detail, body, after: [], hints });
+    },
+    key: (key) => {
+      const letter = key.kind === "text" ? key.text.toLowerCase() : "";
+
+      if (TOGGLES.has(key.kind) || letter === "h" || letter === "l") {
+        state.yes = !state.yes;
+
+        return STAY;
+      }
+
+      if (letter === "y" || letter === "n") {
+        return settle(letter === "y");
+      }
+
+      if (key.kind === "enter") {
+        return settle(state.yes);
+      }
+
+      return isCtrl(key, "d") ? END : STAY;
+    },
+    collapse: spec.collapsed,
+  };
+};
+
+const LINE_BREAK = /\r\n|\r|\n/;
+
+const QUOTES = new Set(['"', "'"]);
+
+const unquoted = (text: string) => {
+  const first = text.at(0) ?? "";
+
+  return text.length >= 2 && QUOTES.has(first) && text.at(-1) === first ? text.slice(1, -1) : text;
+};
+
+const cleanedPaste = (text: string) => {
+  const [first = "", ...rest] = text.split(LINE_BREAK);
+  const several = rest.some((line) => line.trim() !== "");
+  const kept = withoutControls(first);
+
+  return {
+    text: unquoted(kept.trim()).replaceAll("\\ ", " "),
+    several,
+  };
+};
+
+const PASTE_NOTE = "Pasted text had several lines; only the first was kept.";
+
+const inputRow = (context: Context, line: LineState, width: number) => {
+  const { glyphs, paint } = context;
+  const room = Math.max(2, roomOf(width) - POINTER_WIDTH - 1);
+  const chars = Array.from(line.value);
+  const before = printable(chars.slice(0, line.cursor).join(""));
+  const after = printable(chars.slice(line.cursor).join(""));
+
+  const shown =
+    widthOf(before) < room
+      ? before
+      : `${glyphs.ellipsis}${tailOf(before, room - 1 - widthOf(glyphs.ellipsis))}`;
+
+  return {
+    text: `${paint("cyan", glyphs.pointer)} ${shown}${after}`,
+    column: RAIL_WIDTH + POINTER_WIDTH + widthOf(shown),
+  };
+};
+
+const matchLines = (context: Context, matches: string[], width: number) => {
+  const shown = matches.slice(0, MATCHES_SHOWN).map(printable);
+  const hidden = matches.length - shown.length;
+  const more = hidden > 0 ? [context.fold(`…and ${hidden} more`)] : [];
+
+  return wrapSegments([...shown, ...more], roomOf(width) - 2, GAP).map((line) => `  ${line}`);
+};
+
+const pathView = (context: Context, spec: PathSpec): View<string> => {
+  const state = {
+    line: lineOf(spec.initial ?? ""),
+    error: undefined as string | undefined,
+    notice: undefined as string | undefined,
+    matches: [] as string[],
+    tabbed: false,
+  };
+
+  const complete = () => {
+    const completion = completePath(state.line.value, spec.home, spec.readdir);
+    const unchanged = completion.value === state.line.value;
+
+    state.matches = unchanged && state.tabbed ? completion.matches : [];
+    state.tabbed = true;
+    state.line = lineOf(completion.value);
+  };
+
+  const edit = (key: Key) => {
+    if (key.kind !== "paste") {
+      state.line = editLine(state.line, key, { segments: true });
+
+      return;
+    }
+
+    const pasted = cleanedPaste(key.text);
+
+    state.notice = pasted.several ? PASTE_NOTE : undefined;
+    state.line = editLine(state.line, { kind: "paste", text: pasted.text });
+  };
+
+  return {
+    typing: true,
+    frame: (width) => {
+      const input = inputRow(context, state.line, width);
+      const words = wordsOf(spec, "continue");
+      const hints = hintsOf(context, ["tab completes", ...words], width);
+
+      const after = [
+        ...matchLines(context, state.matches, width),
+        ...warningLines(context, state.notice, width),
+        ...errorLines(context, state.error, width),
+      ];
+
+      const parts = composed(context, { title: spec.title, detail: [], body: [input.text], after, hints });
+
+      return { lines: parts.lines, cursor: { row: parts.bodyRow, column: input.column } };
+    },
+    key: (key) => {
+      const tabbed = state.tabbed;
+
+      state.error = undefined;
+      state.notice = undefined;
+      state.matches = [];
+      state.tabbed = false;
+
+      if (key.kind === "enter") {
+        state.error = spec.validate?.(state.line.value);
+
+        return state.error === undefined ? settle(state.line.value) : STAY;
+      }
+
+      if (isCtrl(key, "d") && state.line.value === "") {
+        return END;
+      }
+
+      if (key.kind === "tab") {
+        state.tabbed = tabbed;
+
+        complete();
+
+        return STAY;
+      }
+
+      edit(key);
+
+      return STAY;
+    },
+    collapse: spec.collapsed,
+  };
+};
+
+const numberView = (context: Context, spec: NumberSpec): View<number> => {
+  const state = {
+    line: lineOf(String(spec.initial)),
+    touched: false,
+    error: undefined as string | undefined,
+    warning: undefined as string | undefined,
+    warned: undefined as number | undefined,
+  };
+
+  const stepped = (by: number) => {
+    const current = DIGITS.test(state.line.value) ? Number(state.line.value) : spec.initial;
+
+    return Math.min(spec.max, Math.max(spec.min, current + by));
+  };
+
+  const typed = (digits: string) => {
+    state.line = state.touched ? editLine(state.line, { kind: "text", text: digits }) : lineOf(digits);
+  };
+
+  const submit = (): Step<number> => {
+    state.error = numberProblem(spec, state.line.value);
+
+    if (state.error !== undefined) {
+      return STAY;
+    }
+
+    const value = Number(state.line.value);
+    const warning = warningFor(spec, value, state.warned);
+
+    state.warning = warning;
+    state.warned = warning === undefined ? undefined : value;
+
+    return warning === undefined ? settle(value) : STAY;
+  };
+
+  const change = (key: Key) => {
+    if (key.kind === "up" || key.kind === "down") {
+      state.line = lineOf(String(stepped(key.kind === "up" ? spec.step : -spec.step)));
+
+      return;
+    }
+
+    if (key.kind === "text" || key.kind === "paste") {
+      const [first = ""] = key.text.split(LINE_BREAK);
+      const digits = first.replaceAll(/[^0-9]/g, "");
+
+      if (key.kind === "text" && digits !== key.text) {
+        state.error = `Type a whole number, like ${spec.initial}.`;
+
+        return;
+      }
+
+      typed(digits);
+
+      return;
+    }
+
+    state.line = editLine(state.line, key);
+  };
+
+  return {
+    typing: true,
+    frame: (width) => {
+      const input = inputRow(context, state.line, width);
+      const words = wordsOf(spec, "next");
+      const steps = `${context.glyphs.upDown} change by ${spec.step}`;
+      const extra = spec.hint === undefined ? [] : [spec.hint];
+      const hints = hintsOf(context, [`${spec.min} to ${spec.max}`, ...extra, steps, ...words], width);
+      const after = [
+        ...errorLines(context, state.error, width),
+        ...warningLines(context, state.warning, width),
+      ];
+      const parts = composed(context, {
+        title: spec.title,
+        note: spec.note,
+        detail: [],
+        body: [input.text],
+        after,
+        hints,
+      });
+
+      return { lines: parts.lines, cursor: { row: parts.bodyRow, column: input.column } };
+    },
+    key: (key) => {
+      state.error = undefined;
+
+      if (key.kind === "enter") {
+        return submit();
+      }
+
+      if (isCtrl(key, "d") && state.line.value === "") {
+        return END;
+      }
+
+      const before = state.line.value;
+
+      change(key);
+
+      state.touched = true;
+
+      if (state.line.value !== before) {
+        state.warning = undefined;
+        state.warned = undefined;
+      }
+
+      return STAY;
+    },
+    collapse: spec.collapsed,
+  };
+};
+
+const taskView = (context: Context, spec: TaskSpec<unknown>) => (): TaskView => {
+  const { ui, glyphs, paint, fold } = context;
+  const frame = createFrame(ui, glyphs.ellipsis);
+  const started = ui.timers.now();
+  const state = { text: "", tick: 0, warned: false };
+
+  const view = (width: number): FrameView => {
+    const rail = paint("dim", glyphs.rail);
+    const spinner = paint("cyan", glyphs.spinner[state.tick % glyphs.spinner.length] ?? "");
+    const elapsed = paint("dim", elapsedOf(ui.timers.now() - started));
+    const status = [spinner, ...(state.text === "" ? [] : [fold(state.text)]), elapsed].join(" ");
+    const head = spec.title === "" ? [] : [`${paint("cyan", glyphs.active)}  ${fold(spec.title)}`];
+    const stops = spec.interruptWarning === "" ? [] : [paint("dim", "ctrl-c stops waiting")];
+    const hint = state.warned ? warningLines(context, warningOf(spec), width) : stops;
+
+    return { lines: [...head, `${rail}  ${status}`, ...hint.map((line) => `${rail}  ${line}`)] };
+  };
+
+  const draw = () => frame.draw(view(ui.columns()));
+
+  ui.session.cursor(false);
+
+  draw();
+
+  const stopTimer = ui.timers.every(SPIN_MS, () => {
+    state.tick += 1;
+
+    draw();
+  });
+
+  return {
+    update: (text) => {
+      state.text = text;
+
+      draw();
+    },
+    warn: () => {
+      state.warned = true;
+
+      draw();
+    },
+    redraw: draw,
+    stop: () => {
+      stopTimer();
+
+      frame.clear();
+
+      ui.session.cursor(true);
+    },
+  };
+};
+
+const LEADS: Record<NotePlace, "header" | "answered" | "end" | undefined> = {
+  rail: undefined,
+  start: "header",
+  step: "answered",
+  end: "end",
+};
+
+const noteLines = (context: Context, lines: string[], place: NotePlace) => {
+  const { glyphs, paint } = context;
+  const rail = paint("dim", glyphs.rail);
+  const lead = LEADS[place];
+
+  const later = (line: string) => {
+    if (place === "end") {
+      return line === "" ? "" : `   ${line}`;
+    }
+
+    return line === "" ? rail : `${rail}  ${line}`;
+  };
+
+  return lines
+    .map(context.fold)
+    .map((line, index) =>
+      index === 0 && lead !== undefined ? `${paint("dim", glyphs[lead])}  ${line}` : later(line),
+    );
+};
+
+export const createRichPrompts = (ui: Ui): Prompts => {
+  const context: Context = {
+    ui,
+    glyphs: glyphsOf(ui.unicode),
+    paint: painterOf(ui.colour),
+    fold: ui.unicode ? (text) => text : asciiOf,
+  };
+
+  return {
+    select: (spec) => runView(context, selectView(context, spec)),
+    multiselect: (spec) => runView(context, multiView(context, spec)),
+    confirm: (spec) => runView(context, confirmView(context, spec)),
+    path: (spec) => runView(context, pathView(context, spec)),
+    number: (spec) => runView(context, numberView(context, spec)),
+    task: (spec) => runTask(ui, spec, taskView(context, spec)),
+    note: (lines, place = "rail") => {
+      const shown = typeof lines === "function" ? lines(roomOf(ui.columns())) : lines;
+
+      writeLines(context, noteLines(context, shown, place));
+    },
+  };
+};

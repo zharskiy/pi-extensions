@@ -85,6 +85,56 @@ describe("writing sandbox settings back to the host", () => {
     expect(next.stderr).toContain(WRITTEN);
   });
 
+  it("uses the allowlist the launch started with, even when config.json changes during the session", async () => {
+    const env = await setup();
+    const settings = join(env.harness.hostAgentDir, "settings.json");
+
+    await env.harness.writeJson(settings, { defaultModel: "p/a" });
+
+    await env.launchWith();
+
+    const { stderr } = await env.launchWith(async (write) => {
+      await write("settings.json", { defaultModel: "p/b" });
+
+      await env.harness.writeJson(env.harness.userConfigFile, { writeBack: { enabled: false } });
+    });
+
+    expect(stderr).toContain(WRITTEN);
+    expect(await env.host("settings.json")).toEqual({ defaultModel: "p/b" });
+
+    const disabled = await env.launchWith((write) => write("settings.json", { defaultModel: "p/c" }));
+
+    expect(disabled.stderr).not.toContain("written to the host");
+    expect(await env.host("settings.json")).toEqual({ defaultModel: "p/b" });
+  });
+
+  it("writes back a key the config adds and skips one it excludes", async () => {
+    const env = await setup();
+
+    await env.harness.writeJson(env.harness.userConfigFile, {
+      writeBack: {
+        exclude: { "settings.json": ["defaultModel"] },
+        add: { "settings.json": { editorPaddingX: { type: "integer", min: 0, max: 8 } } },
+      },
+    });
+
+    await env.harness.writeJson(join(env.harness.hostAgentDir, "settings.json"), {
+      defaultModel: "p/a",
+      editorPaddingX: 1,
+    });
+
+    await env.launchWith();
+
+    const { stderr } = await env.launchWith((write) =>
+      write("settings.json", { defaultModel: "p/b", editorPaddingX: 3 }),
+    );
+
+    expect(stderr.split("\n").filter((line) => line.includes("written to the host"))).toEqual([
+      "pi-sandbox: settings.json editorPaddingX: 1 → 3 written to the host",
+    ]);
+    expect(await env.host("settings.json")).toEqual({ defaultModel: "p/a", editorPaddingX: 3 });
+  });
+
   it("writes a live session's change back before the doctor refreshes the shared volume", async () => {
     const env = await setup();
 

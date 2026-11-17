@@ -2,7 +2,14 @@ import { posix } from "node:path";
 import { type Backend, execCapture } from "../../backend/index.ts";
 import { type CredentialRule, fillTemplate, TLS_PORT } from "../../config/index.ts";
 import { credentialHosts, probeHostSessions, readVolumeFile } from "../../provision/index.ts";
-import { GUEST_PATHS, isAuthLikeHeader, isPlaceholder, isSecretName } from "../../shared/index.ts";
+import {
+  errorMessage,
+  GUEST_PATHS,
+  isAuthLikeHeader,
+  isPlaceholder,
+  isSecretName,
+  lastLine,
+} from "../../shared/index.ts";
 import { type CheckResult, failed, type NamedCheck, passed, skipped } from "./doctor-checks.ts";
 
 export interface ProbeTarget {
@@ -84,13 +91,6 @@ const execText = (target: ProbeTarget, command: string[]) =>
     env: {},
     workdir: target.workdir,
   });
-
-const lastLine = (text: string) =>
-  text
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line !== "")
-    .at(-1);
 
 const stringLeaves = (value: unknown, path: string): Leaf[] => {
   if (typeof value === "string") {
@@ -224,8 +224,21 @@ const leaksToken = (entry: unknown) => {
   });
 };
 
+const readSandboxFile = (target: ProbeTarget, name: string) =>
+  readVolumeFile(target.backend, target.containerId, name).catch((error: unknown) => ({
+    value: undefined,
+    invalid: true,
+    unreadable: errorMessage(error),
+  }));
+
 export const checkMcpAuthSweep = async (target: ProbeTarget) => {
-  const { value: store, invalid } = await readVolumeFile(target.backend, target.containerId, "mcp-auth.json");
+  const read = await readSandboxFile(target, "mcp-auth.json");
+
+  if ("unreadable" in read) {
+    return failed(read.unreadable);
+  }
+
+  const { value: store, invalid } = read;
 
   if (invalid) {
     return failed("mcp-auth.json in the sandbox is not a JSON object");
@@ -243,7 +256,7 @@ export const checkMcpAuthSweep = async (target: ProbeTarget) => {
 };
 
 export const checkSettingsSweep = async (target: ProbeTarget) => {
-  const { value, invalid } = await readVolumeFile(target.backend, target.containerId, "settings.json");
+  const { value, invalid } = await readSandboxFile(target, "settings.json");
 
   if (value === undefined && !invalid) {
     return passed("no settings.json in the sandbox yet");

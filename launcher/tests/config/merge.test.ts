@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { defaultConfig } from "../../config/defaults.ts";
-import { getPath } from "../../config/dotted.ts";
+import { getPath } from "../../config/index.ts";
 import { mergeConfig } from "../../config/merge.ts";
 import type { UserConfig } from "../../config/types.ts";
 import { configKeys, validateConfig } from "../../config/validate.ts";
@@ -37,7 +37,13 @@ const COMPLETE_CONFIG: UserConfig = {
   mounts: { sharedCaches: ["~/.cache/pip"], autoOverlays: false },
   env: { allow: ["EDITOR"] },
   resources: { cpus: 2, memoryGiB: 4 },
+  vm: { cpus: 4, memoryGiB: 8, diskGiB: 80 },
   sessions: { host: false },
+  writeBack: {
+    enabled: false,
+    exclude: { "settings.json": ["theme"] },
+    add: { "pi-footer.json": { layout: { type: "json" } } },
+  },
 };
 
 const settableKeys = () => configKeys().filter((key) => key !== "$schema" && !key.includes("[]"));

@@ -166,6 +166,45 @@ describe("pi sandbox config", () => {
     expect(parsed.sources["sessions.host"]).toBe("default");
   });
 
+  it("lists the effective write-back keys of each file with their source", async () => {
+    const harness = await createHarness();
+
+    await harness.writeJson(harness.userConfigFile, {
+      writeBack: {
+        exclude: { "settings.json": ["theme"] },
+        add: { "pi-footer.json": { layout: { type: "json" } } },
+      },
+    });
+
+    expect(await run(["sandbox", "config"], harness.deps)).toBe(0);
+    expect(harness.stdout()).toContain(
+      "# writeBack settings.json default: defaultProvider, defaultModel, defaultThinkingLevel, enabledModels, hideThinkingBlock,",
+    );
+    expect(harness.stdout()).not.toMatch(/# writeBack settings\.json default: .*theme/);
+    expect(harness.stdout()).toContain("# writeBack pi-footer.json config: layout\n");
+    expect(harness.stdout()).toContain("# writeBack.exclude: config\n");
+
+    expect(await run(["sandbox", "config", "--json"], harness.deps)).toBe(0);
+
+    const parsed = JSON.parse(harness.stdout().slice(harness.stdout().lastIndexOf("\n{\n") + 1)) as {
+      writeBack: Record<string, Record<string, { source: string }>>;
+    };
+
+    expect(parsed.writeBack["pi-footer.json"]).toEqual({
+      layout: { spec: { type: "json" }, source: "config" },
+    });
+    expect(parsed.writeBack["settings.json"]?.defaultModel?.source).toBe("default");
+  });
+
+  it("says when nothing is written back", async () => {
+    const harness = await createHarness();
+
+    await harness.writeJson(harness.userConfigFile, { writeBack: { enabled: false } });
+
+    expect(await run(["sandbox", "config"], harness.deps)).toBe(0);
+    expect(harness.stdout()).toContain("# writeBack: nothing is written back to the host\n");
+  });
+
   it("only shows the config and refuses any other option", async () => {
     const harness = await createHarness();
 
