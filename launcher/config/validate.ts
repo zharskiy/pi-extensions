@@ -8,6 +8,7 @@ import {
   LauncherError,
   MAX_WRITE_BACK_CHARS,
   PLACEHOLDER_PREFIX,
+  printable,
   TOOL_CONFIG_FORMATS,
   type ToolConfigFormat,
   type ValueType,
@@ -729,9 +730,9 @@ export const validateConfig = (value: unknown): UserConfig => {
   const found = problemOf(CONFIG_SPEC, value, "");
 
   if (found !== undefined) {
-    throw new LauncherError(
-      found.path === "" ? `config: ${found.problem}` : `config: ${found.path} ${found.problem}`,
-    );
+    const message = found.path === "" ? found.problem : `${found.path} ${found.problem}`;
+
+    throw new LauncherError(`config: ${printable(message)}`);
   }
 
   return normalized(value as UserConfig);

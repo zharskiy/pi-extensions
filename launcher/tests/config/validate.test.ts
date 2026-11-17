@@ -26,6 +26,18 @@ describe("validateConfig", () => {
     );
   });
 
+  it("escapes control, bidi and line separator characters of the keys and values it echoes", () => {
+    expect(configProblem({ "a‮b\u007f\u0085 ": 1 })).toBe(
+      "config: a\\u202Eb\\u007F\\u0085\\u2028 is not a known key",
+    );
+    expect(configProblem({ workspaceRoots: { roots: ["rel\u007f‎"] } })).toBe(
+      'config: workspaceRoots.roots[0] "rel\\u007F\\u200E" must be an absolute path or start with ~/',
+    );
+    expect(configProblem({ writeBack: { exclude: { "settings.json": ["x‮"] } } })).toBe(
+      'config: writeBack.exclude["settings.json"][0] "x\\u202E" is not a built-in write-back key of settings.json',
+    );
+  });
+
   it("reports wrong types with the key", () => {
     expect(configProblem({ egress: { allow: "github.com" } })).toBe("config: egress.allow must be an array");
     expect(configProblem({ egress: { allow: ["https://github.com"] } })).toBe(
