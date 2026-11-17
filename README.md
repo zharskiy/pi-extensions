@@ -1,10 +1,10 @@
 <div align="center">
 
-# pi-extensions
+# pinata
 
 **Background agents, session awareness and a calmer terminal for the [pi coding agent](https://pi.dev).**
 
-Fourteen extensions in one pi package (`pi-extensions-mz`), built on one small shared platform.
+Fourteen extensions in one pi package (`@zharskiy/pinata` on npm), built on one small shared platform, and `pi-sandbox`, a launcher that runs pi in a container.
 
 [![CI](https://github.com/zharskiy/pi-extensions/actions/workflows/ci.yml/badge.svg)](https://github.com/zharskiy/pi-extensions/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -40,12 +40,35 @@ Tool rows from [transcript](extensions/transcript/README.md), an agent batch fro
 
 ## Quick start
 
+One command installs pi (with pi's own installer, when it is missing), the package with the [sandbox launcher](#sandbox-launcher), and the extensions into pi (macOS 13+, Homebrew, Node 22.19+ with npm). Take `install.sh` from a [release](https://github.com/zharskiy/pi-extensions/releases), never from `main`, and check it against the release's `SHA256SUMS`:
+
+<!-- x-release-please-start-version -->
+
 ```bash
-pi install git:github.com/zharskiy/pi-extensions   # the whole package
+base=https://github.com/zharskiy/pi-extensions/releases/download/v0.5.0
+cd "$(mktemp -d)" && curl -fsSLO "$base/install.sh" -O "$base/SHA256SUMS"
+grep ' install.sh$' SHA256SUMS | shasum -a 256 -c - && sh install.sh --root ~/work
+```
+
+<!-- x-release-please-end -->
+
+Rerun it with a newer release to update. [INSTALL.md](INSTALL.md) has the rest: the one-line form, what the command does, rolling it out across a company with an org config, mirrors, exit codes, unattended updates, and the note on the first release.
+
+To add only the extensions to a pi you already have:
+
+<!-- x-release-please-start-version -->
+
+```bash
+pi install npm:@zharskiy/pinata@0.5.0             # the whole package, pinned to a release
+pi install git:github.com/zharskiy/pi-extensions   # the whole package, from git
 pi install ./pi-extensions                         # from a local checkout; add -l for the current project only
 pi -e ./pi-extensions/extensions/<name>/index.ts   # one extension for a single run, from a checkout
 pi update --extensions                             # update a git install; for a checkout, git pull, then /reload in pi
 ```
+
+<!-- x-release-please-end -->
+
+What changed in each release is in [CHANGELOG.md](CHANGELOG.md); pi shows the new entries once after an update ([What users see after an update](INSTALL.md#what-users-see-after-an-update)).
 
 The package installs fourteen extensions:
 
@@ -91,7 +114,7 @@ Start pi and try:
 
 ## Sandbox launcher
 
-The package also ships `pi-sandbox`, a host-side launcher that runs pi in a per-repository Linux container on a Colima VM (macOS). After `launcher/install.sh`, `cd repo && pi` starts pi with your providers, MCP servers, settings and packages, but the container holds placeholders instead of credentials, and its only network exit is a proxy on the host that allows a list of hosts and injects the real credentials there. `pi --no-sandbox` runs host pi. See the [launcher README](launcher/README.md), its [configuration reference](launcher/CONFIGURATION.md) and its [threat model](launcher/THREAT-MODEL.md).
+The package also ships `pi-sandbox`, a host-side launcher that runs pi in a per-repository Linux container on a Colima VM (macOS). After the one-step install above (or `launcher/install.sh` by hand), `cd repo && pi` starts pi with your providers, MCP servers, settings and packages, but the container holds placeholders instead of credentials, and its only network exit is a proxy on the host that allows a list of hosts and injects the real credentials there. `pi --no-sandbox` runs host pi. See the [launcher README](launcher/README.md), its [configuration reference](launcher/CONFIGURATION.md) and its [threat model](launcher/THREAT-MODEL.md).
 
 ## Development
 

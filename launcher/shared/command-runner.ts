@@ -7,6 +7,10 @@ interface InteractiveOptions {
   env?: Record<string, string>;
 }
 
+interface SpawnOptions extends InteractiveOptions {
+  stdin?: "inherit" | "ignore";
+}
+
 export interface RunOptions extends InteractiveOptions {
   input?: string;
   timeoutMs?: number;
@@ -21,7 +25,7 @@ export interface RunResult {
 
 export interface CommandRunner {
   run(file: string, args: string[], options?: RunOptions): Promise<RunResult>;
-  spawnInteractive(file: string, args: string[], options?: InteractiveOptions): Promise<number>;
+  spawnInteractive(file: string, args: string[], options?: SpawnOptions): Promise<number>;
 }
 
 const SIGNAL_EXIT_BASE = 128;
@@ -111,8 +115,8 @@ const runWith =
 
 const spawnInteractiveWith =
   (baseEnv: NodeJS.ProcessEnv) =>
-  (file: string, args: string[], options: InteractiveOptions = {}) =>
-    settle(file, start(file, args, "inherit", options, baseEnv));
+  (file: string, args: string[], options: SpawnOptions = {}) =>
+    settle(file, start(file, args, [options.stdin ?? "inherit", "inherit", "inherit"], options, baseEnv));
 
 export const createProcessRunner = (options: ProcessRunnerOptions = {}): CommandRunner => {
   const baseEnv = options.baseEnv ?? process.env;

@@ -1,0 +1,36 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "bootstrap-sha": "aeafaf286871cf3b81a8e51bfcf3a84ff2dab91e",
+  "packages": {
+    ".": {
+      "release-type": "node",
+      "include-v-in-tag": true,
+      "include-component-in-tag": false,
+      "bump-minor-pre-major": true,
+      "changelog-path": "CHANGELOG.md",
+      "pull-request-title-pattern": "chore: release ${version}",
+      "extra-files": [
+        { "type": "generic", "path": "install.sh" },
+        { "type": "generic", "path": "README.md" },
+        { "type": "generic", "path": "INSTALL.md" },
+        { "type": "generic", "path": "launcher/README.md" },
+        { "type": "generic", "path": "launcher/examples/org/company-install.sh" }
+      ],
+      "changelog-sections": [
+        { "type": "feat", "section": "Features" },
+        { "type": "fix", "section": "Bug Fixes" },
+        { "type": "perf", "section": "Performance" },
+        { "type": "revert", "section": "Reverts" },
+        { "type": "deps", "section": "Dependencies" },
+        { "type": "security", "section": "Security" },
+        { "type": "build", "section": "Build", "hidden": true },
+        { "type": "ci", "section": "CI", "hidden": true },
+        { "type": "style", "section": "Style", "hidden": true },
+        { "type": "chore", "section": "Miscellaneous", "hidden": true },
+        { "type": "docs", "section": "Documentation", "hidden": true },
+        { "type": "refactor", "section": "Refactoring", "hidden": true },
+        { "type": "test", "section": "Tests", "hidden": true }
+      ]
+    }
+  }
+}

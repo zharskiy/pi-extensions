@@ -54,6 +54,7 @@ describe("stateLayout", () => {
     expect(layout.caLock).toBe("/state/ca/ca.lock");
     expect(layout.extraPem).toBe("/state/ca/extra.pem");
     expect(layout.imageRecord).toBe("/state/image.json");
+    expect(layout.installReceipt).toBe("/state/install.json");
   });
 
   it("puts only the rendered files and the trust bundle under vm/, the one dir the VM shares", () => {

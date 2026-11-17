@@ -1,9 +1,10 @@
 import { join } from "node:path";
 import type { HostPi } from "../hostpi/index.ts";
-import { LauncherError, launcherRoot, readJsonFile } from "../shared/index.ts";
+import { isJsonObject, LauncherError, launcherRoot, readJsonFile } from "../shared/index.ts";
 
 interface PackageManifest {
   version?: string;
+  repository?: unknown;
   devDependencies?: Record<string, string>;
 }
 
@@ -21,6 +22,17 @@ const readManifest = async () => {
 };
 
 export const launcherVersion = async () => (await readManifest()).version;
+
+const urlOf = (repository: unknown) => {
+  if (typeof repository === "string") {
+    return repository;
+  }
+
+  return isJsonObject(repository) && typeof repository.url === "string" ? repository.url : undefined;
+};
+
+export const launcherRepository = async () =>
+  urlOf((await readManifest().catch(() => undefined))?.manifest.repository)?.replace(/^git\+/, "");
 
 export const testedPiVersion = async () => {
   const { file, manifest } = await readManifest();

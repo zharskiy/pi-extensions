@@ -374,7 +374,7 @@ The sandbox has no container engine and cannot reach your Mac's `localhost`. So 
 
 ## Sharing one config across a team
 
-A team shares the config by giving everyone the same file: copy it to `~/.pi/agent/pi-sandbox/config.json` on each Mac. It is still each user's own file, and each user can change it. [examples/config.json](examples/config.json) is a starting point. It does the following:
+A team shares the config by giving everyone the same file. `install.sh --config FILE` installs it as `~/.pi/agent/pi-sandbox/config.json`: the launcher being installed checks it first, so an invalid file stops the install with exit 78 before anything changes, and the contents are never printed. It is still each user's own file, and each user can change it. A later run with a new file updates `config.json` while the user has not edited it; once they have, theirs stays and the new file is written beside it as `config.proposed.json` (the doctor's `install` check says so), unless `--config-conflict replace` replaces it after copying it to `config.json.bak`, or `--config-conflict fail` stops the install. `--root` sets the roots in place of the file's `workspaceRoots`. Rolling it out across an organisation, with the version pin and the config kept together, is in [INSTALL.md](../INSTALL.md). [examples/config.json](examples/config.json) is a starting point, and [examples/org/config.json](examples/org/config.json) is the one the rollout example installs. It does the following:
 
 - Allows an internal gateway, registry and git hosts. It also lists them as private hosts, since they resolve to internal addresses.
 - Denies a paste site.

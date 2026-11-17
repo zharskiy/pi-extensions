@@ -1,15 +1,13 @@
-import { readFile, realpath, rm, stat } from "node:fs/promises";
-import { join } from "node:path";
-import type { JsonObject } from "../hostpi/index.ts";
+import { rm } from "node:fs/promises";
 import {
   errorMessage,
-  parseJsonObject,
   readJsonObject,
   stateLayout,
   withFileLock,
   writeFileAtomic,
   writeJsonFile,
 } from "../shared/index.ts";
+import { jsonText, readHostFile } from "./host-file.ts";
 import { type PackagePin, pinHostPackages } from "./host-packages.ts";
 import { prepareHostSettings, sandboxSettings } from "./merge-settings.ts";
 import { refreshPackages } from "./package-refresh.ts";
@@ -30,13 +28,6 @@ import {
   syncedValues,
 } from "./write-back.ts";
 
-interface HostFile {
-  path: string;
-  exists: boolean;
-  value?: JsonObject;
-  mode?: number;
-}
-
 interface FileOutcome {
   changes: string[];
   notices: string[];
@@ -45,29 +36,6 @@ interface FileOutcome {
 const LOCK_TIMEOUT_MS = 30_000;
 
 const PRIVATE_FILE_MODE = 0o600;
-
-const PERMISSION_BITS = 0o777;
-
-const isMissing = (error: unknown) => (error as NodeJS.ErrnoException).code === "ENOENT";
-
-const readHostFile = async (hostAgentDir: string, name: string): Promise<HostFile> => {
-  const linked = join(hostAgentDir, name);
-  const path = await realpath(linked).catch(() => linked);
-
-  try {
-    const [text, info] = await Promise.all([readFile(path, "utf8"), stat(path)]);
-
-    return { path, exists: true, value: parseJsonObject(text), mode: info.mode & PERMISSION_BITS };
-  } catch (error) {
-    if (isMissing(error)) {
-      return { path, exists: false, value: {} };
-    }
-
-    throw error;
-  }
-};
-
-const jsonText = (value: JsonObject) => `${JSON.stringify(value, null, 2)}\n`;
 
 const writeBackFile = async (
   input: SyncInput,

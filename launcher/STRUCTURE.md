@@ -11,10 +11,11 @@ ARCHITECTURE.md                how it works, the files it writes
 STRUCTURE.md                   this file
 THREAT-MODEL.md                assets, trust boundaries, what each feature weakens, known gaps
 REMOVED-DEFAULTS.md            the egress presets and config keys earlier versions shipped, and how to add them back
-install.sh                     macOS install: the launcher and its pi link, PATH blocks (zsh, bash, fish), workspace roots (--root), Colima profile, smoke test
-uninstall.sh                   runs the launcher's cleanup, deletes the profile, removes the link, state, package and PATH blocks
+install.sh                     stage 1 of the installer (installer api 1): the launcher and its pi link (npm install -g, or skipped from the global copy), PATH blocks (zsh, bash, fish), host pi extensions (--with-extensions), the organisation config (--config) or workspace roots (--root), Colima profile, smoke test, receipt; --dry-run and --version
+uninstall.sh                   runs the launcher's cleanup, removes the installed host pi extensions with --with-extensions, deletes the profile, removes the link, state, package and PATH blocks
 tsconfig.build.json            emits dist/ (gitignored) for the published bin
 examples/config.json           a sample config file for a team to start from
+examples/org/                  organisation rollout examples, shipped in the package and imported by nothing: company-install.sh (sign-in placeholder, default settings added key by key with selfUpdateCommand enforced, the checksummed bootstrap of a pinned release with roots and --config, a failure line and code for every step and every bootstrap exit code; where a company's own pi step and --skip-pi go), company-update.sh (the selfUpdateCommand target, deployed with the others in /usr/local/libexec/example-corp/), config.json (an org config), settings.json (a fragment with selfUpdateCommand), README.md (index and a launchd agent)
 schema/sandbox-config.schema.json  the config keys
 ```
 
@@ -31,7 +32,7 @@ bin/paths.sh                   the agent dir (with ~ expanded as pi does), state
 
 ```
 cli/main.ts                    builds the real dependencies, the host git outside the started folder included, and runs
-cli/run.ts                     the command table, the hidden __uninstall, __vm-shares and __init-config routes and error rendering
+cli/run.ts                     the command table, the hidden __uninstall, __vm-shares, __init-config and installer step routes (__seed-config, __busy, __extensions, __receipt) and error rendering
 cli/deps.ts                    the dependencies every command gets, and the shared terminal helpers (TTY and colour checks, a line sink)
 cli/index.ts                   public surface
 cli/launch.ts                  the pi pipeline with its stages and progress lines, and withSandbox for the doctor
@@ -50,7 +51,7 @@ cli/intercept.ts               pi install, uninstall, remove, mcp, every update,
 cli/host-routes.ts             which command lines start no session: help, version, auth, config without -l, --list-models, --export
 cli/host-pi.ts                 the one host pi (pi's managed install only), the missing-pi line (missingPiText, built from the parts of missingPi the doctor shows) and --no-sandbox (runHostPi)
 cli/notices.ts                 notices printed once per repository and text
-cli/versions.ts                launcher version and image pi version
+cli/versions.ts                launcher version, image pi version and the package repository
 cli/commands/status.ts         pi sandbox status
 cli/commands/config.ts         pi sandbox config
 cli/commands/egress.ts         pi sandbox egress allow, revoke and list
@@ -59,6 +60,12 @@ cli/commands/stop.ts           pi sandbox stop
 cli/commands/uninstall.ts      the hidden __uninstall command uninstall.sh runs: live-session refusal, engine objects by label, host-side release
 cli/commands/vm-shares.ts      the hidden __vm-shares command: the VM mount list for install.sh
 cli/commands/init-config.ts    the hidden __init-config command: install.sh --root creates a missing user config with workspaceRoots, exclusively
+cli/commands/seed-config.ts    the hidden __seed-config command: install.sh --config seeds the user config like a dpkg conffile (created, unchanged, updated, kept with config.proposed.json, replaced with config.json.bak, or refused with 78); --check validates without writing
+cli/commands/busy.ts           the hidden __busy command: exit 75 while a launch is live, for the installer's busy guard
+cli/commands/extensions.ts     the hidden __extensions command: install a source of this package into host pi after removing its other sources, carry pi's changelog marker over, and remove the receipt's source
+cli/commands/receipt.ts        the hidden __receipt command: writes the install receipt from install.sh's step results and the bootstrap environment
+cli/commands/doctor-install.ts the doctor's install check and the status line, from the receipt
+cli/install-receipt.ts         the install receipt <state>/install.json: tolerant reading, 0600 atomic writing, the proposed and backup config paths
 cli/commands/doctor.ts         pi sandbox doctor: stages, probes and host checks as checks by section, the denials matched to each rule, the blocked warnings, captured notices and the progress line
 cli/commands/doctor-probes.ts  the doctor's checks inside the container; a rule whose credential was denied warns, one the proxy refused says why, a certificate not yet valid names the VM clock
 cli/commands/doctor-host.ts    the doctor's checks on the host
@@ -200,7 +207,9 @@ provision/render.ts            the render dir, its tool files and its host sourc
 provision/tree.ts              filtered copy of host sources, following no link, with one notice for what was left out and one for skipped links
 provision/pool.ts              bounded parallel work
 provision/sync.ts              the agent files sync under sync.lock: write-back to the host, then settings.json and pi-*.json into the volume, and the baseline
-provision/write-back.ts        the fixed write-back allowlist, the settings.json value checks, the three-way merge per key and its lines (no I/O)
+provision/host-file.ts         reading a host agent dir JSON file through its link, with its mode, and the JSON text the write-back and the marker carry-over write
+provision/changelog-marker.ts  moves pi's extensionChangelogVersions entry of a replaced package source to the new source in host settings.json
+provision/write-back.ts        the fixed write-back allowlist, the settings.json value checks, the three-way merge per key (per entry for extensionChangelogVersions) and its lines (no I/O)
 provision/merge-settings.ts    the sandbox copy of the host settings: dropped keys, package sources, resource entries placed for the container, and their notices
 provision/package-source.ts    package sources and their URL credentials
 provision/host-packages.ts     npm and git package sources pinned to the versions the host installed, read from host files (unversioned, range and tag npm sources; git commits on the remote)
@@ -312,7 +321,7 @@ tests/shared/mcp-auth-key.test.ts    mcp-login.json updates and sign-in dirs
 tests/shared/state-layout.test.ts    the state layout
 tests/shared/tool-config.test.ts     tool config parsers
 tests/config/fixtures.ts             config files in temp dirs
-tests/config/load.test.ts            loading the config file and examples/config.json
+tests/config/load.test.ts            loading the config file, examples/config.json and examples/org/config.json
 tests/config/merge.test.ts           the config over the defaults, key by key, with sources
 tests/config/security-keys.test.ts   credential and image keys
 tests/config/egress-entry.test.ts    the egress grammar
@@ -358,7 +367,8 @@ tests/hostpi/provider-hosts-sample.json  a sample provider host table
 tests/provision/fixtures.ts          provisioning fixtures
 tests/provision/render.test.ts       the render dir
 tests/provision/merge-settings.test.ts  the settings sync
-tests/provision/write-back.test.ts   the write-back allowlist, merge and lines
+tests/provision/write-back.test.ts   the write-back allowlist, merge and lines, the per-entry merge of the changelog markers and their name and version checks
+tests/provision/changelog-marker.test.ts  carrying pi's changelog marker to a new package source, under pi's settings lock
 tests/provision/sync.test.ts         write-back and sync against a fake volume
 tests/provision/package-refresh.test.ts  packages pinned to the host versions and the refresh of outdated checkouts
 tests/provision/host-sessions.test.ts  host session sweep and probe
@@ -394,8 +404,13 @@ tests/cli/egress.test.ts             egress grants
 tests/cli/errors.test.ts             error output
 tests/cli/host-pi.test.ts            host pi selection
 tests/cli/install.test.ts            install.sh, run for real
+tests/cli/install-harness.ts         the fake-tools sandbox install.sh and its tests run in: temp HOME, fake binaries on PATH
+tests/cli/install-options.test.ts    install.sh's installer options for real: --version, --help, --dry-run writing nothing, --config outcomes, extensions, --no-smoke, the receipt (also written early with smoke pending, and the --root config), global mode, PI_SANDBOX_NPM_SPEC, the busy guard, the pre-release package removed, the smoke check in the first existing root, an unwritable rc file or bin dir, no stdin for streamed commands
+tests/cli/install-steps.test.ts      the installer's hidden commands: __seed-config (a symlinked config stays a link), __busy, __extensions (pre-release and local copies removed, stdin ignored), __receipt, receipt reading, the install doctor check and status line
+tests/cli/install-contract.test.ts   installer api 1, append-only: the --dry-run corpus, the exit-code table against INSTALL.md, the receipt key set, no raw exit status when any tool fails
 tests/cli/init-config.test.ts        __init-config: missing, same (resolved) and other config, config without roots, exclusive create, refused root
-tests/cli/uninstall.test.ts          uninstall.sh, run for real
+tests/cli/uninstall.test.ts          uninstall.sh, run for real (also the pre-release package name)
+tests/cli/company-install.test.ts    the example examples/org/company-install.sh against fake curl and a fake bootstrap: options, download and checksum failures, the settings merge, unknown codes
 tests/cli/intercept.test.ts          intercepted commands, host routes and the command lines that still launch
 tests/cli/launch.test.ts             the launch
 tests/cli/launch-flow.test.ts        the signal guard, side-by-side stages and the VM shares of a launch

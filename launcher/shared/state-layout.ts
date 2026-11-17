@@ -68,6 +68,7 @@ export const stateLayout = (stateDir: string) => ({
   legacyTrustPem: join(stateDir, "ca", "trust.pem"),
   imageRecord: join(stateDir, "image.json"),
   gcRecord: join(stateDir, "gc.json"),
+  installReceipt: join(stateDir, "install.json"),
 });
 
 export const ensureSalt = (stateDir: string) => ensureRandomHexFile(stateLayout(stateDir).salt, SALT_BYTES);

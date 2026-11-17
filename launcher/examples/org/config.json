@@ -1,0 +1,44 @@
+{
+  "egress": {
+    "allow": ["registry.npmjs.org", "gateway.example.com", "npm.example.com", "*.git.example.com"],
+    "deny": ["paste.example.com"],
+    "privateHosts": ["gateway.example.com", "npm.example.com", "*.git.example.com"]
+  },
+  "credentials": {
+    "rules": [
+      {
+        "id": "ai-gateway",
+        "host": "gateway.example.com",
+        "placeholder": "pi-sandbox-ai-gateway",
+        "header": "authorization",
+        "template": "Bearer {secret}",
+        "secret": {
+          "command": ["/usr/local/bin/example-sso", "token", "--audience", "gateway"]
+        }
+      },
+      {
+        "id": "package-registry",
+        "host": "npm.example.com",
+        "placeholder": "pi-sandbox-package-registry",
+        "header": "authorization",
+        "template": "Bearer {secret}",
+        "secret": {
+          "env": "EXAMPLE_REGISTRY_TOKEN"
+        }
+      }
+    ]
+  },
+  "tls": {
+    "extraCa": [
+      {
+        "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      }
+    ]
+  },
+  "mounts": {
+    "sharedCaches": ["~/.npm"]
+  },
+  "resources": {
+    "memoryGiB": 6
+  }
+}

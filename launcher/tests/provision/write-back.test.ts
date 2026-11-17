@@ -259,3 +259,68 @@ describe("changeLine", () => {
     );
   });
 });
+
+describe("writing back pi's extension changelog markers", () => {
+  const KEY = "extensionChangelogVersions";
+  const npm = JSON.stringify({ source: "npm:@zharskiy/pinata@0.6.0", scope: "user" });
+  const other = JSON.stringify({ source: "npm:other@1.0.0", scope: "user" });
+  const merged = (baseline: unknown, volume: unknown, host: unknown) =>
+    mergeFile(SETTINGS_FILE, {
+      baseline: baseline === undefined ? {} : { [KEY]: baseline },
+      volume: volume === undefined ? {} : { [KEY]: volume },
+      host: host === undefined ? {} : { [KEY]: host },
+    });
+
+  it("writes back the version the sandboxed pi recorded after it showed the changelog", () => {
+    expect(merged({ [npm]: "0.5.0" }, { [npm]: "0.6.0" }, { [npm]: "0.5.0" }).changes).toEqual([
+      { key: KEY, from: { [npm]: "0.5.0" }, to: { [npm]: "0.6.0" } },
+    ]);
+  });
+
+  it("merges per entry, so a marker another sandbox wrote back meanwhile stays", () => {
+    expect(
+      merged({ [npm]: "0.5.0" }, { [npm]: "0.6.0" }, { [npm]: "0.5.0", [other]: "1.0.0" }).changes,
+    ).toEqual([
+      { key: KEY, from: { [npm]: "0.5.0", [other]: "1.0.0" }, to: { [npm]: "0.6.0", [other]: "1.0.0" } },
+    ]);
+    expect(merged(undefined, { [npm]: "0.6.0" }, undefined).changes).toEqual([
+      { key: KEY, from: undefined, to: { [npm]: "0.6.0" } },
+    ]);
+  });
+
+  it("keeps the host entry when both sides changed it, and drops entries that are not short strings", () => {
+    expect(merged({ [npm]: "0.5.0" }, { [npm]: "0.6.0" }, { [npm]: "0.4.0" })).toEqual({
+      changes: [],
+      notices: [`settings.json: ${KEY} changed on the host and in the sandbox; kept the host value`],
+    });
+    expect(merged({}, { [npm]: 6, [other]: "1.0.0" }, {})).toEqual({
+      changes: [{ key: KEY, from: {}, to: { [other]: "1.0.0" } }],
+      notices: [`settings.json: ${KEY} in the sandbox is not a valid value; not written back`],
+    });
+    expect(merged({}, ["0.6.0"], {}).changes).toEqual([]);
+  });
+
+  it("writes back only version-shaped values under a {source, scope} key pi writes", () => {
+    const rejected = (name: string, value: unknown) => merged({}, { [name]: value }, {}).changes;
+    const project = JSON.stringify({ source: "npm:x@1.0.0", scope: "project" });
+
+    expect(merged({}, { [npm]: "0.6.0-rc.1+build.5", [project]: "1.0.0" }, {}).changes).toEqual([
+      { key: KEY, from: {}, to: { [npm]: "0.6.0-rc.1+build.5", [project]: "1.0.0" } },
+    ]);
+    expect(rejected(npm, "latest")).toEqual([]);
+    expect(rejected(npm, "1.0.0; rm -rf ~")).toEqual([]);
+    expect(rejected(npm, "1.0")).toEqual([]);
+    expect(rejected("npm:x", "1.0.0")).toEqual([]);
+    expect(rejected(JSON.stringify({ source: "npm:x", scope: "global" }), "1.0.0")).toEqual([]);
+    expect(rejected(JSON.stringify({ source: "npm:x\u001b[2J", scope: "user" }), "1.0.0")).toEqual([]);
+    expect(rejected(JSON.stringify({ source: "x".repeat(513), scope: "user" }), "1.0.0")).toEqual([]);
+    expect(rejected(JSON.stringify({ source: "npm:x", scope: "user", extra: 1 }), "1.0.0")).toEqual([]);
+  });
+
+  it("does nothing when the sandbox left the markers alone", () => {
+    expect(merged({ [npm]: "0.5.0" }, { [npm]: "0.5.0" }, { [npm]: "0.4.0", [other]: "1" })).toEqual({
+      changes: [],
+      notices: [],
+    });
+  });
+});

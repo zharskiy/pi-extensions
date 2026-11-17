@@ -3,7 +3,7 @@ import { type CommandRunner, LauncherError, type RunOptions, type RunResult } fr
 export interface FakeCall {
   file: string;
   args: string[];
-  options: RunOptions;
+  options: RunOptions & { stdin?: "inherit" | "ignore" };
   interactive: boolean;
 }
 
@@ -34,7 +34,7 @@ const startsWith = (argv: string[], prefix: string[]) => prefix.every((part, ind
 export const createFakeRunner = (respond: FakeResponder) => {
   const calls: FakeCall[] = [];
 
-  const record = (file: string, args: string[], options: RunOptions, interactive: boolean) => {
+  const record = (file: string, args: string[], options: FakeCall["options"], interactive: boolean) => {
     const call = { file, args, options, interactive };
 
     calls.push(call);

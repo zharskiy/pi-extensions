@@ -4,7 +4,8 @@ unset CDPATH
 COLIMA_HOME="$HOME/.colima"
 export COLIMA_HOME
 
-package_name=pi-extensions-mz
+package_name=@zharskiy/pinata
+legacy_name=pi-extensions-mz
 colima_profile=pi-sandbox
 wrapper_marker="launcher/bin/pi-sandbox"
 sessions_live_exit=75
@@ -16,7 +17,7 @@ bin_dir="$HOME/.local/bin"
 fish_file="$HOME/.config/fish/conf.d/pi-sandbox.fish"
 
 usage() {
-  echo "usage: uninstall.sh"
+  echo "usage: uninstall.sh [--with-extensions]"
 }
 
 fail() {
@@ -24,11 +25,24 @@ fail() {
   exit 1
 }
 
-case "${1:-}" in
-  "") ;;
-  -h|--help) usage; exit 0 ;;
-  *) usage >&2; fail "unknown option $1" ;;
-esac
+with_extensions=0
+
+parse_args() {
+  if [ "$#" -eq 0 ]; then
+    return 0
+  fi
+
+  case "$1" in
+    --with-extensions) with_extensions=1 ;;
+    -h|--help) usage; exit 0 ;;
+    *) usage >&2; fail "unknown option $1" ;;
+  esac
+
+  shift
+  parse_args "$@"
+}
+
+parse_args "$@"
 
 launcher_entry() {
   if [ -f "$script_dir/bin/pi-sandbox-dev.js" ] && [ -f "$script_dir/cli/main.ts" ]; then
@@ -53,6 +67,15 @@ else
   if [ "$cleanup_status" -ne 0 ]; then
     echo "launcher: its cleanup failed (exit $cleanup_status); removing the profile and the host files anyway"
   fi
+fi
+
+extensions_failed=0
+
+if [ "$with_extensions" -eq 1 ] && [ -n "$entry" ] && command -v node >/dev/null 2>&1; then
+  node "$entry" __extensions remove || extensions_failed=1
+elif [ "$with_extensions" -eq 1 ]; then
+  extensions_failed=1
+  echo "extensions: the launcher is not found, so host pi keeps the extensions; remove them with pi remove <source>"
 fi
 
 colima_failed=0
@@ -131,6 +154,11 @@ else
   echo "package: no global $package_name"
 fi
 
+if command -v npm >/dev/null 2>&1 && npm ls -g "$legacy_name" >/dev/null 2>&1; then
+  npm uninstall -g "$legacy_name" >/dev/null
+  echo "package: uninstalled the global $legacy_name, the pre-release name of this package"
+fi
+
 remove_snippet() {
   if ! path_block_present "$1"; then
     return 0
@@ -159,6 +187,10 @@ fi
 
 echo "kept: your repositories, ~/.pi and your launcher config $user_config"
 echo "kept: your pi sessions stay in $agent_dir/sessions"
+
+if [ "$extensions_failed" -eq 1 ]; then
+  fail "the extensions could not be removed from host pi; see pi list and remove them with pi remove <source>"
+fi
 
 if [ "$colima_failed" -eq 1 ]; then
   fail "the colima profile $colima_profile could not be deleted; run colima delete --profile $colima_profile --force"

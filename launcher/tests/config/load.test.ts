@@ -113,4 +113,13 @@ describe("loadEffectiveConfig with the example config", () => {
       { sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" },
     ]);
   });
+  it("loads examples/org/config.json, the organisation config of the rollout example", async () => {
+    const example = JSON.parse(
+      await readFile(join(launcherRoot(), "examples", "org", "config.json"), "utf8"),
+    ) as { egress: { allow: string[] }; credentials: { rules: { id: string }[] } };
+    const { config } = await loadWith(example);
+
+    expect(config.egress.allow).toEqual(example.egress.allow);
+    expect(config.credentials.rules.map((rule) => rule.id)).toEqual(["ai-gateway", "package-registry"]);
+  });
 });
