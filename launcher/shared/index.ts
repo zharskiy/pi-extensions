@@ -24,11 +24,11 @@ export type { McpAuthEntry, McpLoginState } from "./mcp-auth-key.ts";
 export {
   isFreshMcpToken,
   MCP_SERVER_NAME,
-  MCP_TOKEN_SKEW_MS,
   mcpAuthKey,
   mcpLoginCommand,
   readMcpAuthEntry,
   readMcpLogins,
+  tokenUsableUntil,
   updateMcpLogin,
   withMcpLoginDir,
 } from "./mcp-auth-key.ts";

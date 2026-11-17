@@ -21,7 +21,10 @@ export type McpLogins = Record<string, McpLoginState>;
 
 export const MCP_SERVER_NAME = /^[A-Za-z0-9_-]+$/;
 
-export const MCP_TOKEN_SKEW_MS = 30_000;
+const TOKEN_SKEW_MS = 30_000;
+
+export const tokenUsableUntil = (expiresAt: number | undefined) =>
+  expiresAt === undefined ? undefined : expiresAt - TOKEN_SKEW_MS;
 
 const HOST_STORE = "mcp-auth.json";
 
@@ -61,7 +64,7 @@ export const readMcpAuthEntry = async (
 };
 
 export const isFreshMcpToken = (entry: McpAuthEntry | undefined, now: number) =>
-  entry?.access !== undefined && (entry.expiresAt === undefined || entry.expiresAt - MCP_TOKEN_SKEW_MS > now);
+  entry?.access !== undefined && (entry.expiresAt === undefined || entry.expiresAt - TOKEN_SKEW_MS > now);
 
 const LOGIN_TIMEOUT_SECONDS = 300;
 

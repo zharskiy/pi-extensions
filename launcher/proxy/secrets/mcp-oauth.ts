@@ -1,10 +1,10 @@
 import {
   isFreshMcpToken,
   MCP_SERVER_NAME,
-  MCP_TOKEN_SKEW_MS,
   type McpAuthEntry,
   mcpAuthKey,
   readMcpAuthEntry,
+  tokenUsableUntil,
 } from "../../shared/index.ts";
 import { type SignIn, within } from "../sign-in.ts";
 import type { CachedSecret } from "./cache.ts";
@@ -39,7 +39,7 @@ const notSignedInReply = (server: string) =>
 
 const cachedOf = (entry: McpAuthEntry & { access: string }): CachedSecret => ({
   value: entry.access,
-  expiresAt: entry.expiresAt === undefined ? undefined : entry.expiresAt - MCP_TOKEN_SKEW_MS,
+  expiresAt: tokenUsableUntil(entry.expiresAt),
 });
 
 export const createMcpOAuthSource = (deps: McpOAuthDeps) => {

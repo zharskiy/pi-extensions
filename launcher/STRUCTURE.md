@@ -297,7 +297,7 @@ shared/units.ts                the byte, minute, hour and day units
 shared/placeholder.ts          the placeholder format and the JWT shape
 shared/secret-name.ts          secret-looking names, auth-like headers, URL userinfo and credential-shaped values
 shared/pi-env.ts               pi variable names the launcher sets, the fixed part of the sandbox env (FIXED_SANDBOX_ENV) and pi's npm package name (PI_PACKAGE)
-shared/mcp-auth-key.ts         host pi's mcp-auth.json parser, mcp-login.json under a file lock, and sign-in dirs
+shared/mcp-auth-key.ts         host pi's mcp-auth.json parser, mcp-login.json under a file lock, sign-in dirs and the token expiry skew
 shared/tool-config.ts          the tool config format dispatcher, the JSON pointer reader and writer
 shared/npmrc.ts                the .npmrc parser and value reader
 shared/ini.ts                  the ini parser and section.name[n] reader
