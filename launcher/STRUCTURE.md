@@ -11,7 +11,7 @@ ARCHITECTURE.md                how it works, the files it writes
 STRUCTURE.md                   this file
 THREAT-MODEL.md                assets, trust boundaries, what each feature weakens, known gaps
 REMOVED-DEFAULTS.md            the egress presets and config keys earlier versions shipped, and how to add them back
-install.sh                     macOS install: the launcher and its pi link, PATH blocks (zsh, bash, fish), workspace roots (--root), Colima profile, smoke test
+install.sh                     macOS install: the launcher and its pi link, PATH blocks (zsh, bash, fish), workspace roots (--root), Colima profile, smoke test; on a terminal the children run on it under ruled step headers
 uninstall.sh                   runs the launcher's cleanup, deletes the profile, removes the link, state, package and PATH blocks
 tsconfig.build.json            emits dist/ (gitignored) for the published bin
 examples/config.json           a sample config file for a team to start from
@@ -58,6 +58,7 @@ cli/commands/reset.ts          pi sandbox reset: the folder's sandbox and volume
 cli/commands/stop.ts           pi sandbox stop
 cli/commands/uninstall.ts      the hidden __uninstall command uninstall.sh runs: live-session refusal, engine objects by label, host-side release
 cli/commands/vm-shares.ts      the hidden __vm-shares command: the VM mount list for install.sh
+cli/commands/smoke-doctor.ts   the hidden __smoke-doctor command install.sh runs: the doctor, exit 3 when the sandbox part was skipped
 cli/commands/init-config.ts    the hidden __init-config command: install.sh --root creates a missing user config with workspaceRoots, exclusively
 cli/commands/doctor.ts         pi sandbox doctor: stages, probes and host checks as checks by section, the denials matched to each rule, the blocked warnings, captured notices and the progress line
 cli/commands/doctor-probes.ts  the doctor's checks inside the container; a rule whose credential was denied warns, one the proxy refused says why, a certificate not yet valid names the VM clock

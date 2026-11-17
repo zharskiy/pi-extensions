@@ -45,6 +45,8 @@ Without the managed install, `install.sh` stops before it changes anything and s
 
 The script starts a Colima profile named `pi-sandbox` and puts `~/.local/bin` first on `PATH` in your shell startup files. Open a new terminal afterwards.
 
+In a terminal, Homebrew, npm, Colima and the smoke `pi sandbox doctor` print as if you ran them yourself, and each step starts after a blank line and a rule. Piped or redirected, their output is indented under plain `[n/7]` lines.
+
 If `~/.local/bin/pi` is pi's own managed install, the script replaces that link. An earlier pi-sandbox link or wrapper is replaced too. Any other file there stops the install.
 
 The VM gets this Mac's CPU count, from 2 to 8, and half its memory, from 4 to 10 GiB, with a 60 GiB disk. To change that, pass `--cpu N`, `--memory GiB` or `--disk GiB` to `install.sh`. To resize the VM later, while no pi runs:

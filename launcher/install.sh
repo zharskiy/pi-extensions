@@ -67,11 +67,48 @@ size_to_host() {
   fi
 }
 
+on_terminal=0
+
+if [ -t 1 ] && [ -t 2 ]; then
+  on_terminal=1
+fi
+
+header_style=""
+rule_style=""
+plain_style=""
+rule_text="----------------------------------------------------------------"
+
+if [ "$on_terminal" -eq 1 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-}" != dumb ]; then
+  header_style=$(printf '\033[1m')
+  rule_style=$(printf '\033[2m')
+  plain_style=$(printf '\033[0m')
+  rule_text="────────────────────────────────────────────────────────────────"
+fi
+
+last_step=""
+
 step() {
-  printf '%s\n' "[$1/7] $2"
+  if [ "$on_terminal" -eq 0 ]; then
+    printf '%s\n' "[$1/7] $2"
+    return 0
+  fi
+
+  if [ "$1" != "$last_step" ]; then
+    printf '\n%s%s%s\n' "$rule_style" "$rule_text" "$plain_style"
+  else
+    printf '\n'
+  fi
+
+  last_step=$1
+  printf '%s%s%s\n' "$header_style" "[$1/7] $2" "$plain_style"
 }
 
 streamed() {
+  if [ "$on_terminal" -eq 1 ]; then
+    "$@"
+    return
+  fi
+
   { streamed_status=$( { { if "$@" 2>&1 3>&- 4>&-; then echo 0 >&3; else echo "$?" >&3; fi; } | sed 's/^/      /' >&4; } 3>&1 ); } 4>&1
   return "$streamed_status"
 }
@@ -464,34 +501,28 @@ if [ -n "$roots" ]; then
   smoke_where="a temporary git repository in $smoke_parent"
 fi
 
-smoke_log=""
+sandbox_skipped_exit=3
 smoke_skipped=0
-
-smoke_doctor() {
-  { "$shim" sandbox doctor 2>&1; printf '%s\n' "$?" > "$smoke_log.status"; } | tee "$smoke_log"
-  return "$(cat "$smoke_log.status")"
-}
 
 smoke() {
   mkdir -p "$smoke_parent" || return 1
 
   smoke_dir=$(mktemp -d "$smoke_parent/pi-sandbox-smoke.XXXXXX") || return 1
-  smoke_log=$(mktemp "${TMPDIR:-/tmp}/pi-sandbox-smoke.XXXXXX") || smoke_log="$smoke_dir.log"
   smoke_status=0
 
   git -C "$smoke_dir" init -q || smoke_status=1
 
   if [ "$smoke_status" -eq 0 ]; then
-    (cd "$smoke_dir" && export PATH="$bin_dir:$PATH" && streamed smoke_doctor) || smoke_status=1
+    (cd "$smoke_dir" && export PATH="$bin_dir:$PATH" && streamed "$shim" __smoke-doctor) || smoke_status=$?
     (cd "$smoke_dir" && PATH="$bin_dir:$PATH" "$shim" sandbox reset >/dev/null 2>&1) || true
   fi
 
-  if grep -q "not started until the VM shares" "$smoke_log" 2>/dev/null; then
+  if [ "$smoke_status" -eq "$sandbox_skipped_exit" ]; then
     smoke_skipped=1
+    smoke_status=0
   fi
 
   rm -rf "$smoke_dir"
-  rm -f "$smoke_log" "$smoke_log.status"
 
   return "$smoke_status"
 }
