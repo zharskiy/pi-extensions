@@ -9,7 +9,8 @@ import {
   sharedRootsOf,
   type Workspace,
 } from "../../workspace/index.ts";
-import { tempDir } from "../support/temp-dir.ts";
+import { workspaceAt } from "../support/git.ts";
+import { realTempDir, tempDir } from "../support/temp-dir.ts";
 
 const createTree = async () => {
   const unresolved = await tempDir("roots");
@@ -20,13 +21,6 @@ const createTree = async () => {
 
   return { unresolved, base };
 };
-
-const workspaceAt = (repoRoot: string, gitCommonDir?: string): Workspace => ({
-  cwd: repoRoot,
-  repoRoot,
-  gitCommonDir,
-  isGitRepo: gitCommonDir !== undefined,
-});
 
 const NO_HOME = "/nonexistent-home";
 
@@ -104,7 +98,7 @@ describe("assertWithinWorkspaceRoots", () => {
 });
 
 const createHome = async () => {
-  const base = await realpath(await tempDir("shared-roots"));
+  const base = await realTempDir("shared-roots");
   const home = join(base, "home");
   const env = {
     PI_CODING_AGENT_DIR: join(home, ".pi", "agent"),
@@ -271,7 +265,7 @@ describe("sharedRootsOf", () => {
 
 describe("checkRoot", () => {
   const contextOf = async () => {
-    const home = await realpath(await tempDir("check-root-home"));
+    const home = await realTempDir("check-root-home");
 
     await mkdir(join(home, "work"), { recursive: true });
 

@@ -317,9 +317,9 @@ tests/support/fake-engine.ts         an in-memory engine HTTP server
 tests/support/fake-runner.ts         the scripted CommandRunner
 tests/support/fake-clock.ts          a controllable clock
 tests/support/sandbox-config.ts      config builders
-tests/support/temp-dir.ts            temp dir helpers and exists
+tests/support/temp-dir.ts            temp dir helpers (also with the real path) and exists
 tests/support/launches.ts            registers a live launch of this process (registerLiveLaunch)
-tests/support/git.ts                 git for tests, isolated from the developer's git config
+tests/support/git.ts                 git for tests, isolated from the developer's git config, a fresh repository, discoverAt and workspaceAt
 tests/support/fakes.test.ts          the fakes' own contract
 tests/shared/atomic-write.test.ts    atomic writes
 tests/shared/command-runner.test.ts  the real runner

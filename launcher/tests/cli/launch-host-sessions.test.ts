@@ -1,15 +1,10 @@
-import { chmod, lstat, mkdir, readdir, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readdir, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { run } from "../../cli/index.ts";
 import { hostSessionsDir } from "../../workspace/index.ts";
+import { exists } from "../support/temp-dir.ts";
 import { createFakeBackend, createHarness, isPiSession } from "./harness.ts";
-
-const exists = (path: string) =>
-  lstat(path).then(
-    () => true,
-    () => false,
-  );
 
 const header = (cwd: string) => `${JSON.stringify({ type: "session", id: "abc", cwd })}\n`;
 

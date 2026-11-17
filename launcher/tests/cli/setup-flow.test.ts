@@ -1,4 +1,4 @@
-import { mkdir, realpath } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { VmApplied, VmPhase } from "../../backend/index.ts";
@@ -6,7 +6,7 @@ import type { Prompts } from "../../cli/prompt/types.ts";
 import { readDocument } from "../../cli/setup/document.ts";
 import { runSetup, type SetupInput } from "../../cli/setup/flow.ts";
 import type { Answers, FolderCandidate, HostFacts, SetupIo, VmAction } from "../../cli/setup/types.ts";
-import { tempDir } from "../support/temp-dir.ts";
+import { realTempDir } from "../support/temp-dir.ts";
 import { fakeTimers, KEY, plainPrompts, richPrompts, until } from "./prompt/fake-tty.ts";
 import { AUTOMATIC_SIZE, candidateOf, factsOf, HOME, runningVm } from "./setup-fixtures.ts";
 
@@ -403,7 +403,7 @@ describe("a first run", () => {
   });
 
   it("adds a typed folder to the list, checked, and saves it after the others", async () => {
-    const home = await realpath(await tempDir("setup-flow-home"));
+    const home = await realTempDir("setup-flow-home");
 
     await mkdir(join(home, "oss"));
 
@@ -830,7 +830,7 @@ describe("plain mode", () => {
   });
 
   it("adds a typed path to the folders, re-asking the folders after a refused one", async () => {
-    const home = await realpath(await tempDir("setup-flow-plain-home"));
+    const home = await realTempDir("setup-flow-plain-home");
 
     await mkdir(join(home, "oss"));
 

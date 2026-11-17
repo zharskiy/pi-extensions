@@ -1,8 +1,8 @@
-import { mkdir, realpath } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { type Overlap, overlapOf, protectedPaths } from "../../workspace/mounts.ts";
-import { tempDir } from "../support/temp-dir.ts";
+import { realTempDir } from "../support/temp-dir.ts";
 
 const OVERLAP_TEXT: Record<Overlap, string> = {
   is: "it is",
@@ -16,7 +16,7 @@ const firstOverlap = (path: string, home: string, env: NodeJS.ProcessEnv) =>
     .find((found) => found.overlap !== undefined);
 
 const setup = async () => {
-  const base = await realpath(await tempDir("mounts"));
+  const base = await realTempDir("mounts");
   const home = join(base, "home");
 
   await mkdir(join(home, "work", "repo"), { recursive: true });

@@ -1,4 +1,4 @@
-import { chmod, lstat, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach } from "vitest";
@@ -16,6 +16,8 @@ export const tempDir = async (prefix: string) => {
 
   return dir;
 };
+
+export const realTempDir = async (prefix: string) => realpath(await tempDir(prefix));
 
 export const writeText = async (path: string, text: string | Buffer) => {
   await mkdir(dirname(path), { recursive: true });

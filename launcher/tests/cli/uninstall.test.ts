@@ -1,6 +1,6 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { once } from "node:events";
-import { chmod, mkdir, readFile, readlink, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, readlink, rm, symlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { LABELS } from "../../backend/index.ts";
@@ -13,7 +13,7 @@ import {
   sha256Hex,
   stateLayout,
 } from "../../shared/index.ts";
-import { exists, tempDir } from "../support/temp-dir.ts";
+import { exists, realTempDir, tempDir } from "../support/temp-dir.ts";
 import { createFakeBackend, createHarness, holdLaunch, unreachable } from "./harness.ts";
 
 const children: ChildProcess[] = [];
@@ -39,7 +39,7 @@ interface Root {
 }
 
 const uninstallRoot = async (): Promise<Root> => {
-  const root = await realpath(await tempDir("uninstall"));
+  const root = await realTempDir("uninstall");
   const home = join(root, "home");
   const tools = join(root, "tools");
 

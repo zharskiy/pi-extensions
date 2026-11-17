@@ -1,8 +1,10 @@
 import { mkdtempSync, rmSync } from "node:fs";
+import { mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, expect } from "vitest";
 import { createProcessRunner } from "../../shared/index.ts";
+import { discoverWorkspace, type Workspace, workspaceFolder } from "../../workspace/index.ts";
 
 const IDENTITY = [
   "-c",
@@ -43,3 +45,25 @@ export const git = async (cwd: string, args: string[]) => {
 
   expect(result.code, result.stderr).toBe(0);
 };
+
+export const createGitRepo = async (path: string) => {
+  await mkdir(path, { recursive: true });
+
+  await git(path, ["init", "--quiet"]);
+
+  await git(path, ["commit", "--quiet", "--allow-empty", "-m", "init"]);
+
+  return path;
+};
+
+export const discoverAt = async (
+  cwd: string,
+  ...rest: Parameters<typeof discoverWorkspace> extends [unknown, ...infer R] ? R : never
+) => discoverWorkspace(await workspaceFolder(cwd), ...rest);
+
+export const workspaceAt = (repoRoot: string, gitCommonDir?: string): Workspace => ({
+  cwd: repoRoot,
+  repoRoot,
+  gitCommonDir,
+  isGitRepo: gitCommonDir !== undefined,
+});

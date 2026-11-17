@@ -1,4 +1,4 @@
-import { mkdir, realpath, symlink, utimes, writeFile } from "node:fs/promises";
+import { mkdir, symlink, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -12,10 +12,10 @@ import {
   USUAL_FOLDERS,
   unscannedCandidates,
 } from "../../cli/setup/folders.ts";
-import { tempDir } from "../support/temp-dir.ts";
+import { realTempDir } from "../support/temp-dir.ts";
 
 const homeWith = async (repos: string[], folders: string[] = []) => {
-  const home = await realpath(await tempDir("setup-home"));
+  const home = await realTempDir("setup-home");
 
   await Promise.all(repos.map((repo) => mkdir(join(home, repo, ".git"), { recursive: true })));
 

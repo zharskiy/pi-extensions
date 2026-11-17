@@ -1,4 +1,4 @@
-import { mkdir, realpath, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { describe, expect, it } from "vitest";
@@ -9,7 +9,7 @@ import { createHarness, sweepNow, writeColimaMounts, writeLimaMounts } from "../
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { argvOf, createFakeRunner, type FakeCall } from "../support/fake-runner.ts";
 import { registerLiveLaunch } from "../support/launches.ts";
-import { tempDir } from "../support/temp-dir.ts";
+import { realTempDir } from "../support/temp-dir.ts";
 
 interface ColimaAnswers {
   running?: boolean;
@@ -198,7 +198,7 @@ describe("a launch starts the stopped sandbox VM", () => {
 });
 
 const stoppedVm = async (detections: boolean[] = []) => {
-  const root = await realpath(await tempDir("vm"));
+  const root = await realTempDir("vm");
   const home = join(root, "home");
   const outside = join(root, "outside-share-repo");
   const state = { running: false, detections: [...detections] };

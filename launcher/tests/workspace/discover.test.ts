@@ -2,15 +2,9 @@ import { mkdir, readFile, realpath, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { discoverWorkspace, workspaceFolder } from "../../workspace/index.ts";
 import { createFakeRunner } from "../support/fake-runner.ts";
-import { git, gitRunner } from "../support/git.ts";
-import { tempDir } from "../support/temp-dir.ts";
-
-const discoverAt = async (
-  cwd: string,
-  ...rest: Parameters<typeof discoverWorkspace> extends [unknown, ...infer R] ? R : never
-) => discoverWorkspace(await workspaceFolder(cwd), ...rest);
+import { createGitRepo, discoverAt, git, gitRunner } from "../support/git.ts";
+import { realTempDir } from "../support/temp-dir.ts";
 
 const runner = gitRunner;
 
@@ -31,7 +25,7 @@ const recording = () => {
 };
 
 const temporaryFolder = async () => {
-  const folder = await realpath(await tempDir("workspace"));
+  const folder = await realTempDir("workspace");
 
   return folder;
 };
@@ -41,10 +35,7 @@ const createRepo = async () => {
 
   await mkdir(join(repo, "src", "deep"), { recursive: true });
 
-  await git(repo, ["init", "--quiet"]);
-  await git(repo, ["commit", "--quiet", "--allow-empty", "-m", "init"]);
-
-  return repo;
+  return createGitRepo(repo);
 };
 
 describe("discoverWorkspace", () => {

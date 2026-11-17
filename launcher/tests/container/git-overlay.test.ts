@@ -1,22 +1,11 @@
-import { chmod, lstat, mkdir, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { type GitGuardContext, planGitOverlay } from "../../container/index.ts";
 import { sha256Hex, stateLayout } from "../../shared/index.ts";
-import {
-  discoverWorkspace,
-  gitLaunchEndNotices,
-  gitLaunchNotices,
-  type Workspace,
-  workspaceFolder,
-} from "../../workspace/index.ts";
-import { git, gitRunner } from "../support/git.ts";
-import { tempDir } from "../support/temp-dir.ts";
-
-const discoverAt = async (
-  cwd: string,
-  ...rest: Parameters<typeof discoverWorkspace> extends [unknown, ...infer R] ? R : never
-) => discoverWorkspace(await workspaceFolder(cwd), ...rest);
+import { gitLaunchEndNotices, gitLaunchNotices, type Workspace } from "../../workspace/index.ts";
+import { discoverAt, git, gitRunner } from "../support/git.ts";
+import { realTempDir } from "../support/temp-dir.ts";
 
 const runner = gitRunner;
 
@@ -27,7 +16,7 @@ const readyGitOverlay = async (workspace: Workspace, context: GitGuardContext) =
   (await planGitOverlay(workspace, context)).ready();
 
 const createBase = async () => {
-  const base = await realpath(await tempDir("git"));
+  const base = await realTempDir("git");
 
   await mkdir(join(base, "home"));
 

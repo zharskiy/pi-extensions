@@ -1,11 +1,11 @@
-import { mkdir, realpath } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { VmInspect } from "../../backend/index.ts";
 import { type DetectDeps, detectHost } from "../../cli/setup/detect.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { registerLiveLaunch } from "../support/launches.ts";
-import { tempDir } from "../support/temp-dir.ts";
+import { realTempDir } from "../support/temp-dir.ts";
 
 const GIB = 1024 ** 3;
 
@@ -16,7 +16,7 @@ const running: VmInspect = {
 };
 
 const depsOf = async (overrides: Partial<DetectDeps> = {}): Promise<DetectDeps> => {
-  const home = await realpath(await tempDir("detect-home"));
+  const home = await realTempDir("detect-home");
 
   await mkdir(join(home, "Projects", "app", ".git"), { recursive: true });
 

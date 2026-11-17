@@ -1,13 +1,13 @@
-import { mkdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { hostAgentDir } from "../../shared/index.ts";
 import { assertHostSessionsDir, hostSessionsChoice, hostSessionsDir } from "../../workspace/index.ts";
 import { sessionSlug } from "../../workspace/pi-session-dir.ts";
-import { tempDir } from "../support/temp-dir.ts";
+import { realTempDir } from "../support/temp-dir.ts";
 
 const createAgentDir = async () => {
-  const base = await realpath(await tempDir("sessions"));
+  const base = await realTempDir("sessions");
   const home = join(base, "home");
   const agentDir = join(home, ".pi", "agent");
   const repoRoot = join(base, "work", "repo");

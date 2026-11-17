@@ -1,22 +1,17 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmod, lstat, mkdir, readdir, readFile, realpath, stat, symlink, truncate } from "node:fs/promises";
+import { chmod, mkdir, readdir, readFile, stat, symlink, truncate } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { prepareHostSessions, probeHostSessions, sweepHostSessions } from "../../provision/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
-import { runningContainer, tempDir, writeText } from "./fixtures.ts";
+import { exists, realTempDir } from "../support/temp-dir.ts";
+import { runningContainer, writeText } from "./fixtures.ts";
 
 const PRIVATE = 0o700;
 
 const MODE_BITS = 0o777;
 
 const modeOf = async (path: string) => (await stat(path)).mode & MODE_BITS;
-
-const exists = (path: string) =>
-  lstat(path).then(
-    () => true,
-    () => false,
-  );
 
 const header = (cwd: string) =>
   `${JSON.stringify({ type: "session", id: "abc", cwd })}\n{"type":"message"}\n`;
@@ -32,7 +27,7 @@ const rejectedNotice = (dir: string, name: string, reason: string) =>
   );
 
 const sessionsFixture = async () => {
-  const base = await realpath(await tempDir("host-sessions"));
+  const base = await realTempDir("host-sessions");
   const repoRoot = join(base, "work", "repo");
   const dir = join(base, "agent", "sessions", "--work-repo--");
   const outside = join(base, "outside.txt");
@@ -48,7 +43,7 @@ const sessionsFixture = async () => {
 
 describe("prepareHostSessions", () => {
   it("creates the missing agent, sessions and slug directories with mode 0700", async () => {
-    const base = await realpath(await tempDir("prepare"));
+    const base = await realTempDir("prepare");
     const agentDir = join(base, "home", ".pi", "agent");
     const dir = join(agentDir, "sessions", "--repo--");
 
@@ -60,7 +55,7 @@ describe("prepareHostSessions", () => {
   });
 
   it("never changes the mode of directories that already exist", async () => {
-    const base = await realpath(await tempDir("prepare"));
+    const base = await realTempDir("prepare");
     const sessions = join(base, "agent", "sessions");
     const dir = join(sessions, "--repo--");
 

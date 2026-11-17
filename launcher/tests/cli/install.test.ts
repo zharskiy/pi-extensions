@@ -1,9 +1,9 @@
 import { spawnSync } from "node:child_process";
-import { chmod, mkdir, readFile, readlink, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, readlink, rm, symlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { launcherRoot } from "../../shared/index.ts";
-import { exists, tempDir } from "../support/temp-dir.ts";
+import { exists, realTempDir } from "../support/temp-dir.ts";
 import { writeManagedPi } from "./harness.ts";
 
 const SYSTEM_TOOLS = [
@@ -59,7 +59,7 @@ const writeTools = async (dir: string, fakes: Record<string, string>) => {
 };
 
 const installRoot = async (fakes: Record<string, string> = {}, homeName = "home") => {
-  const root = await realpath(await tempDir("install"));
+  const root = await realTempDir("install");
   const home = join(root, homeName);
   const agentDir = join(home, ".pi", "agent");
 

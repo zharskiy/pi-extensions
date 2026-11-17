@@ -7,6 +7,7 @@ import { run } from "../../cli/index.ts";
 import { liveLaunches } from "../../grants/index.ts";
 import { processMark, sha256Hex, stateLayout } from "../../shared/index.ts";
 import { registerLiveLaunch } from "../support/launches.ts";
+import { exists } from "../support/temp-dir.ts";
 import { createFakeBackend, createHarness, holdLaunch, piSessions, sweepNow } from "./harness.ts";
 
 const POLL_MS = 5;
@@ -24,12 +25,6 @@ const _waitFor = async (ready: () => boolean, left = POLLS): Promise<boolean> =>
 };
 
 const OTHER_LAUNCH = "00000000000000aa";
-
-const exists = (path: string) =>
-  lstat(path).then(
-    () => true,
-    () => false,
-  );
 
 const filesUnder = async (dir: string): Promise<string[]> => {
   const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);

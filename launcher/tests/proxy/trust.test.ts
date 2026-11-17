@@ -5,10 +5,11 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { endLaunch, registerLaunch } from "../../grants/index.ts";
+import { endLaunch } from "../../grants/index.ts";
 import { ensureTrustBundle } from "../../proxy/trust.ts";
-import { createProcessRunner, LauncherError, processMark } from "../../shared/index.ts";
+import { createProcessRunner, LauncherError } from "../../shared/index.ts";
 import { argvOf, createScriptedRunner } from "../support/fake-runner.ts";
+import { registerLiveLaunch } from "../support/launches.ts";
 import { openCa } from "./harness.ts";
 
 const state = { stateDir: "", corpPem: "", otherPem: "", launcherPem: "", leafPem: "", plainRootPem: "" };
@@ -316,25 +317,13 @@ describe("the legacy trust.pem", () => {
     });
 
   it("stays while another launch may still bind it, and goes once only this launch is live", async () => {
-    const mark = await processMark();
-
     await mkdir(join(state.stateDir, "ca"), { recursive: true });
 
     await writeFile(legacyPem(), "old");
 
-    await registerLaunch(state.stateDir, {
-      launchId: "00000000000000a1",
-      ...mark,
-      repoHash: "a".repeat(64),
-      startedAt: 1,
-    });
+    await registerLiveLaunch(state.stateDir, "a".repeat(64), { launchId: "00000000000000a1" });
 
-    await registerLaunch(state.stateDir, {
-      launchId: "00000000000000a2",
-      ...mark,
-      repoHash: "b".repeat(64),
-      startedAt: 1,
-    });
+    await registerLiveLaunch(state.stateDir, "b".repeat(64), { launchId: "00000000000000a2" });
 
     await bundleFor("00000000000000a1");
 
@@ -366,8 +355,8 @@ describe("the trust bundle files", () => {
       launchId,
     });
 
-  const register = async (stateDir: string, launchId: string, repoHash: string) =>
-    registerLaunch(stateDir, { launchId, ...(await processMark()), repoHash, startedAt: 1 });
+  const register = (stateDir: string, launchId: string, repoHash: string) =>
+    registerLiveLaunch(stateDir, repoHash, { launchId });
 
   const endOther = (stateDir: string) =>
     endLaunch(stateDir, { repoHash: "d".repeat(64), launchId: OTHER, onLast: async () => undefined });
