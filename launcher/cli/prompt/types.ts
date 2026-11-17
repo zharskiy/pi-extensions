@@ -94,6 +94,10 @@ export interface Choice<T> {
   action?: true;
 }
 
+export interface AddedChoice<T> extends Choice<T> {
+  unchecks?: T[];
+}
+
 export interface SelectSpec<T> extends KeyWords {
   title: string;
   detail?: Detail;
@@ -108,7 +112,7 @@ export interface MultiSpec<T> extends KeyWords {
   detail?: Detail;
   choices: Choice<T>[];
   checked: T[];
-  onAction?: (value: T, typed?: string) => Promise<Choice<T> | undefined>;
+  onAction?: (value: T, typed: string | undefined, checked: T[]) => Promise<AddedChoice<T> | undefined>;
   collapsed: (values: T[]) => Collapse;
   plain: { help: string[]; label: string };
 }

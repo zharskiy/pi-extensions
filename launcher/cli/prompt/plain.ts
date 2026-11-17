@@ -4,6 +4,7 @@ import { DIGITS, initialIndex, numberProblem, toggle, warningFor } from "./rules
 import { asciiOf, printable, wrap } from "./style.ts";
 import { heartbeat, runTask, type TaskView, warningOf } from "./task.ts";
 import {
+  type AddedChoice,
   BACK,
   Cancelled,
   type Choice,
@@ -161,16 +162,22 @@ export const createPlainPrompts = (ui: Ui): Prompts => {
     const values = () =>
       state.choices.filter((choice) => state.checked.has(choice.value)).map((choice) => choice.value);
 
-    const add = (choice: Choice<T> | undefined) => {
+    const add = (choice: AddedChoice<T> | undefined) => {
       if (choice === undefined) {
         return;
       }
 
-      if (!state.choices.some((known) => known.value === choice.value)) {
-        state.choices = [...state.choices, choice];
+      const { unchecks = [], ...shown } = choice;
+
+      if (!state.choices.some((known) => known.value === shown.value)) {
+        state.choices = [...state.choices, shown];
       }
 
-      state.checked.add(choice.value);
+      unchecks.forEach((value) => {
+        state.checked.delete(value);
+      });
+
+      state.checked.add(shown.value);
     };
 
     const picksOf = (answer: string) => {
@@ -196,7 +203,7 @@ export const createPlainPrompts = (ui: Ui): Prompts => {
       const picks = picksOf(answer);
 
       if (picks === undefined && action !== undefined && !NUMBERS.test(answer)) {
-        add(await spec.onAction?.(action.value, answer));
+        add(await spec.onAction?.(action.value, answer, values()));
 
         print(list());
 

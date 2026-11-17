@@ -1,4 +1,4 @@
-import { mkdir, realpath } from "node:fs/promises";
+import { mkdir, realpath, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { VmApplied, VmPhase } from "../../backend/index.ts";
@@ -415,6 +415,66 @@ describe("a first run", () => {
 
     expect(await run.exit).toBe(0);
     expect(JSON.parse(run.writes[0] ?? "").workspaceRoots.roots).toEqual(["~/work", "~/oss"]);
+  });
+
+  it("narrows a checked folder to a typed folder inside it, leaving the wider one listed and unchecked", async () => {
+    const home = await realpath(await tempDir("setup-flow-home"));
+
+    await mkdir(join(home, "Projects", "app"), { recursive: true });
+
+    const run = setup({
+      facts: {
+        home,
+        candidates: [
+          candidate("Projects", 3, { resolved: join(home, "Projects") }),
+          candidate("work", 3, { resolved: join(home, "work") }),
+        ],
+      },
+    });
+
+    await run.keys(KEY.end, KEY.enter, "Projects/app", KEY.enter);
+
+    await run.shown("~/Projects/app replaces ~/Projects, which holds it.");
+
+    await run.shown("Add another folder");
+
+    expect(run.screen.lines()).toContain("│  ~/Projects/app replaces ~/Projects, which holds it.");
+    expect(run.screen.lines()).toContain("│    □ ~/Projects   3 git repositories");
+    expect(run.screen.lines()).toContain("│  › ■ ~/Projects/app");
+
+    await run.keys(KEY.home, ...STEPS_ACCEPTED, KEY.enter);
+
+    expect(await run.exit).toBe(0);
+    expect(JSON.parse(run.writes[0] ?? "").workspaceRoots.roots).toEqual(["~/work", "~/Projects/app"]);
+  });
+
+  it("adds a typed folder inside an unchecked one as is, checking it against the folders checked now", async () => {
+    const home = await realpath(await tempDir("setup-flow-home"));
+
+    await mkdir(join(home, "Projects", "app"), { recursive: true });
+
+    const run = setup({
+      facts: {
+        home,
+        candidates: [
+          candidate("Projects", 3, { resolved: join(home, "Projects") }),
+          candidate("work", 3, { resolved: join(home, "work") }),
+        ],
+      },
+    });
+
+    await run.keys(KEY.space, KEY.end, KEY.enter, "Projects/app", KEY.enter);
+
+    await run.shown("│  › ■ ~/Projects/app");
+
+    expect(run.text()).not.toContain("replaces");
+    expect(run.text()).not.toContain("already selected");
+    expect(run.screen.lines()).toContain("│    □ ~/Projects   3 git repositories");
+
+    await run.keys(KEY.home, ...STEPS_ACCEPTED, KEY.enter);
+
+    expect(await run.exit).toBe(0);
+    expect(JSON.parse(run.writes[0] ?? "").workspaceRoots.roots).toEqual(["~/work", "~/Projects/app"]);
   });
 
   it("cancels on ctrl-c at each step without writing", async () => {
@@ -851,5 +911,128 @@ describe("plain mode", () => {
     expect(lines).toContain("  2) [x] ~/oss");
     expect(lines).toContain("Folders [1 2]:");
     expect(run.text()).not.toContain("Add a folder");
+  });
+
+  it("narrows a checked folder to a typed path inside it, and refuses a typed path holding a checked one", async () => {
+    const home = await realpath(await tempDir("setup-flow-plain-home"));
+
+    await mkdir(join(home, "Projects", "app"), { recursive: true });
+
+    await mkdir(join(home, "work", "api"), { recursive: true });
+
+    const run = setup({
+      plain: true,
+      facts: {
+        home,
+        candidates: [
+          candidate("Projects", 3, { resolved: join(home, "Projects") }),
+          candidate("work/api", 3, { resolved: join(home, "work", "api") }),
+        ],
+      },
+    });
+
+    await run.answer("~/work", "~/Projects/app", "", "", "", "");
+
+    expect(await run.exit).toBe(0);
+    expect(JSON.parse(run.writes[0] ?? "").workspaceRoots.roots).toEqual(["~/work/api", "~/Projects/app"]);
+
+    const lines = run.screen.lines();
+    const refused = lines.findIndex((line) => line.startsWith("Folders [1 2]: ~/work"));
+    const narrowed = lines.findIndex((line) => line.startsWith("Folders [1 2]: ~/Projects/app"));
+
+    expect(lines[refused + 1]).toBe(
+      "Error: ~/work holds ~/work/api, which is selected. Unselect ~/work/api first, or",
+    );
+    expect(lines[narrowed + 1]).toBe("~/Projects/app replaces ~/Projects, which holds it.");
+    expect(lines).toContain("  1) [ ] ~/Projects (3 git repositories)");
+    expect(lines).toContain("  3) [x] ~/Projects/app");
+    expect(lines).toContain("Folders [2 3]:");
+  });
+
+  it("replaces every checked folder that holds a typed path, links included, in one add", async () => {
+    const home = await realpath(await tempDir("setup-flow-plain-home"));
+
+    await mkdir(join(home, "Projects", "app"), { recursive: true });
+
+    await mkdir(join(home, "work"));
+
+    await symlink(join(home, "Projects"), join(home, "link"));
+
+    const run = setup({
+      plain: true,
+      facts: {
+        home,
+        candidates: [
+          candidate("Projects", 3, { resolved: join(home, "Projects") }),
+          candidate("link", 3, { resolved: join(home, "Projects") }),
+          candidate("work", 3, { resolved: join(home, "work") }),
+        ],
+      },
+    });
+
+    await run.answer("~/Projects/app", "", "", "", "");
+
+    expect(await run.exit).toBe(0);
+    expect(JSON.parse(run.writes[0] ?? "").workspaceRoots.roots).toEqual(["~/work", "~/Projects/app"]);
+
+    const lines = run.screen.lines();
+
+    expect(lines).toContain("~/Projects/app replaces ~/Projects and ~/link, which hold it.");
+    expect(lines).toContain("  1) [ ] ~/Projects (3 git repositories)");
+    expect(lines).toContain("  2) [ ] ~/link (3 git repositories)");
+    expect(lines).toContain("  3) [x] ~/work (3 git repositories)");
+    expect(lines).toContain("  4) [x] ~/Projects/app");
+  });
+
+  it("keeps a narrowed choice when the folders step is opened again from the review", async () => {
+    const home = await realpath(await tempDir("setup-flow-plain-home"));
+
+    await mkdir(join(home, "Projects", "app"), { recursive: true });
+
+    const run = setup({
+      plain: true,
+      facts: {
+        home,
+        candidates: [
+          candidate("Projects", 3, { resolved: join(home, "Projects") }),
+          candidate("work", 3, { resolved: join(home, "work") }),
+        ],
+      },
+    });
+
+    await run.answer("~/Projects/app", "", "", "", "2", "", "");
+
+    expect(await run.exit).toBe(0);
+    expect(JSON.parse(run.writes[0] ?? "").workspaceRoots.roots).toEqual(["~/work", "~/Projects/app"]);
+
+    const lines = run.screen.lines();
+    const reopened = lines.lastIndexOf("  1) [ ] ~/Projects (3 git repositories)");
+
+    expect(reopened).toBeGreaterThan(lines.indexOf("  2) Change project folders"));
+    expect(lines[reopened + 1]).toBe("  2) [x] ~/work (3 git repositories)");
+    expect(lines[reopened + 2]).toBe("  3) [x] ~/Projects/app");
+  });
+
+  it("checks a typed path against the folders checked now, not the ones the list opened with", async () => {
+    const home = await realpath(await tempDir("setup-flow-plain-home"));
+
+    await mkdir(join(home, "Projects", "app"), { recursive: true });
+
+    const run = setup({
+      plain: true,
+      facts: {
+        home,
+        candidates: [
+          candidate("Projects", 3, { resolved: join(home, "Projects") }),
+          candidate("work", 3, { resolved: join(home, "work") }),
+        ],
+      },
+    });
+
+    await run.answer("1", "~/Projects/app", "", "", "", "");
+
+    expect(await run.exit).toBe(0);
+    expect(JSON.parse(run.writes[0] ?? "").workspaceRoots.roots).toEqual(["~/work", "~/Projects/app"]);
+    expect(run.text()).not.toContain("replaces");
   });
 });
