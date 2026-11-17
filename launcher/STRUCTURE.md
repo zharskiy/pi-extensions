@@ -196,7 +196,7 @@ hostpi/provider-hosts.mjs      run against the host pi: the built-in provider ho
 hostpi/locate.ts               finds pi's managed install in the host agent dir
 hostpi/path-search.ts          PATH lookup outside the sandbox roots and the executable check
 hostpi/mcp-auth.ts             MCP servers and their host sign-in state
-hostpi/json.ts                 small JSON helpers
+hostpi/json.ts                 objectOr
 hostpi/tools/files.ts          shared helpers of the tool derivers
 hostpi/tools/gh.ts             gh hosts and tokens
 hostpi/tools/glab.ts           glab hosts and tokens
@@ -297,7 +297,7 @@ shared/placeholder.ts          the placeholder format and the JWT shape
 shared/secret-name.ts          secret-looking names, auth-like headers, URL userinfo and credential-shaped values
 shared/pi-env.ts               pi variable names the launcher sets, the fixed part of the sandbox env (FIXED_SANDBOX_ENV) and pi's npm package name (PI_PACKAGE)
 shared/mcp-auth-key.ts         host pi's mcp-auth.json parser, mcp-login.json under a file lock, and sign-in dirs
-shared/tool-config.ts          the tool config format dispatcher and the JSON pointer reader
+shared/tool-config.ts          the tool config format dispatcher, the JSON pointer reader and writer
 shared/npmrc.ts                the .npmrc parser and value reader
 shared/ini.ts                  the ini parser and section.name[n] reader
 shared/maven-xml.ts            the XML tokenizer, the Maven settings model, the server secret reader and the XML writer

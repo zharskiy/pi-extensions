@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import type { SecretRef } from "../config/index.ts";
-import { isJsonObject, placeholderFor } from "../shared/index.ts";
+import { isJsonObject, jsonPointer, placeholderFor } from "../shared/index.ts";
 import {
   type Endpoint,
   endpointOf,
@@ -11,7 +11,7 @@ import {
   strippedUrl,
 } from "./endpoints.ts";
 import { deriveHeaders, type HeaderTarget } from "./headers.ts";
-import { jsonPointer, objectOr } from "./json.ts";
+import { objectOr } from "./json.ts";
 import { noHostNotice, providerEndpoints } from "./provider-endpoints.ts";
 import { type DeriveContext, mergeSections, noticeOnly, rulesFor, type Section } from "./rules.ts";
 import type { JsonObject, ProviderHosts } from "./types.ts";

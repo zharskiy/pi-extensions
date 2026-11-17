@@ -1,7 +1,12 @@
 import { SECRET_MARKER, type SecretRef } from "../config/index.ts";
-import { isAuthLikeHeader, isJsonObject, isSecretShapedValue, placeholderFor } from "../shared/index.ts";
+import {
+  isAuthLikeHeader,
+  isJsonObject,
+  isSecretShapedValue,
+  jsonPointer,
+  placeholderFor,
+} from "../shared/index.ts";
 import type { Endpoint } from "./endpoints.ts";
-import { jsonPointer } from "./json.ts";
 import { type DeriveContext, mergeSections, noticeOnly, rulesFor, type Section } from "./rules.ts";
 import type { JsonObject } from "./types.ts";
 

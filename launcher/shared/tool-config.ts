@@ -49,6 +49,11 @@ export const urlPartOf = (value: string | undefined, select: { urlPassword?: tru
 
 const unescapeToken = (token: string) => token.replaceAll("~1", "/").replaceAll("~0", "~");
 
+const escapeToken = (token: string) => token.replaceAll("~", "~0").replaceAll("/", "~1");
+
+export const jsonPointer = (tokens: Array<string | number>) =>
+  tokens.map((token) => `/${escapeToken(String(token))}`).join("");
+
 const jsonStep = (value: unknown, token: string) => {
   const selector = SELECTOR.exec(token);
 

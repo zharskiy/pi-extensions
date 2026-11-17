@@ -83,7 +83,13 @@ export { settleAll, withTimeout } from "./settle.ts";
 export { ensureSalt, GUEST_PATHS, isTrustBundleName, stateLayout } from "./state-layout.ts";
 export { isControlChar, lastLine, printable } from "./terminal-text.ts";
 export type { ToolConfigFormat, ToolConfigSelect } from "./tool-config.ts";
-export { isToolConfigKey, TOOL_CONFIG_FORMATS, toolConfigValue, urlPartOf } from "./tool-config.ts";
+export {
+  isToolConfigKey,
+  jsonPointer,
+  TOOL_CONFIG_FORMATS,
+  toolConfigValue,
+  urlPartOf,
+} from "./tool-config.ts";
 export type { FileKeys, ValueSpec, ValueType, WriteBackTable } from "./write-back-table.ts";
 export {
   BUILT_IN_EXTENSION_FILES,
