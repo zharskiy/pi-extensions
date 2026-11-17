@@ -1,4 +1,5 @@
-import { cpus, homedir, totalmem } from "node:os";
+import { statfs } from "node:fs/promises";
+import { availableParallelism, homedir, totalmem } from "node:os";
 import { createColimaBackend } from "../backend/index.ts";
 import { findOnPath } from "../hostpi/index.ts";
 import {
@@ -11,6 +12,7 @@ import {
 import { createProcessRunner, realOrResolved, withResolvedCommand } from "../shared/index.ts";
 import { findGitRoot } from "../workspace/index.ts";
 import { type CliDeps, onClosedOutput, pathsOf } from "./deps.ts";
+import { openDevTty } from "./prompt/terminal.ts";
 import { renderFailure, run } from "./run.ts";
 import { hostTerminal } from "./terminal.ts";
 
@@ -39,9 +41,11 @@ const realDeps = (): CliDeps => {
     stdout: process.stdout,
     stderr: process.stderr,
     terminal: hostTerminal(),
+    openTty: openDevTty,
     platform,
     uid: process.getuid?.() ?? 0,
-    machine: { cpus: cpus().length, memoryGiB: totalmem() / GIB },
+    machine: { cpus: availableParallelism(), memoryGiB: totalmem() / GIB },
+    statfs: (path) => statfs(path),
     backend: () => createColimaBackend({ home, stateDir, runner }),
     proxy: {
       ensure: (request) => ensureRepoProxy({ ...request, runner }),

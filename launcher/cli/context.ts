@@ -43,6 +43,7 @@ const discoverContext = async (deps: CliDeps, lenient: boolean, options: Context
     assertWithinWorkspaceRoots(
       { cwd: folder.realCwd, repoRoot: mounted, isGitRepo: false },
       effective.config.workspaceRoots,
+      deps.home,
     );
   }
 
@@ -56,8 +57,8 @@ const discoverContext = async (deps: CliDeps, lenient: boolean, options: Context
   return { workspace, effective, stateDir, repoHash: repoHash(workspace.repoRoot) };
 };
 
-export const checkWorkspaceRoots = (context: LaunchContext) => {
-  assertWithinWorkspaceRoots(context.workspace, context.effective.config.workspaceRoots);
+export const checkWorkspaceRoots = (deps: CliDeps, context: LaunchContext) => {
+  assertWithinWorkspaceRoots(context.workspace, context.effective.config.workspaceRoots, deps.home);
 };
 
 export const openContext = async <M extends ContextMode>(
@@ -71,7 +72,7 @@ export const openContext = async <M extends ContextMode>(
     return { context } as Opened<M>;
   }
 
-  checkWorkspaceRoots(context);
+  checkWorkspaceRoots(deps, context);
 
   assertSafeWorkspace(context.workspace, { home: deps.home, env: deps.env });
 

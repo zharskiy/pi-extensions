@@ -1,7 +1,14 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { type Backend, LABELS, type VmPath, type VmShare } from "../backend/index.ts";
-import type { SandboxConfig } from "../config/index.ts";
+import {
+  type Backend,
+  LABELS,
+  type VmPath,
+  type VmShare,
+  type VmSpec,
+  type VmTarget,
+} from "../backend/index.ts";
+import { type SandboxConfig, VM_BOUNDS } from "../config/index.ts";
 import { listLauncherContainers } from "../container/index.ts";
 import { liveLaunches } from "../grants/index.ts";
 import { isWithin, LauncherError, realOrResolvedSync, stateLayout } from "../shared/index.ts";
@@ -24,6 +31,51 @@ export interface VmSharePlan {
   shares: VmShare[];
   notices: string[];
 }
+
+const HOST_RESERVE_GIB = 2;
+
+const AUTOMATIC = { cpus: { min: 2, max: 8 }, memoryGiB: { min: 4, max: 10 }, diskGiB: 60 };
+
+export const clamp = (value: number, bounds: { min: number; max: number }) =>
+  Math.max(bounds.min, Math.min(bounds.max, value));
+
+export const hostVmLimits = (machine: CliDeps["machine"]) => ({
+  cpus: clamp(machine.cpus, VM_BOUNDS.cpus),
+  memoryGiB: clamp(Math.floor(machine.memoryGiB) - HOST_RESERVE_GIB, VM_BOUNDS.memoryGiB),
+});
+
+export const recommendedVmSize = (cpus: number, memoryGiB: number): VmSpec => ({
+  cpus: clamp(Math.floor(cpus), AUTOMATIC.cpus),
+  memoryGiB: clamp(Math.floor(memoryGiB / 2), AUTOMATIC.memoryGiB),
+  diskGiB: AUTOMATIC.diskGiB,
+});
+
+const vmHostProblems = (machine: CliDeps["machine"], target: VmTarget) => {
+  const limits = hostVmLimits(machine);
+  const memory = Math.floor(machine.memoryGiB);
+
+  return [
+    ...(target.cpus !== undefined && target.cpus > limits.cpus
+      ? [`config: vm.cpus ${target.cpus} is more than the ${machine.cpus} CPUs of this Mac`]
+      : []),
+    ...(target.memoryGiB !== undefined && target.memoryGiB > limits.memoryGiB
+      ? [
+          `config: vm.memoryGiB ${target.memoryGiB} is more than the ${limits.memoryGiB} GiB this Mac can give the VM (${memory} GiB, less ${HOST_RESERVE_GIB} for macOS)`,
+        ]
+      : []),
+  ];
+};
+
+export const assertVmFitsHost = (deps: CliDeps, target: VmTarget) => {
+  const problems = vmHostProblems(deps.machine, target);
+
+  if (problems.length > 0) {
+    throw new LauncherError(
+      problems.join("; "),
+      `lower it in ${pathsOf(deps).userConfigFile}, or run pi sandbox init to choose a size`,
+    );
+  }
+};
 
 const vmDirsOf = (deps: CliDeps) => ({
   sessions: join(hostAgentDirOf(deps), "sessions"),
@@ -67,16 +119,20 @@ export const vmSharesFor = (deps: CliDeps, workspaceRoots: WorkspaceRoots): VmSh
   return { shares, notices };
 };
 
-export const prepareVmShares = async (deps: CliDeps, workspaceRoots: WorkspaceRoots) => {
-  if (workspaceRoots === undefined) {
-    return undefined;
-  }
-
+export const prepareVmDirs = async (deps: CliDeps) => {
   const dirs = vmDirsOf(deps);
 
   await mkdir(dirs.sessions, { recursive: true, mode: 0o700 });
 
   await mkdir(dirs.state, { recursive: true });
+};
+
+export const prepareVmShares = async (deps: CliDeps, workspaceRoots: WorkspaceRoots) => {
+  if (workspaceRoots === undefined) {
+    return undefined;
+  }
+
+  await prepareVmDirs(deps);
 
   return vmSharesFor(deps, workspaceRoots);
 };
@@ -87,19 +143,24 @@ export const startVm = async (
   backend: Backend,
   sessions: HostSessions,
   progress: (line: string) => void,
-  plan?: VmSharePlan,
+  start: { plan?: VmSharePlan; size?: VmTarget } = {},
 ) => {
   await prepareSessionsDir(sessions);
 
-  await backend.vm.ensureRunning((notice) => progress(`pi-sandbox: ${notice}`), plan?.shares);
+  await backend.vm.ensureRunning(
+    (notice) => progress(`pi-sandbox: ${notice}`),
+    start.plan?.shares,
+    start.size,
+  );
 };
 
-const foreignSessions = async (backend: Backend, stateDir: string, launchId: string) => {
+const foreignSessions = async (backend: Backend, stateDir: string, launchId?: string) => {
   if (!(await backend.detect()).available) {
     return 0;
   }
 
-  const known = new Set([launchId, ...(await liveLaunches(stateDir)).map((launch) => launch.launchId)]);
+  const live = (await liveLaunches(stateDir)).map((launch) => launch.launchId);
+  const known = new Set([...(launchId === undefined ? [] : [launchId]), ...live]);
   const containers = await listLauncherContainers(backend);
 
   return containers.filter(
@@ -107,31 +168,33 @@ const foreignSessions = async (backend: Backend, stateDir: string, launchId: str
   ).length;
 };
 
-const vmBusy = (context: LaunchContext, backend: Backend, launchId: string) => async () =>
-  (await busyLaunches(context.stateDir, launchId)) +
-  (await foreignSessions(backend, context.stateDir, launchId));
+const busyCount = async (backend: Backend, stateDir: string, launchId?: string) =>
+  (await busyLaunches(stateDir, launchId)) + (await foreignSessions(backend, stateDir, launchId));
+
+export const vmBusyCount = (backend: Backend, stateDir: string) => busyCount(backend, stateDir);
+
+const vmBusy = (context: LaunchContext, backend: Backend, launchId: string) => () =>
+  busyCount(backend, context.stateDir, launchId);
 
 export const vmShareCoverage = (context: LaunchContext, backend: Backend, sessions: HostSessions) =>
   backend.vm.coverage(vmPathsOf(context, sessions));
 
-export const shareVm = async (
+export const reconcileVm = async (
   deps: CliDeps,
   context: LaunchContext,
   backend: Backend,
   parts: { sessions: HostSessions; launchId: string; plan: VmSharePlan | undefined },
 ) => {
-  const needs = vmPathsOf(context, parts.sessions);
-  const options = { busy: vmBusy(context, backend, parts.launchId), report: report(deps) };
+  writeNotices(deps, parts.plan?.notices ?? []);
 
-  if (parts.plan === undefined) {
-    await backend.vm.ensureShares(needs, options);
-
-    return;
-  }
-
-  writeNotices(deps, parts.plan.notices);
-
-  await backend.vm.reconcileShares(parts.plan.shares, needs, options);
+  await backend.vm.reconcile(
+    {
+      size: context.effective.config.vm,
+      shares: parts.plan?.shares,
+      needs: vmPathsOf(context, parts.sessions),
+    },
+    { busy: vmBusy(context, backend, parts.launchId), report: report(deps) },
+  );
 };
 
 export const trustVm = (

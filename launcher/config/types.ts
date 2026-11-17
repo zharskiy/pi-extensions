@@ -1,4 +1,4 @@
-import type { ToolConfigFormat } from "../shared/index.ts";
+import type { ToolConfigFormat, ValueSpec } from "../shared/index.ts";
 
 export type FileSecret =
   | { file: string; pointer: string }
@@ -57,6 +57,12 @@ interface MountsConfig {
   autoOverlays: boolean;
 }
 
+export interface WriteBackConfig {
+  enabled: boolean;
+  exclude: Record<string, string[]>;
+  add: Record<string, Record<string, ValueSpec>>;
+}
+
 export interface SandboxConfig {
   image: ImageConfig;
   credentials: CredentialsConfig;
@@ -66,7 +72,9 @@ export interface SandboxConfig {
   mounts: MountsConfig;
   env: { allow: string[] };
   resources: { cpus?: number; memoryGiB?: number };
+  vm: { cpus?: number; memoryGiB?: number; diskGiB?: number };
   sessions: { host: boolean };
+  writeBack: WriteBackConfig;
 }
 
 export interface UserConfig {
@@ -81,7 +89,9 @@ export interface UserConfig {
   mounts?: Partial<SandboxConfig["mounts"]>;
   env?: Partial<SandboxConfig["env"]>;
   resources?: SandboxConfig["resources"];
+  vm?: SandboxConfig["vm"];
   sessions?: Partial<SandboxConfig["sessions"]>;
+  writeBack?: Partial<WriteBackConfig>;
 }
 
 export interface EffectiveConfig {

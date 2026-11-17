@@ -1,34 +1,17 @@
 #!/bin/sh
 set -eu
 unset CDPATH
-COLIMA_HOME="$HOME/.colima"
-export COLIMA_HOME
-
-package_name=pi-extensions-mz
-colima_profile=pi-sandbox
 min_colima=0.8.0
 min_node=22.19.0
 min_macos=13
-wrapper_marker="launcher/bin/pi-sandbox"
-bin_dir="$HOME/.local/bin"
 managed_kind='"kind"[[:space:]]*:[[:space:]]*"pi-managed-install"'
 managed_schema='"schemaVersion"[[:space:]]*:[[:space:]]*1([^0-9.]|$)'
 managed_layout='"layout"[[:space:]]*:[[:space:]]*"releases-v1"'
 managed_package="node_modules/@earendil-works/pi-coding-agent/package.json"
 link_hops=40
 
-max_cpus=8
-max_memory=10
-cpus=""
-memory=""
-sizing=""
-disk=60
-nl='
-'
-roots=""
-
 usage() {
-  echo "usage: install.sh [--cpu N] [--memory GiB] [--disk GiB] [--root DIR]..."
+  echo "usage: install.sh"
 }
 
 fail() {
@@ -36,42 +19,53 @@ fail() {
   exit 1
 }
 
-clamp() {
-  value=$1
-
-  if [ -z "$value" ] || [ "$value" -gt "$3" ]; then
-    value=$3
-  fi
-
-  if [ "$value" -lt "$2" ]; then
-    value=$2
-  fi
-
-  echo "$value"
+fail_with() {
+  printf '%s\n' "pi-sandbox install: $2" >&2
+  exit "$1"
 }
 
-size_to_host() {
-  host_cpus=$(sysctl -n hw.ncpu 2>/dev/null || true)
-  host_bytes=$(sysctl -n hw.memsize 2>/dev/null || true)
+on_terminal=0
 
-  if [ -n "$host_cpus$host_bytes" ] && { [ -z "$cpus" ] || [ -z "$memory" ]; }; then
-    sizing=", sized to this Mac"
-  fi
+if [ -t 1 ] && [ -t 2 ]; then
+  on_terminal=1
+fi
 
-  if [ -z "$cpus" ]; then
-    cpus=$(clamp "$host_cpus" 2 "$max_cpus")
-  fi
+header_style=""
+rule_style=""
+plain_style=""
+rule_text="----------------------------------------------------------------"
 
-  if [ -z "$memory" ]; then
-    memory=$(clamp "${host_bytes:+$((host_bytes / 2147483648))}" 4 "$max_memory")
-  fi
-}
+if [ "$on_terminal" -eq 1 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-}" != dumb ]; then
+  header_style=$(printf '\033[1m')
+  rule_style=$(printf '\033[2m')
+  plain_style=$(printf '\033[0m')
+  rule_text="────────────────────────────────────────────────────────────────"
+fi
+
+last_step=""
 
 step() {
-  printf '%s\n' "[$1/7] $2"
+  if [ "$on_terminal" -eq 0 ]; then
+    printf '%s\n' "[$1/6] $2"
+    return 0
+  fi
+
+  if [ "$1" != "$last_step" ]; then
+    printf '\n%s%s%s\n' "$rule_style" "$rule_text" "$plain_style"
+  else
+    printf '\n'
+  fi
+
+  last_step=$1
+  printf '%s%s%s\n' "$header_style" "[$1/6] $2" "$plain_style"
 }
 
 streamed() {
+  if [ "$on_terminal" -eq 1 ]; then
+    "$@"
+    return
+  fi
+
   { streamed_status=$( { { if "$@" 2>&1 3>&- 4>&-; then echo 0 >&3; else echo "$?" >&3; fi; } | sed 's/^/      /' >&4; } 3>&1 ); } 4>&1
   return "$streamed_status"
 }
@@ -83,103 +77,30 @@ version_at_least() {
   }'
 }
 
-needs_value() {
-  if [ "$1" -lt 2 ]; then
-    usage >&2
-    fail "$2 needs a value"
-  fi
-}
-
-needs_root() {
-  if [ -z "$1" ]; then
-    usage >&2
-    fail "--root needs a non-empty value"
-  fi
-}
-
-add_root() {
-  if [ -n "$1" ]; then
-    roots="$roots$1$nl"
-  fi
-}
-
-add_env_roots() {
-  if [ -z "$1" ]; then
-    return 0
-  fi
-
-  add_root "${1%%:*}"
-
-  case "$1" in
-    *:*) add_env_roots "${1#*:}" ;;
-  esac
-}
-
-expanded_root() {
-  case "$1" in
-    "~") printf '%s\n' "$HOME" ;;
-    "~/"*) printf '%s\n' "$HOME/${1#"~/"}" ;;
-    /*) printf '%s\n' "$1" ;;
-    *) printf '%s\n' "$PWD/$1" ;;
-  esac
-}
-
-first_existing_root() {
-  if [ "$#" -eq 0 ]; then
-    return 1
-  fi
-
-  candidate=$(expanded_root "$1")
-
-  if [ -d "$candidate" ]; then
-    printf '%s\n' "$candidate"
-    return 0
-  fi
-
-  shift
-  first_existing_root "$@"
-}
-
-with_roots() {
-  (IFS=$nl; set -f; set -- "$@" $roots; "$@")
-}
-
 parse_args() {
   if [ "$#" -eq 0 ]; then
     return 0
   fi
 
   case "$1" in
-    --cpu) needs_value "$#" "$1"; cpus=$2; shift 2 ;;
-    --memory) needs_value "$#" "$1"; memory=$2; shift 2 ;;
-    --disk) needs_value "$#" "$1"; disk=$2; shift 2 ;;
-    --root) needs_value "$#" "$1"; needs_root "$2"; add_root "$2"; shift 2 ;;
+    --cpu|--cpu=*|--memory|--memory=*|--disk|--disk=*)
+      fail "--cpu, --memory and --disk were removed: the installer asks for the VM size; without a terminal, set vm.cpus, vm.memoryGiB and vm.diskGiB in $user_config first" ;;
+    --root|--root=*)
+      fail "--root was removed: the installer asks for your project folders; without a terminal, set PI_SANDBOX_ROOTS" ;;
     -h|--help) usage; exit 0 ;;
     *) usage >&2; fail "unknown option $1" ;;
   esac
-
-  parse_args "$@"
 }
-
-parse_args "$@"
-
-if [ -z "$roots" ]; then
-  add_env_roots "${PI_SANDBOX_ROOTS:-}"
-fi
-
-shim_dir="$bin_dir"
-
-if [ -d "$bin_dir" ]; then
-  shim_dir=$(cd -P "$bin_dir" && pwd)
-fi
-
-shim="$shim_dir/pi"
 
 script_dir=$(cd "$(dirname "$0")" && pwd)
 checkout=$(dirname "$script_dir")
 
 . "$script_dir/bin/path-block.sh"
 . "$script_dir/bin/paths.sh"
+. "$script_dir/bin/shim.sh"
+
+parse_args "$@"
+
 replaced_link="$state_dir/replaced-pi-link"
 legacy_replaced_link="$legacy_state_dir/replaced-pi-link"
 
@@ -248,19 +169,7 @@ fi
 colima_version=$(colima version 2>/dev/null | sed -n 's/^colima version v\{0,1\}\([0-9.]*\).*/\1/p' | head -n 1)
 version_at_least "${colima_version:-0}" "$min_colima" || fail "colima ${colima_version:-unknown} is older than $min_colima, run brew upgrade colima"
 
-size_to_host
-
 host_pi=$(command -v pi 2>/dev/null || true)
-
-is_ours() {
-  if [ -L "$shim" ]; then
-    case "$(readlink "$shim")" in
-      */pi-sandbox|*/pi-sandbox.js) return 0 ;;
-    esac
-  fi
-
-  [ -f "$shim" ] && grep -q "$wrapper_marker" "$shim"
-}
 
 link_target=""
 
@@ -351,7 +260,6 @@ snippet_broken=""
 login_shell=${SHELL:-zsh}
 login_shell=${login_shell##*/}
 
-fish_file="$HOME/.config/fish/conf.d/pi-sandbox.fish"
 
 add_snippet() {
   if path_block_present "$1" && ! path_block_intact "$1"; then
@@ -413,101 +321,70 @@ esac
 
 step 3 "launcher: $installed, $snippet$snippet_broken$shadowed"
 
-share_list() {
-  printf '%s\n' "$1" | awk '{ if (!sub(/:w$/, " writable")) $0 = $0 " read-only"; printf "%s%s", (NR > 1 ? ", " : ""), $0 }'
-}
+step 4 "setup: running pi sandbox init"
 
-start_vm() {
-  if [ "$1" != -- ]; then
-    mount=$1
-    shift
-    start_vm "$@" --mount "$mount"
-    return
-  fi
+setup_status=0
 
-  shift
-  streamed colima start --profile "$colima_profile" --activate=false --vm-type vz --mount-type virtiofs \
-    --cpu "$cpus" --memory "$memory" --disk "$disk" "$@"
-}
-
-roots_note=""
-
-if [ -n "$roots" ]; then
-  if [ -f "$user_config" ]; then
-    roots_note="; workspaceRoots in $user_config already match"
-  else
-    roots_note="; wrote workspaceRoots to $user_config"
-  fi
-
-  with_roots "$shim" __init-config || exit "$?"
-fi
-
-vm_shares=$("$shim" __vm-shares) || exit "$?"
-
-if colima status --profile "$colima_profile" >/dev/null 2>&1; then
-  step 4 "colima: profile $colima_profile is running (colima stop --profile $colima_profile and run this again to apply new resources)$roots_note${roots:+; if its shares differ, the first pi launch restarts it with the new ones}"
-elif [ -f "$HOME/.colima/$colima_profile/colima.yaml" ]; then
-  step 4 "colima: starting profile $colima_profile (vz, virtiofs, $cpus CPUs, ${memory} GiB, ${disk} GiB$sizing, shares kept)$roots_note${roots:+; if its shares differ, the first pi launch restarts it with the new ones}"
-  start_vm --
+if [ -z "${CI:-}" ] && ( : </dev/tty ) 2>/dev/null; then
+  "$shim" sandbox init </dev/tty || setup_status=$?
 else
-  step 4 "colima: starting profile $colima_profile (vz, virtiofs, $cpus CPUs, ${memory} GiB, ${disk} GiB$sizing, $(share_list "$vm_shares"))$roots_note"
-  (IFS=$nl; set -f; start_vm $vm_shares --)
+  streamed "$shim" sandbox init --yes || setup_status=$?
 fi
 
-step 5 "image: prepared and verified by the smoke check in step 6"
+case "$setup_status" in
+  0) step 4 "setup: done" ;;
+  130) fail_with 130 "setup cancelled; the launcher is installed, run pi sandbox init to finish" ;;
+  *) fail_with "$setup_status" "setup failed, see above; the launcher is installed, run pi sandbox init to try again" ;;
+esac
 
-smoke_parent="$HOME/.cache"
-smoke_where="a temporary git repository"
+smoke_root=$("$shim" __vm-shares) || exit "$?"
+smoke_root=$(printf '%s\n' "$smoke_root" | head -n 1)
+smoke_parent=$smoke_root
+smoke_where="a temporary git repository in $smoke_parent"
 
-if [ -n "$roots" ]; then
-  smoke_parent=$(with_roots first_existing_root) || smoke_parent=""
-  smoke_where="a temporary git repository in $smoke_parent"
+if [ "$smoke_root" = "$HOME" ]; then
+  smoke_parent="$HOME/.cache"
+  smoke_where="a temporary git repository"
 fi
 
-smoke_log=""
+sandbox_skipped_exit=3
 smoke_skipped=0
-
-smoke_doctor() {
-  { "$shim" sandbox doctor 2>&1; printf '%s\n' "$?" > "$smoke_log.status"; } | tee "$smoke_log"
-  return "$(cat "$smoke_log.status")"
-}
 
 smoke() {
   mkdir -p "$smoke_parent" || return 1
 
   smoke_dir=$(mktemp -d "$smoke_parent/pi-sandbox-smoke.XXXXXX") || return 1
-  smoke_log=$(mktemp "${TMPDIR:-/tmp}/pi-sandbox-smoke.XXXXXX") || smoke_log="$smoke_dir.log"
   smoke_status=0
 
   git -C "$smoke_dir" init -q || smoke_status=1
 
   if [ "$smoke_status" -eq 0 ]; then
-    (cd "$smoke_dir" && export PATH="$bin_dir:$PATH" && streamed smoke_doctor) || smoke_status=1
+    (cd "$smoke_dir" && export PATH="$bin_dir:$PATH" && streamed "$shim" __smoke-doctor) || smoke_status=$?
     (cd "$smoke_dir" && PATH="$bin_dir:$PATH" "$shim" sandbox reset >/dev/null 2>&1) || true
   fi
 
-  if grep -q "not started until the VM shares" "$smoke_log" 2>/dev/null; then
+  if [ "$smoke_status" -eq "$sandbox_skipped_exit" ]; then
     smoke_skipped=1
+    smoke_status=0
   fi
 
   rm -rf "$smoke_dir"
-  rm -f "$smoke_log" "$smoke_log.status"
 
   return "$smoke_status"
 }
 
 if ! command -v git >/dev/null 2>&1; then
-  step 6 "smoke: skipped, git is missing; run pi sandbox doctor inside a repository"
+  step 5 "smoke: skipped, git is missing; run pi sandbox doctor inside a repository"
 elif [ -z "$smoke_parent" ]; then
-  step 6 "smoke: skipped, none of the workspace roots exists; run pi sandbox doctor inside a repository in one of them"
+  step 5 "smoke: skipped, none of the workspace roots exists; run pi sandbox doctor inside a repository in one of them"
 else
-  step 6 "smoke: running $shim sandbox doctor in $smoke_where; the first image build takes a few minutes"
+  step 5 "smoke: running $shim sandbox doctor in $smoke_where; the first image build takes a few minutes"
 
   if smoke; then
     if [ "$smoke_skipped" -eq 1 ]; then
-      step 6 "smoke: $shim sandbox doctor passed the host checks; the sandbox part was skipped because the VM does not share $smoke_parent yet, and runs at the first pi launch"
+      step 5 "smoke: $shim sandbox doctor passed the host checks; the sandbox part was skipped because the VM does not share $smoke_parent yet, and runs at the first pi launch"
     else
-      step 6 "smoke: $shim sandbox doctor passed"
+      step 5 "smoke: $shim sandbox doctor passed"
     fi
   else
     fail "smoke check failed, see the doctor report above, or run $shim sandbox doctor inside a repository"
@@ -515,7 +392,7 @@ else
 fi
 
 if [ -n "$snippet_files" ]; then
-  step 7 "next, in a new shell: cd <repo> && pi"
+  step 6 "next, in a new shell: cd <repo> && pi"
 else
-  step 7 "next: cd <repo> && pi"
+  step 6 "next: cd <repo> && pi"
 fi

@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { execCapture } from "../../backend/index.ts";
 import { bypassesParent, parentRouteFor } from "../../proxy/index.ts";
-import { errorMessage, launcherEntry, stateLayout } from "../../shared/index.ts";
+import { errorMessage, lastLine, launcherEntry, stateLayout } from "../../shared/index.ts";
 import type { LaunchContext } from "../context.ts";
 import { type CliDeps, pathsOf } from "../deps.ts";
 import { type CheckResult, failed, passed } from "./doctor-checks.ts";
@@ -60,13 +60,6 @@ const sandboxProbeCommand = async () => {
 
   return ["node", `--input-type=${inputTypeOf(path)}`, "-e", await readFile(path, "utf8")];
 };
-
-const lastLine = (text: string) =>
-  text
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line !== "")
-    .at(-1);
 
 const parsedLine = (line: string | undefined) => {
   try {

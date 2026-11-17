@@ -3,7 +3,13 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { execCapture } from "../../backend/index.ts";
 import { syncVolumeFiles } from "../../provision/index.ts";
-import { GUEST_PATHS, readJsonObject, stateLayout } from "../../shared/index.ts";
+import {
+  BUILT_IN_WRITE_BACK,
+  GUEST_PATHS,
+  readJsonObject,
+  stateLayout,
+  type WriteBackTable,
+} from "../../shared/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { runningContainer, tempDir, writeText } from "./fixtures.ts";
 
@@ -14,7 +20,7 @@ const setup = async () => {
   const guestAgentDir = await tempDir("write-back-volume");
   const fake = createFakeBackend({ guestAgentDir });
   const containerId = await runningContainer(fake.backend);
-  const sync = (readTimeoutMs?: number) =>
+  const sync = (readTimeoutMs?: number, allowlist: WriteBackTable = BUILT_IN_WRITE_BACK) =>
     syncVolumeFiles({
       backend: fake.backend,
       containerId,
@@ -22,6 +28,7 @@ const setup = async () => {
       repoHash: "repo1",
       hostAgentDir,
       repoRoot,
+      allowlist,
       readTimeoutMs,
     });
   const host = async (name: string) => readJsonObject(join(hostAgentDir, name));
@@ -45,6 +52,7 @@ const setup = async () => {
     });
 
   return {
+    stateDir,
     hostAgentDir,
     guestAgentDir,
     fake,
@@ -57,6 +65,168 @@ const setup = async () => {
     guestShell,
   };
 };
+
+const FOOTER: WriteBackTable = {
+  ...BUILT_IN_WRITE_BACK,
+  "pi-footer.json": { layout: { type: "json" } },
+};
+
+const LIST_CHANGED =
+  "the write-back list changed; nothing is written back from sessions started under the old list";
+
+describe("syncVolumeFiles with a configured allowlist", () => {
+  it("copies an added pi-*.json into the sandbox and writes its listed keys back", async () => {
+    const env = await setup();
+
+    await env.writeHost("pi-footer.json", { layout: "wide", secret: "host" });
+
+    await env.sync(undefined, FOOTER);
+
+    expect(await env.volume("pi-footer.json")).toEqual({ layout: "wide", secret: "host" });
+
+    await env.writeVolume("pi-footer.json", { layout: "narrow", secret: "planted" });
+
+    expect((await env.sync(undefined, FOOTER)).changes).toEqual([
+      "pi-footer.json layout: wide → narrow written to the host",
+    ]);
+    expect(await env.host("pi-footer.json")).toEqual({ layout: "narrow", secret: "host" });
+  });
+
+  it("writes back no excluded key and checks a key with its configured spec", async () => {
+    const env = await setup();
+    const allowlist: WriteBackTable = {
+      ...BUILT_IN_WRITE_BACK,
+      "settings.json": { editorPaddingX: { type: "integer", min: 0, max: 8 } },
+    };
+
+    await env.writeHost("settings.json", { theme: "a", editorPaddingX: 1 });
+
+    await env.sync(undefined, allowlist);
+
+    await env.writeVolume("settings.json", { theme: "b", editorPaddingX: 9 });
+
+    expect(await env.sync(undefined, allowlist)).toEqual({
+      changes: [],
+      notices: ["settings.json: editorPaddingX in the sandbox is not a valid value; not written back"],
+    });
+
+    await env.writeVolume("settings.json", { theme: "b", editorPaddingX: 4 });
+
+    expect((await env.sync(undefined, allowlist)).changes).toEqual([
+      "settings.json editorPaddingX: 1 → 4 written to the host",
+    ]);
+    expect(await env.host("settings.json")).toEqual({ theme: "a", editorPaddingX: 4 });
+  });
+
+  it("writes nothing back with an empty allowlist, and still copies the extension files in", async () => {
+    const env = await setup();
+
+    await env.writeHost("settings.json", { theme: "a" });
+    await env.writeHost("pi-style.json", { style: "plain" });
+
+    await env.sync(undefined, {});
+
+    await env.writeVolume("settings.json", { theme: "b" });
+    await env.writeVolume("pi-style.json", { style: "terse" });
+
+    expect(await env.sync(undefined, {})).toEqual({ changes: [], notices: [] });
+    expect(await env.host("settings.json")).toEqual({ theme: "a" });
+    expect(await env.volume("pi-style.json")).toEqual({ style: "plain" });
+  });
+
+  it("resets the baseline when the allowlist changes, so the first sync after it writes nothing back", async () => {
+    const env = await setup();
+
+    await env.writeHost("settings.json", { theme: "a" });
+
+    await env.sync();
+
+    const before = await env.baseline();
+
+    await env.writeVolume("settings.json", { theme: "b" });
+
+    expect(await env.sync(undefined, FOOTER)).toEqual({ changes: [], notices: [LIST_CHANGED] });
+    expect(await env.host("settings.json")).toEqual({ theme: "a" });
+
+    const after = await env.baseline();
+
+    expect(after?.allowlist).not.toEqual(before?.allowlist);
+    expect(Object.keys((after?.files ?? {}) as object)).toContain("pi-footer.json");
+
+    await env.writeVolume("settings.json", { theme: "c" });
+
+    expect((await env.sync(undefined, FOOTER)).changes).toEqual([
+      "settings.json theme: a → c written to the host",
+    ]);
+  });
+});
+
+describe("syncVolumeFiles with a list that drops an added file", () => {
+  it("removes the copy of a file that left the list, and of every added file once write-back is off", async () => {
+    const env = await setup();
+
+    await env.writeHost("pi-footer.json", { layout: "wide", token: "host" });
+    await env.writeHost("pi-style.json", { style: "plain" });
+
+    await env.sync(undefined, FOOTER);
+
+    expect(await env.volume("pi-footer.json")).toEqual({ layout: "wide", token: "host" });
+
+    await env.sync();
+
+    expect(await env.volume("pi-footer.json")).toBeUndefined();
+
+    await env.sync(undefined, FOOTER);
+
+    expect(await env.volume("pi-footer.json")).toEqual({ layout: "wide", token: "host" });
+
+    await env.sync(undefined, {});
+
+    expect(await env.volume("pi-footer.json")).toBeUndefined();
+    expect(await env.volume("pi-style.json")).toEqual({ style: "plain" });
+  });
+
+  it("keeps a pi-*.json the launcher never copied, and removes nothing after a baseline without the copied list", async () => {
+    const env = await setup();
+
+    await env.writeHost("pi-footer.json", { layout: "wide" });
+    await env.writeVolume("pi-made-inside.json", { mode: "sandbox" });
+
+    await env.sync();
+
+    expect(await env.volume("pi-made-inside.json")).toEqual({ mode: "sandbox" });
+
+    await env.sync(undefined, FOOTER);
+    await writeText(
+      stateLayout(env.stateDir).repo("repo1").syncBaseline,
+      JSON.stringify({ allowlist: "older", files: {} }),
+    );
+
+    await env.sync();
+
+    expect(await env.volume("pi-footer.json")).toEqual({ layout: "wide" });
+    expect(await env.volume("pi-made-inside.json")).toEqual({ mode: "sandbox" });
+  });
+
+  it("says once that changes made under the old list are not written back", async () => {
+    const env = await setup();
+    const narrowed: WriteBackTable = {
+      ...BUILT_IN_WRITE_BACK,
+      "settings.json": { theme: { type: "fileName" } },
+    };
+
+    await env.writeHost("settings.json", { theme: "dark" });
+
+    await env.sync();
+
+    await env.writeVolume("settings.json", { theme: "light" });
+
+    expect(await env.sync(undefined, narrowed)).toEqual({ changes: [], notices: [LIST_CHANGED] });
+    expect(await env.sync()).toEqual({ changes: [], notices: [LIST_CHANGED] });
+    expect(await env.sync()).toEqual({ changes: [], notices: [] });
+    expect(await env.host("settings.json")).toEqual({ theme: "dark" });
+  });
+});
 
 describe("syncVolumeFiles write-back", () => {
   it("writes nothing back on the first sync and records what it wrote as the baseline", async () => {
@@ -286,7 +456,9 @@ describe("syncVolumeFiles write-back", () => {
       expect.stringMatching(/^warning: the sandbox copies of the agent settings were not refreshed: /),
       "warning: preference changes made in the sandbox from now on will not be written back to the host",
     ]);
-    expect(await env.baseline()).toBeUndefined();
+    expect(await env.baseline()).toEqual({
+      copied: ["pi-subagents.json", "pi-style.json", "pi-notifications.json", "pi-session-limits.json"],
+    });
   });
 
   it("writes through a symlinked host file and keeps the link", async () => {

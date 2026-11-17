@@ -200,7 +200,7 @@ describe("the sandbox VM trusts the tls.extraCa certificates", () => {
     expect(context.commands()).toEqual([`cat ${MARKER}`, `cat ${MARKER}`]);
 
     expect(context.notices).toEqual([
-      "the sandbox VM will pick up the tls.extraCa certificate change at the first launch with no other pi session running",
+      "the sandbox VM will pick up the tls.extraCa certificate change at the next launch with no other pi session running",
     ]);
 
     expect(state.marker).toBe("old\n");

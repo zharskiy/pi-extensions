@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Backend, ExecIo, ExecSpec } from "../../backend/index.ts";
 import { syncVolumeFiles } from "../../provision/index.ts";
-import { readJsonObject, stateLayout } from "../../shared/index.ts";
+import { BUILT_IN_WRITE_BACK, readJsonObject, stateLayout } from "../../shared/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { runningContainer, tempDir, writeText } from "./fixtures.ts";
 
@@ -55,6 +55,7 @@ const setup = async (options: SetupOptions = {}) => {
       repoHash: "repo1",
       hostAgentDir,
       repoRoot,
+      allowlist: BUILT_IN_WRITE_BACK,
       refreshPackages,
       othersLive: () => Promise.resolve(live.others),
       removeTimeoutMs: options.removeTimeoutMs,
@@ -98,6 +99,7 @@ const setup = async (options: SetupOptions = {}) => {
     stampPath,
     removals,
     repoRoot,
+    allowlist: BUILT_IN_WRITE_BACK,
     guestAgentDir,
     hostAgentDir,
     live,

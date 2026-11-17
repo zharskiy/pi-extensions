@@ -1,8 +1,10 @@
-import { isAbsolute, resolve } from "node:path";
+import { homedir } from "node:os";
+import { isAbsolute, posix, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { JsonObject } from "../hostpi/index.ts";
-import { expandHome, isWithin } from "../shared/index.ts";
-import { sourceOfEntry, withoutSourceCredential } from "./package-source.ts";
+import { expandHome, GUEST_PATHS, HOST_ONLY_SETTINGS, isWithin } from "../shared/index.ts";
+import { sourceOfEntry, withoutSourceCredential, withSource } from "./package-source.ts";
+import { hostAgentsSkillsDir } from "./render.ts";
 
 export interface HostSettingsContext {
   hostAgentDir: string;
@@ -10,24 +12,20 @@ export interface HostSettingsContext {
   home?: string;
 }
 
-const SANDBOX_DROPPED_SETTINGS = [
-  "npmCommand",
-  "selfUpdateCommand",
-  "shellPath",
-  "shellCommandPrefix",
-  "externalEditor",
-  "httpProxy",
-  "sessionDir",
-];
-
 const RESOURCE_ARRAYS = ["extensions", "skills", "prompts", "themes"];
 
 const FILE_URL = /^file:\/\//;
 
-const without = (settings: JsonObject, keys: string[]) =>
+const PATTERN_PREFIX = /^[!+-]/;
+
+const GLOB = /[*?]/;
+
+const NAMED_RESOURCE = /^[a-z][\w+.-]*:/i;
+
+const without = (settings: JsonObject, keys: readonly string[]) =>
   Object.fromEntries(Object.entries(settings).filter(([key]) => !keys.includes(key)));
 
-export const sandboxSettings = (host: JsonObject): JsonObject => without(host, SANDBOX_DROPPED_SETTINGS);
+export const sandboxSettings = (host: JsonObject): JsonObject => without(host, HOST_ONLY_SETTINGS);
 
 const isLocalSource = (source: string) =>
   source.startsWith("/") || source.startsWith("~") || source.startsWith(".") || FILE_URL.test(source);
@@ -40,9 +38,6 @@ const localPathOf = (source: string, context: HostSettingsContext) => {
 
 const isMounted = (path: string, context: HostSettingsContext) =>
   context.mountRoots.some((root) => isWithin(path, root));
-
-const withSource = (entry: unknown, source: string) =>
-  typeof entry === "string" ? source : { ...(entry as JsonObject), source };
 
 const withoutCredential = (entry: unknown) => {
   const source = sourceOfEntry(entry);
@@ -87,29 +82,92 @@ const hostPackage = (original: unknown, context: HostSettingsContext) => {
   };
 };
 
-const outsideResource = (key: string, entry: unknown, context: HostSettingsContext) => {
-  const path = typeof entry === "string" ? entry.replace(/^[!+-]/, "") : "";
+const isNamedResource = (path: string) => NAMED_RESOURCE.test(path) && !FILE_URL.test(path);
 
-  if (!(path.startsWith("/") || path.startsWith("~") || FILE_URL.test(path))) {
-    return [];
-  }
+const isRootedPath = (path: string) => path.startsWith("/") || path.startsWith("~") || FILE_URL.test(path);
 
-  const resolved = localPathOf(path, context);
+const splitGlob = (path: string) => {
+  const segments = path.split("/");
+  const firstGlob = segments.findIndex((segment) => GLOB.test(segment));
 
-  return isMounted(resolved, context)
-    ? []
-    : [`settings.json: ${key} entry ${path} lies outside the sandbox mounts and is missing in the sandbox`];
+  return firstGlob === -1
+    ? { fixed: path, glob: "" }
+    : { fixed: segments.slice(0, firstGlob).join("/") || "/", glob: segments.slice(firstGlob).join("/") };
 };
 
-const resourceNotices = (settings: JsonObject, context: HostSettingsContext) =>
-  RESOURCE_ARRAYS.flatMap((key) => {
+const guestLocations = (context: HostSettingsContext) => [
+  { host: hostAgentsSkillsDir(context.home ?? homedir()), guest: GUEST_PATHS.agentsSkills },
+  { host: context.hostAgentDir, guest: GUEST_PATHS.agentDir },
+];
+
+const guestPathOf = (path: string, context: HostSettingsContext) => {
+  const carried = guestLocations(context).find((location) => isWithin(path, location.host));
+
+  return carried === undefined
+    ? undefined
+    : posix.join(carried.guest, ...relative(carried.host, path).split(sep));
+};
+
+const sandboxPathOf = (path: string, context: HostSettingsContext) => {
+  const { fixed, glob } = splitGlob(path);
+  const hostPath = localPathOf(fixed, context);
+  const placed = isMounted(hostPath, context) ? hostPath : guestPathOf(hostPath, context);
+
+  return placed === undefined || glob === "" ? placed : posix.join(placed, glob);
+};
+
+const placedResource = (key: string, entry: unknown, context: HostSettingsContext) => {
+  if (typeof entry !== "string") {
+    return { entry };
+  }
+
+  const prefix = PATTERN_PREFIX.exec(entry)?.[0] ?? "";
+  const isPattern = prefix !== "" || GLOB.test(entry);
+  const path = isPattern ? entry.slice(prefix.length) : entry.trim();
+
+  if (isNamedResource(path) || (isPattern && !isRootedPath(path))) {
+    return { entry };
+  }
+
+  const placed = sandboxPathOf(path, context);
+
+  return placed === undefined
+    ? {
+        notice: `settings.json: ${key} entry ${entry} lies outside the sandbox mounts, the agent dir and ~/.agents/skills; skipped in the sandbox`,
+      }
+    : { entry: `${prefix}${placed}` };
+};
+
+const placedResources = (settings: JsonObject, context: HostSettingsContext) => {
+  const placed = RESOURCE_ARRAYS.flatMap((key) => {
     const entries = settings[key];
 
-    return Array.isArray(entries) ? entries.flatMap((entry) => outsideResource(key, entry, context)) : [];
+    if (!Array.isArray(entries)) {
+      return [];
+    }
+
+    const outcomes = entries.map((entry) => placedResource(key, entry, context));
+
+    return [
+      {
+        key,
+        entries: outcomes.flatMap((outcome) => ("entry" in outcome ? [outcome.entry] : [])),
+        notices: outcomes.flatMap((outcome) => (outcome.notice === undefined ? [] : [outcome.notice])),
+      },
+    ];
   });
 
-export const prepareHostSettings = (settings: JsonObject, context: HostSettingsContext) => {
-  const notices = resourceNotices(settings, context);
+  return {
+    settings: {
+      ...settings,
+      ...Object.fromEntries(placed.map((resource) => [resource.key, resource.entries])),
+    },
+    notices: placed.flatMap((resource) => resource.notices),
+  };
+};
+
+export const prepareHostSettings = (host: JsonObject, context: HostSettingsContext) => {
+  const { settings, notices } = placedResources(host, context);
 
   if (!Array.isArray(settings.packages)) {
     return { settings, notices };

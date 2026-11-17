@@ -1,11 +1,24 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { setPath } from "../../config/dotted.ts";
-import { configKeys, validateConfig } from "../../config/validate.ts";
+import { setPath } from "../../config/index.ts";
+import {
+  configKeys,
+  MAX_ANY_OF_DEPTH,
+  MAX_KEY_CHARS,
+  MAX_PORT,
+  VM_BOUNDS,
+  validateConfig,
+} from "../../config/validate.ts";
+import { BUILT_IN_WRITE_BACK, MAX_WRITE_BACK_CHARS } from "../../shared/index.ts";
 
 interface SchemaNode {
+  $ref?: string;
+  $defs?: Record<string, SchemaNode>;
   properties?: Record<string, SchemaNode>;
+  patternProperties?: Record<string, SchemaNode>;
+  propertyNames?: SchemaNode;
+  additionalProperties?: SchemaNode;
   items?: SchemaNode;
   oneOf?: SchemaNode[];
   allOf?: SchemaNode[];
@@ -16,6 +29,10 @@ interface SchemaNode {
   then?: SchemaNode;
   pattern?: string;
   minLength?: number;
+  maxLength?: number;
+  minimum?: number;
+  maximum?: number;
+  description?: string;
   uniqueItems?: boolean;
   dependentRequired?: Record<string, string[]>;
 }
@@ -331,5 +348,93 @@ describe("sandbox-config.schema.json", () => {
     expect(
       validatorAccepts(rule({ template: "Bearer {secret}", header: undefined, placeholder: "pi-sandbox-x" })),
     ).toBe(false);
+  });
+
+  it("states the numeric bounds and built-in files of the validator", async () => {
+    const schema = await readSchema();
+    const defs = schema.$defs ?? {};
+    const vm = schema.properties?.vm?.properties ?? {};
+    const port = schema.properties?.credentials?.properties?.rules?.items?.properties?.port;
+    const checks = defs.writeBackCheck?.oneOf ?? [];
+    const anyOfs = [defs.writeBackValue, defs.writeBackSettingsValue].map((value) =>
+      value?.oneOf?.find((option) => option.properties?.type?.const === "anyOf"),
+    );
+    const checkOf = (type: string) => checks.find((option) => option.properties?.type?.const === type);
+
+    expect(
+      Object.fromEntries(
+        Object.entries(vm).map(([key, node]) => [key, { min: node.minimum, max: node.maximum }]),
+      ),
+    ).toEqual(VM_BOUNDS);
+    expect([port?.minimum, port?.maximum]).toEqual([1, MAX_PORT]);
+    expect(
+      [defs.writeBackKeys, defs.writeBackSettingsKeys].map((keys) => keys?.propertyNames?.maxLength),
+    ).toEqual([MAX_KEY_CHARS, MAX_KEY_CHARS]);
+    expect(checkOf("string")?.properties?.maxLength?.maximum).toBe(MAX_WRITE_BACK_CHARS);
+    expect(checkOf("enum")?.properties?.values?.items?.maxLength).toBe(MAX_WRITE_BACK_CHARS);
+    expect(checkOf("stringList")?.description).toContain(`at most ${MAX_WRITE_BACK_CHARS} characters`);
+    expect(anyOfs.map((option) => option?.description)).toEqual([
+      expect.stringContaining(`more than ${MAX_ANY_OF_DEPTH} levels`),
+      expect.stringContaining(`more than ${MAX_ANY_OF_DEPTH} levels`),
+    ]);
+    expect(schema.properties?.writeBack?.properties?.exclude?.propertyNames?.enum).toEqual(
+      Object.keys(BUILT_IN_WRITE_BACK),
+    );
+  });
+
+  describe("writeBack.add", () => {
+    const addOf = async () => {
+      const schema = await readSchema();
+      const add = schema.properties?.writeBack?.properties?.add;
+      const defs = schema.$defs ?? {};
+      const resolved = (node: SchemaNode | undefined) =>
+        node?.$ref === undefined ? node : defs[node.$ref.replace("#/$defs/", "")];
+
+      return { add, defs, resolved };
+    };
+
+    const addedKey = (file: string, key: string, spec: unknown) =>
+      validatorAccepts({ writeBack: { add: { [file]: { [key]: spec } } } });
+
+    it("refuses the same settings.json and pi-subagents.json key names as the validator", async () => {
+      const { add, resolved } = await addOf();
+      const settingsNames = resolved(add?.patternProperties?.["^settings\\.json$"])?.propertyNames ?? {};
+      const subagentNames =
+        add?.patternProperties?.["^pi-subagents\\.json$"]?.allOf?.[1]?.propertyNames ?? {};
+      const settingsKeys = [...(settingsNames.not?.enum ?? []), "defaultModel", "editorPaddingX", "1x"];
+      const subagentKeys = ["disabledPlugins", "maxDepth"];
+
+      expect(settingsNames.not?.enum).toContain("defaultTools");
+      expect(settingsKeys.map((key) => [key, stringAccepts(settingsNames, key)])).toEqual(
+        settingsKeys.map((key) => [key, addedKey("settings.json", key, { type: "boolean" })]),
+      );
+      expect(subagentKeys.map((key) => [key, stringAccepts(subagentNames, key)])).toEqual(
+        subagentKeys.map((key) => [key, addedKey("pi-subagents.json", key, { type: "json" })]),
+      );
+    });
+
+    it("offers settings.json no json check and theme only the fileName check, as the validator", async () => {
+      const { add, defs, resolved } = await addOf();
+      const settingsKeys = resolved(add?.patternProperties?.["^settings\\.json$"]);
+      const constsOf = (node: SchemaNode | undefined, seen: readonly string[]): string[] => {
+        if (node?.$ref !== undefined) {
+          return seen.includes(node.$ref) ? [] : constsOf(resolved(node), [...seen, node.$ref]);
+        }
+
+        return [
+          ...(node?.properties?.type?.const === undefined ? [] : [node.properties.type.const]),
+          ...(node?.oneOf ?? []).flatMap((variant) => constsOf(variant, seen)),
+          ...(node?.properties?.of?.items === undefined ? [] : constsOf(node.properties.of.items, seen)),
+        ];
+      };
+
+      expect(constsOf(defs.writeBackValue, [])).toContain("json");
+      expect(constsOf(settingsKeys?.additionalProperties, [])).not.toContain("json");
+      expect(constsOf(settingsKeys?.properties?.theme, [])).toEqual(["fileName"]);
+      expect(addedKey("settings.json", "layout", { type: "json" })).toBe(false);
+      expect(addedKey("settings.json", "theme", { type: "string" })).toBe(false);
+      expect(addedKey("settings.json", "theme", { type: "fileName" })).toBe(true);
+      expect(addedKey("pi-footer.json", "layout", { type: "json" })).toBe(true);
+    });
   });
 });

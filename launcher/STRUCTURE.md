@@ -11,7 +11,7 @@ ARCHITECTURE.md                how it works, the files it writes
 STRUCTURE.md                   this file
 THREAT-MODEL.md                assets, trust boundaries, what each feature weakens, known gaps
 REMOVED-DEFAULTS.md            the egress presets and config keys earlier versions shipped, and how to add them back
-install.sh                     macOS install: the launcher and its pi link, PATH blocks (zsh, bash, fish), workspace roots (--root), Colima profile, smoke test
+install.sh                     macOS install: the launcher and its pi link, PATH blocks (zsh, bash, fish), then pi sandbox init (on the terminal, or --yes without one), smoke test; on a terminal the children run on it under ruled step headers
 uninstall.sh                   runs the launcher's cleanup, deletes the profile, removes the link, state, package and PATH blocks
 tsconfig.build.json            emits dist/ (gitignored) for the published bin
 examples/config.json           a sample config file for a team to start from
@@ -24,22 +24,33 @@ schema/sandbox-config.schema.json  the config keys
 bin/pi-sandbox.js              the package bin: runs the built dist/
 bin/pi-sandbox-dev.js          checkout entry: runs the .ts sources, not published
 bin/path-block.sh              the PATH block helpers and the sh and fish lines, sourced by install.sh and uninstall.sh
-bin/paths.sh                   the agent dir (with ~ expanded as pi does), state dir, user config and old state folder, sourced by install.sh and uninstall.sh
+bin/paths.sh                   COLIMA_HOME, the agent dir (with ~ expanded as pi does), state dir, user config and old state folder, sourced by install.sh and uninstall.sh
+bin/shim.sh                    the package name, the pi shim in ~/.local/bin with is_ours, and the fish file, sourced by install.sh and uninstall.sh
 ```
 
 ## cli/
 
 ```
-cli/main.ts                    builds the real dependencies, the host git outside the started folder included, and runs
-cli/run.ts                     the command table, the hidden __uninstall, __vm-shares and __init-config routes and error rendering
+cli/main.ts                    builds the real dependencies, the host git outside the started folder and the /dev/tty opener of pi sandbox init included, and runs
+cli/run.ts                     the command table, the hidden __uninstall and __vm-shares routes and error rendering
 cli/deps.ts                    the dependencies every command gets, and the shared terminal helpers (TTY and colour checks, a line sink)
 cli/index.ts                   public surface
 cli/launch.ts                  the pi pipeline with its stages and progress lines, and withSandbox for the doctor
 cli/context.ts                 the launch context: the folder to mount, the guard and workspaceRoots before the search, config, discovery and the checks after it
-cli/vm.ts                      VM start (with the workspaceRoots shares when stopped), shares and trust store, the VM paths a launch needs, the workspaceRoots share list and its nesting check, the busy count with other agent dirs' containers
+cli/vm.ts                      VM start (with the workspaceRoots shares when stopped), the one reconcile of shares and size, trust store, the automatic VM size and the host limits (one clamp), the VM paths a launch needs, the workspaceRoots share list and its nesting check, the busy count with other agent dirs' containers
 cli/launch-notices.ts          the launch notice texts, the host-file flag notice and the proxy stage detail
 cli/legacy-paths.ts            the config and state folders of earlier versions, with the launch notice and doctor warns for them
 cli/terminal.ts                the host terminal: streams, size read at use, resize
+cli/prompt/                    the terminal prompts of pi sandbox init: types, finding the terminal (/dev/tty) and its restore, keys, style and glyphs, the live frame, the line editor, the input rules both prompt sets share (number checks, warn once, initial choice, toggle), the task runner both share (raw mode, ctrl-c, settling once; each set only draws) and the still-working heartbeat, path completion, the rich and plain prompt sets
+cli/setup/types.ts             the setup's facts, answers, plan, outcome, io, effects, apply event and front end types
+cli/setup/document.ts          the config file read with its indent, owned-key edits keeping key order, the diff and the checked atomic write
+cli/setup/folders.ts           the candidate project folders, the repository scan, the storage form of a root and the wizard's refused-folder messages, for Add a folder and the hub's folders row
+cli/setup/plan.ts              the first-run steps, owned-key problems, initial answers, the edited config, the VM action, the plan and the VM size field bounds
+cli/setup/detect.ts            the host, VM, sessions, free disk and folders gathered in parallel within a budget
+cli/setup/screens.ts           every sentence of the setup screens, rich and plain, as functions of the facts and the plan, and one text per apply event
+cli/setup/flow.ts              runSetup: the intro, detection, the three first-run steps, the review hub with its section editors, cancel and the outros
+cli/setup/review.ts            the review summary: the rows of the three settings with their tags and problems, the file changes and the VM action, as lines for the hub and for --yes
+cli/setup/apply.ts             applyPlan: the file write and the VM step as typed events, and the two front ends: the wizard's (progress, failure screen with Try again, success screen) and the lines of --yes
 cli/launches.ts                begin and finish a launch (removing its container), the last-session removal, the live launch count
 cli/sweep.ts                   removeRepoSandbox, the sweep of ended launches' containers, the orphan sweep and the daily collection
 cli/derive.ts                  the host side of a launch: host pi files, derivation (host tools exclude the sandbox roots), trust bundle, notices
@@ -52,13 +63,14 @@ cli/host-pi.ts                 the one host pi (pi's managed install only), the 
 cli/notices.ts                 notices printed once per repository and text
 cli/versions.ts                launcher version and image pi version
 cli/commands/status.ts         pi sandbox status
-cli/commands/config.ts         pi sandbox config
+cli/commands/config.ts         pi sandbox config, with the effective write-back keys of each file and their source
 cli/commands/egress.ts         pi sandbox egress allow, revoke and list
 cli/commands/reset.ts          pi sandbox reset: the folder's sandbox and volumes
 cli/commands/stop.ts           pi sandbox stop
 cli/commands/uninstall.ts      the hidden __uninstall command uninstall.sh runs: live-session refusal, engine objects by label, host-side release
-cli/commands/vm-shares.ts      the hidden __vm-shares command: the VM mount list for install.sh
-cli/commands/init-config.ts    the hidden __init-config command: install.sh --root creates a missing user config with workspaceRoots, exclusively
+cli/commands/vm-shares.ts      the hidden __vm-shares command: the shared workspace roots that exist, or the home, whose first line install.sh takes as the smoke folder
+cli/commands/smoke-doctor.ts   the hidden __smoke-doctor command install.sh runs: the doctor, exit 3 when the sandbox part was skipped
+cli/commands/init.ts           pi sandbox init: --yes, CI and terminal checks, builds the UI and effects, and picks the front end (the wizard, rich or plain, or the lines of --yes)
 cli/commands/doctor.ts         pi sandbox doctor: stages, probes and host checks as checks by section, the denials matched to each rule, the blocked warnings, captured notices and the progress line
 cli/commands/doctor-probes.ts  the doctor's checks inside the container; a rule whose credential was denied warns, one the proxy refused says why, a certificate not yet valid names the VM clock
 cli/commands/doctor-host.ts    the doctor's checks on the host
@@ -78,8 +90,9 @@ config/types.ts                the config, config file and rule types
 config/defaults.ts             the default config and image reference
 config/load.ts                 loads the config file and lays it over the defaults
 config/merge.ts                the config file over the defaults, env.allow added to the default list, the source of each key
-config/validate.ts             the key spec of the config file
-config/dotted.ts               dotted key access
+config/validate.ts             the key spec of the config file, with the writeBack value specs and ceiling and resources within vm
+config/write-back.ts           the effective write-back table: the built-in list with writeBack.exclude and writeBack.add, and each key's source
+config/dotted.ts               dotted key read, set and remove (own keys only)
 config/egress-entry.ts         the host entry grammar, entry parsing and host matching
 config/egress-allow.ts         pi.dev and the allow list
 config/parent-proxy.ts         the parent proxy read from HTTPS_PROXY and NO_PROXY
@@ -118,18 +131,21 @@ backend/labels.ts              every pi-sandbox.* label key
 backend/image-reference.ts     image reference parsing
 backend/managed-network.ts     per-repository network and relay names and labels
 backend/exec-capture.ts        a non-tty exec with collected output
+backend/vm-size.ts             the VM size against the vm config: what differs, a disk below the current one, the size text
+backend/vm-decision.ts         the one VM decision from what the VM has and what is wanted: create, nothing, on next start, restart or defer while busy, for a launch and the setup
 backend/colima/backend.ts      the Colima backend
-backend/colima/profile.ts      the pi-sandbox profile, its socket and the VM's name for the host
+backend/colima/profile.ts      the pi-sandbox profile, its socket, the VM's name for the host, the one colima start argv and its stop-and-start hint text, and the running-sessions and deferred-until-idle texts
 backend/colima/engine-client.ts  the engine HTTP client over the socket, with its timeouts
 backend/colima/container-body.ts  container create bodies from a spec, with the capability, privilege and process limits
 backend/colima/exec-session.ts exec streams with backpressure, ended quietly when the host output closes
 backend/colima/images.ts       image pull, build (with the output tail of a failed build) and removal
 backend/colima/volumes.ts      volume operations
 backend/colima/relay.ts        the per-repository network and relay
-backend/colima/vm.ts           VM start, size and stop
-backend/colima/shares.ts       VM shares, the share restart and the reconcile to the workspaceRoots list
+backend/colima/vm.ts           VM start (at the vm config size when stopped), size, inspect, apply for the setup, the launch reconcile of shares and size in one restart, and stop
+backend/colima/size.ts         the VM size colima reports (status --json, colima.yaml), the size flags of a start, the cold-start size and the shrink notice
+backend/colima/shares.ts       VM shares: coverage, the shares a launch adds, the mount list of a restart and its check
 backend/colima/vm-trust.ts     the tls.extraCa certificates in the VM's trust store, engine restart when idle
-backend/colima/colima-yaml.ts  the lima.yaml mounts reader
+backend/colima/colima-yaml.ts  the lima.yaml and colima.yaml mounts reader and the colima.yaml size reader
 ```
 
 ## container/
@@ -149,7 +165,7 @@ container/run-pi.ts            pi through exec, the pty only for a terminal, sig
 ```
 image/index.ts                 public surface
 image/Dockerfile               the sandbox image
-image/entrypoint.sh            render links, the read-only auth.json copy, CA bundle, JVM truststore, idle
+image/entrypoint.sh            render links (~/.agents/skills included), the read-only auth.json copy, CA bundle, JVM truststore, idle
 image/bash-env.sh              the missing-command hint and the JVM trust flags
 image/sandbox-image.ts         ensureSandboxImage under the build lock: pull or build, then the layer; build leftovers
 image/build.ts                 the base image build and pinned pull
@@ -196,12 +212,12 @@ hostpi/tools/git.ts            git user name and email
 ```
 provision/index.ts             public surface
 provision/types.ts             render and sync types
-provision/render.ts            the render dir and its tool files
-provision/tree.ts              filtered copy of host agent dir entries, with one notice for what was left out
+provision/render.ts            the render dir, its tool files and its host sources (agent dir entries and ~/.agents/skills)
+provision/tree.ts              filtered copy of host sources, following no link, with one notice for what was left out and one for skipped links
 provision/pool.ts              bounded parallel work
 provision/sync.ts              the agent files sync under sync.lock: write-back to the host, then settings.json and pi-*.json into the volume, and the baseline
-provision/write-back.ts        the fixed write-back allowlist, the settings.json value checks, the three-way merge per key and its lines (no I/O)
-provision/merge-settings.ts    the sandbox copy of the host settings: dropped keys, package sources and their notices
+provision/write-back.ts        the write-back table compiled into value checks inside the ceiling, the allowlist hash of the baseline, the three-way merge per key and its lines (no I/O)
+provision/merge-settings.ts    the sandbox copy of the host settings: dropped keys, package sources, resource entries placed for the container, and their notices
 provision/package-source.ts    package sources and their URL credentials
 provision/host-packages.ts     npm and git package sources pinned to the versions the host installed, read from host files (unversioned, range and tag npm sources; git commits on the remote)
 provision/package-refresh.ts   the record of the last pins and the removal of outdated git checkouts from the volume, deferred while another session runs
@@ -271,7 +287,7 @@ shared/atomic-write.ts         atomic, create-only and random-hex file writes
 shared/file-lock.ts            the lock primitives
 shared/liveness.ts             the liveness rule: pid, boot time and process start
 shared/process-start.ts        a process's start time (ps on macOS, /proc on Linux), telling a failed tool from a process without one
-shared/paths.ts                host agent dir, the launcher folder <agent dir>/pi-sandbox/ (config.json, state/), launcher root
+shared/paths.ts                host agent dir, the launcher folder <agent dir>/pi-sandbox/ (config.json, state/), launcher root, path containment and the outermost of a path list
 shared/state-layout.ts         every path under the state dir
 shared/repo-state.ts           per-repository record files: repo.json with its mount root, created folders, leftovers
 shared/regular-file.ts         safe reads of regular files
@@ -284,6 +300,8 @@ shared/npmrc.ts                the .npmrc parser and value reader
 shared/ini.ts                  the ini parser and section.name[n] reader
 shared/maven-xml.ts            the XML tokenizer, the Maven settings model, the server secret reader and the XML writer
 shared/settle.ts               settleAll
+shared/terminal-text.ts        control, bidi and line separator characters shown as \uXXXX escapes, and the last non-empty line of command output
+shared/write-back-table.ts     the built-in write-back table as value specs, the host-only settings keys and the ceiling no config passes
 ```
 
 ## tests/
@@ -295,7 +313,7 @@ tests/support/fake-engine.ts         an in-memory engine HTTP server
 tests/support/fake-runner.ts         the scripted CommandRunner
 tests/support/fake-clock.ts          a controllable clock
 tests/support/sandbox-config.ts      config builders
-tests/support/temp-dir.ts            temp dir helpers
+tests/support/temp-dir.ts            temp dir helpers and exists
 tests/support/git.ts                 git for tests, isolated from the developer's git config
 tests/support/fakes.test.ts          the fakes' own contract
 tests/shared/atomic-write.test.ts    atomic writes
@@ -314,13 +332,16 @@ tests/shared/tool-config.test.ts     tool config parsers
 tests/config/fixtures.ts             config files in temp dirs
 tests/config/load.test.ts            loading the config file and examples/config.json
 tests/config/merge.test.ts           the config over the defaults, key by key, with sources
+tests/config/dotted.test.ts          dotted key read, set and remove
 tests/config/security-keys.test.ts   credential and image keys
 tests/config/egress-entry.test.ts    the egress grammar
 tests/config/parent-proxy.test.ts    the parent proxy parser
 tests/config/mounts.test.ts          mount keys
 tests/config/sessions.test.ts        sessions.host
-tests/config/schema.test.ts          schema and key spec agree
+tests/config/schema.test.ts          schema and key spec agree, bounds included
 tests/config/validate.test.ts        validation messages
+tests/config/write-back.test.ts      writeBack: defaults, exclude, add, override, enabled, the ceiling and the value specs
+tests/config/vm.test.ts              vm bounds and resources within vm
 tests/workspace/discover.test.ts     discovery and layout refusals
 tests/workspace/workspace-mode.test.ts  workspace mode
 tests/workspace/guard.test.ts        the workspace guard
@@ -336,7 +357,9 @@ tests/backend/fake-backend.conformance.test.ts  the suite on the fake backend
 tests/backend/colima.test.ts         Colima adapter specifics
 tests/backend/colima-vm.test.ts      VM start
 tests/backend/colima-shares.test.ts  VM shares, the workspaceRoots reconcile (foreign sessions, one-boot start, nested shares, unreadable lima.yaml), __vm-shares
-tests/backend/colima-size.test.ts    VM size
+tests/backend/colima-size.test.ts    VM size and the restart to the vm config size
+tests/backend/colima-apply.test.ts   VM inspect, apply (create, defer, restart), the launch reconcile of shares and size together, and the cold start at the vm config size
+tests/backend/vm-decision.test.ts    each outcome of vmDecision and whenBusy
 tests/container/spec.test.ts         the container spec
 tests/container/git-overlay.test.ts  the git overlay
 tests/container/lifecycle.test.ts    one container per launch, its removal and housekeeping
@@ -358,8 +381,8 @@ tests/hostpi/provider-hosts-sample.json  a sample provider host table
 tests/provision/fixtures.ts          provisioning fixtures
 tests/provision/render.test.ts       the render dir
 tests/provision/merge-settings.test.ts  the settings sync
-tests/provision/write-back.test.ts   the write-back allowlist, merge and lines
-tests/provision/sync.test.ts         write-back and sync against a fake volume
+tests/provision/write-back.test.ts   the write-back allowlist, value spec checks, the ceiling, baseline hash, merge and lines
+tests/provision/sync.test.ts         write-back and sync against a fake volume, with a configured allowlist
 tests/provision/package-refresh.test.ts  packages pinned to the host versions and the refresh of outdated checkouts
 tests/provision/host-sessions.test.ts  host session sweep and probe
 tests/grants/store.test.ts           grants
@@ -388,13 +411,19 @@ tests/proxy/child-env.test.ts        the minimal environment
 tests/cli/harness.ts                 the CLI test harness, the managed pi layout (also for the live harness) and the doctor report parser
 tests/cli/commands.test.ts           the pi sandbox commands
 tests/cli/doctor.test.ts             the doctor
+tests/cli/doctor-probes.test.ts      the doctor's mcp-auth sweep on a sandbox file it cannot read
 tests/cli/doctor-report.test.ts      the doctor report renderer: collapsing, --verbose, verdicts, partial reports, ~, colour (the whole-report goldens are in doctor.test.ts)
 tests/cli/doctor-tls.test.ts         the tls inspection check against a local TLS server signed by a test CA behind a parent proxy: not inspected, trusted via extras, root in a keychain, root not found, network failure
 tests/cli/egress.test.ts             egress grants
 tests/cli/errors.test.ts             error output
 tests/cli/host-pi.test.ts            host pi selection
 tests/cli/install.test.ts            install.sh, run for real
-tests/cli/init-config.test.ts        __init-config: missing, same (resolved) and other config, config without roots, exclusive create, refused root
+tests/cli/setup-fixtures.ts          host facts, folder candidates, the automatic size, a running VM and config documents for the setup tests
+tests/cli/setup-detect.test.ts       detectHost: the budget, an inspect failure, free disk and sessions
+tests/cli/setup-screens.test.ts      the setup screen texts
+tests/cli/setup-flow.test.ts         pi sandbox init's flow end to end over fake terminals, rich, ASCII and plain
+tests/cli/setup-apply.test.ts        applyPlan: stopping waiting for the VM step, and the lines --yes prints to stdout and stderr, the review first
+tests/cli/init.test.ts               pi sandbox init: the no-terminal and CI refusals, /dev/tty, --yes with PI_SANDBOX_ROOTS, signals and exit codes
 tests/cli/uninstall.test.ts          uninstall.sh, run for real
 tests/cli/intercept.test.ts          intercepted commands, host routes and the command lines that still launch
 tests/cli/launch.test.ts             the launch
@@ -402,7 +431,7 @@ tests/cli/launch-flow.test.ts        the signal guard, side-by-side stages and t
 tests/cli/launch-git.test.ts         the git layout check at launch
 tests/cli/launch-host-sessions.test.ts  host sessions at launch
 tests/cli/launch-sessions.test.ts    session end and the sweep
-tests/cli/launch-write-back.test.ts  settings written back to the host at launch and at exit
+tests/cli/launch-write-back.test.ts  settings written back to the host at launch and at exit, with the allowlist the launch started with
 tests/cli/sweep.test.ts              the sweep of unused repositories and of the state dir
 tests/cli/launch-wiring.test.ts      launch wiring and no leaks
 tests/cli/legacy-paths.test.ts       the old config and state folders: launch notice and doctor warns

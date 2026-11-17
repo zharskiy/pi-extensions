@@ -2,21 +2,10 @@ import { describe, expect, it } from "vitest";
 import { defaultConfig } from "../../config/defaults.ts";
 import { mergeConfig } from "../../config/merge.ts";
 import type { UserConfig } from "../../config/types.ts";
-import { validateConfig } from "../../config/validate.ts";
+import { configProblem } from "../../config/validate.ts";
 import { forwardedEnv } from "../../container/index.ts";
-import { errorMessage } from "../../shared/index.ts";
 
 const merge = (config: UserConfig) => mergeConfig(defaultConfig(), config);
-
-const problemOf = (value: unknown) => {
-  try {
-    validateConfig(value);
-
-    return undefined;
-  } catch (error) {
-    return errorMessage(error);
-  }
-};
 
 describe("sessions.host", () => {
   it("is on by default", () => {
@@ -34,17 +23,17 @@ describe("sessions.host", () => {
   });
 
   it("must be true or false", () => {
-    expect(problemOf({ sessions: { host: "yes" } })).toBe("config: sessions.host must be true or false");
-    expect(problemOf({ sessions: { dir: "/tmp" } })).toBe("config: sessions.dir is not a known key");
+    expect(configProblem({ sessions: { host: "yes" } })).toBe("config: sessions.host must be true or false");
+    expect(configProblem({ sessions: { dir: "/tmp" } })).toBe("config: sessions.dir is not a known key");
   });
 });
 
 describe("env.allow and the launcher's pi directory variables", () => {
   it("refuses PI_CODING_AGENT_SESSION_DIR and PI_CODING_AGENT_DIR", () => {
-    expect(problemOf({ env: { allow: ["PI_CODING_AGENT_SESSION_DIR"] } })).toBe(
+    expect(configProblem({ env: { allow: ["PI_CODING_AGENT_SESSION_DIR"] } })).toBe(
       "config: env.allow[0] PI_CODING_AGENT_SESSION_DIR is set by the launcher and is not forwarded",
     );
-    expect(problemOf({ env: { allow: ["EDITOR", "PI_CODING_AGENT_DIR"] } })).toBe(
+    expect(configProblem({ env: { allow: ["EDITOR", "PI_CODING_AGENT_DIR"] } })).toBe(
       "config: env.allow[1] PI_CODING_AGENT_DIR is set by the launcher and is not forwarded",
     );
   });

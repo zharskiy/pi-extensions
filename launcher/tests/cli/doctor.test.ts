@@ -111,9 +111,6 @@ const guestBackend = async (probes: Probes, vm?: Partial<Vm>) => {
   return fake;
 };
 
-const RESIZE =
-  "colima stop --profile pi-sandbox && colima start --profile pi-sandbox --activate=false --cpu 8 --memory 10";
-
 const hostSection = async (prepared: boolean) => [
   "host",
   `  ok    host pi           pi ${await testedPiVersion()}, managed install ~/.pi/agent/bin/pi; the image follows it`,
@@ -142,6 +139,7 @@ interface DoctorOptions {
   hostSettings?: unknown;
   denials?: DenialRecord[];
   args?: string[];
+  command?: string[];
 }
 
 const doctorWith = async (options: DoctorOptions = {}) => {
@@ -167,7 +165,10 @@ const doctorWith = async (options: DoctorOptions = {}) => {
     await harness.writeJson(join(harness.hostAgentDir, "settings.json"), options.hostSettings);
   }
 
-  const code = await run(["sandbox", "doctor", ...(options.args ?? [])], harness.deps);
+  const code = await run(
+    [...(options.command ?? ["sandbox", "doctor"]), ...(options.args ?? [])],
+    harness.deps,
+  );
   const stdout = harness.stdout();
 
   return { code, stdout, report: doctorReport(stdout), fake, harness, port };
@@ -680,6 +681,27 @@ describe("pi sandbox doctor", () => {
     expect(code).toBe(1);
   });
 
+  it("counts an empty mcp-auth.json in the sandbox as missing", async () => {
+    const { stdout } = await doctorWith({ probes: { mcpAuth: " \n" } });
+
+    expect(check(stdout, "mcp-auth sweep")).toMatchObject({
+      status: "ok",
+      detail: "no mcp-auth.json in the sandbox yet",
+    });
+  });
+
+  it("fails the mcp-auth sweep on a file larger than the volume read bound", async () => {
+    const { code, stdout } = await doctorWith({
+      probes: { mcpAuth: JSON.stringify({ padding: "a".repeat(1024 * 1024) }) },
+    });
+
+    expect(check(stdout, "mcp-auth sweep")).toMatchObject({
+      status: "fail",
+      detail: "mcp-auth.json in the sandbox is not a JSON object",
+    });
+    expect(code).toBe(1);
+  });
+
   it("fails when the container reaches the internet directly", async () => {
     const { code, stdout } = await doctorWith({ probes: { routeExit: 0 } });
 
@@ -710,7 +732,7 @@ describe("pi sandbox doctor", () => {
       "sandbox",
       SHARES_UNKNOWN,
       "  fail  vm                the sandbox VM engine is unreachable at ~/.colima/pi-sandbox/docker.sock: socket missing",
-      "        hint: run launcher/install.sh or colima start --profile pi-sandbox --activate=false",
+      "        hint: run colima start --profile pi-sandbox --activate=false, or pi sandbox init when ~/.colima/pi-sandbox does not exist",
       "  skip  probes            not run: the vm stage failed",
       "",
       "network",
@@ -727,8 +749,8 @@ describe("pi sandbox doctor", () => {
     const shared: string[][] = [];
     const { stdout } = await doctorWith({
       vm: {
-        ensureShares: async (paths) => {
-          shared.push(paths.map((entry) => entry.path));
+        reconcile: async ({ needs }) => {
+          shared.push(needs.map((entry) => entry.path));
         },
       },
     });
@@ -766,6 +788,26 @@ describe("pi sandbox doctor", () => {
     expect(started).toEqual([]);
     expect(fake.created).toEqual([]);
     expect(code).toBe(0);
+  });
+
+  it("exits 3 from the hidden __smoke-doctor when the sandbox part is skipped, with the same report", async () => {
+    const vm = { coverage: async () => ({ shares: [], missing: ["/Volumes/work"] }) };
+    const doctor = await doctorWith({ vm });
+    const smoke = await doctorWith({ vm, command: ["__smoke-doctor"] });
+
+    expect(smoke.code).toBe(3);
+    expect(check(smoke.stdout, "sandbox")).toEqual(check(doctor.stdout, "sandbox"));
+    expect(smoke.report.checks.map((entry) => entry.name)).toEqual(
+      doctor.report.checks.map((entry) => entry.name),
+    );
+    expect(doctor.code).toBe(0);
+  });
+
+  it("exits as the doctor does from the hidden __smoke-doctor when the sandbox part runs", async () => {
+    const passing = await doctorWith({ command: ["__smoke-doctor"] });
+    const failing = await doctorWith({ command: ["__smoke-doctor"], probes: { routeExit: 0 } });
+
+    expect([passing.code, failing.code]).toEqual([0, 1]);
   });
 
   it("reports the proxy and image stages both, then stops after a failed image and says the probes did not run", async () => {
@@ -852,7 +894,7 @@ describe("pi sandbox doctor", () => {
 
       expect(stdout).toContain("\u001b[1;31mfail\u001b[0m  vm ");
       expect(stdout).toContain("\u001b[32mok\u001b[0m    host pi ");
-      expect(stdout).toContain("\u001b[36mhint:\u001b[0m run launcher/install.sh");
+      expect(stdout).toContain("\u001b[36mhint:\u001b[0m run colima start");
       expect(stdout).toContain("result: \u001b[1;31mfail\u001b[0m (");
       expect(doctorReport(stripVTControlCharacters(stdout)).result).toBe("fail (1 failed, 4 ok, 3 skipped)");
       expect(harness.stderr().startsWith("\r\u001b[2Kpi sandbox doctor: preparing the sandbox")).toBe(true);
@@ -861,12 +903,13 @@ describe("pi sandbox doctor", () => {
       expect(code).toBe(1);
     });
 
-    it("prints no colour with NO_COLOR or a dumb TERM, and no progress line on a dumb TERM", async () => {
-      const envs: Array<Record<string, string>> = [{ NO_COLOR: "1" }, { TERM: "dumb" }];
+    it("prints no colour with NO_COLOR, FORCE_COLOR=0 or a dumb TERM, and no progress line on a dumb TERM", async () => {
+      const envs: Array<Record<string, string>> = [{ NO_COLOR: "1" }, { TERM: "dumb" }, { FORCE_COLOR: "0" }];
       const runs = await Promise.all(envs.map(async (env) => (await terminalDoctor(env)).harness));
       const outputs = runs.map((harness) => harness.stdout());
 
       expect(outputs.map((stdout) => doctorReport(stdout).result)).toEqual([
+        "fail (1 failed, 4 ok, 3 skipped)",
         "fail (1 failed, 4 ok, 3 skipped)",
         "fail (1 failed, 4 ok, 3 skipped)",
       ]);
@@ -876,7 +919,11 @@ describe("pi sandbox doctor", () => {
   });
 
   describe("vm size", () => {
-    const sizeCheck = async (size: Vm["size"], machine?: { cpus: number; memoryGiB: number }) => {
+    const sizeCheck = async (
+      size: Vm["size"],
+      machine?: { cpus: number; memoryGiB: number },
+      userConfig?: unknown,
+    ) => {
       const fake = createFakeBackend({ exec: answering({}), vm: { size } });
       const port = await healthServer(200);
       const harness = await createHarness({
@@ -887,20 +934,82 @@ describe("pi sandbox doctor", () => {
         },
       });
 
+      if (userConfig !== undefined) {
+        await harness.writeJson(harness.userConfigFile, userConfig);
+      }
+
       const code = await run(["sandbox", "doctor"], harness.deps);
 
       return { code, found: check(harness.stdout(), "vm size") };
     };
 
-    it("warns with the resize command for a 2 CPU, 4 GiB profile without failing doctor", async () => {
+    it("warns with how to choose a size for a 2 CPU, 4 GiB profile without failing doctor", async () => {
       const { code, found } = await sizeCheck(async () => ({ cpus: 2, memoryGiB: 4 }));
 
       expect(found).toMatchObject({
         status: "warn",
         detail: "profile pi-sandbox has 2 CPUs and 4 GiB, below 8 CPUs and 10 GiB",
-        hint: `resize it with ${RESIZE}`,
+        hint: "choose Custom for the VM size in pi sandbox init, or set vm in the config, while no other pi session runs",
       });
       expect(code).toBe(0);
+    });
+
+    it("measures the profile against the size vm sets instead of its own recommendation", async () => {
+      const small = await sizeCheck(async () => ({ cpus: 2, memoryGiB: 4, diskGiB: 60 }), undefined, {
+        vm: { cpus: 2, memoryGiB: 4 },
+      });
+      const differs = await sizeCheck(async () => ({ cpus: 8, memoryGiB: 10, diskGiB: 60 }), undefined, {
+        vm: { cpus: 4, diskGiB: 80 },
+      });
+      const shrunk = await sizeCheck(async () => ({ cpus: 4, memoryGiB: 8, diskGiB: 60 }), undefined, {
+        vm: { diskGiB: 40 },
+      });
+
+      expect(small.found).toMatchObject({
+        status: "ok",
+        detail: "profile pi-sandbox has 2 CPUs and 4 GiB, as vm sets",
+      });
+      expect(differs.found).toMatchObject({
+        status: "warn",
+        detail: "profile pi-sandbox has 8 CPUs and 10 GiB, not the 4 CPUs, 80 GiB disk vm sets",
+        hint: "run pi sandbox init, or pi, while no other pi session runs; either restarts the VM with the size vm sets",
+      });
+      expect(shrunk.found).toMatchObject({
+        status: "warn",
+        detail: "profile pi-sandbox has 4 CPUs and 8 GiB; vm.diskGiB 40 is below its disk of 60 GiB",
+        hint: "colima cannot shrink a disk; raise vm.diskGiB or leave it out",
+      });
+    });
+
+    it("fails a vm above what this Mac has and starts nothing", async () => {
+      const fake = createFakeBackend({ exec: answering({}) });
+      const started: string[] = [];
+      const harness = await createHarness({
+        backend: () => ({
+          ...fake.backend,
+          vm: {
+            ...fake.backend.vm,
+            ensureRunning: async () => {
+              started.push("vm");
+            },
+          },
+        }),
+      });
+
+      await harness.writeJson(harness.userConfigFile, { vm: { cpus: 9 } });
+
+      const code = await run(["sandbox", "doctor"], harness.deps);
+
+      expect(code).toBe(1);
+      expect(started).toEqual([]);
+      expect(check(harness.stdout(), "vm size")).toMatchObject({
+        status: "fail",
+        detail: "config: vm.cpus 9 is more than the 8 CPUs of this Mac",
+      });
+      expect(check(harness.stdout(), "sandbox")).toMatchObject({
+        status: "skip",
+        detail: "not started: vm asks for more than this Mac has",
+      });
     });
 
     it("measures the profile against the size install.sh gives this machine", async () => {

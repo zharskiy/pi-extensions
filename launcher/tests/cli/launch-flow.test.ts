@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { setTimeout as sleep } from "node:timers/promises";
 import { describe, expect, it } from "vitest";
-import type { Backend, MountSpec, VmPath } from "../../backend/index.ts";
+import type { Backend, MountSpec, VmPath, VmTarget } from "../../backend/index.ts";
 import { onClosedOutput } from "../../cli/deps.ts";
 import { run } from "../../cli/index.ts";
 import { hostPathNotices, launchNotices } from "../../cli/launch-notices.ts";
@@ -183,8 +183,8 @@ describe("the VM shares", () => {
         ...fake.backend,
         vm: {
           ...fake.backend.vm,
-          ensureShares: async (paths) => {
-            asked.shared = paths;
+          reconcile: async ({ needs }) => {
+            asked.shared = needs;
             asked.existed = await exists(hostSessionsDir(harness.hostAgentDir, harness.repoRoot));
           },
         },
@@ -206,8 +206,8 @@ describe("the VM shares", () => {
         ...fake.backend,
         vm: {
           ...fake.backend.vm,
-          ensureShares: async (paths) => {
-            asked.shared = paths;
+          reconcile: async ({ needs }) => {
+            asked.shared = needs;
           },
         },
       }),
@@ -219,6 +219,89 @@ describe("the VM shares", () => {
     expect(asked.shared?.map((need) => need.path)).not.toContain(
       hostSessionsDir(harness.hostAgentDir, harness.repoRoot),
     );
+  });
+});
+
+describe("the VM size", () => {
+  const sizedHarness = async () => {
+    const fake = createFakeBackend();
+    const asked: { targets: VmTarget[]; busy: number[]; started: Array<VmTarget | undefined> } = {
+      targets: [],
+      busy: [],
+      started: [],
+    };
+    const harness = await createHarness({
+      backend: () => ({
+        ...fake.backend,
+        vm: {
+          ...fake.backend.vm,
+          ensureRunning: async (_report, _shares, size) => {
+            asked.started.push(size);
+          },
+          reconcile: async ({ size }, options) => {
+            asked.targets.push(size);
+            asked.busy.push(await options.busy());
+
+            options.report("restarting the sandbox VM to change its size to 6 CPUs");
+          },
+        },
+      }),
+    });
+
+    return { harness, asked };
+  };
+
+  it("asks the VM for the size vm sets with its shares, with no other launch counted as busy", async () => {
+    const { harness, asked } = await sizedHarness();
+
+    await harness.writeJson(harness.userConfigFile, { vm: { cpus: 6, memoryGiB: 8, diskGiB: 80 } });
+
+    expect(await run([], harness.deps)).toBe(0);
+    expect(asked).toEqual({
+      targets: [{ cpus: 6, memoryGiB: 8, diskGiB: 80 }],
+      busy: [0],
+      started: [{ cpus: 6, memoryGiB: 8, diskGiB: 80 }],
+    });
+    expect(harness.stderr()).toContain(
+      "pi-sandbox: restarting the sandbox VM to change its size to 6 CPUs\n",
+    );
+  });
+
+  it("refuses a vm above what this Mac has before it starts or stops the VM", async () => {
+    const { harness, asked } = await sizedHarness();
+
+    await harness.writeJson(harness.userConfigFile, { vm: { cpus: 12, memoryGiB: 31 } });
+
+    expect(await run([], harness.deps)).toBe(1);
+    expect(harness.stderr()).toContain(
+      [
+        "pi-sandbox: config: vm.cpus 12 is more than the 8 CPUs of this Mac; config: vm.memoryGiB 31 is more than the 30 GiB this Mac can give the VM (32 GiB, less 2 for macOS)",
+        `  hint: lower it in ${harness.userConfigFile}, or run pi sandbox init to choose a size`,
+      ].join("\n"),
+    );
+    expect(asked).toEqual({ targets: [], busy: [], started: [] });
+  });
+
+  it("asks with an empty target when vm is unset, and never from the doctor", async () => {
+    const { harness, asked } = await sizedHarness();
+
+    expect(await run([], harness.deps)).toBe(0);
+
+    await run(["sandbox", "doctor"], harness.deps);
+
+    expect(asked.targets).toEqual([{}]);
+    expect(asked.started).toEqual([{}, {}]);
+  });
+
+  it("has the doctor start a stopped VM at the size vm sets, without resizing a running one", async () => {
+    const { harness, asked } = await sizedHarness();
+
+    await harness.writeJson(harness.userConfigFile, { vm: { cpus: 6 } });
+
+    await run(["sandbox", "doctor"], harness.deps);
+
+    expect(asked.targets).toEqual([]);
+    expect(asked.started).toEqual([{ cpus: 6 }]);
   });
 });
 
@@ -260,7 +343,7 @@ describe("the launch registration", () => {
           ensureRunning: async () => {
             seen.running = (await liveLaunches(harness.stateDir)).length;
           },
-          ensureShares: async (_paths, options) => {
+          reconcile: async (_wanted, options) => {
             seen.busy = await options.busy();
 
             throw new LauncherError("the share failed", "share it by hand");

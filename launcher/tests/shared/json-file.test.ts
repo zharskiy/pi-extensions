@@ -7,6 +7,7 @@ import {
   parseJsonObject,
   readJsonFile,
   readJsonObject,
+  readText,
   writeJsonFile,
 } from "../../shared/index.ts";
 import { tempDir as sharedTempDir } from "../support/temp-dir.ts";
@@ -39,6 +40,26 @@ describe("readJsonFile", () => {
 
   it("throws a LauncherError when the path cannot be read", async () => {
     await expect(readJsonFile(await tempDir())).rejects.toBeInstanceOf(LauncherError);
+  });
+});
+
+describe("readText", () => {
+  it("returns the text, and undefined when the file is missing", async () => {
+    const dir = await tempDir();
+    const path = join(dir, "config.json");
+
+    await writeFile(path, "{ broken");
+
+    expect(await readText(path)).toBe("{ broken");
+    expect(await readText(join(dir, "missing.json"))).toBeUndefined();
+  });
+
+  it("throws a LauncherError naming the path when it cannot be read", async () => {
+    const dir = await tempDir();
+    const result = readText(dir);
+
+    await expect(result).rejects.toBeInstanceOf(LauncherError);
+    await expect(result).rejects.toThrow(`${dir}: `);
   });
 });
 

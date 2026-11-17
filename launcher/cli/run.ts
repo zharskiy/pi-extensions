@@ -4,9 +4,10 @@ import { doctorCommand } from "./commands/doctor.ts";
 import { VERBOSE_FLAG } from "./commands/doctor-checks.ts";
 import { egressCommand } from "./commands/egress.ts";
 import { helpCommand, usageOf } from "./commands/help.ts";
-import { INIT_CONFIG, initConfigCommand } from "./commands/init-config.ts";
+import { initCommand, YES_FLAG } from "./commands/init.ts";
 import { assertOptions } from "./commands/options.ts";
 import { resetCommand } from "./commands/reset.ts";
+import { SMOKE_DOCTOR, smokeDoctorCommand } from "./commands/smoke-doctor.ts";
 import { statusCommand } from "./commands/status.ts";
 import { stopCommand } from "./commands/stop.ts";
 import { UNINSTALL, uninstallCommand } from "./commands/uninstall.ts";
@@ -32,6 +33,7 @@ const printVersion = async (deps: CliDeps) => {
 const help: Command = { run: helpCommand };
 
 const COMMANDS: Record<string, Command> = {
+  init: { run: initCommand, options: [YES_FLAG] },
   status: { run: statusCommand, options: [] },
   doctor: { run: doctorCommand, options: [VERBOSE_FLAG] },
   config: { run: configCommand, options: [JSON_FLAG] },
@@ -82,8 +84,8 @@ const route = async (argv: string[], deps: CliDeps) => {
     return vmSharesCommand(deps);
   }
 
-  if (first === INIT_CONFIG) {
-    return initConfigCommand(deps, rest);
+  if (first === SMOKE_DOCTOR && rest.length === 0) {
+    return smokeDoctorCommand(deps);
   }
 
   const intercepted = argv.includes("--no-sandbox") ? undefined : await intercept(argv, deps);

@@ -9,7 +9,7 @@ interface LoadOptions {
   home?: string;
 }
 
-const validateConfigFile = (value: unknown, file: string) => {
+export const validateConfigFile = (value: unknown, file: string) => {
   try {
     return validateConfig(value);
   } catch (error) {

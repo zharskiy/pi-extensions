@@ -1,12 +1,15 @@
 import {
   type Backend,
   ENGINE_PROFILE,
+  hasSizeChanges,
   LABELS,
-  recommendedVmSize,
   shareDrift,
   shareText,
   type VmShare,
   type VmSize,
+  type VmTarget,
+  vmSizeDrift,
+  vmSizeText,
 } from "../../backend/index.ts";
 import { authorityOf, type CredentialRule, TLS_PORT } from "../../config/index.ts";
 import { readHostPiFiles } from "../../hostpi/index.ts";
@@ -18,7 +21,13 @@ import { missingPiText } from "../host-pi.ts";
 import { hostSessionsOf } from "../host-sessions.ts";
 import { type Sandbox, type Stage, type StageOutcome, withSandbox } from "../launch.ts";
 import { denialAdvice, deniedTargets, type SandboxProxy, sandboxDenials } from "../sandbox-proxy.ts";
-import { type VmSharePlan, vmShareCoverage, vmSharesFor } from "../vm.ts";
+import {
+  assertVmFitsHost,
+  recommendedVmSize,
+  type VmSharePlan,
+  vmShareCoverage,
+  vmSharesFor,
+} from "../vm.ts";
 import {
   type CheckResult,
   failed,
@@ -147,7 +156,23 @@ const gibText = (gib: number) => `${Math.round(gib * 10) / 10} GiB`;
 const isBelow = (size: VmSize, recommended: VmSize) =>
   size.cpus < recommended.cpus || size.memoryGiB < recommended.memoryGiB;
 
-const sizeCheck = async (deps: CliDeps, sandbox: Sandbox) => {
+const configuredSizeCheck = (size: VmSize, target: VmTarget, current: string) => {
+  const drift = vmSizeDrift(size, target);
+
+  if (hasSizeChanges(drift)) {
+    return warned(`${current}, not the ${vmSizeText(drift.changes)} vm sets`, {
+      hint: "run pi sandbox init, or pi, while no other pi session runs; either restarts the VM with the size vm sets",
+    });
+  }
+
+  return drift.keptDiskGiB === undefined
+    ? passed(`${current}, as vm sets`)
+    : warned(`${current}; vm.diskGiB ${target.diskGiB} is below its disk of ${drift.keptDiskGiB} GiB`, {
+        hint: "colima cannot shrink a disk; raise vm.diskGiB or leave it out",
+      });
+};
+
+const sizeCheck = async (deps: CliDeps, context: LaunchContext, sandbox: Sandbox) => {
   const { vm } = sandbox.backend;
   const size = await vm.size();
 
@@ -155,12 +180,18 @@ const sizeCheck = async (deps: CliDeps, sandbox: Sandbox) => {
     return skipped(`colima did not report the size of profile ${ENGINE_PROFILE}`);
   }
 
-  const recommended = recommendedVmSize(deps.machine.cpus, deps.machine.memoryGiB);
   const current = `profile ${ENGINE_PROFILE} has ${size.cpus} CPUs and ${gibText(size.memoryGiB)}`;
+  const target = context.effective.config.vm;
+
+  if (Object.keys(target).length > 0) {
+    return configuredSizeCheck(size, target, current);
+  }
+
+  const recommended = recommendedVmSize(deps.machine.cpus, deps.machine.memoryGiB);
 
   return isBelow(size, recommended)
     ? warned(`${current}, below ${recommended.cpus} CPUs and ${recommended.memoryGiB} GiB`, {
-        hint: `resize it with ${vm.resizeCommand(recommended)}`,
+        hint: "choose Custom for the VM size in pi sandbox init, or set vm in the config, while no other pi session runs",
       })
     : passed(current);
 };
@@ -185,7 +216,7 @@ const rootsCheck = (current: VmShare[], desired: VmShare[]): CheckResult => {
   }
 
   return warned(`the sandbox VM ${driftText(extra, lacking)}`, {
-    hint: "run pi once while no other pi session runs; it restarts the VM with the shares workspaceRoots sets",
+    hint: "run pi sandbox init, or pi, while no other pi session runs; either restarts the VM with the shares workspaceRoots sets",
   });
 };
 
@@ -329,7 +360,7 @@ const PROBES: Probe[] = [
   ),
   single("sessions share", "sandbox", ({ target }) => sessionsShareCheck(target)),
   ruleChecks,
-  single("vm size", "sandbox", ({ deps, sandbox }) => sizeCheck(deps, sandbox)),
+  single("vm size", "sandbox", ({ deps, context, sandbox }) => sizeCheck(deps, context, sandbox)),
 ];
 
 const probe = async (deps: CliDeps, context: LaunchContext, sandbox: Sandbox, run: Run) => {
@@ -422,6 +453,27 @@ const skipSandbox = (run: Run, missing: string[]) => {
   return undefined;
 };
 
+const fitsHost = async (deps: CliDeps, context: LaunchContext, run: Run) => {
+  try {
+    assertVmFitsHost(deps, context.effective.config.vm);
+
+    return true;
+  } catch (error) {
+    const hint = error instanceof LauncherError ? error.hint : undefined;
+
+    run.checks.push(
+      { name: "vm size", section: "sandbox", result: failed(errorMessage(error), { hint }) },
+      {
+        name: "sandbox",
+        section: "sandbox",
+        result: skipped("not started: vm asks for more than this Mac has"),
+      },
+    );
+
+    return false;
+  }
+};
+
 const once = <T>(read: () => Promise<T>) => {
   const state: { reading?: Promise<T> } = {};
 
@@ -441,10 +493,13 @@ const runChecks = async (deps: CliDeps, progress: Progress, checks: NamedCheck[]
 
   run.checks.push({ name: "vm shares", section: "sandbox", result: shares.result });
 
-  const signal =
-    shares.missing.length === 0
-      ? await sandboxChecks(deps, context, backend, run)
-      : skipSandbox(run, shares.missing);
+  const skipsSandbox = shares.missing.length > 0;
+
+  const signal = (await fitsHost(deps, context, run))
+    ? skipsSandbox
+      ? skipSandbox(run, shares.missing)
+      : await sandboxChecks(deps, context, backend, run)
+    : undefined;
 
   run.progress.line("checking the host");
 
@@ -454,13 +509,13 @@ const runChecks = async (deps: CliDeps, progress: Progress, checks: NamedCheck[]
     result: tlsInspectionResult(await run.hostTls()),
   });
 
-  return signal;
+  return { signal, skipsSandbox };
 };
 
 const noticesOf = (deps: CliDeps, lines: string[]) =>
   [...new Set(lines.map(withoutPrefix))].filter((notice) => notice !== missingPiText(deps));
 
-export const doctorCommand = async (deps: CliDeps, args: string[]) => {
+export const runDoctor = async (deps: CliDeps, args: string[]) => {
   const checks: NamedCheck[] = [];
   const progress = progressLine(deps);
   const notices: string[] = [];
@@ -480,11 +535,11 @@ export const doctorCommand = async (deps: CliDeps, args: string[]) => {
   };
 
   try {
-    const signal = await runChecks(quiet, progress, checks);
+    const { signal, skipsSandbox } = await runChecks(quiet, progress, checks);
 
     report(false);
 
-    return signal ?? (verdictOf(checks) === "fail" ? 1 : 0);
+    return { code: signal ?? (verdictOf(checks) === "fail" ? 1 : 0), skipsSandbox };
   } catch (error) {
     progress.clear();
 
@@ -495,3 +550,5 @@ export const doctorCommand = async (deps: CliDeps, args: string[]) => {
     throw error;
   }
 };
+
+export const doctorCommand = async (deps: CliDeps, args: string[]) => (await runDoctor(deps, args)).code;
