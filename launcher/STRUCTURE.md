@@ -155,7 +155,7 @@ container/spec.ts              the container spec: mounts, env, labels, the moun
 container/volumes.ts           the volume plan: agent, overlay and shared volume names, targets and labels
 container/git-overlay.ts       the git overlay plan and its ready() step before a start: layout re-check, hooks dirs, the baseline and the pending report
 container/names.ts             container and volume names
-container/lifecycle.ts         startLaunchContainer and removeLaunchContainer: one container per launch, mount points, volume hand-over
+container/lifecycle.ts         startLaunchContainer and removeLaunchContainer: one container per launch, mount points, volume hand-over; agentContainers, the one "launch containers, not relays" filter
 container/run-pi.ts            pi through exec, the pty only for a terminal, signals and resize
 ```
 

@@ -1,4 +1,5 @@
 import { type Backend, LABELS } from "../backend/index.ts";
+import { agentContainers } from "../container/index.ts";
 import { othersLive, withRepoLaunchLock } from "../grants/index.ts";
 import { prepareHostSessions, probeHostSessions, sweepHostSessions } from "../provision/index.ts";
 import { errorMessage, LauncherError } from "../shared/index.ts";
@@ -33,8 +34,8 @@ export const noticeHostSessions = (deps: CliDeps, sessions: HostSessions) => {
 const sweptDir = (deps: CliDeps, repoRoot: string) => hostSessionsDir(hostAgentDirOf(deps), repoRoot);
 
 const containerRunning = async (backend: Backend, context: LaunchContext) =>
-  (await backend.findContainers({ [LABELS.repoHash]: context.repoHash })).some(
-    (container) => container.labels[LABELS.relay] !== "true" && container.state === "running",
+  (await agentContainers(backend, { [LABELS.repoHash]: context.repoHash })).some(
+    (container) => container.state === "running",
   );
 
 const warnUnswept = (deps: CliDeps, dir: string, error: unknown) => {

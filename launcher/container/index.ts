@@ -4,6 +4,7 @@ export {
   planGitOverlay,
 } from "./git-overlay.ts";
 export {
+  agentContainers,
   discardContainer,
   listLauncherContainers,
   removeLaunchContainer,

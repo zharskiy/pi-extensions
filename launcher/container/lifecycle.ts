@@ -228,7 +228,7 @@ const create = async (input: LaunchContainerInput, spec: LauncherContainerSpec):
 
 const isAgent = (container: ContainerSummary) => container.labels[LABELS.relay] !== "true";
 
-const agentContainers = async (backend: Backend, labels: Record<string, string>) =>
+export const agentContainers = async (backend: Backend, labels: Record<string, string>) =>
   (await backend.findContainers(labels)).filter(isAgent);
 
 export const startLaunchContainer = (input: LaunchContainerInput) =>

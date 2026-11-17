@@ -1,6 +1,6 @@
 import { isAbsolute } from "node:path";
 import { type Backend, LABELS } from "../../backend/index.ts";
-import { overlayVolumes, sharedCacheVolumes } from "../../container/index.ts";
+import { agentContainers, overlayVolumes, sharedCacheVolumes } from "../../container/index.ts";
 import { liveLaunches } from "../../grants/index.ts";
 import { recordedImage } from "../../image/index.ts";
 import { LauncherError } from "../../shared/index.ts";
@@ -18,9 +18,10 @@ const sessionDirLine = (label: string | undefined) => {
 };
 
 const containerLines = async (backend: Backend, context: LaunchContext) => {
-  const containers = (
-    await backend.findContainers({ [LABELS.managed]: "true", [LABELS.repoHash]: context.repoHash })
-  ).filter((container) => container.labels[LABELS.relay] !== "true");
+  const containers = await agentContainers(backend, {
+    [LABELS.managed]: "true",
+    [LABELS.repoHash]: context.repoHash,
+  });
 
   return [
     `containers: ${containers.length}`,
