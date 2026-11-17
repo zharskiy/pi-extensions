@@ -1,8 +1,9 @@
 import { lstat, rmdir } from "node:fs/promises";
+import { errnoCode } from "../shared/index.ts";
 import { byDepth } from "./paths.ts";
 
 const isDroppable = (error: unknown) =>
-  ["ENOENT", "ENOTEMPTY", "EEXIST", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "");
+  ["ENOENT", "ENOTEMPTY", "EEXIST", "ENOTDIR"].includes(errnoCode(error) ?? "");
 
 const removeEmptyDir = async (path: string): Promise<string[]> => {
   const info = await lstat(path).catch(() => undefined);

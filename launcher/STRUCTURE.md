@@ -280,7 +280,7 @@ proxy/secrets/errors.ts        unavailable secrets, missing logins and local rep
 
 ```
 shared/index.ts                public surface
-shared/errors.ts               LauncherError and error messages
+shared/errors.ts               LauncherError, error messages and errno codes
 shared/command-runner.ts       the CommandRunner interface and the real runner
 shared/hash.ts                 hashes and the 12-hex short hash
 shared/json-file.ts            JSON file reading and writing, and the strict and lenient text readers

@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { link, mkdir, open, rename, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { errorMessage, LauncherError } from "./errors.ts";
+import { errnoCode, errorMessage, LauncherError } from "./errors.ts";
 import { isLive, isRunning, processMark } from "./liveness.ts";
 import { PRIVATE_DIR_MODE, PRIVATE_FILE_MODE } from "./modes.ts";
 
@@ -34,8 +34,6 @@ const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_RETRY_MS = 25;
 
 const DIRECTORY_REFRESH_MS = 1_000;
-
-const isCode = (error: unknown, code: string) => (error as NodeJS.ErrnoException).code === code;
 
 const settingsOf = (options: FileLockOptions, byAge: boolean): LockSettings => ({
   staleMs: byAge ? (options.staleMs ?? DEFAULT_STALE_MS) : undefined,
@@ -199,7 +197,7 @@ const createPidLock: Attempt = async (path) => {
 
     return (await snapshotOf(draft))?.mark;
   } catch (error) {
-    if (isCode(error, "EEXIST")) {
+    if (errnoCode(error) === "EEXIST") {
       return undefined;
     }
 
@@ -215,7 +213,7 @@ const createDirectoryLock: Attempt = async (path) => {
 
     return (await snapshotOf(path))?.mark;
   } catch (error) {
-    if (isCode(error, "EEXIST")) {
+    if (errnoCode(error) === "EEXIST") {
       return undefined;
     }
 

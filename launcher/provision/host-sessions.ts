@@ -16,6 +16,7 @@ import { StringDecoder } from "node:string_decoder";
 import { type Backend, execCapture } from "../backend/index.ts";
 import {
   errorMessage,
+  isMissing,
   isWithin,
   lstatOrUndefined,
   PI_SESSION_DIR_VARIABLE,
@@ -202,11 +203,9 @@ const readVerdict = async (path: string, info: Stats, repoRoot: string): Promise
   }
 };
 
-const isGone = (error: unknown) => (error as NodeJS.ErrnoException | undefined)?.code === "ENOENT";
-
 const verdictOf = (path: string, info: Stats, repoRoot: string): Promise<Verdict | undefined> =>
   readVerdict(path, info, repoRoot).catch((error: unknown) =>
-    isGone(error) ? undefined : { keep: false, reason: `could not be read (${errorMessage(error)})` },
+    isMissing(error) ? undefined : { keep: false, reason: `could not be read (${errorMessage(error)})` },
   );
 
 const rejectedName = (path: string) => `${path}${REJECTED_SUFFIX}-${randomBytes(4).toString("hex")}`;

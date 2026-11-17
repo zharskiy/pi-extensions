@@ -1,14 +1,12 @@
 import { readFile } from "node:fs/promises";
 import { writeFileAtomic } from "./atomic-write.ts";
-import { errorMessage, LauncherError } from "./errors.ts";
+import { errorMessage, isMissing, LauncherError } from "./errors.ts";
 
 export type JsonObject = Record<string, unknown>;
 
 interface WriteJsonOptions {
   mode?: number;
 }
-
-const isMissing = (error: unknown) => (error as NodeJS.ErrnoException).code === "ENOENT";
 
 export const isJsonObject = (value: unknown): value is JsonObject =>
   typeof value === "object" && value !== null && !Array.isArray(value);

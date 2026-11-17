@@ -4,6 +4,7 @@ import type { JsonObject } from "../hostpi/index.ts";
 import {
   BUILT_IN_EXTENSION_FILES,
   errorMessage,
+  isMissing,
   PERMISSION_BITS,
   PRIVATE_FILE_MODE,
   parseJsonObject,
@@ -58,8 +59,6 @@ interface FileOutcome {
 }
 
 const LOCK_TIMEOUT_MS = 30_000;
-
-const isMissing = (error: unknown) => (error as NodeJS.ErrnoException).code === "ENOENT";
 
 const readHostFile = async (hostAgentDir: string, name: string): Promise<HostFile> => {
   const linked = join(hostAgentDir, name);

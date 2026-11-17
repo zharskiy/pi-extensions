@@ -8,7 +8,9 @@ import {
   type MountSpec,
 } from "../backend/index.ts";
 import {
+  errnoCode,
   errorMessage,
+  isMissing,
   isWithin,
   LauncherError,
   recordCreatedDirs,
@@ -58,10 +60,6 @@ const DEFAULT_OWNER = "1000:1000";
 const ROOT_USER = "0";
 
 const MOUNT_POINT_HINT = "replace it with a directory, or remove it so the launcher can create one";
-
-const isMissing = (error: unknown) => (error as NodeJS.ErrnoException).code === "ENOENT";
-
-const isTaken = (error: unknown) => (error as NodeJS.ErrnoException).code === "EEXIST";
 
 const foundAt = (path: string) =>
   lstat(path).catch((error: unknown) => (isMissing(error) ? undefined : Promise.reject(error)));
@@ -123,7 +121,8 @@ const ensureMountPoint = async (root: string, path: string, guard: MountPointGua
 
   await mkdir(path).then(
     () => guard.onMade(path),
-    (error: unknown) => (isTaken(error) ? ensureMountPoint(root, path, guard) : Promise.reject(error)),
+    (error: unknown) =>
+      errnoCode(error) === "EEXIST" ? ensureMountPoint(root, path, guard) : Promise.reject(error),
   );
 };
 

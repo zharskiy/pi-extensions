@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { link, mkdir, open, readFile, rename, rm } from "node:fs/promises";
 import { dirname } from "node:path";
-import { errorMessage, LauncherError } from "./errors.ts";
+import { errnoCode, errorMessage, LauncherError } from "./errors.ts";
 import { PRIVATE_DIR_MODE, PRIVATE_FILE_MODE } from "./modes.ts";
 
 interface AtomicWriteOptions {
@@ -60,7 +60,7 @@ const linkNew = async (temporary: string, path: string) => {
 
     return true;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+    if (errnoCode(error) === "EEXIST") {
       return false;
     }
 

@@ -6,6 +6,7 @@ import { configProblem, withoutPath } from "../../config/index.ts";
 import {
   errorMessage,
   isJsonObject,
+  isMissing,
   type JsonObject,
   LauncherError,
   PERMISSION_BITS,
@@ -200,7 +201,7 @@ const currentText = async (file: string) => {
   try {
     return await readFile(file, "utf8");
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+    if (isMissing(error)) {
       return undefined;
     }
 

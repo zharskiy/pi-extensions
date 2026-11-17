@@ -15,6 +15,7 @@ import {
   DAY_MS,
   forgetRepo,
   hasRepoLeftovers,
+  isMissing,
   isMounted,
   knownRepos,
   PRIVATE_FILE_MODE,
@@ -38,7 +39,7 @@ type Presence = "present" | "missing" | "unknown";
 const presenceOf = (path: string): Promise<Presence> =>
   stat(path).then(
     () => "present",
-    (error: unknown) => ((error as NodeJS.ErrnoException).code === "ENOENT" ? "missing" : "unknown"),
+    (error: unknown) => (isMissing(error) ? "missing" : "unknown"),
   );
 
 const rootState = async (record: RepoRecord | undefined) => {
