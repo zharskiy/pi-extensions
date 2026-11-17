@@ -73,7 +73,11 @@ const sharePlanFor =
     try {
       const planned = vmSharesFor(deps, { roots });
 
-      return { shares: planned?.shares ?? [], exact: true, notices: planned?.notices ?? [] };
+      return {
+        shares: planned?.shares ?? [],
+        exact: true,
+        notices: [...(planned?.nested ?? []), ...(planned?.notices ?? [])],
+      };
     } catch (error) {
       return { problem: errorMessage(error) };
     }

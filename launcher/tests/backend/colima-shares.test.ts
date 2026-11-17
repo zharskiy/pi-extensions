@@ -620,6 +620,16 @@ describe("the VM shares with workspaceRoots set", () => {
     expect(context.colimaCalls()).toEqual(restart(rootsMounts(context.paths)));
   });
 
+  it("launches with a root inside another root without naming it", async () => {
+    const context = await launchWithRoots({ roots: ({ repoRoot }) => [repoRoot, join(repoRoot, "src")] });
+
+    await mkdir(join(context.paths.repoRoot, "src"), { recursive: true });
+
+    expect(await run0(context)).toBe(0);
+    expect(context.harness.stderr()).not.toContain("is shared through it");
+    expect(context.colimaCalls()).toEqual(restart(rootsMounts(context.paths)));
+  });
+
   it("refuses a root that is the home dir before touching the VM", async () => {
     const context = await launchWithRoots({ roots: ({ home, repoRoot }) => [repoRoot, home] });
 

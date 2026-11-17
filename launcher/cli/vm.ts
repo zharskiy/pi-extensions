@@ -34,6 +34,7 @@ type WorkspaceRoots = SandboxConfig["workspaceRoots"];
 
 export interface VmSharePlan {
   shares: VmShare[];
+  nested: string[];
   notices: string[];
 }
 
@@ -113,7 +114,7 @@ export const vmSharesFor = (deps: CliDeps, workspaceRoots: WorkspaceRoots): VmSh
   }
 
   const dirs = vmDirsOf(deps);
-  const { roots, notices } = sharedRootsOf(workspaceRoots, { home: deps.home, env: deps.env });
+  const { roots, nested, notices } = sharedRootsOf(workspaceRoots, { home: deps.home, env: deps.env });
   const shares = [
     ...roots.map((location) => ({ location, writable: true })),
     { location: realOrResolvedSync(dirs.sessions), writable: true },
@@ -122,7 +123,7 @@ export const vmSharesFor = (deps: CliDeps, workspaceRoots: WorkspaceRoots): VmSh
 
   assertApart(shares);
 
-  return { shares, notices };
+  return { shares, nested, notices };
 };
 
 export const prepareVmDirs = async (deps: CliDeps) => {

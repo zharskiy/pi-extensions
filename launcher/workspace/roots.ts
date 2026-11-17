@@ -35,6 +35,7 @@ export type RootVerdict =
 interface SharedRoots {
   roots: string[];
   missing: string[];
+  nested: string[];
   notices: string[];
 }
 
@@ -171,17 +172,20 @@ export const sharedRootsOf = (workspaceRoots: WorkspaceRoots, context: RootGuard
   const listed = workspaceRoots.roots.map((root) => ({ root, lexical: lexicalRoot(root, context.home) }));
   const present = entries.filter((entry) => isFolder(entry.resolved));
   const absent = entries.filter((entry) => !isFolder(entry.resolved));
-  const notices = [
+  const nested = [
     ...new Set([
       ...nestingNotices(listed, (entry) => entry.lexical),
       ...nestingNotices(present, (entry) => entry.resolved),
-      ...absent.map((entry) => `workspaceRoots: ${printable(entry.root)} does not exist, not shared`),
     ]),
   ];
+  const notices = absent.map(
+    (entry) => `workspaceRoots: ${printable(entry.root)} does not exist, not shared`,
+  );
 
   return {
     roots: outermostPaths(present.map((entry) => entry.resolved)),
     missing: absent.map((entry) => entry.resolved),
+    nested,
     notices,
   };
 };

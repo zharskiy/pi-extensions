@@ -140,9 +140,10 @@ describe("sharedRootsOf", () => {
     ).toEqual({
       roots: [join(base, "work"), join(paths.home, "code")],
       missing: [],
-      notices: [
+      nested: [
         `workspaceRoots: ${join(base, "work", "a")} is inside ${join(base, "work")} and is shared through it`,
       ],
+      notices: [],
     });
   });
 
@@ -153,6 +154,7 @@ describe("sharedRootsOf", () => {
     expect(sharedRootsOf({ roots: [missing, join(base, "other")] }, paths)).toEqual({
       roots: [join(base, "other")],
       missing: [missing],
+      nested: [],
       notices: [`workspaceRoots: ${missing} does not exist, not shared`],
     });
   });
@@ -181,7 +183,8 @@ describe("sharedRootsOf", () => {
     expect(sharedRootsOf({ roots: [join(base, "work"), link] }, paths)).toEqual({
       roots: [join(base, "work")],
       missing: [],
-      notices: [`workspaceRoots: ${link} is inside ${join(base, "work")} and is shared through it`],
+      nested: [`workspaceRoots: ${link} is inside ${join(base, "work")} and is shared through it`],
+      notices: [],
     });
   });
 
@@ -200,7 +203,8 @@ describe("sharedRootsOf", () => {
     expect(sharedRootsOf({ roots: [join(base, "work"), data] }, paths)).toEqual({
       roots: [join(base, "work")],
       missing: [],
-      notices: [`workspaceRoots: ${data} is inside ${join(base, "work")} and is shared through it`],
+      nested: [`workspaceRoots: ${data} is inside ${join(base, "work")} and is shared through it`],
+      notices: [],
     });
   });
 
@@ -212,7 +216,8 @@ describe("sharedRootsOf", () => {
 
     expect(sharedRootsOf({ roots: [join(base, "work"), data] }, paths)).toMatchObject({
       roots: [join(base, "work")],
-      notices: [`workspaceRoots: ${data} is inside ${join(base, "work")} and is shared through it`],
+      nested: [`workspaceRoots: ${data} is inside ${join(base, "work")} and is shared through it`],
+      notices: [],
     });
     expect(() =>
       assertWithinWorkspaceRoots(

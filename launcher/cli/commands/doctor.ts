@@ -265,7 +265,10 @@ const sharesCheck = async (
   const plan = vmSharesFor(deps, context.effective.config.workspaceRoots);
   const outcome = coverageOutcome(coverage, plan);
 
-  return { ...outcome, result: withNotices(outcome.result, plan?.notices ?? []) };
+  return {
+    ...outcome,
+    result: withNotices(outcome.result, [...(plan?.nested ?? []), ...(plan?.notices ?? [])]),
+  };
 };
 
 const sharesOf = (deps: CliDeps, context: LaunchContext, backend: Backend) =>
