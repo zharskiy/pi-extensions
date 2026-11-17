@@ -6,6 +6,7 @@ const SALT_BYTES = 32;
 
 export const GUEST_PATHS = {
   agentDir: "/home/pi/.pi/agent",
+  agentsSkills: "/home/pi/.agents/skills",
   renderDir: "/opt/pi-sandbox/render",
   trustPem: "/etc/pi-sandbox/ca.pem",
 } as const;

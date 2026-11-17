@@ -156,7 +156,7 @@ container/run-pi.ts            pi through exec, the pty only for a terminal, sig
 ```
 image/index.ts                 public surface
 image/Dockerfile               the sandbox image
-image/entrypoint.sh            render links, the read-only auth.json copy, CA bundle, JVM truststore, idle
+image/entrypoint.sh            render links (~/.agents/skills included), the read-only auth.json copy, CA bundle, JVM truststore, idle
 image/bash-env.sh              the missing-command hint and the JVM trust flags
 image/sandbox-image.ts         ensureSandboxImage under the build lock: pull or build, then the layer; build leftovers
 image/build.ts                 the base image build and pinned pull
@@ -203,14 +203,14 @@ hostpi/tools/git.ts            git user name and email
 ```
 provision/index.ts             public surface
 provision/types.ts             render and sync types
-provision/render.ts            the render dir and its tool files
-provision/tree.ts              filtered copy of host agent dir entries, with one notice for what was left out
+provision/render.ts            the render dir, its tool files and its host sources (agent dir entries and ~/.agents/skills)
+provision/tree.ts              filtered copy of host sources, following no link, with one notice for what was left out and one for skipped links
 provision/pool.ts              bounded parallel work
 provision/sync.ts              the agent files sync under sync.lock: write-back to the host, then settings.json and pi-*.json into the volume, and the baseline
 provision/host-file.ts         reading a host agent dir JSON file through its link, with its mode, and the JSON text the write-back and the marker carry-over write
 provision/changelog-marker.ts  moves pi's extensionChangelogVersions entry of a replaced package source to the new source in host settings.json
 provision/write-back.ts        the fixed write-back allowlist, the settings.json value checks, the three-way merge per key (per entry for extensionChangelogVersions) and its lines (no I/O)
-provision/merge-settings.ts    the sandbox copy of the host settings: dropped keys, package sources and their notices
+provision/merge-settings.ts    the sandbox copy of the host settings: dropped keys, package sources, resource entries placed for the container, and their notices
 provision/package-source.ts    package sources and their URL credentials
 provision/host-packages.ts     npm and git package sources pinned to the versions the host installed, read from host files (unversioned, range and tag npm sources; git commits on the remote)
 provision/package-refresh.ts   the record of the last pins and the removal of outdated git checkouts from the volume, deferred while another session runs
