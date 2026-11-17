@@ -1,8 +1,15 @@
 import type { Dirent } from "node:fs";
 import { readdirSync, statSync } from "node:fs";
-import { lstat, readdir, stat } from "node:fs/promises";
+import { readdir, stat } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { expandHome, isWithin, printable, realOrResolved, realOrResolvedSync } from "../../shared/index.ts";
+import {
+  expandHome,
+  isWithin,
+  lstatOrUndefined,
+  printable,
+  realOrResolved,
+  realOrResolvedSync,
+} from "../../shared/index.ts";
 import {
   checkRoot,
   pathTextProblem,
@@ -120,7 +127,7 @@ const isScannable = (entry: Dirent) =>
 const listing = async (dir: string) => readdir(dir, { withFileTypes: true }).catch((): Dirent[] => []);
 
 const gitTime = async (dir: string) => {
-  const info = await lstat(join(dir, ".git")).catch(() => undefined);
+  const info = await lstatOrUndefined(join(dir, ".git"));
 
   return info === undefined ? undefined : info.mtimeMs;
 };
