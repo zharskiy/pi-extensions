@@ -34,6 +34,7 @@
 - `ui/create-ui.ts`: `HostUi`: widgets, overlay, notify, copyText, key observation, thinking label, editor text, columns.
 - `ui/tui-context.ts`: `HostState` (current context and tools) and `tuiContext` (the context in tui mode).
 - `ui/form.ts`: `HostUi.showForm`, the inline form shell.
+- `ui/custom-view.ts`: `showCustomView`, the one `ctx.ui.custom` adapter of the overlay and the form (fitted lines, keys as `KeyPress`, dispose), with the mouse handler and the focus as options.
 - `ui/overlay.ts`: `overlaysCleared`; waits until no overlay is visible.
 - `ui/text-input.ts`: the form `TextInput` over pi-tui's `Editor`, its theme and focus.
 - `ui/key-events.ts`: `KeyPress` naming through pi keybinding ids, and the layout-independent `shortcut`.

@@ -11,9 +11,9 @@ import { captureTui, createEditorInput } from "../editor/input.ts";
 import { createTranscriptPane } from "../tools/transcript.ts";
 import type { HostUi, NotifyChannel, WidgetUi } from "../types/host-ui.ts";
 import type { OverlayFactory, ScrollPane, WidgetHandle } from "../types/view.ts";
+import { showCustomView } from "./custom-view.ts";
 import { createFooterSetter } from "./footer.ts";
 import { createShowForm } from "./form.ts";
-import { keyPress } from "./key-events.ts";
 import type { Notices } from "./notices.ts";
 import { fitLines, piColor, themeLike } from "./theme-bridge.ts";
 import { composeLabel, releaseLabel, storeLabel } from "./thinking-label.ts";
@@ -165,8 +165,9 @@ export const createUi = (
 
     const cwd = ctx.cwd;
 
-    await ctx.ui.custom<void>(
-      (tui, theme, keybindings, done) => {
+    await showCustomView<void>(
+      ctx,
+      (tui, theme, done) => {
         lastTui = tui;
 
         const overlayTheme = themeLike(theme);
@@ -182,11 +183,7 @@ export const createUi = (
         });
 
         return {
-          render: (width: number) => fitLines(view.render(width), width),
-          handleInput: (data: string) => {
-            view.handleKey(keyPress(data, keybindings));
-            tui.requestRender();
-          },
+          view,
           handleMouse: (event: TuiMouseEvent) => {
             if (event.type === "click" && event.button === "left") {
               return view.handleClick?.(event.x, event.y) ? { handled: true } : undefined;
@@ -200,8 +197,6 @@ export const createUi = (
 
             return { handled: true };
           },
-          invalidate: () => {},
-          dispose: () => view.dispose?.(),
         };
       },
       { overlay: true, overlayOptions: { width: "100%", maxHeight: "100%" } },
