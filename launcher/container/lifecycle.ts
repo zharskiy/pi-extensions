@@ -13,6 +13,7 @@ import {
   isMissing,
   isWithin,
   LauncherError,
+  realOrResolved,
   recordCreatedDirs,
   stateLayout,
   withFileLock,
@@ -72,8 +73,6 @@ interface MountPointGuard {
 }
 
 const PROTECTED_HINT = "choose a path outside the git dirs and the read-only mounts";
-
-const realOrSelf = (path: string) => realpath(path).catch(() => path);
 
 const realTarget = async (path: string, exists: boolean) =>
   exists ? realpath(path) : join(await realpath(dirname(path)), basename(path));
@@ -138,7 +137,10 @@ const writableRootOf = (mounts: MountSpec[], target: string) =>
 
 const ensureMountPoints = async (spec: LauncherContainerSpec, onMade: DirMade) => {
   const { mounts } = spec;
-  const guard = { onMade, guarded: await Promise.all((spec.guardedPaths ?? []).map(realOrSelf)) };
+  const guard = {
+    onMade,
+    guarded: await Promise.all((spec.guardedPaths ?? []).map((path) => realOrResolved(path))),
+  };
   const outcomes = await Promise.allSettled(
     mounts
       .filter((mount) => mount.kind === "volume")

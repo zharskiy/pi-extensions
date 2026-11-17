@@ -1,6 +1,6 @@
-import { lstatSync, readdirSync, realpathSync } from "node:fs";
+import { lstatSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { isWithin, LauncherError, realOrResolvedSync } from "../shared/index.ts";
+import { isWithin, LauncherError, realOrResolvedSync, realOrUndefinedSync } from "../shared/index.ts";
 import { type Overlap, overlapOf, type Protected, protectedPaths } from "./mounts.ts";
 import { hostSessionsDir, sessionSlug, sessionsRootOf } from "./pi-session-dir.ts";
 import type { Workspace } from "./types.ts";
@@ -63,14 +63,6 @@ const SESSIONS_HINT = "set sessions.host to false in the user config";
 const refuseSessions = (dir: string, reason: string) =>
   new LauncherError(`sessions: ${dir} ${reason}, refusing to mount it into the sandbox`, SESSIONS_HINT);
 
-const realSessionsDir = (sessions: string) => {
-  try {
-    return realpathSync.native(sessions);
-  } catch {
-    return undefined;
-  }
-};
-
 const agentEntries = (agentDir: string) => {
   try {
     return readdirSync(agentDir).filter((name) => name !== "sessions");
@@ -102,7 +94,7 @@ export const assertHostSessionsDir = (dir: string, context: HostSessionsContext)
     throw refuseSessions(dir, "is not a real directory");
   }
 
-  const realSessions = realSessionsDir(sessionsRootOf(context.agentDir));
+  const realSessions = realOrUndefinedSync(sessionsRootOf(context.agentDir));
 
   const real = realOrResolvedSync(dir);
 

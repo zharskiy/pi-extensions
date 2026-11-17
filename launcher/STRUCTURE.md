@@ -289,7 +289,7 @@ shared/modes.ts                the file and directory modes: owner-only, world-r
 shared/file-lock.ts            the lock primitives
 shared/liveness.ts             the liveness rule: pid, boot time and process start
 shared/process-start.ts        a process's start time (ps on macOS, /proc on Linux), telling a failed tool from a process without one
-shared/paths.ts                host agent dir, the launcher folder <agent dir>/pi-sandbox/ (config.json, state/), launcher root, a pi path setting as a path (home and file URLs), path containment, the outermost of a path list and the private home dirs
+shared/paths.ts                host agent dir, the launcher folder <agent dir>/pi-sandbox/ (config.json, state/), launcher root, real paths (or resolved, or nothing), a pi path setting as a path (home and file URLs), path containment, the outermost of a path list and the private home dirs
 shared/state-layout.ts         every path under the state dir
 shared/repo-state.ts           per-repository record files: repo.json with its mount root, created folders, leftovers
 shared/regular-file.ts         safe reads of regular files, as bytes or as text or nothing, and their size limit

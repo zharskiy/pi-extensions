@@ -81,6 +81,16 @@ export const realOrResolved = async (path: string) => {
   return realpath(absolute).catch(() => absolute);
 };
 
+export const realOrUndefined = (path: string) => realpath(path).catch(() => undefined);
+
+export const realOrUndefinedSync = (path: string) => {
+  try {
+    return realpathSync.native(path);
+  } catch {
+    return undefined;
+  }
+};
+
 export const realOrResolvedSync = (path: string) => {
   const absolute = resolve(path);
 

@@ -1,6 +1,6 @@
 import type { Dirent } from "node:fs";
 import { readdirSync, statSync } from "node:fs";
-import { lstat, readdir, realpath, stat } from "node:fs/promises";
+import { lstat, readdir, stat } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { expandHome, isWithin, printable, realOrResolved, realOrResolvedSync } from "../../shared/index.ts";
 import {
@@ -230,7 +230,7 @@ const candidateOf = async (proposed: Proposed, context: CandidateContext): Promi
   const resolved = await realOrResolved(expandHome(proposed.stored, context.home));
   const exists = await isFolderLater(resolved);
   const scan = exists ? await scanRepos(resolved, context.limits) : { repos: 0, capped: false };
-  const cwd = await realpath(context.cwd).catch(() => context.cwd);
+  const cwd = await realOrResolved(context.cwd);
 
   return {
     stored: proposed.stored,

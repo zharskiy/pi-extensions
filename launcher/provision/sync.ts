@@ -1,4 +1,4 @@
-import { readFile, realpath, rm, stat } from "node:fs/promises";
+import { readFile, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import type { JsonObject } from "../hostpi/index.ts";
 import {
@@ -9,6 +9,7 @@ import {
   PRIVATE_FILE_MODE,
   parseJsonObject,
   readJsonObject,
+  realOrResolved,
   SETTINGS_FILE_NAME,
   stateLayout,
   withFileLock,
@@ -61,8 +62,7 @@ interface FileOutcome {
 const LOCK_TIMEOUT_MS = 30_000;
 
 const readHostFile = async (hostAgentDir: string, name: string): Promise<HostFile> => {
-  const linked = join(hostAgentDir, name);
-  const path = await realpath(linked).catch(() => linked);
+  const path = await realOrResolved(join(hostAgentDir, name));
 
   try {
     const [text, info] = await Promise.all([readFile(path, "utf8"), stat(path)]);

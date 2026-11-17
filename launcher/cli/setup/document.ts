@@ -1,4 +1,4 @@
-import { lstat, mkdir, readFile, readlink, realpath, stat } from "node:fs/promises";
+import { mkdir, readFile, readlink, stat } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import type { VmSpec } from "../../backend/index.ts";
@@ -9,9 +9,11 @@ import {
   isMissing,
   type JsonObject,
   LauncherError,
+  lstatOrUndefined,
   PERMISSION_BITS,
   PRIVATE_DIR_MODE,
   PRIVATE_FILE_MODE,
+  realOrUndefined,
   writeFileAtomic,
 } from "../../shared/index.ts";
 import type { Change, ConfigDocument, DocumentRead, Section } from "./types.ts";
@@ -171,13 +173,13 @@ const modeOf = async (file: string) => {
 const isFolder = async (path: string) => (await stat(path).catch(() => undefined))?.isDirectory() === true;
 
 const targetOf = async (file: string) => {
-  const real = await realpath(file).catch(() => undefined);
+  const real = await realOrUndefined(file);
 
   if (real !== undefined) {
     return real;
   }
 
-  const info = await lstat(file).catch(() => undefined);
+  const info = await lstatOrUndefined(file);
 
   if (info?.isSymbolicLink() !== true) {
     return file;

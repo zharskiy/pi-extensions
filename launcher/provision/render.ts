@@ -5,6 +5,7 @@ import {
   escapeXml,
   type IniSection,
   jsonText,
+  lstatOrUndefined,
   type MavenHeader,
   type MavenRepository,
   type MavenServer,
@@ -244,7 +245,7 @@ const removeStale = async (dir: string, tree: Tree) => {
 };
 
 const isCurrent = async (path: string, data: Buffer, mode: number) => {
-  const info = await lstat(path).catch(() => undefined);
+  const info = await lstatOrUndefined(path);
 
   if (
     info === undefined ||

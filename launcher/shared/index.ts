@@ -49,6 +49,8 @@ export {
   pathFromSetting,
   realOrResolved,
   realOrResolvedSync,
+  realOrUndefined,
+  realOrUndefinedSync,
 } from "./paths.ts";
 export { FIXED_SANDBOX_ENV, isLauncherSetVariable, PI_PACKAGE, PI_SESSION_DIR_VARIABLE } from "./pi-env.ts";
 export {

@@ -7,6 +7,7 @@ import {
   LauncherError,
   lstatOrUndefined,
   readRegularText,
+  realOrUndefined,
 } from "../shared/index.ts";
 import { inertGitOptions } from "./git/command.ts";
 import { findGitRoot, gitDirHolding, gitLayoutAt, isGitName, lexicalGitLayout } from "./git/layout.ts";
@@ -92,8 +93,6 @@ const insideGitDir = (cwd: string, gitDir: string) =>
     `workspace: ${cwd} lies inside the git dir ${gitDir}, refusing`,
     "start pi in a repository's checkout or in a folder outside its git dir",
   );
-
-const realOrUndefined = (path: string) => realpath(path).catch(() => undefined);
 
 const splitsOf = (stdout: string) => {
   const lines = stdout.replace(/\n$/, "").split("\n");

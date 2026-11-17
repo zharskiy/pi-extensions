@@ -1,7 +1,6 @@
-import { realpath } from "node:fs/promises";
 import { resolve } from "node:path";
 import { loadEffectiveConfig } from "../config/index.ts";
-import { isWithin, knownRepos, pathFromSetting, repoRecordOf } from "../shared/index.ts";
+import { isWithin, knownRepos, pathFromSetting, realOrResolved, repoRecordOf } from "../shared/index.ts";
 import { assertSafeMounts, findGitRoot } from "../workspace/index.ts";
 import { type CliDeps, pathsOf, writeLine, writeNotices } from "./deps.ts";
 import { hostPiEnv, requireJobPi, resolveJobPi, runHostJob } from "./host-pi.ts";
@@ -119,12 +118,12 @@ const localPathOf = (text: string, home: string) => {
   }
 };
 
-const realOf = (path: string) => realpath(path).catch(() => path);
-
 const sandboxedRoots = async (stateDir: string) => {
   const records = await Promise.all((await knownRepos(stateDir)).map((hash) => repoRecordOf(stateDir, hash)));
 
-  return Promise.all(records.flatMap((record) => (record === undefined ? [] : [realOf(record.root)])));
+  return Promise.all(
+    records.flatMap((record) => (record === undefined ? [] : [realOrResolved(record.root)])),
+  );
 };
 
 const canHoldSandbox = (deps: CliDeps, root: string) => {
@@ -150,7 +149,7 @@ const isSandboxable = async (deps: CliDeps, candidates: string[]) => {
 const resolvedLocal = async (deps: CliDeps, text: string) => {
   const path = resolve(deps.cwd, localPathOf(text, deps.home));
 
-  return { path, inRepository: await isSandboxable(deps, [path, await realOf(path)]) };
+  return { path, inRepository: await isSandboxable(deps, [path, await realOrResolved(path)]) };
 };
 
 const refuse = (deps: CliDeps, source: string, reason: string) => {

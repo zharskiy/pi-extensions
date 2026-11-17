@@ -1,7 +1,13 @@
 import type { Dirent } from "node:fs";
-import { lstat, readdir, readlink } from "node:fs/promises";
+import { readdir, readlink } from "node:fs/promises";
 import { join } from "node:path";
-import { type CommandRunner, isWithin, readRegularText, sha256Hex } from "../../shared/index.ts";
+import {
+  type CommandRunner,
+  isWithin,
+  lstatOrUndefined,
+  readRegularText,
+  sha256Hex,
+} from "../../shared/index.ts";
 import { gitDirsOf, gitRepos, type Workspace } from "../types.ts";
 import { walkLevels } from "../walk.ts";
 import { SCAN_BUDGET } from "../workspace-scan.ts";
@@ -99,7 +105,7 @@ const gitDirDigest = async (dir: string) => {
 const MISSING = "missing";
 
 const pathDigest = async (path: string): Promise<string> => {
-  const info = await lstat(path).catch(() => undefined);
+  const info = await lstatOrUndefined(path);
 
   if (info === undefined) {
     return MISSING;
