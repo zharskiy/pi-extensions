@@ -4,6 +4,7 @@ import {
   errorMessage,
   isJsonObject,
   launcherRoot,
+  PRIVATE_FILE_MODE,
   parseJsonObject,
   readJsonObject,
   stateLayout,
@@ -78,7 +79,7 @@ const runScript = async (
   }
 
   if (cache !== undefined) {
-    await writeJsonFile(cache, table);
+    await writeJsonFile(cache, table, { mode: PRIVATE_FILE_MODE });
   }
 
   return { hosts: table, notices: [] };

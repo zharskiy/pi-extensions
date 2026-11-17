@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { type HostPi, readProviderHosts } from "../../hostpi/index.ts";
@@ -33,13 +33,15 @@ describe("readProviderHosts", () => {
       runner: fake.runner,
       pi: PI,
     });
-    const cached = JSON.parse(await readFile(stateLayout(stateDir).providerHosts("1.5.0"), "utf8"));
+    const cacheFile = stateLayout(stateDir).providerHosts("1.5.0");
+    const cached = JSON.parse(await readFile(cacheFile, "utf8"));
 
     expect(first.notices).toEqual([]);
     expect(first.hosts).toEqual(JSON.parse(await readFile(SAMPLE, "utf8")));
     expect(second.hosts).toEqual(first.hosts);
     expect(cached).toEqual(first.hosts);
     expect(fake.calls).toHaveLength(1);
+    expect((await stat(cacheFile)).mode & 0o777).toBe(0o600);
   });
 
   it("returns an empty table with a notice when the script fails or prints something else", async () => {

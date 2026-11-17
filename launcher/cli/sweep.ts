@@ -17,6 +17,7 @@ import {
   hasRepoLeftovers,
   isMounted,
   knownRepos,
+  PRIVATE_FILE_MODE,
   type RepoRecord,
   readCreatedDirs,
   readJsonObject,
@@ -269,7 +270,7 @@ const collectGarbage = async (deps: CliDeps, engine: Backend | undefined) => {
   const volumes = await pruneVolumes(stateDir, engine);
   const images = await collectImages(engine, stateDir);
 
-  await writeJsonFile(stateLayout(stateDir).gcRecord, { lastRun: deps.now() });
+  await writeJsonFile(stateLayout(stateDir).gcRecord, { lastRun: deps.now() }, { mode: PRIVATE_FILE_MODE });
 
   return [...volumes, ...images.map((image) => `removed image ${image}`)];
 };

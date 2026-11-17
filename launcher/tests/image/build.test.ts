@@ -1,4 +1,4 @@
-import { readdir, readFile, writeFile } from "node:fs/promises";
+import { readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { BASE_TAG, ensureBuiltImage, prepareBuildContext, pullPinnedImage } from "../../image/build.ts";
@@ -368,6 +368,8 @@ describe("recordedImage", () => {
 
     const recordFile = stateLayout(stateDir).imageRecord;
     const record = JSON.parse(await readFile(recordFile, "utf8"));
+
+    expect((await stat(recordFile)).mode & 0o777).toBe(0o600);
 
     await writeFile(
       recordFile,

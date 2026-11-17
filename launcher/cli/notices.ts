@@ -1,4 +1,4 @@
-import { readJsonFile, sha256Hex, stateLayout, writeJsonFile } from "../shared/index.ts";
+import { PRIVATE_FILE_MODE, readJsonFile, sha256Hex, stateLayout, writeJsonFile } from "../shared/index.ts";
 import { type CliDeps, noticeLine, writeNotices } from "./deps.ts";
 
 interface NoticeScope {
@@ -26,5 +26,7 @@ export const writeOnce = async (deps: CliDeps, scope: NoticeScope, notices: stri
 
   writeNotices(deps, fresh);
 
-  await writeJsonFile(file, [...seen, ...fresh.map(hashOf)].slice(-KEPT_PER_REPO)).catch(() => undefined);
+  await writeJsonFile(file, [...seen, ...fresh.map(hashOf)].slice(-KEPT_PER_REPO), {
+    mode: PRIVATE_FILE_MODE,
+  }).catch(() => undefined);
 };

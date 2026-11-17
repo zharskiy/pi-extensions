@@ -440,6 +440,7 @@ tests/cli/launch-wiring.test.ts      launch wiring and no leaks
 tests/cli/legacy-paths.test.ts       the old config and state folders: launch notice and doctor warns
 tests/cli/launch-workspace.test.ts   workspace launches
 tests/cli/mcp-sign-in.test.ts        the launch-start MCP sign-in
+tests/cli/notices.test.ts            notices shown once per repository and the file that remembers them
 tests/cli/sandbox-proxy.test.ts      the proxy input
 tests/cli/terminal.test.ts           the host terminal
 tests/cli/volumes.test.ts            volumes in the sweep, reset and status

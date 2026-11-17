@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { LABELS } from "../../backend/index.ts";
@@ -326,6 +326,7 @@ describe("the sweep and pi sandbox reset", () => {
     });
 
     expect(await sweepNow(harness.deps)).toBe(0);
+    expect((await stat(stateLayout(harness.stateDir).gcRecord)).mode & 0o777).toBe(0o600);
     expect(fake.imageRemovals).toEqual([dangling.id]);
     expect(harness.stdout()).toContain(`removed image ${dangling.id.replace(/^sha256:/, "").slice(0, 12)}\n`);
     expect((await fake.backend.listImages()).map((image) => image.id)).toEqual(
