@@ -11,6 +11,8 @@ export interface ScrubSecret {
 
 export const HEADER_BREAK = /[\r\n\0]/;
 
+export const HEADER_BREAK_PROBLEM = "holds a line break or NUL";
+
 const REDACTED = "pi-sandbox-redacted";
 
 const FETCH_RESERVED = "sec-";

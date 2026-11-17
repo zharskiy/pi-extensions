@@ -15,6 +15,7 @@ import { rawHead, rawReply, rawResponse, sendJson, sendReply, statusLine, withAg
 import { parseRequestTarget } from "./request-target.ts";
 import {
   HEADER_BREAK,
+  HEADER_BREAK_PROBLEM,
   type HeaderPair,
   matchRules,
   rewriteRequestHeaders,
@@ -161,7 +162,7 @@ const credentialDenial = (rule: CredentialRule, result: SecretResult) => {
 
   return {
     rule: "credential",
-    reason: `credential ${rule.id} is unavailable: the secret holds a line break`,
+    reason: `credential ${rule.id} is unavailable: the secret ${HEADER_BREAK_PROBLEM}`,
   };
 };
 

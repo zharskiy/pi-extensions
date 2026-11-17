@@ -348,7 +348,7 @@ describe("env and file secrets", () => {
     const corp = { id: "corp", host: "corp.test", placeholder: "corp", secret: { env: "CORP" } };
 
     expect(() => envSecretsFor([corp], { CORP: "abc\r\nX-Evil: 1" })).toThrow(
-      "CORP contains a line break and cannot be used as a credential",
+      "CORP holds a line break or NUL and cannot be used as a credential",
     );
   });
 
@@ -356,7 +356,22 @@ describe("env and file secrets", () => {
     const corp = { id: "corp", host: "corp.test", placeholder: "corp", secret: { env: "CORP" } };
 
     expect(() => envSecretsFor([corp], { CORP: "abc\0def" })).toThrow(
-      "CORP contains a line break and cannot be used as a credential",
+      "CORP holds a line break or NUL and cannot be used as a credential",
+    );
+  });
+  it("refuses an env URL whose password decodes to a line break or NUL", () => {
+    const pip = {
+      id: "pip",
+      host: "pypi.corp.test",
+      placeholder: "pip",
+      secret: { env: "PIP_INDEX_URL", urlPassword: true as const },
+    };
+
+    expect(() =>
+      envSecretsFor([pip], { PIP_INDEX_URL: "https://me:a%0D%0AX-Evil:1@pypi.corp.test/simple" }),
+    ).toThrow("PIP_INDEX_URL holds a line break or NUL and cannot be used as a credential");
+    expect(() => envSecretsFor([pip], { PIP_INDEX_URL: "https://me:a%00b@pypi.corp.test/simple" })).toThrow(
+      "PIP_INDEX_URL holds a line break or NUL and cannot be used as a credential",
     );
   });
 });
@@ -371,9 +386,23 @@ describe("line breaks in secrets", () => {
     expect(await secretOf(resolver, "rule", { file, pointer: "/key" })).toBe("value");
   });
 
-  it("refuses an env secret holding a line break", async () => {
-    const { resolver } = setup(undefined, { envSecrets: new Map([["rule", "value\n"]]) });
+  it("refuses an env secret holding a line break or NUL, as a decoded URL password may", async () => {
+    const { resolver } = setup(undefined, {
+      envSecrets: new Map([
+        ["rule", "value\n"],
+        ["pip", "a\r\nX-Evil: 1"],
+        ["nul", "a\0b"],
+      ]),
+    });
 
-    expect(await secretOf(resolver, "rule", { env: "RULE" })).toContain("line break");
+    expect(await secretOf(resolver, "rule", { env: "RULE" })).toContain(
+      "env secret for rule holds a line break or NUL and cannot be used as a credential",
+    );
+    expect(await secretOf(resolver, "pip", { env: "PIP_INDEX_URL", urlPassword: true })).toContain(
+      "env secret for pip holds a line break or NUL",
+    );
+    expect(await secretOf(resolver, "nul", { env: "NUL" })).toContain(
+      "env secret for nul holds a line break or NUL",
+    );
   });
 });

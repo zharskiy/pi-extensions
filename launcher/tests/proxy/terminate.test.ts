@@ -686,7 +686,7 @@ describe("unusable credential values", () => {
       expect.objectContaining({
         rule: "credential",
         decision: "deny",
-        reason: "credential newline is unavailable: the secret holds a line break",
+        reason: "credential newline is unavailable: the secret holds a line break or NUL",
       }),
     );
   });
