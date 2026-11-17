@@ -73,7 +73,7 @@ export type VmAction =
   | { kind: "on-next-start"; parts: VmPart[] }
   | { kind: "unknown"; reason: string };
 
-export type SharePlan = { shares: VmShare[]; exact: boolean; notices?: string[] } | { problem: string };
+export type SharePlan = { shares: VmShare[]; exact: boolean; notices: string[] } | { problem: string };
 
 export interface Plan {
   next: JsonObject;

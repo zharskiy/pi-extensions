@@ -146,11 +146,14 @@ export const createColimaTrust = (colima: Colima, shell: VmShell) => {
       return;
     }
 
-    const phrase = certificates.length === 0 ? REMOVING : INSTALLING;
+    const change =
+      certificates.length === 0
+        ? { phrase: REMOVING, run: remove }
+        : { phrase: INSTALLING, run: () => install(certificates, hash) };
 
-    options.report(`${phrase.doing} ${phrase.where} the sandbox VM, one time`);
+    options.report(`${change.phrase.doing} ${change.phrase.where} the sandbox VM, one time`);
 
-    await (certificates.length === 0 ? remove() : install(certificates, hash));
+    await change.run();
   };
 
   const early: { marker?: Promise<string | undefined> } = {};

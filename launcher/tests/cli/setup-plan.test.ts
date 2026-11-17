@@ -46,7 +46,7 @@ const answersOf = (overrides: Partial<Answers> = {}): Answers => ({
   ...overrides,
 });
 
-const EXACT = { shares: WORK, exact: true };
+const EXACT = { shares: WORK, exact: true, notices: [] };
 
 const ENV = {};
 

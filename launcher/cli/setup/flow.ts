@@ -316,7 +316,7 @@ const createWizard = (io: SetupIo, context: WizardContext) => {
   };
 
   const hubSummary = (state: State, plan: Plan, notice: string | undefined, table: boolean) => {
-    const summary = review.lines(state, plan, { plain: io.plain, table, notice });
+    const summary = review.lines(state, plan, { plain: io.plain, table, notices: true, notice });
 
     if (io.plain) {
       return { detail: summary };

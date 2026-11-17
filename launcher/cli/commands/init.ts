@@ -150,11 +150,11 @@ const acceptAll = async (deps: CliDeps) => {
 
   const streams = { out: deps.stdout, err: deps.stderr, timers: { ...realTimers, now: deps.now } };
   const state = { answers, touched: new Set<never>() };
-  const review = createReview(document, facts, deps.env).lines(
-    state,
-    { ...plan, notices: [] },
-    { plain: true, table: true },
-  );
+  const review = createReview(document, facts, deps.env).lines(state, plan, {
+    plain: true,
+    table: true,
+    notices: false,
+  });
 
   const front = lineFrontEnd(streams, facts, review(Number.POSITIVE_INFINITY));
 

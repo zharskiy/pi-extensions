@@ -34,8 +34,12 @@ const SAVED_STANDARD = `${JSON.stringify({ workspaceRoots: { roots: ["~/Projects
 
 const sharesOf = (roots: Answers["roots"]) =>
   roots === "home"
-    ? { shares: [{ location: HOME, writable: true }], exact: false }
-    : { shares: roots.map((root) => ({ location: root.replace("~", HOME), writable: true })), exact: true };
+    ? { shares: [{ location: HOME, writable: true }], exact: false, notices: [] }
+    : {
+        shares: roots.map((root) => ({ location: root.replace("~", HOME), writable: true })),
+        exact: true,
+        notices: [],
+      };
 
 interface Options {
   text?: string;
