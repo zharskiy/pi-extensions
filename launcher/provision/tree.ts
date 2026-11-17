@@ -1,6 +1,13 @@
 import { readdir } from "node:fs/promises";
 import { basename, extname, join, posix } from "node:path";
-import { isSecretName, lstatOrUndefined, PUBLIC_FILE_MODE, readRegularFile } from "../shared/index.ts";
+import {
+  isSecretName,
+  lstatOrUndefined,
+  MAX_REGULAR_FILE_BYTES,
+  MIB,
+  PUBLIC_FILE_MODE,
+  readRegularFile,
+} from "../shared/index.ts";
 import { inPool } from "./pool.ts";
 
 interface TreeFile {
@@ -9,8 +16,6 @@ interface TreeFile {
 }
 
 export type Tree = Map<string, TreeFile>;
-
-const MAX_FILE_BYTES = 8 * 1024 * 1024;
 
 const EXECUTABLE_BITS = 0o111;
 
@@ -108,8 +113,8 @@ const candidates = async (path: string, relative: string, topLevel: boolean): Pr
     return { ...NOTHING, left: [`${relative} (secret-looking name)`] };
   }
 
-  return info.size > MAX_FILE_BYTES
-    ? { ...NOTHING, left: [`${relative} (over 8 MiB)`] }
+  return info.size > MAX_REGULAR_FILE_BYTES
+    ? { ...NOTHING, left: [`${relative} (over ${MAX_REGULAR_FILE_BYTES / MIB} MiB)`] }
     : { ...NOTHING, files: [{ path, relative }] };
 };
 

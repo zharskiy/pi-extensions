@@ -12,6 +12,7 @@ import {
 import { collectImages, removeBuildLeftovers } from "../image/index.ts";
 import { removeRepoToken } from "../proxy/index.ts";
 import {
+  DAY_MS,
   forgetRepo,
   hasRepoLeftovers,
   isMounted,
@@ -29,8 +30,6 @@ import {
 import { removeCreatedDirs } from "../workspace/index.ts";
 import { type CliDeps, pathsOf, writeWarning } from "./deps.ts";
 import { sweepRepoSessions } from "./host-sessions.ts";
-
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 const RELAYS = { [LABELS.relay]: "true" };
 

@@ -10,6 +10,8 @@ import { join, resolve } from "node:path";
 import { isHostName } from "../config/index.ts";
 import {
   type CommandRunner,
+  DAY_MS,
+  HOUR_MS,
   LauncherError,
   PRIVATE_DIR_MODE,
   PRIVATE_FILE_MODE,
@@ -37,15 +39,13 @@ interface CaOptions {
   runner: CommandRunner;
 }
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-
 const CA_VALIDITY_MS = 3650 * DAY_MS;
 
 const LEAF_VALIDITY_MS = 397 * DAY_MS;
 
 const BACKDATE_HOURS = 1;
 
-const BACKDATE_MS = BACKDATE_HOURS * 60 * 60 * 1000;
+const BACKDATE_MS = BACKDATE_HOURS * HOUR_MS;
 
 export const CERTIFICATE_BACKDATE = BACKDATE_HOURS === 1 ? "an hour" : `${BACKDATE_HOURS} hours`;
 

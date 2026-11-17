@@ -1,6 +1,7 @@
 import { listenFor } from "../container/index.ts";
 import type { HostPi, McpOAuthServer } from "../hostpi/index.ts";
 import {
+  DAY_MS,
   isFreshMcpToken,
   mcpAuthKey,
   mcpLoginCommand,
@@ -16,7 +17,7 @@ import type { HostSide } from "./derive.ts";
 import { hostPiEnv, runHostJob } from "./host-pi.ts";
 import { writeOnce } from "./notices.ts";
 
-const FAILURE_QUIET_MS = 24 * 60 * 60_000;
+const FAILURE_QUIET_MS = DAY_MS;
 
 const notice = (deps: CliDeps, name: string, text: string) => {
   writeNotices(deps, [`mcp ${name}: ${text}`]);

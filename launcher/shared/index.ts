@@ -56,7 +56,13 @@ export {
   placeholderFor,
 } from "./placeholder.ts";
 export { processStart } from "./process-start.ts";
-export { lstatOrUndefined, readRegularFile, readRegularText, sameEntry } from "./regular-file.ts";
+export {
+  lstatOrUndefined,
+  MAX_REGULAR_FILE_BYTES,
+  readRegularFile,
+  readRegularText,
+  sameEntry,
+} from "./regular-file.ts";
 export type { RepoRecord } from "./repo-state.ts";
 export {
   forgetRepo,
@@ -90,6 +96,7 @@ export {
   toolConfigValue,
   urlPartOf,
 } from "./tool-config.ts";
+export { DAY_MS, GIB, HOUR_MS, MIB, MINUTE_MS } from "./units.ts";
 export type { FileKeys, ValueSpec, ValueType, WriteBackTable } from "./write-back-table.ts";
 export {
   BUILT_IN_EXTENSION_FILES,

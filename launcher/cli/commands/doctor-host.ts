@@ -9,7 +9,7 @@ import {
   mcpSignIns,
   readHostPiFiles,
 } from "../../hostpi/index.ts";
-import { errorMessage, isFreshMcpToken } from "../../shared/index.ts";
+import { DAY_MS, errorMessage, HOUR_MS, isFreshMcpToken, MINUTE_MS } from "../../shared/index.ts";
 import { assertHostSessionsDir } from "../../workspace/index.ts";
 import type { LaunchContext } from "../context.ts";
 import { type CliDeps, hostAgentDirOf } from "../deps.ts";
@@ -29,12 +29,6 @@ import {
 } from "./doctor-checks.ts";
 
 const CONNECT_TIMEOUT_MS = 3000;
-
-const MINUTE_MS = 60_000;
-
-const HOUR_MS = 3_600_000;
-
-const DAY_MS = 86_400_000;
 
 const MINUTES_SHOWN_BELOW_MS = 2 * HOUR_MS;
 

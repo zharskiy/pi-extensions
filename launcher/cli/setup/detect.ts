@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import type { Backend } from "../../backend/index.ts";
-import { errorMessage, withTimeout } from "../../shared/index.ts";
+import { errorMessage, GIB, withTimeout } from "../../shared/index.ts";
 import { recommendedVmSize, vmBusyCount } from "../vm.ts";
 import { folderCandidates, unscannedCandidates } from "./folders.ts";
 import type { FolderCandidate, HostFacts, VmFacts } from "./types.ts";
@@ -26,8 +26,6 @@ export interface DetectDeps {
 }
 
 const BUDGET_MS = 3000;
-
-const GIB = 1024 ** 3;
 
 const withinBudget = <T>(pending: Promise<T>, budgetMs: number, fallback: T) =>
   withTimeout(
