@@ -128,9 +128,17 @@ export const createColimaTrust = (colima: Colima, shell: VmShell) => {
       return;
     }
 
+    if (certificates.length === 0) {
+      options.report("removing the earlier tls.extraCa certificates from the sandbox VM, one time");
+
+      await remove();
+
+      return;
+    }
+
     options.report("installing the tls.extraCa certificates in the sandbox VM, one time");
 
-    await (certificates.length === 0 ? remove() : install(certificates, hash));
+    await install(certificates, hash);
   };
 
   const early: { marker?: Promise<string | undefined> } = {};

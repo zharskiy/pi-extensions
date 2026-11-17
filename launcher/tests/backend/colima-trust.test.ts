@@ -139,6 +139,7 @@ describe("the sandbox VM trusts the tls.extraCa certificates", () => {
     expect(context.inputs()).toEqual([FIRST, `${sha256Hex(FIRST)}\n`]);
 
     expect(state.marker).toBe(`${sha256Hex(FIRST)}\n`);
+    expect(context.notices).toEqual(["installing the tls.extraCa certificates in the sandbox VM, one time"]);
 
     expect(context.calls.every((call) => call.file === "colima" && call.args[0] === "ssh")).toBe(true);
   });
@@ -187,6 +188,9 @@ describe("the sandbox VM trusts the tls.extraCa certificates", () => {
     ]);
 
     expect(state.marker).toBeUndefined();
+    expect(context.notices).toEqual([
+      "removing the earlier tls.extraCa certificates from the sandbox VM, one time",
+    ]);
   });
 
   it("defers the change with one notice while another pi session is live", async () => {
