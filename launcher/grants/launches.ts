@@ -1,4 +1,3 @@
-import { randomBytes } from "node:crypto";
 import { readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import {
@@ -7,6 +6,7 @@ import {
   knownRepos,
   LauncherError,
   PRIVATE_FILE_MODE,
+  randomHex,
   readJsonObject,
   stateLayout,
   withFileLock,
@@ -20,7 +20,7 @@ const ENTRY_SUFFIX = ".json";
 
 const LOCK_TIMEOUT_MS = 120_000;
 
-export const newLaunchId = (): string => randomBytes(8).toString("hex");
+export const newLaunchId = (): string => randomHex(8);
 
 const checkedLaunchId = (launchId: string) => {
   if (!LAUNCH_ID.test(launchId)) {

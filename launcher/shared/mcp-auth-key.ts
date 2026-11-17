@@ -1,7 +1,7 @@
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { withFileLock } from "./file-lock.ts";
-import { isJsonObject, parseJsonObject, readJsonObject, writeJsonFile } from "./json-file.ts";
+import { isJsonObject, readJsonObject, writeJsonFile } from "./json-file.ts";
 import { PRIVATE_DIR_MODE, PRIVATE_FILE_MODE } from "./modes.ts";
 import { stateLayout } from "./state-layout.ts";
 
@@ -55,8 +55,7 @@ export const readMcpAuthEntry = async (
   server: string,
   url: string,
 ): Promise<McpAuthEntry | undefined> => {
-  const text = await readFile(join(hostAgentDir, HOST_STORE), "utf8").catch(() => undefined);
-  const store = text === undefined ? undefined : parseJsonObject(text);
+  const store = await readJsonObject(join(hostAgentDir, HOST_STORE));
 
   return store === undefined
     ? undefined

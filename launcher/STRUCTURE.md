@@ -283,6 +283,7 @@ shared/index.ts                public surface
 shared/errors.ts               LauncherError, error messages and errno codes
 shared/command-runner.ts       the CommandRunner interface and the real runner
 shared/hash.ts                 hashes and the 12-hex short hash
+shared/random.ts               random hex ids
 shared/json-file.ts            JSON file reading and writing, and the strict and lenient text readers
 shared/atomic-write.ts         atomic, create-only and random-hex file writes
 shared/modes.ts                the file and directory modes: owner-only, world-readable and the permission mask

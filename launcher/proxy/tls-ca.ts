@@ -1,10 +1,4 @@
-import {
-  createPrivateKey,
-  createPublicKey,
-  generateKeyPairSync,
-  randomBytes,
-  X509Certificate,
-} from "node:crypto";
+import { createPrivateKey, createPublicKey, generateKeyPairSync, X509Certificate } from "node:crypto";
 import { chmod, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { isHostName } from "../config/index.ts";
@@ -16,6 +10,7 @@ import {
   PRIVATE_DIR_MODE,
   PRIVATE_FILE_MODE,
   type RunOptions,
+  randomHex,
   readOptionalText,
   stateLayout,
   withFileLock,
@@ -161,7 +156,7 @@ const signRequest = async (
 ) => {
   await writeFile(join(work, "index.txt"), "");
 
-  await writeFile(join(work, "serial"), `${randomBytes(16).toString("hex")}\n`);
+  await writeFile(join(work, "serial"), `${randomHex(16)}\n`);
 
   await openssl(runner, ["req", "-new", "-key", "key.pem", "-config", "issue.cnf", "-out", "request.csr"], {
     cwd: work,

@@ -1,4 +1,4 @@
-import { randomBytes, X509Certificate } from "node:crypto";
+import { X509Certificate } from "node:crypto";
 import { readdir, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
@@ -10,6 +10,7 @@ import {
   isTrustBundleName,
   LauncherError,
   PUBLIC_FILE_MODE,
+  randomHex,
   readOptionalText,
   sha256Hex,
   stateLayout,
@@ -201,7 +202,7 @@ const reusableBundle = async (directory: string, names: string[], prefix: string
 };
 
 const writeBundle = async (pathFor: (id: string) => string, text: string): Promise<string> => {
-  const path = pathFor(randomBytes(BUNDLE_ID_BYTES).toString("hex"));
+  const path = pathFor(randomHex(BUNDLE_ID_BYTES));
   const written = await writeNewFile(path, text, { mode: PUBLIC_FILE_MODE });
 
   return written ? path : writeBundle(pathFor, text);

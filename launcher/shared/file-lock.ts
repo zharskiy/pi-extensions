@@ -1,10 +1,10 @@
-import { randomBytes } from "node:crypto";
 import { link, mkdir, open, rename, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { errnoCode, errorMessage, LauncherError } from "./errors.ts";
 import { isLive, isRunning, processMark } from "./liveness.ts";
 import { PRIVATE_DIR_MODE, PRIVATE_FILE_MODE } from "./modes.ts";
+import { randomHex } from "./random.ts";
 
 export interface FileLockOptions {
   staleMs?: number;
@@ -41,8 +41,7 @@ const settingsOf = (options: FileLockOptions, byAge: boolean): LockSettings => (
   deadline: Date.now() + (options.timeoutMs ?? DEFAULT_TIMEOUT_MS),
 });
 
-const sibling = (path: string, kind: string) =>
-  `${path}.${kind}.${process.pid}.${randomBytes(4).toString("hex")}`;
+const sibling = (path: string, kind: string) => `${path}.${kind}.${process.pid}.${randomHex(4)}`;
 
 const snapshotOf = async (path: string): Promise<LockSnapshot | undefined> => {
   const info = await stat(path).catch(() => undefined);
@@ -187,7 +186,7 @@ const createPidLock: Attempt = async (path) => {
 
   const self = await processMark();
 
-  await writeFile(draft, `${self.pid} ${self.boot} ${self.start} ${randomBytes(8).toString("hex")}`, {
+  await writeFile(draft, `${self.pid} ${self.boot} ${self.start} ${randomHex(8)}`, {
     mode: PRIVATE_FILE_MODE,
     flag: "wx",
   });

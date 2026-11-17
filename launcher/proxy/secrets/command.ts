@@ -1,4 +1,4 @@
-import { type CommandRunner, tokenUsableUntil } from "../../shared/index.ts";
+import { type CommandRunner, parseJson, tokenUsableUntil } from "../../shared/index.ts";
 import type { CachedSecret } from "./cache.ts";
 import { type SecretUnavailable, unavailable } from "./errors.ts";
 
@@ -12,14 +12,6 @@ const expiryOf = (value: unknown) => {
   return Number.isNaN(parsed) ? undefined : parsed;
 };
 
-const parseJson = (text: string) => {
-  try {
-    return JSON.parse(text) as { token?: unknown; expiresAt?: unknown };
-  } catch {
-    return undefined;
-  }
-};
-
 const parseOutput = (stdout: string) => {
   const text = stdout.trim();
 
@@ -27,7 +19,7 @@ const parseOutput = (stdout: string) => {
     return { token: text, expiresAt: undefined };
   }
 
-  const parsed = parseJson(text);
+  const parsed = parseJson(text) as { token?: unknown; expiresAt?: unknown } | null | undefined;
 
   return {
     token: typeof parsed?.token === "string" ? parsed.token.trim() : "",

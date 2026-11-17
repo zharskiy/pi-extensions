@@ -11,14 +11,18 @@ interface WriteJsonOptions {
 export const isJsonObject = (value: unknown): value is JsonObject =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-export const parseJsonObject = (text: string): JsonObject | undefined => {
+export const parseJson = (text: string): unknown => {
   try {
-    const parsed: unknown = JSON.parse(text);
-
-    return isJsonObject(parsed) ? parsed : undefined;
+    return JSON.parse(text) as unknown;
   } catch {
     return undefined;
   }
+};
+
+export const parseJsonObject = (text: string): JsonObject | undefined => {
+  const parsed = parseJson(text);
+
+  return isJsonObject(parsed) ? parsed : undefined;
 };
 
 export const readOptionalText = (path: string) => readFile(path, "utf8").catch(() => undefined);

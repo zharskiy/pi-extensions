@@ -10,6 +10,7 @@ export type { JsonObject } from "./json-file.ts";
 export {
   isJsonObject,
   jsonText,
+  parseJson,
   parseJsonObject,
   readJsonFile,
   readJsonObject,
@@ -60,6 +61,7 @@ export {
   placeholderFor,
 } from "./placeholder.ts";
 export { processStart } from "./process-start.ts";
+export { randomHex } from "./random.ts";
 export {
   lstatOrUndefined,
   MAX_REGULAR_FILE_BYTES,

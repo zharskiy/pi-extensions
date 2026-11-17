@@ -1,8 +1,8 @@
-import { randomBytes } from "node:crypto";
 import { link, mkdir, open, readFile, rename, rm } from "node:fs/promises";
 import { dirname } from "node:path";
 import { errnoCode, errorMessage, LauncherError } from "./errors.ts";
 import { PRIVATE_DIR_MODE, PRIVATE_FILE_MODE } from "./modes.ts";
+import { randomHex } from "./random.ts";
 
 interface AtomicWriteOptions {
   mode?: number;
@@ -52,7 +52,7 @@ const readHexFile = async (path: string, pattern: RegExp) => {
   return pattern.test(text) ? text : undefined;
 };
 
-const temporaryOf = (path: string) => `${path}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
+const temporaryOf = (path: string) => `${path}.${process.pid}.${randomHex(4)}.tmp`;
 
 const linkNew = async (temporary: string, path: string) => {
   try {
@@ -83,7 +83,7 @@ export const writeNewFile = async (path: string, data: string, options: AtomicWr
 };
 
 const createHexFile = async (path: string, pattern: RegExp, bytes: number) => {
-  const value = randomBytes(bytes).toString("hex");
+  const value = randomHex(bytes);
   const temporary = temporaryOf(path);
 
   await mkdir(dirname(path), { recursive: true, mode: PRIVATE_DIR_MODE });

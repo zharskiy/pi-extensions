@@ -1,4 +1,3 @@
-import { randomBytes } from "node:crypto";
 import { constants, type Stats } from "node:fs";
 import {
   chmod,
@@ -22,6 +21,7 @@ import {
   PI_SESSION_DIR_VARIABLE,
   PRIVATE_DIR_MODE,
   PRIVATE_FILE_MODE,
+  randomHex,
   sameEntry,
 } from "../shared/index.ts";
 import { inPool } from "./pool.ts";
@@ -208,7 +208,7 @@ const verdictOf = (path: string, info: Stats, repoRoot: string): Promise<Verdict
     isMissing(error) ? undefined : { keep: false, reason: `could not be read (${errorMessage(error)})` },
   );
 
-const rejectedName = (path: string) => `${path}${REJECTED_SUFFIX}-${randomBytes(4).toString("hex")}`;
+const rejectedName = (path: string) => `${path}${REJECTED_SUFFIX}-${randomHex(4)}`;
 
 const rejectFile = async (path: string, info: Stats, reason: string): Promise<EntryOutcome> => {
   if (!(await unchanged(path, info))) {
@@ -321,7 +321,7 @@ export const sweepHostSessions = async (input: SweepInput) => {
 };
 
 export const probeHostSessions = async (backend: Backend, containerId: string, dir: string) => {
-  const marker = `.pi-sandbox-probe-${randomBytes(6).toString("hex")}`;
+  const marker = `.pi-sandbox-probe-${randomHex(6)}`;
   const path = join(dir, marker);
 
   await writeFile(path, "", { flag: "wx", mode: PRIVATE_FILE_MODE });
