@@ -11,6 +11,7 @@ import {
   mcpAuthKey,
   mcpLoginCommand,
   PI_AGENT_DIR_VARIABLE,
+  PRIVATE_FILE_MODE,
   readMcpLogins,
   stateLayout,
   updateMcpLogin,
@@ -61,7 +62,7 @@ const exitOf = (child: ChildProcess) =>
   });
 
 const logStdio = (logFile: string | undefined) => {
-  const fd = logFile === undefined ? undefined : openSync(logFile, "a", 0o600);
+  const fd = logFile === undefined ? undefined : openSync(logFile, "a", PRIVATE_FILE_MODE);
 
   return {
     stdio: (fd === undefined ? "ignore" : ["ignore", fd, fd]) as StdioOptions,

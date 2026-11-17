@@ -31,6 +31,7 @@ export {
   updateMcpLogin,
   withMcpLoginDir,
 } from "./mcp-auth-key.ts";
+export { PERMISSION_BITS, PRIVATE_DIR_MODE, PRIVATE_FILE_MODE, PUBLIC_FILE_MODE } from "./modes.ts";
 export type { NpmrcEntry } from "./npmrc.ts";
 export { parseNpmrc } from "./npmrc.ts";
 export {

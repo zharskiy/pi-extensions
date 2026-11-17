@@ -9,6 +9,7 @@ import {
   expandHome,
   isTrustBundleName,
   LauncherError,
+  PUBLIC_FILE_MODE,
   sha256Hex,
   stateLayout,
   withFileLock,
@@ -40,8 +41,6 @@ interface Found {
 }
 
 const MACOS_KEYCHAINS = ["/Library/Keychains/System.keychain", "login.keychain"];
-
-const PUBLIC_MODE = 0o644;
 
 const PEM_BLOCK = /-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g;
 
@@ -184,7 +183,7 @@ const writeIfChanged = async (path: string, text: string) => {
   const current = await readFile(path, "utf8").catch(() => undefined);
 
   if (current !== text) {
-    await writeFileAtomic(path, text, { mode: PUBLIC_MODE });
+    await writeFileAtomic(path, text, { mode: PUBLIC_FILE_MODE });
   }
 };
 
@@ -204,7 +203,7 @@ const reusableBundle = async (directory: string, names: string[], prefix: string
 
 const writeBundle = async (pathFor: (id: string) => string, text: string): Promise<string> => {
   const path = pathFor(randomBytes(BUNDLE_ID_BYTES).toString("hex"));
-  const written = await writeNewFile(path, text, { mode: PUBLIC_MODE });
+  const written = await writeNewFile(path, text, { mode: PUBLIC_FILE_MODE });
 
   return written ? path : writeBundle(pathFor, text);
 };

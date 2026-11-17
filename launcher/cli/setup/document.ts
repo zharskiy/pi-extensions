@@ -8,17 +8,14 @@ import {
   isJsonObject,
   type JsonObject,
   LauncherError,
+  PERMISSION_BITS,
+  PRIVATE_DIR_MODE,
+  PRIVATE_FILE_MODE,
   writeFileAtomic,
 } from "../../shared/index.ts";
 import type { Change, ConfigDocument, DocumentRead, Section } from "./types.ts";
 
 const DEFAULT_INDENT = "  ";
-
-const CONFIG_MODE = 0o600;
-
-const CONFIG_DIR_MODE = 0o700;
-
-const PERMISSION_BITS = 0o777;
 
 const INDENTED_LINE = /^([ \t]+)\S/m;
 
@@ -167,7 +164,7 @@ export const diffOf = (before: JsonObject, after: JsonObject) => diffBetween(bef
 const modeOf = async (file: string) => {
   const info = await stat(file).catch(() => undefined);
 
-  return info === undefined ? CONFIG_MODE : info.mode & PERMISSION_BITS;
+  return info === undefined ? PRIVATE_FILE_MODE : info.mode & PERMISSION_BITS;
 };
 
 const isFolder = async (path: string) => (await stat(path).catch(() => undefined))?.isDirectory() === true;
@@ -242,7 +239,7 @@ export const writeDocument = async (document: ConfigDocument, text: string) => {
   const mode = await modeOf(target);
 
   try {
-    await mkdir(dirname(target), { recursive: true, mode: CONFIG_DIR_MODE });
+    await mkdir(dirname(target), { recursive: true, mode: PRIVATE_DIR_MODE });
 
     await writeFileAtomic(target, text, { mode });
   } catch (error) {

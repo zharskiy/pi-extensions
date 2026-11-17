@@ -11,7 +11,13 @@ import {
 import { type SandboxConfig, VM_BOUNDS } from "../config/index.ts";
 import { listLauncherContainers } from "../container/index.ts";
 import { liveLaunches } from "../grants/index.ts";
-import { isWithin, LauncherError, realOrResolvedSync, stateLayout } from "../shared/index.ts";
+import {
+  isWithin,
+  LauncherError,
+  PRIVATE_DIR_MODE,
+  realOrResolvedSync,
+  stateLayout,
+} from "../shared/index.ts";
 import { type HostSessions, mountedGitDirs, sharedRootsOf } from "../workspace/index.ts";
 import type { LaunchContext } from "./context.ts";
 import { type CliDeps, hostAgentDirOf, pathsOf, reachableEngine, writeNotices } from "./deps.ts";
@@ -122,7 +128,7 @@ export const vmSharesFor = (deps: CliDeps, workspaceRoots: WorkspaceRoots): VmSh
 export const prepareVmDirs = async (deps: CliDeps) => {
   const dirs = vmDirsOf(deps);
 
-  await mkdir(dirs.sessions, { recursive: true, mode: 0o700 });
+  await mkdir(dirs.sessions, { recursive: true, mode: PRIVATE_DIR_MODE });
 
   await mkdir(dirs.state, { recursive: true });
 };

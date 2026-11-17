@@ -4,6 +4,7 @@ import { dirname } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { errorMessage, LauncherError } from "./errors.ts";
 import { isLive, isRunning, processMark } from "./liveness.ts";
+import { PRIVATE_DIR_MODE, PRIVATE_FILE_MODE } from "./modes.ts";
 
 export interface FileLockOptions {
   staleMs?: number;
@@ -33,8 +34,6 @@ const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_RETRY_MS = 25;
 
 const DIRECTORY_REFRESH_MS = 1_000;
-
-const PRIVATE_MODE = 0o600;
 
 const isCode = (error: unknown, code: string) => (error as NodeJS.ErrnoException).code === code;
 
@@ -191,7 +190,7 @@ const createPidLock: Attempt = async (path) => {
   const self = await processMark();
 
   await writeFile(draft, `${self.pid} ${self.boot} ${self.start} ${randomBytes(8).toString("hex")}`, {
-    mode: PRIVATE_MODE,
+    mode: PRIVATE_FILE_MODE,
     flag: "wx",
   });
 
@@ -242,7 +241,7 @@ const holding = async <T>(
   options: FileLockOptions,
   action: () => Promise<T>,
 ) => {
-  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+  await mkdir(dirname(path), { recursive: true, mode: PRIVATE_DIR_MODE });
 
   const mark = await acquire(path, kind.attempt, settingsOf(options, kind.byAge));
   const refresher =

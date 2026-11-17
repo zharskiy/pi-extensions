@@ -1,5 +1,6 @@
 import { createWriteStream, mkdirSync, renameSync, statSync, type WriteStream } from "node:fs";
 import { dirname } from "node:path";
+import { PRIVATE_FILE_MODE } from "../shared/index.ts";
 
 export interface AccessLogEntry {
   time: string;
@@ -19,8 +20,6 @@ export interface AccessLog {
   close(): Promise<void>;
 }
 
-const PRIVATE_MODE = 0o600;
-
 export const sizeOf = (path: string) => {
   try {
     return statSync(path).size;
@@ -30,7 +29,7 @@ export const sizeOf = (path: string) => {
 };
 
 const openStream = (path: string) => {
-  const stream = createWriteStream(path, { flags: "a", mode: PRIVATE_MODE });
+  const stream = createWriteStream(path, { flags: "a", mode: PRIVATE_FILE_MODE });
 
   stream.on("error", () => undefined);
 

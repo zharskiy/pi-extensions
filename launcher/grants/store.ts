@@ -1,7 +1,12 @@
-import { isJsonObject, readJsonFile, stateLayout, withFileLock, writeJsonFile } from "../shared/index.ts";
+import {
+  isJsonObject,
+  PRIVATE_FILE_MODE,
+  readJsonFile,
+  stateLayout,
+  withFileLock,
+  writeJsonFile,
+} from "../shared/index.ts";
 import type { Grant, GrantMatch, GrantRequest } from "./types.ts";
-
-const PRIVATE_MODE = 0o600;
 
 const isGrant = (value: unknown): value is Grant =>
   isJsonObject(value) &&
@@ -20,7 +25,7 @@ export const readGrants = async (stateDir: string): Promise<Grant[]> => {
 };
 
 const writeGrants = (stateDir: string, grants: Grant[]) =>
-  writeJsonFile(grantsFile(stateDir), grants, { mode: PRIVATE_MODE });
+  writeJsonFile(grantsFile(stateDir), grants, { mode: PRIVATE_FILE_MODE });
 
 const updateGrants = <T>(stateDir: string, change: (grants: Grant[]) => { grants: Grant[]; result: T }) =>
   withFileLock(lockFile(stateDir), async () => {

@@ -2,14 +2,11 @@ import { randomBytes } from "node:crypto";
 import { link, mkdir, open, readFile, rename, rm } from "node:fs/promises";
 import { dirname } from "node:path";
 import { errorMessage, LauncherError } from "./errors.ts";
+import { PRIVATE_DIR_MODE, PRIVATE_FILE_MODE } from "./modes.ts";
 
 interface AtomicWriteOptions {
   mode?: number;
 }
-
-const PRIVATE_FILE_MODE = 0o600;
-
-const PRIVATE_DIR_MODE = 0o700;
 
 const writeAndSync = async (path: string, data: string | Uint8Array, mode: number | undefined) => {
   const handle = await open(path, "wx", mode);

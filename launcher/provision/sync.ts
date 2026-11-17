@@ -4,6 +4,8 @@ import type { JsonObject } from "../hostpi/index.ts";
 import {
   BUILT_IN_EXTENSION_FILES,
   errorMessage,
+  PERMISSION_BITS,
+  PRIVATE_FILE_MODE,
   parseJsonObject,
   readJsonObject,
   SETTINGS_FILE_NAME,
@@ -56,10 +58,6 @@ interface FileOutcome {
 }
 
 const LOCK_TIMEOUT_MS = 30_000;
-
-const PRIVATE_FILE_MODE = 0o600;
-
-const PERMISSION_BITS = 0o777;
 
 const isMissing = (error: unknown) => (error as NodeJS.ErrnoException).code === "ENOENT";
 

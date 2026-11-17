@@ -285,6 +285,7 @@ shared/command-runner.ts       the CommandRunner interface and the real runner
 shared/hash.ts                 hashes and the 12-hex short hash
 shared/json-file.ts            JSON file reading and writing
 shared/atomic-write.ts         atomic, create-only and random-hex file writes
+shared/modes.ts                the file and directory modes: owner-only, world-readable and the permission mask
 shared/file-lock.ts            the lock primitives
 shared/liveness.ts             the liveness rule: pid, boot time and process start
 shared/process-start.ts        a process's start time (ps on macOS, /proc on Linux), telling a failed tool from a process without one

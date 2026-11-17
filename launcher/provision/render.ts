@@ -9,6 +9,8 @@ import {
   type MavenRepository,
   type MavenServer,
   type NpmrcEntry,
+  PERMISSION_BITS,
+  PUBLIC_FILE_MODE,
   stateLayout,
   withFileLock,
   writeFileAtomic,
@@ -27,8 +29,6 @@ const RENDER_COPIED_ENTRIES = [
   "SYSTEM.md",
   "keybindings.json",
 ] as const;
-
-const FILE_MODE = 0o644;
 
 const LOCK_TIMEOUT_MS = 30_000;
 
@@ -199,11 +199,11 @@ const desiredTree = async (input: RenderInput): Promise<{ tree: Tree; notices: s
   const tree: Tree = new Map([
     ...rendered.map(([name, value]): [string, { data: Buffer; mode: number }] => [
       name,
-      { data: Buffer.from(jsonText(value)), mode: FILE_MODE },
+      { data: Buffer.from(jsonText(value)), mode: PUBLIC_FILE_MODE },
     ]),
     ...toolFiles(input.derived.tools).map(([name, data]): [string, { data: Buffer; mode: number }] => [
       name,
-      { data, mode: FILE_MODE },
+      { data, mode: PUBLIC_FILE_MODE },
     ]),
     ...copied.tree,
   ]);
@@ -246,7 +246,12 @@ const removeStale = async (dir: string, tree: Tree) => {
 const isCurrent = async (path: string, data: Buffer, mode: number) => {
   const info = await lstat(path).catch(() => undefined);
 
-  if (info === undefined || !info.isFile() || (info.mode & 0o777) !== mode || info.size !== data.length) {
+  if (
+    info === undefined ||
+    !info.isFile() ||
+    (info.mode & PERMISSION_BITS) !== mode ||
+    info.size !== data.length
+  ) {
     return false;
   }
 

@@ -11,6 +11,8 @@ import {
   isLive,
   LauncherError,
   launcherEntry,
+  PRIVATE_DIR_MODE,
+  PRIVATE_FILE_MODE,
   readJsonObject,
   readRandomHexFile,
   stableHash,
@@ -51,8 +53,6 @@ export interface RepoProxyStart {
 }
 
 export const PROXY_LOG_LIMIT = 5 * 1024 * 1024;
-
-const PRIVATE_MODE = 0o600;
 
 const START_TIMEOUT_MS = 10_000;
 
@@ -195,7 +195,7 @@ const spawnDaemon = (options: EnsureRepoProxyOptions, inputHash: string) => {
   capLog(files.log, PROXY_LOG_LIMIT);
 
   const offset = sizeOf(files.log);
-  const log = openSync(files.log, "a", PRIVATE_MODE);
+  const log = openSync(files.log, "a", PRIVATE_FILE_MODE);
   const child = (options.spawn ?? spawnProcess)(
     process.execPath,
     [launcherEntry("proxy/daemon.ts"), "--repo", input.repoHash, "--state", stateDir],
@@ -217,7 +217,7 @@ const startDaemon = async (options: EnsureRepoProxyOptions, inputHash: string): 
   const { stateDir, input } = options;
   const files = proxyFiles(stateDir, input.repoHash);
 
-  await mkdir(files.directory, { recursive: true, mode: 0o700 });
+  await mkdir(files.directory, { recursive: true, mode: PRIVATE_DIR_MODE });
 
   const { child, offset } = spawnDaemon(options, inputHash);
   const exited = { done: false };
@@ -290,11 +290,11 @@ export const ensureRepoProxy = async (options: EnsureRepoProxyOptions): Promise<
   const files = proxyFiles(stateDir, input.repoHash);
   const settings = egressSettingsOf(input);
 
-  await mkdir(files.directory, { recursive: true, mode: 0o700 });
+  await mkdir(files.directory, { recursive: true, mode: PRIVATE_DIR_MODE });
 
   const previous = parseEgressSettings(await readJsonObject(files.egress));
 
-  await writeJsonFile(files.egress, settings, { mode: PRIVATE_MODE });
+  await writeJsonFile(files.egress, settings, { mode: PRIVATE_FILE_MODE });
 
   const others = { live: undefined as boolean | undefined };
   const othersLive = async () => {

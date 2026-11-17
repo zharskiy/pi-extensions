@@ -11,6 +11,8 @@ import { isHostName } from "../config/index.ts";
 import {
   type CommandRunner,
   LauncherError,
+  PRIVATE_DIR_MODE,
+  PRIVATE_FILE_MODE,
   type RunOptions,
   stateLayout,
   withFileLock,
@@ -49,8 +51,6 @@ export const CERTIFICATE_BACKDATE = BACKDATE_HOURS === 1 ? "an hour" : `${BACKDA
 const GENERALIZED_TIME_YEAR = 2050;
 
 const RENEW_MARGIN_MS = DAY_MS;
-
-const PRIVATE_MODE = 0o600;
 
 const MINT_LOCK_TIMEOUT_MS = 30_000;
 
@@ -123,9 +123,9 @@ const newPrivateKey = () =>
   );
 
 const writePrivateKey = async (path: string) => {
-  await writeFile(path, newPrivateKey(), { mode: PRIVATE_MODE });
+  await writeFile(path, newPrivateKey(), { mode: PRIVATE_FILE_MODE });
 
-  await chmod(path, PRIVATE_MODE);
+  await chmod(path, PRIVATE_FILE_MODE);
 };
 
 const publicDer = (key: string | X509Certificate) => {
@@ -279,7 +279,7 @@ export const openLauncherCa = async ({ stateDir, runner }: CaOptions): Promise<L
   const directory = layout.ca;
   const certPath = join(directory, CA_CERT);
 
-  await mkdir(directory, { recursive: true, mode: 0o700 });
+  await mkdir(directory, { recursive: true, mode: PRIVATE_DIR_MODE });
 
   const { certPem } = await ensureCa(directory, layout.caLock, runner);
   const leaves = boundedCache<string, { leaf: LeafCertificate; renewAt: number }>(MAX_LEAVES);

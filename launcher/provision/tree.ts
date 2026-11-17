@@ -1,6 +1,6 @@
 import { readdir } from "node:fs/promises";
 import { basename, extname, join, posix } from "node:path";
-import { isSecretName, lstatOrUndefined, readRegularFile } from "../shared/index.ts";
+import { isSecretName, lstatOrUndefined, PUBLIC_FILE_MODE, readRegularFile } from "../shared/index.ts";
 import { inPool } from "./pool.ts";
 
 interface TreeFile {
@@ -13,8 +13,6 @@ export type Tree = Map<string, TreeFile>;
 const MAX_FILE_BYTES = 8 * 1024 * 1024;
 
 const EXECUTABLE_BITS = 0o111;
-
-const FILE_MODE = 0o644;
 
 const EXECUTABLE_MODE = 0o755;
 
@@ -57,7 +55,7 @@ const isExcludedName = (name: string) => {
 const holdsPrivateKey = (name: string, data: Buffer) =>
   extname(name).toLowerCase() === ".crt" && PRIVATE_KEY.test(data.toString("latin1"));
 
-const modeOf = (mode: number) => ((mode & EXECUTABLE_BITS) === 0 ? FILE_MODE : EXECUTABLE_MODE);
+const modeOf = (mode: number) => ((mode & EXECUTABLE_BITS) === 0 ? PUBLIC_FILE_MODE : EXECUTABLE_MODE);
 
 interface Candidate {
   path: string;

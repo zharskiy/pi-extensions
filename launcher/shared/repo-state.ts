@@ -2,9 +2,8 @@ import { access, readdir, rm, stat } from "node:fs/promises";
 import { dirname } from "node:path";
 import { LauncherError } from "./errors.ts";
 import { readJsonFile, readJsonObject, writeJsonFile } from "./json-file.ts";
+import { PRIVATE_FILE_MODE } from "./modes.ts";
 import { stateLayout } from "./state-layout.ts";
-
-const PRIVATE_MODE = 0o600;
 
 const REPO_HASH = /^[0-9a-f]{64}$/;
 
@@ -59,7 +58,7 @@ export const writeRepoRecord = async (stateDir: string, repoHash: string, root: 
   await writeJsonFile(
     filesOf(stateDir, repoHash).record,
     { root, ...(mountRoot === undefined ? {} : { mountRoot }) },
-    { mode: PRIVATE_MODE },
+    { mode: PRIVATE_FILE_MODE },
   );
 };
 
@@ -104,7 +103,7 @@ const writeList = async <T>(path: string, values: T[]) => {
     return;
   }
 
-  await writeJsonFile(path, values, { mode: PRIVATE_MODE });
+  await writeJsonFile(path, values, { mode: PRIVATE_FILE_MODE });
 };
 
 const isPath = (value: unknown): value is string => typeof value === "string";
