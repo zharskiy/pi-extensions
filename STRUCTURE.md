@@ -5,7 +5,7 @@ Where things are at the top level. Each code folder has its own `STRUCTURE.md` w
 ```
 pi-extensions/
 ├── platform/
-│   ├── pi-adapter/          the only shipped code that imports pi packages; `tools/` also holds the skill-read detection
+│   ├── pi-adapter/          the only shipped code that imports pi packages by name (`launcher/hostpi/*.mjs` loads host pi's from their files); `tools/` also holds the skill-read detection
 │   ├── shared/              pi-free, theme-free, host-free helpers
 │   ├── ui-kit/              theme-aware rendering components
 │   └── extension-manager/   createManagedExtension, plugins, bus, settings
