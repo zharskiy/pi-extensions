@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { isJsonObject, readJsonObject } from "../shared/index.ts";
+import { isJsonObject, PI_PACKAGE, readJsonObject } from "../shared/index.ts";
 import { isExecutable } from "./path-search.ts";
 import type { HostPi } from "./types.ts";
 
@@ -8,8 +8,6 @@ interface PiManifest {
   version?: unknown;
   bin?: unknown;
 }
-
-const PI_PACKAGE = "@earendil-works/pi-coding-agent";
 
 const PI_BIN = "pi";
 

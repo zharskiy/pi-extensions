@@ -45,7 +45,7 @@ export {
   realOrResolved,
   realOrResolvedSync,
 } from "./paths.ts";
-export { isLauncherSetVariable, PI_SESSION_DIR_VARIABLE } from "./pi-env.ts";
+export { isLauncherSetVariable, PI_PACKAGE, PI_SESSION_DIR_VARIABLE } from "./pi-env.ts";
 export {
   isPlaceholder,
   jwtShapedPlaceholder,

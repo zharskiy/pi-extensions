@@ -1,13 +1,11 @@
 import { join } from "node:path";
 import type { HostPi } from "../hostpi/index.ts";
-import { LauncherError, launcherRoot, readJsonFile } from "../shared/index.ts";
+import { LauncherError, launcherRoot, PI_PACKAGE, readJsonFile } from "../shared/index.ts";
 
 interface PackageManifest {
   version?: string;
   devDependencies?: Record<string, string>;
 }
-
-const PI_PACKAGE = "@earendil-works/pi-coding-agent";
 
 const readManifest = async () => {
   const file = join(launcherRoot(), "..", "package.json");

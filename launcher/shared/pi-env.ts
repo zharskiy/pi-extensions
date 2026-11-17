@@ -1,5 +1,7 @@
 import { PI_AGENT_DIR_VARIABLE } from "./paths.ts";
 
+export const PI_PACKAGE = "@earendil-works/pi-coding-agent";
+
 export const PI_SESSION_DIR_VARIABLE = "PI_CODING_AGENT_SESSION_DIR";
 
 const BASH_ENV_VARIABLE = "BASH_ENV";

@@ -2,7 +2,7 @@ import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Backend } from "../backend/index.ts";
 import type { SandboxConfig } from "../config/index.ts";
-import { errorMessage, LauncherError, launcherRoot, stableHash } from "../shared/index.ts";
+import { errorMessage, LauncherError, launcherRoot, PI_PACKAGE, stableHash } from "../shared/index.ts";
 import { placeBuildTrust } from "./build-trust.ts";
 import { buildInContext, reusableImage } from "./context.ts";
 import { type BaseRecord, readBaseRecord, writeBaseRecord } from "./record.ts";
@@ -35,8 +35,6 @@ export interface BuiltImage {
 }
 
 const VERSION_PATTERN = /^[0-9A-Za-z][0-9A-Za-z.+-]*$/;
-
-const PI_PACKAGE = "@earendil-works/pi-coding-agent";
 
 export const BASE_TAG = "pi-sandbox-base:local";
 
