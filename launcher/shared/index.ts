@@ -54,7 +54,7 @@ export {
   placeholderFor,
 } from "./placeholder.ts";
 export { processStart } from "./process-start.ts";
-export { lstatOrUndefined, readRegularFile, sameEntry } from "./regular-file.ts";
+export { lstatOrUndefined, readRegularFile, readRegularText, sameEntry } from "./regular-file.ts";
 export type { RepoRecord } from "./repo-state.ts";
 export {
   forgetRepo,

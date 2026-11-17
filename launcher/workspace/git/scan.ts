@@ -1,7 +1,7 @@
 import type { Dirent } from "node:fs";
 import { lstat, readdir, readlink } from "node:fs/promises";
 import { join } from "node:path";
-import { type CommandRunner, isWithin, readRegularFile, sha256Hex } from "../../shared/index.ts";
+import { type CommandRunner, isWithin, readRegularText, sha256Hex } from "../../shared/index.ts";
 import { gitDirsOf, gitRepos, type Workspace } from "../types.ts";
 import { walkLevels } from "../walk.ts";
 import { SCAN_BUDGET } from "../workspace-scan.ts";
@@ -72,11 +72,7 @@ const kindOf = (entry: Dirent): NestedGitEntry["kind"] => {
 
 const RUN_FILES = ["config", "config.worktree", "commondir"];
 
-const fileText = (path: string) =>
-  readRegularFile(path).then(
-    (file) => file.data.toString("utf8"),
-    () => "",
-  );
+const fileText = async (path: string) => (await readRegularText(path)) ?? "";
 
 const entryDigest = async (path: string, entry: Dirent) => {
   if (entry.isFile()) {

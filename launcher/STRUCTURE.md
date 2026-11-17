@@ -292,7 +292,7 @@ shared/process-start.ts        a process's start time (ps on macOS, /proc on Lin
 shared/paths.ts                host agent dir, the launcher folder <agent dir>/pi-sandbox/ (config.json, state/), launcher root, path containment and the outermost of a path list
 shared/state-layout.ts         every path under the state dir
 shared/repo-state.ts           per-repository record files: repo.json with its mount root, created folders, leftovers
-shared/regular-file.ts         safe reads of regular files
+shared/regular-file.ts         safe reads of regular files, as bytes or as text or nothing
 shared/placeholder.ts          the placeholder format and the JWT shape
 shared/secret-name.ts          secret-looking names, auth-like headers, URL userinfo and credential-shaped values
 shared/pi-env.ts               pi variable names the launcher sets, the fixed part of the sandbox env (FIXED_SANDBOX_ENV) and pi's npm package name (PI_PACKAGE)

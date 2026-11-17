@@ -37,3 +37,9 @@ export const readRegularFile = async (path: string) => {
     await handle.close();
   }
 };
+
+export const readRegularText = (path: string) =>
+  readRegularFile(path).then(
+    (file) => file.data.toString("utf8"),
+    () => undefined,
+  );

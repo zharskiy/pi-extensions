@@ -6,7 +6,7 @@ import {
   isWithin,
   LauncherError,
   lstatOrUndefined,
-  readRegularFile,
+  readRegularText,
 } from "../shared/index.ts";
 import { inertGitOptions } from "./git/command.ts";
 import { findGitRoot, gitDirHolding, gitLayoutAt, isGitName, lexicalGitLayout } from "./git/layout.ts";
@@ -188,10 +188,7 @@ const singleRepo = async (root: string, cwd: string, runner: CommandRunner, empt
 const GIT_FILE_PREFIX = "gitdir: ";
 
 const pointerText = async (path: string) => {
-  const text = await readRegularFile(path).then(
-    (file) => file.data.toString("utf8"),
-    () => "",
-  );
+  const text = (await readRegularText(path)) ?? "";
 
   return text.startsWith(GIT_FILE_PREFIX)
     ? text.slice(GIT_FILE_PREFIX.length).replace(/[\r\n]+$/, "")
@@ -206,10 +203,7 @@ const reachedPaths = async (base: string, text: string) => {
 };
 
 const commonDirPaths = async (gitDir: string) => {
-  const text = await readRegularFile(join(gitDir, "commondir")).then(
-    (file) => file.data.toString("utf8").trimEnd(),
-    () => "",
-  );
+  const text = (await readRegularText(join(gitDir, "commondir")))?.trimEnd() ?? "";
 
   return text === "" || text === "." ? [] : (await reachedPaths(gitDir, text)).paths;
 };

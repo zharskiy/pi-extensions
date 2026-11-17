@@ -1,7 +1,7 @@
 import type { Dirent } from "node:fs";
 import { readdir, realpath } from "node:fs/promises";
 import { join } from "node:path";
-import { isWithin, readRegularFile } from "../shared/index.ts";
+import { isWithin, readRegularText } from "../shared/index.ts";
 import { gitFileTarget, hasGitDirShape, isGitName } from "./git/layout.ts";
 import { isNodeLockfile, NODE_OVERLAY, overlaysMarkedBy } from "./overlay-markers.ts";
 import { walkLevels } from "./walk.ts";
@@ -58,10 +58,7 @@ interface Walk {
 const realOrLexical = (path: string) => realpath(path).catch(() => path);
 
 const isSubmodule = async (dir: string, name: string, owners: string[]) => {
-  const text = await readRegularFile(join(dir, name)).then(
-    (file) => file.data.toString("utf8"),
-    () => "",
-  );
+  const text = (await readRegularText(join(dir, name))) ?? "";
   const pointer = gitFileTarget(dir, text);
 
   if (pointer === undefined) {
