@@ -72,6 +72,10 @@ export const formatPercent = (percent: number, digits = 0) => {
     return "";
   }
 
+  if (digits === 0) {
+    return `${Math.round(percent)}%`;
+  }
+
   const text = percent.toFixed(digits);
 
   return `${Number(text) === 0 ? text.replace("-", "") : text}%`;

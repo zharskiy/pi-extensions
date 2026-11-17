@@ -18,7 +18,7 @@ Modules are grouped by concern; `index.ts` is the only import surface, so a move
   - `host-channels.ts`: the busy and background-work (side by side), awaiting-input, handoff-pending and held-results, usage, totals and limits (`LIMITS_CHANNEL`, `parseLimits` over `limitsSchema`) `trackBusy` (the busy sources a consumer keeps), and `agentsSpend` and `sessionSpend` over `SpendingTotals` channel names, payloads and parsers.
   - `status-keys.ts`: `HINT_STATUS_PREFIX`, `MIRROR_STATUS_PREFIX`, the status-key roles the footer reads.
 - `text/`: theme-free text helpers.
-  - `format.ts`: token, window, duration, error-text, `~/` and short path formatters, `noun`/`counted`, `formatCost`, `formatMoney` and `formatPercent` (a duration, cost or percentage that is not a finite number formats as empty; a percentage never reads `-0%`).
+  - `format.ts`: token, window, duration, error-text, `~/` and short path formatters, `noun`/`counted`, `formatCost`, `formatMoney` and `formatPercent` (a duration, cost or percentage that is not a finite number formats as empty; a percentage never reads `-0%` and rounds to whole as `Math.round` does).
   - `front-matter.ts`: `parseFrontmatter`, the one `.md` front matter parser (scalars, inline and block lists, block text) for agent files, skill files and styles.
   - `text-layout.ts`: `DOT`, `ELLIPSIS`, `cutStart`, `prefixed`, `padded`, `fixedBlock`, `padRows`.
 - `cache-hit.ts`: the cache hit rate of a request and of the session.

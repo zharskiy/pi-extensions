@@ -83,6 +83,15 @@ describe("costs and calls", () => {
     expect(formatPercent(12.34, 1)).toBe("12.3%");
   });
 
+  it("rounds a whole percentage half up as Math.round does, negative ones included", () => {
+    const inputs = [-0.5, -1.5, -2.5, -0.51, 0.5, 2.5, 41.6, -41.6];
+
+    expect(inputs.map((percent) => formatPercent(percent))).toEqual(
+      inputs.map((percent) => `${Math.round(percent)}%`),
+    );
+    expect(formatPercent(-0.5)).toBe("0%");
+  });
+
   it("never formats a percentage as minus zero", () => {
     expect([-0, -0.4, -0.49].map((percent) => formatPercent(percent))).toEqual(["0%", "0%", "0%"]);
     expect(formatPercent(-0.04, 1)).toBe("0.0%");
