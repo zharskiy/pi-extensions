@@ -4,10 +4,17 @@ import { describe, expect, it } from "vitest";
 import { createBus } from "../../../../../platform/extension-manager/index.ts";
 import { usageTotals } from "../../../../../test/framework/index.ts";
 import { createRegistry } from "../../../core/agent-registry/registry.ts";
-import { MAIN_CALLER } from "../../../core/model/agent-record.ts";
+import { listSections, visibleRecords } from "../../../core/agent-view/list-model.ts";
+import {
+  type AgentRecord,
+  type AgentRegistry,
+  chainLinks,
+  MAIN_CALLER,
+} from "../../../core/model/agent-record.ts";
 import type { BusEvents } from "../../../core/model/events.ts";
 import { pastRecords } from "../../../core/model/manifest.ts";
 import { MANIFEST_FILE } from "../../../core/model/paths.ts";
+import { agentRecord } from "../../support/agent-records.ts";
 import { tempDir } from "../../support/subagents-harness.ts";
 
 const newAgent = (dir: string) => ({
@@ -112,5 +119,92 @@ describe("agent registry", () => {
     }));
 
     expect(restored.find((past) => past.id === record.id)?.context).toEqual(latest);
+  });
+
+  describe("restoring damaged chain links", () => {
+    const done = (id: string, createdAt: number, patch: Partial<AgentRecord> = {}) =>
+      agentRecord({ id, state: "done", createdAt, endedAt: 1_000 + createdAt, ...patch });
+
+    const restored = (...batches: AgentRecord[][]) => {
+      const registry = createRegistry({ bus: createBus<BusEvents>(), handoffPath: (id) => `/tmp/${id}.md` });
+
+      batches.forEach((batch) => {
+        registry.restore(batch);
+      });
+
+      return registry;
+    };
+
+    const listedIds = (registry: AgentRegistry) =>
+      listSections(visibleRecords(registry.list(), new Set()))
+        .flatMap((section) => section.rows.flatMap((row) => chainLinks(registry, row.record)))
+        .map((record) => record.id)
+        .sort();
+
+    const links = (registry: AgentRegistry, id: string) => {
+      const record = registry.get(id);
+
+      return { predecessorId: record?.predecessorId, successorId: record?.successorId };
+    };
+
+    it("cuts a predecessor or successor cycle into one chain and lists each record once", () => {
+      const registry = restored([
+        done("x", 1, { predecessorId: "y" }),
+        done("y", 2, { predecessorId: "x" }),
+        done("c", 3, { successorId: "d" }),
+        done("d", 4, { successorId: "c" }),
+        done("k", 5, { callerId: "c" }),
+      ]);
+
+      expect(links(registry, "x")).toEqual({ predecessorId: "y", successorId: undefined });
+      expect(links(registry, "y")).toEqual({ predecessorId: undefined, successorId: "x" });
+      expect(links(registry, "c")).toEqual({ predecessorId: "d", successorId: undefined });
+      expect(links(registry, "d")).toEqual({ predecessorId: undefined, successorId: "c" });
+      expect(listedIds(registry)).toEqual(["c", "d", "k", "x", "y"]);
+    });
+
+    it("pairs a one-sided link and drops one that the other end contradicts", () => {
+      const registry = restored([
+        done("old", 1),
+        done("new", 2, { predecessorId: "old" }),
+        done("taken", 3, { predecessorId: "old" }),
+      ]);
+
+      expect(links(registry, "old")).toEqual({ predecessorId: undefined, successorId: "new" });
+      expect(links(registry, "new")).toEqual({ predecessorId: "old", successorId: undefined });
+      expect(links(registry, "taken")).toEqual({ predecessorId: undefined, successorId: undefined });
+      expect(listedIds(registry)).toEqual(["new", "old", "taken"]);
+    });
+
+    it("drops the caller link that closes a caller cycle and hides no child", () => {
+      const registry = restored([
+        done("p", 1, { callerId: "q" }),
+        done("q", 2, { callerId: "p" }),
+        done("s", 3, { callerId: "s" }),
+        done("child", 4, { callerId: "q" }),
+      ]);
+
+      expect(registry.get("p")?.callerId).toBe(MAIN_CALLER);
+      expect(registry.get("q")?.callerId).toBe("p");
+      expect(registry.get("s")?.callerId).toBe(MAIN_CALLER);
+      expect(listedIds(registry)).toEqual(["child", "p", "q", "s"]);
+    });
+
+    it("breaks a cycle that spans two restores and keeps intact chains and dangling links", () => {
+      const registry = restored(
+        [
+          done("a", 1, { successorId: "b" }),
+          done("m", 3, { successorId: "n" }),
+          done("n", 4, { predecessorId: "m" }),
+        ],
+        [done("b", 2, { successorId: "a" }), done("lost", 5, { successorId: "gone" })],
+      );
+
+      expect(links(registry, "a")).toEqual({ predecessorId: "b", successorId: undefined });
+      expect(links(registry, "b")).toEqual({ predecessorId: undefined, successorId: "a" });
+      expect(links(registry, "n")).toEqual({ predecessorId: "m", successorId: undefined });
+      expect(links(registry, "lost")).toEqual({ predecessorId: undefined, successorId: "gone" });
+      expect(listedIds(registry)).toEqual(["a", "b", "lost", "m", "n"]);
+    });
   });
 });

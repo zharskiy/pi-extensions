@@ -10,7 +10,6 @@ type Lookup = (record: AgentRecord) => AgentRecord;
 
 const memoised = (compute: (record: AgentRecord, self: Lookup) => AgentRecord): Lookup => {
   const memo = new Map<string, AgentRecord>();
-  const visiting = new Set<string>();
 
   const self: Lookup = (record) => {
     const known = memo.get(record.id);
@@ -19,15 +18,8 @@ const memoised = (compute: (record: AgentRecord, self: Lookup) => AgentRecord): 
       return known;
     }
 
-    if (visiting.has(record.id)) {
-      return record;
-    }
-
-    visiting.add(record.id);
-
     const found = compute(record, self);
 
-    visiting.delete(record.id);
     memo.set(record.id, found);
 
     return found;

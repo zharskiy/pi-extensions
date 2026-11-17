@@ -46,7 +46,7 @@ extensions/subagents/
 │   │   ├── model-resolution.ts            # resolutionProblem: the one text for a model that does not resolve
 │   │   ├── context-limit.ts               # effectiveContextLimit, agentLimit, recordLimit, contextUse (tokens, request, level), StepLimit, limitStep (request or abort; nothing below the limit)
 │   │   ├── handoff.ts                     # handoffService: the agent audience's handoff instruction, validation and successor preface, shared by the runner and the limits plugin
-│   │   ├── manifest.ts                    # pastRecords: manifest.json read and restore (own and parent session)
+│   │   ├── manifest.ts                    # pastRecords: manifest.json read and restore (own and parent session); repairLinks: one-sided links paired, link and caller cycles cut
 │   │   └── paths.ts                       # NAMESPACE (every source, custom message type, widget key and the settings file name derive from it), MANIFEST_FILE, agents dir, handoff path, builtin, user and project agent dirs, readPrompt (a trimmed `prompts/` file)
 │   ├── components/
 │   │   ├── receipt.ts                     # formatCalls, stateWord and receiptWord (the one state word map), receipt segments, plainReceipt, agentReceipt, firstLine, cutChars
@@ -57,7 +57,7 @@ extensions/subagents/
 │   │   ├── fields.ts                      # frontmatter field rules (required, kinds; model and lists through agent-values.ts)
 │   │   └── prompt.ts                      # assemblePromptAppend: base prompt plus the agent body
 │   ├── agent-registry/
-│   │   └── registry.ts                    # createRegistry: records, manifests, events
+│   │   └── registry.ts                    # createRegistry: records, manifests, events; restore repairs the links of the restored records
 │   ├── run-agent/
 │   │   ├── runner.ts                      # createRunner: batches, launch, spawn, events, close, stop, wake, routing (one ChildSession.send for routed and custom messages), the successor seed with its agent details and its task, the handoff hold until the agent's own batches settle (heldHandoff, releaseHold, unhold; the `held` turn), the launch and settle guards (startLaunch, failRun)
 │   │   ├── tools.ts                       # run_agent, message_agent and stop_agent specs, params and details types, describeRunAgent
