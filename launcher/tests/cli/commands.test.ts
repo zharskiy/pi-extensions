@@ -401,7 +401,13 @@ describe("the sweep and pi sandbox reset", () => {
   };
 
   it("runs the host side of the sweep when the VM is stopped", async () => {
-    const harness = await createHarness({ backend: () => unreachable(createFakeBackend().backend) });
+    const stopped = unreachable(createFakeBackend().backend);
+    const engineTouched = async () => {
+      throw new Error("the engine was asked");
+    };
+    const harness = await createHarness({
+      backend: () => ({ ...stopped, findContainers: engineTouched, listNetworks: engineTouched }),
+    });
     const repo = "c".repeat(64);
     const token = await tokenOf(harness.stateDir, repo);
 
@@ -409,6 +415,7 @@ describe("the sweep and pi sandbox reset", () => {
     expect(harness.stoppedProxies).toEqual([repo]);
     expect(await readFile(token, "utf8").catch(() => undefined)).toBeUndefined();
     expect(harness.stderr()).not.toContain("unreachable");
+    expect(harness.stderr()).not.toContain("the engine was asked");
   });
 
   it("runs the host-side part of reset when the VM is stopped and says the engine step was skipped", async () => {

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { PassThrough, Writable } from "node:stream";
 import { afterEach } from "vitest";
 import type { Backend, ExecSpec } from "../../backend/index.ts";
-import { pathsOf, writeLines } from "../../cli/deps.ts";
+import { pathsOf, reachableEngine, writeLines } from "../../cli/deps.ts";
 import type { CliDeps } from "../../cli/index.ts";
 import { sweepOrphans } from "../../cli/sweep.ts";
 import { testedPiVersion } from "../../cli/versions.ts";
@@ -125,7 +125,7 @@ export const renderDirOf = (harness: HarnessPaths) =>
 export const sweepNow = async (deps: CliDeps) => {
   await rm(stateLayout(pathsOf(deps).stateDir).gcRecord, { force: true });
 
-  const lines = await sweepOrphans(deps, deps.backend());
+  const lines = await sweepOrphans(deps, await reachableEngine(deps.backend()));
 
   writeLines(deps.stdout, lines);
 
