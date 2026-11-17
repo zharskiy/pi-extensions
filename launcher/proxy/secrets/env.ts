@@ -1,5 +1,5 @@
 import { type CredentialRule, parentProxyOf, type SecretRef } from "../../config/index.ts";
-import { LauncherError, urlPartOf } from "../../shared/index.ts";
+import { LauncherError, MalformedUrlCredentials, urlPartOf } from "../../shared/index.ts";
 import { HEADER_BREAK, HEADER_BREAK_PROBLEM } from "../rules.ts";
 import type { CachedSecret } from "./cache.ts";
 import { unavailable } from "./errors.ts";
@@ -41,7 +41,19 @@ const envValueOf = (entry: EnvSecretEntry, env: NodeJS.ProcessEnv) => {
   const name = envNameOf(entry);
   const value = name === undefined ? undefined : env[name];
 
-  return "env" in entry.ref ? urlPartOf(value, entry.ref) : value;
+  if (!("env" in entry.ref)) {
+    return value;
+  }
+
+  try {
+    return urlPartOf(value, entry.ref);
+  } catch (error) {
+    if (error instanceof MalformedUrlCredentials) {
+      throw new LauncherError(`${name} holds ${error.message}`);
+    }
+
+    throw error;
+  }
 };
 
 const isBroken = (entry: EnvSecretEntry, env: NodeJS.ProcessEnv) =>

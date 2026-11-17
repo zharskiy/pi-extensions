@@ -20,6 +20,21 @@ const PLAIN_KEY = /^[^\s=]+$/;
 
 const SELECTOR = /^\[([^=\]]+)=(.*)\]$/;
 
+export class MalformedUrlCredentials extends Error {
+  constructor() {
+    super("a URL whose credentials are not valid percent-encoding");
+    this.name = "MalformedUrlCredentials";
+  }
+}
+
+const decodedUserinfo = (text: string) => {
+  try {
+    return decodeURIComponent(text);
+  } catch {
+    throw new MalformedUrlCredentials();
+  }
+};
+
 const userinfoOf = (value: string | undefined, part: "password" | "username") => {
   if (value === undefined || !URL.canParse(value)) {
     return undefined;
@@ -27,7 +42,7 @@ const userinfoOf = (value: string | undefined, part: "password" | "username") =>
 
   const text = new URL(value)[part];
 
-  return text === "" ? undefined : decodeURIComponent(text);
+  return text === "" ? undefined : decodedUserinfo(text);
 };
 
 export const urlPartOf = (value: string | undefined, select: { urlPassword?: true; urlUsername?: true }) => {

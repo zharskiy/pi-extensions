@@ -98,6 +98,7 @@ export type { ToolConfigFormat, ToolConfigSelect } from "./tool-config.ts";
 export {
   isToolConfigKey,
   jsonPointer,
+  MalformedUrlCredentials,
   TOOL_CONFIG_FORMATS,
   toolConfigValue,
   urlPartOf,

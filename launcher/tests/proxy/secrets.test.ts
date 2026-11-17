@@ -9,7 +9,7 @@ import {
   parentProxyAuth,
   type SecretResolverDeps,
 } from "../../proxy/secrets/index.ts";
-import { createProcessRunner } from "../../shared/index.ts";
+import { createProcessRunner, LauncherError } from "../../shared/index.ts";
 import { createFakeClock } from "../support/fake-clock.ts";
 import { argvOf, createFakeRunner, type FakeResponder } from "../support/fake-runner.ts";
 import { tempDir } from "../support/temp-dir.ts";
@@ -373,6 +373,45 @@ describe("env and file secrets", () => {
     expect(() => envSecretsFor([pip], { PIP_INDEX_URL: "https://me:a%00b@pypi.corp.test/simple" })).toThrow(
       "PIP_INDEX_URL holds a line break or NUL and cannot be used as a credential",
     );
+  });
+});
+
+describe("malformed percent-escapes in URL credentials", () => {
+  it("refuses an env URL whose credentials are not valid percent-encoding, naming the variable only", () => {
+    const pip = (secret: SecretRef) => ({ id: "pip", host: "pypi.corp.test", placeholder: "pip", secret });
+    const env = { PIP_INDEX_URL: "https://me:se%zzcret@pypi.corp.test/simple" };
+    const refusal = "PIP_INDEX_URL holds a URL whose credentials are not valid percent-encoding";
+
+    expect(() => envSecretsFor([pip({ env: "PIP_INDEX_URL", urlPassword: true })], env)).toThrow(refusal);
+    expect(() => envSecretsFor([pip({ env: "PIP_INDEX_URL", urlUsername: true })], env)).not.toThrow();
+    expect(() =>
+      envSecretsFor([pip({ env: "PIP_INDEX_URL", urlUsername: true })], {
+        PIP_INDEX_URL: "https://m%zze:secret@pypi.corp.test/simple",
+      }),
+    ).toThrow(refusal);
+    expect(() => envSecretsFor([pip({ env: "PIP_INDEX_URL", urlPassword: true })], env)).toThrow(
+      LauncherError,
+    );
+    expect(() => envSecretsFor([pip({ env: "PIP_INDEX_URL", urlPassword: true })], env)).not.toThrow("se%zz");
+  });
+
+  it("refuses a file URL whose credentials are not valid percent-encoding, naming the file and key", async () => {
+    const file = join(state.home, "pip.conf");
+
+    await writeFile(file, "[global]\nindex-url = https://me:se%zzcret@pypi.corp.test/\n");
+
+    const { resolver } = setup();
+    const reason = await secretOf(resolver, "pip", {
+      file: "~/pip.conf",
+      format: "ini",
+      key: "global.index-url",
+      urlPassword: true,
+    });
+
+    expect(reason).toContain(
+      `file secret for pip: ${file} holds a URL whose credentials are not valid percent-encoding at global.index-url`,
+    );
+    expect(reason).not.toContain("se%zz");
   });
 });
 
