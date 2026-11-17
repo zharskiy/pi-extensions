@@ -14,6 +14,7 @@ import {
   PRIVATE_DIR_MODE,
   PRIVATE_FILE_MODE,
   type RunOptions,
+  readOptionalText,
   stateLayout,
   withFileLock,
 } from "../shared/index.ts";
@@ -103,8 +104,6 @@ export const certificateTime = (time: number) => {
 
   return date.getUTCFullYear() < GENERALIZED_TIME_YEAR ? `${stamp.slice(2)}Z` : `${stamp}Z`;
 };
-
-const readOptional = async (path: string) => readFile(path, "utf8").catch(() => undefined);
 
 const parseCertificate = (pem: string | undefined) => {
   try {
@@ -215,8 +214,8 @@ const generateCa = async (directory: string, runner: CommandRunner) => {
 };
 
 const storedCa = async (directory: string) => {
-  const key = await readOptional(join(directory, CA_KEY));
-  const certPem = await readOptional(join(directory, CA_CERT));
+  const key = await readOptionalText(join(directory, CA_KEY));
+  const certPem = await readOptionalText(join(directory, CA_CERT));
   const certificate = parseCertificate(certPem);
 
   return key !== undefined && certPem !== undefined && isFresh(certificate) && keyMatches(key, certificate)

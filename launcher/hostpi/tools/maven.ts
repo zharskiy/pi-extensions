@@ -8,13 +8,14 @@ import {
   type MavenSettings,
   parseMavenSettings,
   placeholderFor,
+  readOptionalText,
   type XmlElement,
 } from "../../shared/index.ts";
 import { type Endpoint, httpsEndpoint, uniqueEndpoints, withoutUserinfo } from "../endpoints.ts";
 import { mergeSections, noticeOnly, rulesFor, type Section } from "../rules.ts";
 import type { DerivedTools, Registry, ToolsInput } from "../types.ts";
 import { EMPTY_MAVEN } from "../types.ts";
-import { expandPublicVariables, readOptional, registriesOf } from "./files.ts";
+import { expandPublicVariables, registriesOf } from "./files.ts";
 
 type MavenRender = DerivedTools["maven"];
 
@@ -219,7 +220,7 @@ export const deriveMaven = async (
   input: ToolsInput,
 ): Promise<Section<MavenRender> & { registries: Registry[] }> => {
   const file = join(input.home, ".m2", "settings.xml");
-  const text = await readOptional(file);
+  const text = await readOptionalText(file);
 
   if (text === undefined) {
     return { ...noticeOnly(EMPTY_MAVEN), registries: [] };

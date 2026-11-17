@@ -1,6 +1,5 @@
-import { readFile } from "node:fs/promises";
 import type { FileSecret } from "../../config/index.ts";
-import { expandHome, type ToolConfigSelect, toolConfigValue } from "../../shared/index.ts";
+import { expandHome, readOptionalText, type ToolConfigSelect, toolConfigValue } from "../../shared/index.ts";
 import type { CachedSecret } from "./cache.ts";
 import { unavailable } from "./errors.ts";
 
@@ -9,7 +8,7 @@ const selectOf = (ref: FileSecret): ToolConfigSelect =>
 
 export const fileSecret = async (key: string, ref: FileSecret, home: string): Promise<CachedSecret> => {
   const path = expandHome(ref.file, home);
-  const text = await readFile(path, "utf8").catch(() => undefined);
+  const text = await readOptionalText(path);
 
   if (text === undefined) {
     throw unavailable(`file secret for ${key}: ${path} is not readable`);

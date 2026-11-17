@@ -1,10 +1,10 @@
 import { join } from "node:path";
-import { placeholderFor } from "../../shared/index.ts";
+import { placeholderFor, readOptionalText } from "../../shared/index.ts";
 import type { Endpoint } from "../endpoints.ts";
 import { findOnPath } from "../path-search.ts";
 import { mergeSections, noticeOnly, rulesFor, type Section } from "../rules.ts";
 import type { ToolHost, ToolsInput } from "../types.ts";
-import { readOptional, sandboxedConfigNotice, xdgConfigHome } from "./files.ts";
+import { sandboxedConfigNotice, xdgConfigHome } from "./files.ts";
 
 const HOST_LINE = /^([A-Za-z0-9.-]+):\s*$/;
 
@@ -25,7 +25,7 @@ const readHosts = async (input: ToolsInput): Promise<Section<string | undefined>
   const { path, variable } = hostsFile(input);
   const notice = variable === "" ? undefined : await sandboxedConfigNotice(input, LABEL, variable, path);
 
-  return notice === undefined ? noticeOnly(await readOptional(path)) : noticeOnly(undefined, notice);
+  return notice === undefined ? noticeOnly(await readOptionalText(path)) : noticeOnly(undefined, notice);
 };
 
 const hostsOf = (text: string) =>

@@ -1,9 +1,9 @@
-import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   hasUrlUserinfo,
   isSecretEnvName,
   placeholderFor,
+  readOptionalText,
   type ToolConfigFormat,
 } from "../../shared/index.ts";
 import { endpointOf, httpsEndpoint, withoutUserinfo } from "../endpoints.ts";
@@ -20,10 +20,8 @@ export const PROXY_KEY_REASON =
 
 export const URL_CREDENTIAL_REASON = "carries credentials in a URL and stays on the host";
 
-export const readOptional = (path: string) => readFile(path, "utf8").catch(() => undefined);
-
 export const firstExisting = async (paths: string[]) => {
-  const texts = await Promise.all(paths.map(readOptional));
+  const texts = await Promise.all(paths.map(readOptionalText));
   const index = texts.findIndex((text) => text !== undefined);
 
   return index < 0 ? undefined : { path: paths[index] ?? "", text: texts[index] ?? "" };

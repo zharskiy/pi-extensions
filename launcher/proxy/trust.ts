@@ -1,5 +1,5 @@
 import { randomBytes, X509Certificate } from "node:crypto";
-import { readdir, readFile, rm } from "node:fs/promises";
+import { readdir, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import type { ExtraCa } from "../config/index.ts";
@@ -10,6 +10,7 @@ import {
   isTrustBundleName,
   LauncherError,
   PUBLIC_FILE_MODE,
+  readOptionalText,
   sha256Hex,
   stateLayout,
   withFileLock,
@@ -96,7 +97,7 @@ const checkUsable = (now: number) => (found: Found) => {
 
 const fileCertificates = async (file: string): Promise<Found[]> => {
   const path = expandHome(file, homedir());
-  const text = await readFile(path, "utf8").catch(() => undefined);
+  const text = await readOptionalText(path);
 
   if (text === undefined) {
     throw new LauncherError(`tls.extraCa: ${path} is not readable`, "fix the path or remove the entry");
@@ -180,7 +181,7 @@ const sourceCertificates = (input: TrustBundleInput) => {
 };
 
 const writeIfChanged = async (path: string, text: string) => {
-  const current = await readFile(path, "utf8").catch(() => undefined);
+  const current = await readOptionalText(path);
 
   if (current !== text) {
     await writeFileAtomic(path, text, { mode: PUBLIC_FILE_MODE });
@@ -193,9 +194,7 @@ const BUNDLE_LOCK_TIMEOUT_MS = 30_000;
 
 const reusableBundle = async (directory: string, names: string[], prefix: string, text: string) => {
   const candidates = names.filter((name) => name.startsWith(prefix) && isTrustBundleName(name));
-  const contents = await Promise.all(
-    candidates.map((name) => readFile(join(directory, name), "utf8").catch(() => undefined)),
-  );
+  const contents = await Promise.all(candidates.map((name) => readOptionalText(join(directory, name))));
   const match = candidates[contents.indexOf(text)];
 
   return match === undefined ? undefined : join(directory, match);

@@ -6,6 +6,7 @@ import {
   type NpmrcEntry,
   parseNpmrc,
   placeholderFor,
+  readOptionalText,
 } from "../../shared/index.ts";
 import { endpointOf } from "../endpoints.ts";
 import { mergeSections, noticeOnly, rulesFor, type Section } from "../rules.ts";
@@ -13,7 +14,6 @@ import type { Registry, ToolsInput } from "../types.ts";
 import {
   expandPublicVariables,
   PROXY_KEY_REASON,
-  readOptional,
   registriesOf,
   URL_CREDENTIAL_REASON,
   urlCredentialSection,
@@ -168,7 +168,7 @@ const plainSection = (input: ToolsInput, entry: NpmrcEntry): Section<NpmrcEntry[
 export const deriveNpmrc = async (
   input: ToolsInput,
 ): Promise<Section<NpmrcEntry[] | undefined> & { registries: Registry[] }> => {
-  const text = await readOptional(join(input.home, ".npmrc"));
+  const text = await readOptionalText(join(input.home, ".npmrc"));
 
   if (text === undefined) {
     return { ...noticeOnly(undefined), registries: [] };

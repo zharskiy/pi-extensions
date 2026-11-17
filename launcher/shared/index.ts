@@ -13,6 +13,7 @@ export {
   parseJsonObject,
   readJsonFile,
   readJsonObject,
+  readOptionalText,
   readText,
   writeJsonFile,
 } from "./json-file.ts";

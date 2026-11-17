@@ -1,6 +1,5 @@
-import { readFile } from "node:fs/promises";
 import { dirname, join, sep } from "node:path";
-import { isWithin, LauncherError, outermostPaths } from "../../shared/index.ts";
+import { isWithin, LauncherError, outermostPaths, readOptionalText } from "../../shared/index.ts";
 import type { VmCoverage, VmPath, VmShare } from "../types.ts";
 import { shareDrift } from "../vm-decision.ts";
 import { movedMountsOf, vmSharesOf } from "./colima-yaml.ts";
@@ -22,8 +21,6 @@ export const shareFor = (path: string, home: string) => {
 
   return shallow || isWithin(home, candidate) ? path : candidate;
 };
-
-const readOptional = (path: string) => readFile(path, "utf8").catch(() => undefined);
 
 const covers = (shares: VmShare[], need: VmPath) =>
   shares.some((share) => isWithin(need.path, share.location) && (share.writable || !need.writable));
@@ -84,7 +81,7 @@ export const assertDesiredCovers = (desired: VmShare[], needs: VmPath[]) => {
 export const createColimaShares = (colima: Colima) => {
   const { home, profile } = colima;
 
-  const limaYaml = () => readOptional(join(home, ".colima", "_lima", instanceOf(profile), "lima.yaml"));
+  const limaYaml = () => readOptionalText(join(home, ".colima", "_lima", instanceOf(profile), "lima.yaml"));
 
   const readShares = async () => {
     const text = await limaYaml();
