@@ -149,6 +149,21 @@ describe("sharedRootsOf", () => {
     });
   });
 
+  it("escapes control and bidi characters of a stored root it echoes", async () => {
+    const { base, paths } = await createHome();
+    const planted = join(base, "gone\u202e\u200f");
+
+    expect(sharedRootsOf({ roots: [planted] }, paths).notices).toEqual([
+      `workspaceRoots: ${join(base, "gone\\u202E\\u200F")} does not exist, not shared`,
+    ]);
+    expect(() =>
+      assertWithinWorkspaceRoots(workspaceAt(join(base, "other")), { roots: [planted] }, NO_HOME),
+    ).toThrow(`(workspaceRoots.roots: ${join(base, "gone\\u202E\\u200F")})`);
+    expect(() => sharedRootsOf({ roots: ["~/a:b\u202e"] }, paths)).toThrow(
+      'config: workspaceRoots.roots: ~/a:b\\u202E holds ","',
+    );
+  });
+
   it("accepts a root next to the protected home paths", async () => {
     const { paths } = await createHome();
 

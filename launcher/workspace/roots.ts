@@ -6,6 +6,7 @@ import {
   LauncherError,
   launcherPaths,
   outermostPaths,
+  printable,
   realOrResolvedSync,
 } from "../shared/index.ts";
 import { protectedPaths } from "./mounts.ts";
@@ -57,7 +58,7 @@ const lexicalRoot = (root: string, home?: string) => resolve(expandHome(root, ho
 
 const refusal = (root: string, problem: string) =>
   new LauncherError(
-    `config: workspaceRoots.roots: ${root} ${problem}`,
+    `config: workspaceRoots.roots: ${printable(root)} ${problem}`,
     "name the project folders themselves in workspaceRoots.roots",
   );
 
@@ -169,7 +170,9 @@ export const sharedRootsOf = (workspaceRoots: WorkspaceRoots, context: RootGuard
 
   const present = entries.filter((entry) => isFolder(entry.resolved));
   const absent = entries.filter((entry) => !isFolder(entry.resolved));
-  const notices = absent.map((entry) => `workspaceRoots: ${entry.root} does not exist, not shared`);
+  const notices = absent.map(
+    (entry) => `workspaceRoots: ${printable(entry.root)} does not exist, not shared`,
+  );
 
   return {
     roots: outermostPaths(present.map((entry) => entry.resolved)),
@@ -192,7 +195,7 @@ export const assertWithinWorkspaceRoots = (
 
   if (outside !== undefined) {
     throw new LauncherError(
-      `${outside} is outside the allowed workspace roots (workspaceRoots.roots: ${workspaceRoots.roots.join(", ")})`,
+      `${printable(outside)} is outside the allowed workspace roots (workspaceRoots.roots: ${workspaceRoots.roots.map(printable).join(", ")})`,
       "start pi inside one of the workspaceRoots, or add the folder to workspaceRoots.roots",
     );
   }

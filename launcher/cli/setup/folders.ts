@@ -2,7 +2,7 @@ import type { Dirent } from "node:fs";
 import { readdirSync, statSync } from "node:fs";
 import { lstat, readdir, realpath, stat } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { expandHome, isWithin, realOrResolved, realOrResolvedSync } from "../../shared/index.ts";
+import { expandHome, isWithin, printable, realOrResolved, realOrResolvedSync } from "../../shared/index.ts";
 import {
   checkRoot,
   pathTextProblem,
@@ -95,6 +95,8 @@ export const tildeForm = (path: string, home: string) => {
 
   return isWithin(absolute, home) ? `~/${relative(home, absolute)}` : absolute;
 };
+
+const shownPath = (path: string, home: string) => printable(tildeForm(path, home));
 
 const isFolder = (path: string) => statSync(path, { throwIfNoEntry: false })?.isDirectory() === true;
 
@@ -366,7 +368,7 @@ export const refusedRootMessage = (stored: string, context: RootGuardContext) =>
 
   return verdict.ok
     ? undefined
-    : guardMessage(tildeForm(stored, context.home), verdict.problem, refusedRoot(stored, context.home));
+    : guardMessage(shownPath(stored, context.home), verdict.problem, refusedRoot(stored, context.home));
 };
 
 const missingMessage = (shown: string, resolved: string, context: RootGuardContext) => {
@@ -374,21 +376,25 @@ const missingMessage = (shown: string, resolved: string, context: RootGuardConte
 
   return suggestion === undefined
     ? `${shown} does not exist.`
-    : `${shown} does not exist. Did you mean ${tildeForm(suggestion, context.home)}?`;
+    : `${shown} does not exist. Did you mean ${shownPath(suggestion, context.home)}?`;
 };
 
 const nestingMessage = (shown: string, resolved: string, context: AddContext) => {
   const outer = context.checked.find((other) => isWithin(resolved, rootOf(other, context).resolved));
 
   if (outer !== undefined) {
-    return `${shown} lies inside ${outer}, which is already selected.`;
+    return `${shown} lies inside ${printable(outer)}, which is already selected.`;
   }
 
   const inner = context.checked.find((other) => isWithin(rootOf(other, context).resolved, resolved));
 
-  return inner === undefined
-    ? undefined
-    : `${shown} holds ${inner}, which is selected. Unselect ${inner} first, or choose another folder.`;
+  if (inner === undefined) {
+    return undefined;
+  }
+
+  const shownInner = printable(inner);
+
+  return `${shown} holds ${shownInner}, which is selected. Unselect ${shownInner} first, or choose another folder.`;
 };
 
 const existingMessage = (shown: string, resolved: string, context: RootGuardContext) => {
@@ -412,7 +418,7 @@ export const addedRootProblem = (typed: string, context: AddContext) => {
     return "Type a full path, starting with / or ~/.";
   }
 
-  const shown = tildeForm(trimmed, context.home);
+  const shown = shownPath(trimmed, context.home);
   const textProblem = pathTextProblem(trimmed);
 
   if (textProblem !== undefined) {

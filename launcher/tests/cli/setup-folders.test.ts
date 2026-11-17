@@ -271,6 +271,20 @@ describe("addedRootProblem", () => {
     expect(addedRootProblem("~/x\u0007", context)).toBe("That path has a control character in it.");
   });
 
+  it("escapes control and bidi characters of the folders it names", async () => {
+    const context = await setup();
+
+    expect(addedRootProblem("~/gone\u202e", context)).toBe("~/gone\\u202E does not exist.");
+    expect(
+      addedRootProblem("~/Projects/app", { ...context, checked: ["~/Projects\u009b/.."], listed: [] }),
+    ).toBe("~/Projects/app lies inside ~/Projects\\u009B/.., which is already selected.");
+    expect(
+      addedRootProblem("~/Projects", { ...context, checked: ["~/Projects/app\u200f"], listed: [] }),
+    ).toBe(
+      "~/Projects holds ~/Projects/app\\u200F, which is selected. Unselect ~/Projects/app\\u200F first, or choose another folder.",
+    );
+  });
+
   it("suggests a sibling folder that differs in case or by at most two letters", async () => {
     const context = await homeWith([], ["Projects", "Pictures", "a", ".ssh", "Library"]);
     const suggested = (name: string) => suggestionFor(join(context.home, name), { ...context, env: {} });
