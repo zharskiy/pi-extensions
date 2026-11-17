@@ -152,7 +152,11 @@ export const lineFrontEnd = (streams: LineStreams, facts: HostFacts, review: str
     review: () => printed(streams.out, review),
     report,
     task,
-    retry: async (failure) => {
+    retry: async (failure, error) => {
+      if (!(error instanceof LauncherError)) {
+        throw error;
+      }
+
       report(failure);
 
       return false;
@@ -217,7 +221,7 @@ const runVm = async (
       reason: reasonOf(error),
     };
 
-    if (await front.retry(failure)) {
+    if (await front.retry(failure, error)) {
       return runVm(front, effects, action);
     }
 

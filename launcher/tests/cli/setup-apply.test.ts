@@ -4,6 +4,7 @@ import { warningOf } from "../../cli/prompt/task.ts";
 import { Cancelled, type Detail, type Prompts } from "../../cli/prompt/types.ts";
 import { applyPlan, lineFrontEnd, wizardFrontEnd } from "../../cli/setup/apply.ts";
 import type { Plan } from "../../cli/setup/types.ts";
+import { LauncherError } from "../../shared/index.ts";
 import { fakeTimers } from "./prompt/fake-tty.ts";
 import { AUTOMATIC_SIZE, documentOf, factsOf } from "./setup-fixtures.ts";
 
@@ -101,7 +102,7 @@ describe("applying a plan as lines", () => {
 
         progress("starting");
 
-        throw new Error("colima start failed");
+        throw new LauncherError("colima start failed");
       },
     };
     const front = lineFrontEnd({ out: out.stream, err: err.stream, timers: clock.timers }, facts, [
@@ -133,6 +134,28 @@ describe("applying a plan as lines", () => {
         "",
       ].join("\n"),
     );
+    expect(clock.live()).toBe(0);
+  });
+
+  it("lets an unexpected error from the VM step through, after saving", async () => {
+    const clock = fakeTimers();
+    const out = collected();
+    const err = collected();
+    const failure = new Error("EACCES: permission denied, mkdir");
+    const effects = {
+      write: async () => undefined,
+      vm: async () => {
+        throw failure;
+      },
+    };
+    const front = lineFrontEnd({ out: out.stream, err: err.stream, timers: clock.timers }, factsOf(), []);
+    const applied = applyPlan(front, effects, documentOf(undefined, "/Users/me/config.json"), {
+      plan: PLAN,
+      answers: { roots: "home", vm: "automatic", writeBack: true },
+    });
+
+    await expect(applied).rejects.toBe(failure);
+    expect(err.text()).toBe("");
     expect(clock.live()).toBe(0);
   });
 });

@@ -123,7 +123,7 @@ export interface ApplyFrontEnd {
   review(): void;
   report(event: ApplyEvent): void;
   task(spec: VmTask): Promise<VmApplied>;
-  retry(failure: VmFailure): Promise<boolean>;
+  retry(failure: VmFailure, error: unknown): Promise<boolean>;
 }
 
 export interface ApplyEffects {

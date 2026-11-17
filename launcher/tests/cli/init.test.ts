@@ -432,6 +432,26 @@ describe("pi sandbox init --yes", () => {
     );
   });
 
+  it("lets an unexpected error from the VM step reach the error handler after saving the config", async () => {
+    const harness = await initSetup({ env: { PI_SANDBOX_ROOTS: "" } });
+    const fake = createFakeBackend({
+      vm: {
+        apply: async () => {
+          throw new Error("EACCES: permission denied, mkdir");
+        },
+      },
+    });
+    const deps = {
+      ...harness.deps,
+      env: { ...harness.deps.env, PI_SANDBOX_ROOTS: harness.repoRoot },
+      backend: () => fake.backend,
+    };
+
+    expect(await run(["sandbox", "init", "--yes"], deps)).toBe(70);
+    expect(await exists(harness.userConfigFile)).toBe(true);
+    expect(harness.stderr()).toBe("pi-sandbox: unexpected error: EACCES: permission denied, mkdir\n");
+  });
+
   it("prints the review with the changed share before restarting a running VM", async () => {
     const harness = await initSetup();
     const old = join(harness.root, "old");
