@@ -616,8 +616,8 @@ const nextCommand = (roots: Answers["roots"], facts: HostFacts) => {
   return `cd <a project in ${printable(roots[0] ?? "~")}> && pi`;
 };
 
-const successLines = (roots: Answers["roots"], facts: HostFacts, deferred: boolean, plain: boolean) => {
-  const head = deferred ? "Done. Settings saved." : "Done. The sandbox is ready.";
+const successLines = (roots: Answers["roots"], facts: HostFacts, vmReady: boolean, plain: boolean) => {
+  const head = vmReady ? "Done. The sandbox is ready." : "Done. Settings saved.";
   const rows: Array<[string, string]> = [
     ["Next", nextCommand(roots, facts)],
     ["Change", "pi sandbox init"],
@@ -686,7 +686,7 @@ export const eventLines = (event: ApplyEvent, facts: HostFacts, plain: boolean):
     case "vm-cancelled":
       return stoppedWaiting(event.phase);
     case "done":
-      return successLines(event.roots, facts, event.deferred, plain);
+      return successLines(event.roots, facts, event.vmReady, plain);
   }
 };
 

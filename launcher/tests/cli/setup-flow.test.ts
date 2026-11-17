@@ -508,6 +508,21 @@ describe("a re-run", () => {
     );
     expect(run.screen.lines()).toContain("└  Done. Settings saved.");
   });
+
+  it("says only that the settings are saved when the VM could not be checked", async () => {
+    const run = setup({
+      text: SAVED,
+      facts: { vm: { state: "unknown", reason: "colima status failed" } },
+    });
+
+    await run.keys(KEY.down, KEY.enter, KEY.down, KEY.down, KEY.space, KEY.enter, KEY.enter);
+
+    expect(await run.exit).toBe(0);
+    expect(run.vms).toEqual([]);
+    expect(run.writes).toHaveLength(1);
+    expect(run.screen.lines()).toContain("└  Done. Settings saved.");
+    expect(run.screen.lines()).not.toContain("└  Done. The sandbox is ready.");
+  });
 });
 
 describe("the VM step", () => {

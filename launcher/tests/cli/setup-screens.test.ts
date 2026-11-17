@@ -284,11 +284,11 @@ describe("the VM step", () => {
 
 describe("the success screen", () => {
   it("falls back to a placeholder project", () => {
-    const success = (roots: Answers["roots"], deferred: boolean) =>
-      eventLines({ kind: "done", roots, deferred }, FACTS, true);
+    const success = (roots: Answers["roots"], vmReady: boolean) =>
+      eventLines({ kind: "done", roots, vmReady }, FACTS, true);
 
-    expect(success(["~/Projects"], false)[1]).toBe("Next: cd <a project in ~/Projects> && pi");
-    expect(success("home", true).slice(0, 2)).toEqual([
+    expect(success(["~/Projects"], true)[1]).toBe("Next: cd <a project in ~/Projects> && pi");
+    expect(success("home", false).slice(0, 2)).toEqual([
       "Done. Settings saved.",
       "Next: cd <a project> && pi",
     ]);

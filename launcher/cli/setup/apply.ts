@@ -206,7 +206,7 @@ const runVm = async (
 
     front.report({ kind: "vm-done", applied, action, elapsed: elapsedOf(front.now() - started) });
 
-    return typeof applied === "object";
+    return typeof applied !== "object";
   } catch (error) {
     if (error instanceof Cancelled) {
       front.report({ kind: "vm-cancelled", phase: seen.phase });
@@ -250,7 +250,7 @@ const applyVm = async (front: ApplyFrontEnd, effects: ApplyEffects, plan: Plan) 
     front.report({ kind: "vm-deferred", sessions: action.sessions, parts: action.parts });
   }
 
-  return action.kind === "defer";
+  return action.kind !== "defer" && action.kind !== "unknown";
 };
 
 export const applyPlan = async (
@@ -279,7 +279,7 @@ export const applyPlan = async (
     return step;
   }
 
-  front.report({ kind: "done", roots: chosen.answers.roots, deferred: step });
+  front.report({ kind: "done", roots: chosen.answers.roots, vmReady: step });
 
   return 0;
 };

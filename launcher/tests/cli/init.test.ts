@@ -396,7 +396,7 @@ describe("pi sandbox init --yes", () => {
     expect(harness.stdout()).toContain(
       "  - the sandbox VM could not be checked (colima did not answer within 3 seconds); run pi sandbox doctor after applying\nSaved ",
     );
-    expect(harness.stdout()).toMatch(/\nSaved .+\nDone\. The sandbox is ready\.\n/);
+    expect(harness.stdout()).toMatch(/\nSaved .+\nDone\. Settings saved\.\n/);
   });
 
   it("fails with the VM's error after saving the config", async () => {

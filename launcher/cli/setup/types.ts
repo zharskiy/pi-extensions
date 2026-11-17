@@ -111,7 +111,7 @@ export type ApplyEvent =
   | VmFailure
   | { kind: "vm-not-ready" }
   | { kind: "vm-cancelled"; phase: VmPhase | undefined }
-  | { kind: "done"; roots: Answers["roots"]; deferred: boolean };
+  | { kind: "done"; roots: Answers["roots"]; vmReady: boolean };
 
 interface VmTask {
   interruptWarning(): string;
