@@ -33,7 +33,23 @@ const MISSING_FILE = "No such file or directory";
 
 const PEM_BLOCK = /-----BEGIN CERTIFICATE-----[A-Za-z0-9+/=\s]+-----END CERTIFICATE-----/g;
 
-const FAILURE = "could not install the tls.extraCa certificates in the sandbox VM";
+interface Phrase {
+  doing: string;
+  failed: string;
+  where: string;
+}
+
+const INSTALLING: Phrase = {
+  doing: "installing the tls.extraCa certificates",
+  failed: "could not install the tls.extraCa certificates",
+  where: "in",
+};
+
+const REMOVING: Phrase = {
+  doing: "removing the earlier tls.extraCa certificates",
+  failed: "could not remove the earlier tls.extraCa certificates",
+  where: "from",
+};
 
 const DEFERRED = deferredUntilIdle("pick up the tls.extraCa certificate change");
 
@@ -42,21 +58,22 @@ const certificatesIn = (text: string) => (text.match(PEM_BLOCK) ?? []).map((pem)
 const certPath = (index: number) => `${CERT_DIR}/pi-sandbox-extra-${index + 1}.crt`;
 
 export const createColimaTrust = (colima: Colima, shell: VmShell) => {
-  const step = async (command: string[], options: ShellOptions = {}) => {
+  const step = async (phrase: Phrase, command: string[], options: ShellOptions = {}) => {
+    const failure = `${phrase.failed} ${phrase.where} the sandbox VM`;
     const result = await shell(["sudo", ...command], options).catch((error: unknown) => {
-      throw new LauncherError(`${FAILURE}: ${errorMessage(error)}`, `see ${logHint(colima.profile)}`);
+      throw new LauncherError(`${failure}: ${errorMessage(error)}`, `see ${logHint(colima.profile)}`);
     });
 
     if (result.timedOut === true) {
       throw new LauncherError(
-        `${FAILURE}: ${command.join(" ")} did not finish within ${(options.timeoutMs ?? 0) / 1000} s`,
+        `${failure}: ${command.join(" ")} did not finish within ${(options.timeoutMs ?? 0) / 1000} s`,
         `run colima ssh --profile ${colima.profile} -- sudo ${command.join(" ")} to see why, then run pi again`,
       );
     }
 
     if (result.code !== 0) {
       throw new LauncherError(
-        `${FAILURE}: ${command.join(" ")} failed: ${lastLine(result.stderr) || `exit ${result.code}`}`,
+        `${failure}: ${command.join(" ")} failed: ${lastLine(result.stderr) || `exit ${result.code}`}`,
         `run colima ssh --profile ${colima.profile} -- sudo ${command.join(" ")} to see why, then run pi again`,
       );
     }
@@ -72,49 +89,50 @@ export const createColimaTrust = (colima: Colima, shell: VmShell) => {
     return result?.stderr.includes(MISSING_FILE) === true ? "" : undefined;
   };
 
-  const restartEngine = () =>
-    step(["systemctl", "restart", ...ENGINE_SERVICES], { timeoutMs: RESTART_TIMEOUT_MS });
+  const restartEngine = (phrase: Phrase) =>
+    step(phrase, ["systemctl", "restart", ...ENGINE_SERVICES], { timeoutMs: RESTART_TIMEOUT_MS });
 
-  const awaitEngine = async () => {
+  const awaitEngine = async (phrase: Phrase) => {
     const detection = await colima.detectAgain(ENGINE_RESTART_DELAYS_MS);
 
     if (detection?.available !== true) {
       throw new LauncherError(
-        `the sandbox VM engine did not come back after installing the tls.extraCa certificates: ${detection?.reason ?? "not detected"}`,
+        `the sandbox VM engine did not come back after ${phrase.doing}: ${detection?.reason ?? "not detected"}`,
         `run colima ssh --profile ${colima.profile} -- sudo systemctl restart docker`,
       );
     }
   };
 
   const install = async (certificates: string[], hash: string) => {
-    await step(["rm", "-rf", "--", MARKER, CERT_DIR]);
+    await step(INSTALLING, ["rm", "-rf", "--", MARKER, CERT_DIR]);
 
-    await step(["mkdir", "-p", "--", CERT_DIR, MARKER_DIR]);
+    await step(INSTALLING, ["mkdir", "-p", "--", CERT_DIR, MARKER_DIR]);
 
     await certificates.reduce(
-      (previous, pem, index) => previous.then(() => step(["tee", "--", certPath(index)], { input: pem })),
+      (previous, pem, index) =>
+        previous.then(() => step(INSTALLING, ["tee", "--", certPath(index)], { input: pem })),
       Promise.resolve(),
     );
 
-    await step(["update-ca-certificates", "--fresh"]);
+    await step(INSTALLING, ["update-ca-certificates", "--fresh"]);
 
-    await restartEngine();
+    await restartEngine(INSTALLING);
 
-    await step(["tee", "--", MARKER], { input: `${hash}\n` });
+    await step(INSTALLING, ["tee", "--", MARKER], { input: `${hash}\n` });
 
-    await awaitEngine();
+    await awaitEngine(INSTALLING);
   };
 
   const remove = async () => {
-    await step(["rm", "-rf", "--", CERT_DIR]);
+    await step(REMOVING, ["rm", "-rf", "--", CERT_DIR]);
 
-    await step(["update-ca-certificates", "--fresh"]);
+    await step(REMOVING, ["update-ca-certificates", "--fresh"]);
 
-    await restartEngine();
+    await restartEngine(REMOVING);
 
-    await step(["rm", "-f", "--", MARKER]);
+    await step(REMOVING, ["rm", "-f", "--", MARKER]);
 
-    await awaitEngine();
+    await awaitEngine(REMOVING);
   };
 
   const apply = async (certificates: string[], hash: string, options: VmShareOptions) => {
@@ -128,17 +146,11 @@ export const createColimaTrust = (colima: Colima, shell: VmShell) => {
       return;
     }
 
-    if (certificates.length === 0) {
-      options.report("removing the earlier tls.extraCa certificates from the sandbox VM, one time");
+    const phrase = certificates.length === 0 ? REMOVING : INSTALLING;
 
-      await remove();
+    options.report(`${phrase.doing} ${phrase.where} the sandbox VM, one time`);
 
-      return;
-    }
-
-    options.report("installing the tls.extraCa certificates in the sandbox VM, one time");
-
-    await install(certificates, hash);
+    await (certificates.length === 0 ? remove() : install(certificates, hash));
   };
 
   const early: { marker?: Promise<string | undefined> } = {};
