@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { rootCertificates } from "node:tls";
 import { parseArgs } from "node:util";
@@ -20,8 +20,10 @@ import {
   DAEMON_FAILURE_TAG,
   type DaemonInput,
   egressSettingsOf,
+  LISTEN_HOST,
   type RepoProxy,
   type RepoProxyInput,
+  readExtraCaPem,
 } from "./files.ts";
 import { watchIdle } from "./idle.ts";
 import { parentRouteFor } from "./parent.ts";
@@ -29,8 +31,6 @@ import { createProxyRuntime } from "./runtime.ts";
 import { createSecretResolver } from "./secrets/index.ts";
 import { startProxyServer } from "./server.ts";
 import { openLauncherCa } from "./tls-ca.ts";
-
-const LISTEN_HOST = "127.0.0.1";
 
 const PRIVATE_MODE = 0o600;
 
@@ -74,7 +74,7 @@ const readInput = async (repoHash: string): Promise<DaemonInput> => {
 };
 
 const upstreamTrust = async (stateDir: string, extraCa: boolean) => {
-  const extra = extraCa ? await readFile(stateLayout(stateDir).extraPem, "utf8").catch(() => "") : "";
+  const extra = await readExtraCaPem(stateDir, extraCa);
 
   return extra.trim() === "" ? undefined : [...rootCertificates, extra];
 };

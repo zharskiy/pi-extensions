@@ -8,6 +8,7 @@ import type {
   NpmrcEntry,
   XmlElement,
 } from "../shared/index.ts";
+import type { Endpoint } from "./endpoints.ts";
 
 export type { JsonObject } from "../shared/index.ts";
 
@@ -65,25 +66,24 @@ export interface DerivedTools {
 
 export const EMPTY_MAVEN: DerivedTools["maven"] = { servers: [], mirrors: [], passthrough: [] };
 
-export const emptyTools = (git: GitIdentity = {}): DerivedTools => ({
-  gh: [],
-  glab: [],
-  maven: EMPTY_MAVEN,
-  git,
-  env: {},
-});
-
-export interface ToolRegistry {
+export interface Registry {
   label: string;
-  endpoint: { host: string; port?: number };
+  endpoint: Endpoint;
 }
 
 export interface ToolsSection {
   value: DerivedTools;
   rules: CredentialRule[];
   notices: string[];
-  registries: ToolRegistry[];
+  registries: Registry[];
 }
+
+export const emptyToolsSection = (git: GitIdentity = {}, notices: string[] = []): ToolsSection => ({
+  value: { gh: [], glab: [], maven: EMPTY_MAVEN, git, env: {} },
+  rules: [],
+  notices,
+  registries: [],
+});
 
 export interface DeriveInput {
   files: HostPiFiles;

@@ -5,9 +5,9 @@ import type { CredentialRule } from "../../config/index.ts";
 import { deriveHostTools, deriveSandboxPi } from "../../hostpi/index.ts";
 import { renderAgentDir } from "../../provision/index.ts";
 import { envSecretsFor } from "../../proxy/index.ts";
-import { placeholderFor, toolConfigValue } from "../../shared/index.ts";
+import { toolConfigValue } from "../../shared/index.ts";
 import { createFakeRunner, type FakeResponder } from "../support/fake-runner.ts";
-import { braced, tempDir, writeExecutable, writeText } from "./fixtures.ts";
+import { braced, placeholderOfSalt, rulesOf, tempDir, writeExecutable, writeText } from "./fixtures.ts";
 
 const SALT = "salt-1";
 
@@ -15,7 +15,7 @@ const GH_TOKEN = "gho_REAL-GH-TOKEN-4711";
 
 const GLAB_TOKEN = "glpat-REAL-GLAB-TOKEN-0815";
 
-const P = (identity: string) => placeholderFor(SALT, identity);
+const P = placeholderOfSalt(SALT);
 
 const b64 = (text: string) => Buffer.from(text).toString("base64");
 
@@ -52,8 +52,6 @@ const derive = async (setup: Setup = {}) => {
 
   return { home, bin, tools, calls: fake.calls };
 };
-
-const rulesOf = (rules: CredentialRule[], id: string) => rules.filter((rule) => rule.id === id);
 
 const GH_HOSTS = `github.com:
     user: me

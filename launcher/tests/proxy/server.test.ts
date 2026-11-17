@@ -114,7 +114,7 @@ describe("proxy authentication", () => {
     const body = JSON.parse(await readRest(reply.socket));
 
     expect(reply.status).toBe(407);
-    expect(reply.head).toContain('Proxy-Authenticate: Basic realm="pi-sandbox"');
+    expect(reply.head).toContain('proxy-authenticate: Basic realm="pi-sandbox"');
     expect(body).toEqual({ error: "missing or wrong Proxy-Authorization" });
   });
 

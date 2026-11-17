@@ -250,18 +250,20 @@ proxy/runtime.ts               rules, the live egress.json settings and live gra
 proxy/tunnel.ts                end-to-end tunnels with the SNI check
 proxy/sni.ts                   ClientHello completeness and server name parsing
 proxy/dial.ts                  the resolving dialer with the private-address filter
+proxy/connect.ts               a TCP connect with its timeout, for the direct and the parent proxy dial
 proxy/intercept.ts             TLS termination for rule hosts
 proxy/terminate.ts             credential injection on terminated streams
 proxy/rules.ts                 rule matching, header rewrite and response scrub
 proxy/request-target.ts        authority parsing, request target and path checks on terminated hosts
 proxy/denials.ts               denial records (with the credential rule id) and replies
 proxy/denial-page.ts           the 403 page over TLS
-proxy/replies.ts               every raw HTTP reply and the JSON replies
+proxy/replies.ts               every reply the proxy answers itself, raw or through a ServerResponse
 proxy/parent.ts                the parent proxy route
 proxy/trust.ts                 the trust bundle: tls.extraCa by keychain fingerprint or PEM file, CA and expiry checks, a bundle path never written twice, under the CA lock
 proxy/tls-ca.ts                the launcher CA and leaf certificates, both dated an hour back
 proxy/sign-in.ts               the proxy's host MCP sign-in
 proxy/single-flight.ts         one pending promise per key
+proxy/bounded-cache.ts         the most recently used promises up to a limit, a failed one dropped
 proxy/access-log.ts            the capped JSON-line logs
 proxy/child-env.ts             the minimal environment of the proxy and its children
 proxy/secrets/index.ts         the secret resolver

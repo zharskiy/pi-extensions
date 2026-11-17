@@ -1,7 +1,8 @@
 import { join } from "node:path";
-import { type Endpoint, endpointOf, uniqueEndpoints } from "../endpoints.ts";
+import { placeholderFor } from "../../shared/index.ts";
+import { type Endpoint, httpsEndpoint, uniqueEndpoints } from "../endpoints.ts";
 import { findOnPath } from "../path-search.ts";
-import { mergeSections, noticeOnly, placeholderOf, rulesFor, type Section } from "../rules.ts";
+import { mergeSections, noticeOnly, rulesFor, type Section } from "../rules.ts";
 import type { GlabHost, ToolsInput } from "../types.ts";
 import {
   firstExisting,
@@ -72,7 +73,7 @@ const readConfig = async (input: ToolsInput) => {
     await Promise.all(configPaths(input).map((path) => checkedPath(input, path))),
   );
 
-  return { config: await firstExisting(checked.values.flat()), notices: checked.notices };
+  return { config: await firstExisting(checked.value.flat()), notices: checked.notices };
 };
 
 const parseLine = (state: ParseState, line: string): ParseState => {
@@ -121,9 +122,7 @@ const apiEndpoint = (entry: ConfigHost): Endpoint[] => {
     return [];
   }
 
-  const result = endpointOf(`https://${apiHost}`);
-
-  return "endpoint" in result ? [result.endpoint] : [];
+  return httpsEndpoint(`https://${apiHost}`);
 };
 
 const tokenCommand = (glab: string, host: string) => [glab, "config", "get", "token", "--host", host];
@@ -182,7 +181,7 @@ const hostSection = async (
   }
 
   const identity = `glab:${entry.host}:token`;
-  const token = placeholderOf(input, identity);
+  const token = placeholderFor(input.salt, identity);
   const endpoints = uniqueEndpoints([{ host: entry.host }, ...apiEndpoint(entry)]);
 
   return {
@@ -206,7 +205,7 @@ export const deriveGlab = async (input: ToolsInput): Promise<Section<GlabHost[]>
 
   const merged = mergeSections(await Promise.all(entries.map((entry) => hostSection(input, glab, entry))));
 
-  return { value: merged.values.flat(), rules: merged.rules, notices: [...notices, ...merged.notices] };
+  return { value: merged.value.flat(), rules: merged.rules, notices: [...notices, ...merged.notices] };
 };
 
 export const glabEnv = (hosts: GlabHost[]): Record<string, string> => {

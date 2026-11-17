@@ -1,5 +1,6 @@
 import { lookup as dnsLookup, type LookupAddress, type LookupOptions } from "node:dns";
 import { connect, type LookupFunction, type Socket } from "node:net";
+import { CONNECT_TIMEOUT_MS, connected } from "./connect.ts";
 import { bypassesParent, dialViaParent, type ParentRoute } from "./parent.ts";
 import { restrictedAddress } from "./policy.ts";
 
@@ -25,8 +26,6 @@ export class RestrictedAddressError extends Error {
 }
 
 const UNRESOLVED = new Set(["ENOTFOUND", "EAI_AGAIN", "ENODATA", "EAI_NONAME"]);
-
-const CONNECT_TIMEOUT_MS = 10_000;
 
 const PRIVATE_RESOLUTION = new Set(["loopback", "link-local", "reserved-address", "private-address"]);
 
@@ -92,41 +91,13 @@ const lookupWith =
     );
   };
 
-const connected = (socket: Socket, host: string, port: number, timeoutMs: number) =>
-  new Promise<Socket>((resolve, reject) => {
-    const fail = (error: Error) => {
-      clearTimeout(timer);
-
-      reject(error);
-    };
-
-    const timer = setTimeout(() => {
-      socket.off("error", fail);
-
-      socket.destroy();
-
-      reject(new Error(`${host}:${port} did not accept the connection in time`));
-    }, timeoutMs);
-
-    socket.once("connect", () => {
-      clearTimeout(timer);
-
-      socket.off("error", fail);
-
-      resolve(socket);
-    });
-
-    socket.once("error", fail);
-  });
-
 const direct =
   (lookups: { public: LookupFunction; private: LookupFunction }, timeoutMs: number) =>
   (host: string, port: number, access: DialAccess) =>
     connected(
       connect({ host, port, lookup: access === "public" ? lookups.public : lookups.private }),
-      host,
-      port,
       timeoutMs,
+      `${host}:${port} did not accept the connection in time`,
     );
 
 const checkResolved = async (resolve: Resolve, host: string) => {

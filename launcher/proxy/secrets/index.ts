@@ -26,7 +26,7 @@ export interface SecretResolverDeps {
 }
 
 export type SecretResult =
-  | { ok: true; value: string; expiresAt?: number }
+  | { ok: true; value: string }
   | { ok: false; reason: string; reply?: SecretReply; login?: boolean };
 
 export interface SecretResolver {
@@ -38,10 +38,7 @@ export interface SecretResolver {
 
 const kindOf = (ref: SecretRef) => Object.keys(ref)[0] ?? "unknown";
 
-const success = (secret: CachedSecret): SecretResult =>
-  secret.expiresAt === undefined
-    ? { ok: true, value: secret.value }
-    : { ok: true, value: secret.value, expiresAt: secret.expiresAt };
+const success = (secret: CachedSecret): SecretResult => ({ ok: true, value: secret.value });
 
 const failure = (key: string, ref: SecretRef, error: unknown): SecretResult => {
   if (!(error instanceof SecretUnavailable)) {

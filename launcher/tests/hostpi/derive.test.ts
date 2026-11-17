@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { CredentialRule } from "../../config/index.ts";
 import type { DeriveInput } from "../../hostpi/index.ts";
 import { deriveSandboxPi } from "../../hostpi/index.ts";
-import { isPlaceholder, jwtShapedPlaceholder, placeholderFor, toolConfigValue } from "../../shared/index.ts";
+import { isPlaceholder, jwtShapedPlaceholder, toolConfigValue } from "../../shared/index.ts";
 import {
   AGENT_DIR,
   braced,
@@ -12,7 +12,9 @@ import {
   hostMcp,
   hostModels,
   JWT_ACCESS,
+  placeholderOfSalt,
   providerHosts,
+  rulesOf,
   SECRETS,
   tempDir,
   writeJson,
@@ -30,9 +32,7 @@ const input = (overrides: Partial<DeriveInput> = {}): DeriveInput => ({
   ...overrides,
 });
 
-const P = (identity: string) => placeholderFor(SALT, identity);
-
-const rulesOf = (rules: CredentialRule[], id: string) => rules.filter((rule) => rule.id === id);
+const P = placeholderOfSalt(SALT);
 
 describe("deriveSandboxPi auth.json", () => {
   it("turns api_key entries into placeholders bound to the host pi credential", () => {
@@ -383,10 +383,10 @@ describe("deriveSandboxPi mcp.json", () => {
     expect(JSON.stringify(result.files)).not.toMatch(/QUERY-/);
     expect(result.rules.filter((rule) => rule.id.startsWith("derived:mcp:keyed"))).toEqual([]);
     expect(result.notices).toContain(
-      "mcp keyed: the url carries a credential in its query string; add a header rule instead",
+      "mcp keyed: the url carries a credential in its query string; the server stays out of the sandbox, use a header instead",
     );
     expect(result.notices).toContain(
-      "mcp signed: the url carries a credential in its query string; add a header rule instead",
+      "mcp signed: the url carries a credential in its query string; the server stays out of the sandbox, use a header instead",
     );
   });
 
@@ -419,6 +419,26 @@ describe("deriveSandboxPi rules and hosts", () => {
 
     expect(result.rules.filter((rule) => rule.host === "api.keyed.example")).toEqual([manual]);
     expect(result.hosts).not.toContain("api.keyed.example");
+  });
+
+  it("compares manual and derived hosts in normal form", () => {
+    const mcp = {
+      mcpServers: { dotted: { url: "https://mcp.dotted.example./mcp", headers: { "X-Api-Key": "LIT" } } },
+    };
+    const dotted = { ...manual, id: "corp-dotted", host: "MCP.Dotted.Example" };
+    const registries = [{ label: "npmrc", endpoint: { host: "mcp.dotted.example." } }];
+    const tools = {
+      value: { gh: [], glab: [], maven: { servers: [], mirrors: [], passthrough: [] }, git: {}, env: {} },
+      rules: [],
+      notices: [],
+      registries,
+    };
+    const result = deriveSandboxPi(
+      input({ files: { agentDir: AGENT_DIR, mcp }, manual: [dotted], tools, egress: [] }),
+    );
+
+    expect(result.rules.filter((rule) => rule.host.toLowerCase().startsWith("mcp.dotted"))).toEqual([dotted]);
+    expect(result.notices.filter((notice) => notice.includes("egress.allow"))).toEqual([]);
   });
 
   it("lists derived hosts once and honours derive.enabled and derive.hosts", () => {
@@ -627,6 +647,13 @@ describe("deriveSandboxPi fix round", () => {
     ["UPSTREAM", "Basic RkFLRTpGQUtF"],
     ["CONFIG", JWT_VALUE],
     ["DATABASE_URL", "postgres://u:FAKE-url@db.example/app"],
+    ["MAX_TOKENS", "4096"],
+    ["TOKEN_FILE", "/run/token"],
+    ["API_KEY_PATH", "/etc/key"],
+    ["USE_TOKEN", "true"],
+    ["TOKENIZER", "bert"],
+    ["KEY_ID", "k-1"],
+    ["API_TOKEN", ""],
   ])("puts a placeholder in the stdio env %s", (variable, value) => {
     const result = mcpOnly({ s: { command: "srv", env: { [variable]: value } } });
 
@@ -636,17 +663,10 @@ describe("deriveSandboxPi fix round", () => {
   it.each([
     ["PASS_THROUGH", "1"],
     ["AUTH_MODE", "oauth"],
-    ["MAX_TOKENS", "4096"],
-    ["TOKEN_FILE", "/run/token"],
     ["SESSION_DIR", "/tmp/s"],
-    ["API_KEY_PATH", "/etc/key"],
-    ["USE_TOKEN", "true"],
-    ["TOKENIZER", "bert"],
-    ["KEY_ID", "k-1"],
     ["PWD", "/work"],
     ["PATH", "/usr/bin"],
     ["AUTHOR", "me"],
-    ["API_TOKEN", ""],
   ])("keeps the stdio env %s", (variable, value) => {
     const result = mcpOnly({ s: { command: "srv", env: { [variable]: value } } });
 
@@ -738,6 +758,34 @@ describe("deriveSandboxPi fix wave", () => {
     expect(JSON.stringify(result.files)).not.toMatch(/x-real/);
   });
 
+  it("masks a credential's env by the same rule as an MCP server's env", () => {
+    const env = {
+      SESSION_COOKIE: "c-1",
+      GITHUB_PAT: "p-1",
+      LOOKUP: braced("HOST_VAR"),
+      FETCH: "!pass show key",
+      API_KEY_FILE: "/etc/key",
+      USE_TOKEN: "true",
+      REGION: "eu-1",
+      VERBOSE: "true",
+    };
+    const auth = { keyed: { type: "api_key", key: SECRETS.apiKey, env } };
+    const mcp = { mcpServers: { s: { command: "srv", env } } };
+    const result = deriveSandboxPi(input({ files: { agentDir: AGENT_DIR, auth, mcp } }));
+    const authEnv = (result.files["auth.json"].keyed as { env: Record<string, unknown> }).env;
+    const mcpEnv = (result.files["mcp.json"].mcpServers as Record<string, { env: Record<string, unknown> }>).s
+      ?.env;
+    const masked = ["SESSION_COOKIE", "GITHUB_PAT", "LOOKUP", "FETCH", "API_KEY_FILE", "USE_TOKEN"];
+    const expected = (prefix: string) => ({
+      ...Object.fromEntries(masked.map((name) => [name, P(`${prefix}:env:${name}`)])),
+      REGION: "eu-1",
+      VERBOSE: "true",
+    });
+
+    expect(authEnv).toEqual(expected("auth:keyed"));
+    expect(mcpEnv).toEqual(expected("mcp:s"));
+  });
+
   it("gives a disabled HTTP MCP server no rule and no sign-in, and a provider-auth server the provider's credential", () => {
     const mcp = {
       mcpServers: {
@@ -789,6 +837,7 @@ describe("deriveSandboxPi fix wave", () => {
       { label: "npmrc", endpoint: { host: "npm.corp.example" } },
       { label: "maven", endpoint: { host: "nexus.corp.example", port: 8443 } },
       { label: "pip", endpoint: { host: "pypi.org" } },
+      { label: "pip", endpoint: { host: "pypi.org." } },
       { label: "npmrc", endpoint: { host: "api.keyed.example" } },
     ];
     const tools = {

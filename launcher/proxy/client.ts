@@ -1,6 +1,7 @@
 import { request as httpRequest } from "node:http";
 import { type JsonObject, parseJsonObject } from "../shared/index.ts";
 import { proxyAuthorization } from "./auth.ts";
+import { LISTEN_HOST } from "./files.ts";
 
 export interface DenialRecord {
   time: number;
@@ -23,8 +24,6 @@ interface ProxyAsk {
 }
 
 type ProxyAnswer = { ok: true; status: number; body: JsonObject | undefined } | { ok: false; error: string };
-
-const LISTEN_HOST = "127.0.0.1";
 
 const HEALTH_TIMEOUT_MS = 500;
 

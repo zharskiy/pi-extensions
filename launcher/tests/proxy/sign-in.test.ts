@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createSignIn } from "../../proxy/sign-in.ts";
 import { mcpAuthKey, readMcpLogins, stateLayout, withFileLock } from "../../shared/index.ts";
+import { isRunning } from "./harness.ts";
 
 const IGNORES_TERM = "process.on('SIGTERM', () => undefined); setInterval(() => undefined, 1000);";
 
@@ -21,16 +22,6 @@ afterEach(async () => {
 
   await rm(state.dir, { recursive: true, force: true });
 });
-
-const isRunning = (pid: number | undefined) => {
-  try {
-    process.kill(pid ?? 0, 0);
-
-    return true;
-  } catch {
-    return false;
-  }
-};
 
 const stubborn = (_file: string, _args: string[], options: SpawnOptions) => {
   const child = spawn(process.execPath, ["-e", IGNORES_TERM], { ...options, stdio: "ignore" });

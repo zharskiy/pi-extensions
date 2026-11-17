@@ -1,5 +1,6 @@
 import { type CredentialRule, parentProxyOf, type SecretRef } from "../../config/index.ts";
 import { LauncherError, urlPartOf } from "../../shared/index.ts";
+import { HEADER_BREAK } from "../rules.ts";
 import type { CachedSecret } from "./cache.ts";
 import { unavailable } from "./errors.ts";
 
@@ -8,8 +9,6 @@ interface EnvSecretEntry {
   ref: SecretRef;
 }
 
-const LINE_BREAK = /[\r\n]/;
-
 export const envSecret = (key: string, envSecrets: ReadonlyMap<string, string>): CachedSecret => {
   const value = envSecrets.get(key);
 
@@ -17,7 +16,7 @@ export const envSecret = (key: string, envSecrets: ReadonlyMap<string, string>):
     throw unavailable(`env secret for ${key} was not handed to the proxy by the launcher`);
   }
 
-  if (LINE_BREAK.test(value)) {
+  if (HEADER_BREAK.test(value)) {
     throw unavailable(`env secret for ${key} holds a line break; remove it from the variable`);
   }
 
@@ -39,7 +38,7 @@ export const parentProxyAuth = (env: NodeJS.ProcessEnv) => {
 const assertSingleLine = (entries: EnvSecretEntry[], env: NodeJS.ProcessEnv) => {
   const broken = entries
     .map(envNameOf)
-    .find((name) => name !== undefined && LINE_BREAK.test(env[name] ?? ""));
+    .find((name) => name !== undefined && HEADER_BREAK.test(env[name] ?? ""));
 
   if (broken !== undefined) {
     throw new LauncherError(`${broken} contains a line break and cannot be used as a credential`);

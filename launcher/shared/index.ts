@@ -1,4 +1,4 @@
-export { ensureRandomHexFile, writeFileAtomic, writeNewFile } from "./atomic-write.ts";
+export { ensureRandomHexFile, readRandomHexFile, writeFileAtomic, writeNewFile } from "./atomic-write.ts";
 export type { CommandRunner, RunOptions, RunResult } from "./command-runner.ts";
 export { createProcessRunner, withResolvedCommand } from "./command-runner.ts";
 export { errorMessage, LauncherError } from "./errors.ts";
@@ -66,9 +66,18 @@ export {
   writeCreatedDirs,
   writeRepoRecord,
 } from "./repo-state.ts";
-export { hasUrlUserinfo, isAuthLikeHeader, isSecretName, isSecretShapedValue } from "./secret-name.ts";
+export {
+  hasSecretSegment,
+  hasUrlUserinfo,
+  isAuthLikeHeader,
+  isInertValue,
+  isSecretEnvEntry,
+  isSecretEnvName,
+  isSecretName,
+  isSecretShapedValue,
+} from "./secret-name.ts";
 export { settleAll } from "./settle.ts";
-export { ensureSalt, GUEST_PATHS, stateLayout } from "./state-layout.ts";
+export { ensureSalt, GUEST_PATHS, isTrustBundleName, stateLayout } from "./state-layout.ts";
 export { isControlChar, lastLine, printable } from "./terminal-text.ts";
 export type { ToolConfigFormat, ToolConfigSelect } from "./tool-config.ts";
 export { isToolConfigKey, TOOL_CONFIG_FORMATS, toolConfigValue, urlPartOf } from "./tool-config.ts";

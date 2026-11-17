@@ -21,7 +21,7 @@ export interface AccessLog {
 
 const PRIVATE_MODE = 0o600;
 
-const sizeOf = (path: string) => {
+export const sizeOf = (path: string) => {
   try {
     return statSync(path).size;
   } catch {

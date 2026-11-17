@@ -15,6 +15,7 @@ import {
   stateLayout,
   withFileLock,
 } from "../shared/index.ts";
+import { boundedCache } from "./bounded-cache.ts";
 
 export interface LeafCertificate {
   key: string;
@@ -41,9 +42,11 @@ const LEAF_VALIDITY_MS = 397 * DAY_MS;
 
 const BACKDATE_MS = 60 * 60 * 1000;
 
+export const CERTIFICATE_BACKDATE = "an hour";
+
 const GENERALIZED_TIME_YEAR = 2050;
 
-const RENEW_MARGIN_MS = 24 * 60 * 60 * 1000;
+const RENEW_MARGIN_MS = DAY_MS;
 
 const PRIVATE_MODE = 0o600;
 
@@ -277,7 +280,7 @@ export const openLauncherCa = async ({ stateDir, runner }: CaOptions): Promise<L
   await mkdir(directory, { recursive: true, mode: 0o700 });
 
   const { certPem } = await ensureCa(directory, layout.caLock, runner);
-  const leaves = new Map<string, Promise<{ leaf: LeafCertificate; renewAt: number }>>();
+  const leaves = boundedCache<string, { leaf: LeafCertificate; renewAt: number }>(MAX_LEAVES);
 
   const checkHost = (host: string) => {
     if (!isHostName(host)) {
@@ -285,28 +288,14 @@ export const openLauncherCa = async ({ stateDir, runner }: CaOptions): Promise<L
     }
   };
 
-  const mint = (host: string) => {
-    const minted = signLeaf(directory, host, runner).then((leaf) => ({
-      leaf,
-      renewAt: Date.parse(new X509Certificate(leaf.cert).validTo) - RENEW_MARGIN_MS,
-    }));
-
-    leaves.set(host, minted);
-
-    minted.catch(() => {
-      if (leaves.get(host) === minted) {
-        leaves.delete(host);
-      }
-    });
-
-    const [oldest] = leaves.keys();
-
-    if (leaves.size > MAX_LEAVES && oldest !== undefined) {
-      leaves.delete(oldest);
-    }
-
-    return minted;
-  };
+  const mint = (host: string) =>
+    leaves.set(
+      host,
+      signLeaf(directory, host, runner).then((leaf) => ({
+        leaf,
+        renewAt: Date.parse(new X509Certificate(leaf.cert).validTo) - RENEW_MARGIN_MS,
+      })),
+    );
 
   const leaf = async (host: string): Promise<LeafCertificate> => {
     checkHost(host);
@@ -316,10 +305,6 @@ export const openLauncherCa = async ({ stateDir, runner }: CaOptions): Promise<L
     if (cached === undefined) {
       return (await mint(host)).leaf;
     }
-
-    leaves.delete(host);
-
-    leaves.set(host, cached);
 
     const current = await cached;
 

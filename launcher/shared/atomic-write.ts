@@ -112,6 +112,8 @@ const createHexFile = async (path: string, pattern: RegExp, bytes: number) => {
   return value;
 };
 
+export const readRandomHexFile = (path: string, bytes: number) => readHexFile(path, HEX_PATTERN(bytes));
+
 export const ensureRandomHexFile = async (path: string, bytes: number): Promise<string> => {
   const pattern = HEX_PATTERN(bytes);
 

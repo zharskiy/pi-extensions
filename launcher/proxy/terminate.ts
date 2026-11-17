@@ -11,9 +11,10 @@ import { type TLSSocket, connect as tlsConnect } from "node:tls";
 import { authorityOf, type CredentialRule } from "../config/index.ts";
 import type { Denials } from "./denials.ts";
 import { type Dial, type DialAccess, RestrictedAddressError } from "./dial.ts";
-import { PROXY_AGENT, rawHead, rawReply, rawResponse, statusLine } from "./replies.ts";
+import { rawHead, rawReply, rawResponse, sendJson, sendReply, statusLine, withAgent } from "./replies.ts";
 import { parseRequestTarget } from "./request-target.ts";
 import {
+  HEADER_BREAK,
   type HeaderPair,
   matchRules,
   rewriteRequestHeaders,
@@ -47,12 +48,6 @@ interface Applied {
   reply?: SecretReply;
 }
 
-interface LocalReply {
-  status: number;
-  headers: HeaderPair[];
-  body: Buffer;
-}
-
 const HOP_BY_HOP = new Set([
   "connection",
   "keep-alive",
@@ -69,8 +64,6 @@ const HOP_BY_HOP = new Set([
 const UPGRADE_HEADERS = new Set(["connection", "upgrade"]);
 
 const UNAUTHORIZED = 401;
-
-const HEADER_BREAK = /[\r\n\0]/;
 
 const IDLE_MS = 4_000;
 
@@ -115,34 +108,13 @@ const headerObject = (pairs: HeaderPair[], host: string) =>
 const statusBlock = (upstream: IncomingMessage, pairs: HeaderPair[]) =>
   rawHead(statusLine(upstream.statusCode ?? 502, upstream.statusMessage), pairs);
 
-const sendLocal = (response: ServerResponse, reply: LocalReply, extra: HeaderPair[] = []) => {
-  response.writeHead(
-    reply.status,
-    [...reply.headers, ...extra, ["content-length", String(reply.body.length)]].flat(),
-  );
-
-  response.end(reply.body);
-};
-
-const localOf = (reply: SecretReply): LocalReply => ({
-  status: reply.status,
-  headers: [...Object.entries(reply.headers), ["proxy-agent", PROXY_AGENT]],
-  body: Buffer.from(reply.body),
-});
-
-const errorReply = (status: number, error: string): LocalReply => ({
-  status,
-  headers: [
-    ["content-type", "application/json"],
-    ["proxy-agent", PROXY_AGENT],
-  ],
-  body: Buffer.from(JSON.stringify({ error })),
-});
+const sendLocal = (response: ServerResponse, reply: SecretReply) =>
+  sendReply(response, reply.status, Object.entries(reply.headers), reply.body);
 
 const sendAndClose = (response: ServerResponse, status: number, error: string) => {
   response.once("finish", () => response.socket?.destroySoon());
 
-  sendLocal(response, errorReply(status, error), [["connection", "close"]]);
+  sendJson(response, status, { error }, [["connection", "close"]]);
 };
 
 const rawError = (client: Duplex, status: number, error: string) => {
@@ -150,13 +122,7 @@ const rawError = (client: Duplex, status: number, error: string) => {
 };
 
 const rawLocal = (client: Duplex, reply: SecretReply) => {
-  client.end(
-    rawResponse(
-      statusLine(reply.status),
-      [...Object.entries(reply.headers), ["proxy-agent", PROXY_AGENT]],
-      reply.body,
-    ),
-  );
+  client.end(rawResponse(statusLine(reply.status), withAgent(Object.entries(reply.headers)), reply.body));
 };
 
 const poolKey = (target: TerminatedTarget) => `${target.host}|${target.port}|${target.access}`;
@@ -183,11 +149,7 @@ const failure = (response: ServerResponse, error: unknown) => {
     return;
   }
 
-  const body = JSON.stringify({ error: upstreamFailure(error) });
-
-  response.writeHead(502, { "content-type": "application/json", "proxy-agent": PROXY_AGENT });
-
-  response.end(body);
+  sendJson(response, 502, { error: upstreamFailure(error) });
 };
 
 const credentialDenial = (rule: CredentialRule, result: SecretResult) => {
@@ -421,7 +383,7 @@ export const createTerminator = (options: TerminatorOptions) => {
           if (reply !== undefined) {
             upstream.resume();
 
-            sendLocal(response, localOf(reply));
+            sendLocal(response, reply);
 
             return;
           }
@@ -492,7 +454,7 @@ export const createTerminator = (options: TerminatorOptions) => {
     if (opened.reply !== undefined) {
       incoming.resume();
 
-      sendLocal(response, localOf(opened.reply));
+      sendLocal(response, opened.reply);
 
       return;
     }

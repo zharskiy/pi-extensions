@@ -8,7 +8,16 @@ import type { LauncherCa } from "../../proxy/tls-ca.ts";
 import { mcpAuthKey } from "../../shared/index.ts";
 import { createFakeClock } from "../support/fake-clock.ts";
 import { createFakeRunner } from "../support/fake-runner.ts";
-import { closeServer, createStateDir, listen, openCa, portOf, removeDir, startTestProxy } from "./harness.ts";
+import {
+  closeServer,
+  createStateDir,
+  isRunning,
+  listen,
+  openCa,
+  portOf,
+  removeDir,
+  startTestProxy,
+} from "./harness.ts";
 import { readBody, requestThrough } from "./proxy-client.ts";
 
 const URL_TEXT = "https://mcp.test/mcp";
@@ -21,16 +30,6 @@ const PLACEHOLDER = "pi-sandbox-0123456789abcdef01234567";
 
 const NOT_SIGNED_IN =
   "pi-sandbox: MCP server docs is not signed in on the host; run pi mcp login docs on the host, then retry.";
-
-const isRunning = (pid: number) => {
-  try {
-    process.kill(pid, "SIGCONT");
-
-    return true;
-  } catch {
-    return false;
-  }
-};
 
 const FAKE_PI = `
 import { spawn } from "node:child_process";

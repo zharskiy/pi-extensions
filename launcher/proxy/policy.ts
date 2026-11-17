@@ -2,13 +2,14 @@ import { BlockList, isIP } from "node:net";
 import {
   authorityOf,
   isHostName,
+  isIpLiteral,
   isLoopbackName,
   isNumericName,
+  matchesAllowEntry,
   matchesDenyEntry,
-  matchesPattern,
   normalizeHost,
   parseEntry,
-  TLS_PORT,
+  unbracketed,
 } from "../config/index.ts";
 
 export interface EgressPolicy {
@@ -128,7 +129,7 @@ const blockLists = ADDRESS_RANGES.map((range) => {
 const deny = (rule: string, reason: string): Denial => ({ allowed: false, rule, reason });
 
 export const restrictedAddress = (address: string): Denial | undefined => {
-  const plain = address.replace(/^\[|\]$/g, "");
+  const plain = unbracketed(address);
   const family = isIP(plain) === 4 ? "ipv4" : "ipv6";
   const match = blockLists.find(({ list }) => list.check(plain, family));
 
@@ -144,16 +145,15 @@ const notAllowed = (host: string, port: number) => {
   );
 };
 
+type ParsedEntry = ReturnType<typeof parseEntry>;
+
 interface AllowEntry {
-  pattern: string;
-  port: number;
+  entry: ParsedEntry;
   rule: AllowRule;
 }
 
-type ParsedEntry = ReturnType<typeof parseEntry>;
-
 const allowEntries = (entries: string[], rule: AllowRule): AllowEntry[] =>
-  entries.map(parseEntry).map((entry) => ({ pattern: entry.pattern, port: entry.port ?? TLS_PORT, rule }));
+  entries.map((entry) => ({ entry: parseEntry(entry), rule }));
 
 const isDenied = (host: string, port: number, deny: ParsedEntry[]) =>
   deny.some((entry) => matchesDenyEntry(host, entry.pattern) && (entry.port ?? port) === port);
@@ -166,8 +166,6 @@ const literalDecision = (host: string): Denial => {
   );
 };
 
-const isLiteral = (host: string) => isIP(host.replace(/^\[|\]$/g, "")) !== 0;
-
 interface CompiledPolicy {
   allow: AllowEntry[];
   deny: ParsedEntry[];
@@ -179,7 +177,7 @@ const hostDecision = (
   policy: CompiledPolicy,
   extra: AllowEntry[],
 ): ConnectDecision => {
-  if (isLiteral(host)) {
+  if (isIpLiteral(host)) {
     return literalDecision(host);
   }
 
@@ -199,9 +197,7 @@ const hostDecision = (
     return deny("egress.deny", `${host} is in egress.deny`);
   }
 
-  const allowing = [...policy.allow, ...extra].find(
-    (entry) => entry.port === port && matchesPattern(host, entry.pattern),
-  );
+  const allowing = [...policy.allow, ...extra].find(({ entry }) => matchesAllowEntry(entry, host, port));
 
   return allowing === undefined ? notAllowed(host, port) : { allowed: true, rule: allowing.rule };
 };

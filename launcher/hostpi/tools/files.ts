@@ -1,14 +1,24 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { hasUrlUserinfo, type ToolConfigFormat } from "../../shared/index.ts";
-import { type Endpoint, endpointOf, withoutUserinfo } from "../endpoints.ts";
+import {
+  hasUrlUserinfo,
+  isSecretEnvName,
+  placeholderFor,
+  type ToolConfigFormat,
+} from "../../shared/index.ts";
+import { endpointOf, httpsEndpoint, withoutUserinfo } from "../endpoints.ts";
 import { isInsideRoots } from "../path-search.ts";
-import { noticeOnly, placeholderOf, rulesFor, type Section } from "../rules.ts";
-import type { ToolsInput } from "../types.ts";
+import { noticeOnly, rulesFor, type Section } from "../rules.ts";
+import type { Registry, ToolsInput } from "../types.ts";
 
 export const PROBE_TIMEOUT_MS = 10_000;
 
 export const TOKEN_PROBE_TIMEOUT_MS = 30_000;
+
+export const PROXY_KEY_REASON =
+  "stays on the host; the sandbox reaches the network through the launcher proxy";
+
+export const URL_CREDENTIAL_REASON = "carries credentials in a URL and stays on the host";
 
 export const readOptional = (path: string) => readFile(path, "utf8").catch(() => undefined);
 
@@ -37,17 +47,16 @@ export const timedOutNotice = (label: string, command: string, timeoutMs = PROBE
 export const noCredentialsNotice = (label: string, command: string, timeoutMs: number) =>
   `${label}: ${command} did not answer within ${timeoutMs / 1000} s on the host (a Keychain prompt may be waiting); it has no credentials in the sandbox this launch, run pi again once it answers`;
 
-export interface Registry {
-  label: string;
-  endpoint: Endpoint;
-}
+export const expandPublicVariables = (text: string, references: RegExp, env: ToolsInput["env"]) => {
+  const names = [...text.matchAll(references)].map((reference) => reference[1] ?? "");
+
+  return names.some((name) => isSecretEnvName(name) || env[name] === undefined)
+    ? undefined
+    : text.replace(references, (_, name: string) => env[name] ?? "");
+};
 
 export const registriesOf = (label: string, urls: string[]): Registry[] =>
-  urls.flatMap((url) => {
-    const result = endpointOf(withoutUserinfo(url));
-
-    return "endpoint" in result ? [{ label, endpoint: result.endpoint }] : [];
-  });
+  urls.flatMap((url) => httpsEndpoint(withoutUserinfo(url)).map((endpoint) => ({ label, endpoint })));
 
 export type UrlSecret = { file: string; format: ToolConfigFormat; key: string };
 
@@ -74,7 +83,7 @@ export const urlCredentialSection = (input: ToolsInput, credential: UrlCredentia
     );
   }
 
-  const placeholder = placeholderOf(input, credential.identity);
+  const placeholder = placeholderFor(input.salt, credential.identity);
   const parsed = new URL(credential.url);
   const part = parsed.password === "" ? { urlUsername: true as const } : { urlPassword: true as const };
 

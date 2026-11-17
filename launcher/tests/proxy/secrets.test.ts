@@ -351,6 +351,14 @@ describe("env and file secrets", () => {
       "CORP contains a line break and cannot be used as a credential",
     );
   });
+
+  it("refuses an env credential that holds a NUL, as injection would", () => {
+    const corp = { id: "corp", host: "corp.test", placeholder: "corp", secret: { env: "CORP" } };
+
+    expect(() => envSecretsFor([corp], { CORP: "abc\0def" })).toThrow(
+      "CORP contains a line break and cannot be used as a credential",
+    );
+  });
 });
 
 describe("line breaks in secrets", () => {

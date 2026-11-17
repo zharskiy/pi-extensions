@@ -1,5 +1,7 @@
 import { connect, type Socket } from "node:net";
 import { normalizeHost, parentProxyOf } from "../config/index.ts";
+import { basicAuthorization } from "./auth.ts";
+import { CONNECT_TIMEOUT_MS, connected } from "./connect.ts";
 
 export interface ParentRoute {
   host: string;
@@ -12,11 +14,6 @@ export interface ParentRoute {
 const HEAD_END = "\r\n\r\n";
 
 const MAX_HEAD_BYTES = 16_384;
-
-const DIAL_TIMEOUT_MS = 10_000;
-
-export const basicAuthorization = (credentials: string) =>
-  `Basic ${Buffer.from(credentials).toString("base64")}`;
 
 const matchesNoProxy = (host: string, entry: string) => {
   const pattern = normalizeHost(entry);
@@ -111,36 +108,13 @@ const readHead = (socket: Socket, timeoutMs: number) =>
     socket.once("close", onClose);
   });
 
-const connectTo = (host: string, port: number, timeoutMs: number) =>
-  new Promise<Socket>((resolve, reject) => {
-    const socket = connect({ host, port });
-
-    const timer = setTimeout(() => {
-      socket.destroy();
-
-      reject(new Error("the parent proxy did not accept the connection in time"));
-    }, timeoutMs);
-
-    const onError = (error: Error) => {
-      clearTimeout(timer);
-
-      reject(error);
-    };
-
-    socket.once("connect", () => {
-      clearTimeout(timer);
-
-      socket.off("error", onError);
-
-      resolve(socket);
-    });
-
-    socket.once("error", onError);
-  });
-
 export const dialViaParent = async (parent: ParentRoute, host: string, port: number) => {
-  const timeoutMs = parent.timeoutMs ?? DIAL_TIMEOUT_MS;
-  const socket = await connectTo(parent.host, parent.port, timeoutMs);
+  const timeoutMs = parent.timeoutMs ?? CONNECT_TIMEOUT_MS;
+  const socket = await connected(
+    connect({ host: parent.host, port: parent.port }),
+    timeoutMs,
+    "the parent proxy did not accept the connection in time",
+  );
   const authority = `${host}:${port}`;
   const authLine =
     parent.authorization === undefined ? "" : `Proxy-Authorization: ${parent.authorization}\r\n`;

@@ -2,19 +2,19 @@ import { join } from "node:path";
 import type { SecretRef } from "../../config/index.ts";
 import {
   hasUrlUserinfo,
-  isSecretName,
   type MavenHeader,
   type MavenRepository,
   type MavenServer,
   type MavenSettings,
   parseMavenSettings,
+  placeholderFor,
   type XmlElement,
 } from "../../shared/index.ts";
-import { type Endpoint, endpointOf, uniqueEndpoints, withoutUserinfo } from "../endpoints.ts";
-import { mergeSections, noticeOnly, placeholderOf, rulesFor, type Section } from "../rules.ts";
-import type { DerivedTools, ToolsInput } from "../types.ts";
+import { type Endpoint, httpsEndpoint, uniqueEndpoints, withoutUserinfo } from "../endpoints.ts";
+import { mergeSections, noticeOnly, rulesFor, type Section } from "../rules.ts";
+import type { DerivedTools, Registry, ToolsInput } from "../types.ts";
 import { EMPTY_MAVEN } from "../types.ts";
-import { type Registry, readOptional, registriesOf } from "./files.ts";
+import { expandPublicVariables, readOptional, registriesOf } from "./files.ts";
 
 type MavenRender = DerivedTools["maven"];
 
@@ -30,11 +30,7 @@ const endpointsFor = (settings: MavenSettings, id: string): Endpoint[] =>
   uniqueEndpoints(
     [...settings.mirrors, ...settings.repositories]
       .filter((repository) => repository.id === id)
-      .flatMap((repository) => {
-        const result = endpointOf(repository.url);
-
-        return "endpoint" in result ? [result.endpoint] : [];
-      }),
+      .flatMap((repository) => httpsEndpoint(repository.url)),
   );
 
 interface ServerContext {
@@ -51,7 +47,7 @@ const secretOf = (value: string, file: string, key: string): SecretRef => {
 
 const passwordSection = (context: ServerContext, server: MavenServer, password: string): Section<string> => {
   const identity = `maven:${server.id}:password`;
-  const placeholder = placeholderOf(context.input, identity);
+  const placeholder = placeholderFor(context.input.salt, identity);
 
   return {
     value: placeholder,
@@ -83,7 +79,7 @@ const headerSection = (
   }
 
   const identity = `maven:${server.id}:header:${header.name}`;
-  const placeholder = placeholderOf(context.input, identity);
+  const placeholder = placeholderFor(context.input.salt, identity);
   const secret = secretOf(header.value, context.file, `${server.id}/httpHeaders/${header.name}`);
 
   return {
@@ -103,7 +99,7 @@ const credentialSection = (
     (server.headers ?? []).map((header) => headerSection(context, server, header)),
   );
   const sections = [...(secured === undefined ? [] : [secured]), headers];
-  const kept = headers.values.flat();
+  const kept = headers.value.flat();
   const { headers: _headers, ...rest } = server;
 
   return {
@@ -119,20 +115,12 @@ const credentialSection = (
   };
 };
 
-const expandedUsername = (input: ToolsInput, username: string) => {
-  const names = [...username.matchAll(ENV_REFERENCES)].map((reference) => reference[1] ?? "");
-
-  return names.some((name) => isSecretName(name) || input.env[name] === undefined)
-    ? undefined
-    : username.replace(ENV_REFERENCES, (_, name: string) => input.env[name] ?? "");
-};
-
 const usernameOf = (input: ToolsInput, server: MavenServer): { server: MavenServer; notices: string[] } => {
   if (server.username === undefined || !server.username.includes("${env.")) {
     return { server, notices: [] };
   }
 
-  const username = expandedUsername(input, server.username);
+  const username = expandPublicVariables(server.username, ENV_REFERENCES, input.env);
 
   return username === undefined
     ? {
@@ -209,7 +197,7 @@ const sanitized = (element: XmlElement): Section<XmlElement> => {
       : element.children;
   const children = mergeSections(kept.map(sanitized));
 
-  return { value: { ...element, children: children.values }, rules: [], notices: children.notices };
+  return noticeOnly({ ...element, children: children.value }, ...children.notices);
 };
 
 const localRepositoryNotices = (settings: MavenSettings) =>
@@ -250,7 +238,7 @@ export const deriveMaven = async (
   const passthrough = mergeSections(settings.passthrough.map(sanitized));
 
   return {
-    value: { servers: merged.values.flat(), mirrors: mirrors.values, passthrough: passthrough.values },
+    value: { servers: merged.value.flat(), mirrors: mirrors.value, passthrough: passthrough.value },
     rules: merged.rules,
     notices: [
       ...merged.notices,
