@@ -71,13 +71,14 @@ const vmHostProblems = (machine: CliDeps["machine"], target: VmTarget) => {
   ];
 };
 
-export const assertVmFitsHost = (deps: CliDeps, target: VmTarget) => {
+export const assertVmFitsHost = (deps: CliDeps, target: VmTarget, inInit = false) => {
   const problems = vmHostProblems(deps.machine, target);
+  const lower = `lower it in ${pathsOf(deps).userConfigFile}`;
 
   if (problems.length > 0) {
     throw new LauncherError(
       problems.join("; "),
-      `lower it in ${pathsOf(deps).userConfigFile}, or run pi sandbox init to choose a size`,
+      inInit ? lower : `${lower}, or run pi sandbox init to choose a size`,
     );
   }
 };

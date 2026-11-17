@@ -396,7 +396,7 @@ describe("pi sandbox init --yes", () => {
 
     expect(await run(["sandbox", "init", "--yes"], deps)).toBe(1);
     expect(harness.stderr()).toBe(
-      `pi-sandbox: config: vm.cpus 12 is more than the 8 CPUs of this Mac\n  hint: lower it in ${harness.userConfigFile}, or run pi sandbox init to choose a size\n`,
+      `pi-sandbox: config: vm.cpus 12 is more than the 8 CPUs of this Mac\n  hint: lower it in ${harness.userConfigFile}\n`,
     );
     expect(await readFile(harness.userConfigFile, "utf8")).toBe(text);
     expect(harness.applied).toEqual([]);

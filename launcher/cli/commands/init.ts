@@ -86,7 +86,7 @@ const effectsFor = (deps: CliDeps, context: SetupContext): ApplyEffects => ({
       return "unchanged";
     }
 
-    assertVmFitsHost(deps, action.size);
+    assertVmFitsHost(deps, action.size, true);
 
     await prepareVmDirs(deps);
 
@@ -141,7 +141,7 @@ const acceptAll = async (deps: CliDeps) => {
   }
 
   if (plan.vm.kind === "create" || plan.vm.kind === "restart") {
-    assertVmFitsHost(deps, plan.vm.size);
+    assertVmFitsHost(deps, plan.vm.size, true);
   }
 
   const streams = { out: deps.stdout, err: deps.stderr, timers: { ...realTimers, now: deps.now } };
