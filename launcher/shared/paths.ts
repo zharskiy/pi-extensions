@@ -36,6 +36,11 @@ export const expandHome = (path: string, home = homedir()) => {
   return path.startsWith("~/") ? join(home, path.slice(2)) : path;
 };
 
+export const isFileUrl = (text: string) => FILE_URL.test(text);
+
+export const pathFromSetting = (text: string, home = homedir()) =>
+  isFileUrl(text) ? fileURLToPath(text) : expandHome(text, home);
+
 export const hostAgentDir = (home: string, env: NodeJS.ProcessEnv) => {
   const configured = env[PI_AGENT_DIR_VARIABLE];
 
@@ -43,9 +48,7 @@ export const hostAgentDir = (home: string, env: NodeJS.ProcessEnv) => {
     return join(home, ".pi", "agent");
   }
 
-  const expanded = expandHome(configured, home);
-
-  return FILE_URL.test(expanded) ? fileURLToPath(expanded) : expanded;
+  return pathFromSetting(configured, home);
 };
 
 const launcherDir = (home: string, env: NodeJS.ProcessEnv) => join(hostAgentDir(home, env), APP);

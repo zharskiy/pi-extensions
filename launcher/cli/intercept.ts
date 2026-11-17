@@ -1,8 +1,7 @@
 import { realpath } from "node:fs/promises";
 import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { loadEffectiveConfig } from "../config/index.ts";
-import { expandHome, isWithin, knownRepos, repoRecordOf } from "../shared/index.ts";
+import { isWithin, knownRepos, pathFromSetting, repoRecordOf } from "../shared/index.ts";
 import { assertSafeMounts, findGitRoot } from "../workspace/index.ts";
 import { type CliDeps, pathsOf, writeLine, writeNotices } from "./deps.ts";
 import { hostPiEnv, requireJobPi, resolveJobPi, runHostJob } from "./host-pi.ts";
@@ -35,8 +34,6 @@ const GIT_REF = /^[A-Za-z0-9._/-]+$/;
 const SCP_SOURCE = /^git@([^:]+):(.+)$/;
 
 const SHORT_SOURCE = /^([^/]+)\/(.+)$/;
-
-const FILE_URL = /^file:\/\//;
 
 const isRepoPath = (path: string) => {
   const parts = path.replace(/\.git$/, "").split("/");
@@ -114,9 +111,9 @@ const classifySource = (source: string): PackageSource => {
   return isGitSource(source) ? { kind: "remote" } : { kind: "local", text: source.trim() };
 };
 
-const localPathOf = (text: string) => {
+const localPathOf = (text: string, home: string) => {
   try {
-    return FILE_URL.test(text) ? fileURLToPath(text) : text;
+    return pathFromSetting(text, home);
   } catch {
     return text;
   }
@@ -151,7 +148,7 @@ const isSandboxable = async (deps: CliDeps, candidates: string[]) => {
 };
 
 const resolvedLocal = async (deps: CliDeps, text: string) => {
-  const path = resolve(deps.cwd, expandHome(localPathOf(text), deps.home));
+  const path = resolve(deps.cwd, localPathOf(text, deps.home));
 
   return { path, inRepository: await isSandboxable(deps, [path, await realOf(path)]) };
 };

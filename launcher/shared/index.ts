@@ -38,6 +38,7 @@ export { parseNpmrc } from "./npmrc.ts";
 export {
   expandHome,
   hostAgentDir,
+  isFileUrl,
   isWithin,
   launcherEntry,
   launcherPaths,
@@ -45,6 +46,7 @@ export {
   outermostPaths,
   PI_AGENT_DIR_VARIABLE,
   PRIVATE_HOME_DIRS,
+  pathFromSetting,
   realOrResolved,
   realOrResolvedSync,
 } from "./paths.ts";

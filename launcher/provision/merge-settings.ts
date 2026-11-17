@@ -1,7 +1,6 @@
 import { isAbsolute, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import type { JsonObject } from "../hostpi/index.ts";
-import { expandHome, HOST_ONLY_SETTINGS, isWithin } from "../shared/index.ts";
+import { HOST_ONLY_SETTINGS, isFileUrl, isWithin, pathFromSetting } from "../shared/index.ts";
 import { sourceOfEntry, withoutSourceCredential, withSource } from "./package-source.ts";
 
 export interface HostSettingsContext {
@@ -12,18 +11,16 @@ export interface HostSettingsContext {
 
 const RESOURCE_ARRAYS = ["extensions", "skills", "prompts", "themes"];
 
-const FILE_URL = /^file:\/\//;
-
 const without = (settings: JsonObject, keys: readonly string[]) =>
   Object.fromEntries(Object.entries(settings).filter(([key]) => !keys.includes(key)));
 
 export const sandboxSettings = (host: JsonObject): JsonObject => without(host, HOST_ONLY_SETTINGS);
 
 const isLocalSource = (source: string) =>
-  source.startsWith("/") || source.startsWith("~") || source.startsWith(".") || FILE_URL.test(source);
+  source.startsWith("/") || source.startsWith("~") || source.startsWith(".") || isFileUrl(source);
 
 const localPathOf = (source: string, context: HostSettingsContext) => {
-  const expanded = FILE_URL.test(source) ? fileURLToPath(source) : expandHome(source, context.home);
+  const expanded = pathFromSetting(source, context.home);
 
   return isAbsolute(expanded) ? expanded : resolve(context.hostAgentDir, expanded);
 };
@@ -77,7 +74,7 @@ const hostPackage = (original: unknown, context: HostSettingsContext) => {
 const outsideResource = (key: string, entry: unknown, context: HostSettingsContext) => {
   const path = typeof entry === "string" ? entry.replace(/^[!+-]/, "") : "";
 
-  if (!(path.startsWith("/") || path.startsWith("~") || FILE_URL.test(path))) {
+  if (!(path.startsWith("/") || path.startsWith("~") || isFileUrl(path))) {
     return [];
   }
 
