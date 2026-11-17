@@ -1,7 +1,7 @@
 import { lstatSync, readdirSync, realpathSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { isWithin, LauncherError, realOrResolvedSync } from "../shared/index.ts";
-import { type Protected, protectedPaths } from "./mounts.ts";
+import { type Overlap, overlapOf, type Protected, protectedPaths } from "./mounts.ts";
 import { sessionSlug } from "./pi-session-dir.ts";
 import type { Workspace } from "./types.ts";
 
@@ -12,37 +12,36 @@ interface GuardContext {
 
 const HINT = "run pi inside a project directory";
 
-const assertOutsideProtected = (mounted: string[], table: Protected[]) => {
-  const inside = mounted
-    .map((path) => ({ path, entry: table.find((entry) => entry.under && isWithin(path, entry.path)) }))
-    .find((found) => found.entry !== undefined);
+const overlapsAs = (kinds: Overlap[], path: string) => (entry: Protected) => {
+  const kind = overlapOf(path, entry);
 
-  if (inside?.entry === undefined) {
-    return;
-  }
-
-  throw new LauncherError(
-    `${inside.path} is inside ${inside.entry.path}, refusing to mount it into the sandbox`,
-    HINT,
-  );
+  return kind !== undefined && kinds.includes(kind);
 };
+
+const firstOverlap = (mounted: string[], table: Protected[], kinds: Overlap[]) =>
+  mounted
+    .map((path) => ({ path, entry: table.find(overlapsAs(kinds, path)) }))
+    .find((found) => found.entry !== undefined);
 
 export const assertSafeMounts = (mounted: string[], context: GuardContext) => {
   const table = protectedPaths({ home: context.home, env: context.env });
-  const covering = mounted
-    .map((path) => ({ path, entry: table.find((entry) => isWithin(entry.path, path)) }))
-    .find((found) => found.entry !== undefined);
+  const covering = firstOverlap(mounted, table, ["is", "contains"]);
 
-  if (covering?.entry === undefined) {
-    assertOutsideProtected(mounted, table);
-
-    return;
+  if (covering?.entry !== undefined) {
+    throw new LauncherError(
+      `${covering.path} would mount ${covering.entry.path} into the sandbox, refusing`,
+      HINT,
+    );
   }
 
-  throw new LauncherError(
-    `${covering.path} would mount ${covering.entry.path} into the sandbox, refusing`,
-    HINT,
-  );
+  const inside = firstOverlap(mounted, table, ["inside"]);
+
+  if (inside?.entry !== undefined) {
+    throw new LauncherError(
+      `${inside.path} is inside ${inside.entry.path}, refusing to mount it into the sandbox`,
+      HINT,
+    );
+  }
 };
 
 export const assertSafeWorkspace = (workspace: Workspace, context: GuardContext) =>

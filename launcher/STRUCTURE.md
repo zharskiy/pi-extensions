@@ -108,7 +108,7 @@ workspace/walk.ts              the budgeted level-by-level directory walk
 workspace/paths.ts             path ordering by depth and code unit, the dirs between a root and a path, the real path of a missing path, a pointer resolved through links as the filesystem does
 workspace/overlay-markers.ts   which marker file gives which build output folder
 workspace/guard.ts             the refusal of protected folders and workspaces (home, pi and launcher dirs, credential, system and image dirs) and the host session dir check
-workspace/mounts.ts            the protected path table
+workspace/mounts.ts            the protected path table and the one overlap rule over it
 workspace/roots.ts             the workspaceRoots refusal (the guard's protected paths and system dirs, nested roots dropped before links) and the checked roots the VM shares
 workspace/pi-session-dir.ts    pi's session slug and the host session dir choice
 workspace/created.ts           removal of recorded created folders

@@ -1,8 +1,19 @@
 import { mkdir, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { protectedRealPathGuard } from "../../workspace/mounts.ts";
+import { type Overlap, overlapOf, protectedPaths } from "../../workspace/mounts.ts";
 import { tempDir } from "../support/temp-dir.ts";
+
+const OVERLAP_TEXT: Record<Overlap, string> = {
+  is: "it is",
+  contains: "it contains",
+  inside: "it is inside",
+};
+
+const firstOverlap = (path: string, home: string, env: NodeJS.ProcessEnv) =>
+  protectedPaths({ home, env })
+    .map((entry) => ({ entry, overlap: overlapOf(path, entry) }))
+    .find((found) => found.overlap !== undefined);
 
 const setup = async () => {
   const base = await realpath(await tempDir("mounts"));
@@ -10,12 +21,16 @@ const setup = async () => {
 
   await mkdir(join(home, "work", "repo"), { recursive: true });
 
-  const reasonOf = (path: string, env: NodeJS.ProcessEnv = {}) => protectedRealPathGuard({ home, env })(path);
+  const reasonOf = (path: string, env: NodeJS.ProcessEnv = {}) => {
+    const found = firstOverlap(path, home, env);
+
+    return found?.overlap === undefined ? undefined : `${OVERLAP_TEXT[found.overlap]} ${found.entry.reason}`;
+  };
 
   return { base, home, reasonOf };
 };
 
-describe("protectedRealPathGuard", () => {
+describe("protectedPaths and overlapOf", () => {
   it("accepts a folder under the home and a folder below an image dir", async () => {
     const { home, reasonOf } = await setup();
 

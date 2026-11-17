@@ -41,25 +41,21 @@ export const protectedPaths = (context: ProtectedContext): Protected[] => {
     ...(socket === undefined ? [] : [{ path: socket, reason: "the container engine socket", under: true }]),
   ];
 
-  return listed.flatMap((entry) => {
-    const real = realOrResolvedSync(entry.path);
-    const resolved = resolve(entry.path);
-
-    return real === resolved ? [{ ...entry, path: real }] : [entry, { ...entry, path: real }];
-  });
+  return listed.flatMap(withRealForm);
 };
 
-const conflictOf = (real: string, entry: Protected) => {
-  if (isWithin(entry.path, real)) {
-    return real === entry.path ? `it is ${entry.reason}` : `it contains ${entry.reason}`;
+export const withRealForm = (entry: Protected): Protected[] => {
+  const real = realOrResolvedSync(entry.path);
+
+  return real === resolve(entry.path) ? [{ ...entry, path: real }] : [entry, { ...entry, path: real }];
+};
+
+export type Overlap = "is" | "contains" | "inside";
+
+export const overlapOf = (path: string, entry: Protected): Overlap | undefined => {
+  if (isWithin(entry.path, path)) {
+    return path === entry.path ? "is" : "contains";
   }
 
-  return entry.under && isWithin(real, entry.path) ? `it is inside ${entry.reason}` : undefined;
-};
-
-export const protectedRealPathGuard = (context: ProtectedContext) => {
-  const guarded = protectedPaths(context);
-
-  return (real: string) =>
-    guarded.map((entry) => conflictOf(real, entry)).find((found) => found !== undefined);
+  return entry.under && isWithin(path, entry.path) ? "inside" : undefined;
 };
