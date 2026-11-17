@@ -410,6 +410,7 @@ tests/proxy/child-env.test.ts        the minimal environment
 tests/cli/harness.ts                 the CLI test harness, the managed pi layout (also for the live harness) and the doctor report parser
 tests/cli/commands.test.ts           the pi sandbox commands
 tests/cli/doctor.test.ts             the doctor
+tests/cli/doctor-probes.test.ts      the doctor's mcp-auth sweep on a sandbox file it cannot read
 tests/cli/doctor-report.test.ts      the doctor report renderer: collapsing, --verbose, verdicts, partial reports, ~, colour (the whole-report goldens are in doctor.test.ts)
 tests/cli/doctor-tls.test.ts         the tls inspection check against a local TLS server signed by a test CA behind a parent proxy: not inspected, trusted via extras, root in a keychain, root not found, network failure
 tests/cli/egress.test.ts             egress grants

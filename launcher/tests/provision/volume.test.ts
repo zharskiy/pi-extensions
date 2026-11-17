@@ -32,6 +32,17 @@ describe("readVolumeFile", () => {
     expect(await env.read("mcp-auth.json")).toEqual({ invalid: false });
   });
 
+  it("reads an empty or whitespace-only file as no value", async () => {
+    const env = await setup();
+
+    await env.fake.writeGuestFile("settings.json", "");
+
+    await env.fake.writeGuestFile("mcp-auth.json", " \n\t");
+
+    expect(await env.read("settings.json")).toEqual({ invalid: false });
+    expect(await env.read("mcp-auth.json")).toEqual({ invalid: false });
+  });
+
   it("reports a file that is not a JSON object as invalid", async () => {
     const env = await setup();
 

@@ -112,6 +112,11 @@ export const readVolumeFile = async (
   timeoutMs = READ_TIMEOUT_MS,
 ): Promise<VolumeRead> => {
   const text = await readVolumeText(backend, containerId, name, CHECKED_FILE_BYTES, timeoutMs);
+
+  if (text?.trim() === "") {
+    return { invalid: false };
+  }
+
   const parsed = parseVolumeText({ name, maxBytes: CHECKED_FILE_BYTES }, text);
 
   return "value" in parsed ? { value: parsed.value, invalid: false } : { invalid: parsed.notices.length > 0 };

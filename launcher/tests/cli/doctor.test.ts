@@ -677,6 +677,15 @@ describe("pi sandbox doctor", () => {
     expect(code).toBe(1);
   });
 
+  it("counts an empty mcp-auth.json in the sandbox as missing", async () => {
+    const { stdout } = await doctorWith({ probes: { mcpAuth: " \n" } });
+
+    expect(check(stdout, "mcp-auth sweep")).toMatchObject({
+      status: "ok",
+      detail: "no mcp-auth.json in the sandbox yet",
+    });
+  });
+
   it("fails the mcp-auth sweep on a file larger than the volume read bound", async () => {
     const { code, stdout } = await doctorWith({
       probes: { mcpAuth: JSON.stringify({ padding: "a".repeat(1024 * 1024) }) },

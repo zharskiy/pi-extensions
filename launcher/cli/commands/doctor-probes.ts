@@ -2,7 +2,14 @@ import { posix } from "node:path";
 import { type Backend, execCapture } from "../../backend/index.ts";
 import { type CredentialRule, fillTemplate, TLS_PORT } from "../../config/index.ts";
 import { credentialHosts, probeHostSessions, readVolumeFile } from "../../provision/index.ts";
-import { GUEST_PATHS, isAuthLikeHeader, isPlaceholder, isSecretName, lastLine } from "../../shared/index.ts";
+import {
+  errorMessage,
+  GUEST_PATHS,
+  isAuthLikeHeader,
+  isPlaceholder,
+  isSecretName,
+  lastLine,
+} from "../../shared/index.ts";
 import { type CheckResult, failed, type NamedCheck, passed, skipped } from "./doctor-checks.ts";
 
 export interface ProbeTarget {
@@ -218,10 +225,20 @@ const leaksToken = (entry: unknown) => {
 };
 
 const readSandboxFile = (target: ProbeTarget, name: string) =>
-  readVolumeFile(target.backend, target.containerId, name).catch(() => ({ value: undefined, invalid: true }));
+  readVolumeFile(target.backend, target.containerId, name).catch((error: unknown) => ({
+    value: undefined,
+    invalid: true,
+    unreadable: errorMessage(error),
+  }));
 
 export const checkMcpAuthSweep = async (target: ProbeTarget) => {
-  const { value: store, invalid } = await readSandboxFile(target, "mcp-auth.json");
+  const read = await readSandboxFile(target, "mcp-auth.json");
+
+  if ("unreadable" in read) {
+    return failed(read.unreadable);
+  }
+
+  const { value: store, invalid } = read;
 
   if (invalid) {
     return failed("mcp-auth.json in the sandbox is not a JSON object");
