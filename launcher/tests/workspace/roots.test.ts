@@ -188,6 +188,22 @@ describe("sharedRootsOf", () => {
     });
   });
 
+  it("says a root inside a missing root does not exist rather than that it is shared", async () => {
+    const { base, paths } = await createHome();
+    const outer = join(base, "gone");
+    const inner = join(outer, "b");
+
+    expect(sharedRootsOf({ roots: [outer, inner] }, paths)).toEqual({
+      roots: [],
+      missing: [outer],
+      nested: [],
+      notices: [
+        `workspaceRoots: ${outer} does not exist, not shared`,
+        `workspaceRoots: ${inner} does not exist, not shared`,
+      ],
+    });
+  });
+
   it("accepts a root next to the protected home paths", async () => {
     const { paths } = await createHome();
 
@@ -198,13 +214,17 @@ describe("sharedRootsOf", () => {
     const { base, paths } = await createHome();
     const data = join(base, "work", "a", "data");
 
+    await mkdir(join(paths.home, ".ssh"), { recursive: true });
+
     await symlink(join(paths.home, ".ssh"), data);
 
     expect(sharedRootsOf({ roots: [join(base, "work"), data] }, paths)).toEqual({
       roots: [join(base, "work")],
       missing: [],
-      nested: [`workspaceRoots: ${data} is inside ${join(base, "work")} and is shared through it`],
-      notices: [],
+      nested: [],
+      notices: [
+        `workspaceRoots: ${data} leads to ${join(paths.home, ".ssh")}, outside the shared roots, not shared`,
+      ],
     });
   });
 
@@ -216,8 +236,10 @@ describe("sharedRootsOf", () => {
 
     expect(sharedRootsOf({ roots: [join(base, "work"), data] }, paths)).toMatchObject({
       roots: [join(base, "work")],
-      nested: [`workspaceRoots: ${data} is inside ${join(base, "work")} and is shared through it`],
-      notices: [],
+      nested: [],
+      notices: [
+        `workspaceRoots: ${data} leads to ${join(base, "other")}, outside the shared roots, not shared`,
+      ],
     });
     expect(() =>
       assertWithinWorkspaceRoots(

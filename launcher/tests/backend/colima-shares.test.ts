@@ -630,6 +630,21 @@ describe("the VM shares with workspaceRoots set", () => {
     expect(context.colimaCalls()).toEqual(restart(rootsMounts(context.paths)));
   });
 
+  it("says at launch that a root a link leads out of the shared roots is not shared", async () => {
+    const context = await launchWithRoots({ roots: ({ repoRoot }) => [repoRoot, join(repoRoot, "link")] });
+    const elsewhere = join(context.paths.home, "elsewhere");
+
+    await mkdir(elsewhere, { recursive: true });
+
+    await symlink(elsewhere, join(context.paths.repoRoot, "link"));
+
+    expect(await run0(context)).toBe(0);
+    expect(context.harness.stderr()).toContain(
+      `pi-sandbox: workspaceRoots: ${join(context.paths.repoRoot, "link")} leads to ${elsewhere}, outside the shared roots, not shared\n`,
+    );
+    expect(context.colimaCalls()).toEqual(restart(rootsMounts(context.paths)));
+  });
+
   it("refuses a root that is the home dir before touching the VM", async () => {
     const context = await launchWithRoots({ roots: ({ home, repoRoot }) => [repoRoot, home] });
 

@@ -149,18 +149,42 @@ export const checkRoot = (root: string, context: RootGuardContext): RootVerdict 
   return problem === undefined ? { ok: true, resolved, exists: isFolder(resolved) } : { ok: false, problem };
 };
 
-const nestingNotices = <T extends { root: string }>(entries: T[], pathOf: (entry: T) => string) =>
-  entries.flatMap((entry) => {
-    const outer = entries.find(
-      (other) => pathOf(other) !== pathOf(entry) && isWithin(pathOf(entry), pathOf(other)),
-    );
+interface RootEntry {
+  root: string;
+  resolved: string;
+}
+
+const notShared = (root: string, reason: string) =>
+  `workspaceRoots: ${printable(root)} ${reason}, not shared`;
+
+const rootNotices = (listed: RootEntry[], present: RootEntry[], shared: string[]) => {
+  const inner = listed.filter((entry) => !shared.includes(entry.resolved));
+  const outerOf = (entry: RootEntry) => {
+    const share = shared.find((root) => isWithin(entry.resolved, root));
+
+    return present.find((other) => other.resolved === share);
+  };
+  const nestedOf = (entry: RootEntry) => {
+    const outer = isFolder(entry.resolved) ? outerOf(entry) : undefined;
 
     return outer === undefined
       ? []
       : [
           `workspaceRoots: ${printable(entry.root)} is inside ${printable(outer.root)} and is shared through it`,
         ];
-  });
+  };
+  const noticesOf = (entry: RootEntry) => {
+    if (!isFolder(entry.resolved)) {
+      return [notShared(entry.root, "does not exist")];
+    }
+
+    return outerOf(entry) === undefined
+      ? [notShared(entry.root, `leads to ${printable(entry.resolved)}, outside the shared roots`)]
+      : [];
+  };
+
+  return { nested: [...new Set(inner.flatMap(nestedOf))], notices: [...new Set(inner.flatMap(noticesOf))] };
+};
 
 export const sharedRootsOf = (workspaceRoots: WorkspaceRoots, context: RootGuardContext): SharedRoots => {
   const entries = configuredRoots(workspaceRoots.roots, context.home);
@@ -169,25 +193,15 @@ export const sharedRootsOf = (workspaceRoots: WorkspaceRoots, context: RootGuard
     assertShareable(entry.root, entry.resolved, context);
   });
 
-  const listed = workspaceRoots.roots.map((root) => ({ root, lexical: lexicalRoot(root, context.home) }));
+  const listed = workspaceRoots.roots.map((root) => ({
+    root,
+    resolved: realOrResolvedSync(lexicalRoot(root, context.home)),
+  }));
   const present = entries.filter((entry) => isFolder(entry.resolved));
   const absent = entries.filter((entry) => !isFolder(entry.resolved));
-  const nested = [
-    ...new Set([
-      ...nestingNotices(listed, (entry) => entry.lexical),
-      ...nestingNotices(present, (entry) => entry.resolved),
-    ]),
-  ];
-  const notices = absent.map(
-    (entry) => `workspaceRoots: ${printable(entry.root)} does not exist, not shared`,
-  );
+  const roots = outermostPaths(present.map((entry) => entry.resolved));
 
-  return {
-    roots: outermostPaths(present.map((entry) => entry.resolved)),
-    missing: absent.map((entry) => entry.resolved),
-    nested,
-    notices,
-  };
+  return { roots, missing: absent.map((entry) => entry.resolved), ...rootNotices(listed, present, roots) };
 };
 
 export const assertWithinWorkspaceRoots = (
