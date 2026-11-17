@@ -115,7 +115,7 @@ Network and credentials:
 - Providers whose client derives the API host from the token content may refuse a placeholder token; the doctor's per-rule check shows a 401 or 403.
 - Provider `/login` inside fails (`auth.json` is a 0444 copy of the placeholder file, re-created at every start); log in on the host.
 - Secrets in the `env` of stdio MCP servers become placeholders that nothing replaces until a `credentials.rules` entry binds them to the host the server calls.
-- A secret written as a purely numeric or boolean value in a stdio MCP server's env or flags is copied, and one under a name without a secret segment is copied unless its value has a credential shape; give it a clearer name or a `credentials.rules` entry.
+- A secret written as a purely numeric or boolean value is copied in a stdio MCP server's flags and in its env under a name that has a secret segment but no secret word (`DB_PASS=1234`; a name with token, secret, key, password, passwd, passphrase, credential or jwt is masked whatever its value), and one in the env under a name without a secret segment is copied unless its value has a credential shape or reads a host value; give it a clearer name or a `credentials.rules` entry.
 - When the glab token probe (`glab config get token`) does not answer in time, a Keychain prompt for example, glab has no credentials in the sandbox for that launch.
 - Plain HTTP is refused (CONNECT to port 80 has no SNI to check), and host-local model servers (`localhost`, plain `http`) are unreachable.
 - Inside the internal network DNS resolves container names only, so tools that resolve names before using the proxy fail.
