@@ -158,10 +158,7 @@ container/git-overlay.ts       the git overlay plan and its ready() step before 
 container/names.ts             container and volume names
 container/lifecycle.ts         startLaunchContainer and removeLaunchContainer: one container per launch, mount points, volume hand-over (fatal when the entrypoint waits for it, a warning otherwise), the wait for the entrypoint's ready marker, the exited-during-startup error
 container/run-pi.ts            pi through exec, the pty only for a terminal, signals and resize, the terminal bridges
-container/terminal-bridge.ts   the OSC 52 copy bridge to the host clipboard, the pasted image import into /tmp/pi-paste and the Ctrl+V clipboard image paste
-container/ctrl-v.ts            the Ctrl+V key scanner over the terminal input, carried across chunks
-container/osc52.ts             the OSC 52 stream state machine: copies, dropped queries and malformed sequences, passthrough
-container/paste.ts             the bracketed paste splitter, path tokens, image magic bytes, ordered input
+container/clipboard.ts         the clipboard bridges: OSC 52 copies teed to pbcopy, pasted image paths and Ctrl+V images copied into /tmp/pi-paste
 container/host-paths.ts        visibleInside: whether the sandbox sees a host path at the same path
 ```
 
@@ -370,10 +367,7 @@ tests/container/spec.test.ts         the container spec
 tests/container/git-overlay.test.ts  the git overlay
 tests/container/lifecycle.test.ts    one container per launch, its removal and housekeeping
 tests/container/run-pi.test.ts       running pi, signals and the terminal bridges
-tests/container/osc52.test.ts        the OSC 52 parser
-tests/container/paste.test.ts        the paste splitter, path tokens and ordered input
-tests/container/terminal-bridge.test.ts  the copy bridge, the pasted image import and the Ctrl+V image paste
-tests/container/ctrl-v.test.ts       the Ctrl+V key scanner: encodings, near misses, chunk splits, pastes
+tests/container/clipboard.test.ts    the copy tee, the pasted image path and Ctrl+V
 tests/image/build.test.ts            base builds
 tests/image/build-network.test.ts    build proxy arguments
 tests/image/layer.test.ts            the image layer
@@ -439,7 +433,7 @@ tests/cli/intercept.test.ts          intercepted commands, host routes and the c
 tests/cli/launch.test.ts             the launch
 tests/cli/launch-flow.test.ts        the signal guard, side-by-side stages and the VM shares of a launch
 tests/cli/launch-git.test.ts         the git layout check at launch
-tests/cli/launch-clipboard.test.ts   the osascript clipboard image read behind Ctrl+V and its gate
+tests/cli/launch-clipboard.test.ts   the osascript clipboard PNG read behind Ctrl+V and its gate
 tests/cli/launch-host-sessions.test.ts  host sessions at launch
 tests/cli/launch-sessions.test.ts    session end and the sweep
 tests/cli/launch-write-back.test.ts  settings written back to the host at launch and at exit, with the allowlist the launch started with

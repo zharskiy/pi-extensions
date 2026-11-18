@@ -587,7 +587,7 @@
       "properties": {
         "clipboard": {
           "type": "boolean",
-          "description": "On a Mac, copy what pi in the sandbox copies (OSC 52) to the host clipboard with pbcopy, so it works in terminals that ignore OSC 52. Through OSC 52 the sandbox can only write the clipboard: read queries are dropped; terminal-specific clipboard protocols pass through. Ctrl+V with an image on the host clipboard copies that image into the sandbox and pastes its path. Off, or on another host, OSC 52 reaches the terminal untouched, read queries included, and Ctrl+V goes to pi as it is. On by default."
+          "description": "On a Mac, put what pi in the sandbox copies (OSC 52) on the host clipboard with pbcopy, copy an image whose host path is pasted into the sandbox, and paste the clipboard PNG on Ctrl+V. On by default."
         }
       }
     },

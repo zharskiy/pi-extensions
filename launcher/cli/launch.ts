@@ -6,9 +6,7 @@ import {
   forwardedEnv,
   type GitOverlay,
   type HostClipboard,
-  type HostClipboardImage,
   type LauncherContainerSpec,
-  PASTE_IMAGE_MAX_BYTES,
   planGitOverlay,
   runPi,
   startLaunchContainer,
@@ -499,69 +497,48 @@ export const withSandbox = async (
 
 const PBCOPY = "/usr/bin/pbcopy";
 
-const PBCOPY_TIMEOUT_MS = 5000;
-
 const OSASCRIPT = "/usr/bin/osascript";
 
-const CLIPBOARD_IMAGE_TIMEOUT_MS = 4000;
+const CLIPBOARD_TIMEOUT_MS = 5000;
 
-const CLIPBOARD_IMAGE_SCRIPT = [
-  'const framework = "AppKit";',
-  "ObjC.import(framework);",
-  "const board = $.NSPasteboard.generalPasteboard;",
-  "const types = ObjC.deepUnwrap(board.types) || [];",
-  'const files = ["public.file-url", "NSFilenamesPboardType"].some((type) => types.includes(type));',
-  'const direct = files ? undefined : ["public.png", "public.jpeg"].find((type) => types.includes(type));',
-  'const icon = files || types.includes("com.apple.icns");',
-  'const tiff = direct === undefined && !icon && types.includes("public.tiff") ? board.dataForType("public.tiff") : undefined;',
-  "const rep = tiff === undefined || tiff.isNil() ? undefined : $.NSBitmapImageRep.imageRepWithData(tiff);",
-  "const data = direct !== undefined ? board.dataForType(direct) : rep === undefined || rep.isNil() ? undefined : rep.representationUsingTypeProperties($.NSBitmapImageFileTypePNG, $({}));",
-  `data === undefined || data.isNil() || data.length > ${PASTE_IMAGE_MAX_BYTES} ? "" : data.base64EncodedStringWithOptions(0).js;`,
-].join("\n");
+const CLIPBOARD_PNG = [
+  "-e",
+  'if (clipboard info for «class furl») is not {} then error "file"',
+  "-e",
+  "the clipboard as «class PNGf»",
+];
 
-const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
+const PNG_HEX = /«data PNGf([0-9A-Fa-f]+)»/;
 
-const clipboardAllowed = (deps: CliDeps, context: LaunchContext) =>
-  deps.platform === "darwin" && context.effective.config.terminal.clipboard;
+const clipboardImage = (stdout: string) => {
+  const hex = PNG_HEX.exec(stdout)?.[1];
 
-const hostClipboard = (deps: CliDeps, context: LaunchContext): HostClipboard | undefined => {
-  if (!clipboardAllowed(deps, context)) {
+  return hex === undefined ? undefined : Buffer.from(hex, "hex");
+};
+
+const hostClipboard = (
+  deps: CliDeps,
+  context: LaunchContext,
+  sandbox: Sandbox,
+): HostClipboard | undefined => {
+  if (deps.platform !== "darwin" || !context.effective.config.terminal.clipboard) {
     return undefined;
   }
 
-  return (text) =>
-    deps.runner
-      .run(PBCOPY, [], {
+  return {
+    copy: (text) =>
+      deps.runner.run(PBCOPY, [], {
         input: text.toString("utf8"),
         env: { LC_CTYPE: "UTF-8" },
-        timeoutMs: PBCOPY_TIMEOUT_MS,
-      })
-      .then(
-        (result) => result.code === 0,
-        () => false,
-      );
-};
+        timeoutMs: CLIPBOARD_TIMEOUT_MS,
+      }),
+    readImage: async () => {
+      const read = await deps.runner.run(OSASCRIPT, CLIPBOARD_PNG, { timeoutMs: CLIPBOARD_TIMEOUT_MS });
 
-const decodedImage = (stdout: string) => {
-  const text = stdout.trim();
-
-  return BASE64.test(text) ? Buffer.from(text, "base64") : undefined;
-};
-
-const hostClipboardImage = (deps: CliDeps, context: LaunchContext): HostClipboardImage | undefined => {
-  if (!clipboardAllowed(deps, context)) {
-    return undefined;
-  }
-
-  return () =>
-    deps.runner
-      .run(OSASCRIPT, ["-l", "JavaScript", "-e", CLIPBOARD_IMAGE_SCRIPT], {
-        timeoutMs: CLIPBOARD_IMAGE_TIMEOUT_MS,
-      })
-      .then(
-        (result) => (result.code === 0 && result.timedOut !== true ? decodedImage(result.stdout) : undefined),
-        () => undefined,
-      );
+      return read.code === 0 ? clipboardImage(read.stdout) : undefined;
+    },
+    mounts: sandbox.spec.mounts,
+  };
 };
 
 const runSandboxPi = async (deps: CliDeps, context: LaunchContext, sandbox: Sandbox, piArgs: string[]) => {
@@ -576,9 +553,7 @@ const runSandboxPi = async (deps: CliDeps, context: LaunchContext, sandbox: Sand
     workspace: context.workspace,
     terminal: deps.terminal,
     signals: deps.signals,
-    clipboard: hostClipboard(deps, context),
-    clipboardImage: hostClipboardImage(deps, context),
-    pasteMounts: sandbox.spec.mounts,
+    clipboard: hostClipboard(deps, context, sandbox),
   });
 };
 
