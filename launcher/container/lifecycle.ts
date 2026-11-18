@@ -9,6 +9,7 @@ import {
 } from "../backend/index.ts";
 import {
   errorMessage,
+  GUEST_PATHS,
   isWithin,
   LauncherError,
   recordCreatedDirs,
@@ -156,22 +157,57 @@ const ensureMountPoints = async (spec: LauncherContainerSpec, onMade: DirMade) =
   }
 };
 
+const HANDOVER_SCRIPT = `chown -h ${DEFAULT_OWNER} "$@" && : > ${GUEST_PATHS.handover}`;
+
+const HANDOVER_HINT = "run pi sandbox doctor, and check the paths in mounts.sharedCaches";
+
+const STARTUP_HINT = "run pi sandbox doctor";
+
 const handOverVolumes = async (backend: Backend, id: string, spec: LauncherContainerSpec) => {
   if (spec.ownedPaths.length === 0) {
-    return [];
+    return;
   }
 
   const result = await execCapture(backend, {
     containerId: id,
-    command: ["chown", "-h", DEFAULT_OWNER, ...spec.ownedPaths],
+    command: ["sh", "-c", HANDOVER_SCRIPT, "sh", ...spec.ownedPaths],
     env: {},
     workdir: "/",
     user: ROOT_USER,
-  }).catch((error: unknown) => ({ code: -1, stdout: "", stderr: errorMessage(error) }));
+  });
 
-  return result.code === 0
-    ? []
-    : [`warning: the sandbox user may not be able to write its cache volumes: ${result.stderr.trim()}`];
+  if (result.code !== 0) {
+    throw new LauncherError(
+      `the sandbox could not hand its cache volumes to the sandbox user: ${result.stderr.trim()}`,
+      HANDOVER_HINT,
+    );
+  }
+};
+
+const isStillRunning = (backend: Backend, id: string, spec: LauncherContainerSpec) => {
+  const launch = { [LABELS.launchId]: spec.labels[LABELS.launchId] ?? "" };
+
+  return backend.findContainers(launch).then(
+    (containers) => containers.some((container) => container.id === id && container.state === "running"),
+    () => true,
+  );
+};
+
+const settleStartup = async (input: LaunchContainerInput, id: string, spec: LauncherContainerSpec) => {
+  try {
+    await handOverVolumes(input.backend, id, spec);
+
+    await input.afterCreate?.(id);
+  } catch (error) {
+    if (await isStillRunning(input.backend, id, spec)) {
+      throw error;
+    }
+
+    throw new LauncherError(
+      `the sandbox container exited during startup, before pi could run (${errorMessage(error)})`,
+      STARTUP_HINT,
+    );
+  }
 };
 
 const ownerLabels = (labels: Record<string, string>) =>
@@ -219,11 +255,9 @@ const create = async (input: LaunchContainerInput, spec: LauncherContainerSpec):
 
   await backend.startContainer(id);
 
-  const notices = [...(spec.notices ?? []), ...(await handOverVolumes(backend, id, spec))];
+  await settleStartup(input, id, spec);
 
-  await input.afterCreate?.(id);
-
-  return { id, spec, notices };
+  return { id, spec, notices: spec.notices ?? [] };
 };
 
 const isAgent = (container: ContainerSummary) => container.labels[LABELS.relay] !== "true";

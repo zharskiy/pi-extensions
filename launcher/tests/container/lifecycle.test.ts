@@ -197,7 +197,7 @@ describe("volumes the sandbox writes", () => {
       config: sandboxConfig({ mounts: { sharedCaches: ["~/.cache/pip"] } }),
     });
   const chownsOf = (fake: ReturnType<typeof createFakeBackend>) =>
-    fake.execs.filter((exec) => exec.spec.command[0] === "chown").map((exec) => exec.spec);
+    fake.execs.filter((exec) => exec.spec.command[2]?.startsWith("chown ") === true).map((exec) => exec.spec);
 
   beforeEach(async () => {
     await rm(project, { recursive: true, force: true });
@@ -341,25 +341,47 @@ describe("volumes the sandbox writes", () => {
     expect(chownsOf(fake)).toHaveLength(2);
     expect(chown?.user).toBe("0");
     expect(chown?.command).toEqual([
-      "chown",
-      "-h",
-      "1000:1000",
+      "sh",
+      "-c",
+      'chown -h 1000:1000 "$@" && : > /tmp/pi-sandbox-handover',
+      "sh",
       "/home/pi/.cache",
       join(project, "node_modules"),
       "/home/pi/.cache/pip",
     ]);
   });
 
-  it("warns when handing the volumes to the sandbox user fails", async () => {
-    const fake = createFakeBackend({ execScripts: [{ command: ["chown"], code: 1, stderr: "denied\n" }] });
-    const result = await startLaunchContainer({
-      backend: fake.backend,
-      spec: specOf({ workspace: nodeWorkspace }),
+  it("stops the launch when handing the volumes to the sandbox user fails", async () => {
+    const fake = createFakeBackend({ execScripts: [{ command: ["sh", "-c"], code: 1, stderr: "denied\n" }] });
+
+    await expect(
+      startLaunchContainer({ backend: fake.backend, spec: specOf({ workspace: nodeWorkspace }) }),
+    ).rejects.toThrow("the sandbox could not hand its cache volumes to the sandbox user: denied");
+  });
+
+  it("names a container that exited during startup instead of the engine's bare not-running error", async () => {
+    const stopped = { backend: undefined as ReturnType<typeof createFakeBackend>["backend"] | undefined };
+    const fake = createFakeBackend({
+      exec: async (spec) => {
+        await stopped.backend?.stopContainer(spec.containerId);
+
+        throw new Error(
+          `engine: POST /containers/${spec.containerId}/exec failed (409): container is not running`,
+        );
+      },
     });
 
-    expect(result.notices).toEqual([
-      "warning: the sandbox user may not be able to write its cache volumes: denied",
-    ]);
+    stopped.backend = fake.backend;
+
+    await expect(startLaunchContainer({ backend: fake.backend, spec: cachedSpec() })).rejects.toThrow(
+      /^the sandbox container exited during startup, before pi could run \(engine: POST .* failed \(409\)/,
+    );
+  });
+
+  it("tells the entrypoint to wait for the handover only when a shared cache lies in the home", () => {
+    expect(cachedSpec().env.PI_SANDBOX_AWAIT_HANDOVER).toBe("1");
+    expect(specOf({ workspace: nodeWorkspace }).env.PI_SANDBOX_AWAIT_HANDOVER).toBeUndefined();
+    expect(specOf().env.PI_SANDBOX_AWAIT_HANDOVER).toBeUndefined();
   });
 
   it("runs no root exec when the sandbox has no volumes of its own to hand over", async () => {

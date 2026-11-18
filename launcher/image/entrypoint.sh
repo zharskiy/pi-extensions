@@ -11,6 +11,26 @@ bundle_dir=/tmp/pi-sandbox
 system_bundle=/etc/ssl/certs/ca-certificates.crt
 trust_bundle=/etc/pi-sandbox/ca.pem
 truststore="$bundle_dir/truststore.p12"
+handover=/tmp/pi-sandbox-handover
+handover_tries=600
+
+await_handover() {
+  tries=0
+
+  while [ ! -e "$handover" ]; do
+    if [ "$tries" -ge "$handover_tries" ]; then
+      echo "pi-sandbox: the launcher did not hand the cache volumes to the sandbox user within $((handover_tries / 10)) s, stopping" >&2
+      exit 1
+    fi
+
+    tries=$((tries + 1))
+    sleep 0.1
+  done
+}
+
+if [ -n "${PI_SANDBOX_AWAIT_HANDOVER:-}" ]; then
+  await_handover
+fi
 
 mkdir -p "$agent_dir" "$bundle_dir"
 

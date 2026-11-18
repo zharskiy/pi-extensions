@@ -9,6 +9,7 @@ export const GUEST_PATHS = {
   agentsSkills: "/home/pi/.agents/skills",
   renderDir: "/opt/pi-sandbox/render",
   trustPem: "/etc/pi-sandbox/ca.pem",
+  handover: "/tmp/pi-sandbox-handover",
 } as const;
 
 const repoProxyFiles = (directory: string) => ({
