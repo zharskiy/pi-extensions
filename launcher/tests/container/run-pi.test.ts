@@ -265,6 +265,66 @@ describe("runPi", () => {
   });
 });
 
+describe("runPi terminal bridges", () => {
+  const COPY = `\x1b]52;c;${Buffer.from("copied").toString("base64")}\x07`;
+
+  const bridgedRun = async (isTTY: boolean) => {
+    const host = fakeTerminal(isTTY);
+    const copied: string[] = [];
+    const seen: ExecIo[] = [];
+    const fake = createFakeBackend({
+      exec: (_spec, io) => {
+        seen.push(io);
+
+        io.stdout.write(`out${COPY}put`);
+
+        return 0;
+      },
+    });
+    const output: Buffer[] = [];
+
+    host.terminal.stdout.on("data", (chunk: Buffer) => output.push(chunk));
+
+    await runPi({
+      launchId: nextLaunchId(),
+      backend: fake.backend,
+      containerId: "c",
+      piArgs: [],
+      workspace,
+      terminal: host.terminal,
+      clipboard: async (text) => {
+        copied.push(text.toString());
+
+        return true;
+      },
+      pasteMounts: [],
+    });
+
+    await new Promise((resolve) => setImmediate(resolve));
+
+    return { host, copied, io: seen[0], output: Buffer.concat(output).toString() };
+  };
+
+  it("filters the copy out of a terminal session and wraps its stdin", async () => {
+    const run = await bridgedRun(true);
+
+    expect(run.output).toBe("output");
+    expect(run.copied).toEqual(["copied"]);
+    expect(run.io?.stdout).not.toBe(run.host.terminal.stdout);
+    expect(run.io?.stdin).not.toBe(run.host.terminal.stdin);
+    expect(run.host.stdin.listenerCount("data")).toBe(0);
+  });
+
+  it("leaves both streams alone without a terminal", async () => {
+    const run = await bridgedRun(false);
+
+    expect(run.output).toBe(`out${COPY}put`);
+    expect(run.copied).toEqual([]);
+    expect(run.io?.stdout).toBe(run.host.terminal.stdout);
+    expect(run.io?.stdin).toBe(run.host.terminal.stdin);
+  });
+});
+
 describe("runPi on a signal", () => {
   const signalled = (isTTY: boolean, codeOnKill?: number) => {
     const signals = new EventEmitter();

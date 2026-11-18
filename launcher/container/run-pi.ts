@@ -1,7 +1,8 @@
 import { constants } from "node:os";
 import { Writable } from "node:stream";
-import type { Backend, TerminalSize } from "../backend/index.ts";
+import type { Backend, MountSpec, TerminalSize } from "../backend/index.ts";
 import type { Workspace } from "../workspace/index.ts";
+import { copyBridge, type HostClipboard, pasteBridge } from "./terminal-bridge.ts";
 
 export interface HostTerminal {
   stdin: NodeJS.ReadableStream & { isTTY?: boolean; setRawMode?: (mode: boolean) => unknown };
@@ -27,6 +28,14 @@ export interface RunPiInput {
   terminal: HostTerminal;
   signals?: SignalSource;
   graceMs?: number;
+  clipboard?: HostClipboard;
+  pasteMounts?: MountSpec[];
+}
+
+interface PiStreams {
+  stdin: NodeJS.ReadableStream;
+  stdout: NodeJS.WritableStream;
+  release(): void;
 }
 
 const SIGNAL_EXIT_BASE = 128;
@@ -121,7 +130,31 @@ const settleSignal = async (input: RunPiInput, running: Promise<number>, signal:
 
 const PI_SCRIPT = `echo $$ > ${PID_FILE}; cd "$1" 2>/dev/null || echo "pi-sandbox: $1 is not in the sandbox, pi starts in $PWD" >&2; shift; exec "$@"`;
 
-const execPi = (input: RunPiInput, tty: boolean) =>
+const bridged = (input: RunPiInput, interactive: boolean): PiStreams => {
+  const { terminal, clipboard, pasteMounts } = input;
+  const copy = interactive && clipboard !== undefined ? copyBridge(terminal.stdout, clipboard) : undefined;
+  const paste =
+    interactive && pasteMounts !== undefined
+      ? pasteBridge(terminal.stdin, {
+          backend: input.backend,
+          containerId: input.containerId,
+          mounts: pasteMounts,
+          recentCopy: copy?.recentCopy,
+        })
+      : undefined;
+
+  return {
+    stdin: paste?.input ?? terminal.stdin,
+    stdout: copy?.output ?? terminal.stdout,
+    release: () => {
+      copy?.release();
+
+      paste?.stop();
+    },
+  };
+};
+
+const execPi = (input: RunPiInput, tty: boolean, streams: PiStreams) =>
   input.backend.exec(
     {
       containerId: input.containerId,
@@ -130,8 +163,8 @@ const execPi = (input: RunPiInput, tty: boolean) =>
       workdir: input.workspace.repoRoot,
     },
     {
-      stdin: input.terminal.stdin,
-      stdout: input.terminal.stdout,
+      stdin: streams.stdin,
+      stdout: streams.stdout,
       stderr: input.terminal.stderr,
       tty,
       size: { columns: input.terminal.columns, rows: input.terminal.rows },
@@ -144,9 +177,10 @@ export const runPi = (input: RunPiInput) => {
 
   return withRawMode(input.terminal, interactive, async () => {
     const watch = listenFor(input.signals ?? process, SIGNALS);
+    const streams = bridged(input, interactive);
 
     try {
-      const running = execPi(input, interactive);
+      const running = execPi(input, interactive, streams);
       const outcome = await Promise.race([
         running.then((code) => ({ code })),
         watch.received.then((signal) => ({ signal })),
@@ -155,6 +189,8 @@ export const runPi = (input: RunPiInput) => {
       return "signal" in outcome ? await settleSignal(input, running, outcome.signal) : outcome.code;
     } finally {
       watch.stop();
+
+      streams.release();
     }
   });
 };

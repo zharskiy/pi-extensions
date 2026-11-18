@@ -5,6 +5,7 @@ import {
   buildContainerSpec,
   forwardedEnv,
   type GitOverlay,
+  type HostClipboard,
   type LauncherContainerSpec,
   planGitOverlay,
   runPi,
@@ -493,6 +494,28 @@ export const withSandbox = async (
   }
 };
 
+const PBCOPY = "/usr/bin/pbcopy";
+
+const PBCOPY_TIMEOUT_MS = 5000;
+
+const hostClipboard = (deps: CliDeps, context: LaunchContext): HostClipboard | undefined => {
+  if (deps.platform !== "darwin" || !context.effective.config.terminal.clipboard) {
+    return undefined;
+  }
+
+  return (text) =>
+    deps.runner
+      .run(PBCOPY, [], {
+        input: text.toString("utf8"),
+        env: { LC_CTYPE: "UTF-8" },
+        timeoutMs: PBCOPY_TIMEOUT_MS,
+      })
+      .then(
+        (result) => result.code === 0,
+        () => false,
+      );
+};
+
 const runSandboxPi = async (deps: CliDeps, context: LaunchContext, sandbox: Sandbox, piArgs: string[]) => {
   writeNotices(deps, await hostPathNotices(piArgs, context.workspace.cwd, sandbox.spec.mounts));
 
@@ -505,6 +528,8 @@ const runSandboxPi = async (deps: CliDeps, context: LaunchContext, sandbox: Sand
     workspace: context.workspace,
     terminal: deps.terminal,
     signals: deps.signals,
+    clipboard: hostClipboard(deps, context),
+    pasteMounts: sandbox.spec.mounts,
   });
 };
 

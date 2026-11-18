@@ -157,7 +157,11 @@ container/volumes.ts           the volume plan: agent, overlay and shared volume
 container/git-overlay.ts       the git overlay plan and its ready() step before a start: layout re-check, hooks dirs, the baseline and the pending report
 container/names.ts             container and volume names
 container/lifecycle.ts         startLaunchContainer and removeLaunchContainer: one container per launch, mount points, volume hand-over
-container/run-pi.ts            pi through exec, the pty only for a terminal, signals and resize
+container/run-pi.ts            pi through exec, the pty only for a terminal, signals and resize, the terminal bridges
+container/terminal-bridge.ts   the OSC 52 copy bridge to the host clipboard and the pasted image import into /tmp/pi-paste
+container/osc52.ts             the OSC 52 stream state machine: copies, dropped queries and malformed sequences, passthrough
+container/paste.ts             the bracketed paste splitter, path tokens, image magic bytes, ordered input
+container/host-paths.ts        visibleInside: whether the sandbox sees a host path at the same path
 ```
 
 ## image/
@@ -338,6 +342,7 @@ tests/config/egress-entry.test.ts    the egress grammar
 tests/config/parent-proxy.test.ts    the parent proxy parser
 tests/config/mounts.test.ts          mount keys
 tests/config/sessions.test.ts        sessions.host
+tests/config/terminal.test.ts        terminal.clipboard
 tests/config/schema.test.ts          schema and key spec agree, bounds included
 tests/config/validate.test.ts        validation messages
 tests/config/write-back.test.ts      writeBack: defaults, exclude, add, override, enabled, the ceiling and the value specs
@@ -363,7 +368,10 @@ tests/backend/vm-decision.test.ts    each outcome of vmDecision and whenBusy
 tests/container/spec.test.ts         the container spec
 tests/container/git-overlay.test.ts  the git overlay
 tests/container/lifecycle.test.ts    one container per launch, its removal and housekeeping
-tests/container/run-pi.test.ts       running pi and signals
+tests/container/run-pi.test.ts       running pi, signals and the terminal bridges
+tests/container/osc52.test.ts        the OSC 52 parser
+tests/container/paste.test.ts        the paste splitter, path tokens and ordered input
+tests/container/terminal-bridge.test.ts  the copy bridge and the pasted image import
 tests/image/build.test.ts            base builds
 tests/image/build-network.test.ts    build proxy arguments
 tests/image/layer.test.ts            the image layer
