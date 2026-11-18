@@ -2,7 +2,14 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Backend } from "../backend/index.ts";
 import type { SandboxConfig } from "../config/index.ts";
-import { errorMessage, expandHome, LauncherError, sha256Hex, shortHash } from "../shared/index.ts";
+import {
+  errorMessage,
+  expandHome,
+  GUEST_PATHS,
+  LauncherError,
+  sha256Hex,
+  shortHash,
+} from "../shared/index.ts";
 import { placeBuildTrust, TRUST_FILE } from "./build-trust.ts";
 import { buildInContext } from "./context.ts";
 import { writeCurrentLayer } from "./record.ts";
@@ -27,8 +34,6 @@ interface LayerImage {
 export const LAYER_TAG_PREFIX = "pi-sandbox-layer:";
 
 const BUILD_CRT = "/usr/local/share/ca-certificates/pi-sandbox-build.crt";
-
-const ENTRYPOINT = "/usr/local/bin/pi-sandbox-entrypoint";
 
 const userDockerfile = async (path: string | undefined, home: string | undefined) => {
   if (path === undefined) {
@@ -73,7 +78,7 @@ const renderLayerDockerfile = async (
     `RUN if [ -f ${BUILD_CRT} ]; then rm ${BUILD_CRT} && update-ca-certificates --fresh; fi \\\n && rm -rf /build`,
     "USER pi",
     "WORKDIR /home/pi",
-    `ENTRYPOINT ["${ENTRYPOINT}"]`,
+    `ENTRYPOINT ["${GUEST_PATHS.entrypoint}"]`,
     "CMD []",
   ];
 

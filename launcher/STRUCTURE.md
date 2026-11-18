@@ -152,11 +152,11 @@ backend/colima/colima-yaml.ts  the lima.yaml and colima.yaml mounts reader and t
 
 ```
 container/index.ts             public surface
-container/spec.ts              the container spec: mounts, env, labels, the mount table check (no target twice, no mount over the image's paths), the overlay backstop
+container/spec.ts              the container spec: mounts, env (the hand-over wait flag), labels, the mount table check (no target twice, no mount over the image's paths), the overlay backstop
 container/volumes.ts           the volume plan: agent, overlay and shared volume names, targets and labels
 container/git-overlay.ts       the git overlay plan and its ready() step before a start: layout re-check, hooks dirs, the baseline and the pending report
 container/names.ts             container and volume names
-container/lifecycle.ts         startLaunchContainer and removeLaunchContainer: one container per launch, mount points, volume hand-over
+container/lifecycle.ts         startLaunchContainer and removeLaunchContainer: one container per launch, mount points, volume hand-over (fatal when the entrypoint waits for it, a warning otherwise), the wait for the entrypoint's ready marker, the exited-during-startup error
 container/run-pi.ts            pi through exec, the pty only for a terminal, signals and resize, the terminal bridges
 container/terminal-bridge.ts   the OSC 52 copy bridge to the host clipboard and the pasted image import into /tmp/pi-paste
 container/osc52.ts             the OSC 52 stream state machine: copies, dropped queries and malformed sequences, passthrough
@@ -169,7 +169,7 @@ container/host-paths.ts        visibleInside: whether the sandbox sees a host pa
 ```
 image/index.ts                 public surface
 image/Dockerfile               the sandbox image
-image/entrypoint.sh            render links (~/.agents/skills included), the read-only auth.json copy, CA bundle, JVM truststore, idle
+image/entrypoint.sh            the wait for the volume hand-over, render links (~/.agents/skills included), the read-only auth.json copy, CA bundle, JVM truststore, the ready marker, idle
 image/bash-env.sh              the missing-command hint and the JVM trust flags
 image/sandbox-image.ts         ensureSandboxImage under the build lock: pull or build, then the layer; build leftovers
 image/build.ts                 the base image build and pinned pull

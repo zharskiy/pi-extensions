@@ -117,6 +117,8 @@ const isWithinAny = (part: string, roots: string[]) =>
 
 const isPiSessionExec = (spec: ExecSpec) => spec.env.PI_SANDBOX_LAUNCH_ID !== undefined;
 
+const isRootExec = (spec: ExecSpec) => spec.user === "0";
+
 const runsInGuest = (spec: ExecSpec, containerSpec: ContainerSpec | undefined) => {
   const binds = (containerSpec?.mounts ?? [])
     .filter((mount) => mount.kind === "bind" && mount.source === mount.target)
@@ -124,6 +126,7 @@ const runsInGuest = (spec: ExecSpec, containerSpec: ContainerSpec | undefined) =
 
   return (
     !isPiSessionExec(spec) &&
+    !isRootExec(spec) &&
     GUEST_PROGRAMS.includes(spec.command[0] ?? "") &&
     spec.command.some((part) => part.includes(GUEST_PATHS.agentDir) || isWithinAny(part, binds))
   );
@@ -270,7 +273,10 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
       return 0;
     }
 
-    return options.guestAgentDir !== undefined && spec.command[0] === "sh" && !isPiSessionExec(spec)
+    return options.guestAgentDir !== undefined &&
+      spec.command[0] === "sh" &&
+      !isPiSessionExec(spec) &&
+      !isRootExec(spec)
       ? shellIn(options.guestAgentDir, spec, {}, io)
       : 0;
   };

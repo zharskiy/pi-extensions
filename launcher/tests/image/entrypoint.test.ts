@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import {
   chmod,
@@ -37,6 +37,7 @@ const HOST_TOOLS = [
   "sed",
   "printf",
   "true",
+  "sleep",
 ];
 
 const hostToolsBin = async (bin: string) => {
@@ -64,6 +65,8 @@ const sandboxRoot = async () => {
     system: join(root, "system.crt"),
     trust: join(root, "etc", "ca.pem"),
     hostBin: join(root, "host-bin"),
+    handover: join(root, "handover"),
+    ready: join(root, "ready"),
   };
 
   await hostToolsBin(paths.hostBin);
@@ -88,6 +91,8 @@ const certificate = (name: string) => `-----BEGIN CERTIFICATE-----\n${name}\n---
 
 const withGuestPaths = (paths: Paths, text: string) => {
   const guestPaths: Record<string, string> = {
+    "/tmp/pi-sandbox-handover": paths.handover,
+    "/tmp/pi-sandbox-ready": paths.ready,
     "/opt/pi-sandbox/render": paths.render,
     "/tmp/pi-sandbox": paths.bundle,
     "/etc/ssl/certs/ca-certificates.crt": paths.system,
@@ -138,19 +143,47 @@ interface RunOptions {
   command?: string[];
   env?: Record<string, string>;
   bin?: string;
+  handoverTries?: number;
 }
 
-const spawnEntrypoint = async (paths: Paths, options: RunOptions = {}) => {
+const entrypointRun = async (paths: Paths, options: RunOptions) => {
   await writeFile(join(paths.root, "bash-env.sh"), withGuestPaths(paths, await imageFile("bash-env.sh")));
 
-  const script = withGuestPaths(paths, await imageFile("entrypoint.sh"));
+  const script = withGuestPaths(paths, await imageFile("entrypoint.sh")).replace(
+    /^handover_tries=\d+$/m,
+    (line) => (options.handoverTries === undefined ? line : `handover_tries=${options.handoverTries}`),
+  );
   const path = [options.bin, paths.hostBin].filter((entry) => entry !== undefined).join(":");
 
-  return spawnSync("sh", ["-c", script, "entrypoint", ...(options.command ?? ["true"])], {
+  return {
+    args: ["-c", script, "entrypoint", ...(options.command ?? ["true"])],
     env: { PATH: path, HOME: paths.home, ...options.env },
-    encoding: "utf8",
+  };
+};
+
+const spawnEntrypoint = async (paths: Paths, options: RunOptions = {}) => {
+  const run = await entrypointRun(paths, options);
+
+  return spawnSync("sh", run.args, { env: run.env, encoding: "utf8" });
+};
+
+const startEntrypoint = async (paths: Paths, options: RunOptions = {}) => {
+  const run = await entrypointRun(paths, options);
+  const child = spawn("sh", run.args, { env: run.env });
+  const stderr: Buffer[] = [];
+
+  child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
+
+  return new Promise<{ status: number | null; stderr: string }>((resolve) => {
+    child.on("close", (status) => resolve({ status, stderr: Buffer.concat(stderr).toString("utf8") }));
   });
 };
+
+const settledWithin = (running: Promise<unknown>, ms: number) =>
+  Promise.race([
+    running.then(() => true),
+    new Promise<boolean>((resolve) => setTimeout(() => resolve(false), ms)),
+  ]);
 
 const runEntrypoint = async (paths: Paths, options: RunOptions = {}) => {
   const result = await spawnEntrypoint(paths, options);
@@ -277,6 +310,39 @@ describe("image entrypoint", () => {
     expect(result.status).not.toBe(0);
   });
 
+  it("marks the home ready as its last step, once the links are in place and before the command runs", async () => {
+    const paths = await sandboxRoot();
+    const script = (await imageFile("entrypoint.sh")).trimEnd().split("\n");
+    const marked = script.indexOf(': > "$ready"');
+
+    await mkdir(join(paths.render, "tools"));
+
+    await writeFile(join(paths.render, "tools", "m2-settings.xml"), "<settings/>\n");
+
+    const result = await spawnEntrypoint(paths, {
+      command: ["sh", "-c", `test -e "${paths.ready}" && test -L "$HOME/.m2/settings.xml"`],
+    });
+
+    expect(script.slice(marked + 1).filter((line) => line.trim() !== "")).toEqual([
+      'if [ "$#" -gt 0 ]; then',
+      '  exec "$@"',
+      "fi",
+      "exec sleep infinity",
+    ]);
+    expect(result.status).toBe(0);
+  });
+
+  it("leaves the home unmarked when it stops before the home is ready", async () => {
+    const paths = await sandboxRoot();
+    const result = await spawnEntrypoint(paths, {
+      env: { PI_SANDBOX_AWAIT_HANDOVER: "1" },
+      handoverTries: 1,
+    });
+
+    expect(result.status).toBe(1);
+    await expect(lstat(paths.ready)).rejects.toThrow();
+  });
+
   it("idles with a plain sleep under the container's own init and leaves the bash env to the shells", async () => {
     const script = await imageFile("entrypoint.sh");
 
@@ -348,6 +414,46 @@ describe("image entrypoint", () => {
       join(paths.render, "tools", "m2-settings.xml"),
     );
     await expect(lstat(join(paths.home, ".pi", "agent", "tools"))).rejects.toThrow();
+  });
+
+  it("links ~/.m2/settings.xml only after the launcher hands over the ~/.m2 the engine made for a shared cache", async () => {
+    const paths = await sandboxRoot();
+    const m2 = join(paths.home, ".m2");
+
+    await mkdir(join(paths.render, "tools"));
+
+    await writeFile(join(paths.render, "tools", "m2-settings.xml"), "<settings/>\n");
+
+    await mkdir(join(m2, "repository"), { recursive: true });
+
+    await chmod(m2, 0o555);
+
+    const running = startEntrypoint(paths, { env: { PI_SANDBOX_AWAIT_HANDOVER: "1" } });
+    const settledBeforeHandover = await settledWithin(running, 500);
+
+    await chmod(m2, 0o755);
+
+    await writeFile(paths.handover, "");
+
+    const result = await running;
+
+    expect(settledBeforeHandover).toBe(false);
+    expect(result).toEqual({ status: 0, stderr: "" });
+    expect(await readlink(join(m2, "settings.xml"))).toBe(join(paths.render, "tools", "m2-settings.xml"));
+  });
+
+  it("stops with a clear message when the launcher never hands the volumes over", async () => {
+    const paths = await sandboxRoot();
+    const result = await spawnEntrypoint(paths, {
+      env: { PI_SANDBOX_AWAIT_HANDOVER: "1" },
+      handoverTries: 10,
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toBe(
+      "pi-sandbox: the launcher did not hand the cache volumes to the sandbox user within 1 s, stopping\n",
+    );
+    await expect(lstat(join(paths.home, ".pi"))).rejects.toThrow();
   });
 
   it("puts the gh, npm and pip files in place and writable copies of the gitconfig and the glab config", async () => {
