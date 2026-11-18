@@ -1,0 +1,5 @@
+{
+  "provider-a": { "hosts": ["api.provider-a.example", "eu.provider-a.example"] },
+  "provider-b": { "hosts": ["api.provider-b.example"] },
+  "provider-c": { "hosts": [] }
+}

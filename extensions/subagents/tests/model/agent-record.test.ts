@@ -2,38 +2,19 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { loadDefinitions } from "../../core/agent-definitions/loader.ts";
-import {
-  type AgentDefinition,
-  type AgentRecord,
-  chainLinks,
-  chainTerminal,
-  isLead,
-} from "../../core/model/agent-record.ts";
-import { agentRecord } from "../support/agent-records.ts";
+import { type AgentRecord, chainLinks, chainTerminal, isLead } from "../../core/model/agent-record.ts";
+import { agentDefinition, agentRecord } from "../support/agent-records.ts";
 import { PACKAGE_ROOT, tempDir } from "../support/subagents-harness.ts";
-
-const definition = (patch: Partial<AgentDefinition> & Pick<AgentDefinition, "name">) =>
-  ({
-    description: `${patch.name} does its job`,
-    limit: 100_000,
-    tools: ["read", "bash"],
-    skills: [],
-    subagents: ["scout"],
-    prompt: "",
-    source: "builtin",
-    path: `/pkg/agents/leads/${patch.name}.md`,
-    ...patch,
-  }) as AgentDefinition;
 
 describe("isLead", () => {
   it("is true for an agent that may start subagents", () => {
-    expect(isLead(definition({ name: "reviewer", subagents: ["scout", "shell"] }))).toBe(true);
-    expect(isLead(definition({ name: "boss", subagents: "all" }))).toBe(true);
-    expect(isLead(definition({ name: "scout", subagents: [] }))).toBe(false);
+    expect(isLead(agentDefinition({ name: "reviewer", subagents: ["scout", "shell"] }))).toBe(true);
+    expect(isLead(agentDefinition({ name: "boss", subagents: "all" }))).toBe(true);
+    expect(isLead(agentDefinition({ name: "scout", subagents: [] }))).toBe(false);
   });
 
   it("does not count every skill without subagents as a lead", () => {
-    expect(isLead(definition({ name: "solo", skills: "all", subagents: [] }))).toBe(false);
+    expect(isLead(agentDefinition({ name: "solo", skills: "all", subagents: [] }))).toBe(false);
   });
 
   it("counts the shipped general agent as a lead", () => {

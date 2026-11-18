@@ -22,7 +22,8 @@ type Status = { pattern: RegExp; reason: (match: RegExpExecArray) => string; tim
 const STATUSES: Status[] = [
   { pattern: /^Command exited with code (\d+)$/, reason: (match) => `exit ${match[1]}` },
   {
-    pattern: /^Command timed out after (\d+) seconds$/,
+    pattern:
+      /^Command timed out after (\d+) seconds(?:\. The shell exited with code -?\d+ after \d+(?:\.\d+)? seconds, but background processes it started kept writing output until the timeout\.)?$/,
     reason: (match) => `timed out after ${match[1]}s`,
     timedOut: true,
   },

@@ -17,18 +17,24 @@ const indentLines = (lines: string[], pad: number, width: number) => {
   );
 };
 
+export const padEntry = (
+  draw: (width: number, pad: number) => string[],
+  width: number,
+  pad: number,
+  flush: boolean,
+) => {
+  const shift = flush ? 0 : pad;
+
+  return indentLines(draw(Math.max(1, width - shift), pad), shift, width);
+};
+
 const paddedComponent = (
   pad: () => number,
   flush: boolean,
   draw: (width: number, pad: number) => string[],
   invalidate: () => void = () => {},
 ): Component => ({
-  render: (width) => {
-    const read = pad();
-    const shift = flush ? 0 : read;
-
-    return indentLines(draw(Math.max(1, width - shift), read), shift, width);
-  },
+  render: (width) => padEntry(draw, width, pad(), flush),
   invalidate,
 });
 

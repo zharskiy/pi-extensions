@@ -28,12 +28,16 @@ const ensureProjectDir = (cwd: string) => {
 
 export const projectPath = (cwd: string, relativePath = "") => join(cwd, PROJECT_DIR, relativePath);
 
-export const ensureProjectSubdir = (cwd: string, relativePath: string) => {
+export const ensureProjectSubdir = (cwd: string, relativePath: string, { ignored = false } = {}) => {
   const dir = projectPath(cwd, relativePath);
 
   ensureProjectDir(cwd);
 
   mkdirSync(dir, { recursive: true });
+
+  if (ignored) {
+    ignoreFromGit(dir);
+  }
 
   return dir;
 };

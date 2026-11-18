@@ -1,0 +1,150 @@
+#!/bin/sh
+set -eu
+
+home="${HOME:-/home/pi}"
+agent_dir="$home/.pi/agent"
+render_dir=/opt/pi-sandbox/render
+tools_dir="$render_dir/tools"
+agents_skills_render="$render_dir/agents-skills"
+agents_skills="$home/.agents/skills"
+bundle_dir=/tmp/pi-sandbox
+system_bundle=/etc/ssl/certs/ca-certificates.crt
+trust_bundle=/etc/pi-sandbox/ca.pem
+truststore="$bundle_dir/truststore.p12"
+handover=/tmp/pi-sandbox-handover
+ready=/tmp/pi-sandbox-ready
+handover_tries=600
+
+await_handover() {
+  tries=0
+
+  while [ ! -e "$handover" ]; do
+    if [ "$tries" -ge "$handover_tries" ]; then
+      echo "pi-sandbox: the launcher did not hand the cache volumes to the sandbox user within $((handover_tries / 10)) s, stopping" >&2
+      exit 1
+    fi
+
+    tries=$((tries + 1))
+    sleep 0.1
+  done
+}
+
+if [ -n "${PI_SANDBOX_AWAIT_HANDOVER:-}" ]; then
+  await_handover
+fi
+
+mkdir -p "$agent_dir" "$bundle_dir"
+
+copy_file() {
+  rm -rf "$2.tmp.$$"
+  cp "$1" "$2.tmp.$$"
+  chmod "$3" "$2.tmp.$$"
+
+  if [ -d "$2" ]; then
+    rm -rf "$2"
+  fi
+
+  mv -f "$2.tmp.$$" "$2"
+}
+
+find "$agent_dir" -mindepth 1 -maxdepth 1 -type l -lname "$render_dir/*" ! -exec test -e {} \; -exec rm -f {} \;
+
+for entry in "$render_dir"/* "$render_dir"/.[!.]* "$render_dir"/..?*; do
+  name=${entry##*/}
+
+  if [ ! -e "$entry" ] || [ "$name" = tools ] || [ "$name" = agents-skills ]; then
+    continue
+  fi
+
+  link="$agent_dir/$name"
+
+  if [ "$name" = auth.json ]; then
+    copy_file "$entry" "$link" 0444
+    continue
+  fi
+
+  rm -rf "$link"
+  ln -s "$entry" "$link"
+done
+
+if [ -d "$agents_skills_render" ]; then
+  mkdir -p "$(dirname "$agents_skills")"
+  rm -rf "$agents_skills"
+  ln -s "$agents_skills_render" "$agents_skills"
+elif [ -L "$agents_skills" ] && [ ! -e "$agents_skills" ]; then
+  rm -f "$agents_skills"
+fi
+
+link_tool() {
+  if [ -f "$tools_dir/$1" ]; then
+    mkdir -p "$(dirname "$home/$2")"
+    rm -rf "${home:?}/$2"
+    ln -s "$tools_dir/$1" "$home/$2"
+  fi
+}
+
+copy_tool() {
+  if [ -f "$tools_dir/$1" ]; then
+    mkdir -p "$(dirname "$home/$2")"
+    copy_file "$tools_dir/$1" "$home/$2" "$3"
+  fi
+}
+
+port_tool() {
+  if [ -f "$tools_dir/$1" ]; then
+    mkdir -p "$(dirname "$home/$2")"
+    sed 's|<port>\${env\.PI_SANDBOX_PROXY_PORT}</port>|<port>'"${PI_SANDBOX_PROXY_PORT:-}"'</port>|' "$tools_dir/$1" > "$bundle_dir/$1"
+    copy_file "$bundle_dir/$1" "$home/$2" 0644
+  fi
+}
+
+port_tool m2-settings.xml .m2/settings.xml
+link_tool gh-hosts.yml .config/gh/hosts.yml
+link_tool npmrc .npmrc
+link_tool pip.conf .config/pip/pip.conf
+copy_tool glab-config.yml .config/glab-cli/config.yml 0600
+copy_tool gitconfig .gitconfig 0644
+
+cat "$system_bundle" > "$bundle_dir/ca-bundle.pem"
+
+if [ -f "$trust_bundle" ]; then
+  cat "$trust_bundle" >> "$bundle_dir/ca-bundle.pem"
+fi
+
+build_truststore() {
+  java_bin="$(command -v java)" || return 1
+  java_home="$(dirname "$(dirname "$(readlink -f "$java_bin")")")"
+  keytool_bin="$java_home/bin/keytool"
+  certs_dir="$bundle_dir/jvm-ca"
+
+  [ -f "$trust_bundle" ] && [ -x "$keytool_bin" ] || return 1
+  rm -rf "$certs_dir" "$truststore.tmp"
+  mkdir -p "$certs_dir"
+  cp -L "$java_home/lib/security/cacerts" "$truststore.tmp" 2>/dev/null || return 1
+  awk -v dir="$certs_dir" '
+    /-----BEGIN CERTIFICATE-----/ { count++; file = dir "/pi-sandbox-" count ".pem" }
+    file != "" { print > file }
+    /-----END CERTIFICATE-----/ { close(file); file = "" }
+  ' "$trust_bundle"
+  failed="$(find "$certs_dir" -name '*.pem' ! -exec sh -c '
+    "$1" -importcert -noprompt -keystore "$2" -storepass changeit -alias "$(basename "$3" .pem)" -file "$3" >/dev/null 2>&1
+  ' sh "$keytool_bin" "$truststore.tmp" {} \; -print)"
+  imported="$(find "$certs_dir" -name '*.pem')"
+  rm -rf "$certs_dir"
+  [ -z "$failed" ] && [ -n "$imported" ] || return 1
+  mv "$truststore.tmp" "$truststore"
+}
+
+rm -f "$truststore"
+
+if ! build_truststore; then
+  rm -f "$truststore.tmp"
+fi
+
+: > "$ready"
+
+if [ "$#" -gt 0 ]; then
+  exec "$@"
+fi
+
+exec sleep infinity

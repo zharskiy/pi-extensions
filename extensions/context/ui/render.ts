@@ -1,17 +1,11 @@
 import { CHILD_COLUMN, type ThemeLike } from "../../../platform/pi-adapter/index.ts";
-import { DOT, formatTokens } from "../../../platform/shared/index.ts";
+import { DOT, formatPercent, formatTokens } from "../../../platform/shared/index.ts";
 import { cachePercentText, countLine, markGlyph } from "../../../platform/ui-kit/index.ts";
-import {
-  type CacheFigures,
-  type Category,
-  type CategoryKey,
-  type UsageModel,
-  usageModel,
-} from "../core/breakdown.ts";
+import { type Category, type CategoryKey, type UsageModel, usageModel } from "../core/breakdown.ts";
 import type { Snapshot } from "../core/snapshot.ts";
 import { detailLines, itemCount } from "./details.ts";
 import { GAP, gridOf, legendGlyph } from "./grid.ts";
-import { figuresText, modelName } from "./summary.ts";
+import { bracketed, cacheText, headerText, type SummaryPaint } from "./summary.ts";
 
 type RenderOptions = { width: number; expanded: boolean; expandKey: string };
 
@@ -29,54 +23,45 @@ const LABELS: Record<CategoryKey, string> = {
 
 const INDENT = " ".repeat(CHILD_COLUMN);
 
-const percentText = (percent: number) => `${percent.toFixed(1)}%`;
-
 const legendText = (theme: ThemeLike, category: Category, full: boolean) => {
   const amount = formatTokens(category.tokens);
-  const share = `(${percentText(category.percent)})`;
+  const share = bracketed(formatPercent(category.percent, 1));
 
   if (category.key !== "free") {
-    return `${LABELS[category.key]}: ${amount} tokens ${share}`;
+    return `${LABELS[category.key]}: ${amount} tokens${share}`;
   }
 
-  return full ? theme.fg("warning", `${LABELS.free}: 0 (0%)`) : `${LABELS.free}: ${amount} ${share}`;
+  return full ? theme.fg("warning", `${LABELS.free}: 0 (0%)`) : `${LABELS.free}: ${amount}${share}`;
 };
 
 const legendLine = (theme: ThemeLike, category: Category, full: boolean) =>
   `${legendGlyph(theme, category.key)} ${legendText(theme, category, full)}`;
 
-const headerText = (theme: ThemeLike, model: UsageModel, unit: boolean) =>
-  [
-    theme.fg("text", modelName(model)),
-    figuresText(model, unit),
-    ...(model.estimated ? [theme.fg("dim", "estimated")] : []),
-  ].join(theme.fg("dim", DOT));
+const painted = (theme: ThemeLike): SummaryPaint => ({
+  name: (text) => theme.fg("text", text),
+  note: (text) => theme.fg("dim", text),
+  percent: (value, missed) =>
+    missed ? theme.fg("warning", formatPercent(value)) : cachePercentText(theme, value),
+  dot: theme.fg("dim", DOT),
+});
 
-const fittedHeader = (theme: ThemeLike, model: UsageModel, room: number) => {
-  const full = headerText(theme, model, true);
+const fittedHeader = (theme: ThemeLike, model: UsageModel, room: number, paint: SummaryPaint) => {
+  const full = headerText(model, true, paint);
 
-  return theme.width(full) <= room ? full : headerText(theme, model, false);
+  return theme.width(full) <= room ? full : headerText(model, false, paint);
 };
 
-const lastTurnText = (theme: ThemeLike, lastTurn: number, missed: boolean) =>
-  missed ? theme.fg("warning", `${Math.round(lastTurn)}%`) : cachePercentText(theme, lastTurn);
+const sideLines = (theme: ThemeLike, model: UsageModel, room: number) => {
+  const paint = painted(theme);
 
-const cacheText = (theme: ThemeLike, cache: CacheFigures) => {
-  const last =
-    cache.lastTurn === undefined
-      ? []
-      : [`last turn ${lastTurnText(theme, cache.lastTurn, cache.lastMissed)}`];
-
-  return `Cache hit: ${[...last, `session ${cachePercentText(theme, cache.session)}`].join(theme.fg("dim", DOT))}`;
+  return [
+    fittedHeader(theme, model, room, paint),
+    ...(model.cache ? [cacheText(model.cache, paint)] : []),
+    "",
+    theme.bold("Estimated usage by category"),
+    ...model.categories.map((category) => legendLine(theme, category, model.full)),
+  ];
 };
-
-const sideLines = (theme: ThemeLike, model: UsageModel, room: number) => [
-  fittedHeader(theme, model, room),
-  ...(model.cache ? [cacheText(theme, model.cache)] : []),
-  "",
-  theme.bold("Estimated usage by category"),
-  ...model.categories.map((category) => legendLine(theme, category, model.full)),
-];
 
 const bodyLines = (theme: ThemeLike, model: UsageModel, width: number) => {
   const room = Math.max(1, width - CHILD_COLUMN);

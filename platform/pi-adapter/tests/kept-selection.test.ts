@@ -1,9 +1,10 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fauxAssistantMessage, fauxProvider, fauxText } from "@earendil-works/pi-ai";
-import * as pi from "@earendil-works/pi-coding-agent";
+import type * as pi from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useTempDirs } from "../../../test/framework/index.ts";
+import { startPiRuntime } from "../../../test/framework/pi/index.ts";
 import { createPiHost } from "../runtime/host.ts";
 import type { ThinkingLevel } from "../types/model.ts";
 
@@ -16,8 +17,6 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
 const startHandoffRuntime = async (settings: object = {}) => {
   const dir = temp.make("pi-kept-selection-");
 
-  vi.stubEnv("PI_CODING_AGENT_DIR", dir);
-
   const faux = fauxProvider({
     provider: "acme",
     models: [
@@ -26,19 +25,6 @@ const startHandoffRuntime = async (settings: object = {}) => {
     ],
   });
   const locked = fauxProvider({ provider: "vault", models: [{ id: "sealed", reasoning: true }] });
-  const modelRuntime = await pi.ModelRuntime.create();
-
-  modelRuntime.registerNativeProvider(faux.provider);
-  modelRuntime.registerNativeProvider(locked.provider);
-
-  await modelRuntime.refresh({ allowNetwork: false });
-
-  const settingsManager = pi.SettingsManager.inMemory({
-    defaultProvider: "acme",
-    defaultModel: "small",
-    defaultThinkingLevel: "low",
-    ...settings,
-  });
   const warnings: string[] = [];
   const reported: string[] = [];
   const pending: Promise<unknown>[] = [];
@@ -83,59 +69,17 @@ const startHandoffRuntime = async (settings: object = {}) => {
     });
   };
 
-  const createRuntime: pi.CreateAgentSessionRuntimeFactory = async ({
-    cwd,
-    agentDir,
-    sessionManager,
-    sessionStartEvent,
-  }) => {
-    const services = await pi.createAgentSessionServices({
-      cwd,
-      agentDir,
-      settingsManager,
-      modelRuntime,
-      resourceLoaderOptions: {
-        extensionFactories: [
-          { name: "handoff", factory: handoff },
-          { name: "bystander", factory: bystander },
-          { name: "chooser", factory: chooser },
-        ],
+  const { runtime, settingsManager, modelRuntime } = await startPiRuntime({
+    dir,
+    providers: [faux, locked],
+    settings: { defaultProvider: "acme", defaultModel: "small", defaultThinkingLevel: "low", ...settings },
+    factories: { handoff, bystander, chooser },
+    ui: {
+      notify: (message, level) => {
+        warnings.push(`${level}: ${message}`);
       },
-    });
-    const created = await pi.createAgentSessionFromServices({ services, sessionManager, sessionStartEvent });
-
-    return { ...created, services, diagnostics: services.diagnostics };
-  };
-
-  const runtime = await pi.createAgentSessionRuntime(createRuntime, {
-    cwd: dir,
-    agentDir: dir,
-    sessionManager: pi.SessionManager.inMemory(dir),
-  });
-
-  const uiContext = {
-    notify: (message: string, level: string) => {
-      warnings.push(`${level}: ${message}`);
     },
-  } as unknown as pi.ExtensionUIContext;
-
-  const bind = async () => {
-    await runtime.session.bindExtensions({
-      mode: "print",
-      uiContext,
-      commandContextActions: {
-        waitForIdle: () => runtime.session.waitForIdle(),
-        newSession: (options) => runtime.newSession(options),
-        fork: (entryId, options) => runtime.fork(entryId, options),
-        navigateTree: async () => ({ cancelled: true }),
-        switchSession: (sessionPath, options) => runtime.switchSession(sessionPath, options),
-        reload: async () => {},
-      },
-    });
-  };
-
-  runtime.setRebindSession(bind);
-  await bind();
+  });
 
   const select = async (model: pi.ExtensionContext["model"], thinking: ThinkingLevel) => {
     await runtime.session.setModel(model as never);

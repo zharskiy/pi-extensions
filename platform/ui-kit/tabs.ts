@@ -1,5 +1,6 @@
 import type { KeyPress, ThemeLike } from "../pi-adapter/index.ts";
 import { prefixed } from "../shared/index.ts";
+import { MARKS } from "./glyphs.ts";
 import type { KeyHint } from "./key-hints.ts";
 
 export type Tab = { label: string; done: boolean };
@@ -8,7 +9,7 @@ type TabGroup = { label: string; tabs: readonly Tab[] };
 
 export const TAB_SWITCH_HINT: KeyHint = ["tab/←→", "to switch"];
 
-const SUBMIT_LABEL = "✓ Submit";
+const SUBMIT_LABEL = `${MARKS.success} Submit`;
 
 const GROUP_LABEL_WIDTH = 8;
 

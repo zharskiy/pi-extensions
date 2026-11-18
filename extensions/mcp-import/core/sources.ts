@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
-import { errorText, isPlainObject } from "../../../platform/shared/index.ts";
-import type { Scope, Source } from "./args.ts";
+import { errorText, isPlainObject, type SettingsScope } from "../../../platform/shared/index.ts";
+import type { Source } from "./args.ts";
 
 export type Origin = { label: string; servers: Record<string, unknown>; note?: string };
 
@@ -64,7 +64,7 @@ type Spec = {
 const LOCAL_NOTE =
   "comes from your private Claude local scope; .pi/mcp.json may be committed, so check it for credentials";
 
-const specsFor = (source: Source, scope: Scope, { home, cwd }: Places): Spec[] => {
+const specsFor = (source: Source, scope: SettingsScope, { home, cwd }: Places): Spec[] => {
   const claudeJson = join(home, ".claude.json");
 
   if (source === "claude" && scope === "user") {
@@ -88,7 +88,7 @@ const specsFor = (source: Source, scope: Scope, { home, cwd }: Places): Spec[] =
     : [{ label: ".cursor/mcp.json", path: join(cwd, ".cursor", "mcp.json"), servers: serversOf }];
 };
 
-export const findServers = (source: Source, scope: Scope, places: Places): Found => {
+export const findServers = (source: Source, scope: SettingsScope, places: Places): Found => {
   const specs = specsFor(source, scope, places);
   const reads = specs.map((spec) => ({ spec, read: readJson(spec.path) }));
 

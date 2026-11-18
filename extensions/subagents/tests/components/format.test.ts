@@ -74,6 +74,7 @@ describe("format helpers", () => {
     expect(shown({ state: "running" })).toBe("Starting");
     expect(shown({ state: "queued" })).toBe("Queued");
     expect(shown({ state: "grace", startedAt: 0 })).toBe("Stopping · Elapsed 1m 5s");
+    expect(shown({ ...worked, startedAt: Number.NaN })).toBe("4 calls · 12.3k tokens · $0.04");
     expect(shown({ ...worked, state: "done", endedAt: 65_000 })).toBe(
       "1m 5s · 4 calls · 12.3k tokens · $0.04",
     );

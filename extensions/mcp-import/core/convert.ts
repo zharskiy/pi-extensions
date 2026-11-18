@@ -1,4 +1,4 @@
-import { isPlainObject } from "../../../platform/shared/index.ts";
+import { isPlainObject, isStringArray } from "../../../platform/shared/index.ts";
 import type { Source } from "./args.ts";
 
 type RawServer = Record<string, unknown>;
@@ -42,9 +42,6 @@ const WORKSPACE = /\$\{workspaceFolder(?:Basename)?\}/;
 const HOME = "${userHome}";
 
 const VARIABLE = /\$\{[^}]*\}/;
-
-const isStringArray = (value: unknown): value is string[] =>
-  Array.isArray(value) && value.every((item) => typeof item === "string");
 
 const isStringRecord = (value: unknown): value is Record<string, string> =>
   isPlainObject(value) && Object.values(value).every((item) => typeof item === "string");

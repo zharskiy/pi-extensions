@@ -3,3 +3,4 @@ node_modules
 .claude/
 test/evals/.results/
 docs/
+launcher/dist/

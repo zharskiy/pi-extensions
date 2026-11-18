@@ -1,9 +1,10 @@
 import type { FormFactory } from "../../../../platform/pi-adapter/index.ts";
-import type { Scope, SetupChange } from "../../core/agent-setup/scope.ts";
+import type { SettingsScope } from "../../../../platform/shared/index.ts";
+import type { SetupChange } from "../../core/agent-setup/scope.ts";
 import { initialSetup, pressSetupKey, type SetupContext, scopeOptions, setupChanges } from "./form.ts";
 import { renderSetup, type SetupPaths } from "./setup-render.ts";
 
-type SetupResult = { scope: Scope; changes: SetupChange[] };
+type SetupResult = { scope: SettingsScope; changes: SetupChange[] };
 
 export const setupForm =
   (context: SetupContext, paths: SetupPaths): FormFactory<SetupResult | undefined> =>

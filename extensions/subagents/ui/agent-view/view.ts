@@ -20,7 +20,13 @@ import {
 import type { ViewData } from "../../core/agent-view/source.ts";
 import { agentReceipt, type ReceiptSegment, singleLine } from "../../core/components/receipt.ts";
 import { tickFor } from "../../core/components/refresh.ts";
-import { type AgentRecord, isClosed, type Worktree } from "../../core/model/agent-record.ts";
+import {
+  type AgentRecord,
+  chainText,
+  handoffText,
+  isClosed,
+  worktreeText,
+} from "../../core/model/agent-record.ts";
 import { type ContextUse, contextUse } from "../../core/model/context-limit.ts";
 import { agentName } from "../components/agent-row.ts";
 import { alignRight, innerWidth, padLine, receiptText, truncatePainted } from "../components/format.ts";
@@ -81,20 +87,6 @@ const receiptLine = (
 const chainName = (record: AgentRecord, index: number) =>
   agentName({ agent: record.agent, chainIndex: index + 1 });
 
-const worktreeLine = (worktree: Worktree) => {
-  if (worktree.cleanup === "removed") {
-    return "Worktree removed";
-  }
-
-  if (worktree.cleanup === "branch kept") {
-    return `Worktree removed${DOT}branch ${worktree.branch} kept`;
-  }
-
-  const kept = worktree.cleanup === "kept" ? `${DOT}kept` : "";
-
-  return `Worktree ${worktree.path}${DOT}branch ${worktree.branch}${kept}`;
-};
-
 const ERROR_ROWS = 6;
 
 const errorLines = (record: AgentRecord, theme: ThemeLike, inner: number) => {
@@ -121,9 +113,7 @@ const handoffLines = (record: AgentRecord, theme: ThemeLike, inner: number) => {
     return [];
   }
 
-  const invalid = record.error ? ` (invalid: ${record.error})` : "";
-
-  return [padLine(theme, "warning", `handoff file ${record.handoffPath}${invalid}`, inner)];
+  return [padLine(theme, "warning", `Handoff file ${handoffText(record)}`, inner)];
 };
 
 export const headerLines = (
@@ -137,16 +127,16 @@ export const headerLines = (
   const inner = innerWidth(width);
   const dim = (text: string) => padLine(theme, "dim", text, inner);
   const names = chain.map((_, index) => chainName(record, index));
-  const chainText = `Chain ${names.join(" → ")} (${chain.length} sessions)${DOT}viewing ${agentName(record)}`;
+  const chainLine = `Chain ${chainText(names)}${DOT}viewing ${agentName(record)}`;
 
   return [
     titleLine(record, theme, inner, now),
     receiptLine(data, theme, inner, now, use),
     dim(`${record.model ?? "model n/a"}${DOT}id ${record.id}`),
     ...errorLines(record, theme, inner),
-    ...(chain.length > 1 ? [dim(chainText)] : []),
+    ...(chain.length > 1 ? [dim(chainLine)] : []),
     ...handoffLines(record, theme, inner),
-    ...(record.worktree ? [dim(worktreeLine(record.worktree))] : []),
+    ...(record.worktree ? [dim(`Worktree ${worktreeText(record.worktree)}`)] : []),
     theme.fg("dim", "─".repeat(Math.max(0, width))),
   ];
 };

@@ -3,7 +3,7 @@ import type { RunMode } from "../../../platform/pi-adapter/index.ts";
 import { AWAITING_INPUT_CHANNEL } from "../../../platform/shared/index.ts";
 import { char, createFakeHost, flushMicrotasks, key } from "../../../test/framework/index.ts";
 import { createQuestionnaire } from "../api/plugin.ts";
-import { QUESTIONNAIRE_SOURCE } from "../core/questionnaire.ts";
+import { NAMESPACE } from "../core/questionnaire.ts";
 import type { QuestionnaireDetails, QuestionnaireParams } from "../core/questions.ts";
 import { ANSWER_ARM_MS } from "../ui/view.ts";
 import { PRIORITY, SCOPE } from "./support/questions.ts";
@@ -218,16 +218,14 @@ describe("questionnaire tool", () => {
 
     await flushMicrotasks();
 
-    expect(waitingSignals(host)).toEqual([
-      { source: QUESTIONNAIRE_SOURCE, waiting: true, title: "questionnaire" },
-    ]);
+    expect(waitingSignals(host)).toEqual([{ source: NAMESPACE, waiting: true, title: "questionnaire" }]);
 
     host.form().press(key("escape"));
     await pending;
 
     expect(waitingSignals(host)).toEqual([
-      { source: QUESTIONNAIRE_SOURCE, waiting: true, title: "questionnaire" },
-      { source: QUESTIONNAIRE_SOURCE, waiting: false, title: "questionnaire" },
+      { source: NAMESPACE, waiting: true, title: "questionnaire" },
+      { source: NAMESPACE, waiting: false, title: "questionnaire" },
     ]);
   });
 
@@ -249,9 +247,7 @@ describe("questionnaire tool", () => {
 
     await flushMicrotasks();
 
-    expect(waitingSignals(host)).toEqual([
-      { source: QUESTIONNAIRE_SOURCE, waiting: true, title: "questionnaire" },
-    ]);
+    expect(waitingSignals(host)).toEqual([{ source: NAMESPACE, waiting: true, title: "questionnaire" }]);
 
     if (aborts) {
       controller.abort();
@@ -261,8 +257,8 @@ describe("questionnaire tool", () => {
 
     expect((await pending).details?.cancelled).toBe(true);
     expect(waitingSignals(host)).toEqual([
-      { source: QUESTIONNAIRE_SOURCE, waiting: true, title: "questionnaire" },
-      { source: QUESTIONNAIRE_SOURCE, waiting: false, title: "questionnaire" },
+      { source: NAMESPACE, waiting: true, title: "questionnaire" },
+      { source: NAMESPACE, waiting: false, title: "questionnaire" },
     ]);
   });
 

@@ -1,6 +1,6 @@
 # The harness side: what pi-extensions must build for a company package
 
-> Status edit, 2026-10-18: the owner dropped section 2.1 (agent files from pi packages) as excessive. Company agents are installed into the user agent dir or `.pi/agents`, for example by the example's `install-agents.sh`, which therefore stays. The workflow engine stays dropped too (item 5). Sections 2.2 to 2.4 remain planned; 2.2 is detailed in ../../cwd/spec.md.
+> Status edit, 2026-10-18: the owner dropped section 2.1 (agent files from pi packages) as excessive. Company agents are installed into the user agent dir or `.pi/agents`, for example by the example's `install-agents.sh`, which therefore stays. The workflow engine stays dropped too (item 5). Sections 2.2 to 2.4 remain planned; 2.2 is detailed in ../../workflow-mechanics/cwd/spec.md.
 
 Scope: verify section C of `../company/company-side.md`, design the harness changes that survive, and say what happens to `future-plans/`. Read on branch `feat/verifier-chore` (5a3846f). "pi dist" means `node_modules/@earendil-works/pi-coding-agent/dist/` (pi 1.3.0). Paths without a prefix are under `extensions/subagents/`.
 

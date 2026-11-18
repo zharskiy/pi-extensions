@@ -24,9 +24,9 @@ import {
   type AgentRegistry,
   chainLinks,
   chainTerminal,
+  cleanupText,
   isClosed,
   MAIN_CALLER,
-  type WorktreeCleanup,
 } from "../../core/model/agent-record.ts";
 import { chainTotals } from "../../core/run-agent/result.ts";
 import type { RunAgentDetails, RunAgentParams } from "../../core/run-agent/tools.ts";
@@ -72,18 +72,10 @@ const nounPhrase = (agents: { agent?: string }[]) => {
   return kind ? `${kind} ${label}` : label;
 };
 
-const CLEANUP_TEXT: Record<WorktreeCleanup, (branch: string) => string> = {
-  removed: () => "worktree removed",
-  "branch kept": (branch) => `branch ${branch} kept`,
-  kept: () => "worktree kept",
-};
+const worktreeCleanup = (record: AgentRecord) => {
+  const cleanup = isClosed(record.state) && record.worktree ? cleanupText(record.worktree) : undefined;
 
-const cleanupText = (record: AgentRecord) => {
-  const cleanup = record.worktree?.cleanup;
-
-  return isClosed(record.state) && cleanup && record.worktree
-    ? CLEANUP_TEXT[cleanup](record.worktree.branch)
-    : undefined;
+  return cleanup ? `worktree ${cleanup}` : undefined;
 };
 
 type Entry = RunAgentDetails["agents"][number];
@@ -137,7 +129,7 @@ const failureLines = (
 ): string[] => {
   const { theme, state, hints } = input;
   const reason = (terminal.error ?? "unknown error").trim();
-  const cleanup = cleanupText(terminal);
+  const cleanup = worktreeCleanup(terminal);
 
   if (reasonLeads(reason, totals, cols, theme)) {
     return [withCleanup(agentReceipt(totals, 0, { live: false, reason }), cleanup, cols, theme)];
@@ -165,7 +157,7 @@ const statusLines = (terminal: AgentRecord, totals: AgentRecord, input: BlockInp
 
   const segments = agentReceipt(totals, 0, { live: false });
 
-  return [withCleanup(segments, cleanupText(terminal), cols, theme)];
+  return [withCleanup(segments, worktreeCleanup(terminal), cols, theme)];
 };
 
 const unavailableRow = (entry: Entry, input: BlockInput, cols: number): MarkedRow => {

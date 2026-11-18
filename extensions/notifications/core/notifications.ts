@@ -1,5 +1,5 @@
 import type { DialogEvent, NotifyChannel, RunMode } from "../../../platform/pi-adapter/index.ts";
-import { parseAwaitingInput, parseBusySignal } from "../../../platform/shared/index.ts";
+import { parseAwaitingInput, trackBusy } from "../../../platform/shared/index.ts";
 import type { NotificationSettings } from "./settings.ts";
 
 const IDLE_TEXT = "pi is waiting for your input";
@@ -31,7 +31,6 @@ export const createNotifier = (
   settings: NotificationSettings,
   notify: (text: string, channel: NotifyChannel) => void,
 ) => {
-  const sources = new Set<string>();
   const idle = slot();
   const waitTimer = slot();
   const waits = new Map<string, { title?: string; fired: boolean }>();
@@ -62,6 +61,10 @@ export const createNotifier = (
 
   const armIdle = () => idle.arm(fireIdle, settings.idleDelayMs);
 
+  const tracker = trackBusy({ onBusy: idle.clear, onQuiet: () => pending && armIdle() });
+
+  const quiet = () => tracker.sources().length === 0;
+
   const armWait = () => waitTimer.arm(fireWait, settings.dialogDelayMs);
 
   const openWait = (owner: string, title?: string) => {
@@ -86,7 +89,7 @@ export const createNotifier = (
 
     waitTimer.clear();
 
-    if (waits.size === 0 && pending && sources.size === 0) {
+    if (waits.size === 0 && pending && quiet()) {
       armIdle();
     }
   };
@@ -108,26 +111,6 @@ export const createNotifier = (
     return channel !== undefined;
   };
 
-  const busy = (data: unknown) => {
-    const signal = parseBusySignal(data);
-
-    if (!signal) {
-      return;
-    }
-
-    if (signal.busy) {
-      sources.add(signal.source);
-      idle.clear();
-      return;
-    }
-
-    const removed = sources.delete(signal.source);
-
-    if (removed && sources.size === 0 && pending) {
-      armIdle();
-    }
-  };
-
   const settled = () => {
     if (!channel) {
       return;
@@ -135,7 +118,7 @@ export const createNotifier = (
 
     pending = true;
 
-    if (sources.size === 0) {
+    if (quiet()) {
       armIdle();
     }
   };
@@ -181,5 +164,5 @@ export const createNotifier = (
     waitTimer.clear();
   };
 
-  return { start, key, busy, settled, agentStart, dialog, awaiting, shutdown };
+  return { start, key, busy: tracker.receive, settled, agentStart, dialog, awaiting, shutdown };
 };

@@ -26,7 +26,5 @@ export const commandAliasesPlugin: Plugin<never, never, undefined> = {
   id: "command-aliases",
   enable({ host }) {
     createCommandAliases(host);
-
-    return undefined;
   },
 };

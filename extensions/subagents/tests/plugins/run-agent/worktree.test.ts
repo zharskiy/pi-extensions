@@ -14,7 +14,7 @@ import type { Settings } from "../../../core/model/settings.ts";
 import type { Runner } from "../../../core/run-agent/runner.ts";
 import type { RunAgentParams } from "../../../core/run-agent/tools.ts";
 import { createWorktree } from "../../../core/run-agent/worktree.ts";
-import { createHarness, tempDir } from "../../support/subagents-harness.ts";
+import { createHarness, tempDir, writeUserAgent } from "../../support/subagents-harness.ts";
 
 const fixedBytes = vi.hoisted(() => ({ value: undefined as Buffer | undefined }));
 
@@ -72,10 +72,7 @@ const setup = (cwd: string, overrides: Partial<Settings> = {}) => {
     overrides,
   });
 
-  const agents = join(harness.host.info.agentDir, "agents");
-
-  mkdirSync(agents, { recursive: true });
-  writeFileSync(join(agents, "isolated.md"), ISOLATED_AGENT);
+  writeUserAgent(harness.host, "isolated", ISOLATED_AGENT);
   harness.host.info.cwd = cwd;
   harness.host.start();
 

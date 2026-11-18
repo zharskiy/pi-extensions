@@ -1,5 +1,3 @@
-import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { flushMicrotasks } from "../../../../../test/framework/index.ts";
 import { agentDefinitionsPlugin } from "../../../api/plugins/agent-definitions.ts";
@@ -7,7 +5,7 @@ import { agentRegistryPlugin } from "../../../api/plugins/agent-registry.ts";
 import { limitsPlugin } from "../../../api/plugins/limits.ts";
 import { runAgentPlugin } from "../../../api/plugins/run-agent.ts";
 import type { RunAgentDetails, RunAgentParams } from "../../../core/run-agent/tools.ts";
-import { createHarness } from "../../support/subagents-harness.ts";
+import { agentFile, createHarness, writeUserAgent } from "../../support/subagents-harness.ts";
 
 describe("run_agent mcp", () => {
   it("passes the definition's mcp to the spawn, true when the file omits it", async () => {
@@ -17,13 +15,8 @@ describe("run_agent mcp", () => {
       runAgentPlugin,
       limitsPlugin,
     ]);
-    const dir = join(harness.host.info.agentDir, "agents");
 
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(
-      join(dir, "own.md"),
-      "---\nname: own\ndescription: d\nlimit: 50000\ntools: all\nskills: []\nsubagents: []\n---\n",
-    );
+    writeUserAgent(harness.host, "own", agentFile("own", { skills: "[]" }));
     harness.host.start();
     harness.host.idle = false;
 

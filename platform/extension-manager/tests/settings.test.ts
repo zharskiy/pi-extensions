@@ -1,16 +1,14 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
-import { createFakeHost } from "../../../test/framework/index.ts";
+import { describe, expect, it } from "vitest";
+import { createFakeHost, useTempDirs } from "../../../test/framework/index.ts";
 import {
   loadSettingsFiles,
   parseSettings,
-  projectSettingsPath,
   readSettingsFile,
   readSettingsFiles,
   type SettingsSchema,
-  userSettingsPath,
+  settingsPath,
 } from "../../shared/index.ts";
 import { reportSettingsErrors } from "../settings-errors.ts";
 
@@ -21,6 +19,8 @@ const schema: SettingsSchema<Example> = {
   ratio: { type: "number", min: 0, max: 1, minExclusive: true },
   names: { type: "list", of: "names" },
 };
+
+const temp = useTempDirs();
 
 describe("settings helpers", () => {
   it("validates numbers and lists, keeps valid values and ignores unknown keys", () => {
@@ -75,12 +75,10 @@ describe("settings helpers", () => {
   });
 
   it("reads files, treats a missing file as empty and reports unreadable JSON", () => {
-    const root = mkdtempSync(join(tmpdir(), "pi-core-settings-"));
-
-    roots.push(root);
-
-    const user = userSettingsPath(join(root, "agent"), "example.json");
-    const project = projectSettingsPath(join(root, "project"), "example.json");
+    const root = temp.make("pi-core-settings-");
+    const where = { agentDir: join(root, "agent"), cwd: join(root, "project") };
+    const user = settingsPath(where, "user", "example.json");
+    const project = settingsPath(where, "project", "example.json");
 
     expect(user).toBe(join(root, "agent", "example.json"));
     expect(project).toBe(join(root, "project", ".pi", "example.json"));
@@ -101,12 +99,8 @@ const FILE = "example.json";
 
 const DEFAULTS: Example = { count: 5, ratio: 0.5, names: [] };
 
-const roots: string[] = [];
-
 const location = (projectTrusted: boolean) => {
-  const root = mkdtempSync(join(tmpdir(), "pi-core-settings-"));
-
-  roots.push(root);
+  const root = temp.make("pi-core-settings-");
 
   return { agentDir: join(root, "agent"), cwd: join(root, "project"), projectTrusted };
 };
@@ -119,17 +113,11 @@ const write = (path: string, content: unknown) => {
 const withFiles = (projectTrusted: boolean) => {
   const where = location(projectTrusted);
 
-  write(userSettingsPath(where.agentDir, FILE), { count: 2, ratio: 0.2 });
-  write(projectSettingsPath(where.cwd, FILE), { ratio: 0.9 });
+  write(settingsPath(where, "user", FILE), { count: 2, ratio: 0.2 });
+  write(settingsPath(where, "project", FILE), { ratio: 0.9 });
 
   return where;
 };
-
-afterEach(() => {
-  roots.splice(0).forEach((root) => {
-    rmSync(root, { recursive: true, force: true });
-  });
-});
 
 describe("settings files", () => {
   it("merges defaults, the user file and a trusted project file, project last", () => {
@@ -165,6 +153,20 @@ describe("settings files", () => {
     ]);
   });
 
+  it("shares one record of reported errors per host and label, at the level given", () => {
+    const host = createFakeHost({ id: "s" });
+
+    reportSettingsErrors(host, "example")(["a"]);
+    reportSettingsErrors(host, "example")(["a", "b"], "info");
+    reportSettingsErrors(host, "other")(["a"]);
+
+    expect(host.notices).toEqual([
+      { message: "example settings: a", level: "warning" },
+      { message: "example settings: b", level: "info" },
+      { message: "other settings: a", level: "warning" },
+    ]);
+  });
+
   it("ignores the project file when the project is not trusted", () => {
     expect(loadSettingsFiles(schema, DEFAULTS, FILE, withFiles(false)).settings).toEqual({
       count: 2,
@@ -175,8 +177,8 @@ describe("settings files", () => {
 
   it("ignores a trusted project file of a user-only settings file and reports it", () => {
     const where = withFiles(true);
-    const project = projectSettingsPath(where.cwd, FILE);
-    const user = userSettingsPath(where.agentDir, FILE);
+    const project = settingsPath(where, "project", FILE);
+    const user = settingsPath(where, "user", FILE);
 
     expect(loadSettingsFiles(schema, DEFAULTS, FILE, where, "user")).toEqual({
       settings: { count: 2, ratio: 0.2, names: [] },
@@ -187,7 +189,7 @@ describe("settings files", () => {
   it("reports nothing for a user-only settings file without a project file", () => {
     const where = location(true);
 
-    write(userSettingsPath(where.agentDir, FILE), { count: 3 });
+    write(settingsPath(where, "user", FILE), { count: 3 });
 
     expect(loadSettingsFiles(schema, DEFAULTS, FILE, where, "user").errors).toEqual([]);
   });

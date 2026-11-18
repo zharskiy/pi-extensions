@@ -364,7 +364,8 @@ describe("spending", () => {
     expect(host.statuses.get(STATUS_KEY)).toBe("main $0.50 · agents $0.20 · total $0.70");
     expect(host.notices).toEqual([
       {
-        message: "spending: could not read the parent session missing.jsonl; totals cover this session only",
+        message:
+          "pi-spending: could not read the parent session missing.jsonl; totals cover this session only",
         level: "warning",
       },
     ]);

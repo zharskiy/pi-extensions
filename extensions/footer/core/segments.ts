@@ -42,15 +42,6 @@ export const footerState = (
 
 export const folderName = (path: string) => path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
 
-export const sessionSpend = (totals: SpendingTotals) => {
-  const all = [totals.main, ...totals.sources];
-
-  return {
-    tokens: all.reduce((sum, spend) => sum + spend.tokens, 0),
-    cost: all.reduce((sum, spend) => sum + spend.cost, 0),
-  };
-};
-
 const statusTexts = (statuses: ReadonlyMap<string, string>, keep: (key: string) => boolean) =>
   Array.from(statuses)
     .filter(([key]) => keep(key))

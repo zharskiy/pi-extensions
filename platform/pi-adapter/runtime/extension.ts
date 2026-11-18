@@ -2,15 +2,17 @@ import type { ExtensionAPI, ExtensionFactory } from "@earendil-works/pi-coding-a
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { createPiRuntime } from "../child/child-runtime.ts";
 import { createSkillInventory } from "../child/skills.ts";
+import { MCP_SOURCE_PATH } from "../tools/tool-source.ts";
 import type { Host } from "../types/host-capabilities.ts";
 import type { SkillInfo } from "../types/messages.ts";
 import type { AgentRuntime } from "../types/runtime.ts";
 import type { HostState } from "../ui/tui-context.ts";
+import { guardAbortedReads } from "./aborted-read-guard.ts";
 import { insideChildSession } from "./child-scope.ts";
 import { createPiHost, liveCtx } from "./host.ts";
 
 export const mcpBuiltinLoaded = (pi: Pick<ExtensionAPI, "getCommands">) =>
-  pi.getCommands().some((command) => command.sourceInfo.path === "builtin:mcp");
+  pi.getCommands().some((command) => command.sourceInfo.path === MCP_SOURCE_PATH);
 
 export const sessionSkillFiles = (pi: Pick<ExtensionAPI, "getCommands">): SkillInfo[] =>
   pi
@@ -38,8 +40,10 @@ export const createPiExtension =
     options: { root: string; namespace: string; childExclude?: readonly string[]; skillInventory?: boolean },
   ): ExtensionFactory =>
   (pi) => {
+    const guarded = guardAbortedReads();
+
     if (insideChildSession()) {
-      return;
+      return guarded;
     }
 
     const inventory = createSkillInventory(() => sessionSkillFiles(pi));
@@ -57,7 +61,7 @@ export const createPiExtension =
       {
         ctx: () => liveCtx(state),
         settings: () => pi.getSettings(),
-        thinking: () => pi.getThinkingLevel(),
+        thinking: host.thinkingLevel,
         inventorySkillFiles: inventory.files,
         sessionSkillFiles: () => sessionSkillFiles(pi),
         activeTools: () => parentTools(pi),
@@ -68,4 +72,6 @@ export const createPiExtension =
     );
 
     boot(host, runtime, { root: options.root, agentDir: getAgentDir() });
+
+    return guarded;
   };

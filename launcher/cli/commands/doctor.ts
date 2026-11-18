@@ -1,0 +1,554 @@
+import {
+  type Backend,
+  ENGINE_PROFILE,
+  hasSizeChanges,
+  LABELS,
+  shareDrift,
+  shareText,
+  type VmShare,
+  type VmSize,
+  type VmTarget,
+  vmSizeDrift,
+  vmSizeText,
+} from "../../backend/index.ts";
+import { authorityOf, type CredentialRule, TLS_PORT } from "../../config/index.ts";
+import { readHostPiFiles } from "../../hostpi/index.ts";
+import { type DenialRecord, readHealth } from "../../proxy/index.ts";
+import { errorMessage, LauncherError } from "../../shared/index.ts";
+import { type LaunchContext, openContext } from "../context.ts";
+import { type CliDeps, colorOf, hostAgentDirOf, isTerminal, lineSink, writeLines } from "../deps.ts";
+import { missingPiText } from "../host-pi.ts";
+import { hostSessionsOf } from "../host-sessions.ts";
+import { type Sandbox, type Stage, type StageOutcome, withSandbox } from "../launch.ts";
+import { denialAdvice, deniedTargets, type SandboxProxy, sandboxDenials } from "../sandbox-proxy.ts";
+import {
+  assertVmFitsHost,
+  recommendedVmSize,
+  type VmSharePlan,
+  vmShareCoverage,
+  vmSharesFor,
+} from "../vm.ts";
+import {
+  type CheckResult,
+  failed,
+  type NamedCheck,
+  passed,
+  type Section,
+  skipped,
+  VERBOSE_FLAG,
+  verdictOf,
+  warned,
+} from "./doctor-checks.ts";
+import { hostChecks } from "./doctor-host.ts";
+import {
+  checkMcp,
+  checkMcpAuthSweep,
+  checkNoRoute,
+  checkRules,
+  checkSessionsShare,
+  checkSettingsSweep,
+  type ProbeTarget,
+  type RuleHint,
+  sweepCredentials,
+} from "./doctor-probes.ts";
+import { renderReport } from "./doctor-report.ts";
+import {
+  type HostTls,
+  readHostTls,
+  readSandboxTls,
+  sandboxTlsResult,
+  tlsInspectionResult,
+} from "./doctor-tls.ts";
+
+interface ProbeInput {
+  deps: CliDeps;
+  context: LaunchContext;
+  sandbox: Sandbox;
+  target: ProbeTarget;
+  hostTls: () => Promise<HostTls>;
+}
+
+type Probe = (input: ProbeInput) => Promise<NamedCheck[]>;
+
+interface Progress {
+  line: (text: string) => void;
+  clear: () => void;
+}
+
+interface Run {
+  checks: NamedCheck[];
+  progress: Progress;
+  hostTls: () => Promise<HostTls>;
+}
+
+const NOTICE_PREFIX = "pi-sandbox: ";
+
+const ERASE_LINE = "\r\u001b[2K";
+
+const stageLabel = (stage: Stage) => (stage === "host" ? "host side" : stage);
+
+const stageSection = (stage: Stage): Section =>
+  stage === "host" ? "host" : stage === "proxy" ? "network" : "sandbox";
+
+const withoutPrefix = (line: string) =>
+  line.startsWith(NOTICE_PREFIX) ? line.slice(NOTICE_PREFIX.length) : line;
+
+const progressLine = (deps: CliDeps): Progress => {
+  if (!isTerminal(deps.stderr) || deps.env.TERM === "dumb") {
+    return { line: () => undefined, clear: () => undefined };
+  }
+
+  const state = { shown: false };
+  const width = Math.max(1, deps.terminal.columns - 1);
+
+  return {
+    line: (text) => {
+      state.shown = true;
+
+      deps.stderr.write(`${ERASE_LINE}${`pi sandbox doctor: ${withoutPrefix(text)}`.slice(0, width)}`);
+    },
+    clear: () => {
+      if (state.shown) {
+        state.shown = false;
+
+        deps.stderr.write(ERASE_LINE);
+      }
+    },
+  };
+};
+
+const attempt = async (action: () => Promise<CheckResult>) => {
+  try {
+    return await action();
+  } catch (error) {
+    return failed(errorMessage(error));
+  }
+};
+
+const stageResult = (outcome: StageOutcome) => {
+  if (outcome.ok) {
+    return passed(outcome.detail ?? "");
+  }
+
+  return failed(errorMessage(outcome.error), {
+    hint: outcome.error instanceof LauncherError ? outcome.error.hint : undefined,
+  });
+};
+
+const stageCheck = (stage: Stage, outcome: StageOutcome): NamedCheck => ({
+  name: stageLabel(stage),
+  section: stageSection(stage),
+  result: stageResult(outcome),
+});
+
+const proxyHealth = async (proxy: SandboxProxy | undefined) => {
+  if (proxy === undefined) {
+    return skipped("no proxy is required");
+  }
+
+  return (await readHealth(proxy.proxy.port, proxy.token)) !== undefined
+    ? passed("/healthz answers")
+    : failed("/healthz does not answer");
+};
+
+const gibText = (gib: number) => `${Math.round(gib * 10) / 10} GiB`;
+
+const isBelow = (size: VmSize, recommended: VmSize) =>
+  size.cpus < recommended.cpus || size.memoryGiB < recommended.memoryGiB;
+
+const configuredSizeCheck = (size: VmSize, target: VmTarget, current: string) => {
+  const drift = vmSizeDrift(size, target);
+
+  if (hasSizeChanges(drift)) {
+    return warned(`${current}, not the ${vmSizeText(drift.changes)} vm sets`, {
+      hint: "run pi sandbox init, or pi, while no other pi session runs; either restarts the VM with the size vm sets",
+    });
+  }
+
+  return drift.keptDiskGiB === undefined
+    ? passed(`${current}, as vm sets`)
+    : warned(`${current}; vm.diskGiB ${target.diskGiB} is below its disk of ${drift.keptDiskGiB} GiB`, {
+        hint: "colima cannot shrink a disk; raise vm.diskGiB or leave it out",
+      });
+};
+
+const sizeCheck = async (deps: CliDeps, context: LaunchContext, sandbox: Sandbox) => {
+  const { vm } = sandbox.backend;
+  const size = await vm.size();
+
+  if (size === undefined) {
+    return skipped(`colima did not report the size of profile ${ENGINE_PROFILE}`);
+  }
+
+  const current = `profile ${ENGINE_PROFILE} has ${size.cpus} CPUs and ${gibText(size.memoryGiB)}`;
+  const target = context.effective.config.vm;
+
+  if (Object.keys(target).length > 0) {
+    return configuredSizeCheck(size, target, current);
+  }
+
+  const recommended = recommendedVmSize(deps.machine.cpus, deps.machine.memoryGiB);
+
+  return isBelow(size, recommended)
+    ? warned(`${current}, below ${recommended.cpus} CPUs and ${recommended.memoryGiB} GiB`, {
+        hint: "choose Custom for the VM size in pi sandbox init, or set vm in the config, while no other pi session runs",
+      })
+    : passed(current);
+};
+
+const sharesPassed = passed("the sandbox VM shares every path this repository needs");
+
+const listed = (shares: VmShare[]) => shares.map(shareText).join(", ");
+
+const driftText = (extra: VmShare[], lacking: VmShare[]) =>
+  [
+    ...(extra.length === 0 ? [] : [`shares ${listed(extra)}, which workspaceRoots leaves out`]),
+    ...(lacking.length === 0 ? [] : [`lacks ${listed(lacking)}`]),
+  ].join(" and ");
+
+const rootsCheck = (current: VmShare[], desired: VmShare[]): CheckResult => {
+  const { extra, lacking } = shareDrift(current, desired);
+
+  if (extra.length === 0 && lacking.length === 0) {
+    return passed(
+      "the sandbox VM shares exactly the workspaceRoots, the session dir and the launcher's vm dir",
+    );
+  }
+
+  return warned(`the sandbox VM ${driftText(extra, lacking)}`, {
+    hint: "run pi sandbox init, or pi, while no other pi session runs; either restarts the VM with the shares workspaceRoots sets",
+  });
+};
+
+const withNotices = (result: CheckResult, notices: string[]): CheckResult =>
+  notices.length === 0 ? result : { ...result, reasons: [...(result.reasons ?? []), ...notices] };
+
+type Coverage = Awaited<ReturnType<typeof vmShareCoverage>>;
+
+interface SharesOutcome {
+  result: CheckResult;
+  missing: string[];
+}
+
+const unreadableShares = warned(
+  `colima's lima.yaml of profile ${ENGINE_PROFILE} could not be read, so the shares of the sandbox VM are unknown`,
+  { hint: "check that colima can start the profile, then run pi once while no other pi session runs" },
+);
+
+const coverageOutcome = (coverage: Coverage, plan: VmSharePlan | undefined): SharesOutcome => {
+  if (coverage === "unreadable" && plan !== undefined) {
+    return { result: unreadableShares, missing: [] };
+  }
+
+  if (coverage === undefined || coverage === "unreadable") {
+    return {
+      result: skipped(`colima has not written the shares of profile ${ENGINE_PROFILE} yet`),
+      missing: [],
+    };
+  }
+
+  if (coverage.missing.length > 0) {
+    return {
+      result: warned(`the sandbox VM does not share ${coverage.missing.join(", ")}`, {
+        hint: "run pi once here while no other pi session runs, which shares it and restarts the VM, then pi sandbox doctor again",
+      }),
+      missing: coverage.missing,
+    };
+  }
+
+  return {
+    result: plan === undefined ? sharesPassed : rootsCheck(coverage.shares, plan.shares),
+    missing: [],
+  };
+};
+
+const sharesCheck = async (
+  deps: CliDeps,
+  context: LaunchContext,
+  backend: Backend,
+): Promise<SharesOutcome> => {
+  const files = await readHostPiFiles(hostAgentDirOf(deps)).catch(() => undefined);
+  const coverage = await vmShareCoverage(context, backend, hostSessionsOf(deps, context, files?.settings));
+  const plan = vmSharesFor(deps, context.effective.config.workspaceRoots);
+  const outcome = coverageOutcome(coverage, plan);
+
+  return { ...outcome, result: withNotices(outcome.result, plan?.notices ?? []) };
+};
+
+const sharesOf = (deps: CliDeps, context: LaunchContext, backend: Backend) =>
+  sharesCheck(deps, context, backend).catch((error: unknown) => ({
+    result: failed(errorMessage(error)),
+    missing: [],
+  }));
+
+const single =
+  (name: string, section: Section, check: (input: ProbeInput) => Promise<CheckResult>): Probe =>
+  async (input) => [{ name, section, result: await attempt(() => check(input)) }];
+
+const inOrder =
+  (...probes: Probe[]): Probe =>
+  (input) =>
+    probes.reduce<Promise<NamedCheck[]>>(
+      async (done, probe) => [...(await done), ...(await probe(input))],
+      Promise.resolve([]),
+    );
+
+const ruleAuthority = (rule: CredentialRule) => authorityOf(rule.host.toLowerCase(), rule.port ?? TLS_PORT);
+
+const denialAuthority = (denial: DenialRecord) => authorityOf(denial.host, denial.port);
+
+const isRefusalOf = (authority: string) => (denial: DenialRecord) =>
+  denial.credentialRule === undefined && denialAuthority(denial) === authority;
+
+const adviceOf = (deps: CliDeps, context: LaunchContext) => (denial: DenialRecord) => {
+  const advice = denialAdvice(deps, denial, denialAuthority(denial), context);
+
+  return warned(advice.reason ?? denial.reason, { hint: advice.fix });
+};
+
+const ruleHints =
+  ({ deps, context, sandbox }: ProbeInput, rules: CredentialRule[]) =>
+  async (): Promise<ReadonlyMap<string, RuleHint>> => {
+    const denials =
+      sandbox.proxy === undefined ? [] : await sandboxDenials(deps, context, sandbox.launch.startedAt);
+    const advice = adviceOf(deps, context);
+
+    return new Map(
+      rules.map((rule): [string, RuleHint] => {
+        const unresolved = denials.findLast((denial) => denial.credentialRule === rule.id);
+        const refused = denials.findLast(isRefusalOf(ruleAuthority(rule)));
+
+        return [
+          rule.id,
+          {
+            ...(unresolved === undefined ? {} : { unresolved: advice(unresolved) }),
+            ...(refused === undefined ? {} : { refused: advice(refused) }),
+          },
+        ];
+      }),
+    );
+  };
+
+const ruleChecks: Probe = (input) => {
+  const { rules } = input.sandbox.host.derived;
+
+  return checkRules(input.target, rules, ruleHints(input, rules)).catch((error: unknown) => [
+    { name: "trust", section: "credentials", result: failed(errorMessage(error)) },
+  ]);
+};
+
+const sessionsShareCheck = async (target: ProbeTarget) => {
+  const containers = await target.backend.findContainers({ [LABELS.managed]: "true" });
+  const running = containers.find((container) => container.id === target.containerId);
+
+  return checkSessionsShare(target, running?.labels[LABELS.sessionDir]);
+};
+
+const PROBES: Probe[] = [
+  single("proxy health", "network", ({ sandbox }) => proxyHealth(sandbox.proxy)),
+  single("credential sweep", "leak sweep", ({ target, sandbox }) =>
+    sweepCredentials(target, sandbox.proxy?.token),
+  ),
+  single("no-route", "network", ({ target }) => checkNoRoute(target)),
+  single("tls in sandbox", "network", async ({ target, hostTls }) =>
+    sandboxTlsResult(await readSandboxTls(target), await hostTls()),
+  ),
+  inOrder(
+    single("mcp", "network", ({ target }) => checkMcp(target)),
+    single("mcp-auth sweep", "leak sweep", ({ target }) => checkMcpAuthSweep(target)),
+    single("settings sweep", "leak sweep", ({ target }) => checkSettingsSweep(target)),
+  ),
+  single("sessions share", "sandbox", ({ target }) => sessionsShareCheck(target)),
+  ruleChecks,
+  single("vm size", "sandbox", ({ deps, context, sandbox }) => sizeCheck(deps, context, sandbox)),
+];
+
+const probe = async (deps: CliDeps, context: LaunchContext, sandbox: Sandbox, run: Run) => {
+  const target = {
+    backend: sandbox.backend,
+    containerId: sandbox.containerId,
+    workdir: sandbox.spec.workdir,
+  };
+
+  const input = { deps, context, sandbox, target, hostTls: run.hostTls };
+
+  return (await Promise.all(PROBES.map((check) => check(input)))).flat();
+};
+
+const blockedChecks = (deps: CliDeps, context: LaunchContext, rules: CredentialRule[]) => {
+  const authorities = new Set(rules.map(ruleAuthority));
+  const advice = adviceOf(deps, context);
+
+  return (denials: DenialRecord[]) =>
+    deniedTargets(
+      denials.filter(
+        (denial) => denial.credentialRule === undefined && !authorities.has(denialAuthority(denial)),
+      ),
+    ).map(
+      (denial): NamedCheck => ({
+        name: `blocked ${denialAuthority(denial)}`,
+        section: "network",
+        result: advice(denial),
+      }),
+    );
+};
+
+const notRun = (stage: Stage | undefined): NamedCheck => ({
+  name: "probes",
+  section: "sandbox",
+  result: skipped(
+    stage === undefined
+      ? "not run: the preparation was stopped"
+      : `not run: the ${stageLabel(stage)} stage failed`,
+  ),
+});
+
+const sandboxChecks = async (deps: CliDeps, context: LaunchContext, backend: Backend, run: Run) => {
+  const seen: { failed?: Stage; rules?: CredentialRule[] } = {};
+  const report = (stage: Stage, outcome: StageOutcome) => {
+    seen.failed ??= outcome.ok ? undefined : stage;
+
+    run.checks.push(stageCheck(stage, outcome));
+
+    run.progress.line(`${stageLabel(stage)} ${outcome.ok ? "ready" : "failed"}`);
+  };
+  const use = async (sandbox: Sandbox) => {
+    seen.rules = sandbox.host.derived.rules;
+
+    run.progress.line("checking inside the sandbox");
+
+    run.checks.push(...(await probe(deps, context, sandbox, run)));
+
+    return 0;
+  };
+  const code = await withSandbox(deps, context, backend, use, {
+    report,
+    progress: run.progress.line,
+    signIn: false,
+    share: false,
+    denials: (records) => run.checks.push(...blockedChecks(deps, context, seen.rules ?? [])(records)),
+  }).catch((error: unknown) => {
+    if (seen.failed === undefined) {
+      throw error;
+    }
+
+    return undefined;
+  });
+  if (seen.rules !== undefined) {
+    return undefined;
+  }
+
+  run.checks.push(notRun(seen.failed));
+
+  return code;
+};
+
+const skipSandbox = (run: Run, missing: string[]) => {
+  run.checks.push({
+    name: "sandbox",
+    section: "sandbox",
+    result: skipped(`not started until the VM shares ${missing.join(", ")}`),
+  });
+
+  return undefined;
+};
+
+const fitsHost = async (deps: CliDeps, context: LaunchContext, run: Run) => {
+  try {
+    assertVmFitsHost(deps, context.effective.config.vm);
+
+    return true;
+  } catch (error) {
+    const hint = error instanceof LauncherError ? error.hint : undefined;
+
+    run.checks.push(
+      { name: "vm size", section: "sandbox", result: failed(errorMessage(error), { hint }) },
+      {
+        name: "sandbox",
+        section: "sandbox",
+        result: skipped("not started: vm asks for more than this Mac has"),
+      },
+    );
+
+    return false;
+  }
+};
+
+const once = <T>(read: () => Promise<T>) => {
+  const state: { reading?: Promise<T> } = {};
+
+  return () => {
+    state.reading ??= read();
+
+    return state.reading;
+  };
+};
+
+const runChecks = async (deps: CliDeps, progress: Progress, checks: NamedCheck[]) => {
+  progress.line("preparing the sandbox");
+
+  const { context, backend } = await openContext(deps, "sandbox");
+  const run: Run = { checks, progress, hostTls: once(() => readHostTls(deps, context)) };
+  const shares = await sharesOf(deps, context, backend);
+
+  run.checks.push({ name: "vm shares", section: "sandbox", result: shares.result });
+
+  const skipsSandbox = shares.missing.length > 0;
+
+  const signal = (await fitsHost(deps, context, run))
+    ? skipsSandbox
+      ? skipSandbox(run, shares.missing)
+      : await sandboxChecks(deps, context, backend, run)
+    : undefined;
+
+  run.progress.line("checking the host");
+
+  run.checks.push(...(await hostChecks(deps, context)), {
+    name: "tls inspection",
+    section: "network",
+    result: tlsInspectionResult(await run.hostTls()),
+  });
+
+  return { signal, skipsSandbox };
+};
+
+const noticesOf = (deps: CliDeps, lines: string[]) =>
+  [...new Set(lines.map(withoutPrefix))].filter((notice) => notice !== missingPiText(deps));
+
+export const runDoctor = async (deps: CliDeps, args: string[]) => {
+  const checks: NamedCheck[] = [];
+  const progress = progressLine(deps);
+  const notices: string[] = [];
+  const quiet: CliDeps = { ...deps, stderr: lineSink((line) => notices.push(line)) };
+  const report = (partial: boolean) => {
+    progress.clear();
+
+    writeLines(
+      deps.stdout,
+      renderReport(checks, noticesOf(deps, notices), {
+        verbose: args.includes(VERBOSE_FLAG),
+        color: colorOf(deps),
+        home: deps.home,
+        partial,
+      }),
+    );
+  };
+
+  try {
+    const { signal, skipsSandbox } = await runChecks(quiet, progress, checks);
+
+    report(false);
+
+    return { code: signal ?? (verdictOf(checks) === "fail" ? 1 : 0), skipsSandbox };
+  } catch (error) {
+    progress.clear();
+
+    if (checks.length > 0 || notices.length > 0) {
+      report(true);
+    }
+
+    throw error;
+  }
+};
+
+export const doctorCommand = async (deps: CliDeps, args: string[]) => (await runDoctor(deps, args)).code;

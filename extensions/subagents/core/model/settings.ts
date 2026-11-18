@@ -2,11 +2,11 @@ import type { AgentRuntime, CodemodeShortfall } from "../../../../platform/pi-ad
 import {
   isPlainObject,
   type ObjectParse,
-  projectSettingsPath,
   readSettingsFile,
-  type SettingsParse,
+  readSettingsFiles,
+  type SettingsLocation,
   type SettingsSchema,
-  userSettingsPath,
+  settingsPath,
 } from "../../../../platform/shared/index.ts";
 import {
   OVERRIDE_FIELDS,
@@ -38,7 +38,7 @@ export type Settings = {
   agents: AgentOverrides;
 };
 
-export const SETTINGS_FILE = "pi-subagents.json";
+export const SETTINGS_FILE = `${NAMESPACE}.json`;
 
 export const defaultSettings = (): Settings => ({
   maxConcurrent: 12,
@@ -82,7 +82,11 @@ const parseOverride = (name: string, raw: unknown) => {
     OVERRIDE_PARSERS[key](raw[key]),
   );
 
-  errors.push(...fields.flatMap((field) => (field.error ? [`${name}.${field.error}`] : [])));
+  errors.push(
+    ...fields.flatMap((field) =>
+      [field.error, field.notice].flatMap((text) => (text ? [`${name}.${text}`] : [])),
+    ),
+  );
 
   const override: AgentOverride = Object.assign({}, ...fields.map((field) => field.patch));
 
@@ -126,63 +130,44 @@ const settingsSchema: SettingsSchema<Settings> = {
   agents: { type: "object", of: "agent overrides", parse: parseOverrides },
 };
 
-export const settingsWarning = (message: string) => `${NAMESPACE} settings: ${message}`;
-
 export const settingsPaths = (info: { agentDir: string; cwd: string }) => ({
-  project: projectSettingsPath(info.cwd, SETTINGS_FILE),
-  user: userSettingsPath(info.agentDir, SETTINGS_FILE),
+  project: settingsPath(info, "project", SETTINGS_FILE),
+  user: settingsPath(info, "user", SETTINGS_FILE),
 });
 
-const readUser = (agentDir: string) =>
-  readSettingsFile(settingsSchema, userSettingsPath(agentDir, SETTINGS_FILE));
+export const disabledPlugins = (agentDir: string) =>
+  readSettingsFile(settingsSchema, settingsPath({ agentDir, cwd: "" }, "user", SETTINGS_FILE)).patch
+    .disabledPlugins ?? [];
 
-export const disabledPlugins = (agentDir: string) => readUser(agentDir).patch.disabledPlugins ?? [];
-
-export const loadSettings = (agentDir: string, cwd: string, projectTrusted: boolean) => {
-  const projectPath = settingsPaths({ agentDir, cwd }).project;
-  const user = readUser(agentDir);
-  const project: SettingsParse<Settings> = projectTrusted
-    ? readSettingsFile(settingsSchema, projectPath)
-    : { patch: {}, errors: [] };
-  const { disabledPlugins: ignored, ...projectPatch } = project.patch;
-  const errors = [...user.errors, ...project.errors];
+export const loadSettings = (location: SettingsLocation) => {
+  const { user, project, errors } = readSettingsFiles(settingsSchema, SETTINGS_FILE, location);
+  const { disabledPlugins: ignored, ...projectPatch } = project;
 
   if (ignored !== undefined) {
-    errors.push(`${projectPath}: disabledPlugins is read from the user settings file only`);
+    errors.push(
+      `${settingsPath(location, "project", SETTINGS_FILE)}: disabledPlugins is read from the user settings file only`,
+    );
   }
 
-  const agents = mergeOverrides(user.patch.agents, projectPatch.agents);
+  const agents = mergeOverrides(user.agents, projectPatch.agents);
 
-  return { settings: { ...defaultSettings(), ...user.patch, ...projectPatch, agents }, errors };
+  return { settings: { ...defaultSettings(), ...user, ...projectPatch, agents }, errors };
 };
-
-const reportedBy = new WeakMap<Settings, Set<string>>();
 
 const shortfallMessage = ({ setting, workers, wanted }: CodemodeShortfall) =>
   `${setting}=${workers} is below the ${wanted} codemode workers the agents may need; agents' codemode scripts may wait or fail`;
 
 export const reloadSettings = (
   settings: Settings,
-  info: { agentDir: string; cwd: string; projectTrusted: boolean },
+  location: SettingsLocation,
   runtime: Pick<AgentRuntime, "reserveCodemodeWorkers">,
-  notify: (message: string) => void,
+  report: (errors: readonly string[]) => void,
 ) => {
-  const loaded = loadSettings(info.agentDir, info.cwd, info.projectTrusted);
-  const reported = reportedBy.get(settings) ?? new Set<string>();
+  const loaded = loadSettings(location);
 
-  reportedBy.set(settings, reported);
   Object.assign(settings, loaded.settings);
 
   const shortfall = runtime.reserveCodemodeWorkers(settings.maxConcurrent);
 
-  if (shortfall) {
-    loaded.errors.push(shortfallMessage(shortfall));
-  }
-
-  loaded.errors
-    .filter((message) => !reported.has(message))
-    .forEach((message) => {
-      reported.add(message);
-      notify(message);
-    });
+  report(shortfall ? [...loaded.errors, shortfallMessage(shortfall)] : loaded.errors);
 };

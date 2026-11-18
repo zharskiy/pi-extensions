@@ -1,6 +1,7 @@
 import { counted } from "../../../platform/shared/index.ts";
 import type { ImportArgs } from "../core/args.ts";
 import { needsSignIn } from "../core/convert.ts";
+import { MCP_FILE } from "../core/import-flow.ts";
 import type { Entry, Plan, Skipped } from "../core/plan.ts";
 
 type ReportInput = { args: ImportArgs; plan: Plan; checked: readonly string[]; target: string };
@@ -98,8 +99,9 @@ export const pickedReport = (input: ReportInput) => addedReport(`${NAMESPACE}:`,
 
 export const NOTHING_SELECTED = `${NAMESPACE}: nothing selected, nothing written`;
 
-export const UNTRUSTED_ONLY =
-  "found MCP servers only in this project's files; trust this project first, pi reads .pi/mcp.json only in trusted projects";
+export const UNTRUSTED = `trust this project first, pi reads .pi/${MCP_FILE} only in trusted projects`;
+
+export const UNTRUSTED_ONLY = `found MCP servers only in this project's files; ${UNTRUSTED}`;
 
 type Nothing = {
   files: readonly string[];

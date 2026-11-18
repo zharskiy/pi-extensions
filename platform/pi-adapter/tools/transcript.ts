@@ -25,14 +25,15 @@ import { type Component, Container, Spacer, type TUI } from "@earendil-works/pi-
 import type { ThemeLike } from "../types/theme.ts";
 import type { AnyToolSpec } from "../types/tools.ts";
 import type { TranscriptItem, TranscriptPane } from "../types/view.ts";
-import { labelledRule } from "../ui/rules.ts";
+import { paddedRule } from "../ui/rules.ts";
 import { hiddenThinkingLabel, OSC133_ZONE_PREFIX } from "../ui/thinking-label.ts";
 import { messageRendererFor, previousEntryComponent } from "./entry-renderers.ts";
 import { sharedPad } from "./row-component.ts";
 import { toPiTool } from "./tool-bridge.ts";
 import { applyToolRows } from "./tool-rows.ts";
+import { type BuiltinTool, isBuiltinTool } from "./tool-source.ts";
 
-const toolDefinitionFactories: Record<string, (cwd: string) => object> = {
+const toolDefinitionFactories: Record<BuiltinTool, (cwd: string) => object> = {
   read: createReadToolDefinition,
   bash: createBashToolDefinition,
   powershell: createPowerShellToolDefinition,
@@ -108,10 +109,8 @@ export const createTranscriptPane = (
   let rendered = 0;
 
   const baseDefinition = (name: string): ToolRenderers | undefined => {
-    const builtin = toolDefinitionFactories[name];
-
-    if (builtin) {
-      return builtin(cwd) as ToolRenderers;
+    if (isBuiltinTool(name)) {
+      return toolDefinitionFactories[name](cwd) as ToolRenderers;
     }
 
     const spec = options.tools?.find((tool) => tool.name === name);
@@ -169,11 +168,15 @@ export const createTranscriptPane = (
     pendingTools.set(call.id, component);
   };
 
+  const spaceAfterContent = () => {
+    if (container.children.length > 0) {
+      container.addChild(new Spacer(1));
+    }
+  };
+
   const addItem = (item: TranscriptItem) => {
     if (item.kind === "user") {
-      if (container.children.length > 0) {
-        container.addChild(new Spacer(1));
-      }
+      spaceAfterContent();
 
       container.addChild(new UserMessageComponent(item.text, getMarkdownTheme()));
       return;
@@ -246,16 +249,10 @@ export const createTranscriptPane = (
         return;
       }
 
-      if (container.children.length > 0) {
-        container.addChild(new Spacer(1));
-      }
+      spaceAfterContent();
 
       container.addChild({
-        render: (width) => {
-          const pad = sharedPad();
-
-          return [`${" ".repeat(pad)}${labelledRule(theme(), width - pad, item.label)}`];
-        },
+        render: (width) => [paddedRule(theme(), width, sharedPad(), item.label)],
         invalidate: () => {},
       });
       return;

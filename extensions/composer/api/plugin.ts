@@ -14,7 +14,5 @@ export const composerPlugin: Plugin<never, never, undefined> = {
   id: "composer",
   enable({ host }) {
     createComposer(host);
-
-    return undefined;
   },
 };

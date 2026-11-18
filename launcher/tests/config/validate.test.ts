@@ -1,0 +1,209 @@
+import { describe, expect, it } from "vitest";
+import { configProblem, validateConfig } from "../../config/index.ts";
+
+describe("validateConfig", () => {
+  it("accepts a complete config and returns it", () => {
+    const config = {
+      $schema: "../schema/sandbox-config.schema.json",
+      image: { reference: "ghcr.io/acme/pi:1", digest: `sha256:${"a".repeat(64)}` },
+      egress: {
+        allow: ["github.com", "*.acme.test", "git.acme.test:2222", "*.acme.test:8443"],
+      },
+      workspaceRoots: { roots: ["~/work", "/srv/repos"] },
+      mounts: { sharedCaches: ["~/.npm"], autoOverlays: false },
+      env: { allow: ["TERM", "EDITOR"] },
+      resources: { cpus: 4, memoryGiB: 8 },
+    };
+
+    expect(validateConfig(config)).toEqual(config);
+  });
+
+  it("reports unknown keys with the dotted key", () => {
+    expect(configProblem({ egres: {} })).toBe("config: egres is not a known key");
+    expect(configProblem({ egress: { allowed: [] } })).toBe("config: egress.allowed is not a known key");
+    expect(configProblem({ credentials: { file: "/x" } })).toBe(
+      "config: credentials.file is not a known key",
+    );
+  });
+
+  it("escapes control, bidi and line separator characters of the keys and values it echoes", () => {
+    expect(configProblem({ "a‮b\u007f\u0085 ": 1 })).toBe(
+      "config: a\\u202Eb\\u007F\\u0085\\u2028 is not a known key",
+    );
+    expect(configProblem({ workspaceRoots: { roots: ["rel\u007f‎"] } })).toBe(
+      'config: workspaceRoots.roots[0] "rel\\u007F\\u200E" must be an absolute path or start with ~/',
+    );
+    expect(configProblem({ writeBack: { exclude: { "settings.json": ["x‮"] } } })).toBe(
+      'config: writeBack.exclude["settings.json"][0] "x\\u202E" is not a built-in write-back key of settings.json',
+    );
+  });
+
+  it("reports wrong types with the key", () => {
+    expect(configProblem({ egress: { allow: "github.com" } })).toBe("config: egress.allow must be an array");
+    expect(configProblem({ egress: { allow: ["https://github.com"] } })).toBe(
+      "config: egress.allow[0] must be a host name or host:port",
+    );
+    expect(configProblem({ egress: { allow: ["github.com:70000"] } })).toBe(
+      "config: egress.allow[0] has a port that is not a number from 1 to 65535",
+    );
+    expect(configProblem({ egress: { allow: ["github.com:"] } })).toBe(
+      "config: egress.allow[0] must be a host name or host:port",
+    );
+    expect(configProblem({ resources: { cpus: 0 } })).toBe("config: resources.cpus must be greater than 0");
+    expect(configProblem({ ssh: { agent: true } })).toBe("config: ssh is not a known key");
+    expect(configProblem({ image: { digest: "latest" } })).toBe(
+      "config: image.digest must look like sha256:<64 hex digits>",
+    );
+    expect(configProblem({ workspaceRoots: { roots: ["relative"] } })).toBe(
+      "config: workspaceRoots.roots[0] relative must be an absolute path or start with ~/",
+    );
+  });
+
+  it("reads egress entries with one host grammar: underscores and any case, no IP, loopback, port 80 or padded port", () => {
+    expect(configProblem({ egress: { allow: ["a_b.Corp.test", "*.svc_x.test:8443"] } })).toBeUndefined();
+    expect(
+      [
+        "10.0.0.5",
+        "10.0.0.5:8443",
+        "::1",
+        "foo.123",
+        "localhost",
+        "db.localhost:8443",
+        "a.test:80",
+        "a.test:00443",
+        "a.test:0x50",
+        "a.test.",
+        `${"a".repeat(64)}.test`,
+      ].map((entry) => configProblem({ egress: { deny: [entry] } })),
+    ).toEqual([
+      "config: egress.deny[0] must not be an IP address",
+      "config: egress.deny[0] must not be an IP address",
+      "config: egress.deny[0] must not be an IP address",
+      "config: egress.deny[0] must not be an IP address",
+      "config: egress.deny[0] must not name loopback",
+      "config: egress.deny[0] must not name loopback",
+      "config: egress.deny[0] names port 80, and plain HTTP is never forwarded",
+      "config: egress.deny[0] has a port that is not a number from 1 to 65535",
+      "config: egress.deny[0] must be a host name or host:port",
+      "config: egress.deny[0] must be a host name or host:port",
+      "config: egress.deny[0] must be a host name or host:port",
+    ]);
+  });
+
+  it("refuses the removed keys", () => {
+    expect(configProblem({ mounts: { cacheVolumes: ["node_modules"] } })).toBe(
+      "config: mounts.cacheVolumes is not a known key",
+    );
+    expect(configProblem({ mounts: { hostCaches: ["maven"] } })).toBe(
+      "config: mounts.hostCaches is not a known key",
+    );
+    expect(configProblem({ mounts: { extraReadOnly: ["/opt"] } })).toBe(
+      "config: mounts.extraReadOnly is not a known key",
+    );
+    expect(configProblem({ workspaceRoots: { roots: ["/srv"], outside: "warn" } })).toBe(
+      "config: workspaceRoots.outside is not a known key",
+    );
+    expect(configProblem({ workspaceRoots: {} })).toBe("config: workspaceRoots.roots is required");
+    expect(configProblem({ tls: { extraCa: [{ hostStore: true }] } })).toBe(
+      "config: tls.extraCa[0].hostStore was removed; run pi sandbox doctor to get the sha256 of your network's CA",
+    );
+  });
+
+  it("says what replaces each removed key", () => {
+    expect(configProblem({ fallback: "host" })).toBe(
+      "config: fallback was removed; --no-sandbox is always available",
+    );
+    expect(configProblem({ egress: { presets: ["npm"] } })).toBe(
+      "config: egress.presets was removed; list the hosts in egress.allow, see REMOVED-DEFAULTS.md",
+    );
+    expect(configProblem({ egress: { grants: true } })).toBe(
+      "config: egress.grants was removed; grants are always on",
+    );
+    expect(configProblem({ egress: { parentProxy: "auto" } })).toBe(
+      "config: egress.parentProxy was removed; the parent proxy is always taken from the environment",
+    );
+  });
+
+  it("takes an extra CA by sha256 fingerprint, colons and case optional", () => {
+    const bare = "ab".repeat(32);
+    const colons = Array.from({ length: 32 }, () => "AB").join(":");
+
+    expect(
+      configProblem({ tls: { extraCa: [{ sha256: bare }, { sha256: colons }, { file: "~/ca.pem" }] } }),
+    ).toBe(undefined);
+    expect(configProblem({ tls: { extraCa: [{ sha256: "ab".repeat(31) }] } })).toBe(
+      "config: tls.extraCa[0].sha256 must be 64 hex digits, colons optional",
+    );
+    expect(configProblem({ tls: { extraCa: [{ sha256: `${"ab".repeat(31)}zz` }] } })).toBe(
+      "config: tls.extraCa[0].sha256 must be 64 hex digits, colons optional",
+    );
+    expect(configProblem({ tls: { extraCa: [{ sha256: `:${bare}` }] } })).toBe(
+      "config: tls.extraCa[0].sha256 must be 64 hex digits, colons optional",
+    );
+    expect(configProblem({ tls: { extraCa: [{ sha256: bare, file: "~/ca.pem" }] } })).toBe(
+      "config: tls.extraCa[0].file is not a known key",
+    );
+  });
+
+  it("drops a trailing slash from shared caches", () => {
+    expect(validateConfig({ mounts: { sharedCaches: ["~/.npm/"] } })).toEqual({
+      mounts: { sharedCaches: ["~/.npm"] },
+    });
+  });
+
+  it("refuses forwarding environment variables that look like secrets", () => {
+    expect(configProblem({ env: { allow: ["EDITOR", "GITHUB_TOKEN"] } })).toBe(
+      "config: env.allow[1] GITHUB_TOKEN looks like a secret and stays on the host",
+    );
+    [
+      "AWS_SECRET_ACCESS_KEY",
+      "npm_password",
+      "MY_CREDENTIALS",
+      "GATEWAY_API_KEY",
+      "DB_PASSWD",
+      "GPG_PASSPHRASE",
+      "SESSION_JWT",
+    ].forEach((name) => {
+      expect(configProblem({ env: { allow: [name] } })).toContain("looks like a secret");
+    });
+  });
+
+  it("refuses forwarding a variable the launcher sets inside the container", () => {
+    [
+      "HTTPS_PROXY",
+      "http_proxy",
+      "NO_PROXY",
+      "NODE_EXTRA_CA_CERTS",
+      "SSL_CERT_FILE",
+      "PI_SANDBOX",
+      "PATH",
+    ].forEach((name) => {
+      expect(configProblem({ env: { allow: [name] } })).toBe(
+        `config: env.allow[0] ${name} is set by the launcher and is not forwarded`,
+      );
+    });
+  });
+
+  it("names the value of a path, name or choice leaf, escaped when it is not printable, and never a host or credential value", () => {
+    expect(configProblem({ mounts: { sharedCaches: ["~/a/\u001b[31m/.."] } })).toBe(
+      'config: mounts.sharedCaches[0] "~/a/\\u001b[31m/.." must name a directory below ~ without empty, . or .. segments',
+    );
+    expect(configProblem({ workspaceRoots: { roots: ["x".repeat(300)] } })).toBe(
+      `config: workspaceRoots.roots[0] ${"x".repeat(200)}... must be an absolute path or start with ~/`,
+    );
+    expect(configProblem({ egress: { allow: ["https://user:sk-live@x.test"] } })).toBe(
+      "config: egress.allow[0] must be a host name or host:port",
+    );
+    expect(
+      configProblem({
+        credentials: {
+          rules: [{ id: "r", host: "x.test", header: "a", template: "sk-live", secret: { env: "A" } }],
+        },
+      }),
+    ).toBe("config: credentials.rules[0].template must contain {secret}");
+  });
+
+  it("requires a JSON object", () => {
+    expect(configProblem([])).toBe("config: must be a JSON object");
+  });
+});

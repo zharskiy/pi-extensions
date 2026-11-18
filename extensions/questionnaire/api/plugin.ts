@@ -56,7 +56,5 @@ export const questionnairePlugin: Plugin<never, never, undefined> = {
   id: "questionnaire",
   enable({ host }) {
     createQuestionnaire(host);
-
-    return undefined;
   },
 };

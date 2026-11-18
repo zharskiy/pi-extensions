@@ -1,0 +1,849 @@
+import { mkdir, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import { vmSharesOf } from "../../backend/colima/colima-yaml.ts";
+import { shareText } from "../../backend/colima/profile.ts";
+import { restartedShares, shareFor, sharesFor } from "../../backend/colima/shares.ts";
+import { createColimaVm } from "../../backend/colima/vm.ts";
+import { type Backend, LABELS, type VmPath, type VmShare } from "../../backend/index.ts";
+import { run } from "../../cli/index.ts";
+import { registerLaunch } from "../../grants/index.ts";
+import { processMark, sha256Hex } from "../../shared/index.ts";
+import {
+  createHarness,
+  doctorCheck,
+  writeColimaMounts,
+  writeLimaMounts,
+  type YamlMount,
+} from "../cli/harness.ts";
+import { createFakeBackend } from "../support/fake-backend.ts";
+import { argvOf, type FakeCall } from "../support/fake-runner.ts";
+
+const PROFILE = { status: async () => ({ socket: "/fake/docker.sock", profile: "pi-sandbox" }) };
+
+interface ColimaAnswers {
+  start?: { code: number; stderr: string };
+  keepLima?: boolean;
+  missing?: boolean;
+  vm?: { up: boolean };
+}
+
+const mountsOf = (args: string[]): YamlMount[] =>
+  args.flatMap((arg, index) => {
+    if (args[index - 1] !== "--mount") {
+      return [];
+    }
+
+    return arg.endsWith(":w") ? [{ location: arg.slice(0, -2), writable: true }] : [{ location: arg }];
+  });
+
+const answerColima = async (home: string, answers: ColimaAnswers, call: FakeCall) => {
+  if (call.args[0] === "status" && answers.vm !== undefined) {
+    return { code: answers.vm.up ? 0 : 1 };
+  }
+
+  if (call.args[0] === "start" && answers.vm !== undefined) {
+    answers.vm.up = true;
+  }
+
+  if (call.args[0] === "start" && answers.start !== undefined) {
+    return answers.start;
+  }
+
+  if (call.args[0] === "start" && answers.keepLima !== true) {
+    await writeLimaMounts(home, mountsOf(call.args));
+  }
+
+  return {};
+};
+
+const colima = (home: string, answers: ColimaAnswers) => (call: FakeCall) =>
+  call.file === "colima" && answers.missing !== true ? answerColima(home, answers, call) : undefined;
+
+interface Setup {
+  lima?: (paths: Paths) => YamlMount[];
+  answers?: ColimaAnswers;
+  backend?: Partial<Backend>;
+  config?: unknown;
+}
+
+interface Paths {
+  root: string;
+  home: string;
+  repoRoot: string;
+  stateDir: string;
+}
+
+const homeAndState = ({ home, stateDir }: Paths): YamlMount[] => [
+  { location: home, writable: true },
+  { location: stateDir },
+];
+
+const launchWith = async (setup: Setup = {}) => {
+  const fake = createFakeBackend();
+  const answers = setup.answers ?? {};
+  const holder: { home: string; stateDir: string } = { home: "", stateDir: "" };
+  const pauses: number[] = [];
+  const harness = await createHarness({
+    backend: () => {
+      const backend = { ...fake.backend, ...PROFILE, ...setup.backend };
+      const vm = createColimaVm({
+        home: holder.home,
+        stateDir: holder.stateDir,
+        runner: harness.deps.runner,
+        detect: () => backend.detect(),
+        pause: async (ms) => {
+          pauses.push(ms);
+        },
+      });
+
+      return { ...backend, vm };
+    },
+    respond: (call) => colima(holder.home, answers)(call),
+  });
+  const paths = {
+    root: harness.root,
+    home: harness.deps.home,
+    repoRoot: harness.repoRoot,
+    stateDir: harness.stateDir,
+  };
+
+  holder.home = paths.home;
+
+  holder.stateDir = paths.stateDir;
+
+  await writeLimaMounts(paths.home, (setup.lima ?? homeAndState)(paths));
+
+  await writeColimaMounts(paths.home, (setup.lima ?? homeAndState)(paths));
+
+  if (setup.config !== undefined) {
+    await harness.writeJson(harness.userConfigFile, setup.config);
+  }
+
+  return {
+    harness,
+    fake,
+    paths,
+    pauses,
+    colimaCalls: () =>
+      harness.calls
+        .filter((call) => call.file === "colima" && call.args[0] !== "ssh")
+        .map((call) => argvOf(call).join(" ")),
+  };
+};
+
+const limaYaml = (home: string) => join(home, ".colima", "_lima", "colima-pi-sandbox", "lima.yaml");
+
+const run0 = async (context: Awaited<ReturnType<typeof launchWith>>) => run([], context.harness.deps);
+
+const restart = (mounts: string) => [
+  "colima stop --profile pi-sandbox",
+  `colima start --profile pi-sandbox --activate=false ${mounts}`,
+];
+
+describe("vmSharesOf", () => {
+  const home = "/Users/dev";
+
+  it("expands a quoted ~, drops a trailing slash and reads writable as false unless it is true", () => {
+    const text = [
+      "vmType: vz",
+      "mounts:",
+      '- location: "~"',
+      "  writable: true",
+      "- location: /Volumes/Data/",
+      "  mountPoint: null",
+      "ssh:",
+      "  localPort: 0",
+    ].join("\n");
+
+    expect(vmSharesOf(text, home)).toEqual([
+      { location: "/Users/dev", writable: true },
+      { location: "/Volumes/Data", writable: false },
+    ]);
+  });
+
+  it("reads an empty list as no share, and a missing key or a flow-style list as unknown", () => {
+    expect(vmSharesOf("cpu: 2\nmounts: []\n", home)).toEqual([]);
+    expect(vmSharesOf("cpu: 2\n", home)).toBeUndefined();
+    expect(vmSharesOf("mounts: [{location: /Volumes/X, writable: true}]\n", home)).toBeUndefined();
+  });
+
+  it("drops an inline comment from an unquoted value", () => {
+    expect(
+      vmSharesOf("mounts:\n- location: /opt/x # shared by hand\n  writable: true # yes\n", home),
+    ).toEqual([{ location: "/opt/x", writable: true }]);
+  });
+
+  it("reads a quoted value with a comment, every YAML true, a comment after the key and CRLF lines", () => {
+    const text = [
+      "mounts: # shared by hand",
+      '  - location: "/Volumes/My Disk" # mine',
+      "    writable: True",
+      "  - location: /opt/y",
+      "    writable: yes",
+      "  - location: /opt/z",
+      "    writable: false",
+    ].join("\r\n");
+
+    expect(vmSharesOf(text, home)).toEqual([
+      { location: "/Volumes/My Disk", writable: true },
+      { location: "/opt/y", writable: true },
+      { location: "/opt/z", writable: false },
+    ]);
+  });
+
+  it("reads a null list as no share and an entry it cannot parse as unknown", () => {
+    expect(vmSharesOf("mounts: null\n", home)).toEqual([]);
+    expect(
+      vmSharesOf(`mounts:\n  - location: ${home}\n  - {location: /opt/x, writable: true}\n`, home),
+    ).toBeUndefined();
+  });
+});
+
+describe("shareFor", () => {
+  const home = "/Users/dev";
+
+  it("shares the volume root under /Volumes and the parent folder elsewhere", () => {
+    expect(shareFor("/Volumes/Projects/a/b", home)).toBe("/Volumes/Projects");
+    expect(shareFor("/opt/src/repo", home)).toBe("/opt/src");
+    expect(shareFor("/private/tmp/x", home)).toBe("/private/tmp");
+  });
+
+  it("shares the home itself for a path inside it", () => {
+    expect(shareFor("/Users/dev/.pi/agent/pi-sandbox/state", home)).toBe("/Users/dev");
+  });
+
+  it("shares the path itself when the parent is shallow or holds the home", () => {
+    expect(shareFor("/opt/repo", home)).toBe("/opt/repo");
+    expect(shareFor("/Users/other", home)).toBe("/Users/other");
+  });
+});
+
+const mountsFor = (current: VmShare[], needs: VmPath[]) =>
+  restartedShares(current, sharesFor(current, needs, "/Users/dev"), false, "/Users/dev").map(shareText);
+
+describe("the share plan", () => {
+  it("merges paths under one share, read-only unless one of them must be writable", () => {
+    const current = [{ location: "/opt/tools", writable: true }];
+
+    expect(
+      mountsFor(current, [
+        { path: "/srv/data/a", writable: false },
+        { path: "/srv/data/b", writable: false },
+      ]),
+    ).toEqual(["/opt/tools:w", "/srv/data"]);
+    expect(
+      mountsFor(current, [
+        { path: "/srv/data/a", writable: false },
+        { path: "/srv/data/b", writable: true },
+      ]),
+    ).toEqual(["/opt/tools:w", "/srv/data:w"]);
+  });
+
+  it("absorbs a share inside a new one instead of nesting them", () => {
+    expect(
+      mountsFor(
+        [{ location: "/Users/Shared/code", writable: true }],
+        [{ path: "/Users/Shared", writable: true }],
+      ),
+    ).toEqual(["/Users/Shared:w"]);
+    expect(
+      mountsFor([{ location: "/opt/ref", writable: false }], [{ path: "/opt/ref/a/repo", writable: true }]),
+    ).toEqual(["/opt/ref:w"]);
+    expect(
+      mountsFor(
+        [{ location: "/Volumes/USB/sub", writable: true }],
+        [{ path: "/Volumes/USB", writable: true }],
+      ),
+    ).toEqual(["/Volumes/USB:w"]);
+  });
+});
+
+describe("the launch shares a repository the VM does not see", () => {
+  it("launches without asking colima when every path is shared", async () => {
+    const context = await launchWith({ lima: ({ root }) => [{ location: root, writable: true }] });
+
+    expect(await run0(context)).toBe(0);
+    expect(context.colimaCalls()).toEqual([]);
+    expect(context.harness.stderr()).not.toContain("with the sandbox VM");
+    expect(context.fake.created).toHaveLength(1);
+  });
+
+  it("launches without a notice and leaves the VM alone when lima.yaml does not parse", async () => {
+    const context = await launchWith();
+
+    await writeFile(limaYaml(context.paths.home), "mounts: [ { location: /x } ]\n");
+
+    expect(await run0(context)).toBe(0);
+    expect(context.colimaCalls()).toEqual([]);
+    expect(context.harness.stderr()).not.toContain("could not be read");
+  });
+
+  it("restarts the VM with the full mount list and prints one notice", async () => {
+    const context = await launchWith();
+    const { home, stateDir, repoRoot } = context.paths;
+
+    expect(await run0(context)).toBe(0);
+    expect(context.harness.stderr()).toContain(
+      `pi-sandbox: restarting the sandbox VM to share ${repoRoot}\n`,
+    );
+    expect(context.colimaCalls()).toEqual(
+      restart(`--mount ${home}:w --mount ${stateDir} --mount ${repoRoot}:w`),
+    );
+    expect(context.fake.created).toHaveLength(1);
+  });
+
+  it("shares the home again first when a bare --mount dropped it, for the session dir under it", async () => {
+    const context = await launchWith({ lima: ({ repoRoot }) => [{ location: repoRoot, writable: true }] });
+    const { home, stateDir, repoRoot } = context.paths;
+
+    expect(await run0(context)).toBe(0);
+    expect(context.colimaCalls()).toEqual(
+      restart(`--mount ${home}:w --mount ${repoRoot}:w --mount ${stateDir}`),
+    );
+  });
+
+  it("upgrades a read-only share in place when a writable path needs it", async () => {
+    const context = await launchWith({
+      lima: ({ home, repoRoot, stateDir }) => [
+        { location: home, writable: true },
+        { location: repoRoot },
+        { location: stateDir },
+      ],
+    });
+    const { home, stateDir, repoRoot } = context.paths;
+
+    expect(await run0(context)).toBe(0);
+    expect(context.colimaCalls()).toEqual(
+      restart(`--mount ${home}:w --mount ${repoRoot}:w --mount ${stateDir}`),
+    );
+  });
+
+  it("upgrades a read-only home for the session dir and keeps it read-only without one", async () => {
+    const readOnlyHome = ({ home, stateDir }: Paths) => [{ location: home }, { location: stateDir }];
+    const sessions = await launchWith({ lima: readOnlyHome });
+    const plain = await launchWith({ lima: readOnlyHome, config: { sessions: { host: false } } });
+
+    expect(await run0(sessions)).toBe(0);
+    expect(await run0(plain)).toBe(0);
+    expect(sessions.colimaCalls()).toEqual(
+      restart(
+        `--mount ${sessions.paths.home}:w --mount ${sessions.paths.stateDir} --mount ${sessions.paths.repoRoot}:w`,
+      ),
+    );
+    expect(plain.colimaCalls()).toEqual(
+      restart(
+        `--mount ${plain.paths.home} --mount ${plain.paths.stateDir} --mount ${plain.paths.repoRoot}:w`,
+      ),
+    );
+  });
+
+  it("takes an empty mountPoint, or one at the share's own path, as a plain mount", async () => {
+    const context = await launchWith({
+      lima: ({ home, stateDir }) => [
+        { location: home, writable: true, mountPoint: '""' },
+        { location: stateDir, mountPoint: stateDir },
+      ],
+    });
+    const { home, stateDir, repoRoot } = context.paths;
+
+    expect(await run0(context)).toBe(0);
+    expect(context.colimaCalls()).toEqual(
+      restart(`--mount ${home}:w --mount ${stateDir} --mount ${repoRoot}:w`),
+    );
+  });
+
+  it("refuses with the full command while another pi session is live and leaves the VM alone", async () => {
+    const context = await launchWith();
+    const { home, stateDir, repoRoot } = context.paths;
+
+    await registerLaunch(context.harness.stateDir, {
+      launchId: "00000000000000dd",
+      ...(await processMark()),
+      repoHash: sha256Hex("/elsewhere"),
+      startedAt: 1,
+    });
+
+    expect(await run0(context)).toBe(1);
+    expect(context.harness.stderr()).toContain(
+      [
+        `pi-sandbox: ${repoRoot} is not shared with the sandbox VM; 1 pi session is running, and restarting the VM to share ${repoRoot} would end them`,
+        `  hint: end them and run pi again, or share it yourself with colima stop --profile pi-sandbox && colima start --profile pi-sandbox --activate=false --mount ${home}:w --mount ${stateDir} --mount ${repoRoot}:w`,
+      ].join("\n"),
+    );
+    expect(context.colimaCalls()).toEqual([]);
+    expect(context.fake.containers.size).toBe(0);
+  });
+
+  it("names the colima error when the start fails", async () => {
+    const context = await launchWith({
+      answers: { start: { code: 1, stderr: 'starting\nlevel=fatal msg="disk busy"\n' } },
+    });
+
+    expect(await run0(context)).toBe(1);
+    expect(context.harness.stderr()).toContain(
+      [
+        `pi-sandbox: could not restart the sandbox VM: colima start failed: level=fatal msg="disk busy"`,
+        "  hint: run colima start --profile pi-sandbox --activate=false and see ~/.colima/_lima/colima-pi-sandbox/ha.stderr.log",
+      ].join("\n"),
+    );
+  });
+
+  it("refuses when colima started without the share", async () => {
+    const context = await launchWith({ answers: { keepLima: true } });
+    const { repoRoot } = context.paths;
+
+    expect(await run0(context)).toBe(1);
+    expect(context.harness.stderr()).toContain(
+      `pi-sandbox: colima did not share ${repoRoot} with the sandbox VM\n`,
+    );
+    expect(context.fake.containers.size).toBe(0);
+  });
+
+  it("refuses a share mounted at another path in the VM, before stopping the VM", async () => {
+    const context = await launchWith({
+      lima: ({ home }) => [{ location: home, writable: true, mountPoint: "/mnt/home" }],
+    });
+
+    expect(await run0(context)).toBe(1);
+    expect(context.harness.stderr()).toContain(
+      `; ${context.paths.home} is mounted at another path in the VM, which colima's --mount cannot keep\n`,
+    );
+    expect(context.harness.stderr()).toContain(
+      "  hint: edit ~/.colima/pi-sandbox/colima.yaml mounts, then colima stop --profile pi-sandbox && colima start --profile pi-sandbox --activate=false",
+    );
+    expect(context.colimaCalls()).toEqual([]);
+  });
+
+  it("refuses a share mounted at another path before the busy refusal while another pi session is live", async () => {
+    const context = await launchWith({
+      lima: ({ home }) => [{ location: home, writable: true, mountPoint: "/mnt/home" }],
+    });
+
+    await registerLaunch(context.harness.stateDir, {
+      launchId: "00000000000000dd",
+      ...(await processMark()),
+      repoHash: sha256Hex("/elsewhere"),
+      startedAt: 1,
+    });
+
+    expect(await run0(context)).toBe(1);
+    expect(context.harness.stderr()).toContain(
+      `pi-sandbox: could not change the shares of the sandbox VM; ${context.paths.home} is mounted at another path in the VM, which colima's --mount cannot keep\n`,
+    );
+    expect(context.harness.stderr()).toContain("  hint: edit ~/.colima/pi-sandbox/colima.yaml mounts");
+    expect(context.harness.stderr()).not.toContain("would end them");
+    expect(context.colimaCalls()).toEqual([]);
+  });
+
+  it("names the missing colima", async () => {
+    const context = await launchWith({ answers: { missing: true } });
+
+    expect(await run0(context)).toBe(1);
+    expect(context.harness.stderr()).toContain(
+      "pi-sandbox: could not restart the sandbox VM: colima: command not found\n",
+    );
+  });
+
+  it("asks the engine again for a few seconds, then says the VM did not come back", async () => {
+    const detections = { count: 0 };
+    const context = await launchWith({
+      backend: {
+        detect: async () => {
+          detections.count += 1;
+
+          return detections.count === 1
+            ? { available: true }
+            : { available: false, reason: "socket missing" };
+        },
+      },
+    });
+
+    expect(await run0(context)).toBe(1);
+    expect(detections.count).toBeGreaterThanOrEqual(6);
+    expect(context.pauses).toEqual([0, 500, 1000, 1500, 2000]);
+    expect(context.harness.stderr()).toContain(
+      "pi-sandbox: the sandbox VM did not come back after restarting it: socket missing\n",
+    );
+  });
+});
+
+describe("the coverage of the VM shares", () => {
+  it("lists the shares and the paths they miss", async () => {
+    const context = await launchWith();
+    const { home, stateDir, repoRoot } = context.paths;
+    const needs = [
+      { path: repoRoot, writable: true },
+      { path: stateDir, writable: false },
+    ];
+
+    expect(await context.harness.deps.backend().vm.coverage(needs)).toEqual({
+      shares: [
+        { location: home, writable: true },
+        { location: stateDir, writable: false },
+      ],
+      missing: [repoRoot],
+    });
+  });
+
+  it("lets pi sandbox doctor name a path the VM lacks without sharing it or restarting the VM", async () => {
+    const context = await launchWith();
+
+    await run(["sandbox", "doctor"], context.harness.deps);
+
+    expect(doctorCheck(context.harness.stdout(), "vm shares")).toMatchObject({
+      status: "warn",
+      detail: `the sandbox VM does not share ${context.paths.repoRoot}`,
+      hint: "run pi once here while no other pi session runs, which shares it and restarts the VM, then pi sandbox doctor again",
+    });
+    expect(context.colimaCalls().filter((call) => /^colima (start|stop|restart)/.test(call))).toEqual([]);
+  });
+
+  it("lets pi sandbox doctor say the VM shares every path it needs", async () => {
+    const context = await launchWith({
+      lima: ({ home, stateDir, repoRoot }) => [
+        { location: home, writable: true },
+        { location: stateDir },
+        { location: repoRoot, writable: true },
+      ],
+    });
+
+    await run(["sandbox", "doctor"], context.harness.deps);
+
+    expect(doctorCheck(context.harness.stdout(), "vm shares")).toMatchObject({
+      status: "ok",
+      detail: "the sandbox VM shares every path this repository needs",
+    });
+  });
+
+  it("knows no coverage before colima wrote the instance config", async () => {
+    const context = await launchWith();
+
+    await rm(join(context.paths.home, ".colima", "_lima", "colima-pi-sandbox", "lima.yaml"));
+
+    expect(await context.harness.deps.backend().vm.coverage([])).toBeUndefined();
+  });
+});
+
+const rootsShares = ({ home, stateDir, repoRoot }: Paths): YamlMount[] => [
+  { location: repoRoot, writable: true },
+  { location: join(home, ".pi", "agent", "sessions"), writable: true },
+  { location: join(stateDir, "vm") },
+];
+
+const rootsMounts = ({ home, stateDir, repoRoot }: Paths) =>
+  `--mount ${repoRoot}:w --mount ${join(home, ".pi", "agent", "sessions")}:w --mount ${join(stateDir, "vm")}`;
+
+const rootsLocations = ({ home, stateDir, repoRoot }: Paths) =>
+  [repoRoot, join(home, ".pi", "agent", "sessions"), join(stateDir, "vm")].join(", ");
+
+const rootsConfig = (...roots: string[]) => ({ workspaceRoots: { roots } });
+
+const holdOtherLaunch = async (stateDir: string) => {
+  await registerLaunch(stateDir, {
+    launchId: "00000000000000dd",
+    ...(await processMark()),
+    repoHash: sha256Hex("/elsewhere"),
+    startedAt: 1,
+  });
+};
+
+const launchWithRoots = async (
+  setup: Omit<Setup, "config"> & { roots?: (paths: Paths) => string[] } = {},
+) => {
+  const context = await launchWith({ ...setup, config: {} });
+  const roots = (setup.roots ?? (({ repoRoot }) => [repoRoot]))(context.paths);
+
+  await context.harness.writeJson(context.harness.userConfigFile, rootsConfig(...roots));
+
+  return context;
+};
+
+const stateBinds = (context: Awaited<ReturnType<typeof launchWith>>) =>
+  context.fake.created
+    .flatMap((container) => container.spec?.mounts ?? [])
+    .filter((mount) => mount.kind === "bind" && mount.source.startsWith(`${context.paths.stateDir}/`))
+    .map((mount) => mount.source);
+
+describe("the VM shares with workspaceRoots set", () => {
+  it("restarts the VM with exactly the roots, the session dir and the vm dir while no other launch is live", async () => {
+    const context = await launchWithRoots();
+
+    expect(await run0(context)).toBe(0);
+    expect(context.colimaCalls()).toEqual(restart(rootsMounts(context.paths)));
+    expect(context.harness.stderr()).toContain(
+      `pi-sandbox: restarting the sandbox VM to change its shares to ${context.paths.repoRoot}, `,
+    );
+    expect(context.fake.created).toHaveLength(1);
+  });
+
+  it("leaves the VM alone when its shares are already the configured ones", async () => {
+    const context = await launchWithRoots({ lima: rootsShares });
+
+    expect(await run0(context)).toBe(0);
+    expect(context.colimaCalls()).toEqual([]);
+    expect(context.harness.stderr()).not.toContain("sandbox VM");
+  });
+
+  it("keeps covering shares while another launch is live and says they change later", async () => {
+    const context = await launchWithRoots({
+      lima: ({ home, stateDir, repoRoot }) => [
+        { location: home, writable: true },
+        { location: stateDir },
+        { location: repoRoot, writable: true },
+      ],
+    });
+
+    await holdOtherLaunch(context.harness.stateDir);
+
+    expect(await run0(context)).toBe(0);
+    expect(context.colimaCalls()).toEqual([]);
+    expect(context.harness.stderr()).toContain(
+      `pi-sandbox: the sandbox VM will change its shares to ${rootsLocations(context.paths)} at the next launch with no other pi session running\n`,
+    );
+    expect(context.fake.created).toHaveLength(1);
+  });
+
+  it("refuses while another launch is live and the current shares miss the repository", async () => {
+    const context = await launchWithRoots();
+    const { repoRoot } = context.paths;
+
+    await holdOtherLaunch(context.harness.stateDir);
+
+    expect(await run0(context)).toBe(1);
+    expect(context.harness.stderr()).toContain(
+      [
+        `pi-sandbox: ${repoRoot} is not shared with the sandbox VM; 1 pi session is running, and restarting the VM to change its shares to ${rootsLocations(context.paths)} would end them`,
+        `  hint: end them and run pi again, or share it yourself with colima stop --profile pi-sandbox && colima start --profile pi-sandbox --activate=false ${rootsMounts(context.paths)}`,
+      ].join("\n"),
+    );
+    expect(context.colimaCalls()).toEqual([]);
+    expect(context.fake.containers.size).toBe(0);
+  });
+
+  it("skips a root that does not exist with a notice and shares the rest", async () => {
+    const context = await launchWithRoots({ roots: ({ root, repoRoot }) => [join(root, "gone"), repoRoot] });
+
+    expect(await run0(context)).toBe(0);
+    expect(context.harness.stderr()).toContain(
+      `pi-sandbox: workspaceRoots: ${join(context.paths.root, "gone")} does not exist, not shared\n`,
+    );
+    expect(context.colimaCalls()).toEqual(restart(rootsMounts(context.paths)));
+  });
+
+  it("refuses a root that is the home dir before touching the VM", async () => {
+    const context = await launchWithRoots({ roots: ({ home, repoRoot }) => [repoRoot, home] });
+
+    expect(await run0(context)).toBe(1);
+    expect(context.harness.stderr()).toContain(
+      `pi-sandbox: config: workspaceRoots.roots: ${context.paths.home} is the home dir or holds it`,
+    );
+    expect(context.colimaCalls()).toEqual([]);
+  });
+
+  it("refuses a repository outside every root, naming it and the key", async () => {
+    const context = await launchWithRoots({ roots: ({ home }) => [join(home, "code")] });
+
+    await mkdir(join(context.paths.home, "code"), { recursive: true });
+
+    expect(await run0(context)).toBe(1);
+    expect(context.harness.stderr()).toContain(
+      `pi-sandbox: ${context.paths.repoRoot} is outside the allowed workspace roots (workspaceRoots.roots: ${join(context.paths.home, "code")})`,
+    );
+    expect(context.colimaCalls()).toEqual([]);
+  });
+
+  it("binds nothing from the state dir outside its vm dir, with roots or without", async () => {
+    const withRoots = await launchWithRoots({ lima: rootsShares });
+    const without = await launchWith();
+
+    expect(await run0(withRoots)).toBe(0);
+    expect(await run0(without)).toBe(0);
+    [withRoots, without].forEach((context) => {
+      const binds = stateBinds(context);
+
+      expect(binds.length).toBeGreaterThan(0);
+      expect(binds.filter((source) => !source.startsWith(`${join(context.paths.stateDir, "vm")}/`))).toEqual(
+        [],
+      );
+    });
+  });
+
+  it("warns in pi sandbox doctor while the VM still shares the home, without restarting it", async () => {
+    const context = await launchWithRoots({
+      lima: ({ home, stateDir, repoRoot }) => [
+        { location: home, writable: true },
+        { location: stateDir },
+        { location: repoRoot, writable: true },
+      ],
+    });
+    const { home, stateDir } = context.paths;
+
+    await run(["sandbox", "doctor"], context.harness.deps);
+
+    expect(doctorCheck(context.harness.stdout(), "vm shares")).toMatchObject({
+      status: "warn",
+      detail: `the sandbox VM shares ${home}:w, ${stateDir}, which workspaceRoots leaves out and lacks ~/.pi/agent/sessions:w, ${join(stateDir, "vm")}`,
+      hint: "run pi sandbox init, or pi, while no other pi session runs; either restarts the VM with the shares workspaceRoots sets",
+    });
+    expect(context.colimaCalls().filter((call) => /^colima (start|stop|restart)/.test(call))).toEqual([]);
+  });
+
+  it("passes pi sandbox doctor when the VM shares exactly the configured set", async () => {
+    const context = await launchWithRoots({ lima: rootsShares });
+
+    await run(["sandbox", "doctor"], context.harness.deps);
+
+    expect(doctorCheck(context.harness.stdout(), "vm shares")).toMatchObject({ status: "ok" });
+  });
+});
+
+const foreignContainer = (fake: ReturnType<typeof createFakeBackend>, state: "running" | "stopped") =>
+  fake.addContainer({
+    name: "pi-sandbox-other",
+    labels: {
+      [LABELS.managed]: "true",
+      [LABELS.launchId]: "00000000000000ff",
+      [LABELS.repoHash]: "f".repeat(64),
+    },
+    state,
+    image: "sha256:other",
+  });
+
+const stoppedVm = () => {
+  const vm = { up: false };
+  const detect = async () => (vm.up ? { available: true } : { available: false, reason: "socket missing" });
+
+  return { answers: { vm }, backend: { detect } };
+};
+
+describe("the VM shares with workspaceRoots set, at the edges", () => {
+  it("counts a running launcher container of another agent dir as a live session and keeps the shares", async () => {
+    const context = await launchWithRoots({
+      lima: ({ home, stateDir, repoRoot }) => [
+        { location: home, writable: true },
+        { location: stateDir },
+        { location: repoRoot, writable: true },
+      ],
+    });
+
+    foreignContainer(context.fake, "running");
+
+    expect(await run0(context)).toBe(0);
+    expect(context.colimaCalls()).toEqual([]);
+    expect(context.harness.stderr()).toContain("the sandbox VM will change its shares to ");
+  });
+
+  it("restarts the VM past a stopped launcher container of another agent dir", async () => {
+    const context = await launchWithRoots();
+
+    foreignContainer(context.fake, "stopped");
+
+    expect(await run0(context)).toBe(0);
+    expect(context.colimaCalls()).toEqual(restart(rootsMounts(context.paths)));
+  });
+
+  it("starts a stopped VM with the configured shares in one boot", async () => {
+    const stopped = stoppedVm();
+    const context = await launchWithRoots(stopped);
+
+    expect(await run0(context)).toBe(0);
+    expect(context.colimaCalls()).toEqual([
+      "colima status --profile pi-sandbox",
+      `colima start --profile pi-sandbox --activate=false ${rootsMounts(context.paths)}`,
+    ]);
+    expect(context.fake.created).toHaveLength(1);
+  });
+
+  it("refuses before stopping the VM when the session dir lies inside a root", async () => {
+    const context = await launchWithRoots();
+    const { home, repoRoot } = context.paths;
+    const store = join(repoRoot, "sessions-store");
+
+    await mkdir(store, { recursive: true });
+
+    await symlink(store, join(home, ".pi", "agent", "sessions"));
+
+    expect(await run0(context)).toBe(1);
+    expect(context.harness.stderr()).toContain(
+      `pi-sandbox: config: workspaceRoots: the sandbox VM shares ${repoRoot} and ${store}, which nest`,
+    );
+    expect(context.colimaCalls()).toEqual([]);
+  });
+
+  it("says the shares could not be read and leaves the VM alone when lima.yaml does not parse", async () => {
+    const context = await launchWithRoots();
+
+    await writeFile(limaYaml(context.paths.home), "mounts: [ { location: /x } ]\n");
+
+    expect(await run0(context)).toBe(0);
+    expect(context.colimaCalls()).toEqual([]);
+    expect(context.harness.stderr()).toContain(
+      "pi-sandbox: the shares of the sandbox VM could not be read from colima's lima.yaml, so they were not changed\n",
+    );
+  });
+
+  it("warns in pi sandbox doctor when the shares cannot be read", async () => {
+    const context = await launchWithRoots();
+
+    await writeFile(limaYaml(context.paths.home), "mounts: [ { location: /x } ]\n");
+
+    await run(["sandbox", "doctor"], context.harness.deps);
+
+    expect(doctorCheck(context.harness.stdout(), "vm shares")).toMatchObject({
+      status: "warn",
+      detail:
+        "colima's lima.yaml of profile pi-sandbox could not be read, so the shares of the sandbox VM are unknown",
+    });
+  });
+
+  it("lists a root that does not exist under the vm shares check of pi sandbox doctor", async () => {
+    const context = await launchWithRoots({
+      lima: rootsShares,
+      roots: ({ root, repoRoot }) => [repoRoot, join(root, "gone")],
+    });
+
+    await run(["sandbox", "doctor"], context.harness.deps);
+
+    expect(doctorCheck(context.harness.stdout(), "vm shares")).toMatchObject({
+      status: "ok",
+      reasons: [`workspaceRoots: ${join(context.paths.root, "gone")} does not exist, not shared`],
+    });
+  });
+});
+
+describe("pi-sandbox __vm-shares", () => {
+  it("prints the home when workspaceRoots is unset", async () => {
+    const context = await launchWith();
+
+    expect(await run(["__vm-shares"], context.harness.deps)).toBe(0);
+    expect(context.harness.stdout()).toBe(`${context.paths.home}\n`);
+    expect(context.colimaCalls()).toEqual([]);
+  });
+
+  it("prints the configured roots that exist, one per line, and creates the dirs the VM shares", async () => {
+    const context = await launchWithRoots({ roots: ({ root, repoRoot }) => [repoRoot, join(root, "gone")] });
+    const { home, stateDir, repoRoot } = context.paths;
+
+    expect(await run(["__vm-shares"], context.harness.deps)).toBe(0);
+    expect(context.harness.stdout()).toBe(`${repoRoot}\n`);
+    expect(context.harness.stderr()).toContain("does not exist, not shared");
+    expect(await stat(join(home, ".pi", "agent", "sessions"))).toBeDefined();
+    expect(await stat(join(stateDir, "vm"))).toBeDefined();
+  });
+
+  it("prints nothing when none of the configured roots exists", async () => {
+    const context = await launchWithRoots({ roots: ({ root }) => [join(root, "gone")] });
+
+    expect(await run(["__vm-shares"], context.harness.deps)).toBe(0);
+    expect(context.harness.stdout()).toBe("");
+  });
+
+  it("fails with the config error for a refused root", async () => {
+    const context = await launchWithRoots({ roots: ({ home }) => [home] });
+
+    expect(await run(["__vm-shares"], context.harness.deps)).toBe(1);
+    expect(context.harness.stdout()).toBe("");
+    expect(context.harness.stderr()).toContain("config: workspaceRoots.roots:");
+  });
+});

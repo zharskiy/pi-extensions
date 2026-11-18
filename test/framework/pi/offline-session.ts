@@ -1,9 +1,32 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { fauxProvider } from "@earendil-works/pi-ai";
+import { type FauxProviderHandle, fauxProvider } from "@earendil-works/pi-ai";
 import * as pi from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
 import { vi } from "vitest";
 import { childScope } from "../../../platform/pi-adapter/runtime/child-scope.ts";
+
+export const offlineModel = {
+  id: "offline",
+  name: "offline",
+  api: "openai-completions",
+  provider: "fake",
+  baseUrl: "http://127.0.0.1:9",
+  reasoning: false,
+  input: ["text"],
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  contextWindow: 1_000,
+  maxTokens: 100,
+};
+
+export const namedTool = (name: string, patch: object = {}) => ({
+  name,
+  label: name,
+  description: name,
+  parameters: Type.Object({}),
+  execute: async () => ({ content: [], details: undefined }),
+  ...patch,
+});
 
 type PiSessionOptions = {
   agentDir: string;
@@ -73,4 +96,83 @@ export const startPiSession = async (options: PiSessionOptions) => {
   });
 
   return { session, settingsManager, model, inScope };
+};
+
+type PiRuntimeOptions = {
+  dir: string;
+  providers: FauxProviderHandle[];
+  settings: Parameters<typeof pi.SettingsManager.inMemory>[0];
+  factories: Record<string, pi.ExtensionFactory>;
+  ui?: Partial<pi.ExtensionUIContext>;
+  model?: pi.ExtensionContext["model"];
+  persisted?: boolean;
+};
+
+export const startPiRuntime = async (options: PiRuntimeOptions) => {
+  const { dir } = options;
+
+  vi.stubEnv("PI_CODING_AGENT_DIR", dir);
+
+  const modelRuntime = await pi.ModelRuntime.create();
+
+  options.providers.forEach((faux) => {
+    modelRuntime.registerNativeProvider(faux.provider);
+  });
+
+  await modelRuntime.refresh({ allowNetwork: false });
+
+  const settingsManager = pi.SettingsManager.inMemory(options.settings);
+  const extensionFactories = Object.entries(options.factories).map(([name, factory]) => ({ name, factory }));
+
+  const createRuntime: pi.CreateAgentSessionRuntimeFactory = async ({
+    cwd,
+    agentDir,
+    sessionManager,
+    sessionStartEvent,
+  }) => {
+    const services = await pi.createAgentSessionServices({
+      cwd,
+      agentDir,
+      settingsManager,
+      modelRuntime,
+      resourceLoaderOptions: { extensionFactories },
+    });
+    const created = await pi.createAgentSessionFromServices({
+      services,
+      sessionManager,
+      sessionStartEvent,
+      model: options.model as never,
+    });
+
+    return { ...created, services, diagnostics: services.diagnostics };
+  };
+
+  const runtime = await pi.createAgentSessionRuntime(createRuntime, {
+    cwd: dir,
+    agentDir: dir,
+    sessionManager: options.persisted ? pi.SessionManager.create(dir, dir) : pi.SessionManager.inMemory(dir),
+  });
+
+  const uiContext = { notify: () => {}, ...options.ui } as pi.ExtensionUIContext;
+
+  const bind = async () => {
+    await runtime.session.bindExtensions({
+      mode: "print",
+      uiContext,
+      commandContextActions: {
+        waitForIdle: () => runtime.session.waitForIdle(),
+        newSession: (newOptions) => runtime.newSession(newOptions),
+        fork: (entryId, forkOptions) => runtime.fork(entryId, forkOptions),
+        navigateTree: async () => ({ cancelled: true }),
+        switchSession: (sessionPath, switchOptions) => runtime.switchSession(sessionPath, switchOptions),
+        reload: async () => {},
+      },
+    });
+  };
+
+  runtime.setRebindSession(bind);
+
+  await bind();
+
+  return { runtime, settingsManager, modelRuntime };
 };

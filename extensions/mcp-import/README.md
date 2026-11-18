@@ -56,7 +56,7 @@ Start with a dry run, then write:
 - Claude Code: `~/.claude.json`. For a project, its entry in `~/.claude.json` and `<cwd>/.mcp.json`.
 - Cursor: `~/.cursor/mcp.json`. For a project, `<cwd>/.cursor/mcp.json`.
 
-A project write creates `.pi/` when needed, with a `.pi/.gitignore` (`*`) that keeps it out of git; delete that file to track `.pi/`. A `.pi/` that already exists is left as it is.
+A user write goes to `~/.pi/agent/mcp.json`, a project write to `.pi/mcp.json`, the files pi reads. A project write creates `.pi/` when needed, with a `.pi/.gitignore` (`*`) that keeps it out of git; delete that file to track `.pi/`. A `.pi/` that already exists is left as it is.
 
 </details>
 

@@ -1,7 +1,7 @@
 ---
 name: planner
 description: Use for requests that need splitting into independent parts, ordering decisions or a design choice across several modules. Read-only; may start scouts, shell and fetch agents. Returns an ordered plan of agent batches with a full brief per task.
-model: openai/gpt-6.1-sol:high
+model: openai/gpt-6.2-sol:high
 limit: 120000
 tools: [read, grep, find, ls]
 skills: []

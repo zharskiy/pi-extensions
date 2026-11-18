@@ -21,6 +21,7 @@ import {
   type OverlayFactory,
   type Phase,
   type PromptTokens,
+  padEntry,
   type RowLines,
   type SessionControl,
   type SessionFill,
@@ -730,10 +731,12 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
         throw new Error(`entry renderer ${customType} not registered`);
       }
 
-      const shift = renderer.flush ? 0 : pad;
-      const lines = renderer.render(structuredClone(data), Math.max(1, width - shift), expanded, theme, pad);
-
-      return lines.map((line) => theme.truncate(`${" ".repeat(shift)}${line}`, width));
+      return padEntry(
+        (inner, read) => renderer.render(structuredClone(data), inner, expanded, theme, read),
+        width,
+        pad,
+        renderer.flush,
+      );
     },
     mainUsage: promptTokens(),
     contextFacts: () => (host.facts ? structuredClone(host.facts) : undefined),

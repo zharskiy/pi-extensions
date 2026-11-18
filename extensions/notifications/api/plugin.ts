@@ -32,7 +32,5 @@ export const notificationsPlugin: Plugin<never, never, NotificationSettings> = {
       offKeys?.();
       offKeys = undefined;
     });
-
-    return undefined;
   },
 };

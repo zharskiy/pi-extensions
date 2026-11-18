@@ -9,12 +9,12 @@ import {
   type SettingsSchema,
 } from "../shared/index.ts";
 import { createExtensionManager, type ExtensionManager } from "./extension-manager.ts";
-import { reportSettingsErrors } from "./settings-errors.ts";
+import { reportSettingsErrors, type SettingsReport } from "./settings-errors.ts";
 
 type SettingsFiles<C> = { schema: SettingsSchema<C>; file: string; scope?: FileScope };
 
 type SettingsReload<C> = {
-  reload(settings: C, info: SessionInfo, runtime: AgentRuntime, notify: (message: string) => void): void;
+  reload(settings: C, info: SessionInfo, runtime: AgentRuntime, report: SettingsReport): void;
 };
 
 type ManagedSettings<C> = (SettingsFiles<C> | SettingsReload<C>) & { defaults(paths: ExtensionPaths): C };
@@ -60,21 +60,24 @@ const watchManagedSettings = <C>(
   const report = reportSettingsErrors(host, label);
   const errors: string[] = [];
 
-  const notify = (message: string) => {
-    errors.push(message);
-    report([message]);
+  const collect: SettingsReport = (messages, level) => {
+    if (level !== "info") {
+      errors.push(...messages);
+    }
+
+    report(messages, level);
   };
 
   host.onSessionStart((info) => {
     errors.length = 0;
 
     if ("reload" in spec) {
-      spec.reload(settings, info, runtime, notify);
+      spec.reload(settings, info, runtime, collect);
     } else {
       const loaded = loadSettingsFiles(spec.schema, initial, spec.file, info, spec.scope);
 
       Object.assign(settings, loaded.settings);
-      loaded.errors.forEach(notify);
+      collect(loaded.errors);
     }
 
     Object.assign(settings, overrides);

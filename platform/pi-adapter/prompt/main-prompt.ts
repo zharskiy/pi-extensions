@@ -4,6 +4,7 @@ import {
   getReadmePath,
   type NormalizedBuildSystemPromptOptions,
 } from "@earendil-works/pi-coding-agent";
+import { FILE_SEARCH_TOOLS } from "../tools/tool-source.ts";
 
 const toolsSection = (declaredTools: string[], toolSnippets: Record<string, string>) => {
   const visible = declaredTools.filter((name) => Boolean(toolSnippets[name]));
@@ -16,7 +17,7 @@ const toolsSection = (declaredTools: string[], toolSnippets: Record<string, stri
 const fileToolRule = (declaredTools: string[]) => {
   const hasBash = declaredTools.includes("bash");
   const hasPowerShell = declaredTools.includes("powershell");
-  const hasSearchTool = ["grep", "find", "ls"].some((name) => declaredTools.includes(name));
+  const hasSearchTool = FILE_SEARCH_TOOLS.some((name) => declaredTools.includes(name));
 
   if ((!hasBash && !hasPowerShell) || hasSearchTool) {
     return [];

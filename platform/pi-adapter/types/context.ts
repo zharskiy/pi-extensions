@@ -1,6 +1,8 @@
+import type { UsageTotals } from "./usage.ts";
+
 export type ContextSnapshot = { tokens: number | null; window: number; percent: number | null };
 
-export type PromptTokens = { input: number; cacheRead: number; cacheWrite: number; output: number };
+export type PromptTokens = Pick<UsageTotals, "input" | "cacheRead" | "cacheWrite" | "output">;
 
 export type ContextSection = { name: string; text: string };
 

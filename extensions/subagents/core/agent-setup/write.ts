@@ -1,6 +1,13 @@
-import { errorText, isPlainObject, readText, writeSettingsFile } from "../../../../platform/shared/index.ts";
-import { SETTINGS_FILE, settingsPaths } from "../model/settings.ts";
-import type { Scope, SetupChange } from "./scope.ts";
+import {
+  errorText,
+  isPlainObject,
+  readText,
+  type SettingsScope,
+  settingsPath,
+  writeSettingsFile,
+} from "../../../../platform/shared/index.ts";
+import { SETTINGS_FILE } from "../model/settings.ts";
+import type { SetupChange } from "./scope.ts";
 
 const readObject = (path: string): Record<string, unknown> => {
   const text = readText(path) ?? "";
@@ -33,10 +40,10 @@ export const mergeChanges = (current: Record<string, unknown>, changes: SetupCha
 
 export const writeChanges = (
   location: { agentDir: string; cwd: string },
-  scope: Scope,
+  scope: SettingsScope,
   changes: SetupChange[],
 ): string | undefined => {
-  const path = settingsPaths(location)[scope];
+  const path = settingsPath(location, scope, SETTINGS_FILE);
 
   try {
     const next = mergeChanges(readObject(path), changes);

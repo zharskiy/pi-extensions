@@ -3,6 +3,7 @@ export { createPiExtension } from "./runtime/extension.ts";
 export { globalRecord } from "./runtime/global-record.ts";
 export { readSessionHeader } from "./runtime/session-file.ts";
 export { settleWithin } from "./runtime/settle-within.ts";
+export { padEntry } from "./tools/entry-renderers.ts";
 export type {
   ContextFacts,
   ContextMessage,
@@ -30,6 +31,8 @@ export {
   type ModelChoice,
   type ModelInfo,
   type ModelResolution,
+  modelChoiceOf,
+  splitModelRef,
   splitModelRequest,
   THINKING_LEVELS,
 } from "./types/model.ts";

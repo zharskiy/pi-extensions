@@ -14,6 +14,7 @@ export default defineConfig({
         test: {
           name: "unit",
           include: [
+            "launcher/tests/**/*.test.ts",
             "platform/*/tests/**/*.test.ts",
             "extensions/*/tests/**/*.test.ts",
             "test/framework/tests/**/*.test.ts",
@@ -31,6 +32,7 @@ export default defineConfig({
           include: [
             "extensions/*/tests/live/**/*.live.test.ts",
             "platform/pi-adapter/tests/live/**/*.live.test.ts",
+            "launcher/tests/live/**/*.live.test.ts",
           ],
           environment: "node",
           fileParallelism: false,

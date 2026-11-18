@@ -1,0 +1,39 @@
+{
+  "egress": {
+    "allow": ["gateway.example.internal", "registry.example.internal", "*.git.example.internal"],
+    "deny": ["paste.example.internal"],
+    "privateHosts": ["gateway.example.internal", "registry.example.internal", "*.git.example.internal"]
+  },
+  "credentials": {
+    "rules": [
+      {
+        "id": "llm-gateway",
+        "host": "gateway.example.internal",
+        "placeholder": "pi-sandbox-llm-gateway",
+        "header": "authorization",
+        "template": "Bearer {secret}",
+        "secret": {
+          "command": ["/usr/local/bin/example-sso", "token", "--audience", "gateway"]
+        }
+      },
+      {
+        "id": "package-registry",
+        "host": "registry.example.internal",
+        "pathPrefix": "/npm/",
+        "placeholder": "pi-sandbox-package-registry",
+        "header": "authorization",
+        "template": "Bearer {secret}",
+        "secret": {
+          "env": "EXAMPLE_REGISTRY_TOKEN"
+        }
+      }
+    ]
+  },
+  "tls": {
+    "extraCa": [
+      {
+        "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      }
+    ]
+  }
+}
