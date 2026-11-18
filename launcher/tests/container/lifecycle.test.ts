@@ -1,8 +1,10 @@
+import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
-import { mkdir, rm, stat, symlink } from "node:fs/promises";
+import { mkdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import type { ExecIo, ExecSpec } from "../../backend/index.ts";
 import {
   type LaunchContainerInput,
   listLauncherContainers,
@@ -11,7 +13,7 @@ import {
   startLaunchContainer as startWith,
 } from "../../container/lifecycle.ts";
 import { buildContainerSpec, type ContainerSpecInput } from "../../container/spec.ts";
-import { readCreatedDirs, sha256Hex } from "../../shared/index.ts";
+import { GUEST_PATHS, LauncherError, readCreatedDirs, sha256Hex } from "../../shared/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
 
@@ -35,6 +37,8 @@ afterAll(() => {
 
   rmSync(WORK, { recursive: true, force: true });
 });
+
+const READY_MARKER = GUEST_PATHS.ready;
 
 const REPO_HASH = sha256Hex(`${WORK}/repo`);
 
@@ -196,6 +200,33 @@ describe("volumes the sandbox writes", () => {
       stateDir,
       config: sandboxConfig({ mounts: { sharedCaches: ["~/.cache/pip"] } }),
     });
+  const stopper: { backend?: ReturnType<typeof createFakeBackend>["backend"] } = {};
+  const answering =
+    (match: string, answer: { code?: number; stderr?: string; error?: string }) =>
+    (spec: ExecSpec, io: ExecIo) => {
+      if (spec.command[2]?.includes(match) !== true) {
+        return undefined;
+      }
+
+      if (answer.error !== undefined) {
+        throw new Error(answer.error);
+      }
+
+      io.stderr.write(answer.stderr ?? "");
+
+      return answer.code ?? 0;
+    };
+  const exitingOn = (match: string) => async (spec: ExecSpec) => {
+    if (spec.command[2]?.includes(match) !== true) {
+      return undefined;
+    }
+
+    await stopper.backend?.stopContainer(spec.containerId);
+
+    throw new Error(
+      `engine: POST /containers/${spec.containerId}/exec failed (409): container is not running`,
+    );
+  };
   const chownsOf = (fake: ReturnType<typeof createFakeBackend>) =>
     fake.execs.filter((exec) => exec.spec.command[2]?.startsWith("chown ") === true).map((exec) => exec.spec);
 
@@ -351,31 +382,81 @@ describe("volumes the sandbox writes", () => {
     ]);
   });
 
-  it("stops the launch when handing the volumes to the sandbox user fails", async () => {
-    const fake = createFakeBackend({ execScripts: [{ command: ["sh", "-c"], code: 1, stderr: "denied\n" }] });
+  it("stops the launch when the hand-over the entrypoint waits for fails", async () => {
+    const fake = createFakeBackend({ exec: answering("chown", { code: 1, stderr: "denied\n" }) });
 
-    await expect(
-      startLaunchContainer({ backend: fake.backend, spec: specOf({ workspace: nodeWorkspace }) }),
-    ).rejects.toThrow("the sandbox could not hand its cache volumes to the sandbox user: denied");
+    await expect(startLaunchContainer({ backend: fake.backend, spec: cachedSpec() })).rejects.toThrow(
+      "the sandbox could not hand its cache volumes to the sandbox user: denied",
+    );
+  });
+
+  it("warns and goes on when the hand-over of volumes outside the home fails", async () => {
+    const fake = createFakeBackend({ exec: answering("chown", { code: 1, stderr: "denied\n" }) });
+    const result = await startLaunchContainer({
+      backend: fake.backend,
+      spec: specOf({ workspace: nodeWorkspace }),
+    });
+
+    expect(result.notices).toEqual([
+      "warning: the sandbox user may not be able to write its cache volumes: denied",
+    ]);
+  });
+
+  it("warns and goes on when the engine rejects the hand-over of volumes outside the home", async () => {
+    const fake = createFakeBackend({ exec: answering("chown", { error: "engine: exec refused" }) });
+    const result = await startLaunchContainer({
+      backend: fake.backend,
+      spec: specOf({ workspace: nodeWorkspace }),
+    });
+
+    expect(result.notices).toEqual([
+      "warning: the sandbox user may not be able to write its cache volumes: engine: exec refused",
+    ]);
   });
 
   it("names a container that exited during startup instead of the engine's bare not-running error", async () => {
-    const stopped = { backend: undefined as ReturnType<typeof createFakeBackend>["backend"] | undefined };
-    const fake = createFakeBackend({
-      exec: async (spec) => {
-        await stopped.backend?.stopContainer(spec.containerId);
+    const fake = createFakeBackend({ exec: exitingOn("chown") });
 
-        throw new Error(
-          `engine: POST /containers/${spec.containerId}/exec failed (409): container is not running`,
-        );
-      },
-    });
-
-    stopped.backend = fake.backend;
+    stopper.backend = fake.backend;
 
     await expect(startLaunchContainer({ backend: fake.backend, spec: cachedSpec() })).rejects.toThrow(
       /^the sandbox container exited during startup, before pi could run \(engine: POST .* failed \(409\)/,
     );
+  });
+
+  it("keeps the hint of the failed step when the container exited during startup", async () => {
+    const fake = createFakeBackend();
+    const failing = (pinnedImage: boolean) =>
+      startLaunchContainer({
+        backend: fake.backend,
+        spec: cachedSpec(),
+        afterCreate: async (id) => {
+          await fake.backend.stopContainer(id);
+
+          throw new LauncherError("the session dir is not shared", "the share hint");
+        },
+        pinnedImage,
+      }).catch((error: unknown) => error);
+
+    expect(await failing(false)).toMatchObject({
+      message:
+        "the sandbox container exited during startup, before pi could run (the session dir is not shared)",
+      hint: "the share hint",
+    });
+    expect(await failing(true)).toMatchObject({
+      hint: "the share hint; the image is pinned by image.digest and may predate this launcher",
+    });
+  });
+
+  it("falls back to the doctor hint when the failed step had none", async () => {
+    const fake = createFakeBackend({ exec: exitingOn(READY_MARKER) });
+
+    stopper.backend = fake.backend;
+
+    await expect(startLaunchContainer({ backend: fake.backend, spec: cachedSpec() })).rejects.toMatchObject({
+      message: expect.stringMatching(/^the sandbox container exited during startup/),
+      hint: "run pi sandbox doctor",
+    });
   });
 
   it("tells the entrypoint to wait for the handover only when a shared cache lies in the home", () => {
@@ -415,5 +496,94 @@ describe("volumes the sandbox writes", () => {
       "pi-sandbox.user-hash": sha256Hex(LOCK_STATE).slice(0, 12),
       "pi-sandbox.shared-path": "~/.cache/pip",
     });
+  });
+});
+
+describe("waiting for the entrypoint", () => {
+  const readyExecsOf = (fake: ReturnType<typeof createFakeBackend>) =>
+    fake.execs
+      .filter((exec) => exec.spec.command[2]?.includes(READY_MARKER) === true)
+      .map((exec) => exec.spec);
+
+  const readyScript = async () => {
+    const fake = createFakeBackend();
+
+    await startLaunchContainer({ backend: fake.backend, spec: specOf() });
+
+    return readyExecsOf(fake)[0]?.command[2] ?? "";
+  };
+
+  const runReadyScript = (script: string, entrypoint: string, marker: string, tries: number) => {
+    const local = script
+      .replaceAll(GUEST_PATHS.entrypoint, entrypoint)
+      .replaceAll(READY_MARKER, marker)
+      .replace(/-lt \d+/, `-lt ${tries}`);
+
+    return new Promise<number | null>((resolve) => {
+      spawn("sh", ["-c", local]).on("close", resolve);
+    });
+  };
+
+  it("waits as the sandbox user, after the hand-over and before the steps that use the home", async () => {
+    const fake = createFakeBackend();
+    const seen: string[] = [];
+
+    await startLaunchContainer({
+      backend: fake.backend,
+      spec: specOf({ config: sandboxConfig({ mounts: { sharedCaches: ["~/.m2/repository"] } }) }),
+      afterCreate: async () => {
+        seen.push(...fake.execs.map((exec) => (exec.spec.command[2] ?? "").split(" ")[0] ?? ""));
+      },
+    });
+
+    const [ready] = readyExecsOf(fake);
+
+    expect(seen).toEqual(["chown", "grep"]);
+    expect(ready?.user).toBeUndefined();
+  });
+
+  it("waits on every launch, also without volumes to hand over", async () => {
+    const fake = createFakeBackend();
+
+    await startLaunchContainer({ backend: fake.backend, spec: specOf() });
+
+    expect(readyExecsOf(fake)).toHaveLength(1);
+  });
+
+  it("stops the launch with what it waited for when the entrypoint never finishes", async () => {
+    const fake = createFakeBackend({
+      exec: (spec) => (spec.command[2]?.includes(READY_MARKER) === true ? 3 : undefined),
+    });
+
+    await expect(startLaunchContainer({ backend: fake.backend, spec: specOf() })).rejects.toThrow(
+      "the sandbox entrypoint did not finish preparing the home within 60 s (no /tmp/pi-sandbox-ready)",
+    );
+  });
+
+  it("returns at once for an image whose entrypoint writes no ready marker, and waits for one that does", async () => {
+    const script = await readyScript();
+    const dir = mkdtempSync(join(tmpdir(), "pi-sandbox-ready-"));
+    const marker = join(dir, "ready");
+    const oldEntrypoint = join(dir, "old-entrypoint");
+    const newEntrypoint = join(dir, "new-entrypoint");
+
+    await writeFile(oldEntrypoint, "#!/bin/sh\nexec sleep infinity\n");
+
+    await writeFile(newEntrypoint, `#!/bin/sh\n: > "${marker}"\n`);
+
+    const started = Date.now();
+
+    expect(await runReadyScript(script, oldEntrypoint, marker, 600)).toBe(0);
+    expect(await runReadyScript(script, join(dir, "missing"), marker, 600)).toBe(0);
+    expect(Date.now() - started).toBeLessThan(5000);
+    expect(await runReadyScript(script, newEntrypoint, marker, 3)).toBe(3);
+
+    const waiting = runReadyScript(script, newEntrypoint, marker, 600);
+
+    await writeFile(marker, "");
+
+    expect(await waiting).toBe(0);
+
+    rmSync(dir, { recursive: true, force: true });
   });
 });

@@ -12,6 +12,7 @@ system_bundle=/etc/ssl/certs/ca-certificates.crt
 trust_bundle=/etc/pi-sandbox/ca.pem
 truststore="$bundle_dir/truststore.p12"
 handover=/tmp/pi-sandbox-handover
+ready=/tmp/pi-sandbox-ready
 handover_tries=600
 
 await_handover() {
@@ -131,6 +132,8 @@ rm -f "$truststore"
 if ! build_truststore; then
   rm -f "$truststore.tmp"
 fi
+
+: > "$ready"
 
 if [ "$#" -gt 0 ]; then
   exec "$@"

@@ -130,8 +130,10 @@ const parentsBelow = (root: string, path: string): string[] => {
   return parent === root || !isWithin(parent, root) ? [] : [...parentsBelow(root, parent), parent];
 };
 
+export const AWAIT_HANDOVER_VARIABLE = "PI_SANDBOX_AWAIT_HANDOVER";
+
 const handoverEnv = (ownedPaths: string[]): Record<string, string> =>
-  ownedPaths.some((path) => isWithin(path, GUEST_HOME)) ? { PI_SANDBOX_AWAIT_HANDOVER: "1" } : {};
+  ownedPaths.some((path) => isWithin(path, GUEST_HOME)) ? { [AWAIT_HANDOVER_VARIABLE]: "1" } : {};
 
 const LOOPBACK_HOSTS = "localhost,127.0.0.1,::1";
 

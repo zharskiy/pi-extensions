@@ -66,6 +66,7 @@ const sandboxRoot = async () => {
     trust: join(root, "etc", "ca.pem"),
     hostBin: join(root, "host-bin"),
     handover: join(root, "handover"),
+    ready: join(root, "ready"),
   };
 
   await hostToolsBin(paths.hostBin);
@@ -91,6 +92,7 @@ const certificate = (name: string) => `-----BEGIN CERTIFICATE-----\n${name}\n---
 const withGuestPaths = (paths: Paths, text: string) => {
   const guestPaths: Record<string, string> = {
     "/tmp/pi-sandbox-handover": paths.handover,
+    "/tmp/pi-sandbox-ready": paths.ready,
     "/opt/pi-sandbox/render": paths.render,
     "/tmp/pi-sandbox": paths.bundle,
     "/etc/ssl/certs/ca-certificates.crt": paths.system,
@@ -306,6 +308,39 @@ describe("image entrypoint", () => {
     await chmod(locked, 0o755);
 
     expect(result.status).not.toBe(0);
+  });
+
+  it("marks the home ready as its last step, once the links are in place and before the command runs", async () => {
+    const paths = await sandboxRoot();
+    const script = (await imageFile("entrypoint.sh")).trimEnd().split("\n");
+    const marked = script.indexOf(': > "$ready"');
+
+    await mkdir(join(paths.render, "tools"));
+
+    await writeFile(join(paths.render, "tools", "m2-settings.xml"), "<settings/>\n");
+
+    const result = await spawnEntrypoint(paths, {
+      command: ["sh", "-c", `test -e "${paths.ready}" && test -L "$HOME/.m2/settings.xml"`],
+    });
+
+    expect(script.slice(marked + 1).filter((line) => line.trim() !== "")).toEqual([
+      'if [ "$#" -gt 0 ]; then',
+      '  exec "$@"',
+      "fi",
+      "exec sleep infinity",
+    ]);
+    expect(result.status).toBe(0);
+  });
+
+  it("leaves the home unmarked when it stops before the home is ready", async () => {
+    const paths = await sandboxRoot();
+    const result = await spawnEntrypoint(paths, {
+      env: { PI_SANDBOX_AWAIT_HANDOVER: "1" },
+      handoverTries: 1,
+    });
+
+    expect(result.status).toBe(1);
+    await expect(lstat(paths.ready)).rejects.toThrow();
   });
 
   it("idles with a plain sleep under the container's own init and leaves the bash env to the shells", async () => {

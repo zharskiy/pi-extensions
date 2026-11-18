@@ -16,7 +16,7 @@ import {
   stateLayout,
   withFileLock,
 } from "../shared/index.ts";
-import type { LauncherContainerSpec } from "./spec.ts";
+import { AWAIT_HANDOVER_VARIABLE, type LauncherContainerSpec } from "./spec.ts";
 
 export interface LaunchContainerInput {
   backend: Backend;
@@ -24,6 +24,7 @@ export interface LaunchContainerInput {
   stateDir: string;
   beforeStart?: () => Promise<LauncherContainerSpec>;
   afterCreate?: (id: string) => Promise<void>;
+  pinnedImage?: boolean;
 }
 
 export interface LaunchContainer {
@@ -159,27 +160,77 @@ const ensureMountPoints = async (spec: LauncherContainerSpec, onMade: DirMade) =
 
 const HANDOVER_SCRIPT = `chown -h ${DEFAULT_OWNER} "$@" && : > ${GUEST_PATHS.handover}`;
 
+const READY_TRIES = 600;
+
+const READY_TIMED_OUT = 3;
+
+const READY_SCRIPT = [
+  `grep -qF ${GUEST_PATHS.ready} ${GUEST_PATHS.entrypoint} 2>/dev/null || exit 0`,
+  "tries=0",
+  `while [ ! -e ${GUEST_PATHS.ready} ]; do`,
+  `  [ "$tries" -lt ${READY_TRIES} ] || exit ${READY_TIMED_OUT}`,
+  "  tries=$((tries + 1))",
+  "  sleep 0.1",
+  "done",
+].join("\n");
+
+const READY_EXEC_TIMEOUT_MS = (READY_TRIES / 10 + 30) * 1000;
+
 const HANDOVER_HINT = "run pi sandbox doctor, and check the paths in mounts.sharedCaches";
 
 const STARTUP_HINT = "run pi sandbox doctor";
 
+const PINNED_IMAGE_HINT = "the image is pinned by image.digest and may predate this launcher";
+
 const handOverVolumes = async (backend: Backend, id: string, spec: LauncherContainerSpec) => {
   if (spec.ownedPaths.length === 0) {
-    return;
+    return [];
   }
 
+  const awaited = spec.env[AWAIT_HANDOVER_VARIABLE] !== undefined;
   const result = await execCapture(backend, {
     containerId: id,
     command: ["sh", "-c", HANDOVER_SCRIPT, "sh", ...spec.ownedPaths],
     env: {},
     workdir: "/",
     user: ROOT_USER,
-  });
+  }).catch((error: unknown) =>
+    awaited ? Promise.reject(error) : { code: -1, stdout: "", stderr: errorMessage(error) },
+  );
 
-  if (result.code !== 0) {
+  if (result.code === 0) {
+    return [];
+  }
+
+  if (awaited) {
     throw new LauncherError(
       `the sandbox could not hand its cache volumes to the sandbox user: ${result.stderr.trim()}`,
       HANDOVER_HINT,
+    );
+  }
+
+  return [`warning: the sandbox user may not be able to write its cache volumes: ${result.stderr.trim()}`];
+};
+
+const awaitEntrypoint = async (backend: Backend, id: string) => {
+  const result = await execCapture(
+    backend,
+    { containerId: id, command: ["sh", "-c", READY_SCRIPT], env: {}, workdir: "/" },
+    "",
+    READY_EXEC_TIMEOUT_MS,
+  );
+
+  if (result.code === READY_TIMED_OUT) {
+    throw new LauncherError(
+      `the sandbox entrypoint did not finish preparing the home within ${READY_TRIES / 10} s (no ${GUEST_PATHS.ready})`,
+      STARTUP_HINT,
+    );
+  }
+
+  if (result.code !== 0) {
+    throw new LauncherError(
+      `the check that the sandbox entrypoint finished failed (exit ${result.code}): ${result.stderr.trim()}`,
+      STARTUP_HINT,
     );
   }
 };
@@ -193,11 +244,21 @@ const isStillRunning = (backend: Backend, id: string, spec: LauncherContainerSpe
   );
 };
 
+const startupHint = (error: unknown, pinnedImage: boolean) => {
+  const hint = error instanceof LauncherError && error.hint !== undefined ? error.hint : STARTUP_HINT;
+
+  return pinnedImage ? `${hint}; ${PINNED_IMAGE_HINT}` : hint;
+};
+
 const settleStartup = async (input: LaunchContainerInput, id: string, spec: LauncherContainerSpec) => {
   try {
-    await handOverVolumes(input.backend, id, spec);
+    const notices = await handOverVolumes(input.backend, id, spec);
+
+    await awaitEntrypoint(input.backend, id);
 
     await input.afterCreate?.(id);
+
+    return notices;
   } catch (error) {
     if (await isStillRunning(input.backend, id, spec)) {
       throw error;
@@ -205,7 +266,7 @@ const settleStartup = async (input: LaunchContainerInput, id: string, spec: Laun
 
     throw new LauncherError(
       `the sandbox container exited during startup, before pi could run (${errorMessage(error)})`,
-      STARTUP_HINT,
+      startupHint(error, input.pinnedImage === true),
     );
   }
 };
@@ -255,9 +316,9 @@ const create = async (input: LaunchContainerInput, spec: LauncherContainerSpec):
 
   await backend.startContainer(id);
 
-  await settleStartup(input, id, spec);
+  const notices = await settleStartup(input, id, spec);
 
-  return { id, spec, notices: spec.notices ?? [] };
+  return { id, spec, notices: [...(spec.notices ?? []), ...notices] };
 };
 
 const isAgent = (container: ContainerSummary) => container.labels[LABELS.relay] !== "true";
