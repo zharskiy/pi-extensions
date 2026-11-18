@@ -515,8 +515,9 @@ describe("waiting for the entrypoint", () => {
 
   const runReadyScript = (script: string, entrypoint: string, marker: string, tries: number) => {
     const local = script
+      .replaceAll(READY_MARKER, "@marker@")
       .replaceAll(GUEST_PATHS.entrypoint, entrypoint)
-      .replaceAll(READY_MARKER, marker)
+      .replaceAll("@marker@", marker)
       .replace(/-lt \d+/, `-lt ${tries}`);
 
     return new Promise<number | null>((resolve) => {
@@ -562,7 +563,7 @@ describe("waiting for the entrypoint", () => {
 
   it("returns at once for an image whose entrypoint writes no ready marker, and waits for one that does", async () => {
     const script = await readyScript();
-    const dir = mkdtempSync(join(tmpdir(), "pi-sandbox-ready-"));
+    const dir = mkdtempSync(join(tmpdir(), "pi-ready-wait-"));
     const marker = join(dir, "ready");
     const oldEntrypoint = join(dir, "old-entrypoint");
     const newEntrypoint = join(dir, "new-entrypoint");
