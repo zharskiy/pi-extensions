@@ -2,7 +2,7 @@ import { constants } from "node:os";
 import { Writable } from "node:stream";
 import type { Backend, MountSpec, TerminalSize } from "../backend/index.ts";
 import type { Workspace } from "../workspace/index.ts";
-import { copyBridge, type HostClipboard, pasteBridge } from "./terminal-bridge.ts";
+import { copyBridge, type HostClipboard, type HostClipboardImage, pasteBridge } from "./terminal-bridge.ts";
 
 export interface HostTerminal {
   stdin: NodeJS.ReadableStream & { isTTY?: boolean; setRawMode?: (mode: boolean) => unknown };
@@ -29,6 +29,7 @@ export interface RunPiInput {
   signals?: SignalSource;
   graceMs?: number;
   clipboard?: HostClipboard;
+  clipboardImage?: HostClipboardImage;
   pasteMounts?: MountSpec[];
 }
 
@@ -131,7 +132,7 @@ const settleSignal = async (input: RunPiInput, running: Promise<number>, signal:
 const PI_SCRIPT = `echo $$ > ${PID_FILE}; cd "$1" 2>/dev/null || echo "pi-sandbox: $1 is not in the sandbox, pi starts in $PWD" >&2; shift; exec "$@"`;
 
 const bridged = (input: RunPiInput, interactive: boolean): PiStreams => {
-  const { terminal, clipboard, pasteMounts } = input;
+  const { terminal, clipboard, clipboardImage, pasteMounts } = input;
   const copy = interactive && clipboard !== undefined ? copyBridge(terminal.stdout, clipboard) : undefined;
   const paste =
     interactive && pasteMounts !== undefined
@@ -140,6 +141,7 @@ const bridged = (input: RunPiInput, interactive: boolean): PiStreams => {
           containerId: input.containerId,
           mounts: pasteMounts,
           recentCopy: copy?.recentCopy,
+          readClipboardImage: clipboardImage,
         })
       : undefined;
 

@@ -315,6 +315,76 @@ describe("runPi terminal bridges", () => {
     expect(run.host.stdin.listenerCount("data")).toBe(0);
   });
 
+  const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(8)]);
+
+  const drained = (stream: NodeJS.ReadableStream | undefined) =>
+    new Promise<string>((resolve) => {
+      const chunks: Buffer[] = [];
+
+      stream?.on("data", (chunk: Buffer) => chunks.push(Buffer.from(chunk)));
+
+      stream?.once("end", () => resolve(Buffer.concat(chunks).toString()));
+    });
+
+  const imageRun = async (isTTY: boolean) => {
+    const host = fakeTerminal(isTTY);
+    const reads: number[] = [];
+    const piInput: string[] = [];
+    const copies: string[] = [];
+    const fake = createFakeBackend({
+      exec: async (spec, io) => {
+        if (!isPiExec(spec)) {
+          copies.push(spec.command.at(-1) ?? "");
+
+          await drained(io.stdin);
+
+          return 0;
+        }
+
+        const input = drained(io.stdin);
+
+        host.stdin.end("\x16");
+
+        piInput.push(await input);
+
+        return 0;
+      },
+    });
+
+    await runPi({
+      launchId: nextLaunchId(),
+      backend: fake.backend,
+      containerId: "c",
+      piArgs: [],
+      workspace,
+      terminal: host.terminal,
+      clipboardImage: async () => {
+        reads.push(1);
+
+        return PNG;
+      },
+      pasteMounts: [],
+    });
+
+    return { reads, piInput: piInput[0], copies };
+  };
+
+  it("pastes the host clipboard image on Ctrl+V in a terminal session", async () => {
+    const run = await imageRun(true);
+
+    expect(run.reads).toEqual([1]);
+    expect(run.copies).toEqual([expect.stringMatching(/^\/tmp\/pi-paste\/[0-9a-f-]{36}\.png$/)]);
+    expect(run.piInput).toBe(`\x1b[200~${run.copies[0]}\x1b[201~`);
+  });
+
+  it("reads no clipboard image without a terminal", async () => {
+    const run = await imageRun(false);
+
+    expect(run.reads).toEqual([]);
+    expect(run.copies).toEqual([]);
+    expect(run.piInput).toBe("\x16");
+  });
+
   it("leaves both streams alone without a terminal", async () => {
     const run = await bridgedRun(false);
 

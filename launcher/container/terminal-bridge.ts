@@ -4,6 +4,7 @@ import { constants } from "node:fs";
 import { open, realpath, stat } from "node:fs/promises";
 import { PassThrough, Writable } from "node:stream";
 import { type Backend, execCapture, type MountSpec } from "../backend/index.ts";
+import { CtrlVScanner, type KeySegment } from "./ctrl-v.ts";
 import { visibleInside } from "./host-paths.ts";
 import { Osc52Filter, type Osc52Segment } from "./osc52.ts";
 import {
@@ -19,6 +20,8 @@ import {
 
 export type HostClipboard = (text: Buffer) => Promise<boolean>;
 
+export type HostClipboardImage = () => Promise<Buffer | undefined>;
+
 type Copy = Extract<Osc52Segment, { kind: "copy" }>;
 
 interface PastedImage {
@@ -32,11 +35,21 @@ export interface PasteTarget {
   mounts: MountSpec[];
   recentCopy?: () => string | undefined;
   readImage?: (path: string, mounts: MountSpec[]) => Promise<PastedImage | undefined>;
+  readClipboardImage?: HostClipboardImage;
+}
+
+interface Deadline {
+  ms: number;
+  stalled: WeakMap<PasteTarget, number>;
 }
 
 export const PASTE_IMAGE_MAX_BYTES = 20 * 1024 * 1024;
 
 export const PASTE_CHECK_TIMEOUT_MS = 2000;
+
+export const CLIPBOARD_READ_TIMEOUT_MS = 5000;
+
+export const CTRL_V_IDLE_MS = 100;
 
 export const GUEST_PASTE_DIR = "/tmp/pi-paste";
 
@@ -189,20 +202,22 @@ const importedImage = async (image: PastedImage | undefined, target: PasteTarget
   return copied?.code === 0 ? guestPath : undefined;
 };
 
-const stalledChecks = new WeakMap<PasteTarget, number>();
+const PATH_CHECKS: Deadline = { ms: PASTE_CHECK_TIMEOUT_MS, stalled: new WeakMap() };
 
-const stalledCount = (target: PasteTarget) => stalledChecks.get(target) ?? 0;
+const CLIPBOARD_READS: Deadline = { ms: CLIPBOARD_READ_TIMEOUT_MS, stalled: new WeakMap() };
 
-const withinDeadline = async <T>(work: Promise<T>, target: PasteTarget) => {
+const stalledCount = (deadline: Deadline, target: PasteTarget) => deadline.stalled.get(target) ?? 0;
+
+const withinDeadline = async <T>(work: Promise<T>, target: PasteTarget, deadline: Deadline) => {
   const timer: { id?: NodeJS.Timeout } = {};
   const expired = new Promise<undefined>((resolve) => {
     timer.id = setTimeout(() => {
-      stalledChecks.set(target, stalledCount(target) + 1);
+      deadline.stalled.set(target, stalledCount(deadline, target) + 1);
 
-      void work.finally(() => stalledChecks.set(target, stalledCount(target) - 1));
+      void work.finally(() => deadline.stalled.set(target, stalledCount(deadline, target) - 1));
 
       resolve(undefined);
-    }, PASTE_CHECK_TIMEOUT_MS);
+    }, deadline.ms);
   });
 
   try {
@@ -228,7 +243,7 @@ export const rewrittenPaste = async (body: Buffer, target: PasteTarget) => {
     return body;
   }
 
-  if (stalledCount(target) > 0) {
+  if (stalledCount(PATH_CHECKS, target) > 0) {
     return body;
   }
 
@@ -242,6 +257,7 @@ export const rewrittenPaste = async (body: Buffer, target: PasteTarget) => {
   const images = await withinDeadline(
     Promise.all(tokens.map((token) => readImage(token.path, target.mounts).catch(() => undefined))),
     target,
+    PATH_CHECKS,
   );
 
   if (images === undefined) {
@@ -254,6 +270,33 @@ export const rewrittenPaste = async (body: Buffer, target: PasteTarget) => {
   const replacements = imported.flatMap(({ token, path }) => (path === undefined ? [] : [{ token, path }]));
 
   return replacements.length === 0 ? body : Buffer.from(withReplacedPaths(text, replacements), "utf8");
+};
+
+const clipboardImage = (data: Buffer | undefined): PastedImage | undefined => {
+  if (data === undefined || data.length === 0 || data.length > PASTE_IMAGE_MAX_BYTES) {
+    return undefined;
+  }
+
+  const extension = imageExtensionOf(data.subarray(0, IMAGE_HEADER_BYTES));
+
+  return extension === undefined ? undefined : { data, extension };
+};
+
+export const clipboardPaste = async (key: Buffer, target: PasteTarget) => {
+  const read = target.readClipboardImage;
+
+  if (read === undefined || stalledCount(CLIPBOARD_READS, target) > 0) {
+    return key;
+  }
+
+  const image = await withinDeadline(
+    read().then(clipboardImage, () => undefined),
+    target,
+    CLIPBOARD_READS,
+  );
+  const path = await importedImage(image, target);
+
+  return path === undefined ? key : bracketed(Buffer.from(path, "utf8"));
 };
 
 export const pasteBridge = (stdin: NodeJS.ReadableStream, target: PasteTarget) => {
@@ -270,13 +313,59 @@ export const pasteBridge = (stdin: NodeJS.ReadableStream, target: PasteTarget) =
     input.once("drain", () => stdin.resume());
   });
 
-  const deliver = (segments: ReturnType<BracketedPasteSplitter["push"]>) =>
+  const scanner = target.readClipboardImage === undefined ? undefined : new CtrlVScanner();
+  const busy = { importing: false };
+  const idle: { timer?: NodeJS.Timeout } = {};
+
+  const pasteImage = (key: Buffer) => {
+    if (busy.importing) {
+      return;
+    }
+
+    busy.importing = true;
+
+    ordered.pushLater(
+      clipboardPaste(key, target).finally(() => {
+        busy.importing = false;
+      }),
+      key,
+    );
+  };
+
+  const deliverKeys = (segments: KeySegment[]) =>
     segments.forEach((segment) => {
       if (segment.kind === "keys") {
         ordered.push(segment.bytes);
 
         return;
       }
+
+      pasteImage(segment.bytes);
+    });
+
+  const armIdle = () => {
+    clearTimeout(idle.timer);
+
+    if (scanner?.waiting() !== true) {
+      return;
+    }
+
+    idle.timer = setTimeout(() => {
+      deliverKeys(scanner.idle());
+
+      armIdle();
+    }, CTRL_V_IDLE_MS);
+  };
+
+  const deliver = (segments: ReturnType<BracketedPasteSplitter["push"]>) =>
+    segments.forEach((segment) => {
+      if (segment.kind === "keys") {
+        deliverKeys(scanner === undefined ? [segment] : scanner.push(segment.bytes));
+
+        return;
+      }
+
+      deliverKeys(scanner?.pasted() ?? []);
 
       const raw = bracketed(segment.body);
 
@@ -285,10 +374,16 @@ export const pasteBridge = (stdin: NodeJS.ReadableStream, target: PasteTarget) =
 
   const receive = (chunk: Buffer | string) => {
     deliver(splitter.push(Buffer.from(chunk)));
+
+    armIdle();
   };
 
   const ended = () => {
+    clearTimeout(idle.timer);
+
     deliver(splitter.flush());
+
+    deliverKeys(scanner?.flush() ?? []);
 
     void ordered.settled().then(() => input.end());
   };
@@ -298,6 +393,8 @@ export const pasteBridge = (stdin: NodeJS.ReadableStream, target: PasteTarget) =
   stdin.once("end", ended);
 
   const stop = () => {
+    clearTimeout(idle.timer);
+
     stdin.off("data", receive);
 
     stdin.off("end", ended);

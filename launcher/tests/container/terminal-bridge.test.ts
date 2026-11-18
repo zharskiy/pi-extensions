@@ -5,6 +5,9 @@ import { PassThrough, Writable } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
 import type { ExecIo, ExecSpec, MountSpec } from "../../backend/index.ts";
 import {
+  CLIPBOARD_READ_TIMEOUT_MS,
+  CTRL_V_IDLE_MS,
+  clipboardPaste,
   copyBridge,
   GUEST_PASTE_DIR,
   PASTE_CHECK_TIMEOUT_MS,
@@ -359,6 +362,291 @@ describe("pasteBridge", () => {
 
     expect(seen.text()).toBe("\x1b[200~hello /nowhere/x.png\x1b[201~\r");
     expect(guest.copies).toEqual([]);
+  });
+});
+
+const pending = <T>() => {
+  const gate: { resolve: (value: T) => void } = { resolve: () => undefined };
+  const promise = new Promise<T>((resolve) => {
+    gate.resolve = resolve;
+  });
+
+  return { promise, resolve: (value: T) => gate.resolve(value) };
+};
+
+const imageBridge = (readClipboardImage: PasteTarget["readClipboardImage"], code?: number) => {
+  const guest = guestBackend({ code });
+  const stdin = new PassThrough();
+  const bridge = pasteBridge(stdin, { ...target(guest.backend), readClipboardImage });
+  const seen = collect();
+
+  bridge.input.pipe(seen.stream);
+
+  const ended = async () => {
+    stdin.end();
+
+    await new Promise((resolve) => bridge.input.once("end", resolve));
+
+    bridge.stop();
+
+    return seen.text();
+  };
+
+  return { guest, stdin, seen, ended };
+};
+
+const pastedPath = (text: string) =>
+  text.startsWith("\x1b[200~") && text.endsWith("\x1b[201~") ? text.slice(6, -6) : undefined;
+
+describe("clipboardPaste", () => {
+  it("copies the clipboard image into the sandbox and pastes its path", async () => {
+    const guest = guestBackend();
+    const pasted = (
+      await clipboardPaste(Buffer.from("\x16"), {
+        ...target(guest.backend),
+        readClipboardImage: async () => PNG,
+      })
+    ).toString();
+    const path = pastedPath(pasted);
+
+    expect(path).toMatch(/\.png$/);
+    expect(path).toMatch(GUEST_PATH);
+    expect(guest.copies).toEqual([{ path, bytes: PNG }]);
+  });
+
+  it("names the file after the bytes, not after what the host reported", async () => {
+    const guest = guestBackend();
+    const pasted = (
+      await clipboardPaste(Buffer.from("\x16"), {
+        ...target(guest.backend),
+        readClipboardImage: async () => JPEG,
+      })
+    ).toString();
+
+    expect(pastedPath(pasted)).toMatch(/\.jpg$/);
+  });
+
+  it("gives back the exact key without an image, on a failed read, a failed copy or bad bytes", async () => {
+    const key = Buffer.from("\x1b[118;69:2u");
+    const oversized = Buffer.concat([PNG, Buffer.alloc(PASTE_IMAGE_MAX_BYTES)]);
+    const readers: Array<{ read: PasteTarget["readClipboardImage"]; code?: number }> = [
+      { read: async () => undefined },
+      { read: async () => Buffer.alloc(0) },
+      { read: () => Promise.reject(new Error("osascript failed")) },
+      { read: async () => Buffer.from("plain text") },
+      { read: async () => oversized },
+      { read: async () => PNG, code: 1 },
+    ];
+
+    await Promise.all(
+      readers.map(async ({ read, code }) => {
+        const guest = guestBackend({ code });
+        const result = await clipboardPaste(key, { ...target(guest.backend), readClipboardImage: read });
+
+        expect(result.equals(key)).toBe(true);
+        expect(guest.copies.length).toBe(code === undefined ? 0 : 1);
+      }),
+    );
+  });
+
+  it("gives back the key when the read misses its deadline and skips reads until it ends", async () => {
+    vi.useFakeTimers();
+
+    try {
+      const guest = guestBackend();
+      const stuck = pending<Buffer | undefined>();
+      const reads: number[] = [];
+      const pasteTarget = {
+        ...target(guest.backend),
+        readClipboardImage: () => {
+          reads.push(reads.length);
+
+          return reads.length === 1 ? stuck.promise : Promise.resolve(PNG);
+        },
+      };
+      const first = clipboardPaste(Buffer.from("\x16"), pasteTarget);
+
+      await vi.advanceTimersByTimeAsync(CLIPBOARD_READ_TIMEOUT_MS);
+
+      expect((await first).toString()).toBe("\x16");
+      expect((await clipboardPaste(Buffer.from("\x16"), pasteTarget)).toString()).toBe("\x16");
+      expect(reads).toEqual([0]);
+
+      stuck.resolve(PNG);
+
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(pastedPath((await clipboardPaste(Buffer.from("\x16"), pasteTarget)).toString())).toMatch(
+        GUEST_PATH,
+      );
+      expect(guest.copies.length).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("pasteBridge with Ctrl+V", () => {
+  it("swaps Ctrl+V for the pasted path and keeps keys typed during the read after it", async () => {
+    const read = pending<Buffer | undefined>();
+    const run = imageBridge(() => read.promise);
+
+    run.stdin.write("a\x1b[118;5u");
+
+    run.stdin.write("bc");
+
+    await settle();
+
+    expect(run.seen.text()).toBe("a");
+
+    read.resolve(PNG);
+
+    const text = await run.ended();
+    const [path] = run.guest.copies.map((copy) => copy.path);
+
+    expect(text).toBe(`a\x1b[200~${path}\x1b[201~bc`);
+    expect(path).toMatch(GUEST_PATH);
+  });
+
+  it("forwards the original bytes when the clipboard holds no image", async () => {
+    const run = imageBridge(async () => undefined);
+
+    run.stdin.write("a\x16b");
+
+    await settle();
+
+    run.stdin.write("\x1b[27;5;118~c");
+
+    expect(await run.ended()).toBe("a\x16b\x1b[27;5;118~c");
+    expect(run.guest.copies).toEqual([]);
+  });
+
+  it("drops Ctrl+V presses and repeats while an import runs", async () => {
+    const read = pending<Buffer | undefined>();
+    const reads: number[] = [];
+    const run = imageBridge(() => {
+      reads.push(reads.length);
+
+      return reads.length === 1 ? read.promise : Promise.resolve(undefined);
+    });
+
+    run.stdin.write("\x16");
+
+    run.stdin.write("\x1b[118;5:2u\x1b[118;5:2u\x16x");
+
+    await settle();
+
+    read.resolve(PNG);
+
+    await settle();
+
+    await settle();
+
+    run.stdin.write("\x16");
+
+    const text = await run.ended();
+
+    expect(reads).toEqual([0, 1]);
+    expect(text.endsWith("x\x16")).toBe(true);
+    expect(pastedPath(text.slice(0, -2))).toMatch(GUEST_PATH);
+  });
+
+  it("reads nothing for a release event or for Ctrl+V inside a paste", async () => {
+    const reads: number[] = [];
+    const run = imageBridge(async () => {
+      reads.push(1);
+
+      return PNG;
+    });
+
+    run.stdin.write("\x1b[118;5:3u\x1b[200~a\x16b\x1b[201~");
+
+    expect(await run.ended()).toBe("\x1b[118;5:3u\x1b[200~a\x16b\x1b[201~");
+    expect(reads).toEqual([]);
+  });
+
+  it("finds a Ctrl+V split across chunks and releases an unfinished one after a pause", async () => {
+    vi.useFakeTimers();
+
+    try {
+      const reads: number[] = [];
+      const run = imageBridge(async () => {
+        reads.push(1);
+
+        return undefined;
+      });
+
+      run.stdin.write("\x1b[118");
+
+      run.stdin.write(";5u");
+
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(reads).toEqual([1]);
+
+      run.stdin.write("\x1b[27;5");
+
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(run.seen.text()).toBe("\x1b[118;5u");
+
+      await vi.advanceTimersByTimeAsync(CTRL_V_IDLE_MS);
+
+      expect(run.seen.text()).toBe("\x1b[118;5u\x1b[27;5");
+
+      vi.useRealTimers();
+
+      expect(await run.ended()).toBe("\x1b[118;5u\x1b[27;5");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("passes Alt+[ on at once and finds Ctrl+V typed after Alt+] once the input pauses", async () => {
+    vi.useFakeTimers();
+
+    try {
+      const reads: number[] = [];
+      const run = imageBridge(async () => {
+        reads.push(1);
+
+        return undefined;
+      });
+
+      run.stdin.write("\x1b[");
+
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(run.seen.text()).toBe("\x1b[");
+
+      run.stdin.write("a\x1b]");
+
+      run.stdin.write("x\x16");
+
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(run.seen.text()).toBe("\x1b[a");
+      expect(reads).toEqual([]);
+
+      await vi.advanceTimersByTimeAsync(CTRL_V_IDLE_MS);
+
+      expect(reads).toEqual([1]);
+      expect(run.seen.text()).toBe("\x1b[a\x1b]x\x16");
+
+      vi.useRealTimers();
+
+      expect(await run.ended()).toBe("\x1b[a\x1b]x\x16");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("leaves Ctrl+V alone without a clipboard reader", async () => {
+    const run = imageBridge(undefined);
+
+    run.stdin.write("a\x16\x1b[118;5u");
+
+    expect(await run.ended()).toBe("a\x16\x1b[118;5u");
   });
 });
 
