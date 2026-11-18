@@ -90,7 +90,15 @@ copy_tool() {
   fi
 }
 
-link_tool m2-settings.xml .m2/settings.xml
+port_tool() {
+  if [ -f "$tools_dir/$1" ]; then
+    mkdir -p "$(dirname "$home/$2")"
+    sed 's|<port>\${env\.PI_SANDBOX_PROXY_PORT}</port>|<port>'"${PI_SANDBOX_PROXY_PORT:-}"'</port>|' "$tools_dir/$1" > "$bundle_dir/$1"
+    copy_file "$bundle_dir/$1" "$home/$2" 0644
+  fi
+}
+
+port_tool m2-settings.xml .m2/settings.xml
 link_tool gh-hosts.yml .config/gh/hosts.yml
 link_tool npmrc .npmrc
 link_tool pip.conf .config/pip/pip.conf
