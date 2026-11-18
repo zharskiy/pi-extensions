@@ -185,6 +185,7 @@ Your home inside the sandbox lives in memory, so tool caches are lost when pi ex
 - Each entry starts with `~/` and appears at the same path inside the sandbox.
 - Your Mac's folder of that name is never mounted. The volume starts empty.
 - No entry may appear twice or lie inside another.
+- An entry may share a folder with a file the launcher puts in your home, such as `~/.m2/repository` beside the rendered `~/.m2/settings.xml`. The sandbox waits until the volume and its folders belong to the sandbox user before it writes them; a launch whose hand-over of a cache in your home fails stops, and one outside it only warns.
 - These are refused, with every folder under them: `~/.pi`, `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.docker`, `~/.colima`, `~/.kube`, `~/.config` and `~/.local/bin`.
 
 Every sandbox can write to these volumes, so a bad package written in one folder reaches the others. Use them for package caches only.

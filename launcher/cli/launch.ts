@@ -272,6 +272,7 @@ const prepareContainer = async (
         }),
       ),
     afterCreate: (created) => probeSessionsShare(backend, created, sessions),
+    pinnedImage: context.effective.config.image.digest !== undefined,
   });
 
   writeNotices(deps, [...notices, ...git.pendingNotices()]);

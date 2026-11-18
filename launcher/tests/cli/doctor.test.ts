@@ -8,7 +8,7 @@ import { run } from "../../cli/index.ts";
 import { testedPiVersion } from "../../cli/versions.ts";
 import { registerLaunch } from "../../grants/index.ts";
 import type { DenialRecord } from "../../proxy/index.ts";
-import { processMark, sha256Hex } from "../../shared/index.ts";
+import { GUEST_PATHS, processMark, sha256Hex } from "../../shared/index.ts";
 import { stdinOf } from "../support/fake-backend.ts";
 import {
   createFakeBackend,
@@ -56,6 +56,9 @@ const healthServer = async (status: number) => {
   return (server.address() as AddressInfo).port;
 };
 
+const isReadyWait = (spec: ExecSpec) =>
+  spec.command[0] === "sh" && spec.command[2]?.includes(GUEST_PATHS.ready) === true;
+
 const answering =
   (probes: Probes, containerEnv: (containerId: string) => string = () => "TERM=xterm-256color\n") =>
   (spec: ExecSpec, io: ExecIo): number => {
@@ -66,7 +69,7 @@ const answering =
     };
     const answers: Record<string, () => number> = {
       env: () => write(probes.env ?? containerEnv(spec.containerId)),
-      sh: () => probes.routeExit ?? 1,
+      sh: () => (isReadyWait(spec) ? 0 : (probes.routeExit ?? 1)),
       pi: () => {
         io.stderr.write("docs: connection refused\n");
 
@@ -514,7 +517,7 @@ describe("pi sandbox doctor", () => {
           });
         }
 
-        if (spec.command[0] === "sh") {
+        if (spec.command[0] === "sh" && !isReadyWait(spec)) {
           await Promise.race([mcpStarted, new Promise((resolve) => setTimeout(resolve, 2000))]);
         }
 
