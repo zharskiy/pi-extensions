@@ -165,7 +165,7 @@ container/run-pi.ts            pi through exec, the pty only for a terminal, sig
 ```
 image/index.ts                 public surface
 image/Dockerfile               the sandbox image
-image/entrypoint.sh            the wait for the volume hand-over, render links (~/.agents/skills included), the read-only auth.json copy, CA bundle, JVM truststore, the ready marker, idle
+image/entrypoint.sh            the wait for the volume hand-over, render links (~/.agents/skills included), the read-only auth.json copy, the Maven settings copy with the proxy port written in, CA bundle, JVM truststore, the ready marker, idle
 image/bash-env.sh              the missing-command hint and the JVM trust flags
 image/sandbox-image.ts         ensureSandboxImage under the build lock: pull or build, then the layer; build leftovers
 image/build.ts                 the base image build and pinned pull

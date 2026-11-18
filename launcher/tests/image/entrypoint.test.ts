@@ -320,7 +320,7 @@ describe("image entrypoint", () => {
     await writeFile(join(paths.render, "tools", "m2-settings.xml"), "<settings/>\n");
 
     const result = await spawnEntrypoint(paths, {
-      command: ["sh", "-c", `test -e "${paths.ready}" && test -L "$HOME/.m2/settings.xml"`],
+      command: ["sh", "-c", `test -e "${paths.ready}" && test -f "$HOME/.m2/settings.xml"`],
     });
 
     expect(script.slice(marked + 1).filter((line) => line.trim() !== "")).toEqual([
@@ -397,8 +397,9 @@ describe("image entrypoint", () => {
     await expect(lstat(agentsSkills)).rejects.toThrow();
   });
 
-  it("links the rendered tool files into the home and keeps them out of the agent dir", async () => {
+  it("copies the rendered Maven settings into the home and keeps the tool files out of the agent dir", async () => {
     const paths = await sandboxRoot();
+    const settings = join(paths.home, ".m2", "settings.xml");
 
     await mkdir(join(paths.render, "tools"));
 
@@ -406,17 +407,38 @@ describe("image entrypoint", () => {
 
     await mkdir(join(paths.home, ".m2"), { recursive: true });
 
-    await writeFile(join(paths.home, ".m2", "settings.xml"), "<planted/>\n");
+    await symlink(join(paths.root, "planted.xml"), settings);
 
     await runEntrypoint(paths);
 
-    expect(await readlink(join(paths.home, ".m2", "settings.xml"))).toBe(
-      join(paths.render, "tools", "m2-settings.xml"),
-    );
+    expect((await lstat(settings)).isFile()).toBe(true);
+    expect(await readFile(settings, "utf8")).toBe("<settings/>\n");
     await expect(lstat(join(paths.home, ".pi", "agent", "tools"))).rejects.toThrow();
   });
 
-  it("links ~/.m2/settings.xml only after the launcher hands over the ~/.m2 the engine made for a shared cache", async () => {
+  it("writes the proxy port into the Maven settings, which Maven reads as a number before it expands env references", async () => {
+    const paths = await sandboxRoot();
+    const proxy = [
+      "<proxy>",
+      `<host>\${env.PI_SANDBOX_PROXY_HOST}</host>`,
+      `<port>\${env.PI_SANDBOX_PROXY_PORT}</port>`,
+      `<password>\${env.PI_SANDBOX_PROXY_TOKEN}</password>`,
+      "</proxy>",
+      "",
+    ];
+
+    await mkdir(join(paths.render, "tools"));
+
+    await writeFile(join(paths.render, "tools", "m2-settings.xml"), proxy.join("\n"));
+
+    await runEntrypoint(paths, { env: { PI_SANDBOX_PROXY_PORT: "3128", PI_SANDBOX_PROXY_TOKEN: "t0k3n" } });
+
+    expect(await readFile(join(paths.home, ".m2", "settings.xml"), "utf8")).toBe(
+      proxy.with(2, "<port>3128</port>").join("\n"),
+    );
+  });
+
+  it("puts ~/.m2/settings.xml in place only after the launcher hands over the ~/.m2 the engine made for a shared cache", async () => {
     const paths = await sandboxRoot();
     const m2 = join(paths.home, ".m2");
 
@@ -439,7 +461,7 @@ describe("image entrypoint", () => {
 
     expect(settledBeforeHandover).toBe(false);
     expect(result).toEqual({ status: 0, stderr: "" });
-    expect(await readlink(join(m2, "settings.xml"))).toBe(join(paths.render, "tools", "m2-settings.xml"));
+    expect(await readFile(join(m2, "settings.xml"), "utf8")).toBe("<settings/>\n");
   });
 
   it("stops with a clear message when the launcher never hands the volumes over", async () => {

@@ -233,7 +233,7 @@ Your settings go in `~/.pi/agent/pi-sandbox/config.json` (inside pi's agent fold
 
 - `egress.allow`: the hosts the sandbox may reach besides `pi.dev` and your providers. It is empty by default, so package registries such as `registry.npmjs.org` are reachable only once you list them or allow them with `pi sandbox egress allow`.
 - `image.packages` and `image.npmGlobal`: Debian and npm packages to add to the image.
-- `mounts.sharedCaches`: cache folders such as `~/.npm`, kept in volumes that all your sandboxes share. Your Mac's own folder is not mounted. A cache such as `~/.m2/repository` may sit beside a file the launcher puts there (`~/.m2/settings.xml`).
+- `mounts.sharedCaches`: cache folders such as `~/.npm`, kept in volumes that all your sandboxes share. Your Mac's own folder is not mounted. A cache such as `~/.m2/repository` may sit beside a file the launcher puts there (`~/.m2/settings.xml`, which points Maven at the sandbox proxy).
 - `vm`: the CPUs, memory and disk of the VM, applied at the next launch with no other pi session running, or at once by `pi sandbox init` when none runs. `resources` limits one container inside the VM instead.
 - `writeBack`: which settings changed inside come back to your Mac, inside limits the launcher keeps.
 
