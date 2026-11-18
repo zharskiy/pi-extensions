@@ -11,7 +11,7 @@ extensions/subagents/
 ├── ARCHITECTURE.md                        # runtime behaviour
 ├── STRUCTURE.md                           # this file
 ├── agents/                                # shipped agent definitions
-│   ├── leads/                             # planner.md, implementer.md, reviewer.md, general.md (leads: they may start subagents)
+│   ├── leads/                             # planner.md, implementer.md, reviewer.md, general.md (leads: they may start subagents; reviewer, planner and general share a model, implementer has its own)
 │   └── chores/                            # scout.md, editor.md, fetch.md, shell.md, image.md, verifier.md (chores: subagents none)
 ├── prompts/
 │   ├── main-session.md                    # the main session's prompt section

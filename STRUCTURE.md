@@ -50,5 +50,5 @@ pi-extensions/
 
 ## Published vs development-only
 
-- Published (`files` in `package.json`): `launcher/` (with the built `launcher/dist/`, without `bin/pi-sandbox-dev.js` and `tsconfig.build.json`), `platform/` (`pi-adapter/`, `extension-manager/`, `ui-kit/`, `shared/`), each extension's `index.ts`, `api/`, `core/`, `ui/`, `prompts/`, `README.md` and the subagents `agents/`, plus the root `README.md`, `LICENSE`, `ARCHITECTURE.md`, `STRUCTURE.md` and `AGENTS.md`; every `tests/` folder is excluded.
+- Published (`files` in `package.json`): `launcher/` (with the built `launcher/dist/`, without `bin/pi-sandbox-dev.js` and `tsconfig.build.json`), `platform/` (`pi-adapter/`, `extension-manager/`, `ui-kit/`, `shared/`), each extension's `index.ts`, `api/`, `core/`, `ui/`, `prompts/`, `README.md` and the subagents `agents/` (the shipped agent files, which name each agent's `model`; the implementer's differs from the other leads'), plus the root `README.md`, `LICENSE`, `ARCHITECTURE.md`, `STRUCTURE.md` and `AGENTS.md`; every `tests/` folder is excluded.
 - Development-only: `test/` (with `test/framework/` and `test/evals/`), every `tests/`, `future-plans/`, `.github/` and the config files.

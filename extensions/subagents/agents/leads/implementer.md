@@ -1,7 +1,7 @@
 ---
 name: implementer
 description: Use for a code change whose scope is clear - the files or behaviour are named. Edits files; starts scouts and shell agents for gathering and a verifier for the checks at the end. Not for open questions or reviews. Returns the changes and the verifier's verdict.
-model: openai/gpt-6-luna:medium
+model: openai/gpt-6.1-terra:medium
 limit: 120000
 tools: [read, grep, find, ls, edit, write, bash]
 skills: []

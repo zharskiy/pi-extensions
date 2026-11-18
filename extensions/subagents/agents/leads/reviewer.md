@@ -1,7 +1,7 @@
 ---
 name: reviewer
 description: Use to review a diff, branch or area of code when it needs judgement (design, public interfaces, several modules, security). Read-only; may start scouts and shell agents. Not for making fixes or for checking that tests and lint pass. Returns findings ranked by severity with path:line and a ship verdict.
-model: openai/gpt-6.1-sol:high
+model: openai/gpt-6.2-sol:high
 limit: 80000
 tools: [read, grep, find, ls, bash]
 skills: []

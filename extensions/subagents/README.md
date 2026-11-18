@@ -48,7 +48,7 @@ Start pi and try:
 <details>
 <summary>What you need</summary>
 
-A model configured in pi. The shipped agents name specific models; without credentials for those, pick one of your models per agent with `/agents setup`. An agent file without a `model` line runs on the main session's model.
+A model configured in pi. The shipped agents name specific models (`reviewer`, `planner` and `general` share one, `implementer` uses another, the chores a third); without credentials for those, pick one of your models per agent with `/agents setup`. An agent file without a `model` line runs on the main session's model.
 
 </details>
 
