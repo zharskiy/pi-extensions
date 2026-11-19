@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, readdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { cutoffAt, plan, planAt, scan, within } from "../core/sweep-plan.ts";
@@ -262,37 +262,6 @@ describe("session rules", () => {
     ]);
   });
 
-  it("keeps the ancestors of a kept session up to five levels", async () => {
-    const layout = fabricate();
-    const chain = ["s6", "s5", "s4", "s3", "s2", "s1"].reduce<string[]>(
-      (files, stem) => files.concat(layout.session(stem, OLD, files.at(-1))),
-      [],
-    );
-    const child = layout.session("s0", RECENT, chain.at(-1));
-
-    const planned = await layout.planned();
-
-    expect(planned.kept).toEqual([
-      { file: child, reason: "fresh" },
-      ...chain
-        .slice(1)
-        .reverse()
-        .map((file) => ({ file, reason: "parent" })),
-    ]);
-    expect(planned.sessions.map((session) => session.file)).toEqual([chain[0]]);
-  });
-
-  it.runIf(process.platform === "darwin")("matches a parent whose path differs in case", async () => {
-    const layout = fabricate();
-    const parent = layout.session("parent", OLD);
-
-    layout.session("child", RECENT, parent.toUpperCase());
-
-    const planned = await layout.planned();
-
-    expect(planned.kept.map((session) => session.reason)).toEqual(["fresh", "parent"]);
-  });
-
   it("never removes a session whose header cannot be read, nor its runs, and reports it", async () => {
     const layout = fabricate();
     const headerless = layout.unreadable("headerless", `${JSON.stringify({ type: "message" })}\n`);
@@ -356,7 +325,7 @@ describe("session rules", () => {
     chmodSync(parent, 0o755);
 
     expect(planned.aborted).toMatch(/not a readable directory$/);
-    expect(planned.sessions).toEqual([]);
+    expect(planned.chains).toEqual([]);
     expect(existsSync(file)).toBe(true);
   });
 
@@ -371,7 +340,7 @@ describe("session rules", () => {
 
     const planned = await layout.planned();
 
-    expect(planned.sessions).toEqual([]);
+    expect(planned.chains).toEqual([]);
     expect(planned.orphans.stems).toEqual([]);
 
     await layout.applied(planned);
@@ -471,6 +440,236 @@ describe("handoff and fallback rules", () => {
   });
 });
 
+const linked = (layout: ReturnType<typeof fabricate>, times: readonly number[], prefix = "s") =>
+  times.reduce<string[]>(
+    (files, time, index) => files.concat(layout.session(`${prefix}${index}`, time, files.at(-1))),
+    [],
+  );
+
+describe("session chains", () => {
+  it("keeps an old session whose descendant is fresh", async () => {
+    const layout = fabricate();
+    const files = linked(layout, [OLD, RECENT]);
+
+    const planned = await layout.planned();
+
+    expect(planned.kept).toEqual([
+      { file: files[0], reason: "chain" },
+      { file: files[1], reason: "fresh" },
+    ]);
+  });
+
+  it("keeps an old session whose ancestor is fresh", async () => {
+    const layout = fabricate();
+    const files = linked(layout, [RECENT, OLD]);
+
+    await layout.prune();
+
+    expect(files.map(existsSync)).toEqual([true, true]);
+  });
+
+  it("keeps an old sibling of a fresh session", async () => {
+    const layout = fabricate();
+    const parent = layout.session("parent", OLD);
+    const children = [layout.session("old-child", OLD, parent), layout.session("new-child", RECENT, parent)];
+
+    await layout.prune();
+
+    expect([parent, ...children].map(existsSync)).toEqual([true, true, true]);
+  });
+
+  it.each([
+    ["ancestor", [RECENT, OLD, OLD]],
+    ["descendant", [OLD, OLD, RECENT]],
+  ])("keeps a chain whose fresh %s is two links away", async (_side, times) => {
+    const layout = fabricate();
+    const files = linked(layout, times);
+
+    expect(await layout.prune()).toEqual({ sessions: 0, runs: 0, handoffs: 0 });
+    expect(files.map(existsSync)).toEqual([true, true, true]);
+  });
+
+  it("keeps every member of an eight-deep chain with a fresh leaf", async () => {
+    const layout = fabricate();
+    const files = linked(layout, [...Array.from({ length: 7 }, () => OLD), RECENT]);
+
+    const planned = await layout.planned();
+
+    expect(planned.chains).toEqual([]);
+    expect(planned.kept.map(({ file }) => file).sort()).toEqual([...files].sort());
+  });
+
+  it("removes every member of an eight-deep chain when all are old", async () => {
+    const layout = fabricate();
+    const files = linked(
+      layout,
+      Array.from({ length: 8 }, () => OLD),
+    );
+
+    expect(await layout.prune()).toEqual({ sessions: 8, runs: 0, handoffs: 0 });
+    expect(files.map(existsSync)).toEqual(Array.from({ length: 8 }, () => false));
+  });
+
+  it("removes a cycle of old sessions and keeps it when a middle member is live", async () => {
+    const layout = fabricate();
+    const first = join(layout.slugDir, "c0.jsonl");
+    const cycle = [
+      layout.session("c0", OLD, join(layout.slugDir, "c2.jsonl")),
+      layout.session("c1", OLD, first),
+      layout.session("c2", OLD, join(layout.slugDir, "c1.jsonl")),
+    ];
+
+    layout.marker("c1", 7);
+
+    expect(await layout.prune({ isAlive: (pid) => pid === 7 })).toEqual({
+      sessions: 0,
+      runs: 0,
+      handoffs: 0,
+    });
+    expect(cycle.map(existsSync)).toEqual([true, true, true]);
+    expect(await layout.prune()).toEqual({ sessions: 3, runs: 0, handoffs: 0 });
+    expect(cycle.map(existsSync)).toEqual([false, false, false]);
+  });
+
+  it("removes an old session whose parent is itself", async () => {
+    const layout = fabricate();
+    const file = layout.session("self", OLD, join(layout.slugDir, "self.jsonl"));
+
+    expect(await layout.prune()).toEqual({ sessions: 1, runs: 0, handoffs: 0 });
+    expect(existsSync(file)).toBe(false);
+  });
+
+  it("keeps a chain that spans two slug folders", async () => {
+    const layout = fabricate();
+    const other = join(layout.sessionsRoot, "--other--");
+    const parent = layout.sessionIn(other, "parent", OLD);
+    const child = layout.session("child", RECENT, parent);
+
+    await layout.prune({ slugDirs: [layout.slugDir, other] });
+
+    expect([parent, child].map(existsSync)).toEqual([true, true]);
+  });
+
+  it("ignores a parent link to a file that was not scanned", async () => {
+    const layout = fabricate();
+    const outside = layout.sessionIn(join(layout.root, "outside"), "parent", RECENT);
+    const child = layout.session("child", OLD, outside);
+
+    await layout.prune();
+
+    expect([outside, child].map(existsSync)).toEqual([true, false]);
+  });
+
+  it("keeps an old child whose parent session has no readable header", async () => {
+    const layout = fabricate();
+    const parent = layout.unreadable("parent", `${JSON.stringify({ type: "message" })}\n`);
+    const child = layout.session("child", OLD, parent);
+
+    const planned = await layout.planned();
+
+    expect(planned.kept).toEqual([{ file: child, reason: "chain" }]);
+    expect(planned.unreadable).toEqual([parent]);
+    expect(await layout.applied(planned)).toEqual({ sessions: 0, runs: 0, handoffs: 0 });
+  });
+
+  it.runIf(process.platform === "darwin")("links a parent path that differs only in case", async () => {
+    const layout = fabricate();
+    const parent = layout.session("parent", OLD);
+
+    layout.session("child", RECENT, parent.toUpperCase());
+
+    const planned = await layout.planned();
+
+    expect(planned.kept.map((session) => session.reason)).toEqual(["fresh", "chain"]);
+  });
+
+  it("takes an old session's fresh handoff folder with its session", async () => {
+    const layout = fabricate();
+    const file = layout.session("old", OLD);
+    const handoff = layout.handoff("old", RECENT);
+
+    expect(await layout.prune()).toEqual({ sessions: 1, runs: 0, handoffs: 1 });
+    expect([file, handoff].map(existsSync)).toEqual([false, false]);
+  });
+});
+
+describe("apply chains", () => {
+  it("keeps the whole chain when a member was touched after the plan", async () => {
+    const layout = fabricate();
+    const files = linked(layout, [OLD, OLD, OLD]);
+    const run = layout.run("s0", "scout-1", OLD);
+    const handoff = layout.handoff("s0", OLD);
+    const planned = await layout.planned();
+
+    touch(files[2], RECENT);
+
+    expect(await layout.applied(planned)).toEqual({ sessions: 0, runs: 0, handoffs: 0 });
+    expect([...files, run, handoff].map(existsSync)).toEqual([true, true, true, true, true]);
+  });
+
+  it("keeps the whole chain when a member turned live after the plan", async () => {
+    const layout = fabricate();
+    const files = linked(layout, [OLD, OLD, OLD]);
+    const planned = await layout.planned();
+
+    layout.marker("s2", 7);
+
+    expect(await layout.applied(planned, { isAlive: (pid) => pid === 7 })).toEqual({
+      sessions: 0,
+      runs: 0,
+      handoffs: 0,
+    });
+    expect(files.map(existsSync)).toEqual([true, true, true]);
+  });
+
+  it("stops the rest of the chain when a member turns live during removal", async () => {
+    const layout = fabricate();
+    const files = linked(layout, [OLD, OLD, OLD]);
+    const planned = await layout.planned();
+
+    layout.marker("s1", 7);
+
+    const removed = await layout.applied(planned, { isAlive: (pid) => pid === 7 && !existsSync(files[0]) });
+
+    expect(removed.sessions).toBe(1);
+    expect(files.map(existsSync)).toEqual([false, true, true]);
+  });
+
+  it("keeps the rest of its chain when a re-check throws", async () => {
+    const layout = fabricate();
+    const files = linked(layout, [OLD, OLD, OLD]);
+    const calls = { count: 0 };
+
+    layout.marker("dead", 9);
+
+    const isAlive = () => {
+      calls.count += 1;
+
+      if (calls.count === 4) {
+        throw new Error("isAlive failed");
+      }
+
+      return false;
+    };
+
+    const removed = await layout.prune({ isAlive });
+
+    expect(removed.sessions).toBe(1);
+    expect(files.map(existsSync)).toEqual([false, true, true]);
+  });
+
+  it("does not stop a chain for a member already gone", async () => {
+    const layout = fabricate();
+    const files = linked(layout, [OLD, OLD, OLD]);
+    const planned = await layout.planned();
+
+    rmSync(files[1]);
+
+    expect(await layout.applied(planned)).toEqual({ sessions: 2, runs: 0, handoffs: 0 });
+    expect(files.map(existsSync)).toEqual([false, false, false]);
+  });
+});
+
 describe("one scan, many cutoffs", () => {
   it("plans every cutoff from one scan the same as a fresh plan", async () => {
     const layout = fabricate();
@@ -494,7 +693,7 @@ describe("one scan, many cutoffs", () => {
 
     expect(plan(scanned, cutoffAt(input.now, 7))).toEqual(week);
     expect(plan(scanned, cutoffAt(input.now, 60))).toEqual(twoMonths);
-    expect([week, twoMonths].map((planned) => planned.sessions.length)).toEqual([2, 1]);
+    expect([week, twoMonths].map((planned) => planned.chains.length)).toEqual([2, 1]);
   });
 });
 
@@ -517,5 +716,28 @@ describe("within", () => {
 
     expect(fresh).not.toEqual(confirmed);
     expect(within(fresh, confirmed)).toEqual(confirmed);
+  });
+
+  it("drops a chain that gained a member after the confirm", async () => {
+    const layout = fabricate();
+    const files = linked(layout, [OLD, OLD]);
+    const other = layout.session("other", OLD);
+    const confirmed = await layout.planned();
+
+    layout.session("late", OLD, files[1]);
+
+    const fresh = await layout.planned();
+
+    expect(within(fresh, confirmed).chains.map((chain) => chain.map(({ file }) => file))).toEqual([[other]]);
+  });
+
+  it("keeps a chain whose members all match the confirmed plan", async () => {
+    const layout = fabricate();
+
+    linked(layout, [OLD, OLD]);
+
+    const confirmed = await layout.planned();
+
+    expect(within(await layout.planned(), confirmed)).toEqual(confirmed);
   });
 });

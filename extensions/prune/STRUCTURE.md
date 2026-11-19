@@ -11,9 +11,10 @@
 - `core/handoff-root.ts`: `rootState`, whether the handoff root is safe to sweep.
 - `core/handoff-scan.ts`: `scanHandoffs`, the handoff root streamed once into owned folders and aged orphans; `Sized`, `Aged`, `HandoffScan`.
 - `core/agent-runs.ts`: `readRuns`, the runs of each of a list of session folders, and `staleRuns`, the run and chain rules over them; `Run`, `AGENTS_DIR`.
-- `core/sweep-plan.ts`: `scan`, `plan`, `planAt`, `within`, `cutoffAt`, `Scan`, `ScanInput`, `Plan`, `PlanInput`, `Candidate`, `Stem`, `KeepReason`; the live, session, kept (parents up to five levels), orphan and handoff rules.
+- `core/sweep-plan.ts`: `scan`, `plan`, `planAt`, `within`, `cutoffAt`, `Scan`, `ScanInput`, `Plan`, `PlanInput`, `Candidate`, `Stem`, `KeepReason`; the live, session, kept (whole chains), orphan and handoff rules.
 - `core/command-args.ts`: `parseArgs`, `completeArgs`, `INTERVALS`, the `/prune` grammar.
-- `core/sweep-apply.ts`: `apply`, `Removed`; the per-candidate removal and the counts.
+- `core/session-chains.ts`: `chainsOf`, `Member`, `Chain`; sessions grouped by `parentSession` links in both directions.
+- `core/sweep-apply.ts`: `apply`, `Removed`; the chain by chain removal with its re-checks, and the counts.
 - `ui/prune-report.ts`: the notify line, the `/prune` report, the abort warning (`abortedText`), the confirm title and message, the counts of a picker row, the settings-error, usage, off and nothing-to-remove texts.
 - `ui/interval-pick.ts`: `pickInterval`, the interval picker with each interval's counts and the configured mark.
 - `tests/support/session-layout.ts`: `fabricate`, a temp agent dir, sessions folder and private handoff root with sessions, runs, handoffs and markers, and `input`/`planned`/`applied`/`prune` over them.

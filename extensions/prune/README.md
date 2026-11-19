@@ -26,8 +26,8 @@ Only `<agent dir>/sessions/` is swept. Sessions elsewhere, in a custom session d
 ## What it keeps
 
 - Sessions written to within `days` days.
-- Sessions open in a running pi process. Each pi process records its session in `<agent dir>/pi-prune/live/<session id>.<pid>.json` while it runs, and the sweep keeps every session a running process names, also one resumed but not yet written to, and checks again right before it removes each session. Removing a session file pi is still writing to would make pi start it again without its header.
-- The parent session of every kept session, and its parent, up to five levels, since a session shows its parent's agents and a handoff chain links each session to the previous one.
+- Sessions open in a running pi process. Each pi process records its session in `<agent dir>/pi-prune/live/<session id>.<pid>.json` while it runs, and the sweep keeps every session a running process names, also one resumed but not yet written to, and checks again right before it removes each session: when a member of a chain turned live or was written to since the plan, nothing of that chain is removed, and when that happens half-way through, the rest of the chain stays. A session open in a pi without this extension is judged by age alone, and a child session such a pi creates after that check is not seen, so its old parent may still go. Removing a session file pi is still writing to would make pi start it again without its header.
+- Every session of a chain that holds a kept one. Sessions linked by `parentSession`, in either direction and at any depth, form a chain (a session shows its parent's agents, and a handoff links each session to the previous one), and a chain goes whole or not at all: an old session stays while its parent, a child or any other member is fresh or open. A session naming a parent whose file has no readable header keeps its whole chain.
 - An agent run, and its whole chain of handoff successors, while any link was touched within `days` days or keeps a worktree or branch. A run folder without a manifest yet, or one that cannot be read, keeps its whole chain. Worktrees and branches are never removed: the run's manifest stays as the pointer to them.
 - A session file whose first line is not a pi session header (or is longer than 64 KiB) is never touched, and neither are its agent runs; it is reported as unreadable. Its handoff folder and `pi-subagents/<id>/` folder are judged by their own age, because its id is unknown.
 - Anything reached through a symbolic link.
@@ -54,7 +54,7 @@ pi -e ./pi-extensions/extensions/prune/index.ts   # this extension alone, from a
 | Try | What you see |
 |---|---|
 | `/prune` | A picker, `Remove sessions not touched for...`, with one row per interval (7, 30, 60, 90, 180 and 365 days) and what each would remove; your `days` is marked `✓` and preselected (180 otherwise). Pick one and confirm `Remove old sessions?` to remove; Escape or no removes nothing. Outside the TUI it prints the plan at `days`. |
-| `/prune 30` | The cutoff, how many sessions, agent runs and handoff folders would be removed, how many sessions are kept and why (`fresh`, `live`, `parent`), and the unreadable files. Nothing is removed. |
+| `/prune 30` | The cutoff, how many sessions, agent runs and handoff folders would be removed, how many sessions are kept and why (`fresh`, `live`, `chain`), and the unreadable files. Nothing is removed. |
 | `/prune 30 apply` | Removes them now, without asking, and prints the counts. |
 | `/prune apply` | The same at `days`. |
 | Start pi with old sessions on disk | `pi-prune: removed 3 sessions, 5 agent runs, 2 handoff dirs older than 180 days`, once. |

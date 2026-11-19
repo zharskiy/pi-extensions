@@ -238,6 +238,22 @@ describe("prune sweep on session start", () => {
     );
   });
 
+  it("keeps a chain with a fresh member", async () => {
+    const layout = fabricate();
+    const parent = layout.session("parent", OLD);
+    const child = layout.session("child", RECENT, parent);
+    const other = layout.session("other", OLD);
+
+    const { host } = boot(layout);
+
+    await vi.waitFor(() =>
+      expect(host.notices).toEqual([
+        { message: "pi-prune: removed 1 session older than 60 days", level: "info" },
+      ]),
+    );
+    expect([parent, child, other].map(existsSync)).toEqual([true, true, false]);
+  });
+
   it("says nothing when it removed nothing", async () => {
     const layout = fabricate();
 
@@ -314,7 +330,7 @@ describe("/prune", () => {
     expect(report[0]).toMatch(/^pi-prune: 60 days, cutoff \d{4}-\d{2}-\d{2}T/);
     expect(report.slice(1)).toEqual([
       "would remove: 1 session, 1 agent run, 1 handoff dir",
-      "keeps: 1 session (1 fresh, 0 live, 0 parent)",
+      "keeps: 1 session (1 fresh, 0 live, 0 chain)",
       "unreadable, never removed:",
       `  ${broken}`,
     ]);

@@ -4,7 +4,7 @@ import { MAX_DAYS, NAMESPACE, SETTINGS_FILE } from "../core/settings.ts";
 import type { Removed } from "../core/sweep-apply.ts";
 import type { KeepReason, Plan, Stem } from "../core/sweep-plan.ts";
 
-const REASONS: KeepReason[] = ["fresh", "live", "parent"];
+const REASONS: KeepReason[] = ["fresh", "live", "chain"];
 
 export const USAGE = `${NAMESPACE}: usage /prune [<days>] [apply], <days> a whole number from ${INTERVALS[0]} to ${MAX_DAYS}`;
 
@@ -55,11 +55,15 @@ export const settingsText = (errors: readonly string[]) =>
 
 const runCount = (stems: readonly Stem[]) => stems.reduce((sum, stem) => sum + stem.runs.length, 0);
 
-export const plannedCounts = (plan: Plan): Removed => ({
-  sessions: plan.sessions.length,
-  runs: runCount(plan.sessions.flatMap((session) => session.stem ?? [])) + runCount(plan.orphans.stems),
-  handoffs: plan.sessions.filter((session) => session.handoff).length + plan.orphans.handoffs.length,
-});
+export const plannedCounts = (plan: Plan): Removed => {
+  const sessions = plan.chains.flat();
+
+  return {
+    sessions: sessions.length,
+    runs: runCount(sessions.flatMap((session) => session.stem ?? [])) + runCount(plan.orphans.stems),
+    handoffs: sessions.filter((session) => session.handoff).length + plan.orphans.handoffs.length,
+  };
+};
 
 export const planReport = (plan: Plan, days: number, handoffRoot: string) => {
   if (plan.aborted) {
