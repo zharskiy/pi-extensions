@@ -9,7 +9,7 @@ const MANIFEST_FILE = "manifest.json";
 
 type Manifest = { predecessorId?: unknown; successorId?: unknown; worktree?: { cleanup?: unknown } } | null;
 
-type Run = { id: string; dir: string; touched: number; spared: boolean; links: unknown[] };
+export type Run = { id: string; dir: string; touched: number; spared: boolean; links: unknown[] };
 
 const parsed = (text: string): Manifest => {
   try {
@@ -74,8 +74,9 @@ const gather = (runs: Map<unknown, Run>, id: unknown, chain: Set<Run>) => {
 const expired = (runs: Map<unknown, Run>, run: Run, cutoff: number) =>
   Array.from(gather(runs, run.id, new Set())).every((link) => link.touched < cutoff && !link.spared);
 
-export const staleRuns = async (stem: string, cutoff: number) => {
-  const found = await serial(await subdirsIn(join(stem, AGENTS_DIR)), readRun);
+export const readRuns = async (stem: string) => serial(await subdirsIn(join(stem, AGENTS_DIR)), readRun);
+
+export const staleRuns = (found: readonly Run[], cutoff: number) => {
   const runs = new Map<unknown, Run>(found.map((run) => [run.id, run]));
 
   return Array.from(runs.values())

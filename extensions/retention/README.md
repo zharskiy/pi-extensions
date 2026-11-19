@@ -27,12 +27,12 @@ Only `<agent dir>/sessions/` is swept. Sessions elsewhere, in a custom session d
 
 - Sessions written to within `retentionDays` days.
 - Sessions open in a running pi process. Each pi process records its session in `<agent dir>/pi-retention/live/<session id>.<pid>.json` while it runs, and the sweep keeps every session a running process names, also one resumed but not yet written to, and checks again right before it removes each session. Removing a session file pi is still writing to would make pi start it again without its header.
-- The parent session of every kept session (one level), since a session shows its parent's agents.
+- The parent session of every kept session, and its parent, up to five levels, since a session shows its parent's agents and a handoff chain links each session to the previous one.
 - An agent run, and its whole chain of handoff successors, while any link was touched within `retentionDays` days or keeps a worktree or branch. A run folder without a manifest yet, or one that cannot be read, keeps its whole chain. Worktrees and branches are never removed: the run's manifest stays as the pointer to them.
 - A session file whose first line is not a pi session header (or is longer than 64 KiB) is never touched, and neither are its agent runs; it is reported as unreadable. Its handoff folder and `pi-subagents/<id>/` folder are judged by their own age, because its id is unknown.
 - Anything reached through a symbolic link.
 
-It removes nothing at all when a session file cannot be read (for example, permission denied), when `<agent dir>/pi-retention/live` is not a real folder, or when `pi-retention.json` has an error; `/retention` says why. Handoff folders are skipped when `<OS temp dir>/pi-handoff` is not a folder you own that others cannot write to.
+It removes nothing at all when a session file cannot be read (for example, permission denied) or when `<agent dir>/pi-retention/live` is not a real folder, and nothing at the configured days when `pi-retention.json` has an error; `/retention` says why. Handoff folders are skipped when `<OS temp dir>/pi-handoff` is not a folder you own that others cannot write to.
 
 ## Settings
 
@@ -42,7 +42,7 @@ It removes nothing at all when a session file cannot be read (for example, permi
 { "retentionDays": 180 }
 ```
 
-`retentionDays` is a whole number of days from `0` to `36500`, `180` by default; `0` turns the sweep off. It is read only from your user file, so a file committed to a repository cannot remove your sessions of every project. In a trusted project, a `.pi/pi-retention.json` is reported as a settings error, which turns off the sweep and `/retention apply` until you delete that file; in an untrusted project it is silently ignored. While the settings have any error, nothing is removed.
+`retentionDays` is a whole number of days from `0` to `36500`, `180` by default; `0` turns the sweep off. It is read only from your user file, so a file committed to a repository cannot remove your sessions of every project. In a trusted project, a `.pi/pi-retention.json` is reported as a settings error, which turns off the sweep and `/retention apply` until you delete that file; in an untrusted project it is silently ignored. While the settings have any error, nothing is removed at the configured days; days you pick or type still work.
 
 ## Quick start
 
@@ -53,8 +53,12 @@ pi -e ./pi-extensions/extensions/retention/index.ts   # this extension alone, fr
 
 | Try | What you see |
 |---|---|
-| `/retention` | The cutoff, how many sessions, agent runs and handoff folders would be removed, how many sessions are kept and why (`fresh`, `live`, `parent`), and the unreadable files. Nothing is removed. |
-| `/retention apply` | Removes them now and prints the counts. |
+| `/retention` | A picker, `Remove sessions not touched for...`, with one row per interval (7, 30, 60, 90, 180 and 365 days) and what each would remove; your `retentionDays` is marked `✓` and preselected (180 otherwise). Pick one and confirm `Remove old sessions?` to remove; Escape or no removes nothing. Outside the TUI it prints the plan at `retentionDays`. |
+| `/retention 30` | The cutoff, how many sessions, agent runs and handoff folders would be removed, how many sessions are kept and why (`fresh`, `live`, `parent`), and the unreadable files. Nothing is removed. |
+| `/retention 30 apply` | Removes them now, without asking, and prints the counts. |
+| `/retention apply` | The same at `retentionDays`. |
+
+`/retention [<days>] [apply]` takes whole days from 7 to 36500. Models never see this command or its output: it registers no tool and adds nothing to the conversation. In print mode `/retention 30 apply` removes with no output.
 | Start pi with old sessions on disk | `pi-retention: removed 3 sessions, 5 agent runs, 2 handoff dirs older than 180 days`, once. |
 | Start pi when a session file cannot be read | `pi-retention: nothing removed, <file>: EACCES`, once, as a warning; also when the liveness marker cannot be written or the sweep fails. |
 
@@ -62,6 +66,7 @@ pi -e ./pi-extensions/extensions/retention/index.ts   # this extension alone, fr
 
 - Age is the file's modification time. Copying sessions without keeping times, a restored backup, or a tool that touches files changes what counts as old; restoring an old backup lets the next pi start remove it again.
 - A pi process on another machine that shares your agent dir is not seen as running: its marker names a process that does not exist here, and the sweep removes that marker. Its session is kept only while it is written to within `retentionDays` days.
+- Only pi processes running this extension write a marker. A pi started before the package was installed, `pi -e` with other extensions only, a pi on another machine, or a pi-sandbox container with `sessions.host` on is not seen: its session is kept only by its age. Removing a session file under such a pi makes its next append start the file again without a header. Pick a short interval only when no such pi is running.
 - A reused process id can make an ended process look running; its session is then kept a while longer, never removed early.
 - Removal is permanent. Run `/retention` first to see what would go.
 

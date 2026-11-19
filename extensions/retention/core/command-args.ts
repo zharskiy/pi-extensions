@@ -1,0 +1,36 @@
+import { MAX_DAYS } from "./settings.ts";
+
+export const INTERVALS = [7, 30, 60, 90, 180, 365];
+
+const APPLY = "apply";
+
+const DAYS = /^\d+$/;
+
+export type RetentionArgs = { days?: number; apply: boolean };
+
+export const parseArgs = (text: string): RetentionArgs | undefined => {
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  const apply = words.at(-1) === APPLY;
+  const [first, ...rest] = apply ? words.slice(0, -1) : words;
+
+  if (first === undefined) {
+    return { apply };
+  }
+
+  const days = Number(first);
+
+  return rest.length === 0 && DAYS.test(first) && days >= INTERVALS[0] && days <= MAX_DAYS
+    ? { days, apply }
+    : undefined;
+};
+
+export const completeArgs = (prefix: string) => {
+  const words = prefix.trimStart().split(/\s+/);
+  const last = words.pop() ?? "";
+  const head = words.length > 0 ? `${words.join(" ")} ` : "";
+  const afterDays = words.length === 1 && DAYS.test(words[0]);
+  const options = words.length === 0 ? [...INTERVALS.map(String), APPLY] : afterDays ? [APPLY] : [];
+  const matches = options.filter((option) => option.startsWith(last));
+
+  return matches.length > 0 ? matches.map((option) => ({ value: `${head}${option}`, label: option })) : null;
+};

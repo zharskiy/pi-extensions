@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { SessionInfo } from "../../../../platform/pi-adapter/index.ts";
 import { createFakeHost, useTempDirs } from "../../../../test/framework/index.ts";
 import { apply } from "../../core/sweep-apply.ts";
-import { type Plan, type PlanInput, plan } from "../../core/sweep-plan.ts";
+import { type Plan, type PlanInput, planAt } from "../../core/sweep-plan.ts";
 
 const DAY_MS = 86_400_000;
 
@@ -125,7 +125,7 @@ export const fabricate = () => {
     current: { id: "current-id", ...options.current },
   });
 
-  const planned = (options: Options = {}) => plan(input(options));
+  const planned = (options: Options = {}) => planAt(input(options));
 
   const applied = (result: Plan, options: Options = {}) => apply(result, input(options));
 
@@ -146,6 +146,7 @@ export const fabricate = () => {
     fallbackRun,
     handoff,
     marker,
+    input,
     planned,
     applied,
     prune,

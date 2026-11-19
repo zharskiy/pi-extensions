@@ -1,6 +1,7 @@
 import { chmodSync, existsSync, mkdirSync, readdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { cutoffAt, plan, planAt, scan } from "../core/sweep-plan.ts";
 import {
   CUTOFF,
   daysAgo,
@@ -261,19 +262,24 @@ describe("session rules", () => {
     ]);
   });
 
-  it("keeps the parent of a kept session but not its grandparent", async () => {
+  it("keeps the ancestors of a kept session up to five levels", async () => {
     const layout = fabricate();
-    const grandparent = layout.session("grandparent", OLD);
-    const parent = layout.session("parent", OLD, grandparent);
-    const child = layout.session("child", RECENT, parent);
+    const chain = ["s6", "s5", "s4", "s3", "s2", "s1"].reduce<string[]>(
+      (files, stem) => files.concat(layout.session(stem, OLD, files.at(-1))),
+      [],
+    );
+    const child = layout.session("s0", RECENT, chain.at(-1));
 
     const planned = await layout.planned();
 
     expect(planned.kept).toEqual([
       { file: child, reason: "fresh" },
-      { file: parent, reason: "parent" },
+      ...chain
+        .slice(1)
+        .reverse()
+        .map((file) => ({ file, reason: "parent" })),
     ]);
-    expect(planned.sessions.map((session) => session.file)).toEqual([grandparent]);
+    expect(planned.sessions.map((session) => session.file)).toEqual([chain[0]]);
   });
 
   it.runIf(process.platform === "darwin")("matches a parent whose path differs in case", async () => {
@@ -447,5 +453,32 @@ describe("handoff and fallback rules", () => {
     await layout.prune({ current: { file: join(layout.slugDir, "current.jsonl") } });
 
     expect(existsSync(run)).toBe(true);
+  });
+});
+
+describe("one scan, many cutoffs", () => {
+  it("plans every cutoff from one scan the same as a fresh plan", async () => {
+    const layout = fabricate();
+
+    layout.session("fresh", RECENT);
+    layout.fallbackRun("fresh", "scout-1", OLD);
+    layout.handoff("fresh", OLD);
+    layout.unreadable("headerless", `${JSON.stringify({ type: "message" })}\n`);
+    layout.session("month", daysAgo(30));
+    layout.run("month", "scout-1", daysAgo(30));
+    layout.handoff("month", daysAgo(30));
+    layout.session("old", OLD);
+    layout.run("old", "scout-1", OLD);
+    layout.run("gone", "scout-1", daysAgo(30));
+    layout.handoff("orphan", daysAgo(30));
+
+    const input = layout.input();
+    const scanned = await scan(input, cutoffAt(input.now, 7));
+    const week = await planAt({ ...input, retentionDays: 7 });
+    const twoMonths = await planAt({ ...input, retentionDays: 60 });
+
+    expect(plan(scanned, cutoffAt(input.now, 7))).toEqual(week);
+    expect(plan(scanned, cutoffAt(input.now, 60))).toEqual(twoMonths);
+    expect([week, twoMonths].map((planned) => planned.sessions.length)).toEqual([2, 1]);
   });
 });

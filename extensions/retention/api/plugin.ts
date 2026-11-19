@@ -1,14 +1,20 @@
 import { join } from "node:path";
 import type { SessionInfo } from "../../../platform/pi-adapter/index.ts";
 import { errorText, type Plugin } from "../../../platform/shared/index.ts";
+import { completeArgs, INTERVALS, parseArgs } from "../core/command-args.ts";
 import { liveDir, markerPath, removeMarker, writeMarker } from "../core/live-markers.ts";
 import { subdirsIn } from "../core/real-dirs.ts";
 import { NAMESPACE, type RetentionSettings } from "../core/settings.ts";
-import { apply } from "../core/sweep-apply.ts";
-import { plan } from "../core/sweep-plan.ts";
+import { apply, type Removed } from "../core/sweep-apply.ts";
+import { cutoffAt, plan, planAt, scan, within } from "../core/sweep-plan.ts";
+import { pickInterval } from "../ui/interval-pick.ts";
 import {
   abortedText,
+  CONFIRM_TITLE,
+  confirmText,
+  NOTHING_TEXT,
   OFF_TEXT,
+  plannedCounts,
   planReport,
   removedText,
   settingsText,
@@ -21,7 +27,7 @@ export type RetentionDeps = {
   process: { swept: boolean; marker?: string };
 };
 
-const APPLY = "apply";
+const total = (counts: Removed) => counts.sessions + counts.runs + counts.handoffs;
 
 export const retentionPlugin = (deps: RetentionDeps): Plugin<never, never, RetentionSettings> => ({
   id: "retention",
@@ -33,16 +39,16 @@ export const retentionPlugin = (deps: RetentionDeps): Plugin<never, never, Reten
       isAlive: deps.isAlive,
     });
 
-    const planFor = async (info: SessionInfo) =>
-      plan({
-        ...context(info),
-        slugDirs: await subdirsIn(join(info.agentDir, "sessions")),
-        retentionDays: settings.retentionDays,
-        now: Date.now(),
-      });
+    const scanInput = async (info: SessionInfo) => ({
+      ...context(info),
+      slugDirs: await subdirsIn(join(info.agentDir, "sessions")),
+    });
+
+    const planFor = async (info: SessionInfo, retentionDays: number) =>
+      planAt({ ...(await scanInput(info)), retentionDays, now: Date.now() });
 
     const sweep = async (info: SessionInfo) => {
-      const planned = await planFor(info);
+      const planned = await planFor(info, settings.retentionDays);
 
       if (planned.aborted) {
         host.ui.notify(abortedText(planned.aborted), "warning");
@@ -96,15 +102,82 @@ export const retentionPlugin = (deps: RetentionDeps): Plugin<never, never, Reten
       deps.process.marker = undefined;
     });
 
-    host.registerCommand("retention", {
-      description:
-        "Show which old sessions, agent runs and handoff dirs retention would remove: /retention [apply]",
-      complete: (prefix) => (APPLY.startsWith(prefix) ? [{ value: APPLY, label: APPLY }] : null),
-      run: async (args) => {
-        const arg = args.trim();
+    const report = async (info: SessionInfo, retentionDays: number, applying: boolean) => {
+      const planned = await planFor(info, retentionDays);
 
-        if (arg !== "" && arg !== APPLY) {
+      if (applying && !planned.aborted) {
+        host.ui.notify(removedText(await apply(planned, context(info)), retentionDays), "info");
+        return;
+      }
+
+      host.ui.notify(planReport(planned, retentionDays, deps.handoffRoot), "info");
+    };
+
+    const pick = async (info: SessionInfo) => {
+      const now = Date.now();
+      const scanned = await scan(await scanInput(info), cutoffAt(now, INTERVALS[0]));
+
+      if ("aborted" in scanned) {
+        host.ui.notify(abortedText(scanned.aborted), "warning");
+        return;
+      }
+
+      const plans = INTERVALS.map((interval) => plan(scanned, cutoffAt(now, interval)));
+
+      if (plans.every((planned) => total(plannedCounts(planned)) === 0)) {
+        host.ui.notify(NOTHING_TEXT, "info");
+        return;
+      }
+
+      const configured = settingsErrors().length === 0 ? settings.retentionDays : undefined;
+      const picked = await pickInterval(host, plans, configured);
+
+      if (picked === undefined) {
+        return;
+      }
+
+      const confirmed = plans[INTERVALS.indexOf(picked)];
+      const counts = plannedCounts(confirmed);
+
+      if (total(counts) === 0) {
+        host.ui.notify(removedText(counts, picked), "info");
+        return;
+      }
+
+      if (!(await host.ui.confirm(CONFIRM_TITLE, confirmText(counts, picked)))) {
+        return;
+      }
+
+      const fresh = await planFor(info, picked);
+
+      if (fresh.aborted) {
+        host.ui.notify(abortedText(fresh.aborted), "warning");
+        return;
+      }
+
+      host.ui.notify(removedText(await apply(within(fresh, confirmed), context(info)), picked), "info");
+    };
+
+    host.registerCommand("retention", {
+      description: "Show or remove old sessions, agent runs and handoff dirs: /retention [<days>] [apply]",
+      complete: completeArgs,
+      run: async (args) => {
+        const parsed = parseArgs(args);
+
+        if (!parsed) {
           host.ui.notify(USAGE, "error");
+          return;
+        }
+
+        const info = host.session();
+
+        if (parsed.days !== undefined) {
+          await report(info, parsed.days, parsed.apply);
+          return;
+        }
+
+        if (!parsed.apply && info.mode === "tui") {
+          await pick(info);
           return;
         }
 
@@ -118,19 +191,7 @@ export const retentionPlugin = (deps: RetentionDeps): Plugin<never, never, Reten
           return;
         }
 
-        const info = host.session();
-        const planned = await planFor(info);
-
-        if (arg === APPLY) {
-          const text = planned.aborted
-            ? planReport(planned, settings.retentionDays, deps.handoffRoot)
-            : removedText(await apply(planned, context(info)), settings.retentionDays);
-
-          host.ui.notify(text, "info");
-          return;
-        }
-
-        host.ui.notify(planReport(planned, settings.retentionDays, deps.handoffRoot), "info");
+        await report(info, settings.retentionDays, parsed.apply);
       },
     });
 

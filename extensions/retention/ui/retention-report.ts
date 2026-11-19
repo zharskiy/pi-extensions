@@ -1,13 +1,18 @@
 import { counted } from "../../../platform/shared/index.ts";
-import { NAMESPACE, SETTINGS_FILE } from "../core/settings.ts";
+import { INTERVALS } from "../core/command-args.ts";
+import { MAX_DAYS, NAMESPACE, SETTINGS_FILE } from "../core/settings.ts";
 import type { Removed } from "../core/sweep-apply.ts";
 import type { KeepReason, Plan, Stem } from "../core/sweep-plan.ts";
 
 const REASONS: KeepReason[] = ["fresh", "live", "parent"];
 
-export const USAGE = `${NAMESPACE}: usage /retention [apply]`;
+export const USAGE = `${NAMESPACE}: usage /retention [<days>] [apply], <days> a whole number from ${INTERVALS[0]} to ${MAX_DAYS}`;
 
-export const OFF_TEXT = `${NAMESPACE}: off, retentionDays is 0`;
+export const OFF_TEXT = `${NAMESPACE}: off, retentionDays is 0; /retention <days> shows what <days> would remove`;
+
+export const NOTHING_TEXT = `${NAMESPACE}: nothing to remove at any interval`;
+
+export const CONFIRM_TITLE = "Remove old sessions?";
 
 const amounts = (removed: Removed) =>
   [
@@ -19,10 +24,21 @@ const amounts = (removed: Removed) =>
 const listed = (pairs: readonly (readonly [number, string])[]) =>
   pairs.map(([count, word]) => counted(count, word)).join(", ");
 
-const days = (retentionDays: number) => counted(retentionDays, "day");
+export const days = (retentionDays: number) => counted(retentionDays, "day");
+
+const nonzero = (removed: Removed) => amounts(removed).filter(([count]) => count > 0);
+
+export const countsText = (removed: Removed) => {
+  const parts = nonzero(removed);
+
+  return parts.length > 0 ? listed(parts) : "nothing to remove";
+};
+
+export const confirmText = (removed: Removed, retentionDays: number) =>
+  `Remove ${listed(nonzero(removed))} not touched for ${days(retentionDays)}? Sessions open in a pi process without retention are judged by age alone. This cannot be undone.`;
 
 export const removedText = (removed: Removed, retentionDays: number) => {
-  const parts = amounts(removed).filter(([count]) => count > 0);
+  const parts = nonzero(removed);
 
   return parts.length > 0
     ? `${NAMESPACE}: removed ${listed(parts)} older than ${days(retentionDays)}`
@@ -39,7 +55,7 @@ export const settingsText = (errors: readonly string[]) =>
 
 const runCount = (stems: readonly Stem[]) => stems.reduce((sum, stem) => sum + stem.runs.length, 0);
 
-const plannedCounts = (plan: Plan): Removed => ({
+export const plannedCounts = (plan: Plan): Removed => ({
   sessions: plan.sessions.length,
   runs: runCount(plan.sessions.flatMap((session) => session.stem ?? [])) + runCount(plan.orphans.stems),
   handoffs: plan.sessions.filter((session) => session.handoff).length + plan.orphans.handoffs.length,

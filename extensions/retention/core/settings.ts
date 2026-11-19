@@ -6,8 +6,10 @@ export const NAMESPACE = "pi-retention";
 
 export const SETTINGS_FILE = `${NAMESPACE}.json`;
 
+export const MAX_DAYS = 36_500;
+
 export const defaults: RetentionSettings = { retentionDays: 180 };
 
 export const schema: SettingsSchema<RetentionSettings> = {
-  retentionDays: { type: "number", min: 0, max: 36_500, integer: true },
+  retentionDays: { type: "number", min: 0, max: MAX_DAYS, integer: true },
 };
