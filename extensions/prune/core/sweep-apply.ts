@@ -4,7 +4,7 @@ import { AGENTS_DIR } from "./agent-runs.ts";
 import { rootState } from "./handoff-root.ts";
 import { readLive } from "./live-markers.ts";
 import { pathKey } from "./path-key.ts";
-import { serial } from "./serial.ts";
+import { LIMIT, pooled } from "./pool.ts";
 import type { Candidate, Plan, PlanInput, Stem } from "./sweep-plan.ts";
 
 export type Removed = { sessions: number; runs: number; handoffs: number };
@@ -26,7 +26,7 @@ const sum = (counts: number[]) => counts.reduce((total, count) => total + count,
 const removeDir = (dir: string) => done(rm(dir, { recursive: true }));
 
 const pruneStem = async ({ dir, runs }: Stem) => {
-  const removed = sum(await serial(runs, removeDir));
+  const removed = sum(await pooled(runs, 1, removeDir));
 
   if (removed > 0) {
     await rmdir(join(dir, AGENTS_DIR)).catch(ignore);
@@ -68,11 +68,11 @@ export const apply = async (plan: Plan, context: ApplyContext): Promise<Removed>
     return NOTHING;
   }
 
-  const sessions = await serial(plan.sessions, (candidate) => removeCandidate(candidate, context));
-  const stems = await serial(plan.orphans.stems, pruneStem);
-  const handoffs = await serial(plan.orphans.handoffs, (dir) => removeHandoff(dir, context));
+  const sessions = await pooled(plan.sessions, 1, (candidate) => removeCandidate(candidate, context));
+  const stems = await pooled(plan.orphans.stems, LIMIT, pruneStem);
+  const handoffs = await pooled(plan.orphans.handoffs, LIMIT, (dir) => removeHandoff(dir, context));
 
-  await serial(plan.markers, (marker) => done(unlink(marker)));
+  await pooled(plan.markers, LIMIT, (marker) => done(unlink(marker)));
 
   return {
     sessions: sum(sessions.map((removed) => removed.sessions)),

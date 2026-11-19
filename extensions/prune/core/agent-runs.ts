@@ -1,7 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { basename, join } from "node:path";
+import { LIMIT, pooled } from "./pool.ts";
 import { lastTouched, subdirsIn } from "./real-dirs.ts";
-import { serial } from "./serial.ts";
 
 export const AGENTS_DIR = "agents";
 
@@ -74,7 +74,13 @@ const gather = (runs: Map<unknown, Run>, id: unknown, chain: Set<Run>) => {
 const expired = (runs: Map<unknown, Run>, run: Run, cutoff: number) =>
   Array.from(gather(runs, run.id, new Set())).every((link) => link.touched < cutoff && !link.spared);
 
-export const readRuns = async (stem: string) => serial(await subdirsIn(join(stem, AGENTS_DIR)), readRun);
+export const readRuns = async (stems: readonly string[]) => {
+  const dirs = await pooled(stems, LIMIT, (stem) => subdirsIn(join(stem, AGENTS_DIR)));
+  const runs = await pooled(dirs.flat(), LIMIT, readRun);
+  const byDir = new Map(runs.map((run) => [run.dir, run]));
+
+  return dirs.map((group) => group.flatMap((dir) => byDir.get(dir) ?? []));
+};
 
 export const staleRuns = (found: readonly Run[], cutoff: number) => {
   const runs = new Map<unknown, Run>(found.map((run) => [run.id, run]));

@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import type { SessionInfo } from "../../../platform/pi-adapter/index.ts";
 import { isPlainObject } from "../../../platform/shared/index.ts";
 import { pathKey } from "./path-key.ts";
-import { serial } from "./serial.ts";
+import { pooled } from "./pool.ts";
 import { NAMESPACE } from "./settings.ts";
 
 const MARKER_EXT = ".json";
@@ -118,7 +118,7 @@ export const readLive = async (
     return undefined;
   }
 
-  const markers = await serial(files, readMarker);
+  const markers = await pooled(files, 1, readMarker);
 
   const live = (data: unknown): data is Marker =>
     isPlainObject(data) && typeof data.id === "string" && typeof data.pid === "number" && isAlive(data.pid);

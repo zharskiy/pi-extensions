@@ -5,8 +5,8 @@ import { type Run, readRuns, staleRuns } from "./agent-runs.ts";
 import { type RootState, rootState } from "./handoff-root.ts";
 import { type Current, type Live, liveDir, readLive } from "./live-markers.ts";
 import { pathKey } from "./path-key.ts";
+import { LIMIT, pooled } from "./pool.ts";
 import { entriesIn, lastTouched, subdirsIn } from "./real-dirs.ts";
-import { serial } from "./serial.ts";
 
 const DAY_MS = 86_400_000;
 
@@ -30,7 +30,7 @@ type Session = { file: string; mtime: number; header?: SessionHeader; runs?: Run
 
 type Readable = Session & { header: SessionHeader };
 
-type Scanned = { sessions: Session[]; errors: string[]; stems: { dir: string; listed: boolean }[] };
+type Listed = { files: string[]; stems: { dir: string; listed: boolean }[] };
 
 export type Stem = { dir: string; runs: string[] };
 
@@ -82,20 +82,17 @@ const readSession = async (file: string): Promise<{ session?: Session; error?: s
   return "gone" in read ? {} : { session: { file, mtime: stat.mtimeMs, header: read.header } };
 };
 
-const scanSlug = async (slug: string): Promise<Scanned> => {
+const listSlug = async (slug: string): Promise<Listed> => {
   const entries = await entriesIn(slug);
   const names = new Set(entries.map((entry) => entry.name));
-  const files = entries.filter((entry) => entry.isFile() && entry.name.endsWith(SESSION_EXT));
-  const reads = await serial(files, (entry) => readSession(join(slug, entry.name)));
-
-  const stems = entries
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => ({ dir: join(slug, entry.name), listed: names.has(`${entry.name}${SESSION_EXT}`) }));
 
   return {
-    sessions: reads.flatMap((read) => (read.session ? [read.session] : [])),
-    errors: reads.flatMap((read) => (read.error ? [read.error] : [])),
-    stems,
+    files: entries
+      .filter((entry) => entry.isFile() && entry.name.endsWith(SESSION_EXT))
+      .map((entry) => join(slug, entry.name)),
+    stems: entries
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => ({ dir: join(slug, entry.name), listed: names.has(`${entry.name}${SESSION_EXT}`) })),
   };
 };
 
@@ -141,7 +138,11 @@ const pruned = (dir: string, found: readonly Run[], cutoff: number): Stem[] => {
   return runs.length > 0 ? [{ dir, runs }] : [];
 };
 
-const runsIn = async (dir: string): Promise<RunsIn> => ({ dir, runs: await readRuns(dir) });
+const runsIn = async (dirs: readonly string[]): Promise<RunsIn[]> => {
+  const runs = await readRuns(dirs);
+
+  return dirs.map((dir, index) => ({ dir, runs: runs[index] }));
+};
 
 const stemOf = (file: string) => file.slice(0, -SESSION_EXT.length);
 
@@ -165,14 +166,19 @@ export const scan = async (input: ScanInput, latestCutoff: number): Promise<Scan
     return { aborted: `${liveDir(input.agentDir)}: not a readable directory` };
   }
 
-  const slugs = await serial(input.slugDirs, scanSlug);
-  const error = slugs.flatMap((slug) => slug.errors)[0];
+  const slugs = await pooled(input.slugDirs, LIMIT, listSlug);
+  const reads = await pooled(
+    slugs.flatMap((slug) => slug.files),
+    LIMIT,
+    readSession,
+  );
+  const error = reads.flatMap((read) => read.error ?? [])[0];
 
   if (error) {
     return { aborted: error };
   }
 
-  const sessions = slugs.flatMap((slug) => slug.sessions);
+  const sessions = reads.flatMap((read) => read.session ?? []);
   const ids = new Set(sessions.flatMap((session) => session.header?.id ?? []));
   const stems = slugs.flatMap((slug) => slug.stems);
   const stemDirs = new Set(stems.map(({ dir }) => pathKey(dir)));
@@ -182,11 +188,16 @@ export const scan = async (input: ScanInput, latestCutoff: number): Promise<Scan
     ...sessions.flatMap((session) => (session.mtime >= latestCutoff ? (session.header?.id ?? []) : [])),
   ]);
 
-  const scanned = await serial(sessions, async (session): Promise<Session> => {
-    const stem = stemOf(session.file);
-    const read = session.header && session.mtime < latestCutoff && stemDirs.has(pathKey(stem));
+  const reading = sessions.filter(
+    (session) =>
+      session.header && session.mtime < latestCutoff && stemDirs.has(pathKey(stemOf(session.file))),
+  );
+  const found = await runsIn(reading.map((session) => stemOf(session.file)));
+  const runsOf = new Map(reading.map((session, index) => [session.file, found[index].runs]));
+  const scanned = sessions.map((session) => {
+    const runs = runsOf.get(session.file);
 
-    return read ? { ...session, runs: await readRuns(stem) } : session;
+    return runs ? { ...session, runs } : session;
   });
 
   const orphanStems = stems
@@ -200,7 +211,7 @@ export const scan = async (input: ScanInput, latestCutoff: number): Promise<Scan
   const handoffState = await rootState(input.handoffRoot);
   const handoffDirs = handoffState === "safe" ? await subdirsIn(input.handoffRoot) : [];
 
-  const handoffs = await serial(handoffDirs, async (dir) => {
+  const handoffs = await pooled(handoffDirs, LIMIT, async (dir) => {
     const claimed = live.ids.has(basename(dir)) || ids.has(basename(dir));
     const touched = claimed
       ? Number.POSITIVE_INFINITY
@@ -212,8 +223,8 @@ export const scan = async (input: ScanInput, latestCutoff: number): Promise<Scan
   return {
     live,
     sessions: scanned,
-    orphanStems: await serial(orphanStems, runsIn),
-    fallbackStems: await serial(fallbackStems, runsIn),
+    orphanStems: await runsIn(orphanStems),
+    fallbackStems: await runsIn(fallbackStems),
     handoffState,
     handoffs,
   };
