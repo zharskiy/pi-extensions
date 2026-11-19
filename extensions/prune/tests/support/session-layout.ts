@@ -50,7 +50,7 @@ export const runFiles = (dir: string, id: string, touched: number, manifest: Man
 type Options = Partial<Omit<PlanInput, "current">> & { current?: Partial<SessionInfo> };
 
 export const fabricate = () => {
-  const root = temp.make("pi-retention-");
+  const root = temp.make("pi-prune-");
   const agentDir = join(root, "agent");
   const sessionsRoot = join(agentDir, "sessions");
   const slugDir = join(sessionsRoot, "--project--");
@@ -106,7 +106,7 @@ export const fabricate = () => {
   };
 
   const marker = (sessionId: string, pid: number, data: Record<string, unknown> = {}) => {
-    const file = join(agentDir, "pi-retention", "live", `${sessionId}.${pid}.json`);
+    const file = join(agentDir, "pi-prune", "live", `${sessionId}.${pid}.json`);
 
     mkdirSync(join(file, ".."), { recursive: true });
     writeFileSync(file, JSON.stringify({ id: sessionId, pid, file: null, parentSession: null, ...data }));
@@ -118,7 +118,7 @@ export const fabricate = () => {
     slugDirs: [slugDir],
     agentDir,
     handoffRoot,
-    retentionDays: 60,
+    days: 60,
     now: NOW,
     isAlive: () => false,
     ...options,

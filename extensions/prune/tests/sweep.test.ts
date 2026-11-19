@@ -337,8 +337,8 @@ describe("session rules", () => {
 
     layout.session("old", OLD);
     mkdirSync(elsewhere);
-    mkdirSync(join(layout.agentDir, "pi-retention"), { recursive: true });
-    symlinkSync(elsewhere, join(layout.agentDir, "pi-retention", "live"));
+    mkdirSync(join(layout.agentDir, "pi-prune"), { recursive: true });
+    symlinkSync(elsewhere, join(layout.agentDir, "pi-prune", "live"));
 
     expect((await layout.planned()).aborted).toMatch(/not a readable directory$/);
   });
@@ -346,7 +346,7 @@ describe("session rules", () => {
   it.skipIf(process.getuid?.() === 0)("aborts when the live markers folder cannot be looked at", async () => {
     const layout = fabricate();
     const file = layout.session("resumed", OLD);
-    const parent = join(layout.agentDir, "pi-retention");
+    const parent = join(layout.agentDir, "pi-prune");
 
     layout.marker("resumed", 7);
     chmodSync(parent, 0o000);
@@ -474,8 +474,8 @@ describe("one scan, many cutoffs", () => {
 
     const input = layout.input();
     const scanned = await scan(input, cutoffAt(input.now, 7));
-    const week = await planAt({ ...input, retentionDays: 7 });
-    const twoMonths = await planAt({ ...input, retentionDays: 60 });
+    const week = await planAt({ ...input, days: 7 });
+    const twoMonths = await planAt({ ...input, days: 60 });
 
     expect(plan(scanned, cutoffAt(input.now, 7))).toEqual(week);
     expect(plan(scanned, cutoffAt(input.now, 60))).toEqual(twoMonths);

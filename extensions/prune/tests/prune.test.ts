@@ -19,8 +19,8 @@ import {
   pause,
   startExtension,
 } from "../../../test/framework/index.ts";
-import { retentionExtension } from "../api/extension.ts";
-import { type RetentionDeps, retentionPlugin } from "../api/plugin.ts";
+import { pruneExtension } from "../api/extension.ts";
+import { type PruneDeps, prunePlugin } from "../api/plugin.ts";
 import { SETTINGS_FILE } from "../core/settings.ts";
 import { daysAgo, fabricate, OLD, RECENT, touch } from "./support/session-layout.ts";
 
@@ -32,9 +32,9 @@ const ESCAPE: KeyPress = key("escape");
 
 const DOWN: KeyPress = key("down");
 
-const USAGE = "pi-retention: usage /retention [<days>] [apply], <days> a whole number from 7 to 36500";
+const USAGE = "pi-prune: usage /prune [<days>] [apply], <days> a whole number from 7 to 36500";
 
-const liveDir = (layout: Layout) => join(layout.agentDir, "pi-retention", "live");
+const liveDir = (layout: Layout) => join(layout.agentDir, "pi-prune", "live");
 
 const markerFile = (layout: Layout, id: string) => join(liveDir(layout), `${id}.${process.pid}.json`);
 
@@ -51,20 +51,20 @@ const deps = (layout: Layout, swept = false, throws = false) => {
     return pid === process.pid;
   };
 
-  const record: RetentionDeps = { handoffRoot: layout.handoffRoot, isAlive, process: { swept } };
+  const record: PruneDeps = { handoffRoot: layout.handoffRoot, isAlive, process: { swept } };
 
   return { alive, record };
 };
 
-type BootOptions = { retentionDays?: number; swept?: boolean; throws?: boolean };
+type BootOptions = { days?: number; swept?: boolean; throws?: boolean };
 
 const boot = (layout: Layout, options: BootOptions = {}) => {
   const { alive, record } = deps(layout, options.swept, options.throws);
 
   const start = (host: FakeHost = layout.host) =>
     startExtension({
-      plugins: [retentionPlugin(record)],
-      settings: { retentionDays: options.retentionDays ?? 60 },
+      plugins: [prunePlugin(record)],
+      settings: { days: options.days ?? 60 },
       root: layout.root,
       runtime: createFakeAgentRuntime(),
       host,
@@ -76,7 +76,7 @@ const boot = (layout: Layout, options: BootOptions = {}) => {
 const bootWithSettings = (layout: Layout, user: unknown, project?: unknown) => {
   const cwd = join(layout.root, "project");
   const host = createFakeHost({ agentDir: layout.agentDir, cwd, projectTrusted: true });
-  const extension = retentionExtension(deps(layout).record);
+  const extension = pruneExtension(deps(layout).record);
 
   mkdirSync(join(cwd, ".pi"), { recursive: true });
   mkdirSync(layout.agentDir, { recursive: true });
@@ -92,8 +92,8 @@ const bootWithSettings = (layout: Layout, user: unknown, project?: unknown) => {
   return host;
 };
 
-describe("retention sweep on session start", () => {
-  it("sweeps with the configured retention, sparing the current and parent session", async () => {
+describe("prune sweep on session start", () => {
+  it("sweeps with the configured days, sparing the current and parent session", async () => {
     const layout = fabricate();
 
     layout.run("ninety", "scout-1", daysAgo(90));
@@ -107,7 +107,7 @@ describe("retention sweep on session start", () => {
       parentSession: layout.session("parent", daysAgo(200)),
     };
 
-    boot(layout, { retentionDays: 100 });
+    boot(layout, { days: 100 });
 
     await vi.waitFor(() =>
       expect(readdirSync(layout.slugDir).sort()).toEqual([
@@ -152,11 +152,11 @@ describe("retention sweep on session start", () => {
     expect(existsSync(second)).toBe(true);
   });
 
-  it("keeps everything when retentionDays is 0", async () => {
+  it("keeps everything when days is 0", async () => {
     const layout = fabricate();
     const old = layout.session("old", OLD);
     const run = layout.run("old", "scout-1", OLD);
-    const booted = boot(layout, { retentionDays: 0 });
+    const booted = boot(layout, { days: 0 });
 
     await pause(50);
 
@@ -170,7 +170,7 @@ describe("retention sweep on session start", () => {
     const elsewhere = join(layout.root, "elsewhere");
 
     mkdirSync(elsewhere);
-    mkdirSync(join(layout.agentDir, "pi-retention"), { recursive: true });
+    mkdirSync(join(layout.agentDir, "pi-prune"), { recursive: true });
     symlinkSync(elsewhere, liveDir(layout));
 
     const { host } = boot(layout);
@@ -181,7 +181,7 @@ describe("retention sweep on session start", () => {
     expect(readdirSync(elsewhere)).toEqual([]);
     expect(host.notices).toEqual([
       {
-        message: `pi-retention: nothing removed, ${liveDir(layout)}: cannot write the liveness marker`,
+        message: `pi-prune: nothing removed, ${liveDir(layout)}: cannot write the liveness marker`,
         level: "warning",
       },
     ]);
@@ -204,7 +204,7 @@ describe("retention sweep on session start", () => {
 
     expect(existsSync(old)).toBe(true);
     expect(booted.host.notices).toEqual([
-      { message: `pi-retention: nothing removed, ${locked}: EACCES`, level: "warning" },
+      { message: `pi-prune: nothing removed, ${locked}: EACCES`, level: "warning" },
     ]);
   });
 
@@ -215,7 +215,7 @@ describe("retention sweep on session start", () => {
 
     await vi.waitFor(() =>
       expect(host.notices).toEqual([
-        { message: "pi-retention: sweep failed, no process table", level: "warning" },
+        { message: "pi-prune: sweep failed, no process table", level: "warning" },
       ]),
     );
 
@@ -233,7 +233,7 @@ describe("retention sweep on session start", () => {
 
     await vi.waitFor(() =>
       expect(host.notices).toEqual([
-        { message: "pi-retention: removed 1 session, 2 agent runs older than 60 days", level: "info" },
+        { message: "pi-prune: removed 1 session, 2 agent runs older than 60 days", level: "info" },
       ]),
     );
   });
@@ -271,7 +271,7 @@ describe("liveness marker", () => {
   it("removes its own marker on quit and leaves other processes' markers", async () => {
     const layout = fabricate();
     const other = layout.marker("main-session", process.pid + 1);
-    const { host } = boot(layout, { retentionDays: 0 });
+    const { host } = boot(layout, { days: 0 });
 
     expect(existsSync(markerFile(layout, "main-session"))).toBe(true);
 
@@ -282,7 +282,7 @@ describe("liveness marker", () => {
 
   it("keeps the marker over a resume shutdown and replaces it on the next start", async () => {
     const layout = fabricate();
-    const { host } = boot(layout, { retentionDays: 0 });
+    const { host } = boot(layout, { days: 0 });
 
     await host.shutdown("resume");
 
@@ -295,7 +295,7 @@ describe("liveness marker", () => {
   });
 });
 
-describe("/retention", () => {
+describe("/prune", () => {
   it("prints the plan without removing anything", async () => {
     const layout = fabricate();
     const old = layout.session("old", OLD);
@@ -307,11 +307,11 @@ describe("/retention", () => {
 
     const { host } = boot(layout, { swept: true });
 
-    await host.runCommand("retention", "60");
+    await host.runCommand("prune", "60");
 
     const report = host.notices.at(-1)?.message.split("\n") ?? [];
 
-    expect(report[0]).toMatch(/^pi-retention: 60 days, cutoff \d{4}-\d{2}-\d{2}T/);
+    expect(report[0]).toMatch(/^pi-prune: 60 days, cutoff \d{4}-\d{2}-\d{2}T/);
     expect(report.slice(1)).toEqual([
       "would remove: 1 session, 1 agent run, 1 handoff dir",
       "keeps: 1 session (1 fresh, 0 live, 0 parent)",
@@ -327,7 +327,7 @@ describe("/retention", () => {
 
     chmodSync(layout.handoffRoot, 0o777);
 
-    await host.runCommand("retention", "60");
+    await host.runCommand("prune", "60");
 
     expect(host.notices.at(-1)?.message.split("\n").at(-1)).toBe(
       `handoff dirs skipped: ${layout.handoffRoot} is not a directory of yours closed to others`,
@@ -341,10 +341,10 @@ describe("/retention", () => {
 
     chmodSync(locked, 0o000);
 
-    await host.runCommand("retention", "apply");
+    await host.runCommand("prune", "apply");
 
     expect(host.notices.at(-1)).toEqual({
-      message: `pi-retention: nothing removed, ${locked}: EACCES`,
+      message: `pi-prune: nothing removed, ${locked}: EACCES`,
       level: "warning",
     });
   });
@@ -354,23 +354,23 @@ describe("/retention", () => {
     const old = layout.session("old", OLD);
     const { host } = boot(layout, { swept: true });
 
-    await host.runCommand("retention", "apply");
+    await host.runCommand("prune", "apply");
 
     expect(existsSync(old)).toBe(false);
-    expect(host.notices.at(-1)?.message).toBe("pi-retention: removed 1 session older than 60 days");
+    expect(host.notices.at(-1)?.message).toBe("pi-prune: removed 1 session older than 60 days");
   });
 
-  it("says it is off when retentionDays is 0", async () => {
+  it("says it is off when days is 0", async () => {
     const layout = fabricate();
 
     layout.host.info = { ...layout.host.info, mode: "rpc" };
 
-    const { host } = boot(layout, { retentionDays: 0 });
+    const { host } = boot(layout, { days: 0 });
 
-    await host.runCommand("retention");
+    await host.runCommand("prune");
 
     expect(host.notices.at(-1)?.message).toBe(
-      "pi-retention: off, retentionDays is 0; /retention <days> shows what <days> would remove",
+      "pi-prune: off, days is 0; /prune <days> shows what <days> would remove",
     );
   });
 });
@@ -386,17 +386,17 @@ const ages = (layout: Layout) => [10, 45, 200].map((days) => layout.session(`age
 
 const confirmOf = (count: string, days: number) => ({
   title: "Remove old sessions?",
-  message: `Remove ${count} not touched for ${days} days? Sessions open in a pi process without retention are judged by age alone. This cannot be undone.`,
+  message: `Remove ${count} not touched for ${days} days? Sessions open in a pi process without prune are judged by age alone. This cannot be undone.`,
 });
 
-describe("/retention picker", () => {
+describe("/prune picker", () => {
   it("offers each interval with what it would remove, marking and preselecting the configured one", async () => {
     const layout = fabricate();
 
     ages(layout);
 
     const { host } = boot(layout, { swept: true });
-    const running = host.runCommand("retention");
+    const running = host.runCommand("prune");
 
     await formCount(host, 1);
 
@@ -416,11 +416,11 @@ describe("/retention picker", () => {
 
     ages(offLayout);
 
-    const off = boot(offLayout, { swept: true, retentionDays: 0 }).host;
+    const off = boot(offLayout, { swept: true, days: 0 }).host;
 
     off.confirmAnswer = false;
 
-    const offRunning = off.runCommand("retention");
+    const offRunning = off.runCommand("prune");
 
     await formCount(off, 1);
 
@@ -442,7 +442,7 @@ describe("/retention picker", () => {
 
     host.confirmAnswer = false;
 
-    const running = host.runCommand("retention");
+    const running = host.runCommand("prune");
 
     await formCount(host, 1);
     host.form().press(ENTER);
@@ -460,7 +460,7 @@ describe("/retention picker", () => {
     layout.run("aged-45", "scout-1", daysAgo(45));
 
     const { host } = boot(layout, { swept: true });
-    const running = host.runCommand("retention");
+    const running = host.runCommand("prune");
 
     await formCount(host, 1);
     host.form().press({ name: "up" }, ENTER);
@@ -468,9 +468,7 @@ describe("/retention picker", () => {
 
     expect(host.confirmations).toEqual([confirmOf("2 sessions, 1 agent run", 30)]);
     expect(files.map(existsSync)).toEqual([true, false, false]);
-    expect(host.notices.at(-1)?.message).toBe(
-      "pi-retention: removed 2 sessions, 1 agent run older than 30 days",
-    );
+    expect(host.notices.at(-1)?.message).toBe("pi-prune: removed 2 sessions, 1 agent run older than 30 days");
   });
 
   it("plans again after the confirm and removes only what was confirmed", async () => {
@@ -488,14 +486,14 @@ describe("/retention picker", () => {
       return true;
     };
 
-    const running = host.runCommand("retention");
+    const running = host.runCommand("prune");
 
     await formCount(host, 1);
     host.form().press(ENTER);
     await running;
 
     expect([written, closed, gone].map(existsSync)).toEqual([true, true, false]);
-    expect(host.notices.at(-1)?.message).toBe("pi-retention: removed 1 session older than 60 days");
+    expect(host.notices.at(-1)?.message).toBe("pi-prune: removed 1 session older than 60 days");
   });
 
   it("says nothing on escape and asks nothing when the picked interval has nothing", async () => {
@@ -504,7 +502,7 @@ describe("/retention picker", () => {
     ages(layout);
 
     const { host } = boot(layout, { swept: true });
-    const escaped = host.runCommand("retention");
+    const escaped = host.runCommand("prune");
 
     await formCount(host, 1);
     host.form().press(ESCAPE);
@@ -512,7 +510,7 @@ describe("/retention picker", () => {
 
     expect(host.notices).toEqual([]);
 
-    const picked = host.runCommand("retention");
+    const picked = host.runCommand("prune");
 
     await formCount(host, 2);
     host.form().press(DOWN, DOWN, DOWN, ENTER);
@@ -520,7 +518,7 @@ describe("/retention picker", () => {
 
     expect(host.confirmations).toEqual([]);
     expect(host.notices.map((notice) => notice.message)).toEqual([
-      "pi-retention: nothing older than 365 days to remove",
+      "pi-prune: nothing older than 365 days to remove",
     ]);
   });
 
@@ -531,10 +529,10 @@ describe("/retention picker", () => {
 
     const { host } = boot(layout, { swept: true });
 
-    await host.runCommand("retention");
+    await host.runCommand("prune");
 
     expect(host.forms).toEqual([]);
-    expect(host.notices.at(-1)?.message).toBe("pi-retention: nothing to remove at any interval");
+    expect(host.notices.at(-1)?.message).toBe("pi-prune: nothing to remove at any interval");
   });
 
   it.skipIf(process.getuid?.() === 0)("reports an aborted scan instead of the picker", async () => {
@@ -544,13 +542,13 @@ describe("/retention picker", () => {
 
     chmodSync(locked, 0o000);
 
-    await host.runCommand("retention");
+    await host.runCommand("prune");
 
     chmodSync(locked, 0o644);
 
     expect(host.forms).toEqual([]);
     expect(host.notices).toEqual([
-      { message: `pi-retention: nothing removed, ${locked}: EACCES`, level: "warning" },
+      { message: `pi-prune: nothing removed, ${locked}: EACCES`, level: "warning" },
     ]);
   });
 
@@ -562,37 +560,37 @@ describe("/retention picker", () => {
 
     const { host } = boot(layout, { swept: true });
 
-    await host.runCommand("retention");
+    await host.runCommand("prune");
 
-    expect(host.notices.at(-1)?.message).toMatch(/^pi-retention: 60 days, cutoff /);
+    expect(host.notices.at(-1)?.message).toMatch(/^pi-prune: 60 days, cutoff /);
   });
 });
 
-describe("/retention args", () => {
-  it("prints the plan for /retention 30", async () => {
+describe("/prune args", () => {
+  it("prints the plan for /prune 30", async () => {
     const layout = fabricate();
     const files = ages(layout);
     const { host } = boot(layout, { swept: true });
 
-    await host.runCommand("retention", "30");
+    await host.runCommand("prune", "30");
 
     const report = host.notices.at(-1)?.message.split("\n") ?? [];
 
-    expect(report[0]).toMatch(/^pi-retention: 30 days, cutoff /);
+    expect(report[0]).toMatch(/^pi-prune: 30 days, cutoff /);
     expect(report[1]).toBe("would remove: 2 sessions, 0 agent runs, 0 handoff dirs");
     expect(files.map(existsSync)).toEqual([true, true, true]);
   });
 
-  it("removes with /retention 30 apply without asking", async () => {
+  it("removes with /prune 30 apply without asking", async () => {
     const layout = fabricate();
     const files = ages(layout);
     const { host } = boot(layout, { swept: true });
 
-    await host.runCommand("retention", "30 apply");
+    await host.runCommand("prune", "30 apply");
 
     expect(host.confirmations).toEqual([]);
     expect(files.map(existsSync)).toEqual([true, false, false]);
-    expect(host.notices.at(-1)?.message).toBe("pi-retention: removed 2 sessions older than 30 days");
+    expect(host.notices.at(-1)?.message).toBe("pi-prune: removed 2 sessions older than 30 days");
   });
 
   it("rejects days below 7 or above 36500, fractions, words and extra words with the usage", async () => {
@@ -602,7 +600,7 @@ describe("/retention args", () => {
     const inputs = ["0", "6", "07", "1.5", "-3", "36501", "week", "30 30", "apply 30", "apply apply"];
 
     await inputs.reduce(
-      (previous, input) => previous.then(() => host.runCommand("retention", input)),
+      (previous, input) => previous.then(() => host.runCommand("prune", input)),
       Promise.resolve(),
     );
 
@@ -615,7 +613,7 @@ describe("/retention args", () => {
     const { host } = boot(layout, { swept: true });
     const complete = (prefix: string) =>
       host.commands
-        .get("retention")
+        .get("prune")
         ?.complete?.(prefix)
         ?.map((option) => option.value) ?? null;
 
@@ -628,57 +626,57 @@ describe("/retention args", () => {
   });
 });
 
-describe("retention settings", () => {
-  it("rejects retentionDays in a trusted project file and does not sweep", async () => {
+describe("prune settings", () => {
+  it("rejects days in a trusted project file and does not sweep", async () => {
     const layout = fabricate();
     const old = layout.session("old", OLD);
-    const host = bootWithSettings(layout, { retentionDays: 60 }, { retentionDays: 1 });
+    const host = bootWithSettings(layout, { days: 60 }, { days: 1 });
     const user = join(layout.agentDir, SETTINGS_FILE);
     const project = join(layout.root, "project", ".pi", SETTINGS_FILE);
     const error = `${project}: ignored, ${SETTINGS_FILE} is read only from ${user}`;
 
-    await host.runCommand("retention", "apply");
+    await host.runCommand("prune", "apply");
     await pause(50);
 
     expect(existsSync(old)).toBe(true);
     expect(host.notices.map((notice) => notice.message)).toEqual([
-      `pi-retention settings: ${error}`,
-      `pi-retention: off until pi-retention.json loads without errors:\n  ${error}`,
+      `pi-prune settings: ${error}`,
+      `pi-prune: off until pi-prune.json loads without errors:\n  ${error}`,
     ]);
   });
 
-  it("keeps 180 days when no settings file sets retentionDays", async () => {
+  it("keeps 180 days when no settings file sets days", async () => {
     const layout = fabricate();
     const host = bootWithSettings(layout, {});
 
-    await host.runCommand("retention", "apply");
+    await host.runCommand("prune", "apply");
 
-    expect(host.notices.at(-1)?.message).toBe("pi-retention: nothing older than 180 days to remove");
+    expect(host.notices.at(-1)?.message).toBe("pi-prune: nothing older than 180 days to remove");
   });
 
-  it("rejects a fractional retentionDays and does not sweep", async () => {
+  it("rejects a fractional days and does not sweep", async () => {
     const layout = fabricate();
     const old = layout.session("old", OLD);
-    const host = bootWithSettings(layout, { retentionDays: 1.5 });
+    const host = bootWithSettings(layout, { days: 1.5 });
 
     await pause(50);
 
     expect(existsSync(old)).toBe(true);
-    expect(host.notices.at(0)?.message).toContain("retentionDays must be a whole number between 0 and 36500");
+    expect(host.notices.at(0)?.message).toContain("days must be a whole number between 0 and 36500");
   });
 
-  it("removes with explicit days and opens the picker despite a settings error, but not with /retention apply", async () => {
+  it("removes with explicit days and opens the picker despite a settings error, but not with /prune apply", async () => {
     const layout = fabricate();
     const files = ages(layout);
-    const host = bootWithSettings(layout, { retentionDays: 60 }, { retentionDays: 1 });
+    const host = bootWithSettings(layout, { days: 60 }, { days: 1 });
 
-    await host.runCommand("retention", "apply");
+    await host.runCommand("prune", "apply");
 
     expect(files.map(existsSync)).toEqual([true, true, true]);
 
     host.confirmAnswer = false;
 
-    const running = host.runCommand("retention");
+    const running = host.runCommand("prune");
 
     await formCount(host, 1);
 
@@ -686,23 +684,21 @@ describe("retention settings", () => {
 
     host.form().press(ENTER);
     await running;
-    await host.runCommand("retention", "30 apply");
+    await host.runCommand("prune", "30 apply");
 
     expect(host.confirmations).toEqual([confirmOf("1 session", 180)]);
     expect(files.map(existsSync)).toEqual([true, false, false]);
   });
 
-  it("neither sweeps nor applies with an invalid retentionDays", async () => {
+  it("neither sweeps nor applies with an invalid days", async () => {
     const layout = fabricate();
     const old = layout.session("old", OLD);
-    const host = bootWithSettings(layout, { retentionDays: -1 });
+    const host = bootWithSettings(layout, { days: -1 });
 
-    await host.runCommand("retention", "apply");
+    await host.runCommand("prune", "apply");
     await pause(50);
 
     expect(existsSync(old)).toBe(true);
-    expect(host.notices.at(-1)?.message).toMatch(
-      /^pi-retention: off until pi-retention.json loads without errors:/,
-    );
+    expect(host.notices.at(-1)?.message).toMatch(/^pi-prune: off until pi-prune.json loads without errors:/);
   });
 });

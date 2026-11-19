@@ -21,7 +21,7 @@
     "mcp-import",
     "transcript",
     "model-default",
-    "retention"
+    "prune"
   ],
   "bin": {
     "pi-sandbox": "launcher/bin/pi-sandbox.js"
@@ -61,7 +61,7 @@
       "./extensions/mcp-import/index.ts",
       "./extensions/transcript/index.ts",
       "./extensions/model-default/index.ts",
-      "./extensions/retention/index.ts"
+      "./extensions/prune/index.ts"
     ]
   },
   "scripts": {

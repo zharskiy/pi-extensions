@@ -20,7 +20,7 @@ Fourteen extensions pass one plugin from `api/plugin.ts` whose `enable` wires ho
 
 `createExtensionManager` (`extension-manager.ts`):
 
-- A `Plugin` is `{ id, requires?, enable(ctx) => disable? }`. `ctx` holds `host`, `runtime`, `bus`, `settings`, `settingsErrors()` (the errors of the latest settings load, file or `reload` notices, empty without settings or for `createExtensionManager` callers that pass none; retention refuses to delete while any exist), the service registry and `paths` (`root`, `agentDir`).
+- A `Plugin` is `{ id, requires?, enable(ctx) => disable? }`. `ctx` holds `host`, `runtime`, `bus`, `settings`, `settingsErrors()` (the errors of the latest settings load, file or `reload` notices, empty without settings or for `createExtensionManager` callers that pass none; prune refuses to delete while any exist), the service registry and `paths` (`root`, `agentDir`).
 - Plugins are sorted topologically by `requires`; a cycle throws. A plugin in the disabled list is skipped silently; one whose required plugin is off or missing is skipped with one warning at session start.
 - Plugins talk two ways: the service registry (`provide`, `require`, `has`; `require` throws when no enabled plugin provided the key) and the typed in-process bus (`createBus` in `bus.ts`, keyed by the extension's event map type; subagents uses `agent:changed`, `agent:turn`, `agent:closed`, `agent:usage`, `batch:settled`). A throwing bus listener goes to `onError`.
 - `disableAll()` runs the disable callbacks in reverse order, one after another; a failing callback goes to `onError` and the rest still run.

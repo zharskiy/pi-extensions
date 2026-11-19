@@ -4,18 +4,18 @@ import { globalRecord } from "../../../platform/pi-adapter/index.ts";
 import { handoffRoot } from "../../../platform/shared/index.ts";
 import { pidAlive } from "../core/live-markers.ts";
 import { defaults, NAMESPACE, SETTINGS_FILE, schema } from "../core/settings.ts";
-import { type RetentionDeps, retentionPlugin } from "./plugin.ts";
+import { type PruneDeps, prunePlugin } from "./plugin.ts";
 
-export const retentionExtension = (deps: RetentionDeps) =>
+export const pruneExtension = (deps: PruneDeps) =>
   createManagedExtension({
     namespace: NAMESPACE,
     root: resolve(import.meta.dirname, ".."),
-    plugins: [retentionPlugin(deps)],
+    plugins: [prunePlugin(deps)],
     settings: { defaults: () => defaults, schema, file: SETTINGS_FILE, scope: "user" },
   });
 
-export default retentionExtension({
+export default pruneExtension({
   handoffRoot: handoffRoot(),
   isAlive: pidAlive,
-  process: globalRecord("retention", () => ({ swept: false })),
+  process: globalRecord("prune", () => ({ swept: false })),
 });

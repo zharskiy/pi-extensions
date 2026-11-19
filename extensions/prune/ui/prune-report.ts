@@ -6,9 +6,9 @@ import type { KeepReason, Plan, Stem } from "../core/sweep-plan.ts";
 
 const REASONS: KeepReason[] = ["fresh", "live", "parent"];
 
-export const USAGE = `${NAMESPACE}: usage /retention [<days>] [apply], <days> a whole number from ${INTERVALS[0]} to ${MAX_DAYS}`;
+export const USAGE = `${NAMESPACE}: usage /prune [<days>] [apply], <days> a whole number from ${INTERVALS[0]} to ${MAX_DAYS}`;
 
-export const OFF_TEXT = `${NAMESPACE}: off, retentionDays is 0; /retention <days> shows what <days> would remove`;
+export const OFF_TEXT = `${NAMESPACE}: off, days is 0; /prune <days> shows what <days> would remove`;
 
 export const NOTHING_TEXT = `${NAMESPACE}: nothing to remove at any interval`;
 
@@ -24,7 +24,7 @@ const amounts = (removed: Removed) =>
 const listed = (pairs: readonly (readonly [number, string])[]) =>
   pairs.map(([count, word]) => counted(count, word)).join(", ");
 
-export const days = (retentionDays: number) => counted(retentionDays, "day");
+export const daysText = (days: number) => counted(days, "day");
 
 const nonzero = (removed: Removed) => amounts(removed).filter(([count]) => count > 0);
 
@@ -34,15 +34,15 @@ export const countsText = (removed: Removed) => {
   return parts.length > 0 ? listed(parts) : "nothing to remove";
 };
 
-export const confirmText = (removed: Removed, retentionDays: number) =>
-  `Remove ${listed(nonzero(removed))} not touched for ${days(retentionDays)}? Sessions open in a pi process without retention are judged by age alone. This cannot be undone.`;
+export const confirmText = (removed: Removed, days: number) =>
+  `Remove ${listed(nonzero(removed))} not touched for ${daysText(days)}? Sessions open in a pi process without prune are judged by age alone. This cannot be undone.`;
 
-export const removedText = (removed: Removed, retentionDays: number) => {
+export const removedText = (removed: Removed, days: number) => {
   const parts = nonzero(removed);
 
   return parts.length > 0
-    ? `${NAMESPACE}: removed ${listed(parts)} older than ${days(retentionDays)}`
-    : `${NAMESPACE}: nothing older than ${days(retentionDays)} to remove`;
+    ? `${NAMESPACE}: removed ${listed(parts)} older than ${daysText(days)}`
+    : `${NAMESPACE}: nothing older than ${daysText(days)} to remove`;
 };
 
 export const abortedText = (reason: string) => `${NAMESPACE}: nothing removed, ${reason}`;
@@ -61,7 +61,7 @@ export const plannedCounts = (plan: Plan): Removed => ({
   handoffs: plan.sessions.filter((session) => session.handoff).length + plan.orphans.handoffs.length,
 });
 
-export const planReport = (plan: Plan, retentionDays: number, handoffRoot: string) => {
+export const planReport = (plan: Plan, days: number, handoffRoot: string) => {
   if (plan.aborted) {
     return abortedText(plan.aborted);
   }
@@ -73,7 +73,7 @@ export const planReport = (plan: Plan, retentionDays: number, handoffRoot: strin
   const unreadable = plan.unreadable.map((file) => `  ${file}`);
 
   return [
-    `${NAMESPACE}: ${days(retentionDays)}, cutoff ${new Date(plan.cutoff).toISOString()}`,
+    `${NAMESPACE}: ${daysText(days)}, cutoff ${new Date(plan.cutoff).toISOString()}`,
     `would remove: ${listed(amounts(plannedCounts(plan)))}`,
     `keeps: ${counted(plan.kept.length, "session")} (${kept.join(", ")})`,
     ...(unreadable.length > 0 ? ["unreadable, never removed:", ...unreadable] : []),

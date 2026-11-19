@@ -6,12 +6,12 @@ const APPLY = "apply";
 
 const DAYS = /^[1-9]\d*$/;
 
-export type RetentionArgs = { days?: number; apply: boolean };
+export type PruneArgs = { days?: number; apply: boolean };
 
 const validDays = (word: string) =>
   DAYS.test(word) && Number(word) >= INTERVALS[0] && Number(word) <= MAX_DAYS;
 
-export const parseArgs = (text: string): RetentionArgs | undefined => {
+export const parseArgs = (text: string): PruneArgs | undefined => {
   const words = text.trim().split(/\s+/).filter(Boolean);
   const apply = words.at(-1) === APPLY;
   const [first, ...rest] = apply ? words.slice(0, -1) : words;

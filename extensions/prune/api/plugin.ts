@@ -4,7 +4,7 @@ import { errorText, type Plugin } from "../../../platform/shared/index.ts";
 import { completeArgs, INTERVALS, parseArgs } from "../core/command-args.ts";
 import { liveDir, markerPath, removeMarker, writeMarker } from "../core/live-markers.ts";
 import { subdirsIn } from "../core/real-dirs.ts";
-import { NAMESPACE, type RetentionSettings } from "../core/settings.ts";
+import { NAMESPACE, type PruneSettings } from "../core/settings.ts";
 import { apply, type Removed } from "../core/sweep-apply.ts";
 import { cutoffAt, plan, planAt, scan, within } from "../core/sweep-plan.ts";
 import { pickInterval } from "../ui/interval-pick.ts";
@@ -19,9 +19,9 @@ import {
   removedText,
   settingsText,
   USAGE,
-} from "../ui/retention-report.ts";
+} from "../ui/prune-report.ts";
 
-export type RetentionDeps = {
+export type PruneDeps = {
   handoffRoot: string;
   isAlive: (pid: number) => boolean;
   process: { swept: boolean; marker?: string };
@@ -29,8 +29,8 @@ export type RetentionDeps = {
 
 const total = (counts: Removed) => counts.sessions + counts.runs + counts.handoffs;
 
-export const retentionPlugin = (deps: RetentionDeps): Plugin<never, never, RetentionSettings> => ({
-  id: "retention",
+export const prunePlugin = (deps: PruneDeps): Plugin<never, never, PruneSettings> => ({
+  id: "prune",
   enable({ host, settings, settingsErrors }) {
     const context = (info: SessionInfo) => ({
       agentDir: info.agentDir,
@@ -44,11 +44,11 @@ export const retentionPlugin = (deps: RetentionDeps): Plugin<never, never, Reten
       slugDirs: await subdirsIn(join(info.agentDir, "sessions")),
     });
 
-    const planFor = async (info: SessionInfo, retentionDays: number) =>
-      planAt({ ...(await scanInput(info)), retentionDays, now: Date.now() });
+    const planFor = async (info: SessionInfo, days: number) =>
+      planAt({ ...(await scanInput(info)), days, now: Date.now() });
 
     const sweep = async (info: SessionInfo) => {
-      const planned = await planFor(info, settings.retentionDays);
+      const planned = await planFor(info, settings.days);
 
       if (planned.aborted) {
         host.ui.notify(abortedText(planned.aborted), "warning");
@@ -58,7 +58,7 @@ export const retentionPlugin = (deps: RetentionDeps): Plugin<never, never, Reten
       const removed = await apply(planned, context(info));
 
       if (total(removed) > 0) {
-        host.ui.notify(removedText(removed, settings.retentionDays), "info");
+        host.ui.notify(removedText(removed, settings.days), "info");
       }
     };
 
@@ -79,7 +79,7 @@ export const retentionPlugin = (deps: RetentionDeps): Plugin<never, never, Reten
 
       deps.process.swept = true;
 
-      if (settings.retentionDays === 0 || settingsErrors().length > 0) {
+      if (settings.days === 0 || settingsErrors().length > 0) {
         return;
       }
 
@@ -104,18 +104,15 @@ export const retentionPlugin = (deps: RetentionDeps): Plugin<never, never, Reten
       deps.process.marker = undefined;
     });
 
-    const report = async (info: SessionInfo, retentionDays: number, applying: boolean) => {
-      const planned = await planFor(info, retentionDays);
+    const report = async (info: SessionInfo, days: number, applying: boolean) => {
+      const planned = await planFor(info, days);
 
       if (applying && !planned.aborted) {
-        host.ui.notify(removedText(await apply(planned, context(info)), retentionDays), "info");
+        host.ui.notify(removedText(await apply(planned, context(info)), days), "info");
         return;
       }
 
-      host.ui.notify(
-        planReport(planned, retentionDays, deps.handoffRoot),
-        planned.aborted ? "warning" : "info",
-      );
+      host.ui.notify(planReport(planned, days, deps.handoffRoot), planned.aborted ? "warning" : "info");
     };
 
     const pick = async (info: SessionInfo) => {
@@ -134,7 +131,7 @@ export const retentionPlugin = (deps: RetentionDeps): Plugin<never, never, Reten
         return;
       }
 
-      const configured = settingsErrors().length === 0 ? settings.retentionDays : undefined;
+      const configured = settingsErrors().length === 0 ? settings.days : undefined;
       const picked = await pickInterval(host, plans, configured);
 
       if (picked === undefined) {
@@ -163,8 +160,8 @@ export const retentionPlugin = (deps: RetentionDeps): Plugin<never, never, Reten
       host.ui.notify(removedText(await apply(within(fresh, confirmed), context(info)), picked), "info");
     };
 
-    host.registerCommand("retention", {
-      description: "Show or remove old sessions, agent runs and handoff dirs: /retention [<days>] [apply]",
+    host.registerCommand("prune", {
+      description: "Show or remove old sessions, agent runs and handoff dirs: /prune [<days>] [apply]",
       complete: completeArgs,
       run: async (args) => {
         const parsed = parseArgs(args);
@@ -191,12 +188,12 @@ export const retentionPlugin = (deps: RetentionDeps): Plugin<never, never, Reten
           return;
         }
 
-        if (settings.retentionDays === 0) {
+        if (settings.days === 0) {
           host.ui.notify(OFF_TEXT, "info");
           return;
         }
 
-        await report(info, settings.retentionDays, parsed.apply);
+        await report(info, settings.days, parsed.apply);
       },
     });
 

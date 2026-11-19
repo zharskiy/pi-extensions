@@ -24,7 +24,7 @@ export type ScanInput = {
   isAlive: (pid: number) => boolean;
 };
 
-export type PlanInput = ScanInput & { retentionDays: number; now: number };
+export type PlanInput = ScanInput & { days: number; now: number };
 
 type Session = { file: string; mtime: number; header?: SessionHeader; runs?: Run[] };
 
@@ -266,7 +266,7 @@ export const plan = (scanned: Scan, cutoff: number): Plan => {
 };
 
 export const planAt = async (input: PlanInput) => {
-  const cutoff = cutoffAt(input.now, input.retentionDays);
+  const cutoff = cutoffAt(input.now, input.days);
 
   return plan(await scan(input, cutoff), cutoff);
 };
