@@ -10,7 +10,7 @@ import {
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { INTERVALS } from "../core/command-args.ts";
+import { INTERVALS } from "../core/settings.ts";
 import { cutoffAt, plan, planAt, scan } from "../core/sweep-plan.ts";
 import { daysAgo, fabricate, OLD, RECENT, touch } from "./support/session-layout.ts";
 

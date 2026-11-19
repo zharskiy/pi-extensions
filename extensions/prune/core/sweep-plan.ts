@@ -14,8 +14,6 @@ const DAY_MS = 86_400_000;
 
 const SESSION_EXT = ".jsonl";
 
-export type KeepReason = "fresh" | "live" | "chain";
-
 export type ScanInput = {
   slugDirs: string[];
   agentDir: string;
@@ -23,6 +21,8 @@ export type ScanInput = {
   current: Current;
   isAlive: (pid: number) => boolean;
 };
+
+export type Sources = Omit<ScanInput, "slugDirs">;
 
 export type PlanInput = ScanInput & { days: number; now: number };
 
@@ -68,8 +68,6 @@ export type Plan = {
   chains: Candidate[][];
   orphans: { stems: Stem[]; handoffs: Sized[] };
   markers: string[];
-  kept: { file: string; reason: KeepReason }[];
-  unreadable: string[];
   handoffsSkipped: boolean;
 };
 
@@ -127,14 +125,6 @@ const keptIdsOf = (chains: readonly Linkage[], cutoff: number, live: Live) =>
       .flatMap((chain) => chain.members.flatMap(({ id }) => id ?? [])),
   ]);
 
-const reasonOf = (member: Member, cutoff: number): KeepReason => {
-  if (member.mtime >= cutoff) {
-    return "fresh";
-  }
-
-  return member.live ? "live" : "chain";
-};
-
 const pruned = (dir: string, found: readonly Run[], cutoff: number): Stem[] => {
   const runs = staleRuns(found, cutoff);
 
@@ -155,12 +145,15 @@ const emptyPlan = (cutoff: number, aborted: string): Plan => ({
   chains: [],
   orphans: { stems: [], handoffs: [] },
   markers: [],
-  kept: [],
-  unreadable: [],
   handoffsSkipped: false,
 });
 
 export const cutoffAt = (now: number, days: number) => now - days * DAY_MS;
+
+export const scanInput = async (sources: Sources): Promise<ScanInput> => ({
+  ...sources,
+  slugDirs: await subdirsIn(join(sources.agentDir, "sessions")),
+});
 
 export const scan = async (input: ScanInput, latestCutoff: number): Promise<Scan> => {
   const live = await readLive(input.agentDir, input.current, input.isAlive);
@@ -243,7 +236,6 @@ export const plan = (scanned: Scan, cutoff: number): Plan => {
 
   const { live, chains } = scanned;
   const keptIds = keptIdsOf(chains, cutoff, live);
-  const kept = chains.filter((chain) => !removableAt(chain, cutoff)).flatMap((chain) => chain.members);
   const fallbackStems = scanned.fallbackStems.filter(({ dir }) => !keptIds.has(basename(dir)));
 
   return {
@@ -271,10 +263,6 @@ export const plan = (scanned: Scan, cutoff: number): Plan => {
         .map(({ dir, bytes }) => ({ dir, bytes })),
     },
     markers: live.dead,
-    kept: kept.flatMap((member) =>
-      member.pinned ? [] : [{ file: member.file, reason: reasonOf(member, cutoff) }],
-    ),
-    unreadable: kept.flatMap((member) => (member.pinned ? [member.file] : [])),
     handoffsSkipped: scanned.handoffState === "unsafe",
   };
 };
@@ -302,6 +290,8 @@ export const totals = (plan: Plan): Removed => {
     bytes: sessions.reduce((total, session) => total + session.bytes, 0) + sizeOf(runs) + sizeOf(handoffs),
   };
 };
+
+export const removesAnything = (removed: Removed) => removed.sessions + removed.runs + removed.handoffs > 0;
 
 export const planAt = async (input: PlanInput) => {
   const cutoff = cutoffAt(input.now, input.days);

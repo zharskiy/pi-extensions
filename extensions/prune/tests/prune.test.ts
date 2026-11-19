@@ -12,11 +12,13 @@ import { basename, join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { KeyPress } from "../../../platform/pi-adapter/index.ts";
 import {
+  char,
   createFakeAgentRuntime,
   createFakeHost,
   type FakeHost,
   key,
   pause,
+  plainTheme,
   startExtension,
 } from "../../../test/framework/index.ts";
 import { pruneExtension } from "../api/extension.ts";
@@ -31,8 +33,6 @@ const ENTER: KeyPress = key("enter");
 const ESCAPE: KeyPress = key("escape");
 
 const DOWN: KeyPress = key("down");
-
-const USAGE = "pi-prune: usage /prune [<days>] [apply], <days> a whole number from 7 to 36500";
 
 const liveDir = (layout: Layout) => join(layout.agentDir, "pi-prune", "live");
 
@@ -60,11 +60,15 @@ type BootOptions = { days?: number; swept?: boolean; throws?: boolean };
 
 const boot = (layout: Layout, options: BootOptions = {}) => {
   const { alive, record } = deps(layout, options.swept, options.throws);
+  const days = options.days ?? 60;
+
+  mkdirSync(layout.agentDir, { recursive: true });
+  writeFileSync(join(layout.agentDir, SETTINGS_FILE), JSON.stringify({ days }));
 
   const start = (host: FakeHost = layout.host) =>
     startExtension({
       plugins: [prunePlugin(record)],
-      settings: { days: options.days ?? 60 },
+      settings: { days },
       root: layout.root,
       runtime: createFakeAgentRuntime(),
       host,
@@ -73,14 +77,17 @@ const boot = (layout: Layout, options: BootOptions = {}) => {
   return { alive, process: record.process, start, ...start() };
 };
 
-const bootWithSettings = (layout: Layout, user: unknown, project?: unknown) => {
+const bootWithSettings = (layout: Layout, user?: unknown, project?: unknown) => {
   const cwd = join(layout.root, "project");
   const host = createFakeHost({ agentDir: layout.agentDir, cwd, projectTrusted: true });
   const extension = pruneExtension(deps(layout).record);
 
   mkdirSync(join(cwd, ".pi"), { recursive: true });
   mkdirSync(layout.agentDir, { recursive: true });
-  writeFileSync(join(layout.agentDir, SETTINGS_FILE), typeof user === "string" ? user : JSON.stringify(user));
+
+  if (user !== undefined) {
+    writeFileSync(join(layout.agentDir, SETTINGS_FILE), JSON.stringify(user));
+  }
 
   if (project !== undefined) {
     writeFileSync(join(cwd, ".pi", SETTINGS_FILE), JSON.stringify(project));
@@ -319,88 +326,6 @@ describe("liveness marker", () => {
   });
 });
 
-describe("/prune", () => {
-  it("prints the plan without removing anything", async () => {
-    const layout = fabricate();
-    const old = layout.session("old", OLD);
-    const broken = layout.unreadable("broken", "{nope");
-
-    layout.session("fresh", RECENT);
-    layout.run("old", "scout-1", OLD);
-    layout.handoff("old", OLD);
-
-    const { host } = boot(layout, { swept: true });
-
-    await host.runCommand("prune", "60");
-
-    const report = host.notices.at(-1)?.message.split("\n") ?? [];
-
-    expect(report[0]).toMatch(/^pi-prune: 60 days, cutoff \d{4}-\d{2}-\d{2}T/);
-    expect(report.slice(1)).toEqual([
-      "would remove: 1 session, 1 agent run, 1 handoff dir",
-      "keeps: 1 session (1 fresh, 0 live, 0 chain)",
-      "unreadable, never removed:",
-      `  ${broken}`,
-    ]);
-    expect(existsSync(old)).toBe(true);
-  });
-
-  it("notes handoff dirs it skips under an unsafe root", async () => {
-    const layout = fabricate();
-    const { host } = boot(layout, { swept: true });
-
-    chmodSync(layout.handoffRoot, 0o777);
-
-    await host.runCommand("prune", "60");
-
-    expect(host.notices.at(-1)?.message.split("\n").at(-1)).toBe(
-      `handoff dirs skipped: ${layout.handoffRoot} is not a directory of yours closed to others`,
-    );
-  });
-
-  it.skipIf(process.getuid?.() === 0)("prints why it aborted", async () => {
-    const layout = fabricate();
-    const locked = layout.session("locked", OLD);
-    const { host } = boot(layout, { swept: true });
-
-    chmodSync(locked, 0o000);
-
-    await host.runCommand("prune", "apply");
-
-    expect(host.notices.at(-1)).toEqual({
-      message: `pi-prune: nothing removed, ${locked}: EACCES`,
-      level: "warning",
-    });
-  });
-
-  it("removes now with apply and prints the counts", async () => {
-    const layout = fabricate();
-    const old = layout.session("old", OLD);
-    const { host } = boot(layout, { swept: true });
-
-    await host.runCommand("prune", "apply");
-
-    expect(existsSync(old)).toBe(false);
-    expect(host.notices.at(-1)?.message).toMatch(
-      /^pi-prune: removed 1 session older than 60 days, \d+ B freed$/,
-    );
-  });
-
-  it("says it is off when days is 0", async () => {
-    const layout = fabricate();
-
-    layout.host.info = { ...layout.host.info, mode: "rpc" };
-
-    const { host } = boot(layout, { days: 0 });
-
-    await host.runCommand("prune");
-
-    expect(host.notices.at(-1)?.message).toBe(
-      "pi-prune: off, days is 0; /prune <days> shows what <days> would remove",
-    );
-  });
-});
-
 const formCount = (host: FakeHost, count: number) =>
   vi.waitFor(() => {
     expect(host.forms).toHaveLength(count);
@@ -410,13 +335,157 @@ const line = (lines: readonly string[], text: string) => lines.find((entry) => e
 
 const ages = (layout: Layout) => [10, 45, 200].map((days) => layout.session(`aged-${days}`, daysAgo(days)));
 
-const confirmOf = (count: string, days: number) => ({
-  title: "Remove old sessions?",
-  message: `Remove ${count} not touched for ${days} days? Sessions open in a pi process without prune are judged by age alone. This cannot be undone.`,
+const CONFIRM_NOTE =
+  "A session open in a pi without this extension may still be removed if it is old. This cannot be undone.";
+
+const confirmOf = (counts: string, days: number) => ({
+  title: "Prune sessions?",
+  message: expect.stringMatching(
+    new RegExp(
+      `^Remove ${counts} \\(\\d+ B\\) not touched for ${days} days\\? ${CONFIRM_NOTE.replaceAll(".", "\\.")}$`,
+    ),
+  ),
 });
 
-describe("/prune picker", () => {
-  it("offers each interval with what it would remove, marking and preselecting the configured one", async () => {
+const settingsFile = (layout: Layout) => join(layout.agentDir, SETTINGS_FILE);
+
+const menuRows = async (host: FakeHost, count = 1) => {
+  await formCount(host, count);
+
+  return host.form().render(120);
+};
+
+const pickRow = async (host: FakeHost, count: number, ...keys: KeyPress[]) => {
+  await formCount(host, count);
+  host.form().press(...keys);
+};
+
+describe("/prune menu", () => {
+  it("opens a menu with Prune now and Auto-prune, whatever was typed after the command", async () => {
+    const layout = fabricate();
+    const files = ages(layout);
+    const { host } = boot(layout, { swept: true });
+    const running = host.runCommand("prune", "30 apply");
+    const rows = await menuRows(host);
+
+    expect(rows.join("\n")).toContain("Prune sessions");
+    expect(line(rows, "1. Prune now")).toMatch(/remove old sessions, up to \d+ B$/);
+    expect(line(rows, "2. Auto-prune")).toMatch(/60 days$/);
+
+    host.form().press(ESCAPE);
+    await running;
+
+    expect(files.map(existsSync)).toEqual([true, true, true]);
+    expect(host.notices).toEqual([]);
+    expect(host.confirmations).toEqual([]);
+  });
+
+  it("with nothing old enough, Prune now says so and opens no list", async () => {
+    const layout = fabricate();
+
+    layout.session("fresh", RECENT);
+
+    const { host } = boot(layout, { swept: true });
+    const running = host.runCommand("prune");
+
+    expect(line(await menuRows(host), "1. Prune now")).toMatch(/nothing to remove$/);
+
+    host.form().press(ENTER);
+    await running;
+
+    expect(host.forms).toHaveLength(1);
+    expect(host.notices).toEqual([{ message: "pi-prune: nothing to remove at any interval", level: "info" }]);
+  });
+
+  it.skipIf(process.getuid?.() === 0)(
+    "after a scan abort the menu still opens, names it in Prune now and warns once",
+    async () => {
+      const layout = fabricate();
+      const locked = layout.session("locked", OLD);
+      const { host } = boot(layout, { swept: true });
+
+      chmodSync(locked, 0o000);
+
+      const running = host.runCommand("prune");
+      const rows = await menuRows(host);
+
+      chmodSync(locked, 0o644);
+
+      expect(line(rows, "1. Prune now")).toMatch(/cannot scan, see the warning$/);
+
+      host.form().press(ENTER);
+      await running;
+
+      expect(host.forms).toHaveLength(1);
+      expect(host.notices).toEqual([
+        { message: `pi-prune: nothing removed, ${locked}: EACCES`, level: "warning" },
+      ]);
+    },
+  );
+
+  it("Escape in a list goes back to the menu without a new scan, Escape in the menu closes", async () => {
+    const layout = fabricate();
+
+    ages(layout);
+
+    const { host } = boot(layout, { swept: true });
+    const widget = vi.spyOn(host.ui, "setWidget");
+    const running = host.runCommand("prune");
+
+    await pickRow(host, 1, ENTER);
+    await pickRow(host, 2, ESCAPE);
+    await pickRow(host, 3, DOWN, ENTER);
+    await pickRow(host, 4, ESCAPE);
+
+    expect((await menuRows(host, 5)).join("\n")).toContain("Prune sessions");
+
+    host.form().press(ESCAPE);
+    await running;
+
+    expect(widget).toHaveBeenCalledTimes(2);
+    expect(host.notices).toEqual([]);
+  });
+
+  it("a second /prune while one is open says it is already open", async () => {
+    const layout = fabricate();
+    const { host } = boot(layout, { swept: true });
+    const first = host.runCommand("prune");
+
+    await formCount(host, 1);
+    await host.runCommand("prune");
+
+    expect(host.notices).toEqual([{ message: "pi-prune: /prune is already open", level: "info" }]);
+
+    host.form().press(ESCAPE);
+    await first;
+  });
+
+  it.each(["rpc", "print"] as const)("in %s mode notifies once and touches no file", async (mode) => {
+    const layout = fabricate();
+    const files = ages(layout);
+
+    layout.host.info = { ...layout.host.info, mode };
+
+    const { host } = boot(layout, { swept: true });
+    const widget = vi.spyOn(host.ui, "setWidget");
+
+    await host.runCommand("prune");
+
+    expect(host.notices).toEqual([
+      {
+        message:
+          "pi-prune: /prune needs the interactive terminal; days in pi-prune.json sets automatic pruning",
+        level: "info",
+      },
+    ]);
+    expect(widget).not.toHaveBeenCalled();
+    expect(host.forms).toEqual([]);
+    expect(files.map(existsSync)).toEqual([true, true, true]);
+  });
+});
+
+describe("/prune now", () => {
+  it("lists each interval with counts and bytes, preselecting the configured one", async () => {
     const layout = fabricate();
 
     ages(layout);
@@ -424,62 +493,25 @@ describe("/prune picker", () => {
     const { host } = boot(layout, { swept: true });
     const running = host.runCommand("prune");
 
-    await formCount(host, 1);
+    await pickRow(host, 1, ENTER);
 
-    const rows = host.form().render(120);
+    const rows = await menuRows(host, 2);
 
     expect(rows.join("\n")).toContain("Remove sessions not touched for...");
-    expect(line(rows, "1. 7 days")).toContain("3 sessions");
-    expect(line(rows, "2. 30 days")).toContain("2 sessions");
-    expect(line(rows, "3. 60 days ✓")).toContain("1 session");
-    expect(line(rows, "6. 365 days")).toContain("nothing to remove");
+    expect(line(rows, "1. 7 days")).toMatch(/3 sessions, \d+ B$/);
+    expect(line(rows, "2. 30 days")).toMatch(/2 sessions, \d+ B$/);
+    expect(line(rows, "3. 60 days")).toMatch(/1 session, \d+ B$/);
+    expect(line(rows, "6. 365 days")).toMatch(/nothing to remove$/);
+    expect(rows.join("\n")).not.toContain("✓");
 
     host.confirmAnswer = false;
     host.form().press(ENTER);
     await running;
 
-    const offLayout = fabricate();
-
-    ages(offLayout);
-
-    const off = boot(offLayout, { swept: true, days: 0 }).host;
-
-    off.confirmAnswer = false;
-
-    const offRunning = off.runCommand("prune");
-
-    await formCount(off, 1);
-
-    expect(off.form().render(120).join("\n")).not.toContain("✓");
-
-    off.form().press(ENTER);
-    await offRunning;
-
-    expect([...host.confirmations, ...off.confirmations]).toEqual([
-      confirmOf("1 session", 60),
-      confirmOf("1 session", 180),
-    ]);
+    expect(host.confirmations).toEqual([confirmOf("1 session", 60)]);
   });
 
-  it("asks before removing and removes nothing on no", async () => {
-    const layout = fabricate();
-    const files = ages(layout);
-    const { host } = boot(layout, { swept: true });
-
-    host.confirmAnswer = false;
-
-    const running = host.runCommand("prune");
-
-    await formCount(host, 1);
-    host.form().press(ENTER);
-    await running;
-
-    expect(host.confirmations).toHaveLength(1);
-    expect(files.map(existsSync)).toEqual([true, true, true]);
-    expect(host.notices).toEqual([]);
-  });
-
-  it("removes the picked interval after yes and tells the counts", async () => {
+  it("removes the picked interval after yes and tells the counts and bytes freed", async () => {
     const layout = fabricate();
     const files = ages(layout);
 
@@ -488,15 +520,77 @@ describe("/prune picker", () => {
     const { host } = boot(layout, { swept: true });
     const running = host.runCommand("prune");
 
-    await formCount(host, 1);
-    host.form().press({ name: "up" }, ENTER);
+    await pickRow(host, 1, ENTER);
+    await pickRow(host, 2, { name: "up" }, ENTER);
     await running;
 
     expect(host.confirmations).toEqual([confirmOf("2 sessions, 1 agent run", 30)]);
     expect(files.map(existsSync)).toEqual([true, false, false]);
-    expect(host.notices.at(-1)?.message).toMatch(
-      /^pi-prune: removed 2 sessions, 1 agent run older than 30 days, \d+ B freed$/,
+    expect(host.notices).toEqual([
+      {
+        message: expect.stringMatching(
+          /^pi-prune: removed 2 sessions, 1 agent run older than 30 days, \d+ B freed$/,
+        ),
+        level: "info",
+      },
+    ]);
+  });
+
+  it("names the handoff root in the confirm when it is open to other users", async () => {
+    const layout = fabricate();
+
+    layout.session("old", OLD);
+    chmodSync(layout.handoffRoot, 0o777);
+
+    const { host } = boot(layout, { swept: true });
+
+    host.confirmAnswer = false;
+
+    const running = host.runCommand("prune");
+
+    await pickRow(host, 1, ENTER);
+    await pickRow(host, 2, ENTER);
+    await running;
+
+    expect(host.confirmations[0]?.message).toContain(
+      `Handoff dirs are skipped: ${layout.handoffRoot} is open to other users. This cannot be undone.`,
     );
+  });
+
+  it("removes nothing and says nothing on no", async () => {
+    const layout = fabricate();
+    const files = ages(layout);
+    const { host } = boot(layout, { swept: true });
+
+    host.confirmAnswer = false;
+
+    const running = host.runCommand("prune");
+
+    await pickRow(host, 1, ENTER);
+    await pickRow(host, 2, ENTER);
+    await running;
+
+    expect(host.confirmations).toHaveLength(1);
+    expect(files.map(existsSync)).toEqual([true, true, true]);
+    expect(host.notices).toEqual([]);
+  });
+
+  it("asks nothing when the picked interval has nothing to remove", async () => {
+    const layout = fabricate();
+
+    ages(layout);
+
+    const { host } = boot(layout, { swept: true });
+    const running = host.runCommand("prune");
+
+    await pickRow(host, 1, ENTER);
+    await pickRow(host, 2, DOWN, DOWN, DOWN, ENTER);
+    await running;
+
+    expect(host.confirmations).toEqual([]);
+    expect(host.notices).toEqual([
+      { message: "pi-prune: nothing older than 365 days to remove", level: "info" },
+    ]);
   });
 
   it("plans again after the confirm and removes only what was confirmed", async () => {
@@ -516,8 +610,8 @@ describe("/prune picker", () => {
 
     const running = host.runCommand("prune");
 
-    await formCount(host, 1);
-    host.form().press(ENTER);
+    await pickRow(host, 1, ENTER);
+    await pickRow(host, 2, ENTER);
     await running;
 
     expect([written, closed, gone].map(existsSync)).toEqual([true, true, false]);
@@ -525,136 +619,288 @@ describe("/prune picker", () => {
       /^pi-prune: removed 1 session older than 60 days, \d+ B freed$/,
     );
   });
+});
 
-  it("says nothing on escape and asks nothing when the picked interval has nothing", async () => {
+const rendered = (render: unknown) =>
+  (render as (width: number, theme: typeof plainTheme) => string[])(80, plainTheme);
+
+describe("/prune progress", () => {
+  it("shows Scanning sessions... at once and clears it before the menu opens", async () => {
     const layout = fabricate();
-
-    ages(layout);
-
     const { host } = boot(layout, { swept: true });
-    const escaped = host.runCommand("prune");
+    const widget = vi.spyOn(host.ui, "setWidget");
+    const form = vi.spyOn(host.ui, "showForm");
+    const running = host.runCommand("prune");
+
+    expect(host.belowEditor).toEqual(["pi-prune"]);
+    expect(rendered(host.widgets.get("pi-prune"))).toEqual([" ◌ Scanning sessions..."]);
 
     await formCount(host, 1);
+
+    expect(host.belowEditor).toEqual([]);
+    expect(widget.mock.calls.map(([key, render]) => [key, render === undefined])).toEqual([
+      ["pi-prune", false],
+      ["pi-prune", true],
+    ]);
+    expect(widget.mock.invocationCallOrder[1]).toBeLessThan(form.mock.invocationCallOrder[0]);
+
     host.form().press(ESCAPE);
-    await escaped;
-
-    expect(host.notices).toEqual([]);
-
-    const picked = host.runCommand("prune");
-
-    await formCount(host, 2);
-    host.form().press(DOWN, DOWN, DOWN, ENTER);
-    await picked;
-
-    expect(host.confirmations).toEqual([]);
-    expect(host.notices.map((notice) => notice.message)).toEqual([
-      "pi-prune: nothing older than 365 days to remove",
-    ]);
+    await running;
   });
 
-  it("opens no picker when nothing is old enough for any interval", async () => {
+  it("shows Removing old sessions... after the confirm and clears it before the result notice", async () => {
     const layout = fabricate();
 
-    layout.session("fresh", RECENT);
+    layout.session("old", OLD);
 
     const { host } = boot(layout, { swept: true });
+    const widget = vi.spyOn(host.ui, "setWidget");
+    const notify = vi.spyOn(host.ui, "notify");
+    const running = host.runCommand("prune");
 
-    await host.runCommand("prune");
+    await pickRow(host, 1, ENTER);
+    await pickRow(host, 2, ENTER);
+    await running;
 
-    expect(host.forms).toEqual([]);
-    expect(host.notices.at(-1)?.message).toBe("pi-prune: nothing to remove at any interval");
+    expect(rendered(widget.mock.calls[2]?.[1])).toEqual([" ◌ Removing old sessions..."]);
+    expect(widget.mock.calls[3]).toEqual(["pi-prune", undefined]);
+    expect(widget.mock.invocationCallOrder[3]).toBeLessThan(notify.mock.invocationCallOrder[0]);
+    expect(host.belowEditor).toEqual([]);
   });
 
-  it.skipIf(process.getuid?.() === 0)("reports an aborted scan instead of the picker", async () => {
+  it.each([
+    ["the scan", 1, 0],
+    ["the scan after the confirm", 2, 2],
+  ])("clears the line and warns when %s throws", async (_when, failing, forms) => {
     const layout = fabricate();
-    const locked = layout.session("locked", OLD);
-    const { host } = boot(layout, { swept: true });
+    const old = layout.session("old", OLD);
+    const record: PruneDeps = {
+      handoffRoot: layout.handoffRoot,
+      isAlive: (() => {
+        let calls = 0;
 
-    chmodSync(locked, 0o000);
+        return (pid: number) => {
+          calls += 1;
 
-    await host.runCommand("prune");
+          if (calls === failing) {
+            throw new Error("no process table");
+          }
 
-    chmodSync(locked, 0o644);
+          return pid === process.pid;
+        };
+      })(),
+      process: { swept: true },
+    };
 
-    expect(host.forms).toEqual([]);
-    expect(host.notices).toEqual([
-      { message: `pi-prune: nothing removed, ${locked}: EACCES`, level: "warning" },
-    ]);
-  });
+    writeFileSync(settingsFile(layout), JSON.stringify({ days: 60 }));
 
-  it("prints the plan at the configured days outside the TUI", async () => {
-    const layout = fabricate();
+    const { host } = startExtension({
+      plugins: [prunePlugin(record)],
+      settings: { days: 60 },
+      root: layout.root,
+      runtime: createFakeAgentRuntime(),
+      host: layout.host,
+    });
+    const running = host.runCommand("prune");
 
-    ages(layout);
-    layout.host.info = { ...layout.host.info, mode: "rpc" };
+    if (forms > 0) {
+      await pickRow(host, 1, ENTER);
+      await pickRow(host, 2, ENTER);
+    }
 
-    const { host } = boot(layout, { swept: true });
+    await running;
 
-    await host.runCommand("prune");
-
-    expect(host.notices.at(-1)?.message).toMatch(/^pi-prune: 60 days, cutoff /);
+    expect(host.forms).toHaveLength(forms);
+    expect(host.belowEditor).toEqual([]);
+    expect(host.notices).toEqual([{ message: "pi-prune: prune failed, no process table", level: "warning" }]);
+    expect(existsSync(old)).toBe(true);
   });
 });
 
-describe("/prune args", () => {
-  it("prints the plan for /prune 30", async () => {
+describe("/prune auto-prune", () => {
+  it("marks and preselects the configured interval, telling what the next start removes", async () => {
     const layout = fabricate();
     const files = ages(layout);
     const { host } = boot(layout, { swept: true });
+    const running = host.runCommand("prune");
 
-    await host.runCommand("prune", "30");
+    await pickRow(host, 1, DOWN, ENTER);
 
-    const report = host.notices.at(-1)?.message.split("\n") ?? [];
+    const rows = await menuRows(host, 2);
 
-    expect(report[0]).toMatch(/^pi-prune: 30 days, cutoff /);
-    expect(report[1]).toBe("would remove: 2 sessions, 0 agent runs, 0 handoff dirs");
+    expect(rows.join("\n")).toContain("Auto-prune sessions not touched for...");
+    expect(line(rows, "1. 7 days")).toMatch(/at next start: 3 sessions, \d+ B$/);
+    expect(line(rows, "3. 60 days ✓")).toMatch(/at next start: 1 session, \d+ B$/);
+    expect(line(rows, "6. 365 days")).toMatch(/365 days$/);
+    expect(line(rows, "7. Off")).toMatch(/Off$/);
+
+    host.form().press(ENTER);
+    await running;
+
+    expect(readFileSync(settingsFile(layout), "utf8")).toBe('{\n  "days": 60\n}\n');
     expect(files.map(existsSync)).toEqual([true, true, true]);
   });
 
-  it("removes with /prune 30 apply without asking", async () => {
+  it.each([
+    [0, "7. Off ✓"],
+    [45, undefined],
+  ])("with days %s marks %s", async (days, marked) => {
+    const layout = fabricate();
+    const { host } = boot(layout, { swept: true, days });
+    const running = host.runCommand("prune");
+
+    await pickRow(host, 1, DOWN, ENTER);
+
+    const rows = await menuRows(host, 2);
+
+    expect(rows.filter((row) => row.includes("✓"))).toEqual(marked ? [line(rows, marked)] : []);
+
+    host.form().press(ESCAPE);
+    await pickRow(host, 3, ESCAPE);
+    await running;
+  });
+
+  it("choosing 90 days writes the file, removes nothing and says when it applies", async () => {
     const layout = fabricate();
     const files = ages(layout);
     const { host } = boot(layout, { swept: true });
+    const running = host.runCommand("prune");
 
-    await host.runCommand("prune", "30 apply");
+    await pickRow(host, 1, DOWN, ENTER);
+    await pickRow(host, 2, DOWN, ENTER);
+    await running;
 
+    expect(readFileSync(settingsFile(layout), "utf8")).toBe('{\n  "days": 90\n}\n');
+    expect(files.map(existsSync)).toEqual([true, true, true]);
     expect(host.confirmations).toEqual([]);
-    expect(files.map(existsSync)).toEqual([true, false, false]);
-    expect(host.notices.at(-1)?.message).toMatch(
-      /^pi-prune: removed 2 sessions older than 30 days, \d+ B freed$/,
-    );
+    expect(host.notices).toEqual([
+      { message: "pi-prune: sessions not touched for 90 days are now removed when pi starts", level: "info" },
+    ]);
   });
 
-  it("rejects days below 7 or above 36500, fractions, words and extra words with the usage", async () => {
+  it("choosing Off writes 0 and says automatic pruning is off", async () => {
     const layout = fabricate();
-    const old = layout.session("old", OLD);
     const { host } = boot(layout, { swept: true });
-    const inputs = ["0", "6", "07", "1.5", "-3", "36501", "week", "30 30", "apply 30", "apply apply"];
+    const running = host.runCommand("prune");
 
-    await inputs.reduce(
-      (previous, input) => previous.then(() => host.runCommand("prune", input)),
-      Promise.resolve(),
-    );
+    await pickRow(host, 1, DOWN, ENTER);
+    await pickRow(host, 2, char("7"));
+    await running;
 
-    expect(existsSync(old)).toBe(true);
-    expect(host.notices).toEqual(inputs.map(() => ({ message: USAGE, level: "error" })));
+    expect(readFileSync(settingsFile(layout), "utf8")).toBe('{\n  "days": 0\n}\n');
+    expect(host.notices).toEqual([{ message: "pi-prune: automatic pruning is off", level: "info" }]);
   });
 
-  it("completes apply and the intervals, and only apply after the days", () => {
+  it("the next process sweeps at the chosen days", async () => {
+    const layout = fabricate();
+    const files = ages(layout);
+    const { host } = boot(layout, { swept: true });
+    const running = host.runCommand("prune");
+
+    await pickRow(host, 1, DOWN, ENTER);
+    await pickRow(host, 2, { name: "up" }, ENTER);
+    await running;
+    await host.shutdown("quit");
+
+    bootWithSettings(layout);
+
+    await vi.waitFor(() => expect(files.map(existsSync)).toEqual([true, false, false]));
+  });
+
+  it("choosing an interval repairs a broken file", async () => {
+    const layout = fabricate();
+    const host = bootWithSettings(layout, { days: -1 });
+    const first = host.runCommand("prune");
+
+    expect(line(await menuRows(host), "2. Auto-prune")).toMatch(/off, pi-prune.json has an error$/);
+
+    host.form().press(DOWN, ENTER);
+    await pickRow(host, 2, { name: "up" }, { name: "up" }, ENTER);
+    await first;
+
+    expect(host.notices.at(-1)).toEqual({
+      message: "pi-prune: sessions not touched for 60 days are now removed when pi starts",
+      level: "info",
+    });
+
+    const second = host.runCommand("prune");
+
+    expect(line(await menuRows(host, 3), "2. Auto-prune")).toMatch(/60 days$/);
+
+    host.form().press(ESCAPE);
+    await second;
+  });
+
+  it("a trusted project file error survives the save and is reported", async () => {
+    const layout = fabricate();
+    const host = bootWithSettings(layout, { days: 60 }, { days: 1 });
+    const project = join(layout.root, "project", ".pi", SETTINGS_FILE);
+    const running = host.runCommand("prune");
+
+    await pickRow(host, 1, DOWN, ENTER);
+    await pickRow(host, 2, ENTER);
+    await running;
+
+    expect(host.notices.at(-1)).toEqual({
+      message: `pi-prune: saved, but automatic pruning stays off until pi-prune.json loads without errors:\n  ${project}: ignored, pi-prune.json is read only from ${settingsFile(layout)}`,
+      level: "warning",
+    });
+  });
+
+  it("a failed write warns and changes nothing", async () => {
     const layout = fabricate();
     const { host } = boot(layout, { swept: true });
-    const complete = (prefix: string) =>
-      host.commands
-        .get("prune")
-        ?.complete?.(prefix)
-        ?.map((option) => option.value) ?? null;
 
-    expect(complete("")).toEqual(["7", "30", "60", "90", "180", "365", "apply"]);
-    expect(complete("3")).toEqual(["30", "365"]);
-    expect(complete("30 ")).toEqual(["30 apply"]);
-    expect(complete("apply ")).toBeNull();
-    expect(complete("0 ")).toBeNull();
-    expect(complete("6 ")).toBeNull();
+    rmSync(settingsFile(layout));
+    mkdirSync(settingsFile(layout));
+
+    const running = host.runCommand("prune");
+
+    await pickRow(host, 1, DOWN, ENTER);
+    await pickRow(host, 2, ENTER);
+    await running;
+
+    expect(host.notices).toEqual([
+      {
+        message: expect.stringMatching(new RegExp(`^pi-prune: cannot save ${settingsFile(layout)}: `)),
+        level: "warning",
+      },
+    ]);
+    expect(readdirSync(settingsFile(layout))).toEqual([]);
+  });
+});
+
+describe("/prune stays out of the session", () => {
+  it("a prune and an auto-prune choice add nothing the model can see", async () => {
+    const layout = fabricate();
+
+    layout.session("old", OLD);
+
+    const { host } = boot(layout, { swept: true });
+    const pruning = host.runCommand("prune");
+
+    await pickRow(host, 1, ENTER);
+    await pickRow(host, 2, ENTER);
+    await pruning;
+
+    const choosing = host.runCommand("prune");
+
+    await pickRow(host, 3, DOWN, ENTER);
+    await pickRow(host, 4, ENTER);
+    await choosing;
+
+    expect(host.notices).toHaveLength(2);
+    expect([...host.tools.keys()]).toEqual([]);
+    expect([...host.promptSections.keys()]).toEqual([]);
+    expect(host.mainPrompt).toBeUndefined();
+    expect([
+      host.entries,
+      host.chat,
+      host.hidden,
+      host.messages,
+      host.dispatched,
+      host.editorSubmissions,
+    ]).toEqual([[], [], [], [], [], []]);
   });
 });
 
@@ -663,74 +909,35 @@ describe("prune settings", () => {
     const layout = fabricate();
     const old = layout.session("old", OLD);
     const host = bootWithSettings(layout, { days: 60 }, { days: 1 });
-    const user = join(layout.agentDir, SETTINGS_FILE);
     const project = join(layout.root, "project", ".pi", SETTINGS_FILE);
-    const error = `${project}: ignored, ${SETTINGS_FILE} is read only from ${user}`;
 
-    await host.runCommand("prune", "apply");
     await pause(50);
 
     expect(existsSync(old)).toBe(true);
     expect(host.notices.map((notice) => notice.message)).toEqual([
-      `pi-prune settings: ${error}`,
-      `pi-prune: off until pi-prune.json loads without errors:\n  ${error}`,
+      `pi-prune settings: ${project}: ignored, ${SETTINGS_FILE} is read only from ${settingsFile(layout)}`,
     ]);
   });
 
   it("keeps 180 days when no settings file sets days", async () => {
     const layout = fabricate();
     const host = bootWithSettings(layout, {});
+    const running = host.runCommand("prune");
 
-    await host.runCommand("prune", "apply");
+    expect(line(await menuRows(host), "2. Auto-prune")).toMatch(/180 days$/);
 
-    expect(host.notices.at(-1)?.message).toBe("pi-prune: nothing older than 180 days to remove");
+    host.form().press(ESCAPE);
+    await running;
   });
 
-  it("rejects a fractional days and does not sweep", async () => {
+  it.each([1.5, -1])("does not sweep with days %s", async (days) => {
     const layout = fabricate();
     const old = layout.session("old", OLD);
-    const host = bootWithSettings(layout, { days: 1.5 });
+    const host = bootWithSettings(layout, { days });
 
     await pause(50);
 
     expect(existsSync(old)).toBe(true);
     expect(host.notices.at(0)?.message).toContain("days must be a whole number between 0 and 36500");
-  });
-
-  it("removes with explicit days and opens the picker despite a settings error, but not with /prune apply", async () => {
-    const layout = fabricate();
-    const files = ages(layout);
-    const host = bootWithSettings(layout, { days: 60 }, { days: 1 });
-
-    await host.runCommand("prune", "apply");
-
-    expect(files.map(existsSync)).toEqual([true, true, true]);
-
-    host.confirmAnswer = false;
-
-    const running = host.runCommand("prune");
-
-    await formCount(host, 1);
-
-    expect(host.form().render(120).join("\n")).not.toContain("✓");
-
-    host.form().press(ENTER);
-    await running;
-    await host.runCommand("prune", "30 apply");
-
-    expect(host.confirmations).toEqual([confirmOf("1 session", 180)]);
-    expect(files.map(existsSync)).toEqual([true, false, false]);
-  });
-
-  it("neither sweeps nor applies with an invalid days", async () => {
-    const layout = fabricate();
-    const old = layout.session("old", OLD);
-    const host = bootWithSettings(layout, { days: -1 });
-
-    await host.runCommand("prune", "apply");
-    await pause(50);
-
-    expect(existsSync(old)).toBe(true);
-    expect(host.notices.at(-1)?.message).toMatch(/^pi-prune: off until pi-prune.json loads without errors:/);
   });
 });

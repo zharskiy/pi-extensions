@@ -29,10 +29,10 @@ Only `<agent dir>/sessions/` is swept. Sessions elsewhere, in a custom session d
 - Sessions open in a running pi process. Each pi process records its session in `<agent dir>/pi-prune/live/<session id>.<pid>.json` while it runs, and the sweep keeps every session a running process names, also one resumed but not yet written to, and checks again right before it removes each session: when a member of a chain turned live or was written to since the plan, nothing of that chain is removed, and when that happens half-way through, the rest of the chain stays. A session open in a pi without this extension is judged by age alone, and a child session such a pi creates after that check is not seen, so its old parent may still go. Removing a session file pi is still writing to would make pi start it again without its header.
 - Every session of a chain that holds a kept one. Sessions linked by `parentSession`, in either direction and at any depth, form a chain (a session shows its parent's agents, and a handoff links each session to the previous one), and a chain goes whole or not at all: an old session stays while its parent, a child or any other member is fresh or open. A session naming a parent whose file has no readable header keeps its whole chain.
 - An agent run, and its whole chain of handoff successors, while any link was touched within `days` days or keeps a worktree or branch. A run folder without a manifest yet, or one that cannot be read, keeps its whole chain. Worktrees and branches are never removed: the run's manifest stays as the pointer to them.
-- A session file whose first line is not a pi session header (or is longer than 64 KiB) is never touched, and neither are its agent runs; it is reported as unreadable. Its handoff folder and `pi-subagents/<id>/` folder are judged by their own age, because its id is unknown.
+- A session file whose first line is not a pi session header (or is longer than 64 KiB) is never touched, and neither are its agent runs. Its handoff folder and `pi-subagents/<id>/` folder are judged by their own age, because its id is unknown.
 - Anything reached through a symbolic link.
 
-It removes nothing at all when a session file cannot be read (for example, permission denied) or when `<agent dir>/pi-prune/live` is not a real folder, and nothing at the configured days when `pi-prune.json` has an error; `/prune` says why. Handoff folders are skipped when `<OS temp dir>/pi-handoff` is not a folder you own that others cannot write to.
+It removes nothing at all when a session file cannot be read (for example, permission denied) or when `<agent dir>/pi-prune/live` is not a real folder, and nothing at the configured days when `pi-prune.json` has an error; the warning says why. Handoff folders are skipped when `<OS temp dir>/pi-handoff` is not a folder you own that others cannot write to.
 
 ## Settings
 
@@ -42,7 +42,9 @@ It removes nothing at all when a session file cannot be read (for example, permi
 { "days": 180 }
 ```
 
-`days` is a whole number of days from `0` to `36500`, `180` by default; `0` turns the sweep off. It is read only from your user file, so a file committed to a repository cannot remove your sessions of every project. In a trusted project, a `.pi/pi-prune.json` is reported as a settings error, which turns off the sweep and `/prune apply` until you delete that file; in an untrusted project it is silently ignored. While the settings have any error, nothing is removed at the configured days; days you pick or type still work.
+`days` is a whole number of days from `0` to `36500`, `180` by default; `0` turns the sweep off. It is read only from your user file, so a file committed to a repository cannot remove your sessions of every project. In a trusted project, a `.pi/pi-prune.json` is reported as a settings error, which turns off the sweep until you delete that file; in an untrusted project it is silently ignored. While the settings have any error, nothing is removed at the configured days; `Prune now` in `/prune` still works.
+
+`/prune` → `Auto-prune` writes this file for you. In the sandbox, the choice is written to the sandbox's `pi-prune.json` and not copied to the host unless `writeBack.add` in the launcher config names `pi-prune.json`.
 
 ## Quick start
 
@@ -53,14 +55,13 @@ pi -e ./pi-extensions/extensions/prune/index.ts   # this extension alone, from a
 
 | Try | What you see |
 |---|---|
-| `/prune` | A picker, `Remove sessions not touched for...`, with one row per interval (7, 30, 60, 90, 180 and 365 days) and what each would remove; your `days` is marked `✓` and preselected (180 otherwise). Pick one and confirm `Remove old sessions?` to remove; Escape or no removes nothing. Outside the TUI it prints the plan at `days`. |
-| `/prune 30` | The cutoff, how many sessions, agent runs and handoff folders would be removed, how many sessions are kept and why (`fresh`, `live`, `chain`), and the unreadable files. Nothing is removed. |
-| `/prune 30 apply` | Removes them now, without asking, and prints the counts. |
-| `/prune apply` | The same at `days`. |
+| `/prune` | `Scanning sessions...` under the editor, then a menu, `Prune sessions`, with `Prune now` and `Auto-prune`. Escape closes it. |
+| `/prune` → `Prune now` | A list, `Remove sessions not touched for...`, with one row per interval (7, 30, 60, 90, 180 and 365 days) and what each would remove, with its size. Pick one and answer `Prune sessions?`; yes shows `Removing old sessions...` and then `pi-prune: removed 2 sessions, 1 agent run older than 30 days, 1.2 MB freed`. Escape goes back to the menu; no removes nothing. |
+| `/prune` → `Auto-prune` | The same intervals and `Off`, `Auto-prune sessions not touched for...`, each with what the next start would remove; your `days` is marked `✓`. Picking one saves it to `pi-prune.json` and removes nothing now. |
 | Start pi with old sessions on disk | `pi-prune: removed 3 sessions, 5 agent runs, 2 handoff dirs older than 180 days, 12.4 MB freed`, once. The bytes are those of the session files and of the files directly in each removed run and handoff folder. |
 | Start pi when a session file cannot be read | `pi-prune: nothing removed, <file>: EACCES`, once, as a warning; also when the liveness marker cannot be written or the sweep fails. |
 
-`/prune [<days>] [apply]` takes whole days from 7 to 36500. Models never see this command or its output: it registers no tool and adds nothing to the conversation. In print mode `/prune 30 apply` removes with no output.
+Right before it removes, `/prune` scans again and removes only what you confirmed that is still old. Models never see this command or its output: it registers no tool and adds nothing to the conversation. Outside the interactive terminal it only says that it needs one; set `days` in `pi-prune.json` there.
 
 ## Before you rely on it
 
@@ -68,7 +69,7 @@ pi -e ./pi-extensions/extensions/prune/index.ts   # this extension alone, from a
 - A pi process on another machine that shares your agent dir is not seen as running: its marker names a process that does not exist here, and the sweep removes that marker. Its session is kept only while it is written to within `days` days.
 - Only pi processes running this extension write a marker. A pi started before the package was installed, `pi -e` with other extensions only, a pi on another machine, or a pi-sandbox container with `sessions.host` on is not seen: its session is kept only by its age. Removing a session file under such a pi makes its next append start the file again without a header. Pick a short interval only when no such pi is running.
 - A reused process id can make an ended process look running; its session is then kept a while longer, never removed early.
-- Removal is permanent. Run `/prune` first to see what would go.
+- Removal is permanent. `/prune` shows what each interval would remove before it asks.
 
 ## Development
 

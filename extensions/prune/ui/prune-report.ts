@@ -1,17 +1,14 @@
-import { counted } from "../../../platform/shared/index.ts";
-import { INTERVALS } from "../core/command-args.ts";
-import { MAX_DAYS, NAMESPACE, SETTINGS_FILE } from "../core/settings.ts";
-import { type KeepReason, type Plan, type Removed, totals } from "../core/sweep-plan.ts";
+import { counted, errorText } from "../../../platform/shared/index.ts";
+import { NAMESPACE, SETTINGS_FILE } from "../core/settings.ts";
+import type { Removed } from "../core/sweep-plan.ts";
 
-const REASONS: KeepReason[] = ["fresh", "live", "chain"];
+export const NO_TERMINAL = `${NAMESPACE}: /prune needs the interactive terminal; days in ${SETTINGS_FILE} sets automatic pruning`;
 
-export const USAGE = `${NAMESPACE}: usage /prune [<days>] [apply], <days> a whole number from ${INTERVALS[0]} to ${MAX_DAYS}`;
-
-export const OFF_TEXT = `${NAMESPACE}: off, days is 0; /prune <days> shows what <days> would remove`;
+export const ALREADY_OPEN = `${NAMESPACE}: /prune is already open`;
 
 export const NOTHING_TEXT = `${NAMESPACE}: nothing to remove at any interval`;
 
-export const CONFIRM_TITLE = "Remove old sessions?";
+export const CONFIRM_TITLE = "Prune sessions?";
 
 const amounts = (removed: Removed) =>
   [
@@ -27,14 +24,11 @@ export const daysText = (days: number) => counted(days, "day");
 
 const nonzero = (removed: Removed) => amounts(removed).filter(([count]) => count > 0);
 
-export const countsText = (removed: Removed) => {
+const countsText = (removed: Removed) => {
   const parts = nonzero(removed);
 
   return parts.length > 0 ? listed(parts) : "nothing to remove";
 };
-
-export const confirmText = (removed: Removed, days: number) =>
-  `Remove ${listed(nonzero(removed))} not touched for ${daysText(days)}? Sessions open in a pi process without prune are judged by age alone. This cannot be undone.`;
 
 const UNITS = ["kB", "MB", "GB", "TB"];
 
@@ -54,6 +48,17 @@ export const bytesText = (bytes: number) => {
   return scaled(1);
 };
 
+export const rowText = (removed: Removed) =>
+  removed.bytes > 0 ? `${countsText(removed)}, ${bytesText(removed.bytes)}` : countsText(removed);
+
+export const confirmText = (removed: Removed, days: number, skippedRoot?: string) =>
+  [
+    `Remove ${countsText(removed)}${removed.bytes > 0 ? ` (${bytesText(removed.bytes)})` : ""} not touched for ${daysText(days)}?`,
+    "A session open in a pi without this extension may still be removed if it is old.",
+    ...(skippedRoot ? [`Handoff dirs are skipped: ${skippedRoot} is open to other users.`] : []),
+    "This cannot be undone.",
+  ].join(" ");
+
 export const removedText = (removed: Removed, days: number) => {
   const parts = nonzero(removed);
   const freed = removed.bytes > 0 ? `, ${bytesText(removed.bytes)} freed` : "";
@@ -65,30 +70,15 @@ export const removedText = (removed: Removed, days: number) => {
 
 export const abortedText = (reason: string) => `${NAMESPACE}: nothing removed, ${reason}`;
 
-export const settingsText = (errors: readonly string[]) =>
+export const failedText = (error: unknown) => `${NAMESPACE}: prune failed, ${errorText(error)}`;
+
+export const autoText = (days: number) =>
+  days > 0
+    ? `${NAMESPACE}: sessions not touched for ${daysText(days)} are now removed when pi starts`
+    : `${NAMESPACE}: automatic pruning is off`;
+
+export const savedWithErrorsText = (errors: readonly string[]) =>
   [
-    `${NAMESPACE}: off until ${SETTINGS_FILE} loads without errors:`,
+    `${NAMESPACE}: saved, but automatic pruning stays off until ${SETTINGS_FILE} loads without errors:`,
     ...errors.map((error) => `  ${error}`),
   ].join("\n");
-
-export const planReport = (plan: Plan, days: number, handoffRoot: string) => {
-  if (plan.aborted) {
-    return abortedText(plan.aborted);
-  }
-
-  const kept = REASONS.map(
-    (reason) => `${plan.kept.filter((session) => session.reason === reason).length} ${reason}`,
-  );
-
-  const unreadable = plan.unreadable.map((file) => `  ${file}`);
-
-  return [
-    `${NAMESPACE}: ${daysText(days)}, cutoff ${new Date(plan.cutoff).toISOString()}`,
-    `would remove: ${listed(amounts(totals(plan)))}`,
-    `keeps: ${counted(plan.kept.length, "session")} (${kept.join(", ")})`,
-    ...(unreadable.length > 0 ? ["unreadable, never removed:", ...unreadable] : []),
-    ...(plan.handoffsSkipped
-      ? [`handoff dirs skipped: ${handoffRoot} is not a directory of yours closed to others`]
-      : []),
-  ].join("\n");
-};
