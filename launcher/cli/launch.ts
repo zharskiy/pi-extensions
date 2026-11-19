@@ -5,6 +5,7 @@ import {
   buildContainerSpec,
   forwardedEnv,
   type GitOverlay,
+  type HostClipboard,
   type LauncherContainerSpec,
   planGitOverlay,
   runPi,
@@ -494,6 +495,52 @@ export const withSandbox = async (
   }
 };
 
+const PBCOPY = "/usr/bin/pbcopy";
+
+const OSASCRIPT = "/usr/bin/osascript";
+
+const CLIPBOARD_TIMEOUT_MS = 5000;
+
+const CLIPBOARD_PNG = [
+  "-e",
+  'if (clipboard info for «class furl») is not {} then error "file"',
+  "-e",
+  "the clipboard as «class PNGf»",
+];
+
+const PNG_HEX = /«data PNGf([0-9A-Fa-f]+)»/;
+
+const clipboardImage = (stdout: string) => {
+  const hex = PNG_HEX.exec(stdout)?.[1];
+
+  return hex === undefined ? undefined : Buffer.from(hex, "hex");
+};
+
+const hostClipboard = (
+  deps: CliDeps,
+  context: LaunchContext,
+  sandbox: Sandbox,
+): HostClipboard | undefined => {
+  if (deps.platform !== "darwin" || !context.effective.config.terminal.clipboard) {
+    return undefined;
+  }
+
+  return {
+    copy: (text) =>
+      deps.runner.run(PBCOPY, [], {
+        input: text.toString("utf8"),
+        env: { LC_CTYPE: "UTF-8" },
+        timeoutMs: CLIPBOARD_TIMEOUT_MS,
+      }),
+    readImage: async () => {
+      const read = await deps.runner.run(OSASCRIPT, CLIPBOARD_PNG, { timeoutMs: CLIPBOARD_TIMEOUT_MS });
+
+      return read.code === 0 ? clipboardImage(read.stdout) : undefined;
+    },
+    mounts: sandbox.spec.mounts,
+  };
+};
+
 const runSandboxPi = async (deps: CliDeps, context: LaunchContext, sandbox: Sandbox, piArgs: string[]) => {
   writeNotices(deps, await hostPathNotices(piArgs, context.workspace.cwd, sandbox.spec.mounts));
 
@@ -506,6 +553,7 @@ const runSandboxPi = async (deps: CliDeps, context: LaunchContext, sandbox: Sand
     workspace: context.workspace,
     terminal: deps.terminal,
     signals: deps.signals,
+    clipboard: hostClipboard(deps, context, sandbox),
   });
 };
 
