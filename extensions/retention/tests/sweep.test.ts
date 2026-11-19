@@ -1,7 +1,7 @@
 import { chmodSync, existsSync, mkdirSync, readdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { cutoffAt, plan, planAt, scan } from "../core/sweep-plan.ts";
+import { cutoffAt, plan, planAt, scan, within } from "../core/sweep-plan.ts";
 import {
   CUTOFF,
   daysAgo,
@@ -480,5 +480,27 @@ describe("one scan, many cutoffs", () => {
     expect(plan(scanned, cutoffAt(input.now, 7))).toEqual(week);
     expect(plan(scanned, cutoffAt(input.now, 60))).toEqual(twoMonths);
     expect([week, twoMonths].map((planned) => planned.sessions.length)).toEqual([2, 1]);
+  });
+});
+
+describe("within", () => {
+  it("drops the runs and handoff dirs the confirmed plan did not remove", async () => {
+    const layout = fabricate();
+
+    layout.session("old", OLD);
+    layout.run("old", "scout-1", OLD);
+    layout.run("gone", "scout-1", OLD);
+    layout.handoff("orphan", OLD);
+
+    const confirmed = await layout.planned();
+
+    layout.run("old", "scout-2", OLD);
+    layout.run("gone", "scout-2", OLD);
+    layout.handoff("orphan-2", OLD);
+
+    const fresh = await layout.planned();
+
+    expect(fresh).not.toEqual(confirmed);
+    expect(within(fresh, confirmed)).toEqual(confirmed);
   });
 });

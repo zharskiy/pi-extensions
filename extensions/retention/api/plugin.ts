@@ -57,7 +57,7 @@ export const retentionPlugin = (deps: RetentionDeps): Plugin<never, never, Reten
 
       const removed = await apply(planned, context(info));
 
-      if (removed.sessions + removed.runs + removed.handoffs > 0) {
+      if (total(removed) > 0) {
         host.ui.notify(removedText(removed, settings.retentionDays), "info");
       }
     };
@@ -88,9 +88,11 @@ export const retentionPlugin = (deps: RetentionDeps): Plugin<never, never, Reten
         return;
       }
 
-      sweep(info).catch((error: unknown) => {
-        host.ui.notify(`${NAMESPACE}: sweep failed, ${errorText(error)}`, "warning");
-      });
+      sweep(info)
+        .catch((error: unknown) => {
+          host.ui.notify(`${NAMESPACE}: sweep failed, ${errorText(error)}`, "warning");
+        })
+        .catch(() => undefined);
     });
 
     host.onSessionShutdown((reason) => {
@@ -110,7 +112,10 @@ export const retentionPlugin = (deps: RetentionDeps): Plugin<never, never, Reten
         return;
       }
 
-      host.ui.notify(planReport(planned, retentionDays, deps.handoffRoot), "info");
+      host.ui.notify(
+        planReport(planned, retentionDays, deps.handoffRoot),
+        planned.aborted ? "warning" : "info",
+      );
     };
 
     const pick = async (info: SessionInfo) => {

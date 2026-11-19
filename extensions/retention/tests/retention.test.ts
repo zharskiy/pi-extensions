@@ -343,7 +343,10 @@ describe("/retention", () => {
 
     await host.runCommand("retention", "apply");
 
-    expect(host.notices.at(-1)?.message).toBe(`pi-retention: nothing removed, ${locked}: EACCES`);
+    expect(host.notices.at(-1)).toEqual({
+      message: `pi-retention: nothing removed, ${locked}: EACCES`,
+      level: "warning",
+    });
   });
 
   it("removes now with apply and prints the counts", async () => {
@@ -596,7 +599,7 @@ describe("/retention args", () => {
     const layout = fabricate();
     const old = layout.session("old", OLD);
     const { host } = boot(layout, { swept: true });
-    const inputs = ["0", "6", "1.5", "-3", "36501", "week", "30 30", "apply 30", "apply apply"];
+    const inputs = ["0", "6", "07", "1.5", "-3", "36501", "week", "30 30", "apply 30", "apply apply"];
 
     await inputs.reduce(
       (previous, input) => previous.then(() => host.runCommand("retention", input)),
@@ -620,6 +623,8 @@ describe("/retention args", () => {
     expect(complete("3")).toEqual(["30", "365"]);
     expect(complete("30 ")).toEqual(["30 apply"]);
     expect(complete("apply ")).toBeNull();
+    expect(complete("0 ")).toBeNull();
+    expect(complete("6 ")).toBeNull();
   });
 });
 

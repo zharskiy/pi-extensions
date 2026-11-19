@@ -4,9 +4,12 @@ export const INTERVALS = [7, 30, 60, 90, 180, 365];
 
 const APPLY = "apply";
 
-const DAYS = /^\d+$/;
+const DAYS = /^[1-9]\d*$/;
 
 export type RetentionArgs = { days?: number; apply: boolean };
+
+const validDays = (word: string) =>
+  DAYS.test(word) && Number(word) >= INTERVALS[0] && Number(word) <= MAX_DAYS;
 
 export const parseArgs = (text: string): RetentionArgs | undefined => {
   const words = text.trim().split(/\s+/).filter(Boolean);
@@ -17,18 +20,14 @@ export const parseArgs = (text: string): RetentionArgs | undefined => {
     return { apply };
   }
 
-  const days = Number(first);
-
-  return rest.length === 0 && DAYS.test(first) && days >= INTERVALS[0] && days <= MAX_DAYS
-    ? { days, apply }
-    : undefined;
+  return rest.length === 0 && validDays(first) ? { days: Number(first), apply } : undefined;
 };
 
 export const completeArgs = (prefix: string) => {
   const words = prefix.trimStart().split(/\s+/);
   const last = words.pop() ?? "";
   const head = words.length > 0 ? `${words.join(" ")} ` : "";
-  const afterDays = words.length === 1 && DAYS.test(words[0]);
+  const afterDays = words.length === 1 && validDays(words[0]);
   const options = words.length === 0 ? [...INTERVALS.map(String), APPLY] : afterDays ? [APPLY] : [];
   const matches = options.filter((option) => option.startsWith(last));
 

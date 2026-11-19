@@ -57,10 +57,10 @@ pi -e ./pi-extensions/extensions/retention/index.ts   # this extension alone, fr
 | `/retention 30` | The cutoff, how many sessions, agent runs and handoff folders would be removed, how many sessions are kept and why (`fresh`, `live`, `parent`), and the unreadable files. Nothing is removed. |
 | `/retention 30 apply` | Removes them now, without asking, and prints the counts. |
 | `/retention apply` | The same at `retentionDays`. |
-
-`/retention [<days>] [apply]` takes whole days from 7 to 36500. Models never see this command or its output: it registers no tool and adds nothing to the conversation. In print mode `/retention 30 apply` removes with no output.
 | Start pi with old sessions on disk | `pi-retention: removed 3 sessions, 5 agent runs, 2 handoff dirs older than 180 days`, once. |
 | Start pi when a session file cannot be read | `pi-retention: nothing removed, <file>: EACCES`, once, as a warning; also when the liveness marker cannot be written or the sweep fails. |
+
+`/retention [<days>] [apply]` takes whole days from 7 to 36500. Models never see this command or its output: it registers no tool and adds nothing to the conversation. In print mode `/retention 30 apply` removes with no output.
 
 ## Before you rely on it
 
