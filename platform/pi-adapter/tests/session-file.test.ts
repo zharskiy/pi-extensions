@@ -128,6 +128,14 @@ describe("system message replay", () => {
     ]);
   });
 
+  it("reads the session id from the first line only", () => {
+    const file = join(temp.make("pi-session-id-"), "late.jsonl");
+
+    writeFileSync(file, `${user}\n${JSON.stringify({ type: "session", id: "s-late", cwd: "/repo" })}\n`);
+
+    expect(readSessionId(file)).toBeUndefined();
+  });
+
   it("reads the header id and parent from the first line", async () => {
     const dir = temp.make("pi-session-header-");
     const child = join(dir, "child.jsonl");

@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { closeSync, openSync, readFileSync, readSync } from "node:fs";
 import { open } from "node:fs/promises";
 import {
   buildContextEntries,
@@ -130,16 +130,6 @@ const parseEntries = (content: string): RawEntry[] => {
 
 export const readSessionEntries = (file: string): unknown[] => parseEntries(readFileSync(file, "utf8"));
 
-export const readSessionId = (file: string): string | undefined => {
-  try {
-    const header = (readSessionEntries(file) as RawEntry[]).find((entry) => entry.type === "session");
-
-    return typeof header?.id === "string" ? header.id : undefined;
-  } catch {
-    return undefined;
-  }
-};
-
 const HEADER_LIMIT = 64 * 1024;
 
 const headerOf = (line: string): SessionHeader | undefined => {
@@ -154,20 +144,44 @@ const headerOf = (line: string): SessionHeader | undefined => {
     : { id: entry.id };
 };
 
+const lineIn = (buffer: Buffer, bytesRead: number) => {
+  const end = buffer.subarray(0, bytesRead).indexOf("\n");
+
+  if (end < 0 && bytesRead === HEADER_LIMIT) {
+    return "";
+  }
+
+  return buffer.subarray(0, end < 0 ? bytesRead : end).toString("utf8");
+};
+
 const firstLine = async (file: string) => {
   const handle = await open(file, "r");
 
   try {
     const { bytesRead, buffer } = await handle.read(Buffer.alloc(HEADER_LIMIT), 0, HEADER_LIMIT, 0);
-    const end = buffer.subarray(0, bytesRead).indexOf("\n");
 
-    if (end < 0 && bytesRead === HEADER_LIMIT) {
-      return "";
-    }
-
-    return buffer.subarray(0, end < 0 ? bytesRead : end).toString("utf8");
+    return lineIn(buffer, bytesRead);
   } finally {
     await handle.close();
+  }
+};
+
+const firstLineSync = (file: string) => {
+  const descriptor = openSync(file, "r");
+  const buffer = Buffer.alloc(HEADER_LIMIT);
+
+  try {
+    return lineIn(buffer, readSync(descriptor, buffer, 0, HEADER_LIMIT, 0));
+  } finally {
+    closeSync(descriptor);
+  }
+};
+
+export const readSessionId = (file: string): string | undefined => {
+  try {
+    return headerOf(firstLineSync(file))?.id;
+  } catch {
+    return undefined;
   }
 };
 
