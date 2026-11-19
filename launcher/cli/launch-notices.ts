@@ -1,8 +1,8 @@
 import { access } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 import type { MountSpec } from "../backend/index.ts";
-import { overlayVolumes } from "../container/index.ts";
-import { isWithin, realOrResolved } from "../shared/index.ts";
+import { overlayVolumes, visibleInside } from "../container/index.ts";
+import { realOrResolved } from "../shared/index.ts";
 import { workspaceNotices } from "../workspace/index.ts";
 import type { LaunchContext } from "./context.ts";
 import type { SandboxProxy } from "./sandbox-proxy.ts";
@@ -63,21 +63,6 @@ const exists = (path: string) =>
     () => true,
     () => false,
   );
-
-const deepestMount = (path: string, mounts: MountSpec[]) =>
-  mounts
-    .filter((mount) => isWithin(path, mount.target))
-    .reduce<MountSpec | undefined>(
-      (deepest, mount) =>
-        deepest === undefined || mount.target.length > deepest.target.length ? mount : deepest,
-      undefined,
-    );
-
-const visibleInside = (path: string, mounts: MountSpec[]) => {
-  const mount = deepestMount(path, mounts);
-
-  return mount?.kind === "bind" && mount.source === mount.target;
-};
 
 export const hostPathNotices = async (args: string[], cwd: string, mounts: MountSpec[]) => {
   const checked = await Promise.all(

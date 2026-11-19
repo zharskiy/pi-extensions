@@ -12,6 +12,7 @@ export const sandboxConfig = ({ mounts, ...overrides }: ConfigOverrides = {}): S
   resources: {},
   vm: {},
   sessions: { host: true },
+  terminal: { clipboard: true },
   writeBack: { enabled: true, exclude: {}, add: {} },
   ...overrides,
 });

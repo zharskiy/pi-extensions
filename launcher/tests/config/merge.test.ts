@@ -39,6 +39,7 @@ const COMPLETE_CONFIG: UserConfig = {
   resources: { cpus: 2, memoryGiB: 4 },
   vm: { cpus: 4, memoryGiB: 8, diskGiB: 80 },
   sessions: { host: false },
+  terminal: { clipboard: false },
   writeBack: {
     enabled: false,
     exclude: { "settings.json": ["theme"] },
