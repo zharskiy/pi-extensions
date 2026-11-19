@@ -1,8 +1,7 @@
 import { counted } from "../../../platform/shared/index.ts";
 import { INTERVALS } from "../core/command-args.ts";
 import { MAX_DAYS, NAMESPACE, SETTINGS_FILE } from "../core/settings.ts";
-import type { Removed } from "../core/sweep-apply.ts";
-import type { KeepReason, Plan, Stem } from "../core/sweep-plan.ts";
+import { type KeepReason, type Plan, type Removed, totals } from "../core/sweep-plan.ts";
 
 const REASONS: KeepReason[] = ["fresh", "live", "chain"];
 
@@ -37,11 +36,30 @@ export const countsText = (removed: Removed) => {
 export const confirmText = (removed: Removed, days: number) =>
   `Remove ${listed(nonzero(removed))} not touched for ${daysText(days)}? Sessions open in a pi process without prune are judged by age alone. This cannot be undone.`;
 
+const UNITS = ["kB", "MB", "GB", "TB"];
+
+export const bytesText = (bytes: number) => {
+  if (bytes < 1000) {
+    return `${bytes} B`;
+  }
+
+  const scaled = (exponent: number): string => {
+    const value = (bytes / 1000 ** exponent).toFixed(1);
+
+    return Number(value) >= 1000 && exponent < UNITS.length
+      ? scaled(exponent + 1)
+      : `${value} ${UNITS[exponent - 1]}`;
+  };
+
+  return scaled(1);
+};
+
 export const removedText = (removed: Removed, days: number) => {
   const parts = nonzero(removed);
+  const freed = removed.bytes > 0 ? `, ${bytesText(removed.bytes)} freed` : "";
 
   return parts.length > 0
-    ? `${NAMESPACE}: removed ${listed(parts)} older than ${daysText(days)}`
+    ? `${NAMESPACE}: removed ${listed(parts)} older than ${daysText(days)}${freed}`
     : `${NAMESPACE}: nothing older than ${daysText(days)} to remove`;
 };
 
@@ -52,18 +70,6 @@ export const settingsText = (errors: readonly string[]) =>
     `${NAMESPACE}: off until ${SETTINGS_FILE} loads without errors:`,
     ...errors.map((error) => `  ${error}`),
   ].join("\n");
-
-const runCount = (stems: readonly Stem[]) => stems.reduce((sum, stem) => sum + stem.runs.length, 0);
-
-export const plannedCounts = (plan: Plan): Removed => {
-  const sessions = plan.chains.flat();
-
-  return {
-    sessions: sessions.length,
-    runs: runCount(sessions.flatMap((session) => session.stem ?? [])) + runCount(plan.orphans.stems),
-    handoffs: sessions.filter((session) => session.handoff).length + plan.orphans.handoffs.length,
-  };
-};
 
 export const planReport = (plan: Plan, days: number, handoffRoot: string) => {
   if (plan.aborted) {
@@ -78,7 +84,7 @@ export const planReport = (plan: Plan, days: number, handoffRoot: string) => {
 
   return [
     `${NAMESPACE}: ${daysText(days)}, cutoff ${new Date(plan.cutoff).toISOString()}`,
-    `would remove: ${listed(amounts(plannedCounts(plan)))}`,
+    `would remove: ${listed(amounts(totals(plan)))}`,
     `keeps: ${counted(plan.kept.length, "session")} (${kept.join(", ")})`,
     ...(unreadable.length > 0 ? ["unreadable, never removed:", ...unreadable] : []),
     ...(plan.handoffsSkipped

@@ -1,5 +1,6 @@
 import { readdir, readFile } from "node:fs/promises";
 import { basename, join } from "node:path";
+import type { Sized } from "./handoff-scan.ts";
 import { LIMIT, pooled } from "./pool.ts";
 import { measure, subdirsIn } from "./real-dirs.ts";
 
@@ -9,7 +10,14 @@ const MANIFEST_FILE = "manifest.json";
 
 type Manifest = { predecessorId?: unknown; successorId?: unknown; worktree?: { cleanup?: unknown } } | null;
 
-export type Run = { id: string; dir: string; touched: number; spared: boolean; links: unknown[] };
+export type Run = {
+  id: string;
+  dir: string;
+  touched: number;
+  bytes: number;
+  spared: boolean;
+  links: unknown[];
+};
 
 const parsed = (text: string): Manifest => {
   try {
@@ -29,6 +37,7 @@ const unreadable = (dir: string): Run => ({
   id: basename(dir),
   dir,
   touched: Number.POSITIVE_INFINITY,
+  bytes: 0,
   spared: true,
   links: [],
 });
@@ -41,13 +50,14 @@ const readRun = async (dir: string): Promise<Run> => {
       return unreadable(dir);
     }
 
-    const { touched } = await measure(dir);
+    const { touched, bytes } = await measure(dir);
     const manifest = parsed(await readFile(join(dir, MANIFEST_FILE), "utf8"));
 
     return {
       id: basename(dir),
       dir,
       touched,
+      bytes,
       spared: keepsWorktree(manifest),
       links: [manifest?.predecessorId, manifest?.successorId],
     };
@@ -82,10 +92,10 @@ export const readRuns = async (stems: readonly string[]) => {
   return dirs.map((group) => group.flatMap((dir) => byDir.get(dir) ?? []));
 };
 
-export const staleRuns = (found: readonly Run[], cutoff: number) => {
+export const staleRuns = (found: readonly Run[], cutoff: number): Sized[] => {
   const runs = new Map<unknown, Run>(found.map((run) => [run.id, run]));
 
   return Array.from(runs.values())
     .filter((run) => expired(runs, run, cutoff))
-    .map((run) => run.dir);
+    .map(({ dir, bytes }) => ({ dir, bytes }));
 };

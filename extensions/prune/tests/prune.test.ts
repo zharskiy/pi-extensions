@@ -233,7 +233,12 @@ describe("prune sweep on session start", () => {
 
     await vi.waitFor(() =>
       expect(host.notices).toEqual([
-        { message: "pi-prune: removed 1 session, 2 agent runs older than 60 days", level: "info" },
+        {
+          message: expect.stringMatching(
+            /^pi-prune: removed 1 session, 2 agent runs older than 60 days, \d+ B freed$/,
+          ),
+          level: "info",
+        },
       ]),
     );
   });
@@ -248,7 +253,10 @@ describe("prune sweep on session start", () => {
 
     await vi.waitFor(() =>
       expect(host.notices).toEqual([
-        { message: "pi-prune: removed 1 session older than 60 days", level: "info" },
+        {
+          message: expect.stringMatching(/^pi-prune: removed 1 session older than 60 days, \d+ B freed$/),
+          level: "info",
+        },
       ]),
     );
     expect([parent, child, other].map(existsSync)).toEqual([true, true, false]);
@@ -373,7 +381,9 @@ describe("/prune", () => {
     await host.runCommand("prune", "apply");
 
     expect(existsSync(old)).toBe(false);
-    expect(host.notices.at(-1)?.message).toBe("pi-prune: removed 1 session older than 60 days");
+    expect(host.notices.at(-1)?.message).toMatch(
+      /^pi-prune: removed 1 session older than 60 days, \d+ B freed$/,
+    );
   });
 
   it("says it is off when days is 0", async () => {
@@ -484,7 +494,9 @@ describe("/prune picker", () => {
 
     expect(host.confirmations).toEqual([confirmOf("2 sessions, 1 agent run", 30)]);
     expect(files.map(existsSync)).toEqual([true, false, false]);
-    expect(host.notices.at(-1)?.message).toBe("pi-prune: removed 2 sessions, 1 agent run older than 30 days");
+    expect(host.notices.at(-1)?.message).toMatch(
+      /^pi-prune: removed 2 sessions, 1 agent run older than 30 days, \d+ B freed$/,
+    );
   });
 
   it("plans again after the confirm and removes only what was confirmed", async () => {
@@ -509,7 +521,9 @@ describe("/prune picker", () => {
     await running;
 
     expect([written, closed, gone].map(existsSync)).toEqual([true, true, false]);
-    expect(host.notices.at(-1)?.message).toBe("pi-prune: removed 1 session older than 60 days");
+    expect(host.notices.at(-1)?.message).toMatch(
+      /^pi-prune: removed 1 session older than 60 days, \d+ B freed$/,
+    );
   });
 
   it("says nothing on escape and asks nothing when the picked interval has nothing", async () => {
@@ -606,7 +620,9 @@ describe("/prune args", () => {
 
     expect(host.confirmations).toEqual([]);
     expect(files.map(existsSync)).toEqual([true, false, false]);
-    expect(host.notices.at(-1)?.message).toBe("pi-prune: removed 2 sessions older than 30 days");
+    expect(host.notices.at(-1)?.message).toMatch(
+      /^pi-prune: removed 2 sessions older than 30 days, \d+ B freed$/,
+    );
   });
 
   it("rejects days below 7 or above 36500, fractions, words and extra words with the usage", async () => {

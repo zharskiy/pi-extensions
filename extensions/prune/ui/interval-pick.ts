@@ -3,14 +3,14 @@ import { ELLIPSIS } from "../../../platform/shared/index.ts";
 import { MARKS, selectForm } from "../../../platform/ui-kit/index.ts";
 import { INTERVALS } from "../core/command-args.ts";
 import { defaults } from "../core/settings.ts";
-import type { Plan } from "../core/sweep-plan.ts";
-import { countsText, daysText, plannedCounts } from "./prune-report.ts";
+import { type Plan, totals } from "../core/sweep-plan.ts";
+import { countsText, daysText } from "./prune-report.ts";
 
 export const pickInterval = (host: Host, plans: readonly Plan[], configured: number | undefined) => {
   const options = INTERVALS.map((interval, index) => ({
     value: interval,
     label: daysText(interval),
-    description: countsText(plannedCounts(plans[index])),
+    description: countsText(totals(plans[index])),
     mark: interval === configured ? MARKS.success : undefined,
   }));
 

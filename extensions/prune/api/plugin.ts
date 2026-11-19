@@ -5,8 +5,8 @@ import { completeArgs, INTERVALS, parseArgs } from "../core/command-args.ts";
 import { liveDir, markerPath, removeMarker, writeMarker } from "../core/live-markers.ts";
 import { subdirsIn } from "../core/real-dirs.ts";
 import { NAMESPACE, type PruneSettings } from "../core/settings.ts";
-import { apply, type Removed } from "../core/sweep-apply.ts";
-import { cutoffAt, plan, planAt, scan, within } from "../core/sweep-plan.ts";
+import { apply } from "../core/sweep-apply.ts";
+import { cutoffAt, plan, planAt, type Removed, scan, totals, within } from "../core/sweep-plan.ts";
 import { pickInterval } from "../ui/interval-pick.ts";
 import {
   abortedText,
@@ -14,7 +14,6 @@ import {
   confirmText,
   NOTHING_TEXT,
   OFF_TEXT,
-  plannedCounts,
   planReport,
   removedText,
   settingsText,
@@ -126,7 +125,7 @@ export const prunePlugin = (deps: PruneDeps): Plugin<never, never, PruneSettings
 
       const plans = INTERVALS.map((interval) => plan(scanned, cutoffAt(now, interval)));
 
-      if (plans.every((planned) => total(plannedCounts(planned)) === 0)) {
+      if (plans.every((planned) => total(totals(planned)) === 0)) {
         host.ui.notify(NOTHING_TEXT, "info");
         return;
       }
@@ -139,7 +138,7 @@ export const prunePlugin = (deps: PruneDeps): Plugin<never, never, PruneSettings
       }
 
       const confirmed = plans[INTERVALS.indexOf(picked)];
-      const counts = plannedCounts(confirmed);
+      const counts = totals(confirmed);
 
       if (total(counts) === 0) {
         host.ui.notify(removedText(counts, picked), "info");

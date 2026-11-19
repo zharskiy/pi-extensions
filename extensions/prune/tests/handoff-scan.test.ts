@@ -65,7 +65,7 @@ describe("handoff shortcuts", () => {
     const layout = fabricate();
     const old = layout.handoff("old", OLD);
 
-    expect(await layout.prune()).toEqual({ sessions: 0, runs: 0, handoffs: 1 });
+    expect(await layout.prune()).toMatchObject({ sessions: 0, runs: 0, handoffs: 1 });
     expect(existsSync(old)).toBe(false);
   });
 
@@ -134,7 +134,7 @@ describe("handoff shortcuts", () => {
         return {
           same: fromScan,
           fresh: await planAt({ ...input, days }),
-          handoffs: [...fromScan.orphans.handoffs].sort(),
+          handoffs: fromScan.orphans.handoffs.map(({ dir }) => dir).sort(),
           naive: naiveOrphans(layout.handoffRoot, claimed, cutoff),
         };
       }),

@@ -26,7 +26,7 @@ export type ScanInput = {
 
 export type PlanInput = ScanInput & { days: number; now: number };
 
-type Session = { file: string; mtime: number; header?: SessionHeader };
+type Session = { file: string; mtime: number; bytes: number; header?: SessionHeader };
 
 type Linked = Member & { runs?: Run[] };
 
@@ -34,7 +34,7 @@ type Linkage = Chain<Linked>;
 
 type Listed = { files: string[]; stems: { dir: string; listed: boolean }[] };
 
-export type Stem = { dir: string; runs: string[] };
+export type Stem = { dir: string; runs: Sized[] };
 
 type RunsIn = { dir: string; runs: Run[] };
 
@@ -55,15 +55,18 @@ export type Candidate = {
   file: string;
   mtime: number;
   id: string;
+  bytes: number;
   stem: Stem | undefined;
-  handoff: string | undefined;
+  handoff: Sized | undefined;
 };
+
+export type Removed = { sessions: number; runs: number; handoffs: number; bytes: number };
 
 export type Plan = {
   cutoff: number;
   aborted?: string;
   chains: Candidate[][];
-  orphans: { stems: Stem[]; handoffs: string[] };
+  orphans: { stems: Stem[]; handoffs: Sized[] };
   markers: string[];
   kept: { file: string; reason: KeepReason }[];
   unreadable: string[];
@@ -83,7 +86,9 @@ const readSession = async (file: string): Promise<{ session?: Session; error?: s
     return { error: `${file}: ${read.error}` };
   }
 
-  return "gone" in read ? {} : { session: { file, mtime: stat.mtimeMs, header: read.header } };
+  return "gone" in read
+    ? {}
+    : { session: { file, mtime: stat.mtimeMs, bytes: stat.size, header: read.header } };
 };
 
 const listSlug = async (slug: string): Promise<Listed> => {
@@ -104,7 +109,7 @@ const memberOf = (session: Session, live: Live): Linked => ({
   file: session.file,
   mtime: session.mtime,
   id: session.header?.id,
-  bytes: 0,
+  bytes: session.bytes,
   parent: session.header?.parentSession,
   live:
     (session.header !== undefined && live.ids.has(session.header.id)) ||
@@ -253,14 +258,17 @@ export const plan = (scanned: Scan, cutoff: number): Plan => {
             file: member.file,
             mtime: member.mtime,
             id,
+            bytes: member.bytes,
             stem: member.runs ? pruned(stemOf(member.file), member.runs, cutoff)[0] : undefined,
-            handoff: keptIds.has(id) ? undefined : scanned.owned.get(id)?.dir,
+            handoff: keptIds.has(id) ? undefined : scanned.owned.get(id),
           };
         }),
       ),
     orphans: {
       stems: [...scanned.orphanStems, ...fallbackStems].flatMap(({ dir, runs }) => pruned(dir, runs, cutoff)),
-      handoffs: scanned.orphanHandoffs.filter(({ touched }) => touched < cutoff).map(({ dir }) => dir),
+      handoffs: scanned.orphanHandoffs
+        .filter(({ touched }) => touched < cutoff)
+        .map(({ dir, bytes }) => ({ dir, bytes })),
     },
     markers: live.dead,
     kept: kept.flatMap((member) =>
@@ -268,6 +276,30 @@ export const plan = (scanned: Scan, cutoff: number): Plan => {
     ),
     unreadable: kept.flatMap((member) => (member.pinned ? [member.file] : [])),
     handoffsSkipped: scanned.handoffState === "unsafe",
+  };
+};
+
+const sizeOf = (items: readonly Sized[]) => items.reduce((total, item) => total + item.bytes, 0);
+
+export const totals = (plan: Plan): Removed => {
+  const sessions = plan.chains.flat();
+  const runs = [...sessions.flatMap((session) => session.stem ?? []), ...plan.orphans.stems].flatMap(
+    (stem) => stem.runs,
+  );
+  const handoffs = [
+    ...new Map(
+      [...sessions.flatMap((session) => session.handoff ?? []), ...plan.orphans.handoffs].map((handoff) => [
+        handoff.dir,
+        handoff,
+      ]),
+    ).values(),
+  ];
+
+  return {
+    sessions: sessions.length,
+    runs: runs.length,
+    handoffs: handoffs.length,
+    bytes: sessions.reduce((total, session) => total + session.bytes, 0) + sizeOf(runs) + sizeOf(handoffs),
   };
 };
 
@@ -283,17 +315,18 @@ export const within = (fresh: Plan, confirmed: Plan): Plan => {
 
   const runs = new Set(
     [...confirmedSessions.flatMap((session) => session.stem ?? []), ...confirmed.orphans.stems].flatMap(
-      (stem) => stem.runs,
+      (stem) => stem.runs.map(({ dir }) => dir),
     ),
   );
 
-  const handoffs = new Set([
-    ...confirmedSessions.flatMap((session) => session.handoff ?? []),
-    ...confirmed.orphans.handoffs,
-  ]);
+  const handoffs = new Set(
+    [...confirmedSessions.flatMap((session) => session.handoff ?? []), ...confirmed.orphans.handoffs].map(
+      ({ dir }) => dir,
+    ),
+  );
 
   const confirmedRuns = (stem: Stem): Stem[] => {
-    const kept = stem.runs.filter((run) => runs.has(run));
+    const kept = stem.runs.filter((run) => runs.has(run.dir));
 
     return kept.length > 0 ? [{ dir: stem.dir, runs: kept }] : [];
   };
@@ -306,12 +339,12 @@ export const within = (fresh: Plan, confirmed: Plan): Plan => {
         chain.map((session) => ({
           ...session,
           stem: session.stem ? confirmedRuns(session.stem)[0] : undefined,
-          handoff: session.handoff && handoffs.has(session.handoff) ? session.handoff : undefined,
+          handoff: session.handoff && handoffs.has(session.handoff.dir) ? session.handoff : undefined,
         })),
       ),
     orphans: {
       stems: fresh.orphans.stems.flatMap(confirmedRuns),
-      handoffs: fresh.orphans.handoffs.filter((dir) => handoffs.has(dir)),
+      handoffs: fresh.orphans.handoffs.filter(({ dir }) => handoffs.has(dir)),
     },
   };
 };

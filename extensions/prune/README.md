@@ -57,7 +57,7 @@ pi -e ./pi-extensions/extensions/prune/index.ts   # this extension alone, from a
 | `/prune 30` | The cutoff, how many sessions, agent runs and handoff folders would be removed, how many sessions are kept and why (`fresh`, `live`, `chain`), and the unreadable files. Nothing is removed. |
 | `/prune 30 apply` | Removes them now, without asking, and prints the counts. |
 | `/prune apply` | The same at `days`. |
-| Start pi with old sessions on disk | `pi-prune: removed 3 sessions, 5 agent runs, 2 handoff dirs older than 180 days`, once. |
+| Start pi with old sessions on disk | `pi-prune: removed 3 sessions, 5 agent runs, 2 handoff dirs older than 180 days, 12.4 MB freed`, once. The bytes are those of the session files and of the files directly in each removed run and handoff folder. |
 | Start pi when a session file cannot be read | `pi-prune: nothing removed, <file>: EACCES`, once, as a warning; also when the liveness marker cannot be written or the sweep fails. |
 
 `/prune [<days>] [apply]` takes whole days from 7 to 36500. Models never see this command or its output: it registers no tool and adds nothing to the conversation. In print mode `/prune 30 apply` removes with no output.
