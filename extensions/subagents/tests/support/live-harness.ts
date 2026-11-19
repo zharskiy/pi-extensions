@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { expect } from "vitest";
 import type { UsageTotals } from "../../../../platform/pi-adapter/index.ts";
 import {
@@ -17,7 +17,7 @@ import {
   startLiveExtension,
 } from "../../../../test/framework/pi/live/index.ts";
 import extension from "../../api/extension.ts";
-import { NAMESPACE } from "../../core/model/paths.ts";
+import { handoffPathFor, NAMESPACE } from "../../core/model/paths.ts";
 import type { Settings } from "../../core/model/settings.ts";
 import type { RunAgentDetails, RunAgentParams } from "../../core/run-agent/tools.ts";
 import {
@@ -136,6 +136,7 @@ export const createLiveHarness = (label: string, options: LiveOptions) => {
     } finally {
       rmSync(root, { recursive: true, force: true });
       rmSync(join(tmpdir(), NAMESPACE, basename(root)), { recursive: true, force: true });
+      rmSync(dirname(handoffPathFor(host.info, "main")), { recursive: true, force: true });
     }
   };
 
