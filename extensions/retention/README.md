@@ -39,10 +39,10 @@ It removes nothing at all when a session file cannot be read (for example, permi
 `<agent dir>/pi-retention.json`:
 
 ```json
-{ "retentionDays": 60 }
+{ "retentionDays": 180 }
 ```
 
-`retentionDays` is a number from `0` to `36500`, `60` by default; `0` turns the sweep off. It is read only from your user file, so a file committed to a repository cannot remove your sessions of every project. In a trusted project, a `.pi/pi-retention.json` is reported as a settings error, which turns off the sweep and `/retention apply` until you delete that file; in an untrusted project it is silently ignored. While the settings have any error, nothing is removed.
+`retentionDays` is a whole number of days from `0` to `36500`, `180` by default; `0` turns the sweep off. It is read only from your user file, so a file committed to a repository cannot remove your sessions of every project. In a trusted project, a `.pi/pi-retention.json` is reported as a settings error, which turns off the sweep and `/retention apply` until you delete that file; in an untrusted project it is silently ignored. While the settings have any error, nothing is removed.
 
 ## Quick start
 
@@ -55,7 +55,8 @@ pi -e ./pi-extensions/extensions/retention/index.ts   # this extension alone, fr
 |---|---|
 | `/retention` | The cutoff, how many sessions, agent runs and handoff folders would be removed, how many sessions are kept and why (`fresh`, `live`, `parent`), and the unreadable files. Nothing is removed. |
 | `/retention apply` | Removes them now and prints the counts. |
-| Start pi with old sessions on disk | `pi-retention: removed 3 sessions, 5 agent runs, 2 handoff dirs older than 60 days`, once. |
+| Start pi with old sessions on disk | `pi-retention: removed 3 sessions, 5 agent runs, 2 handoff dirs older than 180 days`, once. |
+| Start pi when a session file cannot be read | `pi-retention: nothing removed, <file>: EACCES`, once, as a warning; also when the liveness marker cannot be written or the sweep fails. |
 
 ## Before you rely on it
 

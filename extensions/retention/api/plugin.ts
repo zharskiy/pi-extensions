@@ -1,12 +1,19 @@
 import { join } from "node:path";
 import type { SessionInfo } from "../../../platform/pi-adapter/index.ts";
-import type { Plugin } from "../../../platform/shared/index.ts";
-import { markerPath, removeMarker, writeMarker } from "../core/live-markers.ts";
+import { errorText, type Plugin } from "../../../platform/shared/index.ts";
+import { liveDir, markerPath, removeMarker, writeMarker } from "../core/live-markers.ts";
 import { subdirsIn } from "../core/real-dirs.ts";
-import type { RetentionSettings } from "../core/settings.ts";
+import { NAMESPACE, type RetentionSettings } from "../core/settings.ts";
 import { apply } from "../core/sweep-apply.ts";
 import { plan } from "../core/sweep-plan.ts";
-import { OFF_TEXT, planReport, removedText, settingsText, USAGE } from "../ui/retention-report.ts";
+import {
+  abortedText,
+  OFF_TEXT,
+  planReport,
+  removedText,
+  settingsText,
+  USAGE,
+} from "../ui/retention-report.ts";
 
 export type RetentionDeps = {
   handoffRoot: string;
@@ -35,7 +42,14 @@ export const retentionPlugin = (deps: RetentionDeps): Plugin<never, never, Reten
       });
 
     const sweep = async (info: SessionInfo) => {
-      const removed = await apply(await planFor(info), context(info));
+      const planned = await planFor(info);
+
+      if (planned.aborted) {
+        host.ui.notify(abortedText(planned.aborted), "warning");
+        return;
+      }
+
+      const removed = await apply(planned, context(info));
 
       if (removed.sessions + removed.runs + removed.handoffs > 0) {
         host.ui.notify(removedText(removed, settings.retentionDays), "info");
@@ -59,9 +73,18 @@ export const retentionPlugin = (deps: RetentionDeps): Plugin<never, never, Reten
 
       deps.process.swept = true;
 
-      if (written && settings.retentionDays > 0 && settingsErrors().length === 0) {
-        sweep(info).catch(() => undefined);
+      if (settings.retentionDays === 0 || settingsErrors().length > 0) {
+        return;
       }
+
+      if (!written) {
+        host.ui.notify(abortedText(`${liveDir(info.agentDir)}: cannot write the liveness marker`), "warning");
+        return;
+      }
+
+      sweep(info).catch((error: unknown) => {
+        host.ui.notify(`${NAMESPACE}: sweep failed, ${errorText(error)}`, "warning");
+      });
     });
 
     host.onSessionShutdown((reason) => {

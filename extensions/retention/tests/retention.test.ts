@@ -27,11 +27,15 @@ const liveDir = (layout: Layout) => join(layout.agentDir, "pi-retention", "live"
 
 const markerFile = (layout: Layout, id: string) => join(liveDir(layout), `${id}.${process.pid}.json`);
 
-const deps = (layout: Layout, swept = false) => {
+const deps = (layout: Layout, swept = false, throws = false) => {
   const alive: number[] = [];
 
   const isAlive = (pid: number) => {
     alive.push(pid);
+
+    if (throws) {
+      throw new Error("no process table");
+    }
 
     return pid === process.pid;
   };
@@ -41,8 +45,10 @@ const deps = (layout: Layout, swept = false) => {
   return { alive, record };
 };
 
-const boot = (layout: Layout, options: { retentionDays?: number; swept?: boolean } = {}) => {
-  const { alive, record } = deps(layout, options.swept);
+type BootOptions = { retentionDays?: number; swept?: boolean; throws?: boolean };
+
+const boot = (layout: Layout, options: BootOptions = {}) => {
+  const { alive, record } = deps(layout, options.swept, options.throws);
 
   const start = (host: FakeHost = layout.host) =>
     startExtension({
@@ -156,11 +162,53 @@ describe("retention sweep on session start", () => {
     mkdirSync(join(layout.agentDir, "pi-retention"), { recursive: true });
     symlinkSync(elsewhere, liveDir(layout));
 
-    boot(layout);
+    const { host } = boot(layout);
+
     await pause(50);
 
     expect(existsSync(old)).toBe(true);
     expect(readdirSync(elsewhere)).toEqual([]);
+    expect(host.notices).toEqual([
+      {
+        message: `pi-retention: nothing removed, ${liveDir(layout)}: cannot write the liveness marker`,
+        level: "warning",
+      },
+    ]);
+  });
+
+  it.skipIf(process.getuid?.() === 0)("warns once when the sweep aborts", async () => {
+    const layout = fabricate();
+    const old = layout.session("old", OLD);
+    const locked = layout.session("locked", OLD);
+
+    chmodSync(locked, 0o000);
+
+    const booted = boot(layout);
+
+    await vi.waitFor(() => expect(booted.host.notices).toHaveLength(1));
+
+    booted.host.start({ id: "next" });
+    await pause(50);
+    chmodSync(locked, 0o644);
+
+    expect(existsSync(old)).toBe(true);
+    expect(booted.host.notices).toEqual([
+      { message: `pi-retention: nothing removed, ${locked}: EACCES`, level: "warning" },
+    ]);
+  });
+
+  it("warns when the sweep throws", async () => {
+    const layout = fabricate();
+    const old = layout.session("old", OLD);
+    const { host } = boot(layout, { throws: true });
+
+    await vi.waitFor(() =>
+      expect(host.notices).toEqual([
+        { message: "pi-retention: sweep failed, no process table", level: "warning" },
+      ]),
+    );
+
+    expect(existsSync(old)).toBe(true);
   });
 
   it("tells what it removed in one line", async () => {
@@ -284,9 +332,7 @@ describe("/retention", () => {
 
     await host.runCommand("retention", "apply");
 
-    expect(host.notices.at(-1)?.message).toBe(
-      `pi-retention: aborted, nothing would be removed: ${locked}: EACCES`,
-    );
+    expect(host.notices.at(-1)?.message).toBe(`pi-retention: nothing removed, ${locked}: EACCES`);
   });
 
   it("removes now with apply and prints the counts", async () => {
@@ -327,6 +373,26 @@ describe("retention settings", () => {
       `pi-retention settings: ${error}`,
       `pi-retention: off until pi-retention.json loads without errors:\n  ${error}`,
     ]);
+  });
+
+  it("keeps 180 days when no settings file sets retentionDays", async () => {
+    const layout = fabricate();
+    const host = bootWithSettings(layout, {});
+
+    await host.runCommand("retention");
+
+    expect(host.notices.at(-1)?.message).toMatch(/^pi-retention: 180 days, cutoff /);
+  });
+
+  it("rejects a fractional retentionDays and does not sweep", async () => {
+    const layout = fabricate();
+    const old = layout.session("old", OLD);
+    const host = bootWithSettings(layout, { retentionDays: 1.5 });
+
+    await pause(50);
+
+    expect(existsSync(old)).toBe(true);
+    expect(host.notices.at(0)?.message).toContain("retentionDays must be a whole number between 0 and 36500");
   });
 
   it("neither sweeps nor applies with an invalid retentionDays", async () => {

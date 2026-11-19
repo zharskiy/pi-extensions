@@ -29,6 +29,8 @@ export const removedText = (removed: Removed, retentionDays: number) => {
     : `${NAMESPACE}: nothing older than ${days(retentionDays)} to remove`;
 };
 
+export const abortedText = (reason: string) => `${NAMESPACE}: nothing removed, ${reason}`;
+
 export const settingsText = (errors: readonly string[]) =>
   [
     `${NAMESPACE}: off until ${SETTINGS_FILE} loads without errors:`,
@@ -45,7 +47,7 @@ const plannedCounts = (plan: Plan): Removed => ({
 
 export const planReport = (plan: Plan, retentionDays: number, handoffRoot: string) => {
   if (plan.aborted) {
-    return `${NAMESPACE}: aborted, nothing would be removed: ${plan.aborted}`;
+    return abortedText(plan.aborted);
   }
 
   const kept = REASONS.map(

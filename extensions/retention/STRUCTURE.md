@@ -12,7 +12,7 @@
 - `core/agent-runs.ts`: `staleRuns`, the run and chain rules of one session folder; `AGENTS_DIR`.
 - `core/sweep-plan.ts`: `plan`, `Plan`, `PlanInput`, `Candidate`, `Stem`, `KeepReason`; the live, session, kept, orphan and handoff rules.
 - `core/sweep-apply.ts`: `apply`, `Removed`; the per-candidate removal and the counts.
-- `ui/retention-report.ts`: the notify line, the `/retention` report, the settings-error, usage and off texts.
+- `ui/retention-report.ts`: the notify line, the `/retention` report, the abort warning (`abortedText`), the settings-error, usage and off texts.
 - `tests/support/session-layout.ts`: `fabricate`, a temp agent dir, sessions folder and private handoff root with sessions, runs, handoffs and markers, and `planned`/`applied`/`prune` over them.
 - `tests/sweep.test.ts`: the plan and apply rules on real temp folders through the adapter's real header reader.
 - `tests/retention.test.ts`: the plugin on a fake host and the extension booted with real settings files: the sweep on start, markers, notify line, `/retention`, settings errors.
