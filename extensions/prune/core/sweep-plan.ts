@@ -3,10 +3,11 @@ import { basename, join } from "node:path";
 import { readSessionHeader, type SessionHeader } from "../../../platform/pi-adapter/index.ts";
 import { type Run, readRuns, staleRuns } from "./agent-runs.ts";
 import { type RootState, rootState } from "./handoff-root.ts";
+import { type Aged, type Sized, scanHandoffs } from "./handoff-scan.ts";
 import { type Current, type Live, liveDir, readLive } from "./live-markers.ts";
 import { pathKey } from "./path-key.ts";
 import { LIMIT, pooled } from "./pool.ts";
-import { entriesIn, lastTouched, subdirsIn } from "./real-dirs.ts";
+import { entriesIn, subdirsIn } from "./real-dirs.ts";
 
 const DAY_MS = 86_400_000;
 
@@ -43,8 +44,10 @@ export type Scan =
       sessions: Session[];
       orphanStems: RunsIn[];
       fallbackStems: RunsIn[];
+      latestCutoff: number;
       handoffState: RootState;
-      handoffs: { dir: string; touched: number }[];
+      owned: Map<string, Sized>;
+      orphanHandoffs: Aged[];
     };
 
 export type Candidate = {
@@ -132,6 +135,19 @@ const reasons = (sessions: Readable[], cutoff: number, live: Live) => {
   return own;
 };
 
+const sorted = (readable: Readable[], cutoff: number, live: Live) => {
+  const kept = reasons(readable, cutoff, live);
+
+  const keptIds = new Set([
+    ...live.ids,
+    ...readable.filter((session) => kept.has(pathKey(session.file))).map((session) => session.header.id),
+  ]);
+
+  return { kept, keptIds, candidates: readable.filter((session) => !kept.has(pathKey(session.file))) };
+};
+
+const isReadable = (session: Session): session is Readable => session.header !== undefined;
+
 const pruned = (dir: string, found: readonly Run[], cutoff: number): Stem[] => {
   const runs = staleRuns(found, cutoff);
 
@@ -209,24 +225,29 @@ export const scan = async (input: ScanInput, latestCutoff: number): Promise<Scan
   );
 
   const handoffState = await rootState(input.handoffRoot);
-  const handoffDirs = handoffState === "safe" ? await subdirsIn(input.handoffRoot) : [];
+  const latest = sorted(sessions.filter(isReadable), latestCutoff, live);
 
-  const handoffs = await pooled(handoffDirs, LIMIT, async (dir) => {
-    const claimed = live.ids.has(basename(dir)) || ids.has(basename(dir));
-    const touched = claimed
-      ? Number.POSITIVE_INFINITY
-      : await lastTouched(dir).catch(() => Number.POSITIVE_INFINITY);
+  const measured = new Set(
+    latest.candidates.map((session) => session.header.id).filter((id) => !latest.keptIds.has(id)),
+  );
 
-    return { dir, touched };
-  });
+  const handoffs =
+    handoffState === "safe"
+      ? await scanHandoffs(input.handoffRoot, latestCutoff, {
+          measured,
+          claimed: new Set([...ids, ...live.ids]),
+        })
+      : { owned: new Map<string, Sized>(), orphans: [] };
 
   return {
     live,
     sessions: scanned,
     orphanStems: await runsIn(orphanStems),
     fallbackStems: await runsIn(fallbackStems),
+    latestCutoff,
     handoffState,
-    handoffs,
+    owned: handoffs.owned,
+    orphanHandoffs: handoffs.orphans,
   };
 };
 
@@ -235,19 +256,13 @@ export const plan = (scanned: Scan, cutoff: number): Plan => {
     return emptyPlan(cutoff, scanned.aborted);
   }
 
+  if (cutoff > scanned.latestCutoff) {
+    throw new Error("plan: cutoff after the scan's latest cutoff");
+  }
+
   const { live, sessions } = scanned;
-  const readable = sessions.filter((session): session is Readable => session.header !== undefined);
-  const kept = reasons(readable, cutoff, live);
-  const candidates = readable.filter((session) => !kept.has(pathKey(session.file)));
-  const candidateIds = new Set(candidates.map((session) => session.header.id));
-
-  const keptIds = new Set([
-    ...live.ids,
-    ...readable.filter((session) => kept.has(pathKey(session.file))).map((session) => session.header.id),
-  ]);
-
-  const unclaimed = scanned.handoffs.filter(({ dir }) => !keptIds.has(basename(dir)));
-  const handoffOf = new Map(unclaimed.map(({ dir }) => [basename(dir), dir]));
+  const readable = sessions.filter(isReadable);
+  const { kept, keptIds, candidates } = sorted(readable, cutoff, live);
   const fallbackStems = scanned.fallbackStems.filter(({ dir }) => !keptIds.has(basename(dir)));
 
   return {
@@ -257,13 +272,11 @@ export const plan = (scanned: Scan, cutoff: number): Plan => {
       mtime: session.mtime,
       id: session.header.id,
       stem: session.runs ? pruned(stemOf(session.file), session.runs, cutoff)[0] : undefined,
-      handoff: handoffOf.get(session.header.id),
+      handoff: keptIds.has(session.header.id) ? undefined : scanned.owned.get(session.header.id)?.dir,
     })),
     orphans: {
       stems: [...scanned.orphanStems, ...fallbackStems].flatMap(({ dir, runs }) => pruned(dir, runs, cutoff)),
-      handoffs: unclaimed
-        .filter(({ dir, touched }) => !candidateIds.has(basename(dir)) && touched < cutoff)
-        .map(({ dir }) => dir),
+      handoffs: scanned.orphanHandoffs.filter(({ touched }) => touched < cutoff).map(({ dir }) => dir),
     },
     markers: live.dead,
     kept: readable.flatMap((session) => {

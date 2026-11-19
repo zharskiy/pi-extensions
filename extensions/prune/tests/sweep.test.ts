@@ -432,6 +432,21 @@ describe("handoff and fallback rules", () => {
     expect([...handoffs, ...fallbacks].map(existsSync)).toEqual([true, true, true, true]);
   });
 
+  it("does not give a fresh session's handoff dir to an old copy with its id", async () => {
+    const layout = fabricate();
+    const other = join(layout.sessionsRoot, "--other--");
+    const copy = layout.sessionIn(other, "twin", OLD);
+    const fresh = layout.session("twin", RECENT);
+    const handoff = layout.handoff("twin", OLD);
+
+    expect(await layout.prune({ slugDirs: [layout.slugDir, other] })).toEqual({
+      sessions: 1,
+      runs: 0,
+      handoffs: 0,
+    });
+    expect([copy, fresh, handoff].map(existsSync)).toEqual([false, true, true]);
+  });
+
   it("skips handoff dirs under a root others can write to", async () => {
     const layout = fabricate();
     const file = layout.session("old", OLD);

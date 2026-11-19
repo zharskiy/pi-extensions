@@ -5,10 +5,11 @@
 - `api/plugin.ts`: `prunePlugin`, `PruneDeps`; liveness marker on session start and quit, the first-start sweep over `<agentDir>/sessions`, the settings-error guard, the picker flow and the routing of `/prune [<days>] [apply]`.
 - `core/settings.ts`: `NAMESPACE` (`pi-prune`), `PruneSettings`, `defaults`, `schema`, `SETTINGS_FILE`, `MAX_DAYS`.
 - `core/live-markers.ts`: `liveDir`, `markerPath`, `writeMarker`, `removeMarker`, `pidAlive` and `readLive`, the live ids and files and the dead markers.
-- `core/real-dirs.ts`: `entriesIn` and `subdirsIn` of a real folder only, `lastTouched`.
+- `core/real-dirs.ts`: `entriesIn` and `subdirsIn` of a real folder only, `measure`, the touch time and file bytes of a folder one level deep.
 - `core/pool.ts`: `pooled`, a bounded pool over a list or an async iterable, results in source order; `LIMIT`.
 - `core/path-key.ts`: `pathKey`, the comparable form of a session path.
 - `core/handoff-root.ts`: `rootState`, whether the handoff root is safe to sweep.
+- `core/handoff-scan.ts`: `scanHandoffs`, the handoff root streamed once into owned folders and aged orphans; `Sized`, `Aged`, `HandoffScan`.
 - `core/agent-runs.ts`: `readRuns`, the runs of each of a list of session folders, and `staleRuns`, the run and chain rules over them; `Run`, `AGENTS_DIR`.
 - `core/sweep-plan.ts`: `scan`, `plan`, `planAt`, `within`, `cutoffAt`, `Scan`, `ScanInput`, `Plan`, `PlanInput`, `Candidate`, `Stem`, `KeepReason`; the live, session, kept (parents up to five levels), orphan and handoff rules.
 - `core/command-args.ts`: `parseArgs`, `completeArgs`, `INTERVALS`, the `/prune` grammar.
@@ -17,5 +18,6 @@
 - `ui/interval-pick.ts`: `pickInterval`, the interval picker with each interval's counts and the configured mark.
 - `tests/support/session-layout.ts`: `fabricate`, a temp agent dir, sessions folder and private handoff root with sessions, runs, handoffs and markers, and `input`/`planned`/`applied`/`prune` over them.
 - `tests/pool.test.ts`: `pooled` order, limit, async sources, errors and long lists.
+- `tests/handoff-scan.test.ts`: the handoff scan shortcuts against fresh plans and a naive reference, with `readdir` spied.
 - `tests/sweep.test.ts`: the plan and apply rules on real temp folders through the adapter's real header reader.
 - `tests/prune.test.ts`: the plugin on a fake host and the extension booted with real settings files: the sweep on start, markers, notify line, the `/prune` picker and arguments, settings errors.

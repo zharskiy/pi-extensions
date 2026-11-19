@@ -1,7 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { LIMIT, pooled } from "./pool.ts";
-import { lastTouched, subdirsIn } from "./real-dirs.ts";
+import { measure, subdirsIn } from "./real-dirs.ts";
 
 export const AGENTS_DIR = "agents";
 
@@ -41,7 +41,7 @@ const readRun = async (dir: string): Promise<Run> => {
       return unreadable(dir);
     }
 
-    const touched = await lastTouched(dir);
+    const { touched } = await measure(dir);
     const manifest = parsed(await readFile(join(dir, MANIFEST_FILE), "utf8"));
 
     return {

@@ -19,7 +19,7 @@ A session is old when its file was last written before the cutoff (now minus `da
 - the session file, `<agent dir>/sessions/<project>/<timestamp>_<uuid>.jsonl`;
 - then, only once that file is gone, its agent runs, `<session file without .jsonl>/agents/<agent id>/` (manifest, result, the agent's own session, logs), the folders left empty, and its handoff folder, `<OS temp dir>/pi-handoff/<session id>/`.
 
-It also removes old agent runs in folders whose session file is gone and under `<agent dir>/pi-subagents/<id>/` (sessions without a file), handoff folders whose files are all older than the cutoff and whose session is not kept, and the markers of pi processes that have ended.
+It also removes old agent runs in folders whose session file is gone and under `<agent dir>/pi-subagents/<id>/` (sessions without a file), handoff folders whose files are all older than the cutoff and whose session is not kept (a folder it cannot read is kept), and the markers of pi processes that have ended.
 
 Only `<agent dir>/sessions/` is swept. Sessions elsewhere, in a custom session dir (the `sessionDir` setting, `--session-dir`, `PI_CODING_AGENT_SESSION_DIR`) or opened with `--session <path>`, are never touched; a handoff folder whose session lives elsewhere is judged by its own age.
 

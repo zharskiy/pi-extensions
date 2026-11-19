@@ -1,3 +1,4 @@
+import type { Stats } from "node:fs";
 import { lstat, readdir } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -13,9 +14,13 @@ export const entriesIn = async (dir: string) =>
 export const subdirsIn = async (dir: string) =>
   (await entriesIn(dir)).filter((entry) => entry.isDirectory()).map((entry) => join(dir, entry.name));
 
-export const lastTouched = async (dir: string) => {
+export const measure = async (dir: string, own?: Stats) => {
+  const stat = own ?? (await lstat(dir));
   const names = await readdir(dir);
-  const stats = await Promise.all([dir, ...names.map((name) => join(dir, name))].map((path) => lstat(path)));
+  const entries = await Promise.all(names.map((name) => lstat(join(dir, name))));
 
-  return Math.max(...stats.map((stat) => stat.mtimeMs));
+  return {
+    touched: Math.max(stat.mtimeMs, ...entries.map((entry) => entry.mtimeMs)),
+    bytes: entries.reduce((total, entry) => (entry.isFile() ? total + entry.size : total), 0),
+  };
 };
