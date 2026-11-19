@@ -941,3 +941,148 @@ describe("prune settings", () => {
     expect(host.notices.at(0)?.message).toContain("days must be a whole number between 0 and 36500");
   });
 });
+
+const emptyHandoff = (layout: Layout, name: string, touched = daysAgo(2)) => {
+  const dir = join(layout.handoffRoot, name);
+
+  mkdirSync(dir);
+  touch(dir, touched);
+
+  return dir;
+};
+
+const CLEARED = { message: "pi-prune: removed 1 empty handoff dir", level: "info" };
+
+describe("empty handoff folders at session start", () => {
+  it("removes an empty folder older than a day but younger than days, and counts it", async () => {
+    const layout = fabricate();
+    const empty = emptyHandoff(layout, "empty");
+    const { host } = boot(layout);
+
+    await vi.waitFor(() => expect(host.notices).toEqual([CLEARED]));
+
+    expect(existsSync(empty)).toBe(false);
+  });
+
+  it.each([
+    [
+      "a folder with a file, leaving the file intact",
+      (layout: Layout) => {
+        const dir = emptyHandoff(layout, "full");
+        const file = join(dir, "main-handoff.md");
+
+        writeFileSync(file, "handoff\n");
+        touch(file, daysAgo(2));
+        touch(dir, daysAgo(2));
+
+        return () => {
+          expect(readFileSync(file, "utf8")).toBe("handoff\n");
+        };
+      },
+    ],
+    [
+      "an empty folder younger than a day",
+      (layout: Layout) => {
+        const dir = emptyHandoff(layout, "young", Date.now() - 3_600_000);
+
+        return () => {
+          expect(existsSync(dir)).toBe(true);
+        };
+      },
+    ],
+    [
+      "an empty folder named after a live id",
+      (layout: Layout) => {
+        const dir = emptyHandoff(layout, "live-one");
+
+        layout.marker("live-one", process.pid);
+
+        return () => {
+          expect(existsSync(dir)).toBe(true);
+        };
+      },
+    ],
+    [
+      "a symbolic link to an empty folder",
+      (layout: Layout) => {
+        const target = join(layout.root, "elsewhere");
+        const link = join(layout.handoffRoot, "link");
+
+        mkdirSync(target);
+        touch(target, daysAgo(2));
+        symlinkSync(target, link);
+
+        return () => {
+          expect(existsSync(target)).toBe(true);
+          expect(existsSync(link)).toBe(true);
+        };
+      },
+    ],
+  ])("keeps %s", async (_case, arrange) => {
+    const layout = fabricate();
+    const empty = emptyHandoff(layout, "empty");
+    const check = arrange(layout);
+    const { host } = boot(layout);
+
+    await vi.waitFor(() => expect(host.notices).toEqual([CLEARED]));
+
+    expect(existsSync(empty)).toBe(false);
+    check();
+  });
+
+  it("removes nothing when the handoff root is open to other users", async () => {
+    const layout = fabricate();
+    const old = layout.session("old", OLD);
+    const empty = emptyHandoff(layout, "empty");
+
+    chmodSync(layout.handoffRoot, 0o777);
+
+    const { host } = boot(layout);
+
+    await vi.waitFor(() => expect(existsSync(old)).toBe(false));
+    await vi.waitFor(() => expect(host.notices).toHaveLength(1));
+
+    expect(host.notices[0]?.message).toMatch(/^pi-prune: removed 1 session older than 60 days, \d+ B freed$/);
+    expect(existsSync(empty)).toBe(true);
+  });
+
+  it.each([
+    ["automatic pruning is off", (layout: Layout) => boot(layout, { days: 0 }).host],
+    ["the settings have an error", (layout: Layout) => bootWithSettings(layout, { days: -1 })],
+    [
+      "the scan aborted",
+      (layout: Layout) => {
+        chmodSync(layout.session("locked", OLD), 0o000);
+
+        return boot(layout).host;
+      },
+    ],
+  ])("removes nothing when %s", async (_case, start) => {
+    const layout = fabricate();
+    const empty = emptyHandoff(layout, "empty");
+    const host = start(layout);
+
+    await pause(50);
+
+    expect(existsSync(empty)).toBe(true);
+    expect(host.notices.map((notice) => notice.message)).not.toContain(CLEARED.message);
+  });
+
+  it("is left alone by /prune", async () => {
+    const layout = fabricate();
+    const old = layout.session("old", OLD);
+    const empty = emptyHandoff(layout, "empty");
+    const { host } = boot(layout, { swept: true });
+    const running = host.runCommand("prune");
+
+    await pickRow(host, 1, ENTER);
+    await pickRow(host, 2, ENTER);
+    await running;
+
+    expect(existsSync(old)).toBe(false);
+    expect(existsSync(empty)).toBe(true);
+    expect(host.notices.at(-1)?.message).toMatch(
+      /^pi-prune: removed 1 session older than 60 days, \d+ B freed$/,
+    );
+  });
+});

@@ -36,6 +36,7 @@ export {
   parseSeedDetails,
   validateHandoff,
 } from "./handoff/handoff-document.ts";
+export { writeHandoffFile } from "./handoff/handoff-file.ts";
 export {
   type HandoffLimit,
   type LimitLevel,

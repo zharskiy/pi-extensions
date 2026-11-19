@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { dirname } from "node:path";
 import {
   type AgentRuntime,
@@ -19,6 +19,7 @@ import {
   type HandoffSeedDetails,
   type HandoffValidation,
   readText,
+  writeHandoffFile,
 } from "../../../../platform/shared/index.ts";
 import {
   type AgentDefinition,
@@ -395,8 +396,7 @@ export const createRunner = (deps: RunnerDeps): Runner => {
     }
 
     try {
-      mkdirSync(dirname(record.handoffPath), { recursive: true });
-      writeFileSync(record.handoffPath, `${text}\n`);
+      writeHandoffFile(record.handoffPath, `${text}\n`);
 
       return { text };
     } catch (error) {

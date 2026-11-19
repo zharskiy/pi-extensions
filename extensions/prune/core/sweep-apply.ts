@@ -1,5 +1,5 @@
 import { lstat, rm, rmdir, unlink } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { AGENTS_DIR } from "./agent-runs.ts";
 import { rootState } from "./handoff-root.ts";
 import type { Sized } from "./handoff-scan.ts";
@@ -125,6 +125,22 @@ const removeChain = async (chain: readonly Candidate[], context: ApplyContext): 
   };
 
   return pooled(chain, 1, step);
+};
+
+export const clearEmpties = async (plan: Plan, context: ApplyContext) => {
+  const live = await readLive(context.agentDir, context.current, context.isAlive);
+
+  if (!live) {
+    return 0;
+  }
+
+  const cleared = await pooled(
+    plan.empties.filter((dir) => !live.ids.has(basename(dir))),
+    LIMIT,
+    async (dir) => ((await rootState(context.handoffRoot)) === "safe" ? done(rmdir(dir)) : 0),
+  );
+
+  return cleared.reduce((total, count) => total + count, 0);
 };
 
 export const apply = async (plan: Plan, context: ApplyContext): Promise<Removed> => {

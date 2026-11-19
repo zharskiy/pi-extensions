@@ -19,7 +19,7 @@ A session is old when its file was last written before the cutoff (now minus `da
 - the session file, `<agent dir>/sessions/<project>/<timestamp>_<uuid>.jsonl`;
 - then, only once that file is gone, its agent runs, `<session file without .jsonl>/agents/<agent id>/` (manifest, result, the agent's own session, logs), the folders left empty, and its handoff folder, `<OS temp dir>/pi-handoff/<session id>/`.
 
-It also removes old agent runs in folders whose session file is gone and under `<agent dir>/pi-subagents/<id>/` (sessions without a file), handoff folders whose files are all older than the cutoff and whose session is not kept (a folder it cannot read is kept), and the markers of pi processes that have ended.
+It also removes old agent runs in folders whose session file is gone and under `<agent dir>/pi-subagents/<id>/` (sessions without a file), handoff folders whose files are all older than the cutoff and whose session is not kept (a folder it cannot read is kept), and the markers of pi processes that have ended. At session start, when the sweep runs, it also clears empty handoff folders older than a day, whatever `days` is; a folder with any file in it, one named after an open session, and a symbolic link are left alone.
 
 Only `<agent dir>/sessions/` is swept. Sessions elsewhere, in a custom session dir (the `sessionDir` setting, `--session-dir`, `PI_CODING_AGENT_SESSION_DIR`) or opened with `--session <path>`, are never touched; a handoff folder whose session lives elsewhere is judged by its own age.
 
@@ -58,7 +58,7 @@ pi -e ./pi-extensions/extensions/prune/index.ts   # this extension alone, from a
 | `/prune` | `Scanning sessions...` under the editor, then a menu, `Prune sessions`, with `Prune now` and `Auto-prune`. Escape closes it. |
 | `/prune` → `Prune now` | A list, `Remove sessions not touched for...`, with one row per interval (7, 30, 60, 90, 180 and 365 days) and what each would remove, with its size. Pick one and answer `Prune sessions?`; yes shows `Removing old sessions...` and then `pi-prune: removed 2 sessions, 1 agent run older than 30 days, 1.2 MB freed`. Escape goes back to the menu; no removes nothing. |
 | `/prune` → `Auto-prune` | The same intervals and `Off`, `Auto-prune sessions not touched for...`, each with what the next start would remove; your `days` is marked `✓`. Picking one saves it to `pi-prune.json` and removes nothing now. |
-| Start pi with old sessions on disk | `pi-prune: removed 3 sessions, 5 agent runs, 2 handoff dirs older than 180 days, 12.4 MB freed`, once. The bytes are those of the session files and of the files directly in each removed run and handoff folder. |
+| Start pi with old sessions on disk | `pi-prune: removed 3 sessions, 5 agent runs, 2 handoff dirs older than 180 days, 4 empty handoff dirs, 12.4 MB freed`, once. The bytes are those of the session files and of the files directly in each removed run and handoff folder. |
 | Start pi when a session file cannot be read | `pi-prune: nothing removed, <file>: EACCES`, once, as a warning; also when the liveness marker cannot be written or the sweep fails. |
 
 Right before it removes, `/prune` scans again and removes only what you confirmed that is still old. Models never see this command or its output: it registers no tool and adds nothing to the conversation. Outside the interactive terminal it only says that it needs one; set `days` in `pi-prune.json` there.

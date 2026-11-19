@@ -7,17 +7,15 @@ export type Sized = { dir: string; bytes: number };
 
 export type Aged = Sized & { touched: number };
 
-export type HandoffScan = { owned: Map<string, Sized>; orphans: Aged[] };
+export type HandoffScan = { owned: Map<string, Sized>; orphans: Aged[]; empties: string[] };
 
-type Ids = { measured: ReadonlySet<string>; claimed: ReadonlySet<string> };
+type Ids = { measured: ReadonlySet<string>; claimed: ReadonlySet<string>; live: ReadonlySet<string> };
 
-type Found = { owned?: Sized & { id: string }; orphan?: Aged };
+type Ages = { latestCutoff: number; emptyBefore: number };
 
-const judge = async (root: string, name: string, latestCutoff: number, ids: Ids): Promise<Found> => {
-  if (ids.claimed.has(name) && !ids.measured.has(name)) {
-    return {};
-  }
+type Found = { owned?: Sized & { id: string }; orphan?: Aged; empty?: string };
 
+const judge = async (root: string, name: string, ages: Ages, ids: Ids): Promise<Found> => {
   const dir = join(root, name);
   const stat = await lstat(dir).catch(() => undefined);
 
@@ -25,30 +23,32 @@ const judge = async (root: string, name: string, latestCutoff: number, ids: Ids)
     return {};
   }
 
+  const empty = stat.mtimeMs < ages.emptyBefore && !ids.live.has(name) ? { empty: dir } : {};
+
   if (ids.measured.has(name)) {
     const { bytes } = await measure(dir, stat);
 
-    return { owned: { id: name, dir, bytes } };
+    return { ...empty, owned: { id: name, dir, bytes } };
   }
 
-  if (stat.mtimeMs >= latestCutoff) {
-    return {};
+  if (ids.claimed.has(name) || stat.mtimeMs >= ages.latestCutoff) {
+    return empty;
   }
 
   const { touched, bytes } = await measure(dir, stat);
 
-  return touched < latestCutoff ? { orphan: { dir, touched, bytes } } : {};
+  return touched < ages.latestCutoff ? { ...empty, orphan: { dir, touched, bytes } } : empty;
 };
 
-export const scanHandoffs = async (root: string, latestCutoff: number, ids: Ids): Promise<HandoffScan> => {
+export const scanHandoffs = async (root: string, ages: Ages, ids: Ids): Promise<HandoffScan> => {
   const dir = await opendir(root).catch(() => undefined);
 
   if (!dir) {
-    return { owned: new Map(), orphans: [] };
+    return { owned: new Map(), orphans: [], empties: [] };
   }
 
   const found = await pooled(dir, LIMIT, (entry) =>
-    judge(root, entry.name, latestCutoff, ids).catch((): Found => ({})),
+    judge(root, entry.name, ages, ids).catch((): Found => ({})),
   );
 
   return {
@@ -56,5 +56,6 @@ export const scanHandoffs = async (root: string, latestCutoff: number, ids: Ids)
       found.flatMap(({ owned }) => (owned ? [[owned.id, { dir: owned.dir, bytes: owned.bytes }]] : [])),
     ),
     orphans: found.flatMap(({ orphan }) => orphan ?? []),
+    empties: found.flatMap(({ empty }) => empty ?? []),
   };
 };

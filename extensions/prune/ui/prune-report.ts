@@ -59,12 +59,14 @@ export const confirmText = (removed: Removed, days: number, skippedRoot?: string
     "This cannot be undone.",
   ].join(" ");
 
-export const removedText = (removed: Removed, days: number) => {
+export const removedText = (removed: Removed, days: number, empties = 0) => {
   const parts = nonzero(removed);
+  const aged = parts.length > 0 ? [`${listed(parts)} older than ${daysText(days)}`] : [];
+  const cleared = empties > 0 ? [listed([[empties, "empty handoff dir"]])] : [];
   const freed = removed.bytes > 0 ? `, ${bytesText(removed.bytes)} freed` : "";
 
-  return parts.length > 0
-    ? `${NAMESPACE}: removed ${listed(parts)} older than ${daysText(days)}${freed}`
+  return aged.length + cleared.length > 0
+    ? `${NAMESPACE}: removed ${[...aged, ...cleared].join(", ")}${freed}`
     : `${NAMESPACE}: nothing older than ${daysText(days)} to remove`;
 };
 

@@ -2,7 +2,7 @@ import type { SessionInfo } from "../../../platform/pi-adapter/index.ts";
 import { errorText, type Plugin } from "../../../platform/shared/index.ts";
 import { liveDir, markerPath, removeMarker, writeMarker } from "../core/live-markers.ts";
 import { NAMESPACE, type PruneSettings } from "../core/settings.ts";
-import { apply } from "../core/sweep-apply.ts";
+import { apply, clearEmpties } from "../core/sweep-apply.ts";
 import { planAt, removesAnything, scanInput } from "../core/sweep-plan.ts";
 import { abortedText, removedText } from "../ui/prune-report.ts";
 import { registerPrune } from "./prune-command.ts";
@@ -36,9 +36,10 @@ export const prunePlugin = (deps: PruneDeps): Plugin<never, never, PruneSettings
       }
 
       const removed = await apply(planned, sources(info));
+      const empties = await clearEmpties(planned, sources(info));
 
-      if (removesAnything(removed)) {
-        host.ui.notify(removedText(removed, settings.days), "info");
+      if (removesAnything(removed) || empties > 0) {
+        host.ui.notify(removedText(removed, settings.days, empties), "info");
       }
     };
 

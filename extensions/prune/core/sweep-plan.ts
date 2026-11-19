@@ -49,6 +49,7 @@ export type Scan =
       handoffState: RootState;
       owned: Map<string, Sized>;
       orphanHandoffs: Aged[];
+      empties: string[];
     };
 
 export type Candidate = {
@@ -68,6 +69,7 @@ export type Plan = {
   chains: Candidate[][];
   orphans: { stems: Stem[]; handoffs: Sized[] };
   markers: string[];
+  empties: string[];
   handoffsSkipped: boolean;
 };
 
@@ -145,6 +147,7 @@ const emptyPlan = (cutoff: number, aborted: string): Plan => ({
   chains: [],
   orphans: { stems: [], handoffs: [] },
   markers: [],
+  empties: [],
   handoffsSkipped: false,
 });
 
@@ -207,11 +210,12 @@ export const scan = async (input: ScanInput, latestCutoff: number): Promise<Scan
 
   const handoffs =
     handoffState === "safe"
-      ? await scanHandoffs(input.handoffRoot, latestCutoff, {
-          measured,
-          claimed: new Set([...ids, ...live.ids]),
-        })
-      : { owned: new Map<string, Sized>(), orphans: [] };
+      ? await scanHandoffs(
+          input.handoffRoot,
+          { latestCutoff, emptyBefore: Date.now() - DAY_MS },
+          { measured, claimed: new Set([...ids, ...live.ids]), live: live.ids },
+        )
+      : { owned: new Map<string, Sized>(), orphans: [], empties: [] };
 
   return {
     live,
@@ -222,6 +226,7 @@ export const scan = async (input: ScanInput, latestCutoff: number): Promise<Scan
     handoffState,
     owned: handoffs.owned,
     orphanHandoffs: handoffs.orphans,
+    empties: handoffs.empties,
   };
 };
 
@@ -263,6 +268,7 @@ export const plan = (scanned: Scan, cutoff: number): Plan => {
         .map(({ dir, bytes }) => ({ dir, bytes })),
     },
     markers: live.dead,
+    empties: scanned.empties,
     handoffsSkipped: scanned.handoffState === "unsafe",
   };
 };
@@ -336,5 +342,6 @@ export const within = (fresh: Plan, confirmed: Plan): Plan => {
       stems: fresh.orphans.stems.flatMap(confirmedRuns),
       handoffs: fresh.orphans.handoffs.filter(({ dir }) => handoffs.has(dir)),
     },
+    empties: fresh.empties.filter((dir) => confirmed.empties.includes(dir)),
   };
 };

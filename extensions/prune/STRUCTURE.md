@@ -10,11 +10,11 @@
 - `core/pool.ts`: `pooled`, a bounded pool over a list or an async iterable, results in source order; `LIMIT`.
 - `core/path-key.ts`: `pathKey`, the comparable form of a session path.
 - `core/handoff-root.ts`: `rootState`, whether the handoff root is safe to sweep.
-- `core/handoff-scan.ts`: `scanHandoffs`, the handoff root streamed once into owned folders and aged orphans; `Sized`, `Aged`, `HandoffScan`.
+- `core/handoff-scan.ts`: `scanHandoffs`, the handoff root streamed once into owned folders, aged orphans and empty-folder candidates; `Sized`, `Aged`, `HandoffScan`.
 - `core/agent-runs.ts`: `readRuns`, the runs of each of a list of session folders, and `staleRuns`, the run and chain rules over them; `Run`, `AGENTS_DIR`.
 - `core/sweep-plan.ts`: `scan`, `plan`, `planAt`, `within`, `cutoffAt`, `Scan`, `ScanInput`, `Plan`, `PlanInput`, `Candidate`, `Stem`, `Removed`, `Sources`, `scanInput`, `totals`, `removesAnything`; the live, session, kept (whole chains), orphan and handoff rules.
 - `core/session-chains.ts`: `chainsOf`, `Member`, `Chain`; sessions grouped by `parentSession` links in both directions.
-- `core/sweep-apply.ts`: `apply`; the chain by chain removal with its re-checks, and the counts and bytes removed.
+- `core/sweep-apply.ts`: `apply`, the chain by chain removal with its re-checks, and the counts and bytes removed; `clearEmpties`, the empty handoff folders the sweep clears.
 - `ui/prune-report.ts`: every `/prune` and sweep text: the removed line with the freed bytes (`bytesText`), the abort and failure warnings, the confirm title and message, a row's counts and bytes, the `Auto-prune` notices, the terminal, already-open and nothing-to-remove texts.
 - `ui/prune-picker.ts`: `menuForm` and `intervalForm`, the `/prune` menu and its two interval lists with counts, bytes and the configured mark.
 - `tests/support/session-layout.ts`: `fabricate`, a temp agent dir, sessions folder and private handoff root with sessions, runs, handoffs and markers, and `input`/`planned`/`applied`/`prune` over them.
@@ -22,4 +22,4 @@
 - `tests/handoff-scan.test.ts`: the handoff scan shortcuts against fresh plans and a naive reference, with `readdir` spied.
 - `tests/sweep.test.ts`: the plan and apply rules on real temp folders through the adapter's real header reader.
 - `tests/report.test.ts`: `bytesText` and the freed bytes of `removedText`.
-- `tests/prune.test.ts`: the plugin on a fake host and the extension booted with real settings files: the sweep on start, markers, notify line, the `/prune` menu, lists, progress line, `Auto-prune` saves and that nothing reaches the session, settings errors.
+- `tests/prune.test.ts`: the plugin on a fake host and the extension booted with real settings files: the sweep on start, markers, notify line, the `/prune` menu, lists, progress line, `Auto-prune` saves and that nothing reaches the session, settings errors, empty handoff folders at session start.
