@@ -3,12 +3,12 @@ import { createManagedExtension } from "../../../platform/extension-manager/inde
 import { globalRecord } from "../../../platform/pi-adapter/index.ts";
 import { handoffRoot } from "../../../platform/shared/index.ts";
 import { pidAlive } from "../core/live-markers.ts";
-import { defaults, SETTINGS_FILE, schema } from "../core/settings.ts";
+import { defaults, NAMESPACE, SETTINGS_FILE, schema } from "../core/settings.ts";
 import { type RetentionDeps, retentionPlugin } from "./plugin.ts";
 
 export const retentionExtension = (deps: RetentionDeps) =>
   createManagedExtension({
-    namespace: "pi-retention",
+    namespace: NAMESPACE,
     root: resolve(import.meta.dirname, ".."),
     plugins: [retentionPlugin(deps)],
     settings: { defaults: () => defaults, schema, file: SETTINGS_FILE, scope: "user" },

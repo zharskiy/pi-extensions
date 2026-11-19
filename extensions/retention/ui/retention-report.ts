@@ -1,14 +1,13 @@
 import { counted } from "../../../platform/shared/index.ts";
+import { NAMESPACE, SETTINGS_FILE } from "../core/settings.ts";
 import type { Removed } from "../core/sweep-apply.ts";
 import type { KeepReason, Plan, Stem } from "../core/sweep-plan.ts";
 
-const LABEL = "retention";
-
 const REASONS: KeepReason[] = ["fresh", "live", "parent"];
 
-export const USAGE = `${LABEL}: usage /retention [apply]`;
+export const USAGE = `${NAMESPACE}: usage /retention [apply]`;
 
-export const OFF_TEXT = `${LABEL}: off, retentionDays is 0`;
+export const OFF_TEXT = `${NAMESPACE}: off, retentionDays is 0`;
 
 const amounts = (removed: Removed) =>
   [
@@ -26,13 +25,13 @@ export const removedText = (removed: Removed, retentionDays: number) => {
   const parts = amounts(removed).filter(([count]) => count > 0);
 
   return parts.length > 0
-    ? `${LABEL}: removed ${listed(parts)} older than ${days(retentionDays)}`
-    : `${LABEL}: nothing older than ${days(retentionDays)} to remove`;
+    ? `${NAMESPACE}: removed ${listed(parts)} older than ${days(retentionDays)}`
+    : `${NAMESPACE}: nothing older than ${days(retentionDays)} to remove`;
 };
 
 export const settingsText = (errors: readonly string[]) =>
   [
-    `${LABEL}: off until pi-retention.json loads without errors:`,
+    `${NAMESPACE}: off until ${SETTINGS_FILE} loads without errors:`,
     ...errors.map((error) => `  ${error}`),
   ].join("\n");
 
@@ -46,7 +45,7 @@ const plannedCounts = (plan: Plan): Removed => ({
 
 export const planReport = (plan: Plan, retentionDays: number, handoffRoot: string) => {
   if (plan.aborted) {
-    return `${LABEL}: aborted, nothing would be removed: ${plan.aborted}`;
+    return `${NAMESPACE}: aborted, nothing would be removed: ${plan.aborted}`;
   }
 
   const kept = REASONS.map(
@@ -56,7 +55,7 @@ export const planReport = (plan: Plan, retentionDays: number, handoffRoot: strin
   const unreadable = plan.unreadable.map((file) => `  ${file}`);
 
   return [
-    `${LABEL}: ${days(retentionDays)}, cutoff ${new Date(plan.cutoff).toISOString()}`,
+    `${NAMESPACE}: ${days(retentionDays)}, cutoff ${new Date(plan.cutoff).toISOString()}`,
     `would remove: ${listed(amounts(plannedCounts(plan)))}`,
     `keeps: ${counted(plan.kept.length, "session")} (${kept.join(", ")})`,
     ...(unreadable.length > 0 ? ["unreadable, never removed:", ...unreadable] : []),

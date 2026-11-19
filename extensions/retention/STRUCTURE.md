@@ -1,9 +1,9 @@
 # Retention structure
 
 - `index.ts`: pi entry; re-exports the default from `api/extension.ts`.
-- `api/extension.ts`: `retentionExtension(deps)`, `createManagedExtension` with namespace `pi-retention`, `retentionPlugin` and the user-only `pi-retention.json` settings; the default export with the real handoff root, `pidAlive` and the once-per-process record.
+- `api/extension.ts`: `retentionExtension(deps)`, `createManagedExtension` with namespace `NAMESPACE`, `retentionPlugin` and the user-only `pi-retention.json` settings; the default export with the real handoff root, `pidAlive` and the once-per-process record.
 - `api/plugin.ts`: `retentionPlugin`, `RetentionDeps`; liveness marker on session start and quit, the first-start sweep over `<agentDir>/sessions`, the settings-error guard and `/retention [apply]`.
-- `core/settings.ts`: `RetentionSettings`, `defaults`, `schema`, `SETTINGS_FILE`.
+- `core/settings.ts`: `NAMESPACE` (`pi-retention`), `RetentionSettings`, `defaults`, `schema`, `SETTINGS_FILE`.
 - `core/live-markers.ts`: `liveDir`, `markerPath`, `writeMarker`, `removeMarker`, `pidAlive` and `readLive`, the live ids and files and the dead markers.
 - `core/real-dirs.ts`: `entriesIn` and `subdirsIn` of a real folder only, `lastTouched`.
 - `core/serial.ts`: `serial`, one step at a time over a list.

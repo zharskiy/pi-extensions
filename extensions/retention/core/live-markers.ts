@@ -5,6 +5,7 @@ import type { SessionInfo } from "../../../platform/pi-adapter/index.ts";
 import { isPlainObject } from "../../../platform/shared/index.ts";
 import { pathKey } from "./path-key.ts";
 import { serial } from "./serial.ts";
+import { NAMESPACE } from "./settings.ts";
 
 const MARKER_EXT = ".json";
 
@@ -14,7 +15,7 @@ export type Current = Pick<SessionInfo, "id" | "file" | "parentSession">;
 
 type Marker = { id: string; pid: number; file?: unknown; parentSession?: unknown };
 
-export const liveDir = (agentDir: string) => join(agentDir, "pi-retention", "live");
+export const liveDir = (agentDir: string) => join(agentDir, NAMESPACE, "live");
 
 export const markerPath = (agentDir: string, id: string) =>
   join(liveDir(agentDir), `${id}.${process.pid}${MARKER_EXT}`);

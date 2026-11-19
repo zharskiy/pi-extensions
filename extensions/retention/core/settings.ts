@@ -2,7 +2,9 @@ import type { SettingsSchema } from "../../../platform/shared/index.ts";
 
 export type RetentionSettings = { retentionDays: number };
 
-export const SETTINGS_FILE = "pi-retention.json";
+export const NAMESPACE = "pi-retention";
+
+export const SETTINGS_FILE = `${NAMESPACE}.json`;
 
 export const defaults: RetentionSettings = { retentionDays: 60 };
 

@@ -55,7 +55,7 @@ pi -e ./pi-extensions/extensions/retention/index.ts   # this extension alone, fr
 |---|---|
 | `/retention` | The cutoff, how many sessions, agent runs and handoff folders would be removed, how many sessions are kept and why (`fresh`, `live`, `parent`), and the unreadable files. Nothing is removed. |
 | `/retention apply` | Removes them now and prints the counts. |
-| Start pi with old sessions on disk | `retention: removed 3 sessions, 5 agent runs, 2 handoff dirs older than 60 days`, once. |
+| Start pi with old sessions on disk | `pi-retention: removed 3 sessions, 5 agent runs, 2 handoff dirs older than 60 days`, once. |
 
 ## Before you rely on it
 

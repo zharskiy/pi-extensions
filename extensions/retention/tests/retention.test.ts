@@ -174,7 +174,7 @@ describe("retention sweep on session start", () => {
 
     await vi.waitFor(() =>
       expect(host.notices).toEqual([
-        { message: "retention: removed 1 session, 2 agent runs older than 60 days", level: "info" },
+        { message: "pi-retention: removed 1 session, 2 agent runs older than 60 days", level: "info" },
       ]),
     );
   });
@@ -252,7 +252,7 @@ describe("/retention", () => {
 
     const report = host.notices.at(-1)?.message.split("\n") ?? [];
 
-    expect(report[0]).toMatch(/^retention: 60 days, cutoff \d{4}-\d{2}-\d{2}T/);
+    expect(report[0]).toMatch(/^pi-retention: 60 days, cutoff \d{4}-\d{2}-\d{2}T/);
     expect(report.slice(1)).toEqual([
       "would remove: 1 session, 1 agent run, 1 handoff dir",
       "keeps: 1 session (1 fresh, 0 live, 0 parent)",
@@ -285,7 +285,7 @@ describe("/retention", () => {
     await host.runCommand("retention", "apply");
 
     expect(host.notices.at(-1)?.message).toBe(
-      `retention: aborted, nothing would be removed: ${locked}: EACCES`,
+      `pi-retention: aborted, nothing would be removed: ${locked}: EACCES`,
     );
   });
 
@@ -297,7 +297,7 @@ describe("/retention", () => {
     await host.runCommand("retention", "apply");
 
     expect(existsSync(old)).toBe(false);
-    expect(host.notices.at(-1)?.message).toBe("retention: removed 1 session older than 60 days");
+    expect(host.notices.at(-1)?.message).toBe("pi-retention: removed 1 session older than 60 days");
   });
 
   it("says it is off when retentionDays is 0", async () => {
@@ -306,7 +306,7 @@ describe("/retention", () => {
 
     await host.runCommand("retention");
 
-    expect(host.notices.at(-1)?.message).toBe("retention: off, retentionDays is 0");
+    expect(host.notices.at(-1)?.message).toBe("pi-retention: off, retentionDays is 0");
   });
 });
 
@@ -325,7 +325,7 @@ describe("retention settings", () => {
     expect(existsSync(old)).toBe(true);
     expect(host.notices.map((notice) => notice.message)).toEqual([
       `pi-retention settings: ${error}`,
-      `retention: off until pi-retention.json loads without errors:\n  ${error}`,
+      `pi-retention: off until pi-retention.json loads without errors:\n  ${error}`,
     ]);
   });
 
@@ -339,7 +339,7 @@ describe("retention settings", () => {
 
     expect(existsSync(old)).toBe(true);
     expect(host.notices.at(-1)?.message).toMatch(
-      /^retention: off until pi-retention.json loads without errors:/,
+      /^pi-retention: off until pi-retention.json loads without errors:/,
     );
   });
 });
