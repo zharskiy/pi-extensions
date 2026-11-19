@@ -158,7 +158,7 @@ container/git-overlay.ts       the git overlay plan and its ready() step before 
 container/names.ts             container and volume names
 container/lifecycle.ts         startLaunchContainer and removeLaunchContainer: one container per launch, mount points, volume hand-over (fatal when the entrypoint waits for it, a warning otherwise), the wait for the entrypoint's ready marker, the exited-during-startup error
 container/run-pi.ts            pi through exec, the pty only for a terminal, signals and resize, the terminal bridges
-container/clipboard.ts         the clipboard bridges: OSC 52 copies teed to pbcopy, pasted image paths and Ctrl+V images copied into /tmp/pi-paste
+container/clipboard.ts         the clipboard bridges: OSC 52 copies teed to pbcopy, pasted image paths and Ctrl+V images copied into /tmp/pi-paste, an OSC 9 notice when an image import fails, held by the copy tee until pi's output is between escape sequences
 container/host-paths.ts        visibleInside: whether the sandbox sees a host path at the same path
 ```
 
@@ -367,7 +367,7 @@ tests/container/spec.test.ts         the container spec
 tests/container/git-overlay.test.ts  the git overlay
 tests/container/lifecycle.test.ts    one container per launch, its removal and housekeeping
 tests/container/run-pi.test.ts       running pi, signals and the terminal bridges
-tests/container/clipboard.test.ts    the copy tee, the pasted image path and Ctrl+V
+tests/container/clipboard.test.ts    the copy tee with its held notices, the pasted image path, Ctrl+V and the failed-import notices
 tests/image/build.test.ts            base builds
 tests/image/build-network.test.ts    build proxy arguments
 tests/image/layer.test.ts            the image layer
