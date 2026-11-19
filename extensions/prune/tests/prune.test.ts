@@ -506,6 +506,8 @@ describe("/prune now", () => {
 
     host.confirmAnswer = false;
     host.form().press(ENTER);
+    await pickRow(host, 3, ESCAPE);
+    await pickRow(host, 4, ESCAPE);
     await running;
 
     expect(host.confirmations).toEqual([confirmOf("1 session", 60)]);
@@ -550,6 +552,8 @@ describe("/prune now", () => {
 
     await pickRow(host, 1, ENTER);
     await pickRow(host, 2, ENTER);
+    await pickRow(host, 3, ESCAPE);
+    await pickRow(host, 4, ESCAPE);
     await running;
 
     expect(host.confirmations[0]?.message).toContain(
@@ -557,7 +561,7 @@ describe("/prune now", () => {
     );
   });
 
-  it("removes nothing and says nothing on no", async () => {
+  it("goes back to the list on no, removing nothing and saying nothing", async () => {
     const layout = fabricate();
     const files = ages(layout);
     const { host } = boot(layout, { swept: true });
@@ -568,6 +572,14 @@ describe("/prune now", () => {
 
     await pickRow(host, 1, ENTER);
     await pickRow(host, 2, ENTER);
+
+    expect((await menuRows(host, 3)).join("\n")).toContain("Remove sessions not touched for...");
+
+    host.form().press(ESCAPE);
+
+    expect((await menuRows(host, 4)).join("\n")).toContain("Prune sessions");
+
+    host.form().press(ESCAPE);
     await running;
 
     expect(host.confirmations).toHaveLength(1);
@@ -575,7 +587,7 @@ describe("/prune now", () => {
     expect(host.notices).toEqual([]);
   });
 
-  it("asks nothing when the picked interval has nothing to remove", async () => {
+  it("keeps the list open, asking and saying nothing, when the picked interval has nothing to remove", async () => {
     const layout = fabricate();
 
     ages(layout);
@@ -585,12 +597,15 @@ describe("/prune now", () => {
 
     await pickRow(host, 1, ENTER);
     await pickRow(host, 2, DOWN, DOWN, DOWN, ENTER);
+
+    expect((await menuRows(host, 3)).join("\n")).toContain("Remove sessions not touched for...");
+
+    host.form().press(ESCAPE);
+    await pickRow(host, 4, ESCAPE);
     await running;
 
     expect(host.confirmations).toEqual([]);
-    expect(host.notices).toEqual([
-      { message: "pi-prune: nothing older than 365 days to remove", level: "info" },
-    ]);
+    expect(host.notices).toEqual([]);
   });
 
   it("plans again after the confirm and removes only what was confirmed", async () => {
@@ -616,8 +631,33 @@ describe("/prune now", () => {
 
     expect([written, closed, gone].map(existsSync)).toEqual([true, true, false]);
     expect(host.notices.at(-1)?.message).toMatch(
-      /^pi-prune: removed 1 session older than 60 days, \d+ B freed$/,
+      /^pi-prune: removed 1 session older than 60 days, \d+ B freed, the rest changed since the scan and was kept$/,
     );
+  });
+
+  it("says nothing was removed when every confirmed session changed after the confirm", async () => {
+    const layout = fabricate();
+    const files = [layout.session("first", OLD), layout.session("second", OLD)];
+    const { host } = boot(layout, { swept: true });
+
+    host.confirmAnswer = () => {
+      files.forEach((file) => {
+        touch(file, RECENT);
+      });
+
+      return true;
+    };
+
+    const running = host.runCommand("prune");
+
+    await pickRow(host, 1, ENTER);
+    await pickRow(host, 2, ENTER);
+    await running;
+
+    expect(files.map(existsSync)).toEqual([true, true]);
+    expect(host.notices).toEqual([
+      { message: "pi-prune: nothing removed, the sessions changed since the scan", level: "info" },
+    ]);
   });
 });
 
@@ -632,12 +672,12 @@ describe("/prune progress", () => {
     const form = vi.spyOn(host.ui, "showForm");
     const running = host.runCommand("prune");
 
-    expect(host.belowEditor).toEqual(["pi-prune"]);
+    expect(host.aboveEditor).toEqual(["pi-prune"]);
     expect(rendered(host.widgets.get("pi-prune"))).toEqual([" ◌ Scanning sessions..."]);
 
     await formCount(host, 1);
 
-    expect(host.belowEditor).toEqual([]);
+    expect(host.aboveEditor).toEqual([]);
     expect(widget.mock.calls.map(([key, render]) => [key, render === undefined])).toEqual([
       ["pi-prune", false],
       ["pi-prune", true],
@@ -665,7 +705,7 @@ describe("/prune progress", () => {
     expect(rendered(widget.mock.calls[2]?.[1])).toEqual([" ◌ Removing old sessions..."]);
     expect(widget.mock.calls[3]).toEqual(["pi-prune", undefined]);
     expect(widget.mock.invocationCallOrder[3]).toBeLessThan(notify.mock.invocationCallOrder[0]);
-    expect(host.belowEditor).toEqual([]);
+    expect(host.aboveEditor).toEqual([]);
   });
 
   it.each([
@@ -711,7 +751,7 @@ describe("/prune progress", () => {
     await running;
 
     expect(host.forms).toHaveLength(forms);
-    expect(host.belowEditor).toEqual([]);
+    expect(host.aboveEditor).toEqual([]);
     expect(host.notices).toEqual([{ message: "pi-prune: prune failed, no process table", level: "warning" }]);
     expect(existsSync(old)).toBe(true);
   });
@@ -1049,14 +1089,6 @@ describe("empty handoff folders at session start", () => {
   it.each([
     ["automatic pruning is off", (layout: Layout) => boot(layout, { days: 0 }).host],
     ["the settings have an error", (layout: Layout) => bootWithSettings(layout, { days: -1 })],
-    [
-      "the scan aborted",
-      (layout: Layout) => {
-        chmodSync(layout.session("locked", OLD), 0o000);
-
-        return boot(layout).host;
-      },
-    ],
   ])("removes nothing when %s", async (_case, start) => {
     const layout = fabricate();
     const empty = emptyHandoff(layout, "empty");
@@ -1066,6 +1098,26 @@ describe("empty handoff folders at session start", () => {
 
     expect(existsSync(empty)).toBe(true);
     expect(host.notices.map((notice) => notice.message)).not.toContain(CLEARED.message);
+  });
+
+  it.skipIf(process.getuid?.() === 0)("removes nothing when the scan aborted", async () => {
+    const layout = fabricate();
+    const empty = emptyHandoff(layout, "empty");
+    const locked = layout.session("locked", OLD);
+
+    chmodSync(locked, 0o000);
+
+    const { host } = boot(layout);
+
+    await vi.waitFor(() =>
+      expect(host.notices).toEqual([
+        { message: `pi-prune: nothing removed, ${locked}: EACCES`, level: "warning" },
+      ]),
+    );
+
+    chmodSync(locked, 0o644);
+
+    expect(existsSync(empty)).toBe(true);
   });
 
   it("is left alone by /prune", async () => {

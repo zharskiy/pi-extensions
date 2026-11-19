@@ -55,13 +55,13 @@ pi -e ./pi-extensions/extensions/prune/index.ts   # this extension alone, from a
 
 | Try | What you see |
 |---|---|
-| `/prune` | `Scanning sessions...` under the editor, then a menu, `Prune sessions`, with `Prune now` and `Auto-prune`. Escape closes it. |
-| `/prune` → `Prune now` | A list, `Remove sessions not touched for...`, with one row per interval (7, 30, 60, 90, 180 and 365 days) and what each would remove, with its size. Pick one and answer `Prune sessions?`; yes shows `Removing old sessions...` and then `pi-prune: removed 2 sessions, 1 agent run older than 30 days, 1.2 MB freed`. Escape goes back to the menu; no removes nothing. |
+| `/prune` | `Scanning sessions...` directly above the editor, then a menu, `Prune sessions`, with `Prune now` and `Auto-prune`. Escape closes it. |
+| `/prune` → `Prune now` | A list, `Remove sessions not touched for...`, with one row per interval (7, 30, 60, 90, 180 and 365 days) and what each would remove, with its size. Pick one and answer `Prune sessions?`; yes shows `Removing old sessions...` and then `pi-prune: removed 2 sessions, 1 agent run older than 30 days, 1.2 MB freed`. Escape goes back to the menu; an interval with nothing to remove keeps the list open; no removes nothing and goes back to the list. Counts are grouped by thousands, as in `211,941 handoff dirs`. |
 | `/prune` → `Auto-prune` | The same intervals and `Off`, `Auto-prune sessions not touched for...`, each with what the next start would remove; your `days` is marked `✓`. Picking one saves it to `pi-prune.json` and removes nothing now. |
 | Start pi with old sessions on disk | `pi-prune: removed 3 sessions, 5 agent runs, 2 handoff dirs older than 180 days, 4 empty handoff dirs, 12.4 MB freed`, once. The bytes are those of the session files and of the files directly in each removed run and handoff folder. |
 | Start pi when a session file cannot be read | `pi-prune: nothing removed, <file>: EACCES`, once, as a warning; also when the liveness marker cannot be written or the sweep fails. |
 
-Right before it removes, `/prune` scans again and removes only what you confirmed that is still old. Models never see this command or its output: it registers no tool and adds nothing to the conversation. Outside the interactive terminal it only says that it needs one; set `days` in `pi-prune.json` there.
+Right before it removes, `/prune` scans again and removes only what you confirmed that is still old. When that is nothing it says `pi-prune: nothing removed, the sessions changed since the scan`; when it is only part, the notice ends with `, the rest changed since the scan and was kept`. Models never see this command or its output: it registers no tool and adds nothing to the conversation. Outside the interactive terminal it only says that it needs one; set `days` in `pi-prune.json` there.
 
 ## Before you rely on it
 

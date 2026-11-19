@@ -7,80 +7,66 @@ export type Member = {
   bytes: number;
   parent?: string;
   live: boolean;
-  pinned?: boolean;
 };
 
 export type Chain<M extends Member = Member> = { members: M[]; newest: number; live: boolean };
 
-const linked = (members: readonly Member[]) => {
-  const keys = new Set(members.map((member) => pathKey(member.file)));
-  const links = new Map<string, string[]>();
+const disjoint = (count: number) => {
+  const roots = Array.from({ length: count }, (_, node) => node);
+  const sizes = roots.map(() => 1);
 
-  const link = (from: string, to: string) => {
-    const known = links.get(from);
-
-    if (known) {
-      known.push(to);
-      return;
+  const find = (node: number): number => {
+    if (roots[node] === node) {
+      return node;
     }
 
-    links.set(from, [to]);
+    roots[node] = find(roots[node]);
+
+    return roots[node];
   };
 
-  members.forEach((member) => {
-    const child = pathKey(member.file);
-    const parent = member.parent === undefined ? undefined : pathKey(member.parent);
+  const union = (left: number, right: number) => {
+    const [a, b] = [find(left), find(right)];
 
-    if (parent === undefined || parent === child || !keys.has(parent)) {
+    if (a === b) {
       return;
     }
 
-    link(child, parent);
-    link(parent, child);
-  });
+    const [big, small] = sizes[a] >= sizes[b] ? [a, b] : [b, a];
 
-  return links;
+    roots[small] = big;
+    sizes[big] += sizes[small];
+  };
+
+  return { find, union };
 };
 
 export const chainsOf = <M extends Member>(members: readonly M[]): Chain<M>[] => {
-  const links = linked(members);
-  const groupOf = new Map<string, number>();
-
-  const spread = (frontier: string[], group: number): void => {
-    if (frontier.length === 0) {
-      return;
-    }
-
-    const next = frontier
-      .flatMap((key) => links.get(key) ?? [])
-      .filter((key) => {
-        if (groupOf.has(key)) {
-          return false;
-        }
-
-        groupOf.set(key, group);
-
-        return true;
-      });
-
-    spread(next, group);
-  };
+  const nodes = new Map<string, number>();
 
   members.forEach((member, index) => {
     const key = pathKey(member.file);
 
-    if (groupOf.has(key)) {
-      return;
+    if (!nodes.has(key)) {
+      nodes.set(key, index);
     }
+  });
 
-    groupOf.set(key, index);
-    spread([key], index);
+  const sets = disjoint(members.length);
+  const nodeOf = (member: M) => nodes.get(pathKey(member.file)) ?? 0;
+
+  members.forEach((member) => {
+    const parent = member.parent === undefined ? undefined : nodes.get(pathKey(member.parent));
+
+    if (parent !== undefined) {
+      sets.union(nodeOf(member), parent);
+    }
   });
 
   const groups = new Map<number, M[]>();
 
   members.forEach((member) => {
-    const group = groupOf.get(pathKey(member.file)) ?? -1;
+    const group = sets.find(nodeOf(member));
     const found = groups.get(group);
 
     if (found) {
@@ -94,6 +80,6 @@ export const chainsOf = <M extends Member>(members: readonly M[]): Chain<M>[] =>
   return [...groups.values()].map((chained) => ({
     members: chained,
     newest: chained.reduce((newest, member) => Math.max(newest, member.mtime), -Infinity),
-    live: chained.some((member) => member.live || member.pinned === true),
+    live: chained.some((member) => member.live),
   }));
 };

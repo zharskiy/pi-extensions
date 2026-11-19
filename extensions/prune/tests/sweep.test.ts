@@ -3,6 +3,7 @@ import {
   chmodSync,
   existsSync,
   lstatSync,
+  lutimesSync,
   mkdirSync,
   readdirSync,
   rmSync,
@@ -11,6 +12,8 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { chainsOf } from "../core/session-chains.ts";
+import { apply, clearEmpties } from "../core/sweep-apply.ts";
 import { cutoffAt, type Plan, plan, planAt, scan, totals, within } from "../core/sweep-plan.ts";
 import {
   CUTOFF,
@@ -713,7 +716,33 @@ describe("within", () => {
     const fresh = await layout.planned();
 
     expect(fresh).not.toEqual(confirmed);
-    expect(within(fresh, confirmed)).toEqual(confirmed);
+    expect(within(fresh, confirmed)).toEqual({ ...confirmed, empties: [] });
+  });
+
+  it("drops a session's handoff dir the confirmed plan did not have", async () => {
+    const layout = fabricate();
+    const old = layout.session("old", OLD);
+    const confirmed = await layout.planned();
+    const handoff = layout.handoff("old", OLD);
+    const fresh = await layout.planned();
+
+    expect(fresh.chains.flat()[0]?.handoff?.dir).toBe(handoff);
+    expect(within(fresh, confirmed).chains.flat()).toEqual([
+      expect.objectContaining({ file: old, handoff: undefined }),
+    ]);
+  });
+
+  it("lists no empty handoff dirs, which only the sweep clears", async () => {
+    const layout = fabricate();
+    const empty = join(layout.handoffRoot, "empty");
+
+    mkdirSync(empty);
+    touch(empty, OLD);
+
+    const planned = await layout.planned();
+
+    expect(planned.empties).toEqual([empty]);
+    expect(within(planned, planned).empties).toEqual([]);
   });
 
   it("drops a chain that gained a member after the confirm", async () => {
@@ -838,5 +867,172 @@ describe("bytes", () => {
 
     expect(totals(planned)).toEqual({ sessions: 0, runs: 0, handoffs: 0, bytes: 0 });
     expect(files.map(existsSync)).toEqual([true, true]);
+  });
+});
+
+const emptyDir = (layout: ReturnType<typeof fabricate>, name: string) => {
+  const dir = join(layout.handoffRoot, name);
+
+  mkdirSync(dir);
+  touch(dir, daysAgo(2));
+
+  return dir;
+};
+
+describe("review guards", () => {
+  it("does not give an old copy the handoff dir of a newer copy with the same id", async () => {
+    const layout = fabricate();
+    const other = join(layout.sessionsRoot, "--other--");
+    const old = layout.session("dup", daysAgo(400));
+
+    layout.sessionIn(other, "dup", daysAgo(100));
+
+    const handoff = layout.handoff("dup", daysAgo(400));
+    const input = layout.input({ slugDirs: [layout.slugDir, other] });
+    const scanned = await scan(input, cutoffAt(input.now, 7));
+    const planned = plan(scanned, cutoffAt(input.now, 365));
+
+    expect(planned.chains.flat()).toEqual([expect.objectContaining({ file: old, handoff: undefined })]);
+    expect(totals(planned).handoffs).toBe(0);
+    expect(existsSync(handoff)).toBe(true);
+  });
+
+  it("does not measure the handoff dir of an id a fresh copy keeps", async () => {
+    const layout = fabricate();
+    const other = join(layout.sessionsRoot, "--other--");
+
+    layout.session("dup", daysAgo(400));
+    layout.sessionIn(other, "dup", RECENT);
+    layout.handoff("dup", daysAgo(400));
+
+    const input = layout.input({ slugDirs: [layout.slugDir, other] });
+    const scanned = await scan(input, cutoffAt(input.now, 7));
+
+    expect("owned" in scanned && scanned.owned.has("dup")).toBe(false);
+  });
+
+  it("keeps the old parent a live pi names before its own session file exists", async () => {
+    const layout = fabricate();
+    const parent = layout.session("parent", OLD);
+
+    layout.marker("child", process.pid, { file: join(layout.slugDir, "child.jsonl"), parentSession: parent });
+
+    const planned = await layout.planned({ isAlive: (pid) => pid === process.pid });
+
+    expect(planned.chains).toEqual([]);
+  });
+
+  it("stops a chain when a later member changes while an earlier one is removed", async () => {
+    const layout = fabricate();
+    const files = linked(layout, [OLD, OLD]);
+
+    layout.marker("elsewhere", 999_999);
+
+    const planned = await layout.planned();
+    const calls = { count: 0 };
+
+    const isAlive = () => {
+      calls.count += 1;
+
+      if (calls.count === 3) {
+        files
+          .filter((file) => existsSync(file))
+          .forEach((file) => {
+            touch(file, RECENT);
+          });
+      }
+
+      return false;
+    };
+
+    const removed = await layout.applied(planned, { isAlive });
+
+    expect(removed.sessions).toBe(1);
+    expect(files.filter((file) => existsSync(file))).toHaveLength(1);
+  });
+
+  it("removes no handoff dir once the root became open to other users", async () => {
+    const layout = fabricate();
+
+    layout.session("old", OLD);
+
+    const owned = layout.handoff("old", OLD);
+    const orphan = layout.handoff("orphan", OLD);
+    const empty = emptyDir(layout, "empty");
+    const planned = await layout.planned();
+
+    expect(planned.empties).toContain(empty);
+
+    chmodSync(layout.handoffRoot, 0o777);
+
+    const removed = await apply(planned, layout.input());
+    const cleared = await clearEmpties(planned, layout.input());
+
+    chmodSync(layout.handoffRoot, 0o700);
+
+    expect([removed.sessions, removed.handoffs, cleared]).toEqual([1, 0, 0]);
+    expect([owned, orphan, empty].map(existsSync)).toEqual([true, true, true]);
+  });
+
+  it("lists no symbolic link in the handoff root, as an orphan or an empty dir", async () => {
+    const layout = fabricate();
+    const target = join(layout.root, "elsewhere");
+    const link = join(layout.handoffRoot, "link");
+
+    mkdirSync(target);
+    touch(target, OLD);
+    symlinkSync(target, link);
+    lutimesSync(link, new Date(OLD), new Date(OLD));
+
+    const planned = await layout.planned();
+
+    expect(planned.orphans.handoffs).toEqual([]);
+    expect(planned.empties).toEqual([]);
+  });
+
+  it("lists no empty dir named after a session live at scan time", async () => {
+    const layout = fabricate();
+    const live = emptyDir(layout, "live-one");
+    const empty = emptyDir(layout, "empty");
+
+    layout.marker("live-one", process.pid);
+
+    const planned = await layout.planned({ isAlive: (pid) => pid === process.pid });
+
+    expect(planned.empties).toEqual([empty]);
+    expect(existsSync(live)).toBe(true);
+  });
+
+  it("keeps an empty dir whose session turned live after the scan", async () => {
+    const layout = fabricate();
+    const live = emptyDir(layout, "live-one");
+    const empty = emptyDir(layout, "empty");
+    const planned = await layout.planned();
+
+    layout.marker("live-one", process.pid);
+
+    const cleared = await clearEmpties(planned, layout.input({ isAlive: (pid) => pid === process.pid }));
+
+    expect(cleared).toBe(1);
+    expect([live, empty].map(existsSync)).toEqual([true, false]);
+  });
+});
+
+describe("long chains", () => {
+  it("groups a 20,000-long linear chain whose far end is fresh, so nothing is removable", () => {
+    const count = 20_000;
+    const members = Array.from({ length: count }, (_, index) => ({
+      file: `/sessions/s${index}.jsonl`,
+      mtime: index === count - 1 ? RECENT : OLD,
+      bytes: 1,
+      parent: index === 0 ? undefined : `/sessions/s${index - 1}.jsonl`,
+      live: false,
+    }));
+    const chains = chainsOf(members);
+
+    expect(chains).toHaveLength(1);
+    expect(chains[0]?.members).toHaveLength(count);
+    expect(chains[0]?.newest).toBe(RECENT);
+    expect(chains.filter((chain) => !chain.live && chain.newest < CUTOFF)).toEqual([]);
   });
 });

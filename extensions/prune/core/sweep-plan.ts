@@ -64,7 +64,6 @@ export type Candidate = {
 export type Removed = { sessions: number; runs: number; handoffs: number; bytes: number };
 
 export type Plan = {
-  cutoff: number;
   aborted?: string;
   chains: Candidate[][];
   orphans: { stems: Stem[]; handoffs: Sized[] };
@@ -112,9 +111,7 @@ const memberOf = (session: Session, live: Live): Linked => ({
   bytes: session.bytes,
   parent: session.header?.parentSession,
   live:
-    (session.header !== undefined && live.ids.has(session.header.id)) ||
-    live.files.has(pathKey(session.file)),
-  pinned: session.header === undefined,
+    session.header === undefined || live.ids.has(session.header.id) || live.files.has(pathKey(session.file)),
 });
 
 const removableAt = (chain: Chain, cutoff: number) => !chain.live && chain.newest < cutoff;
@@ -141,8 +138,7 @@ const runsIn = async (dirs: readonly string[]): Promise<RunsIn[]> => {
 
 const stemOf = (file: string) => file.slice(0, -SESSION_EXT.length);
 
-const emptyPlan = (cutoff: number, aborted: string): Plan => ({
-  cutoff,
+const emptyPlan = (aborted: string): Plan => ({
   aborted,
   chains: [],
   orphans: { stems: [], handoffs: [] },
@@ -232,7 +228,7 @@ export const scan = async (input: ScanInput, latestCutoff: number): Promise<Scan
 
 export const plan = (scanned: Scan, cutoff: number): Plan => {
   if ("aborted" in scanned) {
-    return emptyPlan(cutoff, scanned.aborted);
+    return emptyPlan(scanned.aborted);
   }
 
   if (cutoff > scanned.latestCutoff) {
@@ -244,7 +240,6 @@ export const plan = (scanned: Scan, cutoff: number): Plan => {
   const fallbackStems = scanned.fallbackStems.filter(({ dir }) => !keptIds.has(basename(dir)));
 
   return {
-    cutoff,
     chains: chains
       .filter((chain) => removableAt(chain, cutoff))
       .map((chain) =>
@@ -342,6 +337,6 @@ export const within = (fresh: Plan, confirmed: Plan): Plan => {
       stems: fresh.orphans.stems.flatMap(confirmedRuns),
       handoffs: fresh.orphans.handoffs.filter(({ dir }) => handoffs.has(dir)),
     },
-    empties: fresh.empties.filter((dir) => confirmed.empties.includes(dir)),
+    empties: [],
   };
 };

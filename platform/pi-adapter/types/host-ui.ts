@@ -29,7 +29,7 @@ export type OverlayUi = {
 };
 
 export type WidgetUi = {
-  setWidget(key: string, render: RowLines | undefined): WidgetHandle;
+  setWidget(key: string, render: RowLines | undefined, options?: { above?: boolean }): WidgetHandle;
   setFooter(render: FooterRender | undefined): WidgetHandle;
   setWorkingMessage(text: string | undefined): void;
   setWorkingVisible(visible: boolean): void;

@@ -6,15 +6,9 @@ import type { Sized } from "./handoff-scan.ts";
 import { type Live, readLive } from "./live-markers.ts";
 import { pathKey } from "./path-key.ts";
 import { LIMIT, pooled } from "./pool.ts";
-import type { Candidate, Plan, PlanInput, Removed, Stem } from "./sweep-plan.ts";
-
-type Tally = { count: number; bytes: number };
-
-type ApplyContext = Pick<PlanInput, "agentDir" | "handoffRoot" | "current" | "isAlive">;
+import type { Candidate, Plan, Removed, Sources, Stem } from "./sweep-plan.ts";
 
 const NOTHING: Removed = { sessions: 0, runs: 0, handoffs: 0, bytes: 0 };
-
-const NONE: Tally = { count: 0, bytes: 0 };
 
 const ignore = () => undefined;
 
@@ -24,11 +18,6 @@ const done = (work: Promise<unknown>) =>
     () => 0,
   );
 
-const tallied = (tallies: readonly Tally[]): Tally => ({
-  count: tallies.reduce((total, tally) => total + tally.count, 0),
-  bytes: tallies.reduce((total, tally) => total + tally.bytes, 0),
-});
-
 const added = (all: readonly Removed[]): Removed => ({
   sessions: all.reduce((total, removed) => total + removed.sessions, 0),
   runs: all.reduce((total, removed) => total + removed.runs, 0),
@@ -36,13 +25,13 @@ const added = (all: readonly Removed[]): Removed => ({
   bytes: all.reduce((total, removed) => total + removed.bytes, 0),
 });
 
-const removeSized = async ({ dir, bytes }: Sized): Promise<Tally> =>
-  (await done(rm(dir, { recursive: true }))) === 1 ? { count: 1, bytes } : NONE;
+const removeSized = async ({ dir, bytes }: Sized, kind: "runs" | "handoffs"): Promise<Removed> =>
+  (await done(rm(dir, { recursive: true }))) === 1 ? { ...NOTHING, [kind]: 1, bytes } : NOTHING;
 
 const pruneStem = async ({ dir, runs }: Stem) => {
-  const removed = tallied(await pooled(runs, 1, removeSized));
+  const removed = added(await pooled(runs, 1, (run) => removeSized(run, "runs")));
 
-  if (removed.count > 0) {
+  if (removed.runs > 0) {
     await rmdir(join(dir, AGENTS_DIR)).catch(ignore);
     await rmdir(dir).catch(ignore);
   }
@@ -50,8 +39,8 @@ const pruneStem = async ({ dir, runs }: Stem) => {
   return removed;
 };
 
-const removeHandoff = async (handoff: Sized, context: ApplyContext) =>
-  (await rootState(context.handoffRoot)) === "safe" ? removeSized(handoff) : NONE;
+const removeHandoff = async (handoff: Sized, context: Sources) =>
+  (await rootState(context.handoffRoot)) === "safe" ? removeSized(handoff, "handoffs") : NOTHING;
 
 const isLive = (candidate: Candidate, live: Live) =>
   live.ids.has(candidate.id) || live.files.has(pathKey(candidate.file));
@@ -62,7 +51,7 @@ const changed = async ({ file, mtime }: Candidate) => {
   return stat !== undefined && stat.mtimeMs !== mtime;
 };
 
-const untouched = async (chain: readonly Candidate[], context: ApplyContext) => {
+const untouched = async (chain: readonly Candidate[], context: Sources) => {
   const live = await readLive(context.agentDir, context.current, context.isAlive);
 
   if (!live || chain.some((candidate) => isLive(candidate, live))) {
@@ -74,7 +63,7 @@ const untouched = async (chain: readonly Candidate[], context: ApplyContext) => 
   return !changes.includes(true);
 };
 
-const recheck = async (candidate: Candidate, context: ApplyContext) => {
+const recheck = async (candidate: Candidate, context: Sources) => {
   const live = await readLive(context.agentDir, context.current, context.isAlive);
 
   if (!live || isLive(candidate, live)) {
@@ -90,7 +79,7 @@ const recheck = async (candidate: Candidate, context: ApplyContext) => {
   return stat.mtimeMs === candidate.mtime ? stat.size : "stop";
 };
 
-const removeChain = async (chain: readonly Candidate[], context: ApplyContext): Promise<Removed[]> => {
+const removeChain = async (chain: readonly Candidate[], context: Sources): Promise<Removed[]> => {
   if (!(await untouched(chain, context).catch(() => false))) {
     return [];
   }
@@ -113,21 +102,16 @@ const removeChain = async (chain: readonly Candidate[], context: ApplyContext): 
       return NOTHING;
     }
 
-    const runs = candidate.stem ? await pruneStem(candidate.stem) : NONE;
-    const handoff = candidate.handoff ? await removeHandoff(candidate.handoff, context) : NONE;
+    const runs = candidate.stem ? await pruneStem(candidate.stem) : NOTHING;
+    const handoff = candidate.handoff ? await removeHandoff(candidate.handoff, context) : NOTHING;
 
-    return {
-      sessions: 1,
-      runs: runs.count,
-      handoffs: handoff.count,
-      bytes: state + runs.bytes + handoff.bytes,
-    };
+    return added([{ ...NOTHING, sessions: 1, bytes: state }, runs, handoff]);
   };
 
   return pooled(chain, 1, step);
 };
 
-export const clearEmpties = async (plan: Plan, context: ApplyContext) => {
+export const clearEmpties = async (plan: Plan, context: Sources) => {
   const live = await readLive(context.agentDir, context.current, context.isAlive);
 
   if (!live) {
@@ -143,22 +127,17 @@ export const clearEmpties = async (plan: Plan, context: ApplyContext) => {
   return cleared.reduce((total, count) => total + count, 0);
 };
 
-export const apply = async (plan: Plan, context: ApplyContext): Promise<Removed> => {
+export const apply = async (plan: Plan, context: Sources): Promise<Removed> => {
   if (plan.aborted) {
     return NOTHING;
   }
 
   const chains = await pooled(plan.chains, LIMIT, (chain) => removeChain(chain, context));
   const sessions = chains.flat();
-  const stems = tallied(await pooled(plan.orphans.stems, LIMIT, pruneStem));
-  const handoffs = tallied(
-    await pooled(plan.orphans.handoffs, LIMIT, (handoff) => removeHandoff(handoff, context)),
-  );
+  const stems = await pooled(plan.orphans.stems, LIMIT, pruneStem);
+  const handoffs = await pooled(plan.orphans.handoffs, LIMIT, (handoff) => removeHandoff(handoff, context));
 
   await pooled(plan.markers, LIMIT, (marker) => done(unlink(marker)));
 
-  return added([
-    ...sessions,
-    { sessions: 0, runs: stems.count, handoffs: handoffs.count, bytes: stems.bytes + handoffs.bytes },
-  ]);
+  return added([...sessions, ...stems, ...handoffs]);
 };

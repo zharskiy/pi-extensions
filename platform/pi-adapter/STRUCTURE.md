@@ -31,7 +31,7 @@
 - `child/model-catalog.ts`: `availableModels`; credentialed models with their window, price and thinking levels.
 - `child/model-resolver.ts`: `resolveModel`; exact, then fuzzy model matching.
 - `child/codemode.ts`: the codemode worker cap (`PI_CODEMODE_MAX_WORKERS`), an owned value shared by adapter copies.
-- `ui/create-ui.ts`: `HostUi`: widgets, overlay, notify, copyText, key observation, thinking label, editor text, columns.
+- `ui/create-ui.ts`: `HostUi`: widgets (below the editor, or above it on request), overlay, notify, copyText, key observation, thinking label, editor text, columns.
 - `ui/tui-context.ts`: `HostState` (current context and tools) and `tuiContext` (the context in tui mode).
 - `ui/form.ts`: `HostUi.showForm`, the inline form shell.
 - `ui/custom-view.ts`: `showCustomView`, the one `ctx.ui.custom` adapter of the overlay and the form (fitted lines, keys as `KeyPress`, dispose), with the mouse handler and the focus as options.

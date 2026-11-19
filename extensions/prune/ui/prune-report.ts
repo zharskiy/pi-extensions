@@ -1,4 +1,4 @@
-import { counted, errorText } from "../../../platform/shared/index.ts";
+import { errorText, noun } from "../../../platform/shared/index.ts";
 import { NAMESPACE, SETTINGS_FILE } from "../core/settings.ts";
 import type { Removed } from "../core/sweep-plan.ts";
 
@@ -16,6 +16,10 @@ const amounts = (removed: Removed) =>
     [removed.runs, "agent run"],
     [removed.handoffs, "handoff dir"],
   ] as const;
+
+const GROUPED = new Intl.NumberFormat("en-US");
+
+const counted = (count: number, word: string) => `${GROUPED.format(count)} ${noun(count, word)}`;
 
 const listed = (pairs: readonly (readonly [number, string])[]) =>
   pairs.map(([count, word]) => counted(count, word)).join(", ");
@@ -68,6 +72,20 @@ export const removedText = (removed: Removed, days: number, empties = 0) => {
   return aged.length + cleared.length > 0
     ? `${NAMESPACE}: removed ${[...aged, ...cleared].join(", ")}${freed}`
     : `${NAMESPACE}: nothing older than ${daysText(days)} to remove`;
+};
+
+const itemsOf = (removed: Removed) => removed.sessions + removed.runs + removed.handoffs;
+
+export const outcomeText = (removed: Removed, expected: Removed, days: number) => {
+  if (itemsOf(removed) === 0) {
+    return `${NAMESPACE}: nothing removed, the sessions changed since the scan`;
+  }
+
+  const text = removedText(removed, days);
+
+  return itemsOf(removed) < itemsOf(expected)
+    ? `${text}, the rest changed since the scan and was kept`
+    : text;
 };
 
 export const abortedText = (reason: string) => `${NAMESPACE}: nothing removed, ${reason}`;

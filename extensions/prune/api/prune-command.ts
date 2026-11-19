@@ -25,7 +25,7 @@ import {
   failedText,
   NO_TERMINAL,
   NOTHING_TEXT,
-  removedText,
+  outcomeText,
   savedWithErrorsText,
 } from "../ui/prune-report.ts";
 
@@ -34,9 +34,11 @@ const SCANNING = "Scanning sessions";
 const REMOVING = "Removing old sessions";
 
 const busy = async <T>(host: Host, text: string, work: () => Promise<T>) => {
-  host.ui.setWidget(NAMESPACE, (_width, theme) => [
-    `${PAD}${theme.fg("muted", `${MARKS.pending} ${text}${ELLIPSIS}`)}`,
-  ]);
+  host.ui.setWidget(
+    NAMESPACE,
+    (_width, theme) => [`${PAD}${theme.fg("muted", `${MARKS.pending} ${text}${ELLIPSIS}`)}`],
+    { above: true },
+  );
 
   try {
     return await work();
@@ -74,19 +76,7 @@ export const registerPrune = (host: Host, sources: (info: SessionInfo) => Source
   };
 
   const pruneNow = async (info: SessionInfo, confirmed: Plan, days: number) => {
-    const planned = totals(confirmed);
-
-    if (!removesAnything(planned)) {
-      host.ui.notify(removedText(planned, days), "info");
-      return;
-    }
-
-    const skipped = confirmed.handoffsSkipped ? sources(info).handoffRoot : undefined;
-
-    if (!(await host.ui.confirm(CONFIRM_TITLE, confirmText(planned, days, skipped)))) {
-      return;
-    }
-
+    const expected = totals(confirmed);
     const outcome = await busy(host, REMOVING, async () => {
       const fresh = await planAt({ ...(await scanInput(sources(info))), days, now: Date.now() });
 
@@ -98,7 +88,30 @@ export const registerPrune = (host: Host, sources: (info: SessionInfo) => Source
       return;
     }
 
-    host.ui.notify(removedText(outcome, days), "info");
+    host.ui.notify(outcomeText(outcome, expected, days), "info");
+  };
+
+  const pickPrune = async (info: SessionInfo, planned: readonly Plan[], selected?: number): Promise<void> => {
+    const days = await host.ui.showForm(intervalForm("prune", planned, selected));
+
+    if (days === undefined) {
+      return menu(info, planned);
+    }
+
+    const confirmed = planned[INTERVALS.indexOf(days)];
+    const expected = totals(confirmed);
+
+    if (!removesAnything(expected)) {
+      return pickPrune(info, planned, days);
+    }
+
+    const skipped = confirmed.handoffsSkipped ? sources(info).handoffRoot : undefined;
+
+    if (!(await host.ui.confirm(CONFIRM_TITLE, confirmText(expected, days, skipped)))) {
+      return pickPrune(info, planned, days);
+    }
+
+    await pruneNow(info, confirmed, days);
   };
 
   const menu = async (info: SessionInfo, planned: readonly Plan[]): Promise<void> => {
@@ -115,18 +128,17 @@ export const registerPrune = (host: Host, sources: (info: SessionInfo) => Source
       return;
     }
 
+    if (kind === "prune") {
+      return pickPrune(info, planned, configured);
+    }
+
     const days = await host.ui.showForm(intervalForm(kind, planned, configured));
 
     if (days === undefined) {
       return menu(info, planned);
     }
 
-    if (kind === "auto") {
-      choose(info, days);
-      return;
-    }
-
-    await pruneNow(info, planned[INTERVALS.indexOf(days)], days);
+    choose(info, days);
   };
 
   const run = async (info: SessionInfo) => {

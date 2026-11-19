@@ -66,6 +66,7 @@ export type FakeHost = Host & {
   statusCalls: { key: string; text: string | undefined }[];
   widgets: Map<string, RowLines | undefined>;
   belowEditor: string[];
+  aboveEditor: string[];
   widgetRefreshes: number;
   overlays: OverlayFactory[];
   forms: FakeForm[];
@@ -245,6 +246,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     statusCalls: [],
     widgets: new Map(),
     belowEditor: [],
+    aboveEditor: [],
     widgetRefreshes: 0,
     overlays: [],
     forms: [],
@@ -326,12 +328,13 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
           ? host.confirmAnswer(title, message)
           : host.confirmAnswer;
       },
-      setWidget: (key, render) => {
+      setWidget: (key, render, options) => {
         host.widgets.set(key, render);
         host.belowEditor = host.belowEditor.filter((entry) => entry !== key);
+        host.aboveEditor = host.aboveEditor.filter((entry) => entry !== key);
 
         if (render) {
-          host.belowEditor.push(key);
+          (options?.above ? host.aboveEditor : host.belowEditor).push(key);
         }
         return {
           refresh: () => {
