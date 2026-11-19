@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Backend, ExecIo, ExecSpec, MountSpec } from "../../backend/index.ts";
-import { copyTee, pasteBridge } from "../../container/clipboard.ts";
+import { type ClipboardContent, copyTee, pasteBridge } from "../../container/clipboard.ts";
 
 const readFailures = vi.hoisted(() => new Map<string, string>());
 
@@ -135,7 +135,7 @@ describe("pasteBridge", () => {
 
   const bridged = async (
     chunks: string[],
-    options: { image?: Buffer; mounts?: MountSpec[]; copyFails?: boolean } = {},
+    options: { content?: ClipboardContent; mounts?: MountSpec[]; copyFails?: boolean } = {},
   ) => {
     const imports: Array<{ path: string; data: Buffer }> = [];
     const backend: Pick<Backend, "exec"> = {
@@ -166,10 +166,10 @@ describe("pasteBridge", () => {
       { backend, containerId: "c" },
       {
         copy: async () => undefined,
-        readImage: async () => {
+        read: async () => {
           reads.push(1);
 
-          return options.image;
+          return options.content;
         },
         mounts: options.mounts ?? [],
       },
@@ -267,7 +267,7 @@ describe("pasteBridge", () => {
       { backend: { exec: async () => 0 }, containerId: "c" },
       {
         copy: async () => undefined,
-        readImage: () => Promise.reject(new Error("osascript failed")),
+        read: () => Promise.reject(new Error("osascript failed")),
         mounts: [],
       },
       () => undefined,
@@ -285,8 +285,46 @@ describe("pasteBridge", () => {
     expect(Buffer.concat(received).toString()).toBe("\x16");
   });
 
+  it("imports a single image file reference on Ctrl+V like a dropped path", async () => {
+    const imported = await bridged(["\x16"], { content: { file: join(root.dir, "my shot.png") } });
+    const denied = await bridged(["\x16"], { content: { file: join(root.dir, "denied.png") } });
+
+    expect(imported.imports).toEqual([{ path: expect.stringMatching(GUEST), data: PNG }]);
+    expect(imported.text).toBe(paste(imported.imports[0]?.path ?? ""));
+    expect(denied.text).toBe("\x16");
+    expect(denied.notices).toHaveLength(1);
+  });
+
+  it("pastes a file reference the sandbox already sees as its own path", async () => {
+    const file = join(root.dir, "my shot.png");
+    const mounts: MountSpec[] = [{ kind: "bind", source: root.dir, target: root.dir, readOnly: true }];
+    const run = await bridged(["\x16"], { content: { file }, mounts });
+
+    expect(run.text).toBe(paste(file));
+    expect(run.imports).toEqual([]);
+  });
+
+  it("forwards Ctrl+V silently for a visible file reference whose path holds control characters", async () => {
+    const mounts: MountSpec[] = [{ kind: "bind", source: root.dir, target: root.dir, readOnly: true }];
+    const runs = await Promise.all(
+      ["x\x1b[201~\r!cmd\r.png", "tab\there.png", "del\x7f.png", "c1\x9b.png"].map((name) =>
+        bridged(["\x16"], { content: { file: join(root.dir, name) }, mounts }),
+      ),
+    );
+
+    expect(runs.map((run) => [run.text, run.notices])).toEqual(runs.map(() => ["\x16", []]));
+  });
+
+  it("forwards Ctrl+V silently for a non-image file reference", async () => {
+    const run = await bridged(["\x16"], { content: { file: join(root.dir, "notes.txt") } });
+
+    expect(run.text).toBe("\x16");
+    expect(run.imports).toEqual([]);
+    expect(run.notices).toEqual([]);
+  });
+
   it("pastes the clipboard image on Ctrl+V, including a non-Latin layout", async () => {
-    const run = await bridged(["\x16", "\x1b[1084::118;5u", "x"], { image: PNG });
+    const run = await bridged(["\x16", "\x1b[1084::118;5u", "x"], { content: { image: PNG } });
 
     expect(run.imports.map((entry) => entry.path)).toEqual([
       expect.stringMatching(GUEST),

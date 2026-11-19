@@ -1,4 +1,4 @@
-export type { HostClipboard } from "./clipboard.ts";
+export type { ClipboardContent, HostClipboard } from "./clipboard.ts";
 export {
   type GitGuardContext,
   type GitOverlay,

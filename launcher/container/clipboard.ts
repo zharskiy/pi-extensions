@@ -6,9 +6,11 @@ import { PassThrough, Writable } from "node:stream";
 import { type Backend, execCapture, type MountSpec } from "../backend/index.ts";
 import { visibleInside } from "./host-paths.ts";
 
+export type ClipboardContent = { image: Buffer } | { file: string };
+
 export interface HostClipboard {
   copy(text: Buffer): Promise<unknown>;
-  readImage(): Promise<Buffer | undefined>;
+  read(): Promise<ClipboardContent | undefined>;
   mounts: MountSpec[];
 }
 
@@ -60,6 +62,13 @@ const TOO_LARGE_NOTICE = `${NOT_COPIED} it is larger than 20 MiB`;
 const COPY_FAILED_NOTICE = `${NOT_COPIED} the copy into the container failed`;
 
 const OPEN_ESCAPE = new RegExp(String.raw`^${ESC}(?:\[[\x20-\x3f]*|[\]P^_X][^${BEL}${ESC}]*|[\x20-\x2f]*)$`);
+
+const control = (text: string) =>
+  [...text].some((character) => {
+    const code = character.codePointAt(0) ?? 0;
+
+    return code < 0x20 || (code >= 0x7f && code <= 0x9f);
+  });
 
 const notification = (notice: string) => `${ESC}]9;${notice}${BEL}`;
 
@@ -252,14 +261,32 @@ const rewrittenPaste = async (body: string, trailing: string, sandbox: Sandbox, 
   return "notice" in imported ? imported : { replaced: bracketed(`${imported.guestPath}${trailing}`) };
 };
 
-const clipboardPaste = async (sandbox: Sandbox, clipboard: HostClipboard) => {
-  const image = await clipboard.readImage();
+const filePaste = async (path: string, sandbox: Sandbox, clipboard: HostClipboard) => {
+  const imported = await importedImage(path, sandbox, clipboard);
 
-  if (image === undefined || image.length > IMAGE_MAX_BYTES) {
+  if (imported === undefined) {
     return {};
   }
 
-  const guestPath = await copiedIn(image, ".png", sandbox);
+  if ("visible" in imported) {
+    return control(path) ? {} : { replaced: bracketed(path) };
+  }
+
+  return "notice" in imported ? imported : { replaced: bracketed(imported.guestPath) };
+};
+
+const clipboardPaste = async (sandbox: Sandbox, clipboard: HostClipboard) => {
+  const content = await clipboard.read();
+
+  if (content !== undefined && "file" in content) {
+    return await filePaste(content.file, sandbox, clipboard);
+  }
+
+  if (content === undefined || content.image.length > IMAGE_MAX_BYTES) {
+    return {};
+  }
+
+  const guestPath = await copiedIn(content.image, ".png", sandbox);
 
   return guestPath === undefined ? {} : { replaced: bracketed(guestPath) };
 };
