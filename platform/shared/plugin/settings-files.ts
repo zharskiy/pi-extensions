@@ -4,7 +4,7 @@ import { isFiniteNumber, isPlainObject, isStringArray } from "../guards.ts";
 import { projectPath, writeProjectFile } from "../project-dir.ts";
 import { errorText } from "../text/format.ts";
 
-type NumberRule = { type: "number"; min: number; max: number; minExclusive?: boolean };
+type NumberRule = { type: "number"; min: number; max: number; minExclusive?: boolean; integer?: true };
 
 type ListRule = { type: "list"; of: string };
 
@@ -21,7 +21,10 @@ export type SettingsSchema<T> = { [K in keyof T]?: SettingsRule };
 export type SettingsParse<T> = { patch: Partial<T>; errors: string[] };
 
 const validNumber = (rule: NumberRule, value: unknown) =>
-  isFiniteNumber(value) && (rule.minExclusive ? value > rule.min : value >= rule.min) && value <= rule.max;
+  isFiniteNumber(value) &&
+  (rule.minExclusive ? value > rule.min : value >= rule.min) &&
+  value <= rule.max &&
+  (!rule.integer || Number.isInteger(value));
 
 const isValid = (rule: SettingsRule, value: unknown) => {
   if (rule.type === "choice") {
@@ -48,9 +51,11 @@ const expectation = (rule: SettingsRule) => {
     return `an object of ${rule.of}`;
   }
 
+  const kind = rule.integer ? "a whole number" : "a number";
+
   return rule.minExclusive
-    ? `a number above ${rule.min} and at most ${rule.max}`
-    : `a number between ${rule.min} and ${rule.max}`;
+    ? `${kind} above ${rule.min} and at most ${rule.max}`
+    : `${kind} between ${rule.min} and ${rule.max}`;
 };
 
 export const parseSettings = <T>(
