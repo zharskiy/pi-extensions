@@ -59,7 +59,7 @@ cli/mcp-sign-in.ts             the launch-start MCP sign-in on the host
 cli/host-sessions.ts           host sessions for a launch: choice, preparation, sweeps, share probe
 cli/intercept.ts               pi install, uninstall, remove, mcp, every update, config, auth, help, --list-models, --export and --version run on the host
 cli/host-routes.ts             which command lines start no session: help, version, auth, config without -l, --list-models, --export
-cli/host-pi.ts                 the one host pi (pi's managed install only), the missing-pi line (missingPiText, built from the parts of missingPi the doctor shows) and --no-sandbox (runHostPi)
+cli/host-pi.ts                 the one host pi (pi's managed install, else npm's global pi, not linked in, outside every folder a sandbox has run in and the launch folder and its git root when a sandbox could hold them), spawning it for host jobs (spawnHostJob), the missing-pi line (missingPiText, built from the parts of missingPi the doctor shows) and --no-sandbox (runHostPi)
 cli/notices.ts                 notices printed once per repository and text
 cli/versions.ts                launcher version and image pi version
 cli/commands/status.ts         pi sandbox status
@@ -113,6 +113,7 @@ workspace/mounts.ts            the protected path table
 workspace/roots.ts             the workspaceRoots refusal (the guard's protected paths and system dirs, nested roots dropped before links) and the checked roots the VM shares
 workspace/pi-session-dir.ts    pi's session slug and the host session dir choice
 workspace/created.ts           removal of recorded created folders
+workspace/sandbox-reach.ts     whether a sandbox could have written a path (a git working tree it could mount, or a folder one has run in), the roots a sandbox has written or is about to (sandboxWriteRoots: folders one has run in, and the launch folder and its git root when one could hold them), and the folders a launch starts in
 workspace/git/layout.ts        git dir layout from the files, refusing links, foreign pointers and a foreign commondir; the git-dir shape and the .git name in any letter case
 workspace/git/protect.ts       the hooks dirs bound read-only, the self binds and the workspace bare-dir check
 workspace/git/integrity.ts     layout re-checks (worktree pointers, foreign commondir) and the alternates notice
@@ -158,7 +159,7 @@ container/git-overlay.ts       the git overlay plan and its ready() step before 
 container/names.ts             container and volume names
 container/lifecycle.ts         startLaunchContainer and removeLaunchContainer: one container per launch, mount points, volume hand-over (fatal when the entrypoint waits for it, a warning otherwise), the wait for the entrypoint's ready marker, the exited-during-startup error
 container/run-pi.ts            pi through exec, the pty only for a terminal, signals and resize, the terminal bridges
-container/clipboard.ts         the clipboard bridges: OSC 52 copies teed to pbcopy, pasted image paths and Ctrl+V images copied into /tmp/pi-paste
+container/clipboard.ts         the clipboard bridges: OSC 52 copies teed to pbcopy, pasted image paths and Ctrl+V images or image files copied into /tmp/pi-paste, an OSC 9 notice when an image import fails, held by the copy tee until pi's output is between escape sequences
 container/host-paths.ts        visibleInside: whether the sandbox sees a host path at the same path
 ```
 
@@ -196,7 +197,7 @@ hostpi/endpoints.ts            rule endpoints and URL credential checks
 hostpi/provider-endpoints.ts   a provider's hosts
 hostpi/provider-hosts.ts       the provider host table with its cache
 hostpi/provider-hosts.mjs      run against the host pi: the built-in provider hosts
-hostpi/locate.ts               finds pi's managed install in the host agent dir
+hostpi/locate.ts               finds pi's managed install in the host agent dir and the pi of npm install -g in npm's global root, keeping only paths the caller's accept predicate takes
 hostpi/path-search.ts          PATH lookup outside the sandbox roots and the executable check
 hostpi/mcp-auth.ts             MCP servers and their host sign-in state
 hostpi/json.ts                 small JSON helpers
@@ -367,7 +368,7 @@ tests/container/spec.test.ts         the container spec
 tests/container/git-overlay.test.ts  the git overlay
 tests/container/lifecycle.test.ts    one container per launch, its removal and housekeeping
 tests/container/run-pi.test.ts       running pi, signals and the terminal bridges
-tests/container/clipboard.test.ts    the copy tee, the pasted image path and Ctrl+V
+tests/container/clipboard.test.ts    the copy tee with its held notices, the pasted image path, Ctrl+V and the failed-import notices
 tests/image/build.test.ts            base builds
 tests/image/build-network.test.ts    build proxy arguments
 tests/image/layer.test.ts            the image layer
@@ -433,7 +434,7 @@ tests/cli/intercept.test.ts          intercepted commands, host routes and the c
 tests/cli/launch.test.ts             the launch
 tests/cli/launch-flow.test.ts        the signal guard, side-by-side stages and the VM shares of a launch
 tests/cli/launch-git.test.ts         the git layout check at launch
-tests/cli/launch-clipboard.test.ts   the osascript clipboard PNG read behind Ctrl+V and its gate
+tests/cli/launch-clipboard.test.ts   the osascript clipboard read (PNG or one file path) behind Ctrl+V and its gate
 tests/cli/launch-host-sessions.test.ts  host sessions at launch
 tests/cli/launch-sessions.test.ts    session end and the sweep
 tests/cli/launch-write-back.test.ts  settings written back to the host at launch and at exit, with the allowlist the launch started with

@@ -63,7 +63,7 @@ Connections that are already open stay until they close.
 | `vm.cpus`, `vm.memoryGiB`, `vm.diskGiB` | The size of the VM itself, which every container shares ([below](#vm-size)). | the size the VM was created with; set by `pi sandbox init` |
 | `writeBack` | Which settings changed inside come back to your Mac ([below](#settings-written-back)); `pi sandbox init` sets `writeBack.enabled`. | the built-in list |
 | `sessions.host` | Keep sessions in host pi's own session folder. | `true` |
-| `terminal.clipboard` | On a Mac, put what pi inside copies (OSC 52) on the clipboard with `pbcopy`, copy a pasted image path into the sandbox, and paste a clipboard PNG on Ctrl+V. | `true` |
+| `terminal.clipboard` | On a Mac, put what pi inside copies (OSC 52) on the clipboard with `pbcopy`, copy a pasted image path into the sandbox, and paste a clipboard PNG or a single copied image file on Ctrl+V. | `true` |
 | `workspaceRoots` | Folders pi may start in, as `{ "roots": [...] }`, and the only folders the VM shares ([below](#workspace-roots)); set by `pi sandbox init`. | anywhere; the VM shares your home |
 
 The sections below explain each group.

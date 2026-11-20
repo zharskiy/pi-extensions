@@ -1,18 +1,10 @@
-import { realpath } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadEffectiveConfig } from "../config/index.ts";
-import {
-  expandHome,
-  isWithin,
-  knownRepos,
-  PI_AGENT_DIR_VARIABLE,
-  repoRecordOf,
-  withMcpLoginDir,
-} from "../shared/index.ts";
-import { assertSafeMounts, findGitRoot } from "../workspace/index.ts";
+import { expandHome, PI_AGENT_DIR_VARIABLE, realOrResolved, withMcpLoginDir } from "../shared/index.ts";
+import { isSandboxWritable } from "../workspace/index.ts";
 import { type CliDeps, hostAgentDirOf, pathsOf, writeLine } from "./deps.ts";
-import { requireJobPi, resolveJobPi } from "./host-pi.ts";
+import { requireJobPi, resolveJobPi, spawnHostJob } from "./host-pi.ts";
 import { type HostRoute, hostRoute } from "./host-routes.ts";
 import { imagePiVersion } from "./versions.ts";
 
@@ -25,7 +17,7 @@ const runOnHost = async (
 ) => {
   const pi = await requireJobPi(deps);
 
-  return deps.runner.spawnInteractive(pi.wrapper, args, options);
+  return spawnHostJob(deps, pi, args, options);
 };
 
 const inEmptyDir = (deps: CliDeps, args: string[], options: { env?: Record<string, string> } = {}) =>
@@ -135,38 +127,13 @@ const localPathOf = (text: string) => {
   }
 };
 
-const realOf = (path: string) => realpath(path).catch(() => path);
-
-const sandboxedRoots = async (stateDir: string) => {
-  const records = await Promise.all((await knownRepos(stateDir)).map((hash) => repoRecordOf(stateDir, hash)));
-
-  return Promise.all(records.flatMap((record) => (record === undefined ? [] : [realOf(record.root)])));
-};
-
-const canHoldSandbox = (deps: CliDeps, root: string) => {
-  try {
-    assertSafeMounts([root], { home: deps.home, env: deps.env });
-
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-const isSandboxable = async (deps: CliDeps, candidates: string[]) => {
-  const gitRoots = await Promise.all(candidates.map(findGitRoot));
-  const roots = await sandboxedRoots(pathsOf(deps).stateDir);
-
-  return (
-    gitRoots.some((root) => root !== undefined && canHoldSandbox(deps, root)) ||
-    roots.some((root) => candidates.some((candidate) => isWithin(candidate, root)))
-  );
-};
-
 const resolvedLocal = async (deps: CliDeps, text: string) => {
   const path = resolve(deps.cwd, expandHome(localPathOf(text), deps.home));
 
-  return { path, inRepository: await isSandboxable(deps, [path, await realOf(path)]) };
+  const paths = [path, await realOrResolved(path)];
+  const context = { home: deps.home, env: deps.env, stateDir: pathsOf(deps).stateDir };
+
+  return { path, inRepository: await isSandboxWritable(paths, context) };
 };
 
 const refuse = (deps: CliDeps, source: string, reason: string) => {

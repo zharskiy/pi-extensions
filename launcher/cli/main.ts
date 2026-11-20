@@ -9,8 +9,8 @@ import {
   readRepoProxy,
   stopRepoProxy,
 } from "../proxy/index.ts";
-import { createProcessRunner, realOrResolved, withResolvedCommand } from "../shared/index.ts";
-import { findGitRoot } from "../workspace/index.ts";
+import { createProcessRunner, withResolvedCommand } from "../shared/index.ts";
+import { startedRoots } from "../workspace/index.ts";
 import { type CliDeps, onClosedOutput, pathsOf } from "./deps.ts";
 import { openDevTty } from "./prompt/terminal.ts";
 import { renderFailure, run } from "./run.ts";
@@ -18,12 +18,8 @@ import { hostTerminal } from "./terminal.ts";
 
 const GIB = 1024 ** 3;
 
-const hostGit = (env: NodeJS.ProcessEnv, cwd: string) => async () => {
-  const folder = await realOrResolved(cwd);
-  const root = await findGitRoot(folder);
-
-  return findOnPath(env, "git", root === undefined ? [folder] : [folder, root]);
-};
+const hostGit = (env: NodeJS.ProcessEnv, cwd: string) => async () =>
+  findOnPath(env, "git", await startedRoots(cwd));
 
 const realDeps = (): CliDeps => {
   const env = process.env;

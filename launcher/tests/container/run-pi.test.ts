@@ -319,7 +319,7 @@ describe("runPi clipboard bridges", () => {
       terminal: host.terminal,
       clipboard: {
         copy: async (text) => copied.push(text.toString()),
-        readImage: async () => Buffer.from("png"),
+        read: async () => ({ image: Buffer.from("png") }),
         mounts: [],
       },
     });

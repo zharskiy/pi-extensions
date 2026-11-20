@@ -118,7 +118,7 @@ export type ToolInput = {
   started?: boolean;
 };
 
-const dropLeadingBlanks = (lines: string[]) => {
+const dropLeadingBlanks = (lines: readonly string[]) => {
   const start = lines.findIndex((line) => plainText(line).trim() !== "");
 
   return start < 0 ? [] : lines.slice(start);

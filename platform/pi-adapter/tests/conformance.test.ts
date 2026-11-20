@@ -1354,7 +1354,7 @@ describe("pi adapter conformance", () => {
   describe("transcript rows", () => {
     const fakeTui = { requestRender: () => {} } as never;
 
-    const plain = (component: { render(width: number): string[] }, width = 80) =>
+    const plain = (component: { render(width: number): readonly string[] }, width = 80) =>
       component.render(width).map((line) => tui.stripTerminalSequences(line).trimEnd());
 
     const textResult = (text: string, details?: unknown) =>

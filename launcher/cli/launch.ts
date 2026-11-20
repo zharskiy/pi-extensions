@@ -3,6 +3,7 @@ import type { Backend } from "../backend/index.ts";
 import { writeBackTableOf } from "../config/index.ts";
 import {
   buildContainerSpec,
+  type ClipboardContent,
   forwardedEnv,
   type GitOverlay,
   type HostClipboard,
@@ -501,19 +502,26 @@ const OSASCRIPT = "/usr/bin/osascript";
 
 const CLIPBOARD_TIMEOUT_MS = 5000;
 
-const CLIPBOARD_PNG = [
-  "-e",
-  'if (clipboard info for «class furl») is not {} then error "file"',
-  "-e",
+const CLIPBOARD_READ = [
+  'use framework "AppKit"',
+  "use scripting additions",
+  "set board to current application's NSPasteboard's generalPasteboard()",
+  "set refs to (board's readObjectsForClasses:{current application's NSURL} options:{NSPasteboardURLReadingFileURLsOnlyKey:true}) as list",
+  'if (count of refs) > 1 then error "files"',
+  "if refs is not {} then return POSIX path of item 1 of refs",
   "the clipboard as «class PNGf»",
-];
+].flatMap((line) => ["-e", line]);
 
-const PNG_HEX = /«data PNGf([0-9A-Fa-f]+)»/;
+const PNG_HEX = /^«data PNGf([0-9A-Fa-f]+)»/;
 
-const clipboardImage = (stdout: string) => {
+const clipboardContent = (stdout: string): ClipboardContent | undefined => {
+  if (stdout.startsWith("/")) {
+    return { file: stdout.replace(/\n$/, "") };
+  }
+
   const hex = PNG_HEX.exec(stdout)?.[1];
 
-  return hex === undefined ? undefined : Buffer.from(hex, "hex");
+  return hex === undefined ? undefined : { image: Buffer.from(hex, "hex") };
 };
 
 const hostClipboard = (
@@ -532,10 +540,10 @@ const hostClipboard = (
         env: { LC_CTYPE: "UTF-8" },
         timeoutMs: CLIPBOARD_TIMEOUT_MS,
       }),
-    readImage: async () => {
-      const read = await deps.runner.run(OSASCRIPT, CLIPBOARD_PNG, { timeoutMs: CLIPBOARD_TIMEOUT_MS });
+    read: async () => {
+      const read = await deps.runner.run(OSASCRIPT, CLIPBOARD_READ, { timeoutMs: CLIPBOARD_TIMEOUT_MS });
 
-      return read.code === 0 ? clipboardImage(read.stdout) : undefined;
+      return read.code === 0 ? clipboardContent(read.stdout) : undefined;
     },
     mounts: sandbox.spec.mounts,
   };
