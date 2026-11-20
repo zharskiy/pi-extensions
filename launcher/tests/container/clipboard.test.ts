@@ -1,10 +1,27 @@
-import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Backend, ExecIo, ExecSpec, MountSpec } from "../../backend/index.ts";
-import { copyTee, pasteBridge } from "../../container/clipboard.ts";
+import { type ClipboardContent, copyTee, pasteBridge } from "../../container/clipboard.ts";
+
+const readFailures = vi.hoisted(() => new Map<string, string>());
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+
+  return {
+    ...actual,
+    readFile: (path: string) => {
+      const code = readFailures.get(path);
+
+      return code === undefined
+        ? actual.readFile(path)
+        : Promise.reject(Object.assign(new Error(code), { code }));
+    },
+  };
+});
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
@@ -54,6 +71,49 @@ describe("copyTee", () => {
   });
 });
 
+describe("copyTee notices", () => {
+  const notified = async (chunks: string[], notice: number) => {
+    const terminal = new PassThrough();
+    const output: Buffer[] = [];
+
+    terminal.on("data", (chunk: Buffer) => output.push(chunk));
+
+    const tee = copyTee(terminal, async () => undefined);
+
+    chunks.forEach((chunk, index) => {
+      if (index === notice) {
+        tee.notify("note");
+      }
+
+      tee.write(Buffer.from(chunk, "latin1"));
+    });
+
+    await new Promise((resolve) => setImmediate(resolve));
+
+    return Buffer.concat(output).toString("latin1");
+  };
+
+  const NOTE = "\x1b]9;note\x07";
+
+  it("writes a notice at once between whole output chunks", async () => {
+    expect(await notified(["\x1b[31mred\x1b[0m", "next"], 1)).toBe(`\x1b[31mred\x1b[0m${NOTE}next`);
+  });
+
+  it("holds a notice until a split escape sequence or character is complete", async () => {
+    const cases = [
+      ["a\x1b[3", "8;5;1mb", "c"],
+      ["a\x1b]0;ti", "tle", "\x07b", "c"],
+      ["a\x1b]0;title\x1b", "\\b", "c"],
+      ["a\x1b", "(Bb", "c"],
+      ["a\xc3", "\xa9b", "c"],
+      ["a\xe2\x86", "\x92b", "c"],
+    ];
+    const outputs = await Promise.all(cases.map((chunks) => notified(chunks, 1)));
+
+    expect(outputs).toEqual(cases.map((chunks) => `${chunks.slice(0, -1).join("")}${NOTE}c`));
+  });
+});
+
 describe("pasteBridge", () => {
   const root: { dir: string } = { dir: "" };
 
@@ -63,11 +123,20 @@ describe("pasteBridge", () => {
     await writeFile(join(root.dir, "my shot.png"), PNG);
 
     await writeFile(join(root.dir, "notes.txt"), "text");
+
+    await writeFile(join(root.dir, "denied.png"), PNG);
+
+    await mkdir(join(root.dir, "folder.png"));
+
+    readFailures.set(join(root.dir, "denied.png"), "EPERM");
   });
 
   afterAll(() => rm(root.dir, { recursive: true, force: true }));
 
-  const bridged = async (chunks: string[], options: { image?: Buffer; mounts?: MountSpec[] } = {}) => {
+  const bridged = async (
+    chunks: string[],
+    options: { content?: ClipboardContent; mounts?: MountSpec[]; copyFails?: boolean } = {},
+  ) => {
     const imports: Array<{ path: string; data: Buffer }> = [];
     const backend: Pick<Backend, "exec"> = {
       exec: async (spec: ExecSpec, io: ExecIo) => {
@@ -81,23 +150,30 @@ describe("pasteBridge", () => {
 
         imports.push({ path: spec.command.at(-1) ?? "", data });
 
+        if (options.copyFails === true) {
+          throw new Error("exec failed");
+        }
+
         return 0;
       },
     };
     const stdin = new PassThrough();
+    const notices: string[] = [];
     const reads: number[] = [];
+
     const { input } = pasteBridge(
       stdin,
       { backend, containerId: "c" },
       {
         copy: async () => undefined,
-        readImage: async () => {
+        read: async () => {
           reads.push(1);
 
-          return options.image;
+          return options.content;
         },
         mounts: options.mounts ?? [],
       },
+      (notice) => notices.push(notice),
     );
     const received: Buffer[] = [];
 
@@ -113,7 +189,7 @@ describe("pasteBridge", () => {
 
     await ended;
 
-    return { text: Buffer.concat(received).toString(), imports, reads: reads.length };
+    return { text: Buffer.concat(received).toString(), imports, reads: reads.length, notices };
   };
 
   const paste = (body: string) => `\x1b[200~${body}\x1b[201~`;
@@ -132,28 +208,123 @@ describe("pasteBridge", () => {
     expect(run.imports).toHaveLength(1);
   });
 
-  it("forwards other pastes unchanged", async () => {
+  it("forwards other pastes unchanged and silently", async () => {
     const chunks = [
       paste(join(root.dir, "notes.txt")),
-      paste(join(root.dir, "missing.png")),
+      paste(join(root.dir, "missing.txt")),
       paste(`see ${join(root.dir, "my shot.png")}`),
+      paste(`${join(root.dir, "my\\ shot.png")} ${join(root.dir, "denied.png")} `),
+      paste(`'${join(root.dir, "my shot.png")}' '${join(root.dir, "denied.png")}'`),
+      paste(`"${join(root.dir, "my shot.png")}" "${join(root.dir, "missing.png")}"`),
     ];
     const run = await bridged(chunks);
 
     expect(run.text).toBe(chunks.join(""));
     expect(run.imports).toEqual([]);
+    expect(run.notices).toEqual([]);
   });
 
-  it("forwards a path the sandbox already sees", async () => {
-    const chunk = paste(join(root.dir, "my\\ shot.png"));
+  it("forwards a path the sandbox already sees, silently", async () => {
+    const chunks = [paste(join(root.dir, "my\\ shot.png")), paste(join(root.dir, "missing.png"))];
     const mounts: MountSpec[] = [{ kind: "bind", source: root.dir, target: root.dir, readOnly: true }];
-    const run = await bridged([chunk], { mounts });
+    const run = await bridged(chunks, { mounts });
 
-    expect(run.text).toBe(chunk);
+    expect(run.text).toBe(chunks.join(""));
+    expect(run.notices).toEqual([]);
+  });
+
+  it("forwards a failed image import with a notice saying why", async () => {
+    const chunks = [
+      paste(`${join(root.dir, "denied.png")} `),
+      paste(join(root.dir, "missing.png")),
+      paste(join(root.dir, "folder.png")),
+      "after",
+    ];
+    const run = await bridged(chunks);
+
+    expect(run.text).toBe(chunks.join(""));
+    expect(run.notices).toEqual([
+      "pi-sandbox: image not copied into the sandbox: macOS blocked the terminal from reading it; allow access in System Settings → Privacy & Security → Files and Folders",
+      "pi-sandbox: image not copied into the sandbox: there is no such file on the host",
+      "pi-sandbox: image not copied into the sandbox: it is not a regular file",
+    ]);
+  });
+
+  it("forwards the paste with a notice when the copy into the container throws", async () => {
+    const chunks = [paste(join(root.dir, "my\\ shot.png")), "after"];
+    const run = await bridged(chunks, { copyFails: true });
+
+    expect(run.text).toBe(chunks.join(""));
+    expect(run.notices).toEqual([
+      "pi-sandbox: image not copied into the sandbox: the copy into the container failed",
+    ]);
+  });
+
+  it("forwards input when the clipboard read throws", async () => {
+    const stdin = new PassThrough();
+    const { input } = pasteBridge(
+      stdin,
+      { backend: { exec: async () => 0 }, containerId: "c" },
+      {
+        copy: async () => undefined,
+        read: () => Promise.reject(new Error("osascript failed")),
+        mounts: [],
+      },
+      () => undefined,
+    );
+    const received: Buffer[] = [];
+
+    input.on("data", (chunk: Buffer) => received.push(chunk));
+
+    const ended = new Promise((resolve) => input.once("end", resolve));
+
+    stdin.end("\x16");
+
+    await ended;
+
+    expect(Buffer.concat(received).toString()).toBe("\x16");
+  });
+
+  it("imports a single image file reference on Ctrl+V like a dropped path", async () => {
+    const imported = await bridged(["\x16"], { content: { file: join(root.dir, "my shot.png") } });
+    const denied = await bridged(["\x16"], { content: { file: join(root.dir, "denied.png") } });
+
+    expect(imported.imports).toEqual([{ path: expect.stringMatching(GUEST), data: PNG }]);
+    expect(imported.text).toBe(paste(imported.imports[0]?.path ?? ""));
+    expect(denied.text).toBe("\x16");
+    expect(denied.notices).toHaveLength(1);
+  });
+
+  it("pastes a file reference the sandbox already sees as its own path", async () => {
+    const file = join(root.dir, "my shot.png");
+    const mounts: MountSpec[] = [{ kind: "bind", source: root.dir, target: root.dir, readOnly: true }];
+    const run = await bridged(["\x16"], { content: { file }, mounts });
+
+    expect(run.text).toBe(paste(file));
+    expect(run.imports).toEqual([]);
+  });
+
+  it("forwards Ctrl+V silently for a visible file reference whose path holds control characters", async () => {
+    const mounts: MountSpec[] = [{ kind: "bind", source: root.dir, target: root.dir, readOnly: true }];
+    const runs = await Promise.all(
+      ["x\x1b[201~\r!cmd\r.png", "tab\there.png", "del\x7f.png", "c1\x9b.png"].map((name) =>
+        bridged(["\x16"], { content: { file: join(root.dir, name) }, mounts }),
+      ),
+    );
+
+    expect(runs.map((run) => [run.text, run.notices])).toEqual(runs.map(() => ["\x16", []]));
+  });
+
+  it("forwards Ctrl+V silently for a non-image file reference", async () => {
+    const run = await bridged(["\x16"], { content: { file: join(root.dir, "notes.txt") } });
+
+    expect(run.text).toBe("\x16");
+    expect(run.imports).toEqual([]);
+    expect(run.notices).toEqual([]);
   });
 
   it("pastes the clipboard image on Ctrl+V, including a non-Latin layout", async () => {
-    const run = await bridged(["\x16", "\x1b[1084::118;5u", "x"], { image: PNG });
+    const run = await bridged(["\x16", "\x1b[1084::118;5u", "x"], { content: { image: PNG } });
 
     expect(run.imports.map((entry) => entry.path)).toEqual([
       expect.stringMatching(GUEST),

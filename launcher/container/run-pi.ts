@@ -136,9 +136,10 @@ const bridged = (input: RunPiInput, interactive: boolean): PiStreams => {
     return { stdin: terminal.stdin, stdout: terminal.stdout, release: () => undefined };
   }
 
-  const paste = pasteBridge(terminal.stdin, input, clipboard);
+  const tee = copyTee(terminal.stdout, clipboard.copy);
+  const paste = pasteBridge(terminal.stdin, input, clipboard, tee.notify);
 
-  return { stdin: paste.input, stdout: copyTee(terminal.stdout, clipboard.copy), release: paste.stop };
+  return { stdin: paste.input, stdout: tee, release: paste.stop };
 };
 
 const execPi = (input: RunPiInput, tty: boolean, streams: PiStreams) =>
