@@ -44,3 +44,9 @@ export const isSandboxWritable = async (paths: string[], context: SandboxReachCo
     sandboxed.some((root) => paths.some((path) => isWithin(path, root)))
   );
 };
+
+export const sandboxWriteRoots = async (cwd: string, context: SandboxReachContext) => {
+  const [sandboxed, started] = await Promise.all([sandboxedRoots(context.stateDir), startedRoots(cwd)]);
+
+  return [...sandboxed, ...started.filter((root) => canHoldSandbox(root, context))];
+};

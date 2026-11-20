@@ -227,37 +227,84 @@ describe("pi installed with npm install -g", () => {
     expect(interactiveCall(steered)).toBeUndefined();
   });
 
-  it("never asks an npm that lies in another git working tree or a folder a sandbox has run in", async () => {
-    const tree = await createHarness({ hostPi: false });
-    const checkout = join(tree.root, "other-project");
-    const inTree = await writeNpmPi(join(checkout, "prefix"), "1.6.0");
-    const recorded = await createHarness({ hostPi: false });
-    const sandboxed = join(recorded.root, "sandboxed");
-    const inSandboxed = await writeNpmPi(join(sandboxed, "prefix"), "1.6.0");
+  it("is found when npm and the package lie in a git checkout no sandbox has run in, as Homebrew and nvm install them", async () => {
+    const harness = await createHarness({ hostPi: false });
+    const checkout = join(harness.root, "homebrew");
+    const npmPi = await writeNpmPi(checkout, "1.6.0");
 
     await mkdir(join(checkout, ".git"), { recursive: true });
 
-    await writeRepoRecord(pathsOf(recorded.deps).stateDir, repoHash(sandboxed), sandboxed);
+    harness.deps.env.PATH = npmPi.bin;
 
-    tree.deps.env.PATH = inTree.bin;
-
-    recorded.deps.env.PATH = inSandboxed.bin;
-
-    expect(await run(["--no-sandbox"], tree.deps)).toBe(1);
-    expect(await run(["--no-sandbox"], recorded.deps)).toBe(1);
-    expect(interactiveCall(tree)).toBeUndefined();
-    expect(interactiveCall(recorded)).toBeUndefined();
-    expect(npmCalls(tree)).toEqual([]);
-    expect(npmCalls(recorded)).toEqual([]);
+    expect(await run(["--no-sandbox"], harness.deps)).toBe(0);
+    expect(npmCalls(harness)).toHaveLength(1);
+    expect(interactiveCall(harness)?.args[0]).toBe(npmPi.entry);
   });
 
-  it("is not used when the global package is a link into a git working tree, as npm link leaves it", async () => {
+  it("never asks an npm that lies in a folder a sandbox has run in, nor takes a global root inside it", async () => {
+    const planted = await createHarness({ hostPi: false });
+    const plantedRoot = join(planted.root, "sandboxed");
+    const inSandboxed = await writeNpmPi(join(plantedRoot, "prefix"), "1.6.0");
+    const steered = await createHarness({ hostPi: false });
+    const steeredRoot = join(steered.root, "sandboxed");
+    const inside = await writeNpmPi(join(steeredRoot, "prefix"), "1.6.0");
+    const outside = await writeNpmPi(join(steered.root, "nvm"), "1.6.0", { reportedRoot: inside.root });
+
+    await writeRepoRecord(pathsOf(planted.deps).stateDir, repoHash(plantedRoot), plantedRoot);
+
+    await writeRepoRecord(pathsOf(steered.deps).stateDir, repoHash(steeredRoot), steeredRoot);
+
+    planted.deps.env.PATH = inSandboxed.bin;
+
+    steered.deps.env.PATH = outside.bin;
+
+    expect(await run(["--no-sandbox"], planted.deps)).toBe(1);
+    expect(await run(["--no-sandbox"], steered.deps)).toBe(1);
+    expect(npmCalls(planted)).toEqual([]);
+    expect(npmCalls(steered)).toHaveLength(1);
+    expect(interactiveCall(planted)).toBeUndefined();
+    expect(interactiveCall(steered)).toBeUndefined();
+  });
+
+  it("is not used when the global package is a link out of the global root, even into a checkout no sandbox has run in", async () => {
     const harness = await createHarness({ hostPi: false });
     const checkout = join(harness.root, "pi-checkout");
     const linked = await writeNpmPi(join(checkout, "prefix"), "1.6.0");
     const npmPi = await writeNpmPi(join(harness.root, "nvm"), "1.6.0");
 
     await mkdir(join(checkout, ".git"), { recursive: true });
+
+    await rm(npmPi.packageDir, { recursive: true });
+
+    await symlink(linked.packageDir, npmPi.packageDir);
+
+    harness.deps.env.PATH = npmPi.bin;
+
+    expect(await run(["--no-sandbox"], harness.deps)).toBe(1);
+    expect(npmCalls(harness)).toHaveLength(1);
+    expect(interactiveCall(harness)).toBeUndefined();
+  });
+
+  it("is not used when the pi entry is a link out of the package", async () => {
+    const harness = await createHarness({ hostPi: false });
+    const npmPi = await writeNpmPi(join(harness.root, "nvm"), "1.6.0");
+    const elsewhere = await writeNpmPi(join(harness.root, "elsewhere"), "1.6.0");
+
+    await rm(npmPi.entry);
+
+    await symlink(elsewhere.entry, npmPi.entry);
+
+    harness.deps.env.PATH = npmPi.bin;
+
+    expect(await run(["--no-sandbox"], harness.deps)).toBe(1);
+    expect(npmCalls(harness)).toHaveLength(1);
+    expect(interactiveCall(harness)).toBeUndefined();
+  });
+
+  it("is not used when the global package is a link into the repository, as npm link leaves it", async () => {
+    const harness = await createHarness({ hostPi: false });
+    const linked = await writeNpmPi(join(harness.repoRoot, "prefix"), "1.6.0");
+    const npmPi = await writeNpmPi(join(harness.root, "nvm"), "1.6.0");
 
     await rm(npmPi.packageDir, { recursive: true });
 
