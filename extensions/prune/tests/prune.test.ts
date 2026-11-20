@@ -185,9 +185,10 @@ describe("prune sweep on session start", () => {
     await pause(50);
 
     expect(existsSync(old)).toBe(true);
+    expect(readdirSync(elsewhere)).toEqual([]);
     expect(host.notices).toEqual([
       {
-        message: `pi-prune: nothing removed, ${liveDir(layout)}: not a readable directory`,
+        message: `pi-prune: nothing removed, ${liveDir(layout)}: cannot write the liveness marker`,
         level: "warning",
       },
     ]);

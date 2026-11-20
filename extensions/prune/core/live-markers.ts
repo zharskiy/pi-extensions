@@ -1,4 +1,4 @@
-import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { SessionInfo } from "../../../platform/pi-adapter/index.ts";
@@ -37,6 +37,11 @@ const writeMarker = (path: string, info: Current) => {
 
   try {
     mkdirSync(dirname(path), { recursive: true });
+
+    if (!lstatSync(dirname(path)).isDirectory()) {
+      return false;
+    }
+
     writeFileSync(temp, JSON.stringify(marker));
     renameSync(temp, path);
 
