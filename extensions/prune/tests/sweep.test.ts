@@ -27,6 +27,13 @@ import {
 
 const NOTHING = { sessions: 0, runs: 0, handoffs: 0, bytes: 0 };
 
+const oldLink = (target: string, link: string) => {
+  symlinkSync(target, link);
+  lutimesSync(link, new Date(OLD), new Date(OLD));
+
+  return link;
+};
+
 describe("agent run rules", () => {
   it("removes old runs, unparsable manifests too, and keeps fresh, edge and manifestless ones", async () => {
     const layout = fabricate();
@@ -38,6 +45,7 @@ describe("agent run rules", () => {
       dir,
       layout.run("s1", "scout-edge", CUTOFF),
       layout.run("s1", "scout-bare", OLD, false),
+      layout.session("edge", CUTOFF),
     ];
 
     touch(join(file, "child.jsonl"), RECENT);
@@ -46,7 +54,7 @@ describe("agent run rules", () => {
     await layout.prune();
 
     expect(removed.map(existsSync)).toEqual([false, false]);
-    expect(kept.map(existsSync)).toEqual([true, true, true, true]);
+    expect(kept.map(existsSync)).toEqual([true, true, true, true, true]);
   });
 
   it("keeps a fresh session whole, its old runs included", async () => {
@@ -206,13 +214,17 @@ describe("agent run rules", () => {
     const outside = runFiles(join(layout.root, "outside", "scout-1"), "scout-1", OLD);
 
     mkdirSync(layout.agentsDir("linked-run"), { recursive: true });
-    symlinkSync(outside, join(layout.agentsDir("linked-run"), "scout-1"));
     mkdirSync(join(layout.slugDir, "linked-agents"), { recursive: true });
-    symlinkSync(dirname(outside), layout.agentsDir("linked-agents"));
+
+    const links = [
+      oldLink(outside, join(layout.agentsDir("linked-run"), "scout-1")),
+      oldLink(dirname(outside), layout.agentsDir("linked-agents")),
+    ];
 
     await layout.prune();
 
     expect(readdirSync(outside).sort()).toEqual(["child.jsonl", MANIFEST_FILE, "result.md"]);
+    expect(links.map(existsSync)).toEqual([true, true]);
   });
 });
 
@@ -328,11 +340,13 @@ describe("session rules", () => {
     const layout = fabricate();
     const outside = layout.sessionIn(join(layout.root, "outside"), "linked", OLD);
     const outsideRun = runFiles(join(layout.root, "outside", "linked", "agents", "scout-1"), "scout-1", OLD);
-    const links = [join(layout.slugDir, "linked.jsonl"), join(layout.slugDir, "linked")];
 
     mkdirSync(layout.slugDir, { recursive: true });
-    symlinkSync(outside, links[0]);
-    symlinkSync(join(layout.root, "outside", "linked"), links[1]);
+
+    const links = [
+      oldLink(outside, join(layout.slugDir, "linked.jsonl")),
+      oldLink(join(layout.root, "outside", "linked"), join(layout.slugDir, "linked")),
+    ];
 
     expect(await layout.prune()).toEqual(NOTHING);
     expect([outside, outsideRun, ...links].map(existsSync)).toEqual([true, true, true, true]);
@@ -645,6 +659,7 @@ describe("one scan, many cutoffs", () => {
 
     layout.session("fresh", RECENT);
     layout.fallbackRun("fresh", "scout-1", OLD);
+    layout.fallbackRun("month", "scout-2", OLD);
     layout.handoff("fresh", OLD);
     layout.unreadable("headerless", `${JSON.stringify({ type: "message" })}\n`);
     layout.session("month", daysAgo(30));
