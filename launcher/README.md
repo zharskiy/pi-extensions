@@ -33,7 +33,7 @@ You need:
 - Colima 0.8.0 or newer. The script installs it with Homebrew if it is missing.
 - Node 22.19 or newer, with npm.
 - git.
-- pi, installed with pi's own installer. The launcher runs only this managed install on the host (for provider credentials, host commands and `--no-sandbox`); a pi installed with npm or found on `PATH` is not used.
+- pi, installed with pi's own installer or with `npm install -g @earendil-works/pi-coding-agent`. The launcher runs the managed install in `~/.pi/agent` on the host (for provider credentials, host commands and `--no-sandbox`), or, without one, the pi in npm's global packages (`npm root -g`). A pi found only on `PATH` or in a project's `node_modules` is not used, nor an npm global pi that lies in a git working tree or a folder a sandbox has run in.
 
 ```bash
 curl -fsSL https://pi.dev/install.sh | sh
@@ -41,7 +41,7 @@ npm install -g --omit=peer pi-extensions-mz
 "$(npm root -g)/pi-extensions-mz/launcher/install.sh"
 ```
 
-Without the managed install, `install.sh` stops before it changes anything and says to install pi this way and run it again.
+Without either install, `install.sh` stops before it changes anything and says to install pi one of these ways and run it again.
 
 The script puts `~/.local/bin` first on `PATH` in your shell startup files, then runs `pi sandbox init`, which asks which folders hold your projects, shows the VM size it picked for this Mac, and creates the VM when you choose Apply. Open a new terminal afterwards.
 
@@ -112,7 +112,7 @@ npm install
 launcher/install.sh
 ```
 
-Pi's own installer comes first here too: the launcher runs only pi's managed install on the host, never the pi in the checkout's `node_modules` or a pi on `PATH`. The script writes a wrapper script at `~/.local/bin/pi` that runs this checkout. Without the managed install, the launch, `pi sandbox doctor`, `--no-sandbox` and the host commands say so in one line, with the same remedy.
+Install pi first here too, with pi's own installer or `npm install -g`: the launcher runs the managed install, else npm's global pi, never the pi in the checkout's `node_modules` or a pi on `PATH`. The script writes a wrapper script at `~/.local/bin/pi` that runs this checkout. Without either, the launch, `pi sandbox doctor`, `--no-sandbox` and the host commands say so in one line, with the same remedy.
 
 </details>
 
@@ -145,7 +145,7 @@ Pi's own installer comes first here too: the launcher runs only pi's managed ins
 
 ## Everyday use
 
-In the table, *host pi* is pi's managed install on your Mac. A *grant* is a host you allowed. *Overlay* and *agent* volumes are storage the VM keeps for the folder's build output and pi's own files.
+In the table, *host pi* is pi's managed install on your Mac, or without one the pi in npm's global packages. A *grant* is a host you allowed. *Overlay* and *agent* volumes are storage the VM keeps for the folder's build output and pi's own files.
 
 | command | what it does |
 | --- | --- |
@@ -173,7 +173,7 @@ In the table, *host pi* is pi's managed install on your Mac. A *grant* is a host
 
 `pi uninstall <source>` also runs with host pi on the host. Host pi loads no extension for `pi --help` and `pi --list-models`, so help omits the flags extensions register and the list omits providers only an extension registers; `pi list`, `pi mcp list` and `pi config -l` run in the sandbox, and `pi --version` asks pi inside when `image.reference` and `image.digest` pin the image. `egress allow` uses port 443 unless you name one, and refuses wildcards, IP addresses and port 80 ([rules](CONFIGURATION.md#network-access)).
 
-`pi update` runs the managed install's own update from an empty folder, and the next launch rebuilds the image. A local path as the source (`./ext`, `~/ext`) is made absolute against your folder first. Every other `pi update` form (`--all`, `--extensions`, `--extension <source>`, `<source>`, `--models`, `--force`) runs host pi from an empty folder, so it updates the host's packages and the host pi, never a copy inside the sandbox; when the target includes pi itself it names the pi version the sandbox follows. Without a managed install it says how to get one. To update the launcher itself, run `npm install -g --omit=peer pi-extensions-mz` (or `git pull` in a checkout).
+`pi update` runs the host pi's own update from an empty folder, and the next launch rebuilds the image. A local path as the source (`./ext`, `~/ext`) is made absolute against your folder first. Every other `pi update` form (`--all`, `--extensions`, `--extension <source>`, `<source>`, `--models`, `--force`) runs host pi from an empty folder, so it updates the host's packages and the host pi, never a copy inside the sandbox; when the target includes pi itself it names the pi version the sandbox follows. Without a host pi it says how to get one. To update the launcher itself, run `npm install -g --omit=peer pi-extensions-mz` (or `git pull` in a checkout).
 
 After a reboot or `pi sandbox stop`, the next `pi` starts the VM again. A failure prints `pi-sandbox: <message>`, often with a `hint:` line.
 

@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { launcherRoot } from "../../shared/index.ts";
 import { exists, tempDir } from "../support/temp-dir.ts";
-import { writeManagedPi } from "./harness.ts";
+import { writeManagedPi, writeNpmPi } from "./harness.ts";
 
 const SYSTEM_TOOLS = [
   "awk",
@@ -603,9 +603,36 @@ describe("install.sh options and the PATH block", { timeout: INSTALL_TIMEOUT_MS 
   });
 
   const noManagedPi = (agentDir: string) =>
-    `pi-sandbox install: no managed pi in ${agentDir} (a pi installed with npm or found on PATH is not used): the sandbox gets no provider credentials, and host commands and --no-sandbox are unavailable; install pi with pi's own installer (curl -fsSL https://pi.dev/install.sh | sh) and run this again\n`;
+    `pi-sandbox install: no managed pi in ${agentDir} and no pi in npm's global packages (a pi found only on PATH or in a project's node_modules is not used): the sandbox gets no provider credentials, and host commands and --no-sandbox are unavailable; install pi with pi's own installer (curl -fsSL https://pi.dev/install.sh | sh) or with npm install -g @earendil-works/pi-coding-agent, and run this again\n`;
 
-  it("refuses without a managed pi, though pi is on PATH and in the checkout's node_modules, before npm or colima run", async () => {
+  const withNpmPi = async () => {
+    const setup = await installRoot();
+    const npmPi = await writeNpmPi(join(setup.root, "npm-global"), "1.6.0");
+    const npm = join(setup.root, "tools", "npm");
+
+    await rm(setup.agentDir, { recursive: true, force: true });
+
+    await writeFile(
+      npm,
+      `#!/bin/sh\npwd >> "$HOME/../npm-cwd"\ncase "$1 $2" in "root -g") echo '${npmPi.root}' ;; *) exit 0 ;; esac\n`,
+    );
+
+    return { ...setup, npmPi };
+  };
+
+  it("takes pi installed with npm install -g as the host pi when there is no managed install", async () => {
+    const { root, home, npmPi } = await withNpmPi();
+    const result = runInstall(root);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain(
+      `, and a pi from npm's global packages was found at ${npmPi.packageDir}: pi sandbox doctor shows which host pi is used`,
+    );
+    expect(await readFile(join(root, "npm-cwd"), "utf8")).toBe(`${home}\n`);
+    expect(await isLauncherWrapper(join(home, ".local", "bin", "pi"))).toBe(true);
+  });
+
+  it("refuses without a managed pi or an npm global pi, though pi is on PATH and in the checkout's node_modules, before npm or colima run", async () => {
     const { root, home, agentDir } = await installRoot({
       pi: "echo path pi",
       npm: 'echo "npm $*" >> "$HOME/../calls.log"',
