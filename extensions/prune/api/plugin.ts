@@ -1,10 +1,11 @@
 import type { SessionInfo } from "../../../platform/pi-adapter/index.ts";
-import { errorText, type Plugin } from "../../../platform/shared/index.ts";
-import { liveDir, markerPath, removeMarker, writeMarker } from "../core/live-markers.ts";
-import { NAMESPACE, type PruneSettings } from "../core/settings.ts";
-import { apply, clearEmpties } from "../core/sweep-apply.ts";
-import { planAt, removesAnything, scanInput } from "../core/sweep-plan.ts";
-import { abortedText, removedText } from "../ui/prune-report.ts";
+import type { Plugin } from "../../../platform/shared/index.ts";
+import { claimMarker, readLive, releaseMarker } from "../core/live-markers.ts";
+import { sweep } from "../core/prune.ts";
+import type { PruneSettings } from "../core/settings.ts";
+import { itemsOf } from "../core/sweep-plan.ts";
+import type { Sources } from "../core/sweep-scan.ts";
+import { abortedText, removedText, sweepFailedText } from "../ui/prune-report.ts";
 import { registerPrune } from "./prune-command.ts";
 
 export type PruneDeps = {
@@ -16,43 +17,27 @@ export type PruneDeps = {
 export const prunePlugin = (deps: PruneDeps): Plugin<never, never, PruneSettings> => ({
   id: "prune",
   enable({ host, settings, settingsErrors }) {
-    const sources = (info: SessionInfo) => ({
+    const sources = (info: SessionInfo): Sources => ({
       agentDir: info.agentDir,
       handoffRoot: deps.handoffRoot,
-      current: info,
-      isAlive: deps.isAlive,
+      live: () => readLive(info, deps.isAlive),
     });
 
-    const sweep = async (info: SessionInfo) => {
-      const planned = await planAt({
-        ...(await scanInput(sources(info))),
-        days: settings.days,
-        now: Date.now(),
-      });
+    const autoSweep = async (info: SessionInfo) => {
+      const outcome = await sweep(sources(info), settings.days, Date.now());
 
-      if (planned.aborted) {
-        host.ui.notify(abortedText(planned.aborted), "warning");
+      if (typeof outcome === "string") {
+        host.ui.notify(abortedText(outcome), "warning");
         return;
       }
 
-      const removed = await apply(planned, sources(info));
-      const empties = await clearEmpties(planned, sources(info));
-
-      if (removesAnything(removed) || empties > 0) {
-        host.ui.notify(removedText(removed, settings.days, empties), "info");
+      if (itemsOf(outcome.removed) > 0 || outcome.empties > 0) {
+        host.ui.notify(removedText(outcome.removed, settings.days, outcome.empties), "info");
       }
     };
 
     host.onSessionStart((info) => {
-      const next = markerPath(info.agentDir, info.id);
-      const written = writeMarker(next, info);
-      const previous = deps.process.marker;
-
-      if (previous && previous !== next) {
-        removeMarker(previous);
-      }
-
-      deps.process.marker = written ? next : undefined;
+      const failure = claimMarker(deps.process, info);
 
       if (deps.process.swept) {
         return;
@@ -64,25 +49,22 @@ export const prunePlugin = (deps: PruneDeps): Plugin<never, never, PruneSettings
         return;
       }
 
-      if (!written) {
-        host.ui.notify(abortedText(`${liveDir(info.agentDir)}: cannot write the liveness marker`), "warning");
+      if (failure) {
+        host.ui.notify(abortedText(failure), "warning");
         return;
       }
 
-      sweep(info)
+      autoSweep(info)
         .catch((error: unknown) => {
-          host.ui.notify(`${NAMESPACE}: sweep failed, ${errorText(error)}`, "warning");
+          host.ui.notify(sweepFailedText(error), "warning");
         })
         .catch(() => undefined);
     });
 
     host.onSessionShutdown((reason) => {
-      if (reason !== "quit" || !deps.process.marker) {
-        return;
+      if (reason === "quit") {
+        releaseMarker(deps.process);
       }
-
-      removeMarker(deps.process.marker);
-      deps.process.marker = undefined;
     });
 
     registerPrune(host, sources);

@@ -3,7 +3,7 @@ import { createManagedExtension } from "../../../platform/extension-manager/inde
 import { globalRecord } from "../../../platform/pi-adapter/index.ts";
 import { handoffRoot } from "../../../platform/shared/index.ts";
 import { pidAlive } from "../core/live-markers.ts";
-import { defaults, NAMESPACE, SETTINGS_FILE, schema } from "../core/settings.ts";
+import { NAMESPACE, settingsSpec } from "../core/settings.ts";
 import { type PruneDeps, prunePlugin } from "./plugin.ts";
 
 export const pruneExtension = (deps: PruneDeps) =>
@@ -11,7 +11,7 @@ export const pruneExtension = (deps: PruneDeps) =>
     namespace: NAMESPACE,
     root: resolve(import.meta.dirname, ".."),
     plugins: [prunePlugin(deps)],
-    settings: { defaults: () => defaults, schema, file: SETTINGS_FILE, scope: "user" },
+    settings: settingsSpec,
   });
 
 export default pruneExtension({

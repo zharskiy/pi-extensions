@@ -2,17 +2,26 @@ import type { Stats } from "node:fs";
 import { lstat, readdir } from "node:fs/promises";
 import { join } from "node:path";
 
-const isRealDir = (dir: string) =>
-  lstat(dir).then(
-    (stat) => stat.isDirectory(),
-    () => false,
-  );
+export type Sized = { dir: string; bytes: number };
 
-export const entriesIn = async (dir: string) =>
-  (await isRealDir(dir)) ? await readdir(dir, { withFileTypes: true }).catch(() => []) : [];
+export type Aged = Sized & { touched: number };
+
+export const entriesIn = async (dir: string) => {
+  const stat = await lstat(dir).catch((error: NodeJS.ErrnoException) => error.code);
+
+  if (stat === "ENOENT") {
+    return [];
+  }
+
+  if (typeof stat !== "object" || !stat.isDirectory()) {
+    return undefined;
+  }
+
+  return readdir(dir, { withFileTypes: true }).catch(() => undefined);
+};
 
 export const subdirsIn = async (dir: string) =>
-  (await entriesIn(dir)).filter((entry) => entry.isDirectory()).map((entry) => join(dir, entry.name));
+  ((await entriesIn(dir)) ?? []).filter((entry) => entry.isDirectory()).map((entry) => join(dir, entry.name));
 
 export const measure = async (dir: string, own?: Stats) => {
   const stat = own ?? (await lstat(dir));

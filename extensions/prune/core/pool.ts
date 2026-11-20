@@ -1,11 +1,11 @@
-export const LIMIT = 64;
+const LIMIT = 64;
 
 type Source<T> = Iterable<T> | AsyncIterable<T>;
 
 const iteratorOf = <T>(source: Source<T>): Iterator<T> | AsyncIterator<T> =>
   Symbol.asyncIterator in source ? source[Symbol.asyncIterator]() : source[Symbol.iterator]();
 
-export const pooled = async <T, R>(source: Source<T>, limit: number, step: (item: T) => Promise<R>) => {
+export const pooled = async <T, R>(source: Source<T>, step: (item: T) => Promise<R>, limit = LIMIT) => {
   const iterator = iteratorOf(source);
   const results: R[] = [];
   let taken = 0;

@@ -1,20 +1,8 @@
-import { type Host, PAD, type SessionInfo } from "../../../platform/pi-adapter/index.ts";
-import { ELLIPSIS } from "../../../platform/shared/index.ts";
-import { MARKS } from "../../../platform/ui-kit/index.ts";
+import type { Host, SessionInfo } from "../../../platform/pi-adapter/index.ts";
+import { planIntervals, pruneConfirmed } from "../core/prune.ts";
 import { INTERVALS, loadDays, NAMESPACE, saveDays } from "../core/settings.ts";
-import { apply } from "../core/sweep-apply.ts";
-import {
-  cutoffAt,
-  type Plan,
-  plan,
-  planAt,
-  removesAnything,
-  type Sources,
-  scan,
-  scanInput,
-  totals,
-  within,
-} from "../core/sweep-plan.ts";
+import { itemsOf, type Plan, type Removed, totals } from "../core/sweep-plan.ts";
+import type { Sources } from "../core/sweep-scan.ts";
 import { intervalForm, menuForm } from "../ui/prune-picker.ts";
 import {
   ALREADY_OPEN,
@@ -26,19 +14,17 @@ import {
   NO_TERMINAL,
   NOTHING_TEXT,
   outcomeText,
+  progressLine,
+  REMOVING,
+  SCANNING,
   savedWithErrorsText,
+  saveFailedText,
 } from "../ui/prune-report.ts";
 
-const SCANNING = "Scanning sessions";
-
-const REMOVING = "Removing old sessions";
+type Offer = { plans: Plan[]; counts: Removed[] };
 
 const busy = async <T>(host: Host, text: string, work: () => Promise<T>) => {
-  host.ui.setWidget(
-    NAMESPACE,
-    (_width, theme) => [`${PAD}${theme.fg("muted", `${MARKS.pending} ${text}${ELLIPSIS}`)}`],
-    { above: true },
-  );
+  host.ui.setWidget(NAMESPACE, progressLine(text), { above: true });
 
   try {
     return await work();
@@ -50,18 +36,11 @@ const busy = async <T>(host: Host, text: string, work: () => Promise<T>) => {
 export const registerPrune = (host: Host, sources: (info: SessionInfo) => Sources) => {
   let open = false;
 
-  const plans = async (info: SessionInfo) => {
-    const now = Date.now();
-    const scanned = await scan(await scanInput(sources(info)), cutoffAt(now, INTERVALS[0]));
-
-    return INTERVALS.map((days) => plan(scanned, cutoffAt(now, days)));
-  };
-
   const choose = (info: SessionInfo, days: number) => {
     const failure = saveDays(info, days);
 
     if (failure) {
-      host.ui.notify(`${NAMESPACE}: ${failure}`, "warning");
+      host.ui.notify(saveFailedText(failure), "warning");
       return;
     }
 
@@ -77,11 +56,10 @@ export const registerPrune = (host: Host, sources: (info: SessionInfo) => Source
 
   const pruneNow = async (info: SessionInfo, confirmed: Plan, days: number) => {
     const expected = totals(confirmed);
-    const outcome = await busy(host, REMOVING, async () => {
-      const fresh = await planAt({ ...(await scanInput(sources(info))), days, now: Date.now() });
 
-      return fresh.aborted ?? apply(within(fresh, confirmed), sources(info));
-    });
+    const outcome = await busy(host, REMOVING, () =>
+      pruneConfirmed(sources(info), confirmed, days, Date.now()),
+    );
 
     if (typeof outcome === "string") {
       host.ui.notify(abortedText(outcome), "warning");
@@ -91,64 +69,66 @@ export const registerPrune = (host: Host, sources: (info: SessionInfo) => Source
     host.ui.notify(outcomeText(outcome, expected, days), "info");
   };
 
-  const pickPrune = async (info: SessionInfo, planned: readonly Plan[], selected?: number): Promise<void> => {
-    const days = await host.ui.showForm(intervalForm("prune", planned, selected));
+  const pickPrune = async (info: SessionInfo, offer: Offer, selected?: number): Promise<void> => {
+    const days = await host.ui.showForm(intervalForm("prune", offer.counts, selected));
 
     if (days === undefined) {
-      return menu(info, planned);
+      return menu(info, offer);
     }
 
-    const confirmed = planned[INTERVALS.indexOf(days)];
-    const expected = totals(confirmed);
+    const index = INTERVALS.indexOf(days);
+    const confirmed = offer.plans[index];
+    const expected = offer.counts[index];
 
-    if (!removesAnything(expected)) {
-      return pickPrune(info, planned, days);
+    if (itemsOf(expected) === 0) {
+      return pickPrune(info, offer, days);
     }
 
-    const skipped = confirmed.handoffsSkipped ? sources(info).handoffRoot : undefined;
-
-    if (!(await host.ui.confirm(CONFIRM_TITLE, confirmText(expected, days, skipped)))) {
-      return pickPrune(info, planned, days);
+    if (!(await host.ui.confirm(CONFIRM_TITLE, confirmText(expected, days, confirmed.skipped)))) {
+      return pickPrune(info, offer, days);
     }
 
     await pruneNow(info, confirmed, days);
   };
 
-  const menu = async (info: SessionInfo, planned: readonly Plan[]): Promise<void> => {
+  const menu = async (info: SessionInfo, offer: Offer): Promise<void> => {
     const stored = loadDays(info);
     const configured = stored.errors.length === 0 ? stored.settings.days : undefined;
-    const kind = await host.ui.showForm(menuForm(planned, configured));
+    const most = offer.counts[0];
+    const kind = await host.ui.showForm(menuForm(most, configured));
 
-    if (kind === undefined || (kind === "prune" && planned[0].aborted)) {
+    if (kind === undefined || (kind === "prune" && !most)) {
       return;
     }
 
-    if (kind === "prune" && !removesAnything(totals(planned[0]))) {
+    if (kind === "prune" && itemsOf(most) === 0) {
       host.ui.notify(NOTHING_TEXT, "info");
       return;
     }
 
     if (kind === "prune") {
-      return pickPrune(info, planned, configured);
+      return pickPrune(info, offer, configured);
     }
 
-    const days = await host.ui.showForm(intervalForm(kind, planned, configured));
+    const days = await host.ui.showForm(intervalForm(kind, offer.counts, configured));
 
     if (days === undefined) {
-      return menu(info, planned);
+      return menu(info, offer);
     }
 
     choose(info, days);
   };
 
   const run = async (info: SessionInfo) => {
-    const planned = await busy(host, SCANNING, () => plans(info));
+    const plans = await busy(host, SCANNING, () => planIntervals(sources(info), Date.now()));
 
-    if (planned[0].aborted) {
-      host.ui.notify(abortedText(planned[0].aborted), "warning");
+    if (typeof plans === "string") {
+      host.ui.notify(abortedText(plans), "warning");
+      await menu(info, { plans: [], counts: [] });
+      return;
     }
 
-    await menu(info, planned);
+    await menu(info, { plans, counts: plans.map(totals) });
   };
 
   host.registerCommand("prune", {

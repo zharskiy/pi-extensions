@@ -9,7 +9,7 @@ export type Member = {
   live: boolean;
 };
 
-export type Chain<M extends Member = Member> = { members: M[]; newest: number; live: boolean };
+export type Chain = { members: Member[]; newest: number; live: boolean };
 
 const disjoint = (count: number) => {
   const roots = Array.from({ length: count }, (_, node) => node);
@@ -41,7 +41,7 @@ const disjoint = (count: number) => {
   return { find, union };
 };
 
-export const chainsOf = <M extends Member>(members: readonly M[]): Chain<M>[] => {
+export const chainsOf = (members: readonly Member[]): Chain[] => {
   const nodes = new Map<string, number>();
 
   members.forEach((member, index) => {
@@ -53,7 +53,7 @@ export const chainsOf = <M extends Member>(members: readonly M[]): Chain<M>[] =>
   });
 
   const sets = disjoint(members.length);
-  const nodeOf = (member: M) => nodes.get(pathKey(member.file)) ?? 0;
+  const nodeOf = (member: Member) => nodes.get(pathKey(member.file)) ?? 0;
 
   members.forEach((member) => {
     const parent = member.parent === undefined ? undefined : nodes.get(pathKey(member.parent));
@@ -63,7 +63,7 @@ export const chainsOf = <M extends Member>(members: readonly M[]): Chain<M>[] =>
     }
   });
 
-  const groups = new Map<number, M[]>();
+  const groups = new Map<number, Member[]>();
 
   members.forEach((member) => {
     const group = sets.find(nodeOf(member));

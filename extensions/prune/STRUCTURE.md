@@ -4,20 +4,21 @@
 - `api/extension.ts`: `pruneExtension(deps)`, `createManagedExtension` with namespace `NAMESPACE`, `prunePlugin` and the user-only `pi-prune.json` settings; the default export with the real handoff root, `pidAlive` and the once-per-process record.
 - `api/plugin.ts`: `prunePlugin`, `PruneDeps`; liveness marker on session start and quit, the first-start sweep over `<agentDir>/sessions`, the settings-error guard; registers `/prune`.
 - `api/prune-command.ts`: `registerPrune`, the `/prune` menu flow and its way back from the list and the confirm, its progress line above the editor, confirm and re-plan, and the `Auto-prune` save.
-- `core/settings.ts`: `NAMESPACE` (`pi-prune`), `PruneSettings`, `defaults`, `schema`, `SETTINGS_FILE`, `INTERVALS`, `loadDays` and `saveDays` of the user file.
-- `core/live-markers.ts`: `liveDir`, `markerPath`, `writeMarker`, `removeMarker`, `pidAlive` and `readLive`, the live ids and files and the dead markers.
-- `core/real-dirs.ts`: `entriesIn` and `subdirsIn` of a real folder only, `measure`, the touch time and file bytes of a folder one level deep.
-- `core/pool.ts`: `pooled`, a bounded pool over a list or an async iterable, results in source order; `LIMIT`.
+- `core/settings.ts`: `NAMESPACE` (`pi-prune`), `PruneSettings`, `defaults`, `settingsSpec`, `SETTINGS_FILE`, `INTERVALS`, `loadDays` and `saveDays` of the user file.
+- `core/live-markers.ts`: `liveDir`, `claimMarker`, `releaseMarker`, `pidAlive`, `isLive` and `readLive`, the live ids and files and the dead markers.
+- `core/real-dirs.ts`: `entriesIn` and `subdirsIn` of a real folder only, `measure`, the touch time and file bytes of a folder one level deep; `Sized`, `Aged`.
+- `core/pool.ts`: `pooled`, a bounded pool over a list or an async iterable, results in source order, 64 steps at once unless given a limit.
 - `core/path-key.ts`: `pathKey`, the comparable form of a session path.
-- `core/handoff-root.ts`: `rootState`, whether the handoff root is safe to sweep.
-- `core/handoff-scan.ts`: `scanHandoffs`, the handoff root streamed once into owned folders, aged orphans and empty-folder candidates; `Sized`, `Aged`, `HandoffScan`.
-- `core/agent-runs.ts`: `readRuns`, the runs of each of a list of session folders, and `staleRuns`, the run and chain rules over them; `Run`, `AGENTS_DIR`.
-- `core/sweep-plan.ts`: `scan`, `plan`, `planAt`, `within`, `cutoffAt`, `Scan`, `ScanInput`, `Plan`, `PlanInput`, `Candidate`, `Stem`, `Removed`, `Sources`, `scanInput`, `totals`, `removesAnything`; the live, session, kept (whole chains), orphan and handoff rules.
+- `core/handoff-scan.ts`: `rootState`, whether the handoff root is safe to sweep; `scanHandoffs`, the handoff root streamed once into owned folders, aged orphans and empty-folder candidates; `HandoffScan`.
+- `core/agent-runs.ts`: `readRuns`, the runs of each of a list of session folders, and `staleRuns`, the run and chain rules over them; `removeRun`; `Run`.
+- `core/sweep-scan.ts`: `scan`, `Sources`; the one read of the disk a plan needs.
+- `core/sweep-plan.ts`: `plan`, `within`, `cutoffAt`, `totals`, `itemsOf`, `Scan`, `Plan`, `Candidate`, `Removed`; the pure live, session, kept (whole chains), orphan and handoff rules.
+- `core/prune.ts`: `planIntervals`, `pruneConfirmed` and `sweep`, the scan, plan and apply steps of `/prune` and of the sweep.
 - `core/session-chains.ts`: `chainsOf`, `Member`, `Chain`; sessions grouped by `parentSession` links in both directions.
 - `core/sweep-apply.ts`: `apply`, the chain by chain removal with its re-checks, and the counts and bytes removed; `clearEmpties`, the empty handoff folders the sweep clears.
 - `ui/prune-report.ts`: every `/prune` and sweep text: the removed line with the freed bytes (`bytesText`), the abort and failure warnings, the confirm title and message, the outcome after the confirm (`outcomeText`), the counts grouped by thousands (`counted`), a row's counts and bytes, the `Auto-prune` notices, the terminal, already-open and nothing-to-remove texts.
 - `ui/prune-picker.ts`: `menuForm` and `intervalForm`, the `/prune` menu and its two interval lists with counts, bytes and the configured mark.
-- `tests/support/session-layout.ts`: `fabricate`, a temp agent dir, sessions folder and private handoff root with sessions, runs, handoffs and markers, and `input`/`planned`/`applied`/`prune` over them.
+- `tests/support/session-layout.ts`: `fabricate`, a temp agent dir, sessions folder and private handoff root with sessions, runs, handoffs and markers, and `input`/`aborted`/`scanned`/`planned`/`applied`/`prune` over them.
 - `tests/pool.test.ts`: `pooled` order, limit, async sources, errors and long lists.
 - `tests/handoff-scan.test.ts`: the handoff scan shortcuts against fresh plans and a naive reference, with `readdir` spied.
 - `tests/sweep.test.ts`: the plan and apply rules on real temp folders through the adapter's real header reader, one test per guard (duplicate ids, a live parent, the root and mtime re-checks, links, live empty folders) and a 20,000-long chain.

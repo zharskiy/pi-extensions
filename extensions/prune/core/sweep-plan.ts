@@ -1,123 +1,48 @@
-import { lstat } from "node:fs/promises";
-import { basename, join } from "node:path";
-import { readSessionHeader, type SessionHeader } from "../../../platform/pi-adapter/index.ts";
-import { fallbackStemsRoot, sessionStem } from "../../../platform/shared/index.ts";
-import { type Run, readRuns, staleRuns } from "./agent-runs.ts";
-import { type RootState, rootState } from "./handoff-root.ts";
-import { type Aged, type Sized, scanHandoffs } from "./handoff-scan.ts";
-import { type Current, type Live, liveDir, readLive } from "./live-markers.ts";
-import { pathKey } from "./path-key.ts";
-import { LIMIT, pooled } from "./pool.ts";
-import { entriesIn, subdirsIn } from "./real-dirs.ts";
-import { type Chain, chainsOf, type Member } from "./session-chains.ts";
+import { type Run, staleRuns } from "./agent-runs.ts";
+import type { Live } from "./live-markers.ts";
+import type { Aged, Sized } from "./real-dirs.ts";
+import type { Chain } from "./session-chains.ts";
 
 const DAY_MS = 86_400_000;
 
-const SESSION_EXT = ".jsonl";
-
-export type ScanInput = {
-  slugDirs: string[];
-  agentDir: string;
-  handoffRoot: string;
-  current: Current;
-  isAlive: (pid: number) => boolean;
+export type Scan = {
+  live: Live;
+  chains: Chain[];
+  runs: Map<string, Run[]>;
+  orphanRuns: Run[][];
+  fallbackRuns: Map<string, Run[]>;
+  latestCutoff: number;
+  skipped: string | undefined;
+  owned: Map<string, Sized>;
+  orphanHandoffs: Aged[];
+  empties: string[];
 };
-
-export type Sources = Omit<ScanInput, "slugDirs">;
-
-export type PlanInput = ScanInput & { days: number; now: number };
-
-type Session = { file: string; mtime: number; bytes: number; header?: SessionHeader };
-
-type Linked = Member & { runs?: Run[] };
-
-type Linkage = Chain<Linked>;
-
-type Listed = { files: string[]; stems: { dir: string; listed: boolean }[] };
-
-export type Stem = { dir: string; runs: Sized[] };
-
-type RunsIn = { dir: string; runs: Run[] };
-
-export type Scan =
-  | { aborted: string }
-  | {
-      live: Live;
-      chains: Linkage[];
-      orphanStems: RunsIn[];
-      fallbackStems: RunsIn[];
-      latestCutoff: number;
-      handoffState: RootState;
-      owned: Map<string, Sized>;
-      orphanHandoffs: Aged[];
-      empties: string[];
-    };
 
 export type Candidate = {
   file: string;
   mtime: number;
   id: string;
   bytes: number;
-  stem: Stem | undefined;
-  handoff: Sized | undefined;
+  runs: Sized[];
+  handoff?: Sized;
+};
+
+export type Plan = {
+  chains: Candidate[][];
+  orphans: { runs: Sized[]; handoffs: Sized[] };
+  markers: string[];
+  skipped: string | undefined;
 };
 
 export type Removed = { sessions: number; runs: number; handoffs: number; bytes: number };
 
-export type Plan = {
-  aborted?: string;
-  chains: Candidate[][];
-  orphans: { stems: Stem[]; handoffs: Sized[] };
-  markers: string[];
-  empties: string[];
-  handoffsSkipped: boolean;
-};
+export const itemsOf = (removed: Removed) => removed.sessions + removed.runs + removed.handoffs;
 
-const readSession = async (file: string): Promise<{ session?: Session; error?: string }> => {
-  const stat = await lstat(file).catch(() => undefined);
+export const cutoffAt = (now: number, days: number) => now - days * DAY_MS;
 
-  if (!stat) {
-    return {};
-  }
+export const removableAt = (chain: Chain, cutoff: number) => !chain.live && chain.newest < cutoff;
 
-  const read = await readSessionHeader(file);
-
-  if ("error" in read) {
-    return { error: `${file}: ${read.error}` };
-  }
-
-  return "gone" in read
-    ? {}
-    : { session: { file, mtime: stat.mtimeMs, bytes: stat.size, header: read.header } };
-};
-
-const listSlug = async (slug: string): Promise<Listed> => {
-  const entries = await entriesIn(slug);
-  const names = new Set(entries.map((entry) => entry.name));
-
-  return {
-    files: entries
-      .filter((entry) => entry.isFile() && entry.name.endsWith(SESSION_EXT))
-      .map((entry) => join(slug, entry.name)),
-    stems: entries
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => ({ dir: join(slug, entry.name), listed: names.has(`${entry.name}${SESSION_EXT}`) })),
-  };
-};
-
-const memberOf = (session: Session, live: Live): Linked => ({
-  file: session.file,
-  mtime: session.mtime,
-  id: session.header?.id,
-  bytes: session.bytes,
-  parent: session.header?.parentSession,
-  live:
-    session.header === undefined || live.ids.has(session.header.id) || live.files.has(pathKey(session.file)),
-});
-
-const removableAt = (chain: Chain, cutoff: number) => !chain.live && chain.newest < cutoff;
-
-const keptIdsOf = (chains: readonly Linkage[], cutoff: number, live: Live) =>
+export const keptIdsOf = (chains: readonly Chain[], cutoff: number, live: Live) =>
   new Set([
     ...live.ids,
     ...chains
@@ -125,201 +50,68 @@ const keptIdsOf = (chains: readonly Linkage[], cutoff: number, live: Live) =>
       .flatMap((chain) => chain.members.flatMap(({ id }) => id ?? [])),
   ]);
 
-const pruned = (dir: string, found: readonly Run[], cutoff: number): Stem[] => {
-  const runs = staleRuns(found, cutoff);
-
-  return runs.length > 0 ? [{ dir, runs }] : [];
-};
-
-const runsIn = async (dirs: readonly string[]): Promise<RunsIn[]> => {
-  const runs = await readRuns(dirs);
-
-  return dirs.map((dir, index) => ({ dir, runs: runs[index] }));
-};
-
-const emptyPlan = (aborted: string): Plan => ({
-  aborted,
-  chains: [],
-  orphans: { stems: [], handoffs: [] },
-  markers: [],
-  empties: [],
-  handoffsSkipped: false,
-});
-
-export const cutoffAt = (now: number, days: number) => now - days * DAY_MS;
-
-export const scanInput = async (sources: Sources): Promise<ScanInput> => ({
-  ...sources,
-  slugDirs: await subdirsIn(join(sources.agentDir, "sessions")),
-});
-
-export const scan = async (input: ScanInput, latestCutoff: number): Promise<Scan> => {
-  const live = await readLive(input.agentDir, input.current, input.isAlive);
-
-  if (!live) {
-    return { aborted: `${liveDir(input.agentDir)}: not a readable directory` };
-  }
-
-  const slugs = await pooled(input.slugDirs, LIMIT, listSlug);
-  const reads = await pooled(
-    slugs.flatMap((slug) => slug.files),
-    LIMIT,
-    readSession,
-  );
-  const error = reads.flatMap((read) => read.error ?? [])[0];
-
-  if (error) {
-    return { aborted: error };
-  }
-
-  const sessions = reads.flatMap((read) => read.session ?? []);
-  const ids = new Set(sessions.flatMap((session) => session.header?.id ?? []));
-  const stems = slugs.flatMap((slug) => slug.stems);
-  const stemDirs = new Set(stems.map(({ dir }) => pathKey(dir)));
-  const chains = chainsOf(sessions.map((session) => memberOf(session, live)));
-  const removable = chains.filter((chain) => removableAt(chain, latestCutoff));
-  const alwaysKept = keptIdsOf(chains, latestCutoff, live);
-
-  const reading = removable
-    .flatMap((chain) => chain.members)
-    .filter((member) => stemDirs.has(pathKey(sessionStem(member.file))));
-
-  const found = await runsIn(reading.map((member) => sessionStem(member.file)));
-
-  reading.forEach((member, index) => {
-    member.runs = found[index].runs;
-  });
-
-  const orphanStems = stems
-    .filter(({ dir, listed }) => !listed && !live.files.has(pathKey(`${dir}${SESSION_EXT}`)))
-    .map(({ dir }) => dir);
-
-  const fallbackStems = (await subdirsIn(fallbackStemsRoot(input.agentDir))).filter(
-    (dir) => !alwaysKept.has(basename(dir)),
-  );
-
-  const handoffState = await rootState(input.handoffRoot);
-  const measured = new Set(
-    removable.flatMap((chain) => chain.members.flatMap(({ id }) => (id && !alwaysKept.has(id) ? [id] : []))),
-  );
-
-  const handoffs =
-    handoffState === "safe"
-      ? await scanHandoffs(
-          input.handoffRoot,
-          { latestCutoff, emptyBefore: Date.now() - DAY_MS },
-          { measured, claimed: new Set([...ids, ...live.ids]), live: live.ids },
-        )
-      : { owned: new Map<string, Sized>(), orphans: [], empties: [] };
-
-  return {
-    live,
-    chains,
-    orphanStems: await runsIn(orphanStems),
-    fallbackStems: await runsIn(fallbackStems),
-    latestCutoff,
-    handoffState,
-    owned: handoffs.owned,
-    orphanHandoffs: handoffs.orphans,
-    empties: handoffs.empties,
-  };
-};
-
 export const plan = (scanned: Scan, cutoff: number): Plan => {
-  if ("aborted" in scanned) {
-    return emptyPlan(scanned.aborted);
-  }
-
   if (cutoff > scanned.latestCutoff) {
     throw new Error("plan: cutoff after the scan's latest cutoff");
   }
 
-  const { live, chains } = scanned;
-  const keptIds = keptIdsOf(chains, cutoff, live);
-  const fallbackStems = scanned.fallbackStems.filter(({ dir }) => !keptIds.has(basename(dir)));
+  const keptIds = keptIdsOf(scanned.chains, cutoff, scanned.live);
+  const fallbacks = [...scanned.fallbackRuns].flatMap(([id, runs]) => (keptIds.has(id) ? [] : [runs]));
 
   return {
-    chains: chains
+    chains: scanned.chains
       .filter((chain) => removableAt(chain, cutoff))
       .map((chain) =>
-        chain.members.map((member) => {
-          const id = member.id ?? "";
-
-          return {
-            file: member.file,
-            mtime: member.mtime,
-            id,
-            bytes: member.bytes,
-            stem: member.runs ? pruned(sessionStem(member.file), member.runs, cutoff)[0] : undefined,
-            handoff: keptIds.has(id) ? undefined : scanned.owned.get(id),
-          };
-        }),
+        chain.members.map(({ file, mtime, id = "", bytes }) => ({
+          file,
+          mtime,
+          id,
+          bytes,
+          runs: staleRuns(scanned.runs.get(file) ?? [], cutoff),
+          handoff: keptIds.has(id) ? undefined : scanned.owned.get(id),
+        })),
       ),
     orphans: {
-      stems: [...scanned.orphanStems, ...fallbackStems].flatMap(({ dir, runs }) => pruned(dir, runs, cutoff)),
+      runs: [...scanned.orphanRuns, ...fallbacks].flatMap((runs) => staleRuns(runs, cutoff)),
       handoffs: scanned.orphanHandoffs
         .filter(({ touched }) => touched < cutoff)
         .map(({ dir, bytes }) => ({ dir, bytes })),
     },
-    markers: live.dead,
-    empties: scanned.empties,
-    handoffsSkipped: scanned.handoffState === "unsafe",
+    markers: scanned.live.dead,
+    skipped: scanned.skipped,
   };
 };
 
-const sizeOf = (items: readonly Sized[]) => items.reduce((total, item) => total + item.bytes, 0);
+const contents = (plan: Plan) => {
+  const sessions = plan.chains.flat();
+  const handoffs = [...sessions.flatMap(({ handoff }) => handoff ?? []), ...plan.orphans.handoffs];
+
+  return {
+    sessions,
+    runs: [...sessions.flatMap(({ runs }) => runs), ...plan.orphans.runs],
+    handoffs: [...new Map(handoffs.map((handoff) => [handoff.dir, handoff])).values()],
+  };
+};
+
+const sizeOf = (items: readonly { bytes: number }[]) => items.reduce((total, item) => total + item.bytes, 0);
 
 export const totals = (plan: Plan): Removed => {
-  const sessions = plan.chains.flat();
-  const runs = [...sessions.flatMap((session) => session.stem ?? []), ...plan.orphans.stems].flatMap(
-    (stem) => stem.runs,
-  );
-  const handoffs = [
-    ...new Map(
-      [...sessions.flatMap((session) => session.handoff ?? []), ...plan.orphans.handoffs].map((handoff) => [
-        handoff.dir,
-        handoff,
-      ]),
-    ).values(),
-  ];
+  const { sessions, runs, handoffs } = contents(plan);
 
   return {
     sessions: sessions.length,
     runs: runs.length,
     handoffs: handoffs.length,
-    bytes: sessions.reduce((total, session) => total + session.bytes, 0) + sizeOf(runs) + sizeOf(handoffs),
+    bytes: sizeOf(sessions) + sizeOf(runs) + sizeOf(handoffs),
   };
-};
-
-export const removesAnything = (removed: Removed) => removed.sessions + removed.runs + removed.handoffs > 0;
-
-export const planAt = async (input: PlanInput) => {
-  const cutoff = cutoffAt(input.now, input.days);
-
-  return plan(await scan(input, cutoff), cutoff);
 };
 
 export const within = (fresh: Plan, confirmed: Plan): Plan => {
-  const confirmedSessions = confirmed.chains.flat();
-  const mtimes = new Map(confirmedSessions.map((session) => [session.file, session.mtime]));
-
-  const runs = new Set(
-    [...confirmedSessions.flatMap((session) => session.stem ?? []), ...confirmed.orphans.stems].flatMap(
-      (stem) => stem.runs.map(({ dir }) => dir),
-    ),
-  );
-
-  const handoffs = new Set(
-    [...confirmedSessions.flatMap((session) => session.handoff ?? []), ...confirmed.orphans.handoffs].map(
-      ({ dir }) => dir,
-    ),
-  );
-
-  const confirmedRuns = (stem: Stem): Stem[] => {
-    const kept = stem.runs.filter((run) => runs.has(run.dir));
-
-    return kept.length > 0 ? [{ dir: stem.dir, runs: kept }] : [];
-  };
+  const kept = contents(confirmed);
+  const mtimes = new Map(kept.sessions.map((session) => [session.file, session.mtime]));
+  const runs = new Set(kept.runs.map(({ dir }) => dir));
+  const handoffs = new Set(kept.handoffs.map(({ dir }) => dir));
+  const confirmedRuns = (found: readonly Sized[]) => found.filter(({ dir }) => runs.has(dir));
 
   return {
     ...fresh,
@@ -328,14 +120,13 @@ export const within = (fresh: Plan, confirmed: Plan): Plan => {
       .map((chain) =>
         chain.map((session) => ({
           ...session,
-          stem: session.stem ? confirmedRuns(session.stem)[0] : undefined,
+          runs: confirmedRuns(session.runs),
           handoff: session.handoff && handoffs.has(session.handoff.dir) ? session.handoff : undefined,
         })),
       ),
     orphans: {
-      stems: fresh.orphans.stems.flatMap(confirmedRuns),
+      runs: confirmedRuns(fresh.orphans.runs),
       handoffs: fresh.orphans.handoffs.filter(({ dir }) => handoffs.has(dir)),
     },
-    empties: [],
   };
 };

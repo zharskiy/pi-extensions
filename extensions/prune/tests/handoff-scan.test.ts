@@ -11,7 +11,7 @@ import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { INTERVALS } from "../core/settings.ts";
-import { cutoffAt, plan, planAt, scan } from "../core/sweep-plan.ts";
+import { cutoffAt, plan } from "../core/sweep-plan.ts";
 import { daysAgo, fabricate, OLD, RECENT, touch } from "./support/session-layout.ts";
 
 vi.mock("node:fs/promises", async (original) => {
@@ -73,7 +73,7 @@ describe("handoff shortcuts", () => {
     const layout = fabricate();
     const input = layout.input();
     const edge = layout.handoff("edge", cutoffAt(input.now, WEEK));
-    const scanned = await scan(input, cutoffAt(input.now, WEEK));
+    const scanned = await layout.scanned({ days: WEEK });
 
     expect(INTERVALS.flatMap((days) => plan(scanned, cutoffAt(input.now, days)).orphans.handoffs)).toEqual(
       [],
@@ -99,7 +99,8 @@ describe("handoff shortcuts", () => {
 
   it("plans from one scan the same as fresh scans and a naive reference at every interval", async () => {
     const layout = fabricate();
-    const input = layout.input({ isAlive: (pid) => pid === 7 });
+    const alive = { isAlive: (pid: number) => pid === 7 };
+    const input = layout.input(alive);
 
     layout.session("fresh", RECENT);
     layout.handoff("fresh", OLD);
@@ -124,7 +125,7 @@ describe("handoff shortcuts", () => {
     });
 
     const claimed = new Set(["fresh", "month", "old", "live-id", "current-id"]);
-    const scanned = await scan(input, cutoffAt(input.now, WEEK));
+    const scanned = await layout.scanned({ ...alive, days: WEEK });
 
     const checks = await Promise.all(
       INTERVALS.map(async (days) => {
@@ -133,7 +134,7 @@ describe("handoff shortcuts", () => {
 
         return {
           same: fromScan,
-          fresh: await planAt({ ...input, days }),
+          fresh: await layout.planned({ ...alive, days }),
           handoffs: fromScan.orphans.handoffs.map(({ dir }) => dir).sort(),
           naive: naiveOrphans(layout.handoffRoot, claimed, cutoff),
         };
@@ -150,7 +151,7 @@ describe("handoff shortcuts", () => {
   it("throws for a cutoff after the scan's latest cutoff", async () => {
     const layout = fabricate();
     const input = layout.input();
-    const scanned = await scan(input, cutoffAt(input.now, 60));
+    const scanned = await layout.scanned();
 
     expect(() => plan(scanned, cutoffAt(input.now, WEEK))).toThrow(
       "plan: cutoff after the scan's latest cutoff",

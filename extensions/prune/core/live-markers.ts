@@ -1,26 +1,24 @@
 import { lstatSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { lstat, readdir, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { SessionInfo } from "../../../platform/pi-adapter/index.ts";
 import { isPlainObject } from "../../../platform/shared/index.ts";
 import { pathKey } from "./path-key.ts";
 import { pooled } from "./pool.ts";
+import { entriesIn } from "./real-dirs.ts";
 import { NAMESPACE } from "./settings.ts";
 
 const MARKER_EXT = ".json";
 
 export type Live = { ids: Set<string>; files: Set<string>; dead: string[] };
 
-export type Current = Pick<SessionInfo, "id" | "file" | "parentSession">;
+type Current = Pick<SessionInfo, "agentDir" | "id" | "file" | "parentSession">;
 
 type Marker = { id: string; pid: number; file?: unknown; parentSession?: unknown };
 
 export const liveDir = (agentDir: string) => join(agentDir, NAMESPACE, "live");
 
-export const markerPath = (agentDir: string, id: string) =>
-  join(liveDir(agentDir), `${id}.${process.pid}${MARKER_EXT}`);
-
-export const removeMarker = (path: string) => {
+const removeMarker = (path: string) => {
   try {
     rmSync(path, { force: true });
   } catch {
@@ -36,7 +34,7 @@ const isRealDirSync = (dir: string) => {
   }
 };
 
-export const writeMarker = (path: string, info: Current) => {
+const writeMarker = (path: string, info: Current) => {
   const temp = `${path}.tmp`;
   const marker = {
     id: info.id,
@@ -61,6 +59,28 @@ export const writeMarker = (path: string, info: Current) => {
 
     return false;
   }
+};
+
+export const claimMarker = (owner: { marker?: string }, info: Current) => {
+  const next = join(liveDir(info.agentDir), `${info.id}.${process.pid}${MARKER_EXT}`);
+  const written = writeMarker(next, info);
+
+  if (owner.marker && owner.marker !== next) {
+    removeMarker(owner.marker);
+  }
+
+  owner.marker = written ? next : undefined;
+
+  return written ? undefined : `${liveDir(info.agentDir)}: cannot write the liveness marker`;
+};
+
+export const releaseMarker = (owner: { marker?: string }) => {
+  if (!owner.marker) {
+    return;
+  }
+
+  removeMarker(owner.marker);
+  owner.marker = undefined;
 };
 
 export const pidAlive = (pid: number) => {
@@ -89,36 +109,24 @@ const readMarker = async (path: string) => ({
 const paths = (owner: { file?: unknown; parentSession?: unknown }) =>
   [owner.file, owner.parentSession].filter((path): path is string => typeof path === "string").map(pathKey);
 
-const markerFiles = async (dir: string) => {
-  const stat = await lstat(dir).catch((error: NodeJS.ErrnoException) => error.code);
-
-  if (stat === "ENOENT") {
-    return [];
-  }
-
-  if (typeof stat !== "object" || !stat.isDirectory()) {
-    return undefined;
-  }
-
-  const entries = await readdir(dir, { withFileTypes: true }).catch(() => undefined);
-
-  return entries
-    ?.filter((entry) => entry.isFile() && entry.name.endsWith(MARKER_EXT))
-    .map((entry) => join(dir, entry.name));
-};
+export const isLive = (live: Live, id: string | undefined, file: string) =>
+  (id !== undefined && live.ids.has(id)) || live.files.has(pathKey(file));
 
 export const readLive = async (
-  agentDir: string,
   current: Current,
   isAlive: (pid: number) => boolean,
 ): Promise<Live | undefined> => {
-  const files = await markerFiles(liveDir(agentDir));
+  const dir = liveDir(current.agentDir);
+  const entries = await entriesIn(dir);
 
-  if (!files) {
+  if (!entries) {
     return undefined;
   }
 
-  const markers = await pooled(files, 1, readMarker);
+  const files = entries
+    .filter((entry) => entry.isFile() && entry.name.endsWith(MARKER_EXT))
+    .map((entry) => join(dir, entry.name));
+  const markers = await pooled(files, readMarker, 1);
 
   const live = (data: unknown): data is Marker =>
     isPlainObject(data) && typeof data.id === "string" && typeof data.pid === "number" && isAlive(data.pid);

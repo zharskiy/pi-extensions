@@ -1,18 +1,10 @@
-import { readdir, readFile } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { readdir, readFile, rm, rmdir } from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
 import { RUN_MANIFEST, runRules, runsDir } from "../../../platform/shared/index.ts";
-import type { Sized } from "./handoff-scan.ts";
-import { LIMIT, pooled } from "./pool.ts";
-import { measure, subdirsIn } from "./real-dirs.ts";
+import { pooled } from "./pool.ts";
+import { measure, type Sized, subdirsIn } from "./real-dirs.ts";
 
-export type Run = {
-  id: string;
-  dir: string;
-  touched: number;
-  bytes: number;
-  keep: boolean;
-  links: string[];
-};
+export type Run = Sized & { id: string; touched: number; keep: boolean; links: string[] };
 
 const parsed = (text: string): unknown => {
   try {
@@ -67,17 +59,33 @@ const expired = (runs: Map<string, Run>, run: Run, cutoff: number) =>
   Array.from(gather(runs, run.id, new Set())).every((link) => link.touched < cutoff && !link.keep);
 
 export const readRuns = async (stems: readonly string[]) => {
-  const dirs = await pooled(stems, LIMIT, (stem) => subdirsIn(runsDir(stem)));
-  const runs = await pooled(dirs.flat(), LIMIT, readRun);
+  const dirs = await pooled(stems, (stem) => subdirsIn(runsDir(stem)));
+  const runs = await pooled(dirs.flat(), readRun);
   const byDir = new Map(runs.map((run) => [run.dir, run]));
 
   return dirs.map((group) => group.flatMap((dir) => byDir.get(dir) ?? []));
 };
 
 export const staleRuns = (found: readonly Run[], cutoff: number): Sized[] => {
-  const runs = new Map<string, Run>(found.map((run) => [run.id, run]));
+  const runs = new Map(found.map((run) => [run.id, run]));
 
   return Array.from(runs.values())
     .filter((run) => expired(runs, run, cutoff))
     .map(({ dir, bytes }) => ({ dir, bytes }));
+};
+
+const ignore = () => undefined;
+
+export const removeRun = async ({ dir }: Sized) => {
+  const removed = await rm(dir, { recursive: true }).then(
+    () => true,
+    () => false,
+  );
+
+  if (removed) {
+    await rmdir(dirname(dir)).catch(ignore);
+    await rmdir(dirname(dirname(dir))).catch(ignore);
+  }
+
+  return removed;
 };

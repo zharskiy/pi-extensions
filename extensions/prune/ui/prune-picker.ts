@@ -2,19 +2,17 @@ import type { FormFactory } from "../../../platform/pi-adapter/index.ts";
 import { ELLIPSIS } from "../../../platform/shared/index.ts";
 import { MARKS, type SelectOption, selectForm } from "../../../platform/ui-kit/index.ts";
 import { defaults, INTERVALS, SETTINGS_FILE } from "../core/settings.ts";
-import { type Plan, removesAnything, totals } from "../core/sweep-plan.ts";
+import { itemsOf, type Removed } from "../core/sweep-plan.ts";
 import { bytesText, daysText, rowText } from "./prune-report.ts";
 
 export type PickKind = "prune" | "auto";
 
-const pruneNowText = (plans: readonly Plan[]) => {
-  if (plans[0].aborted) {
+const pruneNowText = (most: Removed | undefined) => {
+  if (!most) {
     return "cannot scan, see the warning";
   }
 
-  const most = totals(plans[0]);
-
-  if (!removesAnything(most)) {
+  if (itemsOf(most) === 0) {
     return "nothing to remove";
   }
 
@@ -30,36 +28,38 @@ const autoText = (configured: number | undefined) => {
 };
 
 export const menuForm = (
-  plans: readonly Plan[],
+  most: Removed | undefined,
   configured: number | undefined,
 ): FormFactory<PickKind | undefined> =>
   selectForm<PickKind>({
     title: "Prune sessions",
     options: [
-      { value: "prune", label: "Prune now", description: pruneNowText(plans) },
+      { value: "prune", label: "Prune now", description: pruneNowText(most) },
       { value: "auto", label: "Auto-prune", description: autoText(configured) },
     ],
   });
 
-const described = (kind: PickKind, plan: Plan) => {
-  const planned = totals(plan);
+const described = (kind: PickKind, planned: Removed | undefined) => {
+  if (!planned) {
+    return undefined;
+  }
 
   if (kind === "prune") {
     return rowText(planned);
   }
 
-  return removesAnything(planned) ? `at next start: ${rowText(planned)}` : undefined;
+  return itemsOf(planned) > 0 ? `at next start: ${rowText(planned)}` : undefined;
 };
 
 export const intervalForm = (
   kind: PickKind,
-  plans: readonly Plan[],
+  counts: readonly Removed[],
   configured: number | undefined,
 ): FormFactory<number | undefined> => {
   const rows: SelectOption<number>[] = INTERVALS.map((days, index) => ({
     value: days,
     label: daysText(days),
-    description: described(kind, plans[index]),
+    description: described(kind, counts[index]),
   }));
 
   const options = kind === "auto" ? [...rows, { value: 0, label: "Off" }] : rows;

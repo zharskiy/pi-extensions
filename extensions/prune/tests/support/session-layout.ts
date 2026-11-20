@@ -3,8 +3,10 @@ import { join } from "node:path";
 import type { SessionInfo } from "../../../../platform/pi-adapter/index.ts";
 import { fallbackStemsRoot, RUN_MANIFEST, runsDir } from "../../../../platform/shared/index.ts";
 import { createFakeHost, useTempDirs } from "../../../../test/framework/index.ts";
+import { readLive } from "../../core/live-markers.ts";
 import { apply } from "../../core/sweep-apply.ts";
-import { type Plan, type PlanInput, planAt } from "../../core/sweep-plan.ts";
+import { cutoffAt, type Plan, plan } from "../../core/sweep-plan.ts";
+import { scan } from "../../core/sweep-scan.ts";
 
 const DAY_MS = 86_400_000;
 
@@ -48,7 +50,12 @@ export const runFiles = (dir: string, id: string, touched: number, manifest: Man
   return dir;
 };
 
-type Options = Partial<Omit<PlanInput, "current">> & { current?: Partial<SessionInfo> };
+type Options = {
+  days?: number;
+  now?: number;
+  isAlive?: (pid: number) => boolean;
+  current?: Partial<SessionInfo>;
+};
 
 export const fabricate = () => {
   const root = temp.make("pi-prune-");
@@ -115,20 +122,48 @@ export const fabricate = () => {
     return file;
   };
 
-  const input = (options: Options = {}): PlanInput => ({
-    slugDirs: [slugDir],
-    agentDir,
-    handoffRoot,
-    days: 60,
-    now: NOW,
-    isAlive: () => false,
-    ...options,
-    current: { id: "current-id", ...options.current },
-  });
+  const input = (options: Options = {}) => {
+    const current = { agentDir, id: "current-id", ...options.current };
+    const isAlive = options.isAlive ?? (() => false);
 
-  const planned = (options: Options = {}) => planAt(input(options));
+    return {
+      agentDir,
+      handoffRoot,
+      live: () => readLive(current, isAlive),
+      days: options.days ?? 60,
+      now: options.now ?? NOW,
+    };
+  };
 
-  const applied = (result: Plan, options: Options = {}) => apply(result, input(options));
+  const raw = (options: Options = {}) => {
+    const sources = input(options);
+
+    return scan(sources, cutoffAt(sources.now, sources.days), sources.now);
+  };
+
+  const aborted = async (options: Options = {}) => {
+    const scanned = await raw(options);
+
+    return typeof scanned === "string" ? scanned : undefined;
+  };
+
+  const scanned = async (options: Options = {}) => {
+    const result = await raw(options);
+
+    if (typeof result === "string") {
+      throw new Error(result);
+    }
+
+    return result;
+  };
+
+  const planned = async (options: Options = {}) => {
+    const sources = input(options);
+
+    return plan(await scanned(options), cutoffAt(sources.now, sources.days));
+  };
+
+  const applied = (result: Plan, options: Options = {}) => apply(result, input(options).live, handoffRoot);
 
   const prune = async (options: Options = {}) => applied(await planned(options), options);
 
@@ -148,6 +183,8 @@ export const fabricate = () => {
     handoff,
     marker,
     input,
+    aborted,
+    scanned,
     planned,
     applied,
     prune,

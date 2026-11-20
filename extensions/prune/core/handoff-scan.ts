@@ -1,11 +1,9 @@
 import { lstat, opendir } from "node:fs/promises";
 import { join } from "node:path";
-import { LIMIT, pooled } from "./pool.ts";
-import { measure } from "./real-dirs.ts";
+import { pooled } from "./pool.ts";
+import { type Aged, measure, type Sized } from "./real-dirs.ts";
 
-export type Sized = { dir: string; bytes: number };
-
-export type Aged = Sized & { touched: number };
+export type RootState = "safe" | "missing" | "unsafe";
 
 export type HandoffScan = { owned: Map<string, Sized>; orphans: Aged[]; empties: string[] };
 
@@ -14,6 +12,18 @@ type Ids = { measured: ReadonlySet<string>; claimed: ReadonlySet<string>; live: 
 type Ages = { latestCutoff: number; emptyBefore: number };
 
 type Found = { owned?: Sized & { id: string }; orphan?: Aged; empty?: string };
+
+export const rootState = async (root: string): Promise<RootState> => {
+  const stat = await lstat(root).catch(() => undefined);
+
+  if (!stat) {
+    return "missing";
+  }
+
+  const owned = !process.getuid || stat.uid === process.getuid();
+
+  return stat.isDirectory() && owned && (stat.mode & 0o022) === 0 ? "safe" : "unsafe";
+};
 
 const judge = async (root: string, name: string, ages: Ages, ids: Ids): Promise<Found> => {
   const dir = join(root, name);
@@ -47,9 +57,7 @@ export const scanHandoffs = async (root: string, ages: Ages, ids: Ids): Promise<
     return { owned: new Map(), orphans: [], empties: [] };
   }
 
-  const found = await pooled(dir, LIMIT, (entry) =>
-    judge(root, entry.name, ages, ids).catch((): Found => ({})),
-  );
+  const found = await pooled(dir, (entry) => judge(root, entry.name, ages, ids).catch((): Found => ({})));
 
   return {
     owned: new Map(
