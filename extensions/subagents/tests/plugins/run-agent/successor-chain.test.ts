@@ -188,7 +188,7 @@ describe("successor chain", () => {
 
     await requestHandoff(first.id);
 
-    expect(existsSync(first.handoffPath)).toBe(false);
+    expect(existsSync(dirname(first.handoffPath))).toBe(false);
 
     runtime.child(first.id).finish(handoffText("partial"));
     await flushMicrotasks();

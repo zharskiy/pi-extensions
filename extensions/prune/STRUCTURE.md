@@ -1,0 +1,26 @@
+# Prune structure
+
+- `index.ts`: pi entry, re-exports `api/extension.ts`.
+- `api/extension.ts`: `pruneExtension(deps)` and the default export with the real handoff root, `pidAlive` and the per-process record.
+- `api/plugin.ts`: `prunePlugin`, `PruneDeps`; the marker on start and quit, the first-start sweep, `/prune` registration.
+- `api/prune-command.ts`: `registerPrune`, the `/prune` menu, lists, confirm, progress line and `Auto-prune` save.
+- `core/prune.ts`: `planIntervals`, `pruneConfirmed`, `sweep`; the scan, plan and apply steps wired.
+- `core/sweep-scan.ts`: `scan`, `Sources`; the one read of the disk, which joins sessions, live markers, runs and handoffs into a `Scan`.
+- `core/sweep-plan.ts`: `plan`, `within`, `totals`, `cutoffAt`, `itemsOf` and the `Scan`, `Plan`, `Candidate` and `Removed` types; the pure rules.
+- `core/sweep-apply.ts`: `apply`, removal chain by chain after one check; `clearEmpties`.
+- `core/live-markers.ts`: `claimMarker`, `releaseMarker`, `readLive`, `isLive`, `pidAlive`, `liveDir`.
+- `core/session-chains.ts`: `chainsOf`, `Member`, `Chain`; sessions grouped by `parentSession`.
+- `core/agent-runs.ts`: `scanRuns`, `staleRuns`, `removeRun`, `Run`, `SESSION_EXT`; the run folder layout.
+- `core/handoff-scan.ts`: `rootState`, `scanHandoffs`, `HandoffScan`.
+- `core/real-dirs.ts`: `entriesIn`, `subdirsIn`, `measure`, `Sized`, `Aged`; real folders only.
+- `core/pool.ts`: `pooled`, a bounded pool in source order.
+- `core/path-key.ts`: `pathKey`, the comparable form of a path.
+- `core/settings.ts`: `NAMESPACE`, `INTERVALS`, `settingsSpec`, `loadDays`, `saveDays`.
+- `ui/prune-picker.ts`: `menuForm`, `intervalForm`.
+- `ui/prune-report.ts`: every `/prune` and sweep text, `bytesText`.
+- `tests/support/session-layout.ts`: `fabricate`, a temp agent dir and handoff root with builders for sessions, runs, handoffs, empty folders and markers, and the scan, plan and apply steps over them.
+- `tests/pool.test.ts`: `pooled` order, limit, sources and errors.
+- `tests/handoff-scan.test.ts`: the handoff scan against a naive reference.
+- `tests/sweep.test.ts`: the plan and apply rules on real temp folders.
+- `tests/report.test.ts`: the byte sizes and report texts.
+- `tests/prune.test.ts`: the plugin and booted extension on a fake host: the sweep, markers, `/prune` and `Auto-prune`.

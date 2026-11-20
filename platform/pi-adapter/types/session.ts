@@ -1,5 +1,9 @@
 import type { CustomMessage, UserMessage } from "./messages.ts";
 
+export type SessionHeader = { id: string; parentSession?: string };
+
+export type HeaderRead = { header: SessionHeader | undefined } | { gone: true } | { error: string };
+
 export type RunMode = "tui" | "rpc" | "print" | "json";
 
 export type SessionInfo = {

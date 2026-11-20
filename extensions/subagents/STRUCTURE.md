@@ -23,7 +23,7 @@ extensions/subagents/
 │   ├── extension.ts                       # createManagedExtension: namespace, root, settings, plugins, childExclude, onError
 │   ├── plugins.ts                         # the ordered plugin list
 │   └── plugins/
-│       ├── agent-registry.ts              # in-memory records, manifest restore (own and parent session, on every start), the `registry` service
+│       ├── agent-registry.ts              # in-memory records, manifest restore (own and parent session, on every start, handoff paths from the owning session's id), the `registry` service
 │       ├── agent-definitions.ts           # agent files and overrides, the `definitions` service, reload
 │       ├── run-agent.ts                   # runner, run_agent/message_agent/stop_agent/handoff tools, outbox, background-work count (answered at any assistant start), wakes held while a main-session handoff is pending (pi:handoff-pending, pi:held-results), main prompt, block invalidation
 │       ├── usage-report.ts                # reports agent usage to the spending channel
@@ -59,7 +59,7 @@ extensions/subagents/
 │   ├── agent-registry/
 │   │   └── registry.ts                    # createRegistry: records, manifests, events; restore repairs the links of the restored records
 │   ├── run-agent/
-│   │   ├── runner.ts                      # createRunner: batches, launch, spawn, events, close, stop, wake, routing (one ChildSession.send for routed and custom messages), the successor seed with its agent details and its task, the handoff hold until the agent's own batches settle (heldHandoff, releaseHold, unhold; the `held` turn), the launch and settle guards (startLaunch, failRun)
+│   │   ├── runner.ts                      # createRunner: batches, launch, spawn, events, close, stop, wake, routing (one ChildSession.send for routed and custom messages), the successor seed with its agent details and its task, the handoff hold until the agent's own batches settle (heldHandoff, releaseHold, unhold; the `held` turn), the launch and settle guards (startLaunch, failRun), the fallback handoff reply written with writeHandoffFile
 │   │   ├── tools.ts                       # run_agent, message_agent and stop_agent specs, params and details types, describeRunAgent
 │   │   ├── outbox.ts                      # createOutbox: wake texts for the main session and agent callers; wakeMessage, the hidden pi-subagents:wake both get
 │   │   ├── background-work.ts             # createBackgroundWork: the main session's background batches until a reply starts after their wake

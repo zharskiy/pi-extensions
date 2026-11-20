@@ -122,7 +122,7 @@ export const createUi = (
 
   const tuiCtx = () => tuiContext(state);
 
-  const setWidget: WidgetUi["setWidget"] = (key, render) => {
+  const setWidget: WidgetUi["setWidget"] = (key, render, options) => {
     const ctx = tuiCtx();
     const handle: WidgetHandle = { refresh: () => widgetTuis.get(key)?.requestRender() };
 
@@ -150,7 +150,7 @@ export const createUi = (
           invalidate: () => {},
         };
       },
-      { placement: "belowEditor" },
+      { placement: options?.above ? "aboveEditor" : "belowEditor" },
     );
 
     return handle;

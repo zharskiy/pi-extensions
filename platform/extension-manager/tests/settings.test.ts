@@ -20,6 +20,8 @@ const schema: SettingsSchema<Example> = {
   names: { type: "list", of: "names" },
 };
 
+const whole: SettingsSchema<{ days: number }> = { days: { type: "number", min: 0, max: 10, integer: true } };
+
 const temp = useTempDirs();
 
 describe("settings helpers", () => {
@@ -37,6 +39,19 @@ describe("settings helpers", () => {
       "f.json: count must be a number between 1 and 10",
       "f.json: ratio must be a number above 0 and at most 1",
       "f.json: names must be a list of names",
+    ]);
+  });
+
+  it("rejects a fraction for a whole-number rule", () => {
+    expect(parseSettings(whole, { days: 1.5 }, "f.json").errors).toEqual([
+      "f.json: days must be a whole number between 0 and 10",
+    ]);
+  });
+
+  it("accepts a whole number at the bounds", () => {
+    expect([0, 10].map((days) => parseSettings(whole, { days }, "f.json"))).toEqual([
+      { patch: { days: 0 }, errors: [] },
+      { patch: { days: 10 }, errors: [] },
     ]);
   });
 
@@ -173,5 +188,24 @@ describe("settings files", () => {
       ratio: 0.2,
       names: [],
     });
+  });
+
+  it("ignores a trusted project file of a user-only settings file and reports it", () => {
+    const where = withFiles(true);
+    const project = settingsPath(where, "project", FILE);
+    const user = settingsPath(where, "user", FILE);
+
+    expect(loadSettingsFiles(schema, DEFAULTS, FILE, where, "user")).toEqual({
+      settings: { count: 2, ratio: 0.2, names: [] },
+      errors: [`${project}: ignored, ${FILE} is read only from ${user}`],
+    });
+  });
+
+  it("reports nothing for a user-only settings file without a project file", () => {
+    const where = location(true);
+
+    write(settingsPath(where, "user", FILE), { count: 3 });
+
+    expect(loadSettingsFiles(schema, DEFAULTS, FILE, where, "user").errors).toEqual([]);
   });
 });

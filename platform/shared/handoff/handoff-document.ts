@@ -55,13 +55,10 @@ export const parseRequestDetails = (details: unknown): HandoffRequestDetails | u
     : undefined;
 };
 
+export const handoffRoot = () => join(tmpdir(), "pi-handoff");
+
 export const handoffPath = (sessionId: string, owner: { main: true } | { agentId: string }) =>
-  join(
-    tmpdir(),
-    "pi-handoff",
-    sessionId,
-    "main" in owner ? "main-handoff.md" : `${owner.agentId}-handoff.md`,
-  );
+  join(handoffRoot(), sessionId, "main" in owner ? "main-handoff.md" : `${owner.agentId}-handoff.md`);
 
 type Heading = { title: string; line: number };
 

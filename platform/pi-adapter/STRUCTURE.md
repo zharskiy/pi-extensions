@@ -18,9 +18,9 @@
 - `runtime/phase.ts`: the turn phase reducer (waiting, thinking, writing, toolArgs, tool, idle).
 - `runtime/child-scope.ts`: the child scope in which no extension boots.
 - `runtime/kept-selection.ts`: the `pi-adapter:kept-selection` entry a handoff writes into the new session, its restore of the model and thinking level on `session_start`, and the restored-selection marker the `model_select` and `thinking_level_select` filters match against.
-- `runtime/global-record.ts`: `globalRecord(name, init)`; one record per name on `globalThis`, shared by adapter copies.
+- `runtime/global-record.ts`: `globalRecord(name, init)`; one record per name on `globalThis`, shared by adapter copies and by the reloads of one extension in one process (for state that must outlive a reload, such as a once-per-process guard).
 - `runtime/follow-ups.ts`: the custom follow-ups adapter hosts queued per session and not yet started, read for `AssistantEnd.final`.
-- `runtime/session-file.ts`: reads session `.jsonl` files through pi's parser and migration: entries, transcripts (whole, for child sessions, or one branch through pi's context entries, with its custom entries, compaction or branch summaries and bash executions).
+- `runtime/session-file.ts`: reads session `.jsonl` files through pi's parser and migration: entries, the header's id and parent from the first line within 64 KiB (`readSessionHeader`, one bounded read, with vanished and unreadable files told apart; `readSessionId`, the same line read synchronously, for `host.sessionId`), transcripts (whole, for child sessions, or one branch through pi's context entries, with its custom entries, compaction or branch summaries and bash executions).
 - `runtime/message-text.ts`: message text (`finalRunTexts`, a child's final run, with every custom message, hidden ones included, as a run start), `formatRoutedMessage`, and `piCustom` and `startQueued`, the one mapping of a `CustomMessage` to pi's custom message and the one start of held customs (the first triggers a turn, the rest wait for the next) for the main host and a child.
 - `runtime/default-model.ts`: `writeDefaultModel` and `writeDefaultThinkingLevel`; save a `provider/id` ref as pi's global default model, widening a model scope as Ctrl+S does, and a level as pi's global default thinking level, both through pi's `SettingsManager`.
 - `runtime/settle-within.ts`: `settleWithin`; waits for a promise at most a given time.
@@ -30,7 +30,7 @@
 - `child/model-catalog.ts`: `availableModels`; credentialed models with their window, price and thinking levels.
 - `child/model-resolver.ts`: `resolveModel`; exact, then fuzzy model matching.
 - `child/codemode.ts`: the codemode worker cap (`PI_CODEMODE_MAX_WORKERS`), an owned value shared by adapter copies.
-- `ui/create-ui.ts`: `HostUi`: widgets, overlay, notify, copyText, key observation, thinking label, editor text, columns.
+- `ui/create-ui.ts`: `HostUi`: widgets (below the editor, or above it on request), overlay, notify, copyText, key observation, thinking label, editor text, columns.
 - `ui/tui-context.ts`: `HostState` (current context and tools) and `tuiContext` (the context in tui mode).
 - `ui/form.ts`: `HostUi.showForm`, the inline form shell.
 - `ui/custom-view.ts`: `showCustomView`, the one `ctx.ui.custom` adapter of the overlay and the form (fitted lines, keys as `KeyPress`, dispose), with the mouse handler and the focus as options.

@@ -4,7 +4,7 @@ import { isFiniteNumber, isPlainObject, isStringArray } from "../guards.ts";
 import { projectPath, writeProjectFile } from "../project-dir.ts";
 import { errorText } from "../text/format.ts";
 
-type NumberRule = { type: "number"; min: number; max: number; minExclusive?: boolean };
+type NumberRule = { type: "number"; min: number; max: number; minExclusive?: boolean; integer?: true };
 
 type ListRule = { type: "list"; of: string };
 
@@ -21,7 +21,10 @@ export type SettingsSchema<T> = { [K in keyof T]?: SettingsRule };
 export type SettingsParse<T> = { patch: Partial<T>; errors: string[] };
 
 const validNumber = (rule: NumberRule, value: unknown) =>
-  isFiniteNumber(value) && (rule.minExclusive ? value > rule.min : value >= rule.min) && value <= rule.max;
+  isFiniteNumber(value) &&
+  (rule.minExclusive ? value > rule.min : value >= rule.min) &&
+  value <= rule.max &&
+  (!rule.integer || Number.isInteger(value));
 
 const isValid = (rule: SettingsRule, value: unknown) => {
   if (rule.type === "choice") {
@@ -48,9 +51,11 @@ const expectation = (rule: SettingsRule) => {
     return `an object of ${rule.of}`;
   }
 
+  const kind = rule.integer ? "a whole number" : "a number";
+
   return rule.minExclusive
-    ? `a number above ${rule.min} and at most ${rule.max}`
-    : `a number between ${rule.min} and ${rule.max}`;
+    ? `${kind} above ${rule.min} and at most ${rule.max}`
+    : `${kind} between ${rule.min} and ${rule.max}`;
 };
 
 export const parseSettings = <T>(
@@ -132,12 +137,40 @@ export const writeSettingsFile = (
   return path;
 };
 
-export const readSettingsFiles = <T>(schema: SettingsSchema<T>, file: string, location: SettingsLocation) => {
-  const user = readSettingsFile(schema, settingsPath(location, "user", file));
+export type FileScope = "user";
 
-  const project: SettingsParse<T> = location.projectTrusted
-    ? readSettingsFile(schema, settingsPath(location, "project", file))
-    : { patch: {}, errors: [] };
+const readProjectFile = <T>(
+  schema: SettingsSchema<T>,
+  file: string,
+  location: SettingsLocation,
+  scope?: FileScope,
+): SettingsParse<T> => {
+  if (!location.projectTrusted) {
+    return { patch: {}, errors: [] };
+  }
+
+  const path = settingsPath(location, "project", file);
+
+  if (scope !== "user") {
+    return readSettingsFile(schema, path);
+  }
+
+  const user = settingsPath(location, "user", file);
+
+  return {
+    patch: {},
+    errors: existsSync(path) ? [`${path}: ignored, ${file} is read only from ${user}`] : [],
+  };
+};
+
+export const readSettingsFiles = <T>(
+  schema: SettingsSchema<T>,
+  file: string,
+  location: SettingsLocation,
+  scope?: FileScope,
+) => {
+  const user = readSettingsFile(schema, settingsPath(location, "user", file));
+  const project = readProjectFile(schema, file, location, scope);
 
   return { user: user.patch, project: project.patch, errors: [...user.errors, ...project.errors] };
 };
@@ -147,8 +180,9 @@ export const loadSettingsFiles = <T>(
   defaults: T,
   file: string,
   location: SettingsLocation,
+  scope?: FileScope,
 ) => {
-  const { user, project, errors } = readSettingsFiles(schema, file, location);
+  const { user, project, errors } = readSettingsFiles(schema, file, location, scope);
 
   return { settings: { ...defaults, ...user, ...project }, errors };
 };
