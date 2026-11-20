@@ -15,12 +15,12 @@
 - `core/sweep-plan.ts`: `plan`, `within`, `cutoffAt`, `totals`, `itemsOf`, `Scan`, `Plan`, `Candidate`, `Removed`; the pure live, session, kept (whole chains), orphan and handoff rules.
 - `core/prune.ts`: `planIntervals`, `pruneConfirmed` and `sweep`, the scan, plan and apply steps of `/prune` and of the sweep.
 - `core/session-chains.ts`: `chainsOf`, `Member`, `Chain`; sessions grouped by `parentSession` links in both directions.
-- `core/sweep-apply.ts`: `apply`, the chain by chain removal with its re-checks, and the counts and bytes removed; `clearEmpties`, the empty handoff folders the sweep clears.
+- `core/sweep-apply.ts`: `apply`, the chain by chain removal after its one check, and the counts and bytes removed; `clearEmpties`, the empty handoff folders the sweep clears.
 - `ui/prune-report.ts`: every `/prune` and sweep text: the removed line with the freed bytes (`bytesText`), the abort and failure warnings, the confirm title and message, the outcome after the confirm (`outcomeText`), the counts grouped by thousands (`counted`), a row's counts and bytes, the `Auto-prune` notices, the terminal, already-open and nothing-to-remove texts.
 - `ui/prune-picker.ts`: `menuForm` and `intervalForm`, the `/prune` menu and its two interval lists with counts, bytes and the configured mark.
 - `tests/support/session-layout.ts`: `fabricate`, a temp agent dir, sessions folder and private handoff root with sessions, runs, handoffs and markers, and `input`/`aborted`/`scanned`/`planned`/`applied`/`prune` over them.
 - `tests/pool.test.ts`: `pooled` order, limit, async sources, errors and long lists.
 - `tests/handoff-scan.test.ts`: the handoff scan shortcuts against fresh plans and a naive reference, with `readdir` spied.
-- `tests/sweep.test.ts`: the plan and apply rules on real temp folders through the adapter's real header reader, one test per guard (duplicate ids, a live parent, the root and mtime re-checks, links, live empty folders) and a 20,000-long chain.
+- `tests/sweep.test.ts`: the plan and apply rules on real temp folders through the adapter's real header reader, one test per guard (duplicate ids, a live parent, the chain check, the first failed unlink, links, live empty folders) and a 20,000-long chain.
 - `tests/report.test.ts`: `bytesText`, the freed bytes of `removedText`, the grouped counts and `outcomeText`.
 - `tests/prune.test.ts`: the plugin on a fake host and the extension booted with real settings files: the sweep on start, markers, notify line, the `/prune` menu, lists, progress line, `Auto-prune` saves and that nothing reaches the session, settings errors, empty handoff folders at session start.

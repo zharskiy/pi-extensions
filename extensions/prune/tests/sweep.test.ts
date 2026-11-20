@@ -10,10 +10,9 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { chainsOf } from "../core/session-chains.ts";
-import { apply, clearEmpties } from "../core/sweep-apply.ts";
 import { cutoffAt, type Plan, plan, totals, within } from "../core/sweep-plan.ts";
 import {
   CUTOFF,
@@ -621,51 +620,56 @@ describe("apply chains", () => {
     expect(files.map(existsSync)).toEqual([true, true, true]);
   });
 
-  it("stops the rest of the chain when a member turns live during removal", async () => {
+  it("keeps the whole chain when the liveness check throws before removal starts", async () => {
     const layout = fabricate();
     const files = linked(layout, [OLD, OLD, OLD]);
     const planned = await layout.planned();
-
-    layout.marker("s1", 7);
-
-    const removed = await layout.applied(planned, { isAlive: (pid) => pid === 7 && !existsSync(files[0]) });
-
-    expect(removed.sessions).toBe(1);
-    expect(files.map(existsSync)).toEqual([false, true, true]);
-  });
-
-  it("keeps the rest of its chain when a re-check throws", async () => {
-    const layout = fabricate();
-    const files = linked(layout, [OLD, OLD, OLD]);
-    const calls = { count: 0 };
 
     layout.marker("dead", 9);
 
     const isAlive = () => {
-      calls.count += 1;
-
-      if (calls.count === 4) {
-        throw new Error("isAlive failed");
-      }
-
-      return false;
+      throw new Error("isAlive failed");
     };
 
-    const removed = await layout.prune({ isAlive });
-
-    expect(removed.sessions).toBe(1);
-    expect(files.map(existsSync)).toEqual([false, true, true]);
+    expect(await layout.applied(planned, { isAlive })).toEqual({
+      sessions: 0,
+      runs: 0,
+      handoffs: 0,
+      bytes: 0,
+    });
+    expect(files.map(existsSync)).toEqual([true, true, true]);
   });
 
-  it("does not stop a chain for a member already gone", async () => {
+  it("stops a chain at the first failed unlink", async () => {
     const layout = fabricate();
-    const files = linked(layout, [OLD, OLD, OLD]);
+
+    const runs = linked(layout, [OLD, OLD, OLD]).map((file) =>
+      layout.run(basename(file, ".jsonl"), "scout-1", OLD),
+    );
     const planned = await layout.planned();
+    const [first, failing, last] = planned.chains[0];
 
-    rmSync(files[1]);
+    rmSync(failing.file);
+    mkdirSync(failing.file);
+    touch(failing.file, OLD);
 
-    expect(await layout.applied(planned)).toMatchObject({ sessions: 2, runs: 0, handoffs: 0 });
-    expect(files.map(existsSync)).toEqual([false, false, false]);
+    expect(await layout.applied(planned)).toMatchObject({ sessions: 1, runs: 1, handoffs: 0 });
+    expect([first, failing, last].map(({ file }) => existsSync(file))).toEqual([false, true, true]);
+    expect(runs.filter(existsSync)).toHaveLength(2);
+  });
+
+  it("stops a chain at a member already gone", async () => {
+    const layout = fabricate();
+
+    linked(layout, [OLD, OLD, OLD]);
+
+    const planned = await layout.planned();
+    const [first, gone, last] = planned.chains[0].map(({ file }) => file);
+
+    rmSync(gone);
+
+    expect(await layout.applied(planned)).toMatchObject({ sessions: 1, runs: 0, handoffs: 0 });
+    expect([first, last].map(existsSync)).toEqual([false, true]);
   });
 });
 
@@ -915,59 +919,6 @@ describe("review guards", () => {
     expect(planned.chains).toEqual([]);
   });
 
-  it("stops a chain when a later member changes while an earlier one is removed", async () => {
-    const layout = fabricate();
-    const files = linked(layout, [OLD, OLD]);
-
-    layout.marker("elsewhere", 999_999);
-
-    const planned = await layout.planned();
-    const calls = { count: 0 };
-
-    const isAlive = () => {
-      calls.count += 1;
-
-      if (calls.count === 3) {
-        files
-          .filter((file) => existsSync(file))
-          .forEach((file) => {
-            touch(file, RECENT);
-          });
-      }
-
-      return false;
-    };
-
-    const removed = await layout.applied(planned, { isAlive });
-
-    expect(removed.sessions).toBe(1);
-    expect(files.filter((file) => existsSync(file))).toHaveLength(1);
-  });
-
-  it("removes no handoff dir once the root became open to other users", async () => {
-    const layout = fabricate();
-
-    layout.session("old", OLD);
-
-    const owned = layout.handoff("old", OLD);
-    const orphan = layout.handoff("orphan", OLD);
-    const empty = emptyDir(layout, "empty");
-    const scanned = await layout.scanned();
-    const planned = await layout.planned();
-
-    expect(scanned.empties).toContain(empty);
-
-    chmodSync(layout.handoffRoot, 0o777);
-
-    const removed = await apply(planned, layout.input().live, layout.handoffRoot);
-    const cleared = await clearEmpties(scanned.empties, layout.input().live, layout.handoffRoot);
-
-    chmodSync(layout.handoffRoot, 0o700);
-
-    expect([removed.sessions, removed.handoffs, cleared]).toEqual([1, 0, 0]);
-    expect([owned, orphan, empty].map(existsSync)).toEqual([true, true, true]);
-  });
-
   it("lists no symbolic link in the handoff root, as an orphan or an empty dir", async () => {
     const layout = fabricate();
     const target = join(layout.root, "elsewhere");
@@ -995,24 +946,6 @@ describe("review guards", () => {
 
     expect(scanned.empties).toEqual([empty]);
     expect(existsSync(live)).toBe(true);
-  });
-
-  it("keeps an empty dir whose session turned live after the scan", async () => {
-    const layout = fabricate();
-    const live = emptyDir(layout, "live-one");
-    const empty = emptyDir(layout, "empty");
-    const scanned = await layout.scanned();
-
-    layout.marker("live-one", process.pid);
-
-    const cleared = await clearEmpties(
-      scanned.empties,
-      layout.input({ isAlive: (pid) => pid === process.pid }).live,
-      layout.handoffRoot,
-    );
-
-    expect(cleared).toBe(1);
-    expect([live, empty].map(existsSync)).toEqual([true, false]);
   });
 });
 

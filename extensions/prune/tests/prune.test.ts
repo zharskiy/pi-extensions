@@ -185,7 +185,25 @@ describe("prune sweep on session start", () => {
     await pause(50);
 
     expect(existsSync(old)).toBe(true);
-    expect(readdirSync(elsewhere)).toEqual([]);
+    expect(host.notices).toEqual([
+      {
+        message: `pi-prune: nothing removed, ${liveDir(layout)}: not a readable directory`,
+        level: "warning",
+      },
+    ]);
+  });
+
+  it("does not sweep when the liveness marker cannot be written", async () => {
+    const layout = fabricate();
+    const old = layout.session("old", OLD);
+
+    writeFileSync(join(layout.agentDir, "pi-prune"), "");
+
+    const { host } = boot(layout);
+
+    await pause(50);
+
+    expect(existsSync(old)).toBe(true);
     expect(host.notices).toEqual([
       {
         message: `pi-prune: nothing removed, ${liveDir(layout)}: cannot write the liveness marker`,

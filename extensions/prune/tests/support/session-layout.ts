@@ -163,7 +163,7 @@ export const fabricate = () => {
     return plan(await scanned(options), cutoffAt(sources.now, sources.days));
   };
 
-  const applied = (result: Plan, options: Options = {}) => apply(result, input(options).live, handoffRoot);
+  const applied = (result: Plan, options: Options = {}) => apply(result, input(options).live);
 
   const prune = async (options: Options = {}) => applied(await planned(options), options);
 

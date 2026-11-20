@@ -15,7 +15,7 @@ export const pruneConfirmed = async (sources: Sources, confirmed: Plan, days: nu
 
   return typeof scanned === "string"
     ? scanned
-    : apply(within(plan(scanned, cutoff), confirmed), sources.live, sources.handoffRoot);
+    : apply(within(plan(scanned, cutoff), confirmed), sources.live);
 };
 
 export const sweep = async (sources: Sources, days: number, now: number) => {
@@ -26,8 +26,8 @@ export const sweep = async (sources: Sources, days: number, now: number) => {
     return scanned;
   }
 
-  const removed = await apply(plan(scanned, cutoff), sources.live, sources.handoffRoot);
-  const empties = await clearEmpties(scanned.empties, sources.live, sources.handoffRoot);
+  const removed = await apply(plan(scanned, cutoff), sources.live);
+  const empties = await clearEmpties(scanned.empties);
 
   return { removed, empties };
 };
