@@ -1,19 +1,15 @@
 import { lstat } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 import { readSessionHeader, type SessionHeader } from "../../../platform/pi-adapter/index.ts";
-import { fallbackStemsRoot, sessionStem } from "../../../platform/shared/index.ts";
-import { readRuns } from "./agent-runs.ts";
+import { SESSION_EXT, scanRuns } from "./agent-runs.ts";
 import { rootState, scanHandoffs } from "./handoff-scan.ts";
 import { isLive, type Live, liveDir } from "./live-markers.ts";
-import { pathKey } from "./path-key.ts";
 import { pooled } from "./pool.ts";
 import { entriesIn, subdirsIn } from "./real-dirs.ts";
 import { chainsOf } from "./session-chains.ts";
 import { keptIdsOf, removableAt, type Scan } from "./sweep-plan.ts";
 
 const DAY_MS = 86_400_000;
-
-const SESSION_EXT = ".jsonl";
 
 export type Sources = { agentDir: string; handoffRoot: string; live: () => Promise<Live | undefined> };
 
@@ -80,23 +76,9 @@ export const scan = async (sources: Sources, latestCutoff: number, now: number):
 
   const sessions = reads.flatMap((read) => read.session ?? []);
   const ids = new Set(sessions.flatMap((session) => session.header?.id ?? []));
-  const stems = slugs.flatMap((slug) => slug.stems);
-  const stemDirs = new Set(stems.map(({ dir }) => pathKey(dir)));
   const chains = chainsOf(sessions.map((session) => memberOf(session, live)));
   const removable = chains.filter((chain) => removableAt(chain, latestCutoff));
   const alwaysKept = keptIdsOf(chains, latestCutoff, live);
-
-  const reading = removable
-    .flatMap((chain) => chain.members.map(({ file }) => file))
-    .filter((file) => stemDirs.has(pathKey(sessionStem(file))));
-
-  const orphanStems = stems
-    .filter(({ dir, listed }) => !listed && !live.files.has(pathKey(`${dir}${SESSION_EXT}`)))
-    .map(({ dir }) => dir);
-
-  const fallbackStems = (await subdirsIn(fallbackStemsRoot(sources.agentDir))).filter(
-    (dir) => !alwaysKept.has(basename(dir)),
-  );
 
   const handoffState = await rootState(sources.handoffRoot);
   const measured = new Set(
@@ -112,15 +94,17 @@ export const scan = async (sources: Sources, latestCutoff: number, now: number):
         )
       : { owned: new Map(), orphans: [], empties: [] };
 
-  const runs = await readRuns(reading.map(sessionStem));
-  const fallbackRuns = await readRuns(fallbackStems);
+  const runs = await scanRuns(sources.agentDir, {
+    files: removable.flatMap((chain) => chain.members.map(({ file }) => file)),
+    stems: slugs.flatMap((slug) => slug.stems),
+    live: live.files,
+    kept: alwaysKept,
+  });
 
   return {
     live,
     chains,
-    runs: new Map(reading.map((file, index) => [file, runs[index]])),
-    orphanRuns: await readRuns(orphanStems),
-    fallbackRuns: new Map(fallbackStems.map((dir, index) => [basename(dir), fallbackRuns[index]])),
+    ...runs,
     latestCutoff,
     skipped: handoffState === "unsafe" ? sources.handoffRoot : undefined,
     owned: handoffs.owned,

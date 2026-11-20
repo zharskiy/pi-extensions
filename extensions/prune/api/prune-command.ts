@@ -91,26 +91,25 @@ export const registerPrune = (host: Host, sources: (info: SessionInfo) => Source
     await pruneNow(info, confirmed, days);
   };
 
-  const menu = async (info: SessionInfo, offer: Offer): Promise<void> => {
+  const menu = async (info: SessionInfo, offer: Offer | undefined): Promise<void> => {
     const stored = loadDays(info);
     const configured = stored.errors.length === 0 ? stored.settings.days : undefined;
-    const most = offer.counts[0];
-    const kind = await host.ui.showForm(menuForm(most, configured));
+    const kind = await host.ui.showForm(menuForm(offer?.counts[0], configured));
 
-    if (kind === undefined || (kind === "prune" && !most)) {
+    if (kind === undefined) {
       return;
     }
 
-    if (kind === "prune" && itemsOf(most) === 0) {
+    if (kind === "prune" && offer && itemsOf(offer.counts[0]) === 0) {
       host.ui.notify(NOTHING_TEXT, "info");
       return;
     }
 
     if (kind === "prune") {
-      return pickPrune(info, offer, configured);
+      return offer && pickPrune(info, offer, configured);
     }
 
-    const days = await host.ui.showForm(intervalForm(kind, offer.counts, configured));
+    const days = await host.ui.showForm(intervalForm(kind, offer?.counts ?? [], configured));
 
     if (days === undefined) {
       return menu(info, offer);
@@ -124,7 +123,7 @@ export const registerPrune = (host: Host, sources: (info: SessionInfo) => Source
 
     if (typeof plans === "string") {
       host.ui.notify(abortedText(plans), "warning");
-      await menu(info, { plans: [], counts: [] });
+      await menu(info, undefined);
       return;
     }
 

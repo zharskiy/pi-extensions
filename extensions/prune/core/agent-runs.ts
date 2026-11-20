@@ -1,10 +1,23 @@
-import { readdir, readFile, rm, rmdir } from "node:fs/promises";
+import { readFile, rm, rmdir } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-import { RUN_MANIFEST, runRules, runsDir } from "../../../platform/shared/index.ts";
+import {
+  fallbackStemsRoot,
+  RUN_MANIFEST,
+  runRules,
+  runsDir,
+  sessionStem,
+} from "../../../platform/shared/index.ts";
+import { pathKey } from "./path-key.ts";
 import { pooled } from "./pool.ts";
 import { measure, type Sized, subdirsIn } from "./real-dirs.ts";
 
 export type Run = Sized & { id: string; touched: number; keep: boolean; links: string[] };
+
+export const SESSION_EXT = ".jsonl";
+
+type Stem = { dir: string; listed: boolean };
+
+type Found = { files: readonly string[]; stems: readonly Stem[]; live: Set<string>; kept: Set<string> };
 
 const parsed = (text: string): unknown => {
   try {
@@ -25,14 +38,8 @@ const unreadable = (dir: string): Run => ({
 
 const readRun = async (dir: string): Promise<Run> => {
   try {
-    const names = await readdir(dir);
-
-    if (!names.includes(RUN_MANIFEST)) {
-      return unreadable(dir);
-    }
-
-    const { touched, bytes } = await measure(dir);
     const rules = runRules(parsed(await readFile(join(dir, RUN_MANIFEST), "utf8")));
+    const { touched, bytes } = await measure(dir);
 
     return { id: basename(dir), dir, touched, bytes, ...rules };
   } catch {
@@ -58,12 +65,31 @@ const gather = (runs: Map<string, Run>, id: string, chain: Set<Run>) => {
 const expired = (runs: Map<string, Run>, run: Run, cutoff: number) =>
   Array.from(gather(runs, run.id, new Set())).every((link) => link.touched < cutoff && !link.keep);
 
-export const readRuns = async (stems: readonly string[]) => {
+const readRuns = async (stems: readonly string[]) => {
   const dirs = await pooled(stems, (stem) => subdirsIn(runsDir(stem)));
   const runs = await pooled(dirs.flat(), readRun);
   const byDir = new Map(runs.map((run) => [run.dir, run]));
 
   return dirs.map((group) => group.flatMap((dir) => byDir.get(dir) ?? []));
+};
+
+export const scanRuns = async (agentDir: string, found: Found) => {
+  const stemDirs = new Set(found.stems.map(({ dir }) => pathKey(dir)));
+  const reading = found.files.filter((file) => stemDirs.has(pathKey(sessionStem(file))));
+  const fallbacks = (await subdirsIn(fallbackStemsRoot(agentDir))).filter(
+    (dir) => !found.kept.has(basename(dir)),
+  );
+  const orphans = found.stems.filter(
+    ({ dir, listed }) => !listed && !found.live.has(pathKey(`${dir}${SESSION_EXT}`)),
+  );
+  const runs = await readRuns(reading.map(sessionStem));
+  const fallbackRuns = await readRuns(fallbacks);
+
+  return {
+    runs: new Map(reading.map((file, index) => [file, runs[index]] as const)),
+    orphanRuns: await readRuns(orphans.map(({ dir }) => dir)),
+    fallbackRuns: new Map(fallbacks.map((dir, index) => [basename(dir), fallbackRuns[index]] as const)),
+  };
 };
 
 export const staleRuns = (found: readonly Run[], cutoff: number): Sized[] => {
