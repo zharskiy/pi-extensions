@@ -250,8 +250,6 @@ describe("pi installed with npm install -g", () => {
     const inside = await writeNpmPi(join(steeredRoot, "prefix"), "1.6.0");
     const outside = await writeNpmPi(join(steered.root, "nvm"), "1.6.0", { reportedRoot: inside.root });
 
-    await mkdir(join(steeredRoot, ".git"), { recursive: true });
-
     await writeRepoRecord(pathsOf(planted.deps).stateDir, repoHash(plantedRoot), plantedRoot);
 
     await writeRepoRecord(pathsOf(steered.deps).stateDir, repoHash(steeredRoot), steeredRoot);
@@ -266,6 +264,41 @@ describe("pi installed with npm install -g", () => {
     expect(npmCalls(steered)).toHaveLength(1);
     expect(interactiveCall(planted)).toBeUndefined();
     expect(interactiveCall(steered)).toBeUndefined();
+  });
+
+  it("is not used when the global package is a link out of the global root, even into a checkout no sandbox has run in", async () => {
+    const harness = await createHarness({ hostPi: false });
+    const checkout = join(harness.root, "pi-checkout");
+    const linked = await writeNpmPi(join(checkout, "prefix"), "1.6.0");
+    const npmPi = await writeNpmPi(join(harness.root, "nvm"), "1.6.0");
+
+    await mkdir(join(checkout, ".git"), { recursive: true });
+
+    await rm(npmPi.packageDir, { recursive: true });
+
+    await symlink(linked.packageDir, npmPi.packageDir);
+
+    harness.deps.env.PATH = npmPi.bin;
+
+    expect(await run(["--no-sandbox"], harness.deps)).toBe(1);
+    expect(npmCalls(harness)).toHaveLength(1);
+    expect(interactiveCall(harness)).toBeUndefined();
+  });
+
+  it("is not used when the pi entry is a link out of the package", async () => {
+    const harness = await createHarness({ hostPi: false });
+    const npmPi = await writeNpmPi(join(harness.root, "nvm"), "1.6.0");
+    const elsewhere = await writeNpmPi(join(harness.root, "elsewhere"), "1.6.0");
+
+    await rm(npmPi.entry);
+
+    await symlink(elsewhere.entry, npmPi.entry);
+
+    harness.deps.env.PATH = npmPi.bin;
+
+    expect(await run(["--no-sandbox"], harness.deps)).toBe(1);
+    expect(npmCalls(harness)).toHaveLength(1);
+    expect(interactiveCall(harness)).toBeUndefined();
   });
 
   it("is not used when the global package is a link into the repository, as npm link leaves it", async () => {

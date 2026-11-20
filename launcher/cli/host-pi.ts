@@ -1,21 +1,27 @@
 import { type HostPi, locateManagedPi, locateNpmPi } from "../hostpi/index.ts";
-import { LauncherError } from "../shared/index.ts";
-import { isInSandboxedOrStartedRoot } from "../workspace/index.ts";
+import { isWithin, LauncherError } from "../shared/index.ts";
+import { sandboxWriteRoots } from "../workspace/index.ts";
 import type { LaunchContext } from "./context.ts";
 import { type CliDeps, hostAgentDirOf, pathsOf, writeLine } from "./deps.ts";
 import { sweepForHostPi } from "./host-sessions.ts";
 
 export const NO_SANDBOX = "--no-sandbox";
 
-const isTrusted = (deps: CliDeps) => {
-  const context = { home: deps.home, env: deps.env, stateDir: pathsOf(deps).stateDir, cwd: deps.cwd };
+const outsideRoots = (roots: string[]) => async (path: string, real: string) =>
+  !roots.some((root) => isWithin(path, root) || isWithin(real, root));
 
-  return async (path: string, real: string) => !(await isInSandboxedOrStartedRoot([path, real], context));
+export const resolveJobPi = async (deps: CliDeps): Promise<HostPi | undefined> => {
+  const managed = await locateManagedPi(hostAgentDirOf(deps));
+
+  if (managed !== undefined) {
+    return managed;
+  }
+
+  const context = { home: deps.home, env: deps.env, stateDir: pathsOf(deps).stateDir };
+  const roots = await sandboxWriteRoots(deps.cwd, context);
+
+  return locateNpmPi({ runner: deps.runner, env: deps.env, home: deps.home, accept: outsideRoots(roots) });
 };
-
-export const resolveJobPi = async (deps: CliDeps): Promise<HostPi | undefined> =>
-  (await locateManagedPi(hostAgentDirOf(deps))) ??
-  locateNpmPi({ runner: deps.runner, env: deps.env, home: deps.home, accept: isTrusted(deps) });
 
 export const missingPi = (deps: CliDeps) => ({
   problem: `no managed pi in ${hostAgentDirOf(deps)} and no pi in npm's global packages`,

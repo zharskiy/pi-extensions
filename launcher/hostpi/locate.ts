@@ -139,6 +139,14 @@ export const locateNpmPi = async (input: NpmPiInput): Promise<HostPi | undefined
     return undefined;
   }
 
+  const [realRoot, realPackage, realEntry] = await Promise.all(
+    [root, packageDir, found.entry].map(realOrResolved),
+  );
+
+  if (!isWithin(realPackage, realRoot) || !isWithin(realEntry, realPackage)) {
+    return undefined;
+  }
+
   const accepted = await Promise.all([packageDir, found.entry].map((path) => isAccepted(input, path)));
 
   if (!accepted.every(Boolean)) {
