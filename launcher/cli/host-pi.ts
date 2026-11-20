@@ -1,6 +1,6 @@
 import { type HostPi, locateManagedPi, locateNpmPi } from "../hostpi/index.ts";
 import { LauncherError } from "../shared/index.ts";
-import { isSandboxWritable } from "../workspace/index.ts";
+import { isInSandboxedOrStartedRoot } from "../workspace/index.ts";
 import type { LaunchContext } from "./context.ts";
 import { type CliDeps, hostAgentDirOf, pathsOf, writeLine } from "./deps.ts";
 import { sweepForHostPi } from "./host-sessions.ts";
@@ -8,9 +8,9 @@ import { sweepForHostPi } from "./host-sessions.ts";
 export const NO_SANDBOX = "--no-sandbox";
 
 const isTrusted = (deps: CliDeps) => {
-  const context = { home: deps.home, env: deps.env, stateDir: pathsOf(deps).stateDir };
+  const context = { home: deps.home, env: deps.env, stateDir: pathsOf(deps).stateDir, cwd: deps.cwd };
 
-  return async (path: string, real: string) => !(await isSandboxWritable([path, real], context));
+  return async (path: string, real: string) => !(await isInSandboxedOrStartedRoot([path, real], context));
 };
 
 export const resolveJobPi = async (deps: CliDeps): Promise<HostPi | undefined> =>

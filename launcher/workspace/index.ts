@@ -27,5 +27,5 @@ export {
   rootRefusal,
   sharedRootsOf,
 } from "./roots.ts";
-export { isSandboxWritable, startedRoots } from "./sandbox-reach.ts";
+export { isInSandboxedOrStartedRoot, isSandboxWritable, startedRoots } from "./sandbox-reach.ts";
 export { gitRepos, mountedGitDirs, type Workspace } from "./types.ts";

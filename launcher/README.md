@@ -33,7 +33,7 @@ You need:
 - Colima 0.8.0 or newer. The script installs it with Homebrew if it is missing.
 - Node 22.19 or newer, with npm.
 - git.
-- pi, installed with pi's own installer or with `npm install -g @earendil-works/pi-coding-agent`. The launcher runs the managed install in `~/.pi/agent` on the host (for provider credentials, host commands and `--no-sandbox`), or, without one, the pi in npm's global packages (`npm root -g`). A pi found only on `PATH` or in a project's `node_modules` is not used, nor an npm global pi that lies in a git working tree or a folder a sandbox has run in.
+- pi, installed with pi's own installer or with `npm install -g @earendil-works/pi-coding-agent`. The launcher runs the managed install in `~/.pi/agent` on the host (for provider credentials, host commands and `--no-sandbox`), or, without one, the pi in npm's global packages (`npm root -g`). A pi found only on `PATH` or in a project's `node_modules` is not used, nor an npm global pi that lies in a folder a sandbox has run in or in the folder you start pi in (or its git root). A git checkout no sandbox has used, such as `/opt/homebrew` or `~/.nvm`, does not count.
 
 ```bash
 curl -fsSL https://pi.dev/install.sh | sh

@@ -33,6 +33,9 @@ const canHoldSandbox = (root: string, context: SandboxReachContext) => {
   }
 };
 
+const isWithinAny = (paths: string[], roots: string[]) =>
+  roots.some((root) => paths.some((path) => isWithin(path, root)));
+
 export const isSandboxWritable = async (paths: string[], context: SandboxReachContext) => {
   const [gitRoots, sandboxed] = await Promise.all([
     Promise.all(paths.map(findGitRoot)),
@@ -41,6 +44,19 @@ export const isSandboxWritable = async (paths: string[], context: SandboxReachCo
 
   return (
     gitRoots.some((root) => root !== undefined && canHoldSandbox(root, context)) ||
-    sandboxed.some((root) => paths.some((path) => isWithin(path, root)))
+    isWithinAny(paths, sandboxed)
   );
+};
+
+export const isInSandboxedOrStartedRoot = async (
+  paths: string[],
+  context: SandboxReachContext & { cwd: string },
+) => {
+  const [sandboxed, started] = await Promise.all([
+    sandboxedRoots(context.stateDir),
+    startedRoots(context.cwd),
+  ]);
+  const startable = started.filter((root) => canHoldSandbox(root, context));
+
+  return isWithinAny(paths, [...sandboxed, ...startable]);
 };
