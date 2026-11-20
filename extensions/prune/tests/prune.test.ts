@@ -38,28 +38,35 @@ const liveDir = (layout: Layout) => join(layout.agentDir, "pi-prune", "live");
 
 const markerFile = (layout: Layout, id: string) => join(liveDir(layout), `${id}.${process.pid}.json`);
 
-const deps = (layout: Layout, swept = false, throws = false) => {
+const eventually = (check: () => unknown) => vi.waitFor(check, { interval: 2 });
+
+type BootOptions = { days?: number; swept?: boolean; throws?: number; onAlive?: () => void };
+
+const deps = (layout: Layout, options: BootOptions = {}) => {
   const alive: number[] = [];
 
   const isAlive = (pid: number) => {
     alive.push(pid);
+    options.onAlive?.();
 
-    if (throws) {
+    if (alive.length === options.throws) {
       throw new Error("no process table");
     }
 
     return pid === process.pid;
   };
 
-  const record: PruneDeps = { handoffRoot: layout.handoffRoot, isAlive, process: { swept } };
+  const record: PruneDeps = {
+    handoffRoot: layout.handoffRoot,
+    isAlive,
+    process: { swept: options.swept ?? false },
+  };
 
   return { alive, record };
 };
 
-type BootOptions = { days?: number; swept?: boolean; throws?: boolean };
-
 const boot = (layout: Layout, options: BootOptions = {}) => {
-  const { alive, record } = deps(layout, options.swept, options.throws);
+  const { alive, record } = deps(layout, options);
   const days = options.days ?? 60;
 
   mkdirSync(layout.agentDir, { recursive: true });
@@ -116,7 +123,7 @@ describe("prune sweep on session start", () => {
 
     boot(layout, { days: 100 });
 
-    await vi.waitFor(() =>
+    await eventually(() =>
       expect(readdirSync(layout.slugDir).sort()).toEqual([
         "current",
         "current.jsonl",
@@ -132,7 +139,7 @@ describe("prune sweep on session start", () => {
     const old = layout.session("old", OLD);
     const booted = boot(layout);
 
-    await vi.waitFor(() => expect(existsSync(old)).toBe(false));
+    await eventually(() => expect(existsSync(old)).toBe(false));
 
     expect(booted.alive).toContain(process.pid);
     expect(JSON.parse(readFileSync(markerFile(layout, "main-session"), "utf8"))).toEqual({
@@ -148,7 +155,7 @@ describe("prune sweep on session start", () => {
     const first = layout.session("first", OLD);
     const booted = boot(layout);
 
-    await vi.waitFor(() => expect(existsSync(first)).toBe(false));
+    await eventually(() => expect(existsSync(first)).toBe(false));
 
     const second = layout.session("second", OLD);
 
@@ -163,23 +170,43 @@ describe("prune sweep on session start", () => {
     const layout = fabricate();
     const old = layout.session("old", OLD);
     const run = layout.run("old", "scout-1", OLD);
+    const empty = layout.empty("empty");
     const booted = boot(layout, { days: 0 });
 
     await pause(50);
 
-    expect([old, run].map(existsSync)).toEqual([true, true]);
+    expect([old, run, empty].map(existsSync)).toEqual([true, true, true]);
     expect(booted.process.swept).toBe(true);
   });
 
-  it("does not sweep when the live markers folder is a symbolic link", async () => {
+  it.each([
+    [
+      "the live markers folder is a symbolic link",
+      (layout: Layout) => {
+        const elsewhere = join(layout.root, "elsewhere");
+
+        mkdirSync(elsewhere);
+        mkdirSync(join(layout.agentDir, "pi-prune"), { recursive: true });
+        symlinkSync(elsewhere, liveDir(layout));
+
+        return elsewhere;
+      },
+    ],
+    [
+      "the live markers folder cannot be created",
+      (layout: Layout) => {
+        const elsewhere = join(layout.root, "elsewhere");
+
+        mkdirSync(elsewhere);
+        writeFileSync(join(layout.agentDir, "pi-prune"), "");
+
+        return elsewhere;
+      },
+    ],
+  ])("writes no marker and does not sweep when %s", async (_case, arrange) => {
     const layout = fabricate();
     const old = layout.session("old", OLD);
-    const elsewhere = join(layout.root, "elsewhere");
-
-    mkdirSync(elsewhere);
-    mkdirSync(join(layout.agentDir, "pi-prune"), { recursive: true });
-    symlinkSync(elsewhere, liveDir(layout));
-
+    const elsewhere = arrange(layout);
     const { host } = boot(layout);
 
     await pause(50);
@@ -194,41 +221,23 @@ describe("prune sweep on session start", () => {
     ]);
   });
 
-  it("does not sweep when the liveness marker cannot be written", async () => {
-    const layout = fabricate();
-    const old = layout.session("old", OLD);
-
-    writeFileSync(join(layout.agentDir, "pi-prune"), "");
-
-    const { host } = boot(layout);
-
-    await pause(50);
-
-    expect(existsSync(old)).toBe(true);
-    expect(host.notices).toEqual([
-      {
-        message: `pi-prune: nothing removed, ${liveDir(layout)}: cannot write the liveness marker`,
-        level: "warning",
-      },
-    ]);
-  });
-
   it.skipIf(process.getuid?.() === 0)("warns once when the sweep aborts", async () => {
     const layout = fabricate();
     const old = layout.session("old", OLD);
     const locked = layout.session("locked", OLD);
+    const empty = layout.empty("empty");
 
     chmodSync(locked, 0o000);
 
     const booted = boot(layout);
 
-    await vi.waitFor(() => expect(booted.host.notices).toHaveLength(1));
+    await eventually(() => expect(booted.host.notices).toHaveLength(1));
 
     booted.host.start({ id: "next" });
     await pause(50);
     chmodSync(locked, 0o644);
 
-    expect(existsSync(old)).toBe(true);
+    expect([old, empty].map(existsSync)).toEqual([true, true]);
     expect(booted.host.notices).toEqual([
       { message: `pi-prune: nothing removed, ${locked}: EACCES`, level: "warning" },
     ]);
@@ -237,9 +246,9 @@ describe("prune sweep on session start", () => {
   it("warns when the sweep throws", async () => {
     const layout = fabricate();
     const old = layout.session("old", OLD);
-    const { host } = boot(layout, { throws: true });
+    const { host } = boot(layout, { throws: 1 });
 
-    await vi.waitFor(() =>
+    await eventually(() =>
       expect(host.notices).toEqual([
         { message: "pi-prune: sweep failed, no process table", level: "warning" },
       ]),
@@ -248,8 +257,9 @@ describe("prune sweep on session start", () => {
     expect(existsSync(old)).toBe(true);
   });
 
-  it("tells what it removed in one line", async () => {
+  it("tells what it removed in one line, empty handoff folders included", async () => {
     const layout = fabricate();
+    const empty = layout.empty("empty");
 
     layout.session("old", OLD);
     layout.run("old", "scout-1", OLD);
@@ -257,35 +267,17 @@ describe("prune sweep on session start", () => {
 
     const { host } = boot(layout);
 
-    await vi.waitFor(() =>
+    await eventually(() =>
       expect(host.notices).toEqual([
         {
           message: expect.stringMatching(
-            /^pi-prune: removed 1 session, 2 agent runs older than 60 days, \d+ B freed$/,
+            /^pi-prune: removed 1 session, 2 agent runs older than 60 days, 1 empty handoff dir, \d+ B freed$/,
           ),
           level: "info",
         },
       ]),
     );
-  });
-
-  it("keeps a chain with a fresh member", async () => {
-    const layout = fabricate();
-    const parent = layout.session("parent", OLD);
-    const child = layout.session("child", RECENT, parent);
-    const other = layout.session("other", OLD);
-
-    const { host } = boot(layout);
-
-    await vi.waitFor(() =>
-      expect(host.notices).toEqual([
-        {
-          message: expect.stringMatching(/^pi-prune: removed 1 session older than 60 days, \d+ B freed$/),
-          level: "info",
-        },
-      ]),
-    );
-    expect([parent, child, other].map(existsSync)).toEqual([true, true, false]);
+    expect(existsSync(empty)).toBe(false);
   });
 
   it("says nothing when it removed nothing", async () => {
@@ -295,7 +287,7 @@ describe("prune sweep on session start", () => {
 
     const booted = boot(layout);
 
-    await vi.waitFor(() => expect(booted.alive).toContain(process.pid));
+    await eventually(() => expect(booted.alive).toContain(process.pid));
     await pause(50);
 
     expect(booted.host.notices).toEqual([]);
@@ -311,7 +303,7 @@ describe("prune sweep on session start", () => {
 
     boot(layout);
 
-    await vi.waitFor(() => expect(existsSync(inRoot)).toBe(false));
+    await eventually(() => expect(existsSync(inRoot)).toBe(false));
 
     expect(existsSync(outside)).toBe(true);
   });
@@ -346,25 +338,13 @@ describe("liveness marker", () => {
 });
 
 const formCount = (host: FakeHost, count: number) =>
-  vi.waitFor(() => {
+  eventually(() => {
     expect(host.forms).toHaveLength(count);
   });
 
 const line = (lines: readonly string[], text: string) => lines.find((entry) => entry.includes(text)) ?? "";
 
 const ages = (layout: Layout) => [10, 45, 200].map((days) => layout.session(`aged-${days}`, daysAgo(days)));
-
-const CONFIRM_NOTE =
-  "A session open in a pi without this extension may still be removed if it is old. This cannot be undone.";
-
-const confirmOf = (counts: string, days: number) => ({
-  title: "Prune sessions?",
-  message: expect.stringMatching(
-    new RegExp(
-      `^Remove ${counts} \\(\\d+ B\\) not touched for ${days} days\\? ${CONFIRM_NOTE.replaceAll(".", "\\.")}$`,
-    ),
-  ),
-});
 
 const settingsFile = (layout: Layout) => join(layout.agentDir, SETTINGS_FILE);
 
@@ -377,6 +357,11 @@ const menuRows = async (host: FakeHost, count = 1) => {
 const pickRow = async (host: FakeHost, count: number, ...keys: KeyPress[]) => {
   await formCount(host, count);
   host.form().press(...keys);
+};
+
+const backOut = async (host: FakeHost, count: number) => {
+  await pickRow(host, count, ESCAPE);
+  await pickRow(host, count + 1, ESCAPE);
 };
 
 describe("/prune menu", () => {
@@ -448,20 +433,18 @@ describe("/prune menu", () => {
     ages(layout);
 
     const { host } = boot(layout, { swept: true });
-    const widget = vi.spyOn(host.ui, "setWidget");
     const running = host.runCommand("prune");
 
     await pickRow(host, 1, ENTER);
+    layout.session("later", OLD);
     await pickRow(host, 2, ESCAPE);
     await pickRow(host, 3, DOWN, ENTER);
-    await pickRow(host, 4, ESCAPE);
 
-    expect((await menuRows(host, 5)).join("\n")).toContain("Prune sessions");
+    expect(line(await menuRows(host, 4), "1. 7 days")).toMatch(/at next start: 3 sessions, \d+ B$/);
 
-    host.form().press(ESCAPE);
+    await backOut(host, 4);
     await running;
 
-    expect(widget).toHaveBeenCalledTimes(2);
     expect(host.notices).toEqual([]);
   });
 
@@ -486,7 +469,6 @@ describe("/prune menu", () => {
     layout.host.info = { ...layout.host.info, mode };
 
     const { host } = boot(layout, { swept: true });
-    const widget = vi.spyOn(host.ui, "setWidget");
 
     await host.runCommand("prune");
 
@@ -497,17 +479,18 @@ describe("/prune menu", () => {
         level: "info",
       },
     ]);
-    expect(widget).not.toHaveBeenCalled();
+    expect(host.widgets.size).toBe(0);
     expect(host.forms).toEqual([]);
     expect(files.map(existsSync)).toEqual([true, true, true]);
   });
 });
 
 describe("/prune now", () => {
-  it("lists each interval with counts and bytes, preselecting the configured one", async () => {
+  it("lists each interval with counts and bytes, preselecting the configured one, and goes back to it on no", async () => {
     const layout = fabricate();
+    const files = ages(layout);
 
-    ages(layout);
+    chmodSync(layout.handoffRoot, 0o777);
 
     const { host } = boot(layout, { swept: true });
     const running = host.runCommand("prune");
@@ -525,16 +508,25 @@ describe("/prune now", () => {
 
     host.confirmAnswer = false;
     host.form().press(ENTER);
-    await pickRow(host, 3, ESCAPE);
-    await pickRow(host, 4, ESCAPE);
+
+    expect((await menuRows(host, 3)).join("\n")).toContain("Remove sessions not touched for...");
+
+    await backOut(host, 3);
     await running;
 
-    expect(host.confirmations).toEqual([confirmOf("1 session", 60)]);
+    expect(host.confirmations).toHaveLength(1);
+    expect(host.confirmations[0]?.message).toMatch(/^Remove 1 session \(\d+ B\) not touched for 60 days\? /);
+    expect(host.confirmations[0]?.message).toContain(
+      `Handoff dirs are skipped: ${layout.handoffRoot} is open to other users.`,
+    );
+    expect(files.map(existsSync)).toEqual([true, true, true]);
+    expect(host.notices).toEqual([]);
   });
 
-  it("removes the picked interval after yes and tells the counts and bytes freed", async () => {
+  it("removes the picked interval after yes, leaving empty handoff folders, and tells the counts and bytes freed", async () => {
     const layout = fabricate();
     const files = ages(layout);
+    const empty = layout.empty("empty");
 
     layout.run("aged-45", "scout-1", daysAgo(45));
 
@@ -545,8 +537,15 @@ describe("/prune now", () => {
     await pickRow(host, 2, { name: "up" }, ENTER);
     await running;
 
-    expect(host.confirmations).toEqual([confirmOf("2 sessions, 1 agent run", 30)]);
-    expect(files.map(existsSync)).toEqual([true, false, false]);
+    expect(host.confirmations).toEqual([
+      {
+        title: "Prune sessions?",
+        message: expect.stringMatching(
+          /^Remove 2 sessions, 1 agent run \(\d+ B\) not touched for 30 days\? A session open in a pi without this extension may still be removed if it is old\. This cannot be undone\.$/,
+        ),
+      },
+    ]);
+    expect([...files, empty].map(existsSync)).toEqual([true, false, false, true]);
     expect(host.notices).toEqual([
       {
         message: expect.stringMatching(
@@ -555,55 +554,6 @@ describe("/prune now", () => {
         level: "info",
       },
     ]);
-  });
-
-  it("names the handoff root in the confirm when it is open to other users", async () => {
-    const layout = fabricate();
-
-    layout.session("old", OLD);
-    chmodSync(layout.handoffRoot, 0o777);
-
-    const { host } = boot(layout, { swept: true });
-
-    host.confirmAnswer = false;
-
-    const running = host.runCommand("prune");
-
-    await pickRow(host, 1, ENTER);
-    await pickRow(host, 2, ENTER);
-    await pickRow(host, 3, ESCAPE);
-    await pickRow(host, 4, ESCAPE);
-    await running;
-
-    expect(host.confirmations[0]?.message).toContain(
-      `Handoff dirs are skipped: ${layout.handoffRoot} is open to other users. This cannot be undone.`,
-    );
-  });
-
-  it("goes back to the list on no, removing nothing and saying nothing", async () => {
-    const layout = fabricate();
-    const files = ages(layout);
-    const { host } = boot(layout, { swept: true });
-
-    host.confirmAnswer = false;
-
-    const running = host.runCommand("prune");
-
-    await pickRow(host, 1, ENTER);
-    await pickRow(host, 2, ENTER);
-
-    expect((await menuRows(host, 3)).join("\n")).toContain("Remove sessions not touched for...");
-
-    host.form().press(ESCAPE);
-
-    expect((await menuRows(host, 4)).join("\n")).toContain("Prune sessions");
-
-    host.form().press(ESCAPE);
-    await running;
-
-    expect(host.confirmations).toHaveLength(1);
-    expect(files.map(existsSync)).toEqual([true, true, true]);
-    expect(host.notices).toEqual([]);
   });
 
   it("keeps the list open, asking and saying nothing, when the picked interval has nothing to remove", async () => {
@@ -619,8 +569,7 @@ describe("/prune now", () => {
 
     expect((await menuRows(host, 3)).join("\n")).toContain("Remove sessions not touched for...");
 
-    host.form().press(ESCAPE);
-    await pickRow(host, 4, ESCAPE);
+    await backOut(host, 3);
     await running;
 
     expect(host.confirmations).toEqual([]);
@@ -684,82 +633,51 @@ const rendered = (render: unknown) =>
   (render as (width: number, theme: typeof plainTheme) => string[])(80, plainTheme);
 
 describe("/prune progress", () => {
-  it("shows Scanning sessions... at once and clears it before the menu opens", async () => {
+  it("shows Scanning while it scans and Removing after the confirm, and neither in the menu or the confirm", async () => {
     const layout = fabricate();
-    const { host } = boot(layout, { swept: true });
-    const widget = vi.spyOn(host.ui, "setWidget");
-    const form = vi.spyOn(host.ui, "showForm");
+    const shown: string[] = [];
+    const confirming: string[] = [];
+
+    layout.session("old", OLD);
+
+    const { host } = boot(layout, {
+      swept: true,
+      onAlive: () => {
+        shown.push(rendered(layout.host.widgets.get("pi-prune")).join("\n"));
+      },
+    });
+
+    host.confirmAnswer = () => {
+      confirming.push(...host.aboveEditor);
+
+      return true;
+    };
+
     const running = host.runCommand("prune");
 
     expect(host.aboveEditor).toEqual(["pi-prune"]);
-    expect(rendered(host.widgets.get("pi-prune"))).toEqual([" ◌ Scanning sessions..."]);
 
     await formCount(host, 1);
 
     expect(host.aboveEditor).toEqual([]);
-    expect(widget.mock.calls.map(([key, render]) => [key, render === undefined])).toEqual([
-      ["pi-prune", false],
-      ["pi-prune", true],
-    ]);
-    expect(widget.mock.invocationCallOrder[1]).toBeLessThan(form.mock.invocationCallOrder[0]);
 
-    host.form().press(ESCAPE);
-    await running;
-  });
-
-  it("shows Removing old sessions... after the confirm and clears it before the result notice", async () => {
-    const layout = fabricate();
-
-    layout.session("old", OLD);
-
-    const { host } = boot(layout, { swept: true });
-    const widget = vi.spyOn(host.ui, "setWidget");
-    const notify = vi.spyOn(host.ui, "notify");
-    const running = host.runCommand("prune");
-
-    await pickRow(host, 1, ENTER);
+    host.form().press(ENTER);
     await pickRow(host, 2, ENTER);
     await running;
 
-    expect(rendered(widget.mock.calls[2]?.[1])).toEqual([" ◌ Removing old sessions..."]);
-    expect(widget.mock.calls[3]).toEqual(["pi-prune", undefined]);
-    expect(widget.mock.invocationCallOrder[3]).toBeLessThan(notify.mock.invocationCallOrder[0]);
+    expect([...new Set(shown)]).toEqual([" ◌ Scanning sessions...", " ◌ Removing old sessions..."]);
+    expect(confirming).toEqual([]);
     expect(host.aboveEditor).toEqual([]);
+    expect(host.notices).toHaveLength(1);
   });
 
   it.each([
     ["the scan", 1, 0],
     ["the scan after the confirm", 2, 2],
-  ])("clears the line and warns when %s throws", async (_when, failing, forms) => {
+  ])("clears the line and warns when %s throws", async (_when, throws, forms) => {
     const layout = fabricate();
     const old = layout.session("old", OLD);
-    const record: PruneDeps = {
-      handoffRoot: layout.handoffRoot,
-      isAlive: (() => {
-        let calls = 0;
-
-        return (pid: number) => {
-          calls += 1;
-
-          if (calls === failing) {
-            throw new Error("no process table");
-          }
-
-          return pid === process.pid;
-        };
-      })(),
-      process: { swept: true },
-    };
-
-    writeFileSync(settingsFile(layout), JSON.stringify({ days: 60 }));
-
-    const { host } = startExtension({
-      plugins: [prunePlugin(record)],
-      settings: { days: 60 },
-      root: layout.root,
-      runtime: createFakeAgentRuntime(),
-      host: layout.host,
-    });
+    const { host } = boot(layout, { swept: true, throws });
     const running = host.runCommand("prune");
 
     if (forms > 0) {
@@ -819,35 +737,23 @@ describe("/prune auto-prune", () => {
     await running;
   });
 
-  it("choosing 90 days writes the file, removes nothing and says when it applies", async () => {
+  it.each([
+    ["90 days", [DOWN, ENTER], 90, "sessions not touched for 90 days are now removed when pi starts"],
+    ["Off", [char("7")], 0, "automatic pruning is off"],
+  ])("choosing %s writes the file, removes nothing and says so", async (_label, keys, days, text) => {
     const layout = fabricate();
     const files = ages(layout);
     const { host } = boot(layout, { swept: true });
     const running = host.runCommand("prune");
 
     await pickRow(host, 1, DOWN, ENTER);
-    await pickRow(host, 2, DOWN, ENTER);
+    await pickRow(host, 2, ...keys);
     await running;
 
-    expect(readFileSync(settingsFile(layout), "utf8")).toBe('{\n  "days": 90\n}\n');
+    expect(readFileSync(settingsFile(layout), "utf8")).toBe(`{\n  "days": ${days}\n}\n`);
     expect(files.map(existsSync)).toEqual([true, true, true]);
     expect(host.confirmations).toEqual([]);
-    expect(host.notices).toEqual([
-      { message: "pi-prune: sessions not touched for 90 days are now removed when pi starts", level: "info" },
-    ]);
-  });
-
-  it("choosing Off writes 0 and says automatic pruning is off", async () => {
-    const layout = fabricate();
-    const { host } = boot(layout, { swept: true });
-    const running = host.runCommand("prune");
-
-    await pickRow(host, 1, DOWN, ENTER);
-    await pickRow(host, 2, char("7"));
-    await running;
-
-    expect(readFileSync(settingsFile(layout), "utf8")).toBe('{\n  "days": 0\n}\n');
-    expect(host.notices).toEqual([{ message: "pi-prune: automatic pruning is off", level: "info" }]);
+    expect(host.notices).toEqual([{ message: `pi-prune: ${text}`, level: "info" }]);
   });
 
   it("the next process sweeps at the chosen days", async () => {
@@ -863,7 +769,7 @@ describe("/prune auto-prune", () => {
 
     bootWithSettings(layout);
 
-    await vi.waitFor(() => expect(files.map(existsSync)).toEqual([true, false, false]));
+    await eventually(() => expect(files.map(existsSync)).toEqual([true, false, false]));
   });
 
   it("choosing an interval repairs a broken file", async () => {
@@ -992,168 +898,12 @@ describe("prune settings", () => {
   it.each([1.5, -1])("does not sweep with days %s", async (days) => {
     const layout = fabricate();
     const old = layout.session("old", OLD);
+    const empty = layout.empty("empty");
     const host = bootWithSettings(layout, { days });
 
     await pause(50);
 
-    expect(existsSync(old)).toBe(true);
+    expect([old, empty].map(existsSync)).toEqual([true, true]);
     expect(host.notices.at(0)?.message).toContain("days must be a whole number between 0 and 36500");
-  });
-});
-
-const emptyHandoff = (layout: Layout, name: string, touched = daysAgo(2)) => {
-  const dir = join(layout.handoffRoot, name);
-
-  mkdirSync(dir);
-  touch(dir, touched);
-
-  return dir;
-};
-
-const CLEARED = { message: "pi-prune: removed 1 empty handoff dir", level: "info" };
-
-describe("empty handoff folders at session start", () => {
-  it("removes an empty folder older than a day but younger than days, and counts it", async () => {
-    const layout = fabricate();
-    const empty = emptyHandoff(layout, "empty");
-    const { host } = boot(layout);
-
-    await vi.waitFor(() => expect(host.notices).toEqual([CLEARED]));
-
-    expect(existsSync(empty)).toBe(false);
-  });
-
-  it.each([
-    [
-      "a folder with a file, leaving the file intact",
-      (layout: Layout) => {
-        const dir = emptyHandoff(layout, "full");
-        const file = join(dir, "main-handoff.md");
-
-        writeFileSync(file, "handoff\n");
-        touch(file, daysAgo(2));
-        touch(dir, daysAgo(2));
-
-        return () => {
-          expect(readFileSync(file, "utf8")).toBe("handoff\n");
-        };
-      },
-    ],
-    [
-      "an empty folder younger than a day",
-      (layout: Layout) => {
-        const dir = emptyHandoff(layout, "young", Date.now() - 3_600_000);
-
-        return () => {
-          expect(existsSync(dir)).toBe(true);
-        };
-      },
-    ],
-    [
-      "an empty folder named after a live id",
-      (layout: Layout) => {
-        const dir = emptyHandoff(layout, "live-one");
-
-        layout.marker("live-one", process.pid);
-
-        return () => {
-          expect(existsSync(dir)).toBe(true);
-        };
-      },
-    ],
-    [
-      "a symbolic link to an empty folder",
-      (layout: Layout) => {
-        const target = join(layout.root, "elsewhere");
-        const link = join(layout.handoffRoot, "link");
-
-        mkdirSync(target);
-        touch(target, daysAgo(2));
-        symlinkSync(target, link);
-
-        return () => {
-          expect(existsSync(target)).toBe(true);
-          expect(existsSync(link)).toBe(true);
-        };
-      },
-    ],
-  ])("keeps %s", async (_case, arrange) => {
-    const layout = fabricate();
-    const empty = emptyHandoff(layout, "empty");
-    const check = arrange(layout);
-    const { host } = boot(layout);
-
-    await vi.waitFor(() => expect(host.notices).toEqual([CLEARED]));
-
-    expect(existsSync(empty)).toBe(false);
-    check();
-  });
-
-  it("removes nothing when the handoff root is open to other users", async () => {
-    const layout = fabricate();
-    const old = layout.session("old", OLD);
-    const empty = emptyHandoff(layout, "empty");
-
-    chmodSync(layout.handoffRoot, 0o777);
-
-    const { host } = boot(layout);
-
-    await vi.waitFor(() => expect(existsSync(old)).toBe(false));
-    await vi.waitFor(() => expect(host.notices).toHaveLength(1));
-
-    expect(host.notices[0]?.message).toMatch(/^pi-prune: removed 1 session older than 60 days, \d+ B freed$/);
-    expect(existsSync(empty)).toBe(true);
-  });
-
-  it.each([
-    ["automatic pruning is off", (layout: Layout) => boot(layout, { days: 0 }).host],
-    ["the settings have an error", (layout: Layout) => bootWithSettings(layout, { days: -1 })],
-  ])("removes nothing when %s", async (_case, start) => {
-    const layout = fabricate();
-    const empty = emptyHandoff(layout, "empty");
-    const host = start(layout);
-
-    await pause(50);
-
-    expect(existsSync(empty)).toBe(true);
-    expect(host.notices.map((notice) => notice.message)).not.toContain(CLEARED.message);
-  });
-
-  it.skipIf(process.getuid?.() === 0)("removes nothing when the scan aborted", async () => {
-    const layout = fabricate();
-    const empty = emptyHandoff(layout, "empty");
-    const locked = layout.session("locked", OLD);
-
-    chmodSync(locked, 0o000);
-
-    const { host } = boot(layout);
-
-    await vi.waitFor(() =>
-      expect(host.notices).toEqual([
-        { message: `pi-prune: nothing removed, ${locked}: EACCES`, level: "warning" },
-      ]),
-    );
-
-    chmodSync(locked, 0o644);
-
-    expect(existsSync(empty)).toBe(true);
-  });
-
-  it("is left alone by /prune", async () => {
-    const layout = fabricate();
-    const old = layout.session("old", OLD);
-    const empty = emptyHandoff(layout, "empty");
-    const { host } = boot(layout, { swept: true });
-    const running = host.runCommand("prune");
-
-    await pickRow(host, 1, ENTER);
-    await pickRow(host, 2, ENTER);
-    await running;
-
-    expect(existsSync(old)).toBe(false);
-    expect(existsSync(empty)).toBe(true);
-    expect(host.notices.at(-1)?.message).toMatch(
-      /^pi-prune: removed 1 session older than 60 days, \d+ B freed$/,
-    );
   });
 });

@@ -11,7 +11,7 @@ import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { INTERVALS } from "../core/settings.ts";
-import { cutoffAt, plan } from "../core/sweep-plan.ts";
+import { plan, totals } from "../core/sweep-plan.ts";
 import { daysAgo, fabricate, OLD, RECENT, touch } from "./support/session-layout.ts";
 
 vi.mock("node:fs/promises", async (original) => {
@@ -71,12 +71,11 @@ describe("handoff shortcuts", () => {
 
   it("keeps a handoff folder whose mtime equals the latest cutoff at every interval", async () => {
     const layout = fabricate();
-    const input = layout.input();
-    const edge = layout.handoff("edge", cutoffAt(input.now, WEEK));
+    const edge = layout.handoff("edge", daysAgo(WEEK));
     const scanned = await layout.scanned({ days: WEEK });
 
-    expect(INTERVALS.flatMap((days) => plan(scanned, cutoffAt(input.now, days)).orphans.handoffs)).toEqual(
-      [],
+    expect(INTERVALS.map((days) => totals(plan(scanned, daysAgo(days))).handoffs)).toEqual(
+      INTERVALS.map(() => 0),
     );
     expect(existsSync(edge)).toBe(true);
   });
@@ -93,14 +92,13 @@ describe("handoff shortcuts", () => {
     writeFileSync(file, "x");
     touch(file, OLD);
 
-    expect((await layout.planned()).orphans.handoffs).toEqual([]);
-    expect([target, file].map(existsSync)).toEqual([true, true]);
+    expect(await layout.prune()).toMatchObject({ handoffs: 0 });
+    expect([target, link, file].map(existsSync)).toEqual([true, true, true]);
   });
 
   it("plans from one scan the same as fresh scans and a naive reference at every interval", async () => {
     const layout = fabricate();
     const alive = { isAlive: (pid: number) => pid === 7 };
-    const input = layout.input(alive);
 
     layout.session("fresh", RECENT);
     layout.handoff("fresh", OLD);
@@ -117,7 +115,7 @@ describe("handoff shortcuts", () => {
     layout.fallbackRun("nobody", "scout-1", daysAgo(100));
     layout.unreadable("headerless", `${JSON.stringify({ type: "message" })}\n`);
     layout.handoff("headerless", daysAgo(200));
-    layout.handoff("edge", cutoffAt(input.now, WEEK));
+    layout.handoff("edge", daysAgo(WEEK));
     touch(join(layout.handoff("rewritten", OLD), "main-handoff.md"), RECENT);
     touch(layout.handoff("young", OLD), RECENT);
     [3, 10, 45, 100, 400].forEach((days) => {
@@ -129,7 +127,7 @@ describe("handoff shortcuts", () => {
 
     const checks = await Promise.all(
       INTERVALS.map(async (days) => {
-        const cutoff = cutoffAt(input.now, days);
+        const cutoff = daysAgo(days);
         const fromScan = plan(scanned, cutoff);
 
         return {
@@ -150,12 +148,9 @@ describe("handoff shortcuts", () => {
 
   it("throws for a cutoff after the scan's latest cutoff", async () => {
     const layout = fabricate();
-    const input = layout.input();
     const scanned = await layout.scanned();
 
-    expect(() => plan(scanned, cutoffAt(input.now, WEEK))).toThrow(
-      "plan: cutoff after the scan's latest cutoff",
-    );
+    expect(() => plan(scanned, daysAgo(WEEK))).toThrow("plan: cutoff after the scan's latest cutoff");
   });
 
   it.skipIf(process.getuid?.() === 0)(

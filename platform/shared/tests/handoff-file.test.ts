@@ -1,7 +1,7 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { useTempDirs } from "../../../test/framework/index.ts";
 import { writeHandoffFile } from "../handoff/handoff-file.ts";
 
 vi.mock("node:fs", async (original) => {
@@ -10,22 +10,13 @@ vi.mock("node:fs", async (original) => {
   return { ...actual, writeFileSync: vi.fn(actual.writeFileSync) };
 });
 
-const roots: string[] = [];
+const temp = useTempDirs();
 
 afterEach(() => {
-  roots.splice(0).forEach((root) => {
-    rmSync(root, { recursive: true, force: true });
-  });
   vi.mocked(writeFileSync).mockClear();
 });
 
-const target = () => {
-  const root = mkdtempSync(join(tmpdir(), "handoff-file-"));
-
-  roots.push(root);
-
-  return join(root, "session-id", "main-handoff.md");
-};
+const target = () => join(temp.make("handoff-file-"), "session-id", "main-handoff.md");
 
 describe("writeHandoffFile", () => {
   it("creates the folder and writes the file", () => {

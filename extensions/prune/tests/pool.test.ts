@@ -10,7 +10,7 @@ async function* counted(count: number) {
 
 describe("pooled", () => {
   it("keeps source order with out-of-order completion", async () => {
-    expect(await pooled([30, 10, 20, 0], (ms) => later(ms, ms), 4)).toEqual([30, 10, 20, 0]);
+    expect(await pooled([3, 1, 2, 0], (ms) => later(ms, ms), 4)).toEqual([3, 1, 2, 0]);
   });
 
   it("never runs more than the limit at once", async () => {

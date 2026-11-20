@@ -4,6 +4,7 @@ import type { SessionInfo } from "../../../../platform/pi-adapter/index.ts";
 import { fallbackStemsRoot, RUN_MANIFEST, runsDir } from "../../../../platform/shared/index.ts";
 import { createFakeHost, useTempDirs } from "../../../../test/framework/index.ts";
 import { readLive } from "../../core/live-markers.ts";
+import { sweep } from "../../core/prune.ts";
 import { apply } from "../../core/sweep-apply.ts";
 import { cutoffAt, type Plan, plan } from "../../core/sweep-plan.ts";
 import { scan } from "../../core/sweep-scan.ts";
@@ -113,6 +114,15 @@ export const fabricate = () => {
     return dir;
   };
 
+  const empty = (name: string, touched = daysAgo(2)) => {
+    const dir = join(handoffRoot, name);
+
+    mkdirSync(dir);
+    touch(dir, touched);
+
+    return dir;
+  };
+
   const marker = (sessionId: string, pid: number, data: Record<string, unknown> = {}) => {
     const file = join(agentDir, "pi-prune", "live", `${sessionId}.${pid}.json`);
 
@@ -167,6 +177,12 @@ export const fabricate = () => {
 
   const prune = async (options: Options = {}) => applied(await planned(options), options);
 
+  const swept = (options: Options = {}) => {
+    const sources = input(options);
+
+    return sweep(sources, sources.days, sources.now);
+  };
+
   return {
     root,
     agentDir,
@@ -181,6 +197,7 @@ export const fabricate = () => {
     run,
     fallbackRun,
     handoff,
+    empty,
     marker,
     input,
     aborted,
@@ -188,5 +205,6 @@ export const fabricate = () => {
     planned,
     applied,
     prune,
+    swept,
   };
 };

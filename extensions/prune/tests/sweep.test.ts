@@ -13,7 +13,7 @@ import {
 import { basename, dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { chainsOf } from "../core/session-chains.ts";
-import { cutoffAt, type Plan, plan, totals, within } from "../core/sweep-plan.ts";
+import { type Plan, plan, totals, within } from "../core/sweep-plan.ts";
 import {
   CUTOFF,
   daysAgo,
@@ -25,36 +25,28 @@ import {
   touch,
 } from "./support/session-layout.ts";
 
+const NOTHING = { sessions: 0, runs: 0, handoffs: 0, bytes: 0 };
+
 describe("agent run rules", () => {
-  it("removes runs untouched since before the cutoff, whatever their manifest says", async () => {
+  it("removes old runs, unparsable manifests too, and keeps fresh, edge and manifestless ones", async () => {
     const layout = fabricate();
-    const old = layout.run("s1", "scout-old", OLD);
-
-    await layout.prune();
-
-    expect(existsSync(old)).toBe(false);
-  });
-
-  it("keeps a run with a recently touched file or directory", async () => {
-    const layout = fabricate();
+    const removed = [layout.run("s1", "scout-old", OLD), layout.run("s1", "scout-broken", OLD, "{not json")];
     const file = layout.run("s1", "scout-file", OLD);
     const dir = layout.run("s1", "scout-dir", OLD);
+    const kept = [
+      file,
+      dir,
+      layout.run("s1", "scout-edge", CUTOFF),
+      layout.run("s1", "scout-bare", OLD, false),
+    ];
 
     touch(join(file, "child.jsonl"), RECENT);
     touch(dir, RECENT);
 
     await layout.prune();
 
-    expect([file, dir].map(existsSync)).toEqual([true, true]);
-  });
-
-  it("keeps a run exactly at the cutoff", async () => {
-    const layout = fabricate();
-    const edge = layout.run("s1", "scout-edge", CUTOFF);
-
-    await layout.prune();
-
-    expect(existsSync(edge)).toBe(true);
+    expect(removed.map(existsSync)).toEqual([false, false]);
+    expect(kept.map(existsSync)).toEqual([true, true, true, true]);
   });
 
   it("keeps a fresh session whole, its old runs included", async () => {
@@ -65,15 +57,6 @@ describe("agent run rules", () => {
     await layout.prune();
 
     expect([file, old].map(existsSync)).toEqual([true, true]);
-  });
-
-  it("keeps a directory without a manifest", async () => {
-    const layout = fabricate();
-    const bare = layout.run("s1", "scout-bare", OLD, false);
-
-    await layout.prune();
-
-    expect(existsSync(bare)).toBe(true);
   });
 
   it("spares a run whose worktree checkout or branch was kept or never released", async () => {
@@ -132,7 +115,7 @@ describe("agent run rules", () => {
 
     chmodSync(second, 0o755);
 
-    expect(planned.orphans.runs).toEqual([]);
+    expect(await layout.applied(planned)).toEqual(NOTHING);
     expect([first, second].map(existsSync)).toEqual([true, true]);
   });
 
@@ -271,6 +254,16 @@ describe("session rules", () => {
     expect([file, parent].map(existsSync)).toEqual([true, true]);
   });
 
+  it("keeps the old parent a live pi names before its own session file exists", async () => {
+    const layout = fabricate();
+    const parent = layout.session("parent", OLD);
+
+    layout.marker("child", 7, { file: join(layout.slugDir, "child.jsonl"), parentSession: parent });
+
+    expect(await layout.prune({ isAlive: (pid) => pid === 7 })).toEqual(NOTHING);
+    expect(existsSync(parent)).toBe(true);
+  });
+
   it("never removes a session whose header cannot be read, nor its runs", async () => {
     const layout = fabricate();
     const headerless = layout.unreadable("headerless", `${JSON.stringify({ type: "message" })}\n`);
@@ -281,7 +274,7 @@ describe("session rules", () => {
     );
     const run = layout.run("broken", "scout-1", OLD);
 
-    expect(await layout.prune()).toEqual({ sessions: 0, runs: 0, handoffs: 0, bytes: 0 });
+    expect(await layout.prune()).toEqual(NOTHING);
     expect([headerless, broken, long, run].map(existsSync)).toEqual([true, true, true, true]);
   });
 
@@ -335,49 +328,14 @@ describe("session rules", () => {
     const layout = fabricate();
     const outside = layout.sessionIn(join(layout.root, "outside"), "linked", OLD);
     const outsideRun = runFiles(join(layout.root, "outside", "linked", "agents", "scout-1"), "scout-1", OLD);
+    const links = [join(layout.slugDir, "linked.jsonl"), join(layout.slugDir, "linked")];
 
     mkdirSync(layout.slugDir, { recursive: true });
-    symlinkSync(outside, join(layout.slugDir, "linked.jsonl"));
-    symlinkSync(join(layout.root, "outside", "linked"), join(layout.slugDir, "linked"));
+    symlinkSync(outside, links[0]);
+    symlinkSync(join(layout.root, "outside", "linked"), links[1]);
 
-    const planned = await layout.planned();
-
-    expect(planned.chains).toEqual([]);
-    expect(planned.orphans.runs).toEqual([]);
-
-    await layout.applied(planned);
-
-    expect([outside, outsideRun].map(existsSync)).toEqual([true, true]);
-  });
-
-  it("keeps a session written to after the plan, with its runs and handoff dir", async () => {
-    const layout = fabricate();
-    const file = layout.session("old", OLD);
-    const run = layout.run("old", "scout-1", OLD);
-    const handoff = layout.handoff("old", OLD);
-    const planned = await layout.planned();
-
-    touch(file, RECENT);
-
-    expect(await layout.applied(planned)).toEqual({ sessions: 0, runs: 0, handoffs: 0, bytes: 0 });
-    expect([file, run, handoff].map(existsSync)).toEqual([true, true, true]);
-  });
-
-  it("keeps a session a process opened after the plan", async () => {
-    const layout = fabricate();
-    const file = layout.session("old", OLD);
-    const run = layout.run("old", "scout-1", OLD);
-    const planned = await layout.planned();
-
-    layout.marker("old", 7);
-
-    expect(await layout.applied(planned, { isAlive: (pid) => pid === 7 })).toEqual({
-      sessions: 0,
-      runs: 0,
-      handoffs: 0,
-      bytes: 0,
-    });
-    expect([file, run].map(existsSync)).toEqual([true, true]);
+    expect(await layout.prune()).toEqual(NOTHING);
+    expect([outside, outsideRun, ...links].map(existsSync)).toEqual([true, true, true, true]);
   });
 });
 
@@ -404,33 +362,32 @@ describe("handoff and fallback rules", () => {
     expect([...handoffs, ...fallbacks].map(existsSync)).toEqual([true, true, true, true]);
   });
 
-  it("does not give a fresh session's handoff dir to an old copy with its id", async () => {
-    const layout = fabricate();
-    const other = join(layout.sessionsRoot, "--other--");
-    const copy = layout.sessionIn(other, "twin", OLD);
-    const fresh = layout.session("twin", RECENT);
-    const handoff = layout.handoff("twin", OLD);
+  it.each([
+    ["a fresh copy", OLD, RECENT, 60, 60],
+    ["a newer copy, planned from an earlier scan", daysAgo(400), daysAgo(100), 7, 365],
+  ])(
+    "does not give an old copy the handoff dir of %s with its id",
+    async (_case, old, newer, scanDays, days) => {
+      const layout = fabricate();
+      const copy = layout.sessionIn(join(layout.sessionsRoot, "--other--"), "twin", old);
+      const kept = layout.session("twin", newer);
+      const handoff = layout.handoff("twin", old);
+      const scanned = await layout.scanned({ days: scanDays });
 
-    expect(await layout.prune()).toMatchObject({
-      sessions: 1,
-      runs: 0,
-      handoffs: 0,
-    });
-    expect([copy, fresh, handoff].map(existsSync)).toEqual([false, true, true]);
-  });
+      expect(await layout.applied(plan(scanned, daysAgo(days)))).toMatchObject({ sessions: 1, handoffs: 0 });
+      expect([copy, kept, handoff].map(existsSync)).toEqual([false, true, true]);
+    },
+  );
 
-  it("skips handoff dirs under a root others can write to", async () => {
+  it("skips handoff dirs, empty ones too, under a root others can write to", async () => {
     const layout = fabricate();
     const file = layout.session("old", OLD);
-    const handoffs = [layout.handoff("old", OLD), layout.handoff("gone", OLD)];
+    const kept = [layout.handoff("old", OLD), layout.handoff("gone", OLD), layout.empty("empty")];
 
     chmodSync(layout.handoffRoot, 0o777);
 
-    const planned = await layout.planned();
-
-    expect(planned.skipped).toBe(layout.handoffRoot);
-    expect(await layout.applied(planned)).toMatchObject({ sessions: 1, runs: 0, handoffs: 0 });
-    expect([file, ...handoffs].map(existsSync)).toEqual([false, true, true]);
+    expect(await layout.swept()).toMatchObject({ removed: { sessions: 1, handoffs: 0 }, empties: 0 });
+    expect([file, ...kept].map(existsSync)).toEqual([false, true, true, true]);
   });
 
   it("leaves the current session's directory alone before pi writes its file", async () => {
@@ -443,6 +400,68 @@ describe("handoff and fallback rules", () => {
   });
 });
 
+describe("empty handoff folders", () => {
+  it.each([
+    [
+      "a folder with a file",
+      (layout: ReturnType<typeof fabricate>) => {
+        const file = join(layout.empty("full"), "main-handoff.md");
+
+        writeFileSync(file, "handoff\n");
+        touch(file, daysAgo(2));
+        touch(dirname(file), daysAgo(2));
+
+        return [file];
+      },
+    ],
+    [
+      "an empty folder younger than a day",
+      (layout: ReturnType<typeof fabricate>) => [layout.empty("young", daysAgo(0.5))],
+    ],
+    [
+      "an empty folder named after a live id",
+      (layout: ReturnType<typeof fabricate>) => {
+        layout.marker("live-one", 7);
+
+        return [layout.empty("live-one")];
+      },
+    ],
+    [
+      "a symbolic link to an empty folder",
+      (layout: ReturnType<typeof fabricate>) => {
+        const target = join(layout.root, "elsewhere");
+        const link = join(layout.handoffRoot, "link");
+
+        mkdirSync(target);
+        touch(target, daysAgo(2));
+        symlinkSync(target, link);
+        lutimesSync(link, new Date(daysAgo(2)), new Date(daysAgo(2)));
+
+        return [target, link];
+      },
+    ],
+    [
+      "a plain file",
+      (layout: ReturnType<typeof fabricate>) => {
+        const file = join(layout.handoffRoot, "plain");
+
+        writeFileSync(file, "");
+        touch(file, daysAgo(2));
+
+        return [file];
+      },
+    ],
+  ])("clears an empty folder older than a day and keeps %s", async (_case, arrange) => {
+    const layout = fabricate();
+    const empty = layout.empty("empty");
+    const kept = arrange(layout);
+
+    expect(await layout.swept({ isAlive: (pid) => pid === 7 })).toEqual({ removed: NOTHING, empties: 1 });
+    expect(existsSync(empty)).toBe(false);
+    expect(kept.filter((path) => !existsSync(path))).toEqual([]);
+  });
+});
+
 const linked = (layout: ReturnType<typeof fabricate>, times: readonly number[], prefix = "s") =>
   times.reduce<string[]>(
     (files, time, index) => files.concat(layout.session(`${prefix}${index}`, time, files.at(-1))),
@@ -450,22 +469,21 @@ const linked = (layout: ReturnType<typeof fabricate>, times: readonly number[], 
   );
 
 describe("session chains", () => {
-  it("keeps an old session whose descendant is fresh", async () => {
+  it.each([
+    ["descendant", [OLD, RECENT]],
+    ["ancestor", [RECENT, OLD]],
+    ["ancestor two links away", [RECENT, OLD, OLD]],
+    ["descendant two links away", [OLD, OLD, RECENT]],
+    ["leaf eight deep", [...Array.from({ length: 7 }, () => OLD), RECENT]],
+  ])("keeps a chain whose fresh member is its %s", async (_side, times) => {
     const layout = fabricate();
-    const files = linked(layout, [OLD, RECENT]);
+    const files = linked(layout, times);
 
-    await layout.prune();
+    layout.run("s0", "scout-1", OLD);
+    layout.handoff("s0", OLD);
 
-    expect(files.map(existsSync)).toEqual([true, true]);
-  });
-
-  it("keeps an old session whose ancestor is fresh", async () => {
-    const layout = fabricate();
-    const files = linked(layout, [RECENT, OLD]);
-
-    await layout.prune();
-
-    expect(files.map(existsSync)).toEqual([true, true]);
+    expect(await layout.prune()).toEqual(NOTHING);
+    expect(files.filter((file) => !existsSync(file))).toEqual([]);
   });
 
   it("keeps an old sibling of a fresh session", async () => {
@@ -478,35 +496,16 @@ describe("session chains", () => {
     expect([parent, ...children].map(existsSync)).toEqual([true, true, true]);
   });
 
-  it.each([
-    ["ancestor", [RECENT, OLD, OLD]],
-    ["descendant", [OLD, OLD, RECENT]],
-  ])("keeps a chain whose fresh %s is two links away", async (_side, times) => {
-    const layout = fabricate();
-    const files = linked(layout, times);
-
-    expect(await layout.prune()).toEqual({ sessions: 0, runs: 0, handoffs: 0, bytes: 0 });
-    expect(files.map(existsSync)).toEqual([true, true, true]);
-  });
-
-  it("keeps every member of an eight-deep chain with a fresh leaf", async () => {
-    const layout = fabricate();
-    const files = linked(layout, [...Array.from({ length: 7 }, () => OLD), RECENT]);
-
-    expect((await layout.planned()).chains).toEqual([]);
-    expect(await layout.prune()).toEqual({ sessions: 0, runs: 0, handoffs: 0, bytes: 0 });
-    expect(files.every(existsSync)).toBe(true);
-  });
-
-  it("removes every member of an eight-deep chain when all are old", async () => {
+  it("removes an all-old eight-deep chain and an old session whose parent is itself", async () => {
     const layout = fabricate();
     const files = linked(
       layout,
       Array.from({ length: 8 }, () => OLD),
     );
+    const self = layout.session("self", OLD, join(layout.slugDir, "self.jsonl"));
 
-    expect(await layout.prune()).toMatchObject({ sessions: 8, runs: 0, handoffs: 0 });
-    expect(files.map(existsSync)).toEqual(Array.from({ length: 8 }, () => false));
+    expect(await layout.prune()).toMatchObject({ sessions: 9, runs: 0, handoffs: 0 });
+    expect([...files, self].filter(existsSync)).toEqual([]);
   });
 
   it("removes a cycle of old sessions and keeps it when a middle member is live", async () => {
@@ -520,23 +519,10 @@ describe("session chains", () => {
 
     layout.marker("c1", 7);
 
-    expect(await layout.prune({ isAlive: (pid) => pid === 7 })).toEqual({
-      sessions: 0,
-      runs: 0,
-      handoffs: 0,
-      bytes: 0,
-    });
+    expect(await layout.prune({ isAlive: (pid) => pid === 7 })).toEqual(NOTHING);
     expect(cycle.map(existsSync)).toEqual([true, true, true]);
     expect(await layout.prune()).toMatchObject({ sessions: 3, runs: 0, handoffs: 0 });
     expect(cycle.map(existsSync)).toEqual([false, false, false]);
-  });
-
-  it("removes an old session whose parent is itself", async () => {
-    const layout = fabricate();
-    const file = layout.session("self", OLD, join(layout.slugDir, "self.jsonl"));
-
-    expect(await layout.prune()).toMatchObject({ sessions: 1, runs: 0, handoffs: 0 });
-    expect(existsSync(file)).toBe(false);
   });
 
   it("keeps a chain that spans two slug folders", async () => {
@@ -565,7 +551,7 @@ describe("session chains", () => {
     const parent = layout.unreadable("parent", `${JSON.stringify({ type: "message" })}\n`);
     const child = layout.session("child", OLD, parent);
 
-    expect(await layout.prune()).toEqual({ sessions: 0, runs: 0, handoffs: 0, bytes: 0 });
+    expect(await layout.prune()).toEqual(NOTHING);
     expect([parent, child].map(existsSync)).toEqual([true, true]);
   });
 
@@ -579,65 +565,45 @@ describe("session chains", () => {
 
     expect([parent, child].map(existsSync)).toEqual([true, true]);
   });
-
-  it("takes an old session's fresh handoff folder with its session", async () => {
-    const layout = fabricate();
-    const file = layout.session("old", OLD);
-    const handoff = layout.handoff("old", RECENT);
-
-    expect(await layout.prune()).toMatchObject({ sessions: 1, runs: 0, handoffs: 1 });
-    expect([file, handoff].map(existsSync)).toEqual([false, false]);
-  });
 });
 
 describe("apply chains", () => {
-  it("keeps the whole chain when a member was touched after the plan", async () => {
+  it.each([
+    [
+      "a member was touched after the plan",
+      (files: string[]) => {
+        touch(files[2] ?? "", RECENT);
+
+        return () => false;
+      },
+    ],
+    [
+      "a member turned live after the plan",
+      (_files: string[], layout: ReturnType<typeof fabricate>) => {
+        layout.marker("s2", 7);
+
+        return (pid: number) => pid === 7;
+      },
+    ],
+    [
+      "the liveness check throws before removal starts",
+      (_files: string[], layout: ReturnType<typeof fabricate>) => {
+        layout.marker("dead", 9);
+
+        return () => {
+          throw new Error("isAlive failed");
+        };
+      },
+    ],
+  ])("keeps the whole chain when %s", async (_case, change) => {
     const layout = fabricate();
     const files = linked(layout, [OLD, OLD, OLD]);
-    const run = layout.run("s0", "scout-1", OLD);
-    const handoff = layout.handoff("s0", OLD);
+    const kept = [...files, layout.run("s0", "scout-1", OLD), layout.handoff("s0", OLD)];
     const planned = await layout.planned();
+    const isAlive = change(files, layout);
 
-    touch(files[2], RECENT);
-
-    expect(await layout.applied(planned)).toEqual({ sessions: 0, runs: 0, handoffs: 0, bytes: 0 });
-    expect([...files, run, handoff].map(existsSync)).toEqual([true, true, true, true, true]);
-  });
-
-  it("keeps the whole chain when a member turned live after the plan", async () => {
-    const layout = fabricate();
-    const files = linked(layout, [OLD, OLD, OLD]);
-    const planned = await layout.planned();
-
-    layout.marker("s2", 7);
-
-    expect(await layout.applied(planned, { isAlive: (pid) => pid === 7 })).toEqual({
-      sessions: 0,
-      runs: 0,
-      handoffs: 0,
-      bytes: 0,
-    });
-    expect(files.map(existsSync)).toEqual([true, true, true]);
-  });
-
-  it("keeps the whole chain when the liveness check throws before removal starts", async () => {
-    const layout = fabricate();
-    const files = linked(layout, [OLD, OLD, OLD]);
-    const planned = await layout.planned();
-
-    layout.marker("dead", 9);
-
-    const isAlive = () => {
-      throw new Error("isAlive failed");
-    };
-
-    expect(await layout.applied(planned, { isAlive })).toEqual({
-      sessions: 0,
-      runs: 0,
-      handoffs: 0,
-      bytes: 0,
-    });
-    expect(files.map(existsSync)).toEqual([true, true, true]);
+    expect(await layout.applied(planned, { isAlive })).toEqual(NOTHING);
+    expect(kept.filter((path) => !existsSync(path))).toEqual([]);
   });
 
   it("stops a chain at the first failed unlink", async () => {
@@ -689,13 +655,12 @@ describe("one scan, many cutoffs", () => {
     layout.run("gone", "scout-1", daysAgo(30));
     layout.handoff("orphan", daysAgo(30));
 
-    const input = layout.input();
     const scanned = await layout.scanned({ days: 7 });
     const week = await layout.planned({ days: 7 });
     const twoMonths = await layout.planned({ days: 60 });
 
-    expect(plan(scanned, cutoffAt(input.now, 7))).toEqual(week);
-    expect(plan(scanned, cutoffAt(input.now, 60))).toEqual(twoMonths);
+    expect(plan(scanned, daysAgo(7))).toEqual(week);
+    expect(plan(scanned, daysAgo(60))).toEqual(twoMonths);
     expect([week, twoMonths].map((planned) => planned.chains.length)).toEqual([2, 1]);
   });
 });
@@ -728,21 +693,9 @@ describe("within", () => {
     const handoff = layout.handoff("old", OLD);
     const fresh = await layout.planned();
 
-    expect(fresh.chains.flat()[0]?.handoff?.dir).toBe(handoff);
-    expect(within(fresh, confirmed).chains.flat()).toEqual([
-      expect.objectContaining({ file: old, handoff: undefined }),
-    ]);
-  });
-
-  it("lists no empty handoff dirs, which only the sweep clears", async () => {
-    const layout = fabricate();
-    const empty = join(layout.handoffRoot, "empty");
-
-    mkdirSync(empty);
-    touch(empty, OLD);
-
-    expect((await layout.scanned()).empties).toEqual([empty]);
-    expect(await layout.planned()).not.toHaveProperty("empties");
+    expect(totals(fresh).handoffs).toBe(1);
+    expect(await layout.applied(within(fresh, confirmed))).toMatchObject({ sessions: 1, handoffs: 0 });
+    expect([old, handoff].map(existsSync)).toEqual([false, true]);
   });
 
   it("drops a chain that gained a member after the confirm", async () => {
@@ -751,21 +704,11 @@ describe("within", () => {
     const other = layout.session("other", OLD);
     const confirmed = await layout.planned();
 
-    layout.session("late", OLD, files[1]);
-
+    const late = layout.session("late", OLD, files[1]);
     const fresh = await layout.planned();
 
-    expect(within(fresh, confirmed).chains.map((chain) => chain.map(({ file }) => file))).toEqual([[other]]);
-  });
-
-  it("keeps a chain whose members all match the confirmed plan", async () => {
-    const layout = fabricate();
-
-    linked(layout, [OLD, OLD]);
-
-    const confirmed = await layout.planned();
-
-    expect(within(await layout.planned(), confirmed)).toEqual(confirmed);
+    expect(await layout.applied(within(fresh, confirmed))).toMatchObject({ sessions: 1 });
+    expect([...files, late, other].map(existsSync)).toEqual([true, true, true, false]);
   });
 });
 
@@ -826,16 +769,11 @@ describe("bytes", () => {
     const layout = fabricate();
     const other = join(layout.sessionsRoot, "--other--");
 
-    layout.sessionIn(other, "twin", OLD);
-    layout.session("twin", OLD);
-
+    const files = [layout.sessionIn(other, "twin", OLD), layout.session("twin", OLD)];
     const handoff = layout.handoff("twin", OLD);
-    const planned = await layout.planned();
+    const bytes = files.reduce((total, file) => total + walked(file), walked(handoff));
 
-    expect(totals(planned)).toMatchObject({ sessions: 2, handoffs: 1 });
-    expect(totals(planned).bytes).toBe(
-      planned.chains.flat().reduce((total, { file }) => total + lstatSync(file).size, 0) + walked(handoff),
-    );
+    expect(totals(await layout.planned())).toEqual({ sessions: 2, runs: 0, handoffs: 1, bytes });
   });
 
   it.skipIf(process.getuid?.() === 0)("leaves out the bytes apply could not remove", async () => {
@@ -852,100 +790,6 @@ describe("bytes", () => {
 
     expect(removed).toEqual({ sessions: 1, runs: 0, handoffs: 0, bytes: size });
     expect(existsSync(run)).toBe(true);
-  });
-
-  it("adds no bytes for a kept chain", async () => {
-    const layout = fabricate();
-    const files = linked(layout, [OLD, RECENT]);
-
-    layout.run("s0", "scout-1", OLD);
-    layout.handoff("s0", OLD);
-
-    const planned = await layout.planned();
-
-    expect(totals(planned)).toEqual({ sessions: 0, runs: 0, handoffs: 0, bytes: 0 });
-    expect(files.map(existsSync)).toEqual([true, true]);
-  });
-});
-
-const emptyDir = (layout: ReturnType<typeof fabricate>, name: string) => {
-  const dir = join(layout.handoffRoot, name);
-
-  mkdirSync(dir);
-  touch(dir, daysAgo(2));
-
-  return dir;
-};
-
-describe("review guards", () => {
-  it("does not give an old copy the handoff dir of a newer copy with the same id", async () => {
-    const layout = fabricate();
-    const other = join(layout.sessionsRoot, "--other--");
-    const old = layout.session("dup", daysAgo(400));
-
-    layout.sessionIn(other, "dup", daysAgo(100));
-
-    const handoff = layout.handoff("dup", daysAgo(400));
-    const input = layout.input();
-    const scanned = await layout.scanned({ days: 7 });
-    const planned = plan(scanned, cutoffAt(input.now, 365));
-
-    expect(planned.chains.flat()).toEqual([expect.objectContaining({ file: old, handoff: undefined })]);
-    expect(totals(planned).handoffs).toBe(0);
-    expect(existsSync(handoff)).toBe(true);
-  });
-
-  it("does not measure the handoff dir of an id a fresh copy keeps", async () => {
-    const layout = fabricate();
-    const other = join(layout.sessionsRoot, "--other--");
-
-    layout.session("dup", daysAgo(400));
-    layout.sessionIn(other, "dup", RECENT);
-    layout.handoff("dup", daysAgo(400));
-
-    const scanned = await layout.scanned({ days: 7 });
-
-    expect(scanned.owned.has("dup")).toBe(false);
-  });
-
-  it("keeps the old parent a live pi names before its own session file exists", async () => {
-    const layout = fabricate();
-    const parent = layout.session("parent", OLD);
-
-    layout.marker("child", process.pid, { file: join(layout.slugDir, "child.jsonl"), parentSession: parent });
-
-    const planned = await layout.planned({ isAlive: (pid) => pid === process.pid });
-
-    expect(planned.chains).toEqual([]);
-  });
-
-  it("lists no symbolic link in the handoff root, as an orphan or an empty dir", async () => {
-    const layout = fabricate();
-    const target = join(layout.root, "elsewhere");
-    const link = join(layout.handoffRoot, "link");
-
-    mkdirSync(target);
-    touch(target, OLD);
-    symlinkSync(target, link);
-    lutimesSync(link, new Date(OLD), new Date(OLD));
-
-    const planned = await layout.planned();
-
-    expect(planned.orphans.handoffs).toEqual([]);
-    expect((await layout.scanned()).empties).toEqual([]);
-  });
-
-  it("lists no empty dir named after a session live at scan time", async () => {
-    const layout = fabricate();
-    const live = emptyDir(layout, "live-one");
-    const empty = emptyDir(layout, "empty");
-
-    layout.marker("live-one", process.pid);
-
-    const scanned = await layout.scanned({ isAlive: (pid) => pid === process.pid });
-
-    expect(scanned.empties).toEqual([empty]);
-    expect(existsSync(live)).toBe(true);
   });
 });
 

@@ -111,7 +111,7 @@ describe("system message replay", () => {
   });
 
   it("reads the session id from the header and nothing from a missing or headerless file", () => {
-    const dir = mkdtempSync(join(tmpdir(), "pi-session-id-"));
+    const dir = temp.make("pi-session-id-");
     const named = join(dir, "renamed.jsonl");
     const headerless = join(dir, "headerless.jsonl");
 

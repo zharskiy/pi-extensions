@@ -28,6 +28,14 @@ describe("removedText", () => {
   });
 });
 
+describe("confirmText", () => {
+  it("names a handoff root open to other users before the closing warning", () => {
+    expect(confirmText({ sessions: 1, runs: 0, handoffs: 0, bytes: 0 }, 60, "/tmp/pi-handoff")).toBe(
+      "Remove 1 session not touched for 60 days? A session open in a pi without this extension may still be removed if it is old. Handoff dirs are skipped: /tmp/pi-handoff is open to other users. This cannot be undone.",
+    );
+  });
+});
+
 const MANY = { sessions: 12_345, runs: 1_000, handoffs: 211_941, bytes: 0 };
 
 describe("counts", () => {
