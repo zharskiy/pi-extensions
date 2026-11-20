@@ -7,7 +7,6 @@ export {
   gitLaunchNotices,
   recordGitBaseline,
 } from "./git/launch.ts";
-export { findGitRoot } from "./git/layout.ts";
 export {
   findProtectedGitPaths,
   type GitOverlay,
@@ -28,4 +27,5 @@ export {
   rootRefusal,
   sharedRootsOf,
 } from "./roots.ts";
+export { isSandboxWritable, startedRoots } from "./sandbox-reach.ts";
 export { gitRepos, mountedGitDirs, type Workspace } from "./types.ts";

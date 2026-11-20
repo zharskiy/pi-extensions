@@ -7,7 +7,8 @@ min_macos=13
 managed_kind='"kind"[[:space:]]*:[[:space:]]*"pi-managed-install"'
 managed_schema='"schemaVersion"[[:space:]]*:[[:space:]]*1([^0-9.]|$)'
 managed_layout='"layout"[[:space:]]*:[[:space:]]*"releases-v1"'
-managed_package="node_modules/@earendil-works/pi-coding-agent/package.json"
+pi_package="@earendil-works/pi-coding-agent"
+managed_package="node_modules/$pi_package/package.json"
 link_hops=40
 
 usage() {
@@ -152,9 +153,16 @@ is_managed_root() {
   is_safe_release "$release" && [ -f "$1/install/releases/$release/$managed_package" ]
 }
 
+npm_pi=""
+
+is_npm_pi() {
+  npm_root=$(cd "$HOME" && npm root -g 2>/dev/null) || return 1
+  [ -f "$npm_root/$pi_package/package.json" ] && npm_pi="$npm_root/$pi_package"
+}
+
 require_host_pi() {
-  is_managed_root "$agent_dir" ||
-    fail "no managed pi in $agent_dir (a pi installed with npm or found on PATH is not used): the sandbox gets no provider credentials, and host commands and --no-sandbox are unavailable; install pi with pi's own installer (curl -fsSL https://pi.dev/install.sh | sh) and run this again"
+  is_managed_root "$agent_dir" || is_npm_pi ||
+    fail "no managed pi in $agent_dir and no pi in npm's global packages (a pi found only on PATH or in a project's node_modules is not used): the sandbox gets no provider credentials, and host commands and --no-sandbox are unavailable; install pi with pi's own installer (curl -fsSL https://pi.dev/install.sh | sh) or with npm install -g @earendil-works/pi-coding-agent, and run this again"
 }
 
 require_host_pi
@@ -310,6 +318,8 @@ case "$login_shell" in
   zsh|bash|fish)
     if [ -n "$managed_root" ]; then
       shadowed="; the managed pi at $managed_root/bin/pi stays the host pi for host jobs and pi --no-sandbox (uninstall.sh restores the link)"
+    elif [ -n "$npm_pi" ]; then
+      shadowed="; $bin_dir comes first on PATH, and a pi from npm's global packages was found at $npm_pi: pi sandbox doctor shows which host pi is used"
     elif [ -n "$host_pi" ] && [ "$host_pi" != "$shim" ]; then
       shadowed=", $host_pi is now shadowed"
     fi

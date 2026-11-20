@@ -19,6 +19,7 @@ import {
   noHostPiLine,
   unreachable,
   writeManagedPi,
+  writeNpmPi,
   writePathPi,
 } from "./harness.ts";
 
@@ -116,7 +117,7 @@ const guestBackend = async (probes: Probes, vm?: Partial<Vm>) => {
 
 const hostSection = async (prepared: boolean) => [
   "host",
-  `  ok    host pi           pi ${await testedPiVersion()}, managed install ~/.pi/agent/bin/pi; the image follows it`,
+  `  ok    host pi           pi ${await testedPiVersion()}, ~/.pi/agent/bin/pi; the image follows it`,
   "  ok    provider hosts    1 built-in providers with known hosts",
   expect.stringMatching(/^ {2}ok {4}sessions {10}~\/\.pi\/agent\/sessions\/--.+-repo-- \(host pi lists them/),
   ...(prepared ? ["  ok    host side"] : []),
@@ -1048,7 +1049,7 @@ describe("pi sandbox doctor on the host pi", () => {
 
     expect(found).toMatchObject({
       status: "ok",
-      detail: "pi 1.6.0, managed install ~/.pi/agent/bin/pi; the image follows it",
+      detail: "pi 1.6.0, ~/.pi/agent/bin/pi; the image follows it",
     });
   });
 
@@ -1059,8 +1060,19 @@ describe("pi sandbox doctor on the host pi", () => {
 
     expect(found).toMatchObject({
       status: "warn",
-      detail: `pi 1.0.0 (managed install ~/.pi/agent/bin/pi) is older than ${await testedPiVersion()}, the pi this launcher is tested with`,
+      detail: `pi 1.0.0 (~/.pi/agent/bin/pi) is older than ${await testedPiVersion()}, the pi this launcher is tested with`,
       hint: "run pi update",
+    });
+  });
+
+  it("names an npm global install when there is no managed install", async () => {
+    const { found } = await hostPiCheck(async (harness) => {
+      harness.deps.env.PATH = (await writeNpmPi(join(harness.deps.home, "npm-global"), "1.6.0")).bin;
+    }, false);
+
+    expect(found).toMatchObject({
+      status: "ok",
+      detail: "pi 1.6.0, ~/npm-global/lib/node_modules/@earendil-works/pi-coding-agent; the image follows it",
     });
   });
 
@@ -1071,7 +1083,10 @@ describe("pi sandbox doctor on the host pi", () => {
     const [ignored, effect] = found?.reasons ?? [];
     const joined = `${found?.detail} (${ignored}): ${effect}; ${found?.hint}`;
 
-    expect(found).toMatchObject({ status: "fail", detail: "no managed pi in ~/.pi/agent" });
+    expect(found).toMatchObject({
+      status: "fail",
+      detail: "no managed pi in ~/.pi/agent and no pi in npm's global packages",
+    });
     expect(found?.reasons).toHaveLength(2);
     expect(joined.replace("~/", `${harness.deps.home}/`)).toBe(noHostPiLine(harness.hostAgentDir));
     expect(check(harness.stdout(), "provider hosts")).toMatchObject({ status: "skip", detail: "no host pi" });

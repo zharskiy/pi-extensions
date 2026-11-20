@@ -59,7 +59,7 @@ cli/mcp-sign-in.ts             the launch-start MCP sign-in on the host
 cli/host-sessions.ts           host sessions for a launch: choice, preparation, sweeps, share probe
 cli/intercept.ts               pi install, uninstall, remove, mcp, every update, config, auth, help, --list-models, --export and --version run on the host
 cli/host-routes.ts             which command lines start no session: help, version, auth, config without -l, --list-models, --export
-cli/host-pi.ts                 the one host pi (pi's managed install only), the missing-pi line (missingPiText, built from the parts of missingPi the doctor shows) and --no-sandbox (runHostPi)
+cli/host-pi.ts                 the one host pi (pi's managed install, else npm's global pi that no sandbox could have written), spawning it for host jobs (spawnHostJob), the missing-pi line (missingPiText, built from the parts of missingPi the doctor shows) and --no-sandbox (runHostPi)
 cli/notices.ts                 notices printed once per repository and text
 cli/versions.ts                launcher version and image pi version
 cli/commands/status.ts         pi sandbox status
@@ -113,6 +113,7 @@ workspace/mounts.ts            the protected path table
 workspace/roots.ts             the workspaceRoots refusal (the guard's protected paths and system dirs, nested roots dropped before links) and the checked roots the VM shares
 workspace/pi-session-dir.ts    pi's session slug and the host session dir choice
 workspace/created.ts           removal of recorded created folders
+workspace/sandbox-reach.ts     whether a sandbox could have written a path (a git working tree it could mount, or a folder one has run in) and the folders a launch starts in
 workspace/git/layout.ts        git dir layout from the files, refusing links, foreign pointers and a foreign commondir; the git-dir shape and the .git name in any letter case
 workspace/git/protect.ts       the hooks dirs bound read-only, the self binds and the workspace bare-dir check
 workspace/git/integrity.ts     layout re-checks (worktree pointers, foreign commondir) and the alternates notice
@@ -196,7 +197,7 @@ hostpi/endpoints.ts            rule endpoints and URL credential checks
 hostpi/provider-endpoints.ts   a provider's hosts
 hostpi/provider-hosts.ts       the provider host table with its cache
 hostpi/provider-hosts.mjs      run against the host pi: the built-in provider hosts
-hostpi/locate.ts               finds pi's managed install in the host agent dir
+hostpi/locate.ts               finds pi's managed install in the host agent dir and the pi of npm install -g in npm's global root, keeping only paths the caller's accept predicate takes
 hostpi/path-search.ts          PATH lookup outside the sandbox roots and the executable check
 hostpi/mcp-auth.ts             MCP servers and their host sign-in state
 hostpi/json.ts                 small JSON helpers
