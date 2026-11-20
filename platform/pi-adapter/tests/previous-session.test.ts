@@ -298,7 +298,7 @@ describe("showing the previous session after a handoff", () => {
   it("redraws the previous session in the new theme once pi invalidates the entry", async () => {
     const session = await handOff("show");
     const entry = session.previousEntry();
-    const line = (lines: string[] | undefined, text: string) =>
+    const line = (lines: readonly string[] | undefined, text: string) =>
       lines?.find((row) => stripVTControlCharacters(row).includes(text));
 
     let skin = "dark";

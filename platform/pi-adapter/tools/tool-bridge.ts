@@ -18,7 +18,7 @@ class WidthText implements Component {
     this.source = source;
   }
 
-  render(width: number): string[] {
+  render(width: number): readonly string[] {
     this.text.setText(this.source(width));
 
     return this.text.render(width);
