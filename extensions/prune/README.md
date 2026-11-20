@@ -25,7 +25,7 @@ Only `<agent dir>/sessions/` is swept. Sessions in a custom session dir, or open
 - Sessions written to within `days` days.
 - Sessions open in a running pi that loads this extension, also one resumed but not yet written to.
 - Every session linked to a kept one. Sessions linked by `parentSession`, in either direction and at any depth, form a chain, and a chain goes whole or not at all. Right before removing a chain it checks again: when a member was opened or written to since the scan, the whole chain stays.
-- An agent run while any run of its handoff chain is recent, has no readable manifest, or keeps a worktree or branch. Worktrees and branches are never removed.
+- An agent run while any run of its handoff chain is recent, has no manifest, has one that cannot be read, or keeps a worktree or branch. A manifest that can be read but not parsed keeps nothing. Worktrees and branches are never removed.
 - A session file without a readable pi header, and its agent runs.
 - Anything reached through a symbolic link, and empty handoff folders that are a day old or less or named after an open session.
 
@@ -54,7 +54,7 @@ pi -e ./pi-extensions/extensions/prune/index.ts   # this extension alone, from a
 |---|---|
 | `/prune` | `Scanning sessions...` above the editor, then a menu with `Prune now` and `Auto-prune`. Escape closes it. |
 | `/prune` → `Prune now` | One row per interval (7, 30, 60, 90, 180 and 365 days) with what it would remove and its size. Pick one and confirm; it scans again, removes only what you confirmed that is still old, and says what it freed. No or Escape goes back. |
-| `/prune` → `Auto-prune` | The same intervals and `Off`, each with what the next start would remove; your `days` is marked `✓`. Picking one saves it and removes nothing now. |
+| `/prune` → `Auto-prune` | The same intervals and `Off`. A row that would remove something shows what the next start would remove, without the empty handoff folders it also clears. Your `days` is marked `✓`. Picking one saves it and removes nothing now. |
 | Start pi with old sessions on disk | `pi-prune: removed 3 sessions, 5 agent runs, 2 handoff dirs older than 180 days, 4 empty handoff dirs, 12.4 MB freed`, once. |
 
 Models never see `/prune` or its output. Outside the interactive terminal it only says that it needs one.
@@ -63,6 +63,7 @@ Models never see `/prune` or its output. Outside the interactive terminal it onl
 
 - Age is the file's modification time. Copying sessions without their times, or restoring an old backup, changes what counts as old.
 - Only a pi that loads this extension marks its session as open. A pi started before the package was installed, a `pi -e` with other extensions only, a pi on another machine that shares your agent dir, or a sandbox with `sessions.host` on is not seen, so its session is kept only by its age. Removing a session file under such a pi makes it start the file again without its header. Pick a short interval only when no such pi is running.
+- Liveness and mtime are checked once per chain, right before its first removal, not per member, so a session of that chain that another pi opens while the chain is being removed is not seen.
 - A reused process id can make an ended pi look open; its session is then kept longer, never removed early.
 - Removal is permanent.
 

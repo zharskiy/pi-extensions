@@ -5,12 +5,12 @@
 - `api/plugin.ts`: `prunePlugin`, `PruneDeps`; the marker on start and quit, the first-start sweep, `/prune` registration.
 - `api/prune-command.ts`: `registerPrune`, the `/prune` menu, lists, confirm, progress line and `Auto-prune` save.
 - `core/prune.ts`: `planIntervals`, `pruneConfirmed`, `sweep`; the scan, plan and apply steps wired.
-- `core/sweep-scan.ts`: `scan`, `Sources`; the one read of the disk.
+- `core/sweep-scan.ts`: `scan`, `Sources`; the one read of the disk, which joins sessions, live markers, runs and handoffs into a `Scan`.
 - `core/sweep-plan.ts`: `plan`, `within`, `totals`, `cutoffAt`, `itemsOf` and the `Scan`, `Plan`, `Candidate` and `Removed` types; the pure rules.
 - `core/sweep-apply.ts`: `apply`, removal chain by chain after one check; `clearEmpties`.
 - `core/live-markers.ts`: `claimMarker`, `releaseMarker`, `readLive`, `isLive`, `pidAlive`, `liveDir`.
 - `core/session-chains.ts`: `chainsOf`, `Member`, `Chain`; sessions grouped by `parentSession`.
-- `core/agent-runs.ts`: `readRuns`, `staleRuns`, `removeRun`, `Run`.
+- `core/agent-runs.ts`: `scanRuns`, `staleRuns`, `removeRun`, `Run`, `SESSION_EXT`; the run folder layout.
 - `core/handoff-scan.ts`: `rootState`, `scanHandoffs`, `HandoffScan`.
 - `core/real-dirs.ts`: `entriesIn`, `subdirsIn`, `measure`, `Sized`, `Aged`; real folders only.
 - `core/pool.ts`: `pooled`, a bounded pool in source order.
