@@ -89,7 +89,7 @@ class RowComponent implements Component {
     return this;
   }
 
-  render(width: number): string[] {
+  render(width: number): readonly string[] {
     const { lines, pad, body, lead } = this.parts;
     const margin = " ".repeat(pad);
     const drawn = this.own(lines, Math.max(1, width - pad));

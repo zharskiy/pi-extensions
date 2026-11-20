@@ -7,7 +7,6 @@ import type { Host } from "../types/host-capabilities.ts";
 import type { SkillInfo } from "../types/messages.ts";
 import type { AgentRuntime } from "../types/runtime.ts";
 import type { HostState } from "../ui/tui-context.ts";
-import { guardAbortedReads } from "./aborted-read-guard.ts";
 import { insideChildSession } from "./child-scope.ts";
 import { createPiHost, liveCtx } from "./host.ts";
 
@@ -40,10 +39,8 @@ export const createPiExtension =
     options: { root: string; namespace: string; childExclude?: readonly string[]; skillInventory?: boolean },
   ): ExtensionFactory =>
   (pi) => {
-    const guarded = guardAbortedReads();
-
     if (insideChildSession()) {
-      return guarded;
+      return;
     }
 
     const inventory = createSkillInventory(() => sessionSkillFiles(pi));
@@ -72,6 +69,4 @@ export const createPiExtension =
     );
 
     boot(host, runtime, { root: options.root, agentDir: getAgentDir() });
-
-    return guarded;
   };
