@@ -1,6 +1,6 @@
 import { lstat, rm, rmdir, unlink } from "node:fs/promises";
-import { basename, join } from "node:path";
-import { AGENTS_DIR } from "./agent-runs.ts";
+import { basename } from "node:path";
+import { runsDir } from "../../../platform/shared/index.ts";
 import { rootState } from "./handoff-root.ts";
 import type { Sized } from "./handoff-scan.ts";
 import { type Live, readLive } from "./live-markers.ts";
@@ -32,7 +32,7 @@ const pruneStem = async ({ dir, runs }: Stem) => {
   const removed = added(await pooled(runs, 1, (run) => removeSized(run, "runs")));
 
   if (removed.runs > 0) {
-    await rmdir(join(dir, AGENTS_DIR)).catch(ignore);
+    await rmdir(runsDir(dir)).catch(ignore);
     await rmdir(dir).catch(ignore);
   }
 

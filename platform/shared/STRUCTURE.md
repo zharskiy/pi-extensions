@@ -15,6 +15,7 @@ Modules are grouped by concern; `index.ts` is the only import surface, so a move
   - `handoff-seam.ts`: `seamLabel` and `LIMIT_SEAM`, the handoff seam rule's label.
   - `handoff-tool.ts`: `handoffTool`, `HandoffTarget`.
   - `handoff-file.ts`: `writeHandoffFile`, the handoff file write that retries once when its folder vanished.
+- `agent-runs/agent-runs.ts`: the agent run layout (`sessionStem`, `runsDir`, `fallbackStemsRoot`, `sessionRunsDir`, `RUN_MANIFEST`), `RunManifest`, `RunCleanup` and `runRules`.
 - `channels/`: how extensions talk without importing each other.
   - `host-channels.ts`: the busy and background-work (side by side), awaiting-input, handoff-pending and held-results, usage, totals and limits (`LIMITS_CHANNEL`, `parseLimits` over `limitsSchema`) `trackBusy` (the busy sources a consumer keeps), and `agentsSpend` and `sessionSpend` over `SpendingTotals` channel names, payloads and parsers.
   - `status-keys.ts`: `HINT_STATUS_PREFIX`, `MIRROR_STATUS_PREFIX`, the status-key roles the footer reads.
@@ -31,6 +32,7 @@ Modules are grouped by concern; `index.ts` is the only import surface, so a move
 - `tests/handoff-file.test.ts`: `writeHandoffFile`, also when its folder vanishes before the write.
 - `tests/handoff-prompt.test.ts`: the instruction over test audiences, retry and seed text.
 - `tests/handoff-document.test.ts`: `validateHandoff`, `handoffPath` and the details parsers.
+- `tests/agent-runs.test.ts`: the run layout and `runRules`.
 - `tests/host-channels.test.ts`: the channel payload parsers.
 - `tests/text-layout.test.ts`: `fixedBlock` and `padRows`.
 - `tests/front-matter.test.ts`: `parseFrontmatter`.

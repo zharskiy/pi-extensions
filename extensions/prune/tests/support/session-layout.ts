@@ -1,6 +1,7 @@
 import { mkdirSync, readdirSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { SessionInfo } from "../../../../platform/pi-adapter/index.ts";
+import { fallbackStemsRoot, RUN_MANIFEST, runsDir } from "../../../../platform/shared/index.ts";
 import { createFakeHost, useTempDirs } from "../../../../test/framework/index.ts";
 import { apply } from "../../core/sweep-apply.ts";
 import { type Plan, type PlanInput, planAt } from "../../core/sweep-plan.ts";
@@ -17,7 +18,7 @@ export const RECENT = daysAgo(5);
 
 export const CUTOFF = daysAgo(60);
 
-export const MANIFEST_FILE = "manifest.json";
+export const MANIFEST_FILE = RUN_MANIFEST;
 
 const temp = useTempDirs();
 
@@ -59,7 +60,7 @@ export const fabricate = () => {
 
   mkdirSync(handoffRoot, { mode: 0o700 });
 
-  const agentsDir = (stem: string) => join(slugDir, stem, "agents");
+  const agentsDir = (stem: string) => runsDir(join(slugDir, stem));
 
   const sessionIn = (dir: string, stem: string, touched = NOW, parentSession?: string) => {
     const file = join(dir, `${stem}.jsonl`);
@@ -91,7 +92,7 @@ export const fabricate = () => {
     runFiles(join(agentsDir(stem), id), id, touched, manifest);
 
   const fallbackRun = (sessionId: string, id: string, touched = NOW) =>
-    runFiles(join(agentDir, "pi-subagents", sessionId, "agents", id), id, touched);
+    runFiles(join(runsDir(join(fallbackStemsRoot(agentDir), sessionId)), id), id, touched);
 
   const handoff = (sessionId: string, touched = NOW) => {
     const dir = join(handoffRoot, sessionId);

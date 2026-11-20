@@ -1,3 +1,13 @@
+export {
+  fallbackStemsRoot,
+  RUN_MANIFEST,
+  type RunCleanup,
+  type RunManifest,
+  runRules,
+  runsDir,
+  sessionRunsDir,
+  sessionStem,
+} from "./agent-runs/agent-runs.ts";
 export { cacheHitPercent, reportedCache, sessionCacheHit } from "./cache-hit.ts";
 export {
   AWAITING_INPUT_CHANNEL,

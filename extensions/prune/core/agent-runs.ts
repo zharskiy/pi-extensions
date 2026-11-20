@@ -1,36 +1,25 @@
 import { readdir, readFile } from "node:fs/promises";
 import { basename, join } from "node:path";
+import { RUN_MANIFEST, runRules, runsDir } from "../../../platform/shared/index.ts";
 import type { Sized } from "./handoff-scan.ts";
 import { LIMIT, pooled } from "./pool.ts";
 import { measure, subdirsIn } from "./real-dirs.ts";
-
-export const AGENTS_DIR = "agents";
-
-const MANIFEST_FILE = "manifest.json";
-
-type Manifest = { predecessorId?: unknown; successorId?: unknown; worktree?: { cleanup?: unknown } } | null;
 
 export type Run = {
   id: string;
   dir: string;
   touched: number;
   bytes: number;
-  spared: boolean;
-  links: unknown[];
+  keep: boolean;
+  links: string[];
 };
 
-const parsed = (text: string): Manifest => {
+const parsed = (text: string): unknown => {
   try {
-    return JSON.parse(text) as Manifest;
+    return JSON.parse(text);
   } catch {
-    return null;
+    return undefined;
   }
-};
-
-const keepsWorktree = (manifest: Manifest) => {
-  const worktree = manifest?.worktree;
-
-  return Boolean(worktree) && worktree?.cleanup !== "removed";
 };
 
 const unreadable = (dir: string): Run => ({
@@ -38,7 +27,7 @@ const unreadable = (dir: string): Run => ({
   dir,
   touched: Number.POSITIVE_INFINITY,
   bytes: 0,
-  spared: true,
+  keep: true,
   links: [],
 });
 
@@ -46,27 +35,20 @@ const readRun = async (dir: string): Promise<Run> => {
   try {
     const names = await readdir(dir);
 
-    if (!names.includes(MANIFEST_FILE)) {
+    if (!names.includes(RUN_MANIFEST)) {
       return unreadable(dir);
     }
 
     const { touched, bytes } = await measure(dir);
-    const manifest = parsed(await readFile(join(dir, MANIFEST_FILE), "utf8"));
+    const rules = runRules(parsed(await readFile(join(dir, RUN_MANIFEST), "utf8")));
 
-    return {
-      id: basename(dir),
-      dir,
-      touched,
-      bytes,
-      spared: keepsWorktree(manifest),
-      links: [manifest?.predecessorId, manifest?.successorId],
-    };
+    return { id: basename(dir), dir, touched, bytes, ...rules };
   } catch {
     return unreadable(dir);
   }
 };
 
-const gather = (runs: Map<unknown, Run>, id: unknown, chain: Set<Run>) => {
+const gather = (runs: Map<string, Run>, id: string, chain: Set<Run>) => {
   const run = runs.get(id);
 
   if (!run || chain.has(run)) {
@@ -81,11 +63,11 @@ const gather = (runs: Map<unknown, Run>, id: unknown, chain: Set<Run>) => {
   return chain;
 };
 
-const expired = (runs: Map<unknown, Run>, run: Run, cutoff: number) =>
-  Array.from(gather(runs, run.id, new Set())).every((link) => link.touched < cutoff && !link.spared);
+const expired = (runs: Map<string, Run>, run: Run, cutoff: number) =>
+  Array.from(gather(runs, run.id, new Set())).every((link) => link.touched < cutoff && !link.keep);
 
 export const readRuns = async (stems: readonly string[]) => {
-  const dirs = await pooled(stems, LIMIT, (stem) => subdirsIn(join(stem, AGENTS_DIR)));
+  const dirs = await pooled(stems, LIMIT, (stem) => subdirsIn(runsDir(stem)));
   const runs = await pooled(dirs.flat(), LIMIT, readRun);
   const byDir = new Map(runs.map((run) => [run.dir, run]));
 
@@ -93,7 +75,7 @@ export const readRuns = async (stems: readonly string[]) => {
 };
 
 export const staleRuns = (found: readonly Run[], cutoff: number): Sized[] => {
-  const runs = new Map<unknown, Run>(found.map((run) => [run.id, run]));
+  const runs = new Map<string, Run>(found.map((run) => [run.id, run]));
 
   return Array.from(runs.values())
     .filter((run) => expired(runs, run, cutoff))

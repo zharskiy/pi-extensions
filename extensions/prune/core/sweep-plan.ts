@@ -1,6 +1,7 @@
 import { lstat } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { readSessionHeader, type SessionHeader } from "../../../platform/pi-adapter/index.ts";
+import { fallbackStemsRoot, sessionStem } from "../../../platform/shared/index.ts";
 import { type Run, readRuns, staleRuns } from "./agent-runs.ts";
 import { type RootState, rootState } from "./handoff-root.ts";
 import { type Aged, type Sized, scanHandoffs } from "./handoff-scan.ts";
@@ -136,8 +137,6 @@ const runsIn = async (dirs: readonly string[]): Promise<RunsIn[]> => {
   return dirs.map((dir, index) => ({ dir, runs: runs[index] }));
 };
 
-const stemOf = (file: string) => file.slice(0, -SESSION_EXT.length);
-
 const emptyPlan = (aborted: string): Plan => ({
   aborted,
   chains: [],
@@ -183,9 +182,9 @@ export const scan = async (input: ScanInput, latestCutoff: number): Promise<Scan
 
   const reading = removable
     .flatMap((chain) => chain.members)
-    .filter((member) => stemDirs.has(pathKey(stemOf(member.file))));
+    .filter((member) => stemDirs.has(pathKey(sessionStem(member.file))));
 
-  const found = await runsIn(reading.map((member) => stemOf(member.file)));
+  const found = await runsIn(reading.map((member) => sessionStem(member.file)));
 
   reading.forEach((member, index) => {
     member.runs = found[index].runs;
@@ -195,7 +194,7 @@ export const scan = async (input: ScanInput, latestCutoff: number): Promise<Scan
     .filter(({ dir, listed }) => !listed && !live.files.has(pathKey(`${dir}${SESSION_EXT}`)))
     .map(({ dir }) => dir);
 
-  const fallbackStems = (await subdirsIn(join(input.agentDir, "pi-subagents"))).filter(
+  const fallbackStems = (await subdirsIn(fallbackStemsRoot(input.agentDir))).filter(
     (dir) => !alwaysKept.has(basename(dir)),
   );
 
@@ -251,7 +250,7 @@ export const plan = (scanned: Scan, cutoff: number): Plan => {
             mtime: member.mtime,
             id,
             bytes: member.bytes,
-            stem: member.runs ? pruned(stemOf(member.file), member.runs, cutoff)[0] : undefined,
+            stem: member.runs ? pruned(sessionStem(member.file), member.runs, cutoff)[0] : undefined,
             handoff: keptIds.has(id) ? undefined : scanned.owned.get(id),
           };
         }),

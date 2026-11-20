@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { errorText } from "../../../../platform/shared/index.ts";
+import { errorText, type RunManifest } from "../../../../platform/shared/index.ts";
 import { type AgentRecord, type AgentRegistry, isClosed, type NewAgent } from "../model/agent-record.ts";
 import type { Bus } from "../model/events.ts";
 import { repairLinks } from "../model/manifest.ts";
@@ -45,7 +45,7 @@ const writeManifestFile = (record: AgentRecord) => {
     toolCalls: record.toolCalls,
     tokens: record.tokens,
     cost: record.cost,
-  };
+  } satisfies RunManifest & Record<string, unknown>;
 
   writeFileSync(join(record.dir, MANIFEST_FILE), `${JSON.stringify(manifest, null, 2)}\n`);
 };
