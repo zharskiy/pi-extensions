@@ -27,6 +27,7 @@ describe("runRules", () => {
     [{ worktree: { path: "/w" } }, { links: [], keep: true }],
     [{ worktree: { cleanup: "branch kept" } }, { links: [], keep: true }],
     [{ worktree: { cleanup: "kept" } }, { links: [], keep: true }],
+    [{ worktree: true }, { links: [], keep: true }],
     [null, { links: [], keep: false }],
     ["text", { links: [], keep: false }],
   ])("reads %j as %j", (manifest, rules) => {

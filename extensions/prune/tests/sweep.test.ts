@@ -12,6 +12,7 @@ import {
 } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { liveDir } from "../core/live-markers.ts";
 import { chainsOf } from "../core/session-chains.ts";
 import { type Plan, plan, totals, within } from "../core/sweep-plan.ts";
 import {
@@ -46,15 +47,16 @@ describe("agent run rules", () => {
       layout.run("s1", "scout-edge", CUTOFF),
       layout.run("s1", "scout-bare", OLD, false),
       layout.session("edge", CUTOFF),
+      layout.handoff("orphan-edge", CUTOFF),
     ];
 
     touch(join(file, "child.jsonl"), RECENT);
     touch(dir, RECENT);
 
-    await layout.prune();
+    await layout.applied(plan(await layout.scanned({ days: 30 }), CUTOFF));
 
     expect(removed.map(existsSync)).toEqual([false, false]);
-    expect(kept.map(existsSync)).toEqual([true, true, true, true, true]);
+    expect(kept.map(existsSync)).toEqual([true, true, true, true, true, true]);
   });
 
   it("keeps a fresh session whole, its old runs included", async () => {
@@ -609,6 +611,19 @@ describe("apply chains", () => {
         };
       },
     ],
+    [
+      "the live folder became a symbolic link after the plan",
+      (_files: string[], layout: ReturnType<typeof fabricate>) => {
+        const target = join(layout.root, "elsewhere");
+
+        rmSync(liveDir(layout.agentDir), { recursive: true, force: true });
+        mkdirSync(dirname(liveDir(layout.agentDir)), { recursive: true });
+        mkdirSync(target);
+        symlinkSync(target, liveDir(layout.agentDir));
+
+        return () => false;
+      },
+    ],
   ])("keeps the whole chain when %s", async (_case, change) => {
     const layout = fabricate();
     const files = linked(layout, [OLD, OLD, OLD]);
@@ -626,6 +641,7 @@ describe("apply chains", () => {
     const runs = linked(layout, [OLD, OLD, OLD]).map((file) =>
       layout.run(basename(file, ".jsonl"), "scout-1", OLD),
     );
+    const handoff = layout.handoff("s1", OLD);
     const planned = await layout.planned();
     const [first, failing, last] = planned.chains[0];
 
@@ -636,6 +652,7 @@ describe("apply chains", () => {
     expect(await layout.applied(planned)).toMatchObject({ sessions: 1, runs: 1, handoffs: 0 });
     expect([first, failing, last].map(({ file }) => existsSync(file))).toEqual([false, true, true]);
     expect(runs.filter(existsSync)).toHaveLength(2);
+    expect(existsSync(handoff)).toBe(true);
   });
 
   it("stops a chain at a member already gone", async () => {

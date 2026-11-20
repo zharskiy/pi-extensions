@@ -2,6 +2,7 @@ import {
   chmodSync,
   existsSync,
   lstatSync,
+  lutimesSync,
   mkdirSync,
   readdirSync,
   symlinkSync,
@@ -89,6 +90,7 @@ describe("handoff shortcuts", () => {
     mkdirSync(target);
     touch(target, OLD);
     symlinkSync(target, link);
+    lutimesSync(link, new Date(OLD), new Date(OLD));
     writeFileSync(file, "x");
     touch(file, OLD);
 
