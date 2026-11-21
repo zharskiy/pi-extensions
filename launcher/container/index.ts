@@ -1,8 +1,10 @@
+export type { ClipboardContent, HostClipboard } from "./clipboard.ts";
 export {
   type GitGuardContext,
   type GitOverlay,
   planGitOverlay,
 } from "./git-overlay.ts";
+export { visibleInside } from "./host-paths.ts";
 export {
   agentContainers,
   discardContainer,

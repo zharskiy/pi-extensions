@@ -131,11 +131,16 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
   const tunnel = createTunnel({ dial: dial.dial, track, record, denials, helloTimeoutMs });
   const routes = createRoutes(denials);
 
-  const isCaller = (request: IncomingMessage) => {
-    const token = proxyTokenOf(request.headers["proxy-authorization"]);
+  const holdsToken = (header: string | string[] | undefined) => {
+    const token = proxyTokenOf(header);
 
     return token !== undefined && sameText(token, options.token);
   };
+
+  const isCaller = (request: IncomingMessage) => holdsToken(request.headers["proxy-authorization"]);
+
+  const isConnectCaller = (request: IncomingMessage) =>
+    holdsToken(request.headers["proxy-authorization"] ?? request.headers.authorization);
 
   const restrictedResolution = async (host: string, access: DialAccess) => {
     const problem = await dial.checkAddresses(host, access).then(
@@ -149,7 +154,7 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
   const handleConnect = async (request: IncomingMessage, client: Socket, head: Buffer) => {
     const target = parseAuthority(request.url);
 
-    if (!isCaller(request)) {
+    if (!isConnectCaller(request)) {
       denials.log(target?.host ?? UNPARSEABLE, AUTH_DENIAL);
 
       client.end(rawReply(statusLine(AUTH_REPLY.status), AUTH_REPLY.body, AUTH_REPLY.headers));

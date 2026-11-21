@@ -10,7 +10,7 @@ Part of [pi-extensions](../../README.md) · [Quick start](#quick-start) · [Deve
 
 ## Why
 
-When the main session finishes its work or a dialog waits for an answer, pi is waiting for you. You may be looking at another window. This extension tells you so through your terminal, once per wait. It holds back while background agents run.
+When the main session finishes its work or a dialog waits for an answer, pi is waiting for you. You may be looking at another window. This extension tells you so through your terminal, once per wait. It holds back while background agents run, or while any other extension reports busy work, and counts the wait from when the last of them ends.
 
 ## What it looks like
 

@@ -21,6 +21,7 @@ import {
   type OverlayFactory,
   type Phase,
   type PromptTokens,
+  padEntry,
   type RowLines,
   type SessionControl,
   type SessionFill,
@@ -39,7 +40,7 @@ import { type FakeForm, openFakeForm } from "./fake-form.ts";
 import { plainTheme } from "./themes.ts";
 import { promptTokens } from "./usage-builders.ts";
 
-type FakeSessionFile = { entries: { customType: string; data: unknown }[]; usage: UsageTotals };
+type FakeSessionFile = { id?: string; entries: { customType: string; data: unknown }[]; usage: UsageTotals };
 
 type ChatItem = { kind: "assistant"; text: string } | { kind: "entry"; customType: string; data: unknown };
 
@@ -65,6 +66,7 @@ export type FakeHost = Host & {
   statusCalls: { key: string; text: string | undefined }[];
   widgets: Map<string, RowLines | undefined>;
   belowEditor: string[];
+  aboveEditor: string[];
   widgetRefreshes: number;
   overlays: OverlayFactory[];
   forms: FakeForm[];
@@ -244,6 +246,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
     statusCalls: [],
     widgets: new Map(),
     belowEditor: [],
+    aboveEditor: [],
     widgetRefreshes: 0,
     overlays: [],
     forms: [],
@@ -325,12 +328,13 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
           ? host.confirmAnswer(title, message)
           : host.confirmAnswer;
       },
-      setWidget: (key, render) => {
+      setWidget: (key, render, options) => {
         host.widgets.set(key, render);
         host.belowEditor = host.belowEditor.filter((entry) => entry !== key);
+        host.aboveEditor = host.aboveEditor.filter((entry) => entry !== key);
 
         if (render) {
-          host.belowEditor.push(key);
+          (options?.above ? host.aboveEditor : host.belowEditor).push(key);
         }
         return {
           refresh: () => {
@@ -548,6 +552,7 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
         .entries.filter((entry) => entry.customType === customType)
         .map((entry) => entry.data as T),
     sessionUsage: (file) => sessionFile(file).usage,
+    sessionId: (file) => host.files.get(file)?.id,
     session: () => {
       if (!started) {
         throw new Error("no live pi session: called before session_start or after session_shutdown");
@@ -729,10 +734,12 @@ export const createFakeHost = (info: Partial<SessionInfo> = {}): FakeHost => {
         throw new Error(`entry renderer ${customType} not registered`);
       }
 
-      const shift = renderer.flush ? 0 : pad;
-      const lines = renderer.render(structuredClone(data), Math.max(1, width - shift), expanded, theme, pad);
-
-      return lines.map((line) => theme.truncate(`${" ".repeat(shift)}${line}`, width));
+      return padEntry(
+        (inner, read) => renderer.render(structuredClone(data), inner, expanded, theme, read),
+        width,
+        pad,
+        renderer.flush,
+      );
     },
     mainUsage: promptTokens(),
     contextFacts: () => (host.facts ? structuredClone(host.facts) : undefined),

@@ -1,6 +1,7 @@
 import type { EditorFrame, EditorLayout, ThemeLike } from "../../../platform/pi-adapter/index.ts";
+import { MARKS } from "../../../platform/ui-kit/index.ts";
 
-const CHEVRON = "›";
+const CHEVRON = MARKS.pointer;
 
 const RULE = "─";
 const MARGIN = 1;

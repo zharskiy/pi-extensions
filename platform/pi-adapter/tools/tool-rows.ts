@@ -18,17 +18,7 @@ import {
 } from "./row-component.ts";
 import { skillOfRead } from "./skill-reads.ts";
 import { fromPiResult, type PiToolRenderContext } from "./tool-bridge.ts";
-
-export const BUILTIN_TOOLS: readonly string[] = [
-  "read",
-  "bash",
-  "powershell",
-  "edit",
-  "write",
-  "grep",
-  "find",
-  "ls",
-];
+import { isBuiltinTool, MCP_PREFIX, MCP_SOURCE_PATH, piShippedSource } from "./tool-source.ts";
 
 type PiResult = Parameters<NonNullable<ToolRenderers["renderResult"]>>[0];
 
@@ -39,7 +29,7 @@ const imageCount = (result: PiResult) =>
 
 export type ToolLabel = (name: string) => string | undefined;
 
-const MCP_NAME = /^mcp__(.+?)__(.+)$/;
+const MCP_NAME = new RegExp(`^${MCP_PREFIX}(.+?)__(.+)$`);
 
 export const mcpLabel: ToolLabel = (name) => {
   const match = MCP_NAME.exec(name);
@@ -47,11 +37,11 @@ export const mcpLabel: ToolLabel = (name) => {
   return match ? `${match[1]}/${match[2]}` : undefined;
 };
 
-const MCP_SOURCE = "builtin:mcp";
-
 export const toolLabel = (pi: Pick<ExtensionAPI, "getAllTools">, name: string) => {
   try {
-    const tool = pi.getAllTools().find((info) => info.name === name && info.sourceInfo.path === MCP_SOURCE);
+    const tool = pi
+      .getAllTools()
+      .find((info) => info.name === name && info.sourceInfo.path === MCP_SOURCE_PATH);
     const server = tool?.namespace?.aliases?.[0];
     const prefix = `${tool?.namespace?.name}__`;
 
@@ -156,11 +146,9 @@ const TIMING = /^(Took|Elapsed) \d/;
 const timingFilter = (row: ToolRow | undefined) =>
   row?.dropTiming ? (line: string) => !TIMING.test(stripVTControlCharacters(line).trim()) : undefined;
 
-const BUILTIN_SOURCE = "builtin";
-
 export const piShipped = (pi: Pick<ExtensionAPI, "getAllTools">, name: string) => {
   try {
-    return pi.getAllTools().some((tool) => tool.name === name && tool.sourceInfo.source === BUILTIN_SOURCE);
+    return pi.getAllTools().some((tool) => tool.name === name && piShippedSource(tool.sourceInfo));
   } catch {
     return false;
   }
@@ -170,7 +158,7 @@ const hasOwnRenderer = (base: ToolRenderers | undefined) =>
   base?.renderShell === "self" || base?.renderCall !== undefined || base?.renderResult !== undefined;
 
 const keepsBase = (name: string, base: ToolRenderers | undefined, shipped: () => boolean) =>
-  !BUILTIN_TOOLS.includes(name) && hasOwnRenderer(base) && !shipped();
+  !isBuiltinTool(name) && hasOwnRenderer(base) && !shipped();
 
 export const rowRenderers = (
   rows: ToolRows | undefined,

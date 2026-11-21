@@ -2,6 +2,7 @@ import { Writable } from "node:stream";
 import type { Backend, TerminalSize } from "../backend/index.ts";
 import { signalExit } from "../shared/index.ts";
 import type { Workspace } from "../workspace/index.ts";
+import { copyTee, type HostClipboard, pasteBridge } from "./clipboard.ts";
 
 export interface HostTerminal {
   stdin: NodeJS.ReadableStream & { isTTY?: boolean; setRawMode?: (mode: boolean) => unknown };
@@ -27,6 +28,13 @@ export interface RunPiInput {
   terminal: HostTerminal;
   signals?: SignalSource;
   graceMs?: number;
+  clipboard?: HostClipboard;
+}
+
+interface PiStreams {
+  stdin: NodeJS.ReadableStream;
+  stdout: NodeJS.WritableStream;
+  release(): void;
 }
 
 const GRACE_MS = 5000;
@@ -127,7 +135,20 @@ const settleSignal = async (input: RunPiInput, running: Promise<number>, signal:
 
 const PI_SCRIPT = `echo $$ > ${PID_FILE}; cd "$1" 2>/dev/null || echo "pi-sandbox: $1 is not in the sandbox, pi starts in $PWD" >&2; shift; exec "$@"`;
 
-const execPi = (input: RunPiInput, tty: boolean) =>
+const bridged = (input: RunPiInput, interactive: boolean): PiStreams => {
+  const { terminal, clipboard } = input;
+
+  if (!interactive || clipboard === undefined) {
+    return { stdin: terminal.stdin, stdout: terminal.stdout, release: () => undefined };
+  }
+
+  const tee = copyTee(terminal.stdout, clipboard.copy);
+  const paste = pasteBridge(terminal.stdin, input, clipboard, tee.notify);
+
+  return { stdin: paste.input, stdout: tee, release: paste.stop };
+};
+
+const execPi = (input: RunPiInput, tty: boolean, streams: PiStreams) =>
   input.backend.exec(
     {
       containerId: input.containerId,
@@ -136,8 +157,8 @@ const execPi = (input: RunPiInput, tty: boolean) =>
       workdir: input.workspace.repoRoot,
     },
     {
-      stdin: input.terminal.stdin,
-      stdout: input.terminal.stdout,
+      stdin: streams.stdin,
+      stdout: streams.stdout,
       stderr: input.terminal.stderr,
       tty,
       size: { columns: input.terminal.columns, rows: input.terminal.rows },
@@ -150,9 +171,10 @@ export const runPi = (input: RunPiInput) => {
 
   return withRawMode(input.terminal, interactive, async () => {
     const watch = listenFor(input.signals ?? process, STOP_SIGNALS);
+    const streams = bridged(input, interactive);
 
     try {
-      const running = execPi(input, interactive);
+      const running = execPi(input, interactive, streams);
       const outcome = await Promise.race([
         running.then((code) => ({ code })),
         watch.received.then((signal) => ({ signal })),
@@ -161,6 +183,8 @@ export const runPi = (input: RunPiInput) => {
       return "signal" in outcome ? await settleSignal(input, running, outcome.signal) : outcome.code;
     } finally {
       watch.stop();
+
+      streams.release();
     }
   });
 };

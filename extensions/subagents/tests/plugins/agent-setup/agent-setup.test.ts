@@ -595,6 +595,16 @@ describe("/agents setup one-line form", () => {
     expect(definition("reviewer")?.thinking).toBe("high");
   });
 
+  it("saves de-duplicated skills and warns about the duplicates", async () => {
+    const { host, userFile, noticesOf } = setup();
+
+    await host.runCommand("agents", "setup reviewer skills=docs,docs scope=user");
+
+    expect(readJson(userFile)).toEqual({ agents: { reviewer: { skills: ["docs"] } } });
+    expect(noticesOf("warning")).toEqual(["pi-subagents: skills lists entries more than once: docs"]);
+    expect(noticesOf("error")).toEqual([]);
+  });
+
   it("writes the user file by default in an untrusted project", async () => {
     const { host, userFile, definition } = setup();
 

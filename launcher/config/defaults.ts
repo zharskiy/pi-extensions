@@ -21,5 +21,6 @@ export const defaultConfig = (): SandboxConfig => ({
   resources: {},
   vm: {},
   sessions: { host: true },
+  terminal: { clipboard: true },
   writeBack: { enabled: true, exclude: {}, add: {} },
 });

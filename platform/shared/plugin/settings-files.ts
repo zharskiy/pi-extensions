@@ -1,10 +1,10 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { isPlainObject } from "../plain-object.ts";
+import { isFiniteNumber, isPlainObject, isStringArray } from "../guards.ts";
 import { projectPath, writeProjectFile } from "../project-dir.ts";
 import { errorText } from "../text/format.ts";
 
-type NumberRule = { type: "number"; min: number; max: number; minExclusive?: boolean };
+type NumberRule = { type: "number"; min: number; max: number; minExclusive?: boolean; integer?: true };
 
 type ListRule = { type: "list"; of: string };
 
@@ -21,13 +21,10 @@ export type SettingsSchema<T> = { [K in keyof T]?: SettingsRule };
 export type SettingsParse<T> = { patch: Partial<T>; errors: string[] };
 
 const validNumber = (rule: NumberRule, value: unknown) =>
-  typeof value === "number" &&
-  Number.isFinite(value) &&
+  isFiniteNumber(value) &&
   (rule.minExclusive ? value > rule.min : value >= rule.min) &&
-  value <= rule.max;
-
-const validList = (value: unknown) =>
-  Array.isArray(value) && value.every((entry) => typeof entry === "string");
+  value <= rule.max &&
+  (!rule.integer || Number.isInteger(value));
 
 const isValid = (rule: SettingsRule, value: unknown) => {
   if (rule.type === "choice") {
@@ -38,7 +35,7 @@ const isValid = (rule: SettingsRule, value: unknown) => {
     return isPlainObject(value);
   }
 
-  return rule.type === "number" ? validNumber(rule, value) : validList(value);
+  return rule.type === "number" ? validNumber(rule, value) : isStringArray(value);
 };
 
 const expectation = (rule: SettingsRule) => {
@@ -54,9 +51,11 @@ const expectation = (rule: SettingsRule) => {
     return `an object of ${rule.of}`;
   }
 
+  const kind = rule.integer ? "a whole number" : "a number";
+
   return rule.minExclusive
-    ? `a number above ${rule.min} and at most ${rule.max}`
-    : `a number between ${rule.min} and ${rule.max}`;
+    ? `${kind} above ${rule.min} and at most ${rule.max}`
+    : `${kind} between ${rule.min} and ${rule.max}`;
 };
 
 export const parseSettings = <T>(
@@ -109,13 +108,15 @@ export const readSettingsFile = <T>(schema: SettingsSchema<T>, path: string): Se
   }
 };
 
-export const userSettingsPath = (agentDir: string, file: string) => join(agentDir, file);
-
-export const projectSettingsPath = (cwd: string, file: string) => projectPath(cwd, file);
-
 export type SettingsLocation = { agentDir: string; cwd: string; projectTrusted: boolean };
 
-type SettingsScope = "user" | "project";
+export type SettingsScope = "user" | "project";
+
+export const settingsPath = (
+  location: Pick<SettingsLocation, "agentDir" | "cwd">,
+  scope: SettingsScope,
+  file: string,
+) => (scope === "project" ? projectPath(location.cwd, file) : join(location.agentDir, file));
 
 export const writeSettingsFile = (
   location: Pick<SettingsLocation, "agentDir" | "cwd">,
@@ -127,7 +128,7 @@ export const writeSettingsFile = (
     return writeProjectFile(location.cwd, file, text);
   }
 
-  const path = userSettingsPath(location.agentDir, file);
+  const path = settingsPath(location, scope, file);
 
   mkdirSync(dirname(path), { recursive: true });
 
@@ -136,12 +137,40 @@ export const writeSettingsFile = (
   return path;
 };
 
-export const readSettingsFiles = <T>(schema: SettingsSchema<T>, file: string, location: SettingsLocation) => {
-  const user = readSettingsFile(schema, userSettingsPath(location.agentDir, file));
+export type FileScope = "user";
 
-  const project: SettingsParse<T> = location.projectTrusted
-    ? readSettingsFile(schema, projectSettingsPath(location.cwd, file))
-    : { patch: {}, errors: [] };
+const readProjectFile = <T>(
+  schema: SettingsSchema<T>,
+  file: string,
+  location: SettingsLocation,
+  scope?: FileScope,
+): SettingsParse<T> => {
+  if (!location.projectTrusted) {
+    return { patch: {}, errors: [] };
+  }
+
+  const path = settingsPath(location, "project", file);
+
+  if (scope !== "user") {
+    return readSettingsFile(schema, path);
+  }
+
+  const user = settingsPath(location, "user", file);
+
+  return {
+    patch: {},
+    errors: existsSync(path) ? [`${path}: ignored, ${file} is read only from ${user}`] : [],
+  };
+};
+
+export const readSettingsFiles = <T>(
+  schema: SettingsSchema<T>,
+  file: string,
+  location: SettingsLocation,
+  scope?: FileScope,
+) => {
+  const user = readSettingsFile(schema, settingsPath(location, "user", file));
+  const project = readProjectFile(schema, file, location, scope);
 
   return { user: user.patch, project: project.patch, errors: [...user.errors, ...project.errors] };
 };
@@ -151,8 +180,9 @@ export const loadSettingsFiles = <T>(
   defaults: T,
   file: string,
   location: SettingsLocation,
+  scope?: FileScope,
 ) => {
-  const { user, project, errors } = readSettingsFiles(schema, file, location);
+  const { user, project, errors } = readSettingsFiles(schema, file, location, scope);
 
   return { settings: { ...defaults, ...user, ...project }, errors };
 };

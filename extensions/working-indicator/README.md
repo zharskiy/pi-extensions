@@ -31,7 +31,7 @@ Send a prompt in the interactive TUI:
 
 | Try | What you see |
 |---|---|
-| Send a prompt | A verb such as `Pondering`, the elapsed time and the interrupt hint, next to pi's spinner. |
+| Send a prompt | A verb such as `Pondering`, the elapsed time and the interrupt hint, next to pi's spinner. | An elapsed time that cannot be computed is left out with its separator.
 | Wait while it runs | The time advances every second; the verb changes every 8 s. |
 | Let the answer text stream in | The line hides, and comes back as soon as the text stops. |
 
@@ -41,6 +41,10 @@ Send a prompt in the interactive TUI:
 npm run test -- extensions/working-indicator   # this extension's unit tests
 npm run check                                  # typecheck, biome, knip, unit tests
 ```
+
+The interrupt hint follows your `app.interrupt` key binding and disappears when the key is unbound.
+
+The extension keeps nothing to undo: its timer stops when pi shuts the session down.
 
 The full set of commands is in the root README's [Development](../../README.md#development) section; rules for coding agents are in [AGENTS.md](../../AGENTS.md).
 

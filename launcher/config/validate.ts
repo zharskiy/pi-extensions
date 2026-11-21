@@ -561,6 +561,7 @@ const CONFIG_SPEC: ObjectSpec = {
       diskGiB: vmSize(VM_BOUNDS.diskGiB.min, VM_BOUNDS.diskGiB.max),
     }),
     sessions: shape({ host: flag }),
+    terminal: shape({ clipboard: flag }),
     writeBack: WRITE_BACK,
   },
 };

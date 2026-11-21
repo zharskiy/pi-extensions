@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { closeSync, openSync, readFileSync, readSync } from "node:fs";
+import { open } from "node:fs/promises";
 import {
   buildContextEntries,
   migrateSessionEntries,
@@ -7,6 +8,7 @@ import {
   sessionEntryToContextMessages,
 } from "@earendil-works/pi-coding-agent";
 import type { PromptTool, SessionRecord } from "../types/messages.ts";
+import type { HeaderRead, SessionHeader } from "../types/session.ts";
 import type { TranscriptItem } from "../types/view.ts";
 import { messageText } from "./message-text.ts";
 
@@ -25,6 +27,7 @@ type RawMessage = {
 
 type RawEntry = {
   id?: string;
+  parentSession?: string;
   parentId?: string | null;
   type?: string;
   customType?: string;
@@ -37,6 +40,16 @@ type RawEntry = {
 };
 
 type PromptRecordData = { providerPayload?: unknown };
+
+export const promptToolOf = (tool: {
+  name: string;
+  description?: string;
+  parameters: PromptTool["parameters"];
+}): PromptTool => ({
+  name: tool.name,
+  description: tool.description ?? "",
+  parameters: tool.parameters,
+});
 
 export type Replay = { sections: Map<string, string>; tools: Map<string, PromptTool> };
 
@@ -55,11 +68,7 @@ const replaySystemMessage = (replay: Replay, message: RawMessage) => {
   });
 
   (message.toolsAdded ?? []).forEach((tool) => {
-    replay.tools.set(tool.name, {
-      name: tool.name,
-      description: tool.description ?? "",
-      parameters: tool.parameters,
-    });
+    replay.tools.set(tool.name, promptToolOf(tool));
   });
 };
 
@@ -120,6 +129,71 @@ const parseEntries = (content: string): RawEntry[] => {
 };
 
 export const readSessionEntries = (file: string): unknown[] => parseEntries(readFileSync(file, "utf8"));
+
+const HEADER_LIMIT = 64 * 1024;
+
+const headerOf = (line: string): SessionHeader | undefined => {
+  const [entry] = parseSessionEntries(line) as RawEntry[];
+
+  if (entry?.type !== "session" || typeof entry.id !== "string") {
+    return undefined;
+  }
+
+  return typeof entry.parentSession === "string"
+    ? { id: entry.id, parentSession: entry.parentSession }
+    : { id: entry.id };
+};
+
+const lineIn = (buffer: Buffer, bytesRead: number) => {
+  const end = buffer.subarray(0, bytesRead).indexOf("\n");
+
+  if (end < 0 && bytesRead === HEADER_LIMIT) {
+    return "";
+  }
+
+  return buffer.subarray(0, end < 0 ? bytesRead : end).toString("utf8");
+};
+
+const firstLine = async (file: string) => {
+  const handle = await open(file, "r");
+
+  try {
+    const { bytesRead, buffer } = await handle.read(Buffer.alloc(HEADER_LIMIT), 0, HEADER_LIMIT, 0);
+
+    return lineIn(buffer, bytesRead);
+  } finally {
+    await handle.close();
+  }
+};
+
+const firstLineSync = (file: string) => {
+  const descriptor = openSync(file, "r");
+  const buffer = Buffer.alloc(HEADER_LIMIT);
+
+  try {
+    return lineIn(buffer, readSync(descriptor, buffer, 0, HEADER_LIMIT, 0));
+  } finally {
+    closeSync(descriptor);
+  }
+};
+
+export const readSessionId = (file: string): string | undefined => {
+  try {
+    return headerOf(firstLineSync(file))?.id;
+  } catch {
+    return undefined;
+  }
+};
+
+export const readSessionHeader = async (file: string): Promise<HeaderRead> => {
+  try {
+    return { header: headerOf(await firstLine(file)) };
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+
+    return code === "ENOENT" ? { gone: true } : { error: code ?? String(error) };
+  }
+};
 
 const sessionRecord = (entries: RawEntry[], recordEntry: string): SessionRecord => {
   const recordData = entries

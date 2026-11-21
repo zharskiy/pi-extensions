@@ -61,12 +61,13 @@ describe("the write-back allowlist", () => {
     expect(SETTINGS_FILE.keys).toContain("defaultModel");
   });
 
-  it("covers the four extension files, 64 KiB each, and keeps disabledPlugins on the host", () => {
+  it("covers the five extension files, 64 KiB each, and keeps disabledPlugins on the host", () => {
     expect(EXTENSION_FILES.map((file) => [file.name, file.maxBytes])).toEqual([
       ["pi-subagents.json", 65_536],
       ["pi-style.json", 65_536],
       ["pi-notifications.json", 65_536],
       ["pi-session-limits.json", 65_536],
+      ["pi-prune.json", 65_536],
     ]);
     expect(SUBAGENTS.keys).not.toContain("disabledPlugins");
   });
@@ -333,6 +334,22 @@ describe("compiling write-back value specs into checks", () => {
   ])("checks %j", (spec, good, bad) => {
     expect(good.map((value) => acceptedBy(spec, value))).toEqual(good.map(() => true));
     expect(bad.map((value) => acceptedBy(spec, value))).toEqual(bad.map(() => false));
+  });
+
+  it("writes back a prune interval the picker offers and refuses days under 7 or a non-number", () => {
+    const days = fileNamed("pi-prune.json").checks.days;
+
+    expect([0, 7, 30, 365].map((value) => days?.(value))).toEqual([true, true, true, true]);
+    expect([1, 6, 8, 400, -1, "30", null, 30.5].map((value) => days?.(value))).toEqual([
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+    ]);
   });
 
   it("refuses every value of a spec type it does not know", () => {

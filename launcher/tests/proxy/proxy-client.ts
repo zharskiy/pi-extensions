@@ -14,10 +14,14 @@ const HEAD_END = "\r\n\r\n";
 
 const REPO_USER = "pi-sandbox";
 
-const authLine = (token: string | undefined, user: string) =>
-  token === undefined ? "" : `Proxy-Authorization: ${basicAuthorization(`${user}:${token}`)}\r\n`;
+export const authorization = (token: string, user = REPO_USER) => basicAuthorization(`${user}:${token}`);
 
-export const openConnect = (proxyPort: number, authority: string, token?: string, user = REPO_USER) =>
+const headerLines = (headers: Record<string, string>) =>
+  Object.entries(headers)
+    .map(([name, value]) => `${name}: ${value}\r\n`)
+    .join("");
+
+export const openConnectWith = (proxyPort: number, authority: string, headers: Record<string, string>) =>
   new Promise<ConnectReply>((resolve, reject) => {
     const socket = connect({ host: "127.0.0.1", port: proxyPort });
     const state = { buffer: Buffer.alloc(0) };
@@ -49,8 +53,15 @@ export const openConnect = (proxyPort: number, authority: string, token?: string
 
     socket.once("error", reject);
 
-    socket.write(`CONNECT ${authority} HTTP/1.1\r\nHost: ${authority}\r\n${authLine(token, user)}\r\n`);
+    socket.write(`CONNECT ${authority} HTTP/1.1\r\nHost: ${authority}\r\n${headerLines(headers)}\r\n`);
   });
+
+export const openConnect = (proxyPort: number, authority: string, token?: string, user = REPO_USER) =>
+  openConnectWith(
+    proxyPort,
+    authority,
+    token === undefined ? {} : { "Proxy-Authorization": authorization(token, user) },
+  );
 
 export const readRest = (socket: Socket) =>
   new Promise<string>((resolve) => {
@@ -136,6 +147,7 @@ export interface PlainOptions {
   method?: string;
   body?: string;
   address?: string;
+  headers?: Record<string, string>;
 }
 
 export const plainRequest = (proxyPort: number, path: string, options: PlainOptions = {}) =>
@@ -147,13 +159,13 @@ export const plainRequest = (proxyPort: number, path: string, options: PlainOpti
         port: proxyPort,
         path,
         method: options.method ?? "GET",
-        headers:
-          options.token === undefined
-            ? { host }
-            : {
-                host,
-                "proxy-authorization": basicAuthorization(`${options.user ?? REPO_USER}:${options.token}`),
-              },
+        headers: {
+          ...options.headers,
+          host,
+          ...(options.token === undefined
+            ? {}
+            : { "proxy-authorization": authorization(options.token, options.user) }),
+        },
       },
       (response) => {
         void readBody(response).then((body) =>

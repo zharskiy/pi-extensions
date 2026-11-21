@@ -2,7 +2,7 @@ import { join } from "node:path";
 import { reportSettingsErrors } from "../../../platform/extension-manager/index.ts";
 import type { Host } from "../../../platform/pi-adapter/index.ts";
 import type { Plugin } from "../../../platform/shared/index.ts";
-import { readStyleSettings, SETTINGS_FILE, saveStyle } from "../core/settings.ts";
+import { NAMESPACE, readStyleSettings, SETTINGS_FILE, saveStyle } from "../core/settings.ts";
 import { createStyleSection } from "../core/style.ts";
 import { loadStyles, type Style } from "../core/styles.ts";
 import { pickStyle } from "../ui/pick.ts";
@@ -11,7 +11,7 @@ export const createStyle = (host: Host, styles: ReadonlyMap<string, Style>) => {
   const { names, fallback, current, apply } = createStyleSection(host, styles);
   let projectStyle: string | undefined;
 
-  const report = reportSettingsErrors(host, "pi-style");
+  const report = reportSettingsErrors(host, NAMESPACE);
 
   host.onSessionStart((info) => {
     const stored = readStyleSettings(names, info);
@@ -22,10 +22,10 @@ export const createStyle = (host: Host, styles: ReadonlyMap<string, Style>) => {
   });
 
   const choose = (name: string) => {
-    const failure = saveStyle(host.session().agentDir, name);
+    const failure = saveStyle(host.session(), name);
 
     if (failure) {
-      host.ui.notify(`pi-style: ${failure}`, "warning");
+      host.ui.notify(`${NAMESPACE}: ${failure}`, "warning");
     }
 
     apply(name);
@@ -50,7 +50,7 @@ export const createStyle = (host: Host, styles: ReadonlyMap<string, Style>) => {
       return;
     }
 
-    const picked = await pickStyle(host, styles, current());
+    const picked = await pickStyle(host, styles, names, current());
 
     if (picked !== undefined) {
       choose(picked);
@@ -59,8 +59,11 @@ export const createStyle = (host: Host, styles: ReadonlyMap<string, Style>) => {
 
   host.registerCommand("style", {
     description: `Pick the output style of the main session from a list, or set it directly: /style [${names.join("|")}]`,
-    complete: (prefix) =>
-      names.filter((name) => name.startsWith(prefix)).map((name) => ({ value: name, label: name })),
+    complete: (prefix) => {
+      const matches = names.filter((name) => name.startsWith(prefix));
+
+      return matches.length > 0 ? matches.map((name) => ({ value: name, label: name })) : null;
+    },
     run: async (args) => {
       const name = args.trim();
 
@@ -83,7 +86,5 @@ export const stylePlugin: Plugin<never, never, undefined> = {
   id: "style",
   enable({ host, paths }) {
     createStyle(host, loadStyles(join(paths.root, "prompts")));
-
-    return undefined;
   },
 };

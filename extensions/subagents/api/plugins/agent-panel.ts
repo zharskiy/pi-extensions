@@ -48,8 +48,7 @@ export const agentPanelPlugin: Plugin = {
     };
 
     const applyHint = (force = false) => {
-      const wanted =
-        enabled && tui && current.length === 0 && !settings.disabledPlugins.includes("agent-view");
+      const wanted = enabled && tui && current.length === 0 && services.has("agentView");
       const value = wanted
         ? `${host.ui.style("dim", "←")} ${host.ui.style("muted", "to list agents")}`
         : undefined;

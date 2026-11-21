@@ -1,5 +1,4 @@
 import { execFile } from "node:child_process";
-import { existsSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { ensureProjectSubdir, errorText } from "../../../../platform/shared/index.ts";
 import type { Worktree, WorktreeCleanup } from "../model/agent-record.ts";
@@ -25,19 +24,9 @@ const runGit = (cwd: string, args: string[]) =>
     });
   });
 
-const ignoreWorktrees = (root: string) => {
-  const file = join(root, ".gitignore");
-
-  if (!existsSync(file)) {
-    writeFileSync(file, "*\n");
-  }
-};
-
 const worktreesRoot = (cwd: string): { ok: true; root: string } | { ok: false; error: string } => {
   try {
-    const root = ensureProjectSubdir(cwd, "worktrees");
-
-    ignoreWorktrees(root);
+    const root = ensureProjectSubdir(cwd, "worktrees", { ignored: true });
 
     return { ok: true, root };
   } catch (error) {

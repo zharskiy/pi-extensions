@@ -1,15 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { plainTheme, tokenTaggingTheme } from "../../../../test/framework/index.ts";
-import { displayWord } from "../../core/components/receipt.ts";
+import { displayWord, stateWord } from "../../core/components/receipt.ts";
 import type { AgentState } from "../../core/model/agent-record.ts";
-import {
-  liveGlyph,
-  scrollGlyph,
-  stateGlyph,
-  stateToken,
-  stateWord,
-  stopWords,
-} from "../../ui/components/state-text.ts";
+import { liveGlyph, scrollGlyph, stateGlyph, stateToken, stopWords } from "../../ui/components/state-text.ts";
 import { agentRecord } from "../support/agent-records.ts";
 
 const STATES: AgentState[] = ["queued", "running", "grace", "done", "failed", "stopped", "handoff"];

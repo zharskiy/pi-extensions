@@ -59,6 +59,8 @@ npm run test -- extensions/model-default   # this extension's unit tests
 npm run check                              # typecheck, biome, knip, unit tests
 ```
 
+The extension's name `pi-model-default` is written once, as `NAMESPACE` in `api/plugin.ts`, which also prefixes the warnings above.
+
 The full set of commands is in the root README's [Development](../../README.md#development) section; rules for coding agents are in [AGENTS.md](../../AGENTS.md).
 
 ## Contributing

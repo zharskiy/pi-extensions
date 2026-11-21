@@ -263,6 +263,95 @@ describe("runPi", () => {
   });
 });
 
+describe("runPi clipboard bridges", () => {
+  const COPY = `\x1b]52;c;${Buffer.from("copied").toString("base64")}\x07`;
+
+  const drained = (stream: NodeJS.ReadableStream | undefined) =>
+    new Promise<string>((resolve) => {
+      const chunks: Buffer[] = [];
+
+      stream?.on("data", (chunk: Buffer) => chunks.push(Buffer.from(chunk)));
+
+      stream?.once("end", () => resolve(Buffer.concat(chunks).toString()));
+    });
+
+  const bridgedRun = async (isTTY: boolean) => {
+    const host = fakeTerminal(isTTY);
+    const copied: string[] = [];
+    const imports: string[] = [];
+    const seen: ExecIo[] = [];
+    const piInput: string[] = [];
+    const fake = createFakeBackend({
+      exec: async (spec, io) => {
+        if (!isPiExec(spec)) {
+          imports.push(spec.command.at(-1) ?? "");
+
+          await drained(io.stdin);
+
+          return 0;
+        }
+
+        seen.push(io);
+
+        io.stdout.write(`out${COPY}put`);
+
+        const input = drained(io.stdin);
+
+        host.stdin.end("\x16");
+
+        piInput.push(await input);
+
+        return 0;
+      },
+    });
+    const output: Buffer[] = [];
+
+    host.terminal.stdout.on("data", (chunk: Buffer) => output.push(chunk));
+
+    await runPi({
+      launchId: nextLaunchId(),
+      backend: fake.backend,
+      containerId: "c",
+      piArgs: [],
+      workspace,
+      terminal: host.terminal,
+      clipboard: {
+        copy: async (text) => copied.push(text.toString()),
+        read: async () => ({ image: Buffer.from("png") }),
+        mounts: [],
+      },
+    });
+
+    return {
+      host,
+      copied,
+      imports,
+      io: seen[0],
+      piInput: piInput[0],
+      output: Buffer.concat(output).toString(),
+    };
+  };
+
+  it("tees copies to the host clipboard and pastes the clipboard image on Ctrl+V in a terminal session", async () => {
+    const run = await bridgedRun(true);
+
+    expect(run.output).toBe(`out${COPY}put`);
+    expect(run.copied).toEqual(["copied"]);
+    expect(run.imports).toEqual([expect.stringMatching(/^\/tmp\/pi-paste\/[0-9a-f-]{36}\.png$/)]);
+    expect(run.piInput).toBe(`\x1b[200~${run.imports[0]}\x1b[201~`);
+    expect(run.host.stdin.listenerCount("data")).toBe(0);
+  });
+
+  it("leaves both streams alone without a terminal", async () => {
+    const run = await bridgedRun(false);
+
+    expect(run.copied).toEqual([]);
+    expect(run.imports).toEqual([]);
+    expect(run.io?.stdout).toBe(run.host.terminal.stdout);
+    expect(run.io?.stdin).toBe(run.host.terminal.stdin);
+  });
+});
+
 describe("runPi on a signal", () => {
   const signalled = (isTTY: boolean, codeOnKill?: number) => {
     const signals = new EventEmitter();

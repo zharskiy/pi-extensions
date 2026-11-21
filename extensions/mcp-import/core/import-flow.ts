@@ -2,12 +2,12 @@ import { sep } from "node:path";
 import {
   errorText,
   homeRelative,
-  projectSettingsPath,
   readText,
-  userSettingsPath,
+  type SettingsScope,
+  settingsPath,
   writeSettingsFile,
 } from "../../../platform/shared/index.ts";
-import type { Scope, Source } from "./args.ts";
+import type { Source } from "./args.ts";
 import { type Plan, planImport, type Skipped } from "./plan.ts";
 import { type Found, findServers } from "./sources.ts";
 
@@ -17,7 +17,7 @@ const NOT_SELECTED = "not selected";
 
 export type Pair = {
   source: Source;
-  scope: Scope;
+  scope: SettingsScope;
   found: Found;
   plan: Plan;
   path: string;
@@ -34,7 +34,7 @@ type Prepared = { found: Found; pair?: Pair; problem?: string };
 
 type Places = { home: string; cwd: string; agentDir: string };
 
-const PAIRS: readonly { source: Source; scope: Scope }[] = [
+const PAIRS: readonly { source: Source; scope: SettingsScope }[] = [
   { source: "claude", scope: "user" },
   { source: "claude", scope: "project" },
   { source: "cursor", scope: "user" },
@@ -43,16 +43,21 @@ const PAIRS: readonly { source: Source; scope: Scope }[] = [
 
 const hasServers = (found: Found) => found.origins.some((origin) => Object.keys(origin.servers).length > 0);
 
-export const prepareImport = (source: Source, scope: Scope, { home, cwd, agentDir }: Places): Prepared => {
+const fixFirst = (error: string) => `${error}; fix it first, nothing written`;
+
+export const prepareImport = (
+  source: Source,
+  scope: SettingsScope,
+  { home, cwd, agentDir }: Places,
+): Prepared => {
   const found = findServers(source, scope, { home, cwd });
 
   if (!hasServers(found)) {
     return { found };
   }
 
-  const project = scope === "project";
-  const path = project ? projectSettingsPath(cwd, MCP_FILE) : userSettingsPath(agentDir, MCP_FILE);
-  const target = project ? `.pi/${MCP_FILE}` : homeRelative(path, home);
+  const path = settingsPath({ agentDir, cwd }, scope, MCP_FILE);
+  const target = scope === "project" ? `.pi/${MCP_FILE}` : homeRelative(path, home);
   let text: string | undefined;
 
   try {
@@ -64,7 +69,7 @@ export const prepareImport = (source: Source, scope: Scope, { home, cwd, agentDi
   const plan = planImport(source, found.origins, { label: target, text }, { home, sep });
 
   if (plan.error) {
-    return { found, problem: `${plan.error}; fix it first, nothing written` };
+    return { found, problem: fixFirst(plan.error) };
   }
 
   return { found, pair: { source, scope, found, plan, path, target, text } };
@@ -84,7 +89,7 @@ export const writeImport = (pair: Pair, text: string | undefined, places: Omit<P
   }
 };
 
-export const selectedPlan = (pair: Pair, names: readonly string[], home: string): Plan => {
+export const selectedPlan = (pair: Pair, names: readonly string[], home: string) => {
   const chosen = new Set(names);
   const origins = pair.found.origins.map((origin) => ({
     ...origin,
@@ -95,7 +100,10 @@ export const selectedPlan = (pair: Pair, names: readonly string[], home: string)
     .filter((entry) => !chosen.has(entry.name))
     .map((entry) => ({ name: entry.name, origin: entry.origin, reason: NOT_SELECTED }));
 
-  return { ...plan, skipped: [...pair.plan.skipped, ...unchecked] };
+  return {
+    plan: { ...plan, skipped: [...pair.plan.skipped, ...unchecked] },
+    problem: plan.error ? fixFirst(plan.error) : undefined,
+  };
 };
 
 const foundNames = (pair: Pair) => [
@@ -108,7 +116,7 @@ const allPresent = (pair: Pair) => {
   return foundNames(pair).every((name) => present.has(name));
 };
 
-const visibleScope = (scope: Scope, trusted: boolean) => trusted || scope === "user";
+const visibleScope = (scope: SettingsScope, trusted: boolean) => trusted || scope === "user";
 
 const scanPairs = (candidates: readonly Pair[], trusted: boolean): Scan => {
   const addable = candidates.filter((pair) => pair.plan.added.length > 0);

@@ -129,6 +129,11 @@ const parentsBelow = (root: string, path: string): string[] => {
   return parent === root || !isWithin(parent, root) ? [] : [...parentsBelow(root, parent), parent];
 };
 
+export const AWAIT_HANDOVER_VARIABLE = "PI_SANDBOX_AWAIT_HANDOVER";
+
+const handoverEnv = (ownedPaths: string[]): Record<string, string> =>
+  ownedPaths.some((path) => isWithin(path, GUEST_HOME)) ? { [AWAIT_HANDOVER_VARIABLE]: "1" } : {};
+
 const LOOPBACK_HOSTS = "localhost,127.0.0.1,::1";
 
 const javaProxyOptions = (host: string, port: string, user: string, password: string) =>
@@ -314,27 +319,29 @@ export const buildContainerSpec = (input: ContainerSpecInput): LauncherContainer
 
   assertOverlaysHidden(workspace, mounts);
 
+  const ownedPaths = [
+    ...new Set([
+      ...owned
+        .filter((entry) => entry.key === "mounts.sharedCaches")
+        .flatMap((entry) => parentsBelow(GUEST_HOME, entry.target)),
+      ...owned.map((entry) => entry.target),
+    ]),
+  ];
+
   const spec: LauncherContainerSpec = {
     name: containerName(workspace.repoRoot, input.launchId),
     image: input.image.id,
     labels: baseLabels(input),
     mounts,
     network: input.proxy.network,
-    env: sandboxEnv(input),
+    env: { ...sandboxEnv(input), ...handoverEnv(ownedPaths) },
     workdir: workspace.repoRoot,
     readOnlyRoot: true,
     tmpfs: [`/tmp:${SHARED_TMPFS}`, `${GUEST_HOME}:${SHARED_TMPFS}`],
     init: true,
     resources: { cpus: config.resources.cpus, memoryGiB: config.resources.memoryGiB },
     volumeLabels: Object.fromEntries(volumes.map((entry) => [entry.name, entry.labels])),
-    ownedPaths: [
-      ...new Set([
-        ...owned
-          .filter((entry) => entry.key === "mounts.sharedCaches")
-          .flatMap((entry) => parentsBelow(GUEST_HOME, entry.target)),
-        ...owned.map((entry) => entry.target),
-      ]),
-    ],
+    ownedPaths,
     guardedPaths,
   };
 

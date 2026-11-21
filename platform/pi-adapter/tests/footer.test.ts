@@ -1,5 +1,5 @@
 import { stripVTControlCharacters } from "node:util";
-import { type ExtensionContext, InteractiveMode } from "@earendil-works/pi-coding-agent";
+import { type ExtensionAPI, type ExtensionContext, InteractiveMode } from "@earendil-works/pi-coding-agent";
 import { Container } from "@earendil-works/pi-tui";
 import { afterEach, describe, expect, it } from "vitest";
 import { initPiRenderTheme } from "../../../test/framework/pi/index.ts";
@@ -487,13 +487,17 @@ describe("footerHost", () => {
     expect(host.thinkingLevel()).toBe("off");
   });
 
-  it("prefers the context's thinking level", () => {
+  it("reads pi's live thinking level over the context's", () => {
+    const live: { level: ReturnType<ExtensionAPI["getThinkingLevel"]> } = { level: "low" };
     const state: HostState = {
       tools: new Map(),
       ctx: { thinkingLevel: "low", sessionManager: {} } as unknown as ExtensionContext,
     };
+    const host = footerHost({ getThinkingLevel: () => live.level }, state);
 
-    expect(footerHost({ getThinkingLevel: () => "high" }, state).thinkingLevel()).toBe("low");
+    live.level = "high";
+
+    expect(host.thinkingLevel()).toBe("high");
   });
 
   it("reuses the context usage until the leaf or the model changes", () => {

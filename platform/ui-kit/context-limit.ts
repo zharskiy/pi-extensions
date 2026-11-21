@@ -10,6 +10,8 @@ const limitTone = (level: LimitLevel | undefined): StatusToken | undefined => {
   return level === "soft" ? "warning" : undefined;
 };
 
+export const NO_MODEL = "no model";
+
 export const limitFigure = (theme: ThemeLike, level: LimitLevel | undefined, tokens: number) => {
   const tone = limitTone(level);
   const painted = theme.fg(tone ?? "text", formatTokens(tokens));

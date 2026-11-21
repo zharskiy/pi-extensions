@@ -2,6 +2,7 @@ import type { ToolSpec } from "../../../../platform/pi-adapter/index.ts";
 import {
   type AgentInternals,
   type AgentRegistry,
+  canNest,
   chainTerminal,
   grantText,
   isNone,
@@ -59,8 +60,8 @@ const modelText = (agent: DelegateAgent) => {
 
 const agentLine = (agent: DelegateAgent, limits: RunAgentLimits) => {
   const nested = agent.subagents ?? [];
-  const canNest = !isNone(nested) && limits.callerDepth + 1 < limits.maxDepth;
-  const spawns = canNest
+  const nests = !isNone(nested) && canNest(limits.callerDepth + 1, limits.maxDepth);
+  const spawns = nests
     ? `, may start ${nested === AGENT_SCOPE_ALL ? "any other agent" : grantText(nested)}`
     : "";
 
@@ -80,10 +81,9 @@ const agentList = (agents: DelegateAgent[], limits: RunAgentLimits) => {
 
 const depthRule = ({ callerDepth, maxDepth }: RunAgentLimits) => {
   const childDepth = callerDepth + 1;
-  const nesting =
-    childDepth >= maxDepth
-      ? "They cannot start agents of their own."
-      : "They may start only the subagents their own definition allows.";
+  const nesting = canNest(childDepth, maxDepth)
+    ? "They may start only the subagents their own definition allows."
+    : "They cannot start agents of their own.";
 
   return `- Depth: you run at depth ${callerDepth}; agents you start run at depth ${childDepth} of at most ${maxDepth}. ${nesting}`;
 };

@@ -44,6 +44,8 @@ npm run test -- extensions/command-aliases   # this extension's unit tests
 npm run check                                # typecheck, biome, knip, unit tests
 ```
 
+The extension has no settings, writes no files and keeps nothing to undo when it is turned off.
+
 The full set of commands is in the root README's [Development](../../README.md#development) section; rules for coding agents are in [AGENTS.md](../../AGENTS.md).
 
 ## Contributing

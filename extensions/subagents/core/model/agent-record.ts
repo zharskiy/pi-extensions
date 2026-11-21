@@ -4,6 +4,7 @@ import type {
   CustomMessage,
   RoutedMessage,
 } from "../../../../platform/pi-adapter/index.ts";
+import type { RunCleanup } from "../../../../platform/shared/index.ts";
 import { AGENT_SCOPE_ALL, type AgentFrontmatter, type Grant } from "./agent-schema.ts";
 
 export const MAIN_CALLER = "main";
@@ -45,23 +46,33 @@ export const chainTerminal = (registry: Pick<AgentRegistry, "get">, record: Agen
 export const chainLinks = (registry: Pick<AgentRegistry, "get">, record: AgentRecord): AgentRecord[] =>
   linksTo(registry, record, new Set());
 
-export type WorktreeCleanup = "removed" | "branch kept" | "kept";
+export type WorktreeCleanup = RunCleanup;
 
 export type Worktree = { path: string; branch: string; base: string; cwd: string; cleanup?: WorktreeCleanup };
+
+const CLEANUP_TEXT: Record<WorktreeCleanup, (branch: string) => string> = {
+  removed: () => "removed",
+  "branch kept": (branch) => `removed; branch ${branch} kept`,
+  kept: () => "kept",
+};
+
+export const cleanupText = (worktree: Worktree) =>
+  worktree.cleanup ? CLEANUP_TEXT[worktree.cleanup](worktree.branch) : undefined;
 
 export const worktreeText = (worktree: Worktree) => {
   const checkout = `${worktree.path} (branch ${worktree.branch})`;
 
-  if (worktree.cleanup === "removed") {
-    return "removed";
+  if (worktree.cleanup === "kept") {
+    return `kept: ${checkout}`;
   }
 
-  if (worktree.cleanup === "branch kept") {
-    return `removed; branch ${worktree.branch} kept`;
-  }
-
-  return worktree.cleanup === "kept" ? `kept: ${checkout}` : checkout;
+  return cleanupText(worktree) ?? checkout;
 };
+
+export const chainText = (names: string[]) => `${names.join(" → ")} (${names.length} sessions)`;
+
+export const handoffText = (record: Pick<AgentRecord, "handoffPath" | "error">) =>
+  `${record.handoffPath}${record.error ? ` (invalid: ${record.error})` : ""}`;
 
 export type AgentRecord = {
   id: string;
@@ -164,6 +175,15 @@ export type AgentDefinitions = {
   promptAppend(definition: AgentDefinition): string[];
   reload(): void;
 };
+
+export const grantedSubagents = (definitions: Pick<AgentDefinitions, "get" | "list">, agent: string) => {
+  const definition = definitions.get(agent);
+  const names = definitions.list().map((known) => known.name);
+
+  return definition ? subagentNames(definition, names) : [];
+};
+
+export const canNest = (depth: number, maxDepth: number) => depth < maxDepth;
 
 export type AgentMessage = RoutedMessage | CustomMessage;
 

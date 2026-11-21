@@ -2,6 +2,7 @@ import { type Component, truncateToWidth } from "@earendil-works/pi-tui";
 import { globalRecord } from "../runtime/global-record.ts";
 import type { ToolRows } from "../types/tools.ts";
 import { CHILD_COLUMN, isBlankLine } from "../ui/row-layout.ts";
+import { SHELLS } from "./tool-source.ts";
 
 type RowsRecord = { rows?: ToolRows; owners?: Map<object, ToolRows>; pad: number };
 
@@ -32,8 +33,6 @@ const ABORTED = "Operation aborted";
 const RETRIES_ABORTED = /^Aborted after \d+ retry attempts?$/;
 
 const SHELL_ABORTED = "Command aborted";
-
-const SHELLS: readonly string[] = ["bash", "powershell"];
 
 export const abortNotice = (text: string) => {
   const trimmed = text.trim();
@@ -90,7 +89,7 @@ class RowComponent implements Component {
     return this;
   }
 
-  render(width: number): string[] {
+  render(width: number): readonly string[] {
     const { lines, pad, body, lead } = this.parts;
     const margin = " ".repeat(pad);
     const drawn = this.own(lines, Math.max(1, width - pad));

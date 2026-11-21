@@ -7,20 +7,22 @@ import {
   type ThemeToken,
 } from "../../../platform/pi-adapter/index.ts";
 import {
+  agentsSpend,
   DOT,
   formatMoney,
+  formatPercent,
   formatTokens,
   type SpendingTotals,
+  sessionSpend,
   WORKING_CONTEXT,
 } from "../../../platform/shared/index.ts";
-import { keyHints, limitFigure, limitTail } from "../../../platform/ui-kit/index.ts";
+import { keyHints, limitFigure, limitTail, NO_MODEL } from "../../../platform/ui-kit/index.ts";
 import {
   type ContextBase,
   contextBase,
   type FooterState,
   folderName,
   hintTexts,
-  sessionSpend,
   statusLines,
 } from "../core/segments.ts";
 import { type Segment, spread } from "./layout.ts";
@@ -60,7 +62,7 @@ const modelSegments = (theme: ThemeLike, model: ModelInfo | undefined, thinking:
     `${theme.fg("dim", "thinking ")}${theme.fg(LEVEL_TOKENS[level] ?? "thinkingOff", level)}`;
 
   return [
-    { text: theme.fg("muted", model?.name ?? "no model"), drop: NEVER },
+    { text: theme.fg("muted", model?.name ?? NO_MODEL), drop: NEVER },
     ...(model?.reasoning ? [{ text: levelText(), drop: 2 }] : []),
   ];
 };
@@ -78,10 +80,13 @@ const contextSegments = (theme: ThemeLike, context: ContextSnapshot, base: Conte
   ];
 };
 
-const cacheSegments = (theme: ThemeLike, cache: number | undefined): Segment[] =>
-  cache === undefined
+const cacheSegments = (theme: ThemeLike, cache: number | undefined): Segment[] => {
+  const percent = cache === undefined ? "" : formatPercent(cache);
+
+  return percent === ""
     ? []
-    : [{ text: `${theme.fg("dim", "cache ")}${theme.fg("muted", `${Math.round(cache)}%`)}`, drop: 3 }];
+    : [{ text: `${theme.fg("dim", "cache ")}${theme.fg("muted", percent)}`, drop: 3 }];
+};
 
 const totalSegment = (theme: ThemeLike, totals: SpendingTotals, labelled: boolean): Segment => {
   const { subscription } = totals;
@@ -101,7 +106,7 @@ const moneySegments = (theme: ThemeLike, totals: SpendingTotals | undefined): Se
     return [];
   }
 
-  const agentsCost = totals.sources.reduce((sum, spend) => sum + spend.cost, 0);
+  const agentsCost = agentsSpend(totals).cost;
   const tokens = {
     text: `${theme.fg("muted", formatTokens(sessionSpend(totals).tokens))}${theme.fg("dim", " tokens")}`,
     drop: 1,

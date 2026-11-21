@@ -387,12 +387,6 @@ const missingMessage = (shown: string, resolved: string, context: RootGuardConte
 };
 
 const nestingMessage = (shown: string, resolved: string, context: AddContext) => {
-  const outer = context.checked.find((other) => isWithin(resolved, rootOf(other, context).resolved));
-
-  if (outer !== undefined) {
-    return `${shown} lies inside ${printable(outer)}, which is already selected.`;
-  }
-
   const inner = context.checked.find((other) => isWithin(rootOf(other, context).resolved, resolved));
 
   if (inner === undefined) {
@@ -445,6 +439,23 @@ export const addedRootProblem = (typed: string, context: AddContext) => {
   return (
     existingMessage(shown, verdict.resolved, context) ?? nestingMessage(shown, verdict.resolved, context)
   );
+};
+
+export const replacedRoots = (typed: string, context: AddContext) => {
+  const verdict = checkRoot(typed.trim(), context);
+
+  return verdict.ok
+    ? context.checked.filter((other) => isWithin(verdict.resolved, rootOf(other, context).resolved))
+    : [];
+};
+
+const spokenList = (names: string[]) =>
+  names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
+
+export const replacedNotice = (typed: string, replaced: string[], home: string) => {
+  const holder = replaced.length === 1 ? "holds" : "hold";
+
+  return `${shownPath(typed.trim(), home)} replaces ${spokenList(replaced.map(printable))}, which ${holder} it.`;
 };
 
 const sharedSet = (roots: string[], context: RootGuardContext) => {

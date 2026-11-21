@@ -373,3 +373,32 @@ describe("thinking label", () => {
     expect(hiddenThinkingLabel()).toBeUndefined();
   });
 });
+
+describe("setWidget placement", () => {
+  it("draws below the editor by default and above it on request", () => {
+    const placements: unknown[] = [];
+    const state: HostState = {
+      tools: new Map(),
+      ctx: {
+        mode: "tui",
+        ui: {
+          setWidget: (_key: string, _factory: unknown, options?: { placement?: string }) => {
+            placements.push(options?.placement);
+          },
+        },
+      } as unknown as ExtensionContext,
+    };
+    const ui = createUi(
+      state,
+      { write: () => {} },
+      {},
+      createEditorHooks(() => undefined),
+      createNotices(state),
+    );
+
+    ui.setWidget("below", () => ["row"]);
+    ui.setWidget("above", () => ["row"], { above: true });
+
+    expect(placements).toEqual(["belowEditor", "aboveEditor"]);
+  });
+});

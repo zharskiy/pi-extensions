@@ -21,7 +21,9 @@ import {
   waitFor,
 } from "./harness.ts";
 import {
+  authorization,
   openConnect,
+  openConnectWith,
   pageThrough,
   plainGet,
   plainRequest,
@@ -133,6 +135,59 @@ describe("proxy authentication", () => {
     await readRest(reply.socket);
 
     expect(reply.status).toBe(407);
+  });
+
+  it("accepts the repository token under Authorization on a CONNECT", async () => {
+    const reply = await openConnectWith(state.test.proxy.port, "target.test:443", {
+      Authorization: authorization(state.token),
+    });
+
+    reply.socket.destroy();
+
+    expect(reply.status).toBe(200);
+  });
+
+  it("answers a CONNECT with an unknown token under Authorization with 407 and logs it", async () => {
+    const reply = await openConnectWith(state.test.proxy.port, "wrong-authorization.test:443", {
+      Authorization: authorization("not-a-token"),
+    });
+
+    await readRest(reply.socket);
+
+    expect(reply.status).toBe(407);
+    expect(state.test.log).toContainEqual(
+      expect.objectContaining({ host: "wrong-authorization.test", rule: "auth", decision: "deny" }),
+    );
+  });
+
+  it("decides a CONNECT by Proxy-Authorization alone when it is present", async () => {
+    const reply = await openConnectWith(state.test.proxy.port, "target.test:443", {
+      "Proxy-Authorization": authorization("not-a-token"),
+      Authorization: authorization(state.token),
+    });
+
+    await readRest(reply.socket);
+
+    expect(reply.status).toBe(407);
+  });
+
+  it("treats an empty Proxy-Authorization on a CONNECT as present", async () => {
+    const reply = await openConnectWith(state.test.proxy.port, "target.test:443", {
+      "Proxy-Authorization": "",
+      Authorization: authorization(state.token),
+    });
+
+    await readRest(reply.socket);
+
+    expect(reply.status).toBe(407);
+  });
+
+  it("ignores Authorization on plain requests", async () => {
+    const health = await plainRequest(state.test.proxy.port, "/healthz", {
+      headers: { authorization: authorization(state.token) },
+    });
+
+    expect(health.status).toBe(407);
   });
 
   it("answers plain requests without credentials with 407, health included", async () => {

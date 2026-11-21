@@ -52,19 +52,19 @@ describe("handoffStep", () => {
 
 describe("segmentFor", () => {
   it("names the hard threshold and the tokens used when the token cap wins", () => {
-    expect(segmentFor(at(160_000, 1_000_000), false, limits, "handoff")).toEqual({
+    expect(segmentFor(at(160_000, 1_000_000), false, limits)).toEqual({
       token: "warning",
       text: "» handoff at 175k tokens · 160.0k used",
     });
   });
 
   it("names the hard threshold when the ratio wins", () => {
-    expect(segmentFor(at(100_000, 200_000), false, limits, "handoff")).toEqual({
+    expect(segmentFor(at(100_000, 200_000), false, limits)).toEqual({
       token: "warning",
       text: "» handoff at 120k tokens · 100.0k used",
     });
     expect(
-      segmentFor(at(142_300, 200_000), false, { ...limits, hardTokens: 175_000, hardRatio: 0.9 }, "handoff"),
+      segmentFor(at(142_300, 200_000), false, { ...limits, hardTokens: 175_000, hardRatio: 0.9 }),
     ).toEqual({
       token: "warning",
       text: "» handoff at 175k tokens · 142.3k used",
@@ -72,28 +72,28 @@ describe("segmentFor", () => {
   });
 
   it("is empty without a known window", () => {
-    expect(segmentFor(at(80_000, 0), false, limits, "handoff")).toBeUndefined();
+    expect(segmentFor(at(80_000, 0), false, limits)).toBeUndefined();
   });
 
   it("is empty below the soft limit and warns from it", () => {
-    expect(segmentFor(at(40_000), false, limits, "handoff")).toBeUndefined();
-    expect(segmentFor(at(50_000), false, limits, "handoff")).toEqual({
+    expect(segmentFor(at(40_000), false, limits)).toBeUndefined();
+    expect(segmentFor(at(50_000), false, limits)).toEqual({
       token: "warning",
       text: "» handoff at 60k tokens · 50.0k used",
     });
   });
 
   it("keeps the threshold warning while a handoff is in progress and says nothing else", () => {
-    expect(segmentFor(at(78_000), false, limits, "handoff")).toEqual({
+    expect(segmentFor(at(78_000), false, limits)).toEqual({
       token: "warning",
       text: "» handoff at 60k tokens · 78.0k used",
     });
-    expect(segmentFor(at(40_000), false, limits, "handoff")).toBeUndefined();
-    expect(segmentFor(undefined, false, limits, "handoff")).toBeUndefined();
+    expect(segmentFor(at(40_000), false, limits)).toBeUndefined();
+    expect(segmentFor(undefined, false, limits)).toBeUndefined();
   });
 
   it("marks only the failure with the error glyph and colour, and names the command", () => {
-    expect(segmentFor(at(78_000), true, limits, "handoff")).toEqual({
+    expect(segmentFor(at(78_000), true, limits)).toEqual({
       token: "error",
       text: "✗ handoff failed · run /handoff",
     });
@@ -101,7 +101,7 @@ describe("segmentFor", () => {
 
   it("never repeats the footer's context percentage", () => {
     [false, true].forEach((stuck) => {
-      expect(segmentFor(at(78_000), stuck, limits, "handoff")?.text).not.toMatch(/ctx|%/);
+      expect(segmentFor(at(78_000), stuck, limits)?.text).not.toMatch(/ctx|%/);
     });
   });
 });

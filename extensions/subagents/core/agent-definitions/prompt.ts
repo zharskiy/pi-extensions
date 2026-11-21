@@ -5,5 +5,5 @@ export const assemblePromptAppend = (basePrompt: string, definition: AgentDefini
     .filter((part) => part.trim().length > 0)
     .join("\n\n");
 
-  return [basePrompt.trim(), agentSection];
+  return [basePrompt, agentSection];
 };

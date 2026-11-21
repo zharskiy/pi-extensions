@@ -10,7 +10,7 @@ Part of [pi-extensions](../../README.md) · [Quick start](#quick-start) · [Deve
 
 ## Why
 
-Pi's own accounting covers the main session's messages. Background agents and other extensions spend money outside them, which that figure does not show. This extension adds the main session and everything other extensions spend on its behalf into one total. It keeps that total across resume, fork and handoff, and counts the parent session's spend once, when the forked or handed-off session is created.
+Pi's own accounting covers the main session's messages. Background agents and other extensions spend money outside them, which that figure does not show. This extension adds the main session and everything other extensions spend on its behalf into one total. It keeps that total across resume, fork and handoff, and counts the parent session's spend once, when the forked or handed-off session is created. When the parent session file cannot be read it warns `pi-spending: could not read the parent session <file>; totals cover this session only`.
 
 ## What it looks like
 

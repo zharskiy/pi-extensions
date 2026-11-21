@@ -5,7 +5,12 @@ import { fauxAssistantMessage, fauxProvider, fauxText } from "@earendil-works/pi
 import * as pi from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useTempDirs } from "../../../test/framework/index.ts";
-import { initPiRenderTheme, piKeyHints, plainPiTheme } from "../../../test/framework/pi/index.ts";
+import {
+  initPiRenderTheme,
+  piKeyHints,
+  plainPiTheme,
+  startPiRuntime,
+} from "../../../test/framework/pi/index.ts";
 import { createPiHost } from "../runtime/host.ts";
 import { sharedPad } from "../tools/row-component.ts";
 
@@ -26,15 +31,8 @@ const SEAM = /^\s*── .* ─+$/;
 const startRuntime = async () => {
   const dir = temp.make("pi-previous-session-");
 
-  vi.stubEnv("PI_CODING_AGENT_DIR", dir);
-
   const faux = fauxProvider({ provider: "acme", models: [{ id: "small" }] });
-  const modelRuntime = await pi.ModelRuntime.create();
   const requests: unknown[] = [];
-
-  modelRuntime.registerNativeProvider(faux.provider);
-
-  await modelRuntime.refresh({ allowNetwork: false });
 
   const reply = (text: string) => (context: unknown) => {
     requests.push(structuredClone(context));
@@ -47,8 +45,6 @@ const startRuntime = async () => {
       reply(`${turn} answer`),
     ),
   );
-
-  const settingsManager = pi.SettingsManager.inMemory({ defaultProvider: "acme", defaultModel: "small" });
 
   const handoff: pi.ExtensionFactory = (api) => {
     const host = createPiHost(api, { tools: new Map() });
@@ -81,47 +77,13 @@ const startRuntime = async () => {
     });
   };
 
-  const createRuntime: pi.CreateAgentSessionRuntimeFactory = async ({
-    cwd,
-    agentDir,
-    sessionManager,
-    sessionStartEvent,
-  }) => {
-    const services = await pi.createAgentSessionServices({
-      cwd,
-      agentDir,
-      settingsManager,
-      modelRuntime,
-      resourceLoaderOptions: { extensionFactories: [{ name: "handoff", factory: handoff }] },
-    });
-    const created = await pi.createAgentSessionFromServices({ services, sessionManager, sessionStartEvent });
-
-    return { ...created, services, diagnostics: services.diagnostics };
-  };
-
-  const runtime = await pi.createAgentSessionRuntime(createRuntime, {
-    cwd: dir,
-    agentDir: dir,
-    sessionManager: pi.SessionManager.create(dir, dir),
+  const { runtime } = await startPiRuntime({
+    dir,
+    providers: [faux],
+    settings: { defaultProvider: "acme", defaultModel: "small" },
+    factories: { handoff },
+    persisted: true,
   });
-
-  const bind = async () => {
-    await runtime.session.bindExtensions({
-      mode: "print",
-      uiContext: { notify: () => {} } as unknown as pi.ExtensionUIContext,
-      commandContextActions: {
-        waitForIdle: () => runtime.session.waitForIdle(),
-        newSession: (options) => runtime.newSession(options),
-        fork: (entryId, options) => runtime.fork(entryId, options),
-        navigateTree: async () => ({ cancelled: true }),
-        switchSession: (sessionPath, options) => runtime.switchSession(sessionPath, options),
-        reload: async () => {},
-      },
-    });
-  };
-
-  runtime.setRebindSession(bind);
-  await bind();
 
   const previousEntry = () =>
     runtime.session.sessionManager
@@ -336,7 +298,7 @@ describe("showing the previous session after a handoff", () => {
   it("redraws the previous session in the new theme once pi invalidates the entry", async () => {
     const session = await handOff("show");
     const entry = session.previousEntry();
-    const line = (lines: string[] | undefined, text: string) =>
+    const line = (lines: readonly string[] | undefined, text: string) =>
       lines?.find((row) => stripVTControlCharacters(row).includes(text));
 
     let skin = "dark";

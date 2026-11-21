@@ -113,9 +113,10 @@ export interface DerivedSandboxPi {
 
 export interface HostPi {
   command: string[];
+  hostJob: string[];
   version: string;
   packageDir: string;
-  wrapper: string;
+  location: string;
 }
 
 export interface McpOAuthServer {

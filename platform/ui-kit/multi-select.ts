@@ -1,15 +1,15 @@
 import { type FormFactory, type KeyPress, PAD, type ThemeLike } from "../pi-adapter/index.ts";
 import { padded, padRows, prefixed } from "../shared/index.ts";
-import { pointerMark } from "./glyphs.ts";
-import { framed, type KeyHint } from "./key-hints.ts";
-import { CANCEL_HINT, clampIndex } from "./list.ts";
+import { MARKS, pointerMark } from "./glyphs.ts";
+import { type KeyHint, titledFrame } from "./key-hints.ts";
+import { CANCEL_HINT, cursorKey, MOVE_HINT } from "./list.ts";
 
 export type MultiOption = { label: string; description?: string };
 
 export type MultiState = { cursor: number; checked: readonly boolean[] };
 
 const MULTI_SELECT_HINTS: readonly KeyHint[] = [
-  ["↑↓", "to select"],
+  MOVE_HINT,
   ["space", "to toggle"],
   ["a", "to check all"],
   ["n", "to check none"],
@@ -65,18 +65,10 @@ export const scrolledLines = (
     ];
   }
 
-  const more = (text: string) => padded(theme, theme.fg("dim", text), width);
-  const above = start > 0 ? more(`↑ ${start} more`) : [];
-  const below = end < count ? more(`↓ ${count - end} more`) : [];
+  const edge = (arrow: "↑" | "↓", hidden: number) =>
+    hidden > 0 ? [moreRow(theme, arrow, hidden, width)] : [];
 
-  return [...above, ...rows, ...below];
-};
-
-const MOVES: Partial<Record<KeyPress["name"], (state: MultiState, count: number) => number>> = {
-  up: (state) => state.cursor - 1,
-  down: (state) => state.cursor + 1,
-  home: () => 0,
-  end: (_, count) => count - 1,
+  return [...edge("↑", start), ...rows, ...edge("↓", count - end)];
 };
 
 const fill = (state: MultiState, value: boolean): MultiState => ({
@@ -91,10 +83,10 @@ const toggle = (state: MultiState): MultiState => ({
 
 export const multiKey = (key: KeyPress, state: MultiState): MultiState | undefined => {
   const count = state.checked.length;
-  const move = MOVES[key.name];
+  const cursor = cursorKey(key, state.cursor, count);
 
-  if (move) {
-    return count === 0 ? state : { ...state, cursor: clampIndex(move(state, count), count) };
+  if (cursor !== undefined) {
+    return count === 0 ? state : { ...state, cursor };
   }
 
   if (key.name === "space") {
@@ -108,7 +100,7 @@ export const multiKey = (key: KeyPress, state: MultiState): MultiState | undefin
   return undefined;
 };
 
-const ROW_MARKS = "› [ ] ";
+const ROW_MARKS = `${MARKS.pointer} [ ] `;
 
 const descriptionRoom = (theme: ThemeLike, label: string, width: number) =>
   width - theme.width(`${PAD}${ROW_MARKS}`) - theme.width(label) - 2;
@@ -164,16 +156,7 @@ export const multiSelectForm =
 
     return {
       render: (width) =>
-        framed(
-          api.theme,
-          width,
-          [
-            ...padded(api.theme, api.theme.fg("text", spec.title), width),
-            "",
-            ...multiLines(api.theme, spec.options, state, width),
-          ],
-          hints,
-        ),
+        titledFrame(api.theme, width, spec.title, multiLines(api.theme, spec.options, state, width), hints),
       handleKey: (key) => {
         if (key.name === "escape") {
           api.done(undefined);

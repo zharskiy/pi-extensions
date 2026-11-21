@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import type { AnyToolSpec } from "../../../../platform/pi-adapter/index.ts";
 import {
   BACKGROUND_WORK_CHANNEL,
@@ -21,12 +19,13 @@ import {
   type AgentDefinition,
   type AgentRecord,
   allowlist,
+  canNest,
+  grantedSubagents,
   isClosed,
   MAIN_CALLER,
-  subagentNames,
 } from "../../core/model/agent-record.ts";
 import { handoffService } from "../../core/model/handoff.ts";
-import { NAMESPACE } from "../../core/model/paths.ts";
+import { NAMESPACE, readPrompt } from "../../core/model/paths.ts";
 import type { Plugin } from "../../core/model/plugin.ts";
 import { createBackgroundWork } from "../../core/run-agent/background-work.ts";
 import { joinTexts, wakeMessage } from "../../core/run-agent/outbox.ts";
@@ -38,8 +37,6 @@ import {
   stopAgentTool,
 } from "../../core/run-agent/tools.ts";
 import { pendingRows } from "../../ui/run-agent/pending-rows.ts";
-
-const readPrompt = (root: string, file: string) => readFileSync(join(root, "prompts", file), "utf8").trim();
 
 export const runAgentPlugin: Plugin = {
   id: "run-agent",
@@ -54,7 +51,7 @@ export const runAgentPlugin: Plugin = {
     });
     const hints = {
       manage: () => !settings.disabledPlugins.includes("agent-panel"),
-      list: () => !settings.disabledPlugins.includes("agent-view"),
+      list: () => services.has("agentView"),
       expandKey: () => host.ui.keyText(EXPAND_BINDING),
     };
 
@@ -109,8 +106,7 @@ export const runAgentPlugin: Plugin = {
 
     const childTools = (record: AgentRecord): AnyToolSpec[] => {
       const own = definitions.get(record.agent);
-      const names = definitions.list().map((definition) => definition.name);
-      const allowed = (own ? subagentNames(own, names) : [])
+      const allowed = grantedSubagents(definitions, record.agent)
         .map((name) => definitions.get(name))
         .filter((definition): definition is AgentDefinition => definition !== undefined);
 
@@ -128,7 +124,7 @@ export const runAgentPlugin: Plugin = {
         ...(granted ? [services.require("fetchTool").tool()] : []),
       ];
 
-      if (allowed.length === 0 || record.depth >= settings.maxDepth) {
+      if (allowed.length === 0 || !canNest(record.depth, settings.maxDepth)) {
         return extra;
       }
 

@@ -63,6 +63,7 @@ Connections that are already open stay until they close.
 | `vm.cpus`, `vm.memoryGiB`, `vm.diskGiB` | The size of the VM itself, which every container shares ([below](#vm-size)). | the size the VM was created with; set by `pi sandbox init` |
 | `writeBack` | Which settings changed inside come back to your Mac ([below](#settings-written-back)); `pi sandbox init` sets `writeBack.enabled`. | the built-in list |
 | `sessions.host` | Keep sessions in host pi's own session folder. | `true` |
+| `terminal.clipboard` | On a Mac, put what pi inside copies (OSC 52) on the clipboard with `pbcopy`, copy a pasted image path into the sandbox, and paste a clipboard PNG or a single copied image file on Ctrl+V. | `true` |
 | `workspaceRoots` | Folders pi may start in, as `{ "roots": [...] }`, and the only folders the VM shares ([below](#workspace-roots)); set by `pi sandbox init`. | anywhere; the VM shares your home |
 
 The sections below explain each group.
@@ -185,6 +186,7 @@ Your home inside the sandbox lives in memory, so tool caches are lost when pi ex
 - Each entry starts with `~/` and appears at the same path inside the sandbox.
 - Your Mac's folder of that name is never mounted. The volume starts empty.
 - No entry may appear twice or lie inside another.
+- An entry may share a folder with a file the launcher puts in your home, such as `~/.m2/repository` beside the rendered `~/.m2/settings.xml`. The sandbox waits until the volume and its folders belong to the sandbox user before it writes them; a launch whose hand-over of a cache in your home fails stops, and one outside it only warns.
 - These are refused, with every folder under them: `~/.pi`, `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.docker`, `~/.colima`, `~/.kube`, `~/.config` and `~/.local/bin`.
 
 Every sandbox can write to these volumes, so a bad package written in one folder reaches the others. Use them for package caches only.
@@ -209,6 +211,7 @@ When pi inside changes a setting on the list, the launcher copies the change to 
 
 - `settings.json`: `defaultProvider`, `defaultModel`, `defaultThinkingLevel`, `enabledModels`, `theme`, `hideThinkingBlock`, `quietStartup`, `collapseChangelog`, `doubleEscapeAction`, `treeFilterMode`, `steeringMode`, `followUpMode`, each with a check of its value.
 - `pi-subagents.json`, `pi-style.json`, `pi-notifications.json`, `pi-session-limits.json`: the top-level keys their extensions read, any JSON value.
+- `pi-prune.json`: `days`, only one of `0` (off), `7`, `30`, `60`, `90`, `180` and `365`, the choices of `/prune`.
 
 `writeBack` changes the list:
 
@@ -228,7 +231,7 @@ When pi inside changes a setting on the list, the launcher copies the change to 
 }
 ```
 
-- `enabled: false` copies nothing back. `settings.json` and the four built-in `pi-*.json` files are still copied into the sandbox, since pi there reads them; a file you added is not, and its earlier copy is removed from the sandbox at the next launch.
+- `enabled: false` copies nothing back. `settings.json` and the five built-in `pi-*.json` files are still copied into the sandbox, since pi there reads them; a file you added is not, and its earlier copy is removed from the sandbox at the next launch.
 - `exclude` names built-in keys, per file, to stop copying. A key that is not on the built-in list is an error.
 - `add` names keys, per file, with the check a value must pass. A built-in key gets your check instead of its own, for example when pi adds a value the built-in list does not know yet. A new `pi-<name>.json` file is copied whole from your Mac into the sandbox at each launch, like the built-in ones, and its listed keys come back. Every key in that file is readable inside the sandbox, not only the ones you list, so do not add a file that holds secrets. Once you take the file out of `add`, the next launch removes its copy from the sandbox.
 - A key both excluded and added is an error.

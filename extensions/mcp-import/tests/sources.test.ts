@@ -1,28 +1,21 @@
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
+import { useTempDirs } from "../../../test/framework/index.ts";
 import { findServers } from "../core/sources.ts";
 
-const roots: string[] = [];
+const temp = useTempDirs();
 
 const places = () => {
-  const root = mkdtempSync(join(tmpdir(), "pi-mcp-import-"));
+  const root = temp.make("pi-mcp-import-");
   const home = join(root, "home");
   const cwd = join(root, "project");
 
-  roots.push(root);
   mkdirSync(join(home, ".cursor"), { recursive: true });
   mkdirSync(join(cwd, ".cursor"), { recursive: true });
 
   return { home, cwd };
 };
-
-afterEach(() => {
-  roots.splice(0).forEach((root) => {
-    rmSync(root, { recursive: true, force: true });
-  });
-});
 
 describe("source files", () => {
   it("reports a wrong mcpServers shape as a problem", () => {

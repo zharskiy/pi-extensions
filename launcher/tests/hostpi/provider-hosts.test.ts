@@ -10,9 +10,10 @@ const SAMPLE = join(import.meta.dirname, "provider-hosts-sample.json");
 
 const PI: HostPi = {
   command: [process.execPath, "/opt/pi/cli.js"],
+  hostJob: ["/opt/agent/bin/pi"],
   version: "1.5.0",
   packageDir: "/opt/pi",
-  wrapper: "/opt/agent/bin/pi",
+  location: "/opt/agent/bin/pi",
 };
 
 const SCRIPT = join(launcherRoot(), "hostpi", "provider-hosts.mjs");
@@ -114,6 +115,68 @@ describe("provider-hosts.mjs", () => {
 
     expect(result.code).toBe(1);
     expect(result.stdout).toBe("");
+  });
+});
+
+const AI_PATH = join("node_modules", "@earendil-works", "pi-ai");
+
+const PI_PATH = join("node_modules", "@earendil-works", "pi-coding-agent");
+
+const writeFakeAi = async (aiDir: string, host: string) => {
+  await writeText(
+    join(aiDir, "package.json"),
+    JSON.stringify({ exports: { "./providers/*": { import: "./dist/providers/*.js" } } }),
+  );
+
+  await writeText(
+    join(aiDir, "dist", "providers", "all.js"),
+    [
+      'export const getBuiltinProviders = () => ["example"];',
+      `export const getBuiltinModels = () => [{ baseUrl: "https://${host}/v1" }];`,
+    ].join("\n"),
+  );
+};
+
+const tableFrom = async (piDir: string) => {
+  const result = await createProcessRunner().run(process.execPath, [SCRIPT, piDir]);
+
+  return result.code === 0 ? JSON.parse(result.stdout) : result.stderr;
+};
+
+describe("provider-hosts.mjs finds pi-ai in both install layouts", () => {
+  it("takes pi-ai nested under the pi package, as an npm global install lays it out", async () => {
+    const prefix = await tempDir("provider-hosts-npm-global");
+    const piDir = join(prefix, "lib", PI_PATH);
+
+    await writeText(join(piDir, "package.json"), "{}");
+
+    await writeFakeAi(join(piDir, AI_PATH), "nested.example.com");
+
+    expect(await tableFrom(piDir)).toEqual({ example: { hosts: ["nested.example.com"] } });
+  });
+
+  it("takes pi-ai beside the pi package, as the managed install lays it out", async () => {
+    const release = await tempDir("provider-hosts-managed");
+    const piDir = join(release, PI_PATH);
+
+    await writeText(join(piDir, "package.json"), "{}");
+
+    await writeFakeAi(join(release, AI_PATH), "sibling.example.com");
+
+    expect(await tableFrom(piDir)).toEqual({ example: { hosts: ["sibling.example.com"] } });
+  });
+
+  it("prefers the nested pi-ai over a sibling one, as node resolves it", async () => {
+    const prefix = await tempDir("provider-hosts-both");
+    const piDir = join(prefix, "lib", PI_PATH);
+
+    await writeText(join(piDir, "package.json"), "{}");
+
+    await writeFakeAi(join(piDir, AI_PATH), "nested.example.com");
+
+    await writeFakeAi(join(prefix, "lib", AI_PATH), "sibling.example.com");
+
+    expect(await tableFrom(piDir)).toEqual({ example: { hosts: ["nested.example.com"] } });
   });
 });
 

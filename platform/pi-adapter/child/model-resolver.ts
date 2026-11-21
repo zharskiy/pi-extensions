@@ -1,4 +1,4 @@
-import type { ModelChoice, ModelResolution } from "../types/model.ts";
+import { type ModelResolution, modelChoiceOf, modelRefOf } from "../types/model.ts";
 
 export type CatalogModel = {
   provider: string;
@@ -72,14 +72,6 @@ const editDistance = (left: string, right: string) => {
 
   return rows[left.length][right.length];
 };
-
-const refOf = (model: CatalogModel) => `${model.provider}/${model.id}`;
-
-const choiceOf = (model: CatalogModel): ModelChoice => ({
-  ref: refOf(model),
-  contextWindow: model.contextWindow,
-  cost: model.cost,
-});
 
 const versionSource = (id: string) => id.toLowerCase().replace(/-v\d+(:\d+)?$/, "");
 
@@ -233,14 +225,14 @@ const compareMatches = (preferences: ModelPreferences) => (left: Match, right: M
     return left.model.id.length - right.model.id.length;
   }
 
-  return refOf(left.model).localeCompare(refOf(right.model));
+  return modelRefOf(left.model).localeCompare(modelRefOf(right.model));
 };
 
 const exactMatches = (ref: string, catalog: CatalogModel[]) => {
   const wanted = ref.toLowerCase();
 
   return catalog.filter(
-    (model) => refOf(model).toLowerCase() === wanted || model.id.toLowerCase() === wanted,
+    (model) => modelRefOf(model).toLowerCase() === wanted || model.id.toLowerCase() === wanted,
   );
 };
 
@@ -265,7 +257,7 @@ const fromExact = (
     .map((model): Match => ({ model, tier: 3, score: 1 }))
     .sort(compareMatches(preferences));
 
-  return { kind: "resolved", request, model: choiceOf(ranked[0].model) };
+  return { kind: "resolved", request, model: modelChoiceOf(ranked[0].model) };
 };
 
 const scopeOf = (name: string, catalog: CatalogModel[]) => {
@@ -290,7 +282,7 @@ const unknownResult = (request: string, query: string, pool: CatalogModel[], mat
     .filter((match) => !match.model.authenticated)
     .sort((left, right) => right.tier - left.tier || compareMatches({})(left, right))
     .slice(0, MAX_CANDIDATES)
-    .map((match) => choiceOf(match.model));
+    .map((match) => modelChoiceOf(match.model));
 
   if (withoutCredentials.length > 0) {
     return { kind: "unknown" as const, request, candidates: [], withoutCredentials };
@@ -300,9 +292,12 @@ const unknownResult = (request: string, query: string, pool: CatalogModel[], mat
     .filter((model) => model.authenticated)
     .map((model) => ({ model, score: similarity(query, model) }))
     .filter((entry) => entry.score >= MIN_SUGGESTION_SIMILARITY)
-    .sort((left, right) => right.score - left.score || refOf(left.model).localeCompare(refOf(right.model)))
+    .sort(
+      (left, right) =>
+        right.score - left.score || modelRefOf(left.model).localeCompare(modelRefOf(right.model)),
+    )
     .slice(0, MAX_SUGGESTIONS)
-    .map((entry) => choiceOf(entry.model));
+    .map((entry) => modelChoiceOf(entry.model));
 
   return { kind: "unknown" as const, request, candidates, withoutCredentials };
 };
@@ -357,13 +352,13 @@ export const resolveModel = (
     return {
       kind: "ambiguous",
       request,
-      candidates: contenders.slice(0, MAX_CANDIDATES).map((members) => choiceOf(members[0].model)),
+      candidates: contenders.slice(0, MAX_CANDIDATES).map((members) => modelChoiceOf(members[0].model)),
     };
   }
 
   return {
     kind: "resolved",
     request,
-    model: choiceOf(contenders[0][0].model),
+    model: modelChoiceOf(contenders[0][0].model),
   };
 };

@@ -1,4 +1,5 @@
 import { DOT, formatDuration } from "../../../platform/shared/index.ts";
+import { keyHintText } from "../../../platform/ui-kit/index.ts";
 import { TICK_MS } from "../core/indicator-state.ts";
 
 export const VERBS = [
@@ -65,10 +66,14 @@ export const VERBS = [
 export const pickVerb = () => VERBS[Math.floor(Math.random() * VERBS.length)] ?? "Working";
 
 export const workingText = (verb: string, elapsedMs: number, hint: string) => {
-  const elapsed = elapsedMs >= TICK_MS ? `${DOT}${formatDuration(elapsedMs)}` : "";
+  const duration = elapsedMs >= TICK_MS ? formatDuration(elapsedMs) : "";
+  const elapsed = duration === "" ? "" : `${DOT}${duration}`;
 
   return `${verb}${elapsed}${hint}`;
 };
 
-export const interruptHint = (key: string | undefined, dim: (text: string) => string) =>
-  key ? dim(` (${key} to interrupt)`) : "";
+export const interruptHint = (key: string | undefined, dim: (text: string) => string) => {
+  const hint = keyHintText(key, "interrupt");
+
+  return hint ? dim(` ${hint}`) : "";
+};

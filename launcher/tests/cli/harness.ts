@@ -1,7 +1,8 @@
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { PassThrough, Writable } from "node:stream";
 import { afterEach } from "vitest";
 import type { Backend, ExecSpec } from "../../backend/index.ts";
@@ -136,7 +137,7 @@ export const holdLaunch = (harness: HarnessPaths, held: HeldLaunch = {}) =>
   registerLiveLaunch(harness.stateDir, sha256Hex(harness.repoRoot), held);
 
 export const noHostPiLine = (agentDir: string) =>
-  `no managed pi in ${agentDir} (a pi installed with npm or found on PATH is not used): the sandbox gets no provider credentials, and host commands and --no-sandbox are unavailable; install pi with pi's own installer (curl -fsSL https://pi.dev/install.sh | sh) and run the launcher's install.sh again`;
+  `no managed pi in ${agentDir} and no pi in npm's global packages (a pi found only on PATH or in a project's node_modules is not used): the sandbox gets no provider credentials, and host commands and --no-sandbox are unavailable; install pi with pi's own installer (curl -fsSL https://pi.dev/install.sh | sh) or with npm install -g @earendil-works/pi-coding-agent, and run the launcher's install.sh again`;
 
 export interface DoctorCheck {
   section: string;
@@ -252,6 +253,42 @@ const writeScript = async (path: string, body: string) => {
   await chmod(path, 0o755);
 };
 
+interface NpmPiOptions {
+  manifest?: unknown;
+  reportedRoot?: string;
+}
+
+export const writeNpmPi = async (prefix: string, version: string, options: NpmPiOptions = {}) => {
+  const root = join(prefix, "lib", "node_modules");
+  const packageDir = join(root, "@earendil-works", "pi-coding-agent");
+  const entry = join(packageDir, "dist", "cli.js");
+  const npm = join(prefix, "bin", "npm");
+
+  await writeScript(entry, 'echo npm pi "$@"');
+
+  await writeFile(
+    join(packageDir, "package.json"),
+    JSON.stringify(
+      options.manifest ?? { name: "@earendil-works/pi-coding-agent", version, bin: { pi: "dist/cli.js" } },
+    ),
+  );
+
+  await writeScript(
+    npm,
+    `case "$1 $2" in "root --global"|"root -g") echo '${options.reportedRoot ?? root}' ;; *) exit 1 ;; esac`,
+  );
+
+  return { bin: join(prefix, "bin"), npm, root, packageDir, entry };
+};
+
+const npmAnswer = (call: { file: string; args: string[] }): Partial<RunResult> => {
+  try {
+    return { stdout: execFileSync(call.file, call.args, { encoding: "utf8" }) };
+  } catch {
+    return { code: 1 };
+  }
+};
+
 export const writePathPi = async (dir: string, version?: string) => {
   const packageDir = join(dir, "lib", "node_modules", "@earendil-works", "pi-coding-agent");
   const pi = join(dir, "bin", "pi");
@@ -364,6 +401,10 @@ export const createHarness = async (options: HarnessOptions = {}) => {
 
     if (call.interactive) {
       return { code: 0 };
+    }
+
+    if (basename(call.file) === "npm") {
+      return npmAnswer(call);
     }
 
     return call.file === "git" ? gitAnswer(repoRoot, call.args) : undefined;

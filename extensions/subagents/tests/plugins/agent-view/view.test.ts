@@ -444,7 +444,7 @@ describe("agent view", () => {
     const lines = plainLines(view.render(100));
 
     expect(lines[4]).toBe(
-      " Worktree /project/.pi/worktrees/explorer-1-abc · branch pi-agents/explorer-1-abc",
+      " Worktree /project/.pi/worktrees/explorer-1-abc (branch pi-agents/explorer-1-abc)",
     );
     expect(lines[5]).toBe(RULE(100));
 
@@ -453,7 +453,7 @@ describe("agent view", () => {
     const again = await harness.openView(record.id);
 
     expect(plainLines(again.view.render(100))[4]).toBe(
-      " Worktree removed · branch pi-agents/explorer-1-abc kept",
+      " Worktree removed; branch pi-agents/explorer-1-abc kept",
     );
   });
 });
@@ -508,9 +508,9 @@ describe("agent view header", () => {
       " tests failed twice",
       " stack",
     ]);
-    expect(header(base({ state: "handoff", handoffPath: "/tmp/h.md" }))[3]).toBe(" handoff file /tmp/h.md");
+    expect(header(base({ state: "handoff", handoffPath: "/tmp/h.md" }))[3]).toBe(" Handoff file /tmp/h.md");
     expect(header(base({ state: "handoff", handoffPath: "/tmp/h.md", error: "missing Status" }))[3]).toBe(
-      " handoff file /tmp/h.md (invalid: missing Status)",
+      " Handoff file /tmp/h.md (invalid: missing Status)",
     );
 
     const painted = header(
@@ -1136,8 +1136,10 @@ describe("agent view past sessions", () => {
       .execute({ ids: ["explorer-old", "explorer-dead"] }, {});
     const [stored, unknown] = status.text.split("\n").filter((line) => line.startsWith("explorer-"));
 
-    expect(await header("explorer-old")).toMatch(/ · working context 21\.0k of 70k$/);
-    expect(stored).toMatch(/ · working context 21\.0k of 70k$/);
+    expect(await header("explorer-old")).toMatch(/^ +working context 21\.0k of 70k$/);
+    expect(stored).toBe(
+      "explorer-old (scout, model n/a) done · 0 calls · 0 tokens · working context 21.0k of 70k",
+    );
     expect(await header("explorer-dead")).not.toContain("context");
     expect(unknown).toMatch(/ · context n\/a$/);
   });
@@ -1737,7 +1739,7 @@ describe("agent view nested run_agent calls", () => {
     child.finish("Started batch, waiting.");
     await finishAll();
 
-    expect(child.hidden.map((wake) => wake.customType)).toEqual(["pi-subagents:wake"]);
+    expect(child.hidden.map((wake) => wake.message.customType)).toEqual(["pi-subagents:wake"]);
     expect(shown()).toContain(" ✓ 2 scout agents");
     expect(shown()).not.toContain("◌");
     expect(shown()).not.toContain("[pi-subagents] Batch");

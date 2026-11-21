@@ -50,6 +50,8 @@ npm run test -- extensions/questionnaire   # this extension's unit tests
 npm run check                              # typecheck, biome, knip, unit tests
 ```
 
+The extension's name `pi-questionnaire` is written once, as `NAMESPACE` in `core/questionnaire.ts`, which is also the source of its waiting signal.
+
 The full set of commands is in the root README's [Development](../../README.md#development) section; rules for coding agents are in [AGENTS.md](../../AGENTS.md).
 
 ## Contributing

@@ -1,5 +1,3 @@
-import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { flushMicrotasks } from "../../../../../test/framework/index.ts";
 import { agentDefinitionsPlugin } from "../../../api/plugins/agent-definitions.ts";
@@ -7,7 +5,7 @@ import { agentRegistryPlugin } from "../../../api/plugins/agent-registry.ts";
 import { fetchToolPlugin } from "../../../api/plugins/fetch-tool.ts";
 import { runAgentPlugin } from "../../../api/plugins/run-agent.ts";
 import type { RunAgentDetails, RunAgentParams } from "../../../core/run-agent/tools.ts";
-import { createHarness } from "../../support/subagents-harness.ts";
+import { createHarness, writeUserAgent } from "../../support/subagents-harness.ts";
 
 const definition = (name: string, tools: string) =>
   `---\nname: ${name}\ndescription: d\nlimit: 50000\nsubagents: [scout]\nskills: []\nworktree: false\ntools: ${tools}\n---\n`;
@@ -17,10 +15,8 @@ const setup = async (tools: string, overrides = {}) => {
     [agentRegistryPlugin, agentDefinitionsPlugin, fetchToolPlugin, runAgentPlugin],
     { overrides },
   );
-  const dir = join(harness.host.info.agentDir, "agents");
 
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, "worker.md"), definition("worker", tools));
+  writeUserAgent(harness.host, "worker", definition("worker", tools));
   harness.host.start();
   harness.host.idle = false;
 

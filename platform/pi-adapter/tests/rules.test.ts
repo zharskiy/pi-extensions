@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { plainTheme, tokenTaggingTheme } from "../../../test/framework/index.ts";
 import type { ThemeLike } from "../index.ts";
-import { labelledRule } from "../ui/rules.ts";
+import { labelledRule, paddedRule } from "../ui/rules.ts";
 
 const tagged: ThemeLike = tokenTaggingTheme();
 
@@ -28,5 +28,15 @@ describe("labelledRule", () => {
   it("draws only the line below six columns", () => {
     expect(labelledRule(plainTheme, 4, "worked 42s")).toBe("────");
     expect(labelledRule(plainTheme, 0, "worked 42s")).toBe("─");
+  });
+});
+
+describe("paddedRule", () => {
+  it("draws the rule after the pad within the width", () => {
+    const line = paddedRule(plainTheme, 30, 2, "worked 42s");
+
+    expect(line).toBe(`  ${labelledRule(plainTheme, 28, "worked 42s")}`);
+    expect(plainTheme.width(line)).toBe(30);
+    expect(paddedRule(tagged, 30, 2, "not found", "warning")).toMatch(/^ {2}<warning>── not found /);
   });
 });

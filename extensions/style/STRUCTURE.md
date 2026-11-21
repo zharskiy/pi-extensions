@@ -8,14 +8,14 @@ extensions/style/
 │   └── plugin.ts          # createStyle (/style command, session start, settings wiring; saves into `Host.session().agentDir`), stylePlugin (loads prompts/ from ctx.paths.root)
 ├── core/
 │   ├── style.ts           # SECTION, createStyleSection (style names, default fallback, current style, setPromptSection)
-│   ├── styles.ts          # Style, NORMAL, DEFAULT_STYLE (concise), parseStyle (front matter), loadStyles
-│   └── settings.ts        # SETTINGS_FILE, readStyleSettings (user and project), saveStyle (user file)
+│   ├── styles.ts          # Style, NORMAL, DEFAULT_STYLE (concise), parseStyle (front matter through platform/shared parseFrontmatter), loadStyles
+│   └── settings.ts        # NAMESPACE, SETTINGS_FILE, readStyleSettings (user and project), saveStyle (user file, through writeSettingsFile)
 ├── ui/
-│   └── pick.ts            # pickStyle: the selectForm list shown through showForm
+│   └── pick.ts            # pickStyle: the selectForm list shown through showForm, over the names from createStyleSection
 ├── prompts/
 │   └── concise.md         # one file per style, front matter `description:`
 ├── tests/
-│   └── style.test.ts      # default style, command, picker, settings files, style loading
+│   └── style.test.ts      # default style, command and its completion, picker, settings files, style loading
 ├── README.md
 ├── ARCHITECTURE.md
 └── STRUCTURE.md

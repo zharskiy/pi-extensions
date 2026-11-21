@@ -3,10 +3,8 @@ import { BUSY_CHANNEL } from "../../../../platform/shared/index.ts";
 import { createRegistry } from "../../core/agent-registry/registry.ts";
 import { type AgentRegistry, isClosed } from "../../core/model/agent-record.ts";
 import { pastRecords } from "../../core/model/manifest.ts";
-import { agentsDirFor, handoffPathFor } from "../../core/model/paths.ts";
+import { agentsDirFor, handoffPathFor, NAMESPACE } from "../../core/model/paths.ts";
 import type { Plugin } from "../../core/model/plugin.ts";
-
-const BUSY_SOURCE = "pi-subagents";
 
 const hasOpenAgents = (registry: AgentRegistry) => registry.list().some((record) => !isClosed(record.state));
 
@@ -18,7 +16,7 @@ export const agentRegistryPlugin: Plugin = {
 
     const publish = (next: boolean) => {
       busy = next;
-      host.publish(BUSY_CHANNEL, { source: BUSY_SOURCE, busy });
+      host.publish(BUSY_CHANNEL, { source: NAMESPACE, busy });
     };
 
     services.provide("registry", registry);
@@ -35,14 +33,16 @@ export const agentRegistryPlugin: Plugin = {
       const pastIn = (owner: SessionInfo) =>
         pastRecords(host, agentsDirFor(owner), (dir, manifest) => ({
           dir,
-          handoffPath: handoffPathFor(info, manifest.id as string),
+          handoffPath: handoffPathFor(owner, manifest.id as string),
           contextLimit: 0,
         }));
 
       registry.restore(pastIn(info));
 
       if (info.parentSession) {
-        registry.restore(pastIn({ ...info, file: info.parentSession }));
+        const id = host.sessionId(info.parentSession) ?? info.id;
+
+        registry.restore(pastIn({ ...info, id, file: info.parentSession }));
       }
 
       publish(hasOpenAgents(registry));

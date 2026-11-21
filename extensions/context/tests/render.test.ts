@@ -264,4 +264,18 @@ describe("renderSnapshot", () => {
       "Context: Test Model · 61.2k/200k tokens (31%) · Cache hit: last turn 87% · session 91%",
     );
   });
+
+  it("leaves out a percentage that is not finite with its brackets and its label", () => {
+    const broken = usage({ cacheRead: Number.POSITIVE_INFINITY });
+    const free = render({ breakdown: breakdown({ window: Number.POSITIVE_INFINITY }) }, { width: 300 });
+
+    expect(summaryLine(snapshot({ breakdown: breakdown({ total: Number.NaN }) }))).not.toContain("()");
+    expect(free.find((line) => line.includes("Free space:"))).not.toContain("()");
+    expect(summaryLine(snapshot({ lastRequest: broken }))).toBe(
+      "Context: Test Model · 61.2k/200k tokens (31%) · Cache hit: session 91%",
+    );
+    expect(summaryLine(snapshot({ lastRequest: broken, session: broken }))).toBe(
+      "Context: Test Model · 61.2k/200k tokens (31%)",
+    );
+  });
 });

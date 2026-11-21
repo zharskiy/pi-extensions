@@ -1,6 +1,7 @@
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { HANDOFF_SECTIONS, handoffDocument } from "../../../test/framework/index.ts";
 import {
   handoffPath,
   parseRequestDetails,
@@ -10,50 +11,41 @@ import {
 
 const STATUSES = ["done", "partial", "blocked"];
 
-const handoff = (sections: Record<string, string>) =>
-  Object.entries(sections)
-    .map(([title, body]) => `## ${title}\n${body}\n`)
-    .join("\n");
-
-const complete = {
-  Status: "partial",
-  Outcome: "- goal",
-  Evidence: "- tests pass",
-  Blocker: "none",
-  Next: "- continue",
-  "Files touched": "none",
-};
-
 describe("validateHandoff", () => {
   it("accepts the sections in order with a status from the given list", () => {
-    expect(validateHandoff(handoff(complete), STATUSES)).toEqual({ ok: true, status: "partial" });
-    expect(validateHandoff(handoff({ ...complete, Status: "**Done**" }), STATUSES)).toEqual({
+    expect(validateHandoff(handoffDocument(HANDOFF_SECTIONS), STATUSES)).toEqual({
+      ok: true,
+      status: "partial",
+    });
+    expect(validateHandoff(handoffDocument({ ...HANDOFF_SECTIONS, Status: "**Done**" }), STATUSES)).toEqual({
       ok: true,
       status: "done",
     });
   });
 
   it("reports missing, empty and misordered sections", () => {
-    const { Next: _next, ...withoutNext } = complete;
+    const { Next: _next, ...withoutNext } = HANDOFF_SECTIONS;
 
-    expect(validateHandoff(handoff(withoutNext), STATUSES)).toEqual({
+    expect(validateHandoff(handoffDocument(withoutNext), STATUSES)).toEqual({
       ok: false,
       errors: ["missing sections: Next"],
     });
-    expect(validateHandoff(handoff({ ...complete, Blocker: "" }), STATUSES)).toEqual({
+    expect(validateHandoff(handoffDocument({ ...HANDOFF_SECTIONS, Blocker: "" }), STATUSES)).toEqual({
       ok: false,
       errors: ["empty sections: Blocker"],
     });
 
-    const { Status, ...rest } = complete;
-    const result = validateHandoff(handoff({ ...rest, Status }), STATUSES);
+    const { Status, ...rest } = HANDOFF_SECTIONS;
+    const result = validateHandoff(handoffDocument({ ...rest, Status }), STATUSES);
 
     expect(result.ok).toBe(false);
     expect(result.ok ? [] : result.errors[0]).toContain("must appear in this order");
   });
 
   it("judges the status against the statuses it is given", () => {
-    expect(validateHandoff(handoff({ ...complete, Status: "done" }), ["partial", "blocked"])).toEqual({
+    expect(
+      validateHandoff(handoffDocument({ ...HANDOFF_SECTIONS, Status: "done" }), ["partial", "blocked"]),
+    ).toEqual({
       ok: false,
       errors: ["Status must be one of partial, blocked"],
     });

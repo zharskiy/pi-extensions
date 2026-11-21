@@ -21,7 +21,7 @@ pi --version                                                                    
 npm view @earendil-works/pi-coding-agent version                                           # latest
 ```
 
-`pi` on PATH may be this repo's sandbox launcher (step 6). Then `pi --version` prints the pi version the sandbox runs without starting it: the managed install's (`~/.pi/agent/install/current-version`), else the repo floor. `~/.pi/agent/bin/pi --version` asks the managed install itself.
+`pi` on PATH may be this repo's sandbox launcher (step 6). Then `pi --version` prints the pi version the sandbox runs without starting it: the managed install's (`~/.pi/agent/install/current-version`), else that of the pi in npm's global packages (`$(npm root -g)/@earendil-works/pi-coding-agent`), else the repo floor. `~/.pi/agent/bin/pi --version` (or `"$(npm prefix -g)/bin/pi" --version`) asks the host pi itself.
 
 If the user named a version, use that instead of latest. The three packages `pi-ai`, `pi-coding-agent` and `pi-tui` are released in lockstep, so they always move together to the same version.
 
@@ -69,9 +69,9 @@ Check how pi is installed before touching it:
 readlink "$(command -v pi)"; head -2 "$(command -v pi)"; cat ~/.pi/agent/install/managed-install.json 2>/dev/null
 ```
 
-`pi` on PATH may be the sandbox launcher: `~/.local/bin/pi` a wrapper that execs `launcher/bin/pi-sandbox-dev.js` of a checkout, or a link to the npm `pi-sandbox`. Then `readlink` says nothing about pi; the real managed install is `~/.pi/agent/install/` (`current-version`, `releases/`) with its own entrypoint `~/.pi/agent/bin/pi`.
+`pi` on PATH may be the sandbox launcher: `~/.local/bin/pi` a wrapper that execs `launcher/bin/pi-sandbox-dev.js` of a checkout, or a link to the npm `pi-sandbox`. Then `readlink` says nothing about pi; the real managed install is `~/.pi/agent/install/` (`current-version`, `releases/`) with its own entrypoint `~/.pi/agent/bin/pi`, and without one the host pi is the npm global install at `$(npm root -g)/@earendil-works/pi-coding-agent` with its link `$(npm prefix -g)/bin/pi`, which the launcher's `PATH` entry shadows.
 
-A managed install (`managed-install.json` present) updates itself with `pi update` (which is `pi update --self`; `--force` reinstalls when already current). Through the launcher a bare `pi update` runs the managed install's own update on the host, and the sandbox image follows that version at the next launch, which rebuilds it for a few minutes. An npm global install uses `npm install -g --ignore-scripts @earendil-works/pi-coding-agent@<v>` (the launcher never runs such a pi; it uses only the managed install); a Nix install is the user's to update, say so. Afterwards `pi --version` must print the new version. Then start the real binary once in this repo and quit, so that extension load errors against it are seen rather than assumed: `~/.pi/agent/bin/pi` (or `pi` when it is not the launcher), since `pi` through the launcher starts a sandbox instead.
+A managed install (`managed-install.json` present) updates itself with `pi update` (which is `pi update --self`; `--force` reinstalls when already current). Through the launcher a bare `pi update` runs the host pi's own update on the host, and the sandbox image follows that version at the next launch, which rebuilds it for a few minutes. An npm global install uses `npm install -g --ignore-scripts @earendil-works/pi-coding-agent@<v>` (the launcher runs it as the host pi when there is no managed install, and its image follows it too); a Nix install is the user's to update, say so. Afterwards `pi --version` must print the new version. Then start the real binary once in this repo and quit, so that extension load errors against it are seen rather than assumed: `~/.pi/agent/bin/pi` (or `"$(npm prefix -g)/bin/pi"` for an npm global install, or `pi` when it is not the launcher), since `pi` through the launcher starts a sandbox instead.
 
 ## 7. Verify and hand over
 

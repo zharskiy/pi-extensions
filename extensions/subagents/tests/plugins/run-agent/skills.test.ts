@@ -1,5 +1,5 @@
 import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { describe, expect, it } from "vitest";
 import { flushMicrotasks } from "../../../../../test/framework/index.ts";
 import { agentDefinitionsPlugin } from "../../../api/plugins/agent-definitions.ts";
@@ -9,7 +9,7 @@ import { runAgentPlugin } from "../../../api/plugins/run-agent.ts";
 import type { AgentRecord } from "../../../core/model/agent-record.ts";
 import type { Runner } from "../../../core/run-agent/runner.ts";
 import type { RunAgentDetails, RunAgentParams } from "../../../core/run-agent/tools.ts";
-import { createHarness } from "../../support/subagents-harness.ts";
+import { createHarness, writeUserAgent } from "../../support/subagents-harness.ts";
 
 const HEADER = "description: d\nlimit: 50000\nsubagents: []\n";
 
@@ -17,12 +17,9 @@ const setup = (definitions: Record<string, string> = {}, overrides = {}) => {
   const harness = createHarness([agentRegistryPlugin, agentDefinitionsPlugin, runAgentPlugin, limitsPlugin], {
     overrides,
   });
-  const dir = join(harness.host.info.agentDir, "agents");
-
-  mkdirSync(dir, { recursive: true });
 
   Object.entries(definitions).forEach(([name, grants]) => {
-    writeFileSync(join(dir, `${name}.md`), `---\nname: ${name}\n${HEADER}${grants}\n---\n`);
+    writeUserAgent(harness.host, name, `---\nname: ${name}\n${HEADER}${grants}\n---\n`);
   });
 
   harness.host.start();

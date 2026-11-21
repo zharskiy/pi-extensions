@@ -1,8 +1,7 @@
-import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
 import type { ToolSpec } from "../../pi-adapter/index.ts";
 import { errorText } from "../text/format.ts";
 import type { HandoffToolRows, HandoffValidation } from "./handoff-document.ts";
+import { writeHandoffFile } from "./handoff-file.ts";
 
 const HANDOFF_TOOL = "handoff";
 
@@ -43,8 +42,7 @@ export const handoffTool = (deps: HandoffToolDeps): ToolSpec<HandoffParams, unkn
     const content = (params.content ?? "").trim();
 
     try {
-      mkdirSync(dirname(target.path), { recursive: true });
-      writeFileSync(target.path, `${content}\n`);
+      writeHandoffFile(target.path, `${content}\n`);
     } catch (error) {
       return { text: `Error: handoff not saved at ${target.path}: ${errorText(error)}`, isError: true };
     }

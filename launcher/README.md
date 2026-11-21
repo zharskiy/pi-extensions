@@ -33,7 +33,7 @@ You need:
 - Colima 0.8.0 or newer. The script installs it with Homebrew if it is missing.
 - Node 22.19 or newer, with npm.
 - git.
-- pi, installed with pi's own installer. The launcher runs only this managed install on the host (for provider credentials, host commands and `--no-sandbox`); a pi installed with npm or found on `PATH` is not used.
+- pi, installed with pi's own installer or with `npm install -g @earendil-works/pi-coding-agent`. The launcher runs the managed install in `~/.pi/agent` on the host (for provider credentials, host commands and `--no-sandbox`), or, without one, the pi in npm's global packages (`npm root -g`). A pi found only on `PATH` or in a project's `node_modules` is not used, nor an npm global pi linked in from outside npm's global folder (`npm link`), or one that lies in a folder a sandbox has run in, or in the folder you start pi in (or its git root) when a sandbox could run there. A git checkout no sandbox has used, such as `/opt/homebrew` or `~/.nvm`, does not count.
 
 ```bash
 curl -fsSL https://pi.dev/install.sh | sh
@@ -41,7 +41,7 @@ npm install -g --omit=peer pi-extensions-mz
 "$(npm root -g)/pi-extensions-mz/launcher/install.sh"
 ```
 
-Without the managed install, `install.sh` stops before it changes anything and says to install pi this way and run it again.
+Without either install, `install.sh` stops before it changes anything and says to install pi one of these ways and run it again.
 
 The script puts `~/.local/bin` first on `PATH` in your shell startup files, then runs `pi sandbox init`, which asks which folders hold your projects, shows the VM size it picked for this Mac, and creates the VM when you choose Apply. Open a new terminal afterwards.
 
@@ -85,7 +85,7 @@ Created the VM in 54s: 8 CPUs, 10 GiB memory, 60 GiB disk
 Done. The sandbox is ready.
 ```
 
-- **Project folders.** The list holds the usual project folders of your home (`~/Projects`, `~/Developer`, `~/code` and the like) and the top folder of where you are, with the number of git repositories in each; those with repositories start checked, and you can add any other folder. Pi starts only inside a chosen folder, and the VM shares only these folders (writable), pi's session folder `~/.pi/agent/sessions` (writable) and the launcher's `state/vm` folder (read-only, the rendered files and the trust bundle). With no folder chosen, the VM shares your whole home, writable, so a container escape reaches all of `~`; setup asks before it allows that.
+- **Project folders.** The list holds the usual project folders of your home (`~/Projects`, `~/Developer`, `~/code` and the like) and the top folder of where you are, with the number of git repositories in each; those with repositories start checked, and you can add any other folder. Adding a folder inside a checked one narrows the choice: the new folder is checked and the wider one unchecked, with a line saying so; adding a folder that holds a checked one is refused until you uncheck that one. Pi starts only inside a chosen folder, and the VM shares only these folders (writable), pi's session folder `~/.pi/agent/sessions` (writable) and the launcher's `state/vm` folder (read-only, the rendered files and the trust bundle). With no folder chosen, the VM shares your whole home, writable, so a container escape reaches all of `~`; setup asks before it allows that.
 - **VM size.** Automatic follows this Mac: its CPU count from 2 to 8, half its memory from 4 to 10 GiB, and a 60 GiB disk. Custom asks for each value; the disk can only grow.
 - **Settings write-back.** On by default: preference changes made inside the sandbox are copied to your pi on this Mac (see [Settings written back](CONFIGURATION.md#settings-written-back)).
 
@@ -112,7 +112,7 @@ npm install
 launcher/install.sh
 ```
 
-Pi's own installer comes first here too: the launcher runs only pi's managed install on the host, never the pi in the checkout's `node_modules` or a pi on `PATH`. The script writes a wrapper script at `~/.local/bin/pi` that runs this checkout. Without the managed install, the launch, `pi sandbox doctor`, `--no-sandbox` and the host commands say so in one line, with the same remedy.
+Install pi first here too, with pi's own installer or `npm install -g`: the launcher runs the managed install, else npm's global pi, never the pi in the checkout's `node_modules` or a pi on `PATH`. The script writes a wrapper script at `~/.local/bin/pi` that runs this checkout. Without either, the launch, `pi sandbox doctor`, `--no-sandbox` and the host commands say so in one line, with the same remedy.
 
 </details>
 
@@ -145,7 +145,7 @@ Pi's own installer comes first here too: the launcher runs only pi's managed ins
 
 ## Everyday use
 
-In the table, *host pi* is pi's managed install on your Mac. A *grant* is a host you allowed. *Overlay* and *agent* volumes are storage the VM keeps for the folder's build output and pi's own files.
+In the table, *host pi* is pi's managed install on your Mac, or without one the pi in npm's global packages. A *grant* is a host you allowed. *Overlay* and *agent* volumes are storage the VM keeps for the folder's build output and pi's own files.
 
 | command | what it does |
 | --- | --- |
@@ -173,7 +173,7 @@ In the table, *host pi* is pi's managed install on your Mac. A *grant* is a host
 
 `pi uninstall <source>` also runs with host pi on the host. Host pi loads no extension for `pi --help` and `pi --list-models`, so help omits the flags extensions register and the list omits providers only an extension registers; `pi list`, `pi mcp list` and `pi config -l` run in the sandbox, and `pi --version` asks pi inside when `image.reference` and `image.digest` pin the image. `egress allow` uses port 443 unless you name one, and refuses wildcards, IP addresses and port 80 ([rules](CONFIGURATION.md#network-access)).
 
-`pi update` runs the managed install's own update from an empty folder, and the next launch rebuilds the image. A local path as the source (`./ext`, `~/ext`) is made absolute against your folder first. Every other `pi update` form (`--all`, `--extensions`, `--extension <source>`, `<source>`, `--models`, `--force`) runs host pi from an empty folder, so it updates the host's packages and the host pi, never a copy inside the sandbox; when the target includes pi itself it names the pi version the sandbox follows. Without a managed install it says how to get one. To update the launcher itself, run `npm install -g --omit=peer pi-extensions-mz` (or `git pull` in a checkout).
+`pi update` runs the host pi's own update from an empty folder, and the next launch rebuilds the image. A local path as the source (`./ext`, `~/ext`) is made absolute against your folder first. Every other `pi update` form (`--all`, `--extensions`, `--extension <source>`, `<source>`, `--models`, `--force`) runs host pi from an empty folder, so it updates the host's packages and the host pi, never a copy inside the sandbox; when the target includes pi itself it names the pi version the sandbox follows. Without a host pi it says how to get one. To update the launcher itself, run `npm install -g --omit=peer pi-extensions-mz` (or `git pull` in a checkout).
 
 After a reboot or `pi sandbox stop`, the next `pi` starts the VM again. A failure prints `pi-sandbox: <message>`, often with a `hint:` line.
 
@@ -185,10 +185,16 @@ After a reboot or `pi sandbox stop`, the next `pi` starts the VM again. A failur
 - **Resource paths in `settings.json` are rewritten.** An `extensions`, `skills`, `prompts` or `themes` entry inside the repository becomes its absolute path, one anywhere inside `~/.pi/agent` (pi's package checkouts under `git/` and `npm/` included) or `~/.agents/skills` points at the same path inside the sandbox, and any other path is left out with a line naming it. Relative patterns (`!old-*`, `-skills/x`) and `builtin:` entries stay as written.
 - **No Docker.** `docker compose` and Testcontainers do not work. You can [run a database inside](CONFIGURATION.md#databases-and-other-services).
 - **Only https leaves, and your Mac's `localhost` is out of reach.** Servers you start inside answer on `127.0.0.1`.
+- **Maven goes through the proxy.** `~/.m2/settings.xml` points Maven at it. Maven 3.9 releases before 3.9.13 send the proxy token under `Authorization` on parallel downloads; the proxy accepts it there on a CONNECT.
 - **Home lives in memory.** `/home/pi` and `/tmp` are emptied when pi exits. Pi's own files survive in the folder's agent volume. To keep a tool cache, list it in `mounts.sharedCaches`.
 - **Build output has its own copy.** `node_modules`, `.venv`, `target` and `.gradle` get their own volume when a matching lockfile sits beside them ([list](CONFIGURATION.md#build-output-overlays)). Run your install command, such as `npm install`, once inside.
 - **Sessions are shared.** `/resume` on your Mac lists sandbox sessions.
-- **Some settings come back to your Mac.** When you change the default model, provider or thinking level, the enabled models, the theme or a few display and queue preferences inside (in `settings.json`), or the settings of the subagents, style, notifications and session-limits extensions (their `pi-*.json` files), the launcher copies the change to your Mac when pi exits, or at the next launch after a crash, and prints one line per change. A value of the wrong type, or a theme name that is not a plain file name, is not copied and a line says so; if a settings file is missing from the sandbox, nothing in it is removed on your Mac. If you changed the same setting on your Mac meanwhile, your Mac's value wins and a line says so. `writeBack` in the config can take keys off this list, add plain preferences or turn it off ([Settings written back](CONFIGURATION.md#settings-written-back)). Nothing else comes back, whatever the config says: packages, extensions, skills, commands, paths, proxy settings, logins, `models.json`, `mcp.json` and agent files change only on your Mac.
+- **Copy reaches your Mac's clipboard.** What pi copies inside (OSC 52) is also put on the macOS clipboard with `pbcopy`, so it works in terminals that ignore OSC 52. The output still reaches your terminal unchanged.
+- **Pasted screenshots work.** Dragging or pasting the path of a PNG, JPEG, GIF or WebP file (up to 20 MiB) that the sandbox cannot see copies it to `/tmp/pi-paste/` inside and pastes that path instead. If the file cannot be read (macOS blocks the terminal from Desktop or Downloads until you allow it under System Settings → Privacy & Security → Files and Folders) or is not there, the path is pasted as it is and your terminal shows a notification saying why. That needs a terminal that shows OSC 9 notifications: iTerm2 does, with "Send escape sequence-generated alerts" on in the profile; terminals without OSC 9 support, Terminal.app among them, show nothing.
+- **Ctrl+V pastes a copied image.** With a PNG on the clipboard (a screenshot copied with Cmd+Ctrl+Shift+4, say), Ctrl+V copies it to `/tmp/pi-paste/` inside and pastes its path. A single image file copied in Finder is copied in the same way; with text, several files or another file, Ctrl+V reaches pi as it is.
+
+All three are on a Mac only; `terminal.clipboard: false` turns them off.
+- **Some settings come back to your Mac.** When you change the default model, provider or thinking level, the enabled models, the theme or a few display and queue preferences inside (in `settings.json`), or the settings of the subagents, style, notifications and session-limits extensions and the prune interval (their `pi-*.json` files; the prune interval only as one of the values `/prune` offers or off), the launcher copies the change to your Mac when pi exits, or at the next launch after a crash, and prints one line per change. A value of the wrong type, or a theme name that is not a plain file name, is not copied and a line says so; if a settings file is missing from the sandbox, nothing in it is removed on your Mac. If you changed the same setting on your Mac meanwhile, your Mac's value wins and a line says so. `writeBack` in the config can take keys off this list, add plain preferences or turn it off ([Settings written back](CONFIGURATION.md#settings-written-back)). Nothing else comes back, whatever the config says: packages, extensions, skills, commands, paths, proxy settings, logins, `models.json`, `mcp.json` and agent files change only on your Mac.
 - **A new share restarts the VM once.** The first launch in a folder outside your home restarts the VM to share it, and the share is kept for later launches. With `workspaceRoots` set, the VM shares only those folders, so the restart happens when the list changes; a stopped VM starts with the new list directly. If other pi sessions run, also from another agent dir, a launch whose folder the VM does not share yet stops and asks you to exit them first; when the current shares already cover the launch, it goes ahead and says the VM changes at the next launch with no other pi session running.
 
 ### Where pi can start
@@ -216,6 +222,7 @@ It does not protect:
 - **The folder.** The agent can change any file in it, `.git/config` included. When pi exits, the launcher names changed git files. Review them before you run git there.
 - **Data sent to allowed hosts.** Anything can leave through them.
 - **Earlier sessions.** Host pi's sessions of this folder are readable inside, with any secret a tool printed in them. `sessions.host: false` keeps them apart.
+- **Your clipboard.** The agent can put text there for you to paste somewhere else, an image on it enters the sandbox when you press Ctrl+V, and an image whose path you paste is copied in. `terminal.clipboard: false` turns these off.
 - **The rest of the VM.** Without `workspaceRoots`, the Colima VM can read and write your whole home; only the container is limited. With [`workspaceRoots`](CONFIGURATION.md#workspace-roots) set, the VM sees only those folders, pi's session folder and a read-only launcher folder.
 
 The full list is in [known gaps](THREAT-MODEL.md#5-known-gaps).
@@ -233,7 +240,7 @@ Your settings go in `~/.pi/agent/pi-sandbox/config.json` (inside pi's agent fold
 
 - `egress.allow`: the hosts the sandbox may reach besides `pi.dev` and your providers. It is empty by default, so package registries such as `registry.npmjs.org` are reachable only once you list them or allow them with `pi sandbox egress allow`.
 - `image.packages` and `image.npmGlobal`: Debian and npm packages to add to the image.
-- `mounts.sharedCaches`: cache folders such as `~/.npm`, kept in volumes that all your sandboxes share. Your Mac's own folder is not mounted.
+- `mounts.sharedCaches`: cache folders such as `~/.npm`, kept in volumes that all your sandboxes share. Your Mac's own folder is not mounted. A cache such as `~/.m2/repository` may sit beside a file the launcher puts there (`~/.m2/settings.xml`, which points Maven at the sandbox proxy).
 - `vm`: the CPUs, memory and disk of the VM, applied at the next launch with no other pi session running, or at once by `pi sandbox init` when none runs. `resources` limits one container inside the VM instead.
 - `writeBack`: which settings changed inside come back to your Mac, inside limits the launcher keeps.
 

@@ -44,7 +44,7 @@ cli/terminal.ts                the host terminal: streams, size read at use, res
 cli/prompt/                    the terminal prompts of pi sandbox init: types, finding the terminal (/dev/tty) and its restore, keys, style and glyphs, the live frame, the line editor, the input rules both prompt sets share (number checks, warn once, initial choice, toggle), the task runner both share (raw mode, ctrl-c, settling once; each set only draws) and the still-working heartbeat, path completion, the rich and plain prompt sets
 cli/setup/types.ts             the setup's facts, answers, plan, outcome, io, effects, apply event and front end types
 cli/setup/document.ts          the config file read with its indent, owned-key edits keeping key order, the diff and the checked atomic write
-cli/setup/folders.ts           the candidate project folders, the repository scan, the storage form of a root and the wizard's refused-folder messages, for Add a folder and the hub's folders row
+cli/setup/folders.ts           the candidate project folders, the repository scan, the storage form of a root, the wizard's refused-folder messages and the checked folders an added one replaces, for Add a folder and the hub's folders row
 cli/setup/plan.ts              the first-run steps, owned-key problems, initial answers, the edited config, the VM action, the plan and the VM size field bounds
 cli/setup/detect.ts            the host, VM, sessions, free disk and folders gathered in parallel within a budget
 cli/setup/screens.ts           every sentence of the setup screens, rich and plain, as functions of the facts and the plan, and one text per apply event
@@ -59,7 +59,7 @@ cli/mcp-sign-in.ts             the launch-start MCP sign-in on the host
 cli/host-sessions.ts           host sessions for a launch: choice, preparation, sweeps, share probe
 cli/intercept.ts               pi install, uninstall, remove, mcp, every update, config, auth, help, --list-models, --export and --version run on the host
 cli/host-routes.ts             which command lines start no session: help, version, auth, config without -l, --list-models, --export
-cli/host-pi.ts                 the one host pi (pi's managed install only), the missing-pi line (missingPiText, built from the parts of missingPi the doctor shows), the one way to start a host job (runHostJob: in the cwd or an empty dir, with the host agent dir when asked) and --no-sandbox (runHostPi)
+cli/host-pi.ts                 the one host pi (pi's managed install, else npm's global pi, not linked in, outside every folder a sandbox has run in and the launch folder and its git root when a sandbox could hold them), the missing-pi line (missingPiText, built from the parts of missingPi the doctor shows), the one way to start a host job (runHostJob: HostPi.hostJob or HostPi.command and its arguments, in the cwd or an empty dir, with the host agent dir when asked) and --no-sandbox (runHostPi)
 cli/notices.ts                 notices printed once per repository and text
 cli/versions.ts                launcher version and image pi version
 cli/commands/status.ts         pi sandbox status
@@ -113,6 +113,7 @@ workspace/mounts.ts            the protected path table and the one overlap rule
 workspace/roots.ts             the workspaceRoots refusal (the guard's protected paths and system dirs, nested roots dropped before links, with a notice) and the checked roots the VM shares
 workspace/pi-session-dir.ts    pi's session slug, the sessions dir of an agent dir and the host session dir choice
 workspace/created.ts           removal of recorded created folders
+workspace/sandbox-reach.ts     whether a sandbox could have written a path (a git working tree it could mount, or a folder one has run in), the roots a sandbox has written or is about to (sandboxWriteRoots: folders one has run in, and the launch folder and its git root when one could hold them), and the folders a launch starts in
 workspace/git/layout.ts        git dir layout from the files, refusing links, foreign pointers and a foreign commondir; the git-dir shape and the .git name in any letter case
 workspace/git/protect.ts       the hooks dirs bound read-only, the self binds and the workspace bare-dir check
 workspace/git/integrity.ts     layout re-checks (worktree pointers, foreign commondir) and the alternates notice
@@ -152,12 +153,14 @@ backend/colima/colima-yaml.ts  the lima.yaml and colima.yaml mounts reader and t
 
 ```
 container/index.ts             public surface
-container/spec.ts              the container spec: mounts, env, labels, the mount table check (no target twice, no mount over the image's paths), the overlay backstop
+container/spec.ts              the container spec: mounts, env (the hand-over wait flag), labels, the mount table check (no target twice, no mount over the image's paths), the overlay backstop
 container/volumes.ts           the volume plan: agent, overlay and shared volume names, targets and labels
 container/git-overlay.ts       the git overlay plan and its ready() step before a start: layout re-check, hooks dirs, the baseline and the pending report
 container/names.ts             container and volume names
-container/lifecycle.ts         startLaunchContainer and removeLaunchContainer: one container per launch, mount points, volume hand-over; agentContainers, the one "launch containers, not relays" filter
-container/run-pi.ts            pi through exec, the pty only for a terminal, signals and resize
+container/lifecycle.ts         startLaunchContainer and removeLaunchContainer: one container per launch, mount points, volume hand-over (fatal when the entrypoint waits for it, a warning otherwise), the wait for the entrypoint's ready marker, the exited-during-startup error; agentContainers, the one "launch containers, not relays" filter
+container/run-pi.ts            pi through exec, the pty only for a terminal, signals and resize, the terminal bridges
+container/clipboard.ts         the clipboard bridges: OSC 52 copies teed to pbcopy, pasted image paths and Ctrl+V images or image files copied into /tmp/pi-paste, an OSC 9 notice when an image import fails, held by the copy tee until pi's output is between escape sequences
+container/host-paths.ts        visibleInside: whether the sandbox sees a host path at the same path
 ```
 
 ## image/
@@ -165,7 +168,7 @@ container/run-pi.ts            pi through exec, the pty only for a terminal, sig
 ```
 image/index.ts                 public surface
 image/Dockerfile               the sandbox image
-image/entrypoint.sh            render links (~/.agents/skills included), the read-only auth.json copy, CA bundle, JVM truststore, idle
+image/entrypoint.sh            the wait for the volume hand-over, render links (~/.agents/skills included), the read-only auth.json copy, the Maven settings copy with the proxy port written in, CA bundle, JVM truststore, the ready marker, idle
 image/bash-env.sh              the missing-command hint and the JVM trust flags
 image/sandbox-image.ts         ensureSandboxImage under the build lock: pull or build, then the layer; build leftovers
 image/build.ts                 the base image build and pinned pull
@@ -194,7 +197,7 @@ hostpi/endpoints.ts            rule endpoints and URL credential checks
 hostpi/provider-endpoints.ts   a provider's hosts
 hostpi/provider-hosts.ts       the provider host table with its cache
 hostpi/provider-hosts.mjs      run against the host pi: the built-in provider hosts
-hostpi/locate.ts               finds pi's managed install in the host agent dir
+hostpi/locate.ts               finds pi's managed install in the host agent dir and the pi of npm install -g in npm's global root, keeping only paths the caller's accept predicate takes
 hostpi/path-search.ts          PATH lookup outside the sandbox roots and the executable check
 hostpi/mcp-auth.ts             MCP servers and their host sign-in state
 hostpi/json.ts                 objectOr
@@ -243,7 +246,7 @@ proxy/start.ts                 start, reuse and stop of a repository's proxy
 proxy/idle.ts                  the idle exit
 proxy/files.ts                 proxy input, live egress settings and record types
 proxy/client.ts                the launcher's client to a proxy
-proxy/server.ts                the proxy server, CONNECT dispatch and the resolved-address check
+proxy/server.ts                the proxy server, the token check, CONNECT dispatch and the resolved-address check
 proxy/routes.ts                /healthz and /denials
 proxy/auth.ts                  the repository token and the guest proxy URL
 proxy/policy.ts                CONNECT decisions and restricted addresses
@@ -306,7 +309,7 @@ shared/ini.ts                  the ini parser and section.name[n] reader
 shared/maven-xml.ts            the XML tokenizer, the Maven settings model, the server secret reader and the XML writer
 shared/settle.ts               settleAll and withTimeout
 shared/terminal-text.ts        control, bidi and line separator characters shown as \uXXXX escapes, and the last non-empty line of command output
-shared/write-back-table.ts     the built-in write-back table as value specs, the host-only settings keys and the ceiling no config passes
+shared/write-back-table.ts     the built-in write-back table as value specs (`pi-prune.json` `days` an enum of the picker intervals), the host-only settings keys and the ceiling no config passes
 ```
 
 ## tests/
@@ -344,6 +347,7 @@ tests/config/egress-entry.test.ts    the egress grammar
 tests/config/parent-proxy.test.ts    the parent proxy parser
 tests/config/mounts.test.ts          mount keys
 tests/config/sessions.test.ts        sessions.host
+tests/config/terminal.test.ts        terminal.clipboard
 tests/config/schema.test.ts          schema and key spec agree, bounds included
 tests/config/validate.test.ts        validation messages
 tests/config/write-back.test.ts      writeBack: defaults, exclude, add, override, enabled, the ceiling and the value specs
@@ -369,7 +373,8 @@ tests/backend/vm-decision.test.ts    each outcome of vmDecision and whenBusy
 tests/container/spec.test.ts         the container spec
 tests/container/git-overlay.test.ts  the git overlay
 tests/container/lifecycle.test.ts    one container per launch, its removal and housekeeping
-tests/container/run-pi.test.ts       running pi and signals
+tests/container/run-pi.test.ts       running pi, signals and the terminal bridges
+tests/container/clipboard.test.ts    the copy tee with its held notices, the pasted image path, Ctrl+V and the failed-import notices
 tests/image/build.test.ts            base builds
 tests/image/build-network.test.ts    build proxy arguments
 tests/image/layer.test.ts            the image layer
@@ -435,6 +440,7 @@ tests/cli/intercept.test.ts          intercepted commands, host routes and the c
 tests/cli/launch.test.ts             the launch
 tests/cli/launch-flow.test.ts        the signal guard, side-by-side stages and the VM shares of a launch
 tests/cli/launch-git.test.ts         the git layout check at launch
+tests/cli/launch-clipboard.test.ts   the osascript clipboard read (PNG or one file path) behind Ctrl+V and its gate
 tests/cli/launch-host-sessions.test.ts  host sessions at launch
 tests/cli/launch-sessions.test.ts    session end and the sweep
 tests/cli/launch-write-back.test.ts  settings written back to the host at launch and at exit, with the allowlist the launch started with

@@ -1,13 +1,18 @@
 import { PAD, type ThemeLike } from "../pi-adapter/index.ts";
-import { DOT, ELLIPSIS, noun } from "../shared/index.ts";
+import { DOT, ELLIPSIS, noun, padded } from "../shared/index.ts";
 import type { Styled } from "./row.ts";
 
 export const EXPAND_BINDING = "app.tools.expand";
 
 const MIN_SUMMARY = 20;
 
-export const expandHint = (key: string): Styled | undefined =>
-  key === "" ? undefined : (theme) => theme.fg("dim", `(${key} to expand)`);
+export const keyHintText = (key: string | undefined, verb: string) => (key ? `(${key} to ${verb})` : "");
+
+export const expandHint = (key: string): Styled | undefined => {
+  const text = keyHintText(key, "expand");
+
+  return text === "" ? undefined : (theme) => theme.fg("dim", text);
+};
 
 export const paint = (text: Styled, theme: ThemeLike) => (typeof text === "function" ? text(theme) : text);
 
@@ -103,3 +108,11 @@ export const framed = (
   ...(oneRow ? [hintRow(theme, hints, width)] : hintLines(theme, hints, width)),
   rule(theme, width),
 ];
+
+export const titledFrame = (
+  theme: ThemeLike,
+  width: number,
+  title: string,
+  lines: string[],
+  hints: readonly KeyHint[],
+) => framed(theme, width, [...padded(theme, theme.fg("text", title), width), "", ...lines], hints);

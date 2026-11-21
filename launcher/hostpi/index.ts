@@ -1,7 +1,7 @@
 export { deriveSandboxPi } from "./derive.ts";
 export { deriveHostTools } from "./derive-tools.ts";
 export { readHostPiFiles } from "./files.ts";
-export { locateManagedPi } from "./locate.ts";
+export { locateManagedPi, locateNpmPi } from "./locate.ts";
 export type { McpSignIn } from "./mcp-auth.ts";
 export { mcpSignIns } from "./mcp-auth.ts";
 export { findOnPath } from "./path-search.ts";

@@ -74,6 +74,7 @@ export interface SandboxConfig {
   resources: { cpus?: number; memoryGiB?: number };
   vm: { cpus?: number; memoryGiB?: number; diskGiB?: number };
   sessions: { host: boolean };
+  terminal: { clipboard: boolean };
   writeBack: WriteBackConfig;
 }
 
@@ -91,6 +92,7 @@ export interface UserConfig {
   resources?: SandboxConfig["resources"];
   vm?: SandboxConfig["vm"];
   sessions?: Partial<SandboxConfig["sessions"]>;
+  terminal?: Partial<SandboxConfig["terminal"]>;
   writeBack?: Partial<WriteBackConfig>;
 }
 

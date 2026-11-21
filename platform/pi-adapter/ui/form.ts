@@ -2,10 +2,10 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { TUI } from "@earendil-works/pi-tui";
 import type { OverlayUi } from "../types/host-ui.ts";
 import type { FormFactory } from "../types/view.ts";
-import { keyPress } from "./key-events.ts";
+import { showCustomView } from "./custom-view.ts";
 import { overlaysCleared } from "./overlay.ts";
 import { createTextInputs } from "./text-input.ts";
-import { fitLines, themeLike } from "./theme-bridge.ts";
+import { themeLike } from "./theme-bridge.ts";
 
 export const createShowForm =
   (
@@ -20,7 +20,7 @@ export const createShowForm =
       return undefined;
     }
 
-    return ctx.ui.custom<T | undefined>((tui, theme, keybindings, done) => {
+    return showCustomView<T | undefined>(ctx, (tui, theme, done) => {
       const inputs = createTextInputs(tui, theme);
 
       const finish = (result: T | undefined) => {
@@ -40,21 +40,10 @@ export const createShowForm =
       });
 
       return {
-        get focused() {
-          return inputs.focused();
-        },
-        set focused(value: boolean) {
-          inputs.focus(value);
-        },
-        render: (width: number) => fitLines(view.render(width), width),
-        handleInput: (data: string) => {
-          view.handleKey(keyPress(data, keybindings));
-          tui.requestRender();
-        },
-        invalidate: () => {},
+        view,
+        focus: { get: inputs.focused, set: inputs.focus },
         dispose: () => {
           signal?.removeEventListener("abort", abort);
-          view.dispose?.();
         },
       };
     });

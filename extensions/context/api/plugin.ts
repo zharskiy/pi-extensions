@@ -1,6 +1,6 @@
 import { homedir } from "node:os";
 import type { Host } from "../../../platform/pi-adapter/index.ts";
-import { homeRelative, type Plugin } from "../../../platform/shared/index.ts";
+import { type Plugin, shortPath } from "../../../platform/shared/index.ts";
 import { EXPAND_BINDING } from "../../../platform/ui-kit/index.ts";
 import { type Breakdown, breakdownOf } from "../core/buckets.ts";
 import { parseSnapshot, type Snapshot } from "../core/snapshot.ts";
@@ -13,19 +13,11 @@ const ALL = "all";
 
 type ContextEnv = { home: string; now(): number };
 
-const cwdOrHomeRelative = (path: string, home: string, cwd: string) => {
-  if (cwd && path.startsWith(`${cwd}/`)) {
-    return `./${path.slice(cwd.length + 1)}`;
-  }
-
-  return homeRelative(path, home);
-};
-
 const shortened = (breakdown: Breakdown, home: string, cwd: string): Breakdown => ({
   ...breakdown,
   memoryFiles: breakdown.memoryFiles.map((part) => ({
     ...part,
-    name: cwdOrHomeRelative(part.name, home, cwd),
+    name: shortPath(part.name, cwd, home),
   })),
 });
 
@@ -74,6 +66,5 @@ export const contextPlugin: Plugin<never, never, undefined> = {
   id: "context",
   enable({ host }) {
     createContext(host, { home: homedir(), now: Date.now });
-    return undefined;
   },
 };

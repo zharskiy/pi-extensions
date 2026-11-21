@@ -1,23 +1,15 @@
 import { homedir } from "node:os";
 import type { Host } from "../../../platform/pi-adapter/index.ts";
-import type { Plugin } from "../../../platform/shared/index.ts";
+import type { Plugin, SettingsScope } from "../../../platform/shared/index.ts";
 import {
   completeArgs,
   type ImportArgs,
   MISSING_SOURCE,
   parseArgs,
-  type Scope,
   type Source,
   USAGE,
 } from "../core/args.ts";
-import {
-  MCP_FILE,
-  type Pair,
-  prepareImport,
-  selectedPlan,
-  surveyImports,
-  writeImport,
-} from "../core/import-flow.ts";
+import { type Pair, prepareImport, selectedPlan, surveyImports, writeImport } from "../core/import-flow.ts";
 import { pickImport } from "../ui/pick.ts";
 import {
   appliedReport,
@@ -27,6 +19,7 @@ import {
   NOTHING_SELECTED,
   nothingToImport,
   pickedReport,
+  UNTRUSTED,
   UNTRUSTED_ONLY,
 } from "../ui/report.ts";
 
@@ -45,7 +38,7 @@ export const createMcpImport = (host: Host, home: string) => {
     return { home, cwd, agentDir };
   };
 
-  const prepare = (source: Source, scope: Scope) => prepareImport(source, scope, places());
+  const prepare = (source: Source, scope: SettingsScope) => prepareImport(source, scope, places());
 
   const write = (pair: Pair, text: string | undefined) => {
     const problem = writeImport(pair, text, places());
@@ -62,7 +55,7 @@ export const createMcpImport = (host: Host, home: string) => {
     const project = args.scope === "project";
 
     if (project && args.apply && !host.session().projectTrusted) {
-      fail(`trust this project first; pi reads .pi/${MCP_FILE} only in trusted projects`);
+      fail(UNTRUSTED);
       return;
     }
 
@@ -109,10 +102,10 @@ export const createMcpImport = (host: Host, home: string) => {
       return;
     }
 
-    const plan = selectedPlan(pair, names, home);
+    const { plan, problem } = selectedPlan(pair, names, home);
 
-    if (plan.error) {
-      fail(`${plan.error}; fix it first, nothing written`);
+    if (problem) {
+      fail(problem);
       return;
     }
 
@@ -192,6 +185,5 @@ export const mcpImportPlugin: Plugin<never, never, undefined> = {
   id: "mcp-import",
   enable({ host }) {
     createMcpImport(host, homedir());
-    return undefined;
   },
 };

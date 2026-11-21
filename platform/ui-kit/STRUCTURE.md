@@ -2,15 +2,15 @@
 
 - `index.ts`: the public surface.
 - `row.ts`: the pi-native row layout: the 0/2/4 grid, `row`/`rowChildren`, `titleLine`, `failureSuffix`, `wrapChild`, `preview`, `rowText`.
-- `handoff-rows.ts`: `handoffRequestMessage`, `handoffSeedMessage`, `handoffToolRows`.
+- `handoff-rows.ts`: `handoffRequestMessage`, `handoffSeedMessage` (both one private `handoffRow`: bold title, the text when expanded, the first sentence or nothing when collapsed), `handoffToolRows`.
 - `glyphs.ts`: the state marks `MARKS` (`◌ ✓ ✗ ⊘ » ↳ › ∴`), `Mark`, `markGlyph`, `markOf`, `pointerMark`.
-- `key-hints.ts`: the hint grammar: `EXPAND_BINDING`, `expandHint`, `appendHint`, `countLine`, `keyHints`, `hintRow` (one hint row cut to the width) and the private `hintLines` (bottom strips), `framed` (rule, lines, hints, rule, with the accent `rule` it keeps to itself; `{ oneRow: true }` cuts the hints to one row).
-- `list.ts`: the selectable list: lines, keys, the shared hints.
+- `key-hints.ts`: the hint grammar: `EXPAND_BINDING`, `keyHintText`, `expandHint`, `appendHint`, `countLine`, `keyHints`, `hintRow` (one hint row cut to the width) and the private `hintLines` (bottom strips), `framed` (rule, lines, hints, rule, with the accent `rule` it keeps to itself; `{ oneRow: true }` cuts the hints to one row), `titledFrame` (`framed` with a title and a blank line on top, for the select and multi-select forms).
+- `list.ts`: the selectable list: lines, keys (`cursorKey` shared with the multi-select), the shared hints.
 - `select.ts`: `selectForm`; a single-choice form over the list.
 - `tabs.ts`: the tab bar, the grouped tab bar and Tab/←→ keys (questionnaire, `/agents setup`).
 - `multi-select.ts`: the checkbox list (Space, `a` all, `n` none, scroll window, `{ slots: true, empty }` for a fixed-height window with its `(none available)` or other empty text, `moreRow` for one `↑ N more`/`↓ N more` row) and `multiSelectForm`; `initialMulti`, `scrollWindow` and the hints are private to the file.
 - `cache-tone.ts`: the cache rate's colour thresholds and the coloured percentage.
-- `context-limit.ts`: the context limit's look shared by the footer, session-limits and the subagents agent view: `limitFigure` (the token figure in `text`, `warning` at soft, bold `error` at hard), `limitTail` (`of <limit>`, dim or the figure's tone), `limitLine` (the whole `working context X of Y`, label dim; the plain text is `workingContextText` in `platform/shared`) and `handoffNotice` (`» handoff at <limit> tokens · <used> used` in `warning` from the soft level on, otherwise undefined).
+- `context-limit.ts`: the context limit's look shared by the footer, session-limits and the subagents agent view: `limitFigure` (the token figure in `text`, `warning` at soft, bold `error` at hard), `limitTail` (`of <limit>`, dim or the figure's tone), `limitLine` (the whole `working context X of Y`, label dim; the plain text is `workingContextText` in `platform/shared`) and `handoffNotice` (`» handoff at <limit> tokens · <used> used` in `warning` from the soft level on, otherwise undefined). It also exports `NO_MODEL`, the `no model` text footer and context show when no model is set.
 - `tests/handoff-rows.test.ts`: `handoff-rows.ts`.
 - `tests/row.test.ts`: `row.ts` and `glyphs.ts`.
 - `tests/layout.test.ts`: `key-hints.ts` and the `shared` text layout it builds on.

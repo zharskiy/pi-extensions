@@ -4,7 +4,7 @@
 extensions/session-limits/
 ├── index.ts                    entry: re-exports the default from api/extension.ts
 ├── api/
-│   ├── extension.ts            createManagedExtension: namespace pi-session-limits, host conversationOnly, settings, sessionLimitsPlugin
+│   ├── extension.ts            createManagedExtension: namespace NAMESPACE, host conversationOnly, settings, sessionLimitsPlugin
 │   └── plugin.ts               sessionLimitsPlugin, createLimits: registers the `handoff` tool, the request and seed renderers (from ui-kit), the kept-message entry renderers (the message one flush, both kept out of the previous-session block), starts watchLimits, publishes the settings on session start
 ├── core/
 │   ├── conversation-host.ts    conversationOnly: Host wrapper limiting events (session info passed as is) and commands to tui and rpc
@@ -12,10 +12,10 @@ extensions/session-limits/
 │   ├── thresholds.ts           handoff step, retry decisions
 │   ├── kept-entries.ts         kept-rule and kept-message entry names, data types, parsers and keptRuleFor (which rule the state calls for)
 │   ├── handoff.ts              HANDOFF_COMMAND, MAIN_AUDIENCE, sessionPreface, withLateResults (held results under a fixed heading), userPrompts (kept messages as the new session's user prompts), handoff path, handoff validation
-│   └── settings.ts             settings file name, defaults and schema
+│   └── settings.ts             NAMESPACE, settings file name and defaults (the schema is platform/shared's limitsSchema)
 ├── ui/
 │   ├── kept-entries.ts         keptRule (the adapter's labelledRule and its labels) and keptMessage (pi's user message look, full width with pi's pad as its margin) entry renderers
-│   └── threshold-text.ts       segmentFor: threshold warning (ui-kit handoffNotice) and failure notice text and token
+│   └── threshold-text.ts       segmentFor: threshold warning (ui-kit handoffNotice) and failure notice text and token, naming /handoff itself
 ├── tests/
 │   ├── conversation.test.ts    conversationOnly
 │   ├── kept-entries.test.ts    the kept-message block (background from the first column, text after the pad, full-width rows, the same rows as pi's user message through the adapter) and the kept entries' fallbacks

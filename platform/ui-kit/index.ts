@@ -1,5 +1,5 @@
 export { cachePercentText } from "./cache-tone.ts";
-export { handoffNotice, limitFigure, limitLine, limitTail } from "./context-limit.ts";
+export { handoffNotice, limitFigure, limitLine, limitTail, NO_MODEL } from "./context-limit.ts";
 export { MARKS, type Mark, markGlyph, markOf, pointerMark } from "./glyphs.ts";
 export { handoffRequestMessage, handoffSeedMessage, handoffToolRows } from "./handoff-rows.ts";
 export {
@@ -11,6 +11,7 @@ export {
   hintRow,
   type KeyHint,
   keyHints,
+  keyHintText,
 } from "./key-hints.ts";
 export {
   CANCEL_HINT,

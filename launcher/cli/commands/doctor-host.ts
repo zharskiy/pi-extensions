@@ -52,7 +52,7 @@ const checkHostPi = async (deps: CliDeps, context: LaunchContext, job: HostPi | 
 
   if (isOlderVersion(job.version, tested)) {
     return warned(
-      `pi ${job.version} (managed install ${job.wrapper}) is older than ${tested}, the pi this launcher is tested with`,
+      `pi ${job.version} (${job.location}) is older than ${tested}, the pi this launcher is tested with`,
       { hint: "run pi update" },
     );
   }
@@ -62,7 +62,7 @@ const checkHostPi = async (deps: CliDeps, context: LaunchContext, job: HostPi | 
       ? "the image follows it"
       : "the image is pinned by image.digest";
 
-  return passed(`pi ${job.version}, managed install ${job.wrapper}; ${image}`);
+  return passed(`pi ${job.version}, ${job.location}; ${image}`);
 };
 
 const checkProviderHosts = async (deps: CliDeps, context: LaunchContext, pi: HostPi | undefined) => {

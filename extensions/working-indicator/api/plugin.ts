@@ -101,7 +101,5 @@ export const workingIndicatorPlugin: Plugin<never, never, undefined> = {
   id: "working-indicator",
   enable({ host }) {
     createWorkingIndicator(host);
-
-    return undefined;
   },
 };

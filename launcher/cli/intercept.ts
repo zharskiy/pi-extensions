@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import { loadEffectiveConfig } from "../config/index.ts";
-import { isWithin, knownRepos, pathFromSetting, realOrResolved, repoRecordOf } from "../shared/index.ts";
-import { assertSafeMounts, findGitRoot } from "../workspace/index.ts";
+import { pathFromSetting, realOrResolved } from "../shared/index.ts";
+import { isSandboxWritable } from "../workspace/index.ts";
 import { type CliDeps, pathsOf, writeLine, writeNotices } from "./deps.ts";
 import { hostPiEnv, requireJobPi, resolveJobPi, runHostJob } from "./host-pi.ts";
 import { type HostRoute, hostRoute, LOCAL_FLAGS } from "./host-routes.ts";
@@ -15,7 +15,7 @@ const runOnHost = async (
 ) => {
   const pi = await requireJobPi(deps);
 
-  return runHostJob(deps, [pi.wrapper, ...args], where, env);
+  return runHostJob(deps, [...pi.hostJob, ...args], where, env);
 };
 
 const NPM_PREFIX = "npm:";
@@ -118,38 +118,13 @@ const localPathOf = (text: string, home: string) => {
   }
 };
 
-const sandboxedRoots = async (stateDir: string) => {
-  const records = await Promise.all((await knownRepos(stateDir)).map((hash) => repoRecordOf(stateDir, hash)));
-
-  return Promise.all(
-    records.flatMap((record) => (record === undefined ? [] : [realOrResolved(record.root)])),
-  );
-};
-
-const canHoldSandbox = (deps: CliDeps, root: string) => {
-  try {
-    assertSafeMounts([root], { home: deps.home, env: deps.env });
-
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-const isSandboxable = async (deps: CliDeps, candidates: string[]) => {
-  const gitRoots = await Promise.all(candidates.map(findGitRoot));
-  const roots = await sandboxedRoots(pathsOf(deps).stateDir);
-
-  return (
-    gitRoots.some((root) => root !== undefined && canHoldSandbox(deps, root)) ||
-    roots.some((root) => candidates.some((candidate) => isWithin(candidate, root)))
-  );
-};
-
 const resolvedLocal = async (deps: CliDeps, text: string) => {
   const path = resolve(deps.cwd, localPathOf(text, deps.home));
 
-  return { path, inRepository: await isSandboxable(deps, [path, await realOrResolved(path)]) };
+  const paths = [path, await realOrResolved(path)];
+  const context = { home: deps.home, env: deps.env, stateDir: pathsOf(deps).stateDir };
+
+  return { path, inRepository: await isSandboxWritable(paths, context) };
 };
 
 const refuse = (deps: CliDeps, source: string, reason: string) => {

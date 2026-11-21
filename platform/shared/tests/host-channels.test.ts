@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { usageTotals } from "../../../test/framework/index.ts";
 import {
   AWAITING_INPUT_CHANNEL,
+  agentsSpend,
   BACKGROUND_WORK_CHANNEL,
   BUSY_CHANNEL,
   HANDOFF_PENDING_CHANNEL,
@@ -15,7 +16,47 @@ import {
   parseLimits,
   parseTotals,
   parseUsageReport,
+  sessionSpend,
+  trackBusy,
 } from "../channels/host-channels.ts";
+
+describe("agentsSpend and sessionSpend", () => {
+  it("sum the sources, and the sources with main", () => {
+    const totals = {
+      main: { cost: 1, tokens: 100 },
+      sources: [
+        { source: "agents", cost: 0.5, tokens: 50 },
+        { source: "jobs", cost: 0.25, tokens: 25 },
+      ],
+      subscription: false,
+    };
+
+    expect(agentsSpend(totals)).toEqual({ cost: 0.75, tokens: 75 });
+    expect(sessionSpend(totals)).toEqual({ cost: 1.75, tokens: 175 });
+    expect(agentsSpend({ ...totals, sources: [] })).toEqual({ cost: 0, tokens: 0 });
+  });
+});
+
+describe("trackBusy", () => {
+  it("keeps the busy sources and calls onQuiet only when a known source ends the last one", () => {
+    const events: string[] = [];
+    const busy = trackBusy({ onBusy: () => events.push("busy"), onQuiet: () => events.push("quiet") });
+
+    busy.receive({ source: "a", busy: true });
+    busy.receive({ source: "b", busy: true });
+    busy.receive({ source: "a", busy: false });
+
+    expect(busy.sources()).toEqual(["b"]);
+
+    busy.receive({ source: "x", busy: false });
+    busy.receive({ source: "b", busy: false });
+    busy.receive({ source: "b", busy: false });
+    busy.receive({ busy: true });
+
+    expect(events).toEqual(["busy", "busy", "quiet"]);
+    expect(busy.sources()).toEqual([]);
+  });
+});
 
 describe("parseBusySignal", () => {
   it("names the channel pi:busy", () => {
@@ -208,5 +249,10 @@ describe("parseLimits", () => {
     expect(parseLimits({ ...limits, hardRatio: 1.1 })).toBeUndefined();
     expect(parseLimits({ ...limits, hardTokens: -1 })).toBeUndefined();
     expect(parseLimits({ ...limits, hardTokens: Number.NaN })).toBeUndefined();
+    expect(parseLimits({ ...limits, hardTokens: 100_000_001 })).toBeUndefined();
+    expect(parseLimits({ ...limits, hardTokens: 100_000_000 })).toEqual({
+      ...limits,
+      hardTokens: 100_000_000,
+    });
   });
 });

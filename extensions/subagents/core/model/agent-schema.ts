@@ -8,6 +8,10 @@ export const PLAIN_NAME = /^[A-Za-z0-9_][A-Za-z0-9_-]*$/;
 
 export const PLAIN_NAME_TEXT = "letters, digits, '_' and '-', not starting with '-'";
 
+export const SKILL_NAME = /^[^\s,\p{Cc}]+$/u;
+
+export const SKILL_NAME_TEXT = "names without commas, whitespace or control characters";
+
 export type Grant = string[] | typeof AGENT_SCOPE_ALL;
 
 export type AgentFrontmatter = {

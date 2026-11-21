@@ -7,7 +7,7 @@ import { NAMESPACE, projectAgentsDir, userAgentsDir } from "../model/paths.ts";
 import { type AgentKind, agentTemplate } from "./agent-template.ts";
 import { fillTemplate } from "./template.ts";
 
-const CREATE_TYPE = "pi-subagents-create";
+const CREATE_TYPE = `${NAMESPACE}-create`;
 
 export const CREATE_USAGE = "/agents create [<name> [project] | <what the agent is for>]";
 

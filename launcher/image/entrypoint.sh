@@ -11,6 +11,27 @@ bundle_dir=/tmp/pi-sandbox
 system_bundle=/etc/ssl/certs/ca-certificates.crt
 trust_bundle=/etc/pi-sandbox/ca.pem
 truststore="$bundle_dir/truststore.p12"
+handover=/tmp/pi-sandbox-handover
+ready=/tmp/pi-sandbox-ready
+handover_tries=600
+
+await_handover() {
+  tries=0
+
+  while [ ! -e "$handover" ]; do
+    if [ "$tries" -ge "$handover_tries" ]; then
+      echo "pi-sandbox: the launcher did not hand the cache volumes to the sandbox user within $((handover_tries / 10)) s, stopping" >&2
+      exit 1
+    fi
+
+    tries=$((tries + 1))
+    sleep 0.1
+  done
+}
+
+if [ -n "${PI_SANDBOX_AWAIT_HANDOVER:-}" ]; then
+  await_handover
+fi
 
 mkdir -p "$agent_dir" "$bundle_dir"
 
@@ -69,7 +90,15 @@ copy_tool() {
   fi
 }
 
-link_tool m2-settings.xml .m2/settings.xml
+port_tool() {
+  if [ -f "$tools_dir/$1" ]; then
+    mkdir -p "$(dirname "$home/$2")"
+    sed 's|<port>\${env\.PI_SANDBOX_PROXY_PORT}</port>|<port>'"${PI_SANDBOX_PROXY_PORT:-}"'</port>|' "$tools_dir/$1" > "$bundle_dir/$1"
+    copy_file "$bundle_dir/$1" "$home/$2" 0644
+  fi
+}
+
+port_tool m2-settings.xml .m2/settings.xml
 link_tool gh-hosts.yml .config/gh/hosts.yml
 link_tool npmrc .npmrc
 link_tool pip.conf .config/pip/pip.conf
@@ -111,6 +140,8 @@ rm -f "$truststore"
 if ! build_truststore; then
   rm -f "$truststore.tmp"
 fi
+
+: > "$ready"
 
 if [ "$#" -gt 0 ]; then
   exec "$@"

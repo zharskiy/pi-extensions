@@ -581,6 +581,16 @@
         }
       }
     },
+    "terminal": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "clipboard": {
+          "type": "boolean",
+          "description": "On a Mac, put what pi in the sandbox copies (OSC 52) on the host clipboard with pbcopy, copy an image whose host path is pasted into the sandbox, and paste the clipboard PNG on Ctrl+V. On by default."
+        }
+      }
+    },
     "tls": {
       "type": "object",
       "additionalProperties": false,
@@ -636,7 +646,8 @@
               "pi-subagents.json",
               "pi-style.json",
               "pi-notifications.json",
-              "pi-session-limits.json"
+              "pi-session-limits.json",
+              "pi-prune.json"
             ]
           },
           "additionalProperties": {
