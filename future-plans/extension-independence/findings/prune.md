@@ -33,20 +33,39 @@ Verdict: prune imports no other extension, but it hard-codes the subagents run l
 | R3 | Restored agent records build the handoff path from the owning session's id (`host.sessionId`, new on `Host`). | `extensions/subagents/api/plugins/agent-registry.ts:33-46`; `platform/pi-adapter/runtime/host.ts:668`; `platform/pi-adapter/types/host-capabilities.ts:65` | NOT COUPLING: a subagents fix. | None. |
 | R4 | New generic platform surface used by prune: `readSessionHeader` and `SessionHeader`, `globalRecord` exported, `settingsErrors()` on the plugin context, `scope: "user"` settings, `integer` number rule, `setWidget(…, { above })`. | `platform/pi-adapter/index.ts:3-4`, `:57`; `platform/shared/plugin/plugin-contract.ts:25`; `platform/shared/plugin/settings-files.ts:140-185`; `platform/extension-manager/managed-extension.ts:50-110`; `platform/pi-adapter/ui/create-ui.ts:125-153` | NOT COUPLING in code: none names prune. | Platform docs name prune as the reason ("exported for prune's sweep", "prune refuses to delete while any exist", "which prune sweeps"): `platform/pi-adapter/ARCHITECTURE.md:17`, `platform/pi-adapter/STRUCTURE.md:21`, `platform/shared/ARCHITECTURE.md:21`, `:23`, `:28`, `platform/extension-manager/ARCHITECTURE.md:23`. Reword to describe the feature, not its first user. |
 | R5 | Subagents docs say old runs are removed by prune and that prune keeps worktree runs. | `extensions/subagents/README.md:13`, `extensions/subagents/ARCHITECTURE.md:72`, `:75` | ACCEPTABLE as a pointer, but it reads as if prune were always on. | Say "if the prune extension is enabled". |
+| R6 | PR #43 added `platform/shared/agent-runs/agent-runs.ts` (33 lines) to fix #1 to #4. It holds subagents' run layout, manifest type and keep rule, and `:18` spells subagents' namespace (`fallbackStemsRoot` = `<agentDir>/pi-subagents`). Users: subagents (`extensions/subagents/core/model/paths.ts:4`) and prune. Checked 2026-11-21 at `51f54c22`. | `platform/shared/agent-runs/agent-runs.ts:4-33`; `platform/shared/tests/agent-runs.test.ts` | REVERSE LEAK (kind E) under the owner's rule that `platform/shared` holds only what is purely shareable: one extension's knowledge in the platform. | Interim. Move it back to `extensions/subagents/core/model/` and publish a footprint declaration from subagents' `api/` through its `index.ts`; prune's `api/` imports that. Step 1 of [../footprint-declarations.md](../footprint-declarations.md), section 4.5. |
 
 ## Fixed in this PR
 
-- #1: fixed. The run layout (`runsDir`, `RUN_MANIFEST`, `sessionRunsDir`) lives in `platform/shared/agent-runs/`, and prune and subagents import it from there.
-- #2: fixed. `fallbackStemsRoot(agentDir)` in `platform/shared/agent-runs/` names the fallback root; prune calls it and subagents reaches it through `sessionRunsDir`, so neither spells `pi-subagents`.
-- #3: fixed. `runRules(manifest)` in `platform/shared/agent-runs/` gives the links and the keep rule, and the manifest subagents writes `satisfies` its `RunManifest`.
-- #4: fixed. One `sessionStem(file)`, in `platform/shared/agent-runs/` rather than the adapter; prune calls it and subagents reaches it through `sessionRunsDir`.
+#1 to #4 are fixed as an interim step. They put subagents' knowledge in `platform/shared/agent-runs/`, which the owner's later rule (`platform/shared` holds only what is purely shareable) does not allow. See R6.
+
+- #1: fixed, interim. The run layout (`runsDir`, `RUN_MANIFEST`, `sessionRunsDir`) lives in `platform/shared/agent-runs/`, and prune and subagents import it from there.
+- #2: fixed, interim. `fallbackStemsRoot(agentDir)` in `platform/shared/agent-runs/` names the fallback root; prune calls it and subagents reaches it through `sessionRunsDir`, so neither extension spells `pi-subagents`. The shared module does (`agent-runs.ts:18`).
+- #3: fixed, interim. `runRules(manifest)` in `platform/shared/agent-runs/` gives the links and the keep rule, and the manifest subagents writes `satisfies` its `RunManifest`.
+- #4: fixed, interim. One `sessionStem(file)`, in `platform/shared/agent-runs/` rather than the adapter; prune calls it and subagents reaches it through `sessionRunsDir`. Under the rule it belongs in the adapter, as first proposed, since it is pi's format.
 - #7: not done. Prune never joins the handoff root with a session id: it lists the root's entries, and the root is injected for tests. So `handoffDir` would be used only by `handoffPath`, and knip flagged it as unused.
 - R4: fixed. The platform docs no longer name prune as the reason for a feature.
 - R5: fixed. The subagents README and architecture say "when the prune extension is enabled".
 
+## Left in prune after this PR
+
+Checked 2026-11-21 at `2d587a19`; the line numbers in this section are from that commit, not from `c7e3f023`. `core/agent-runs.ts` and `core/handoff-scan.ts` stayed in prune on purpose: they hold how prune finds, measures and removes folders, and take the names and rules from `platform/shared`. What they still know about the two writers:
+
+| # | What prune still knows | Where | Owner | Rating |
+|---|---|---|---|---|
+| L1 | Each subfolder of `runsDir(stem)` is one run, its id is the folder name, and links point at runs in the same folder. | `core/agent-runs.ts:44`, `:50-66`, `:69` | subagents; only `runsDir` and `runRules` are in `platform/shared/agent-runs/agent-runs.ts:16`, `:26-33` | REAL COUPLING, low harm: a new nesting leaves runs unswept. A link to a run in another folder counts as absent (`:53-55`), which is a risk if successors can live elsewhere (not checked). |
+| L2 | Removing a run clears its `agents/` folder and then the stem folder, two levels up. | `core/agent-runs.ts:105-117` | subagents' layout | REAL COUPLING, low harm: the `rmdir` calls are non-recursive. |
+| L3 | A folder under `fallbackStemsRoot` is named by a session id. | `core/agent-runs.ts:79-81`, `:91` | the inverse of `sessionRunsDir` (`platform/shared/agent-runs/agent-runs.ts:20-21`) | ACCEPTABLE: the rule is in `platform/shared`; prune reads it backwards. |
+| L4 | An unreadable manifest keeps the run. | `core/agent-runs.ts:30-47` | prune | NOT COUPLING: prune's own safety policy. |
+| L5 | `SESSION_EXT = ".jsonl"` next to the shared `sessionStem`. | `core/agent-runs.ts:16`; `platform/shared/agent-runs/agent-runs.ts:14` | pi | ACCEPTABLE: pi's format, spelled twice. |
+| L6 | A handoff folder's name is a session id; folders older than a day and not live are offered to `rmdir`, which keeps the ones that are not empty. | `core/handoff-scan.ts:28-51`, `:36`; `core/sweep-apply.ts:75-79` | the inverse of `handoffPath` (`platform/shared/handoff/handoff-document.ts:60-61`) | ACCEPTABLE, as #7. |
+| L7 | Root checks, the fresh-folder shortcut, `opendir` streaming, the bounded pool, age and bytes one level deep. | `core/handoff-scan.ts:16-26`, `:44-46`, `:53-60`; `core/pool.ts`; `core/real-dirs.ts:26-35` | prune | NOT COUPLING: generic mechanics. |
+
+The types, counters and report words that name runs and handoffs (`core/sweep-plan.ts:8-37`, `core/sweep-apply.ts:10-33`, `ui/prune-report.ts:32-39`, `:72`, `:79`) are listed in [../footprint-declarations.md](../footprint-declarations.md), section 2.2. That note sizes a footprint model that would remove L1 to L3 and L6 from prune, and moves the layout back to subagents first (R6).
+
 ## With another extension disabled
 
-- Subagents disabled: no new runs appear. Prune still sweeps runs left from before, by the layout it hard-codes. Nothing breaks.
+- Subagents disabled: no new runs appear. Prune still sweeps runs left from before, by the layout it imports from `platform/shared` (at `c7e3f023` it hard-coded it; after R6, by the declaration it imports from subagents' `index.ts`, which a disabled subagents still ships). Nothing breaks.
 - Session-limits disabled: no `main-handoff.md` and no handoff `parentSession` links. `/fork` and `/clone` still make links through pi. Prune works the same.
 - Prune disabled: sessions, runs and handoff folders pile up, as before this branch. Subagents and session-limits do not rely on prune; the only trace is the extra write in `writeHandoffFile` (R1), which then never fires.
 - Subagents changes its layout or manifest while prune stays the same: runs are not found and stay (#1, #2), or a run that points at a kept worktree loses its manifest (#3). This is the case the coupling makes dangerous. Worktrees and branches themselves are never removed by prune.
