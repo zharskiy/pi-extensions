@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createBus } from "../../../../../platform/extension-manager/index.ts";
@@ -97,6 +97,21 @@ describe("agent registry", () => {
     const manifest = JSON.parse(readFileSync(join(record.dir, MANIFEST_FILE), "utf8"));
 
     expect(manifest).toMatchObject({ turns: 3, toolCalls: 4, tokens: 12_300, context, state: "done" });
+  });
+
+  it("writes the manifest without creating the handoff folder", () => {
+    const handoffDir = join(tempDir(), "pi-handoff");
+    const registry = createRegistry({
+      bus: createBus<BusEvents>(),
+      handoffPath: (id) => join(handoffDir, `${id}-handoff.md`),
+    });
+    const record = registry.create(newAgent(tempDir()));
+
+    registry.update(record.id, { state: "running" });
+    registry.close(record.id, { state: "done" });
+
+    expect(existsSync(join(record.dir, MANIFEST_FILE))).toBe(true);
+    expect(existsSync(handoffDir)).toBe(false);
   });
 
   it("keeps each turn's context in the manifest, so a restore after a hard kill has the latest figure", () => {

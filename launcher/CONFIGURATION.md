@@ -211,6 +211,7 @@ When pi inside changes a setting on the list, the launcher copies the change to 
 
 - `settings.json`: `defaultProvider`, `defaultModel`, `defaultThinkingLevel`, `enabledModels`, `theme`, `hideThinkingBlock`, `quietStartup`, `collapseChangelog`, `doubleEscapeAction`, `treeFilterMode`, `steeringMode`, `followUpMode`, each with a check of its value.
 - `pi-subagents.json`, `pi-style.json`, `pi-notifications.json`, `pi-session-limits.json`: the top-level keys their extensions read, any JSON value.
+- `pi-prune.json`: `days`, only one of `0` (off), `7`, `30`, `60`, `90`, `180` and `365`, the choices of `/prune`.
 
 `writeBack` changes the list:
 
@@ -230,7 +231,7 @@ When pi inside changes a setting on the list, the launcher copies the change to 
 }
 ```
 
-- `enabled: false` copies nothing back. `settings.json` and the four built-in `pi-*.json` files are still copied into the sandbox, since pi there reads them; a file you added is not, and its earlier copy is removed from the sandbox at the next launch.
+- `enabled: false` copies nothing back. `settings.json` and the five built-in `pi-*.json` files are still copied into the sandbox, since pi there reads them; a file you added is not, and its earlier copy is removed from the sandbox at the next launch.
 - `exclude` names built-in keys, per file, to stop copying. A key that is not on the built-in list is an error.
 - `add` names keys, per file, with the check a value must pass. A built-in key gets your check instead of its own, for example when pi adds a value the built-in list does not know yet. A new `pi-<name>.json` file is copied whole from your Mac into the sandbox at each launch, like the built-in ones, and its listed keys come back. Every key in that file is readable inside the sandbox, not only the ones you list, so do not add a file that holds secrets. Once you take the file out of `add`, the next launch removes its copy from the sandbox.
 - A key both excluded and added is an error.

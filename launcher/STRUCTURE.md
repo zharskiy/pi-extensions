@@ -304,7 +304,7 @@ shared/ini.ts                  the ini parser and section.name[n] reader
 shared/maven-xml.ts            the XML tokenizer, the Maven settings model, the server secret reader and the XML writer
 shared/settle.ts               settleAll
 shared/terminal-text.ts        control, bidi and line separator characters shown as \uXXXX escapes, and the last non-empty line of command output
-shared/write-back-table.ts     the built-in write-back table as value specs, the host-only settings keys and the ceiling no config passes
+shared/write-back-table.ts     the built-in write-back table as value specs (`pi-prune.json` `days` an enum of the picker intervals), the host-only settings keys and the ceiling no config passes
 ```
 
 ## tests/

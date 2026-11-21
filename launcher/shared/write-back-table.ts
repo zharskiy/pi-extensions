@@ -101,6 +101,7 @@ export const BUILT_IN_WRITE_BACK: WriteBackTable = {
   "pi-style.json": jsonKeys(["style"]),
   "pi-notifications.json": jsonKeys(["channel", "idleDelayMs", "dialogDelayMs"]),
   "pi-session-limits.json": jsonKeys(["softRatio", "hardRatio", "softTokens", "hardTokens"]),
+  "pi-prune.json": { days: { type: "enum", values: [0, 7, 30, 60, 90, 180, 365] } },
 };
 
 export const BUILT_IN_EXTENSION_FILES = Object.keys(BUILT_IN_WRITE_BACK).filter(

@@ -1,3 +1,13 @@
+export {
+  fallbackStemsRoot,
+  RUN_MANIFEST,
+  type RunCleanup,
+  type RunManifest,
+  runRules,
+  runsDir,
+  sessionRunsDir,
+  sessionStem,
+} from "./agent-runs/agent-runs.ts";
 export { cacheHitPercent, reportedCache, sessionCacheHit } from "./cache-hit.ts";
 export {
   AWAITING_INPUT_CHANNEL,
@@ -31,10 +41,12 @@ export {
   type HandoffToolRows,
   type HandoffValidation,
   handoffPath,
+  handoffRoot,
   parseRequestDetails,
   parseSeedDetails,
   validateHandoff,
 } from "./handoff/handoff-document.ts";
+export { writeHandoffFile } from "./handoff/handoff-file.ts";
 export {
   type HandoffLimit,
   type LimitLevel,
@@ -55,6 +67,7 @@ export { LIMIT_SEAM, seamLabel } from "./handoff/handoff-seam.ts";
 export { type HandoffTarget, handoffTool } from "./handoff/handoff-tool.ts";
 export type { Bus, Disable, EventMap, ExtensionPaths, Plugin, Services } from "./plugin/plugin-contract.ts";
 export {
+  type FileScope,
   loadSettingsFiles,
   type ObjectParse,
   parseSettings,

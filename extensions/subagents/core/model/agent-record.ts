@@ -4,6 +4,7 @@ import type {
   CustomMessage,
   RoutedMessage,
 } from "../../../../platform/pi-adapter/index.ts";
+import type { RunCleanup } from "../../../../platform/shared/index.ts";
 import { AGENT_SCOPE_ALL, type AgentFrontmatter, type Grant } from "./agent-schema.ts";
 
 export const MAIN_CALLER = "main";
@@ -45,7 +46,7 @@ export const chainTerminal = (registry: Pick<AgentRegistry, "get">, record: Agen
 export const chainLinks = (registry: Pick<AgentRegistry, "get">, record: AgentRecord): AgentRecord[] =>
   linksTo(registry, record, new Set());
 
-export type WorktreeCleanup = "removed" | "branch kept" | "kept";
+export type WorktreeCleanup = RunCleanup;
 
 export type Worktree = { path: string; branch: string; base: string; cwd: string; cleanup?: WorktreeCleanup };
 

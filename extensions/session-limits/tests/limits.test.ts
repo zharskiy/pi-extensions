@@ -24,7 +24,7 @@ const temp = useTempDirs();
 const tempRoot = () => {
   const root = temp.make("pi-session-limits-");
 
-  temp.track(pathFor(basename(root), { main: true }));
+  temp.track(dirname(pathFor(basename(root), { main: true })));
 
   return root;
 };
