@@ -646,7 +646,8 @@
               "pi-subagents.json",
               "pi-style.json",
               "pi-notifications.json",
-              "pi-session-limits.json"
+              "pi-session-limits.json",
+              "pi-prune.json"
             ]
           },
           "additionalProperties": {

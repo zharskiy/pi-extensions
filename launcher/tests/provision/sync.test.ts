@@ -246,6 +246,7 @@ describe("syncVolumeFiles write-back", () => {
       "pi-style.json": { style: "terse" },
       "pi-notifications.json": {},
       "pi-session-limits.json": {},
+      "pi-prune.json": {},
     });
   });
 
@@ -457,7 +458,13 @@ describe("syncVolumeFiles write-back", () => {
       "warning: preference changes made in the sandbox from now on will not be written back to the host",
     ]);
     expect(await env.baseline()).toEqual({
-      copied: ["pi-subagents.json", "pi-style.json", "pi-notifications.json", "pi-session-limits.json"],
+      copied: [
+        "pi-subagents.json",
+        "pi-style.json",
+        "pi-notifications.json",
+        "pi-session-limits.json",
+        "pi-prune.json",
+      ],
     });
   });
 

@@ -23,6 +23,7 @@ describe("the writeBack key", () => {
       "pi-style.json",
       "pi-notifications.json",
       "pi-session-limits.json",
+      "pi-prune.json",
     ]);
   });
 
