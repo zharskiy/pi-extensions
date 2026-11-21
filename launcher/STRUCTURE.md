@@ -246,7 +246,7 @@ proxy/start.ts                 start, reuse and stop of a repository's proxy
 proxy/idle.ts                  the idle exit
 proxy/files.ts                 proxy input, live egress settings and record types
 proxy/client.ts                the launcher's client to a proxy
-proxy/server.ts                the proxy server, CONNECT dispatch and the resolved-address check
+proxy/server.ts                the proxy server, the token check, CONNECT dispatch and the resolved-address check
 proxy/routes.ts                /healthz and /denials
 proxy/auth.ts                  the repository token and the guest proxy URL
 proxy/policy.ts                CONNECT decisions and restricted addresses
