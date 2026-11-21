@@ -412,6 +412,7 @@ describe("buildContainerSpec", () => {
       PATH: "/opt/homebrew/bin",
       PWD: "/Users/dev/repo",
       PI_SANDBOX: "0",
+      PI_SANDBOX_AWAIT_HANDOVER: "1",
       EDITOR: "vi",
     };
 

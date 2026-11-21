@@ -18,6 +18,7 @@ describe("isLauncherSetVariable", () => {
     "GIT_SSL_CAINFO",
     "PI_SANDBOX",
     "PI_SANDBOX_TRUST_HASH",
+    "PI_SANDBOX_AWAIT_HANDOVER",
     "GITLAB_HOST",
     "HOME",
     "PATH",
