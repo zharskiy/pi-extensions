@@ -34,10 +34,16 @@ const COMPLETE_CONFIG: UserConfig = {
   },
   tls: { extraCa: [{ file: "/etc/corp/ca.pem" }] },
   workspaceRoots: { roots: ["/work"] },
-  mounts: { sharedCaches: ["~/.cache/pip"], autoOverlays: false },
-  env: { allow: ["EDITOR"] },
-  resources: { cpus: 2, memoryGiB: 4 },
-  vm: { cpus: 4, memoryGiB: 8, diskGiB: 80 },
+  mounts: {
+    volumes: ["~/.cache/pip", { target: "/opt/data", name: "data" }],
+    binds: [{ source: "/etc/corp", target: "/etc/corp" }],
+    autoOverlays: false,
+  },
+  setup: [["npm", "ci"]],
+  services: [{ name: "db", command: ["db"], memoryGiB: 1 }],
+  env: { allow: ["EDITOR"], set: { CI: "1", EDITOR: "vi" } },
+  resources: { cpus: 2, memoryGiB: 4, pids: 8192, openFiles: 65536, shmMiB: 1024 },
+  vm: { cpus: 4, memoryGiB: 8, diskGiB: 80, releaseFileCache: false },
   sessions: { host: false },
   terminal: { clipboard: false },
   writeBack: {
@@ -56,6 +62,7 @@ const leafKeys = () => [
     return value !== undefined && !isJsonObject(value) && !key.startsWith("workspaceRoots.");
   }),
   "workspaceRoots",
+  "env.set",
 ];
 
 describe("mergeConfig with a config that sets every key", () => {
@@ -107,6 +114,23 @@ describe("mergeConfig with part of the keys", () => {
     const { config } = merge({ env: { allow: ["EDITOR", "TERM"] } });
 
     expect(config.env.allow).toEqual([...defaultConfig().env.allow, "EDITOR"]);
+  });
+
+  it("takes env.set from the config key by key, over defaults that set none", () => {
+    const { config, sources } = merge({ env: { set: { CI: "1", LANG: "C.UTF-8" } } });
+
+    expect(defaultConfig().env.set).toEqual({});
+    expect(config.env).toEqual({ allow: defaultConfig().env.allow, set: { CI: "1", LANG: "C.UTF-8" } });
+    expect(sources).toMatchObject({ "env.set": "config", "env.allow": "default" });
+    expect(merge({}).sources["env.set"]).toBe("default");
+  });
+
+  it("keeps the default pids limit next to a configured open files limit and sends no default for the others", () => {
+    const { config, sources } = merge({ resources: { openFiles: 65536 } });
+
+    expect(config.resources).toEqual({ pids: 4096, openFiles: 65536 });
+    expect(sources).toMatchObject({ "resources.pids": "default", "resources.openFiles": "config" });
+    expect(sources["resources.shmMiB"]).toBeUndefined();
   });
 
   it("returns the defaults for no config", () => {

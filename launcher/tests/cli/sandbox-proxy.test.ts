@@ -65,7 +65,6 @@ describe("denial lines", () => {
       time: 1_700_000_000_500,
       host,
       port: 443,
-      repoHash: "repo",
       rule,
       reason,
     });
@@ -80,10 +79,10 @@ describe("denial lines", () => {
     await run([], harness.deps);
 
     expect(harness.stderr()).toContain(
-      `pi-sandbox: allow.test was blocked in this folder's sandbox; run pi sandbox egress allow allow.test on the host from ${harness.repoRoot}\n`,
+      `pi-sandbox: allow.test was blocked in the sandbox; run pi sandbox egress allow allow.test on the host\n`,
     );
     expect(harness.stderr()).toContain(
-      "pi-sandbox: capped.test was blocked in this folder's sandbox; too many denial pages\n",
+      "pi-sandbox: capped.test was blocked in the sandbox; too many denial pages\n",
     );
   });
 });

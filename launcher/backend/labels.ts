@@ -1,14 +1,20 @@
 export const LABELS = {
   managed: "pi-sandbox.managed",
+  install: "pi-sandbox.install",
   repoHash: "pi-sandbox.repo-hash",
   repoRoot: "pi-sandbox.repo-root",
   launchId: "pi-sandbox.launch-id",
   imageDigest: "pi-sandbox.image-digest",
-  imageReference: "pi-sandbox.image-reference",
-  relay: "pi-sandbox.relay",
-  relayPort: "pi-sandbox.relay-port",
+  relayInputs: "pi-sandbox.relay-inputs",
   sessionDir: "pi-sandbox.session-dir",
-  userHash: "pi-sandbox.user-hash",
-  sharedPath: "pi-sandbox.shared-path",
   cachePath: "pi-sandbox.cache-path",
+  role: "pi-sandbox.role",
+  serviceName: "pi-sandbox.service-name",
+  servicesHash: "pi-sandbox.services-hash",
 } as const;
+
+type Labels = Record<string, string>;
+
+export const roleOf = (labels: Labels) => labels[LABELS.role];
+
+export const isSession = (labels: Labels) => roleOf(labels) === "agent";

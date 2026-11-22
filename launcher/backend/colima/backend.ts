@@ -1,7 +1,16 @@
 import { existsSync } from "node:fs";
 import { type CommandRunner, errorMessage, LauncherError } from "../../shared/index.ts";
+import { installIdOf } from "../install.ts";
+import { LABELS } from "../labels.ts";
 import type { Backend, ContainerSpec, Detection } from "../types.ts";
-import { containerBody, type EngineContainer, labelFilters, summaryOf } from "./container-body.ts";
+import {
+  containerBody,
+  type EngineContainer,
+  type EngineInspect,
+  inspectOf,
+  labelFilters,
+  summaryOf,
+} from "./container-body.ts";
 import {
   createEngineClient,
   ENGINE_TIMEOUTS,
@@ -11,8 +20,9 @@ import {
   messageOf,
   segment,
 } from "./engine-client.ts";
-import { runExec } from "./exec-session.ts";
+import { demultiplexer, runExec } from "./exec-session.ts";
 import { createImageOperations } from "./images.ts";
+import { createNetworkOperations } from "./networks.ts";
 import { ENGINE_PROFILE, engineSocketPath } from "./profile.ts";
 import { createRelayOperations } from "./relay.ts";
 import { createColimaVm } from "./vm.ts";
@@ -50,8 +60,11 @@ export const createColimaBackend = (options: ColimaBackendOptions): Backend => {
   const timeouts = options.timeouts ?? ENGINE_TIMEOUTS;
   const client = createEngineClient(socket, timeouts);
   const images = createImageOperations(client, options.runner);
-  const volumes = createVolumeOperations(client);
-  const relay = createRelayOperations(client, (id) =>
+  const install = installIdOf(options.stateDir);
+  const owned = { [LABELS.managed]: "true", [LABELS.install]: install };
+  const volumes = createVolumeOperations(client, install);
+  const networks = createNetworkOperations(client, install);
+  const relay = createRelayOperations(client, install, networks, (id) =>
     removeContainer(id, Math.min(RELAY_REMOVAL_MS, timeouts.callMs)),
   );
 
@@ -67,7 +80,7 @@ export const createColimaBackend = (options: ColimaBackendOptions): Backend => {
     }
   };
 
-  const findContainers = async (labels: Record<string, string>) => {
+  const listContainers = async (labels: Record<string, string>) => {
     const containers = await client.json<EngineContainer[]>({
       method: "GET",
       path: "/containers/json",
@@ -83,7 +96,7 @@ export const createColimaBackend = (options: ColimaBackendOptions): Backend => {
         method: "POST",
         path: "/containers/create",
         query: { name: spec.name },
-        json: containerBody(spec),
+        json: containerBody({ ...spec, labels: { ...spec.labels, ...owned } }),
       },
       [400, 409],
     );
@@ -114,14 +127,50 @@ export const createColimaBackend = (options: ColimaBackendOptions): Backend => {
 
   const stopContainer = async (id: string, timeoutSeconds = STOP_TIMEOUT_SECONDS) => {
     await client.call(
-      { method: "POST", path: `/containers/${segment(id)}/stop`, query: { t: timeoutSeconds } },
+      {
+        method: "POST",
+        path: `/containers/${segment(id)}/stop`,
+        query: { t: timeoutSeconds },
+        timeoutMs: timeouts.callMs + timeoutSeconds * 1000,
+      },
       [304, 404],
     );
   };
 
+  const inspectContainer = async (id: string) => {
+    const response = await client.call({ method: "GET", path: `/containers/${segment(id)}/json` }, [404]);
+
+    if (response.status === 404) {
+      return undefined;
+    }
+
+    return inspectOf(JSON.parse(response.body.toString("utf8")) as EngineInspect);
+  };
+
+  const containerLogs = async (id: string, lines: number) => {
+    const response = await client.call(
+      {
+        method: "GET",
+        path: `/containers/${segment(id)}/logs`,
+        query: { stdout: true, stderr: true, tail: lines },
+      },
+      [404],
+    );
+
+    if (response.status === 404) {
+      return "";
+    }
+
+    const chunks: Buffer[] = [];
+
+    demultiplexer({ stdout: chunks, stderr: chunks }, (target, data) => target.push(data))(response.body);
+
+    return Buffer.concat(chunks).toString("utf8");
+  };
+
   const removeContainer = async (id: string, timeoutMs?: number) => {
     await client.call(
-      { method: "DELETE", path: `/containers/${segment(id)}`, query: { force: true }, timeoutMs },
+      { method: "DELETE", path: `/containers/${segment(id)}`, query: { force: true, v: true }, timeoutMs },
       [404, 409],
     );
 
@@ -170,18 +219,27 @@ export const createColimaBackend = (options: ColimaBackendOptions): Backend => {
     buildImage: images.buildImage,
     listImages: images.listImages,
     removeImage: images.removeImage,
-    findContainers,
+    findContainers: (labels) => listContainers({ ...labels, ...owned }),
+    listOtherInstallSessions: async () => {
+      const sessions = await listContainers({ [LABELS.managed]: "true", [LABELS.role]: "agent" });
+
+      return sessions.filter(
+        (session) => session.state === "running" && session.labels[LABELS.install] !== install,
+      );
+    },
     createContainer,
     startContainer,
     stopContainer,
     removeContainer: (id) => removeContainer(id),
+    inspectContainer,
+    containerLogs,
     exec: (spec, io) => runExec(client, spec, io),
     ensureVolume: volumes.ensureVolume,
     listVolumes: volumes.listVolumes,
     removeVolume: volumes.removeVolume,
-    prepareProxyRoute: relay.prepareProxyRoute,
-    listNetworks: relay.listNetworks,
-    removeRepoNetwork: relay.removeRepoNetwork,
+    prepareRelay: relay.prepareRelay,
+    prepareNetwork: networks.prepareNetwork,
+    removeNetwork: networks.removeNetwork,
     status,
   };
 };

@@ -2,9 +2,8 @@ import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Backend } from "../backend/index.ts";
 import type { SandboxConfig } from "../config/index.ts";
-import { errorMessage, LauncherError, launcherRoot, stableHash } from "../shared/index.ts";
-import { placeBuildTrust } from "./build-trust.ts";
-import { buildInContext, reusableImage } from "./context.ts";
+import { errorMessage, LauncherError, stableHash } from "../shared/index.ts";
+import { buildInContext, imageAsset, reusableImage } from "./context.ts";
 import { type BaseRecord, readBaseRecord, writeBaseRecord } from "./record.ts";
 
 export interface ImageVersions {
@@ -22,7 +21,6 @@ export interface PullImageInput {
 export interface EnsureImageInput extends PullImageInput {
   versions: ImageVersions;
   trustPem?: string;
-  proxyCaPem?: string;
   env?: Record<string, string | undefined>;
 }
 
@@ -42,21 +40,9 @@ export const BASE_TAG = "pi-sandbox-base:local";
 
 const DOCKERFILE = "Dockerfile";
 
-const COPIED_ASSETS = [DOCKERFILE, "entrypoint.sh", "bash-env.sh"];
+const TRUST_FILE = "trust.pem";
 
 const PINNED = "pinned";
-
-const PROXY_CA_FILE = "proxy-ca.pem";
-
-interface BuildTrust {
-  trustPem?: string;
-  proxyCaPem?: string;
-}
-
-const proxyCaText = (path: string | undefined) =>
-  path === undefined ? Promise.resolve("") : readFile(path, "utf8");
-
-const imageAssets = () => join(launcherRoot(), "image");
 
 const checkedVersion = (name: string, value: string) => {
   if (!VERSION_PATTERN.test(value)) {
@@ -68,23 +54,22 @@ const checkedVersion = (name: string, value: string) => {
 
 const buildArgsFor = (versions: ImageVersions) => ({ PI_VERSION: checkedVersion("pi", versions.pi) });
 
-export const prepareBuildContext = async (dir: string, trust: BuildTrust = {}) => {
+export const prepareBuildContext = async (dir: string, trustPem?: string) => {
   await mkdir(dir, { recursive: true });
 
-  await Promise.all(COPIED_ASSETS.map((name) => copyFile(join(imageAssets(), name), join(dir, name))));
+  await copyFile(imageAsset(DOCKERFILE), join(dir, DOCKERFILE));
 
-  await writeFile(join(dir, PROXY_CA_FILE), await proxyCaText(trust.proxyCaPem));
+  const trust = join(dir, TRUST_FILE);
 
-  await placeBuildTrust(dir, trust.trustPem);
+  await (trustPem === undefined ? writeFile(trust, "") : copyFile(trustPem, trust));
 
   return dir;
 };
 
 const inputsHash = async (input: EnsureImageInput) => {
-  const assets = await Promise.all(COPIED_ASSETS.map((name) => readFile(join(imageAssets(), name), "utf8")));
-  const proxyCa = await proxyCaText(input.proxyCaPem);
+  const dockerfile = await readFile(imageAsset(DOCKERFILE), "utf8");
 
-  return stableHash({ pi: input.versions.pi, assets, proxyCa });
+  return stableHash({ pi: input.versions.pi, assets: [dockerfile] });
 };
 
 export const recordedImage = async (stateDir: string, config: SandboxConfig) => {
@@ -129,7 +114,7 @@ const buildLocally = async (input: EnsureImageInput, hash: string): Promise<Buil
       prefix: "build",
       tag: BASE_TAG,
       args: buildArgsFor(input.versions),
-      fill: (dir) => prepareBuildContext(dir, { trustPem: input.trustPem, proxyCaPem: input.proxyCaPem }),
+      fill: (dir) => prepareBuildContext(dir, input.trustPem),
     }).catch(unpublishedPi(input.versions.pi)),
   );
   const replaced = await replaceBase(input.stateDir, { id, digest, inputsHash: hash });

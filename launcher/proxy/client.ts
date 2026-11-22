@@ -1,12 +1,11 @@
 import { request as httpRequest } from "node:http";
 import { type JsonObject, parseJsonObject } from "../shared/index.ts";
-import { proxyAuthorization } from "./auth.ts";
+import { connectWithPreamble } from "./preamble.ts";
 
 export interface DenialRecord {
   time: number;
   host: string;
   port: number;
-  repoHash: string;
   rule: string;
   reason: string;
   credentialRule?: string;
@@ -39,7 +38,7 @@ const askProxy = (port: number, token: string, ask: ProxyAsk) =>
         method: "GET",
         path: ask.path,
         timeout: ask.timeoutMs,
-        headers: { "proxy-authorization": proxyAuthorization(token) },
+        createConnection: () => connectWithPreamble(LISTEN_HOST, port, token),
       },
       (response) => {
         const chunks: Buffer[] = [];

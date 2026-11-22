@@ -2,8 +2,10 @@ import { type Dirent, readdirSync, statSync } from "node:fs";
 import { statfs } from "node:fs/promises";
 import { join } from "node:path";
 import type { Backend, VmApplied } from "../../backend/index.ts";
-import { validateConfigFile } from "../../config/index.ts";
-import { errorMessage, LauncherError, launcherRoot } from "../../shared/index.ts";
+import { getPath, validateConfigFile } from "../../config/index.ts";
+import { errorMessage, isJsonObject, LauncherError, launcherRoot } from "../../shared/index.ts";
+import { hostBinds } from "../../workspace/index.ts";
+import { vmSessions } from "../busy.ts";
 import { type CliDeps, pathsOf, writeNotices } from "../deps.ts";
 import { createPlainPrompts } from "../prompt/plain.ts";
 import { createRichPrompts } from "../prompt/rich.ts";
@@ -24,7 +26,7 @@ import type {
   SetupIo,
   SharePlan,
 } from "../setup/types.ts";
-import { assertVmFitsHost, prepareVmDirs, vmBusyCount, vmSharesFor } from "../vm.ts";
+import { assertVmFitsHost, prepareVmDirs, vmSharesFor } from "../vm.ts";
 
 export const YES_FLAG = "--yes";
 
@@ -63,15 +65,26 @@ const detectFor = (deps: CliDeps, context: SetupContext) => (document: ConfigDoc
     statfs: deps.statfs ?? statfs,
   });
 
+const bindEntriesOf = (read: DocumentRead) => {
+  const binds = read.ok ? getPath(read.document.value, "mounts.binds") : undefined;
+
+  return (Array.isArray(binds) ? binds : []).filter(
+    (entry): entry is { source: string; target: string } =>
+      isJsonObject(entry) && typeof entry.source === "string" && typeof entry.target === "string",
+  );
+};
+
 const sharePlanFor =
-  (deps: CliDeps) =>
+  (deps: CliDeps, read: DocumentRead) =>
   (roots: Answers["roots"], facts: { home: string }): SharePlan => {
     if (roots === "home") {
       return { shares: [{ location: facts.home, writable: true }], exact: false };
     }
 
     try {
-      return { shares: vmSharesFor(deps, { roots })?.shares ?? [], exact: true };
+      const binds = hostBinds(bindEntriesOf(read), { home: deps.home, env: deps.env, roots });
+
+      return { shares: vmSharesFor(deps, { roots }, binds).shares, exact: true };
     } catch (error) {
       return { problem: errorMessage(error) };
     }
@@ -94,7 +107,7 @@ const effectsFor = (deps: CliDeps, context: SetupContext): ApplyEffects => ({
         shares: action.shares,
         exactShares: action.kind === "restart" ? action.exactShares : true,
       },
-      { busy: () => vmBusyCount(context.backend, context.stateDir), progress },
+      { busy: () => vmSessions(context.backend, context.stateDir), progress },
     );
   },
 });
@@ -132,7 +145,7 @@ const acceptAll = async (deps: CliDeps) => {
 
   writeNotices(deps, notices);
 
-  const plan = planOf(document, answers, facts, sharePlanFor(deps)(answers.roots, facts));
+  const plan = planOf(document, answers, facts, sharePlanFor(deps, read)(answers.roots, facts));
 
   if (plan.problems.length > 0) {
     throw new LauncherError(plan.problems.join("; "), `fix ${context.configFile}`);
@@ -171,14 +184,15 @@ const ask = (deps: CliDeps, ui: Ui) => {
   const signal = signalExit();
 
   const setup = async () => {
+    const read = await readConfig(context.configFile);
     const input: SetupInput = {
-      read: await readConfig(context.configFile),
+      read,
       configFile: context.configFile,
       home: deps.home,
       env: deps.env,
       readdir: folderNames,
       detect: detectFor(deps, context),
-      sharePlan: sharePlanFor(deps),
+      sharePlan: sharePlanFor(deps, read),
     };
 
     return runSetup(ioOf(ui), input, effectsFor(deps, context));

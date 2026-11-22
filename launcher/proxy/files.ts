@@ -9,8 +9,7 @@ export interface EgressSettings {
   derivedHosts: string[];
 }
 
-export interface RepoProxyInput extends EgressSettings {
-  repoHash: string;
+export interface ProxyInput extends EgressSettings {
   token: string;
   rules: CredentialRule[];
   envSecrets: Record<string, string>;
@@ -22,7 +21,7 @@ export interface RepoProxyInput extends EgressSettings {
   accessLogLimit: number;
 }
 
-export interface RepoProxy {
+export interface ProxyRecord {
   pid: number;
   boot: number;
   start: string;
@@ -52,6 +51,6 @@ export const parseEgressSettings = (
     : undefined;
 
 export interface DaemonInput {
-  input: RepoProxyInput;
+  input: ProxyInput;
   inputHash: string;
 }

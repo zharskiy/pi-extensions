@@ -56,11 +56,12 @@ const SYSTEM_PARENTS = ["/private", "/var"];
 
 const lexicalRoot = (root: string, home?: string) => resolve(expandHome(root, home));
 
-const refusal = (root: string, problem: string) =>
-  new LauncherError(
-    `config: workspaceRoots.roots: ${printable(root)} ${problem}`,
-    "name the project folders themselves in workspaceRoots.roots",
-  );
+const ROOTS_KEY = "workspaceRoots.roots";
+
+const ROOTS_HINT = "name the project folders themselves in workspaceRoots.roots";
+
+const refusal = (key: string, hint: string) => (root: string, problem: string) =>
+  new LauncherError(`config: ${key}: ${printable(root)} ${problem}`, hint);
 
 const bothForms = (entry: Guarded) => {
   const real = realOrResolvedSync(entry.path);
@@ -94,7 +95,7 @@ export const pathTextProblem = (path: string): RootProblem | undefined => {
   return MOUNT_SYNTAX.test(path) ? { kind: "mount-syntax" } : undefined;
 };
 
-const problemOf = (resolved: string, context: RootGuardContext): RootProblem | undefined => {
+export const shareProblem = (resolved: string, context: RootGuardContext): RootProblem | undefined => {
   const textProblem = pathTextProblem(resolved);
 
   if (textProblem !== undefined) {
@@ -118,22 +119,26 @@ const problemOf = (resolved: string, context: RootGuardContext): RootProblem | u
     : { kind: "inside", name: clash.name, path: clash.path };
 };
 
-const refusalOf = (root: string, problem: RootProblem) => {
+export const pathRefusal = (key: string, hint: string, root: string, problem: RootProblem) => {
+  const refuse = refusal(key, hint);
+
   if (problem.kind === "control") {
-    return refusal(JSON.stringify(root), "holds a newline or another control character");
+    return refuse(JSON.stringify(root), "holds a newline or another control character");
   }
 
   if (problem.kind === "mount-syntax") {
-    return refusal(root, 'holds "," or ":", which colima\'s --mount cannot take');
+    return refuse(root, 'holds "," or ":", which colima\'s --mount cannot take');
   }
 
   return problem.kind === "home"
-    ? refusal(root, "is the home dir or holds it, which would share all of it with the sandbox VM")
-    : refusal(root, `overlaps ${problem.name} (${problem.path}), which the sandbox VM must not see`);
+    ? refuse(root, "is the home dir or holds it, which would share all of it with the sandbox VM")
+    : refuse(root, `overlaps ${problem.name} (${problem.path}), which the sandbox VM must not see`);
 };
 
+const refusalOf = (root: string, problem: RootProblem) => pathRefusal(ROOTS_KEY, ROOTS_HINT, root, problem);
+
 const assertShareable = (root: string, resolved: string, context: RootGuardContext) => {
-  const problem = problemOf(resolved, context);
+  const problem = shareProblem(resolved, context);
 
   if (problem !== undefined) {
     throw refusalOf(root, problem);
@@ -156,7 +161,7 @@ const configuredRoots = (roots: string[], home?: string) => {
 
 export const checkRoot = (root: string, context: RootGuardContext): RootVerdict => {
   const resolved = realOrResolvedSync(lexicalRoot(root, context.home));
-  const problem = problemOf(resolved, context);
+  const problem = shareProblem(resolved, context);
 
   return problem === undefined ? { ok: true, resolved, exists: isFolder(resolved) } : { ok: false, problem };
 };

@@ -25,7 +25,7 @@ const notice = (deps: CliDeps, name: string, text: string) => {
 const notSignedInLine = (name: string) => `pi-sandbox: mcp ${name}: not signed in; run pi mcp login ${name}`;
 
 const notSignedIn = (deps: CliDeps, context: LaunchContext, name: string) =>
-  writeOnce(deps, context, [notSignedInLine(name)]);
+  writeOnce(deps, context.stateDir, [notSignedInLine(name)]);
 
 const needsSignIn = async (host: HostSide, server: McpOAuthServer, now: number) => {
   const entry = await readMcpAuthEntry(host.hostAgentDir, server.name, server.url);
@@ -95,7 +95,7 @@ export const signInMcpServers = async (deps: CliDeps, context: LaunchContext, ho
   if (!isTerminal(deps.terminal.stdin) || !isTerminal(deps.terminal.stdout)) {
     await writeOnce(
       deps,
-      context,
+      context.stateDir,
       needed.map((server) => notSignedInLine(server.name)),
     );
 

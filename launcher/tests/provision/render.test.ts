@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { DerivedSandboxPi, DerivedTools } from "../../hostpi/index.ts";
 import { renderAgentDir } from "../../provision/index.ts";
 import { stateLayout } from "../../shared/index.ts";
-import { tempDir, writeText } from "./fixtures.ts";
+import { NO_STATUS, tempDir, writeText } from "./fixtures.ts";
 
 const NO_TOOLS: DerivedTools = {
   gh: [],
@@ -92,6 +92,7 @@ describe("renderAgentDir", () => {
       hostAgentDir: host,
       hostHome: host,
       derived: derived(),
+      status: NO_STATUS,
     });
 
     expect(result.renderDir).toBe(stateLayout(stateDir).repo("repo1").render);
@@ -112,6 +113,7 @@ describe("renderAgentDir", () => {
       "skills/deploy/run.sh",
       "tools/",
       "tools/m2-settings.xml",
+      "tools/status.json",
     ]);
     expect(JSON.parse(await readFile(join(result.renderDir, "auth.json"), "utf8"))).toEqual(
       derived().files["auth.json"],
@@ -130,6 +132,7 @@ describe("renderAgentDir", () => {
         hostAgentDir: host,
         hostHome: host,
         derived: derived(key),
+        status: NO_STATUS,
       });
     const first = await render();
     const auth = join(first.renderDir, "auth.json");
@@ -160,6 +163,7 @@ describe("renderAgentDir", () => {
       hostAgentDir: host,
       hostHome: host,
       derived: derived(),
+      status: NO_STATUS,
     });
 
     await writeText(join(result.renderDir, "AGENTS.md"), "RULES\n");
@@ -170,6 +174,7 @@ describe("renderAgentDir", () => {
       hostAgentDir: host,
       hostHome: host,
       derived: derived(),
+      status: NO_STATUS,
     });
 
     expect(await readFile(join(result.renderDir, "AGENTS.md"), "utf8")).toBe("rules\n");
@@ -185,6 +190,7 @@ describe("renderAgentDir", () => {
       hostAgentDir: host,
       hostHome: host,
       derived: derived(),
+      status: NO_STATUS,
     });
 
     await rm(join(host, "skills"), { recursive: true });
@@ -197,6 +203,7 @@ describe("renderAgentDir", () => {
       hostAgentDir: host,
       hostHome: host,
       derived: derived(),
+      status: NO_STATUS,
     });
     const tree = await listTree(result.renderDir);
 
@@ -212,6 +219,7 @@ describe("renderAgentDir", () => {
       hostAgentDir: host,
       hostHome: host,
       derived: derived(),
+      status: NO_STATUS,
     });
 
     expect(await listTree(result.renderDir)).toEqual([
@@ -220,10 +228,11 @@ describe("renderAgentDir", () => {
       "models.json",
       "tools/",
       "tools/m2-settings.xml",
+      "tools/status.json",
     ]);
   });
 
-  it("renders Maven settings with the sandbox proxy read from the env when the host has no settings.xml", async () => {
+  it("renders Maven settings with the sandbox proxy and no credentials when the host has no settings.xml", async () => {
     const stateDir = await tempDir("render-state");
     const host = await tempDir("render-host");
     const result = await renderAgentDir({
@@ -232,15 +241,17 @@ describe("renderAgentDir", () => {
       hostAgentDir: host,
       hostHome: host,
       derived: derived(),
+      status: NO_STATUS,
     });
     const settings = await readFile(join(result.renderDir, "tools", "m2-settings.xml"), "utf8");
     const proxy = /<proxy>([\s\S]*)<\/proxy>/.exec(settings)?.[1] ?? "";
 
     expect(proxy).toContain("<active>true</active>");
-    expect(proxy).toContain(`<host>\${env.PI_SANDBOX_PROXY_HOST}</host>`);
-    expect(proxy).toContain(`<port>\${env.PI_SANDBOX_PROXY_PORT}</port>`);
-    expect(proxy).toContain("<username>pi-sandbox</username>");
-    expect(proxy).toContain(`<password>\${env.PI_SANDBOX_PROXY_TOKEN}</password>`);
+    expect(proxy).toContain("<host>pi-sandbox-proxy</host>");
+    expect(proxy).toContain("<port>3128</port>");
+    expect(proxy).toContain("<nonProxyHosts>localhost|127.*|[::1]|pi-sandbox-proxy</nonProxyHosts>");
+    expect(proxy).not.toContain("<username>");
+    expect(proxy).not.toContain("<password>");
   });
 
   it("renders the tool files of the derived gh, glab, npm, pip, Maven and git settings", async () => {
@@ -264,6 +275,7 @@ describe("renderAgentDir", () => {
         },
         git: { name: 'Max "Z"', email: "max@corp.test" },
       }),
+      status: NO_STATUS,
     });
     const read = (name: string) => readFile(join(result.renderDir, "tools", name), "utf8");
 
@@ -345,6 +357,7 @@ describe("renderAgentDir", () => {
       hostAgentDir: host,
       hostHome: host,
       derived: derived(),
+      status: NO_STATUS,
     });
     const files = await listTree(result.renderDir);
 
@@ -381,6 +394,7 @@ describe("renderAgentDir fix round", () => {
       hostAgentDir: host,
       hostHome: host,
       derived: derived(),
+      status: NO_STATUS,
     });
     const tree = await listTree(renderDir);
 
@@ -401,6 +415,7 @@ describe("renderAgentDir fix round", () => {
       hostAgentDir: host,
       hostHome: host,
       derived: derived(),
+      status: NO_STATUS,
     });
     const leftover = join(renderDir, `auth.json.${process.pid}.abcd1234.tmp`);
 
@@ -412,6 +427,7 @@ describe("renderAgentDir fix round", () => {
       hostAgentDir: host,
       hostHome: host,
       derived: derived(),
+      status: NO_STATUS,
     });
 
     expect(await listTree(renderDir)).not.toContain(basename(leftover));
@@ -427,29 +443,11 @@ describe("renderAgentDir fix round", () => {
         hostAgentDir: host,
         hostHome: host,
         derived: derived(`pi-sandbox-${String(index).repeat(24)}`),
+        status: NO_STATUS,
       }),
     );
 
     await expect(Promise.all(renders)).resolves.toHaveLength(6);
-  });
-});
-
-describe("the legacy render dir", () => {
-  it("stays while another launch of the repository is live, and goes at a launch with none", async () => {
-    const stateDir = await tempDir("render-legacy");
-    const host = await hostAgentDir();
-    const legacy = stateLayout(stateDir).repo("repo1").legacyRender;
-    const input = { stateDir, repoHash: "repo1", hostAgentDir: host, hostHome: host, derived: derived() };
-
-    await writeText(join(legacy, "AGENTS.md"), "old");
-
-    await renderAgentDir({ ...input, othersLive: async () => true });
-
-    expect(await readFile(join(legacy, "AGENTS.md"), "utf8")).toBe("old");
-
-    await renderAgentDir({ ...input, othersLive: async () => false });
-
-    expect(await stat(legacy).catch(() => undefined)).toBeUndefined();
   });
 });
 
@@ -461,6 +459,7 @@ describe("the user skills of ~/.agents/skills", () => {
       hostAgentDir: host,
       hostHome,
       derived: derived(),
+      status: NO_STATUS,
     });
 
   it("renders them into their own render subdir with the agent dir filters", async () => {
@@ -506,6 +505,7 @@ describe("symlinks in the rendered host entries", () => {
       hostAgentDir: host,
       hostHome,
       derived: derived(),
+      status: NO_STATUS,
     });
 
   it("are left out and named in a notice that says why and what to do", async () => {
@@ -598,5 +598,47 @@ describe("symlinks in the rendered host entries", () => {
     expect(notices).toEqual([
       "render: missing in the sandbox, because the launcher follows no symlinks: skills/deploy, ~/.agents/skills; replace each link with a real directory or file to carry it",
     ]);
+  });
+
+  it("renders the status file from the config-derived input and keeps it through stale removal", async () => {
+    const stateDir = await tempDir("render-state");
+    const host = await hostAgentDir();
+    const status = {
+      resources: { cpus: 2, pids: 256, shmMiB: 64 },
+      volumes: ["/home/pi/.m2", "/home/pi/.gradle"],
+      binds: ["/data"],
+      setup: [["npm", "ci"]],
+      services: [],
+    };
+    const input = {
+      stateDir,
+      repoHash: "repo1",
+      hostAgentDir: host,
+      hostHome: host,
+      derived: derived(),
+      status,
+    };
+    const first = await renderAgentDir(input);
+    const path = join(first.renderDir, "tools", "status.json");
+    const text = await readFile(path, "utf8");
+
+    await renderAgentDir(input);
+
+    expect(await readFile(path, "utf8")).toBe(text);
+    expect(text.endsWith("}\n")).toBe(true);
+    expect(JSON.parse(text)).toEqual({
+      version: 1,
+      proxy: {
+        url: "http://pi-sandbox-proxy:3128",
+        denials: "http://pi-sandbox-proxy:3128/denials",
+        health: "http://pi-sandbox-proxy:3128/healthz",
+      },
+      resources: { cpus: 2, pids: 256, shmMiB: 64 },
+      volumes: [{ target: "/home/pi/.m2" }, { target: "/home/pi/.gradle" }],
+      binds: [{ target: "/data" }],
+      setup: [["npm", "ci"]],
+      services: [],
+    });
+    expect(text).not.toContain(host);
   });
 });

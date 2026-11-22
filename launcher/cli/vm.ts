@@ -1,28 +1,24 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import {
-  type Backend,
-  LABELS,
-  type VmPath,
-  type VmShare,
-  type VmSpec,
-  type VmTarget,
-} from "../backend/index.ts";
-import { type SandboxConfig, VM_BOUNDS } from "../config/index.ts";
-import { listLauncherContainers } from "../container/index.ts";
-import { liveLaunches } from "../grants/index.ts";
-import { isWithin, LauncherError, realOrResolvedSync, stateLayout } from "../shared/index.ts";
-import { type HostSessions, mountedGitDirs, sharedRootsOf } from "../workspace/index.ts";
+import type { Backend, VmPath, VmShare, VmSpec, VmTarget } from "../backend/index.ts";
+import { defaultVmMemoryProblem, type SandboxConfig, VM_BOUNDS } from "../config/index.ts";
+import { isWithin, LauncherError, outermostPaths, realOrResolvedSync, stateLayout } from "../shared/index.ts";
+import { type HostBind, type HostSessions, mountedGitDirs, sharedRootsOf } from "../workspace/index.ts";
+import { vmSessions } from "./busy.ts";
 import type { LaunchContext } from "./context.ts";
 import { type CliDeps, hostAgentDirOf, pathsOf, writeNotices } from "./deps.ts";
 import { prepareSessionsDir } from "./host-sessions.ts";
-import { busyLaunches } from "./launches.ts";
 
-const vmPathsOf = (context: LaunchContext, sessions: HostSessions): VmPath[] =>
+export const writableMounts = (context: LaunchContext, sessions: HostSessions) => [
+  ...mountedGitDirs(context.workspace),
+  ...("dir" in sessions ? [sessions.dir] : []),
+];
+
+const vmPathsOf = (context: LaunchContext, sessions: HostSessions, binds: HostBind[]): VmPath[] =>
   [
-    ...mountedGitDirs(context.workspace).map((path) => ({ path, writable: true })),
+    ...writableMounts(context, sessions).map((path) => ({ path, writable: true })),
     { path: stateLayout(context.stateDir).vm, writable: false },
-    ...("dir" in sessions ? [{ path: sessions.dir, writable: true }] : []),
+    ...binds.map((bind) => ({ path: bind.share, writable: false })),
   ].map((need) => ({ ...need, path: realOrResolvedSync(need.path) }));
 
 type WorkspaceRoots = SandboxConfig["workspaceRoots"];
@@ -33,6 +29,12 @@ export interface VmSharePlan {
 }
 
 const HOST_RESERVE_GIB = 2;
+
+export const vmTargetOf = (vm: SandboxConfig["vm"]): VmTarget => {
+  const size = { cpus: vm.cpus, memoryGiB: vm.memoryGiB, diskGiB: vm.diskGiB };
+
+  return Object.fromEntries(Object.entries(size).filter(([, value]) => value !== undefined));
+};
 
 const AUTOMATIC = { cpus: { min: 2, max: 8 }, memoryGiB: { min: 4, max: 10 }, diskGiB: 60 };
 
@@ -77,6 +79,22 @@ export const assertVmFitsHost = (deps: CliDeps, target: VmTarget) => {
   }
 };
 
+export const assertMemoryFitsVm = (deps: CliDeps, config: SandboxConfig) => {
+  if (config.vm.memoryGiB !== undefined) {
+    return;
+  }
+
+  const size = recommendedVmSize(deps.machine.cpus, deps.machine.memoryGiB);
+  const problem = defaultVmMemoryProblem(config, size.memoryGiB);
+
+  if (problem !== undefined) {
+    throw new LauncherError(
+      `config: ${problem}`,
+      `set vm.memoryGiB in ${pathsOf(deps).userConfigFile}, or run pi sandbox init to choose a size`,
+    );
+  }
+};
+
 const vmDirsOf = (deps: CliDeps) => ({
   sessions: join(hostAgentDirOf(deps), "sessions"),
   state: stateLayout(pathsOf(deps).stateDir).vm,
@@ -101,11 +119,27 @@ const assertApart = (shares: VmShare[]) => {
   }
 };
 
-export const vmSharesFor = (deps: CliDeps, workspaceRoots: WorkspaceRoots): VmSharePlan | undefined => {
-  if (workspaceRoots === undefined) {
-    return undefined;
-  }
+const bindShares = (shares: VmShare[], binds: HostBind[]) =>
+  outermostPaths(binds.map((bind) => bind.share))
+    .filter((location) => !shares.some((share) => isWithin(location, share.location)))
+    .map((location) => {
+      const held = shares.find((share) => isWithin(share.location, location));
 
+      if (held !== undefined) {
+        throw new LauncherError(
+          `config: mounts.binds: the sandbox VM would share ${location} for a bind source, which holds the share ${held.location}, and colima refuses nested shares`,
+          "bind a folder inside that share, or one apart from it",
+        );
+      }
+
+      return { location, writable: false };
+    });
+
+export const vmSharesFor = (
+  deps: CliDeps,
+  workspaceRoots: NonNullable<WorkspaceRoots>,
+  binds: HostBind[],
+): VmSharePlan => {
   const dirs = vmDirsOf(deps);
   const { roots, notices } = sharedRootsOf(workspaceRoots, { home: deps.home, env: deps.env });
   const shares = [
@@ -116,7 +150,7 @@ export const vmSharesFor = (deps: CliDeps, workspaceRoots: WorkspaceRoots): VmSh
 
   assertApart(shares);
 
-  return { shares, notices };
+  return { shares: [...shares, ...bindShares(shares, binds)], notices };
 };
 
 export const prepareVmDirs = async (deps: CliDeps) => {
@@ -127,14 +161,14 @@ export const prepareVmDirs = async (deps: CliDeps) => {
   await mkdir(dirs.state, { recursive: true });
 };
 
-export const prepareVmShares = async (deps: CliDeps, workspaceRoots: WorkspaceRoots) => {
+export const prepareVmShares = async (deps: CliDeps, workspaceRoots: WorkspaceRoots, binds: HostBind[]) => {
   if (workspaceRoots === undefined) {
     return undefined;
   }
 
   await prepareVmDirs(deps);
 
-  return vmSharesFor(deps, workspaceRoots);
+  return vmSharesFor(deps, workspaceRoots, binds);
 };
 
 const report = (deps: CliDeps) => (notice: string) => writeNotices(deps, [notice]);
@@ -154,44 +188,29 @@ export const startVm = async (
   );
 };
 
-const foreignSessions = async (backend: Backend, stateDir: string, launchId?: string) => {
-  if (!(await backend.detect()).available) {
-    return 0;
-  }
-
-  const live = (await liveLaunches(stateDir)).map((launch) => launch.launchId);
-  const known = new Set([...(launchId === undefined ? [] : [launchId]), ...live]);
-  const containers = await listLauncherContainers(backend);
-
-  return containers.filter(
-    (container) => container.state === "running" && !known.has(container.labels[LABELS.launchId] ?? ""),
-  ).length;
-};
-
-const busyCount = async (backend: Backend, stateDir: string, launchId?: string) =>
-  (await busyLaunches(stateDir, launchId)) + (await foreignSessions(backend, stateDir, launchId));
-
-export const vmBusyCount = (backend: Backend, stateDir: string) => busyCount(backend, stateDir);
-
 const vmBusy = (context: LaunchContext, backend: Backend, launchId: string) => () =>
-  busyCount(backend, context.stateDir, launchId);
+  vmSessions(backend, context.stateDir, launchId);
 
-export const vmShareCoverage = (context: LaunchContext, backend: Backend, sessions: HostSessions) =>
-  backend.vm.coverage(vmPathsOf(context, sessions));
+export const vmShareCoverage = (
+  context: LaunchContext,
+  backend: Backend,
+  sessions: HostSessions,
+  binds: HostBind[],
+) => backend.vm.coverage(vmPathsOf(context, sessions, binds));
 
 export const reconcileVm = async (
   deps: CliDeps,
   context: LaunchContext,
   backend: Backend,
-  parts: { sessions: HostSessions; launchId: string; plan: VmSharePlan | undefined },
+  parts: { sessions: HostSessions; launchId: string; plan: VmSharePlan | undefined; binds: HostBind[] },
 ) => {
   writeNotices(deps, parts.plan?.notices ?? []);
 
   await backend.vm.reconcile(
     {
-      size: context.effective.config.vm,
+      size: vmTargetOf(context.effective.config.vm),
       shares: parts.plan?.shares,
-      needs: vmPathsOf(context, parts.sessions),
+      needs: vmPathsOf(context, parts.sessions, parts.binds),
     },
     { busy: vmBusy(context, backend, parts.launchId), report: report(deps) },
   );

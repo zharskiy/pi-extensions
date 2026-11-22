@@ -24,17 +24,17 @@ import {
   DAEMON_FAILURE_TAG,
   type EgressSettings,
   egressSettingsOf,
+  type ProxyInput,
+  type ProxyRecord,
   parseEgressSettings,
-  type RepoProxy,
-  type RepoProxyInput,
 } from "./files.ts";
 import { openLauncherCa } from "./tls-ca.ts";
 
 type SpawnProcess = (command: string, args: string[], options: SpawnOptions) => ChildProcess;
 
-export interface EnsureRepoProxyOptions {
+export interface EnsureProxyOptions {
   stateDir: string;
-  input: RepoProxyInput;
+  input: ProxyInput;
   env: NodeJS.ProcessEnv;
   othersLive: () => Promise<boolean>;
   runner?: CommandRunner;
@@ -42,8 +42,8 @@ export interface EnsureRepoProxyOptions {
   timeoutMs?: number;
 }
 
-export interface RepoProxyStart {
-  proxy: RepoProxy;
+export interface ProxyStart {
+  proxy: ProxyRecord;
   notices: string[];
 }
 
@@ -66,21 +66,19 @@ const LOG_TAIL_BYTES = 4096;
 const TOKEN_BYTES = 32;
 
 const CHANGED =
-  "the credential, parent proxy or CA settings changed; the pi sessions running in this folder keep the earlier ones until they all exit (egress allow and deny changes apply now)";
+  "the credential, parent proxy or CA settings changed; the pi sessions running in the sandbox keep the earlier ones until they all exit (egress allow and deny changes apply now)";
 
 const EGRESS_CHANGED =
-  "the network allow and deny settings changed and now apply to every pi running in this folder";
+  "the network allow and deny settings changed and now apply to every pi running in the sandbox";
 
-const proxyFiles = (stateDir: string, repoHash: string) => stateLayout(stateDir).repo(repoHash).proxy;
+const proxyFiles = (stateDir: string) => stateLayout(stateDir).proxy;
 
-export const repoProxyToken = (stateDir: string, repoHash: string) =>
-  ensureRandomHexFile(proxyFiles(stateDir, repoHash).token, TOKEN_BYTES);
+export const proxyToken = (stateDir: string) => ensureRandomHexFile(proxyFiles(stateDir).token, TOKEN_BYTES);
 
-export const removeRepoToken = (stateDir: string, repoHash: string) =>
-  rm(proxyFiles(stateDir, repoHash).token, { force: true });
+export const removeProxyToken = (stateDir: string) => rm(proxyFiles(stateDir).token, { force: true });
 
-const isRecord = (value: unknown): value is RepoProxy => {
-  const record = value as Partial<RepoProxy> | undefined;
+const isRecord = (value: unknown): value is ProxyRecord => {
+  const record = value as Partial<ProxyRecord> | undefined;
 
   return (
     typeof record?.pid === "number" &&
@@ -91,16 +89,16 @@ const isRecord = (value: unknown): value is RepoProxy => {
   );
 };
 
-export const readRepoProxy = async (stateDir: string, repoHash: string): Promise<RepoProxy | undefined> => {
-  const path = proxyFiles(stateDir, repoHash).record;
+export const readProxy = async (stateDir: string): Promise<ProxyRecord | undefined> => {
+  const path = proxyFiles(stateDir).record;
   const record = await readJsonObject(path);
 
   return isRecord(record) && (await isLive(record)) ? record : undefined;
 };
 
-export const stopRepoProxy = async (stateDir: string, repoHash: string) => {
-  const files = proxyFiles(stateDir, repoHash);
-  const record = await readRepoProxy(stateDir, repoHash);
+export const stopProxy = async (stateDir: string) => {
+  const files = proxyFiles(stateDir);
+  const record = await readProxy(stateDir);
 
   if (record !== undefined) {
     await terminateProcess(record.pid, STOP_GRACE_MS);
@@ -111,7 +109,7 @@ export const stopRepoProxy = async (stateDir: string, repoHash: string) => {
   return record !== undefined;
 };
 
-const proxyInputHash = async (stateDir: string, input: RepoProxyInput) => {
+const proxyInputHash = async (stateDir: string, input: ProxyInput) => {
   const {
     token: _token,
     envSecrets,
@@ -133,11 +131,11 @@ const proxyInputHash = async (stateDir: string, input: RepoProxyInput) => {
   return stableHash({ ...rest, secrets, extraCaPem });
 };
 
-const isHealthy = async (record: RepoProxy, token: string) =>
+const isHealthy = async (record: ProxyRecord, token: string) =>
   (await readHealth(record.port, token))?.pid === record.pid;
 
 const isHealthyWithRetries = async (
-  record: RepoProxy,
+  record: ProxyRecord,
   token: string,
   tries = HEALTH_TRIES,
 ): Promise<boolean> => {
@@ -204,9 +202,9 @@ const failureSince = async (path: string, offset: number) => {
   }
 };
 
-const spawnDaemon = (options: EnsureRepoProxyOptions, inputHash: string) => {
+const spawnDaemon = (options: EnsureProxyOptions, inputHash: string) => {
   const { stateDir, input } = options;
-  const files = proxyFiles(stateDir, input.repoHash);
+  const files = proxyFiles(stateDir);
 
   capLog(files.log, PROXY_LOG_LIMIT);
 
@@ -214,7 +212,7 @@ const spawnDaemon = (options: EnsureRepoProxyOptions, inputHash: string) => {
   const log = openSync(files.log, "a", PRIVATE_MODE);
   const child = (options.spawn ?? spawnProcess)(
     process.execPath,
-    [launcherEntry("proxy/daemon.ts"), "--repo", input.repoHash, "--state", stateDir],
+    [launcherEntry("proxy/daemon.ts"), "--state", stateDir],
     { cwd: files.directory, detached: true, stdio: ["pipe", "ignore", log], env: minimalEnv(options.env) },
   );
 
@@ -229,9 +227,9 @@ const spawnDaemon = (options: EnsureRepoProxyOptions, inputHash: string) => {
   return { child, offset };
 };
 
-const startDaemon = async (options: EnsureRepoProxyOptions, inputHash: string): Promise<RepoProxy> => {
+const startDaemon = async (options: EnsureProxyOptions, inputHash: string): Promise<ProxyRecord> => {
   const { stateDir, input } = options;
-  const files = proxyFiles(stateDir, input.repoHash);
+  const files = proxyFiles(stateDir);
 
   await mkdir(files.directory, { recursive: true, mode: 0o700 });
 
@@ -274,11 +272,17 @@ const startDaemon = async (options: EnsureRepoProxyOptions, inputHash: string): 
   return record;
 };
 
-const runningProxy = async (stateDir: string, input: RepoProxyInput) => {
-  const record = await readRepoProxy(stateDir, input.repoHash);
+const unhealthyShared = (stateDir: string, record: ProxyRecord) =>
+  new LauncherError(
+    `the pi-sandbox egress proxy (pid ${record.pid}) does not answer, and other pi sessions use it, so it was kept`,
+    `see ${proxyFiles(stateDir).log}; once the other pi sessions exit, the next pi starts a new proxy`,
+  );
+
+const runningProxy = async (stateDir: string, input: ProxyInput, othersLive: () => Promise<boolean>) => {
+  const record = await readProxy(stateDir);
 
   if (record === undefined) {
-    await rm(proxyFiles(stateDir, input.repoHash).record, { force: true });
+    await rm(proxyFiles(stateDir).record, { force: true });
 
     return undefined;
   }
@@ -287,7 +291,11 @@ const runningProxy = async (stateDir: string, input: RepoProxyInput) => {
     return record;
   }
 
-  await stopRepoProxy(stateDir, input.repoHash);
+  if (await othersLive()) {
+    throw unhealthyShared(stateDir, record);
+  }
+
+  await stopProxy(stateDir);
 
   return undefined;
 };
@@ -298,12 +306,12 @@ const egressChangedFor = async (
   othersLive: () => Promise<boolean>,
 ) => (previous === undefined || stableHash(previous) !== stableHash(settings)) && (await othersLive());
 
-export const ensureRepoProxy = async (options: EnsureRepoProxyOptions): Promise<RepoProxyStart> => {
+export const ensureProxy = async (options: EnsureProxyOptions): Promise<ProxyStart> => {
   const { stateDir, input } = options;
 
   await openLauncherCa({ stateDir, runner: options.runner ?? createProcessRunner() });
 
-  const files = proxyFiles(stateDir, input.repoHash);
+  const files = proxyFiles(stateDir);
   const settings = egressSettingsOf(input);
 
   await mkdir(files.directory, { recursive: true, mode: 0o700 });
@@ -320,7 +328,7 @@ export const ensureRepoProxy = async (options: EnsureRepoProxyOptions): Promise<
   };
   const egressNotices = (await egressChangedFor(previous, settings, othersLive)) ? [EGRESS_CHANGED] : [];
   const inputHash = await proxyInputHash(stateDir, input);
-  const current = await runningProxy(stateDir, input);
+  const current = await runningProxy(stateDir, input, othersLive);
 
   if (current?.inputHash === inputHash) {
     return { proxy: current, notices: egressNotices };
@@ -331,7 +339,7 @@ export const ensureRepoProxy = async (options: EnsureRepoProxyOptions): Promise<
   }
 
   if (current !== undefined) {
-    await stopRepoProxy(stateDir, input.repoHash);
+    await stopProxy(stateDir);
   }
 
   return { proxy: await startDaemon(options, inputHash), notices: egressNotices };
@@ -339,21 +347,14 @@ export const ensureRepoProxy = async (options: EnsureRepoProxyOptions): Promise<
 
 const TOKEN = new RegExp(`^[0-9a-f]{${TOKEN_BYTES * 2}}$`);
 
-const readToken = async (stateDir: string, repoHash: string) => {
-  const text = await readFile(proxyFiles(stateDir, repoHash).token, "utf8").catch(() => "");
+const readToken = async (stateDir: string) => {
+  const text = await readFile(proxyFiles(stateDir).token, "utf8").catch(() => "");
 
   return TOKEN.test(text) ? text : undefined;
 };
 
-export const readDenials = async (
-  stateDir: string,
-  repoHash: string,
-  since: number,
-): Promise<DenialRecord[]> => {
-  const [record, token] = await Promise.all([
-    readRepoProxy(stateDir, repoHash),
-    readToken(stateDir, repoHash),
-  ]);
+export const readDenials = async (stateDir: string, since: number): Promise<DenialRecord[]> => {
+  const [record, token] = await Promise.all([readProxy(stateDir), readToken(stateDir)]);
 
   return record === undefined || token === undefined ? [] : fetchDenials(record.port, token, since);
 };

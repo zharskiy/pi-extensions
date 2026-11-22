@@ -2,23 +2,23 @@ import { Writable } from "node:stream";
 import { type Backend, engineUnreachable } from "../backend/index.ts";
 import type { ExtraCa } from "../config/index.ts";
 import type { HostTerminal, SignalSource } from "../container/index.ts";
-import type { DenialRecord, RepoProxy, RepoProxyInput, RepoProxyStart, TrustBundle } from "../proxy/index.ts";
+import type { DenialRecord, ProxyInput, ProxyRecord, ProxyStart, TrustBundle } from "../proxy/index.ts";
 import { type CommandRunner, hostAgentDir, launcherPaths } from "../shared/index.ts";
 import { colourOf, type TtyStreams } from "./prompt/terminal.ts";
 
 interface ProxyRequest {
   stateDir: string;
-  input: RepoProxyInput;
+  input: ProxyInput;
   env: NodeJS.ProcessEnv;
   othersLive: () => Promise<boolean>;
 }
 
 interface ProxyControl {
-  ensure(request: ProxyRequest): Promise<RepoProxyStart>;
-  read(stateDir: string, repoHash: string): Promise<RepoProxy | undefined>;
-  stop(stateDir: string, repoHash: string): Promise<boolean>;
-  denials(stateDir: string, repoHash: string, since: number): Promise<DenialRecord[]>;
-  trust(stateDir: string, sources: ExtraCa[], launchId?: string): Promise<TrustBundle>;
+  ensure(request: ProxyRequest): Promise<ProxyStart>;
+  read(stateDir: string): Promise<ProxyRecord | undefined>;
+  stop(stateDir: string): Promise<boolean>;
+  denials(stateDir: string, since: number): Promise<DenialRecord[]>;
+  trust(stateDir: string, sources: ExtraCa[]): Promise<TrustBundle>;
 }
 
 export interface CliDeps {
@@ -32,7 +32,6 @@ export interface CliDeps {
   signals?: SignalSource;
   openTty?: () => TtyStreams | undefined;
   platform: NodeJS.Platform;
-  uid: number;
   machine: { cpus: number; memoryGiB: number };
   statfs?: (path: string) => Promise<{ bavail: number | bigint; bsize: number | bigint }>;
   backend(): Backend;

@@ -1,13 +1,13 @@
-import { lstat, readFile } from "node:fs/promises";
+import { lstat, readFile, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { ProxyRouteRequest } from "../../backend/index.ts";
+import { LABELS, type RelayRequest } from "../../backend/index.ts";
 import { run } from "../../cli/index.ts";
 import type { DenialRecord } from "../../proxy/index.ts";
 import { isPlaceholder, sha256Hex } from "../../shared/index.ts";
 import { expectNoLeak } from "../support/expect-no-leak.ts";
-import { writeExecutable, writeText } from "../support/temp-dir.ts";
-import { createFakeBackend, createHarness, noHostPiLine, renderDirOf } from "./harness.ts";
+import { tempDir, writeExecutable, writeText } from "../support/temp-dir.ts";
+import { createFakeBackend, createHarness, isPiSession, noHostPiLine, renderDirOf } from "./harness.ts";
 
 const REAL_KEY = "real-secret-value-1234567890";
 
@@ -17,27 +17,29 @@ const denial = (host: string, port: number, rule = "egress.allow", reason = "not
   time: 1_700_000_000_500,
   host,
   port,
-  repoHash: "repo",
   rule,
   reason,
 });
 
 describe("pi launch wiring", () => {
-  it("gives the container and its proxy the same repository token and labels the container with its hash", async () => {
+  it("gives the relay, not the container, the proxy's token and labels the container with its hash", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
 
     await run([], harness.deps);
 
     const [container] = fake.created;
-    const url = new URL(container?.spec?.env.HTTPS_PROXY ?? "");
+    const [route] = fake.routes;
     const [input] = harness.proxyInputs;
+    const env = Object.values(container?.spec?.env ?? {});
 
-    expect(url.password).toMatch(/^[0-9a-f]{64}$/);
-    expect(url.hostname).toBe("pi-sandbox-proxy");
-    expect(input?.token).toBe(url.password);
+    expect(input?.token).toMatch(/^[0-9a-f]{64}$/);
+    expect(route?.preamble).toBe(`PI-SANDBOX ${input?.token}`);
+    expect(container?.spec?.env.HTTPS_PROXY).toBe("http://pi-sandbox-proxy:3128");
+    expect(env.filter((value) => value.includes(input?.token ?? "-"))).toEqual([]);
+    expect(container?.summary.labels[LABELS.repoHash]).toBe(sha256Hex(harness.repoRoot));
+    expect(input).not.toHaveProperty("repoHash");
     expect(input).toMatchObject({
-      repoHash: sha256Hex(harness.repoRoot),
       rules: [],
       derivedHosts: expect.any(Array),
     });
@@ -91,7 +93,7 @@ describe("pi launch wiring", () => {
     await expectNoLeak(fake, renderDirOf(harness), ["p@ss", "p%40ss"]);
   });
 
-  it("renders Maven proxy settings and hands the proxy to JVMs on a host without ~/.m2/settings.xml", async () => {
+  it("renders Maven proxy settings and leaves JVM options to the user on a host without ~/.m2/settings.xml", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
 
@@ -100,18 +102,19 @@ describe("pi launch wiring", () => {
 
     const [container] = fake.created;
     const env = container?.spec?.env ?? {};
-    const token = new URL(env.HTTPS_PROXY ?? "").password;
     const settings = await readFile(join(renderDirOf(harness), "tools", "m2-settings.xml"), "utf8");
 
-    expect(settings).toMatch(/<proxy>[\s\S]*<host>\$\{env\.PI_SANDBOX_PROXY_HOST\}<\/host>[\s\S]*<\/proxy>/);
+    expect(settings).toMatch(
+      /<proxy>[\s\S]*<host>pi-sandbox-proxy<\/host>[\s\S]*<port>3128<\/port>[\s\S]*<\/proxy>/,
+    );
+    expect(settings).not.toContain("<password>");
     expect(env).toMatchObject({
       https_proxy: env.HTTPS_PROXY,
-      PI_SANDBOX_PROXY_HOST: "pi-sandbox-proxy",
-      PI_SANDBOX_PROXY_TOKEN: token,
-      PIP_CERT: "/tmp/pi-sandbox/ca-bundle.pem",
+      PIP_CERT: "/etc/ssl/certs/ca-certificates.crt",
     });
-    expect(env.JAVA_TOOL_OPTIONS).toContain("-Dhttps.proxyHost=pi-sandbox-proxy");
-    expect(env.JAVA_TOOL_OPTIONS).not.toContain("trustStore");
+    expect(
+      Object.keys(env).filter((name) => name.startsWith("PI_SANDBOX_PROXY") || name === "JAVA_TOOL_OPTIONS"),
+    ).toEqual([]);
 
     await expectNoLeak(fake, renderDirOf(harness), [REAL_KEY]);
   });
@@ -281,10 +284,10 @@ describe("pi launch wiring", () => {
     await run([], harness.deps);
 
     expect(harness.stderr()).toContain(
-      `pi-sandbox: blocked.example.test was blocked in this folder's sandbox; run pi sandbox egress allow blocked.example.test on the host from ${harness.repoRoot}\n`,
+      `pi-sandbox: blocked.example.test was blocked in the sandbox; run pi sandbox egress allow blocked.example.test on the host\n`,
     );
     expect(harness.stderr()).toContain(
-      `pi-sandbox: other.test:8443 was blocked in this folder's sandbox; run pi sandbox egress allow other.test:8443 on the host from ${harness.repoRoot}\n`,
+      `pi-sandbox: other.test:8443 was blocked in the sandbox; run pi sandbox egress allow other.test:8443 on the host\n`,
     );
     expect(harness.stderr().match(/blocked\.example\.test was blocked/g)).toHaveLength(1);
   });
@@ -306,7 +309,7 @@ describe("pi launch wiring", () => {
     await run([], harness.deps);
 
     expect(harness.stderr()).toContain(
-      `pi-sandbox: ${record.host} was blocked in this folder's sandbox; ${hint} ${harness.userConfigFile}\n`,
+      `pi-sandbox: ${record.host} was blocked in the sandbox; ${hint} ${harness.userConfigFile}\n`,
     );
   });
 
@@ -328,32 +331,32 @@ describe("pi launch wiring", () => {
     [
       "an unavailable credential",
       denial("api.corp.test", 443, "credential", "credential corp is unavailable: token expired"),
-      "pi-sandbox: api.corp.test was blocked in this folder's sandbox; it could not authenticate: credential corp is unavailable: token expired\n",
+      "pi-sandbox: api.corp.test was blocked in the sandbox; it could not authenticate: credential corp is unavailable: token expired\n",
     ],
     [
       "a missing or expired host login",
       denial("llm.corp.test", 443, "login", "the corp-llm login on the host is missing or expired"),
-      "pi-sandbox: llm.corp.test was blocked in this folder's sandbox; the corp-llm login on the host is missing or expired; log in again with pi --no-sandbox and /login\n",
+      "pi-sandbox: llm.corp.test was blocked in the sandbox; the corp-llm login on the host is missing or expired; log in again with pi --no-sandbox and /login\n",
     ],
     [
       "egress.deny",
       denial("paste.test", 443, "egress.deny", "paste.test is in egress.deny"),
-      "pi-sandbox: paste.test was blocked in this folder's sandbox; denied by egress.deny\n",
+      "pi-sandbox: paste.test was blocked in the sandbox; denied by egress.deny\n",
     ],
     [
       "plain HTTP",
       denial("localhost.test", 80, "plain-http", "only HTTPS through CONNECT is proxied"),
-      "pi-sandbox: localhost.test:80 was blocked in this folder's sandbox; plain HTTP is not proxied; use https\n",
+      "pi-sandbox: localhost.test:80 was blocked in the sandbox; plain HTTP is not proxied; use https\n",
     ],
     [
       "an upstream failure",
       denial("down.test", 443, "upstream", "connect ECONNREFUSED 203.0.113.9:443"),
-      "pi-sandbox: down.test was blocked in this folder's sandbox; it could not be reached: connect ECONNREFUSED 203.0.113.9:443\n",
+      "pi-sandbox: down.test was blocked in the sandbox; it could not be reached: connect ECONNREFUSED 203.0.113.9:443\n",
     ],
     [
       "a TLS name mismatch",
       denial("api.test", 443, "sni", "TLS server name evil.test does not match api.test"),
-      "pi-sandbox: api.test was blocked in this folder's sandbox; TLS server name evil.test does not match api.test\n",
+      "pi-sandbox: api.test was blocked in the sandbox; TLS server name evil.test does not match api.test\n",
     ],
   ])("prints its own hint for %s when pi exits", async (_kind, record, line) => {
     const harness = await createHarness({ backend: () => createFakeBackend().backend, denials: [record] });
@@ -377,23 +380,81 @@ describe("pi launch wiring", () => {
     expect(harness.stderr()).toContain("pi-sandbox: mcp docs: not signed in; run pi mcp login docs\n");
     expect(harness.stderr()).toContain(`pi-sandbox: ${noHostPiLine(harness.hostAgentDir)}\n`);
   });
+
+  it("names a pi argument that lies outside the folders mounted, once", async () => {
+    const harness = await createHarness({ backend: () => createFakeBackend().backend });
+    const prompt = join(await realpath(await tempDir("outside-prompt")), "prompt.md");
+
+    await writeText(prompt, "text\n");
+
+    expect(await run(["--append-system-prompt", prompt], harness.deps)).toBe(0);
+
+    const line = `pi-sandbox: --append-system-prompt ${prompt}: ${prompt} lies outside the folders mounted in the sandbox, so pi inside cannot read it\n`;
+
+    expect(harness.stderr().split(line).length - 1).toBe(1);
+  });
 });
 
-describe("the proxy route of a repository", () => {
-  it("asks the backend for the repository's own network", async () => {
+describe("the proxy route of the install", () => {
+  it("asks the backend for the one route of the install, named by no repository", async () => {
     const fake = createFakeBackend();
-    const asked: Array<string | undefined> = [];
+    const asked: string[][] = [];
     const backend = {
       ...fake.backend,
-      prepareProxyRoute: (request: ProxyRouteRequest) => {
-        asked.push(request.repoHash);
+      prepareRelay: (request: RelayRequest) => {
+        asked.push(Object.keys(request).sort());
 
-        return fake.backend.prepareProxyRoute(request);
+        return fake.backend.prepareRelay(request);
       },
     };
     const harness = await createHarness({ backend: () => backend });
 
     expect(await run([], harness.deps)).toBe(0);
-    expect(asked).toEqual([sha256Hex(harness.repoRoot)]);
+    expect(asked).toEqual([["hostPort", "imageId", "preamble"]]);
+  });
+});
+
+describe("the VM's file cache watch", () => {
+  const watchedLaunch = async (config: Record<string, unknown>) => {
+    const events: string[] = [];
+    const fake = createFakeBackend({
+      vm: {
+        watchFileCache: () => {
+          events.push("watch");
+
+          return {
+            stop: async () => {
+              events.push("stop");
+
+              await new Promise((done) => setTimeout(done, 20));
+
+              events.push("settled");
+            },
+          };
+        },
+      },
+      exec: (spec) => {
+        if (isPiSession(spec)) {
+          events.push("pi");
+        }
+
+        return undefined;
+      },
+    });
+    const harness = await createHarness({ backend: () => fake.backend });
+
+    await harness.writeJson(harness.userConfigFile, config);
+
+    expect(await run([], harness.deps)).toBe(0);
+
+    return events;
+  };
+
+  it("runs while pi runs, stops when pi exits and is waited for before the launch returns", async () => {
+    expect(await watchedLaunch({})).toEqual(["watch", "pi", "stop", "settled"]);
+  });
+
+  it("does not start when vm.releaseFileCache is off", async () => {
+    expect(await watchedLaunch({ vm: { releaseFileCache: false } })).toEqual(["pi"]);
   });
 });

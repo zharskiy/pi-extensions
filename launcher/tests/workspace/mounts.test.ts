@@ -56,12 +56,10 @@ describe("protectedRealPathGuard", () => {
     );
   });
 
-  it("names ~/.config and the old launcher config folder, and accepts its other subfolders", async () => {
+  it("names ~/.config and accepts its subfolders", async () => {
     const { home, reasonOf } = await setup();
 
     expect(reasonOf(join(home, ".config"))).toBe("it is ~/.config");
-    expect(reasonOf(join(home, ".config", "pi-sandbox"))).toBe("it is ~/.config/pi-sandbox");
-    expect(reasonOf(join(home, ".config", "pi-sandbox", "repo"))).toBe("it is inside ~/.config/pi-sandbox");
     expect(reasonOf(join(home, ".config", "nvim"))).toBeUndefined();
   });
 

@@ -4,25 +4,17 @@ import {
   type Backend,
   type ContainerSummary,
   execCapture,
+  isSession,
   LABELS,
   type MountSpec,
 } from "../backend/index.ts";
-import {
-  errorMessage,
-  GUEST_PATHS,
-  isWithin,
-  LauncherError,
-  recordCreatedDirs,
-  stateLayout,
-  withFileLock,
-} from "../shared/index.ts";
-import { AWAIT_HANDOVER_VARIABLE, type LauncherContainerSpec } from "./spec.ts";
+import { errorMessage, GUEST_PATHS, isWithin, LauncherError, recordCreatedDirs } from "../shared/index.ts";
+import type { LauncherContainerSpec } from "./spec.ts";
 
 export interface LaunchContainerInput {
   backend: Backend;
-  spec: LauncherContainerSpec;
   stateDir: string;
-  beforeStart?: () => Promise<LauncherContainerSpec>;
+  spec: LauncherContainerSpec;
   afterCreate?: (id: string) => Promise<void>;
   pinnedImage?: boolean;
 }
@@ -33,15 +25,15 @@ export interface LaunchContainer {
   notices: string[];
 }
 
-const MANAGED = { [LABELS.managed]: "true" };
-
-const LOCK_TIMEOUT_MS = 120_000;
-
 const STOP_SECONDS = 3;
 
-export const discardContainer = async (backend: Backend, container: ContainerSummary) => {
+export const discardContainer = async (
+  backend: Backend,
+  container: ContainerSummary,
+  seconds = STOP_SECONDS,
+) => {
   if (container.state === "running") {
-    await backend.stopContainer(container.id, STOP_SECONDS).catch(() => undefined);
+    await backend.stopContainer(container.id, seconds).catch(() => undefined);
   }
 
   await backend.removeContainer(container.id);
@@ -141,7 +133,7 @@ const writableRootOf = (mounts: MountSpec[], target: string) =>
 
 const ensureMountPoints = async (spec: LauncherContainerSpec, onMade: DirMade) => {
   const { mounts } = spec;
-  const guard = { onMade, guarded: await Promise.all((spec.guardedPaths ?? []).map(realOrSelf)) };
+  const guard = { onMade, guarded: await Promise.all(spec.guardedPaths.map(realOrSelf)) };
   const outcomes = await Promise.allSettled(
     mounts
       .filter((mount) => mount.kind === "volume")
@@ -158,11 +150,55 @@ const ensureMountPoints = async (spec: LauncherContainerSpec, onMade: DirMade) =
   }
 };
 
-const HANDOVER_SCRIPT = `chown -h ${DEFAULT_OWNER} "$@" && : > ${GUEST_PATHS.handover}`;
+const ROOT_SHELL = "/bin/sh";
+
+const LOADER_AND_LIBC_VARIABLES = [
+  "LD_PRELOAD",
+  "LD_LIBRARY_PATH",
+  "LD_AUDIT",
+  "GCONV_PATH",
+  "GETCONF_DIR",
+  "HOSTALIASES",
+  "LD_DEBUG",
+  "LD_DEBUG_OUTPUT",
+  "LD_ORIGIN_PATH",
+  "LD_PROFILE",
+  "LOCALDOMAIN",
+  "LOCPATH",
+  "MALLOC_TRACE",
+  "NIS_PATH",
+  "NLSPATH",
+  "RESOLV_HOST_CONF",
+  "RES_OPTIONS",
+  "TMPDIR",
+  "TZDIR",
+  "GLIBC_TUNABLES",
+  "LD_HWCAP_MASK",
+];
+
+export const ROOT_EXEC_ENV: Record<string, string> = {
+  PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+  ...Object.fromEntries(LOADER_AND_LIBC_VARIABLES.map((name) => [name, ""])),
+};
+
+const handoverScript = (owner: string) => `/bin/chown -h ${owner} "$@"`;
+
+const HANDOVER_SCRIPT = `${handoverScript(DEFAULT_OWNER)} && : > ${GUEST_PATHS.handover}`;
+
+export const chownRoots = (backend: Backend, id: string, owner: string, paths: string[]) =>
+  execCapture(backend, {
+    containerId: id,
+    command: [ROOT_SHELL, "-c", handoverScript(owner), "sh", ...paths],
+    env: ROOT_EXEC_ENV,
+    workdir: "/",
+    user: ROOT_USER,
+  });
 
 const READY_TRIES = 600;
 
 const READY_TIMED_OUT = 3;
+
+const FORWARD_FAILED = 4;
 
 const READY_SCRIPT = [
   `grep -qF ${GUEST_PATHS.ready} ${GUEST_PATHS.entrypoint} 2>/dev/null || exit 0`,
@@ -172,11 +208,12 @@ const READY_SCRIPT = [
   "  tries=$((tries + 1))",
   "  sleep 0.1",
   "done",
+  `[ ! -s ${GUEST_PATHS.forwardStatus} ] || { cat ${GUEST_PATHS.forwardStatus} >&2; exit ${FORWARD_FAILED}; }`,
 ].join("\n");
 
 const READY_EXEC_TIMEOUT_MS = (READY_TRIES / 10 + 30) * 1000;
 
-const HANDOVER_HINT = "run pi sandbox doctor, and check the paths in mounts.sharedCaches";
+const HANDOVER_HINT = "run pi sandbox doctor, and check the targets in mounts.volumes";
 
 const STARTUP_HINT = "run pi sandbox doctor";
 
@@ -184,32 +221,23 @@ const PINNED_IMAGE_HINT = "the image is pinned by image.digest and may predate t
 
 const handOverVolumes = async (backend: Backend, id: string, spec: LauncherContainerSpec) => {
   if (spec.ownedPaths.length === 0) {
-    return [];
+    return;
   }
 
-  const awaited = spec.env[AWAIT_HANDOVER_VARIABLE] !== undefined;
   const result = await execCapture(backend, {
     containerId: id,
-    command: ["sh", "-c", HANDOVER_SCRIPT, "sh", ...spec.ownedPaths],
-    env: {},
+    command: [ROOT_SHELL, "-c", HANDOVER_SCRIPT, "sh", ...spec.ownedPaths],
+    env: ROOT_EXEC_ENV,
     workdir: "/",
     user: ROOT_USER,
-  }).catch((error: unknown) =>
-    awaited ? Promise.reject(error) : { code: -1, stdout: "", stderr: errorMessage(error) },
-  );
+  });
 
-  if (result.code === 0) {
-    return [];
-  }
-
-  if (awaited) {
+  if (result.code !== 0) {
     throw new LauncherError(
-      `the sandbox could not hand its cache volumes to the sandbox user: ${result.stderr.trim()}`,
+      `the sandbox could not hand its volumes to the sandbox user: ${result.stderr.trim()}`,
       HANDOVER_HINT,
     );
   }
-
-  return [`warning: the sandbox user may not be able to write its cache volumes: ${result.stderr.trim()}`];
 };
 
 const awaitEntrypoint = async (backend: Backend, id: string) => {
@@ -227,6 +255,13 @@ const awaitEntrypoint = async (backend: Backend, id: string) => {
     );
   }
 
+  if (result.code === FORWARD_FAILED) {
+    throw new LauncherError(
+      `the sandbox could not forward the services' ports: ${result.stderr.trim()}`,
+      "free that port in the sandbox, or change services[].ports in the config",
+    );
+  }
+
   if (result.code !== 0) {
     throw new LauncherError(
       `the check that the sandbox entrypoint finished failed (exit ${result.code}): ${result.stderr.trim()}`,
@@ -235,14 +270,11 @@ const awaitEntrypoint = async (backend: Backend, id: string) => {
   }
 };
 
-const isStillRunning = (backend: Backend, id: string, spec: LauncherContainerSpec) => {
-  const launch = { [LABELS.launchId]: spec.labels[LABELS.launchId] ?? "" };
-
-  return backend.findContainers(launch).then(
-    (containers) => containers.some((container) => container.id === id && container.state === "running"),
+const isStillRunning = (backend: Backend, id: string) =>
+  backend.inspectContainer(id).then(
+    (container) => container?.state === "running",
     () => true,
   );
-};
 
 const startupHint = (error: unknown, pinnedImage: boolean) => {
   const hint = error instanceof LauncherError && error.hint !== undefined ? error.hint : STARTUP_HINT;
@@ -252,15 +284,13 @@ const startupHint = (error: unknown, pinnedImage: boolean) => {
 
 const settleStartup = async (input: LaunchContainerInput, id: string, spec: LauncherContainerSpec) => {
   try {
-    const notices = await handOverVolumes(input.backend, id, spec);
+    await handOverVolumes(input.backend, id, spec);
 
     await awaitEntrypoint(input.backend, id);
 
     await input.afterCreate?.(id);
-
-    return notices;
   } catch (error) {
-    if (await isStillRunning(input.backend, id, spec)) {
+    if (await isStillRunning(input.backend, id)) {
       throw error;
     }
 
@@ -270,15 +300,6 @@ const settleStartup = async (input: LaunchContainerInput, id: string, spec: Laun
     );
   }
 };
-
-const ownerLabels = (labels: Record<string, string>) =>
-  Object.fromEntries(
-    [LABELS.repoHash, LABELS.repoRoot].flatMap((key) => {
-      const value = labels[key];
-
-      return value === undefined ? [] : [[key, value]];
-    }),
-  );
 
 const specRepoHash = (spec: LauncherContainerSpec) => spec.labels[LABELS.repoHash] ?? "";
 
@@ -297,17 +318,16 @@ const pruneCacheVolumes = async (backend: Backend, spec: LauncherContainerSpec) 
   await Promise.all(stale.map((volume) => backend.removeVolume(volume.name).catch(() => undefined)));
 };
 
-const create = async (input: LaunchContainerInput, spec: LauncherContainerSpec): Promise<LaunchContainer> => {
-  const { backend } = input;
+export const startLaunchContainer = async (input: LaunchContainerInput): Promise<LaunchContainer> => {
+  const { backend, spec } = input;
   const { mounts } = spec;
-  const owner = ownerLabels(spec.labels);
 
   await pruneCacheVolumes(backend, spec);
 
   await Promise.all(
     mounts
       .filter((mount) => mount.kind === "volume")
-      .map((mount) => backend.ensureVolume(mount.source, spec.volumeLabels[mount.source] ?? owner)),
+      .map((mount) => backend.ensureVolume(mount.source, spec.volumeLabels[mount.source])),
   );
 
   await ensureMountPoints(spec, (path) => recordCreatedDirs(input.stateDir, specRepoHash(spec), [path]));
@@ -316,36 +336,19 @@ const create = async (input: LaunchContainerInput, spec: LauncherContainerSpec):
 
   await backend.startContainer(id);
 
-  const notices = await settleStartup(input, id, spec);
+  await settleStartup(input, id, spec);
 
-  return { id, spec, notices: [...(spec.notices ?? []), ...notices] };
+  return { id, spec, notices: spec.notices };
 };
 
-const isAgent = (container: ContainerSummary) => container.labels[LABELS.relay] !== "true";
-
-const agentContainers = async (backend: Backend, labels: Record<string, string>) =>
-  (await backend.findContainers(labels)).filter(isAgent);
-
-export const startLaunchContainer = (input: LaunchContainerInput) =>
-  withFileLock(
-    stateLayout(input.stateDir).repo(specRepoHash(input.spec)).containerLock,
-    async () => create(input, (await input.beforeStart?.()) ?? input.spec),
-    { timeoutMs: LOCK_TIMEOUT_MS },
+export const removeLaunchContainer = async (backend: Backend, launchId: string) => {
+  const sessions = (await backend.findContainers({ [LABELS.launchId]: launchId })).filter((container) =>
+    isSession(container.labels),
   );
 
-const discardAll = async (backend: Backend, labels: Record<string, string>) => {
-  const existing = await agentContainers(backend, labels);
+  await Promise.all(sessions.map((container) => discardContainer(backend, container)));
 
-  await Promise.all(existing.map((container) => discardContainer(backend, container)));
-
-  return existing;
+  return sessions;
 };
 
-export const removeLaunchContainer = (backend: Backend, launchId: string) =>
-  discardAll(backend, { [LABELS.launchId]: launchId });
-
-export const listLauncherContainers = async (backend: Backend) =>
-  (await backend.findContainers(MANAGED)).filter(isAgent);
-
-export const removeRepoContainers = (backend: Backend, repo: string) =>
-  discardAll(backend, { [LABELS.repoHash]: repo });
+export const listLauncherContainers = (backend: Backend) => backend.findContainers({});

@@ -35,16 +35,33 @@ const baseImage = async (input: SandboxImageInput, trustPem: string | undefined)
     : ensureBuiltImage({ ...input, versions: await input.versions(), trustPem });
 };
 
+const announcedOnce = (preparing: (() => void) | undefined) => {
+  const state = { announced: false };
+
+  return () => {
+    if (state.announced) {
+      return;
+    }
+
+    state.announced = true;
+
+    preparing?.();
+  };
+};
+
 const preparedImage = async (input: SandboxImageInput): Promise<SandboxImage> => {
   const trustPem = input.config.tls.extraCa.length === 0 ? undefined : input.trustPem;
-  const base = await baseImage(input, trustPem);
+  const preparing = announcedOnce(input.preparing);
+  const base = await baseImage({ ...input, preparing }, trustPem);
   const layer = await ensureLayerImage({
     backend: input.backend,
     baseImageId: base.id,
     config: input.config,
     stateDir: input.stateDir,
     trustPem,
+    proxyCaPem: input.proxyCaPem,
     env: input.env,
+    preparing,
     progress: input.progress,
   });
 
@@ -55,18 +72,11 @@ const preparedImage = async (input: SandboxImageInput): Promise<SandboxImage> =>
   return { reference: base.reference, digest: base.digest, id: layer.id };
 };
 
-export const ensureSandboxImage = async (input: SandboxImageInput): Promise<SandboxImage> => {
-  const lock = stateLayout(input.stateDir).buildLock;
-  const free = await withFileLockIfFree(lock, () => preparedImage(input));
-
-  if (!free.busy) {
-    return free.value;
-  }
-
-  input.waiting?.();
-
-  return withFileLock(lock, () => preparedImage(input), { timeoutMs: BUILD_LOCK_TIMEOUT_MS });
-};
+export const ensureSandboxImage = (input: SandboxImageInput): Promise<SandboxImage> =>
+  withFileLock(stateLayout(input.stateDir).buildLock, () => preparedImage(input), {
+    timeoutMs: BUILD_LOCK_TIMEOUT_MS,
+    onWait: input.waiting,
+  });
 
 export const removeBuildLeftovers = (stateDir: string) =>
   withFileLockIfFree(stateLayout(stateDir).buildLock, () =>

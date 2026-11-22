@@ -39,8 +39,20 @@ const extraDockerfile = async (text: string) => {
 const layerDockerfile = (fake: ReturnType<typeof createFakeBackend>) =>
   fake.builds.at(-1)?.files.Dockerfile ?? "";
 
+const layerFiles = (fake: ReturnType<typeof createFakeBackend>) => fake.builds.at(-1)?.files ?? {};
+
+const certificate = (body: string) => `-----BEGIN CERTIFICATE-----\n${body}\n-----END CERTIFICATE-----`;
+
+const pemFile = async (text: string) => {
+  const path = join(await tempDir(), "ca.pem");
+
+  await writeFile(path, text);
+
+  return path;
+};
+
 describe("ensureLayerImage", () => {
-  it("uses the base image as is when no layer key is set", async () => {
+  it("builds the layer with the trust steps when no layer key is set", async () => {
     const fake = createFakeBackend();
     const result = await ensureLayerImage({
       backend: fake.backend,
@@ -48,9 +60,131 @@ describe("ensureLayerImage", () => {
       config: configWith({}),
       stateDir: await tempDir(),
     });
+    const text = layerDockerfile(fake);
 
-    expect(result).toEqual({ id: BASE_ID, built: false });
-    expect(fake.builds).toEqual([]);
+    expect(result.built).toBe(true);
+    expect(Object.keys(layerFiles(fake)).sort()).toEqual([
+      "Dockerfile",
+      "bash-env.sh",
+      "entrypoint.sh",
+      "forwarder.mjs",
+      "jdk-net.properties",
+      "trust-jdk.sh",
+    ]);
+    expect(text).toContain("COPY ca/ /usr/local/share/ca-certificates/pi-sandbox/");
+    expect(text).toContain("COPY trust-jdk.sh jdk-net.properties /usr/local/lib/pi-sandbox/");
+    expect(text).toMatch(/command -v update-ca-certificates[\s\S]+&& update-ca-certificates\n/);
+    expect(text).toContain("RUN /usr/local/lib/pi-sandbox/trust-jdk.sh");
+  });
+
+  it("carries the entrypoint and the bash hint of this launcher, whatever base it builds on", async () => {
+    const fake = createFakeBackend();
+
+    await ensureLayerImage({
+      backend: fake.backend,
+      baseImageId: BASE_ID,
+      config: configWith({}),
+      stateDir: await tempDir(),
+    });
+
+    const text = layerDockerfile(fake);
+    const files = layerFiles(fake);
+
+    expect(files["entrypoint.sh"]).toContain("sleep infinity");
+    expect(files["bash-env.sh"]).toContain("command_not_found_handle");
+    expect(text).toContain("COPY bash-env.sh forwarder.mjs /usr/local/lib/pi-sandbox/");
+    expect(files["forwarder.mjs"]).toContain("node:net");
+    expect(text).toContain("COPY entrypoint.sh /usr/local/bin/pi-sandbox-entrypoint");
+    expect(text).toContain(
+      "grep -qxF '. /usr/local/lib/pi-sandbox/bash-env.sh' /etc/bash.bashrc || { printf '%s\\n' '. /usr/local/lib/pi-sandbox/bash-env.sh' | cat - /etc/bash.bashrc",
+    );
+    expect(text).toContain("ENV BASH_ENV=/usr/local/lib/pi-sandbox/bash-env.sh");
+    expect(text.indexOf("ENV BASH_ENV")).toBeLessThan(text.indexOf("ARG NODE_EXTRA_CA_CERTS"));
+    expect(text.trimEnd().split("\n\n").slice(-2)).toEqual([
+      'ENTRYPOINT ["/usr/local/bin/pi-sandbox-entrypoint"]',
+      "CMD []",
+    ]);
+  });
+
+  it("builds a layer without packages behind a parent proxy that needs credentials, since it fetches nothing", async () => {
+    const fake = createFakeBackend();
+    const env = { HTTPS_PROXY: "http://corp:secret@proxy.example.test:8080" };
+    const stateDir = await tempDir();
+
+    await ensureLayerImage({
+      backend: fake.backend,
+      baseImageId: BASE_ID,
+      config: configWith({}),
+      stateDir,
+      env,
+    });
+
+    expect(fake.builds.at(-1)?.args).toEqual({});
+    await expect(
+      ensureLayerImage({
+        backend: fake.backend,
+        baseImageId: BASE_ID,
+        config: configWith({ packages: ["jq"] }),
+        stateDir,
+        env,
+      }),
+    ).rejects.toThrow("the parent proxy needs credentials");
+  });
+
+  it("builds a layer without packages offline and one with packages online", async () => {
+    const fake = createFakeBackend();
+    const { backend } = fake;
+    const stateDir = await tempDir();
+
+    await ensureLayerImage({ backend, baseImageId: BASE_ID, config: configWith({}), stateDir });
+    await ensureLayerImage({
+      backend,
+      baseImageId: BASE_ID,
+      config: configWith({ packages: ["jq"] }),
+      stateDir,
+    });
+
+    expect(fake.builds.map((build) => build.offline)).toEqual([true, false]);
+  });
+
+  it("creates the CA folder before it sets its mode", async () => {
+    const fake = createFakeBackend();
+
+    await ensureLayerImage({
+      backend: fake.backend,
+      baseImageId: BASE_ID,
+      config: configWith({}),
+      stateDir: await tempDir(),
+    });
+
+    const text = layerDockerfile(fake);
+
+    expect(text).toContain("&& mkdir -p /usr/local/share/ca-certificates/pi-sandbox");
+    expect(text.indexOf("mkdir -p /usr/local/share/ca-certificates/pi-sandbox")).toBeLessThan(
+      text.indexOf("chmod 0755 /usr/local/share/ca-certificates/pi-sandbox"),
+    );
+  });
+
+  it("writes the sandbox proxy into the JDK net.properties fragment", async () => {
+    const fake = createFakeBackend();
+
+    await ensureLayerImage({
+      backend: fake.backend,
+      baseImageId: BASE_ID,
+      config: configWith({}),
+      stateDir: await tempDir(),
+    });
+
+    expect(layerFiles(fake)["jdk-net.properties"]).toBe(
+      [
+        "http.proxyHost=pi-sandbox-proxy",
+        "http.proxyPort=3128",
+        "https.proxyHost=pi-sandbox-proxy",
+        "https.proxyPort=3128",
+        "http.nonProxyHosts=localhost|127.*|[::1]|pi-sandbox-proxy",
+        "",
+      ].join("\n"),
+    );
   });
 
   it("builds the layer on the base id from packages, npm globals and the extra Dockerfile text", async () => {
@@ -68,9 +202,11 @@ describe("ensureLayerImage", () => {
     const order = [
       `FROM ${BASE_ID}`,
       "USER root",
+      "&& update-ca-certificates",
       "apt-get install -y --no-install-recommends chromium=120.0 jq",
       "npm install --global typescript@5.6.0",
       "RUN echo extra > /opt/extra",
+      "RUN /usr/local/lib/pi-sandbox/trust-jdk.sh",
       "USER pi",
     ].map((step) => text.indexOf(step));
 
@@ -83,7 +219,6 @@ describe("ensureLayerImage", () => {
       "CMD []",
     ]);
     expect(text).toMatch(/^ARG NODE_EXTRA_CA_CERTS=/m);
-    expect(Object.keys(fake.builds.at(-1)?.files ?? {}).sort()).toEqual(["Dockerfile", "trust.pem"]);
   });
 
   it("gives the same layer tag for the same packages in another order or repeated", async () => {
@@ -138,20 +273,52 @@ describe("ensureLayerImage", () => {
     expect(layerDockerfile(fake)).toContain("npm install --global typescript@5.6.0");
   });
 
-  it("puts the trust bundle into the build context", async () => {
+  it("puts the proxy CA and every extra CA into the context, one certificate per file", async () => {
     const fake = createFakeBackend();
-    const trustPem = join(await tempDir(), "trust.pem");
+    const proxyCaPem = await pemFile(`${certificate("proxy")}\n`);
+    const trustPem = await pemFile(
+      `${certificate("first")}\nnoise\n${certificate("second")}\n${certificate("first")}\n`,
+    );
 
-    await writeFile(trustPem, "corporate root\n");
     await ensureLayerImage({
       backend: fake.backend,
       baseImageId: BASE_ID,
-      config: configWith({ packages: ["jq"] }),
+      config: configWith({}),
       stateDir: await tempDir(),
+      proxyCaPem,
       trustPem,
     });
 
-    expect(fake.builds.at(-1)?.files["trust.pem"]).toBe("corporate root\n");
+    const certificates = Object.entries(layerFiles(fake)).filter(([name]) => name.startsWith("ca/"));
+
+    expect(certificates.map(([name]) => name.replace(/-[0-9a-f]{12}\.crt$/, "")).sort()).toEqual([
+      "ca/extra",
+      "ca/extra",
+      "ca/proxy",
+    ]);
+    expect(certificates.map(([, text]) => text).sort()).toEqual(
+      [certificate("first"), certificate("proxy"), certificate("second")].map((pem) => `${pem}\n`),
+    );
+  });
+
+  it("gives the layer another tag when a CA changes", async () => {
+    const fake = createFakeBackend();
+    const stateDir = await tempDir();
+    const tagWith = async (proxyCaPem: string) =>
+      (
+        await ensureLayerImage({
+          backend: fake.backend,
+          baseImageId: BASE_ID,
+          config: configWith({}),
+          stateDir,
+          proxyCaPem,
+        })
+      ).tag;
+    const first = await tagWith(await pemFile(certificate("old")));
+    const second = await tagWith(await pemFile(certificate("new")));
+
+    expect(second).not.toBe(first);
+    expect(fake.builds).toHaveLength(2);
   });
 
   it("tags the layer by its inputs hash and records it as the current layer next to the base in image.json", async () => {
@@ -178,9 +345,18 @@ describe("ensureLayerImage", () => {
     expect(record).toEqual({ base: expect.objectContaining({ id: base.id }), layer: layer.tag });
     expect(await readdir(stateDir)).toEqual(["image.json"]);
 
-    await ensureLayerImage({ backend: fake.backend, baseImageId: base.id, config: configWith({}), stateDir });
+    const plain = await ensureLayerImage({
+      backend: fake.backend,
+      baseImageId: base.id,
+      config: configWith({}),
+      stateDir,
+    });
 
-    expect(JSON.parse(await readFile(join(stateDir, "image.json"), "utf8"))).toEqual({ base: record.base });
+    expect(plain.tag).not.toBe(layer.tag);
+    expect(JSON.parse(await readFile(join(stateDir, "image.json"), "utf8"))).toEqual({
+      base: record.base,
+      layer: plain.tag,
+    });
   });
 
   it("reuses the layer tagged by its inputs and rebuilds when a key or the base changes", async () => {

@@ -1,5 +1,6 @@
 import { lstat, mkdir, readdir, readFile, realpath, rm } from "node:fs/promises";
 import { join, posix } from "node:path";
+import { GUEST_PROXY_HOST, GUEST_PROXY_PORT } from "../backend/index.ts";
 import type { DerivedTools, GlabHost, ToolHost } from "../hostpi/index.ts";
 import {
   escapeXml,
@@ -10,11 +11,14 @@ import {
   type MavenRepository,
   type MavenServer,
   type NpmrcEntry,
+  nonProxyHosts,
+  RENDER_STATUS_FILE,
   stateLayout,
   withFileLock,
   writeFileAtomic,
   xmlLines,
 } from "../shared/index.ts";
+import { statusFile } from "./status.ts";
 import { type HostSource, readHostEntries, type Tree } from "./tree.ts";
 import type { RenderInput, RenderResult } from "./types.ts";
 
@@ -97,10 +101,9 @@ const mavenSettings = (maven: DerivedTools["maven"]) =>
     "      <id>pi-sandbox</id>",
     "      <active>true</active>",
     "      <protocol>http</protocol>",
-    `      <host>\${env.PI_SANDBOX_PROXY_HOST}</host>`,
-    `      <port>\${env.PI_SANDBOX_PROXY_PORT}</port>`,
-    "      <username>pi-sandbox</username>",
-    `      <password>\${env.PI_SANDBOX_PROXY_TOKEN}</password>`,
+    `      <host>${GUEST_PROXY_HOST}</host>`,
+    `      <port>${GUEST_PROXY_PORT}</port>`,
+    `      <nonProxyHosts>${nonProxyHosts(GUEST_PROXY_HOST)}</nonProxyHosts>`,
     "    </proxy>",
     "  </proxies>",
     ...xmlList("servers", maven.servers.map(mavenServer)),
@@ -229,6 +232,7 @@ const desiredTree = async (input: RenderInput): Promise<{ tree: Tree; notices: s
       name,
       { data: Buffer.from(jsonText(value)), mode: FILE_MODE },
     ]),
+    [RENDER_STATUS_FILE, { data: statusFile(input.status), mode: FILE_MODE }],
     ...toolFiles(input.derived.tools).map(([name, data]): [string, { data: Buffer; mode: number }] => [
       name,
       { data, mode: FILE_MODE },
@@ -294,12 +298,8 @@ const writeChanged = async (dir: string, tree: Tree) => {
 };
 
 export const renderAgentDir = async (input: RenderInput): Promise<RenderResult & { notices: string[] }> => {
-  const { render: renderDir, renderLock, legacyRender } = stateLayout(input.stateDir).repo(input.repoHash);
+  const { render: renderDir, renderLock } = stateLayout(input.stateDir).repo(input.repoHash);
   const { tree, notices } = await desiredTree(input);
-
-  if (!(await input.othersLive?.())) {
-    await rm(legacyRender, { recursive: true, force: true });
-  }
 
   await mkdir(renderDir, { recursive: true });
 

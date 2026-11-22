@@ -1,9 +1,9 @@
 import { isAbsolute } from "node:path";
-import { type Backend, LABELS } from "../../backend/index.ts";
-import { overlayVolumes, sharedCacheVolumes } from "../../container/index.ts";
-import { liveLaunches } from "../../grants/index.ts";
+import { type Backend, type ContainerSummary, isSession, LABELS, roleOf } from "../../backend/index.ts";
+import { installServices, mountedVolumes, overlayVolumes } from "../../container/index.ts";
+import { type Launch, liveLaunches } from "../../grants/index.ts";
 import { recordedImage } from "../../image/index.ts";
-import { LauncherError } from "../../shared/index.ts";
+import { LauncherError, repoRecordOf, shortHash } from "../../shared/index.ts";
 import { type LaunchContext, openContext } from "../context.ts";
 import { type CliDeps, reachableBackend, writeLines } from "../deps.ts";
 import { launcherVersion } from "../versions.ts";
@@ -17,12 +17,36 @@ const sessionDirLine = (label: string | undefined) => {
   return isAbsolute(label) ? `session dir: ${label}` : `session dir: sandbox volume (${label})`;
 };
 
-const containerLines = async (backend: Backend, context: LaunchContext) => {
-  const containers = (
-    await backend.findContainers({ [LABELS.managed]: "true", [LABELS.repoHash]: context.repoHash })
-  ).filter((container) => container.labels[LABELS.relay] === undefined);
+const serviceLines = (context: LaunchContext, found: ContainerSummary[]) => {
+  const { services } = context.effective.config;
+
+  if (services.length === 0) {
+    return [];
+  }
 
   return [
+    `services: ${services.length}`,
+    ...services.map((service) => {
+      const container = found.find(
+        (entry) => roleOf(entry.labels) === "service" && entry.labels[LABELS.serviceName] === service.name,
+      );
+
+      const ports = (service.ports ?? []).length === 0 ? "" : ` ports ${(service.ports ?? []).join(",")}`;
+
+      return container === undefined
+        ? `service: ${service.name} not started${ports}`
+        : `service: ${service.name} ${container.state} (${container.id})${ports}`;
+    }),
+  ];
+};
+
+const containerLines = async (backend: Backend, context: LaunchContext) => {
+  const found = await backend.findContainers({ [LABELS.repoHash]: context.repoHash });
+  const containers = found.filter((container) => isSession(container.labels));
+  const services = await installServices(backend);
+
+  return [
+    ...serviceLines(context, services),
     `containers: ${containers.length}`,
     ...containers.flatMap((container) => [
       `container: ${container.id} ${container.state} launch ${container.labels[LABELS.launchId] ?? "unknown"} digest ${container.labels[LABELS.imageDigest] ?? "unknown"}`,
@@ -47,7 +71,7 @@ const runtimeLines = async (deps: CliDeps, context: LaunchContext) => {
 };
 
 const proxyLines = async (deps: CliDeps, context: LaunchContext) => {
-  const proxy = await deps.proxy.read(context.stateDir, context.repoHash);
+  const proxy = await deps.proxy.read(context.stateDir);
 
   return [proxy === undefined ? "proxy: stopped" : `proxy: pid ${proxy.pid} port ${proxy.port}`];
 };
@@ -59,28 +83,30 @@ const imageLine = async (context: LaunchContext) => {
   return `image: ${record?.reference ?? image.reference ?? "pi-sandbox-base:local"} ${image.digest ?? record?.digest ?? "(not built yet)"}`;
 };
 
-const launchLines = async (context: LaunchContext) => {
-  const launches = await liveLaunches(context.stateDir, context.repoHash);
+const launchLine = async (stateDir: string, launch: Launch) => {
+  const root =
+    (await repoRecordOf(stateDir, launch.repoHash))?.root ?? `repository ${shortHash(launch.repoHash)}`;
 
-  return [
-    `launches: ${launches.length} running in ${context.workspace.repoRoot}`,
-    ...launches.map(
-      (launch) =>
-        `launch: ${launch.launchId} pid ${launch.pid} since ${new Date(launch.startedAt).toISOString()}`,
-    ),
-  ];
+  return `launch: ${launch.launchId} pid ${launch.pid} since ${new Date(launch.startedAt).toISOString()} in ${root}`;
+};
+
+const launchLines = async (context: LaunchContext) => {
+  const launches = await liveLaunches(context.stateDir);
+  const lines = await Promise.all(launches.map((launch) => launchLine(context.stateDir, launch)));
+
+  return [`launches: ${launches.length} running in the sandbox`, ...lines];
 };
 
 const volumeLines = (context: LaunchContext) => {
   const { config } = context.effective;
-  const overlays = overlayVolumes(context.workspace, config);
-  const shared = sharedCacheVolumes(config, context.stateDir);
+  const overlays = overlayVolumes(context.workspace, config, context.stateDir);
+  const volumes = mountedVolumes(config, context.stateDir);
 
   return [
     `overlays: ${overlays.length}`,
     ...overlays.map((overlay) => `overlay: ${overlay.path} (${overlay.name})`),
-    `shared caches: ${shared.length}`,
-    ...shared.map((cache) => `shared cache: ${cache.path} (${cache.name})`),
+    `volumes: ${volumes.length}`,
+    ...volumes.map((entry) => `volume: ${entry.target} (${entry.name})`),
   ];
 };
 

@@ -7,12 +7,14 @@ import {
   lastLine,
   stateLayout,
   withDirectoryLock,
+  withDirectoryLockIfFree,
 } from "../../shared/index.ts";
 import type {
   Detection,
   Vm,
   VmApplied,
   VmApplyOptions,
+  VmBusy,
   VmDesired,
   VmInspect,
   VmPath,
@@ -32,15 +34,17 @@ import {
 } from "../vm-decision.ts";
 import { vmSizeText } from "../vm-size.ts";
 import { vmSharesOf, vmSizeOfYaml } from "./colima-yaml.ts";
+import { createFileCacheGuard, processAlive, type Ticker, watchFileCache } from "./file-cache.ts";
 import {
+  busyText,
   type Colima,
-  deferredUntilIdle,
+  deferredWhileBusy,
   ENGINE_PROFILE,
   ENGINE_SOCKET_DISPLAY,
+  instanceOf,
   logHint,
   plainStart,
   restartText,
-  sessionsRunning,
   startArgs,
 } from "./profile.ts";
 import {
@@ -62,6 +66,8 @@ export interface ColimaVmOptions {
   runner: CommandRunner;
   detect: () => Promise<Detection>;
   pause?: (ms: number) => Promise<void>;
+  now?: () => number;
+  ticker?: Ticker;
 }
 
 const LOCK_TIMEOUT_MS = 180_000;
@@ -81,6 +87,8 @@ const MOVED_PROBLEM = "could not change the shares of the sandbox VM";
 const startHint = `run ${plainStart(ENGINE_PROFILE)} and see ${logHint(ENGINE_PROFILE)}`;
 
 const INIT_HINT = "run pi sandbox init, which creates it";
+
+const NOT_BUSY: VmBusy = { count: 0, others: [] };
 
 export const engineUnreachable = (detection?: Detection) =>
   new LauncherError(
@@ -165,9 +173,17 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
     withLock,
   };
   const shares = createColimaShares(colima);
-  const trust = createColimaTrust(colima, (command, extra) =>
-    colimaRun(["ssh", "--profile", profile, "--", ...command], extra),
-  );
+  const vmShell = (command: string[], extra?: { input?: string; timeoutMs?: number }) =>
+    colimaRun(["ssh", "--profile", profile, "--", ...command], extra);
+  const trust = createColimaTrust(colima, vmShell);
+  const fileCache = createFileCacheGuard({
+    runner,
+    diskPath: join(home, ".colima", "_lima", instanceOf(profile), "disk"),
+    shell: vmShell,
+    lockIfFree: (action) => withDirectoryLockIfFree(stateLayout(options.stateDir).vmLock, action),
+    alive: processAlive,
+    now: options.now ?? Date.now,
+  });
 
   const profileYaml = join(home, ".colima", profile, "colima.yaml");
 
@@ -233,11 +249,11 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
   };
 
   const refuseBusy = async (busy: VmShareOptions["busy"]) => {
-    const count = await busy();
+    const sessions = await busy();
 
-    if (count > 0) {
+    if (sessions.count > 0) {
       throw new LauncherError(
-        `${sessionsRunning(count)}; stopping the sandbox VM would end them`,
+        `${busyText(sessions)}; stopping the sandbox VM would end them`,
         "exit them and run pi sandbox stop again",
       );
     }
@@ -315,10 +331,11 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
     await waitForEngine("creating it", progress);
   };
 
-  const decide = async (found: VmFound, wanted: VmWanted, busy: () => Promise<number>) => {
+  const decide = async (found: VmFound, wanted: VmWanted, busy: VmShareOptions["busy"]) => {
     const decision = vmDecision(found, wanted);
+    const sessions = decision.kind === "restart" ? await busy() : NOT_BUSY;
 
-    return decision.kind === "restart" ? whenBusy(decision, await busy()) : decision;
+    return { decision: whenBusy(decision, sessions.count), sessions };
   };
 
   const restartOf = (found: VmFound, wanted: VmWanted, change: VmChange): Restart => {
@@ -363,7 +380,7 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
 
   const applyLocked = async (desired: VmDesired, options: VmApplyOptions): Promise<VmApplied> => {
     const found = await inspect();
-    const decision = await decide(found, desired, options.busy);
+    const { decision } = await decide(found, desired, options.busy);
 
     if (decision.kind === "create") {
       await create(desired, options.progress);
@@ -394,9 +411,9 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
       : { size: target.size, shares: target.shares, exactShares: true };
   };
 
-  const refused = (missing: string[], sessions: number, text: string, mounts: VmShare[]) =>
+  const refused = (missing: string[], sessions: VmBusy, text: string, mounts: VmShare[]) =>
     new LauncherError(
-      `${notShared(missing)}; ${sessionsRunning(sessions)}, and restarting the VM to ${text} would end them`,
+      `${notShared(missing)}; ${busyText(sessions)}, and restarting the VM to ${text} would end them`,
       `end them and run pi again, or share it yourself with ${restartText(profile, { shares: mounts })}`,
     );
 
@@ -414,7 +431,7 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
       size: Object.keys(target.size).length === 0 ? undefined : await size(),
       shares: current ?? "unreadable",
     };
-    const decision = await decide(found, wanted, options.busy);
+    const { decision, sessions } = await decide(found, wanted, options.busy);
     const changesVm = decision.kind === "restart" || decision.kind === "defer";
 
     if (read === "unreadable" && (target.shares !== undefined || changesVm)) {
@@ -440,10 +457,10 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
       }
 
       if (missing.length > 0) {
-        throw refused(missing, decision.sessions, text, planned.mounts);
+        throw refused(missing, sessions, text, planned.mounts);
       }
 
-      options.report(deferredUntilIdle(text));
+      options.report(deferredWhileBusy(text, sessions));
 
       return;
     }
@@ -454,6 +471,7 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
   };
 
   return {
+    watchFileCache: () => watchFileCache(fileCache, options.ticker),
     inspect,
     apply: (desired, options) => withLock(() => applyLocked(desired, options)),
     ensureRunning,

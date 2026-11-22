@@ -1,8 +1,7 @@
-import { liveLaunches, withRepoLaunchLock } from "../grants/index.ts";
+import { liveLaunches, withLaunchLock } from "../grants/index.ts";
 
 export interface IdleWatchOptions {
   stateDir: string;
-  repoHash: string;
   intervalMs: number;
   emptyChecks: number;
   onIdle: () => Promise<void>;
@@ -17,8 +16,8 @@ export const watchIdle = (options: IdleWatchOptions): IdleWatch => {
   const state: { empty: number; stopped: boolean; timer?: NodeJS.Timeout } = { empty: 0, stopped: false };
 
   const check = () =>
-    withRepoLaunchLock(options.stateDir, options.repoHash, async () => {
-      const launches = await liveLaunches(options.stateDir, options.repoHash);
+    withLaunchLock(options.stateDir, async () => {
+      const launches = await liveLaunches(options.stateDir);
 
       state.empty = launches.length === 0 ? state.empty + 1 : 0;
 

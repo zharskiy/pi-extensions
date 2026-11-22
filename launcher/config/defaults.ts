@@ -8,19 +8,26 @@ const TERMINAL_VARIABLES = [
   "LC_TERMINAL",
   "LC_TERMINAL_VERSION",
   "COLORFGBG",
-  "LANG",
 ];
+
+export const DEFAULT_PIDS = 4096;
+
+export const DEFAULT_SERVICE_USER = "1000:1000";
+
+export const DEFAULT_READY_SECONDS = 60;
 
 export const defaultConfig = (): SandboxConfig => ({
   image: {},
   credentials: { rules: [], derive: { enabled: true } },
   egress: { allow: [], deny: [], privateHosts: [] },
   tls: { extraCa: [] },
-  mounts: { sharedCaches: [], autoOverlays: true },
-  env: { allow: TERMINAL_VARIABLES },
-  resources: {},
-  vm: {},
+  mounts: { volumes: [], binds: [], autoOverlays: true },
+  env: { allow: TERMINAL_VARIABLES, set: {} },
+  resources: { pids: DEFAULT_PIDS },
+  vm: { releaseFileCache: true },
   sessions: { host: true },
   terminal: { clipboard: true },
   writeBack: { enabled: true, exclude: {}, add: {} },
+  setup: [],
+  services: [],
 });

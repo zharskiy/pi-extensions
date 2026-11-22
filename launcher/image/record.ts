@@ -41,5 +41,12 @@ export const writeBaseRecord = (stateDir: string, base: BaseRecord) => updateRec
 
 export const currentLayer = async (stateDir: string) => (await readRecord(stateDir)).layer;
 
-export const writeCurrentLayer = (stateDir: string, layer: string | undefined) =>
-  updateRecord(stateDir, { layer });
+export const writeCurrentLayer = async (stateDir: string, layer: string | undefined) => {
+  const record = await readRecord(stateDir);
+
+  if (record.layer === layer) {
+    return;
+  }
+
+  await writeJsonFile(recordFileOf(stateDir), { ...record, layer });
+};

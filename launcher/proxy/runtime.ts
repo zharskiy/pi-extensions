@@ -1,6 +1,6 @@
 import { stat } from "node:fs/promises";
 import { authorityOf, type CredentialRule } from "../config/index.ts";
-import { activeGrants, type Grant, readGrants } from "../grants/index.ts";
+import { type Grant, readGrants } from "../grants/index.ts";
 import { readJsonObject, stateLayout } from "../shared/index.ts";
 import { type EgressSettings, parseEgressSettings } from "./files.ts";
 
@@ -16,7 +16,6 @@ export interface ProxyRuntime {
 
 export interface RuntimeOptions {
   stateDir: string;
-  repoHash: string;
   rules: CredentialRule[];
   settings: EgressSettings;
 }
@@ -77,7 +76,7 @@ const liveFile = <T>(
 
 export const createProxyRuntime = (options: RuntimeOptions): ProxyRuntime => {
   const layout = stateLayout(options.stateDir);
-  const egressPath = layout.repo(options.repoHash).proxy.egress;
+  const egressPath = layout.proxy.egress;
   const grants = liveFile<Grant[]>(
     layout.grants,
     [],
@@ -91,8 +90,7 @@ export const createProxyRuntime = (options: RuntimeOptions): ProxyRuntime => {
     (last) => last,
   );
 
-  const grantEntries = async () =>
-    activeGrants(await grants(), options.repoHash).map((grant) => authorityOf(grant.host, grant.port));
+  const grantEntries = async () => (await grants()).map((grant) => authorityOf(grant.host, grant.port));
 
   const egress = async (): Promise<LiveEgress> => {
     const current = await settings();

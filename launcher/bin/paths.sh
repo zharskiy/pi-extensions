@@ -10,4 +10,3 @@ esac
 
 state_dir="${PI_SANDBOX_STATE_DIR:-$agent_dir/pi-sandbox/state}"
 user_config="${PI_SANDBOX_USER_CONFIG:-$agent_dir/pi-sandbox/config.json}"
-legacy_state_dir="$HOME/.local/state/pi-sandbox"

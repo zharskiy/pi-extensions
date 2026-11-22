@@ -50,31 +50,16 @@ describe("loadEffectiveConfig", () => {
     expect(egressAllowList(config.egress)).toEqual(["pi.dev", "repo1.maven.org", "corp.test"]);
   });
 
-  it("refuses to forward JAVA_TOOL_OPTIONS, which carries the sandbox proxy", async () => {
-    await expect(loadWith({ env: { allow: ["JAVA_TOOL_OPTIONS"] } })).rejects.toThrow(
-      "config: env.allow[0] JAVA_TOOL_OPTIONS is set by the launcher and is not forwarded",
-    );
-  });
-
-  it("refuses the removed keys", async () => {
-    await expect(loadWith({ egress: { presets: ["npm"] } })).rejects.toThrow(
-      "config: egress.presets was removed; list the hosts in egress.allow, see REMOVED-DEFAULTS.md",
-    );
-    await expect(loadWith({ egress: { grants: false } })).rejects.toThrow(
-      "config: egress.grants was removed; grants are always on",
-    );
-    await expect(loadWith({ egress: { parentProxy: "none" } })).rejects.toThrow(
-      "config: egress.parentProxy was removed; the parent proxy is always taken from the environment",
-    );
-    await expect(loadWith({ fallback: "refuse" })).rejects.toThrow(
-      "config: fallback was removed; --no-sandbox is always available",
+  it("forwards JAVA_TOOL_OPTIONS, which the launcher no longer sets", async () => {
+    expect((await loadWith({ env: { allow: ["JAVA_TOOL_OPTIONS"] } })).config.env.allow).toContain(
+      "JAVA_TOOL_OPTIONS",
     );
   });
 
   it("records the source per key", async () => {
     const { config, sources } = await loadWith({ resources: { cpus: 6 }, egress: { allow: ["crates.io"] } });
 
-    expect(config.resources).toEqual({ cpus: 6 });
+    expect(config.resources).toEqual({ cpus: 6, pids: 4096 });
     expect(config.egress.allow).toEqual(["crates.io"]);
     expect(sources).toMatchObject({
       "resources.cpus": "config",
@@ -87,7 +72,8 @@ describe("loadEffectiveConfig", () => {
   it("adds env.allow to the default terminal variables", async () => {
     const { config } = await loadWith({ env: { allow: ["EDITOR"] }, egress: { deny: ["bin.example.test"] } });
 
-    expect(config.env.allow).toEqual(expect.arrayContaining(["TERM", "LANG", "EDITOR"]));
+    expect(config.env.allow).toEqual(expect.arrayContaining(["TERM", "COLORFGBG", "EDITOR"]));
+    expect(config.env.allow).not.toContain("LANG");
     expect(config.egress.deny).toEqual(["bin.example.test"]);
   });
 

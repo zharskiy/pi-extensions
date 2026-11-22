@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createColimaBackend, execCapture, LABELS } from "../../backend/index.ts";
+import { createColimaBackend, execCapture, installIdOf, LABELS } from "../../backend/index.ts";
 import {
   type LauncherContainerSpec,
   removeLaunchContainer,
@@ -20,7 +20,7 @@ const PULLABLE = "busybox:1.36";
 
 const RUNNABLE = "pi-sandbox-conformance:busybox";
 
-const RELAY = "pi-sandbox-relay-test:alpine";
+const RELAY = "pi-sandbox-relay-test:node";
 
 const socketPath = [join(homedir(), ".colima", "pi-sandbox", "docker.sock")].find((path) => existsSync(path));
 
@@ -62,10 +62,11 @@ runBackendConformance(
 
     await buildFrom(backend.buildImage, RUNNABLE, `FROM ${PULLABLE}\nCMD ["sleep", "3600"]\n`);
 
-    await buildFrom(backend.buildImage, RELAY, "FROM alpine:3.20\nRUN apk add --no-cache socat\n");
+    await buildFrom(backend.buildImage, RELAY, "FROM node:24-bookworm-slim\n");
 
     return {
       backend,
+      install: installIdOf(""),
       pullableImage: PULLABLE,
       runnableImage: RUNNABLE,
       relayImage: RELAY,
@@ -114,9 +115,13 @@ hooks.describe("colima volume ownership", () => {
     readOnlyRoot: true,
     tmpfs: ["/tmp:mode=1777", "/home/pi:mode=1777"],
     init: true,
-    resources: { cpus: 1, memoryGiB: 0.25 },
+    resources: { cpus: 1, memoryGiB: 0.25, pids: 4096 },
+    capabilities: ["CHOWN"],
+    autoRemove: true,
     volumeLabels: {},
     ownedPaths: ["/home/pi/.cache", OWNERSHIP_TARGET],
+    guardedPaths: [],
+    notices: [],
   });
 
   hooks.it(
@@ -128,7 +133,11 @@ hooks.describe("colima volume ownership", () => {
 
       await buildFrom(backend.buildImage, RUNNABLE, `FROM ${PULLABLE}\nCMD ["sleep", "3600"]\n`);
 
-      const ensured = await startLaunchContainer({ backend, spec: spec(), stateDir: state.dir });
+      const ensured = await startLaunchContainer({
+        backend,
+        spec: spec(),
+        stateDir: state.dir,
+      });
 
       const written = await execCapture(backend, {
         containerId: ensured.id,
@@ -169,9 +178,13 @@ hooks.describe("colima read-only binds on the share", () => {
     readOnlyRoot: true,
     tmpfs: ["/tmp:mode=1777"],
     init: true,
-    resources: { cpus: 1, memoryGiB: 0.25 },
+    resources: { cpus: 1, memoryGiB: 0.25, pids: 4096 },
+    capabilities: ["CHOWN"],
+    autoRemove: true,
     volumeLabels: {},
     ownedPaths: [],
+    guardedPaths: [],
+    notices: [],
   });
 
   const probe = (script: string) =>
@@ -195,7 +208,13 @@ hooks.describe("colima read-only binds on the share", () => {
 
     await buildFrom(backend.buildImage, RUNNABLE, `FROM ${PULLABLE}\nCMD ["sleep", "3600"]\n`);
 
-    state.id = (await startLaunchContainer({ backend, spec: spec(work, state.git), stateDir: state.dir })).id;
+    state.id = (
+      await startLaunchContainer({
+        backend,
+        spec: spec(work, state.git),
+        stateDir: state.dir,
+      })
+    ).id;
   }, 300_000);
 
   hooks.afterAll(async () => {
@@ -272,9 +291,13 @@ hooks.describe("colima sandbox image missing-command hint", () => {
     readOnlyRoot: true,
     tmpfs: ["/tmp:mode=1777", "/home/pi:mode=1777"],
     init: true,
-    resources: { cpus: 1, memoryGiB: 0.5 },
+    resources: { cpus: 1, memoryGiB: 0.5, pids: 4096 },
+    capabilities: ["CHOWN"],
+    autoRemove: true,
     volumeLabels: {},
     ownedPaths: [],
+    guardedPaths: [],
+    notices: [],
   });
 
   hooks.it(
@@ -289,7 +312,11 @@ hooks.describe("colima sandbox image missing-command hint", () => {
         versions: async () => ({ pi: await pinnedPi() }),
       });
 
-      const ensured = await startLaunchContainer({ backend, spec: spec(image.id), stateDir: state.dir });
+      const ensured = await startLaunchContainer({
+        backend,
+        spec: spec(image.id),
+        stateDir: state.dir,
+      });
 
       const probed = await execCapture(backend, {
         containerId: ensured.id,

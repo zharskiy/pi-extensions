@@ -9,26 +9,24 @@ import { createHarness } from "./harness.ts";
 const NOW = 1_700_000_000_000;
 
 describe("pi sandbox egress allow", () => {
-  it("grants a host to this repository", async () => {
+  it("grants a host to every session", async () => {
     const harness = await createHarness();
 
     expect(await run(["sandbox", "egress", "allow", "Docs.Example.test"], harness.deps)).toBe(0);
     expect(await readGrants(harness.stateDir)).toEqual([
-      { host: "docs.example.test", port: 443, repoHash: sha256Hex(harness.repoRoot), createdAt: NOW },
+      { host: "docs.example.test", port: 443, createdAt: NOW },
     ]);
-    expect(harness.stdout()).toBe(`allowed docs.example.test for ${harness.repoRoot}\n`);
+    expect(harness.stdout()).toBe("allowed docs.example.test\n");
   });
 
-  it("grants a host:port to every repository with --user", async () => {
+  it("grants a host:port", async () => {
     const harness = await createHarness();
 
-    expect(await run(["sandbox", "egress", "allow", "git.example.test:8443", "--user"], harness.deps)).toBe(
-      0,
-    );
+    expect(await run(["sandbox", "egress", "allow", "git.example.test:8443"], harness.deps)).toBe(0);
     expect(await readGrants(harness.stateDir)).toEqual([
       { host: "git.example.test", port: 8443, createdAt: NOW },
     ]);
-    expect(harness.stdout()).toBe("allowed git.example.test:8443 for every repository\n");
+    expect(harness.stdout()).toBe("allowed git.example.test:8443\n");
   });
 
   it("refuses a host that egress.deny blocks, at any depth under a bare domain, and stores nothing", async () => {
@@ -55,8 +53,13 @@ describe("pi sandbox egress allow", () => {
     expect(harness.stderr()).toContain("egress: *.example.test must be a host name or host:port");
     expect(await run(["sandbox", "egress", "allow", "a.test", "--bogus", "1"], harness.deps)).toBe(1);
     expect(harness.stderr()).toContain(
-      'pi-sandbox: unknown egress allow option "--bogus"\n  hint: pi sandbox egress allow <host[:port]> [--user]\n',
+      'pi-sandbox: unknown egress allow option "--bogus"\n  hint: pi sandbox egress allow <host[:port]>\n',
     );
+    expect(await run(["sandbox", "egress", "allow", "a.test", "--user"], harness.deps)).toBe(1);
+    expect(harness.stderr()).toContain('pi-sandbox: unknown egress allow option "--user"');
+    expect(await run(["sandbox", "egress", "revoke", "a.test", "--user"], harness.deps)).toBe(1);
+    expect(harness.stderr()).toContain('pi-sandbox: unknown egress revoke option "--user"');
+    expect(await readGrants(harness.stateDir)).toEqual([]);
   });
 });
 
@@ -81,17 +84,13 @@ describe("pi sandbox egress allow targets and arguments", () => {
 
     expect(await run(["sandbox", "egress", "allow", "svc_a.corp.test"], harness.deps)).toBe(0);
     expect(await readGrants(harness.stateDir)).toEqual([
-      { host: "svc_a.corp.test", port: 443, repoHash: sha256Hex(harness.repoRoot), createdAt: NOW },
+      { host: "svc_a.corp.test", port: 443, createdAt: NOW },
     ]);
   });
 
-  it("takes the flag before the host and refuses a second host", async () => {
+  it("refuses a second host", async () => {
     const harness = await createHarness();
 
-    expect(await run(["sandbox", "egress", "allow", "--user", "docs.example.test"], harness.deps)).toBe(0);
-    expect(await readGrants(harness.stateDir)).toEqual([
-      { host: "docs.example.test", port: 443, createdAt: NOW },
-    ]);
     expect(await run(["sandbox", "egress", "allow", "a.test", "b.test"], harness.deps)).toBe(1);
     expect(harness.stderr()).toContain("egress allow: takes one host, got a.test b.test");
   });
@@ -107,66 +106,48 @@ describe("pi sandbox egress allow targets and arguments", () => {
     expect(await run(["sandbox", "egress", "allow", "-h"], harness.deps)).toBe(0);
     expect(await run(["sandbox", "egress", "revoke", "--help"], harness.deps)).toBe(0);
     expect(await run(["sandbox", "egress", "list", "-h"], harness.deps)).toBe(0);
-    expect(harness.stdout()).toContain("usage: pi sandbox egress allow <host[:port]> [--user]\n");
-    expect(harness.stdout()).toContain("usage: pi sandbox egress revoke <host[:port]> [--user]\n");
+    expect(harness.stdout()).toContain("usage: pi sandbox egress allow <host[:port]>\n");
+    expect(harness.stdout()).toContain("usage: pi sandbox egress revoke <host[:port]>\n");
     expect(harness.stdout()).toContain("usage: pi sandbox egress list ");
   });
 
-  it("refuses a repository grant in a folder a launch refuses, and allows a user grant there", async () => {
+  it("grants a host from a folder a launch refuses", async () => {
     const harness = await createHarness();
     const home = harness.deps.home;
 
     await mkdir(home, { recursive: true });
 
-    const deps = { ...harness.deps, cwd: home };
-
-    expect(await run(["sandbox", "egress", "allow", "docs.example.test"], deps)).toBe(1);
-    expect(harness.stderr()).toContain(`pi-sandbox: ${home} would mount ${home} into the sandbox, refusing`);
-    expect(await readGrants(harness.stateDir)).toEqual([]);
-    expect(await run(["sandbox", "egress", "allow", "docs.example.test", "--user"], deps)).toBe(0);
+    expect(
+      await run(["sandbox", "egress", "allow", "docs.example.test"], { ...harness.deps, cwd: home }),
+    ).toBe(0);
+    expect(await readGrants(harness.stateDir)).toHaveLength(1);
   });
 });
 
 describe("pi sandbox egress revoke and list", () => {
-  it("revokes this repository's grants for a host, and user grants with --user", async () => {
+  it("revokes the grants of a host, every port unless one is named", async () => {
     const harness = await createHarness();
 
     await run(["sandbox", "egress", "allow", "docs.example.test"], harness.deps);
 
-    await run(["sandbox", "egress", "allow", "docs.example.test", "--user"], harness.deps);
+    await run(["sandbox", "egress", "allow", "docs.example.test:8443"], harness.deps);
 
+    expect(await run(["sandbox", "egress", "revoke", "docs.example.test:8443"], harness.deps)).toBe(0);
+    expect(harness.stdout()).toContain("revoked 1 grant for docs.example.test:8443\n");
     expect(await run(["sandbox", "egress", "revoke", "docs.example.test"], harness.deps)).toBe(0);
-    expect(harness.stdout()).toContain("revoked 1 grant for docs.example.test\n");
-    expect(await readGrants(harness.stateDir)).toEqual([
-      expect.not.objectContaining({ repoHash: expect.anything() }),
-    ]);
-
-    expect(await run(["sandbox", "egress", "revoke", "docs.example.test", "--user"], harness.deps)).toBe(0);
     expect(await readGrants(harness.stateDir)).toEqual([]);
-  });
-
-  it("names the scope that holds the grant when the revoke found none in its own", async () => {
-    const harness = await createHarness();
-
-    await run(["sandbox", "egress", "allow", "docs.example.test", "--user"], harness.deps);
-
-    expect(await run(["sandbox", "egress", "revoke", "docs.example.test"], harness.deps)).toBe(1);
-    expect(harness.stderr()).toContain(
-      "pi-sandbox: egress: docs.example.test has no grant for this repository; its grant is for every repository\n  hint: pi sandbox egress revoke docs.example.test --user\n",
-    );
-    expect(await readGrants(harness.stateDir)).toHaveLength(1);
     expect(await run(["sandbox", "egress", "revoke", "other.example.test"], harness.deps)).toBe(0);
     expect(harness.stdout()).toContain("revoked 0 grants for other.example.test\n");
   });
 
-  it("takes no --user, since the list names each grant's scope", async () => {
+  it("refuses an unknown list option", async () => {
     const harness = await createHarness();
 
     expect(await run(["sandbox", "egress", "list", "--user"], harness.deps)).toBe(1);
     expect(harness.stderr()).toContain('pi-sandbox: unknown egress list option "--user"');
   });
 
-  it("lists the grants of this repository and the user-wide ones", async () => {
+  it("lists every grant and none stored for one repository", async () => {
     const harness = await createHarness();
 
     await writeFile(
@@ -174,14 +155,12 @@ describe("pi sandbox egress revoke and list", () => {
       JSON.stringify([
         { host: "mine.example.test", port: 443, repoHash: sha256Hex(harness.repoRoot), createdAt: 1 },
         { host: "user.example.test", port: 8443, createdAt: 1 },
-        { host: "other.example.test", port: 443, repoHash: "other", createdAt: 1 },
+        { host: "plain.example.test", port: 443, createdAt: 1 },
       ]),
     );
 
     expect(await run(["sandbox", "egress", "list"], harness.deps)).toBe(0);
-    expect(harness.stdout()).toBe(
-      ["mine.example.test for this repository", "user.example.test:8443 for every repository", ""].join("\n"),
-    );
+    expect(harness.stdout()).toBe(["user.example.test:8443", "plain.example.test", ""].join("\n"));
   });
 
   it("lists the hosts the proxy denied with --denied", async () => {
@@ -191,7 +170,6 @@ describe("pi sandbox egress revoke and list", () => {
           time: NOW,
           host: "blocked.example.test",
           port: 443,
-          repoHash: "r",
           rule: "allowlist",
           reason: "not allowed",
         },

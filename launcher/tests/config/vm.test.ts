@@ -3,8 +3,15 @@ import { defaultConfig } from "../../config/defaults.ts";
 import { configProblem } from "../../config/validate.ts";
 
 describe("the vm key", () => {
-  it("is empty by default, so the VM keeps the size install.sh gave it", () => {
-    expect(defaultConfig().vm).toEqual({});
+  it("sets no size by default, so the VM keeps the size install.sh gave it", () => {
+    expect(defaultConfig().vm).toEqual({ releaseFileCache: true });
+  });
+
+  it("takes vm.releaseFileCache as true or false", () => {
+    expect(configProblem({ vm: { releaseFileCache: false } })).toBeUndefined();
+    expect(configProblem({ vm: { releaseFileCache: "off" } })).toBe(
+      "config: vm.releaseFileCache must be true or false",
+    );
   });
 
   it("accepts whole numbers within bounds", () => {

@@ -7,15 +7,24 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createColimaBackend } from "../../backend/colima/backend.ts";
 import { demultiplexer } from "../../backend/colima/exec-session.ts";
 import { engineSocketPath } from "../../backend/colima/profile.ts";
+import { RELAY_SCRIPT } from "../../backend/colima/relay-script.ts";
 import {
   type Backend,
   type ContainerSpec,
   execCapture,
+  installIdOf,
   LABELS,
+  networkName,
+  relayName,
   type TerminalSize,
 } from "../../backend/index.ts";
 import { createProcessRunner, LauncherError } from "../../shared/index.ts";
-import { createFakeEngine, type FakeEngine, type FakeEngineOptions } from "../support/fake-engine.ts";
+import {
+  createFakeEngine,
+  FAKE_NETWORK_SUBNET,
+  type FakeEngine,
+  type FakeEngineOptions,
+} from "../support/fake-engine.ts";
 import { createFakeRunner } from "../support/fake-runner.ts";
 
 const IMAGE = "example.test/pi-sandbox:1";
@@ -24,19 +33,25 @@ const DIGEST = `sha256:${"c".repeat(64)}`;
 
 const REPO = "e".repeat(64);
 
-const RELAY = `pi-sandbox-relay-${REPO.slice(0, 12)}`;
+const INSTALL = installIdOf("/nonexistent");
 
-const ALIAS_ADDRESS = "pi-sandbox-proxy:3128";
+const RELAY = relayName(INSTALL);
 
-const REPO_NETWORK = `pi-sandbox-${REPO.slice(0, 12)}`;
+const NETWORK = networkName(INSTALL);
 
 interface RouteOptions {
   image?: string;
-  repo?: string;
+  preamble?: string;
 }
 
+const PREAMBLE = "PI-SANDBOX t0k3n";
+
 const routeOn = (backend: Backend, hostPort: number, options: RouteOptions = {}) =>
-  backend.prepareProxyRoute({ hostPort, repoHash: options.repo ?? REPO, imageId: options.image ?? IMAGE });
+  backend.prepareRelay({
+    hostPort,
+    imageId: options.image ?? IMAGE,
+    preamble: options.preamble ?? PREAMBLE,
+  });
 
 const cleanups: Array<() => Promise<unknown>> = [];
 
@@ -73,7 +88,7 @@ const relayOf = (engine: FakeEngine, name = RELAY) =>
 
 const relayBody = (engine: FakeEngine, name = RELAY) =>
   engine.createdBodies.filter((entry) => entry.name === name).at(-1)?.body as
-    | { Cmd?: string[]; Labels?: Record<string, string> }
+    | { Cmd?: string[]; Env?: string[]; Labels?: Record<string, string> }
     | undefined;
 
 const baseSpec: ContainerSpec = {
@@ -91,7 +106,9 @@ const baseSpec: ContainerSpec = {
   readOnlyRoot: true,
   tmpfs: ["/tmp", "/home/pi:mode=1777"],
   init: true,
-  resources: { cpus: 2, memoryGiB: 4 },
+  resources: { cpus: 2, memoryGiB: 4, pids: 4096 },
+  capabilities: ["CHOWN"],
+  autoRemove: true,
 };
 
 const collected = () => {
@@ -148,11 +165,8 @@ describe("colima adapter on the colima VM", () => {
 
     await backend.pullImage(IMAGE);
 
-    expect(await routeOn(backend, 3128)).toEqual({
-      network: { kind: "internal", name: REPO_NETWORK },
-      address: ALIAS_ADDRESS,
-    });
-    expect(relayBody(engine)?.Cmd).toEqual(["TCP-LISTEN:3128,fork,reuseaddr", "TCP:host.lima.internal:3128"]);
+    expect(await routeOn(backend, 3128)).toBe(NETWORK);
+    expect(relayBody(engine)?.Cmd).toEqual(["3128", "host.lima.internal", "3128", FAKE_NETWORK_SUBNET]);
   });
 });
 
@@ -163,7 +177,7 @@ describe("colima adapter status", () => {
     expect(await backendFor(engine).status()).toEqual({
       socket: engine.socketPath,
       profile: "pi-sandbox",
-      engine: "27.0.0-fake",
+      engine: "28.3.0-fake",
       api: "1.47",
       platform: "linux/arm64",
     });
@@ -269,7 +283,7 @@ describe("colima adapter status", () => {
   it("says the engine closed a call it had begun to answer, without advising a VM start", async () => {
     const socketPath = await halfAnswer(true);
     const failure = (await hungBackend(socketPath)
-      .listNetworks()
+      .removeNetwork()
       .catch((error: unknown) => error)) as LauncherError;
 
     expect(failure.message).toMatch(
@@ -283,7 +297,7 @@ describe("colima adapter status", () => {
   it("gives up on an answer that stops halfway", async () => {
     const socketPath = await halfAnswer(false);
     const failure = (await hungBackend(socketPath)
-      .listNetworks()
+      .removeNetwork()
       .catch((error: unknown) => error)) as LauncherError;
 
     expect(failure.message).toBe(
@@ -347,6 +361,34 @@ describe("colima container translation", () => {
     });
   });
 
+  it("sends the configured pids, open files and shm limits and leaves the unset ones to the engine", async () => {
+    const engine = await startEngine();
+    const backend = backendFor(engine);
+
+    await backend.pullImage(IMAGE);
+
+    await backend.createContainer({
+      ...baseSpec,
+      resources: { pids: 8192, openFiles: 65536, shmMiB: 1024 },
+    });
+
+    const limited = engine.createdBodies.at(-1)?.body as { HostConfig: Record<string, unknown> };
+
+    expect(limited.HostConfig).toMatchObject({
+      PidsLimit: 8192,
+      Ulimits: [{ Name: "nofile", Soft: 65536, Hard: 65536 }],
+      ShmSize: 1024 * 1024 ** 2,
+    });
+
+    await backend.createContainer({ ...baseSpec, name: "pi-sandbox-unlimited" });
+
+    const unset = engine.createdBodies.at(-1)?.body as { HostConfig: Record<string, unknown> };
+
+    expect(unset.HostConfig).toMatchObject({ PidsLimit: 4096 });
+    expect(unset.HostConfig).not.toHaveProperty("Ulimits");
+    expect(unset.HostConfig).not.toHaveProperty("ShmSize");
+  });
+
   it("maps engine states to summary states, passes the stop timeout and lets the engine remove a stopped container", async () => {
     const engine = await startEngine();
     const { backend, id } = await startedContainer(engine);
@@ -355,7 +397,7 @@ describe("colima container translation", () => {
       {
         id,
         name: "pi-sandbox-abc",
-        labels: { [LABELS.repoHash]: "abc" },
+        labels: { [LABELS.managed]: "true", [LABELS.install]: INSTALL, [LABELS.repoHash]: "abc" },
         state: "running",
         image: IMAGE,
       },
@@ -370,6 +412,24 @@ describe("colima container translation", () => {
       "removed",
     );
     expect(engine.requests.find((request) => request.path.endsWith("/stop"))?.query.get("t")).toBe("10");
+  });
+
+  it("removes a container together with its anonymous volumes", async () => {
+    const engine = await startEngine();
+    const backend = backendFor(engine);
+
+    await backend.pullImage(IMAGE);
+
+    const { id } = await backend.createContainer(baseSpec);
+
+    await backend.removeContainer(id);
+
+    const removal = engine.requests.find(
+      (request) => request.method === "DELETE" && request.path === `/containers/${id}`,
+    );
+
+    expect(removal?.query.get("force")).toBe("true");
+    expect(removal?.query.get("v")).toBe("true");
   });
 
   it("names a host folder the VM does not share when the engine misses the bind source", async () => {
@@ -467,7 +527,9 @@ describe("colima images", () => {
       runner: createProcessRunner(),
     });
     const steps: string[] = [];
-    const built = await backend.buildImage(context, "pi-sandbox:dev", {}, (step) => steps.push(step));
+    const built = await backend.buildImage(context, "pi-sandbox:dev", {
+      progress: (step) => steps.push(step),
+    });
 
     expect(steps).toEqual(["Step 1/1"]);
     expect(built.id).toMatch(/^sha256:[0-9a-f]{64}$/);
@@ -574,7 +636,9 @@ describe("colima images", () => {
     });
 
     await backend.buildImage(context, "pi-sandbox:plain");
-    await backend.buildImage(context, "pi-sandbox:proxied", { HTTPS_PROXY: "http://proxy.example.com:8080" });
+    await backend.buildImage(context, "pi-sandbox:proxied", {
+      args: { HTTPS_PROXY: "http://proxy.example.com:8080" },
+    });
 
     const builds = engine.requests.filter((request) => request.path === "/build");
 
@@ -582,6 +646,27 @@ describe("colima images", () => {
       null,
       JSON.stringify({ HTTPS_PROXY: "http://proxy.example.com:8080" }),
     ]);
+  });
+
+  it("sends networkmode none only for an offline build", async () => {
+    const engine = await startEngine();
+    const context = await temporaryDir();
+
+    await writeFile(join(context, "Dockerfile"), "FROM scratch\n");
+
+    const backend = createColimaBackend({
+      home: "/nonexistent",
+      stateDir: "/nonexistent",
+      socketPath: engine.socketPath,
+      runner: createProcessRunner(),
+    });
+
+    await backend.buildImage(context, "pi-sandbox:online");
+    await backend.buildImage(context, "pi-sandbox:offline", { offline: true });
+
+    const builds = engine.requests.filter((request) => request.path === "/build");
+
+    expect(builds.map((request) => request.query.get("networkmode"))).toEqual([null, "none"]);
   });
 
   it("labels builds as managed, lists images with their tags and use, and removes only unused ones", async () => {
@@ -639,7 +724,7 @@ describe("colima exec stream frames", () => {
     const stdout = new PassThrough();
     const stderr = new PassThrough();
     const written = { stdout: 0, stderr: 0 };
-    const deliver = demultiplexer({ stdout, stderr, tty: false }, (target, data) => {
+    const deliver = demultiplexer({ stdout, stderr }, (target, data) => {
       written[target === stderr ? "stderr" : "stdout"] += data.length;
     });
 
@@ -720,6 +805,27 @@ describe("colima exec", () => {
     expect(exitCode).toBe(5);
     expect(stdout.text()).toBe("first second");
     expect(stderr.text()).toBe("warning");
+  });
+
+  it("sends an empty exec variable as NAME= so it overrides the container's value", async () => {
+    const seen: string[][] = [];
+    const engine = await startEngine({
+      exec: (context) => {
+        seen.push(context.env);
+
+        return 0;
+      },
+    });
+    const { backend, id } = await startedContainer(engine);
+    const stdout = collected();
+    const stderr = collected();
+
+    await backend.exec(
+      { containerId: id, command: ["sh"], env: { PATH: "/bin", LD_PRELOAD: "" }, workdir: "/", user: "0" },
+      { stdout: stdout.stream, stderr: stderr.stream, tty: false },
+    );
+
+    expect(seen).toEqual([["PATH=/bin", "LD_PRELOAD="]]);
   });
 
   it("delivers every frame in order to a slow stdout that asks it to wait", async () => {
@@ -857,6 +963,81 @@ describe("colima volumes", () => {
   });
 });
 
+describe("colima sandbox network", () => {
+  it("creates the sandbox network with no repository label and keeps it on a second call", async () => {
+    const engine = await startEngine();
+    const backend = backendFor(engine);
+
+    expect(await backend.prepareNetwork()).toBe(NETWORK);
+    expect(await backend.prepareNetwork()).toBe(NETWORK);
+    expect(engine.networks.get(NETWORK)?.body).toEqual({
+      Name: NETWORK,
+      Driver: "bridge",
+      Internal: true,
+      EnableIPv6: false,
+      CheckDuplicate: true,
+      Options: { "com.docker.network.bridge.gateway_mode_ipv4": "isolated" },
+      Labels: { [LABELS.managed]: "true", [LABELS.install]: INSTALL },
+    });
+  });
+
+  it("gives the pod its services alias when it creates it on the sandbox network", async () => {
+    const engine = await startEngine();
+    const backend = backendFor(engine);
+
+    await backend.pullImage(IMAGE);
+
+    await backend.prepareNetwork();
+
+    const pod = await backend.createContainer({
+      ...baseSpec,
+      network: { kind: "internal", name: NETWORK, alias: "pi-sandbox-services" },
+    });
+
+    expect(engine.networks.get(NETWORK)?.connected).toEqual([
+      expect.objectContaining({ container: pod.id, aliases: ["pi-sandbox-services"] }),
+    ]);
+  });
+
+  it("refuses a sandbox network the launcher did not make", async () => {
+    const engine = await startEngine();
+    const backend = backendFor(engine);
+
+    engine.networks.set(NETWORK, { body: { Name: NETWORK, Internal: true }, connected: [] });
+
+    await expect(backend.prepareNetwork()).rejects.toThrow(
+      `network ${NETWORK} exists but is not managed by pi-sandbox`,
+    );
+  });
+
+  it("removes a network once nothing is on it, and tolerates a missing one", async () => {
+    const engine = await startEngine();
+    const backend = backendFor(engine);
+
+    await backend.pullImage(IMAGE);
+
+    await backend.prepareNetwork();
+
+    const pod = await backend.createContainer({ ...baseSpec, network: { kind: "internal", name: NETWORK } });
+
+    await backend.startContainer(pod.id);
+
+    await expect(backend.removeNetwork()).resolves.toBe(false);
+
+    expect(engine.networks.has(NETWORK)).toBe(true);
+
+    await backend.stopContainer(pod.id, 1);
+
+    await backend.removeContainer(pod.id);
+
+    await expect(backend.removeNetwork()).resolves.toBe(true);
+
+    expect(engine.networks.has(NETWORK)).toBe(false);
+
+    await expect(backend.removeNetwork()).resolves.toBe(false);
+  });
+});
+
 describe("colima egress relay", () => {
   const readyBackend = async () => {
     const engine = await startEngine();
@@ -867,20 +1048,22 @@ describe("colima egress relay", () => {
     return { engine, backend };
   };
 
-  it("creates a managed internal network and a running relay of the repository under the proxy alias", async () => {
+  it("creates the sandbox network and one running relay on it under the proxy alias, with no repository label", async () => {
     const { engine, backend } = await readyBackend();
     const route = await routeOn(backend, 3128);
     const relay = relayOf(engine);
 
-    expect(route).toEqual({ network: { kind: "internal", name: REPO_NETWORK }, address: ALIAS_ADDRESS });
-    expect(engine.networks.get(REPO_NETWORK)?.body).toEqual({
-      Name: REPO_NETWORK,
+    expect(route).toBe(NETWORK);
+    expect(engine.networks.get(NETWORK)?.body).toEqual({
+      Name: NETWORK,
       Driver: "bridge",
       Internal: true,
+      EnableIPv6: false,
       CheckDuplicate: true,
-      Labels: { [LABELS.managed]: "true", [LABELS.repoHash]: REPO },
+      Options: { "com.docker.network.bridge.gateway_mode_ipv4": "isolated" },
+      Labels: { [LABELS.managed]: "true", [LABELS.install]: INSTALL },
     });
-    expect(engine.networks.get(REPO_NETWORK)?.connected).toEqual([
+    expect(engine.networks.get(NETWORK)?.connected).toEqual([
       expect.objectContaining({ container: relay?.Id, aliases: ["pi-sandbox-proxy"] }),
     ]);
     expect(relay?.State).toBe("running");
@@ -888,10 +1071,12 @@ describe("colima egress relay", () => {
       Image: IMAGE,
       Labels: {
         [LABELS.managed]: "true",
-        [LABELS.relay]: "true",
-        [LABELS.repoHash]: REPO,
-        [LABELS.relayPort]: "3128",
+        [LABELS.install]: INSTALL,
+        [LABELS.role]: "relay",
+        [LABELS.relayInputs]: expect.stringMatching(/^[0-9a-f]{64}$/),
       },
+      Entrypoint: ["node", "-e", RELAY_SCRIPT],
+      Env: [`PI_SANDBOX_RELAY_PREAMBLE=${PREAMBLE}`],
       HostConfig: {
         NetworkMode: "bridge",
         AutoRemove: true,
@@ -901,6 +1086,7 @@ describe("colima egress relay", () => {
         PidsLimit: 1024,
       },
     });
+    expect(relayBody(engine)?.Labels).not.toHaveProperty([LABELS.repoHash]);
     expect(relayBody(engine)).not.toHaveProperty("HostConfig.CapAdd");
   });
 
@@ -914,7 +1100,7 @@ describe("colima egress relay", () => {
     await routeOn(backend, 3128);
 
     expect(relayOf(engine)?.Id).toBe(first);
-    expect(await backend.findContainers({ [LABELS.relay]: "true" })).toHaveLength(1);
+    expect(await backend.findContainers({ [LABELS.role]: "relay" })).toHaveLength(1);
   });
 
   it("recreates the relay under the same name and alias when the proxy port changes, while a sandbox runs", async () => {
@@ -924,7 +1110,7 @@ describe("colima egress relay", () => {
       ...baseSpec,
       name: "agent",
       labels: { [LABELS.managed]: "true", [LABELS.repoHash]: REPO },
-      network: route.network,
+      network: { kind: "internal", name: route },
     });
 
     await backend.startContainer(sandbox.id);
@@ -933,15 +1119,90 @@ describe("colima egress relay", () => {
     const again = await routeOn(backend, 4000);
 
     expect(relayOf(engine)?.Id).not.toBe(first);
-    expect(again).toEqual(route);
-    expect(relayBody(engine)?.Cmd).toEqual(["TCP-LISTEN:3128,fork,reuseaddr", "TCP:host.lima.internal:4000"]);
-    expect(engine.networks.get(REPO_NETWORK)?.connected).toContainEqual(
+    expect(again).toBe(route);
+    expect(relayBody(engine)?.Cmd).toEqual(["3128", "host.lima.internal", "4000", FAKE_NETWORK_SUBNET]);
+    expect(engine.networks.get(NETWORK)?.connected).toContainEqual(
       expect.objectContaining({ container: relayOf(engine)?.Id, aliases: ["pi-sandbox-proxy"] }),
     );
     expect(engine.containers.get(sandbox.id)?.State).toBe("running");
   });
 
-  it("replaces a relay that stays created or is no longer on the repository network", async () => {
+  it("replaces the relay when the preamble changes and keeps it when nothing changes", async () => {
+    const { engine, backend } = await readyBackend();
+
+    await routeOn(backend, 3128);
+
+    const first = relayOf(engine)?.Id;
+    const inputs = relayBody(engine)?.Labels?.[LABELS.relayInputs];
+
+    await routeOn(backend, 3128, { preamble: "PI-SANDBOX other" });
+
+    expect(relayOf(engine)?.Id).not.toBe(first);
+    expect(relayBody(engine)?.Labels?.[LABELS.relayInputs]).not.toBe(inputs);
+    expect(relayBody(engine)?.Env).toEqual(["PI_SANDBOX_RELAY_PREAMBLE=PI-SANDBOX other"]);
+  });
+
+  it("replaces the relay when the network's subnet changes and hands it the new subnet", async () => {
+    const { engine, backend } = await readyBackend();
+
+    await routeOn(backend, 3128);
+
+    const first = relayOf(engine)?.Id;
+    const inputs = relayBody(engine)?.Labels?.[LABELS.relayInputs];
+    const network = engine.networks.get(NETWORK);
+
+    if (network !== undefined) {
+      network.body.IPAM = { Config: [{ Subnet: "10.90.0.0/24" }] };
+    }
+
+    await routeOn(backend, 3128);
+
+    expect(relayOf(engine)?.Id).not.toBe(first);
+    expect(relayBody(engine)?.Labels?.[LABELS.relayInputs]).not.toBe(inputs);
+    expect(relayBody(engine)?.Cmd).toEqual(["3128", "host.lima.internal", "3128", "10.90.0.0/24"]);
+  });
+
+  it("refuses a sandbox network without an IPv4 subnet and creates no relay", async () => {
+    const { engine, backend } = await readyBackend();
+
+    engine.networks.set(NETWORK, {
+      body: {
+        Name: NETWORK,
+        Internal: true,
+        Labels: { [LABELS.managed]: "true", [LABELS.install]: INSTALL },
+        Options: { "com.docker.network.bridge.gateway_mode_ipv4": "isolated" },
+        IPAM: { Config: [{ Subnet: "fd00::/64" }] },
+      },
+      connected: [],
+    });
+
+    const failure = (await routeOn(backend, 3128).catch((error: unknown) => error)) as LauncherError;
+
+    expect(failure).toBeInstanceOf(LauncherError);
+    expect(failure.message).toBe(
+      `network ${NETWORK} has no IPv4 subnet, so the relay cannot tell the sandbox containers from other clients`,
+    );
+    expect(relayOf(engine)).toBeUndefined();
+  });
+
+  it("refuses to create the network on an engine older than 28", async () => {
+    const engine = await startEngine({ engineVersion: "27.5.1" });
+    const backend = backendFor(engine);
+
+    await backend.pullImage(IMAGE);
+
+    const refused = routeOn(backend, 3128);
+
+    await expect(refused).rejects.toThrow(
+      "the sandbox VM runs Docker Engine 27.5.1, and the sandbox network needs 28.0 or later to keep the VM itself off it",
+    );
+    await expect(refused).rejects.toMatchObject({
+      hint: "update colima, then delete and recreate the sandbox VM so it gets a newer engine",
+    });
+    expect(engine.networks.has(NETWORK)).toBe(false);
+  });
+
+  it("replaces a relay that stays created or is no longer on the sandbox network", async () => {
     const { engine, backend } = await readyBackend();
 
     await routeOn(backend, 3128);
@@ -959,7 +1220,7 @@ describe("colima egress relay", () => {
     expect(restarted?.Id).not.toBe(created?.Id);
     expect(restarted?.State).toBe("running");
 
-    const network = engine.networks.get(REPO_NETWORK);
+    const network = engine.networks.get(NETWORK);
 
     if (network !== undefined) {
       network.connected = [];
@@ -968,7 +1229,7 @@ describe("colima egress relay", () => {
     await routeOn(backend, 3128);
 
     expect(relayOf(engine)?.Id).not.toBe(restarted?.Id);
-    expect(engine.networks.get(REPO_NETWORK)?.connected).toEqual([
+    expect(engine.networks.get(NETWORK)?.connected).toEqual([
       expect.objectContaining({ container: relayOf(engine)?.Id, aliases: ["pi-sandbox-proxy"] }),
     ]);
   });
@@ -996,7 +1257,7 @@ describe("colima egress relay", () => {
 
     expect(relayOf(engine)?.Id).not.toBe(old);
     expect(relayOf(engine)?.State).toBe("running");
-    expect(relayBody(engine)?.Cmd).toEqual(["TCP-LISTEN:3128,fork,reuseaddr", "TCP:host.lima.internal:4000"]);
+    expect(relayBody(engine)?.Cmd).toEqual(["3128", "host.lima.internal", "4000", FAKE_NETWORK_SUBNET]);
   });
 
   it("keeps the engine's own error when it refuses to remove the old relay", async () => {
@@ -1025,10 +1286,10 @@ describe("colima egress relay", () => {
     );
   });
 
-  it("creates no relay when the repository's network is refused", async () => {
+  it("creates no relay when the sandbox network is refused", async () => {
     const { engine, backend } = await readyBackend();
 
-    engine.networks.set(REPO_NETWORK, { body: { Name: REPO_NETWORK, Internal: true }, connected: [] });
+    engine.networks.set(NETWORK, { body: { Name: NETWORK, Internal: true }, connected: [] });
 
     await expect(routeOn(backend, 3128)).rejects.toBeInstanceOf(LauncherError);
     expect(relayOf(engine)).toBeUndefined();
@@ -1060,10 +1321,7 @@ describe("colima egress relay", () => {
     const pinned = await backend.pullImage(IMAGE, DIGEST);
 
     expect(engine.images.has(IMAGE)).toBe(false);
-    expect(await routeOn(backend, 3128, { image: pinned.id })).toEqual({
-      network: { kind: "internal", name: REPO_NETWORK },
-      address: ALIAS_ADDRESS,
-    });
+    expect(await routeOn(backend, 3128, { image: pinned.id })).toBe(NETWORK);
     expect(relayBody(engine)).toMatchObject({ Image: pinned.id });
     expect(relayOf(engine)?.State).toBe("running");
   });

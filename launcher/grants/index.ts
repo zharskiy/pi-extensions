@@ -6,13 +6,7 @@ export {
   othersLive,
   pruneLaunches,
   registerLaunch,
-  withRepoLaunchLock,
+  withLaunchLock,
 } from "./launches.ts";
-export {
-  activeGrants,
-  addGrant,
-  forgetRepoGrants,
-  readGrants,
-  revokeGrants,
-} from "./store.ts";
+export { addGrant, readGrants, revokeGrants } from "./store.ts";
 export type { Grant, Launch } from "./types.ts";

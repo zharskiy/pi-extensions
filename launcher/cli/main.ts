@@ -2,13 +2,7 @@ import { statfs } from "node:fs/promises";
 import { availableParallelism, homedir, totalmem } from "node:os";
 import { createColimaBackend } from "../backend/index.ts";
 import { findOnPath } from "../hostpi/index.ts";
-import {
-  ensureRepoProxy,
-  ensureTrustBundle,
-  readDenials,
-  readRepoProxy,
-  stopRepoProxy,
-} from "../proxy/index.ts";
+import { ensureProxy, ensureTrustBundle, readDenials, readProxy, stopProxy } from "../proxy/index.ts";
 import { createProcessRunner, withResolvedCommand } from "../shared/index.ts";
 import { startedRoots } from "../workspace/index.ts";
 import { type CliDeps, onClosedOutput, pathsOf } from "./deps.ts";
@@ -39,17 +33,16 @@ const realDeps = (): CliDeps => {
     terminal: hostTerminal(),
     openTty: openDevTty,
     platform,
-    uid: process.getuid?.() ?? 0,
     machine: { cpus: availableParallelism(), memoryGiB: totalmem() / GIB },
     statfs: (path) => statfs(path),
     backend: () => createColimaBackend({ home, stateDir, runner }),
     proxy: {
-      ensure: (request) => ensureRepoProxy({ ...request, runner }),
-      read: readRepoProxy,
-      stop: stopRepoProxy,
+      ensure: (request) => ensureProxy({ ...request, runner }),
+      read: readProxy,
+      stop: stopProxy,
       denials: readDenials,
-      trust: (stateDir, sources, launchId) =>
-        ensureTrustBundle({ stateDir, runner, platform: process.platform, sources, launchId }),
+      trust: (stateDir, sources) =>
+        ensureTrustBundle({ stateDir, runner, platform: process.platform, sources }),
     },
     now: () => Date.now(),
   };

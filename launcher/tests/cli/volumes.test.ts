@@ -1,25 +1,29 @@
-import { writeFile } from "node:fs/promises";
+import { rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { LABELS } from "../../backend/index.ts";
 import { run } from "../../cli/index.ts";
-import { overlayVolumes, sharedCacheVolumes } from "../../container/index.ts";
-import { sha256Hex } from "../../shared/index.ts";
+import { configVolumeName, mountedVolumes, overlayVolumes } from "../../container/index.ts";
+import { sha256Hex, stateLayout } from "../../shared/index.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
+import { tempDir } from "../support/temp-dir.ts";
 import { createFakeBackend, createHarness, sweepNow } from "./harness.ts";
 
 const SHARED = "~/.cache/pip";
 
+const DATA = "/opt/data";
+
 const volumeHarness = async () => {
   const fake = createFakeBackend();
   const harness = await createHarness({ backend: () => fake.backend });
-  const config = sandboxConfig({ mounts: { sharedCaches: [SHARED] } });
+  const volumes = [SHARED, { target: DATA }];
+  const config = sandboxConfig({ mounts: { volumes } });
 
   await writeFile(join(harness.repoRoot, "package-lock.json"), "{}");
 
-  await harness.writeJson(harness.userConfigFile, { mounts: { sharedCaches: [SHARED] } });
+  await harness.writeJson(harness.userConfigFile, { mounts: { volumes } });
 
-  const [shared] = sharedCacheVolumes(config, harness.stateDir);
+  const [shared, data] = mountedVolumes(config, harness.stateDir);
   const [overlay] = overlayVolumes(
     {
       cwd: harness.repoRoot,
@@ -28,16 +32,17 @@ const volumeHarness = async () => {
       overlays: [join(harness.repoRoot, "node_modules")],
     },
     config,
+    harness.stateDir,
   );
 
-  return { fake, harness, shared: shared?.name ?? "", overlay: overlay?.name ?? "" };
+  return { fake, harness, shared: shared?.name ?? "", data: data?.name ?? "", overlay: overlay?.name ?? "" };
 };
 
-const plantShared = (fake: ReturnType<typeof createFakeBackend>, name: string, userHash: string) =>
-  fake.backend.ensureVolume(name, { [LABELS.userHash]: userHash, [LABELS.sharedPath]: SHARED });
+const plantShared = (fake: ReturnType<typeof createFakeBackend>, name: string, install: string) =>
+  fake.backendFor(install).ensureVolume(name, {});
 
-describe("the sweep and shared caches", () => {
-  it("keeps every shared cache and never counts them as unlabelled", async () => {
+describe("the sweep and configured volumes", () => {
+  it("keeps every configured volume and never counts them as unlabelled", async () => {
     const { fake, harness, shared } = await volumeHarness();
 
     await run([], harness.deps);
@@ -50,11 +55,28 @@ describe("the sweep and shared caches", () => {
     expect(harness.stdout()).not.toContain("without repository label");
     expect(harness.stdout()).not.toContain("shared cache");
   });
+
+  it("keeps a configured volume once a folder that mounted it is gone", async () => {
+    const { fake, harness, data } = await volumeHarness();
+    const gone = await tempDir("gone-volume-repo");
+    const volume = configVolumeName(harness.stateDir, DATA);
+
+    await harness.writeJson(stateLayout(harness.stateDir).repo(sha256Hex(gone)).record, { root: gone });
+
+    await fake.backend.ensureVolume(volume, {});
+
+    await rm(gone, { recursive: true, force: true });
+
+    await sweepNow(harness.deps);
+
+    expect(volume).toBe(data);
+    expect(fake.volumes.has(data)).toBe(true);
+  });
 });
 
 describe("pi sandbox reset and volumes", () => {
-  it("removes the node_modules overlays, those of deleted packages included, and keeps shared caches", async () => {
-    const { fake, harness, shared, overlay } = await volumeHarness();
+  it("removes the node_modules overlays, those of deleted packages included, and keeps the configured volumes", async () => {
+    const { fake, harness, shared, data, overlay } = await volumeHarness();
     const stale = `pi-sandbox-cache-${sha256Hex(harness.repoRoot).slice(0, 12)}-deadbeef`;
 
     await run([], harness.deps);
@@ -65,13 +87,16 @@ describe("pi sandbox reset and volumes", () => {
     });
 
     expect(fake.volumes.has(overlay)).toBe(true);
+    expect(fake.volumes.has(data)).toBe(true);
     expect(await run(["sandbox", "reset"], harness.deps)).toBe(0);
     expect(fake.volumes.has(overlay)).toBe(false);
     expect(fake.volumes.has(stale)).toBe(false);
     expect(fake.volumes.has(shared)).toBe(true);
+    expect(fake.volumes.has(data)).toBe(true);
     expect(harness.stdout()).toContain(`removed volume ${overlay}\n`);
     expect(harness.stdout()).toContain(`removed volume ${stale}\n`);
     expect(harness.stdout()).not.toContain(shared);
+    expect(harness.stdout()).not.toContain(data);
   });
 
   it("removes an agent volume of this repository under an older name, and leaves other repositories' volumes", async () => {
@@ -98,8 +123,8 @@ describe("pi sandbox reset and volumes", () => {
 });
 
 describe("pi sandbox status and volumes", () => {
-  it("lists the node_modules overlays and shared caches of this repository", async () => {
-    const { harness, shared, overlay } = await volumeHarness();
+  it("lists the node_modules overlays and the configured volumes of this repository", async () => {
+    const { harness, shared, data, overlay } = await volumeHarness();
 
     expect(await run(["sandbox", "status"], harness.deps)).toBe(0);
 
@@ -107,8 +132,9 @@ describe("pi sandbox status and volumes", () => {
 
     expect(lines).toContain("overlays: 1");
     expect(lines).toContain(`overlay: ${join(harness.repoRoot, "node_modules")} (${overlay})`);
-    expect(lines).toContain("shared caches: 1");
-    expect(lines).toContain(`shared cache: ${SHARED} (${shared})`);
+    expect(lines).toContain("volumes: 2");
+    expect(lines).toContain(`volume: /home/pi/.cache/pip (${shared})`);
+    expect(lines).toContain(`volume: ${DATA} (${data})`);
   });
 
   it("reports none of either when nothing is configured or found", async () => {
@@ -119,8 +145,8 @@ describe("pi sandbox status and volumes", () => {
     const lines = harness.stdout().split("\n");
 
     expect(lines).toContain("overlays: 0");
-    expect(lines).toContain("shared caches: 0");
+    expect(lines).toContain("volumes: 0");
     expect(lines.some((line) => line.startsWith("overlay:"))).toBe(false);
-    expect(lines.some((line) => line.startsWith("shared cache:"))).toBe(false);
+    expect(lines.some((line) => line.startsWith("volume:"))).toBe(false);
   });
 });

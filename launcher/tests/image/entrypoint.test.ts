@@ -12,6 +12,7 @@ import {
   symlink,
   writeFile,
 } from "node:fs/promises";
+import { type AddressInfo, createServer } from "node:net";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { launcherRoot } from "../../shared/index.ts";
@@ -53,6 +54,8 @@ const hostToolsBin = async (bin: string) => {
       return found === undefined ? Promise.resolve() : symlink(found, join(bin, name));
     }),
   );
+
+  await symlink(process.execPath, join(bin, "node"));
 };
 
 const sandboxRoot = async () => {
@@ -63,10 +66,10 @@ const sandboxRoot = async () => {
     render: join(root, "opt", "render"),
     bundle: join(root, "tmp"),
     system: join(root, "system.crt"),
-    trust: join(root, "etc", "ca.pem"),
     hostBin: join(root, "host-bin"),
     handover: join(root, "handover"),
     ready: join(root, "ready"),
+    forward: join(root, "forward"),
   };
 
   await hostToolsBin(paths.hostBin);
@@ -84,19 +87,15 @@ type Paths = Awaited<ReturnType<typeof sandboxRoot>>;
 
 const PROXY_OPTIONS = "-Dhttps.proxyHost=pi-sandbox-proxy -Dhttps.proxyPort=3128";
 
-const trustFlags = (paths: Paths) =>
-  `-Djavax.net.ssl.trustStore=${paths.bundle}/truststore.p12 -Djavax.net.ssl.trustStoreType=PKCS12 -Djavax.net.ssl.trustStorePassword=changeit`;
-
-const certificate = (name: string) => `-----BEGIN CERTIFICATE-----\n${name}\n-----END CERTIFICATE-----\n`;
-
 const withGuestPaths = (paths: Paths, text: string) => {
   const guestPaths: Record<string, string> = {
     "/tmp/pi-sandbox-handover": paths.handover,
     "/tmp/pi-sandbox-ready": paths.ready,
+    "/tmp/pi-sandbox-forward": paths.forward,
+    "/usr/local/lib/pi-sandbox/forwarder.mjs": join(launcherRoot(), "image", "forwarder.mjs"),
     "/opt/pi-sandbox/render": paths.render,
     "/tmp/pi-sandbox": paths.bundle,
     "/etc/ssl/certs/ca-certificates.crt": paths.system,
-    "/etc/pi-sandbox/ca.pem": paths.trust,
     "/usr/local/lib/pi-sandbox/bash-env.sh": join(paths.root, "bash-env.sh"),
   };
   const guestPath = new RegExp(
@@ -134,10 +133,7 @@ const installJdk = async (paths: Paths, keytool: string) => {
   return bin;
 };
 
-const IMPORTING_KEYTOOL =
-  'store="$4"; alias="$8"; shift 9; printf \'%s %s\\n\' "$alias" "$(sed -n 2p "$1")" >> "$store"';
-
-const FAILING_KEYTOOL = "exit 1";
+const RECORDING_KEYTOOL = 'touch "$(dirname "$0")/../../keytool-ran"';
 
 interface RunOptions {
   command?: string[];
@@ -196,13 +192,6 @@ const runEntrypoint = async (paths: Paths, options: RunOptions = {}) => {
 
 const sourcingBashEnv = (paths: Paths, times: number) =>
   `${`. '${join(paths.root, "bash-env.sh")}'; `.repeat(times)}printf %s "$JAVA_TOOL_OPTIONS"`;
-
-const javaOptionsAfterStart = (paths: Paths, bin?: string) =>
-  runEntrypoint(paths, {
-    command: ["sh", "-c", sourcingBashEnv(paths, 1)],
-    env: { JAVA_TOOL_OPTIONS: PROXY_OPTIONS },
-    bin,
-  });
 
 describe("image entrypoint", () => {
   it("links every rendered entry, replacing a file or dir an agent put in place of a link", async () => {
@@ -332,6 +321,65 @@ describe("image entrypoint", () => {
     expect(result.status).toBe(0);
   });
 
+  it("starts no forwarder when the services have no ports", async () => {
+    const paths = await sandboxRoot();
+
+    await runEntrypoint(paths);
+
+    await expect(lstat(paths.forward)).rejects.toThrow();
+  });
+
+  it("starts the forwarder on the service ports before it marks the home ready", async () => {
+    const paths = await sandboxRoot();
+    const probe = createServer();
+    const port = await new Promise<number>((resolve) => {
+      probe.listen({ host: "127.0.0.1", port: 0 }, () => resolve((probe.address() as AddressInfo).port));
+    });
+
+    await new Promise((resolve) => probe.close(resolve));
+
+    const connect = `require("node:net").connect(${port}, "127.0.0.1").on("connect", () => process.exit(0)).on("error", () => process.exit(3))`;
+    const run = await entrypointRun(paths, {
+      command: [
+        "sh",
+        "-c",
+        `test -e "${paths.forward}" && ! test -s "${paths.forward}" && node -e '${connect}'`,
+      ],
+      env: {
+        PI_SANDBOX_SERVICE_PORTS: String(port),
+        PI_SANDBOX_SERVICES_HOST: "pi-sandbox-services.invalid",
+      },
+    });
+    const child = spawn("sh", run.args, { env: run.env, detached: true, stdio: "ignore" });
+    const status = await new Promise<number | null>((resolve) => child.on("exit", resolve));
+
+    process.kill(-(child.pid ?? 0), "SIGKILL");
+
+    expect(status).toBe(0);
+    expect(await readFile(paths.ready, "utf8")).toBe("");
+  });
+
+  it("records why the forwarder failed and still marks the home ready for the launcher to report", async () => {
+    const paths = await sandboxRoot();
+    const taken = createServer();
+    const port = await new Promise<number>((resolve) => {
+      taken.listen({ host: "127.0.0.1", port: 0 }, () => resolve((taken.address() as AddressInfo).port));
+    });
+
+    const result = await spawnEntrypoint(paths, {
+      env: {
+        PI_SANDBOX_SERVICE_PORTS: String(port),
+        PI_SANDBOX_SERVICES_HOST: "pi-sandbox-services.invalid",
+      },
+    });
+
+    taken.close();
+
+    expect(result.status).toBe(0);
+    expect(await readFile(paths.forward, "utf8")).toContain(`port ${port} on 127.0.0.1`);
+    expect(await readFile(paths.ready, "utf8")).toBe("");
+  });
+
   it("leaves the home unmarked when it stops before the home is ready", async () => {
     const paths = await sandboxRoot();
     const result = await spawnEntrypoint(paths, {
@@ -397,7 +445,7 @@ describe("image entrypoint", () => {
     await expect(lstat(agentsSkills)).rejects.toThrow();
   });
 
-  it("copies the rendered Maven settings into the home and keeps the tool files out of the agent dir", async () => {
+  it("links the rendered Maven settings into the home, replacing a planted link, and keeps the tool files out of the agent dir", async () => {
     const paths = await sandboxRoot();
     const settings = join(paths.home, ".m2", "settings.xml");
 
@@ -411,31 +459,36 @@ describe("image entrypoint", () => {
 
     await runEntrypoint(paths);
 
-    expect((await lstat(settings)).isFile()).toBe(true);
+    expect(await readlink(settings)).toBe(join(paths.render, "tools", "m2-settings.xml"));
     expect(await readFile(settings, "utf8")).toBe("<settings/>\n");
     await expect(lstat(join(paths.home, ".pi", "agent", "tools"))).rejects.toThrow();
   });
 
-  it("writes the proxy port into the Maven settings, which Maven reads as a number before it expands env references", async () => {
+  it("leaves the rendered status file in the render folder, linked nowhere", async () => {
     const paths = await sandboxRoot();
-    const proxy = [
-      "<proxy>",
-      `<host>\${env.PI_SANDBOX_PROXY_HOST}</host>`,
-      `<port>\${env.PI_SANDBOX_PROXY_PORT}</port>`,
-      `<password>\${env.PI_SANDBOX_PROXY_TOKEN}</password>`,
-      "</proxy>",
-      "",
-    ];
 
     await mkdir(join(paths.render, "tools"));
 
-    await writeFile(join(paths.render, "tools", "m2-settings.xml"), proxy.join("\n"));
+    await writeFile(join(paths.render, "tools", "status.json"), "{}\n");
 
-    await runEntrypoint(paths, { env: { PI_SANDBOX_PROXY_PORT: "3128", PI_SANDBOX_PROXY_TOKEN: "t0k3n" } });
+    await runEntrypoint(paths);
 
-    expect(await readFile(join(paths.home, ".m2", "settings.xml"), "utf8")).toBe(
-      proxy.with(2, "<port>3128</port>").join("\n"),
-    );
+    await expect(lstat(join(paths.home, ".pi", "agent", "tools"))).rejects.toThrow();
+    await expect(lstat(join(paths.home, ".pi", "agent", "status.json"))).rejects.toThrow();
+    expect(await readFile(join(paths.render, "tools", "status.json"), "utf8")).toBe("{}\n");
+  });
+
+  it("leaves the literal proxy of the rendered Maven settings as it is", async () => {
+    const paths = await sandboxRoot();
+    const proxy = "<proxy>\n<host>pi-sandbox-proxy</host>\n<port>3128</port>\n</proxy>\n";
+
+    await mkdir(join(paths.render, "tools"));
+
+    await writeFile(join(paths.render, "tools", "m2-settings.xml"), proxy);
+
+    await runEntrypoint(paths);
+
+    expect(await readFile(join(paths.home, ".m2", "settings.xml"), "utf8")).toBe(proxy);
   });
 
   it("puts ~/.m2/settings.xml in place only after the launcher hands over the ~/.m2 the engine made for a shared cache", async () => {
@@ -473,7 +526,7 @@ describe("image entrypoint", () => {
 
     expect(result.status).toBe(1);
     expect(result.stderr).toBe(
-      "pi-sandbox: the launcher did not hand the cache volumes to the sandbox user within 1 s, stopping\n",
+      "pi-sandbox: the launcher did not hand the volumes to the sandbox user within 1 s, stopping\n",
     );
     await expect(lstat(join(paths.home, ".pi"))).rejects.toThrow();
   });
@@ -507,62 +560,26 @@ describe("image entrypoint", () => {
     expect(await readFile(gitconfig, "utf8")).toBe("gitconfig\n");
   });
 
-  it("builds a JVM truststore from the JDK cacerts and every proxy CA cert and adds the trust flags", async () => {
+  it("leaves the JDK, its cacerts and the proxy flags of JAVA_TOOL_OPTIONS alone, since the image layer trusts the CAs", async () => {
     const paths = await sandboxRoot();
-    const bin = await installJdk(paths, IMPORTING_KEYTOOL);
-
-    await writeFile(paths.trust, `${certificate("PROXY")}${certificate("CORP")}`);
-
-    expect(await javaOptionsAfterStart(paths, bin)).toBe(`${PROXY_OPTIONS} ${trustFlags(paths)}`);
-    expect((await readFile(join(paths.bundle, "truststore.p12"), "utf8")).split("\n").sort()).toEqual([
-      "",
-      "CACERTS",
-      "pi-sandbox-1 PROXY",
-      "pi-sandbox-2 CORP",
-    ]);
-  });
-
-  it("adds the trust flags once when a shell sources the bash env again", async () => {
-    const paths = await sandboxRoot();
-    const bin = await installJdk(paths, IMPORTING_KEYTOOL);
-
-    await writeFile(paths.trust, certificate("PROXY"));
-
+    const bin = await installJdk(paths, RECORDING_KEYTOOL);
     const options = await runEntrypoint(paths, {
       command: ["sh", "-c", sourcingBashEnv(paths, 2)],
       env: { JAVA_TOOL_OPTIONS: PROXY_OPTIONS },
       bin,
     });
 
-    expect(options).toBe(`${PROXY_OPTIONS} ${trustFlags(paths)}`);
+    expect(options).toBe(PROXY_OPTIONS);
+    expect(await readFile(join(paths.root, "jdk", "lib", "security", "cacerts"), "utf8")).toBe("CACERTS\n");
+    await expect(lstat(join(paths.root, "keytool-ran"))).rejects.toThrow();
   });
 
-  it("leaves JAVA_TOOL_OPTIONS without trust flags when keytool fails", async () => {
+  it("writes no CA bundle or truststore at start", async () => {
     const paths = await sandboxRoot();
-    const bin = await installJdk(paths, FAILING_KEYTOOL);
-
-    await writeFile(paths.trust, certificate("PROXY"));
-
-    expect(await javaOptionsAfterStart(paths, bin)).toBe(PROXY_OPTIONS);
-    await expect(lstat(join(paths.bundle, "truststore.p12"))).rejects.toThrow();
-  });
-
-  it("leaves JAVA_TOOL_OPTIONS without trust flags when the image has no java", async () => {
-    const paths = await sandboxRoot();
-
-    await writeFile(paths.trust, certificate("PROXY"));
-
-    expect(await javaOptionsAfterStart(paths)).toBe(PROXY_OPTIONS);
-    await expect(lstat(join(paths.bundle, "truststore.p12"))).rejects.toThrow();
-  });
-
-  it("appends the mounted trust bundle to the CA bundle", async () => {
-    const paths = await sandboxRoot();
-
-    await writeFile(paths.trust, "TRUST\n");
 
     await runEntrypoint(paths);
 
-    expect(await readFile(join(paths.bundle, "ca-bundle.pem"), "utf8")).toBe("SYSTEM\nTRUST\n");
+    await expect(lstat(join(paths.bundle, "ca-bundle.pem"))).rejects.toThrow();
+    await expect(lstat(join(paths.bundle, "truststore.p12"))).rejects.toThrow();
   });
 });

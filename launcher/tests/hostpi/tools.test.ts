@@ -476,6 +476,7 @@ describe("URL userinfo in npmrc and pip.conf", () => {
       hostAgentDir: join(home, "agent"),
       hostHome: home,
       derived: sandbox,
+      status: { resources: { pids: 512 }, volumes: [], binds: [], setup: [], services: [] },
     });
     const rendered = await treeText(renderDir);
     const leaked = Object.values(URL_SECRETS).filter(
@@ -621,6 +622,7 @@ describe("Maven settings in the sandbox", () => {
       hostAgentDir: join(home, "agent"),
       hostHome: home,
       derived: sandbox,
+      status: { resources: { pids: 512 }, volumes: [], binds: [], setup: [], services: [] },
     });
 
     return { tools, rendered: await treeText(renderDir) };

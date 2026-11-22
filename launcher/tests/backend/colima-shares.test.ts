@@ -703,6 +703,8 @@ const foreignContainer = (fake: ReturnType<typeof createFakeBackend>, state: "ru
     name: "pi-sandbox-other",
     labels: {
       [LABELS.managed]: "true",
+      [LABELS.install]: "otherinstall",
+      [LABELS.role]: "agent",
       [LABELS.launchId]: "00000000000000ff",
       [LABELS.repoHash]: "f".repeat(64),
     },

@@ -5,25 +5,24 @@ import type { Duplex } from "node:stream";
 import { authorityOf, matchesPattern, normalizeHost, TLS_PORT } from "../config/index.ts";
 import { LauncherError } from "../shared/index.ts";
 import type { AccessLogEntry } from "./access-log.ts";
-import { proxyTokenOf, sameText } from "./auth.ts";
 import { createDenialPages } from "./denial-page.ts";
 import { createDenials, isHinted, type RecordAccess } from "./denials.ts";
-import { type DialAccess, type Dialer, RestrictedAddressError } from "./dial.ts";
+import { type DialAccess, type Dialer, ResolutionTimeoutError, RestrictedAddressError } from "./dial.ts";
 import type { EgressSettings } from "./files.ts";
 import { createInterceptor } from "./intercept.ts";
 import { compilePolicy, type EgressDecider } from "./policy.ts";
-import { PROXY_AGENT, rawReply, sendJson } from "./replies.ts";
+import { createPreambleGate } from "./preamble.ts";
+import { rawReply, statusLine } from "./replies.ts";
 import { HTTP_PORT, parseAuthority } from "./request-target.ts";
-import { createRoutes, hostOf, PLAIN_HTTP } from "./routes.ts";
+import { createRoutes, PLAIN_HTTP } from "./routes.ts";
 import type { ProxyRuntime } from "./runtime.ts";
 import type { SecretResolver } from "./secrets/index.ts";
-import { createTerminator } from "./terminate.ts";
+import { createTerminator, upstreamFailure } from "./terminate.ts";
 import type { LeafCertificate } from "./tls-ca.ts";
 import { type Connection, createTunnel } from "./tunnel.ts";
 
 export interface ProxyServerOptions {
   listen: { host: string; port: number };
-  repoHash: string;
   token: string;
   runtime: ProxyRuntime;
   resolver: SecretResolver;
@@ -35,16 +34,13 @@ export interface ProxyServerOptions {
   dial: Dialer;
   upstreamCa?: string | string[];
   helloTimeoutMs?: number;
+  handshakeTimeoutMs?: number;
 }
 
 export interface ProxyServer {
   port: number;
   close(): Promise<void>;
 }
-
-const AUTH_CHALLENGE = `Basic realm="${PROXY_AGENT}"`;
-
-const AUTH_DENIAL = { rule: "auth", reason: "missing or wrong Proxy-Authorization" };
 
 const DEFAULT_HELLO_TIMEOUT_MS = 10_000;
 
@@ -60,7 +56,6 @@ const currentUser = () => {
 
 export const startProxyServer = async (options: ProxyServerOptions): Promise<ProxyServer> => {
   const { dial, ca } = options;
-  const { repoHash } = options;
   const user = currentUser();
   const sockets = new Set<Socket>();
   const helloTimeoutMs = options.helloTimeoutMs ?? DEFAULT_HELLO_TIMEOUT_MS;
@@ -72,7 +67,7 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
   };
 
   const record: RecordAccess = (entry) => {
-    options.log({ time: new Date().toISOString(), user, repo: repoHash, ...entry });
+    options.log({ time: new Date().toISOString(), user, ...entry });
   };
 
   const credentialHosts = [
@@ -101,7 +96,7 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
     return fresh;
   };
   const pages = createDenialPages({ leaf: (host) => ca.ephemeralLeaf(host) });
-  const denials = createDenials(repoHash, record, pages);
+  const denials = createDenials(record, pages);
 
   const terminator = createTerminator({
     rules: () => options.runtime.rules(),
@@ -115,6 +110,7 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
     },
     upstreamCa: options.upstreamCa,
     note: denials.note,
+    handshakeTimeoutMs: options.handshakeTimeoutMs,
   });
 
   const intercept = createInterceptor({
@@ -127,40 +123,14 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
   const tunnel = createTunnel({ dial: dial.dial, track, record, denials, helloTimeoutMs });
   const routes = createRoutes(denials);
 
-  const holdsToken = (header: string | string[] | undefined) => {
-    const token = proxyTokenOf(header);
-
-    return token !== undefined && sameText(token, options.token);
-  };
-
-  const isCaller = (request: IncomingMessage) => holdsToken(request.headers["proxy-authorization"]);
-
-  const isConnectCaller = (request: IncomingMessage) =>
-    holdsToken(request.headers["proxy-authorization"] ?? request.headers.authorization);
-
-  const restrictedResolution = async (host: string, access: DialAccess) => {
-    const problem = await dial.checkAddresses(host, access).then(
+  const resolutionProblem = (host: string, access: DialAccess) =>
+    dial.checkAddresses(host, access).then(
       () => undefined,
       (error: unknown) => error,
     );
 
-    return problem instanceof RestrictedAddressError ? problem : undefined;
-  };
-
   const handleConnect = async (request: IncomingMessage, client: Socket, head: Buffer) => {
     const target = parseAuthority(request.url);
-
-    if (!isConnectCaller(request)) {
-      denials.log(target?.host ?? UNPARSEABLE, AUTH_DENIAL);
-
-      client.end(
-        rawReply("407 Proxy Authentication Required", { error: AUTH_DENIAL.reason }, [
-          ["Proxy-Authenticate", AUTH_CHALLENGE],
-        ]),
-      );
-
-      return;
-    }
 
     if (target === undefined) {
       denials.refuse(client, UNPARSEABLE, { rule: "connect", reason: "CONNECT needs host:port" });
@@ -196,10 +166,18 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
     const access: DialAccess = privatePatterns.some((pattern) => matchesPattern(host, pattern))
       ? "private"
       : "public";
-    const restricted = await restrictedResolution(host, access);
+    const problem = await resolutionProblem(host, access);
 
-    if (restricted !== undefined) {
-      denials.refuse(client, host, { rule: restricted.rule, reason: restricted.message }, { port });
+    if (problem instanceof RestrictedAddressError) {
+      denials.refuse(client, host, { rule: problem.rule, reason: problem.message }, { port });
+
+      return;
+    }
+
+    if (problem instanceof ResolutionTimeoutError) {
+      denials.note(host, { rule: "upstream", reason: problem.message }, { port });
+
+      client.end(rawReply(statusLine(502), { error: upstreamFailure(problem) }));
 
       return;
     }
@@ -225,21 +203,9 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
     void handleConnect(request, client, head).catch(() => client.destroy());
   };
 
-  const handlePlain = (request: IncomingMessage, response: ServerResponse) => {
-    if (!isCaller(request)) {
-      denials.log(hostOf(request.headers.host), AUTH_DENIAL);
-
-      sendJson(response, 407, { error: AUTH_DENIAL.reason }, { "proxy-authenticate": AUTH_CHALLENGE });
-
-      return;
-    }
-
-    routes(request, response);
-  };
-
-  const server = createServer((request, response) => {
+  const server = createServer((request: IncomingMessage, response: ServerResponse) => {
     try {
-      handlePlain(request, response);
+      routes(request, response);
     } catch {
       response.destroy();
     }
@@ -247,8 +213,12 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
 
   server.on("connect", onConnect);
 
+  const gate = createPreambleGate(options.token, (socket) => server.emit("connection", socket));
+
+  gate.on("connection", track);
+
   await new Promise<void>((resolve, reject) => {
-    server.once("error", (error) =>
+    gate.once("error", (error) =>
       reject(
         new LauncherError(
           `proxy cannot listen on ${options.listen.host}:${options.listen.port}: ${error.message}`,
@@ -257,10 +227,10 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
       ),
     );
 
-    server.listen(options.listen.port, options.listen.host, () => resolve());
+    gate.listen(options.listen.port, options.listen.host, () => resolve());
   });
 
-  const port = (server.address() as AddressInfo).port;
+  const port = (gate.address() as AddressInfo).port;
 
   const close = async () => {
     await options.resolver.close();
@@ -274,7 +244,9 @@ export const startProxyServer = async (options: ProxyServerOptions): Promise<Pro
 
       server.closeAllConnections();
 
-      server.close(() => resolve());
+      server.close();
+
+      gate.close(() => resolve());
     });
   };
 

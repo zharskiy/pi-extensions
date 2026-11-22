@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { readdir, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import type {
   Backend,
   ContainerSpec,
@@ -13,19 +13,22 @@ import type {
   TerminalSize,
   Vm,
 } from "../../backend/index.ts";
-import { LABELS, relayName, repoNetworkName } from "../../backend/index.ts";
+import { LABELS, networkName, relayName } from "../../backend/index.ts";
 import { GUEST_PATHS, LauncherError } from "../../shared/index.ts";
-import { fakeUidOf } from "./fake-engine.ts";
+import { fakeUidOf, isFakeScript, runFakeScript } from "./fake-engine.ts";
 
 interface FakeContainer {
   summary: ContainerSummary;
   spec?: ContainerSpec;
+  logs?: string[];
+  exitCode?: number;
 }
 
 interface FakeBuild {
   contextDir: string;
   tag: string;
   args?: Record<string, string>;
+  offline?: boolean;
   files: Record<string, string>;
 }
 
@@ -46,14 +49,17 @@ export interface FakeExecScript {
 
 interface FakeRoute {
   hostPort: number;
-  repoHash: string;
   imageId: string;
+  preamble: string;
 }
 
 interface FakeRelay {
   id: string;
+  install: string;
   hostPort: number;
   imageId: string;
+  preamble: string;
+  network: string;
 }
 
 interface FakeBackendOptions {
@@ -65,7 +71,11 @@ interface FakeBackendOptions {
   vm?: Partial<Vm>;
 }
 
-const RELAY_ADDRESS = "pi-sandbox-proxy:3128";
+export const FAKE_INSTALL = "fakeinstall0";
+
+export const FAKE_NETWORK = networkName(FAKE_INSTALL);
+
+export const FAKE_RELAY = relayName(FAKE_INSTALL);
 
 const imageIdOf = (digest: string) => `sha256:image-${digest.replace(/^sha256:/, "")}`;
 
@@ -174,10 +184,13 @@ const shellIn = (agentDir: string, spec: ExecSpec, env: Record<string, string>, 
   });
 
 const contextFiles = async (dir: string) => {
-  const names = await readdir(dir);
-  const contents = await Promise.all(names.map((name) => readFile(join(dir, name), "utf8")));
+  const entries = await readdir(dir, { recursive: true, withFileTypes: true });
+  const files = entries
+    .filter((entry) => entry.isFile())
+    .map((entry) => relative(dir, join(entry.parentPath, entry.name)));
+  const contents = await Promise.all(files.map((name) => readFile(join(dir, name), "utf8")));
 
-  return Object.fromEntries(names.map((name, index) => [name, contents[index] ?? ""]));
+  return Object.fromEntries(files.map((name, index) => [name, contents[index] ?? ""]));
 };
 
 export const createFakeBackend = (options: FakeBackendOptions = {}) => {
@@ -322,8 +335,8 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
 
   const networks = new Map<string, string>();
   const foreignNetworks = new Set<string>();
-  const externalNetworks = new Set<string>();
   const removedNetworks = new Set<string>();
+  const networkIds = new Map<string, string>();
 
   const start = (id: string) => {
     const network = container(id).spec?.network;
@@ -333,23 +346,32 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
     }
 
     setState(id, "running");
+
+    const spec = container(id).spec;
+    const command = [...(spec?.entrypoint ?? []), ...(spec?.command ?? [])];
+
+    if (command.length > 0 && isFakeScript(command)) {
+      const result = runFakeScript(command);
+
+      containers.set(id, {
+        ...container(id),
+        logs: result.lines.map((line) => line.text),
+        exitCode: result.code,
+      });
+
+      exit(id);
+    }
   };
 
-  const relaySummary = (repoHash: string, relay: FakeRelay): ContainerSummary => ({
+  const relaySummary = (name: string, relay: FakeRelay): ContainerSummary => ({
     id: relay.id,
-    name: relayName(repoHash),
-    labels: {
-      [LABELS.managed]: "true",
-      [LABELS.relay]: "true",
-      [LABELS.repoHash]: repoHash,
-      [LABELS.relayPort]: String(relay.hostPort),
-    },
+    name,
+    labels: { [LABELS.managed]: "true", [LABELS.install]: relay.install, [LABELS.role]: "relay" },
     state: "running",
     image: relay.imageId,
   });
 
-  const relaySummaries = () =>
-    [...relays.entries()].map(([repoHash, relay]) => relaySummary(repoHash, relay));
+  const relaySummaries = () => [...relays.entries()].map(([name, relay]) => relaySummary(name, relay));
 
   const drop = (id: string) => {
     if (containers.has(id)) {
@@ -360,14 +382,34 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
 
     [...relays.entries()]
       .filter(([, relay]) => relay.id === id)
-      .forEach(([repoHash]) => {
-        relays.delete(repoHash);
+      .forEach(([name]) => {
+        relays.delete(name);
       });
   };
 
+  const exit = (id: string) => {
+    if (containers.get(id)?.spec?.autoRemove === false) {
+      setState(id, "stopped");
+
+      return;
+    }
+
+    drop(id);
+  };
+
+  const logsOf = (id: string, lines: number) => {
+    const logs = containers.get(id)?.logs ?? [];
+
+    return logs.slice(Math.max(logs.length - lines, 0)).join("");
+  };
+
   const attached = (name: string) =>
+    [...relays.values()].some((relay) => networkName(relay.install) === name) ||
     [...containers.values()].some(
-      (entry) => entry.spec?.network.kind === "internal" && entry.spec.network.name === name,
+      (entry) =>
+        entry.summary.state === "running" &&
+        entry.spec?.network.kind === "internal" &&
+        entry.spec.network.name === name,
     );
 
   const tagsOf = (digest: string) =>
@@ -403,18 +445,39 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
     ...options.vm,
   };
 
-  const backend: Backend = {
+  const summaries = () => [...[...containers.values()].map((entry) => entry.summary), ...relaySummaries()];
+
+  const prepareNetwork = (install: string) => {
+    const name = networkName(install);
+
+    if (foreignNetworks.has(name)) {
+      throw new LauncherError(
+        `network ${name} exists but is not managed by pi-sandbox`,
+        "remove that network from the sandbox VM so the launcher can create its own",
+      );
+    }
+
+    networks.set(name, install);
+
+    networkIds.set(name, networkIds.get(name) ?? nextId("network"));
+
+    removedNetworks.delete(name);
+
+    return name;
+  };
+
+  const backendFor = (install: string): Backend => ({
     vm,
     detect: async () => ({ available: true }),
     pullImage,
     resolveImage,
-    buildImage: async (contextDir, tag, args, progress) => {
+    buildImage: async (contextDir, tag, { args, progress, offline } = {}) => {
       const digest = `sha256:${nextId("built")}`;
 
       progress?.("Step 1/1");
       const previous = localImages.get(tag);
 
-      builds.push({ contextDir, tag, args, files: await contextFiles(contextDir) });
+      builds.push({ contextDir, tag, args, offline, files: await contextFiles(contextDir) });
 
       localImages.set(tag, digest);
 
@@ -454,8 +517,15 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
       return true;
     },
     findContainers: async (labels) =>
-      [...[...containers.values()].map((entry) => entry.summary), ...relaySummaries()].filter((summary) =>
-        matches(summary.labels, labels),
+      summaries().filter((summary) =>
+        matches(summary.labels, { ...labels, [LABELS.managed]: "true", [LABELS.install]: install }),
+      ),
+    listOtherInstallSessions: async () =>
+      summaries().filter(
+        (summary) =>
+          matches(summary.labels, { [LABELS.managed]: "true", [LABELS.role]: "agent" }) &&
+          summary.state === "running" &&
+          summary.labels[LABELS.install] !== install,
       ),
     createContainer: async (spec) => {
       const taken = [...containers.values()].some((entry) => entry.summary.name === spec.name);
@@ -465,9 +535,10 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
       }
 
       const id = nextId("container");
+      const labels = { ...spec.labels, [LABELS.managed]: "true", [LABELS.install]: install };
       const entry = {
         spec,
-        summary: { id, name: spec.name, labels: spec.labels, state: "created" as const, image: spec.image },
+        summary: { id, name: spec.name, labels, state: "created" as const, image: spec.image },
       };
 
       containers.set(id, entry);
@@ -480,22 +551,33 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
     stopContainer: async (id, timeoutSeconds) => {
       stops.push({ id, timeoutSeconds });
 
-      drop(id);
+      exit(id);
     },
     removeContainer: async (id) => {
       removals.push(id);
 
       drop(id);
     },
+    inspectContainer: async (id) => {
+      const found = containers.get(id);
+
+      return found === undefined
+        ? undefined
+        : { id, labels: found.summary.labels, state: found.summary.state, exitCode: found.exitCode ?? 0 };
+    },
+    containerLogs: async (id, lines) => logsOf(id, lines),
     exec: runExec,
     ensureVolume: async (name, labels = {}) => {
-      volumeLabels.set(name, volumeLabels.get(name) ?? { ...labels, [LABELS.managed]: "true" });
+      volumeLabels.set(
+        name,
+        volumeLabels.get(name) ?? { ...labels, [LABELS.managed]: "true", [LABELS.install]: install },
+      );
 
       volumes.add(name);
     },
     listVolumes: async () =>
       [...volumes]
-        .filter((name) => volumeLabels.get(name)?.[LABELS.managed] === "true")
+        .filter((name) => volumeLabels.get(name)?.[LABELS.install] === install)
         .map((name) => ({
           name,
           labels: volumeLabels.get(name) ?? {},
@@ -504,48 +586,50 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
           ),
         })),
     removeVolume: async (name) => {
+      const used = [...containers.values()].some((entry) =>
+        (entry.spec?.mounts ?? []).some((mount) => mount.kind === "volume" && mount.source === name),
+      );
+
+      if (used) {
+        throw new LauncherError(
+          `volume ${name} is in use by a sandbox container`,
+          "end the pi sessions that use it, then run the command again",
+        );
+      }
+
       volumes.delete(name);
 
       volumeLabels.delete(name);
     },
-    prepareProxyRoute: async ({ hostPort, repoHash, imageId }) => {
-      const name = repoNetworkName(repoHash);
+    prepareRelay: async ({ hostPort, imageId, preamble }) => {
+      const name = prepareNetwork(install);
+      const relay = relays.get(relayName(install));
+      const network = networkIds.get(name) ?? "";
 
-      if (externalNetworks.has(name)) {
-        throw new LauncherError(
-          `network ${name} exists but is not internal`,
-          "remove that network from the sandbox VM so the launcher can create its own",
-        );
+      routes.push({ hostPort, imageId, preamble });
+
+      const reusable =
+        relay !== undefined &&
+        relay.hostPort === hostPort &&
+        relay.preamble === preamble &&
+        relay.network === network;
+
+      if (!reusable) {
+        relays.set(relayName(install), {
+          id: nextId("relay"),
+          install,
+          hostPort,
+          imageId,
+          preamble,
+          network,
+        });
       }
 
-      if (foreignNetworks.has(name)) {
-        throw new LauncherError(
-          `network ${name} exists but is not managed by pi-sandbox`,
-          "remove that network from the sandbox VM so the launcher can create its own",
-        );
-      }
-
-      routes.push({ hostPort, repoHash, imageId });
-
-      networks.set(name, repoHash);
-
-      removedNetworks.delete(name);
-
-      const relay = relays.get(repoHash);
-
-      if (relay === undefined || relay.hostPort !== hostPort) {
-        relays.set(repoHash, { id: nextId("relay"), hostPort, imageId });
-      }
-
-      return { network: { kind: "internal", name }, address: RELAY_ADDRESS };
+      return name;
     },
-    listNetworks: async () =>
-      [...networks.entries()].map(([name, repoHash]) => ({
-        name,
-        labels: { [LABELS.managed]: "true", [LABELS.repoHash]: repoHash },
-      })),
-    removeRepoNetwork: async (repoHash) => {
-      const name = repoNetworkName(repoHash);
+    prepareNetwork: async () => prepareNetwork(install),
+    removeNetwork: async () => {
+      const name = networkName(install);
 
       if (!networks.has(name) || attached(name)) {
         return false;
@@ -553,39 +637,39 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
 
       networks.delete(name);
 
+      networkIds.delete(name);
+
       removedNetworks.add(name);
 
       return true;
     },
     status: async () => ({ socket: "/fake/docker.sock" }),
-  };
+  });
+
+  const backend = backendFor(FAKE_INSTALL);
 
   const addContainer = (summary: Omit<ContainerSummary, "id">) => {
     const id = nextId("container");
+    const labels = { [LABELS.install]: FAKE_INSTALL, ...summary.labels };
 
-    containers.set(id, { summary: { ...summary, id } });
+    containers.set(id, { summary: { ...summary, labels, id } });
 
     return id;
   };
 
-  const plantNetwork = (name: string, managed = true, internal = true, repoHash = "") => {
-    if (!internal) {
-      externalNetworks.add(name);
-
-      return;
-    }
-
-    if (managed) {
-      networks.set(name, repoHash);
-
-      return;
-    }
-
+  const plantForeignNetwork = (name: string) => {
     foreignNetworks.add(name);
   };
 
-  const hasNetwork = (name: string) =>
-    networks.has(name) || foreignNetworks.has(name) || externalNetworks.has(name);
+  const dropNetwork = (name: string) => {
+    networks.delete(name);
+
+    networkIds.delete(name);
+
+    foreignNetworks.delete(name);
+  };
+
+  const hasNetwork = (name: string) => networks.has(name) || foreignNetworks.has(name);
 
   const guestPath = (name: string) => {
     if (options.guestAgentDir === undefined) {
@@ -601,12 +685,14 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
 
   return {
     backend,
+    backendFor,
     containers,
     volumes,
     volumeLabels,
     networks,
-    plantNetwork,
+    plantForeignNetwork,
     hasNetwork,
+    dropNetwork,
     guestFile,
     writeGuestFile,
     localImages,

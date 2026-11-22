@@ -1,18 +1,14 @@
-import { randomBytes, X509Certificate } from "node:crypto";
-import { readdir, readFile, rm } from "node:fs/promises";
+import { X509Certificate } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, join } from "node:path";
 import type { ExtraCa } from "../config/index.ts";
-import { liveLaunches } from "../grants/index.ts";
 import {
   type CommandRunner,
   expandHome,
   LauncherError,
-  sha256Hex,
+  pemCertificates,
   stateLayout,
-  withFileLock,
   writeFileAtomic,
-  writeNewFile,
 } from "../shared/index.ts";
 import { openLauncherCa } from "./tls-ca.ts";
 
@@ -21,15 +17,12 @@ export interface TrustBundleInput {
   runner: CommandRunner;
   platform: NodeJS.Platform;
   sources: ExtraCa[];
-  launchId?: string;
   now?: number;
 }
 
 export interface TrustBundle {
-  pemPath: string;
   caCertPath: string;
   extraPemPath: string;
-  hash: string;
 }
 
 interface Found {
@@ -42,8 +35,6 @@ const MACOS_KEYCHAINS = ["/Library/Keychains/System.keychain", "login.keychain"]
 
 const PUBLIC_MODE = 0o644;
 
-const PEM_BLOCK = /-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g;
-
 const FILE_HINT = 'export the CA to a PEM file and list it as { "file": "~/ca.pem" }';
 
 const parsed = (pem: string) => {
@@ -55,7 +46,7 @@ const parsed = (pem: string) => {
 };
 
 const certificatesIn = (text: string) =>
-  (text.match(PEM_BLOCK) ?? []).flatMap((pem) => {
+  pemCertificates(text).flatMap((pem) => {
     const certificate = parsed(pem);
 
     return certificate === undefined ? [] : [{ pem, certificate }];
@@ -187,69 +178,16 @@ const writeIfChanged = async (path: string, text: string) => {
   }
 };
 
-const TRUST_BUNDLE_NAME = /^trust(-[0-9a-f]+){0,2}\.pem$/;
-
-const BUNDLE_ID_BYTES = 8;
-
-const BUNDLE_LOCK_TIMEOUT_MS = 30_000;
-
-const reusableBundle = async (directory: string, names: string[], prefix: string, text: string) => {
-  const candidates = names.filter((name) => name.startsWith(prefix) && name.endsWith(".pem"));
-  const contents = await Promise.all(
-    candidates.map((name) => readFile(join(directory, name), "utf8").catch(() => undefined)),
-  );
-  const match = candidates[contents.indexOf(text)];
-
-  return match === undefined ? undefined : join(directory, match);
-};
-
-const writeBundle = async (pathFor: (id: string) => string, text: string): Promise<string> => {
-  const path = pathFor(randomBytes(BUNDLE_ID_BYTES).toString("hex"));
-  const written = await writeNewFile(path, text, { mode: PUBLIC_MODE });
-
-  return written ? path : writeBundle(pathFor, text);
-};
-
-const removeOldBundles = async (directory: string, names: string[], keep: string) => {
-  const old = names.filter((name) => TRUST_BUNDLE_NAME.test(name) && name !== keep);
-
-  await Promise.all(old.map((name) => rm(join(directory, name), { force: true })));
-};
-
 const pemText = (certificates: string[]) => certificates.map((pem) => `${pem.trim()}\n`).join("");
-
-const othersRunning = async (stateDir: string, launchId: string | undefined) =>
-  (await liveLaunches(stateDir)).some((launch) => launch.launchId !== launchId);
 
 export const ensureTrustBundle = async (input: TrustBundleInput): Promise<TrustBundle> => {
   const found = await Promise.all(input.sources.map(sourceCertificates(input)));
   const usable = found.flat().map(checkUsable(input.now ?? Date.now()));
   const extras = [...new Set(usable.map((pem) => pem.trim()))];
   const ca = await openLauncherCa({ stateDir: input.stateDir, runner: input.runner });
-  const layout = stateLayout(input.stateDir);
-  const extraPemPath = layout.extraPem;
-  const bundle = pemText([ca.certPem, ...extras]);
-  const hash = sha256Hex(bundle);
+  const extraPemPath = stateLayout(input.stateDir).extraPem;
 
   await writeIfChanged(extraPemPath, pemText(extras));
 
-  const pemPath = await withFileLock(
-    layout.caLock,
-    async () => {
-      const names = await readdir(layout.vm).catch((): string[] => []);
-      const reused = await reusableBundle(layout.vm, names, layout.trustPemPrefix(hash), bundle);
-      const placed = reused ?? (await writeBundle((id) => layout.trustPem(hash, id), bundle));
-
-      if (!(await othersRunning(input.stateDir, input.launchId))) {
-        await rm(layout.legacyTrustPem, { force: true });
-
-        await removeOldBundles(layout.vm, names, basename(placed));
-      }
-
-      return placed;
-    },
-    { timeoutMs: BUNDLE_LOCK_TIMEOUT_MS },
-  );
-
-  return { pemPath, caCertPath: ca.certPath, extraPemPath, hash };
+  return { caCertPath: ca.certPath, extraPemPath };
 };

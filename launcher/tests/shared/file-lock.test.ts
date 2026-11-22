@@ -12,6 +12,7 @@ import {
   type LauncherError,
   processStart,
   withDirectoryLock,
+  withDirectoryLockIfFree,
   withFileLock,
   withFileLockIfFree,
 } from "../../shared/index.ts";
@@ -286,6 +287,28 @@ describe("withDirectoryLock", () => {
 
     expect(problem).toBe(`${lockPath}: lock is held by another process`);
     expect(await exists(lockPath)).toBe(true);
+  });
+
+  it("reports a held directory lock as busy at once instead of waiting for it", async () => {
+    const lockPath = join(state.dir, "vm.lock");
+
+    await mkdir(lockPath);
+
+    const begun = Date.now();
+
+    expect(await withDirectoryLockIfFree(lockPath, async () => "never")).toEqual({ busy: true });
+    expect(Date.now() - begun).toBeLessThan(1000);
+    expect(await exists(lockPath)).toBe(true);
+  });
+
+  it("runs the action under a free directory lock and removes the lock afterwards", async () => {
+    const lockPath = join(state.dir, "vm.lock");
+
+    expect(await withDirectoryLockIfFree(lockPath, async () => "taken")).toEqual({
+      busy: false,
+      value: "taken",
+    });
+    expect(await exists(lockPath)).toBe(false);
   });
 
   it("takes over a directory lock that stopped being refreshed", async () => {

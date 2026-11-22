@@ -1,11 +1,20 @@
 import { readdir, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
-import { endLaunch, liveLaunches, newLaunchId, registerLaunch } from "../../grants/index.ts";
+import {
+  endLaunch,
+  launchState,
+  liveLaunches,
+  newLaunchId,
+  othersLive,
+  registerLaunch,
+} from "../../grants/index.ts";
 import { bootTime, processMark, stateLayout } from "../../shared/index.ts";
 import { tempDir } from "../support/temp-dir.ts";
 
 const REPO = "1".repeat(64);
+
+const OTHER = "2".repeat(64);
 
 const DEAD_PID = 999_999;
 
@@ -27,61 +36,63 @@ const entry = (pid = process.pid, repoHash = REPO) => ({
 
 const register = (launch: ReturnType<typeof entry>) => registerLaunch(state.stateDir, launch);
 
+const liveIds = async () => (await liveLaunches(state.stateDir)).map((launch) => launch.launchId).sort();
+
 describe("launches", () => {
   it("makes 16 hex launch ids", () => {
     expect(newLaunchId()).toMatch(/^[0-9a-f]{16}$/);
     expect(newLaunchId()).not.toBe(newLaunchId());
   });
 
-  it("counts live launches per repository and runs onLast only for the last one", async () => {
+  it("keeps the launches of every repository in one registry and reports what remains when one ends", async () => {
     const first = entry();
     const second = entry();
-    const calls: string[] = [];
+    const other = entry(process.pid, OTHER);
 
-    expect(await register(first)).toBe(1);
-    expect(await register(second)).toBe(2);
-    expect(await register(entry(process.pid, "2".repeat(64)))).toBe(1);
+    await register(first);
 
-    expect(
-      await endLaunch(state.stateDir, {
-        repoHash: REPO,
-        launchId: first.launchId,
-        onLast: async () => void calls.push("first"),
-      }),
-    ).toBe(1);
-    expect(
-      await endLaunch(state.stateDir, {
-        repoHash: REPO,
-        launchId: second.launchId,
-        onLast: async () => void calls.push("second"),
-      }),
-    ).toBe(0);
-    expect(calls).toEqual(["second"]);
+    await register(second);
+
+    await register(other);
+
+    const afterFirst = await endLaunch(state.stateDir, first.launchId);
+    const afterSecond = await endLaunch(state.stateDir, second.launchId);
+
+    expect(afterFirst.map((launch) => launch.launchId).sort()).toEqual(
+      [second.launchId, other.launchId].sort(),
+    );
+    expect(afterSecond.map((launch) => launch.repoHash)).toEqual([OTHER]);
   });
 
-  it("ignores a session whose launcher pid is dead", async () => {
-    const live = entry();
+  it("tells whether other launches of a repository live, apart from a given launch", async () => {
+    const own = entry();
 
-    await register(entry(DEAD_PID));
+    await register(own);
+
+    await register(entry(process.pid, OTHER));
+
+    expect(await othersLive(state.stateDir, REPO, own.launchId)).toBe(false);
+    expect(await othersLive(state.stateDir, REPO)).toBe(true);
+    expect(await othersLive(state.stateDir, OTHER, own.launchId)).toBe(true);
+  });
+
+  it("ignores a launch whose launcher pid is dead and reports it as dead with its repository", async () => {
+    const live = entry();
+    const directory = stateLayout(state.stateDir).launches;
+    const dead = entry(DEAD_PID, OTHER);
 
     await register(live);
 
-    expect((await liveLaunches(state.stateDir, REPO)).map((session) => session.launchId)).toEqual([
-      live.launchId,
-    ]);
-    const calls: string[] = [];
+    await writeFile(join(directory, `${dead.launchId}.json`), JSON.stringify(dead));
 
-    await endLaunch(state.stateDir, {
-      repoHash: REPO,
-      launchId: live.launchId,
-      onLast: async () => void calls.push("last"),
-    });
+    const found = await launchState(state.stateDir);
 
-    expect(calls).toEqual(["last"]);
+    expect(await liveIds()).toEqual([live.launchId]);
+    expect(found.dead.map((launch) => launch.repoHash)).toEqual([OTHER]);
   });
 
   it("deletes the entry of a dead launcher when another launch registers or ends", async () => {
-    const directory = stateLayout(state.stateDir).repo(REPO).launches;
+    const directory = stateLayout(state.stateDir).launches;
     const live = entry();
     const files = async () => (await readdir(directory)).filter((name) => name.endsWith(".json")).sort();
 
@@ -93,18 +104,14 @@ describe("launches", () => {
 
     await writeFile(join(directory, `${"a".repeat(16)}.json`), JSON.stringify(entry(DEAD_PID)));
 
-    await endLaunch(state.stateDir, {
-      repoHash: REPO,
-      launchId: newLaunchId(),
-      onLast: async () => undefined,
-    });
+    await endLaunch(state.stateDir, newLaunchId());
 
     expect(await files()).toEqual([`${live.launchId}.json`]);
   });
 
   it("keeps counting a live launch whose entry was last touched hours ago, as after the Mac slept", async () => {
     const slept = entry();
-    const directory = stateLayout(state.stateDir).repo(REPO).launches;
+    const directory = stateLayout(state.stateDir).launches;
 
     await register(slept);
 
@@ -112,60 +119,53 @@ describe("launches", () => {
 
     await utimes(join(directory, `${slept.launchId}.json`), old, old);
 
-    expect(await register(entry())).toBe(2);
-    expect((await liveLaunches(state.stateDir, REPO)).map((launch) => launch.launchId)).toContain(
-      slept.launchId,
-    );
+    await register(entry());
+
+    expect(await liveIds()).toHaveLength(2);
+    expect(await liveIds()).toContain(slept.launchId);
     expect(await readdir(directory)).toContain(`${slept.launchId}.json`);
   });
 
   it("does not count a live pid recorded with another process start time, as after pid reuse", async () => {
     await register({ ...entry(), start: "Thu-Jan-1-00:00:00-1970" });
 
-    expect(await liveLaunches(state.stateDir, REPO)).toEqual([]);
+    expect(await liveLaunches(state.stateDir)).toEqual([]);
   });
 
   it("does not count a live pid recorded with another boot time", async () => {
     await register({ ...entry(), boot: bootTime() - 3600 });
 
-    expect(await liveLaunches(state.stateDir, REPO)).toEqual([]);
-  });
-
-  it("lists launches of every repository", async () => {
-    await register(entry());
-
-    await register(entry(process.pid, "2".repeat(64)));
-
-    expect(await liveLaunches(state.stateDir)).toHaveLength(2);
+    expect(await liveLaunches(state.stateDir)).toEqual([]);
   });
 
   it("takes over a lock left by a dead launcher", async () => {
-    const first = entry();
-
-    await register(first);
+    await register(entry());
 
     await writeFile(
-      stateLayout(state.stateDir).repo(REPO).lock,
+      stateLayout(state.stateDir).launchesLock,
       `${DEAD_PID} ${bootTime()} ${state.self.start} x`,
     );
 
-    expect(await register(entry())).toBe(2);
+    await register(entry());
+
+    expect(await liveIds()).toHaveLength(2);
   });
 
   it("takes over a lock without a readable pid at once", async () => {
-    const first = entry();
-    const lock = stateLayout(state.stateDir).repo(REPO).lock;
+    await register(entry());
 
-    await register(first);
+    await writeFile(stateLayout(state.stateDir).launchesLock, "");
 
-    await writeFile(lock, "");
+    await register(entry());
 
-    expect(await register(entry())).toBe(2);
+    expect(await liveIds()).toHaveLength(2);
   });
 
   it("registers concurrent launches without losing any", async () => {
-    const counts = await Promise.all([1, 2, 3, 4].map(() => register(entry())));
+    const launches = [1, 2, 3, 4].map(() => entry());
 
-    expect([...counts].sort()).toEqual([1, 2, 3, 4]);
+    await Promise.all(launches.map(register));
+
+    expect(await liveIds()).toEqual(launches.map((launch) => launch.launchId).sort());
   });
 });

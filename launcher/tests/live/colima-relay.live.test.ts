@@ -5,10 +5,16 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { type Backend, createColimaBackend, LABELS } from "../../backend/index.ts";
+import {
+  type Backend,
+  createColimaBackend,
+  GUEST_PROXY_HOST,
+  GUEST_PROXY_PORT,
+  LABELS,
+} from "../../backend/index.ts";
 import { createProcessRunner } from "../../shared/index.ts";
 
-const RELAY_IMAGE = "pi-sandbox-relay-test:alpine";
+const RELAY_IMAGE = "pi-sandbox-relay-test:node";
 
 const CLIENT_IMAGE = "pi-sandbox-conformance:busybox";
 
@@ -79,14 +85,14 @@ describe.skipIf(!enabled)("colima egress relay (live)", () => {
 
     await buildImage(backend, CLIENT_IMAGE, 'FROM busybox:1.36\nCMD ["sleep", "3600"]\n');
 
-    await buildImage(backend, RELAY_IMAGE, "FROM alpine:3.20\nRUN apk add --no-cache socat\n");
+    await buildImage(backend, RELAY_IMAGE, "FROM node:24-bookworm-slim\n");
 
     state.server = await listen();
 
-    const route = await backend.prepareProxyRoute({
+    const network = await backend.prepareRelay({
       hostPort: portOf(state.server),
-      repoHash: REPO_HASH,
       imageId: RELAY_IMAGE,
+      preamble: "PI-SANDBOX live",
     });
     const stale = await backend.findContainers({ "pi-sandbox.relay-client": "true" });
 
@@ -97,24 +103,26 @@ describe.skipIf(!enabled)("colima egress relay (live)", () => {
       image: CLIENT_IMAGE,
       labels: { "pi-sandbox.relay-client": "true", [LABELS.repoHash]: REPO_HASH },
       mounts: [],
-      network: route.network,
+      network: { kind: "internal", name: network },
       env: {},
       workdir: "/",
       readOnlyRoot: true,
       tmpfs: ["/tmp"],
       init: true,
-      resources: {},
+      resources: { pids: 4096 },
+      capabilities: ["CHOWN"],
+      autoRemove: true,
     });
 
     await backend.startContainer(client.id);
 
     state.clientId = client.id;
 
-    state.address = route.address;
+    state.address = `${GUEST_PROXY_HOST}:${GUEST_PROXY_PORT}`;
   });
 
   afterAll(async () => {
-    const relays = await backend.findContainers({ [LABELS.relay]: "true" });
+    const relays = await backend.findContainers({ [LABELS.role]: "relay" });
 
     await Promise.all(
       [state.clientId, ...relays.map((relay) => relay.id)].map((id) => id && backend.removeContainer(id)),

@@ -41,7 +41,7 @@ else
   node "$entry" __uninstall || cleanup_status=$?
 
   if [ "$cleanup_status" -eq "$sessions_live_exit" ]; then
-    fail "pi sessions still run in the sandbox, nothing was removed; exit them and run uninstall.sh again"
+    fail "pi sessions still run in the sandbox VM, so the VM and the host files stay; exit them and run uninstall.sh again"
   fi
 
   if [ "$cleanup_status" -ne 0 ]; then
@@ -95,11 +95,6 @@ if [ -d "$state_dir" ]; then
 fi
 
 rmdir "$agent_dir/pi-sandbox" 2>/dev/null || true
-
-if [ -d "$legacy_state_dir" ]; then
-  rm -rf "$legacy_state_dir"
-  echo "state: removed the old $legacy_state_dir"
-fi
 
 if command -v npm >/dev/null 2>&1 && npm ls -g "$package_name" >/dev/null 2>&1; then
   npm uninstall -g "$package_name" >/dev/null

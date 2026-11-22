@@ -5,17 +5,19 @@ import {
   LABELS,
   type MountSpec,
   type NetworkRef,
+  SERVICES_ALIAS,
 } from "../backend/index.ts";
 import type { SandboxConfig } from "../config/index.ts";
 import {
+  GUEST_HOME,
   GUEST_PATHS,
+  guestReservedOver,
   isLauncherSetVariable,
   isSecretShapedValue,
   isWithin,
   LauncherError,
   PI_SESSION_DIR_VARIABLE,
   realOrResolvedSync,
-  repoHash,
 } from "../shared/index.ts";
 import {
   type GitOverlay,
@@ -25,13 +27,16 @@ import {
   type Workspace,
 } from "../workspace/index.ts";
 import { containerName } from "./names.ts";
-import { GUEST_HOME, type PlannedVolume, volumePlan } from "./volumes.ts";
+import { type PlannedVolume, repoLabels, serviceVolumeNames, volumePlan } from "./volumes.ts";
+
+export const HANDOVER_CAPABILITIES = ["CHOWN"];
 
 export interface LauncherContainerSpec extends ContainerSpec {
+  workdir: string;
   volumeLabels: Record<string, Record<string, string>>;
   ownedPaths: string[];
-  guardedPaths?: string[];
-  notices?: string[];
+  guardedPaths: string[];
+  notices: string[];
 }
 
 interface SpecProxy {
@@ -39,27 +44,27 @@ interface SpecProxy {
   network: NetworkRef;
 }
 
-interface SpecTrust {
-  pemPath: string;
-  hash: string;
-}
-
 export interface ContainerSpecInput {
   workspace: Workspace;
   config: SandboxConfig;
-  image: ImageInfo & { reference: string };
-  hostUid: number;
+  image: ImageInfo;
   stateDir: string;
   launchId: string;
   gitOverlay: GitOverlay;
   proxy: SpecProxy;
-  trust: SpecTrust;
-  renderDir?: string;
-  hostSessions?: HostSessions;
-  toolEnv?: Record<string, string>;
+  servicePorts: number[];
+  renderDir: string;
+  hostSessions: HostSessions;
+  toolEnv: Record<string, string>;
+  binds: GuestBind[];
 }
 
-const GUEST_CA_BUNDLE = "/tmp/pi-sandbox/ca-bundle.pem";
+interface GuestBind {
+  source: string;
+  target: string;
+}
+
+const GUEST_CA_BUNDLE = GUEST_PATHS.caBundle;
 
 const SHARED_TMPFS = "mode=1777,exec";
 
@@ -130,52 +135,35 @@ const parentsBelow = (root: string, path: string): string[] => {
   return parent === root || !isWithin(parent, root) ? [] : [...parentsBelow(root, parent), parent];
 };
 
-export const AWAIT_HANDOVER_VARIABLE = "PI_SANDBOX_AWAIT_HANDOVER";
+const AWAIT_HANDOVER_VARIABLE = "PI_SANDBOX_AWAIT_HANDOVER";
 
 const handoverEnv = (ownedPaths: string[]): Record<string, string> =>
-  ownedPaths.some((path) => isWithin(path, GUEST_HOME)) ? { [AWAIT_HANDOVER_VARIABLE]: "1" } : {};
+  ownedPaths.length > 0 ? { [AWAIT_HANDOVER_VARIABLE]: "1" } : {};
 
-const LOOPBACK_HOSTS = "localhost,127.0.0.1,::1";
-
-const javaProxyOptions = (host: string, port: string, user: string, password: string) =>
-  ["https", "http"]
-    .flatMap((scheme) => [
-      `-D${scheme}.proxyHost=${host}`,
-      `-D${scheme}.proxyPort=${port}`,
-      `-D${scheme}.proxyUser=${user}`,
-      `-D${scheme}.proxyPassword=${password}`,
-    ])
-    .concat(["-Djdk.http.auth.tunneling.disabledSchemes=", "-Djdk.http.auth.proxying.disabledSchemes="])
-    .join(" ");
+const forwarderEnv = (ports: number[]): Record<string, string> =>
+  ports.length === 0
+    ? {}
+    : { PI_SANDBOX_SERVICE_PORTS: ports.join(" "), PI_SANDBOX_SERVICES_HOST: SERVICES_ALIAS };
 
 const proxyEnv = (input: ContainerSpecInput): Record<string, string> => {
   const { url } = input.proxy;
-  const { hostname, port, username, password } = new URL(url);
+  const directHosts = `localhost,127.0.0.1,::1,${new URL(url).hostname}`;
 
   return {
     HTTPS_PROXY: url,
     HTTP_PROXY: url,
     ALL_PROXY: url,
-    NO_PROXY: LOOPBACK_HOSTS,
+    NO_PROXY: directHosts,
     https_proxy: url,
     http_proxy: url,
     all_proxy: url,
-    no_proxy: LOOPBACK_HOSTS,
+    no_proxy: directHosts,
     NODE_USE_ENV_PROXY: "1",
-    PI_SANDBOX_PROXY_HOST: hostname,
-    PI_SANDBOX_PROXY_PORT: port,
-    PI_SANDBOX_PROXY_TOKEN: password,
-    JAVA_TOOL_OPTIONS: javaProxyOptions(hostname, port, username, password),
   };
 };
 
-const trustEnv = (input: ContainerSpecInput): Record<string, string> => ({
-  NODE_EXTRA_CA_CERTS: GUEST_PATHS.trustPem,
-  PI_SANDBOX_TRUST_HASH: input.trust.hash,
-});
-
 const hostSessionsDirOf = (input: ContainerSpecInput) =>
-  input.hostSessions !== undefined && "dir" in input.hostSessions ? input.hostSessions.dir : undefined;
+  "dir" in input.hostSessions ? input.hostSessions.dir : undefined;
 
 const sessionsEnv = (input: ContainerSpecInput): Record<string, string> => {
   const dir = hostSessionsDirOf(input);
@@ -189,19 +177,15 @@ const sessionsMounts = (input: ContainerSpecInput) => {
   return dir === undefined ? [] : [bind(realOrResolvedSync(dir), dir, false)];
 };
 
-const sessionsLabel = (sessions: HostSessions | undefined): Record<string, string> => {
-  if (sessions === undefined) {
-    return {};
-  }
-
-  return { [LABELS.sessionDir]: "dir" in sessions ? sessions.dir : sessions.off };
-};
+const sessionsLabel = (sessions: HostSessions) => ({
+  [LABELS.sessionDir]: "dir" in sessions ? sessions.dir : sessions.off,
+});
 
 const sandboxEnv = (input: ContainerSpecInput) => ({
   ...proxyEnv(input),
   ...input.toolEnv,
-  ...trustEnv(input),
   ...sessionsEnv(input),
+  NODE_EXTRA_CA_CERTS: GUEST_CA_BUNDLE,
   SSL_CERT_FILE: GUEST_CA_BUNDLE,
   CURL_CA_BUNDLE: GUEST_CA_BUNDLE,
   REQUESTS_CA_BUNDLE: GUEST_CA_BUNDLE,
@@ -210,10 +194,14 @@ const sandboxEnv = (input: ContainerSpecInput) => ({
   GIT_SSL_CAINFO: GUEST_CA_BUNDLE,
   GIT_TERMINAL_PROMPT: "0",
   PI_SANDBOX: "1",
+  PI_SANDBOX_STATUS: GUEST_PATHS.statusFile,
   PI_SKIP_VERSION_CHECK: "1",
   PI_TELEMETRY: "0",
   PI_CLIPBOARD_OSC52: "1",
 });
+
+export const forwardedNames = (env: SandboxConfig["env"]) =>
+  env.allow.filter((name) => !Object.hasOwn(env.set, name));
 
 export const forwardedEnv = (
   names: string[],
@@ -238,20 +226,15 @@ export const forwardedEnv = (
     }),
   );
 
-const trustMounts = (input: ContainerSpecInput) => [
-  bind(realOrResolvedSync(input.trust.pemPath), GUEST_PATHS.trustPem, true),
+const renderMounts = (renderDir: string) => [
+  bind(realOrResolvedSync(renderDir), GUEST_PATHS.renderDir, true),
 ];
 
-const renderMounts = (renderDir: string | undefined) =>
-  renderDir === undefined ? [] : [bind(realOrResolvedSync(renderDir), GUEST_PATHS.renderDir, true)];
-
 const baseLabels = (input: ContainerSpecInput) => ({
-  [LABELS.managed]: "true",
-  [LABELS.repoHash]: repoHash(input.workspace.repoRoot),
-  [LABELS.repoRoot]: input.workspace.repoRoot,
+  [LABELS.role]: "agent",
+  ...repoLabels(input.workspace.repoRoot),
   [LABELS.launchId]: input.launchId,
   [LABELS.imageDigest]: input.image.digest,
-  [LABELS.imageReference]: input.image.reference,
   ...sessionsLabel(input.hostSessions),
 });
 
@@ -281,80 +264,115 @@ const placeVolumes = (planned: PlannedVolume[], guarded: string[]) => {
   };
 };
 
-const GUEST_RESERVED = [
-  "/usr/local/bin",
-  "/usr/local/lib",
-  dirname(GUEST_PATHS.renderDir),
-  dirname(GUEST_PATHS.trustPem),
-  GUEST_HOME,
-  "/tmp",
-];
+const TABLE_HINT = "start pi in another folder";
 
-const checkMountTable = (mounts: MountSpec[], guestReserved: string[]) => {
+const checkMountTable = (mounts: MountSpec[], own: MountSpec[]) => {
   mounts.forEach((mount, index) => {
     const target = resolve(mount.target);
-    const reserved = guestReserved.find((path) => isWithin(path, target));
+    const reserved = own.includes(mount) ? undefined : guestReservedOver(target);
 
     if (reserved !== undefined) {
       throw new LauncherError(
         `workspace: the sandbox would mount ${mount.target} over ${reserved}, which the sandbox image needs, refusing`,
-        "start pi in another folder",
+        TABLE_HINT,
       );
     }
 
     if (mounts.slice(0, index).some((other) => resolve(other.target) === target)) {
       throw new LauncherError(
         `workspace: the sandbox would mount ${mount.target} twice, refusing`,
-        "start pi in another folder",
+        TABLE_HINT,
       );
     }
   });
 };
 
+const overlap = (one: string, other: string) => isWithin(one, other) || isWithin(other, one);
+
+const checkConfigMounts = (configured: MountSpec[], mounts: MountSpec[]) => {
+  const clash = configured
+    .flatMap((mount) =>
+      mounts
+        .filter((other) => other !== mount && overlap(mount.target, other.target))
+        .map((other) => [mount, other]),
+    )
+    .at(0);
+
+  if (clash !== undefined) {
+    throw new LauncherError(
+      `mounts: the sandbox would mount ${clash[0].target} and ${clash[1].target} inside one another, refusing`,
+      "move that target in mounts.volumes or mounts.binds",
+    );
+  }
+};
+
 export const buildContainerSpec = (input: ContainerSpecInput): LauncherContainerSpec => {
   const { workspace, config } = input;
-  const planned = volumePlan({ workspace, config, uid: input.hostUid, stateDir: input.stateDir });
+  const planned = volumePlan({ workspace, config, stateDir: input.stateDir });
   const binds = [
     ...writableRoots(workspace).map((path) => bind(path, path, false)),
     ...gitMounts(input.gitOverlay),
     ...sessionsMounts(input),
-    ...renderMounts(input.renderDir),
-    ...trustMounts(input),
   ];
-  const guardedPaths = guardedPathsOf(binds, workspace);
+  const render = renderMounts(input.renderDir);
+  const configBinds = input.binds.map((entry) => bind(entry.source, entry.target, true));
+  const guardedPaths = guardedPathsOf([...binds, ...render], workspace);
   const { volumes, notices } = placeVolumes(planned, guardedPaths);
-  const owned = volumes.filter((entry) => entry.key !== "agent");
-  const mounts = [...binds, ...volumes.map((entry) => volume(entry.name, entry.target))];
+  const serviceVolumes = serviceVolumeNames(input.stateDir, config.services);
+  const owned = volumes.filter((entry) => entry.key !== "agent" && !serviceVolumes.has(entry.name));
+  const toMount = (entry: PlannedVolume) => volume(entry.name, entry.target);
+  const configured = [
+    ...configBinds,
+    ...volumes.filter((entry) => entry.key === "mounts.volumes").map(toMount),
+  ];
+  const mounts = [
+    ...binds,
+    ...render,
+    ...volumes.filter((entry) => entry.key !== "mounts.volumes").map(toMount),
+    ...configured,
+  ];
 
-  checkMountTable(mounts, GUEST_RESERVED);
+  checkMountTable(mounts, render);
+
+  checkConfigMounts(configured, mounts);
 
   assertOverlaysHidden(workspace, mounts);
 
   const ownedPaths = [
     ...new Set([
-      ...owned
-        .filter((entry) => entry.key === "mounts.sharedCaches")
-        .flatMap((entry) => parentsBelow(GUEST_HOME, entry.target)),
+      ...configured.flatMap((mount) => parentsBelow(GUEST_HOME, mount.target)),
       ...owned.map((entry) => entry.target),
     ]),
   ];
 
-  const spec: LauncherContainerSpec = {
+  return {
     name: containerName(workspace.repoRoot, input.launchId),
     image: input.image.id,
     labels: baseLabels(input),
     mounts,
     network: input.proxy.network,
-    env: { ...sandboxEnv(input), ...handoverEnv(ownedPaths) },
+    env: {
+      ...config.env.set,
+      ...sandboxEnv(input),
+      ...handoverEnv(ownedPaths),
+      ...forwarderEnv(input.servicePorts),
+    },
     workdir: workspace.repoRoot,
     readOnlyRoot: true,
     tmpfs: [`/tmp:${SHARED_TMPFS}`, `${GUEST_HOME}:${SHARED_TMPFS}`],
     init: true,
-    resources: { cpus: config.resources.cpus, memoryGiB: config.resources.memoryGiB },
+    resources: {
+      cpus: config.resources.cpus,
+      memoryGiB: config.resources.memoryGiB,
+      pids: config.resources.pids,
+      openFiles: config.resources.openFiles,
+      shmMiB: config.resources.shmMiB,
+    },
+    capabilities: HANDOVER_CAPABILITIES,
+    autoRemove: true,
     volumeLabels: Object.fromEntries(volumes.map((entry) => [entry.name, entry.labels])),
     ownedPaths,
     guardedPaths,
+    notices,
   };
-
-  return notices.length === 0 ? spec : { ...spec, notices };
 };

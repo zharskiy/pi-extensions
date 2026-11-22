@@ -9,6 +9,8 @@ export interface FileLockOptions {
   staleMs?: number;
   timeoutMs?: number;
   retryMs?: number;
+  onWait?: () => void;
+  signal?: AbortSignal;
 }
 
 interface LockSettings {
@@ -16,6 +18,8 @@ interface LockSettings {
   retryMs: number;
   deadline: number;
   held?: string;
+  onWait?: () => void;
+  signal?: AbortSignal;
 }
 
 interface LockSnapshot {
@@ -32,6 +36,8 @@ const DEFAULT_TIMEOUT_MS = 10_000;
 
 const DEFAULT_RETRY_MS = 25;
 
+const WAITING_RETRY_MS = 250;
+
 const DIRECTORY_REFRESH_MS = 1_000;
 
 const PRIVATE_MODE = 0o600;
@@ -42,6 +48,8 @@ const settingsOf = (options: FileLockOptions, byAge: boolean): LockSettings => (
   staleMs: byAge ? (options.staleMs ?? DEFAULT_STALE_MS) : undefined,
   retryMs: options.retryMs ?? DEFAULT_RETRY_MS,
   deadline: Date.now() + (options.timeoutMs ?? DEFAULT_TIMEOUT_MS),
+  onWait: options.onWait,
+  signal: options.signal,
 });
 
 const sibling = (path: string, kind: string) =>
@@ -178,9 +186,11 @@ const acquire = async (path: string, attempt: Attempt, settings: LockSettings): 
     throw busy(path, snapshot);
   }
 
-  await sleep(settings.retryMs);
+  settings.onWait?.();
 
-  return acquire(path, attempt, { ...settings, held: snapshot?.mark });
+  await sleep(settings.retryMs, undefined, { signal: settings.signal });
+
+  return acquire(path, attempt, { ...settings, held: snapshot?.mark, onWait: undefined });
 };
 
 const failure = (path: string, error: unknown) => new LauncherError(`${path}: ${errorMessage(error)}`);
@@ -268,14 +278,27 @@ const holding = async <T>(
 export const withFileLock = <T>(path: string, action: () => Promise<T>, options: FileLockOptions = {}) =>
   holding(path, { attempt: createPidLock, byAge: false }, options, action);
 
-export const withFileLockIfFree = async <T>(
+interface Waiting {
+  signal?: AbortSignal;
+  onWait?: () => void;
+}
+
+export const withWaitingLock = <T>(path: string, action: () => Promise<T>, waiting: Waiting) =>
+  withFileLock(path, action, { timeoutMs: Number.POSITIVE_INFINITY, retryMs: WAITING_RETRY_MS, ...waiting });
+
+type LockTaker = <T>(path: string, action: () => Promise<T>, options: FileLockOptions) => Promise<T>;
+
+export type LockOutcome<T> = { busy: true } | { busy: false; value: T };
+
+const ifFree = async <T>(
+  take: LockTaker,
   path: string,
   action: () => Promise<T>,
-): Promise<{ busy: true } | { busy: false; value: T }> => {
+): Promise<LockOutcome<T>> => {
   const entered = { now: false };
 
   try {
-    const value = await withFileLock(
+    const value = await take(
       path,
       () => {
         entered.now = true;
@@ -295,6 +318,37 @@ export const withFileLockIfFree = async <T>(
   }
 };
 
+export const withFileLockIfFree = <T>(path: string, action: () => Promise<T>) =>
+  ifFree(withFileLock, path, action);
+
+interface Unless {
+  skip: () => Promise<boolean>;
+  signal?: AbortSignal;
+  onWait?: () => void;
+}
+
+export const withFileLockUnless = async <T>(
+  path: string,
+  action: () => Promise<T>,
+  unless: Unless,
+): Promise<LockOutcome<T>> => {
+  if (unless.signal?.aborted === true || (await unless.skip())) {
+    return { busy: true };
+  }
+
+  const outcome = await withFileLockIfFree(path, action);
+
+  if (!outcome.busy) {
+    return outcome;
+  }
+
+  unless.onWait?.();
+
+  await sleep(WAITING_RETRY_MS, undefined, { signal: unless.signal }).catch(() => undefined);
+
+  return withFileLockUnless(path, action, { ...unless, onWait: undefined });
+};
+
 export const withDirectoryLock = <T>(path: string, action: () => Promise<T>, options: FileLockOptions = {}) =>
   holding(
     path,
@@ -309,3 +363,6 @@ export const withDirectoryLock = <T>(path: string, action: () => Promise<T>, opt
     options,
     action,
   );
+
+export const withDirectoryLockIfFree = <T>(path: string, action: () => Promise<T>) =>
+  ifFree(withDirectoryLock, path, action);

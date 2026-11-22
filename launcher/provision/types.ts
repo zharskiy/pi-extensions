@@ -2,13 +2,27 @@ import type { Backend } from "../backend/index.ts";
 import type { DerivedSandboxPi } from "../hostpi/index.ts";
 import type { WriteBackTable } from "../shared/index.ts";
 
+export interface SandboxStatusInput {
+  resources: {
+    cpus?: number;
+    memoryGiB?: number;
+    pids: number;
+    openFiles?: number;
+    shmMiB?: number;
+  };
+  volumes: string[];
+  binds: string[];
+  setup: string[][];
+  services: Array<{ name: string; command: string[]; ready?: string[]; ports: number[] }>;
+}
+
 export interface RenderInput {
   stateDir: string;
   repoHash: string;
   hostAgentDir: string;
   hostHome: string;
   derived: DerivedSandboxPi;
-  othersLive?: () => Promise<boolean>;
+  status: SandboxStatusInput;
 }
 
 export interface RenderResult {

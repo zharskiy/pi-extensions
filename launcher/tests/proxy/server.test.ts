@@ -1,11 +1,13 @@
 import { execFile } from "node:child_process";
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import { createServer as createHttpsServer, type Server } from "node:https";
-import { connect } from "node:net";
+import { connect, type Socket } from "node:net";
 import { dirname } from "node:path";
 import { type TLSSocket, connect as tlsConnect } from "node:tls";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { addGrant } from "../../grants/index.ts";
+import { createDialer } from "../../proxy/dial.ts";
+import { PREAMBLE_LIMIT, preambleText } from "../../proxy/preamble.ts";
 import type { LauncherCa } from "../../proxy/tls-ca.ts";
 import { stateLayout } from "../../shared/index.ts";
 import {
@@ -17,6 +19,7 @@ import {
   removeDir,
   settingsOf,
   startTestProxy,
+  startTestRelay,
   type TestProxy,
   waitFor,
 } from "./harness.ts";
@@ -33,9 +36,9 @@ import {
   secureTunnel,
 } from "./proxy-client.ts";
 
-const REPO = "1".repeat(64);
-
 const MINTS_PER_MINUTE = 30;
+
+const API_PLACEHOLDER = "pi-sandbox-89abcdef0123456789abcdef";
 
 const state: {
   stateDir: string;
@@ -110,36 +113,59 @@ const connectStatus = (authority: string, token = state.token) =>
 const deniedPage = async (authority: string, token = state.token) =>
   (await pageThrough(state.test.proxy.port, authority, token, state.ca.certPem)).body;
 
-describe("proxy authentication", () => {
-  it("answers a CONNECT without credentials with 407 and a challenge", async () => {
-    const reply = await openConnect(state.test.proxy.port, "target.test:443");
-    const body = JSON.parse(await readRest(reply.socket));
+const replyBeforeClose = (socket: Socket, bytes: string) =>
+  new Promise<string>((resolve) => {
+    const chunks: Buffer[] = [];
 
-    expect(reply.status).toBe(407);
-    expect(reply.head).toContain('Proxy-Authenticate: Basic realm="pi-sandbox"');
-    expect(body).toEqual({ error: "missing or wrong Proxy-Authorization" });
+    socket.on("data", (chunk: Buffer) => chunks.push(chunk));
+
+    socket.once("error", () => undefined);
+
+    socket.once("close", () => resolve(Buffer.concat(chunks).toString("utf8")));
+
+    socket.write(bytes);
   });
 
-  it("answers a CONNECT with an unknown token with 407", async () => {
-    expect((await connectStatus("target.test:443", "not-a-token")).status).toBe(407);
+const CONNECT_LINE = "CONNECT target.test:443 HTTP/1.1\r\nHost: target.test:443\r\n\r\n";
+
+describe("proxy preamble", () => {
+  it("closes a connection that starts without the preamble, without a reply", async () => {
+    const socket = connect({ host: "127.0.0.1", port: state.test.proxy.port });
+
+    expect(await replyBeforeClose(socket, CONNECT_LINE)).toBe("");
   });
 
-  it("refuses the repository token under another user name", async () => {
-    const reply = await openConnect(
-      state.test.proxy.port,
-      "target.test:443",
-      state.token,
-      "pi-sandbox-control",
+  it("closes a connection whose preamble holds another token, without a reply", async () => {
+    const socket = connect({ host: "127.0.0.1", port: state.test.proxy.port });
+
+    expect(await replyBeforeClose(socket, `${preambleText("d".repeat(64))}\n${CONNECT_LINE}`)).toBe("");
+  });
+
+  it("closes a connection whose first line runs past the limit", async () => {
+    const socket = connect({ host: "127.0.0.1", port: state.test.proxy.port });
+
+    expect(await replyBeforeClose(socket, "x".repeat(PREAMBLE_LIMIT))).toBe("");
+  });
+
+  it("reads a preamble split across writes and a request in the same write as its end", async () => {
+    const socket = connect({ host: "127.0.0.1", port: state.test.proxy.port });
+    const line = `${preambleText(state.token)}\n`;
+
+    socket.write(line.slice(0, 5));
+
+    const reply = await replyBeforeClose(
+      socket,
+      `${line.slice(5)}GET /healthz HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n`,
     );
 
-    await readRest(reply.socket);
-
-    expect(reply.status).toBe(407);
+    expect(reply).toContain("200 OK");
+    expect(reply).toContain(`"pid":${process.pid}`);
   });
 
-  it("accepts the repository token under Authorization on a CONNECT", async () => {
+  it("ignores Proxy-Authorization and Authorization on a CONNECT", async () => {
     const reply = await openConnectWith(state.test.proxy.port, "target.test:443", {
-      Authorization: authorization(state.token),
+      "Proxy-Authorization": authorization("not-a-token"),
+      Authorization: authorization("not-a-token"),
     });
 
     reply.socket.destroy();
@@ -147,69 +173,15 @@ describe("proxy authentication", () => {
     expect(reply.status).toBe(200);
   });
 
-  it("answers a CONNECT with an unknown token under Authorization with 407 and logs it", async () => {
-    const reply = await openConnectWith(state.test.proxy.port, "wrong-authorization.test:443", {
-      Authorization: authorization("not-a-token"),
-    });
-
-    await readRest(reply.socket);
-
-    expect(reply.status).toBe(407);
-    expect(state.test.log).toContainEqual(
-      expect.objectContaining({ host: "wrong-authorization.test", rule: "auth", decision: "deny" }),
-    );
-  });
-
-  it("decides a CONNECT by Proxy-Authorization alone when it is present", async () => {
-    const reply = await openConnectWith(state.test.proxy.port, "target.test:443", {
-      "Proxy-Authorization": authorization("not-a-token"),
-      Authorization: authorization(state.token),
-    });
-
-    await readRest(reply.socket);
-
-    expect(reply.status).toBe(407);
-  });
-
-  it("treats an empty Proxy-Authorization on a CONNECT as present", async () => {
-    const reply = await openConnectWith(state.test.proxy.port, "target.test:443", {
-      "Proxy-Authorization": "",
-      Authorization: authorization(state.token),
-    });
-
-    await readRest(reply.socket);
-
-    expect(reply.status).toBe(407);
-  });
-
-  it("ignores Authorization on plain requests", async () => {
-    const health = await plainRequest(state.test.proxy.port, "/healthz", {
-      headers: { authorization: authorization(state.token) },
-    });
-
-    expect(health.status).toBe(407);
-  });
-
-  it("answers plain requests without credentials with 407, health included", async () => {
-    const health = await plainGet(state.test.proxy.port, "/healthz");
-
-    expect(health.status).toBe(407);
-    expect(health.headers["proxy-authenticate"]).toBe('Basic realm="pi-sandbox"');
-  });
-
-  it("serves health to the repository token only", async () => {
-    const repo = await plainGet(state.test.proxy.port, "/healthz", "127.0.0.1", state.token);
+  it("serves health after the preamble", async () => {
+    const repo = await plainGet(state.test.proxy.port, "/healthz");
 
     expect(JSON.parse(repo.body)).toEqual({ ok: true, pid: process.pid });
   });
 
   it("answers the removed control and policy routes like any plain request", async () => {
-    const control = await plainRequest(state.test.proxy.port, "/control", {
-      method: "POST",
-      token: state.token,
-      body: "{}",
-    });
-    const policy = await plainGet(state.test.proxy.port, "/policy", "127.0.0.1", state.token);
+    const control = await plainRequest(state.test.proxy.port, "/control", { method: "POST", body: "{}" });
+    const policy = await plainGet(state.test.proxy.port, "/policy");
 
     expect(control.status).toBe(403);
     expect(policy.status).toBe(403);
@@ -231,8 +203,6 @@ describe("proxy authentication", () => {
   it("logs an unparseable CONNECT authority as unparseable", async () => {
     const raw = "leaked-secret-value/path?q=1";
 
-    await connectStatus(raw, "nope");
-
     await connectStatus(raw);
 
     expect(JSON.stringify(state.test.log)).not.toContain("leaked-secret-value");
@@ -244,9 +214,7 @@ describe("repository token", () => {
   it("tags log entries with the repository of the proxy", async () => {
     await connectStatus("evil.test:443");
 
-    expect(state.test.log).toContainEqual(
-      expect.objectContaining({ repo: REPO, host: "evil.test", decision: "deny" }),
-    );
+    expect(state.test.log).toContainEqual(expect.objectContaining({ host: "evil.test", decision: "deny" }));
   });
 });
 
@@ -287,7 +255,7 @@ describe("CONNECT tunnel", () => {
       ),
     );
 
-    expect(entry).toMatchObject({ host: "target.test", rule: "egress.allow", repo: REPO });
+    expect(entry).toMatchObject({ host: "target.test", rule: "egress.allow" });
   });
 
   it("answers a host outside the allowlist with a 403 page carrying the allow hint inside the tunnel", async () => {
@@ -311,7 +279,8 @@ describe("CONNECT tunnel", () => {
     );
   });
 
-  it("lets Node's built-in fetch through HTTPS_PROXY show the denial text", async () => {
+  it("lets Node's built-in fetch through HTTPS_PROXY and the relay show the denial text", async () => {
+    const relay = await startTestRelay(state.test.proxy.port);
     const script =
       "fetch('https://evil.test/doc').then(async (r) => console.log(r.status, await r.text()), (e) => console.log(String(e), String(e.cause)))";
     const output = await new Promise<string>((resolve) => {
@@ -322,7 +291,7 @@ describe("CONNECT tunnel", () => {
           env: {
             PATH: process.env.PATH ?? "",
             NODE_USE_ENV_PROXY: "1",
-            HTTPS_PROXY: `http://pi-sandbox:${state.token}@127.0.0.1:${state.test.proxy.port}`,
+            HTTPS_PROXY: `http://127.0.0.1:${relay.port}`,
             NODE_EXTRA_CA_CERTS: state.ca.certPath,
           },
           timeout: 15_000,
@@ -330,6 +299,8 @@ describe("CONNECT tunnel", () => {
         (_error, stdout, stderr) => resolve(`${stdout}${stderr}`),
       );
     });
+
+    await relay.close();
 
     expect(output).toContain("is not allowed");
     expect(output).toContain(`403 ${hint("evil.test")}`);
@@ -457,11 +428,69 @@ describe("the upstream of a spliced tunnel", () => {
   });
 });
 
+describe("a CONNECT whose name never resolves", () => {
+  const stalled = () => new Promise<never>(() => undefined);
+
+  const stalledProxy = async () => {
+    const dialled: string[] = [];
+    const stateDir = await createStateDir();
+    const resolution = createDialer({ resolve: stalled, connectTimeoutMs: 100 });
+    const local = await startTestProxy({
+      stateDir,
+      policy: { allow: ["target.test", "api.test"] },
+      ca: state.ca,
+      rules: [{ id: "api", host: "api.test", placeholder: API_PLACEHOLDER, secret: { env: "API_KEY" } }],
+      dial: {
+        dial: (host, port, access) => {
+          dialled.push(`${host}:${port}`);
+
+          return resolution.dial(host, port, access);
+        },
+        checkAddresses: resolution.checkAddresses,
+      },
+    });
+    const close = async () => {
+      await local.proxy.close();
+
+      await removeDir(stateDir);
+    };
+
+    return { local, dialled, close };
+  };
+
+  it.each(["target.test", "api.test"])(
+    "refuses %s with 502 once the check times out and never dials",
+    async (host) => {
+      const { local, dialled, close } = await stalledProxy();
+
+      try {
+        const started = Date.now();
+        const refused = await connectStatusOn(local.proxy.port, `${host}:443`, local.token);
+
+        expect(refused.status).toBe(502);
+        expect(refused.body).toEqual({ error: `upstream request failed: ${host} did not resolve in time` });
+        expect(Date.now() - started).toBeLessThan(2_000);
+        expect(local.log).toContainEqual(
+          expect.objectContaining({
+            host,
+            decision: "deny",
+            rule: "upstream",
+            reason: `${host} did not resolve in time`,
+          }),
+        );
+        expect(dialled).toEqual([]);
+      } finally {
+        await close();
+      }
+    },
+  );
+});
+
 describe("live egress settings", () => {
   it("applies a tightened and a loosened egress.json to new CONNECTs and keeps the last good one", async () => {
     const stateDir = await createStateDir();
     const local = await startTestProxy({ stateDir, policy: { allow: ["target.test"] }, ca: state.ca, ports });
-    const path = stateLayout(stateDir).repo(local.repoHash).proxy.egress;
+    const path = stateLayout(stateDir).proxy.egress;
     const write = async (text: string) => {
       await mkdir(dirname(path), { recursive: true });
 
@@ -529,14 +558,10 @@ describe("denial page certificates", () => {
 });
 
 describe("grants", () => {
-  it("allows a host with a grant of this repository, read live from grants.json", async () => {
+  it("allows a host with a grant, read live from grants.json", async () => {
     expect(await deniedPage("granted.test:443")).toBe(hint("granted.test"));
 
-    await addGrant(state.stateDir, { host: "granted.test", port: 443, repoHash: "2".repeat(64) }, Date.now());
-
-    expect(await deniedPage("granted.test:443")).toBe(hint("granted.test"));
-
-    await addGrant(state.stateDir, { host: "granted.test", port: 443, repoHash: REPO }, Date.now());
+    await addGrant(state.stateDir, { host: "granted.test", port: 443 }, Date.now());
 
     expect((await connectStatus("granted.test:443")).status).toBe(200);
   });
@@ -582,20 +607,7 @@ describe("denials", () => {
 
     expect(hosts).toContain("denied-here.test");
     expect(JSON.parse(reply.body).denials).toContainEqual(
-      expect.objectContaining({ host: "denied-here.test", port: 443, repoHash: REPO, rule: "egress.allow" }),
-    );
-  });
-
-  it("logs a CONNECT without the token but keeps it out of the denials list", async () => {
-    const since = Date.now();
-
-    await connectStatus("stranger.test:443", "not-a-token");
-
-    const reply = await plainGet(state.test.proxy.port, `/denials?since=${since}`, "127.0.0.1", state.token);
-
-    expect(JSON.parse(reply.body).denials).toEqual([]);
-    expect(state.test.log).toContainEqual(
-      expect.objectContaining({ host: "stranger.test", rule: "auth", repo: REPO, decision: "deny" }),
+      expect.objectContaining({ host: "denied-here.test", port: 443, rule: "egress.allow" }),
     );
   });
 

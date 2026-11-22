@@ -7,9 +7,6 @@ const UNPARSEABLE = "unparseable";
 
 export const PLAIN_HTTP = { rule: "plain-http", reason: "only HTTPS through CONNECT is proxied" };
 
-export const hostOf = (authority: string | undefined) =>
-  parseAuthority(authority, HTTP_PORT)?.host ?? UNPARSEABLE;
-
 const pathOf = (url: string | undefined) => (url?.startsWith("/") ? (url.split("?")[0] ?? "") : "");
 
 const sinceOf = (url: string) => {

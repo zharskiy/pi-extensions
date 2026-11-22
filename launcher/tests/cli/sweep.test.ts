@@ -44,8 +44,12 @@ describe("the sweep of a repository no launch uses", () => {
     const fake = createFakeBackend();
     const backend: Backend = {
       ...fake.backend,
-      removeRepoNetwork: async () => {
-        throw new Error("engine busy");
+      findContainers: async (labels) => {
+        if (labels[LABELS.repoHash] !== undefined) {
+          throw new Error("engine busy");
+        }
+
+        return fake.backend.findContainers(labels);
       },
     };
     const harness = await createHarness({ backend: () => backend });
@@ -151,7 +155,7 @@ describe("the sweep of what is left in the state dir", () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
     const hash = sha256Hex(harness.repoRoot);
-    const entry = join(stateLayout(harness.stateDir).repo(hash).launches, `${newLaunchId()}.json`);
+    const entry = join(stateLayout(harness.stateDir).launches, `${newLaunchId()}.json`);
 
     await harness.writeJson(stateLayout(harness.stateDir).repo(hash).record, { root: harness.repoRoot });
 
@@ -166,7 +170,7 @@ describe("the sweep of what is left in the state dir", () => {
 
     expect(await sweepNow(harness.deps)).toBe(0);
     expect(await exists(entry)).toBe(false);
-    expect(await liveLaunches(harness.stateDir, hash)).toEqual([]);
+    expect(await liveLaunches(harness.stateDir)).toEqual([]);
   });
 
   it("removes the container of an ended launch while another launch of the repository runs", async () => {
@@ -179,6 +183,7 @@ describe("the sweep of what is left in the state dir", () => {
         name: `pi-sandbox-repo-${launchId ?? "none"}`,
         labels: {
           [LABELS.managed]: "true",
+          [LABELS.role]: "agent",
           [LABELS.repoHash]: hash,
           ...(launchId === undefined ? {} : { [LABELS.launchId]: launchId }),
         },
@@ -200,13 +205,71 @@ describe("the sweep of what is left in the state dir", () => {
     expect(fake.containers.has(unlabelled)).toBe(false);
   });
 
+  it("never takes a pod or a service of a running repository for an ended launch", async () => {
+    const fake = createFakeBackend();
+    const harness = await createHarness({ backend: () => fake.backend });
+    const hash = sha256Hex(harness.repoRoot);
+    const live = { launchId: newLaunchId(), repoHash: hash, startedAt: 1, ...(await processMark()) };
+    const companion = (role: string) =>
+      fake.addContainer({
+        name: `pi-sandbox-repo-${role}`,
+        labels: {
+          [LABELS.managed]: "true",
+          [LABELS.repoHash]: hash,
+          [LABELS.role]: role,
+          [LABELS.launchId]: newLaunchId(),
+        },
+        state: "running",
+        image: "x",
+      });
+
+    await harness.writeJson(stateLayout(harness.stateDir).repo(hash).record, { root: harness.repoRoot });
+
+    await registerLaunch(harness.stateDir, live);
+
+    const pod = companion("pod");
+    const service = companion("service");
+
+    expect(await sweepNow(harness.deps)).toBe(0);
+    expect(fake.containers.has(pod)).toBe(true);
+    expect(fake.containers.has(service)).toBe(true);
+  });
+
+  it("removes a repository's session, pod and relay, the session with a short stop", async () => {
+    const fake = createFakeBackend();
+    const harness = await createHarness({ backend: () => fake.backend });
+    const orphan = "e".repeat(64);
+    const repo = { [LABELS.managed]: "true", [LABELS.repoHash]: orphan };
+    const agent = fake.addContainer({
+      name: "agent",
+      labels: { ...repo, [LABELS.role]: "agent" },
+      state: "running",
+      image: "x",
+    });
+    const pod = fake.addContainer({
+      name: "pod",
+      labels: { ...repo, [LABELS.role]: "pod" },
+      state: "running",
+      image: "pod",
+    });
+
+    await fake.backend.prepareRelay({ hostPort: 3128, imageId: "relay", preamble: "PI-SANDBOX test" });
+
+    expect(await sweepNow(harness.deps)).toBe(0);
+    expect(fake.stops).toContainEqual({ id: agent, timeoutSeconds: 3 });
+    expect(fake.containers.size).toBe(0);
+    expect(harness.stdout()).toContain(`removed container agent (${agent})`);
+    expect(harness.stdout()).toContain(`removed container pod (${pod})`);
+    expect(harness.stdout()).toContain("removed relay ");
+  });
+
   it("forgets a repository it knows only from engine labels once its sandbox is removed", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
     const orphan = "d".repeat(64);
     const id = fake.addContainer({
       name: `pi-sandbox-${orphan.slice(0, 12)}`,
-      labels: { [LABELS.managed]: "true", [LABELS.repoHash]: orphan },
+      labels: { [LABELS.managed]: "true", [LABELS.role]: "agent", [LABELS.repoHash]: orphan },
       state: "running",
       image: "x",
     });

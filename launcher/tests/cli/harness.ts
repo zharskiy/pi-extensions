@@ -11,7 +11,7 @@ import type { CliDeps } from "../../cli/index.ts";
 import { sweepOrphans } from "../../cli/sweep.ts";
 import { testedPiVersion } from "../../cli/versions.ts";
 import { newLaunchId, registerLaunch } from "../../grants/index.ts";
-import type { DenialRecord, RepoProxy, RepoProxyInput } from "../../proxy/index.ts";
+import type { DenialRecord, ProxyInput, ProxyRecord } from "../../proxy/index.ts";
 import { LauncherError, processMark, type RunResult, sha256Hex, stateLayout } from "../../shared/index.ts";
 import { createFakeBackend as createBareBackend, type FakeExec } from "../support/fake-backend.ts";
 import { createFakeRunner, type FakeResponder } from "../support/fake-runner.ts";
@@ -79,7 +79,7 @@ const collector = (): Collected => {
   return { stream, text: () => chunks.join("") };
 };
 
-const RUNNING_PROXY: RepoProxy = { pid: 4242, boot: 0, start: "", port: 3128, inputHash: "input" };
+const RUNNING_PROXY: ProxyRecord = { pid: 4242, boot: 0, start: "", port: 3128, inputHash: "input" };
 
 const PROVIDER_HOSTS = { example: { hosts: ["models.example.test"] } };
 
@@ -371,7 +371,7 @@ export const createHarness = async (options: HarnessOptions = {}) => {
   const userConfigFile = join(root, "config", "config.json");
 
   const hostAgentDir = join(root, "home", ".pi", "agent");
-  const trustPem = stateLayout(stateDir).trustPem(sha256Hex("trust bundle\n"), "0".repeat(16));
+  const proxyCaPem = join(stateDir, "ca", "ca-cert.pem");
 
   mkdirSync(join(repoRoot, ".git", "hooks"), { recursive: true });
 
@@ -379,7 +379,7 @@ export const createHarness = async (options: HarnessOptions = {}) => {
 
   mkdirSync(stateLayout(stateDir).vm, { recursive: true });
 
-  writeFileSync(trustPem, "trust bundle\n");
+  writeFileSync(proxyCaPem, "-----BEGIN CERTIFICATE-----\nproxy\n-----END CERTIFICATE-----\n");
 
   writeFileSync(join(stateDir, "ca", "extra.pem"), "");
   mkdirSync(cwd, { recursive: true });
@@ -416,8 +416,8 @@ export const createHarness = async (options: HarnessOptions = {}) => {
     return call.file === "git" ? gitAnswer(repoRoot, call.args) : undefined;
   });
   const terminalOut = new PassThrough();
-  const stoppedProxies: string[] = [];
-  const proxyInputs: RepoProxyInput[] = [];
+  const proxyStops = { count: 0 };
+  const proxyInputs: ProxyInput[] = [];
   const proxyState = { stopped: false };
   const deps: CliDeps = {
     runner: fake.runner,
@@ -442,7 +442,6 @@ export const createHarness = async (options: HarnessOptions = {}) => {
       onResize: () => () => undefined,
     },
     platform: "darwin",
-    uid: 501,
     machine: options.machine ?? { cpus: 8, memoryGiB: 32 },
     backend: options.backend ?? unreachableBackend,
     proxy: {
@@ -454,8 +453,8 @@ export const createHarness = async (options: HarnessOptions = {}) => {
         return { proxy: RUNNING_PROXY, notices: [] };
       },
       read: async () => undefined,
-      stop: async (_stateDir, repoHash) => {
-        stoppedProxies.push(repoHash);
+      stop: async () => {
+        proxyStops.count += 1;
 
         proxyState.stopped = true;
 
@@ -463,10 +462,8 @@ export const createHarness = async (options: HarnessOptions = {}) => {
       },
       denials: async () => (proxyState.stopped ? [] : (options.denials ?? [])),
       trust: async () => ({
-        pemPath: trustPem,
-        caCertPath: trustPem,
+        caCertPath: proxyCaPem,
         extraPemPath: join(stateDir, "ca", "extra.pem"),
-        hash: "trust-hash",
       }),
       ...options.proxy,
     },
@@ -485,11 +482,11 @@ export const createHarness = async (options: HarnessOptions = {}) => {
     cwd,
     stateDir,
     hostAgentDir,
-    trustPem,
+    proxyCaPem,
     userConfigFile,
     deps,
     calls: fake.calls,
-    stoppedProxies,
+    proxyStops: () => proxyStops.count,
     proxyInputs,
     stdout: stdout.text,
     stderr: stderr.text,

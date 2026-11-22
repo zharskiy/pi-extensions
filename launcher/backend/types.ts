@@ -5,11 +5,17 @@ export interface MountSpec {
   kind: "bind" | "volume";
 }
 
-export type NetworkRef = { kind: "none" } | { kind: "internal"; name: string };
+export type NetworkRef =
+  | { kind: "none" }
+  | { kind: "internal"; name: string; alias?: string }
+  | { kind: "container"; id: string };
 
 interface ContainerResources {
   cpus?: number;
   memoryGiB?: number;
+  pids: number;
+  openFiles?: number;
+  shmMiB?: number;
 }
 
 export interface ContainerSpec {
@@ -19,11 +25,16 @@ export interface ContainerSpec {
   mounts: MountSpec[];
   network: NetworkRef;
   env: Record<string, string>;
-  workdir: string;
+  workdir?: string;
   readOnlyRoot: boolean;
   tmpfs: string[];
-  init: true;
+  init: boolean;
   resources: ContainerResources;
+  user?: string;
+  entrypoint?: string[];
+  command?: string[];
+  capabilities: string[];
+  autoRemove: boolean;
 }
 
 export interface TerminalSize {
@@ -41,17 +52,19 @@ export interface ExecSpec {
 
 export type ContainerState = "running" | "stopped" | "created" | "unknown";
 
+export interface ContainerInspect {
+  id: string;
+  labels: Record<string, string>;
+  state: ContainerState;
+  exitCode?: number;
+}
+
 export interface ContainerSummary {
   id: string;
   name: string;
   labels: Record<string, string>;
   state: ContainerState;
   image: string;
-}
-
-export interface NetworkSummary {
-  name: string;
-  labels: Record<string, string>;
 }
 
 export interface VolumeSummary {
@@ -88,15 +101,10 @@ export interface ImageSummary {
   created: number;
 }
 
-export interface ProxyRoute {
-  network: NetworkRef;
-  address: string;
-}
-
-export interface ProxyRouteRequest {
+export interface RelayRequest {
   hostPort: number;
-  repoHash: string;
   imageId: string;
+  preamble: string;
 }
 
 export interface VmPath {
@@ -138,8 +146,13 @@ export type VmApplied = "created" | "restarted" | "unchanged" | "stopped" | { de
 
 export type VmPhase = "creating" | "stopping" | "starting" | "waiting";
 
+export interface VmBusy {
+  count: number;
+  others: string[];
+}
+
 export interface VmApplyOptions {
-  busy: () => Promise<number>;
+  busy: () => Promise<VmBusy>;
   progress: (phase: VmPhase) => void;
 }
 
@@ -148,7 +161,7 @@ type VmStop = "absent" | "already stopped" | "stopped";
 export type VmReport = (notice: string) => void;
 
 export interface VmShareOptions {
-  busy: () => Promise<number>;
+  busy: () => Promise<VmBusy>;
   report: VmReport;
 }
 
@@ -158,7 +171,12 @@ export interface VmReconcile {
   needs: VmPath[];
 }
 
+export interface VmWatch {
+  stop(): Promise<void>;
+}
+
 export interface Vm {
+  watchFileCache?(): VmWatch;
   ensureRunning(report: VmReport, shares?: VmShare[], size?: VmTarget): Promise<void>;
   coverage(paths: VmPath[]): Promise<VmCoverage | "unreadable" | undefined>;
   reconcile(wanted: VmReconcile, options: VmShareOptions): Promise<void>;
@@ -169,30 +187,34 @@ export interface Vm {
   stop(options: Pick<VmShareOptions, "busy">): Promise<VmStop>;
 }
 
+export interface BuildOptions {
+  args?: Record<string, string>;
+  progress?: (step: string) => void;
+  offline?: boolean;
+}
+
 export interface Backend {
   vm: Vm;
   detect(): Promise<Detection>;
   pullImage(reference: string, digest?: string): Promise<ImageInfo>;
   resolveImage(reference: string): Promise<ImageInfo | undefined>;
-  buildImage(
-    contextDir: string,
-    tag: string,
-    buildArgs?: Record<string, string>,
-    progress?: (step: string) => void,
-  ): Promise<ImageInfo>;
+  buildImage(contextDir: string, tag: string, options?: BuildOptions): Promise<ImageInfo>;
   listImages(): Promise<ImageSummary[]>;
   removeImage(reference: string): Promise<boolean>;
   findContainers(labels: Record<string, string>): Promise<ContainerSummary[]>;
+  listOtherInstallSessions(): Promise<ContainerSummary[]>;
   createContainer(spec: ContainerSpec): Promise<{ id: string }>;
   startContainer(id: string): Promise<void>;
   stopContainer(id: string, timeoutSeconds?: number): Promise<void>;
   removeContainer(id: string): Promise<void>;
+  inspectContainer(id: string): Promise<ContainerInspect | undefined>;
+  containerLogs(id: string, lines: number): Promise<string>;
   exec(spec: ExecSpec, io: ExecIo): Promise<number>;
   ensureVolume(name: string, labels?: Record<string, string>): Promise<void>;
   listVolumes(): Promise<VolumeSummary[]>;
   removeVolume(name: string): Promise<void>;
-  prepareProxyRoute(request: ProxyRouteRequest): Promise<ProxyRoute>;
-  listNetworks(): Promise<NetworkSummary[]>;
-  removeRepoNetwork(repoHash: string): Promise<boolean>;
+  prepareRelay(request: RelayRequest): Promise<string>;
+  prepareNetwork(): Promise<string>;
+  removeNetwork(): Promise<boolean>;
   status(): Promise<Record<string, string>>;
 }

@@ -25,34 +25,23 @@ afterEach(async () => {
 });
 
 describe("prepareBuildContext", () => {
-  it("writes the Dockerfile, the entrypoint, the bash hint and an empty trust file, and no pi auth or models", async () => {
+  it("writes the Dockerfile and an empty trust file, and no sandbox scripts, pi auth or models", async () => {
     const dir = await tempDir();
 
     await prepareBuildContext(dir);
 
-    expect((await readdir(dir)).sort()).toEqual([
-      "Dockerfile",
-      "bash-env.sh",
-      "entrypoint.sh",
-      "proxy-ca.pem",
-      "trust.pem",
-    ]);
+    expect((await readdir(dir)).sort()).toEqual(["Dockerfile", "trust.pem"]);
     expect(await readFile(join(dir, "trust.pem"), "utf8")).toBe("");
-    expect(await readFile(join(dir, "entrypoint.sh"), "utf8")).toContain("sleep infinity");
-    expect(await readFile(join(dir, "bash-env.sh"), "utf8")).toContain("command_not_found_handle");
-    expect(await readFile(join(dir, "Dockerfile"), "utf8")).toContain(
-      "BASH_ENV=/usr/local/lib/pi-sandbox/bash-env.sh",
-    );
+    expect(await readFile(join(dir, "Dockerfile"), "utf8")).not.toContain("BASH_ENV");
+    expect(await readFile(join(dir, "Dockerfile"), "utf8")).not.toContain("ENTRYPOINT");
   });
 
-  it("sources the bash hint from the first line of the system bashrc", async () => {
+  it("sets the C.UTF-8 locale that bookworm's glibc ships", async () => {
     const dir = await tempDir();
 
     await prepareBuildContext(dir);
 
-    expect(await readFile(join(dir, "Dockerfile"), "utf8")).toContain(
-      "sed -i '1i . /usr/local/lib/pi-sandbox/bash-env.sh' /etc/bash.bashrc",
-    );
+    expect(await readFile(join(dir, "Dockerfile"), "utf8")).toMatch(/^ {4}LANG=C\.UTF-8 \\$/m);
   });
 
   it("copies the trust bundle into the context", async () => {
@@ -60,22 +49,20 @@ describe("prepareBuildContext", () => {
     const trust = join(await tempDir(), "trust.pem");
 
     await writeFile(trust, "-----BEGIN CERTIFICATE-----\n");
-    await prepareBuildContext(dir, { trustPem: trust });
+    await prepareBuildContext(dir, trust);
 
     expect(await readFile(join(dir, "trust.pem"), "utf8")).toBe("-----BEGIN CERTIFICATE-----\n");
   });
 
-  it("copies the proxy CA into the context and keeps it in the system store after the build", async () => {
+  it("leaves the proxy CA out of the base image", async () => {
     const dir = await tempDir();
-    const ca = join(await tempDir(), "ca-cert.pem");
 
-    await writeFile(ca, "PROXY CA\n");
-    await prepareBuildContext(dir, { proxyCaPem: ca });
+    await prepareBuildContext(dir);
 
     const dockerfile = await readFile(join(dir, "Dockerfile"), "utf8");
 
-    expect(await readFile(join(dir, "proxy-ca.pem"), "utf8")).toBe("PROXY CA\n");
-    expect(dockerfile).toContain("/usr/local/share/ca-certificates/pi-sandbox-proxy.crt");
+    expect(dockerfile).not.toContain("proxy-ca");
+    expect(dockerfile).not.toContain("/etc/pi-sandbox");
     expect(dockerfile).toMatch(/update-ca-certificates --fresh/);
   });
 
@@ -182,13 +169,7 @@ describe("ensureBuiltImage", () => {
     expect(fake.builds.map((build) => [build.tag, build.args])).toEqual([
       [BASE_TAG, { PI_VERSION: "1.5.0" }],
     ]);
-    expect(Object.keys(fake.builds[0]?.files ?? {}).sort()).toEqual([
-      "Dockerfile",
-      "bash-env.sh",
-      "entrypoint.sh",
-      "proxy-ca.pem",
-      "trust.pem",
-    ]);
+    expect(Object.keys(fake.builds[0]?.files ?? {}).sort()).toEqual(["Dockerfile", "trust.pem"]);
     expect(JSON.parse(await readFile(join(stateDir, "image.json"), "utf8"))).toEqual({
       base: {
         digest: "sha256:built-1",
@@ -243,23 +224,6 @@ describe("ensureBuiltImage", () => {
     });
 
     expect(fake.builds).toHaveLength(2);
-  });
-
-  it("rebuilds when the proxy CA changes", async () => {
-    const fake = createFakeBackend();
-    const stateDir = await tempDir();
-    const config = sandboxConfig();
-    const proxyCaPem = join(await tempDir(), "ca-cert.pem");
-
-    await writeFile(proxyCaPem, "CA ONE\n");
-    await ensureBuiltImage({ backend: fake.backend, config, versions, stateDir, proxyCaPem });
-    await ensureBuiltImage({ backend: fake.backend, config, versions, stateDir, proxyCaPem });
-
-    await writeFile(proxyCaPem, "CA TWO\n");
-    await ensureBuiltImage({ backend: fake.backend, config, versions, stateDir, proxyCaPem });
-
-    expect(fake.builds).toHaveLength(2);
-    expect(fake.builds[1]?.files["proxy-ca.pem"]).toBe("CA TWO\n");
   });
 
   it("refuses a pi version that is not a plain version string before it builds", async () => {

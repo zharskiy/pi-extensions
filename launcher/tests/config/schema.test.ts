@@ -7,10 +7,20 @@ import {
   MAX_ANY_OF_DEPTH,
   MAX_KEY_CHARS,
   MAX_PORT,
+  MAX_READY_SECONDS,
+  RESOURCE_BOUNDS,
   VM_BOUNDS,
   validateConfig,
 } from "../../config/validate.ts";
-import { BUILT_IN_WRITE_BACK, MAX_WRITE_BACK_CHARS } from "../../shared/index.ts";
+import {
+  BUILT_IN_WRITE_BACK,
+  GUEST_MARKERS,
+  GUEST_MOUNT_POINTS,
+  GUEST_TREES,
+  LAUNCHER_SET_VARIABLES,
+  MAX_WRITE_BACK_CHARS,
+  PROXY_VARIABLES,
+} from "../../shared/index.ts";
 
 interface SchemaNode {
   $ref?: string;
@@ -37,7 +47,7 @@ interface SchemaNode {
   dependentRequired?: Record<string, string[]>;
 }
 
-const SHARED_CACHE_SAMPLES = [
+const TARGET_SAMPLES = [
   "~/.cache/pip",
   "~/.npm/",
   "~/.pix",
@@ -45,11 +55,15 @@ const SHARED_CACHE_SAMPLES = [
   "~",
   "~/",
   "/abs",
+  "/opt/data",
+  "/var/lib/db/",
+  "/etc/tool",
   "relative",
   "~/a/../b",
   "~/a//b",
   "~/./a",
   "~/a/.",
+  "/opt/./a",
   "~/.pi",
   "~/.pi/agent",
   "~/.config",
@@ -63,6 +77,43 @@ const SHARED_CACHE_SAMPLES = [
   "~/.local/bin/tool",
   "~/.local/share",
   "~/.local/binx",
+  "/",
+  "/home",
+  "/home/",
+  "/home/pi",
+  "/home/pi/.npm",
+  "/home/other",
+  "/tmp",
+  "/tmp/x",
+  "/tmpx",
+  "/usr",
+  "/usr/local",
+  "/usr/local/lib",
+  "/usr/lib",
+  "/opt",
+  "/opt/pi-sandbox",
+  "/opt/pi-sandbox/x",
+  "/opt/pi-sandboxes",
+  "/etc",
+  "/etc/ssl",
+  "/etc/ssl/certs",
+  "/etc/sslx",
+  "/var",
+  "/var/",
+  "/var/log/db",
+  "/srv/x",
+  "/data",
+  "/libexec",
+  "/lib32x",
+  "/etc/app/conf.d",
+  "/etc/hostsx",
+  "/etc/ld.so.confx",
+  ...[...GUEST_TREES, ...GUEST_MOUNT_POINTS, ...GUEST_MARKERS].flatMap((path) => [
+    path,
+    `${path}/`,
+    `${path}/x`,
+    `${path}x`,
+  ]),
 ];
 
 const joinPath = (prefix: string, key: string) => (prefix === "" ? key : `${prefix}.${key}`);
@@ -92,13 +143,13 @@ describe("sandbox-config.schema.json", () => {
     expect(distinctSorted(schemaKeys(schema, ""))).toEqual(distinctSorted(configKeys()));
   });
 
-  it("accepts and refuses the same shared cache paths as the validator", async () => {
+  it("accepts and refuses the same volume targets as the validator", async () => {
     const pattern = new RegExp(
-      (await readSchema()).properties?.mounts?.properties?.sharedCaches?.items?.pattern ?? "",
+      (await readSchema()).properties?.mounts?.properties?.volumes?.items?.oneOf?.[0]?.pattern ?? "",
     );
     const accepted = (path: string) => {
       try {
-        validateConfig({ mounts: { sharedCaches: [path] } });
+        validateConfig({ mounts: { volumes: [path] } });
 
         return true;
       } catch {
@@ -106,8 +157,8 @@ describe("sandbox-config.schema.json", () => {
       }
     };
 
-    expect(SHARED_CACHE_SAMPLES.map((path) => [path, pattern.test(path)])).toEqual(
-      SHARED_CACHE_SAMPLES.map((path) => [path, accepted(path)]),
+    expect(TARGET_SAMPLES.map((path) => [path, pattern.test(path)])).toEqual(
+      TARGET_SAMPLES.map((path) => [path, accepted(path)]),
     );
   });
 
@@ -261,6 +312,9 @@ describe("sandbox-config.schema.json", () => {
         "GIT_TERMINAL_PROMPT",
         "PI_SANDBOX",
         "PI_SANDBOX_LAUNCH_ID",
+        "PI_SANDBOX_STATUS",
+        "PI_SANDBOX_AWAIT_HANDOVER",
+        "PI_SELF_UPDATE_COMMAND",
         "PI_CODING_AGENT_DIR",
         "HOME",
         "PATH",
@@ -275,6 +329,114 @@ describe("sandbox-config.schema.json", () => {
         "GH_TOKEN",
       ],
     },
+    {
+      name: "env.set names",
+      node: (schema) => schema.properties?.env?.properties?.set?.propertyNames,
+      layer: (value) => ({ env: { set: { [value]: "1" } } }),
+      samples: [
+        "CI",
+        "EDITOR",
+        "LANG",
+        "GITHUB_TOKEN",
+        "HTTPS_PROXY",
+        "https_proxy",
+        "Http_Proxy",
+        "NO_PROXY",
+        "all_proxy",
+        "NODE_EXTRA_CA_CERTS",
+        "SSL_CERT_FILE",
+        "BASH_ENV",
+        "JAVA_TOOL_OPTIONS",
+        "GH_TOKEN",
+        "GITLAB_HOST",
+        "PI_SANDBOX",
+        "PI_SANDBOX_LAUNCH_ID",
+        "PI_SANDBOX_STATUS",
+        "PI_SANDBOX_AWAIT_HANDOVER",
+        "PI_SELF_UPDATE_COMMAND",
+        "PI_CODING_AGENT_DIR",
+        "HOME",
+        "PATH",
+        "PWD",
+        "path",
+        "1BAD",
+        "A-B",
+        "",
+      ],
+    },
+    {
+      name: "env.set values",
+      node: (schema) => schema.properties?.env?.properties?.set?.additionalProperties,
+      layer: (value) => ({ env: { set: { CI: value } } }),
+      samples: ["1", "", " ", "$HOME/bin", "a=b", "line\nbreak", "nul\u0000inside"],
+    },
+    {
+      name: "services[].name",
+      node: (schema) => schema.properties?.services?.items?.properties?.name,
+      layer: (value) => ({ services: [{ name: value, command: ["x"] }] }),
+      samples: ["db", "a", "cache-2", "a".repeat(31), "a".repeat(32), "2db", "-db", "Db", "db_1", "db.1", ""],
+    },
+    {
+      name: "services[].user",
+      node: (schema) => schema.properties?.services?.items?.properties?.user,
+      layer: (value) => ({ services: [{ name: "db", command: ["x"], user: value }] }),
+      samples: [
+        "1000:1000",
+        "70:70",
+        "1:1",
+        "0:0",
+        "0:1000",
+        "1000:0",
+        "01:1",
+        "1000",
+        "a:b",
+        "1000:1000:1",
+        "2147483647:2147483647",
+        "2147483648:1",
+        "1:2147483648",
+        "999999999:1",
+        "1999999999:1",
+        "2099999999:1",
+        "2147483639:1",
+        "2147483640:1",
+        "9999999999:1",
+        "",
+      ],
+    },
+    ...["volumes", "tmpfs"].map((key) => ({
+      name: `services[].${key}`,
+      node: (schema: SchemaNode) => {
+        const items = schema.properties?.services?.items?.properties?.[key]?.items;
+
+        return key === "volumes" ? items?.properties?.target : items;
+      },
+      layer: (value: string) => ({
+        services: [
+          {
+            name: "db",
+            command: ["x"],
+            [key]: [key === "volumes" ? { name: "data", target: value } : value],
+          },
+        ],
+      }),
+      samples: [
+        "/data",
+        "/var/lib/db",
+        "/",
+        "data",
+        "/data/",
+        "//data",
+        "/a//b",
+        "/a/./b",
+        "/a/..",
+        "/.x",
+        "~/data",
+        "/data:ro",
+        "/a,b",
+        "/a:b/c",
+        "/a/b,c",
+      ],
+    })),
     {
       name: "image.reference",
       node: (schema) => schema.properties?.image?.properties?.reference,
@@ -337,17 +499,31 @@ describe("sandbox-config.schema.json", () => {
 
     expect(rules?.uniqueItems).toBe(true);
     expect(rules?.items?.dependentRequired).toEqual({ template: ["header"] });
-    expect(schema.properties?.mounts?.properties?.sharedCaches?.uniqueItems).toBe(true);
     expect(schema.properties?.image?.dependentRequired).toEqual({
       reference: ["digest"],
       digest: ["reference"],
     });
     expect(validatorAccepts({ image: { reference: "corp/pi:1" } })).toBe(false);
     expect(validatorAccepts({ image: { digest: `sha256:${"a".repeat(64)}` } })).toBe(false);
-    expect(validatorAccepts({ mounts: { sharedCaches: ["~/.npm", "~/.npm/cache"] } })).toBe(false);
+    expect(validatorAccepts({ mounts: { volumes: ["~/.npm", "~/.npm/cache"] } })).toBe(false);
+    expect(
+      validatorAccepts({ mounts: { volumes: ["/opt/a"], binds: [{ source: "/x", target: "/opt/a" }] } }),
+    ).toBe(false);
+    expect(validatorAccepts({ setup: [["npm", "ci"]] })).toBe(true);
     expect(
       validatorAccepts(rule({ template: "Bearer {secret}", header: undefined, placeholder: "pi-sandbox-x" })),
     ).toBe(false);
+  });
+
+  it("refuses in env.allow and env.set the names the launcher sets, the proxy variables by pattern", async () => {
+    const schema = await readSchema();
+    const env = schema.properties?.env?.properties;
+    const reserved = (rules: SchemaNode[] | undefined) =>
+      rules?.find((rule) => rule.not?.enum !== undefined)?.not?.enum;
+    const expected = LAUNCHER_SET_VARIABLES.filter((name) => !PROXY_VARIABLES.includes(name));
+
+    expect(reserved(env?.allow?.items?.allOf)).toEqual(expected);
+    expect(reserved(env?.set?.propertyNames?.allOf)).toEqual(expected);
   });
 
   it("states the numeric bounds and built-in files of the validator", async () => {
@@ -355,6 +531,7 @@ describe("sandbox-config.schema.json", () => {
     const defs = schema.$defs ?? {};
     const vm = schema.properties?.vm?.properties ?? {};
     const port = schema.properties?.credentials?.properties?.rules?.items?.properties?.port;
+    const service = schema.properties?.services?.items?.properties;
     const checks = defs.writeBackCheck?.oneOf ?? [];
     const anyOfs = [defs.writeBackValue, defs.writeBackSettingsValue].map((value) =>
       value?.oneOf?.find((option) => option.properties?.type?.const === "anyOf"),
@@ -363,10 +540,28 @@ describe("sandbox-config.schema.json", () => {
 
     expect(
       Object.fromEntries(
-        Object.entries(vm).map(([key, node]) => [key, { min: node.minimum, max: node.maximum }]),
+        Object.entries(vm)
+          .filter(([key]) => key in VM_BOUNDS)
+          .map(([key, node]) => [key, { min: node.minimum, max: node.maximum }]),
       ),
     ).toEqual(VM_BOUNDS);
+    expect(
+      Object.fromEntries(
+        Object.entries(schema.properties?.resources?.properties ?? {})
+          .filter(([key]) => key in RESOURCE_BOUNDS)
+          .map(([key, node]) => [key, { min: node.minimum, max: node.maximum }]),
+      ),
+    ).toEqual(RESOURCE_BOUNDS);
     expect([port?.minimum, port?.maximum]).toEqual([1, MAX_PORT]);
+    expect(
+      [service?.ready?.properties?.timeoutSeconds, service?.shmMiB].map((node) => [
+        node?.minimum,
+        node?.maximum,
+      ]),
+    ).toEqual([
+      [1, MAX_READY_SECONDS],
+      [RESOURCE_BOUNDS.shmMiB.min, RESOURCE_BOUNDS.shmMiB.max],
+    ]);
     expect(
       [defs.writeBackKeys, defs.writeBackSettingsKeys].map((keys) => keys?.propertyNames?.maxLength),
     ).toEqual([MAX_KEY_CHARS, MAX_KEY_CHARS]);

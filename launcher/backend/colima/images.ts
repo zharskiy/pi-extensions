@@ -3,7 +3,7 @@ import { rm } from "node:fs/promises";
 import { type CommandRunner, errorMessage, LauncherError } from "../../shared/index.ts";
 import { pinnedReference, repositoryOf, tagOf } from "../image-reference.ts";
 import { LABELS } from "../labels.ts";
-import type { ImageInfo, ImageSummary } from "../types.ts";
+import type { BuildOptions, ImageInfo, ImageSummary } from "../types.ts";
 import { type EngineClient, segment } from "./engine-client.ts";
 
 interface EngineImage {
@@ -149,22 +149,18 @@ export const createImageOperations = (client: EngineClient, runner: CommandRunne
     }
   };
 
-  const buildQuery = (tag: string, buildArgs: Record<string, string>) => ({
+  const buildQuery = (tag: string, { args = {}, offline = false }: BuildOptions) => ({
     t: tag,
     rm: true,
     forcerm: true,
     labels: BUILD_LABELS,
-    ...(Object.keys(buildArgs).length === 0 ? {} : { buildargs: JSON.stringify(buildArgs) }),
+    ...(offline ? { networkmode: "none" } : {}),
+    ...(Object.keys(args).length === 0 ? {} : { buildargs: JSON.stringify(args) }),
   });
 
-  const buildImage = async (
-    contextDir: string,
-    tag: string,
-    buildArgs: Record<string, string> = {},
-    progress: (step: string) => void = () => undefined,
-  ) => {
+  const buildImage = async (contextDir: string, tag: string, options: BuildOptions = {}) => {
     const tarPath = `${contextDir}.tar`;
-    const output = buildOutput(progress);
+    const output = buildOutput(options.progress ?? (() => undefined));
 
     try {
       await archiveContext(contextDir, tarPath);
@@ -174,7 +170,7 @@ export const createImageOperations = (client: EngineClient, runner: CommandRunne
           {
             method: "POST",
             path: "/build",
-            query: buildQuery(tag, buildArgs),
+            query: buildQuery(tag, options),
             stream: createReadStream(tarPath),
             contentType: "application/x-tar",
           },

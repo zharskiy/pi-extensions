@@ -72,7 +72,7 @@ describe("resizing the sandbox VM to the configured size", () => {
     const resize = (target: VmTarget) =>
       colima.reconcile(
         { size: target, needs: [] },
-        { busy: async () => busy, report: (notice) => notices.push(notice) },
+        { busy: async () => ({ count: busy, others: [] }), report: (notice) => notices.push(notice) },
       );
     const changes = () =>
       fake.calls.map((call) => call.args.join(" ")).filter((line) => !line.startsWith("status"));
@@ -140,7 +140,7 @@ describe("resizing the sandbox VM to the configured size", () => {
 
     await vm.reconcile(
       { size: { cpus: 2 }, needs: [] },
-      { busy: async () => 0, report: (notice) => notices.push(notice) },
+      { busy: async () => ({ count: 0, others: [] }), report: (notice) => notices.push(notice) },
     );
 
     expect(notices).toEqual([]);

@@ -55,7 +55,9 @@ describe("the host pi of host jobs", () => {
     await writeManagedPi(harness.hostAgentDir, "99.0.0");
 
     expect(await run([], harness.deps)).toBe(0);
-    expect(fake.builds.map((build) => build.args?.PI_VERSION)).toEqual([await testedPiVersion(), "99.0.0"]);
+    const baseBuilds = fake.builds.filter((build) => build.tag === "pi-sandbox-base:local");
+
+    expect(baseBuilds.map((build) => build.args?.PI_VERSION)).toEqual([await testedPiVersion(), "99.0.0"]);
     expect(harness.stderr()).not.toContain("provider host table unavailable");
   });
 
