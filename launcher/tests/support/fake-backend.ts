@@ -13,7 +13,7 @@ import type {
   TerminalSize,
   Vm,
 } from "../../backend/index.ts";
-import { LABELS, networkName, relayName } from "../../backend/index.ts";
+import { isOlderBuild, LABELS, networkName, relayName } from "../../backend/index.ts";
 import { GUEST_PATHS, LauncherError } from "../../shared/index.ts";
 import { fakeUidOf, isFakeScript, runFakeScript } from "./fake-engine.ts";
 
@@ -334,7 +334,7 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
   };
 
   const networks = new Map<string, string>();
-  const foreignNetworks = new Set<string>();
+  const foreignNetworks = new Map<string, Record<string, string>>();
   const removedNetworks = new Set<string>();
   const networkIds = new Map<string, string>();
 
@@ -410,6 +410,11 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
         entry.summary.state === "running" &&
         entry.spec?.network.kind === "internal" &&
         entry.spec.network.name === name,
+    );
+
+  const volumeInUse = (name: string) =>
+    [...containers.values()].some((entry) =>
+      (entry.spec?.mounts ?? []).some((mount) => mount.kind === "volume" && mount.source === name),
     );
 
   const tagsOf = (digest: string) =>
@@ -581,16 +586,10 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
         .map((name) => ({
           name,
           labels: volumeLabels.get(name) ?? {},
-          inUse: [...containers.values()].some((entry) =>
-            (entry.spec?.mounts ?? []).some((mount) => mount.kind === "volume" && mount.source === name),
-          ),
+          inUse: volumeInUse(name),
         })),
     removeVolume: async (name) => {
-      const used = [...containers.values()].some((entry) =>
-        (entry.spec?.mounts ?? []).some((mount) => mount.kind === "volume" && mount.source === name),
-      );
-
-      if (used) {
+      if (volumeInUse(name)) {
         throw new LauncherError(
           `volume ${name} is in use by a sandbox container`,
           "end the pi sessions that use it, then run the command again",
@@ -643,6 +642,28 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
 
       return true;
     },
+    listOlderBuildObjects: async () => ({
+      containers: summaries().filter((summary) => isOlderBuild(summary.name, summary.labels)),
+      volumes: [...volumes].filter((name) => isOlderBuild(name, volumeLabels.get(name) ?? {})),
+      networks: [
+        ...[...networks.entries()].map(([name, owner]) => ({
+          name,
+          labels: { [LABELS.managed]: "true", [LABELS.install]: owner },
+        })),
+        ...[...foreignNetworks.entries()].map(([name, labels]) => ({ name, labels })),
+      ]
+        .filter((network) => isOlderBuild(network.name, network.labels))
+        .map((network) => network.name),
+    }),
+    removeNamedNetwork: async (name) => {
+      if (attached(name) || !foreignNetworks.has(name)) {
+        return false;
+      }
+
+      foreignNetworks.delete(name);
+
+      return true;
+    },
     status: async () => ({ socket: "/fake/docker.sock" }),
   });
 
@@ -657,8 +678,8 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
     return id;
   };
 
-  const plantForeignNetwork = (name: string) => {
-    foreignNetworks.add(name);
+  const plantForeignNetwork = (name: string, labels: Record<string, string> = {}) => {
+    foreignNetworks.set(name, labels);
   };
 
   const dropNetwork = (name: string) => {

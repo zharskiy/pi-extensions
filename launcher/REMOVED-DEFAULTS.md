@@ -78,9 +78,11 @@ A `tls.extraCa` entry `{ "hostStore": true }`, which read the CAs of the macOS S
 
 ## Objects left by an older launcher
 
-This launcher does not see the sessions, containers, networks or volumes an earlier launcher build made: it keeps its launches in a different place and lists, changes and removes only engine objects that carry its install label, which an older launcher did not set. Update the launcher with no pi session running, and remove the old objects by hand.
+This launcher does not see the sessions of an earlier launcher build: it keeps its launches in a different place, and lists and changes only engine objects that carry its install label, which an older launcher did not set. Update the launcher with no pi session running.
 
-The objects that stay in the sandbox VM after the update are the networks `pi-sandbox-machine` and `pi-sandbox-<id>`, the relays `pi-sandbox-relay` and `pi-sandbox-relay-<id>`, the pod `pi-sandbox-pod`, the services `pi-sandbox-service-<name>`, and the agent, cache and shared volumes. They do no harm, but they take space. Remove them with the engine's own tools, or delete and recreate the sandbox VM.
+The daily collection removes what an older build left in the sandbox VM: every stopped container, volume and network whose name starts with `pi-sandbox-`, that carries the `pi-sandbox.managed=true` label and that has no install label at all (the networks `pi-sandbox-machine` and `pi-sandbox-<id>`, the relays, the pod, the services, and the agent and cache volumes). It tries each volume and network and the engine refuses the ones still in use, so a container that still runs stays, with its volumes and network, until a later day's collection after it stops. Objects labelled by another install, and objects without the managed label, are never touched. An old agent volume holds the in-sandbox settings of that build, and they go with it.
+
+Shared volumes (`pi-sandbox-shared-*`) of an older build are never removed by the daily collection, nor by `pi sandbox reset --services` or the uninstall, which remove only volumes with this install's label. Remove them with the engine's own tools, or delete and recreate the sandbox VM.
 
 An old shared volume can have the same name as a new `mounts.volumes` entry, since the name is built from the same state dir hash. The launcher then mounts and reuses it, with its content, but never lists or removes it.
 

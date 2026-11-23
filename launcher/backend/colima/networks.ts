@@ -1,6 +1,6 @@
 import { LauncherError } from "../../shared/index.ts";
 import { networkName } from "../install.ts";
-import { LABELS } from "../labels.ts";
+import { isOlderBuild, LABELS } from "../labels.ts";
 import { labelFilters } from "./container-body.ts";
 import { type EngineClient, segment } from "./engine-client.ts";
 
@@ -113,6 +113,9 @@ export const createNetworkOperations = (client: EngineClient, install: string) =
     return subnetOf(name, network);
   };
 
+  const deleteNetwork = (network: string) =>
+    client.call({ method: "DELETE", path: `/networks/${segment(network)}` }, [403, 404, 409]);
+
   const removeNetwork = async () => {
     const listed = await client.json<Array<{ Name?: string }>>({
       method: "GET",
@@ -120,16 +123,26 @@ export const createNetworkOperations = (client: EngineClient, install: string) =
       query: { filters: labelFilters(labels) },
     });
 
-    const answers = await Promise.all(
-      listed.map((network) =>
-        client.call({ method: "DELETE", path: `/networks/${segment(network.Name ?? "")}` }, [403, 404, 409]),
-      ),
-    );
+    const answers = await Promise.all(listed.map((network) => deleteNetwork(network.Name ?? "")));
 
     return answers.some((answer) => answer.status < 300);
   };
 
-  return { name, prepareNetwork, subnet, removeNetwork };
+  const listOlderBuildNetworks = async () => {
+    const listed = await client.json<Array<{ Name?: string; Labels?: Record<string, string> | null }>>({
+      method: "GET",
+      path: "/networks",
+    });
+
+    return listed
+      .map((network) => ({ name: network.Name ?? "", labels: network.Labels ?? {} }))
+      .filter((network) => isOlderBuild(network.name, network.labels))
+      .map((network) => network.name);
+  };
+
+  const removeNamedNetwork = async (network: string) => (await deleteNetwork(network)).status < 300;
+
+  return { name, prepareNetwork, subnet, removeNetwork, listOlderBuildNetworks, removeNamedNetwork };
 };
 
 export type NetworkOperations = ReturnType<typeof createNetworkOperations>;

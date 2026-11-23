@@ -65,7 +65,7 @@ cli/launches.ts                begin and finish a launch (registered under the f
 cli/busy.ts                    busyLaunches, the live launches of this state dir, and vmSessions, the VM's busy count that adds the running agent containers of other installs and names them
 cli/ground.ts                  the ground lock with its waiting line, the install's services started under it, the idle teardown of services, relay, network and proxy and the idle proxy stop (both wait for the lock unless a launch of this state dir is registered), and wipeServices for reset --services
 cli/prepare.ts                 the repository's preparation lock with its waiting line, its if-free form for the opportunistic removals, its wait-unless-another-session form for the folder's last session, and the setup commands run in the agent container
-cli/sweep.ts                   removeRepoSandbox (agent containers, created folders, host sessions), the sweep of ended launches' containers, forgetting a folder that is gone, the orphan sweep with the idle ground stop and build leftovers, and the daily collection
+cli/sweep.ts                   removeRepoSandbox (agent containers, created folders, host sessions), the sweep of ended launches' containers, forgetting a folder that is gone, the orphan sweep with the idle ground stop and build leftovers, and the daily collection with the managed `pi-sandbox-*` objects of older builds that have no install label, shared volumes kept
 cli/derive.ts                  the host side of a launch: host pi files, derivation (host tools exclude the sandbox roots), the CAs the image trusts, notices
 cli/sandbox-proxy.ts           the install's proxy input and token, opened under the ground lock, and the denial summary at exit with a reason and fix per kind (also the doctor's rule hints and blocked warnings)
 cli/mcp-sign-in.ts             the launch-start MCP sign-in on the host
@@ -143,7 +143,7 @@ workspace/git/command.ts       inert options for the launcher's own git calls
 ```
 backend/index.ts               public surface
 backend/types.ts               the Backend contract with its VM
-backend/labels.ts              every pi-sandbox.* label key, the container roles and isSession
+backend/labels.ts              every pi-sandbox.* label key, the container roles, isSession and isOlderBuild (a `pi-sandbox-*` name with the managed label and no install label)
 backend/image-reference.ts     image reference parsing
 backend/install.ts             the install id, the install's network and relay names, and the services alias
 backend/exec-capture.ts        a non-tty exec with collected output
@@ -155,8 +155,8 @@ backend/colima/engine-client.ts  the engine HTTP client over the socket, with it
 backend/colima/container-body.ts  container create bodies from a spec, with the capability, privilege, process, open files and /dev/shm limits
 backend/colima/exec-session.ts exec streams with backpressure, ended quietly when the host output closes
 backend/colima/images.ts       image pull, build (with the output tail of a failed build) and removal
-backend/colima/volumes.ts      volume operations
-backend/colima/networks.ts     the install's network: inspect, the managed check, creation (internal, no IPv6, isolated gateway, with its engine version check), the subnet, removal
+backend/colima/volumes.ts      volume operations, with the listing of older builds' volumes
+backend/colima/networks.ts     the install's network: inspect, the managed check, creation (internal, no IPv6, isolated gateway, with its engine version check), the subnet, removal, and the listing and removal by name of older builds' networks
 backend/colima/relay.ts        the install's one relay: joins the install's network as pi-sandbox-proxy on port 3128 and forwards to the proxy's host port, labelled with the hash of its inputs (the network's subnet included) and replaced when they change
 backend/colima/relay-script.ts the relay's node script: serves only clients inside the install network's subnet, one upstream connection per client, the preamble first
 backend/colima/vm.ts           VM start (at the vm config size when stopped), size, inspect, apply for the setup, the launch reconcile of shares and size in one restart, and stop
@@ -174,7 +174,7 @@ container/index.ts             public surface
 container/spec.ts              the container spec: mounts, the install's network, the forwarder's service ports and host, service volumes left out of the hand-over, env (env.set under the launcher's variables, the hand-over wait flag), the env.allow names env.set leaves forwarded, labels, the mount table check (no target twice, no mount over the image's paths), the overlay backstop
 container/volumes.ts           the volume plan: agent, overlay and mounts.volumes names, targets and labels; userVolume names a volume shared by every folder of the state dir
 container/git-overlay.ts       the git overlay plan and its ready() step before a start: layout re-check, hooks dirs, the baseline and the pending report
-container/names.ts             container and volume names (agent, cache and shared volumes), the pod and service container names
+container/names.ts             container and volume names (agent, cache and shared volumes, with isSharedVolumeName), the pod and service container names
 container/services.ts          ensureServices and stopServices for the install: one pod on the install's network under the services alias, the service specs, the volume hand-over to each service user, the ready wait with its log tail, decide (fresh, refresh or keep by services hash) and the stop of all services at once; serviceVolumes for reset --services
 container/lifecycle.ts         startLaunchContainer and removeLaunchContainer: one container per launch, mount points, volume hand-over (chownRoots, also for the pod) (fatal when the entrypoint waits for it, a warning otherwise), the wait for the entrypoint's ready marker and the forwarder's status, the exited-during-startup error
 container/run-pi.ts            pi through exec, the pty only for a terminal, signals and resize, the terminal bridges

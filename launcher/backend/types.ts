@@ -216,5 +216,11 @@ export interface Backend {
   prepareRelay(request: RelayRequest): Promise<string>;
   prepareNetwork(): Promise<string>;
   removeNetwork(): Promise<boolean>;
+  listOlderBuildObjects(): Promise<{
+    containers: ContainerSummary[];
+    volumes: string[];
+    networks: string[];
+  }>;
+  removeNamedNetwork(name: string): Promise<boolean>;
   status(): Promise<Record<string, string>>;
 }

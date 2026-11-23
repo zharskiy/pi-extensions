@@ -17,6 +17,8 @@ export const cacheVolumeName = (install: string, repoRoot: string, path: string)
 export const configVolumeName = (stateDir: string, identity: string) =>
   `pi-sandbox-shared-${installIdOf(stateDir)}-${pathHash(identity)}`;
 
+export const isSharedVolumeName = (name: string) => name.startsWith("pi-sandbox-shared-");
+
 export const podName = (install: string) => `pi-sandbox-pod-${install}`;
 
 export const serviceContainerName = (install: string, service: string) =>

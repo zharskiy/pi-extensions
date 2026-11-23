@@ -8,7 +8,7 @@ import {
   roleOf,
   type VolumeSummary,
 } from "../backend/index.ts";
-import { discardContainer, listLauncherContainers } from "../container/index.ts";
+import { discardContainer, isSharedVolumeName, listLauncherContainers } from "../container/index.ts";
 import { type Launch, launchState, pruneLaunches, withLaunchLock } from "../grants/index.ts";
 import { collectImages, removeBuildLeftovers } from "../image/index.ts";
 import {
@@ -187,9 +187,9 @@ const engineObjects = async (engine: Backend | undefined) => {
   return { agents, hashes: containers.flatMap(repoHashOf) };
 };
 
-const removedVolume = (backend: Backend, volume: VolumeSummary) =>
-  backend.removeVolume(volume.name).then(
-    () => [volume],
+const removedVolume = (backend: Backend, name: string) =>
+  backend.removeVolume(name).then(
+    () => [`removed volume ${name}`],
     () => [],
   );
 
@@ -214,10 +214,34 @@ const pruneVolumes = async (stateDir: string, backend: Backend) => {
   const volumes = await backend.listVolumes();
   const verdicts = await Promise.all(volumes.map((volume) => orphaned(stateDir, volume)));
   const removed = await Promise.all(
-    volumes.filter((_volume, index) => verdicts[index]).map((volume) => removedVolume(backend, volume)),
+    volumes.filter((_volume, index) => verdicts[index]).map((volume) => removedVolume(backend, volume.name)),
   );
 
-  return removed.flat().map((volume) => `removed volume ${volume.name}`);
+  return removed.flat();
+};
+
+const removedContainer = (backend: Backend, container: ContainerSummary) =>
+  backend.removeContainer(container.id).then(
+    () => [`removed container ${container.name}`],
+    () => [],
+  );
+
+const removedNetwork = (backend: Backend, name: string) =>
+  backend.removeNamedNetwork(name).then(
+    (removed) => (removed ? [`removed network ${name}`] : []),
+    () => [],
+  );
+
+const pruneOlderBuilds = async (backend: Backend) => {
+  const listed = await backend.listOlderBuildObjects();
+  const stopped = listed.containers.filter((container) => ["stopped", "created"].includes(container.state));
+  const containers = await Promise.all(stopped.map((container) => removedContainer(backend, container)));
+
+  const unshared = listed.volumes.filter((name) => !isSharedVolumeName(name));
+  const volumes = await Promise.all(unshared.map((name) => removedVolume(backend, name)));
+  const networks = await Promise.all(listed.networks.map((name) => removedNetwork(backend, name)));
+
+  return [...containers.flat(), ...volumes.flat(), ...networks.flat()];
 };
 
 const gcDue = async (deps: CliDeps) => {
@@ -236,11 +260,12 @@ const collectGarbage = async (deps: CliDeps, backend: Backend | undefined) => {
   }
 
   const volumes = await pruneVolumes(stateDir, engine);
+  const olderBuilds = await pruneOlderBuilds(engine);
   const images = await collectImages(engine, stateDir);
 
   await writeJsonFile(stateLayout(stateDir).gcRecord, { lastRun: deps.now() });
 
-  return [...volumes, ...images.map((image) => `removed image ${image}`)];
+  return [...volumes, ...olderBuilds, ...images.map((image) => `removed image ${image}`)];
 };
 
 const sweepGround = async (deps: CliDeps, backend: Backend | undefined, signal?: AbortSignal) => {

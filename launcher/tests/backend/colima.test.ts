@@ -963,6 +963,89 @@ describe("colima volumes", () => {
   });
 });
 
+describe("colima objects of older builds", () => {
+  const MANAGED = { [LABELS.managed]: "true" };
+
+  const plantContainer = (
+    engine: Awaited<ReturnType<typeof startEngine>>,
+    name: string,
+    labels: Record<string, string>,
+    state: "exited" | "running" = "exited",
+  ) => {
+    engine.containers.set(name, {
+      Id: name,
+      Name: name,
+      State: state,
+      body: { Image: IMAGE, Labels: labels },
+      logs: [],
+      exitCode: 0,
+    });
+  };
+
+  it("lists only the managed pi-sandbox objects with no install label, and removes such a network by name", async () => {
+    const engine = await startEngine();
+    const backend = backendFor(engine);
+
+    await backend.ensureVolume("pi-sandbox-agent-current");
+
+    engine.volumes.set("pi-sandbox-agent-old", Buffer.alloc(0));
+
+    engine.volumeLabels.set("pi-sandbox-agent-old", MANAGED);
+
+    engine.volumes.set("pi-sandbox-agent-unmanaged", Buffer.alloc(0));
+
+    engine.volumeLabels.set("pi-sandbox-agent-unmanaged", {});
+
+    engine.volumes.set("project-data", Buffer.alloc(0));
+
+    engine.volumeLabels.set("project-data", MANAGED);
+
+    engine.networks.set("pi-sandbox-network-old", {
+      body: { Name: "pi-sandbox-network-old", Labels: MANAGED },
+      connected: [],
+    });
+
+    engine.networks.set("pi-sandbox-network-unmanaged", {
+      body: { Name: "pi-sandbox-network-unmanaged", Labels: {} },
+      connected: [],
+    });
+
+    plantContainer(engine, "pi-sandbox-agent-old", MANAGED);
+
+    plantContainer(engine, "pi-sandbox-agent-now", { ...MANAGED, [LABELS.install]: INSTALL });
+
+    plantContainer(engine, "pi-sandbox-agent-unmanaged", {});
+
+    plantContainer(engine, "project-app", MANAGED);
+
+    await backend.prepareNetwork();
+
+    const listed = await backend.listOlderBuildObjects();
+
+    expect(listed.volumes).toEqual(["pi-sandbox-agent-old"]);
+    expect(listed.networks).toEqual(["pi-sandbox-network-old"]);
+    expect(listed.containers.map((container) => container.name)).toEqual(["pi-sandbox-agent-old"]);
+    await expect(backend.removeNamedNetwork("pi-sandbox-network-old")).resolves.toBe(true);
+    expect(engine.networks.has("pi-sandbox-network-old")).toBe(false);
+    expect(engine.networks.has(NETWORK)).toBe(true);
+  });
+
+  it("resolves false when the engine refuses to remove a network a running container uses", async () => {
+    const engine = await startEngine();
+    const backend = backendFor(engine);
+
+    plantContainer(engine, "pi-sandbox-agent-busy", MANAGED, "running");
+
+    engine.networks.set("pi-sandbox-network-busy", {
+      body: { Name: "pi-sandbox-network-busy", Labels: MANAGED },
+      connected: [{ container: "pi-sandbox-agent-busy", address: "10.0.0.2" }],
+    });
+
+    await expect(backend.removeNamedNetwork("pi-sandbox-network-busy")).resolves.toBe(false);
+    expect(engine.networks.has("pi-sandbox-network-busy")).toBe(true);
+  });
+});
+
 describe("colima sandbox network", () => {
   it("creates the sandbox network with no repository label and keeps it on a second call", async () => {
     const engine = await startEngine();

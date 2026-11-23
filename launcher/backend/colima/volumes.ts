@@ -1,5 +1,5 @@
 import { LauncherError } from "../../shared/index.ts";
-import { LABELS } from "../labels.ts";
+import { isOlderBuild, LABELS } from "../labels.ts";
 import type { VolumeSummary } from "../types.ts";
 import { labelFilters } from "./container-body.ts";
 import { type EngineClient, segment } from "./engine-client.ts";
@@ -58,6 +58,17 @@ export const createVolumeOperations = (client: EngineClient, install: string) =>
     }));
   };
 
+  const listOlderBuildVolumes = async () => {
+    const listed = await client.json<{ Volumes?: EngineVolume[] | null }>({
+      method: "GET",
+      path: "/volumes",
+    });
+
+    return (listed.Volumes ?? [])
+      .filter((volume) => isOlderBuild(volume.Name, volume.Labels ?? {}))
+      .map((volume) => volume.Name);
+  };
+
   const removeVolume = async (name: string) => {
     const response = await client.call({ method: "DELETE", path: `/volumes/${segment(name)}` }, [404, 409]);
 
@@ -69,5 +80,5 @@ export const createVolumeOperations = (client: EngineClient, install: string) =>
     }
   };
 
-  return { ensureVolume, listVolumes, removeVolume };
+  return { ensureVolume, listVolumes, listOlderBuildVolumes, removeVolume };
 };

@@ -11,7 +11,7 @@ export {
   removeLaunchContainer,
   startLaunchContainer,
 } from "./lifecycle.ts";
-export { configVolumeName } from "./names.ts";
+export { configVolumeName, isSharedVolumeName } from "./names.ts";
 export type { HostTerminal, SignalSource } from "./run-pi.ts";
 export { runPi } from "./run-pi.ts";
 export {
