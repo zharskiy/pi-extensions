@@ -1256,6 +1256,35 @@ describe("pi sandbox doctor file cache", () => {
     });
   });
 
+  it.each([
+    [
+      "no process is found",
+      { state: "no-vm", looked: LOOKED },
+      "the VM's open files cannot be counted: no Mac process holds its disk; the release is off (vm.releaseFileCache)",
+    ],
+    [
+      "the lookup failed",
+      { state: "lookup-failed", looked: LOOKED },
+      "the VM's open files cannot be counted: looking for its process timed out or could not run; the release is off (vm.releaseFileCache)",
+    ],
+    [
+      "the limits cannot be read",
+      { state: "no-limit", count: 1200 },
+      "the release point cannot be read from kern.maxfilesperproc and kern.maxfiles; the release is off (vm.releaseFileCache)",
+    ],
+  ] satisfies Array<[string, VmFileCache, string]>)(
+    "passes when %s while vm.releaseFileCache is off",
+    async (_, reading, detail) => {
+      const { found } = await fileCacheCheck(
+        { readFileCache: async () => reading },
+        { userConfig: { vm: { releaseFileCache: false } } },
+      );
+
+      expect(found).toMatchObject({ status: "ok", detail });
+      expect(found?.hint).toBeUndefined();
+    },
+  );
+
   it("skips off macOS, without a probe and once the vm stage failed, reading nothing", async () => {
     const reads: string[] = [];
     const readFileCache = async (): Promise<VmFileCache> => {

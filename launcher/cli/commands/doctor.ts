@@ -232,6 +232,41 @@ const countedCheck = (reading: Counted, releasing: boolean) => {
   );
 };
 
+type Unread = Exclude<VmFileCache, { state: "counted" }>;
+
+const RELEASE_OFF = "the release is off (vm.releaseFileCache)";
+
+const UNREAD_WHILE_OFF: Record<Unread["state"], string> = {
+  "no-vm": "the VM's open files cannot be counted: no Mac process holds its disk",
+  "lookup-failed":
+    "the VM's open files cannot be counted: looking for its process timed out or could not run",
+  "no-limit": "the release point cannot be read from kern.maxfilesperproc and kern.maxfiles",
+};
+
+const unreadCheck = (reading: Unread) => {
+  if (reading.state === "no-vm") {
+    return warned("the file cache release cannot find the VM's process, so it does nothing", {
+      hint: `it looks for the Mac process that holds ${reading.looked.join(" or ")}`,
+    });
+  }
+
+  if (reading.state === "lookup-failed") {
+    return warned(
+      "looking for the VM's process timed out or could not run, so the file cache release does nothing",
+      {
+        hint: `it looks with lsof for the Mac process that holds ${reading.looked.join(" or ")}; pi sandbox stop frees the VM's open files`,
+      },
+    );
+  }
+
+  return warned(
+    "kern.maxfilesperproc and kern.maxfiles could not be read, so the file cache release does nothing",
+    {
+      hint: "run sysctl kern.maxfilesperproc kern.maxfiles on the Mac to see why",
+    },
+  );
+};
+
 const fileCacheCheck = async (deps: CliDeps, context: LaunchContext, vm: Vm, running?: boolean) => {
   if (deps.platform !== "darwin") {
     return skipped("only counted on macOS");
@@ -253,31 +288,13 @@ const fileCacheCheck = async (deps: CliDeps, context: LaunchContext, vm: Vm, run
     );
   }
 
-  if (reading.state === "no-vm") {
-    return warned("the file cache release cannot find the VM's process, so it does nothing", {
-      hint: `it looks for the Mac process that holds ${reading.looked.join(" or ")}`,
-    });
+  const releasing = context.effective.config.vm.releaseFileCache;
+
+  if (reading.state !== "counted") {
+    return releasing ? unreadCheck(reading) : passed(`${UNREAD_WHILE_OFF[reading.state]}; ${RELEASE_OFF}`);
   }
 
-  if (reading.state === "lookup-failed") {
-    return warned(
-      "looking for the VM's process timed out or could not run, so the file cache release does nothing",
-      {
-        hint: `it looks with lsof for the Mac process that holds ${reading.looked.join(" or ")}; pi sandbox stop frees the VM's open files`,
-      },
-    );
-  }
-
-  if (reading.state === "no-limit") {
-    return warned(
-      "kern.maxfilesperproc and kern.maxfiles could not be read, so the file cache release does nothing",
-      {
-        hint: "run sysctl kern.maxfilesperproc kern.maxfiles on the Mac to see why",
-      },
-    );
-  }
-
-  return countedCheck(reading, context.effective.config.vm.releaseFileCache);
+  return countedCheck(reading, releasing);
 };
 
 const sharesPassed = passed("the sandbox VM shares every path this repository needs");
