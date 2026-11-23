@@ -141,7 +141,7 @@ Install pi first here too, with pi's own installer or `npm install -g`: the laun
    allowed docs.example.com
    ```
 
-5. If something does not work, run `pi sandbox doctor`. It reports each check by area (host, sandbox, network, credentials, leak sweep), puts the reasons and a `hint:` under each problem, lists the launch notices at the end and closes with one `result:` line. The credential rules that pass share one line; `--verbose` lists each.
+5. If something does not work, run `pi sandbox doctor`. It reports each check by area (host, sandbox, network, credentials, leak sweep), puts the reasons and a `hint:` under each problem, lists the launch notices at the end and closes with one `result:` line. The credential rules that pass share one line; `--verbose` lists each. The leak sweep does not check `env.set` values that match the config and names the secret-looking ones it skipped, so it does not catch a secret written into `env.set`.
 
 ## Everyday use
 

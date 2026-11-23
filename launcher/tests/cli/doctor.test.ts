@@ -655,6 +655,20 @@ describe("pi sandbox doctor", () => {
     });
   });
 
+  it("passes the sweep over secret-named env.set variables that hold the configured value, and names them", async () => {
+    const { code, stdout } = await doctorWith({
+      userConfig: { env: { set: { GIT_CONFIG_KEY_0: "url.https://git.example.internal/.insteadOf" } } },
+      probes: { env: "TERM=xterm\nGIT_CONFIG_KEY_0=url.https://git.example.internal/.insteadOf\n" },
+    });
+
+    expect(check(stdout, "credential sweep")).toMatchObject({
+      status: "ok",
+      detail:
+        "no credential in the environment, auth.json or mcp.json; env.set values not checked: GIT_CONFIG_KEY_0",
+    });
+    expect(code).toBe(0);
+  });
+
   it("removes only its own container when another launch of the repository is live", async () => {
     const port = await healthServer(200);
     const fake = createFakeBackend({ exec: answering({}) });

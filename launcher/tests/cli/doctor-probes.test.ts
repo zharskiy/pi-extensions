@@ -59,4 +59,66 @@ describe("sweepCredentials", () => {
 
     expect(await sweepCredentials(target, TOKEN)).toMatchObject({ status: "ok" });
   });
+
+  const GIT_REWRITE = {
+    GIT_CONFIG_COUNT: "2",
+    GIT_CONFIG_KEY_0: "url.https://git.example.internal/.insteadOf",
+    GIT_CONFIG_VALUE_0: "git@git.example.internal:",
+    GIT_CONFIG_KEY_1: "url.https://git.example.internal/.insteadOf",
+    GIT_CONFIG_VALUE_1: "ssh://git@git.example.internal/",
+  };
+
+  const envText = (env: Record<string, string>) =>
+    Object.entries(env)
+      .map(([name, value]) => `${name}=${value}\n`)
+      .join("");
+
+  it("passes the env.set values of the config and names the secret-looking ones it did not check", async () => {
+    const target = await envOf(`TERM=xterm\n${envText(GIT_REWRITE)}`);
+
+    expect(await sweepCredentials(target, TOKEN, GIT_REWRITE)).toEqual({
+      status: "ok",
+      detail:
+        "no credential in the environment, auth.json or mcp.json; env.set values not checked: GIT_CONFIG_KEY_0, GIT_CONFIG_KEY_1",
+    });
+  });
+
+  it("passes and names a token that env.set sets to the value inside", async () => {
+    const configured = { NPM_TOKEN: "npm_real" };
+    const target = await envOf(envText(configured));
+
+    expect(await sweepCredentials(target, TOKEN, configured)).toMatchObject({
+      status: "ok",
+      detail:
+        "no credential in the environment, auth.json or mcp.json; env.set values not checked: NPM_TOKEN",
+    });
+  });
+
+  it("keeps the passing detail when env.set sets no secret-looking name", async () => {
+    const configured = { CI: "1" };
+    const target = await envOf(`TERM=xterm\n${envText(configured)}`);
+
+    expect(await sweepCredentials(target, TOKEN, configured)).toMatchObject({
+      status: "ok",
+      detail: "no credential in the environment, auth.json or mcp.json",
+    });
+  });
+
+  it("fails an env.set name whose value inside differs from the config", async () => {
+    const target = await envOf(envText({ ...GIT_REWRITE, GIT_CONFIG_KEY_0: "real-secret-value-1234567890" }));
+
+    expect(await sweepCredentials(target, TOKEN, GIT_REWRITE)).toMatchObject({
+      status: "fail",
+      reasons: ["environment variable GIT_CONFIG_KEY_0 holds a value other than the placeholder"],
+    });
+  });
+
+  it("fails a secret-named variable that env.set does not set", async () => {
+    const target = await envOf(`${envText(GIT_REWRITE)}GATEWAY_API_KEY=real-secret-value-1234567890\n`);
+
+    expect(await sweepCredentials(target, TOKEN, GIT_REWRITE)).toMatchObject({
+      status: "fail",
+      reasons: ["environment variable GATEWAY_API_KEY holds a value other than the placeholder"],
+    });
+  });
 });

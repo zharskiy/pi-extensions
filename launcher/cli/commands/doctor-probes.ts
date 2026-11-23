@@ -143,23 +143,41 @@ const foreignMcpPaths = (mcp: unknown) =>
     .filter((leaf) => isMcpSecret(leaf.path) && !isPlaceholderValue(leaf.value))
     .map((leaf) => leaf.path);
 
-const envEntries = (output: string) =>
+interface EnvEntry {
+  name: string;
+  value: string;
+}
+
+const envEntries = (output: string): EnvEntry[] =>
   output
     .split("\n")
     .filter((line) => line.includes("="))
     .map((line) => ({ name: line.slice(0, line.indexOf("=")), value: line.slice(line.indexOf("=") + 1) }));
 
-const secretEnvNames = (output: string) =>
-  envEntries(output)
-    .filter(({ name, value }) => isSecretName(name) && !isPlaceholderValue(value))
+const isConfiguredValue = (configured: Record<string, string>, { name, value }: EnvEntry) =>
+  Object.hasOwn(configured, name) && configured[name] === value;
+
+const isSecretEnvValue = (entry: EnvEntry) => isSecretName(entry.name) && !isPlaceholderValue(entry.value);
+
+const secretEnvNames = (entries: EnvEntry[], configured: Record<string, string>) =>
+  entries
+    .filter((entry) => isSecretEnvValue(entry) && !isConfiguredValue(configured, entry))
     .map(({ name }) => name);
 
-const tokenEnvNames = (output: string, proxyToken: string | undefined) =>
+const skippedSetNames = (entries: EnvEntry[], configured: Record<string, string>) =>
+  entries
+    .filter((entry) => isSecretEnvValue(entry) && isConfiguredValue(configured, entry))
+    .map(({ name }) => name);
+
+const CLEAN_SWEEP = "no credential in the environment, auth.json or mcp.json";
+
+const cleanSweepDetail = (skipped: string[]) =>
+  skipped.length === 0 ? CLEAN_SWEEP : `${CLEAN_SWEEP}; env.set values not checked: ${skipped.join(", ")}`;
+
+const tokenEnvNames = (entries: EnvEntry[], proxyToken: string | undefined) =>
   proxyToken === undefined
     ? []
-    : envEntries(output)
-        .filter(({ value }) => value.includes(proxyToken))
-        .map(({ name }) => name);
+    : entries.filter(({ value }) => value.includes(proxyToken)).map(({ name }) => name);
 
 const readGuestJson = async (target: ProbeTarget, path: string) => {
   const file = await execText(target, ["cat", path]);
@@ -167,20 +185,25 @@ const readGuestJson = async (target: ProbeTarget, path: string) => {
   return file.code === 0 ? parsedJson(file.stdout) : {};
 };
 
-export const sweepCredentials = async (target: ProbeTarget, proxyToken?: string) => {
+export const sweepCredentials = async (
+  target: ProbeTarget,
+  proxyToken?: string,
+  configured: Record<string, string> = {},
+) => {
   const [env, auth, mcp] = await Promise.all([
     execText(target, ["env"]),
     readGuestJson(target, GUEST_AUTH_FILE),
     readGuestJson(target, GUEST_MCP_FILE),
   ]);
+  const entries = envEntries(env.stdout);
   const problems = [
     ...(env.code === 0 ? [] : [`env exited ${env.code}`]),
     ...(auth === undefined ? [`${GUEST_AUTH_FILE} is not JSON`] : []),
     ...(mcp === undefined ? [`${GUEST_MCP_FILE} is not JSON`] : []),
-    ...secretEnvNames(env.stdout).map(
+    ...secretEnvNames(entries, configured).map(
       (name) => `environment variable ${name} holds a value other than the placeholder`,
     ),
-    ...tokenEnvNames(env.stdout, proxyToken).map(
+    ...tokenEnvNames(entries, proxyToken).map(
       (name) => `environment variable ${name} holds the proxy token, which only the relay may hold`,
     ),
     ...foreignAuthPaths(auth).map(
@@ -192,7 +215,7 @@ export const sweepCredentials = async (target: ProbeTarget, proxyToken?: string)
   ];
 
   return problems.length === 0
-    ? passed("no credential in the environment, auth.json or mcp.json")
+    ? passed(cleanSweepDetail(skippedSetNames(entries, configured)))
     : failed(
         `${problems.length} finding${problems.length === 1 ? "" : "s"} in the environment, auth.json or mcp.json`,
         { reasons: problems },
