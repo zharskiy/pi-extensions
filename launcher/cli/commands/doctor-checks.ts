@@ -24,7 +24,18 @@ const LAYOUT: Array<[Section, string[]]> = [
   ["host", ["user config", "host pi", "provider hosts", "sessions", "host side"]],
   [
     "sandbox",
-    ["vm shares", "vm", "sandbox", "vm size", "image", "container", "sync", "sessions share", "probes"],
+    [
+      "vm shares",
+      "vm",
+      "sandbox",
+      "vm size",
+      "file cache",
+      "image",
+      "container",
+      "sync",
+      "sessions share",
+      "probes",
+    ],
   ],
   [
     "network",

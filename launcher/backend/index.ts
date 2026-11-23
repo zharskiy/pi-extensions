@@ -25,6 +25,7 @@ export type {
   VmApplied,
   VmBusy,
   VmDesired,
+  VmFileCache,
   VmInspect,
   VmPath,
   VmPhase,

@@ -84,7 +84,7 @@ cli/commands/uninstall.ts      the hidden __uninstall command uninstall.sh runs:
 cli/commands/vm-shares.ts      the hidden __vm-shares command: the shared workspace roots that exist, or the home, whose first line install.sh takes as the smoke folder
 cli/commands/smoke-doctor.ts   the hidden __smoke-doctor command install.sh runs: the doctor, exit 3 when the sandbox part was skipped
 cli/commands/init.ts           pi sandbox init: --yes, CI and terminal checks, builds the UI and effects, and picks the front end (the wizard, rich or plain, or the lines of --yes)
-cli/commands/doctor.ts         pi sandbox doctor: stages, probes and host checks as checks by section, the denials matched to each rule, the blocked warnings, captured notices and the progress line
+cli/commands/doctor.ts         pi sandbox doctor: stages, probes and host checks as checks by section, the vm size and file cache checks, the denials matched to each rule, the blocked warnings, captured notices and the progress line
 cli/commands/doctor-probes.ts  the doctor's checks inside the container; the credential sweep skips the config's own `env.set` values and names the secret-named ones; a rule whose credential was denied warns, one the proxy refused says why, a certificate not yet valid names the VM clock
 cli/commands/doctor-host.ts    the doctor's checks on the host
 cli/commands/doctor-checks.ts  the check data model: result types and builders, the section and check order, the tally and verdict
@@ -163,7 +163,7 @@ backend/colima/vm.ts           VM start (at the vm config size when stopped), si
 backend/colima/size.ts         the VM size colima reports (status --json, colima.yaml), the size flags of a start, the cold-start size and the shrink notice
 backend/colima/shares.ts       VM shares: coverage, the shares a launch adds, the mount list of a restart and its check
 backend/colima/vm-trust.ts     the tls.extraCa certificates in the VM's trust store, engine restart when idle
-backend/colima/file-cache.ts   the VM's file cache watch: open files of the VM's Mac process, the host limit, the drop_caches release
+backend/colima/file-cache.ts   the VM's file cache watch: open files of the VM's Mac process found by its disk names, the host limit, the drop_caches release, and the read-only reading the doctor shows
 backend/colima/colima-yaml.ts  the lima.yaml and colima.yaml mounts reader and the colima.yaml size reader
 ```
 
@@ -390,7 +390,7 @@ tests/backend/colima-vm.test.ts      VM start
 tests/backend/colima-shares.test.ts  VM shares, the workspaceRoots reconcile (foreign sessions, one-boot start, nested shares, unreadable lima.yaml), __vm-shares
 tests/backend/colima-size.test.ts    VM size and the restart to the vm config size
 tests/backend/colima-apply.test.ts   VM inspect, apply (create, defer, restart), the launch reconcile of shares and size together, and the cold start at the vm config size
-tests/backend/colima-file-cache.test.ts  the file cache watch: limit, VM process lookup among several holders and every 5 minutes, timed-out count, release command, rate limit, busy VM lock, stop waiting for a release
+tests/backend/colima-file-cache.test.ts  the file cache watch: limit, VM process lookup by either disk name, among several holders and every 5 minutes, a failed lookup kept apart from none found, the read-only reading, timed-out count, release command, rate limit, busy VM lock, stop waiting for a release
 tests/backend/colima-trust.test.ts   the tls.extraCa certificates in the VM trust store
 tests/backend/vm-decision.test.ts    each outcome of vmDecision and whenBusy
 tests/container/spec.test.ts         the container spec
@@ -454,7 +454,7 @@ tests/cli/launch-services.test.ts    a launch with services: the order pod, serv
 tests/cli/services-stop.test.ts      the services stopped by the sweep, reset --services and pi sandbox stop, and left alone by a plain reset and while a session runs
 tests/cli/installs.test.ts           two installs on one engine: each brings up, tears down and sweeps only its own objects, and the VM stop counts both
 tests/cli/ground-lock.test.ts        the ground lock: its waiting line, the services under it, the idle teardown of services, relay, network and proxy, and the wait for the lock at the end of a session and in stop
-tests/cli/doctor.test.ts             the doctor
+tests/cli/doctor.test.ts             the doctor, its file cache check among them, also when the sandbox does not start and with the release off
 tests/cli/doctor-probes.test.ts      the doctor's mcp-auth sweep on a sandbox file it cannot read, and the credential sweep's proxy token finding and its skipped `env.set` values
 tests/cli/doctor-report.test.ts      the doctor report renderer: collapsing, --verbose, verdicts, partial reports, ~, colour (the whole-report goldens are in doctor.test.ts)
 tests/cli/doctor-tls.test.ts         the tls inspection check against a local TLS server signed by a test CA behind a parent proxy: not inspected, trusted via extras, root in a keychain, root not found, network failure

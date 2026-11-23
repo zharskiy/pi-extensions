@@ -6,7 +6,7 @@ import {
   type FileCacheDeps,
   type FileCacheGuard,
   type FileCacheTick,
-  fileLimitOf,
+  fileLimitsOf,
   LSOF,
   REDISCOVER_INTERVAL_MS,
   RELEASE_COMMAND,
@@ -23,13 +23,23 @@ import { tempDir } from "../support/temp-dir.ts";
 
 interface HostState {
   pids: string[];
+  held?: string[];
   open: Record<string, number>;
   limits?: string;
   slow?: string[];
   gone?: string[];
+  stuck?: string[];
+  broken?: string[];
 }
 
 const DISK = "/home/u/.colima/_lima/colima-pi-sandbox/disk";
+
+const LEGACY_DISK = "/home/u/.colima/_lima/colima-pi-sandbox/diffdisk";
+
+const missingFile = (path: string) => ({
+  code: 1,
+  stderr: `lsof: status error on ${path}: No such file or directory\n`,
+});
 
 const LIMIT = 30_720;
 
@@ -48,6 +58,20 @@ const answerHost = (host: HostState) => (call: FakeCall) => {
   const [flag, target] = call.args.slice(2);
 
   if (flag === "-t") {
+    const path = target ?? "";
+
+    if (host.stuck?.includes(path)) {
+      return { code: 124, timedOut: true as const };
+    }
+
+    if (host.broken?.includes(path)) {
+      return undefined;
+    }
+
+    if (!(host.held ?? [DISK]).includes(path)) {
+      return missingFile(path);
+    }
+
     return host.pids.length === 0 ? { code: 1 } : { stdout: `${host.pids.join("\n")}\n` };
   }
 
@@ -81,7 +105,7 @@ const guardOf = (host: HostState, overrides: Partial<FileCacheDeps> = {}) => {
   };
   const guard = createFileCacheGuard({
     runner: fake.runner,
-    diskPath: DISK,
+    diskPaths: [DISK],
     shell,
     lockIfFree: async (action) => ({ busy: false, value: await action() }),
     alive: aliveIn(host),
@@ -136,15 +160,15 @@ const scriptedGuard = (tick: FileCacheGuard["tick"]): FileCacheGuard => ({
 
 describe("the file limit of the Mac", () => {
   it("is half the per-process limit or a quarter of the system-wide limit, whichever is lower", () => {
-    expect(fileLimitOf("61440\n122880\n")).toBe(LIMIT);
-    expect(fileLimitOf("10240\n122880\n")).toBe(5120);
-    expect(fileLimitOf("61440\n40000\n")).toBe(10_000);
+    expect(fileLimitsOf("61440\n122880\n")).toEqual({ limit: LIMIT, maxFiles: 122_880 });
+    expect(fileLimitsOf("10240\n122880\n")?.limit).toBe(5120);
+    expect(fileLimitsOf("61440\n40000\n")?.limit).toBe(10_000);
   });
 
   it("is unknown when sysctl does not report both limits", () => {
-    expect(fileLimitOf("")).toBeUndefined();
-    expect(fileLimitOf("61440\n")).toBeUndefined();
-    expect(fileLimitOf("unknown oid\nx\n")).toBeUndefined();
+    expect(fileLimitsOf("")).toBeUndefined();
+    expect(fileLimitsOf("61440\n")).toBeUndefined();
+    expect(fileLimitsOf("unknown oid\nx\n")).toBeUndefined();
   });
 
   it("is read again on each tick until a read succeeds, then kept, and nothing is released while it is unknown", async () => {
@@ -227,6 +251,26 @@ describe("the VM process", () => {
     expect(released).toHaveLength(1);
   });
 
+  it("is found through whichever disk name the instance has, one lsof per name", async () => {
+    const host: HostState = { pids: ["700"], held: [LEGACY_DISK], open: { "700": 120 } };
+    const { guard, calls } = guardOf(host, { diskPaths: [DISK, LEGACY_DISK] });
+
+    expect(await guard.tick()).toBe("below");
+    expect(calls.filter((call) => call.args[2] === "-t").map(argvOf)).toEqual([
+      [LSOF, "-n", "-P", "-t", DISK],
+      [LSOF, "-n", "-P", "-t", LEGACY_DISK],
+    ]);
+    expect(counted(calls)).toEqual(["700"]);
+  });
+
+  it("is counted once when it holds several of the disks", async () => {
+    const host: HostState = { pids: ["700"], held: [DISK, LEGACY_DISK], open: { "700": 120 } };
+    const { guard, calls } = guardOf(host, { diskPaths: [DISK, LEGACY_DISK] });
+
+    expect(await guard.tick()).toBe("below");
+    expect(counted(calls)).toEqual(["700"]);
+  });
+
   it("does nothing when no process holds the VM's disk", async () => {
     const { guard, released, calls } = guardOf({ pids: [], open: {} });
 
@@ -240,7 +284,7 @@ describe("the VM process", () => {
     const fake = createFakeRunner(() => undefined);
     const guard = createFileCacheGuard({
       runner: fake.runner,
-      diskPath: DISK,
+      diskPaths: [DISK],
       shell: async () => {
         throw new Error("never");
       },
@@ -281,6 +325,126 @@ describe("a count that times out", () => {
     expect(await guard.tick()).toBe("below");
     expect(discoveries(calls)).toBe(2);
     expect(released).toEqual([]);
+  });
+});
+
+describe("a lookup of the VM process that fails", () => {
+  it.each([
+    ["times out", { stuck: [DISK] }],
+    ["cannot run", { broken: [DISK] }],
+  ])("keeps the known process while it lives when the lookup %s, and counts it", async (_, failure) => {
+    const host: HostState = { pids: ["700"], open: { "700": 120 } };
+    const { guard, clock, calls, released } = guardOf(host);
+
+    expect(await guard.tick()).toBe("below");
+
+    Object.assign(host, failure);
+    host.open["700"] = 50_000;
+
+    clock.advance(REDISCOVER_INTERVAL_MS);
+
+    expect(await guard.tick()).toBe("released");
+    expect(released).toEqual([RELEASE_COMMAND]);
+    expect(discoveries(calls)).toBe(2);
+
+    clock.advance(SAMPLE_INTERVAL_MS * 3);
+
+    expect(await guard.tick()).toBe("below");
+    expect(discoveries(calls)).toBe(2);
+  });
+
+  it("forgets the known process when it is gone", async () => {
+    const host: HostState = { pids: ["700"], open: { "700": 120 } };
+    const { guard, clock } = guardOf(host);
+
+    await guard.tick();
+
+    host.stuck = [DISK];
+    host.gone = ["700"];
+
+    clock.advance(REDISCOVER_INTERVAL_MS);
+
+    expect(await guard.tick()).toBe("no-vm");
+  });
+
+  it("uses a holder found through another disk name", async () => {
+    const host: HostState = { pids: ["700"], held: [DISK, LEGACY_DISK], open: { "700": 120, "900": 140 } };
+    const { guard, clock, calls } = guardOf(host, { diskPaths: [DISK, LEGACY_DISK] });
+
+    await guard.tick();
+
+    host.pids = ["900"];
+    host.stuck = [DISK];
+
+    clock.advance(REDISCOVER_INTERVAL_MS);
+
+    expect(await guard.tick()).toBe("below");
+    expect(counted(calls).at(-1)).toBe("900");
+  });
+
+  it("finds nothing when no process is known", async () => {
+    const { guard, released } = guardOf({ pids: ["700"], open: { "700": 50_000 }, stuck: [DISK] });
+
+    expect(await guard.tick()).toBe("no-vm");
+    expect(released).toEqual([]);
+  });
+});
+
+describe("the file cache reading", () => {
+  it("reports the count, the limit and kern.maxfiles, and releases nothing", async () => {
+    const { guard, released, calls } = guardOf({ pids: ["700"], open: { "700": 50_000 } });
+
+    expect(await guard.read()).toEqual({ state: "counted", count: 50_000, limit: LIMIT, maxFiles: 122_880 });
+    expect(released).toEqual([]);
+    expect(calls.every((call) => call.file === LSOF || call.file === SYSCTL)).toBe(true);
+  });
+
+  it("reports the paths it looked for when no process holds them", async () => {
+    const { guard } = guardOf({ pids: [], held: [], open: {} }, { diskPaths: [DISK, LEGACY_DISK] });
+
+    expect(await guard.read()).toEqual({ state: "no-vm", looked: [DISK, LEGACY_DISK] });
+  });
+
+  it.each([
+    ["times out", { stuck: [DISK] }],
+    ["cannot run", { broken: [DISK] }],
+  ])(
+    "reports a failed lookup apart from no process when a lookup %s and none finds a holder",
+    async (_, failure) => {
+      const { guard } = guardOf(
+        { pids: ["700"], held: [DISK], open: { "700": 120 }, ...failure },
+        { diskPaths: [DISK, LEGACY_DISK] },
+      );
+
+      expect(await guard.read()).toEqual({ state: "lookup-failed", looked: [DISK, LEGACY_DISK] });
+    },
+  );
+
+  it("reports the holder another disk name finds even when one lookup fails", async () => {
+    const { guard } = guardOf(
+      { pids: ["700"], held: [LEGACY_DISK], open: { "700": 120 }, stuck: [DISK] },
+      { diskPaths: [DISK, LEGACY_DISK] },
+    );
+
+    expect(await guard.read()).toMatchObject({ state: "counted", count: 120 });
+  });
+
+  it("reports no process when every lookup ran and found none", async () => {
+    const { guard } = guardOf({ pids: [], held: [DISK], open: {} });
+
+    expect(await guard.read()).toEqual({ state: "no-vm", looked: [DISK] });
+  });
+
+  it("reports a count that times out on a live process as timed out", async () => {
+    const { guard } = guardOf({ pids: ["700"], open: {}, slow: ["700"] });
+
+    expect(await guard.read()).toMatchObject({ state: "counted", count: "timed out" });
+  });
+
+  it("reports the count without a limit when sysctl does not answer", async () => {
+    const { guard } = guardOf({ pids: ["700"], open: { "700": 120 }, limits: "" });
+
+    expect(await guard.read()).toEqual({ state: "no-limit", count: 120 });
   });
 });
 
@@ -432,7 +596,11 @@ describe("the file cache watch", () => {
 describe("the colima VM's file cache watch", () => {
   const setup = async (respond: (call: FakeCall) => FakeAnswer | Promise<FakeAnswer> = () => ({})) => {
     const home = await tempDir("file-cache");
-    const host: HostState = { pids: ["700"], open: { "700": 50_000 } };
+    const host: HostState = {
+      pids: ["700"],
+      held: [join(home, ".colima", "_lima", "colima-pi-sandbox", "disk")],
+      open: { "700": 50_000 },
+    };
     const answer = answerHost(host);
     const fake = createFakeRunner((call) => (call.file === "colima" ? respond(call) : answer(call)));
     const { ticker, fire } = manualTicker();
@@ -463,12 +631,13 @@ describe("the colima VM's file cache watch", () => {
 
     await watch?.stop();
 
-    expect(fake.calls[0]?.args).toEqual([
-      "-n",
-      "-P",
-      "-t",
-      join(home, ".colima", "_lima", "colima-pi-sandbox", "disk"),
-    ]);
+    expect(fake.calls.slice(0, 3).map((call) => call.args)).toEqual(
+      [
+        join(home, ".colima", "_lima", "colima-pi-sandbox", "disk"),
+        join(home, ".colima", "_lima", "colima-pi-sandbox", "diffdisk"),
+        join(home, ".colima", "_lima", "_disks", "colima-pi-sandbox", "datadisk"),
+      ].map((path) => ["-n", "-P", "-t", path]),
+    );
     expect(colimaCalls()).toEqual([
       ["ssh", "--profile", "pi-sandbox", "--", "sudo", "sysctl", "-q", "-w", "vm.drop_caches=2"],
     ]);
@@ -544,7 +713,7 @@ describe("the colima VM's file cache watch", () => {
 
     fire();
 
-    await vi.waitFor(() => expect(fake.calls).toHaveLength(1));
+    await vi.waitFor(() => expect(fake.calls).toHaveLength(3));
 
     await watch?.stop();
 

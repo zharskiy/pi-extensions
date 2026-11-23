@@ -5,6 +5,8 @@ import {
   LABELS,
   shareDrift,
   shareText,
+  type Vm,
+  type VmFileCache,
   type VmShare,
   type VmSize,
   type VmTarget,
@@ -82,6 +84,7 @@ interface Run {
   checks: NamedCheck[];
   progress: Progress;
   hostTls: () => Promise<HostTls>;
+  vmRunning?: boolean;
 }
 
 const NOTICE_PREFIX = "pi-sandbox: ";
@@ -197,6 +200,101 @@ const sizeCheck = async (deps: CliDeps, context: LaunchContext, sandbox: Sandbox
         hint: "choose Custom for the VM size in pi sandbox init, or set vm in the config, while no other pi session runs",
       })
     : passed(current);
+};
+
+type Counted = Extract<VmFileCache, { state: "counted" }>;
+
+const RELEASE_OFF_HINT =
+  "vm.releaseFileCache is off, so nothing releases it; turn it on, or run pi sandbox stop, which frees it all";
+
+const pastLimitCheck = ({ count, limit, maxFiles }: Counted, releasing: boolean) => {
+  const counted =
+    count === "timed out"
+      ? "counting the VM's open files timed out, which counts as past"
+      : `${count} open files in the VM's process, past`;
+
+  return warned(`${counted} the release at ${limit} (kern.maxfiles ${maxFiles})`, {
+    hint: releasing
+      ? "it is released while pi runs with vm.releaseFileCache on; pi sandbox stop frees it all"
+      : RELEASE_OFF_HINT,
+  });
+};
+
+const countedCheck = (reading: Counted, releasing: boolean) => {
+  if (reading.count === "timed out" || reading.count >= reading.limit) {
+    return pastLimitCheck(reading, releasing);
+  }
+
+  return passed(
+    releasing
+      ? `${reading.count} open files, released at ${reading.limit}`
+      : `${reading.count} open files; the release at ${reading.limit} is off (vm.releaseFileCache)`,
+  );
+};
+
+type Unread = Exclude<VmFileCache, { state: "counted" }>;
+
+const RELEASE_OFF = "the release is off (vm.releaseFileCache)";
+
+const UNREAD_WHILE_OFF: Record<Unread["state"], string> = {
+  "no-vm": "the VM's open files cannot be counted: no Mac process holds its disk",
+  "lookup-failed":
+    "the VM's open files cannot be counted: looking for its process timed out or could not run",
+  "no-limit": "the release point cannot be read from kern.maxfilesperproc and kern.maxfiles",
+};
+
+const unreadCheck = (reading: Unread) => {
+  if (reading.state === "no-vm") {
+    return warned("the file cache release cannot find the VM's process, so it does nothing", {
+      hint: `it looks for the Mac process that holds ${reading.looked.join(" or ")}`,
+    });
+  }
+
+  if (reading.state === "lookup-failed") {
+    return warned(
+      "looking for the VM's process timed out or could not run, so the file cache release does nothing",
+      {
+        hint: `it looks with lsof for the Mac process that holds ${reading.looked.join(" or ")}; pi sandbox stop frees the VM's open files`,
+      },
+    );
+  }
+
+  return warned(
+    "kern.maxfilesperproc and kern.maxfiles could not be read, so the file cache release does nothing",
+    {
+      hint: "run sysctl kern.maxfilesperproc kern.maxfiles on the Mac to see why",
+    },
+  );
+};
+
+const fileCacheCheck = async (deps: CliDeps, context: LaunchContext, vm: Vm, running?: boolean) => {
+  if (deps.platform !== "darwin") {
+    return skipped("only counted on macOS");
+  }
+
+  if (vm.readFileCache === undefined) {
+    return skipped("the backend does not count the VM's open files");
+  }
+
+  if (running === false) {
+    return skipped("the sandbox VM is not running");
+  }
+
+  const reading = await vm.readFileCache();
+
+  if (reading.state === "no-vm" && running === undefined) {
+    return skipped(
+      "the sandbox was not started and no Mac process holds the VM's disk, so the VM is likely stopped",
+    );
+  }
+
+  const releasing = context.effective.config.vm.releaseFileCache;
+
+  if (reading.state !== "counted") {
+    return releasing ? unreadCheck(reading) : passed(`${UNREAD_WHILE_OFF[reading.state]}; ${RELEASE_OFF}`);
+  }
+
+  return countedCheck(reading, releasing);
 };
 
 const sharesPassed = passed("the sandbox VM shares every path this repository needs");
@@ -422,6 +520,10 @@ const sandboxChecks = async (deps: CliDeps, context: LaunchContext, backend: Bac
   const report = (stage: Stage, outcome: StageOutcome) => {
     seen.failed ??= outcome.ok ? undefined : stage;
 
+    if (stage === "vm") {
+      run.vmRunning = outcome.ok;
+    }
+
     run.checks.push(stageCheck(stage, outcome));
 
     run.progress.line(`${stageLabel(stage)} ${outcome.ok ? "ready" : "failed"}`);
@@ -518,6 +620,12 @@ const runChecks = async (deps: CliDeps, progress: Progress, checks: NamedCheck[]
       ? skipSandbox(run, shares.missing)
       : await sandboxChecks(deps, context, backend, run)
     : undefined;
+
+  run.checks.push({
+    name: "file cache",
+    section: "sandbox",
+    result: await attempt(() => fileCacheCheck(deps, context, backend.vm, run.vmRunning)),
+  });
 
   run.progress.line("checking the host");
 
