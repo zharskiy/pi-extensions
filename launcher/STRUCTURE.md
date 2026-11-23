@@ -223,7 +223,7 @@ hostpi/path-search.ts          PATH lookup outside the sandbox roots and the exe
 hostpi/mcp-auth.ts             MCP servers and their host sign-in state
 hostpi/json.ts                 small JSON helpers
 hostpi/tools/files.ts          shared helpers of the tool derivers
-hostpi/tools/glab.ts           glab hosts and tokens
+hostpi/tools/glab.ts           glab hosts and tokens; no no-token notice for a host never logged in to while another has a token
 hostpi/tools/npmrc.ts          ~/.npmrc credentials
 hostpi/tools/pip.ts            pip.conf in the home locations
 hostpi/tools/maven.ts          ~/.m2/settings.xml servers (passwords and httpHeaders), mirrors, profiles, activeProfiles, pluginGroups

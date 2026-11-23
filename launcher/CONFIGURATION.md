@@ -473,7 +473,7 @@ With `credentials.derive.enabled` on, the launcher reads these at every launch:
 - Each provider in host pi's `auth.json`, and provider API keys set as variables in your shell. The proxy reads such a key on your Mac. It is never copied inside.
 - Each `apiKey` and secret header in `models.json`.
 - Each enabled HTTP server in `mcp.json`.
-- The glab hosts, with their tokens.
+- The glab hosts, with their tokens. A host without a token is named in a notice, except one with no `user` either (never logged in to, like glab's default `gitlab.com` entry) while another glab host has a token.
 - Registry credentials in `~/.npmrc`, `~/.m2/settings.xml` and `pip.conf`. For pip the first of `~/.config/pip/pip.conf`, `~/Library/Application Support/pip/pip.conf` and `~/.pip/pip.conf` is used.
 - Your git `user.name` and `user.email`.
 

@@ -160,25 +160,28 @@ const rendered = (entry: ConfigHost, token: string): GlabHost => {
   };
 };
 
-const hostSection = async (
-  input: ToolsInput,
-  glab: string,
-  entry: ConfigHost,
-): Promise<Section<GlabHost[]>> => {
+interface HostSection extends Section<GlabHost[]> {
+  entry: ConfigHost;
+  state: TokenState;
+}
+
+const hostSection = async (input: ToolsInput, glab: string, entry: ConfigHost): Promise<HostSection> => {
   const state = await tokenOnHost(input, glab, entry);
 
   if (state === "timedOut") {
-    return noticeOnly(
-      [],
-      noCredentialsNotice(`${LABEL} ${entry.host}`, `${glab} config get token`, TOKEN_PROBE_TIMEOUT_MS),
+    const notice = noCredentialsNotice(
+      `${LABEL} ${entry.host}`,
+      `${glab} config get token`,
+      TOKEN_PROBE_TIMEOUT_MS,
     );
+
+    return { ...noticeOnly([], notice), entry, state };
   }
 
   if (state === "missing") {
-    return noticeOnly(
-      [],
-      `glab ${entry.host}: no token on the host; run glab auth login --hostname ${entry.host} there`,
-    );
+    const notice = `glab ${entry.host}: no token on the host; run glab auth login --hostname ${entry.host} there`;
+
+    return { ...noticeOnly([], notice), entry, state };
   }
 
   const identity = `glab:${entry.host}:token`;
@@ -192,7 +195,21 @@ const hostSection = async (
       secret: { command: tokenCommand(glab, entry.host) },
     }),
     notices: [],
+    entry,
+    state,
   };
+};
+
+const isNeverLoggedIn = ({ fields }: ConfigHost) => (fields.token ?? "") === "" && (fields.user ?? "") === "";
+
+const withoutUnusedHostNotices = (sections: HostSection[]) => {
+  const anyToken = sections.some((section) => section.state === "present");
+
+  return sections.map((section) =>
+    anyToken && section.state === "missing" && isNeverLoggedIn(section.entry)
+      ? { ...section, notices: [] }
+      : section,
+  );
 };
 
 export const deriveGlab = async (input: ToolsInput): Promise<Section<GlabHost[]>> => {
@@ -204,7 +221,8 @@ export const deriveGlab = async (input: ToolsInput): Promise<Section<GlabHost[]>
     return noticeOnly([], ...notices);
   }
 
-  const merged = mergeSections(await Promise.all(entries.map((entry) => hostSection(input, glab, entry))));
+  const sections = await Promise.all(entries.map((entry) => hostSection(input, glab, entry)));
+  const merged = mergeSections(withoutUnusedHostNotices(sections));
 
   return { value: merged.values.flat(), rules: merged.rules, notices: [...notices, ...merged.notices] };
 };

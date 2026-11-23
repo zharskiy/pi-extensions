@@ -123,6 +123,59 @@ describe("glab", () => {
     expect(JSON.stringify(deriveSandboxPi({ ...pureInput(), tools }))).not.toContain(GLAB_TOKEN);
   });
 
+  const missingNotice = (host: string) =>
+    `glab ${host}: no token on the host; run glab auth login --hostname ${host} there`;
+
+  const glabWith = (config: string, respond: FakeResponder = glabToken) =>
+    derive({ bins: ["glab"], files: { ".config/glab-cli/config.yml": config }, respond });
+
+  it("says nothing of a host never logged in to while another glab host has a token", async () => {
+    const { tools } = await glabWith(
+      `hosts:\n  gitlab.com:\n    api_protocol: https\n    token:\n    user:\n  gitlab.corp.test:\n    token: ${GLAB_TOKEN}\n`,
+      (call) => (call.args[0] === "config" ? { stdout: "\n" } : undefined),
+    );
+
+    expect(tools.notices).toEqual([]);
+    expect([...new Set(tools.rules.map((rule) => rule.id))]).toEqual(["derived:glab:gitlab.corp.test:token"]);
+    expect(tools.value.glab?.map((entry) => entry.host)).toEqual(["gitlab.corp.test"]);
+  });
+
+  it("keeps the no-token notice of a host with a user next to one with a token", async () => {
+    const { tools } = await glabWith(
+      `hosts:\n  gitlab.com:\n    user: me\n  gitlab.corp.test:\n    token: ${GLAB_TOKEN}\n`,
+      (call) => (call.args[0] === "config" ? { stdout: "\n" } : undefined),
+    );
+
+    expect(tools.notices).toEqual([missingNotice("gitlab.com")]);
+    expect(tools.value.glab?.map((entry) => entry.host)).toEqual(["gitlab.corp.test"]);
+  });
+
+  it("keeps the no-token notice of every host while none has a token", async () => {
+    const single = await glabWith("hosts:\n  empty.corp.test:\n    api_protocol: https\n");
+    const both = await glabWith(
+      "hosts:\n  empty.corp.test:\n    api_protocol: https\n  gitlab.com:\n    api_protocol: https\n",
+      () => ({
+        stdout: "\n",
+      }),
+    );
+
+    expect(single.tools.notices).toEqual([missingNotice("empty.corp.test")]);
+    expect(both.tools.notices).toEqual([missingNotice("empty.corp.test"), missingNotice("gitlab.com")]);
+    expect(both.tools.rules).toEqual([]);
+  });
+
+  it("keeps the timeout notice of a host next to one with a token", async () => {
+    const { bin, tools } = await glabWith(
+      `hosts:\n  gitlab.corp.test:\n    token: ${GLAB_TOKEN}\n  slow.corp.test:\n    api_protocol: https\n`,
+      () => ({ code: 124, timedOut: true }),
+    );
+
+    expect(tools.notices).toEqual([
+      `glab slow.corp.test: ${join(bin, "glab")} config get token did not answer within 30 s on the host (a Keychain prompt may be waiting); it has no credentials in the sandbox this launch, run pi again once it answers`,
+    ]);
+    expect(tools.value.glab?.map((entry) => entry.host)).toEqual(["gitlab.corp.test"]);
+  });
+
   it("sets GITLAB_TOKEN and GITLAB_HOST only when gitlab.com is the only host", async () => {
     const { tools } = await derive({
       bins: ["glab"],
