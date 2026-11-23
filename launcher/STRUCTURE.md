@@ -85,7 +85,7 @@ cli/commands/vm-shares.ts      the hidden __vm-shares command: the shared worksp
 cli/commands/smoke-doctor.ts   the hidden __smoke-doctor command install.sh runs: the doctor, exit 3 when the sandbox part was skipped
 cli/commands/init.ts           pi sandbox init: --yes, CI and terminal checks, builds the UI and effects, and picks the front end (the wizard, rich or plain, or the lines of --yes)
 cli/commands/doctor.ts         pi sandbox doctor: stages, probes and host checks as checks by section, the denials matched to each rule, the blocked warnings, captured notices and the progress line
-cli/commands/doctor-probes.ts  the doctor's checks inside the container; a rule whose credential was denied warns, one the proxy refused says why, a certificate not yet valid names the VM clock
+cli/commands/doctor-probes.ts  the doctor's checks inside the container; the credential sweep skips the config's own `env.set` values and names the secret-named ones; a rule whose credential was denied warns, one the proxy refused says why, a certificate not yet valid names the VM clock
 cli/commands/doctor-host.ts    the doctor's checks on the host
 cli/commands/doctor-checks.ts  the check data model: result types and builders, the section and check order, the tally and verdict
 cli/commands/doctor-report.ts  the pure text renderer of the checks: aligned columns, reasons and hints, collapsed rules, notices, result line, ~, colour
@@ -223,7 +223,7 @@ hostpi/path-search.ts          PATH lookup outside the sandbox roots and the exe
 hostpi/mcp-auth.ts             MCP servers and their host sign-in state
 hostpi/json.ts                 small JSON helpers
 hostpi/tools/files.ts          shared helpers of the tool derivers
-hostpi/tools/glab.ts           glab hosts and tokens
+hostpi/tools/glab.ts           glab hosts and tokens; no no-token notice for a host never logged in to while another has a token
 hostpi/tools/npmrc.ts          ~/.npmrc credentials
 hostpi/tools/pip.ts            pip.conf in the home locations
 hostpi/tools/maven.ts          ~/.m2/settings.xml servers (passwords and httpHeaders), mirrors, profiles, activeProfiles, pluginGroups
@@ -455,7 +455,7 @@ tests/cli/services-stop.test.ts      the services stopped by the sweep, reset --
 tests/cli/installs.test.ts           two installs on one engine: each brings up, tears down and sweeps only its own objects, and the VM stop counts both
 tests/cli/ground-lock.test.ts        the ground lock: its waiting line, the services under it, the idle teardown of services, relay, network and proxy, and the wait for the lock at the end of a session and in stop
 tests/cli/doctor.test.ts             the doctor
-tests/cli/doctor-probes.test.ts      the doctor's mcp-auth sweep on a sandbox file it cannot read, and the credential sweep's proxy token finding
+tests/cli/doctor-probes.test.ts      the doctor's mcp-auth sweep on a sandbox file it cannot read, and the credential sweep's proxy token finding and its skipped `env.set` values
 tests/cli/doctor-report.test.ts      the doctor report renderer: collapsing, --verbose, verdicts, partial reports, ~, colour (the whole-report goldens are in doctor.test.ts)
 tests/cli/doctor-tls.test.ts         the tls inspection check against a local TLS server signed by a test CA behind a parent proxy: not inspected, trusted via extras, root in a keychain, root not found, network failure
 tests/cli/egress.test.ts             egress grants

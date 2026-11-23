@@ -458,7 +458,7 @@ Inside, `PI_SANDBOX=1` tells scripts they run in the sandbox, and `PI_SANDBOX_ST
 
 `env.set` maps variable names to values that every process in the sandbox container sees: pi, its tools and anything they start. A value is a string, taken as written: `$HOME` or `~` stays as those characters. It may not contain a NUL character. They are set when the container is created, so a change applies from the next `pi`.
 
-A name the launcher sets is refused when the config loads, with `config: env.set["<NAME>"] is set by the launcher and cannot be set`. That is the same list `env.allow` refuses: the proxy variables in any case, `NODE_USE_ENV_PROXY`, `PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSION_DIR`, `NODE_EXTRA_CA_CERTS` and the other CA variables, `BASH_ENV`, `HOME`, `PATH`, `PWD`, `GITLAB_TOKEN`, `GITLAB_HOST`, `GIT_TERMINAL_PROMPT` and the `PI_*` variables the launcher sets, `PI_SANDBOX_STATUS` among them. A name must look like a variable name: letters, digits and `_`, not starting with a digit. Unlike `env.allow`, names that look like secrets are accepted, since the value is yours and written in the file; still, keep secrets out of it and use [credentials](#credentials). Every `env.set` value is visible to the agent and everything it runs, so a real secret never goes there.
+A name the launcher sets is refused when the config loads, with `config: env.set["<NAME>"] is set by the launcher and cannot be set`. That is the same list `env.allow` refuses: the proxy variables in any case, `NODE_USE_ENV_PROXY`, `PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSION_DIR`, `NODE_EXTRA_CA_CERTS` and the other CA variables, `BASH_ENV`, `HOME`, `PATH`, `PWD`, `GITLAB_TOKEN`, `GITLAB_HOST`, `GIT_TERMINAL_PROMPT` and the `PI_*` variables the launcher sets, `PI_SANDBOX_STATUS` among them. A name must look like a variable name: letters, digits and `_`, not starting with a digit. Unlike `env.allow`, names that look like secrets are accepted, since the value is yours and written in the file; still, keep secrets out of it and use [credentials](#credentials). Every `env.set` value is visible to the agent and everything it runs, so a real secret never goes there. `pi sandbox doctor` does not check an `env.set` variable whose value inside is the one in the file; its credential sweep names the secret-looking ones it skipped (`env.set values not checked: …`), so a secret written here is not caught by the doctor.
 
 A name in both `env.allow` and `env.set` takes the `env.set` value; your shell's value is not passed. A name the image sets, such as `LANG`, takes the `env.set` value.
 
@@ -473,7 +473,7 @@ With `credentials.derive.enabled` on, the launcher reads these at every launch:
 - Each provider in host pi's `auth.json`, and provider API keys set as variables in your shell. The proxy reads such a key on your Mac. It is never copied inside.
 - Each `apiKey` and secret header in `models.json`.
 - Each enabled HTTP server in `mcp.json`.
-- The glab hosts, with their tokens.
+- The glab hosts, with their tokens. A host without a token is named in a notice, except one with no `user` either (never logged in to, like glab's default `gitlab.com` entry) while another glab host has a token.
 - Registry credentials in `~/.npmrc`, `~/.m2/settings.xml` and `pip.conf`. For pip the first of `~/.config/pip/pip.conf`, `~/Library/Application Support/pip/pip.conf` and `~/.pip/pip.conf` is used.
 - Your git `user.name` and `user.email`.
 

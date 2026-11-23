@@ -360,8 +360,8 @@ const sessionsShareCheck = async (target: ProbeTarget) => {
 
 const PROBES: Probe[] = [
   single("proxy health", "network", ({ sandbox }) => proxyHealth(sandbox.proxy)),
-  single("credential sweep", "leak sweep", ({ target, sandbox }) =>
-    sweepCredentials(target, sandbox.proxy?.token),
+  single("credential sweep", "leak sweep", ({ target, context, sandbox }) =>
+    sweepCredentials(target, sandbox.proxy?.token, context.effective.config.env.set),
   ),
   single("no-route", "network", ({ target }) => checkNoRoute(target)),
   single("tls in sandbox", "network", async ({ target, hostTls }) =>
