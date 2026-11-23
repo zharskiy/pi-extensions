@@ -107,7 +107,9 @@ describe("the missing-command hint", () => {
   it.skipIf(!(bashMajor >= 4)).each(["sudo", "doas", "systemctl"])(
     "says there is no root instead of suggesting a package for %s",
     async (name) => {
-      const result = shellTool(`. '${BASH_ENV_FILE}'; ${name} true`, { HOME: await emptyHome() });
+      const result = shellTool(`. '${BASH_ENV_FILE}'; PATH="$HOME"; ${name} true`, {
+        HOME: await emptyHome(),
+      });
 
       expect(result.stderr).toBe(rootHint(name));
       expect(result.stdout).toBe("");
