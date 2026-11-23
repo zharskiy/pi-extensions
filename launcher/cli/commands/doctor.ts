@@ -131,9 +131,12 @@ const attempt = async (action: () => Promise<CheckResult>) => {
   }
 };
 
-const stageResult = (outcome: StageOutcome) => {
+const stageResult = (stage: Stage, outcome: StageOutcome) => {
   if (outcome.ok) {
-    return passed(outcome.detail ?? "");
+    const detail = outcome.detail ?? "";
+    const reference = detail.split(" ")[0] ?? "";
+
+    return stage === "image" && reference !== "" ? passed(detail, { brief: reference }) : passed(detail);
   }
 
   return failed(errorMessage(outcome.error), {
@@ -144,17 +147,17 @@ const stageResult = (outcome: StageOutcome) => {
 const stageCheck = (stage: Stage, outcome: StageOutcome): NamedCheck => ({
   name: stageLabel(stage),
   section: stageSection(stage),
-  result: stageResult(outcome),
+  result: stageResult(stage, outcome),
 });
 
 const proxyHealth = async (proxy: SandboxProxy | undefined) => {
   if (proxy === undefined) {
-    return skipped("no proxy is required");
+    return skipped("no proxy is required", { neutral: true });
   }
 
   return (await readHealth(proxy.proxy.port, proxy.token)) !== undefined
-    ? passed("/healthz answers")
-    : failed("/healthz does not answer");
+    ? passed("the proxy answers its health check")
+    : failed("the proxy does not answer its health check");
 };
 
 const gibText = (gib: number) => `${Math.round(gib * 10) / 10} GiB`;
@@ -162,7 +165,7 @@ const gibText = (gib: number) => `${Math.round(gib * 10) / 10} GiB`;
 const isBelow = (size: VmSize, recommended: VmSize) =>
   size.cpus < recommended.cpus || size.memoryGiB < recommended.memoryGiB;
 
-const configuredSizeCheck = (size: VmSize, target: VmTarget, current: string) => {
+const configuredSizeCheck = (size: VmSize, target: VmTarget, current: string, brief: string) => {
   const drift = vmSizeDrift(size, target);
 
   if (hasSizeChanges(drift)) {
@@ -172,7 +175,7 @@ const configuredSizeCheck = (size: VmSize, target: VmTarget, current: string) =>
   }
 
   return drift.keptDiskGiB === undefined
-    ? passed(`${current}, as vm sets`)
+    ? passed(`${current}, as vm sets`, { brief })
     : warned(`${current}; vm.diskGiB ${target.diskGiB} is below its disk of ${drift.keptDiskGiB} GiB`, {
         hint: "colima cannot shrink a disk; raise vm.diskGiB or leave it out",
       });
@@ -183,14 +186,15 @@ const sizeCheck = async (deps: CliDeps, context: LaunchContext, sandbox: Sandbox
   const size = await vm.size();
 
   if (size === undefined) {
-    return skipped(`colima did not report the size of profile ${ENGINE_PROFILE}`);
+    return skipped(`colima did not report the size of profile ${ENGINE_PROFILE}`, { neutral: true });
   }
 
   const current = `profile ${ENGINE_PROFILE} has ${size.cpus} CPUs and ${gibText(size.memoryGiB)}`;
+  const brief = `${size.cpus} CPUs, ${gibText(size.memoryGiB)}`;
   const target = vmTargetOf(context.effective.config.vm);
 
   if (Object.keys(target).length > 0) {
-    return configuredSizeCheck(size, target, current);
+    return configuredSizeCheck(size, target, current, brief);
   }
 
   const recommended = recommendedVmSize(deps.machine.cpus, deps.machine.memoryGiB);
@@ -199,7 +203,7 @@ const sizeCheck = async (deps: CliDeps, context: LaunchContext, sandbox: Sandbox
     ? warned(`${current}, below ${recommended.cpus} CPUs and ${recommended.memoryGiB} GiB`, {
         hint: "choose Custom for the VM size in pi sandbox init, or set vm in the config, while no other pi session runs",
       })
-    : passed(current);
+    : passed(current, { brief });
 };
 
 type Counted = Extract<VmFileCache, { state: "counted" }>;
@@ -269,11 +273,11 @@ const unreadCheck = (reading: Unread) => {
 
 const fileCacheCheck = async (deps: CliDeps, context: LaunchContext, vm: Vm, running?: boolean) => {
   if (deps.platform !== "darwin") {
-    return skipped("only counted on macOS");
+    return skipped("only counted on macOS", { neutral: true });
   }
 
   if (vm.readFileCache === undefined) {
-    return skipped("the backend does not count the VM's open files");
+    return skipped("the backend does not count the VM's open files", { neutral: true });
   }
 
   if (running === false) {
@@ -297,7 +301,9 @@ const fileCacheCheck = async (deps: CliDeps, context: LaunchContext, vm: Vm, run
   return countedCheck(reading, releasing);
 };
 
-const sharesPassed = passed("the sandbox VM shares every path this repository needs");
+const sharesPassed = passed("the sandbox VM shares every path this repository needs", {
+  brief: "shares this repository",
+});
 
 const listed = (shares: VmShare[]) => shares.map(shareText).join(", ");
 
@@ -313,6 +319,7 @@ const rootsCheck = (current: VmShare[], desired: VmShare[]): CheckResult => {
   if (extra.length === 0 && lacking.length === 0) {
     return passed(
       "the sandbox VM shares exactly the workspaceRoots, the session dir and the launcher's vm dir",
+      { brief: "shares this repository" },
     );
   }
 
@@ -445,15 +452,24 @@ const ruleHints =
 const ruleChecks: Probe = (input) => {
   const { rules } = input.sandbox.host.derived;
 
-  return checkRules(input.target, rules, ruleHints(input, rules)).catch((error: unknown) => [
+  return checkRules(
+    input.target,
+    rules,
+    ruleHints(input, rules),
+    input.context.effective.config.credentials.rules,
+  ).catch((error: unknown) => [
     { name: "trust", section: "credentials", result: failed(errorMessage(error)) },
   ]);
 };
 
-const sessionsShareCheck = async (target: ProbeTarget) => {
+const sessionsShareCheck = async (target: ProbeTarget, context: LaunchContext) => {
   const container = await target.backend.inspectContainer(target.containerId);
 
-  return checkSessionsShare(target, container?.labels[LABELS.sessionDir]);
+  return checkSessionsShare(
+    target,
+    container?.labels[LABELS.sessionDir],
+    context.effective.config.sessions.host,
+  );
 };
 
 const PROBES: Probe[] = [
@@ -461,7 +477,7 @@ const PROBES: Probe[] = [
   single("credential sweep", "leak sweep", ({ target, context, sandbox }) =>
     sweepCredentials(target, sandbox.proxy?.token, context.effective.config.env.set),
   ),
-  single("no-route", "network", ({ target }) => checkNoRoute(target)),
+  single("isolation", "network", ({ target }) => checkNoRoute(target)),
   single("tls in sandbox", "network", async ({ target, hostTls }) =>
     sandboxTlsResult(await readSandboxTls(target), await hostTls()),
   ),
@@ -470,7 +486,7 @@ const PROBES: Probe[] = [
     single("mcp-auth sweep", "leak sweep", ({ target }) => checkMcpAuthSweep(target)),
     single("settings sweep", "leak sweep", ({ target }) => checkSettingsSweep(target)),
   ),
-  single("sessions share", "sandbox", ({ target }) => sessionsShareCheck(target)),
+  single("sessions share", "sandbox", ({ target, context }) => sessionsShareCheck(target, context)),
   ruleChecks,
   single("vm size", "sandbox", ({ deps, context, sandbox }) => sizeCheck(deps, context, sandbox)),
 ];
@@ -505,13 +521,23 @@ const blockedChecks = (deps: CliDeps, rules: CredentialRule[]) => {
     );
 };
 
+const STAGE_STEPS: Record<Stage, string> = {
+  vm: "starting the VM",
+  shares: "sharing this repository with the VM",
+  host: "preparing the host side",
+  proxy: "starting the proxy",
+  image: "building the image",
+  container: "starting the container",
+  sync: "syncing the agent files",
+};
+
 const notRun = (stage: Stage | undefined): NamedCheck => ({
-  name: "probes",
+  name: "sandbox checks",
   section: "sandbox",
   result: skipped(
     stage === undefined
-      ? "not run: the preparation was stopped"
-      : `not run: the ${stageLabel(stage)} stage failed`,
+      ? "not run, because preparing the sandbox was stopped"
+      : `not run, because ${STAGE_STEPS[stage]} failed`,
   ),
 });
 

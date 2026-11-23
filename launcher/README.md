@@ -141,7 +141,7 @@ Install pi first here too, with pi's own installer or `npm install -g`: the laun
    allowed docs.example.com
    ```
 
-5. If something does not work, run `pi sandbox doctor`. It reports each check by area (host, sandbox, network, credentials, leak sweep), puts the reasons and a `hint:` under each problem, lists the launch notices at the end and closes with one `result:` line. The credential rules that pass share one line; `--verbose` lists each. The leak sweep does not check `env.set` values that match the config and names the secret-looking ones it skipped, so it does not catch a secret written into `env.set`. A glab host you never logged in to gets no notice while another glab host has a token.
+5. If something does not work, run `pi sandbox doctor`. It shows by area (host, sandbox, network, credentials) one line per thing that works, such as `vm`, `sandbox`, `isolation`, `tls` and `secrets`, and each check that warns or fails under its own name, with the reasons and a `hint:` under it; it lists the launch notices at the end and closes with one `result:` line that names the checks that failed or warned. The credential rules that pass share one line, `logins` when each is a pi login, else `credential hosts`; a rule from your `credentials.rules` that fails or warns shows its rule id. `--verbose` lists every check with its detail, the credential rules with their ids and the leak sweep in its own area. The leak sweep does not check `env.set` values that match the config and names the secret-looking ones it skipped, so it does not catch a secret written into `env.set`. A glab host you never logged in to gets no notice while another glab host has a token.
 
 ## Everyday use
 
@@ -168,7 +168,7 @@ In the table, *host pi* is pi's managed install on your Mac, or without one the 
 | `pi sandbox egress list [--denied]` | the grants, or the hosts the proxy blocked |
 | `pi sandbox reset [--services]` | remove this folder's sandbox with its overlay and agent volumes, once none of its sessions runs; --services instead removes the sandbox's services and their data, once no pi session runs |
 | `pi sandbox stop` | stop the services and the sandbox VM when no pi session runs |
-| `pi sandbox doctor [--verbose]` | prepare the sandbox like pi and report each check by area, with a hint per problem; --verbose lists every credential rule |
+| `pi sandbox doctor [--verbose]` | prepare the sandbox like pi and report what needs attention by area, with a hint per problem; --verbose lists every check with its detail |
 | `pi sandbox --version`, `pi sandbox help` | version and usage |
 
 `pi uninstall <source>` also runs with host pi on the host. Host pi loads no extension for `pi --help` and `pi --list-models`, so help omits the flags extensions register and the list omits providers only an extension registers; `pi list`, `pi mcp list` and `pi config -l` run in the sandbox, and `pi --version` asks pi inside when `image.reference` and `image.digest` pin the image. `egress allow` uses port 443 unless you name one, and refuses wildcards, IP addresses and port 80 ([rules](CONFIGURATION.md#network-access)).
@@ -260,8 +260,8 @@ Start with `pi sandbox doctor`, which names the failing check.
 
 | symptom | what to do |
 | --- | --- |
-| A host `was blocked in the sandbox` | Follow the hint in that line. `pi sandbox doctor` puts the same hint under the `rule` check of a credential host the proxy refused, for example the address a host resolved to and the `egress.privateHosts` entry that allows it, and reports any other host blocked during its run as a `blocked <host:port>` warning. |
-| The doctor's `trust` or `rule` check fails with `CERT_NOT_YET_VALID` | The VM's clock is more than an hour behind the host's. Run `pi sandbox stop` once no pi session runs, then `pi sandbox doctor` again, which starts the VM afresh. |
+| A host `was blocked in the sandbox` | Follow the hint in that line. `pi sandbox doctor` puts the same hint under the check of a credential host the proxy refused (named for its login, such as `<provider> login`, or for its host), for example the address a host resolved to and the `egress.privateHosts` entry that allows it, and reports any other host blocked during its run as a `blocked <host:port>` warning. |
+| The doctor's `trust` check or a credential host's check fails with `CERT_NOT_YET_VALID` | The VM's clock is more than an hour behind the host's. Run `pi sandbox stop` once no pi session runs, then `pi sandbox doctor` again, which starts the VM afresh. |
 | A provider login is missing or expired | Run `pi --no-sandbox`, then `/login`. |
 | Pi says `the sandbox VM does not exist` | Run `pi sandbox init`, which creates the VM with its size, shares and VM type. A bare `colima start` would create it with colima's defaults instead. |
 | Pi says `the sandbox VM engine is unreachable` | Run `colima start --profile pi-sandbox --activate=false` when the profile exists, else `pi sandbox init`. |
@@ -274,7 +274,7 @@ Start with `pi sandbox doctor`, which names the failing check.
 | `sudo`, `doas` or `systemctl` says `there is no root in the sandbox` | Add packages to `image.packages`, which installs them as root when the image is built, and list a server the agent needs under `services`, which runs it in a container of its own, see [Services](CONFIGURATION.md#services). |
 | Perl or another program prints `Setting locale failed` | `env.allow` lists `LANG` and the image lacks that locale. Drop `LANG` to keep the image's `C.UTF-8`, or generate the locale with `image.dockerfile`, see [Variables passed into the sandbox](CONFIGURATION.md#variables-passed-into-the-sandbox). |
 | The npm registry lacks your host pi version | Install a published pi version on your Mac. |
-| A large build fails with `Too many open files in system` | Your Mac ran out of open files for the VM's cached files. Check the `file cache` line of `pi sandbox doctor` and [File cache](CONFIGURATION.md#file-cache). Until then, `pi sandbox stop` once no pi session runs frees them all, or raise the limit until the next reboot with `sudo sysctl -w kern.maxfiles=524288 kern.maxfilesperproc=262144`. |
+| A large build fails with `Too many open files in system` | Your Mac ran out of open files for the VM's cached files. Check the `file cache` line of `pi sandbox doctor --verbose` and [File cache](CONFIGURATION.md#file-cache). Until then, `pi sandbox stop` once no pi session runs frees them all, or raise the limit until the next reboot with `sudo sysctl -w kern.maxfiles=524288 kern.maxfilesperproc=262144`. |
 | A running session missed a config change | See [when changes apply](CONFIGURATION.md#when-changes-apply). |
 
 ## Uninstall

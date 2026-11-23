@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ExecIo, ExecSpec } from "../../backend/index.ts";
-import { checkMcpAuthSweep, sweepCredentials } from "../../cli/commands/doctor-probes.ts";
+import { checkMcp, checkMcpAuthSweep, sweepCredentials } from "../../cli/commands/doctor-probes.ts";
 import { runningContainer, tempDir } from "../provision/fixtures.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
 
@@ -29,6 +29,50 @@ describe("checkMcpAuthSweep", () => {
   });
 });
 
+const ESC = String.fromCharCode(27);
+
+const MCP_LIST = [
+  "docs: connected, 3 tools (direct, user)",
+  "  stdio npx -y docs-server",
+  "  tools: search, fetch, list",
+  `${ESC}[32mmy server.v2${ESC}[0m: connected, 1 tool (search, project)`,
+  "  http https://mcp.example.test/",
+  "  tools: lookup",
+  "  team/notes: connected, 0 tools (direct, user)",
+  "  stdio notes",
+  "drafts: needs sign-in (direct, user)",
+  "  http https://drafts.example.test/",
+  "  sign in with: pi mcp login drafts",
+  "",
+].join("\n");
+
+describe("checkMcp", () => {
+  it("counts the servers pi mcp list reports connected, whatever their names, ignoring colour and indentation", async () => {
+    const target = await targetWith(async (_spec, io) => {
+      io.stdout.write(MCP_LIST);
+
+      return 0;
+    });
+
+    expect(await checkMcp(target)).toMatchObject({
+      status: "ok",
+      brief: "3 MCP servers connect from the sandbox",
+    });
+  });
+
+  it("leaves the count out when no server is connected", async () => {
+    const target = await targetWith(async (_spec, io) => {
+      io.stdout.write(
+        "No MCP servers configured. Add them to /home/pi/.pi/agent/mcp.json or .pi/mcp.json.\n",
+      );
+
+      return 0;
+    });
+
+    expect((await checkMcp(target)).brief).toBeUndefined();
+  });
+});
+
 describe("sweepCredentials", () => {
   const TOKEN = "a".repeat(64);
 
@@ -49,7 +93,7 @@ describe("sweepCredentials", () => {
     expect(await sweepCredentials(target, TOKEN)).toMatchObject({
       status: "fail",
       reasons: expect.arrayContaining([
-        "environment variable HTTPS_PROXY holds the proxy token, which only the relay may hold",
+        "environment variable HTTPS_PROXY holds the proxy token, which belongs to the proxy, never to the sandbox",
       ]),
     });
   });
@@ -80,6 +124,7 @@ describe("sweepCredentials", () => {
       status: "ok",
       detail:
         "no credential in the environment, auth.json or mcp.json; env.set values not checked: GIT_CONFIG_KEY_0, GIT_CONFIG_KEY_1",
+      brief: "env.set values not checked: GIT_CONFIG_KEY_0, GIT_CONFIG_KEY_1",
     });
   });
 

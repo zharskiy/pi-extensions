@@ -31,7 +31,7 @@ const COMMANDS: Array<[string, string]> = [
   ["pi sandbox stop", "stop the services and the sandbox VM when no pi session runs"],
   [
     "pi sandbox doctor [--verbose]",
-    "prepare the sandbox like pi and report each check by area, with a hint per problem; --verbose lists every credential rule",
+    "prepare the sandbox like pi and report what needs attention by area, with a hint per problem; --verbose lists every check with its detail",
   ],
   ["pi sandbox --version", "print the launcher version"],
   ["pi sandbox help", "show this help"],

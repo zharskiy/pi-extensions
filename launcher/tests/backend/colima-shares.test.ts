@@ -5,7 +5,7 @@ import { vmSharesOf } from "../../backend/colima/colima-yaml.ts";
 import { shareText } from "../../backend/colima/profile.ts";
 import { restartedShares, shareFor, sharesFor } from "../../backend/colima/shares.ts";
 import { createColimaVm } from "../../backend/colima/vm.ts";
-import { type Backend, LABELS, type VmPath, type VmShare } from "../../backend/index.ts";
+import { type Backend, LABELS, type Vm, type VmPath, type VmShare } from "../../backend/index.ts";
 import { run } from "../../cli/index.ts";
 import { registerLaunch } from "../../grants/index.ts";
 import { processMark, sha256Hex } from "../../shared/index.ts";
@@ -64,6 +64,7 @@ interface Setup {
   lima?: (paths: Paths) => YamlMount[];
   answers?: ColimaAnswers;
   backend?: Partial<Backend>;
+  vm?: Partial<Vm>;
   config?: unknown;
 }
 
@@ -97,7 +98,7 @@ const launchWith = async (setup: Setup = {}) => {
         },
       });
 
-      return { ...backend, vm };
+      return { ...backend, vm: { ...vm, ...setup.vm } };
     },
     respond: (call) => colima(holder.home, answers)(call),
   });
@@ -489,7 +490,7 @@ describe("the coverage of the VM shares", () => {
   it("lets pi sandbox doctor name a path the VM lacks without sharing it or restarting the VM", async () => {
     const context = await launchWith();
 
-    await run(["sandbox", "doctor"], context.harness.deps);
+    await run(["sandbox", "doctor", "--verbose"], context.harness.deps);
 
     expect(doctorCheck(context.harness.stdout(), "vm shares")).toMatchObject({
       status: "warn",
@@ -508,7 +509,7 @@ describe("the coverage of the VM shares", () => {
       ],
     });
 
-    await run(["sandbox", "doctor"], context.harness.deps);
+    await run(["sandbox", "doctor", "--verbose"], context.harness.deps);
 
     expect(doctorCheck(context.harness.stdout(), "vm shares")).toMatchObject({
       status: "ok",
@@ -679,7 +680,7 @@ describe("the VM shares with workspaceRoots set", () => {
     });
     const { home, stateDir } = context.paths;
 
-    await run(["sandbox", "doctor"], context.harness.deps);
+    await run(["sandbox", "doctor", "--verbose"], context.harness.deps);
 
     expect(doctorCheck(context.harness.stdout(), "vm shares")).toMatchObject({
       status: "warn",
@@ -692,7 +693,7 @@ describe("the VM shares with workspaceRoots set", () => {
   it("passes pi sandbox doctor when the VM shares exactly the configured set", async () => {
     const context = await launchWithRoots({ lima: rootsShares });
 
-    await run(["sandbox", "doctor"], context.harness.deps);
+    await run(["sandbox", "doctor", "--verbose"], context.harness.deps);
 
     expect(doctorCheck(context.harness.stdout(), "vm shares")).toMatchObject({ status: "ok" });
   });
@@ -790,7 +791,7 @@ describe("the VM shares with workspaceRoots set, at the edges", () => {
 
     await writeFile(limaYaml(context.paths.home), "mounts: [ { location: /x } ]\n");
 
-    await run(["sandbox", "doctor"], context.harness.deps);
+    await run(["sandbox", "doctor", "--verbose"], context.harness.deps);
 
     expect(doctorCheck(context.harness.stdout(), "vm shares")).toMatchObject({
       status: "warn",
@@ -805,11 +806,42 @@ describe("the VM shares with workspaceRoots set, at the edges", () => {
       roots: ({ root, repoRoot }) => [repoRoot, join(root, "gone")],
     });
 
-    await run(["sandbox", "doctor"], context.harness.deps);
+    await run(["sandbox", "doctor", "--verbose"], context.harness.deps);
 
     expect(doctorCheck(context.harness.stdout(), "vm shares")).toMatchObject({
       status: "ok",
       reasons: [`workspaceRoots: ${join(context.paths.root, "gone")} does not exist, not shared`],
+    });
+  });
+
+  it("keeps that root's reason in the default view, on the vm line or under vm shares", async () => {
+    const roots = ({ root, repoRoot }: Paths) => [repoRoot, join(root, "gone")];
+    const merged = await launchWithRoots({ lima: rootsShares, roots });
+
+    await run(["sandbox", "doctor"], merged.harness.deps);
+
+    const vmLine = doctorCheck(merged.harness.stdout(), "vm");
+
+    expect(vmLine?.detail).toContain("shares this repository");
+    expect(vmLine?.reasons).toEqual([
+      `workspaceRoots: ${join(merged.paths.root, "gone")} does not exist, not shared`,
+    ]);
+
+    const small = await launchWithRoots({
+      lima: rootsShares,
+      roots,
+      vm: { size: async () => ({ cpus: 2, memoryGiB: 4 }) },
+    });
+
+    await run(["sandbox", "doctor"], small.harness.deps);
+
+    const stdout = small.harness.stdout();
+
+    expect(doctorCheck(stdout, "vm")).toBeUndefined();
+    expect(doctorCheck(stdout, "vm size")?.status).toBe("warn");
+    expect(doctorCheck(stdout, "vm shares")).toMatchObject({
+      status: "ok",
+      reasons: [`workspaceRoots: ${join(small.paths.root, "gone")} does not exist, not shared`],
     });
   });
 });

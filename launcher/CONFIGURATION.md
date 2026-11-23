@@ -153,7 +153,7 @@ A blocked request gets a 403 page that says what to do. When pi exits, the launc
 
 Any other case prints the proxy's own reason.
 
-`pi sandbox doctor` puts the same reason and hint under the `rule` check of a credential host the proxy refused. Every other host blocked during its run becomes a `blocked <host:port>` warning in the network section, with the same reason and hint, instead of a line printed when it exits; a run that stops before its probes reports none.
+`pi sandbox doctor` puts the same reason and hint under the check of a credential host the proxy refused. Every other host blocked during its run becomes a `blocked <host:port>` warning in the network section, with the same reason and hint, instead of a line printed when it exits; a run that stops before its probes reports none.
 
 ## Image
 
@@ -371,7 +371,7 @@ Your Mac's process behind the VM keeps one open file for each file the VM has ca
 
 It skips a check while another launch is changing the VM, and does nothing when it cannot find the VM's process. It finds that process as the holder of the VM's disk file, `disk`, or `diffdisk`, as Lima older than 2.1 names it, or its data disk. When several processes hold them, it watches the one with the most open files and looks again every 5 minutes. When looking again times out, it keeps watching the process it found before while that process runs. When pi exits during a release, the launcher waits for the release to finish. Set `vm.releaseFileCache` to `false` to turn it off.
 
-The `file cache` line of `pi sandbox doctor`, there also when the sandbox does not start, shows the count and the limit, and warns when the count is past it, when the release cannot find the VM's process, when looking for it timed out or could not run, or when it cannot read the limit. With `vm.releaseFileCache` off, it warns only when the count is past the limit. It only reads; it never drops the cache. `resources.openFiles` does not change any of this: it limits each process inside the container, not your Mac's process behind the VM.
+The `file cache` line of `pi sandbox doctor`, there also when the sandbox does not start, prints by default when it warns or skips for a reason it names (the VM is not running, or likely stopped), not when it is ok or skipped off macOS or on a backend that does not count; `pi sandbox doctor --verbose` always prints it. It shows the count and the limit, and warns when the count is past it, when the release cannot find the VM's process, when looking for it timed out or could not run, or when it cannot read the limit. With `vm.releaseFileCache` off, it warns only when the count is past the limit. It only reads; it never drops the cache. `resources.openFiles` does not change any of this: it limits each process inside the container, not your Mac's process behind the VM.
 
 ## Settings written back
 

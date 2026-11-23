@@ -264,11 +264,13 @@ export const tlsInspectionResult = (host: HostTls): CheckResult => {
   const [builtin, extras] = reading.verdicts;
 
   if (builtin === null) {
-    return passed("not inspected");
+    return passed("not inspected", { brief: "not inspected" });
   }
 
   if (extras === null) {
-    return passed(`inspected by ${topIssuer(reading)}, trusted via tls.extraCa`);
+    const inspected = `inspected by ${topIssuer(reading)}, trusted via tls.extraCa`;
+
+    return passed(inspected, { brief: inspected });
   }
 
   if (!isIssuerError(builtin)) {
@@ -289,7 +291,7 @@ const layerOf = (sandbox: Presented, host: Presented) => {
 
   return host.verdicts[0] === null
     ? `the container's system store (NODE_EXTRA_CA_CERTS=${bundle}) does not hold the public roots`
-    : `the container's system store (NODE_EXTRA_CA_CERTS=${bundle}) does not hold the tls.extraCa certificates; the sandbox layer adds them when it is built, and a launch rebuilds it after tls.extraCa changes`;
+    : `the container's system store (NODE_EXTRA_CA_CERTS=${bundle}) does not hold the tls.extraCa certificates; the sandbox image adds them when it is built, and a launch rebuilds it after tls.extraCa changes`;
 };
 
 export const sandboxTlsResult = (sandbox: TlsReading, host: HostTls): CheckResult => {
