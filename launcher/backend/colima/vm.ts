@@ -483,6 +483,7 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
 
   return {
     watchFileCache: () => watchFileCache(fileCache, options.ticker),
+    readFileCache: fileCache.read,
     inspect,
     apply: (desired, options) => withLock(() => applyLocked(desired, options)),
     ensureRunning,

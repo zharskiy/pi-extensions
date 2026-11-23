@@ -175,8 +175,16 @@ export interface VmWatch {
   stop(): Promise<void>;
 }
 
+type VmOpenFiles = number | "timed out";
+
+export type VmFileCache =
+  | { state: "no-vm"; looked: string[] }
+  | { state: "no-limit"; count: VmOpenFiles }
+  | { state: "counted"; count: VmOpenFiles; limit: number; maxFiles: number };
+
 export interface Vm {
   watchFileCache?(): VmWatch;
+  readFileCache?(): Promise<VmFileCache>;
   ensureRunning(report: VmReport, shares?: VmShare[], size?: VmTarget): Promise<void>;
   coverage(paths: VmPath[]): Promise<VmCoverage | "unreadable" | undefined>;
   reconcile(wanted: VmReconcile, options: VmShareOptions): Promise<void>;

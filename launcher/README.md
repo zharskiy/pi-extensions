@@ -274,7 +274,7 @@ Start with `pi sandbox doctor`, which names the failing check.
 | `sudo`, `doas` or `systemctl` says `there is no root in the sandbox` | Add packages to `image.packages`, which installs them as root when the image is built, and list a server the agent needs under `services`, which runs it in a container of its own, see [Services](CONFIGURATION.md#services). |
 | Perl or another program prints `Setting locale failed` | `env.allow` lists `LANG` and the image lacks that locale. Drop `LANG` to keep the image's `C.UTF-8`, or generate the locale with `image.dockerfile`, see [Variables passed into the sandbox](CONFIGURATION.md#variables-passed-into-the-sandbox). |
 | The npm registry lacks your host pi version | Install a published pi version on your Mac. |
-| A large build fails with `Too many open files in system` | Your Mac ran out of open files for the VM's cached files. See [File cache](CONFIGURATION.md#file-cache). Until then, `pi sandbox stop` once no pi session runs frees them all, or raise the limit until the next reboot with `sudo sysctl -w kern.maxfiles=524288 kern.maxfilesperproc=262144`. |
+| A large build fails with `Too many open files in system` | Your Mac ran out of open files for the VM's cached files. Check the `file cache` line of `pi sandbox doctor` and [File cache](CONFIGURATION.md#file-cache). Until then, `pi sandbox stop` once no pi session runs frees them all, or raise the limit until the next reboot with `sudo sysctl -w kern.maxfiles=524288 kern.maxfilesperproc=262144`. |
 | A running session missed a config change | See [when changes apply](CONFIGURATION.md#when-changes-apply). |
 
 ## Uninstall

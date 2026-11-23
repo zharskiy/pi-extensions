@@ -5,6 +5,7 @@ import {
   LABELS,
   shareDrift,
   shareText,
+  type VmFileCache,
   type VmShare,
   type VmSize,
   type VmTarget,
@@ -199,6 +200,71 @@ const sizeCheck = async (deps: CliDeps, context: LaunchContext, sandbox: Sandbox
     : passed(current);
 };
 
+type Counted = Extract<VmFileCache, { state: "counted" }>;
+
+const RELEASE_OFF_HINT =
+  "vm.releaseFileCache is off, so nothing releases it; turn it on, or run pi sandbox stop, which frees it all";
+
+const pastLimitCheck = ({ count, limit, maxFiles }: Counted, releasing: boolean) => {
+  const counted =
+    count === "timed out"
+      ? "counting the VM's open files timed out, which counts as past"
+      : `${count} open files in the VM's process, past`;
+
+  return warned(`${counted} the release at ${limit} (kern.maxfiles ${maxFiles})`, {
+    hint: releasing
+      ? "it is released while pi runs with vm.releaseFileCache on; pi sandbox stop frees it all"
+      : RELEASE_OFF_HINT,
+  });
+};
+
+const countedCheck = (reading: Counted, releasing: boolean) => {
+  if (reading.count === "timed out" || reading.count >= reading.limit) {
+    return pastLimitCheck(reading, releasing);
+  }
+
+  return passed(
+    releasing
+      ? `${reading.count} open files, released at ${reading.limit}`
+      : `${reading.count} open files; the release at ${reading.limit} is off (vm.releaseFileCache)`,
+  );
+};
+
+const fileCacheCheck = async (deps: CliDeps, context: LaunchContext, sandbox: Sandbox) => {
+  const { vm } = sandbox.backend;
+
+  if (deps.platform !== "darwin") {
+    return skipped("only counted on macOS");
+  }
+
+  if (vm.readFileCache === undefined) {
+    return skipped("the backend does not count the VM's open files");
+  }
+
+  if ((await vm.size()) === undefined) {
+    return skipped("the sandbox VM is not running");
+  }
+
+  const reading = await vm.readFileCache();
+
+  if (reading.state === "no-vm") {
+    return warned("the file cache release cannot find the VM's process, so it does nothing", {
+      hint: `it looks for the Mac process that holds ${reading.looked.join(" or ")}`,
+    });
+  }
+
+  if (reading.state === "no-limit") {
+    return warned(
+      "kern.maxfilesperproc and kern.maxfiles could not be read, so the file cache release does nothing",
+      {
+        hint: "run sysctl kern.maxfilesperproc kern.maxfiles on the Mac to see why",
+      },
+    );
+  }
+
+  return countedCheck(reading, context.effective.config.vm.releaseFileCache);
+};
+
 const sharesPassed = passed("the sandbox VM shares every path this repository needs");
 
 const listed = (shares: VmShare[]) => shares.map(shareText).join(", ");
@@ -375,6 +441,7 @@ const PROBES: Probe[] = [
   single("sessions share", "sandbox", ({ target }) => sessionsShareCheck(target)),
   ruleChecks,
   single("vm size", "sandbox", ({ deps, context, sandbox }) => sizeCheck(deps, context, sandbox)),
+  single("file cache", "sandbox", ({ deps, context, sandbox }) => fileCacheCheck(deps, context, sandbox)),
 ];
 
 const probe = async (deps: CliDeps, context: LaunchContext, sandbox: Sandbox, run: Run) => {

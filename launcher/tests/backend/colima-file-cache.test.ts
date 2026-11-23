@@ -6,7 +6,7 @@ import {
   type FileCacheDeps,
   type FileCacheGuard,
   type FileCacheTick,
-  fileLimitOf,
+  fileLimitsOf,
   LSOF,
   REDISCOVER_INTERVAL_MS,
   RELEASE_COMMAND,
@@ -150,15 +150,15 @@ const scriptedGuard = (tick: FileCacheGuard["tick"]): FileCacheGuard => ({
 
 describe("the file limit of the Mac", () => {
   it("is half the per-process limit or a quarter of the system-wide limit, whichever is lower", () => {
-    expect(fileLimitOf("61440\n122880\n")).toBe(LIMIT);
-    expect(fileLimitOf("10240\n122880\n")).toBe(5120);
-    expect(fileLimitOf("61440\n40000\n")).toBe(10_000);
+    expect(fileLimitsOf("61440\n122880\n")).toEqual({ limit: LIMIT, maxFiles: 122_880 });
+    expect(fileLimitsOf("10240\n122880\n")?.limit).toBe(5120);
+    expect(fileLimitsOf("61440\n40000\n")?.limit).toBe(10_000);
   });
 
   it("is unknown when sysctl does not report both limits", () => {
-    expect(fileLimitOf("")).toBeUndefined();
-    expect(fileLimitOf("61440\n")).toBeUndefined();
-    expect(fileLimitOf("unknown oid\nx\n")).toBeUndefined();
+    expect(fileLimitsOf("")).toBeUndefined();
+    expect(fileLimitsOf("61440\n")).toBeUndefined();
+    expect(fileLimitsOf("unknown oid\nx\n")).toBeUndefined();
   });
 
   it("is read again on each tick until a read succeeds, then kept, and nothing is released while it is unknown", async () => {
@@ -315,6 +315,34 @@ describe("a count that times out", () => {
     expect(await guard.tick()).toBe("below");
     expect(discoveries(calls)).toBe(2);
     expect(released).toEqual([]);
+  });
+});
+
+describe("the file cache reading", () => {
+  it("reports the count, the limit and kern.maxfiles, and releases nothing", async () => {
+    const { guard, released, calls } = guardOf({ pids: ["700"], open: { "700": 50_000 } });
+
+    expect(await guard.read()).toEqual({ state: "counted", count: 50_000, limit: LIMIT, maxFiles: 122_880 });
+    expect(released).toEqual([]);
+    expect(calls.every((call) => call.file === LSOF || call.file === SYSCTL)).toBe(true);
+  });
+
+  it("reports the paths it looked for when no process holds them", async () => {
+    const { guard } = guardOf({ pids: [], held: [], open: {} }, { diskPaths: [DISK, LEGACY_DISK] });
+
+    expect(await guard.read()).toEqual({ state: "no-vm", looked: [DISK, LEGACY_DISK] });
+  });
+
+  it("reports a count that times out on a live process as timed out", async () => {
+    const { guard } = guardOf({ pids: ["700"], open: {}, slow: ["700"] });
+
+    expect(await guard.read()).toMatchObject({ state: "counted", count: "timed out" });
+  });
+
+  it("reports the count without a limit when sysctl does not answer", async () => {
+    const { guard } = guardOf({ pids: ["700"], open: { "700": 120 }, limits: "" });
+
+    expect(await guard.read()).toEqual({ state: "no-limit", count: 120 });
   });
 });
 

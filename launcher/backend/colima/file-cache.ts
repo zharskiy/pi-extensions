@@ -1,5 +1,5 @@
 import type { CommandRunner, LockOutcome, RunResult } from "../../shared/index.ts";
-import type { VmWatch } from "../types.ts";
+import type { VmFileCache, VmWatch } from "../types.ts";
 
 export const LSOF = "/usr/sbin/lsof";
 
@@ -43,6 +43,11 @@ export interface FileCacheGuard {
   settled(): Promise<void>;
 }
 
+interface FileLimits {
+  limit: number;
+  maxFiles: number;
+}
+
 export interface Ticker {
   after(ms: number, run: () => void): () => void;
 }
@@ -72,14 +77,14 @@ export const processAlive = (pid: string) => {
   }
 };
 
-export const fileLimitOf = (stdout: string) => {
+export const fileLimitsOf = (stdout: string): FileLimits | undefined => {
   const [perProcess, total] = stdout.trim().split("\n").map(Number);
 
   if (perProcess === undefined || total === undefined || !(perProcess > 0) || !(total > 0)) {
     return undefined;
   }
 
-  return Math.min(Math.floor(perProcess / 2), Math.floor(total / 4));
+  return { limit: Math.min(Math.floor(perProcess / 2), Math.floor(total / 4)), maxFiles: total };
 };
 
 const busiest = (holders: Holder[]) =>
@@ -92,7 +97,7 @@ export const createFileCacheGuard = (deps: FileCacheDeps) => {
   const state: {
     pid?: string;
     foundAt?: number;
-    limit?: number;
+    limits?: FileLimits;
     releasedAt?: number;
     locking?: Promise<unknown>;
   } = {};
@@ -141,16 +146,16 @@ export const createFileCacheGuard = (deps: FileCacheDeps) => {
     return (await discover())?.count;
   };
 
-  const readLimit = async () => {
-    if (state.limit === undefined) {
+  const readLimits = async () => {
+    if (state.limits === undefined) {
       const read = await deps.runner
         .run(SYSCTL, ["-n", "kern.maxfilesperproc", "kern.maxfiles"], { timeoutMs: PROBE_TIMEOUT_MS })
         .catch(() => undefined);
 
-      state.limit = read?.code === 0 ? fileLimitOf(read.stdout) : undefined;
+      state.limits = read?.code === 0 ? fileLimitsOf(read.stdout) : undefined;
     }
 
-    return state.limit;
+    return state.limits;
   };
 
   const release = async (limit: number, active: () => boolean): Promise<FileCacheTick> => {
@@ -204,7 +209,7 @@ export const createFileCacheGuard = (deps: FileCacheDeps) => {
       return "no-vm";
     }
 
-    const limit = await readLimit();
+    const limit = (await readLimits())?.limit;
 
     if (limit === undefined) {
       return "no-limit";
@@ -225,7 +230,20 @@ export const createFileCacheGuard = (deps: FileCacheDeps) => {
     await state.locking;
   };
 
-  return { tick, settled, discover, countOf };
+  const read = async (): Promise<VmFileCache> => {
+    const holder = await discover();
+
+    if (holder === undefined) {
+      return { state: "no-vm", looked: deps.diskPaths };
+    }
+
+    const count = holder.count === PAST_THE_LIMIT ? "timed out" : holder.count;
+    const limits = await readLimits();
+
+    return limits === undefined ? { state: "no-limit", count } : { state: "counted", count, ...limits };
+  };
+
+  return { tick, settled, read };
 };
 
 export const watchFileCache = (guard: FileCacheGuard, ticker: Ticker = realTicker): VmWatch => {
