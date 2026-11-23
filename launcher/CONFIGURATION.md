@@ -6,7 +6,7 @@ Every setting of the sandbox, where its one config file lives, and how credentia
 
 The sandbox reads one JSON file: `~/.pi/agent/pi-sandbox/config.json` (`pi-sandbox/config.json` under `PI_CODING_AGENT_DIR` when set). It belongs to you, the user who runs the launcher; there is no other config file and no setting above yours. `PI_SANDBOX_USER_CONFIG` moves the file to another path ([environment variables](#environment-variables-the-launcher-reads)). A key you set replaces its default; `env.allow` adds to the default terminal variables.
 
-Without the file the defaults apply. The launcher reads it at every launch and writes it only in `pi sandbox init`, which changes only the keys it asks about: `workspaceRoots`, `vm.cpus`, `vm.memoryGiB`, `vm.diskGiB` and `writeBack.enabled`. It keeps every other key and their order, and the file's indentation where it can. Nothing in the project folder configures the sandbox; see [One config for every session](#one-config-for-every-session).
+Without the file the defaults apply. The launcher reads it at every launch and writes it only in `pi sandbox init`, which changes only the keys it asks about: `workspaceRoot`, `vm.cpus`, `vm.memoryGiB`, `vm.diskGiB` and `writeBack.enabled`. It keeps every other key and their order, and the file's indentation where it can. Nothing in the project folder configures the sandbox; see [One config for every session](#one-config-for-every-session).
 
 `pi sandbox config` prints the result and, for each key, whether it comes from the file (`config`) or the default. Add `--json` for machine-readable output.
 
@@ -14,7 +14,7 @@ The keys are described in [schema/sandbox-config.schema.json](schema/sandbox-con
 
 An invalid value or an unknown key stops the launch. The message names the key, and the hint names the file to fix.
 
-The message also shows the value for `image.dockerfile`, `image.packages`, `tls.extraCa` files, `workspaceRoots.roots`, `mounts.volumes` targets, `mounts.binds` sources and targets, `services[].volumes[].target`, `services[].tmpfs` and `env.allow`. Host, credential and `npmGlobal` values are never shown.
+The message also shows the value for `image.dockerfile`, `image.packages`, `tls.extraCa` files, `workspaceRoot`, `mounts.volumes` targets, `mounts.binds` sources and targets, `services[].volumes[].target`, `services[].tmpfs` and `env.allow`. Host, credential and `npmGlobal` values are never shown.
 
 ## When changes apply
 
@@ -24,7 +24,7 @@ Each launch gets a new container, so most changes apply at the next `pi`. Your M
 - **Network settings** reach running sessions when you start a new `pi`, in any folder. These are `egress.allow`, `egress.deny` and `egress.privateHosts`. Editing the file alone changes nothing for them.
 - **Credential rules, `env` secrets, the parent proxy and `tls.extraCa`** wait until every pi of the launcher state folder has exited.
 - **`vm`** size applies at the next launch with no other pi session running, which restarts the VM, or at once through `pi sandbox init` when no pi session runs. `vm.releaseFileCache` applies from the next `pi`.
-- **`workspaceRoots`** limits where pi starts from the next launch. The VM's shares follow at the next launch with no other pi session running, which restarts the VM, or at once through `pi sandbox init` when no pi session runs (see [below](#workspace-roots)).
+- **`workspaceRoot`** limits where pi starts from the next launch. The VM's shares follow at the next launch with no other pi session running, which restarts the VM, or at once through `pi sandbox init` when no pi session runs (see [below](#workspace-root)).
 - **`writeBack`** applies from the next launch. Nothing is copied back from sessions started under the old list, not even from one still running, and a line says so (see [below](#settings-written-back)). An `env` secret is a credential rule whose secret comes from a variable of your shell.
 - **`image`, `env.set`, `resources`, `mounts.volumes` and `setup`** apply to the next launch's new container; sessions already running keep what they started with.
 - **`mounts.binds`** apply at the next launch. A source the VM does not share yet restarts the VM when no other pi session runs, and is refused while one does (see [below](#read-only-binds)).
@@ -79,9 +79,9 @@ The file applies to every pi you start in the sandbox, in every folder. There ar
 | `vm.cpus`, `vm.memoryGiB`, `vm.diskGiB` | The size of the VM itself, which every container shares ([below](#vm-size)). | the size the VM was created with; set by `pi sandbox init` |
 | `vm.releaseFileCache` | While pi runs, drop the VM's file cache before your Mac runs short of open files ([below](#file-cache)). | `true` |
 | `writeBack` | Which settings changed inside come back to your Mac ([below](#settings-written-back)); `pi sandbox init` sets `writeBack.enabled`. | the built-in list |
-| `sessions.host` | Keep sessions in host pi's own session folder. | `true` |
+| `sessions.host` | Keep sessions in host pi's own session folder. Off, they stay in the one pi folder every folder's sandbox shares, and `pi sandbox reset --agent` removes them with it. | `true` |
 | `terminal.clipboard` | On a Mac, put what pi inside copies (OSC 52) on the clipboard with `pbcopy`, copy a pasted image path into the sandbox, and paste a clipboard PNG or a single copied image file on Ctrl+V. | `true` |
-| `workspaceRoots` | Folders pi may start in, as `{ "roots": [...] }`, and, with the bind sources, the only folders the VM shares ([below](#workspace-roots)); set by `pi sandbox init`. | anywhere; the VM shares your home |
+| `workspaceRoot` | The folder that holds your projects: pi starts only inside it, and, with the bind sources, it is the only project folder the VM shares ([below](#workspace-root)); set by `pi sandbox init`. Required to launch. | not set: pi does not start |
 
 The sections below explain each group.
 
@@ -186,7 +186,7 @@ With `mounts.autoOverlays` on, these folders get a volume of their own when a ma
 
 This keeps Linux builds apart from your Mac's. Inside, the host copy is hidden, so run your install command once there. Maven `target/` and Gradle `build/` are not overlaid and stay on your Mac's folder: their builds remove and recreate them, and a build tool that deletes its output folder fails on a volume mounted there (`mvn clean`, for example, fails with `EBUSY`). A build that writes very many files there is safe through the [file cache release](#file-cache).
 
-If there are more than 512 such folders, nothing is overlaid and a notice says so. A repository too large to search gets no overlays and a notice. A plain folder that large is refused. Set `mounts.autoOverlays` to `false` to use your Mac's copies.
+If there are more than 512 such folders, nothing is overlaid and a notice says so. Only the repository pi starts in is searched, never the other projects in the workspace root. A repository too large to search (over 50,000 directories) gets no overlays and a notice, and so does a folder outside git: `pi-sandbox: <folder> is not in a git repository; build output is not overlaid, the host copies are used`. Set `mounts.autoOverlays` to `false` to use your Mac's copies.
 
 If an overlay folder is missing, the launcher creates it empty on your Mac. It removes it again, if still empty, after the folder's last session. `pi sandbox reset` removes the overlay volumes.
 
@@ -226,9 +226,9 @@ A user volume stays until you uninstall; `pi sandbox reset` of a folder and the 
 { "mounts": { "binds": [{ "source": "~/reference/schemas", "target": "/etc/schemas" }] } }
 ```
 
-- `source` is an absolute path or starts with `~/`. It must exist, and it is checked on your Mac before anything starts, with the rules of a [workspace root](#workspace-roots): not your home or a folder above it, nothing under `~/.ssh`, `~/.aws`, `~/.config` and the other folders the sandbox protects, not the launcher's or pi's folders. An error names `mounts.binds[<n>].source`.
+- `source` is an absolute path or starts with `~/`. It must exist, and it is checked on your Mac before anything starts, with the rules of the [workspace root](#workspace-root): not your home or a folder above it, nothing under `~/.ssh`, `~/.aws`, `~/.config` and the other folders the sandbox protects, not the launcher's or pi's folders. An error names `mounts.binds[<n>].source`.
 - The VM must see the source. A folder source, or the folder of a file source, that lies inside a folder the VM already shares needs nothing more. Otherwise the VM shares it, read-only. A source that holds a folder the VM shares, such as a folder above a workspace root, is refused, since the VM cannot share nested folders.
-- A source whose real path is a folder the launch mounts writable, lies inside one or holds one is refused (`… overlaps <path>, which the sandbox already mounts`). Those folders are the repository, the workspace roots, the git folders of the repository and of its linked worktrees, and pi's session folder. Bind a folder or file apart from them.
+- A source whose real path is a folder the launch mounts writable, lies inside one or holds one is refused (`… overlaps <path>, which the sandbox already mounts`). Those folders are the workspace root, which holds the repository and its git folders, and pi's session folder. Bind a folder or file apart from them.
 - Right before the container is created, each source is checked again. A short window between this check and the engine resolving the source stays open; binds are read-only (see [THREAT-MODEL.md](THREAT-MODEL.md)). A source that became a link, changed from file to folder or the other way round, or now resolves elsewhere stops the launch with `… changed while pi was starting, refusing`; run pi again.
 - A new share needs a VM restart. A launch with no other pi session running restarts the VM once, with a line that says so. While other sessions run, the launch is refused and names the path the VM does not share yet; end the other sessions and start pi again. `pi sandbox init` plans the same shares, bind sources included.
 - The [target rules](#mount-targets) apply.
@@ -418,23 +418,26 @@ Choose an added key with care: a sandboxed agent can set it to any value its che
 
 Every launch uses the list it started with. After you change `writeBack`, the next launch copies nothing back from earlier sessions, including one still running, so a change made under the old list is never judged by the new one; it prints `pi-sandbox: the write-back list changed; nothing is written back from sessions started under the old list`. `pi sandbox config` lists the keys of each file and whether they come from the default or your config.
 
-## Workspace roots
+## Workspace root
 
 ```json
-{ "workspaceRoots": { "roots": ["~/work", "/Volumes/code"] } }
+{ "workspaceRoot": "~/work" }
 ```
 
-Without `workspaceRoots`, pi starts anywhere the guard allows, and the VM shares your whole home, writable. With it:
+`workspaceRoot` is one folder, an absolute path or one starting with `~/`. It is required for the sandbox: while it is unset, `pi` stops with `config: workspaceRoot is not set, so pi has no folder it may start in` and a hint to run `pi sandbox init` or set the key, and `pi sandbox doctor` fails its `vm shares` check for the same reason and leaves the VM stopped. `pi --no-sandbox` runs without it, as no VM is involved. A root that does not exist stops `pi`, `pi --no-sandbox` and the doctor with `config: workspaceRoot: <root> does not exist` and a hint to create the folder, mount its volume or point the key at another folder. With it:
 
-- **Pi starts only inside a root.** A launch is refused when the repository, or a git dir it mounts (a worktree's main `.git`, say), lies outside every root. The message names the folder and `workspaceRoots.roots`.
-- **The VM shares only the roots**, writable, plus pi's session folder `<agent dir>/sessions` (writable), the launcher's `<state>/vm` folder (read-only, the rendered agent files) and the folders of [`mounts.binds`](#read-only-binds) sources outside the roots (read-only). Your home is not shared.
-- **The VM restarts when its shares differ.** At the first launch after you set or change the roots, the launcher restarts the VM with exactly this list and says so. While other pi sessions run, a launch the current shares already cover goes ahead and the VM is changed at the next launch with no session running; a launch they do not cover stops and asks you to exit the others. `pi sandbox doctor` warns while the shares differ.
+- **Pi starts only inside the root.** A launch, with or without the sandbox, is refused when the repository lies outside it: `<folder> is outside the workspace root (workspaceRoot: <root>)`, and when its git dir or common dir (a worktree's main `.git`, say) does: `git: the git dir <dir> of <folder> is outside the workspace root (workspaceRoot: <root>)`. `pi --no-sandbox` checks only that the repository is inside the root: a git dir outside it, or a root that is your home or holds it, is allowed there, as nothing is shared.
+- **The sandbox sees the whole root.** Wherever pi starts in it, the container mounts the root read-write at its own path, every project and git dir in it included; see [THREAT-MODEL.md](THREAT-MODEL.md#3-baseline-guarantees). Keep only your own projects in it.
+- **The VM shares only the root**, writable, plus pi's session folder `<agent dir>/sessions` (writable), the launcher's `<state>/vm` folder (read-only, the rendered agent files) and the folders of [`mounts.binds`](#read-only-binds) sources outside the root (read-only). Your home is never shared whole.
+- **The VM restarts when its shares differ.** At the first launch after you set or change the root, the launcher restarts the VM with exactly this list and says so, naming the new list and what it adds and drops. While other pi sessions run, a launch the current shares already cover goes ahead and the VM is changed at the next launch with no session running; a launch they do not cover stops and asks you to exit the others. `pi sandbox doctor` warns while the shares differ.
 
-A root is refused when it holds `,`, `:`, a newline or another control character, is your home or a folder above it, or is, holds or lies inside a path the VM could use to take over the host: `~/.pi`, the agent dir, the launcher state dir, the user config file and its folder, `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.docker`, `~/.colima`, `~/.kube`, `~/.config`, `~/.local/bin`, `~/Library`, `/etc`, `/usr`, `/opt`, `/System`, `/Library`, `/bin` or `/sbin`. `/private` and `/var` are refused when the root is or holds them (the macOS temp folder lies inside them). A root written inside another root is dropped before its links are followed, so a link planted there cannot point it elsewhere; a root whose real path lies inside another is dropped too. A root that does not exist is skipped with `workspaceRoots: <root> does not exist, not shared`, and `pi sandbox doctor` lists it under `vm shares`. The VM's shares must not nest: when `<agent dir>/sessions` or `<state>/vm` resolves into a root, or a root into them, the launch stops with a `config:` error before the VM is touched.
+The root may not be your home or a folder that holds it: `~` is refused when the config loads, and a path that resolves to your home or above it (`/Users`, `/`, `~/..`) is refused at launch, before the VM is touched, with `config: workspaceRoot: <root> is the home dir or holds it, which would share all of it with the sandbox VM`. Choose the folder in your home that holds your projects, or a folder elsewhere such as `/Volumes/Projects`. The root is also refused when it holds `,`, `:`, a newline or another control character, or is, holds or lies inside a path the VM could use to take over the host: `~/.pi`, the agent dir, the launcher state dir, the user config file and its folder, `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.docker`, `~/.colima`, `~/.kube`, `~/.config`, `~/.local/bin`, `~/Library`, `/etc`, `/usr`, `/opt`, `/System`, `/Library`, `/bin` or `/sbin`. `/private` and `/var` are refused when the root is or holds them (the macOS temp folder lies inside them). `pi sandbox init`, `--yes` included, accepts a root that does not exist yet, prints `workspaceRoot: <root> is missing, so it is not shared until it exists` and leaves it out of the VM's shares; a launch then stops until the folder exists. The VM's shares must not nest: when `<agent dir>/sessions` or `<state>/vm` resolves into the root, or the root into them, the launch stops with a `config: workspaceRoot:` error before the VM is touched.
 
 The VM's shares follow the config of whichever agent dir launches pi, since every agent dir uses the same `pi-sandbox` VM. Two agent dirs with different roots therefore make the VM restart when you switch between them while no pi session runs; while a session of either runs, a launch counts it as a live session.
 
-`pi sandbox init` chooses the roots with you and applies them to the VM at once, restarting it when no pi session runs. In a script, or on a machine without a terminal, set `PI_SANDBOX_ROOTS` and run `pi sandbox init --yes` (or `install.sh`, which does): it writes the roots into a config without `workspaceRoots`, and stops when the config names other roots (see [Set up the sandbox](README.md#set-up-the-sandbox)).
+`pi sandbox init` chooses the root with you and applies it to the VM at once, restarting it when no pi session runs. In a script, or on a machine without a terminal, set `PI_SANDBOX_ROOT` and run `pi sandbox init --yes` (or `install.sh`, which does): it writes the root into a config without `workspaceRoot`, stops when the config names another root, and stops when neither the config nor `PI_SANDBOX_ROOT` names one (see [Set up the sandbox](README.md#set-up-the-sandbox)).
+
+The key replaced `workspaceRoots: { "roots": [...] }` and the mode that shared your whole home; see [REMOVED-DEFAULTS.md](REMOVED-DEFAULTS.md#several-workspace-roots-and-the-home-share).
 
 ## Variables passed into the sandbox
 
@@ -777,6 +780,6 @@ The image has one Node and one Python. For more:
 | Provider API key variables | Derived as credentials. The proxy reads them on your Mac. |
 | The names in `env.allow` | Passed into each pi run. |
 | `COLIMA_HOME` | Ignored. The launcher always uses `~/.colima/pi-sandbox`. |
-| `PI_SANDBOX_ROOTS` | Read by `pi sandbox init`: project folders separated by `:` (a relative one counts from the current folder). On a first run the interactive setup lists them checked; `--yes` writes them to a config without `workspaceRoots`. |
+| `PI_SANDBOX_ROOT` | Read by `pi sandbox init`: the folder that holds your projects (a relative path counts from the current folder). On a first run the interactive setup offers it first; `--yes` writes it to a config without `workspaceRoot`, and refuses your home or a folder that holds it. |
 | `PI_SANDBOX_PLAIN` | When set, `pi sandbox init` asks its questions as numbered lines that you answer by typing, with no menu, no spinner and no colour, for screen readers and plain terminals. |
 | `CI` | When set, `pi sandbox init` without `--yes` refuses instead of asking, and never opens `/dev/tty`. |

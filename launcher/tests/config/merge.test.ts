@@ -33,7 +33,7 @@ const COMPLETE_CONFIG: UserConfig = {
     privateHosts: ["*.corp.internal"],
   },
   tls: { extraCa: [{ file: "/etc/corp/ca.pem" }] },
-  workspaceRoots: { roots: ["/work"] },
+  workspaceRoot: "/work",
   mounts: {
     volumes: ["~/.cache/pip", { target: "/opt/data", name: "data" }],
     binds: [{ source: "/etc/corp", target: "/etc/corp" }],
@@ -59,9 +59,8 @@ const leafKeys = () => [
   ...settableKeys().filter((key) => {
     const value = getPath(COMPLETE_CONFIG, key);
 
-    return value !== undefined && !isJsonObject(value) && !key.startsWith("workspaceRoots.");
+    return value !== undefined && !isJsonObject(value);
   }),
-  "workspaceRoots",
   "env.set",
 ];
 

@@ -23,13 +23,7 @@ const noBackend = () => {
 };
 
 const workspaceRoot = async () => {
-  const harness = await createHarness({
-    backend: noBackend,
-    respond: (call) =>
-      call.file === "git" && String(call.options.cwd ?? "").includes("work")
-        ? { stdout: `${call.options.cwd}\n.git\n` }
-        : undefined,
-  });
+  const harness = await createHarness({ backend: noBackend });
   const work = join(harness.root, "work");
 
   await mkdir(join(work, "a", ".git", "hooks"), { recursive: true });
@@ -74,7 +68,7 @@ describe("pi install and pi remove", () => {
     expect(hostPiRuns(harness)).toEqual([["remove", ext]]);
   });
 
-  it("treats every source host pi would read as a path as local, and refuses it inside the repository", async () => {
+  it("treats every source host pi would read as a path as local, and installs it from the workspace root with a notice", async () => {
     const harness = await createHarness({ backend: noBackend });
     const sources = [
       " npm:foo",
@@ -87,12 +81,12 @@ describe("pi install and pi remove", () => {
     ];
 
     expect(await Promise.all(sources.map((source) => run(["install", source], harness.deps)))).toEqual(
-      sources.map(() => 1),
+      sources.map(() => 0),
     );
-    expect(hostPiRuns(harness)).toEqual([]);
+    expect(hostPiRuns(harness)).toHaveLength(sources.length);
     sources.forEach((source) => {
       expect(harness.stderr()).toContain(
-        `pi-sandbox: ${source} lies in a git working tree or a sandboxed folder, which a sandbox can rewrite; not installed on the host\n`,
+        `pi-sandbox: ${source} lies in the workspace root or a folder a sandbox has run in, which a sandbox can rewrite; pi on the host runs it as it is\n`,
       );
     });
   });
@@ -128,7 +122,7 @@ describe("pi install and pi remove", () => {
     expect(hostPiRuns(harness)).toEqual([["install", ext]]);
   });
 
-  it("refuses to install a package source inside the repository on the host", async () => {
+  it("installs a package source inside the workspace root or a sandboxed folder on the host, with a notice", async () => {
     const harness = await createHarness({ backend: noBackend });
     const link = join(harness.deps.home, "tools", "ext");
 
@@ -138,32 +132,32 @@ describe("pi install and pi remove", () => {
 
     await symlink(join(harness.repoRoot, "ext"), link);
 
-    expect(await run(["install", "../ext"], harness.deps)).toBe(1);
-    expect(await run(["install", link], harness.deps)).toBe(1);
-    expect(await run(["install", "ext"], harness.deps)).toBe(1);
-    expect(await run(["install", `file://${join(harness.repoRoot, "ext")}`], harness.deps)).toBe(1);
+    expect(await run(["install", "../ext"], harness.deps)).toBe(0);
+    expect(await run(["install", link], harness.deps)).toBe(0);
+    expect(await run(["install", "ext"], harness.deps)).toBe(0);
+    expect(await run(["install", `file://${join(harness.repoRoot, "ext")}`], harness.deps)).toBe(0);
 
     const workspace = await workspaceRoot();
 
     await writeRepoRecord(pathsOf(workspace.deps).stateDir, repoHash(workspace.deps.cwd), workspace.deps.cwd);
 
-    expect(await run(["install", "./tools/ext"], workspace.deps)).toBe(1);
-    expect([...hostPiRuns(harness), ...hostPiRuns(workspace)]).toEqual([]);
-    expect(await readdir(harness.hostAgentDir).catch(() => [])).toEqual(["bin", "install"]);
+    expect(await run(["install", "./tools/ext"], workspace.deps)).toBe(0);
+    expect(hostPiRuns(harness)).toHaveLength(4);
+    expect(hostPiRuns(workspace)).toEqual([["install", join(workspace.deps.cwd, "tools", "ext")]]);
     expect(harness.stderr()).toContain(
-      "pi-sandbox: ../ext lies in a git working tree or a sandboxed folder, which a sandbox can rewrite; not installed on the host\n",
+      "pi-sandbox: ../ext lies in the workspace root or a folder a sandbox has run in, which a sandbox can rewrite; pi on the host runs it as it is\n",
     );
     expect(harness.stderr()).toContain(
-      `pi-sandbox: ${link} lies in a git working tree or a sandboxed folder, which a sandbox can rewrite; not installed on the host\n`,
+      `pi-sandbox: ${link} lies in the workspace root or a folder a sandbox has run in, which a sandbox can rewrite; pi on the host runs it as it is\n`,
     );
     expect(harness.stderr()).toContain(
-      "pi-sandbox: ext lies in a git working tree or a sandboxed folder, which a sandbox can rewrite; not installed on the host\n",
+      "pi-sandbox: ext lies in the workspace root or a folder a sandbox has run in, which a sandbox can rewrite; pi on the host runs it as it is\n",
     );
     expect(harness.stderr()).toContain(
-      `pi-sandbox: file://${join(harness.repoRoot, "ext")} lies in a git working tree or a sandboxed folder, which a sandbox can rewrite; not installed on the host\n`,
+      `pi-sandbox: file://${join(harness.repoRoot, "ext")} lies in the workspace root or a folder a sandbox has run in, which a sandbox can rewrite; pi on the host runs it as it is\n`,
     );
     expect(workspace.stderr()).toContain(
-      "pi-sandbox: ./tools/ext lies in a git working tree or a sandboxed folder, which a sandbox can rewrite; not installed on the host\n",
+      "pi-sandbox: ./tools/ext lies in the workspace root or a folder a sandbox has run in, which a sandbox can rewrite; pi on the host runs it as it is\n",
     );
   });
 
@@ -175,8 +169,15 @@ describe("pi install and pi remove", () => {
     await mkdir(ext, { recursive: true });
 
     expect(await run(["install", "./tools/ext"], outside)).toBe(0);
-    expect(await run(["install", join(harness.repoRoot, "ext")], outside)).toBe(1);
-    expect(hostPiRuns(harness)).toEqual([["install", ext]]);
+    expect(harness.stderr()).toBe("");
+    expect(await run(["install", join(harness.repoRoot, "ext")], outside)).toBe(0);
+    expect(harness.stderr()).toContain(
+      `pi-sandbox: ${join(harness.repoRoot, "ext")} lies in the workspace root`,
+    );
+    expect(hostPiRuns(harness)).toEqual([
+      ["install", ext],
+      ["install", join(harness.repoRoot, "ext")],
+    ]);
   });
 
   it("ignores a git root no sandbox can hold, such as a home folder kept in git", async () => {

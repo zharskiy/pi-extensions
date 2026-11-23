@@ -18,7 +18,6 @@ export interface SandboxStatusInput {
 
 export interface RenderInput {
   stateDir: string;
-  repoHash: string;
   hostAgentDir: string;
   hostHome: string;
   derived: DerivedSandboxPi;
@@ -33,9 +32,8 @@ export interface SyncInput {
   backend: Backend;
   containerId: string;
   stateDir: string;
-  repoHash: string;
   hostAgentDir: string;
-  repoRoot: string;
+  workspaceRoot: string;
   allowlist: WriteBackTable;
   hostHome?: string;
   refreshPackages?: boolean;
@@ -44,7 +42,13 @@ export interface SyncInput {
   removeTimeoutMs?: number;
 }
 
+export interface PackageChanges {
+  sources: string[];
+  changed: string[];
+}
+
 export interface SyncResult {
   notices: string[];
   changes: string[];
+  packages?: PackageChanges;
 }

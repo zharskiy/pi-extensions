@@ -13,7 +13,7 @@ const PLAN: Plan = {
   text: "",
   changes: [],
   reindented: false,
-  vm: { kind: "restart", size: AUTOMATIC_SIZE, shares: [], exactShares: true, parts: ["size"] },
+  vm: { kind: "restart", size: AUTOMATIC_SIZE, shares: [], parts: ["size"] },
   problems: [],
 };
 
@@ -45,7 +45,7 @@ const interrupted = async (phases: VmPhase[]) => {
   const io = { prompts, plain: true, now: () => 0 };
   const code = await applyPlan(wizardFrontEnd(io, facts), effects, document, {
     plan: PLAN,
-    answers: { roots: "home", vm: "automatic", writeBack: true },
+    answers: { root: "~/work", vm: "automatic", writeBack: true },
   });
 
   return { code, said: notes.join("\n"), warned: warnings.join("\n") };
@@ -111,7 +111,7 @@ describe("applying a plan as lines", () => {
     ]);
     const code = await applyPlan(front, effects, document, {
       plan: PLAN,
-      answers: { roots: "home", vm: "automatic", writeBack: true },
+      answers: { root: "~/work", vm: "automatic", writeBack: true },
     });
 
     expect(code).toBe(1);
@@ -151,7 +151,7 @@ describe("applying a plan as lines", () => {
     const front = lineFrontEnd({ out: out.stream, err: err.stream, timers: clock.timers }, factsOf(), []);
     const applied = applyPlan(front, effects, documentOf(undefined, "/Users/me/config.json"), {
       plan: PLAN,
-      answers: { roots: "home", vm: "automatic", writeBack: true },
+      answers: { root: "~/work", vm: "automatic", writeBack: true },
     });
 
     await expect(applied).rejects.toBe(failure);

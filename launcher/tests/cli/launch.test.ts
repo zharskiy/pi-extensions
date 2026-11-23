@@ -17,6 +17,8 @@ import {
   unreachable,
 } from "./harness.ts";
 
+type Harness = Awaited<ReturnType<typeof createHarness>>;
+
 const PREPARING = "preparing pi sandbox, one time";
 
 const occurrences = (text: string, line: string) => text.split("\n").filter((entry) => entry === line).length;
@@ -179,7 +181,7 @@ describe("pi [args]", () => {
 
     expect(await run([], harness.deps)).toBe(1);
     expect(harness.stderr()).toContain(
-      `pi-sandbox: ${harness.deps.home} would mount ${harness.deps.home} into the sandbox`,
+      `pi-sandbox: pi may not start in ${harness.deps.home}, a protected folder`,
     );
     expect(harness.stderr()).toContain("  hint: run pi inside a project directory");
     expect(fake.containers.size).toBe(0);
@@ -225,17 +227,122 @@ describe("pi [args]", () => {
     expect(fake.execs).toHaveLength(0);
   });
 
-  it("refuses a folder outside the workspace roots before any discovery", async () => {
+  it("refuses a folder outside the workspace root before any discovery", async () => {
+    const fake = createFakeBackend();
+    const harness = await createHarness({ backend: () => fake.backend });
+    const elsewhere = join(harness.root, "elsewhere");
+
+    await mkdir(elsewhere);
+
+    await harness.writeJson(harness.userConfigFile, { workspaceRoot: elsewhere });
+
+    expect(await run([], harness.deps)).toBe(1);
+    expect(harness.stderr()).toContain(
+      [
+        `pi-sandbox: ${harness.repoRoot} is outside the workspace root (workspaceRoot: ${elsewhere})`,
+        "  hint: start pi inside it, or point workspaceRoot at a folder that holds the project",
+      ].join("\n"),
+    );
+    expect(harness.calls.filter((call) => call.file === "git")).toEqual([]);
+    expect(fake.execs).toHaveLength(0);
+  });
+
+  it("refuses a host launch outside the workspace root", async () => {
+    const harness = await createHarness();
+    const elsewhere = join(harness.root, "elsewhere");
+
+    await mkdir(elsewhere);
+
+    await harness.writeJson(harness.userConfigFile, { workspaceRoot: elsewhere });
+
+    expect(await run(["--no-sandbox"], harness.deps)).toBe(1);
+    expect(harness.stderr()).toContain(`pi-sandbox: ${harness.repoRoot} is outside the workspace root`);
+    expect(harness.calls.filter((call) => call.interactive)).toEqual([]);
+  });
+
+  it.each([
+    ["a sandbox launch", []],
+    ["a host launch", ["--no-sandbox"]],
+  ])("refuses %s under a workspace root that does not exist, saying so", async (_name, args) => {
+    const fake = createFakeBackend();
+    const harness = await createHarness({ backend: () => fake.backend });
+    const gone = join(harness.root, "gone");
+
+    await harness.writeJson(harness.userConfigFile, { workspaceRoot: gone });
+
+    expect(await run(args, harness.deps)).toBe(1);
+    expect(harness.stderr()).toContain(
+      [
+        `pi-sandbox: config: workspaceRoot: ${gone} does not exist`,
+        "  hint: create the folder, mount the volume it lives on, or point workspaceRoot at a folder that holds your projects",
+      ].join("\n"),
+    );
+    expect(harness.calls.filter((call) => call.file === "colima" || call.interactive)).toEqual([]);
+    expect(fake.execs).toHaveLength(0);
+  });
+
+  it("runs a host launch while workspaceRoot is not set, as no VM is involved", async () => {
+    const harness = await createHarness({ workspaceRoot: false });
+
+    expect(await run(["--no-sandbox", "-p", "hi"], harness.deps)).toBe(0);
+    expect(harness.calls.find((entry) => entry.interactive)?.args).toEqual(["-p", "hi"]);
+  });
+
+  it("runs a host launch under a workspace root that holds the home dir, as no VM shares it", async () => {
+    const harness = await createHarness();
+
+    await harness.writeJson(harness.userConfigFile, { workspaceRoot: harness.root });
+
+    expect(await run(["--no-sandbox"], harness.deps)).toBe(0);
+  });
+
+  it("refuses a sandbox launch while workspaceRoot is not set, before any VM work", async () => {
+    const fake = createFakeBackend();
+    const harness = await createHarness({ backend: () => fake.backend, workspaceRoot: false });
+
+    expect(await run([], harness.deps)).toBe(1);
+    expect(harness.stderr()).toContain(
+      [
+        "pi-sandbox: config: workspaceRoot is not set, so pi has no folder it may start in",
+        `  hint: run pi sandbox init, or set workspaceRoot in ${harness.userConfigFile} to the folder that holds your projects`,
+      ].join("\n"),
+    );
+    expect(harness.calls.filter((call) => call.file === "colima" || call.interactive)).toEqual([]);
+    expect(fake.execs).toHaveLength(0);
+  });
+
+  it.each([
+    ["the home dir", (harness: Harness) => harness.deps.home],
+    ["a folder that holds the home dir", (harness: Harness) => harness.root],
+  ])("refuses %s as the workspace root at launch, before any VM work", async (_name, rootOf) => {
+    const fake = createFakeBackend();
+    const harness = await createHarness({ backend: () => fake.backend });
+    const root = rootOf(harness);
+
+    await harness.writeJson(harness.userConfigFile, { workspaceRoot: root });
+
+    expect(await run([], harness.deps)).toBe(1);
+    expect(harness.stderr()).toContain(
+      [
+        `pi-sandbox: config: workspaceRoot: ${root} is the home dir or holds it, which would share all of it with the sandbox VM`,
+        "  hint: point workspaceRoot at the folder that holds your projects, not at your home or above it",
+      ].join("\n"),
+    );
+    expect(harness.calls.filter((call) => call.file === "colima")).toEqual([]);
+    expect(fake.execs).toHaveLength(0);
+  });
+
+  it("refuses ~ as the workspace root when it reads the config", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
 
-    await harness.writeJson(harness.userConfigFile, {
-      workspaceRoots: { roots: [join(harness.root, "elsewhere")] },
-    });
+    await harness.writeJson(harness.userConfigFile, { workspaceRoot: "~" });
 
     expect(await run([], harness.deps)).toBe(1);
-    expect(harness.stderr()).toContain(`${harness.repoRoot} is outside the allowed workspace roots`);
-    expect(harness.calls.filter((call) => call.file === "git")).toEqual([]);
+    expect(harness.stderr()).toContain(
+      "pi-sandbox: config: workspaceRoot ~ is the home dir, which would share all of it with the sandbox VM",
+    );
+    expect(harness.calls.filter((call) => call.file === "colima")).toEqual([]);
     expect(fake.execs).toHaveLength(0);
   });
 
@@ -253,7 +360,6 @@ describe("pi [args]", () => {
       repoRoot: harness.deps.home,
       isGitRepo: false,
     });
-    expect(context.workspace.nested).toBeUndefined();
   });
 
   it("runs the managed pi for --no-sandbox, never a pi on PATH, and says so", async () => {

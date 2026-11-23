@@ -72,5 +72,8 @@ export const refreshPackages = async (input: PackageRefreshInput) => {
   const changed = refreshed.filter(changedSince(previous));
   const notices = changed.length === 0 ? [] : [refreshNotice(changed.length)];
 
-  return deferred ? [...notices, DEFERRED_NOTICE] : notices;
+  return {
+    notices: deferred ? [...notices, DEFERRED_NOTICE] : notices,
+    changed: changed.map((pin) => pin.identity),
+  };
 };

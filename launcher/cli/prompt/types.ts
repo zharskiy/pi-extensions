@@ -91,11 +91,6 @@ export interface Choice<T> {
   value: T;
   label: string;
   tag?: string;
-  action?: true;
-}
-
-export interface AddedChoice<T> extends Choice<T> {
-  unchecks?: T[];
 }
 
 export interface SelectSpec<T> extends KeyWords {
@@ -105,16 +100,6 @@ export interface SelectSpec<T> extends KeyWords {
   initial?: T;
   radio?: boolean;
   collapsed: (value: T) => Collapse;
-}
-
-export interface MultiSpec<T> extends KeyWords {
-  title: string;
-  detail?: Detail;
-  choices: Choice<T>[];
-  checked: T[];
-  onAction?: (value: T, typed: string | undefined, checked: T[]) => Promise<AddedChoice<T> | undefined>;
-  collapsed: (values: T[]) => Collapse;
-  plain: { help: string[]; label: string };
 }
 
 export interface ConfirmSpec extends KeyWords {
@@ -159,7 +144,6 @@ export type NotePlace = "rail" | "start" | "step" | "end";
 
 export interface Prompts {
   select<T>(spec: SelectSpec<T>): Promise<Reply<T>>;
-  multiselect<T>(spec: MultiSpec<T>): Promise<Reply<T[]>>;
   confirm(spec: ConfirmSpec): Promise<Reply<boolean>>;
   path(spec: PathSpec): Promise<Reply<string>>;
   number(spec: NumberSpec): Promise<Reply<number>>;

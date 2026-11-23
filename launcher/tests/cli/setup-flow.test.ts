@@ -1,4 +1,4 @@
-import { mkdir, realpath, symlink } from "node:fs/promises";
+import { mkdir, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { VmApplied, VmPhase } from "../../backend/index.ts";
@@ -17,25 +17,22 @@ const candidate = (name: string, repos: number, extra: Partial<FolderCandidate> 
 
 const CANDIDATES = [
   candidate("Projects", 14, { latestRepo: `${HOME}/Projects/my-app` }),
-  candidate("work", 3, { origin: "cwd", here: true }),
+  candidate("work", 3, { origin: "cwd", here: true, latestRepo: `${HOME}/work/api` }),
   candidate("src", 0),
 ];
 
 const FACTS = factsOf({ cwd: `${HOME}/work`, candidates: CANDIDATES });
 
-const RUNNING = runningVm(AUTOMATIC_SIZE, [
-  { location: `${HOME}/Projects`, writable: true },
-  { location: `${HOME}/work`, writable: true },
-]);
+const RUNNING = runningVm(AUTOMATIC_SIZE, [{ location: `${HOME}/work`, writable: true }]);
 
-const SAVED = `{\n  "workspaceRoots": {\n    "roots": ["~/Projects", "~/work"]\n  }\n}\n`;
+const SAVED = `{\n  "workspaceRoot": "~/work"\n}\n`;
 
-const SAVED_STANDARD = `${JSON.stringify({ workspaceRoots: { roots: ["~/Projects", "~/work"] } }, null, 2)}\n`;
+const SAVED_STANDARD = `${JSON.stringify({ workspaceRoot: "~/work" }, null, 2)}\n`;
 
-const sharesOf = (roots: Answers["roots"]) =>
-  roots === "home"
-    ? { shares: [{ location: HOME, writable: true }], exact: false }
-    : { shares: roots.map((root) => ({ location: root.replace("~", HOME), writable: true })), exact: true };
+const sharesOf = (root: Answers["root"]) =>
+  root === undefined
+    ? { problem: "none" }
+    : { shares: [{ location: root.replace("~", HOME), writable: true }] };
 
 interface Options {
   text?: string;
@@ -75,7 +72,6 @@ const setup = (options: Options = {}) => {
     };
   const prompts: Prompts = {
     select: counted("prompts", fake.prompts.select),
-    multiselect: counted("prompts", fake.prompts.multiselect),
     confirm: counted("prompts", fake.prompts.confirm),
     path: counted("prompts", fake.prompts.path),
     number: counted("prompts", fake.prompts.number),
@@ -171,10 +167,7 @@ describe("a first run", () => {
       {
         kind: "create",
         size: { cpus: 8, memoryGiB: 10, diskGiB: 60 },
-        shares: [
-          { location: `${HOME}/Projects`, writable: true },
-          { location: `${HOME}/work`, writable: true },
-        ],
+        shares: [{ location: `${HOME}/work`, writable: true }],
       },
     ]);
 
@@ -191,8 +184,8 @@ describe("a first run", () => {
       "│  Sandbox VM   not created yet",
       "│",
     ]);
-    expect(lines).toContain("◇  Project folders");
-    expect(lines).toContain("│  ~/Projects, ~/work");
+    expect(lines).toContain("◇  Project folder");
+    expect(lines).toContain("│  ~/work");
     expect(lines).toContain("│  Automatic: 8 CPUs · 10 GiB memory · 60 GiB disk");
     expect(lines).toContain("◇  Settings write-back");
     expect(lines).toContain("◇  Review");
@@ -201,7 +194,7 @@ describe("a first run", () => {
     expect(lines.slice(-7)).toEqual([
       "└  Done. The sandbox is ready.",
       "",
-      "   Next      cd ~/Projects/my-app && pi",
+      "   Next      cd ~/work/api && pi",
       "   Change    pi sandbox init",
       "   Check     pi sandbox doctor",
       "   Settings  ~/.pi/agent/pi-sandbox/config.json",
@@ -223,7 +216,7 @@ describe("a first run", () => {
   it("takes a whole plain first run typed ahead as one chunk", async () => {
     const run = setup({ plain: true });
 
-    await run.shown("Folders [1 2]:");
+    await run.shown("Choose [2]:");
 
     run.input.write("\n\n\n\n");
 
@@ -254,9 +247,10 @@ describe("a first run", () => {
 
     const lines = run.screen.lines();
 
-    expect(lines).toContain("◆  Which folders hold your projects?   step 1 of 3");
-    expect(lines.some((line) => /■ ~\/Projects\s+14 git repositories$/.test(line))).toBe(true);
-    expect(lines.some((line) => /■ ~\/work\s+ {2}3 git repositories · you are here$/.test(line))).toBe(true);
+    expect(lines).toContain("◆  Which folder holds your projects?   step 1 of 3");
+    expect(lines.some((line) => /○ ~\/Projects\s+14 git repositories$/.test(line))).toBe(true);
+    expect(lines.some((line) => /● ~\/work\s+ {2}3 git repositories · you are here$/.test(line))).toBe(true);
+    expect(lines.some((line) => /○ Another folder…$/.test(line))).toBe(true);
 
     await run.keys(KEY.ctrlC);
 
@@ -272,7 +266,7 @@ describe("a first run", () => {
 
     expect(await run.exit).toBe(0);
     expect(JSON.parse(run.writes[0] ?? "")).toEqual({
-      workspaceRoots: { roots: ["~/Projects", "~/work"] },
+      workspaceRoot: "~/work",
       vm: { cpus: 6, memoryGiB: 12, diskGiB: 80 },
       writeBack: { enabled: false },
     });
@@ -316,41 +310,39 @@ describe("a first run", () => {
     expect(run.writes).toEqual([]);
   });
 
-  it("asks to share the home when nothing is checked, and goes back on No", async () => {
+  it("shares another listed folder when it is chosen", async () => {
     const run = setup();
 
-    await run.keys(KEY.space, KEY.down, KEY.space, KEY.enter);
-
-    expect(run.text()).toContain("◆  Share your whole home with the sandbox VM instead?   step 1 of 3");
-
-    await run.keys(KEY.enter, KEY.enter);
-
-    await run.keys(KEY.right, KEY.enter, ...STEPS_ACCEPTED.slice(1), KEY.enter);
+    await run.keys(KEY.up, KEY.enter, ...STEPS_ACCEPTED.slice(1), KEY.enter);
 
     expect(await run.exit).toBe(0);
-    expect(run.writes).toEqual([]);
-    expect(run.screen.lines()).toContain("│  your whole home (~), not recommended");
-    expect(run.vms[0]).toMatchObject({ kind: "create", shares: [{ location: HOME, writable: true }] });
+    expect(run.writes).toEqual([`${JSON.stringify({ workspaceRoot: "~/Projects" }, null, 2)}\n`]);
+    expect(run.vms[0]).toMatchObject({
+      kind: "create",
+      shares: [{ location: `${HOME}/Projects`, writable: true }],
+    });
+    expect(run.screen.lines()).toContain("   Next      cd ~/Projects/my-app && pi");
   });
 
-  it("treats a file without workspaceRoots as a first run and pre-checks the detected folders", async () => {
+  it("treats a file without workspaceRoot as a first run and picks the detected folder", async () => {
     const run = setup({ text: "{}\n" });
 
     await run.keys(...STEPS_ACCEPTED, KEY.enter);
 
     expect(await run.exit).toBe(0);
-    expect(JSON.parse(run.writes[0] ?? "").workspaceRoots.roots).toEqual(["~/Projects", "~/work"]);
+    expect(JSON.parse(run.writes[0] ?? "").workspaceRoot).toBe("~/work");
   });
 
-  it("never shares the home of a file without workspaceRoots without the confirm", async () => {
-    const run = setup({
-      text: '{ "egress": { "allow": [] } }\n',
-      facts: { candidates: [candidate("src", 0)] },
-    });
+  it("offers only to type a folder when no folder with projects was found", async () => {
+    const run = setup({ text: '{ "egress": { "allow": [] } }\n', facts: { candidates: [] } });
+
+    await run.settled();
+
+    expect(run.screen.lines().some((line) => /● Type a folder…$/.test(line))).toBe(true);
 
     await run.keys(KEY.enter);
 
-    expect(run.text()).toContain("Share your whole home with the sandbox VM instead?");
+    expect(run.screen.lines()).toContain("◆  Type the folder that holds your projects");
 
     await run.keys(KEY.ctrlC);
 
@@ -358,16 +350,11 @@ describe("a first run", () => {
     expect(run.vms).toEqual([]);
   });
 
-  it("says what the VM shares now and starts the confirm on Yes when it shares the home", async () => {
-    const vm = { ...RUNNING, shares: [{ location: HOME, writable: true }] } as HostFacts["vm"];
+  it("says what the VM shares now on a first run", async () => {
+    const vm = runningVm(AUTOMATIC_SIZE, [{ location: `${HOME}/Projects`, writable: true }]);
     const run = setup({ text: "{}\n", facts: { vm } });
 
-    await run.shown("The sandbox VM shares your whole home (~) now.");
-
-    await run.keys(KEY.space, KEY.down, KEY.space, KEY.enter, KEY.enter);
-
-    expect(run.text()).toContain("│  your whole home (~), not recommended");
-    expect(run.text()).toContain("step 2 of 3");
+    await run.shown("The sandbox VM shares ~/Projects now.");
 
     await run.keys(KEY.ctrlC);
 
@@ -392,17 +379,17 @@ describe("a first run", () => {
     expect([await late.exit, await none.exit]).toEqual([130, 130]);
   });
 
-  it("returns to the list unchanged when the add-folder input is left", async () => {
+  it("returns to the list unchanged when the typed folder is left", async () => {
     const run = setup();
 
-    await run.keys(KEY.end, KEY.enter, KEY.escape, KEY.home, ...STEPS_ACCEPTED, KEY.enter);
+    await run.keys(KEY.end, KEY.enter, KEY.escape, ...STEPS_ACCEPTED, KEY.enter);
 
     expect(await run.exit).toBe(0);
     expect(run.writes).toEqual([SAVED_STANDARD]);
-    expect(run.text()).not.toContain("◇  Add a folder");
+    expect(run.text()).not.toContain("◇  Type the folder that holds your projects");
   });
 
-  it("adds a typed folder to the list, checked, and saves it after the others", async () => {
+  it("shares a typed folder, refusing the home and a missing folder first", async () => {
     const home = await realpath(await tempDir("setup-flow-home"));
 
     await mkdir(join(home, "oss"));
@@ -411,70 +398,25 @@ describe("a first run", () => {
       facts: { home, candidates: [candidate("work", 3, { resolved: join(home, "work") })] },
     });
 
-    await run.keys(KEY.down, KEY.enter, "oss", KEY.enter, KEY.home, ...STEPS_ACCEPTED, KEY.enter);
+    await run.keys(KEY.end, KEY.enter, KEY.backspace, KEY.enter);
+
+    await run.shown("✖ ~ is your home or holds it");
+
+    await run.keys("/missing", KEY.enter);
+
+    await run.shown("✖ ~/missing does not exist.");
+
+    await run.keys(
+      ...Array.from({ length: 7 }, () => KEY.backspace),
+      "oss",
+      KEY.enter,
+      ...STEPS_ACCEPTED.slice(1),
+      KEY.enter,
+    );
 
     expect(await run.exit).toBe(0);
-    expect(JSON.parse(run.writes[0] ?? "").workspaceRoots.roots).toEqual(["~/work", "~/oss"]);
-  });
-
-  it("narrows a checked folder to a typed folder inside it, leaving the wider one listed and unchecked", async () => {
-    const home = await realpath(await tempDir("setup-flow-home"));
-
-    await mkdir(join(home, "Projects", "app"), { recursive: true });
-
-    const run = setup({
-      facts: {
-        home,
-        candidates: [
-          candidate("Projects", 3, { resolved: join(home, "Projects") }),
-          candidate("work", 3, { resolved: join(home, "work") }),
-        ],
-      },
-    });
-
-    await run.keys(KEY.end, KEY.enter, "Projects/app", KEY.enter);
-
-    await run.shown("~/Projects/app replaces ~/Projects, which holds it.");
-
-    await run.shown("Add another folder");
-
-    expect(run.screen.lines()).toContain("│  ~/Projects/app replaces ~/Projects, which holds it.");
-    expect(run.screen.lines()).toContain("│    □ ~/Projects   3 git repositories");
-    expect(run.screen.lines()).toContain("│  › ■ ~/Projects/app");
-
-    await run.keys(KEY.home, ...STEPS_ACCEPTED, KEY.enter);
-
-    expect(await run.exit).toBe(0);
-    expect(JSON.parse(run.writes[0] ?? "").workspaceRoots.roots).toEqual(["~/work", "~/Projects/app"]);
-  });
-
-  it("adds a typed folder inside an unchecked one as is, checking it against the folders checked now", async () => {
-    const home = await realpath(await tempDir("setup-flow-home"));
-
-    await mkdir(join(home, "Projects", "app"), { recursive: true });
-
-    const run = setup({
-      facts: {
-        home,
-        candidates: [
-          candidate("Projects", 3, { resolved: join(home, "Projects") }),
-          candidate("work", 3, { resolved: join(home, "work") }),
-        ],
-      },
-    });
-
-    await run.keys(KEY.space, KEY.end, KEY.enter, "Projects/app", KEY.enter);
-
-    await run.shown("│  › ■ ~/Projects/app");
-
-    expect(run.text()).not.toContain("replaces");
-    expect(run.text()).not.toContain("already selected");
-    expect(run.screen.lines()).toContain("│    □ ~/Projects   3 git repositories");
-
-    await run.keys(KEY.home, ...STEPS_ACCEPTED, KEY.enter);
-
-    expect(await run.exit).toBe(0);
-    expect(JSON.parse(run.writes[0] ?? "").workspaceRoots.roots).toEqual(["~/work", "~/Projects/app"]);
+    expect(JSON.parse(run.writes[0] ?? "").workspaceRoot).toBe("~/oss");
+    expect(run.vms[0]).toMatchObject({ shares: [{ location: `${HOME}/oss`, writable: true }] });
   });
 
   it("cancels on ctrl-c at each step without writing", async () => {
@@ -494,20 +436,17 @@ describe("a first run", () => {
 });
 
 describe("a re-run", () => {
-  it("asks the home confirm from the review without a step counter", async () => {
+  it("opens the folder step from the review on the current folder, without a step counter", async () => {
     const run = setup({ text: SAVED, facts: { vm: RUNNING } });
 
     await run.settled();
 
     await run.keys(KEY.down, KEY.enter);
 
-    await run.shown("Which folders hold your projects?");
+    await run.shown("◆  Which folder holds your projects?");
 
-    await run.keys(KEY.space, KEY.down, KEY.space, KEY.enter);
-
-    await run.shown("Share your whole home with the sandbox VM instead?");
-
-    expect(run.screen.lines()).toContain("◆  Share your whole home with the sandbox VM instead?");
+    expect(run.screen.lines()).toContain("◆  Which folder holds your projects?");
+    expect(run.screen.lines().some((line) => /› ● ~\/work\s/.test(line))).toBe(true);
     expect(run.text()).not.toContain("step 1 of 3");
 
     await run.keys(KEY.ctrlC);
@@ -558,7 +497,7 @@ describe("a re-run", () => {
   it("defers the VM while sessions are live and says so", async () => {
     const run = setup({ text: SAVED, facts: { vm: RUNNING, sessions: 2 } });
 
-    await run.keys(KEY.down, KEY.enter, KEY.down, KEY.down, KEY.space, KEY.enter, KEY.enter);
+    await run.keys(KEY.down, KEY.enter, KEY.up, KEY.enter, KEY.enter);
 
     expect(await run.exit).toBe(0);
     expect(run.vms).toEqual([]);
@@ -575,7 +514,7 @@ describe("a re-run", () => {
       facts: { vm: { state: "unknown", reason: "colima status failed" } },
     });
 
-    await run.keys(KEY.down, KEY.enter, KEY.down, KEY.down, KEY.space, KEY.enter, KEY.enter);
+    await run.keys(KEY.down, KEY.enter, KEY.up, KEY.enter, KEY.enter);
 
     expect(await run.exit).toBe(0);
     expect(run.vms).toEqual([]);
@@ -662,7 +601,7 @@ describe("an invalid config", () => {
 
   it("marks a bad owned key invalid and fixes it on Apply", async () => {
     const run = setup({
-      text: '{ "workspaceRoots": { "roots": ["~/Projects"] }, "vm": { "memoryGiB": -1 } }',
+      text: '{ "workspaceRoot": "~/Projects", "vm": { "memoryGiB": -1 } }',
     });
 
     await run.settled();
@@ -677,13 +616,13 @@ describe("an invalid config", () => {
 
   it("refuses Apply while the folders nest with a launcher path", async () => {
     const run = setup({
-      share: () => ({ problem: "config: workspaceRoots: ~/work holds the sessions dir" }),
+      share: () => ({ problem: "config: workspaceRoot: ~/work holds the sessions dir" }),
     });
 
     await run.keys(...STEPS_ACCEPTED, KEY.enter);
 
-    expect(run.text()).toContain("✖ Fix the project folders first.");
-    expect(run.text()).toContain("config: workspaceRoots: ~/work holds the sessions dir");
+    expect(run.text()).toContain("✖ Fix the project folder first.");
+    expect(run.text()).toContain("config: workspaceRoot: ~/work holds the sessions dir");
 
     await run.keys(KEY.ctrlC);
 
@@ -693,7 +632,7 @@ describe("an invalid config", () => {
 });
 
 describe("the review hub on an 80x24 terminal", () => {
-  const MENU = ["Apply", "Change project folders", "Change VM size", "Change settings write-back", "Cancel"];
+  const MENU = ["Apply", "Change project folder", "Change VM size", "Change settings write-back", "Cancel"];
 
   const liveHub = async (run: ReturnType<typeof setup>) => {
     await run.shown("◆  Review");
@@ -730,7 +669,7 @@ describe("the review hub on an 80x24 terminal", () => {
   it("prints a re-run's diff above the menu and keeps the menu whole", async () => {
     const run = setup({
       rows: 24,
-      text: '{"workspaceRoots": {"roots": ["~/Projects", "~/.ssh"]}, "vm": {"memoryGiB": -3}}\n',
+      text: '{"workspaceRoot": "~/.ssh", "vm": {"memoryGiB": -3}}\n',
       facts: { vm: RUNNING },
     });
 
@@ -764,7 +703,7 @@ describe("the review hub on an 80x24 terminal", () => {
 });
 
 describe("narrow terminals", () => {
-  const PROBLEMS = '{"workspaceRoots": {"roots": ["~/Projects", "~/.ssh"]}, "vm": {"memoryGiB": -3}}\n';
+  const PROBLEMS = '{"workspaceRoot": "~/.ssh", "vm": {"memoryGiB": -3}}\n';
 
   const framed = (lines: string[]) =>
     lines.slice(
@@ -834,16 +773,16 @@ describe("plain mode", () => {
       "Sandbox VM: not created yet",
       "Nothing is saved until you choose Apply.",
       "",
-      "Which folders hold your projects?   step 1 of 3",
-      "Only these folders are shared with the sandbox VM, besides pi's sessions folder",
-      "and the launcher's read-only state/vm folder, and pi starts only inside them.",
-      "  1) [x] ~/Projects (14 git repositories)",
-      "  2) [x] ~/work (3 git repositories, you are here)",
-      "  3) [ ] ~/src (no git repository found)",
-      "Type numbers to switch folders on or off (like 1 3), a path to add a folder,",
-      "or press Enter to keep the selection.",
-      "Folders [1 2]:",
-      "Project folders: ~/Projects, ~/work",
+      "Which folder holds your projects?   step 1 of 3",
+      "Only this folder is shared with the sandbox VM, besides pi's sessions folder",
+      "and the launcher's read-only state/vm folder, and pi starts only inside it. It",
+      "cannot be your home or a folder that holds it.",
+      "  1) ~/Projects (14 git repositories)",
+      "  2) ~/work (3 git repositories, you are here)",
+      "  3) ~/src (no git repository found)",
+      "  4) Another folder...",
+      "Choose [2]:",
+      "Project folder: ~/work",
       "",
       "VM size   step 2 of 3",
       "Every pi session runs in this VM. Automatic follows this Mac: CPUs from 2 to 8,",
@@ -860,17 +799,17 @@ describe("plain mode", () => {
       "Settings write-back: on",
       "",
       "Review",
-      "  Project folders: ~/Projects, ~/work (chosen)",
+      "  Project folder: ~/work (chosen)",
       "  VM size: 8 CPUs, 10 GiB memory, 60 GiB disk (automatic)",
       "  Settings write-back: on (default)",
       "When you apply:",
       "  - create ~/.pi/agent/pi-sandbox/config.json",
-      '      added workspaceRoots.roots: ["~/Projects","~/work"]',
-      "  - create the sandbox VM with these folders, pi's sessions folder and the",
+      '      added workspaceRoot: "~/work"',
+      "  - create the sandbox VM with this folder, pi's sessions folder and the",
       "    launcher's read-only state/vm folder; this takes a minute or two, longer",
       "    the first time while colima downloads the VM's system image",
       "  1) Apply",
-      "  2) Change project folders",
+      "  2) Change project folder",
       "  3) Change VM size",
       "  4) Change settings write-back",
       "  5) Cancel",
@@ -882,14 +821,14 @@ describe("plain mode", () => {
       "  still working (45s)",
       "Created the VM in 54s: 8 CPUs, 10 GiB memory, 60 GiB disk",
       "Done. The sandbox is ready.",
-      "Next: cd ~/Projects/my-app && pi",
+      "Next: cd ~/work/api && pi",
       "Change: pi sandbox init",
       "Check: pi sandbox doctor",
       "Settings: ~/.pi/agent/pi-sandbox/config.json",
     ]);
   });
 
-  it("adds a typed path to the folders, re-asking the folders after a refused one", async () => {
+  it("shares a typed path, re-asking it after a refused one", async () => {
     const home = await realpath(await tempDir("setup-flow-plain-home"));
 
     await mkdir(join(home, "oss"));
@@ -899,140 +838,30 @@ describe("plain mode", () => {
       facts: { home, candidates: [candidate("work", 3, { resolved: join(home, "work") })] },
     });
 
-    await run.answer("~/missing", "~/oss", "", "", "", "");
+    await run.answer("2", "~/missing", "~/oss", "", "", "");
 
     expect(await run.exit).toBe(0);
-    expect(JSON.parse(run.writes[0] ?? "").workspaceRoots.roots).toEqual(["~/work", "~/oss"]);
+    expect(JSON.parse(run.writes[0] ?? "").workspaceRoot).toBe("~/oss");
 
     const lines = run.screen.lines();
-    const refused = lines.findIndex((line) => line.startsWith("Folders [1]: ~/missing"));
+    const refused = lines.findIndex((line) => line.includes("~/missing"));
 
     expect(lines[refused + 1]).toMatch(/^Error: /);
-    expect(lines).toContain("  2) [x] ~/oss");
-    expect(lines).toContain("Folders [1 2]:");
-    expect(run.text()).not.toContain("Add a folder");
+    expect(lines).toContain("Project folder: ~/oss");
   });
 
-  it("narrows a checked folder to a typed path inside it, and refuses a typed path holding a checked one", async () => {
-    const home = await realpath(await tempDir("setup-flow-plain-home"));
+  it("opens the folder step again from the review on the chosen folder", async () => {
+    const run = setup({ plain: true });
 
-    await mkdir(join(home, "Projects", "app"), { recursive: true });
-
-    await mkdir(join(home, "work", "api"), { recursive: true });
-
-    const run = setup({
-      plain: true,
-      facts: {
-        home,
-        candidates: [
-          candidate("Projects", 3, { resolved: join(home, "Projects") }),
-          candidate("work/api", 3, { resolved: join(home, "work", "api") }),
-        ],
-      },
-    });
-
-    await run.answer("~/work", "~/Projects/app", "", "", "", "");
+    await run.answer("1", "", "", "2", "", "");
 
     expect(await run.exit).toBe(0);
-    expect(JSON.parse(run.writes[0] ?? "").workspaceRoots.roots).toEqual(["~/work/api", "~/Projects/app"]);
+    expect(JSON.parse(run.writes[0] ?? "").workspaceRoot).toBe("~/Projects");
 
     const lines = run.screen.lines();
-    const refused = lines.findIndex((line) => line.startsWith("Folders [1 2]: ~/work"));
-    const narrowed = lines.findIndex((line) => line.startsWith("Folders [1 2]: ~/Projects/app"));
+    const reopened = lines.lastIndexOf("  4) Another folder...");
 
-    expect(lines[refused + 1]).toBe(
-      "Error: ~/work holds ~/work/api, which is selected. Unselect ~/work/api first, or",
-    );
-    expect(lines[narrowed + 1]).toBe("~/Projects/app replaces ~/Projects, which holds it.");
-    expect(lines).toContain("  1) [ ] ~/Projects (3 git repositories)");
-    expect(lines).toContain("  3) [x] ~/Projects/app");
-    expect(lines).toContain("Folders [2 3]:");
-  });
-
-  it("replaces every checked folder that holds a typed path, links included, in one add", async () => {
-    const home = await realpath(await tempDir("setup-flow-plain-home"));
-
-    await mkdir(join(home, "Projects", "app"), { recursive: true });
-
-    await mkdir(join(home, "work"));
-
-    await symlink(join(home, "Projects"), join(home, "link"));
-
-    const run = setup({
-      plain: true,
-      facts: {
-        home,
-        candidates: [
-          candidate("Projects", 3, { resolved: join(home, "Projects") }),
-          candidate("link", 3, { resolved: join(home, "Projects") }),
-          candidate("work", 3, { resolved: join(home, "work") }),
-        ],
-      },
-    });
-
-    await run.answer("~/Projects/app", "", "", "", "");
-
-    expect(await run.exit).toBe(0);
-    expect(JSON.parse(run.writes[0] ?? "").workspaceRoots.roots).toEqual(["~/work", "~/Projects/app"]);
-
-    const lines = run.screen.lines();
-
-    expect(lines).toContain("~/Projects/app replaces ~/Projects and ~/link, which hold it.");
-    expect(lines).toContain("  1) [ ] ~/Projects (3 git repositories)");
-    expect(lines).toContain("  2) [ ] ~/link (3 git repositories)");
-    expect(lines).toContain("  3) [x] ~/work (3 git repositories)");
-    expect(lines).toContain("  4) [x] ~/Projects/app");
-  });
-
-  it("keeps a narrowed choice when the folders step is opened again from the review", async () => {
-    const home = await realpath(await tempDir("setup-flow-plain-home"));
-
-    await mkdir(join(home, "Projects", "app"), { recursive: true });
-
-    const run = setup({
-      plain: true,
-      facts: {
-        home,
-        candidates: [
-          candidate("Projects", 3, { resolved: join(home, "Projects") }),
-          candidate("work", 3, { resolved: join(home, "work") }),
-        ],
-      },
-    });
-
-    await run.answer("~/Projects/app", "", "", "", "2", "", "");
-
-    expect(await run.exit).toBe(0);
-    expect(JSON.parse(run.writes[0] ?? "").workspaceRoots.roots).toEqual(["~/work", "~/Projects/app"]);
-
-    const lines = run.screen.lines();
-    const reopened = lines.lastIndexOf("  1) [ ] ~/Projects (3 git repositories)");
-
-    expect(reopened).toBeGreaterThan(lines.indexOf("  2) Change project folders"));
-    expect(lines[reopened + 1]).toBe("  2) [x] ~/work (3 git repositories)");
-    expect(lines[reopened + 2]).toBe("  3) [x] ~/Projects/app");
-  });
-
-  it("checks a typed path against the folders checked now, not the ones the list opened with", async () => {
-    const home = await realpath(await tempDir("setup-flow-plain-home"));
-
-    await mkdir(join(home, "Projects", "app"), { recursive: true });
-
-    const run = setup({
-      plain: true,
-      facts: {
-        home,
-        candidates: [
-          candidate("Projects", 3, { resolved: join(home, "Projects") }),
-          candidate("work", 3, { resolved: join(home, "work") }),
-        ],
-      },
-    });
-
-    await run.answer("1", "~/Projects/app", "", "", "", "");
-
-    expect(await run.exit).toBe(0);
-    expect(JSON.parse(run.writes[0] ?? "").workspaceRoots.roots).toEqual(["~/work", "~/Projects/app"]);
-    expect(run.text()).not.toContain("replaces");
+    expect(reopened).toBeGreaterThan(lines.indexOf("  2) Change project folder"));
+    expect(lines[reopened + 1]).toBe("Choose [1]:");
   });
 });

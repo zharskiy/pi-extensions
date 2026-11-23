@@ -71,7 +71,7 @@ describe("stateLayout", () => {
     const hidden = [...flat(layout), ...flat(layout.repo("r1"))].filter(inVm);
 
     expect(layout.vm).toBe("/state/vm");
-    expect(hidden.sort()).toEqual(["/state/vm/render", "/state/vm/render/r1"]);
+    expect(hidden.sort()).toEqual(["/state/vm/agent", "/state/vm/render", "/state/vm/render/r1"]);
   });
 
   it("keeps every file of one repository under repos/<repo hash>", () => {
@@ -81,14 +81,27 @@ describe("stateLayout", () => {
       directory: "/state/repos/r1",
       record: "/state/repos/r1/repo.json",
       prepareLock: "/state/locks/prepare-r1.lock",
-      render: "/state/vm/render/r1",
-      renderLock: "/state/repos/r1/render.lock",
-      sync: "/state/repos/r1/sync",
-      syncLock: "/state/repos/r1/sync/sync.lock",
-      syncBaseline: "/state/repos/r1/sync/baseline.json",
-      syncPackages: "/state/repos/r1/sync/packages.json",
-      gitBaseline: "/state/repos/r1/git/baseline.json",
       created: "/state/repos/r1/created.json",
+      legacy: {
+        render: "/state/vm/render/r1",
+        renderLock: "/state/repos/r1/render.lock",
+        sync: "/state/repos/r1/sync",
+      },
+    });
+  });
+
+  it("keeps the rendered pi folder, its sync records and their locks once for the install", () => {
+    const layout = stateLayout("/state");
+
+    expect(layout.render).toBe("/state/vm/agent");
+    expect(layout.renderLock).toBe("/state/locks/render.lock");
+    expect(layout.agentLock).toBe("/state/locks/agent.lock");
+    expect(layout.sync).toEqual({
+      directory: "/state/sync",
+      lock: "/state/locks/sync.lock",
+      baseline: "/state/sync/baseline.json",
+      packages: "/state/sync/packages.json",
+      installFailed: "/state/sync/install-failed.json",
     });
   });
 

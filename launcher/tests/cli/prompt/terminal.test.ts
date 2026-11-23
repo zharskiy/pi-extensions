@@ -142,31 +142,30 @@ describe("modes, glyphs and colour", () => {
   it("draws the ASCII glyphs when the locale is not UTF-8", async () => {
     const { prompts, screen, input } = richPrompts({ env: { LANG: "C" } });
 
-    const reply = prompts.multiselect({
-      collapsed: () => ({ title: "Folders…", text: "~/a" }),
+    const reply = prompts.select({
+      collapsed: (value) => ({ title: "Folders…", text: value }),
       title: "Folders…",
+      radio: true,
       choices: [
-        { value: "a", label: "~/a", tag: "1 git repository · you are here" },
-        { value: "b", label: "~/b" },
+        { value: "~/a", label: "~/a", tag: "1 git repository · you are here" },
+        { value: "~/b", label: "~/b" },
       ],
-      checked: ["a"],
-      plain: { help: [], label: "Folders" },
     });
 
     await press(input, KEY.end);
 
     expect(screen.lines()).toEqual([
       "*  Folders...",
-      "|    [x] ~/a   1 git repository, you are here",
-      "|  > [ ] ~/b",
-      "|  up/down move, space select, enter continue, esc back, ctrl-c cancel",
+      "|    ( ) ~/a   1 git repository, you are here",
+      "|  > (*) ~/b",
+      "|  up/down move, enter choose, esc back, ctrl-c cancel",
     ]);
 
     await press(input, KEY.enter);
 
     await reply;
 
-    expect(screen.lines()).toEqual(["o  Folders...", "|  ~/a", "|"]);
+    expect(screen.lines()).toEqual(["o  Folders...", "|  ~/b", "|"]);
   });
 
   it("wraps a long title and the detail at the width, keeping the rail", async () => {

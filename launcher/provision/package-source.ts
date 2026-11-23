@@ -11,6 +11,10 @@ export const sourceOfEntry = (entry: unknown) => {
 export const withSource = (entry: unknown, source: string) =>
   typeof entry === "string" ? source : { ...(entry as JsonObject), source };
 
+const GIT_SOURCE = /^(?:git:|https?:\/\/|ssh:\/\/)/;
+
+export const isRemoteSource = (source: string) => source.startsWith("npm:") || GIT_SOURCE.test(source.trim());
+
 const URL_IN_SOURCE = /^((?:git:)?)([a-z][a-z0-9+.-]*:\/\/.*)$/i;
 
 const WEB_PROTOCOLS = new Set(["http:", "https:"]);

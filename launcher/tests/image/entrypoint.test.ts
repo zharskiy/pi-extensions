@@ -35,6 +35,7 @@ const HOST_TOOLS = [
   "cp",
   "chmod",
   "mv",
+  "mktemp",
   "sed",
   "printf",
   "true",
@@ -278,6 +279,47 @@ describe("image entrypoint", () => {
     expect(await readlink(join(paths.home, ".pi", "agent", ".hidden.json"))).toBe(
       join(paths.render, ".hidden.json"),
     );
+  });
+
+  it("keeps a render link already in place, so a second container leaves the shared pi folder as it was", async () => {
+    const paths = await sandboxRoot();
+    const link = join(paths.home, ".pi", "agent", "models.json");
+
+    await writeFile(join(paths.render, "models.json"), "{}\n");
+
+    await runEntrypoint(paths);
+
+    const before = await lstat(link);
+
+    await runEntrypoint(paths);
+
+    const after = await lstat(link);
+
+    expect(after.ino).toBe(before.ino);
+    expect(await readlink(link)).toBe(join(paths.render, "models.json"));
+  });
+
+  it("leaves the shared pi folder linked and free of temporary files when two containers start at once", async () => {
+    const paths = await sandboxRoot();
+    const agent = join(paths.home, ".pi", "agent");
+
+    await writeFile(join(paths.render, "models.json"), "{}\n");
+
+    await writeFile(join(paths.render, "auth.json"), '{"rendered":true}\n');
+
+    await mkdir(join(paths.render, "skills"));
+
+    const results = await Promise.all([
+      startEntrypoint(paths),
+      startEntrypoint(paths),
+      startEntrypoint(paths),
+    ]);
+
+    expect(results.map((result) => result.status)).toEqual([0, 0, 0]);
+    expect(await readlink(join(agent, "models.json"))).toBe(join(paths.render, "models.json"));
+    expect(await readlink(join(agent, "skills"))).toBe(join(paths.render, "skills"));
+    expect(await readFile(join(agent, "auth.json"), "utf8")).toBe('{"rendered":true}\n');
+    expect((await readdir(agent)).filter((name) => name.includes(".pi-sandbox-"))).toEqual([]);
   });
 
   it("fails when an agent dir entry cannot be replaced by its render link", async () => {

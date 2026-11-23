@@ -29,6 +29,7 @@ const exists = (path: string) =>
 export interface RepoRecord {
   root: string;
   mountRoot?: string;
+  workspaceRoot?: string;
 }
 
 const deviceOf = (path: string) =>
@@ -53,14 +54,20 @@ const mountRootOf = async (dir: string): Promise<string | undefined> => {
   return (await isMounted(dir)) ? dir : mountRootOf(parent);
 };
 
-export const writeRepoRecord = async (stateDir: string, repoHash: string, root: string) => {
+export const writeRepoRecord = async (
+  stateDir: string,
+  repoHash: string,
+  root: string,
+  workspaceRoot?: string,
+) => {
   const mountRoot = await mountRootOf(root);
+  const record = {
+    root,
+    ...(mountRoot === undefined ? {} : { mountRoot }),
+    ...(workspaceRoot === undefined ? {} : { workspaceRoot }),
+  };
 
-  await writeJsonFile(
-    filesOf(stateDir, repoHash).record,
-    { root, ...(mountRoot === undefined ? {} : { mountRoot }) },
-    { mode: PRIVATE_MODE },
-  );
+  await writeJsonFile(filesOf(stateDir, repoHash).record, record, { mode: PRIVATE_MODE });
 };
 
 export const repoRecordOf = async (stateDir: string, repoHash: string): Promise<RepoRecord | undefined> => {
@@ -70,9 +77,11 @@ export const repoRecordOf = async (stateDir: string, repoHash: string): Promise<
     return undefined;
   }
 
-  return typeof record.mountRoot === "string"
-    ? { root: record.root, mountRoot: record.mountRoot }
-    : { root: record.root };
+  const mountRoot = typeof record.mountRoot === "string" ? { mountRoot: record.mountRoot } : {};
+  const workspaceRoot =
+    typeof record.workspaceRoot === "string" ? { workspaceRoot: record.workspaceRoot } : {};
+
+  return { root: record.root, ...mountRoot, ...workspaceRoot };
 };
 
 export const knownRepos = async (stateDir: string) => {
@@ -132,7 +141,7 @@ export const hasRepoLeftovers = (stateDir: string, repoHash: string) =>
 export const forgetRepo = async (stateDir: string, repoHash: string) => {
   const files = filesOf(stateDir, repoHash);
 
-  await rm(files.render, { recursive: true, force: true });
+  await rm(files.legacy.render, { recursive: true, force: true });
 
   await rm(files.directory, { recursive: true, force: true });
 };

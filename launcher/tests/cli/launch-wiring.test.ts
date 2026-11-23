@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { LABELS, type RelayRequest } from "../../backend/index.ts";
 import { run } from "../../cli/index.ts";
 import type { DenialRecord } from "../../proxy/index.ts";
-import { sha256Hex } from "../../shared/index.ts";
+import { repoHash, sha256Hex, writeRepoRecord } from "../../shared/index.ts";
 import { expectNoLeak } from "../support/expect-no-leak.ts";
 import { tempDir, writeExecutable, writeText } from "../support/temp-dir.ts";
 import { createFakeBackend, createHarness, isPiSession, noHostPiLine, renderDirOf } from "./harness.ts";
@@ -172,6 +172,34 @@ describe("pi launch wiring", () => {
     );
 
     await expectNoLeak(fake, renderDir, [glabToken]);
+  });
+
+  it("derives nothing from a glab that lies in a folder a sandbox has run in", async () => {
+    const fake = createFakeBackend();
+    const harness = await createHarness({
+      backend: () => fake.backend,
+      respond: (call) =>
+        call.file.endsWith("/glab") ? { stdout: "glpat-REAL-HOST-GLAB-TOKEN-4242\n" } : undefined,
+    });
+    const sandboxed = join(harness.root, "sandboxed");
+
+    await writeExecutable(join(sandboxed, "bin", "glab"));
+
+    await writeText(
+      join(harness.deps.home, ".config", "glab-cli", "config.yml"),
+      ["hosts:", "    gitlab.com:", "        token: glpat-REAL-HOST-GLAB-TOKEN-4242", ""].join("\n"),
+    );
+
+    await writeRepoRecord(harness.stateDir, repoHash(sandboxed), sandboxed);
+
+    harness.deps.env.PATH = join(sandboxed, "bin");
+
+    expect(await run([], harness.deps)).toBe(0);
+
+    const [input] = harness.proxyInputs;
+
+    expect(input?.rules.filter((rule) => rule.id.startsWith("derived:glab:"))).toEqual([]);
+    expect(harness.calls.filter((call) => call.file.endsWith("/glab"))).toEqual([]);
   });
 
   it("renders host auth.json with placeholders into a read-only render mount", async () => {

@@ -15,7 +15,7 @@ import { applyPlan, lineFrontEnd } from "../setup/apply.ts";
 import { detectHost } from "../setup/detect.ts";
 import { readConfigText, readDocument, writeDocument } from "../setup/document.ts";
 import { runSetup, type SetupInput } from "../setup/flow.ts";
-import { answersForYes, configuredRoots, isFirstRun, planOf } from "../setup/plan.ts";
+import { answersForYes, configuredRoot, isFirstRun, NO_ROOT, planOf } from "../setup/plan.ts";
 import { createReview } from "../setup/review.ts";
 import { invalidText } from "../setup/screens.ts";
 import type {
@@ -31,7 +31,7 @@ import { assertVmFitsHost, prepareVmDirs, vmSharesFor } from "../vm.ts";
 export const YES_FLAG = "--yes";
 
 const SETUP_HINT =
-  "pass --yes to keep the current settings and apply them; PI_SANDBOX_ROOTS names project folders";
+  "pass --yes to keep the current settings and apply them; PI_SANDBOX_ROOT names the folder that holds your projects";
 
 const SIGNAL_EXITS = { SIGTERM: 143, SIGHUP: 129 } as const;
 
@@ -59,7 +59,7 @@ const detectFor = (deps: CliDeps, context: SetupContext) => (document: ConfigDoc
     stateDir: context.stateDir,
     configFile: context.configFile,
     docsFile: join(launcherRoot(), "CONFIGURATION.md"),
-    configRoots: configuredRoots(document),
+    configRoot: configuredRoot(document),
     firstRun: isFirstRun(document),
     backend: context.backend,
     statfs: deps.statfs ?? statfs,
@@ -74,21 +74,37 @@ const bindEntriesOf = (read: DocumentRead) => {
   );
 };
 
+const vmPlanFor = (deps: CliDeps, read: DocumentRead, root: string) => {
+  const binds = hostBinds(bindEntriesOf(read), { home: deps.home, env: deps.env, roots: [root] });
+
+  return vmSharesFor(deps, root, binds);
+};
+
 const sharePlanFor =
   (deps: CliDeps, read: DocumentRead) =>
-  (roots: Answers["roots"], facts: { home: string }): SharePlan => {
-    if (roots === "home") {
-      return { shares: [{ location: facts.home, writable: true }], exact: false };
+  (root: Answers["root"]): SharePlan => {
+    if (root === undefined) {
+      return { problem: NO_ROOT };
     }
 
     try {
-      const binds = hostBinds(bindEntriesOf(read), { home: deps.home, env: deps.env, roots });
-
-      return { shares: vmSharesFor(deps, { roots }, binds).shares, exact: true };
+      return { shares: vmPlanFor(deps, read, root).shares };
     } catch (error) {
       return { problem: errorMessage(error) };
     }
   };
+
+const shareNoticesFor = (deps: CliDeps, read: DocumentRead, root: Answers["root"]) => {
+  if (root === undefined) {
+    return [];
+  }
+
+  try {
+    return vmPlanFor(deps, read, root).notices;
+  } catch {
+    return [];
+  }
+};
 
 const effectsFor = (deps: CliDeps, context: SetupContext): ApplyEffects => ({
   write: writeDocument,
@@ -102,11 +118,7 @@ const effectsFor = (deps: CliDeps, context: SetupContext): ApplyEffects => ({
     await prepareVmDirs(deps);
 
     return context.backend.vm.apply(
-      {
-        size: action.size,
-        shares: action.shares,
-        exactShares: action.kind === "restart" ? action.exactShares : true,
-      },
+      { size: action.size, shares: action.shares },
       { busy: () => vmSessions(context.backend, context.stateDir), progress },
     );
   },
@@ -141,15 +153,14 @@ const acceptAll = async (deps: CliDeps) => {
   validateConfigFile(document.value, document.file);
 
   const facts = await detectFor(deps, context)(document);
-  const { answers, notices } = answersForYes(document, facts, deps.env);
-
-  writeNotices(deps, notices);
-
-  const plan = planOf(document, answers, facts, sharePlanFor(deps, read)(answers.roots, facts));
+  const answers = answersForYes(document, facts, deps.env);
+  const plan = planOf(document, answers, facts, sharePlanFor(deps, read)(answers.root));
 
   if (plan.problems.length > 0) {
     throw new LauncherError(plan.problems.join("; "), `fix ${context.configFile}`);
   }
+
+  writeNotices(deps, shareNoticesFor(deps, read, answers.root));
 
   if (plan.vm.kind === "create" || plan.vm.kind === "restart") {
     assertVmFitsHost(deps, plan.vm.size);

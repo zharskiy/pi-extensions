@@ -1,9 +1,4 @@
 export type { ClipboardContent, HostClipboard } from "./clipboard.ts";
-export {
-  type GitGuardContext,
-  type GitOverlay,
-  planGitOverlay,
-} from "./git-overlay.ts";
 export { visibleInside } from "./host-paths.ts";
 export {
   discardContainer,
@@ -11,7 +6,7 @@ export {
   removeLaunchContainer,
   startLaunchContainer,
 } from "./lifecycle.ts";
-export { configVolumeName, isSharedVolumeName } from "./names.ts";
+export { agentVolumeName, configVolumeName, isLegacyAgentVolume, isSharedVolumeName } from "./names.ts";
 export type { HostTerminal, SignalSource } from "./run-pi.ts";
 export { runPi } from "./run-pi.ts";
 export {

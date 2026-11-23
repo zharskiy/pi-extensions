@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { initialIndex, numberProblem, toggle, warningFor } from "../../../cli/prompt/rules.ts";
+import { initialIndex, numberProblem, warningFor } from "../../../cli/prompt/rules.ts";
 
 describe("numberProblem", () => {
   const spec = { initial: 8, min: 1, max: 12, tooLow: "low", tooHigh: "high" };
@@ -42,17 +42,5 @@ describe("initialIndex", () => {
     expect(initialIndex(choices, "x")).toBe(0);
 
     expect(initialIndex(choices, undefined)).toBe(0);
-  });
-});
-
-describe("toggle", () => {
-  it("flips a value in and out of the set", () => {
-    const checked = new Set(["a"]);
-
-    toggle(checked, "a");
-
-    toggle(checked, "b");
-
-    expect([...checked]).toEqual(["b"]);
   });
 });

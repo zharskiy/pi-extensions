@@ -2,7 +2,7 @@ import type { VmSpec } from "../../backend/index.ts";
 import { BACK, Cancelled, type Choice, type Reply } from "../prompt/types.ts";
 import { applyPlan, noteOf, wizardFrontEnd } from "./apply.ts";
 import { VM_KEYS } from "./document.ts";
-import { addedRootProblem, replacedNotice, replacedRoots, tildeForm } from "./folders.ts";
+import { tildeForm, typedRootProblem } from "./folders.ts";
 import { firstRunSteps, initialAnswers, isPlanEmpty, planOf, vmBounds } from "./plan.ts";
 import { createReview, SECTION_LABELS } from "./review.ts";
 import {
@@ -12,22 +12,19 @@ import {
   DISCARD_CONFIRM,
   FIX_FOLDERS,
   FOLDERS_DETAIL,
-  FOLDERS_PLAIN_HELP,
   FOLDERS_TITLE,
   folderTag,
-  HOME_CONFIRM,
-  HOME_ROOTS,
   INTRO_TITLE,
   introLines,
   invalidLines,
   NO_FOLDER_FOUND,
   NOTHING_CHANGED,
   numberFields,
-  rootsSummary,
+  OTHER_FOLDER_TITLE,
+  rootSummary,
   SEARCH_TIMED_OUT,
   type Step,
   sharedNowLine,
-  sharesHome,
   shownSize,
   stepTitle,
   vmCollapsed,
@@ -53,7 +50,7 @@ interface WizardContext {
   facts: HostFacts;
   env: NodeJS.ProcessEnv;
   readdir: (dir: string) => string[];
-  sharePlan: (roots: Answers["roots"], facts: HostFacts) => SharePlan;
+  sharePlan: (root: Answers["root"]) => SharePlan;
 }
 
 export interface SetupInput {
@@ -63,23 +60,17 @@ export interface SetupInput {
   env: NodeJS.ProcessEnv;
   readdir: (dir: string) => string[];
   detect: (document: ConfigDocument) => Promise<HostFacts>;
-  sharePlan: (roots: Answers["roots"], facts: HostFacts) => SharePlan;
+  sharePlan: (root: Answers["root"]) => SharePlan;
 }
 
 interface State {
   answers: Answers;
   touched: ReadonlySet<Section>;
-  added: readonly string[];
-}
-
-interface Pending {
-  added: string[];
-  listed: string[];
 }
 
 type HubChoice = "apply" | "done" | "cancel" | Section;
 
-const ADD = "\u0000add";
+const OTHER = "\u0000other";
 
 const touchedWith = (state: State, section: Section, answers: Answers): State => ({
   ...state,
@@ -94,11 +85,10 @@ const createWizard = (io: SetupIo, context: WizardContext) => {
   const { prompts } = io;
   const { document, facts, env } = context;
   const review = createReview(document, facts, env);
-  const homeNow = sharesHome(facts);
   const sharedNow = firstRunSteps(document).length > 0 ? sharedNowLine(facts) : undefined;
 
   const planFor = (answers: Answers): Plan =>
-    planOf(document, answers, facts, context.sharePlan(answers.roots, facts));
+    planOf(document, answers, facts, context.sharePlan(answers.root));
 
   const folderChoices = (state: State): Choice<string>[] => {
     const listed = facts.candidates.map((candidate) => ({
@@ -106,120 +96,63 @@ const createWizard = (io: SetupIo, context: WizardContext) => {
       label: candidate.stored,
       tag: folderTag(candidate, facts.candidates, io.plain),
     }));
-    const known = new Set(listed.map((choice) => choice.value));
-    const chosen = state.answers.roots === "home" ? [] : state.answers.roots;
-    const extra = [...chosen, ...state.added]
-      .filter((root, index, all) => !known.has(root) && all.indexOf(root) === index)
-      .map((root) => ({ value: root, label: root }));
+    const root = state.answers.root;
+    const known = root === undefined || listed.some((choice) => choice.value === root);
 
-    return [...listed, ...extra];
+    return known ? listed : [...listed, { value: root, label: root }];
   };
 
-  const addContext = (state: Pending, checked: string[]) => ({
-    home: facts.home,
-    env,
-    checked,
-    listed: state.listed,
-  });
-
-  const rootProblem = (typed: string, state: Pending, checked: string[]) =>
-    addedRootProblem(typed, addContext(state, checked));
-
-  const added = (typed: string, state: Pending, checked: string[]) => {
-    const stored = tildeForm(typed.trim(), facts.home);
-    const unchecks = replacedRoots(typed, addContext(state, checked));
-
-    state.added.push(stored);
-
-    state.listed.push(stored);
-
-    if (unchecks.length > 0) {
-      prompts.note([replacedNotice(typed, unchecks, facts.home)]);
-    }
-
-    return { value: stored, label: stored, unchecks };
-  };
-
-  const addFolder = async (state: Pending, checked: string[]) => {
+  const typedFolder = async (): Promise<Reply<string>> => {
     const typed = await prompts.path({
-      title: "Add a folder",
+      title: OTHER_FOLDER_TITLE,
       initial: "~/",
       home: facts.home,
       readdir: context.readdir,
-      enter: "add",
-      validate: (value) => rootProblem(value, state, checked),
+      enter: "choose",
+      validate: (value) => typedRootProblem(value, { home: facts.home, env }),
       collapsed: () => undefined,
     });
 
-    return typed === BACK ? undefined : added(typed, state, checked);
-  };
-
-  const addTyped = (typed: string, state: Pending, checked: string[]) => {
-    const problem = rootProblem(typed, state, checked);
-
-    if (problem === undefined) {
-      return added(typed, state, checked);
-    }
-
-    prompts.note([`Error: ${problem}`]);
-
-    return undefined;
-  };
-
-  const confirmHome = async (step: Step | undefined) => {
-    const reply = await prompts.confirm({
-      title: stepTitle(HOME_CONFIRM.title, step),
-      detail: [HOME_CONFIRM.detail],
-      yes: HOME_CONFIRM.yes,
-      no: HOME_CONFIRM.no,
-      initial: homeNow,
-      collapsed: (yes) => (yes ? { title: SECTION_LABELS.folders, text: HOME_ROOTS } : undefined),
-    });
-
-    return reply === true;
+    return typed === BACK ? BACK : tildeForm(typed.trim(), facts.home);
   };
 
   const editFolders = async (state: State, step: Step | undefined): Promise<Reply<State>> => {
     const choices = folderChoices(state);
-    const checked = state.answers.roots === "home" ? [] : state.answers.roots;
-    const pending = {
-      added: [...state.added],
-      listed: choices.map((choice) => choice.value),
-    };
-    const empty = choices.length === 0;
     const now = sharedNow === undefined ? [] : [sharedNow];
+    const empty = choices.length === 0;
     const searchNote = facts.searchTimedOut === true ? SEARCH_TIMED_OUT : empty ? NO_FOLDER_FOUND : undefined;
-    const reply = await prompts.multiselect<string>({
+    const reply = await prompts.select<string>({
       title: stepTitle(FOLDERS_TITLE, step),
       detail: [FOLDERS_DETAIL, ...now, ...(searchNote === undefined ? [] : ["", searchNote])],
-      choices: [
-        ...choices,
-        { value: ADD, label: empty ? "+ Add a folder…" : "+ Add another folder…", action: true },
-      ],
-      checked,
-      onAction: async (_value, typed, ticked) =>
-        typed === undefined ? addFolder(pending, ticked) : addTyped(typed, pending, ticked),
+      choices: [...choices, { value: OTHER, label: empty ? "Type a folder…" : "Another folder…" }],
+      initial: state.answers.root ?? choices[0]?.value ?? OTHER,
+      radio: true,
       escape: step?.index === 1 ? "cancel" : "back",
-      collapsed: (values) =>
-        values.length > 0 ? { title: SECTION_LABELS.folders, text: rootsSummary(values) } : undefined,
-      plain: { help: FOLDERS_PLAIN_HELP, label: "Folders" },
+      collapsed: (value) =>
+        value === OTHER ? undefined : { title: SECTION_LABELS.folders, text: rootSummary(value) },
     });
 
     if (reply === BACK) {
       return BACK;
     }
 
-    const next = { ...state, added: pending.added };
+    const root = reply === OTHER ? await typedFolder() : reply;
 
-    if (reply.length > 0) {
-      return touchedWith(next, "folders", { ...state.answers, roots: reply });
+    if (root === BACK) {
+      return editFolders(state, step);
     }
 
-    if (await confirmHome(step)) {
-      return touchedWith(next, "folders", { ...state.answers, roots: "home" });
+    if (reply === OTHER) {
+      noteOf(
+        io,
+        io.plain
+          ? [`${SECTION_LABELS.folders}: ${rootSummary(root)}`, ""]
+          : [SECTION_LABELS.folders, rootSummary(root), ""],
+        io.plain ? "rail" : "step",
+      );
     }
 
-    return editFolders({ ...next, answers: { ...state.answers, roots: [] } }, step);
+    return touchedWith(state, "folders", { ...state.answers, root });
   };
 
   const customSize = async (size: VmSpec, index: number): Promise<Reply<VmSpec>> => {
@@ -357,7 +290,7 @@ const createWizard = (io: SetupIo, context: WizardContext) => {
     const plan = planFor(state.answers);
     const done = isPlanEmpty(plan) && plan.problems.length === 0;
     const changes: Choice<HubChoice>[] = [
-      { value: "folders", label: "Change project folders" },
+      { value: "folders", label: "Change project folder" },
       { value: "vm", label: "Change VM size" },
       { value: "writeBack", label: "Change settings write-back" },
     ];
@@ -395,7 +328,7 @@ const createWizard = (io: SetupIo, context: WizardContext) => {
   };
 
   const run = async (): Promise<Outcome> => {
-    const start: State = { answers: initialAnswers(document, facts, env), touched: new Set(), added: [] };
+    const start: State = { answers: initialAnswers(document, facts, env), touched: new Set() };
     const steps = firstRunSteps(document);
     const stepped = await runSteps(start, steps, 0);
 

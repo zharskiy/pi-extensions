@@ -1,3 +1,5 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createColimaVm } from "../../backend/colima/vm.ts";
 import type { VmTarget } from "../../backend/index.ts";
@@ -6,9 +8,20 @@ import { tempDir } from "../support/temp-dir.ts";
 
 const GIB = 1024 ** 3;
 
-const vmWith = (respond: FakeResponder, stateDir = "/nonexistent") =>
+const homeSharingNothing = async () => {
+  const home = await tempDir("colima-size-home");
+  const limaDir = join(home, ".colima", "_lima", "colima-pi-sandbox");
+
+  await mkdir(limaDir, { recursive: true });
+
+  await writeFile(join(limaDir, "lima.yaml"), "vmType: vz\nmounts: []\n");
+
+  return home;
+};
+
+const vmWith = (respond: FakeResponder, stateDir = "/nonexistent", home = "/nonexistent") =>
   createColimaVm({
-    home: "/nonexistent",
+    home,
     stateDir,
     runner: createFakeRunner(respond).runner,
     detect: async () => ({ available: true }),
@@ -62,7 +75,7 @@ describe("resizing the sandbox VM to the configured size", () => {
       return {};
     });
     const colima = createColimaVm({
-      home: "/nonexistent",
+      home: await homeSharingNothing(),
       stateDir,
       runner: fake.runner,
       detect: async () => ({ available: true }),
@@ -71,7 +84,7 @@ describe("resizing the sandbox VM to the configured size", () => {
     const notices: string[] = [];
     const resize = (target: VmTarget) =>
       colima.reconcile(
-        { size: target, needs: [] },
+        { size: target, shares: [], needs: [] },
         { busy: async () => ({ count: busy, others: [] }), report: (notice) => notices.push(notice) },
       );
     const changes = () =>
@@ -135,11 +148,15 @@ describe("resizing the sandbox VM to the configured size", () => {
   });
 
   it("skips a profile colima reports no size for", async () => {
-    const vm = vmWith(() => ({ code: 1, stderr: "not running" }), await tempDir("colima-size"));
+    const vm = vmWith(
+      () => ({ code: 1, stderr: "not running" }),
+      await tempDir("colima-size"),
+      await homeSharingNothing(),
+    );
     const notices: string[] = [];
 
     await vm.reconcile(
-      { size: { cpus: 2 }, needs: [] },
+      { size: { cpus: 2 }, shares: [], needs: [] },
       { busy: async () => ({ count: 0, others: [] }), report: (notice) => notices.push(notice) },
     );
 

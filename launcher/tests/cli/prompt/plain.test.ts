@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import type { Choice } from "../../../cli/prompt/types.ts";
 import { KEY, outcome, pause, plainPrompts, press } from "./fake-tty.ts";
 
 const answer = async (input: ReturnType<typeof plainPrompts>["input"], line: string) => {
@@ -10,88 +9,7 @@ const answer = async (input: ReturnType<typeof plainPrompts>["input"], line: str
   await pause();
 };
 
-const FOLDERS = {
-  title: "Which folders hold your projects?",
-  detail: ["Only these folders are shared with the sandbox VM, and pi starts only inside them."],
-  choices: [
-    { value: "~/Projects", label: "~/Projects", tag: "14 git repositories" },
-    { value: "~/work", label: "~/work", tag: "3 git repositories, you are here" },
-    { value: "~/src", label: "~/src", tag: "no git repository found" },
-    { value: "add", label: "+ Add another folder…", action: true as const },
-  ],
-  checked: ["~/Projects", "~/work"],
-  collapsed: (values: string[]) => ({ title: "Project folders", text: values.join(", ") }),
-  plain: {
-    help: [
-      "Type numbers to switch folders on or off (like 1 3), a path to add a folder,",
-      "or press Enter to keep the selection.",
-    ],
-    label: "Folders",
-  },
-};
-
 describe("plain prompts", () => {
-  it("prints the folder question as numbered lines and keeps the selection on Enter", async () => {
-    const { prompts, screen, input } = plainPrompts({ columns: 100 });
-    const reply = prompts.multiselect(FOLDERS);
-
-    await answer(input, "");
-
-    expect(await reply).toEqual(["~/Projects", "~/work"]);
-
-    expect(screen.lines()).toEqual([
-      "Which folders hold your projects?",
-      "Only these folders are shared with the sandbox VM, and pi starts only inside",
-      "them.",
-      "  1) [x] ~/Projects (14 git repositories)",
-      "  2) [x] ~/work (3 git repositories, you are here)",
-      "  3) [ ] ~/src (no git repository found)",
-      "Type numbers to switch folders on or off (like 1 3), a path to add a folder,",
-      "or press Enter to keep the selection.",
-      "Folders [1 2]:",
-      "Project folders: ~/Projects, ~/work",
-    ]);
-
-    expect(input.isRaw).toBe(false);
-  });
-
-  it("toggles by numbers, re-asks after an invalid number, and hands other text to the action", async () => {
-    const { prompts, screen, input } = plainPrompts();
-    const asked: string[] = [];
-
-    const onAction = async (_value: string, typed?: string): Promise<Choice<string> | undefined> => {
-      asked.push(String(typed));
-
-      return typed === undefined || typed === "~/nope" ? undefined : { value: typed, label: typed };
-    };
-
-    const reply = prompts.multiselect({ ...FOLDERS, onAction });
-
-    await answer(input, "1 3");
-
-    await answer(input, "7");
-
-    await answer(input, "~/nope");
-
-    await answer(input, "~/oss");
-
-    await answer(input, "");
-
-    expect(await reply).toEqual(["~/work", "~/src", "~/oss"]);
-
-    expect(asked).toEqual(["~/nope", "~/oss"]);
-
-    const lines = screen.lines();
-
-    expect(lines).toContain("Folders [2 3]: 7");
-
-    expect(lines).toContain("Error: Type numbers from 1 to 3, or press Enter.");
-
-    expect(lines).toContain("  4) [x] ~/oss");
-
-    expect(lines.at(-1)).toBe("Project folders: ~/work, ~/src, ~/oss");
-  });
-
   it("numbers a select, takes the default on Enter and re-asks out of range", async () => {
     const { prompts, screen, input } = plainPrompts();
 
@@ -121,7 +39,7 @@ describe("plain prompts", () => {
   it("reads y, yes, n and no in any case, the default on Enter, and re-asks otherwise", async () => {
     const { prompts, screen, input } = plainPrompts();
     const spec = {
-      title: "Share your whole home with the sandbox VM instead?",
+      title: "Restart the sandbox VM now?",
       yes: "Yes",
       no: "No",
       initial: false,
@@ -136,9 +54,9 @@ describe("plain prompts", () => {
     expect(await first).toBe(true);
 
     expect(screen.lines().slice(0, 3)).toEqual([
-      "Share your whole home with the sandbox VM instead? (y/N): maybe",
+      "Restart the sandbox VM now? (y/N): maybe",
       "Error: Type y or n.",
-      "Share your whole home with the sandbox VM instead? (y/N): YES",
+      "Restart the sandbox VM now? (y/N): YES",
     ]);
 
     const second = prompts.confirm(spec);

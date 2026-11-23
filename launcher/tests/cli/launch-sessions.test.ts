@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { lstat, mkdir, readdir, readFile, rm, utimes, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readdir, readFile, utimes } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { describe, expect, it } from "vitest";
@@ -170,64 +170,6 @@ describe("the end of a session", () => {
 
     expect(await sweepNow(harness.deps)).toBe(0);
     expect(fake.containers.size).toBe(0);
-  });
-});
-
-describe("the git report at the last session's end", () => {
-  it("finishes under the prepare lock, so a launch registering right after sees no baseline of the ended one", async () => {
-    const fake = createFakeBackend();
-    const seen: {
-      ran?: boolean;
-      ending?: boolean;
-      atEnd?: boolean;
-      atRegistration?: boolean;
-      registered?: Promise<void>;
-    } = {};
-    const harness = await createHarness({
-      respond: (call) =>
-        seen.ending === true && call.file === "git" && call.args.includes("ls-files")
-          ? sleep(300).then(() => ({ code: 1 }))
-          : undefined,
-      backend: () => ({
-        ...fake.backend,
-        exec: async (spec, io) => {
-          const result = await fake.backend.exec(spec, io);
-
-          seen.ran = seen.ran === true || spec.env.PI_SANDBOX_LAUNCH_ID !== undefined;
-
-          return result;
-        },
-        findContainers: async (labels) => {
-          const repoHash = labels["pi-sandbox.repo-hash"];
-
-          if (seen.ran === true && seen.ending !== true && repoHash !== undefined) {
-            seen.ending = true;
-            seen.atEnd = await exists(baseline());
-            seen.registered = withPrepareLock(
-              { stateDir: harness.stateDir, repoHash, progress: () => undefined },
-              async () =>
-                registerLaunch(harness.stateDir, {
-                  launchId: OTHER_LAUNCH,
-                  repoHash,
-                  startedAt: 2,
-                  ...(await processMark()),
-                }),
-            ).then(async () => {
-              seen.atRegistration = await exists(baseline());
-            });
-          }
-
-          return fake.backend.findContainers(labels);
-        },
-      }),
-    });
-    const baseline = () => stateLayout(harness.stateDir).repo(sha256Hex(harness.repoRoot)).gitBaseline;
-
-    expect(await run([], harness.deps)).toBe(0);
-
-    await seen.registered;
-
-    expect(seen).toMatchObject({ atEnd: true, atRegistration: false });
   });
 });
 
@@ -521,35 +463,6 @@ describe("a signal while the sandbox is being prepared", () => {
     expect(sessionsWhenBuilt).toEqual([1, 1]);
     expect(fake.containers.size).toBe(0);
     expect(await launchesShown(harness)).toBe("launches: 0 running in the sandbox");
-  });
-});
-
-describe("a launch refused right before its start", () => {
-  it("refuses when .git/hooks turned into a file before the start, and leaves no container", async () => {
-    const fake = createFakeBackend();
-    const box = { planted: false, root: "" };
-    const backend: typeof fake.backend = {
-      ...fake.backend,
-      findContainers: async (labels) => {
-        if (!box.planted && labels["pi-sandbox.repo-hash"] === sha256Hex(box.root)) {
-          box.planted = true;
-
-          await rm(join(box.root, ".git", "hooks"), { recursive: true, force: true });
-
-          await writeFile(join(box.root, ".git", "hooks"), "");
-        }
-
-        return fake.backend.findContainers(labels);
-      },
-    };
-    const harness = await createHarness({ backend: () => backend });
-
-    box.root = harness.repoRoot;
-
-    expect(await run([], harness.deps)).toBe(1);
-    expect(box.planted).toBe(true);
-    expect(harness.stderr()).toContain(`${join(harness.repoRoot, ".git", "hooks")} is not a directory`);
-    expect(fake.containers.size).toBe(0);
   });
 });
 

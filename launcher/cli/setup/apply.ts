@@ -278,7 +278,7 @@ export const applyPlan = async (
     return step;
   }
 
-  front.report({ kind: "done", roots: chosen.answers.roots, vmReady: step });
+  front.report({ kind: "done", root: chosen.answers.root, vmReady: step });
 
   return 0;
 };

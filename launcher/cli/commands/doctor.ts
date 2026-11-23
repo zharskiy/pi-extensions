@@ -28,6 +28,7 @@ import {
   assertMemoryFitsVm,
   assertVmFitsHost,
   recommendedVmSize,
+  rootPaths,
   type VmSharePlan,
   vmShareCoverage,
   vmSharesFor,
@@ -301,15 +302,11 @@ const fileCacheCheck = async (deps: CliDeps, context: LaunchContext, vm: Vm, run
   return countedCheck(reading, releasing);
 };
 
-const sharesPassed = passed("the sandbox VM shares every path this repository needs", {
-  brief: "shares this repository",
-});
-
 const listed = (shares: VmShare[]) => shares.map(shareText).join(", ");
 
 const driftText = (extra: VmShare[], lacking: VmShare[]) =>
   [
-    ...(extra.length === 0 ? [] : [`shares ${listed(extra)}, which workspaceRoots leaves out`]),
+    ...(extra.length === 0 ? [] : [`shares ${listed(extra)}, which workspaceRoot leaves out`]),
     ...(lacking.length === 0 ? [] : [`lacks ${listed(lacking)}`]),
   ].join(" and ");
 
@@ -318,13 +315,13 @@ const rootsCheck = (current: VmShare[], desired: VmShare[]): CheckResult => {
 
   if (extra.length === 0 && lacking.length === 0) {
     return passed(
-      "the sandbox VM shares exactly the workspaceRoots, the session dir and the launcher's vm dir",
-      { brief: "shares this repository" },
+      "the sandbox VM shares exactly the workspaceRoot, the session dir and the launcher's vm dir",
+      { brief: "shares the workspace root" },
     );
   }
 
   return warned(`the sandbox VM ${driftText(extra, lacking)}`, {
-    hint: "run pi sandbox init, or pi, while no other pi session runs; either restarts the VM with the shares workspaceRoots sets",
+    hint: "run pi sandbox init, or pi, while no other pi session runs; either restarts the VM with the shares workspaceRoot sets",
   });
 };
 
@@ -343,12 +340,12 @@ const unreadableShares = warned(
   { hint: "check that colima can start the profile, then run pi once while no other pi session runs" },
 );
 
-const coverageOutcome = (coverage: Coverage, plan: VmSharePlan | undefined): SharesOutcome => {
-  if (coverage === "unreadable" && plan !== undefined) {
+const coverageOutcome = (coverage: Coverage, plan: VmSharePlan): SharesOutcome => {
+  if (coverage === "unreadable") {
     return { result: unreadableShares, missing: [] };
   }
 
-  if (coverage === undefined || coverage === "unreadable") {
+  if (coverage === undefined) {
     return {
       result: skipped(`colima has not written the shares of profile ${ENGINE_PROFILE} yet`),
       missing: [],
@@ -365,7 +362,7 @@ const coverageOutcome = (coverage: Coverage, plan: VmSharePlan | undefined): Sha
   }
 
   return {
-    result: plan === undefined ? sharesPassed : rootsCheck(coverage.shares, plan.shares),
+    result: rootsCheck(coverage.shares, plan.shares),
     missing: [],
   };
 };
@@ -380,7 +377,7 @@ const sharesCheck = async (
   const binds = hostBinds(config.mounts.binds, {
     home: deps.home,
     env: deps.env,
-    roots: [context.workspace.repoRoot, ...(config.workspaceRoots?.roots ?? [])],
+    roots: [context.workspace.repoRoot, ...rootPaths(config)],
   });
   const coverage = await vmShareCoverage(
     context,
@@ -388,11 +385,10 @@ const sharesCheck = async (
     hostSessionsOf(deps, context, files?.settings),
     binds,
   );
-  const plan =
-    config.workspaceRoots === undefined ? undefined : vmSharesFor(deps, config.workspaceRoots, binds);
+  const plan = vmSharesFor(deps, config.workspaceRoot, binds);
   const outcome = coverageOutcome(coverage, plan);
 
-  return { ...outcome, result: withNotices(outcome.result, plan?.notices ?? []) };
+  return { ...outcome, result: withNotices(outcome.result, plan.notices) };
 };
 
 const sharesOf = (deps: CliDeps, context: LaunchContext, backend: Backend) =>
@@ -523,7 +519,7 @@ const blockedChecks = (deps: CliDeps, rules: CredentialRule[]) => {
 
 const STAGE_STEPS: Record<Stage, string> = {
   vm: "starting the VM",
-  shares: "sharing this repository with the VM",
+  shares: "sharing the workspace root with the VM",
   host: "preparing the host side",
   proxy: "starting the proxy",
   image: "building the image",
@@ -597,6 +593,21 @@ const skipSandbox = (run: Run, missing: string[]) => {
   return undefined;
 };
 
+const ROOTLESS_SHARES: SharesOutcome = {
+  result: skipped("workspaceRoot is not set, so there are no shares to check"),
+  missing: [],
+};
+
+const skipRootless = (run: Run) => {
+  run.checks.push({
+    name: "sandbox",
+    section: "sandbox",
+    result: skipped("not started: workspaceRoot is not set, so the VM was not started"),
+  });
+
+  return undefined;
+};
+
 const fitsHost = async (deps: CliDeps, context: LaunchContext, run: Run) => {
   try {
     assertVmFitsHost(deps, vmTargetOf(context.effective.config.vm));
@@ -633,18 +644,21 @@ const once = <T>(read: () => Promise<T>) => {
 const runChecks = async (deps: CliDeps, progress: Progress, checks: NamedCheck[]) => {
   progress.line("preparing the sandbox");
 
-  const { context, backend } = await openContext(deps, "sandbox");
+  const { context, backend } = await openContext(deps, "sandbox", { rootOptional: true });
   const run: Run = { checks, progress, hostTls: once(() => readHostTls(deps, context)) };
-  const shares = await sharesOf(deps, context, backend);
+  const rootless = context.effective.config.workspaceRoot === undefined;
+  const shares = rootless ? ROOTLESS_SHARES : await sharesOf(deps, context, backend);
 
   run.checks.push({ name: "vm shares", section: "sandbox", result: shares.result });
 
-  const skipsSandbox = shares.missing.length > 0;
+  const skipsSandbox = rootless || shares.missing.length > 0;
 
   const signal = (await fitsHost(deps, context, run))
-    ? skipsSandbox
-      ? skipSandbox(run, shares.missing)
-      : await sandboxChecks(deps, context, backend, run)
+    ? rootless
+      ? skipRootless(run)
+      : skipsSandbox
+        ? skipSandbox(run, shares.missing)
+        : await sandboxChecks(deps, context, backend, run)
     : undefined;
 
   run.checks.push({

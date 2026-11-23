@@ -2,7 +2,7 @@ import { completePath } from "./complete.ts";
 import { createFrame, type FrameView } from "./frame.ts";
 import { isCtrl, listenKeys } from "./keys.ts";
 import { editLine, type LineState, lineOf } from "./line-editor.ts";
-import { DIGITS, initialIndex, numberProblem, toggle, warningFor } from "./rules.ts";
+import { DIGITS, initialIndex, numberProblem, warningFor } from "./rules.ts";
 import {
   asciiOf,
   elapsedOf,
@@ -20,7 +20,6 @@ import {
 } from "./style.ts";
 import { runTask, type TaskView, warningOf } from "./task.ts";
 import {
-  type AddedChoice,
   BACK,
   type CancelCause,
   Cancelled,
@@ -30,7 +29,6 @@ import {
   type Detail,
   type Key,
   type KeyWords,
-  type MultiSpec,
   type NotePlace,
   type NumberSpec,
   type PathSpec,
@@ -453,122 +451,6 @@ const selectView = <T>(context: Context, spec: SelectSpec<T>): View<T> => {
   };
 };
 
-const multiView = <T>(context: Context, spec: MultiSpec<T>): View<T[]> => {
-  const { glyphs, paint } = context;
-
-  const state = {
-    choices: [...spec.choices],
-    checked: new Set(spec.checked),
-    cursor: 0,
-    top: 0,
-    pointer: 0,
-  };
-
-  const checkedChoices = () =>
-    state.choices.filter((choice) => choice.action !== true && state.checked.has(choice.value));
-
-  const add = (choice: AddedChoice<T> | undefined) => {
-    if (choice === undefined) {
-      return;
-    }
-
-    const { unchecks = [], ...shown } = choice;
-    const existing = state.choices.findIndex((known) => known.value === shown.value);
-    const firstAction = state.choices.findIndex((known) => known.action === true);
-    const at = firstAction < 0 ? state.choices.length : firstAction;
-
-    if (existing < 0) {
-      state.choices = [...state.choices.slice(0, at), shown, ...state.choices.slice(at)];
-    }
-
-    unchecks.forEach((value) => {
-      state.checked.delete(value);
-    });
-
-    state.checked.add(shown.value);
-
-    state.cursor = existing < 0 ? at : existing;
-  };
-
-  const mark = (choice: Choice<T>) => {
-    if (choice.action === true) {
-      return "";
-    }
-
-    return state.checked.has(choice.value) ? `${paint("cyan", glyphs.checked)} ` : `${glyphs.unchecked} `;
-  };
-
-  const enter = (choice: Choice<T>): Step<T[]> => {
-    if (choice.action === true) {
-      return {
-        kind: "suspend",
-        run: async () => {
-          const checked = checkedChoices().map((known) => known.value);
-
-          add(await spec.onAction?.(choice.value, undefined, checked));
-        },
-      };
-    }
-
-    return settle(checkedChoices().map((checked) => checked.value));
-  };
-
-  return {
-    typing: false,
-    frame: (width) => {
-      const detail = detailOf(context, spec.detail, width);
-      const rows = choiceRows(context, state.choices, mark, state.cursor);
-      const body = windowed(context, rows, state.cursor, state, limitOf(context, detail));
-      const toggles = state.choices.some((choice) => choice.action !== true);
-      const words = wordsOf(spec, toggles ? "continue" : "choose");
-
-      const hints = hintsOf(
-        context,
-        [`${glyphs.upDown} move`, ...(toggles ? ["space select"] : []), ...words],
-        width,
-      );
-
-      const parts = composed(context, {
-        title: spec.title,
-        detail,
-        body,
-        after: [],
-        hints,
-      });
-
-      return { lines: parts.lines, focus: parts.bodyRow + state.pointer };
-    },
-    key: (key) => {
-      const next = moved(state.cursor, key, state.choices.length);
-
-      if (next !== undefined) {
-        state.cursor = next;
-
-        return STAY;
-      }
-
-      const choice = state.choices[state.cursor];
-
-      if (choice === undefined) {
-        return isCtrl(key, "d") ? END : STAY;
-      }
-
-      if (key.kind === "space" && choice.action !== true) {
-        toggle(state.checked, choice.value);
-
-        return STAY;
-      }
-
-      if (key.kind === "enter") {
-        return enter(choice);
-      }
-
-      return isCtrl(key, "d") ? END : STAY;
-    },
-    collapse: spec.collapsed,
-  };
-};
-
 const TOGGLES = new Set(["left", "right", "tab"]);
 
 const confirmView = (context: Context, spec: ConfirmSpec): View<boolean> => {
@@ -943,7 +825,6 @@ export const createRichPrompts = (ui: Ui): Prompts => {
 
   return {
     select: (spec) => runView(context, selectView(context, spec)),
-    multiselect: (spec) => runView(context, multiView(context, spec)),
     confirm: (spec) => runView(context, confirmView(context, spec)),
     path: (spec) => runView(context, pathView(context, spec)),
     number: (spec) => runView(context, numberView(context, spec)),

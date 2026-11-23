@@ -31,6 +31,7 @@ export interface HarnessOptions {
   denials?: DenialRecord[];
   machine?: CliDeps["machine"];
   defaultStateDir?: true;
+  workspaceRoot?: false | string;
 }
 
 const roots: string[] = [];
@@ -43,7 +44,7 @@ export const unreachable = (backend: Backend): Backend => ({
     ensureRunning: async () => {
       throw new LauncherError(
         "the sandbox VM engine is unreachable at ~/.colima/pi-sandbox/docker.sock: socket missing",
-        "run colima start --profile pi-sandbox --activate=false, or pi sandbox init when ~/.colima/pi-sandbox does not exist",
+        "run pi, which starts the sandbox VM with its planned shares, or pi sandbox init when ~/.colima/pi-sandbox does not exist",
       );
     },
   },
@@ -121,8 +122,7 @@ export const piArgsOf = (exec: FakeExec | undefined) => {
   return command.slice(command.indexOf("pi") + 1);
 };
 
-export const renderDirOf = (harness: HarnessPaths) =>
-  stateLayout(harness.stateDir).repo(sha256Hex(harness.repoRoot)).render;
+export const renderDirOf = (harness: HarnessPaths) => stateLayout(harness.stateDir).render;
 
 export const sweepNow = async (deps: CliDeps) => {
   await rm(stateLayout(pathsOf(deps).stateDir).gcRecord, { force: true });
@@ -472,15 +472,36 @@ export const createHarness = async (options: HarnessOptions = {}) => {
     now: () => 1_700_000_000_000,
   };
 
+  const withRoot = (file: string, value: unknown) => {
+    const isPlain = typeof value === "object" && value !== null && !Array.isArray(value);
+
+    if (file !== userConfigFile || options.workspaceRoot === false || !isPlain || "workspaceRoot" in value) {
+      return value;
+    }
+
+    return { workspaceRoot: join(root, options.workspaceRoot ?? "repo"), ...value };
+  };
+
   const writeJson = async (file: string, value: unknown) => {
     await mkdir(join(file, ".."), { recursive: true });
 
-    await writeFile(file, JSON.stringify(value));
+    await writeFile(file, JSON.stringify(withRoot(file, value)));
   };
+
+  if (options.workspaceRoot !== false) {
+    await writeJson(userConfigFile, {});
+  }
+
+  const shares = [
+    { location: repoRoot, writable: true },
+    { location: join(hostAgentDir, "sessions"), writable: true },
+    { location: stateLayout(stateDir).vm, writable: false },
+  ];
 
   return {
     root,
     repoRoot,
+    shares,
     cwd,
     stateDir,
     hostAgentDir,

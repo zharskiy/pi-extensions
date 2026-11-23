@@ -1,52 +1,41 @@
 import { isWithin, knownRepos, realOrResolved, repoRecordOf } from "../shared/index.ts";
-import { findGitRoot } from "./git/layout.ts";
-import { assertSafeMounts } from "./guard.ts";
+import { checkRoot } from "./roots.ts";
 
 interface SandboxReachContext {
   home: string;
   env: NodeJS.ProcessEnv;
   stateDir: string;
+  workspaceRoot?: string;
 }
-
-export const startedRoots = async (cwd: string) => {
-  const folder = await realOrResolved(cwd);
-  const root = await findGitRoot(folder);
-
-  return root === undefined ? [folder] : [folder, root];
-};
 
 const sandboxedRoots = async (stateDir: string) => {
   const records = await Promise.all((await knownRepos(stateDir)).map((hash) => repoRecordOf(stateDir, hash)));
 
-  return Promise.all(
-    records.flatMap((record) => (record === undefined ? [] : [realOrResolved(record.root)])),
+  const recorded = records.flatMap((record) =>
+    record === undefined
+      ? []
+      : [record.root, ...(record.workspaceRoot === undefined ? [] : [record.workspaceRoot])],
   );
+
+  return Promise.all(recorded.map(realOrResolved));
 };
 
-const canHoldSandbox = (root: string, context: SandboxReachContext) => {
-  try {
-    assertSafeMounts([root], { home: context.home, env: context.env });
-
-    return true;
-  } catch {
-    return false;
+const mountedRoots = (context: SandboxReachContext) => {
+  if (context.workspaceRoot === undefined) {
+    return [];
   }
+
+  const verdict = checkRoot(context.workspaceRoot, context);
+
+  return verdict.ok ? [verdict.resolved] : [];
 };
+
+export const sandboxWriteRoots = async (context: SandboxReachContext) => [
+  ...new Set([...mountedRoots(context), ...(await sandboxedRoots(context.stateDir))]),
+];
 
 export const isSandboxWritable = async (paths: string[], context: SandboxReachContext) => {
-  const [gitRoots, sandboxed] = await Promise.all([
-    Promise.all(paths.map(findGitRoot)),
-    sandboxedRoots(context.stateDir),
-  ]);
+  const roots = await sandboxWriteRoots(context);
 
-  return (
-    gitRoots.some((root) => root !== undefined && canHoldSandbox(root, context)) ||
-    sandboxed.some((root) => paths.some((path) => isWithin(path, root)))
-  );
-};
-
-export const sandboxWriteRoots = async (cwd: string, context: SandboxReachContext) => {
-  const [sandboxed, started] = await Promise.all([sandboxedRoots(context.stateDir), startedRoots(cwd)]);
-
-  return [...sandboxed, ...started.filter((root) => canHoldSandbox(root, context))];
+  return paths.some((path) => roots.some((root) => isWithin(path, root)));
 };

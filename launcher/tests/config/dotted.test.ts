@@ -22,7 +22,7 @@ describe("dotted paths", () => {
 
     expect(withoutPath(value, "vm.cpus")).toEqual({ writeBack: { enabled: true, exclude: {} } });
     expect(withoutPath(value, "writeBack.enabled")).toEqual({ vm: { cpus: 4 }, writeBack: { exclude: {} } });
-    expect(withoutPath(value, "workspaceRoots")).toBe(value);
+    expect(withoutPath(value, "workspaceRoot")).toBe(value);
     expect(withoutPath(value, "vm.diskGiB")).toBe(value);
     expect(withoutPath({ vm: 3 }, "vm.cpus")).toEqual({ vm: 3 });
   });

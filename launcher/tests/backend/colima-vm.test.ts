@@ -34,6 +34,9 @@ const STATUS = "colima status --profile pi-sandbox";
 
 const START = "colima start --profile pi-sandbox --activate=false";
 
+const startWith = (shares: { location: string; writable: boolean }[]) =>
+  [START, ...shares.map((share) => `--mount ${share.location}${share.writable ? ":w" : ""}`)].join(" ");
+
 const setupWith = async (setup: Setup = {}) => {
   const answers = setup.colima ?? {};
   const fake = createFakeBackend();
@@ -93,9 +96,9 @@ const setupWith = async (setup: Setup = {}) => {
   });
 
   if (setup.profile !== false) {
-    await writeColimaMounts(harness.deps.home, [{ location: harness.root, writable: true }]);
+    await writeColimaMounts(harness.deps.home, harness.shares);
 
-    await writeLimaMounts(harness.deps.home, [{ location: harness.root, writable: true }]);
+    await writeLimaMounts(harness.deps.home, harness.shares);
   }
 
   if (setup.config !== undefined) {
@@ -128,7 +131,7 @@ describe("a launch starts the stopped sandbox VM", () => {
 
     expect(await run([], context.harness.deps)).toBe(0);
     expect(context.harness.stderr()).toContain("pi-sandbox: starting the sandbox VM\n");
-    expect(context.colimaCalls()).toEqual([STATUS, START]);
+    expect(context.colimaCalls()).toEqual([STATUS, startWith(context.harness.shares)]);
     expect(context.fake.created).toHaveLength(1);
   });
 
@@ -152,7 +155,7 @@ describe("a launch starts the stopped sandbox VM", () => {
     expect(context.harness.stderr()).toContain(
       [
         "pi-sandbox: the sandbox VM is running but its engine at ~/.colima/pi-sandbox/docker.sock does not answer: socket missing",
-        "  hint: run colima stop --profile pi-sandbox && colima start --profile pi-sandbox --activate=false and see ~/.colima/_lima/colima-pi-sandbox/ha.stderr.log",
+        "  hint: run pi sandbox stop, then pi again, and see ~/.colima/_lima/colima-pi-sandbox/ha.stderr.log",
       ].join("\n"),
     );
     expect(context.colimaCalls()).toEqual([STATUS]);
@@ -167,9 +170,11 @@ describe("a launch starts the stopped sandbox VM", () => {
     expect(context.harness.stderr()).toContain(
       [
         'pi-sandbox: could not start the sandbox VM: colima start failed: level=fatal msg="disk full"',
-        "  hint: run colima start --profile pi-sandbox --activate=false and see ~/.colima/_lima/colima-pi-sandbox/ha.stderr.log",
+        `  hint: run ${START} --mount `,
       ].join("\n"),
     );
+    expect(context.harness.stderr()).toContain(":w --mount ");
+    expect(context.harness.stderr()).toContain(" and see ~/.colima/_lima/colima-pi-sandbox/ha.stderr.log");
     expect(context.fake.containers.size).toBe(0);
   });
 
@@ -180,7 +185,7 @@ describe("a launch starts the stopped sandbox VM", () => {
     expect(context.harness.stderr()).toContain(
       "pi-sandbox: the sandbox VM started but its engine is unreachable: socket missing\n",
     );
-    expect(context.colimaCalls()).toEqual([STATUS, START]);
+    expect(context.colimaCalls()).toEqual([STATUS, startWith(context.harness.shares)]);
     expect(context.pauses).toEqual([0, 500, 1000, 1500, 2000]);
   });
 
@@ -246,14 +251,16 @@ const stoppedVm = async (detections: boolean[] = []) => {
   return { home, outside, vm, colimaCalls, colimaEnvs };
 };
 
+const PLANNED = [{ location: "/Volumes/work", writable: true }];
+
 describe("the stopped sandbox VM", () => {
-  it("starts plainly, leaving any missing share to the shares stage", async () => {
+  it("starts with the planned shares, leaving any missing share to the shares stage", async () => {
     const context = await stoppedVm();
     const notices: string[] = [];
 
-    await context.vm.ensureRunning((notice) => notices.push(notice));
+    await context.vm.ensureRunning((notice) => notices.push(notice), PLANNED);
 
-    expect(context.colimaCalls()).toEqual([STATUS, START]);
+    expect(context.colimaCalls()).toEqual([STATUS, startWith(PLANNED)]);
     expect(notices).toEqual(["starting the sandbox VM"]);
     expect(await context.vm.coverage([{ path: context.outside, writable: true }])).toMatchObject({
       missing: [context.outside],
@@ -263,7 +270,7 @@ describe("the stopped sandbox VM", () => {
   it("runs every colima command against ~/.colima, whatever COLIMA_HOME says", async () => {
     const context = await stoppedVm();
 
-    await context.vm.ensureRunning(() => undefined);
+    await context.vm.ensureRunning(() => undefined, PLANNED);
 
     await context.vm.size();
 
@@ -278,7 +285,7 @@ describe("the stopped sandbox VM", () => {
   it("starts nothing when another launch brought the engine up while this one waited for the VM lock", async () => {
     const context = await stoppedVm([true]);
 
-    await context.vm.ensureRunning(() => undefined);
+    await context.vm.ensureRunning(() => undefined, PLANNED);
 
     expect(context.colimaCalls()).toEqual([]);
   });
@@ -303,7 +310,7 @@ describe("the stopped sandbox VM", () => {
 
     await entered;
 
-    const ensured = context.vm.ensureRunning(() => undefined).then(() => order.push("ensured"));
+    const ensured = context.vm.ensureRunning(() => undefined, PLANNED).then(() => order.push("ensured"));
 
     await sleep(100);
 

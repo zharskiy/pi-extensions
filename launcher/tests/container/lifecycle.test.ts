@@ -60,7 +60,7 @@ const specOf = (overrides: Partial<ContainerSpecInput> = {}) =>
     image: { digest: "sha256:one", id: "sha256:image-one" },
     stateDir: LOCK_STATE,
     launchId: nextLaunchId(),
-    gitOverlay: { selfBinds: [], readOnlyDirs: [] },
+    workspaceRoot: workspace.repoRoot,
     proxy: {
       url: "http://pi-sandbox:t@pi-sandbox-proxy:3128",
       network: { kind: "internal", name: "pi-sandbox" },
@@ -305,58 +305,6 @@ describe("volumes the sandbox writes", () => {
     expect([...fake.containers.values()]).toEqual([]);
 
     await rm(link, { force: true });
-  });
-
-  it("creates no mount point inside the git dir through a path that resolves into it", async () => {
-    const fake = createFakeBackend();
-    const hooks = join(WORK, "repo", ".git", "hooks");
-    const alias = join(WORK, "repo", "git-alias");
-
-    await mkdir(hooks, { recursive: true });
-
-    await rm(alias, { force: true });
-
-    await symlink(join(WORK, "repo", ".git"), alias);
-
-    const spec = overlaid("git-alias/hooks/pre-commit");
-
-    await expect(startLaunchContainer({ backend: fake.backend, spec })).rejects.toThrow(
-      `the mount point ${join(alias, "hooks")} lies inside ${join(WORK, "repo", ".git")}, which the sandbox protects`,
-    );
-    expect(await stat(join(hooks, "pre-commit")).catch(() => undefined)).toBeUndefined();
-    expect([...fake.containers.values()]).toEqual([]);
-
-    await rm(alias, { force: true });
-  });
-
-  it("never creates a hook through a differently spelled git dir, whatever the filesystem's case rules", async () => {
-    const fake = createFakeBackend();
-    const hooks = join(WORK, "repo", ".git", "hooks");
-
-    await mkdir(hooks, { recursive: true });
-
-    const spec = overlaid(".GIT/hooks/pre-commit");
-
-    await startLaunchContainer({ backend: fake.backend, spec }).catch(() => undefined);
-
-    expect(await stat(join(hooks, "pre-commit")).catch(() => undefined)).toBeUndefined();
-
-    await rm(join(WORK, "repo", ".GIT"), { recursive: true, force: true }).catch(() => undefined);
-  });
-
-  it("passes on the notice for a build output overlay left out inside a protected path", async () => {
-    const fake = createFakeBackend();
-    const guardedDir = join(WORK, "repo", ".githooks");
-    const spec = specOf({
-      workspace: { ...workspace, overlays: [join(guardedDir, "node_modules")] },
-      gitOverlay: { selfBinds: [], readOnlyDirs: [guardedDir] },
-    });
-    const ensured = await startLaunchContainer({ backend: fake.backend, spec });
-
-    expect(ensured.notices).toContain(
-      `${join(guardedDir, "node_modules")} is not overlaid: it lies inside ${guardedDir}, which the sandbox protects`,
-    );
-    expect(await stat(join(guardedDir, "node_modules")).catch(() => undefined)).toBeUndefined();
   });
 
   it("creates every missing directory of a nested mount point inside the repository", async () => {

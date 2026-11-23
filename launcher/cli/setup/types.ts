@@ -43,7 +43,7 @@ export interface ConfigDocument {
 
 export type DocumentRead =
   | { ok: true; document: ConfigDocument }
-  | { ok: false; kind: "json" | "config"; message: string };
+  | { ok: false; kind: "json" | "config"; message: string; hint?: string };
 
 export interface OwnedProblem {
   key: string;
@@ -51,7 +51,7 @@ export interface OwnedProblem {
 }
 
 export interface Answers {
-  roots: string[] | "home";
+  root: string | undefined;
   vm: "automatic" | VmSpec | { kept: Partial<VmSpec> };
   writeBack: boolean;
 }
@@ -68,12 +68,12 @@ export type VmPart = "size" | "folders";
 export type VmAction =
   | { kind: "none" }
   | { kind: "create"; size: VmSpec; shares: VmShare[] }
-  | { kind: "restart"; size: VmSpec; shares: VmShare[]; exactShares: boolean; parts: VmPart[] }
+  | { kind: "restart"; size: VmSpec; shares: VmShare[]; parts: VmPart[] }
   | { kind: "defer"; sessions: number; parts: VmPart[] }
   | { kind: "on-next-start"; parts: VmPart[] }
   | { kind: "unknown"; reason: string };
 
-export type SharePlan = { shares: VmShare[]; exact: boolean } | { problem: string };
+export type SharePlan = { shares: VmShare[] } | { problem: string };
 
 export interface Plan {
   next: JsonObject;
@@ -111,7 +111,7 @@ export type ApplyEvent =
   | VmFailure
   | { kind: "vm-not-ready" }
   | { kind: "vm-cancelled"; phase: VmPhase | undefined }
-  | { kind: "done"; roots: Answers["roots"]; vmReady: boolean };
+  | { kind: "done"; root: Answers["root"]; vmReady: boolean };
 
 interface VmTask {
   interruptWarning(): string;

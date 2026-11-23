@@ -70,9 +70,9 @@ export const serviceVolumeNames = (stateDir: string, services: ServiceEntry[]) =
 
 const repoVolumePlan = ({ workspace, config, stateDir }: RepoVolumesInput): PlannedVolume[] => [
   {
-    name: agentVolumeName(installIdOf(stateDir), workspace.repoRoot),
+    name: agentVolumeName(installIdOf(stateDir)),
     target: GUEST_PATHS.agentDir,
-    labels: repoLabels(workspace.repoRoot),
+    labels: {},
     key: "agent",
   },
   ...overlayTargets(workspace, config).map((target) => overlayVolume(workspace, stateDir, target)),

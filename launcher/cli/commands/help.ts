@@ -14,7 +14,7 @@ const COMMANDS: Array<[string, string]> = [
   ["pi config", "the user resource config, with host pi on the host (-l passes through into the sandbox)"],
   [
     "pi sandbox init [--yes]",
-    "set up or change the project folders, VM size and settings write-back, then apply them to the sandbox VM; --yes asks nothing and applies the current settings",
+    "set up or change the folder that holds your projects, VM size and settings write-back, then apply them to the sandbox VM; --yes asks nothing and applies the current settings",
   ],
   ["pi sandbox status", "runtime, services, container, proxy, image, launches, grants, overlays, volumes"],
   [
@@ -25,8 +25,8 @@ const COMMANDS: Array<[string, string]> = [
   ["pi sandbox egress revoke <host[:port]>", "remove a grant"],
   ["pi sandbox egress list [--denied]", "the grants, or the hosts the proxy blocked"],
   [
-    "pi sandbox reset [--services]",
-    "remove this folder's sandbox with its overlay and agent volumes, once none of its sessions runs; --services instead removes the sandbox's services and their data, once no pi session runs",
+    "pi sandbox reset [--services | --agent]",
+    "remove this folder's sandbox with its overlay volumes, once none of its sessions runs; --services instead removes the sandbox's services and their data, and --agent the pi folder every folder's sandbox shares, once no pi session runs",
   ],
   ["pi sandbox stop", "stop the services and the sandbox VM when no pi session runs"],
   [

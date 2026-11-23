@@ -3,7 +3,6 @@ import { basename, resolve } from "node:path";
 import type { MountSpec } from "../backend/index.ts";
 import { overlayVolumes, visibleInside } from "../container/index.ts";
 import { realOrResolved } from "../shared/index.ts";
-import { workspaceNotices } from "../workspace/index.ts";
 import type { LaunchContext } from "./context.ts";
 import type { SandboxProxy } from "./sandbox-proxy.ts";
 
@@ -13,7 +12,14 @@ const CAPPED_NOTICE =
 const TRUNCATED_NOTICE =
   "pi-sandbox: the folder is too large to search for build output; overlays disabled, the host copies are used";
 
+const notInRepository = (cwd: string) =>
+  `pi-sandbox: ${cwd} is not in a git repository; build output is not overlaid, the host copies are used`;
+
 const overlayNotices = (context: LaunchContext) => {
+  if (!context.workspace.isGitRepo && context.effective.config.mounts.autoOverlays) {
+    return [notInRepository(context.workspace.cwd)];
+  }
+
   if (context.workspace.overlaysCapped === true) {
     return [CAPPED_NOTICE];
   }
@@ -38,10 +44,7 @@ const overlayNotices = (context: LaunchContext) => {
   ];
 };
 
-export const launchNotices = (context: LaunchContext) => [
-  ...workspaceNotices(context.workspace),
-  ...overlayNotices(context),
-];
+export const launchNotices = (context: LaunchContext) => overlayNotices(context);
 
 export const proxyDetail = (proxy: SandboxProxy) => `pid ${proxy.proxy.pid} port ${proxy.proxy.port}`;
 

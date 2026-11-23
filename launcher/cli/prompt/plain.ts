@@ -1,20 +1,17 @@
 import { type Completer, createInterface } from "node:readline/promises";
 import { completePath } from "./complete.ts";
-import { DIGITS, initialIndex, numberProblem, toggle, warningFor } from "./rules.ts";
+import { DIGITS, initialIndex, numberProblem, warningFor } from "./rules.ts";
 import { asciiOf, printable, wrap } from "./style.ts";
 import { heartbeat, runTask, type TaskView, warningOf } from "./task.ts";
 import {
-  type AddedChoice,
   BACK,
   Cancelled,
   type Choice,
   type Collapse,
   type Detail,
-  type MultiSpec,
   type NumberSpec,
   type PathSpec,
   type Prompts,
-  type Reply,
   type TaskSpec,
   type Ui,
 } from "./types.ts";
@@ -22,10 +19,6 @@ import {
 type Parsed<T> = { value: T } | { error: string };
 
 const PLAIN_WIDTH = 80;
-
-const PICKS = /[\s,]+/;
-
-const NUMBERS = /^[\d\s,]+$/;
 
 const YES = new Set(["y", "yes"]);
 
@@ -146,100 +139,6 @@ export const createPlainPrompts = (ui: Ui): Prompts => {
     return parsed.value;
   };
 
-  const multiselect = async <T>(spec: MultiSpec<T>): Promise<Reply<T[]>> => {
-    const state = {
-      choices: spec.choices.filter((choice) => choice.action !== true),
-      checked: new Set(spec.checked),
-    };
-    const action = spec.choices.find((choice) => choice.action === true);
-
-    const list = () =>
-      state.choices.map(
-        (choice, index) =>
-          `  ${index + 1}) ${state.checked.has(choice.value) ? "[x]" : "[ ]"} ${printable(choice.label)}${tagOf(choice)}`,
-      );
-
-    const values = () =>
-      state.choices.filter((choice) => state.checked.has(choice.value)).map((choice) => choice.value);
-
-    const add = (choice: AddedChoice<T> | undefined) => {
-      if (choice === undefined) {
-        return;
-      }
-
-      const { unchecks = [], ...shown } = choice;
-
-      if (!state.choices.some((known) => known.value === shown.value)) {
-        state.choices = [...state.choices, shown];
-      }
-
-      unchecks.forEach((value) => {
-        state.checked.delete(value);
-      });
-
-      state.checked.add(shown.value);
-    };
-
-    const picksOf = (answer: string) => {
-      const picks = answer.split(PICKS);
-      const count = state.choices.length;
-
-      return picks.every((pick) => DIGITS.test(pick) && Number(pick) >= 1 && Number(pick) <= count)
-        ? picks.map(Number)
-        : undefined;
-    };
-
-    const round = async (): Promise<T[]> => {
-      const marked = state.choices.flatMap((choice, index) =>
-        state.checked.has(choice.value) ? [String(index + 1)] : [],
-      );
-
-      const answer = (await ask(`${spec.plain.label} [${marked.join(" ") || "none"}]: `)).trim();
-
-      if (answer === "") {
-        return values();
-      }
-
-      const picks = picksOf(answer);
-
-      if (picks === undefined && action !== undefined && !NUMBERS.test(answer)) {
-        add(await spec.onAction?.(action.value, answer, values()));
-
-        print(list());
-
-        return round();
-      }
-
-      if (picks === undefined) {
-        const range = state.choices.length === 0 ? "" : `numbers from 1 to ${state.choices.length}, `;
-
-        print([`Error: Type ${range}or press Enter.`]);
-
-        return round();
-      }
-
-      picks.forEach((pick) => {
-        const choice = state.choices[pick - 1];
-
-        if (choice !== undefined) {
-          toggle(state.checked, choice.value);
-        }
-      });
-
-      print(list());
-
-      return round();
-    };
-
-    print([spec.title, ...detailOf(spec.detail), ...list(), ...spec.plain.help]);
-
-    const chosen = await round();
-
-    printCollapse(spec.collapsed(chosen));
-
-    return chosen;
-  };
-
   const numberRound = async (spec: NumberSpec, fallback: number, warned?: number): Promise<number> => {
     const answer = (await ask(`${spec.title}, ${spec.min} to ${spec.max} [${fallback}]: `)).trim();
     const text = answer === "" ? String(fallback) : answer;
@@ -333,7 +232,6 @@ export const createPlainPrompts = (ui: Ui): Prompts => {
 
       return choice.value;
     },
-    multiselect,
     confirm: async (spec) => {
       print(detailOf(spec.detail));
 

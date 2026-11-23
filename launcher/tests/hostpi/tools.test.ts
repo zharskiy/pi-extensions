@@ -455,7 +455,6 @@ describe("URL userinfo in npmrc and pip.conf", () => {
     const stateDir = await tempDir("tools-render");
     const { renderDir } = await renderAgentDir({
       stateDir,
-      repoHash: "repo1",
       hostAgentDir: join(home, "agent"),
       hostHome: home,
       derived: sandbox,
@@ -600,7 +599,6 @@ describe("Maven settings in the sandbox", () => {
     const sandbox = deriveSandboxPi({ ...pureInput(), tools });
     const { renderDir } = await renderAgentDir({
       stateDir: await tempDir("maven-render"),
-      repoHash: "repo1",
       hostAgentDir: join(home, "agent"),
       hostHome: home,
       derived: sandbox,

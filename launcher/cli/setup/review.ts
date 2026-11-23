@@ -8,7 +8,7 @@ import {
   hubRowLines,
   NOTHING_TO_DO,
   OTHER_SETTINGS,
-  rootsSummary,
+  rootSummary,
   shownSize,
   sizeText,
   type Tag,
@@ -28,7 +28,7 @@ export interface ReviewView {
 }
 
 export const SECTION_LABELS: Record<Section, string> = {
-  folders: "Project folders",
+  folders: "Project folder",
   vm: "VM size",
   writeBack: "Settings write-back",
 };
@@ -41,7 +41,7 @@ export const createReview = (document: ConfigDocument, facts: HostFacts, env: No
       ? []
       : problems.filter((problem) => isInSection(section, problem.key));
     const planned =
-      section === "folders" ? plan.problems.map((message) => ({ key: "workspaceRoots", message })) : [];
+      section === "folders" ? plan.problems.map((message) => ({ key: "workspaceRoot", message })) : [];
 
     return [...owned, ...planned];
   };
@@ -72,7 +72,7 @@ export const createReview = (document: ConfigDocument, facts: HostFacts, env: No
 
   const sectionValue = (section: Section, answers: Answers) => {
     if (section === "folders") {
-      return rootsSummary(answers.roots);
+      return rootSummary(answers.root);
     }
 
     return section === "vm" ? sizeText(shownSize(answers.vm, facts)) : answers.writeBack ? "on" : "off";

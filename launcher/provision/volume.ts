@@ -9,7 +9,12 @@ export interface VolumeRead {
   invalid: boolean;
 }
 
-const WRITE_SCRIPT = 'mkdir -p "$(dirname "$1")" && cat > "$1.pi-sandbox-tmp" && mv "$1.pi-sandbox-tmp" "$1"';
+const WRITE_SCRIPT = [
+  'mkdir -p "$(dirname "$1")" && temporary=$(mktemp "$1.pi-sandbox-XXXXXX") || exit 1',
+  'cat > "$temporary" && chmod 0644 "$temporary" || { rm -f "$temporary"; exit 1; }',
+  '[ ! -d "$1" ] || { rm -f "$temporary"; exit 4; }',
+  'mv -f "$temporary" "$1" || { rm -f "$temporary"; exit 1; }',
+].join("\n");
 
 const REGULAR_FILE_GUARD = '[ -f "$1" ] || { [ -e "$1" ] || [ -L "$1" ] && exit 4; exit 3; }';
 
@@ -35,11 +40,18 @@ const MISSING_EXIT = 3;
 
 const NOT_REGULAR_EXIT = 4;
 
+const UNCHANGED_EXITS = new Set([1, NOT_REGULAR_EXIT, 125, 126, 127]);
+
 const READ_TIMEOUT_MS = 5000;
 
 const REMOVE_TIMEOUT_MS = 60_000;
 
 const CHECKED_FILE_BYTES = 1024 * 1024;
+
+export class VolumeUnchangedError extends LauncherError {}
+
+const failedChange = (code: number, message: string) =>
+  UNCHANGED_EXITS.has(code) ? new VolumeUnchangedError(message) : new LauncherError(message);
 
 const guestPath = (name: string) => posix.join(GUEST_PATHS.agentDir, name);
 
@@ -72,8 +84,15 @@ export const writeVolumeFile = async (
     input: jsonText(value),
   });
 
+  if (result.code === NOT_REGULAR_EXIT) {
+    throw new VolumeUnchangedError(`${name}: it is not a regular file in the sandbox volume`);
+  }
+
   if (result.code !== 0) {
-    throw new LauncherError(`${name}: could not write it into the sandbox volume (exit ${result.code})`);
+    throw failedChange(
+      result.code,
+      `${name}: could not write it into the sandbox volume (exit ${result.code})`,
+    );
   }
 };
 
@@ -153,6 +172,9 @@ export const removeVolumeFile = async (backend: Backend, containerId: string, na
   const result = await runScript(backend, containerId, REMOVE_SCRIPT, [guestPath(name)]);
 
   if (result.code !== 0) {
-    throw new LauncherError(`${name}: could not remove it from the sandbox volume (exit ${result.code})`);
+    throw failedChange(
+      result.code,
+      `${name}: could not remove it from the sandbox volume (exit ${result.code})`,
+    );
   }
 };

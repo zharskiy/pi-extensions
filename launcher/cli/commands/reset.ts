@@ -1,14 +1,20 @@
 import { rm } from "node:fs/promises";
-import { type Backend, ENGINE_PROFILE, LABELS } from "../../backend/index.ts";
+import { type Backend, installIdOf, LABELS } from "../../backend/index.ts";
+import { agentVolumeName, isLegacyAgentVolume } from "../../container/index.ts";
 import { liveLaunches } from "../../grants/index.ts";
-import { LauncherError, stateLayout } from "../../shared/index.ts";
+import { knownRepos, LauncherError, stateLayout, withFileLock } from "../../shared/index.ts";
+import { busyLaunches } from "../busy.ts";
 import { type LaunchContext, openContext } from "../context.ts";
 import { type CliDeps, writeLine, writeLines } from "../deps.ts";
 import { wipeServices } from "../ground.ts";
-import { withPrepareLock } from "../prepare.ts";
+import { withAgentLock, withPrepareLock } from "../prepare.ts";
 import { removeRepoSandbox } from "../sweep.ts";
 
 export const SERVICES_FLAG = "--services";
+
+export const AGENT_FLAG = "--agent";
+
+const RENDER_LOCK_TIMEOUT_MS = 30_000;
 
 const ownVolumes = async (context: LaunchContext, backend: Backend) =>
   (await backend.listVolumes()).filter((volume) => volume.labels[LABELS.repoHash] === context.repoHash);
@@ -25,7 +31,10 @@ const refuseLive = async (stateDir: string, context: LaunchContext) => {
   }
 };
 
-const ENGINE_SKIPPED = `the sandbox VM is not running, so the engine step was skipped; run colima start --profile ${ENGINE_PROFILE} --activate=false, then pi sandbox reset again to remove the container and volumes`;
+const ENGINE_SKIPPED = `the sandbox VM is not running, so the engine step was skipped; run pi (it starts the sandbox VM with its planned shares) and exit it, then pi sandbox reset again to remove the container and volumes`;
+
+const keptVolumeLine = (name: string, flag: string) =>
+  `kept volume ${name}: a container still mounts it, run pi sandbox reset${flag} again`;
 
 const removeVolumes = async (context: LaunchContext, backend: Backend) => {
   const volumes = await ownVolumes(context, backend);
@@ -33,14 +42,26 @@ const removeVolumes = async (context: LaunchContext, backend: Backend) => {
 
   await Promise.all(free.map((volume) => backend.removeVolume(volume.name)));
 
-  await rm(stateLayout(context.stateDir).repo(context.repoHash).sync, { recursive: true, force: true });
+  await rm(stateLayout(context.stateDir).repo(context.repoHash).legacy.sync, {
+    recursive: true,
+    force: true,
+  });
 
   return [
     ...free.map((volume) => `removed volume ${volume.name}`),
-    ...volumes
-      .filter((volume) => volume.inUse)
-      .map((volume) => `kept volume ${volume.name}: a container still mounts it, run pi sandbox reset again`),
+    ...volumes.filter((volume) => volume.inUse).map((volume) => keptVolumeLine(volume.name, "")),
   ];
+};
+
+const sharedKeptLine = async (context: LaunchContext, backend: Backend) => {
+  const name = agentVolumeName(installIdOf(context.stateDir));
+  const volumes = await backend.listVolumes();
+
+  return volumes.some((volume) => volume.name === name)
+    ? [
+        `kept volume ${name}: the pi folder every folder's sandbox shares; pi sandbox reset ${AGENT_FLAG} removes it`,
+      ]
+    : [];
 };
 
 const reset = async (deps: CliDeps, context: LaunchContext, backend: Backend) => {
@@ -51,7 +72,7 @@ const reset = async (deps: CliDeps, context: LaunchContext, backend: Backend) =>
   const reachable = (await backend.detect()).available;
   const removed = await removeRepoSandbox(deps, repoHash, reachable ? backend : undefined);
 
-  await rm(stateLayout(stateDir).repo(repoHash).render, { recursive: true, force: true });
+  await rm(stateLayout(stateDir).repo(repoHash).legacy.render, { recursive: true, force: true });
 
   if (!reachable) {
     writeLines(deps.stdout, [...removed, ENGINE_SKIPPED]);
@@ -61,10 +82,13 @@ const reset = async (deps: CliDeps, context: LaunchContext, backend: Backend) =>
 
   const lines = [...removed, ...(await removeVolumes(context, backend))];
 
-  writeLines(deps.stdout, lines.length === 0 ? [`no sandbox for ${workspace.repoRoot}`] : lines);
+  writeLines(deps.stdout, [
+    ...(lines.length === 0 ? [`no sandbox for ${workspace.repoRoot}`] : lines),
+    ...(await sharedKeptLine(context, backend)),
+  ]);
 };
 
-const SERVICES_SKIPPED = `the sandbox VM is not running, so its services hold no data to remove now; run colima start --profile ${ENGINE_PROFILE} --activate=false, then pi sandbox reset ${SERVICES_FLAG} again`;
+const SERVICES_SKIPPED = `the sandbox VM is not running, so its services hold no data to remove now; run pi (it starts the sandbox VM with its planned shares) and exit it, then pi sandbox reset ${SERVICES_FLAG} again`;
 
 const resetServices = async (deps: CliDeps, context: LaunchContext, backend: Backend) => {
   if (!(await backend.detect()).available) {
@@ -81,11 +105,92 @@ const resetServices = async (deps: CliDeps, context: LaunchContext, backend: Bac
   writeLines(deps.stdout, lines.length === 0 ? ["no services to remove"] : lines);
 };
 
+const AGENT_SKIPPED = `the sandbox VM is not running, so nothing was removed; run pi (it starts the sandbox VM with its planned shares) and exit it, then pi sandbox reset ${AGENT_FLAG} again`;
+
+const AGENT_BUSY = "a pi session is running, so the shared pi folder was kept";
+
+const AGENT_BUSY_HINT = `end every pi session, then run pi sandbox reset ${AGENT_FLAG} again`;
+
+const SESSIONS_REMOVED =
+  "the pi sessions kept in the sandbox while sessions.host is off were removed with the volume";
+
+const agentVolumes = async (stateDir: string, backend: Backend) => {
+  const install = installIdOf(stateDir);
+  const shared = agentVolumeName(install);
+  const volumes = await backend.listVolumes();
+
+  return volumes.filter((volume) => volume.name === shared || isLegacyAgentVolume(install, volume.name));
+};
+
+const removeAgentRecords = async (stateDir: string) => {
+  const layout = stateLayout(stateDir);
+  const legacy = (await knownRepos(stateDir)).map((hash) => layout.repo(hash).legacy.sync);
+  const paths = [layout.render, layout.renders, layout.sync.directory, ...legacy];
+
+  await Promise.all(paths.map((path) => rm(path, { recursive: true, force: true })));
+};
+
+const wipeAgent = async (context: LaunchContext, backend: Backend) => {
+  const { stateDir } = context;
+
+  if ((await busyLaunches(stateDir)) > 0) {
+    throw new LauncherError(AGENT_BUSY, AGENT_BUSY_HINT);
+  }
+
+  const volumes = await agentVolumes(stateDir, backend);
+  const free = volumes.filter((volume) => !volume.inUse);
+  const kept = volumes.filter((volume) => volume.inUse);
+
+  await Promise.all(free.map((volume) => backend.removeVolume(volume.name)));
+
+  if (kept.length === 0) {
+    await removeAgentRecords(stateDir);
+  }
+
+  const sessionsLost = free.length > 0 && !context.effective.config.sessions.host;
+
+  return [
+    ...free.map((volume) => `removed volume ${volume.name}`),
+    ...kept.map((volume) => keptVolumeLine(volume.name, ` ${AGENT_FLAG}`)),
+    ...(sessionsLost ? [SESSIONS_REMOVED] : []),
+  ];
+};
+
+const resetAgent = async (deps: CliDeps, context: LaunchContext, backend: Backend) => {
+  if (!(await backend.detect()).available) {
+    writeLines(deps.stdout, [AGENT_SKIPPED]);
+
+    return;
+  }
+
+  const lock = { stateDir: context.stateDir, progress: (line: string) => writeLine(deps.stderr, line) };
+  const lines = await withAgentLock(lock, () =>
+    withFileLock(stateLayout(context.stateDir).renderLock, () => wipeAgent(context, backend), {
+      timeoutMs: RENDER_LOCK_TIMEOUT_MS,
+    }),
+  );
+
+  writeLines(deps.stdout, lines.length === 0 ? ["no shared pi folder to remove"] : lines);
+};
+
 export const resetCommand = async (deps: CliDeps, args: string[] = []) => {
+  if (args.includes(SERVICES_FLAG) && args.includes(AGENT_FLAG)) {
+    throw new LauncherError(
+      `${SERVICES_FLAG} and ${AGENT_FLAG} do not go together`,
+      "run them one at a time",
+    );
+  }
+
   const { context } = await openContext(deps, "host");
 
   if (args.includes(SERVICES_FLAG)) {
     await resetServices(deps, context, deps.backend());
+
+    return 0;
+  }
+
+  if (args.includes(AGENT_FLAG)) {
+    await resetAgent(deps, context, deps.backend());
 
     return 0;
   }

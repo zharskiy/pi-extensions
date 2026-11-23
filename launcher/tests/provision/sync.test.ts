@@ -20,17 +20,21 @@ const setup = async () => {
   const guestAgentDir = await tempDir("write-back-volume");
   const fake = createFakeBackend({ guestAgentDir });
   const containerId = await runningContainer(fake.backend);
-  const sync = (readTimeoutMs?: number, allowlist: WriteBackTable = BUILT_IN_WRITE_BACK) =>
+  const synced = (readTimeoutMs?: number, allowlist: WriteBackTable = BUILT_IN_WRITE_BACK) =>
     syncVolumeFiles({
       backend: fake.backend,
       containerId,
       stateDir,
-      repoHash: "repo1",
       hostAgentDir,
-      repoRoot,
+      workspaceRoot: repoRoot,
       allowlist,
       readTimeoutMs,
     });
+  const sync = async (readTimeoutMs?: number, allowlist?: WriteBackTable) => {
+    const { changes, notices } = await synced(readTimeoutMs, allowlist);
+
+    return { changes, notices };
+  };
   const host = async (name: string) => readJsonObject(join(hostAgentDir, name));
   const volume = async (name: string) => {
     const text = await fake.guestFile(name);
@@ -41,7 +45,7 @@ const setup = async () => {
     writeText(join(hostAgentDir, name), JSON.stringify(value));
   const writeVolume = (name: string, value: unknown) =>
     fake.writeGuestFile(name, typeof value === "string" ? value : JSON.stringify(value));
-  const baseline = () => readJsonObject(stateLayout(stateDir).repo("repo1").syncBaseline);
+  const baseline = () => readJsonObject(stateLayout(stateDir).sync.baseline);
 
   const guestShell = (script: string, name: string) =>
     execCapture(fake.backend, {
@@ -53,10 +57,12 @@ const setup = async () => {
 
   return {
     stateDir,
+    containerId,
     hostAgentDir,
     guestAgentDir,
     fake,
     sync,
+    synced,
     host,
     volume,
     writeHost,
@@ -198,7 +204,7 @@ describe("syncVolumeFiles with a list that drops an added file", () => {
 
     await env.sync(undefined, FOOTER);
     await writeText(
-      stateLayout(env.stateDir).repo("repo1").syncBaseline,
+      stateLayout(env.stateDir).sync.baseline,
       JSON.stringify({ allowlist: "older", files: {} }),
     );
 
@@ -439,7 +445,64 @@ describe("syncVolumeFiles write-back", () => {
     expect(await env.host("pi-style.json")).toEqual({ style: "a" });
   });
 
-  it("says that later changes will not be written back when refreshing the volume fails", async () => {
+  it("keeps the baseline when a sync into a container that is gone fails, so another launch still writes back", async () => {
+    const env = await setup();
+
+    await env.writeHost("settings.json", { theme: "a" });
+
+    await env.sync();
+
+    await env.writeVolume("settings.json", { theme: "b" });
+
+    const exec = env.fake.backend.exec;
+
+    env.fake.backend.exec = (spec, io) => (spec.command[0] === "sh" ? Promise.resolve(1) : exec(spec, io));
+
+    const ended = await env.sync();
+
+    env.fake.backend.exec = exec;
+
+    const otherLaunch = await env.sync();
+
+    expect(ended.changes).toEqual([]);
+    expect(ended.notices).toContain(
+      "warning: the sandbox copies of the agent settings were not refreshed: settings.json: could not write it into the sandbox volume (exit 1)",
+    );
+    expect(ended.notices.join("\n")).not.toContain("will not be written back to the host");
+    expect(otherLaunch.changes).toEqual(["settings.json theme: a → b written to the host"]);
+    expect(await env.host("settings.json")).toEqual({ theme: "b" });
+    expect(await env.volume("settings.json")).toEqual({ theme: "b" });
+  });
+
+  it("advances the kept baseline past what that failed sync wrote back, so a later host change is not undone", async () => {
+    const env = await setup();
+
+    await env.writeHost("settings.json", { theme: "a" });
+
+    await env.sync();
+
+    await env.writeVolume("settings.json", { theme: "b" });
+
+    const exec = env.fake.backend.exec;
+
+    env.fake.backend.exec = (spec, io) =>
+      spec.command.some((part) => part.startsWith("mkdir -p")) ? Promise.resolve(1) : exec(spec, io);
+
+    const failed = await env.sync();
+
+    env.fake.backend.exec = exec;
+
+    await env.writeHost("settings.json", { theme: "a" });
+
+    const next = await env.sync();
+
+    expect(failed.changes).toEqual(["settings.json theme: a → b written to the host"]);
+    expect(next.changes).toEqual([]);
+    expect(await env.host("settings.json")).toEqual({ theme: "a" });
+    expect(await env.volume("settings.json")).toEqual({ theme: "a" });
+  });
+
+  it("drops the baseline of a file whose copy may have landed, and names it", async () => {
     const env = await setup();
 
     await env.writeHost("settings.json", { theme: "a" });
@@ -449,7 +512,51 @@ describe("syncVolumeFiles write-back", () => {
     const exec = env.fake.backend.exec;
 
     env.fake.backend.exec = (spec, io) =>
-      spec.command.some((part) => part.startsWith("mkdir -p")) ? Promise.resolve(1) : exec(spec, io);
+      spec.command.some((part) => part.startsWith("mkdir -p")) &&
+      spec.command.some((part) => part.endsWith("/settings.json"))
+        ? Promise.reject(new Error("the connection broke"))
+        : exec(spec, io);
+
+    const result = await env.sync();
+
+    env.fake.backend.exec = exec;
+
+    expect(result.notices).toEqual([
+      "warning: the sandbox copies of the agent settings were not refreshed: the connection broke",
+      "warning: preference changes made in the sandbox to settings.json from now on will not be written back to the host",
+    ]);
+
+    const record = await env.baseline();
+
+    expect(Object.keys((record?.files ?? {}) as object)).not.toContain("settings.json");
+    expect(Object.keys((record?.files ?? {}) as object)).toContain("pi-style.json");
+    expect(record?.copied).toEqual([
+      "pi-subagents.json",
+      "pi-style.json",
+      "pi-notifications.json",
+      "pi-session-limits.json",
+      "pi-prune.json",
+    ]);
+
+    await env.writeVolume("settings.json", { theme: "b" });
+
+    expect((await env.sync()).changes).toEqual([]);
+    expect(await env.host("settings.json")).toEqual({ theme: "a" });
+  });
+
+  it("says that later changes will not be written back when no file's copy can be trusted", async () => {
+    const env = await setup();
+
+    await env.writeHost("settings.json", { theme: "a" });
+
+    await env.sync();
+
+    const exec = env.fake.backend.exec;
+
+    env.fake.backend.exec = (spec, io) =>
+      spec.command.some((part) => part.startsWith("mkdir -p") || part === 'rm -f "$1"')
+        ? Promise.resolve(137)
+        : exec(spec, io);
 
     const result = await env.sync();
 
@@ -457,15 +564,6 @@ describe("syncVolumeFiles write-back", () => {
       expect.stringMatching(/^warning: the sandbox copies of the agent settings were not refreshed: /),
       "warning: preference changes made in the sandbox from now on will not be written back to the host",
     ]);
-    expect(await env.baseline()).toEqual({
-      copied: [
-        "pi-subagents.json",
-        "pi-style.json",
-        "pi-notifications.json",
-        "pi-session-limits.json",
-        "pi-prune.json",
-      ],
-    });
   });
 
   it("writes through a symlinked host file and keeps the link", async () => {
@@ -525,5 +623,33 @@ describe("syncVolumeFiles write-back", () => {
     expect(secondLaunch.changes).toEqual(["settings.json theme: a → b written to the host"]);
     expect([...firstExit.changes, ...secondExit.changes]).toEqual([]);
     expect(await env.host("settings.json")).toEqual({ theme: "b" });
+  });
+
+  it("keeps one baseline for every folder, so a change made in one folder's session is written back once", async () => {
+    const env = await setup();
+    const otherRoot = await tempDir("write-back-other-repo");
+    const syncOther = () =>
+      syncVolumeFiles({
+        backend: env.fake.backend,
+        containerId: env.containerId,
+        stateDir: env.stateDir,
+        hostAgentDir: env.hostAgentDir,
+        workspaceRoot: otherRoot,
+        allowlist: BUILT_IN_WRITE_BACK,
+      });
+
+    await env.writeHost("settings.json", { theme: "a" });
+
+    await env.sync();
+
+    await env.writeVolume("settings.json", { theme: "b" });
+
+    const otherLaunch = await syncOther();
+    const firstExit = await env.sync();
+
+    expect(otherLaunch.changes).toEqual(["settings.json theme: a → b written to the host"]);
+    expect(firstExit.changes).toEqual([]);
+    expect(await env.host("settings.json")).toEqual({ theme: "b" });
+    expect(await env.baseline()).toBeDefined();
   });
 });

@@ -4,7 +4,7 @@ import { loadEffectiveConfig } from "../config/index.ts";
 import { expandHome, PI_AGENT_DIR_VARIABLE, realOrResolved, withMcpLoginDir } from "../shared/index.ts";
 import { isSandboxWritable } from "../workspace/index.ts";
 import { type CliDeps, hostAgentDirOf, pathsOf, writeLine } from "./deps.ts";
-import { requireJobPi, resolveJobPi, spawnHostJob } from "./host-pi.ts";
+import { requireJobPi, resolveJobPi, sandboxReachOf, spawnHostJob } from "./host-pi.ts";
 import { type HostRoute, hostRoute } from "./host-routes.ts";
 import { imagePiVersion } from "./versions.ts";
 
@@ -131,9 +131,8 @@ const resolvedLocal = async (deps: CliDeps, text: string) => {
   const path = resolve(deps.cwd, expandHome(localPathOf(text), deps.home));
 
   const paths = [path, await realOrResolved(path)];
-  const context = { home: deps.home, env: deps.env, stateDir: pathsOf(deps).stateDir };
 
-  return { path, inRepository: await isSandboxWritable(paths, context) };
+  return { path, sandboxWritable: await isSandboxWritable(paths, await sandboxReachOf(deps)) };
 };
 
 const refuse = (deps: CliDeps, source: string, reason: string) => {
@@ -142,7 +141,8 @@ const refuse = (deps: CliDeps, source: string, reason: string) => {
   return 1;
 };
 
-const IN_REPOSITORY = "lies in a git working tree or a sandboxed folder, which a sandbox can rewrite";
+const sandboxWritableNotice = (source: string) =>
+  `pi-sandbox: ${source} lies in the workspace root or a folder a sandbox has run in, which a sandbox can rewrite; pi on the host runs it as it is`;
 
 const packageCommand = async (deps: CliDeps, argv: string[], source: string) => {
   const classified = classifySource(source);
@@ -154,8 +154,8 @@ const packageCommand = async (deps: CliDeps, argv: string[], source: string) => 
 
   const local = classified.kind === "local" ? await resolvedLocal(deps, classified.text) : undefined;
 
-  if (local?.inRepository === true && command === "install") {
-    return refuse(deps, source, IN_REPOSITORY);
+  if (local?.sandboxWritable === true && command === "install") {
+    writeLine(deps.stderr, sandboxWritableNotice(source));
   }
 
   const args = argv.map((arg) => (arg === source && local !== undefined ? local.path : arg));

@@ -67,8 +67,15 @@ const installRoot = async (fakes: Record<string, string> = {}, homeName = "home"
   await mkdir(join(home, ".local", "bin"), { recursive: true });
 
   const managed = await writeManagedPi(agentDir, "1.6.0");
+  const projects = join(root, "projects");
 
-  return { root, home, agentDir, managed, record: join(root, "state", "replaced-pi-link") };
+  await mkdir(projects);
+
+  await mkdir(join(root, "config"));
+
+  await writeFile(join(root, "config", "config.json"), JSON.stringify({ workspaceRoot: projects }));
+
+  return { root, home, agentDir, managed, projects, record: join(root, "state", "replaced-pi-link") };
 };
 
 const INSTALL_TIMEOUT_MS = 30_000;
@@ -619,47 +626,41 @@ describe("install.sh options and the PATH block", { timeout: INSTALL_TIMEOUT_MS 
 describe("install.sh and the smoke folder", { timeout: INSTALL_TIMEOUT_MS }, () => {
   const configFile = (root: string) => join(root, "config", "config.json");
 
-  const rootsSetup = async (
+  const rootSetup = async (
     fakes: Record<string, string> = {},
-    roots: (setup: { home: string; root: string }) => string[] = () => [],
+    workspaceRoot: (setup: { home: string; root: string }) => string | undefined = ({ root }) =>
+      join(root, "my work"),
   ) => {
     const setup = await installRoot(fakes);
     const work = join(setup.root, "my work");
 
     await mkdir(work, { recursive: true });
 
-    const configured = roots(setup);
-
-    if (configured.length > 0) {
-      await mkdir(join(setup.root, "config"), { recursive: true });
-
-      await writeFile(configFile(setup.root), JSON.stringify({ workspaceRoots: { roots: configured } }));
-    }
+    await writeFile(configFile(setup.root), JSON.stringify({ workspaceRoot: workspaceRoot(setup) }));
 
     return { ...setup, work };
   };
 
-  it("runs the smoke check in a temporary repository under ~/.cache when the VM shares the home", async () => {
-    const { root, home } = await rootsSetup({ git: 'echo "$2" >> "$HOME/../git-dirs"\nexit 1' });
+  it("stops before the smoke check when the workspace root is the home", async () => {
+    const { root } = await rootSetup({}, ({ home }) => home);
     const result = runInstall(root);
-    const smokeDir = (await readFile(join(root, "git-dirs"), "utf8")).trim();
 
     expect(result.status).toBe(1);
-    expect(result.stdout).toContain("sandbox doctor in a temporary git repository; the first image build");
-    expect(dirname(smokeDir)).toBe(join(home, ".cache"));
+    expect(result.stderr).toContain("pi-sandbox: config: workspaceRoot");
+    expect(result.stdout).not.toContain("[5/6]");
   });
 
-  it("stops before the smoke check when __vm-shares fails on the config", async () => {
-    const { root } = await rootsSetup({}, ({ home }) => [home]);
+  it("stops before the smoke check when no workspace root is set", async () => {
+    const { root } = await rootSetup({}, () => undefined);
     const result = runInstall(root);
 
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain("pi-sandbox: config: workspaceRoots.roots:");
+    expect(result.stderr).toContain("pi-sandbox: config: workspaceRoot is not set");
     expect(result.stdout).not.toContain("[5/6]");
   });
 
   it("keeps a backslash in a root path when it picks the smoke folder", async () => {
-    const { root } = await rootsSetup({ git: "exit 1" }, ({ root }) => [join(root, "back\\tslash")]);
+    const { root } = await rootSetup({ git: "exit 1" }, ({ root }) => join(root, "back\\tslash"));
 
     await mkdir(join(root, "back\\tslash"));
 
@@ -670,18 +671,18 @@ describe("install.sh and the smoke folder", { timeout: INSTALL_TIMEOUT_MS }, () 
     );
   });
 
-  it("skips the smoke check when none of the workspace roots exists", async () => {
-    const { root } = await rootsSetup({ git: "exit 1" }, ({ root }) => [join(root, "gone")]);
+  it("skips the smoke check when the workspace root does not exist", async () => {
+    const { root } = await rootSetup({ git: "exit 1" }, ({ root }) => join(root, "gone"));
     const result = runInstall(root);
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain(
-      "[5/6] smoke: skipped, none of the workspace roots exists; run pi sandbox doctor inside a repository in one of them",
+      "[5/6] smoke: skipped, the workspace root does not exist; run pi sandbox doctor inside a repository in it",
     );
   });
 
   it("says the sandbox part of the smoke check was skipped when the VM does not share the root yet", async () => {
-    const { root, work } = await rootsSetup({ git: "exit 0" }, ({ root }) => [join(root, "my work")]);
+    const { root, work } = await rootSetup({ git: "exit 0" });
 
     await stubDoctor(root, ['echo "  skip  sandbox  not started until the VM shares $PWD"', "exit 3"]);
 
@@ -696,7 +697,7 @@ describe("install.sh and the smoke folder", { timeout: INSTALL_TIMEOUT_MS }, () 
   });
 
   it("fails the install when the smoke doctor fails, after showing its report indented", async () => {
-    const { root } = await rootsSetup({ git: "exit 0" }, ({ root }) => [join(root, "my work")]);
+    const { root } = await rootSetup({ git: "exit 0" });
 
     await stubDoctor(root, ['echo "result: fail (1 failed)"', "exit 1"]);
 
@@ -710,7 +711,7 @@ describe("install.sh and the smoke folder", { timeout: INSTALL_TIMEOUT_MS }, () 
   });
 
   it("runs the smoke doctor on the terminal and still says the sandbox part was skipped", async () => {
-    const { root } = await rootsSetup({ git: "exit 0" }, ({ root }) => [join(root, "my work")]);
+    const { root } = await rootSetup({ git: "exit 0" });
 
     await stubDoctor(root, [
       'if [ -t 1 ] && [ -t 2 ]; then echo "doctor on a terminal"; fi',
@@ -729,11 +730,8 @@ describe("install.sh and the smoke folder", { timeout: INSTALL_TIMEOUT_MS }, () 
     );
   });
 
-  it("runs the smoke check in a folder inside the first root that exists and removes it", async () => {
-    const { root, work } = await rootsSetup(
-      { git: 'echo "$2" >> "$HOME/../git-dirs"\nexit 1' },
-      ({ root }) => [join(root, "gone"), join(root, "my work")],
-    );
+  it("runs the smoke check in a folder inside the workspace root and removes it", async () => {
+    const { root, work } = await rootSetup({ git: 'echo "$2" >> "$HOME/../git-dirs"\nexit 1' });
     const result = runInstall(root);
     const smokeDir = (await readFile(join(root, "git-dirs"), "utf8")).trim();
 

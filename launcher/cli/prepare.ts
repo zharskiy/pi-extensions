@@ -13,11 +13,16 @@ import { cleanupWaiting } from "./ground.ts";
 export const PREPARE_WAITING =
   "pi-sandbox: waiting for another pi session of this folder to finish preparing";
 
-interface PrepareLock {
+const AGENT_WAITING = "pi-sandbox: waiting for another pi session to finish with the shared pi folder";
+
+interface AgentLock {
   stateDir: string;
-  repoHash: string;
   signal?: AbortSignal;
   progress: (line: string) => void;
+}
+
+interface PrepareLock extends AgentLock {
+  repoHash: string;
 }
 
 interface SetupRun {
@@ -39,6 +44,12 @@ export const withPrepareLock = <T>(lock: PrepareLock, action: () => Promise<T>) 
   withWaitingLock(prepareLockOf(lock.stateDir, lock.repoHash), action, {
     signal: lock.signal,
     onWait: () => lock.progress(PREPARE_WAITING),
+  });
+
+export const withAgentLock = <T>(lock: AgentLock, action: () => Promise<T>) =>
+  withWaitingLock(stateLayout(lock.stateDir).agentLock, action, {
+    signal: lock.signal,
+    onWait: () => lock.progress(AGENT_WAITING),
   });
 
 export const whenNotPreparing = <T>(stateDir: string, repoHash: string, action: () => Promise<T>) =>

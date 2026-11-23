@@ -319,7 +319,7 @@ describe("pi installed with npm install -g", () => {
     expect(interactiveCall(harness)).toBeUndefined();
   });
 
-  it("is found from a home folder that is itself a git repository", async () => {
+  it("is not looked for from a home folder that is itself a git repository, which lies outside the workspace root", async () => {
     const harness = await createHarness({ hostPi: false });
     const npmPi = await writeNpmPi(join(harness.deps.home, ".nvm", "node"), "1.6.0");
 
@@ -329,8 +329,9 @@ describe("pi installed with npm install -g", () => {
 
     harness.deps.cwd = harness.deps.home;
 
-    expect(await run(["--no-sandbox"], harness.deps)).toBe(0);
-    expect(interactiveCall(harness)?.args[0]).toBe(npmPi.entry);
+    expect(await run(["--no-sandbox"], harness.deps)).toBe(1);
+    expect(harness.stderr()).toContain(`pi-sandbox: ${harness.deps.home} is outside the workspace root`);
+    expect(interactiveCall(harness)).toBeUndefined();
   });
 
   it("is not found through a pi in a project's node_modules", async () => {

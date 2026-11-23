@@ -1,3 +1,4 @@
+import { loadEffectiveConfig } from "../config/index.ts";
 import { type HostPi, locateManagedPi, locateNpmPi } from "../hostpi/index.ts";
 import { isWithin, LauncherError } from "../shared/index.ts";
 import { sandboxWriteRoots } from "../workspace/index.ts";
@@ -10,6 +11,17 @@ export const NO_SANDBOX = "--no-sandbox";
 const outsideRoots = (roots: string[]) => async (path: string, real: string) =>
   !roots.some((root) => isWithin(path, root) || isWithin(real, root));
 
+export const sandboxReachOf = async (deps: CliDeps) => {
+  const effective = await loadEffectiveConfig({ env: deps.env, home: deps.home }).catch(() => undefined);
+
+  return {
+    home: deps.home,
+    env: deps.env,
+    stateDir: pathsOf(deps).stateDir,
+    workspaceRoot: effective?.config.workspaceRoot,
+  };
+};
+
 export const resolveJobPi = async (deps: CliDeps): Promise<HostPi | undefined> => {
   const managed = await locateManagedPi(hostAgentDirOf(deps));
 
@@ -17,8 +29,7 @@ export const resolveJobPi = async (deps: CliDeps): Promise<HostPi | undefined> =
     return managed;
   }
 
-  const context = { home: deps.home, env: deps.env, stateDir: pathsOf(deps).stateDir };
-  const roots = await sandboxWriteRoots(deps.cwd, context);
+  const roots = await sandboxWriteRoots(await sandboxReachOf(deps));
 
   return locateNpmPi({ runner: deps.runner, env: deps.env, home: deps.home, accept: outsideRoots(roots) });
 };

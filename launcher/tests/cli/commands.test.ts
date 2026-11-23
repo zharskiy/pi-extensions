@@ -1,9 +1,9 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { LABELS } from "../../backend/index.ts";
+import { installIdOf, LABELS } from "../../backend/index.ts";
 import { run } from "../../cli/index.ts";
-import { volumePlan } from "../../container/index.ts";
+import { agentVolumeName, volumePlan } from "../../container/index.ts";
 import { registerLaunch } from "../../grants/index.ts";
 import {
   launcherRoot,
@@ -15,7 +15,7 @@ import {
 } from "../../shared/index.ts";
 import { FAKE_NETWORK } from "../support/fake-backend.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
-import { tempDir } from "../support/temp-dir.ts";
+import { exists, tempDir } from "../support/temp-dir.ts";
 import { createFakeBackend, createHarness, sweepNow, unreachable } from "./harness.ts";
 
 const packageVersion = async () =>
@@ -43,7 +43,32 @@ describe("pi sandbox status", () => {
     expect(lines).toContain("grants: 0 active");
   });
 
-  it("names a folder that is no repository a workspace", async () => {
+  it("names the shared pi folder and, in one place, what an older launcher left", async () => {
+    const fake = createFakeBackend();
+    const harness = await createHarness({ backend: () => fake.backend });
+    const layout = stateLayout(harness.stateDir);
+    const agent = agentVolumeName(installIdOf(harness.stateDir));
+    const legacy = `${agent}-0123456789ab`;
+    const renders = layout.repo(sha256Hex(harness.repoRoot)).legacy.render;
+
+    await run([], harness.deps);
+
+    await fake.backend.ensureVolume(legacy, {});
+
+    await mkdir(renders, { recursive: true });
+
+    expect(await run(["sandbox", "status"], harness.deps)).toBe(0);
+
+    const lines = harness.stdout().split("\n");
+
+    expect(lines).toContain(`pi folder: ${agent}, shared by every folder's sandbox`);
+    expect(lines.filter((line) => line.startsWith("leftover: "))).toEqual([
+      `leftover: volume ${legacy}, left by an older launcher; pi sandbox reset --agent removes it`,
+      `leftover: ${layout.renders}, left by an older launcher; pi sandbox reset --agent removes it`,
+    ]);
+  });
+
+  it("names a folder that is no repository a folder", async () => {
     const harness = await createHarness({ backend: () => createFakeBackend().backend });
     const folder = join(harness.root, "workspace");
 
@@ -53,7 +78,7 @@ describe("pi sandbox status", () => {
 
     const lines = harness.stdout().split("\n");
 
-    expect(lines).toContain(`workspace: ${folder}`);
+    expect(lines).toContain(`folder: ${folder}`);
     expect(lines).toContain("launches: 0 running in the sandbox");
   });
 
@@ -432,28 +457,79 @@ describe("the sweep and pi sandbox reset", () => {
     expect(harness.proxyStops()).toBe(0);
     expect(await readFile(token, "utf8")).toBe("f".repeat(64));
     expect(harness.stdout()).toContain(
-      "the sandbox VM is not running, so the engine step was skipped; run colima start --profile pi-sandbox --activate=false, then pi sandbox reset again to remove the container and volumes\n",
+      "the sandbox VM is not running, so the engine step was skipped; run pi (it starts the sandbox VM with its planned shares) and exit it, then pi sandbox reset again to remove the container and volumes\n",
     );
     expect(harness.stdout()).not.toContain("no sandbox for");
   });
 
-  it("removes this folder's container and its agent volume", async () => {
+  it("removes this folder's container and keeps the pi folder every folder shares", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
+    const agent = agentVolumeName(installIdOf(harness.stateDir));
+    const legacy = `${agent}-${shortHash(sha256Hex(harness.repoRoot))}`;
+    const labels = { [LABELS.repoHash]: sha256Hex(harness.repoRoot), [LABELS.repoRoot]: harness.repoRoot };
 
     await run([], harness.deps);
 
-    const [agent = ""] = volumePlan({
-      workspace: { cwd: harness.repoRoot, repoRoot: harness.repoRoot, isGitRepo: true },
-      config: sandboxConfig(),
-      stateDir: harness.stateDir,
-    }).map((volume) => volume.name);
+    await fake.backend.ensureVolume(legacy, labels);
 
     expect(fake.volumes.has(agent)).toBe(true);
     expect(await run(["sandbox", "reset"], harness.deps)).toBe(0);
     expect(fake.containers.size).toBe(0);
+    expect(fake.volumes.has(agent)).toBe(true);
+    expect(fake.volumes.has(legacy)).toBe(false);
+    expect(harness.stdout()).toContain(`removed volume ${legacy}\n`);
+    expect(harness.stdout()).toContain(
+      `kept volume ${agent}: the pi folder every folder's sandbox shares; pi sandbox reset --agent removes it\n`,
+    );
+  });
+
+  it("removes the shared pi folder, the legacy ones and the sync records on reset --agent", async () => {
+    const fake = createFakeBackend();
+    const harness = await createHarness({ backend: () => fake.backend });
+    const layout = stateLayout(harness.stateDir);
+    const agent = agentVolumeName(installIdOf(harness.stateDir));
+    const legacy = `${agent}-0123456789ab`;
+
+    await run([], harness.deps);
+
+    await fake.backend.ensureVolume(legacy, { [LABELS.repoHash]: "gone", [LABELS.repoRoot]: "/gone" });
+
+    expect(await exists(layout.render)).toBe(true);
+    expect(await run(["sandbox", "reset", "--agent"], harness.deps)).toBe(0);
     expect(fake.volumes.has(agent)).toBe(false);
+    expect(fake.volumes.has(legacy)).toBe(false);
+    expect(await exists(layout.render)).toBe(false);
+    expect(await exists(layout.sync.directory)).toBe(false);
     expect(harness.stdout()).toContain(`removed volume ${agent}\n`);
+    expect(harness.stdout()).toContain(`removed volume ${legacy}\n`);
+  });
+
+  it("refuses reset --agent while a pi session of any folder runs", async () => {
+    const fake = createFakeBackend();
+    const harness = await createHarness({ backend: () => fake.backend });
+    const agent = agentVolumeName(installIdOf(harness.stateDir));
+
+    await run([], harness.deps);
+
+    await registerLaunch(harness.stateDir, {
+      launchId: "0123456789abcdef",
+      ...(await processMark()),
+      repoHash: sha256Hex("/elsewhere"),
+      startedAt: 1,
+    });
+
+    expect(await run(["sandbox", "reset", "--agent"], harness.deps)).not.toBe(0);
+    expect(harness.stderr()).toContain("a pi session is running, so the shared pi folder was kept");
+    expect(fake.volumes.has(agent)).toBe(true);
+    expect(await exists(stateLayout(harness.stateDir).render)).toBe(true);
+  });
+
+  it("says nothing was removed on reset --agent while the VM is not running", async () => {
+    const harness = await createHarness({ backend: () => unreachable(createFakeBackend().backend) });
+
+    expect(await run(["sandbox", "reset", "--agent"], harness.deps)).toBe(0);
+    expect(harness.stdout()).toContain("the sandbox VM is not running, so nothing was removed");
   });
 
   it("names only volumes it removed on reset, and keeps one a container still mounts", async () => {
@@ -495,6 +571,19 @@ describe("the sweep and pi sandbox reset", () => {
     expect(await sweepNow(harness.deps)).toBe(0);
     expect(fake.volumes.has("pi-sandbox-agent-gone")).toBe(false);
     expect(harness.stdout()).toContain("removed volume pi-sandbox-agent-gone\n");
+  });
+
+  it("keeps the pi folder every folder's sandbox shares when the repository that made it is gone", async () => {
+    const fake = createFakeBackend();
+    const harness = await createHarness({ backend: () => fake.backend });
+    const agent = agentVolumeName(installIdOf(harness.stateDir));
+
+    await run([], harness.deps);
+
+    await rm(harness.repoRoot, { recursive: true, force: true });
+
+    expect(await sweepNow(harness.deps)).toBe(0);
+    expect(fake.volumes.has(agent)).toBe(true);
   });
 
   it("keeps the volumes of a repository that still exists after its container is removed", async () => {
@@ -541,7 +630,7 @@ describe("pi sandbox help and version", () => {
     expect(await run(["sandbox"], harness.deps)).toBe(0);
     expect(harness.stdout().match(/pi sandbox doctor/g)).toHaveLength(2);
     expect(harness.stdout()).not.toContain("pi sandbox gc");
-    expect(harness.stdout()).toContain("pi sandbox reset [--services]  ");
+    expect(harness.stdout()).toContain("pi sandbox reset [--services | --agent]  ");
   });
 
   const readmeRows = async () => {

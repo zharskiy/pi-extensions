@@ -87,14 +87,13 @@ describe("renderAgentDir", () => {
     const host = await hostAgentDir();
     const result = await renderAgentDir({
       stateDir,
-      repoHash: "repo1",
       hostAgentDir: host,
       hostHome: host,
       derived: derived(),
       status: NO_STATUS,
     });
 
-    expect(result.renderDir).toBe(stateLayout(stateDir).repo("repo1").render);
+    expect(result.renderDir).toBe(stateLayout(stateDir).render);
     expect(await listTree(result.renderDir)).toEqual([
       "AGENTS.md",
       "agents/",
@@ -127,7 +126,6 @@ describe("renderAgentDir", () => {
     const render = (key?: string) =>
       renderAgentDir({
         stateDir,
-        repoHash: "repo1",
         hostAgentDir: host,
         hostHome: host,
         derived: derived(key),
@@ -158,7 +156,6 @@ describe("renderAgentDir", () => {
     const host = await hostAgentDir();
     const result = await renderAgentDir({
       stateDir,
-      repoHash: "repo1",
       hostAgentDir: host,
       hostHome: host,
       derived: derived(),
@@ -169,7 +166,6 @@ describe("renderAgentDir", () => {
 
     await renderAgentDir({
       stateDir,
-      repoHash: "repo1",
       hostAgentDir: host,
       hostHome: host,
       derived: derived(),
@@ -185,7 +181,6 @@ describe("renderAgentDir", () => {
 
     await renderAgentDir({
       stateDir,
-      repoHash: "repo1",
       hostAgentDir: host,
       hostHome: host,
       derived: derived(),
@@ -198,7 +193,6 @@ describe("renderAgentDir", () => {
 
     const result = await renderAgentDir({
       stateDir,
-      repoHash: "repo1",
       hostAgentDir: host,
       hostHome: host,
       derived: derived(),
@@ -214,7 +208,6 @@ describe("renderAgentDir", () => {
     const host = await tempDir("render-host");
     const result = await renderAgentDir({
       stateDir,
-      repoHash: "repo1",
       hostAgentDir: host,
       hostHome: host,
       derived: derived(),
@@ -236,7 +229,6 @@ describe("renderAgentDir", () => {
     const host = await tempDir("render-host");
     const result = await renderAgentDir({
       stateDir,
-      repoHash: "repo1",
       hostAgentDir: host,
       hostHome: host,
       derived: derived(),
@@ -259,7 +251,6 @@ describe("renderAgentDir", () => {
     const P = "pi-sandbox-bbbbbbbbbbbbbbbbbbbbbbbb";
     const result = await renderAgentDir({
       stateDir,
-      repoHash: "repo1",
       hostAgentDir: host,
       hostHome: host,
       derived: derived(undefined, {
@@ -350,7 +341,6 @@ describe("renderAgentDir", () => {
 
     const result = await renderAgentDir({
       stateDir,
-      repoHash: "repo1",
       hostAgentDir: host,
       hostHome: host,
       derived: derived(),
@@ -387,7 +377,6 @@ describe("renderAgentDir fix round", () => {
 
     const { renderDir, notices } = await renderAgentDir({
       stateDir,
-      repoHash: "r1",
       hostAgentDir: host,
       hostHome: host,
       derived: derived(),
@@ -408,7 +397,6 @@ describe("renderAgentDir fix round", () => {
     const stateDir = await tempDir("render-state");
     const { renderDir } = await renderAgentDir({
       stateDir,
-      repoHash: "r1",
       hostAgentDir: host,
       hostHome: host,
       derived: derived(),
@@ -420,7 +408,6 @@ describe("renderAgentDir fix round", () => {
 
     await renderAgentDir({
       stateDir,
-      repoHash: "r1",
       hostAgentDir: host,
       hostHome: host,
       derived: derived(),
@@ -436,7 +423,6 @@ describe("renderAgentDir fix round", () => {
     const renders = Array.from({ length: 6 }, (_, index) =>
       renderAgentDir({
         stateDir,
-        repoHash: "r1",
         hostAgentDir: host,
         hostHome: host,
         derived: derived(`pi-sandbox-${String(index).repeat(24)}`),
@@ -446,13 +432,47 @@ describe("renderAgentDir fix round", () => {
 
     await expect(Promise.all(renders)).resolves.toHaveLength(6);
   });
+
+  it("renders one project after another into the shared render dir with nothing left from the first", async () => {
+    const stateDir = await tempDir("render-state");
+    const first = await hostAgentDir();
+    const second = await tempDir("render-host");
+
+    await writeText(join(second, "skills", "lint", "SKILL.md"), "lint\n");
+
+    const inputOf = (host: string, key: string, setup: string[][]) => ({
+      hostAgentDir: host,
+      hostHome: host,
+      derived: derived(key),
+      status: { ...NO_STATUS, setup },
+    });
+    const projectA = inputOf(first, `pi-sandbox-${"a".repeat(24)}`, [["npm", "ci"]]);
+    const projectB = inputOf(second, `pi-sandbox-${"b".repeat(24)}`, []);
+    const snapshot = async (dir: string) =>
+      Promise.all(
+        (await listTree(dir)).map(async (path) =>
+          path.endsWith("/") ? [path] : [path, await readFile(join(dir, path), "utf8")],
+        ),
+      );
+    const fresh = async (input: typeof projectA) =>
+      snapshot((await renderAgentDir({ ...input, stateDir: await tempDir("render-state") })).renderDir);
+
+    const { renderDir } = await renderAgentDir({ ...projectA, stateDir });
+
+    await renderAgentDir({ ...projectB, stateDir });
+
+    expect(await snapshot(renderDir)).toEqual(await fresh(projectB));
+
+    await renderAgentDir({ ...projectA, stateDir });
+
+    expect(await snapshot(renderDir)).toEqual(await fresh(projectA));
+  });
 });
 
 describe("the user skills of ~/.agents/skills", () => {
   const render = async (host: string, hostHome: string) =>
     renderAgentDir({
       stateDir: await tempDir("render-state"),
-      repoHash: "repo1",
       hostAgentDir: host,
       hostHome,
       derived: derived(),
@@ -498,7 +518,6 @@ describe("symlinks in the rendered host entries", () => {
   const render = async (host: string, hostHome: string) =>
     renderAgentDir({
       stateDir: await tempDir("render-state"),
-      repoHash: "repo1",
       hostAgentDir: host,
       hostHome,
       derived: derived(),
@@ -609,7 +628,6 @@ describe("symlinks in the rendered host entries", () => {
     };
     const input = {
       stateDir,
-      repoHash: "repo1",
       hostAgentDir: host,
       hostHome: host,
       derived: derived(),

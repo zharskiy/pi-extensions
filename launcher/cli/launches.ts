@@ -1,10 +1,9 @@
 import type { Backend } from "../backend/index.ts";
-import { type GitGuardContext, overlayVolumes, removeLaunchContainer } from "../container/index.ts";
+import { removeLaunchContainer } from "../container/index.ts";
 import { endLaunch, type Launch, newLaunchId, othersLive, registerLaunch } from "../grants/index.ts";
 import { errorMessage, processMark, writeRepoRecord } from "../shared/index.ts";
-import { gitLaunchEndNotices } from "../workspace/index.ts";
 import type { LaunchContext } from "./context.ts";
-import { type CliDeps, writeLine, writeNotices } from "./deps.ts";
+import { type CliDeps, writeLine } from "./deps.ts";
 import { sweepRepoSessions } from "./host-sessions.ts";
 import { whenLastOfRepo, withPrepareLock } from "./prepare.ts";
 import { removeRepoSandbox, sweepOrphans } from "./sweep.ts";
@@ -23,26 +22,18 @@ export const beginLaunch = async (
   const lock = { stateDir: context.stateDir, repoHash: context.repoHash, progress };
 
   await withPrepareLock(lock, async () => {
-    await writeRepoRecord(context.stateDir, context.repoHash, context.workspace.repoRoot);
+    await writeRepoRecord(
+      context.stateDir,
+      context.repoHash,
+      context.workspace.repoRoot,
+      context.mountedRoot,
+    );
 
     await registerLaunch(context.stateDir, launch);
   });
 
   return launch;
 };
-
-export const gitGuardOf = (deps: CliDeps, context: LaunchContext): GitGuardContext => ({
-  runner: deps.runner,
-  stateDir: context.stateDir,
-  volumePaths: overlayVolumes(context.workspace, context.effective.config, context.stateDir).map(
-    (volume) => volume.path,
-  ),
-});
-
-const gitEndNotices = (deps: CliDeps, context: LaunchContext) =>
-  gitLaunchEndNotices(context.workspace, gitGuardOf(deps, context)).catch((error: unknown) => [
-    `warning: git: the check after the session failed: ${errorMessage(error)}`,
-  ]);
 
 const removeOwnContainer = async (deps: CliDeps, launch: Launch, backend?: Backend) => {
   if (backend === undefined) {
@@ -76,11 +67,7 @@ const removeIfLast = async (deps: CliDeps, context: LaunchContext, ending: Endin
       return false;
     }
 
-    try {
-      await removeRepoSandbox(deps, context.repoHash, backend);
-    } finally {
-      writeNotices(deps, await gitEndNotices(deps, context));
-    }
+    await removeRepoSandbox(deps, context.repoHash, backend);
 
     return true;
   });

@@ -33,7 +33,7 @@ const specInput = (overrides: Partial<ContainerSpecInput> = {}): ContainerSpecIn
   stateDir: "/state",
   launchId,
   proxy,
-  gitOverlay: { selfBinds: [], readOnlyDirs: [] },
+  workspaceRoot: "/work",
   servicePorts: [],
   renderDir: "/state/render",
   hostSessions: { off: "sessions.host is off", notice: false },
@@ -49,20 +49,6 @@ afterAll(() => {
 });
 
 const mountAt = (mounts: MountSpec[], target: string) => mounts.find((mount) => mount.target === target);
-
-const withNestedRepo = {
-  cwd: repoRoot,
-  repoRoot,
-  isGitRepo: false,
-  nested: [
-    {
-      cwd: "/work/repo/api",
-      repoRoot: "/work/repo/api",
-      gitCommonDir: "/work/repo/api/.git",
-      isGitRepo: true,
-    },
-  ],
-};
 
 describe("buildContainerSpec", () => {
   it("names the container after the repo hash and the launch", () => {
@@ -84,59 +70,30 @@ describe("buildContainerSpec", () => {
     expect(buildContainerSpec(specInput()).image).toBe("sha256:image-abc");
   });
 
-  it("binds the repo read-write at the same path and skips a git dir nested inside it", () => {
-    const writable = buildContainerSpec(specInput()).mounts.filter(
-      (mount) => !mount.readOnly && mount.kind === "bind",
-    );
+  it("binds the workspace root read-write at its own path and nothing narrower", () => {
+    const binds = buildContainerSpec(specInput()).mounts.filter((mount) => mount.kind === "bind");
 
-    expect(writable).toEqual([{ source: repoRoot, target: repoRoot, readOnly: false, kind: "bind" }]);
+    expect(binds.filter((mount) => !mount.readOnly)).toEqual([
+      { source: "/work", target: "/work", readOnly: false, kind: "bind" },
+    ]);
+    expect(binds.filter((mount) => mount.target.startsWith("/work/"))).toEqual([]);
   });
 
-  it("binds a git common dir outside the repo read-write at the same path", () => {
+  it("binds only the workspace root for a linked worktree whose common dir lies elsewhere in it", () => {
     const workspace = {
       cwd: "/work/wt",
       repoRoot: "/work/wt",
+      gitDir: "/work/main/.git/worktrees/wt",
       gitCommonDir: "/work/main/.git",
       isGitRepo: true,
     };
-    const mounts = buildContainerSpec(specInput({ workspace })).mounts;
+    const binds = buildContainerSpec(specInput({ workspace })).mounts.filter(
+      (mount) => mount.kind === "bind",
+    );
 
-    expect(mountAt(mounts, "/work/wt")).toEqual({
-      source: "/work/wt",
-      target: "/work/wt",
-      readOnly: false,
-      kind: "bind",
-    });
-    expect(mountAt(mounts, "/work/main/.git")).toEqual({
-      source: "/work/main/.git",
-      target: "/work/main/.git",
-      readOnly: false,
-      kind: "bind",
-    });
-  });
-
-  it("binds the git dirs onto themselves and the protected dirs read-only from the host", () => {
-    const gitOverlay = {
-      selfBinds: ["/work/repo/.git", "/work/repo/.git/modules"],
-      readOnlyDirs: ["/work/repo/.git/hooks"],
-    };
-    const mounts = buildContainerSpec(specInput({ gitOverlay })).mounts;
-
-    expect(mountAt(mounts, "/work/repo/.git")).toEqual({
-      source: "/work/repo/.git",
-      target: "/work/repo/.git",
-      readOnly: false,
-      kind: "bind",
-    });
-    expect(mountAt(mounts, "/work/repo/.git/modules")?.readOnly).toBe(false);
-    expect(mountAt(mounts, "/work/repo/.git/hooks")).toEqual({
-      source: "/work/repo/.git/hooks",
-      target: "/work/repo/.git/hooks",
-      readOnly: true,
-      kind: "bind",
-    });
-    expect(mounts.some((mount) => mount.source.startsWith("/state/repos/"))).toBe(false);
-    expect(mounts.map((mount) => mount.target).indexOf("/work/repo/.git")).toBe(1);
+    expect(binds.filter((mount) => mount.target.startsWith("/work"))).toEqual([
+      { source: "/work", target: "/work", readOnly: false, kind: "bind" },
+    ]);
   });
 
   it("needs no git mounts outside git", () => {
@@ -146,8 +103,8 @@ describe("buildContainerSpec", () => {
     expect(spec.mounts.filter((mount) => mount.target.includes(".git"))).toEqual([]);
   });
 
-  it("keeps pi's agent dir on a named volume per user account and repository, whatever USER says", () => {
-    const agentVolume = `pi-sandbox-agent-${installIdOf("/state")}-${repoHash.slice(0, 12)}`;
+  it("keeps pi's agent dir on one named volume per install, the same for every repository, whatever USER says", () => {
+    const agentVolume = `pi-sandbox-agent-${installIdOf("/state")}`;
     const other = { cwd: "/work/other", repoRoot: "/work/other", isGitRepo: false };
 
     expect(mountAt(buildContainerSpec(specInput()).mounts, "/home/pi/.pi/agent")).toEqual({
@@ -158,7 +115,18 @@ describe("buildContainerSpec", () => {
     });
     expect(
       mountAt(buildContainerSpec(specInput({ workspace: other })).mounts, "/home/pi/.pi/agent")?.source,
-    ).not.toBe(agentVolume);
+    ).toBe(agentVolume);
+  });
+
+  it("labels the agent volume with no repository, so the sweep and a folder's reset never take it", () => {
+    const other = { cwd: "/work/other", repoRoot: "/work/other", isGitRepo: false };
+    const agentOf = (workspace: typeof other) =>
+      volumePlan({ workspace, config: sandboxConfig(), stateDir: "/state" }).find(
+        (volume) => volume.key === "agent",
+      );
+
+    expect(agentOf({ cwd: repoRoot, repoRoot, isGitRepo: true })).toEqual(agentOf(other));
+    expect(agentOf(other)?.labels).toEqual({});
   });
 
   it("lists the repository's agent and overlay volumes", () => {
@@ -217,59 +185,11 @@ describe("buildContainerSpec", () => {
     );
   });
 
-  it("starts only while the deepest mount over each overlay folder is a volume or read-only and no writable bind lies inside", () => {
-    const venv = "/work/repo/api/.venv";
-    const workspace = { ...withNestedRepo, overlays: [venv] };
-    const refusal = {
-      message: `workspace: the sandbox could write in ${venv}, which the launcher did not search for repositories, refusing`,
-      hint: "set mounts.autoOverlays to false so the launcher searches it, or start pi in a narrower folder",
-    };
-    const attempt = (input: Partial<ContainerSpecInput>) => () =>
-      buildContainerSpec(specInput({ workspace, ...input }));
-    const overlay = (selfBinds: string[], readOnlyDirs: string[] = []) => ({
-      gitOverlay: { selfBinds, readOnlyDirs },
-    });
-
-    expect(mountAt(buildContainerSpec(specInput({ workspace })).mounts, venv)?.kind).toBe("volume");
-    expect(attempt(overlay([], [join(venv, "hooks")]))).not.toThrow();
-    expect(attempt(overlay([join(venv, "tools")]))).toThrow(expect.objectContaining(refusal));
-  });
-
-  it("refuses a writable bind that re-exposes an overlay folder below a read-only mount", () => {
-    const target = "/work/repo/a/b/target";
-    const below = buildContainerSpec.bind(
-      undefined,
-      specInput({
-        workspace: { ...withNestedRepo, overlays: [target] },
-        gitOverlay: { selfBinds: ["/work/repo/a/b"], readOnlyDirs: ["/work/repo/a"] },
-      }),
-    );
-
-    expect(below).toThrow(`workspace: the sandbox could write in ${target}`);
-  });
-
-  it("compares mount depth on normalised targets and refuses when a writable bind shares the deepest target", () => {
-    const target = "/work/repo/a/b/target";
-    const attempt = (gitOverlay: ContainerSpecInput["gitOverlay"]) => () =>
-      buildContainerSpec(specInput({ workspace: { ...withNestedRepo, overlays: [target] }, gitOverlay }));
-
-    expect(
-      attempt({
-        selfBinds: ["/work/repo/a/b"],
-        readOnlyDirs: ["/work/repo/a/./././././."],
-      }),
-    ).toThrow(`workspace: the sandbox could write in ${target}`);
-    expect(attempt({ selfBinds: ["/work/repo/a"], readOnlyDirs: ["/work/repo/a/b/../"] })).toThrow(
-      "workspace: the sandbox would mount /work/repo/a/b/../ twice, refusing",
-    );
-    expect(attempt({ selfBinds: ["/work/repo/a"], readOnlyDirs: ["/work/repo/a/b/"] })).not.toThrow();
-  });
-
-  it("refuses a bind target inside the repository before the engine could make its mount point there", () => {
+  it("refuses a bind target inside the workspace root before the engine could make its mount point there", () => {
     const binds = [{ source: "/Users/dev/reference", target: "/work/repo/reference" }];
 
     expect(() => buildContainerSpec(specInput({ binds }))).toThrow(
-      "mounts: the sandbox would mount /work/repo/reference and /work/repo inside one another, refusing",
+      "mounts: the sandbox would mount /work/repo/reference and /work inside one another, refusing",
     );
     expect(() =>
       buildContainerSpec(
@@ -280,7 +200,9 @@ describe("buildContainerSpec", () => {
 
   it("refuses a folder whose mount would cover a path the sandbox image needs", () => {
     const at = (repoRoot: string) => () =>
-      buildContainerSpec(specInput({ workspace: { cwd: repoRoot, repoRoot, isGitRepo: false, nested: [] } }));
+      buildContainerSpec(
+        specInput({ workspace: { cwd: repoRoot, repoRoot, isGitRepo: false }, workspaceRoot: repoRoot }),
+      );
 
     expect(at("/usr/local")).toThrow(
       "workspace: the sandbox would mount /usr/local over /usr, which the sandbox image needs, refusing",
@@ -304,7 +226,9 @@ describe("buildContainerSpec", () => {
 
   it("mounts a workspace in the usual host folders", () => {
     const at = (repoRoot: string) => () =>
-      buildContainerSpec(specInput({ workspace: { cwd: repoRoot, repoRoot, isGitRepo: false, nested: [] } }));
+      buildContainerSpec(
+        specInput({ workspace: { cwd: repoRoot, repoRoot, isGitRepo: false }, workspaceRoot: repoRoot }),
+      );
 
     expect(at("/Users/dev/src/app")).not.toThrow();
     expect(at("/Volumes/Projects/app")).not.toThrow();
@@ -508,55 +432,16 @@ describe("buildContainerSpec", () => {
     });
   });
 
-  it("leaves out a build output overlay inside a read-only git dir with a notice, and still starts", () => {
-    const repo = join(scratch, "overlay-repo");
+  it("guards only its read-only mounts, none of them inside the workspace root, and has no notice", () => {
+    const workspace = { ...specInput().workspace, overlays: ["/work/repo/node_modules"] };
+    const spec = buildContainerSpec(specInput({ workspace }));
 
-    mkdirSync(join(repo, "vendor", "pkg"), { recursive: true });
-
-    const vendor = join(repo, "vendor");
-    const workspace = {
-      cwd: repo,
-      repoRoot: repo,
-      isGitRepo: false,
-      overlays: [join(vendor, "pkg", "node_modules"), join(repo, "node_modules")],
-    };
-    const gitOverlay = { selfBinds: [], readOnlyDirs: [vendor] };
-    const spec = buildContainerSpec(specInput({ workspace, gitOverlay }));
-
-    expect(mountAt(spec.mounts, join(vendor, "pkg", "node_modules"))).toBeUndefined();
-    expect(mountAt(spec.mounts, join(repo, "node_modules"))?.kind).toBe("volume");
-    expect(Object.keys(spec.volumeLabels)).toHaveLength(2);
-    expect(spec.ownedPaths).toEqual([join(repo, "node_modules")]);
-    expect(spec.notices).toEqual([
-      `${join(vendor, "pkg", "node_modules")} is not overlaid: it lies inside ${vendor}, which the sandbox protects`,
-    ]);
-  });
-
-  it("leaves out a build output overlay inside a read-only git path and has no notice otherwise", () => {
-    const workspace = {
-      cwd: repoRoot,
-      repoRoot,
-      gitCommonDir: "/work/repo/.git",
-      isGitRepo: true,
-      overlays: ["/work/repo/.githooks/node_modules"],
-    };
-    const gitOverlay = { selfBinds: [], readOnlyDirs: ["/work/repo/.githooks"] };
-    const spec = buildContainerSpec(specInput({ workspace, gitOverlay }));
-
-    expect(mountAt(spec.mounts, "/work/repo/.githooks/node_modules")).toBeUndefined();
-    expect(spec.notices).toHaveLength(1);
-    expect(buildContainerSpec(specInput()).notices).toEqual([]);
-  });
-
-  it("lists the read-only targets and git dirs a mount point may not be created in", () => {
-    const gitOverlay = {
-      selfBinds: ["/work/repo/.git"],
-      readOnlyDirs: ["/work/repo/.git/hooks"],
-    };
-
-    expect(buildContainerSpec(specInput({ gitOverlay })).guardedPaths).toEqual(
-      expect.arrayContaining(["/work/repo/.git/hooks", "/work/repo/.git"]),
+    expect(spec.guardedPaths).toEqual(
+      spec.mounts.filter((mount) => mount.readOnly && mount.kind === "bind").map((mount) => mount.target),
     );
+    expect(spec.guardedPaths.filter((path) => path.startsWith("/work"))).toEqual([]);
+    expect(mountAt(spec.mounts, "/work/repo/node_modules")?.kind).toBe("volume");
+    expect(spec.notices).toEqual([]);
   });
 
   it("works in the repo root and carries the configured resources", () => {

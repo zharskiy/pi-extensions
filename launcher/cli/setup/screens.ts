@@ -32,8 +32,6 @@ export interface Step {
 
 const LABEL_WIDTH = 19;
 
-const SHOWN_ROOTS = 3;
-
 const HUB_TAGS_INLINE = 56;
 
 export const INTRO_TITLE = "pi sandbox setup";
@@ -45,23 +43,18 @@ export const OTHER_SETTINGS =
 
 export const HUB_SUMMARY_TITLE = "Your settings:";
 
-export const HOME_ROOTS = "your whole home (~), not recommended";
-
-export const FOLDERS_TITLE = "Which folders hold your projects?";
+export const FOLDERS_TITLE = "Which folder holds your projects?";
 
 export const FOLDERS_DETAIL =
-  "Only these folders are shared with the sandbox VM, besides pi's sessions folder and the launcher's read-only state/vm folder, and pi starts only inside them.";
+  "Only this folder is shared with the sandbox VM, besides pi's sessions folder and the launcher's read-only state/vm folder, and pi starts only inside it. It cannot be your home or a folder that holds it.";
+
+export const OTHER_FOLDER_TITLE = "Type the folder that holds your projects";
 
 export const NO_FOLDER_FOUND =
-  "No usual project folder was found in your home. Add the folders that hold your projects.";
+  "No usual project folder was found in your home. Choose the folder that holds your projects.";
 
 export const SEARCH_TIMED_OUT =
-  "Looking for project folders took too long. Add the folders that hold your projects.";
-
-export const FOLDERS_PLAIN_HELP = [
-  "Type numbers to switch folders on or off (like 1 3), a path to add a folder,",
-  "or press Enter to keep the selection.",
-];
+  "Looking for project folders took too long. Choose the folder that holds your projects.";
 
 const workspaceShares = (facts: HostFacts) => {
   const vm = existingVm(facts);
@@ -77,8 +70,6 @@ const workspaceShares = (facts: HostFacts) => {
     .filter((location) => location !== agentDir && !isWithin(location, agentDir));
 };
 
-export const sharesHome = (facts: HostFacts) => workspaceShares(facts)?.includes(facts.home) === true;
-
 export const sharedNowLine = (facts: HostFacts) => {
   const locations = workspaceShares(facts);
 
@@ -86,21 +77,9 @@ export const sharedNowLine = (facts: HostFacts) => {
     return undefined;
   }
 
-  if (sharesHome(facts)) {
-    return "The sandbox VM shares your whole home (~) now.";
-  }
-
   return locations.length === 0
     ? "The sandbox VM shares no project folder now."
-    : `The sandbox VM shares ${rootsSummary(locations.map((location) => tildeForm(location, facts.home)))} now.`;
-};
-
-export const HOME_CONFIRM = {
-  title: "Share your whole home with the sandbox VM instead?",
-  detail:
-    "With no project folder, pi starts in any folder, and a sandbox escape could reach every file in ~.",
-  no: "No, choose folders",
-  yes: "Yes, share ~",
+    : `The sandbox VM shares ${locations.map((location) => printable(tildeForm(location, facts.home))).join(", ")} now.`;
 };
 
 export const DISCARD_CONFIRM = {
@@ -114,7 +93,7 @@ export const WRITE_BACK_TITLE = "Copy settings changed in the sandbox back to yo
 export const WRITE_BACK_DETAIL =
   "When on, preference changes made inside the sandbox (the default model, the theme, extension settings) are copied to your pi on this Mac when a session starts and ends. Your pi wins when both changed.";
 
-export const FIX_FOLDERS = "✖ Fix the project folders first.";
+export const FIX_FOLDERS = "✖ Fix the project folder first.";
 
 export const CANCELLED = "Cancelled. Nothing was changed.";
 
@@ -216,10 +195,10 @@ const repoTag = (candidate: FolderCandidate, digits: number) => {
 
 const originTags = (candidate: FolderCandidate, digits: number) => {
   if (candidate.origin === "config") {
-    return candidate.exists ? ["current"] : ["current", "not found right now"];
+    return candidate.exists ? ["current"] : ["current", "missing, not shared until it exists"];
   }
 
-  return candidate.origin === "env" ? ["from PI_SANDBOX_ROOTS"] : [repoTag(candidate, digits)];
+  return candidate.origin === "env" ? ["from PI_SANDBOX_ROOT"] : [repoTag(candidate, digits)];
 };
 
 export const folderTag = (candidate: FolderCandidate, candidates: FolderCandidate[], plain: boolean) => {
@@ -229,16 +208,7 @@ export const folderTag = (candidate: FolderCandidate, candidates: FolderCandidat
   return [...originTags(candidate, digits), ...(candidate.here ? ["you are here"] : [])].join(" · ");
 };
 
-export const rootsSummary = (roots: Answers["roots"]) => {
-  if (roots === "home") {
-    return HOME_ROOTS;
-  }
-
-  const listed = roots.slice(0, SHOWN_ROOTS).map(printable);
-  const more = roots.length - SHOWN_ROOTS;
-
-  return more > 0 ? `${listed.join(", ")} and ${more} more` : listed.join(", ");
-};
+export const rootSummary = (root: Answers["root"]) => (root === undefined ? "none" : printable(root));
 
 const automaticSize = (facts: HostFacts) => existingVm(facts)?.size ?? facts.automatic;
 
@@ -343,13 +313,9 @@ const afterExit = (sessions: number) => (sessions === 1 ? "after it exits" : "af
 const CREATE_TAIL =
   "this takes a minute or two, longer the first time while colima downloads the VM's system image";
 
-export const vmActionText = (action: VmAction, home: string) => {
+export const vmActionText = (action: VmAction) => {
   if (action.kind === "create") {
-    const sharesHome = action.shares.some((share) => share.location === home);
-
-    return sharesHome
-      ? `create the sandbox VM sharing your whole home (~), writable; ${CREATE_TAIL}`
-      : `create the sandbox VM with these folders, pi's sessions folder and the launcher's read-only state/vm folder; ${CREATE_TAIL}`;
+    return `create the sandbox VM with this folder, pi's sessions folder and the launcher's read-only state/vm folder; ${CREATE_TAIL}`;
   }
 
   if (action.kind === "restart") {
@@ -373,15 +339,6 @@ export const vmActionText = (action: VmAction, home: string) => {
 
 const json = (value: unknown) => printable(JSON.stringify(value));
 
-const isRootsKey = (key: string) => key === "workspaceRoots" || key.startsWith("workspaceRoots.");
-
-const shownChanges = (changes: Change[]) => {
-  const rootsRemoved = changes.some((change) => isRootsKey(change.key) && change.kind === "remove");
-  const rest = changes.filter((change) => !(rootsRemoved && isRootsKey(change.key)));
-
-  return rootsRemoved ? [...rest, { key: "workspaceRoots", kind: "remove" as const }] : rest;
-};
-
 const automaticPart = (key: string, facts: HostFacts) => {
   const name = key.slice("vm.".length) as keyof VmSpec;
   const value = facts.automatic[name];
@@ -402,10 +359,6 @@ const richChangeLines = (change: Change, keyWidth: number, room: number, facts: 
 
   if (change.kind === "add") {
     return keyedLines(head, json(change.after), room);
-  }
-
-  if (change.kind === "remove" && change.key === "workspaceRoots") {
-    return keyedLines(head, "(your whole home is shared again)", room);
   }
 
   if (change.kind === "remove") {
@@ -431,10 +384,6 @@ const richChangeLines = (change: Change, keyWidth: number, room: number, facts: 
 const plainChangeLine = (change: Change) => {
   if (change.kind === "add") {
     return `added ${change.key}: ${json(change.after)}`;
-  }
-
-  if (change.kind === "remove" && change.key === "workspaceRoots") {
-    return "removed workspaceRoots (your whole home is shared again)";
   }
 
   if (change.kind === "remove") {
@@ -465,9 +414,8 @@ export interface FileShape {
 }
 
 export const applyLines = (plan: Plan, facts: HostFacts, shape: FileShape, room: number, plain: boolean) => {
-  const changes = shownChanges(plan.changes);
-  const keyWidth = Math.max(0, ...changes.map((change) => change.key.length));
-  const diff = changes.flatMap((change) =>
+  const keyWidth = Math.max(0, ...plan.changes.map((change) => change.key.length));
+  const diff = plan.changes.flatMap((change) =>
     plain ? [plainChangeLine(change)] : richChangeLines(change, keyWidth, room - 6, facts),
   );
   const reindent = plan.reindented
@@ -480,7 +428,7 @@ export const applyLines = (plan: Plan, facts: HostFacts, shape: FileShape, room:
           ...bullet(fileBullet(plan, facts, shape.existed), room, plain),
           ...[...diff, ...reindent].flatMap((line) => wrap(`      ${line}`, room)),
         ];
-  const vmText = vmActionText(plan.vm, facts.home);
+  const vmText = vmActionText(plan.vm);
   const vm = vmText === undefined ? [] : bullet(vmText, room, plain);
 
   return ["When you apply:", ...file, ...vm];
@@ -598,25 +546,20 @@ const savedLine = (facts: HostFacts, plain: boolean) =>
 const saveFailedLine = (file: string, home: string, reason: string) =>
   `✖ Could not save ${shown(file, home)}: ${printable(reason)}`;
 
-const nextCommand = (roots: Answers["roots"], facts: HostFacts) => {
-  if (roots === "home") {
-    return "cd <a project> && pi";
-  }
-
-  const chosen = facts.candidates.filter((candidate) => roots.includes(candidate.stored));
-  const latest = chosen.find((candidate) => candidate.latestRepo !== undefined)?.latestRepo;
+const nextCommand = (root: Answers["root"], facts: HostFacts) => {
+  const latest = facts.candidates.find((candidate) => candidate.stored === root)?.latestRepo;
 
   if (latest !== undefined) {
     return `cd ${shown(latest, facts.home)} && pi`;
   }
 
-  return `cd <a project in ${printable(roots[0] ?? "~")}> && pi`;
+  return `cd <a project in ${printable(root ?? "~")}> && pi`;
 };
 
-const successLines = (roots: Answers["roots"], facts: HostFacts, vmReady: boolean, plain: boolean) => {
+const successLines = (root: Answers["root"], facts: HostFacts, vmReady: boolean, plain: boolean) => {
   const head = vmReady ? "Done. The sandbox is ready." : "Done. Settings saved.";
   const rows: Array<[string, string]> = [
-    ["Next", nextCommand(roots, facts)],
+    ["Next", nextCommand(root, facts)],
     ["Change", "pi sandbox init"],
     ["Check", "pi sandbox doctor"],
     ["Settings", shown(facts.configFile, facts.home)],
@@ -646,7 +589,7 @@ export const invalidText = (read: InvalidRead) =>
       }
     : {
         problem: "has a problem this setup does not fix",
-        fix: "fix that key, then run pi sandbox init again",
+        fix: read.hint ?? "fix that key, then run pi sandbox init again",
       };
 
 export const invalidLines = (read: InvalidRead, file: string, home: string) => {
@@ -683,7 +626,7 @@ export const eventLines = (event: ApplyEvent, facts: HostFacts, plain: boolean):
     case "vm-cancelled":
       return stoppedWaiting(event.phase);
     case "done":
-      return successLines(event.roots, facts, event.vmReady, plain);
+      return successLines(event.root, facts, event.vmReady, plain);
   }
 };
 

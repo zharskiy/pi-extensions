@@ -1,26 +1,18 @@
 import { loadEffectiveConfig } from "../../config/index.ts";
-import { hostBinds, sharedRootsOf } from "../../workspace/index.ts";
-import { type CliDeps, writeLine, writeLines, writeNotices } from "../deps.ts";
-import { prepareVmShares } from "../vm.ts";
+import { hostBinds } from "../../workspace/index.ts";
+import { type CliDeps, writeLines, writeNotices } from "../deps.ts";
+import { prepareVmShares, rootPaths } from "../vm.ts";
 
 export const VM_SHARES = "__vm-shares";
 
 export const vmSharesCommand = async (deps: CliDeps) => {
-  const { workspaceRoots, mounts } = (await loadEffectiveConfig({ env: deps.env, home: deps.home })).config;
+  const { config } = await loadEffectiveConfig({ env: deps.env, home: deps.home });
+  const binds = hostBinds(config.mounts.binds, { home: deps.home, env: deps.env, roots: rootPaths(config) });
+  const plan = await prepareVmShares(deps, config.workspaceRoot, binds);
 
-  if (workspaceRoots === undefined) {
-    writeLine(deps.stdout, deps.home);
+  writeNotices(deps, plan.notices);
 
-    return 0;
-  }
-
-  const context = { home: deps.home, env: deps.env };
-  const binds = hostBinds(mounts.binds, { ...context, roots: workspaceRoots.roots });
-  const plan = await prepareVmShares(deps, workspaceRoots, binds);
-
-  writeNotices(deps, plan?.notices ?? []);
-
-  writeLines(deps.stdout, sharedRootsOf(workspaceRoots, context).roots);
+  writeLines(deps.stdout, plan.root === undefined ? [] : [plan.root]);
 
   return 0;
 };
