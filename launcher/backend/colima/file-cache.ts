@@ -31,7 +31,7 @@ export type FileCacheTick =
 
 export interface FileCacheDeps {
   runner: CommandRunner;
-  diskPath: string;
+  diskPaths: string[];
   shell: (command: string[], options: { timeoutMs: number }) => Promise<RunResult>;
   lockIfFree: (action: () => Promise<FileCacheTick>) => Promise<LockOutcome<FileCacheTick>>;
   alive: (pid: string) => boolean;
@@ -110,9 +110,14 @@ export const createFileCacheGuard = (deps: FileCacheDeps) => {
     return listed?.timedOut === true && deps.alive(pid) ? PAST_THE_LIMIT : undefined;
   };
 
+  const holdersOf = async (diskPath: string) => {
+    const found = await probe(["-t", diskPath]);
+
+    return found?.code === 0 ? found.stdout.split("\n").map((line) => line.trim()) : [];
+  };
+
   const discover = async () => {
-    const found = await probe(["-t", deps.diskPath]);
-    const pids = found?.code === 0 ? found.stdout.split("\n").map((line) => line.trim()) : [];
+    const pids = [...new Set((await Promise.all(deps.diskPaths.map(holdersOf))).flat())];
     const counted = await Promise.all(
       pids.filter((pid) => /^\d+$/.test(pid)).map(async (pid) => ({ pid, count: await countOf(pid) })),
     );

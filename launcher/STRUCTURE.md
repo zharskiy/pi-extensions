@@ -163,7 +163,7 @@ backend/colima/vm.ts           VM start (at the vm config size when stopped), si
 backend/colima/size.ts         the VM size colima reports (status --json, colima.yaml), the size flags of a start, the cold-start size and the shrink notice
 backend/colima/shares.ts       VM shares: coverage, the shares a launch adds, the mount list of a restart and its check
 backend/colima/vm-trust.ts     the tls.extraCa certificates in the VM's trust store, engine restart when idle
-backend/colima/file-cache.ts   the VM's file cache watch: open files of the VM's Mac process, the host limit, the drop_caches release
+backend/colima/file-cache.ts   the VM's file cache watch: open files of the VM's Mac process found by its disk names, the host limit, the drop_caches release
 backend/colima/colima-yaml.ts  the lima.yaml and colima.yaml mounts reader and the colima.yaml size reader
 ```
 
@@ -390,7 +390,7 @@ tests/backend/colima-vm.test.ts      VM start
 tests/backend/colima-shares.test.ts  VM shares, the workspaceRoots reconcile (foreign sessions, one-boot start, nested shares, unreadable lima.yaml), __vm-shares
 tests/backend/colima-size.test.ts    VM size and the restart to the vm config size
 tests/backend/colima-apply.test.ts   VM inspect, apply (create, defer, restart), the launch reconcile of shares and size together, and the cold start at the vm config size
-tests/backend/colima-file-cache.test.ts  the file cache watch: limit, VM process lookup among several holders and every 5 minutes, timed-out count, release command, rate limit, busy VM lock, stop waiting for a release
+tests/backend/colima-file-cache.test.ts  the file cache watch: limit, VM process lookup by either disk name, among several holders and every 5 minutes, timed-out count, release command, rate limit, busy VM lock, stop waiting for a release
 tests/backend/colima-trust.test.ts   the tls.extraCa certificates in the VM trust store
 tests/backend/vm-decision.test.ts    each outcome of vmDecision and whenBusy
 tests/container/spec.test.ts         the container spec

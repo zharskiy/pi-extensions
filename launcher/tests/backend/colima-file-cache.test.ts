@@ -23,6 +23,7 @@ import { tempDir } from "../support/temp-dir.ts";
 
 interface HostState {
   pids: string[];
+  held?: string[];
   open: Record<string, number>;
   limits?: string;
   slow?: string[];
@@ -30,6 +31,13 @@ interface HostState {
 }
 
 const DISK = "/home/u/.colima/_lima/colima-pi-sandbox/disk";
+
+const LEGACY_DISK = "/home/u/.colima/_lima/colima-pi-sandbox/diffdisk";
+
+const missingFile = (path: string) => ({
+  code: 1,
+  stderr: `lsof: status error on ${path}: No such file or directory\n`,
+});
 
 const LIMIT = 30_720;
 
@@ -48,6 +56,12 @@ const answerHost = (host: HostState) => (call: FakeCall) => {
   const [flag, target] = call.args.slice(2);
 
   if (flag === "-t") {
+    const path = target ?? "";
+
+    if (!(host.held ?? [DISK]).includes(path)) {
+      return missingFile(path);
+    }
+
     return host.pids.length === 0 ? { code: 1 } : { stdout: `${host.pids.join("\n")}\n` };
   }
 
@@ -81,7 +95,7 @@ const guardOf = (host: HostState, overrides: Partial<FileCacheDeps> = {}) => {
   };
   const guard = createFileCacheGuard({
     runner: fake.runner,
-    diskPath: DISK,
+    diskPaths: [DISK],
     shell,
     lockIfFree: async (action) => ({ busy: false, value: await action() }),
     alive: aliveIn(host),
@@ -227,6 +241,26 @@ describe("the VM process", () => {
     expect(released).toHaveLength(1);
   });
 
+  it("is found through whichever disk name the instance has, one lsof per name", async () => {
+    const host: HostState = { pids: ["700"], held: [LEGACY_DISK], open: { "700": 120 } };
+    const { guard, calls } = guardOf(host, { diskPaths: [DISK, LEGACY_DISK] });
+
+    expect(await guard.tick()).toBe("below");
+    expect(calls.filter((call) => call.args[2] === "-t").map(argvOf)).toEqual([
+      [LSOF, "-n", "-P", "-t", DISK],
+      [LSOF, "-n", "-P", "-t", LEGACY_DISK],
+    ]);
+    expect(counted(calls)).toEqual(["700"]);
+  });
+
+  it("is counted once when it holds several of the disks", async () => {
+    const host: HostState = { pids: ["700"], held: [DISK, LEGACY_DISK], open: { "700": 120 } };
+    const { guard, calls } = guardOf(host, { diskPaths: [DISK, LEGACY_DISK] });
+
+    expect(await guard.tick()).toBe("below");
+    expect(counted(calls)).toEqual(["700"]);
+  });
+
   it("does nothing when no process holds the VM's disk", async () => {
     const { guard, released, calls } = guardOf({ pids: [], open: {} });
 
@@ -240,7 +274,7 @@ describe("the VM process", () => {
     const fake = createFakeRunner(() => undefined);
     const guard = createFileCacheGuard({
       runner: fake.runner,
-      diskPath: DISK,
+      diskPaths: [DISK],
       shell: async () => {
         throw new Error("never");
       },
@@ -432,7 +466,11 @@ describe("the file cache watch", () => {
 describe("the colima VM's file cache watch", () => {
   const setup = async (respond: (call: FakeCall) => FakeAnswer | Promise<FakeAnswer> = () => ({})) => {
     const home = await tempDir("file-cache");
-    const host: HostState = { pids: ["700"], open: { "700": 50_000 } };
+    const host: HostState = {
+      pids: ["700"],
+      held: [join(home, ".colima", "_lima", "colima-pi-sandbox", "disk")],
+      open: { "700": 50_000 },
+    };
     const answer = answerHost(host);
     const fake = createFakeRunner((call) => (call.file === "colima" ? respond(call) : answer(call)));
     const { ticker, fire } = manualTicker();
@@ -463,12 +501,13 @@ describe("the colima VM's file cache watch", () => {
 
     await watch?.stop();
 
-    expect(fake.calls[0]?.args).toEqual([
-      "-n",
-      "-P",
-      "-t",
-      join(home, ".colima", "_lima", "colima-pi-sandbox", "disk"),
-    ]);
+    expect(fake.calls.slice(0, 3).map((call) => call.args)).toEqual(
+      [
+        join(home, ".colima", "_lima", "colima-pi-sandbox", "disk"),
+        join(home, ".colima", "_lima", "colima-pi-sandbox", "diffdisk"),
+        join(home, ".colima", "_lima", "_disks", "colima-pi-sandbox", "datadisk"),
+      ].map((path) => ["-n", "-P", "-t", path]),
+    );
     expect(colimaCalls()).toEqual([
       ["ssh", "--profile", "pi-sandbox", "--", "sudo", "sysctl", "-q", "-w", "vm.drop_caches=2"],
     ]);
@@ -544,7 +583,7 @@ describe("the colima VM's file cache watch", () => {
 
     fire();
 
-    await vi.waitFor(() => expect(fake.calls).toHaveLength(1));
+    await vi.waitFor(() => expect(fake.calls).toHaveLength(3));
 
     await watch?.stop();
 

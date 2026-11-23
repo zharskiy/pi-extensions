@@ -369,7 +369,7 @@ At a launch with no other pi session running, a VM whose size differs is restart
 
 Your Mac's process behind the VM keeps one open file for each file the VM has cached from your Mac's folders. A very large build or test run can push that up to what macOS allows, and then files fail to open, in the sandbox and on your Mac. With `vm.releaseFileCache` on, the launcher checks that count every 10 seconds while pi runs. When it reaches half your Mac's per-process limit (`kern.maxfilesperproc`) or a quarter of its system-wide limit (`kern.maxfiles`), whichever is lower, it drops the VM's file cache, at most once every 30 seconds per pi session. A count that takes longer than 10 seconds counts as past the limit. Files stay as they are; the VM reads them again when they are used.
 
-It skips a check while another launch is changing the VM, and does nothing when it cannot find the VM's process. When several processes hold the VM's disk file, it watches the one with the most open files and looks again every 5 minutes. When pi exits during a release, the launcher waits for the release to finish. Set `vm.releaseFileCache` to `false` to turn it off.
+It skips a check while another launch is changing the VM, and does nothing when it cannot find the VM's process. It finds that process as the holder of the VM's disk file, `disk`, or `diffdisk` for a VM that an older Lima created, or its data disk. When several processes hold them, it watches the one with the most open files and looks again every 5 minutes. When pi exits during a release, the launcher waits for the release to finish. Set `vm.releaseFileCache` to `false` to turn it off.
 
 ## Settings written back
 

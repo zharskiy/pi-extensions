@@ -90,6 +90,17 @@ const INIT_HINT = "run pi sandbox init, which creates it";
 
 const NOT_BUSY: VmBusy = { count: 0, others: [] };
 
+const DISK_NAMES = ["disk", "diffdisk"];
+
+const vmDiskPaths = (home: string, profile: string) => {
+  const lima = join(home, ".colima", "_lima");
+
+  return [
+    ...DISK_NAMES.map((name) => join(lima, instanceOf(profile), name)),
+    join(lima, "_disks", instanceOf(profile), "datadisk"),
+  ];
+};
+
 export const engineUnreachable = (detection?: Detection) =>
   new LauncherError(
     `the sandbox VM engine is unreachable at ${ENGINE_SOCKET_DISPLAY}${detection?.reason === undefined ? "" : `: ${detection.reason}`}`,
@@ -178,7 +189,7 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
   const trust = createColimaTrust(colima, vmShell);
   const fileCache = createFileCacheGuard({
     runner,
-    diskPath: join(home, ".colima", "_lima", instanceOf(profile), "disk"),
+    diskPaths: vmDiskPaths(home, profile),
     shell: vmShell,
     lockIfFree: (action) => withDirectoryLockIfFree(stateLayout(options.stateDir).vmLock, action),
     alive: processAlive,
