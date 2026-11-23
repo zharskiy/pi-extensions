@@ -785,7 +785,17 @@ describe("pi sandbox doctor", () => {
   });
 
   it("stops at the vm stage with the engine's hint when the VM engine is unreachable, still checks the host and exits 1", async () => {
-    const harness = await createHarness({ backend: () => unreachable(createFakeBackend().backend) });
+    const reads: string[] = [];
+    const fake = createFakeBackend({
+      vm: {
+        readFileCache: async () => {
+          reads.push("read");
+
+          return { state: "no-vm", looked: [] };
+        },
+      },
+    });
+    const harness = await createHarness({ backend: () => unreachable(fake.backend) });
 
     expect(await run(["sandbox", "doctor"], harness.deps)).toBe(1);
     expect(harness.stdout().split("\n")).toEqual([
@@ -795,16 +805,18 @@ describe("pi sandbox doctor", () => {
       SHARES_UNKNOWN,
       "  fail  vm                the sandbox VM engine is unreachable at ~/.colima/pi-sandbox/docker.sock: socket missing",
       "        hint: run colima start --profile pi-sandbox --activate=false, or pi sandbox init when ~/.colima/pi-sandbox does not exist",
+      "  skip  file cache        the sandbox VM is not running",
       "  skip  probes            not run: the vm stage failed",
       "",
       "network",
       NO_PARENT,
       NOT_INSPECTED,
       "",
-      "result: fail (1 failed, 4 ok, 3 skipped)",
+      "result: fail (1 failed, 4 ok, 4 skipped)",
       "",
     ]);
     expect(harness.stderr()).toBe("");
+    expect(reads).toEqual([]);
   });
 
   it("runs no shares stage, so it never restarts the VM to share a path", async () => {
@@ -873,7 +885,12 @@ describe("pi sandbox doctor", () => {
   });
 
   it("reports the proxy and image stages both, then stops after a failed image and says the probes did not run", async () => {
-    const fake = createFakeBackend({ exec: answering({}) });
+    const fake = createFakeBackend({
+      exec: answering({}),
+      vm: {
+        readFileCache: async () => ({ state: "counted", count: 1200, limit: 30_720, maxFiles: 122_880 }),
+      },
+    });
     const failing = { ...fake.backend, buildImage: async () => Promise.reject(new Error("build failed")) };
     const harness = await createHarness({ backend: () => failing });
 
@@ -886,6 +903,7 @@ describe("pi sandbox doctor", () => {
       "sandbox",
       SHARES_UNKNOWN,
       "  ok    vm",
+      "  ok    file cache        1200 open files, released at 30720",
       "  fail  image             build failed",
       "  skip  probes            not run: the image stage failed",
       "",
@@ -894,7 +912,7 @@ describe("pi sandbox doctor", () => {
       NO_PARENT,
       NOT_INSPECTED,
       "",
-      "result: fail (1 failed, 7 ok, 3 skipped)",
+      "result: fail (1 failed, 8 ok, 3 skipped)",
       "",
     ]);
   });
@@ -958,7 +976,7 @@ describe("pi sandbox doctor", () => {
       expect(stdout).toContain("\u001b[32mok\u001b[0m    host pi ");
       expect(stdout).toContain("\u001b[36mhint:\u001b[0m run colima start");
       expect(stdout).toContain("result: \u001b[1;31mfail\u001b[0m (");
-      expect(doctorReport(stripVTControlCharacters(stdout)).result).toBe("fail (1 failed, 4 ok, 3 skipped)");
+      expect(doctorReport(stripVTControlCharacters(stdout)).result).toBe("fail (1 failed, 4 ok, 4 skipped)");
       expect(harness.stderr().startsWith("\r\u001b[2Kpi sandbox doctor: preparing the sandbox")).toBe(true);
       expect(harness.stderr().endsWith("\r\u001b[2K")).toBe(true);
       expect(harness.stderr()).not.toContain("\n");
@@ -971,9 +989,9 @@ describe("pi sandbox doctor", () => {
       const outputs = runs.map((harness) => harness.stdout());
 
       expect(outputs.map((stdout) => doctorReport(stdout).result)).toEqual([
-        "fail (1 failed, 4 ok, 3 skipped)",
-        "fail (1 failed, 4 ok, 3 skipped)",
-        "fail (1 failed, 4 ok, 3 skipped)",
+        "fail (1 failed, 4 ok, 4 skipped)",
+        "fail (1 failed, 4 ok, 4 skipped)",
+        "fail (1 failed, 4 ok, 4 skipped)",
       ]);
       expect(outputs.filter((stdout) => stdout.includes("\u001b["))).toEqual([]);
       expect(runs[1]?.stderr()).toBe("");
@@ -1238,7 +1256,7 @@ describe("pi sandbox doctor file cache", () => {
     });
   });
 
-  it("skips off macOS, without a probe and while the VM is not running, reading nothing", async () => {
+  it("skips off macOS, without a probe and once the vm stage failed, reading nothing", async () => {
     const reads: string[] = [];
     const readFileCache = async (): Promise<VmFileCache> => {
       reads.push("read");
@@ -1248,7 +1266,12 @@ describe("pi sandbox doctor file cache", () => {
 
     const linux = await fileCacheCheck({ readFileCache }, { platform: "linux" });
     const probeless = await fileCacheCheck({ readFileCache: undefined });
-    const stopped = await fileCacheCheck({ readFileCache, size: async () => undefined });
+    const stopped = await fileCacheCheck({
+      readFileCache,
+      ensureRunning: async () => {
+        throw new Error("colima did not start");
+      },
+    });
 
     expect(linux.found).toMatchObject({ status: "skip", detail: "only counted on macOS" });
     expect(probeless.found).toMatchObject({
@@ -1257,6 +1280,45 @@ describe("pi sandbox doctor file cache", () => {
     });
     expect(stopped.found).toMatchObject({ status: "skip", detail: "the sandbox VM is not running" });
     expect(reads).toEqual([]);
+  });
+});
+
+describe("pi sandbox doctor file cache without the sandbox", () => {
+  const MISSING = { coverage: async () => ({ shares: [], missing: ["/Volumes/work"] }) };
+
+  it("still reads the count when the VM lacks a share and the sandbox is not started", async () => {
+    const { stdout } = await doctorWith({
+      vm: {
+        ...MISSING,
+        readFileCache: async () => ({ state: "counted", count: 40_000, limit: 30_720, maxFiles: 122_880 }),
+      },
+    });
+
+    expect(check(stdout, "sandbox")).toMatchObject({ status: "skip" });
+    expect(check(stdout, "file cache")).toMatchObject({
+      status: "warn",
+      detail: "40000 open files in the VM's process, past the release at 30720 (kern.maxfiles 122880)",
+    });
+  });
+
+  it("skips when the sandbox is not started and no process holds the VM's disk", async () => {
+    const { stdout } = await doctorWith({
+      vm: { ...MISSING, readFileCache: async () => ({ state: "no-vm", looked: [] }) },
+    });
+
+    expect(check(stdout, "file cache")).toMatchObject({
+      status: "skip",
+      detail:
+        "the sandbox was not started and no Mac process holds the VM's disk, so the VM is likely stopped",
+    });
+  });
+
+  it("warns that the lookup failed when the sandbox is not started", async () => {
+    const { stdout } = await doctorWith({
+      vm: { ...MISSING, readFileCache: async () => ({ state: "lookup-failed", looked: [] }) },
+    });
+
+    expect(check(stdout, "file cache")).toMatchObject({ status: "warn" });
   });
 });
 

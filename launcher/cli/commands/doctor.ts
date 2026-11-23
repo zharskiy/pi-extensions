@@ -5,6 +5,7 @@ import {
   LABELS,
   shareDrift,
   shareText,
+  type Vm,
   type VmFileCache,
   type VmShare,
   type VmSize,
@@ -83,6 +84,7 @@ interface Run {
   checks: NamedCheck[];
   progress: Progress;
   hostTls: () => Promise<HostTls>;
+  vmRunning?: boolean;
 }
 
 const NOTICE_PREFIX = "pi-sandbox: ";
@@ -230,9 +232,7 @@ const countedCheck = (reading: Counted, releasing: boolean) => {
   );
 };
 
-const fileCacheCheck = async (deps: CliDeps, context: LaunchContext, sandbox: Sandbox) => {
-  const { vm } = sandbox.backend;
-
+const fileCacheCheck = async (deps: CliDeps, context: LaunchContext, vm: Vm, running?: boolean) => {
   if (deps.platform !== "darwin") {
     return skipped("only counted on macOS");
   }
@@ -241,11 +241,17 @@ const fileCacheCheck = async (deps: CliDeps, context: LaunchContext, sandbox: Sa
     return skipped("the backend does not count the VM's open files");
   }
 
-  if ((await vm.size()) === undefined) {
+  if (running === false) {
     return skipped("the sandbox VM is not running");
   }
 
   const reading = await vm.readFileCache();
+
+  if (reading.state === "no-vm" && running === undefined) {
+    return skipped(
+      "the sandbox was not started and no Mac process holds the VM's disk, so the VM is likely stopped",
+    );
+  }
 
   if (reading.state === "no-vm") {
     return warned("the file cache release cannot find the VM's process, so it does nothing", {
@@ -450,7 +456,6 @@ const PROBES: Probe[] = [
   single("sessions share", "sandbox", ({ target }) => sessionsShareCheck(target)),
   ruleChecks,
   single("vm size", "sandbox", ({ deps, context, sandbox }) => sizeCheck(deps, context, sandbox)),
-  single("file cache", "sandbox", ({ deps, context, sandbox }) => fileCacheCheck(deps, context, sandbox)),
 ];
 
 const probe = async (deps: CliDeps, context: LaunchContext, sandbox: Sandbox, run: Run) => {
@@ -497,6 +502,10 @@ const sandboxChecks = async (deps: CliDeps, context: LaunchContext, backend: Bac
   const seen: { failed?: Stage; rules?: CredentialRule[] } = {};
   const report = (stage: Stage, outcome: StageOutcome) => {
     seen.failed ??= outcome.ok ? undefined : stage;
+
+    if (stage === "vm") {
+      run.vmRunning = outcome.ok;
+    }
 
     run.checks.push(stageCheck(stage, outcome));
 
@@ -594,6 +603,12 @@ const runChecks = async (deps: CliDeps, progress: Progress, checks: NamedCheck[]
       ? skipSandbox(run, shares.missing)
       : await sandboxChecks(deps, context, backend, run)
     : undefined;
+
+  run.checks.push({
+    name: "file cache",
+    section: "sandbox",
+    result: await attempt(() => fileCacheCheck(deps, context, backend.vm, run.vmRunning)),
+  });
 
   run.progress.line("checking the host");
 
