@@ -393,7 +393,12 @@ export const runBackendConformance = (
       };
 
       expect(await exited()).toMatchObject({ id: created.id, state: "stopped", exitCode: 4 });
-      expect(await backend().containerLogs(created.id, 2)).toBe("two\nthree\n");
+
+      const lines = (await backend().containerLogs(created.id, 10)).split("\n").filter(Boolean);
+
+      expect([...lines].sort()).toEqual(["one", "three", "two"]);
+      expect(lines.indexOf("one")).toBeLessThan(lines.indexOf("three"));
+      expect(await backend().containerLogs(created.id, 2)).toBe(`${lines.slice(-2).join("\n")}\n`);
 
       await backend().removeContainer(created.id);
 

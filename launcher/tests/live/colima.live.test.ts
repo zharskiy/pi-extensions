@@ -15,6 +15,7 @@ import { createProcessRunner, launcherRoot } from "../../shared/index.ts";
 import { runBackendConformance } from "../backend/conformance.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
 import { listNetworks, removeNetwork } from "./harness/engine.ts";
+import { liveRoot } from "./harness/sandbox.ts";
 
 const PULLABLE = "busybox:1.36";
 
@@ -31,9 +32,25 @@ const hooks = enabled
   : { describe: describe.skip, it, expect, beforeAll, afterAll };
 
 const launchLabels = (launchId: string) => ({
+  [LABELS.role]: "agent",
   [LABELS.repoHash]: randomBytes(32).toString("hex"),
   [LABELS.launchId]: launchId,
 });
+
+const cleanUp = async (steps: Array<() => Promise<unknown>>) => {
+  const failures = await steps.reduce<Promise<unknown[]>>(async (pending, step) => {
+    const failed = await pending;
+
+    return step().then(
+      () => failed,
+      (error: unknown) => [...failed, error],
+    );
+  }, Promise.resolve([]));
+
+  if (failures.length > 0) {
+    throw failures.length === 1 ? failures[0] : new AggregateError(failures, "the suite's cleanup failed");
+  }
+};
 
 const newLaunch = () => randomBytes(8).toString("hex");
 
@@ -97,11 +114,11 @@ hooks.describe("colima volume ownership", () => {
   const state = { dir: "", launchId: newLaunch() };
 
   hooks.afterAll(async () => {
-    await removeLaunchContainer(backend, state.launchId);
-
-    await backend.removeVolume(OWNERSHIP_VOLUME);
-
-    await rm(state.dir, { recursive: true, force: true });
+    await cleanUp([
+      () => removeLaunchContainer(backend, state.launchId),
+      () => backend.removeVolume(OWNERSHIP_VOLUME),
+      () => rm(state.dir, { recursive: true, force: true }),
+    ]);
   });
 
   const spec = (): LauncherContainerSpec => ({
@@ -191,7 +208,7 @@ hooks.describe("colima read-only binds on the share", () => {
     execCapture(backend, { containerId: state.id, command: ["sh", "-c", script], env: {}, workdir: "/" });
 
   hooks.beforeAll(async () => {
-    const root = join(homedir(), ".cache", "pi-sandbox-live");
+    const root = liveRoot();
 
     await mkdir(root, { recursive: true });
 
@@ -218,9 +235,10 @@ hooks.describe("colima read-only binds on the share", () => {
   }, 300_000);
 
   hooks.afterAll(async () => {
-    await removeLaunchContainer(backend, state.launchId);
-
-    await rm(state.dir, { recursive: true, force: true });
+    await cleanUp([
+      () => removeLaunchContainer(backend, state.launchId),
+      () => rm(state.dir, { recursive: true, force: true }),
+    ]);
   });
 
   hooks.it(
@@ -275,9 +293,10 @@ hooks.describe("colima sandbox image missing-command hint", () => {
   const state = { dir: "", launchId: newLaunch() };
 
   hooks.afterAll(async () => {
-    await removeLaunchContainer(backend, state.launchId);
-
-    await rm(state.dir, { recursive: true, force: true });
+    await cleanUp([
+      () => removeLaunchContainer(backend, state.launchId),
+      () => rm(state.dir, { recursive: true, force: true }),
+    ]);
   });
 
   const spec = (image: string): LauncherContainerSpec => ({

@@ -122,13 +122,20 @@ describe.skipIf(!enabled)("colima egress relay (live)", () => {
   });
 
   afterAll(async () => {
-    const relays = await backend.findContainers({ [LABELS.role]: "relay" });
+    state.server?.close();
 
-    await Promise.all(
+    const relays = await backend.findContainers({ [LABELS.role]: "relay" });
+    const removals = await Promise.allSettled(
       [state.clientId, ...relays.map((relay) => relay.id)].map((id) => id && backend.removeContainer(id)),
     );
 
-    state.server?.close();
+    await backend.removeNetwork();
+
+    const failed = removals.find((removal) => removal.status === "rejected");
+
+    if (failed !== undefined) {
+      throw failed.reason;
+    }
   });
 
   it("reaches the host listener through the proxy alias the route reports", async () => {

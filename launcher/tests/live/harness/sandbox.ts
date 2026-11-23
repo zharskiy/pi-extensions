@@ -107,7 +107,7 @@ const SESSION_START_MS = 300_000;
 
 const SESSION_POLL_MS = 250;
 
-const liveRoot = () => process.env.PI_SANDBOX_LIVE_DIR ?? join(homedir(), ".cache", "pi-sandbox-live");
+export const liveRoot = () => process.env.PI_SANDBOX_LIVE_DIR ?? join(homedir(), ".cache", "pi-sandbox-live");
 
 export const liveEnabled = process.env.PI_SANDBOX_LIVE === "1" && engineSocket !== undefined;
 
