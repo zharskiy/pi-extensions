@@ -26,3 +26,20 @@ export const useTempDirs = () => {
 
   return { make, track };
 };
+
+export const usePrivateTmpdir = () => {
+  const previous = process.env.TMPDIR;
+  const dir = mkdtempSync(join(tmpdir(), "pi-test-tmpdir-"));
+
+  process.env.TMPDIR = dir;
+
+  afterAll(() => {
+    if (previous === undefined) {
+      delete process.env.TMPDIR;
+    } else {
+      process.env.TMPDIR = previous;
+    }
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+};

@@ -81,7 +81,10 @@ const setup = async (state: VmState, busy = 0) => {
     },
   });
   const ensure = () =>
-    vm.ensureTrust(pemPath, { busy: async () => busy, report: (notice) => notices.push(notice) });
+    vm.ensureTrust(pemPath, {
+      busy: async () => ({ count: busy, others: [] }),
+      report: (notice) => notices.push(notice),
+    });
 
   return {
     pemPath,

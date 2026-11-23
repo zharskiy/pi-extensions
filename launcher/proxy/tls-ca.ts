@@ -51,10 +51,6 @@ const MINT_LOCK_TIMEOUT_MS = 30_000;
 
 const MAX_LEAVES = 256;
 
-const CA_KEY = "ca-key.pem";
-
-const CA_CERT = "ca-cert.pem";
-
 const issueSections = `[ca]
 default_ca = issue
 [issue]
@@ -191,8 +187,10 @@ const signRequest = async (
   );
 };
 
-const generateCa = async (directory: string, runner: CommandRunner) => {
-  const work = await mkdtemp(join(directory, "new-"));
+type StateLayout = ReturnType<typeof stateLayout>;
+
+const generateCa = async (layout: StateLayout, runner: CommandRunner) => {
+  const work = await mkdtemp(join(layout.ca, "new-"));
 
   try {
     await writePrivateKey(join(work, "key.pem"));
@@ -201,17 +199,17 @@ const generateCa = async (directory: string, runner: CommandRunner) => {
 
     await signRequest(runner, work, ["-selfsign", "-keyfile", "key.pem"], "authority", CA_VALIDITY_MS);
 
-    await rename(join(work, "key.pem"), join(directory, CA_KEY));
+    await rename(join(work, "key.pem"), layout.caKey);
 
-    await rename(join(work, "cert.pem"), join(directory, CA_CERT));
+    await rename(join(work, "cert.pem"), layout.caCert);
   } finally {
     await rm(work, { recursive: true, force: true });
   }
 };
 
-const storedCa = async (directory: string) => {
-  const key = await readOptional(join(directory, CA_KEY));
-  const certPem = await readOptional(join(directory, CA_CERT));
+const storedCa = async (layout: StateLayout) => {
+  const key = await readOptional(layout.caKey);
+  const certPem = await readOptional(layout.caCert);
   const certificate = parseCertificate(certPem);
 
   return key !== undefined && certPem !== undefined && isFresh(certificate) && keyMatches(key, certificate)
@@ -219,28 +217,28 @@ const storedCa = async (directory: string) => {
     : undefined;
 };
 
-const ensureCa = async (directory: string, lockPath: string, runner: CommandRunner) => {
-  const current = await storedCa(directory);
+const ensureCa = async (layout: StateLayout, runner: CommandRunner) => {
+  const current = await storedCa(layout);
 
   if (current !== undefined) {
     return current;
   }
 
   return withFileLock(
-    lockPath,
+    layout.caLock,
     async () => {
-      const again = await storedCa(directory);
+      const again = await storedCa(layout);
 
       if (again !== undefined) {
         return again;
       }
 
-      await generateCa(directory, runner);
+      await generateCa(layout, runner);
 
-      const created = await storedCa(directory);
+      const created = await storedCa(layout);
 
       if (created === undefined) {
-        throw new LauncherError(`the launcher CA in ${directory} could not be created`);
+        throw new LauncherError(`the launcher CA in ${layout.ca} could not be created`);
       }
 
       return created;
@@ -249,9 +247,13 @@ const ensureCa = async (directory: string, lockPath: string, runner: CommandRunn
   );
 };
 
-const signLeaf = async (directory: string, host: string, runner: CommandRunner): Promise<LeafCertificate> => {
-  const work = await mkdtemp(join(directory, "work-"));
-  const signer = ["-cert", resolve(join(directory, CA_CERT)), "-keyfile", resolve(join(directory, CA_KEY))];
+const signLeaf = async (
+  layout: StateLayout,
+  host: string,
+  runner: CommandRunner,
+): Promise<LeafCertificate> => {
+  const work = await mkdtemp(join(layout.ca, "work-"));
+  const signer = ["-cert", resolve(layout.caCert), "-keyfile", resolve(layout.caKey)];
 
   try {
     await writePrivateKey(join(work, "key.pem"));
@@ -271,12 +273,11 @@ const signLeaf = async (directory: string, host: string, runner: CommandRunner):
 
 export const openLauncherCa = async ({ stateDir, runner }: CaOptions): Promise<LauncherCa> => {
   const layout = stateLayout(stateDir);
-  const directory = layout.ca;
-  const certPath = join(directory, CA_CERT);
+  const certPath = layout.caCert;
 
-  await mkdir(directory, { recursive: true, mode: 0o700 });
+  await mkdir(layout.ca, { recursive: true, mode: 0o700 });
 
-  const { certPem } = await ensureCa(directory, layout.caLock, runner);
+  const { certPem } = await ensureCa(layout, runner);
   const leaves = new Map<string, Promise<{ leaf: LeafCertificate; renewAt: number }>>();
 
   const checkHost = (host: string) => {
@@ -286,7 +287,7 @@ export const openLauncherCa = async ({ stateDir, runner }: CaOptions): Promise<L
   };
 
   const mint = (host: string) => {
-    const minted = signLeaf(directory, host, runner).then((leaf) => ({
+    const minted = signLeaf(layout, host, runner).then((leaf) => ({
       leaf,
       renewAt: Date.parse(new X509Certificate(leaf.cert).validTo) - RENEW_MARGIN_MS,
     }));
@@ -329,7 +330,7 @@ export const openLauncherCa = async ({ stateDir, runner }: CaOptions): Promise<L
   const ephemeralLeaf = async (host: string): Promise<LeafCertificate> => {
     checkHost(host);
 
-    return signLeaf(directory, host, runner);
+    return signLeaf(layout, host, runner);
   };
 
   return { certPath, certPem, leaf, ephemeralLeaf };

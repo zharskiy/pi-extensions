@@ -1,3 +1,4 @@
+export { DEFAULT_PIDS, DEFAULT_READY_SECONDS, DEFAULT_SERVICE_USER } from "./defaults.ts";
 export { getPath, setPath, withoutPath } from "./dotted.ts";
 export { egressAllowList } from "./egress-allow.ts";
 export {
@@ -24,6 +25,7 @@ export type {
   FileSecret,
   SandboxConfig,
   SecretRef,
+  ServiceEntry,
 } from "./types.ts";
-export { configProblem, VM_BOUNDS, validateConfig } from "./validate.ts";
+export { configProblem, defaultVmMemoryProblem, guestPathOf, VM_BOUNDS, validateConfig } from "./validate.ts";
 export { type WriteBackListing, writeBackListing, writeBackTableOf } from "./write-back.ts";

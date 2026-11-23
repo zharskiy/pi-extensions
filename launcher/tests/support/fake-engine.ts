@@ -18,9 +18,13 @@ interface FakeExecContext {
 
 type OutputStream = "stdout" | "stderr";
 
+interface ScriptLine {
+  stream: OutputStream;
+  text: string;
+}
+
 interface ScriptResult {
-  stdout: string;
-  stderr: string;
+  lines: ScriptLine[];
   code: number;
 }
 
@@ -36,7 +40,8 @@ interface FakeNetwork {
     Name?: string;
     Internal?: boolean;
     Labels?: Record<string, string>;
-    IPAM?: { Config: Array<{ Gateway?: string }> };
+    Options?: Record<string, string>;
+    IPAM?: { Config: Array<{ Gateway?: string; Subnet?: string }> };
   };
   connected: Array<{ container: string; address: string; aliases?: string[] }>;
 }
@@ -52,6 +57,7 @@ export interface FakeEngineOptions {
   failPull?: string;
   lingeringRemovals?: number;
   failContainerRemoval?: string;
+  engineVersion?: string;
 }
 
 interface FakeImage {
@@ -71,7 +77,9 @@ interface FakeMount {
 interface CreateBody {
   Image: string;
   Labels?: Record<string, string>;
+  Cmd?: string[];
   HostConfig?: { Mounts?: FakeMount[]; NetworkMode?: string; AutoRemove?: boolean };
+  NetworkingConfig?: { EndpointsConfig?: Record<string, { Aliases?: string[] }> };
 }
 
 interface FakeContainer {
@@ -79,6 +87,8 @@ interface FakeContainer {
   Name: string;
   State: "created" | "running" | "exited" | "removing";
   body: CreateBody;
+  logs: ScriptLine[];
+  exitCode: number;
 }
 
 interface FakeExec {
@@ -109,6 +119,8 @@ interface RouteResult {
 const EMPTY_TAR = Buffer.alloc(1024);
 
 const AUTO_REMOVAL_MS = 30;
+
+export const FAKE_NETWORK_SUBNET = "10.89.0.0/24";
 
 const FRAME_HEADER = 8;
 
@@ -146,12 +158,10 @@ const runStatement = (result: ScriptResult, statement: string): ScriptResult => 
 
   const echo = ECHO.exec(statement);
 
-  if (echo !== null && echo[2] !== undefined) {
-    return { ...result, stderr: `${result.stderr}${echo[1]}\n` };
-  }
-
   if (echo !== null) {
-    return { ...result, stdout: `${result.stdout}${echo[1]}\n` };
+    const line: ScriptLine = { stream: echo[2] === undefined ? "stdout" : "stderr", text: `${echo[1]}\n` };
+
+    return { ...result, lines: [...result.lines, line] };
   }
 
   const exit = EXIT.exec(statement);
@@ -159,12 +169,24 @@ const runStatement = (result: ScriptResult, statement: string): ScriptResult => 
   return exit === null ? result : { ...result, code: Number(exit[1]) };
 };
 
-const runFakeScript = (command: string[]): ScriptResult => {
-  const statements = (command.at(-1) ?? "").split(";").map((statement) => statement.trim());
-  const result = statements.reduce(runStatement, { stdout: "", stderr: "", code: -1 });
+const statementsOf = (command: string[]) =>
+  (command.at(-1) ?? "").split(";").map((statement) => statement.trim());
+
+export const isFakeScript = (command: string[]) =>
+  statementsOf(command).every((statement) => ECHO.test(statement) || EXIT.test(statement));
+
+export const runFakeScript = (command: string[]): ScriptResult => {
+  const statements = statementsOf(command);
+  const result = statements.reduce(runStatement, { lines: [], code: -1 });
 
   return { ...result, code: Math.max(result.code, 0) };
 };
+
+const textOf = (lines: ScriptLine[], stream: OutputStream) =>
+  lines
+    .filter((line) => line.stream === stream)
+    .map((line) => line.text)
+    .join("");
 
 const ECHO_INPUT = "cat";
 
@@ -187,9 +209,9 @@ const defaultExec: FakeExecHandler = async (context) => {
 
   const result = runFakeScript(context.command);
 
-  context.write(result.stdout, "stdout");
+  context.write(textOf(result.lines, "stdout"), "stdout");
 
-  context.write(result.stderr, "stderr");
+  context.write(textOf(result.lines, "stderr"), "stderr");
 
   return result.code;
 };
@@ -375,11 +397,16 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
 
     createdBodies.push({ name, body: spec });
 
-    containers.set(id, { Id: id, Name: name, State: "created", body: spec });
+    containers.set(id, { Id: id, Name: name, State: "created", body: spec, logs: [], exitCode: 0 });
 
     const mode = spec.HostConfig?.NetworkMode ?? "";
+    const aliases = spec.NetworkingConfig?.EndpointsConfig?.[mode]?.Aliases;
 
-    networks.get(mode)?.connected.push({ container: id, address: `10.89.0.${100 + containers.size}` });
+    networks.get(mode)?.connected.push({
+      container: id,
+      address: `10.89.0.${100 + containers.size}`,
+      ...(aliases === undefined ? {} : { aliases }),
+    });
 
     volumeMounts(containers.get(id) as FakeContainer).forEach((mount) => {
       volumes.set(mount.Source, volumes.get(mount.Source) ?? EMPTY_TAR);
@@ -399,17 +426,6 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
         ? notFound(`No such container: ${request.match[1]}`)
         : handle(container, request);
     };
-
-  const setState = (state: FakeContainer["State"]) =>
-    withContainer((container) => {
-      if (container.State === state) {
-        return { status: 304 };
-      }
-
-      container.State = state;
-
-      return { status: 204 };
-    });
 
   const endpoints = (network: FakeNetwork) =>
     network.connected.filter((entry) => findContainer(entry.container)?.State === "running");
@@ -466,11 +482,7 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
     dropContainer(container);
   };
 
-  const stopContainer = withContainer((container) => {
-    if (container.State !== "running") {
-      return { status: 304 };
-    }
-
+  const exitContainer = (container: FakeContainer) => {
     container.State = "exited";
 
     if (container.body.HostConfig?.AutoRemove === true) {
@@ -489,8 +501,45 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
         }),
       );
     }
+  };
+
+  const stopContainer = withContainer((container) => {
+    if (container.State !== "running") {
+      return { status: 304 };
+    }
+
+    exitContainer(container);
 
     return { status: 204 };
+  });
+
+  const startContainer = withContainer((container) => {
+    if (container.State === "running") {
+      return { status: 304 };
+    }
+
+    container.State = "running";
+
+    if (container.body.Cmd !== undefined && isFakeScript(container.body.Cmd)) {
+      const result = runFakeScript(container.body.Cmd);
+
+      container.logs = result.lines;
+
+      container.exitCode = result.code;
+
+      exitContainer(container);
+    }
+
+    return { status: 204 };
+  });
+
+  const containerLogs = withContainer((container, { query }) => {
+    const tail = Number(query.get("tail") ?? container.logs.length);
+    const framed = container.logs
+      .slice(Math.max(container.logs.length - tail, 0))
+      .map((line) => frame(Buffer.from(line.text), line.stream));
+
+    return { status: 200, raw: Buffer.concat(framed) };
   });
 
   const lingered = (container: FakeContainer) =>
@@ -593,7 +642,11 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
       json: {
         Id: container.Id,
         Name: `/${container.Name}`,
-        State: { Running: container.State === "running", Status: container.State },
+        State: {
+          Running: container.State === "running",
+          Status: container.State,
+          ExitCode: container.exitCode,
+        },
         Config: { Labels: container.body.Labels ?? {}, Image: container.body.Image },
         NetworkSettings: { Networks: networksOf(container) },
       },
@@ -665,7 +718,8 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
     Name: network.body.Name,
     Internal: network.body.Internal ?? false,
     Labels: network.body.Labels ?? {},
-    IPAM: network.body.IPAM ?? { Config: [] },
+    Options: network.body.Options ?? {},
+    IPAM: network.body.IPAM ?? { Config: [{ Subnet: FAKE_NETWORK_SUBNET }] },
     Containers: Object.fromEntries(
       endpoints(network).map(({ container, address, aliases }) => [
         container,
@@ -716,7 +770,12 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
       pattern: /^\/version$/,
       handle: () => ({
         status: 200,
-        json: { Version: "27.0.0-fake", ApiVersion: "1.47", Os: "linux", Arch: "arm64" },
+        json: {
+          Version: options.engineVersion ?? "28.3.0-fake",
+          ApiVersion: "1.47",
+          Os: "linux",
+          Arch: "arm64",
+        },
       }),
     },
     { method: "POST", pattern: /^\/images\/create$/, handle: pull },
@@ -767,8 +826,9 @@ export const createFakeEngine = async (options: FakeEngineOptions = {}) => {
       },
     },
     { method: "POST", pattern: /^\/containers\/create$/, handle: createContainer },
-    { method: "POST", pattern: /^\/containers\/([^/]+)\/start$/, handle: setState("running") },
+    { method: "POST", pattern: /^\/containers\/([^/]+)\/start$/, handle: startContainer },
     { method: "POST", pattern: /^\/containers\/([^/]+)\/stop$/, handle: stopContainer },
+    { method: "GET", pattern: /^\/containers\/([^/]+)\/logs$/, handle: containerLogs },
     { method: "POST", pattern: /^\/containers\/([^/]+)\/wait$/, handle: waitContainer },
     { method: "DELETE", pattern: /^\/containers\/([^/]+)$/, handle: removeContainer },
     { method: "POST", pattern: /^\/containers\/([^/]+)\/exec$/, handle: createExec },

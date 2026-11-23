@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { execCapture } from "../../backend/index.ts";
 import { bypassesParent, parentRouteFor } from "../../proxy/index.ts";
-import { errorMessage, lastLine, launcherEntry, stateLayout } from "../../shared/index.ts";
+import { errorMessage, lastLine, launcherEntry, pemCertificates, stateLayout } from "../../shared/index.ts";
 import type { LaunchContext } from "../context.ts";
 import { type CliDeps, pathsOf } from "../deps.ts";
 import { type CheckResult, failed, passed } from "./doctor-checks.ts";
@@ -37,8 +37,6 @@ const PROBE_TIMEOUT_MS = 30_000;
 const SYSTEM_KEYCHAIN = "/Library/Keychains/System.keychain";
 
 const LOGIN_KEYCHAIN = join("Library", "Keychains", "login.keychain-db");
-
-const PEM_BLOCK = /-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g;
 
 const MAX_ISSUER_HOPS = 8;
 
@@ -91,8 +89,7 @@ const certificateOf = (pem: string) => {
   }
 };
 
-const certificatesIn = (text: string) =>
-  (text.match(PEM_BLOCK) ?? []).flatMap((pem) => certificateOf(pem) ?? []);
+const certificatesIn = (text: string) => pemCertificates(text).flatMap((pem) => certificateOf(pem) ?? []);
 
 const hasCertificate = async (path: string) =>
   certificatesIn(await readFile(path, "utf8").catch(() => "")).length > 0;
@@ -107,7 +104,7 @@ const keychainCertificates = async (deps: CliDeps) => {
     keychains.map((keychain) =>
       deps.runner
         .run("security", ["find-certificate", "-a", "-p", keychain])
-        .then((result) => (result.code === 0 ? (result.stdout.match(PEM_BLOCK) ?? []) : []))
+        .then((result) => (result.code === 0 ? pemCertificates(result.stdout) : []))
         .catch(() => []),
     ),
   );
@@ -291,8 +288,8 @@ const layerOf = (sandbox: Presented, host: Presented) => {
   const bundle = sandbox.extraCaEnv ?? "unset";
 
   return host.verdicts[0] === null
-    ? `the container's trust (NODE_EXTRA_CA_CERTS=${bundle}) does not hold the public roots`
-    : `the container's trust (NODE_EXTRA_CA_CERTS=${bundle}) does not hold the tls.extraCa certificates`;
+    ? `the container's system store (NODE_EXTRA_CA_CERTS=${bundle}) does not hold the public roots`
+    : `the container's system store (NODE_EXTRA_CA_CERTS=${bundle}) does not hold the tls.extraCa certificates; the sandbox layer adds them when it is built, and a launch rebuilds it after tls.extraCa changes`;
 };
 
 export const sandboxTlsResult = (sandbox: TlsReading, host: HostTls): CheckResult => {

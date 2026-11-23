@@ -4,7 +4,8 @@ import { describe, expect, it } from "vitest";
 import { LABELS } from "../../backend/index.ts";
 import { openContext } from "../../cli/context.ts";
 import { run } from "../../cli/index.ts";
-import { LauncherError, sha256Hex } from "../../shared/index.ts";
+import { LauncherError } from "../../shared/index.ts";
+import { FAKE_NETWORK } from "../support/fake-backend.ts";
 import {
   createFakeBackend,
   createHarness,
@@ -37,14 +38,17 @@ describe("pi [args]", () => {
 
     expect(await run(["--model", "x"], harness.deps)).toBe(3);
     expect(occurrences(harness.stderr(), PREPARING)).toBe(1);
-    expect(occurrences(harness.stderr(), "pi-sandbox: build: Step 1/1")).toBe(1);
-    expect(fake.builds).toHaveLength(1);
+    expect(occurrences(harness.stderr(), "pi-sandbox: build: Step 1/1")).toBe(2);
+    expect(fake.builds.map((build) => build.tag)).toEqual([
+      "pi-sandbox-base:local",
+      expect.stringMatching(/^pi-sandbox-layer:[0-9a-f]{12}$/),
+    ]);
 
     const packs = harness.calls.filter((call) => call.file === "npm").length;
 
     expect(await run(["chat", "hello"], harness.deps)).toBe(3);
     expect(occurrences(harness.stderr(), PREPARING)).toBe(1);
-    expect(fake.builds).toHaveLength(1);
+    expect(fake.builds).toHaveLength(2);
     expect(harness.calls.filter((call) => call.file === "npm")).toHaveLength(packs);
     expect(fake.containers.size).toBe(0);
 
@@ -64,11 +68,15 @@ describe("pi [args]", () => {
     const mounts = container?.spec?.mounts ?? [];
 
     expect(fake.routes).toEqual([
-      { hostPort: 3128, repoHash: sha256Hex(harness.repoRoot), imageId: container?.spec?.image },
+      {
+        hostPort: 3128,
+        imageId: container?.spec?.image,
+        preamble: expect.stringMatching(/^PI-SANDBOX [0-9a-f]{64}$/),
+      },
     ]);
     expect(container?.spec?.network).toEqual({
       kind: "internal",
-      name: `pi-sandbox-${sha256Hex(harness.repoRoot).slice(0, 12)}`,
+      name: FAKE_NETWORK,
     });
 
     expect(mounts).toContainEqual({
@@ -77,12 +85,10 @@ describe("pi [args]", () => {
       readOnly: false,
       kind: "bind",
     });
-    expect(mounts.some((mount) => mount.target === "/etc/pi-sandbox/ca.pem")).toBe(true);
-    expect(container?.spec?.env.HTTPS_PROXY).toMatch(
-      /^http:\/\/pi-sandbox:[0-9a-f]{64}@pi-sandbox-proxy:3128$/,
-    );
+    expect(mounts.some((mount) => mount.target.startsWith("/etc/ssl"))).toBe(false);
+    expect(container?.spec?.env.HTTPS_PROXY).toBe("http://pi-sandbox-proxy:3128");
     expect(container?.spec?.env.HTTP_PROXY).toBe(container?.spec?.env.HTTPS_PROXY);
-    expect(container?.spec?.env.NODE_EXTRA_CA_CERTS).toBe("/etc/pi-sandbox/ca.pem");
+    expect(container?.spec?.env.NODE_EXTRA_CA_CERTS).toBe("/etc/ssl/certs/ca-certificates.crt");
   });
 
   it("passes the terminal variables to pi's exec, not the container, and gives each launch its own container", async () => {
@@ -122,7 +128,7 @@ describe("pi [args]", () => {
     expect(fake.containers.size).toBe(0);
   });
 
-  it("mounts the trust bundle read-only when a credential rule is configured", async () => {
+  it("bakes the proxy CA into the layer and mounts no trust bundle when a credential rule is configured", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
 
@@ -138,17 +144,15 @@ describe("pi [args]", () => {
 
     const [container] = fake.created;
 
-    expect(container?.spec?.env.NODE_EXTRA_CA_CERTS).toBe("/etc/pi-sandbox/ca.pem");
-    expect(container?.spec?.env.PI_SANDBOX_TRUST_HASH).toBe("trust-hash");
-    expect(container?.spec?.mounts).toContainEqual({
-      source: harness.trustPem,
-      target: "/etc/pi-sandbox/ca.pem",
-      readOnly: true,
-      kind: "bind",
-    });
+    const layerFiles = Object.keys(fake.builds.at(-1)?.files ?? {});
+
+    expect(container?.spec?.env.NODE_EXTRA_CA_CERTS).toBe("/etc/ssl/certs/ca-certificates.crt");
+    expect(container?.spec?.env).not.toHaveProperty("PI_SANDBOX_TRUST_HASH");
+    expect(container?.spec?.mounts.some((mount) => mount.source.includes("trust"))).toBe(false);
+    expect(layerFiles.filter((name) => name.startsWith("ca/proxy-"))).toHaveLength(1);
   });
 
-  it("creates the container from the built image id and keeps the reference in a label", async () => {
+  it("creates the container from the built layer id", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
 
@@ -156,8 +160,7 @@ describe("pi [args]", () => {
 
     const [container] = fake.created;
 
-    expect(container?.spec?.image).toBe("sha256:image-built-1");
-    expect(container?.spec?.labels[LABELS.imageReference]).toBe("pi-sandbox-base:local");
+    expect(container?.spec?.image).toBe("sha256:image-built-2");
   });
 
   it("refuses a repository rooted at the home directory before touching the backend", async () => {

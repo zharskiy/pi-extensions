@@ -14,7 +14,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { LABELS } from "../../backend/index.ts";
+import { LABELS, networkName } from "../../backend/index.ts";
 import { run } from "../../cli/index.ts";
 import {
   bootTime,
@@ -24,6 +24,7 @@ import {
   sha256Hex,
   stateLayout,
 } from "../../shared/index.ts";
+import { FAKE_NETWORK, FAKE_RELAY } from "../support/fake-backend.ts";
 import { exists, tempDir } from "../support/temp-dir.ts";
 import { createFakeBackend, createHarness, holdLaunch, unreachable } from "./harness.ts";
 
@@ -122,7 +123,7 @@ describe("the hidden uninstall command", () => {
     const harness = await createHarness({ backend: () => fake.backend });
     const id = fake.addContainer({
       name: "live",
-      labels: { [LABELS.managed]: "true" },
+      labels: { [LABELS.managed]: "true", [LABELS.role]: "agent" },
       state: "running",
       image: "x",
     });
@@ -130,25 +131,38 @@ describe("the hidden uninstall command", () => {
     await holdLaunch(harness);
 
     expect(await run(["__uninstall"], harness.deps)).toBe(75);
-    expect(harness.stderr()).toContain("1 pi sessions still run in the sandbox; exit them first");
+    expect(harness.stderr()).toContain(
+      "pi-sandbox: 1 pi session is running in the sandbox VM; exit them first",
+    );
     expect(fake.containers.has(id)).toBe(true);
   });
 
-  it("removes the managed containers, networks, volumes and images by label, and releases every folder", async () => {
+  it("removes the managed containers, networks, volumes and images by label, leaves another install's, and releases every folder", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
     const repo = sha256Hex(harness.repoRoot);
     const context = await tempDir("uninstall-images");
 
-    await fake.backend.prepareProxyRoute({ hostPort: 3128, repoHash: repo, imageId: "relay" });
+    await fake.backend.prepareRelay({ hostPort: 3128, imageId: "relay", preamble: "PI-SANDBOX test" });
 
     const managed = fake.addContainer({
       name: "pi-sandbox-a",
-      labels: { [LABELS.managed]: "true", [LABELS.repoHash]: repo },
+      labels: { [LABELS.managed]: "true", [LABELS.role]: "agent", [LABELS.repoHash]: repo },
       state: "running",
       image: "x",
     });
     const foreign = fake.addContainer({ name: "foreign", labels: {}, state: "running", image: "x" });
+    const other = fake.backendFor("otherinstall");
+    const othersContainer = fake.addContainer({
+      name: "pi-sandbox-other",
+      labels: { [LABELS.managed]: "true", [LABELS.install]: "otherinstall", [LABELS.role]: "agent" },
+      state: "stopped",
+      image: "x",
+    });
+
+    await other.prepareNetwork();
+
+    await other.ensureVolume("pi-sandbox-agent-other");
 
     await fake.backend.ensureVolume("pi-sandbox-agent-a", { [LABELS.repoHash]: repo });
 
@@ -159,21 +173,30 @@ describe("the hidden uninstall command", () => {
     expect(await run(["__uninstall"], harness.deps)).toBe(0);
     expect(fake.containers.has(managed)).toBe(false);
     expect(fake.containers.has(foreign)).toBe(true);
-    expect(fake.relays.has(repo)).toBe(false);
-    expect(fake.networks.has(`pi-sandbox-${repo.slice(0, 12)}`)).toBe(false);
+    expect(fake.containers.has(othersContainer)).toBe(true);
+    expect(fake.relays.size).toBe(0);
+    expect(fake.networks.has(FAKE_NETWORK)).toBe(false);
+    expect(fake.networks.has(networkName("otherinstall"))).toBe(true);
     expect(fake.volumes.has("pi-sandbox-agent-a")).toBe(false);
+    expect(fake.volumes.has("pi-sandbox-agent-other")).toBe(true);
     expect(fake.imageRemovals).toContain(built.id);
-    expect(harness.stoppedProxies).toContain(repo);
-    expect(harness.stdout()).toContain("host: released the created folders and proxies of 1 folders\n");
+    expect(harness.proxyStops()).toBe(1);
+    expect(harness.stdout()).toContain(`install: removed relay ${FAKE_RELAY}\n`);
+    expect(harness.stdout()).toContain("host: released the created folders of 1 folders\n");
   });
 
-  it("leaves the sandbox of a folder whose pi session starts while the uninstall runs", async () => {
+  it("keeps the sandbox, the ground and the stored objects when a pi session starts while the uninstall runs", async () => {
     const fake = createFakeBackend();
+    const detections = { count: 0 };
     const harness = await createHarness({
       backend: () => ({
         ...fake.backend,
         detect: async () => {
-          await holdLaunch(harness);
+          detections.count += 1;
+
+          if (detections.count === 2) {
+            await holdLaunch(harness);
+          }
 
           return { available: true };
         },
@@ -181,22 +204,58 @@ describe("the hidden uninstall command", () => {
     });
     const repo = sha256Hex(harness.repoRoot);
 
-    await fake.backend.prepareProxyRoute({ hostPort: 3128, repoHash: repo, imageId: "relay" });
+    await fake.backend.prepareRelay({ hostPort: 3128, imageId: "relay", preamble: "PI-SANDBOX test" });
 
     const starting = fake.addContainer({
       name: "pi-sandbox-starting",
-      labels: { [LABELS.managed]: "true", [LABELS.repoHash]: repo },
+      labels: { [LABELS.managed]: "true", [LABELS.role]: "agent", [LABELS.repoHash]: repo },
       state: "running",
       image: "x",
     });
 
-    expect(await run(["__uninstall"], harness.deps)).toBe(0);
+    await fake.backend.ensureVolume("pi-sandbox-agent-a", { [LABELS.repoHash]: repo });
+
+    expect(await run(["__uninstall"], harness.deps)).toBe(75);
     expect(fake.containers.has(starting)).toBe(true);
-    expect(fake.relays.has(repo)).toBe(true);
-    expect(fake.networks.has(`pi-sandbox-${repo.slice(0, 12)}`)).toBe(true);
+    expect(fake.relays.size).toBe(1);
+    expect(fake.networks.has(FAKE_NETWORK)).toBe(true);
+    expect(fake.volumes.has("pi-sandbox-agent-a")).toBe(true);
+    expect(harness.proxyStops()).toBe(0);
     expect(harness.stdout()).toContain(
       `host: a pi session of ${repo.slice(0, 12)} started meanwhile; its sandbox stays\n`,
     );
+    expect(harness.stderr()).toContain("the sandbox network, proxy, services, volumes and images were kept");
+  });
+
+  it("holds a pi session that registers during the removal of the install objects until the removal ends", async () => {
+    const fake = createFakeBackend();
+    const order: string[] = [];
+    const registering = { done: Promise.resolve() };
+    const harness = await createHarness({
+      backend: () => ({
+        ...fake.backend,
+        removeVolume: async (name) => {
+          registering.done = holdLaunch(harness).then(() => {
+            order.push("registered");
+          });
+
+          await new Promise((resolve) => setTimeout(resolve, 100));
+
+          order.push("removed");
+
+          return fake.backend.removeVolume(name);
+        },
+      }),
+    });
+
+    await fake.backend.ensureVolume("pi-sandbox-cache-a");
+
+    expect(await run(["__uninstall"], harness.deps)).toBe(0);
+
+    await registering.done;
+
+    expect(order).toEqual(["removed", "registered"]);
+    expect(fake.volumes.has("pi-sandbox-cache-a")).toBe(false);
   });
 
   it("releases the host side and leaves the engine objects to the profile when the VM is stopped", async () => {
@@ -210,9 +269,25 @@ describe("the hidden uninstall command", () => {
 
     expect(await run(["__uninstall"], harness.deps)).toBe(0);
     expect(await exists(mountPoint)).toBe(false);
-    expect(harness.stoppedProxies).toEqual([repo]);
+    expect(harness.proxyStops()).toBe(1);
     expect(harness.stdout()).toContain(
       "engine: the sandbox VM is not running, its objects go with the colima profile\n",
+    );
+  });
+
+  it("stops the proxy when listing the engine's containers fails", async () => {
+    const fake = createFakeBackend();
+    const harness = await createHarness({
+      backend: () => ({
+        ...fake.backend,
+        findContainers: () => Promise.reject(new Error("engine broke")),
+      }),
+    });
+
+    expect(await run(["__uninstall"], harness.deps)).toBe(0);
+    expect(harness.proxyStops()).toBe(1);
+    expect(harness.stdout()).toContain(
+      "install: the sandbox network, proxy and services were not all released: engine broke\n",
     );
   });
 });
@@ -220,18 +295,21 @@ describe("the hidden uninstall command", () => {
 describe("uninstall.sh", { timeout: UNINSTALL_TIMEOUT_MS }, () => {
   it("removes the created dirs, stops a live proxy, deletes the profile and removes the state dir", async () => {
     const paths = await uninstallRoot();
-    const files = stateLayout(paths.stateDir).repo("c".repeat(64));
+    const layout = stateLayout(paths.stateDir);
+    const files = layout.repo("c".repeat(64));
     const createdDir = join(paths.root, "repo", "node_modules");
     const proxy = await idleProcess();
 
-    await mkdir(files.proxy.directory, { recursive: true });
+    await mkdir(layout.proxy.directory, { recursive: true });
+
+    await mkdir(files.directory, { recursive: true });
 
     await mkdir(createdDir, { recursive: true });
 
     await writeFile(files.created, JSON.stringify([createdDir]));
 
     await writeFile(
-      files.proxy.record,
+      layout.proxy.record,
       JSON.stringify({
         pid: proxy.pid,
         boot: bootTime(),
@@ -257,24 +335,29 @@ describe("uninstall.sh", { timeout: UNINSTALL_TIMEOUT_MS }, () => {
 
   it("refuses and removes nothing while a launch is live", async () => {
     const paths = await uninstallRoot();
-    const files = stateLayout(paths.stateDir).repo("c".repeat(64));
+    const layout = stateLayout(paths.stateDir);
+    const files = layout.repo("c".repeat(64));
     const createdDir = join(paths.root, "repo", "node_modules");
 
-    await mkdir(files.launches, { recursive: true });
+    await mkdir(layout.launches, { recursive: true });
+
+    await mkdir(files.directory, { recursive: true });
 
     await mkdir(createdDir, { recursive: true });
 
     await writeFile(files.created, JSON.stringify([createdDir]));
 
     await writeFile(
-      join(files.launches, "00000000000000aa.json"),
-      JSON.stringify({ ...(await processMark()), launchId: "00000000000000aa" }),
+      join(layout.launches, "00000000000000aa.json"),
+      JSON.stringify({ ...(await processMark()), launchId: "00000000000000aa", repoHash: "c".repeat(64) }),
     );
 
     const result = await runUninstall(paths);
 
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain("pi sessions still run in the sandbox, nothing was removed");
+    expect(result.stderr).toContain(
+      "pi sessions still run in the sandbox VM, so the VM and the host files stay",
+    );
     expect(await exists(createdDir)).toBe(true);
     expect(await exists(paths.stateDir)).toBe(true);
     expect(await colimaLog(paths)).not.toContain("delete");
@@ -308,14 +391,11 @@ describe("uninstall.sh", { timeout: UNINSTALL_TIMEOUT_MS }, () => {
     expect(await exists(paths.stateDir)).toBe(false);
   });
 
-  it("removes the state under pi's agent dir and the old state folder, and keeps the user config", async () => {
+  it("removes the state under pi's agent dir and keeps the user config", async () => {
     const paths = await uninstallRoot();
     const folder = join(paths.home, ".pi", "agent", "pi-sandbox");
-    const legacy = join(paths.home, ".local", "state", "pi-sandbox");
 
     await mkdir(join(folder, "state", "ca"), { recursive: true });
-
-    await mkdir(join(legacy, "ca"), { recursive: true });
 
     await writeFile(join(folder, "config.json"), "{}");
 
@@ -323,10 +403,8 @@ describe("uninstall.sh", { timeout: UNINSTALL_TIMEOUT_MS }, () => {
 
     expect(result.status).toBe(0);
     expect(await exists(join(folder, "state"))).toBe(false);
-    expect(await exists(legacy)).toBe(false);
     expect(await readFile(join(folder, "config.json"), "utf8")).toBe("{}");
     expect(result.stdout).toContain(`state: removed ${join(folder, "state")}\n`);
-    expect(result.stdout).toContain(`state: removed the old ${legacy}\n`);
     expect(result.stdout).toContain(
       `kept: your repositories, ~/.pi and your launcher config ${join(folder, "config.json")}\n`,
     );

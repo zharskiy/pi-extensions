@@ -18,6 +18,7 @@ export interface EngineVolume {
 export interface EngineNetwork {
   Id: string;
   Name: string;
+  Labels?: Record<string, string> | null;
   Containers?: Record<string, unknown>;
 }
 

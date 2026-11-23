@@ -70,7 +70,9 @@ describe("createFakeBackend exec", () => {
       readOnlyRoot: true,
       tmpfs: [],
       init: true,
-      resources: {},
+      resources: { pids: 4096 },
+      capabilities: ["CHOWN"],
+      autoRemove: true,
     });
 
     await fake.backend.startContainer(id);

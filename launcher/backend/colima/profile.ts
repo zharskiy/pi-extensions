@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import type { Detection, VmShare, VmTarget } from "../types.ts";
+import type { Detection, VmBusy, VmShare, VmTarget } from "../types.ts";
 import { sizeFlags } from "./size.ts";
 
 export interface Colima {
@@ -54,5 +54,15 @@ export const logHint = (profile: string) => `~/.colima/_lima/${instanceOf(profil
 export const sessionsRunning = (count: number) =>
   count === 1 ? "1 pi session is running" : `${count} pi sessions are running`;
 
-export const deferredUntilIdle = (change: string) =>
+const deferredUntilIdle = (change: string) =>
   `the sandbox VM will ${change} at the next launch with no other pi session running`;
+
+const othersText = (others: string[]) =>
+  others.length === 0
+    ? ""
+    : ` (${others.join(", ")} of another pi-sandbox install; remove a leftover with docker --context ${instanceOf(ENGINE_PROFILE)} rm --force <name>)`;
+
+export const busyText = (busy: VmBusy) => `${sessionsRunning(busy.count)}${othersText(busy.others)}`;
+
+export const deferredWhileBusy = (change: string, busy: VmBusy) =>
+  busy.others.length === 0 ? deferredUntilIdle(change) : `${deferredUntilIdle(change)}: ${busyText(busy)}`;

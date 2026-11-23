@@ -1,18 +1,18 @@
-export { guestProxyUrl } from "./auth.ts";
 export { parentProxyEnv } from "./child-env.ts";
 export { type DenialRecord, readHealth } from "./client.ts";
-export type { RepoProxy, RepoProxyInput } from "./files.ts";
+export type { ProxyInput, ProxyRecord } from "./files.ts";
 export { bypassesParent, parentRouteFor } from "./parent.ts";
+export { preambleText } from "./preamble.ts";
 export { envSecretsFor, parentProxyAuth } from "./secrets/index.ts";
-export type { RepoProxyStart } from "./start.ts";
+export type { ProxyStart } from "./start.ts";
 export {
-  ensureRepoProxy,
+  ensureProxy,
   PROXY_LOG_LIMIT,
+  proxyToken,
   readDenials,
-  readRepoProxy,
-  removeRepoToken,
-  repoProxyToken,
-  stopRepoProxy,
+  readProxy,
+  removeProxyToken,
+  stopProxy,
 } from "./start.ts";
 export type { TrustBundle } from "./trust.ts";
 export { ensureTrustBundle } from "./trust.ts";

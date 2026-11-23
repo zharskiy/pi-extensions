@@ -20,8 +20,8 @@ import {
   DAEMON_FAILURE_TAG,
   type DaemonInput,
   egressSettingsOf,
-  type RepoProxy,
-  type RepoProxyInput,
+  type ProxyInput,
+  type ProxyRecord,
 } from "./files.ts";
 import { watchIdle } from "./idle.ts";
 import { parentRouteFor } from "./parent.ts";
@@ -34,8 +34,6 @@ const LISTEN_HOST = "127.0.0.1";
 
 const PRIVATE_MODE = 0o600;
 
-const REPO_HASH = /^[0-9a-f]{64}$/;
-
 const IDLE_CHECKS = 2;
 
 const IDLE_INTERVAL_MS = 30_000;
@@ -43,34 +41,29 @@ const IDLE_INTERVAL_MS = 30_000;
 const parseDaemonArgs = () => {
   const { values } = parseArgs({
     options: {
-      repo: { type: "string" },
       state: { type: "string" },
     },
   });
-
-  if (values.repo === undefined || !REPO_HASH.test(values.repo)) {
-    throw new LauncherError("--repo <repository hash> is required");
-  }
 
   if (values.state === undefined) {
     throw new LauncherError("--state <state dir> is required");
   }
 
-  return { repoHash: values.repo, stateDir: values.state };
+  return { stateDir: values.state };
 };
 
 type DaemonArgs = ReturnType<typeof parseDaemonArgs>;
 
-const readInput = async (repoHash: string): Promise<DaemonInput> => {
+const readInput = async (): Promise<DaemonInput> => {
   const text = Buffer.concat((await process.stdin.toArray()) as Buffer[]).toString("utf8");
   const parsed = parseJsonObject(text);
   const input = parsed?.input;
 
-  if (!isJsonObject(input) || typeof parsed?.inputHash !== "string" || input.repoHash !== repoHash) {
-    throw new LauncherError("the proxy input on stdin is missing or names another repository");
+  if (!isJsonObject(input) || typeof parsed?.inputHash !== "string") {
+    throw new LauncherError("the proxy input on stdin is missing");
   }
 
-  return { input: input as unknown as RepoProxyInput, inputHash: parsed.inputHash };
+  return { input: input as unknown as ProxyInput, inputHash: parsed.inputHash };
 };
 
 const upstreamTrust = async (stateDir: string, extraCa: boolean) => {
@@ -88,8 +81,8 @@ const reportFailure = (error: unknown): never => {
 };
 
 const run = async (args: DaemonArgs) => {
-  const files = stateLayout(args.stateDir).repo(args.repoHash).proxy;
-  const { input, inputHash } = await readInput(args.repoHash);
+  const files = stateLayout(args.stateDir).proxy;
+  const { input, inputHash } = await readInput();
   const parentEnv = helperProxyEnv(input.parentEnv, input.parentAuth);
   const childEnv = { ...minimalEnv(process.env), ...parentEnv };
   const runner = createProcessRunner({ baseEnv: childEnv });
@@ -109,11 +102,9 @@ const run = async (args: DaemonArgs) => {
   const log = createAccessLog(files.accessLog, input.accessLogLimit);
   const server = await startProxyServer({
     listen: { host: LISTEN_HOST, port: 0 },
-    repoHash: input.repoHash,
     token: input.token,
     runtime: createProxyRuntime({
       stateDir: args.stateDir,
-      repoHash: input.repoHash,
       rules: input.rules,
       settings: egressSettingsOf(input),
     }),
@@ -123,7 +114,7 @@ const run = async (args: DaemonArgs) => {
     dial: createDialer({ parent: parentRouteFor(parentEnv) }),
     upstreamCa: await upstreamTrust(args.stateDir, input.extraCa),
   });
-  const record: RepoProxy = { ...(await processMark()), port: server.port, inputHash };
+  const record: ProxyRecord = { ...(await processMark()), port: server.port, inputHash };
 
   await writeJsonFile(files.record, record, { mode: PRIVATE_MODE });
 
@@ -137,7 +128,6 @@ const run = async (args: DaemonArgs) => {
 
   const idle = watchIdle({
     stateDir: args.stateDir,
-    repoHash: args.repoHash,
     intervalMs: IDLE_INTERVAL_MS,
     emptyChecks: IDLE_CHECKS,
     onIdle: async () => {
@@ -172,7 +162,7 @@ const run = async (args: DaemonArgs) => {
 
 const startProxyDaemon = async () => {
   const args = await Promise.resolve().then(parseDaemonArgs).catch(reportFailure);
-  const files = stateLayout(args.stateDir).repo(args.repoHash).proxy;
+  const files = stateLayout(args.stateDir).proxy;
 
   await mkdir(files.directory, { recursive: true, mode: 0o700 });
 

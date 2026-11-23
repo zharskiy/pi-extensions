@@ -52,6 +52,9 @@ describe("stateLayout", () => {
     expect(layout.gcRecord).toBe("/state/gc.json");
     expect(layout.ca).toBe("/state/ca");
     expect(layout.caLock).toBe("/state/ca/ca.lock");
+    expect(layout.caKey).toBe("/state/ca/ca-key.pem");
+    expect(layout.caCert).toBe("/state/ca/ca-cert.pem");
+    expect(layout.replacedPiLink).toBe("/state/replaced-pi-link");
     expect(layout.extraPem).toBe("/state/ca/extra.pem");
     expect(layout.imageRecord).toBe("/state/image.json");
   });
@@ -68,25 +71,17 @@ describe("stateLayout", () => {
     const hidden = [...flat(layout), ...flat(layout.repo("r1"))].filter(inVm);
 
     expect(layout.vm).toBe("/state/vm");
-    expect(layout.trustPem("ab".repeat(32), "0123456789abcdef")).toBe(
-      "/state/vm/trust-abababababab-0123456789abcdef.pem",
-    );
-    expect(layout.trustPemPrefix("ab".repeat(32))).toBe("trust-abababababab-");
-    expect(layout.legacyTrustPem).toBe("/state/ca/trust.pem");
-    expect(hidden.sort()).toEqual(["/state/vm/render/r1"]);
+    expect(hidden.sort()).toEqual(["/state/vm/render", "/state/vm/render/r1"]);
   });
 
-  it("keeps every file of one repository under repos/<repo hash>, its proxy included", () => {
+  it("keeps every file of one repository under repos/<repo hash>", () => {
     const files = stateLayout("/state").repo("r1");
 
     expect(files).toEqual({
       directory: "/state/repos/r1",
       record: "/state/repos/r1/repo.json",
-      launches: "/state/repos/r1/launches",
-      lock: "/state/repos/r1/lock",
-      containerLock: "/state/repos/r1/container.lock",
+      prepareLock: "/state/locks/prepare-r1.lock",
       render: "/state/vm/render/r1",
-      legacyRender: "/state/repos/r1/render",
       renderLock: "/state/repos/r1/render.lock",
       sync: "/state/repos/r1/sync",
       syncLock: "/state/repos/r1/sync/sync.lock",
@@ -94,15 +89,24 @@ describe("stateLayout", () => {
       syncPackages: "/state/repos/r1/sync/packages.json",
       gitBaseline: "/state/repos/r1/git/baseline.json",
       created: "/state/repos/r1/created.json",
-      seen: "/state/repos/r1/seen.json",
-      proxy: {
-        directory: "/state/repos/r1/proxy",
-        record: "/state/repos/r1/proxy/proxy.json",
-        token: "/state/repos/r1/proxy/token",
-        log: "/state/repos/r1/proxy/proxy.log",
-        accessLog: "/state/repos/r1/proxy/access.log",
-        egress: "/state/repos/r1/proxy/egress.json",
-      },
+    });
+  });
+
+  it("keeps the proxy, the launch registry and the ground lock once for the install", () => {
+    const layout = stateLayout("/state");
+
+    expect(layout.launches).toBe("/state/launches");
+    expect(layout.launchesLock).toBe("/state/locks/launches.lock");
+    expect(layout.groundLock).toBe("/state/locks/ground.lock");
+    expect(layout.proxy).toEqual({
+      directory: "/state/proxy",
+      record: "/state/proxy/proxy.json",
+      token: "/state/proxy/token",
+      log: "/state/proxy/proxy.log",
+      rotatedLog: "/state/proxy/proxy.log.1",
+      accessLog: "/state/proxy/access.log",
+      rotatedAccessLog: "/state/proxy/access.log.1",
+      egress: "/state/proxy/egress.json",
     });
   });
 });

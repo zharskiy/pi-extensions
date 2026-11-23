@@ -31,13 +31,13 @@ const inputOf = async (
 };
 
 describe("ensureSandboxImage", () => {
-  it("builds once, announcing it, and then reuses the recorded build while its inputs stay the same", async () => {
+  it("builds the base and the layer once, announcing it once, and then reuses them while their inputs stay the same", async () => {
     const fake = createFakeBackend();
     const { input, asked } = await inputOf(fake);
     const first = await ensureSandboxImage(input);
 
     expect(asked).toEqual(["versions", "preparing"]);
-    expect(fake.builds).toHaveLength(1);
+    expect(fake.builds).toHaveLength(2);
 
     asked.length = 0;
 
@@ -45,7 +45,7 @@ describe("ensureSandboxImage", () => {
 
     expect(second).toEqual(first);
     expect(asked).toEqual(["versions"]);
-    expect(fake.builds).toHaveLength(1);
+    expect(fake.builds).toHaveLength(2);
   });
 
   it("builds the current image even while a container runs the previous one", async () => {
@@ -58,7 +58,7 @@ describe("ensureSandboxImage", () => {
     const second = await ensureSandboxImage({ ...input, versions: async () => ({ pi: "1.6.0" }) });
 
     expect(second.id).not.toBe(first.id);
-    expect(fake.builds).toHaveLength(2);
+    expect(fake.builds).toHaveLength(4);
     expect((await fake.backend.listImages()).map((image) => image.id)).toContain(first.id);
   });
 
@@ -68,7 +68,7 @@ describe("ensureSandboxImage", () => {
     const [first, second] = await Promise.all([ensureSandboxImage(input), ensureSandboxImage(input)]);
 
     expect(second).toEqual(first);
-    expect(fake.builds).toHaveLength(1);
+    expect(fake.builds).toHaveLength(2);
     expect(asked.filter((step) => step === "waiting")).toEqual(["waiting"]);
   });
 
@@ -83,7 +83,7 @@ describe("ensureSandboxImage", () => {
     await ensureSandboxImage(input);
 
     expect(asked).toEqual(["versions"]);
-    expect(fake.builds).toHaveLength(1);
+    expect(fake.builds).toHaveLength(2);
 
     const reference = "ghcr.io/zharskiy/pi-sandbox:0.4.0";
     const registry = createFakeBackend({ registry: { [reference]: "sha256:pinned" } });
@@ -100,7 +100,7 @@ describe("ensureSandboxImage", () => {
     expect(pinned.asked).toEqual([]);
   });
 
-  it("pulls a pinned image without resolving versions", async () => {
+  it("pulls a pinned image without resolving versions and builds the trust layer on it", async () => {
     const reference = "ghcr.io/zharskiy/pi-sandbox:0.4.0";
     const fake = createFakeBackend({ registry: { [reference]: "sha256:pinned" } });
     const { input, asked } = await inputOf(fake, {
@@ -110,10 +110,10 @@ describe("ensureSandboxImage", () => {
     expect(await ensureSandboxImage(input)).toEqual({
       reference,
       digest: "sha256:pinned",
-      id: "sha256:image-pinned",
+      id: "sha256:image-built-1",
     });
     expect(asked).toEqual(["preparing"]);
-    expect(fake.builds).toEqual([]);
+    expect(fake.builds.map((build) => build.tag)).toEqual([expect.stringMatching(/^pi-sandbox-layer:/)]);
   });
 
   it("puts the trust bundle into the build only when extra CAs are configured", async () => {
@@ -133,7 +133,9 @@ describe("ensureSandboxImage", () => {
 
     await ensureSandboxImage(extra.input);
 
-    expect(fake.builds.map((build) => build.files["trust.pem"])).toEqual([
+    const baseBuilds = fake.builds.filter((build) => build.tag === BASE_TAG);
+
+    expect(baseBuilds.map((build) => build.files["trust.pem"])).toEqual([
       "",
       "-----BEGIN CERTIFICATE-----\n",
     ]);
@@ -182,27 +184,36 @@ describe("ensureSandboxImage", () => {
     expect(idle.id).not.toBe(current.id);
   });
 
-  it("removes the previous base image after a rebuild unless a container uses it", async () => {
+  it("removes the previous base and layer after a rebuild unless a container uses them", async () => {
     const fake = createFakeBackend();
     const { input } = await inputOf(fake);
+    const listed = async () => (await fake.backend.listImages()).map((image) => image.id).sort();
     const first = await ensureSandboxImage(input);
+    const firstImages = await listed();
 
     fake.ageImages(2 * 60 * 60);
 
     const rebuilt = await ensureSandboxImage({ ...input, versions: async () => ({ pi: "1.6.0" }) });
+    const rebuiltImages = await listed();
 
-    expect((await fake.backend.listImages()).map((image) => image.id)).toEqual([rebuilt.id]);
-    expect(fake.imageRemovals).toEqual([first.id]);
+    expect(rebuiltImages).toHaveLength(2);
+    expect(rebuiltImages).toContain(rebuilt.id);
+    expect(rebuiltImages.some((id) => firstImages.includes(id))).toBe(false);
+    expect(firstImages).toContain(first.id);
+    expect(fake.imageRemovals.sort()).toEqual([
+      expect.stringMatching(/^pi-sandbox-layer:/),
+      "sha256:image-built-1",
+    ]);
 
     fake.addContainer({ name: "running", labels: {}, state: "running", image: rebuilt.id });
 
     fake.ageImages(2 * 60 * 60);
 
     const third = await ensureSandboxImage({ ...input, versions: async () => ({ pi: "1.7.0" }) });
+    const thirdImages = await listed();
 
-    expect((await fake.backend.listImages()).map((image) => image.id).sort()).toEqual(
-      [rebuilt.id, third.id].sort(),
-    );
+    expect(thirdImages).toHaveLength(3);
+    expect(thirdImages).toEqual(expect.arrayContaining([rebuilt.id, third.id]));
   });
 
   it("collects a previous base later when it was in use or too young at the rebuild", async () => {
@@ -218,14 +229,19 @@ describe("ensureSandboxImage", () => {
     const third = await ensureSandboxImage({ ...input, versions: async () => ({ pi: "1.7.0" }) });
     const listed = async () => (await fake.backend.listImages()).map((image) => image.id).sort();
 
-    expect(await listed()).toEqual([first.id, second.id, third.id].sort());
+    expect(await listed()).toEqual(expect.arrayContaining([first.id, second.id, third.id]));
+    expect(await listed()).toHaveLength(5);
 
     await fake.backend.removeContainer(running);
 
     fake.ageImages(2 * 60 * 60);
 
-    expect(await collectImages(fake.backend, input.stateDir)).toHaveLength(2);
-    expect(await listed()).toEqual([third.id]);
+    expect(await collectImages(fake.backend, input.stateDir)).toHaveLength(3);
+
+    const remaining = await listed();
+
+    expect(remaining).toHaveLength(2);
+    expect(remaining).toContain(third.id);
   });
 
   it("keeps a layer tag built in the last hour that no container uses yet and removes an older one", async () => {

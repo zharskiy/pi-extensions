@@ -6,16 +6,13 @@ import { createProxyRuntime } from "../../proxy/runtime.ts";
 import { stateLayout } from "../../shared/index.ts";
 import { settingsOf } from "./harness.ts";
 
-const REPO = "1".repeat(64);
-
 const state = { stateDir: "" };
 
-const egressPath = () => stateLayout(state.stateDir).repo(REPO).proxy.egress;
+const egressPath = () => stateLayout(state.stateDir).proxy.egress;
 
 const runtimeWith = (allow: string[]) =>
   createProxyRuntime({
     stateDir: state.stateDir,
-    repoHash: REPO,
     rules: [],
     settings: settingsOf({ allow }),
   });

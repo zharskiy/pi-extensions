@@ -6,6 +6,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { describe, expect, it } from "vitest";
 import type { Backend, MountSpec, VmPath, VmTarget } from "../../backend/index.ts";
 import { onClosedOutput } from "../../cli/deps.ts";
+import { CLEANUP_WAITING, GROUND_WAITING, withGroundLock } from "../../cli/ground.ts";
 import { run } from "../../cli/index.ts";
 import { hostPathNotices, launchNotices } from "../../cli/launch-notices.ts";
 import { liveLaunches } from "../../grants/index.ts";
@@ -16,6 +17,11 @@ import { tempDir } from "../support/temp-dir.ts";
 import { createFakeBackend, createHarness, piSessions, renderDirOf } from "./harness.ts";
 
 const STOPPING = "pi-sandbox: stopping after the current step\n";
+
+const SKIPPING_WAITS =
+  "pi-sandbox: the cleanup will not wait for other pi-sandbox commands; another Ctrl-C ends pi-sandbox at once, leaving the rest to the next start\n";
+
+const PREPARATION_SIGNALS: NodeJS.Signals[] = ["SIGINT", "SIGTERM", "SIGHUP"];
 
 const POLL_MS = 5;
 
@@ -40,18 +46,29 @@ const exists = (path: string) =>
 const occurrences = (text: string, part: string) => text.split(part).length - 1;
 
 describe("signals from the launch registration to the end of the session", () => {
-  it("says once that it stops after the current step, then leaves a second signal to the default handler", async () => {
+  it("says once that it stops after the current step, catches a second signal while the step unwinds, then leaves the next to the default handler", async () => {
     const signals = new EventEmitter();
     const fake = createFakeBackend();
     const counts: number[] = [];
+    const listening = () => PREPARATION_SIGNALS.map((name) => signals.listenerCount(name));
     const backend: Backend = {
       ...fake.backend,
       buildImage: async (...args: Parameters<Backend["buildImage"]>) => {
-        counts.push(signals.listenerCount("SIGINT"));
+        if (counts.length > 0) {
+          return fake.backend.buildImage(...args);
+        }
+
+        counts.push(...listening());
 
         signals.emit("SIGINT");
 
-        counts.push(signals.listenerCount("SIGINT"), signals.listenerCount("SIGTERM"));
+        await sleep(20);
+
+        counts.push(...listening());
+
+        signals.emit("SIGTERM");
+
+        counts.push(...listening());
 
         return fake.backend.buildImage(...args);
       },
@@ -61,10 +78,12 @@ describe("signals from the launch registration to the end of the session", () =>
     harness.deps.signals = signals;
 
     expect(await run([], harness.deps)).toBe(130);
-    expect(counts).toEqual([1, 0, 0]);
+    expect(counts).toEqual([1, 1, 1, 1, 1, 1, 0, 0, 0]);
     expect(occurrences(harness.stderr(), STOPPING)).toBe(1);
+    expect(occurrences(harness.stderr(), SKIPPING_WAITS)).toBe(1);
     expect(piSessions(fake)).toEqual([]);
     expect(fake.containers.size).toBe(0);
+    expect(await liveLaunches(harness.stateDir)).toEqual([]);
   });
 
   it("leaves signals to the default handler while pi runs", async () => {
@@ -89,16 +108,19 @@ describe("signals from the launch registration to the end of the session", () =>
     expect(counts).toEqual([1]);
   });
 
-  it("swallows a signal while the session ends, so the cleanup finishes", async () => {
+  it("catches a signal while the session ends, so the cleanup finishes, and leaves the next to the default handler", async () => {
     const signals = new EventEmitter();
     const fake = createFakeBackend();
     const counts: number[] = [];
+    const listening = () => PREPARATION_SIGNALS.map((name) => signals.listenerCount(name));
     const backend: Backend = {
       ...fake.backend,
       stopContainer: async (id: string, timeoutSeconds?: number) => {
-        counts.push(signals.listenerCount("SIGHUP"));
+        counts.push(...listening());
 
         signals.emit("SIGHUP");
+
+        counts.push(...listening());
 
         return fake.backend.stopContainer(id, timeoutSeconds);
       },
@@ -108,9 +130,53 @@ describe("signals from the launch registration to the end of the session", () =>
     harness.deps.signals = signals;
 
     expect(await run([], harness.deps)).toBe(0);
-    expect(counts[0]).toBeGreaterThan(0);
+    expect(counts).toEqual([1, 1, 1, 0, 0, 0]);
+    expect(occurrences(harness.stderr(), SKIPPING_WAITS)).toBe(1);
     expect(fake.containers.size).toBe(0);
-    expect(signals.listenerCount("SIGHUP")).toBe(0);
+    expect(await liveLaunches(harness.stateDir)).toEqual([]);
+  });
+  it("ends the waits for the ground lock on Ctrl-C, and the cleanup wait at the end of the session on a second Ctrl-C", async () => {
+    const signals = new EventEmitter();
+    const harness = await createHarness({ backend: () => createFakeBackend().backend });
+    const holder = { entered: (): void => undefined, release: (): void => undefined };
+    const entered = new Promise<void>((resolve) => {
+      holder.entered = resolve;
+    });
+    const released = new Promise<void>((resolve) => {
+      holder.release = resolve;
+    });
+    const holding = withGroundLock({ stateDir: harness.stateDir }, () => {
+      holder.entered();
+
+      return released;
+    });
+
+    harness.deps.signals = signals;
+
+    await entered;
+
+    const code = run([], harness.deps);
+
+    await waitFor(() => occurrences(harness.stderr(), GROUND_WAITING) >= 2);
+
+    signals.emit("SIGINT");
+
+    await waitFor(() => harness.stderr().includes(CLEANUP_WAITING));
+
+    expect(harness.stderr()).toContain(`${CLEANUP_WAITING}; Ctrl-C skips the cleanup\n`);
+
+    signals.emit("SIGINT");
+
+    const outcome = await Promise.race([code, sleep(3000).then(() => "still waiting")]);
+
+    holder.release();
+
+    await holding;
+
+    await code;
+
+    expect(outcome).toBe(130);
+    expect(occurrences(harness.stderr(), SKIPPING_WAITS)).toBe(1);
   });
 });
 
@@ -138,7 +204,7 @@ describe("work that runs side by side", () => {
     const harness = await createHarness({ backend: () => backend });
 
     expect(await run([], harness.deps)).toBe(0);
-    expect(seen).toEqual([true]);
+    expect(seen).toEqual([true, true]);
   });
 
   it("derives the host side while the sandbox VM starts", async () => {
@@ -158,10 +224,8 @@ describe("work that runs side by side", () => {
           trusted.push(true);
 
           return {
-            pemPath: harness.trustPem,
-            caCertPath: harness.trustPem,
+            caCertPath: harness.proxyCaPem,
             extraPemPath: join(harness.stateDir, "ca", "extra.pem"),
-            hash: "trust-hash",
           };
         },
       },
@@ -240,7 +304,7 @@ describe("the VM size", () => {
           },
           reconcile: async ({ size }, options) => {
             asked.targets.push(size);
-            asked.busy.push(await options.busy());
+            asked.busy.push((await options.busy()).count);
 
             options.report("restarting the sandbox VM to change its size to 6 CPUs");
           },
@@ -277,6 +341,22 @@ describe("the VM size", () => {
       [
         "pi-sandbox: config: vm.cpus 12 is more than the 8 CPUs of this Mac; config: vm.memoryGiB 31 is more than the 30 GiB this Mac can give the VM (32 GiB, less 2 for macOS)",
         `  hint: lower it in ${harness.userConfigFile}, or run pi sandbox init to choose a size`,
+      ].join("\n"),
+    );
+    expect(asked).toEqual({ targets: [], busy: [], started: [] });
+  });
+
+  it("counts the agent's and the services' memory against the automatic VM size when vm.memoryGiB is unset", async () => {
+    const { harness, asked } = await sizedHarness();
+    const services = [{ name: "db", command: ["db"], memoryGiB: 4 }];
+
+    await harness.writeJson(harness.userConfigFile, { resources: { memoryGiB: 7 }, services });
+
+    expect(await run([], harness.deps)).toBe(1);
+    expect(harness.stderr()).toContain(
+      [
+        "pi-sandbox: config: resources.memoryGiB 7 plus the services' memoryGiB 4 is larger than the 10 GiB the VM gets by default on this Mac (vm.memoryGiB is not set); the agent and every service share the VM",
+        `  hint: set vm.memoryGiB in ${harness.userConfigFile}, or run pi sandbox init to choose a size`,
       ].join("\n"),
     );
     expect(asked).toEqual({ targets: [], busy: [], started: [] });
@@ -329,6 +409,29 @@ describe("the doctor and the VM", () => {
     expect(asked.running).toBe(1);
     expect(asked.shared).toBe(0);
   });
+
+  it("does not watch the VM's file cache, even with vm.releaseFileCache on", async () => {
+    const watched: string[] = [];
+    const fake = createFakeBackend({
+      vm: {
+        ensureRunning: async () => {
+          watched.push("running");
+        },
+        watchFileCache: () => {
+          watched.push("watch");
+
+          return { stop: async () => undefined };
+        },
+      },
+    });
+    const harness = await createHarness({ backend: () => fake.backend });
+
+    await harness.writeJson(harness.userConfigFile, { vm: { releaseFileCache: true } });
+
+    await run(["sandbox", "doctor"], harness.deps);
+
+    expect(watched).toEqual(["running"]);
+  });
 });
 
 describe("the launch registration", () => {
@@ -344,7 +447,7 @@ describe("the launch registration", () => {
             seen.running = (await liveLaunches(harness.stateDir)).length;
           },
           reconcile: async (_wanted, options) => {
-            seen.busy = await options.busy();
+            seen.busy = (await options.busy()).count;
 
             throw new LauncherError("the share failed", "share it by hand");
           },

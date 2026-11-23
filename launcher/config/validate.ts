@@ -1,10 +1,13 @@
 import {
   errorMessage,
+  GUEST_HOME,
+  guestReservedOver,
   isJsonObject,
   isLauncherSetVariable,
   isNeverWritten,
   isSecretName,
   isToolConfigKey,
+  isWithin,
   LauncherError,
   MAX_WRITE_BACK_CHARS,
   PLACEHOLDER_PREFIX,
@@ -15,47 +18,27 @@ import {
   valueSpecProblem,
   writeBackFileProblem,
 } from "../shared/index.ts";
+import { DEFAULT_SERVICE_USER } from "./defaults.ts";
 import { parseHostEntry, SECRET_MARKER } from "./egress-entry.ts";
-import type { UserConfig } from "./types.ts";
+import {
+  at,
+  type Check,
+  firstProblem,
+  joinPath,
+  keyPath,
+  type ListCheck,
+  named,
+  type ObjectCheck,
+  type ObjectSpec,
+  objectProblem,
+  type Problem,
+  problemOf,
+  type Spec,
+  shape,
+  shown,
+} from "./shape.ts";
+import type { UserConfig, VolumeEntry } from "./types.ts";
 import { builtInKeysOf } from "./write-back.ts";
-
-type Check = (value: string) => string | undefined;
-
-type ObjectCheck = (value: Record<string, unknown>) => string | undefined;
-
-type ListCheck = (value: unknown[]) => string | undefined;
-
-interface ObjectSpec {
-  type: "object";
-  properties: Record<string, Spec>;
-  required?: readonly string[];
-  check?: ObjectCheck;
-  atomic?: true;
-  removed?: Record<string, string>;
-}
-
-interface NumberSpec {
-  type: "number";
-  exclusiveMinimum?: number;
-  minimum?: number;
-  maximum?: number;
-  integer?: boolean;
-}
-
-type Spec =
-  | { type: "string"; check?: Check; values?: readonly string[] }
-  | NumberSpec
-  | { type: "true" }
-  | { type: "boolean" }
-  | { type: "array"; items: Spec; check?: ListCheck }
-  | ObjectSpec
-  | { type: "keyed"; variants: Record<string, ObjectSpec>; removed?: Record<string, string> }
-  | { type: "custom"; problem: (value: unknown, path: string) => Problem | undefined };
-
-interface Problem {
-  path: string;
-  problem: string;
-}
 
 export const MAX_PORT = 65535;
 
@@ -85,6 +68,8 @@ const PRIVATE_HOME_PATHS = [
   ".local/bin",
 ];
 
+const VOLUME_NAME = /^[a-z0-9][a-z0-9._-]{0,62}$/;
+
 const NPM_PACKAGE = /^(@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*@[0-9][0-9A-Za-z.+-]*$/;
 
 const nonEmpty: Check = (value) => (value.trim() === "" ? "must not be empty" : undefined);
@@ -113,6 +98,11 @@ const forwardableVariable: Check = (value) =>
   launcherSet(value) ??
   (isSecretName(value) ? "looks like a secret and stays on the host" : undefined);
 
+const settableVariable: Check = (value) =>
+  variable(value) ?? (isLauncherSetVariable(value) ? "is set by the launcher and cannot be set" : undefined);
+
+const withoutNul: Check = (value) => (value.includes("\0") ? "must not contain a NUL character" : undefined);
+
 const absolutePath: Check = (value) =>
   value.startsWith("/") || value === "~" || value.startsWith("~/")
     ? undefined
@@ -120,24 +110,45 @@ const absolutePath: Check = (value) =>
 
 const withoutTrailingSlash = (value: string) => value.replace(/\/$/, "");
 
-const homeSegments = (value: string) => withoutTrailingSlash(value.slice(2)).split("/");
+const pathSegments = (value: string) => withoutTrailingSlash(value).split("/").slice(1);
 
-const sharedCache: Check = (value) => {
-  if (!value.startsWith("~/")) {
-    return "must start with ~/";
-  }
+export const guestPathOf = (target: string) =>
+  target.startsWith("~/")
+    ? `${GUEST_HOME}/${pathSegments(target).join("/")}`
+    : withoutTrailingSlash(target) || "/";
 
-  const segments = homeSegments(value);
+const privateHomeDir = (value: string) => {
+  const path = pathSegments(value).join("/");
 
-  if (segments.some((segment) => segment === "" || segment === "." || segment === "..")) {
-    return "must name a directory below ~ without empty, . or .. segments";
-  }
-
-  const path = segments.join("/");
-  const privateDir = PRIVATE_HOME_PATHS.find((dir) => path === dir || path.startsWith(`${dir}/`));
-
-  return privateDir === undefined ? undefined : `must not be or lie under ~/${privateDir}`;
+  return PRIVATE_HOME_PATHS.find((dir) => path === dir || path.startsWith(`${dir}/`));
 };
+
+const guestTarget: Check = (value) => {
+  if (!value.startsWith("/") && !value.startsWith("~/")) {
+    return "must be an absolute path or start with ~/";
+  }
+
+  if (pathSegments(value).some((segment) => segment === "" || segment === "." || segment === "..")) {
+    return "must not hold empty, . or .. segments";
+  }
+
+  const privateDir = value.startsWith("~/") ? privateHomeDir(value) : undefined;
+
+  if (privateDir !== undefined) {
+    return `must not be or lie under ~/${privateDir}`;
+  }
+
+  if (value.startsWith("/") && isWithin(value, GUEST_HOME)) {
+    return `lies in ${GUEST_HOME}; write it as ~/${pathSegments(value).slice(2).join("/")}`;
+  }
+
+  const reserved = guestReservedOver(guestPathOf(value));
+
+  return reserved === undefined ? undefined : `overlaps ${reserved}, which the sandbox needs`;
+};
+
+const volumeName: Check = (value) =>
+  VOLUME_NAME.test(value) ? undefined : "must be lowercase letters, digits, dot, dash or underscore";
 
 const httpsUrl: Check = (value) =>
   URL.canParse(value) && new URL(value).protocol === "https:" ? undefined : "must be an https URL";
@@ -171,24 +182,21 @@ const npmPackage: Check = (value) =>
 
 const notEmptyList: ListCheck = (value) => (value.length === 0 ? "must not be empty" : undefined);
 
-const distinctHomePaths: ListCheck = (value) => {
-  const paths = value.map((item) => homeSegments(String(item)).join("/"));
-  const duplicate = paths.find((path, index) => paths.indexOf(path) !== index);
-
-  if (duplicate !== undefined) {
-    return `lists ~/${duplicate} twice`;
+const command: ListCheck = (value) => {
+  if (value.length === 0) {
+    return "must not be empty";
   }
 
-  const nested = paths.find((path) => paths.some((other) => path.startsWith(`${other}/`)));
-
-  return nested === undefined ? undefined : `lists ~/${nested} inside another entry`;
+  return String(value[0]).trim() === "" ? "must name a command first" : undefined;
 };
 
-const uniqueIds: ListCheck = (value) => {
-  const ids = value.map((item) => (isJsonObject(item) ? item.id : undefined));
+const firstDuplicate = <T>(values: T[]) => values.find((value, index) => values.indexOf(value) !== index);
 
-  return ids.some((id, index) => ids.indexOf(id) !== index) ? "has a duplicate id" : undefined;
-};
+const firstNested = (paths: string[]) =>
+  paths.find((path) => paths.some((other) => other !== path && isWithin(path, other)));
+
+const uniqueIds: ListCheck = (value) =>
+  firstDuplicate(value.map((item) => fieldOf(item, "id"))) === undefined ? undefined : "has a duplicate id";
 
 const pinnedReference: ObjectCheck = (value) =>
   (value.reference === undefined) !== (value.digest === undefined)
@@ -234,26 +242,19 @@ const fileSecretMode: ObjectCheck = (value) => {
 
 const text = (check?: Check): Spec => ({ type: "string", check });
 
+const namedText = (check: Check): Spec => ({ type: "string", check, named: true });
+
 const choice = (values: readonly string[]): Spec => ({ type: "string", values });
 
 const list = (check?: Check): Spec => ({ type: "array", items: text(check) });
+
+const namedList = (check: Check): Spec => ({ type: "array", items: namedText(check) });
 
 const positive: Spec = { type: "number", exclusiveMinimum: 0 };
 
 const port: Spec = { type: "number", exclusiveMinimum: 0, maximum: MAX_PORT, integer: true };
 
 const flag: Spec = { type: "boolean" };
-
-const shape = (
-  properties: Record<string, Spec>,
-  required?: readonly string[],
-  removed?: Record<string, string>,
-): ObjectSpec => ({
-  type: "object",
-  properties,
-  required,
-  removed,
-});
 
 const SECRET_REF: Spec = {
   type: "keyed",
@@ -306,16 +307,13 @@ const EXTRA_CA: Spec = {
   type: "keyed",
   variants: {
     sha256: shape({ sha256: text(fingerprint) }, ["sha256"]),
-    file: shape({ file: text(absolutePath) }, ["file"]),
+    file: shape({ file: namedText(absolutePath) }, ["file"]),
   },
-  removed: { hostStore: "was removed; run pi sandbox doctor to get the sha256 of your network's CA" },
 };
 
 const WRITE_BACK_KEY = /^[A-Za-z][A-Za-z0-9_-]*$/;
 
 export const MAX_KEY_CHARS = 100;
-
-const keyPath = (prefix: string, key: string) => `${prefix}[${JSON.stringify(key)}]`;
 
 const anyNumber: Spec = { type: "number" };
 
@@ -483,6 +481,38 @@ const excludedAndAdded: ObjectCheck = (value) => {
   return clash === undefined ? undefined : `excludes and adds ${clash[1]} of ${clash[0]}`;
 };
 
+const VOLUME = shape({ target: namedText(guestTarget), name: text(volumeName) }, ["target"]);
+
+const volumeAt = (value: unknown, path: string): Problem | undefined =>
+  typeof value === "string" ? at(path, named(value, guestTarget(value))) : problemOf(VOLUME, value, path);
+
+const BIND = shape({ source: namedText(absolutePath), target: namedText(guestTarget) }, ["source", "target"]);
+
+const nameOf = (entry: unknown) =>
+  isJsonObject(entry) && typeof entry.name === "string" ? entry.name : undefined;
+
+const distinctVolumeNames: ListCheck = (value) => {
+  const duplicate = firstDuplicate(value.flatMap((entry) => nameOf(entry) ?? []));
+
+  return duplicate === undefined ? undefined : `names the volume ${duplicate} twice`;
+};
+
+const targetOf = (entry: unknown) => String(isJsonObject(entry) ? entry.target : entry);
+
+const apartTargets: ObjectCheck = (value) => {
+  const lists = [value.volumes, value.binds].map((list) => (Array.isArray(list) ? list : []));
+  const targets = lists.flat().map((entry) => guestPathOf(targetOf(entry)));
+  const duplicate = firstDuplicate(targets);
+
+  if (duplicate !== undefined) {
+    return `lists the target ${duplicate} twice`;
+  }
+
+  const nested = firstNested(targets);
+
+  return nested === undefined ? undefined : `lists the target ${nested} inside another target`;
+};
+
 const WRITE_BACK: ObjectSpec = {
   ...shape({
     enabled: flag,
@@ -498,38 +528,233 @@ export const VM_BOUNDS = {
   diskGiB: { min: 20, max: 2048 },
 } as const;
 
-const vmSize = (minimum: number, maximum: number): Spec => ({
+const wholeWithin = (minimum: number, maximum: number): Spec => ({
   type: "number",
   minimum,
   maximum,
   integer: true,
 });
 
+export const RESOURCE_BOUNDS = {
+  pids: { min: 256, max: 4194304 },
+  openFiles: { min: 1024, max: 1048576 },
+  shmMiB: { min: 1, max: VM_BOUNDS.memoryGiB.max * 1024 },
+} as const;
+
 const RESOURCE_KEYS = ["cpus", "memoryGiB"] as const;
+
+const serviceMemoryOf = (services: unknown) =>
+  (Array.isArray(services) ? services : []).reduce<number>(
+    (sum, service) =>
+      sum + (isJsonObject(service) && typeof service.memoryGiB === "number" ? service.memoryGiB : 0),
+    0,
+  );
+
+const memoryWithinVm = (
+  agent: number | undefined,
+  services: number,
+  vm: number | undefined,
+  vmName: string,
+) => {
+  if (vm === undefined || services === 0 || (agent ?? 0) + services <= vm) {
+    return undefined;
+  }
+
+  return `resources.memoryGiB ${agent ?? 0} plus the services' memoryGiB ${services} is larger than ${vmName}; the agent and every service share the VM`;
+};
+
+export const defaultVmMemoryProblem = (
+  config: { resources: { memoryGiB?: number }; services: Array<{ memoryGiB?: number }> },
+  defaultGiB: number,
+) => {
+  const agent = config.resources.memoryGiB;
+  const vmName = `the ${defaultGiB} GiB the VM gets by default on this Mac (vm.memoryGiB is not set)`;
+
+  if (agent !== undefined && agent > defaultGiB) {
+    return `resources.memoryGiB ${agent} is larger than ${vmName}; resources limits one container inside the VM`;
+  }
+
+  return memoryWithinVm(agent, serviceMemoryOf(config.services), defaultGiB, vmName);
+};
 
 const resourcesWithinVm: ObjectCheck = (value) => {
   const resources = (value.resources ?? {}) as Record<string, number | undefined>;
   const vm = (value.vm ?? {}) as Record<string, number | undefined>;
   const larger = RESOURCE_KEYS.find((key) => (resources[key] ?? 0) > (vm[key] ?? Number.POSITIVE_INFINITY));
 
-  return larger === undefined
-    ? undefined
-    : `resources.${larger} ${resources[larger]} is larger than vm.${larger} ${vm[larger]}; resources limits one container inside the VM`;
+  if (larger !== undefined) {
+    return `resources.${larger} ${resources[larger]} is larger than vm.${larger} ${vm[larger]}; resources limits one container inside the VM`;
+  }
+
+  return memoryWithinVm(
+    resources.memoryGiB,
+    serviceMemoryOf(value.services),
+    vm.memoryGiB,
+    `vm.memoryGiB ${vm.memoryGiB}`,
+  );
 };
+
+const agentVolumeNames = (mounts: unknown) => {
+  const volumes = fieldOf(mounts, "volumes");
+
+  return (Array.isArray(volumes) ? volumes : [])
+    .map((entry) => fieldOf(entry, "name"))
+    .filter((name) => name !== undefined);
+};
+
+const agentSharesAsDefaultUser: ObjectCheck = (value) => {
+  const shared = new Set<unknown>(agentVolumeNames(value.mounts));
+  const services = Array.isArray(value.services) ? value.services : [];
+  const clash = volumeUsers(services).find(
+    (entry) => shared.has(entry.name) && entry.user !== DEFAULT_SERVICE_USER,
+  );
+
+  return clash === undefined
+    ? undefined
+    : `services: mounts the volume ${String(clash.name)} as ${clash.user}, but mounts.volumes shares it with the agent, so every service that mounts it runs as ${DEFAULT_SERVICE_USER}`;
+};
+
+const configCheck: ObjectCheck = (value) => resourcesWithinVm(value) ?? agentSharesAsDefaultUser(value);
+
+const SERVICE_NAME = /^[a-z][a-z0-9-]{0,30}$/;
+
+const SERVICE_USER = /^[1-9][0-9]{0,9}:[1-9][0-9]{0,9}$/;
+
+export const MAX_READY_SECONDS = 3600;
+
+const serviceName: Check = (value) =>
+  SERVICE_NAME.test(value)
+    ? undefined
+    : "must start with a lowercase letter and hold at most 31 lowercase letters, digits or dashes";
+
+const MAX_SERVICE_ID = 2147483647;
+
+const serviceUser: Check = (value) => {
+  if (!SERVICE_USER.test(value)) {
+    return "must be uid:gid, two numbers above 0 without leading zeros";
+  }
+
+  return value.split(":").some((id) => Number(id) > MAX_SERVICE_ID)
+    ? `must be uid:gid, each at most ${MAX_SERVICE_ID}`
+    : undefined;
+};
+
+const MOUNT_SEPARATORS = /[:,]/;
+
+const servicePath: Check = (value) => {
+  if (!value.startsWith("/") || value === "/") {
+    return "must be an absolute path other than /";
+  }
+
+  if (MOUNT_SEPARATORS.test(value)) {
+    return "must not hold : or , (the container engine reads them as separators)";
+  }
+
+  return value
+    .slice(1)
+    .split("/")
+    .some((segment) => segment === "" || segment === "." || segment === "..")
+    ? "must be a normalised path: no trailing slash and no empty, . or .. segments"
+    : undefined;
+};
+
+const SERVICE_TMP = "/tmp";
+
+const pathsApart: ObjectCheck = (value) => {
+  const volumes = Array.isArray(value.volumes) ? value.volumes : [];
+  const tmpfs = Array.isArray(value.tmpfs) ? value.tmpfs : [];
+  const paths = [SERVICE_TMP, ...volumes.map(targetOf), ...tmpfs.map(String)];
+  const duplicate = firstDuplicate(paths);
+
+  if (duplicate !== undefined) {
+    return `lists ${duplicate} twice (${SERVICE_TMP} is always a tmpfs)`;
+  }
+
+  const nested = firstNested(paths);
+
+  return nested === undefined ? undefined : `lists ${nested} inside another volume target or tmpfs path`;
+};
+
+const SERVICE: ObjectSpec = {
+  ...shape(
+    {
+      name: text(serviceName),
+      image: text(nonEmpty),
+      command: { type: "array", items: text(withoutNul), check: command },
+      user: text(serviceUser),
+      env: { type: "map", key: variable, value: text(withoutNul) },
+      volumes: {
+        type: "array",
+        items: shape({ name: text(volumeName), target: namedText(servicePath) }, ["name", "target"]),
+      },
+      tmpfs: namedList(servicePath),
+      ready: shape(
+        {
+          command: { type: "array", items: text(withoutNul), check: command },
+          timeoutSeconds: wholeWithin(1, MAX_READY_SECONDS),
+        },
+        ["command"],
+      ),
+      memoryGiB: positive,
+      shmMiB: wholeWithin(RESOURCE_BOUNDS.shmMiB.min, RESOURCE_BOUNDS.shmMiB.max),
+      ports: { type: "array", items: wholeWithin(1, MAX_PORT) },
+    },
+    ["name", "command"],
+  ),
+  check: pathsApart,
+};
+
+const fieldOf = (entry: unknown, key: string) => (isJsonObject(entry) ? entry[key] : undefined);
+
+const distinctServiceNames: ListCheck = (value) => {
+  const duplicate = firstDuplicate(value.map((service) => fieldOf(service, "name")));
+
+  return duplicate === undefined ? undefined : `names the service ${String(duplicate)} twice`;
+};
+
+const volumeUsers = (value: unknown[]) =>
+  value.flatMap((service) => {
+    const user = String(fieldOf(service, "user") ?? DEFAULT_SERVICE_USER);
+    const volumes = fieldOf(service, "volumes");
+
+    return (Array.isArray(volumes) ? volumes : []).map((volume) => ({ name: fieldOf(volume, "name"), user }));
+  });
+
+const oneUserPerVolume: ListCheck = (value) => {
+  const users = volumeUsers(value);
+  const clash = users.find((entry) =>
+    users.some((other) => other.name === entry.name && other.user !== entry.user),
+  );
+
+  return clash === undefined ? undefined : `mounts the volume ${String(clash.name)} as two different users`;
+};
+
+const distinctPorts: ListCheck = (value) => {
+  const ports = value.flatMap((service) => {
+    const listed = fieldOf(service, "ports");
+
+    return Array.isArray(listed) ? listed : [];
+  });
+  const duplicate = firstDuplicate(ports);
+
+  return duplicate === undefined ? undefined : `lists the port ${String(duplicate)} twice`;
+};
+
+const servicesCheck: ListCheck = (value) =>
+  distinctServiceNames(value) ?? oneUserPerVolume(value) ?? distinctPorts(value);
 
 const CONFIG_SPEC: ObjectSpec = {
   type: "object",
-  check: resourcesWithinVm,
-  removed: { fallback: "was removed; --no-sandbox is always available" },
+  check: configCheck,
   properties: {
     $schema: text(),
     image: {
       ...shape({
         reference: text(nonEmpty),
         digest: text(digest),
-        packages: list(aptPackage),
+        packages: namedList(aptPackage),
         npmGlobal: list(npmPackage),
-        dockerfile: text(absolutePath),
+        dockerfile: namedText(absolutePath),
       }),
       check: pinnedReference,
     },
@@ -537,194 +762,72 @@ const CONFIG_SPEC: ObjectSpec = {
       rules: { type: "array", items: CREDENTIAL_RULE, check: uniqueIds },
       derive: shape({ enabled: flag, hosts: list(hostPattern) }),
     }),
-    egress: shape(
-      {
-        allow: list(egressEntry),
-        deny: list(egressEntry),
-        privateHosts: list(hostPattern),
-      },
-      undefined,
-      {
-        presets: "was removed; list the hosts in egress.allow, see REMOVED-DEFAULTS.md",
-        grants: "was removed; grants are always on",
-        parentProxy: "was removed; the parent proxy is always taken from the environment",
-      },
-    ),
+    egress: shape({
+      allow: list(egressEntry),
+      deny: list(egressEntry),
+      privateHosts: list(hostPattern),
+    }),
     tls: shape({ extraCa: { type: "array", items: EXTRA_CA } }),
     workspaceRoots: {
       type: "object",
       atomic: true,
       required: ["roots"],
-      properties: { roots: list(absolutePath) },
+      properties: { roots: namedList(absolutePath) },
     },
     mounts: {
+      ...shape({
+        volumes: {
+          type: "array",
+          items: { type: "custom", problem: volumeAt, keys: VOLUME },
+          check: distinctVolumeNames,
+        },
+        binds: { type: "array", items: BIND },
+        autoOverlays: flag,
+      }),
+      check: apartTargets,
+    },
+    env: {
       type: "object",
       properties: {
-        sharedCaches: { type: "array", items: text(sharedCache), check: distinctHomePaths },
-        autoOverlays: flag,
+        allow: namedList(forwardableVariable),
+        set: { type: "map", key: settableVariable, value: text(withoutNul) },
       },
     },
-    env: { type: "object", properties: { allow: list(forwardableVariable) } },
-    resources: { type: "object", properties: { cpus: positive, memoryGiB: positive } },
+    resources: {
+      type: "object",
+      properties: {
+        cpus: positive,
+        memoryGiB: positive,
+        pids: wholeWithin(RESOURCE_BOUNDS.pids.min, RESOURCE_BOUNDS.pids.max),
+        openFiles: wholeWithin(RESOURCE_BOUNDS.openFiles.min, RESOURCE_BOUNDS.openFiles.max),
+        shmMiB: wholeWithin(RESOURCE_BOUNDS.shmMiB.min, RESOURCE_BOUNDS.shmMiB.max),
+      },
+    },
     vm: shape({
-      cpus: vmSize(VM_BOUNDS.cpus.min, VM_BOUNDS.cpus.max),
-      memoryGiB: vmSize(VM_BOUNDS.memoryGiB.min, VM_BOUNDS.memoryGiB.max),
-      diskGiB: vmSize(VM_BOUNDS.diskGiB.min, VM_BOUNDS.diskGiB.max),
+      cpus: wholeWithin(VM_BOUNDS.cpus.min, VM_BOUNDS.cpus.max),
+      memoryGiB: wholeWithin(VM_BOUNDS.memoryGiB.min, VM_BOUNDS.memoryGiB.max),
+      diskGiB: wholeWithin(VM_BOUNDS.diskGiB.min, VM_BOUNDS.diskGiB.max),
+      releaseFileCache: flag,
     }),
     sessions: shape({ host: flag }),
     terminal: shape({ clipboard: flag }),
     writeBack: WRITE_BACK,
+    setup: { type: "array", items: { type: "array", items: text(withoutNul), check: command } },
+    services: { type: "array", items: SERVICE, check: servicesCheck },
   },
 };
 
-const joinPath = (prefix: string, key: string) => (prefix === "" ? key : `${prefix}.${key}`);
-
-const at = (path: string, problem: string | undefined): Problem | undefined =>
-  problem === undefined ? undefined : { path, problem };
-
-const firstProblem = (problems: Array<() => Problem | undefined>) =>
-  problems.reduce<Problem | undefined>((found, next) => found ?? next(), undefined);
-
-const MAX_SHOWN = 200;
-
-const PRINTABLE = /^[\x20-\x7e]*$/;
-
-const NAMED_PATHS =
-  /^(image\.(dockerfile|packages\[\d+\])|tls\.extraCa\[\d+\]\.file|workspaceRoots\.roots\[\d+\]|mounts\.sharedCaches\[\d+\]|env\.allow\[\d+\])$/;
-
-const shown = (value: string) => {
-  const cut = value.length > MAX_SHOWN ? `${value.slice(0, MAX_SHOWN)}...` : value;
-
-  return PRINTABLE.test(cut) && cut.trim() !== "" ? cut : JSON.stringify(cut);
-};
-
-const named = (path: string, value: unknown, problem: string | undefined) =>
-  problem === undefined || typeof value !== "string" || !NAMED_PATHS.test(path)
-    ? problem
-    : `${shown(value)} ${problem}`;
-
-const stringProblem = (spec: { check?: Check; values?: readonly string[] }, value: unknown) => {
-  if (typeof value !== "string") {
-    return "must be a string";
-  }
-
-  if (spec.values !== undefined && !spec.values.includes(value)) {
-    return `must be one of ${spec.values.join(", ")}`;
-  }
-
-  return spec.check?.(value);
-};
-
-const numberProblem = (spec: NumberSpec, value: unknown) => {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    return "must be a number";
-  }
-
-  if (spec.integer === true && !Number.isInteger(value)) {
-    return "must be a whole number";
-  }
-
-  if (spec.maximum !== undefined && value > spec.maximum) {
-    return `must be at most ${spec.maximum}`;
-  }
-
-  if (spec.minimum !== undefined && value < spec.minimum) {
-    return `must be at least ${spec.minimum}`;
-  }
-
-  return spec.exclusiveMinimum !== undefined && value <= spec.exclusiveMinimum
-    ? `must be greater than ${spec.exclusiveMinimum}`
-    : undefined;
-};
-
-const objectProblem = (spec: ObjectSpec, value: unknown, path: string): Problem | undefined => {
-  if (!isJsonObject(value)) {
-    return { path, problem: path === "" ? "must be a JSON object" : "must be an object" };
-  }
-
-  const removedKey = Object.entries(spec.removed ?? {}).find(([name]) => Object.hasOwn(value, name));
-
-  if (removedKey !== undefined) {
-    return { path: joinPath(path, removedKey[0]), problem: removedKey[1] };
-  }
-
-  const unknownKey = Object.keys(value).find((key) => !Object.hasOwn(spec.properties, key));
-  const missingKey = (spec.required ?? []).find((key) => value[key] === undefined);
-
-  return firstProblem([
-    () =>
-      unknownKey === undefined
-        ? undefined
-        : { path: joinPath(path, unknownKey), problem: "is not a known key" },
-    () =>
-      missingKey === undefined ? undefined : { path: joinPath(path, missingKey), problem: "is required" },
-    ...Object.entries(value).map(
-      ([key, child]) =>
-        () =>
-          problemOf(spec.properties[key], child, joinPath(path, key)),
-    ),
-    () => at(path, spec.check?.(value)),
-  ]);
-};
-
-const keyedProblem = (spec: Extract<Spec, { type: "keyed" }>, value: unknown, path: string) => {
-  if (!isJsonObject(value)) {
-    return { path, problem: "must be an object" };
-  }
-
-  const removed = Object.entries(spec.removed ?? {}).find(([name]) => Object.hasOwn(value, name));
-
-  if (removed !== undefined) {
-    return { path: joinPath(path, removed[0]), problem: removed[1] };
-  }
-
-  const names = Object.keys(spec.variants);
-  const chosen = names.find((name) => Object.hasOwn(value, name));
-
-  return chosen === undefined
-    ? { path, problem: `must set one of ${names.join(", ")}` }
-    : objectProblem(spec.variants[chosen], value, path);
-};
-
-const problemOf = (spec: Spec, value: unknown, path: string): Problem | undefined => {
-  if (spec.type === "string") {
-    return at(path, named(path, value, stringProblem(spec, value)));
-  }
-
-  if (spec.type === "number") {
-    return at(path, numberProblem(spec, value));
-  }
-
-  if (spec.type === "true") {
-    return at(path, value === true ? undefined : "must be true");
-  }
-
-  if (spec.type === "boolean") {
-    return at(path, typeof value === "boolean" ? undefined : "must be true or false");
-  }
-
-  if (spec.type === "array") {
-    return Array.isArray(value)
-      ? firstProblem([
-          ...value.map((item, index) => () => problemOf(spec.items, item, `${path}[${index}]`)),
-          () => at(path, spec.check?.(value)),
-        ])
-      : { path, problem: "must be an array" };
-  }
-
-  if (spec.type === "custom") {
-    return spec.problem(value, path);
-  }
-
-  return spec.type === "keyed" ? keyedProblem(spec, value, path) : objectProblem(spec, value, path);
-};
+const normalizedVolume = (entry: string | VolumeEntry) =>
+  typeof entry === "string"
+    ? withoutTrailingSlash(entry)
+    : { ...entry, target: withoutTrailingSlash(entry.target) };
 
 const normalized = (config: UserConfig): UserConfig => {
-  const caches = config.mounts?.sharedCaches;
+  const volumes = config.mounts?.volumes;
 
-  return caches === undefined
+  return volumes === undefined
     ? config
-    : { ...config, mounts: { ...config.mounts, sharedCaches: caches.map(withoutTrailingSlash) } };
+    : { ...config, mounts: { ...config.mounts, volumes: volumes.map(normalizedVolume) } };
 };
 
 export const validateConfig = (value: unknown): UserConfig => {
@@ -759,6 +862,10 @@ const keysOf = (spec: Spec, path: string): string[] => {
 
   if (spec.type === "keyed") {
     return [...new Set(Object.values(spec.variants).flatMap((variant) => keysOf(variant, path)))];
+  }
+
+  if (spec.type === "custom") {
+    return spec.keys === undefined ? [] : keysOf(spec.keys, path);
   }
 
   return spec.type === "array" ? keysOf(spec.items, `${path}[]`) : [];

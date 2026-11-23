@@ -454,20 +454,198 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "sharedCaches": {
+        "volumes": {
           "type": "array",
-          "uniqueItems": true,
           "items": {
-            "type": "string",
-            "pattern": "^~/(?!(\\.pi|\\.ssh|\\.gnupg|\\.aws|\\.docker|\\.colima|\\.kube|\\.config|\\.local/bin)(/|$))(?!(.*/)?\\.{1,2}(/|$))[^/]+(/[^/]+)*/?$"
+            "oneOf": [
+              {
+                "type": "string",
+                "pattern": "^(?:~/(?!(?:\\.pi|\\.ssh|\\.gnupg|\\.aws|\\.docker|\\.colima|\\.kube|\\.config|\\.local/bin)(?:/|$))|/(?!(?:home|tmp|opt|etc|var)?/?$)(?!(?:usr|bin|sbin|lib|lib32|lib64|libx32|boot|dev|proc|sys|run|root|home/pi|opt/pi-sandbox|var/run|var/lock|tmp/pi-sandbox-handover|tmp/pi-sandbox-ready|tmp/pi-sandbox-forward|etc/(?:ssl|ld\\.so\\.preload|ld\\.so\\.cache|ld\\.so\\.conf|ld\\.so\\.conf\\.d|passwd|group|shadow|gshadow|nsswitch\\.conf|hosts|hostname|resolv\\.conf))(?:/|$)))(?!(?:.*/)?\\.{1,2}(?:/|$))[^/]+(?:/[^/]+)*/?$",
+                "description": "In the container: an absolute path, or ~/ for the sandbox home (/home/pi, which may not be written out). Not ~/.pi, ~/.ssh, ~/.gnupg, ~/.aws, ~/.docker, ~/.colima, ~/.kube, ~/.config or ~/.local/bin; nothing under or above /usr, /bin, /sbin, /lib, /lib32, /lib64, /libx32, /boot, /dev, /proc, /sys, /run, /var/run, /var/lock, /root, /opt/pi-sandbox, /etc/ssl and the /etc entries ld.so.preload, ld.so.cache, ld.so.conf, ld.so.conf.d, passwd, group, shadow, gshadow, nsswitch.conf, hosts, hostname and resolv.conf (so not /, /etc, /opt or /var); not /home or /tmp; and nothing under or above the marker files /tmp/pi-sandbox-handover, /tmp/pi-sandbox-ready and /tmp/pi-sandbox-forward. Paths such as /etc/<app>, /opt/<name>, /srv/<name>, /var/lib/<name> and /data are fine."
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["target"],
+                "properties": {
+                  "target": {
+                    "type": "string",
+                    "pattern": "^(?:~/(?!(?:\\.pi|\\.ssh|\\.gnupg|\\.aws|\\.docker|\\.colima|\\.kube|\\.config|\\.local/bin)(?:/|$))|/(?!(?:home|tmp|opt|etc|var)?/?$)(?!(?:usr|bin|sbin|lib|lib32|lib64|libx32|boot|dev|proc|sys|run|root|home/pi|opt/pi-sandbox|var/run|var/lock|tmp/pi-sandbox-handover|tmp/pi-sandbox-ready|tmp/pi-sandbox-forward|etc/(?:ssl|ld\\.so\\.preload|ld\\.so\\.cache|ld\\.so\\.conf|ld\\.so\\.conf\\.d|passwd|group|shadow|gshadow|nsswitch\\.conf|hosts|hostname|resolv\\.conf))(?:/|$)))(?!(?:.*/)?\\.{1,2}(?:/|$))[^/]+(?:/[^/]+)*/?$",
+                    "description": "In the container: an absolute path, or ~/ for the sandbox home (/home/pi, which may not be written out). Not ~/.pi, ~/.ssh, ~/.gnupg, ~/.aws, ~/.docker, ~/.colima, ~/.kube, ~/.config or ~/.local/bin; nothing under or above /usr, /bin, /sbin, /lib, /lib32, /lib64, /libx32, /boot, /dev, /proc, /sys, /run, /var/run, /var/lock, /root, /opt/pi-sandbox, /etc/ssl and the /etc entries ld.so.preload, ld.so.cache, ld.so.conf, ld.so.conf.d, passwd, group, shadow, gshadow, nsswitch.conf, hosts, hostname and resolv.conf (so not /, /etc, /opt or /var); not /home or /tmp; and nothing under or above the marker files /tmp/pi-sandbox-handover, /tmp/pi-sandbox-ready and /tmp/pi-sandbox-forward. Paths such as /etc/<app>, /opt/<name>, /srv/<name>, /var/lib/<name> and /data are fine."
+                  },
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9._-]{0,62}$",
+                    "description": "The volume's identity in place of the target, so entries of one name share a volume wherever they are mounted."
+                  }
+                }
+              }
+            ]
           },
-          "description": "Directories under ~ kept in one volume per user and shared by every repository, mounted read-write at the same path in the container. Not ~/.pi, ~/.ssh, ~/.gnupg, ~/.aws, ~/.docker, ~/.colima, ~/.kube, ~/.config or ~/.local/bin, no entry listed twice (a trailing slash is dropped) or inside another."
+          "description": "Folders in the container kept in a named volume, one per sandbox VM, mounted read-write and owned by the sandbox user. A string is the volume at that target. No target listed twice (a trailing slash is dropped) or inside another, and no name listed twice."
+        },
+        "binds": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["source", "target"],
+            "properties": {
+              "source": {
+                "type": "string",
+                "pattern": "^(/|~$|~/)",
+                "description": "A folder or file on the host, an absolute path or ~/; it must exist, and may not be the home dir, hold it, or overlap a path the sandbox protects."
+              },
+              "target": {
+                "type": "string",
+                "pattern": "^(?:~/(?!(?:\\.pi|\\.ssh|\\.gnupg|\\.aws|\\.docker|\\.colima|\\.kube|\\.config|\\.local/bin)(?:/|$))|/(?!(?:home|tmp|opt|etc|var)?/?$)(?!(?:usr|bin|sbin|lib|lib32|lib64|libx32|boot|dev|proc|sys|run|root|home/pi|opt/pi-sandbox|var/run|var/lock|tmp/pi-sandbox-handover|tmp/pi-sandbox-ready|tmp/pi-sandbox-forward|etc/(?:ssl|ld\\.so\\.preload|ld\\.so\\.cache|ld\\.so\\.conf|ld\\.so\\.conf\\.d|passwd|group|shadow|gshadow|nsswitch\\.conf|hosts|hostname|resolv\\.conf))(?:/|$)))(?!(?:.*/)?\\.{1,2}(?:/|$))[^/]+(?:/[^/]+)*/?$",
+                "description": "In the container: an absolute path, or ~/ for the sandbox home (/home/pi, which may not be written out). Not ~/.pi, ~/.ssh, ~/.gnupg, ~/.aws, ~/.docker, ~/.colima, ~/.kube, ~/.config or ~/.local/bin; nothing under or above /usr, /bin, /sbin, /lib, /lib32, /lib64, /libx32, /boot, /dev, /proc, /sys, /run, /var/run, /var/lock, /root, /opt/pi-sandbox, /etc/ssl and the /etc entries ld.so.preload, ld.so.cache, ld.so.conf, ld.so.conf.d, passwd, group, shadow, gshadow, nsswitch.conf, hosts, hostname and resolv.conf (so not /, /etc, /opt or /var); not /home or /tmp; and nothing under or above the marker files /tmp/pi-sandbox-handover, /tmp/pi-sandbox-ready and /tmp/pi-sandbox-forward. Paths such as /etc/<app>, /opt/<name>, /srv/<name>, /var/lib/<name> and /data are fine."
+              }
+            }
+          },
+          "description": "Host folders or files mounted read-only in the container. A source outside the folders the sandbox VM shares adds a read-only VM share, which restarts the VM once."
         },
         "autoOverlays": {
           "type": "boolean",
           "description": "Give every folder with a lockfile or build marker its own volume for the build output (node_modules for npm, pnpm, yarn and bun lockfiles, .venv for uv.lock, poetry.lock and Pipfile.lock, target for Cargo.lock, .gradle for settings.gradle and settings.gradle.kts) so the sandbox never shares it with the host. On by default."
         }
       }
+    },
+    "setup": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "string",
+          "pattern": "^[^\\u0000]*$"
+        },
+        "description": "One command as its argument list, run without a shell; the first entry names the command."
+      },
+      "description": "Commands run in the sandbox container, in order, at every launch, after the container starts and before pi, as the sandbox user with pi's environment, in the repository folder, with no input. A command that exits non-zero stops the launch."
+    },
+    "services": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "command"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,30}$",
+            "description": "The service's name, unique in the list: a lowercase letter, then at most 30 lowercase letters, digits or dashes."
+          },
+          "image": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "The image the service runs, pulled by the VM's Docker when absent. Unset runs the sandbox image."
+          },
+          "command": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "pattern": "^[^\\u0000]*$"
+            },
+            "description": "The service's process as its argument list, run without a shell; the first entry names the command. It must stay in the foreground."
+          },
+          "user": {
+            "type": "string",
+            "pattern": "^(?:[1-9][0-9]{0,8}|1[0-9]{9}|20[0-9]{8}|21[0-3][0-9]{7}|214[0-6][0-9]{6}|2147[0-3][0-9]{5}|21474[0-7][0-9]{4}|214748[0-2][0-9]{3}|2147483[0-5][0-9]{2}|21474836[0-3][0-9]|214748364[0-7]):(?:[1-9][0-9]{0,8}|1[0-9]{9}|20[0-9]{8}|21[0-3][0-9]{7}|214[0-6][0-9]{6}|2147[0-3][0-9]{5}|21474[0-7][0-9]{4}|214748[0-2][0-9]{3}|2147483[0-5][0-9]{2}|21474836[0-3][0-9]|214748364[0-7])$",
+            "default": "1000:1000",
+            "description": "Numeric uid:gid the service runs as, each from 1 to 2147483647; 0 is refused. A service that mounts a volume the agent shares through mounts.volumes runs as 1000:1000."
+          },
+          "env": {
+            "type": "object",
+            "propertyNames": {
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+            },
+            "additionalProperties": {
+              "type": "string",
+              "pattern": "^[^\\u0000]*$"
+            },
+            "description": "The service's whole environment, name to literal value; nothing from the host or the agent is forwarded."
+          },
+          "volumes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "target"],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9._-]{0,62}$",
+                  "description": "The volume's name, one volume for the whole sandbox VM: the same volume as a mounts.volumes entry of this name. Services that mount one name run as one user, and as 1000:1000 when a mounts.volumes entry shares it with the agent."
+                },
+                "target": {
+                  "type": "string",
+                  "pattern": "^(?!(?:.*/)?\\.{1,2}(?:/|$))/[^/:,]+(?:/[^/:,]+)*$",
+                  "description": "Where the volume is mounted in the service: an absolute, normalised path other than /, without : or ,."
+                }
+              }
+            },
+            "description": "Named volumes, one per sandbox VM, mounted read-write and owned by the service's user; they keep their data until pi sandbox reset --services."
+          },
+          "tmpfs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^(?!(?:.*/)?\\.{1,2}(?:/|$))/[^/:,]+(?:/[^/:,]+)*$"
+            },
+            "description": "Extra writable tmpfs paths (mode 1777), absolute and normalised, without : or ,; /tmp always is one. The root is read-only otherwise."
+          },
+          "ready": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["command"],
+            "properties": {
+              "command": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[^\\u0000]*$"
+                },
+                "description": "Run in the service about every 500 ms, as its user and without a shell, until it exits 0."
+              },
+              "timeoutSeconds": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 3600,
+                "default": 60,
+                "description": "How long the launch waits for the ready command to succeed."
+              }
+            },
+            "description": "How the launcher knows the service is ready. Unset: ready once it runs."
+          },
+          "memoryGiB": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "description": "Memory limit of the service; it counts with resources.memoryGiB against vm.memoryGiB. Unset: no limit and not counted."
+          },
+          "shmMiB": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 262144,
+            "description": "Size of the service's /dev/shm in MiB. Unset keeps the engine's default of 64."
+          },
+          "ports": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            "default": [],
+            "description": "TCP ports the service listens on, on every interface; the agent reaches each at localhost:<port>. A port appears once across all services."
+          }
+        },
+        "description": "Volume targets and tmpfs paths may not repeat, hold one another or be /tmp."
+      },
+      "description": "Long-running processes started before pi in one network namespace of their own, one set for the whole sandbox VM; the agent reaches their ports on localhost. Every session in the VM shares them; the last session to end stops them. Each starts in order and is ready before the next."
     },
     "env": {
       "type": "object",
@@ -492,13 +670,8 @@
                     "PI_CODING_AGENT_DIR",
                     "PI_CODING_AGENT_SESSION_DIR",
                     "BASH_ENV",
-                    "JAVA_TOOL_OPTIONS",
                     "NODE_USE_ENV_PROXY",
-                    "PI_SANDBOX_PROXY_HOST",
-                    "PI_SANDBOX_PROXY_PORT",
-                    "PI_SANDBOX_PROXY_TOKEN",
                     "NODE_EXTRA_CA_CERTS",
-                    "PI_SANDBOX_TRUST_HASH",
                     "SSL_CERT_FILE",
                     "CURL_CA_BUNDLE",
                     "REQUESTS_CA_BUNDLE",
@@ -506,11 +679,15 @@
                     "CARGO_HTTP_CAINFO",
                     "GIT_SSL_CAINFO",
                     "PI_SANDBOX",
+                    "PI_SANDBOX_AWAIT_HANDOVER",
                     "PI_SANDBOX_LAUNCH_ID",
+                    "PI_SANDBOX_SERVICE_PORTS",
+                    "PI_SANDBOX_SERVICES_HOST",
+                    "PI_SANDBOX_STATUS",
                     "PI_SKIP_VERSION_CHECK",
                     "PI_TELEMETRY",
                     "PI_CLIPBOARD_OSC52",
-                    "GH_TOKEN",
+                    "PI_SELF_UPDATE_COMMAND",
                     "GITLAB_TOKEN",
                     "GITLAB_HOST",
                     "GIT_TERMINAL_PROMPT",
@@ -528,6 +705,59 @@
             ],
             "description": "Environment variable forwarded from the host; names that look like secrets (token, secret, key, password, passwd, passphrase, credential or jwt in any case), the proxy variables in any case and every variable listed here that the launcher sets inside the container are refused."
           }
+        },
+        "set": {
+          "type": "object",
+          "propertyNames": {
+            "allOf": [
+              {
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+              },
+              {
+                "not": {
+                  "enum": [
+                    "PI_CODING_AGENT_DIR",
+                    "PI_CODING_AGENT_SESSION_DIR",
+                    "BASH_ENV",
+                    "NODE_USE_ENV_PROXY",
+                    "NODE_EXTRA_CA_CERTS",
+                    "SSL_CERT_FILE",
+                    "CURL_CA_BUNDLE",
+                    "REQUESTS_CA_BUNDLE",
+                    "PIP_CERT",
+                    "CARGO_HTTP_CAINFO",
+                    "GIT_SSL_CAINFO",
+                    "PI_SANDBOX",
+                    "PI_SANDBOX_AWAIT_HANDOVER",
+                    "PI_SANDBOX_LAUNCH_ID",
+                    "PI_SANDBOX_SERVICE_PORTS",
+                    "PI_SANDBOX_SERVICES_HOST",
+                    "PI_SANDBOX_STATUS",
+                    "PI_SKIP_VERSION_CHECK",
+                    "PI_TELEMETRY",
+                    "PI_CLIPBOARD_OSC52",
+                    "PI_SELF_UPDATE_COMMAND",
+                    "GITLAB_TOKEN",
+                    "GITLAB_HOST",
+                    "GIT_TERMINAL_PROMPT",
+                    "HOME",
+                    "PATH",
+                    "PWD"
+                  ]
+                }
+              },
+              {
+                "not": {
+                  "pattern": "^([Hh][Tt][Tt][Pp][Ss]?|[Aa][Ll][Ll]|[Nn][Oo])_[Pp][Rr][Oo][Xx][Yy]$"
+                }
+              }
+            ]
+          },
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^[^\\u0000]*$"
+          },
+          "description": "Environment variables set in the sandbox container for pi and everything it runs, name to literal value; nothing in a value is expanded. The names the launcher sets itself (listed under env.allow, and the proxy variables in any case) are refused. A name that is also in env.allow takes this value, not the host's."
         }
       }
     },
@@ -543,13 +773,32 @@
         "memoryGiB": {
           "type": "number",
           "exclusiveMinimum": 0
+        },
+        "pids": {
+          "type": "integer",
+          "minimum": 256,
+          "maximum": 4194304,
+          "default": 4096,
+          "description": "Most processes and threads the container may hold at once."
+        },
+        "openFiles": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 1048576,
+          "description": "Open files limit (nofile, soft and hard) of every process in the container. Unset keeps the engine's default."
+        },
+        "shmMiB": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 262144,
+          "description": "Size of /dev/shm in MiB; it counts against the container's memory. Unset keeps the engine's default of 64."
         }
       }
     },
     "vm": {
       "type": "object",
       "additionalProperties": false,
-      "description": "The size of the sandbox VM, which every sandbox container shares. Unset keeps the size install.sh gave it. A launch with no other pi session running restarts the VM to this size; the disk only grows.",
+      "description": "The size of the sandbox VM, which every sandbox container shares, and whether the launcher releases its file cache. An unset size keeps the size install.sh gave it. A launch with no other pi session running restarts the VM to this size; the disk only grows.",
       "properties": {
         "cpus": {
           "type": "integer",
@@ -568,6 +817,10 @@
           "minimum": 20,
           "maximum": 2048,
           "description": "Disk of the VM, in GiB. A value below the current disk is reported and ignored."
+        },
+        "releaseFileCache": {
+          "type": "boolean",
+          "description": "While pi runs, drop the VM's file cache when the Mac process behind the VM holds as many open files as half the Mac's per-process limit or a quarter of its system-wide limit, whichever is lower, so a very large build does not exhaust the Mac's file descriptors. On by default."
         }
       }
     },

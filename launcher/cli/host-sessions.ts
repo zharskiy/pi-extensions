@@ -1,5 +1,5 @@
-import { type Backend, LABELS } from "../backend/index.ts";
-import { othersLive, withRepoLaunchLock } from "../grants/index.ts";
+import { type Backend, isSession, LABELS } from "../backend/index.ts";
+import { othersLive } from "../grants/index.ts";
 import { prepareHostSessions, probeHostSessions, sweepHostSessions } from "../provision/index.ts";
 import { errorMessage, LauncherError } from "../shared/index.ts";
 import {
@@ -10,6 +10,7 @@ import {
 } from "../workspace/index.ts";
 import type { LaunchContext } from "./context.ts";
 import { type CliDeps, hostAgentDirOf, reachableBackend, writeLine, writeNotices } from "./deps.ts";
+import { whenNotPreparing } from "./prepare.ts";
 
 export const hostSessionsOf = (
   deps: CliDeps,
@@ -34,7 +35,7 @@ const sweptDir = (deps: CliDeps, repoRoot: string) => hostSessionsDir(hostAgentD
 
 const containerRunning = async (backend: Backend, context: LaunchContext) =>
   (await backend.findContainers({ [LABELS.repoHash]: context.repoHash })).some(
-    (container) => container.labels[LABELS.relay] !== "true" && container.state === "running",
+    (container) => isSession(container.labels) && container.state === "running",
   );
 
 const warnUnswept = (deps: CliDeps, dir: string, error: unknown) => {
@@ -77,11 +78,13 @@ const sweepWhenIdle = async (
   launchId?: string,
 ) => {
   try {
-    return await withRepoLaunchLock(context.stateDir, context.repoHash, async () => {
+    const outcome = await whenNotPreparing(context.stateDir, context.repoHash, async () => {
       const others = await othersLive(context.stateDir, context.repoHash, launchId);
 
       return sweep(deps, context.workspace.repoRoot, !others && !(await running()));
     });
+
+    return outcome.busy ? await sweep(deps, context.workspace.repoRoot, false) : outcome.value;
   } catch (error) {
     warnUnswept(deps, sweptDir(deps, context.workspace.repoRoot), error);
 
@@ -103,9 +106,9 @@ export const readyHostSessions = async (
 ) => {
   const { sessions } = parts;
 
-  if ("dir" in sessions) {
-    await prepareHostSessions(sessions.dir);
+  await prepareSessionsDir(sessions);
 
+  if ("dir" in sessions) {
     assertHostSessionsDir(sessions.dir, {
       home: deps.home,
       agentDir: hostAgentDirOf(deps),

@@ -10,6 +10,7 @@ import {
   type FakeHost,
   flushMicrotasks,
   startExtension,
+  usePrivateTmpdir,
   useTempDirs,
 } from "../../../../test/framework/index.ts";
 import { handoffPathFor, NAMESPACE, userAgentsDir } from "../../core/model/paths.ts";
@@ -18,6 +19,8 @@ import { defaultSettings, type Settings } from "../../core/model/settings.ts";
 import type { RunAgentParams } from "../../core/run-agent/tools.ts";
 
 export const PACKAGE_ROOT = resolve(import.meta.dirname, "..", "..");
+
+usePrivateTmpdir();
 
 const tempDirs = useTempDirs();
 

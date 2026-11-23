@@ -125,7 +125,7 @@ const desiredOf = (home: string, exactShares = true): VmDesired => ({
 const applied = async (env: Awaited<ReturnType<typeof setupWith>>, desired: VmDesired, busy = 0) => {
   const phases: VmPhase[] = [];
   const result = await env.vm.apply(desired, {
-    busy: async () => busy,
+    busy: async () => ({ count: busy, others: [] }),
     progress: (phase) => phases.push(phase),
   });
 
@@ -193,7 +193,10 @@ describe("applying a size and shares to the sandbox VM", () => {
     const env = await setupWith({ start: { code: 1, stderr: "disk full\n" } });
 
     await expect(
-      env.vm.apply(desiredOf(env.home), { busy: async () => 0, progress: () => undefined }),
+      env.vm.apply(desiredOf(env.home), {
+        busy: async () => ({ count: 0, others: [] }),
+        progress: () => undefined,
+      }),
     ).rejects.toMatchObject({
       message: "could not create the sandbox VM: colima start failed: disk full",
       hint: "see ~/.colima/_lima/colima-pi-sandbox/ha.stderr.log, then run pi sandbox init again",
@@ -357,7 +360,7 @@ describe("a launch's share restart", () => {
 
     await env.vm.reconcile(
       { size: { cpus: 8, memoryGiB: 12 }, shares: [{ location: "/Volumes/new", writable: true }], needs: [] },
-      { busy: async () => 0, report: (notice) => notices.push(notice) },
+      { busy: async () => ({ count: 0, others: [] }), report: (notice) => notices.push(notice) },
     );
 
     expect(env.commands()).toEqual([
@@ -401,7 +404,7 @@ const reconciled = async (env: Awaited<ReturnType<typeof setupWith>>, target: Vm
       busy: async () => {
         counted.times += 1;
 
-        return busy;
+        return { count: busy, others: [] };
       },
       report: (notice) => notices.push(notice),
     })

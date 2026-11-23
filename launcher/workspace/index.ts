@@ -1,3 +1,4 @@
+export { confirmBinds, type HostBind, hostBinds } from "./binds.ts";
 export { removeCreatedDirs } from "./created.ts";
 export { discoverWorkspace, workspaceFolder } from "./discover.ts";
 export { assertGitIntegrity } from "./git/integrity.ts";

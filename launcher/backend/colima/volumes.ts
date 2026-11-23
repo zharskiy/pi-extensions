@@ -1,5 +1,5 @@
 import { LauncherError } from "../../shared/index.ts";
-import { LABELS } from "../labels.ts";
+import { isOlderBuild, LABELS } from "../labels.ts";
 import type { VolumeSummary } from "../types.ts";
 import { labelFilters } from "./container-body.ts";
 import { type EngineClient, segment } from "./engine-client.ts";
@@ -14,12 +14,14 @@ interface EngineMount {
   Name?: string;
 }
 
-export const createVolumeOperations = (client: EngineClient) => {
+export const createVolumeOperations = (client: EngineClient, install: string) => {
+  const owned = { [LABELS.managed]: "true", [LABELS.install]: install };
+
   const ensureVolume = async (name: string, labels: Record<string, string> = {}) => {
     await client.call({
       method: "POST",
       path: "/volumes/create",
-      json: { Name: name, Labels: { ...labels, [LABELS.managed]: "true" } },
+      json: { Name: name, Labels: { ...labels, ...owned } },
     });
   };
 
@@ -44,7 +46,7 @@ export const createVolumeOperations = (client: EngineClient) => {
       client.json<{ Volumes?: EngineVolume[] | null }>({
         method: "GET",
         path: "/volumes",
-        query: { filters: labelFilters({ [LABELS.managed]: "true" }) },
+        query: { filters: labelFilters(owned) },
       }),
       mountedVolumes(),
     ]);
@@ -54,6 +56,17 @@ export const createVolumeOperations = (client: EngineClient) => {
       labels: volume.Labels ?? {},
       inUse: mounted.has(volume.Name),
     }));
+  };
+
+  const listOlderBuildVolumes = async () => {
+    const listed = await client.json<{ Volumes?: EngineVolume[] | null }>({
+      method: "GET",
+      path: "/volumes",
+    });
+
+    return (listed.Volumes ?? [])
+      .filter((volume) => isOlderBuild(volume.Name, volume.Labels ?? {}))
+      .map((volume) => volume.Name);
   };
 
   const removeVolume = async (name: string) => {
@@ -67,5 +80,5 @@ export const createVolumeOperations = (client: EngineClient) => {
     }
   };
 
-  return { ensureVolume, listVolumes, removeVolume };
+  return { ensureVolume, listVolumes, listOlderBuildVolumes, removeVolume };
 };

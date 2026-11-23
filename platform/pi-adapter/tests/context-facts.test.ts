@@ -1,12 +1,13 @@
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { InMemoryModelsStore } from "@earendil-works/pi-ai";
 import * as pi from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { useTempDirs } from "../../../test/framework/index.ts";
 import { namedTool, offlineModel } from "../../../test/framework/pi/index.ts";
 import { contextHost } from "../context/context-facts.ts";
 import type { HostState } from "../ui/tui-context.ts";
+
+const temp = useTempDirs();
 
 const factsModel = { ...offlineModel, name: "Offline", contextWindow: 100_000 };
 
@@ -266,7 +267,7 @@ describe("pi context against a real session", () => {
   });
 
   it("sees builtin:mcp as the source of MCP tools and system messages in the projection after a request", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "pi-context-"));
+    const dir = temp.make("pi-context-");
     let captured: pi.ExtensionContext | undefined;
     let api: pi.ExtensionAPI | undefined;
 
@@ -311,7 +312,15 @@ describe("pi context against a real session", () => {
 
     await loader.reload();
 
-    const modelRuntime = await pi.ModelRuntime.create();
+    const modelRuntime = await pi.ModelRuntime.create({
+      credentials: {
+        read: async () => undefined,
+        list: async () => [],
+        modify: async () => undefined,
+        delete: async () => undefined,
+      },
+      modelsStore: new InMemoryModelsStore(),
+    });
 
     const { session } = await pi.createAgentSession({
       cwd: dir,

@@ -10,7 +10,7 @@ import { type Duplex, pipeline } from "node:stream";
 import { type TLSSocket, connect as tlsConnect } from "node:tls";
 import { authorityOf, type CredentialRule } from "../config/index.ts";
 import type { Denials } from "./denials.ts";
-import { type Dial, type DialAccess, RestrictedAddressError } from "./dial.ts";
+import { CONNECT_TIMEOUT_MS, type Dial, type DialAccess, RestrictedAddressError } from "./dial.ts";
 import { PROXY_AGENT, rawHead, rawReply, rawResponse, statusLine } from "./replies.ts";
 import { parseRequestTarget } from "./request-target.ts";
 import {
@@ -38,6 +38,7 @@ export interface TerminatorOptions {
   dial: Dial;
   upstreamCa?: string | string[];
   note: Denials["note"];
+  handshakeTimeoutMs?: number;
 }
 
 interface Applied {
@@ -171,7 +172,47 @@ const failureReason = (error: unknown) => {
   return `${message}${CERTIFICATE_ERROR.test(message) ? CERTIFICATE_HINT : ""}`;
 };
 
-const upstreamFailure = (error: unknown) => `upstream request failed: ${failureReason(error)}`;
+export const upstreamFailure = (error: unknown) => `upstream request failed: ${failureReason(error)}`;
+
+const handshaken = (secure: TLSSocket, socket: Duplex, target: TerminatedTarget, timeoutMs: number) =>
+  new Promise<TLSSocket>((resolve, reject) => {
+    const authority = `${target.host}:${target.port}`;
+
+    const settle = (error?: Error) => {
+      clearTimeout(timer);
+
+      secure.off("secureConnect", settle);
+
+      secure.off("error", settle);
+
+      secure.off("close", closed);
+
+      if (error === undefined) {
+        resolve(secure);
+
+        return;
+      }
+
+      secure.destroy();
+
+      socket.destroy();
+
+      reject(error);
+    };
+
+    const closed = () => settle(new Error(`${authority} closed the connection during the TLS handshake`));
+
+    const timer = setTimeout(
+      () => settle(new Error(`${authority} did not finish the TLS handshake in time`)),
+      timeoutMs,
+    );
+
+    secure.once("secureConnect", settle);
+
+    secure.once("error", settle);
+
+    secure.once("close", closed);
+  });
 
 const framingOf = (incoming: IncomingMessage): HeaderPair[] =>
   incoming.headers["transfer-encoding"] === undefined ? [] : [["transfer-encoding", "chunked"]];
@@ -288,7 +329,7 @@ export const createTerminator = (options: TerminatorOptions) => {
 
     secure.on("error", () => secure.destroy());
 
-    return secure;
+    return handshaken(secure, socket, target, options.handshakeTimeoutMs ?? CONNECT_TIMEOUT_MS);
   };
 
   const agentFor = (target: TerminatedTarget) => {

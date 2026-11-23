@@ -52,15 +52,70 @@ interface ImageConfig {
   dockerfile?: string;
 }
 
+interface VmConfig {
+  cpus?: number;
+  memoryGiB?: number;
+  diskGiB?: number;
+  releaseFileCache: boolean;
+}
+
+export interface VolumeEntry {
+  target: string;
+  name?: string;
+}
+
+interface BindEntry {
+  source: string;
+  target: string;
+}
+
 interface MountsConfig {
-  sharedCaches: string[];
+  volumes: Array<string | VolumeEntry>;
+  binds: BindEntry[];
   autoOverlays: boolean;
+}
+
+interface ResourcesConfig {
+  cpus?: number;
+  memoryGiB?: number;
+  pids: number;
+  openFiles?: number;
+  shmMiB?: number;
+}
+
+interface EnvConfig {
+  allow: string[];
+  set: Record<string, string>;
 }
 
 export interface WriteBackConfig {
   enabled: boolean;
   exclude: Record<string, string[]>;
   add: Record<string, Record<string, ValueSpec>>;
+}
+
+interface ServiceVolume {
+  name: string;
+  target: string;
+}
+
+interface ServiceReady {
+  command: string[];
+  timeoutSeconds?: number;
+}
+
+export interface ServiceEntry {
+  name: string;
+  image?: string;
+  command: string[];
+  user?: string;
+  env?: Record<string, string>;
+  volumes?: ServiceVolume[];
+  tmpfs?: string[];
+  ready?: ServiceReady;
+  memoryGiB?: number;
+  shmMiB?: number;
+  ports?: number[];
 }
 
 export interface SandboxConfig {
@@ -70,12 +125,14 @@ export interface SandboxConfig {
   tls: { extraCa: ExtraCa[] };
   workspaceRoots?: WorkspaceRootsConfig;
   mounts: MountsConfig;
-  env: { allow: string[] };
-  resources: { cpus?: number; memoryGiB?: number };
-  vm: { cpus?: number; memoryGiB?: number; diskGiB?: number };
+  env: EnvConfig;
+  resources: ResourcesConfig;
+  vm: VmConfig;
   sessions: { host: boolean };
   terminal: { clipboard: boolean };
   writeBack: WriteBackConfig;
+  setup: string[][];
+  services: ServiceEntry[];
 }
 
 export interface UserConfig {
@@ -89,11 +146,13 @@ export interface UserConfig {
   workspaceRoots?: WorkspaceRootsConfig;
   mounts?: Partial<SandboxConfig["mounts"]>;
   env?: Partial<SandboxConfig["env"]>;
-  resources?: SandboxConfig["resources"];
-  vm?: SandboxConfig["vm"];
+  resources?: Partial<ResourcesConfig>;
+  vm?: Partial<VmConfig>;
   sessions?: Partial<SandboxConfig["sessions"]>;
   terminal?: Partial<SandboxConfig["terminal"]>;
   writeBack?: Partial<WriteBackConfig>;
+  setup?: string[][];
+  services?: ServiceEntry[];
 }
 
 export interface EffectiveConfig {

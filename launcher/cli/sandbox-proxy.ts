@@ -1,33 +1,34 @@
 import { authorityOf, egressAllowList, parentProxyOf, parseHostEntry } from "../config/index.ts";
-import { type Launch, othersLive, withRepoLaunchLock } from "../grants/index.ts";
+import type { Launch } from "../grants/index.ts";
 import {
   type DenialRecord,
   envSecretsFor,
   PROXY_LOG_LIMIT,
+  type ProxyInput,
+  type ProxyRecord,
   parentProxyAuth,
   parentProxyEnv,
-  type RepoProxy,
-  type RepoProxyInput,
-  repoProxyToken,
+  proxyToken,
 } from "../proxy/index.ts";
 import { errorMessage, LauncherError } from "../shared/index.ts";
+import { busyLaunches } from "./busy.ts";
 import type { LaunchContext } from "./context.ts";
 import { type CliDeps, pathsOf, writeLines, writeNotices } from "./deps.ts";
 import type { HostSide } from "./derive.ts";
+import { withGroundLock } from "./ground.ts";
 
 export interface SandboxProxy {
-  proxy: RepoProxy;
+  proxy: ProxyRecord;
   token: string;
 }
 
-type InputParts = Omit<RepoProxyInput, "token">;
+type InputParts = Omit<ProxyInput, "token">;
 
 const proxyInput = (deps: CliDeps, context: LaunchContext, host: HostSide): InputParts => {
   const { egress, tls } = context.effective.config;
   const parentAuth = parentProxyAuth(deps.env);
 
   return {
-    repoHash: context.repoHash,
     allow: egressAllowList(egress),
     deny: egress.deny,
     privateHosts: egress.privateHosts,
@@ -51,13 +52,19 @@ const parentNotices = (deps: CliDeps) => {
     : [];
 };
 
-const startProxy = async (deps: CliDeps, context: LaunchContext, parts: InputParts, launch: Launch) => {
-  const token = await repoProxyToken(context.stateDir, context.repoHash);
+interface ProxyLaunch {
+  launch: Launch;
+  progress: (line: string) => void;
+  signal: AbortSignal;
+}
+
+const startProxy = async (deps: CliDeps, context: LaunchContext, parts: InputParts, own: ProxyLaunch) => {
+  const token = await proxyToken(context.stateDir);
   const started = await deps.proxy.ensure({
     stateDir: context.stateDir,
     input: { ...parts, token },
     env: deps.env,
-    othersLive: () => othersLive(context.stateDir, context.repoHash, launch.launchId),
+    othersLive: async () => (await busyLaunches(context.stateDir, own.launch.launchId)) > 0,
   });
 
   writeNotices(deps, [...started.notices, ...parentNotices(deps)]);
@@ -69,14 +76,14 @@ export const openSandboxProxy = async (
   deps: CliDeps,
   context: LaunchContext,
   host: HostSide,
-  launch: Launch,
+  own: ProxyLaunch,
 ): Promise<SandboxProxy> => {
   const parts = proxyInput(deps, context, host);
 
   try {
-    return await withRepoLaunchLock(context.stateDir, context.repoHash, () =>
-      startProxy(deps, context, parts, launch),
-    );
+    const lock = { stateDir: context.stateDir, progress: own.progress, signal: own.signal };
+
+    return await withGroundLock(lock, () => startProxy(deps, context, parts, own));
   } catch (error) {
     throw new LauncherError(
       `the egress proxy could not start, refusing to run without it: ${errorMessage(error)}`,
@@ -106,14 +113,9 @@ export interface DenialAdvice {
   fix?: string;
 }
 
-export const denialAdvice = (
-  deps: CliDeps,
-  denial: DenialRecord,
-  target: string,
-  context: LaunchContext,
-): DenialAdvice => {
+export const denialAdvice = (deps: CliDeps, denial: DenialRecord, target: string): DenialAdvice => {
   if (denial.rule === "egress.allow") {
-    return { fix: `run pi sandbox egress allow ${target} on the host from ${context.workspace.repoRoot}` };
+    return { fix: `run pi sandbox egress allow ${target} on the host` };
   }
 
   if (RESTRICTED_RULES.has(denial.rule)) {
@@ -131,24 +133,24 @@ export const denialAdvice = (
   return advice[denial.rule] ?? { reason: denial.reason };
 };
 
-const denialHint = (deps: CliDeps, denial: DenialRecord, target: string, context: LaunchContext) => {
-  const { reason, fix } = denialAdvice(deps, denial, target, context);
+const denialHint = (deps: CliDeps, denial: DenialRecord, target: string) => {
+  const { reason, fix } = denialAdvice(deps, denial, target);
 
   return [reason, fix].filter((part) => part !== undefined).join("; ");
 };
 
-const blockedText = (deps: CliDeps, context: LaunchContext) => (denial: DenialRecord) => {
+const blockedText = (deps: CliDeps, denial: DenialRecord) => {
   const target = authorityOf(denial.host, denial.port);
 
-  return `${target} was blocked in this folder's sandbox; ${denialHint(deps, denial, target, context)}`;
+  return `${target} was blocked in the sandbox; ${denialHint(deps, denial, target)}`;
 };
 
 export const sandboxDenials = (deps: CliDeps, context: LaunchContext, since: number) =>
-  deps.proxy.denials(context.stateDir, context.repoHash, since).catch((): DenialRecord[] => []);
+  deps.proxy.denials(context.stateDir, since).catch((): DenialRecord[] => []);
 
-export const reportDenials = (deps: CliDeps, context: LaunchContext) => (denials: DenialRecord[]) => {
+export const reportDenials = (deps: CliDeps) => (denials: DenialRecord[]) => {
   writeLines(
     deps.stderr,
-    deniedTargets(denials).map((denial) => `pi-sandbox: ${blockedText(deps, context)(denial)}`),
+    deniedTargets(denials).map((denial) => `pi-sandbox: ${blockedText(deps, denial)}`),
   );
 };

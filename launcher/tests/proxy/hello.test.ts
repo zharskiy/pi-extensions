@@ -6,8 +6,6 @@ import { createDialer } from "../../proxy/dial.ts";
 import { createStateDir, removeDir, resolveTo, startTestProxy, type TestProxy, waitFor } from "./harness.ts";
 import { openConnect, readRest } from "./proxy-client.ts";
 
-const REPO = "1".repeat(64);
-
 const state: { stateDir: string; recorder: Server; received: Buffer[]; test: TestProxy; token: string } = {
   stateDir: "",
   recorder: undefined as unknown as Server,
@@ -105,7 +103,7 @@ describe("ClientHello on a tunnel", () => {
       await waitFor(() =>
         state.test.log.find((entry) => entry.decision === "allow" && entry.sni === "target.test"),
       ),
-    ).toMatchObject({ host: "target.test", rule: "egress.allow", bytesOut: hello.length, repo: REPO });
+    ).toMatchObject({ host: "target.test", rule: "egress.allow", bytesOut: hello.length });
   });
 
   it("records an sni denial when no hello arrives in time", async () => {
@@ -119,11 +117,11 @@ describe("ClientHello on a tunnel", () => {
       state.test.log.find(
         (entry) => entry.decision === "deny" && entry.rule === "sni" && entry.host === "target.test",
       ),
-    ).toMatchObject({ reason: "no TLS server name", repo: REPO });
+    ).toMatchObject({ reason: "no TLS server name" });
   });
 
   it("forwards the hello of a host reachable only through a grant", async () => {
-    await addGrant(state.stateDir, { host: "granted.test", port: 443, repoHash: REPO }, Date.now());
+    await addGrant(state.stateDir, { host: "granted.test", port: 443 }, Date.now());
 
     const hello = await captureHello("granted.test");
     const socket = await tunnelTo("granted.test:443");

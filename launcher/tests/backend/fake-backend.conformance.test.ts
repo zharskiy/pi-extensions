@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { ContainerSpec } from "../../backend/index.ts";
 import { execCapture } from "../../backend/index.ts";
 import { GUEST_PATHS, LauncherError } from "../../shared/index.ts";
-import { createFakeBackend } from "../support/fake-backend.ts";
+import { createFakeBackend, FAKE_INSTALL } from "../support/fake-backend.ts";
 import { tempDir } from "../support/temp-dir.ts";
 import { runBackendConformance } from "./conformance.ts";
 
@@ -19,14 +19,13 @@ runBackendConformance("fake backend", { describe, it, expect, beforeAll, afterAl
 
   return {
     backend: fake.backend,
+    install: FAKE_INSTALL,
     pullableImage: PULLABLE,
     runnableImage: PULLABLE,
     networks: {
       has: async (name) => fake.hasNetwork(name),
-      remove: async (name) => {
-        fake.networks.delete(name);
-      },
-      plant: async (name, traits) => fake.plantNetwork(name, traits.managed, traits.internal),
+      remove: async (name) => fake.dropNetwork(name),
+      plantForeign: async (name) => fake.plantForeignNetwork(name),
     },
     dispose: () => rm(guestAgentDir, { recursive: true, force: true }),
   };
@@ -43,7 +42,9 @@ const specFor = (name: string, repoHash = REPO_A): ContainerSpec => ({
   readOnlyRoot: true,
   tmpfs: [],
   init: true,
-  resources: {},
+  resources: { pids: 4096 },
+  capabilities: ["CHOWN"],
+  autoRemove: true,
 });
 
 const execSpec = (containerId: string, script: string) => ({

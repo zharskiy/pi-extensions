@@ -22,7 +22,9 @@ const overlayNotices = (context: LaunchContext) => {
     return [TRUNCATED_NOTICE];
   }
 
-  const paths = overlayVolumes(context.workspace, context.effective.config).map((overlay) => overlay.path);
+  const paths = overlayVolumes(context.workspace, context.effective.config, context.stateDir).map(
+    (overlay) => overlay.path,
+  );
 
   if (paths.length === 0) {
     return [];

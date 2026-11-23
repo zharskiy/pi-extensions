@@ -1,8 +1,16 @@
-export { ensureRandomHexFile, writeFileAtomic, writeNewFile } from "./atomic-write.ts";
+export { ensureRandomHexFile, writeFileAtomic } from "./atomic-write.ts";
 export type { CommandRunner, RunOptions, RunResult } from "./command-runner.ts";
 export { createProcessRunner, withResolvedCommand } from "./command-runner.ts";
 export { errorMessage, LauncherError } from "./errors.ts";
-export { withDirectoryLock, withFileLock, withFileLockIfFree } from "./file-lock.ts";
+export type { LockOutcome } from "./file-lock.ts";
+export {
+  withDirectoryLock,
+  withDirectoryLockIfFree,
+  withFileLock,
+  withFileLockIfFree,
+  withFileLockUnless,
+  withWaitingLock,
+} from "./file-lock.ts";
 export { repoHash, sha256Hex, shortHash, stableHash } from "./hash.ts";
 export type { IniSection } from "./ini.ts";
 export { iniWords, parseIni } from "./ini.ts";
@@ -45,7 +53,14 @@ export {
   realOrResolved,
   realOrResolvedSync,
 } from "./paths.ts";
-export { isLauncherSetVariable, PI_SESSION_DIR_VARIABLE } from "./pi-env.ts";
+export { pemCertificates } from "./pem.ts";
+export {
+  isLauncherSetVariable,
+  LAUNCHER_SET_VARIABLES,
+  nonProxyHosts,
+  PI_SESSION_DIR_VARIABLE,
+  PROXY_VARIABLES,
+} from "./pi-env.ts";
 export {
   isPlaceholder,
   jwtShapedPlaceholder,
@@ -68,7 +83,19 @@ export {
 } from "./repo-state.ts";
 export { hasUrlUserinfo, isAuthLikeHeader, isSecretName, isSecretShapedValue } from "./secret-name.ts";
 export { settleAll } from "./settle.ts";
-export { ensureSalt, GUEST_PATHS, stateLayout } from "./state-layout.ts";
+export {
+  ensureSalt,
+  GUEST_HOME,
+  GUEST_MARKERS,
+  GUEST_MOUNT_POINTS,
+  GUEST_PATHS,
+  GUEST_TREES,
+  guestReservedOver,
+  RENDER_STATUS_FILE,
+  rotatedLogOf,
+  stateEntries,
+  stateLayout,
+} from "./state-layout.ts";
 export { isControlChar, lastLine, printable } from "./terminal-text.ts";
 export type { ToolConfigFormat, ToolConfigSelect } from "./tool-config.ts";
 export { isToolConfigKey, TOOL_CONFIG_FORMATS, toolConfigValue, urlPartOf } from "./tool-config.ts";

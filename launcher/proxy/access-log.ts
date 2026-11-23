@@ -1,10 +1,10 @@
 import { createWriteStream, mkdirSync, renameSync, statSync, type WriteStream } from "node:fs";
 import { dirname } from "node:path";
+import { rotatedLogOf } from "../shared/index.ts";
 
 export interface AccessLogEntry {
   time: string;
   user: string;
-  repo: string;
   host: string;
   sni?: string;
   decision: "allow" | "deny";
@@ -37,11 +37,9 @@ const openStream = (path: string) => {
   return stream;
 };
 
-const rotatedLogPath = (path: string) => `${path}.1`;
-
 const moveAside = (path: string) => {
   try {
-    renameSync(path, rotatedLogPath(path));
+    renameSync(path, rotatedLogOf(path));
   } catch {
     return;
   }

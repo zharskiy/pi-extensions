@@ -1,22 +1,25 @@
 import { randomBytes } from "node:crypto";
 import { PassThrough } from "node:stream";
 import type * as Vitest from "vitest";
-import { type Backend, type ContainerSpec, LABELS } from "../../backend/index.ts";
+import {
+  type Backend,
+  type ContainerInspect,
+  type ContainerSpec,
+  LABELS,
+  networkName,
+  relayName,
+} from "../../backend/index.ts";
 import { LauncherError } from "../../shared/index.ts";
-
-interface NetworkTraits {
-  managed: boolean;
-  internal: boolean;
-}
 
 interface ConformanceNetworks {
   has: (name: string) => Promise<boolean>;
   remove: (name: string) => Promise<void>;
-  plant?: (name: string, traits: NetworkTraits) => Promise<void>;
+  plantForeign?: (name: string) => Promise<void>;
 }
 
 export interface ConformanceTarget {
   backend: Backend;
+  install: string;
   pullableImage: string;
   runnableImage: string;
   relayImage?: string;
@@ -42,11 +45,7 @@ const RUN_LABEL = "pi-sandbox.conformance";
 
 const PIPED_INPUT = "piped input\n";
 
-const SHORT_REPO_HASH = 12;
-
 const randomHash = () => randomBytes(32).toString("hex");
-
-const networkOf = (repoHash: string) => `pi-sandbox-${repoHash.slice(0, SHORT_REPO_HASH)}`;
 
 const inputOf = (text = "") => {
   const stdin = new PassThrough();
@@ -90,7 +89,9 @@ export const runBackendConformance = (
     readOnlyRoot: true,
     tmpfs: ["/tmp"],
     init: true,
-    resources: { cpus: 1, memoryGiB: 0.25 },
+    resources: { cpus: 1, memoryGiB: 0.25, pids: 4096 },
+    capabilities: ["CHOWN"],
+    autoRemove: true,
   });
 
   const collector = () => {
@@ -104,32 +105,42 @@ export const runBackendConformance = (
 
   const networks = () => target().networks;
 
-  const plant = (name: string, traits: NetworkTraits) => {
-    const planter = networks().plant;
+  const plantForeign = (name: string) => {
+    const planter = networks().plantForeign;
 
     if (planter === undefined) {
       throw new Error("this conformance target cannot plant networks");
     }
 
-    return planter(name, traits);
+    return planter(name);
   };
 
-  const routeFor = async (repoHash: string, hostPort = 3128) => {
+  const ownNetwork = () => networkName(target().install);
+
+  const relays = () => backend().findContainers({ [LABELS.role]: "relay" });
+
+  const removeRelays = async () => {
+    const found = await relays();
+
+    await Promise.all(found.map((relay) => backend().removeContainer(relay.id)));
+  };
+
+  const routeFor = async (hostPort = 3128) => {
     await backend().pullImage(target().pullableImage);
 
-    return backend().prepareProxyRoute({
+    return backend().prepareRelay({
       hostPort,
-      repoHash,
       imageId: target().relayImage ?? target().runnableImage,
+      preamble: "PI-SANDBOX t0k3n",
     });
   };
 
   const createOn = async (name: string, repoHash: string) => {
-    const route = await routeFor(repoHash);
+    const network = await routeFor();
 
     return backend().createContainer({
       ...specFor(name, { [LABELS.repoHash]: repoHash }),
-      network: route.network,
+      network: { kind: "internal", name: network },
     });
   };
 
@@ -154,19 +165,6 @@ export const runBackendConformance = (
         state.target === undefined ? [] : await backend().findContainers({ [RUN_LABEL]: runId });
 
       await Promise.all(leftovers.map((container) => backend().removeContainer(container.id)));
-
-      const relays =
-        state.target === undefined
-          ? []
-          : (await backend().findContainers({ [LABELS.relay]: "true" })).filter((relay) =>
-              repos.includes(relay.labels[LABELS.repoHash] ?? ""),
-            );
-
-      await Promise.all(relays.map((relay) => backend().removeContainer(relay.id)));
-
-      await Promise.all(
-        repos.map((repoHash) => state.target?.networks.remove(networkOf(repoHash)).catch(() => undefined)),
-      );
 
       await Promise.all(
         volumes.map((volume) => (state.target === undefined ? undefined : backend().removeVolume(volume))),
@@ -372,78 +370,121 @@ export const runBackendConformance = (
       await backend().removeContainer(created.id);
     });
 
-    it("routes each repository over its own internal network, the same one on every call", async () => {
-      const [repoA = "", repoB = ""] = repos;
-      const routeA = await routeFor(repoA);
-      const again = await routeFor(repoA);
-      const routeB = await routeFor(repoB);
+    it("keeps a container that is not auto-removed after it exits, with its exit code and last log lines", async () => {
+      const created = await backend().createContainer({
+        ...specFor("exited", {}),
+        autoRemove: false,
+        entrypoint: ["sh", "-c"],
+        command: ["echo one; echo two >&2; echo three; exit 4"],
+      });
 
-      expect(routeA.network).toEqual({ kind: "internal", name: networkOf(repoA) });
-      expect(routeB.network).toEqual({ kind: "internal", name: networkOf(repoB) });
-      expect(again).toEqual(routeA);
-      expect(routeA.address).toBe("pi-sandbox-proxy:3128");
-      expect(routeB.address).toBe(routeA.address);
-      expect(
-        (await backend().findContainers({ [LABELS.relay]: "true", [LABELS.repoHash]: repoA })).map(
-          (relay) => relay.name,
-        ),
-      ).toEqual([`pi-sandbox-relay-${repoA.slice(0, 12)}`]);
-      expect(await networks().has(networkOf(repoA))).toBe(true);
-      expect(await networks().has(networkOf(repoB))).toBe(true);
+      await backend().startContainer(created.id);
+
+      const exited = async (): Promise<ContainerInspect | undefined> => {
+        const inspected = await backend().inspectContainer(created.id);
+
+        if (inspected?.state !== "running") {
+          return inspected;
+        }
+
+        await new Promise((done) => setTimeout(done, 50));
+
+        return exited();
+      };
+
+      expect(await exited()).toMatchObject({ id: created.id, state: "stopped", exitCode: 4 });
+
+      const lines = (await backend().containerLogs(created.id, 10)).split("\n").filter(Boolean);
+
+      expect([...lines].sort()).toEqual(["one", "three", "two"]);
+      expect(lines.indexOf("one")).toBeLessThan(lines.indexOf("three"));
+      expect(await backend().containerLogs(created.id, 2)).toBe(`${lines.slice(-2).join("\n")}\n`);
+
+      await backend().removeContainer(created.id);
+
+      expect(await backend().inspectContainer(created.id)).toBeUndefined();
+      expect(await backend().containerLogs(created.id, 2)).toBe("");
     });
 
-    it("removes a repository's network only once no sandbox container is attached", async () => {
-      const [repoA = "", repoB = ""] = repos;
-      const first = await createOn("net-a1", repoA);
-      const other = await createOn("net-b", repoB);
+    it("stops a container that is not auto-removed and keeps it until it is removed", async () => {
+      const created = await backend().createContainer({ ...specFor("kept", {}), autoRemove: false });
 
-      expect(await backend().removeRepoNetwork(repoA)).toBe(false);
-      expect(await networks().has(networkOf(repoA))).toBe(true);
+      await backend().startContainer(created.id);
 
-      await backend().removeContainer(first.id);
+      expect((await backend().inspectContainer(created.id))?.state).toBe("running");
 
-      const relays = await backend().findContainers({ [LABELS.relay]: "true", [LABELS.repoHash]: repoA });
+      await backend().stopContainer(created.id, 1);
 
-      await Promise.all(relays.map((relay) => backend().removeContainer(relay.id)));
+      expect((await backend().inspectContainer(created.id))?.state).toBe("stopped");
 
-      expect(await backend().removeRepoNetwork(repoA)).toBe(true);
-      expect(await networks().has(networkOf(repoA))).toBe(false);
-      expect(await networks().has(networkOf(repoB))).toBe(true);
+      await backend().removeContainer(created.id);
 
-      await backend().removeContainer(other.id);
+      expect(await backend().inspectContainer(created.id)).toBeUndefined();
     });
 
     if (scope.sharedRuntime !== true) {
-      it("refuses a network of the repository's name that it does not manage or that is not internal", async () => {
-        const [, , repoC = "", repoD = ""] = repos;
+      it("routes every session over the install's network through one relay, the same on every call", async () => {
+        const network = await routeFor();
+        const again = await routeFor();
+        const found = await relays();
 
-        await plant(networkOf(repoC), { managed: false, internal: true });
+        expect(network).toBe(ownNetwork());
+        expect(again).toBe(network);
+        expect(found.map((relay) => relay.name)).toEqual([relayName(target().install)]);
+        expect(found[0]?.labels[LABELS.install]).toBe(target().install);
+        expect(found[0]?.labels[LABELS.repoHash]).toBeUndefined();
+        expect(await networks().has(network)).toBe(true);
+      });
 
-        await plant(networkOf(repoD), { managed: true, internal: false });
+      it("removes a network only once no container is attached, says whether it removed one, and tolerates a missing one", async () => {
+        const [repoA = ""] = repos;
+        const attached = await createOn("net-a1", repoA);
 
-        const unmanaged = routeFor(repoC);
-        const external = routeFor(repoD);
+        await backend().startContainer(attached.id);
+
+        await expect(backend().removeNetwork()).resolves.toBe(false);
+
+        expect(await networks().has(ownNetwork())).toBe(true);
+
+        await backend().removeContainer(attached.id);
+
+        await removeRelays();
+
+        await expect(backend().removeNetwork()).resolves.toBe(true);
+
+        expect(await networks().has(ownNetwork())).toBe(false);
+
+        await expect(backend().removeNetwork()).resolves.toBe(false);
+      });
+
+      it("refuses a network of its name that it does not manage", async () => {
+        await networks().remove(ownNetwork());
+
+        await plantForeign(ownNetwork());
+
+        const unmanaged = routeFor();
 
         await expect(unmanaged).rejects.toBeInstanceOf(LauncherError);
         await expect(unmanaged).rejects.toThrow("exists but is not managed by pi-sandbox");
-        await expect(external).rejects.toBeInstanceOf(LauncherError);
-        await expect(external).rejects.toThrow("exists but is not internal");
+
+        await networks().remove(ownNetwork());
       });
 
-      it("lists the launcher's networks with their repository and nothing else", async () => {
-        const [repoA = "", , , , repoE = ""] = repos;
+      it("removes its own network and no other", async () => {
+        const foreign = `${prefix}-foreign`;
 
-        await routeFor(repoA);
+        await routeFor();
 
-        await plant(networkOf(repoE), { managed: false, internal: true });
+        await plantForeign(foreign);
 
-        const listed = await backend().listNetworks();
+        await removeRelays();
 
-        expect(listed).toContainEqual({
-          name: networkOf(repoA),
-          labels: expect.objectContaining({ [LABELS.repoHash]: repoA }),
-        });
-        expect(listed.map((network) => network.name)).not.toContain(networkOf(repoE));
+        await backend().removeNetwork();
+
+        expect(await networks().has(ownNetwork())).toBe(false);
+        expect(await networks().has(foreign)).toBe(true);
+
+        await networks().remove(foreign);
       });
     }
   });

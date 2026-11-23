@@ -1,8 +1,9 @@
 import { existsSync, realpathSync } from "node:fs";
+import { mkdir, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   expandHome,
   isWithin,
@@ -12,6 +13,7 @@ import {
   realOrResolved,
   realOrResolvedSync,
 } from "../../shared/index.ts";
+import { tempDir } from "../support/temp-dir.ts";
 
 const home = "/home/dev";
 
@@ -28,15 +30,73 @@ describe("launcherPaths", () => {
   });
 
   it("lets the environment override every path", () => {
+    const temp = realpathSync.native(tmpdir());
     const env = {
-      PI_SANDBOX_STATE_DIR: "/tmp/state",
+      PI_SANDBOX_STATE_DIR: join(temp, "pi-sandbox-state"),
       PI_SANDBOX_USER_CONFIG: "/tmp/user.json",
     };
 
     expect(launcherPaths({ env, home })).toEqual({
-      stateDir: "/tmp/state",
+      stateDir: join(temp, "pi-sandbox-state"),
       userConfigFile: "/tmp/user.json",
     });
+  });
+
+  it("spells a state dir with a trailing slash like the dir itself", async () => {
+    const parent = await tempDir("state");
+    const stateDir = join(parent, "state");
+
+    await mkdir(stateDir);
+
+    expect(launcherPaths({ env: { PI_SANDBOX_STATE_DIR: `${stateDir}/` }, home }).stateDir).toBe(
+      realpathSync.native(stateDir),
+    );
+    expect(
+      launcherPaths({ env: { PI_SANDBOX_STATE_DIR: join(parent, "missing", "..", "state") }, home }).stateDir,
+    ).toBe(realpathSync.native(stateDir));
+  });
+
+  it("spells a state dir reached through a symlink like its target", async () => {
+    const parent = await tempDir("state");
+    const stateDir = join(parent, "state");
+
+    await mkdir(stateDir);
+
+    await symlink(stateDir, join(parent, "alias"));
+
+    expect(launcherPaths({ env: { PI_SANDBOX_STATE_DIR: join(parent, "alias") }, home }).stateDir).toBe(
+      realpathSync.native(stateDir),
+    );
+    expect(
+      launcherPaths({ env: { PI_SANDBOX_STATE_DIR: join(parent, "alias", "not-yet") }, home }).stateDir,
+    ).toBe(join(realpathSync.native(stateDir), "not-yet"));
+  });
+
+  it("creates nothing when it resolves a state dir that does not exist", async () => {
+    const parent = realpathSync.native(await tempDir("state"));
+    const stateDir = join(parent, "missing", "state");
+
+    expect(launcherPaths({ env: { PI_SANDBOX_STATE_DIR: stateDir }, home }).stateDir).toBe(stateDir);
+    expect(existsSync(join(parent, "missing"))).toBe(false);
+  });
+
+  it("resolves a relative state dir against the working directory, so two directories give two state dirs", async () => {
+    const first = realpathSync.native(await tempDir("cwd"));
+    const second = realpathSync.native(await tempDir("cwd"));
+    const env = { PI_SANDBOX_STATE_DIR: "state" };
+    const cwd = vi.spyOn(process, "cwd");
+
+    cwd.mockReturnValue(first);
+
+    const fromFirst = launcherPaths({ env, home }).stateDir;
+
+    cwd.mockReturnValue(second);
+
+    const fromSecond = launcherPaths({ env, home }).stateDir;
+
+    cwd.mockRestore();
+
+    expect([fromFirst, fromSecond]).toEqual([join(first, "state"), join(second, "state")]);
   });
 
   it("ignores empty overrides", () => {

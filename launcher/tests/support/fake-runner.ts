@@ -7,7 +7,7 @@ export interface FakeCall {
   interactive: boolean;
 }
 
-type FakeAnswer = Partial<RunResult> | undefined;
+export type FakeAnswer = Partial<RunResult> | undefined;
 
 export type FakeResponder = (call: FakeCall) => FakeAnswer | Promise<FakeAnswer>;
 

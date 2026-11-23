@@ -1,7 +1,8 @@
 import { join } from "node:path";
 import type { Backend } from "../../backend/index.ts";
 import { errorMessage } from "../../shared/index.ts";
-import { recommendedVmSize, vmBusyCount } from "../vm.ts";
+import { vmSessions } from "../busy.ts";
+import { recommendedVmSize } from "../vm.ts";
 import { folderCandidates, unscannedCandidates } from "./folders.ts";
 import type { FolderCandidate, HostFacts, VmFacts } from "./types.ts";
 
@@ -64,7 +65,11 @@ export const detectHost = async (deps: DetectDeps): Promise<HostFacts> => {
   };
   const [vm, sessions, freeDiskGiB, found] = await Promise.all([
     withinBudget(vmFactsOf(deps.backend), budgetMs, late),
-    withinBudget(vmBusyCount(deps.backend, deps.stateDir), budgetMs, 0),
+    withinBudget(
+      vmSessions(deps.backend, deps.stateDir).then((busy) => busy.count),
+      budgetMs,
+      0,
+    ),
     withinBudget<number | undefined>(freeDiskOf(deps), budgetMs, undefined),
     withinBudget<FolderCandidate[] | "late">(folderCandidates(search), budgetMs, "late"),
   ]);

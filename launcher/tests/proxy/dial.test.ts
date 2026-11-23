@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createDialer, RestrictedAddressError } from "../../proxy/dial.ts";
+import { createDialer, ResolutionTimeoutError, RestrictedAddressError } from "../../proxy/dial.ts";
 
 const refusal = async (address: string) => {
   const { dial } = createDialer({
@@ -29,5 +29,25 @@ describe("a name that resolves only to restricted addresses", () => {
     await expect(dial("named.test", 443, "public")).rejects.toThrow(
       "named.test resolves only to restricted addresses (127.0.0.1 is a loopback address)",
     );
+  });
+});
+
+describe("a lookup that never answers", () => {
+  const stalled = () => new Promise<never>(() => undefined);
+
+  const parent = { host: "127.0.0.1", port: 1, noProxy: [] };
+
+  it("fails the dial through a parent proxy once the connect timeout passes", async () => {
+    const { dial } = createDialer({ parent, resolve: stalled, connectTimeoutMs: 50 });
+    const started = Date.now();
+
+    await expect(dial("named.test", 443, "public")).rejects.toThrow("named.test did not resolve in time");
+    expect(Date.now() - started).toBeLessThan(2_000);
+  });
+
+  it("fails the address check once the connect timeout passes", async () => {
+    const { checkAddresses } = createDialer({ resolve: stalled, connectTimeoutMs: 50 });
+
+    await expect(checkAddresses("named.test", "public")).rejects.toBeInstanceOf(ResolutionTimeoutError);
   });
 });

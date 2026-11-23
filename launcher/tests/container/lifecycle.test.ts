@@ -4,17 +4,17 @@ import { mkdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import type { ExecIo, ExecSpec } from "../../backend/index.ts";
+import { type ExecIo, type ExecSpec, roleOf } from "../../backend/index.ts";
 import {
   type LaunchContainerInput,
   listLauncherContainers,
+  ROOT_EXEC_ENV,
   removeLaunchContainer,
-  removeRepoContainers,
   startLaunchContainer as startWith,
 } from "../../container/lifecycle.ts";
 import { buildContainerSpec, type ContainerSpecInput } from "../../container/spec.ts";
 import { GUEST_PATHS, LauncherError, readCreatedDirs, sha256Hex } from "../../shared/index.ts";
-import { createFakeBackend } from "../support/fake-backend.ts";
+import { createFakeBackend, FAKE_INSTALL } from "../support/fake-backend.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
 
 const WORK = realpathSync(mkdtempSync(join(tmpdir(), "pi-sandbox-lifecycle-work-")));
@@ -57,8 +57,7 @@ const specOf = (overrides: Partial<ContainerSpecInput> = {}) =>
   buildContainerSpec({
     workspace,
     config: sandboxConfig(),
-    image: { reference: "pi-sandbox:local", digest: "sha256:one", id: "sha256:image-one" },
-    hostUid: 501,
+    image: { digest: "sha256:one", id: "sha256:image-one" },
     stateDir: LOCK_STATE,
     launchId: nextLaunchId(),
     gitOverlay: { selfBinds: [], readOnlyDirs: [] },
@@ -66,7 +65,11 @@ const specOf = (overrides: Partial<ContainerSpecInput> = {}) =>
       url: "http://pi-sandbox:t@pi-sandbox-proxy:3128",
       network: { kind: "internal", name: "pi-sandbox" },
     },
-    trust: { pemPath: "/state/vm/trust.pem", hash: "trust-1" },
+    servicePorts: [],
+    renderDir: join(LOCK_STATE, "render"),
+    hostSessions: { off: "sessions.host is off", notice: false },
+    toolEnv: {},
+    binds: [],
     ...overrides,
   });
 
@@ -112,7 +115,7 @@ describe("startLaunchContainer", () => {
     const second = await startLaunchContainer({
       backend: fake.backend,
       spec: specOf({
-        image: { reference: "pi-sandbox:local", digest: "sha256:two", id: "sha256:image-two" },
+        image: { digest: "sha256:two", id: "sha256:image-two" },
       }),
     });
 
@@ -122,24 +125,11 @@ describe("startLaunchContainer", () => {
     expect(fake.stops).toEqual([]);
   });
 
-  it("creates from the spec the step right before the start returns, under the container lock", async () => {
+  it("creates the container from the spec it is given", async () => {
     const fake = createFakeBackend();
-    const order: string[] = [];
     const ready = specOf();
-    const result = await startLaunchContainer({
-      backend: fake.backend,
-      spec: specOf(),
-      beforeStart: async () => {
-        order.push("before");
+    const result = await startLaunchContainer({ backend: fake.backend, spec: ready });
 
-        return ready;
-      },
-      afterCreate: async () => {
-        order.push("after");
-      },
-    });
-
-    expect(order).toEqual(["before", "after"]);
     expect(result.spec).toBe(ready);
     expect(fake.containers.get(result.id)?.summary.name).toBe(ready.name);
   });
@@ -157,6 +147,26 @@ describe("removeLaunchContainer", () => {
     expect(removed.map((container) => container.id)).toEqual([mine.id]);
     expect([...fake.containers.keys()]).toEqual([other.id]);
   });
+
+  it("never takes a pod or a service for the launch's container", async () => {
+    const fake = createFakeBackend();
+    const launch = { "pi-sandbox.managed": "true", "pi-sandbox.launch-id": "launch-1" };
+    const pod = fake.addContainer({
+      name: "pod",
+      labels: { ...launch, "pi-sandbox.role": "pod" },
+      state: "running",
+      image: "pod",
+    });
+    const service = fake.addContainer({
+      name: "service",
+      labels: { ...launch, "pi-sandbox.role": "service" },
+      state: "running",
+      image: "service",
+    });
+
+    expect(await removeLaunchContainer(fake.backend, "launch-1")).toEqual([]);
+    expect([...fake.containers.keys()]).toEqual([pod, service]);
+  });
 });
 
 describe("container housekeeping", () => {
@@ -169,25 +179,18 @@ describe("container housekeeping", () => {
     expect((await listLauncherContainers(fake.backend)).map((container) => container.id)).toEqual([id]);
   });
 
-  it("stops the container of one repository with a short timeout, then removes it", async () => {
-    const fake = createFakeBackend();
-    const { id } = await startLaunchContainer({ backend: fake.backend, spec: specOf() });
-
-    const removed = await removeRepoContainers(fake.backend, REPO_HASH);
-
-    expect(removed.map((container) => container.id)).toEqual([id]);
-    expect(fake.stops).toEqual([{ id, timeoutSeconds: 3 }]);
-    expect(fake.removals).toEqual([id]);
-    expect(fake.containers.size).toBe(0);
-  });
-
-  it("never lists a relay as a launcher container", async () => {
+  it("lists a relay among the launcher's containers", async () => {
     const fake = createFakeBackend();
 
-    await fake.backend.prepareProxyRoute({ hostPort: 3128, repoHash: REPO_HASH, imageId: "relay" });
+    await fake.backend.prepareRelay({
+      hostPort: 3128,
+      imageId: "relay",
+      preamble: "PI-SANDBOX test",
+    });
 
-    expect(await listLauncherContainers(fake.backend)).toEqual([]);
-    expect(await removeRepoContainers(fake.backend, REPO_HASH)).toEqual([]);
+    expect((await listLauncherContainers(fake.backend)).map((container) => roleOf(container.labels))).toEqual(
+      ["relay"],
+    );
   });
 });
 
@@ -198,7 +201,9 @@ describe("volumes the sandbox writes", () => {
     specOf({
       workspace: nodeWorkspace,
       stateDir,
-      config: sandboxConfig({ mounts: { sharedCaches: ["~/.cache/pip"] } }),
+      config: sandboxConfig({
+        mounts: { volumes: ["~/.cache/pip", { target: "/opt/data" }] },
+      }),
     });
   const stopper: { backend?: ReturnType<typeof createFakeBackend>["backend"] } = {};
   const answering =
@@ -228,7 +233,9 @@ describe("volumes the sandbox writes", () => {
     );
   };
   const chownsOf = (fake: ReturnType<typeof createFakeBackend>) =>
-    fake.execs.filter((exec) => exec.spec.command[2]?.startsWith("chown ") === true).map((exec) => exec.spec);
+    fake.execs
+      .filter((exec) => exec.spec.command[2]?.startsWith("/bin/chown ") === true)
+      .map((exec) => exec.spec);
 
   beforeEach(async () => {
     await rm(project, { recursive: true, force: true });
@@ -361,6 +368,37 @@ describe("volumes the sandbox writes", () => {
     expect((await stat(join(WORK, "repo", "deep", "a", "b"))).isDirectory()).toBe(true);
   });
 
+  it("runs every root exec through /bin/sh and calls its programs by absolute path", async () => {
+    const fake = createFakeBackend();
+    await startLaunchContainer({ backend: fake.backend, spec: cachedSpec() });
+
+    const rootExecs = fake.execs.filter((exec) => exec.spec.user === "0").map((exec) => exec.spec.command);
+
+    expect(rootExecs).not.toHaveLength(0);
+    expect(rootExecs.map((command) => [command[0], command[2]?.split(" ")[0]])).toEqual(
+      rootExecs.map(() => ["/bin/sh", "/bin/chown"]),
+    );
+  });
+
+  it("overrides the loader and libc variables the container's environment would pass to every root exec", async () => {
+    const fake = createFakeBackend();
+    await startLaunchContainer({ backend: fake.backend, spec: cachedSpec() });
+
+    const rootEnvs = fake.execs.filter((exec) => exec.spec.user === "0").map((exec) => exec.spec.env);
+
+    expect(rootEnvs).not.toHaveLength(0);
+    expect(rootEnvs).toEqual(rootEnvs.map(() => ROOT_EXEC_ENV));
+    expect(ROOT_EXEC_ENV).toMatchObject({
+      PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+      LD_PRELOAD: "",
+      LD_LIBRARY_PATH: "",
+      LD_AUDIT: "",
+      GCONV_PATH: "",
+      GLIBC_TUNABLES: "",
+    });
+    expect(Object.keys(ROOT_EXEC_ENV)).toHaveLength(22);
+  });
+
   it("hands every owned volume and the home dirs above a shared cache to the sandbox user as root on each start", async () => {
     const fake = createFakeBackend();
     await startLaunchContainer({ backend: fake.backend, spec: cachedSpec() });
@@ -372,13 +410,14 @@ describe("volumes the sandbox writes", () => {
     expect(chownsOf(fake)).toHaveLength(2);
     expect(chown?.user).toBe("0");
     expect(chown?.command).toEqual([
-      "sh",
+      "/bin/sh",
       "-c",
-      'chown -h 1000:1000 "$@" && : > /tmp/pi-sandbox-handover',
+      '/bin/chown -h 1000:1000 "$@" && : > /tmp/pi-sandbox-handover',
       "sh",
       "/home/pi/.cache",
       join(project, "node_modules"),
       "/home/pi/.cache/pip",
+      "/opt/data",
     ]);
   });
 
@@ -386,32 +425,26 @@ describe("volumes the sandbox writes", () => {
     const fake = createFakeBackend({ exec: answering("chown", { code: 1, stderr: "denied\n" }) });
 
     await expect(startLaunchContainer({ backend: fake.backend, spec: cachedSpec() })).rejects.toThrow(
-      "the sandbox could not hand its cache volumes to the sandbox user: denied",
+      "the sandbox could not hand its volumes to the sandbox user: denied",
     );
   });
 
-  it("warns and goes on when the hand-over of volumes outside the home fails", async () => {
+  it("stops the launch when the hand-over of volumes outside the home fails", async () => {
     const fake = createFakeBackend({ exec: answering("chown", { code: 1, stderr: "denied\n" }) });
-    const result = await startLaunchContainer({
-      backend: fake.backend,
-      spec: specOf({ workspace: nodeWorkspace }),
-    });
 
-    expect(result.notices).toEqual([
-      "warning: the sandbox user may not be able to write its cache volumes: denied",
-    ]);
+    await expect(
+      startLaunchContainer({ backend: fake.backend, spec: specOf({ workspace: nodeWorkspace }) }),
+    ).rejects.toMatchObject({
+      message: expect.stringContaining("the sandbox could not hand its volumes to the sandbox user: denied"),
+    });
   });
 
-  it("warns and goes on when the engine rejects the hand-over of volumes outside the home", async () => {
+  it("stops the launch when the engine rejects the hand-over", async () => {
     const fake = createFakeBackend({ exec: answering("chown", { error: "engine: exec refused" }) });
-    const result = await startLaunchContainer({
-      backend: fake.backend,
-      spec: specOf({ workspace: nodeWorkspace }),
-    });
 
-    expect(result.notices).toEqual([
-      "warning: the sandbox user may not be able to write its cache volumes: engine: exec refused",
-    ]);
+    await expect(
+      startLaunchContainer({ backend: fake.backend, spec: specOf({ workspace: nodeWorkspace }) }),
+    ).rejects.toThrow("engine: exec refused");
   });
 
   it("names a container that exited during startup instead of the engine's bare not-running error", async () => {
@@ -459,9 +492,9 @@ describe("volumes the sandbox writes", () => {
     });
   });
 
-  it("tells the entrypoint to wait for the handover only when a shared cache lies in the home", () => {
+  it("tells the entrypoint to wait for the handover whenever the sandbox owns a volume", () => {
     expect(cachedSpec().env.PI_SANDBOX_AWAIT_HANDOVER).toBe("1");
-    expect(specOf({ workspace: nodeWorkspace }).env.PI_SANDBOX_AWAIT_HANDOVER).toBeUndefined();
+    expect(specOf({ workspace: nodeWorkspace }).env.PI_SANDBOX_AWAIT_HANDOVER).toBe("1");
     expect(specOf().env.PI_SANDBOX_AWAIT_HANDOVER).toBeUndefined();
   });
 
@@ -476,7 +509,7 @@ describe("volumes the sandbox writes", () => {
     expect(chownsOf(fake)).toEqual([]);
   });
 
-  it("labels repository volumes with the repository and shared caches with the user only", async () => {
+  it("labels overlay volumes with the repository and configured volumes with the install only", async () => {
     const fake = createFakeBackend();
     const spec = cachedSpec();
 
@@ -487,14 +520,18 @@ describe("volumes the sandbox writes", () => {
 
     expect(labelsOf(join(project, "node_modules"))).toEqual({
       "pi-sandbox.managed": "true",
+      "pi-sandbox.install": FAKE_INSTALL,
       "pi-sandbox.repo-hash": sha256Hex(workspace.repoRoot),
       "pi-sandbox.repo-root": workspace.repoRoot,
       "pi-sandbox.cache-path": "web/node_modules",
     });
     expect(labelsOf("/home/pi/.cache/pip")).toEqual({
       "pi-sandbox.managed": "true",
-      "pi-sandbox.user-hash": sha256Hex(LOCK_STATE).slice(0, 12),
-      "pi-sandbox.shared-path": "~/.cache/pip",
+      "pi-sandbox.install": FAKE_INSTALL,
+    });
+    expect(labelsOf("/opt/data")).toEqual({
+      "pi-sandbox.managed": "true",
+      "pi-sandbox.install": FAKE_INSTALL,
     });
   });
 });
@@ -531,7 +568,7 @@ describe("waiting for the entrypoint", () => {
 
     await startLaunchContainer({
       backend: fake.backend,
-      spec: specOf({ config: sandboxConfig({ mounts: { sharedCaches: ["~/.m2/repository"] } }) }),
+      spec: specOf({ config: sandboxConfig({ mounts: { volumes: ["~/.m2/repository"] } }) }),
       afterCreate: async () => {
         seen.push(...fake.execs.map((exec) => (exec.spec.command[2] ?? "").split(" ")[0] ?? ""));
       },
@@ -539,7 +576,7 @@ describe("waiting for the entrypoint", () => {
 
     const [ready] = readyExecsOf(fake);
 
-    expect(seen).toEqual(["chown", "grep"]);
+    expect(seen).toEqual(["/bin/chown", "grep"]);
     expect(ready?.user).toBeUndefined();
   });
 
@@ -559,6 +596,48 @@ describe("waiting for the entrypoint", () => {
     await expect(startLaunchContainer({ backend: fake.backend, spec: specOf() })).rejects.toThrow(
       "the sandbox entrypoint did not finish preparing the home within 60 s (no /tmp/pi-sandbox-ready)",
     );
+  });
+
+  it("fails the launch and names the port when the forwarder could not listen", async () => {
+    const fake = createFakeBackend({
+      exec: (spec, io) => {
+        if (spec.command[2]?.includes(READY_MARKER) !== true) {
+          return undefined;
+        }
+
+        io.stderr.write("port 5432 on 127.0.0.1: listen EADDRINUSE: address already in use\n");
+
+        return 4;
+      },
+    });
+
+    await expect(startLaunchContainer({ backend: fake.backend, spec: specOf() })).rejects.toThrow(
+      "the sandbox could not forward the services' ports: port 5432 on 127.0.0.1: listen EADDRINUSE",
+    );
+  });
+
+  it("reports the forwarder's failure once the home is ready, and passes on an empty forwarder status", async () => {
+    const script = await readyScript();
+    const dir = mkdtempSync(join(tmpdir(), "pi-ready-forward-"));
+    const entrypoint = join(dir, "entrypoint");
+    const marker = join(dir, "ready");
+    const status = join(dir, "forward");
+
+    await writeFile(entrypoint, `#!/bin/sh\n: > "${marker}"\n`);
+
+    await writeFile(marker, "");
+
+    const local = script.replaceAll(GUEST_PATHS.forwardStatus, status);
+
+    await writeFile(status, "");
+
+    expect(await runReadyScript(local, entrypoint, marker, 600)).toBe(0);
+
+    await writeFile(status, "port 5432 on ::1: listen EADDRINUSE\n");
+
+    expect(await runReadyScript(local, entrypoint, marker, 600)).toBe(4);
+
+    rmSync(dir, { recursive: true, force: true });
   });
 
   it("returns at once for an image whose entrypoint writes no ready marker, and waits for one that does", async () => {

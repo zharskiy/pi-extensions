@@ -32,7 +32,7 @@ export {
   userLine,
 } from "./recorded-sessions.ts";
 export { plainLines, plainText, visibleWidth } from "./rendered-text.ts";
-export { useTempDirs } from "./temp-dirs.ts";
+export { usePrivateTmpdir, useTempDirs } from "./temp-dirs.ts";
 export { paintRecordingTheme, plainTheme, tokenTaggingTheme } from "./themes.ts";
 export { promptTokens, usageTotals } from "./usage-builders.ts";
 export { HANDOFF_SECTIONS, handoffDocument, VALID_HANDOFF } from "./valid-handoff.ts";

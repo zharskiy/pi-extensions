@@ -1,8 +1,10 @@
+import { existsSync } from "node:fs";
 import { mkdir, realpath, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { describe, expect, it } from "vitest";
 import { createColimaVm } from "../../backend/colima/vm.ts";
+import { LABELS } from "../../backend/index.ts";
 import { run } from "../../cli/index.ts";
 import { registerLaunch } from "../../grants/index.ts";
 import { processMark, sha256Hex, stateLayout, withDirectoryLock } from "../../shared/index.ts";
@@ -25,8 +27,6 @@ interface Setup {
   config?: unknown;
   proxy?: boolean;
 }
-
-const LEFT_REPO = "d".repeat(64);
 
 const STOP = "colima stop --profile pi-sandbox";
 
@@ -83,9 +83,11 @@ const setupWith = async (setup: Setup = {}) => {
     respond: (call) => (call.file === "colima" && answers.missing !== true ? answer(call) : undefined),
     proxy: {
       stop: async () => {
+        const running = setup.proxy === true && !events.includes("proxy stop");
+
         events.push("proxy stop");
 
-        return setup.proxy === true;
+        return running;
       },
     },
   });
@@ -314,19 +316,20 @@ describe("the stopped sandbox VM", () => {
 });
 
 describe("pi sandbox stop", () => {
-  it("stops the VM, then sweeps what the sandboxes left, proxies included, and says the next pi starts it again", async () => {
+  it("stops the proxy and removes its token, stops the VM and says the next pi starts it again", async () => {
     const context = await setupWith({ colima: { running: true }, proxy: true });
-    const proxyDir = stateLayout(context.harness.stateDir).repo(LEFT_REPO).proxy;
+    const proxyFiles = stateLayout(context.harness.stateDir).proxy;
 
-    await mkdir(proxyDir.directory, { recursive: true });
+    await mkdir(proxyFiles.directory, { recursive: true });
 
-    await writeFile(proxyDir.token, "f".repeat(64));
+    await writeFile(proxyFiles.token, "f".repeat(64));
 
     expect(await run(["sandbox", "stop"], context.harness.deps)).toBe(0);
-    expect(context.events).toEqual([STATUS, STOP, "proxy stop"]);
+    expect(context.events).toEqual(["proxy stop", STATUS, STOP]);
+    expect(existsSync(proxyFiles.token)).toBe(false);
     expect(context.harness.stdout()).toBe(
       [
-        `stopped the proxy of ${LEFT_REPO.slice(0, 12)}`,
+        "stopped the proxy",
         "stopped the sandbox VM (profile pi-sandbox); the next pi starts it again",
         "",
       ].join("\n"),
@@ -349,6 +352,26 @@ describe("pi sandbox stop", () => {
     expect(context.events).toEqual([STATUS]);
   });
 
+  it("refuses for a session of another install, names its container and says how to remove a leftover", async () => {
+    const context = await setupWith({ colima: { running: true } });
+
+    context.fake.addContainer({
+      name: "pi-sandbox-agent-other",
+      labels: { [LABELS.managed]: "true", [LABELS.install]: "otherinstall", [LABELS.role]: "agent" },
+      state: "running",
+      image: "x",
+    });
+
+    expect(await run(["sandbox", "stop"], context.harness.deps)).toBe(1);
+    expect(context.harness.stderr()).toBe(
+      [
+        "pi-sandbox: 1 pi session is running (pi-sandbox-agent-other of another pi-sandbox install; remove a leftover with docker --context colima-pi-sandbox rm --force <name>); stopping the sandbox VM would end them",
+        "  hint: exit them and run pi sandbox stop again",
+        "",
+      ].join("\n"),
+    );
+  });
+
   it("names the colima error when the stop fails", async () => {
     const context = await setupWith({ colima: { running: true, stop: { code: 1, stderr: "busy\n" } } });
 
@@ -356,7 +379,7 @@ describe("pi sandbox stop", () => {
     expect(context.harness.stderr()).toContain(
       "pi-sandbox: could not stop the sandbox VM: colima stop failed: busy\n  hint: see ~/.colima/_lima/colima-pi-sandbox/ha.stderr.log",
     );
-    expect(context.events).toEqual([STATUS, STOP]);
+    expect(context.events).toEqual(["proxy stop", STATUS, STOP]);
   });
 
   it("does nothing when the VM is already stopped", async () => {
@@ -364,7 +387,7 @@ describe("pi sandbox stop", () => {
 
     expect(await run(["sandbox", "stop"], context.harness.deps)).toBe(0);
     expect(context.harness.stdout()).toBe("the sandbox VM is already stopped\n");
-    expect(context.events).toEqual([STATUS]);
+    expect(context.events).toEqual(["proxy stop", STATUS]);
   });
 
   it("says there is no VM without the pi-sandbox profile", async () => {
@@ -372,7 +395,7 @@ describe("pi sandbox stop", () => {
 
     expect(await run(["sandbox", "stop"], context.harness.deps)).toBe(0);
     expect(context.harness.stdout()).toBe("no sandbox VM: the colima profile pi-sandbox does not exist\n");
-    expect(context.events).toEqual([]);
+    expect(context.events).toEqual(["proxy stop"]);
   });
 
   it("takes no arguments and is listed in the help", async () => {

@@ -166,24 +166,6 @@ describe("install.sh and pi's managed install", { timeout: INSTALL_TIMEOUT_MS },
     expect(await isLauncherWrapper(shim)).toBe(true);
   });
 
-  it("carries over only the replaced-link record of the old state folder, and only when the new one is missing", async () => {
-    const { root, home, record } = await installRoot();
-    const legacy = join(home, ".local", "state", "pi-sandbox", "replaced-pi-link");
-
-    await mkdir(dirname(legacy), { recursive: true });
-
-    await writeFile(legacy, "../../.pi/agent/bin/pi\n");
-
-    expect(runInstall(root).status).toBe(0);
-    expect(await readFile(record, "utf8")).toBe("../../.pi/agent/bin/pi\n");
-    expect(await readFile(legacy, "utf8")).toBe("../../.pi/agent/bin/pi\n");
-
-    await writeFile(record, "kept\n");
-
-    expect(runInstall(root).status).toBe(0);
-    expect(await readFile(record, "utf8")).toBe("kept\n");
-  });
-
   it("finds the managed pi of an agent dir given with ~ as pi does", async () => {
     const { root, home } = await installRoot();
 
@@ -551,28 +533,6 @@ describe("install.sh options and the PATH block", { timeout: INSTALL_TIMEOUT_MS 
     expect(dryRun.status).toBe(1);
     expect(dryRun.stderr).toContain("pi-sandbox install: unknown option --dry-run\n");
     expect(await exists(zshrc(home))).toBe(false);
-  });
-
-  it("refuses the removed sizing and root options with their replacement, before any change", async () => {
-    const { root, home } = await installRoot();
-    const config = join(root, "config", "config.json");
-    const sizing = `pi-sandbox install: --cpu, --memory and --disk were removed: the installer asks for the VM size; without a terminal, set vm.cpus, vm.memoryGiB and vm.diskGiB in ${config} first\n`;
-    const roots =
-      "pi-sandbox install: --root was removed: the installer asks for your project folders; without a terminal, set PI_SANDBOX_ROOTS\n";
-    const results = [["--cpu", "6"], ["--memory=12"], ["--disk"], ["--root", "/work"], ["--root="]].map(
-      (flags) => runInstall(root, flags),
-    );
-
-    expect(results.map((result) => [result.status, result.stderr])).toEqual([
-      [1, sizing],
-      [1, sizing],
-      [1, sizing],
-      [1, roots],
-      [1, roots],
-    ]);
-    expect(await exists(zshrc(home))).toBe(false);
-    expect(await exists(join(home, ".local", "bin", "pi"))).toBe(false);
-    expect(await exists(config)).toBe(false);
   });
 
   it("prints its usage", async () => {

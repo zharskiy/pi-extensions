@@ -7,7 +7,8 @@ const isGrant = (value: unknown): value is Grant =>
   isJsonObject(value) &&
   typeof value.host === "string" &&
   typeof value.port === "number" &&
-  typeof value.createdAt === "number";
+  typeof value.createdAt === "number" &&
+  !("repoHash" in value);
 
 const grantsFile = (stateDir: string) => stateLayout(stateDir).grants;
 
@@ -40,12 +41,10 @@ const updateGrants = <T>(stateDir: string, change: (grants: Grant[]) => { grants
 const grantFor = (request: GrantRequest, now: number): Grant => ({
   host: request.host.trim().toLowerCase(),
   port: request.port,
-  ...(request.repoHash === undefined ? {} : { repoHash: request.repoHash }),
   createdAt: now,
 });
 
-const sameTarget = (left: Grant, right: Grant) =>
-  left.host === right.host && left.port === right.port && left.repoHash === right.repoHash;
+const sameTarget = (left: Grant, right: Grant) => left.host === right.host && left.port === right.port;
 
 export const addGrant = async (stateDir: string, request: GrantRequest, now: number): Promise<Grant> => {
   const grant = grantFor(request, now);
@@ -57,23 +56,11 @@ export const addGrant = async (stateDir: string, request: GrantRequest, now: num
 };
 
 const matches = (grant: Grant, match: GrantMatch) =>
-  grant.host === match.host.trim().toLowerCase() &&
-  (match.port === undefined || grant.port === match.port) &&
-  grant.repoHash === match.repoHash;
+  grant.host === match.host.trim().toLowerCase() && (match.port === undefined || grant.port === match.port);
 
 export const revokeGrants = (stateDir: string, match: GrantMatch): Promise<number> =>
   updateGrants(stateDir, (grants) => {
     const kept = grants.filter((grant) => !matches(grant, match));
-
-    return { grants: kept, result: grants.length - kept.length };
-  });
-
-export const activeGrants = (grants: Grant[], repoHash: string): Grant[] =>
-  grants.filter((grant) => grant.repoHash === undefined || grant.repoHash === repoHash);
-
-export const forgetRepoGrants = (stateDir: string, repoHash: string): Promise<number> =>
-  updateGrants(stateDir, (grants) => {
-    const kept = grants.filter((grant) => grant.repoHash !== repoHash);
 
     return { grants: kept, result: grants.length - kept.length };
   });

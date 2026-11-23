@@ -16,7 +16,6 @@ import { type CliDeps, hostAgentDirOf } from "../deps.ts";
 import { providerHostsOf } from "../derive.ts";
 import { missingPi, resolveJobPi } from "../host-pi.ts";
 import { hostSessionsOf } from "../host-sessions.ts";
-import { ignoredPolicy, leftoverState, movedConfig } from "../legacy-paths.ts";
 import { isOlderVersion, testedPiVersion } from "../versions.ts";
 import {
   type CheckResult,
@@ -195,27 +194,6 @@ const checkSessions = async (deps: CliDeps, context: LaunchContext, files: HostP
     : failed(`${sessions.dir} is not writable`);
 };
 
-const legacyChecks = async (deps: CliDeps): Promise<NamedCheck[]> => {
-  const [config, state, policy] = await Promise.all([
-    movedConfig(deps),
-    leftoverState(deps),
-    ignoredPolicy(deps),
-  ]);
-  const legacyCheck =
-    (name: string) =>
-    (legacy: { problem: string; fix: string }): NamedCheck => ({
-      name,
-      section: "host",
-      result: warned(legacy.problem, { hint: legacy.fix }),
-    });
-
-  return [
-    ...config.map(legacyCheck("user config")),
-    ...policy.map(legacyCheck("old policy")),
-    ...state.map(legacyCheck("old state")),
-  ];
-};
-
 const named = async (name: string, section: Section, result: Promise<CheckResult>): Promise<NamedCheck> => ({
   name,
   section,
@@ -224,8 +202,7 @@ const named = async (name: string, section: Section, result: Promise<CheckResult
 
 export const hostChecks = async (deps: CliDeps, context: LaunchContext): Promise<NamedCheck[]> => {
   const [files, pi] = await Promise.all([readHostPiFiles(hostAgentDirOf(deps)), resolveJobPi(deps)]);
-  const [legacy, checks, signIns] = await Promise.all([
-    legacyChecks(deps),
+  const [checks, signIns] = await Promise.all([
     Promise.all([
       named("host pi", "host", checkHostPi(deps, context, pi)),
       named("provider hosts", "host", checkProviderHosts(deps, context, pi)),
@@ -235,5 +212,5 @@ export const hostChecks = async (deps: CliDeps, context: LaunchContext): Promise
     signInChecks(deps, files),
   ]);
 
-  return [...legacy, ...checks, ...signIns];
+  return [...checks, ...signIns];
 };

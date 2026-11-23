@@ -15,6 +15,7 @@ import { authorityOf, type CredentialRule, TLS_PORT } from "../../config/index.t
 import { readHostPiFiles } from "../../hostpi/index.ts";
 import { type DenialRecord, readHealth } from "../../proxy/index.ts";
 import { errorMessage, LauncherError } from "../../shared/index.ts";
+import { hostBinds } from "../../workspace/index.ts";
 import { type LaunchContext, openContext } from "../context.ts";
 import { type CliDeps, colorOf, hostAgentDirOf, isTerminal, lineSink, writeLines } from "../deps.ts";
 import { missingPiText } from "../host-pi.ts";
@@ -22,11 +23,13 @@ import { hostSessionsOf } from "../host-sessions.ts";
 import { type Sandbox, type Stage, type StageOutcome, withSandbox } from "../launch.ts";
 import { denialAdvice, deniedTargets, type SandboxProxy, sandboxDenials } from "../sandbox-proxy.ts";
 import {
+  assertMemoryFitsVm,
   assertVmFitsHost,
   recommendedVmSize,
   type VmSharePlan,
   vmShareCoverage,
   vmSharesFor,
+  vmTargetOf,
 } from "../vm.ts";
 import {
   type CheckResult,
@@ -181,7 +184,7 @@ const sizeCheck = async (deps: CliDeps, context: LaunchContext, sandbox: Sandbox
   }
 
   const current = `profile ${ENGINE_PROFILE} has ${size.cpus} CPUs and ${gibText(size.memoryGiB)}`;
-  const target = context.effective.config.vm;
+  const target = vmTargetOf(context.effective.config.vm);
 
   if (Object.keys(target).length > 0) {
     return configuredSizeCheck(size, target, current);
@@ -268,8 +271,20 @@ const sharesCheck = async (
   backend: Backend,
 ): Promise<SharesOutcome> => {
   const files = await readHostPiFiles(hostAgentDirOf(deps)).catch(() => undefined);
-  const coverage = await vmShareCoverage(context, backend, hostSessionsOf(deps, context, files?.settings));
-  const plan = vmSharesFor(deps, context.effective.config.workspaceRoots);
+  const { config } = context.effective;
+  const binds = hostBinds(config.mounts.binds, {
+    home: deps.home,
+    env: deps.env,
+    roots: [context.workspace.repoRoot, ...(config.workspaceRoots?.roots ?? [])],
+  });
+  const coverage = await vmShareCoverage(
+    context,
+    backend,
+    hostSessionsOf(deps, context, files?.settings),
+    binds,
+  );
+  const plan =
+    config.workspaceRoots === undefined ? undefined : vmSharesFor(deps, config.workspaceRoots, binds);
   const outcome = coverageOutcome(coverage, plan);
 
   return { ...outcome, result: withNotices(outcome.result, plan?.notices ?? []) };
@@ -300,8 +315,8 @@ const denialAuthority = (denial: DenialRecord) => authorityOf(denial.host, denia
 const isRefusalOf = (authority: string) => (denial: DenialRecord) =>
   denial.credentialRule === undefined && denialAuthority(denial) === authority;
 
-const adviceOf = (deps: CliDeps, context: LaunchContext) => (denial: DenialRecord) => {
-  const advice = denialAdvice(deps, denial, denialAuthority(denial), context);
+const adviceOf = (deps: CliDeps) => (denial: DenialRecord) => {
+  const advice = denialAdvice(deps, denial, denialAuthority(denial));
 
   return warned(advice.reason ?? denial.reason, { hint: advice.fix });
 };
@@ -311,7 +326,7 @@ const ruleHints =
   async (): Promise<ReadonlyMap<string, RuleHint>> => {
     const denials =
       sandbox.proxy === undefined ? [] : await sandboxDenials(deps, context, sandbox.launch.startedAt);
-    const advice = adviceOf(deps, context);
+    const advice = adviceOf(deps);
 
     return new Map(
       rules.map((rule): [string, RuleHint] => {
@@ -338,10 +353,9 @@ const ruleChecks: Probe = (input) => {
 };
 
 const sessionsShareCheck = async (target: ProbeTarget) => {
-  const containers = await target.backend.findContainers({ [LABELS.managed]: "true" });
-  const running = containers.find((container) => container.id === target.containerId);
+  const container = await target.backend.inspectContainer(target.containerId);
 
-  return checkSessionsShare(target, running?.labels[LABELS.sessionDir]);
+  return checkSessionsShare(target, container?.labels[LABELS.sessionDir]);
 };
 
 const PROBES: Probe[] = [
@@ -375,9 +389,9 @@ const probe = async (deps: CliDeps, context: LaunchContext, sandbox: Sandbox, ru
   return (await Promise.all(PROBES.map((check) => check(input)))).flat();
 };
 
-const blockedChecks = (deps: CliDeps, context: LaunchContext, rules: CredentialRule[]) => {
+const blockedChecks = (deps: CliDeps, rules: CredentialRule[]) => {
   const authorities = new Set(rules.map(ruleAuthority));
-  const advice = adviceOf(deps, context);
+  const advice = adviceOf(deps);
 
   return (denials: DenialRecord[]) =>
     deniedTargets(
@@ -426,7 +440,8 @@ const sandboxChecks = async (deps: CliDeps, context: LaunchContext, backend: Bac
     progress: run.progress.line,
     signIn: false,
     share: false,
-    denials: (records) => run.checks.push(...blockedChecks(deps, context, seen.rules ?? [])(records)),
+    probe: true,
+    denials: (records) => run.checks.push(...blockedChecks(deps, seen.rules ?? [])(records)),
   }).catch((error: unknown) => {
     if (seen.failed === undefined) {
       throw error;
@@ -434,6 +449,7 @@ const sandboxChecks = async (deps: CliDeps, context: LaunchContext, backend: Bac
 
     return undefined;
   });
+
   if (seen.rules !== undefined) {
     return undefined;
   }
@@ -455,7 +471,9 @@ const skipSandbox = (run: Run, missing: string[]) => {
 
 const fitsHost = async (deps: CliDeps, context: LaunchContext, run: Run) => {
   try {
-    assertVmFitsHost(deps, context.effective.config.vm);
+    assertVmFitsHost(deps, vmTargetOf(context.effective.config.vm));
+
+    assertMemoryFitsVm(deps, context.effective.config);
 
     return true;
   } catch (error) {

@@ -4,14 +4,13 @@ import { join } from "node:path";
 import {
   isJsonObject,
   isLive,
-  knownRepos,
   LauncherError,
   readJsonObject,
   stateLayout,
   withFileLock,
   writeJsonFile,
 } from "../shared/index.ts";
-import type { EndLaunchInput, Launch } from "./types.ts";
+import type { Launch } from "./types.ts";
 
 const LAUNCH_ID = /^[0-9a-f]{16}$/;
 
@@ -31,12 +30,8 @@ const checkedLaunchId = (launchId: string) => {
   return launchId;
 };
 
-const launchesDir = (stateDir: string, repoHash: string) => stateLayout(stateDir).repo(repoHash).launches;
-
-const entryFile = (stateDir: string, repoHash: string, launchId: string) =>
-  join(launchesDir(stateDir, repoHash), `${checkedLaunchId(launchId)}${ENTRY_SUFFIX}`);
-
-const lockFile = (stateDir: string, repoHash: string) => stateLayout(stateDir).repo(repoHash).lock;
+const entryFile = (stateDir: string, launchId: string) =>
+  join(stateLayout(stateDir).launches, `${checkedLaunchId(launchId)}${ENTRY_SUFFIX}`);
 
 interface StoredEntry {
   path: string;
@@ -49,7 +44,8 @@ const isEntry = (value: unknown): value is Launch =>
   typeof value.pid === "number" &&
   typeof value.boot === "number" &&
   typeof value.start === "string" &&
-  typeof value.launchId === "string";
+  typeof value.launchId === "string" &&
+  typeof value.repoHash === "string";
 
 const readEntry = async (path: string): Promise<StoredEntry> => {
   const value = await readJsonObject(path);
@@ -61,8 +57,8 @@ const readEntry = async (path: string): Promise<StoredEntry> => {
   return { path, entry: value, live: await isLive(value) };
 };
 
-const storedEntries = async (stateDir: string, repoHash: string) => {
-  const directory = launchesDir(stateDir, repoHash);
+const storedEntries = async (stateDir: string) => {
+  const directory = stateLayout(stateDir).launches;
   const names = await readdir(directory).catch(() => []);
 
   return Promise.all(
@@ -74,51 +70,44 @@ const liveEntries = (stored: StoredEntry[]) =>
   stored.flatMap((item) => (item.live && item.entry !== undefined ? [item.entry] : []));
 
 const deadEntries = (stored: StoredEntry[]) =>
-  stored.filter((item) => item.entry !== undefined && !item.live);
+  stored.flatMap((item) => (!item.live && item.entry !== undefined ? [item] : []));
 
-export const pruneLaunches = async (stateDir: string, repoHash: string): Promise<Launch[]> => {
-  const stored = await storedEntries(stateDir, repoHash);
+export const pruneLaunches = async (stateDir: string): Promise<Launch[]> => {
+  const stored = await storedEntries(stateDir);
 
   await Promise.all(deadEntries(stored).map((item) => rm(item.path, { force: true })));
 
   return liveEntries(stored);
 };
 
-export const liveLaunches = async (stateDir: string, repoHash?: string): Promise<Launch[]> => {
-  const hashes = repoHash === undefined ? await knownRepos(stateDir) : [repoHash];
-  const entries = await Promise.all(hashes.map((hash) => storedEntries(stateDir, hash)));
+export const liveLaunches = async (stateDir: string): Promise<Launch[]> =>
+  liveEntries(await storedEntries(stateDir));
 
-  return entries.flatMap(liveEntries);
-};
+export const launchState = async (stateDir: string) => {
+  const stored = await storedEntries(stateDir);
 
-export const launchState = async (stateDir: string, repoHash: string) => {
-  const stored = await storedEntries(stateDir, repoHash);
-
-  return { live: liveEntries(stored), dead: deadEntries(stored).length };
+  return {
+    live: liveEntries(stored),
+    dead: deadEntries(stored).flatMap((item) => (item.entry === undefined ? [] : [item.entry])),
+  };
 };
 
 export const othersLive = async (stateDir: string, repoHash: string, launchId?: string) =>
-  (await liveLaunches(stateDir, repoHash)).some((entry) => entry.launchId !== launchId);
+  (await liveLaunches(stateDir)).some((entry) => entry.repoHash === repoHash && entry.launchId !== launchId);
 
-export const withRepoLaunchLock = <T>(stateDir: string, repoHash: string, action: () => Promise<T>) =>
-  withFileLock(lockFile(stateDir, repoHash), action, { timeoutMs: LOCK_TIMEOUT_MS });
+export const withLaunchLock = <T>(stateDir: string, action: () => Promise<T>) =>
+  withFileLock(stateLayout(stateDir).launchesLock, action, { timeoutMs: LOCK_TIMEOUT_MS });
 
-export const registerLaunch = (stateDir: string, entry: Launch): Promise<number> =>
-  withRepoLaunchLock(stateDir, entry.repoHash, async () => {
-    await writeJsonFile(entryFile(stateDir, entry.repoHash, entry.launchId), entry, { mode: PRIVATE_MODE });
+export const registerLaunch = (stateDir: string, entry: Launch) =>
+  withLaunchLock(stateDir, async () => {
+    await writeJsonFile(entryFile(stateDir, entry.launchId), entry, { mode: PRIVATE_MODE });
 
-    return (await pruneLaunches(stateDir, entry.repoHash)).length;
+    await pruneLaunches(stateDir);
   });
 
-export const endLaunch = (stateDir: string, input: EndLaunchInput): Promise<number> =>
-  withRepoLaunchLock(stateDir, input.repoHash, async () => {
-    await rm(entryFile(stateDir, input.repoHash, input.launchId), { force: true });
+export const endLaunch = (stateDir: string, launchId: string): Promise<Launch[]> =>
+  withLaunchLock(stateDir, async () => {
+    await rm(entryFile(stateDir, launchId), { force: true });
 
-    const remaining = (await pruneLaunches(stateDir, input.repoHash)).length;
-
-    if (remaining === 0) {
-      await input.onLast();
-    }
-
-    return remaining;
+    return pruneLaunches(stateDir);
   });

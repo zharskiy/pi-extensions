@@ -7,7 +7,7 @@ import { ESTABLISHED, rawReply } from "./replies.ts";
 
 type DenialInput = Pick<Denial, "rule" | "reason">;
 
-export type RecordAccess = (entry: Omit<AccessLogEntry, "time" | "user" | "repo">) => void;
+export type RecordAccess = (entry: Omit<AccessLogEntry, "time" | "user">) => void;
 
 export interface DenialContext {
   port?: number;
@@ -31,11 +31,7 @@ const forbiddenStatus = (denial: DenialInput) =>
 const forbidden = (host: string, denial: DenialInput) =>
   rawReply(forbiddenStatus(denial), denialBody(host, denial));
 
-export const createDenials = (
-  repoHash: string,
-  record: RecordAccess,
-  pages: ReturnType<typeof createDenialPages>,
-) => {
+export const createDenials = (record: RecordAccess, pages: ReturnType<typeof createDenialPages>) => {
   const state: { remembered: DenialRecord[] } = { remembered: [] };
 
   const log = (host: string, denial: DenialInput, context: DenialContext = {}) => {
@@ -57,7 +53,6 @@ export const createDenials = (
       time: Date.now(),
       host,
       port: context.port ?? 0,
-      repoHash,
       rule: denial.rule,
       reason: denial.reason,
       ...(context.credentialRule === undefined ? {} : { credentialRule: context.credentialRule }),

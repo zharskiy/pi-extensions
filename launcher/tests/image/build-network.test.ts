@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { BuildOptions } from "../../backend/index.ts";
 import { ensureBuiltImage } from "../../image/build.ts";
 import { ensureSandboxImage } from "../../image/index.ts";
 import { createFakeBackend } from "../support/fake-backend.ts";
@@ -14,8 +15,8 @@ const recordingBackend = () => {
   const buildArgs: Array<Record<string, string> | undefined> = [];
   const backend = {
     ...fake.backend,
-    buildImage: async (contextDir: string, tag: string, args?: Record<string, string>) => {
-      buildArgs.push(args);
+    buildImage: async (contextDir: string, tag: string, options?: BuildOptions) => {
+      buildArgs.push(options?.args);
 
       return fake.backend.buildImage(contextDir, tag);
     },
@@ -152,6 +153,8 @@ describe("image build network", () => {
     });
 
     expect(result.digest).toBe("sha256:pinned");
-    expect(fake.builds).toEqual([]);
+    expect(fake.builds.map((build) => [build.tag, build.args])).toEqual([
+      [expect.stringMatching(/^pi-sandbox-layer:/), {}],
+    ]);
   });
 });

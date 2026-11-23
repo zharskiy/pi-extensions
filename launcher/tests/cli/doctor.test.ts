@@ -1,5 +1,5 @@
 import { createServer, type Server } from "node:http";
-import type { AddressInfo } from "node:net";
+import { type AddressInfo, createServer as createNetServer, type Socket } from "node:net";
 import { join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
@@ -35,7 +35,11 @@ interface Probes {
   sandboxTls?: string;
 }
 
-const SANDBOX_TRUSTS = JSON.stringify({ chain: [], verdicts: [null], extraCaEnv: "/etc/pi-sandbox/ca.pem" });
+const SANDBOX_TRUSTS = JSON.stringify({
+  chain: [],
+  verdicts: [null],
+  extraCaEnv: "/etc/ssl/certs/ca-certificates.crt",
+});
 
 const cleanups: Array<() => Promise<void>> = [];
 
@@ -43,18 +47,55 @@ afterEach(async () => {
   await Promise.all(cleanups.splice(0).map((cleanup) => cleanup()));
 });
 
+const PREAMBLE_LINE = /^PI-SANDBOX [0-9a-f]{64}$/;
+
+const afterPreamble = (socket: Socket, admit: (socket: Socket) => void) => {
+  const state = { pending: Buffer.alloc(0) };
+
+  const onData = (chunk: Buffer) => {
+    state.pending = Buffer.concat([state.pending, chunk]);
+
+    const end = state.pending.indexOf("\n");
+
+    if (end === -1) {
+      return;
+    }
+
+    socket.off("data", onData);
+
+    if (!PREAMBLE_LINE.test(state.pending.subarray(0, end).toString("utf8"))) {
+      socket.destroy();
+
+      return;
+    }
+
+    socket.pause();
+
+    socket.unshift(state.pending.subarray(end + 1));
+
+    admit(socket);
+
+    socket.resume();
+  };
+
+  socket.on("data", onData);
+};
+
 const healthServer = async (status: number) => {
   const server: Server = createServer((_request, response) => {
     response.writeHead(status, { "content-type": "application/json" });
 
     response.end('{"ok":true}');
   });
+  const gate = createNetServer((socket) =>
+    afterPreamble(socket, (admitted) => server.emit("connection", admitted)),
+  );
 
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  await new Promise<void>((resolve) => gate.listen(0, "127.0.0.1", resolve));
 
-  cleanups.push(() => new Promise<void>((resolve) => server.close(() => resolve())));
+  cleanups.push(() => new Promise<void>((resolve) => gate.close(() => resolve())));
 
-  return (server.address() as AddressInfo).port;
+  return (gate.address() as AddressInfo).port;
 };
 
 const isReadyWait = (spec: ExecSpec) =>
@@ -295,7 +336,6 @@ describe("pi sandbox doctor", () => {
       time: 1_700_000_000_500,
       host: "models.example.test",
       port: 443,
-      repoHash: "repo",
       rule: "login",
       reason: "the example login on the host is missing or expired",
       credentialRule: "derived:auth:example:key",
@@ -321,7 +361,6 @@ describe("pi sandbox doctor", () => {
     time: 1_700_000_000_500,
     host: "models.example.test",
     port,
-    repoHash: "repo",
     rule,
     reason,
   });
@@ -415,14 +454,15 @@ describe("pi sandbox doctor", () => {
 
   it("probes the session dir the running container was started with, not the planned one", async () => {
     const fake = await guestBackend({});
-    const find = fake.backend.findContainers;
+    const inspect = fake.backend.inspectContainer;
 
-    fake.backend.findContainers = async (labels) =>
-      (await find(labels)).map((summary) =>
-        fake.execs.length === 0
-          ? summary
-          : { ...summary, labels: { ...summary.labels, [LABELS.sessionDir]: "sessions.host is off" } },
-      );
+    fake.backend.inspectContainer = async (id) => {
+      const container = await inspect(id);
+
+      return container === undefined || fake.execs.length === 0
+        ? container
+        : { ...container, labels: { ...container.labels, [LABELS.sessionDir]: "sessions.host is off" } };
+    };
 
     const port = await healthServer(200);
     const harness = await createHarness({
@@ -462,7 +502,7 @@ describe("pi sandbox doctor", () => {
         sandboxTls: JSON.stringify({
           chain: [],
           verdicts: ["UNABLE_TO_GET_ISSUER_CERT_LOCALLY"],
-          extraCaEnv: "/etc/pi-sandbox/ca.pem",
+          extraCaEnv: "/etc/ssl/certs/ca-certificates.crt",
         }),
       },
     });
@@ -472,7 +512,7 @@ describe("pi sandbox doctor", () => {
       status: "fail",
       detail: "the host trusts TLS to pi.dev, the container does not: UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
       reasons: [
-        "the container's trust (NODE_EXTRA_CA_CERTS=/etc/pi-sandbox/ca.pem) does not hold the public roots",
+        "the container's system store (NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt) does not hold the public roots",
       ],
     });
     expect(code).toBe(1);
@@ -568,11 +608,13 @@ describe("pi sandbox doctor", () => {
     expect(stdout).not.toContain("real-secret");
   });
 
-  it("passes the sweep over the container's own environment, whose proxy token is no placeholder", async () => {
+  it("passes the sweep over the container's own environment, which holds no proxy token", async () => {
     const { stdout, fake } = await doctorWith();
-    const env = fake.created[0]?.spec?.env ?? {};
+    const env = Object.values(fake.created[0]?.spec?.env ?? {});
+    const token = (fake.routes[0]?.preamble ?? "").replace("PI-SANDBOX ", "");
 
-    expect(env.PI_SANDBOX_PROXY_TOKEN).toMatch(/^[0-9a-f]{64}$/);
+    expect(token).toMatch(/^[0-9a-f]{64}$/);
+    expect(env.filter((value) => value.includes(token))).toEqual([]);
     expect(check(stdout, "credential sweep")).toMatchObject({
       status: "ok",
       detail: "no credential in the environment, auth.json or mcp.json",
@@ -635,6 +677,7 @@ describe("pi sandbox doctor", () => {
       name: "other-launch",
       labels: {
         [LABELS.managed]: "true",
+        [LABELS.role]: "agent",
         [LABELS.repoHash]: sha256Hex(harness.repoRoot),
         [LABELS.launchId]: "00000000000000cc",
       },

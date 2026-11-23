@@ -12,6 +12,9 @@ const BASH_ENV_FILE = join(launcherRoot(), "image", "bash-env.sh");
 const HINT =
   "bash: pi-sandbox-missing-tool: command not found\npi-sandbox: pi-sandbox-missing-tool is not in the sandbox image; add its Debian package to image.packages or its npm package to image.npmGlobal in pi-sandbox/config.json under pi's agent dir on the host (~/.pi/agent unless PI_CODING_AGENT_DIR is set)\n";
 
+const rootHint = (name: string) =>
+  `bash: ${name}: command not found\npi-sandbox: there is no root in the sandbox, so ${name} cannot help; Debian packages go in image.packages in pi-sandbox/config.json under pi's agent dir on the host and are installed as root when the image is built, and a server the agent needs runs in a container of its own listed under services (see "Services" in the launcher's CONFIGURATION.md)\n`;
+
 const bashVersion = spawnSync("bash", ["--version"], { encoding: "utf8" }).stdout ?? "";
 
 const bashMajor = Number(/version (\d+)\./.exec(bashVersion)?.[1] ?? 0);
@@ -96,6 +99,19 @@ describe("the missing-command hint", () => {
       const result = shellTool("pi-sandbox-missing-tool --version", { HOME: await bashrcHome() });
 
       expect(result.stderr).toBe(HINT);
+      expect(result.stdout).toBe("");
+      expect(result.status).toBe(127);
+    },
+  );
+
+  it.skipIf(!(bashMajor >= 4)).each(["sudo", "doas", "systemctl"])(
+    "says there is no root instead of suggesting a package for %s",
+    async (name) => {
+      const result = shellTool(`. '${BASH_ENV_FILE}'; PATH="$HOME"; ${name} true`, {
+        HOME: await emptyHome(),
+      });
+
+      expect(result.stderr).toBe(rootHint(name));
       expect(result.stdout).toBe("");
       expect(result.status).toBe(127);
     },

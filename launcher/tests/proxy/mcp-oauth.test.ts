@@ -391,15 +391,20 @@ describe("mcpOAuth secrets read the host pi sign-in", () => {
 describe("mcpOAuth sign-in through the proxy", () => {
   const RULE: CredentialRule = { id: "mcp", host: "mcp.test", placeholder: PLACEHOLDER, secret: REF };
 
-  const proxy: { ca?: LauncherCa; upstream?: Server; seen: Array<string | undefined>; accepting: boolean } = {
+  const proxy: {
+    caDir?: string;
+    ca?: LauncherCa;
+    upstream?: Server;
+    seen: Array<string | undefined>;
+    accepting: boolean;
+  } = {
     seen: [],
     accepting: false,
   };
 
   beforeAll(async () => {
-    const caDir = await createStateDir();
-
-    proxy.ca = await openCa(caDir);
+    proxy.caDir = await createStateDir();
+    proxy.ca = await openCa(proxy.caDir);
     proxy.upstream = createHttpsServer(await proxy.ca.leaf("mcp.test"), (request, response) => {
       proxy.seen.push(request.headers.authorization);
 
@@ -421,6 +426,10 @@ describe("mcpOAuth sign-in through the proxy", () => {
 
   afterAll(async () => {
     await closeServer(proxy.upstream);
+
+    if (proxy.caDir !== undefined) {
+      await removeDir(proxy.caDir);
+    }
   });
 
   const started = async (

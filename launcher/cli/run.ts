@@ -6,7 +6,7 @@ import { egressCommand } from "./commands/egress.ts";
 import { helpCommand, usageOf } from "./commands/help.ts";
 import { initCommand, YES_FLAG } from "./commands/init.ts";
 import { assertOptions } from "./commands/options.ts";
-import { resetCommand } from "./commands/reset.ts";
+import { resetCommand, SERVICES_FLAG } from "./commands/reset.ts";
 import { SMOKE_DOCTOR, smokeDoctorCommand } from "./commands/smoke-doctor.ts";
 import { statusCommand } from "./commands/status.ts";
 import { stopCommand } from "./commands/stop.ts";
@@ -38,7 +38,7 @@ const COMMANDS: Record<string, Command> = {
   doctor: { run: doctorCommand, options: [VERBOSE_FLAG] },
   config: { run: configCommand, options: [JSON_FLAG] },
   egress: { run: egressCommand },
-  reset: { run: resetCommand, options: [] },
+  reset: { run: resetCommand, options: [SERVICES_FLAG] },
   stop: { run: stopCommand, options: [] },
   help,
   "--help": help,

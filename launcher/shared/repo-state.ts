@@ -126,12 +126,8 @@ export const recordCreatedDirs = (stateDir: string, repoHash: string, dirs: stri
     await writeList(filesOf(stateDir, repoHash).created, [...new Set([...known, ...dirs])]);
   });
 
-export const hasRepoLeftovers = async (stateDir: string, repoHash: string) => {
-  const files = filesOf(stateDir, repoHash);
-  const present = await Promise.all([files.proxy.record, files.proxy.token, files.created].map(exists));
-
-  return present.some(Boolean);
-};
+export const hasRepoLeftovers = (stateDir: string, repoHash: string) =>
+  exists(filesOf(stateDir, repoHash).created);
 
 export const forgetRepo = async (stateDir: string, repoHash: string) => {
   const files = filesOf(stateDir, repoHash);

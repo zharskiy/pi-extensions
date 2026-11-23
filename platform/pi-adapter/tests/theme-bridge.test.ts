@@ -1,15 +1,17 @@
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { initTheme, type Theme } from "@earendil-works/pi-coding-agent";
 import { mixColors, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
+import { useTempDirs } from "../../../test/framework/index.ts";
 import { plainPiTheme } from "../../../test/framework/pi/index.ts";
 import type { ThemeToken } from "../index.ts";
 import { themeLike } from "../ui/theme-bridge.ts";
 
 initTheme("dark", false);
+
+const temp = useTempDirs();
 
 const theme = plainPiTheme;
 
@@ -75,7 +77,7 @@ describe("themeLike panels", () => {
       import.meta.resolve("@earendil-works/pi-coding-agent"),
     );
     const json = JSON.parse(readFileSync(source, "utf8"));
-    const file = join(mkdtempSync(join(tmpdir(), "pi-theme-")), "probe.json");
+    const file = join(temp.make("pi-theme-"), "probe.json");
 
     writeFileSync(
       file,

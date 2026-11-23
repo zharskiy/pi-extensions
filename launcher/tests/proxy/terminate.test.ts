@@ -1,5 +1,6 @@
 import { createServer as createHttpsServer, type Server } from "node:https";
-import type { Duplex } from "node:stream";
+import type { Socket } from "node:net";
+import { Duplex } from "node:stream";
 import { createSecureContext } from "node:tls";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { CredentialRule } from "../../config/index.ts";
@@ -45,11 +46,9 @@ const API_SECRET = "real-api-secret";
 
 const GIT_SECRET = "real-git-secret";
 
-const GH_PLACEHOLDER = "pi-sandbox-aaaabbbbccccddddeeeeffff";
+const BASIC_PLACEHOLDER = "pi-sandbox-aaaabbbbccccddddeeeeffff";
 
-const GH_SECRET = "gho_real-token";
-
-const REPO = "1".repeat(64);
+const BASIC_SECRET = "real-basic-token";
 
 const RULES: CredentialRule[] = [
   {
@@ -96,7 +95,12 @@ const RULES: CredentialRule[] = [
     template: "Bearer {secret}",
     secret: { command: ["newline"] },
   },
-  { id: "derived:gh", host: "npm.test", placeholder: GH_PLACEHOLDER, secret: { command: ["gh-token"] } },
+  {
+    id: "derived:basic",
+    host: "npm.test",
+    placeholder: BASIC_PLACEHOLDER,
+    secret: { command: ["basic-token"] },
+  },
 ];
 
 const b64 = (text: string) => Buffer.from(text).toString("base64");
@@ -125,7 +129,7 @@ const state: {
       llm: SECRET,
       api: API_SECRET,
       git: GIT_SECRET,
-      "derived:gh": GH_SECRET,
+      "derived:basic": BASIC_SECRET,
       broken: "value",
       newline: "trailing\n",
     },
@@ -149,6 +153,16 @@ const respond = (
     response.write("data: first\n\n");
 
     state.releaseStream.push(() => response.end("data: last\n\n"));
+
+    return;
+  }
+
+  if (request.url === "/slow") {
+    response.writeHead(200, { "content-type": "text/plain" });
+
+    response.write("first...");
+
+    setTimeout(() => response.end("last"), 400);
 
     return;
   }
@@ -307,6 +321,14 @@ describe("a header rule with a placeholder", () => {
     expect(body).toMatchObject({ url: "/v1/messages", headers: { "x-api-key": SECRET } });
   });
 
+  it("never forwards a Proxy-Authorization the client sends inside the tunnel", async () => {
+    const body = await echoed("llm.test", "/v1/messages", {
+      "proxy-authorization": "Basic c3RyYXk6dmFsdWU=",
+    });
+
+    expect(body.headers["proxy-authorization"]).toBeUndefined();
+  });
+
   it("forwards any other value of the auth header untouched", async () => {
     const body = await echoed("llm.test", "/v1/messages", { "x-api-key": "user-supplied" });
 
@@ -389,17 +411,17 @@ describe("credential rules", () => {
   });
 
   it("substitutes inside a Basic value git sends and scrubs the base64 it sent from the response", async () => {
-    const sent = b64(`x-access-token:${GH_PLACEHOLDER}`);
+    const sent = b64(`x-access-token:${BASIC_PLACEHOLDER}`);
     const body = await echoed("npm.test", "/repo.git/info/refs", { authorization: `Basic ${sent}` });
 
-    expect(body.headers.authorization).toBe(`Basic ${b64(`x-access-token:${GH_SECRET}`)}`);
+    expect(body.headers.authorization).toBe(`Basic ${b64(`x-access-token:${BASIC_SECRET}`)}`);
 
     const response = await through("npm.test", "/echo-auth", { authorization: `Basic ${sent}` });
 
     await readBody(response);
 
     expect(response.headers["x-echo-authorization"]).toBe(`Basic ${sent}`);
-    expect(JSON.stringify(response.headers)).not.toContain(b64(`x-access-token:${GH_SECRET}`));
+    expect(JSON.stringify(response.headers)).not.toContain(b64(`x-access-token:${BASIC_SECRET}`));
   });
 
   it("scrubs the secret from every response header and never shows it to the client", async () => {
@@ -433,7 +455,6 @@ describe("credential rules", () => {
         decision: "deny",
         rule: "credential",
         reason: "credential missing is unavailable: no secret for missing",
-        repo: REPO,
       }),
     );
   });
@@ -532,12 +553,8 @@ describe("credential rules", () => {
     ).toMatchObject({ decision: "deny", sni: "git.test" });
   });
 
-  it("does not terminate for a client without a repository token", async () => {
-    const reply = await openConnect(state.test.proxy.port, "api.test:443");
-
-    await readRest(reply.socket);
-
-    expect(reply.status).toBe(407);
+  it("does not terminate for a client without the preamble", async () => {
+    await expect(openConnect(state.test.proxy.port, "api.test:443", null)).rejects.toThrow();
   });
 });
 
@@ -738,6 +755,102 @@ describe("an upstream certificate the proxy does not trust", () => {
         reason: expect.stringMatching(/(certificate|issuer).*tls\.extraCa/),
       }),
     );
+  });
+});
+
+describe("an upstream that never finishes the TLS handshake", () => {
+  const local: { test?: TestProxy; stateDir: string; dialled: Duplex[] } = { stateDir: "", dialled: [] };
+
+  beforeAll(async () => {
+    local.stateDir = await createStateDir();
+    local.test = await startTestProxy({
+      stateDir: local.stateDir,
+      policy: { allow: ["api.test"] },
+      ca: state.ca,
+      rules: RULES,
+      resolver: state.resolver.resolver,
+      dial: {
+        dial: async () => {
+          const socket = new Duplex({ read: () => undefined, write: (_chunk, _encoding, done) => done() });
+
+          local.dialled.push(socket);
+
+          return socket as Socket;
+        },
+        checkAddresses: async () => undefined,
+      },
+      handshakeTimeoutMs: 200,
+    });
+  });
+
+  afterAll(async () => {
+    await local.test?.proxy.close();
+
+    await removeDir(local.stateDir);
+  });
+
+  it("answers 502 with the handshake timeout and notes the denial", async () => {
+    const started = Date.now();
+    const response = await requestThrough({
+      proxyPort: local.test?.proxy.port ?? 0,
+      token: local.test?.token ?? "",
+      host: "api.test",
+      ca: state.ca.certPem,
+      path: "/v1/models",
+      headers: { authorization: `Bearer ${API_PLACEHOLDER}` },
+    });
+    const body = JSON.parse(await readBody(response)) as { error: string };
+
+    expect(response.statusCode).toBe(502);
+    expect(body.error).toBe("upstream request failed: api.test:443 did not finish the TLS handshake in time");
+    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(local.test?.log).toContainEqual(
+      expect.objectContaining({
+        host: "api.test",
+        decision: "deny",
+        rule: "upstream",
+        reason: "api.test:443 did not finish the TLS handshake in time",
+      }),
+    );
+    expect(local.dialled.length).toBeGreaterThan(0);
+    expect(local.dialled.every((socket) => socket.destroyed)).toBe(true);
+  });
+});
+
+describe("a terminated response slower than the handshake bound", () => {
+  const local: { test?: TestProxy; stateDir: string } = { stateDir: "" };
+
+  beforeAll(async () => {
+    local.stateDir = await createStateDir();
+    local.test = await startTestProxy({
+      stateDir: local.stateDir,
+      policy: { allow: ["api.test"] },
+      ca: state.ca,
+      rules: RULES,
+      resolver: state.resolver.resolver,
+      ports: () => ({ "api.test:443": portOf(state.upstream) }),
+      handshakeTimeoutMs: 100,
+    });
+  });
+
+  afterAll(async () => {
+    await local.test?.proxy.close();
+
+    await removeDir(local.stateDir);
+  });
+
+  it("completes once the upstream answers after the bound has passed", async () => {
+    const response = await requestThrough({
+      proxyPort: local.test?.proxy.port ?? 0,
+      token: local.test?.token ?? "",
+      host: "api.test",
+      ca: state.ca.certPem,
+      path: "/slow",
+      headers: { authorization: `Bearer ${API_PLACEHOLDER}` },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(await readBody(response)).toBe("first...last");
   });
 });
 

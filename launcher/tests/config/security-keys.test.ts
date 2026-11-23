@@ -71,7 +71,7 @@ describe("validateConfig with the credential, egress, tls and image keys", () =>
       [{ id: "a" }, "credentials.rules[0].host is required"],
       [rule({ id: "has space" }), "credentials.rules[0].id must be letters, digits, dot, dash or underscore"],
       [
-        rule({ id: "derived:gh" }),
+        rule({ id: "derived:glab" }),
         "credentials.rules[0].id must be letters, digits, dot, dash or underscore",
       ],
       [

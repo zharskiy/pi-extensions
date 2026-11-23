@@ -2,6 +2,8 @@ import { request as httpRequest, type IncomingMessage } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { connect, type Socket } from "node:net";
 import { type TLSSocket, connect as tlsConnect } from "node:tls";
+import { connectWithPreamble } from "../../proxy/preamble.ts";
+import { TEST_TOKEN } from "./harness.ts";
 
 export interface ConnectReply {
   status: number;
@@ -11,19 +13,29 @@ export interface ConnectReply {
 
 const HEAD_END = "\r\n\r\n";
 
-const REPO_USER = "pi-sandbox";
-
-export const authorization = (token: string, user = REPO_USER) =>
+export const authorization = (token: string, user = "pi-sandbox") =>
   `Basic ${Buffer.from(`${user}:${token}`).toString("base64")}`;
+
+export type PreambleToken = string | null;
+
+const openProxySocket = (proxyPort: number, token: PreambleToken = TEST_TOKEN) =>
+  token === null
+    ? connect({ host: "127.0.0.1", port: proxyPort })
+    : connectWithPreamble("127.0.0.1", proxyPort, token);
 
 const headerLines = (headers: Record<string, string>) =>
   Object.entries(headers)
     .map(([name, value]) => `${name}: ${value}\r\n`)
     .join("");
 
-export const openConnectWith = (proxyPort: number, authority: string, headers: Record<string, string>) =>
+export const openConnectWith = (
+  proxyPort: number,
+  authority: string,
+  headers: Record<string, string>,
+  token?: PreambleToken,
+) =>
   new Promise<ConnectReply>((resolve, reject) => {
-    const socket = connect({ host: "127.0.0.1", port: proxyPort });
+    const socket = openProxySocket(proxyPort, token);
     const state = { buffer: Buffer.alloc(0) };
 
     const onData = (chunk: Buffer) => {
@@ -53,15 +65,13 @@ export const openConnectWith = (proxyPort: number, authority: string, headers: R
 
     socket.once("error", reject);
 
+    socket.once("close", () => reject(new Error("the proxy closed the connection")));
+
     socket.write(`CONNECT ${authority} HTTP/1.1\r\nHost: ${authority}\r\n${headerLines(headers)}\r\n`);
   });
 
-export const openConnect = (proxyPort: number, authority: string, token?: string, user = REPO_USER) =>
-  openConnectWith(
-    proxyPort,
-    authority,
-    token === undefined ? {} : { "Proxy-Authorization": authorization(token, user) },
-  );
+export const openConnect = (proxyPort: number, authority: string, token?: PreambleToken) =>
+  openConnectWith(proxyPort, authority, {}, token);
 
 export const readRest = (socket: Socket) =>
   new Promise<string>((resolve) => {
@@ -79,7 +89,7 @@ export const secureTunnel = async (
   authority: string,
   servername: string,
   ca: string,
-  token?: string,
+  token?: PreambleToken,
 ) => {
   const reply = await openConnect(proxyPort, authority, token);
 
@@ -99,7 +109,7 @@ export interface TunnelRequest {
   path: string;
   port?: number;
   headers?: Record<string, string>;
-  token?: string;
+  token?: PreambleToken;
   method?: string;
   body?: string;
 }
@@ -142,11 +152,9 @@ export const readBody = (response: IncomingMessage) =>
 
 export interface PlainOptions {
   host?: string;
-  token?: string;
-  user?: string;
+  token?: PreambleToken;
   method?: string;
   body?: string;
-  address?: string;
   headers?: Record<string, string>;
 }
 
@@ -155,17 +163,10 @@ export const plainRequest = (proxyPort: number, path: string, options: PlainOpti
     const host = options.host ?? "127.0.0.1";
     const request = httpRequest(
       {
-        host: options.address ?? "127.0.0.1",
-        port: proxyPort,
         path,
         method: options.method ?? "GET",
-        headers: {
-          ...options.headers,
-          host,
-          ...(options.token === undefined
-            ? {}
-            : { "proxy-authorization": authorization(options.token, options.user) }),
-        },
+        headers: { ...options.headers, host },
+        createConnection: () => openProxySocket(proxyPort, options.token),
       },
       (response) => {
         void readBody(response).then((body) =>
@@ -179,13 +180,8 @@ export const plainRequest = (proxyPort: number, path: string, options: PlainOpti
     request.end(options.body);
   });
 
-export const plainGet = (
-  proxyPort: number,
-  path: string,
-  host = "127.0.0.1",
-  token?: string,
-  user?: string,
-) => plainRequest(proxyPort, path, { host, token, user });
+export const plainGet = (proxyPort: number, path: string, host = "127.0.0.1", token?: PreambleToken) =>
+  plainRequest(proxyPort, path, { host, token });
 
 export interface PageReply {
   connect: number;

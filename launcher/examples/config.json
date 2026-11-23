@@ -35,5 +35,38 @@
         "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
       }
     ]
-  }
+  },
+  "env": {
+    "set": {
+      "CI": "1",
+      "NPM_CONFIG_REGISTRY": "https://registry.example.internal/npm/"
+    }
+  },
+  "resources": {
+    "memoryGiB": 6,
+    "pids": 8192,
+    "shmMiB": 512
+  },
+  "mounts": {
+    "volumes": ["~/.npm", { "target": "/srv/fixtures" }, { "target": "/var/log/db", "name": "db-logs" }],
+    "binds": [{ "source": "~/reference/fixtures", "target": "/etc/fixtures" }]
+  },
+  "setup": [
+    [
+      "sh",
+      "-c",
+      "test -e /srv/fixtures/.seeded || { cp -R /etc/fixtures/. /srv/fixtures/ && touch /srv/fixtures/.seeded; }"
+    ]
+  ],
+  "services": [
+    {
+      "name": "db",
+      "image": "registry.example.internal/db:16",
+      "command": ["db-server", "--listen", "0.0.0.0:5432", "--data", "/data", "--log-dir", "/logs"],
+      "volumes": [{ "name": "db-data", "target": "/data" }, { "name": "db-logs", "target": "/logs" }],
+      "ready": { "command": ["db-ready", "--port", "5432"], "timeoutSeconds": 60 },
+      "memoryGiB": 1,
+      "ports": [5432]
+    }
+  ]
 }

@@ -1,19 +1,25 @@
+import { installIdOf } from "../backend/index.ts";
 import { repoHash, sha256Hex, shortHash } from "../shared/index.ts";
 
-const CACHE_VOLUME_PREFIX = "pi-sandbox-cache-";
-
 const shortRepoHash = (repoRoot: string) => shortHash(repoHash(repoRoot));
+
+const pathHash = (path: string) => sha256Hex(path).slice(0, 8);
 
 export const containerName = (repoRoot: string, launchId: string) =>
   `pi-sandbox-${shortRepoHash(repoRoot)}-${launchId}`;
 
-export const agentVolumeName = (user: string, repoRoot: string) =>
-  `pi-sandbox-agent-${shortHash(sha256Hex(user))}-${shortRepoHash(repoRoot)}`;
+export const agentVolumeName = (install: string, repoRoot: string) =>
+  `pi-sandbox-agent-${install}-${shortRepoHash(repoRoot)}`;
 
-export const cacheVolumeName = (repoRoot: string, path: string) =>
-  `${CACHE_VOLUME_PREFIX}${shortRepoHash(repoRoot)}-${sha256Hex(path).slice(0, 8)}`;
+export const cacheVolumeName = (install: string, repoRoot: string, path: string) =>
+  `pi-sandbox-cache-${install}-${shortRepoHash(repoRoot)}-${pathHash(path)}`;
 
-export const userHashOf = (stateDir: string) => shortHash(sha256Hex(stateDir));
+export const configVolumeName = (stateDir: string, identity: string) =>
+  `pi-sandbox-shared-${installIdOf(stateDir)}-${pathHash(identity)}`;
 
-export const sharedVolumeName = (userHash: string, path: string) =>
-  `pi-sandbox-shared-${userHash}-${sha256Hex(path).slice(0, 8)}`;
+export const isSharedVolumeName = (name: string) => name.startsWith("pi-sandbox-shared-");
+
+export const podName = (install: string) => `pi-sandbox-pod-${install}`;
+
+export const serviceContainerName = (install: string, service: string) =>
+  `pi-sandbox-service-${install}-${service}`;

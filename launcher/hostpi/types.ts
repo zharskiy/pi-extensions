@@ -37,12 +37,9 @@ export interface ToolsInput {
   excludedRoots: string[];
 }
 
-export interface ToolHost {
+export interface GlabHost {
   host: string;
   token: string;
-}
-
-export interface GlabHost extends ToolHost {
   user?: string;
   apiHost?: string;
   apiProtocol?: string;
@@ -54,7 +51,6 @@ export interface GitIdentity {
 }
 
 export interface DerivedTools {
-  gh: ToolHost[];
   glab: GlabHost[];
   npmrc?: NpmrcEntry[];
   pip?: IniSection[];
@@ -66,7 +62,6 @@ export interface DerivedTools {
 export const EMPTY_MAVEN: DerivedTools["maven"] = { servers: [], mirrors: [], passthrough: [] };
 
 export const emptyTools = (git: GitIdentity = {}): DerivedTools => ({
-  gh: [],
   glab: [],
   maven: EMPTY_MAVEN,
   git,

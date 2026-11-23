@@ -1,17 +1,16 @@
-import { userInfo } from "node:os";
-import { join, relative } from "node:path";
-import { LABELS } from "../backend/index.ts";
-import type { SandboxConfig } from "../config/index.ts";
+import { relative } from "node:path";
+import { installIdOf, LABELS } from "../backend/index.ts";
+import { guestPathOf, type SandboxConfig, type ServiceEntry } from "../config/index.ts";
 import { GUEST_PATHS, repoHash } from "../shared/index.ts";
 import type { Workspace } from "../workspace/index.ts";
-import { agentVolumeName, cacheVolumeName, sharedVolumeName, userHashOf } from "./names.ts";
+import { agentVolumeName, cacheVolumeName, configVolumeName } from "./names.ts";
 
 export interface PathVolume {
   path: string;
   name: string;
 }
 
-type VolumeKey = "agent" | "mounts.autoOverlays" | "mounts.sharedCaches";
+type VolumeKey = "agent" | "mounts.autoOverlays" | "mounts.volumes";
 
 export interface PlannedVolume {
   name: string;
@@ -23,72 +22,71 @@ export interface PlannedVolume {
 export interface RepoVolumesInput {
   workspace: Workspace;
   config: SandboxConfig;
-  uid: number;
+  stateDir: string;
 }
-
-export const GUEST_HOME = "/home/pi";
-
-const hostUser = (uid: number) => {
-  try {
-    return userInfo().username;
-  } catch {
-    return String(uid);
-  }
-};
-
-const homeRelative = (path: string) => path.slice(2).replace(/\/+$/, "");
 
 const repoRelative = (workspace: Workspace, target: string) => relative(workspace.repoRoot, target) || ".";
 
-const repoLabels = (workspace: Workspace) => ({
-  [LABELS.repoHash]: repoHash(workspace.repoRoot),
-  [LABELS.repoRoot]: workspace.repoRoot,
+export const repoLabels = (repoRoot: string) => ({
+  [LABELS.repoHash]: repoHash(repoRoot),
+  [LABELS.repoRoot]: repoRoot,
 });
 
-const overlayVolume = (workspace: Workspace, target: string): PlannedVolume => ({
-  name: cacheVolumeName(workspace.repoRoot, repoRelative(workspace, target)),
+const overlayVolume = (workspace: Workspace, stateDir: string, target: string): PlannedVolume => ({
+  name: cacheVolumeName(installIdOf(stateDir), workspace.repoRoot, repoRelative(workspace, target)),
   target,
-  labels: { ...repoLabels(workspace), [LABELS.cachePath]: repoRelative(workspace, target) },
+  labels: { ...repoLabels(workspace.repoRoot), [LABELS.cachePath]: repoRelative(workspace, target) },
   key: "mounts.autoOverlays",
 });
 
 const overlayTargets = (workspace: Workspace, config: SandboxConfig) =>
   config.mounts.autoOverlays ? (workspace.overlays ?? []) : [];
 
-export const overlayVolumes = (workspace: Workspace, config: SandboxConfig): PathVolume[] =>
+export const overlayVolumes = (workspace: Workspace, config: SandboxConfig, stateDir: string): PathVolume[] =>
   overlayTargets(workspace, config).map((path) => ({
     path,
-    name: overlayVolume(workspace, path).name,
+    name: overlayVolume(workspace, stateDir, path).name,
   }));
 
-export const sharedCacheVolumes = (config: SandboxConfig, stateDir: string): PathVolume[] =>
-  config.mounts.sharedCaches.map((entry) => {
-    const path = `~/${homeRelative(entry)}`;
+export const configVolumes = (config: SandboxConfig) =>
+  config.mounts.volumes.map((entry) => {
+    const volume = typeof entry === "string" ? { target: entry } : entry;
 
-    return { path, name: sharedVolumeName(userHashOf(stateDir), path) };
+    return {
+      identity: volume.name ?? volume.target,
+      target: guestPathOf(volume.target),
+    };
   });
 
-const repoVolumePlan = ({ workspace, config, uid }: RepoVolumesInput): PlannedVolume[] => [
+export const mountedVolumes = (config: SandboxConfig, stateDir: string) =>
+  configVolumes(config).map((volume) => ({ ...volume, name: configVolumeName(stateDir, volume.identity) }));
+
+export const serviceVolumeNames = (stateDir: string, services: ServiceEntry[]) =>
+  new Set(
+    services.flatMap((service) =>
+      (service.volumes ?? []).map((entry) => configVolumeName(stateDir, entry.name)),
+    ),
+  );
+
+const repoVolumePlan = ({ workspace, config, stateDir }: RepoVolumesInput): PlannedVolume[] => [
   {
-    name: agentVolumeName(hostUser(uid), workspace.repoRoot),
+    name: agentVolumeName(installIdOf(stateDir), workspace.repoRoot),
     target: GUEST_PATHS.agentDir,
-    labels: repoLabels(workspace),
+    labels: repoLabels(workspace.repoRoot),
     key: "agent",
   },
-  ...overlayTargets(workspace, config).map((target) => overlayVolume(workspace, target)),
+  ...overlayTargets(workspace, config).map((target) => overlayVolume(workspace, stateDir, target)),
 ];
 
-const sharedVolumePlan = (config: SandboxConfig, stateDir: string): PlannedVolume[] =>
-  sharedCacheVolumes(config, stateDir).map((cache) => ({
-    name: cache.name,
-    target: join(GUEST_HOME, homeRelative(cache.path)),
-    labels: { [LABELS.userHash]: userHashOf(stateDir), [LABELS.sharedPath]: cache.path },
-    key: "mounts.sharedCaches",
+const configVolumePlan = (config: SandboxConfig, stateDir: string): PlannedVolume[] =>
+  mountedVolumes(config, stateDir).map((volume) => ({
+    name: volume.name,
+    labels: {},
+    target: volume.target,
+    key: "mounts.volumes",
   }));
 
-export const volumePlan = (input: RepoVolumesInput & { stateDir: string }): PlannedVolume[] => [
+export const volumePlan = (input: RepoVolumesInput): PlannedVolume[] => [
   ...repoVolumePlan(input),
-  ...sharedVolumePlan(input.config, input.stateDir),
+  ...configVolumePlan(input.config, input.stateDir),
 ];
-
-export const repoVolumes = (input: RepoVolumesInput) => repoVolumePlan(input).map((volume) => volume.name);

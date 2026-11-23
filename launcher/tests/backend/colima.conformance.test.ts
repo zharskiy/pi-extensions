@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createColimaBackend } from "../../backend/colima/backend.ts";
-import { LABELS } from "../../backend/index.ts";
+import { installIdOf } from "../../backend/index.ts";
 import { createFakeEngine } from "../support/fake-engine.ts";
 import { createFakeRunner } from "../support/fake-runner.ts";
 import { runBackendConformance } from "./conformance.ts";
@@ -9,6 +9,7 @@ const PULLABLE = "example.test/pi-sandbox:1";
 
 runBackendConformance("colima (fake engine)", { describe, it, expect, beforeAll, afterAll }, async () => {
   const engine = await createFakeEngine({ registry: { [PULLABLE]: `sha256:${"a".repeat(64)}` } });
+  const install = installIdOf("/nonexistent");
   const backend = createColimaBackend({
     home: "/nonexistent",
     stateDir: "/nonexistent",
@@ -18,6 +19,7 @@ runBackendConformance("colima (fake engine)", { describe, it, expect, beforeAll,
 
   return {
     backend,
+    install,
     pullableImage: PULLABLE,
     runnableImage: PULLABLE,
     networks: {
@@ -25,14 +27,10 @@ runBackendConformance("colima (fake engine)", { describe, it, expect, beforeAll,
       remove: async (name) => {
         engine.networks.delete(name);
       },
-      plant: async (name, traits) => {
+      plantForeign: async (name) => {
         engine.networks.set(name, {
-          body: {
-            Name: name,
-            Internal: traits.internal,
-            Labels: traits.managed ? { [LABELS.managed]: "true" } : {},
-          },
-          connected: [],
+          body: { Name: name, Internal: true, Labels: {} },
+          connected: engine.networks.get(name)?.connected ?? [],
         });
       },
     },

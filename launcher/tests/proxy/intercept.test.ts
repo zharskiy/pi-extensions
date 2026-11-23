@@ -75,11 +75,7 @@ const startProxy = async (options: ProxyOptions = {}) => {
     });
   };
 
-  const denials = createDenials(
-    "1".repeat(64),
-    record,
-    createDenialPages({ leaf: (host) => ca.ephemeralLeaf(host) }),
-  );
+  const denials = createDenials(record, createDenialPages({ leaf: (host) => ca.ephemeralLeaf(host) }));
 
   const serve = (socket: TLSSocket) => {
     served.push(socket.servername || "");

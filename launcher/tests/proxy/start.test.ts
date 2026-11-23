@@ -6,29 +6,27 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { endLaunch, newLaunchId, registerLaunch, withRepoLaunchLock } from "../../grants/index.ts";
+import { endLaunch, newLaunchId, registerLaunch, withLaunchLock } from "../../grants/index.ts";
 import { watchIdle } from "../../proxy/idle.ts";
 import {
-  ensureRepoProxy,
-  guestProxyUrl,
+  ensureProxy,
   PROXY_LOG_LIMIT,
-  type RepoProxyInput,
+  type ProxyInput,
+  proxyToken,
   readDenials,
-  readRepoProxy,
-  repoProxyToken,
-  stopRepoProxy,
+  readProxy,
+  stopProxy,
 } from "../../proxy/index.ts";
+import { createPreambleGate } from "../../proxy/preamble.ts";
 import { bootTime, processMark, processStart, stateLayout } from "../../shared/index.ts";
 import { openConnect, plainGet } from "./proxy-client.ts";
 
 const REPO = "1".repeat(64);
 
-const OTHER = "2".repeat(64);
-
 const SECRET = "env-secret-value-0123456789";
 
 const EGRESS_CHANGED =
-  "the network allow and deny settings changed and now apply to every pi running in this folder";
+  "the network allow and deny settings changed and now apply to every pi running in the sandbox";
 
 const FAILING_DAEMON = [
   'console.error("2026-01-01T00:00:00.000Z pi-sandbox-proxy failed: broken input (fix the input)");',
@@ -40,14 +38,10 @@ const state = { stateDir: "" };
 
 const idlers: ChildProcess[] = [];
 
-const files = (repoHash = REPO) => stateLayout(state.stateDir).repo(repoHash).proxy;
+const files = () => stateLayout(state.stateDir).proxy;
 
-const inputFor = async (
-  overrides: Partial<RepoProxyInput> = {},
-  repoHash = REPO,
-): Promise<RepoProxyInput> => ({
-  repoHash,
-  token: await repoProxyToken(state.stateDir, repoHash),
+const inputFor = async (overrides: Partial<ProxyInput> = {}): Promise<ProxyInput> => ({
+  token: await proxyToken(state.stateDir),
   allow: ["registry.npmjs.org"],
   deny: [],
   privateHosts: [],
@@ -62,8 +56,8 @@ const inputFor = async (
   ...overrides,
 });
 
-const ensure = async (input: RepoProxyInput, othersLive = false) =>
-  ensureRepoProxy({
+const ensure = async (input: ProxyInput, othersLive = false) =>
+  ensureProxy({
     stateDir: state.stateDir,
     input,
     env: process.env,
@@ -96,7 +90,7 @@ beforeAll(async () => {
 });
 
 afterEach(async () => {
-  await Promise.all([REPO, OTHER].map((hash) => stopRepoProxy(state.stateDir, hash)));
+  await stopProxy(state.stateDir);
 
   idlers.splice(0).forEach((child) => {
     child.kill("SIGKILL");
@@ -107,18 +101,16 @@ afterAll(async () => {
   await rm(state.stateDir, { recursive: true, force: true });
 });
 
-describe("ensureRepoProxy", () => {
-  it("starts one daemon per repository and reuses it while the input is the same", async () => {
+describe("ensureProxy", () => {
+  it("starts one daemon for the install and reuses it while the input is the same", async () => {
     const input = await inputFor();
     const first = await ensure(input);
     const reused = await ensure(input);
-    const other = await ensure(await inputFor({}, OTHER));
 
     expect(first.proxy).toMatchObject({ pid: expect.any(Number), port: expect.any(Number) });
     expect(Math.abs(first.proxy.boot - bootTime())).toBeLessThanOrEqual(1);
     expect(reused.proxy).toEqual(first.proxy);
-    expect(other.proxy.pid).not.toBe(first.proxy.pid);
-    expect(await readRepoProxy(state.stateDir, REPO)).toEqual(first.proxy);
+    expect(await readProxy(state.stateDir)).toEqual(first.proxy);
     expect((await stat(files().record)).mode & 0o777).toBe(0o600);
     expect((await stat(files().token)).mode & 0o777).toBe(0o600);
   }, 20_000);
@@ -133,11 +125,11 @@ describe("ensureRepoProxy", () => {
     expect(texts.some((text) => text.includes(SECRET))).toBe(false);
   }, 20_000);
 
-  it("answers health and denials only with the repository token", async () => {
+  it("answers health and denials only after the preamble of the install token", async () => {
     const input = await inputFor({ deny: ["blocked.test"] });
     const { proxy } = await ensure(input);
 
-    expect((await plainGet(proxy.port, "/healthz", "127.0.0.1", "f".repeat(64))).status).toBe(407);
+    await expect(plainGet(proxy.port, "/healthz", "127.0.0.1", "f".repeat(64))).rejects.toThrow();
     expect(JSON.parse((await plainGet(proxy.port, "/healthz", "127.0.0.1", input.token)).body)).toEqual({
       ok: true,
       pid: proxy.pid,
@@ -148,9 +140,7 @@ describe("ensureRepoProxy", () => {
     refused.socket.destroy();
 
     expect(refused.status).toBe(403);
-    expect((await readDenials(state.stateDir, REPO, 0)).map((denial) => denial.host)).toEqual([
-      "blocked.test",
-    ]);
+    expect((await readDenials(state.stateDir, 0)).map((denial) => denial.host)).toEqual(["blocked.test"]);
   }, 20_000);
 
   it("keeps a proxy whose credentials changed while other launches live, with a notice, and replaces it after", async () => {
@@ -161,7 +151,7 @@ describe("ensureRepoProxy", () => {
 
     expect(kept.proxy).toEqual(first.proxy);
     expect(kept.notices).toEqual([
-      "the credential, parent proxy or CA settings changed; the pi sessions running in this folder keep the earlier ones until they all exit (egress allow and deny changes apply now)",
+      "the credential, parent proxy or CA settings changed; the pi sessions running in the sandbox keep the earlier ones until they all exit (egress allow and deny changes apply now)",
     ]);
 
     const replaced = await ensure(changed);
@@ -178,7 +168,7 @@ describe("ensureRepoProxy", () => {
 
       reply.socket.destroy();
 
-      return (await readDenials(state.stateDir, REPO, since)).find((denial) => denial.host === host)?.rule;
+      return (await readDenials(state.stateDir, since)).find((denial) => denial.host === host)?.rule;
     };
     const input = await inputFor({ allow: ["kept.invalid"] });
     const first = await ensure(input);
@@ -198,7 +188,7 @@ describe("ensureRepoProxy", () => {
     expect(await denied(first.proxy.port, input.token, "added.invalid")).toBeUndefined();
   }, 20_000);
 
-  it("names a changed egress.json only when other sessions of the folder are live", async () => {
+  it("names a changed egress.json only when other sessions in the sandbox are live", async () => {
     const first = await ensure(await inputFor({ allow: ["a.invalid"] }));
     const unchanged = await ensure(await inputFor({ allow: ["a.invalid"] }), true);
     const changedAlone = await ensure(await inputFor({ allow: ["b.invalid"] }));
@@ -260,10 +250,10 @@ describe("ensureRepoProxy", () => {
   }, 20_000);
 });
 
-describe("ensureRepoProxy start and health", () => {
+describe("ensureProxy start and health", () => {
   it("starts the daemon in its proxy dir and names its own failure line in the error, not another writer's", async () => {
     const seen: Array<string | undefined> = [];
-    const failing = ensureRepoProxy({
+    const failing = ensureProxy({
       stateDir: state.stateDir,
       input: await inputFor(),
       env: process.env,
@@ -289,6 +279,7 @@ describe("ensureRepoProxy start and health", () => {
 
     await once(stranger, "spawn");
 
+    const input = await inputFor();
     const answers = { count: 0 };
     const health = createServer((_request, response) => {
       answers.count += 1;
@@ -304,7 +295,9 @@ describe("ensureRepoProxy start and health", () => {
         .end(JSON.stringify({ ok: true, pid: stranger.pid }));
     });
 
-    await new Promise<void>((resolve) => health.listen(0, "127.0.0.1", () => resolve()));
+    const gate = createPreambleGate(input.token, (socket) => health.emit("connection", socket));
+
+    await new Promise<void>((resolve) => gate.listen(0, "127.0.0.1", () => resolve()));
 
     await mkdir(files().directory, { recursive: true });
 
@@ -314,14 +307,14 @@ describe("ensureRepoProxy start and health", () => {
         pid: stranger.pid,
         boot: bootTime(),
         start: await processStart(stranger.pid ?? 0),
-        port: (health.address() as AddressInfo).port,
+        port: (gate.address() as AddressInfo).port,
         inputHash: "old",
       }),
     );
 
-    const kept = await ensure(await inputFor(), true);
+    const kept = await ensure(input, true);
 
-    health.close();
+    gate.close();
 
     expect(kept.proxy.pid).toBe(stranger.pid);
     expect(answers.count).toBe(2);
@@ -329,17 +322,43 @@ describe("ensureRepoProxy start and health", () => {
 
     await rm(files().record, { force: true });
   }, 20_000);
+
+  it("keeps a live recorded proxy that fails its health check while other launches live, and fails the launch", async () => {
+    const stranger = idle();
+
+    await once(stranger, "spawn");
+
+    const record = {
+      pid: stranger.pid,
+      boot: bootTime(),
+      start: await processStart(stranger.pid ?? 0),
+      port: 9,
+      inputHash: "old",
+    };
+
+    await mkdir(files().directory, { recursive: true });
+
+    await writeFile(files().record, JSON.stringify(record));
+
+    await expect(ensure(await inputFor(), true)).rejects.toThrow(
+      `the pi-sandbox egress proxy (pid ${stranger.pid}) does not answer, and other pi sessions use it, so it was kept`,
+    );
+    expect(isAlive(stranger)).toBe(true);
+    expect(JSON.parse(await readFile(files().record, "utf8"))).toEqual(record);
+
+    await rm(files().record, { force: true });
+  }, 20_000);
 });
 
-describe("stopRepoProxy", () => {
+describe("stopProxy", () => {
   it("stops the daemon and removes its record", async () => {
     const { proxy } = await ensure(await inputFor());
 
-    expect(await stopRepoProxy(state.stateDir, REPO)).toBe(true);
-    expect(await readRepoProxy(state.stateDir, REPO)).toBeUndefined();
+    expect(await stopProxy(state.stateDir)).toBe(true);
+    expect(await readProxy(state.stateDir)).toBeUndefined();
     expect(await stat(files().record).catch(() => undefined)).toBeUndefined();
     expect(() => process.kill(proxy.pid, "SIGCONT")).toThrow();
-    expect(await stopRepoProxy(state.stateDir, REPO)).toBe(false);
+    expect(await stopProxy(state.stateDir)).toBe(false);
   }, 20_000);
 });
 
@@ -354,10 +373,9 @@ describe("watchIdle", () => {
     };
     const held: { watch?: ReturnType<typeof watchIdle>; pending?: ReturnType<typeof registerLaunch> } = {};
 
-    await withRepoLaunchLock(state.stateDir, REPO, async () => {
+    await withLaunchLock(state.stateDir, async () => {
       held.watch = watchIdle({
         stateDir: state.stateDir,
-        repoHash: REPO,
         intervalMs: 30,
         emptyChecks: 2,
         onIdle: async () => {
@@ -376,22 +394,10 @@ describe("watchIdle", () => {
 
     expect(outcome.idle).toBe(false);
 
-    await endLaunch(state.stateDir, {
-      repoHash: REPO,
-      launchId: launch.launchId,
-      onLast: async () => undefined,
-    });
+    await endLaunch(state.stateDir, launch.launchId);
 
     await held.watch?.idle;
 
     expect(outcome.idle).toBe(true);
-  });
-});
-
-describe("guestProxyUrl", () => {
-  it("names the route address and carries the repository token", () => {
-    expect(guestProxyUrl({ address: "pi-sandbox-proxy:3128" }, "t0k3n")).toBe(
-      "http://pi-sandbox:t0k3n@pi-sandbox-proxy:3128",
-    );
   });
 });

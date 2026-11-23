@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { errorMessage, LauncherError, lastLine, type RunResult, sha256Hex } from "../../shared/index.ts";
 import type { VmShareOptions } from "../types.ts";
-import { type Colima, deferredUntilIdle, logHint } from "./profile.ts";
+import { type Colima, deferredWhileBusy, logHint } from "./profile.ts";
 
 interface ShellOptions {
   input?: string;
@@ -28,7 +28,7 @@ const PEM_BLOCK = /-----BEGIN CERTIFICATE-----[A-Za-z0-9+/=\s]+-----END CERTIFIC
 
 const FAILURE = "could not install the tls.extraCa certificates in the sandbox VM";
 
-const DEFERRED = deferredUntilIdle("pick up the tls.extraCa certificate change");
+const DEFERRED = "pick up the tls.extraCa certificate change";
 
 const certificatesIn = (text: string) => (text.match(PEM_BLOCK) ?? []).map((pem) => `${pem.trim()}\n`);
 
@@ -115,8 +115,10 @@ export const createColimaTrust = (colima: Colima, shell: VmShell) => {
       return;
     }
 
-    if ((await options.busy()) > 0) {
-      options.report(DEFERRED);
+    const sessions = await options.busy();
+
+    if (sessions.count > 0) {
+      options.report(deferredWhileBusy(DEFERRED, sessions));
 
       return;
     }

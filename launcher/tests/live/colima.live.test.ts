@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createColimaBackend, execCapture, LABELS } from "../../backend/index.ts";
+import { createColimaBackend, execCapture, installIdOf, LABELS } from "../../backend/index.ts";
 import {
   type LauncherContainerSpec,
   removeLaunchContainer,
@@ -15,12 +15,13 @@ import { createProcessRunner, launcherRoot } from "../../shared/index.ts";
 import { runBackendConformance } from "../backend/conformance.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
 import { listNetworks, removeNetwork } from "./harness/engine.ts";
+import { liveRoot } from "./harness/sandbox.ts";
 
 const PULLABLE = "busybox:1.36";
 
 const RUNNABLE = "pi-sandbox-conformance:busybox";
 
-const RELAY = "pi-sandbox-relay-test:alpine";
+const RELAY = "pi-sandbox-relay-test:node";
 
 const socketPath = [join(homedir(), ".colima", "pi-sandbox", "docker.sock")].find((path) => existsSync(path));
 
@@ -31,9 +32,25 @@ const hooks = enabled
   : { describe: describe.skip, it, expect, beforeAll, afterAll };
 
 const launchLabels = (launchId: string) => ({
+  [LABELS.role]: "agent",
   [LABELS.repoHash]: randomBytes(32).toString("hex"),
   [LABELS.launchId]: launchId,
 });
+
+const cleanUp = async (steps: Array<() => Promise<unknown>>) => {
+  const failures = await steps.reduce<Promise<unknown[]>>(async (pending, step) => {
+    const failed = await pending;
+
+    return step().then(
+      () => failed,
+      (error: unknown) => [...failed, error],
+    );
+  }, Promise.resolve([]));
+
+  if (failures.length > 0) {
+    throw failures.length === 1 ? failures[0] : new AggregateError(failures, "the suite's cleanup failed");
+  }
+};
 
 const newLaunch = () => randomBytes(8).toString("hex");
 
@@ -62,10 +79,11 @@ runBackendConformance(
 
     await buildFrom(backend.buildImage, RUNNABLE, `FROM ${PULLABLE}\nCMD ["sleep", "3600"]\n`);
 
-    await buildFrom(backend.buildImage, RELAY, "FROM alpine:3.20\nRUN apk add --no-cache socat\n");
+    await buildFrom(backend.buildImage, RELAY, "FROM node:24-bookworm-slim\n");
 
     return {
       backend,
+      install: installIdOf(""),
       pullableImage: PULLABLE,
       runnableImage: RUNNABLE,
       relayImage: RELAY,
@@ -96,11 +114,11 @@ hooks.describe("colima volume ownership", () => {
   const state = { dir: "", launchId: newLaunch() };
 
   hooks.afterAll(async () => {
-    await removeLaunchContainer(backend, state.launchId);
-
-    await backend.removeVolume(OWNERSHIP_VOLUME);
-
-    await rm(state.dir, { recursive: true, force: true });
+    await cleanUp([
+      () => removeLaunchContainer(backend, state.launchId),
+      () => backend.removeVolume(OWNERSHIP_VOLUME),
+      () => rm(state.dir, { recursive: true, force: true }),
+    ]);
   });
 
   const spec = (): LauncherContainerSpec => ({
@@ -114,9 +132,13 @@ hooks.describe("colima volume ownership", () => {
     readOnlyRoot: true,
     tmpfs: ["/tmp:mode=1777", "/home/pi:mode=1777"],
     init: true,
-    resources: { cpus: 1, memoryGiB: 0.25 },
+    resources: { cpus: 1, memoryGiB: 0.25, pids: 4096 },
+    capabilities: ["CHOWN"],
+    autoRemove: true,
     volumeLabels: {},
     ownedPaths: ["/home/pi/.cache", OWNERSHIP_TARGET],
+    guardedPaths: [],
+    notices: [],
   });
 
   hooks.it(
@@ -128,7 +150,11 @@ hooks.describe("colima volume ownership", () => {
 
       await buildFrom(backend.buildImage, RUNNABLE, `FROM ${PULLABLE}\nCMD ["sleep", "3600"]\n`);
 
-      const ensured = await startLaunchContainer({ backend, spec: spec(), stateDir: state.dir });
+      const ensured = await startLaunchContainer({
+        backend,
+        spec: spec(),
+        stateDir: state.dir,
+      });
 
       const written = await execCapture(backend, {
         containerId: ensured.id,
@@ -169,16 +195,20 @@ hooks.describe("colima read-only binds on the share", () => {
     readOnlyRoot: true,
     tmpfs: ["/tmp:mode=1777"],
     init: true,
-    resources: { cpus: 1, memoryGiB: 0.25 },
+    resources: { cpus: 1, memoryGiB: 0.25, pids: 4096 },
+    capabilities: ["CHOWN"],
+    autoRemove: true,
     volumeLabels: {},
     ownedPaths: [],
+    guardedPaths: [],
+    notices: [],
   });
 
   const probe = (script: string) =>
     execCapture(backend, { containerId: state.id, command: ["sh", "-c", script], env: {}, workdir: "/" });
 
   hooks.beforeAll(async () => {
-    const root = join(homedir(), ".cache", "pi-sandbox-live");
+    const root = liveRoot();
 
     await mkdir(root, { recursive: true });
 
@@ -195,13 +225,20 @@ hooks.describe("colima read-only binds on the share", () => {
 
     await buildFrom(backend.buildImage, RUNNABLE, `FROM ${PULLABLE}\nCMD ["sleep", "3600"]\n`);
 
-    state.id = (await startLaunchContainer({ backend, spec: spec(work, state.git), stateDir: state.dir })).id;
+    state.id = (
+      await startLaunchContainer({
+        backend,
+        spec: spec(work, state.git),
+        stateDir: state.dir,
+      })
+    ).id;
   }, 300_000);
 
   hooks.afterAll(async () => {
-    await removeLaunchContainer(backend, state.launchId);
-
-    await rm(state.dir, { recursive: true, force: true });
+    await cleanUp([
+      () => removeLaunchContainer(backend, state.launchId),
+      () => rm(state.dir, { recursive: true, force: true }),
+    ]);
   });
 
   hooks.it(
@@ -256,9 +293,10 @@ hooks.describe("colima sandbox image missing-command hint", () => {
   const state = { dir: "", launchId: newLaunch() };
 
   hooks.afterAll(async () => {
-    await removeLaunchContainer(backend, state.launchId);
-
-    await rm(state.dir, { recursive: true, force: true });
+    await cleanUp([
+      () => removeLaunchContainer(backend, state.launchId),
+      () => rm(state.dir, { recursive: true, force: true }),
+    ]);
   });
 
   const spec = (image: string): LauncherContainerSpec => ({
@@ -272,9 +310,13 @@ hooks.describe("colima sandbox image missing-command hint", () => {
     readOnlyRoot: true,
     tmpfs: ["/tmp:mode=1777", "/home/pi:mode=1777"],
     init: true,
-    resources: { cpus: 1, memoryGiB: 0.5 },
+    resources: { cpus: 1, memoryGiB: 0.5, pids: 4096 },
+    capabilities: ["CHOWN"],
+    autoRemove: true,
     volumeLabels: {},
     ownedPaths: [],
+    guardedPaths: [],
+    notices: [],
   });
 
   hooks.it(
@@ -289,7 +331,11 @@ hooks.describe("colima sandbox image missing-command hint", () => {
         versions: async () => ({ pi: await pinnedPi() }),
       });
 
-      const ensured = await startLaunchContainer({ backend, spec: spec(image.id), stateDir: state.dir });
+      const ensured = await startLaunchContainer({
+        backend,
+        spec: spec(image.id),
+        stateDir: state.dir,
+      });
 
       const probed = await execCapture(backend, {
         containerId: ensured.id,

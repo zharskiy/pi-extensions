@@ -1,11 +1,18 @@
 import { EventEmitter } from "node:events";
-import { lstat, readdir, readFile, rm, utimes, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readdir, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { describe, expect, it } from "vitest";
+import { LABELS } from "../../backend/index.ts";
+import { openContext } from "../../cli/context.ts";
+import { CLEANUP_WAITING, withGroundLock } from "../../cli/ground.ts";
 import { run } from "../../cli/index.ts";
+import { withSandbox } from "../../cli/launch.ts";
+import { beginLaunch, finishLaunch } from "../../cli/launches.ts";
+import { withPrepareLock } from "../../cli/prepare.ts";
 import { liveLaunches, registerLaunch } from "../../grants/index.ts";
-import { processMark, sha256Hex, stateLayout } from "../../shared/index.ts";
+import { processMark, recordCreatedDirs, sha256Hex, stateLayout } from "../../shared/index.ts";
+import { FAKE_NETWORK } from "../support/fake-backend.ts";
 import { createFakeBackend, createHarness, piSessions, sweepNow } from "./harness.ts";
 
 const POLL_MS = 5;
@@ -65,23 +72,24 @@ describe("the end of a session", () => {
     expect(await run([], harness.deps)).toBe(0);
 
     const files = stateLayout(harness.stateDir).repo(repo);
+    const token = stateLayout(harness.stateDir).proxy.token;
     const [created] = fake.created;
     const left = await filesUnder(harness.stateDir);
 
-    expect(created?.spec?.env.HTTPS_PROXY).toContain("@pi-sandbox-proxy:3128");
+    expect(created?.spec?.env.HTTPS_PROXY).toBe("http://pi-sandbox-proxy:3128");
     expect(fake.containers.size).toBe(0);
     expect(fake.relays.size).toBe(0);
     expect([...fake.networks.keys()]).toEqual([]);
-    expect(harness.stoppedProxies).toEqual([repo, repo]);
+    expect(harness.proxyStops()).toBe(2);
     expect(left).toEqual(before);
-    expect(left).not.toContain(files.proxy.token);
+    expect(left).not.toContain(token);
     expect(left).not.toContain(files.created);
     expect(left.filter((path) => /\/git\/[0-9a-f]{16}$/.test(path))).toEqual([]);
     expect(await lstat(join(harness.repoRoot, ".git", "commondir")).catch(() => undefined)).toBeUndefined();
     expect(await readFile(files.record, "utf8")).toContain(harness.repoRoot);
   });
 
-  it("removes its own container at the end, and the relay and network only after the last session of the repository", async () => {
+  it("removes its own container at the end, and the relay, network and proxy only after the last session of the install", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
 
@@ -89,7 +97,7 @@ describe("the end of a session", () => {
       ...(await processMark()),
       launchId: "0123456789abcdef",
       pid: process.pid,
-      repoHash: sha256Hex(harness.repoRoot),
+      repoHash: "d".repeat(64),
       startedAt: 1,
     });
 
@@ -98,8 +106,8 @@ describe("the end of a session", () => {
     expect(fake.created).toHaveLength(1);
     expect(fake.containers.size).toBe(0);
     expect(fake.relays.size).toBe(1);
-    expect(fake.networks.size).toBe(1);
-    expect(harness.stoppedProxies).toEqual([]);
+    expect(fake.networks.has(FAKE_NETWORK)).toBe(true);
+    expect(harness.proxyStops()).toBe(0);
   });
 
   it("removes its own container first, then the relay and the network", async () => {
@@ -112,10 +120,10 @@ describe("the end of a session", () => {
 
         await fake.backend.removeContainer(id);
       },
-      removeRepoNetwork: async (repoHash: string) => {
+      removeNetwork: async () => {
         order.push("network");
 
-        return fake.backend.removeRepoNetwork(repoHash);
+        return fake.backend.removeNetwork();
       },
     };
     const harness = await createHarness({ backend: () => backend });
@@ -152,14 +160,11 @@ describe("the end of a session", () => {
       },
     };
     const harness = await createHarness({ backend: () => backend });
-    const repo = sha256Hex(harness.repoRoot);
 
     expect(await run([], harness.deps)).toBe(0);
     expect(fake.containers.size).toBe(1);
-    expect(harness.stoppedProxies).toContain(repo);
-    expect(
-      await lstat(stateLayout(harness.stateDir).repo(repo).proxy.token).catch(() => undefined),
-    ).toBeUndefined();
+    expect(harness.proxyStops()).toBe(1);
+    expect(await exists(stateLayout(harness.stateDir).proxy.token)).toBe(false);
 
     engine.up = true;
 
@@ -169,10 +174,15 @@ describe("the end of a session", () => {
 });
 
 describe("the git report at the last session's end", () => {
-  it("finishes under the launch lock, so a launch registering right after sees no baseline of the ended one", async () => {
+  it("finishes under the prepare lock, so a launch registering right after sees no baseline of the ended one", async () => {
     const fake = createFakeBackend();
-    const seen: { ending?: boolean; atEnd?: boolean; atRegistration?: boolean; registered?: Promise<void> } =
-      {};
+    const seen: {
+      ran?: boolean;
+      ending?: boolean;
+      atEnd?: boolean;
+      atRegistration?: boolean;
+      registered?: Promise<void>;
+    } = {};
     const harness = await createHarness({
       respond: (call) =>
         seen.ending === true && call.file === "git" && call.args.includes("ls-files")
@@ -180,20 +190,34 @@ describe("the git report at the last session's end", () => {
           : undefined,
       backend: () => ({
         ...fake.backend,
-        removeRepoNetwork: async (repoHash: string) => {
-          seen.ending = true;
-          seen.atEnd = await exists(baseline());
+        exec: async (spec, io) => {
+          const result = await fake.backend.exec(spec, io);
 
-          seen.registered = registerLaunch(harness.stateDir, {
-            launchId: OTHER_LAUNCH,
-            repoHash,
-            startedAt: 2,
-            ...(await processMark()),
-          }).then(async () => {
-            seen.atRegistration = await exists(baseline());
-          });
+          seen.ran = seen.ran === true || spec.env.PI_SANDBOX_LAUNCH_ID !== undefined;
 
-          return fake.backend.removeRepoNetwork(repoHash);
+          return result;
+        },
+        findContainers: async (labels) => {
+          const repoHash = labels["pi-sandbox.repo-hash"];
+
+          if (seen.ran === true && seen.ending !== true && repoHash !== undefined) {
+            seen.ending = true;
+            seen.atEnd = await exists(baseline());
+            seen.registered = withPrepareLock(
+              { stateDir: harness.stateDir, repoHash, progress: () => undefined },
+              async () =>
+                registerLaunch(harness.stateDir, {
+                  launchId: OTHER_LAUNCH,
+                  repoHash,
+                  startedAt: 2,
+                  ...(await processMark()),
+                }),
+            ).then(async () => {
+              seen.atRegistration = await exists(baseline());
+            });
+          }
+
+          return fake.backend.findContainers(labels);
         },
       }),
     });
@@ -207,14 +231,150 @@ describe("the git report at the last session's end", () => {
   });
 });
 
+describe("the cleanup at the end of a folder's last session", () => {
+  it("lets a launch of another folder register while the cleanup is slow", async () => {
+    const fake = createFakeBackend();
+    const cleanup = { ending: false, entered: (): void => undefined, open: (): void => undefined };
+    const entered = new Promise<void>((resolve) => {
+      cleanup.entered = resolve;
+    });
+    const opened = new Promise<void>((resolve) => {
+      cleanup.open = resolve;
+    });
+    const harness = await createHarness({
+      backend: () => ({
+        ...fake.backend,
+        findContainers: async (labels) => {
+          if (cleanup.ending && labels[LABELS.repoHash] !== undefined) {
+            cleanup.entered();
+
+            await opened;
+          }
+
+          return fake.backend.findContainers(labels);
+        },
+      }),
+    });
+    const own = await openContext(harness.deps, "host");
+    const launch = await beginLaunch(harness.deps, own.context, () => undefined);
+
+    cleanup.ending = true;
+
+    const finished = finishLaunch(
+      harness.deps,
+      own.context,
+      harness.deps.backend(),
+      launch,
+      new AbortController().signal,
+    );
+
+    await entered;
+
+    const other = await openContext({ ...harness.deps, cwd: harness.deps.home }, "host");
+    const begun = await Promise.race([
+      beginLaunch(harness.deps, other.context, () => undefined).then(() => "registered"),
+      sleep(2000).then(() => "blocked"),
+    ]);
+
+    cleanup.open();
+
+    await finished;
+
+    expect(begun).toBe("registered");
+    expect((await liveLaunches(harness.stateDir)).map((entry) => entry.repoHash)).toEqual([
+      other.context.repoHash,
+    ]);
+  });
+
+  it("cleans the folder and the install ground when the folder's two last sessions end together while both locks are held", async () => {
+    const fake = createFakeBackend();
+    const harness = await createHarness({ backend: () => fake.backend });
+    const own = await openContext(harness.deps, "host");
+    const mountDir = join(harness.repoRoot, "created-mount");
+
+    await fake.backend.prepareRelay({ hostPort: 3128, imageId: "relay", preamble: "PI-SANDBOX test" });
+
+    await mkdir(mountDir);
+
+    await recordCreatedDirs(harness.stateDir, own.context.repoHash, [mountDir]);
+
+    const launches = [
+      await beginLaunch(harness.deps, own.context, () => undefined),
+      await beginLaunch(harness.deps, own.context, () => undefined),
+    ];
+    const backend = harness.deps.backend();
+    const lock = { stateDir: harness.stateDir, repoHash: own.context.repoHash, progress: () => undefined };
+    const preparing = withPrepareLock(lock, () => sleep(300));
+    const grounding = withGroundLock(lock, () => sleep(600));
+
+    await sleep(20);
+
+    await Promise.all([
+      ...launches.map((launch) =>
+        finishLaunch(harness.deps, own.context, backend, launch, new AbortController().signal),
+      ),
+      preparing,
+      grounding,
+    ]);
+
+    expect(await liveLaunches(harness.stateDir)).toEqual([]);
+    expect(await exists(mountDir)).toBe(false);
+    expect(fake.relays.size).toBe(0);
+    expect(fake.networks.has(FAKE_NETWORK)).toBe(false);
+    expect(harness.proxyStops()).toBeGreaterThan(0);
+  });
+
+  it("waits for a host pi job's sweep holding the folder's prepare lock, says so, then cleans the folder", async () => {
+    const fake = createFakeBackend();
+    const harness = await createHarness({ backend: () => fake.backend });
+    const own = await openContext(harness.deps, "host");
+    const mountDir = join(harness.repoRoot, "created-mount");
+    const release = { now: (): void => undefined };
+    const held = new Promise<void>((resolve) => {
+      release.now = resolve;
+    });
+
+    await mkdir(mountDir);
+
+    await recordCreatedDirs(harness.stateDir, own.context.repoHash, [mountDir]);
+
+    const launch = await beginLaunch(harness.deps, own.context, () => undefined);
+    const lock = { stateDir: harness.stateDir, repoHash: own.context.repoHash, progress: () => undefined };
+    const sweeping = withPrepareLock(lock, () => held);
+
+    await sleep(20);
+
+    const finished = finishLaunch(
+      harness.deps,
+      own.context,
+      harness.deps.backend(),
+      launch,
+      new AbortController().signal,
+    );
+
+    await sleep(300);
+
+    expect(await exists(mountDir)).toBe(true);
+    expect(harness.stderr()).toContain(CLEANUP_WAITING);
+
+    release.now();
+
+    await sweeping;
+
+    await finished;
+
+    expect(await exists(mountDir)).toBe(false);
+  });
+});
+
 describe("the sweep of what a killed launcher left", () => {
-  it("removes the sandbox of another repository whose launcher is gone and its pid reused, at the next launch", async () => {
+  it("removes the sandbox of another repository whose launcher is gone and its pid reused, at the next launch, and keeps a container without a role", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
     const orphan = "b".repeat(64);
-    const files = stateLayout(harness.stateDir).repo(orphan);
+    const layout = stateLayout(harness.stateDir);
 
-    await harness.writeJson(join(files.launches, "00000000000000ee.json"), {
+    await harness.writeJson(join(layout.launches, "00000000000000ee.json"), {
       launchId: "00000000000000ee",
       ...(await processMark()),
       start: "Thu-Jan-1-00:00:00-1970",
@@ -222,23 +382,32 @@ describe("the sweep of what a killed launcher left", () => {
       startedAt: 1,
     });
 
-    await harness.writeJson(files.proxy.token, "token");
-
-    await fake.backend.prepareProxyRoute({ hostPort: 3128, repoHash: orphan, imageId: "relay" });
+    await harness.writeJson(layout.proxy.token, "token");
 
     const id = fake.addContainer({
       name: `pi-sandbox-${orphan.slice(0, 12)}`,
-      labels: { "pi-sandbox.managed": "true", "pi-sandbox.repo-hash": orphan },
+      labels: {
+        [LABELS.managed]: "true",
+        [LABELS.role]: "agent",
+        [LABELS.repoHash]: orphan,
+        [LABELS.launchId]: "00000000000000ee",
+      },
+      state: "running",
+      image: "x",
+    });
+    const roleless = fake.addContainer({
+      name: "pi-sandbox-build-step",
+      labels: { [LABELS.managed]: "true", [LABELS.repoHash]: orphan },
       state: "running",
       image: "x",
     });
 
     expect(await run([], harness.deps)).toBe(0);
     expect(fake.containers.has(id)).toBe(false);
-    expect(fake.relays.has(orphan)).toBe(false);
-    expect(fake.networks.has(`pi-sandbox-${orphan.slice(0, 12)}`)).toBe(false);
-    expect(harness.stoppedProxies).toContain(orphan);
-    expect(await lstat(files.proxy.token).catch(() => undefined)).toBeUndefined();
+    expect(fake.containers.has(roleless)).toBe(true);
+    expect(fake.networks.has(FAKE_NETWORK)).toBe(false);
+    expect(harness.proxyStops()).toBe(1);
+    expect(await exists(layout.proxy.token)).toBe(false);
   });
 
   it("keeps the sandbox of another repository while its launcher runs, even when its entry is hours old after a sleep", async () => {
@@ -254,14 +423,15 @@ describe("the sweep of what a killed launcher left", () => {
       startedAt: 1,
     });
 
-    await utimes(join(stateLayout(harness.stateDir).repo(other).launches, "00000000000000ff.json"), old, old);
+    await utimes(join(stateLayout(harness.stateDir).launches, "00000000000000ff.json"), old, old);
 
     const id = fake.addContainer({
       name: `pi-sandbox-${other.slice(0, 12)}`,
       labels: {
-        "pi-sandbox.managed": "true",
-        "pi-sandbox.repo-hash": other,
-        "pi-sandbox.launch-id": "00000000000000ff",
+        [LABELS.managed]: "true",
+        [LABELS.role]: "agent",
+        [LABELS.repoHash]: other,
+        [LABELS.launchId]: "00000000000000ff",
       },
       state: "running",
       image: "x",
@@ -269,7 +439,8 @@ describe("the sweep of what a killed launcher left", () => {
 
     expect(await run([], harness.deps)).toBe(0);
     expect(fake.containers.has(id)).toBe(true);
-    expect(harness.stoppedProxies).not.toContain(other);
+    expect(fake.networks.has(FAKE_NETWORK)).toBe(true);
+    expect(harness.proxyStops()).toBe(0);
   });
 });
 
@@ -320,7 +491,7 @@ describe("a signal while the sandbox is being prepared", () => {
     expect(fake.created).toHaveLength(1);
     expect(fake.containers.size).toBe(0);
     expect(fake.stops.map((stop) => stop.id)).toContain(fake.created[0]?.summary.id);
-    expect(await launchesShown(harness)).toBe(`launches: 0 running in ${harness.repoRoot}`);
+    expect(await launchesShown(harness)).toBe("launches: 0 running in the sandbox");
     expect(signals.listenerCount("SIGINT")).toBe(0);
     expect(piSessions(fake)).toEqual([]);
   });
@@ -347,9 +518,9 @@ describe("a signal while the sandbox is being prepared", () => {
     harness.deps.signals = signals;
 
     expect(await run([], harness.deps)).toBe(130);
-    expect(sessionsWhenBuilt).toEqual([1]);
+    expect(sessionsWhenBuilt).toEqual([1, 1]);
     expect(fake.containers.size).toBe(0);
-    expect(await launchesShown(harness)).toBe(`launches: 0 running in ${harness.repoRoot}`);
+    expect(await launchesShown(harness)).toBe("launches: 0 running in the sandbox");
   });
 });
 
@@ -379,5 +550,32 @@ describe("a launch refused right before its start", () => {
     expect(box.planted).toBe(true);
     expect(harness.stderr()).toContain(`${join(harness.repoRoot, ".git", "hooks")} is not a directory`);
     expect(fake.containers.size).toBe(0);
+  });
+});
+
+describe("a failure right after the launch registered", () => {
+  it("ends the launch, so no session stays registered", async () => {
+    const fake = createFakeBackend();
+    const harness = await createHarness({ backend: () => fake.backend });
+    const { context, backend } = await openContext(harness.deps, "sandbox");
+    const config = context.effective.config;
+    const failing = {
+      ...context,
+      effective: {
+        ...context.effective,
+        config: {
+          ...config,
+          get writeBack(): typeof config.writeBack {
+            throw new Error("write-back table failed");
+          },
+        },
+      },
+    };
+
+    await expect(withSandbox(harness.deps, failing, backend, async () => 0)).rejects.toThrow(
+      "write-back table failed",
+    );
+
+    expect(await liveLaunches(harness.stateDir)).toEqual([]);
   });
 });

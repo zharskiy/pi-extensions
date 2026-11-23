@@ -12,12 +12,15 @@ import {
   createFakeHost,
   flushTimers as flush,
   requestTexts,
+  usePrivateTmpdir,
   useTempDirs,
   VALID_HANDOFF,
 } from "../../../test/framework/index.ts";
 import { createLimits } from "../api/plugin.ts";
 import { conversationOnly } from "../core/conversation-host.ts";
 import { DEFAULT_LIMITS } from "../core/settings.ts";
+
+usePrivateTmpdir();
 
 const temp = useTempDirs();
 

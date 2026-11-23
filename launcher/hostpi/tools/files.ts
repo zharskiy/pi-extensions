@@ -1,5 +1,4 @@
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
 import { hasUrlUserinfo, type ToolConfigFormat } from "../../shared/index.ts";
 import { type Endpoint, endpointOf, withoutUserinfo } from "../endpoints.ts";
 import { isInsideRoots } from "../path-search.ts";
@@ -28,8 +27,6 @@ export const sandboxedConfigNotice = async (
   (await isInsideRoots(path, input.excludedRoots))
     ? `${label}: ${path} (from ${variable}) lies inside the sandbox, which can rewrite it; ignored`
     : undefined;
-
-export const xdgConfigHome = (input: ToolsInput) => input.env.XDG_CONFIG_HOME || join(input.home, ".config");
 
 export const timedOutNotice = (label: string, command: string, timeoutMs = PROBE_TIMEOUT_MS) =>
   `${label}: ${command} did not answer within ${timeoutMs / 1000} s on the host; skipped`;

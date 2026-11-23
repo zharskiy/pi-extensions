@@ -50,12 +50,29 @@ export const hostAgentDir = (home: string, env: NodeJS.ProcessEnv) => {
 
 const launcherDir = (home: string, env: NodeJS.ProcessEnv) => join(hostAgentDir(home, env), APP);
 
+const realBeneath = (path: string): string => {
+  const absolute = resolve(path);
+  const parent = dirname(absolute);
+
+  try {
+    return realpathSync.native(absolute);
+  } catch {
+    return parent === absolute ? absolute : join(realBeneath(parent), basename(absolute));
+  }
+};
+
+const configuredStateDir = (env: NodeJS.ProcessEnv) => {
+  const configured = present(env.PI_SANDBOX_STATE_DIR);
+
+  return configured === undefined ? undefined : realBeneath(configured);
+};
+
 export const launcherPaths = (context: Partial<PathContext> = {}): LauncherPaths => {
   const env = context.env ?? process.env;
   const home = context.home ?? homedir();
 
   return {
-    stateDir: present(env.PI_SANDBOX_STATE_DIR) ?? join(launcherDir(home, env), STATE_DIR),
+    stateDir: configuredStateDir(env) ?? join(launcherDir(home, env), STATE_DIR),
     userConfigFile: present(env.PI_SANDBOX_USER_CONFIG) ?? join(launcherDir(home, env), CONFIG_FILE),
   };
 };

@@ -10,7 +10,8 @@ describe("validateConfig", () => {
         allow: ["github.com", "*.acme.test", "git.acme.test:2222", "*.acme.test:8443"],
       },
       workspaceRoots: { roots: ["~/work", "/srv/repos"] },
-      mounts: { sharedCaches: ["~/.npm"], autoOverlays: false },
+      mounts: { volumes: ["~/.npm"], binds: [{ source: "~/ref", target: "/srv/ref" }], autoOverlays: false },
+      setup: [["npm", "ci"]],
       env: { allow: ["TERM", "EDITOR"] },
       resources: { cpus: 4, memoryGiB: 8 },
     };
@@ -104,24 +105,7 @@ describe("validateConfig", () => {
       "config: workspaceRoots.outside is not a known key",
     );
     expect(configProblem({ workspaceRoots: {} })).toBe("config: workspaceRoots.roots is required");
-    expect(configProblem({ tls: { extraCa: [{ hostStore: true }] } })).toBe(
-      "config: tls.extraCa[0].hostStore was removed; run pi sandbox doctor to get the sha256 of your network's CA",
-    );
-  });
-
-  it("says what replaces each removed key", () => {
-    expect(configProblem({ fallback: "host" })).toBe(
-      "config: fallback was removed; --no-sandbox is always available",
-    );
-    expect(configProblem({ egress: { presets: ["npm"] } })).toBe(
-      "config: egress.presets was removed; list the hosts in egress.allow, see REMOVED-DEFAULTS.md",
-    );
-    expect(configProblem({ egress: { grants: true } })).toBe(
-      "config: egress.grants was removed; grants are always on",
-    );
-    expect(configProblem({ egress: { parentProxy: "auto" } })).toBe(
-      "config: egress.parentProxy was removed; the parent proxy is always taken from the environment",
-    );
+    expect(configProblem({ fallback: "host" })).toBe("config: fallback is not a known key");
   });
 
   it("takes an extra CA by sha256 fingerprint, colons and case optional", () => {
@@ -145,9 +129,9 @@ describe("validateConfig", () => {
     );
   });
 
-  it("drops a trailing slash from shared caches", () => {
-    expect(validateConfig({ mounts: { sharedCaches: ["~/.npm/"] } })).toEqual({
-      mounts: { sharedCaches: ["~/.npm"] },
+  it("drops a trailing slash from volume targets", () => {
+    expect(validateConfig({ mounts: { volumes: ["~/.npm/"] } })).toEqual({
+      mounts: { volumes: ["~/.npm"] },
     });
   });
 
@@ -184,9 +168,45 @@ describe("validateConfig", () => {
     });
   });
 
+  it("sets literal env.set values and refuses a name the launcher sets, naming the key", () => {
+    expect(configProblem({ env: { set: { CI: "1", PATH_EXTRA: "$HOME/bin", EMPTY: "" } } })).toBeUndefined();
+    expect(
+      configProblem({ env: { set: { JAVA_TOOL_OPTIONS: "-Dhttps.proxyHost=pi-sandbox-proxy" } } }),
+    ).toBeUndefined();
+    expect(configProblem({ env: { set: { GH_TOKEN: "pi-sandbox-github" } } })).toBeUndefined();
+    ["HTTPS_PROXY", "no_proxy", "GITLAB_TOKEN", "PI_SANDBOX", "HOME", "PATH"].forEach((name) => {
+      expect(configProblem({ env: { set: { CI: "1", [name]: "x" } } })).toBe(
+        `config: env.set["${name}"] is set by the launcher and cannot be set`,
+      );
+    });
+    expect(configProblem({ env: { set: { "1BAD": "x" } } })).toBe(
+      'config: env.set["1BAD"] is not an environment variable name',
+    );
+    expect(configProblem({ env: { set: { CI: 1 } } })).toBe('config: env.set["CI"] must be a string');
+    expect(configProblem({ env: { set: { CI: "a\u0000b" } } })).toBe(
+      'config: env.set["CI"] must not contain a NUL character',
+    );
+    expect(configProblem({ env: { set: ["CI=1"] } })).toBe("config: env.set must be an object");
+  });
+
+  it("bounds the pids, open files and shm limits and takes whole numbers only", () => {
+    expect(configProblem({ resources: { pids: 256, openFiles: 1048576, shmMiB: 1 } })).toBeUndefined();
+    expect(configProblem({ resources: { pids: 255 } })).toBe("config: resources.pids must be at least 256");
+    expect(configProblem({ resources: { openFiles: 1048577 } })).toBe(
+      "config: resources.openFiles must be at most 1048576",
+    );
+    expect(configProblem({ resources: { openFiles: 1023 } })).toBe(
+      "config: resources.openFiles must be at least 1024",
+    );
+    expect(configProblem({ resources: { shmMiB: 0 } })).toBe("config: resources.shmMiB must be at least 1");
+    expect(configProblem({ resources: { shmMiB: 64.5 } })).toBe(
+      "config: resources.shmMiB must be a whole number",
+    );
+  });
+
   it("names the value of a path, name or choice leaf, escaped when it is not printable, and never a host or credential value", () => {
-    expect(configProblem({ mounts: { sharedCaches: ["~/a/\u001b[31m/.."] } })).toBe(
-      'config: mounts.sharedCaches[0] "~/a/\\u001b[31m/.." must name a directory below ~ without empty, . or .. segments',
+    expect(configProblem({ mounts: { volumes: ["~/a/\u001b[31m/.."] } })).toBe(
+      'config: mounts.volumes[0] "~/a/\\u001b[31m/.." must not hold empty, . or .. segments',
     );
     expect(configProblem({ workspaceRoots: { roots: ["x".repeat(300)] } })).toBe(
       `config: workspaceRoots.roots[0] ${"x".repeat(200)}... must be an absolute path or start with ~/`,

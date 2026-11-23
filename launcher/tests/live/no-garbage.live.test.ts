@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { installIdOf, networkName } from "../../backend/index.ts";
 import { listContainers, listNetworks } from "./harness/engine.ts";
 import { createLiveSandbox, type LiveSandbox, liveEnabled } from "./harness/sandbox.ts";
 import { fixtureConfig } from "./harness/scenario.ts";
@@ -20,14 +21,17 @@ describe.skipIf(!liveEnabled)("the last session leaves nothing behind (live)", (
 
   it("removes each launch's container when its pi exits, and the relay, network, proxy and state after the last", async () => {
     const sandbox = state.sandbox as LiveSandbox;
-    const network = `pi-sandbox-${sandbox.repoHash.slice(0, 12)}`;
     const first = await sandbox.pi(["list"]).done;
 
     expect(first.code).toBe(0);
 
-    const running = await listContainers({ "pi-sandbox.repo-hash": sandbox.repoHash });
+    const relays = await listContainers({
+      "pi-sandbox.role": "relay",
+      "pi-sandbox.install": installIdOf(sandbox.stateDir),
+    });
 
-    expect(running.map((container) => container.Labels["pi-sandbox.relay"] === "true")).toEqual([true]);
+    expect(await listContainers({ "pi-sandbox.repo-hash": sandbox.repoHash })).toEqual([]);
+    expect(relays.map((container) => container.Labels["pi-sandbox.repo-hash"])).toEqual([undefined]);
 
     const last = await sandbox.lastExit();
 
@@ -35,7 +39,15 @@ describe.skipIf(!liveEnabled)("the last session leaves nothing behind (live)", (
 
     expect(await listContainers({ "pi-sandbox.repo-hash": sandbox.repoHash })).toEqual([]);
 
-    expect((await listNetworks()).map((candidate) => candidate.Name)).not.toContain(network);
+    expect((await listNetworks()).map((candidate) => candidate.Name)).not.toContain(
+      networkName(installIdOf(sandbox.stateDir)),
+    );
+    expect(
+      await listContainers({
+        "pi-sandbox.role": "relay",
+        "pi-sandbox.install": installIdOf(sandbox.stateDir),
+      }),
+    ).toEqual([]);
 
     expect(await sandbox.leftovers()).toEqual([]);
   });

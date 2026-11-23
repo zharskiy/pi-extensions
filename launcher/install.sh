@@ -84,10 +84,6 @@ parse_args() {
   fi
 
   case "$1" in
-    --cpu|--cpu=*|--memory|--memory=*|--disk|--disk=*)
-      fail "--cpu, --memory and --disk were removed: the installer asks for the VM size; without a terminal, set vm.cpus, vm.memoryGiB and vm.diskGiB in $user_config first" ;;
-    --root|--root=*)
-      fail "--root was removed: the installer asks for your project folders; without a terminal, set PI_SANDBOX_ROOTS" ;;
     -h|--help) usage; exit 0 ;;
     *) usage >&2; fail "unknown option $1" ;;
   esac
@@ -103,7 +99,6 @@ checkout=$(dirname "$script_dir")
 parse_args "$@"
 
 replaced_link="$state_dir/replaced-pi-link"
-legacy_replaced_link="$legacy_state_dir/replaced-pi-link"
 
 from_checkout=0
 if [ -f "$checkout/package.json" ] && [ -e "$checkout/.git" ] && grep -q "\"name\": \"$package_name\"" "$checkout/package.json"; then
@@ -227,13 +222,6 @@ if [ -n "$managed_root" ] && [ "$managed_root" != "$agent_root" ]; then
   fail "$shim is pi's managed install at $managed_root, outside the host agent dir $agent_dir; the launcher uses only the managed install in the agent dir, move it away and run this again"
 fi
 
-carry_replaced_link() {
-  if [ ! -f "$replaced_link" ] && [ -f "$legacy_replaced_link" ]; then
-    mkdir -p "$state_dir"
-    cat "$legacy_replaced_link" > "$replaced_link"
-  fi
-}
-
 record_replaced_link() {
   if [ -n "$managed_root" ]; then
     mkdir -p "$state_dir"
@@ -242,8 +230,6 @@ record_replaced_link() {
 }
 
 mkdir -p "$bin_dir"
-
-carry_replaced_link
 
 if [ "$from_checkout" -eq 1 ]; then
   record_replaced_link

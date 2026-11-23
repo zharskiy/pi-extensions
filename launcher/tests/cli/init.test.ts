@@ -144,6 +144,34 @@ const fakeTtyStreams = (closed: string[] = []) => ({
 });
 
 describe("pi sandbox init --yes", () => {
+  it("plans the share of a bind source outside the roots, as a launch does", async () => {
+    const harness = await initSetup();
+    const work = join(harness.deps.home, "work");
+    const reference = join(harness.deps.home, "reference");
+    const config = {
+      workspaceRoots: { roots: ["~/work"] },
+      mounts: { binds: [{ source: "~/reference", target: "/etc/reference" }] },
+    };
+
+    await mkdir(work, { recursive: true });
+
+    await mkdir(reference, { recursive: true });
+
+    await mkdir(dirname(harness.userConfigFile), { recursive: true });
+
+    await writeFile(harness.userConfigFile, JSON.stringify(config));
+
+    expect(await run(["sandbox", "init", "--yes"], harness.deps)).toBe(0);
+    expect(harness.applied.map((desired) => desired.shares)).toEqual([
+      [
+        { location: work, writable: true },
+        { location: harness.sessions, writable: true },
+        { location: harness.vmState, writable: false },
+        { location: reference, writable: false },
+      ],
+    ]);
+  });
+
   it("writes the roots of PI_SANDBOX_ROOTS into a new config and creates the VM with them", async () => {
     const harness = await initSetup();
     const work = join(harness.deps.home, "work");

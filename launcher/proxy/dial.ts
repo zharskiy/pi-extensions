@@ -24,9 +24,16 @@ export class RestrictedAddressError extends Error {
   }
 }
 
+export class ResolutionTimeoutError extends Error {
+  constructor(host: string) {
+    super(`${host} did not resolve in time`);
+    this.name = "ResolutionTimeoutError";
+  }
+}
+
 const UNRESOLVED = new Set(["ENOTFOUND", "EAI_AGAIN", "ENODATA", "EAI_NONAME"]);
 
-const CONNECT_TIMEOUT_MS = 10_000;
+export const CONNECT_TIMEOUT_MS = 10_000;
 
 const PRIVATE_RESOLUTION = new Set(["loopback", "link-local", "reserved-address", "private-address"]);
 
@@ -129,8 +136,26 @@ const direct =
       timeoutMs,
     );
 
-const checkResolved = async (resolve: Resolve, host: string) => {
-  const addresses = await resolve(host).catch((error: NodeJS.ErrnoException) => {
+const resolvedInTime = (resolve: Resolve, host: string, timeoutMs: number) =>
+  new Promise<LookupAddress[]>((settle, reject) => {
+    const timer = setTimeout(() => reject(new ResolutionTimeoutError(host)), timeoutMs);
+
+    resolve(host).then(
+      (addresses) => {
+        clearTimeout(timer);
+
+        settle(addresses);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+
+        reject(error);
+      },
+    );
+  });
+
+const checkResolved = async (resolve: Resolve, host: string, timeoutMs: number) => {
+  const addresses = await resolvedInTime(resolve, host, timeoutMs).catch((error: NodeJS.ErrnoException) => {
     if (UNRESOLVED.has(error.code ?? "")) {
       return [];
     }
@@ -169,7 +194,7 @@ export const createDialer = ({
     }
 
     if (access === "public") {
-      await checkResolved(resolveHost, host);
+      await checkResolved(resolveHost, host, connectTimeoutMs);
     }
 
     return dialViaParent(parent, host, port);
@@ -177,7 +202,7 @@ export const createDialer = ({
 
   const checkAddresses = async (host: string, access: DialAccess) => {
     if (access === "public") {
-      await checkResolved(resolveHost, host);
+      await checkResolved(resolveHost, host, connectTimeoutMs);
     }
   };
 

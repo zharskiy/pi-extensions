@@ -1,16 +1,21 @@
 import { rm } from "node:fs/promises";
 import { type Backend, ENGINE_PROFILE, LABELS } from "../../backend/index.ts";
-import { liveLaunches, withRepoLaunchLock } from "../../grants/index.ts";
+import { liveLaunches } from "../../grants/index.ts";
 import { LauncherError, stateLayout } from "../../shared/index.ts";
 import { type LaunchContext, openContext } from "../context.ts";
-import { type CliDeps, writeLines } from "../deps.ts";
+import { type CliDeps, writeLine, writeLines } from "../deps.ts";
+import { wipeServices } from "../ground.ts";
+import { withPrepareLock } from "../prepare.ts";
 import { removeRepoSandbox } from "../sweep.ts";
+
+export const SERVICES_FLAG = "--services";
 
 const ownVolumes = async (context: LaunchContext, backend: Backend) =>
   (await backend.listVolumes()).filter((volume) => volume.labels[LABELS.repoHash] === context.repoHash);
 
 const refuseLive = async (stateDir: string, context: LaunchContext) => {
-  const count = (await liveLaunches(stateDir, context.repoHash)).length;
+  const launches = await liveLaunches(stateDir);
+  const count = launches.filter((launch) => launch.repoHash === context.repoHash).length;
 
   if (count > 0) {
     throw new LauncherError(
@@ -44,7 +49,7 @@ const reset = async (deps: CliDeps, context: LaunchContext, backend: Backend) =>
   await refuseLive(stateDir, context);
 
   const reachable = (await backend.detect()).available;
-  const removed = await removeRepoSandbox(deps, backend, repoHash);
+  const removed = await removeRepoSandbox(deps, repoHash, reachable ? backend : undefined);
 
   await rm(stateLayout(stateDir).repo(repoHash).render, { recursive: true, force: true });
 
@@ -59,10 +64,39 @@ const reset = async (deps: CliDeps, context: LaunchContext, backend: Backend) =>
   writeLines(deps.stdout, lines.length === 0 ? [`no sandbox for ${workspace.repoRoot}`] : lines);
 };
 
-export const resetCommand = async (deps: CliDeps) => {
+const SERVICES_SKIPPED = `the sandbox VM is not running, so its services hold no data to remove now; run colima start --profile ${ENGINE_PROFILE} --activate=false, then pi sandbox reset ${SERVICES_FLAG} again`;
+
+const resetServices = async (deps: CliDeps, context: LaunchContext, backend: Backend) => {
+  if (!(await backend.detect()).available) {
+    writeLines(deps.stdout, [SERVICES_SKIPPED]);
+
+    return;
+  }
+
+  const lines = await wipeServices(backend, context.stateDir, {
+    services: context.effective.config.services,
+    progress: (line) => writeLine(deps.stderr, line),
+  });
+
+  writeLines(deps.stdout, lines.length === 0 ? ["no services to remove"] : lines);
+};
+
+export const resetCommand = async (deps: CliDeps, args: string[] = []) => {
   const { context } = await openContext(deps, "host");
 
-  await withRepoLaunchLock(context.stateDir, context.repoHash, () => reset(deps, context, deps.backend()));
+  if (args.includes(SERVICES_FLAG)) {
+    await resetServices(deps, context, deps.backend());
+
+    return 0;
+  }
+
+  const lock = {
+    stateDir: context.stateDir,
+    repoHash: context.repoHash,
+    progress: (line: string) => writeLine(deps.stderr, line),
+  };
+
+  await withPrepareLock(lock, () => reset(deps, context, deps.backend()));
 
   return 0;
 };

@@ -15,5 +15,4 @@ export type {
   HostPiFiles,
   JsonObject,
   McpOAuthServer,
-  ToolHost,
 } from "./types.ts";
