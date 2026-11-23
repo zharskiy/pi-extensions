@@ -72,12 +72,16 @@ export const guestReservedOver = (target: string) =>
   GUEST_MOUNT_POINTS.find((point) => isWithin(point, target)) ??
   GUEST_MARKERS.find((marker) => overlaps(marker, target));
 
+export const rotatedLogOf = (path: string) => `${path}.1`;
+
 const proxyFiles = (directory: string) => ({
   directory,
   record: join(directory, "proxy.json"),
   token: join(directory, "token"),
   log: join(directory, "proxy.log"),
+  rotatedLog: rotatedLogOf(join(directory, "proxy.log")),
   accessLog: join(directory, "access.log"),
+  rotatedAccessLog: rotatedLogOf(join(directory, "access.log")),
   egress: join(directory, "egress.json"),
 });
 
@@ -107,7 +111,9 @@ export const stateLayout = (stateDir: string) => ({
   repos: join(stateDir, "repos"),
   repo: (repoHash: string) => repoFiles(stateDir, repoHash),
   vm: join(stateDir, "vm"),
+  renders: join(stateDir, "vm", "render"),
   emptyDir: join(stateDir, "empty"),
+  locks: join(stateDir, "locks"),
   vmLock: join(stateDir, "locks", "vm.lock"),
   groundLock: join(stateDir, "locks", "ground.lock"),
   launches: join(stateDir, "launches"),
@@ -120,12 +126,34 @@ export const stateLayout = (stateDir: string) => ({
   mcpLoginFileLock: join(stateDir, "locks", "mcp-login-file.lock"),
   mcpLoginDirPrefix: join(stateDir, "mcp-login-"),
   mcpLoginLock: (key: string) => join(stateDir, "locks", `mcp-login-${sha256Hex(key).slice(0, 8)}.lock`),
+  providerHostsDir: join(stateDir, "provider-hosts"),
   providerHosts: (piVersion: string) => join(stateDir, "provider-hosts", `${piVersion}.json`),
   ca: join(stateDir, "ca"),
+  caKey: join(stateDir, "ca", "ca-key.pem"),
+  caCert: join(stateDir, "ca", "ca-cert.pem"),
   caLock: join(stateDir, "ca", "ca.lock"),
   extraPem: join(stateDir, "ca", "extra.pem"),
   imageRecord: join(stateDir, "image.json"),
   gcRecord: join(stateDir, "gc.json"),
+  replacedPiLink: join(stateDir, "replaced-pi-link"),
 });
+
+const leavesOf = (value: unknown): string[] => {
+  if (typeof value === "string") {
+    return [value];
+  }
+
+  return typeof value === "object" && value !== null ? Object.values(value).flatMap(leavesOf) : [];
+};
+
+export const stateEntries = (stateDir: string, repoHashes: string[]) => {
+  const layout = stateLayout(stateDir);
+
+  return {
+    named: [...leavesOf(layout), ...repoHashes.flatMap((hash) => leavesOf(layout.repo(hash)))],
+    open: [layout.locks, layout.launches, layout.build, layout.providerHostsDir],
+    walked: [layout.repos, layout.renders],
+  };
+};
 
 export const ensureSalt = (stateDir: string) => ensureRandomHexFile(stateLayout(stateDir).salt, SALT_BYTES);

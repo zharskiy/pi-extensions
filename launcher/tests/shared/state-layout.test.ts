@@ -52,6 +52,9 @@ describe("stateLayout", () => {
     expect(layout.gcRecord).toBe("/state/gc.json");
     expect(layout.ca).toBe("/state/ca");
     expect(layout.caLock).toBe("/state/ca/ca.lock");
+    expect(layout.caKey).toBe("/state/ca/ca-key.pem");
+    expect(layout.caCert).toBe("/state/ca/ca-cert.pem");
+    expect(layout.replacedPiLink).toBe("/state/replaced-pi-link");
     expect(layout.extraPem).toBe("/state/ca/extra.pem");
     expect(layout.imageRecord).toBe("/state/image.json");
   });
@@ -68,7 +71,7 @@ describe("stateLayout", () => {
     const hidden = [...flat(layout), ...flat(layout.repo("r1"))].filter(inVm);
 
     expect(layout.vm).toBe("/state/vm");
-    expect(hidden.sort()).toEqual(["/state/vm/render/r1"]);
+    expect(hidden.sort()).toEqual(["/state/vm/render", "/state/vm/render/r1"]);
   });
 
   it("keeps every file of one repository under repos/<repo hash>", () => {
@@ -100,7 +103,9 @@ describe("stateLayout", () => {
       record: "/state/proxy/proxy.json",
       token: "/state/proxy/token",
       log: "/state/proxy/proxy.log",
+      rotatedLog: "/state/proxy/proxy.log.1",
       accessLog: "/state/proxy/access.log",
+      rotatedAccessLog: "/state/proxy/access.log.1",
       egress: "/state/proxy/egress.json",
     });
   });

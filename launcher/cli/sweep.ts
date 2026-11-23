@@ -1,5 +1,5 @@
-import { stat } from "node:fs/promises";
-import { dirname } from "node:path";
+import { lstat, readdir, rm, stat } from "node:fs/promises";
+import { dirname, join, relative } from "node:path";
 import {
   type Backend,
   type ContainerSummary,
@@ -16,12 +16,15 @@ import {
   forgetRepo,
   hasRepoLeftovers,
   isMounted,
+  isWithin,
   knownRepos,
+  printable,
   type RepoRecord,
   readCreatedDirs,
   readJsonObject,
   repoRecordOf,
   shortHash,
+  stateEntries,
   stateLayout,
   writeCreatedDirs,
   writeJsonFile,
@@ -244,6 +247,69 @@ const pruneOlderBuilds = async (backend: Backend) => {
   return [...containers.flat(), ...volumes.flat(), ...networks.flat()];
 };
 
+interface StateWalk {
+  stateDir: string;
+  kept: Set<string>;
+  walked: Set<string>;
+  now: number;
+}
+
+const ancestorsOf = (stateDir: string, path: string): string[] => {
+  const parent = dirname(path);
+
+  return parent === stateDir || !isWithin(parent, stateDir) ? [] : [parent, ...ancestorsOf(stateDir, parent)];
+};
+
+const stateWalkOf = async (stateDir: string, now: number): Promise<StateWalk> => {
+  const entries = stateEntries(stateDir, await knownRepos(stateDir));
+  const ancestors = [...entries.walked, ...entries.named.flatMap((path) => ancestorsOf(stateDir, path))];
+  const walked = ancestors.filter((path) => !entries.open.some((open) => isWithin(path, open)));
+
+  return {
+    stateDir,
+    kept: new Set([...entries.named, ...entries.open, ...walked]),
+    walked: new Set(walked),
+    now,
+  };
+};
+
+const removedStateEntry = async (walk: StateWalk, path: string) => {
+  const info = await lstat(path).catch(() => undefined);
+
+  if (info === undefined || walk.now - info.mtimeMs < DAY_MS) {
+    return [];
+  }
+
+  return rm(path, { recursive: true, force: true }).then(
+    () => [`removed state entry ${printable(relative(walk.stateDir, path))}`],
+    () => [],
+  );
+};
+
+const pruneStateFolder = async (walk: StateWalk, directory: string): Promise<string[]> => {
+  const children = await readdir(directory, { withFileTypes: true }).catch(() => []);
+  const removed = await Promise.all(
+    children.map((child) => {
+      const path = join(directory, child.name);
+
+      if (child.isDirectory() && walk.walked.has(path)) {
+        return pruneStateFolder(walk, path);
+      }
+
+      return walk.kept.has(path) ? [] : removedStateEntry(walk, path);
+    }),
+  );
+
+  return removed.flat();
+};
+
+const pruneUnnamedState = async (stateDir: string, now: number) =>
+  pruneStateFolder(await stateWalkOf(stateDir, now), stateDir);
+
+const isDefaultStateDir = (deps: CliDeps) =>
+  pathsOf({ env: { ...deps.env, PI_SANDBOX_STATE_DIR: undefined }, home: deps.home }).stateDir ===
+  pathsOf(deps).stateDir;
+
 const gcDue = async (deps: CliDeps) => {
   const record = await readJsonObject(stateLayout(pathsOf(deps).stateDir).gcRecord);
   const lastRun = typeof record?.lastRun === "number" ? record.lastRun : 0;
@@ -262,10 +328,11 @@ const collectGarbage = async (deps: CliDeps, backend: Backend | undefined) => {
   const volumes = await pruneVolumes(stateDir, engine);
   const olderBuilds = await pruneOlderBuilds(engine);
   const images = await collectImages(engine, stateDir);
+  const unnamed = isDefaultStateDir(deps) ? await pruneUnnamedState(stateDir, deps.now()) : [];
 
   await writeJsonFile(stateLayout(stateDir).gcRecord, { lastRun: deps.now() });
 
-  return [...volumes, ...olderBuilds, ...images.map((image) => `removed image ${image}`)];
+  return [...volumes, ...olderBuilds, ...images.map((image) => `removed image ${image}`), ...unnamed];
 };
 
 const sweepGround = async (deps: CliDeps, backend: Backend | undefined, signal?: AbortSignal) => {

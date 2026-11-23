@@ -92,6 +92,8 @@ export {
   GUEST_TREES,
   guestReservedOver,
   RENDER_STATUS_FILE,
+  rotatedLogOf,
+  stateEntries,
   stateLayout,
 } from "./state-layout.ts";
 export { isControlChar, lastLine, printable } from "./terminal-text.ts";

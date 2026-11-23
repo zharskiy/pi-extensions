@@ -65,7 +65,7 @@ cli/launches.ts                begin and finish a launch (registered under the f
 cli/busy.ts                    busyLaunches, the live launches of this state dir, and vmSessions, the VM's busy count that adds the running agent containers of other installs and names them
 cli/ground.ts                  the ground lock with its waiting line, the install's services started under it, the idle teardown of services, relay, network and proxy and the idle proxy stop (both wait for the lock unless a launch of this state dir is registered), and wipeServices for reset --services
 cli/prepare.ts                 the repository's preparation lock with its waiting line, its if-free form for the opportunistic removals, its wait-unless-another-session form for the folder's last session, and the setup commands run in the agent container
-cli/sweep.ts                   removeRepoSandbox (agent containers, created folders, host sessions), the sweep of ended launches' containers, forgetting a folder that is gone, the orphan sweep with the idle ground stop and build leftovers, and the daily collection with the managed `pi-sandbox-*` objects of older builds that have no install label, shared volumes kept
+cli/sweep.ts                   removeRepoSandbox (agent containers, created folders, host sessions), the sweep of ended launches' containers, forgetting a folder that is gone, the orphan sweep with the idle ground stop and build leftovers, and the daily collection with the managed `pi-sandbox-*` objects of older builds that have no install label, shared volumes kept, and the state entries the layout does not name in the default state dir
 cli/derive.ts                  the host side of a launch: host pi files, derivation (host tools exclude the sandbox roots), the CAs the image trusts, notices
 cli/sandbox-proxy.ts           the install's proxy input and token, opened under the ground lock, and the denial summary at exit with a reason and fix per kind (also the doctor's rule hints and blocked warnings)
 cli/mcp-sign-in.ts             the launch-start MCP sign-in on the host
@@ -313,7 +313,7 @@ shared/file-lock.ts            the lock primitives with their once-only waiting 
 shared/liveness.ts             the liveness rule: pid, boot time and process start
 shared/process-start.ts        a process's start time (ps on macOS, /proc on Linux), telling a failed tool from a process without one
 shared/paths.ts                host agent dir, the launcher folder <agent dir>/pi-sandbox/ (config.json, state/, with PI_SANDBOX_STATE_DIR made absolute and real), launcher root, path containment and the outermost of a path list
-shared/state-layout.ts         every path under the state dir
+shared/state-layout.ts         every path under the state dir, and the named and open paths the daily collection keeps
 shared/repo-state.ts           per-repository record files: repo.json with its mount root, created folders, leftovers, forgetRepo
 shared/regular-file.ts         safe reads of regular files
 shared/placeholder.ts          the placeholder format and the JWT shape
@@ -499,6 +499,7 @@ tests/cli/launch-host-sessions.test.ts  host sessions at launch
 tests/cli/launch-sessions.test.ts    session end and the sweep
 tests/cli/launch-write-back.test.ts  settings written back to the host at launch and at exit, with the allowlist the launch started with
 tests/cli/sweep.test.ts              the sweep of unused repositories and of the state dir
+tests/cli/sweep-state.test.ts        the daily removal of state entries the layout does not name
 tests/cli/launch-wiring.test.ts      launch wiring, no leaks, and the file cache watch around pi
 tests/cli/launch-workspace.test.ts   workspace launches
 tests/cli/launch-mounts.test.ts      binds at launch (VM needs and shares, the read-only mount, refusals before the engine) and setup (order, env, failure, doctor skip)

@@ -30,6 +30,7 @@ export interface HarnessOptions {
   providerHosts?: Record<string, { hosts: string[]; envVars?: string[] }>;
   denials?: DenialRecord[];
   machine?: CliDeps["machine"];
+  defaultStateDir?: true;
 }
 
 const roots: string[] = [];
@@ -367,10 +368,11 @@ export const createHarness = async (options: HarnessOptions = {}) => {
 
   const repoRoot = join(root, "repo");
   const cwd = join(repoRoot, "src");
-  const stateDir = join(root, "state");
+  const hostAgentDir = join(root, "home", ".pi", "agent");
+  const stateDir =
+    options.defaultStateDir === true ? join(hostAgentDir, "pi-sandbox", "state") : join(root, "state");
   const userConfigFile = join(root, "config", "config.json");
 
-  const hostAgentDir = join(root, "home", ".pi", "agent");
   const proxyCaPem = join(stateDir, "ca", "ca-cert.pem");
 
   mkdirSync(join(repoRoot, ".git", "hooks"), { recursive: true });
@@ -422,7 +424,7 @@ export const createHarness = async (options: HarnessOptions = {}) => {
   const deps: CliDeps = {
     runner: fake.runner,
     env: {
-      PI_SANDBOX_STATE_DIR: stateDir,
+      ...(options.defaultStateDir === true ? {} : { PI_SANDBOX_STATE_DIR: stateDir }),
       PI_SANDBOX_USER_CONFIG: userConfigFile,
       USER: "dev",
       TERM: "xterm-256color",

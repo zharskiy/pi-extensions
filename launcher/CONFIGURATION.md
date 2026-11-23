@@ -768,7 +768,7 @@ The image has one Node and one Python. For more:
 | variable | effect |
 | --- | --- |
 | `PI_SANDBOX_USER_CONFIG` | Path of the config file. |
-| `PI_SANDBOX_STATE_DIR` | The launcher's state folder. The default is `pi-sandbox/state` in host pi's agent folder. A relative value is made absolute against your folder and resolved to its real path, so one folder is one install however it is spelled. |
+| `PI_SANDBOX_STATE_DIR` | The launcher's state folder. The default is `pi-sandbox/state` in host pi's agent folder. A relative value is made absolute against your folder and resolved to its real path, so one folder is one install however it is spelled. The daily removal of state files this build does not use runs only in the default folder, never in one this variable names. |
 | `PI_CODING_AGENT_DIR` | Host pi's agent folder. The default is `~/.pi/agent`. The config file and the state follow it, so two shells with different values use separate configs, CAs and state. |
 | `HTTPS_PROXY`, `https_proxy`, `NO_PROXY`, `no_proxy` | The parent proxy. |
 | `GH_CONFIG_DIR`, `GLAB_CONFIG_DIR`, `XDG_CONFIG_HOME` | Where the gh and glab configs are read. A path inside the repository is ignored. |
