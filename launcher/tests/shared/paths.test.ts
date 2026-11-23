@@ -1,5 +1,5 @@
 import { existsSync, realpathSync } from "node:fs";
-import { mkdir, mkdtemp, symlink } from "node:fs/promises";
+import { mkdir, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -13,6 +13,7 @@ import {
   realOrResolved,
   realOrResolvedSync,
 } from "../../shared/index.ts";
+import { tempDir } from "../support/temp-dir.ts";
 
 const home = "/home/dev";
 
@@ -42,7 +43,7 @@ describe("launcherPaths", () => {
   });
 
   it("spells a state dir with a trailing slash like the dir itself", async () => {
-    const parent = await mkdtemp(join(tmpdir(), "pi-sandbox-state-"));
+    const parent = await tempDir("state");
     const stateDir = join(parent, "state");
 
     await mkdir(stateDir);
@@ -56,7 +57,7 @@ describe("launcherPaths", () => {
   });
 
   it("spells a state dir reached through a symlink like its target", async () => {
-    const parent = await mkdtemp(join(tmpdir(), "pi-sandbox-state-"));
+    const parent = await tempDir("state");
     const stateDir = join(parent, "state");
 
     await mkdir(stateDir);
@@ -72,7 +73,7 @@ describe("launcherPaths", () => {
   });
 
   it("creates nothing when it resolves a state dir that does not exist", async () => {
-    const parent = realpathSync.native(await mkdtemp(join(tmpdir(), "pi-sandbox-state-")));
+    const parent = realpathSync.native(await tempDir("state"));
     const stateDir = join(parent, "missing", "state");
 
     expect(launcherPaths({ env: { PI_SANDBOX_STATE_DIR: stateDir }, home }).stateDir).toBe(stateDir);
@@ -80,8 +81,8 @@ describe("launcherPaths", () => {
   });
 
   it("resolves a relative state dir against the working directory, so two directories give two state dirs", async () => {
-    const first = realpathSync.native(await mkdtemp(join(tmpdir(), "pi-sandbox-cwd-")));
-    const second = realpathSync.native(await mkdtemp(join(tmpdir(), "pi-sandbox-cwd-")));
+    const first = realpathSync.native(await tempDir("cwd"));
+    const second = realpathSync.native(await tempDir("cwd"));
     const env = { PI_SANDBOX_STATE_DIR: "state" };
     const cwd = vi.spyOn(process, "cwd");
 

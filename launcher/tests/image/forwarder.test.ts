@@ -1,10 +1,11 @@
 import { type ChildProcess, spawn } from "node:child_process";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import net from "node:net";
-import { networkInterfaces, tmpdir } from "node:os";
+import { networkInterfaces } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
+import { tempDir } from "../support/temp-dir.ts";
 
 const FORWARDER = fileURLToPath(new URL("../../image/forwarder.mjs", import.meta.url));
 
@@ -58,7 +59,7 @@ const statusOf = async (path: string): Promise<string> => {
 };
 
 const startForwarder = async (host: string, ports: number[]) => {
-  const status = join(await mkdtemp(join(tmpdir(), "forwarder-")), "status");
+  const status = join(await tempDir("forwarder"), "status");
   const child = spawn(process.execPath, [FORWARDER, status, host, ...ports.map(String)], { stdio: "ignore" });
   const exited = exitOf(child);
 

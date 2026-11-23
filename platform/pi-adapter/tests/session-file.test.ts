@@ -1,5 +1,4 @@
-import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { chmodSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { useTempDirs } from "../../../test/framework/index.ts";
@@ -64,7 +63,7 @@ describe("session file prompt record", () => {
 
 describe("session file entries", () => {
   it("migrates an old session file as pi does", () => {
-    const file = join(mkdtempSync(join(tmpdir(), "pi-session-file-")), "old.jsonl");
+    const file = join(temp.make("pi-session-file-"), "old.jsonl");
     const lines = [
       { type: "session", id: "s", cwd: "/repo" },
       { type: "message", message: { role: "user", content: "hi" } },
