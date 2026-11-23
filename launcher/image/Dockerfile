@@ -7,7 +7,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     NPM_CONFIG_AUDIT=false
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends git ripgrep fd-find ncurses-term openssh-client ca-certificates socat netcat-openbsd curl jq python3 python3-venv make unzip less procps xz-utils gh \
+ && apt-get install -y --no-install-recommends git ripgrep fd-find ncurses-term openssh-client ca-certificates socat netcat-openbsd curl jq python3 python3-venv make unzip less procps xz-utils \
  && ln -s /usr/bin/fdfind /usr/local/bin/fd \
  && rm -rf /var/lib/apt/lists/*
 

@@ -1,7 +1,7 @@
 import { lstat, mkdir, readdir, readFile, realpath, rm } from "node:fs/promises";
 import { join, posix } from "node:path";
 import { GUEST_PROXY_HOST, GUEST_PROXY_PORT } from "../backend/index.ts";
-import type { DerivedTools, GlabHost, ToolHost } from "../hostpi/index.ts";
+import type { DerivedTools, GlabHost } from "../hostpi/index.ts";
 import {
   escapeXml,
   type IniSection,
@@ -115,13 +115,6 @@ const mavenSettings = (maven: DerivedTools["maven"]) =>
 
 const yaml = (text: string) => JSON.stringify(text);
 
-const ghHosts = (hosts: ToolHost[]) =>
-  hosts.flatMap((entry) => [
-    `${entry.host}:`,
-    `    oauth_token: ${yaml(entry.token)}`,
-    `    git_protocol: "https"`,
-  ]);
-
 const glabField = (name: string, value: string | undefined) =>
   value === undefined ? [] : [`        ${name}: ${yaml(value)}`];
 
@@ -167,7 +160,6 @@ const gitHost = (host: string, helper: string) => [
 
 const gitConfig = (tools: DerivedTools) => [
   ...gitIdentity(tools.git),
-  ...tools.gh.flatMap((entry) => gitHost(entry.host, "!gh auth git-credential")),
   ...tools.glab.flatMap((entry) => gitHost(entry.host, "!glab auth git-credential")),
 ];
 
@@ -188,7 +180,6 @@ const optional = (name: string, items: string[]): Array<[string, Buffer]> =>
 
 const toolFiles = (tools: DerivedTools): Array<[string, Buffer]> => [
   ["tools/m2-settings.xml", Buffer.from(mavenSettings(tools.maven))],
-  ...optional("tools/gh-hosts.yml", ghHosts(tools.gh)),
   ...(tools.glab.length === 0 ? [] : optional("tools/glab-config.yml", glabConfig(tools.glab))),
   ...optional("tools/gitconfig", gitConfig(tools)),
   ...optional("tools/npmrc", npmrc(tools.npmrc ?? [])),

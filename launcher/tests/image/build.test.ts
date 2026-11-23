@@ -86,7 +86,6 @@ describe("prepareBuildContext", () => {
         "less",
         "procps",
         "xz-utils",
-        "gh",
       ]),
     );
     expect(dockerfile).toContain(

@@ -1,6 +1,6 @@
 # Removed defaults
 
-The launcher used to ship network access that not every project needs, forwarded a variable that broke the sandbox's locale, built the sandbox's trust at container start, put the proxy's token in the sandbox, and gave each folder its own proxy, network and grants. They are gone. This page lists what was removed and how to add each one back in your config file (`pi-sandbox/config.json` under pi's agent dir, see [CONFIGURATION.md](CONFIGURATION.md)).
+The launcher used to ship network access that not every project needs, forwarded a variable that broke the sandbox's locale, built the sandbox's trust at container start, put the proxy's token in the sandbox, gave each folder its own proxy, network and grants, and bundled the GitHub CLI with its credentials. They are gone. This page lists what was removed and how to add each one back in your config file (`pi-sandbox/config.json` under pi's agent dir, see [CONFIGURATION.md](CONFIGURATION.md)).
 
 ## Egress presets
 
@@ -56,6 +56,51 @@ Each folder used to get its own proxy, token, relay, internal network and grants
 | A proxy, token and relay per folder (`pi-sandbox-relay-<id>`) | One proxy and token under the state dir and one relay, `pi-sandbox-relay-<install id>`, where the install id is a short hash of the state dir. The latest launch sets the egress rules for every session, with a notice when other sessions run. Two folders cannot run with different `egress` lists at the same time. |
 | An internal network per folder (`pi-sandbox-<id>`) | One internal network, `pi-sandbox-network-<install id>`, for every session's container of the state dir, its relay and its services pod. It is created so that the VM has no address on it, which needs Docker Engine 28 or later in the VM; with an older engine the launch says to update colima and recreate the VM. An existing network of that name is used as it is when it carries the launcher's managed label (`pi-sandbox.managed`); one without it fails the launch. Old per-folder networks and relays are not removed by the launcher (see below). |
 | Grants per folder, and `pi sandbox egress allow --user` for every folder | Every grant is for every folder and every session. `--user` is refused as an unknown option. Old per-folder grants in `grants.json` are not read: allow those hosts again. |
+
+## The GitHub CLI
+
+The image no longer has `gh`, and the launcher no longer reads gh's config. These pieces are gone:
+
+| Removed | Now, and how to get it back |
+| --- | --- |
+| The `gh` package in the base image (Debian bookworm's own package, from the default Debian sources) | Add `"gh"` to `image.packages`. It is the same package from the same sources. |
+| Reading the hosts in gh's `hosts.yml` on your Mac (from `GH_CONFIG_DIR`, else `XDG_CONFIG_HOME`, else `~/.config/gh`), and a `derived:gh:<host>:token` rule for each, whose secret was `gh auth token --hostname <host>` | Write the rules yourself in `credentials.rules`, one per host, as below. `credentials.derive.hosts` and `credentials.derive.enabled` no longer cover gh. |
+| The rule hosts: `github.com`, `api.github.com` and `uploads.github.com` for github.com, `<host>` and `api.<host>` for a `.ghe.com` host, the host alone for another server | One rule per host, all sharing one placeholder. A rule also makes its host reachable. |
+| `GH_TOKEN` set to the github.com placeholder | Set it with `env.set`. The name is no longer reserved. |
+| `tools/gh-hosts.yml`, linked at `~/.config/gh/hosts.yml`, with a placeholder per host | Nothing for github.com: `GH_TOKEN` is enough. For other hosts, see below. |
+| In the rendered git config, `credential.https://<host>.helper = !gh auth git-credential` and the rewrites of `git@<host>:` and `ssh://git@<host>/` to HTTPS, for every gh host | Set them with `git config --global` from `setup`. |
+| `GH_CONFIG_DIR` passed to the host commands that print secrets | Put it in the rule's command, as `["/usr/bin/env", "GH_CONFIG_DIR=<folder>", "<gh>", …]`. |
+
+Without these, plain git over HTTPS to github.com has no credential in the sandbox: a clone of a public repository works once `github.com` is reachable, a push or a private clone fails, since `GIT_TERMINAL_PROMPT` is `0` and git cannot ask. An SSH remote fails too, since the sandbox has no SSH keys.
+
+This config gives back gh and git over HTTPS for github.com. Use your own placeholder: `pi-sandbox-` and 24 lowercase hex digits, such as `pi-sandbox-` followed by the output of `openssl rand -hex 12`. `pi sandbox doctor` reports a `GH_TOKEN` of any other shape as a value that is not a placeholder. Replace `/opt/homebrew/bin/gh` with what `command -v gh` prints on your Mac. The command runs on your Mac with a short list of variables, so give an absolute path.
+
+```json
+{
+  "image": { "packages": ["gh"] },
+  "env": { "set": { "GH_TOKEN": "pi-sandbox-6a1f0c2e9b7d4a3851e0f2c4" } },
+  "credentials": {
+    "rules": [
+      { "id": "github", "host": "github.com", "placeholder": "pi-sandbox-6a1f0c2e9b7d4a3851e0f2c4", "secret": { "command": ["/opt/homebrew/bin/gh", "auth", "token", "--hostname", "github.com"] } },
+      { "id": "github-api", "host": "api.github.com", "placeholder": "pi-sandbox-6a1f0c2e9b7d4a3851e0f2c4", "secret": { "command": ["/opt/homebrew/bin/gh", "auth", "token", "--hostname", "github.com"] } },
+      { "id": "github-uploads", "host": "uploads.github.com", "placeholder": "pi-sandbox-6a1f0c2e9b7d4a3851e0f2c4", "secret": { "command": ["/opt/homebrew/bin/gh", "auth", "token", "--hostname", "github.com"] } }
+    ]
+  },
+  "setup": [
+    ["git", "config", "--global", "credential.https://github.com.helper", "!gh auth git-credential"],
+    ["git", "config", "--global", "--add", "url.https://github.com/.insteadOf", "git@github.com:"],
+    ["git", "config", "--global", "--add", "url.https://github.com/.insteadOf", "ssh://git@github.com/"]
+  ]
+}
+```
+
+- `gh` reads `GH_TOKEN` inside and sends the placeholder; `gh auth git-credential` gives git the user `x-access-token` and the same placeholder; the proxy puts the real token in its place on the hosts the rules name.
+- `setup` runs at every launch, after the home is in place, so the lines land in that launch's `~/.gitconfig`. It replaces nothing the rendered config sets.
+- For git alone, without `gh` in the image, use the helper `!f() { echo username=x-access-token; echo password=pi-sandbox-6a1f0c2e9b7d4a3851e0f2c4; }; f` instead, and leave out `image.packages` and `GH_TOKEN`.
+- Archives and release downloads go through other hosts, such as `codeload.github.com` and `objects.githubusercontent.com`; list them in `egress.allow` if you need them.
+- For a GitHub Enterprise host, add rules for it (and for `api.<host>` on `.ghe.com`) with its own placeholder and `--hostname <host>`, the `setup` lines with its name, and `GH_HOST` or `GH_ENTERPRISE_TOKEN` in `env.set`. `GH_ENTERPRISE_TOKEN` is one value for every enterprise host, so two enterprise hosts with different tokens need a `hosts.yml` inside, written from `setup` (`sh -c` with a `printf` into `~/.config/gh/hosts.yml`), with each host's placeholder.
+
+What the config cannot do as the derivation did: it does not find your gh hosts or your gh binary by itself, so you write the host list and the path, and a config shared by a team needs gh at the same path on every Mac. The launcher also no longer refuses to run a gh that lies inside a folder a sandbox can write; an absolute path outside your projects keeps that guarantee in your hands.
 
 ## Notices about the old config folder and the policy file
 

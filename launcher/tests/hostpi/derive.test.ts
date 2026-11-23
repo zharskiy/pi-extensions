@@ -792,7 +792,7 @@ describe("deriveSandboxPi fix wave", () => {
       { label: "npmrc", endpoint: { host: "api.keyed.example" } },
     ];
     const tools = {
-      value: { gh: [], glab: [], maven: { servers: [], mirrors: [], passthrough: [] }, git: {}, env: {} },
+      value: { glab: [], maven: { servers: [], mirrors: [], passthrough: [] }, git: {}, env: {} },
       rules: [],
       notices: [],
       registries,

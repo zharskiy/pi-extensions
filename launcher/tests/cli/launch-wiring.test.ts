@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { LABELS, type RelayRequest } from "../../backend/index.ts";
 import { run } from "../../cli/index.ts";
 import type { DenialRecord } from "../../proxy/index.ts";
-import { isPlaceholder, sha256Hex } from "../../shared/index.ts";
+import { sha256Hex } from "../../shared/index.ts";
 import { expectNoLeak } from "../support/expect-no-leak.ts";
 import { tempDir, writeExecutable, writeText } from "../support/temp-dir.ts";
 import { createFakeBackend, createHarness, isPiSession, noHostPiLine, renderDirOf } from "./harness.ts";
@@ -117,54 +117,6 @@ describe("pi launch wiring", () => {
     ).toEqual([]);
 
     await expectNoLeak(fake, renderDirOf(harness), [REAL_KEY]);
-  });
-
-  it("gives gh and git placeholders for the host gh token and the proxy a gh command rule", async () => {
-    const fake = createFakeBackend();
-    const ghToken = "gho_REAL-HOST-GH-TOKEN-31337";
-    const harness = await createHarness({
-      backend: () => fake.backend,
-      respond: (call) =>
-        call.file.endsWith("/gh") && call.args[0] === "--version"
-          ? { stdout: "gh version 2.45.0\n" }
-          : undefined,
-    });
-    const gh = join(harness.root, "bin", "gh");
-
-    await writeExecutable(gh);
-
-    await writeText(
-      join(harness.deps.home, ".config", "gh", "hosts.yml"),
-      `github.com:\n    oauth_token: ${ghToken}\n    user: me\n`,
-    );
-
-    harness.deps.env.PATH = join(harness.root, "bin");
-
-    expect(await run([], harness.deps)).toBe(0);
-
-    const env = fake.created[0]?.spec?.env ?? {};
-    const [input] = harness.proxyInputs;
-    const renderDir = renderDirOf(harness);
-    const tools = join(renderDir, "tools");
-
-    expect(isPlaceholder(env.GH_TOKEN ?? "")).toBe(true);
-    expect(env.GIT_TERMINAL_PROMPT).toBe("0");
-    expect(Object.keys(env).filter((name) => name.startsWith("GIT_CONFIG"))).toEqual([]);
-    expect(input?.rules.filter((rule) => rule.id === "derived:gh:github.com:token")).toEqual(
-      ["github.com", "api.github.com", "uploads.github.com"].map((host) => ({
-        id: "derived:gh:github.com:token",
-        host,
-        placeholder: env.GH_TOKEN,
-        secret: { command: [gh, "auth", "token", "--hostname", "github.com"] },
-      })),
-    );
-    expect(input?.derivedHosts).toEqual(expect.arrayContaining(["api.github.com", "uploads.github.com"]));
-    expect(await readFile(join(tools, "gh-hosts.yml"), "utf8")).toContain(`oauth_token: "${env.GH_TOKEN}"`);
-    expect(await readFile(join(tools, "gitconfig"), "utf8")).toContain(
-      '\thelper = "!gh auth git-credential"',
-    );
-
-    await expectNoLeak(fake, renderDir, [ghToken]);
   });
 
   it("gives glab placeholders for gitlab.com and a self-managed host and no GITLAB_TOKEN for two hosts", async () => {

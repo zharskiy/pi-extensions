@@ -157,7 +157,7 @@ Any other case prints the proxy's own reason.
 
 ## Image
 
-The sandbox image is Debian bookworm with Node 24, git, search tools, curl, jq, python3, gh and glab. It installs the same pi version as your host pi, from npm. When host pi changes version, the next launch rebuilds the image.
+The sandbox image is Debian bookworm with Node 24, git, search tools, curl, jq, python3 and glab. There is no GitHub CLI: [REMOVED-DEFAULTS.md](REMOVED-DEFAULTS.md#the-github-cli) shows how to add `gh` and its token. It installs the same pi version as your host pi, from npm. When host pi changes version, the next launch rebuilds the image.
 
 These keys add one layer on top of that image:
 
@@ -458,7 +458,7 @@ Inside, `PI_SANDBOX=1` tells scripts they run in the sandbox, and `PI_SANDBOX_ST
 
 `env.set` maps variable names to values that every process in the sandbox container sees: pi, its tools and anything they start. A value is a string, taken as written: `$HOME` or `~` stays as those characters. It may not contain a NUL character. They are set when the container is created, so a change applies from the next `pi`.
 
-A name the launcher sets is refused when the config loads, with `config: env.set["<NAME>"] is set by the launcher and cannot be set`. That is the same list `env.allow` refuses: the proxy variables in any case, `NODE_USE_ENV_PROXY`, `PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSION_DIR`, `NODE_EXTRA_CA_CERTS` and the other CA variables, `BASH_ENV`, `HOME`, `PATH`, `PWD`, `GH_TOKEN`, `GITLAB_TOKEN`, `GITLAB_HOST`, `GIT_TERMINAL_PROMPT` and the `PI_*` variables the launcher sets, `PI_SANDBOX_STATUS` among them. A name must look like a variable name: letters, digits and `_`, not starting with a digit. Unlike `env.allow`, names that look like secrets are accepted, since the value is yours and written in the file; still, keep secrets out of it and use [credentials](#credentials). Every `env.set` value is visible to the agent and everything it runs, so a real secret never goes there.
+A name the launcher sets is refused when the config loads, with `config: env.set["<NAME>"] is set by the launcher and cannot be set`. That is the same list `env.allow` refuses: the proxy variables in any case, `NODE_USE_ENV_PROXY`, `PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSION_DIR`, `NODE_EXTRA_CA_CERTS` and the other CA variables, `BASH_ENV`, `HOME`, `PATH`, `PWD`, `GITLAB_TOKEN`, `GITLAB_HOST`, `GIT_TERMINAL_PROMPT` and the `PI_*` variables the launcher sets, `PI_SANDBOX_STATUS` among them. A name must look like a variable name: letters, digits and `_`, not starting with a digit. Unlike `env.allow`, names that look like secrets are accepted, since the value is yours and written in the file; still, keep secrets out of it and use [credentials](#credentials). Every `env.set` value is visible to the agent and everything it runs, so a real secret never goes there.
 
 A name in both `env.allow` and `env.set` takes the `env.set` value; your shell's value is not passed. A name the image sets, such as `LANG`, takes the `env.set` value.
 
@@ -473,15 +473,15 @@ With `credentials.derive.enabled` on, the launcher reads these at every launch:
 - Each provider in host pi's `auth.json`, and provider API keys set as variables in your shell. The proxy reads such a key on your Mac. It is never copied inside.
 - Each `apiKey` and secret header in `models.json`.
 - Each enabled HTTP server in `mcp.json`.
-- The gh and glab hosts, with their tokens.
+- The glab hosts, with their tokens.
 - Registry credentials in `~/.npmrc`, `~/.m2/settings.xml` and `pip.conf`. For pip the first of `~/.config/pip/pip.conf`, `~/Library/Application Support/pip/pip.conf` and `~/.pip/pip.conf` is used.
 - Your git `user.name` and `user.email`.
 
-Inside, the matching files hold placeholders only. So `gh`, `glab`, `git push`, npm, pip and Maven work as on your Mac, while the proxy fetches the real value on your Mac.
+Inside, the matching files hold placeholders only. So `glab`, `git push` to your glab hosts, npm, pip and Maven work as on your Mac, while the proxy fetches the real value on your Mac.
 
 A registry, mirror or index without a credential and without an `egress.allow` entry prints a notice. It names the entry to add.
 
-A derived gh or glab token reaches everything it can on its host. For github.com that is `github.com`, `api.github.com` and `uploads.github.com`.
+A derived glab token reaches everything it can on its host and its API host.
 
 To narrow what is derived, list the hosts you want in `credentials.derive.hosts`. `*.domain` entries work. Set `credentials.derive.enabled` to `false` to derive nothing.
 
@@ -634,7 +634,7 @@ A team shares the config by giving everyone the same file: copy it to `~/.pi/age
 - Denies a paste site.
 - Adds the company CA.
 - Adds a credential for the gateway, from a host command, and one for the registry, from a variable.
-- Leaves credential derivation on, so `gh`, `glab`, npm, pip and Maven work as on the host.
+- Leaves credential derivation on, so `glab`, npm, pip and Maven work as on the host.
 - Points npm at the internal registry with `env.set`, sets `CI`, and raises the memory, process and `/dev/shm` limits of the container.
 - Keeps the npm cache, a fixtures folder and the database's logs in volumes that every session shares.
 - Mounts a fixtures folder of your Mac read-only and copies it into its volume once, from `setup` (see [below](#seed-a-volume-from-a-read-only-bind)).
@@ -668,7 +668,7 @@ The marker is written last, so a copy stopped half-way runs again at the next la
 
 ### Git remotes with SSH URLs
 
-The sandbox has no SSH keys. The rendered git config already rewrites `git@<host>:` and `ssh://git@<host>/` to HTTPS for your gh and glab hosts. For another host, rewrite with git's own variables in `env.set`, and give the proxy the credential:
+The sandbox has no SSH keys. The rendered git config already rewrites `git@<host>:` and `ssh://git@<host>/` to HTTPS for your glab hosts. For another host, github.com among them ([REMOVED-DEFAULTS.md](REMOVED-DEFAULTS.md#the-github-cli)), rewrite with git's own variables in `env.set`, and give the proxy the credential:
 
 ```json
 {
@@ -771,7 +771,7 @@ The image has one Node and one Python. For more:
 | `PI_SANDBOX_STATE_DIR` | The launcher's state folder. The default is `pi-sandbox/state` in host pi's agent folder. A relative value is made absolute against your folder and resolved to its real path, so one folder is one install however it is spelled. The daily removal of state files this build does not use runs only in the default folder, never in one this variable names. |
 | `PI_CODING_AGENT_DIR` | Host pi's agent folder. The default is `~/.pi/agent`. The config file and the state follow it, so two shells with different values use separate configs, CAs and state. |
 | `HTTPS_PROXY`, `https_proxy`, `NO_PROXY`, `no_proxy` | The parent proxy. |
-| `GH_CONFIG_DIR`, `GLAB_CONFIG_DIR`, `XDG_CONFIG_HOME` | Where the gh and glab configs are read. A path inside the repository is ignored. |
+| `GLAB_CONFIG_DIR`, `XDG_CONFIG_HOME` | Where the glab config is read. A path inside the repository is ignored. |
 | Provider API key variables | Derived as credentials. The proxy reads them on your Mac. |
 | The names in `env.allow` | Passed into each pi run. |
 | `COLIMA_HOME` | Ignored. The launcher always uses `~/.colima/pi-sandbox`. |

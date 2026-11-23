@@ -11,8 +11,6 @@ import { braced, tempDir, writeExecutable, writeText } from "./fixtures.ts";
 
 const SALT = "salt-1";
 
-const GH_TOKEN = "gho_REAL-GH-TOKEN-4711";
-
 const GLAB_TOKEN = "glpat-REAL-GLAB-TOKEN-0815";
 
 const P = (identity: string) => placeholderFor(SALT, identity);
@@ -54,74 +52,6 @@ const derive = async (setup: Setup = {}) => {
 };
 
 const rulesOf = (rules: CredentialRule[], id: string) => rules.filter((rule) => rule.id === id);
-
-const GH_HOSTS = `github.com:
-    user: me
-    oauth_token: ${GH_TOKEN}
-    git_protocol: ssh
-acme.ghe.com:
-    user: me
-`;
-
-describe("gh", () => {
-  it("derives a command rule per host, the API hosts and GH_TOKEN, all with placeholders", async () => {
-    const { bin, tools } = await derive({
-      bins: ["gh"],
-      files: { ".config/gh/hosts.yml": GH_HOSTS },
-    });
-    const gh = join(bin, "gh");
-
-    expect(rulesOf(tools.rules, "derived:gh:github.com:token").map((rule) => rule.host)).toEqual([
-      "github.com",
-      "api.github.com",
-      "uploads.github.com",
-    ]);
-    expect(rulesOf(tools.rules, "derived:gh:acme.ghe.com:token")).toEqual([
-      expect.objectContaining({ host: "acme.ghe.com" }),
-      {
-        id: "derived:gh:acme.ghe.com:token",
-        host: "api.acme.ghe.com",
-        placeholder: P("gh:acme.ghe.com:token"),
-        secret: { command: [gh, "auth", "token", "--hostname", "acme.ghe.com"] },
-      },
-    ]);
-    expect(tools.value.gh).toEqual([
-      { host: "github.com", token: P("gh:github.com:token") },
-      { host: "acme.ghe.com", token: P("gh:acme.ghe.com:token") },
-    ]);
-    expect(tools.value.env).toEqual({ GH_TOKEN: P("gh:github.com:token") });
-    expect(JSON.stringify(tools)).not.toContain(GH_TOKEN);
-  });
-
-  it("reads hosts.yml from GH_CONFIG_DIR", async () => {
-    const { tools } = await derive({
-      bins: ["gh"],
-      files: { "elsewhere/hosts.yml": "corp.example.test:\n    user: me\n" },
-      env: { GH_CONFIG_DIR: "" },
-    });
-
-    expect(tools.value.gh).toEqual([]);
-
-    const moved = await tempDir("gh-config");
-
-    await writeText(join(moved, "hosts.yml"), "corp.example.test:\n    user: me\n");
-
-    const configured = await derive({
-      bins: ["gh"],
-      env: { GH_CONFIG_DIR: moved },
-    });
-
-    expect(configured.tools.value.gh.map((entry) => entry.host)).toEqual(["corp.example.test"]);
-  });
-
-  it("derives nothing and says nothing without gh on PATH", async () => {
-    const { tools, calls } = await derive({ files: { ".config/gh/hosts.yml": GH_HOSTS } });
-
-    expect(tools.rules).toEqual([]);
-    expect(tools.notices).toEqual([]);
-    expect(calls.filter((call) => call.file.endsWith("gh"))).toEqual([]);
-  });
-});
 
 const GLAB_CONFIG = `git_protocol: ssh
 hosts:
@@ -563,8 +493,8 @@ describe("URL userinfo in npmrc and pip.conf", () => {
 describe("git identity and the derive switch", () => {
   it("reads the host user name and email, also with derivation off", async () => {
     const { bin, tools, calls } = await derive({
-      bins: ["gh", "git"],
-      files: { ".config/gh/hosts.yml": GH_HOSTS, ".npmrc": "//npm.test/:_authToken=x\n" },
+      bins: ["git"],
+      files: { ".npmrc": "//npm.test/:_authToken=x\n" },
       enabled: false,
       respond: (call) =>
         call.file.endsWith("/git") ? { stdout: "user.name Max Z\nuser.email max@corp.test\n" } : undefined,
@@ -572,7 +502,6 @@ describe("git identity and the derive switch", () => {
 
     expect(tools.value.git).toEqual({ name: "Max Z", email: "max@corp.test" });
     expect(tools.rules).toEqual([]);
-    expect(tools.value.gh).toEqual([]);
     expect(tools.value.npmrc).toBeUndefined();
     expect(calls.map((call) => call.file)).toEqual([join(bin, "git")]);
     expect(calls[0]?.args.slice(0, 4)).toEqual([
@@ -672,10 +601,10 @@ describe("Maven settings in the sandbox", () => {
 });
 
 describe("host tools inside the sandbox roots", () => {
-  it("never runs a gh or git that lies inside the sandbox", async () => {
+  it("never runs a glab or git that lies inside the sandbox", async () => {
     const { tools, calls } = await derive({
-      bins: ["gh", "git"],
-      files: { ".config/gh/hosts.yml": GH_HOSTS },
+      bins: ["glab", "git"],
+      files: { ".config/glab-cli/config.yml": "hosts:\n    gitlab.corp.test:\n        user: me\n" },
       excludedRoots: (home) => [join(home, "bin")],
     });
 
@@ -686,13 +615,11 @@ describe("host tools inside the sandbox roots", () => {
 
   it("ignores tool config files the environment points inside the sandbox", async () => {
     const { home, tools, calls } = await derive({
-      bins: ["gh", "glab"],
+      bins: ["glab"],
       files: {
-        "repo/gh/hosts.yml": "exfil-gh.example:\n    user: me\n",
         "repo/glab/config.yml": "hosts:\n    exfil-glab.example:\n        token: x\n",
       },
       envFromHome: (dir) => ({
-        GH_CONFIG_DIR: join(dir, "repo", "gh"),
         GLAB_CONFIG_DIR: join(dir, "repo", "glab"),
       }),
       excludedRoots: (dir) => [join(dir, "repo")],
@@ -703,7 +630,6 @@ describe("host tools inside the sandbox roots", () => {
     expect(tools.value.pip).toBeUndefined();
     expect(calls.filter((call) => !call.file.endsWith("/git"))).toEqual([]);
     expect(tools.notices).toEqual([
-      `gh: ${join(home, "repo", "gh", "hosts.yml")} (from GH_CONFIG_DIR) lies inside the sandbox, which can rewrite it; ignored`,
       `glab: ${join(home, "repo", "glab", "config.yml")} (from GLAB_CONFIG_DIR) lies inside the sandbox, which can rewrite it; ignored`,
     ]);
   });
@@ -722,17 +648,16 @@ describe("host tool probes", () => {
     expect(probes[0]?.options.timeoutMs).toBe(30_000);
   });
 
-  it("skips glab and git with a notice when they do not answer in time; gh needs no probe", async () => {
+  it("skips glab and git with a notice when they do not answer in time", async () => {
     const { bin, tools } = await derive({
-      bins: ["gh", "glab", "git"],
+      bins: ["glab", "git"],
       files: {
-        ".config/gh/hosts.yml": GH_HOSTS,
         ".config/glab-cli/config.yml": "hosts:\n    gitlab.corp.test:\n        user: me\n",
       },
       respond: () => ({ code: 124, timedOut: true }),
     });
 
-    expect(tools.rules.every((rule) => rule.id.startsWith("derived:gh:"))).toBe(true);
+    expect(tools.rules).toEqual([]);
     expect(tools.value.git).toEqual({});
     expect(tools.notices).toEqual([
       `git: ${join(bin, "git")} config --global did not answer within 10 s on the host; skipped`,

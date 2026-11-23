@@ -531,10 +531,10 @@ describe("image entrypoint", () => {
     await expect(lstat(join(paths.home, ".pi"))).rejects.toThrow();
   });
 
-  it("puts the gh, npm and pip files in place and writable copies of the gitconfig and the glab config", async () => {
+  it("puts the npm and pip files in place and writable copies of the gitconfig and the glab config", async () => {
     const paths = await sandboxRoot();
     const tools = join(paths.render, "tools");
-    const names = ["gh-hosts.yml", "npmrc", "pip.conf", "glab-config.yml", "gitconfig"];
+    const names = ["npmrc", "pip.conf", "glab-config.yml", "gitconfig"];
 
     await mkdir(tools);
 
@@ -546,7 +546,6 @@ describe("image entrypoint", () => {
 
     await runEntrypoint(paths);
 
-    expect(await readlink(join(paths.home, ".config", "gh", "hosts.yml"))).toBe(join(tools, "gh-hosts.yml"));
     expect(await readlink(join(paths.home, ".npmrc"))).toBe(join(tools, "npmrc"));
     expect(await readlink(join(paths.home, ".config", "pip", "pip.conf"))).toBe(join(tools, "pip.conf"));
 

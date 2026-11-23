@@ -173,7 +173,8 @@ describe("validateConfig", () => {
     expect(
       configProblem({ env: { set: { JAVA_TOOL_OPTIONS: "-Dhttps.proxyHost=pi-sandbox-proxy" } } }),
     ).toBeUndefined();
-    ["HTTPS_PROXY", "no_proxy", "GH_TOKEN", "PI_SANDBOX", "HOME", "PATH"].forEach((name) => {
+    expect(configProblem({ env: { set: { GH_TOKEN: "pi-sandbox-github" } } })).toBeUndefined();
+    ["HTTPS_PROXY", "no_proxy", "GITLAB_TOKEN", "PI_SANDBOX", "HOME", "PATH"].forEach((name) => {
       expect(configProblem({ env: { set: { CI: "1", [name]: "x" } } })).toBe(
         `config: env.set["${name}"] is set by the launcher and cannot be set`,
       );

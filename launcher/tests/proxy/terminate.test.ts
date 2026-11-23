@@ -46,9 +46,9 @@ const API_SECRET = "real-api-secret";
 
 const GIT_SECRET = "real-git-secret";
 
-const GH_PLACEHOLDER = "pi-sandbox-aaaabbbbccccddddeeeeffff";
+const BASIC_PLACEHOLDER = "pi-sandbox-aaaabbbbccccddddeeeeffff";
 
-const GH_SECRET = "gho_real-token";
+const BASIC_SECRET = "real-basic-token";
 
 const RULES: CredentialRule[] = [
   {
@@ -95,7 +95,12 @@ const RULES: CredentialRule[] = [
     template: "Bearer {secret}",
     secret: { command: ["newline"] },
   },
-  { id: "derived:gh", host: "npm.test", placeholder: GH_PLACEHOLDER, secret: { command: ["gh-token"] } },
+  {
+    id: "derived:basic",
+    host: "npm.test",
+    placeholder: BASIC_PLACEHOLDER,
+    secret: { command: ["basic-token"] },
+  },
 ];
 
 const b64 = (text: string) => Buffer.from(text).toString("base64");
@@ -124,7 +129,7 @@ const state: {
       llm: SECRET,
       api: API_SECRET,
       git: GIT_SECRET,
-      "derived:gh": GH_SECRET,
+      "derived:basic": BASIC_SECRET,
       broken: "value",
       newline: "trailing\n",
     },
@@ -406,17 +411,17 @@ describe("credential rules", () => {
   });
 
   it("substitutes inside a Basic value git sends and scrubs the base64 it sent from the response", async () => {
-    const sent = b64(`x-access-token:${GH_PLACEHOLDER}`);
+    const sent = b64(`x-access-token:${BASIC_PLACEHOLDER}`);
     const body = await echoed("npm.test", "/repo.git/info/refs", { authorization: `Basic ${sent}` });
 
-    expect(body.headers.authorization).toBe(`Basic ${b64(`x-access-token:${GH_SECRET}`)}`);
+    expect(body.headers.authorization).toBe(`Basic ${b64(`x-access-token:${BASIC_SECRET}`)}`);
 
     const response = await through("npm.test", "/echo-auth", { authorization: `Basic ${sent}` });
 
     await readBody(response);
 
     expect(response.headers["x-echo-authorization"]).toBe(`Basic ${sent}`);
-    expect(JSON.stringify(response.headers)).not.toContain(b64(`x-access-token:${GH_SECRET}`));
+    expect(JSON.stringify(response.headers)).not.toContain(b64(`x-access-token:${BASIC_SECRET}`));
   });
 
   it("scrubs the secret from every response header and never shows it to the client", async () => {

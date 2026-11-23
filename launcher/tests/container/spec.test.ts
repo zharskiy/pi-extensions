@@ -450,7 +450,7 @@ describe("buildContainerSpec", () => {
     const spec = buildContainerSpec(
       specInput({
         hostSessions: { dir: "/Users/dev/.pi/agent/sessions/--work-repo--" },
-        toolEnv: { GH_TOKEN: "pi-sandbox-gh", GITLAB_TOKEN: "pi-sandbox-gl", GITLAB_HOST: "gitlab.com" },
+        toolEnv: { GITLAB_TOKEN: "pi-sandbox-gl", GITLAB_HOST: "gitlab.com" },
       }),
     );
     const names = Object.keys(spec.env);

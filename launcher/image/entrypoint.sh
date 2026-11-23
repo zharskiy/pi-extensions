@@ -89,7 +89,6 @@ copy_tool() {
 }
 
 link_tool m2-settings.xml .m2/settings.xml
-link_tool gh-hosts.yml .config/gh/hosts.yml
 link_tool npmrc .npmrc
 link_tool pip.conf .config/pip/pip.conf
 copy_tool glab-config.yml .config/glab-cli/config.yml 0600

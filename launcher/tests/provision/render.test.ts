@@ -7,7 +7,6 @@ import { stateLayout } from "../../shared/index.ts";
 import { NO_STATUS, tempDir, writeText } from "./fixtures.ts";
 
 const NO_TOOLS: DerivedTools = {
-  gh: [],
   glab: [],
   maven: { servers: [], mirrors: [], passthrough: [] },
   git: {},
@@ -254,7 +253,7 @@ describe("renderAgentDir", () => {
     expect(proxy).not.toContain("<password>");
   });
 
-  it("renders the tool files of the derived gh, glab, npm, pip, Maven and git settings", async () => {
+  it("renders the tool files of the derived glab, npm, pip, Maven and git settings", async () => {
     const stateDir = await tempDir("render-state");
     const host = await tempDir("render-host");
     const P = "pi-sandbox-bbbbbbbbbbbbbbbbbbbbbbbb";
@@ -264,7 +263,6 @@ describe("renderAgentDir", () => {
       hostAgentDir: host,
       hostHome: host,
       derived: derived(undefined, {
-        gh: [{ host: "github.com", token: P }],
         glab: [{ host: "gitlab.corp.test", token: P, user: "me", apiHost: "api.gitlab.corp.test" }],
         npmrc: [{ key: "//npm.corp.test/:_authToken", value: P }],
         pip: [{ name: "global", entries: [["index-url", `https://me:${P}@pypi.corp.test/simple`]] }],
@@ -279,9 +277,14 @@ describe("renderAgentDir", () => {
     });
     const read = (name: string) => readFile(join(result.renderDir, "tools", name), "utf8");
 
-    expect(await read("gh-hosts.yml")).toBe(
-      `github.com:\n    oauth_token: "${P}"\n    git_protocol: "https"\n`,
-    );
+    expect((await readdir(join(result.renderDir, "tools"))).sort()).toEqual([
+      "gitconfig",
+      "glab-config.yml",
+      "m2-settings.xml",
+      "npmrc",
+      "pip.conf",
+      "status.json",
+    ]);
     expect(await read("glab-config.yml")).toContain(
       `hosts:\n    gitlab.corp.test:\n        token: "${P}"\n        user: "me"\n        api_host: "api.gitlab.corp.test"\n        git_protocol: "https"\n        use_keyring: "false"\n`,
     );
@@ -297,12 +300,6 @@ describe("renderAgentDir", () => {
         "[user]",
         '\tname = "Max \\"Z\\""',
         '\temail = "max@corp.test"',
-        '[credential "https://github.com"]',
-        '\thelper = ""',
-        '\thelper = "!gh auth git-credential"',
-        '[url "https://github.com/"]',
-        '\tinsteadOf = "git@github.com:"',
-        '\tinsteadOf = "ssh://git@github.com/"',
         '[credential "https://gitlab.corp.test"]',
         '\thelper = ""',
         '\thelper = "!glab auth git-credential"',

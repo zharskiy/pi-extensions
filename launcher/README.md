@@ -220,7 +220,7 @@ It protects:
 
 It does not protect:
 
-- **Use of your credentials.** The agent cannot read them, but can use them: push with your gh token, call your provider, publish a package.
+- **Use of your credentials.** The agent cannot read them, but can use them: push with your glab token, call your provider, publish a package.
 - **The folder.** The agent can change any file in it, `.git/config` included. When pi exits, the launcher names changed git files. Review them before you run git there.
 - **Data sent to allowed hosts.** Anything can leave through them.
 - **Earlier sessions.** Host pi's sessions of this folder are readable inside, with any secret a tool printed in them. `sessions.host: false` keeps them apart.
@@ -241,7 +241,7 @@ Your settings go in `~/.pi/agent/pi-sandbox/config.json` (inside pi's agent fold
 ```
 
 - `egress.allow`: the hosts the sandbox may reach besides `pi.dev` and your providers. It is empty by default, so package registries such as `registry.npmjs.org` are reachable only once you list them or allow them with `pi sandbox egress allow`.
-- `image.packages` and `image.npmGlobal`: Debian and npm packages to add to the image. The launcher's CA and your `tls.extraCa` CAs are built into the image's system store and into every JDK the image holds (its `cacerts`, and its `net.properties` points Java at the sandbox proxy), so the image is rebuilt when a CA changes.
+- `image.packages` and `image.npmGlobal`: Debian and npm packages to add to the image. The image has no GitHub CLI; [REMOVED-DEFAULTS.md](REMOVED-DEFAULTS.md#the-github-cli) shows how to add `gh` and its token. The launcher's CA and your `tls.extraCa` CAs are built into the image's system store and into every JDK the image holds (its `cacerts`, and its `net.properties` points Java at the sandbox proxy), so the image is rebuilt when a CA changes.
 - `mounts.volumes`: folders such as `~/.npm` or `/opt/data`, kept in volumes that every session shares, in any folder. Your Mac's own folder is not mounted. A cache such as `~/.m2/repository` may sit beside a file the launcher puts there (`~/.m2/settings.xml`, which points Maven at the sandbox proxy).
 - `mounts.binds`: files or folders of your Mac mounted read-only inside, such as `{ "source": "~/reference", "target": "/etc/reference" }`. A source outside the folders the VM shares adds a read-only share, which restarts the VM once.
 - `setup`: commands run inside before pi starts, at every launch, such as `[["npm", "ci"]]`. A failing command stops the launch. See [Setup commands](CONFIGURATION.md#setup-commands) before you add one.
