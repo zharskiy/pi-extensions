@@ -16,7 +16,7 @@ pi-extensions/
 │   ├── docs-sync.test.ts
 │   ├── framework/           fakes, harnesses, pi/ (real pi), live/, eval-runs/
 │   └── evals/               prompt-quality evals, local only
-├── future-plans/        research and specs, one folder per topic, each topic's status in future-plans/README.md (launcher-consumer-config/: the launcher's services, mounts and setup refactor, built)
+├── future-plans/        research and specs, one folder per topic, each topic's status in future-plans/README.md
 ├── .github/workflows/   ci.yml
 ├── README.md  AGENTS.md  ARCHITECTURE.md  STRUCTURE.md  LICENSE
 └── package.json  tsconfig.json  biome.json  knip.json  vitest.config.ts
