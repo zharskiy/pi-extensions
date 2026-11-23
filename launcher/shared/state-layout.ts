@@ -92,16 +92,22 @@ const repoFiles = (stateDir: string, repoHash: string) => {
     directory,
     record: join(directory, "repo.json"),
     prepareLock: join(stateDir, "locks", `prepare-${repoHash}.lock`),
-    render: join(stateDir, "vm", "render", repoHash),
-    renderLock: join(directory, "render.lock"),
-    sync: join(directory, "sync"),
-    syncLock: join(directory, "sync", "sync.lock"),
-    syncBaseline: join(directory, "sync", "baseline.json"),
-    syncPackages: join(directory, "sync", "packages.json"),
-    gitBaseline: join(directory, "git", "baseline.json"),
     created: join(directory, "created.json"),
+    legacy: {
+      render: join(stateDir, "vm", "render", repoHash),
+      renderLock: join(directory, "render.lock"),
+      sync: join(directory, "sync"),
+    },
   };
 };
+
+const syncFiles = (stateDir: string) => ({
+  directory: join(stateDir, "sync"),
+  lock: join(stateDir, "locks", "sync.lock"),
+  baseline: join(stateDir, "sync", "baseline.json"),
+  packages: join(stateDir, "sync", "packages.json"),
+  installFailed: join(stateDir, "sync", "install-failed.json"),
+});
 
 export const stateLayout = (stateDir: string) => ({
   salt: join(stateDir, "salt"),
@@ -112,7 +118,10 @@ export const stateLayout = (stateDir: string) => ({
   repo: (repoHash: string) => repoFiles(stateDir, repoHash),
   vm: join(stateDir, "vm"),
   renders: join(stateDir, "vm", "render"),
-  emptyDir: join(stateDir, "empty"),
+  render: join(stateDir, "vm", "agent"),
+  renderLock: join(stateDir, "locks", "render.lock"),
+  sync: syncFiles(stateDir),
+  agentLock: join(stateDir, "locks", "agent.lock"),
   locks: join(stateDir, "locks"),
   vmLock: join(stateDir, "locks", "vm.lock"),
   groundLock: join(stateDir, "locks", "ground.lock"),

@@ -8,7 +8,6 @@ import {
   pathTextProblem,
   type RootGuardContext,
   type RootProblem,
-  sharedRootsOf,
 } from "../../workspace/index.ts";
 import type { FolderCandidate } from "./types.ts";
 
@@ -34,7 +33,7 @@ interface Scan {
 
 export interface CandidateContext extends RootGuardContext {
   cwd: string;
-  configRoots: string[] | undefined;
+  configRoot: string | undefined;
   firstRun: boolean;
   limits?: Partial<ScanLimits>;
 }
@@ -42,11 +41,6 @@ export interface CandidateContext extends RootGuardContext {
 interface Proposed {
   stored: string;
   origin: FolderCandidate["origin"];
-}
-
-export interface AddContext extends RootGuardContext {
-  checked: string[];
-  listed: string[];
 }
 
 export const USUAL_FOLDERS = [
@@ -73,8 +67,6 @@ export const USUAL_FOLDERS = [
 const MAX_DETECTED = 8;
 
 const MAX_SUGGESTION_DISTANCE = 2;
-
-const ROOTS_SEPARATOR = ":";
 
 const DEFAULT_LIMITS: ScanLimits = { maxRepos: 50, maxEntries: 4000, budgetMs: 400, now: Date.now };
 
@@ -191,18 +183,25 @@ const acceptable = async (path: string, context: RootGuardContext) => {
   return verdict.ok && verdict.exists;
 };
 
-export const rootsFromEnv = (env: NodeJS.ProcessEnv, cwd: string) =>
-  (env.PI_SANDBOX_ROOTS ?? "")
-    .split(ROOTS_SEPARATOR)
-    .filter((root) => root !== "")
-    .map((root) => (isAbsolute(root) || isHomeForm(root) ? withoutTrailingSlash(root) : resolve(cwd, root)));
+export const rootFromEnv = (env: NodeJS.ProcessEnv, cwd: string) => {
+  const root = env.PI_SANDBOX_ROOT ?? "";
 
-const envRoots = (context: CandidateContext): Proposed[] =>
-  rootsFromEnv(context.env, context.cwd).map((stored) => ({ stored, origin: "env" as const }));
+  if (root === "") {
+    return undefined;
+  }
+
+  return isAbsolute(root) || isHomeForm(root) ? withoutTrailingSlash(root) : resolve(cwd, root);
+};
+
+const envRoot = (context: CandidateContext): Proposed[] => {
+  const stored = rootFromEnv(context.env, context.cwd);
+
+  return stored === undefined ? [] : [{ stored, origin: "env" }];
+};
 
 const fixedRoots = (context: CandidateContext): Proposed[] => [
-  ...(context.configRoots ?? []).map((stored) => ({ stored, origin: "config" as const })),
-  ...(context.firstRun ? envRoots(context) : []),
+  ...(context.configRoot === undefined ? [] : [{ stored: context.configRoot, origin: "config" as const }]),
+  ...(context.firstRun ? envRoot(context) : []),
 ];
 
 const cwdFolder = async (context: CandidateContext): Promise<Proposed[]> => {
@@ -274,18 +273,6 @@ export const folderCandidates = async (context: CandidateContext): Promise<Folde
   return [...fixed, ...detected];
 };
 
-export const isPreChecked = (candidate: FolderCandidate, firstRun: boolean) => {
-  if (candidate.origin === "config" || candidate.origin === "env") {
-    return true;
-  }
-
-  if (!firstRun) {
-    return false;
-  }
-
-  return candidate.origin === "cwd" || candidate.repos > 0;
-};
-
 const nextRow = (row: number[], leftChar: string, leftIndex: number, right: string) =>
   Array.from(right).reduce(
     (next, rightChar, rightIndex) => {
@@ -351,7 +338,7 @@ const guardMessage = (shown: string, problem: RootProblem, resolved = "") => {
   }
 
   if (problem.kind === "home") {
-    return `${shown} is your whole home. Choose the folders inside it that hold projects.`;
+    return `${shown} is your home or holds it, and the sandbox VM must not see all of it. Choose the folder in it that holds your projects.`;
   }
 
   if (problem.path === resolved) {
@@ -379,18 +366,6 @@ const missingMessage = (shown: string, resolved: string, context: RootGuardConte
     : `${shown} does not exist. Did you mean ${shownPath(suggestion, context.home)}?`;
 };
 
-const nestingMessage = (shown: string, resolved: string, context: AddContext) => {
-  const inner = context.checked.find((other) => isWithin(rootOf(other, context).resolved, resolved));
-
-  if (inner === undefined) {
-    return undefined;
-  }
-
-  const shownInner = printable(inner);
-
-  return `${shown} holds ${shownInner}, which is selected. Unselect ${shownInner} first, or choose another folder.`;
-};
-
 const existingMessage = (shown: string, resolved: string, context: RootGuardContext) => {
   const info = statSync(resolved, { throwIfNoEntry: false });
 
@@ -401,7 +376,7 @@ const existingMessage = (shown: string, resolved: string, context: RootGuardCont
   return info.isDirectory() ? undefined : `${shown} is a file, not a folder.`;
 };
 
-export const addedRootProblem = (typed: string, context: AddContext) => {
+export const typedRootProblem = (typed: string, context: RootGuardContext) => {
   const trimmed = typed.trim();
 
   if (trimmed === "" || trimmed === "~/") {
@@ -421,41 +396,10 @@ export const addedRootProblem = (typed: string, context: AddContext) => {
 
   const verdict = checkRoot(trimmed, context);
 
-  if (!verdict.ok) {
-    return guardMessage(shown, verdict.problem, refusedRoot(trimmed, context.home));
-  }
-
-  if (context.listed.some((other) => rootOf(other, context).resolved === verdict.resolved)) {
-    return `${shown} is already in the list.`;
-  }
-
-  return (
-    existingMessage(shown, verdict.resolved, context) ?? nestingMessage(shown, verdict.resolved, context)
-  );
-};
-
-export const replacedRoots = (typed: string, context: AddContext) => {
-  const verdict = checkRoot(typed.trim(), context);
-
   return verdict.ok
-    ? context.checked.filter((other) => isWithin(verdict.resolved, rootOf(other, context).resolved))
-    : [];
+    ? existingMessage(shown, verdict.resolved, context)
+    : guardMessage(shown, verdict.problem, refusedRoot(trimmed, context.home));
 };
 
-const spokenList = (names: string[]) =>
-  names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
-
-export const replacedNotice = (typed: string, replaced: string[], home: string) => {
-  const holder = replaced.length === 1 ? "holds" : "hold";
-
-  return `${shownPath(typed.trim(), home)} replaces ${spokenList(replaced.map(printable))}, which ${holder} it.`;
-};
-
-const sharedSet = (roots: string[], context: RootGuardContext) => {
-  const shared = sharedRootsOf({ roots }, context);
-
-  return [...new Set([...shared.roots, ...shared.missing])].sort();
-};
-
-export const sameRootSet = (left: string[], right: string[], context: RootGuardContext) =>
-  JSON.stringify(sharedSet(left, context)) === JSON.stringify(sharedSet(right, context));
+export const sameRoot = (left: string, right: string, context: RootGuardContext) =>
+  rootOf(left, context).resolved === rootOf(right, context).resolved;

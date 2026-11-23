@@ -8,8 +8,10 @@ const pathHash = (path: string) => sha256Hex(path).slice(0, 8);
 export const containerName = (repoRoot: string, launchId: string) =>
   `pi-sandbox-${shortRepoHash(repoRoot)}-${launchId}`;
 
-export const agentVolumeName = (install: string, repoRoot: string) =>
-  `pi-sandbox-agent-${install}-${shortRepoHash(repoRoot)}`;
+export const agentVolumeName = (install: string) => `pi-sandbox-agent-${install}`;
+
+export const isLegacyAgentVolume = (install: string, name: string) =>
+  name.startsWith(`${agentVolumeName(install)}-`);
 
 export const cacheVolumeName = (install: string, repoRoot: string, path: string) =>
   `pi-sandbox-cache-${install}-${shortRepoHash(repoRoot)}-${pathHash(path)}`;

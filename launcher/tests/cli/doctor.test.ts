@@ -842,7 +842,7 @@ describe("pi sandbox doctor", () => {
       "sandbox",
       SHARES_UNKNOWN,
       "  fail  vm                the sandbox VM engine is unreachable at ~/.colima/pi-sandbox/docker.sock: socket missing",
-      "        hint: run colima start --profile pi-sandbox --activate=false, or pi sandbox init when ~/.colima/pi-sandbox does not exist",
+      "        hint: run pi, which starts the sandbox VM with its planned shares, or pi sandbox init when ~/.colima/pi-sandbox does not exist",
       "  skip  file cache        the sandbox VM is not running",
       "  skip  sandbox checks    not run, because starting the VM failed",
       "",
@@ -1012,7 +1012,7 @@ describe("pi sandbox doctor", () => {
 
       expect(stdout).toContain("\u001b[1;31mfail\u001b[0m  vm ");
       expect(stdout).toContain("\u001b[32mok\u001b[0m    pi ");
-      expect(stdout).toContain("\u001b[36mhint:\u001b[0m run colima start");
+      expect(stdout).toContain("\u001b[36mhint:\u001b[0m run pi, which starts the sandbox VM");
       expect(stdout).toContain("result: \u001b[1;31mfail\u001b[0m (");
       expect(doctorReport(stripVTControlCharacters(stdout)).result).toBe("fail (1 failed: vm)");
       expect(harness.stderr().startsWith("\r\u001b[2Kpi sandbox doctor: preparing the sandbox")).toBe(true);

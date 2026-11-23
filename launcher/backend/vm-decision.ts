@@ -8,7 +8,6 @@ export type VmFound =
 export interface VmWanted {
   size: VmTarget;
   shares?: VmShare[];
-  exactShares: boolean;
 }
 
 export interface VmChange {
@@ -23,7 +22,9 @@ export type VmDecision =
   | ({ kind: "defer"; sessions: number } & VmChange);
 
 const sameShare = (share: VmShare) => (other: VmShare) =>
-  other.location === share.location && other.writable === share.writable;
+  other.location === share.location &&
+  other.writable === share.writable &&
+  other.mountPoint === share.mountPoint;
 
 export const shareDrift = (current: VmShare[], desired: VmShare[]) => ({
   extra: current.filter((share) => !desired.some(sameShare(share))),
@@ -41,7 +42,7 @@ const sharesDiffer = (current: VmShare[] | "unreadable", wanted: VmWanted) => {
 
   const drift = shareDrift(current, wanted.shares);
 
-  return drift.lacking.length > 0 || (wanted.exactShares && drift.extra.length > 0);
+  return drift.lacking.length > 0 || drift.extra.length > 0;
 };
 
 export const vmDecision = (found: VmFound, wanted: VmWanted): VmDecision => {

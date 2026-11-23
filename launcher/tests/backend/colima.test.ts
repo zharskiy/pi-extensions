@@ -211,7 +211,9 @@ describe("colima adapter status", () => {
     const failure = await backend.listVolumes().catch((error: unknown) => error);
 
     expect(failure).toBeInstanceOf(LauncherError);
-    expect((failure as LauncherError).hint).toBe("run colima start --profile pi-sandbox --activate=false");
+    expect((failure as LauncherError).hint).toBe(
+      "run pi, which starts the sandbox VM with its planned shares",
+    );
   });
 
   const hungSocket = async () => {

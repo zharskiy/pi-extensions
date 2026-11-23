@@ -52,9 +52,8 @@ const setup = async (options: SetupOptions = {}) => {
       backend,
       containerId,
       stateDir,
-      repoHash: "repo1",
       hostAgentDir,
-      repoRoot,
+      workspaceRoot: repoRoot,
       allowlist: BUILT_IN_WRITE_BACK,
       refreshPackages,
       othersLive: () => Promise.resolve(live.others),
@@ -85,7 +84,7 @@ const setup = async (options: SetupOptions = {}) => {
     return dir;
   };
   const volumeSettings = async () => JSON.parse((await fake.guestFile("settings.json")) ?? "{}");
-  const stampPath = stateLayout(stateDir).repo("repo1").syncPackages;
+  const stampPath = stateLayout(stateDir).sync.packages;
   const stamp = () => readJsonObject(stampPath);
   const removals = () => fake.execs.filter((exec) => isRemoval(exec.spec));
 
@@ -121,6 +120,10 @@ describe("sandbox packages follow the host", () => {
     ]);
 
     expect(result.notices).toEqual([]);
+    expect(result.packages).toEqual({
+      sources: ["npm:@scope/tool@1.2.3", `git:github.com/owner/repo@${COMMIT_A}`],
+      changed: [],
+    });
     expect((await env.volumeSettings()).packages).toEqual([
       "npm:@scope/tool@1.2.3",
       { source: `git:github.com/owner/repo@${COMMIT_A}`, extensions: ["a.ts"] },
@@ -143,6 +146,7 @@ describe("sandbox packages follow the host", () => {
     const result = await env.sync(["npm:tool", "git:github.com/owner/repo"]);
 
     expect(result.notices).toEqual([]);
+    expect(result.packages?.changed).toEqual([]);
     expect(env.removals()).toHaveLength(removalsBefore);
     expect(await exists(checkout)).toBe(true);
   });
@@ -167,6 +171,7 @@ describe("sandbox packages follow the host", () => {
     const result = await env.sync(["npm:tool", "npm:same", "https://github.com/owner/repo.git"]);
 
     expect(result.notices).toEqual(["sandbox packages follow the host: reinstalling 2 packages"]);
+    expect(result.packages?.changed).toEqual(["npm:tool", "git:github.com/owner/repo"]);
     expect((await env.volumeSettings()).packages).toEqual([
       "npm:tool@1.1.0",
       "npm:same@3.0.0",
@@ -305,6 +310,7 @@ describe("sandbox packages follow the host", () => {
     const deferred = await env.sync(["git:github.com/owner/repo"]);
 
     expect(deferred.notices).toEqual([DEFERRED_NOTICE]);
+    expect(deferred.packages?.changed).toEqual([]);
     expect((await env.volumeSettings()).packages).toEqual([`git:github.com/owner/repo@${COMMIT_B}`]);
     expect(await exists(checkout)).toBe(true);
     expect(await env.stamp()).toEqual({ "git:github.com/owner/repo": COMMIT_A });
@@ -314,6 +320,7 @@ describe("sandbox packages follow the host", () => {
     const retried = await env.sync(["git:github.com/owner/repo"]);
 
     expect(retried.notices).toEqual(["sandbox packages follow the host: reinstalling 1 package"]);
+    expect(retried.packages?.changed).toEqual(["git:github.com/owner/repo"]);
     expect(await exists(checkout)).toBe(false);
   });
 

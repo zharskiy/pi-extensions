@@ -115,6 +115,7 @@ export interface VmPath {
 export interface VmShare {
   location: string;
   writable: boolean;
+  mountPoint?: string;
 }
 
 export interface VmCoverage {
@@ -135,7 +136,6 @@ export type VmSize = Omit<VmSpec, "diskGiB"> & Pick<VmTarget, "diskGiB">;
 export interface VmDesired {
   size: VmSpec;
   shares: VmShare[];
-  exactShares: boolean;
 }
 
 export type VmInspect =
@@ -167,7 +167,7 @@ export interface VmShareOptions {
 
 export interface VmReconcile {
   size: VmTarget;
-  shares?: VmShare[];
+  shares: VmShare[];
   needs: VmPath[];
 }
 
@@ -186,7 +186,7 @@ export type VmFileCache =
 export interface Vm {
   watchFileCache?(): VmWatch;
   readFileCache?(): Promise<VmFileCache>;
-  ensureRunning(report: VmReport, shares?: VmShare[], size?: VmTarget): Promise<void>;
+  ensureRunning(report: VmReport, shares: VmShare[], size?: VmTarget): Promise<void>;
   coverage(paths: VmPath[]): Promise<VmCoverage | "unreadable" | undefined>;
   reconcile(wanted: VmReconcile, options: VmShareOptions): Promise<void>;
   ensureTrust(pemPath: string, options: VmShareOptions): Promise<void>;

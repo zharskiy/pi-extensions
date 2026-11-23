@@ -9,9 +9,10 @@ import {
 } from "../hostpi/index.ts";
 import type { TrustBundle } from "../proxy/index.ts";
 import { ensureSalt, settleAll } from "../shared/index.ts";
+import { sandboxWriteRoots } from "../workspace/index.ts";
 import type { LaunchContext } from "./context.ts";
 import { type CliDeps, hostAgentDirOf } from "./deps.ts";
-import { missingPiText } from "./host-pi.ts";
+import { missingPiText, sandboxReachOf } from "./host-pi.ts";
 
 export interface HostSide {
   hostAgentDir: string;
@@ -25,11 +26,6 @@ export interface PreparedHost {
   host: HostSide;
   notices: string[];
 }
-
-const sandboxRoots = (context: LaunchContext) => [
-  context.workspace.repoRoot,
-  ...(context.workspace.gitCommonDir === undefined ? [] : [context.workspace.gitCommonDir]),
-];
 
 export const providerHostsOf = async (deps: CliDeps, context: LaunchContext, pi: HostPi | undefined) => {
   if (pi === undefined) {
@@ -47,6 +43,7 @@ const deriveFor = async (
 ) => {
   const { config } = context.effective;
   const salting = ensureSalt(context.stateDir);
+  const excludedRoots = [context.mountedRoot, ...(await sandboxWriteRoots(await sandboxReachOf(deps)))];
   const [providers, salt, tools] = await settleAll([
     providerHostsOf(deps, context, pi),
     salting,
@@ -58,7 +55,7 @@ const deriveFor = async (
         runner: deps.runner,
         salt,
         enabled: config.credentials.derive.enabled,
-        excludedRoots: sandboxRoots(context),
+        excludedRoots,
       }),
     ),
   ]);

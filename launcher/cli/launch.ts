@@ -6,27 +6,27 @@ import {
   configVolumes,
   forwardedEnv,
   forwardedNames,
-  type GitOverlay,
   type LauncherContainerSpec,
-  planGitOverlay,
   runPi,
   startLaunchContainer,
 } from "../container/index.ts";
-import { type Launch, othersLive } from "../grants/index.ts";
+import type { Launch } from "../grants/index.ts";
 import { type HostPiFiles, readHostPiFiles } from "../hostpi/index.ts";
 import { ensureSandboxImage, type SandboxImage } from "../image/index.ts";
-import { renderAgentDir, type SandboxStatusInput, syncVolumeFiles } from "../provision/index.ts";
-import { type DenialRecord, preambleText } from "../proxy/index.ts";
-import { errorMessage, settleAll, type WriteBackTable } from "../shared/index.ts";
 import {
-  confirmBinds,
-  gitLaunchNotices,
-  type HostBind,
-  type HostSessions,
-  hostBinds,
-} from "../workspace/index.ts";
+  installPackages,
+  isPiOffline,
+  type PackageChanges,
+  renderAgentDir,
+  type SandboxStatusInput,
+  syncVolumeFiles,
+} from "../provision/index.ts";
+import { type DenialRecord, preambleText } from "../proxy/index.ts";
+import { errorMessage, settleAll, stateLayout, type WriteBackTable } from "../shared/index.ts";
+import { confirmBinds, type HostBind, type HostSessions, hostBinds } from "../workspace/index.ts";
+import { busyLaunches } from "./busy.ts";
 import { hostClipboard } from "./clipboard.ts";
-import { checkWorkspaceRoots, type LaunchContext, openContext } from "./context.ts";
+import { checkHostRoot, type LaunchContext, openContext } from "./context.ts";
 import { type CliDeps, hostAgentDirOf, writeLine, writeNotices } from "./deps.ts";
 import { type HostSide, type PreparedHost, prepareHostSide } from "./derive.ts";
 import { startServices, withGroundLock } from "./ground.ts";
@@ -38,10 +38,10 @@ import {
   readyHostSessions,
 } from "./host-sessions.ts";
 import { hostPathNotices, launchNotices, proxyDetail } from "./launch-notices.ts";
-import { beginLaunch, finishLaunch, gitGuardOf } from "./launches.ts";
+import { beginLaunch, finishLaunch } from "./launches.ts";
 import { signInMcpServers } from "./mcp-sign-in.ts";
 import { writeOnce } from "./notices.ts";
-import { runSetup, withPrepareLock } from "./prepare.ts";
+import { runSetup, withAgentLock, withPrepareLock } from "./prepare.ts";
 import { openSandboxProxy, reportDenials, type SandboxProxy, sandboxDenials } from "./sandbox-proxy.ts";
 import { sweepOrphans } from "./sweep.ts";
 import { imagePiVersion } from "./versions.ts";
@@ -50,6 +50,7 @@ import {
   assertVmFitsHost,
   prepareVmShares,
   reconcileVm,
+  rootPaths,
   startVm,
   trustVm,
   vmTargetOf,
@@ -218,16 +219,17 @@ interface VolumeSync {
 }
 
 const syncVolume = async (deps: CliDeps, context: LaunchContext, backend: Backend, sync: VolumeSync) => {
-  const { changes, notices } = await syncVolumeFiles({
+  const { changes, notices, packages } = await syncVolumeFiles({
     backend,
     stateDir: context.stateDir,
-    repoHash: context.repoHash,
-    repoRoot: context.workspace.repoRoot,
+    workspaceRoot: context.mountedRoot,
     hostHome: deps.home,
     ...sync,
   });
 
   writeNotices(deps, [...changes, ...notices]);
+
+  return packages;
 };
 
 const syncAgentFiles = (input: PreparedInput, containerId: string) =>
@@ -238,6 +240,42 @@ const syncAgentFiles = (input: PreparedInput, containerId: string) =>
     allowlist: input.allowlist,
     refreshPackages: true,
     othersLive: input.othersLive,
+  });
+
+const agentLockOf = (input: PreparedInput) => ({
+  stateDir: input.context.stateDir,
+  signal: input.cancelled,
+  progress: input.progress,
+});
+
+const installAgentPackages = async (
+  input: PreparedInput,
+  container: PreparedContainer,
+  packages: PackageChanges | undefined,
+) => {
+  if (input.probe) {
+    return;
+  }
+
+  const env = input.forwarded.env;
+  const notices = await installPackages({
+    backend: input.backend,
+    containerId: container.containerId,
+    env,
+    packages,
+    failedPath: stateLayout(input.context.stateDir).sync.installFailed,
+    offline: isPiOffline({ ...container.spec.env, ...env }, input.piArgs),
+    announce: (notice) => writeNotices(input.deps, [notice]),
+  });
+
+  writeNotices(input.deps, notices);
+};
+
+const prepareAgentFolder = (input: PreparedInput, container: PreparedContainer) =>
+  withAgentLock(agentLockOf(input), async () => {
+    const packages = await syncAgentFiles(input, container.containerId);
+
+    await installAgentPackages(input, container, packages);
   });
 
 const statusInput = (config: SandboxConfig): SandboxStatusInput => {
@@ -260,21 +298,18 @@ const statusInput = (config: SandboxConfig): SandboxStatusInput => {
 const prepareFiles = async (input: PreparedInput) => {
   const { deps, context, backend, launch, sessions } = input;
   const { host } = input.prepared;
-  const [render, gitNotices, git] = await settleAll([
+  const [render] = await settleAll([
     renderAgentDir({
       stateDir: context.stateDir,
-      repoHash: context.repoHash,
       hostAgentDir: host.hostAgentDir,
       hostHome: deps.home,
       derived: host.derived,
       status: statusInput(context.effective.config),
     }),
-    gitLaunchNotices(context.workspace),
-    planGitOverlay(context.workspace, gitGuardOf(deps, context)),
     readyHostSessions(deps, context, backend, { sessions, launchId: launch.launchId }),
   ]);
 
-  return { render, gitNotices, git };
+  return { render };
 };
 
 type PreparedFiles = Awaited<ReturnType<typeof prepareFiles>>;
@@ -313,49 +348,44 @@ const prepareContainer = async (
   const { deps, context, backend, launch, sessions, cancelled } = input;
   const { host } = input.prepared;
   const { image, route } = parts;
-  const { render, gitNotices, git } = parts.files;
-
-  writeNotices(deps, gitNotices);
+  const { render } = parts.files;
 
   await writeOnce(deps, context.stateDir, [
     ...render.notices.map((notice) => `pi-sandbox: ${notice}`),
     ...launchNotices(context),
   ]);
 
-  const specWith = (gitOverlay: GitOverlay) =>
-    buildContainerSpec({
-      workspace: context.workspace,
-      config: context.effective.config,
-      image,
-      stateDir: context.stateDir,
-      launchId: launch.launchId,
-      gitOverlay,
-      proxy: route,
-      servicePorts: servicePortsOf(input),
-      renderDir: render.renderDir,
-      hostSessions: sessions,
-      toolEnv: host.derived.tools.env,
-      binds: input.binds.map((entry) => ({ source: entry.source, target: guestPathOf(entry.target) })),
-    });
-
   cancelled.throwIfAborted();
 
-  const overlay = await git.ready({ othersLive: await input.othersLive() });
-  const built = specWith(overlay);
+  const built = buildContainerSpec({
+    workspace: context.workspace,
+    config: context.effective.config,
+    image,
+    stateDir: context.stateDir,
+    launchId: launch.launchId,
+    workspaceRoot: context.mountedRoot,
+    proxy: route,
+    servicePorts: servicePortsOf(input),
+    renderDir: render.renderDir,
+    hostSessions: sessions,
+    toolEnv: host.derived.tools.env,
+    binds: input.binds.map((entry) => ({ source: entry.source, target: guestPathOf(entry.target) })),
+  });
 
   confirmBinds(input.binds);
 
-  const { id, spec, notices } = await startLaunchContainer({
-    backend,
-    stateDir: context.stateDir,
-    spec: built,
-    afterCreate: (created) => probeSessionsShare(backend, created, sessions),
-    pinnedImage: context.effective.config.image.digest !== undefined,
-  });
+  const { id, spec, notices } = await withAgentLock(agentLockOf(input), () =>
+    startLaunchContainer({
+      backend,
+      stateDir: context.stateDir,
+      spec: built,
+      afterCreate: (created) => probeSessionsShare(backend, created, sessions),
+      pinnedImage: context.effective.config.image.digest !== undefined,
+    }),
+  );
 
   writeNotices(deps, [
     ...notices,
-    ...git.pendingNotices(),
     ...(await hostPathNotices(input.piArgs, context.workspace.cwd, spec.mounts)),
   ]);
 
@@ -434,7 +464,7 @@ const prepareSandbox = async (input: PreparedInput) => {
 
   cancelled.throwIfAborted();
 
-  await staged("sync", () => syncAgentFiles(input, prepared.containerId)).catch((error: unknown) => {
+  await staged("sync", () => prepareAgentFolder(input, prepared)).catch((error: unknown) => {
     writeLine(deps.stderr, `pi-sandbox: warning: the agent settings were not synced: ${errorMessage(error)}`);
   });
 
@@ -506,13 +536,15 @@ const prepareVm = async (input: SandboxInput, share: boolean) => {
 
   assertMemoryFitsVm(deps, context.effective.config);
 
+  const planShares = () => prepareVmShares(deps, context.effective.config.workspaceRoot, input.binds);
+
   if (!share) {
-    await staged("vm", () => startVm(backend, sessions, progress, { size }));
+    await staged("vm", async () => startVm(backend, sessions, progress, { plan: await planShares(), size }));
 
     return;
   }
 
-  const plan = await prepareVmShares(deps, context.effective.config.workspaceRoots, input.binds);
+  const plan = await planShares();
 
   await staged("vm", () => startVm(backend, sessions, progress, { plan, size }));
 
@@ -554,7 +586,7 @@ const prepareAll = async (
     ...(await prepareSandbox({
       ...input,
       prepared,
-      othersLive: () => othersLive(context.stateDir, context.repoHash, input.launch.launchId),
+      othersLive: async () => (await busyLaunches(context.stateDir, input.launch.launchId)) > 0,
     })),
   };
 };
@@ -582,10 +614,7 @@ export const withSandbox = async (
     : hostBinds(context.effective.config.mounts.binds, {
         home: deps.home,
         env: deps.env,
-        roots: [
-          ...writableMounts(context, sessions),
-          ...(context.effective.config.workspaceRoots?.roots ?? []),
-        ],
+        roots: [...writableMounts(context, sessions), ...rootPaths(context.effective.config)],
       });
   const forwarded = forwardedOf(deps, context);
   const staged = stagedWith(report);
@@ -660,8 +689,12 @@ export const withSandbox = async (
         denials(await sandboxDenials(deps, context, launch.startedAt));
       }
 
-      if (ended.sync?.writeBack === true) {
-        await syncVolume(deps, context, backend, ended.sync).catch((error: unknown) => {
+      const sync = ended.sync;
+
+      if (sync?.writeBack === true) {
+        const lock = { stateDir: context.stateDir, signal: skipWaits, progress };
+
+        await withAgentLock(lock, () => syncVolume(deps, context, backend, sync)).catch((error: unknown) => {
           writeLine(
             deps.stderr,
             `pi-sandbox: warning: settings were not written back: ${errorMessage(error)}`,
@@ -696,7 +729,7 @@ export const launch = async (args: string[], deps: CliDeps) => {
   if (piArgs.length !== args.length) {
     const { context } = await openContext(deps, "host");
 
-    checkWorkspaceRoots(deps, context);
+    checkHostRoot(deps, context);
 
     return runHostPi(deps, context, piArgs);
   }

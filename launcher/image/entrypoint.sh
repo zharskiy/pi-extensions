@@ -34,18 +34,37 @@ fi
 mkdir -p "$agent_dir"
 
 copy_file() {
-  rm -rf "$2.tmp.$$"
-  cp "$1" "$2.tmp.$$"
-  chmod "$3" "$2.tmp.$$"
+  temporary=$(mktemp "$2.pi-sandbox-XXXXXX")
+  cp "$1" "$temporary"
+  chmod "$3" "$temporary"
 
   if [ -d "$2" ]; then
-    rm -rf "$2"
+    rm -rf "$2" || true
   fi
 
-  mv -f "$2.tmp.$$" "$2"
+  mv -f "$temporary" "$2"
 }
 
-find "$agent_dir" -mindepth 1 -maxdepth 1 -type l -lname "$render_dir/*" ! -exec test -e {} \; -exec rm -f {} \;
+linked() {
+  [ "$(readlink "$2" 2>/dev/null || true)" = "$1" ]
+}
+
+place_link() {
+  if linked "$1" "$2"; then
+    return
+  fi
+
+  if [ -d "$2" ]; then
+    rm -rf "$2" || true
+  fi
+
+  temporary=$(mktemp "$2.pi-sandbox-XXXXXX")
+  ln -sf "$1" "$temporary"
+  mv -f "$temporary" "$2" 2>/dev/null || rm -f "$temporary"
+  linked "$1" "$2"
+}
+
+find "$agent_dir" -mindepth 1 -maxdepth 1 -type l -lname "$render_dir/*" ! -exec test -e {} \; -exec rm -f {} \; || true
 
 for entry in "$render_dir"/* "$render_dir"/.[!.]* "$render_dir"/..?*; do
   name=${entry##*/}
@@ -61,14 +80,12 @@ for entry in "$render_dir"/* "$render_dir"/.[!.]* "$render_dir"/..?*; do
     continue
   fi
 
-  rm -rf "$link"
-  ln -s "$entry" "$link"
+  place_link "$entry" "$link"
 done
 
 if [ -d "$agents_skills_render" ]; then
   mkdir -p "$(dirname "$agents_skills")"
-  rm -rf "$agents_skills"
-  ln -s "$agents_skills_render" "$agents_skills"
+  place_link "$agents_skills_render" "$agents_skills"
 elif [ -L "$agents_skills" ] && [ ! -e "$agents_skills" ]; then
   rm -f "$agents_skills"
 fi
@@ -76,8 +93,7 @@ fi
 link_tool() {
   if [ -f "$tools_dir/$1" ]; then
     mkdir -p "$(dirname "$home/$2")"
-    rm -rf "${home:?}/$2"
-    ln -s "$tools_dir/$1" "$home/$2"
+    place_link "$tools_dir/$1" "$home/$2"
   fi
 }
 

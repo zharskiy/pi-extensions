@@ -29,7 +29,7 @@ const depsOf = async (overrides: Partial<DetectDeps> = {}): Promise<DetectDeps> 
     stateDir: join(home, "state"),
     configFile: join(home, "config.json"),
     docsFile: "/docs/CONFIGURATION.md",
-    configRoots: undefined,
+    configRoot: undefined,
     firstRun: true,
     backend: createFakeBackend({ vm: { inspect: async () => running } }).backend,
     statfs: async () => ({ bavail: 100 * GIB, bsize: 1 }),
@@ -110,8 +110,8 @@ describe("detectHost", () => {
     expect(facts).not.toHaveProperty("freeDiskGiB");
   });
 
-  it("says when the folder search ran out of time, and keeps the configured roots", async () => {
-    const deps = await depsOf({ budgetMs: 0, configRoots: ["~/w"], firstRun: false });
+  it("says when the folder search ran out of time, and keeps the configured root", async () => {
+    const deps = await depsOf({ budgetMs: 0, configRoot: "~/w", firstRun: false });
     const facts = await detectHost(deps);
 
     expect(facts.searchTimedOut).toBe(true);

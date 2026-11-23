@@ -36,7 +36,7 @@ const gitEnv: Record<string, string> = {
   GIT_CONFIG_NOSYSTEM: "1",
 };
 
-export const gitRunner = createProcessRunner({ baseEnv: gitEnv });
+const gitRunner = createProcessRunner({ baseEnv: gitEnv });
 
 export const git = async (cwd: string, args: string[]) => {
   const result = await gitRunner.run("git", [...IDENTITY, ...args], { cwd });

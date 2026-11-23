@@ -44,7 +44,10 @@ export const startArgs = (profile: string, parts: StartParts = {}) => [
   ...sizeFlags(parts.size ?? {}),
 ];
 
-export const plainStart = (profile: string) => `colima ${startArgs(profile).join(" ")}`;
+export const plainStart = (profile: string, shares: VmShare[]) =>
+  `colima ${startArgs(profile, { shares }).map(shellWord).join(" ")}`;
+
+export const PI_STARTS_VM = "run pi, which starts the sandbox VM with its planned shares";
 
 export const restartText = (profile: string, parts: StartParts = {}) =>
   `colima stop --profile ${profile} && colima ${startArgs(profile, parts).map(shellWord).join(" ")}`;

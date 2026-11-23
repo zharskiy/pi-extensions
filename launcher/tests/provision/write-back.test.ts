@@ -241,12 +241,19 @@ describe("parseBaseline", () => {
     });
   });
 
-  it("treats a missing, malformed or partial baseline as none", () => {
+  it("treats a missing or malformed baseline as none", () => {
     expect(parseBaseline(undefined, SYNCED_FILES, HASH)).toBeUndefined();
     expect(parseBaseline({ allowlist: HASH, files: [] }, SYNCED_FILES, HASH)).toBeUndefined();
+  });
+
+  it("keeps the files a partial baseline holds and drops the rest", () => {
     expect(
-      parseBaseline({ allowlist: HASH, files: { "settings.json": {} } }, SYNCED_FILES, HASH),
-    ).toBeUndefined();
+      parseBaseline(
+        { allowlist: HASH, files: { "settings.json": { theme: "a" }, "pi-style.json": [1] } },
+        SYNCED_FILES,
+        HASH,
+      ),
+    ).toEqual({ "settings.json": { theme: "a" } });
   });
 
   it("treats a baseline recorded under another allowlist, or under none, as none", () => {

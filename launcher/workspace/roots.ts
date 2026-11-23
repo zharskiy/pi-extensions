@@ -5,16 +5,11 @@ import {
   isWithin,
   LauncherError,
   launcherPaths,
-  outermostPaths,
   printable,
   realOrResolvedSync,
 } from "../shared/index.ts";
 import { protectedPaths } from "./mounts.ts";
-import { mountedGitDirs, type Workspace } from "./types.ts";
-
-interface WorkspaceRoots {
-  roots: string[];
-}
+import { gitDirsOf, type Workspace } from "./types.ts";
 
 export interface RootGuardContext {
   home: string;
@@ -32,9 +27,8 @@ export type RootVerdict =
   | { ok: true; resolved: string; exists: boolean }
   | { ok: false; problem: RootProblem };
 
-interface SharedRoots {
-  roots: string[];
-  missing: string[];
+interface SharedRoot {
+  root?: string;
   notices: string[];
 }
 
@@ -56,9 +50,9 @@ const SYSTEM_PARENTS = ["/private", "/var"];
 
 const lexicalRoot = (root: string, home?: string) => resolve(expandHome(root, home));
 
-const ROOTS_KEY = "workspaceRoots.roots";
+const ROOT_KEY = "workspaceRoot";
 
-const ROOTS_HINT = "name the project folders themselves in workspaceRoots.roots";
+const ROOT_HINT = "point workspaceRoot at the folder that holds your projects, not at your home or above it";
 
 const refusal = (key: string, hint: string) => (root: string, problem: string) =>
   new LauncherError(`config: ${key}: ${printable(root)} ${problem}`, hint);
@@ -135,29 +129,11 @@ export const pathRefusal = (key: string, hint: string, root: string, problem: Ro
     : refuse(root, `overlaps ${problem.name} (${problem.path}), which the sandbox VM must not see`);
 };
 
-const refusalOf = (root: string, problem: RootProblem) => pathRefusal(ROOTS_KEY, ROOTS_HINT, root, problem);
-
-const assertShareable = (root: string, resolved: string, context: RootGuardContext) => {
-  const problem = shareProblem(resolved, context);
-
-  if (problem !== undefined) {
-    throw refusalOf(root, problem);
-  }
-};
+const refusalOf = (root: string, problem: RootProblem) => pathRefusal(ROOT_KEY, ROOT_HINT, root, problem);
 
 export const rootRefusal = (root: string, problem: RootProblem) => refusalOf(root, problem).message;
 
 const isFolder = (path: string) => statSync(path, { throwIfNoEntry: false })?.isDirectory() === true;
-
-const configuredRoots = (roots: string[], home?: string) => {
-  const entries = roots.map((root) => ({ root, lexical: lexicalRoot(root, home) }));
-  const kept = new Set(outermostPaths(entries.map((entry) => entry.lexical)));
-
-  return entries
-    .filter((entry) => kept.has(entry.lexical))
-    .filter((entry, index, all) => all.findIndex((other) => other.lexical === entry.lexical) === index)
-    .map((entry) => ({ root: entry.root, resolved: realOrResolvedSync(entry.lexical) }));
-};
 
 export const checkRoot = (root: string, context: RootGuardContext): RootVerdict => {
   const resolved = realOrResolvedSync(lexicalRoot(root, context.home));
@@ -166,42 +142,91 @@ export const checkRoot = (root: string, context: RootGuardContext): RootVerdict 
   return problem === undefined ? { ok: true, resolved, exists: isFolder(resolved) } : { ok: false, problem };
 };
 
-export const sharedRootsOf = (workspaceRoots: WorkspaceRoots, context: RootGuardContext): SharedRoots => {
-  const entries = configuredRoots(workspaceRoots.roots, context.home);
+const shareableRoot = (root: string, context: RootGuardContext) => {
+  const verdict = checkRoot(root, context);
 
-  entries.forEach((entry) => {
-    assertShareable(entry.root, entry.resolved, context);
-  });
+  if (!verdict.ok) {
+    throw refusalOf(root, verdict.problem);
+  }
 
-  const present = entries.filter((entry) => isFolder(entry.resolved));
-  const absent = entries.filter((entry) => !isFolder(entry.resolved));
-  const notices = absent.map(
-    (entry) => `workspaceRoots: ${printable(entry.root)} does not exist, not shared`,
-  );
-
-  return {
-    roots: outermostPaths(present.map((entry) => entry.resolved)),
-    missing: absent.map((entry) => entry.resolved),
-    notices,
-  };
+  return verdict;
 };
 
-export const assertWithinWorkspaceRoots = (
+export const sharedRootOf = (root: string, context: RootGuardContext): SharedRoot => {
+  const verdict = shareableRoot(root, context);
+
+  return verdict.exists
+    ? { root: verdict.resolved, notices: [] }
+    : { notices: [`workspaceRoot: ${printable(root)} is missing, so it is not shared until it exists`] };
+};
+
+export const requiredRoot = (root: string | undefined, context: RootGuardContext) => {
+  if (root === undefined) {
+    throw new LauncherError(
+      "config: workspaceRoot is not set, so pi has no folder it may start in",
+      `run pi sandbox init, or set workspaceRoot in ${launcherPaths(context).userConfigFile} to the folder that holds your projects`,
+    );
+  }
+
+  return root;
+};
+
+const outsideGitDir = (dir: string, workspace: Workspace, root: string) =>
+  new LauncherError(
+    `git: the git dir ${printable(dir)} of ${printable(workspace.repoRoot)} is outside the workspace root (workspaceRoot: ${printable(root)})`,
+    "the sandbox mounts only the workspace root, so git would not work there; move the repository (or its main checkout) inside it, or point workspaceRoot at a folder that holds both",
+  );
+
+const missingRoot = (root: string) =>
+  new LauncherError(
+    `config: workspaceRoot: ${printable(root)} does not exist`,
+    "create the folder, mount the volume it lives on, or point workspaceRoot at a folder that holds your projects",
+  );
+
+const assertProjectInsideRoot = (workspace: Workspace, root: string, resolved: string) => {
+  if (!isFolder(resolved)) {
+    throw missingRoot(root);
+  }
+
+  if (!isWithin(workspace.repoRoot, resolved)) {
+    throw new LauncherError(
+      `${printable(workspace.repoRoot)} is outside the workspace root (workspaceRoot: ${printable(root)})`,
+      "start pi inside it, or point workspaceRoot at a folder that holds the project",
+    );
+  }
+};
+
+const assertInsideRoot = (workspace: Workspace, root: string, resolved: string) => {
+  assertProjectInsideRoot(workspace, root, resolved);
+
+  const outside = gitDirsOf(workspace).find((dir) => !isWithin(dir, resolved));
+
+  if (outside !== undefined) {
+    throw outsideGitDir(outside, workspace, root);
+  }
+};
+
+export const assertWithinWorkspaceRoot = (
   workspace: Workspace,
-  workspaceRoots: WorkspaceRoots | undefined,
-  home: string,
+  configured: string | undefined,
+  context: RootGuardContext,
 ) => {
-  if (workspaceRoots === undefined) {
+  const root = requiredRoot(configured, context);
+  const { resolved } = shareableRoot(root, context);
+
+  assertInsideRoot(workspace, root, resolved);
+};
+
+export const assertWithinHostRoot = (
+  workspace: Workspace,
+  configured: string | undefined,
+  context: RootGuardContext,
+) => {
+  if (configured === undefined) {
     return;
   }
 
-  const roots = configuredRoots(workspaceRoots.roots, home).map((entry) => entry.resolved);
-  const outside = mountedGitDirs(workspace).find((path) => !roots.some((root) => isWithin(path, root)));
+  const resolved = realOrResolvedSync(lexicalRoot(configured, context.home));
 
-  if (outside !== undefined) {
-    throw new LauncherError(
-      `${printable(outside)} is outside the allowed workspace roots (workspaceRoots.roots: ${workspaceRoots.roots.map(printable).join(", ")})`,
-      "start pi inside one of the workspaceRoots, or add the folder to workspaceRoots.roots",
-    );
-  }
+  assertProjectInsideRoot(workspace, configured, resolved);
 };

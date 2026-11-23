@@ -34,10 +34,6 @@ interface CredentialsConfig {
 
 export type ExtraCa = { file: string } | { sha256: string };
 
-interface WorkspaceRootsConfig {
-  roots: string[];
-}
-
 interface EgressConfig {
   allow: string[];
   deny: string[];
@@ -123,7 +119,7 @@ export interface SandboxConfig {
   credentials: CredentialsConfig;
   egress: EgressConfig;
   tls: { extraCa: ExtraCa[] };
-  workspaceRoots?: WorkspaceRootsConfig;
+  workspaceRoot?: string;
   mounts: MountsConfig;
   env: EnvConfig;
   resources: ResourcesConfig;
@@ -143,7 +139,7 @@ export interface UserConfig {
   };
   egress?: Partial<EgressConfig>;
   tls?: Partial<SandboxConfig["tls"]>;
-  workspaceRoots?: WorkspaceRootsConfig;
+  workspaceRoot?: string;
   mounts?: Partial<SandboxConfig["mounts"]>;
   env?: Partial<SandboxConfig["env"]>;
   resources?: Partial<ResourcesConfig>;

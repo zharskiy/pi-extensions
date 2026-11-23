@@ -1,10 +1,11 @@
 import type { Backend } from "../backend/index.ts";
 import { type EffectiveConfig, loadEffectiveConfig } from "../config/index.ts";
-import { realOrResolvedSync, repoHash, stateLayout } from "../shared/index.ts";
+import { realOrResolvedSync, repoHash } from "../shared/index.ts";
 import {
   assertSafeMounts,
-  assertSafeWorkspace,
-  assertWithinWorkspaceRoots,
+  assertWithinHostRoot,
+  assertWithinWorkspaceRoot,
+  checkRoot,
   discoverWorkspace,
   type Workspace,
   workspaceFolder,
@@ -16,12 +17,14 @@ export interface LaunchContext {
   effective: EffectiveConfig;
   stateDir: string;
   repoHash: string;
+  mountedRoot: string;
 }
 
 type ContextMode = "sandbox" | "host";
 
 interface ContextOptions {
   overlays?: boolean;
+  rootOptional?: boolean;
 }
 
 type Opened<M extends ContextMode> = M extends "host"
@@ -30,6 +33,29 @@ type Opened<M extends ContextMode> = M extends "host"
 
 const isHomeOrRoot = (deps: CliDeps, folder: string) =>
   folder === "/" || folder === realOrResolvedSync(deps.home);
+
+const assertWithinRoot = (
+  deps: CliDeps,
+  workspace: Workspace,
+  root: string | undefined,
+  options: ContextOptions,
+) => {
+  if (root === undefined && options.rootOptional === true) {
+    return;
+  }
+
+  assertWithinWorkspaceRoot(workspace, root, { home: deps.home, env: deps.env });
+};
+
+const mountedRootOf = (deps: CliDeps, workspace: Workspace, root: string | undefined) => {
+  if (root === undefined) {
+    return workspace.repoRoot;
+  }
+
+  const verdict = checkRoot(root, { home: deps.home, env: deps.env });
+
+  return verdict.ok ? verdict.resolved : workspace.repoRoot;
+};
 
 const discoverContext = async (deps: CliDeps, lenient: boolean, options: ContextOptions) => {
   const stateDir = pathsOf(deps).stateDir;
@@ -40,25 +66,33 @@ const discoverContext = async (deps: CliDeps, lenient: boolean, options: Context
   if (!lenient) {
     assertSafeMounts([mounted], { home: deps.home, env: deps.env });
 
-    assertWithinWorkspaceRoots(
+    assertWithinRoot(
+      deps,
       { cwd: folder.realCwd, repoRoot: mounted, isGitRepo: false },
-      effective.config.workspaceRoots,
-      deps.home,
+      effective.config.workspaceRoot,
+      options,
     );
   }
 
   const overlays = lenient
     ? options.overlays === true && !isHomeOrRoot(deps, mounted)
     : effective.config.mounts.autoOverlays;
-  const workspace = await discoverWorkspace(folder, deps.runner, stateLayout(stateDir).emptyDir, {
-    lenient,
-    overlays,
-  });
-  return { workspace, effective, stateDir, repoHash: repoHash(workspace.repoRoot) };
+  const workspace = await discoverWorkspace(folder, { overlays });
+
+  return {
+    workspace,
+    effective,
+    stateDir,
+    repoHash: repoHash(workspace.repoRoot),
+    mountedRoot: mountedRootOf(deps, workspace, effective.config.workspaceRoot),
+  };
 };
 
-export const checkWorkspaceRoots = (deps: CliDeps, context: LaunchContext) => {
-  assertWithinWorkspaceRoots(context.workspace, context.effective.config.workspaceRoots, deps.home);
+export const checkHostRoot = (deps: CliDeps, context: LaunchContext) => {
+  assertWithinHostRoot(context.workspace, context.effective.config.workspaceRoot, {
+    home: deps.home,
+    env: deps.env,
+  });
 };
 
 export const openContext = async <M extends ContextMode>(
@@ -72,9 +106,7 @@ export const openContext = async <M extends ContextMode>(
     return { context } as Opened<M>;
   }
 
-  checkWorkspaceRoots(deps, context);
-
-  assertSafeWorkspace(context.workspace, { home: deps.home, env: deps.env });
+  assertWithinRoot(deps, context.workspace, context.effective.config.workspaceRoot, options);
 
   return { context, backend: deps.backend() } as Opened<M>;
 };

@@ -9,7 +9,7 @@ describe("validateConfig", () => {
       egress: {
         allow: ["github.com", "*.acme.test", "git.acme.test:2222", "*.acme.test:8443"],
       },
-      workspaceRoots: { roots: ["~/work", "/srv/repos"] },
+      workspaceRoot: "~/work",
       mounts: { volumes: ["~/.npm"], binds: [{ source: "~/ref", target: "/srv/ref" }], autoOverlays: false },
       setup: [["npm", "ci"]],
       env: { allow: ["TERM", "EDITOR"] },
@@ -27,12 +27,22 @@ describe("validateConfig", () => {
     );
   });
 
+  it("names workspaceRoot as the replacement of the removed workspaceRoots key", () => {
+    expect(() => validateConfig({ workspaceRoots: { roots: ["~/work"] } })).toThrow(
+      expect.objectContaining({
+        message: "config: workspaceRoots is not a known key",
+        hint: 'workspaceRoots was replaced by workspaceRoot, one folder: write "workspaceRoot": "~/work" in its place, or remove the key and run pi sandbox init',
+      }),
+    );
+    expect(() => validateConfig({ egres: {} })).toThrow(expect.objectContaining({ hint: undefined }));
+  });
+
   it("escapes control, bidi and line separator characters of the keys and values it echoes", () => {
     expect(configProblem({ "a‮b\u007f\u0085 ": 1 })).toBe(
       "config: a\\u202Eb\\u007F\\u0085\\u2028 is not a known key",
     );
-    expect(configProblem({ workspaceRoots: { roots: ["rel\u007f‎"] } })).toBe(
-      'config: workspaceRoots.roots[0] "rel\\u007F\\u200E" must be an absolute path or start with ~/',
+    expect(configProblem({ workspaceRoot: "rel\u007f‎" })).toBe(
+      'config: workspaceRoot "rel\\u007F\\u200E" must be an absolute path or start with ~/',
     );
     expect(configProblem({ writeBack: { exclude: { "settings.json": ["x‮"] } } })).toBe(
       'config: writeBack.exclude["settings.json"][0] "x\\u202E" is not a built-in write-back key of settings.json',
@@ -55,9 +65,21 @@ describe("validateConfig", () => {
     expect(configProblem({ image: { digest: "latest" } })).toBe(
       "config: image.digest must look like sha256:<64 hex digits>",
     );
-    expect(configProblem({ workspaceRoots: { roots: ["relative"] } })).toBe(
-      "config: workspaceRoots.roots[0] relative must be an absolute path or start with ~/",
+    expect(configProblem({ workspaceRoot: "relative" })).toBe(
+      "config: workspaceRoot relative must be an absolute path or start with ~/",
     );
+    expect(configProblem({ workspaceRoot: 3 })).toBe("config: workspaceRoot must be a string");
+  });
+
+  it("refuses the home dir as the workspace root and takes a folder on another volume", () => {
+    expect(configProblem({ workspaceRoot: "~" })).toBe(
+      "config: workspaceRoot ~ is the home dir, which would share all of it with the sandbox VM",
+    );
+    expect(configProblem({ workspaceRoot: "~/" })).toBe(
+      "config: workspaceRoot ~/ is the home dir, which would share all of it with the sandbox VM",
+    );
+    expect(configProblem({ workspaceRoot: "/Volumes/Projects" })).toBeUndefined();
+    expect(configProblem({ workspaceRoot: "~/work" })).toBeUndefined();
   });
 
   it("reads egress entries with one host grammar: underscores and any case, no IP, loopback, port 80 or padded port", () => {
@@ -101,10 +123,9 @@ describe("validateConfig", () => {
     expect(configProblem({ mounts: { extraReadOnly: ["/opt"] } })).toBe(
       "config: mounts.extraReadOnly is not a known key",
     );
-    expect(configProblem({ workspaceRoots: { roots: ["/srv"], outside: "warn" } })).toBe(
-      "config: workspaceRoots.outside is not a known key",
+    expect(configProblem({ workspaceRoots: { roots: ["/srv"] } })).toBe(
+      "config: workspaceRoots is not a known key",
     );
-    expect(configProblem({ workspaceRoots: {} })).toBe("config: workspaceRoots.roots is required");
     expect(configProblem({ fallback: "host" })).toBe("config: fallback is not a known key");
   });
 
@@ -208,8 +229,8 @@ describe("validateConfig", () => {
     expect(configProblem({ mounts: { volumes: ["~/a/\u001b[31m/.."] } })).toBe(
       'config: mounts.volumes[0] "~/a/\\u001b[31m/.." must not hold empty, . or .. segments',
     );
-    expect(configProblem({ workspaceRoots: { roots: ["x".repeat(300)] } })).toBe(
-      `config: workspaceRoots.roots[0] ${"x".repeat(200)}... must be an absolute path or start with ~/`,
+    expect(configProblem({ workspaceRoot: "x".repeat(300) })).toBe(
+      `config: workspaceRoot ${"x".repeat(200)}... must be an absolute path or start with ~/`,
     );
     expect(configProblem({ egress: { allow: ["https://user:sk-live@x.test"] } })).toBe(
       "config: egress.allow[0] must be a host name or host:port",

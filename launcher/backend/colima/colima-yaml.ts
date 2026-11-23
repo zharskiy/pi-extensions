@@ -8,7 +8,11 @@ const MOUNTS_KEY = /^mounts:\s*(.*)$/;
 
 const ENTRY_KEY = /^([A-Za-z0-9_]+):\s*(.*)$/;
 
-const QUOTED = /^(["'])(.*?)\1(?:\s+#.*)?$/;
+const SINGLE_QUOTED = /^'((?:[^']|'')*)'(?:\s+#.*)?$/;
+
+const DOUBLE_QUOTED = /^"((?:[^"\\]|\\.)*)"(?:\s+#.*)?$/;
+
+const DOUBLE_ESCAPE = /\\(["\\])/g;
 
 const INLINE_COMMENT = /(?:^|\s+)#.*$/;
 
@@ -17,9 +21,15 @@ const TRUE = /^(?:true|yes|on)$/i;
 const EMPTY_VALUES = ["", "null", "~"];
 
 const yamlValue = (raw: string) => {
-  const quoted = QUOTED.exec(raw);
+  const single = SINGLE_QUOTED.exec(raw);
 
-  return quoted === null ? raw.replace(INLINE_COMMENT, "") : (quoted[2] ?? "");
+  if (single !== null) {
+    return (single[1] ?? "").replaceAll("''", "'");
+  }
+
+  const double = DOUBLE_QUOTED.exec(raw);
+
+  return double === null ? raw.replace(INLINE_COMMENT, "") : (double[1] ?? "").replace(DOUBLE_ESCAPE, "$1");
 };
 
 const isTopLevel = (line: string) => line !== "" && !/^[\s-]/.test(line);
@@ -76,12 +86,32 @@ const mountEntriesOf = (text: string) => {
   return entries.every((entry) => entry.location !== undefined) ? entries : "flow";
 };
 
-const shareOf = (entry: MountEntry, home: string): VmShare[] => {
-  const location = entry.location;
+const guestPathOf = (path: string, home: string) => resolve(expandHome(path, home));
 
-  return location === undefined || location === ""
-    ? []
-    : [{ location: resolve(expandHome(location, home)), writable: TRUE.test(entry.writable ?? "") }];
+const mountPointOf = (entry: MountEntry, location: string, home: string) => {
+  const mountPoint = entry.mountPoint ?? "";
+
+  if (EMPTY_VALUES.includes(mountPoint)) {
+    return undefined;
+  }
+
+  const guestPath = guestPathOf(mountPoint, home);
+
+  return guestPath === location ? undefined : guestPath;
+};
+
+const shareOf = (entry: MountEntry, home: string): VmShare[] => {
+  const raw = entry.location;
+
+  if (raw === undefined || raw === "") {
+    return [];
+  }
+
+  const location = guestPathOf(raw, home);
+  const writable = TRUE.test(entry.writable ?? "");
+  const mountPoint = mountPointOf(entry, location, home);
+
+  return [mountPoint === undefined ? { location, writable } : { location, writable, mountPoint }];
 };
 
 export const vmSharesOf = (text: string, home: string) => {
@@ -90,23 +120,6 @@ export const vmSharesOf = (text: string, home: string) => {
   return entries === undefined || entries === "flow"
     ? undefined
     : entries.flatMap((entry) => shareOf(entry, home));
-};
-
-const isMoved = (entry: MountEntry, home: string) => {
-  const mountPoint = entry.mountPoint ?? "";
-
-  return (
-    !EMPTY_VALUES.includes(mountPoint) &&
-    shareOf(entry, home).some((share) => share.location !== resolve(expandHome(mountPoint, home)))
-  );
-};
-
-export const movedMountsOf = (text: string, home: string) => {
-  const entries = mountEntriesOf(text);
-
-  return entries === undefined || entries === "flow"
-    ? []
-    : entries.filter((entry) => isMoved(entry, home)).map((entry) => entry.location ?? "");
 };
 
 const sizeValue = (text: string, key: string) => {

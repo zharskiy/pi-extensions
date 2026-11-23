@@ -4,10 +4,11 @@ import { type JsonObject, LauncherError } from "../../shared/index.ts";
 import { checkRoot, type RootGuardContext, rootRefusal } from "../../workspace/index.ts";
 import { clamp, hostVmLimits } from "../vm.ts";
 import { diffOf, isReindented, SECTIONS, serialise, VM_KEYS, WRITE_BACK_PATH } from "./document.ts";
-import { isPreChecked, refusedRootMessage, rootsFromEnv, sameRootSet } from "./folders.ts";
+import { refusedRootMessage, rootFromEnv, sameRoot } from "./folders.ts";
 import type {
   Answers,
   ConfigDocument,
+  FolderCandidate,
   HostFacts,
   OwnedProblem,
   Plan,
@@ -26,43 +27,33 @@ interface Bound {
 
 export type VmBounds = Record<VmKey, Bound>;
 
-interface YesAnswers {
-  answers: Answers;
-  notices: string[];
-}
+const ROOT_PATH = "workspaceRoot";
 
-const ROOTS_PATH = "workspaceRoots.roots";
+export const NO_ROOT = "choose the folder that holds your projects";
 
-export const isFirstRun = (document: ConfigDocument) =>
-  getPath(document.value, "workspaceRoots") === undefined;
+export const isFirstRun = (document: ConfigDocument) => getPath(document.value, ROOT_PATH) === undefined;
 
 export const firstRunSteps = (document: ConfigDocument): readonly Section[] =>
   isFirstRun(document) ? SECTIONS : [];
 
-export const configuredRoots = (document: ConfigDocument) => {
-  const roots = getPath(document.value, ROOTS_PATH);
+export const configuredRoot = (document: ConfigDocument) => {
+  const root = getPath(document.value, ROOT_PATH);
 
-  return Array.isArray(roots) && roots.every((root) => typeof root === "string") ? roots : undefined;
+  return typeof root === "string" ? root : undefined;
+};
+
+const shapeProblem = (document: ConfigDocument) => {
+  const workspaceRoot = getPath(document.value, ROOT_PATH);
+
+  return workspaceRoot === undefined ? undefined : configProblem({ workspaceRoot });
 };
 
 const rootProblems = (document: ConfigDocument, context: RootGuardContext): OwnedProblem[] => {
-  const workspaceRoots = getPath(document.value, "workspaceRoots");
+  const root = configuredRoot(document);
+  const message =
+    shapeProblem(document) ?? (root === undefined ? undefined : refusedRootMessage(root, context));
 
-  if (workspaceRoots === undefined) {
-    return [];
-  }
-
-  const shape = configProblem({ workspaceRoots });
-
-  if (shape !== undefined) {
-    return [{ key: "workspaceRoots", message: shape }];
-  }
-
-  return (configuredRoots(document) ?? []).flatMap((root) => {
-    const message = refusedRootMessage(root, context);
-
-    return message === undefined ? [] : [{ key: "workspaceRoots.roots", message }];
-  });
+  return message === undefined ? [] : [{ key: ROOT_PATH, message }];
 };
 
 const vmProblems = (document: ConfigDocument): OwnedProblem[] =>
@@ -89,20 +80,21 @@ export const ownedProblems = (document: ConfigDocument, context: RootGuardContex
 
 const isInvalid = (problems: OwnedProblem[], key: string) => problems.some((problem) => problem.key === key);
 
-const validRoots = (document: ConfigDocument, context: RootGuardContext) =>
-  (configuredRoots(document) ?? []).filter((root) => checkRoot(root, context).ok);
+const ORIGIN_RANK: Record<FolderCandidate["origin"], number> = { config: 0, env: 1, cwd: 2, usual: 3 };
 
-const detectedRoots = (document: ConfigDocument, facts: HostFacts) =>
+const detectedRoot = (facts: HostFacts) =>
   facts.candidates
-    .filter((candidate) => isPreChecked(candidate, isFirstRun(document)))
-    .map((candidate) => candidate.stored);
+    .filter(
+      (candidate) => candidate.origin !== "config" && (candidate.origin !== "usual" || candidate.repos > 0),
+    )
+    .sort((left, right) => ORIGIN_RANK[left.origin] - ORIGIN_RANK[right.origin])[0]?.stored;
 
-const initialRoots = (document: ConfigDocument, facts: HostFacts, context: RootGuardContext) => {
-  if (isFirstRun(document) || isInvalid(ownedProblems(document, context), "workspaceRoots")) {
-    return detectedRoots(document, facts);
+const initialRoot = (document: ConfigDocument, facts: HostFacts, context: RootGuardContext) => {
+  if (isFirstRun(document) || isInvalid(ownedProblems(document, context), ROOT_PATH)) {
+    return detectedRoot(facts);
   }
 
-  return validRoots(document, context);
+  return configuredRoot(document);
 };
 
 const fileVm = (document: ConfigDocument) =>
@@ -138,14 +130,14 @@ export const initialAnswers = (
   const problems = ownedProblems(document, context);
 
   return {
-    roots: initialRoots(document, facts, context),
+    root: initialRoot(document, facts, context),
     vm: initialVm(document, problems),
     writeBack: initialWriteBack(document),
   };
 };
 
-const editedRoots = (value: JsonObject, roots: Answers["roots"]) =>
-  roots === "home" ? withoutPath(value, "workspaceRoots") : setPath(value, ROOTS_PATH, roots);
+const editedRoot = (value: JsonObject, root: Answers["root"]) =>
+  root === undefined ? value : setPath(value, ROOT_PATH, root);
 
 const editedVm = (value: JsonObject, vm: Answers["vm"]) => {
   if (vm === "automatic") {
@@ -173,7 +165,7 @@ const editedWriteBack = (value: JsonObject, enabled: boolean) => {
 };
 
 export const editedConfig = (value: JsonObject, answers: Answers) =>
-  editedWriteBack(editedVm(editedRoots(value, answers.roots), answers.vm), answers.writeBack);
+  editedWriteBack(editedVm(editedRoot(value, answers.root), answers.vm), answers.writeBack);
 
 const wantedSize = (vm: Answers["vm"]) => {
   if (vm === "automatic") {
@@ -188,11 +180,7 @@ const partsOf = (change: { resize: object; reshare: boolean }): VmPart[] => [
   ...(change.reshare ? ["folders" as const] : []),
 ];
 
-export const vmActionOf = (
-  answers: Answers,
-  facts: HostFacts,
-  share: { shares: VmShare[]; exact: boolean },
-): VmAction => {
+export const vmActionOf = (answers: Answers, facts: HostFacts, share: { shares: VmShare[] }): VmAction => {
   const wanted = wantedSize(answers.vm);
 
   if (facts.vm.state === "unknown") {
@@ -206,7 +194,7 @@ export const vmActionOf = (
   }
 
   const decision = whenBusy(
-    vmDecision(current, { size: wanted ?? {}, shares: share.shares, exactShares: share.exact }),
+    vmDecision(current, { size: wanted ?? {}, shares: share.shares }),
     facts.sessions,
   );
 
@@ -226,15 +214,9 @@ export const vmActionOf = (
     kind: "restart",
     size: { ...current.size, ...wanted },
     shares: share.shares,
-    exactShares: share.exact,
     parts: partsOf(decision),
   };
 };
-
-const rootsProblem = (roots: Answers["roots"]) =>
-  Array.isArray(roots) && roots.length === 0
-    ? ["choose at least one project folder, or share your home"]
-    : [];
 
 export const planOf = (
   document: ConfigDocument,
@@ -247,7 +229,6 @@ export const planOf = (
   const invalid = configProblem(next);
   const problems = [
     ...("problem" in share ? [share.problem] : []),
-    ...rootsProblem(answers.roots),
     ...(invalid === undefined ? [] : [invalid]),
   ];
 
@@ -261,63 +242,58 @@ export const planOf = (
   };
 };
 
-const yesRoots = (document: ConfigDocument, facts: HostFacts, env: NodeJS.ProcessEnv) => {
+const yesRoot = (document: ConfigDocument, facts: HostFacts, env: NodeJS.ProcessEnv) => {
   const context = { home: facts.home, env };
-  const configured = configuredRoots(document);
-  const fromEnv = rootsFromEnv(env, facts.cwd);
-  const shape = rootProblems(document, context).find((problem) => problem.key === "workspaceRoots");
+  const configured = configuredRoot(document);
+  const fromEnv = rootFromEnv(env, facts.cwd);
+  const shape = shapeProblem(document);
 
   if (shape !== undefined) {
-    throw new LauncherError(shape.message, `fix ${document.file}`);
+    throw new LauncherError(shape, `fix ${document.file}`);
   }
 
-  if (configured !== undefined && fromEnv.length > 0 && !sameRootSet(configured, fromEnv, context)) {
+  if (configured !== undefined && fromEnv !== undefined && !sameRoot(configured, fromEnv, context)) {
     throw new LauncherError(
-      `${document.file} has other workspaceRoots than PI_SANDBOX_ROOTS`,
-      `edit workspaceRoots in ${document.file}, or unset PI_SANDBOX_ROOTS`,
+      `${document.file} has another workspaceRoot than PI_SANDBOX_ROOT`,
+      `edit workspaceRoot in ${document.file}, or unset PI_SANDBOX_ROOT`,
     );
   }
 
   if (configured !== undefined) {
-    return { roots: configured, notices: [] };
+    return configured;
   }
 
-  if (fromEnv.length === 0) {
-    return {
-      roots: "home" as const,
-      notices: [
-        "no workspaceRoots, so the sandbox VM shares your whole home; run pi sandbox init in a terminal to choose project folders",
-      ],
-    };
+  if (fromEnv === undefined) {
+    throw new LauncherError(
+      `${document.file} has no workspaceRoot and PI_SANDBOX_ROOT is not set, so there is no folder to share with the sandbox VM`,
+      "run pi sandbox init in a terminal to choose the folder that holds your projects, or set PI_SANDBOX_ROOT to it",
+    );
   }
 
-  const refused = fromEnv.flatMap((root) => {
-    const verdict = checkRoot(root, context);
+  const verdict = checkRoot(fromEnv, context);
 
-    return verdict.ok ? [] : [rootRefusal(root, verdict.problem)];
-  });
-
-  if (refused.length > 0) {
-    throw new LauncherError(refused[0] ?? "", "name the project folders themselves in PI_SANDBOX_ROOTS");
+  if (!verdict.ok) {
+    throw new LauncherError(
+      rootRefusal(fromEnv, verdict.problem),
+      "point PI_SANDBOX_ROOT at the folder that holds your projects",
+    );
   }
 
-  return { roots: fromEnv, notices: [] };
+  return fromEnv;
 };
 
 export const answersForYes = (
   document: ConfigDocument,
   facts: HostFacts,
   env: NodeJS.ProcessEnv,
-): YesAnswers => {
+): Answers => {
   const configured = fileVm(document);
-  const roots = yesRoots(document, facts, env);
-  const answers: Answers = {
-    roots: roots.roots,
+
+  return {
+    root: yesRoot(document, facts, env),
     vm: Object.keys(configured).length === 0 ? "automatic" : { kept: configured },
     writeBack: initialWriteBack(document),
   };
-
-  return { answers, notices: roots.notices };
 };
 
 export const existingVm = (facts: HostFacts) =>

@@ -19,13 +19,7 @@ import {
   PI_SESSION_DIR_VARIABLE,
   realOrResolvedSync,
 } from "../shared/index.ts";
-import {
-  type GitOverlay,
-  gitRepos,
-  type HostSessions,
-  mountedGitDirs,
-  type Workspace,
-} from "../workspace/index.ts";
+import type { HostSessions, Workspace } from "../workspace/index.ts";
 import { containerName } from "./names.ts";
 import { type PlannedVolume, repoLabels, serviceVolumeNames, volumePlan } from "./volumes.ts";
 
@@ -50,7 +44,7 @@ export interface ContainerSpecInput {
   image: ImageInfo;
   stateDir: string;
   launchId: string;
-  gitOverlay: GitOverlay;
+  workspaceRoot: string;
   proxy: SpecProxy;
   servicePorts: number[];
   renderDir: string;
@@ -81,53 +75,6 @@ const volume = (source: string, target: string): MountSpec => ({
   readOnly: false,
   kind: "volume",
 });
-
-const writableRoots = (workspace: Workspace) => {
-  const roots = [...new Set(mountedGitDirs(workspace))];
-
-  return roots.filter((path) => !roots.some((other) => other !== path && isWithin(path, other)));
-};
-
-const gitCommonDirsOf = (workspace: Workspace) =>
-  gitRepos(workspace).flatMap((repo) => (repo.gitCommonDir === undefined ? [] : [repo.gitCommonDir]));
-
-const gitMounts = ({ selfBinds, readOnlyDirs }: GitOverlay) => [
-  ...selfBinds.map((path) => bind(path, path, false)),
-  ...readOnlyDirs.map((path) => bind(path, path, true)),
-];
-
-const depthOver = (mounts: MountSpec[], dir: string) =>
-  mounts
-    .filter((mount) => isWithin(dir, mount.target))
-    .map((mount) => ({ mount, depth: resolve(mount.target).length }));
-
-const isHidden = (mounts: MountSpec[], dir: string) => {
-  const over = depthOver(mounts, dir);
-  const deepest = Math.max(...over.map((entry) => entry.depth));
-  const top = over.filter((entry) => entry.depth === deepest).map((entry) => entry.mount);
-
-  return (
-    top.length > 0 &&
-    top.every((mount) => mount.kind === "volume" || mount.readOnly) &&
-    !mounts.some(
-      (mount) =>
-        mount.kind !== "volume" &&
-        !mount.readOnly &&
-        (isWithin(mount.target, dir) || isWithin(mount.source, dir)),
-    )
-  );
-};
-
-const assertOverlaysHidden = (workspace: Workspace, mounts: MountSpec[]) => {
-  const exposed = (workspace.overlays ?? []).find((dir) => !isHidden(mounts, dir));
-
-  if (exposed !== undefined) {
-    throw new LauncherError(
-      `workspace: the sandbox could write in ${exposed}, which the launcher did not search for repositories, refusing`,
-      "set mounts.autoOverlays to false so the launcher searches it, or start pi in a narrower folder",
-    );
-  }
-};
 
 const parentsBelow = (root: string, path: string): string[] => {
   const parent = dirname(path);
@@ -238,11 +185,8 @@ const baseLabels = (input: ContainerSpecInput) => ({
   ...sessionsLabel(input.hostSessions),
 });
 
-const guardedPathsOf = (binds: MountSpec[], workspace: Workspace) => [
-  ...new Set([
-    ...binds.filter((mount) => mount.readOnly).map((mount) => mount.target),
-    ...gitCommonDirsOf(workspace),
-  ]),
+const guardedPathsOf = (binds: MountSpec[]) => [
+  ...new Set(binds.filter((mount) => mount.readOnly).map((mount) => mount.target)),
 ];
 
 const placeVolumes = (planned: PlannedVolume[], guarded: string[]) => {
@@ -309,14 +253,10 @@ const checkConfigMounts = (configured: MountSpec[], mounts: MountSpec[]) => {
 export const buildContainerSpec = (input: ContainerSpecInput): LauncherContainerSpec => {
   const { workspace, config } = input;
   const planned = volumePlan({ workspace, config, stateDir: input.stateDir });
-  const binds = [
-    ...writableRoots(workspace).map((path) => bind(path, path, false)),
-    ...gitMounts(input.gitOverlay),
-    ...sessionsMounts(input),
-  ];
+  const binds = [bind(input.workspaceRoot, input.workspaceRoot, false), ...sessionsMounts(input)];
   const render = renderMounts(input.renderDir);
   const configBinds = input.binds.map((entry) => bind(entry.source, entry.target, true));
-  const guardedPaths = guardedPathsOf([...binds, ...render], workspace);
+  const guardedPaths = guardedPathsOf([...binds, ...render]);
   const { volumes, notices } = placeVolumes(planned, guardedPaths);
   const serviceVolumes = serviceVolumeNames(input.stateDir, config.services);
   const owned = volumes.filter((entry) => entry.key !== "agent" && !serviceVolumes.has(entry.name));
@@ -335,8 +275,6 @@ export const buildContainerSpec = (input: ContainerSpecInput): LauncherContainer
   checkMountTable(mounts, render);
 
   checkConfigMounts(configured, mounts);
-
-  assertOverlaysHidden(workspace, mounts);
 
   const ownedPaths = [
     ...new Set([

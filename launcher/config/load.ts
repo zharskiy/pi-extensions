@@ -13,7 +13,12 @@ export const validateConfigFile = (value: unknown, file: string) => {
   try {
     return validateConfig(value);
   } catch (error) {
-    throw new LauncherError(errorMessage(error), `fix ${file}`);
+    const validatorHint = error instanceof LauncherError ? error.hint : undefined;
+
+    throw new LauncherError(
+      errorMessage(error),
+      validatorHint === undefined ? `fix ${file}` : `fix ${file}: ${validatorHint}`,
+    );
   }
 };
 

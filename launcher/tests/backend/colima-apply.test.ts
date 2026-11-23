@@ -19,6 +19,7 @@ interface Setup {
   limaText?: string;
   status?: (call: FakeCall) => Partial<RunResult> | undefined;
   start?: Partial<RunResult>;
+  limaAfterStart?: Mount[];
 }
 
 const mountPointText = (share: Mount, indent: string) =>
@@ -60,9 +61,15 @@ const setupWith = async (setup: Setup & { home?: string }) => {
 
   const state = { up: setup.running !== undefined };
   const detections = { count: 0 };
-  const fake = createFakeRunner((call) => {
+  const fake = createFakeRunner(async (call) => {
     if (call.args[0] === "start" && setup.start !== undefined) {
       return setup.start;
+    }
+
+    if (call.args[0] === "start" && setup.limaAfterStart !== undefined) {
+      await mkdir(limaDir, { recursive: true });
+
+      await writeFile(join(limaDir, "lima.yaml"), `vmType: vz\n${mountsText(setup.limaAfterStart, "")}`);
     }
 
     if (call.args[0] === "start") {
@@ -116,10 +123,9 @@ const setupWith = async (setup: Setup & { home?: string }) => {
 
 const SIZE = { cpus: 6, memoryGiB: 12, diskGiB: 80 };
 
-const desiredOf = (home: string, exactShares = true): VmDesired => ({
+const desiredOf = (home: string): VmDesired => ({
   size: SIZE,
   shares: [{ location: join(home, "work"), writable: true }],
-  exactShares,
 });
 
 const applied = async (env: Awaited<ReturnType<typeof setupWith>>, desired: VmDesired, busy = 0) => {
@@ -249,42 +255,7 @@ describe("applying a size and shares to the sandbox VM", () => {
     ]);
   });
 
-  it("keeps the shares it has when the shares need only cover the wanted ones", async () => {
-    const env = await setupWith({
-      profile: { cpu: 6, memory: 12 },
-      running: { cpu: 6, memory: 12, disk: 80 },
-      lima: [{ location: "/Volumes/old", writable: true }],
-    });
-    const { result } = await applied(env, desiredOf(env.home, false));
-
-    expect(result).toBe("restarted");
-    expect(env.commands().at(-1)).toBe(
-      `start --profile pi-sandbox --activate=false --mount /Volumes/old:w --mount ${join(env.home, "work")}:w`,
-    );
-  });
-
-  it("absorbs the project shares into the whole home instead of nesting them", async () => {
-    const home = await tempDir("colima-apply-whole-home");
-    const env = await setupWith({
-      home,
-      profile: { cpu: 6, memory: 12 },
-      running: { cpu: 6, memory: 12, disk: 80 },
-      lima: [
-        { location: join(home, "code"), writable: true },
-        { location: join(home, ".pi", "agent", "sessions"), writable: true },
-        { location: "/Volumes/data", writable: false },
-      ],
-    });
-    const desired = { size: SIZE, shares: [{ location: home, writable: true }], exactShares: false };
-
-    expect((await applied(env, desired)).result).toBe("restarted");
-    expect(env.commands()).toEqual([
-      "stop --profile pi-sandbox",
-      `start --profile pi-sandbox --activate=false --mount ${home}:w --mount /Volumes/data`,
-    ]);
-  });
-
-  it("turns a read-only home share writable instead of mounting the home twice", async () => {
+  it("turns a read-only share writable instead of mounting it twice", async () => {
     const home = await tempDir("colima-apply-read-only-home");
     const env = await setupWith({
       home,
@@ -292,7 +263,7 @@ describe("applying a size and shares to the sandbox VM", () => {
       running: { cpu: 6, memory: 12, disk: 80 },
       lima: [{ location: home, writable: false }],
     });
-    const desired = { size: SIZE, shares: [{ location: home, writable: true }], exactShares: false };
+    const desired = { size: SIZE, shares: [{ location: home, writable: true }] };
 
     await applied(env, desired);
 
@@ -303,28 +274,26 @@ describe("applying a size and shares to the sandbox VM", () => {
     const env = await setupWith({
       profile: { cpu: 6, memory: 4 },
       running: { cpu: 6, memory: 4, disk: 80 },
-      lima: [{ location: "/Volumes/old", writable: true, mountPoint: "/mnt/old" }],
+      lima: [{ location: "/Volumes/old", writable: true }],
     });
-    const desired = { ...desiredOf(env.home, false), shares: [{ location: "/Volumes/old", writable: true }] };
+    const desired = { ...desiredOf(env.home), shares: [{ location: "/Volumes/old", writable: true }] };
 
     await applied(env, desired);
 
     expect(env.commands().at(-1)).toBe("start --profile pi-sandbox --activate=false --memory 12");
   });
 
-  it("refuses to add a share when a mount sits at another path in the VM, before stopping it", async () => {
+  it("restarts to the plan when a share is mounted at another path in the VM", async () => {
     const env = await setupWith({
       profile: { cpu: 6, memory: 12 },
       running: { cpu: 6, memory: 12, disk: 80 },
       lima: [{ location: "/Volumes/old", writable: true, mountPoint: "/mnt/old" }],
     });
+    const desired = { ...desiredOf(env.home), shares: [{ location: "/Volumes/old", writable: true }] };
 
-    await expect(applied(env, desiredOf(env.home, false))).rejects.toMatchObject({
-      message:
-        "could not change the shares of the sandbox VM; /Volumes/old is mounted at another path in the VM, which colima's --mount cannot keep",
-      hint: "edit ~/.colima/pi-sandbox/colima.yaml mounts, then colima stop --profile pi-sandbox && colima start --profile pi-sandbox --activate=false",
-    });
-    expect(env.commands()).toEqual([]);
+    await applied(env, desired);
+
+    expect(env.commands().at(-1)).toBe("start --profile pi-sandbox --activate=false --mount /Volumes/old:w");
   });
 });
 
@@ -368,7 +337,7 @@ describe("a launch's share restart", () => {
       "start --profile pi-sandbox --activate=false --mount /Volumes/new:w --cpu 8",
     ]);
     expect(notices).toEqual([
-      "restarting the sandbox VM to change its shares to /Volumes/new, and its size to 8 CPUs",
+      "restarting the sandbox VM to change its shares to /Volumes/new (drops /Volumes/old), and its size to 8 CPUs",
     ]);
   });
 });
@@ -378,9 +347,15 @@ describe("starting a stopped VM at the configured size", () => {
     const env = await setupWith({ profile: { cpu: 2, memory: 4, disk: 100 } });
     const notices: string[] = [];
 
-    await env.vm.ensureRunning((notice) => notices.push(notice), [], { cpus: 4, memoryGiB: 4, diskGiB: 80 });
+    await env.vm.ensureRunning((notice) => notices.push(notice), PLANNED, {
+      cpus: 4,
+      memoryGiB: 4,
+      diskGiB: 80,
+    });
 
-    expect(env.commands()).toEqual(["start --profile pi-sandbox --activate=false --cpu 4"]);
+    expect(env.commands()).toEqual([
+      "start --profile pi-sandbox --activate=false --mount /Volumes/work:w --cpu 4",
+    ]);
     expect(notices).toEqual([
       "vm.diskGiB 80 is below the sandbox VM's disk of 100 GiB; colima cannot shrink a disk, so it stays",
       "starting the sandbox VM",
@@ -390,11 +365,24 @@ describe("starting a stopped VM at the configured size", () => {
   it("grows the disk on a cold start", async () => {
     const env = await setupWith({ profile: { cpu: 2, memory: 4, disk: 60 } });
 
-    await env.vm.ensureRunning(() => undefined, [], { diskGiB: 80 });
+    await env.vm.ensureRunning(() => undefined, PLANNED, { diskGiB: 80 });
 
-    expect(env.commands()).toEqual(["start --profile pi-sandbox --activate=false --disk 80"]);
+    expect(env.commands()).toEqual([
+      "start --profile pi-sandbox --activate=false --mount /Volumes/work:w --disk 80",
+    ]);
+  });
+
+  it("refuses a cold start without the planned shares, which would leave colima's home share", async () => {
+    const env = await setupWith({ profile: { cpu: 2, memory: 4, disk: 60 } });
+
+    await expect(env.vm.ensureRunning(() => undefined, [])).rejects.toThrow(
+      "the sandbox VM may not start without the folders it shares, or colima would share the home dir",
+    );
+    expect(env.commands()).toEqual([]);
   });
 });
+
+const PLANNED = [{ location: "/Volumes/work", writable: true }];
 
 const reconciled = async (env: Awaited<ReturnType<typeof setupWith>>, target: VmReconcile, busy = 0) => {
   const notices: string[] = [];
@@ -420,48 +408,58 @@ const RUNNING = { profile: { cpu: 6, memory: 12, disk: 80 }, running: { cpu: 6, 
 
 const NEW_REPO = [{ path: "/Volumes/new/repo", writable: true }];
 
+const NEW_SHARES = [{ location: "/Volumes/new", writable: true }];
+
 describe("reconciling the sandbox VM at launch", () => {
-  it("says the shares cannot be read without workspaceRoots and still changes the size", async () => {
-    const env = await setupWith({ ...RUNNING, limaText: UNPARSED_LIMA });
-    const result = await reconciled(env, { size: { cpus: 8 }, needs: NEW_REPO });
+  it("restarts to the planned shares with the new size when the shares cannot be read", async () => {
+    const env = await setupWith({ ...RUNNING, limaText: UNPARSED_LIMA, limaAfterStart: NEW_SHARES });
+    const result = await reconciled(env, { size: { cpus: 8 }, shares: NEW_SHARES, needs: NEW_REPO });
 
     expect(result.outcome).toBeUndefined();
     expect(result.notices).toEqual([
-      "the shares of the sandbox VM could not be read from colima's lima.yaml, so they were not changed",
-      "restarting the sandbox VM to change its size to 8 CPUs",
+      "restarting the sandbox VM to change its shares to /Volumes/new, and its size to 8 CPUs",
     ]);
     expect(env.commands()).toEqual([
       "stop --profile pi-sandbox",
-      "start --profile pi-sandbox --activate=false --cpu 8",
+      "start --profile pi-sandbox --activate=false --mount /Volumes/new:w --cpu 8",
     ]);
   });
 
-  it("shares a missing path and changes the size in one restart without workspaceRoots", async () => {
-    const env = await setupWith({ ...RUNNING, lima: [{ location: "/Volumes/old", writable: true }] });
-    const result = await reconciled(env, { size: { cpus: 8 }, needs: NEW_REPO });
+  it("restarts to the planned shares when lima.yaml is missing, never without --mount", async () => {
+    const env = await setupWith({ ...RUNNING, limaAfterStart: NEW_SHARES });
+    const result = await reconciled(env, { size: { cpus: 8 }, shares: NEW_SHARES, needs: NEW_REPO });
 
-    expect(result.notices).toEqual([
-      "restarting the sandbox VM to share /Volumes/new, and change its size to 8 CPUs",
-    ]);
+    expect(result.outcome).toBeUndefined();
     expect(env.commands()).toEqual([
       "stop --profile pi-sandbox",
-      "start --profile pi-sandbox --activate=false --mount /Volumes/old:w --mount /Volumes/new:w --cpu 8",
+      "start --profile pi-sandbox --activate=false --mount /Volumes/new:w --cpu 8",
     ]);
+  });
+
+  it("says the shares cannot be read while another session runs, and changes nothing", async () => {
+    const env = await setupWith({ ...RUNNING, limaText: UNPARSED_LIMA });
+    const result = await reconciled(env, { size: {}, shares: NEW_SHARES, needs: NEW_REPO }, 1);
+
+    expect(result.outcome).toBeUndefined();
+    expect(result.notices[0]).toBe(
+      "the shares of the sandbox VM could not be read from colima's lima.yaml, so they were not changed",
+    );
+    expect(env.commands()).toEqual([]);
   });
 
   it("refuses a missing path and a size change in one text while busy, stopping nothing", async () => {
     const env = await setupWith({ ...RUNNING, lima: [{ location: "/Volumes/old", writable: true }] });
-    const result = await reconciled(env, { size: { cpus: 8 }, needs: NEW_REPO }, 1);
+    const result = await reconciled(env, { size: { cpus: 8 }, shares: NEW_SHARES, needs: NEW_REPO }, 1);
 
     expect(result.outcome).toMatchObject({
       message:
-        "/Volumes/new/repo is not shared with the sandbox VM; 1 pi session is running, and restarting the VM to share /Volumes/new, and change its size to 8 CPUs would end them",
+        "/Volumes/new/repo is not shared with the sandbox VM; 1 pi session is running, and restarting the VM to change its shares to /Volumes/new (drops /Volumes/old), and its size to 8 CPUs would end them",
     });
     expect(result.notices).toEqual([]);
     expect(env.commands()).toEqual([]);
   });
 
-  it("defers a share and a size change with workspaceRoots in one notice while busy, stopping nothing", async () => {
+  it("defers a share and a size change in one notice while busy, stopping nothing", async () => {
     const env = await setupWith({
       ...RUNNING,
       lima: [
@@ -469,15 +467,11 @@ describe("reconciling the sandbox VM at launch", () => {
         { location: "/Volumes/new", writable: true },
       ],
     });
-    const result = await reconciled(
-      env,
-      { size: { cpus: 8 }, shares: [{ location: "/Volumes/new", writable: true }], needs: NEW_REPO },
-      1,
-    );
+    const result = await reconciled(env, { size: { cpus: 8 }, shares: NEW_SHARES, needs: NEW_REPO }, 1);
 
     expect(result.outcome).toBeUndefined();
     expect(result.notices).toEqual([
-      "the sandbox VM will change its shares to /Volumes/new, and its size to 8 CPUs at the next launch with no other pi session running",
+      "the sandbox VM will change its shares to /Volumes/new (drops /Volumes/old), and its size to 8 CPUs at the next launch with no other pi session running",
     ]);
     expect(env.commands()).toEqual([]);
   });
@@ -486,7 +480,7 @@ describe("reconciling the sandbox VM at launch", () => {
     const env = await setupWith({ ...RUNNING, lima: [{ location: "/Volumes/new", writable: true }] });
     const result = await reconciled(
       env,
-      { size: { cpus: 6, memoryGiB: 12, diskGiB: 80 }, needs: NEW_REPO },
+      { size: { cpus: 6, memoryGiB: 12, diskGiB: 80 }, shares: NEW_SHARES, needs: NEW_REPO },
       1,
     );
 
@@ -498,11 +492,11 @@ describe("reconciling the sandbox VM at launch", () => {
 
   it("never attempts a disk shrink asked for together with a busy refusal", async () => {
     const env = await setupWith({ ...RUNNING, lima: [{ location: "/Volumes/old", writable: true }] });
-    const result = await reconciled(env, { size: { diskGiB: 40 }, needs: NEW_REPO }, 1);
+    const result = await reconciled(env, { size: { diskGiB: 40 }, shares: NEW_SHARES, needs: NEW_REPO }, 1);
 
     expect(result.outcome).toMatchObject({
       message:
-        "/Volumes/new/repo is not shared with the sandbox VM; 1 pi session is running, and restarting the VM to share /Volumes/new would end them",
+        "/Volumes/new/repo is not shared with the sandbox VM; 1 pi session is running, and restarting the VM to change its shares to /Volumes/new (drops /Volumes/old) would end them",
     });
     expect(result.notices).toEqual([
       "vm.diskGiB 40 is below the sandbox VM's disk of 80 GiB; colima cannot shrink a disk, so it stays",

@@ -435,20 +435,10 @@
         }
       }
     },
-    "workspaceRoots": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "roots": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "pattern": "^(/|~$|~/)"
-          }
-        }
-      },
-      "required": ["roots"],
-      "description": "Folders pi may start in, and the only folders the sandbox VM shares (with the session dir and the launcher's vm dir); a launch outside every root is refused."
+    "workspaceRoot": {
+      "type": "string",
+      "pattern": "^(/|~/.)",
+      "description": "The folder that holds your projects: pi starts only inside it, and the sandbox VM shares it (with the session dir and the launcher's vm dir). Required to launch; never the home dir or a folder that holds it."
     },
     "mounts": {
       "type": "object",

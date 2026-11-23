@@ -108,6 +108,11 @@ const absolutePath: Check = (value) =>
     ? undefined
     : "must be an absolute path or start with ~/";
 
+const workspaceRootPath: Check = (value) =>
+  value === "~" || value === "~/"
+    ? "is the home dir, which would share all of it with the sandbox VM"
+    : absolutePath(value);
+
 const withoutTrailingSlash = (value: string) => value.replace(/\/$/, "");
 
 const pathSegments = (value: string) => withoutTrailingSlash(value).split("/").slice(1);
@@ -768,12 +773,7 @@ const CONFIG_SPEC: ObjectSpec = {
       privateHosts: list(hostPattern),
     }),
     tls: shape({ extraCa: { type: "array", items: EXTRA_CA } }),
-    workspaceRoots: {
-      type: "object",
-      atomic: true,
-      required: ["roots"],
-      properties: { roots: namedList(absolutePath) },
-    },
+    workspaceRoot: namedText(workspaceRootPath),
     mounts: {
       ...shape({
         volumes: {
@@ -830,13 +830,21 @@ const normalized = (config: UserConfig): UserConfig => {
     : { ...config, mounts: { ...config.mounts, volumes: volumes.map(normalizedVolume) } };
 };
 
+const REPLACED_KEYS: Record<string, string> = {
+  workspaceRoots:
+    'workspaceRoots was replaced by workspaceRoot, one folder: write "workspaceRoot": "~/work" in its place, or remove the key and run pi sandbox init',
+};
+
 export const validateConfig = (value: unknown): UserConfig => {
   const found = problemOf(CONFIG_SPEC, value, "");
 
   if (found !== undefined) {
     const message = found.path === "" ? found.problem : `${found.path} ${found.problem}`;
 
-    throw new LauncherError(`config: ${printable(message)}`);
+    throw new LauncherError(
+      `config: ${printable(message)}`,
+      Object.hasOwn(REPLACED_KEYS, found.path) ? REPLACED_KEYS[found.path] : undefined,
+    );
   }
 
   return normalized(value as UserConfig);

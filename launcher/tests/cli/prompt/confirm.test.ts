@@ -3,14 +3,14 @@ import { BACK } from "../../../cli/prompt/types.ts";
 import { KEY, outcome, pause, press, richPrompts } from "./fake-tty.ts";
 
 const HOME = {
-  title: "Share your whole home with the sandbox VM instead?",
+  title: "Restart the sandbox VM now?",
   detail: ["With no project folder, pi starts in any folder."],
-  yes: "Yes, share ~",
-  no: "No, choose folders",
+  yes: "Yes, restart",
+  no: "No, leave it as is",
   initial: false,
   collapsed: (yes: boolean) => ({
-    title: "Share your whole home with the sandbox VM instead?",
-    text: yes ? "Yes, share ~" : "No, choose folders",
+    title: "Restart the sandbox VM now?",
+    text: yes ? "Yes, restart" : "No, leave it as is",
   }),
 };
 
@@ -22,10 +22,10 @@ describe("confirm", () => {
     await pause();
 
     expect(screen.lines()).toEqual([
-      "◆  Share your whole home with the sandbox VM instead?",
+      "◆  Restart the sandbox VM now?",
       "│  With no project folder, pi starts in any folder.",
       "│",
-      "│  › No, choose folders     Yes, share ~",
+      "│  › No, leave it as is     Yes, restart",
       "│",
       "│  ←→ choose · y/n · enter confirm · esc back · ctrl-c cancel",
     ]);
@@ -41,7 +41,7 @@ describe("confirm", () => {
 
     await press(input, KEY.right);
 
-    expect(screen.lines()).toContain("│    No, choose folders   › Yes, share ~");
+    expect(screen.lines()).toContain("│    No, leave it as is   › Yes, restart");
 
     await press(input, KEY.left, KEY.tab, "h", "l", KEY.enter);
 
@@ -56,11 +56,7 @@ describe("confirm", () => {
 
     expect(await first).toBe(true);
 
-    expect(yes.screen.lines()).toEqual([
-      "◇  Share your whole home with the sandbox VM instead?",
-      "│  Yes, share ~",
-      "│",
-    ]);
+    expect(yes.screen.lines()).toEqual(["◇  Restart the sandbox VM now?", "│  Yes, restart", "│"]);
 
     const no = richPrompts();
     const second = no.prompts.confirm({ ...HOME, initial: true });

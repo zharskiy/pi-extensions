@@ -50,7 +50,9 @@ const HEALTHY: NamedCheck[] = [
   named(
     "sandbox",
     "vm shares",
-    passed("the sandbox VM shares every path this repository needs", { brief: "shares this repository" }),
+    passed("the sandbox VM shares exactly the workspaceRoot, the session dir and the launcher's vm dir", {
+      brief: "shares the workspace root",
+    }),
   ),
   named("sandbox", "vm", passed("")),
   named("sandbox", "vm size", passed("profile pi-sandbox has 8 CPUs and 8 GiB", { brief: "8 CPUs, 8 GiB" })),
@@ -88,7 +90,7 @@ describe("the doctor report", () => {
       "  ok    sessions          saved on the host in ~/.pi/agent/sessions/--repo--, writable from the sandbox",
       "",
       "sandbox",
-      "  ok    vm                running, 8 CPUs, 8 GiB, shares this repository",
+      "  ok    vm                running, 8 CPUs, 8 GiB, shares the workspace root",
       "  ok    sandbox           starts here (pi-sandbox-base:local)",
       "",
       "network",
@@ -175,28 +177,28 @@ describe("the doctor report", () => {
       "  skip  sessions          kept inside the sandbox, not on the host, so pi on the host does not list them (sessions.off)",
     );
     expect(renderReport(unsized, [], PLAIN)).toContain(
-      "  ok    vm                running, shares this repository",
+      "  ok    vm                running, shares the workspace root",
     );
   });
 
   it("never loses a reason on an ok check: the merged line carries it, and an unmerged group prints its ok member", () => {
-    const reasons = ["workspaceRoots: /x/gone does not exist, not shared"];
+    const reasons = ["workspaceRoot: /x/gone is missing, so it is not shared until it exists"];
     const noted = replaced(
       HEALTHY,
       "vm shares",
-      passed("the sandbox VM shares every path this repository needs", {
-        brief: "shares this repository",
+      passed("the sandbox VM shares exactly the workspaceRoot, the session dir and the launcher's vm dir", {
+        brief: "shares the workspace root",
         reasons,
       }),
     );
     const merged = renderReport(noted, [], PLAIN);
     const unmerged = renderReport(replaced(noted, "vm size", warned("small")), [], PLAIN);
 
-    expect(merged).toContain("  ok    vm                running, 8 CPUs, 8 GiB, shares this repository");
+    expect(merged).toContain("  ok    vm                running, 8 CPUs, 8 GiB, shares the workspace root");
     expect(merged).toContain(`        ${reasons[0]}`);
     expect(unmerged.slice(unmerged.indexOf("sandbox"), unmerged.indexOf("network"))).toEqual([
       "sandbox",
-      "  ok    vm shares         the sandbox VM shares every path this repository needs",
+      "  ok    vm shares         the sandbox VM shares exactly the workspaceRoot, the session dir and the launcher's vm dir",
       `        ${reasons[0]}`,
       "  ok    sandbox           starts here (pi-sandbox-base:local)",
       "  warn  vm size           small",

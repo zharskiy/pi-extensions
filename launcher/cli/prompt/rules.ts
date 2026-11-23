@@ -31,9 +31,3 @@ export const initialIndex = <T>(choices: Choice<T>[], initial: T | undefined) =>
     0,
     choices.findIndex((choice) => choice.value === initial),
   );
-
-export const toggle = <T>(checked: Set<T>, value: T) => {
-  if (!checked.delete(value)) {
-    checked.add(value);
-  }
-};

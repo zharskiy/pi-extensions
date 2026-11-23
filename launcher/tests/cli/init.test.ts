@@ -13,7 +13,7 @@ import { fakeInput, fakeOutput, KEY, pause } from "./prompt/fake-tty.ts";
 import { AUTOMATIC_SIZE } from "./setup-fixtures.ts";
 
 const HINT =
-  "  hint: pass --yes to keep the current settings and apply them; PI_SANDBOX_ROOTS names project folders\n";
+  "  hint: pass --yes to keep the current settings and apply them; PI_SANDBOX_ROOT names the folder that holds your projects\n";
 
 const listed = async (dir: string): Promise<string[]> => {
   const entries = await readdir(dir, { withFileTypes: true, recursive: true });
@@ -24,6 +24,7 @@ const listed = async (dir: string): Promise<string[]> => {
 interface SetupOptions {
   env?: Record<string, string>;
   inspect?: VmInspect;
+  workspaceRoot?: false;
 }
 
 const initSetup = async (options: SetupOptions = {}) => {
@@ -38,7 +39,11 @@ const initSetup = async (options: SetupOptions = {}) => {
       },
     },
   });
-  const harness = await createHarness({ backend: () => fake.backend, env: options.env });
+  const harness = await createHarness({
+    backend: () => fake.backend,
+    env: options.env,
+    workspaceRoot: options.workspaceRoot,
+  });
   const sessions = join(harness.hostAgentDir, "sessions");
   const vmState = stateLayout(harness.stateDir).vm;
 
@@ -130,7 +135,7 @@ describe("pi sandbox init without a terminal", () => {
     expect(await run(["sandbox", "help"], harness.deps)).toBe(0);
     expect(harness.stdout()).toContain("usage: pi sandbox init [--yes]\n");
     expect(harness.stdout()).toContain(
-      "set up or change the project folders, VM size and settings write-back, then apply them to the sandbox VM; --yes asks nothing and applies the current settings",
+      "set up or change the folder that holds your projects, VM size and settings write-back, then apply them to the sandbox VM; --yes asks nothing and applies the current settings",
     );
   });
 });
@@ -149,7 +154,7 @@ describe("pi sandbox init --yes", () => {
     const work = join(harness.deps.home, "work");
     const reference = join(harness.deps.home, "reference");
     const config = {
-      workspaceRoots: { roots: ["~/work"] },
+      workspaceRoot: "~/work",
       mounts: { binds: [{ source: "~/reference", target: "/etc/reference" }] },
     };
 
@@ -172,21 +177,16 @@ describe("pi sandbox init --yes", () => {
     ]);
   });
 
-  it("writes the roots of PI_SANDBOX_ROOTS into a new config and creates the VM with them", async () => {
-    const harness = await initSetup();
+  it("writes the root of PI_SANDBOX_ROOT into a new config and creates the VM with it", async () => {
+    const harness = await initSetup({ workspaceRoot: false });
     const work = join(harness.deps.home, "work");
 
     await mkdir(work, { recursive: true });
 
-    const deps = {
-      ...harness.deps,
-      env: { ...harness.deps.env, PI_SANDBOX_ROOTS: `~/work:${harness.repoRoot}/` },
-    };
+    const deps = { ...harness.deps, env: { ...harness.deps.env, PI_SANDBOX_ROOT: "~/work/" } };
 
     expect(await run(["sandbox", "init", "--yes"], deps)).toBe(0);
-    expect(JSON.parse(await readFile(harness.userConfigFile, "utf8"))).toEqual({
-      workspaceRoots: { roots: ["~/work", harness.repoRoot] },
-    });
+    expect(JSON.parse(await readFile(harness.userConfigFile, "utf8"))).toEqual({ workspaceRoot: "~/work" });
     expect((await stat(harness.userConfigFile)).mode & 0o777).toBe(0o600);
     expect((await stat(dirname(harness.userConfigFile))).mode & 0o777).toBe(0o700);
     expect(harness.applied).toEqual([
@@ -194,22 +194,20 @@ describe("pi sandbox init --yes", () => {
         size: AUTOMATIC_SIZE,
         shares: [
           { location: work, writable: true },
-          { location: harness.repoRoot, writable: true },
           { location: harness.sessions, writable: true },
           { location: harness.vmState, writable: false },
         ],
-        exactShares: true,
       },
     ]);
     expect(harness.stdout()).toBe(
       [
-        `  Project folders: ~/work, ${harness.repoRoot} (changed)`,
+        "  Project folder: ~/work (changed)",
         "  VM size: 8 CPUs, 10 GiB memory, 60 GiB disk (automatic)",
         "  Settings write-back: on (default)",
         "When you apply:",
         `  - create ${harness.userConfigFile}`,
-        `      added workspaceRoots.roots: ["~/work","${harness.repoRoot}"]`,
-        "  - create the sandbox VM with these folders, pi's sessions folder and the launcher's read-only state/vm folder; this takes a minute or two, longer the first time while colima downloads the VM's system image",
+        '      added workspaceRoot: "~/work"',
+        "  - create the sandbox VM with this folder, pi's sessions folder and the launcher's read-only state/vm folder; this takes a minute or two, longer the first time while colima downloads the VM's system image",
         `Saved ${harness.userConfigFile}`,
         "Created the VM in 0s: 8 CPUs, 10 GiB memory, 60 GiB disk",
         "Done. The sandbox is ready.",
@@ -223,26 +221,38 @@ describe("pi sandbox init --yes", () => {
     expect(harness.stderr()).toBe("");
   });
 
-  it("resolves a relative PI_SANDBOX_ROOTS entry against the current folder", async () => {
-    const harness = await initSetup({ env: { PI_SANDBOX_ROOTS: ".." } });
+  it("accepts a root that does not exist, saying it is not shared", async () => {
+    const harness = await initSetup({ workspaceRoot: false });
+    const gone = join(harness.deps.home, "gone");
+    const deps = { ...harness.deps, env: { ...harness.deps.env, PI_SANDBOX_ROOT: gone } };
+
+    expect(await run(["sandbox", "init", "--yes"], deps)).toBe(0);
+    expect(JSON.parse(await readFile(harness.userConfigFile, "utf8"))).toEqual({ workspaceRoot: gone });
+    expect(harness.stderr()).toBe(
+      `pi-sandbox: workspaceRoot: ${gone} is missing, so it is not shared until it exists\n`,
+    );
+  });
+
+  it("resolves a relative PI_SANDBOX_ROOT against the current folder", async () => {
+    const harness = await initSetup({ env: { PI_SANDBOX_ROOT: ".." }, workspaceRoot: false });
 
     expect(await run(["sandbox", "init", "--yes"], harness.deps)).toBe(0);
     expect(JSON.parse(await readFile(harness.userConfigFile, "utf8"))).toEqual({
-      workspaceRoots: { roots: [harness.repoRoot] },
+      workspaceRoot: harness.repoRoot,
     });
   });
 
-  it("keeps a config with the same roots written another way, and says nothing changes", async () => {
+  it("keeps a config with the same root written another way, and says nothing changes", async () => {
     const harness = await initSetup();
     const text = JSON.stringify({
-      workspaceRoots: { roots: [`${harness.repoRoot}/`] },
+      workspaceRoot: `${harness.repoRoot}/`,
       env: { allow: ["FOO"] },
     });
 
     await harness.writeJson(harness.userConfigFile, JSON.parse(text));
 
     const before = await stat(harness.userConfigFile);
-    const deps = { ...harness.deps, env: { ...harness.deps.env, PI_SANDBOX_ROOTS: harness.repoRoot } };
+    const deps = { ...harness.deps, env: { ...harness.deps.env, PI_SANDBOX_ROOT: harness.repoRoot } };
     const fake = createFakeBackend({
       vm: {
         inspect: async () => ({
@@ -265,9 +275,9 @@ describe("pi sandbox init --yes", () => {
     expect((await stat(harness.userConfigFile)).mtimeMs).toBe(before.mtimeMs);
   });
 
-  it("refuses a config with other roots than PI_SANDBOX_ROOTS and leaves it as it is", async () => {
+  it("refuses a config with another root than PI_SANDBOX_ROOT and leaves it as it is", async () => {
     const harness = await initSetup();
-    const text = JSON.stringify({ workspaceRoots: { roots: [harness.repoRoot] } });
+    const text = JSON.stringify({ workspaceRoot: harness.repoRoot });
 
     await mkdir(join(harness.root, "other"));
 
@@ -275,46 +285,64 @@ describe("pi sandbox init --yes", () => {
 
     const deps = {
       ...harness.deps,
-      env: { ...harness.deps.env, PI_SANDBOX_ROOTS: join(harness.root, "other") },
+      env: { ...harness.deps.env, PI_SANDBOX_ROOT: join(harness.root, "other") },
     };
 
     expect(await run(["sandbox", "init", "--yes"], deps)).toBe(1);
     expect(harness.stderr()).toBe(
-      `pi-sandbox: ${harness.userConfigFile} has other workspaceRoots than PI_SANDBOX_ROOTS\n  hint: edit workspaceRoots in ${harness.userConfigFile}, or unset PI_SANDBOX_ROOTS\n`,
+      `pi-sandbox: ${harness.userConfigFile} has another workspaceRoot than PI_SANDBOX_ROOT\n  hint: edit workspaceRoot in ${harness.userConfigFile}, or unset PI_SANDBOX_ROOT\n`,
     );
     expect(await readFile(harness.userConfigFile, "utf8")).toBe(text);
     expect(harness.applied).toEqual([]);
   });
 
-  it("shares the home without roots, writes nothing and says how to choose folders", async () => {
-    const harness = await initSetup();
+  it("refuses without workspaceRoot and PI_SANDBOX_ROOT, and writes nothing", async () => {
+    const harness = await initSetup({ workspaceRoot: false });
 
-    expect(await run(["sandbox", "init", "--yes"], harness.deps)).toBe(0);
+    expect(await run(["sandbox", "init", "--yes"], harness.deps)).toBe(1);
     expect(await exists(harness.userConfigFile)).toBe(false);
-    expect(harness.applied).toEqual([
-      { size: AUTOMATIC_SIZE, shares: [{ location: harness.deps.home, writable: true }], exactShares: true },
-    ]);
+    expect(harness.applied).toEqual([]);
     expect(harness.stderr()).toBe(
-      "pi-sandbox: no workspaceRoots, so the sandbox VM shares your whole home; run pi sandbox init in a terminal to choose project folders\n",
+      `pi-sandbox: ${harness.userConfigFile} has no workspaceRoot and PI_SANDBOX_ROOT is not set, so there is no folder to share with the sandbox VM\n  hint: run pi sandbox init in a terminal to choose the folder that holds your projects, or set PI_SANDBOX_ROOT to it\n`,
     );
-    expect(harness.stdout()).toContain(
-      "Created the VM in 0s: 8 CPUs, 10 GiB memory, 60 GiB disk\nDone. The sandbox is ready.\nNext: cd <a project> && pi\n",
+  });
+
+  it("refuses a PI_SANDBOX_ROOT that is the home or holds it, and writes nothing", async () => {
+    const outcomes = await Promise.all(
+      ["~", "~/..", "/"].map(async (root) => {
+        const harness = await initSetup({ env: { PI_SANDBOX_ROOT: root }, workspaceRoot: false });
+        const code = await run(["sandbox", "init", "--yes"], harness.deps);
+
+        return {
+          code,
+          written: await exists(harness.userConfigFile),
+          applied: harness.applied.length,
+          hint: harness.stderr().split("\n")[1],
+        };
+      }),
+    );
+
+    expect(outcomes).toEqual(
+      ["~", "~/..", "/"].map(() => ({
+        code: 1,
+        written: false,
+        applied: 0,
+        hint: "  hint: point PI_SANDBOX_ROOT at the folder that holds your projects",
+      })),
     );
   });
 
   it("keeps the running VM while pi sessions run", async () => {
     const harness = await initSetup({
-      env: { PI_SANDBOX_ROOTS: "" },
+      env: { PI_SANDBOX_ROOT: "" },
       inspect: { state: "running", size: AUTOMATIC_SIZE, shares: [] },
     });
-
-    await harness.writeJson(harness.userConfigFile, { workspaceRoots: { roots: [harness.repoRoot] } });
 
     await holdLaunch(harness);
 
     expect(await run(["sandbox", "init", "--yes"], harness.deps)).toBe(0);
     expect(harness.stdout().split("\n").slice(0, 7)).toEqual([
-      `  Project folders: ${harness.repoRoot} (current)`,
+      `  Project folder: ${harness.repoRoot} (current)`,
       "  VM size: 8 CPUs, 10 GiB memory, 60 GiB disk (automatic)",
       "  Settings write-back: on (default)",
       "When you apply:",
@@ -350,16 +378,31 @@ describe("pi sandbox init --yes", () => {
   });
 
   it("refuses a vm above what this Mac has before it writes or touches the VM", async () => {
-    const harness = await initSetup({ env: { PI_SANDBOX_ROOTS: "" } });
+    const harness = await initSetup({ env: { PI_SANDBOX_ROOT: "" } });
 
     await harness.writeJson(harness.userConfigFile, { vm: { cpus: 12 } });
 
     const text = await readFile(harness.userConfigFile, "utf8");
-    const deps = { ...harness.deps, env: { ...harness.deps.env, PI_SANDBOX_ROOTS: harness.repoRoot } };
+    const deps = { ...harness.deps, env: { ...harness.deps.env, PI_SANDBOX_ROOT: harness.repoRoot } };
 
     expect(await run(["sandbox", "init", "--yes"], deps)).toBe(1);
     expect(harness.stderr()).toBe(
       `pi-sandbox: config: vm.cpus 12 is more than the 8 CPUs of this Mac\n  hint: lower it in ${harness.userConfigFile}, or run pi sandbox init to choose a size\n`,
+    );
+    expect(await readFile(harness.userConfigFile, "utf8")).toBe(text);
+    expect(harness.applied).toEqual([]);
+  });
+
+  it("refuses a config that still sets workspaceRoots, naming its replacement, and rewrites nothing", async () => {
+    const harness = await initSetup();
+
+    await harness.writeJson(harness.userConfigFile, { workspaceRoots: { roots: ["~/work"] } });
+
+    const text = await readFile(harness.userConfigFile, "utf8");
+
+    expect(await run(["sandbox", "init", "--yes"], harness.deps)).toBe(1);
+    expect(harness.stderr()).toBe(
+      `pi-sandbox: ${harness.userConfigFile} has a problem this setup does not fix: config: workspaceRoots is not a known key\n  hint: workspaceRoots was replaced by workspaceRoot, one folder: write "workspaceRoot": "~/work" in its place, or remove the key and run pi sandbox init\n`,
     );
     expect(await readFile(harness.userConfigFile, "utf8")).toBe(text);
     expect(harness.applied).toEqual([]);
@@ -400,7 +443,7 @@ describe("pi sandbox init --yes", () => {
   });
 
   it("saves the config and exits 0 with one notice when the VM cannot be checked", async () => {
-    const harness = await initSetup();
+    const harness = await initSetup({ workspaceRoot: false });
     const fake = createFakeBackend({
       vm: {
         inspect: async () => {
@@ -410,13 +453,13 @@ describe("pi sandbox init --yes", () => {
     });
     const deps = {
       ...harness.deps,
-      env: { ...harness.deps.env, PI_SANDBOX_ROOTS: harness.repoRoot },
+      env: { ...harness.deps.env, PI_SANDBOX_ROOT: harness.repoRoot },
       backend: () => fake.backend,
     };
 
     expect(await run(["sandbox", "init", "--yes"], deps)).toBe(0);
     expect(JSON.parse(await readFile(harness.userConfigFile, "utf8"))).toEqual({
-      workspaceRoots: { roots: [harness.repoRoot] },
+      workspaceRoot: harness.repoRoot,
     });
     expect(harness.stderr()).toBe(
       "! The VM could not be checked (colima did not answer within 3 seconds). Run pi sandbox doctor to see why.\n",
@@ -428,7 +471,7 @@ describe("pi sandbox init --yes", () => {
   });
 
   it("fails with the VM's error after saving the config", async () => {
-    const harness = await initSetup({ env: { PI_SANDBOX_ROOTS: "" } });
+    const harness = await initSetup({ env: { PI_SANDBOX_ROOT: "" }, workspaceRoot: false });
     const fake = createFakeBackend({
       vm: {
         apply: async () => {
@@ -441,7 +484,7 @@ describe("pi sandbox init --yes", () => {
     });
     const deps = {
       ...harness.deps,
-      env: { ...harness.deps.env, PI_SANDBOX_ROOTS: harness.repoRoot },
+      env: { ...harness.deps.env, PI_SANDBOX_ROOT: harness.repoRoot },
       backend: () => fake.backend,
     };
 
@@ -456,12 +499,12 @@ describe("pi sandbox init --yes", () => {
       ].join("\n"),
     );
     expect(harness.stdout()).toMatch(
-      /^ {2}Project folders: [\s\S]*\nWhen you apply:\n[\s\S]*\nSaved [^\n]+\n$/,
+      /^ {2}Project folder: [\s\S]*\nWhen you apply:\n[\s\S]*\nSaved [^\n]+\n$/,
     );
   });
 
   it("lets an unexpected error from the VM step reach the error handler after saving the config", async () => {
-    const harness = await initSetup({ env: { PI_SANDBOX_ROOTS: "" } });
+    const harness = await initSetup({ env: { PI_SANDBOX_ROOT: "" }, workspaceRoot: false });
     const fake = createFakeBackend({
       vm: {
         apply: async () => {
@@ -471,7 +514,7 @@ describe("pi sandbox init --yes", () => {
     });
     const deps = {
       ...harness.deps,
-      env: { ...harness.deps.env, PI_SANDBOX_ROOTS: harness.repoRoot },
+      env: { ...harness.deps.env, PI_SANDBOX_ROOT: harness.repoRoot },
       backend: () => fake.backend,
     };
 
@@ -485,8 +528,6 @@ describe("pi sandbox init --yes", () => {
     const old = join(harness.root, "old");
 
     await mkdir(old);
-
-    await harness.writeJson(harness.userConfigFile, { workspaceRoots: { roots: [harness.repoRoot] } });
 
     const fake = createFakeBackend({
       vm: {
@@ -506,7 +547,7 @@ describe("pi sandbox init --yes", () => {
 
     expect(await run(["sandbox", "init", "--yes"], deps)).toBe(0);
     expect(harness.stdout().split("\n").slice(0, 7)).toEqual([
-      `  Project folders: ${harness.repoRoot} (current)`,
+      `  Project folder: ${harness.repoRoot} (current)`,
       "  VM size: 8 CPUs, 10 GiB memory, 60 GiB disk (automatic)",
       "  Settings write-back: on (default)",
       "When you apply:",
@@ -524,7 +565,7 @@ const gitRepo = async (dir: string) => {
 
 describe("pi sandbox init at a terminal", () => {
   it("runs the plain setup, saves the chosen folder and creates the VM", async () => {
-    const harness = await initSetup({ env: { PI_SANDBOX_PLAIN: "1" } });
+    const harness = await initSetup({ env: { PI_SANDBOX_PLAIN: "1" }, workspaceRoot: false });
     const projects = join(harness.deps.home, "Projects");
 
     await gitRepo(join(projects, "app"));
@@ -536,7 +577,7 @@ describe("pi sandbox init at a terminal", () => {
 
     expect(await exit).toBe(0);
     expect(JSON.parse(await readFile(harness.userConfigFile, "utf8"))).toEqual({
-      workspaceRoots: { roots: ["~/Projects"] },
+      workspaceRoot: "~/Projects",
     });
     expect(harness.applied).toEqual([
       {
@@ -546,7 +587,6 @@ describe("pi sandbox init at a terminal", () => {
           { location: harness.sessions, writable: true },
           { location: harness.vmState, writable: false },
         ],
-        exactShares: true,
       },
     ]);
     expect(tty.output.screen.lines()).toContain("Done. The sandbox is ready.");
@@ -555,7 +595,7 @@ describe("pi sandbox init at a terminal", () => {
   });
 
   it("uses /dev/tty when stdin is piped, and closes it after a cancel that leaves nothing behind", async () => {
-    const harness = await initSetup();
+    const harness = await initSetup({ workspaceRoot: false });
     const closed: string[] = [];
     const streams = fakeTtyStreams(closed);
     const piped = new PassThrough();

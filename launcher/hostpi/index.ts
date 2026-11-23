@@ -4,7 +4,6 @@ export { readHostPiFiles } from "./files.ts";
 export { locateManagedPi, locateNpmPi } from "./locate.ts";
 export type { McpSignIn } from "./mcp-auth.ts";
 export { mcpSignIns } from "./mcp-auth.ts";
-export { findOnPath } from "./path-search.ts";
 export { readProviderHosts } from "./provider-hosts.ts";
 export type {
   DerivedSandboxPi,

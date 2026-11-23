@@ -1,16 +1,13 @@
 import { mkdir, realpath, symlink, utimes, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  addedRootProblem,
   folderCandidates,
-  isPreChecked,
-  replacedNotice,
-  replacedRoots,
-  sameRootSet,
+  sameRoot,
   scanRepos,
   suggestionFor,
   tildeForm,
+  typedRootProblem,
   USUAL_FOLDERS,
   unscannedCandidates,
 } from "../../cli/setup/folders.ts";
@@ -52,16 +49,16 @@ describe("the usual project folders", () => {
 });
 
 describe("folderCandidates", () => {
-  it("lists configured roots, PI_SANDBOX_ROOTS, the cwd's top folder and usual folders, by repositories", async () => {
+  it("lists the configured root, PI_SANDBOX_ROOT, the cwd's top folder and usual folders, by repositories", async () => {
     const context = await homeWith(
       ["Projects/a", "Projects/b", "Projects/c/d", "Sites/s", "clients/acme/x"],
       ["src"],
     );
     const candidates = await folderCandidates({
       ...context,
-      env: { ...context.env, PI_SANDBOX_ROOTS: "/Volumes/Env:~/later" },
+      env: { ...context.env, PI_SANDBOX_ROOT: "/Volumes/Env" },
       cwd: join(context.home, "clients", "acme"),
-      configRoots: ["~/kept"],
+      configRoot: "~/kept",
       firstRun: true,
     });
 
@@ -70,7 +67,6 @@ describe("folderCandidates", () => {
     ).toEqual([
       ["~/kept", "config", 0, false],
       ["/Volumes/Env", "env", 0, false],
-      ["~/later", "env", 0, false],
       ["~/Projects", "usual", 3, false],
       ["~/clients", "cwd", 1, true],
       ["~/Sites", "usual", 1, false],
@@ -79,23 +75,26 @@ describe("folderCandidates", () => {
     expect(candidates[0]).toMatchObject({ exists: false, resolved: join(context.home, "kept") });
   });
 
-  it("reads PI_SANDBOX_ROOTS only on a first run and pre-checks the right ones", async () => {
+  it("reads PI_SANDBOX_ROOT only on a first run", async () => {
     const context = await homeWith(["work/a"], ["src"]);
+    const env = { ...context.env, PI_SANDBOX_ROOT: "/Volumes/Env" };
     const rerun = await folderCandidates({
       ...context,
-      env: { ...context.env, PI_SANDBOX_ROOTS: "/Volumes/Env" },
+      env,
       cwd: "/",
-      configRoots: ["~/work"],
+      configRoot: "~/work",
       firstRun: false,
     });
-    const first = await folderCandidates({ ...context, cwd: "/", configRoots: undefined, firstRun: true });
+    const first = await folderCandidates({
+      ...context,
+      env,
+      cwd: "/",
+      configRoot: undefined,
+      firstRun: true,
+    });
 
     expect(rerun.map((candidate) => candidate.stored)).toEqual(["~/work", "~/src"]);
-    expect(first.map((candidate) => [candidate.stored, isPreChecked(candidate, true)])).toEqual([
-      ["~/work", true],
-      ["~/src", false],
-    ]);
-    expect(rerun.map((candidate) => isPreChecked(candidate, false))).toEqual([true, false]);
+    expect(first.map((candidate) => candidate.stored)).toEqual(["/Volumes/Env", "~/work", "~/src"]);
   });
 
   it("lists one folder once by its real path", async () => {
@@ -106,7 +105,7 @@ describe("folderCandidates", () => {
     const candidates = await folderCandidates({
       ...context,
       cwd: "/",
-      configRoots: ["~/Projects"],
+      configRoot: "~/Projects",
       firstRun: true,
     });
 
@@ -118,7 +117,7 @@ describe("folderCandidates", () => {
     const candidates = await folderCandidates({
       ...context,
       cwd: join(context.home, ".ssh", "keys"),
-      configRoots: undefined,
+      configRoot: undefined,
       firstRun: true,
     });
 
@@ -127,20 +126,19 @@ describe("folderCandidates", () => {
 });
 
 describe("unscannedCandidates", () => {
-  it("resolves configured roots to their real paths and says which exist, as a full search does", async () => {
+  it("resolves the configured root to its real path and says whether it exists, as a full search does", async () => {
     const context = await homeWith([], ["Projects"]);
 
     await symlink(join(context.home, "Projects"), join(context.home, "code"));
 
-    const search = { ...context, cwd: "/", configRoots: ["~/code", "~/gone"], firstRun: false };
     const shown = (candidates: { stored: string; resolved: string; exists: boolean }[]) =>
       candidates.map((candidate) => [candidate.stored, candidate.resolved, candidate.exists]);
+    const linked = { ...context, cwd: "/", configRoot: "~/code", firstRun: false };
+    const gone = { ...context, cwd: "/", configRoot: "~/gone", firstRun: false };
 
-    expect(shown(unscannedCandidates(search))).toEqual([
-      ["~/code", join(context.home, "Projects"), true],
-      ["~/gone", join(context.home, "gone"), false],
-    ]);
-    expect(shown(unscannedCandidates(search))).toEqual(shown(await folderCandidates(search)));
+    expect(shown(unscannedCandidates(linked))).toEqual([["~/code", join(context.home, "Projects"), true]]);
+    expect(shown(unscannedCandidates(gone))).toEqual([["~/gone", join(context.home, "gone"), false]]);
+    expect(shown(unscannedCandidates(linked))).toEqual(shown(await folderCandidates(linked)));
   });
 });
 
@@ -203,19 +201,17 @@ describe("tildeForm", () => {
   });
 });
 
-describe("addedRootProblem", () => {
+describe("typedRootProblem", () => {
   const setup = async () => {
     const context = await homeWith([], ["Projects/app", "work", "a,b", "tools/agent"]);
 
     await writeFile(join(context.home, "notes.txt"), "");
 
-    return {
-      ...context,
-      env: { PI_CODING_AGENT_DIR: join(context.home, "tools", "agent") },
-      checked: ["~/work"],
-      listed: ["~/work"],
-    };
+    return { home: context.home, env: { PI_CODING_AGENT_DIR: join(context.home, "tools", "agent") } };
   };
+
+  const HOME =
+    "is your home or holds it, and the sandbox VM must not see all of it. Choose the folder in it that holds your projects.";
 
   it.each([
     ["", "Type the path of a folder."],
@@ -225,12 +221,12 @@ describe("addedRootProblem", () => {
     ["~/Projcts", "~/Projcts does not exist. Did you mean ~/Projects?"],
     ["~/nothing-like-it", "~/nothing-like-it does not exist."],
     ["~/notes.txt", "~/notes.txt is a file, not a folder."],
-    ["~", "~ is your whole home. Choose the folders inside it that hold projects."],
+    ["~", `~ ${HOME}`],
     [
       "~/tools/agent",
       "~/tools/agent cannot be shared: the sandbox must never see it, since it holds secrets or system files. Choose another folder.",
     ],
-    ["/", "/ is your whole home. Choose the folders inside it that hold projects."],
+    ["/", `/ ${HOME}`],
     ["/etc/x", "/etc/x lies inside /etc, which the sandbox must never see."],
     [
       "~/tools",
@@ -240,24 +236,25 @@ describe("addedRootProblem", () => {
       "~/a,b",
       '~/a,b has a "," or ":" in its name, which the VM cannot share. Rename it or choose another folder.',
     ],
-    ["~/work/", "~/work is already in the list."],
   ])("refuses %j", async (typed, message) => {
     const context = await setup();
-    expect(addedRootProblem(typed, context)).toBe(message);
+
+    expect(typedRootProblem(typed, context)).toBe(message);
   });
 
-  it("accepts a folder inside a checked one, refuses one holding a checked one, and accepts a plain one", async () => {
+  it("refuses the folder that holds the home", async () => {
+    const context = await setup();
+    const parent = dirname(context.home);
+
+    expect(typedRootProblem(parent, context)).toBe(`${parent} ${HOME}`);
+  });
+
+  it("accepts a folder, one inside another, and one typed with a trailing slash", async () => {
     const context = await setup();
 
-    expect(
-      addedRootProblem("~/Projects/app", { ...context, checked: ["~/Projects"], listed: ["~/Projects"] }),
-    ).toBeUndefined();
-    expect(
-      addedRootProblem("~/Projects", { ...context, checked: ["~/Projects/app"], listed: ["~/Projects/app"] }),
-    ).toBe(
-      "~/Projects holds ~/Projects/app, which is selected. Unselect ~/Projects/app first, or choose another folder.",
-    );
-    expect(addedRootProblem("~/Projects", context)).toBeUndefined();
+    expect(typedRootProblem("~/Projects", context)).toBeUndefined();
+    expect(typedRootProblem("~/Projects/app", context)).toBeUndefined();
+    expect(typedRootProblem(" ~/work/ ", context)).toBeUndefined();
   });
 
   it("refuses typed text the VM cannot share even when it links to a clean folder", async () => {
@@ -267,52 +264,16 @@ describe("addedRootProblem", () => {
 
     await symlink(join(context.home, "Projects", "app"), join(context.home, "x\u0007"));
 
-    expect(addedRootProblem("~/x:y", context)).toBe(
+    expect(typedRootProblem("~/x:y", context)).toBe(
       '~/x:y has a "," or ":" in its name, which the VM cannot share. Rename it or choose another folder.',
     );
-    expect(addedRootProblem("~/x\u0007", context)).toBe("That path has a control character in it.");
+    expect(typedRootProblem("~/x\u0007", context)).toBe("That path has a control character in it.");
   });
 
   it("escapes control and bidi characters of the folders it names", async () => {
     const context = await setup();
 
-    expect(addedRootProblem("~/gone\u202e", context)).toBe("~/gone\\u202E does not exist.");
-    expect(
-      addedRootProblem("~/Projects", { ...context, checked: ["~/Projects/app\u200f"], listed: [] }),
-    ).toBe(
-      "~/Projects holds ~/Projects/app\\u200F, which is selected. Unselect ~/Projects/app\\u200F first, or choose another folder.",
-    );
-  });
-
-  it("names every checked folder that holds the typed one, through links too", async () => {
-    const context = await setup();
-
-    await symlink(join(context.home, "Projects"), join(context.home, "link"));
-
-    const checked = ["~/Projects", "~/link", "~/work"];
-    const listed = [...checked, "~/Projects/app"];
-
-    expect(replacedRoots("~/Projects/app ", { ...context, checked, listed })).toEqual([
-      "~/Projects",
-      "~/link",
-    ]);
-    expect(replacedRoots("~/Projects", { ...context, checked: ["~/work"], listed: ["~/work"] })).toEqual([]);
-    expect(replacedRoots("~/.ssh", { ...context, checked: ["~"], listed: [] })).toEqual([]);
-    expect(addedRootProblem("~/Projects/app", { ...context, checked, listed })).toBe(
-      "~/Projects/app is already in the list.",
-    );
-  });
-
-  it("tells which checked folders the typed one replaces, escaping their names", () => {
-    expect(replacedNotice("~/Projects/app", ["~/Projects"], "/home/me")).toBe(
-      "~/Projects/app replaces ~/Projects, which holds it.",
-    );
-    expect(replacedNotice("/home/me/Projects/app\u202e", ["~/Projects\u009b/..", "~/link"], "/home/me")).toBe(
-      "~/Projects/app\\u202E replaces ~/Projects\\u009B/.. and ~/link, which hold it.",
-    );
-    expect(replacedNotice("~/a/b/c", ["~/a", "~/link", "/Volumes/a"], "/home/me")).toBe(
-      "~/a/b/c replaces ~/a, ~/link and /Volumes/a, which hold it.",
-    );
+    expect(typedRootProblem("~/gone\u202e", context)).toBe("~/gone\\u202E does not exist.");
   });
 
   it("suggests a sibling folder that differs in case or by at most two letters", async () => {
@@ -334,11 +295,14 @@ describe("addedRootProblem", () => {
   });
 });
 
-describe("sameRootSet", () => {
-  it("compares roots by the folders they share, whatever the spelling or order", async () => {
+describe("sameRoot", () => {
+  it("compares roots by the folder they share, whatever the spelling", async () => {
     const context = await homeWith([], ["a", "b"]);
 
-    expect(sameRootSet(["~/a", "~/b/"], [join(context.home, "b"), "~/a"], context)).toBe(true);
-    expect(sameRootSet(["~/a"], ["~/b"], context)).toBe(false);
+    await symlink(join(context.home, "a"), join(context.home, "link"));
+
+    expect(sameRoot("~/b/", join(context.home, "b"), context)).toBe(true);
+    expect(sameRoot("~/a", "~/link", context)).toBe(true);
+    expect(sameRoot("~/a", "~/b", context)).toBe(false);
   });
 });

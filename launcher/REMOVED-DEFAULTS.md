@@ -1,6 +1,6 @@
 # Removed defaults
 
-The launcher used to ship network access that not every project needs, forwarded a variable that broke the sandbox's locale, built the sandbox's trust at container start, put the proxy's token in the sandbox, gave each folder its own proxy, network and grants, and bundled the GitHub CLI with its credentials. They are gone. This page lists what was removed and how to add each one back in your config file (`pi-sandbox/config.json` under pi's agent dir, see [CONFIGURATION.md](CONFIGURATION.md)).
+The launcher used to ship network access that not every project needs, forwarded a variable that broke the sandbox's locale, built the sandbox's trust at container start, put the proxy's token in the sandbox, gave each folder its own proxy, network and grants, bundled the GitHub CLI with its credentials, let the sandbox VM share your whole home or several workspace roots, and guarded git one folder at a time. They are gone. This page lists what was removed and how to add each one back in your config file (`pi-sandbox/config.json` under pi's agent dir, see [CONFIGURATION.md](CONFIGURATION.md)).
 
 ## Egress presets
 
@@ -102,6 +102,36 @@ This config gives back gh and git over HTTPS for github.com. Use your own placeh
 
 What the config cannot do as the derivation did: it does not find your gh hosts or your gh binary by itself, so you write the host list and the path, and a config shared by a team needs gh at the same path on every Mac. The launcher also no longer refuses to run a gh that lies inside a folder a sandbox can write; an absolute path outside your projects keeps that guarantee in your hands.
 
+## Several workspace roots and the home share
+
+`workspaceRoots: { "roots": [...] }` is replaced by `workspaceRoot`, one folder. A config that still sets `workspaceRoots` is refused like any unknown key (`config: workspaceRoots is not a known key`), with a hint that names `workspaceRoot` as its replacement; nothing is migrated. The sandbox VM no longer shares your home: without `workspaceRoot`, a sandboxed launch does not start (`--no-sandbox` still runs, as no VM is involved).
+
+| Removed | Now, and how to get it back |
+| --- | --- |
+| `workspaceRoots: { "roots": ["~/work", "/Volumes/code"] }` | `"workspaceRoot": "~/work"`, one folder. Replace the key by hand, or remove it and run `pi sandbox init`. With the old key still in the file, `pi sandbox init` (with or without `--yes`) changes nothing and exits 1 with `<config file> has a problem this setup does not fix: config: workspaceRoots is not a known key` and the same hint; without the key it asks for the folder. Projects kept in several places go under one folder that holds them all, such as `~/Projects`, or are reached with a [read-only bind](CONFIGURATION.md#read-only-binds). |
+| No `workspaceRoots`: pi started anywhere and the VM shared your whole home, writable | Gone. A sandboxed launch without `workspaceRoot` stops with `config: workspaceRoot is not set, so pi has no folder it may start in`; set it to the folder that holds your projects. Your home, or a folder that holds it, is refused as the root. |
+| The setup's choice to share the whole home, and its several-folder list | `pi sandbox init` asks for one folder: a detected one, or one you type. |
+| `PI_SANDBOX_ROOTS`, folders separated by `:` | `PI_SANDBOX_ROOT`, one folder. `pi sandbox init --yes` (and `install.sh`) now refuses when neither the config nor `PI_SANDBOX_ROOT` names a folder. |
+
+At the first launch after the change, the VM restarts once to drop the home share and share only the root, `<agent dir>/sessions`, `<state>/vm` and the bind sources outside the root.
+
+Mounts added to `colima.yaml` by hand are no longer refused: at the next launch with no other pi session running, the VM restarts and the planned list replaces them.
+
+## Git protections and workspace mode
+
+The sandbox now mounts the whole workspace root read-write, wherever pi starts in it, and the git checks that guarded one folder at a time are gone. No config key changes.
+
+| Removed | Now |
+| --- | --- |
+| The container saw only the repository, or plain folder, pi started in | It sees the whole workspace root, read-write. Keep only your own projects there. |
+| `.git/hooks` read-only inside | Writable, like every other file under the root. |
+| The git report when the last session ends (`git: <path> changed while the sandbox ran; review it before running git there`) and the record of git files behind it | Gone; nothing is recorded or reported. |
+| The launcher's own git calls (`git rev-parse`) and its refusals of git files git did not write, links at `.git`, letter-case variants of `.git` and unreadable folders | The git dir and common dir are read from the files; a launch is refused only when one lies outside the root. |
+| Workspace mode: in a folder outside git, a search for nested repositories, each checked and protected, with at most 128 repositories and 50,000 directories | A folder outside git launches like any other, with no search and a notice; with `mounts.autoOverlays` on (the default) it gets no overlays. Overlays cover only the repository pi starts in. |
+| `pi install` refused a local source in a git working tree | A local source in the workspace root or in a folder a sandbox has run in is installed with a notice. |
+
+Files an older launcher left in its state dir (`<state>/empty`, `<state>/repos/<h>/git/baseline.json`) are not read and can be removed.
+
 ## Notices about the old config folder and the policy file
 
 Launches and `pi sandbox doctor` used to name a config left in `~/.config/pi-sandbox/` and an administrator policy file that still existed. Neither is read, nothing says so any more, and the launcher never touches `~/.config/pi-sandbox/`. Move your settings into `pi-sandbox/config.json` under pi's agent dir yourself.
@@ -117,6 +147,7 @@ A config that still sets one of these keys is refused: the key `is not a known k
 | `egress.parentProxy` | Always follows the proxy environment variables. |
 | `egress.presets` | Gone. Use `egress.allow`. |
 | `mounts.sharedCaches` | Renamed. List the folders in `mounts.volumes`. |
+| `workspaceRoots` | Replaced by `workspaceRoot`, one folder ([above](#several-workspace-roots-and-the-home-share)). |
 | Administrator policy file | Gone. There is one config file: built-in defaults plus yours. A policy file that still exists is not read, and nothing says so. |
 
 A `tls.extraCa` entry `{ "hostStore": true }`, which read the CAs of the macOS System keychain, is refused with `must set one of sha256, file`. Name each CA with `{ "sha256": … }` or `{ "file": … }` ([corporate proxy and TLS inspection](CONFIGURATION.md#corporate-proxy-and-tls-inspection)).
@@ -131,9 +162,13 @@ Shared volumes (`pi-sandbox-shared-*`) of an older build are never removed by th
 
 An old shared volume can have the same name as a new `mounts.volumes` entry, since the name is built from the same state dir hash. The launcher then mounts and reuses it, with its content, but never lists or removes it.
 
+## One pi folder for every folder
+
+Earlier launchers gave each folder its own pi folder inside the sandbox: an agent volume `pi-sandbox-agent-<install id>-<12 hex>`, a render folder `vm/render/<12 hex>/` and sync records under `repos/<hash>/sync/` in the state folder. Now one agent volume, `pi-sandbox-agent-<install id>`, serves every folder, so pi's packages, its in-sandbox settings and, with `sessions.host` off, its sessions are the same in every folder. The new volume starts empty: the launcher has pi install its packages again at the first launch, and in-sandbox settings and sessions of the old per-folder volumes stay where they were. The launcher removes an old one on its own only once its folder no longer exists: the daily collection removes the unused per-folder agent volume, and with `sessions.host` off the sessions kept in it go with it, and the sweep that forgets the folder removes its render folder and sync records. Until then `pi sandbox status` lists them as `leftover:` lines, and `pi sandbox reset --agent` removes them together with the shared one once no pi session runs. Copy anything you want to keep out of an old volume first, with the engine's own tools.
+
 ## Files left in the state folder
 
-The launcher does not remove the files earlier versions left in its state folder: the CA bundles `ca/trust.pem`, `vm/trust.pem` and `vm/trust-*.pem` and the render dirs `repos/*/render/` (these go with their repository's state). Nothing reads them. With no sandbox running, remove them from the state folder (`~/.pi/agent/pi-sandbox/state` by default): `rm -f ca/trust.pem vm/trust*.pem` and `rm -rf repos/*/render`.
+The launcher does not remove the files earlier versions left in its state folder: the CA bundles `ca/trust.pem`, `vm/trust.pem` and `vm/trust-*.pem` and the per-folder render dirs `vm/render/<h>/`, render locks `repos/<h>/render.lock` and sync records `repos/<h>/sync/`. Nothing reads them. With no sandbox running, remove them from the state folder (`~/.pi/agent/pi-sandbox/state` by default): `rm -f ca/trust.pem vm/trust*.pem` and `rm -rf vm/render repos/*/render.lock repos/*/sync`.
 
 ## Getting the old defaults back
 

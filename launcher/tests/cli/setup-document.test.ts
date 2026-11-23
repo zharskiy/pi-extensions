@@ -19,7 +19,7 @@ const FILE = "/config/config.json";
 
 const documentOf = (text: string | undefined) => fixtureDocument(text, FILE);
 
-const KEEP: Answers = { roots: ["~/work"], vm: "automatic", writeBack: true };
+const KEEP: Answers = { root: "~/work", vm: "automatic", writeBack: true };
 
 describe("reading the config document", () => {
   it("detects the indent and the trailing newline", () => {
@@ -58,16 +58,14 @@ describe("reading the config document", () => {
       ok: false,
       kind: "config",
     });
-    expect(readDocument(FILE, JSON.stringify({ vm: { memoryGiB: "lots" }, workspaceRoots: 3 })).ok).toBe(
-      true,
-    );
+    expect(readDocument(FILE, JSON.stringify({ vm: { memoryGiB: "lots" }, workspaceRoot: 3 })).ok).toBe(true);
     expect(readDocument(FILE, JSON.stringify({ vm: { cpus: 2, extra: 1 } }))).toMatchObject({ ok: false });
   });
 
   it("drops only the owned keys and the objects they leave empty", () => {
     expect(
       withoutOwned({
-        workspaceRoots: { roots: [] },
+        workspaceRoot: "~/w",
         vm: { cpus: 2 },
         writeBack: { enabled: false, exclude: {} },
         egress: { allow: [] },
@@ -81,7 +79,7 @@ describe("editing the config document", () => {
     {
       $schema: "../schema/sandbox-config.schema.json",
       credentials: { rules: [{ id: "r", host: "a.test", header: "authorization", secret: { env: "A" } }] },
-      workspaceRoots: { roots: ["~/work", "/Volumes/Code/"] },
+      workspaceRoot: "/Volumes/Code/",
       egress: { allow: ["a.test"] },
       vm: { cpus: 4, memoryGiB: 8, diskGiB: 80 },
       image: { packages: ["jq"] },
@@ -94,7 +92,7 @@ describe("editing the config document", () => {
   it("keeps every other key, its order and its bytes when only an owned value changes", () => {
     const document = { file: FILE, text: STANDARD, value: JSON.parse(STANDARD), indent: "  ", newline: true };
     const next = editedConfig(document.value, {
-      roots: ["~/work", "/Volumes/Code/"],
+      root: "/Volumes/Code/",
       vm: { cpus: 6, memoryGiB: 8, diskGiB: 80 },
       writeBack: true,
     });
@@ -103,28 +101,28 @@ describe("editing the config document", () => {
     expect(isReindented(document)).toBe(false);
   });
 
-  it("appends new top-level keys in the order workspaceRoots, vm, writeBack, and new child keys inside", () => {
+  it("appends new top-level keys in the order workspaceRoot, vm, writeBack, and new child keys inside", () => {
     const appended = editedConfig(
       { egress: { allow: [] } },
-      { roots: ["~/work"], vm: { cpus: 2, memoryGiB: 4, diskGiB: 60 }, writeBack: false },
+      { root: "~/work", vm: { cpus: 2, memoryGiB: 4, diskGiB: 60 }, writeBack: false },
     );
     const inside = editedConfig(
       { writeBack: { exclude: {} }, vm: {} },
       { ...KEEP, vm: { cpus: 2, memoryGiB: 4, diskGiB: 60 }, writeBack: false },
     );
 
-    expect(Object.keys(appended)).toEqual(["egress", "workspaceRoots", "vm", "writeBack"]);
+    expect(Object.keys(appended)).toEqual(["egress", "workspaceRoot", "vm", "writeBack"]);
     expect(inside).toEqual({
       writeBack: { exclude: {}, enabled: false },
       vm: { cpus: 2, memoryGiB: 4, diskGiB: 60 },
-      workspaceRoots: { roots: ["~/work"] },
+      workspaceRoot: "~/work",
     });
   });
 
   it("removes the vm keys and an emptied vm for automatic, and writes all three for custom", () => {
     expect(editedConfig({ vm: { cpus: 4 }, image: {} }, KEEP)).toEqual({
       image: {},
-      workspaceRoots: { roots: ["~/work"] },
+      workspaceRoot: "~/work",
     });
     expect(editedConfig({}, { ...KEEP, vm: { cpus: 8, memoryGiB: 10, diskGiB: 60 } }).vm).toEqual({
       cpus: 8,
@@ -135,23 +133,19 @@ describe("editing the config document", () => {
   });
 
   it("leaves an unset writeBack.enabled unset when it stays on, and never removes a set one", () => {
-    expect(editedConfig({}, KEEP)).toEqual({ workspaceRoots: { roots: ["~/work"] } });
+    expect(editedConfig({}, KEEP)).toEqual({ workspaceRoot: "~/work" });
     expect(editedConfig({ writeBack: { enabled: false } }, KEEP).writeBack).toEqual({ enabled: true });
     expect(editedConfig({ writeBack: { enabled: true } }, KEEP).writeBack).toEqual({ enabled: true });
   });
 
-  it("removes workspaceRoots for home sharing and keeps the spelling of roots", () => {
-    expect(
-      editedConfig({ workspaceRoots: { roots: ["~/w"] }, egress: {} }, { ...KEEP, roots: "home" }),
-    ).toEqual({
+  it("keeps the spelling of the root, and the file's root when none is chosen", () => {
+    expect(editedConfig({ workspaceRoot: "~/w", egress: {} }, { ...KEEP, root: "/Users/me/w/" })).toEqual({
+      workspaceRoot: "/Users/me/w/",
       egress: {},
     });
-    expect(
-      editedConfig(
-        { workspaceRoots: { roots: ["/Users/me/w/"] } },
-        { ...KEEP, roots: ["/Users/me/w/", "~/new"] },
-      ),
-    ).toEqual({ workspaceRoots: { roots: ["/Users/me/w/", "~/new"] } });
+    expect(editedConfig({ workspaceRoot: "~/w" }, { ...KEEP, root: undefined })).toEqual({
+      workspaceRoot: "~/w",
+    });
   });
 
   it("says when serialising changes the formatting", () => {
@@ -167,16 +161,16 @@ describe("diffOf", () => {
   it("lists added, changed and removed leaves with dotted keys, arrays as whole values", () => {
     expect(
       diffOf(
-        { workspaceRoots: { roots: ["~/a"] }, vm: { cpus: 4, diskGiB: 60 }, egress: { allow: ["x"] } },
+        { image: { packages: ["a"] }, vm: { cpus: 4, diskGiB: 60 }, egress: { allow: ["x"] } },
         {
-          workspaceRoots: { roots: ["~/a", "~/b"] },
+          image: { packages: ["a", "b"] },
           vm: { cpus: 6 },
           writeBack: { enabled: false },
           egress: { allow: ["x"] },
         },
       ),
     ).toEqual([
-      { key: "workspaceRoots.roots", kind: "change", before: ["~/a"], after: ["~/a", "~/b"] },
+      { key: "image.packages", kind: "change", before: ["a"], after: ["a", "b"] },
       { key: "vm.cpus", kind: "change", before: 4, after: 6 },
       { key: "vm.diskGiB", kind: "remove", before: 60 },
       { key: "writeBack.enabled", kind: "add", after: false },

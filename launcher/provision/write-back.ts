@@ -160,12 +160,16 @@ export const parseBaseline = (
     return undefined;
   }
 
-  if (!isJsonObject(files) || !synced.every((file) => isJsonObject(files[file.name]))) {
+  if (!isJsonObject(files)) {
     return undefined;
   }
 
   return Object.fromEntries(
-    synced.map((file) => [file.name, syncedValues(file, files[file.name] as JsonObject)]),
+    synced.flatMap((file) => {
+      const entry = files[file.name];
+
+      return isJsonObject(entry) ? [[file.name, syncedValues(file, entry)]] : [];
+    }),
   );
 };
 

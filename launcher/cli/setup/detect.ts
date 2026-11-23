@@ -19,7 +19,7 @@ export interface DetectDeps {
   stateDir: string;
   configFile: string;
   docsFile: string;
-  configRoots: string[] | undefined;
+  configRoot: string | undefined;
   firstRun: boolean;
   backend: Backend;
   statfs: (path: string) => Promise<DiskStats>;
@@ -60,7 +60,7 @@ export const detectHost = async (deps: DetectDeps): Promise<HostFacts> => {
     home: deps.home,
     env: deps.env,
     cwd: deps.cwd,
-    configRoots: deps.configRoots,
+    configRoot: deps.configRoot,
     firstRun: deps.firstRun,
   };
   const [vm, sessions, freeDiskGiB, found] = await Promise.all([

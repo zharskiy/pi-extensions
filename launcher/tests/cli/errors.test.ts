@@ -65,7 +65,7 @@ describe("error rendering", () => {
     expect(harness.stdout()).toBe(
       [
         "usage: pi sandbox config [--json]",
-        "usage: pi sandbox reset [--services]",
+        "usage: pi sandbox reset [--services | --agent]",
         "usage: pi sandbox status",
         "",
       ].join("\n"),
@@ -85,7 +85,7 @@ describe("error rendering", () => {
 
     expect(await run(["sandbox", "reset", "--volumes"], harness.deps)).toBe(1);
     expect(harness.stderr()).toBe(
-      'pi-sandbox: unknown reset option "--volumes"\n  hint: pi sandbox reset [--services]\n',
+      'pi-sandbox: unknown reset option "--volumes"\n  hint: pi sandbox reset [--services | --agent]\n',
     );
   });
 

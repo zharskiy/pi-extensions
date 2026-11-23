@@ -8,8 +8,6 @@ export interface Glyphs {
   active: string;
   answered: string;
   pointer: string;
-  checked: string;
-  unchecked: string;
   radioOn: string;
   radioOff: string;
   warning: string;
@@ -30,8 +28,6 @@ const UNICODE: Glyphs = {
   active: "◆",
   answered: "◇",
   pointer: "›",
-  checked: "■",
-  unchecked: "□",
   radioOn: "●",
   radioOff: "○",
   warning: "▲",
@@ -52,8 +48,6 @@ const ASCII: Glyphs = {
   active: "*",
   answered: "o",
   pointer: ">",
-  checked: "[x]",
-  unchecked: "[ ]",
   radioOn: "(*)",
   radioOff: "( )",
   warning: "!",

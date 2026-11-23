@@ -87,17 +87,17 @@ describe("the daily collection of state entries the layout does not name", () =>
 
     await plantFolder(harness, unknown, 2);
 
-    await plant(harness, repo.files.syncBaseline, 2);
+    await plant(harness, repo.files.legacy.render, 2);
 
-    await plant(harness, join(repo.files.sync, "old.json"), 2);
+    await plant(harness, join(repo.files.legacy.sync, "old.json"), 2);
 
     await ageTo(harness, repo.files.record, 2);
 
     expect(await sweepNow(harness.deps)).toBe(0);
     expect(await exists(unknown)).toBe(false);
-    expect(await exists(join(repo.files.sync, "old.json"))).toBe(false);
+    expect(await exists(join(repo.files.legacy.sync, "old.json"))).toBe(true);
     expect(await exists(repo.files.record)).toBe(true);
-    expect(await exists(repo.files.syncBaseline)).toBe(true);
+    expect(await exists(repo.files.legacy.render)).toBe(true);
     expect(harness.stdout()).toContain(`removed state entry ${join("repos", repo.hash, "proxy")}\n`);
   });
 
@@ -139,7 +139,7 @@ describe("the daily collection of state entries the layout does not name", () =>
     const harness = await defaultHarness();
     const repo = await knownRepo(harness);
     const temporary = join(harness.stateDir, `grants.json.${process.pid}.0a1b2c3d.tmp`);
-    const draft = `${repo.files.renderLock}.draft.${process.pid}.0a1b2c3d`;
+    const draft = `${repo.files.legacy.renderLock}.draft.${process.pid}.0a1b2c3d`;
     const work = join(stateLayout(harness.stateDir).ca, "work-abc123");
 
     await plant(harness, temporary, 0);
@@ -241,7 +241,7 @@ describe("the daily collection of state entries the layout does not name", () =>
   it("removes a render folder and a stray in repos/ with no repository known", async () => {
     const harness = await defaultHarness();
     const layout = stateLayout(harness.stateDir);
-    const render = layout.repo(sha256Hex("gone")).render;
+    const render = layout.repo(sha256Hex("gone")).legacy.render;
     const stray = join(layout.repos, "stray.json");
 
     await plantFolder(harness, render, 2);

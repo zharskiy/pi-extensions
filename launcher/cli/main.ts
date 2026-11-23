@@ -1,10 +1,8 @@
 import { statfs } from "node:fs/promises";
 import { availableParallelism, homedir, totalmem } from "node:os";
 import { createColimaBackend } from "../backend/index.ts";
-import { findOnPath } from "../hostpi/index.ts";
 import { ensureProxy, ensureTrustBundle, readDenials, readProxy, stopProxy } from "../proxy/index.ts";
-import { createProcessRunner, withResolvedCommand } from "../shared/index.ts";
-import { startedRoots } from "../workspace/index.ts";
+import { createProcessRunner } from "../shared/index.ts";
 import { type CliDeps, onClosedOutput, pathsOf } from "./deps.ts";
 import { openDevTty } from "./prompt/terminal.ts";
 import { renderFailure, run } from "./run.ts";
@@ -12,13 +10,10 @@ import { hostTerminal } from "./terminal.ts";
 
 const GIB = 1024 ** 3;
 
-const hostGit = (env: NodeJS.ProcessEnv, cwd: string) => async () =>
-  findOnPath(env, "git", await startedRoots(cwd));
-
 const realDeps = (): CliDeps => {
   const env = process.env;
   const cwd = process.cwd();
-  const runner = withResolvedCommand(createProcessRunner(), "git", hostGit(env, cwd));
+  const runner = createProcessRunner();
   const home = homedir();
   const platform = process.platform;
   const { stateDir } = pathsOf({ env, home });

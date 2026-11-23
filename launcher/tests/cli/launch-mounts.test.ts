@@ -12,6 +12,25 @@ const commandsOf = (fake: ReturnType<typeof createFakeBackend>) =>
 
 const isPi = (command: string[]) => command.includes("pi");
 
+const appInRoot = async (fake: ReturnType<typeof createFakeBackend>, workspaceRoot: string) => {
+  const app = { path: "" };
+  const harness = await createHarness({
+    backend: () => fake.backend,
+    workspaceRoot,
+    respond: (call) =>
+      call.file === "git" && call.args.includes("--show-toplevel")
+        ? { stdout: `${app.path}\n.git\n` }
+        : undefined,
+  });
+  const root = join(harness.root, workspaceRoot);
+
+  app.path = join(root, "app");
+
+  await mkdir(join(app.path, ".git", "hooks"), { recursive: true });
+
+  return { harness, root, app: app.path, deps: { ...harness.deps, cwd: app.path } };
+};
+
 describe("mounts.binds", () => {
   it("mounts a bind read-only at its target and asks the VM to share its source read-only", async () => {
     const fake = createFakeBackend();
@@ -65,7 +84,7 @@ describe("mounts.binds", () => {
     expect(fake.execs).toEqual([]);
   });
 
-  it("shares a bind source apart from the workspace roots", async () => {
+  it("shares a bind source apart from the workspace root", async () => {
     const fake = createFakeBackend();
     const asked: { shares?: string[] } = {};
     const harness = await createHarness({
@@ -84,7 +103,7 @@ describe("mounts.binds", () => {
     await mkdir(apart);
 
     await harness.writeJson(harness.userConfigFile, {
-      workspaceRoots: { roots: [harness.repoRoot] },
+      workspaceRoot: harness.repoRoot,
       mounts: { binds: [{ source: apart, target: "/etc/reference" }] },
     });
 
@@ -93,54 +112,41 @@ describe("mounts.binds", () => {
     expect(asked.shares).toContain(`${harness.repoRoot} rw`);
   });
 
-  it("refuses a bind source inside the repo or a workspace root before it calls the engine", async () => {
+  it("refuses a bind source inside the workspace root, the repository included, before it calls the engine", async () => {
     const fake = createFakeBackend();
-    const harness = await createHarness({ backend: () => fake.backend });
-    const root = join(harness.root, "projects");
-    const inRepo = join(harness.repoRoot, "docs");
+    const { harness, root, app, deps } = await appInRoot(fake, "projects");
+    const inRepo = join(app, "docs");
     const inRoot = join(root, "lib");
 
-    await Promise.all([mkdir(inRepo), mkdir(inRoot, { recursive: true })]);
+    await Promise.all([mkdir(inRepo), mkdir(inRoot)]);
 
     await harness.writeJson(harness.userConfigFile, {
-      workspaceRoots: { roots: [harness.repoRoot, root] },
       mounts: { binds: [{ source: inRepo, target: "/etc/docs" }] },
     });
 
-    expect(await run([], harness.deps)).toBe(1);
+    expect(await run([], deps)).toBe(1);
     expect(harness.stderr()).toContain(
-      `pi-sandbox: config: mounts.binds[0].source: ${inRepo} overlaps ${harness.repoRoot}`,
+      `pi-sandbox: config: mounts.binds[0].source: ${inRepo} overlaps ${root}, which the sandbox already mounts`,
     );
 
     await harness.writeJson(harness.userConfigFile, {
-      workspaceRoots: { roots: [harness.repoRoot, root] },
       mounts: { binds: [{ source: inRoot, target: "/etc/lib" }] },
     });
 
-    expect(await run([], harness.deps)).toBe(1);
+    expect(await run([], deps)).toBe(1);
     expect(harness.stderr()).toContain(
       `pi-sandbox: config: mounts.binds[0].source: ${inRoot} overlaps ${root}`,
     );
     expect(fake.created).toEqual([]);
   });
 
-  it("refuses a bind inside the git common dir of a linked worktree", async () => {
+  it("refuses a bind inside the git common dir of a linked worktree, which the workspace root holds", async () => {
     const fake = createFakeBackend();
-    const linked = { root: "", commonDir: "" };
-    const harness = await createHarness({
-      backend: () => fake.backend,
-      respond: (call) =>
-        call.file === "git" && call.args.includes("--show-toplevel")
-          ? { stdout: `${linked.root}\n${linked.commonDir}\n` }
-          : undefined,
-    });
-    const main = join(harness.root, "main");
+    const harness = await createHarness({ backend: () => fake.backend, workspaceRoot: "worktrees" });
+    const main = join(harness.root, "worktrees", "main");
+    const linked = { root: join(harness.root, "worktrees", "linked"), commonDir: join(main, ".git") };
 
-    linked.root = join(harness.root, "linked");
-
-    linked.commonDir = join(main, ".git");
-
-    await mkdir(main);
+    await mkdir(main, { recursive: true });
 
     await git(main, ["init", "--quiet"]);
 
@@ -158,7 +164,7 @@ describe("mounts.binds", () => {
 
     expect(await run([], { ...harness.deps, cwd: linked.root })).toBe(1);
     expect(harness.stderr()).toContain(
-      `pi-sandbox: config: mounts.binds[0].source: ${inside} overlaps ${linked.commonDir}`,
+      `pi-sandbox: config: mounts.binds[0].source: ${inside} overlaps ${join(harness.root, "worktrees")}, which the sandbox already mounts`,
     );
     expect(fake.created).toEqual([]);
   });
@@ -212,25 +218,21 @@ describe("mounts.binds", () => {
     expect(fake.created).toEqual([]);
   });
 
-  it("refuses a file bind whose folder holds a workspace root, as colima refuses nested shares", async () => {
+  it("refuses a file bind whose folder holds the workspace root, as colima refuses nested shares", async () => {
     const fake = createFakeBackend();
-    const harness = await createHarness({ backend: () => fake.backend });
-    const other = join(harness.root, "other");
-    const inner = join(other, "inner");
+    const { harness, root, deps } = await appInRoot(fake, join("other", "inner"));
+    const other = join(root, "..");
     const file = join(other, "tool.conf");
-
-    await mkdir(inner, { recursive: true });
 
     await writeFile(file, "x");
 
     await harness.writeJson(harness.userConfigFile, {
-      workspaceRoots: { roots: [harness.repoRoot, inner] },
       mounts: { binds: [{ source: file, target: "/etc/tool.conf" }] },
     });
 
-    expect(await run([], harness.deps)).toBe(1);
+    expect(await run([], deps)).toBe(1);
     expect(harness.stderr()).toContain(
-      `pi-sandbox: config: mounts.binds: the sandbox VM would share ${other} for a bind source, which holds the share ${inner}, and colima refuses nested shares`,
+      `pi-sandbox: config: mounts.binds: the sandbox VM would share ${other} for a bind source, which holds the share ${root}, and colima refuses nested shares`,
     );
     expect(fake.created).toEqual([]);
   });

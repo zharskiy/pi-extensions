@@ -27,7 +27,7 @@ const volumeBackend = async (files: Record<string, unknown>) => {
 };
 
 describe("syncVolumeFiles for settings.json", () => {
-  const setup = async (volume: Record<string, unknown>) => {
+  const setup = async (volume: Record<string, unknown>, rootOf = (repoRoot: string) => repoRoot) => {
     const stateDir = await tempDir("sync-state");
     const repoRoot = await tempDir("sync-repo");
     const hostHome = await tempDir("sync-home");
@@ -40,9 +40,8 @@ describe("syncVolumeFiles for settings.json", () => {
         backend: fake.backend,
         containerId,
         stateDir,
-        repoHash: "repo1",
         hostAgentDir,
-        repoRoot,
+        workspaceRoot: rootOf(repoRoot),
         allowlist: BUILT_IN_WRITE_BACK,
         hostHome,
       });
@@ -79,6 +78,15 @@ describe("syncVolumeFiles for settings.json", () => {
       "settings.json: package /elsewhere/ext is a local path outside the sandbox mounts; skipped in the sandbox",
       "settings.json: package ~/private/ext is a local path outside the sandbox mounts; skipped in the sandbox",
     ]);
+  });
+
+  it("keeps a local package of another project in the workspace root, which the sandbox mounts", async () => {
+    const env = await setup({}, dirname);
+    const sibling = join(dirname(env.repoRoot), "sibling", "ext");
+    const result = await env.sync({ packages: [sibling, join(env.repoRoot, "ext")] });
+
+    expect(await env.volume("settings.json")).toEqual({ packages: [sibling, join(env.repoRoot, "ext")] });
+    expect(result.notices).toEqual([]);
   });
 
   it("hands kept local packages to the sandbox as absolute host paths, file URLs included", async () => {
@@ -261,7 +269,7 @@ describe("syncVolumeFiles for settings.json", () => {
 
   it("waits for another launch's sync of the same repository before it reads the volume", async () => {
     const env = await setup({});
-    const lock = stateLayout(env.stateDir).repo("repo1").syncLock;
+    const lock = stateLayout(env.stateDir).sync.lock;
 
     await mkdir(dirname(lock), { recursive: true });
 

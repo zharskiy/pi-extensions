@@ -3,7 +3,7 @@ import type { Socket } from "node:net";
 import type { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { LauncherError } from "../../shared/index.ts";
-import { ENGINE_PROFILE, logHint, plainStart } from "./profile.ts";
+import { ENGINE_PROFILE, logHint, PI_STARTS_VM } from "./profile.ts";
 
 interface EngineRequest {
   method: "GET" | "POST" | "PUT" | "DELETE" | "HEAD";
@@ -187,10 +187,7 @@ export const createEngineClient = (
     }
 
     return CONNECTION_ERRORS.has(error.code ?? "")
-      ? new LauncherError(
-          `engine socket ${socket()} is not reachable (${error.code})`,
-          `run ${plainStart(ENGINE_PROFILE)}`,
-        )
+      ? new LauncherError(`engine socket ${socket()} is not reachable (${error.code})`, PI_STARTS_VM)
       : new LauncherError(`engine: ${error.message}`);
   };
 

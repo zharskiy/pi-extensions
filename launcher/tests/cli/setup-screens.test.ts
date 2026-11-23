@@ -9,7 +9,7 @@ import {
   hubRowLines,
   introLines,
   numberFields,
-  rootsSummary,
+  rootSummary,
   vmActionText,
   vmCollapsed,
   wrapped,
@@ -77,16 +77,15 @@ describe("the folder tags", () => {
 
   it("tags configured and environment roots by where they come from", () => {
     expect(folderTag(candidateOf({ origin: "config", exists: false }), all, false)).toBe(
-      "current · not found right now",
+      "current · missing, not shared until it exists",
     );
-    expect(folderTag(candidateOf({ origin: "env" }), all, false)).toBe("from PI_SANDBOX_ROOTS");
+    expect(folderTag(candidateOf({ origin: "env" }), all, false)).toBe("from PI_SANDBOX_ROOT");
   });
 
-  it("summarises more than three roots", () => {
-    expect(rootsSummary(["~/a", "~/b", "/Volumes/Code", "~/c", "~/d"])).toBe(
-      "~/a, ~/b, /Volumes/Code and 2 more",
-    );
-    expect(rootsSummary("home")).toBe("your whole home (~), not recommended");
+  it("summarises the root, escaping it, and no root as none", () => {
+    expect(rootSummary("/Volumes/Code")).toBe("/Volumes/Code");
+    expect(rootSummary("~/a\u202e")).toBe("~/a\\u202E");
+    expect(rootSummary(undefined)).toBe("none");
   });
 });
 
@@ -131,10 +130,10 @@ describe("the hub", () => {
     const plan = planOf({
       changes: [
         {
-          key: "workspaceRoots.roots",
+          key: "image.packages",
           kind: "change",
-          before: ["~/Projects", "~/work"],
-          after: ["~/Projects", "~/work", "~/oss"],
+          before: ["ripgrep", "imagemagick"],
+          after: ["ripgrep", "imagemagick", "postgresql-client"],
         },
         { key: "vm.cpus", kind: "remove", before: 6 },
       ],
@@ -144,21 +143,21 @@ describe("the hub", () => {
     expect(applyLines(plan, FACTS, SHAPE, 76, false)).toEqual([
       "When you apply:",
       "  • change ~/.pi/agent/pi-sandbox/config.json",
-      '      ~ workspaceRoots.roots   ["~/Projects","~/work"]',
-      '                               → ["~/Projects","~/work","~/oss"]',
-      "      - vm.cpus                6   (back to automatic: 8)",
+      '      ~ image.packages   ["ripgrep","imagemagick"]',
+      '                         → ["ripgrep","imagemagick","postgresql-client"]',
+      "      - vm.cpus          6   (back to automatic: 8)",
       "      (the rest of the file is kept; its indentation is normalised to 2",
       "      spaces)",
     ]);
   });
 
-  it("says that removed roots share the whole home again", () => {
-    const plan = planOf({ changes: [{ key: "workspaceRoots.roots", kind: "remove", before: ["~/a"] }] });
+  it("shows a new root as an added key", () => {
+    const plan = planOf({ changes: [{ key: "workspaceRoot", kind: "add", after: "~/a" }] });
 
     expect(applyLines(plan, FACTS, SHAPE, 76, true)).toEqual([
       "When you apply:",
       "  - change ~/.pi/agent/pi-sandbox/config.json",
-      "      removed workspaceRoots (your whole home is shared again)",
+      '      added workspaceRoot: "~/a"',
     ]);
   });
 
@@ -173,7 +172,7 @@ describe("the hub", () => {
 
   it("words every VM action", () => {
     const actions: VmAction[] = [
-      { kind: "restart", size: AUTOMATIC_SIZE, shares: [], exactShares: true, parts: ["size", "folders"] },
+      { kind: "restart", size: AUTOMATIC_SIZE, shares: [], parts: ["size", "folders"] },
       { kind: "defer", sessions: 2, parts: ["folders"] },
       { kind: "defer", sessions: 1, parts: ["size"] },
       { kind: "create", size: AUTOMATIC_SIZE, shares: [{ location: "/Users/me", writable: true }] },
@@ -182,11 +181,11 @@ describe("the hub", () => {
       { kind: "none" },
     ];
 
-    expect(actions.map((action) => vmActionText(action, "/Users/me"))).toEqual([
+    expect(actions.map((action) => vmActionText(action))).toEqual([
       "restart the sandbox VM with the new size and folders; no pi session is running, and this usually takes under a minute",
       "keep the sandbox VM as it is for now: 2 pi sessions are running. The first pi you start after they all exit restarts it with the new folders",
       "keep the sandbox VM as it is for now: 1 pi session is running. The first pi you start after it exits restarts it with the new size",
-      "create the sandbox VM sharing your whole home (~), writable; this takes a minute or two, longer the first time while colima downloads the VM's system image",
+      "create the sandbox VM with this folder, pi's sessions folder and the launcher's read-only state/vm folder; this takes a minute or two, longer the first time while colima downloads the VM's system image",
       "the sandbox VM is stopped; the next pi starts it with the new size",
       "the sandbox VM could not be checked (colima status failed); run pi sandbox doctor after applying",
       undefined,
@@ -251,7 +250,6 @@ describe("the VM step", () => {
     kind: "restart",
     size: AUTOMATIC_SIZE,
     shares: [],
-    exactShares: true,
     parts: ["folders"],
   };
 
@@ -284,13 +282,13 @@ describe("the VM step", () => {
 
 describe("the success screen", () => {
   it("falls back to a placeholder project", () => {
-    const success = (roots: Answers["roots"], vmReady: boolean) =>
-      eventLines({ kind: "done", roots, vmReady }, FACTS, true);
+    const success = (root: Answers["root"], vmReady: boolean) =>
+      eventLines({ kind: "done", root, vmReady }, FACTS, true);
 
-    expect(success(["~/Projects"], true)[1]).toBe("Next: cd <a project in ~/Projects> && pi");
-    expect(success("home", false).slice(0, 2)).toEqual([
+    expect(success("~/Projects", true)[1]).toBe("Next: cd <a project in ~/Projects> && pi");
+    expect(success("/Volumes/Code", false).slice(0, 2)).toEqual([
       "Done. Settings saved.",
-      "Next: cd <a project> && pi",
+      "Next: cd <a project in /Volumes/Code> && pi",
     ]);
   });
 });

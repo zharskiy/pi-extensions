@@ -553,14 +553,34 @@ describe("pi arguments that name host files", () => {
 describe("the overlay notices", () => {
   it("says the overlays are off when the walk was cut short", () => {
     const notices = launchNotices({
-      workspace: { cwd: "/work", repoRoot: "/work", isGitRepo: false, overlays: [], overlaysTruncated: true },
+      workspace: { cwd: "/work", repoRoot: "/work", isGitRepo: true, overlays: [], overlaysTruncated: true },
       effective: { config: sandboxConfig(), sources: {} },
       stateDir: "/state",
       repoHash: "r",
+      mountedRoot: "/work",
     });
 
     expect(notices).toEqual([
       "pi-sandbox: the folder is too large to search for build output; overlays disabled, the host copies are used",
     ]);
+  });
+
+  it("says once that a folder outside git gets no overlays, and nothing when overlays are off", () => {
+    const context = {
+      workspace: { cwd: "/work/notes", repoRoot: "/work/notes", isGitRepo: false, overlays: [] },
+      effective: { config: sandboxConfig(), sources: {} },
+      stateDir: "/state",
+      repoHash: "r",
+      mountedRoot: "/work",
+    };
+    const off = {
+      ...context,
+      effective: { ...context.effective, config: sandboxConfig({ mounts: { autoOverlays: false } }) },
+    };
+
+    expect(launchNotices(context)).toEqual([
+      "pi-sandbox: /work/notes is not in a git repository; build output is not overlaid, the host copies are used",
+    ]);
+    expect(launchNotices(off)).toEqual([]);
   });
 });

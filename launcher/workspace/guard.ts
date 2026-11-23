@@ -3,7 +3,6 @@ import { join, resolve } from "node:path";
 import { isWithin, LauncherError, realOrResolvedSync } from "../shared/index.ts";
 import { type Protected, protectedPaths } from "./mounts.ts";
 import { sessionSlug } from "./pi-session-dir.ts";
-import type { Workspace } from "./types.ts";
 
 interface GuardContext {
   home: string;
@@ -39,17 +38,11 @@ export const assertSafeMounts = (mounted: string[], context: GuardContext) => {
     return;
   }
 
-  throw new LauncherError(
-    `${covering.path} would mount ${covering.entry.path} into the sandbox, refusing`,
-    HINT,
-  );
-};
+  const reason =
+    covering.entry.path === covering.path ? ", a protected folder" : `: it holds ${covering.entry.path}`;
 
-export const assertSafeWorkspace = (workspace: Workspace, context: GuardContext) =>
-  assertSafeMounts(
-    [workspace.repoRoot, workspace.gitCommonDir].filter((path) => path !== undefined),
-    context,
-  );
+  throw new LauncherError(`pi may not start in ${covering.path}${reason}, refusing`, HINT);
+};
 
 interface HostSessionsContext {
   home: string;

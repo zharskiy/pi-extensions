@@ -333,15 +333,9 @@ case "$setup_status" in
   *) fail_with "$setup_status" "setup failed, see above; the launcher is installed, run pi sandbox init to try again" ;;
 esac
 
-smoke_root=$("$shim" __vm-shares) || exit "$?"
-smoke_root=$(printf '%s\n' "$smoke_root" | head -n 1)
-smoke_parent=$smoke_root
+smoke_parent=$("$shim" __vm-shares) || exit "$?"
+smoke_parent=$(printf '%s\n' "$smoke_parent" | head -n 1)
 smoke_where="a temporary git repository in $smoke_parent"
-
-if [ "$smoke_root" = "$HOME" ]; then
-  smoke_parent="$HOME/.cache"
-  smoke_where="a temporary git repository"
-fi
 
 sandbox_skipped_exit=3
 smoke_skipped=0
@@ -372,7 +366,7 @@ smoke() {
 if ! command -v git >/dev/null 2>&1; then
   step 5 "smoke: skipped, git is missing; run pi sandbox doctor inside a repository"
 elif [ -z "$smoke_parent" ]; then
-  step 5 "smoke: skipped, none of the workspace roots exists; run pi sandbox doctor inside a repository in one of them"
+  step 5 "smoke: skipped, the workspace root does not exist; run pi sandbox doctor inside a repository in it"
 else
   step 5 "smoke: running $shim sandbox doctor in $smoke_where; the first image build takes a few minutes"
 
