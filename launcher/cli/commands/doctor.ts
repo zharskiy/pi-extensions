@@ -253,6 +253,15 @@ const fileCacheCheck = async (deps: CliDeps, context: LaunchContext, sandbox: Sa
     });
   }
 
+  if (reading.state === "lookup-failed") {
+    return warned(
+      "looking for the VM's process timed out or could not run, so the file cache release does nothing",
+      {
+        hint: `it looks with lsof for the Mac process that holds ${reading.looked.join(" or ")}; pi sandbox stop frees the VM's open files`,
+      },
+    );
+  }
+
   if (reading.state === "no-limit") {
     return warned(
       "kern.maxfilesperproc and kern.maxfiles could not be read, so the file cache release does nothing",

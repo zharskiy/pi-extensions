@@ -1211,6 +1211,20 @@ describe("pi sandbox doctor file cache", () => {
     expect(code).toBe(0);
   });
 
+  it("warns that the release does nothing when looking for the VM's process timed out or could not run", async () => {
+    const { code, found } = await fileCacheCheck({
+      readFileCache: async () => ({ state: "lookup-failed", looked: LOOKED }),
+    });
+
+    expect(found).toMatchObject({
+      status: "warn",
+      detail:
+        "looking for the VM's process timed out or could not run, so the file cache release does nothing",
+      hint: `it looks with lsof for the Mac process that holds ${LOOKED[0]} or ${LOOKED[1]}; pi sandbox stop frees the VM's open files`,
+    });
+    expect(code).toBe(0);
+  });
+
   it("warns when the Mac's limits cannot be read", async () => {
     const { found } = await fileCacheCheck({
       readFileCache: async () => ({ state: "no-limit", count: 1200 }),

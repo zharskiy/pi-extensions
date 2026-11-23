@@ -118,20 +118,39 @@ export const createFileCacheGuard = (deps: FileCacheDeps) => {
   const holdersOf = async (diskPath: string) => {
     const found = await probe(["-t", diskPath]);
 
-    return found?.code === 0 ? found.stdout.split("\n").map((line) => line.trim()) : [];
+    if (found === undefined || found.timedOut === true) {
+      return undefined;
+    }
+
+    return found.code === 0 ? found.stdout.split("\n").map((line) => line.trim()) : [];
+  };
+
+  const knownHolder = async (): Promise<Holder | undefined> => {
+    const pid = state.pid;
+
+    if (pid === undefined || !deps.alive(pid)) {
+      return undefined;
+    }
+
+    const count = await countOf(pid);
+
+    return count === undefined ? undefined : { pid, count };
   };
 
   const discover = async () => {
-    const pids = [...new Set((await Promise.all(deps.diskPaths.map(holdersOf))).flat())];
+    const lookups = await Promise.all(deps.diskPaths.map(holdersOf));
+    const pids = [...new Set(lookups.flatMap((holders) => holders ?? []))];
     const counted = await Promise.all(
       pids.filter((pid) => /^\d+$/.test(pid)).map(async (pid) => ({ pid, count: await countOf(pid) })),
     );
-    const holder = busiest(counted.filter((entry): entry is Holder => entry.count !== undefined));
+    const found = busiest(counted.filter((entry): entry is Holder => entry.count !== undefined));
+    const lookupFailed = lookups.includes(undefined);
+    const holder = found ?? (lookupFailed ? await knownHolder() : undefined);
 
     state.pid = holder?.pid;
     state.foundAt = deps.now();
 
-    return holder;
+    return { holder, lookupFailed };
   };
 
   const sample = async () => {
@@ -143,7 +162,7 @@ export const createFileCacheGuard = (deps: FileCacheDeps) => {
       return count;
     }
 
-    return (await discover())?.count;
+    return (await discover()).holder?.count;
   };
 
   const readLimits = async () => {
@@ -231,10 +250,12 @@ export const createFileCacheGuard = (deps: FileCacheDeps) => {
   };
 
   const read = async (): Promise<VmFileCache> => {
-    const holder = await discover();
+    const { holder, lookupFailed } = await discover();
 
     if (holder === undefined) {
-      return { state: "no-vm", looked: deps.diskPaths };
+      return lookupFailed
+        ? { state: "lookup-failed", looked: deps.diskPaths }
+        : { state: "no-vm", looked: deps.diskPaths };
     }
 
     const count = holder.count === PAST_THE_LIMIT ? "timed out" : holder.count;

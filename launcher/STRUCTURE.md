@@ -390,7 +390,7 @@ tests/backend/colima-vm.test.ts      VM start
 tests/backend/colima-shares.test.ts  VM shares, the workspaceRoots reconcile (foreign sessions, one-boot start, nested shares, unreadable lima.yaml), __vm-shares
 tests/backend/colima-size.test.ts    VM size and the restart to the vm config size
 tests/backend/colima-apply.test.ts   VM inspect, apply (create, defer, restart), the launch reconcile of shares and size together, and the cold start at the vm config size
-tests/backend/colima-file-cache.test.ts  the file cache watch: limit, VM process lookup by either disk name, among several holders and every 5 minutes, the read-only reading, timed-out count, release command, rate limit, busy VM lock, stop waiting for a release
+tests/backend/colima-file-cache.test.ts  the file cache watch: limit, VM process lookup by either disk name, among several holders and every 5 minutes, a failed lookup kept apart from none found, the read-only reading, timed-out count, release command, rate limit, busy VM lock, stop waiting for a release
 tests/backend/colima-trust.test.ts   the tls.extraCa certificates in the VM trust store
 tests/backend/vm-decision.test.ts    each outcome of vmDecision and whenBusy
 tests/container/spec.test.ts         the container spec

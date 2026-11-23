@@ -179,6 +179,7 @@ type VmOpenFiles = number | "timed out";
 
 export type VmFileCache =
   | { state: "no-vm"; looked: string[] }
+  | { state: "lookup-failed"; looked: string[] }
   | { state: "no-limit"; count: VmOpenFiles }
   | { state: "counted"; count: VmOpenFiles; limit: number; maxFiles: number };
 

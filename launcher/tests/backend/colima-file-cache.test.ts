@@ -28,6 +28,8 @@ interface HostState {
   limits?: string;
   slow?: string[];
   gone?: string[];
+  stuck?: string[];
+  broken?: string[];
 }
 
 const DISK = "/home/u/.colima/_lima/colima-pi-sandbox/disk";
@@ -57,6 +59,14 @@ const answerHost = (host: HostState) => (call: FakeCall) => {
 
   if (flag === "-t") {
     const path = target ?? "";
+
+    if (host.stuck?.includes(path)) {
+      return { code: 124, timedOut: true as const };
+    }
+
+    if (host.broken?.includes(path)) {
+      return undefined;
+    }
 
     if (!(host.held ?? [DISK]).includes(path)) {
       return missingFile(path);
@@ -318,6 +328,68 @@ describe("a count that times out", () => {
   });
 });
 
+describe("a lookup of the VM process that fails", () => {
+  it.each([
+    ["times out", { stuck: [DISK] }],
+    ["cannot run", { broken: [DISK] }],
+  ])("keeps the known process while it lives when the lookup %s, and counts it", async (_, failure) => {
+    const host: HostState = { pids: ["700"], open: { "700": 120 } };
+    const { guard, clock, calls, released } = guardOf(host);
+
+    expect(await guard.tick()).toBe("below");
+
+    Object.assign(host, failure);
+    host.open["700"] = 50_000;
+
+    clock.advance(REDISCOVER_INTERVAL_MS);
+
+    expect(await guard.tick()).toBe("released");
+    expect(released).toEqual([RELEASE_COMMAND]);
+    expect(discoveries(calls)).toBe(2);
+
+    clock.advance(SAMPLE_INTERVAL_MS * 3);
+
+    expect(await guard.tick()).toBe("below");
+    expect(discoveries(calls)).toBe(2);
+  });
+
+  it("forgets the known process when it is gone", async () => {
+    const host: HostState = { pids: ["700"], open: { "700": 120 } };
+    const { guard, clock } = guardOf(host);
+
+    await guard.tick();
+
+    host.stuck = [DISK];
+    host.gone = ["700"];
+
+    clock.advance(REDISCOVER_INTERVAL_MS);
+
+    expect(await guard.tick()).toBe("no-vm");
+  });
+
+  it("uses a holder found through another disk name", async () => {
+    const host: HostState = { pids: ["700"], held: [DISK, LEGACY_DISK], open: { "700": 120, "900": 140 } };
+    const { guard, clock, calls } = guardOf(host, { diskPaths: [DISK, LEGACY_DISK] });
+
+    await guard.tick();
+
+    host.pids = ["900"];
+    host.stuck = [DISK];
+
+    clock.advance(REDISCOVER_INTERVAL_MS);
+
+    expect(await guard.tick()).toBe("below");
+    expect(counted(calls).at(-1)).toBe("900");
+  });
+
+  it("finds nothing when no process is known", async () => {
+    const { guard, released } = guardOf({ pids: ["700"], open: { "700": 50_000 }, stuck: [DISK] });
+
+    expect(await guard.tick()).toBe("no-vm");
+    expect(released).toEqual([]);
+  });
+});
+
 describe("the file cache reading", () => {
   it("reports the count, the limit and kern.maxfiles, and releases nothing", async () => {
     const { guard, released, calls } = guardOf({ pids: ["700"], open: { "700": 50_000 } });
@@ -331,6 +403,36 @@ describe("the file cache reading", () => {
     const { guard } = guardOf({ pids: [], held: [], open: {} }, { diskPaths: [DISK, LEGACY_DISK] });
 
     expect(await guard.read()).toEqual({ state: "no-vm", looked: [DISK, LEGACY_DISK] });
+  });
+
+  it.each([
+    ["times out", { stuck: [DISK] }],
+    ["cannot run", { broken: [DISK] }],
+  ])(
+    "reports a failed lookup apart from no process when a lookup %s and none finds a holder",
+    async (_, failure) => {
+      const { guard } = guardOf(
+        { pids: ["700"], held: [DISK], open: { "700": 120 }, ...failure },
+        { diskPaths: [DISK, LEGACY_DISK] },
+      );
+
+      expect(await guard.read()).toEqual({ state: "lookup-failed", looked: [DISK, LEGACY_DISK] });
+    },
+  );
+
+  it("reports the holder another disk name finds even when one lookup fails", async () => {
+    const { guard } = guardOf(
+      { pids: ["700"], held: [LEGACY_DISK], open: { "700": 120 }, stuck: [DISK] },
+      { diskPaths: [DISK, LEGACY_DISK] },
+    );
+
+    expect(await guard.read()).toMatchObject({ state: "counted", count: 120 });
+  });
+
+  it("reports no process when every lookup ran and found none", async () => {
+    const { guard } = guardOf({ pids: [], held: [DISK], open: {} });
+
+    expect(await guard.read()).toEqual({ state: "no-vm", looked: [DISK] });
   });
 
   it("reports a count that times out on a live process as timed out", async () => {
