@@ -301,7 +301,7 @@ const doctorThroughInspection = async (options: InspectedOptions = {}) => {
     await writeFile(join(harness.stateDir, "ca", "extra.pem"), chainOf().root);
   }
 
-  const code = await run(["sandbox", "doctor"], harness.deps);
+  const code = await run(["sandbox", "doctor", "--verbose"], harness.deps);
 
   return { code, harness, proxy, asked, found: doctorCheck(harness.stdout(), "tls inspection") };
 };
@@ -322,7 +322,7 @@ const doctorWithProbe = async (chain: string[], verdict: string, system = "") =>
     },
   });
 
-  await run(["sandbox", "doctor"], harness.deps);
+  await run(["sandbox", "doctor", "--verbose"], harness.deps);
 
   return {
     harness,
@@ -345,7 +345,7 @@ describe("pi sandbox doctor tls inspection", () => {
       },
     });
 
-    await run(["sandbox", "doctor"], harness.deps);
+    await run(["sandbox", "doctor", "--verbose"], harness.deps);
 
     expect(doctorCheck(harness.stdout(), "tls inspection")).toMatchObject({
       section: "network",

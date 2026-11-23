@@ -158,7 +158,7 @@ const guestBackend = async (probes: Probes, vm?: Partial<Vm>) => {
 
 const hostSection = async (prepared: boolean) => [
   "host",
-  `  ok    host pi           pi ${await testedPiVersion()}, ~/.pi/agent/bin/pi; the image follows it`,
+  `  ok    pi                ${await testedPiVersion()} at ~/.pi/agent/bin/pi; the sandbox runs the same version`,
   "  ok    provider hosts    1 built-in providers with known hosts",
   expect.stringMatching(/^ {2}ok {4}sessions {10}~\/\.pi\/agent\/sessions\/--.+-repo-- \(host pi lists them/),
   ...(prepared ? ["  ok    host side"] : []),
@@ -173,7 +173,9 @@ const NOT_INSPECTED = "  ok    tls inspection    not inspected";
 
 const EXAMPLE_AUTH = { example: { type: "api_key", key: "real-secret-value-1234567890" } };
 
-const RULE = "rule derived:auth:example:key";
+const RULE = "example login";
+
+const RULE_NOTE = " (rule derived:auth:example:key)";
 
 interface DoctorOptions {
   probes?: Probes;
@@ -211,7 +213,10 @@ const doctorWith = async (options: DoctorOptions = {}) => {
   }
 
   const code = await run(
-    [...(options.command ?? ["sandbox", "doctor"]), ...(options.args ?? [])],
+    [
+      ...(options.command ?? ["sandbox", "doctor"]),
+      ...(options.args ?? (options.command ? [] : ["--verbose"])),
+    ],
     harness.deps,
   );
   const stdout = harness.stdout();
@@ -243,22 +248,22 @@ describe("pi sandbox doctor", () => {
       "",
       "network",
       `  ok    proxy             pid 77 port ${port}`,
-      "  ok    proxy health      /healthz answers",
+      "  ok    proxy health      the proxy answers its health check",
       NO_PARENT,
+      "  ok    isolation         no direct route to the internet (tried 1.1.1.1:443)",
       NOT_INSPECTED,
       "  ok    tls in sandbox    the container trusts TLS to pi.dev through the sandbox proxy",
-      "  ok    no-route          no direct route to 1.1.1.1:443",
       "  ok    mcp               pi mcp list connects to every enabled server",
       "",
       "credentials",
-      "  skip  trust             no credential rule, nothing is terminated",
+      "  skip  trust             no credential rule, so the proxy adds no credential to any request",
       "",
       "leak sweep",
       "  ok    credential sweep  no credential in the environment, auth.json or mcp.json",
       "  ok    mcp-auth sweep    no mcp-auth.json in the sandbox yet",
       "  ok    settings sweep    no settings.json package carries a credential in its URL",
       "",
-      "result: ok (18 ok, 5 skipped)",
+      "result: ok",
       "",
     ]);
     expect(harness.stderr()).toBe("");
@@ -280,28 +285,57 @@ describe("pi sandbox doctor", () => {
     });
     expect(check(stdout, RULE)).toMatchObject({
       status: "fail",
-      detail: "https://models.example.test/ answered HTTP 401 with the placeholder",
+      detail: `https://models.example.test/ answered HTTP 401 with the placeholder${RULE_NOTE}`,
     });
     expect(request?.spec.command.at(-1)).toMatch(/^Bearer pi-sandbox-[0-9a-f]{24}$/);
     expect(request?.spec.command[2]).toContain("AbortSignal.timeout(15000)");
     expect(JSON.stringify(fake.execs.map((exec) => exec.spec))).not.toContain("real-secret-value");
   });
 
+  it("shows by default only the merged lines of a healthy run, with nothing on stderr", async () => {
+    const { code, stdout, harness } = await doctorWith({ hostAuth: EXAMPLE_AUTH, args: [] });
+
+    expect(stdout.split("\n")).toEqual([
+      "host",
+      `  ok    pi                ${await testedPiVersion()} at ~/.pi/agent/bin/pi; the sandbox runs the same version`,
+      expect.stringMatching(
+        /^ {2}ok {4}sessions {10}saved on the host in ~\/\.pi\/agent\/sessions\/--.+-repo--, writable from the sandbox$/,
+      ),
+      "",
+      "sandbox",
+      SHARES_UNKNOWN,
+      "  ok    sandbox           starts here (pi-sandbox-base:local)",
+      "",
+      "network",
+      "  ok    isolation         no direct route to the internet (tried 1.1.1.1:443)",
+      "  ok    tls               not inspected; the sandbox trusts HTTPS through the proxy",
+      "",
+      "credentials",
+      "  ok    logins            1 login answered through the proxy (--verbose lists them)",
+      "  ok    secrets           no real credential inside the sandbox",
+      "",
+      "result: ok",
+      "",
+    ]);
+    expect(harness.stderr()).toBe("");
+    expect(code).toBe(0);
+  });
+
   it("collapses the rules that pass into one line with their count, and lists each with --verbose", async () => {
-    const plain = await doctorWith({ hostAuth: EXAMPLE_AUTH });
+    const plain = await doctorWith({ hostAuth: EXAMPLE_AUTH, args: [] });
     const verbose = await doctorWith({ hostAuth: EXAMPLE_AUTH, args: ["--verbose"] });
 
-    expect(check(plain.stdout, "rules")).toMatchObject({
+    expect(check(plain.stdout, "logins")).toMatchObject({
       status: "ok",
-      detail: "1 credential host answered through the proxy (--verbose lists them)",
+      detail: "1 login answered through the proxy (--verbose lists them)",
     });
     expect(check(plain.stdout, RULE)).toBeUndefined();
     expect(check(verbose.stdout, RULE)).toMatchObject({
       status: "ok",
-      detail: "https://models.example.test/ answered HTTP 200",
+      detail: `https://models.example.test/ answered HTTP 200${RULE_NOTE}`,
     });
-    expect(check(verbose.stdout, "rules")).toBeUndefined();
-    expect(plain.report.result).toBe("ok (20 ok, 4 skipped)");
+    expect(check(verbose.stdout, "logins")).toBeUndefined();
+    expect(plain.report.result).toBe("ok");
     expect(verbose.report.result).toBe(plain.report.result);
   });
 
@@ -326,7 +360,7 @@ describe("pi sandbox doctor", () => {
 
     expect(check(stdout, RULE)).toMatchObject({
       status: "fail",
-      detail: "https://models.example.test/ answered HTTP 502",
+      detail: `https://models.example.test/ answered HTTP 502${RULE_NOTE}`,
       reasons: ["upstream request failed: unable to get local issuer certificate; set tls.extraCa"],
     });
     expect(code).toBe(1);
@@ -349,7 +383,7 @@ describe("pi sandbox doctor", () => {
 
     expect(check(stdout, RULE)).toMatchObject({
       status: "warn",
-      detail: "the example login on the host is missing or expired",
+      detail: `the example login on the host is missing or expired${RULE_NOTE}`,
       hint: "log in again with pi --no-sandbox and /login",
     });
     expect(blocked(report.checks)).toEqual([]);
@@ -378,7 +412,7 @@ describe("pi sandbox doctor", () => {
 
     expect(check(stdout, RULE)).toMatchObject({
       status: "fail",
-      detail: "https://models.example.test/: the sandbox proxy refused it",
+      detail: `https://models.example.test/: the sandbox proxy refused it${RULE_NOTE}`,
       reasons: [reason],
       hint: `add models.example.test to egress.privateHosts in ${harness.userConfigFile}`,
     });
@@ -394,7 +428,7 @@ describe("pi sandbox doctor", () => {
     ]);
 
     expect(check(stdout, RULE)).toMatchObject({
-      detail: "https://models.example.test/: the sandbox proxy refused it",
+      detail: `https://models.example.test/: the sandbox proxy refused it${RULE_NOTE}`,
       reasons: ["denied by egress.deny"],
     });
     expect(check(stdout, RULE)?.hint).toBeUndefined();
@@ -405,7 +439,10 @@ describe("pi sandbox doctor", () => {
       refusal("private-address", "models.example.test resolves only to restricted addresses", 8443),
     ]);
 
-    expect(check(stdout, RULE)).toMatchObject({ status: "fail", detail: "https://models.example.test/: 0" });
+    expect(check(stdout, RULE)).toMatchObject({
+      status: "fail",
+      detail: `https://models.example.test/: 0${RULE_NOTE}`,
+    });
     expect(check(stdout, "blocked models.example.test:8443")).toMatchObject({
       status: "warn",
       detail: "models.example.test resolves only to restricted addresses",
@@ -425,7 +462,7 @@ describe("pi sandbox doctor", () => {
 
     expect(check(stdout, RULE)).toMatchObject({
       status: "fail",
-      detail: "https://models.example.test/: CERT_NOT_YET_VALID",
+      detail: `https://models.example.test/: CERT_NOT_YET_VALID${RULE_NOTE}`,
       ...clock,
     });
     expect(check(stdout, "trust")).toMatchObject({
@@ -473,11 +510,12 @@ describe("pi sandbox doctor", () => {
       },
     });
 
-    await run(["sandbox", "doctor"], harness.deps);
+    await run(["sandbox", "doctor", "--verbose"], harness.deps);
 
     expect(check(harness.stdout(), "sessions share")).toMatchObject({
       status: "skip",
-      detail: "in the sandbox volume (sessions.host is off)",
+      detail:
+        "the running container keeps sessions in its sandbox volume, not on the host (sessions.host is off)",
     });
   });
 
@@ -575,10 +613,10 @@ describe("pi sandbox doctor", () => {
     });
     const startedAt = Date.now();
 
-    await run(["sandbox", "doctor"], harness.deps);
+    await run(["sandbox", "doctor", "--verbose"], harness.deps);
 
     expect(Date.now() - startedAt).toBeLessThan(2000);
-    expect(check(harness.stdout(), "no-route")?.status).toBe("ok");
+    expect(check(harness.stdout(), "isolation")?.status).toBe("ok");
   });
 
   it("fails the sweep on an mcp.json header or stdio env value that is not a placeholder", async () => {
@@ -700,7 +738,7 @@ describe("pi sandbox doctor", () => {
       image: "x",
     });
 
-    await run(["sandbox", "doctor"], harness.deps);
+    await run(["sandbox", "doctor", "--verbose"], harness.deps);
 
     expect([...fake.containers.keys()]).toEqual([other]);
   });
@@ -767,19 +805,19 @@ describe("pi sandbox doctor", () => {
   it("fails when the container reaches the internet directly", async () => {
     const { code, stdout } = await doctorWith({ probes: { routeExit: 0 } });
 
-    expect(check(stdout, "no-route")).toMatchObject({
+    expect(check(stdout, "isolation")).toMatchObject({
       status: "fail",
-      detail: "1.1.1.1:443 is reachable directly",
+      detail: "the sandbox reaches 1.1.1.1:443 directly, outside the proxy",
     });
     expect(code).toBe(1);
   });
 
-  it("fails the proxy check when /healthz does not answer", async () => {
+  it("fails the proxy check when its health check does not answer", async () => {
     const { code, stdout } = await doctorWith({ health: 503 });
 
     expect(check(stdout, "proxy health")).toMatchObject({
       status: "fail",
-      detail: "/healthz does not answer",
+      detail: "the proxy does not answer its health check",
     });
     expect(code).toBe(1);
   });
@@ -797,7 +835,7 @@ describe("pi sandbox doctor", () => {
     });
     const harness = await createHarness({ backend: () => unreachable(fake.backend) });
 
-    expect(await run(["sandbox", "doctor"], harness.deps)).toBe(1);
+    expect(await run(["sandbox", "doctor", "--verbose"], harness.deps)).toBe(1);
     expect(harness.stdout().split("\n")).toEqual([
       ...(await hostSection(false)),
       "",
@@ -806,13 +844,13 @@ describe("pi sandbox doctor", () => {
       "  fail  vm                the sandbox VM engine is unreachable at ~/.colima/pi-sandbox/docker.sock: socket missing",
       "        hint: run colima start --profile pi-sandbox --activate=false, or pi sandbox init when ~/.colima/pi-sandbox does not exist",
       "  skip  file cache        the sandbox VM is not running",
-      "  skip  probes            not run: the vm stage failed",
+      "  skip  sandbox checks    not run, because starting the VM failed",
       "",
       "network",
       NO_PARENT,
       NOT_INSPECTED,
       "",
-      "result: fail (1 failed, 4 ok, 4 skipped)",
+      "result: fail (1 failed: vm)",
       "",
     ]);
     expect(harness.stderr()).toBe("");
@@ -854,7 +892,7 @@ describe("pi sandbox doctor", () => {
       status: "skip",
       detail: "not started until the VM shares /Volumes/work",
     });
-    expect(["vm", "probes", "host side"].map((name) => check(stdout, name))).toEqual([
+    expect(["vm", "sandbox checks", "host side"].map((name) => check(stdout, name))).toEqual([
       undefined,
       undefined,
       undefined,
@@ -866,7 +904,7 @@ describe("pi sandbox doctor", () => {
 
   it("exits 3 from the hidden __smoke-doctor when the sandbox part is skipped, with the same report", async () => {
     const vm = { coverage: async () => ({ shares: [], missing: ["/Volumes/work"] }) };
-    const doctor = await doctorWith({ vm });
+    const doctor = await doctorWith({ vm, args: [] });
     const smoke = await doctorWith({ vm, command: ["__smoke-doctor"] });
 
     expect(smoke.code).toBe(3);
@@ -896,7 +934,7 @@ describe("pi sandbox doctor", () => {
 
     await harness.writeJson(harness.userConfigFile, { egress: { allow: [] } });
 
-    expect(await run(["sandbox", "doctor"], harness.deps)).toBe(1);
+    expect(await run(["sandbox", "doctor", "--verbose"], harness.deps)).toBe(1);
     expect(harness.stdout().split("\n")).toEqual([
       ...(await hostSection(true)),
       "",
@@ -905,14 +943,14 @@ describe("pi sandbox doctor", () => {
       "  ok    vm",
       "  ok    file cache        1200 open files, released at 30720",
       "  fail  image             build failed",
-      "  skip  probes            not run: the image stage failed",
+      "  skip  sandbox checks    not run, because building the image failed",
       "",
       "network",
       "  ok    proxy             pid 4242 port 3128",
       NO_PARENT,
       NOT_INSPECTED,
       "",
-      "result: fail (1 failed, 8 ok, 3 skipped)",
+      "result: fail (1 failed: image)",
       "",
     ]);
   });
@@ -941,7 +979,7 @@ describe("pi sandbox doctor", () => {
       packages: [{ source: "git:https://user:hunter2@git.example.test/team/ext.git" }],
     });
 
-    expect(await run(["sandbox", "doctor"], harness.deps)).toBe(70);
+    expect(await run(["sandbox", "doctor", "--verbose"], harness.deps)).toBe(70);
 
     const report = doctorReport(harness.stdout());
 
@@ -963,7 +1001,7 @@ describe("pi sandbox doctor", () => {
       (harness.deps.stdout as { isTTY?: boolean }).isTTY = true;
       (harness.deps.stderr as { isTTY?: boolean }).isTTY = true;
 
-      const code = await run(["sandbox", "doctor"], harness.deps);
+      const code = await run(["sandbox", "doctor", "--verbose"], harness.deps);
 
       return { code, harness };
     };
@@ -973,10 +1011,10 @@ describe("pi sandbox doctor", () => {
       const stdout = harness.stdout();
 
       expect(stdout).toContain("\u001b[1;31mfail\u001b[0m  vm ");
-      expect(stdout).toContain("\u001b[32mok\u001b[0m    host pi ");
+      expect(stdout).toContain("\u001b[32mok\u001b[0m    pi ");
       expect(stdout).toContain("\u001b[36mhint:\u001b[0m run colima start");
       expect(stdout).toContain("result: \u001b[1;31mfail\u001b[0m (");
-      expect(doctorReport(stripVTControlCharacters(stdout)).result).toBe("fail (1 failed, 4 ok, 4 skipped)");
+      expect(doctorReport(stripVTControlCharacters(stdout)).result).toBe("fail (1 failed: vm)");
       expect(harness.stderr().startsWith("\r\u001b[2Kpi sandbox doctor: preparing the sandbox")).toBe(true);
       expect(harness.stderr().endsWith("\r\u001b[2K")).toBe(true);
       expect(harness.stderr()).not.toContain("\n");
@@ -989,9 +1027,9 @@ describe("pi sandbox doctor", () => {
       const outputs = runs.map((harness) => harness.stdout());
 
       expect(outputs.map((stdout) => doctorReport(stdout).result)).toEqual([
-        "fail (1 failed, 4 ok, 4 skipped)",
-        "fail (1 failed, 4 ok, 4 skipped)",
-        "fail (1 failed, 4 ok, 4 skipped)",
+        "fail (1 failed: vm)",
+        "fail (1 failed: vm)",
+        "fail (1 failed: vm)",
       ]);
       expect(outputs.filter((stdout) => stdout.includes("\u001b["))).toEqual([]);
       expect(runs[1]?.stderr()).toBe("");
@@ -1018,7 +1056,7 @@ describe("pi sandbox doctor", () => {
         await harness.writeJson(harness.userConfigFile, userConfig);
       }
 
-      const code = await run(["sandbox", "doctor"], harness.deps);
+      const code = await run(["sandbox", "doctor", "--verbose"], harness.deps);
 
       return { code, found: check(harness.stdout(), "vm size") };
     };
@@ -1078,7 +1116,7 @@ describe("pi sandbox doctor", () => {
 
       await harness.writeJson(harness.userConfigFile, { vm: { cpus: 9 } });
 
-      const code = await run(["sandbox", "doctor"], harness.deps);
+      const code = await run(["sandbox", "doctor", "--verbose"], harness.deps);
 
       expect(code).toBe(1);
       expect(started).toEqual([]);
@@ -1139,7 +1177,7 @@ describe("pi sandbox doctor file cache", () => {
       await harness.writeJson(harness.userConfigFile, options.userConfig);
     }
 
-    const code = await run(["sandbox", "doctor"], {
+    const code = await run(["sandbox", "doctor", "--verbose"], {
       ...harness.deps,
       platform: options.platform ?? "darwin",
     });
@@ -1364,19 +1402,19 @@ describe("pi sandbox doctor on the host pi", () => {
 
     await prepare(harness);
 
-    await run(["sandbox", "doctor"], harness.deps);
+    await run(["sandbox", "doctor", "--verbose"], harness.deps);
 
-    return { harness, found: check(harness.stdout(), "host pi") };
+    return { harness, found: check(harness.stdout(), "pi") };
   };
 
-  it("names pi's managed install, with the home shown as ~, and says the image follows it", async () => {
+  it("names pi's managed install, with the home shown as ~, and says the sandbox runs the same version", async () => {
     const { found } = await hostPiCheck(async (harness) => {
       await writeManagedPi(harness.hostAgentDir, "1.6.0");
     });
 
     expect(found).toMatchObject({
       status: "ok",
-      detail: "pi 1.6.0, ~/.pi/agent/bin/pi; the image follows it",
+      detail: "1.6.0 at ~/.pi/agent/bin/pi; the sandbox runs the same version",
     });
   });
 
@@ -1399,7 +1437,8 @@ describe("pi sandbox doctor on the host pi", () => {
 
     expect(found).toMatchObject({
       status: "ok",
-      detail: "pi 1.6.0, ~/npm-global/lib/node_modules/@earendil-works/pi-coding-agent; the image follows it",
+      detail:
+        "1.6.0 at ~/npm-global/lib/node_modules/@earendil-works/pi-coding-agent; the sandbox runs the same version",
     });
   });
 
@@ -1431,7 +1470,7 @@ describe("pi sandbox doctor on the host pi", () => {
         },
       });
 
-      await run(["sandbox", "doctor"], harness.deps);
+      await run(["sandbox", "doctor", "--verbose"], harness.deps);
 
       return { stdout: harness.stdout(), report: doctorReport(harness.stdout()) };
     })();
@@ -1456,7 +1495,7 @@ describe("pi sandbox doctor parent proxy", () => {
 
     harness.deps.env.HTTPS_PROXY = url(port);
 
-    await run(["sandbox", "doctor"], harness.deps);
+    await run(["sandbox", "doctor", "--verbose"], harness.deps);
 
     return { port, found: check(harness.stdout(), "parent proxy") };
   };
@@ -1501,7 +1540,7 @@ describe("pi sandbox doctor mcp sign-in checks", () => {
       },
     });
 
-    await run(["sandbox", "doctor"], harness.deps);
+    await run(["sandbox", "doctor", "--verbose"], harness.deps);
 
     const servers = doctorReport(harness.stdout()).checks.filter(
       (entry) => entry.section === "credentials" && entry.name.startsWith("mcp "),
@@ -1513,5 +1552,189 @@ describe("pi sandbox doctor mcp sign-in checks", () => {
     ]);
     expect(servers[1]?.hint).toBeUndefined();
     expect(harness.stdout()).not.toContain("real-access-token");
+  });
+});
+
+describe("pi sandbox doctor by default", () => {
+  const plain = (options: DoctorOptions = {}) => doctorWith({ ...options, args: [] });
+
+  it("prints a failing group member under its own name, without the group's line", async () => {
+    const { code, stdout } = await plain({ vm: { size: async () => ({ cpus: 2, memoryGiB: 4 }) } });
+    const lines = stdout.split("\n");
+
+    expect(check(stdout, "vm size")).toMatchObject({
+      status: "warn",
+      detail: "profile pi-sandbox has 2 CPUs and 4 GiB, below 8 CPUs and 10 GiB",
+    });
+    expect(check(stdout, "vm")).toBeUndefined();
+    expect(lines).toContain("  ok    sandbox           starts here (pi-sandbox-base:local)");
+    expect(lines).toContain("result: ok with warnings (1 warning: vm size)");
+    expect(code).toBe(0);
+  });
+
+  it("prints a failing tls member and drops the passing ones that carry nothing", async () => {
+    const { stdout } = await plain({
+      probes: {
+        sandboxTls: JSON.stringify({
+          chain: [],
+          verdicts: ["UNABLE_TO_GET_ISSUER_CERT_LOCALLY"],
+          extraCaEnv: "/etc/ssl/certs/ca-certificates.crt",
+        }),
+      },
+    });
+
+    expect(check(stdout, "tls in sandbox")?.status).toBe("fail");
+    expect(check(stdout, "tls")).toBeUndefined();
+    expect(check(stdout, "tls inspection")).toBeUndefined();
+  });
+
+  it("keeps the neutral skips out, and shows them with --verbose", async () => {
+    const quiet = await plain();
+    const verbose = await doctorWith();
+
+    expect(check(quiet.stdout, "parent proxy")).toBeUndefined();
+    expect(check(quiet.stdout, "trust")).toBeUndefined();
+    expect(check(quiet.stdout, "file cache")).toBeUndefined();
+    expect(check(verbose.stdout, "parent proxy")?.status).toBe("skip");
+    expect(check(verbose.stdout, "trust")?.status).toBe("skip");
+    expect(quiet.report.result).toBe(verbose.report.result);
+  });
+
+  it("shows a failing derived rule without its rule id, which --verbose keeps", async () => {
+    const options = { probes: { ruleAnswer: "401" as const }, hostAuth: EXAMPLE_AUTH };
+    const { code, stdout } = await plain(options);
+    const verbose = await doctorWith(options);
+
+    expect(check(stdout, RULE)).toMatchObject({
+      status: "fail",
+      detail: "https://models.example.test/ answered HTTP 401 with the placeholder",
+    });
+    expect(check(verbose.stdout, RULE)?.detail).toBe(
+      `https://models.example.test/ answered HTTP 401 with the placeholder${RULE_NOTE}`,
+    );
+    expect(check(stdout, "logins")).toBeUndefined();
+    expect(code).toBe(1);
+  });
+
+  it("shows a failing rule from the config with its rule id", async () => {
+    const { stdout } = await plain({
+      probes: { ruleAnswer: "401" },
+      userConfig: {
+        credentials: {
+          rules: [
+            {
+              id: "llm",
+              host: "llm.example.test",
+              placeholder: "pi-sandbox-llm",
+              secret: { env: "LLM_KEY" },
+            },
+          ],
+        },
+      },
+    });
+
+    expect(check(stdout, "llm.example.test")).toMatchObject({
+      status: "fail",
+      detail: expect.stringMatching(/ \(rule llm\)$/),
+    });
+  });
+
+  it("tells two rules on one host apart by their ids, lowercasing the host", async () => {
+    const rule = (id: string, pathPrefix: string) => ({
+      id,
+      host: "LLM.Example.test",
+      pathPrefix,
+      placeholder: `pi-sandbox-${id}`,
+      secret: { env: "LLM_KEY" },
+    });
+    const { stdout } = await plain({
+      probes: { ruleAnswer: "401" },
+      userConfig: { credentials: { rules: [rule("chat", "/chat"), rule("embed", "/embed")] } },
+    });
+
+    expect(check(stdout, "llm.example.test chat")).toMatchObject({ status: "fail" });
+    expect(check(stdout, "llm.example.test embed")).toMatchObject({ status: "fail" });
+    expect(check(stdout, "llm.example.test chat")?.detail).toMatch(/\(rule chat\)$/);
+  });
+
+  it("counts the passing rules of one host as credential rules", async () => {
+    const rule = (id: string, pathPrefix: string) => ({
+      id,
+      host: "llm.example.test",
+      pathPrefix,
+      placeholder: `pi-sandbox-${id}`,
+      secret: { env: "LLM_KEY" },
+    });
+    const { stdout } = await plain({
+      userConfig: { credentials: { rules: [rule("chat", "/chat"), rule("embed", "/embed")] } },
+    });
+
+    expect(check(stdout, "credential hosts")).toMatchObject({
+      status: "ok",
+      detail: "2 credential rules answered through the proxy (--verbose lists them)",
+    });
+  });
+
+  const keptInVolume = async (
+    label: (labels: Record<string, string>) => Record<string, string> | undefined,
+  ) => {
+    const fake = await guestBackend({});
+    const inspect = fake.backend.inspectContainer;
+
+    fake.backend.inspectContainer = async (id) => {
+      const container = await inspect(id);
+
+      if (container === undefined || fake.execs.length === 0) {
+        return container;
+      }
+
+      const labels = label(container.labels);
+
+      return labels === undefined ? undefined : { ...container, labels };
+    };
+
+    const port = await healthServer(200);
+    const harness = await createHarness({
+      backend: () => fake.backend,
+      proxy: {
+        ensure: async () => ({ proxy: { pid: 77, port, boot: 0, start: "", inputHash: "h" }, notices: [] }),
+      },
+    });
+
+    await run(["sandbox", "doctor"], harness.deps);
+
+    return harness.stdout();
+  };
+
+  it("says where the running container keeps sessions when it is not the planned host dir", async () => {
+    const stdout = await keptInVolume((labels) => ({
+      ...labels,
+      [LABELS.sessionDir]: "sessions.host is off",
+    }));
+
+    expect(check(stdout, "sessions share")).toMatchObject({
+      status: "skip",
+      detail:
+        "the running container keeps sessions in its sandbox volume, not on the host (sessions.host is off)",
+    });
+    expect(check(stdout, "sessions")).toBeUndefined();
+    expect(stdout).not.toContain("writable from the sandbox");
+  });
+
+  it("says the same when the running container cannot be inspected", async () => {
+    const stdout = await keptInVolume(() => undefined);
+
+    expect(check(stdout, "sessions share")).toMatchObject({
+      status: "skip",
+      detail: "the running container keeps sessions in its sandbox volume, not on the host",
+    });
+    expect(stdout).not.toContain("writable from the sandbox");
+  });
+
+  it("hides the in-volume sessions share when sessions.host is off, which the sessions line says", async () => {
+    const { stdout } = await plain({ userConfig: { sessions: { host: false } } });
+
+    expect(check(stdout, "sessions")?.status).toBe("skip");
+    expect(check(stdout, "sessions share")).toBeUndefined();
   });
 });

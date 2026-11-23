@@ -1,13 +1,5 @@
-import {
-  type CheckStatus,
-  inLayout,
-  type NamedCheck,
-  passed,
-  SECTIONS,
-  tallyOf,
-  VERBOSE_FLAG,
-  verdictOf,
-} from "./doctor-checks.ts";
+import { inLayout, type NamedCheck, SECTIONS, verdictOf } from "./doctor-checks.ts";
+import { defaultRows, verboseRows } from "./doctor-view.ts";
 
 export interface ReportOptions {
   verbose: boolean;
@@ -16,7 +8,7 @@ export interface ReportOptions {
   partial?: boolean;
 }
 
-const NAME_WIDTH = 16;
+const MIN_NAME_WIDTH = 16;
 
 const STATUS_WIDTH = 4;
 
@@ -45,37 +37,11 @@ const homeAt = (home: string) =>
 const tilde = (home: string) => (text: string) =>
   home === "" || home === "/" ? text : text.replace(homeAt(home), "$1~/");
 
-const isPassingRule = (check: NamedCheck) => check.group === "rules" && check.result.status === "ok";
-
-const rulesSummary = (count: number, others: boolean): NamedCheck => ({
-  name: "rules",
-  section: "credentials",
-  result: passed(
-    `${count} ${others ? "other " : ""}credential host${count === 1 ? "" : "s"} answered through the proxy (${VERBOSE_FLAG} lists them)`,
-  ),
-});
-
-const collapsed = (checks: NamedCheck[], verbose: boolean) => {
-  const passing = checks.filter(isPassingRule).length;
-
-  if (verbose || passing === 0) {
-    return checks;
-  }
-
-  const last = checks.findLastIndex((check) => check.group === "rules");
-  const others = checks.some((check) => check.group === "rules" && !isPassingRule(check));
-
-  return checks.flatMap((check, index) => [
-    ...(isPassingRule(check) ? [] : [check]),
-    ...(index === last ? [rulesSummary(passing, others)] : []),
-  ]);
-};
-
-const checkLines = (check: NamedCheck, options: ReportOptions) => {
+const checkLines = (check: NamedCheck, options: ReportOptions, width: number) => {
   const style = paint(options.color);
   const shown = tilde(options.home);
   const { status, detail, reasons = [], hint } = check.result;
-  const head = `${check.name.padEnd(NAME_WIDTH)}  ${shown(detail)}`.trimEnd();
+  const head = `${check.name.padEnd(width)}  ${shown(detail)}`.trimEnd();
   const fix =
     hint === undefined || hint === CIRCULAR_HINT
       ? []
@@ -87,18 +53,20 @@ const checkLines = (check: NamedCheck, options: ReportOptions) => {
   ];
 };
 
-const sectionBlocks = (checks: NamedCheck[], options: ReportOptions) =>
-  SECTIONS.map((section) =>
-    collapsed(
-      checks.filter((check) => check.section === section),
-      options.verbose,
-    ),
-  )
-    .filter((rows) => rows.length > 0)
-    .map((rows) => [
-      paint(options.color)(STYLE.section, rows[0]?.section ?? ""),
-      ...rows.flatMap((row) => checkLines(row, options)),
+const nameWidth = (rows: NamedCheck[]) =>
+  rows.reduce((width, row) => Math.max(width, row.name.length), MIN_NAME_WIDTH);
+
+const sectionBlocks = (checks: NamedCheck[], options: ReportOptions) => {
+  const rows = options.verbose ? verboseRows(checks) : defaultRows(checks);
+  const width = nameWidth(rows);
+
+  return SECTIONS.map((section) => rows.filter((row) => row.section === section))
+    .filter((shown) => shown.length > 0)
+    .map((shown) => [
+      paint(options.color)(STYLE.section, shown[0]?.section ?? ""),
+      ...shown.flatMap((row) => checkLines(row, options, width)),
     ]);
+};
 
 const noticesBlock = (notices: string[], options: ReportOptions) =>
   notices.length === 0
@@ -110,27 +78,29 @@ const noticesBlock = (notices: string[], options: ReportOptions) =>
         ],
       ];
 
-const COUNTS: Array<[CheckStatus, (count: number) => string]> = [
-  ["fail", (count) => `${count} failed`],
-  ["warn", (count) => `${count} warning${count === 1 ? "" : "s"}`],
-  ["ok", (count) => `${count} ok`],
-  ["skip", (count) => `${count} skipped`],
-];
+const namesWith = (checks: NamedCheck[], status: NamedCheck["result"]["status"]) =>
+  checks.filter((check) => check.result.status === status).map((check) => check.name);
 
 const summaryOf = (checks: NamedCheck[]) => {
-  const tally = tallyOf(checks);
+  const failures = namesWith(checks, "fail");
+  const warnings = namesWith(checks, "warn");
 
-  return COUNTS.filter(([status]) => tally[status] > 0)
-    .map(([status, text]) => text(tally[status]))
-    .join(", ");
+  return [
+    ...(failures.length === 0 ? [] : [`${failures.length} failed: ${failures.join(", ")}`]),
+    ...(warnings.length === 0
+      ? []
+      : [`${warnings.length} warning${warnings.length === 1 ? "" : "s"}: ${warnings.join(", ")}`]),
+  ].join("; ");
 };
 
 const resultBlock = (checks: NamedCheck[], options: ReportOptions) => {
   const verdict = verdictOf(checks);
+  const summary = summaryOf(checks);
+  const counts = summary === "" ? "" : ` (${summary})`;
 
   return options.partial === true
     ? []
-    : [[`result: ${paint(options.color)(VERDICT_STYLE[verdict], verdict)} (${summaryOf(checks)})`]];
+    : [[`result: ${paint(options.color)(VERDICT_STYLE[verdict], verdict)}${counts}`]];
 };
 
 export const renderReport = (checks: NamedCheck[], notices: string[], options: ReportOptions) => {

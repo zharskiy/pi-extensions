@@ -5,6 +5,8 @@ export interface CheckResult {
   detail: string;
   reasons?: string[];
   hint?: string;
+  brief?: string;
+  neutral?: boolean;
 }
 
 export type Section = "host" | "sandbox" | "network" | "credentials" | "leak sweep";
@@ -14,14 +16,19 @@ export interface NamedCheck {
   section: Section;
   result: CheckResult;
   group?: "rules";
+  note?: string;
+  login?: boolean;
+  configured?: boolean;
 }
 
-type Explained = Pick<CheckResult, "reasons" | "hint">;
+type Explained = Pick<CheckResult, "reasons" | "hint" | "brief">;
+
+type SkipExplained = Explained & Pick<CheckResult, "neutral">;
 
 export const VERBOSE_FLAG = "--verbose";
 
 const LAYOUT: Array<[Section, string[]]> = [
-  ["host", ["user config", "host pi", "provider hosts", "sessions", "host side"]],
+  ["host", ["user config", "pi", "provider hosts", "sessions", "host side"]],
   [
     "sandbox",
     [
@@ -34,7 +41,7 @@ const LAYOUT: Array<[Section, string[]]> = [
       "container",
       "sync",
       "sessions share",
-      "probes",
+      "sandbox checks",
     ],
   ],
   [
@@ -43,21 +50,22 @@ const LAYOUT: Array<[Section, string[]]> = [
       "proxy",
       "proxy health",
       "parent proxy",
+      "isolation",
+      "tls",
       "tls inspection",
       "tls in sandbox",
-      "no-route",
       "mcp",
       "blocked",
     ],
   ],
-  ["credentials", ["trust", "rule", "mcp"]],
+  ["credentials", ["trust", "rule", "mcp", "secrets"]],
   ["leak sweep", ["credential sweep", "mcp-auth sweep", "settings sweep"]],
 ];
 
 export const SECTIONS = LAYOUT.map(([section]) => section);
 
 const resultOf =
-  (status: CheckStatus) =>
+  (status: Exclude<CheckStatus, "skip">) =>
   (detail: string, more: Explained = {}): CheckResult => ({ status, detail, ...more });
 
 export const passed = resultOf("ok");
@@ -66,14 +74,21 @@ export const warned = resultOf("warn");
 
 export const failed = resultOf("fail");
 
-export const skipped = resultOf("skip");
+export const skipped = (detail: string, more: SkipExplained = {}): CheckResult => ({
+  status: "skip",
+  detail,
+  ...more,
+});
+
+export const isNeutral = (result: CheckResult) => result.status === "skip" && result.neutral === true;
 
 const sectionIndex = (section: Section) => LAYOUT.findIndex(([name]) => name === section);
 
 const rankOf = (check: NamedCheck) => {
   const order = LAYOUT[sectionIndex(check.section)]?.[1] ?? [];
-  const exact = order.indexOf(check.name);
-  const family = order.indexOf(check.name.split(" ")[0] ?? "");
+  const key = check.group === "rules" ? "rule" : check.name;
+  const exact = order.indexOf(key);
+  const family = order.indexOf(key.split(" ")[0] ?? "");
 
   return exact >= 0 ? exact : family >= 0 ? family : order.length;
 };
@@ -83,7 +98,7 @@ export const inLayout = (checks: NamedCheck[]) =>
     (left, right) => sectionIndex(left.section) - sectionIndex(right.section) || rankOf(left) - rankOf(right),
   );
 
-export const tallyOf = (checks: NamedCheck[]) => {
+const tallyOf = (checks: NamedCheck[]) => {
   const tally: Record<CheckStatus, number> = { ok: 0, warn: 0, fail: 0, skip: 0 };
 
   checks.forEach((check) => {

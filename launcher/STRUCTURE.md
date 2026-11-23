@@ -85,10 +85,11 @@ cli/commands/vm-shares.ts      the hidden __vm-shares command: the shared worksp
 cli/commands/smoke-doctor.ts   the hidden __smoke-doctor command install.sh runs: the doctor, exit 3 when the sandbox part was skipped
 cli/commands/init.ts           pi sandbox init: --yes, CI and terminal checks, builds the UI and effects, and picks the front end (the wizard, rich or plain, or the lines of --yes)
 cli/commands/doctor.ts         pi sandbox doctor: stages, probes and host checks as checks by section, the vm size and file cache checks, the denials matched to each rule, the blocked warnings, captured notices and the progress line
-cli/commands/doctor-probes.ts  the doctor's checks inside the container; the credential sweep skips the config's own `env.set` values and names the secret-named ones; a rule whose credential was denied warns, one the proxy refused says why, a certificate not yet valid names the VM clock
+cli/commands/doctor-probes.ts  the doctor's checks inside the container, each credential rule named for its login or host; the credential sweep skips the config's own `env.set` values and names the secret-named ones; a rule whose credential was denied warns, one the proxy refused says why, a certificate not yet valid names the VM clock
 cli/commands/doctor-host.ts    the doctor's checks on the host
-cli/commands/doctor-checks.ts  the check data model: result types and builders, the section and check order, the tally and verdict
-cli/commands/doctor-report.ts  the pure text renderer of the checks: aligned columns, reasons and hints, collapsed rules, notices, result line, ~, colour
+cli/commands/doctor-checks.ts  the check data model: result types and builders (with the brief phrase and the neutral skip the default view reads), the section and check order, the verdict
+cli/commands/doctor-report.ts  the pure text renderer of the checks: the name column padded to the longest name, reasons and hints, notices, the result line naming the failed and warned checks, ~, colour
+cli/commands/doctor-view.ts    which rows the report prints: every check with --verbose, else the merged groups carrying their members' reasons, the checks quiet when ok left out unless they carry a reason, a failing configured rule's id, the passing rules collapsed into logins or credential hosts
 cli/commands/doctor-tls.ts     the tls inspection checks: the node handshake to pi.dev on the host and in the container, the keychain lookup of the root CA, the outcomes
 cli/commands/tls-probe.ts      the typed TLS handshake script those checks run as their own node process: request on stdin, chain and verdicts on stdout
 cli/commands/help.ts           usage
@@ -454,9 +455,9 @@ tests/cli/launch-services.test.ts    a launch with services: the order pod, serv
 tests/cli/services-stop.test.ts      the services stopped by the sweep, reset --services and pi sandbox stop, and left alone by a plain reset and while a session runs
 tests/cli/installs.test.ts           two installs on one engine: each brings up, tears down and sweeps only its own objects, and the VM stop counts both
 tests/cli/ground-lock.test.ts        the ground lock: its waiting line, the services under it, the idle teardown of services, relay, network and proxy, and the wait for the lock at the end of a session and in stop
-tests/cli/doctor.test.ts             the doctor, its file cache check among them, also when the sandbox does not start and with the release off
-tests/cli/doctor-probes.test.ts      the doctor's mcp-auth sweep on a sandbox file it cannot read, and the credential sweep's proxy token finding and its skipped `env.set` values
-tests/cli/doctor-report.test.ts      the doctor report renderer: collapsing, --verbose, verdicts, partial reports, ~, colour (the whole-report goldens are in doctor.test.ts)
+tests/cli/doctor.test.ts             the doctor, its file cache check among them, also when the sandbox does not start and with the release off, and its default view end to end
+tests/cli/doctor-probes.test.ts      the doctor's mcp-auth sweep on a sandbox file it cannot read, the connected-server count on pi mcp list's format, and the credential sweep's proxy token finding and its skipped `env.set` values
+tests/cli/doctor-report.test.ts      the doctor report renderer: the default view's merged groups and hidden checks, a group with a failing member, collapsing, --verbose, the result line's names, the name column, partial reports, ~, colour (the whole-report goldens are in doctor.test.ts)
 tests/cli/doctor-tls.test.ts         the tls inspection check against a local TLS server signed by a test CA behind a parent proxy: not inspected, trusted via extras, root in a keychain, root not found, network failure
 tests/cli/egress.test.ts             egress grants
 tests/cli/errors.test.ts             error output

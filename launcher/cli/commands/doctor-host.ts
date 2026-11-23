@@ -57,10 +57,10 @@ const checkHostPi = async (deps: CliDeps, context: LaunchContext, job: HostPi | 
 
   const image =
     context.effective.config.image.digest === undefined
-      ? "the image follows it"
-      : "the image is pinned by image.digest";
+      ? "the sandbox runs the same version"
+      : "the sandbox image is pinned by image.digest";
 
-  return passed(`pi ${job.version}, ${job.location}; ${image}`);
+  return passed(`${job.version} at ${job.location}; ${image}`);
 };
 
 const checkProviderHosts = async (deps: CliDeps, context: LaunchContext, pi: HostPi | undefined) => {
@@ -99,7 +99,7 @@ const checkParentProxy = async (deps: CliDeps) => {
   const target = parentProxyOf(deps.env);
 
   if (target === undefined) {
-    return skipped("no parent proxy configured");
+    return skipped("no parent proxy configured", { neutral: true });
   }
 
   if ("unsupported" in target) {
@@ -171,11 +171,17 @@ const checkSessions = async (deps: CliDeps, context: LaunchContext, files: HostP
   const sessions = hostSessionsOf(deps, context, files.settings);
 
   if ("off" in sessions) {
-    return skipped(`in the sandbox volume (${sessions.off})`);
+    return skipped(
+      `kept inside the sandbox, not on the host, so pi on the host does not list them (${sessions.off})`,
+    );
   }
 
+  const saved = `saved on the host in ${sessions.dir}`;
+
   if ((await lstat(sessions.dir).catch(() => undefined)) === undefined) {
-    return passed(`${sessions.dir} (host pi lists them, created at the first launch)`);
+    return passed(`${sessions.dir} (host pi lists them, created at the first launch)`, {
+      brief: `${saved}, created at the first launch`,
+    });
   }
 
   const unsafe = unsafeSessionsDir(deps, context, sessions.dir);
@@ -190,7 +196,7 @@ const checkSessions = async (deps: CliDeps, context: LaunchContext, files: HostP
   );
 
   return writable
-    ? passed(`${sessions.dir} (host pi lists them)`)
+    ? passed(`${sessions.dir} (host pi lists them)`, { brief: saved })
     : failed(`${sessions.dir} is not writable`);
 };
 
@@ -204,7 +210,7 @@ export const hostChecks = async (deps: CliDeps, context: LaunchContext): Promise
   const [files, pi] = await Promise.all([readHostPiFiles(hostAgentDirOf(deps)), resolveJobPi(deps)]);
   const [checks, signIns] = await Promise.all([
     Promise.all([
-      named("host pi", "host", checkHostPi(deps, context, pi)),
+      named("pi", "host", checkHostPi(deps, context, pi)),
       named("provider hosts", "host", checkProviderHosts(deps, context, pi)),
       named("parent proxy", "network", checkParentProxy(deps)),
       named("sessions", "host", checkSessions(deps, context, files)),

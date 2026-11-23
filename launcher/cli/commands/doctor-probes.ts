@@ -171,8 +171,12 @@ const skippedSetNames = (entries: EnvEntry[], configured: Record<string, string>
 
 const CLEAN_SWEEP = "no credential in the environment, auth.json or mcp.json";
 
-const cleanSweepDetail = (skipped: string[]) =>
-  skipped.length === 0 ? CLEAN_SWEEP : `${CLEAN_SWEEP}; env.set values not checked: ${skipped.join(", ")}`;
+const uncheckedText = (skipped: string[]) => `env.set values not checked: ${skipped.join(", ")}`;
+
+const cleanSweep = (skipped: string[]) =>
+  skipped.length === 0
+    ? passed(CLEAN_SWEEP)
+    : passed(`${CLEAN_SWEEP}; ${uncheckedText(skipped)}`, { brief: uncheckedText(skipped) });
 
 const tokenEnvNames = (entries: EnvEntry[], proxyToken: string | undefined) =>
   proxyToken === undefined
@@ -204,7 +208,8 @@ export const sweepCredentials = async (
       (name) => `environment variable ${name} holds a value other than the placeholder`,
     ),
     ...tokenEnvNames(entries, proxyToken).map(
-      (name) => `environment variable ${name} holds the proxy token, which only the relay may hold`,
+      (name) =>
+        `environment variable ${name} holds the proxy token, which belongs to the proxy, never to the sandbox`,
     ),
     ...foreignAuthPaths(auth).map(
       (path) => `${GUEST_AUTH_FILE} holds a value other than the placeholder at ${path}`,
@@ -215,7 +220,7 @@ export const sweepCredentials = async (
   ];
 
   return problems.length === 0
-    ? passed(cleanSweepDetail(skippedSetNames(entries, configured)))
+    ? cleanSweep(skippedSetNames(entries, configured))
     : failed(
         `${problems.length} finding${problems.length === 1 ? "" : "s"} in the environment, auth.json or mcp.json`,
         { reasons: problems },
@@ -230,15 +235,35 @@ export const checkNoRoute = async (target: ProbeTarget) => {
   }
 
   return code === 0
-    ? failed(`${ROUTE_TARGET} is reachable directly`)
-    : passed(`no direct route to ${ROUTE_TARGET}`);
+    ? failed(`the sandbox reaches ${ROUTE_TARGET} directly, outside the proxy`)
+    : passed(`no direct route to the internet (tried ${ROUTE_TARGET})`);
 };
+
+const ANSI_ESCAPE = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
+
+const CONNECTED_SERVER = /^\s*\S.*: connected, \d+ tools? \(/;
+
+const connectedCount = (stdout: string) =>
+  stdout
+    .split("\n")
+    .map((line) => line.replace(ANSI_ESCAPE, ""))
+    .filter((line) => CONNECTED_SERVER.test(line)).length;
+
+const mcpListed = (count: number) =>
+  passed(
+    "pi mcp list connects to every enabled server",
+    count === 0
+      ? {}
+      : {
+          brief: `${count} MCP server${count === 1 ? "" : "s"} connect${count === 1 ? "s" : ""} from the sandbox`,
+        },
+  );
 
 export const checkMcp = async (target: ProbeTarget) => {
   const { code, stdout, stderr } = await execText(target, MCP_LIST_PROBE);
 
   if (code === 0) {
-    return passed("pi mcp list connects to every enabled server");
+    return mcpListed(connectedCount(stdout));
   }
 
   if (code === TIMED_OUT) {
@@ -381,7 +406,9 @@ const ruleResult = (answer: RuleAnswer, hint: RuleHint) => {
 
 const trustResult = (answers: RuleAnswer[]) => {
   if (answers.length === 0) {
-    return skipped("no credential rule, nothing is terminated");
+    return skipped("no credential rule, so the proxy adds no credential to any request", {
+      neutral: true,
+    });
   }
 
   const broken = answers.find((answer) => answer.error !== undefined && TRUST_ERROR.test(answer.error));
@@ -393,38 +420,88 @@ const trustResult = (answers: RuleAnswer[]) => {
   const verified = answers.find((answer) => answer.status !== undefined);
 
   return verified === undefined
-    ? failed("no rule host answered, so the chain could not be checked")
+    ? failed("no credential rule host answered, so the proxy's certificate could not be checked")
     : passed(`the container trusts the proxy's certificate for ${verified.rule.host}`);
+};
+
+const baseLabel = (rule: CredentialRule) =>
+  "piAuth" in rule.secret ? `${rule.secret.piAuth} login` : rule.host.toLowerCase();
+
+const countsOf = (labels: string[]) =>
+  labels.reduce((seen, label) => seen.set(label, (seen.get(label) ?? 0) + 1), new Map<string, number>());
+
+const withHost = (label: string, rule: CredentialRule) => {
+  const host = rule.host.toLowerCase();
+
+  return label === host ? label : `${label} ${host}`;
+};
+
+const ruleLabels = (rules: CredentialRule[]) => {
+  const bases = rules.map(baseLabel);
+  const baseCounts = countsOf(bases);
+
+  const hosted = rules.map((rule, index) => {
+    const base = bases[index] ?? baseLabel(rule);
+
+    return (baseCounts.get(base) ?? 0) > 1 ? withHost(base, rule) : base;
+  });
+
+  const hostedCounts = countsOf(hosted);
+
+  const labels = new Map(
+    rules.map((rule, index) => {
+      const label = hosted[index] ?? baseLabel(rule);
+
+      return [rule, (hostedCounts.get(label) ?? 0) > 1 ? `${label} ${rule.id}` : label];
+    }),
+  );
+
+  return (rule: CredentialRule) => labels.get(rule) ?? baseLabel(rule);
 };
 
 export const checkRules = async (
   target: ProbeTarget,
   rules: CredentialRule[],
   ruleHints: () => Promise<ReadonlyMap<string, RuleHint>> = async () => new Map(),
+  configured: CredentialRule[] = [],
 ): Promise<NamedCheck[]> => {
   const answers = await Promise.all(rules.map((rule) => askRule(target, rule)));
   const hints = await ruleHints();
+
+  const labelOf = ruleLabels(rules);
+  const configuredIds = new Set(configured.map((rule) => rule.id));
 
   return [
     { name: "trust", section: "credentials", result: trustResult(answers) },
     ...answers.map(
       (answer): NamedCheck => ({
-        name: `rule ${answer.rule.id}`,
+        name: labelOf(answer.rule),
         section: "credentials",
         group: "rules",
+        note: `rule ${answer.rule.id}`,
+        login: "piAuth" in answer.rule.secret,
+        configured: configuredIds.has(answer.rule.id),
         result: ruleResult(answer, hints.get(answer.rule.id) ?? {}),
       }),
     ),
   ];
 };
 
-export const checkSessionsShare = async (target: ProbeTarget, sessionDir: string | undefined) => {
+export const checkSessionsShare = async (
+  target: ProbeTarget,
+  sessionDir: string | undefined,
+  plannedOnHost = true,
+) => {
   if (sessionDir === undefined || !posix.isAbsolute(sessionDir)) {
-    return skipped(`in the sandbox volume${sessionDir === undefined ? "" : ` (${sessionDir})`}`);
+    const why = sessionDir === undefined ? "" : ` (${sessionDir})`;
+
+    return plannedOnHost
+      ? skipped(`the running container keeps sessions in its sandbox volume, not on the host${why}`)
+      : skipped(`in the sandbox volume${why}`, { neutral: true });
   }
 
   return (await probeHostSessions(target.backend, target.containerId, sessionDir))
-    ? passed("writable at the host path")
+    ? passed("writable at the host path", { brief: "writable from the sandbox" })
     : failed(`${sessionDir} is not writable from the sandbox`, {
         hint: "set sessions.host: false or share it with the VM",
       });
