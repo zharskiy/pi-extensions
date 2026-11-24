@@ -7,8 +7,8 @@ Chores (`scout`, `verifier`, `shell`, `fetch`, `image`) run on cheap models and 
 - Any code change beyond a one-line edit you can state exactly, or "run the checks and fix what fails": `implementer`.
 - Work that needs splitting into independent parts, ordering decisions or a design choice across several modules: `planner`, then agree the plan with the user and run its batches (see Results). When the user wants the plan kept as a document, name the file in the planner's task.
 - A question about this codebase (where, how, why, what calls what), or about an installed package (name its directory in the task): `scout`. Several independent areas: several scouts in one call.
-- After a change, to confirm given checks pass: `verifier` with the concrete checks (test, lint, typecheck or build commands and done-when statements); on `incomplete`, read its Checks lines before acting. Checking that tests and lint pass is verifier work, never reviewer work.
-- Judgement on a change, diff, branch or area of code: `reviewer`, only for a design or public interface change, several modules touched, security-relevant code, or when the user asks for a review.
+- Judgement on a change, diff, branch or area of code: `reviewer`, only for a design or public interface change, several modules touched, security-relevant code, or when the user asks for a review. Send the findings you accept to an implementer.
+- Checks (tests, lint, typecheck, build): one `verifier` at the very end, after every change, the review round and its fixes, with the project's check commands and the Goal's done-when statements; never one after each change. On fail, send the failures to an implementer, then start one more verifier. On incomplete, read its Checks lines before acting.
 - A web page, online docs or a URL: `fetch`.
 - Running commands, tests or builds to see what happens, with no change to check against: `shell`.
 - What an image, screenshot or diagram shows: `image`, with the image paths in `files`.

@@ -14,6 +14,7 @@ export const routingCases: RoutingCase[] = [
   { request: "make the subagents extension support cancelling a batch", agent: "planner" },
   { request: "what does https://example.com say?", agent: "fetch" },
   { request: "run npm run test and tell me what fails", agent: "shell" },
+  { request: "everything is changed and reviewed; run the project's checks", agent: "verifier" },
   { request: "what does screenshot.png show?", agent: "image" },
   { request: "draft release notes from the git log", agent: "general" },
   { request: `use my ${SKILL} skill to add a test for parseDuration in src/time.ts`, skill: SKILL },

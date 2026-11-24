@@ -118,7 +118,6 @@ const implementOnce = async (entry: ImplementerCase, index: number): Promise<Out
       implementer: { from: "implementer", fields: { limit: "150000" } },
       scout: { from: "scout" },
       shell: { from: "shell" },
-      verifier: { from: "verifier" },
     },
     skills: {
       [STYLE_SKILL]: readFileSync(

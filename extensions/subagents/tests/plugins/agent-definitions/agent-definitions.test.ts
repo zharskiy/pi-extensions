@@ -613,7 +613,7 @@ describe("definition loading", () => {
     expect(grants("implementer")).toEqual([
       ["read", "grep", "find", "ls", "edit", "write", "bash"],
       ["pinata-code-style"],
-      ["scout", "shell", "verifier"],
+      ["scout", "shell"],
     ]);
     expect(grants("fetch")).toEqual([["fetch", "read"], [], []]);
     expect(grants("shell")).toEqual([["bash", "read"], [], []]);
@@ -622,7 +622,7 @@ describe("definition loading", () => {
     expect(grants("general")).toEqual([
       "all",
       "all",
-      ["scout", "fetch", "shell", "image", "verifier", "planner", "implementer", "reviewer"],
+      ["scout", "fetch", "shell", "image", "planner", "implementer", "reviewer"],
     ]);
     expect(result.definitions.get("general")?.description).toMatch(/^Use only when no other agent fits/);
   });
