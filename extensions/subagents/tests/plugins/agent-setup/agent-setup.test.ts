@@ -190,13 +190,11 @@ describe("/agents setup form", () => {
     const bar = form.render(400).slice(1, 3);
 
     expect(bar[0]).toBe(" Leads   □ general  □ implementer  □ planner  □ reviewer  □ aardvark");
-    expect(bar[1]).toBe(
-      " Chores  □ editor  □ fetch  □ image  □ scout  □ shell  □ verifier  □ abacus  ✓ Submit",
-    );
+    expect(bar[1]).toBe(" Chores  □ fetch  □ image  □ scout  □ shell  □ verifier  □ abacus  ✓ Submit");
 
     const order = [
       ...["general", "implementer", "planner", "reviewer", "aardvark"],
-      ...["editor", "fetch", "image", "scout", "shell", "verifier", "abacus"],
+      ...["fetch", "image", "scout", "shell", "verifier", "abacus"],
     ];
     const visited = order.map(() => {
       const shown = order.find((name) => showsAgent(form, name));

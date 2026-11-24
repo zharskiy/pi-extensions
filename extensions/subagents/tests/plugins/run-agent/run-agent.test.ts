@@ -311,7 +311,7 @@ describe("run_agent batches", () => {
     const runAgent = host.tool<RunAgentParams, RunAgentDetails>("run_agent");
 
     await expect(runAgent.execute({ agents: [{ agent: "nope", task: "x" }] }, {})).rejects.toThrow(
-      /unknown agent\(s\): nope. Available: editor, fetch, general, image, implementer, planner, reviewer, scout, shell, verifier/,
+      /unknown agent\(s\): nope. Available: fetch, general, image, implementer, planner, reviewer, scout, shell, verifier/,
     );
     expect(runtime.children).toEqual([]);
   });
@@ -641,7 +641,7 @@ describe("allowed subagents", () => {
     const spawn = (agent: string) => runner.startBatch([{ agent, task: "x" }], { callerId: lead.id });
 
     expect(() => spawn("lead")).toThrow(
-      "agent(s) not allowed for this caller: lead. Allowed: editor, fetch, general, image, implementer, planner, reviewer, scout, shell, verifier",
+      "agent(s) not allowed for this caller: lead. Allowed: fetch, general, image, implementer, planner, reviewer, scout, shell, verifier",
     );
 
     spawn("implementer");
