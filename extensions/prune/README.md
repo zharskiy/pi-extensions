@@ -46,7 +46,7 @@ It removes nothing when a session file cannot be read, and nothing at the config
 ## Quick start
 
 ```bash
-pi install git:github.com/zharskiy/pi-extensions   # the whole package
+pi install npm:@zharskiy/pinata                    # the whole package
 pi -e ./pi-extensions/extensions/prune/index.ts   # this extension alone, from a checkout
 ```
 

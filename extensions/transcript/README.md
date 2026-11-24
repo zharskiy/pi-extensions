@@ -39,7 +39,7 @@ A turn in the main session's transcript:
 ## Quick start
 
 ```bash
-pi install git:github.com/zharskiy/pi-extensions   # the whole package
+pi install npm:@zharskiy/pinata                    # the whole package
 pi -e ./pi-extensions/extensions/transcript/index.ts   # this extension alone, from a checkout
 ```
 

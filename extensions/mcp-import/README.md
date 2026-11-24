@@ -38,7 +38,7 @@ run /mcp-import claude apply to write them
 ## Quick start
 
 ```bash
-pi install git:github.com/zharskiy/pi-extensions   # the whole package
+pi install npm:@zharskiy/pinata                    # the whole package
 pi -e ./pi-extensions/extensions/mcp-import/index.ts   # this extension alone, from a checkout
 ```
 

@@ -29,7 +29,7 @@ An agent that ran in a worktree ends its row with what became of it: `worktree r
 ## Quick start
 
 ```bash
-pi install git:github.com/zharskiy/pi-extensions   # the whole package
+pi install npm:@zharskiy/pinata                    # the whole package
 pi -e ./pi-extensions/extensions/subagents/index.ts   # this extension alone, from a checkout
 ```
 

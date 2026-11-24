@@ -48,7 +48,7 @@ The title line always carries the time the snapshot was taken.
 ## Quick start
 
 ```bash
-pi install git:github.com/zharskiy/pi-extensions   # the whole package
+pi install npm:@zharskiy/pinata                    # the whole package
 pi -e ./pi-extensions/extensions/context/index.ts   # this extension alone, from a checkout
 ```
 

@@ -26,7 +26,7 @@ Without a dialog title the second text is just `pi needs your input`.
 ## Quick start
 
 ```bash
-pi install git:github.com/zharskiy/pi-extensions   # the whole package
+pi install npm:@zharskiy/pinata                    # the whole package
 pi -e ./pi-extensions/extensions/notifications/index.ts   # this extension alone, from a checkout
 ```
 

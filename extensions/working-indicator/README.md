@@ -23,7 +23,7 @@ The working line, drawn inside the input's top line while a prompt runs:
 ## Quick start
 
 ```bash
-pi install git:github.com/zharskiy/pi-extensions   # the whole package
+pi install npm:@zharskiy/pinata                    # the whole package
 pi -e ./pi-extensions/extensions/working-indicator/index.ts   # this extension alone, from a checkout
 ```
 

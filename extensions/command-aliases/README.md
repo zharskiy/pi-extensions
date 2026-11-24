@@ -25,7 +25,7 @@ The slash menu after typing `/`, pi's own commands left out:
 ## Quick start
 
 ```bash
-pi install git:github.com/zharskiy/pi-extensions   # the whole package
+pi install npm:@zharskiy/pinata                    # the whole package
 pi -e ./pi-extensions/extensions/command-aliases/index.ts   # this extension alone, from a checkout
 ```
 

@@ -29,7 +29,7 @@ Everything is neutral grey: folder, branch, session and model are `muted`, label
 ## Quick start
 
 ```bash
-pi install git:github.com/zharskiy/pi-extensions   # the whole package
+pi install npm:@zharskiy/pinata                    # the whole package
 pi -e ./pi-extensions/extensions/footer/index.ts   # this extension alone, from a checkout
 ```
 

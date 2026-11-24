@@ -111,7 +111,7 @@ What the config cannot do as the derivation did: it does not find your gh hosts 
 | `workspaceRoots: { "roots": ["~/work", "/Volumes/code"] }` | `"workspaceRoot": "~/work"`, one folder. Replace the key by hand, or remove it and run `pi sandbox init`. With the old key still in the file, `pi sandbox init` (with or without `--yes`) changes nothing and exits 1 with `<config file> has a problem this setup does not fix: config: workspaceRoots is not a known key` and the same hint; without the key it asks for the folder. Projects kept in several places go under one folder that holds them all, such as `~/Projects`, or are reached with a [read-only bind](CONFIGURATION.md#read-only-binds). |
 | No `workspaceRoots`: pi started anywhere and the VM shared your whole home, writable | Gone. A sandboxed launch without `workspaceRoot` stops with `config: workspaceRoot is not set, so pi has no folder it may start in`; set it to the folder that holds your projects. Your home, or a folder that holds it, is refused as the root. |
 | The setup's choice to share the whole home, and its several-folder list | `pi sandbox init` asks for one folder: a detected one, or one you type. |
-| `PI_SANDBOX_ROOTS`, folders separated by `:` | `PI_SANDBOX_ROOT`, one folder. `pi sandbox init --yes` (and `install.sh`) now refuses when neither the config nor `PI_SANDBOX_ROOT` names a folder. |
+| `PI_SANDBOX_ROOTS`, folders separated by `:` | `PI_SANDBOX_ROOT`, one folder. `pi sandbox init --yes` (and `pinata install`) now refuses when neither the config nor `PI_SANDBOX_ROOT` names a folder. |
 
 At the first launch after the change, the VM restarts once to drop the home share and share only the root, `<agent dir>/sessions`, `<state>/vm` and the bind sources outside the root.
 

@@ -21,7 +21,7 @@ main $0.12 · agents $0.05 · total $0.17 (sub)
 ## Quick start
 
 ```bash
-pi install git:github.com/zharskiy/pi-extensions   # the whole package
+pi install npm:@zharskiy/pinata                    # the whole package
 pi -e ./pi-extensions/extensions/spending/index.ts   # this extension alone, from a checkout
 ```
 

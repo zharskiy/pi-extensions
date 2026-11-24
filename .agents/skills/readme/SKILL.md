@@ -44,7 +44,7 @@ Part of [pi-extensions](../../README.md) · [Quick start](#quick-start) · [Deve
 ## Quick start
 
 ```bash
-pi install git:github.com/zharskiy/pi-extensions   # the whole package
+pi install npm:@zharskiy/pinata                    # the whole package
 pi -e ./pi-extensions/extensions/<name>/index.ts   # this extension alone, from a checkout
 ```
 

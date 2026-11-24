@@ -39,7 +39,7 @@ Known limits: picking the model you are already on (Enter on it in the selector,
 ## Quick start
 
 ```bash
-pi install git:github.com/zharskiy/pi-extensions   # the whole package
+pi install npm:@zharskiy/pinata                    # the whole package
 pi -e ./pi-extensions/extensions/model-default/index.ts   # this extension alone, from a checkout
 ```
 

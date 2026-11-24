@@ -435,7 +435,7 @@ The root may not be your home or a folder that holds it: `~` is refused when the
 
 The VM's shares follow the config of whichever agent dir launches pi, since every agent dir uses the same `pi-sandbox` VM. Two agent dirs with different roots therefore make the VM restart when you switch between them while no pi session runs; while a session of either runs, a launch counts it as a live session.
 
-`pi sandbox init` chooses the root with you and applies it to the VM at once, restarting it when no pi session runs. In a script, or on a machine without a terminal, set `PI_SANDBOX_ROOT` and run `pi sandbox init --yes` (or `install.sh`, which does): it writes the root into a config without `workspaceRoot`, stops when the config names another root, and stops when neither the config nor `PI_SANDBOX_ROOT` names one (see [Set up the sandbox](README.md#set-up-the-sandbox)).
+`pi sandbox init` chooses the root with you and applies it to the VM at once, restarting it when no pi session runs. In a script, or on a machine without a terminal, set `PI_SANDBOX_ROOT` and run `pi sandbox init --yes` (or `pinata install`, which does): it writes the root into a config without `workspaceRoot`, stops when the config names another root, and stops when neither the config nor `PI_SANDBOX_ROOT` names one (see [Set up the sandbox](README.md#set-up-the-sandbox)).
 
 The key replaced `workspaceRoots: { "roots": [...] }` and the mode that shared your whole home; see [REMOVED-DEFAULTS.md](REMOVED-DEFAULTS.md#several-workspace-roots-and-the-home-share).
 

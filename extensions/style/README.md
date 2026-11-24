@@ -30,7 +30,7 @@ The list `/style` opens in place of the editor, the current style marked `✓` a
 ## Quick start
 
 ```bash
-pi install git:github.com/zharskiy/pi-extensions   # the whole package
+pi install npm:@zharskiy/pinata                    # the whole package
 pi -e ./pi-extensions/extensions/style/index.ts   # this extension alone, from a checkout
 ```
 

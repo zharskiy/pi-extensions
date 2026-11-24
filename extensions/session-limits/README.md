@@ -29,7 +29,7 @@ A long session eventually fills the model's context window. Before that happens,
 ## Quick start
 
 ```bash
-pi install git:github.com/zharskiy/pi-extensions   # the whole package
+pi install npm:@zharskiy/pinata                    # the whole package
 pi -e ./pi-extensions/extensions/session-limits/index.ts   # this extension alone, from a checkout
 ```
 

@@ -29,7 +29,7 @@ Some decisions come down to a few concrete options. This extension gives the mai
 ## Quick start
 
 ```bash
-pi install git:github.com/zharskiy/pi-extensions   # the whole package
+pi install npm:@zharskiy/pinata                    # the whole package
 pi -e ./pi-extensions/extensions/questionnaire/index.ts   # this extension alone, from a checkout
 ```
 
