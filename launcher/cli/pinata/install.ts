@@ -1,6 +1,5 @@
 import { join, resolve } from "node:path";
 import { validateConfigFile } from "../../config/index.ts";
-import { locateManagedPi } from "../../hostpi/index.ts";
 import {
   jsonText,
   LauncherError,
@@ -9,29 +8,18 @@ import {
   writeFileAtomic,
 } from "../../shared/index.ts";
 import { initCommand, YES_FLAG } from "../commands/init.ts";
-import { type CliDeps, hostAgentDirOf, isTerminal, pathsOf } from "../deps.ts";
-import { resolveJobPi } from "../host-pi.ts";
+import { type CliDeps, isTerminal, pathsOf } from "../deps.ts";
 import { intercept } from "../intercept.ts";
 import { isSet } from "../prompt/terminal.ts";
-import { launcherVersion, PI_PACKAGE, testedPiVersion } from "../versions.ts";
-import { interactive, isCheckout, PACKAGE, piSources, preflight, refuseBusy, say } from "./host.ts";
+import { launcherVersion } from "../versions.ts";
+import { isCheckout, PACKAGE, piSources, preflight, refuseBusy, requireHostPi, say } from "./host.ts";
 import { setPathBlock } from "./path-block.ts";
 import { inspectPinataLink, inspectShim, installPinataLink, installShim, removePinataLink } from "./shim.ts";
 
 export interface InstallFlags {
-  pi?: string;
   config?: string;
   yes?: boolean;
 }
-
-export const refusePinnedManaged = async (deps: CliDeps, pi: string | undefined) => {
-  if (pi !== undefined && (await locateManagedPi(hostAgentDirOf(deps))) !== undefined) {
-    throw new LauncherError(
-      `--pi ${pi}: pi's managed install in ${hostAgentDirOf(deps)} is the host pi and wins over npm's, so the version would be ignored`,
-      "drop --pi, or remove the managed install with curl -fsSL https://pi.dev/install.sh | sh (Uninstall Pi) and run this again",
-    );
-  }
-};
 
 const readConfig = async (deps: CliDeps, given: string) => {
   const file = resolve(deps.cwd, given);
@@ -44,18 +32,6 @@ const readConfig = async (deps: CliDeps, given: string) => {
   validateConfigFile(value, file);
 
   return { file, value };
-};
-
-const ensurePi = async (deps: CliDeps, pi: string | undefined) => {
-  if (pi === undefined && (await resolveJobPi(deps)) !== undefined) {
-    return;
-  }
-
-  const version = pi ?? (await testedPiVersion());
-
-  say(deps, `pi: installing ${PI_PACKAGE}@${version} with npm`);
-
-  await interactive(deps, "npm", ["install", "-g", "--ignore-scripts", `${PI_PACKAGE}@${version}`]);
 };
 
 const ensureExtensions = async (deps: CliDeps, own: string) => {
@@ -89,7 +65,7 @@ const linkPinata = (deps: CliDeps, packageDir: string, checkout: boolean) =>
     : removePinataLink(deps);
 
 export const install = async (deps: CliDeps, packageDir: string, flags: InstallFlags) => {
-  await refusePinnedManaged(deps, flags.pi);
+  await requireHostPi(deps, "install");
 
   const config = flags.config === undefined ? undefined : await readConfig(deps, flags.config);
   const checkout = await isCheckout(deps, packageDir);
@@ -98,15 +74,11 @@ export const install = async (deps: CliDeps, packageDir: string, flags: InstallF
 
   await refuseBusy(deps);
 
-  await inspectShim(deps);
+  const shim = await inspectShim(deps);
 
   if (checkout) {
     await inspectPinataLink(deps);
   }
-
-  await ensurePi(deps, flags.pi);
-
-  const shim = await inspectShim(deps);
 
   await ensureExtensions(deps, checkout ? packageDir : `npm:${PACKAGE}@${await launcherVersion()}`);
 

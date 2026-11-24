@@ -13,11 +13,11 @@ const COMMANDS: Array<[string, string]> = [
   ["pi update [target]", "update host pi, its packages or its model catalogs, with host pi on the host"],
   ["pi config", "the user resource config, with host pi on the host (-l passes through into the sandbox)"],
   [
-    "pinata install [--pi <version>] [--config <file>] [--yes]",
-    "set up host pi, the pi link, PATH and the sandbox VM; --pi installs that host pi version, --config writes that file as the config, --yes asks nothing",
+    "pinata install [--config <file>] [--yes]",
+    "set up pinata's package in host pi, the pi link, PATH and the sandbox VM; needs pi installed on the host, --config writes that file as the config, --yes asks nothing",
   ],
   [
-    "pinata update [<version>] [--pi <version>]",
+    "pinata update [<version>]",
     "install that pinata version with npm (latest without one), then its pinata install --yes",
   ],
   [

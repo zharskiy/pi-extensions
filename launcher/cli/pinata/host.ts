@@ -9,7 +9,8 @@ import {
 } from "../../shared/index.ts";
 import { vmSessions } from "../busy.ts";
 import { type CliDeps, hostAgentDirOf, pathsOf, writeLine } from "../deps.ts";
-import { isOlderVersion, launcherVersion } from "../versions.ts";
+import { missingPi, resolveJobPi } from "../host-pi.ts";
+import { isOlderVersion, launcherVersion, PI_PACKAGE } from "../versions.ts";
 
 export const PACKAGE = "@zharskiy/pinata";
 
@@ -32,6 +33,17 @@ export const interactive = async (
   if (code !== 0) {
     throw new LauncherError(`${[file, ...args].join(" ")} exited with code ${code}`);
   }
+};
+
+export const requireHostPi = async (deps: CliDeps, command: string) => {
+  if ((await resolveJobPi(deps)) !== undefined) {
+    return;
+  }
+
+  throw new LauncherError(
+    `pi is not installed on the host (${missingPi(deps).problem}), and pinata does not install it`,
+    `install pi with pi's own installer (curl -fsSL https://pi.dev/install.sh | sh) or with npm install -g ${PI_PACKAGE}, then run pinata ${command} again`,
+  );
 };
 
 export const preflight = async (deps: CliDeps) => {

@@ -52,14 +52,14 @@ describe("pinata install", () => {
   it.each([
     ["a file of its own", (shim: string) => writeFile(shim, "#!/bin/sh\necho mine\n")],
     ["npm's pi link", (shim: string) => symlink("../lib/node_modules/pi/dist/cli.js", shim)],
-  ])("refuses %s at ~/.local/bin/pi before it installs pi, and leaves it there", async (_, put) => {
-    const pinata = await createPinata({ hostPi: false });
+  ])("refuses %s at ~/.local/bin/pi before it changes anything, and leaves it there", async (_, put) => {
+    const pinata = await createPinata();
 
     await mkdir(join(pinata.shim, ".."), { recursive: true });
 
     await put(pinata.shim);
 
-    expect(await pinata.run("install", "--pi", "1.6.0")).toBe(1);
+    expect(await pinata.run("install", "--yes")).toBe(1);
     expect(pinata.harness.stderr()).toContain("  hint: move it away and run this again");
     expect(pinata.lines().filter((line) => line.startsWith("npm"))).toEqual([]);
     expect(await pinata.packages()).toEqual([]);
@@ -104,14 +104,24 @@ describe("pinata install", () => {
     );
   });
 
-  it.each(["install", "update"])(
-    "refuses %s --pi while pi's managed install exists, before npm runs",
-    async (command) => {
-      const pinata = await createPinata({ global: true });
+  it.each([["install", "--yes"], ["update"]])(
+    "refuses %s without a host pi before it changes anything",
+    async (command, ...args) => {
+      const pinata = await createPinata({ global: true, hostPi: false });
+      const agentDir = pinata.harness.hostAgentDir;
 
-      expect(await pinata.run(command, "--pi", "1.2.3")).toBe(1);
-      expect(pinata.harness.stderr()).toContain("pi's managed install");
-      expect(pinata.lines().filter((line) => line.includes(" -g "))).toEqual([]);
+      expect(await pinata.run(command, ...args)).toBe(1);
+      expect(pinata.harness.stderr()).toBe(
+        [
+          `pinata: pi is not installed on the host (no managed pi in ${agentDir} and no pi in npm's global packages), and pinata does not install it`,
+          `  hint: install pi with pi's own installer (curl -fsSL https://pi.dev/install.sh | sh) or with npm install -g @earendil-works/pi-coding-agent, then run pinata ${command} again`,
+          "",
+        ].join("\n"),
+      );
+      expect(pinata.harness.calls.filter((call) => call.interactive)).toEqual([]);
+      expect(await pinata.packages()).toEqual([]);
+      expect(await exists(pinata.shim)).toBe(false);
+      expect(await exists(join(pinata.home, ".zshrc"))).toBe(false);
     },
   );
 
@@ -163,15 +173,15 @@ describe("pinata install", () => {
     expect(await exists(link)).toBe(false);
   });
 
-  it("refuses another file at ~/.local/bin/pinata before it installs pi, and uninstall leaves it there", async () => {
-    const pinata = await createPinata({ hostPi: false });
+  it("refuses another file at ~/.local/bin/pinata before it changes anything, and uninstall leaves it there", async () => {
+    const pinata = await createPinata();
     const link = join(pinata.home, ".local", "bin", "pinata");
 
     await mkdir(join(link, ".."), { recursive: true });
 
     await writeFile(link, "#!/bin/sh\necho mine\n");
 
-    expect(await pinata.run("install", "--pi", "1.6.0")).toBe(1);
+    expect(await pinata.run("install", "--yes")).toBe(1);
     expect(pinata.harness.stderr()).toBe(
       `pinata: ${link} is not pinata's link\n  hint: move it away and run this again\n`,
     );
@@ -210,8 +220,8 @@ describe("pinata install", () => {
     expect(await pinata.run("uninstall", "--help")).toBe(0);
     expect(pinata.harness.stdout()).toBe(
       [
-        "usage: pinata install [--pi <version>] [--config <file>] [--yes]",
-        "usage: pinata update [<version>] [--pi <version>]",
+        "usage: pinata install [--config <file>] [--yes]",
+        "usage: pinata update [<version>]",
         "usage: pinata uninstall",
         "",
       ].join("\n"),

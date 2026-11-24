@@ -1,15 +1,14 @@
 import { join } from "node:path";
 import { LauncherError } from "../../shared/index.ts";
 import type { CliDeps } from "../deps.ts";
-import { interactive, isCheckout, PACKAGE, preflight, refuseBusy } from "./host.ts";
-import { refusePinnedManaged } from "./install.ts";
+import { interactive, isCheckout, PACKAGE, preflight, refuseBusy, requireHostPi } from "./host.ts";
 
-export const update = async (deps: CliDeps, packageDir: string, version?: string, pi?: string) => {
+export const update = async (deps: CliDeps, packageDir: string, version?: string) => {
   if (await isCheckout(deps, packageDir)) {
     throw new LauncherError("this is a checkout: git pull, then pinata install");
   }
 
-  await refusePinnedManaged(deps, pi);
+  await requireHostPi(deps, "update");
 
   await preflight(deps);
 
@@ -22,11 +21,9 @@ export const update = async (deps: CliDeps, packageDir: string, version?: string
     `${PACKAGE}@${version ?? "latest"}`,
   ]);
 
-  const args = ["install", "--yes", ...(pi === undefined ? [] : ["--pi", pi])];
-
   return deps.runner.spawnInteractive(
     process.execPath,
-    [join(packageDir, "launcher", "bin", "pinata.js"), ...args],
+    [join(packageDir, "launcher", "bin", "pinata.js"), "install", "--yes"],
     {
       cwd: deps.cwd,
     },

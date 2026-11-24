@@ -26,25 +26,26 @@ flowchart LR
 
 ## Install
 
-You need macOS 13 or newer, [Homebrew](https://brew.sh) when Colima is missing, Node 22.19 or newer with npm, and git. Colima 0.9.0 or newer is installed with Homebrew when it is missing.
+You need pi on the host, macOS 13 or newer, [Homebrew](https://brew.sh) when Colima is missing, Node 22.19 or newer with npm, and git. Colima 0.9.0 or newer is installed with Homebrew when it is missing.
 
 ```bash
 npm install -g --legacy-peer-deps @zharskiy/pinata@<version>
-pinata install [--pi <version>] [--config <file>] [--yes]
+pinata install [--config <file>] [--yes]
 ```
+
+Pinata never installs, updates or removes pi. Without a host pi, `pinata install` and `pinata update` stop before they change anything and say so; install pi with pi's own installer (`curl -fsSL https://pi.dev/install.sh | sh`) or with `npm install -g @earendil-works/pi-coding-agent`, then run the command again. Pinata runs pi's managed install in `~/.pi/agent` on the host (for provider credentials, host commands and `--no-sandbox`), or, without one, the pi in npm's global packages (`npm root -g`). A pi found only on `PATH` or in a project's `node_modules` is not used, nor an npm global pi linked in from outside npm's global folder (`npm link`), or one that lies in a folder a sandbox has run in, or in the folder you start pi in (or its git root) when a sandbox could run there. A git checkout no sandbox has used, such as `/opt/homebrew` or `~/.nvm`, does not count.
 
 `pinata install` refuses to run as root and while pi sessions run in the sandbox VM, and runs only from npm's global copy of the package or from a checkout. It then:
 
-1. Makes sure there is a host pi: `--pi <version>` installs that version with `npm install -g --ignore-scripts @earendil-works/pi-coding-agent@<version>`; without it a host pi you have stays, and a missing one gets the version pinata is tested with. Pinata runs pi's managed install in `~/.pi/agent` on the host (for provider credentials, host commands and `--no-sandbox`), or, without one, the pi in npm's global packages (`npm root -g`), so `--pi` is refused while the managed install exists; remove it with `curl -fsSL https://pi.dev/install.sh | sh` and Uninstall Pi. A pi found only on `PATH` or in a project's `node_modules` is not used, nor an npm global pi linked in from outside npm's global folder (`npm link`), or one that lies in a folder a sandbox has run in, or in the folder you start pi in (or its git root) when a sandbox could run there. A git checkout no sandbox has used, such as `/opt/homebrew` or `~/.nvm`, does not count.
-2. Registers the package with host pi as `npm:@zharskiy/pinata@<version>`, the version you installed, so pi loads the extensions of that version; `pi update --extensions` does not move a pinned source.
-3. Links `~/.local/bin/pi` to pinata, after checking it before step 1 too, so a refusal changes nothing. pi's managed link there is replaced, and `pinata uninstall` puts it back, as is the wrapper an earlier install wrote; any other file stops the install.
-4. Puts `~/.local/bin` first on `PATH` with a marked block in `~/.zshrc`, and in `~/.bashrc` and `~/.bash_profile` when they exist. A file with an unpaired or repeated marker line is left as it is, with a line saying so. `pinata uninstall` cuts the block with the newline it added, so the file is as it was.
-5. With `--config <file>`, writes that file over `~/.pi/agent/pinata/config.json`, after checking it before anything else changes. It writes it on every install that passes it, with no merge: this is how a team hands out one config.
-6. Runs `pinata init`, which asks which folder holds your projects, shows the VM size it picked for this Mac, and creates the VM when you choose Apply. It asks only on a first install (no `workspaceRoot` in the config) at a terminal, without `--yes`, `--config` or `CI`; otherwise it runs as `pinata init --yes`, and not at all when the config has a `workspaceRoot`, the VM exists and no `--config` was given.
+1. Registers the package with host pi as `npm:@zharskiy/pinata@<version>`, the version you installed, so pi loads the extensions of that version; `pi update --extensions` does not move a pinned source.
+2. Links `~/.local/bin/pi` to pinata, after checking it before step 1, so a refusal changes nothing. pi's managed link there is replaced, and `pinata uninstall` puts it back, as is the wrapper an earlier install wrote; any other file stops the install.
+3. Puts `~/.local/bin` first on `PATH` with a marked block in `~/.zshrc`, and in `~/.bashrc` and `~/.bash_profile` when they exist. A file with an unpaired or repeated marker line is left as it is, with a line saying so. `pinata uninstall` cuts the block with the newline it added, so the file is as it was.
+4. With `--config <file>`, writes that file over `~/.pi/agent/pinata/config.json`, after checking it before anything else changes. It writes it on every install that passes it, with no merge: this is how a team hands out one config.
+5. Runs `pinata init`, which asks which folder holds your projects, shows the VM size it picked for this Mac, and creates the VM when you choose Apply. It asks only on a first install (no `workspaceRoot` in the config) at a terminal, without `--yes`, `--config` or `CI`; otherwise it runs as `pinata init --yes`, and not at all when the config has a `workspaceRoot`, the VM exists and no `--config` was given.
 
 Run again, `pinata install` changes nothing. Open a new terminal afterwards.
 
-To pick other versions, run `pinata update [<version>] [--pi <version>]`: it runs `npm install -g --legacy-peer-deps @zharskiy/pinata@<version>` (`latest` without a version), then the new copy's `pinata install --yes`. A bare `pi update` moves an npm pi to the latest version; pin it again with `pinata install --pi <version>`. Pi in the sandbox follows the host pi.
+To pick other versions, run `pinata update [<version>]`: it runs `npm install -g --legacy-peer-deps @zharskiy/pinata@<version>` (`latest` without a version), then the new copy's `pinata install --yes`. A bare `pi update` moves an npm pi to the latest version. Pi in the sandbox follows the host pi.
 
 To change the folder or the VM size later, run `pinata init` again. It plans the same VM shares as a launch, the folders of `mounts.binds` included.
 
@@ -157,8 +158,8 @@ In the table, *host pi* is pi's managed install on your Mac, or without one the 
 | `pi --version` | the pi version the sandbox runs, without starting a sandbox |
 | `pi update [target]` | update host pi, its packages or its model catalogs, with host pi on the host |
 | `pi config` | the user resource config, with host pi on the host (-l passes through into the sandbox) |
-| `pinata install [--pi <version>] [--config <file>] [--yes]` | set up host pi, the pi link, PATH and the sandbox VM; --pi installs that host pi version, --config writes that file as the config, --yes asks nothing |
-| `pinata update [<version>] [--pi <version>]` | install that pinata version with npm (latest without one), then its pinata install --yes |
+| `pinata install [--config <file>] [--yes]` | set up pinata's package in host pi, the pi link, PATH and the sandbox VM; needs pi installed on the host, --config writes that file as the config, --yes asks nothing |
+| `pinata update [<version>]` | install that pinata version with npm (latest without one), then its pinata install --yes |
 | `pinata uninstall` | remove the sandbox VM, pinata's state, its links, its PATH block and its package in host pi; your config, sessions, pi and colima stay |
 | `pinata init [--yes]` | set up or change the folder that holds your projects, VM size and settings write-back, then apply them to the sandbox VM; --yes asks nothing and applies the current settings |
 | `pinata status` | runtime, services, container, proxy, image, launches, grants, overlays, volumes |

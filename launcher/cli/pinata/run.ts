@@ -26,9 +26,7 @@ interface Command {
 
 const HELP_FLAGS = ["-h", "--help"];
 
-const PI_OPTION = { pi: { type: "string" } } as const;
-
-const INSTALL_OPTIONS = { ...PI_OPTION, config: { type: "string" }, yes: { type: "boolean" } } as const;
+const INSTALL_OPTIONS = { config: { type: "string" }, yes: { type: "boolean" } } as const;
 
 const parseOptions = <T extends Record<string, { type: "string" | "boolean" }>>(
   command: string,
@@ -57,11 +55,11 @@ const installCommand = (deps: CliDeps, args: string[], packageDir: string) => {
 };
 
 const updateCommand = (deps: CliDeps, args: string[], packageDir: string) => {
-  const { values, positionals } = parseOptions("update", args, PI_OPTION);
+  const { positionals } = parseOptions("update", args, {});
 
   assertPositionals("update", positionals, 1);
 
-  return update(deps, packageDir, positionals[0], values.pi);
+  return update(deps, packageDir, positionals[0]);
 };
 
 const printVersion = async (deps: CliDeps) => {

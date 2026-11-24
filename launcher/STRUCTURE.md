@@ -92,9 +92,9 @@ cli/commands/tls-probe.ts      the typed TLS handshake script those checks run a
 cli/commands/help.ts           usage
 cli/commands/options.ts        the option check of the sandbox commands and egress
 cli/pinata/run.ts              pinata: the one command table, install, update and uninstall and the sandbox commands, with their flags
-cli/pinata/host.ts             the package name, the preflight (root, Node, colima installed with brew when missing), the busy refusal, the checkout or npm-copy check and the package sources in pi's settings.json
-cli/pinata/install.ts          pinata install: --pi and --config checks, host pi, pi install of the package, the link, the PATH blocks, the config file, then pinata init
-cli/pinata/update.ts           pinata update: checkout refusal, preflight, npm install -g of the package, then the new copy's pinata install --yes
+cli/pinata/host.ts             the package name, the host pi requirement (no pi stops install and update before they change anything), the preflight (root, Node, colima installed with brew when missing), the busy refusal, the checkout or npm-copy check and the package sources in pi's settings.json
+cli/pinata/install.ts          pinata install: host pi requirement, --config check, pi install of the package, the link, the PATH blocks, the config file, then pinata init
+cli/pinata/update.ts           pinata update: checkout refusal, host pi requirement, preflight, npm install -g of the package, then the new copy's pinata install --yes
 cli/pinata/uninstall.ts        pinata uninstall: busy refusal, releaseSandbox, the colima profile, the link, pi remove, the PATH blocks, the guarded state dir, npm uninstall -g, the kept lines
 cli/pinata/shim.ts             ~/.local/bin/pi: what may be replaced, the link, the recorded managed link and its restore; ~/.local/bin/pinata of a checkout
 cli/pinata/path-block.ts       the marked PATH block in ~/.zshrc, ~/.bashrc and ~/.bash_profile, added or removed

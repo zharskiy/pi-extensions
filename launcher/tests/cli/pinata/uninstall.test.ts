@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { VmInspect } from "../../../backend/index.ts";
@@ -36,6 +36,17 @@ describe("pinata uninstall", () => {
     expect(await pinata.packages()).toEqual(["npm:other"]);
     expect(await exists(pinata.harness.stateDir)).toBe(false);
     expect(pinata.lines().at(-1) === "npm uninstall -g @zharskiy/pinata").toBe(global);
+  });
+
+  it("leaves pi alone", async () => {
+    const pinata = await installed(true);
+    const managed = join(pinata.harness.hostAgentDir, "install");
+    const before = await readdir(managed, { recursive: true });
+
+    expect(await pinata.run("uninstall")).toBe(0);
+    expect(pinata.lines().filter((line) => line.includes("pi-coding-agent"))).toEqual([]);
+    expect(await readdir(managed, { recursive: true })).toEqual(before);
+    expect(await exists(join(pinata.harness.hostAgentDir, "bin", "pi"))).toBe(true);
   });
 
   it("stops before the VM is deleted when releasing the sandbox fails, and names the way out", async () => {
