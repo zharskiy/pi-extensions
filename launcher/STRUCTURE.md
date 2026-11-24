@@ -73,7 +73,7 @@ cli/host-pi.ts                 the one host pi (pi's managed install, else npm's
 cli/notices.ts                 notices printed once per install, their hashes kept in seen.json
 cli/versions.ts                pinata version, the tested pi version, the version compare
 cli/commands/status.ts         pinata status as one closing block: the folder, then a row each for the runtime, services, containers, pi folder, proxy, image, overlays, volumes, launches and grants
-cli/commands/config.ts         pinata config: the effective config as JSON, the keys the config file sets and the written-back keys of each file; --json unchanged
+cli/commands/config.ts         pinata config: the effective config as JSON, the keys the config file sets and the written-back keys of each file
 cli/commands/egress.ts         pinata egress allow, revoke and list
 cli/commands/restart.ts        pinata restart: live-session refusal, the settings read, validated and planned for a missing VM (planAll) before anything is deleted, removeSandbox with the host records of what was in the VM cleared under its locks, then that plan applied (applyAll) with stepsFrontEnd; a failed creation says the VM is gone
 cli/commands/stop.ts           pinata stop: the orphan sweep, which stops the ground and the proxy when idle, then the VM when no session runs in it, as step lines
@@ -92,7 +92,7 @@ cli/commands/help.ts           the command table, printed whole for help and eve
 cli/commands/options.ts        the option check of the sandbox commands and egress
 cli/pinata/run.ts              pinata: the one command table, install, update and uninstall and the sandbox commands, with their flags
 cli/pinata/host.ts             the package name, the preflight (root, Node, colima installed with brew when missing), host pi run captured, the busy refusal, the checkout or npm-copy check and the package sources in pi's settings.json
-cli/pinata/install.ts          pinata install: host pi requirement, --config check, pi install of the package, the link, the PATH blocks, the config file, then pinata init, and the closing block (installed, or nothing changed)
+cli/pinata/install.ts          pinata install: host pi requirement, pi install of the package, the link, the PATH blocks, then pinata init, and the closing block (installed, or nothing changed)
 cli/pinata/update.ts           pinata update: checkout refusal, host pi requirement, preflight, npm install -g of the package, then the new copy's pinata install --yes
 cli/pinata/uninstall.ts        pinata uninstall: busy refusal, releaseSandbox (each folder released, then under the ground and launch registry locks a second session count, the proxy stopped and the teardown it is given, silent unless a folder's session started meanwhile), removeSandbox (releaseSandbox with the colima profile deleted under its locks and the VM lock, shared with restart), the link, pi remove (a warning instead without a host pi), the PATH blocks, the guarded state dir, npm uninstall -g, the closing block of what was kept; --sandbox skips the pinata link, pi remove, the PATH blocks and npm uninstall -g
 cli/pinata/shim.ts             ~/.local/bin/pi: what may be replaced, the link, the recorded managed link and its restore; ~/.local/bin/pinata of a checkout, pinata's only when it points at launcher/bin/pinata-dev.js

@@ -8,7 +8,7 @@ The sandbox reads one JSON file: `~/.pi/agent/pinata/config.json` (`pinata/confi
 
 Without the file the defaults apply. Pinata reads it at every launch and writes it only in `pinata init`, which changes only the keys it asks about: `workspaceRoot`, `vm.cpus`, `vm.memoryGiB`, `vm.diskGiB` and `writeBack.enabled`. It keeps every other key and their order, and the file's indentation where it can. Nothing in the project folder configures the sandbox; see [One config for every session](#one-config-for-every-session).
 
-`pinata config` prints the result and, for each key, whether it comes from the file (`config`) or the default. Add `--json` for machine-readable output.
+`pinata config` prints the result and, for each key, whether it comes from the file (`config`) or the default.
 
 The keys are described in [schema/sandbox-config.schema.json](schema/sandbox-config.schema.json). A `$schema` key is allowed, so your editor can point at that file for completion.
 

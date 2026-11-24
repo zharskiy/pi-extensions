@@ -30,7 +30,7 @@ You need pi on the host, macOS 13 or newer, [Homebrew](https://brew.sh) when Col
 
 ```bash
 npm install -g --legacy-peer-deps @zharskiy/pinata@<version>
-pinata install [--config <file>] [--yes]
+pinata install [--yes]
 ```
 
 Pinata never installs, updates or removes pi. Without a host pi, `pinata install`, `pinata update` and `pi` itself (also `pi --no-sandbox`) stop before they change anything and say so; install pi with pi's own installer (`curl -fsSL https://pi.dev/install.sh | sh`) or with `npm install -g @earendil-works/pi-coding-agent`, then run the command again. Pinata runs pi's managed install in `~/.pi/agent` on the host (for provider credentials, host commands and `--no-sandbox`), or, without one, the pi in npm's global packages (`npm root -g`). A pi found only on `PATH` or in a project's `node_modules` is not used, nor an npm global pi linked in from outside npm's global folder (`npm link`), or one that lies in a folder a sandbox has run in, or in the folder you start pi in (or its git root) when a sandbox could run there. A git checkout no sandbox has used, such as `/opt/homebrew` or `~/.nvm`, does not count.
@@ -40,12 +40,11 @@ Pinata never installs, updates or removes pi. Without a host pi, `pinata install
 1. Registers the package with host pi as `npm:@zharskiy/pinata@<version>`, the version you installed, so pi loads the extensions of that version; `pi update --extensions` does not move a pinned source.
 2. Links `~/.local/bin/pi` to pinata, after checking it before step 1, so a refusal changes nothing. pi's managed link there is replaced, and `pinata uninstall` puts it back; any other file stops the install.
 3. Puts `~/.local/bin` first on `PATH` with a marked block in `~/.zshrc`, and in `~/.bashrc` and `~/.bash_profile` when they exist. A file with an unpaired or repeated marker line is left as it is, with a line saying so. `pinata uninstall` cuts the block with the newline it added, so the file is as it was.
-4. With `--config <file>`, writes that file over `~/.pi/agent/pinata/config.json`, after checking it before anything else changes. It writes it on every install that passes it, with no merge: this is how a team hands out one config.
-5. Runs `pinata init`, which asks which folder holds your projects, shows the VM size it picked for this Mac, and creates the VM when you choose Apply. It asks only on a first install (no `workspaceRoot` in the config) at a terminal, without `--yes`, `--config` or `CI`; otherwise it runs as `pinata init --yes`, and not at all when the config has a `workspaceRoot`, the VM exists and no `--config` was given.
+4. Runs `pinata init`, which asks which folder holds your projects, shows the VM size it picked for this Mac, and creates the VM when you choose Apply. It asks only on a first install (no `workspaceRoot` in the config) at a terminal, without `--yes` or `CI`; otherwise it runs as `pinata init --yes`, and not at all when the config has a `workspaceRoot` and the VM exists.
 
 Run again, `pinata install` changes nothing. Open a new terminal afterwards.
 
-To pick other versions, run `pinata update [<version>]`: it runs `npm install -g --legacy-peer-deps @zharskiy/pinata@<version>` (`latest` without a version), then the new copy's `pinata install --yes`. A bare `pi update` moves an npm pi to the latest version. Pi in the sandbox follows the host pi.
+To update, run `pinata update`: it runs `npm install -g --legacy-peer-deps @zharskiy/pinata@latest`, then the new copy's `pinata install --yes`. For another version, run that npm command with the version, then `pinata install`. A bare `pi update` moves an npm pi to the latest version. Pi in the sandbox follows the host pi.
 
 To change the folder or the VM size later, run `pinata init` again. It plans the same VM shares as a launch, the folders of `mounts.binds` included.
 
@@ -158,13 +157,13 @@ In the table, *host pi* is pi's managed install on your Mac, or without one the 
 | `pi --version` | the pi version the sandbox runs, without starting a sandbox |
 | `pi update [target]` | update host pi, its packages or its model catalogs, with host pi on the host |
 | `pi config` | the user resource config, with host pi on the host (-l passes through into the sandbox) |
-| `pinata install [--config <file>] [--yes]` | set up pinata's package in host pi, the pi link, PATH and the sandbox VM; needs pi installed on the host, --config writes that file as the config, --yes asks nothing |
-| `pinata update [<version>]` | install that pinata version with npm (latest without one), then its pinata install --yes |
+| `pinata install [--yes]` | set up pinata's package in host pi, the pi link, PATH and the sandbox VM; needs pi installed on the host, --yes asks nothing |
+| `pinata update` | install the latest pinata with npm, then its pinata install --yes |
 | `pinata uninstall [--sandbox]` | remove the sandbox VM, pinata's state, its links, its PATH block and its package in host pi; your config, sessions, pi and colima stay; --sandbox removes only the sandbox VM, the pi link and pinata's state, so pi runs host pi |
 | `pinata init [--yes]` | set up or change the folder that holds your projects, VM size and settings write-back, then apply them to the sandbox VM; --yes asks nothing and applies the current settings |
 | `pinata status` | runtime, services, container, proxy, image, launches, grants, overlays, volumes |
 | `pinata list` | the sandbox VM and the pi sessions it runs, for every folder, without starting it |
-| `pinata config [--json]` | the effective config and whether each key comes from the config file or the default |
+| `pinata config` | the effective config and whether each key comes from the config file or the default |
 | `pinata egress allow <host[:port]>` | allow a host for every session until revoked |
 | `pinata egress revoke <host[:port]>` | remove a grant |
 | `pinata egress list [--denied]` | the grants, or the hosts the proxy blocked |
@@ -175,7 +174,7 @@ In the table, *host pi* is pi's managed install on your Mac, or without one the 
 
 `pi uninstall <source>` also runs with host pi on the host. Host pi loads no extension for `pi --help` and `pi --list-models`, so help omits the flags extensions register and the list omits providers only an extension registers; `pi list`, `pi mcp list` and `pi config -l` run in the sandbox, and `pi --version` asks pi inside when `image.reference` and `image.digest` pin the image. `egress allow` uses port 443 unless you name one, and refuses wildcards, IP addresses and port 80 ([rules](CONFIGURATION.md#network-access)).
 
-`pi update` runs the host pi's own update from an empty folder, and the next launch rebuilds the image. A local path as the source (`./ext`, `~/ext`) is made absolute against your folder first. Every other `pi update` form (`--all`, `--extensions`, `--extension <source>`, `<source>`, `--models`, `--force`) runs host pi from an empty folder, so it updates the host's packages and the host pi, never a copy inside the sandbox; when the target includes pi itself it names the pi version the sandbox follows. Without a host pi it says how to get one. To update pinata itself, run `pinata update [<version>]` (or `git pull` and `pinata install` in a checkout).
+`pi update` runs the host pi's own update from an empty folder, and the next launch rebuilds the image. A local path as the source (`./ext`, `~/ext`) is made absolute against your folder first. Every other `pi update` form (`--all`, `--extensions`, `--extension <source>`, `<source>`, `--models`, `--force`) runs host pi from an empty folder, so it updates the host's packages and the host pi, never a copy inside the sandbox; when the target includes pi itself it names the pi version the sandbox follows. Without a host pi it says how to get one. To update pinata itself, run `pinata update` (or `git pull` and `pinata install` in a checkout).
 
 After a reboot or `pinata stop`, the next `pi` starts the VM again. A failure prints `pinata: <message>`, often with a `hint:` line.
 

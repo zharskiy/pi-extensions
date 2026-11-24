@@ -1,10 +1,7 @@
 import { type EffectiveConfig, type WriteBackListing, writeBackListing } from "../../config/index.ts";
-import { jsonText } from "../../shared/index.ts";
 import { openContext } from "../context.ts";
 import { type CliDeps, pathsOf, writeLine } from "../deps.ts";
 import { stepsOf, tilde } from "../steps.ts";
-
-export const JSON_FLAG = "--json";
 
 const keysFrom = (listing: WriteBackListing[string], source: string) =>
   Object.entries(listing)
@@ -39,15 +36,9 @@ const sourcesText = (deps: CliDeps, sources: EffectiveConfig["sources"]) => {
   return `${tilde(deps, pathsOf(deps).userConfigFile)} sets ${configured.join(", ")}; every other key has its default value.`;
 };
 
-export const configCommand = async (deps: CliDeps, args: string[]) => {
+export const configCommand = async (deps: CliDeps) => {
   const { effective } = (await openContext(deps, "host")).context;
   const writeBack = writeBackListing(effective.config.writeBack);
-
-  if (args.includes(JSON_FLAG)) {
-    deps.stdout.write(jsonText({ ...effective, writeBack }));
-
-    return 0;
-  }
 
   writeLine(deps.stdout, JSON.stringify(effective.config, null, 2));
 

@@ -99,17 +99,15 @@ The package also ships pinata, a host-side command that runs pi in a per-reposit
 
 ```bash
 npm install -g --legacy-peer-deps @zharskiy/pinata@<version>   # macOS with pi, Homebrew and Node 22.19 or newer
-pinata install [--config <file>] [--yes]
-pinata update [<version>]
+pinata install [--yes]
+pinata update
 pinata uninstall [--sandbox]
 pinata list                                                    # the sandbox VM and the pi sessions in it
 ```
 
 `pinata install`, `pinata update` and every launch need pi on the host and stop before they change anything without one: pinata never installs, updates or removes pi. It installs Colima with Homebrew when it is missing, registers the package with host pi, links `~/.local/bin/pi` to pinata, puts `~/.local/bin` on `PATH` in `~/.zshrc` (and in `~/.bashrc` and `~/.bash_profile` when they exist) and runs `pinata init`. Run again, it changes nothing. In a checkout, run `npm install`, then `node launcher/bin/pinata-dev.js install`; `pinata update` refuses there (`git pull`, then install again). Details: [pinata README](launcher/README.md#install).
 
-**Versions are yours to pick.** The package version is the one you install, `@zharskiy/pinata@<version>` or `pinata update <version>` (`latest` by default), and pi loads the extensions of that same version, pinned as `npm:@zharskiy/pinata@<version>` in pi's settings, which `pi update --extensions` does not move. The host pi is yours to install and update; pinata runs pi's managed install in `~/.pi/agent` first, else the pi of `npm install -g`. Pi in the sandbox follows the host pi. How releases are made: [RELEASING.md](RELEASING.md).
-
-**One config for a team.** `--config <file>` checks the file before anything changes, then writes it over `~/.pi/agent/pinata/config.json`, with no merge, on every install that passes it.
+**Versions are yours to pick.** The package version is the one you install, `@zharskiy/pinata@<version>`, or the latest with `pinata update`, and pi loads the extensions of that same version, pinned as `npm:@zharskiy/pinata@<version>` in pi's settings, which `pi update --extensions` does not move. The host pi is yours to install and update; pinata runs pi's managed install in `~/.pi/agent` first, else the pi of `npm install -g`. Pi in the sandbox follows the host pi. How releases are made: [RELEASING.md](RELEASING.md).
 
 **Uninstall.** `pinata uninstall`, with no pi session running in the sandbox, deletes the sandbox VM with its containers, volumes and images, the `pi` link, the package's source in pi, the `PATH` blocks, pinata's state and the npm package. Your config, pi's sessions, pi and Colima stay. `pinata uninstall --sandbox` removes only the VM, the `pi` link and pinata's state, so `pi` runs host pi with pinata's extensions; `pinata install` brings the sandbox back.
 

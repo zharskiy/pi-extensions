@@ -59,7 +59,7 @@ describe("error rendering", () => {
     const harness = await createHarness();
 
     expect(await runPinata(["help"], reference.deps)).toBe(0);
-    expect(await runPinata(["config", "--json", "--help"], harness.deps)).toBe(0);
+    expect(await runPinata(["doctor", "--verbose", "--help"], harness.deps)).toBe(0);
     expect(await runPinata(["restart", "-h"], harness.deps)).toBe(0);
     expect(await runPinata(["status", "--help"], harness.deps)).toBe(0);
     expect(harness.stdout()).toBe(reference.stdout().repeat(3));

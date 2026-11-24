@@ -10,9 +10,9 @@ describe("pinata update", () => {
     });
     const bin = join(pinata.packageDir, "launcher", "bin", "pinata.js");
 
-    expect(await pinata.run("update", "0.5.0")).toBe(3);
+    expect(await pinata.run("update")).toBe(3);
     expect(pinata.lines().slice(-2)).toEqual([
-      "npm install -g --legacy-peer-deps @zharskiy/pinata@0.5.0",
+      "npm install -g --legacy-peer-deps @zharskiy/pinata@latest",
       `${process.execPath} ${bin} install --yes`,
     ]);
     expect(
@@ -35,12 +35,12 @@ describe("pinata update", () => {
           : undefined,
     });
 
-    expect(await pinata.run("update", "0.5.0")).toBe(1);
+    expect(await pinata.run("update")).toBe(1);
     expect(pinata.harness.stderr()).toBe(
       [
         "x Could not update pinata",
         "  npm error code E404",
-        "pinata: npm install -g --legacy-peer-deps @zharskiy/pinata@0.5.0 exited with code 1",
+        "pinata: npm install -g --legacy-peer-deps @zharskiy/pinata@latest exited with code 1",
         "",
       ].join("\n"),
     );

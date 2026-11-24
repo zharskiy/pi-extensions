@@ -196,20 +196,6 @@ describe("pinata config", () => {
     expect(JSON.parse(json).image.reference).toBeUndefined();
   });
 
-  it("prints config and sources as one JSON object with --json", async () => {
-    const harness = await createHarness();
-
-    expect(await runPinata(["config", "--json"], harness.deps)).toBe(0);
-
-    const parsed = JSON.parse(harness.stdout()) as {
-      config: { sessions: { host: boolean } };
-      sources: Record<string, string>;
-    };
-
-    expect(parsed.config.sessions.host).toBe(true);
-    expect(parsed.sources["sessions.host"]).toBe("default");
-  });
-
   it("lists the effective write-back keys of each file with their source", async () => {
     const harness = await createHarness();
 
@@ -228,17 +214,6 @@ describe("pinata config", () => {
       "  Written back:  settings.json: defaultProvider, defaultModel, defaultThinkingLevel, enabledModels, hideThinkingBlock, quietStartup, collapseChangelog, doubleEscapeAction, treeFilterMode, steeringMode, followUpMode",
     ]);
     expect(closing.slice(-2)).toEqual(["                 pi-footer.json: layout (from the config)", ""]);
-
-    expect(await runPinata(["config", "--json"], harness.deps)).toBe(0);
-
-    const parsed = JSON.parse(harness.stdout().slice(harness.stdout().lastIndexOf("\n{\n") + 1)) as {
-      writeBack: Record<string, Record<string, { source: string }>>;
-    };
-
-    expect(parsed.writeBack["pi-footer.json"]).toEqual({
-      layout: { spec: { type: "json" }, source: "config" },
-    });
-    expect(parsed.writeBack["settings.json"]?.defaultModel?.source).toBe("default");
   });
 
   it("says when nothing is written back", async () => {
@@ -255,7 +230,7 @@ describe("pinata config", () => {
 
     expect(await runPinata(["config", "set", "sessions.host", "false"], harness.deps)).toBe(1);
     expect(harness.stderr()).toContain('pinata: unknown config option "set"\n');
-    expect(harness.stderr()).toContain("  hint: pinata config [--json]");
+    expect(harness.stderr()).toContain("  hint: pinata config\n");
   });
 });
 

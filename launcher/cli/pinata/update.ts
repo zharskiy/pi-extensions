@@ -5,7 +5,7 @@ import { requireJobPi } from "../host-pi.ts";
 import { runQuietly, stepsOf } from "../steps.ts";
 import { isCheckout, PACKAGE, preflight, refuseBusy } from "./host.ts";
 
-export const update = async (deps: CliDeps, packageDir: string, version?: string) => {
+export const update = async (deps: CliDeps, packageDir: string) => {
   if (await isCheckout(deps, packageDir)) {
     throw new LauncherError("this is a checkout: git pull, then pinata install");
   }
@@ -18,11 +18,9 @@ export const update = async (deps: CliDeps, packageDir: string, version?: string
 
   await refuseBusy(deps);
 
-  const spec = `${PACKAGE}@${version ?? "latest"}`;
-
   await steps.task(
     { pending: "Updating pinata", done: "Updated pinata", failed: "Could not update pinata" },
-    () => runQuietly(deps, ["npm", "install", "-g", "--legacy-peer-deps", spec]),
+    () => runQuietly(deps, ["npm", "install", "-g", "--legacy-peer-deps", `${PACKAGE}@latest`]),
   );
 
   return deps.runner.spawnInteractive(

@@ -177,26 +177,6 @@ describe("pinata install", () => {
     },
   );
 
-  it("refuses an invalid --config before it changes anything, and writes a valid one", async () => {
-    const pinata = await createPinata();
-    const given = join(pinata.harness.root, "team.json");
-
-    await writeFile(given, JSON.stringify({ workspaceRoot: 5 }));
-
-    expect(await pinata.run("install", "--config", given)).toBe(1);
-    expect(pinata.harness.stderr()).toContain("workspaceRoot");
-    expect(pinata.lines()).toEqual([]);
-    expect(await exists(pinata.shim)).toBe(false);
-    expect(await exists(join(pinata.home, ".zshrc"))).toBe(false);
-
-    await writeFile(given, JSON.stringify({ workspaceRoot: pinata.harness.repoRoot }));
-
-    expect(await pinata.run("install", "--config", given)).toBe(0);
-    expect(JSON.parse(await readFile(pinata.harness.userConfigFile, "utf8"))).toEqual({
-      workspaceRoot: pinata.harness.repoRoot,
-    });
-  });
-
   it("links ~/.local/bin/pinata to the checkout, and uninstall removes the link", async () => {
     const pinata = await createPinata();
     const link = join(pinata.home, ".local", "bin", "pinata");
@@ -289,7 +269,7 @@ describe("pinata install", () => {
   it.each([
     [["install", "extra"], 'pinata: install: unexpected argument "extra"'],
     [["install", "--force"], "pinata: install: Unknown option '--force'"],
-    [["update", "1.0.0", "2.0.0"], 'pinata: update: unexpected argument "2.0.0"'],
+    [["update", "1.0.0"], 'pinata: update: unexpected argument "1.0.0"'],
     [["update", "--yes"], "pinata: update: Unknown option '--yes'"],
     [["uninstall", "--yes"], 'pinata: unknown uninstall option "--yes"'],
   ])("refuses %j and names its usage", async (argv, message) => {

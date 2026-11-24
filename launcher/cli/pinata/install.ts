@@ -1,12 +1,5 @@
-import { join, resolve } from "node:path";
-import { validateConfigFile } from "../../config/index.ts";
-import {
-  jsonText,
-  LauncherError,
-  readJsonFile,
-  readJsonObject,
-  writeFileAtomic,
-} from "../../shared/index.ts";
+import { join } from "node:path";
+import { readJsonObject } from "../../shared/index.ts";
 import { acceptAll, initCommand } from "../commands/init.ts";
 import { type CliDeps, isTerminal, pathsOf } from "../deps.ts";
 import { requireJobPi } from "../host-pi.ts";
@@ -19,22 +12,8 @@ import { setPathBlock } from "./path-block.ts";
 import { inspectPinataLink, inspectShim, installPinataLink, installShim, removePinataLink } from "./shim.ts";
 
 export interface InstallFlags {
-  config?: string;
   yes?: boolean;
 }
-
-const readConfig = async (deps: CliDeps, given: string) => {
-  const file = resolve(deps.cwd, given);
-  const value = await readJsonFile<unknown>(file);
-
-  if (value === undefined) {
-    throw new LauncherError(`--config ${file}: no such file`);
-  }
-
-  validateConfigFile(value, file);
-
-  return { file, value };
-};
 
 const EXTENSIONS = {
   pending: "Registering pinata's extensions with pi",
@@ -53,12 +32,11 @@ const ensureExtensions = async (deps: CliDeps, steps: Steps, own: string) => {
 const setup = async (deps: CliDeps, steps: Steps, flags: InstallFlags) => {
   const configured = (await readJsonObject(pathsOf(deps).userConfigFile))?.workspaceRoot !== undefined;
 
-  if (configured && flags.config === undefined && (await deps.backend().vm.inspect()).state !== "absent") {
+  if (configured && (await deps.backend().vm.inspect()).state !== "absent") {
     return { code: 0, asked: false };
   }
 
-  const ask =
-    isTerminal(deps.terminal.stdin) && !flags.yes && flags.config === undefined && !isSet(deps.env.CI);
+  const ask = isTerminal(deps.terminal.stdin) && !flags.yes && !isSet(deps.env.CI);
 
   if (ask && !configured) {
     return { code: await initCommand(deps, []), asked: true };
@@ -90,7 +68,6 @@ const close = (deps: CliDeps, steps: Steps, asked: boolean) => {
 export const install = async (deps: CliDeps, packageDir: string, flags: InstallFlags) => {
   await requireJobPi(deps, "install");
 
-  const config = flags.config === undefined ? undefined : await readConfig(deps, flags.config);
   const checkout = await isCheckout(deps, packageDir);
   const steps = stepsOf(deps);
 
@@ -111,14 +88,6 @@ export const install = async (deps: CliDeps, packageDir: string, flags: InstallF
   await linkPinata(deps, steps, packageDir, checkout);
 
   await setPathBlock(deps, steps, true);
-
-  if (config !== undefined) {
-    await writeFileAtomic(pathsOf(deps).userConfigFile, jsonText(config.value));
-
-    steps.done(
-      `Copied the settings from ${tilde(deps, config.file)} (${tilde(deps, pathsOf(deps).userConfigFile)})`,
-    );
-  }
 
   const { code, asked } = await setup(deps, steps, flags);
 

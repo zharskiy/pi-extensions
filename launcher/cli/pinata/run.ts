@@ -1,7 +1,7 @@
 import { dirname } from "node:path";
 import { parseArgs } from "node:util";
 import { errorMessage, LauncherError, launcherRoot } from "../../shared/index.ts";
-import { configCommand, JSON_FLAG } from "../commands/config.ts";
+import { configCommand } from "../commands/config.ts";
 import { doctorCommand } from "../commands/doctor.ts";
 import { VERBOSE_FLAG } from "../commands/doctor-checks.ts";
 import { egressCommand } from "../commands/egress.ts";
@@ -28,7 +28,7 @@ const HELP_FLAGS = ["-h", "--help"];
 
 const SANDBOX_FLAG = "--sandbox";
 
-const INSTALL_OPTIONS = { config: { type: "string" }, yes: { type: "boolean" } } as const;
+const INSTALL_OPTIONS = { yes: { type: "boolean" } } as const;
 
 const parseOptions = <T extends Record<string, { type: "string" | "boolean" }>>(
   command: string,
@@ -59,9 +59,9 @@ const installCommand = (deps: CliDeps, args: string[], packageDir: string) => {
 const updateCommand = (deps: CliDeps, args: string[], packageDir: string) => {
   const { positionals } = parseOptions("update", args, {});
 
-  assertPositionals("update", positionals, 1);
+  assertPositionals("update", positionals, 0);
 
-  return update(deps, packageDir, positionals[0]);
+  return update(deps, packageDir);
 };
 
 const printVersion = async (deps: CliDeps) => {
@@ -83,7 +83,7 @@ const COMMANDS: Record<string, Command> = {
   status: { run: statusCommand, options: [] },
   list: { run: listCommand, options: [] },
   doctor: { run: doctorCommand, options: [VERBOSE_FLAG] },
-  config: { run: configCommand, options: [JSON_FLAG] },
+  config: { run: configCommand, options: [] },
   egress: { run: egressCommand },
   restart: { run: restartCommand, options: [] },
   stop: { run: stopCommand, options: [] },
