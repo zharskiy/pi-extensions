@@ -2,7 +2,7 @@
 name: image
 description: Use to find out what an image, screenshot or diagram shows; pass the image paths in files. Read-only. Returns a description scoped to the question, with stated uncertainty.
 model: openai/gpt-6-luna:low
-limit: 60000
+limit: 80000
 tools: [read]
 skills: []
 subagents: []

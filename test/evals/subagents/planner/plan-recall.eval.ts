@@ -114,7 +114,7 @@ const runOnce = async (entry: PlannerCase, index: number, total: number) => {
   const label = `plan ${entry.sha} run ${index + 1}`;
   const live = createLiveHarness(label, {
     agents: {
-      planner: { from: "planner", fields: { limit: "120000" } },
+      planner: { from: "planner", fields: { limit: "150000" } },
       scout: { from: "scout" },
       shell: { from: "shell" },
       fetch: { from: "fetch" },

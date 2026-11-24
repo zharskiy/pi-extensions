@@ -2,7 +2,7 @@
 name: shell
 description: Use to run commands, tests or builds and report the outcome. Changes nothing. Not for fixing what fails. Returns the exit status, a digest of errors and failing tests, and the path of the full log.
 model: openai/gpt-6-luna:low
-limit: 60000
+limit: 80000
 tools: [bash, read]
 skills: []
 subagents: []

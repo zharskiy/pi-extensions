@@ -2,7 +2,7 @@
 name: fetch
 description: Use for web pages, online documentation or any URL. Read-only. Not for this codebase. Returns an answer to the question with quoted extracts, source URLs and fetch dates.
 model: openai/gpt-6-luna:low
-limit: 80000
+limit: 100000
 tools: [fetch, read]
 skills: []
 subagents: []

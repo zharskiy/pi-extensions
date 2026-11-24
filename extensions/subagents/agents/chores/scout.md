@@ -2,7 +2,7 @@
 name: scout
 description: Use for questions about this codebase - where something is, how it works, what calls what. Read-only and cheap. Not for web pages, running commands or changes. Returns an answer with path:line findings.
 model: openai/gpt-6-luna:low
-limit: 100000
+limit: 150000
 tools: [read, grep, find, ls]
 skills: []
 subagents: []

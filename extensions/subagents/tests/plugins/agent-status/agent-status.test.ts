@@ -62,7 +62,7 @@ describe("agent_status", () => {
       toolCalls: 1,
     });
     child.usage = usageTotals(0.01, 1_000);
-    child.turn({ tokens: 30_000, window: 200_000, percent: 15 });
+    child.turn({ tokens: 30_000, window: 400_000, percent: 7.5 });
 
     const result = await harness.status.execute({ ids: [first.id, second.id, "ghost-0000"] }, {});
     const snapshot = result.details?.agents[0];
@@ -74,13 +74,13 @@ describe("agent_status", () => {
       state: "running",
       tokens: 2_000,
       toolCalls: 1,
-      context: { tokens: 30_000, limit: 100_000 },
+      context: { tokens: 30_000, limit: 150_000 },
       lastLine: "found the handler",
     });
     expect(result.details?.agents).toHaveLength(2);
     expect(result.details?.unknown).toEqual(["ghost-0000"]);
     expect(result.text).toContain(`${first.id} (scout, ${first.model}) running`);
-    expect(result.text).toContain(" · 1 call · 2.0k tokens · working context 30.0k of 100k");
+    expect(result.text).toContain(" · 1 call · 2.0k tokens · working context 30.0k of 150k");
     expect(result.text).toContain(" · 0 calls · 0 tokens · context n/a");
     expect(result.text).toContain("ghost-0000: unknown agent");
 
