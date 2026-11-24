@@ -137,7 +137,7 @@ describe("pinata restart", () => {
       detect: async () => {
         detections.count += 1;
 
-        if (detections.count === 4) {
+        if (detections.count === 3) {
           fake.addContainer({
             name: "other",
             labels: { [LABELS.managed]: "true", [LABELS.install]: "other", [LABELS.role]: "agent" },

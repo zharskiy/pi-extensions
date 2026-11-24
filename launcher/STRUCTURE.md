@@ -77,8 +77,7 @@ cli/commands/config.ts         pinata config: the effective config as JSON, the 
 cli/commands/egress.ts         pinata egress allow, revoke and list
 cli/commands/restart.ts        pinata restart: live-session refusal, the settings read, validated and planned for a missing VM (planAll) before anything is deleted, removeSandbox with the host records of what was in the VM cleared under its locks, then that plan applied (applyAll) with stepsFrontEnd; a failed creation says the VM is gone
 cli/commands/stop.ts           pinata stop: the orphan sweep, which stops the ground and the proxy when idle, then the VM when no session runs in it, as step lines
-cli/commands/uninstall.ts      releaseSandbox for pinata uninstall and restart: live-session refusal, each folder released, then under the ground and launch registry locks a second session count, the proxy stopped and the teardown it is given, silent unless a folder's session started meanwhile
-cli/release.ts                 what releaseSandbox uses: every known folder released under its preparation lock when free, and the ground and registry locks with the second session count
+cli/release.ts                 what releaseSandbox uses: every known folder released under its preparation lock when free, and the ground and registry locks with the session count
 cli/commands/list.ts           pinata list: the VM's state and size as one sentence and, when it runs, a Sessions row per agent container with its folder, without starting it
 cli/commands/init.ts           pinata init: --yes, CI and terminal checks, builds the UI and effects, and picks the front end (the wizard, rich or plain, or the step lines and closing block of --yes, or the front end pinata install passes to acceptAll); acceptAll is planAll (read, validate, plan, size check) then applyAll, which restart calls apart
 cli/commands/doctor.ts         pinata doctor: stages, probes and host checks as checks by section, the vm size and file cache checks, the denials matched to each rule, the blocked warnings, captured notices and the progress line
@@ -95,7 +94,7 @@ cli/pinata/run.ts              pinata: the one command table, install, update an
 cli/pinata/host.ts             the package name, the preflight (root, Node, colima installed with brew when missing), host pi run captured, the busy refusal, the checkout or npm-copy check and the package sources in pi's settings.json
 cli/pinata/install.ts          pinata install: host pi requirement, --config check, pi install of the package, the link, the PATH blocks, the config file, then pinata init, and the closing block (installed, or nothing changed)
 cli/pinata/update.ts           pinata update: checkout refusal, host pi requirement, preflight, npm install -g of the package, then the new copy's pinata install --yes, told the old version
-cli/pinata/uninstall.ts        pinata uninstall: busy refusal, removeSandbox (releaseSandbox with the colima profile deleted under its locks and the VM lock, shared with restart), the link, pi remove (a warning instead without a host pi), the PATH blocks, the guarded state dir, npm uninstall -g, the closing block of what was kept; --sandbox skips the pinata link, pi remove, the PATH blocks and npm uninstall -g
+cli/pinata/uninstall.ts        pinata uninstall: busy refusal, releaseSandbox (each folder released, then under the ground and launch registry locks a second session count, the proxy stopped and the teardown it is given, silent unless a folder's session started meanwhile), removeSandbox (releaseSandbox with the colima profile deleted under its locks and the VM lock, shared with restart), the link, pi remove (a warning instead without a host pi), the PATH blocks, the guarded state dir, npm uninstall -g, the closing block of what was kept; --sandbox skips the pinata link, pi remove, the PATH blocks and npm uninstall -g
 cli/pinata/shim.ts             ~/.local/bin/pi: what may be replaced, the link, the recorded managed link and its restore; ~/.local/bin/pinata of a checkout, pinata's only when it points at launcher/bin/pinata-dev.js
 cli/pinata/path-block.ts       the marked PATH block in ~/.zshrc, ~/.bashrc and ~/.bash_profile, added or removed
 ```
@@ -485,7 +484,7 @@ tests/cli/prompt/number.test.ts      number
 tests/cli/prompt/text.test.ts        the path prompt
 tests/cli/prompt/plain.test.ts       the plain prompt set
 tests/cli/init.test.ts               pinata init: the no-terminal and CI refusals, /dev/tty, --yes with PINATA_ROOT and without a root, signals and exit codes
-tests/cli/uninstall.test.ts          releaseSandbox: refusal, release and teardown, a stopped VM, a session started meanwhile, a launch held back, a failed proxy stop
+tests/cli/uninstall.test.ts          releaseSandbox: release and teardown, a stopped VM, a session started meanwhile, a launch held back, a failed proxy stop
 tests/cli/steps.test.ts              the step lines: off and at a terminal, NO_COLOR, the pending line, a failing child's output, continuation rows
 tests/cli/list.test.ts               pinata list
 tests/cli/pinata/support.ts          a pinata run over the CLI harness: npm prefix, package folder, host pi install and remove writing settings.json, the captured colima delete and global npm

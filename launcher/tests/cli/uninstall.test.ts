@@ -2,7 +2,7 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { LABELS } from "../../backend/index.ts";
-import { releaseSandbox } from "../../cli/commands/uninstall.ts";
+import { releaseSandbox } from "../../cli/pinata/uninstall.ts";
 import { sha256Hex, stateLayout, withFileLock } from "../../shared/index.ts";
 import { exists } from "../support/temp-dir.ts";
 import { createFakeBackend, createHarness, holdLaunch, unreachable } from "./harness.ts";
@@ -26,19 +26,6 @@ const otherSession = (fake: ReturnType<typeof createFakeBackend>) =>
   });
 
 describe("releaseSandbox", () => {
-  it("refuses while a launch is live and tears nothing down", async () => {
-    const harness = await createHarness({ backend: () => createFakeBackend().backend });
-    const { runs, teardown } = tracked();
-
-    await holdLaunch(harness);
-
-    await expect(releaseSandbox(harness.deps, () => undefined, teardown)).rejects.toThrow(
-      "1 pi session is running in the sandbox VM",
-    );
-    expect(runs.count).toBe(0);
-    expect(harness.proxyStops()).toBe(0);
-  });
-
   it("releases every folder, stops the proxy and tears down, leaving the engine objects to the VM delete", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
@@ -82,7 +69,7 @@ describe("releaseSandbox", () => {
         detect: async () => {
           detections.count += 1;
 
-          if (detections.count === 2) {
+          if (detections.count === 1) {
             otherSession(fake);
           }
 

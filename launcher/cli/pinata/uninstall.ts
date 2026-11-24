@@ -1,6 +1,6 @@
 import { rm, rmdir } from "node:fs/promises";
 import { join, relative } from "node:path";
-import { ENGINE_PROFILE } from "../../backend/index.ts";
+import { busyText, ENGINE_PROFILE } from "../../backend/index.ts";
 import {
   LauncherError,
   lstatOrUndefined,
@@ -8,13 +8,42 @@ import {
   stateLayout,
   withDirectoryLock,
 } from "../../shared/index.ts";
-import { releaseSandbox } from "../commands/uninstall.ts";
 import { type CliDeps, hostAgentDirOf, pathsOf } from "../deps.ts";
+import { removeGround } from "../ground.ts";
 import { resolveJobPi } from "../host-pi.ts";
+import { releaseRepos, withInstallReleased } from "../release.ts";
 import { runQuietly, type Steps, stepsOf, tilde } from "../steps.ts";
 import { hostPiQuietly, PACKAGE, piSources, refuseBusy } from "./host.ts";
 import { setPathBlock } from "./path-block.ts";
 import { removePinataLink, removeShim } from "./shim.ts";
+
+export const releaseSandbox = async (
+  deps: CliDeps,
+  note: (line: string) => void,
+  teardown: () => Promise<void>,
+) => {
+  const { stateDir } = pathsOf(deps);
+  const released = await releaseRepos(deps, stateDir);
+
+  released
+    .filter((repo) => repo.busy)
+    .forEach((repo) => {
+      note(`A pi session of ${repo.repoHash.slice(0, 12)} started meanwhile; its sandbox stays`);
+    });
+
+  const busy = await withInstallReleased(deps, stateDir, async () => {
+    await removeGround(deps, stateDir, undefined);
+
+    await teardown();
+  });
+
+  if (busy !== undefined) {
+    throw new LauncherError(
+      `a pi session started in the sandbox VM meanwhile (${busyText(busy)}), so the sandbox network, proxy, services, volumes and images were kept`,
+      "exit it, then run this again",
+    );
+  }
+};
 
 const SANDBOX = {
   pending: "Removing the sandbox VM and its data",
