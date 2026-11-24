@@ -38,7 +38,7 @@ export const missingPi = (deps: CliDeps) => ({
   problem: `no managed pi in ${hostAgentDirOf(deps)} and no pi in npm's global packages`,
   ignored: "a pi found only on PATH or in a project's node_modules is not used",
   effect: "the sandbox gets no provider credentials, and host commands and --no-sandbox are unavailable",
-  fix: "install pi with pi's own installer (curl -fsSL https://pi.dev/install.sh | sh) or with npm install -g @earendil-works/pi-coding-agent, and run the launcher's install.sh again",
+  fix: "install pi with pi's own installer (curl -fsSL https://pi.dev/install.sh | sh) or with npm install -g @earendil-works/pi-coding-agent, and run pinata install again",
 });
 
 export const missingPiText = (deps: CliDeps) => {

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/zharskiy/pi-extensions/launcher/schema/sandbox-config.schema.json",
+  "$id": "https://github.com/zharskiy/pinata/launcher/schema/sandbox-config.schema.json",
   "title": "pi sandbox config",
   "description": "The pi sandbox config file, owned by the user who runs the launcher. A key it sets replaces the built-in default; env.allow adds to the default terminal variables.",
   "type": "object",
@@ -788,7 +788,7 @@
     "vm": {
       "type": "object",
       "additionalProperties": false,
-      "description": "The size of the sandbox VM, which every sandbox container shares, and whether the launcher releases its file cache. An unset size keeps the size install.sh gave it. A launch with no other pi session running restarts the VM to this size; the disk only grows.",
+      "description": "The size of the sandbox VM, which every sandbox container shares, and whether the launcher releases its file cache. An unset size keeps the size colima gave it. A launch with no other pi session running restarts the VM to this size; the disk only grows.",
       "properties": {
         "cpus": {
           "type": "integer",

@@ -1,4 +1,4 @@
-# The harness side: what pi-extensions must build for a company package
+# The harness side: what pinata must build for a company package
 
 > Status edit, 2026-10-18: the owner dropped section 2.1 (agent files from pi packages) as excessive. Company agents are installed into the user agent dir or `.pi/agents`, for example by the example's `install-agents.sh`, which therefore stays. The workflow engine stays dropped too (item 5). Sections 2.2 to 2.4 remain planned; 2.2 is detailed in ../../workflow-mechanics/cwd/spec.md.
 

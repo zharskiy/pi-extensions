@@ -4,7 +4,7 @@
 
 **Tool calls as state rows: a glyph, a title and a one-line outcome you expand with `ctrl+o`.**
 
-Part of [pi-extensions](../../README.md) · [Quick start](#quick-start) · [Development](#development) · [Contributing](#contributing)
+Part of [pinata](../../README.md) · [Quick start](#quick-start) · [Development](#development) · [Contributing](#contributing)
 
 </div>
 
@@ -39,8 +39,8 @@ A turn in the main session's transcript:
 ## Quick start
 
 ```bash
-pi install git:github.com/zharskiy/pi-extensions   # the whole package
-pi -e ./pi-extensions/extensions/transcript/index.ts   # this extension alone, from a checkout
+pi install npm:@zharskiy/pinata                    # the whole package
+pi -e ./pinata/extensions/transcript/index.ts   # this extension alone, from a checkout
 ```
 
 Give the model a task that touches files:
@@ -63,4 +63,4 @@ The full set of commands is in the root README's [Development](../../README.md#d
 
 ## Contributing
 
-Issues and pull requests at [github.com/zharskiy/pi-extensions](https://github.com/zharskiy/pi-extensions) are welcome. Before changing code, read [ARCHITECTURE.md](ARCHITECTURE.md) for how it works and [STRUCTURE.md](STRUCTURE.md) for where things are.
+Issues and pull requests at [github.com/zharskiy/pinata](https://github.com/zharskiy/pinata) are welcome. Before changing code, read [ARCHITECTURE.md](ARCHITECTURE.md) for how it works and [STRUCTURE.md](STRUCTURE.md) for where things are.

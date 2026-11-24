@@ -1,6 +1,6 @@
 # The company side as the primary design
 
-This report designs what a company builds on top of pi-extensions for the `feature` and `epic` workflows, then derives what the harness must provide. It follows the owner's ten decisions, which override `future-plans/`. A complete example package sits next to this file in `example/`; section A describes it and section B explains the two workflows in it.
+This report designs what a company builds on top of pinata for the `feature` and `epic` workflows, then derives what the harness must provide. It follows the owner's ten decisions, which override `future-plans/`. A complete example package sits next to this file in `example/`; section A describes it and section B explains the two workflows in it.
 
 Line references to `extensions/subagents/README.md` use the file's own line numbers. "pi docs" means `node_modules/@earendil-works/pi-coding-agent/docs/`.
 

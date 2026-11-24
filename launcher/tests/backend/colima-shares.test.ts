@@ -1,4 +1,4 @@
-import { mkdir, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { vmSharesOf } from "../../backend/colima/colima-yaml.ts";
@@ -710,44 +710,5 @@ describe("the VM shares with workspaceRoot set, at the edges", () => {
     expect(doctorCheck(stdout, "vm")).toBeUndefined();
     expect(doctorCheck(stdout, "vm size")?.status).toBe("warn");
     expect(doctorCheck(stdout, "vm shares")).toBeUndefined();
-  });
-});
-
-describe("pi-sandbox __vm-shares", () => {
-  it("fails with the unset error when workspaceRoot is unset", async () => {
-    const context = await launchWith({ workspaceRoot: false });
-
-    expect(await run(["__vm-shares"], context.harness.deps)).toBe(1);
-    expect(context.harness.stdout()).toBe("");
-    expect(context.harness.stderr()).toContain("pi-sandbox: config: workspaceRoot is not set");
-    expect(context.colimaCalls()).toEqual([]);
-  });
-
-  it("prints the root and creates the dirs the VM shares", async () => {
-    const context = await launchWith();
-    const { home, stateDir, repoRoot } = context.paths;
-
-    expect(await run(["__vm-shares"], context.harness.deps)).toBe(0);
-    expect(context.harness.stdout()).toBe(`${repoRoot}\n`);
-    expect(await stat(join(home, ".pi", "agent", "sessions"))).toBeDefined();
-    expect(await stat(join(stateDir, "vm"))).toBeDefined();
-  });
-
-  it("prints nothing, with a notice, when the root does not exist", async () => {
-    const context = await launchWithRoot({ root: ({ root }) => join(root, "gone") });
-
-    expect(await run(["__vm-shares"], context.harness.deps)).toBe(0);
-    expect(context.harness.stdout()).toBe("");
-    expect(context.harness.stderr()).toContain(
-      `workspaceRoot: ${join(context.paths.root, "gone")} is missing, so it is not shared until it exists`,
-    );
-  });
-
-  it("fails with the config error for a refused root", async () => {
-    const context = await launchWithRoot({ root: ({ home }) => home });
-
-    expect(await run(["__vm-shares"], context.harness.deps)).toBe(1);
-    expect(context.harness.stdout()).toBe("");
-    expect(context.harness.stderr()).toContain("config: workspaceRoot:");
   });
 });

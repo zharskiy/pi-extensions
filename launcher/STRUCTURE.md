@@ -5,14 +5,12 @@ One line per file. Layer rules and behaviour are in [ARCHITECTURE.md](ARCHITECTU
 ## Top level
 
 ```
-README.md                      for users: install, quick start, everyday use, what is protected, troubleshooting
+README.md                      for users: install with pinata, quick start, everyday use, what is protected, troubleshooting
 CONFIGURATION.md               every config key, the one config file, credentials, corporate proxies, sharing the file across a team
 ARCHITECTURE.md                how it works, the files it writes
 STRUCTURE.md                   this file
 THREAT-MODEL.md                assets, trust boundaries, what each feature weakens, known gaps
 REMOVED-DEFAULTS.md            the egress presets and config keys earlier versions shipped, and how to add them back
-install.sh                     macOS install: the launcher and its pi link, PATH blocks (zsh, bash, fish), then pi sandbox init (on the terminal, or --yes without one), smoke test; on a terminal the children run on it under ruled step headers
-uninstall.sh                   runs the launcher's cleanup, deletes the profile, removes the link, state, package and PATH blocks
 tsconfig.build.json            emits dist/ (gitignored) for the published bin
 examples/config.json           a sample config file for a team to start from
 schema/sandbox-config.schema.json  the config keys
@@ -23,16 +21,15 @@ schema/sandbox-config.schema.json  the config keys
 ```
 bin/pi-sandbox.js              the package bin: runs the built dist/
 bin/pi-sandbox-dev.js          checkout entry: runs the .ts sources, not published
-bin/path-block.sh              the PATH block helpers and the sh and fish lines, sourced by install.sh and uninstall.sh
-bin/paths.sh                   COLIMA_HOME, the agent dir (with ~ expanded as pi does), state dir and user config, sourced by install.sh and uninstall.sh
-bin/shim.sh                    the package name, the pi shim in ~/.local/bin with is_ours, and the fish file, sourced by install.sh and uninstall.sh
+bin/pinata.js                  the pinata bin: runs the built dist/
+bin/pinata-dev.js              checkout entry of pinata: runs the .ts sources, not published
 ```
 
 ## cli/
 
 ```
-cli/main.ts                    builds the real dependencies, the /dev/tty opener of pi sandbox init included, and runs
-cli/run.ts                     the command table, the hidden __uninstall, __vm-shares and __smoke-doctor routes and error rendering
+cli/main.ts                    builds the real dependencies, the /dev/tty opener of pi sandbox init included, and runs pinata or pi-sandbox by the name it was started under
+cli/run.ts                     the command table and error rendering
 cli/deps.ts                    the dependencies every command gets, and the shared terminal helpers (TTY and colour checks, a line sink)
 cli/index.ts                   public surface
 cli/launch.ts                  the pi pipeline with its stages and progress lines, the proxy route and the install's services under the ground lock inside the preparation lock, the file cache watch while pi runs, and withSandbox for the doctor
@@ -74,15 +71,14 @@ cli/intercept.ts               pi install, uninstall, remove, mcp, every update,
 cli/host-routes.ts             which command lines start no session: help, version, auth, config without -l, --list-models, --export
 cli/host-pi.ts                 the one host pi (pi's managed install, else npm's global pi, not linked in, outside the workspace root and every folder a sandbox has run in), spawning it for host jobs (spawnHostJob), the missing-pi line (missingPiText, built from the parts of missingPi the doctor shows) and --no-sandbox (runHostPi)
 cli/notices.ts                 notices printed once per install, their hashes kept in seen.json
-cli/versions.ts                launcher version and image pi version
+cli/versions.ts                launcher version, the tested pi version and image pi version, the version compare
 cli/commands/status.ts         pi sandbox status, with each configured service and its state, the shared pi folder and, in one place, what older launchers left
 cli/commands/config.ts         pi sandbox config, with the effective write-back keys of each file and their source
 cli/commands/egress.ts         pi sandbox egress allow, revoke and list
 cli/commands/reset.ts          pi sandbox reset: the folder's sandbox and volumes, keeping the shared pi folder; with --services the install's services and their volumes; with --agent the shared pi folder, its render dir and sync records and older launchers' leftovers
 cli/commands/stop.ts           pi sandbox stop: the orphan sweep, which stops the ground and the proxy when idle, then the VM when no session runs in it
-cli/commands/uninstall.ts      the hidden __uninstall command uninstall.sh runs: live-session refusal, each folder released, then under the ground and launch registry locks a second session count and the install's services, relay, network, proxy and volumes and the managed images, host-side release
-cli/commands/vm-shares.ts      the hidden __vm-shares command: the workspace root when it exists, which install.sh takes as the smoke folder
-cli/commands/smoke-doctor.ts   the hidden __smoke-doctor command install.sh runs: the doctor, exit 3 when the sandbox part was skipped
+cli/commands/uninstall.ts      releaseSandbox for pinata uninstall: live-session refusal, each folder released, then under the ground and launch registry locks a second session count and the install's services, relay, network, proxy and volumes and the managed images, host-side release
+cli/commands/list.ts           pi sandbox list: the VM's state and size and, when it runs, every agent container in it with its folder, without starting it
 cli/commands/init.ts           pi sandbox init: --yes, CI and terminal checks, builds the UI and effects, and picks the front end (the wizard, rich or plain, or the lines of --yes)
 cli/commands/doctor.ts         pi sandbox doctor: stages, probes and host checks as checks by section, the vm size and file cache checks, the denials matched to each rule, the blocked warnings, captured notices and the progress line
 cli/commands/doctor-probes.ts  the doctor's checks inside the container, each credential rule named for its login or host; the credential sweep skips the config's own `env.set` values and names the secret-named ones; a rule whose credential was denied warns, one the proxy refused says why, a certificate not yet valid names the VM clock
@@ -94,6 +90,13 @@ cli/commands/doctor-tls.ts     the tls inspection checks: the node handshake to 
 cli/commands/tls-probe.ts      the typed TLS handshake script those checks run as their own node process: request on stdin, chain and verdicts on stdout
 cli/commands/help.ts           usage
 cli/commands/options.ts        the option check of the sandbox commands and egress
+cli/pinata/run.ts              pinata: parses install, update and uninstall and their flags
+cli/pinata/host.ts             the package name, the preflight (root, Node, colima installed with brew when missing), the busy refusal, the checkout or npm-copy check and the package sources in pi's settings.json
+cli/pinata/install.ts          pinata install: --pi and --config checks, host pi, pi install of the package, the link, the PATH blocks, the config file, then pi sandbox init
+cli/pinata/update.ts           pinata update: checkout refusal, preflight, npm install -g of the package, then the new copy's pinata install --yes
+cli/pinata/uninstall.ts        pinata uninstall: busy refusal, releaseSandbox, the colima profile, the link, pi remove, the PATH blocks, the guarded state dir, npm uninstall -g, the kept lines
+cli/pinata/shim.ts             ~/.local/bin/pi: what may be replaced, the link, the recorded managed link and its restore
+cli/pinata/path-block.ts       the marked PATH block in ~/.zshrc, ~/.bashrc and ~/.bash_profile, added or removed
 ```
 
 ## config/
@@ -381,7 +384,7 @@ tests/backend/container-body.test.ts  the agent's create body byte for byte, and
 tests/backend/labels.test.ts         container roles, containers without a role and the role predicates
 tests/backend/relay-script.test.ts   the relay script: drops a client outside the subnet before any upstream connection opens, serves a client inside it, preamble first
 tests/backend/colima-vm.test.ts      VM start
-tests/backend/colima-shares.test.ts  VM shares, the workspaceRoot reconcile (foreign sessions, one-boot start, nested shares, unreadable lima.yaml), __vm-shares
+tests/backend/colima-shares.test.ts  VM shares, the workspaceRoot reconcile (foreign sessions, one-boot start, nested shares, unreadable lima.yaml)
 tests/backend/colima-size.test.ts    VM size and the restart to the vm config size
 tests/backend/colima-apply.test.ts   VM inspect, apply (create, defer, restart), the launch reconcile of shares and size together, and the cold start at the vm config size
 tests/backend/colima-file-cache.test.ts  the file cache watch: limit, VM process lookup by either disk name, among several holders and every 5 minutes, a failed lookup kept apart from none found, the read-only reading, timed-out count, release command, rate limit, busy VM lock, stop waiting for a release
@@ -456,7 +459,6 @@ tests/cli/doctor-tls.test.ts         the tls inspection check against a local TL
 tests/cli/egress.test.ts             egress grants
 tests/cli/errors.test.ts             error output
 tests/cli/host-pi.test.ts            host pi selection
-tests/cli/install.test.ts            install.sh, run for real
 tests/cli/setup-fixtures.ts          host facts, folder candidates, the automatic size, a running VM and config documents for the setup tests
 tests/cli/setup-detect.test.ts       detectHost: the budget, an inspect failure, free disk and sessions
 tests/cli/setup-screens.test.ts      the setup screen texts
@@ -482,7 +484,12 @@ tests/cli/prompt/number.test.ts      number
 tests/cli/prompt/text.test.ts        the path prompt
 tests/cli/prompt/plain.test.ts       the plain prompt set
 tests/cli/init.test.ts               pi sandbox init: the no-terminal and CI refusals, /dev/tty, --yes with PI_SANDBOX_ROOT and without a root, signals and exit codes
-tests/cli/uninstall.test.ts          uninstall.sh, run for real
+tests/cli/uninstall.test.ts          releaseSandbox
+tests/cli/list.test.ts               pi sandbox list
+tests/cli/pinata/support.ts          a pinata run over the CLI harness: npm prefix, package folder, host pi install and remove writing settings.json
+tests/cli/pinata/install.test.ts     pinata install
+tests/cli/pinata/update.test.ts      pinata update
+tests/cli/pinata/uninstall.test.ts   pinata uninstall
 tests/cli/intercept.test.ts          intercepted commands, host routes and the command lines that still launch
 tests/cli/launch.test.ts             the launch
 tests/cli/launch-flow.test.ts        the signal guard, side-by-side stages and the VM shares of a launch

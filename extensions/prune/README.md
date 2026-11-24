@@ -4,7 +4,7 @@
 
 **Removes old pi sessions and what these extensions wrote for them.**
 
-Part of [pi-extensions](../../README.md) · [Quick start](#quick-start) · [Development](#development) · [Contributing](#contributing)
+Part of [pinata](../../README.md) · [Quick start](#quick-start) · [Development](#development) · [Contributing](#contributing)
 
 </div>
 
@@ -46,8 +46,8 @@ It removes nothing when a session file cannot be read, and nothing at the config
 ## Quick start
 
 ```bash
-pi install git:github.com/zharskiy/pi-extensions   # the whole package
-pi -e ./pi-extensions/extensions/prune/index.ts   # this extension alone, from a checkout
+pi install npm:@zharskiy/pinata                    # the whole package
+pi -e ./pinata/extensions/prune/index.ts   # this extension alone, from a checkout
 ```
 
 | Try | What you see |
@@ -78,4 +78,4 @@ The full set of commands is in the root README's [Development](../../README.md#d
 
 ## Contributing
 
-Issues and pull requests at [github.com/zharskiy/pi-extensions](https://github.com/zharskiy/pi-extensions) are welcome. Before changing code, read [ARCHITECTURE.md](ARCHITECTURE.md) for how it works and [STRUCTURE.md](STRUCTURE.md) for where things are.
+Issues and pull requests at [github.com/zharskiy/pinata](https://github.com/zharskiy/pinata) are welcome. Before changing code, read [ARCHITECTURE.md](ARCHITECTURE.md) for how it works and [STRUCTURE.md](STRUCTURE.md) for where things are.

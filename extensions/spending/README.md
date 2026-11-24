@@ -4,7 +4,7 @@
 
 **What the whole session has cost, in the footer, subagents at every depth included.**
 
-Part of [pi-extensions](../../README.md) · [Quick start](#quick-start) · [Development](#development) · [Contributing](#contributing)
+Part of [pinata](../../README.md) · [Quick start](#quick-start) · [Development](#development) · [Contributing](#contributing)
 
 </div>
 
@@ -21,8 +21,8 @@ main $0.12 · agents $0.05 · total $0.17 (sub)
 ## Quick start
 
 ```bash
-pi install git:github.com/zharskiy/pi-extensions   # the whole package
-pi -e ./pi-extensions/extensions/spending/index.ts   # this extension alone, from a checkout
+pi install npm:@zharskiy/pinata                    # the whole package
+pi -e ./pinata/extensions/spending/index.ts   # this extension alone, from a checkout
 ```
 
 Start pi and try:
@@ -44,4 +44,4 @@ The full set of commands is in the root README's [Development](../../README.md#d
 
 ## Contributing
 
-Issues and pull requests at [github.com/zharskiy/pi-extensions](https://github.com/zharskiy/pi-extensions) are welcome. Before changing code, read [ARCHITECTURE.md](ARCHITECTURE.md) for how it works and [STRUCTURE.md](STRUCTURE.md) for where things are.
+Issues and pull requests at [github.com/zharskiy/pinata](https://github.com/zharskiy/pinata) are welcome. Before changing code, read [ARCHITECTURE.md](ARCHITECTURE.md) for how it works and [STRUCTURE.md](STRUCTURE.md) for where things are.

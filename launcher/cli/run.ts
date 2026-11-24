@@ -5,13 +5,11 @@ import { VERBOSE_FLAG } from "./commands/doctor-checks.ts";
 import { egressCommand } from "./commands/egress.ts";
 import { helpCommand, usageOf } from "./commands/help.ts";
 import { initCommand, YES_FLAG } from "./commands/init.ts";
+import { listCommand } from "./commands/list.ts";
 import { assertOptions } from "./commands/options.ts";
 import { AGENT_FLAG, resetCommand, SERVICES_FLAG } from "./commands/reset.ts";
-import { SMOKE_DOCTOR, smokeDoctorCommand } from "./commands/smoke-doctor.ts";
 import { statusCommand } from "./commands/status.ts";
 import { stopCommand } from "./commands/stop.ts";
-import { UNINSTALL, uninstallCommand } from "./commands/uninstall.ts";
-import { VM_SHARES, vmSharesCommand } from "./commands/vm-shares.ts";
 import { type CliDeps, writeLine } from "./deps.ts";
 import { intercept } from "./intercept.ts";
 import { launch } from "./launch.ts";
@@ -35,6 +33,7 @@ const help: Command = { run: helpCommand };
 const COMMANDS: Record<string, Command> = {
   init: { run: initCommand, options: [YES_FLAG] },
   status: { run: statusCommand, options: [] },
+  list: { run: listCommand, options: [] },
   doctor: { run: doctorCommand, options: [VERBOSE_FLAG] },
   config: { run: configCommand, options: [JSON_FLAG] },
   egress: { run: egressCommand },
@@ -76,26 +75,14 @@ const route = async (argv: string[], deps: CliDeps) => {
     return sandbox(deps, rest);
   }
 
-  if (first === UNINSTALL && rest.length === 0) {
-    return uninstallCommand(deps);
-  }
-
-  if (first === VM_SHARES && rest.length === 0) {
-    return vmSharesCommand(deps);
-  }
-
-  if (first === SMOKE_DOCTOR && rest.length === 0) {
-    return smokeDoctorCommand(deps);
-  }
-
   const intercepted = argv.includes("--no-sandbox") ? undefined : await intercept(argv, deps);
 
   return intercepted ?? launch(argv, deps);
 };
 
-export const renderFailure = (error: unknown, stderr: NodeJS.WritableStream) => {
+export const renderFailure = (error: unknown, stderr: NodeJS.WritableStream, name = "pi-sandbox") => {
   if (error instanceof LauncherError) {
-    writeLine(stderr, `pi-sandbox: ${error.message}`);
+    writeLine(stderr, `${name}: ${error.message}`);
 
     if (error.hint !== undefined) {
       writeLine(stderr, `  hint: ${error.hint}`);
@@ -104,7 +91,7 @@ export const renderFailure = (error: unknown, stderr: NodeJS.WritableStream) => 
     return 1;
   }
 
-  writeLine(stderr, `pi-sandbox: unexpected error: ${errorMessage(error)}`);
+  writeLine(stderr, `${name}: unexpected error: ${errorMessage(error)}`);
 
   return UNEXPECTED_EXIT;
 };

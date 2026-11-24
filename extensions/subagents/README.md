@@ -4,7 +4,7 @@
 
 **Background agents the main session runs, watches, messages and stops, each with its own context.**
 
-Part of [pi-extensions](../../README.md) · [Quick start](#quick-start) · [Development](#development) · [Contributing](#contributing)
+Part of [pinata](../../README.md) · [Quick start](#quick-start) · [Development](#development) · [Contributing](#contributing)
 
 </div>
 
@@ -29,8 +29,8 @@ An agent that ran in a worktree ends its row with what became of it: `worktree r
 ## Quick start
 
 ```bash
-pi install git:github.com/zharskiy/pi-extensions   # the whole package
-pi -e ./pi-extensions/extensions/subagents/index.ts   # this extension alone, from a checkout
+pi install npm:@zharskiy/pinata                    # the whole package
+pi -e ./pinata/extensions/subagents/index.ts   # this extension alone, from a checkout
 ```
 
 Start pi and try:
@@ -67,4 +67,4 @@ The full set of commands is in the root README's [Development](../../README.md#d
 
 ## Contributing
 
-Issues and pull requests at [github.com/zharskiy/pi-extensions](https://github.com/zharskiy/pi-extensions) are welcome. Before changing code, read [ARCHITECTURE.md](ARCHITECTURE.md) for how it works and [STRUCTURE.md](STRUCTURE.md) for where things are.
+Issues and pull requests at [github.com/zharskiy/pinata](https://github.com/zharskiy/pinata) are welcome. Before changing code, read [ARCHITECTURE.md](ARCHITECTURE.md) for how it works and [STRUCTURE.md](STRUCTURE.md) for where things are.

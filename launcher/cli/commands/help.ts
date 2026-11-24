@@ -17,6 +17,7 @@ const COMMANDS: Array<[string, string]> = [
     "set up or change the folder that holds your projects, VM size and settings write-back, then apply them to the sandbox VM; --yes asks nothing and applies the current settings",
   ],
   ["pi sandbox status", "runtime, services, container, proxy, image, launches, grants, overlays, volumes"],
+  ["pi sandbox list", "the sandbox VM and the pi sessions it runs, for every folder, without starting it"],
   [
     "pi sandbox config [--json]",
     "the effective config and whether each key comes from the config file or the default",

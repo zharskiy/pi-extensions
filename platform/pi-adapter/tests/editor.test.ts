@@ -97,7 +97,7 @@ const click = (x: number, y: number, width: number) => ({
   clickCount: 1,
 });
 
-const EDITOR_KEY = Symbol.for("pi-extensions.editor-hooks");
+const EDITOR_KEY = Symbol.for("pinata.editor-hooks");
 
 const piKeys = () => new KeybindingsManager(TUI_KEYBINDINGS);
 

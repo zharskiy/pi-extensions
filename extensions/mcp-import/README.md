@@ -4,7 +4,7 @@
 
 **Copies MCP servers from Claude Code or Cursor into pi's `mcp.json`.**
 
-Part of [pi-extensions](../../README.md) · [Quick start](#quick-start) · [Development](#development) · [Contributing](#contributing)
+Part of [pinata](../../README.md) · [Quick start](#quick-start) · [Development](#development) · [Contributing](#contributing)
 
 </div>
 
@@ -38,8 +38,8 @@ run /mcp-import claude apply to write them
 ## Quick start
 
 ```bash
-pi install git:github.com/zharskiy/pi-extensions   # the whole package
-pi -e ./pi-extensions/extensions/mcp-import/index.ts   # this extension alone, from a checkout
+pi install npm:@zharskiy/pinata                    # the whole package
+pi -e ./pinata/extensions/mcp-import/index.ts   # this extension alone, from a checkout
 ```
 
 Start with a dry run, then write:
@@ -71,4 +71,4 @@ The full set of commands is in the root README's [Development](../../README.md#d
 
 ## Contributing
 
-Issues and pull requests at [github.com/zharskiy/pi-extensions](https://github.com/zharskiy/pi-extensions) are welcome. Before changing code, read [ARCHITECTURE.md](ARCHITECTURE.md) for how it works and [STRUCTURE.md](STRUCTURE.md) for where things are.
+Issues and pull requests at [github.com/zharskiy/pinata](https://github.com/zharskiy/pinata) are welcome. Before changing code, read [ARCHITECTURE.md](ARCHITECTURE.md) for how it works and [STRUCTURE.md](STRUCTURE.md) for where things are.

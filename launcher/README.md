@@ -2,7 +2,7 @@
 
 Run the pi coding agent on your Mac as you always do, with the agent kept in a sandbox.
 
-Part of [pi-extensions](../README.md).
+Part of [pinata](../README.md).
 
 ## What it does
 
@@ -26,28 +26,25 @@ flowchart LR
 
 ## Install
 
-You need:
-
-- macOS 13 or newer.
-- [Homebrew](https://brew.sh).
-- Colima 0.8.0 or newer. The script installs it with Homebrew if it is missing.
-- Node 22.19 or newer, with npm.
-- git.
-- pi, installed with pi's own installer or with `npm install -g @earendil-works/pi-coding-agent`. The launcher runs the managed install in `~/.pi/agent` on the host (for provider credentials, host commands and `--no-sandbox`), or, without one, the pi in npm's global packages (`npm root -g`). A pi found only on `PATH` or in a project's `node_modules` is not used, nor an npm global pi linked in from outside npm's global folder (`npm link`), or one that lies in a folder a sandbox has run in, or in the folder you start pi in (or its git root) when a sandbox could run there. A git checkout no sandbox has used, such as `/opt/homebrew` or `~/.nvm`, does not count.
+You need macOS 13 or newer, [Homebrew](https://brew.sh) when Colima is missing, Node 22.19 or newer with npm, and git. Colima 0.9.0 or newer is installed with Homebrew when it is missing.
 
 ```bash
-curl -fsSL https://pi.dev/install.sh | sh
-npm install -g --omit=peer pi-extensions-mz
-"$(npm root -g)/pi-extensions-mz/launcher/install.sh"
+npm install -g --legacy-peer-deps @zharskiy/pinata@<version>
+pinata install [--pi <version>] [--config <file>] [--yes]
 ```
 
-Without either install, `install.sh` stops before it changes anything and says to install pi one of these ways and run it again.
+`pinata install` refuses to run as root and while pi sessions run in the sandbox VM, and runs only from npm's global copy of the package or from a checkout. It then:
 
-The script puts `~/.local/bin` first on `PATH` in your shell startup files, then runs `pi sandbox init`, which asks which folder holds your projects, shows the VM size it picked for this Mac, and creates the VM when you choose Apply. Open a new terminal afterwards.
+1. Makes sure there is a host pi: `--pi <version>` installs that version with `npm install -g --ignore-scripts @earendil-works/pi-coding-agent@<version>`; without it a host pi you have stays, and a missing one gets the version the launcher is tested with. The launcher runs pi's managed install in `~/.pi/agent` on the host (for provider credentials, host commands and `--no-sandbox`), or, without one, the pi in npm's global packages (`npm root -g`), so `--pi` is refused while the managed install exists; remove it with `curl -fsSL https://pi.dev/install.sh | sh` and Uninstall Pi. A pi found only on `PATH` or in a project's `node_modules` is not used, nor an npm global pi linked in from outside npm's global folder (`npm link`), or one that lies in a folder a sandbox has run in, or in the folder you start pi in (or its git root) when a sandbox could run there. A git checkout no sandbox has used, such as `/opt/homebrew` or `~/.nvm`, does not count.
+2. Registers the package with host pi as `npm:@zharskiy/pinata@<version>`, the version you installed, so pi loads the extensions of that version; `pi update --extensions` does not move a pinned source.
+3. Links `~/.local/bin/pi` to the launcher, after checking it before step 1 too, so a refusal changes nothing. pi's managed link there is replaced, and `pinata uninstall` puts it back, as is the wrapper an earlier install wrote; any other file stops the install.
+4. Puts `~/.local/bin` first on `PATH` with a marked block in `~/.zshrc`, and in `~/.bashrc` and `~/.bash_profile` when they exist. A file with an unpaired or repeated marker line is left as it is, with a line saying so. `pinata uninstall` cuts the block with the newline it added, so the file is as it was.
+5. With `--config <file>`, writes that file over `~/.pi/agent/pi-sandbox/config.json`, after checking it before anything else changes. It writes it on every install that passes it, with no merge: this is how a team hands out one config.
+6. Runs `pi sandbox init`, which asks which folder holds your projects, shows the VM size it picked for this Mac, and creates the VM when you choose Apply. It asks only on a first install (no `workspaceRoot` in the config) at a terminal, without `--yes`, `--config` or `CI`; otherwise it runs as `pi sandbox init --yes`, and not at all when the config has a `workspaceRoot`, the VM exists and no `--config` was given.
 
-In a terminal, Homebrew, npm, `pi sandbox init` and the smoke `pi sandbox doctor` print as if you ran them yourself, and each step starts after a blank line and a rule. Piped or redirected, their output is indented under plain `[n/6]` lines.
+Run again, `pinata install` changes nothing. Open a new terminal afterwards.
 
-If `~/.local/bin/pi` is pi's own managed install, the script replaces that link. An existing pi-sandbox link or wrapper is replaced too. Any other file there stops the install.
+To pick other versions, run `pinata update [<version>] [--pi <version>]`: it runs `npm install -g --legacy-peer-deps @zharskiy/pinata@<version>` (`latest` without a version), then the new copy's `pinata install --yes`. A bare `pi update` moves an npm pi to the latest version; pin it again with `pinata install --pi <version>`. Pi in the sandbox follows the host pi.
 
 To change the folder or the VM size later, run `pi sandbox init` again. It plans the same VM shares as a launch, the folders of `mounts.binds` included.
 
@@ -94,26 +91,25 @@ Run again, `pi sandbox init` opens the review with your current settings; a conf
 
 `PI_SANDBOX_PLAIN=1` asks the same questions as numbered lines that you answer by typing, with no menu to move through, no spinner and no colour: for screen readers and plain terminals. A dumb or unset `TERM` gets plain mode too, read line by line without any cursor control (and so without Tab completion of paths).
 
-Without a terminal (CI, a provisioning script, `ssh host install.sh`), `pi sandbox init` refuses, and `pi sandbox init --yes` asks nothing: it keeps the settings in the file and applies them to the VM, printing the same lines as the plain setup: the review of the settings, the file changes and the VM action first, then the progress and the result. `install.sh` uses `--yes` when it finds no terminal or `CI` is set. To name the project folder there, set `PI_SANDBOX_ROOT`, which `--yes` writes to a config without `workspaceRoot`; with neither, `--yes` refuses and writes nothing:
+Without a terminal (CI, a provisioning script), `pi sandbox init` refuses, and `pi sandbox init --yes` asks nothing: it keeps the settings in the file and applies them to the VM, printing the same lines as the plain setup: the review of the settings, the file changes and the VM action first, then the progress and the result. `pinata install` uses `--yes` when it finds no terminal or `CI` is set. To name the project folder there, set `PI_SANDBOX_ROOT`, which `--yes` writes to a config without `workspaceRoot`; with neither, `--yes` refuses and writes nothing:
 
 ```bash
-PI_SANDBOX_ROOT="$HOME/Projects" "$(npm root -g)/pi-extensions-mz/launcher/install.sh"
+PI_SANDBOX_ROOT="$HOME/Projects" pinata install
 ```
 
-A config whose `workspaceRoot` names another folder stops `--yes` (a trailing `/` and `~` against the full path do not matter), and so does a `PI_SANDBOX_ROOT` that is your home or holds it. So does a config with any invalid key: `--yes` prints the error like every other command, writes nothing and exits 1, and never fixes a value for you. When colima does not answer in time, `--yes` saves the config, says the VM could not be checked and exits 0; the next pi start applies the size and the shares. For the VM size, set `vm` in the config first (see [VM size](CONFIGURATION.md#vm-size)). When the VM does not share the root yet, the install's smoke check runs only the host checks and says the sandbox part runs at the first pi launch. See [Workspace root](CONFIGURATION.md#workspace-root).
+A config whose `workspaceRoot` names another folder stops `--yes` (a trailing `/` and `~` against the full path do not matter), and so does a `PI_SANDBOX_ROOT` that is your home or holds it. So does a config with any invalid key: `--yes` prints the error like every other command, writes nothing and exits 1, and never fixes a value for you. When colima does not answer in time, `--yes` saves the config, says the VM could not be checked and exits 0; the next pi start applies the size and the shares. For the VM size, set `vm` in the config first (see [VM size](CONFIGURATION.md#vm-size)). See [Workspace root](CONFIGURATION.md#workspace-root).
 
 <details>
 <summary>Install from a checkout</summary>
 
 ```bash
-curl -fsSL https://pi.dev/install.sh | sh
-git clone https://github.com/zharskiy/pi-extensions.git
-cd pi-extensions
+git clone https://github.com/zharskiy/pinata.git
+cd pinata
 npm install
-launcher/install.sh
+node launcher/bin/pinata-dev.js install
 ```
 
-Install pi first here too, with pi's own installer or `npm install -g`: the launcher runs the managed install, else npm's global pi, never the pi in the checkout's `node_modules` or a pi on `PATH`. The script writes a wrapper script at `~/.local/bin/pi` that runs this checkout. Without either, the launch, `pi sandbox doctor`, `--no-sandbox` and the host commands say so in one line, with the same remedy.
+The `pi` link then runs this checkout's sources, and pi registers the checkout folder as the package's source. `pinata update` refuses in a checkout: `git pull`, then install again.
 
 </details>
 
@@ -125,7 +121,7 @@ Install pi first here too, with pi's own installer or `npm install -g`: the laun
    cd ~/code/my-app && pi
    ```
 
-   When the install script's smoke check ran, it already built the sandbox image, so pi starts in seconds; when it was skipped, the first launch builds it. Behind a proxy that inspects TLS the smoke check fails until [`tls.extraCa`](CONFIGURATION.md#corporate-proxy-and-tls-inspection) names the proxy's CA, which `pi sandbox doctor` prints. When the image must be rebuilt, for example after a pi update, the launch prints `preparing pi sandbox, one time` and takes a few minutes.
+   The first launch builds the sandbox image, which takes a few minutes. Behind a proxy that inspects TLS it fails until [`tls.extraCa`](CONFIGURATION.md#corporate-proxy-and-tls-inspection) names the proxy's CA, which `pi sandbox doctor` prints. When the image must be rebuilt, for example after a pi update, the launch prints `preparing pi sandbox, one time` and takes a few minutes.
 
 2. Work as usual. A tool that reaches a host that is not allowed gets an error page saying what to do.
 
@@ -163,6 +159,7 @@ In the table, *host pi* is pi's managed install on your Mac, or without one the 
 | `pi config` | the user resource config, with host pi on the host (-l passes through into the sandbox) |
 | `pi sandbox init [--yes]` | set up or change the folder that holds your projects, VM size and settings write-back, then apply them to the sandbox VM; --yes asks nothing and applies the current settings |
 | `pi sandbox status` | runtime, services, container, proxy, image, launches, grants, overlays, volumes |
+| `pi sandbox list` | the sandbox VM and the pi sessions it runs, for every folder, without starting it |
 | `pi sandbox config [--json]` | the effective config and whether each key comes from the config file or the default |
 | `pi sandbox egress allow <host[:port]>` | allow a host for every session until revoked |
 | `pi sandbox egress revoke <host[:port]>` | remove a grant |
@@ -174,7 +171,7 @@ In the table, *host pi* is pi's managed install on your Mac, or without one the 
 
 `pi uninstall <source>` also runs with host pi on the host. Host pi loads no extension for `pi --help` and `pi --list-models`, so help omits the flags extensions register and the list omits providers only an extension registers; `pi list`, `pi mcp list` and `pi config -l` run in the sandbox, and `pi --version` asks pi inside when `image.reference` and `image.digest` pin the image. `egress allow` uses port 443 unless you name one, and refuses wildcards, IP addresses and port 80 ([rules](CONFIGURATION.md#network-access)).
 
-`pi update` runs the host pi's own update from an empty folder, and the next launch rebuilds the image. A local path as the source (`./ext`, `~/ext`) is made absolute against your folder first. Every other `pi update` form (`--all`, `--extensions`, `--extension <source>`, `<source>`, `--models`, `--force`) runs host pi from an empty folder, so it updates the host's packages and the host pi, never a copy inside the sandbox; when the target includes pi itself it names the pi version the sandbox follows. Without a host pi it says how to get one. To update the launcher itself, run `npm install -g --omit=peer pi-extensions-mz` (or `git pull` in a checkout).
+`pi update` runs the host pi's own update from an empty folder, and the next launch rebuilds the image. A local path as the source (`./ext`, `~/ext`) is made absolute against your folder first. Every other `pi update` form (`--all`, `--extensions`, `--extension <source>`, `<source>`, `--models`, `--force`) runs host pi from an empty folder, so it updates the host's packages and the host pi, never a copy inside the sandbox; when the target includes pi itself it names the pi version the sandbox follows. Without a host pi it says how to get one. To update the launcher itself, run `pinata update [<version>]` (or `git pull` and `pinata install` in a checkout).
 
 After a reboot or `pi sandbox stop`, the next `pi` starts the VM again. A failure prints `pi-sandbox: <message>`, often with a `hint:` line.
 
@@ -279,16 +276,9 @@ Start with `pi sandbox doctor`, which names the failing check.
 
 ## Uninstall
 
-Exit every pi session, then run the script from where you installed:
+Exit every pi session, then run `pinata uninstall`. It releases the sandbox, deletes the `pi-sandbox` Colima profile with its containers, volumes and images, removes the `pi` link (and puts pi's managed link back if the install replaced it), the package's source in pi, the `PATH` blocks, the launcher's state (`~/.pi/agent/pi-sandbox/state`) and the npm package.
 
-```bash
-"$(npm root -g)/pi-extensions-mz/launcher/uninstall.sh"   # npm install
-launcher/uninstall.sh                                     # checkout
-```
-
-It deletes the `pi-sandbox` Colima profile, the launcher's state (`~/.pi/agent/pi-sandbox/state`), the `pi` link, the npm package and the `PATH` lines. It restores pi's managed link if `install.sh` replaced it.
-
-Your repositories, `~/.pi` with its sessions, and your config `~/.pi/agent/pi-sandbox/config.json` stay. Colima stays installed. Remove it with `brew uninstall colima` if nothing else uses it.
+Your repositories, `~/.pi` with its sessions, your config `~/.pi/agent/pi-sandbox/config.json` and pi stay. Colima stays installed. Remove it with `brew uninstall colima` if nothing else uses it. `pi sandbox list` shows this sandbox VM; `colima list` shows every Colima VM on the Mac.
 
 ## More
 

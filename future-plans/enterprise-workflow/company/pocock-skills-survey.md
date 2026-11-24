@@ -1,4 +1,4 @@
-# Matt Pocock's skills: survey for pi-extensions feature and epic workflows
+# Matt Pocock's skills: survey for pinata feature and epic workflows
 
 Source: github.com/mattpocock/skills at commit 49dd158 (main, 2026-10-09). Skill URLs: `https://github.com/mattpocock/skills/blob/main/skills/<bucket>/<name>/SKILL.md`. No separate ai-hero skills repo. Install: Claude Code plugin, Codex and Copilot plugins, `npx skills@latest add mattpocock/skills -a pi` (pi is a named target).
 

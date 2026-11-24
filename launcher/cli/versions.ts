@@ -7,7 +7,7 @@ interface PackageManifest {
   devDependencies?: Record<string, string>;
 }
 
-const PI_PACKAGE = "@earendil-works/pi-coding-agent";
+export const PI_PACKAGE = "@earendil-works/pi-coding-agent";
 
 const readManifest = async () => {
   const file = join(launcherRoot(), "..", "package.json");

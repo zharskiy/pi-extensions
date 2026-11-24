@@ -1,15 +1,11 @@
 import { type Backend, busyText, LABELS, type VmBusy } from "../../backend/index.ts";
 import { othersLive, withLaunchLock } from "../../grants/index.ts";
-import { errorMessage, knownRepos } from "../../shared/index.ts";
+import { errorMessage, knownRepos, LauncherError } from "../../shared/index.ts";
 import { vmSessions } from "../busy.ts";
 import { type CliDeps, pathsOf, writeLine, writeLines } from "../deps.ts";
 import { removeGround, withGroundLock } from "../ground.ts";
 import { whenNotPreparing } from "../prepare.ts";
 import { removeRepoSandbox } from "../sweep.ts";
-
-export const UNINSTALL = "__uninstall";
-
-const SESSIONS_LIVE_EXIT = 75;
 
 const isManaged = (labels: Record<string, string>) => labels[LABELS.managed] === "true";
 
@@ -36,17 +32,13 @@ const releaseRepo = async (
   backend: Backend | undefined,
   repoHash: string,
 ) => {
-  try {
-    const outcome = await whenNotPreparing(stateDir, repoHash, async () =>
-      (await othersLive(stateDir, repoHash))
-        ? startedMeanwhile(repoHash)
-        : removeRepoSandbox(deps, repoHash, backend),
-    );
+  const outcome = await whenNotPreparing(stateDir, repoHash, async () =>
+    (await othersLive(stateDir, repoHash))
+      ? startedMeanwhile(repoHash)
+      : removeRepoSandbox(deps, repoHash, backend),
+  );
 
-    return outcome.busy ? startedMeanwhile(repoHash) : outcome.value;
-  } catch (error) {
-    return [`host: the sandbox of ${repoHash.slice(0, 12)} was not released: ${errorMessage(error)}`];
-  }
+  return outcome.busy ? startedMeanwhile(repoHash) : outcome.value;
 };
 
 const releaseRepos = async (deps: CliDeps, stateDir: string, backend: Backend | undefined) => {
@@ -55,7 +47,10 @@ const releaseRepos = async (deps: CliDeps, stateDir: string, backend: Backend | 
   const repos = [...new Set([...known, ...inEngine])];
   const lines = await Promise.all(repos.map((repoHash) => releaseRepo(deps, stateDir, backend, repoHash)));
 
-  return [...lines.flat(), `host: released the created folders of ${known.length} folders`];
+  return [
+    ...lines.flat(),
+    `host: released the created folders of ${known.length} ${known.length === 1 ? "folder" : "folders"}`,
+  ];
 };
 
 const removeStored = async (backend: Backend) => {
@@ -69,14 +64,6 @@ const removeStored = async (backend: Backend) => {
 
 const reachableEngine = async (backend: Backend) =>
   (await backend.detect()).available ? backend : undefined;
-
-const releaseGround = async (deps: CliDeps, stateDir: string, backend: Backend | undefined) => {
-  try {
-    return await removeGround(deps, stateDir, backend);
-  } catch (error) {
-    return [`the sandbox network, proxy and services were not all released: ${errorMessage(error)}`];
-  }
-};
 
 const releaseStored = (backend: Backend | undefined) =>
   backend === undefined
@@ -94,39 +81,33 @@ const releaseInstall = (deps: CliDeps, stateDir: string, backend: Backend | unde
         return sessions;
       }
 
-      const ground = await releaseGround(deps, stateDir, backend);
+      const ground = await removeGround(deps, stateDir, backend);
       const stored = await releaseStored(backend);
 
       return [...ground.map((line) => `install: ${line}`), ...stored];
     }),
   );
 
-const kept = (sessions: VmBusy) =>
-  `pi-sandbox: a pi session started in the sandbox VM meanwhile (${busyText(sessions)}), so the sandbox network, proxy, services, volumes and images were kept; exit it, then uninstall again`;
-
-export const uninstallCommand = async (deps: CliDeps) => {
+export const releaseSandbox = async (deps: CliDeps) => {
   const { stateDir } = pathsOf(deps);
   const sessions = await vmSessions(deps.backend(), stateDir);
 
   if (sessions.count > 0) {
-    writeLine(deps.stderr, `pi-sandbox: ${busyText(sessions)} in the sandbox VM; exit them first`);
-
-    return SESSIONS_LIVE_EXIT;
+    throw new LauncherError(`${busyText(sessions)} in the sandbox VM`, "exit them, then run this again");
   }
 
   const backend = await reachableEngine(deps.backend());
   const released = await releaseRepos(deps, stateDir, backend);
   const install = await releaseInstall(deps, stateDir, backend);
 
+  writeLines(deps.stdout, released);
+
   if (!Array.isArray(install)) {
-    writeLines(deps.stdout, released);
-
-    writeLine(deps.stderr, kept(install));
-
-    return SESSIONS_LIVE_EXIT;
+    throw new LauncherError(
+      `a pi session started in the sandbox VM meanwhile (${busyText(install)}), so the sandbox network, proxy, services, volumes and images were kept`,
+      "exit it, then uninstall again",
+    );
   }
 
-  writeLines(deps.stdout, [...install, ...released]);
-
-  return 0;
+  writeLines(deps.stdout, install);
 };

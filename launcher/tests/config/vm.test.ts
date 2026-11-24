@@ -3,7 +3,7 @@ import { defaultConfig } from "../../config/defaults.ts";
 import { configProblem } from "../../config/validate.ts";
 
 describe("the vm key", () => {
-  it("sets no size by default, so the VM keeps the size install.sh gave it", () => {
+  it("sets no size by default, so the VM keeps the size colima gave it", () => {
     expect(defaultConfig().vm).toEqual({ releaseFileCache: true });
   });
 
