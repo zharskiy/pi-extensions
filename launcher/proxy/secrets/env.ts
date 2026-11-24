@@ -14,7 +14,7 @@ export const envSecret = (key: string, envSecrets: ReadonlyMap<string, string>):
   const value = envSecrets.get(key);
 
   if (value === undefined || value === "") {
-    throw unavailable(`env secret for ${key} was not handed to the proxy by the launcher`);
+    throw unavailable(`env secret for ${key} was not handed to the proxy by pinata`);
   }
 
   if (LINE_BREAK.test(value)) {

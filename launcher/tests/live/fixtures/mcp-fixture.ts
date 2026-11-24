@@ -35,7 +35,7 @@ const resultFor = (rpc: RpcRequest, tool: string) => {
     return {
       protocolVersion: rpc.params?.protocolVersion ?? "2025-06-18",
       capabilities: { tools: {} },
-      serverInfo: { name: "pi-sandbox-fixture", version: "1.0.0" },
+      serverInfo: { name: "pinata-fixture", version: "1.0.0" },
     };
   }
 

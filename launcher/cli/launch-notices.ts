@@ -7,13 +7,13 @@ import type { LaunchContext } from "./context.ts";
 import type { SandboxProxy } from "./sandbox-proxy.ts";
 
 const CAPPED_NOTICE =
-  "pi-sandbox: more than 512 build output directories; overlays disabled, the host copies are used";
+  "pinata: more than 512 build output directories; overlays disabled, the host copies are used";
 
 const TRUNCATED_NOTICE =
-  "pi-sandbox: the folder is too large to search for build output; overlays disabled, the host copies are used";
+  "pinata: the folder is too large to search for build output; overlays disabled, the host copies are used";
 
 const notInRepository = (cwd: string) =>
-  `pi-sandbox: ${cwd} is not in a git repository; build output is not overlaid, the host copies are used`;
+  `pinata: ${cwd} is not in a git repository; build output is not overlaid, the host copies are used`;
 
 const overlayNotices = (context: LaunchContext) => {
   if (!context.workspace.isGitRepo && context.effective.config.mounts.autoOverlays) {
@@ -40,7 +40,7 @@ const overlayNotices = (context: LaunchContext) => {
   const kinds = [...new Set(paths.map((path) => basename(path)))].sort().join(", ");
 
   return [
-    `pi-sandbox: ${kinds} overlaid in ${places}; the host copies are hidden; set mounts.autoOverlays=false to keep them`,
+    `pinata: ${kinds} overlaid in ${places}; the host copies are hidden; set mounts.autoOverlays=false to keep them`,
   ];
 };
 

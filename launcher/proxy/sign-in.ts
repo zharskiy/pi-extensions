@@ -185,10 +185,6 @@ export const createSignIn = (deps: SignInDeps): SignIn => {
       return Promise.resolve({ exited: known.done });
     }
 
-    if (deps.piCommand[0] === undefined) {
-      return Promise.resolve(undefined);
-    }
-
     return new Promise((resolve) => {
       const track = (child: ChildProcess) => {
         const entry: Running = {

@@ -1,7 +1,7 @@
 import { type CommandRunner, PI_AGENT_DIR_VARIABLE } from "../../shared/index.ts";
 import type { CachedSecret } from "./cache.ts";
 import { commandSecret } from "./command.ts";
-import { loginMissing, unavailable } from "./errors.ts";
+import { loginMissing } from "./errors.ts";
 
 const PI_AUTH_TTL_SECONDS = 240;
 
@@ -19,10 +19,6 @@ export const piAuthSecret = (
   ref: { piAuth: string; bearer?: boolean },
   deps: { runner: CommandRunner; now: () => number; piCommand: string[]; hostAgentDir: string },
 ): Promise<CachedSecret> => {
-  if (deps.piCommand.length === 0) {
-    return Promise.reject(unavailable(`piAuth secret for ${key}: no pi command is configured`));
-  }
-
   return commandSecret({
     key,
     kind: "piAuth",

@@ -11,10 +11,10 @@ const COMMIT_A = "a".repeat(40);
 
 const COMMIT_B = "b".repeat(40);
 
-const INSTALLING = "pi-sandbox: installing 1 extension in the shared pi folder; this can take a few minutes";
+const INSTALLING = "pinata: installing 1 extension in the shared pi folder; this can take a few minutes";
 
 const DEFERRED =
-  "pi-sandbox: sandbox packages follow the host: git packages refresh at the next launch (another session is running)";
+  "pinata: sandbox packages follow the host: git packages refresh at the next launch (another session is running)";
 
 const exists = (path: string) =>
   access(path).then(
@@ -127,7 +127,7 @@ describe("installing the configured extensions before pi starts", () => {
 
     expect(await run([], harness.deps)).toBe(0);
     expect(harness.stderr()).toContain(
-      "pi-sandbox: warning: npm:tool could not be installed in the shared pi folder; pi tries again when it starts",
+      "pinata: warning: npm:tool could not be installed in the shared pi folder; pi tries again when it starts",
     );
     expect(stuck.execs.filter((exec) => isPiSession(exec.spec))).toHaveLength(1);
   });

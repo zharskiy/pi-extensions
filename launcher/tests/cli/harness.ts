@@ -30,7 +30,6 @@ export interface HarnessOptions {
   providerHosts?: Record<string, { hosts: string[]; envVars?: string[] }>;
   denials?: DenialRecord[];
   machine?: CliDeps["machine"];
-  defaultStateDir?: true;
   workspaceRoot?: false | string;
 }
 
@@ -43,8 +42,8 @@ export const unreachable = (backend: Backend): Backend => ({
     ...backend.vm,
     ensureRunning: async () => {
       throw new LauncherError(
-        "the sandbox VM engine is unreachable at ~/.colima/pi-sandbox/docker.sock: socket missing",
-        "run pi, which starts the sandbox VM with its planned shares, or pi sandbox init when ~/.colima/pi-sandbox does not exist",
+        "the sandbox VM engine is unreachable at ~/.colima/pinata/docker.sock: socket missing",
+        "run pi, which starts the sandbox VM with its planned shares, or pinata init when ~/.colima/pinata does not exist",
       );
     },
   },
@@ -53,7 +52,7 @@ export const unreachable = (backend: Backend): Backend => ({
 type FakeBackendOptions = NonNullable<Parameters<typeof createBareBackend>[0]>;
 
 export const createFakeBackend = (options: FakeBackendOptions = {}) => {
-  const guestAgentDir = realpathSync(mkdtempSync(join(tmpdir(), "pi-sandbox-guest-")));
+  const guestAgentDir = realpathSync(mkdtempSync(join(tmpdir(), "pinata-guest-")));
 
   roots.push(guestAgentDir);
 
@@ -109,7 +108,7 @@ interface HarnessPaths {
   repoRoot: string;
 }
 
-export const isPiSession = (spec: ExecSpec) => spec.env.PI_SANDBOX_LAUNCH_ID !== undefined;
+export const isPiSession = (spec: ExecSpec) => spec.env.PINATA_LAUNCH_ID !== undefined;
 
 export const piSessions = (fake: { execs: FakeExec[] }) =>
   fake.execs.filter((exec) => isPiSession(exec.spec));
@@ -144,7 +143,7 @@ export const holdLaunch = async (harness: HarnessPaths) => {
 };
 
 export const noHostPiLine = (agentDir: string) =>
-  `no managed pi in ${agentDir} and no pi in npm's global packages (a pi found only on PATH or in a project's node_modules is not used): the sandbox gets no provider credentials, and host commands and --no-sandbox are unavailable; install pi with pi's own installer (curl -fsSL https://pi.dev/install.sh | sh) or with npm install -g @earendil-works/pi-coding-agent, and run pinata install again`;
+  `pi is not installed on the host (no managed pi in ${agentDir} and no pi in npm's global packages), and pinata does not install it\n  hint: install pi with pi's own installer (curl -fsSL https://pi.dev/install.sh | sh) or with npm install -g @earendil-works/pi-coding-agent, then run pinata install again`;
 
 export interface DoctorCheck {
   section: string;
@@ -162,9 +161,11 @@ export interface DoctorReport {
   result?: string;
 }
 
-const CHECK_LINE = /^ {2}(ok|warn|fail|skip) +(\S+(?: \S+)*?)(?: {2,}(.*))?$/;
+const STATUSES: Record<string, string> = { ok: "ok", "!": "warn", x: "fail", "-": "skip" };
 
-const SUB_LINE = /^ {8}(\S.*)$/;
+const CHECK_LINE = /^ {2}(ok|!|x|-) +(\S+(?: \S+)*?)(?: {2,}(.*))?$/;
+
+const SUB_LINE = /^ {5}(\S.*)$/;
 
 const readLine = (report: DoctorReport, line: string) => {
   const section = report.sections.at(-1) ?? "";
@@ -172,22 +173,22 @@ const readLine = (report: DoctorReport, line: string) => {
   const sub = SUB_LINE.exec(line)?.[1];
   const last = report.checks.at(-1);
 
-  if (line.startsWith("result: ")) {
-    report.result = line.slice("result: ".length);
+  if (/^\S.*\.$/.test(line)) {
+    report.result = line;
   } else if (/^\S/.test(line)) {
     report.sections.push(line);
-  } else if (section === "notices" && /^ {2}\S/.test(line)) {
+  } else if (section === "Notices" && /^ {2}\S/.test(line)) {
     report.notices.push(line.slice(2));
   } else if (sub !== undefined && last !== undefined) {
-    if (sub.startsWith("hint: ")) {
-      last.hint = [last.hint, sub.slice("hint: ".length)].filter((text) => text !== undefined).join("\n");
+    if (sub.startsWith("-> ")) {
+      last.hint = [last.hint, sub.slice("-> ".length)].filter((text) => text !== undefined).join("\n");
     } else {
       last.reasons.push(sub);
     }
   } else if (check !== null) {
     report.checks.push({
       section,
-      status: check[1] ?? "",
+      status: STATUSES[check[1] ?? ""] ?? "",
       name: check[2] ?? "",
       detail: check[3] ?? "",
       reasons: [],
@@ -338,9 +339,9 @@ const mountsYaml = (mounts: YamlMount[], indent: string) =>
     ? "mounts: []\n"
     : `mounts:\n${mounts.map((mount) => mountLines(mount, indent)).join("\n")}\n`;
 
-const limaYamlPath = (home: string) => join(home, ".colima", "_lima", "colima-pi-sandbox", "lima.yaml");
+const limaYamlPath = (home: string) => join(home, ".colima", "_lima", "colima-pinata", "lima.yaml");
 
-const colimaYamlPath = (home: string) => join(home, ".colima", "pi-sandbox", "colima.yaml");
+const colimaYamlPath = (home: string) => join(home, ".colima", "pinata", "colima.yaml");
 
 export const writeLimaMounts = async (home: string, mounts: YamlMount[]) => {
   const file = limaYamlPath(home);
@@ -362,15 +363,14 @@ export const writeColimaMounts = async (home: string, mounts: YamlMount[]) => {
 };
 
 export const createHarness = async (options: HarnessOptions = {}) => {
-  const root = await realpath(await mkdtemp(join(tmpdir(), "pi-sandbox-cli-")));
+  const root = await realpath(await mkdtemp(join(tmpdir(), "pinata-cli-")));
 
   roots.push(root);
 
   const repoRoot = join(root, "repo");
   const cwd = join(repoRoot, "src");
   const hostAgentDir = join(root, "home", ".pi", "agent");
-  const stateDir =
-    options.defaultStateDir === true ? join(hostAgentDir, "pi-sandbox", "state") : join(root, "state");
+  const stateDir = join(root, "state");
   const userConfigFile = join(root, "config", "config.json");
 
   const proxyCaPem = join(stateDir, "ca", "ca-cert.pem");
@@ -424,8 +424,8 @@ export const createHarness = async (options: HarnessOptions = {}) => {
   const deps: CliDeps = {
     runner: fake.runner,
     env: {
-      ...(options.defaultStateDir === true ? {} : { PI_SANDBOX_STATE_DIR: stateDir }),
-      PI_SANDBOX_USER_CONFIG: userConfigFile,
+      PINATA_STATE_DIR: stateDir,
+      PINATA_USER_CONFIG: userConfigFile,
       USER: "dev",
       TERM: "xterm-256color",
       PATH: "",

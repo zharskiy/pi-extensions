@@ -9,7 +9,7 @@ import {
   withoutStrayPlaceholders,
 } from "../../proxy/rules.ts";
 
-const PLACEHOLDER = "pi-sandbox-0123456789abcdef01234567";
+const PLACEHOLDER = "pinata-0123456789abcdef01234567";
 
 const rule = (overrides: Partial<CredentialRule> = {}): CredentialRule => ({
   id: "api",
@@ -151,7 +151,7 @@ describe("scrubResponseHeaders", () => {
 
   it("redacts a secret of a rule without a placeholder", () => {
     expect(scrubResponseHeaders([["x-echo", "abc-token"]], [{ value: "abc-token" }])).toEqual([
-      ["x-echo", "pi-sandbox-redacted"],
+      ["x-echo", "pinata-redacted"],
     ]);
   });
 });

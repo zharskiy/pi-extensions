@@ -88,7 +88,7 @@ describe("sweepCredentials", () => {
     });
 
   it("fails on any variable that holds the proxy token, whatever its name", async () => {
-    const target = await envOf(`TERM=xterm\nHTTPS_PROXY=http://pi-sandbox:${TOKEN}@pi-sandbox-proxy:3128\n`);
+    const target = await envOf(`TERM=xterm\nHTTPS_PROXY=http://pinata:${TOKEN}@pinata-proxy:3128\n`);
 
     expect(await sweepCredentials(target, TOKEN)).toMatchObject({
       status: "fail",
@@ -99,7 +99,7 @@ describe("sweepCredentials", () => {
   });
 
   it("passes an environment whose proxy URL carries no token", async () => {
-    const target = await envOf("TERM=xterm\nHTTPS_PROXY=http://pi-sandbox-proxy:3128\n");
+    const target = await envOf("TERM=xterm\nHTTPS_PROXY=http://pinata-proxy:3128\n");
 
     expect(await sweepCredentials(target, TOKEN)).toMatchObject({ status: "ok" });
   });

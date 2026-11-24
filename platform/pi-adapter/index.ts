@@ -13,7 +13,7 @@ export type {
   PromptTokens,
   ToolSource,
 } from "./types/context.ts";
-export type { Host, SessionHost } from "./types/host-capabilities.ts";
+export type { Host } from "./types/host-capabilities.ts";
 export type { ClipboardUi, NotifyChannel } from "./types/host-ui.ts";
 export type { KeyPress } from "./types/keys.ts";
 export type {

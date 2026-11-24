@@ -508,9 +508,9 @@ describe("URL userinfo in npmrc and pip.conf", () => {
       URL_SECRETS.extra,
     ]);
     expect(tools.notices).toEqual([
-      "npmrc: https-proxy stays on the host; the sandbox reaches the network through the launcher proxy",
-      "npmrc: proxy stays on the host; the sandbox reaches the network through the launcher proxy",
-      "pip: global.proxy stays on the host; the sandbox reaches the network through the launcher proxy",
+      "npmrc: https-proxy stays on the host; the sandbox reaches the network through pinata's proxy",
+      "npmrc: proxy stays on the host; the sandbox reaches the network through pinata's proxy",
+      "pip: global.proxy stays on the host; the sandbox reaches the network through pinata's proxy",
       "pip: global.find-links carries credentials in a URL and stays on the host",
     ]);
     expect(rendered).toContain(`registry=https://npmuser:${P("npmrc:registry:url")}@npm.corp.test/repo/`);
@@ -734,7 +734,7 @@ describe("tool config details", () => {
     ]);
     expect(tools.rules.map((rule) => rule.host)).toEqual(["pypi.corp.test"]);
     expect(tools.notices).toEqual([
-      "pip: global.--proxy stays on the host; the sandbox reaches the network through the launcher proxy",
+      "pip: global.--proxy stays on the host; the sandbox reaches the network through pinata's proxy",
     ]);
   });
 

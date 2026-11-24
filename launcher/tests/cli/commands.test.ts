@@ -2,7 +2,7 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { installIdOf, LABELS } from "../../backend/index.ts";
-import { run } from "../../cli/index.ts";
+import { run, runPinata } from "../../cli/index.ts";
 import { agentVolumeName, volumePlan } from "../../container/index.ts";
 import { registerLaunch } from "../../grants/index.ts";
 import {
@@ -15,57 +15,48 @@ import {
 } from "../../shared/index.ts";
 import { FAKE_NETWORK } from "../support/fake-backend.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
-import { exists, tempDir } from "../support/temp-dir.ts";
+import { tempDir } from "../support/temp-dir.ts";
 import { createFakeBackend, createHarness, sweepNow, unreachable } from "./harness.ts";
 
 const packageVersion = async () =>
   (JSON.parse(await readFile(join(launcherRoot(), "..", "package.json"), "utf8")) as { version: string })
     .version;
 
-describe("pi sandbox status", () => {
+describe("pinata status", () => {
   it("reports runtime, proxy and image, and no container once the last session exited", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
 
     await run([], harness.deps);
 
-    expect(await run(["sandbox", "status"], harness.deps)).toBe(0);
+    expect(await runPinata(["status"], harness.deps)).toBe(0);
 
     const lines = harness.stdout().split("\n");
 
-    expect(lines).toContain(`launcher: ${await packageVersion()}`);
-    expect(lines.filter((line) => line.startsWith("runtime: "))).toEqual([]);
-    expect(lines).toContain("runtime socket: /fake/docker.sock");
-    expect(lines).toContain("containers: 0");
-    expect(lines).toContain("proxy: stopped");
-    expect(lines).toContain("image: pi-sandbox-base:local sha256:built-1");
-    expect(lines).toContain("launches: 0 running in the sandbox");
-    expect(lines).toContain("grants: 0 active");
+    expect(lines).toEqual([
+      `Pinata ${await packageVersion()} for the repository ${harness.repoRoot}.`,
+      "  Runtime:     socket /fake/docker.sock",
+      "  Containers:  none",
+      `  Pi folder:   ${agentVolumeName(installIdOf(harness.stateDir))}, shared by every folder's sandbox`,
+      "  Proxy:       stopped",
+      "  Image:       pinata-base:local sha256:built-1",
+      "  Launches:    none",
+      "  Grants:      none",
+      "",
+    ]);
   });
 
-  it("names the shared pi folder and, in one place, what an older launcher left", async () => {
+  it("names the shared pi folder", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
-    const layout = stateLayout(harness.stateDir);
     const agent = agentVolumeName(installIdOf(harness.stateDir));
-    const legacy = `${agent}-0123456789ab`;
-    const renders = layout.repo(sha256Hex(harness.repoRoot)).legacy.render;
 
     await run([], harness.deps);
 
-    await fake.backend.ensureVolume(legacy, {});
-
-    await mkdir(renders, { recursive: true });
-
-    expect(await run(["sandbox", "status"], harness.deps)).toBe(0);
-
-    const lines = harness.stdout().split("\n");
-
-    expect(lines).toContain(`pi folder: ${agent}, shared by every folder's sandbox`);
-    expect(lines.filter((line) => line.startsWith("leftover: "))).toEqual([
-      `leftover: volume ${legacy}, left by an older launcher; pi sandbox reset --agent removes it`,
-      `leftover: ${layout.renders}, left by an older launcher; pi sandbox reset --agent removes it`,
-    ]);
+    expect(await runPinata(["status"], harness.deps)).toBe(0);
+    expect(harness.stdout().split("\n")).toContain(
+      `  Pi folder:   ${agent}, shared by every folder's sandbox`,
+    );
   });
 
   it("names a folder that is no repository a folder", async () => {
@@ -74,19 +65,19 @@ describe("pi sandbox status", () => {
 
     await mkdir(folder, { recursive: true });
 
-    expect(await run(["sandbox", "status"], { ...harness.deps, cwd: folder })).toBe(0);
+    expect(await runPinata(["status"], { ...harness.deps, cwd: folder })).toBe(0);
 
     const lines = harness.stdout().split("\n");
 
-    expect(lines).toContain(`folder: ${folder}`);
-    expect(lines).toContain("launches: 0 running in the sandbox");
+    expect(lines[0]).toBe(`Pinata ${await packageVersion()} for the folder ${folder}.`);
+    expect(lines).toContain("  Launches:    none");
   });
 
   it("reports every launch container of this folder, and no relay", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
     const id = fake.addContainer({
-      name: "pi-sandbox-repo",
+      name: "pinata-repo",
       labels: {
         [LABELS.managed]: "true",
         [LABELS.role]: "agent",
@@ -99,7 +90,7 @@ describe("pi sandbox status", () => {
     });
 
     fake.addContainer({
-      name: "pi-sandbox-relay-repo",
+      name: "pinata-relay-repo",
       labels: {
         [LABELS.managed]: "true",
         [LABELS.role]: "relay",
@@ -108,12 +99,13 @@ describe("pi sandbox status", () => {
       image: "relay",
     });
 
-    expect(await run(["sandbox", "status"], harness.deps)).toBe(0);
+    expect(await runPinata(["status"], harness.deps)).toBe(0);
 
     const lines = harness.stdout().split("\n");
 
-    expect(lines).toContain("containers: 1");
-    expect(lines).toContain(`container: ${id} running launch 00000000000000aa digest sha256:one`);
+    expect(lines.filter((line) => /^ {2}(Containers:| {11})/.test(line))).toEqual([
+      `  Containers:  ${id}, running, launch 00000000000000aa, digest sha256:one, sessions in the sandbox volume`,
+    ]);
   });
 
   it("reports the install's proxy without its token", async () => {
@@ -121,14 +113,14 @@ describe("pi sandbox status", () => {
       proxy: { read: async () => ({ pid: 11, port: 4001, boot: 1, start: "", inputHash: "input" }) },
     });
 
-    expect(await run(["sandbox", "status"], harness.deps)).toBe(0);
+    expect(await runPinata(["status"], harness.deps)).toBe(0);
 
     const proxies = harness
       .stdout()
       .split("\n")
-      .filter((line) => line.startsWith("proxy: "));
+      .filter((line) => line.startsWith("  Proxy:"));
 
-    expect(proxies).toEqual(["proxy: pid 11 port 4001"]);
+    expect(proxies).toEqual(["  Proxy:     pid 11, port 4001"]);
   });
 
   it("reports the live launches of the install with their folders, and the active grants", async () => {
@@ -153,21 +145,18 @@ describe("pi sandbox status", () => {
       startedAt: 1_700_000_000_000,
     });
 
-    await run(["sandbox", "egress", "allow", "docs.example.test"], harness.deps);
+    await runPinata(["egress", "allow", "docs.example.test"], harness.deps);
 
-    expect(await run(["sandbox", "status"], harness.deps)).toBe(0);
+    expect(await runPinata(["status"], harness.deps)).toBe(0);
 
     const lines = harness.stdout().split("\n");
 
-    expect(lines).toContain("launches: 2 running in the sandbox");
-    expect(lines).toContain(
-      `launch: 0123456789abcdef pid ${process.pid} since 2023-11-14T22:13:20.000Z in ${harness.repoRoot}`,
-    );
-    expect(lines).toContain(
-      `launch: 00000000000000e1 pid ${process.pid} since 2023-11-14T22:13:20.000Z in repository ${shortHash(other)}`,
-    );
-    expect(lines).toContain("grants: 1 active");
-    expect(lines).toContain("grant: docs.example.test");
+    expect(lines.slice(-4)).toEqual([
+      `  Launches:  00000000000000e1, pid ${process.pid}, since 2023-11-14T22:13:20.000Z, in repository ${shortHash(other)}`,
+      `             0123456789abcdef, pid ${process.pid}, since 2023-11-14T22:13:20.000Z, in ${harness.repoRoot}`,
+      "  Grants:    docs.example.test",
+      "",
+    ]);
   });
 
   it("still reports the proxy and image without a reachable engine", async () => {
@@ -175,44 +164,36 @@ describe("pi sandbox status", () => {
     const down = { ...fake.backend, detect: async () => ({ available: false, reason: "socket missing" }) };
     const harness = await createHarness({ backend: () => down });
 
-    expect(await run(["sandbox", "status"], harness.deps)).toBe(0);
-    expect(harness.stdout()).toContain(
-      "runtime: none (the sandbox VM engine is unreachable at ~/.colima/pi-sandbox/docker.sock: socket missing)",
-    );
-    expect(harness.stdout()).toContain("proxy: stopped");
-    expect(harness.stdout()).toContain("(not built yet)");
+    expect(await runPinata(["status"], harness.deps)).toBe(0);
+    expect(harness.stdout().split("\n").slice(1)).toEqual([
+      "  Runtime:   the sandbox VM engine is unreachable at ~/.colima/pinata/docker.sock: socket missing",
+      "  Proxy:     stopped",
+      "  Image:     pinata-base:local, not built yet",
+      "  Launches:  none",
+      "  Grants:    none",
+      "",
+    ]);
   });
 });
 
-describe("pi sandbox config", () => {
+describe("pinata config", () => {
   it("prints the effective config followed by the source of each key", async () => {
     const harness = await createHarness();
 
     await harness.writeJson(harness.userConfigFile, { sessions: { host: false } });
 
-    expect(await run(["sandbox", "config"], harness.deps)).toBe(0);
+    expect(await runPinata(["config"], harness.deps)).toBe(0);
 
     const output = harness.stdout();
-    const json = output.slice(0, output.indexOf("\n# "));
+    const json = output.slice(0, output.indexOf("\n\n"));
 
     expect(JSON.parse(json).sessions.host).toBe(false);
-    expect(output).toContain("# sessions.host: config\n");
-    expect(output).toContain("# mounts.autoOverlays: default\n");
+    expect(output.slice(json.length).split("\n").slice(0, 3)).toEqual([
+      "",
+      "",
+      `${harness.userConfigFile} sets sessions.host, workspaceRoot; every other key has its default value.`,
+    ]);
     expect(JSON.parse(json).image.reference).toBeUndefined();
-  });
-
-  it("prints config and sources as one JSON object with --json", async () => {
-    const harness = await createHarness();
-
-    expect(await run(["sandbox", "config", "--json"], harness.deps)).toBe(0);
-
-    const parsed = JSON.parse(harness.stdout()) as {
-      config: { sessions: { host: boolean } };
-      sources: Record<string, string>;
-    };
-
-    expect(parsed.config.sessions.host).toBe(true);
-    expect(parsed.sources["sessions.host"]).toBe("default");
   });
 
   it("lists the effective write-back keys of each file with their source", async () => {
@@ -225,24 +206,14 @@ describe("pi sandbox config", () => {
       },
     });
 
-    expect(await run(["sandbox", "config"], harness.deps)).toBe(0);
-    expect(harness.stdout()).toContain(
-      "# writeBack settings.json default: defaultProvider, defaultModel, defaultThinkingLevel, enabledModels, hideThinkingBlock,",
-    );
-    expect(harness.stdout()).not.toMatch(/# writeBack settings\.json default: .*theme/);
-    expect(harness.stdout()).toContain("# writeBack pi-footer.json config: layout\n");
-    expect(harness.stdout()).toContain("# writeBack.exclude: config\n");
+    expect(await runPinata(["config"], harness.deps)).toBe(0);
+    const closing = harness.stdout().split("\n\n").at(-1)?.split("\n") ?? [];
 
-    expect(await run(["sandbox", "config", "--json"], harness.deps)).toBe(0);
-
-    const parsed = JSON.parse(harness.stdout().slice(harness.stdout().lastIndexOf("\n{\n") + 1)) as {
-      writeBack: Record<string, Record<string, { source: string }>>;
-    };
-
-    expect(parsed.writeBack["pi-footer.json"]).toEqual({
-      layout: { spec: { type: "json" }, source: "config" },
-    });
-    expect(parsed.writeBack["settings.json"]?.defaultModel?.source).toBe("default");
+    expect(closing.slice(0, 2)).toEqual([
+      `${harness.userConfigFile} sets workspaceRoot, writeBack.add, writeBack.exclude; every other key has its default value.`,
+      "  Written back:  settings.json: defaultProvider, defaultModel, defaultThinkingLevel, enabledModels, hideThinkingBlock, quietStartup, collapseChangelog, doubleEscapeAction, treeFilterMode, steeringMode, followUpMode",
+    ]);
+    expect(closing.slice(-2)).toEqual(["                 pi-footer.json: layout (from the config)", ""]);
   });
 
   it("says when nothing is written back", async () => {
@@ -250,29 +221,29 @@ describe("pi sandbox config", () => {
 
     await harness.writeJson(harness.userConfigFile, { writeBack: { enabled: false } });
 
-    expect(await run(["sandbox", "config"], harness.deps)).toBe(0);
-    expect(harness.stdout()).toContain("# writeBack: nothing is written back to the host\n");
+    expect(await runPinata(["config"], harness.deps)).toBe(0);
+    expect(harness.stdout()).toMatch(/\n {2}Written back: {2}nothing\n$/);
   });
 
   it("only shows the config and refuses any other option", async () => {
     const harness = await createHarness();
 
-    expect(await run(["sandbox", "config", "set", "sessions.host", "false"], harness.deps)).toBe(1);
-    expect(harness.stderr()).toContain('pi-sandbox: unknown config option "set"\n');
-    expect(harness.stderr()).toContain("  hint: pi sandbox config [--json]");
+    expect(await runPinata(["config", "set", "sessions.host", "false"], harness.deps)).toBe(1);
+    expect(harness.stderr()).toContain('pinata: unknown config option "set"\n');
+    expect(harness.stderr()).toContain("  hint: pinata config\n");
   });
 });
 
-describe("the sweep and pi sandbox reset", () => {
+describe("the sweep", () => {
   const orphanOf = async (
     fake: ReturnType<typeof createFakeBackend>,
     repoHash: string,
     launchId = "00000000000000ff",
   ) => {
-    await fake.backend.prepareRelay({ hostPort: 3128, imageId: "relay", preamble: "PI-SANDBOX test" });
+    await fake.backend.prepareRelay({ hostPort: 3128, imageId: "relay", preamble: "PINATA test" });
 
     return fake.addContainer({
-      name: `pi-sandbox-${repoHash.slice(0, 12)}`,
+      name: `pinata-${repoHash.slice(0, 12)}`,
       labels: {
         [LABELS.managed]: "true",
         [LABELS.role]: "agent",
@@ -297,7 +268,7 @@ describe("the sweep and pi sandbox reset", () => {
     expect(fake.relays.size).toBe(0);
     expect(fake.networks.has(FAKE_NETWORK)).toBe(false);
     expect(harness.proxyStops()).toBe(1);
-    expect(harness.stdout()).toContain(`removed container pi-sandbox-${orphan.slice(0, 12)} (${id})\n`);
+    expect(harness.stdout()).toContain(`removed container pinata-${orphan.slice(0, 12)} (${id})\n`);
     expect([...fake.containers.values()].map((entry) => entry.summary.name)).toEqual(["unrelated"]);
   });
 
@@ -331,7 +302,7 @@ describe("the sweep and pi sandbox reset", () => {
 
     await harness.writeJson(files.record, { root: gone });
 
-    await fake.backend.ensureVolume("pi-sandbox-agent-gone", {
+    await fake.backend.ensureVolume("pinata-agent-gone", {
       [LABELS.repoHash]: hash,
       [LABELS.repoRoot]: gone,
     });
@@ -340,7 +311,7 @@ describe("the sweep and pi sandbox reset", () => {
 
     expect(await sweepNow(harness.deps)).toBe(0);
     expect(await readFile(files.record, "utf8").catch(() => undefined)).toBeUndefined();
-    expect(fake.volumes.has("pi-sandbox-agent-gone")).toBe(false);
+    expect(fake.volumes.has("pinata-agent-gone")).toBe(false);
     expect(harness.stdout()).toContain(`forgot ${gone}, which no longer exists\n`);
   });
 
@@ -349,17 +320,17 @@ describe("the sweep and pi sandbox reset", () => {
     const harness = await createHarness({ backend: () => fake.backend });
     const context = await tempDir("gc-images");
     const build = (tag: string) => fake.backend.buildImage(context, tag);
-    const dangling = await build("pi-sandbox-layer:old");
-    const used = await build("pi-sandbox-layer:used");
-    const current = await build("pi-sandbox:base");
+    const dangling = await build("pinata-layer:old");
+    const used = await build("pinata-layer:used");
+    const current = await build("pinata:base");
 
     fake.ageImages(2 * 60 * 60);
 
-    await build("pi-sandbox-layer:old");
+    await build("pinata-layer:old");
 
-    await build("pi-sandbox-layer:used");
+    await build("pinata-layer:used");
 
-    await build("pi-sandbox:base");
+    await build("pinata:base");
 
     fake.addContainer({ name: "running", labels: {}, state: "running", image: used.id });
 
@@ -375,10 +346,10 @@ describe("the sweep and pi sandbox reset", () => {
     );
   });
 
-  it("leaves the daily collection due when it ran without an engine, as under pi sandbox stop of a stopped VM", async () => {
+  it("leaves the daily collection due when it ran without an engine, as under pinata stop of a stopped VM", async () => {
     const harness = await createHarness({ backend: () => unreachable(createFakeBackend().backend) });
 
-    expect(await run(["sandbox", "stop"], harness.deps)).toBe(0);
+    expect(await runPinata(["stop"], harness.deps)).toBe(0);
     expect(
       await readFile(stateLayout(harness.stateDir).gcRecord, "utf8").catch(() => undefined),
     ).toBeUndefined();
@@ -396,25 +367,6 @@ describe("the sweep and pi sandbox reset", () => {
     expect(await readFile(`${leftover}.tar`, "utf8").catch(() => undefined)).toBeUndefined();
   });
 
-  it("refuses reset while a session of the repository runs, names the count and removes nothing", async () => {
-    const fake = createFakeBackend();
-    const harness = await createHarness({ backend: () => fake.backend });
-    const repo = sha256Hex(harness.repoRoot);
-    const id = await orphanOf(fake, repo);
-    const launch = { ...(await processMark()), repoHash: repo, startedAt: 1 };
-
-    await registerLaunch(harness.stateDir, { ...launch, launchId: "00000000000000a1" });
-
-    await registerLaunch(harness.stateDir, { ...launch, launchId: "00000000000000a2" });
-
-    expect(await run(["sandbox", "reset"], harness.deps)).toBe(1);
-    expect(harness.stderr()).toContain(`2 sessions are running in ${harness.repoRoot}`);
-    expect(harness.stderr()).toContain("exit them, then run pi sandbox reset again");
-    expect(fake.containers.has(id)).toBe(true);
-    expect(fake.relays.size).toBe(1);
-    expect(harness.proxyStops()).toBe(0);
-  });
-
   const tokenOf = async (stateDir: string) => {
     const token = stateLayout(stateDir).proxy.token;
 
@@ -424,20 +376,6 @@ describe("the sweep and pi sandbox reset", () => {
 
     return token;
   };
-
-  it("removes this repository's container on reset once no session runs, and leaves the install's proxy and relay", async () => {
-    const fake = createFakeBackend();
-    const harness = await createHarness({ backend: () => fake.backend });
-    const repo = sha256Hex(harness.repoRoot);
-    const id = await orphanOf(fake, repo);
-    const token = await tokenOf(harness.stateDir);
-
-    expect(await run(["sandbox", "reset"], harness.deps)).toBe(0);
-    expect(fake.containers.has(id)).toBe(false);
-    expect(fake.relays.size).toBe(1);
-    expect(harness.proxyStops()).toBe(0);
-    expect(await readFile(token, "utf8")).toBe("f".repeat(64));
-  });
 
   it("runs the host side of the sweep when the VM is stopped", async () => {
     const harness = await createHarness({ backend: () => unreachable(createFakeBackend().backend) });
@@ -449,119 +387,12 @@ describe("the sweep and pi sandbox reset", () => {
     expect(harness.stderr()).not.toContain("unreachable");
   });
 
-  it("runs the host-side part of reset when the VM is stopped and says the engine step was skipped", async () => {
-    const harness = await createHarness({ backend: () => unreachable(createFakeBackend().backend) });
-    const token = await tokenOf(harness.stateDir);
-
-    expect(await run(["sandbox", "reset"], harness.deps)).toBe(0);
-    expect(harness.proxyStops()).toBe(0);
-    expect(await readFile(token, "utf8")).toBe("f".repeat(64));
-    expect(harness.stdout()).toContain(
-      "the sandbox VM is not running, so the engine step was skipped; run pi (it starts the sandbox VM with its planned shares) and exit it, then pi sandbox reset again to remove the container and volumes\n",
-    );
-    expect(harness.stdout()).not.toContain("no sandbox for");
-  });
-
-  it("removes this folder's container and keeps the pi folder every folder shares", async () => {
-    const fake = createFakeBackend();
-    const harness = await createHarness({ backend: () => fake.backend });
-    const agent = agentVolumeName(installIdOf(harness.stateDir));
-    const legacy = `${agent}-${shortHash(sha256Hex(harness.repoRoot))}`;
-    const labels = { [LABELS.repoHash]: sha256Hex(harness.repoRoot), [LABELS.repoRoot]: harness.repoRoot };
-
-    await run([], harness.deps);
-
-    await fake.backend.ensureVolume(legacy, labels);
-
-    expect(fake.volumes.has(agent)).toBe(true);
-    expect(await run(["sandbox", "reset"], harness.deps)).toBe(0);
-    expect(fake.containers.size).toBe(0);
-    expect(fake.volumes.has(agent)).toBe(true);
-    expect(fake.volumes.has(legacy)).toBe(false);
-    expect(harness.stdout()).toContain(`removed volume ${legacy}\n`);
-    expect(harness.stdout()).toContain(
-      `kept volume ${agent}: the pi folder every folder's sandbox shares; pi sandbox reset --agent removes it\n`,
-    );
-  });
-
-  it("removes the shared pi folder, the legacy ones and the sync records on reset --agent", async () => {
-    const fake = createFakeBackend();
-    const harness = await createHarness({ backend: () => fake.backend });
-    const layout = stateLayout(harness.stateDir);
-    const agent = agentVolumeName(installIdOf(harness.stateDir));
-    const legacy = `${agent}-0123456789ab`;
-
-    await run([], harness.deps);
-
-    await fake.backend.ensureVolume(legacy, { [LABELS.repoHash]: "gone", [LABELS.repoRoot]: "/gone" });
-
-    expect(await exists(layout.render)).toBe(true);
-    expect(await run(["sandbox", "reset", "--agent"], harness.deps)).toBe(0);
-    expect(fake.volumes.has(agent)).toBe(false);
-    expect(fake.volumes.has(legacy)).toBe(false);
-    expect(await exists(layout.render)).toBe(false);
-    expect(await exists(layout.sync.directory)).toBe(false);
-    expect(harness.stdout()).toContain(`removed volume ${agent}\n`);
-    expect(harness.stdout()).toContain(`removed volume ${legacy}\n`);
-  });
-
-  it("refuses reset --agent while a pi session of any folder runs", async () => {
-    const fake = createFakeBackend();
-    const harness = await createHarness({ backend: () => fake.backend });
-    const agent = agentVolumeName(installIdOf(harness.stateDir));
-
-    await run([], harness.deps);
-
-    await registerLaunch(harness.stateDir, {
-      launchId: "0123456789abcdef",
-      ...(await processMark()),
-      repoHash: sha256Hex("/elsewhere"),
-      startedAt: 1,
-    });
-
-    expect(await run(["sandbox", "reset", "--agent"], harness.deps)).not.toBe(0);
-    expect(harness.stderr()).toContain("a pi session is running, so the shared pi folder was kept");
-    expect(fake.volumes.has(agent)).toBe(true);
-    expect(await exists(stateLayout(harness.stateDir).render)).toBe(true);
-  });
-
-  it("says nothing was removed on reset --agent while the VM is not running", async () => {
-    const harness = await createHarness({ backend: () => unreachable(createFakeBackend().backend) });
-
-    expect(await run(["sandbox", "reset", "--agent"], harness.deps)).toBe(0);
-    expect(harness.stdout()).toContain("the sandbox VM is not running, so nothing was removed");
-  });
-
-  it("names only volumes it removed on reset, and keeps one a container still mounts", async () => {
-    const fake = createFakeBackend();
-    const harness = await createHarness({ backend: () => fake.backend });
-    const labels = { [LABELS.repoHash]: sha256Hex(harness.repoRoot), [LABELS.repoRoot]: harness.repoRoot };
-
-    expect(await run(["sandbox", "reset"], harness.deps)).toBe(0);
-    expect(harness.stdout()).toBe(`no sandbox for ${harness.repoRoot}\n`);
-
-    await fake.backend.ensureVolume("pi-sandbox-cache-held", labels);
-
-    const holder = fake.addContainer({ name: "holder", labels: {}, state: "running", image: "x" });
-    const entry = fake.containers.get(holder);
-
-    if (entry !== undefined) {
-      entry.spec = { mounts: [{ kind: "volume", source: "pi-sandbox-cache-held", target: "/x" }] } as never;
-    }
-
-    expect(await run(["sandbox", "reset"], harness.deps)).toBe(0);
-    expect(fake.volumes.has("pi-sandbox-cache-held")).toBe(true);
-    expect(harness.stdout()).toContain(
-      "kept volume pi-sandbox-cache-held: a container still mounts it, run pi sandbox reset again\n",
-    );
-  });
-
   it("removes a volume whose repository no longer exists on disk", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
     const gone = await tempDir("gone-repo");
 
-    await fake.backend.ensureVolume("pi-sandbox-agent-gone", {
+    await fake.backend.ensureVolume("pinata-agent-gone", {
       [LABELS.repoHash]: sha256Hex(gone),
       [LABELS.repoRoot]: gone,
     });
@@ -569,8 +400,8 @@ describe("the sweep and pi sandbox reset", () => {
     await rm(gone, { recursive: true, force: true });
 
     expect(await sweepNow(harness.deps)).toBe(0);
-    expect(fake.volumes.has("pi-sandbox-agent-gone")).toBe(false);
-    expect(harness.stdout()).toContain("removed volume pi-sandbox-agent-gone\n");
+    expect(fake.volumes.has("pinata-agent-gone")).toBe(false);
+    expect(harness.stdout()).toContain("removed volume pinata-agent-gone\n");
   });
 
   it("keeps the pi folder every folder's sandbox shares when the repository that made it is gone", async () => {
@@ -608,29 +439,57 @@ describe("the sweep and pi sandbox reset", () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
 
-    await fake.backend.ensureVolume("pi-sandbox-agent-unlabelled");
+    await fake.backend.ensureVolume("pinata-agent-unlabelled");
 
     expect(await sweepNow(harness.deps)).toBe(0);
-    expect(fake.volumes.has("pi-sandbox-agent-unlabelled")).toBe(true);
+    expect(fake.volumes.has("pinata-agent-unlabelled")).toBe(true);
   });
 });
 
-describe("pi sandbox help and version", () => {
+describe("pinata help and version", () => {
   it("prints the launcher version from the package manifest", async () => {
     const harness = await createHarness();
 
-    expect(await run(["sandbox", "--version"], harness.deps)).toBe(0);
+    expect(await runPinata(["--version"], harness.deps)).toBe(0);
     expect(harness.stdout()).toBe(`${await packageVersion()}\n`);
   });
 
-  it("prints usage for help and for a bare pi sandbox", async () => {
+  it("lists every pinata command in one list", async () => {
     const harness = await createHarness();
 
-    expect(await run(["sandbox", "help"], harness.deps)).toBe(0);
-    expect(await run(["sandbox"], harness.deps)).toBe(0);
-    expect(harness.stdout().match(/pi sandbox doctor/g)).toHaveLength(2);
-    expect(harness.stdout()).not.toContain("pi sandbox gc");
-    expect(harness.stdout()).toContain("pi sandbox reset [--services | --agent]  ");
+    expect(await runPinata(["help"], harness.deps)).toBe(0);
+
+    const listed = harness
+      .stdout()
+      .split("\n")
+      .map((line) => /^pinata (\S+)/.exec(line)?.[1])
+      .filter((command) => command !== undefined);
+
+    expect([...new Set(listed)]).toEqual([
+      "install",
+      "update",
+      "uninstall",
+      "init",
+      "status",
+      "list",
+      "config",
+      "egress",
+      "restart",
+      "stop",
+      "doctor",
+      "--version",
+      "help",
+    ]);
+  });
+
+  it("prints usage for help and for a bare pinata", async () => {
+    const harness = await createHarness();
+
+    expect(await runPinata(["help"], harness.deps)).toBe(0);
+    expect(await runPinata([], harness.deps)).toBe(0);
+    expect(harness.stdout().match(/pinata doctor/g)).toHaveLength(2);
+    expect(harness.stdout()).not.toContain("pinata gc");
+    expect(harness.stdout()).toContain("pinata restart  ");
   });
 
   const readmeRows = async () => {
@@ -659,12 +518,12 @@ describe("pi sandbox help and version", () => {
   it("lists every command of the README table with the same description, in aligned columns", async () => {
     const harness = await createHarness();
 
-    await run(["sandbox", "help"], harness.deps);
+    await runPinata(["help"], harness.deps);
 
-    const lines = harness.stdout().trimEnd().split("\n").slice(1);
+    const lines = harness.stdout().trimEnd().split("\n");
     const rows = await readmeRows();
-    const described = (command: string) => lines.find((line) => line.startsWith(`  ${command}  `));
-    const columns = new Set(lines.map((line) => /^ {2}\S.*?\S {2,}(?=\S)/.exec(line)?.[0].length));
+    const described = (command: string) => lines.find((line) => line.startsWith(`${command}  `));
+    const columns = new Set(lines.map((line) => /^\S.*?\S {2,}(?=\S)/.exec(line)?.[0].length));
 
     expect(rows.flatMap((row) => row.commands).filter((command) => described(command) === undefined)).toEqual(
       [],

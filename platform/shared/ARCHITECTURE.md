@@ -10,8 +10,6 @@ A module belongs in `platform/shared/` only when all of these hold:
 - No function takes a `Host` or an `AgentRuntime`; a module that needs one belongs to `platform/extension-manager/` (or to the extension).
 - It paints no theme. Measuring text through `ThemeLike`'s `width` and `wrap` is fine; calling `fg`, `bg`, `bold` or `inverse` is not, and such a module belongs to `platform/ui-kit/`.
 
-The accent rule that used to live here (`rule`) now sits in `platform/ui-kit/key-hints.ts` next to its only caller, so the rule holds without exceptions.
-
 ## Modules
 
 Modules are grouped by concern in five folders, plus three single-purpose modules at the top; `index.ts` re-exports them all and stays the only import surface.

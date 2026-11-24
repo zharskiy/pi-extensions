@@ -11,7 +11,7 @@ const IGNORES_TERM = "process.on('SIGTERM', () => undefined); setInterval(() => 
 const state = { dir: "", children: [] as ChildProcess[] };
 
 beforeEach(async () => {
-  state.dir = await mkdtemp(join(tmpdir(), "pi-sandbox-sign-in-"));
+  state.dir = await mkdtemp(join(tmpdir(), "pinata-sign-in-"));
 });
 
 afterEach(async () => {

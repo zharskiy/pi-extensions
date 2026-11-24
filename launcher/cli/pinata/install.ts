@@ -1,123 +1,99 @@
-import { join, resolve } from "node:path";
-import { validateConfigFile } from "../../config/index.ts";
-import { locateManagedPi } from "../../hostpi/index.ts";
-import {
-  jsonText,
-  LauncherError,
-  readJsonFile,
-  readJsonObject,
-  writeFileAtomic,
-} from "../../shared/index.ts";
-import { initCommand, YES_FLAG } from "../commands/init.ts";
-import { type CliDeps, hostAgentDirOf, isTerminal, pathsOf } from "../deps.ts";
-import { resolveJobPi } from "../host-pi.ts";
-import { intercept } from "../intercept.ts";
+import { join } from "node:path";
+import { readJsonObject } from "../../shared/index.ts";
+import { acceptAll, initCommand } from "../commands/init.ts";
+import { type CliDeps, isTerminal, pathsOf } from "../deps.ts";
+import { requireJobPi } from "../host-pi.ts";
 import { isSet } from "../prompt/terminal.ts";
-import { launcherVersion, PI_PACKAGE, testedPiVersion } from "../versions.ts";
-import { interactive, isCheckout, PACKAGE, piSources, preflight, refuseBusy, say } from "./host.ts";
+import { stepsFrontEnd } from "../setup/apply.ts";
+import { type Steps, stepsOf, tilde } from "../steps.ts";
+import { launcherVersion } from "../versions.ts";
+import { hostPiQuietly, isCheckout, PACKAGE, piSources, preflight, refuseBusy } from "./host.ts";
 import { setPathBlock } from "./path-block.ts";
-import { inspectShim, installShim } from "./shim.ts";
+import { inspectPinataLink, inspectShim, installPinataLink, installShim, removePinataLink } from "./shim.ts";
 
 export interface InstallFlags {
-  pi?: string;
-  config?: string;
   yes?: boolean;
 }
 
-export const refusePinnedManaged = async (deps: CliDeps, pi: string | undefined) => {
-  if (pi !== undefined && (await locateManagedPi(hostAgentDirOf(deps))) !== undefined) {
-    throw new LauncherError(
-      `--pi ${pi}: pi's managed install in ${hostAgentDirOf(deps)} is the host pi and wins over npm's, so the version would be ignored`,
-      "drop --pi, or remove the managed install with curl -fsSL https://pi.dev/install.sh | sh (Uninstall Pi) and run this again",
-    );
-  }
+const EXTENSIONS = {
+  pending: "Registering pinata's extensions with pi",
+  done: "Registered pinata's extensions with pi",
+  failed: "Could not register pinata's extensions with pi",
 };
 
-const readConfig = async (deps: CliDeps, given: string) => {
-  const file = resolve(deps.cwd, given);
-  const value = await readJsonFile<unknown>(file);
-
-  if (value === undefined) {
-    throw new LauncherError(`--config ${file}: no such file`);
-  }
-
-  validateConfigFile(value, file);
-
-  return { file, value };
-};
-
-const ensurePi = async (deps: CliDeps, pi: string | undefined) => {
-  if (pi === undefined && (await resolveJobPi(deps)) !== undefined) {
-    return;
-  }
-
-  const version = pi ?? (await testedPiVersion());
-
-  say(deps, `pi: installing ${PI_PACKAGE}@${version} with npm`);
-
-  await interactive(deps, "npm", ["install", "-g", "--ignore-scripts", `${PI_PACKAGE}@${version}`]);
-};
-
-const ensureExtensions = async (deps: CliDeps, own: string) => {
+const ensureExtensions = async (deps: CliDeps, steps: Steps, own: string) => {
   if ((await piSources(deps)).includes(own)) {
     return;
   }
 
-  const code = await intercept(["install", own], deps);
-
-  if (code !== 0) {
-    throw new LauncherError(`pi install ${own} exited with code ${code}`);
-  }
+  await steps.task(EXTENSIONS, () => hostPiQuietly(deps, ["install", own]));
 };
 
-const setup = async (deps: CliDeps, flags: InstallFlags) => {
+const setup = async (deps: CliDeps, steps: Steps, flags: InstallFlags) => {
   const configured = (await readJsonObject(pathsOf(deps).userConfigFile))?.workspaceRoot !== undefined;
 
-  if (configured && flags.config === undefined && (await deps.backend().vm.inspect()).state !== "absent") {
-    return 0;
+  if (configured && (await deps.backend().vm.inspect()).state !== "absent") {
+    return { code: 0, asked: false };
   }
 
-  const ask =
-    isTerminal(deps.terminal.stdin) && !flags.yes && flags.config === undefined && !isSet(deps.env.CI);
+  const ask = isTerminal(deps.terminal.stdin) && !flags.yes && !isSet(deps.env.CI);
 
-  return initCommand(deps, ask && !configured ? [] : [YES_FLAG]);
+  if (ask && !configured) {
+    return { code: await initCommand(deps, []), asked: true };
+  }
+
+  return {
+    code: await acceptAll(deps, (facts, timers) => stepsFrontEnd(steps, facts, timers)),
+    asked: false,
+  };
+};
+
+const linkPinata = (deps: CliDeps, steps: Steps, packageDir: string, checkout: boolean) =>
+  checkout
+    ? installPinataLink(deps, steps, join(packageDir, "launcher", "bin", "pinata-dev.js"))
+    : removePinataLink(deps, steps);
+
+const close = (deps: CliDeps, steps: Steps, asked: boolean) => {
+  if (!steps.changed() && !asked) {
+    return steps.close("Pinata is already installed. Nothing changed.");
+  }
+
+  steps.close("Pinata is installed.", [
+    ["Start", "open a new terminal, then cd <your repo> && pi"],
+    ["Settings", tilde(deps, pathsOf(deps).userConfigFile)],
+    ["Check", "pinata doctor"],
+  ]);
 };
 
 export const install = async (deps: CliDeps, packageDir: string, flags: InstallFlags) => {
-  await refusePinnedManaged(deps, flags.pi);
+  await requireJobPi(deps, "install");
 
-  const config = flags.config === undefined ? undefined : await readConfig(deps, flags.config);
   const checkout = await isCheckout(deps, packageDir);
+  const steps = stepsOf(deps);
 
-  await preflight(deps);
+  await preflight(deps, steps);
 
   await refuseBusy(deps);
 
-  await inspectShim(deps);
-
-  await ensurePi(deps, flags.pi);
-
   const shim = await inspectShim(deps);
 
-  await ensureExtensions(deps, checkout ? packageDir : `npm:${PACKAGE}@${await launcherVersion()}`);
-
-  await installShim(
-    deps,
-    shim,
-    join(packageDir, "launcher", "bin", checkout ? "pi-sandbox-dev.js" : "pi-sandbox.js"),
-  );
-
-  await setPathBlock(deps, true);
-
-  if (config !== undefined) {
-    await writeFileAtomic(pathsOf(deps).userConfigFile, jsonText(config.value));
-
-    say(deps, `config: wrote ${pathsOf(deps).userConfigFile} from ${config.file}`);
+  if (checkout) {
+    await inspectPinataLink(deps);
   }
 
-  const code = await setup(deps, flags);
+  await ensureExtensions(deps, steps, checkout ? packageDir : `npm:${PACKAGE}@${await launcherVersion()}`);
 
-  say(deps, "next: open a new shell, cd into a repository in your workspace root and run pi");
+  await installShim(deps, steps, shim, join(packageDir, "launcher", "bin", checkout ? "pi-dev.js" : "pi.js"));
+
+  await linkPinata(deps, steps, packageDir, checkout);
+
+  await setPathBlock(deps, steps, true);
+
+  const { code, asked } = await setup(deps, steps, flags);
+
+  if (code === 0) {
+    close(deps, steps, asked);
+  }
 
   return code;
 };

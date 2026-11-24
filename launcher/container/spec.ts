@@ -82,15 +82,13 @@ const parentsBelow = (root: string, path: string): string[] => {
   return parent === root || !isWithin(parent, root) ? [] : [...parentsBelow(root, parent), parent];
 };
 
-const AWAIT_HANDOVER_VARIABLE = "PI_SANDBOX_AWAIT_HANDOVER";
+const AWAIT_HANDOVER_VARIABLE = "PINATA_AWAIT_HANDOVER";
 
 const handoverEnv = (ownedPaths: string[]): Record<string, string> =>
   ownedPaths.length > 0 ? { [AWAIT_HANDOVER_VARIABLE]: "1" } : {};
 
 const forwarderEnv = (ports: number[]): Record<string, string> =>
-  ports.length === 0
-    ? {}
-    : { PI_SANDBOX_SERVICE_PORTS: ports.join(" "), PI_SANDBOX_SERVICES_HOST: SERVICES_ALIAS };
+  ports.length === 0 ? {} : { PINATA_SERVICE_PORTS: ports.join(" "), PINATA_SERVICES_HOST: SERVICES_ALIAS };
 
 const proxyEnv = (input: ContainerSpecInput): Record<string, string> => {
   const { url } = input.proxy;
@@ -140,8 +138,8 @@ const sandboxEnv = (input: ContainerSpecInput) => ({
   CARGO_HTTP_CAINFO: GUEST_CA_BUNDLE,
   GIT_SSL_CAINFO: GUEST_CA_BUNDLE,
   GIT_TERMINAL_PROMPT: "0",
-  PI_SANDBOX: "1",
-  PI_SANDBOX_STATUS: GUEST_PATHS.statusFile,
+  PINATA: "1",
+  PINATA_STATUS: GUEST_PATHS.statusFile,
   PI_SKIP_VERSION_CHECK: "1",
   PI_TELEMETRY: "0",
   PI_CLIPBOARD_OSC52: "1",

@@ -10,9 +10,9 @@ interface ShellOptions {
 
 type VmShell = (command: string[], options?: ShellOptions) => Promise<RunResult>;
 
-const CERT_DIR = "/usr/local/share/ca-certificates/pi-sandbox";
+const CERT_DIR = "/usr/local/share/ca-certificates/pinata";
 
-const MARKER_DIR = "/etc/pi-sandbox";
+const MARKER_DIR = "/etc/pinata";
 
 const MARKER = `${MARKER_DIR}/extra.sha256`;
 
@@ -32,7 +32,7 @@ const DEFERRED = "pick up the tls.extraCa certificate change";
 
 const certificatesIn = (text: string) => (text.match(PEM_BLOCK) ?? []).map((pem) => `${pem.trim()}\n`);
 
-const certPath = (index: number) => `${CERT_DIR}/pi-sandbox-extra-${index + 1}.crt`;
+const certPath = (index: number) => `${CERT_DIR}/pinata-extra-${index + 1}.crt`;
 
 export const createColimaTrust = (colima: Colima, shell: VmShell) => {
   const step = async (command: string[], options: ShellOptions = {}) => {

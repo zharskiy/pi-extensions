@@ -13,7 +13,7 @@ const versions = { pi: "1.5.0" };
 const dirs: string[] = [];
 
 const tempDir = async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-sandbox-image-"));
+  const dir = await mkdtemp(join(tmpdir(), "pinata-image-"));
 
   dirs.push(dir);
 
@@ -62,11 +62,11 @@ describe("prepareBuildContext", () => {
     const dockerfile = await readFile(join(dir, "Dockerfile"), "utf8");
 
     expect(dockerfile).not.toContain("proxy-ca");
-    expect(dockerfile).not.toContain("/etc/pi-sandbox");
+    expect(dockerfile).not.toContain("/etc/pinata");
     expect(dockerfile).toMatch(/update-ca-certificates --fresh/);
   });
 
-  it("installs the base tools and a pi-sandbox command that points back to the host", async () => {
+  it("installs the base tools and a pinata command that points back to the host", async () => {
     const dir = await tempDir();
 
     await prepareBuildContext(dir);
@@ -88,9 +88,9 @@ describe("prepareBuildContext", () => {
         "xz-utils",
       ]),
     );
-    expect(dockerfile).toContain(
-      "pi sandbox commands run on the host; ask the user to run pi sandbox $* there",
-    );
+    expect(dockerfile).toContain("pinata commands run on the host; ask the user to run pinata $* there");
+    expect(dockerfile).toContain("> /usr/local/bin/pinata");
+    expect(dockerfile).not.toContain("ln -s pinata");
     expect(dockerfile).toContain("exit 2");
   });
 
@@ -107,8 +107,8 @@ describe("prepareBuildContext", () => {
     expect(dockerfile).not.toMatch(/^ENV[^\n]*NODE_EXTRA_CA_CERTS/m);
     expect(dockerfile).not.toContain("PI_OFFLINE");
     expect(dockerfile).not.toMatch(/auth\.json|models\.json/);
-    expect(dockerfile).toContain("PI_SELF_UPDATE_COMMAND=/usr/local/bin/pi-sandbox-self-update");
-    expect(dockerfile).toContain("is managed by the sandbox and follows the launcher");
+    expect(dockerfile).toContain("PI_SELF_UPDATE_COMMAND=/usr/local/bin/pinata-self-update");
+    expect(dockerfile).toContain("is managed by the sandbox and follows pinata");
   });
 
   it("declares the pi version without a default right before the pi install, so a pi update reuses the earlier layers", async () => {
@@ -128,7 +128,7 @@ describe("prepareBuildContext", () => {
 
 describe("ensureBuiltImage", () => {
   it("pullPinnedImage pulls the pinned digest and never builds", async () => {
-    const reference = "ghcr.io/zharskiy/pi-sandbox:0.4.0";
+    const reference = "ghcr.io/zharskiy/pinata:0.4.0";
     const fake = createFakeBackend({ registry: { [reference]: "sha256:pinned" } });
     const config = sandboxConfig({ image: { reference, digest: "sha256:pinned" } });
     const result = await pullPinnedImage(
@@ -143,7 +143,7 @@ describe("ensureBuiltImage", () => {
   });
 
   it("refuses a pull whose digest is not the pinned one", async () => {
-    const reference = "ghcr.io/zharskiy/pi-sandbox:0.4.0";
+    const reference = "ghcr.io/zharskiy/pinata:0.4.0";
     const fake = createFakeBackend();
     const backend = { ...fake.backend, pullImage: async () => ({ id: "sha256:x", digest: "sha256:other" }) };
     const config = sandboxConfig({ image: { reference, digest: "sha256:pinned" } });
@@ -191,7 +191,7 @@ describe("ensureBuiltImage", () => {
       config: sandboxConfig({
         credentials: {
           rules: [
-            { id: "llm", host: "llm.example.com", placeholder: "pi-sandbox-llm", secret: { env: "LLM_KEY" } },
+            { id: "llm", host: "llm.example.com", placeholder: "pinata-llm", secret: { env: "LLM_KEY" } },
           ],
           derive: { enabled: true },
         },

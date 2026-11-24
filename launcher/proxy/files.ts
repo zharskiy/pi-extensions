@@ -1,6 +1,6 @@
 import type { CredentialRule } from "../config/index.ts";
 
-export const DAEMON_FAILURE_TAG = "pi-sandbox-proxy failed:";
+export const DAEMON_FAILURE_TAG = "pinata-proxy failed:";
 
 export interface EgressSettings {
   allow: string[];

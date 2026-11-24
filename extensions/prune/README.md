@@ -41,7 +41,7 @@ It removes nothing when a session file cannot be read, and nothing at the config
 
 `days` is a whole number from `0` to `36500`, `180` by default; `0` turns the sweep off. It is read only from your user file, so a file committed to a repository cannot remove your sessions. In a trusted project, a `.pi/pi-prune.json` is a settings error, which turns the sweep off until you delete that file. `Prune now` in `/prune` works either way.
 
-`/prune` → `Auto-prune` writes this file for you. In the sandbox the launcher copies the choice back to the host, but only the listed intervals and off.
+`/prune` → `Auto-prune` writes this file for you. In the sandbox pinata copies the choice back to the host, but only the listed intervals and off.
 
 ## Quick start
 

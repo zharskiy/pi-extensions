@@ -76,9 +76,9 @@ describe("modes, glyphs and colour", () => {
   it("is rich on a capable terminal and plain on request, on a dumb or unset TERM, or below 40 columns", () => {
     expect(uiWith(ENV).mode).toBe("rich");
 
-    expect(uiWith({ ...ENV, PI_SANDBOX_PLAIN: "1" }).mode).toBe("plain");
+    expect(uiWith({ ...ENV, PINATA_PLAIN: "1" }).mode).toBe("plain");
 
-    expect(uiWith({ ...ENV, PI_SANDBOX_PLAIN: "" }).mode).toBe("rich");
+    expect(uiWith({ ...ENV, PINATA_PLAIN: "" }).mode).toBe("rich");
 
     expect(uiWith({ ...ENV, TERM: "dumb" }).mode).toBe("plain");
 
@@ -235,7 +235,7 @@ describe("notes", () => {
     const { ui, screen } = fakeUi();
     const prompts = createRichPrompts(ui);
 
-    prompts.note(["pi sandbox setup", ""], "start");
+    prompts.note(["pinata setup", ""], "start");
 
     prompts.note(["Sets up the sandbox.", ""]);
 
@@ -244,7 +244,7 @@ describe("notes", () => {
     prompts.note(["Done. The sandbox is ready.", "", "Next      cd ~/x && pi"], "end");
 
     expect(screen.lines()).toEqual([
-      "┌  pi sandbox setup",
+      "┌  pinata setup",
       "│",
       "│  Sets up the sandbox.",
       "│",

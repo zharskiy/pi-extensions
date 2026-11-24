@@ -36,7 +36,7 @@ const expectText = async (pem: string, parts: string[]) => {
 };
 
 beforeAll(async () => {
-  state.stateDir = await mkdtemp(join(tmpdir(), "pi-sandbox-ca-"));
+  state.stateDir = await mkdtemp(join(tmpdir(), "pinata-ca-"));
 });
 
 afterAll(async () => {
@@ -86,7 +86,7 @@ describe("launcher CA", () => {
   });
 
   it("creates one consistent CA when several launchers open a new state dir at once", async () => {
-    const stateDir = await mkdtemp(join(tmpdir(), "pi-sandbox-ca-first-"));
+    const stateDir = await mkdtemp(join(tmpdir(), "pinata-ca-first-"));
 
     try {
       const opened = await Promise.all(
@@ -107,7 +107,7 @@ describe("launcher CA", () => {
   });
 
   it("replaces a CA whose key does not match its certificate and keeps a valid one", async () => {
-    const stateDir = await mkdtemp(join(tmpdir(), "pi-sandbox-ca-pair-"));
+    const stateDir = await mkdtemp(join(tmpdir(), "pinata-ca-pair-"));
 
     try {
       const first = await openLauncherCa({ stateDir, runner: createProcessRunner() });
@@ -145,7 +145,7 @@ describe("launcher CA", () => {
   });
 
   it("issues an in-memory leaf without writing it under the state dir", async () => {
-    const stateDir = await mkdtemp(join(tmpdir(), "pi-sandbox-ca-ephemeral-"));
+    const stateDir = await mkdtemp(join(tmpdir(), "pinata-ca-ephemeral-"));
     const ca = await openLauncherCa({ stateDir, runner: createProcessRunner() });
     const leaf = await ca.ephemeralLeaf("denied.test");
     const entries = await readdir(join(stateDir, "ca"));
@@ -202,7 +202,7 @@ describe("launcher CA", () => {
   });
 
   it("dates a new CA an hour back and keeps its end date, extensions and key type", async () => {
-    const stateDir = await mkdtemp(join(tmpdir(), "pi-sandbox-ca-dated-"));
+    const stateDir = await mkdtemp(join(tmpdir(), "pinata-ca-dated-"));
 
     try {
       const before = Date.now();
@@ -213,7 +213,7 @@ describe("launcher CA", () => {
       expectDatedBack(authority, before, after, CA_VALIDITY_MS);
 
       expect(authority.ca).toBe(true);
-      expect(authority.subject).toBe("CN=pi-sandbox launcher CA");
+      expect(authority.subject).toBe("CN=pinata CA");
       expect(authority.issuer).toBe(authority.subject);
       expect(authority.publicKey.asymmetricKeyType).toBe("ec");
       expect(authority.verify(authority.publicKey)).toBe(true);
@@ -241,7 +241,7 @@ describe("launcher CA", () => {
   });
 
   it("keeps a CA made by an earlier version instead of creating a new one", async () => {
-    const stateDir = await mkdtemp(join(tmpdir(), "pi-sandbox-ca-earlier-"));
+    const stateDir = await mkdtemp(join(tmpdir(), "pinata-ca-earlier-"));
     const directory = join(stateDir, "ca");
     const runner = createProcessRunner();
 
@@ -250,7 +250,7 @@ describe("launcher CA", () => {
 
       await writeFile(
         join(directory, "ca.cnf"),
-        "[req]\ndistinguished_name = dn\nprompt = no\n[dn]\nCN = pi-sandbox launcher CA\n[ca]\nbasicConstraints = critical,CA:TRUE\nkeyUsage = critical,keyCertSign,cRLSign\nsubjectKeyIdentifier = hash\n",
+        "[req]\ndistinguished_name = dn\nprompt = no\n[dn]\nCN = pinata CA\n[ca]\nbasicConstraints = critical,CA:TRUE\nkeyUsage = critical,keyCertSign,cRLSign\nsubjectKeyIdentifier = hash\n",
       );
 
       await writeFile(

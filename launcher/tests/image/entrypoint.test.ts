@@ -86,18 +86,18 @@ const sandboxRoot = async () => {
 
 type Paths = Awaited<ReturnType<typeof sandboxRoot>>;
 
-const PROXY_OPTIONS = "-Dhttps.proxyHost=pi-sandbox-proxy -Dhttps.proxyPort=3128";
+const PROXY_OPTIONS = "-Dhttps.proxyHost=pinata-proxy -Dhttps.proxyPort=3128";
 
 const withGuestPaths = (paths: Paths, text: string) => {
   const guestPaths: Record<string, string> = {
-    "/tmp/pi-sandbox-handover": paths.handover,
-    "/tmp/pi-sandbox-ready": paths.ready,
-    "/tmp/pi-sandbox-forward": paths.forward,
-    "/usr/local/lib/pi-sandbox/forwarder.mjs": join(launcherRoot(), "image", "forwarder.mjs"),
-    "/opt/pi-sandbox/render": paths.render,
-    "/tmp/pi-sandbox": paths.bundle,
+    "/tmp/pinata-handover": paths.handover,
+    "/tmp/pinata-ready": paths.ready,
+    "/tmp/pinata-forward": paths.forward,
+    "/usr/local/lib/pinata/forwarder.mjs": join(launcherRoot(), "image", "forwarder.mjs"),
+    "/opt/pinata/render": paths.render,
+    "/tmp/pinata": paths.bundle,
     "/etc/ssl/certs/ca-certificates.crt": paths.system,
-    "/usr/local/lib/pi-sandbox/bash-env.sh": join(paths.root, "bash-env.sh"),
+    "/usr/local/lib/pinata/bash-env.sh": join(paths.root, "bash-env.sh"),
   };
   const guestPath = new RegExp(
     Object.keys(guestPaths)
@@ -319,7 +319,7 @@ describe("image entrypoint", () => {
     expect(await readlink(join(agent, "models.json"))).toBe(join(paths.render, "models.json"));
     expect(await readlink(join(agent, "skills"))).toBe(join(paths.render, "skills"));
     expect(await readFile(join(agent, "auth.json"), "utf8")).toBe('{"rendered":true}\n');
-    expect((await readdir(agent)).filter((name) => name.includes(".pi-sandbox-"))).toEqual([]);
+    expect((await readdir(agent)).filter((name) => name.includes(".pinata-"))).toEqual([]);
   });
 
   it("fails when an agent dir entry cannot be replaced by its render link", async () => {
@@ -388,8 +388,8 @@ describe("image entrypoint", () => {
         `test -e "${paths.forward}" && ! test -s "${paths.forward}" && node -e '${connect}'`,
       ],
       env: {
-        PI_SANDBOX_SERVICE_PORTS: String(port),
-        PI_SANDBOX_SERVICES_HOST: "pi-sandbox-services.invalid",
+        PINATA_SERVICE_PORTS: String(port),
+        PINATA_SERVICES_HOST: "pinata-services.invalid",
       },
     });
     const child = spawn("sh", run.args, { env: run.env, detached: true, stdio: "ignore" });
@@ -410,8 +410,8 @@ describe("image entrypoint", () => {
 
     const result = await spawnEntrypoint(paths, {
       env: {
-        PI_SANDBOX_SERVICE_PORTS: String(port),
-        PI_SANDBOX_SERVICES_HOST: "pi-sandbox-services.invalid",
+        PINATA_SERVICE_PORTS: String(port),
+        PINATA_SERVICES_HOST: "pinata-services.invalid",
       },
     });
 
@@ -425,7 +425,7 @@ describe("image entrypoint", () => {
   it("leaves the home unmarked when it stops before the home is ready", async () => {
     const paths = await sandboxRoot();
     const result = await spawnEntrypoint(paths, {
-      env: { PI_SANDBOX_AWAIT_HANDOVER: "1" },
+      env: { PINATA_AWAIT_HANDOVER: "1" },
       handoverTries: 1,
     });
 
@@ -522,7 +522,7 @@ describe("image entrypoint", () => {
 
   it("leaves the literal proxy of the rendered Maven settings as it is", async () => {
     const paths = await sandboxRoot();
-    const proxy = "<proxy>\n<host>pi-sandbox-proxy</host>\n<port>3128</port>\n</proxy>\n";
+    const proxy = "<proxy>\n<host>pinata-proxy</host>\n<port>3128</port>\n</proxy>\n";
 
     await mkdir(join(paths.render, "tools"));
 
@@ -545,7 +545,7 @@ describe("image entrypoint", () => {
 
     await chmod(m2, 0o555);
 
-    const running = startEntrypoint(paths, { env: { PI_SANDBOX_AWAIT_HANDOVER: "1" } });
+    const running = startEntrypoint(paths, { env: { PINATA_AWAIT_HANDOVER: "1" } });
     const settledBeforeHandover = await settledWithin(running, 500);
 
     await chmod(m2, 0o755);
@@ -562,13 +562,13 @@ describe("image entrypoint", () => {
   it("stops with a clear message when the launcher never hands the volumes over", async () => {
     const paths = await sandboxRoot();
     const result = await spawnEntrypoint(paths, {
-      env: { PI_SANDBOX_AWAIT_HANDOVER: "1" },
+      env: { PINATA_AWAIT_HANDOVER: "1" },
       handoverTries: 10,
     });
 
     expect(result.status).toBe(1);
     expect(result.stderr).toBe(
-      "pi-sandbox: the launcher did not hand the volumes to the sandbox user within 1 s, stopping\n",
+      "pinata: the volumes were not handed to the sandbox user within 1 s, stopping\n",
     );
     await expect(lstat(join(paths.home, ".pi"))).rejects.toThrow();
   });

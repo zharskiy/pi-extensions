@@ -1,8 +1,8 @@
 import { chmod, lstat, mkdir, readFile, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { Backend, ContainerSpec, ContainerState } from "../../backend/index.ts";
-import { LABELS, networkName } from "../../backend/index.ts";
+import type { Backend } from "../../backend/index.ts";
+import { LABELS } from "../../backend/index.ts";
 import { sweepOrphans } from "../../cli/sweep.ts";
 import { liveLaunches, newLaunchId, readGrants, registerLaunch } from "../../grants/index.ts";
 import {
@@ -13,7 +13,6 @@ import {
   stateLayout,
   writeRepoRecord,
 } from "../../shared/index.ts";
-import { FAKE_INSTALL } from "../support/fake-backend.ts";
 import { tempDir } from "../support/temp-dir.ts";
 import { createFakeBackend, createHarness, sweepNow } from "./harness.ts";
 
@@ -76,14 +75,14 @@ describe("the sweep of what is left in the state dir", () => {
 
     await harness.writeJson(files.record, { root, mountRoot });
 
-    await fake.backend.ensureVolume("pi-sandbox-agent-volume-root", {
+    await fake.backend.ensureVolume("pinata-agent-volume-root", {
       [LABELS.repoHash]: hash,
       [LABELS.repoRoot]: root,
     });
 
     expect(await sweepNow(harness.deps)).toBe(0);
     expect(await repoRecordOf(harness.stateDir, hash)).toEqual({ root, mountRoot });
-    expect(fake.volumes.has("pi-sandbox-agent-volume-root")).toBe(true);
+    expect(fake.volumes.has("pinata-agent-volume-root")).toBe(true);
   });
 
   it("forgets a repository whose folder is gone at the sweep, with its grants, and leaves its volumes to the collection", async () => {
@@ -102,7 +101,7 @@ describe("the sweep of what is left in the state dir", () => {
       { host: "kept.test", port: 443, createdAt: 1 },
     ]);
 
-    await fake.backend.ensureVolume("pi-sandbox-agent-gone", {
+    await fake.backend.ensureVolume("pinata-agent-gone", {
       [LABELS.repoHash]: hash,
       [LABELS.repoRoot]: root,
     });
@@ -112,10 +111,10 @@ describe("the sweep of what is left in the state dir", () => {
     ]);
     expect(await exists(layout.repo(hash).directory)).toBe(false);
     expect((await readGrants(harness.stateDir)).map((grant) => grant.host)).toEqual(["kept.test"]);
-    expect(fake.volumes.has("pi-sandbox-agent-gone")).toBe(true);
+    expect(fake.volumes.has("pinata-agent-gone")).toBe(true);
 
     expect(await sweepNow(harness.deps)).toBe(0);
-    expect(fake.volumes.has("pi-sandbox-agent-gone")).toBe(false);
+    expect(fake.volumes.has("pinata-agent-gone")).toBe(false);
   });
 
   it("keeps a repository whose root cannot be checked for another reason than it is missing", async () => {
@@ -181,7 +180,7 @@ describe("the sweep of what is left in the state dir", () => {
     const live = { launchId: newLaunchId(), repoHash: hash, startedAt: 1, ...(await processMark()) };
     const container = (launchId?: string) =>
       fake.addContainer({
-        name: `pi-sandbox-repo-${launchId ?? "none"}`,
+        name: `pinata-repo-${launchId ?? "none"}`,
         labels: {
           [LABELS.managed]: "true",
           [LABELS.role]: "agent",
@@ -213,7 +212,7 @@ describe("the sweep of what is left in the state dir", () => {
     const live = { launchId: newLaunchId(), repoHash: hash, startedAt: 1, ...(await processMark()) };
     const companion = (role: string) =>
       fake.addContainer({
-        name: `pi-sandbox-repo-${role}`,
+        name: `pinata-repo-${role}`,
         labels: {
           [LABELS.managed]: "true",
           [LABELS.repoHash]: hash,
@@ -254,7 +253,7 @@ describe("the sweep of what is left in the state dir", () => {
       image: "pod",
     });
 
-    await fake.backend.prepareRelay({ hostPort: 3128, imageId: "relay", preamble: "PI-SANDBOX test" });
+    await fake.backend.prepareRelay({ hostPort: 3128, imageId: "relay", preamble: "PINATA test" });
 
     expect(await sweepNow(harness.deps)).toBe(0);
     expect(fake.stops).toContainEqual({ id: agent, timeoutSeconds: 3 });
@@ -269,7 +268,7 @@ describe("the sweep of what is left in the state dir", () => {
     const harness = await createHarness({ backend: () => fake.backend });
     const orphan = "d".repeat(64);
     const id = fake.addContainer({
-      name: `pi-sandbox-${orphan.slice(0, 12)}`,
+      name: `pinata-${orphan.slice(0, 12)}`,
       labels: { [LABELS.managed]: "true", [LABELS.role]: "agent", [LABELS.repoHash]: orphan },
       state: "running",
       image: "x",
@@ -278,121 +277,5 @@ describe("the sweep of what is left in the state dir", () => {
     expect(await sweepNow(harness.deps)).toBe(0);
     expect(fake.containers.has(id)).toBe(false);
     expect(await exists(stateLayout(harness.stateDir).repo(orphan).directory)).toBe(false);
-  });
-});
-
-describe("the daily collection of older builds' engine objects", () => {
-  const MANAGED = { [LABELS.managed]: "true" };
-
-  const OTHER = { [LABELS.managed]: "true", [LABELS.install]: "otherinstall" };
-
-  const plantContainer = (
-    fake: ReturnType<typeof createFakeBackend>,
-    name: string,
-    state: ContainerState,
-    labels: Record<string, string>,
-    attachments: { volume?: string; network?: string } = {},
-  ) => {
-    const mounts =
-      attachments.volume === undefined
-        ? []
-        : [{ kind: "volume" as const, source: attachments.volume, target: "/data", readOnly: false }];
-    const network =
-      attachments.network === undefined ? { kind: "none" } : { kind: "internal", name: attachments.network };
-    const spec = { mounts, network } as unknown as ContainerSpec;
-
-    fake.containers.set(name, { spec, summary: { id: name, name, labels, state, image: "old" } });
-  };
-
-  const plantVolume = (
-    fake: ReturnType<typeof createFakeBackend>,
-    name: string,
-    labels: Record<string, string>,
-  ) => {
-    fake.volumes.add(name);
-
-    fake.volumeLabels.set(name, labels);
-  };
-
-  it("removes a stopped container, its volume and a free network of an older build, and says so", async () => {
-    const fake = createFakeBackend();
-    const harness = await createHarness({ backend: () => fake.backend });
-
-    plantContainer(fake, "pi-sandbox-old-stopped", "stopped", MANAGED, { volume: "pi-sandbox-agent-held" });
-
-    plantVolume(fake, "pi-sandbox-agent-held", MANAGED);
-
-    fake.plantForeignNetwork("pi-sandbox-network-old", MANAGED);
-
-    expect(await sweepNow(harness.deps)).toBe(0);
-    expect(fake.containers.has("pi-sandbox-old-stopped")).toBe(false);
-    expect(fake.volumes.has("pi-sandbox-agent-held")).toBe(false);
-    expect(fake.hasNetwork("pi-sandbox-network-old")).toBe(false);
-    expect(harness.stdout()).toContain("removed container pi-sandbox-old-stopped\n");
-    expect(harness.stdout()).toContain("removed volume pi-sandbox-agent-held\n");
-    expect(harness.stdout()).toContain("removed network pi-sandbox-network-old\n");
-  });
-
-  it("keeps an older build's volume that a container it keeps still mounts, without a word", async () => {
-    const fake = createFakeBackend();
-    const harness = await createHarness({ backend: () => fake.backend });
-    const current = { [LABELS.managed]: "true", [LABELS.install]: FAKE_INSTALL };
-
-    plantContainer(fake, "pi-sandbox-current", "stopped", current, { volume: "pi-sandbox-agent-reused" });
-
-    plantVolume(fake, "pi-sandbox-agent-reused", MANAGED);
-
-    expect(await sweepNow(harness.deps)).toBe(0);
-    expect(fake.volumes.has("pi-sandbox-agent-reused")).toBe(true);
-    expect(harness.stdout()).not.toContain("removed");
-    expect(harness.stderr()).toBe("");
-  });
-
-  it("keeps a running container of an older build with its volume and network", async () => {
-    const fake = createFakeBackend();
-    const harness = await createHarness({ backend: () => fake.backend });
-
-    plantContainer(fake, "pi-sandbox-old-running", "running", MANAGED, {
-      volume: "pi-sandbox-agent-busy",
-      network: "pi-sandbox-network-busy",
-    });
-
-    plantVolume(fake, "pi-sandbox-agent-busy", MANAGED);
-
-    fake.plantForeignNetwork("pi-sandbox-network-busy", MANAGED);
-
-    expect(await sweepNow(harness.deps)).toBe(0);
-    expect(fake.containers.has("pi-sandbox-old-running")).toBe(true);
-    expect(fake.volumes.has("pi-sandbox-agent-busy")).toBe(true);
-    expect(fake.hasNetwork("pi-sandbox-network-busy")).toBe(true);
-  });
-
-  it("keeps another install's objects, unmanaged pi-sandbox objects and older builds' shared volumes", async () => {
-    const fake = createFakeBackend();
-    const harness = await createHarness({ backend: () => fake.backend });
-
-    plantVolume(fake, "pi-sandbox-agent-other", OTHER);
-
-    plantContainer(fake, "pi-sandbox-other", "stopped", OTHER);
-
-    await fake.backendFor("otherinstall").prepareNetwork();
-
-    plantVolume(fake, "pi-sandbox-scratch", {});
-
-    plantContainer(fake, "pi-sandbox-mine", "stopped", {});
-
-    fake.plantForeignNetwork("pi-sandbox-net", {});
-
-    plantVolume(fake, "pi-sandbox-shared-oldinstall00-aaaaaaaa", MANAGED);
-
-    expect(await sweepNow(harness.deps)).toBe(0);
-    expect(fake.volumes.has("pi-sandbox-agent-other")).toBe(true);
-    expect(fake.containers.has("pi-sandbox-other")).toBe(true);
-    expect(fake.hasNetwork(networkName("otherinstall"))).toBe(true);
-    expect(fake.volumes.has("pi-sandbox-scratch")).toBe(true);
-    expect(fake.containers.has("pi-sandbox-mine")).toBe(true);
-    expect(fake.hasNetwork("pi-sandbox-net")).toBe(true);
-    expect(fake.volumes.has("pi-sandbox-shared-oldinstall00-aaaaaaaa")).toBe(true);
-    expect(harness.stdout()).not.toContain("removed");
   });
 });

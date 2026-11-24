@@ -50,7 +50,7 @@ export const writeLines = (stream: NodeJS.WritableStream, lines: string[]) => {
 export const writeNotices = (deps: CliDeps, notices: string[]) => {
   writeLines(
     deps.stderr,
-    [...new Set(notices)].map((notice) => `pi-sandbox: ${notice}`),
+    [...new Set(notices)].map((notice) => `pinata: ${notice}`),
   );
 };
 

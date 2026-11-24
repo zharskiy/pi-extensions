@@ -92,7 +92,7 @@ describe("hostSessionsChoice", () => {
 
 describe("the sessions switch", () => {
   it("knows no environment switch: sessions.host is the one switch", () => {
-    expect("dir" in choiceWith({ env: { PI_SANDBOX_SESSIONS_HOST: "off" } })).toBe(true);
+    expect("dir" in choiceWith({ env: { PINATA_SESSIONS_HOST: "off" } })).toBe(true);
   });
 });
 

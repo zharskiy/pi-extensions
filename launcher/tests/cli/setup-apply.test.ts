@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { VmPhase } from "../../backend/index.ts";
 import { warningOf } from "../../cli/prompt/task.ts";
 import { Cancelled, type Detail, type Prompts } from "../../cli/prompt/types.ts";
-import { applyPlan, lineFrontEnd, wizardFrontEnd } from "../../cli/setup/apply.ts";
+import { applyPlan, stepsFrontEnd, wizardFrontEnd } from "../../cli/setup/apply.ts";
 import type { Plan } from "../../cli/setup/types.ts";
+import { stepsOf } from "../../cli/steps.ts";
 import { LauncherError } from "../../shared/index.ts";
 import { fakeTimers } from "./prompt/fake-tty.ts";
 import { AUTOMATIC_SIZE, documentOf, factsOf } from "./setup-fixtures.ts";
@@ -86,8 +87,8 @@ const collected = () => {
   return { stream, text: () => lines.join("") };
 };
 
-describe("applying a plan as lines", () => {
-  it("prints the review, progress and the heartbeat to stdout, and a failure to stderr", async () => {
+describe("applying a plan as steps", () => {
+  it("prints a failed VM step as one failure line with the reason under it on stderr", async () => {
     const clock = fakeTimers();
     const out = collected();
     const err = collected();
@@ -95,46 +96,46 @@ describe("applying a plan as lines", () => {
     const facts = factsOf({ configFile: "/Users/me/config.json" });
     const effects = {
       write: async () => undefined,
-      vm: async (_action: unknown, progress: (phase: VmPhase) => void) => {
-        progress("stopping");
-
+      vm: async () => {
         clock.advance(31_000);
-
-        progress("starting");
 
         throw new LauncherError("colima start failed");
       },
     };
-    const front = lineFrontEnd({ out: out.stream, err: err.stream, timers: clock.timers }, facts, [
-      "When you apply:",
-      "  • restart the sandbox VM",
-    ]);
-    const code = await applyPlan(front, effects, document, {
+    const steps = stepsOf({ stdout: out.stream, stderr: err.stream, env: {} }, clock.timers);
+    const code = await applyPlan(stepsFrontEnd(steps, facts, clock.timers), effects, document, {
       plan: PLAN,
       answers: { root: "~/work", vm: "automatic", writeBack: true },
     });
 
     expect(code).toBe(1);
-    expect(out.text()).toBe(
-      [
-        "When you apply:",
-        "  - restart the sandbox VM",
-        "Stopping the VM...",
-        "  still working (15s)",
-        "  still working (30s)",
-        "Starting the VM with the new size...",
-        "",
-      ].join("\n"),
-    );
+    expect(out.text()).toBe("");
     expect(err.text()).toBe(
       [
         "x Could not restart the VM after 31s.",
         "  colima start failed",
-        "Your settings are saved, but the sandbox VM is not ready. Fix the problem above, then run pi sandbox init again. pi sandbox doctor checks everything.",
+        "x Your settings are saved, but the sandbox VM is not ready. Fix the problem above, then run pinata init again. pinata doctor checks everything.",
         "",
       ].join("\n"),
     );
     expect(clock.live()).toBe(0);
+  });
+
+  it("prints a warning event as a warning line on stdout", async () => {
+    const clock = fakeTimers();
+    const out = collected();
+    const err = collected();
+    const steps = stepsOf({ stdout: out.stream, stderr: err.stream, env: {} }, clock.timers);
+
+    stepsFrontEnd(steps, factsOf(), clock.timers).report({
+      kind: "vm-unknown",
+      reason: "colima did not answer",
+    });
+
+    expect(out.text()).toBe(
+      "! The VM could not be checked (colima did not answer). Run pinata doctor to see why.\n",
+    );
+    expect(err.text()).toBe("");
   });
 
   it("lets an unexpected error from the VM step through, after saving", async () => {
@@ -148,11 +149,16 @@ describe("applying a plan as lines", () => {
         throw failure;
       },
     };
-    const front = lineFrontEnd({ out: out.stream, err: err.stream, timers: clock.timers }, factsOf(), []);
-    const applied = applyPlan(front, effects, documentOf(undefined, "/Users/me/config.json"), {
-      plan: PLAN,
-      answers: { root: "~/work", vm: "automatic", writeBack: true },
-    });
+    const steps = stepsOf({ stdout: out.stream, stderr: err.stream, env: {} }, clock.timers);
+    const applied = applyPlan(
+      stepsFrontEnd(steps, factsOf(), clock.timers),
+      effects,
+      documentOf(undefined, "/Users/me/config.json"),
+      {
+        plan: PLAN,
+        answers: { root: "~/work", vm: "automatic", writeBack: true },
+      },
+    );
 
     await expect(applied).rejects.toBe(failure);
     expect(err.text()).toBe("");

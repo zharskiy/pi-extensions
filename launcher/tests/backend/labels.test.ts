@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { isSession, roleOf } from "../../backend/index.ts";
 
-const MANAGED = { "pi-sandbox.managed": "true" };
+const MANAGED = { "pinata.managed": "true" };
 
-const withRole = (role: string) => ({ ...MANAGED, "pi-sandbox.role": role });
+const withRole = (role: string) => ({ ...MANAGED, "pinata.role": role });
 
 describe("container roles", () => {
   it("reads the role a container is labelled with", () => {

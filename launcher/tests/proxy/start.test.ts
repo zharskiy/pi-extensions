@@ -29,7 +29,7 @@ const EGRESS_CHANGED =
   "the network allow and deny settings changed and now apply to every pi running in the sandbox";
 
 const FAILING_DAEMON = [
-  'console.error("2026-01-01T00:00:00.000Z pi-sandbox-proxy failed: broken input (fix the input)");',
+  'console.error("2026-01-01T00:00:00.000Z pinata-proxy failed: broken input (fix the input)");',
   'console.error("2026-01-01T00:00:01.000Z pi mcp login: waiting for the browser");',
   "process.exit(1);",
 ].join(" ");
@@ -86,7 +86,7 @@ const filesUnder = async (dir: string): Promise<string[]> => {
 };
 
 beforeAll(async () => {
-  state.stateDir = await mkdtemp(join(tmpdir(), "pi-sandbox-start-"));
+  state.stateDir = await mkdtemp(join(tmpdir(), "pinata-start-"));
 });
 
 afterEach(async () => {
@@ -269,7 +269,7 @@ describe("ensureProxy start and health", () => {
     });
 
     await expect(failing).rejects.toThrow(
-      "the pi-sandbox egress proxy did not become healthy: broken input (fix the input)",
+      "the pinata egress proxy did not become healthy: broken input (fix the input)",
     );
     expect(seen).toEqual([files().directory]);
   }, 20_000);
@@ -341,7 +341,7 @@ describe("ensureProxy start and health", () => {
     await writeFile(files().record, JSON.stringify(record));
 
     await expect(ensure(await inputFor(), true)).rejects.toThrow(
-      `the pi-sandbox egress proxy (pid ${stranger.pid}) does not answer, and other pi sessions use it, so it was kept`,
+      `the pinata egress proxy (pid ${stranger.pid}) does not answer, and other pi sessions use it, so it was kept`,
     );
     expect(isAlive(stranger)).toBe(true);
     expect(JSON.parse(await readFile(files().record, "utf8"))).toEqual(record);

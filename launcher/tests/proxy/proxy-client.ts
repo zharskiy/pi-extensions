@@ -13,7 +13,7 @@ export interface ConnectReply {
 
 const HEAD_END = "\r\n\r\n";
 
-export const authorization = (token: string, user = "pi-sandbox") =>
+export const authorization = (token: string, user = "pinata") =>
   `Basic ${Buffer.from(`${user}:${token}`).toString("base64")}`;
 
 export type PreambleToken = string | null;

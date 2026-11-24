@@ -1,13 +1,13 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { CliDeps } from "../deps.ts";
-import { say } from "./host.ts";
+import { type Steps, tilde } from "../steps.ts";
 
-const BEGIN = "# pi-sandbox begin";
+const BEGIN = "# pinata begin";
 
-const END = "# pi-sandbox end";
+const END = "# pinata end";
 
-const setBlock = async (deps: CliDeps, file: string, add: boolean) => {
+const setBlock = async (deps: CliDeps, steps: Steps, file: string, add: boolean) => {
   const text = await readFile(file, "latin1").catch(() => (add && file.endsWith(".zshrc") ? "" : undefined));
 
   if (text === undefined) {
@@ -19,7 +19,9 @@ const setBlock = async (deps: CliDeps, file: string, add: boolean) => {
   const [start = -1, end = -1] = marks;
 
   if (marks.length > 0 && (marks.length !== 2 || lines[start] !== BEGIN || lines[end] !== END)) {
-    return say(deps, `shell: ${file} has a "${BEGIN}" or "${END}" line without its pair, left as it is`);
+    return steps.warn(
+      `Left ${tilde(deps, file)} as it is: it has a "${BEGIN}" or "${END}" line without its pair`,
+    );
   }
 
   const block = `${BEGIN}\nexport PATH='${join(deps.home, ".local", "bin").replaceAll("'", "'\\''")}':"$PATH"\n${END}`;
@@ -31,11 +33,16 @@ const setBlock = async (deps: CliDeps, file: string, add: boolean) => {
   if (next !== text) {
     await writeFile(file, next, "latin1");
 
-    say(deps, `shell: ${add ? "added the PATH block to" : "removed the PATH block from"} ${file}`);
+    steps.done(
+      add
+        ? `Added ${tilde(deps, join(deps.home, ".local", "bin"))} to PATH in ${tilde(deps, file)}`
+        : `Removed the PATH block from ${tilde(deps, file)}`,
+    );
   }
 };
 
-export const setPathBlock = (deps: CliDeps, add: boolean) =>
-  Promise.all(
-    [".zshrc", ".bashrc", ".bash_profile"].map((name) => setBlock(deps, join(deps.home, name), add)),
+export const setPathBlock = (deps: CliDeps, steps: Steps, add: boolean) =>
+  [".zshrc", ".bashrc", ".bash_profile"].reduce(
+    (previous, name) => previous.then(() => setBlock(deps, steps, join(deps.home, name), add)),
+    Promise.resolve(),
   );

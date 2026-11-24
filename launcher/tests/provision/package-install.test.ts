@@ -256,7 +256,7 @@ describe("installPackages", () => {
       "warning: the extensions in the shared pi folder were not checked (pi list exited with 2); pi installs what is missing when it starts",
     ]);
     expect(await garbled.install()).toEqual([
-      "warning: the extensions in the shared pi folder were not checked (pi list printed nothing the launcher understands); pi installs what is missing when it starts",
+      "warning: the extensions in the shared pi folder were not checked (pi list printed nothing pinata understands); pi installs what is missing when it starts",
     ]);
     expect(await hung.install({ listTimeoutMs: 20 })).toEqual([
       "warning: the extensions in the shared pi folder were not checked (the command in the sandbox did not finish within 20 ms); pi installs what is missing when it starts",
@@ -282,7 +282,7 @@ describe("installPackages with a source that did not install", () => {
   ].join("\n");
 
   const SKIPPED =
-    "warning: git:github.com/owner/private@main could not be installed in the shared pi folder last time, so the launcher did not try again; pi tries when it starts";
+    "warning: git:github.com/owner/private@main could not be installed in the shared pi folder last time, so pinata did not try again; pi tries when it starts";
 
   const packages = { sources: ["git:github.com/owner/private@main"], changed: [] };
 

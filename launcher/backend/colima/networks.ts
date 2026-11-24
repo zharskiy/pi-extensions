@@ -1,6 +1,6 @@
 import { LauncherError } from "../../shared/index.ts";
 import { networkName } from "../install.ts";
-import { isOlderBuild, LABELS } from "../labels.ts";
+import { LABELS } from "../labels.ts";
 import { labelFilters } from "./container-body.ts";
 import { type EngineClient, segment } from "./engine-client.ts";
 
@@ -25,8 +25,8 @@ const oldEngine = (version: string | undefined) =>
 
 const foreign = (name: string) =>
   new LauncherError(
-    `network ${name} exists but is not managed by pi-sandbox`,
-    "remove that network from the sandbox VM so the launcher can create its own",
+    `network ${name} exists but is not managed by pinata`,
+    "remove that network from the sandbox VM so pinata can create its own",
   );
 
 const noSubnet = (name: string) =>
@@ -128,21 +128,7 @@ export const createNetworkOperations = (client: EngineClient, install: string) =
     return answers.some((answer) => answer.status < 300);
   };
 
-  const listOlderBuildNetworks = async () => {
-    const listed = await client.json<Array<{ Name?: string; Labels?: Record<string, string> | null }>>({
-      method: "GET",
-      path: "/networks",
-    });
-
-    return listed
-      .map((network) => ({ name: network.Name ?? "", labels: network.Labels ?? {} }))
-      .filter((network) => isOlderBuild(network.name, network.labels))
-      .map((network) => network.name);
-  };
-
-  const removeNamedNetwork = async (network: string) => (await deleteNetwork(network)).status < 300;
-
-  return { name, prepareNetwork, subnet, removeNetwork, listOlderBuildNetworks, removeNamedNetwork };
+  return { name, prepareNetwork, subnet, removeNetwork };
 };
 
 export type NetworkOperations = ReturnType<typeof createNetworkOperations>;

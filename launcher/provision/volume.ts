@@ -10,7 +10,7 @@ export interface VolumeRead {
 }
 
 const WRITE_SCRIPT = [
-  'mkdir -p "$(dirname "$1")" && temporary=$(mktemp "$1.pi-sandbox-XXXXXX") || exit 1',
+  'mkdir -p "$(dirname "$1")" && temporary=$(mktemp "$1.pinata-XXXXXX") || exit 1',
   'cat > "$temporary" && chmod 0644 "$temporary" || { rm -f "$temporary"; exit 1; }',
   '[ ! -d "$1" ] || { rm -f "$temporary"; exit 4; }',
   'mv -f "$temporary" "$1" || { rm -f "$temporary"; exit 1; }',

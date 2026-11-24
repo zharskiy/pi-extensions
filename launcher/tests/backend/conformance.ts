@@ -41,7 +41,7 @@ export interface ConformanceHooks {
 
 const WRONG_DIGEST = `sha256:${"0".repeat(64)}`;
 
-const RUN_LABEL = "pi-sandbox.conformance";
+const RUN_LABEL = "pinata.conformance";
 
 const PIPED_INPUT = "piped input\n";
 
@@ -63,7 +63,7 @@ export const runBackendConformance = (
 ) => {
   const { describe, it, expect, beforeAll, afterAll } = hooks;
   const runId = randomBytes(4).toString("hex");
-  const prefix = `pi-sandbox-conformance-${runId}`;
+  const prefix = `pinata-conformance-${runId}`;
   const volumes = [`${prefix}-a`, `${prefix}-b`, `${prefix}-mounted`, `${prefix}-owned`, `${prefix}-listed`];
   const repos = [randomHash(), randomHash(), randomHash(), randomHash(), randomHash()];
   const state: { target?: ConformanceTarget } = {};
@@ -84,7 +84,7 @@ export const runBackendConformance = (
     labels: { [RUN_LABEL]: runId, ...labels },
     mounts: [{ kind: "volume", source: `${prefix}-mounted`, target: "/data", readOnly: false }],
     network: { kind: "none" },
-    env: { PI_SANDBOX_CONFORMANCE: "1" },
+    env: { PINATA_CONFORMANCE: "1" },
     workdir: "/",
     readOnlyRoot: true,
     tmpfs: ["/tmp"],
@@ -131,7 +131,7 @@ export const runBackendConformance = (
     return backend().prepareRelay({
       hostPort,
       imageId: target().relayImage ?? target().runnableImage,
-      preamble: "PI-SANDBOX t0k3n",
+      preamble: "PINATA t0k3n",
     });
   };
 
@@ -201,26 +201,26 @@ export const runBackendConformance = (
     });
 
     it("finds a created container by all of its labels", async () => {
-      const created = await backend().createContainer(specFor("find", { "pi-sandbox.repo-hash": "find" }));
+      const created = await backend().createContainer(specFor("find", { "pinata.repo-hash": "find" }));
 
-      const found = await backend().findContainers({ [RUN_LABEL]: runId, "pi-sandbox.repo-hash": "find" });
+      const found = await backend().findContainers({ [RUN_LABEL]: runId, "pinata.repo-hash": "find" });
       const unrelated = await backend().findContainers({
         [RUN_LABEL]: runId,
-        "pi-sandbox.repo-hash": "other",
+        "pinata.repo-hash": "other",
       });
 
       expect(found.map((container) => container.id)).toEqual([created.id]);
-      expect(found[0]).toMatchObject({ name: `${prefix}-find`, labels: { "pi-sandbox.repo-hash": "find" } });
+      expect(found[0]).toMatchObject({ name: `${prefix}-find`, labels: { "pinata.repo-hash": "find" } });
       expect(unrelated).toEqual([]);
 
       await backend().removeContainer(created.id);
     });
 
     it("refuses a duplicate name and recreates under the same name after removal", async () => {
-      const old = await backend().createContainer(specFor("recreate", { "pi-sandbox.config-hash": "old" }));
+      const old = await backend().createContainer(specFor("recreate", { "pinata.config-hash": "old" }));
 
       await expect(
-        backend().createContainer(specFor("recreate", { "pi-sandbox.config-hash": "new" })),
+        backend().createContainer(specFor("recreate", { "pinata.config-hash": "new" })),
       ).rejects.toBeInstanceOf(LauncherError);
 
       await backend().startContainer(old.id);
@@ -230,14 +230,12 @@ export const runBackendConformance = (
       await backend().removeContainer(old.id);
 
       const replacement = await backend().createContainer(
-        specFor("recreate", { "pi-sandbox.config-hash": "new" }),
+        specFor("recreate", { "pinata.config-hash": "new" }),
       );
 
-      expect(await backend().findContainers({ [RUN_LABEL]: runId, "pi-sandbox.config-hash": "old" })).toEqual(
-        [],
-      );
+      expect(await backend().findContainers({ [RUN_LABEL]: runId, "pinata.config-hash": "old" })).toEqual([]);
       expect(
-        (await backend().findContainers({ [RUN_LABEL]: runId, "pi-sandbox.config-hash": "new" })).map(
+        (await backend().findContainers({ [RUN_LABEL]: runId, "pinata.config-hash": "new" })).map(
           (container) => container.id,
         ),
       ).toEqual([replacement.id]);
@@ -465,7 +463,7 @@ export const runBackendConformance = (
         const unmanaged = routeFor();
 
         await expect(unmanaged).rejects.toBeInstanceOf(LauncherError);
-        await expect(unmanaged).rejects.toThrow("exists but is not managed by pi-sandbox");
+        await expect(unmanaged).rejects.toThrow("exists but is not managed by pinata");
 
         await networks().remove(ownNetwork());
       });

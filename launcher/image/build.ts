@@ -36,7 +36,7 @@ const VERSION_PATTERN = /^[0-9A-Za-z][0-9A-Za-z.+-]*$/;
 
 const PI_PACKAGE = "@earendil-works/pi-coding-agent";
 
-export const BASE_TAG = "pi-sandbox-base:local";
+export const BASE_TAG = "pinata-base:local";
 
 const DOCKERFILE = "Dockerfile";
 

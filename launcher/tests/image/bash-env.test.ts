@@ -10,10 +10,10 @@ import { tempDir } from "../support/temp-dir.ts";
 const BASH_ENV_FILE = join(launcherRoot(), "image", "bash-env.sh");
 
 const HINT =
-  "bash: pi-sandbox-missing-tool: command not found\npi-sandbox: pi-sandbox-missing-tool is not in the sandbox image; add its Debian package to image.packages or its npm package to image.npmGlobal in pi-sandbox/config.json under pi's agent dir on the host (~/.pi/agent unless PI_CODING_AGENT_DIR is set)\n";
+  "bash: pinata-missing-tool: command not found\npinata: pinata-missing-tool is not in the sandbox image; add its Debian package to image.packages or its npm package to image.npmGlobal in pinata/config.json under pi's agent dir on the host (~/.pi/agent unless PI_CODING_AGENT_DIR is set)\n";
 
 const rootHint = (name: string) =>
-  `bash: ${name}: command not found\npi-sandbox: there is no root in the sandbox, so ${name} cannot help; Debian packages go in image.packages in pi-sandbox/config.json under pi's agent dir on the host and are installed as root when the image is built, and a server the agent needs runs in a container of its own listed under services (see "Services" in the launcher's CONFIGURATION.md)\n`;
+  `bash: ${name}: command not found\npinata: there is no root in the sandbox, so ${name} cannot help; Debian packages go in image.packages in pinata/config.json under pi's agent dir on the host and are installed as root when the image is built, and a server the agent needs runs in a container of its own listed under services (see "Services" in pinata's CONFIGURATION.md)\n`;
 
 const bashVersion = spawnSync("bash", ["--version"], { encoding: "utf8" }).stdout ?? "";
 
@@ -26,7 +26,7 @@ const loadUserConfig = async (value: unknown) => {
   await writeFile(userConfig, JSON.stringify(value));
 
   return loadEffectiveConfig({
-    env: { PI_SANDBOX_USER_CONFIG: userConfig },
+    env: { PINATA_USER_CONFIG: userConfig },
   });
 };
 
@@ -55,7 +55,7 @@ describe("the missing-command hint", () => {
   it.skipIf(!(bashMajor >= 4))(
     "names the command and the config keys on stderr and exits 127 under bash -c",
     async () => {
-      const result = shellTool(`. '${BASH_ENV_FILE}'; pi-sandbox-missing-tool --version`, {
+      const result = shellTool(`. '${BASH_ENV_FILE}'; pinata-missing-tool --version`, {
         HOME: await emptyHome(),
       });
 
@@ -66,10 +66,9 @@ describe("the missing-command hint", () => {
   );
 
   it.skipIf(!(bashMajor >= 4))("gives the same hint when the script is sourced twice", async () => {
-    const result = shellTool(
-      `. '${BASH_ENV_FILE}'; . '${BASH_ENV_FILE}'; pi-sandbox-missing-tool --version`,
-      { HOME: await emptyHome() },
-    );
+    const result = shellTool(`. '${BASH_ENV_FILE}'; . '${BASH_ENV_FILE}'; pinata-missing-tool --version`, {
+      HOME: await emptyHome(),
+    });
 
     expect(result.stderr).toBe(HINT);
     expect(result.stdout).toBe("");
@@ -79,15 +78,15 @@ describe("the missing-command hint", () => {
   it.skipIf(!(bashMajor >= 4))(
     "is skipped through BASH_ENV alone by a socket-stdin bash -c without SHLVL",
     async () => {
-      const result = shellTool("pi-sandbox-missing-tool --version", { HOME: await emptyHome() });
+      const result = shellTool("pinata-missing-tool --version", { HOME: await emptyHome() });
 
-      expect(result.stderr).not.toContain("pi-sandbox:");
+      expect(result.stderr).not.toContain("pinata:");
       expect(result.status).toBe(127);
     },
   );
 
   it.skipIf(!(bashMajor >= 4))("is read through BASH_ENV once SHLVL is set", async () => {
-    const result = shellTool("pi-sandbox-missing-tool --version", { HOME: await emptyHome(), SHLVL: "1" });
+    const result = shellTool("pinata-missing-tool --version", { HOME: await emptyHome(), SHLVL: "1" });
 
     expect(result.stderr).toBe(HINT);
     expect(result.status).toBe(127);
@@ -96,7 +95,7 @@ describe("the missing-command hint", () => {
   it.skipIf(!(bashMajor >= 4))(
     "reaches a socket-stdin bash -c without SHLVL through a bashrc that sources the script",
     async () => {
-      const result = shellTool("pi-sandbox-missing-tool --version", { HOME: await bashrcHome() });
+      const result = shellTool("pinata-missing-tool --version", { HOME: await bashrcHome() });
 
       expect(result.stderr).toBe(HINT);
       expect(result.stdout).toBe("");
@@ -126,10 +125,10 @@ describe("the missing-command hint", () => {
   });
 });
 
-describe("BASH_ENV is set by the launcher's image", () => {
+describe("BASH_ENV is set by pinata's image", () => {
   it("is refused in env.allow", async () => {
     await expect(loadUserConfig({ env: { allow: ["EDITOR", "BASH_ENV"] } })).rejects.toThrow(
-      "config: env.allow[1] BASH_ENV is set by the launcher and is not forwarded",
+      "config: env.allow[1] BASH_ENV is set by pinata and is not forwarded",
     );
   });
 

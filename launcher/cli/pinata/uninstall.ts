@@ -1,68 +1,128 @@
 import { rm, rmdir } from "node:fs/promises";
 import { join, relative } from "node:path";
-import { ENGINE_PROFILE } from "../../backend/index.ts";
+import { busyText, ENGINE_PROFILE } from "../../backend/index.ts";
 import {
-  errorMessage,
   LauncherError,
   lstatOrUndefined,
   realOrResolved,
   stateLayout,
+  withDirectoryLock,
 } from "../../shared/index.ts";
-import { releaseSandbox } from "../commands/uninstall.ts";
-import { type CliDeps, hostAgentDirOf, pathsOf, writeLines } from "../deps.ts";
-import { intercept } from "../intercept.ts";
-import { PI_PACKAGE } from "../versions.ts";
-import { interactive, PACKAGE, piSources, refuseBusy, say } from "./host.ts";
+import { type CliDeps, hostAgentDirOf, pathsOf } from "../deps.ts";
+import { removeGround } from "../ground.ts";
+import { resolveJobPi } from "../host-pi.ts";
+import { releaseRepos, withInstallReleased } from "../release.ts";
+import { runQuietly, type Steps, stepsOf, tilde } from "../steps.ts";
+import { hostPiQuietly, PACKAGE, piSources, refuseBusy } from "./host.ts";
 import { setPathBlock } from "./path-block.ts";
-import { removeShim } from "./shim.ts";
+import { removePinataLink, removeShim } from "./shim.ts";
 
-const release = async (deps: CliDeps) => {
-  if ((await lstatOrUndefined(pathsOf(deps).stateDir)) === undefined) {
-    return;
-  }
+export const releaseSandbox = async (
+  deps: CliDeps,
+  note: (line: string) => void,
+  teardown: () => Promise<void>,
+) => {
+  const { stateDir } = pathsOf(deps);
+  const released = await releaseRepos(deps, stateDir);
 
-  await releaseSandbox(deps).catch((error: unknown) => {
-    throw error instanceof LauncherError && error.hint !== undefined
-      ? error
-      : new LauncherError(
-          errorMessage(error),
-          `colima delete --profile ${ENGINE_PROFILE} --force --data removes the VM with everything in it, then run pinata uninstall again`,
-        );
+  released
+    .filter((repo) => repo.busy)
+    .forEach((repo) => {
+      note(`A pi session of ${repo.repoHash.slice(0, 12)} started meanwhile; its sandbox stays`);
+    });
+
+  const busy = await withInstallReleased(deps, stateDir, async () => {
+    await removeGround(deps, stateDir, undefined);
+
+    await teardown();
   });
+
+  if (busy !== undefined) {
+    throw new LauncherError(
+      `a pi session started in the sandbox VM meanwhile (${busyText(busy)}), so the sandbox network, proxy, services, volumes and images were kept`,
+      "exit it, then run this again",
+    );
+  }
 };
+
+const SANDBOX = {
+  pending: "Removing the sandbox VM and its data",
+  failed: "Could not remove the sandbox VM",
+};
+
+const VM_LOCK_TIMEOUT_MS = 180_000;
 
 const deleteVm = async (deps: CliDeps) => {
-  if ((await deps.backend().vm.inspect()).state === "absent") {
-    return;
-  }
+  const env = { COLIMA_HOME: join(deps.home, ".colima") };
 
-  await interactive(deps, "colima", ["delete", "--profile", ENGINE_PROFILE, "--force", "--data"], {
-    COLIMA_HOME: join(deps.home, ".colima"),
-  });
-
-  say(deps, `colima: deleted the ${ENGINE_PROFILE} VM with its containers, volumes and images`);
+  await runQuietly(deps, ["colima", "delete", "--profile", ENGINE_PROFILE, "--force", "--data"], { env });
 };
 
-const removeExtensions = async (deps: CliDeps, packageDir: string) => {
+export const removeSandbox = async (
+  deps: CliDeps,
+  steps: Steps,
+  forget: () => Promise<void> = async () => undefined,
+) => {
+  const present = (await deps.backend().vm.inspect()).state !== "absent";
+  const stateKept = (await lstatOrUndefined(pathsOf(deps).stateDir)) !== undefined;
+
+  const teardown = () => (present ? deleteVm(deps) : Promise.resolve());
+
+  const released = () =>
+    releaseSandbox(deps, steps.note, async () => {
+      await withDirectoryLock(stateLayout(pathsOf(deps).stateDir).vmLock, teardown, {
+        timeoutMs: VM_LOCK_TIMEOUT_MS,
+      });
+
+      await forget();
+    });
+
+  await steps.task({ ...SANDBOX, done: present ? "Removed the sandbox VM and its data" : undefined }, () =>
+    stateKept ? released() : teardown(),
+  );
+};
+
+const EXTENSIONS = {
+  pending: "Removing pinata's extensions from pi",
+  done: "Removed pinata's extensions from pi",
+  failed: "Could not remove pinata's extensions from pi",
+};
+
+const removeExtensions = async (deps: CliDeps, steps: Steps, packageDir: string) => {
   const own = (await piSources(deps)).filter(
     (source) => source === packageDir || source === `npm:${PACKAGE}` || source.startsWith(`npm:${PACKAGE}@`),
   );
 
-  await own.reduce(async (previous, source) => {
-    await previous;
+  if (own.length === 0) {
+    return;
+  }
 
-    if ((await intercept(["remove", source], deps)) !== 0) {
-      throw new LauncherError(`pi remove ${source} failed`);
-    }
+  if ((await resolveJobPi(deps)) === undefined) {
+    const settings = tilde(deps, join(hostAgentDirOf(deps), "settings.json"));
 
-    say(deps, `pi: removed ${source}`);
-  }, Promise.resolve());
+    steps.warn(`pi is not installed, so pinata's extensions stay listed in pi's settings (${settings})`);
+
+    return;
+  }
+
+  await steps.task(EXTENSIONS, () =>
+    own.reduce(
+      (previous, source) => previous.then(() => hostPiQuietly(deps, ["remove", source])),
+      Promise.resolve(),
+    ),
+  );
 };
 
-const removeState = async (deps: CliDeps) => {
+const COMMAND = {
+  pending: "Removing the pinata command",
+  done: "Removed the pinata command",
+  failed: "Could not remove the pinata command",
+};
+
+const removeState = async (deps: CliDeps, steps: Steps) => {
   const { stateDir, userConfigFile } = pathsOf(deps);
   const info = await lstatOrUndefined(stateDir);
-  const launcherDir = join(hostAgentDirOf(deps), "pi-sandbox");
+  const launcherDir = join(hostAgentDirOf(deps), "pinata");
 
   if (info === undefined) {
     return;
@@ -77,7 +137,7 @@ const removeState = async (deps: CliDeps) => {
 
   if (holds || info.isSymbolicLink() || !marked) {
     throw new LauncherError(
-      `${stateDir} does not look like the launcher's state, left as it is`,
+      `${stateDir} does not look like pinata's state, left as it is`,
       "remove it by hand",
     );
   }
@@ -86,32 +146,43 @@ const removeState = async (deps: CliDeps) => {
 
   await rmdir(launcherDir).catch(() => undefined);
 
-  say(deps, `state: removed ${stateDir}`);
+  steps.done("Removed pinata's state");
 };
 
-export const uninstall = async (deps: CliDeps, packageDir: string) => {
+export const uninstall = async (deps: CliDeps, packageDir: string, sandboxOnly: boolean) => {
+  const steps = stepsOf(deps);
+
   await refuseBusy(deps);
 
-  await release(deps);
+  await removeSandbox(deps, steps);
 
-  await deleteVm(deps);
+  await removeShim(deps, steps);
 
-  await removeShim(deps);
+  if (sandboxOnly) {
+    await removeState(deps, steps);
 
-  await removeExtensions(deps, packageDir);
+    steps.close("The sandbox is uninstalled.", [["Bring back", "pinata install"]]);
 
-  await setPathBlock(deps, false);
+    return 0;
+  }
 
-  await removeState(deps);
+  await removePinataLink(deps, steps);
 
-  writeLines(deps.stdout, [
-    `kept: ${pathsOf(deps).userConfigFile}, pi's sessions in ${join(hostAgentDirOf(deps), "sessions")}, pi and colima`,
-    `kept: remove pi with npm uninstall -g ${PI_PACKAGE} (a managed pi with pi's installer), colima with brew uninstall colima`,
-  ]);
+  await removeExtensions(deps, steps, packageDir);
+
+  await setPathBlock(deps, steps, false);
+
+  await removeState(deps, steps);
 
   if ((await lstatOrUndefined(join(packageDir, ".git"))) === undefined) {
-    await interactive(deps, "npm", ["uninstall", "-g", PACKAGE]);
+    await steps.task(COMMAND, () => runQuietly(deps, ["npm", "uninstall", "-g", PACKAGE]));
   }
+
+  steps.close("Pinata is uninstalled. Kept on purpose:", [
+    ["Settings", tilde(deps, pathsOf(deps).userConfigFile)],
+    ["pi sessions", tilde(deps, join(hostAgentDirOf(deps), "sessions"))],
+    ["pi, colima", "remove them yourself if you no longer need them"],
+  ]);
 
   return 0;
 };

@@ -79,7 +79,7 @@ describe("the folder tags", () => {
     expect(folderTag(candidateOf({ origin: "config", exists: false }), all, false)).toBe(
       "current · missing, not shared until it exists",
     );
-    expect(folderTag(candidateOf({ origin: "env" }), all, false)).toBe("from PI_SANDBOX_ROOT");
+    expect(folderTag(candidateOf({ origin: "env" }), all, false)).toBe("from PINATA_ROOT");
   });
 
   it("summarises the root, escaping it, and no root as none", () => {
@@ -142,7 +142,7 @@ describe("the hub", () => {
 
     expect(applyLines(plan, FACTS, SHAPE, 76, false)).toEqual([
       "When you apply:",
-      "  • change ~/.pi/agent/pi-sandbox/config.json",
+      "  • change ~/.pi/agent/pinata/config.json",
       '      ~ image.packages   ["ripgrep","imagemagick"]',
       '                         → ["ripgrep","imagemagick","postgresql-client"]',
       "      - vm.cpus          6   (back to automatic: 8)",
@@ -156,7 +156,7 @@ describe("the hub", () => {
 
     expect(applyLines(plan, FACTS, SHAPE, 76, true)).toEqual([
       "When you apply:",
-      "  - change ~/.pi/agent/pi-sandbox/config.json",
+      "  - change ~/.pi/agent/pinata/config.json",
       '      added workspaceRoot: "~/a"',
     ]);
   });
@@ -166,7 +166,7 @@ describe("the hub", () => {
 
     expect(applyLines(plan, FACTS, { existed: false, indent: "\t" }, 76, false).slice(0, 2)).toEqual([
       "When you apply:",
-      "  • create ~/.pi/agent/pi-sandbox/config.json (applies from the next pi)",
+      "  • create ~/.pi/agent/pinata/config.json (applies from the next pi)",
     ]);
   });
 
@@ -185,9 +185,9 @@ describe("the hub", () => {
       "restart the sandbox VM with the new size and folders; no pi session is running, and this usually takes under a minute",
       "keep the sandbox VM as it is for now: 2 pi sessions are running. The first pi you start after they all exit restarts it with the new folders",
       "keep the sandbox VM as it is for now: 1 pi session is running. The first pi you start after it exits restarts it with the new size",
-      "create the sandbox VM with this folder, pi's sessions folder and the launcher's read-only state/vm folder; this takes a minute or two, longer the first time while colima downloads the VM's system image",
+      "create the sandbox VM with this folder, pi's sessions folder and pinata's read-only state/vm folder; this takes a minute or two, longer the first time while colima downloads the VM's system image",
       "the sandbox VM is stopped; the next pi starts it with the new size",
-      "the sandbox VM could not be checked (colima status failed); run pi sandbox doctor after applying",
+      "the sandbox VM could not be checked (colima status failed); run pinata doctor after applying",
       undefined,
     ]);
   });

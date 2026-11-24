@@ -10,10 +10,9 @@ import {
 } from "../shared/index.ts";
 import { cleanupWaiting } from "./ground.ts";
 
-export const PREPARE_WAITING =
-  "pi-sandbox: waiting for another pi session of this folder to finish preparing";
+export const PREPARE_WAITING = "pinata: waiting for another pi session of this folder to finish preparing";
 
-const AGENT_WAITING = "pi-sandbox: waiting for another pi session to finish with the shared pi folder";
+const AGENT_WAITING = "pinata: waiting for another pi session to finish with the shared pi folder";
 
 interface AgentLock {
   stateDir: string;
@@ -65,7 +64,7 @@ export const whenLastOfRepo = <T>(lock: PrepareLock, action: () => Promise<T>) =
 const shown = (command: string[]) => printable(command.join(" "));
 
 const runCommand = async (run: SetupRun, command: string[]) => {
-  run.progress(`pi-sandbox: setup: ${shown(command)}`);
+  run.progress(`pinata: setup: ${shown(command)}`);
 
   const code = await run.backend.exec(
     { containerId: run.containerId, command, env: run.env, workdir: run.workdir },

@@ -10,7 +10,7 @@ afterEach(async () => {
 });
 
 export const tempDir = async (prefix: string) => {
-  const dir = await mkdtemp(join(tmpdir(), `pi-sandbox-${prefix}-`));
+  const dir = await mkdtemp(join(tmpdir(), `pinata-${prefix}-`));
 
   created.push(dir);
 

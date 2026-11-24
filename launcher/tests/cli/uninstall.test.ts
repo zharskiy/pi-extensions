@@ -1,79 +1,66 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { LABELS, networkName } from "../../backend/index.ts";
-import { releaseSandbox } from "../../cli/commands/uninstall.ts";
-import { sha256Hex, stateLayout } from "../../shared/index.ts";
-import { FAKE_NETWORK, FAKE_RELAY } from "../support/fake-backend.ts";
-import { exists, tempDir } from "../support/temp-dir.ts";
+import { LABELS } from "../../backend/index.ts";
+import { releaseSandbox } from "../../cli/pinata/uninstall.ts";
+import { sha256Hex, stateLayout, withFileLock } from "../../shared/index.ts";
+import { exists } from "../support/temp-dir.ts";
 import { createFakeBackend, createHarness, holdLaunch, unreachable } from "./harness.ts";
 
-describe("releaseSandbox", () => {
-  it("refuses while a launch is live and removes nothing", async () => {
-    const fake = createFakeBackend();
-    const harness = await createHarness({ backend: () => fake.backend });
-    const id = fake.addContainer({
-      name: "live",
-      labels: { [LABELS.managed]: "true", [LABELS.role]: "agent" },
-      state: "running",
-      image: "x",
-    });
+const tracked = () => {
+  const runs = { count: 0 };
 
-    await holdLaunch(harness);
+  const teardown = async () => {
+    runs.count += 1;
+  };
 
-    await expect(releaseSandbox(harness.deps)).rejects.toThrow("1 pi session is running in the sandbox VM");
-    expect(fake.containers.has(id)).toBe(true);
+  return { runs, teardown };
+};
+
+const otherSession = (fake: ReturnType<typeof createFakeBackend>) =>
+  fake.addContainer({
+    name: "pinata-other",
+    labels: { [LABELS.managed]: "true", [LABELS.install]: "otherinstall", [LABELS.role]: "agent" },
+    state: "running",
+    image: "x",
   });
 
-  it("removes the managed containers, networks, volumes and images by label, leaves another install's, and releases every folder", async () => {
+describe("releaseSandbox", () => {
+  it("releases every folder, stops the proxy and tears down, leaving the engine objects to the VM delete", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
-    const repo = sha256Hex(harness.repoRoot);
-    const context = await tempDir("uninstall-images");
-
-    await fake.backend.prepareRelay({ hostPort: 3128, imageId: "relay", preamble: "PI-SANDBOX test" });
-
-    const managed = fake.addContainer({
-      name: "pi-sandbox-a",
+    const { runs, teardown } = tracked();
+    const repo = "c".repeat(64);
+    const mountPoint = join(harness.root, "elsewhere", "node_modules");
+    const container = fake.addContainer({
+      name: "pinata-a",
       labels: { [LABELS.managed]: "true", [LABELS.role]: "agent", [LABELS.repoHash]: repo },
-      state: "running",
-      image: "x",
-    });
-    const foreign = fake.addContainer({ name: "foreign", labels: {}, state: "running", image: "x" });
-    const other = fake.backendFor("otherinstall");
-    const othersContainer = fake.addContainer({
-      name: "pi-sandbox-other",
-      labels: { [LABELS.managed]: "true", [LABELS.install]: "otherinstall", [LABELS.role]: "agent" },
       state: "stopped",
       image: "x",
     });
 
-    await other.prepareNetwork();
+    await mkdir(mountPoint, { recursive: true });
 
-    await other.ensureVolume("pi-sandbox-agent-other");
+    await harness.writeJson(stateLayout(harness.stateDir).repo(repo).created, [mountPoint]);
 
-    await fake.backend.ensureVolume("pi-sandbox-agent-a", { [LABELS.repoHash]: repo });
-
-    const built = await fake.backend.buildImage(context, "pi-sandbox-layer:a");
-
-    await harness.writeJson(stateLayout(harness.stateDir).repo(repo).record, { root: harness.repoRoot });
-
-    await releaseSandbox(harness.deps);
-    expect(fake.containers.has(managed)).toBe(false);
-    expect(fake.containers.has(foreign)).toBe(true);
-    expect(fake.containers.has(othersContainer)).toBe(true);
-    expect(fake.relays.size).toBe(0);
-    expect(fake.networks.has(FAKE_NETWORK)).toBe(false);
-    expect(fake.networks.has(networkName("otherinstall"))).toBe(true);
-    expect(fake.volumes.has("pi-sandbox-agent-a")).toBe(false);
-    expect(fake.volumes.has("pi-sandbox-agent-other")).toBe(true);
-    expect(fake.imageRemovals).toContain(built.id);
+    await releaseSandbox(harness.deps, () => undefined, teardown);
+    expect(await exists(mountPoint)).toBe(false);
     expect(harness.proxyStops()).toBe(1);
-    expect(harness.stdout()).toContain(`install: removed relay ${FAKE_RELAY}\n`);
-    expect(harness.stdout()).toContain("host: released the created folders of 1 folder\n");
+    expect(runs.count).toBe(1);
+    expect(fake.containers.has(container)).toBe(true);
+    expect(harness.stdout()).toBe("");
   });
 
-  it("keeps the sandbox, the ground and the stored objects when a pi session starts while the uninstall runs", async () => {
+  it("tears down when the VM is stopped", async () => {
+    const harness = await createHarness({ backend: () => unreachable(createFakeBackend().backend) });
+    const { runs, teardown } = tracked();
+
+    await releaseSandbox(harness.deps, () => undefined, teardown);
+    expect(runs.count).toBe(1);
+    expect(harness.proxyStops()).toBe(1);
+  });
+
+  it("keeps the sandbox when a pi session starts while it runs", async () => {
     const fake = createFakeBackend();
     const detections = { count: 0 };
     const harness = await createHarness({
@@ -82,98 +69,64 @@ describe("releaseSandbox", () => {
         detect: async () => {
           detections.count += 1;
 
-          if (detections.count === 2) {
-            await holdLaunch(harness);
+          if (detections.count === 1) {
+            otherSession(fake);
           }
 
           return { available: true };
         },
       }),
     });
+    const { runs, teardown } = tracked();
     const repo = sha256Hex(harness.repoRoot);
+    const notes: string[] = [];
 
-    await fake.backend.prepareRelay({ hostPort: 3128, imageId: "relay", preamble: "PI-SANDBOX test" });
+    await harness.writeJson(stateLayout(harness.stateDir).repo(repo).record, { root: harness.repoRoot });
 
-    const starting = fake.addContainer({
-      name: "pi-sandbox-starting",
-      labels: { [LABELS.managed]: "true", [LABELS.role]: "agent", [LABELS.repoHash]: repo },
-      state: "running",
-      image: "x",
-    });
-
-    await fake.backend.ensureVolume("pi-sandbox-agent-a", { [LABELS.repoHash]: repo });
-
-    await expect(releaseSandbox(harness.deps)).rejects.toThrow(
-      "the sandbox network, proxy, services, volumes and images were kept",
+    const release = withFileLock(stateLayout(harness.stateDir).repo(repo).prepareLock, () =>
+      releaseSandbox(harness.deps, (line) => notes.push(line), teardown),
     );
-    expect(fake.containers.has(starting)).toBe(true);
-    expect(fake.relays.size).toBe(1);
-    expect(fake.networks.has(FAKE_NETWORK)).toBe(true);
-    expect(fake.volumes.has("pi-sandbox-agent-a")).toBe(true);
+
+    await expect(release).rejects.toThrow(
+      "a pi session started in the sandbox VM meanwhile (1 pi session is running",
+    );
+    expect(runs.count).toBe(0);
     expect(harness.proxyStops()).toBe(0);
-    expect(harness.stdout()).toContain(
-      `host: a pi session of ${repo.slice(0, 12)} started meanwhile; its sandbox stays\n`,
-    );
+    expect(notes).toEqual([`A pi session of ${repo.slice(0, 12)} started meanwhile; its sandbox stays`]);
   });
 
-  it("holds a pi session that registers during the removal of the install objects until the removal ends", async () => {
-    const fake = createFakeBackend();
+  it("holds a pi session that registers during the teardown until the teardown ends", async () => {
+    const harness = await createHarness({ backend: () => createFakeBackend().backend });
     const order: string[] = [];
     const registering = { done: Promise.resolve() };
-    const harness = await createHarness({
-      backend: () => ({
-        ...fake.backend,
-        removeVolume: async (name) => {
-          registering.done = holdLaunch(harness).then(() => {
-            order.push("registered");
-          });
 
-          await new Promise((resolve) => setTimeout(resolve, 100));
+    const teardown = async () => {
+      registering.done = holdLaunch(harness).then(() => {
+        order.push("registered");
+      });
 
-          order.push("removed");
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
-          return fake.backend.removeVolume(name);
-        },
-      }),
-    });
+      order.push("removed");
+    };
 
-    await fake.backend.ensureVolume("pi-sandbox-cache-a");
-
-    await releaseSandbox(harness.deps);
+    await releaseSandbox(harness.deps, () => undefined, teardown);
 
     await registering.done;
 
     expect(order).toEqual(["removed", "registered"]);
-    expect(fake.volumes.has("pi-sandbox-cache-a")).toBe(false);
   });
 
-  it("releases the host side and leaves the engine objects to the profile when the VM is stopped", async () => {
-    const harness = await createHarness({ backend: () => unreachable(createFakeBackend().backend) });
-    const repo = "c".repeat(64);
-    const mountPoint = join(harness.root, "elsewhere", "node_modules");
-
-    await mkdir(mountPoint, { recursive: true });
-
-    await harness.writeJson(stateLayout(harness.stateDir).repo(repo).created, [mountPoint]);
-
-    await releaseSandbox(harness.deps);
-    expect(await exists(mountPoint)).toBe(false);
-    expect(harness.proxyStops()).toBe(1);
-    expect(harness.stdout()).toContain(
-      "engine: the sandbox VM is not running, its objects go with the colima profile\n",
-    );
-  });
-
-  it("stops the proxy when listing the engine's containers fails", async () => {
-    const fake = createFakeBackend();
+  it("does not tear down when stopping the proxy fails", async () => {
     const harness = await createHarness({
-      backend: () => ({
-        ...fake.backend,
-        findContainers: () => Promise.reject(new Error("engine broke")),
-      }),
+      backend: () => createFakeBackend().backend,
+      proxy: { stop: () => Promise.reject(new Error("proxy would not stop")) },
     });
+    const { runs, teardown } = tracked();
 
-    await expect(releaseSandbox(harness.deps)).rejects.toThrow("engine broke");
-    expect(harness.proxyStops()).toBe(1);
+    await expect(releaseSandbox(harness.deps, () => undefined, teardown)).rejects.toThrow(
+      "proxy would not stop",
+    );
+    expect(runs.count).toBe(0);
   });
 });

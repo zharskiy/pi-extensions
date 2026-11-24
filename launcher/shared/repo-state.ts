@@ -138,10 +138,5 @@ export const recordCreatedDirs = (stateDir: string, repoHash: string, dirs: stri
 export const hasRepoLeftovers = (stateDir: string, repoHash: string) =>
   exists(filesOf(stateDir, repoHash).created);
 
-export const forgetRepo = async (stateDir: string, repoHash: string) => {
-  const files = filesOf(stateDir, repoHash);
-
-  await rm(files.legacy.render, { recursive: true, force: true });
-
-  await rm(files.directory, { recursive: true, force: true });
-};
+export const forgetRepo = (stateDir: string, repoHash: string) =>
+  rm(filesOf(stateDir, repoHash).directory, { recursive: true, force: true });

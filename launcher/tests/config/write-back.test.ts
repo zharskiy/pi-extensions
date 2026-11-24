@@ -71,7 +71,7 @@ describe("the writeBack key", () => {
     );
   });
 
-  it("names the source of each key for pi sandbox config", () => {
+  it("names the source of each key for pinata config", () => {
     const { config, sources } = mergeConfig(defaultConfig(), {
       writeBack: { add: { "settings.json": { theme: { type: "fileName" } } } },
     });
@@ -104,7 +104,7 @@ describe("the writeBack ceiling", () => {
     "pi-foo.yaml",
     "../pi-foo.json",
     "sub/pi-foo.json",
-    "pi-sandbox/config.json",
+    "pinata/config.json",
   ])("refuses the file name %s", (file) => {
     expect(added(file, "x", { type: "json" })).toBe(
       `config: writeBack.add[${JSON.stringify(file)}] must be settings.json or a pi-<name>.json file of lowercase letters, digits and dashes`,

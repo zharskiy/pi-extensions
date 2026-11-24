@@ -42,7 +42,7 @@ describe("mounts.volumes", () => {
         "/etc/app/conf.d",
         "/libexec",
         "/tmp/x",
-        "/tmp/pi-sandbox-readyx",
+        "/tmp/pinata-readyx",
         { target: "~/.gradle" },
         { target: "/srv/cache", name: "shared-cache" },
       ]),
@@ -78,11 +78,8 @@ describe("mounts.volumes", () => {
     ["/run/x", "config: mounts.volumes[0] /run/x overlaps /run, which the sandbox needs"],
     ["/var", "config: mounts.volumes[0] /var overlaps /var/run, which the sandbox needs"],
     ["/var/run/nscd", "config: mounts.volumes[0] /var/run/nscd overlaps /var/run, which the sandbox needs"],
-    ["/opt", "config: mounts.volumes[0] /opt overlaps /opt/pi-sandbox, which the sandbox needs"],
-    [
-      "/opt/pi-sandbox",
-      "config: mounts.volumes[0] /opt/pi-sandbox overlaps /opt/pi-sandbox, which the sandbox needs",
-    ],
+    ["/opt", "config: mounts.volumes[0] /opt overlaps /opt/pinata, which the sandbox needs"],
+    ["/opt/pinata", "config: mounts.volumes[0] /opt/pinata overlaps /opt/pinata, which the sandbox needs"],
     ["/etc", "config: mounts.volumes[0] /etc overlaps /etc/ssl, which the sandbox needs"],
     ["/etc/ssl/certs", "config: mounts.volumes[0] /etc/ssl/certs overlaps /etc/ssl, which the sandbox needs"],
     [
@@ -101,12 +98,12 @@ describe("mounts.volumes", () => {
     ["/home", "config: mounts.volumes[0] /home overlaps /home/pi, which the sandbox needs"],
     ["/tmp", "config: mounts.volumes[0] /tmp overlaps /tmp, which the sandbox needs"],
     [
-      "/tmp/pi-sandbox-handover",
-      "config: mounts.volumes[0] /tmp/pi-sandbox-handover overlaps /tmp/pi-sandbox-handover, which the sandbox needs",
+      "/tmp/pinata-handover",
+      "config: mounts.volumes[0] /tmp/pinata-handover overlaps /tmp/pinata-handover, which the sandbox needs",
     ],
     [
-      "/tmp/pi-sandbox-ready/x",
-      "config: mounts.volumes[0] /tmp/pi-sandbox-ready/x overlaps /tmp/pi-sandbox-ready, which the sandbox needs",
+      "/tmp/pinata-ready/x",
+      "config: mounts.volumes[0] /tmp/pinata-ready/x overlaps /tmp/pinata-ready, which the sandbox needs",
     ],
   ])("refuses the target %s", (target, message) => {
     expect(volumesProblem([target])).toBe(message);
@@ -181,8 +178,8 @@ describe("mounts.binds", () => {
     expect(bindsProblem([{ source: "/data", target: "/etc/ld.so.preload" }])).toBe(
       "config: mounts.binds[0].target /etc/ld.so.preload overlaps /etc/ld.so.preload, which the sandbox needs",
     );
-    expect(bindsProblem([{ source: "/data", target: "/tmp/pi-sandbox-ready" }])).toBe(
-      "config: mounts.binds[0].target /tmp/pi-sandbox-ready overlaps /tmp/pi-sandbox-ready, which the sandbox needs",
+    expect(bindsProblem([{ source: "/data", target: "/tmp/pinata-ready" }])).toBe(
+      "config: mounts.binds[0].target /tmp/pinata-ready overlaps /tmp/pinata-ready, which the sandbox needs",
     );
   });
 

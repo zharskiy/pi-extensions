@@ -291,22 +291,22 @@ describe("answersForYes", () => {
     return factsOf({ home, cwd: home });
   };
 
-  it("takes PI_SANDBOX_ROOT for a file without a root, a relative one from the cwd", async () => {
+  it("takes PINATA_ROOT for a file without a root, a relative one from the cwd", async () => {
     const facts = await setup();
 
-    expect(answersForYes(documentOf(undefined), facts, { PI_SANDBOX_ROOT: "~/a/" })).toEqual({
+    expect(answersForYes(documentOf(undefined), facts, { PINATA_ROOT: "~/a/" })).toEqual({
       root: "~/a",
       vm: "automatic",
       writeBack: true,
     });
-    expect(answersForYes(documentOf({}), facts, { PI_SANDBOX_ROOT: "b" }).root).toBe(join(facts.home, "b"));
+    expect(answersForYes(documentOf({}), facts, { PINATA_ROOT: "b" }).root).toBe(join(facts.home, "b"));
   });
 
-  it("keeps the file's root and vm keys, also when PI_SANDBOX_ROOT names the same folder", async () => {
+  it("keeps the file's root and vm keys, also when PINATA_ROOT names the same folder", async () => {
     const facts = await setup();
     const document = documentOf({ workspaceRoot: "~/b", vm: { cpus: 4 } });
 
-    expect(answersForYes(document, facts, { PI_SANDBOX_ROOT: `${join(facts.home, "b")}/` })).toEqual({
+    expect(answersForYes(document, facts, { PINATA_ROOT: `${join(facts.home, "b")}/` })).toEqual({
       root: "~/b",
       vm: { kept: { cpus: 4 } },
       writeBack: true,
@@ -317,20 +317,20 @@ describe("answersForYes", () => {
   it("refuses another root, a refused root and a root of the wrong shape", async () => {
     const facts = await setup();
 
-    expect(() =>
-      answersForYes(documentOf({ workspaceRoot: "~/a" }), facts, { PI_SANDBOX_ROOT: "~/b" }),
-    ).toThrow("/c/config.json has another workspaceRoot than PI_SANDBOX_ROOT");
-    expect(() => answersForYes(documentOf(undefined), facts, { PI_SANDBOX_ROOT: "~" })).toThrow(
+    expect(() => answersForYes(documentOf({ workspaceRoot: "~/a" }), facts, { PINATA_ROOT: "~/b" })).toThrow(
+      "/c/config.json has another workspaceRoot than PINATA_ROOT",
+    );
+    expect(() => answersForYes(documentOf(undefined), facts, { PINATA_ROOT: "~" })).toThrow(
       "is the home dir or holds it",
     );
     expect(() => answersForYes(documentOf({ workspaceRoot: 1 }), facts, {})).toThrow("config: workspaceRoot");
   });
 
-  it("refuses when neither the file nor PI_SANDBOX_ROOT names a root", async () => {
+  it("refuses when neither the file nor PINATA_ROOT names a root", async () => {
     const facts = await setup();
 
     expect(() => answersForYes(documentOf({}), facts, {})).toThrow(
-      "/c/config.json has no workspaceRoot and PI_SANDBOX_ROOT is not set, so there is no folder to share with the sandbox VM",
+      "/c/config.json has no workspaceRoot and PINATA_ROOT is not set, so there is no folder to share with the sandbox VM",
     );
   });
 });

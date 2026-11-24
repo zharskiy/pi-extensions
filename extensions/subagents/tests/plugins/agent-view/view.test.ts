@@ -17,7 +17,6 @@ import {
   plainLines,
   plainTheme,
   tokenTaggingTheme,
-  usageTotals,
   userLine,
 } from "../../../../../test/framework/index.ts";
 import {
@@ -1073,18 +1072,19 @@ describe("agent view with live agents", () => {
 describe("agent view past sessions", () => {
   type Past = {
     manifests: Record<string, unknown>[];
-    cost?: number;
     sessions?: Record<string, SessionRecord>;
   };
+
+  const STORED_COUNTERS = { chainIndex: 1, turns: 0, toolCalls: 0, tokens: 0, cost: 0 };
 
   const writeManifest = (host: FakeHost, manifest: Record<string, unknown>) => {
     const dir = join(agentsDirFor(host.info), String(manifest.id));
 
     mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, MANIFEST_FILE), JSON.stringify(manifest));
+    writeFileSync(join(dir, MANIFEST_FILE), JSON.stringify({ ...STORED_COUNTERS, ...manifest }));
   };
 
-  const restarted = ({ manifests, cost, sessions = {} }: Past) =>
+  const restarted = ({ manifests, sessions = {} }: Past) =>
     setup([agentRegistryPlugin, agentDefinitionsPlugin, agentStatusPlugin, agentViewPlugin], {
       beforeStart: ({ root, host, runtime }) => {
         manifests.forEach((manifest) => {
@@ -1096,19 +1096,14 @@ describe("agent view past sessions", () => {
             runtime.sessions.set(file, sessions[name] ?? fixture());
           }
 
-          if (file && cost !== undefined) {
-            host.files.set(file, { entries: [], usage: usageTotals(cost) });
-          }
-
           writeManifest(host, file ? { ...manifest, sessionFile: file } : manifest);
         });
       },
     });
 
-  const openFromManifest = async (manifest: Record<string, unknown>, cost?: number) => {
+  const openFromManifest = async (manifest: Record<string, unknown>) => {
     const harness = restarted({
       manifests: [{ description: "old", state: "done", sessionFile: "old.jsonl", ...manifest }],
-      cost,
     });
     const { view } = await harness.openView(String(manifest.id));
 
@@ -1158,14 +1153,7 @@ describe("agent view past sessions", () => {
     expect(lines[2]).toBe(" 1m 5s · 4 calls · 12.3k tokens");
   });
 
-  it("reads the cost of an agent known only from its manifest from its session file", async () => {
-    const manifest = { id: "explorer-paid", agent: "scout", toolCalls: 4, startedAt: 0, endedAt: 65_000 };
-    const lines = await openFromManifest(manifest, 0.04);
-
-    expect(lines[2]).toBe(" 1m 5s · 4 calls · $0.04");
-  });
-
-  it("prefers the cost stored in the manifest", async () => {
+  it("shows the cost stored in the manifest", async () => {
     const manifest = {
       id: "explorer-kept",
       agent: "scout",
@@ -1174,20 +1162,9 @@ describe("agent view past sessions", () => {
       startedAt: 0,
       endedAt: 65_000,
     };
-    const lines = await openFromManifest(manifest, 0.04);
+    const lines = await openFromManifest(manifest);
 
     expect(lines[2]).toBe(" 1m 5s · 4 calls · $0.50");
-  });
-
-  it("shows only the time for a manifest written before counters were stored", async () => {
-    const lines = await openFromManifest({
-      id: "explorer-older",
-      agent: "scout",
-      startedAt: 0,
-      endedAt: 3_000,
-    });
-
-    expect(lines[2]).toBe(" 3s");
   });
 
   const replyLine = (text: string) =>

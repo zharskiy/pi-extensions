@@ -43,7 +43,7 @@ export interface ConfigDocument {
 
 export type DocumentRead =
   | { ok: true; document: ConfigDocument }
-  | { ok: false; kind: "json" | "config"; message: string; hint?: string };
+  | { ok: false; kind: "json" | "config"; message: string };
 
 export interface OwnedProblem {
   key: string;
@@ -120,7 +120,6 @@ interface VmTask {
 
 export interface ApplyFrontEnd {
   now(): number;
-  review(): void;
   report(event: ApplyEvent): void;
   task(spec: VmTask): Promise<VmApplied>;
   retry(failure: VmFailure, error: unknown): Promise<boolean>;

@@ -7,7 +7,7 @@ import type { DenialRecord } from "../../proxy/index.ts";
 import { repoHash, sha256Hex, writeRepoRecord } from "../../shared/index.ts";
 import { expectNoLeak } from "../support/expect-no-leak.ts";
 import { tempDir, writeExecutable, writeText } from "../support/temp-dir.ts";
-import { createFakeBackend, createHarness, isPiSession, noHostPiLine, renderDirOf } from "./harness.ts";
+import { createFakeBackend, createHarness, isPiSession, renderDirOf } from "./harness.ts";
 
 const REAL_KEY = "real-secret-value-1234567890";
 
@@ -34,8 +34,8 @@ describe("pi launch wiring", () => {
     const env = Object.values(container?.spec?.env ?? {});
 
     expect(input?.token).toMatch(/^[0-9a-f]{64}$/);
-    expect(route?.preamble).toBe(`PI-SANDBOX ${input?.token}`);
-    expect(container?.spec?.env.HTTPS_PROXY).toBe("http://pi-sandbox-proxy:3128");
+    expect(route?.preamble).toBe(`PINATA ${input?.token}`);
+    expect(container?.spec?.env.HTTPS_PROXY).toBe("http://pinata-proxy:3128");
     expect(env.filter((value) => value.includes(input?.token ?? "-"))).toEqual([]);
     expect(container?.summary.labels[LABELS.repoHash]).toBe(sha256Hex(harness.repoRoot));
     expect(input).not.toHaveProperty("repoHash");
@@ -46,7 +46,7 @@ describe("pi launch wiring", () => {
   });
 
   it("hands env secrets to the proxy, not to the container", async () => {
-    const fake = createFakeBackend({ registry: { "registry.example.test/pi-sandbox:1": PINNED } });
+    const fake = createFakeBackend({ registry: { "registry.example.test/pinata:1": PINNED } });
     const harness = await createHarness({
       backend: () => fake.backend,
       env: { CORP_TOKEN: REAL_KEY },
@@ -58,12 +58,12 @@ describe("pi launch wiring", () => {
           {
             id: "corp",
             host: "corp.example.test",
-            placeholder: "pi-sandbox-corp",
+            placeholder: "pinata-corp",
             secret: { env: "CORP_TOKEN" },
           },
         ],
       },
-      image: { reference: "registry.example.test/pi-sandbox:1", digest: PINNED },
+      image: { reference: "registry.example.test/pinata:1", digest: PINNED },
     });
 
     expect(await run([], harness.deps)).toBe(0);
@@ -73,14 +73,14 @@ describe("pi launch wiring", () => {
   });
 
   it("hands the env parent proxy's credentials to the proxy input and its address without them", async () => {
-    const fake = createFakeBackend({ registry: { "registry.example.test/pi-sandbox:1": PINNED } });
+    const fake = createFakeBackend({ registry: { "registry.example.test/pinata:1": PINNED } });
     const harness = await createHarness({
       backend: () => fake.backend,
       env: { HTTPS_PROXY: "http://corp:p%40ss@proxy.example.test:8080" },
     });
 
     await harness.writeJson(harness.userConfigFile, {
-      image: { reference: "registry.example.test/pi-sandbox:1", digest: PINNED },
+      image: { reference: "registry.example.test/pinata:1", digest: PINNED },
     });
 
     expect(await run([], harness.deps)).toBe(0);
@@ -105,7 +105,7 @@ describe("pi launch wiring", () => {
     const settings = await readFile(join(renderDirOf(harness), "tools", "m2-settings.xml"), "utf8");
 
     expect(settings).toMatch(
-      /<proxy>[\s\S]*<host>pi-sandbox-proxy<\/host>[\s\S]*<port>3128<\/port>[\s\S]*<\/proxy>/,
+      /<proxy>[\s\S]*<host>pinata-proxy<\/host>[\s\S]*<port>3128<\/port>[\s\S]*<\/proxy>/,
     );
     expect(settings).not.toContain("<password>");
     expect(env).toMatchObject({
@@ -113,7 +113,7 @@ describe("pi launch wiring", () => {
       PIP_CERT: "/etc/ssl/certs/ca-certificates.crt",
     });
     expect(
-      Object.keys(env).filter((name) => name.startsWith("PI_SANDBOX_PROXY") || name === "JAVA_TOOL_OPTIONS"),
+      Object.keys(env).filter((name) => name.startsWith("PINATA_PROXY") || name === "JAVA_TOOL_OPTIONS"),
     ).toEqual([]);
 
     await expectNoLeak(fake, renderDirOf(harness), [REAL_KEY]);
@@ -218,11 +218,11 @@ describe("pi launch wiring", () => {
 
     expect(container?.spec?.mounts).toContainEqual({
       source: renderDir,
-      target: "/opt/pi-sandbox/render",
+      target: "/opt/pinata/render",
       readOnly: true,
       kind: "bind",
     });
-    expect(JSON.parse(rendered).example.key).toMatch(/^pi-sandbox-[0-9a-f]{24}$/);
+    expect(JSON.parse(rendered).example.key).toMatch(/^pinata-[0-9a-f]{24}$/);
 
     await expectNoLeak(fake, renderDir, [REAL_KEY]);
   });
@@ -264,10 +264,10 @@ describe("pi launch wiring", () => {
     await run([], harness.deps);
 
     expect(harness.stderr()).toContain(
-      `pi-sandbox: blocked.example.test was blocked in the sandbox; run pi sandbox egress allow blocked.example.test on the host\n`,
+      `pinata: blocked.example.test was blocked in the sandbox; run pinata egress allow blocked.example.test on the host\n`,
     );
     expect(harness.stderr()).toContain(
-      `pi-sandbox: other.test:8443 was blocked in the sandbox; run pi sandbox egress allow other.test:8443 on the host\n`,
+      `pinata: other.test:8443 was blocked in the sandbox; run pinata egress allow other.test:8443 on the host\n`,
     );
     expect(harness.stderr().match(/blocked\.example\.test was blocked/g)).toHaveLength(1);
   });
@@ -289,7 +289,7 @@ describe("pi launch wiring", () => {
     await run([], harness.deps);
 
     expect(harness.stderr()).toContain(
-      `pi-sandbox: ${record.host} was blocked in the sandbox; ${hint} ${harness.userConfigFile}\n`,
+      `pinata: ${record.host} was blocked in the sandbox; ${hint} ${harness.userConfigFile}\n`,
     );
   });
 
@@ -311,32 +311,32 @@ describe("pi launch wiring", () => {
     [
       "an unavailable credential",
       denial("api.corp.test", 443, "credential", "credential corp is unavailable: token expired"),
-      "pi-sandbox: api.corp.test was blocked in the sandbox; it could not authenticate: credential corp is unavailable: token expired\n",
+      "pinata: api.corp.test was blocked in the sandbox; it could not authenticate: credential corp is unavailable: token expired\n",
     ],
     [
       "a missing or expired host login",
       denial("llm.corp.test", 443, "login", "the corp-llm login on the host is missing or expired"),
-      "pi-sandbox: llm.corp.test was blocked in the sandbox; the corp-llm login on the host is missing or expired; log in again with pi --no-sandbox and /login\n",
+      "pinata: llm.corp.test was blocked in the sandbox; the corp-llm login on the host is missing or expired; log in again with pi --no-sandbox and /login\n",
     ],
     [
       "egress.deny",
       denial("paste.test", 443, "egress.deny", "paste.test is in egress.deny"),
-      "pi-sandbox: paste.test was blocked in the sandbox; denied by egress.deny\n",
+      "pinata: paste.test was blocked in the sandbox; denied by egress.deny\n",
     ],
     [
       "plain HTTP",
       denial("localhost.test", 80, "plain-http", "only HTTPS through CONNECT is proxied"),
-      "pi-sandbox: localhost.test:80 was blocked in the sandbox; plain HTTP is not proxied; use https\n",
+      "pinata: localhost.test:80 was blocked in the sandbox; plain HTTP is not proxied; use https\n",
     ],
     [
       "an upstream failure",
       denial("down.test", 443, "upstream", "connect ECONNREFUSED 203.0.113.9:443"),
-      "pi-sandbox: down.test was blocked in the sandbox; it could not be reached: connect ECONNREFUSED 203.0.113.9:443\n",
+      "pinata: down.test was blocked in the sandbox; it could not be reached: connect ECONNREFUSED 203.0.113.9:443\n",
     ],
     [
       "a TLS name mismatch",
       denial("api.test", 443, "sni", "TLS server name evil.test does not match api.test"),
-      "pi-sandbox: api.test was blocked in the sandbox; TLS server name evil.test does not match api.test\n",
+      "pinata: api.test was blocked in the sandbox; TLS server name evil.test does not match api.test\n",
     ],
   ])("prints its own hint for %s when pi exits", async (_kind, record, line) => {
     const harness = await createHarness({ backend: () => createFakeBackend().backend, denials: [record] });
@@ -349,7 +349,7 @@ describe("pi launch wiring", () => {
 
   it("prints derivation notices on stderr, one line each", async () => {
     const fake = createFakeBackend();
-    const harness = await createHarness({ backend: () => fake.backend, hostPi: false });
+    const harness = await createHarness({ backend: () => fake.backend });
 
     await harness.writeJson(join(harness.hostAgentDir, "mcp.json"), {
       mcpServers: { docs: { url: "https://docs.example.test/mcp" } },
@@ -357,8 +357,7 @@ describe("pi launch wiring", () => {
 
     await run([], harness.deps);
 
-    expect(harness.stderr()).toContain("pi-sandbox: mcp docs: not signed in; run pi mcp login docs\n");
-    expect(harness.stderr()).toContain(`pi-sandbox: ${noHostPiLine(harness.hostAgentDir)}\n`);
+    expect(harness.stderr()).toContain("pinata: mcp docs: not signed in; run pi mcp login docs\n");
   });
 
   it("names a pi argument that lies outside the folders mounted, once", async () => {
@@ -369,7 +368,7 @@ describe("pi launch wiring", () => {
 
     expect(await run(["--append-system-prompt", prompt], harness.deps)).toBe(0);
 
-    const line = `pi-sandbox: --append-system-prompt ${prompt}: ${prompt} lies outside the folders mounted in the sandbox, so pi inside cannot read it\n`;
+    const line = `pinata: --append-system-prompt ${prompt}: ${prompt} lies outside the folders mounted in the sandbox, so pi inside cannot read it\n`;
 
     expect(harness.stderr().split(line).length - 1).toBe(1);
   });

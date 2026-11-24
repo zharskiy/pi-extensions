@@ -16,7 +16,7 @@ interface RelayInspect {
   NetworkSettings?: { Networks?: Record<string, unknown> | null };
 }
 
-export const PROXY_ALIAS = "pi-sandbox-proxy";
+export const PROXY_ALIAS = "pinata-proxy";
 
 export const RELAY_LISTEN_PORT = 3128;
 

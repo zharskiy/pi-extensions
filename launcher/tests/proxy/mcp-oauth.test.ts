@@ -17,10 +17,10 @@ const REF = { mcpOAuth: { server: "docs", url: URL_TEXT } };
 
 const KEY = mcpAuthKey("docs", URL_TEXT);
 
-const PLACEHOLDER = "pi-sandbox-0123456789abcdef01234567";
+const PLACEHOLDER = "pinata-0123456789abcdef01234567";
 
 const NOT_SIGNED_IN =
-  "pi-sandbox: MCP server docs is not signed in on the host; run pi mcp login docs on the host, then retry.";
+  "pinata: MCP server docs is not signed in on the host; run pi mcp login docs on the host, then retry.";
 
 const isRunning = (pid: number) => {
   try {
@@ -182,7 +182,7 @@ describe("mcpOAuth secrets read the host pi sign-in", () => {
     expect(result.ok ? undefined : result.reply).toEqual({
       status: 503,
       headers: { "retry-after": "30", "content-type": "text/plain" },
-      body: "pi-sandbox: sign-in to MCP server docs opened in the browser on the host; finish it there, then retry. If no browser opened, run pi mcp login docs on the host.",
+      body: "pinata: sign-in to MCP server docs opened in the browser on the host; finish it there, then retry. If no browser opened, run pi mcp login docs on the host.",
     });
 
     await loggedRuns(1);
@@ -215,7 +215,7 @@ describe("mcpOAuth secrets read the host pi sign-in", () => {
     const reply = await resolverWith("hang").rejected("mcp", REF, undefined);
 
     expect(reply?.body).toBe(
-      "pi-sandbox: MCP server docs is not signed in on the host; run pi mcp login docs on the host, then retry.",
+      "pinata: MCP server docs is not signed in on the host; run pi mcp login docs on the host, then retry.",
     );
     expect(await piRuns()).toEqual([]);
   });
@@ -230,7 +230,7 @@ describe("mcpOAuth secrets read the host pi sign-in", () => {
     const reply = await resolver.rejected("mcp", REF, undefined);
 
     expect(reply?.body).toBe(
-      "pi-sandbox: sign-in to MCP server docs opened in the browser on the host; finish it there, then retry. If no browser opened, run pi mcp login docs on the host.",
+      "pinata: sign-in to MCP server docs opened in the browser on the host; finish it there, then retry. If no browser opened, run pi mcp login docs on the host.",
     );
 
     await loggedRuns(1);
@@ -492,7 +492,7 @@ describe("mcpOAuth sign-in through the proxy", () => {
     expect(proxy.seen.at(-1)).toBeUndefined();
     expect(reply.status).toBe(503);
     expect(reply.body).toContain(
-      "pi-sandbox: MCP server docs is not signed in on the host; run pi mcp login docs on the host, then retry.",
+      "pinata: MCP server docs is not signed in on the host; run pi mcp login docs on the host, then retry.",
     );
     expect(await piRuns()).toEqual([]);
   });

@@ -1,0 +1,63 @@
+import { rm } from "node:fs/promises";
+import { removeBuildLeftovers } from "../../image/index.ts";
+import { errorMessage, LauncherError, stateLayout } from "../../shared/index.ts";
+import { type CliDeps, pathsOf } from "../deps.ts";
+import { refuseBusy } from "../pinata/host.ts";
+import { removeSandbox } from "../pinata/uninstall.ts";
+import type { Timers } from "../prompt/types.ts";
+import { stepsFrontEnd } from "../setup/apply.ts";
+import type { ApplyEvent, HostFacts } from "../setup/types.ts";
+import { type Steps, stepsOf } from "../steps.ts";
+import { applyAll, type Planned, planAll } from "./init.ts";
+
+const forgetVm = (stateDir: string) => async () => {
+  const layout = stateLayout(stateDir);
+  const records = [layout.render, layout.sync.directory, layout.imageRecord];
+
+  await Promise.all(records.map((path) => rm(path, { recursive: true, force: true })));
+
+  await removeBuildLeftovers(stateDir);
+};
+
+const vmGone = (reason?: string) =>
+  new LauncherError(
+    `the sandbox VM is deleted and could not be created again${reason === undefined ? "" : `: ${reason}`}`,
+    "fix that, then run pinata restart, which creates it",
+  );
+
+const frontOf = (steps: Steps) => (facts: HostFacts, timers: Timers) => {
+  const front = stepsFrontEnd(steps, facts, timers);
+
+  return {
+    ...front,
+    report: (event: ApplyEvent) => (event.kind === "vm-not-ready" ? undefined : front.report(event)),
+  };
+};
+
+const withoutVm = (facts: HostFacts): HostFacts => ({ ...facts, vm: { state: "absent" } });
+
+const createVm = async (deps: CliDeps, steps: Steps, planned: Planned) => {
+  const code = await applyAll(deps, planned, frontOf(steps)).catch((error: unknown) => {
+    throw vmGone(errorMessage(error));
+  });
+
+  if (code !== 0) {
+    throw vmGone();
+  }
+};
+
+export const restartCommand = async (deps: CliDeps) => {
+  const steps = stepsOf(deps);
+
+  await refuseBusy(deps);
+
+  const planned = await planAll(deps, withoutVm);
+
+  await removeSandbox(deps, steps, forgetVm(pathsOf(deps).stateDir));
+
+  await createVm(deps, steps, planned);
+
+  steps.close("The next pi rebuilds the image and reinstalls your extensions.");
+
+  return 0;
+};

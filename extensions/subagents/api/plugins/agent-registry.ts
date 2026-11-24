@@ -31,7 +31,7 @@ export const agentRegistryPlugin: Plugin = {
 
     host.onSessionStart((info) => {
       const pastIn = (owner: SessionInfo) =>
-        pastRecords(host, agentsDirFor(owner), (dir, manifest) => ({
+        pastRecords(agentsDirFor(owner), (dir, manifest) => ({
           dir,
           handoffPath: handoffPathFor(owner, manifest.id as string),
           contextLimit: 0,

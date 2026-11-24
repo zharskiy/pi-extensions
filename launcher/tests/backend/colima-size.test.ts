@@ -10,7 +10,7 @@ const GIB = 1024 ** 3;
 
 const homeSharingNothing = async () => {
   const home = await tempDir("colima-size-home");
-  const limaDir = join(home, ".colima", "_lima", "colima-pi-sandbox");
+  const limaDir = join(home, ".colima", "_lima", "colima-pinata");
 
   await mkdir(limaDir, { recursive: true });
 
@@ -30,7 +30,7 @@ const vmWith = (respond: FakeResponder, stateDir = "/nonexistent", home = "/none
 describe("the sandbox VM size", () => {
   it("reads the size colima reports for the profile", async () => {
     const vm = vmWith((call) =>
-      call.args.join(" ") === "status --profile pi-sandbox --json"
+      call.args.join(" ") === "status --profile pinata --json"
         ? { stdout: JSON.stringify({ cpu: 4, memory: 6 * GIB }) }
         : undefined,
     );
@@ -107,8 +107,8 @@ describe("resizing the sandbox VM to the configured size", () => {
     await env.resize({ cpus: 6, memoryGiB: 8, diskGiB: 80 });
 
     expect(env.changes()).toEqual([
-      "stop --profile pi-sandbox",
-      "start --profile pi-sandbox --activate=false --cpu 6 --disk 80",
+      "stop --profile pinata",
+      "start --profile pinata --activate=false --cpu 6 --disk 80",
     ]);
     expect(env.notices).toEqual(["restarting the sandbox VM to change its size to 6 CPUs, 80 GiB disk"]);
   });

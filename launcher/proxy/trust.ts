@@ -154,7 +154,7 @@ const fingerprintCertificates = async (
   if (match === undefined) {
     throw new LauncherError(
       `tls.extraCa: no certificate with sha256 ${fingerprint} in the macOS keychains${unreadableNote(unreadable)}`,
-      `run pi sandbox doctor to get the sha256 of your network's CA; for a CA that is not in a keychain, ${FILE_HINT}`,
+      `run pinata doctor to get the sha256 of your network's CA; for a CA that is not in a keychain, ${FILE_HINT}`,
     );
   }
 

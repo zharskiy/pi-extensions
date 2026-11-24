@@ -8,9 +8,9 @@ const HOUR_AND_MORE = 2 * 60 * 60;
 
 const danglingImage = async (fake: ReturnType<typeof createFakeBackend>) => {
   const context = await tempDir("prune-context");
-  const first = await fake.backend.buildImage(context, "pi-sandbox-layer:old");
+  const first = await fake.backend.buildImage(context, "pinata-layer:old");
 
-  await fake.backend.buildImage(context, "pi-sandbox-layer:old");
+  await fake.backend.buildImage(context, "pinata-layer:old");
 
   return first;
 };
@@ -42,26 +42,23 @@ describe("collectImages", () => {
     const fake = createFakeBackend();
     const stateDir = await tempDir("prune-state");
     const context = await tempDir("prune-context");
-    const used = await fake.backend.buildImage(context, "pi-sandbox-layer:used");
-    const wanted = await fake.backend.buildImage(context, "pi-sandbox-layer:wanted");
+    const used = await fake.backend.buildImage(context, "pinata-layer:used");
+    const wanted = await fake.backend.buildImage(context, "pinata-layer:wanted");
 
-    await fake.backend.buildImage(context, "pi-sandbox-layer:earlier");
+    await fake.backend.buildImage(context, "pinata-layer:earlier");
 
     fake.addContainer({ name: "running", labels: {}, state: "running", image: used.id });
 
-    await writeJsonFile(stateLayout(stateDir).imageRecord, { layer: "pi-sandbox-layer:wanted" });
+    await writeJsonFile(stateLayout(stateDir).imageRecord, { layer: "pinata-layer:wanted" });
 
     fake.ageImages(HOUR_AND_MORE);
 
-    expect(await collectImages(fake.backend, stateDir)).toEqual(["pi-sandbox-layer:earlier"]);
+    expect(await collectImages(fake.backend, stateDir)).toEqual(["pinata-layer:earlier"]);
 
     const left = await fake.backend.listImages();
 
     expect(left.map((image) => image.id)).toEqual(expect.arrayContaining([used.id, wanted.id]));
-    expect(left.flatMap((image) => image.tags).sort()).toEqual([
-      "pi-sandbox-layer:used",
-      "pi-sandbox-layer:wanted",
-    ]);
+    expect(left.flatMap((image) => image.tags).sort()).toEqual(["pinata-layer:used", "pinata-layer:wanted"]);
   });
 
   it("removes nothing while an image build holds the build lock", async () => {

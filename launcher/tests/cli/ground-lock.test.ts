@@ -9,7 +9,7 @@ import {
   stopIdleGround,
   withGroundLock,
 } from "../../cli/ground.ts";
-import { run } from "../../cli/index.ts";
+import { run, runPinata } from "../../cli/index.ts";
 import { newLaunchId, registerLaunch } from "../../grants/index.ts";
 import { processMark, stateLayout } from "../../shared/index.ts";
 import { createFakeBackend, FAKE_NETWORK, FAKE_RELAY } from "../support/fake-backend.ts";
@@ -125,7 +125,7 @@ describe("the ground lock and the install-wide services", () => {
 
     expect(live(fake)).toEqual(["pod", "service"]);
     expect(kept.lines).toEqual([
-      "pi-sandbox: the services in the config changed; they restart once every pi session has ended",
+      "pinata: the services in the config changed; they restart once every pi session has ended",
     ]);
   });
 
@@ -170,7 +170,7 @@ describe("the ground lock and the install-wide services", () => {
 
     await sleep(20);
 
-    const stopping = run(["sandbox", "stop"], harness.deps);
+    const stopping = runPinata(["stop"], harness.deps);
 
     await sleep(300);
 
@@ -237,7 +237,7 @@ describe("the ground lock and the install-wide services", () => {
       backend: () => ({
         ...fake.backend,
         exec: async (spec, io) => {
-          if (spec.env.PI_SANDBOX_LAUNCH_ID !== undefined) {
+          if (spec.env.PINATA_LAUNCH_ID !== undefined) {
             teardown.armed = true;
 
             seen.push({
@@ -298,7 +298,7 @@ describe("the ground lock and the install-wide services", () => {
 
     await start(fake, harness.stateDir, "own").started;
 
-    await fake.backend.prepareRelay({ hostPort: 3128, imageId: "relay", preamble: "PI-SANDBOX test" });
+    await fake.backend.prepareRelay({ hostPort: 3128, imageId: "relay", preamble: "PINATA test" });
 
     const lines = await stopIdleGround(harness.deps, fake.backend);
 
@@ -318,7 +318,7 @@ describe("the ground lock and the install-wide services", () => {
       }),
     });
 
-    expect(await run(["sandbox", "stop"], harness.deps)).toBe(0);
+    expect(await runPinata(["stop"], harness.deps)).toBe(0);
     expect(harness.stderr()).toContain("the sweep of the folders' leftover sandboxes failed");
     expect(harness.stderr()).toContain("the sandbox network, proxy and services were not all stopped");
     expect(harness.proxyStops()).toBe(1);
@@ -333,7 +333,7 @@ describe("the ground lock and the install-wide services", () => {
       }),
     });
 
-    expect(await run(["sandbox", "stop"], harness.deps)).toBe(0);
+    expect(await runPinata(["stop"], harness.deps)).toBe(0);
     expect(harness.stderr().split("the sweep of leftover sandboxes failed").length - 1).toBe(1);
     expect(harness.proxyStops()).toBe(1);
   });

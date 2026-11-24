@@ -140,7 +140,7 @@ const notAllowed = (host: string, port: number) => {
 
   return deny(
     "egress.allow",
-    `${target} is not allowed by the sandbox. Ask the user to run pi sandbox egress allow ${target} on the host.`,
+    `${target} is not allowed by the sandbox. Ask the user to run pinata egress allow ${target} on the host.`,
   );
 };
 

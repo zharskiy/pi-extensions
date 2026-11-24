@@ -153,7 +153,7 @@ const stillMissingNotice = (source: string, reason: string | undefined) =>
   `warning: ${shownSource(source)} could not be installed in the shared pi folder${reason === undefined ? "" : ` (${reason})`}; pi tries again when it starts`;
 
 const skippedNotice = (source: string) =>
-  `warning: ${shownSource(source)} could not be installed in the shared pi folder last time, so the launcher did not try again; pi tries when it starts`;
+  `warning: ${shownSource(source)} could not be installed in the shared pi folder last time, so pinata did not try again; pi tries when it starts`;
 
 const listFailedNotice = (reason: string) =>
   `warning: the extensions in the shared pi folder were not checked (${reason}); pi installs what is missing when it starts`;
@@ -185,7 +185,7 @@ const listPackages = async (input: PackageInstallInput) => {
   const list = parsePiList(result.stdout);
 
   if (list === undefined) {
-    throw new Error("pi list printed nothing the launcher understands");
+    throw new Error("pi list printed nothing pinata understands");
   }
 
   return list;

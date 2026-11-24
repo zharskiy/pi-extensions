@@ -1,8 +1,9 @@
 import type { VmPhase } from "../../backend/index.ts";
 import { errorMessage, LauncherError } from "../../shared/index.ts";
-import { asciiOf, elapsedOf } from "../prompt/style.ts";
-import { heartbeat } from "../prompt/task.ts";
+import { elapsedOf } from "../prompt/style.ts";
 import { Cancelled, type NotePlace, type Timers } from "../prompt/types.ts";
+import type { Steps } from "../steps.ts";
+import { tildeForm } from "./folders.ts";
 import { isPlanEmpty } from "./plan.ts";
 import {
   eventLines,
@@ -111,46 +112,62 @@ const failedChoice = async (io: SetupIo, facts: HostFacts, failure: VmFailure) =
 
 export const wizardFrontEnd = (io: SetupIo, facts: HostFacts): ApplyFrontEnd => ({
   now: io.now,
-  review: () => undefined,
   report: drawEvent(io, facts),
   task: (spec) => io.prompts.task({ title: VM_TITLE, ...spec }),
   retry: (failure) => failedChoice(io, facts, failure),
 });
 
-interface LineStreams {
-  out: NodeJS.WritableStream;
-  err: NodeJS.WritableStream;
-  timers: Timers;
-}
+const QUIET_EVENTS = new Set<ApplyEvent["kind"]>(["nothing-to-do", "nothing-changed", "done"]);
 
-const printed = (stream: NodeJS.WritableStream, paragraphs: Paragraph[]) => {
-  stream.write(
-    wrapped(paragraphs, Number.POSITIVE_INFINITY)
-      .map((line) => `${asciiOf(line)}\n`)
-      .join(""),
-  );
-};
+const textOf = (paragraph: Paragraph) => (typeof paragraph === "string" ? paragraph : paragraph.text);
 
-export const lineFrontEnd = (streams: LineStreams, facts: HostFacts, review: string[]): ApplyFrontEnd => {
+export const stepsFrontEnd = (steps: Steps, facts: HostFacts, timers: Timers): ApplyFrontEnd => {
   const report = (event: ApplyEvent) => {
-    printed(PROBLEMS.has(event.kind) ? streams.err : streams.out, eventLines(event, facts, true));
-  };
-
-  const task = async (spec: Parameters<ApplyFrontEnd["task"]>[0]) => {
-    const stop = heartbeat(streams.timers, (line) => printed(streams.out, [line]));
-
-    try {
-      return await spec.run((text) => printed(streams.out, [text]));
-    } finally {
-      stop();
+    if (QUIET_EVENTS.has(event.kind)) {
+      return;
     }
+
+    if (event.kind === "saved") {
+      steps.done(`Wrote the settings (${tildeForm(facts.configFile, facts.home)})`);
+
+      return;
+    }
+
+    if (event.kind === "vm-done" && event.applied === "created") {
+      steps.done(`Created the sandbox VM in ${event.elapsed}`);
+
+      return;
+    }
+
+    if (event.kind === "vm-done" && event.applied === "restarted") {
+      steps.done(`Restarted the sandbox VM in ${event.elapsed}`);
+
+      return;
+    }
+
+    const [first = "", ...rest] = eventLines(event, facts, true).map(textOf);
+
+    if (first.startsWith("▲ ")) {
+      steps.warn(first.slice(2));
+
+      rest.forEach(steps.note);
+
+      return;
+    }
+
+    if (PROBLEMS.has(event.kind)) {
+      steps.failed(first.replace(/^✖ /, ""), rest.map((line) => line.trimStart()).join("\n"));
+
+      return;
+    }
+
+    [first, ...rest].forEach(steps.note);
   };
 
   return {
-    now: streams.timers.now,
-    review: () => printed(streams.out, review),
+    now: timers.now,
     report,
-    task,
+    task: (spec) => steps.task({ pending: "Preparing the sandbox VM" }, spec.run),
     retry: async (failure, error) => {
       if (!(error instanceof LauncherError)) {
         throw error;
@@ -263,8 +280,6 @@ export const applyPlan = async (
 
     return 0;
   }
-
-  front.review();
 
   const saved = chosen.plan.changes.length === 0 || (await savePlan(front, effects, document, chosen.plan));
 

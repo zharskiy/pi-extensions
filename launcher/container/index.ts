@@ -6,7 +6,7 @@ export {
   removeLaunchContainer,
   startLaunchContainer,
 } from "./lifecycle.ts";
-export { agentVolumeName, configVolumeName, isLegacyAgentVolume, isSharedVolumeName } from "./names.ts";
+export { agentVolumeName, configVolumeName } from "./names.ts";
 export type { HostTerminal, SignalSource } from "./run-pi.ts";
 export { runPi } from "./run-pi.ts";
 export {

@@ -1,56 +1,124 @@
+import { dirname } from "node:path";
 import { parseArgs } from "node:util";
-import { errorMessage, LauncherError } from "../../shared/index.ts";
-import { type CliDeps, writeLines } from "../deps.ts";
+import { errorMessage, LauncherError, launcherRoot } from "../../shared/index.ts";
+import { configCommand } from "../commands/config.ts";
+import { doctorCommand } from "../commands/doctor.ts";
+import { VERBOSE_FLAG } from "../commands/doctor-checks.ts";
+import { egressCommand } from "../commands/egress.ts";
+import { helpCommand, usageOf } from "../commands/help.ts";
+import { initCommand, YES_FLAG } from "../commands/init.ts";
+import { listCommand } from "../commands/list.ts";
+import { assertOptions } from "../commands/options.ts";
+import { restartCommand } from "../commands/restart.ts";
+import { statusCommand } from "../commands/status.ts";
+import { stopCommand } from "../commands/stop.ts";
+import { type CliDeps, writeLine } from "../deps.ts";
+import { renderFailure } from "../run.ts";
+import { launcherVersion } from "../versions.ts";
 import { install } from "./install.ts";
 import { uninstall } from "./uninstall.ts";
 import { update } from "./update.ts";
 
-const USAGE = [
-  "usage:",
-  "  pinata install [--pi <version>] [--config <file>] [--yes]",
-  "  pinata update [<version>] [--pi <version>]",
-  "  pinata uninstall",
-];
+interface Command {
+  run: (deps: CliDeps, args: string[], packageDir: string) => Promise<number> | number;
+  options?: string[] | "parsed";
+}
 
-const OPTIONS = {
-  pi: { type: "string" },
-  config: { type: "string" },
-  yes: { type: "boolean" },
-  help: { type: "boolean", short: "h" },
-} as const;
+const HELP_FLAGS = ["-h", "--help"];
 
-const parsed = (argv: string[]) => {
+const SANDBOX_FLAG = "--sandbox";
+
+const INSTALL_OPTIONS = { yes: { type: "boolean" } } as const;
+
+const parseOptions = <T extends Record<string, { type: "string" | "boolean" }>>(
+  command: string,
+  args: string[],
+  options: T,
+) => {
   try {
-    return parseArgs({ args: argv, options: OPTIONS, allowPositionals: true });
+    return parseArgs({ args, options, strict: true, allowPositionals: true });
   } catch (error) {
-    throw new LauncherError(errorMessage(error), "pinata --help lists the commands");
+    throw new LauncherError(`${command}: ${errorMessage(error)}`, usageOf(command));
   }
 };
 
-export const runPinata = async (argv: string[], deps: CliDeps, packageDir: string) => {
-  const { values, positionals } = parsed(argv);
-  const [command, ...rest] = positionals;
+const assertPositionals = (command: string, positionals: string[], most: number) => {
+  if (positionals.length > most) {
+    throw new LauncherError(`${command}: unexpected argument "${positionals[most]}"`, usageOf(command));
+  }
+};
 
-  if (values.help === true || command === undefined) {
-    writeLines(deps.stdout, USAGE);
+const installCommand = (deps: CliDeps, args: string[], packageDir: string) => {
+  const { values, positionals } = parseOptions("install", args, INSTALL_OPTIONS);
 
-    return 0;
+  assertPositionals("install", positionals, 0);
+
+  return install(deps, packageDir, values);
+};
+
+const updateCommand = (deps: CliDeps, args: string[], packageDir: string) => {
+  const { positionals } = parseOptions("update", args, {});
+
+  assertPositionals("update", positionals, 0);
+
+  return update(deps, packageDir);
+};
+
+const printVersion = async (deps: CliDeps) => {
+  writeLine(deps.stdout, await launcherVersion());
+
+  return 0;
+};
+
+const help: Command = { run: helpCommand };
+
+const COMMANDS: Record<string, Command> = {
+  install: { run: installCommand, options: "parsed" },
+  update: { run: updateCommand, options: "parsed" },
+  uninstall: {
+    run: (deps, args, packageDir) => uninstall(deps, packageDir, args.includes(SANDBOX_FLAG)),
+    options: [SANDBOX_FLAG],
+  },
+  init: { run: initCommand, options: [YES_FLAG] },
+  status: { run: statusCommand, options: [] },
+  list: { run: listCommand, options: [] },
+  doctor: { run: doctorCommand, options: [VERBOSE_FLAG] },
+  config: { run: configCommand, options: [] },
+  egress: { run: egressCommand },
+  restart: { run: restartCommand, options: [] },
+  stop: { run: stopCommand, options: [] },
+  help,
+  "-h": help,
+  "--help": help,
+  "--version": { run: printVersion },
+};
+
+const dispatch = (deps: CliDeps, [name = "help", ...args]: string[], packageDir: string) => {
+  const command = Object.hasOwn(COMMANDS, name) ? COMMANDS[name] : undefined;
+
+  if (command === undefined) {
+    throw new LauncherError(`unknown command "pinata ${name}"`, "pinata help");
   }
 
-  if (command === "install" && rest.length === 0) {
-    return install(deps, packageDir, values);
+  if (args.some((arg) => HELP_FLAGS.includes(arg))) {
+    return helpCommand(deps);
   }
 
-  if (command === "update" && rest.length <= 1 && values.config === undefined && values.yes === undefined) {
-    return update(deps, packageDir, rest[0], values.pi);
+  if (command.options === undefined) {
+    return command.run(deps, args, packageDir);
   }
 
-  if (command === "uninstall" && rest.length === 0 && Object.keys(values).length === 0) {
-    return uninstall(deps, packageDir);
+  if (command.options !== "parsed") {
+    assertOptions(name, args, command.options);
   }
 
-  throw new LauncherError(
-    `not a pinata command: pinata ${argv.join(" ")}`,
-    "pinata --help lists the commands",
-  );
+  return command.run(deps, args, packageDir);
+};
+
+export const runPinata = async (argv: string[], deps: CliDeps, packageDir = dirname(launcherRoot())) => {
+  try {
+    return await dispatch(deps, argv, packageDir);
+  } catch (error) {
+    return renderFailure(error, deps.stderr);
+  }
 };

@@ -2,7 +2,6 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createBus } from "../../../../../platform/extension-manager/index.ts";
-import { usageTotals } from "../../../../../test/framework/index.ts";
 import { createRegistry } from "../../../core/agent-registry/registry.ts";
 import { listSections, visibleRecords } from "../../../core/agent-view/list-model.ts";
 import {
@@ -127,7 +126,7 @@ describe("agent registry", () => {
     registry.update(record.id, { context: { tokens: 21_000, window: 200_000, percent: 10.5 } });
     registry.update(record.id, { context: latest });
 
-    const restored = pastRecords({ sessionUsage: () => usageTotals(0) }, agentsDir, (dir) => ({
+    const restored = pastRecords(agentsDir, (dir) => ({
       dir,
       handoffPath: "/tmp/handoff.md",
       contextLimit: 100_000,

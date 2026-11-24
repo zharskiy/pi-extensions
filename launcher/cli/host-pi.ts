@@ -5,6 +5,7 @@ import { sandboxWriteRoots } from "../workspace/index.ts";
 import type { LaunchContext } from "./context.ts";
 import { type CliDeps, hostAgentDirOf, pathsOf, writeLine } from "./deps.ts";
 import { sweepForHostPi } from "./host-sessions.ts";
+import { PI_PACKAGE } from "./versions.ts";
 
 export const NO_SANDBOX = "--no-sandbox";
 
@@ -34,24 +35,17 @@ export const resolveJobPi = async (deps: CliDeps): Promise<HostPi | undefined> =
   return locateNpmPi({ runner: deps.runner, env: deps.env, home: deps.home, accept: outsideRoots(roots) });
 };
 
-export const missingPi = (deps: CliDeps) => ({
-  problem: `no managed pi in ${hostAgentDirOf(deps)} and no pi in npm's global packages`,
-  ignored: "a pi found only on PATH or in a project's node_modules is not used",
-  effect: "the sandbox gets no provider credentials, and host commands and --no-sandbox are unavailable",
-  fix: "install pi with pi's own installer (curl -fsSL https://pi.dev/install.sh | sh) or with npm install -g @earendil-works/pi-coding-agent, and run pinata install again",
-});
+export const missingPi = (deps: CliDeps, command = "install") =>
+  new LauncherError(
+    `pi is not installed on the host (no managed pi in ${hostAgentDirOf(deps)} and no pi in npm's global packages), and pinata does not install it`,
+    `install pi with pi's own installer (curl -fsSL https://pi.dev/install.sh | sh) or with npm install -g ${PI_PACKAGE}, then run pinata ${command} again`,
+  );
 
-export const missingPiText = (deps: CliDeps) => {
-  const { problem, ignored, effect, fix } = missingPi(deps);
-
-  return `${problem} (${ignored}): ${effect}; ${fix}`;
-};
-
-export const requireJobPi = async (deps: CliDeps, prefix?: string) => {
+export const requireJobPi = async (deps: CliDeps, command?: string) => {
   const pi = await resolveJobPi(deps);
 
   if (pi === undefined) {
-    throw new LauncherError(prefix === undefined ? missingPiText(deps) : `${prefix}: ${missingPiText(deps)}`);
+    throw missingPi(deps, command);
   }
 
   return pi;
@@ -68,10 +62,8 @@ export const spawnHostJob = (
   return deps.runner.spawnInteractive(file, [...prefix, ...args], options);
 };
 
-export const runHostPi = async (deps: CliDeps, context: LaunchContext, piArgs: string[]) => {
-  const pi = await requireJobPi(deps, NO_SANDBOX);
-
-  writeLine(deps.stderr, `pi-sandbox: warning: running ${pi.location} on the host, outside the sandbox`);
+export const runHostPi = async (deps: CliDeps, context: LaunchContext, pi: HostPi, piArgs: string[]) => {
+  writeLine(deps.stderr, `pinata: warning: running ${pi.location} on the host, outside the sandbox`);
 
   await sweepForHostPi(deps, context);
 

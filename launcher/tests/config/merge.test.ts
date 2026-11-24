@@ -14,14 +14,14 @@ const COMPLETE_CONFIG: UserConfig = {
     digest: `sha256:${"d".repeat(64)}`,
     packages: ["chromium"],
     npmGlobal: ["tool@1.0.0"],
-    dockerfile: "/etc/pi-sandbox/layer.Dockerfile",
+    dockerfile: "/etc/pinata/layer.Dockerfile",
   },
   credentials: {
     rules: [
       {
         id: "llm",
         host: "llm.corp.test",
-        placeholder: "pi-sandbox-llm",
+        placeholder: "pinata-llm",
         secret: { env: "LLM_KEY" },
       },
     ],

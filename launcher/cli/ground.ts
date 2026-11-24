@@ -1,23 +1,20 @@
 import { type Backend, installIdOf, networkName, roleOf } from "../backend/index.ts";
-import type { ServiceEntry } from "../config/index.ts";
 import {
   discardContainer,
   ensureServices,
   listLauncherContainers,
   type ServicesInput,
-  serviceVolumes,
   stopServices,
 } from "../container/index.ts";
 import { removeProxyToken } from "../proxy/index.ts";
-import { LauncherError, stateLayout, withFileLockUnless, withWaitingLock } from "../shared/index.ts";
+import { stateLayout, withFileLockUnless, withWaitingLock } from "../shared/index.ts";
 import { busyLaunches } from "./busy.ts";
 import { type CliDeps, pathsOf, writeLine } from "./deps.ts";
 
 export const GROUND_WAITING =
-  "pi-sandbox: waiting for another pi session to finish with the sandbox network, proxy or services";
+  "pinata: waiting for another pi session to finish with the sandbox network, proxy or services";
 
-export const CLEANUP_WAITING =
-  "pi-sandbox: waiting for another pi-sandbox command to finish before cleaning up";
+export const CLEANUP_WAITING = "pinata: waiting for another pinata command to finish before cleaning up";
 
 export const cleanupWaiting = (signal?: AbortSignal) =>
   signal === undefined ? CLEANUP_WAITING : `${CLEANUP_WAITING}; Ctrl-C skips the cleanup`;
@@ -124,23 +121,3 @@ const whenGroundIdle = async (deps: CliDeps, action: () => Promise<string[]>, si
 
 export const stopIdleGround = (deps: CliDeps, backend: Backend, signal?: AbortSignal) =>
   whenGroundIdle(deps, () => removeIdleGround(deps, backend), signal);
-
-const BUSY_HINT = "end every pi session, then run this again";
-
-export const wipeServices = (
-  backend: Backend,
-  stateDir: string,
-  parts: { services: ServiceEntry[]; progress: (line: string) => void },
-) =>
-  withGroundLock({ stateDir, progress: parts.progress }, async () => {
-    if ((await busyLaunches(stateDir)) > 0) {
-      throw new LauncherError("a pi session is running, so the services were kept", BUSY_HINT);
-    }
-
-    const removed = removedLines(await stopServices(backend));
-    const volumes = await serviceVolumes(backend, stateDir, parts.services);
-
-    await Promise.all(volumes.map((volume) => backend.removeVolume(volume.name)));
-
-    return [...removed, ...volumes.map((volume) => `removed volume ${volume.name}`)];
-  });

@@ -121,7 +121,7 @@ describe("runSetup", () => {
       backend: fake.backend,
       containerId: "",
       commands,
-      env: { PI_SANDBOX_LAUNCH_ID: "0123456789abcdef" },
+      env: { PINATA_LAUNCH_ID: "0123456789abcdef" },
       workdir: "/work/repo",
       stdout: new PassThrough(),
       stderr: new PassThrough(),
@@ -148,7 +148,7 @@ describe("runSetup", () => {
     ]);
     expect(fake.execs.map((exec) => exec.tty)).toEqual([false, false]);
     expect(fake.execs.flatMap((exec) => exec.stdin)).toEqual([]);
-    expect(lines).toEqual(["pi-sandbox: setup: npm ci", "pi-sandbox: setup: sh -c make init"]);
+    expect(lines).toEqual(["pinata: setup: npm ci", "pinata: setup: sh -c make init"]);
   });
 
   it("stops at the first command that fails, naming it and its exit code", async () => {

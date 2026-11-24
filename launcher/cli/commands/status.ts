@@ -7,180 +7,164 @@ import {
   LABELS,
   roleOf,
 } from "../../backend/index.ts";
-import {
-  agentVolumeName,
-  installServices,
-  isLegacyAgentVolume,
-  mountedVolumes,
-  overlayVolumes,
-} from "../../container/index.ts";
+import { agentVolumeName, installServices, mountedVolumes, overlayVolumes } from "../../container/index.ts";
 import { type Launch, liveLaunches } from "../../grants/index.ts";
 import { recordedImage } from "../../image/index.ts";
-import {
-  knownRepos,
-  LauncherError,
-  lstatOrUndefined,
-  repoRecordOf,
-  shortHash,
-  stateLayout,
-} from "../../shared/index.ts";
+import { LauncherError, repoRecordOf, shortHash } from "../../shared/index.ts";
 import { type LaunchContext, openContext } from "../context.ts";
-import { type CliDeps, reachableBackend, writeLines } from "../deps.ts";
+import { type CliDeps, reachableBackend } from "../deps.ts";
+import { stepsOf, tilde } from "../steps.ts";
 import { launcherVersion } from "../versions.ts";
 import { grantLines } from "./egress.ts";
 
-const sessionDirLine = (label: string | undefined) => {
+type Row = [string, string];
+
+const listed = (label: string, items: string[], empty?: string): Row[] => {
+  if (items.length === 0) {
+    return empty === undefined ? [] : [[label, empty]];
+  }
+
+  return items.map((item, index) => [index === 0 ? label : "", item]);
+};
+
+const shownPath = (deps: CliDeps, text: string) => (isAbsolute(text) ? tilde(deps, text) : text);
+
+const sessionsText = (deps: CliDeps, label: string | undefined) => {
   if (label === undefined) {
-    return "session dir: sandbox volume";
+    return "sessions in the sandbox volume";
   }
 
-  return isAbsolute(label) ? `session dir: ${label}` : `session dir: sandbox volume (${label})`;
+  return isAbsolute(label)
+    ? `sessions in ${tilde(deps, label)}`
+    : `sessions in the sandbox volume (${label})`;
 };
 
-const serviceLines = (context: LaunchContext, found: ContainerSummary[]) => {
-  const { services } = context.effective.config;
+const serviceRows = (context: LaunchContext, found: ContainerSummary[]) => {
+  const services = context.effective.config.services.map((service) => {
+    const container = found.find(
+      (entry) => roleOf(entry.labels) === "service" && entry.labels[LABELS.serviceName] === service.name,
+    );
+    const ports = (service.ports ?? []).length === 0 ? "" : `, ports ${(service.ports ?? []).join(",")}`;
 
-  if (services.length === 0) {
-    return [];
-  }
+    return container === undefined
+      ? `${service.name}, not started${ports}`
+      : `${service.name}, ${container.state} (${container.id})${ports}`;
+  });
 
-  return [
-    `services: ${services.length}`,
-    ...services.map((service) => {
-      const container = found.find(
-        (entry) => roleOf(entry.labels) === "service" && entry.labels[LABELS.serviceName] === service.name,
-      );
-
-      const ports = (service.ports ?? []).length === 0 ? "" : ` ports ${(service.ports ?? []).join(",")}`;
-
-      return container === undefined
-        ? `service: ${service.name} not started${ports}`
-        : `service: ${service.name} ${container.state} (${container.id})${ports}`;
-    }),
-  ];
+  return listed("Services", services);
 };
 
-const containerLines = async (backend: Backend, context: LaunchContext) => {
+const containerRows = async (deps: CliDeps, backend: Backend, context: LaunchContext) => {
   const found = await backend.findContainers({ [LABELS.repoHash]: context.repoHash });
-  const containers = found.filter((container) => isSession(container.labels));
-  const services = await installServices(backend);
+  const containers = found
+    .filter((container) => isSession(container.labels))
+    .map((container) =>
+      [
+        container.id,
+        container.state,
+        `launch ${container.labels[LABELS.launchId] ?? "unknown"}`,
+        `digest ${container.labels[LABELS.imageDigest] ?? "unknown"}`,
+        sessionsText(deps, container.labels[LABELS.sessionDir]),
+      ].join(", "),
+    );
 
   return [
-    ...serviceLines(context, services),
-    `containers: ${containers.length}`,
-    ...containers.flatMap((container) => [
-      `container: ${container.id} ${container.state} launch ${container.labels[LABELS.launchId] ?? "unknown"} digest ${container.labels[LABELS.imageDigest] ?? "unknown"}`,
-      sessionDirLine(container.labels[LABELS.sessionDir]),
-    ]),
+    ...serviceRows(context, await installServices(backend)),
+    ...listed("Containers", containers, "none"),
   ];
 };
 
-const LEFTOVER_HINT = "left by an older launcher; pi sandbox reset --agent removes it";
-
-const leftoverFolders = async (stateDir: string) => {
-  const layout = stateLayout(stateDir);
-  const legacy = (await knownRepos(stateDir)).map((hash) => layout.repo(hash).legacy.sync);
-  const candidates = [layout.renders, ...legacy];
-  const found = await Promise.all(
-    candidates.map(async (path) => ((await lstatOrUndefined(path)) ? [path] : [])),
-  );
-
-  return found.flat().map((path) => `leftover: ${path}, ${LEFTOVER_HINT}`);
-};
-
-const piFolderLines = async (backend: Backend, context: LaunchContext) => {
-  const install = installIdOf(context.stateDir);
-  const shared = agentVolumeName(install);
+const piFolderRow = async (backend: Backend, context: LaunchContext): Promise<Row> => {
+  const shared = agentVolumeName(installIdOf(context.stateDir));
   const volumes = await backend.listVolumes();
   const created = volumes.some((volume) => volume.name === shared);
-  const legacy = volumes.filter((volume) => isLegacyAgentVolume(install, volume.name));
 
-  return [
-    created ? `pi folder: ${shared}, shared by every folder's sandbox` : "pi folder: not created yet",
-    ...legacy.map((volume) => `leftover: volume ${volume.name}, ${LEFTOVER_HINT}`),
-    ...(await leftoverFolders(context.stateDir)),
-  ];
+  return ["Pi folder", created ? `${shared}, shared by every folder's sandbox` : "not created yet"];
 };
 
-const runtimeLines = async (deps: CliDeps, context: LaunchContext) => {
+const runtimeRows = async (deps: CliDeps, context: LaunchContext): Promise<Row[]> => {
   try {
     const backend = await reachableBackend(deps);
-    const details = Object.entries(await backend.status()).map(([key, value]) => `runtime ${key}: ${value}`);
+    const details = Object.entries(await backend.status())
+      .map(([key, value]) => `${key} ${shownPath(deps, value)}`)
+      .join(", ");
 
     return [
-      ...details,
-      ...(await containerLines(backend, context)),
-      ...(await piFolderLines(backend, context)),
+      ["Runtime", details],
+      ...(await containerRows(deps, backend, context)),
+      await piFolderRow(backend, context),
     ];
   } catch (error) {
     if (error instanceof LauncherError) {
-      return [`runtime: none (${error.message})`, ...(await leftoverFolders(context.stateDir))];
+      return [["Runtime", error.message]];
     }
 
     throw error;
   }
 };
 
-const proxyLines = async (deps: CliDeps, context: LaunchContext) => {
+const proxyRow = async (deps: CliDeps, context: LaunchContext): Promise<Row> => {
   const proxy = await deps.proxy.read(context.stateDir);
 
-  return [proxy === undefined ? "proxy: stopped" : `proxy: pid ${proxy.pid} port ${proxy.port}`];
+  return ["Proxy", proxy === undefined ? "stopped" : `pid ${proxy.pid}, port ${proxy.port}`];
 };
 
-const imageLine = async (context: LaunchContext) => {
+const imageRow = async (context: LaunchContext): Promise<Row> => {
   const { image } = context.effective.config;
   const record = await recordedImage(context.stateDir, context.effective.config);
+  const reference = record?.reference ?? image.reference ?? "pinata-base:local";
+  const digest = image.digest ?? record?.digest;
 
-  return `image: ${record?.reference ?? image.reference ?? "pi-sandbox-base:local"} ${image.digest ?? record?.digest ?? "(not built yet)"}`;
+  return ["Image", digest === undefined ? `${reference}, not built yet` : `${reference} ${digest}`];
 };
 
-const launchLine = async (stateDir: string, launch: Launch) => {
-  const root =
-    (await repoRecordOf(stateDir, launch.repoHash))?.root ?? `repository ${shortHash(launch.repoHash)}`;
+const launchText = async (deps: CliDeps, stateDir: string, launch: Launch) => {
+  const record = await repoRecordOf(stateDir, launch.repoHash);
+  const root = record === undefined ? `repository ${shortHash(launch.repoHash)}` : tilde(deps, record.root);
 
-  return `launch: ${launch.launchId} pid ${launch.pid} since ${new Date(launch.startedAt).toISOString()} in ${root}`;
+  return `${launch.launchId}, pid ${launch.pid}, since ${new Date(launch.startedAt).toISOString()}, in ${root}`;
 };
 
-const launchLines = async (context: LaunchContext) => {
+const launchRows = async (deps: CliDeps, context: LaunchContext) => {
   const launches = await liveLaunches(context.stateDir);
-  const lines = await Promise.all(launches.map((launch) => launchLine(context.stateDir, launch)));
+  const texts = await Promise.all(launches.map((launch) => launchText(deps, context.stateDir, launch)));
 
-  return [`launches: ${launches.length} running in the sandbox`, ...lines];
+  return listed("Launches", texts, "none");
 };
 
-const volumeLines = (context: LaunchContext) => {
+const volumeRows = (deps: CliDeps, context: LaunchContext) => {
   const { config } = context.effective;
   const overlays = overlayVolumes(context.workspace, config, context.stateDir);
   const volumes = mountedVolumes(config, context.stateDir);
 
   return [
-    `overlays: ${overlays.length}`,
-    ...overlays.map((overlay) => `overlay: ${overlay.path} (${overlay.name})`),
-    `volumes: ${volumes.length}`,
-    ...volumes.map((entry) => `volume: ${entry.target} (${entry.name})`),
+    ...listed(
+      "Overlays",
+      overlays.map((overlay) => `${tilde(deps, overlay.path)} (${overlay.name})`),
+    ),
+    ...listed(
+      "Volumes",
+      volumes.map((entry) => `${entry.target} (${entry.name})`),
+    ),
   ];
-};
-
-const grantStatus = async (context: LaunchContext) => {
-  const lines = await grantLines(context);
-
-  return [`grants: ${lines.length} active`, ...lines.map((line) => `grant: ${line}`)];
 };
 
 export const statusCommand = async (deps: CliDeps) => {
   const { context } = await openContext(deps, "host", { overlays: true });
-  const lines = [
-    `launcher: ${await launcherVersion()}`,
-    `${context.workspace.isGitRepo ? "repo" : "folder"}: ${context.workspace.repoRoot}`,
-    ...(await runtimeLines(deps, context)),
-    ...(await proxyLines(deps, context)),
-    await imageLine(context),
-    ...volumeLines(context),
-    ...(await launchLines(context)),
-    ...(await grantStatus(context)),
+  const kind = context.workspace.isGitRepo ? "repository" : "folder";
+  const rows = [
+    ...(await runtimeRows(deps, context)),
+    await proxyRow(deps, context),
+    await imageRow(context),
+    ...volumeRows(deps, context),
+    ...(await launchRows(deps, context)),
+    ...listed("Grants", await grantLines(context), "none"),
   ];
 
-  writeLines(deps.stdout, lines);
+  stepsOf(deps).close(
+    `Pinata ${await launcherVersion()} for the ${kind} ${tilde(deps, context.workspace.repoRoot)}.`,
+    rows,
+  );
 
   return 0;
 };

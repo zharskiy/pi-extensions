@@ -24,13 +24,13 @@ const TLS_FAILED = { rule: "tls", reason: "TLS handshake with the client failed"
 const CLIENT_CLOSED = {
   rule: "tls",
   reason:
-    "the client closed the connection during the TLS handshake, so it may not trust the launcher CA or the VM's clock may be more than an hour behind the host's",
+    "the client closed the connection during the TLS handshake, so it may not trust pinata's CA or the VM's clock may be more than an hour behind the host's",
 };
 
 const CLIENT_REJECTED = {
   rule: "tls",
   reason:
-    "the client rejected the proxy's certificate, so it may not trust the launcher CA or the VM's clock may be more than an hour behind the host's",
+    "the client rejected the proxy's certificate, so it may not trust pinata's CA or the VM's clock may be more than an hour behind the host's",
 };
 
 const CLIENT_LEFT = { rule: "tls", reason: "the client closed the connection before its TLS hello" };

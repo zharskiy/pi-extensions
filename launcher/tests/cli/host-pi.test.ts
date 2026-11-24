@@ -1,4 +1,4 @@
-import { mkdir, rm, symlink, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { pathsOf } from "../../cli/deps.ts";
@@ -20,6 +20,13 @@ const launchHarness = async (options: { hostPi?: false } = {}) => {
   const harness = await createHarness({ backend: () => fake.backend, ...options });
 
   return { fake, harness, requests: harness.proxyInputs };
+};
+
+const treeOf = async (root: string) => {
+  const paths = await readdir(root, { recursive: true });
+  const stats = await Promise.all(paths.map((path) => lstat(join(root, path))));
+
+  return paths.map((path, index) => `${path} ${stats[index]?.mtimeMs}`).sort();
 };
 
 const interactiveCall = (harness: Awaited<ReturnType<typeof createHarness>>) =>
@@ -55,7 +62,7 @@ describe("the host pi of host jobs", () => {
     await writeManagedPi(harness.hostAgentDir, "99.0.0");
 
     expect(await run([], harness.deps)).toBe(0);
-    const baseBuilds = fake.builds.filter((build) => build.tag === "pi-sandbox-base:local");
+    const baseBuilds = fake.builds.filter((build) => build.tag === "pinata-base:local");
 
     expect(baseBuilds.map((build) => build.args?.PI_VERSION)).toEqual([await testedPiVersion(), "99.0.0"]);
     expect(harness.stderr()).not.toContain("provider host table unavailable");
@@ -69,23 +76,36 @@ describe("the host pi of host jobs", () => {
 
     await writeManagedPi(escaping.harness.hostAgentDir, "1.6.0", { release: "../1.6.0" });
 
-    expect(await run([], marked.harness.deps)).toBe(0);
-    expect(await run([], escaping.harness.deps)).toBe(0);
-    expect(marked.requests[0]?.piCommand).toEqual([]);
-    expect(escaping.requests[0]?.piCommand).toEqual([]);
-    expect(marked.harness.stderr()).toContain(`pi-sandbox: ${noHostPiLine(marked.harness.hostAgentDir)}\n`);
+    expect(await run([], marked.harness.deps)).toBe(1);
+    expect(await run([], escaping.harness.deps)).toBe(1);
+    expect(marked.requests).toEqual([]);
+    expect(escaping.requests).toEqual([]);
+    expect(marked.harness.stderr()).toBe(`pinata: ${noHostPiLine(marked.harness.hostAgentDir)}\n`);
   });
 
-  it("gives the proxy no pi without a managed install, even with a pi on PATH", async () => {
-    const { harness, requests } = await launchHarness({ hostPi: false });
+  it("refuses a launch without a managed install, even with a pi on PATH, and changes nothing", async () => {
+    const fake = createFakeBackend();
+    const opened: string[] = [];
+    const harness = await createHarness({
+      hostPi: false,
+      backend: () => {
+        opened.push("backend");
+
+        return fake.backend;
+      },
+    });
     const onPath = await writePathPi(join(harness.root, "brew"), "1.7.0");
 
     harness.deps.env.PATH = onPath.bin;
 
-    expect(await run([], harness.deps)).toBe(0);
-    expect(requests[0]?.piCommand).toEqual([]);
+    const before = await treeOf(harness.root);
+
+    expect(await run([], harness.deps)).toBe(1);
+    expect(harness.stderr()).toBe(`pinata: ${noHostPiLine(harness.hostAgentDir)}\n`);
+    expect(opened).toEqual([]);
+    expect(harness.proxyInputs).toEqual([]);
     expect(providerScriptCall(harness)).toBeUndefined();
-    expect(harness.stderr()).toContain(`pi-sandbox: ${noHostPiLine(harness.hostAgentDir)}\n`);
+    expect(await treeOf(harness.root)).toEqual(before);
   });
 });
 
@@ -102,15 +122,18 @@ describe("pi --no-sandbox", () => {
     expect(interactiveCall(harness)?.args).toEqual(["-p", "hi"]);
   });
 
-  it("prints the missing-pi line without a managed install, even with a pi on PATH", async () => {
+  it("prints the missing-pi error without a managed install, even with a pi on PATH, and changes nothing", async () => {
     const harness = await createHarness({ hostPi: false });
     const brew = await writePathPi(join(harness.root, "brew"), "1.7.0");
 
     harness.deps.env.PATH = brew.bin;
 
+    const before = await treeOf(harness.root);
+
     expect(await run(["--no-sandbox"], harness.deps)).toBe(1);
     expect(interactiveCall(harness)).toBeUndefined();
-    expect(harness.stderr()).toBe(`pi-sandbox: --no-sandbox: ${noHostPiLine(harness.hostAgentDir)}\n`);
+    expect(harness.stderr()).toBe(`pinata: ${noHostPiLine(harness.hostAgentDir)}\n`);
+    expect(await treeOf(harness.root)).toEqual(before);
   });
 });
 
@@ -202,7 +225,7 @@ describe("pi installed with npm install -g", () => {
         return {
           code: await run(["--no-sandbox"], harness.deps),
           asked: npmCalls(harness).length,
-          stderr: harness.stderr() === `pi-sandbox: --no-sandbox: ${noHostPiLine(harness.hostAgentDir)}\n`,
+          stderr: harness.stderr() === `pinata: ${noHostPiLine(harness.hostAgentDir)}\n`,
         };
       }),
     );
@@ -330,7 +353,7 @@ describe("pi installed with npm install -g", () => {
     harness.deps.cwd = harness.deps.home;
 
     expect(await run(["--no-sandbox"], harness.deps)).toBe(1);
-    expect(harness.stderr()).toContain(`pi-sandbox: ${harness.deps.home} is outside the workspace root`);
+    expect(harness.stderr()).toContain(`pinata: ${harness.deps.home} is outside the workspace root`);
     expect(interactiveCall(harness)).toBeUndefined();
   });
 

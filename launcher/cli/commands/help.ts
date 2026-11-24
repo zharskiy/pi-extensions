@@ -1,7 +1,7 @@
 import { type CliDeps, writeLines } from "../deps.ts";
 
 const COMMANDS: Array<[string, string]> = [
-  ["pi [args...]", "run pi in the sandbox for this repository; pi's exit code is the launcher's"],
+  ["pi [args...]", "run pi in the sandbox for this repository; pi's exit code is pinata's"],
   ["pi --no-sandbox [args...]", "run host pi, outside the sandbox"],
   ["pi install|remove <source>", "with host pi on the host (-l passes through into the sandbox)"],
   ["pi mcp add|remove|login|logout ...", "with host pi on the host"],
@@ -13,43 +13,55 @@ const COMMANDS: Array<[string, string]> = [
   ["pi update [target]", "update host pi, its packages or its model catalogs, with host pi on the host"],
   ["pi config", "the user resource config, with host pi on the host (-l passes through into the sandbox)"],
   [
-    "pi sandbox init [--yes]",
+    "pinata install [--yes]",
+    "set up pinata's package in host pi, the pi link, PATH and the sandbox VM; needs pi installed on the host, --yes asks nothing",
+  ],
+  ["pinata update", "install the latest pinata with npm, then its pinata install --yes"],
+  [
+    "pinata uninstall [--sandbox]",
+    "remove the sandbox VM, pinata's state, its links, its PATH block and its package in host pi; your config, sessions, pi and colima stay; --sandbox removes only the sandbox VM, the pi link and pinata's state, so pi runs host pi",
+  ],
+  [
+    "pinata init [--yes]",
     "set up or change the folder that holds your projects, VM size and settings write-back, then apply them to the sandbox VM; --yes asks nothing and applies the current settings",
   ],
-  ["pi sandbox status", "runtime, services, container, proxy, image, launches, grants, overlays, volumes"],
-  ["pi sandbox list", "the sandbox VM and the pi sessions it runs, for every folder, without starting it"],
+  ["pinata status", "runtime, services, container, proxy, image, launches, grants, overlays, volumes"],
+  ["pinata list", "the sandbox VM and the pi sessions it runs, for every folder, without starting it"],
+  ["pinata config", "the effective config and whether each key comes from the config file or the default"],
+  ["pinata egress allow <host[:port]>", "allow a host for every session until revoked"],
+  ["pinata egress revoke <host[:port]>", "remove a grant"],
+  ["pinata egress list [--denied]", "the grants, or the hosts the proxy blocked"],
   [
-    "pi sandbox config [--json]",
-    "the effective config and whether each key comes from the config file or the default",
+    "pinata restart",
+    "delete the sandbox VM with everything in it and create it again, once no pi session runs; the next pi rebuilds the image and reinstalls your extensions",
   ],
-  ["pi sandbox egress allow <host[:port]>", "allow a host for every session until revoked"],
-  ["pi sandbox egress revoke <host[:port]>", "remove a grant"],
-  ["pi sandbox egress list [--denied]", "the grants, or the hosts the proxy blocked"],
+  ["pinata stop", "stop the services and the sandbox VM when no pi session runs"],
   [
-    "pi sandbox reset [--services | --agent]",
-    "remove this folder's sandbox with its overlay volumes, once none of its sessions runs; --services instead removes the sandbox's services and their data, and --agent the pi folder every folder's sandbox shares, once no pi session runs",
+    "pinata doctor [--verbose]",
+    "prepare the sandbox like pi and report what needs attention by area, with the fix for each problem; --verbose lists every check with its detail",
   ],
-  ["pi sandbox stop", "stop the services and the sandbox VM when no pi session runs"],
-  [
-    "pi sandbox doctor [--verbose]",
-    "prepare the sandbox like pi and report what needs attention by area, with a hint per problem; --verbose lists every check with its detail",
-  ],
-  ["pi sandbox --version", "print the launcher version"],
-  ["pi sandbox help", "show this help"],
+  ["pinata --version", "print the pinata version"],
+  ["pinata help", "show this help"],
 ];
 
+const isFor =
+  (command: string) =>
+  ([usage]: [string, string]) =>
+    usage === `pinata ${command}` || usage.startsWith(`pinata ${command} `);
+
 export const usageOf = (command: string) =>
-  COMMANDS.map(([usage]) => usage)
-    .filter((usage) => usage === `pi sandbox ${command}` || usage.startsWith(`pi sandbox ${command} `))
+  COMMANDS.filter(isFor(command))
+    .map(([usage]) => usage)
     .join(" | ");
 
-const WIDTH = Math.max(...COMMANDS.map(([command]) => command.length));
+const tableOf = (rows: Array<[string, string]>) => {
+  const width = Math.max(...rows.map(([command]) => command.length));
+
+  return rows.map(([command, description]) => `${command.padEnd(width)}  ${description}`);
+};
 
 export const helpCommand = (deps: CliDeps) => {
-  writeLines(deps.stdout, [
-    "usage:",
-    ...COMMANDS.map(([command, description]) => `  ${command.padEnd(WIDTH)}  ${description}`),
-  ]);
+  writeLines(deps.stdout, tableOf(COMMANDS));
 
   return 0;
 };

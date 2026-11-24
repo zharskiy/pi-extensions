@@ -184,7 +184,7 @@ const acceptable = async (path: string, context: RootGuardContext) => {
 };
 
 export const rootFromEnv = (env: NodeJS.ProcessEnv, cwd: string) => {
-  const root = env.PI_SANDBOX_ROOT ?? "";
+  const root = env.PINATA_ROOT ?? "";
 
   if (root === "") {
     return undefined;

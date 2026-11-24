@@ -118,7 +118,7 @@ describe("pasteBridge", () => {
   const root: { dir: string } = { dir: "" };
 
   beforeAll(async () => {
-    root.dir = await realpath(await mkdtemp(join(tmpdir(), "pi-sandbox-paste-")));
+    root.dir = await realpath(await mkdtemp(join(tmpdir(), "pinata-paste-")));
 
     await writeFile(join(root.dir, "my shot.png"), PNG);
 
@@ -244,9 +244,9 @@ describe("pasteBridge", () => {
 
     expect(run.text).toBe(chunks.join(""));
     expect(run.notices).toEqual([
-      "pi-sandbox: image not copied into the sandbox: macOS blocked the terminal from reading it; allow access in System Settings → Privacy & Security → Files and Folders",
-      "pi-sandbox: image not copied into the sandbox: there is no such file on the host",
-      "pi-sandbox: image not copied into the sandbox: it is not a regular file",
+      "pinata: image not copied into the sandbox: macOS blocked the terminal from reading it; allow access in System Settings → Privacy & Security → Files and Folders",
+      "pinata: image not copied into the sandbox: there is no such file on the host",
+      "pinata: image not copied into the sandbox: it is not a regular file",
     ]);
   });
 
@@ -256,7 +256,7 @@ describe("pasteBridge", () => {
 
     expect(run.text).toBe(chunks.join(""));
     expect(run.notices).toEqual([
-      "pi-sandbox: image not copied into the sandbox: the copy into the container failed",
+      "pinata: image not copied into the sandbox: the copy into the container failed",
     ]);
   });
 

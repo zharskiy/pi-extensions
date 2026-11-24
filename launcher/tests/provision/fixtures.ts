@@ -5,8 +5,8 @@ export { tempDir, writeText } from "../support/temp-dir.ts";
 
 export const runningContainer = async (backend: Backend) => {
   const { id } = await backend.createContainer({
-    name: "pi-sandbox-provision",
-    image: "pi-sandbox:test",
+    name: "pinata-provision",
+    image: "pinata:test",
     labels: {},
     mounts: [],
     network: { kind: "none" },

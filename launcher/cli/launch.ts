@@ -11,7 +11,7 @@ import {
   startLaunchContainer,
 } from "../container/index.ts";
 import type { Launch } from "../grants/index.ts";
-import { type HostPiFiles, readHostPiFiles } from "../hostpi/index.ts";
+import { type HostPi, readHostPiFiles } from "../hostpi/index.ts";
 import { ensureSandboxImage, type SandboxImage } from "../image/index.ts";
 import {
   installPackages,
@@ -30,7 +30,7 @@ import { checkHostRoot, type LaunchContext, openContext } from "./context.ts";
 import { type CliDeps, hostAgentDirOf, writeLine, writeNotices } from "./deps.ts";
 import { type HostSide, type PreparedHost, prepareHostSide } from "./derive.ts";
 import { startServices, withGroundLock } from "./ground.ts";
-import { NO_SANDBOX, resolveJobPi, runHostPi } from "./host-pi.ts";
+import { NO_SANDBOX, requireJobPi, runHostPi } from "./host-pi.ts";
 import {
   hostSessionsOf,
   noticeHostSessions,
@@ -44,7 +44,6 @@ import { writeOnce } from "./notices.ts";
 import { runSetup, withAgentLock, withPrepareLock } from "./prepare.ts";
 import { openSandboxProxy, reportDenials, type SandboxProxy, sandboxDenials } from "./sandbox-proxy.ts";
 import { sweepOrphans } from "./sweep.ts";
-import { imagePiVersion } from "./versions.ts";
 import {
   assertMemoryFitsVm,
   assertVmFitsHost,
@@ -119,12 +118,12 @@ interface PreparedInput extends SandboxInput {
   othersLive: () => Promise<boolean>;
 }
 
-const PREPARING = "preparing pi sandbox, one time";
+const PREPARING = "preparing the sandbox, one time";
 
-const STOPPING = "pi-sandbox: stopping after the current step";
+const STOPPING = "pinata: stopping after the current step";
 
 const SKIPPING_WAITS =
-  "pi-sandbox: the cleanup will not wait for other pi-sandbox commands; another Ctrl-C ends pi-sandbox at once, leaving the rest to the next start";
+  "pinata: the cleanup will not wait for other pinata commands; another Ctrl-C ends pinata at once, leaving the rest to the next start";
 
 const PREPARATION_SIGNALS: NodeJS.Signals[] = ["SIGINT", "SIGTERM", "SIGHUP"];
 
@@ -151,9 +150,6 @@ const handled = <T>(pending: Promise<T>) => {
 
   return pending;
 };
-
-const startHostSide = (deps: CliDeps, context: LaunchContext, files: HostPiFiles) =>
-  handled(resolveJobPi(deps).then((pi) => prepareHostSide(deps, context, files, pi)));
 
 const prepareHost = async (
   deps: CliDeps,
@@ -187,10 +183,10 @@ const prepareImage = (
     env: deps.env,
     trustPem: parts.host.trust.extraPemPath,
     proxyCaPem: parts.host.trust.caCertPath,
-    versions: async () => ({ pi: await imagePiVersion(parts.host.pi) }),
+    versions: async () => ({ pi: parts.host.pi.version }),
     preparing: () => parts.progress(PREPARING),
-    waiting: () => parts.progress("pi-sandbox: waiting for the image build in another session"),
-    progress: (step) => parts.progress(`pi-sandbox: build: ${step}`),
+    waiting: () => parts.progress("pinata: waiting for the image build in another session"),
+    progress: (step) => parts.progress(`pinata: build: ${step}`),
   });
 
 const sandboxRoute = async (input: PreparedInput, proxy: SandboxProxy, imageId: string) => {
@@ -351,7 +347,7 @@ const prepareContainer = async (
   const { render } = parts.files;
 
   await writeOnce(deps, context.stateDir, [
-    ...render.notices.map((notice) => `pi-sandbox: ${notice}`),
+    ...render.notices.map((notice) => `pinata: ${notice}`),
     ...launchNotices(context),
   ]);
 
@@ -412,7 +408,7 @@ const setupContainer = (input: PreparedInput, containerId: string) => {
     backend,
     containerId,
     commands: context.effective.config.setup,
-    env: { ...input.forwarded.env, PI_SANDBOX_LAUNCH_ID: launch.launchId },
+    env: { ...input.forwarded.env, PINATA_LAUNCH_ID: launch.launchId },
     workdir: context.workspace.repoRoot,
     stdout: deps.stdout,
     stderr: deps.stderr,
@@ -465,7 +461,7 @@ const prepareSandbox = async (input: PreparedInput) => {
   cancelled.throwIfAborted();
 
   await staged("sync", () => prepareAgentFolder(input, prepared)).catch((error: unknown) => {
-    writeLine(deps.stderr, `pi-sandbox: warning: the agent settings were not synced: ${errorMessage(error)}`);
+    writeLine(deps.stderr, `pinata: warning: the agent settings were not synced: ${errorMessage(error)}`);
   });
 
   return { prepared, proxy };
@@ -595,6 +591,7 @@ export const withSandbox = async (
   deps: CliDeps,
   context: LaunchContext,
   backend: Backend,
+  pi: HostPi,
   use: (sandbox: Sandbox) => Promise<number>,
   {
     report = () => undefined,
@@ -633,7 +630,7 @@ export const withSandbox = async (
     ended.signal = signal;
 
     const cancel = new AbortController();
-    const deriving = startHostSide(deps, context, files);
+    const deriving = handled(prepareHostSide(deps, context, files, pi));
     const allowlist = writeBackTableOf(context.effective.config.writeBack);
     const preparation = prepareAll(
       {
@@ -695,10 +692,7 @@ export const withSandbox = async (
         const lock = { stateDir: context.stateDir, signal: skipWaits, progress };
 
         await withAgentLock(lock, () => syncVolume(deps, context, backend, sync)).catch((error: unknown) => {
-          writeLine(
-            deps.stderr,
-            `pi-sandbox: warning: settings were not written back: ${errorMessage(error)}`,
-          );
+          writeLine(deps.stderr, `pinata: warning: settings were not written back: ${errorMessage(error)}`);
         });
       }
 
@@ -724,6 +718,7 @@ const startPi = (deps: CliDeps, context: LaunchContext, sandbox: Sandbox, piArgs
 };
 
 export const launch = async (args: string[], deps: CliDeps) => {
+  const pi = await requireJobPi(deps);
   const piArgs = args.filter((arg) => arg !== NO_SANDBOX);
 
   if (piArgs.length !== args.length) {
@@ -731,12 +726,12 @@ export const launch = async (args: string[], deps: CliDeps) => {
 
     checkHostRoot(deps, context);
 
-    return runHostPi(deps, context, piArgs);
+    return runHostPi(deps, context, pi, piArgs);
   }
 
   const { context, backend } = await openContext(deps, "sandbox");
 
-  return withSandbox(deps, context, backend, (sandbox) => startPi(deps, context, sandbox, piArgs), {
+  return withSandbox(deps, context, backend, pi, (sandbox) => startPi(deps, context, sandbox, piArgs), {
     writeBack: true,
     piArgs,
   });

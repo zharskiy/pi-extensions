@@ -34,18 +34,18 @@ describe("assertSafeMounts", () => {
     const attempts = [
       { workspace: base, context },
       { workspace: join(home, ".pi"), context },
-      { workspace: join(home, ".pi", "agent", "pi-sandbox"), context },
+      { workspace: join(home, ".pi", "agent", "pinata"), context },
       {
         workspace: "/srv/pi",
         context: { ...context, env: { PI_CODING_AGENT_DIR: "/srv/pi/agent" } },
       },
       {
         workspace: "/srv/config",
-        context: { ...context, env: { PI_SANDBOX_USER_CONFIG: "/srv/config/sandbox.json" } },
+        context: { ...context, env: { PINATA_USER_CONFIG: "/srv/config/sandbox.json" } },
       },
       {
         workspace: "/srv/state",
-        context: { ...context, env: { PI_SANDBOX_STATE_DIR: "/srv/state/x" } },
+        context: { ...context, env: { PINATA_STATE_DIR: "/srv/state/x" } },
       },
     ];
 
@@ -58,14 +58,14 @@ describe("assertSafeMounts", () => {
     const { home, context } = await createHome();
     const attempts = [
       { workspace: join(home, ".pi", "agent", "repo"), context },
-      { workspace: join(home, ".pi", "agent", "pi-sandbox", "state", "copies"), context },
+      { workspace: join(home, ".pi", "agent", "pinata", "state", "copies"), context },
       {
-        workspace: "/srv/agent/pi-sandbox/repo",
+        workspace: "/srv/agent/pinata/repo",
         context: { ...context, env: { PI_CODING_AGENT_DIR: "/srv/agent" } },
       },
       {
         workspace: "/srv/state/repo",
-        context: { ...context, env: { PI_SANDBOX_STATE_DIR: "/srv/state" } },
+        context: { ...context, env: { PINATA_STATE_DIR: "/srv/state" } },
       },
     ];
 
@@ -85,7 +85,7 @@ describe("assertSafeMounts", () => {
 
   it("refuses a repository inside another protected home or system directory", async () => {
     const { home, context } = await createHome();
-    const attempts = [join(home, ".aws", "config-repo"), "/etc/pi-sandbox-repo"];
+    const attempts = [join(home, ".aws", "config-repo"), "/etc/pinata-repo"];
 
     attempts.forEach((workspace) => {
       expect(() => assertSafeMounts([workspace], context)).toThrow(/is inside .*, refusing/);
@@ -106,10 +106,10 @@ describe("assertSafeMounts", () => {
     expect(() => assertSafeMounts([join(base, "agents")], context)).not.toThrow();
   });
 
-  it("protects only the user config file, not its directory, when PI_SANDBOX_USER_CONFIG points elsewhere", async () => {
+  it("protects only the user config file, not its directory, when PINATA_USER_CONFIG points elsewhere", async () => {
     const { base, context } = await createHome();
     const configDir = join(base, "shared-config");
-    const custom = { ...context, env: { PI_SANDBOX_USER_CONFIG: join(configDir, "pi.json") } };
+    const custom = { ...context, env: { PINATA_USER_CONFIG: join(configDir, "pi.json") } };
 
     expect(() => assertSafeMounts([configDir], custom)).toThrow("pi may not start in");
     expect(() => assertSafeMounts([base], custom)).toThrow("pi may not start in");

@@ -18,7 +18,7 @@ const runtimeWith = (allow: string[]) =>
   });
 
 beforeEach(async () => {
-  state.stateDir = await mkdtemp(join(tmpdir(), "pi-sandbox-runtime-"));
+  state.stateDir = await mkdtemp(join(tmpdir(), "pinata-runtime-"));
 
   await mkdir(dirname(egressPath()), { recursive: true });
 });

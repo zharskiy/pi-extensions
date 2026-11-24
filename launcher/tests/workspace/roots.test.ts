@@ -35,7 +35,7 @@ const NO_HOME = { home: "/nonexistent-home", env: {} };
 describe("requiredRoot", () => {
   it("refuses an unset root, naming the user config file", () => {
     expect(() =>
-      requiredRoot(undefined, { home: "/h", env: { PI_SANDBOX_USER_CONFIG: "/c/config.json" } }),
+      requiredRoot(undefined, { home: "/h", env: { PINATA_USER_CONFIG: "/c/config.json" } }),
     ).toThrow("config: workspaceRoot is not set, so pi has no folder it may start in");
     expect(requiredRoot("~/work", NO_HOME)).toBe("~/work");
   });
@@ -179,8 +179,8 @@ const createHome = async () => {
   const home = join(base, "home");
   const env = {
     PI_CODING_AGENT_DIR: join(home, ".pi", "agent"),
-    PI_SANDBOX_STATE_DIR: join(base, "state"),
-    PI_SANDBOX_USER_CONFIG: join(base, "config", "config.json"),
+    PINATA_STATE_DIR: join(base, "state"),
+    PINATA_USER_CONFIG: join(base, "config", "config.json"),
   };
 
   await Promise.all(
@@ -190,7 +190,7 @@ const createHome = async () => {
       join(home, "code"),
       join(home, "Projects"),
       env.PI_CODING_AGENT_DIR,
-      env.PI_SANDBOX_STATE_DIR,
+      env.PINATA_STATE_DIR,
     ].map((dir) => mkdir(dir, { recursive: true })),
   );
 
@@ -263,13 +263,13 @@ describe("sharedRootOf", () => {
       (base: string) => join(base, "home", ".pi", "agent", "x"),
       "overlaps pi's directory",
     ],
-    ["the state dir", (base: string) => join(base, "state"), "overlaps the launcher state directory"],
-    ["a folder in the state dir", (base: string) => join(base, "state", "x"), "overlaps the launcher state"],
-    ["the user config dir", (base: string) => join(base, "config"), "overlaps the launcher user config"],
+    ["the state dir", (base: string) => join(base, "state"), "overlaps pinata's state directory"],
+    ["a folder in the state dir", (base: string) => join(base, "state", "x"), "overlaps pinata's state"],
+    ["the user config dir", (base: string) => join(base, "config"), "overlaps pinata's user config"],
     [
       "a folder in the user config dir",
       (base: string) => join(base, "config", "x"),
-      "overlaps the launcher config dir",
+      "overlaps pinata's config dir",
     ],
     ["~/.ssh", (base: string) => join(base, "home", ".ssh"), "overlaps ~/.ssh"],
     ["a folder in ~/.colima", (base: string) => join(base, "home", ".colima", "x"), "overlaps ~/.colima"],
@@ -346,9 +346,9 @@ describe("checkRoot", () => {
       ok: true,
       resolved: "/Volumes/Projects",
     });
-    expect(checkRoot("/Volumes/pi-sandbox-test-absent", context)).toEqual({
+    expect(checkRoot("/Volumes/pinata-test-absent", context)).toEqual({
       ok: true,
-      resolved: "/Volumes/pi-sandbox-test-absent",
+      resolved: "/Volumes/pinata-test-absent",
       exists: false,
     });
   });

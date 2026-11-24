@@ -68,7 +68,7 @@ const caConfig = `[req]
 distinguished_name = dn
 prompt = no
 [dn]
-CN = pi-sandbox launcher CA
+CN = pinata CA
 [authority]
 basicConstraints = critical,CA:TRUE
 keyUsage = critical,keyCertSign,cRLSign
@@ -238,7 +238,7 @@ const ensureCa = async (layout: StateLayout, runner: CommandRunner) => {
       const created = await storedCa(layout);
 
       if (created === undefined) {
-        throw new LauncherError(`the launcher CA in ${layout.ca} could not be created`);
+        throw new LauncherError(`pinata's CA in ${layout.ca} could not be created`);
       }
 
       return created;

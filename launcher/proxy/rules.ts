@@ -8,7 +8,7 @@ export interface ScrubSecret {
   placeholder?: string;
 }
 
-const REDACTED = "pi-sandbox-redacted";
+const REDACTED = "pinata-redacted";
 
 const FETCH_RESERVED = "sec-";
 

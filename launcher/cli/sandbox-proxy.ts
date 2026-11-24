@@ -38,7 +38,7 @@ const proxyInput = (deps: CliDeps, context: LaunchContext, host: HostSide): Inpu
     parentEnv: parentProxyEnv(deps.env),
     ...(parentAuth === undefined ? {} : { parentAuth }),
     extraCa: tls.extraCa.length > 0,
-    piCommand: host.pi?.command ?? [],
+    piCommand: host.pi.command,
     hostAgentDir: host.hostAgentDir,
     accessLogLimit: PROXY_LOG_LIMIT,
   };
@@ -87,7 +87,7 @@ export const openSandboxProxy = async (
   } catch (error) {
     throw new LauncherError(
       `the egress proxy could not start, refusing to run without it: ${errorMessage(error)}`,
-      error instanceof LauncherError && error.hint !== undefined ? error.hint : "run pi sandbox doctor",
+      error instanceof LauncherError && error.hint !== undefined ? error.hint : "run pinata doctor",
     );
   }
 };
@@ -115,7 +115,7 @@ export interface DenialAdvice {
 
 export const denialAdvice = (deps: CliDeps, denial: DenialRecord, target: string): DenialAdvice => {
   if (denial.rule === "egress.allow") {
-    return { fix: `run pi sandbox egress allow ${target} on the host` };
+    return { fix: `run pinata egress allow ${target} on the host` };
   }
 
   if (RESTRICTED_RULES.has(denial.rule)) {
@@ -151,6 +151,6 @@ export const sandboxDenials = (deps: CliDeps, context: LaunchContext, since: num
 export const reportDenials = (deps: CliDeps) => (denials: DenialRecord[]) => {
   writeLines(
     deps.stderr,
-    deniedTargets(denials).map((denial) => `pi-sandbox: ${blockedText(deps, denial)}`),
+    deniedTargets(denials).map((denial) => `pinata: ${blockedText(deps, denial)}`),
   );
 };

@@ -84,7 +84,7 @@ const mappedDial = (ports: () => Record<string, number>): Dialer => ({
   checkAddresses: async () => undefined,
 });
 
-export const createStateDir = () => mkdtemp(join(tmpdir(), "pi-sandbox-proxy-"));
+export const createStateDir = () => mkdtemp(join(tmpdir(), "pinata-proxy-"));
 
 export const removeDir = (path: string) => rm(path, { recursive: true, force: true });
 

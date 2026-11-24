@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { run } from "../../cli/index.ts";
+import { run, runPinata } from "../../cli/index.ts";
 import { createFakeBackend, createHarness, isPiSession } from "./harness.ts";
 
 type Edit = (write: (name: string, value: unknown) => Promise<void>) => Promise<void>;
@@ -34,7 +34,7 @@ const setup = async () => {
   return { fake, harness, host, launchWith };
 };
 
-const WRITTEN = "pi-sandbox: settings.json defaultModel: p/a → p/b written to the host";
+const WRITTEN = "pinata: settings.json defaultModel: p/a → p/b written to the host";
 
 describe("writing sandbox settings back to the host", () => {
   it("writes nothing back at the first launch, then writes the session's change back at exit", async () => {
@@ -65,7 +65,7 @@ describe("writing sandbox settings back to the host", () => {
 
     const second = await env.launchWith((write) => write("pi-style.json", { style: "terse" }));
 
-    expect(second.stderr).toContain("pi-sandbox: pi-style.json style: plain → terse written to the host");
+    expect(second.stderr).toContain("pinata: pi-style.json style: plain → terse written to the host");
     expect(await env.host("pi-style.json")).toEqual({ style: "terse" });
   });
 
@@ -130,7 +130,7 @@ describe("writing sandbox settings back to the host", () => {
     );
 
     expect(stderr.split("\n").filter((line) => line.includes("written to the host"))).toEqual([
-      "pi-sandbox: settings.json editorPaddingX: 1 → 3 written to the host",
+      "pinata: settings.json editorPaddingX: 1 → 3 written to the host",
     ]);
     expect(await env.host("settings.json")).toEqual({ defaultModel: "p/a", editorPaddingX: 3 });
   });
@@ -144,9 +144,11 @@ describe("writing sandbox settings back to the host", () => {
 
     await env.fake.writeGuestFile("settings.json", JSON.stringify({ defaultModel: "p/b" }));
 
-    await run(["sandbox", "doctor"], env.harness.deps);
+    await runPinata(["doctor"], env.harness.deps);
 
-    expect(env.harness.stdout()).toContain("settings.json defaultModel: p/a → p/b written to the host");
+    expect(env.harness.stdout()).toContain(
+      "\nNotices\n  settings.json defaultModel: p/a -> p/b written to the host\n",
+    );
     expect(await env.host("settings.json")).toEqual({ defaultModel: "p/b" });
     expect(JSON.parse((await env.fake.guestFile("settings.json")) ?? "null")).toMatchObject({
       defaultModel: "p/b",
@@ -166,7 +168,7 @@ describe("writing sandbox settings back to the host", () => {
     });
 
     expect(stderr).toContain(
-      "pi-sandbox: settings.json: defaultModel changed on the host and in the sandbox; kept the host value",
+      "pinata: settings.json: defaultModel changed on the host and in the sandbox; kept the host value",
     );
     expect(await env.host("settings.json")).toEqual({ defaultModel: "p/c" });
   });
@@ -195,7 +197,7 @@ describe("writing sandbox settings back to the host", () => {
     const { code, stderr } = await env.launchWith();
 
     expect(code).toBe(5);
-    expect(stderr).toContain("pi-sandbox: warning: settings.json was not written back");
+    expect(stderr).toContain("pinata: warning: settings.json was not written back");
     expect(await env.host("settings.json")).toEqual({ defaultModel: "p/a" });
   });
 });

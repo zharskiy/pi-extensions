@@ -78,17 +78,17 @@ export const parseRequestTarget = (target: string | undefined, host: string, por
   const path = originFormOf(target ?? "", host, port);
 
   if (path === undefined) {
-    return refused("pi-sandbox: the request target must be a path on the terminated host");
+    return refused("pinata: the request target must be a path on the terminated host");
   }
 
   const decodedPath = decode((path.split("#")[0] ?? "").split("?")[0] ?? "");
 
   if (decodedPath === undefined) {
-    return refused("pi-sandbox: the request path is not valid percent-encoding");
+    return refused("pinata: the request path is not valid percent-encoding");
   }
 
   if (decodedPath.split(SEPARATOR).some(isDotSegment)) {
-    return refused("pi-sandbox: the request path holds a dot segment");
+    return refused("pinata: the request path holds a dot segment");
   }
 
   return { ok: true, path, decodedPath };

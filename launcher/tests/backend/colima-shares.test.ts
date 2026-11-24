@@ -5,7 +5,7 @@ import { vmSharesOf } from "../../backend/colima/colima-yaml.ts";
 import { createColimaVm } from "../../backend/colima/vm.ts";
 import { type Backend, LABELS, type Vm } from "../../backend/index.ts";
 import { shareDrift } from "../../backend/vm-decision.ts";
-import { run } from "../../cli/index.ts";
+import { run, runPinata } from "../../cli/index.ts";
 import { registerLaunch } from "../../grants/index.ts";
 import { processMark, sha256Hex } from "../../shared/index.ts";
 import {
@@ -18,7 +18,7 @@ import {
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { argvOf, type FakeCall } from "../support/fake-runner.ts";
 
-const PROFILE = { status: async () => ({ socket: "/fake/docker.sock", profile: "pi-sandbox" }) };
+const PROFILE = { status: async () => ({ socket: "/fake/docker.sock", profile: "pinata" }) };
 
 interface ColimaAnswers {
   start?: { code: number; stderr: string };
@@ -134,13 +134,13 @@ const launchWith = async (setup: Setup = {}) => {
   };
 };
 
-const limaYaml = (home: string) => join(home, ".colima", "_lima", "colima-pi-sandbox", "lima.yaml");
+const limaYaml = (home: string) => join(home, ".colima", "_lima", "colima-pinata", "lima.yaml");
 
 const run0 = async (context: Awaited<ReturnType<typeof launchWith>>) => run([], context.harness.deps);
 
 const restart = (mounts: string) => [
-  "colima stop --profile pi-sandbox",
-  `colima start --profile pi-sandbox --activate=false ${mounts}`,
+  "colima stop --profile pinata",
+  `colima start --profile pinata --activate=false ${mounts}`,
 ];
 
 describe("vmSharesOf", () => {
@@ -171,13 +171,13 @@ describe("vmSharesOf", () => {
       "      writable: true",
       "    - location: ~/.pi/agent/sessions/",
       "      writable: true",
-      "    - location: ~/.pi/agent/pi-sandbox/state/vm/",
+      "    - location: ~/.pi/agent/pinata/state/vm/",
       "      writable: false",
     ].join("\n");
     const plan = [
       { location: "/Volumes/Projects", writable: true },
       { location: "/Users/dev/.pi/agent/sessions", writable: true },
-      { location: "/Users/dev/.pi/agent/pi-sandbox/state/vm", writable: false },
+      { location: "/Users/dev/.pi/agent/pinata/state/vm", writable: false },
     ];
     const shares = vmSharesOf(text, home) ?? [];
 
@@ -294,7 +294,7 @@ describe("the launch shares the workspace root with the VM", () => {
 
     expect(await run0(context)).toBe(0);
     expect(context.harness.stderr()).toContain(
-      `pi-sandbox: restarting the sandbox VM to change its shares to ${rootsLocations(context.paths)}${dropsHomeAndState(context.paths)}\n`,
+      `pinata: restarting the sandbox VM to change its shares to ${rootsLocations(context.paths)}${dropsHomeAndState(context.paths)}\n`,
     );
     expect(context.colimaCalls()).toEqual(restart(rootsMounts(context.paths)));
     expect(context.fake.created).toHaveLength(1);
@@ -343,8 +343,8 @@ describe("the launch shares the workspace root with the VM", () => {
     expect(await run0(context)).toBe(1);
     expect(context.harness.stderr()).toContain(
       [
-        `pi-sandbox: could not restart the sandbox VM: colima start failed: level=fatal msg="disk busy"`,
-        `  hint: run colima start --profile pi-sandbox --activate=false ${rootsMounts(context.paths)} and see ~/.colima/_lima/colima-pi-sandbox/ha.stderr.log`,
+        `pinata: could not restart the sandbox VM: colima start failed: level=fatal msg="disk busy"`,
+        `  hint: run colima start --profile pinata --activate=false ${rootsMounts(context.paths)} and see ~/.colima/_lima/colima-pinata/ha.stderr.log`,
       ].join("\n"),
     );
   });
@@ -355,7 +355,7 @@ describe("the launch shares the workspace root with the VM", () => {
 
     expect(await run0(context)).toBe(1);
     expect(context.harness.stderr()).toContain(
-      `pi-sandbox: colima did not share ${repoRoot} with the sandbox VM\n`,
+      `pinata: colima did not share ${repoRoot} with the sandbox VM\n`,
     );
     expect(context.fake.containers.size).toBe(0);
   });
@@ -365,7 +365,7 @@ describe("the launch shares the workspace root with the VM", () => {
 
     expect(await run0(context)).toBe(1);
     expect(context.harness.stderr()).toContain(
-      "pi-sandbox: could not restart the sandbox VM: colima: command not found\n",
+      "pinata: could not restart the sandbox VM: colima: command not found\n",
     );
   });
 
@@ -387,7 +387,7 @@ describe("the launch shares the workspace root with the VM", () => {
     expect(detections.count).toBeGreaterThanOrEqual(6);
     expect(context.pauses).toEqual([0, 500, 1000, 1500, 2000]);
     expect(context.harness.stderr()).toContain(
-      "pi-sandbox: the sandbox VM did not come back after restarting it: socket missing\n",
+      "pinata: the sandbox VM did not come back after restarting it: socket missing\n",
     );
   });
 });
@@ -410,34 +410,34 @@ describe("the coverage of the VM shares", () => {
     });
   });
 
-  it("lets pi sandbox doctor name a path the VM lacks without sharing it or restarting the VM", async () => {
+  it("lets pinata doctor name a path the VM lacks without sharing it or restarting the VM", async () => {
     const context = await launchWith();
 
-    await run(["sandbox", "doctor", "--verbose"], context.harness.deps);
+    await runPinata(["doctor", "--verbose"], context.harness.deps);
 
     expect(doctorCheck(context.harness.stdout(), "vm shares")).toMatchObject({
       status: "warn",
       detail: `the sandbox VM does not share ${context.paths.repoRoot}`,
-      hint: "run pi once here while no other pi session runs, which shares it and restarts the VM, then pi sandbox doctor again",
+      hint: "run pi once here while no other pi session runs, which shares it and restarts the VM, then pinata doctor again",
     });
     expect(context.colimaCalls().filter((call) => /^colima (start|stop|restart)/.test(call))).toEqual([]);
   });
 
-  it("lets pi sandbox doctor say the VM shares every path it needs", async () => {
+  it("lets pinata doctor say the VM shares every path it needs", async () => {
     const context = await launchWith({ lima: rootsShares });
 
-    await run(["sandbox", "doctor", "--verbose"], context.harness.deps);
+    await runPinata(["doctor", "--verbose"], context.harness.deps);
 
     expect(doctorCheck(context.harness.stdout(), "vm shares")).toMatchObject({
       status: "ok",
-      detail: "the sandbox VM shares exactly the workspaceRoot, the session dir and the launcher's vm dir",
+      detail: "the sandbox VM shares exactly the workspaceRoot, the session dir and pinata's vm dir",
     });
   });
 
   it("knows no coverage before colima wrote the instance config", async () => {
     const context = await launchWith();
 
-    await rm(join(context.paths.home, ".colima", "_lima", "colima-pi-sandbox", "lima.yaml"));
+    await rm(join(context.paths.home, ".colima", "_lima", "colima-pinata", "lima.yaml"));
 
     expect(await context.harness.deps.backend().vm.coverage([])).toBeUndefined();
   });
@@ -473,7 +473,7 @@ describe("the VM shares with workspaceRoot set", () => {
     expect(await run0(context)).toBe(0);
     expect(context.colimaCalls()).toEqual([]);
     expect(context.harness.stderr()).toContain(
-      `pi-sandbox: the sandbox VM will change its shares to ${rootsLocations(context.paths)} (adds ${join(context.paths.home, ".pi", "agent", "sessions")}, ${join(context.paths.stateDir, "vm")}, drops ${context.paths.home}, ${context.paths.stateDir}) at the next launch with no other pi session running\n`,
+      `pinata: the sandbox VM will change its shares to ${rootsLocations(context.paths)} (adds ${join(context.paths.home, ".pi", "agent", "sessions")}, ${join(context.paths.stateDir, "vm")}, drops ${context.paths.home}, ${context.paths.stateDir}) at the next launch with no other pi session running\n`,
     );
     expect(context.fake.created).toHaveLength(1);
   });
@@ -487,8 +487,8 @@ describe("the VM shares with workspaceRoot set", () => {
     expect(await run0(context)).toBe(1);
     expect(context.harness.stderr()).toContain(
       [
-        `pi-sandbox: ${repoRoot} is not shared with the sandbox VM; 1 pi session is running, and restarting the VM to change its shares to ${rootsLocations(context.paths)}${dropsHomeAndState(context.paths)} would end them`,
-        `  hint: end them and run pi again, or share it yourself with colima stop --profile pi-sandbox && colima start --profile pi-sandbox --activate=false ${rootsMounts(context.paths)}`,
+        `pinata: ${repoRoot} is not shared with the sandbox VM; 1 pi session is running, and restarting the VM to change its shares to ${rootsLocations(context.paths)}${dropsHomeAndState(context.paths)} would end them`,
+        `  hint: end them and run pi again, or share it yourself with colima stop --profile pinata && colima start --profile pinata --activate=false ${rootsMounts(context.paths)}`,
       ].join("\n"),
     );
     expect(context.colimaCalls()).toEqual([]);
@@ -500,7 +500,7 @@ describe("the VM shares with workspaceRoot set", () => {
 
     expect(await run0(context)).toBe(1);
     expect(context.harness.stderr()).toContain(
-      `pi-sandbox: config: workspaceRoot: ${context.paths.home} is the home dir or holds it`,
+      `pinata: config: workspaceRoot: ${context.paths.home} is the home dir or holds it`,
     );
     expect(context.colimaCalls()).toEqual([]);
   });
@@ -512,7 +512,7 @@ describe("the VM shares with workspaceRoot set", () => {
 
     expect(await run0(context)).toBe(1);
     expect(context.harness.stderr()).toContain(
-      `pi-sandbox: ${context.paths.repoRoot} is outside the workspace root (workspaceRoot: ${join(context.paths.home, "code")})`,
+      `pinata: ${context.paths.repoRoot} is outside the workspace root (workspaceRoot: ${join(context.paths.home, "code")})`,
     );
     expect(context.colimaCalls()).toEqual([]);
   });
@@ -530,7 +530,7 @@ describe("the VM shares with workspaceRoot set", () => {
     );
   });
 
-  it("warns in pi sandbox doctor while the VM still shares the home, without restarting it", async () => {
+  it("warns in pinata doctor while the VM still shares the home, without restarting it", async () => {
     const context = await launchWithRoot({
       lima: ({ home, stateDir, repoRoot }) => [
         { location: home, writable: true },
@@ -540,20 +540,20 @@ describe("the VM shares with workspaceRoot set", () => {
     });
     const { home, stateDir } = context.paths;
 
-    await run(["sandbox", "doctor", "--verbose"], context.harness.deps);
+    await runPinata(["doctor", "--verbose"], context.harness.deps);
 
     expect(doctorCheck(context.harness.stdout(), "vm shares")).toMatchObject({
       status: "warn",
       detail: `the sandbox VM shares ${home}:w, ${stateDir}, which workspaceRoot leaves out and lacks ~/.pi/agent/sessions:w, ${join(stateDir, "vm")}`,
-      hint: "run pi sandbox init, or pi, while no other pi session runs; either restarts the VM with the shares workspaceRoot sets",
+      hint: "run pinata init, or pi, while no other pi session runs; either restarts the VM with the shares workspaceRoot sets",
     });
     expect(context.colimaCalls().filter((call) => /^colima (start|stop|restart)/.test(call))).toEqual([]);
   });
 
-  it("passes pi sandbox doctor when the VM shares exactly the configured set", async () => {
+  it("passes pinata doctor when the VM shares exactly the configured set", async () => {
     const context = await launchWith({ lima: rootsShares });
 
-    await run(["sandbox", "doctor", "--verbose"], context.harness.deps);
+    await runPinata(["doctor", "--verbose"], context.harness.deps);
 
     expect(doctorCheck(context.harness.stdout(), "vm shares")).toMatchObject({ status: "ok" });
   });
@@ -561,7 +561,7 @@ describe("the VM shares with workspaceRoot set", () => {
 
 const foreignContainer = (fake: ReturnType<typeof createFakeBackend>, state: "running" | "stopped") =>
   fake.addContainer({
-    name: "pi-sandbox-other",
+    name: "pinata-other",
     labels: {
       [LABELS.managed]: "true",
       [LABELS.install]: "otherinstall",
@@ -612,8 +612,8 @@ describe("the VM shares with workspaceRoot set, at the edges", () => {
 
     expect(await run0(context)).toBe(0);
     expect(context.colimaCalls()).toEqual([
-      "colima status --profile pi-sandbox",
-      `colima start --profile pi-sandbox --activate=false ${rootsMounts(context.paths)}`,
+      "colima status --profile pinata",
+      `colima start --profile pinata --activate=false ${rootsMounts(context.paths)}`,
     ]);
     expect(context.fake.created).toHaveLength(1);
   });
@@ -629,7 +629,7 @@ describe("the VM shares with workspaceRoot set, at the edges", () => {
 
     expect(await run0(context)).toBe(1);
     expect(context.harness.stderr()).toContain(
-      `pi-sandbox: config: workspaceRoot: the sandbox VM shares ${repoRoot} and ${store}, which nest`,
+      `pinata: config: workspaceRoot: the sandbox VM shares ${repoRoot} and ${store}, which nest`,
     );
     expect(context.colimaCalls()).toEqual([]);
   });
@@ -652,34 +652,34 @@ describe("the VM shares with workspaceRoot set, at the edges", () => {
     expect(context.colimaCalls()).toEqual(restart(rootsMounts(context.paths)));
   });
 
-  it("warns in pi sandbox doctor when the shares cannot be read", async () => {
+  it("warns in pinata doctor when the shares cannot be read", async () => {
     const context = await launchWith();
 
     await writeFile(limaYaml(context.paths.home), "mounts: [ { location: /x } ]\n");
 
-    await run(["sandbox", "doctor", "--verbose"], context.harness.deps);
+    await runPinata(["doctor", "--verbose"], context.harness.deps);
 
     expect(doctorCheck(context.harness.stdout(), "vm shares")).toMatchObject({
       status: "warn",
       detail:
-        "colima's lima.yaml of profile pi-sandbox could not be read, so the shares of the sandbox VM are unknown",
+        "colima's lima.yaml of profile pinata could not be read, so the shares of the sandbox VM are unknown",
     });
   });
 
-  it("lets pi sandbox doctor say a root does not exist", async () => {
+  it("lets pinata doctor say a root does not exist", async () => {
     const context = await launchWithRoot({ lima: rootsShares, root: ({ root }) => join(root, "gone") });
 
-    expect(await run(["sandbox", "doctor"], context.harness.deps)).toBe(1);
+    expect(await runPinata(["doctor"], context.harness.deps)).toBe(1);
     expect(context.harness.stderr()).toContain(
-      `pi-sandbox: config: workspaceRoot: ${join(context.paths.root, "gone")} does not exist`,
+      `pinata: config: workspaceRoot: ${join(context.paths.root, "gone")} does not exist`,
     );
     expect(context.colimaCalls().filter((call) => /^colima (start|stop|restart)/.test(call))).toEqual([]);
   });
 
-  it("lets pi sandbox doctor leave the VM stopped while workspaceRoot is not set", async () => {
+  it("lets pinata doctor leave the VM stopped while workspaceRoot is not set", async () => {
     const context = await launchWith({ workspaceRoot: false, answers: { vm: { up: false } } });
 
-    expect(await run(["sandbox", "doctor"], context.harness.deps)).toBe(0);
+    expect(await runPinata(["doctor"], context.harness.deps)).toBe(0);
     expect(doctorCheck(context.harness.stdout(), "vm shares")).toMatchObject({
       status: "skip",
       detail: "workspaceRoot is not set, so there are no shares to check",
@@ -694,7 +694,7 @@ describe("the VM shares with workspaceRoot set, at the edges", () => {
   it("names the workspace root on the vm line of the default view, and hides vm shares when another vm check warns", async () => {
     const merged = await launchWith({ lima: rootsShares });
 
-    await run(["sandbox", "doctor"], merged.harness.deps);
+    await runPinata(["doctor"], merged.harness.deps);
 
     expect(doctorCheck(merged.harness.stdout(), "vm")?.detail).toContain("shares the workspace root");
 
@@ -703,7 +703,7 @@ describe("the VM shares with workspaceRoot set, at the edges", () => {
       vm: { size: async () => ({ cpus: 2, memoryGiB: 4 }) },
     });
 
-    await run(["sandbox", "doctor"], small.harness.deps);
+    await runPinata(["doctor"], small.harness.deps);
 
     const stdout = small.harness.stdout();
 

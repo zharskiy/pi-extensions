@@ -46,7 +46,7 @@ extensions/subagents/
 │   │   ├── model-resolution.ts            # resolutionProblem: the one text for a model that does not resolve
 │   │   ├── context-limit.ts               # effectiveContextLimit, agentLimit, recordLimit, contextUse (tokens, request, level), StepLimit, limitStep (request or abort; nothing below the limit)
 │   │   ├── handoff.ts                     # handoffService: the agent audience's handoff instruction, validation and successor preface, shared by the runner and the limits plugin
-│   │   ├── manifest.ts                    # pastRecords: manifest.json read and restore (own and parent session); repairLinks: one-sided links paired, link and caller cycles cut
+│   │   ├── manifest.ts                    # pastRecords: manifest.json read and restore (own and parent session), counters and cost as the manifest stores them; repairLinks: one-sided links paired, link and caller cycles cut
 │   │   └── paths.ts                       # NAMESPACE (every source, custom message type, widget key and the settings file name derive from it), MANIFEST_FILE, agents dir, handoff path, builtin, user and project agent dirs, readPrompt (a trimmed `prompts/` file)
 │   ├── components/
 │   │   ├── receipt.ts                     # formatCalls, stateWord and receiptWord (the one state word map), receipt segments, plainReceipt, agentReceipt, firstLine, cutChars (no time segment when the elapsed time formats as empty)

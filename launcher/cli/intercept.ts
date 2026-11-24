@@ -6,7 +6,6 @@ import { isSandboxWritable } from "../workspace/index.ts";
 import { type CliDeps, hostAgentDirOf, pathsOf, writeLine } from "./deps.ts";
 import { requireJobPi, resolveJobPi, sandboxReachOf, spawnHostJob } from "./host-pi.ts";
 import { type HostRoute, hostRoute } from "./host-routes.ts";
-import { imagePiVersion } from "./versions.ts";
 
 const LOCAL_FLAGS = ["-l", "--local"];
 
@@ -136,13 +135,13 @@ const resolvedLocal = async (deps: CliDeps, text: string) => {
 };
 
 const refuse = (deps: CliDeps, source: string, reason: string) => {
-  writeLine(deps.stderr, `pi-sandbox: ${source} ${reason}; not installed on the host`);
+  writeLine(deps.stderr, `pinata: ${source} ${reason}; not installed on the host`);
 
   return 1;
 };
 
 const sandboxWritableNotice = (source: string) =>
-  `pi-sandbox: ${source} lies in the workspace root or a folder a sandbox has run in, which a sandbox can rewrite; pi on the host runs it as it is`;
+  `pinata: ${source} lies in the workspace root or a folder a sandbox has run in, which a sandbox can rewrite; pi on the host runs it as it is`;
 
 const packageCommand = async (deps: CliDeps, argv: string[], source: string) => {
   const classified = classifySource(source);
@@ -222,7 +221,7 @@ const noticeFollowedPi = async (deps: CliDeps) => {
   const followed = await resolveJobPi(deps);
 
   if (followed !== undefined) {
-    writeLine(deps.stderr, `pi-sandbox: the sandbox follows pi ${followed.version} at the next launch`);
+    writeLine(deps.stderr, `pinata: the sandbox follows pi ${followed.version} at the next launch`);
   }
 };
 
@@ -274,13 +273,14 @@ const updateCommand = (deps: CliDeps, argv: string[], args: string[]) =>
   isSelfUpdate(args) ? selfUpdate(deps) : hostUpdate(deps, argv, args);
 
 const sandboxPiVersion = async (deps: CliDeps) => {
+  const pi = await requireJobPi(deps);
   const { image } = (await loadEffectiveConfig({ env: deps.env, home: deps.home })).config;
 
   if (image.reference !== undefined && image.digest !== undefined) {
     return undefined;
   }
 
-  writeLine(deps.stdout, await imagePiVersion(await resolveJobPi(deps)));
+  writeLine(deps.stdout, pi.version);
 
   return 0;
 };

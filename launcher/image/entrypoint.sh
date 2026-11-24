@@ -3,14 +3,14 @@ set -eu
 
 home="${HOME:-/home/pi}"
 agent_dir="$home/.pi/agent"
-render_dir=/opt/pi-sandbox/render
+render_dir=/opt/pinata/render
 tools_dir="$render_dir/tools"
 agents_skills_render="$render_dir/agents-skills"
 agents_skills="$home/.agents/skills"
-handover=/tmp/pi-sandbox-handover
-ready=/tmp/pi-sandbox-ready
-forward_status=/tmp/pi-sandbox-forward
-forwarder=/usr/local/lib/pi-sandbox/forwarder.mjs
+handover=/tmp/pinata-handover
+ready=/tmp/pinata-ready
+forward_status=/tmp/pinata-forward
+forwarder=/usr/local/lib/pinata/forwarder.mjs
 handover_tries=600
 
 await_handover() {
@@ -18,7 +18,7 @@ await_handover() {
 
   while [ ! -e "$handover" ]; do
     if [ "$tries" -ge "$handover_tries" ]; then
-      echo "pi-sandbox: the launcher did not hand the volumes to the sandbox user within $((handover_tries / 10)) s, stopping" >&2
+      echo "pinata: the volumes were not handed to the sandbox user within $((handover_tries / 10)) s, stopping" >&2
       exit 1
     fi
 
@@ -27,14 +27,14 @@ await_handover() {
   done
 }
 
-if [ -n "${PI_SANDBOX_AWAIT_HANDOVER:-}" ]; then
+if [ -n "${PINATA_AWAIT_HANDOVER:-}" ]; then
   await_handover
 fi
 
 mkdir -p "$agent_dir"
 
 copy_file() {
-  temporary=$(mktemp "$2.pi-sandbox-XXXXXX")
+  temporary=$(mktemp "$2.pinata-XXXXXX")
   cp "$1" "$temporary"
   chmod "$3" "$temporary"
 
@@ -58,7 +58,7 @@ place_link() {
     rm -rf "$2" || true
   fi
 
-  temporary=$(mktemp "$2.pi-sandbox-XXXXXX")
+  temporary=$(mktemp "$2.pinata-XXXXXX")
   ln -sf "$1" "$temporary"
   mv -f "$temporary" "$2" 2>/dev/null || rm -f "$temporary"
   linked "$1" "$2"
@@ -112,7 +112,7 @@ copy_tool gitconfig .gitconfig 0644
 
 start_forwarder() {
   rm -f "$forward_status"
-  node "$forwarder" "$forward_status" "$PI_SANDBOX_SERVICES_HOST" $PI_SANDBOX_SERVICE_PORTS &
+  node "$forwarder" "$forward_status" "$PINATA_SERVICES_HOST" $PINATA_SERVICE_PORTS &
   forwarder_pid=$!
 
   while [ ! -e "$forward_status" ]; do
@@ -124,7 +124,7 @@ start_forwarder() {
   done
 }
 
-if [ -n "${PI_SANDBOX_SERVICE_PORTS:-}" ]; then
+if [ -n "${PINATA_SERVICE_PORTS:-}" ]; then
   start_forwarder
 fi
 

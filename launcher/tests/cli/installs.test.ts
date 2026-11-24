@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { installIdOf, LABELS, networkName, relayName } from "../../backend/index.ts";
-import { run } from "../../cli/index.ts";
+import { run, runPinata } from "../../cli/index.ts";
 import { sha256Hex } from "../../shared/index.ts";
 import { createFakeBackend, createHarness, holdLaunch, sweepNow } from "./harness.ts";
 
@@ -20,7 +20,7 @@ const twoInstalls = async (fake: Fake) => {
 
 const plantSession = (fake: Fake, install: string, repoRoot: string) =>
   fake.addContainer({
-    name: `pi-sandbox-${install}`,
+    name: `pinata-${install}`,
     labels: {
       [LABELS.managed]: "true",
       [LABELS.install]: install,
@@ -34,10 +34,10 @@ const plantSession = (fake: Fake, install: string, repoRoot: string) =>
 const plantGround = async (fake: Fake, install: string) => {
   await fake
     .backendFor(install)
-    .prepareRelay({ hostPort: 4100, imageId: "relay", preamble: `PI-SANDBOX ${install}` });
+    .prepareRelay({ hostPort: 4100, imageId: "relay", preamble: `PINATA ${install}` });
 
   return fake.addContainer({
-    name: `pi-sandbox-pod-${install}`,
+    name: `pinata-pod-${install}`,
     labels: { [LABELS.managed]: "true", [LABELS.install]: install, [LABELS.role]: "pod" },
     state: "running",
     image: "x",
@@ -55,7 +55,7 @@ describe("two installs on one engine", () => {
 
     expect(await run([], b.deps)).toBe(0);
     expect(fake.created.some((entry) => entry.summary.labels[LABELS.install] === idB)).toBe(true);
-    expect(fake.routes.some((route) => route.preamble !== `PI-SANDBOX ${idA}`)).toBe(true);
+    expect(fake.routes.some((route) => route.preamble !== `PINATA ${idA}`)).toBe(true);
     expect(fake.networks.has(networkName(idB))).toBe(false);
     expect(fake.relays.has(relayName(idB))).toBe(false);
     expect(fake.networks.has(networkName(idA))).toBe(true);
@@ -109,7 +109,7 @@ describe("two installs on one engine", () => {
 
     await holdLaunch(a);
 
-    expect(await run(["sandbox", "stop"], a.deps)).toBe(0);
+    expect(await runPinata(["stop"], a.deps)).toBe(0);
     expect(busy).toEqual([2]);
   });
 });

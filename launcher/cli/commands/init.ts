@@ -10,28 +10,32 @@ import { type CliDeps, pathsOf, writeNotices } from "../deps.ts";
 import { createPlainPrompts } from "../prompt/plain.ts";
 import { createRichPrompts } from "../prompt/rich.ts";
 import { findTerminal, isSet, realTimers, withTerminal } from "../prompt/terminal.ts";
-import type { Ui } from "../prompt/types.ts";
-import { applyPlan, lineFrontEnd } from "../setup/apply.ts";
+import type { Timers, Ui } from "../prompt/types.ts";
+import { applyPlan, stepsFrontEnd } from "../setup/apply.ts";
 import { detectHost } from "../setup/detect.ts";
 import { readConfigText, readDocument, writeDocument } from "../setup/document.ts";
 import { runSetup, type SetupInput } from "../setup/flow.ts";
+import { tildeForm } from "../setup/folders.ts";
 import { answersForYes, configuredRoot, isFirstRun, NO_ROOT, planOf } from "../setup/plan.ts";
-import { createReview } from "../setup/review.ts";
-import { invalidText } from "../setup/screens.ts";
+import { invalidText, NOTHING_TO_DO, nextCommand } from "../setup/screens.ts";
 import type {
   Answers,
   ApplyEffects,
+  ApplyEvent,
+  ApplyFrontEnd,
   ConfigDocument,
   DocumentRead,
+  HostFacts,
   SetupIo,
   SharePlan,
 } from "../setup/types.ts";
+import { type Steps, stepsOf } from "../steps.ts";
 import { assertVmFitsHost, prepareVmDirs, vmSharesFor } from "../vm.ts";
 
 export const YES_FLAG = "--yes";
 
 const SETUP_HINT =
-  "pass --yes to keep the current settings and apply them; PI_SANDBOX_ROOT names the folder that holds your projects";
+  "pass --yes to keep the current settings and apply them; PINATA_ROOT names the folder that holds your projects";
 
 const SIGNAL_EXITS = { SIGTERM: 143, SIGHUP: 129 } as const;
 
@@ -140,7 +144,9 @@ const invalidConfig = (file: string, read: Extract<DocumentRead, { ok: false }>)
   return new LauncherError(`${file} ${problem}: ${read.message}`, fix);
 };
 
-const acceptAll = async (deps: CliDeps) => {
+type FrontOf = (facts: HostFacts, timers: Timers) => ApplyFrontEnd;
+
+export const planAll = async (deps: CliDeps, factsFor = (facts: HostFacts) => facts) => {
   const context = contextOf(deps);
   const read = await readConfig(context.configFile);
 
@@ -152,7 +158,7 @@ const acceptAll = async (deps: CliDeps) => {
 
   validateConfigFile(document.value, document.file);
 
-  const facts = await detectFor(deps, context)(document);
+  const facts = factsFor(await detectFor(deps, context)(document));
   const answers = answersForYes(document, facts, deps.env);
   const plan = planOf(document, answers, facts, sharePlanFor(deps, read)(answers.root));
 
@@ -160,19 +166,58 @@ const acceptAll = async (deps: CliDeps) => {
     throw new LauncherError(plan.problems.join("; "), `fix ${context.configFile}`);
   }
 
-  writeNotices(deps, shareNoticesFor(deps, read, answers.root));
-
   if (plan.vm.kind === "create" || plan.vm.kind === "restart") {
     assertVmFitsHost(deps, plan.vm.size);
   }
 
-  const streams = { out: deps.stdout, err: deps.stderr, timers: { ...realTimers, now: deps.now } };
-  const state = { answers, touched: new Set<never>() };
-  const review = createReview(document, facts, deps.env).lines(state, plan, { plain: true, table: true });
+  return { context, read, document, facts, answers, plan };
+};
 
-  const front = lineFrontEnd(streams, facts, review(Number.POSITIVE_INFINITY));
+export type Planned = Awaited<ReturnType<typeof planAll>>;
+
+export const applyAll = (deps: CliDeps, planned: Planned, frontOf: FrontOf) => {
+  const { context, read, document, facts, answers, plan } = planned;
+
+  writeNotices(deps, shareNoticesFor(deps, read, answers.root));
+
+  const front = frontOf(facts, { ...realTimers, now: deps.now });
 
   return applyPlan(front, effectsFor(deps, context), document, { plan, answers });
+};
+
+export const acceptAll = async (deps: CliDeps, frontOf: FrontOf) =>
+  applyAll(deps, await planAll(deps), frontOf);
+
+const closingFrontEnd = (steps: Steps, facts: HostFacts, timers: Timers): ApplyFrontEnd => {
+  const front = stepsFrontEnd(steps, facts, timers);
+
+  const report = (event: ApplyEvent) => {
+    if (event.kind === "nothing-to-do") {
+      steps.close(NOTHING_TO_DO);
+
+      return;
+    }
+
+    if (event.kind === "done" && event.vmReady) {
+      steps.close("The sandbox is ready.", [
+        ["Start", nextCommand(event.root, facts)],
+        ["Settings", tildeForm(facts.configFile, facts.home)],
+        ["Check", "pinata doctor"],
+      ]);
+
+      return;
+    }
+
+    if (event.kind === "done") {
+      steps.close("The settings are saved.");
+
+      return;
+    }
+
+    front.report(event);
+  };
+
+  return { ...front, report };
 };
 
 const ioOf = (ui: Ui): SetupIo => ({
@@ -216,11 +261,13 @@ const ask = (deps: CliDeps, ui: Ui) => {
 
 export const initCommand = async (deps: CliDeps, args: string[]) => {
   if (args.includes(YES_FLAG)) {
-    return acceptAll(deps);
+    const steps = stepsOf(deps);
+
+    return acceptAll(deps, (facts, timers) => closingFrontEnd(steps, facts, timers));
   }
 
   if (isSet(deps.env.CI)) {
-    throw new LauncherError("pi sandbox init asks questions, and CI is set", SETUP_HINT);
+    throw new LauncherError("pinata init asks questions, and CI is set", SETUP_HINT);
   }
 
   const ui = findTerminal({
@@ -231,7 +278,7 @@ export const initCommand = async (deps: CliDeps, args: string[]) => {
   });
 
   if (ui === undefined) {
-    throw new LauncherError("pi sandbox init asks questions and needs a terminal", SETUP_HINT);
+    throw new LauncherError("pinata init asks questions and needs a terminal", SETUP_HINT);
   }
 
   return ask(deps, ui);

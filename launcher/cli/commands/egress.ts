@@ -2,7 +2,8 @@ import { authorityOf, matchesDenyEntry, parseEntry, parseHostEntry, TLS_PORT } f
 import { addGrant, type Grant, readGrants, revokeGrants } from "../../grants/index.ts";
 import { LauncherError } from "../../shared/index.ts";
 import { type LaunchContext, openContext } from "../context.ts";
-import { type CliDeps, writeLine, writeLines } from "../deps.ts";
+import { type CliDeps, writeLines } from "../deps.ts";
+import { stepsOf } from "../steps.ts";
 import { usageOf } from "./help.ts";
 import { assertOptions } from "./options.ts";
 
@@ -12,8 +13,6 @@ interface Target {
 }
 
 const DENIED_FLAG = "--denied";
-
-const HELP_FLAGS = ["-h", "--help"];
 
 const usage = (problem: string) => new LauncherError(problem, usageOf("egress"));
 
@@ -54,7 +53,7 @@ const assertNotDenied = (context: LaunchContext, target: Target) => {
   if (entry !== undefined) {
     throw new LauncherError(
       `egress: ${authorityOf(target.host, target.port)} is denied by the egress.deny entry ${entry}, which a grant cannot override`,
-      "pi sandbox config shows the layers that set egress.deny",
+      "pinata config shows the layers that set egress.deny",
     );
   }
 };
@@ -67,7 +66,7 @@ const allow = async (deps: CliDeps, args: string[]) => {
 
   const grant = await addGrant(context.stateDir, target, deps.now());
 
-  writeLine(deps.stdout, `allowed ${grantText(grant)}`);
+  stepsOf(deps).done(`Allowed ${grantText(grant)}`);
 
   return 0;
 };
@@ -81,7 +80,13 @@ const revoke = async (deps: CliDeps, args: string[]) => {
     ...(port === undefined ? {} : { port }),
   });
 
-  writeLine(deps.stdout, `revoked ${count} grant${count === 1 ? "" : "s"} for ${text}`);
+  if (count === 0) {
+    stepsOf(deps).note(`No grant for ${text}.`);
+
+    return 0;
+  }
+
+  stepsOf(deps).done(`Revoked ${count} grant${count === 1 ? "" : "s"} for ${text}`);
 
   return 0;
 };
@@ -94,20 +99,20 @@ const deniedLines = async (deps: CliDeps, context: LaunchContext) => {
 
   return denials.map(
     (denial) =>
-      `denied ${authorityOf(denial.host, denial.port)} at ${new Date(denial.time).toISOString()}: ${denial.reason}`,
+      `${authorityOf(denial.host, denial.port)} at ${new Date(denial.time).toISOString()}: ${denial.reason}`,
   );
 };
 
 const listedGrants = async (context: LaunchContext) => {
   const lines = await grantLines(context);
 
-  return lines.length === 0 ? ["no active grants"] : lines;
+  return lines.length === 0 ? ["No grants."] : lines;
 };
 
 const listedDenials = async (deps: CliDeps, context: LaunchContext) => {
   const lines = await deniedLines(deps, context);
 
-  return lines.length === 0 ? ["no denials recorded by the running proxy"] : lines;
+  return lines.length === 0 ? ["No host blocked since the proxy started."] : lines;
 };
 
 const list = async (deps: CliDeps, args: string[]) => {
@@ -126,22 +131,10 @@ const ACTIONS: Record<string, (deps: CliDeps, args: string[]) => Promise<number>
 export const egressCommand = (deps: CliDeps, args: string[]) => {
   const [action = "", ...rest] = args;
 
-  if (HELP_FLAGS.includes(action)) {
-    writeLine(deps.stdout, `usage: ${usageOf("egress")}`);
-
-    return Promise.resolve(0);
-  }
-
   const run = Object.hasOwn(ACTIONS, action) ? ACTIONS[action] : undefined;
 
   if (run === undefined) {
     throw usage(`unknown egress action "${action}"`);
-  }
-
-  if (rest.some((arg) => HELP_FLAGS.includes(arg))) {
-    writeLine(deps.stdout, `usage: ${usageOf(`egress ${action}`)}`);
-
-    return Promise.resolve(0);
   }
 
   return run(deps, rest);

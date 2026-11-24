@@ -49,7 +49,7 @@ const COPY_TIMEOUT_MS = 10_000;
 
 const COPY_SCRIPT = `umask 077 && mkdir -p ${GUEST_DIR} && cat > "$1"`;
 
-const NOT_COPIED = "pi-sandbox: image not copied into the sandbox:";
+const NOT_COPIED = "pinata: image not copied into the sandbox:";
 
 const DENIED_NOTICE = `${NOT_COPIED} macOS blocked the terminal from reading it; allow access in System Settings → Privacy & Security → Files and Folders`;
 

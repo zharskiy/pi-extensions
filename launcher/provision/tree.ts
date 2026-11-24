@@ -170,7 +170,7 @@ const linkedNotice = (linked: string[]) =>
   linked.length === 0
     ? []
     : [
-        `render: missing in the sandbox, because the launcher follows no symlinks: ${linked.join(", ")}; replace each link with a real directory or file to carry it`,
+        `render: missing in the sandbox, because pinata follows no symlinks: ${linked.join(", ")}; replace each link with a real directory or file to carry it`,
       ];
 
 export const readHostEntries = async (sources: HostSource[]): Promise<{ tree: Tree; notices: string[] }> => {

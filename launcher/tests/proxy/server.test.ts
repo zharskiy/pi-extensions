@@ -38,7 +38,7 @@ import {
 
 const MINTS_PER_MINUTE = 30;
 
-const API_PLACEHOLDER = "pi-sandbox-89abcdef0123456789abcdef";
+const API_PLACEHOLDER = "pinata-89abcdef0123456789abcdef";
 
 const state: {
   stateDir: string;
@@ -67,7 +67,7 @@ const ports = () => {
 };
 
 const hint = (host: string) =>
-  `${host} is not allowed by the sandbox. Ask the user to run pi sandbox egress allow ${host} on the host.`;
+  `${host} is not allowed by the sandbox. Ask the user to run pinata egress allow ${host} on the host.`;
 
 beforeAll(async () => {
   state.stateDir = await createStateDir();
@@ -226,13 +226,13 @@ describe("CONNECT tunnel", () => {
       host: "target.test",
       ca: state.ca.certPem,
       path: "/hello",
-      headers: { authorization: "Bearer pi-sandbox-000000000000000000000000" },
+      headers: { authorization: "Bearer pinata-000000000000000000000000" },
     });
     const body = JSON.parse(await readBody(response));
 
     expect(body).toMatchObject({
       url: "/hello",
-      headers: { authorization: "Bearer pi-sandbox-000000000000000000000000" },
+      headers: { authorization: "Bearer pinata-000000000000000000000000" },
     });
   });
 
@@ -632,7 +632,7 @@ describe("plain HTTP", () => {
     const denied = await plainGet(state.test.proxy.port, "http://target.test/", "target.test", state.token);
 
     expect(denied.status).toBe(403);
-    expect(denied.headers["proxy-agent"]).toBe("pi-sandbox");
+    expect(denied.headers["proxy-agent"]).toBe("pinata");
     expect(JSON.parse(denied.body)).toMatchObject({ denied: "target.test", rule: "plain-http" });
   });
 

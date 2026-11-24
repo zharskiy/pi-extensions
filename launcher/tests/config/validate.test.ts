@@ -27,16 +27,6 @@ describe("validateConfig", () => {
     );
   });
 
-  it("names workspaceRoot as the replacement of the removed workspaceRoots key", () => {
-    expect(() => validateConfig({ workspaceRoots: { roots: ["~/work"] } })).toThrow(
-      expect.objectContaining({
-        message: "config: workspaceRoots is not a known key",
-        hint: 'workspaceRoots was replaced by workspaceRoot, one folder: write "workspaceRoot": "~/work" in its place, or remove the key and run pi sandbox init',
-      }),
-    );
-    expect(() => validateConfig({ egres: {} })).toThrow(expect.objectContaining({ hint: undefined }));
-  });
-
   it("escapes control, bidi and line separator characters of the keys and values it echoes", () => {
     expect(configProblem({ "a‮b\u007f\u0085 ": 1 })).toBe(
       "config: a\\u202Eb\\u007F\\u0085\\u2028 is not a known key",
@@ -113,22 +103,6 @@ describe("validateConfig", () => {
     ]);
   });
 
-  it("refuses the removed keys", () => {
-    expect(configProblem({ mounts: { cacheVolumes: ["node_modules"] } })).toBe(
-      "config: mounts.cacheVolumes is not a known key",
-    );
-    expect(configProblem({ mounts: { hostCaches: ["maven"] } })).toBe(
-      "config: mounts.hostCaches is not a known key",
-    );
-    expect(configProblem({ mounts: { extraReadOnly: ["/opt"] } })).toBe(
-      "config: mounts.extraReadOnly is not a known key",
-    );
-    expect(configProblem({ workspaceRoots: { roots: ["/srv"] } })).toBe(
-      "config: workspaceRoots is not a known key",
-    );
-    expect(configProblem({ fallback: "host" })).toBe("config: fallback is not a known key");
-  });
-
   it("takes an extra CA by sha256 fingerprint, colons and case optional", () => {
     const bare = "ab".repeat(32);
     const colons = Array.from({ length: 32 }, () => "AB").join(":");
@@ -180,11 +154,11 @@ describe("validateConfig", () => {
       "NO_PROXY",
       "NODE_EXTRA_CA_CERTS",
       "SSL_CERT_FILE",
-      "PI_SANDBOX",
+      "PINATA",
       "PATH",
     ].forEach((name) => {
       expect(configProblem({ env: { allow: [name] } })).toBe(
-        `config: env.allow[0] ${name} is set by the launcher and is not forwarded`,
+        `config: env.allow[0] ${name} is set by pinata and is not forwarded`,
       );
     });
   });
@@ -192,12 +166,12 @@ describe("validateConfig", () => {
   it("sets literal env.set values and refuses a name the launcher sets, naming the key", () => {
     expect(configProblem({ env: { set: { CI: "1", PATH_EXTRA: "$HOME/bin", EMPTY: "" } } })).toBeUndefined();
     expect(
-      configProblem({ env: { set: { JAVA_TOOL_OPTIONS: "-Dhttps.proxyHost=pi-sandbox-proxy" } } }),
+      configProblem({ env: { set: { JAVA_TOOL_OPTIONS: "-Dhttps.proxyHost=pinata-proxy" } } }),
     ).toBeUndefined();
-    expect(configProblem({ env: { set: { GH_TOKEN: "pi-sandbox-github" } } })).toBeUndefined();
-    ["HTTPS_PROXY", "no_proxy", "GITLAB_TOKEN", "PI_SANDBOX", "HOME", "PATH"].forEach((name) => {
+    expect(configProblem({ env: { set: { GH_TOKEN: "pinata-github" } } })).toBeUndefined();
+    ["HTTPS_PROXY", "no_proxy", "GITLAB_TOKEN", "PINATA", "HOME", "PATH"].forEach((name) => {
       expect(configProblem({ env: { set: { CI: "1", [name]: "x" } } })).toBe(
-        `config: env.set["${name}"] is set by the launcher and cannot be set`,
+        `config: env.set["${name}"] is set by pinata and cannot be set`,
       );
     });
     expect(configProblem({ env: { set: { "1BAD": "x" } } })).toBe(

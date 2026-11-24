@@ -563,7 +563,7 @@ export const createTerminator = (options: TerminatorOptions) => {
     if (opened instanceof Error) {
       noteFailure(target, opened);
 
-      rawError(client, 502, "pi-sandbox: upstream request failed");
+      rawError(client, 502, "pinata: upstream request failed");
 
       return;
     }

@@ -15,7 +15,7 @@ const BASE_ID = "sha256:image-base";
 const dirs: string[] = [];
 
 const tempDir = async () => {
-  const dir = await mkdtemp(join(tmpdir(), "pi-sandbox-layer-"));
+  const dir = await mkdtemp(join(tmpdir(), "pinata-layer-"));
 
   dirs.push(dir);
 
@@ -71,10 +71,10 @@ describe("ensureLayerImage", () => {
       "jdk-net.properties",
       "trust-jdk.sh",
     ]);
-    expect(text).toContain("COPY ca/ /usr/local/share/ca-certificates/pi-sandbox/");
-    expect(text).toContain("COPY trust-jdk.sh jdk-net.properties /usr/local/lib/pi-sandbox/");
+    expect(text).toContain("COPY ca/ /usr/local/share/ca-certificates/pinata/");
+    expect(text).toContain("COPY trust-jdk.sh jdk-net.properties /usr/local/lib/pinata/");
     expect(text).toMatch(/command -v update-ca-certificates[\s\S]+&& update-ca-certificates\n/);
-    expect(text).toContain("RUN /usr/local/lib/pi-sandbox/trust-jdk.sh");
+    expect(text).toContain("RUN /usr/local/lib/pinata/trust-jdk.sh");
   });
 
   it("carries the entrypoint and the bash hint of this launcher, whatever base it builds on", async () => {
@@ -92,16 +92,16 @@ describe("ensureLayerImage", () => {
 
     expect(files["entrypoint.sh"]).toContain("sleep infinity");
     expect(files["bash-env.sh"]).toContain("command_not_found_handle");
-    expect(text).toContain("COPY bash-env.sh forwarder.mjs /usr/local/lib/pi-sandbox/");
+    expect(text).toContain("COPY bash-env.sh forwarder.mjs /usr/local/lib/pinata/");
     expect(files["forwarder.mjs"]).toContain("node:net");
-    expect(text).toContain("COPY entrypoint.sh /usr/local/bin/pi-sandbox-entrypoint");
+    expect(text).toContain("COPY entrypoint.sh /usr/local/bin/pinata-entrypoint");
     expect(text).toContain(
-      "grep -qxF '. /usr/local/lib/pi-sandbox/bash-env.sh' /etc/bash.bashrc || { printf '%s\\n' '. /usr/local/lib/pi-sandbox/bash-env.sh' | cat - /etc/bash.bashrc",
+      "grep -qxF '. /usr/local/lib/pinata/bash-env.sh' /etc/bash.bashrc || { printf '%s\\n' '. /usr/local/lib/pinata/bash-env.sh' | cat - /etc/bash.bashrc",
     );
-    expect(text).toContain("ENV BASH_ENV=/usr/local/lib/pi-sandbox/bash-env.sh");
+    expect(text).toContain("ENV BASH_ENV=/usr/local/lib/pinata/bash-env.sh");
     expect(text.indexOf("ENV BASH_ENV")).toBeLessThan(text.indexOf("ARG NODE_EXTRA_CA_CERTS"));
     expect(text.trimEnd().split("\n\n").slice(-2)).toEqual([
-      'ENTRYPOINT ["/usr/local/bin/pi-sandbox-entrypoint"]',
+      'ENTRYPOINT ["/usr/local/bin/pinata-entrypoint"]',
       "CMD []",
     ]);
   });
@@ -159,9 +159,9 @@ describe("ensureLayerImage", () => {
 
     const text = layerDockerfile(fake);
 
-    expect(text).toContain("&& mkdir -p /usr/local/share/ca-certificates/pi-sandbox");
-    expect(text.indexOf("mkdir -p /usr/local/share/ca-certificates/pi-sandbox")).toBeLessThan(
-      text.indexOf("chmod 0755 /usr/local/share/ca-certificates/pi-sandbox"),
+    expect(text).toContain("&& mkdir -p /usr/local/share/ca-certificates/pinata");
+    expect(text.indexOf("mkdir -p /usr/local/share/ca-certificates/pinata")).toBeLessThan(
+      text.indexOf("chmod 0755 /usr/local/share/ca-certificates/pinata"),
     );
   });
 
@@ -177,11 +177,11 @@ describe("ensureLayerImage", () => {
 
     expect(layerFiles(fake)["jdk-net.properties"]).toBe(
       [
-        "http.proxyHost=pi-sandbox-proxy",
+        "http.proxyHost=pinata-proxy",
         "http.proxyPort=3128",
-        "https.proxyHost=pi-sandbox-proxy",
+        "https.proxyHost=pinata-proxy",
         "https.proxyPort=3128",
-        "http.nonProxyHosts=localhost|127.*|[::1]|pi-sandbox-proxy",
+        "http.nonProxyHosts=localhost|127.*|[::1]|pinata-proxy",
         "",
       ].join("\n"),
     );
@@ -206,7 +206,7 @@ describe("ensureLayerImage", () => {
       "apt-get install -y --no-install-recommends chromium=120.0 jq",
       "npm install --global typescript@5.6.0",
       "RUN echo extra > /opt/extra",
-      "RUN /usr/local/lib/pi-sandbox/trust-jdk.sh",
+      "RUN /usr/local/lib/pinata/trust-jdk.sh",
       "USER pi",
     ].map((step) => text.indexOf(step));
 
@@ -215,7 +215,7 @@ describe("ensureLayerImage", () => {
     expect(text.trimEnd().split("\n\n").slice(-4)).toEqual([
       "USER pi",
       "WORKDIR /home/pi",
-      'ENTRYPOINT ["/usr/local/bin/pi-sandbox-entrypoint"]',
+      'ENTRYPOINT ["/usr/local/bin/pinata-entrypoint"]',
       "CMD []",
     ]);
     expect(text).toMatch(/^ARG NODE_EXTRA_CA_CERTS=/m);
@@ -340,7 +340,7 @@ describe("ensureLayerImage", () => {
     const record = JSON.parse(await readFile(join(stateDir, "image.json"), "utf8"));
 
     expect(layer.built).toBe(true);
-    expect(layer.tag).toMatch(/^pi-sandbox-layer:[0-9a-f]{12}$/);
+    expect(layer.tag).toMatch(/^pinata-layer:[0-9a-f]{12}$/);
     expect(fake.builds.at(-1)?.tag).toBe(layer.tag);
     expect(record).toEqual({ base: expect.objectContaining({ id: base.id }), layer: layer.tag });
     expect(await readdir(stateDir)).toEqual(["image.json"]);
@@ -385,7 +385,7 @@ describe("ensureLayerImage", () => {
     expect(changed.built).toBe(true);
     expect(changed.tag).not.toBe(first.tag);
     expect(rebased.tag).not.toBe(changed.tag);
-    expect(fake.builds.filter((build) => build.tag.startsWith("pi-sandbox-layer:"))).toHaveLength(3);
+    expect(fake.builds.filter((build) => build.tag.startsWith("pinata-layer:"))).toHaveLength(3);
   });
 
   it("refuses a parent proxy with credentials when it has to build the layer", async () => {

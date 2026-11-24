@@ -85,7 +85,7 @@ describe("ensureSandboxImage", () => {
     expect(asked).toEqual(["versions"]);
     expect(fake.builds).toHaveLength(2);
 
-    const reference = "ghcr.io/zharskiy/pi-sandbox:0.4.0";
+    const reference = "ghcr.io/zharskiy/pinata:0.4.0";
     const registry = createFakeBackend({ registry: { [reference]: "sha256:pinned" } });
     const pinned = await inputOf(registry, {
       config: sandboxConfig({ image: { reference, digest: "sha256:pinned" } }),
@@ -101,7 +101,7 @@ describe("ensureSandboxImage", () => {
   });
 
   it("pulls a pinned image without resolving versions and builds the trust layer on it", async () => {
-    const reference = "ghcr.io/zharskiy/pi-sandbox:0.4.0";
+    const reference = "ghcr.io/zharskiy/pinata:0.4.0";
     const fake = createFakeBackend({ registry: { [reference]: "sha256:pinned" } });
     const { input, asked } = await inputOf(fake, {
       config: sandboxConfig({ image: { reference, digest: "sha256:pinned" } }),
@@ -113,7 +113,7 @@ describe("ensureSandboxImage", () => {
       id: "sha256:image-built-1",
     });
     expect(asked).toEqual(["preparing"]);
-    expect(fake.builds.map((build) => build.tag)).toEqual([expect.stringMatching(/^pi-sandbox-layer:/)]);
+    expect(fake.builds.map((build) => build.tag)).toEqual([expect.stringMatching(/^pinata-layer:/)]);
   });
 
   it("puts the trust bundle into the build only when extra CAs are configured", async () => {
@@ -150,7 +150,7 @@ describe("ensureSandboxImage", () => {
 
     expect(fake.builds.map((build) => build.tag)).toEqual([
       BASE_TAG,
-      expect.stringMatching(/^pi-sandbox-layer:/),
+      expect.stringMatching(/^pinata-layer:/),
     ]);
     expect(image.digest).toBe("sha256:built-1");
     expect(image.id).not.toBe("sha256:image-built-1");
@@ -180,7 +180,7 @@ describe("ensureSandboxImage", () => {
       [used.id, current.id, "sha256:image-built-1"].sort(),
     );
     expect(tagOf("sha256:image-built-1")).toEqual([BASE_TAG]);
-    expect(tagOf(current.id)).toEqual([expect.stringMatching(/^pi-sandbox-layer:/)]);
+    expect(tagOf(current.id)).toEqual([expect.stringMatching(/^pinata-layer:/)]);
     expect(idle.id).not.toBe(current.id);
   });
 
@@ -201,7 +201,7 @@ describe("ensureSandboxImage", () => {
     expect(rebuiltImages.some((id) => firstImages.includes(id))).toBe(false);
     expect(firstImages).toContain(first.id);
     expect(fake.imageRemovals.sort()).toEqual([
-      expect.stringMatching(/^pi-sandbox-layer:/),
+      expect.stringMatching(/^pinata-layer:/),
       "sha256:image-built-1",
     ]);
 

@@ -1,15 +1,15 @@
 #!/bin/sh
 set -eu
 
-ca_dir=/usr/local/share/ca-certificates/pi-sandbox
-net_lines=/usr/local/lib/pi-sandbox/jdk-net.properties
-alias_prefix=pi-sandbox-
+ca_dir=/usr/local/share/ca-certificates/pinata
+net_lines=/usr/local/lib/pinata/jdk-net.properties
+alias_prefix=pinata-
 store_pass=changeit
 
 unset JAVA_TOOL_OPTIONS JDK_JAVA_OPTIONS _JAVA_OPTIONS
 
 fail() {
-  echo "pi-sandbox trust: $*" >&2
+  echo "pinata trust: $*" >&2
   exit 1
 }
 
@@ -87,7 +87,7 @@ jdk_problem() {
   problem="$1 has no $2"
 
   if [ "$discovered" = yes ]; then
-    echo "pi-sandbox trust: skipping $problem" >&2
+    echo "pinata trust: skipping $problem" >&2
     return 0
   fi
 
@@ -106,7 +106,7 @@ trust_jdk() {
 
   trust_store "$keytool_bin" "$(readlink -f "$cacerts")"
   write_net_properties "$(readlink -f "$net_file")"
-  echo "pi-sandbox trust: $home trusts the sandbox CAs and uses the sandbox proxy"
+  echo "pinata trust: $home trusts the sandbox CAs and uses the sandbox proxy"
 }
 
 [ -f "$net_lines" ] || fail "$net_lines is missing"

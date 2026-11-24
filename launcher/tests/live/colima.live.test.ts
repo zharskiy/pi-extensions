@@ -19,13 +19,13 @@ import { liveRoot } from "./harness/sandbox.ts";
 
 const PULLABLE = "busybox:1.36";
 
-const RUNNABLE = "pi-sandbox-conformance:busybox";
+const RUNNABLE = "pinata-conformance:busybox";
 
-const RELAY = "pi-sandbox-relay-test:node";
+const RELAY = "pinata-relay-test:node";
 
-const socketPath = [join(homedir(), ".colima", "pi-sandbox", "docker.sock")].find((path) => existsSync(path));
+const socketPath = [join(homedir(), ".colima", "pinata", "docker.sock")].find((path) => existsSync(path));
 
-const enabled = process.env.PI_SANDBOX_LIVE === "1" && socketPath !== undefined;
+const enabled = process.env.PINATA_LIVE === "1" && socketPath !== undefined;
 
 const hooks = enabled
   ? { describe, it, expect, beforeAll, afterAll }
@@ -59,7 +59,7 @@ const buildFrom = async (
   tag: string,
   dockerfile: string,
 ) => {
-  const context = await mkdtemp(join(tmpdir(), "pi-sandbox-live-"));
+  const context = await mkdtemp(join(tmpdir(), "pinata-live-"));
 
   await writeFile(join(context, "Dockerfile"), dockerfile);
 
@@ -98,7 +98,7 @@ runBackendConformance(
   { sharedRuntime: true },
 );
 
-const OWNERSHIP_VOLUME = `pi-sandbox-live-ownership-${randomBytes(4).toString("hex")}`;
+const OWNERSHIP_VOLUME = `pinata-live-ownership-${randomBytes(4).toString("hex")}`;
 
 const OWNERSHIP_TARGET = "/home/pi/.cache/live";
 
@@ -144,7 +144,7 @@ hooks.describe("colima volume ownership", () => {
   hooks.it(
     "a cache volume mounted at a path absent from the image is writable by the sandbox user",
     async () => {
-      state.dir = await mkdtemp(join(tmpdir(), "pi-sandbox-live-ownership-"));
+      state.dir = await mkdtemp(join(tmpdir(), "pinata-live-ownership-"));
 
       await backend.pullImage(PULLABLE);
 
@@ -170,7 +170,7 @@ hooks.describe("colima volume ownership", () => {
   );
 });
 
-const BINDS_CONTAINER = `pi-sandbox-live-binds-${randomBytes(4).toString("hex")}`;
+const BINDS_CONTAINER = `pinata-live-binds-${randomBytes(4).toString("hex")}`;
 
 hooks.describe("colima read-only binds on the share", () => {
   const backend = createColimaBackend({
@@ -263,7 +263,7 @@ hooks.describe("colima read-only binds on the share", () => {
   });
 });
 
-const HINT_CONTAINER = `pi-sandbox-live-bash-hint-${randomBytes(4).toString("hex")}`;
+const HINT_CONTAINER = `pinata-live-bash-hint-${randomBytes(4).toString("hex")}`;
 
 const pinnedPi = async () => {
   const manifest = JSON.parse(await readFile(join(launcherRoot(), "..", "package.json"), "utf8")) as {
@@ -275,7 +275,7 @@ const pinnedPi = async () => {
 
 const SHELL_TOOL_PROBE = [
   'const { spawnSync } = require("node:child_process");',
-  'const result = spawnSync("bash", ["-c", "pi-sandbox-missing-tool --version"], {',
+  'const result = spawnSync("bash", ["-c", "pinata-missing-tool --version"], {',
   '  encoding: "utf8",',
   '  stdio: ["pipe", "pipe", "pipe"],',
   "  env: { PATH: process.env.PATH, BASH_ENV: process.env.BASH_ENV },",
@@ -322,7 +322,7 @@ hooks.describe("colima sandbox image missing-command hint", () => {
   hooks.it(
     "a bash -c spawned like pi's shell tool, with socket stdin and no SHLVL, prints the hint and exits 127",
     async () => {
-      state.dir = await mkdtemp(join(tmpdir(), "pi-sandbox-live-bash-hint-"));
+      state.dir = await mkdtemp(join(tmpdir(), "pinata-live-bash-hint-"));
 
       const image = await ensureSandboxImage({
         backend,
@@ -347,7 +347,7 @@ hooks.describe("colima sandbox image missing-command hint", () => {
       hooks.expect(probed.code).toBe(0);
       hooks.expect(JSON.parse(probed.stdout)).toEqual({
         stderr:
-          "bash: pi-sandbox-missing-tool: command not found\npi-sandbox: pi-sandbox-missing-tool is not in the sandbox image; add its Debian package to image.packages or its npm package to image.npmGlobal in pi-sandbox/config.json under pi's agent dir on the host (~/.pi/agent unless PI_CODING_AGENT_DIR is set)\n",
+          "bash: pinata-missing-tool: command not found\npinata: pinata-missing-tool is not in the sandbox image; add its Debian package to image.packages or its npm package to image.npmGlobal in pinata/config.json under pi's agent dir on the host (~/.pi/agent unless PI_CODING_AGENT_DIR is set)\n",
         status: 127,
       });
     },

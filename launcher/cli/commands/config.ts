@@ -1,51 +1,50 @@
-import { type WriteBackListing, writeBackListing } from "../../config/index.ts";
-import { jsonText } from "../../shared/index.ts";
+import { type EffectiveConfig, type WriteBackListing, writeBackListing } from "../../config/index.ts";
 import { openContext } from "../context.ts";
-import { type CliDeps, writeLines } from "../deps.ts";
+import { type CliDeps, pathsOf, writeLine } from "../deps.ts";
+import { stepsOf, tilde } from "../steps.ts";
 
-export const JSON_FLAG = "--json";
+const keysFrom = (listing: WriteBackListing[string], source: string) =>
+  Object.entries(listing)
+    .filter(([, entry]) => entry.source === source)
+    .map(([key]) => key);
 
-const SOURCES = ["default", "config"] as const;
+const writeBackText = (file: string, keys: WriteBackListing[string]) => {
+  const configured = keysFrom(keys, "config");
+  const parts = [...keysFrom(keys, "default"), ...configured.map((key) => `${key} (from the config)`)];
 
-const writeBackLines = (listing: WriteBackListing) => {
-  if (Object.keys(listing).length === 0) {
-    return ["# writeBack: nothing is written back to the host"];
-  }
-
-  return Object.entries(listing).flatMap(([file, keys]) =>
-    SOURCES.flatMap((source) => {
-      const named = Object.entries(keys)
-        .filter(([, entry]) => entry.source === source)
-        .map(([key]) => key);
-
-      return named.length === 0 ? [] : [`# writeBack ${file} ${source}: ${named.join(", ")}`];
-    }),
-  );
+  return `${file}: ${parts.join(", ")}`;
 };
 
-const showConfig = async (deps: CliDeps, json: boolean) => {
+const writeBackRows = (listing: WriteBackListing): Array<[string, string]> => {
+  const files = Object.entries(listing).map(([file, keys]) => writeBackText(file, keys));
+
+  return files.length === 0
+    ? [["Written back", "nothing"]]
+    : files.map((text, index) => [index === 0 ? "Written back" : "", text]);
+};
+
+const sourcesText = (deps: CliDeps, sources: EffectiveConfig["sources"]) => {
+  const configured = Object.entries(sources)
+    .filter(([, source]) => source !== "default")
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, source]) => (source === "config" ? key : `${key} (added to the default)`));
+
+  if (configured.length === 0) {
+    return "Every key has its default value.";
+  }
+
+  return `${tilde(deps, pathsOf(deps).userConfigFile)} sets ${configured.join(", ")}; every other key has its default value.`;
+};
+
+export const configCommand = async (deps: CliDeps) => {
   const { effective } = (await openContext(deps, "host")).context;
   const writeBack = writeBackListing(effective.config.writeBack);
 
-  if (json) {
-    deps.stdout.write(jsonText({ ...effective, writeBack }));
+  writeLine(deps.stdout, JSON.stringify(effective.config, null, 2));
 
-    return 0;
-  }
+  writeLine(deps.stdout, "");
 
-  const listing = Object.entries(effective.sources)
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([key, source]) => `# ${key}: ${source}`);
-
-  writeLines(deps.stdout, [
-    JSON.stringify(effective.config, null, 2),
-    ...listing,
-    ...writeBackLines(writeBack),
-  ]);
+  stepsOf(deps).close(sourcesText(deps, effective.sources), writeBackRows(writeBack));
 
   return 0;
-};
-
-export const configCommand = async (deps: CliDeps, args: string[]) => {
-  return showConfig(deps, args.includes(JSON_FLAG));
 };

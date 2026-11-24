@@ -20,10 +20,12 @@ import { errorMessage, LauncherError } from "../../shared/index.ts";
 import { hostBinds } from "../../workspace/index.ts";
 import { type LaunchContext, openContext } from "../context.ts";
 import { type CliDeps, colorOf, hostAgentDirOf, isTerminal, lineSink, writeLines } from "../deps.ts";
-import { missingPiText } from "../host-pi.ts";
+import { resolveJobPi } from "../host-pi.ts";
 import { hostSessionsOf } from "../host-sessions.ts";
 import { type Sandbox, type Stage, type StageOutcome, withSandbox } from "../launch.ts";
+import { unicodeOf } from "../prompt/terminal.ts";
 import { denialAdvice, deniedTargets, type SandboxProxy, sandboxDenials } from "../sandbox-proxy.ts";
+import { glyphsShown } from "../steps.ts";
 import {
   assertMemoryFitsVm,
   assertVmFitsHost,
@@ -88,7 +90,7 @@ interface Run {
   vmRunning?: boolean;
 }
 
-const NOTICE_PREFIX = "pi-sandbox: ";
+const NOTICE_PREFIX = "pinata: ";
 
 const ERASE_LINE = "\r\u001b[2K";
 
@@ -100,6 +102,8 @@ const stageSection = (stage: Stage): Section =>
 const withoutPrefix = (line: string) =>
   line.startsWith(NOTICE_PREFIX) ? line.slice(NOTICE_PREFIX.length) : line;
 
+const capitalised = (text: string) => `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
+
 const progressLine = (deps: CliDeps): Progress => {
   if (!isTerminal(deps.stderr) || deps.env.TERM === "dumb") {
     return { line: () => undefined, clear: () => undefined };
@@ -107,12 +111,13 @@ const progressLine = (deps: CliDeps): Progress => {
 
   const state = { shown: false };
   const width = Math.max(1, deps.terminal.columns - 1);
+  const ellipsis = unicodeOf(deps.env) ? "…" : "...";
 
   return {
     line: (text) => {
       state.shown = true;
 
-      deps.stderr.write(`${ERASE_LINE}${`pi sandbox doctor: ${withoutPrefix(text)}`.slice(0, width)}`);
+      deps.stderr.write(`${ERASE_LINE}${`${ellipsis} ${capitalised(withoutPrefix(text))}`.slice(0, width)}`);
     },
     clear: () => {
       if (state.shown) {
@@ -171,7 +176,7 @@ const configuredSizeCheck = (size: VmSize, target: VmTarget, current: string, br
 
   if (hasSizeChanges(drift)) {
     return warned(`${current}, not the ${vmSizeText(drift.changes)} vm sets`, {
-      hint: "run pi sandbox init, or pi, while no other pi session runs; either restarts the VM with the size vm sets",
+      hint: "run pinata init, or pi, while no other pi session runs; either restarts the VM with the size vm sets",
     });
   }
 
@@ -202,7 +207,7 @@ const sizeCheck = async (deps: CliDeps, context: LaunchContext, sandbox: Sandbox
 
   return isBelow(size, recommended)
     ? warned(`${current}, below ${recommended.cpus} CPUs and ${recommended.memoryGiB} GiB`, {
-        hint: "choose Custom for the VM size in pi sandbox init, or set vm in the config, while no other pi session runs",
+        hint: "choose Custom for the VM size in pinata init, or set vm in the config, while no other pi session runs",
       })
     : passed(current, { brief });
 };
@@ -210,7 +215,7 @@ const sizeCheck = async (deps: CliDeps, context: LaunchContext, sandbox: Sandbox
 type Counted = Extract<VmFileCache, { state: "counted" }>;
 
 const RELEASE_OFF_HINT =
-  "vm.releaseFileCache is off, so nothing releases it; turn it on, or run pi sandbox stop, which frees it all";
+  "vm.releaseFileCache is off, so nothing releases it; turn it on, or run pinata stop, which frees it all";
 
 const pastLimitCheck = ({ count, limit, maxFiles }: Counted, releasing: boolean) => {
   const counted =
@@ -220,7 +225,7 @@ const pastLimitCheck = ({ count, limit, maxFiles }: Counted, releasing: boolean)
 
   return warned(`${counted} the release at ${limit} (kern.maxfiles ${maxFiles})`, {
     hint: releasing
-      ? "it is released while pi runs with vm.releaseFileCache on; pi sandbox stop frees it all"
+      ? "it is released while pi runs with vm.releaseFileCache on; pinata stop frees it all"
       : RELEASE_OFF_HINT,
   });
 };
@@ -259,7 +264,7 @@ const unreadCheck = (reading: Unread) => {
     return warned(
       "looking for the VM's process timed out or could not run, so the file cache release does nothing",
       {
-        hint: `it looks with lsof for the Mac process that holds ${reading.looked.join(" or ")}; pi sandbox stop frees the VM's open files`,
+        hint: `it looks with lsof for the Mac process that holds ${reading.looked.join(" or ")}; pinata stop frees the VM's open files`,
       },
     );
   }
@@ -314,14 +319,13 @@ const rootsCheck = (current: VmShare[], desired: VmShare[]): CheckResult => {
   const { extra, lacking } = shareDrift(current, desired);
 
   if (extra.length === 0 && lacking.length === 0) {
-    return passed(
-      "the sandbox VM shares exactly the workspaceRoot, the session dir and the launcher's vm dir",
-      { brief: "shares the workspace root" },
-    );
+    return passed("the sandbox VM shares exactly the workspaceRoot, the session dir and pinata's vm dir", {
+      brief: "shares the workspace root",
+    });
   }
 
   return warned(`the sandbox VM ${driftText(extra, lacking)}`, {
-    hint: "run pi sandbox init, or pi, while no other pi session runs; either restarts the VM with the shares workspaceRoot sets",
+    hint: "run pinata init, or pi, while no other pi session runs; either restarts the VM with the shares workspaceRoot sets",
   });
 };
 
@@ -355,7 +359,7 @@ const coverageOutcome = (coverage: Coverage, plan: VmSharePlan): SharesOutcome =
   if (coverage.missing.length > 0) {
     return {
       result: warned(`the sandbox VM does not share ${coverage.missing.join(", ")}`, {
-        hint: "run pi once here while no other pi session runs, which shares it and restarts the VM, then pi sandbox doctor again",
+        hint: "run pi once here while no other pi session runs, which shares it and restarts the VM, then pinata doctor again",
       }),
       missing: coverage.missing,
     };
@@ -538,6 +542,18 @@ const notRun = (stage: Stage | undefined): NamedCheck => ({
 });
 
 const sandboxChecks = async (deps: CliDeps, context: LaunchContext, backend: Backend, run: Run) => {
+  const pi = await resolveJobPi(deps);
+
+  if (pi === undefined) {
+    run.checks.push({
+      name: "sandbox",
+      section: "sandbox",
+      result: skipped("not started: there is no host pi"),
+    });
+
+    return undefined;
+  }
+
   const seen: { failed?: Stage; rules?: CredentialRule[] } = {};
   const report = (stage: Stage, outcome: StageOutcome) => {
     seen.failed ??= outcome.ok ? undefined : stage;
@@ -559,7 +575,7 @@ const sandboxChecks = async (deps: CliDeps, context: LaunchContext, backend: Bac
 
     return 0;
   };
-  const code = await withSandbox(deps, context, backend, use, {
+  const code = await withSandbox(deps, context, backend, pi, use, {
     report,
     progress: run.progress.line,
     signIn: false,
@@ -676,8 +692,7 @@ const runChecks = async (deps: CliDeps, progress: Progress, checks: NamedCheck[]
   return signal;
 };
 
-const noticesOf = (deps: CliDeps, lines: string[]) =>
-  [...new Set(lines.map(withoutPrefix))].filter((notice) => notice !== missingPiText(deps));
+const noticesOf = (lines: string[]) => [...new Set(lines.map(withoutPrefix))];
 
 export const doctorCommand = async (deps: CliDeps, args: string[]) => {
   const checks: NamedCheck[] = [];
@@ -689,9 +704,10 @@ export const doctorCommand = async (deps: CliDeps, args: string[]) => {
 
     writeLines(
       deps.stdout,
-      renderReport(checks, noticesOf(deps, notices), {
+      renderReport(checks, noticesOf(notices), {
         verbose: args.includes(VERBOSE_FLAG),
         color: colorOf(deps),
+        unicode: glyphsShown(deps),
         home: deps.home,
         partial,
       }),

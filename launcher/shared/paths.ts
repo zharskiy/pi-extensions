@@ -16,7 +16,7 @@ interface PathContext {
   home: string;
 }
 
-const APP = "pi-sandbox";
+const APP = "pinata";
 
 const BUILD_DIR = "dist";
 
@@ -62,7 +62,7 @@ const realBeneath = (path: string): string => {
 };
 
 const configuredStateDir = (env: NodeJS.ProcessEnv) => {
-  const configured = present(env.PI_SANDBOX_STATE_DIR);
+  const configured = present(env.PINATA_STATE_DIR);
 
   return configured === undefined ? undefined : realBeneath(configured);
 };
@@ -73,7 +73,7 @@ export const launcherPaths = (context: Partial<PathContext> = {}): LauncherPaths
 
   return {
     stateDir: configuredStateDir(env) ?? join(launcherDir(home, env), STATE_DIR),
-    userConfigFile: present(env.PI_SANDBOX_USER_CONFIG) ?? join(launcherDir(home, env), CONFIG_FILE),
+    userConfigFile: present(env.PINATA_USER_CONFIG) ?? join(launcherDir(home, env), CONFIG_FILE),
   };
 };
 

@@ -13,11 +13,11 @@ interface VmState {
   engineUpAfter?: number;
 }
 
-const SSH = ["ssh", "--profile", "pi-sandbox", "--"];
+const SSH = ["ssh", "--profile", "pinata", "--"];
 
-const MARKER = "/etc/pi-sandbox/extra.sha256";
+const MARKER = "/etc/pinata/extra.sha256";
 
-const CERT_DIR = "/usr/local/share/ca-certificates/pi-sandbox";
+const CERT_DIR = "/usr/local/share/ca-certificates/pinata";
 
 const certificate = (body: string) => `-----BEGIN CERTIFICATE-----\n${body}\n-----END CERTIFICATE-----\n`;
 
@@ -132,8 +132,8 @@ describe("the sandbox VM trusts the tls.extraCa certificates", () => {
       `cat ${MARKER}`,
       `cat ${MARKER}`,
       `sudo rm -rf -- ${MARKER} ${CERT_DIR}`,
-      `sudo mkdir -p -- ${CERT_DIR} /etc/pi-sandbox`,
-      `sudo tee -- ${CERT_DIR}/pi-sandbox-extra-1.crt`,
+      `sudo mkdir -p -- ${CERT_DIR} /etc/pinata`,
+      `sudo tee -- ${CERT_DIR}/pinata-extra-1.crt`,
       "sudo update-ca-certificates --fresh",
       "sudo systemctl restart containerd.service docker.service",
       `sudo tee -- ${MARKER}`,
@@ -164,8 +164,8 @@ describe("the sandbox VM trusts the tls.extraCa certificates", () => {
     await context.ensure();
 
     expect(context.commands().filter((command) => command.startsWith("sudo tee"))).toEqual([
-      `sudo tee -- ${CERT_DIR}/pi-sandbox-extra-1.crt`,
-      `sudo tee -- ${CERT_DIR}/pi-sandbox-extra-2.crt`,
+      `sudo tee -- ${CERT_DIR}/pinata-extra-1.crt`,
+      `sudo tee -- ${CERT_DIR}/pinata-extra-2.crt`,
       `sudo tee -- ${MARKER}`,
     ]);
 

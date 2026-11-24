@@ -70,7 +70,7 @@ const guardedPaths = (context: RootGuardContext, homes: string[]): Guarded[] => 
       .filter((entry) => !homes.includes(entry.path))
       .map((entry) => ({ path: entry.path, name: entry.reason, inside: true })),
     ...ROOT_ONLY_HOME.map((name) => ({ path: join(context.home, name), name: `~/${name}`, inside: true })),
-    { path: configDir, name: "the launcher config dir", inside: true },
+    { path: configDir, name: "pinata's config dir", inside: true },
     ...SYSTEM_DIRS.map((path) => ({ path, name: path, inside: true })),
     ...SYSTEM_PARENTS.map((path) => ({ path, name: path, inside: false })),
   ];
@@ -164,7 +164,7 @@ export const requiredRoot = (root: string | undefined, context: RootGuardContext
   if (root === undefined) {
     throw new LauncherError(
       "config: workspaceRoot is not set, so pi has no folder it may start in",
-      `run pi sandbox init, or set workspaceRoot in ${launcherPaths(context).userConfigFile} to the folder that holds your projects`,
+      `run pinata init, or set workspaceRoot in ${launcherPaths(context).userConfigFile} to the folder that holds your projects`,
     );
   }
 

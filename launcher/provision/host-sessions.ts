@@ -324,7 +324,7 @@ export const sweepHostSessions = async (input: SweepInput) => {
 };
 
 export const probeHostSessions = async (backend: Backend, containerId: string, dir: string) => {
-  const marker = `.pi-sandbox-probe-${randomBytes(6).toString("hex")}`;
+  const marker = `.pinata-probe-${randomBytes(6).toString("hex")}`;
   const path = join(dir, marker);
 
   await writeFile(path, "", { flag: "wx", mode: 0o600 });

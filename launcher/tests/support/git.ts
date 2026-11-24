@@ -19,7 +19,7 @@ const IDENTITY = [
   "advice.addEmbeddedRepo=false",
 ];
 
-const gitHome = mkdtempSync(join(tmpdir(), "pi-sandbox-git-home-"));
+const gitHome = mkdtempSync(join(tmpdir(), "pinata-git-home-"));
 
 afterAll(() => {
   rmSync(gitHome, { recursive: true, force: true });

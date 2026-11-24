@@ -1,34 +1,31 @@
 import { join } from "node:path";
 import { LauncherError } from "../../shared/index.ts";
 import type { CliDeps } from "../deps.ts";
-import { interactive, isCheckout, PACKAGE, preflight, refuseBusy } from "./host.ts";
-import { refusePinnedManaged } from "./install.ts";
+import { requireJobPi } from "../host-pi.ts";
+import { runQuietly, stepsOf } from "../steps.ts";
+import { isCheckout, PACKAGE, preflight, refuseBusy } from "./host.ts";
 
-export const update = async (deps: CliDeps, packageDir: string, version?: string, pi?: string) => {
+export const update = async (deps: CliDeps, packageDir: string) => {
   if (await isCheckout(deps, packageDir)) {
     throw new LauncherError("this is a checkout: git pull, then pinata install");
   }
 
-  await refusePinnedManaged(deps, pi);
+  await requireJobPi(deps, "update");
 
-  await preflight(deps);
+  const steps = stepsOf(deps);
+
+  await preflight(deps, steps);
 
   await refuseBusy(deps);
 
-  await interactive(deps, "npm", [
-    "install",
-    "-g",
-    "--legacy-peer-deps",
-    `${PACKAGE}@${version ?? "latest"}`,
-  ]);
-
-  const args = ["install", "--yes", ...(pi === undefined ? [] : ["--pi", pi])];
+  await steps.task(
+    { pending: "Updating pinata", done: "Updated pinata", failed: "Could not update pinata" },
+    () => runQuietly(deps, ["npm", "install", "-g", "--legacy-peer-deps", `${PACKAGE}@latest`]),
+  );
 
   return deps.runner.spawnInteractive(
     process.execPath,
-    [join(packageDir, "launcher", "bin", "pinata.js"), ...args],
-    {
-      cwd: deps.cwd,
-    },
+    [join(packageDir, "launcher", "bin", "pinata.js"), "install", "--yes"],
+    { cwd: deps.cwd },
   );
 };
