@@ -15,8 +15,8 @@ export const createConfigFile = async () => {
   return {
     userFile,
     env: {
-      PI_SANDBOX_USER_CONFIG: userFile,
-      PI_SANDBOX_STATE_DIR: join(root, "state"),
+      PINATA_USER_CONFIG: userFile,
+      PINATA_STATE_DIR: join(root, "state"),
     },
     write: (value: unknown) => writeJson(userFile, value),
   };

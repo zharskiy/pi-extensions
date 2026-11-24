@@ -79,7 +79,7 @@ describe("the folder tags", () => {
     expect(folderTag(candidateOf({ origin: "config", exists: false }), all, false)).toBe(
       "current · missing, not shared until it exists",
     );
-    expect(folderTag(candidateOf({ origin: "env" }), all, false)).toBe("from PI_SANDBOX_ROOT");
+    expect(folderTag(candidateOf({ origin: "env" }), all, false)).toBe("from PINATA_ROOT");
   });
 
   it("summarises the root, escaping it, and no root as none", () => {
@@ -142,7 +142,7 @@ describe("the hub", () => {
 
     expect(applyLines(plan, FACTS, SHAPE, 76, false)).toEqual([
       "When you apply:",
-      "  • change ~/.pi/agent/pi-sandbox/config.json",
+      "  • change ~/.pi/agent/pinata/config.json",
       '      ~ image.packages   ["ripgrep","imagemagick"]',
       '                         → ["ripgrep","imagemagick","postgresql-client"]',
       "      - vm.cpus          6   (back to automatic: 8)",
@@ -156,7 +156,7 @@ describe("the hub", () => {
 
     expect(applyLines(plan, FACTS, SHAPE, 76, true)).toEqual([
       "When you apply:",
-      "  - change ~/.pi/agent/pi-sandbox/config.json",
+      "  - change ~/.pi/agent/pinata/config.json",
       '      added workspaceRoot: "~/a"',
     ]);
   });
@@ -166,7 +166,7 @@ describe("the hub", () => {
 
     expect(applyLines(plan, FACTS, { existed: false, indent: "\t" }, 76, false).slice(0, 2)).toEqual([
       "When you apply:",
-      "  • create ~/.pi/agent/pi-sandbox/config.json (applies from the next pi)",
+      "  • create ~/.pi/agent/pinata/config.json (applies from the next pi)",
     ]);
   });
 

@@ -13,7 +13,7 @@ import { fakeInput, fakeOutput, KEY, pause } from "./prompt/fake-tty.ts";
 import { AUTOMATIC_SIZE } from "./setup-fixtures.ts";
 
 const HINT =
-  "  hint: pass --yes to keep the current settings and apply them; PI_SANDBOX_ROOT names the folder that holds your projects\n";
+  "  hint: pass --yes to keep the current settings and apply them; PINATA_ROOT names the folder that holds your projects\n";
 
 const listed = async (dir: string): Promise<string[]> => {
   const entries = await readdir(dir, { withFileTypes: true, recursive: true });
@@ -175,13 +175,13 @@ describe("pinata init --yes", () => {
     ]);
   });
 
-  it("writes the root of PI_SANDBOX_ROOT into a new config and creates the VM with it", async () => {
+  it("writes the root of PINATA_ROOT into a new config and creates the VM with it", async () => {
     const harness = await initSetup({ workspaceRoot: false });
     const work = join(harness.deps.home, "work");
 
     await mkdir(work, { recursive: true });
 
-    const deps = { ...harness.deps, env: { ...harness.deps.env, PI_SANDBOX_ROOT: "~/work/" } };
+    const deps = { ...harness.deps, env: { ...harness.deps.env, PINATA_ROOT: "~/work/" } };
 
     expect(await runPinata(["init", "--yes"], deps)).toBe(0);
     expect(JSON.parse(await readFile(harness.userConfigFile, "utf8"))).toEqual({ workspaceRoot: "~/work" });
@@ -222,7 +222,7 @@ describe("pinata init --yes", () => {
   it("accepts a root that does not exist, saying it is not shared", async () => {
     const harness = await initSetup({ workspaceRoot: false });
     const gone = join(harness.deps.home, "gone");
-    const deps = { ...harness.deps, env: { ...harness.deps.env, PI_SANDBOX_ROOT: gone } };
+    const deps = { ...harness.deps, env: { ...harness.deps.env, PINATA_ROOT: gone } };
 
     expect(await runPinata(["init", "--yes"], deps)).toBe(0);
     expect(JSON.parse(await readFile(harness.userConfigFile, "utf8"))).toEqual({ workspaceRoot: gone });
@@ -231,8 +231,8 @@ describe("pinata init --yes", () => {
     );
   });
 
-  it("resolves a relative PI_SANDBOX_ROOT against the current folder", async () => {
-    const harness = await initSetup({ env: { PI_SANDBOX_ROOT: ".." }, workspaceRoot: false });
+  it("resolves a relative PINATA_ROOT against the current folder", async () => {
+    const harness = await initSetup({ env: { PINATA_ROOT: ".." }, workspaceRoot: false });
 
     expect(await runPinata(["init", "--yes"], harness.deps)).toBe(0);
     expect(JSON.parse(await readFile(harness.userConfigFile, "utf8"))).toEqual({
@@ -250,7 +250,7 @@ describe("pinata init --yes", () => {
     await harness.writeJson(harness.userConfigFile, JSON.parse(text));
 
     const before = await stat(harness.userConfigFile);
-    const deps = { ...harness.deps, env: { ...harness.deps.env, PI_SANDBOX_ROOT: harness.repoRoot } };
+    const deps = { ...harness.deps, env: { ...harness.deps.env, PINATA_ROOT: harness.repoRoot } };
     const fake = createFakeBackend({
       vm: {
         inspect: async () => ({
@@ -273,7 +273,7 @@ describe("pinata init --yes", () => {
     expect((await stat(harness.userConfigFile)).mtimeMs).toBe(before.mtimeMs);
   });
 
-  it("refuses a config with another root than PI_SANDBOX_ROOT and leaves it as it is", async () => {
+  it("refuses a config with another root than PINATA_ROOT and leaves it as it is", async () => {
     const harness = await initSetup();
     const text = JSON.stringify({ workspaceRoot: harness.repoRoot });
 
@@ -283,32 +283,32 @@ describe("pinata init --yes", () => {
 
     const deps = {
       ...harness.deps,
-      env: { ...harness.deps.env, PI_SANDBOX_ROOT: join(harness.root, "other") },
+      env: { ...harness.deps.env, PINATA_ROOT: join(harness.root, "other") },
     };
 
     expect(await runPinata(["init", "--yes"], deps)).toBe(1);
     expect(harness.stderr()).toBe(
-      `pinata: ${harness.userConfigFile} has another workspaceRoot than PI_SANDBOX_ROOT\n  hint: edit workspaceRoot in ${harness.userConfigFile}, or unset PI_SANDBOX_ROOT\n`,
+      `pinata: ${harness.userConfigFile} has another workspaceRoot than PINATA_ROOT\n  hint: edit workspaceRoot in ${harness.userConfigFile}, or unset PINATA_ROOT\n`,
     );
     expect(await readFile(harness.userConfigFile, "utf8")).toBe(text);
     expect(harness.applied).toEqual([]);
   });
 
-  it("refuses without workspaceRoot and PI_SANDBOX_ROOT, and writes nothing", async () => {
+  it("refuses without workspaceRoot and PINATA_ROOT, and writes nothing", async () => {
     const harness = await initSetup({ workspaceRoot: false });
 
     expect(await runPinata(["init", "--yes"], harness.deps)).toBe(1);
     expect(await exists(harness.userConfigFile)).toBe(false);
     expect(harness.applied).toEqual([]);
     expect(harness.stderr()).toBe(
-      `pinata: ${harness.userConfigFile} has no workspaceRoot and PI_SANDBOX_ROOT is not set, so there is no folder to share with the sandbox VM\n  hint: run pinata init in a terminal to choose the folder that holds your projects, or set PI_SANDBOX_ROOT to it\n`,
+      `pinata: ${harness.userConfigFile} has no workspaceRoot and PINATA_ROOT is not set, so there is no folder to share with the sandbox VM\n  hint: run pinata init in a terminal to choose the folder that holds your projects, or set PINATA_ROOT to it\n`,
     );
   });
 
-  it("refuses a PI_SANDBOX_ROOT that is the home or holds it, and writes nothing", async () => {
+  it("refuses a PINATA_ROOT that is the home or holds it, and writes nothing", async () => {
     const outcomes = await Promise.all(
       ["~", "~/..", "/"].map(async (root) => {
-        const harness = await initSetup({ env: { PI_SANDBOX_ROOT: root }, workspaceRoot: false });
+        const harness = await initSetup({ env: { PINATA_ROOT: root }, workspaceRoot: false });
         const code = await runPinata(["init", "--yes"], harness.deps);
 
         return {
@@ -325,14 +325,14 @@ describe("pinata init --yes", () => {
         code: 1,
         written: false,
         applied: 0,
-        hint: "  hint: point PI_SANDBOX_ROOT at the folder that holds your projects",
+        hint: "  hint: point PINATA_ROOT at the folder that holds your projects",
       })),
     );
   });
 
   it("keeps the running VM while pi sessions run", async () => {
     const harness = await initSetup({
-      env: { PI_SANDBOX_ROOT: "" },
+      env: { PINATA_ROOT: "" },
       inspect: { state: "running", size: AUTOMATIC_SIZE, shares: [] },
     });
 
@@ -376,12 +376,12 @@ describe("pinata init --yes", () => {
   });
 
   it("refuses a vm above what this Mac has before it writes or touches the VM", async () => {
-    const harness = await initSetup({ env: { PI_SANDBOX_ROOT: "" } });
+    const harness = await initSetup({ env: { PINATA_ROOT: "" } });
 
     await harness.writeJson(harness.userConfigFile, { vm: { cpus: 12 } });
 
     const text = await readFile(harness.userConfigFile, "utf8");
-    const deps = { ...harness.deps, env: { ...harness.deps.env, PI_SANDBOX_ROOT: harness.repoRoot } };
+    const deps = { ...harness.deps, env: { ...harness.deps.env, PINATA_ROOT: harness.repoRoot } };
 
     expect(await runPinata(["init", "--yes"], deps)).toBe(1);
     expect(harness.stderr()).toBe(
@@ -449,7 +449,7 @@ describe("pinata init --yes", () => {
     });
     const deps = {
       ...harness.deps,
-      env: { ...harness.deps.env, PI_SANDBOX_ROOT: harness.repoRoot },
+      env: { ...harness.deps.env, PINATA_ROOT: harness.repoRoot },
       backend: () => fake.backend,
     };
 
@@ -467,7 +467,7 @@ describe("pinata init --yes", () => {
   });
 
   it("fails with the VM's error after saving the config", async () => {
-    const harness = await initSetup({ env: { PI_SANDBOX_ROOT: "" }, workspaceRoot: false });
+    const harness = await initSetup({ env: { PINATA_ROOT: "" }, workspaceRoot: false });
     const fake = createFakeBackend({
       vm: {
         apply: async () => {
@@ -480,7 +480,7 @@ describe("pinata init --yes", () => {
     });
     const deps = {
       ...harness.deps,
-      env: { ...harness.deps.env, PI_SANDBOX_ROOT: harness.repoRoot },
+      env: { ...harness.deps.env, PINATA_ROOT: harness.repoRoot },
       backend: () => fake.backend,
     };
 
@@ -500,7 +500,7 @@ describe("pinata init --yes", () => {
   });
 
   it("lets an unexpected error from the VM step reach the error handler after saving the config", async () => {
-    const harness = await initSetup({ env: { PI_SANDBOX_ROOT: "" }, workspaceRoot: false });
+    const harness = await initSetup({ env: { PINATA_ROOT: "" }, workspaceRoot: false });
     const fake = createFakeBackend({
       vm: {
         apply: async () => {
@@ -510,7 +510,7 @@ describe("pinata init --yes", () => {
     });
     const deps = {
       ...harness.deps,
-      env: { ...harness.deps.env, PI_SANDBOX_ROOT: harness.repoRoot },
+      env: { ...harness.deps.env, PINATA_ROOT: harness.repoRoot },
       backend: () => fake.backend,
     };
 
@@ -561,7 +561,7 @@ const gitRepo = async (dir: string) => {
 
 describe("pinata init at a terminal", () => {
   it("runs the plain setup, saves the chosen folder and creates the VM", async () => {
-    const harness = await initSetup({ env: { PI_SANDBOX_PLAIN: "1" }, workspaceRoot: false });
+    const harness = await initSetup({ env: { PINATA_PLAIN: "1" }, workspaceRoot: false });
     const projects = join(harness.deps.home, "Projects");
 
     await gitRepo(join(projects, "app"));
@@ -639,7 +639,7 @@ describe("pinata init at a terminal", () => {
   });
 
   it("shows an invalid config and exits 1 without touching it", async () => {
-    const harness = await initSetup({ env: { PI_SANDBOX_PLAIN: "1" } });
+    const harness = await initSetup({ env: { PINATA_PLAIN: "1" } });
 
     await mkdir(dirname(harness.userConfigFile), { recursive: true });
 

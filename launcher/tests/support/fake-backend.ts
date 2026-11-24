@@ -125,7 +125,7 @@ const GUEST_PROGRAMS = ["sh", "cat"];
 const isWithinAny = (part: string, roots: string[]) =>
   roots.some((root) => part === root || part.startsWith(`${root}/`));
 
-const isPiSessionExec = (spec: ExecSpec) => spec.env.PI_SANDBOX_LAUNCH_ID !== undefined;
+const isPiSessionExec = (spec: ExecSpec) => spec.env.PINATA_LAUNCH_ID !== undefined;
 
 const isRootExec = (spec: ExecSpec) => spec.user === "0";
 
@@ -457,7 +457,7 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
 
     if (foreignNetworks.has(name)) {
       throw new LauncherError(
-        `network ${name} exists but is not managed by pi-sandbox`,
+        `network ${name} exists but is not managed by pinata`,
         "remove that network from the sandbox VM so pinata can create its own",
       );
     }

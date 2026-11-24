@@ -46,11 +46,11 @@ describe("the sweep and configured volumes", () => {
 
     await run([], harness.deps);
 
-    await plantShared(fake, "pi-sandbox-shared-otheruser000-aaaaaaaa", "otheruser000");
+    await plantShared(fake, "pinata-shared-otheruser000-aaaaaaaa", "otheruser000");
 
     expect(await sweepNow(harness.deps)).toBe(0);
     expect(fake.volumes.has(shared)).toBe(true);
-    expect(fake.volumes.has("pi-sandbox-shared-otheruser000-aaaaaaaa")).toBe(true);
+    expect(fake.volumes.has("pinata-shared-otheruser000-aaaaaaaa")).toBe(true);
     expect(harness.stdout()).not.toContain("without repository label");
     expect(harness.stdout()).not.toContain("shared cache");
   });

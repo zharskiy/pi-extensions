@@ -88,7 +88,7 @@ describe("ensureServices", () => {
     expect(lines).toEqual(["pinata: starting service db", "pinata: starting service cache"]);
     expect(fake.networks.has(FAKE_NETWORK)).toBe(true);
     expect(podEntry?.spec).toMatchObject({
-      name: `pi-sandbox-pod-${installIdOf(STATE)}`,
+      name: `pinata-pod-${installIdOf(STATE)}`,
       network: { kind: "internal", name: FAKE_NETWORK, alias: SERVICES_ALIAS },
       readOnlyRoot: true,
       init: true,
@@ -100,7 +100,7 @@ describe("ensureServices", () => {
     expect(podEntry?.spec?.labels[LABELS.repoHash]).toBeUndefined();
     expect(podEntry?.spec?.labels[LABELS.servicesHash]).toMatch(/^[0-9a-f]{64}$/);
     expect(dbEntry?.spec).toMatchObject({
-      name: `pi-sandbox-service-${installIdOf(STATE)}-db`,
+      name: `pinata-service-${installIdOf(STATE)}-db`,
       image: "sha256:sandbox",
       network: { kind: "container", id: pod },
       entrypoint: ["db", "--serve"],
@@ -132,7 +132,7 @@ describe("ensureServices", () => {
 
     expect(chown?.spec).toMatchObject({
       user: "0",
-      command: ["/bin/sh", "-c", '/bin/chown -h 70:70 "$@"', "sh", `/pi-sandbox/service-volumes/${dbVolume}`],
+      command: ["/bin/sh", "-c", '/bin/chown -h 70:70 "$@"', "sh", `/pinata/service-volumes/${dbVolume}`],
     });
     expect(chown?.spec.env).toEqual(ROOT_EXEC_ENV);
     expect(ready?.spec.user).toBe("70:70");

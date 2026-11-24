@@ -62,7 +62,7 @@ export const isSet = (value: string | undefined) => value !== undefined && value
 const cursorControlOf = (env: NodeJS.ProcessEnv) => isSet(env.TERM) && env.TERM !== "dumb";
 
 const modeOf = (env: NodeJS.ProcessEnv, columns: number): Ui["mode"] =>
-  !isSet(env.PI_SANDBOX_PLAIN) && cursorControlOf(env) && columns >= RICH_COLUMNS ? "rich" : "plain";
+  !isSet(env.PINATA_PLAIN) && cursorControlOf(env) && columns >= RICH_COLUMNS ? "rich" : "plain";
 
 const UTF8 = /utf-?8/i;
 

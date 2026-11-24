@@ -32,9 +32,9 @@ interface HostState {
   broken?: string[];
 }
 
-const DISK = "/home/u/.colima/_lima/colima-pi-sandbox/disk";
+const DISK = "/home/u/.colima/_lima/colima-pinata/disk";
 
-const LEGACY_DISK = "/home/u/.colima/_lima/colima-pi-sandbox/diffdisk";
+const LEGACY_DISK = "/home/u/.colima/_lima/colima-pinata/diffdisk";
 
 const missingFile = (path: string) => ({
   code: 1,
@@ -598,7 +598,7 @@ describe("the colima VM's file cache watch", () => {
     const home = await tempDir("file-cache");
     const host: HostState = {
       pids: ["700"],
-      held: [join(home, ".colima", "_lima", "colima-pi-sandbox", "disk")],
+      held: [join(home, ".colima", "_lima", "colima-pinata", "disk")],
       open: { "700": 50_000 },
     };
     const answer = answerHost(host);
@@ -633,13 +633,13 @@ describe("the colima VM's file cache watch", () => {
 
     expect(fake.calls.slice(0, 3).map((call) => call.args)).toEqual(
       [
-        join(home, ".colima", "_lima", "colima-pi-sandbox", "disk"),
-        join(home, ".colima", "_lima", "colima-pi-sandbox", "diffdisk"),
-        join(home, ".colima", "_lima", "_disks", "colima-pi-sandbox", "datadisk"),
+        join(home, ".colima", "_lima", "colima-pinata", "disk"),
+        join(home, ".colima", "_lima", "colima-pinata", "diffdisk"),
+        join(home, ".colima", "_lima", "_disks", "colima-pinata", "datadisk"),
       ].map((path) => ["-n", "-P", "-t", path]),
     );
     expect(colimaCalls()).toEqual([
-      ["ssh", "--profile", "pi-sandbox", "--", "sudo", "sysctl", "-q", "-w", "vm.drop_caches=2"],
+      ["ssh", "--profile", "pinata", "--", "sudo", "sysctl", "-q", "-w", "vm.drop_caches=2"],
     ]);
     expect(fake.calls.find((call) => call.file === "colima")?.options.env).toEqual({
       COLIMA_HOME: join(home, ".colima"),

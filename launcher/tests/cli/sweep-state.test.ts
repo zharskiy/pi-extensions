@@ -186,7 +186,7 @@ describe("the daily collection of state entries the layout does not name", () =>
     expect(await exists(file)).toBe(true);
   });
 
-  it("leaves a state dir that PI_SANDBOX_STATE_DIR moves alone", async () => {
+  it("leaves a state dir that PINATA_STATE_DIR moves alone", async () => {
     const harness = await createHarness({ backend: () => createFakeBackend().backend });
     const file = join(harness.stateDir, "old.json");
 

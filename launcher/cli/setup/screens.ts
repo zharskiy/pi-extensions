@@ -198,7 +198,7 @@ const originTags = (candidate: FolderCandidate, digits: number) => {
     return candidate.exists ? ["current"] : ["current", "missing, not shared until it exists"];
   }
 
-  return candidate.origin === "env" ? ["from PI_SANDBOX_ROOT"] : [repoTag(candidate, digits)];
+  return candidate.origin === "env" ? ["from PINATA_ROOT"] : [repoTag(candidate, digits)];
 };
 
 export const folderTag = (candidate: FolderCandidate, candidates: FolderCandidate[], plain: boolean) => {

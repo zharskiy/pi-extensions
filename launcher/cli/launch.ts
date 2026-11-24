@@ -412,7 +412,7 @@ const setupContainer = (input: PreparedInput, containerId: string) => {
     backend,
     containerId,
     commands: context.effective.config.setup,
-    env: { ...input.forwarded.env, PI_SANDBOX_LAUNCH_ID: launch.launchId },
+    env: { ...input.forwarded.env, PINATA_LAUNCH_ID: launch.launchId },
     workdir: context.workspace.repoRoot,
     stdout: deps.stdout,
     stderr: deps.stderr,

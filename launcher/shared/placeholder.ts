@@ -1,7 +1,7 @@
 import { sha256Hex } from "./hash.ts";
 import { type JsonObject, parseJsonObject } from "./json-file.ts";
 
-export const PLACEHOLDER_PREFIX = "pi-sandbox-";
+export const PLACEHOLDER_PREFIX = "pinata-";
 
 const HEX_LENGTH = 24;
 

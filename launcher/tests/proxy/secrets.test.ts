@@ -252,14 +252,14 @@ describe("piAuth secrets", () => {
 
 describe("env and file secrets", () => {
   it("reads env secrets from the map handed over by the launcher, never from the environment", async () => {
-    process.env.PI_SANDBOX_TEST_SECRET = "from-daemon-env";
+    process.env.PINATA_TEST_SECRET = "from-daemon-env";
 
     const { resolver } = setup(undefined, { envSecrets: new Map([["handed", "from-launcher"]]) });
 
     expect(await secretOf(resolver, "handed", { env: "WHATEVER" })).toBe("from-launcher");
-    expect(await resolver.resolve("other", { env: "PI_SANDBOX_TEST_SECRET" })).toMatchObject({ ok: false });
+    expect(await resolver.resolve("other", { env: "PINATA_TEST_SECRET" })).toMatchObject({ ok: false });
 
-    delete process.env.PI_SANDBOX_TEST_SECRET;
+    delete process.env.PINATA_TEST_SECRET;
   });
 
   it("reads a JSON pointer from a file under home", async () => {

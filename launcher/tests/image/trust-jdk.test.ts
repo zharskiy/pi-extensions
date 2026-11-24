@@ -15,8 +15,8 @@ esac
 const setup = async () => {
   const root = await tempDir("trust-jdk");
   const script = (await readFile(join(launcherRoot(), "image", "trust-jdk.sh"), "utf8"))
-    .replace("ca_dir=/usr/local/share/ca-certificates/pi-sandbox", `ca_dir=${root}/ca`)
-    .replace("net_lines=/usr/local/lib/pi-sandbox/jdk-net.properties", `net_lines=${root}/net-lines`)
+    .replace("ca_dir=/usr/local/share/ca-certificates/pinata", `ca_dir=${root}/ca`)
+    .replace("net_lines=/usr/local/lib/pinata/jdk-net.properties", `net_lines=${root}/net-lines`)
     .replace("find / -xdev", `find ${root}/jdks -xdev`);
 
   await mkdir(join(root, "ca"), { recursive: true });

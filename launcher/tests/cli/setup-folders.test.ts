@@ -49,14 +49,14 @@ describe("the usual project folders", () => {
 });
 
 describe("folderCandidates", () => {
-  it("lists the configured root, PI_SANDBOX_ROOT, the cwd's top folder and usual folders, by repositories", async () => {
+  it("lists the configured root, PINATA_ROOT, the cwd's top folder and usual folders, by repositories", async () => {
     const context = await homeWith(
       ["Projects/a", "Projects/b", "Projects/c/d", "Sites/s", "clients/acme/x"],
       ["src"],
     );
     const candidates = await folderCandidates({
       ...context,
-      env: { ...context.env, PI_SANDBOX_ROOT: "/Volumes/Env" },
+      env: { ...context.env, PINATA_ROOT: "/Volumes/Env" },
       cwd: join(context.home, "clients", "acme"),
       configRoot: "~/kept",
       firstRun: true,
@@ -75,9 +75,9 @@ describe("folderCandidates", () => {
     expect(candidates[0]).toMatchObject({ exists: false, resolved: join(context.home, "kept") });
   });
 
-  it("reads PI_SANDBOX_ROOT only on a first run", async () => {
+  it("reads PINATA_ROOT only on a first run", async () => {
     const context = await homeWith(["work/a"], ["src"]);
-    const env = { ...context.env, PI_SANDBOX_ROOT: "/Volumes/Env" };
+    const env = { ...context.env, PINATA_ROOT: "/Volumes/Env" };
     const rerun = await folderCandidates({
       ...context,
       env,

@@ -76,7 +76,7 @@ describe("the end of a session", () => {
     const [created] = fake.created;
     const left = await filesUnder(harness.stateDir);
 
-    expect(created?.spec?.env.HTTPS_PROXY).toBe("http://pi-sandbox-proxy:3128");
+    expect(created?.spec?.env.HTTPS_PROXY).toBe("http://pinata-proxy:3128");
     expect(fake.containers.size).toBe(0);
     expect(fake.relays.size).toBe(0);
     expect([...fake.networks.keys()]).toEqual([]);
@@ -152,7 +152,7 @@ describe("the end of a session", () => {
       ...fake.backend,
       detect: async () => (engine.up ? { available: true } : { available: false, reason: "gone" }),
       exec: async (spec, io) => {
-        if (spec.env.PI_SANDBOX_LAUNCH_ID !== undefined) {
+        if (spec.env.PINATA_LAUNCH_ID !== undefined) {
           engine.up = false;
         }
 
@@ -234,7 +234,7 @@ describe("the cleanup at the end of a folder's last session", () => {
     const own = await openContext(harness.deps, "host");
     const mountDir = join(harness.repoRoot, "created-mount");
 
-    await fake.backend.prepareRelay({ hostPort: 3128, imageId: "relay", preamble: "PI-SANDBOX test" });
+    await fake.backend.prepareRelay({ hostPort: 3128, imageId: "relay", preamble: "PINATA test" });
 
     await mkdir(mountDir);
 
@@ -327,7 +327,7 @@ describe("the sweep of what a killed launcher left", () => {
     await harness.writeJson(layout.proxy.token, "token");
 
     const id = fake.addContainer({
-      name: `pi-sandbox-${orphan.slice(0, 12)}`,
+      name: `pinata-${orphan.slice(0, 12)}`,
       labels: {
         [LABELS.managed]: "true",
         [LABELS.role]: "agent",
@@ -338,7 +338,7 @@ describe("the sweep of what a killed launcher left", () => {
       image: "x",
     });
     const roleless = fake.addContainer({
-      name: "pi-sandbox-build-step",
+      name: "pinata-build-step",
       labels: { [LABELS.managed]: "true", [LABELS.repoHash]: orphan },
       state: "running",
       image: "x",
@@ -368,7 +368,7 @@ describe("the sweep of what a killed launcher left", () => {
     await utimes(join(stateLayout(harness.stateDir).launches, "00000000000000ff.json"), old, old);
 
     const id = fake.addContainer({
-      name: `pi-sandbox-${other.slice(0, 12)}`,
+      name: `pinata-${other.slice(0, 12)}`,
       labels: {
         [LABELS.managed]: "true",
         [LABELS.role]: "agent",

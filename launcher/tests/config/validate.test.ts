@@ -180,7 +180,7 @@ describe("validateConfig", () => {
       "NO_PROXY",
       "NODE_EXTRA_CA_CERTS",
       "SSL_CERT_FILE",
-      "PI_SANDBOX",
+      "PINATA",
       "PATH",
     ].forEach((name) => {
       expect(configProblem({ env: { allow: [name] } })).toBe(
@@ -192,10 +192,10 @@ describe("validateConfig", () => {
   it("sets literal env.set values and refuses a name the launcher sets, naming the key", () => {
     expect(configProblem({ env: { set: { CI: "1", PATH_EXTRA: "$HOME/bin", EMPTY: "" } } })).toBeUndefined();
     expect(
-      configProblem({ env: { set: { JAVA_TOOL_OPTIONS: "-Dhttps.proxyHost=pi-sandbox-proxy" } } }),
+      configProblem({ env: { set: { JAVA_TOOL_OPTIONS: "-Dhttps.proxyHost=pinata-proxy" } } }),
     ).toBeUndefined();
-    expect(configProblem({ env: { set: { GH_TOKEN: "pi-sandbox-github" } } })).toBeUndefined();
-    ["HTTPS_PROXY", "no_proxy", "GITLAB_TOKEN", "PI_SANDBOX", "HOME", "PATH"].forEach((name) => {
+    expect(configProblem({ env: { set: { GH_TOKEN: "pinata-github" } } })).toBeUndefined();
+    ["HTTPS_PROXY", "no_proxy", "GITLAB_TOKEN", "PINATA", "HOME", "PATH"].forEach((name) => {
       expect(configProblem({ env: { set: { CI: "1", [name]: "x" } } })).toBe(
         `config: env.set["${name}"] is set by pinata and cannot be set`,
       );

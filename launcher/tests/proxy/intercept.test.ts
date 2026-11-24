@@ -21,7 +21,7 @@ type Entry = Omit<AccessLogEntry, "time" | "user" | "repo">;
 const state: { stateDir: string; ca?: LauncherCa } = { stateDir: "" };
 
 beforeAll(async () => {
-  state.stateDir = await mkdtemp(join(tmpdir(), "pi-sandbox-intercept-"));
+  state.stateDir = await mkdtemp(join(tmpdir(), "pinata-intercept-"));
 
   state.ca = await openLauncherCa({ stateDir: state.stateDir, runner: createProcessRunner() });
 });

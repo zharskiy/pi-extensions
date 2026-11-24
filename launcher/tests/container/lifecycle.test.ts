@@ -17,7 +17,7 @@ import { GUEST_PATHS, LauncherError, readCreatedDirs, sha256Hex } from "../../sh
 import { createFakeBackend, FAKE_INSTALL } from "../support/fake-backend.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
 
-const WORK = realpathSync(mkdtempSync(join(tmpdir(), "pi-sandbox-lifecycle-work-")));
+const WORK = realpathSync(mkdtempSync(join(tmpdir(), "pinata-lifecycle-work-")));
 
 mkdirSync(join(WORK, "repo"));
 
@@ -30,7 +30,7 @@ const workspace = {
   isGitRepo: true,
 };
 
-const LOCK_STATE = mkdtempSync(join(tmpdir(), "pi-sandbox-lifecycle-lock-"));
+const LOCK_STATE = mkdtempSync(join(tmpdir(), "pinata-lifecycle-lock-"));
 
 afterAll(() => {
   rmSync(LOCK_STATE, { recursive: true, force: true });
@@ -62,8 +62,8 @@ const specOf = (overrides: Partial<ContainerSpecInput> = {}) =>
     launchId: nextLaunchId(),
     workspaceRoot: workspace.repoRoot,
     proxy: {
-      url: "http://pi-sandbox:t@pi-sandbox-proxy:3128",
-      network: { kind: "internal", name: "pi-sandbox" },
+      url: "http://pinata:t@pinata-proxy:3128",
+      network: { kind: "internal", name: "pinata" },
     },
     servicePorts: [],
     renderDir: join(LOCK_STATE, "render"),
@@ -142,7 +142,7 @@ describe("removeLaunchContainer", () => {
     const mine = await startLaunchContainer({ backend: fake.backend, spec });
     const other = await startLaunchContainer({ backend: fake.backend, spec: specOf() });
 
-    const removed = await removeLaunchContainer(fake.backend, spec.labels["pi-sandbox.launch-id"] ?? "");
+    const removed = await removeLaunchContainer(fake.backend, spec.labels["pinata.launch-id"] ?? "");
 
     expect(removed.map((container) => container.id)).toEqual([mine.id]);
     expect([...fake.containers.keys()]).toEqual([other.id]);
@@ -150,16 +150,16 @@ describe("removeLaunchContainer", () => {
 
   it("never takes a pod or a service for the launch's container", async () => {
     const fake = createFakeBackend();
-    const launch = { "pi-sandbox.managed": "true", "pi-sandbox.launch-id": "launch-1" };
+    const launch = { "pinata.managed": "true", "pinata.launch-id": "launch-1" };
     const pod = fake.addContainer({
       name: "pod",
-      labels: { ...launch, "pi-sandbox.role": "pod" },
+      labels: { ...launch, "pinata.role": "pod" },
       state: "running",
       image: "pod",
     });
     const service = fake.addContainer({
       name: "service",
-      labels: { ...launch, "pi-sandbox.role": "service" },
+      labels: { ...launch, "pinata.role": "service" },
       state: "running",
       image: "service",
     });
@@ -185,7 +185,7 @@ describe("container housekeeping", () => {
     await fake.backend.prepareRelay({
       hostPort: 3128,
       imageId: "relay",
-      preamble: "PI-SANDBOX test",
+      preamble: "PINATA test",
     });
 
     expect((await listLauncherContainers(fake.backend)).map((container) => roleOf(container.labels))).toEqual(
@@ -255,20 +255,20 @@ describe("volumes the sandbox writes", () => {
   it("removes overlay volumes of this repository that no container mounts any more", async () => {
     const fake = createFakeBackend();
 
-    await fake.backend.ensureVolume("pi-sandbox-cache-stale", {
-      "pi-sandbox.repo-hash": REPO_HASH,
-      "pi-sandbox.cache-path": "gone/node_modules",
+    await fake.backend.ensureVolume("pinata-cache-stale", {
+      "pinata.repo-hash": REPO_HASH,
+      "pinata.cache-path": "gone/node_modules",
     });
 
-    await fake.backend.ensureVolume("pi-sandbox-cache-foreign", {
-      "pi-sandbox.repo-hash": "f".repeat(64),
-      "pi-sandbox.cache-path": "gone/node_modules",
+    await fake.backend.ensureVolume("pinata-cache-foreign", {
+      "pinata.repo-hash": "f".repeat(64),
+      "pinata.cache-path": "gone/node_modules",
     });
 
     await startLaunchContainer({ backend: fake.backend, spec: cachedSpec() });
 
-    expect(fake.volumes.has("pi-sandbox-cache-stale")).toBe(false);
-    expect(fake.volumes.has("pi-sandbox-cache-foreign")).toBe(true);
+    expect(fake.volumes.has("pinata-cache-stale")).toBe(false);
+    expect(fake.volumes.has("pinata-cache-foreign")).toBe(true);
   });
 
   it("refuses a mount point the sandbox side turned into a link", async () => {
@@ -360,7 +360,7 @@ describe("volumes the sandbox writes", () => {
     expect(chown?.command).toEqual([
       "/bin/sh",
       "-c",
-      '/bin/chown -h 1000:1000 "$@" && : > /tmp/pi-sandbox-handover',
+      '/bin/chown -h 1000:1000 "$@" && : > /tmp/pinata-handover',
       "sh",
       "/home/pi/.cache",
       join(project, "node_modules"),
@@ -441,9 +441,9 @@ describe("volumes the sandbox writes", () => {
   });
 
   it("tells the entrypoint to wait for the handover whenever the sandbox owns a volume", () => {
-    expect(cachedSpec().env.PI_SANDBOX_AWAIT_HANDOVER).toBe("1");
-    expect(specOf({ workspace: nodeWorkspace }).env.PI_SANDBOX_AWAIT_HANDOVER).toBe("1");
-    expect(specOf().env.PI_SANDBOX_AWAIT_HANDOVER).toBeUndefined();
+    expect(cachedSpec().env.PINATA_AWAIT_HANDOVER).toBe("1");
+    expect(specOf({ workspace: nodeWorkspace }).env.PINATA_AWAIT_HANDOVER).toBe("1");
+    expect(specOf().env.PINATA_AWAIT_HANDOVER).toBeUndefined();
   });
 
   it("runs no root exec when the sandbox has no volumes of its own to hand over", async () => {
@@ -467,19 +467,19 @@ describe("volumes the sandbox writes", () => {
       fake.volumeLabels.get(spec.mounts.find((mount) => mount.target === target)?.source ?? "");
 
     expect(labelsOf(join(project, "node_modules"))).toEqual({
-      "pi-sandbox.managed": "true",
-      "pi-sandbox.install": FAKE_INSTALL,
-      "pi-sandbox.repo-hash": sha256Hex(workspace.repoRoot),
-      "pi-sandbox.repo-root": workspace.repoRoot,
-      "pi-sandbox.cache-path": "web/node_modules",
+      "pinata.managed": "true",
+      "pinata.install": FAKE_INSTALL,
+      "pinata.repo-hash": sha256Hex(workspace.repoRoot),
+      "pinata.repo-root": workspace.repoRoot,
+      "pinata.cache-path": "web/node_modules",
     });
     expect(labelsOf("/home/pi/.cache/pip")).toEqual({
-      "pi-sandbox.managed": "true",
-      "pi-sandbox.install": FAKE_INSTALL,
+      "pinata.managed": "true",
+      "pinata.install": FAKE_INSTALL,
     });
     expect(labelsOf("/opt/data")).toEqual({
-      "pi-sandbox.managed": "true",
-      "pi-sandbox.install": FAKE_INSTALL,
+      "pinata.managed": "true",
+      "pinata.install": FAKE_INSTALL,
     });
   });
 });
@@ -542,7 +542,7 @@ describe("waiting for the entrypoint", () => {
     });
 
     await expect(startLaunchContainer({ backend: fake.backend, spec: specOf() })).rejects.toThrow(
-      "the sandbox entrypoint did not finish preparing the home within 60 s (no /tmp/pi-sandbox-ready)",
+      "the sandbox entrypoint did not finish preparing the home within 60 s (no /tmp/pinata-ready)",
     );
   });
 

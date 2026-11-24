@@ -9,8 +9,8 @@ const createHome = async () => {
   const home = join(base, "home");
   const env = {
     PI_CODING_AGENT_DIR: join(home, ".pi", "agent"),
-    PI_SANDBOX_STATE_DIR: join(base, "state"),
-    PI_SANDBOX_USER_CONFIG: join(base, "config", "config.json"),
+    PINATA_STATE_DIR: join(base, "state"),
+    PINATA_USER_CONFIG: join(base, "config", "config.json"),
   };
 
   await Promise.all(
@@ -19,7 +19,7 @@ const createHome = async () => {
       join(base, "work", "repo", "src"),
       join(home, "tools"),
       join(home, ".ssh"),
-      env.PI_SANDBOX_STATE_DIR,
+      env.PINATA_STATE_DIR,
     ].map((dir) => mkdir(dir, { recursive: true })),
   );
 
@@ -85,9 +85,9 @@ describe("hostBinds", () => {
   it("refuses the launcher state dir", async () => {
     const { context } = await createHome();
 
-    expect(() =>
-      hostBinds([{ source: context.env.PI_SANDBOX_STATE_DIR, target: "/srv/x" }], context),
-    ).toThrow("mounts.binds[0].source");
+    expect(() => hostBinds([{ source: context.env.PINATA_STATE_DIR, target: "/srv/x" }], context)).toThrow(
+      "mounts.binds[0].source",
+    );
   });
 
   it("refuses a source inside the repo, one that holds it, and a link into it, naming the entry", async () => {

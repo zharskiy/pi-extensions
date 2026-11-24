@@ -5,15 +5,14 @@ import { launcherVersion } from "../../../cli/versions.ts";
 import { exists } from "../../support/temp-dir.ts";
 import { createPinata } from "./support.ts";
 
-const BLOCK = (home: string) =>
-  `# pi-sandbox begin\nexport PATH='${home}/.local/bin':"$PATH"\n# pi-sandbox end\n`;
+const BLOCK = (home: string) => `# pinata begin\nexport PATH='${home}/.local/bin':"$PATH"\n# pinata end\n`;
 
-const BROKEN = ["# pi-sandbox begin\n", `${"# pi-sandbox begin\nx\n# pi-sandbox end\n".repeat(2)}`];
+const BROKEN = ["# pinata begin\n", `${"# pinata begin\nx\n# pinata end\n".repeat(2)}`];
 
 describe("pinata install", () => {
   it.each([
-    [false, "pi-sandbox-dev.js", "alias ll=\xff\n"],
-    [true, "pi-sandbox.js", "alias ll=\xff"],
+    [false, "pi-dev.js", "alias ll=\xff\n"],
+    [true, "pi.js", "alias ll=\xff"],
   ])(
     "installs (global: %s), a rerun changes nothing, and uninstall restores the rc file's bytes",
     async (global, bin, rc) => {
@@ -70,11 +69,11 @@ describe("pinata install", () => {
   it("replaces main's wrapper, and puts back on uninstall the managed link it replaced", async () => {
     const pinata = await createPinata();
     const managed = join(pinata.harness.hostAgentDir, "bin", "pi");
-    const target = join(pinata.packageDir, "launcher", "bin", "pi-sandbox-dev.js");
+    const target = join(pinata.packageDir, "launcher", "bin", "pi-dev.js");
 
     await mkdir(join(pinata.shim, ".."), { recursive: true });
 
-    await writeFile(pinata.shim, "#!/bin/sh\nexec node '/x/launcher/bin/pi-sandbox-dev.js' \"$@\"\n");
+    await writeFile(pinata.shim, "#!/bin/sh\nexec node '/x/launcher/bin/pi-dev.js' \"$@\"\n");
 
     expect(await pinata.run("install", "--yes")).toBe(0);
     expect(await readlink(pinata.shim)).toBe(target);
@@ -101,7 +100,7 @@ describe("pinata install", () => {
     expect(await pinata.run("install", "--yes")).toBe(0);
     expect(await readFile(zshrc, "utf8")).toBe(text);
     expect(pinata.harness.stdout()).toContain(
-      `shell: ${zshrc} has a "# pi-sandbox begin" or "# pi-sandbox end" line`,
+      `shell: ${zshrc} has a "# pinata begin" or "# pinata end" line`,
     );
   });
 

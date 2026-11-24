@@ -27,12 +27,12 @@ const listed = async (state: VmInspect | Error, setup?: (fake: Fake, hash: strin
 
 describe("pinata list", () => {
   it("says when the VM is not created", async () => {
-    expect((await listed({ state: "absent" })).stdout).toBe("vm: pi-sandbox not created\n");
+    expect((await listed({ state: "absent" })).stdout).toBe("vm: pinata not created\n");
   });
 
   it.each<[VmInspect | Error, string]>([
-    [{ state: "stopped", size: SIZE, shares: [] }, "vm: pi-sandbox stopped (4 cpus, 8 GiB memory)\n"],
-    [new Error("colima did not answer within 3 seconds"), "vm: pi-sandbox stopped\n"],
+    [{ state: "stopped", size: SIZE, shares: [] }, "vm: pinata stopped (4 cpus, 8 GiB memory)\n"],
+    [new Error("colima did not answer within 3 seconds"), "vm: pinata stopped\n"],
   ])("gives the size of a stopped VM when colima has it", async (state, line) => {
     expect((await listed(state)).stdout).toBe(line);
   });
@@ -55,7 +55,7 @@ describe("pinata list", () => {
 
     expect(stdout).toBe(
       [
-        "vm: pi-sandbox running (4 cpus, 8 GiB memory)",
+        "vm: pinata running (4 cpus, 8 GiB memory)",
         `session: ${harness.repoRoot} ${ids[0]?.slice(0, 12)} running`,
         `session: unknown ${ids[1]?.slice(0, 12)} stopped`,
         "",

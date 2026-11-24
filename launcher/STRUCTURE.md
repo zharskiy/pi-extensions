@@ -1,4 +1,4 @@
-# launcher structure
+# pinata structure
 
 One line per file. Layer rules and behaviour are in [ARCHITECTURE.md](ARCHITECTURE.md). Each folder with code has an `index.ts` that is its only public surface.
 
@@ -19,8 +19,8 @@ schema/sandbox-config.schema.json  the config keys
 ## bin/
 
 ```
-bin/pi-sandbox.js              the package bin: runs the built dist/
-bin/pi-sandbox-dev.js          checkout entry: runs the .ts sources, not published
+bin/pi.js              the package bin: runs the built dist/
+bin/pi-dev.js          checkout entry: runs the .ts sources, not published
 bin/pinata.js                  the pinata bin: runs the built dist/
 bin/pinata-dev.js              checkout entry of pinata: runs the .ts sources, not published
 ```
@@ -62,7 +62,7 @@ cli/launches.ts                begin and finish a launch (registered under the f
 cli/busy.ts                    busyLaunches, the live launches of this state dir, and vmSessions, the VM's busy count that adds the running agent containers of other installs and names them
 cli/ground.ts                  the ground lock with its waiting line, the install's services started under it, the idle teardown of services, relay, network and proxy and the idle proxy stop (both wait for the lock unless a launch of this state dir is registered)
 cli/prepare.ts                 the repository's preparation lock with its waiting line, its if-free form for the opportunistic removals, its wait-unless-another-session form for the folder's last session, and the setup commands run in the agent container; the install's agent lock (withAgentLock) around the shared pi folder
-cli/sweep.ts                   removeRepoSandbox (agent containers, created folders, host sessions), the sweep of ended launches' containers, forgetting a folder that is gone, the orphan sweep with the idle ground stop and build leftovers, and the daily collection with the managed `pi-sandbox-*` objects of older builds that have no install label, shared volumes kept, and the state entries the layout does not name in the default state dir
+cli/sweep.ts                   removeRepoSandbox (agent containers, created folders, host sessions), the sweep of ended launches' containers, forgetting a folder that is gone, the orphan sweep with the idle ground stop and build leftovers, and the daily collection with the managed `pinata-*` objects of older builds that have no install label, shared volumes kept, and the state entries the layout does not name in the default state dir
 cli/derive.ts                  the host side of a launch: host pi files, derivation (host tools exclude the sandbox roots), the CAs the image trusts, notices
 cli/sandbox-proxy.ts           the install's proxy input and token, opened under the ground lock, and the denial summary at exit with a reason and fix per kind (also the doctor's rule hints and blocked warnings)
 cli/mcp-sign-in.ts             the launch-start MCP sign-in on the host
@@ -71,7 +71,7 @@ cli/intercept.ts               pi install, uninstall, remove, mcp, every update,
 cli/host-routes.ts             which command lines start no session: help, version, auth, config without -l, --list-models, --export
 cli/host-pi.ts                 the one host pi (pi's managed install, else npm's global pi, not linked in, outside the workspace root and every folder a sandbox has run in), spawning it for host jobs (spawnHostJob), the missing-pi line (missingPiText, built from the parts of missingPi the doctor shows) and --no-sandbox (runHostPi)
 cli/notices.ts                 notices printed once per install, their hashes kept in seen.json
-cli/versions.ts                launcher version, the tested pi version and image pi version, the version compare
+cli/versions.ts                pinata version, the tested pi version and image pi version, the version compare
 cli/commands/status.ts         pinata status, with each configured service and its state, the shared pi folder and, in one place, what older launchers left
 cli/commands/config.ts         pinata config, with the effective write-back keys of each file and their source
 cli/commands/egress.ts         pinata egress allow, revoke and list
@@ -127,7 +127,7 @@ workspace/overlay-scan.ts      the budgeted search of the launch repository for 
 workspace/walk.ts              the budgeted level-by-level directory walk
 workspace/paths.ts             path ordering by depth and code unit
 workspace/overlay-markers.ts   which marker file gives which build output folder
-workspace/guard.ts             the refusal of protected folders (home, pi and launcher dirs, credential, system and image dirs) and the host session dir check
+workspace/guard.ts             the refusal of protected folders (home, pi and pinata dirs, credential, system and image dirs) and the host session dir check
 workspace/mounts.ts            the protected path table
 workspace/roots.ts             the workspaceRoot checks (unset, missing, the home or above it, the guard's protected paths and system dirs, outside the root, a git dir or common dir outside the root; the host launch runs only the inside-the-root ones) and the checked root the VM shares
 workspace/binds.ts             the mounts.binds sources on the host: resolved, must exist, the root guard, and the folder the VM must share
@@ -142,21 +142,21 @@ workspace/git/layout.ts        the nearest folder with a .git entry, and the git
 ```
 backend/index.ts               public surface
 backend/types.ts               the Backend contract with its VM
-backend/labels.ts              every pi-sandbox.* label key, the container roles, isSession and isOlderBuild (a `pi-sandbox-*` name with the managed label and no install label)
+backend/labels.ts              every pinata.* label key, the container roles, isSession and isOlderBuild (a `pinata-*` name with the managed label and no install label)
 backend/image-reference.ts     image reference parsing
 backend/install.ts             the install id, the install's network and relay names, and the services alias
 backend/exec-capture.ts        a non-tty exec with collected output
 backend/vm-size.ts             the VM size against the vm config: what differs, a disk below the current one, the size text
 backend/vm-decision.ts         the one VM decision from what the VM has and what is wanted: create, nothing, on next start, restart or defer while busy, for a launch and the setup
 backend/colima/backend.ts      the Colima backend
-backend/colima/profile.ts      the pi-sandbox profile, its socket, the VM's name for the host, the one colima start argv and its stop-and-start hint text, and the running-sessions, leftover-container and deferred-until-idle texts
+backend/colima/profile.ts      the pinata profile, its socket, the VM's name for the host, the one colima start argv and its stop-and-start hint text, and the running-sessions, leftover-container and deferred-until-idle texts
 backend/colima/engine-client.ts  the engine HTTP client over the socket, with its timeouts
 backend/colima/container-body.ts  container create bodies from a spec, with the capability, privilege, process, open files and /dev/shm limits
 backend/colima/exec-session.ts exec streams with backpressure, ended quietly when the host output closes
 backend/colima/images.ts       image pull, build (with the output tail of a failed build) and removal
 backend/colima/volumes.ts      volume operations, with the listing of older builds' volumes
 backend/colima/networks.ts     the install's network: inspect, the managed check, creation (internal, no IPv6, isolated gateway, with its engine version check), the subnet, removal, and the listing and removal by name of older builds' networks
-backend/colima/relay.ts        the install's one relay: joins the install's network as pi-sandbox-proxy on port 3128 and forwards to the proxy's host port, labelled with the hash of its inputs (the network's subnet included) and replaced when they change
+backend/colima/relay.ts        the install's one relay: joins the install's network as pinata-proxy on port 3128 and forwards to the proxy's host port, labelled with the hash of its inputs (the network's subnet included) and replaced when they change
 backend/colima/relay-script.ts the relay's node script: serves only clients inside the install network's subnet, one upstream connection per client, the preamble first
 backend/colima/vm.ts           VM start (at the vm config size when stopped), size, inspect, apply for the setup, the launch reconcile of shares and size in one restart, and stop
 backend/colima/size.ts         the VM size colima reports (status --json, colima.yaml), the size flags of a start, the cold-start size and the shrink notice
@@ -170,7 +170,7 @@ backend/colima/colima-yaml.ts  the lima.yaml and colima.yaml mounts reader and t
 
 ```
 container/index.ts             public surface
-container/spec.ts              the container spec: mounts (the workspace root read-write), the install's network, the forwarder's service ports and host, service volumes left out of the hand-over, env (env.set under the launcher's variables, the hand-over wait flag), the env.allow names env.set leaves forwarded, labels, the mount table check (no target twice, no mount over the image's paths)
+container/spec.ts              the container spec: mounts (the workspace root read-write), the install's network, the forwarder's service ports and host, service volumes left out of the hand-over, env (env.set under pinata's variables, the hand-over wait flag), the env.allow names env.set leaves forwarded, labels, the mount table check (no target twice, no mount over the image's paths)
 container/volumes.ts           the volume plan: agent, overlay and mounts.volumes names, targets and labels; userVolume names a volume shared by every folder of the state dir
 container/names.ts             container and volume names (agent, cache and shared volumes, with isSharedVolumeName), the pod and service container names; the install's agent volume name and isLegacyAgentVolume for the per-repository ones of older launchers
 container/services.ts          ensureServices and stopServices for the install: one pod on the install's network under the services alias, the service specs, the volume hand-over to each service user, the ready wait with its log tail, decide (fresh, refresh or keep by services hash) and the stop of all services at once; serviceVolumes, the service volumes the config names
@@ -195,7 +195,7 @@ image/layer.ts                 the always-built image layer: the sandbox CAs, th
 image/trust.ts                 the layer's trust inputs: one CA per file, the JDK net.properties lines, the image paths
 image/trust-jdk.sh             the trust script kept in the image: imports the sandbox CAs into every JDK's cacerts (or the JDKs given) and points its net.properties at the proxy
 image/record.ts                the image record: base image and current layer
-image/prune.ts                 the one rule that removes stale layer tags and untagged launcher images, skipped while a build holds build.lock
+image/prune.ts                 the one rule that removes stale layer tags and untagged pinata images, skipped while a build holds build.lock
 image/build-proxy.ts           the parent proxy as build arguments, loopback proxies pointed at the host
 ```
 
@@ -265,7 +265,7 @@ proxy/daemon.ts                the proxy process entry
 proxy/start.ts                 start, reuse and stop of the install's proxy (an unhealthy one kept while others use it), and its token
 proxy/idle.ts                  the idle exit
 proxy/files.ts                 proxy input, live egress settings and record types
-proxy/client.ts                the launcher's client to a proxy
+proxy/client.ts                pinata's client to a proxy
 proxy/server.ts                the proxy server behind the preamble gate, CONNECT dispatch and the resolved-address check
 proxy/preamble.ts              the preamble line: the gate on the raw socket and the host-side connect that sends it
 proxy/routes.ts                /healthz and /denials
@@ -283,7 +283,7 @@ proxy/denial-page.ts           the 403 page over TLS
 proxy/replies.ts               every raw HTTP reply and the JSON replies
 proxy/parent.ts                the parent proxy route
 proxy/trust.ts                 the sandbox CAs: tls.extraCa by keychain fingerprint or PEM file into ca/extra.pem, CA and expiry checks
-proxy/tls-ca.ts                the launcher CA and leaf certificates, both dated an hour back
+proxy/tls-ca.ts                pinata's CA and leaf certificates, both dated an hour back
 proxy/sign-in.ts               the proxy's host MCP sign-in
 proxy/single-flight.ts         one pending promise per key
 proxy/access-log.ts            the capped JSON-line logs
@@ -310,13 +310,13 @@ shared/atomic-write.ts         atomic, create-only and random-hex file writes
 shared/file-lock.ts            the lock primitives with their once-only waiting callback and abort signal, the take-only-if-free form and the form that retries every 250 ms until a skip test holds
 shared/liveness.ts             the liveness rule: pid, boot time and process start
 shared/process-start.ts        a process's start time (ps on macOS, /proc on Linux), telling a failed tool from a process without one
-shared/paths.ts                host agent dir, the launcher folder <agent dir>/pi-sandbox/ (config.json, state/, with PI_SANDBOX_STATE_DIR made absolute and real), launcher root, path containment and the outermost of a path list
+shared/paths.ts                host agent dir, pinata's folder <agent dir>/pinata/ (config.json, state/, with PINATA_STATE_DIR made absolute and real), `launcher/` root, path containment and the outermost of a path list
 shared/state-layout.ts         every path under the state dir, and the named and open paths the daily collection keeps
 shared/repo-state.ts           per-repository record files: repo.json with its mount root and the workspace root the launch mounted, created folders, leftovers, forgetRepo
 shared/regular-file.ts         safe reads of regular files
 shared/placeholder.ts          the placeholder format and the JWT shape
 shared/secret-name.ts          secret-looking names, auth-like headers, URL userinfo and credential-shaped values
-shared/pi-env.ts               pi variable names the launcher sets, refused in env.allow and env.set, and the hosts the guest reaches without the proxy
+shared/pi-env.ts               pi variable names pinata sets, refused in env.allow and env.set, and the hosts the guest reaches without the proxy
 shared/pem.ts                  the PEM certificate blocks of a text
 shared/mcp-auth-key.ts         host pi's mcp-auth.json parser, mcp-login.json under a file lock, and sign-in dirs
 shared/tool-config.ts          the tool config format dispatcher and the JSON pointer reader
@@ -347,9 +347,9 @@ tests/shared/file-lock.test.ts       locks, takeover, liveness, the take-only-if
 tests/shared/liveness.test.ts        the liveness rule
 tests/shared/hash.test.ts            hashes
 tests/shared/json-file.test.ts       JSON files
-tests/shared/paths.test.ts           paths and the spelling of PI_SANDBOX_STATE_DIR
+tests/shared/paths.test.ts           paths and the spelling of PINATA_STATE_DIR
 tests/shared/placeholder.test.ts     placeholders
-tests/shared/pi-env.test.ts          the variables the launcher sets
+tests/shared/pi-env.test.ts          the variables pinata sets
 tests/shared/mcp-auth-key.test.ts    mcp-login.json updates and sign-in dirs
 tests/shared/state-layout.test.ts    the state layout
 tests/shared/tool-config.test.ts     tool config parsers
@@ -484,7 +484,7 @@ tests/cli/prompt/confirm.test.ts     confirm
 tests/cli/prompt/number.test.ts      number
 tests/cli/prompt/text.test.ts        the path prompt
 tests/cli/prompt/plain.test.ts       the plain prompt set
-tests/cli/init.test.ts               pinata init: the no-terminal and CI refusals, /dev/tty, --yes with PI_SANDBOX_ROOT and without a root, signals and exit codes
+tests/cli/init.test.ts               pinata init: the no-terminal and CI refusals, /dev/tty, --yes with PINATA_ROOT and without a root, signals and exit codes
 tests/cli/uninstall.test.ts          releaseSandbox
 tests/cli/list.test.ts               pinata list
 tests/cli/pinata/support.ts          a pinata run over the CLI harness: npm prefix, package folder, host pi install and remove writing settings.json

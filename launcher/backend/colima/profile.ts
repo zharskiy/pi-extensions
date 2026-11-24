@@ -10,7 +10,7 @@ export interface Colima {
   withLock<T>(action: () => Promise<T>): Promise<T>;
 }
 
-export const ENGINE_PROFILE = "pi-sandbox";
+export const ENGINE_PROFILE = "pinata";
 
 export const VM_HOST_ALIAS = "host.lima.internal";
 

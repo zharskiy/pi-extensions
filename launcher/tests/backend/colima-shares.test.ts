@@ -18,7 +18,7 @@ import {
 import { createFakeBackend } from "../support/fake-backend.ts";
 import { argvOf, type FakeCall } from "../support/fake-runner.ts";
 
-const PROFILE = { status: async () => ({ socket: "/fake/docker.sock", profile: "pi-sandbox" }) };
+const PROFILE = { status: async () => ({ socket: "/fake/docker.sock", profile: "pinata" }) };
 
 interface ColimaAnswers {
   start?: { code: number; stderr: string };
@@ -134,13 +134,13 @@ const launchWith = async (setup: Setup = {}) => {
   };
 };
 
-const limaYaml = (home: string) => join(home, ".colima", "_lima", "colima-pi-sandbox", "lima.yaml");
+const limaYaml = (home: string) => join(home, ".colima", "_lima", "colima-pinata", "lima.yaml");
 
 const run0 = async (context: Awaited<ReturnType<typeof launchWith>>) => run([], context.harness.deps);
 
 const restart = (mounts: string) => [
-  "colima stop --profile pi-sandbox",
-  `colima start --profile pi-sandbox --activate=false ${mounts}`,
+  "colima stop --profile pinata",
+  `colima start --profile pinata --activate=false ${mounts}`,
 ];
 
 describe("vmSharesOf", () => {
@@ -171,13 +171,13 @@ describe("vmSharesOf", () => {
       "      writable: true",
       "    - location: ~/.pi/agent/sessions/",
       "      writable: true",
-      "    - location: ~/.pi/agent/pi-sandbox/state/vm/",
+      "    - location: ~/.pi/agent/pinata/state/vm/",
       "      writable: false",
     ].join("\n");
     const plan = [
       { location: "/Volumes/Projects", writable: true },
       { location: "/Users/dev/.pi/agent/sessions", writable: true },
-      { location: "/Users/dev/.pi/agent/pi-sandbox/state/vm", writable: false },
+      { location: "/Users/dev/.pi/agent/pinata/state/vm", writable: false },
     ];
     const shares = vmSharesOf(text, home) ?? [];
 
@@ -344,7 +344,7 @@ describe("the launch shares the workspace root with the VM", () => {
     expect(context.harness.stderr()).toContain(
       [
         `pinata: could not restart the sandbox VM: colima start failed: level=fatal msg="disk busy"`,
-        `  hint: run colima start --profile pi-sandbox --activate=false ${rootsMounts(context.paths)} and see ~/.colima/_lima/colima-pi-sandbox/ha.stderr.log`,
+        `  hint: run colima start --profile pinata --activate=false ${rootsMounts(context.paths)} and see ~/.colima/_lima/colima-pinata/ha.stderr.log`,
       ].join("\n"),
     );
   });
@@ -437,7 +437,7 @@ describe("the coverage of the VM shares", () => {
   it("knows no coverage before colima wrote the instance config", async () => {
     const context = await launchWith();
 
-    await rm(join(context.paths.home, ".colima", "_lima", "colima-pi-sandbox", "lima.yaml"));
+    await rm(join(context.paths.home, ".colima", "_lima", "colima-pinata", "lima.yaml"));
 
     expect(await context.harness.deps.backend().vm.coverage([])).toBeUndefined();
   });
@@ -488,7 +488,7 @@ describe("the VM shares with workspaceRoot set", () => {
     expect(context.harness.stderr()).toContain(
       [
         `pinata: ${repoRoot} is not shared with the sandbox VM; 1 pi session is running, and restarting the VM to change its shares to ${rootsLocations(context.paths)}${dropsHomeAndState(context.paths)} would end them`,
-        `  hint: end them and run pi again, or share it yourself with colima stop --profile pi-sandbox && colima start --profile pi-sandbox --activate=false ${rootsMounts(context.paths)}`,
+        `  hint: end them and run pi again, or share it yourself with colima stop --profile pinata && colima start --profile pinata --activate=false ${rootsMounts(context.paths)}`,
       ].join("\n"),
     );
     expect(context.colimaCalls()).toEqual([]);
@@ -561,7 +561,7 @@ describe("the VM shares with workspaceRoot set", () => {
 
 const foreignContainer = (fake: ReturnType<typeof createFakeBackend>, state: "running" | "stopped") =>
   fake.addContainer({
-    name: "pi-sandbox-other",
+    name: "pinata-other",
     labels: {
       [LABELS.managed]: "true",
       [LABELS.install]: "otherinstall",
@@ -612,8 +612,8 @@ describe("the VM shares with workspaceRoot set, at the edges", () => {
 
     expect(await run0(context)).toBe(0);
     expect(context.colimaCalls()).toEqual([
-      "colima status --profile pi-sandbox",
-      `colima start --profile pi-sandbox --activate=false ${rootsMounts(context.paths)}`,
+      "colima status --profile pinata",
+      `colima start --profile pinata --activate=false ${rootsMounts(context.paths)}`,
     ]);
     expect(context.fake.created).toHaveLength(1);
   });
@@ -662,7 +662,7 @@ describe("the VM shares with workspaceRoot set, at the edges", () => {
     expect(doctorCheck(context.harness.stdout(), "vm shares")).toMatchObject({
       status: "warn",
       detail:
-        "colima's lima.yaml of profile pi-sandbox could not be read, so the shares of the sandbox VM are unknown",
+        "colima's lima.yaml of profile pinata could not be read, so the shares of the sandbox VM are unknown",
     });
   });
 

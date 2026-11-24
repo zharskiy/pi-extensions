@@ -27,7 +27,7 @@ export const factsOf = (overrides: Partial<HostFacts> = {}): HostFacts => ({
   vm: { state: "absent" },
   sessions: 0,
   candidates: [],
-  configFile: `${HOME}/.pi/agent/pi-sandbox/config.json`,
+  configFile: `${HOME}/.pi/agent/pinata/config.json`,
   docsFile: "/opt/launcher/CONFIGURATION.md",
   ...overrides,
 });

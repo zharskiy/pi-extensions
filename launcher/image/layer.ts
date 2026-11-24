@@ -33,7 +33,7 @@ interface LayerImage {
   built: boolean;
 }
 
-export const LAYER_TAG_PREFIX = "pi-sandbox-layer:";
+export const LAYER_TAG_PREFIX = "pinata-layer:";
 
 const CA_CONTEXT_DIR = "ca";
 

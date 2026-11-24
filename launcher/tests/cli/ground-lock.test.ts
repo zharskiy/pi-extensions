@@ -237,7 +237,7 @@ describe("the ground lock and the install-wide services", () => {
       backend: () => ({
         ...fake.backend,
         exec: async (spec, io) => {
-          if (spec.env.PI_SANDBOX_LAUNCH_ID !== undefined) {
+          if (spec.env.PINATA_LAUNCH_ID !== undefined) {
             teardown.armed = true;
 
             seen.push({
@@ -298,7 +298,7 @@ describe("the ground lock and the install-wide services", () => {
 
     await start(fake, harness.stateDir, "own").started;
 
-    await fake.backend.prepareRelay({ hostPort: 3128, imageId: "relay", preamble: "PI-SANDBOX test" });
+    await fake.backend.prepareRelay({ hostPort: 3128, imageId: "relay", preamble: "PINATA test" });
 
     const lines = await stopIdleGround(harness.deps, fake.backend);
 

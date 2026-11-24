@@ -17,7 +17,7 @@ const REF = { mcpOAuth: { server: "docs", url: URL_TEXT } };
 
 const KEY = mcpAuthKey("docs", URL_TEXT);
 
-const PLACEHOLDER = "pi-sandbox-0123456789abcdef01234567";
+const PLACEHOLDER = "pinata-0123456789abcdef01234567";
 
 const NOT_SIGNED_IN =
   "pinata: MCP server docs is not signed in on the host; run pi mcp login docs on the host, then retry.";

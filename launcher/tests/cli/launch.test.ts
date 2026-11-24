@@ -42,8 +42,8 @@ describe("pi [args]", () => {
     expect(occurrences(harness.stderr(), PREPARING)).toBe(1);
     expect(occurrences(harness.stderr(), "pinata: build: Step 1/1")).toBe(2);
     expect(fake.builds.map((build) => build.tag)).toEqual([
-      "pi-sandbox-base:local",
-      expect.stringMatching(/^pi-sandbox-layer:[0-9a-f]{12}$/),
+      "pinata-base:local",
+      expect.stringMatching(/^pinata-layer:[0-9a-f]{12}$/),
     ]);
 
     const packs = harness.calls.filter((call) => call.file === "npm").length;
@@ -73,7 +73,7 @@ describe("pi [args]", () => {
       {
         hostPort: 3128,
         imageId: container?.spec?.image,
-        preamble: expect.stringMatching(/^PI-SANDBOX [0-9a-f]{64}$/),
+        preamble: expect.stringMatching(/^PINATA [0-9a-f]{64}$/),
       },
     ]);
     expect(container?.spec?.network).toEqual({
@@ -88,7 +88,7 @@ describe("pi [args]", () => {
       kind: "bind",
     });
     expect(mounts.some((mount) => mount.target.startsWith("/etc/ssl"))).toBe(false);
-    expect(container?.spec?.env.HTTPS_PROXY).toBe("http://pi-sandbox-proxy:3128");
+    expect(container?.spec?.env.HTTPS_PROXY).toBe("http://pinata-proxy:3128");
     expect(container?.spec?.env.HTTP_PROXY).toBe(container?.spec?.env.HTTPS_PROXY);
     expect(container?.spec?.env.NODE_EXTRA_CA_CERTS).toBe("/etc/ssl/certs/ca-certificates.crt");
   });
@@ -117,12 +117,12 @@ describe("pi [args]", () => {
       {
         TERM: "xterm-256color",
         TERM_PROGRAM: "first",
-        PI_SANDBOX_LAUNCH_ID: expect.stringMatching(/^[0-9a-f]{16}$/),
+        PINATA_LAUNCH_ID: expect.stringMatching(/^[0-9a-f]{16}$/),
       },
       {
         TERM: "xterm-kitty",
         TERM_PROGRAM: "second",
-        PI_SANDBOX_LAUNCH_ID: expect.stringMatching(/^[0-9a-f]{16}$/),
+        PINATA_LAUNCH_ID: expect.stringMatching(/^[0-9a-f]{16}$/),
       },
     ]);
     expect(fake.created).toHaveLength(2);
@@ -137,7 +137,7 @@ describe("pi [args]", () => {
     await harness.writeJson(harness.userConfigFile, {
       credentials: {
         rules: [
-          { id: "llm", host: "llm.example.com", placeholder: "pi-sandbox-llm", secret: { env: "LLM_KEY" } },
+          { id: "llm", host: "llm.example.com", placeholder: "pinata-llm", secret: { env: "LLM_KEY" } },
         ],
       },
     });
@@ -149,7 +149,7 @@ describe("pi [args]", () => {
     const layerFiles = Object.keys(fake.builds.at(-1)?.files ?? {});
 
     expect(container?.spec?.env.NODE_EXTRA_CA_CERTS).toBe("/etc/ssl/certs/ca-certificates.crt");
-    expect(container?.spec?.env).not.toHaveProperty("PI_SANDBOX_TRUST_HASH");
+    expect(container?.spec?.env).not.toHaveProperty("PINATA_TRUST_HASH");
     expect(container?.spec?.mounts.some((mount) => mount.source.includes("trust"))).toBe(false);
     expect(layerFiles.filter((name) => name.startsWith("ca/proxy-"))).toHaveLength(1);
   });
@@ -203,7 +203,7 @@ describe("pi [args]", () => {
 
     expect(await run([], harness.deps)).toBe(1);
     expect(harness.stderr()).toContain(
-      "pinata: the sandbox VM engine is unreachable at ~/.colima/pi-sandbox/docker.sock",
+      "pinata: the sandbox VM engine is unreachable at ~/.colima/pinata/docker.sock",
     );
     expect(harness.stderr()).toContain("  hint: ");
     expect(harness.stderr()).not.toContain("--no-sandbox");

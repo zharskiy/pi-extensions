@@ -110,11 +110,7 @@ export const install = async (deps: CliDeps, packageDir: string, flags: InstallF
 
   await ensureExtensions(deps, checkout ? packageDir : `npm:${PACKAGE}@${await launcherVersion()}`);
 
-  await installShim(
-    deps,
-    shim,
-    join(packageDir, "launcher", "bin", checkout ? "pi-sandbox-dev.js" : "pi-sandbox.js"),
-  );
+  await installShim(deps, shim, join(packageDir, "launcher", "bin", checkout ? "pi-dev.js" : "pi.js"));
 
   await linkPinata(deps, packageDir, checkout);
 

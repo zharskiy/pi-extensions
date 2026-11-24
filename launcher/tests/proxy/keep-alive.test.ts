@@ -23,7 +23,7 @@ import { secureTunnel } from "./proxy-client.ts";
 const HOST = "api.test";
 
 const RULES: CredentialRule[] = [
-  { id: "api", host: HOST, placeholder: "pi-sandbox-0123456789abcdef01234567", secret: { env: "API" } },
+  { id: "api", host: HOST, placeholder: "pinata-0123456789abcdef01234567", secret: { env: "API" } },
 ];
 
 const state: {

@@ -18,7 +18,7 @@ RUN userdel --remove node \
 COPY trust.pem /build/
 
 RUN if [ -s /build/trust.pem ]; then \
-      cp /build/trust.pem /usr/local/share/ca-certificates/pi-sandbox-build.crt && update-ca-certificates; \
+      cp /build/trust.pem /usr/local/share/ca-certificates/pinata-build.crt && update-ca-certificates; \
     fi
 
 ARG GLAB_VERSION=1.128.0
@@ -45,12 +45,11 @@ RUN test -n "${PI_VERSION}" || { echo "PI_VERSION build argument is required" >&
  && npm install --global "@earendil-works/pi-coding-agent@${PI_VERSION}" \
  && npm cache clean --force
 
-RUN mkdir -p /opt/pi-sandbox/render \
- && printf '#!/bin/sh\necho "pi %s is managed by the sandbox and follows pinata"\n' "${PI_VERSION}" > /usr/local/bin/pi-sandbox-self-update \
+RUN mkdir -p /opt/pinata/render \
+ && printf '#!/bin/sh\necho "pi %s is managed by the sandbox and follows pinata"\n' "${PI_VERSION}" > /usr/local/bin/pinata-self-update \
  && printf '%s\n' '#!/bin/sh' 'echo "pinata commands run on the host; ask the user to run pinata $* there" >&2' 'exit 2' > /usr/local/bin/pinata \
- && ln -s pinata /usr/local/bin/pi-sandbox \
- && chmod 0755 /usr/local/bin/pi-sandbox-self-update /usr/local/bin/pinata \
- && rm -f /usr/local/share/ca-certificates/pi-sandbox-build.crt \
+ && chmod 0755 /usr/local/bin/pinata-self-update /usr/local/bin/pinata \
+ && rm -f /usr/local/share/ca-certificates/pinata-build.crt \
  && update-ca-certificates --fresh \
  && rm -rf /build
 
@@ -59,7 +58,7 @@ USER pi
 ENV HOME=/home/pi \
     PI_SKIP_VERSION_CHECK=1 \
     PI_TELEMETRY=0 \
-    PI_SELF_UPDATE_COMMAND=/usr/local/bin/pi-sandbox-self-update
+    PI_SELF_UPDATE_COMMAND=/usr/local/bin/pinata-self-update
 
 RUN mkdir -p /home/pi/.pi/agent
 

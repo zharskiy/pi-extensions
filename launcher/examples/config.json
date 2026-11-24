@@ -9,7 +9,7 @@
       {
         "id": "llm-gateway",
         "host": "gateway.example.internal",
-        "placeholder": "pi-sandbox-llm-gateway",
+        "placeholder": "pinata-llm-gateway",
         "header": "authorization",
         "template": "Bearer {secret}",
         "secret": {
@@ -20,7 +20,7 @@
         "id": "package-registry",
         "host": "registry.example.internal",
         "pathPrefix": "/npm/",
-        "placeholder": "pi-sandbox-package-registry",
+        "placeholder": "pinata-package-registry",
         "header": "authorization",
         "template": "Bearer {secret}",
         "secret": {

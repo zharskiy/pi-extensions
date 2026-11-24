@@ -1,10 +1,10 @@
-# pi-sandbox configuration
+# pinata configuration
 
 Every setting of the sandbox, where its one config file lives, and how credentials reach the proxy. For installing and everyday use, see [README.md](README.md). For what each setting weakens, see [THREAT-MODEL.md](THREAT-MODEL.md).
 
 ## Where the config lives
 
-The sandbox reads one JSON file: `~/.pi/agent/pi-sandbox/config.json` (`pi-sandbox/config.json` under `PI_CODING_AGENT_DIR` when set). It belongs to you, the user who runs pinata; there is no other config file and no setting above yours. `PI_SANDBOX_USER_CONFIG` moves the file to another path ([environment variables](#environment-variables-pinata-reads)). A key you set replaces its default; `env.allow` adds to the default terminal variables.
+The sandbox reads one JSON file: `~/.pi/agent/pinata/config.json` (`pinata/config.json` under `PI_CODING_AGENT_DIR` when set). It belongs to you, the user who runs pinata; there is no other config file and no setting above yours. `PINATA_USER_CONFIG` moves the file to another path ([environment variables](#environment-variables-pinata-reads)). A key you set replaces its default; `env.allow` adds to the default terminal variables.
 
 Without the file the defaults apply. Pinata reads it at every launch and writes it only in `pinata init`, which changes only the keys it asks about: `workspaceRoot`, `vm.cpus`, `vm.memoryGiB`, `vm.diskGiB` and `writeBack.enabled`. It keeps every other key and their order, and the file's indentation where it can. Nothing in the project folder configures the sandbox; see [One config for every session](#one-config-for-every-session).
 
@@ -18,7 +18,7 @@ The message also shows the value for `image.dockerfile`, `image.packages`, `tls.
 
 ## When changes apply
 
-Each launch gets a new container, so most changes apply at the next `pi`. Your Mac also runs one proxy per launcher state folder (`PI_SANDBOX_STATE_DIR`, one per agent dir by default; pinata makes the value absolute and real, so one folder is one install however you spell it), shared by every pi session of that folder, in every project folder. Some settings live in that proxy.
+Each launch gets a new container, so most changes apply at the next `pi`. Your Mac also runs one proxy per pinata state folder (`PINATA_STATE_DIR`, one per agent dir by default; pinata makes the value absolute and real, so one folder is one install however you spell it), shared by every pi session of that folder, in every project folder. Some settings live in that proxy.
 
 - **Grants** from `pinata egress allow` and `revoke` apply at once, also to running sessions.
 - **Network settings** reach running sessions when you start a new `pi`, in any folder. These are `egress.allow`, `egress.deny` and `egress.privateHosts`. Editing the file alone changes nothing for them.
@@ -68,7 +68,7 @@ The file applies to every pi you start in the sandbox, in every folder. There ar
 | `mounts.volumes` | Folders kept in volumes shared by all your sandboxes ([below](#volumes)). | `[]` |
 | `mounts.binds` | Host files or folders mounted read-only inside ([below](#read-only-binds)). | `[]` |
 | `setup` | Commands run in the sandbox at every launch, before pi starts ([below](#setup-commands)). | `[]` |
-| `services` | Long-running processes started before pi, reachable on `localhost` on the ports they declare and shared by every session that uses the same launcher state folder ([below](#services)). | `[]` |
+| `services` | Long-running processes started before pi, reachable on `localhost` on the ports they declare and shared by every session that uses the same pinata state folder ([below](#services)). | `[]` |
 | `env.allow` | Variables from your shell passed into each run. | terminal variables |
 | `env.set` | Variables set to a fixed value in each sandbox container ([below](#fixed-variables)). | none |
 | `resources.cpus` | CPU limit of each sandbox container, inside the VM. | no limit (the whole VM) |
@@ -242,8 +242,8 @@ Every target of `mounts.volumes` and `mounts.binds` follows these rules, checked
 | a path in `~` such as `~/.npm` or `~/.m2/repository` | yes |
 | `~` itself (`/home/pi`), `/home`, `/tmp` or `/` | no, the sandbox mounts its home and `/tmp` there |
 | a path in `/tmp`, such as `/tmp/cache` | yes |
-| `/tmp/pi-sandbox-handover`, `/tmp/pi-sandbox-ready`, `/tmp/pi-sandbox-forward` and anything inside them | no, pinata and the entrypoint signal each other through these files |
-| `/usr`, `/bin`, `/sbin`, `/lib`, `/lib32`, `/lib64`, `/libx32`, `/boot`, `/dev`, `/proc`, `/sys`, `/run`, `/var/run`, `/var/lock`, `/root`, `/opt/pi-sandbox`, `/etc/ssl`, anything inside them or a folder above them (`/`, `/opt`, `/etc`, `/var`) | no, the sandbox image and pinata's root commands need them |
+| `/tmp/pinata-handover`, `/tmp/pinata-ready`, `/tmp/pinata-forward` and anything inside them | no, pinata and the entrypoint signal each other through these files |
+| `/usr`, `/bin`, `/sbin`, `/lib`, `/lib32`, `/lib64`, `/libx32`, `/boot`, `/dev`, `/proc`, `/sys`, `/run`, `/var/run`, `/var/lock`, `/root`, `/opt/pinata`, `/etc/ssl`, anything inside them or a folder above them (`/`, `/opt`, `/etc`, `/var`) | no, the sandbox image and pinata's root commands need them |
 | `/etc/ld.so.preload`, `/etc/ld.so.cache`, `/etc/ld.so.conf`, `/etc/ld.so.conf.d`, `/etc/passwd`, `/etc/group`, `/etc/shadow`, `/etc/gshadow`, `/etc/nsswitch.conf`, `/etc/hosts`, `/etc/hostname`, `/etc/resolv.conf` and anything inside them | no, they steer every program, root's included |
 | other paths, such as `/etc/<app>/conf.d`, `/opt/data`, `/srv/cache`, `/var/lib/<app>`, `/var/log/<app>`, `/data` or `/logs` | yes |
 | `~/.pi`, `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.docker`, `~/.colima`, `~/.kube`, `~/.config`, `~/.local/bin` and anything inside them | no |
@@ -317,7 +317,7 @@ Paths are absolute, normalised, not `/`, not inside each other and without `:` o
 How it works:
 
 - At a launch, after the image is ready and before the agent's container starts, pinata makes sure the services run. When none run yet, it starts one holder container, the pod, and then each service in order, printing `pinata: starting service <name>`. The services share the pod's network. Without services nothing changes.
-- The pod sits on the sandbox network under the name `pi-sandbox-services`. In the agent's container, a small forwarder listens on `127.0.0.1` and `::1` for each declared port and passes the connection on to `pi-sandbox-services` on the same port. So a service must listen on an address of the pod's network, such as `0.0.0.0`, not on `127.0.0.1`.
+- The pod sits on the sandbox network under the name `pinata-services`. In the agent's container, a small forwarder listens on `127.0.0.1` and `::1` for each declared port and passes the connection on to `pinata-services` on the same port. So a service must listen on an address of the pod's network, such as `0.0.0.0`, not on `127.0.0.1`.
 - A port the forwarder cannot listen on stops the launch with `the sandbox could not forward the services' ports: port <n> on <address>: <reason>`.
 - A service waits for its `ready.command`, checked about twice a second. A service that exits first stops the launch with `service <name> exited with code <n> before it was ready`, and one that is not ready in time with `service <name> was not ready within <n> s`; both show its last 40 log lines and name `services[<i>]`. Ctrl-C stops the wait.
 - A service gets only its own `env`: no workspace, home, credentials or variables of yours. It runs with no capabilities, no privilege escalation, a read-only root file system, `/tmp` and the `tmpfs` folders writable, and at most 4096 processes.
@@ -331,13 +331,13 @@ Some things to know:
 
 - Services start with the first session, so a slow `ready` delays that `pi`. A later session waits only for a service that had exited and starts again.
 - Every session reaches the same services and the same data, in any folder. Two repositories that need different data in one database need different database names or users.
-- A service volume is one volume per launcher state folder, like a `mounts.volumes` entry. Its name is the `name` you give it.
+- A service volume is one volume per pinata state folder, like a `mounts.volumes` entry. Its name is the `name` you give it.
 - The agent sees a service volume only through a `mounts.volumes` entry with the same `name`. Such a volume is shared: every service that mounts it must run as `1000:1000`, the sandbox user's ids, and the config is refused otherwise. The agent owns its files and can write, replace or delete anything the service keeps there.
 - Data a service must keep needs a `volumes` entry. A path the image declares as `VOLUME` gets an anonymous volume that is removed with the service's container, when the last session ends and when an exited service starts again, so a database whose image declares its data folder as `VOLUME` starts empty each time without one.
 - A changed `services` list, or a changed sandbox image, applies when no other pi session of pinata's state folder runs. Until then the old services keep running and a launch prints `pinata: the services in the config changed; they restart once every pi session has ended`. A service of the old set that stopped is started again as it was; one that cannot start stops the launch with `service <name> is stopped and could not be started`. A change to `ports` alone applies to the next launch's container at once.
-- Each agent container is on the same network as the pod, so any session can also reach a service at `pi-sandbox-services:<port>` on a port the config does not declare.
+- Each agent container is on the same network as the pod, so any session can also reach a service at `pinata-services:<port>` on a port the config does not declare.
 - A service without `memoryGiB` is not counted when pinata compares `resources.memoryGiB` and the services with the VM's memory, and can use the whole VM. Without `vm.memoryGiB` that memory is the automatic size of [the VM](#vm-size) on this Mac, and a launch or `pinata doctor` refuses a sum above it with a `config:` error.
-- A service's only way out is the proxy at `pi-sandbox-proxy:3128`, which it can reach whatever its `env` says. Its tools use it when its `env` points them there, for example `HTTPS_PROXY=http://pi-sandbox-proxy:3128`. The same egress policy applies as to the agent.
+- A service's only way out is the proxy at `pinata-proxy:3128`, which it can reach whatever its `env` says. Its tools use it when its `env` points them there, for example `HTTPS_PROXY=http://pinata-proxy:3128`. The same egress policy applies as to the agent.
 - A service gets no CPU or open-file limit, so a busy service can slow every session.
 - An `image` other than the sandbox image is pulled by the VM's container engine directly, not through the proxy, and runs with the trust you give its author when you write it in the config.
 
@@ -433,9 +433,9 @@ Every launch uses the list it started with. After you change `writeBack`, the ne
 
 The root may not be your home or a folder that holds it: `~` is refused when the config loads, and a path that resolves to your home or above it (`/Users`, `/`, `~/..`) is refused at launch, before the VM is touched, with `config: workspaceRoot: <root> is the home dir or holds it, which would share all of it with the sandbox VM`. Choose the folder in your home that holds your projects, or a folder elsewhere such as `/Volumes/Projects`. The root is also refused when it holds `,`, `:`, a newline or another control character, or is, holds or lies inside a path the VM could use to take over the host: `~/.pi`, the agent dir, pinata's state dir, the user config file and its folder, `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.docker`, `~/.colima`, `~/.kube`, `~/.config`, `~/.local/bin`, `~/Library`, `/etc`, `/usr`, `/opt`, `/System`, `/Library`, `/bin` or `/sbin`. `/private` and `/var` are refused when the root is or holds them (the macOS temp folder lies inside them). `pinata init`, `--yes` included, accepts a root that does not exist yet, prints `workspaceRoot: <root> is missing, so it is not shared until it exists` and leaves it out of the VM's shares; a launch then stops until the folder exists. The VM's shares must not nest: when `<agent dir>/sessions` or `<state>/vm` resolves into the root, or the root into them, the launch stops with a `config: workspaceRoot:` error before the VM is touched.
 
-The VM's shares follow the config of whichever agent dir launches pi, since every agent dir uses the same `pi-sandbox` VM. Two agent dirs with different roots therefore make the VM restart when you switch between them while no pi session runs; while a session of either runs, a launch counts it as a live session.
+The VM's shares follow the config of whichever agent dir launches pi, since every agent dir uses the same `pinata` VM. Two agent dirs with different roots therefore make the VM restart when you switch between them while no pi session runs; while a session of either runs, a launch counts it as a live session.
 
-`pinata init` chooses the root with you and applies it to the VM at once, restarting it when no pi session runs. In a script, or on a machine without a terminal, set `PI_SANDBOX_ROOT` and run `pinata init --yes` (or `pinata install`, which does): it writes the root into a config without `workspaceRoot`, stops when the config names another root, and stops when neither the config nor `PI_SANDBOX_ROOT` names one (see [Set up the sandbox](README.md#set-up-the-sandbox)).
+`pinata init` chooses the root with you and applies it to the VM at once, restarting it when no pi session runs. In a script, or on a machine without a terminal, set `PINATA_ROOT` and run `pinata init --yes` (or `pinata install`, which does): it writes the root into a config without `workspaceRoot`, stops when the config names another root, and stops when neither the config nor `PINATA_ROOT` names one (see [Set up the sandbox](README.md#set-up-the-sandbox)).
 
 The key replaced `workspaceRoots: { "roots": [...] }` and the mode that shared your whole home; see [REMOVED-DEFAULTS.md](REMOVED-DEFAULTS.md#several-workspace-roots-and-the-home-share).
 
@@ -453,7 +453,7 @@ Some names are refused when the config loads:
 
 A value that looks like a credential stays on your Mac. That means a `Bearer`, `Basic` or `Token` prefix, a JWT, or a URL with a user name or password. The launch then prints `env.allow: <NAME> holds a credential, so it stays on the host`.
 
-Inside, `PI_SANDBOX=1` tells scripts they run in the sandbox, and `PI_SANDBOX_STATUS` names the [sandbox status file](#sandbox-status-file). `HTTPS_PROXY`, `HTTP_PROXY` and `ALL_PROXY`, in both cases, point at the proxy, `http://pi-sandbox-proxy:3128`, and `NO_PROXY` holds `localhost,127.0.0.1,::1,pi-sandbox-proxy`, so local test servers and services are reached directly.
+Inside, `PINATA=1` tells scripts they run in the sandbox, and `PINATA_STATUS` names the [sandbox status file](#sandbox-status-file). `HTTPS_PROXY`, `HTTP_PROXY` and `ALL_PROXY`, in both cases, point at the proxy, `http://pinata-proxy:3128`, and `NO_PROXY` holds `localhost,127.0.0.1,::1,pinata-proxy`, so local test servers and services are reached directly.
 
 ### Fixed variables
 
@@ -463,7 +463,7 @@ Inside, `PI_SANDBOX=1` tells scripts they run in the sandbox, and `PI_SANDBOX_ST
 
 `env.set` maps variable names to values that every process in the sandbox container sees: pi, its tools and anything they start. A value is a string, taken as written: `$HOME` or `~` stays as those characters. It may not contain a NUL character. They are set when the container is created, so a change applies from the next `pi`.
 
-A name pinata sets is refused when the config loads, with `config: env.set["<NAME>"] is set by pinata and cannot be set`. That is the same list `env.allow` refuses: the proxy variables in any case, `NODE_USE_ENV_PROXY`, `PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSION_DIR`, `NODE_EXTRA_CA_CERTS` and the other CA variables, `BASH_ENV`, `HOME`, `PATH`, `PWD`, `GITLAB_TOKEN`, `GITLAB_HOST`, `GIT_TERMINAL_PROMPT` and the `PI_*` variables pinata sets, `PI_SANDBOX_STATUS` among them. A name must look like a variable name: letters, digits and `_`, not starting with a digit. Unlike `env.allow`, names that look like secrets are accepted, since the value is yours and written in the file; still, keep secrets out of it and use [credentials](#credentials). Every `env.set` value is visible to the agent and everything it runs, so a real secret never goes there. `pinata doctor` does not check an `env.set` variable whose value inside is the one in the file; its credential sweep names the secret-looking ones it skipped (`env.set values not checked: …`), so a secret written here is not caught by the doctor.
+A name pinata sets is refused when the config loads, with `config: env.set["<NAME>"] is set by pinata and cannot be set`. That is the same list `env.allow` refuses: the proxy variables in any case, `NODE_USE_ENV_PROXY`, `PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSION_DIR`, `NODE_EXTRA_CA_CERTS` and the other CA variables, `BASH_ENV`, `HOME`, `PATH`, `PWD`, `GITLAB_TOKEN`, `GITLAB_HOST`, `GIT_TERMINAL_PROMPT` and the `PI_*` variables pinata sets, `PINATA_STATUS` among them. A name must look like a variable name: letters, digits and `_`, not starting with a digit. Unlike `env.allow`, names that look like secrets are accepted, since the value is yours and written in the file; still, keep secrets out of it and use [credentials](#credentials). Every `env.set` value is visible to the agent and everything it runs, so a real secret never goes there. `pinata doctor` does not check an `env.set` variable whose value inside is the one in the file; its credential sweep names the secret-looking ones it skipped (`env.set values not checked: …`), so a secret written here is not caught by the doctor.
 
 A name in both `env.allow` and `env.set` takes the `env.set` value; your shell's value is not passed. A name the image sets, such as `LANG`, takes the `env.set` value.
 
@@ -518,7 +518,7 @@ Some credentials are not derived, for example uv's config and tokens that a proj
 | `host` | The host name the rule applies to. The host becomes reachable. |
 | `port` | Optional. The default is 443. |
 | `pathPrefix` | Optional. Only paths that start with it, such as `/npm/`. |
-| `placeholder` | Optional. A stand-in value starting with `pi-sandbox-` that you put in a tool's config inside. |
+| `placeholder` | Optional. A stand-in value starting with `pinata-` that you put in a tool's config inside. |
 | `header` | Optional. A header the proxy sets on every matching request. |
 | `template` | Optional. The header value, with `{secret}` where the secret goes. Needs `header`. |
 | `secret` | Where the real value comes from (below). |
@@ -589,12 +589,12 @@ If a proxy on your network inspects TLS, add its CA certificate. An entry takes 
 
 Every certificate must be a CA (or a self-signed root without the CA flag) and within its validity dates. A launch stops when a fingerprint is in neither keychain, a file is missing, a certificate is not a CA, or it has expired; the message names the entry and the certificate's subject.
 
-The CAs are trusted by pinata's proxy, during the image build and inside the container. The image layer, built at every change of these CAs, adds them with pinata's CA to the system store, `/etc/ssl/certs/ca-certificates.crt`, which `SSL_CERT_FILE`, `CURL_CA_BUNDLE`, `REQUESTS_CA_BUNDLE`, `PIP_CERT`, `CARGO_HTTP_CAINFO`, `GIT_SSL_CAINFO` and `NODE_EXTRA_CA_CERTS` point at. For every JDK in the image, found by its `bin/keytool`, it imports them into the JDK's `cacerts` and writes the proxy into its `net.properties` (`http.proxyHost` and `https.proxyHost` `pi-sandbox-proxy`, port `3128`, `http.nonProxyHosts` `localhost|127.*|[::1]|pi-sandbox-proxy`), so Java tools need no proxy flags; a JDK missing one of these files is skipped with a line in the build output. A JDK installed later, such as one in a volume, gets the same with `/usr/local/lib/pi-sandbox/trust-jdk.sh <jdk home>` (see [a JDK in a volume](#a-jdk-in-a-volume)). The layer needs `update-ca-certificates` (Debian's `ca-certificates` package) in the base image, `image.reference` included; without it the build stops with `the sandbox layer needs update-ca-certificates`.
+The CAs are trusted by pinata's proxy, during the image build and inside the container. The image layer, built at every change of these CAs, adds them with pinata's CA to the system store, `/etc/ssl/certs/ca-certificates.crt`, which `SSL_CERT_FILE`, `CURL_CA_BUNDLE`, `REQUESTS_CA_BUNDLE`, `PIP_CERT`, `CARGO_HTTP_CAINFO`, `GIT_SSL_CAINFO` and `NODE_EXTRA_CA_CERTS` point at. For every JDK in the image, found by its `bin/keytool`, it imports them into the JDK's `cacerts` and writes the proxy into its `net.properties` (`http.proxyHost` and `https.proxyHost` `pinata-proxy`, port `3128`, `http.nonProxyHosts` `localhost|127.*|[::1]|pinata-proxy`), so Java tools need no proxy flags; a JDK missing one of these files is skipped with a line in the build output. A JDK installed later, such as one in a volume, gets the same with `/usr/local/lib/pinata/trust-jdk.sh <jdk home>` (see [a JDK in a volume](#a-jdk-in-a-volume)). The layer needs `update-ca-certificates` (Debian's `ca-certificates` package) in the base image, `image.reference` included; without it the build stops with `the sandbox layer needs update-ca-certificates`.
 
 Behind Zscaler or another inspecting proxy:
 
 1. Run `pinata doctor`. When it sees TLS interception its `tls inspection` check fails and prints the line to add, `{ "sha256": "<fp>" }`, with the fingerprint of the root CA it found in the System or login keychain. When the root is in neither, it names the issuer instead, even when the proxy sends the root itself: get that CA as PEM from your IT and add `{ "file": "<path>" }`.
-2. Copy that line into `tls.extraCa` in `~/.pi/agent/pi-sandbox/config.json`.
+2. Copy that line into `tls.extraCa` in `~/.pi/agent/pinata/config.json`.
 3. Quit every pi in the sandbox and launch again.
 
 What trusting the CA means:
@@ -627,13 +627,13 @@ The sandbox has no container engine and cannot reach your Mac's `localhost`. So 
 
 ## Sandbox status file
 
-Pinata renders `tools/status.json` into the repo's render folder (read-only in the container) and sets `PI_SANDBOX_STATUS` to its guest path, `/opt/pi-sandbox/render/tools/status.json`. It tells the agent what the sandbox gives it, derived only from the configuration: `version` (1); `proxy` (`url`, plus `denials` and `health`, two URLs that answer a plain GET from inside the sandbox); `resources` (the configured `cpus`, `memoryGiB`, `pids`, `openFiles`, `shmMiB` that are set); `volumes` (guest `target` of each `mounts.volumes` entry); `binds` (guest `target` of each `mounts.binds` entry, never the host source); `setup` (the configured commands); and `services`. It holds nothing per launch, no tokens and no host paths. `PI_SANDBOX_STATUS` is a name pinata sets, so `env.set` and `env.allow` refuse it.
+Pinata renders `tools/status.json` into the repo's render folder (read-only in the container) and sets `PINATA_STATUS` to its guest path, `/opt/pinata/render/tools/status.json`. It tells the agent what the sandbox gives it, derived only from the configuration: `version` (1); `proxy` (`url`, plus `denials` and `health`, two URLs that answer a plain GET from inside the sandbox); `resources` (the configured `cpus`, `memoryGiB`, `pids`, `openFiles`, `shmMiB` that are set); `volumes` (guest `target` of each `mounts.volumes` entry); `binds` (guest `target` of each `mounts.binds` entry, never the host source); `setup` (the configured commands); and `services`. It holds nothing per launch, no tokens and no host paths. `PINATA_STATUS` is a name pinata sets, so `env.set` and `env.allow` refuse it.
 
 Each `services` entry is `{ "name", "command", "ready", "ports" }`, with `ready` the `ready.command` when one is set and `ports` the ports the agent reaches on `localhost`. The agent reads these, so a secret belongs in the service's `env`, never in `command` or `ready.command`.
 
 ## Sharing one config across a team
 
-A team shares the config by giving everyone the same file: copy it to `~/.pi/agent/pi-sandbox/config.json` on each Mac. It is still each user's own file, and each user can change it. [examples/config.json](examples/config.json) is a starting point. It does the following:
+A team shares the config by giving everyone the same file: copy it to `~/.pi/agent/pinata/config.json` on each Mac. It is still each user's own file, and each user can change it. [examples/config.json](examples/config.json) is a starting point. It does the following:
 
 - Allows an internal gateway, registry and git hosts. It also lists them as private hosts, since they resolve to internal addresses.
 - Denies a paste site.
@@ -731,7 +731,7 @@ The image layer gives every JDK in the image the sandbox CAs and the proxy. A JD
 {
   "mounts": { "volumes": ["/opt/jdks"] },
   "setup": [
-    ["sh", "-c", "for home in /opt/jdks/*/; do [ -d \"$home\" ] || continue; /usr/local/lib/pi-sandbox/trust-jdk.sh \"$home\"; done"]
+    ["sh", "-c", "for home in /opt/jdks/*/; do [ -d \"$home\" ] || continue; /usr/local/lib/pinata/trust-jdk.sh \"$home\"; done"]
   ]
 }
 ```
@@ -772,14 +772,14 @@ The image has one Node and one Python. For more:
 
 | variable | effect |
 | --- | --- |
-| `PI_SANDBOX_USER_CONFIG` | Path of the config file. |
-| `PI_SANDBOX_STATE_DIR` | Pinata's state folder. The default is `pi-sandbox/state` in host pi's agent folder. A relative value is made absolute against your folder and resolved to its real path, so one folder is one install however it is spelled. The daily removal of state files this build does not use runs only in the default folder, never in one this variable names. |
+| `PINATA_USER_CONFIG` | Path of the config file. |
+| `PINATA_STATE_DIR` | Pinata's state folder. The default is `pinata/state` in host pi's agent folder. A relative value is made absolute against your folder and resolved to its real path, so one folder is one install however it is spelled. The daily removal of state files this build does not use runs only in the default folder, never in one this variable names. |
 | `PI_CODING_AGENT_DIR` | Host pi's agent folder. The default is `~/.pi/agent`. The config file and the state follow it, so two shells with different values use separate configs, CAs and state. |
 | `HTTPS_PROXY`, `https_proxy`, `NO_PROXY`, `no_proxy` | The parent proxy. |
 | `GLAB_CONFIG_DIR`, `XDG_CONFIG_HOME` | Where the glab config is read. A path inside the repository is ignored. |
 | Provider API key variables | Derived as credentials. The proxy reads them on your Mac. |
 | The names in `env.allow` | Passed into each pi run. |
-| `COLIMA_HOME` | Ignored. Pinata always uses `~/.colima/pi-sandbox`. |
-| `PI_SANDBOX_ROOT` | Read by `pinata init`: the folder that holds your projects (a relative path counts from the current folder). On a first run the interactive setup offers it first; `--yes` writes it to a config without `workspaceRoot`, and refuses your home or a folder that holds it. |
-| `PI_SANDBOX_PLAIN` | When set, `pinata init` asks its questions as numbered lines that you answer by typing, with no menu, no spinner and no colour, for screen readers and plain terminals. |
+| `COLIMA_HOME` | Ignored. Pinata always uses `~/.colima/pinata`. |
+| `PINATA_ROOT` | Read by `pinata init`: the folder that holds your projects (a relative path counts from the current folder). On a first run the interactive setup offers it first; `--yes` writes it to a config without `workspaceRoot`, and refuses your home or a folder that holds it. |
+| `PINATA_PLAIN` | When set, `pinata init` asks its questions as numbered lines that you answer by typing, with no menu, no spinner and no colour, for screen readers and plain terminals. |
 | `CI` | When set, `pinata init` without `--yes` refuses instead of asking, and never opens `/dev/tty`. |

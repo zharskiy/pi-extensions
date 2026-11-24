@@ -49,7 +49,7 @@ const fakeTerminal = (isTTY: boolean, stdoutTTY = isTTY) => {
 };
 
 const PI_WRAPPER =
-  /^echo \$\$ > (\/tmp\/pi-sandbox-pi\.pid); cd "\$1" 2>\/dev\/null \|\| echo "pinata: \$1 is not in the sandbox, pi starts in \$PWD" >&2; shift; exec "\$@"$/;
+  /^echo \$\$ > (\/tmp\/pinata-pi\.pid); cd "\$1" 2>\/dev\/null \|\| echo "pinata: \$1 is not in the sandbox, pi starts in \$PWD" >&2; shift; exec "\$@"$/;
 
 let launches = 0;
 
@@ -95,12 +95,12 @@ describe("runPi", () => {
     expect(fake.execs[0]?.spec).toEqual({
       containerId: "container-9",
       command: ["sh", "-c", expect.stringMatching(PI_WRAPPER), "sh", "/work/repo/src", "pi", "--model", "x"],
-      env: { PI_SANDBOX_LAUNCH_ID: expect.stringMatching(/^[0-9a-f]{16}$/) },
+      env: { PINATA_LAUNCH_ID: expect.stringMatching(/^[0-9a-f]{16}$/) },
       workdir: "/work/repo",
     });
     expect(fake.execs[0]?.tty).toBe(true);
     expect(fake.execs[0]?.size).toEqual({ columns: 120, rows: 40 });
-    expect(pidFile).toBe("/tmp/pi-sandbox-pi.pid");
+    expect(pidFile).toBe("/tmp/pinata-pi.pid");
     expect(scripts(fake.execs)).toEqual([]);
     expect(fake.stops).toEqual([]);
   });
@@ -113,7 +113,7 @@ describe("runPi", () => {
       backend: fake.backend,
       containerId: "container-9",
       piArgs: [],
-      env: { TERM: "xterm-256color", PI_SANDBOX_DEBUG: "1" },
+      env: { TERM: "xterm-256color", PINATA_DEBUG: "1" },
       launchId: "0123456789abcdef",
       workspace,
       terminal,
@@ -121,8 +121,8 @@ describe("runPi", () => {
 
     expect(fake.execs[0]?.spec.env).toEqual({
       TERM: "xterm-256color",
-      PI_SANDBOX_DEBUG: "1",
-      PI_SANDBOX_LAUNCH_ID: "0123456789abcdef",
+      PINATA_DEBUG: "1",
+      PINATA_LAUNCH_ID: "0123456789abcdef",
     });
   });
 
@@ -218,7 +218,7 @@ describe("runPi", () => {
   it("starts pi in the repository root with a notice when the cwd is hidden in the sandbox", async () => {
     const fake = createFakeBackend();
     const { terminal } = fakeTerminal(false);
-    const root = realpathSync(await mkdtemp(join(tmpdir(), "pi-sandbox-run-pi-")));
+    const root = realpathSync(await mkdtemp(join(tmpdir(), "pinata-run-pi-")));
     const elsewhere = realpathSync(tmpdir());
 
     await runPi({

@@ -54,10 +54,10 @@ describe("createProcessRunner run", () => {
   });
 
   it("rejects with a LauncherError naming a missing command", async () => {
-    const result = runner.run("pi-sandbox-missing-command", []);
+    const result = runner.run("pinata-missing-command", []);
 
     await expect(result).rejects.toBeInstanceOf(LauncherError);
-    await expect(result).rejects.toThrow("pi-sandbox-missing-command: command not found");
+    await expect(result).rejects.toThrow("pinata-missing-command: command not found");
   });
 });
 
@@ -67,8 +67,8 @@ describe("createProcessRunner spawnInteractive", () => {
   });
 
   it("rejects with a LauncherError naming a missing command", async () => {
-    await expect(runner.spawnInteractive("pi-sandbox-missing-command", [])).rejects.toThrow(
-      "pi-sandbox-missing-command: command not found",
+    await expect(runner.spawnInteractive("pinata-missing-command", [])).rejects.toThrow(
+      "pinata-missing-command: command not found",
     );
   });
 });

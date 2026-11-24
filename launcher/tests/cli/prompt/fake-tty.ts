@@ -193,7 +193,7 @@ export const richPrompts = (options: FakeUiOptions = {}) => {
 };
 
 export const plainPrompts = (options: FakeUiOptions = {}) => {
-  const fake = fakeUi({ ...options, env: { PI_SANDBOX_PLAIN: "1", ...options.env } });
+  const fake = fakeUi({ ...options, env: { PINATA_PLAIN: "1", ...options.env } });
 
   return { ...fake, prompts: createPlainPrompts(fake.ui) };
 };

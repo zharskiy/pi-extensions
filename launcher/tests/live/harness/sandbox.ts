@@ -73,7 +73,7 @@ export interface LiveSandbox {
 
 const run = promisify(execFile);
 
-const LAUNCHER_ENTRY = fileURLToPath(new URL("../../../bin/pi-sandbox-dev.js", import.meta.url));
+const LAUNCHER_ENTRY = fileURLToPath(new URL("../../../bin/pi-dev.js", import.meta.url));
 
 const REPO_MODULES = fileURLToPath(new URL("../../../../node_modules", import.meta.url));
 
@@ -101,15 +101,15 @@ const resolvePreload = () => {
 
 const DEFAULT_TIMEOUT_MS = 540_000;
 
-const PI_PID_FILE = "/tmp/pi-sandbox-pi.pid";
+const PI_PID_FILE = "/tmp/pinata-pi.pid";
 
 const SESSION_START_MS = 300_000;
 
 const SESSION_POLL_MS = 250;
 
-export const liveRoot = () => process.env.PI_SANDBOX_LIVE_DIR ?? join(homedir(), ".cache", "pi-sandbox-live");
+export const liveRoot = () => process.env.PINATA_LIVE_DIR ?? join(homedir(), ".cache", "pinata-live");
 
-export const liveEnabled = process.env.PI_SANDBOX_LIVE === "1" && engineSocket !== undefined;
+export const liveEnabled = process.env.PINATA_LIVE === "1" && engineSocket !== undefined;
 
 const sha256 = (value: string) => createHash("sha256").update(value).digest("hex");
 
@@ -118,7 +118,7 @@ const fakeOpener = (log: string) => `#!/bin/sh\nprintf '%s\\n' "$1" >> '${log}'\
 const initRepo = async (repo: string) => {
   await mkdir(repo, { recursive: true });
 
-  await writeFile(join(repo, "README.md"), "pi sandbox live fixture repository\n");
+  await writeFile(join(repo, "README.md"), "pinata live fixture repository\n");
 
   const git = (args: string[]) =>
     run("git", ["-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", ...args], {
@@ -202,8 +202,8 @@ export const createLiveSandbox = async (name: string): Promise<LiveSandbox> => {
   const root = join(liveRoot(), `${name}-${randomBytes(3).toString("hex")}`);
   const home = join(root, "home");
   const agentDir = join(home, ".pi", "agent");
-  const stateDir = join(agentDir, "pi-sandbox", "state");
-  const userConfigFile = join(agentDir, "pi-sandbox", "config.json");
+  const stateDir = join(agentDir, "pinata", "state");
+  const userConfigFile = join(agentDir, "pinata", "config.json");
   const repoPath = join(root, "repos", name);
   const bin = join(root, "bin");
   const certs = join(root, "certs");
@@ -212,7 +212,7 @@ export const createLiveSandbox = async (name: string): Promise<LiveSandbox> => {
 
   await Promise.all([agentDir, stateDir, bin, certs].map((dir) => mkdir(dir, { recursive: true })));
 
-  await mkdir(join(agentDir, "pi-sandbox"), { recursive: true });
+  await mkdir(join(agentDir, "pinata"), { recursive: true });
 
   await installRepoPiAsManaged(agentDir);
 
@@ -237,8 +237,8 @@ export const createLiveSandbox = async (name: string): Promise<LiveSandbox> => {
     USER: process.env.USER ?? "pi",
     TMPDIR: process.env.TMPDIR ?? "/tmp",
     PI_CODING_AGENT_DIR: agentDir,
-    PI_SANDBOX_STATE_DIR: stateDir,
-    PI_SANDBOX_USER_CONFIG: userConfigFile,
+    PINATA_STATE_DIR: stateDir,
+    PINATA_USER_CONFIG: userConfigFile,
     NODE_OPTIONS: `--import=${resolvePreload()}`,
     NODE_EXTRA_CA_CERTS: ca.certPath,
     GIT_CONFIG_NOSYSTEM: "1",

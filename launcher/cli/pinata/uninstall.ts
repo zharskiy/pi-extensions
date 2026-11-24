@@ -62,7 +62,7 @@ const removeExtensions = async (deps: CliDeps, packageDir: string) => {
 const removeState = async (deps: CliDeps) => {
   const { stateDir, userConfigFile } = pathsOf(deps);
   const info = await lstatOrUndefined(stateDir);
-  const launcherDir = join(hostAgentDirOf(deps), "pi-sandbox");
+  const launcherDir = join(hostAgentDirOf(deps), "pinata");
 
   if (info === undefined) {
     return;

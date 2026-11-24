@@ -31,7 +31,7 @@ import { assertVmFitsHost, prepareVmDirs, vmSharesFor } from "../vm.ts";
 export const YES_FLAG = "--yes";
 
 const SETUP_HINT =
-  "pass --yes to keep the current settings and apply them; PI_SANDBOX_ROOT names the folder that holds your projects";
+  "pass --yes to keep the current settings and apply them; PINATA_ROOT names the folder that holds your projects";
 
 const SIGNAL_EXITS = { SIGTERM: 143, SIGHUP: 129 } as const;
 

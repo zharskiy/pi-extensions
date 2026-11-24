@@ -47,7 +47,7 @@ afterEach(async () => {
   await Promise.all(cleanups.splice(0).map((cleanup) => cleanup()));
 });
 
-const PREAMBLE_LINE = /^PI-SANDBOX [0-9a-f]{64}$/;
+const PREAMBLE_LINE = /^PINATA [0-9a-f]{64}$/;
 
 const afterPreamble = (socket: Socket, admit: (socket: Socket) => void) => {
   const state = { pending: Buffer.alloc(0) };
@@ -164,8 +164,7 @@ const hostSection = async (prepared: boolean) => [
   ...(prepared ? ["  ok    host side"] : []),
 ];
 
-const SHARES_UNKNOWN =
-  "  skip  vm shares         colima has not written the shares of profile pi-sandbox yet";
+const SHARES_UNKNOWN = "  skip  vm shares         colima has not written the shares of profile pinata yet";
 
 const NO_PARENT = "  skip  parent proxy      no parent proxy configured";
 
@@ -232,9 +231,9 @@ describe("pinata doctor", () => {
       "sandbox",
       SHARES_UNKNOWN,
       "  ok    vm",
-      "  skip  vm size           colima did not report the size of profile pi-sandbox",
+      "  skip  vm size           colima did not report the size of profile pinata",
       "  skip  file cache        the backend does not count the VM's open files",
-      "  ok    image             pi-sandbox-base:local sha256:built-1",
+      "  ok    image             pinata-base:local sha256:built-1",
       "  ok    container",
       "  ok    sync",
       "  ok    sessions share    writable at the host path",
@@ -280,7 +279,7 @@ describe("pinata doctor", () => {
       status: "fail",
       detail: `https://models.example.test/ answered HTTP 401 with the placeholder${RULE_NOTE}`,
     });
-    expect(request?.spec.command.at(-1)).toMatch(/^Bearer pi-sandbox-[0-9a-f]{24}$/);
+    expect(request?.spec.command.at(-1)).toMatch(/^Bearer pinata-[0-9a-f]{24}$/);
     expect(request?.spec.command[2]).toContain("AbortSignal.timeout(15000)");
     expect(JSON.stringify(fake.execs.map((exec) => exec.spec))).not.toContain("real-secret-value");
   });
@@ -297,7 +296,7 @@ describe("pinata doctor", () => {
       "",
       "sandbox",
       SHARES_UNKNOWN,
-      "  ok    sandbox           starts here (pi-sandbox-base:local)",
+      "  ok    sandbox           starts here (pinata-base:local)",
       "",
       "network",
       "  ok    isolation         no direct route to the internet (tried 1.1.1.1:443)",
@@ -623,7 +622,7 @@ describe("pinata doctor", () => {
             },
             tool: {
               command: "tool",
-              env: { TOOL_TOKEN: "pi-sandbox-0123456789abcdef01234567", MODE: "fast" },
+              env: { TOOL_TOKEN: "pinata-0123456789abcdef01234567", MODE: "fast" },
             },
           },
         }),
@@ -643,7 +642,7 @@ describe("pinata doctor", () => {
   it("passes the sweep over the container's own environment, which holds no proxy token", async () => {
     const { stdout, fake } = await doctorWith();
     const env = Object.values(fake.created[0]?.spec?.env ?? {});
-    const token = (fake.routes[0]?.preamble ?? "").replace("PI-SANDBOX ", "");
+    const token = (fake.routes[0]?.preamble ?? "").replace("PINATA ", "");
 
     expect(token).toMatch(/^[0-9a-f]{64}$/);
     expect(env.filter((value) => value.includes(token))).toEqual([]);
@@ -676,8 +675,8 @@ describe("pinata doctor", () => {
   it("passes the sweep when secret-named variables and auth.json hold only the placeholder", async () => {
     const { stdout } = await doctorWith({
       probes: {
-        env: "TERM=xterm\nGATEWAY_API_KEY=pi-sandbox-0123456789abcdef01234567\nSESSION_TOKEN=\n",
-        auth: JSON.stringify({ llm: { type: "api_key", key: "pi-sandbox-0123456789abcdef01234567" } }),
+        env: "TERM=xterm\nGATEWAY_API_KEY=pinata-0123456789abcdef01234567\nSESSION_TOKEN=\n",
+        auth: JSON.stringify({ llm: { type: "api_key", key: "pinata-0123456789abcdef01234567" } }),
       },
     });
 
@@ -834,8 +833,8 @@ describe("pinata doctor", () => {
       "",
       "sandbox",
       SHARES_UNKNOWN,
-      "  fail  vm                the sandbox VM engine is unreachable at ~/.colima/pi-sandbox/docker.sock: socket missing",
-      "        hint: run pi, which starts the sandbox VM with its planned shares, or pinata init when ~/.colima/pi-sandbox does not exist",
+      "  fail  vm                the sandbox VM engine is unreachable at ~/.colima/pinata/docker.sock: socket missing",
+      "        hint: run pi, which starts the sandbox VM with its planned shares, or pinata init when ~/.colima/pinata does not exist",
       "  skip  file cache        the sandbox VM is not running",
       "  skip  sandbox checks    not run, because starting the VM failed",
       "",
@@ -1039,7 +1038,7 @@ describe("pinata doctor", () => {
 
       expect(found).toMatchObject({
         status: "warn",
-        detail: "profile pi-sandbox has 2 CPUs and 4 GiB, below 8 CPUs and 10 GiB",
+        detail: "profile pinata has 2 CPUs and 4 GiB, below 8 CPUs and 10 GiB",
         hint: "choose Custom for the VM size in pinata init, or set vm in the config, while no other pi session runs",
       });
       expect(code).toBe(0);
@@ -1058,16 +1057,16 @@ describe("pinata doctor", () => {
 
       expect(small.found).toMatchObject({
         status: "ok",
-        detail: "profile pi-sandbox has 2 CPUs and 4 GiB, as vm sets",
+        detail: "profile pinata has 2 CPUs and 4 GiB, as vm sets",
       });
       expect(differs.found).toMatchObject({
         status: "warn",
-        detail: "profile pi-sandbox has 8 CPUs and 10 GiB, not the 4 CPUs, 80 GiB disk vm sets",
+        detail: "profile pinata has 8 CPUs and 10 GiB, not the 4 CPUs, 80 GiB disk vm sets",
         hint: "run pinata init, or pi, while no other pi session runs; either restarts the VM with the size vm sets",
       });
       expect(shrunk.found).toMatchObject({
         status: "warn",
-        detail: "profile pi-sandbox has 4 CPUs and 8 GiB; vm.diskGiB 40 is below its disk of 60 GiB",
+        detail: "profile pinata has 4 CPUs and 8 GiB; vm.diskGiB 40 is below its disk of 60 GiB",
         hint: "colima cannot shrink a disk; raise vm.diskGiB or leave it out",
       });
     });
@@ -1106,7 +1105,7 @@ describe("pinata doctor", () => {
     it("measures the profile against the size colima gives this machine", async () => {
       const { found } = await sizeCheck(async () => ({ cpus: 4, memoryGiB: 4 }), { cpus: 4, memoryGiB: 8 });
 
-      expect(found).toMatchObject({ status: "ok", detail: "profile pi-sandbox has 4 CPUs and 4 GiB" });
+      expect(found).toMatchObject({ status: "ok", detail: "profile pinata has 4 CPUs and 4 GiB" });
     });
   });
 });
@@ -1114,7 +1113,7 @@ describe("pinata doctor", () => {
 describe("pinata doctor file cache", () => {
   const RUNNING = async () => ({ cpus: 8, memoryGiB: 10 });
 
-  const LOOKED = ["/h/.colima/_lima/colima-pi-sandbox/disk", "/h/.colima/_lima/colima-pi-sandbox/diffdisk"];
+  const LOOKED = ["/h/.colima/_lima/colima-pinata/disk", "/h/.colima/_lima/colima-pinata/diffdisk"];
 
   const fileCacheCheck = async (
     vm: Partial<Vm>,
@@ -1537,10 +1536,10 @@ describe("pinata doctor by default", () => {
 
     expect(check(stdout, "vm size")).toMatchObject({
       status: "warn",
-      detail: "profile pi-sandbox has 2 CPUs and 4 GiB, below 8 CPUs and 10 GiB",
+      detail: "profile pinata has 2 CPUs and 4 GiB, below 8 CPUs and 10 GiB",
     });
     expect(check(stdout, "vm")).toBeUndefined();
-    expect(lines).toContain("  ok    sandbox           starts here (pi-sandbox-base:local)");
+    expect(lines).toContain("  ok    sandbox           starts here (pinata-base:local)");
     expect(lines).toContain("result: ok with warnings (1 warning: vm size)");
     expect(code).toBe(0);
   });
@@ -1598,7 +1597,7 @@ describe("pinata doctor by default", () => {
             {
               id: "llm",
               host: "llm.example.test",
-              placeholder: "pi-sandbox-llm",
+              placeholder: "pinata-llm",
               secret: { env: "LLM_KEY" },
             },
           ],
@@ -1617,7 +1616,7 @@ describe("pinata doctor by default", () => {
       id,
       host: "LLM.Example.test",
       pathPrefix,
-      placeholder: `pi-sandbox-${id}`,
+      placeholder: `pinata-${id}`,
       secret: { env: "LLM_KEY" },
     });
     const { stdout } = await plain({
@@ -1635,7 +1634,7 @@ describe("pinata doctor by default", () => {
       id,
       host: "llm.example.test",
       pathPrefix,
-      placeholder: `pi-sandbox-${id}`,
+      placeholder: `pinata-${id}`,
       secret: { env: "LLM_KEY" },
     });
     const { stdout } = await plain({

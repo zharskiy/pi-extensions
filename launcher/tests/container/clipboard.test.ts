@@ -118,7 +118,7 @@ describe("pasteBridge", () => {
   const root: { dir: string } = { dir: "" };
 
   beforeAll(async () => {
-    root.dir = await realpath(await mkdtemp(join(tmpdir(), "pi-sandbox-paste-")));
+    root.dir = await realpath(await mkdtemp(join(tmpdir(), "pinata-paste-")));
 
     await writeFile(join(root.dir, "my shot.png"), PNG);
 

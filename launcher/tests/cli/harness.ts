@@ -43,8 +43,8 @@ export const unreachable = (backend: Backend): Backend => ({
     ...backend.vm,
     ensureRunning: async () => {
       throw new LauncherError(
-        "the sandbox VM engine is unreachable at ~/.colima/pi-sandbox/docker.sock: socket missing",
-        "run pi, which starts the sandbox VM with its planned shares, or pinata init when ~/.colima/pi-sandbox does not exist",
+        "the sandbox VM engine is unreachable at ~/.colima/pinata/docker.sock: socket missing",
+        "run pi, which starts the sandbox VM with its planned shares, or pinata init when ~/.colima/pinata does not exist",
       );
     },
   },
@@ -53,7 +53,7 @@ export const unreachable = (backend: Backend): Backend => ({
 type FakeBackendOptions = NonNullable<Parameters<typeof createBareBackend>[0]>;
 
 export const createFakeBackend = (options: FakeBackendOptions = {}) => {
-  const guestAgentDir = realpathSync(mkdtempSync(join(tmpdir(), "pi-sandbox-guest-")));
+  const guestAgentDir = realpathSync(mkdtempSync(join(tmpdir(), "pinata-guest-")));
 
   roots.push(guestAgentDir);
 
@@ -109,7 +109,7 @@ interface HarnessPaths {
   repoRoot: string;
 }
 
-export const isPiSession = (spec: ExecSpec) => spec.env.PI_SANDBOX_LAUNCH_ID !== undefined;
+export const isPiSession = (spec: ExecSpec) => spec.env.PINATA_LAUNCH_ID !== undefined;
 
 export const piSessions = (fake: { execs: FakeExec[] }) =>
   fake.execs.filter((exec) => isPiSession(exec.spec));
@@ -338,9 +338,9 @@ const mountsYaml = (mounts: YamlMount[], indent: string) =>
     ? "mounts: []\n"
     : `mounts:\n${mounts.map((mount) => mountLines(mount, indent)).join("\n")}\n`;
 
-const limaYamlPath = (home: string) => join(home, ".colima", "_lima", "colima-pi-sandbox", "lima.yaml");
+const limaYamlPath = (home: string) => join(home, ".colima", "_lima", "colima-pinata", "lima.yaml");
 
-const colimaYamlPath = (home: string) => join(home, ".colima", "pi-sandbox", "colima.yaml");
+const colimaYamlPath = (home: string) => join(home, ".colima", "pinata", "colima.yaml");
 
 export const writeLimaMounts = async (home: string, mounts: YamlMount[]) => {
   const file = limaYamlPath(home);
@@ -362,7 +362,7 @@ export const writeColimaMounts = async (home: string, mounts: YamlMount[]) => {
 };
 
 export const createHarness = async (options: HarnessOptions = {}) => {
-  const root = await realpath(await mkdtemp(join(tmpdir(), "pi-sandbox-cli-")));
+  const root = await realpath(await mkdtemp(join(tmpdir(), "pinata-cli-")));
 
   roots.push(root);
 
@@ -370,7 +370,7 @@ export const createHarness = async (options: HarnessOptions = {}) => {
   const cwd = join(repoRoot, "src");
   const hostAgentDir = join(root, "home", ".pi", "agent");
   const stateDir =
-    options.defaultStateDir === true ? join(hostAgentDir, "pi-sandbox", "state") : join(root, "state");
+    options.defaultStateDir === true ? join(hostAgentDir, "pinata", "state") : join(root, "state");
   const userConfigFile = join(root, "config", "config.json");
 
   const proxyCaPem = join(stateDir, "ca", "ca-cert.pem");
@@ -424,8 +424,8 @@ export const createHarness = async (options: HarnessOptions = {}) => {
   const deps: CliDeps = {
     runner: fake.runner,
     env: {
-      ...(options.defaultStateDir === true ? {} : { PI_SANDBOX_STATE_DIR: stateDir }),
-      PI_SANDBOX_USER_CONFIG: userConfigFile,
+      ...(options.defaultStateDir === true ? {} : { PINATA_STATE_DIR: stateDir }),
+      PINATA_USER_CONFIG: userConfigFile,
       USER: "dev",
       TERM: "xterm-256color",
       PATH: "",

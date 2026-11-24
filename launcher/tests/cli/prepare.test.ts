@@ -121,7 +121,7 @@ describe("runSetup", () => {
       backend: fake.backend,
       containerId: "",
       commands,
-      env: { PI_SANDBOX_LAUNCH_ID: "0123456789abcdef" },
+      env: { PINATA_LAUNCH_ID: "0123456789abcdef" },
       workdir: "/work/repo",
       stdout: new PassThrough(),
       stderr: new PassThrough(),

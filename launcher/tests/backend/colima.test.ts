@@ -27,7 +27,7 @@ import {
 } from "../support/fake-engine.ts";
 import { createFakeRunner } from "../support/fake-runner.ts";
 
-const IMAGE = "example.test/pi-sandbox:1";
+const IMAGE = "example.test/pinata:1";
 
 const DIGEST = `sha256:${"c".repeat(64)}`;
 
@@ -44,7 +44,7 @@ interface RouteOptions {
   preamble?: string;
 }
 
-const PREAMBLE = "PI-SANDBOX t0k3n";
+const PREAMBLE = "PINATA t0k3n";
 
 const routeOn = (backend: Backend, hostPort: number, options: RouteOptions = {}) =>
   backend.prepareRelay({
@@ -92,13 +92,13 @@ const relayBody = (engine: FakeEngine, name = RELAY) =>
     | undefined;
 
 const baseSpec: ContainerSpec = {
-  name: "pi-sandbox-abc",
+  name: "pinata-abc",
   image: IMAGE,
   labels: { [LABELS.repoHash]: "abc" },
   mounts: [
     { kind: "bind", source: "/work/repo", target: "/work/repo", readOnly: false },
     { kind: "bind", source: "/work/repo/.git/hooks", target: "/work/repo/.git/hooks", readOnly: true },
-    { kind: "volume", source: "pi-sandbox-agent-u1", target: "/home/pi/.pi/agent", readOnly: false },
+    { kind: "volume", source: "pinata-agent-u1", target: "/home/pi/.pi/agent", readOnly: false },
   ],
   network: { kind: "none" },
   env: { TERM: "xterm-256color", PI_OFFLINE: "1" },
@@ -153,8 +153,8 @@ const resizeSource = () => {
 };
 
 describe("engineSocketPath", () => {
-  it("is the docker socket of the pi-sandbox colima profile under the home it is given", () => {
-    expect(engineSocketPath("/Users/dev")).toBe("/Users/dev/.colima/pi-sandbox/docker.sock");
+  it("is the docker socket of the pinata colima profile under the home it is given", () => {
+    expect(engineSocketPath("/Users/dev")).toBe("/Users/dev/.colima/pinata/docker.sock");
   });
 });
 
@@ -176,7 +176,7 @@ describe("colima adapter status", () => {
 
     expect(await backendFor(engine).status()).toEqual({
       socket: engine.socketPath,
-      profile: "pi-sandbox",
+      profile: "pinata",
       engine: "28.3.0-fake",
       api: "1.47",
       platform: "linux/arm64",
@@ -254,7 +254,7 @@ describe("colima adapter status", () => {
       `engine socket ${socketPath} did not answer GET /images/json: no answer within 0.1 s`,
     );
     expect(failure.hint).toBe(
-      "the engine may still be finishing it; run the command again later, and see ~/.colima/_lima/colima-pi-sandbox/ha.stderr.log if it keeps timing out",
+      "the engine may still be finishing it; run the command again later, and see ~/.colima/_lima/colima-pinata/ha.stderr.log if it keeps timing out",
     );
   });
 
@@ -292,7 +292,7 @@ describe("colima adapter status", () => {
       new RegExp(`^engine socket ${socketPath} closed GET /networks before its answer was complete \\(`),
     );
     expect(failure.hint).toBe(
-      "the engine may still be finishing it; run the command again later, and see ~/.colima/_lima/colima-pi-sandbox/ha.stderr.log if it keeps timing out",
+      "the engine may still be finishing it; run the command again later, and see ~/.colima/_lima/colima-pinata/ha.stderr.log if it keeps timing out",
     );
   });
 
@@ -311,8 +311,8 @@ describe("colima adapter status", () => {
     const socketPath = await hungSocket();
     const backend = hungBackend(socketPath);
     const removals = [
-      backend.removeVolume("pi-sandbox-cache-big"),
-      backend.removeImage("pi-sandbox-layer:old"),
+      backend.removeVolume("pinata-cache-big"),
+      backend.removeImage("pinata-layer:old"),
       backend.removeContainer("abc"),
     ];
     const failures = (await Promise.all(
@@ -320,8 +320,8 @@ describe("colima adapter status", () => {
     )) as LauncherError[];
 
     expect(failures.map((failure) => failure.message)).toEqual([
-      `engine socket ${socketPath} did not answer DELETE /volumes/pi-sandbox-cache-big: no answer within 0.4 s`,
-      `engine socket ${socketPath} did not answer DELETE /images/pi-sandbox-layer%3Aold: no answer within 0.4 s`,
+      `engine socket ${socketPath} did not answer DELETE /volumes/pinata-cache-big: no answer within 0.4 s`,
+      `engine socket ${socketPath} did not answer DELETE /images/pinata-layer%3Aold: no answer within 0.4 s`,
       `engine socket ${socketPath} did not answer DELETE /containers/abc: no answer within 0.1 s`,
     ]);
   });
@@ -334,10 +334,10 @@ describe("colima container translation", () => {
 
     await backend.pullImage(IMAGE);
 
-    await backend.createContainer({ ...baseSpec, network: { kind: "internal", name: "pi-sandbox-net" } });
+    await backend.createContainer({ ...baseSpec, network: { kind: "internal", name: "pinata-net" } });
 
     expect(engine.createdBodies.at(-1)).toMatchObject({
-      name: "pi-sandbox-abc",
+      name: "pinata-abc",
       body: {
         Env: ["TERM=xterm-256color", "PI_OFFLINE=1"],
         HostConfig: {
@@ -349,9 +349,9 @@ describe("colima container translation", () => {
               Target: "/work/repo/.git/hooks",
               ReadOnly: true,
             },
-            { Type: "volume", Source: "pi-sandbox-agent-u1", Target: "/home/pi/.pi/agent", ReadOnly: false },
+            { Type: "volume", Source: "pinata-agent-u1", Target: "/home/pi/.pi/agent", ReadOnly: false },
           ],
-          NetworkMode: "pi-sandbox-net",
+          NetworkMode: "pinata-net",
           ReadonlyRootfs: true,
           AutoRemove: true,
           CapDrop: ["ALL"],
@@ -382,7 +382,7 @@ describe("colima container translation", () => {
       ShmSize: 1024 * 1024 ** 2,
     });
 
-    await backend.createContainer({ ...baseSpec, name: "pi-sandbox-unlimited" });
+    await backend.createContainer({ ...baseSpec, name: "pinata-unlimited" });
 
     const unset = engine.createdBodies.at(-1)?.body as { HostConfig: Record<string, unknown> };
 
@@ -398,7 +398,7 @@ describe("colima container translation", () => {
     expect(await backend.findContainers({ [LABELS.repoHash]: "abc" })).toEqual([
       {
         id,
-        name: "pi-sandbox-abc",
+        name: "pinata-abc",
         labels: { [LABELS.managed]: "true", [LABELS.install]: INSTALL, [LABELS.repoHash]: "abc" },
         state: "running",
         image: IMAGE,
@@ -495,7 +495,7 @@ describe("colima images", () => {
     const pulled = await backend.pullImage(IMAGE, DIGEST);
     const pull = engine.requests.find((request) => request.path === "/images/create");
 
-    expect(pull?.query.get("fromImage")).toBe("example.test/pi-sandbox");
+    expect(pull?.query.get("fromImage")).toBe("example.test/pinata");
     expect(pull?.query.get("tag")).toBe(DIGEST);
     expect(pulled.digest).toBe(DIGEST);
     expect(pulled.id).toMatch(/^sha256:[0-9a-f]{64}$/);
@@ -529,14 +529,14 @@ describe("colima images", () => {
       runner: createProcessRunner(),
     });
     const steps: string[] = [];
-    const built = await backend.buildImage(context, "pi-sandbox:dev", {
+    const built = await backend.buildImage(context, "pinata:dev", {
       progress: (step) => steps.push(step),
     });
 
     expect(steps).toEqual(["Step 1/1"]);
     expect(built.id).toMatch(/^sha256:[0-9a-f]{64}$/);
     expect(built.digest).toBe(built.id);
-    expect(engine.images.get("pi-sandbox:dev")?.Id).toBe(built.id);
+    expect(engine.images.get("pinata:dev")?.Id).toBe(built.id);
   });
 
   const failingBuild = async (output: string[], error: string) => {
@@ -551,7 +551,7 @@ describe("colima images", () => {
       socketPath: engine.socketPath,
       runner: createProcessRunner(),
     })
-      .buildImage(context, "pi-sandbox:failing")
+      .buildImage(context, "pinata:failing")
       .then(
         () => undefined,
         (failure: LauncherError) => failure,
@@ -637,8 +637,8 @@ describe("colima images", () => {
       runner: createProcessRunner(),
     });
 
-    await backend.buildImage(context, "pi-sandbox:plain");
-    await backend.buildImage(context, "pi-sandbox:proxied", {
+    await backend.buildImage(context, "pinata:plain");
+    await backend.buildImage(context, "pinata:proxied", {
       args: { HTTPS_PROXY: "http://proxy.example.com:8080" },
     });
 
@@ -663,8 +663,8 @@ describe("colima images", () => {
       runner: createProcessRunner(),
     });
 
-    await backend.buildImage(context, "pi-sandbox:online");
-    await backend.buildImage(context, "pi-sandbox:offline", { offline: true });
+    await backend.buildImage(context, "pinata:online");
+    await backend.buildImage(context, "pinata:offline", { offline: true });
 
     const builds = engine.requests.filter((request) => request.path === "/build");
 
@@ -683,11 +683,11 @@ describe("colima images", () => {
 
     await writeFile(join(context, "Dockerfile"), "FROM scratch\n");
 
-    const used = await backend.buildImage(context, "pi-sandbox-layer:used");
+    const used = await backend.buildImage(context, "pinata-layer:used");
 
     await writeFile(join(context, "Dockerfile"), "FROM scratch\nUSER pi\n");
 
-    const idle = await backend.buildImage(context, "pi-sandbox-layer:idle");
+    const idle = await backend.buildImage(context, "pinata-layer:idle");
 
     await backend.createContainer({ ...baseSpec, image: used.id });
 
@@ -695,23 +695,23 @@ describe("colima images", () => {
       expect.arrayContaining([
         {
           id: used.id,
-          tags: ["pi-sandbox-layer:used"],
+          tags: ["pinata-layer:used"],
           labels: { [LABELS.managed]: "true" },
           inUse: true,
           created: expect.any(Number),
         },
         {
           id: idle.id,
-          tags: ["pi-sandbox-layer:idle"],
+          tags: ["pinata-layer:idle"],
           labels: { [LABELS.managed]: "true" },
           inUse: false,
           created: expect.any(Number),
         },
       ]),
     );
-    expect(await backend.removeImage("pi-sandbox-layer:used")).toBe(false);
-    expect(await backend.removeImage("pi-sandbox-layer:idle")).toBe(true);
-    expect(await backend.removeImage("pi-sandbox-layer:idle")).toBe(false);
+    expect(await backend.removeImage("pinata-layer:used")).toBe(false);
+    expect(await backend.removeImage("pinata-layer:idle")).toBe(true);
+    expect(await backend.removeImage("pinata-layer:idle")).toBe(false);
     expect((await backend.listImages()).map((image) => image.id)).toEqual([used.id]);
   });
 });
@@ -955,10 +955,10 @@ describe("colima volumes", () => {
     const engine = await startEngine();
     const { backend } = await startedContainer(engine);
 
-    const refused = backend.removeVolume("pi-sandbox-agent-u1");
+    const refused = backend.removeVolume("pinata-agent-u1");
 
     await expect(refused).rejects.toBeInstanceOf(LauncherError);
-    await expect(refused).rejects.toThrow("volume pi-sandbox-agent-u1 is in use by a sandbox container");
+    await expect(refused).rejects.toThrow("volume pinata-agent-u1 is in use by a sandbox container");
     await expect(refused).rejects.toMatchObject({
       hint: "end the pi sessions that use it, then run the command again",
     });
@@ -984,39 +984,39 @@ describe("colima objects of older builds", () => {
     });
   };
 
-  it("lists only the managed pi-sandbox objects with no install label, and removes such a network by name", async () => {
+  it("lists only the managed pinata objects with no install label, and removes such a network by name", async () => {
     const engine = await startEngine();
     const backend = backendFor(engine);
 
-    await backend.ensureVolume("pi-sandbox-agent-current");
+    await backend.ensureVolume("pinata-agent-current");
 
-    engine.volumes.set("pi-sandbox-agent-old", Buffer.alloc(0));
+    engine.volumes.set("pinata-agent-old", Buffer.alloc(0));
 
-    engine.volumeLabels.set("pi-sandbox-agent-old", MANAGED);
+    engine.volumeLabels.set("pinata-agent-old", MANAGED);
 
-    engine.volumes.set("pi-sandbox-agent-unmanaged", Buffer.alloc(0));
+    engine.volumes.set("pinata-agent-unmanaged", Buffer.alloc(0));
 
-    engine.volumeLabels.set("pi-sandbox-agent-unmanaged", {});
+    engine.volumeLabels.set("pinata-agent-unmanaged", {});
 
     engine.volumes.set("project-data", Buffer.alloc(0));
 
     engine.volumeLabels.set("project-data", MANAGED);
 
-    engine.networks.set("pi-sandbox-network-old", {
-      body: { Name: "pi-sandbox-network-old", Labels: MANAGED },
+    engine.networks.set("pinata-network-old", {
+      body: { Name: "pinata-network-old", Labels: MANAGED },
       connected: [],
     });
 
-    engine.networks.set("pi-sandbox-network-unmanaged", {
-      body: { Name: "pi-sandbox-network-unmanaged", Labels: {} },
+    engine.networks.set("pinata-network-unmanaged", {
+      body: { Name: "pinata-network-unmanaged", Labels: {} },
       connected: [],
     });
 
-    plantContainer(engine, "pi-sandbox-agent-old", MANAGED);
+    plantContainer(engine, "pinata-agent-old", MANAGED);
 
-    plantContainer(engine, "pi-sandbox-agent-now", { ...MANAGED, [LABELS.install]: INSTALL });
+    plantContainer(engine, "pinata-agent-now", { ...MANAGED, [LABELS.install]: INSTALL });
 
-    plantContainer(engine, "pi-sandbox-agent-unmanaged", {});
+    plantContainer(engine, "pinata-agent-unmanaged", {});
 
     plantContainer(engine, "project-app", MANAGED);
 
@@ -1024,11 +1024,11 @@ describe("colima objects of older builds", () => {
 
     const listed = await backend.listOlderBuildObjects();
 
-    expect(listed.volumes).toEqual(["pi-sandbox-agent-old"]);
-    expect(listed.networks).toEqual(["pi-sandbox-network-old"]);
-    expect(listed.containers.map((container) => container.name)).toEqual(["pi-sandbox-agent-old"]);
-    await expect(backend.removeNamedNetwork("pi-sandbox-network-old")).resolves.toBe(true);
-    expect(engine.networks.has("pi-sandbox-network-old")).toBe(false);
+    expect(listed.volumes).toEqual(["pinata-agent-old"]);
+    expect(listed.networks).toEqual(["pinata-network-old"]);
+    expect(listed.containers.map((container) => container.name)).toEqual(["pinata-agent-old"]);
+    await expect(backend.removeNamedNetwork("pinata-network-old")).resolves.toBe(true);
+    expect(engine.networks.has("pinata-network-old")).toBe(false);
     expect(engine.networks.has(NETWORK)).toBe(true);
   });
 
@@ -1036,15 +1036,15 @@ describe("colima objects of older builds", () => {
     const engine = await startEngine();
     const backend = backendFor(engine);
 
-    plantContainer(engine, "pi-sandbox-agent-busy", MANAGED, "running");
+    plantContainer(engine, "pinata-agent-busy", MANAGED, "running");
 
-    engine.networks.set("pi-sandbox-network-busy", {
-      body: { Name: "pi-sandbox-network-busy", Labels: MANAGED },
-      connected: [{ container: "pi-sandbox-agent-busy", address: "10.0.0.2" }],
+    engine.networks.set("pinata-network-busy", {
+      body: { Name: "pinata-network-busy", Labels: MANAGED },
+      connected: [{ container: "pinata-agent-busy", address: "10.0.0.2" }],
     });
 
-    await expect(backend.removeNamedNetwork("pi-sandbox-network-busy")).resolves.toBe(false);
-    expect(engine.networks.has("pi-sandbox-network-busy")).toBe(true);
+    await expect(backend.removeNamedNetwork("pinata-network-busy")).resolves.toBe(false);
+    expect(engine.networks.has("pinata-network-busy")).toBe(true);
   });
 });
 
@@ -1076,11 +1076,11 @@ describe("colima sandbox network", () => {
 
     const pod = await backend.createContainer({
       ...baseSpec,
-      network: { kind: "internal", name: NETWORK, alias: "pi-sandbox-services" },
+      network: { kind: "internal", name: NETWORK, alias: "pinata-services" },
     });
 
     expect(engine.networks.get(NETWORK)?.connected).toEqual([
-      expect.objectContaining({ container: pod.id, aliases: ["pi-sandbox-services"] }),
+      expect.objectContaining({ container: pod.id, aliases: ["pinata-services"] }),
     ]);
   });
 
@@ -1091,7 +1091,7 @@ describe("colima sandbox network", () => {
     engine.networks.set(NETWORK, { body: { Name: NETWORK, Internal: true }, connected: [] });
 
     await expect(backend.prepareNetwork()).rejects.toThrow(
-      `network ${NETWORK} exists but is not managed by pi-sandbox`,
+      `network ${NETWORK} exists but is not managed by pinata`,
     );
   });
 
@@ -1149,7 +1149,7 @@ describe("colima egress relay", () => {
       Labels: { [LABELS.managed]: "true", [LABELS.install]: INSTALL },
     });
     expect(engine.networks.get(NETWORK)?.connected).toEqual([
-      expect.objectContaining({ container: relay?.Id, aliases: ["pi-sandbox-proxy"] }),
+      expect.objectContaining({ container: relay?.Id, aliases: ["pinata-proxy"] }),
     ]);
     expect(relay?.State).toBe("running");
     expect(relayBody(engine)).toMatchObject({
@@ -1161,7 +1161,7 @@ describe("colima egress relay", () => {
         [LABELS.relayInputs]: expect.stringMatching(/^[0-9a-f]{64}$/),
       },
       Entrypoint: ["node", "-e", RELAY_SCRIPT],
-      Env: [`PI_SANDBOX_RELAY_PREAMBLE=${PREAMBLE}`],
+      Env: [`PINATA_RELAY_PREAMBLE=${PREAMBLE}`],
       HostConfig: {
         NetworkMode: "bridge",
         AutoRemove: true,
@@ -1207,7 +1207,7 @@ describe("colima egress relay", () => {
     expect(again).toBe(route);
     expect(relayBody(engine)?.Cmd).toEqual(["3128", "host.lima.internal", "4000", FAKE_NETWORK_SUBNET]);
     expect(engine.networks.get(NETWORK)?.connected).toContainEqual(
-      expect.objectContaining({ container: relayOf(engine)?.Id, aliases: ["pi-sandbox-proxy"] }),
+      expect.objectContaining({ container: relayOf(engine)?.Id, aliases: ["pinata-proxy"] }),
     );
     expect(engine.containers.get(sandbox.id)?.State).toBe("running");
   });
@@ -1220,11 +1220,11 @@ describe("colima egress relay", () => {
     const first = relayOf(engine)?.Id;
     const inputs = relayBody(engine)?.Labels?.[LABELS.relayInputs];
 
-    await routeOn(backend, 3128, { preamble: "PI-SANDBOX other" });
+    await routeOn(backend, 3128, { preamble: "PINATA other" });
 
     expect(relayOf(engine)?.Id).not.toBe(first);
     expect(relayBody(engine)?.Labels?.[LABELS.relayInputs]).not.toBe(inputs);
-    expect(relayBody(engine)?.Env).toEqual(["PI_SANDBOX_RELAY_PREAMBLE=PI-SANDBOX other"]);
+    expect(relayBody(engine)?.Env).toEqual(["PINATA_RELAY_PREAMBLE=PINATA other"]);
   });
 
   it("replaces the relay when the network's subnet changes and hands it the new subnet", async () => {
@@ -1315,7 +1315,7 @@ describe("colima egress relay", () => {
 
     expect(relayOf(engine)?.Id).not.toBe(restarted?.Id);
     expect(engine.networks.get(NETWORK)?.connected).toEqual([
-      expect.objectContaining({ container: relayOf(engine)?.Id, aliases: ["pi-sandbox-proxy"] }),
+      expect.objectContaining({ container: relayOf(engine)?.Id, aliases: ["pinata-proxy"] }),
     ]);
   });
 

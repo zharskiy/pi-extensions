@@ -186,7 +186,7 @@ describe("writing the config document", () => {
   const fileIn = async () => {
     const dir = await tempDir("setup-write");
 
-    return { dir, file: join(dir, "pi-sandbox", "config.json") };
+    return { dir, file: join(dir, "pinata", "config.json") };
   };
 
   it("creates a missing file with mode 0600 in a folder with mode 0700", async () => {
@@ -196,7 +196,7 @@ describe("writing the config document", () => {
 
     expect(await readFile(file, "utf8")).toBe("{}\n");
     expect((await stat(file)).mode & 0o777).toBe(0o600);
-    expect((await stat(join(dir, "pi-sandbox"))).mode & 0o777).toBe(0o700);
+    expect((await stat(join(dir, "pinata"))).mode & 0o777).toBe(0o700);
   });
 
   it("refuses to write when the file changed since it was read, and keeps the other writer's text", async () => {

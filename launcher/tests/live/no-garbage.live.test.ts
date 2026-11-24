@@ -26,26 +26,26 @@ describe.skipIf(!liveEnabled)("the last session leaves nothing behind (live)", (
     expect(first.code).toBe(0);
 
     const relays = await listContainers({
-      "pi-sandbox.role": "relay",
-      "pi-sandbox.install": installIdOf(sandbox.stateDir),
+      "pinata.role": "relay",
+      "pinata.install": installIdOf(sandbox.stateDir),
     });
 
-    expect(await listContainers({ "pi-sandbox.repo-hash": sandbox.repoHash })).toEqual([]);
-    expect(relays.map((container) => container.Labels["pi-sandbox.repo-hash"])).toEqual([undefined]);
+    expect(await listContainers({ "pinata.repo-hash": sandbox.repoHash })).toEqual([]);
+    expect(relays.map((container) => container.Labels["pinata.repo-hash"])).toEqual([undefined]);
 
     const last = await sandbox.lastExit();
 
     expect(last.code).toBe(0);
 
-    expect(await listContainers({ "pi-sandbox.repo-hash": sandbox.repoHash })).toEqual([]);
+    expect(await listContainers({ "pinata.repo-hash": sandbox.repoHash })).toEqual([]);
 
     expect((await listNetworks()).map((candidate) => candidate.Name)).not.toContain(
       networkName(installIdOf(sandbox.stateDir)),
     );
     expect(
       await listContainers({
-        "pi-sandbox.role": "relay",
-        "pi-sandbox.install": installIdOf(sandbox.stateDir),
+        "pinata.role": "relay",
+        "pinata.install": installIdOf(sandbox.stateDir),
       }),
     ).toEqual([]);
 

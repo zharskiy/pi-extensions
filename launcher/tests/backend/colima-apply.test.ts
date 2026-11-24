@@ -33,8 +33,8 @@ const mountsText = (shares: Mount[], indent: string) =>
 const setupWith = async (setup: Setup & { home?: string }) => {
   const home = setup.home ?? (await tempDir("colima-apply-home"));
   const stateDir = await tempDir("colima-apply-state");
-  const profileDir = join(home, ".colima", "pi-sandbox");
-  const limaDir = join(home, ".colima", "_lima", "colima-pi-sandbox");
+  const profileDir = join(home, ".colima", "pinata");
+  const limaDir = join(home, ".colima", "_lima", "colima-pinata");
 
   if (setup.profile !== undefined) {
     const { cpu, memory, disk, mounts = [] } = setup.profile;
@@ -191,7 +191,7 @@ describe("applying a size and shares to the sandbox VM", () => {
     expect(result).toBe("created");
     expect(phases).toEqual(["creating", "waiting"]);
     expect(env.commands()).toEqual([
-      `start --profile pi-sandbox --activate=false --mount ${join(env.home, "work")}:w --vm-type vz --mount-type virtiofs --cpu 6 --memory 12 --disk 80`,
+      `start --profile pinata --activate=false --mount ${join(env.home, "work")}:w --vm-type vz --mount-type virtiofs --cpu 6 --memory 12 --disk 80`,
     ]);
   });
 
@@ -205,7 +205,7 @@ describe("applying a size and shares to the sandbox VM", () => {
       }),
     ).rejects.toMatchObject({
       message: "could not create the sandbox VM: colima start failed: disk full",
-      hint: "see ~/.colima/_lima/colima-pi-sandbox/ha.stderr.log, then run pinata init again",
+      hint: "see ~/.colima/_lima/colima-pinata/ha.stderr.log, then run pinata init again",
     });
   });
 
@@ -250,8 +250,8 @@ describe("applying a size and shares to the sandbox VM", () => {
     expect(result).toBe("restarted");
     expect(phases).toEqual(["stopping", "starting", "waiting"]);
     expect(env.commands()).toEqual([
-      "stop --profile pi-sandbox",
-      `start --profile pi-sandbox --activate=false --mount ${join(env.home, "work")}:w --memory 12`,
+      "stop --profile pinata",
+      `start --profile pinata --activate=false --mount ${join(env.home, "work")}:w --memory 12`,
     ]);
   });
 
@@ -267,7 +267,7 @@ describe("applying a size and shares to the sandbox VM", () => {
 
     await applied(env, desired);
 
-    expect(env.commands().at(-1)).toBe(`start --profile pi-sandbox --activate=false --mount ${home}:w`);
+    expect(env.commands().at(-1)).toBe(`start --profile pinata --activate=false --mount ${home}:w`);
   });
 
   it("restarts for a size change without passing mounts, so colima keeps the ones it has", async () => {
@@ -280,7 +280,7 @@ describe("applying a size and shares to the sandbox VM", () => {
 
     await applied(env, desired);
 
-    expect(env.commands().at(-1)).toBe("start --profile pi-sandbox --activate=false --memory 12");
+    expect(env.commands().at(-1)).toBe("start --profile pinata --activate=false --memory 12");
   });
 
   it("restarts to the plan when a share is mounted at another path in the VM", async () => {
@@ -293,7 +293,7 @@ describe("applying a size and shares to the sandbox VM", () => {
 
     await applied(env, desired);
 
-    expect(env.commands().at(-1)).toBe("start --profile pi-sandbox --activate=false --mount /Volumes/old:w");
+    expect(env.commands().at(-1)).toBe("start --profile pinata --activate=false --mount /Volumes/old:w");
   });
 });
 
@@ -310,8 +310,8 @@ describe("applying to a VM whose shares cannot be read", () => {
 
     expect(result).toBe("restarted");
     expect(env.commands()).toEqual([
-      "stop --profile pi-sandbox",
-      `start --profile pi-sandbox --activate=false --mount ${join(env.home, "work")}:w`,
+      "stop --profile pinata",
+      `start --profile pinata --activate=false --mount ${join(env.home, "work")}:w`,
     ]);
     expect(phases).toEqual(["stopping", "starting", "waiting"]);
     expect(env.waited()).toBeGreaterThan(0);
@@ -333,8 +333,8 @@ describe("a launch's share restart", () => {
     );
 
     expect(env.commands()).toEqual([
-      "stop --profile pi-sandbox",
-      "start --profile pi-sandbox --activate=false --mount /Volumes/new:w --cpu 8",
+      "stop --profile pinata",
+      "start --profile pinata --activate=false --mount /Volumes/new:w --cpu 8",
     ]);
     expect(notices).toEqual([
       "restarting the sandbox VM to change its shares to /Volumes/new (drops /Volumes/old), and its size to 8 CPUs",
@@ -354,7 +354,7 @@ describe("starting a stopped VM at the configured size", () => {
     });
 
     expect(env.commands()).toEqual([
-      "start --profile pi-sandbox --activate=false --mount /Volumes/work:w --cpu 4",
+      "start --profile pinata --activate=false --mount /Volumes/work:w --cpu 4",
     ]);
     expect(notices).toEqual([
       "vm.diskGiB 80 is below the sandbox VM's disk of 100 GiB; colima cannot shrink a disk, so it stays",
@@ -368,7 +368,7 @@ describe("starting a stopped VM at the configured size", () => {
     await env.vm.ensureRunning(() => undefined, PLANNED, { diskGiB: 80 });
 
     expect(env.commands()).toEqual([
-      "start --profile pi-sandbox --activate=false --mount /Volumes/work:w --disk 80",
+      "start --profile pinata --activate=false --mount /Volumes/work:w --disk 80",
     ]);
   });
 
@@ -420,8 +420,8 @@ describe("reconciling the sandbox VM at launch", () => {
       "restarting the sandbox VM to change its shares to /Volumes/new, and its size to 8 CPUs",
     ]);
     expect(env.commands()).toEqual([
-      "stop --profile pi-sandbox",
-      "start --profile pi-sandbox --activate=false --mount /Volumes/new:w --cpu 8",
+      "stop --profile pinata",
+      "start --profile pinata --activate=false --mount /Volumes/new:w --cpu 8",
     ]);
   });
 
@@ -431,8 +431,8 @@ describe("reconciling the sandbox VM at launch", () => {
 
     expect(result.outcome).toBeUndefined();
     expect(env.commands()).toEqual([
-      "stop --profile pi-sandbox",
-      "start --profile pi-sandbox --activate=false --mount /Volumes/new:w --cpu 8",
+      "stop --profile pinata",
+      "start --profile pinata --activate=false --mount /Volumes/new:w --cpu 8",
     ]);
   });
 

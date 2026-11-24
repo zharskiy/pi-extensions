@@ -6,7 +6,7 @@ const SECRET_VALUE = "sk-live-value-that-must-not-leak";
 const rule = (overrides: Record<string, unknown> = {}) => ({
   id: "corp-llm",
   host: "llm.corp.test",
-  placeholder: "pi-sandbox-corp",
+  placeholder: "pinata-corp",
   secret: { env: "CORP_LLM_KEY" },
   ...overrides,
 });
@@ -49,7 +49,7 @@ const FULL_CONFIG = {
   image: {
     packages: ["chromium", "libnss3=2:3.87-1"],
     npmGlobal: ["@scope/tool@1.2.3", "plain@0.1.0-beta.1"],
-    dockerfile: "/etc/pi-sandbox/layer.Dockerfile",
+    dockerfile: "/etc/pinata/layer.Dockerfile",
   },
 };
 
@@ -85,7 +85,7 @@ describe("validateConfig with the credential, egress, tls and image keys", () =>
       [rule({ port: 70000 }), "credentials.rules[0].port must be at most 65535"],
       [rule({ port: 1.5 }), "credentials.rules[0].port must be a whole number"],
       [rule({ pathPrefix: "repos" }), "credentials.rules[0].pathPrefix must start with /"],
-      [rule({ placeholder: "corp" }), "credentials.rules[0].placeholder must start with pi-sandbox-"],
+      [rule({ placeholder: "corp" }), "credentials.rules[0].placeholder must start with pinata-"],
       [rule({ header: "x-key", template: "{token}" }), "credentials.rules[0].template must contain {secret}"],
       [rule({ placeholder: undefined }), "credentials.rules[0] needs a placeholder or a header"],
       [rule({ template: "{secret}" }), "credentials.rules[0] template needs a header"],

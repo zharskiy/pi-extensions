@@ -3,9 +3,9 @@ import { join } from "node:path";
 import type { CliDeps } from "../deps.ts";
 import { say } from "./host.ts";
 
-const BEGIN = "# pi-sandbox begin";
+const BEGIN = "# pinata begin";
 
-const END = "# pi-sandbox end";
+const END = "# pinata end";
 
 const setBlock = async (deps: CliDeps, file: string, add: boolean) => {
   const text = await readFile(file, "latin1").catch(() => (add && file.endsWith(".zshrc") ? "" : undefined));

@@ -3,14 +3,14 @@ import { containerBody, inspectOf } from "../../backend/colima/container-body.ts
 import type { ContainerSpec } from "../../backend/index.ts";
 
 const AGENT: ContainerSpec = {
-  name: "pi-sandbox-abc",
-  image: "pi-sandbox-base:local",
-  labels: { "pi-sandbox.managed": "true", "pi-sandbox.role": "agent" },
+  name: "pinata-abc",
+  image: "pinata-base:local",
+  labels: { "pinata.managed": "true", "pinata.role": "agent" },
   mounts: [
     { kind: "bind", source: "/repo", target: "/repo", readOnly: false },
     { kind: "volume", source: "vol", target: "/home/pi", readOnly: false },
   ],
-  network: { kind: "internal", name: "pi-sandbox-net-abc" },
+  network: { kind: "internal", name: "pinata-net-abc" },
   env: { HOME: "/home/pi", A: "b=c" },
   workdir: "/repo",
   readOnlyRoot: true,
@@ -22,11 +22,11 @@ const AGENT: ContainerSpec = {
 };
 
 const AGENT_BODY =
-  '{"Image":"pi-sandbox-base:local","Labels":{"pi-sandbox.managed":"true","pi-sandbox.role":"agent"},' +
+  '{"Image":"pinata-base:local","Labels":{"pinata.managed":"true","pinata.role":"agent"},' +
   '"Env":["HOME=/home/pi","A=b=c"],"WorkingDir":"/repo","HostConfig":{"Mounts":[' +
   '{"Type":"bind","Source":"/repo","Target":"/repo","ReadOnly":false},' +
   '{"Type":"volume","Source":"vol","Target":"/home/pi","ReadOnly":false}],' +
-  '"NetworkMode":"pi-sandbox-net-abc","ReadonlyRootfs":true,"Tmpfs":{"/tmp":"mode=1777,exec","/run":""},' +
+  '"NetworkMode":"pinata-net-abc","ReadonlyRootfs":true,"Tmpfs":{"/tmp":"mode=1777,exec","/run":""},' +
   '"Init":true,"AutoRemove":true,"CapDrop":["ALL"],"CapAdd":["CHOWN"],"SecurityOpt":["no-new-privileges"],' +
   '"PidsLimit":4096,"Ulimits":[{"Name":"nofile","Soft":1024,"Hard":1024}],' +
   '"NanoCpus":1500000000,"Memory":2147483648,"ShmSize":67108864}}';
@@ -39,12 +39,12 @@ describe("container body", () => {
   it("gives a container its alias on the internal network it joins at creation", () => {
     const body = containerBody({
       ...AGENT,
-      network: { kind: "internal", name: "pi-sandbox-net", alias: "pi-sandbox-services" },
+      network: { kind: "internal", name: "pinata-net", alias: "pinata-services" },
     });
 
-    expect(body.HostConfig.NetworkMode).toBe("pi-sandbox-net");
+    expect(body.HostConfig.NetworkMode).toBe("pinata-net");
     expect(body).toMatchObject({
-      NetworkingConfig: { EndpointsConfig: { "pi-sandbox-net": { Aliases: ["pi-sandbox-services"] } } },
+      NetworkingConfig: { EndpointsConfig: { "pinata-net": { Aliases: ["pinata-services"] } } },
     });
     expect(containerBody(AGENT)).not.toHaveProperty("NetworkingConfig");
   });
@@ -67,7 +67,7 @@ describe("container body", () => {
     });
 
     expect(body).toEqual({
-      Image: "pi-sandbox-base:local",
+      Image: "pinata-base:local",
       User: "1000:1000",
       Labels: {},
       Env: [],

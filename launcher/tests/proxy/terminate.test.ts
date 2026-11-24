@@ -30,13 +30,13 @@ import {
   secureTunnel,
 } from "./proxy-client.ts";
 
-const PLACEHOLDER = "pi-sandbox-0123456789abcdef01234567";
+const PLACEHOLDER = "pinata-0123456789abcdef01234567";
 
-const API_PLACEHOLDER = "pi-sandbox-89abcdef0123456789abcdef";
+const API_PLACEHOLDER = "pinata-89abcdef0123456789abcdef";
 
-const MISSING_PLACEHOLDER = "pi-sandbox-fedcba9876543210fedcba98";
+const MISSING_PLACEHOLDER = "pinata-fedcba9876543210fedcba98";
 
-const EXPIRED_PLACEHOLDER = "pi-sandbox-0f1e2d3c4b5a69788796a5b4";
+const EXPIRED_PLACEHOLDER = "pinata-0f1e2d3c4b5a69788796a5b4";
 
 const EXPIRED_LOGIN = "the provider-x login on the host is missing or expired";
 
@@ -46,7 +46,7 @@ const API_SECRET = "real-api-secret";
 
 const GIT_SECRET = "real-git-secret";
 
-const BASIC_PLACEHOLDER = "pi-sandbox-aaaabbbbccccddddeeeeffff";
+const BASIC_PLACEHOLDER = "pinata-aaaabbbbccccddddeeeeffff";
 
 const BASIC_SECRET = "real-basic-token";
 

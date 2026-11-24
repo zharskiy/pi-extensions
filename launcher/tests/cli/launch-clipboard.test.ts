@@ -101,7 +101,7 @@ describe("Ctrl+V image paste at launch", () => {
   });
 
   it("imports a single copied image file", async () => {
-    const dir = await realpath(await mkdtemp(join(tmpdir(), "pi-sandbox-ctrlv-")));
+    const dir = await realpath(await mkdtemp(join(tmpdir(), "pinata-ctrlv-")));
     const file = join(dir, "copied shot.png");
 
     await writeFile(file, PNG);

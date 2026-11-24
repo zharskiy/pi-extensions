@@ -410,7 +410,7 @@ describe("deriveSandboxPi rules and hosts", () => {
   const manual: CredentialRule = {
     id: "corp-keyed",
     host: "api.keyed.example",
-    placeholder: "pi-sandbox-manual",
+    placeholder: "pinata-manual",
     secret: { env: "CORP_KEY" },
   };
 

@@ -147,7 +147,7 @@ const listen = async (server: Server | TlsServer) => {
 };
 
 beforeAll(async () => {
-  state.dir = await mkdtemp(join(tmpdir(), "pi-sandbox-doctor-tls-"));
+  state.dir = await mkdtemp(join(tmpdir(), "pinata-doctor-tls-"));
 
   const root = await selfSigned("root", "/O=Inspecting Proxy Inc./CN=Inspecting Proxy Root CA");
   const intermediate = await signed(

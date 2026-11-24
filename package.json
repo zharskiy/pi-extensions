@@ -31,12 +31,11 @@
     "prune"
   ],
   "bin": {
-    "pi-sandbox": "launcher/bin/pi-sandbox.js",
     "pinata": "launcher/bin/pinata.js"
   },
   "files": [
     "launcher",
-    "!launcher/bin/pi-sandbox-dev.js",
+    "!launcher/bin/pi-dev.js",
     "!launcher/bin/pinata-dev.js",
     "!launcher/tsconfig.build.json",
     "platform",

@@ -17,9 +17,9 @@ const plantServices = (fake: Fake) => {
       state: "running",
       image: "x",
     });
-  const pod = container("pod", "pi-sandbox-pod", {});
-  const first = container("service", "pi-sandbox-service-db", { [LABELS.serviceName]: "db" });
-  const second = container("service", "pi-sandbox-service-cache", { [LABELS.serviceName]: "cache" });
+  const pod = container("pod", "pinata-pod", {});
+  const first = container("service", "pinata-service-db", { [LABELS.serviceName]: "db" });
+  const second = container("service", "pinata-service-cache", { [LABELS.serviceName]: "cache" });
 
   return { pod, first, second };
 };
@@ -78,7 +78,7 @@ describe("stopping the services", () => {
     const harness = await createHarness({ backend: () => fake.backend });
     const { first, second } = plantServices(fake);
     const crashed = fake.addContainer({
-      name: "pi-sandbox-crashed",
+      name: "pinata-crashed",
       labels: { [LABELS.managed]: "true", [LABELS.role]: "agent", [LABELS.repoHash]: "d".repeat(64) },
       state: "running",
       image: "x",
@@ -104,7 +104,7 @@ describe("stopping the services", () => {
     const token = stateLayout(harness.stateDir).proxy.token;
     const { first, second } = plantServices(fake);
     const other = fake.addContainer({
-      name: "pi-sandbox-other",
+      name: "pinata-other",
       labels: { [LABELS.managed]: "true", [LABELS.install]: "otherinstall", [LABELS.role]: "agent" },
       state: "running",
       image: "x",

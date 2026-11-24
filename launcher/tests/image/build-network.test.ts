@@ -140,7 +140,7 @@ describe("image build network", () => {
   });
 
   it("never refuses for credentials when the image is pinned and pulled", async () => {
-    const reference = "ghcr.io/zharskiy/pi-sandbox:0.4.0";
+    const reference = "ghcr.io/zharskiy/pinata:0.4.0";
     const fake = createFakeBackend({ registry: { [reference]: "sha256:pinned" } });
     const base = sandboxConfig();
     const config = { ...base, image: { reference, digest: "sha256:pinned" } };
@@ -154,7 +154,7 @@ describe("image build network", () => {
 
     expect(result.digest).toBe("sha256:pinned");
     expect(fake.builds.map((build) => [build.tag, build.args])).toEqual([
-      [expect.stringMatching(/^pi-sandbox-layer:/), {}],
+      [expect.stringMatching(/^pinata-layer:/), {}],
     ]);
   });
 });

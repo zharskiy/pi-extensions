@@ -98,7 +98,7 @@
               },
               "placeholder": {
                 "type": "string",
-                "pattern": "^pi-sandbox-.+"
+                "pattern": "^pinata-.+"
               },
               "header": {
                 "type": "string",
@@ -450,8 +450,8 @@
             "oneOf": [
               {
                 "type": "string",
-                "pattern": "^(?:~/(?!(?:\\.pi|\\.ssh|\\.gnupg|\\.aws|\\.docker|\\.colima|\\.kube|\\.config|\\.local/bin)(?:/|$))|/(?!(?:home|tmp|opt|etc|var)?/?$)(?!(?:usr|bin|sbin|lib|lib32|lib64|libx32|boot|dev|proc|sys|run|root|home/pi|opt/pi-sandbox|var/run|var/lock|tmp/pi-sandbox-handover|tmp/pi-sandbox-ready|tmp/pi-sandbox-forward|etc/(?:ssl|ld\\.so\\.preload|ld\\.so\\.cache|ld\\.so\\.conf|ld\\.so\\.conf\\.d|passwd|group|shadow|gshadow|nsswitch\\.conf|hosts|hostname|resolv\\.conf))(?:/|$)))(?!(?:.*/)?\\.{1,2}(?:/|$))[^/]+(?:/[^/]+)*/?$",
-                "description": "In the container: an absolute path, or ~/ for the sandbox home (/home/pi, which may not be written out). Not ~/.pi, ~/.ssh, ~/.gnupg, ~/.aws, ~/.docker, ~/.colima, ~/.kube, ~/.config or ~/.local/bin; nothing under or above /usr, /bin, /sbin, /lib, /lib32, /lib64, /libx32, /boot, /dev, /proc, /sys, /run, /var/run, /var/lock, /root, /opt/pi-sandbox, /etc/ssl and the /etc entries ld.so.preload, ld.so.cache, ld.so.conf, ld.so.conf.d, passwd, group, shadow, gshadow, nsswitch.conf, hosts, hostname and resolv.conf (so not /, /etc, /opt or /var); not /home or /tmp; and nothing under or above the marker files /tmp/pi-sandbox-handover, /tmp/pi-sandbox-ready and /tmp/pi-sandbox-forward. Paths such as /etc/<app>, /opt/<name>, /srv/<name>, /var/lib/<name> and /data are fine."
+                "pattern": "^(?:~/(?!(?:\\.pi|\\.ssh|\\.gnupg|\\.aws|\\.docker|\\.colima|\\.kube|\\.config|\\.local/bin)(?:/|$))|/(?!(?:home|tmp|opt|etc|var)?/?$)(?!(?:usr|bin|sbin|lib|lib32|lib64|libx32|boot|dev|proc|sys|run|root|home/pi|opt/pinata|var/run|var/lock|tmp/pinata-handover|tmp/pinata-ready|tmp/pinata-forward|etc/(?:ssl|ld\\.so\\.preload|ld\\.so\\.cache|ld\\.so\\.conf|ld\\.so\\.conf\\.d|passwd|group|shadow|gshadow|nsswitch\\.conf|hosts|hostname|resolv\\.conf))(?:/|$)))(?!(?:.*/)?\\.{1,2}(?:/|$))[^/]+(?:/[^/]+)*/?$",
+                "description": "In the container: an absolute path, or ~/ for the sandbox home (/home/pi, which may not be written out). Not ~/.pi, ~/.ssh, ~/.gnupg, ~/.aws, ~/.docker, ~/.colima, ~/.kube, ~/.config or ~/.local/bin; nothing under or above /usr, /bin, /sbin, /lib, /lib32, /lib64, /libx32, /boot, /dev, /proc, /sys, /run, /var/run, /var/lock, /root, /opt/pinata, /etc/ssl and the /etc entries ld.so.preload, ld.so.cache, ld.so.conf, ld.so.conf.d, passwd, group, shadow, gshadow, nsswitch.conf, hosts, hostname and resolv.conf (so not /, /etc, /opt or /var); not /home or /tmp; and nothing under or above the marker files /tmp/pinata-handover, /tmp/pinata-ready and /tmp/pinata-forward. Paths such as /etc/<app>, /opt/<name>, /srv/<name>, /var/lib/<name> and /data are fine."
               },
               {
                 "type": "object",
@@ -460,8 +460,8 @@
                 "properties": {
                   "target": {
                     "type": "string",
-                    "pattern": "^(?:~/(?!(?:\\.pi|\\.ssh|\\.gnupg|\\.aws|\\.docker|\\.colima|\\.kube|\\.config|\\.local/bin)(?:/|$))|/(?!(?:home|tmp|opt|etc|var)?/?$)(?!(?:usr|bin|sbin|lib|lib32|lib64|libx32|boot|dev|proc|sys|run|root|home/pi|opt/pi-sandbox|var/run|var/lock|tmp/pi-sandbox-handover|tmp/pi-sandbox-ready|tmp/pi-sandbox-forward|etc/(?:ssl|ld\\.so\\.preload|ld\\.so\\.cache|ld\\.so\\.conf|ld\\.so\\.conf\\.d|passwd|group|shadow|gshadow|nsswitch\\.conf|hosts|hostname|resolv\\.conf))(?:/|$)))(?!(?:.*/)?\\.{1,2}(?:/|$))[^/]+(?:/[^/]+)*/?$",
-                    "description": "In the container: an absolute path, or ~/ for the sandbox home (/home/pi, which may not be written out). Not ~/.pi, ~/.ssh, ~/.gnupg, ~/.aws, ~/.docker, ~/.colima, ~/.kube, ~/.config or ~/.local/bin; nothing under or above /usr, /bin, /sbin, /lib, /lib32, /lib64, /libx32, /boot, /dev, /proc, /sys, /run, /var/run, /var/lock, /root, /opt/pi-sandbox, /etc/ssl and the /etc entries ld.so.preload, ld.so.cache, ld.so.conf, ld.so.conf.d, passwd, group, shadow, gshadow, nsswitch.conf, hosts, hostname and resolv.conf (so not /, /etc, /opt or /var); not /home or /tmp; and nothing under or above the marker files /tmp/pi-sandbox-handover, /tmp/pi-sandbox-ready and /tmp/pi-sandbox-forward. Paths such as /etc/<app>, /opt/<name>, /srv/<name>, /var/lib/<name> and /data are fine."
+                    "pattern": "^(?:~/(?!(?:\\.pi|\\.ssh|\\.gnupg|\\.aws|\\.docker|\\.colima|\\.kube|\\.config|\\.local/bin)(?:/|$))|/(?!(?:home|tmp|opt|etc|var)?/?$)(?!(?:usr|bin|sbin|lib|lib32|lib64|libx32|boot|dev|proc|sys|run|root|home/pi|opt/pinata|var/run|var/lock|tmp/pinata-handover|tmp/pinata-ready|tmp/pinata-forward|etc/(?:ssl|ld\\.so\\.preload|ld\\.so\\.cache|ld\\.so\\.conf|ld\\.so\\.conf\\.d|passwd|group|shadow|gshadow|nsswitch\\.conf|hosts|hostname|resolv\\.conf))(?:/|$)))(?!(?:.*/)?\\.{1,2}(?:/|$))[^/]+(?:/[^/]+)*/?$",
+                    "description": "In the container: an absolute path, or ~/ for the sandbox home (/home/pi, which may not be written out). Not ~/.pi, ~/.ssh, ~/.gnupg, ~/.aws, ~/.docker, ~/.colima, ~/.kube, ~/.config or ~/.local/bin; nothing under or above /usr, /bin, /sbin, /lib, /lib32, /lib64, /libx32, /boot, /dev, /proc, /sys, /run, /var/run, /var/lock, /root, /opt/pinata, /etc/ssl and the /etc entries ld.so.preload, ld.so.cache, ld.so.conf, ld.so.conf.d, passwd, group, shadow, gshadow, nsswitch.conf, hosts, hostname and resolv.conf (so not /, /etc, /opt or /var); not /home or /tmp; and nothing under or above the marker files /tmp/pinata-handover, /tmp/pinata-ready and /tmp/pinata-forward. Paths such as /etc/<app>, /opt/<name>, /srv/<name>, /var/lib/<name> and /data are fine."
                   },
                   "name": {
                     "type": "string",
@@ -488,8 +488,8 @@
               },
               "target": {
                 "type": "string",
-                "pattern": "^(?:~/(?!(?:\\.pi|\\.ssh|\\.gnupg|\\.aws|\\.docker|\\.colima|\\.kube|\\.config|\\.local/bin)(?:/|$))|/(?!(?:home|tmp|opt|etc|var)?/?$)(?!(?:usr|bin|sbin|lib|lib32|lib64|libx32|boot|dev|proc|sys|run|root|home/pi|opt/pi-sandbox|var/run|var/lock|tmp/pi-sandbox-handover|tmp/pi-sandbox-ready|tmp/pi-sandbox-forward|etc/(?:ssl|ld\\.so\\.preload|ld\\.so\\.cache|ld\\.so\\.conf|ld\\.so\\.conf\\.d|passwd|group|shadow|gshadow|nsswitch\\.conf|hosts|hostname|resolv\\.conf))(?:/|$)))(?!(?:.*/)?\\.{1,2}(?:/|$))[^/]+(?:/[^/]+)*/?$",
-                "description": "In the container: an absolute path, or ~/ for the sandbox home (/home/pi, which may not be written out). Not ~/.pi, ~/.ssh, ~/.gnupg, ~/.aws, ~/.docker, ~/.colima, ~/.kube, ~/.config or ~/.local/bin; nothing under or above /usr, /bin, /sbin, /lib, /lib32, /lib64, /libx32, /boot, /dev, /proc, /sys, /run, /var/run, /var/lock, /root, /opt/pi-sandbox, /etc/ssl and the /etc entries ld.so.preload, ld.so.cache, ld.so.conf, ld.so.conf.d, passwd, group, shadow, gshadow, nsswitch.conf, hosts, hostname and resolv.conf (so not /, /etc, /opt or /var); not /home or /tmp; and nothing under or above the marker files /tmp/pi-sandbox-handover, /tmp/pi-sandbox-ready and /tmp/pi-sandbox-forward. Paths such as /etc/<app>, /opt/<name>, /srv/<name>, /var/lib/<name> and /data are fine."
+                "pattern": "^(?:~/(?!(?:\\.pi|\\.ssh|\\.gnupg|\\.aws|\\.docker|\\.colima|\\.kube|\\.config|\\.local/bin)(?:/|$))|/(?!(?:home|tmp|opt|etc|var)?/?$)(?!(?:usr|bin|sbin|lib|lib32|lib64|libx32|boot|dev|proc|sys|run|root|home/pi|opt/pinata|var/run|var/lock|tmp/pinata-handover|tmp/pinata-ready|tmp/pinata-forward|etc/(?:ssl|ld\\.so\\.preload|ld\\.so\\.cache|ld\\.so\\.conf|ld\\.so\\.conf\\.d|passwd|group|shadow|gshadow|nsswitch\\.conf|hosts|hostname|resolv\\.conf))(?:/|$)))(?!(?:.*/)?\\.{1,2}(?:/|$))[^/]+(?:/[^/]+)*/?$",
+                "description": "In the container: an absolute path, or ~/ for the sandbox home (/home/pi, which may not be written out). Not ~/.pi, ~/.ssh, ~/.gnupg, ~/.aws, ~/.docker, ~/.colima, ~/.kube, ~/.config or ~/.local/bin; nothing under or above /usr, /bin, /sbin, /lib, /lib32, /lib64, /libx32, /boot, /dev, /proc, /sys, /run, /var/run, /var/lock, /root, /opt/pinata, /etc/ssl and the /etc entries ld.so.preload, ld.so.cache, ld.so.conf, ld.so.conf.d, passwd, group, shadow, gshadow, nsswitch.conf, hosts, hostname and resolv.conf (so not /, /etc, /opt or /var); not /home or /tmp; and nothing under or above the marker files /tmp/pinata-handover, /tmp/pinata-ready and /tmp/pinata-forward. Paths such as /etc/<app>, /opt/<name>, /srv/<name>, /var/lib/<name> and /data are fine."
               }
             }
           },
@@ -668,12 +668,12 @@
                     "PIP_CERT",
                     "CARGO_HTTP_CAINFO",
                     "GIT_SSL_CAINFO",
-                    "PI_SANDBOX",
-                    "PI_SANDBOX_AWAIT_HANDOVER",
-                    "PI_SANDBOX_LAUNCH_ID",
-                    "PI_SANDBOX_SERVICE_PORTS",
-                    "PI_SANDBOX_SERVICES_HOST",
-                    "PI_SANDBOX_STATUS",
+                    "PINATA",
+                    "PINATA_AWAIT_HANDOVER",
+                    "PINATA_LAUNCH_ID",
+                    "PINATA_SERVICE_PORTS",
+                    "PINATA_SERVICES_HOST",
+                    "PINATA_STATUS",
                     "PI_SKIP_VERSION_CHECK",
                     "PI_TELEMETRY",
                     "PI_CLIPBOARD_OSC52",
@@ -717,12 +717,12 @@
                     "PIP_CERT",
                     "CARGO_HTTP_CAINFO",
                     "GIT_SSL_CAINFO",
-                    "PI_SANDBOX",
-                    "PI_SANDBOX_AWAIT_HANDOVER",
-                    "PI_SANDBOX_LAUNCH_ID",
-                    "PI_SANDBOX_SERVICE_PORTS",
-                    "PI_SANDBOX_SERVICES_HOST",
-                    "PI_SANDBOX_STATUS",
+                    "PINATA",
+                    "PINATA_AWAIT_HANDOVER",
+                    "PINATA_LAUNCH_ID",
+                    "PINATA_SERVICE_PORTS",
+                    "PINATA_SERVICES_HOST",
+                    "PINATA_STATUS",
                     "PI_SKIP_VERSION_CHECK",
                     "PI_TELEMETRY",
                     "PI_CLIPBOARD_OSC52",

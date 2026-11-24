@@ -22,7 +22,7 @@ export interface EngineNetwork {
   Containers?: Record<string, unknown>;
 }
 
-export const engineSocket = [join(homedir(), ".colima", "pi-sandbox", "docker.sock")].find((path) =>
+export const engineSocket = [join(homedir(), ".colima", "pinata", "docker.sock")].find((path) =>
   existsSync(path),
 );
 
@@ -52,7 +52,7 @@ const filters = (value: Record<string, string[]>) => encodeURIComponent(JSON.str
 
 export const listContainers = async (labels: Record<string, string> = {}) => {
   const label = Object.entries(labels).map(([key, value]) => `${key}=${value}`);
-  const query = label.length === 0 ? filters({ name: ["pi-sandbox"] }) : filters({ label });
+  const query = label.length === 0 ? filters({ name: ["pinata"] }) : filters({ label });
   const response = await call<EngineContainer[]>("GET", `/containers/json?all=1&filters=${query}`);
 
   return response.body ?? [];
@@ -61,17 +61,14 @@ export const listContainers = async (labels: Record<string, string> = {}) => {
 export const listVolumes = async () => {
   const response = await call<{ Volumes: EngineVolume[] | null }>(
     "GET",
-    `/volumes?filters=${filters({ name: ["pi-sandbox"] })}`,
+    `/volumes?filters=${filters({ name: ["pinata"] })}`,
   );
 
   return response.body?.Volumes ?? [];
 };
 
 export const listNetworks = async () => {
-  const response = await call<EngineNetwork[]>(
-    "GET",
-    `/networks?filters=${filters({ name: ["pi-sandbox"] })}`,
-  );
+  const response = await call<EngineNetwork[]>("GET", `/networks?filters=${filters({ name: ["pinata"] })}`);
 
   return response.body ?? [];
 };

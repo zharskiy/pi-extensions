@@ -12,12 +12,16 @@ const shimPath = (deps: CliDeps) => linkPath(deps, "pi");
 
 const recordOf = (deps: CliDeps) => join(pathsOf(deps).stateDir, "replaced-pi-link");
 
+const PI_ENTRY = /launcher\/bin\/pi(-dev)?\.js/;
+
+const PI_ENTRY_LINK = /\/launcher\/bin\/pi(-dev)?\.js$/;
+
 const isOurs = async (path: string) => {
   const target = await readlink(path).catch(() => undefined);
 
   return target === undefined
-    ? (await readFile(path, "utf8").catch(() => "")).includes("launcher/bin/pi-sandbox")
-    : /\/pi-sandbox(-dev)?(\.js)?$/.test(target);
+    ? PI_ENTRY.test(await readFile(path, "utf8").catch(() => ""))
+    : PI_ENTRY_LINK.test(target);
 };
 
 const isPinataLink = async (path: string) => {

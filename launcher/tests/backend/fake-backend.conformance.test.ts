@@ -9,12 +9,12 @@ import { createFakeBackend, FAKE_INSTALL } from "../support/fake-backend.ts";
 import { tempDir } from "../support/temp-dir.ts";
 import { runBackendConformance } from "./conformance.ts";
 
-const PULLABLE = "example.test/pi-sandbox:1";
+const PULLABLE = "example.test/pinata:1";
 
 const REPO_A = "a".repeat(64);
 
 runBackendConformance("fake backend", { describe, it, expect, beforeAll, afterAll }, async () => {
-  const guestAgentDir = await mkdtemp(join(tmpdir(), "pi-sandbox-fake-guest-"));
+  const guestAgentDir = await mkdtemp(join(tmpdir(), "pinata-fake-guest-"));
   const fake = createFakeBackend({ registry: { [PULLABLE]: `sha256:${"c".repeat(64)}` }, guestAgentDir });
 
   return {
@@ -34,7 +34,7 @@ runBackendConformance("fake backend", { describe, it, expect, beforeAll, afterAl
 const specFor = (name: string, repoHash = REPO_A): ContainerSpec => ({
   name,
   image: PULLABLE,
-  labels: { "pi-sandbox.repo-hash": repoHash },
+  labels: { "pinata.repo-hash": repoHash },
   mounts: [],
   network: { kind: "none" },
   env: {},

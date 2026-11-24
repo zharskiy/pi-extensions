@@ -116,7 +116,7 @@ describe("createPreambleGate", () => {
 
     await new Promise<void>((resolve) => socket.once("connect", () => resolve()));
 
-    socket.write("PI-SANDBOX ");
+    socket.write("PINATA ");
 
     await vi.waitFor(() => expect(vi.getTimerCount()).toBeGreaterThan(0));
 

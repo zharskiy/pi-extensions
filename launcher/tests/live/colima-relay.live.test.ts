@@ -14,20 +14,20 @@ import {
 } from "../../backend/index.ts";
 import { createProcessRunner } from "../../shared/index.ts";
 
-const RELAY_IMAGE = "pi-sandbox-relay-test:node";
+const RELAY_IMAGE = "pinata-relay-test:node";
 
-const CLIENT_IMAGE = "pi-sandbox-conformance:busybox";
+const CLIENT_IMAGE = "pinata-conformance:busybox";
 
-const CLIENT_NAME = "pi-sandbox-relay-client";
+const CLIENT_NAME = "pinata-relay-client";
 
 const REPO_HASH = "f".repeat(64);
 
-const socketPath = [join(homedir(), ".colima", "pi-sandbox", "docker.sock")].find((path) => existsSync(path));
+const socketPath = [join(homedir(), ".colima", "pinata", "docker.sock")].find((path) => existsSync(path));
 
-const enabled = process.env.PI_SANDBOX_LIVE === "1" && socketPath !== undefined;
+const enabled = process.env.PINATA_LIVE === "1" && socketPath !== undefined;
 
 const buildImage = async (backend: Backend, tag: string, dockerfile: string) => {
-  const context = await mkdtemp(join(tmpdir(), "pi-sandbox-relay-live-"));
+  const context = await mkdtemp(join(tmpdir(), "pinata-relay-live-"));
 
   await writeFile(join(context, "Dockerfile"), dockerfile);
 
@@ -92,16 +92,16 @@ describe.skipIf(!enabled)("colima egress relay (live)", () => {
     const network = await backend.prepareRelay({
       hostPort: portOf(state.server),
       imageId: RELAY_IMAGE,
-      preamble: "PI-SANDBOX live",
+      preamble: "PINATA live",
     });
-    const stale = await backend.findContainers({ "pi-sandbox.relay-client": "true" });
+    const stale = await backend.findContainers({ "pinata.relay-client": "true" });
 
     await Promise.all(stale.map((container) => backend.removeContainer(container.id)));
 
     const client = await backend.createContainer({
       name: CLIENT_NAME,
       image: CLIENT_IMAGE,
-      labels: { "pi-sandbox.relay-client": "true", [LABELS.repoHash]: REPO_HASH },
+      labels: { "pinata.relay-client": "true", [LABELS.repoHash]: REPO_HASH },
       mounts: [],
       network: { kind: "internal", name: network },
       env: {},

@@ -96,7 +96,7 @@ const answer = async (tty: ReturnType<typeof withTty>, reply: string) => {
 const serviceSetup = async () => {
   const fake = createFakeBackend();
   const { vm, backend } = counted(fake);
-  const harness = await createHarness({ backend: () => backend, env: { PI_SANDBOX_PLAIN: "1" } });
+  const harness = await createHarness({ backend: () => backend, env: { PINATA_PLAIN: "1" } });
   const data = configVolumeName(harness.stateDir, "db-data");
 
   await harness.writeJson(harness.userConfigFile, { services: SERVICES });
@@ -136,7 +136,7 @@ describe("pinata restart", () => {
     const harness = await createHarness({ backend: () => fake.backend });
 
     fake.addContainer({
-      name: "pi-sandbox-other",
+      name: "pinata-other",
       labels: { [LABELS.managed]: "true", [LABELS.role]: "agent", [LABELS.install]: "otherinstall" },
       state: "running",
       image: "x",
@@ -155,9 +155,9 @@ describe("pinata restart", () => {
     const agent = agentVolumeName(installIdOf(harness.stateDir));
     const legacy = `${agent}-0123456789ab`;
     const repo = { [LABELS.repoHash]: sha256Hex(harness.repoRoot), [LABELS.repoRoot]: harness.repoRoot };
-    const overlay = `pi-sandbox-cache-${sha256Hex(harness.repoRoot).slice(0, 12)}-deadbeef`;
+    const overlay = `pinata-cache-${sha256Hex(harness.repoRoot).slice(0, 12)}-deadbeef`;
     const [cache] = mountedVolumes(sandboxConfig({ mounts: { volumes: [PACKAGE_CACHE] } }), harness.stateDir);
-    const foreign = "pi-sandbox-cache-otherinstall-x";
+    const foreign = "pinata-cache-otherinstall-x";
 
     await harness.writeJson(harness.userConfigFile, { mounts: { volumes: [PACKAGE_CACHE] } });
 
@@ -172,7 +172,7 @@ describe("pinata restart", () => {
     await fake.backendFor("otherinstall").ensureVolume(foreign);
 
     fake.addContainer({
-      name: "pi-sandbox-left",
+      name: "pinata-left",
       labels: { [LABELS.managed]: "true", [LABELS.role]: "agent", ...repo },
       state: "stopped",
       image: "x",

@@ -31,10 +31,10 @@ describe("releaseSandbox", () => {
     const repo = sha256Hex(harness.repoRoot);
     const context = await tempDir("uninstall-images");
 
-    await fake.backend.prepareRelay({ hostPort: 3128, imageId: "relay", preamble: "PI-SANDBOX test" });
+    await fake.backend.prepareRelay({ hostPort: 3128, imageId: "relay", preamble: "PINATA test" });
 
     const managed = fake.addContainer({
-      name: "pi-sandbox-a",
+      name: "pinata-a",
       labels: { [LABELS.managed]: "true", [LABELS.role]: "agent", [LABELS.repoHash]: repo },
       state: "running",
       image: "x",
@@ -42,7 +42,7 @@ describe("releaseSandbox", () => {
     const foreign = fake.addContainer({ name: "foreign", labels: {}, state: "running", image: "x" });
     const other = fake.backendFor("otherinstall");
     const othersContainer = fake.addContainer({
-      name: "pi-sandbox-other",
+      name: "pinata-other",
       labels: { [LABELS.managed]: "true", [LABELS.install]: "otherinstall", [LABELS.role]: "agent" },
       state: "stopped",
       image: "x",
@@ -50,11 +50,11 @@ describe("releaseSandbox", () => {
 
     await other.prepareNetwork();
 
-    await other.ensureVolume("pi-sandbox-agent-other");
+    await other.ensureVolume("pinata-agent-other");
 
-    await fake.backend.ensureVolume("pi-sandbox-agent-a", { [LABELS.repoHash]: repo });
+    await fake.backend.ensureVolume("pinata-agent-a", { [LABELS.repoHash]: repo });
 
-    const built = await fake.backend.buildImage(context, "pi-sandbox-layer:a");
+    const built = await fake.backend.buildImage(context, "pinata-layer:a");
 
     await harness.writeJson(stateLayout(harness.stateDir).repo(repo).record, { root: harness.repoRoot });
 
@@ -65,8 +65,8 @@ describe("releaseSandbox", () => {
     expect(fake.relays.size).toBe(0);
     expect(fake.networks.has(FAKE_NETWORK)).toBe(false);
     expect(fake.networks.has(networkName("otherinstall"))).toBe(true);
-    expect(fake.volumes.has("pi-sandbox-agent-a")).toBe(false);
-    expect(fake.volumes.has("pi-sandbox-agent-other")).toBe(true);
+    expect(fake.volumes.has("pinata-agent-a")).toBe(false);
+    expect(fake.volumes.has("pinata-agent-other")).toBe(true);
     expect(fake.imageRemovals).toContain(built.id);
     expect(harness.proxyStops()).toBe(1);
     expect(harness.stdout()).toContain(`install: removed relay ${FAKE_RELAY}\n`);
@@ -92,16 +92,16 @@ describe("releaseSandbox", () => {
     });
     const repo = sha256Hex(harness.repoRoot);
 
-    await fake.backend.prepareRelay({ hostPort: 3128, imageId: "relay", preamble: "PI-SANDBOX test" });
+    await fake.backend.prepareRelay({ hostPort: 3128, imageId: "relay", preamble: "PINATA test" });
 
     const starting = fake.addContainer({
-      name: "pi-sandbox-starting",
+      name: "pinata-starting",
       labels: { [LABELS.managed]: "true", [LABELS.role]: "agent", [LABELS.repoHash]: repo },
       state: "running",
       image: "x",
     });
 
-    await fake.backend.ensureVolume("pi-sandbox-agent-a", { [LABELS.repoHash]: repo });
+    await fake.backend.ensureVolume("pinata-agent-a", { [LABELS.repoHash]: repo });
 
     await expect(releaseSandbox(harness.deps)).rejects.toThrow(
       "the sandbox network, proxy, services, volumes and images were kept",
@@ -109,7 +109,7 @@ describe("releaseSandbox", () => {
     expect(fake.containers.has(starting)).toBe(true);
     expect(fake.relays.size).toBe(1);
     expect(fake.networks.has(FAKE_NETWORK)).toBe(true);
-    expect(fake.volumes.has("pi-sandbox-agent-a")).toBe(true);
+    expect(fake.volumes.has("pinata-agent-a")).toBe(true);
     expect(harness.proxyStops()).toBe(0);
     expect(harness.stdout()).toContain(
       `host: a pi session of ${repo.slice(0, 12)} started meanwhile; its sandbox stays\n`,
@@ -137,14 +137,14 @@ describe("releaseSandbox", () => {
       }),
     });
 
-    await fake.backend.ensureVolume("pi-sandbox-cache-a");
+    await fake.backend.ensureVolume("pinata-cache-a");
 
     await releaseSandbox(harness.deps);
 
     await registering.done;
 
     expect(order).toEqual(["removed", "registered"]);
-    expect(fake.volumes.has("pi-sandbox-cache-a")).toBe(false);
+    expect(fake.volumes.has("pinata-cache-a")).toBe(false);
   });
 
   it("releases the host side and leaves the engine objects to the profile when the VM is stopped", async () => {

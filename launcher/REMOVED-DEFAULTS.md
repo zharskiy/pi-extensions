@@ -24,28 +24,28 @@ List the hosts you need in `egress.allow`.
 
 ## Trust built at container start
 
-The sandbox CAs (the launcher's CA and `tls.extraCa`) are now part of the image layer, so these container-start pieces are gone:
+The sandbox CAs (pinata's CA and `tls.extraCa`) are now part of the image layer, so these container-start pieces are gone:
 
 | Removed | Now, and how to get it back |
 | --- | --- |
-| The bind of the bundle at `/etc/pi-sandbox/ca.pem`, from `<state>/vm/trust-<hash>-<id>.pem` | The CAs are files under `/usr/local/share/ca-certificates/pi-sandbox/` and in `/etc/ssl/certs/ca-certificates.crt`. Read that file where a tool wants a bundle. |
+| The bind of the bundle at `/etc/pi-sandbox/ca.pem`, from `<state>/vm/trust-<hash>-<id>.pem` | The CAs are files under `/usr/local/share/ca-certificates/pinata/` and in `/etc/ssl/certs/ca-certificates.crt`. Read that file where a tool wants a bundle. |
 | `/tmp/pi-sandbox/ca-bundle.pem`, which the entrypoint wrote, and the CA variables pointing at it | `SSL_CERT_FILE`, `CURL_CA_BUNDLE`, `REQUESTS_CA_BUNDLE`, `PIP_CERT`, `CARGO_HTTP_CAINFO`, `GIT_SSL_CAINFO` and `NODE_EXTRA_CA_CERTS` all point at `/etc/ssl/certs/ca-certificates.crt`, which holds the same certificates. |
-| `/tmp/pi-sandbox/truststore.p12`, which the entrypoint built for the `java` on `PATH`, and the `javax.net.ssl.trustStore` flags in `JAVA_TOOL_OPTIONS` (set by the launcher and by `bash-env.sh`) | Every JDK in the image has the CAs in its own `cacerts`. A JDK installed with `image.dockerfile` is covered, because the layer's last step runs after it. For a JDK installed later, run `/usr/local/lib/pi-sandbox/trust-jdk.sh <its folder>` as its owner. |
+| `/tmp/pi-sandbox/truststore.p12`, which the entrypoint built for the `java` on `PATH`, and the `javax.net.ssl.trustStore` flags in `JAVA_TOOL_OPTIONS` (set by the launcher and by `bash-env.sh`) | Every JDK in the image has the CAs in its own `cacerts`. A JDK installed with `image.dockerfile` is covered, because the layer's last step runs after it. For a JDK installed later, run `/usr/local/lib/pinata/trust-jdk.sh <its folder>` as its owner. |
 | `PI_SANDBOX_TRUST_HASH` | Nothing to restore: each launch creates its container, so no container outlives a CA change. The name is no longer reserved in `env.allow` and `env.set`. |
 
 The first launch after the update rebuilds the image once (`preparing the sandbox, one time`): the base image and the layer, or only the layer when `image.digest` pins the base.
 
 ## The proxy token inside the sandbox
 
-The proxy's token no longer enters the sandbox container. The relay holds it and sends it ahead of every connection, so the proxy is `http://pi-sandbox-proxy:3128` inside, with no user or password. These pieces are gone:
+The proxy's token no longer enters the sandbox container. The relay holds it and sends it ahead of every connection, so the proxy is `http://pinata-proxy:3128` inside, with no user or password. These pieces are gone:
 
 | Removed | Now, and how to get it back |
 | --- | --- |
-| The token as the password in `HTTPS_PROXY`, `HTTP_PROXY`, `ALL_PROXY` and their lowercase forms | They are `http://pi-sandbox-proxy:3128`. Nothing to restore: the proxy ignores a `Proxy-Authorization` header and never forwards it. |
-| `PI_SANDBOX_PROXY_HOST`, `PI_SANDBOX_PROXY_PORT`, `PI_SANDBOX_PROXY_TOKEN` | The proxy is always `pi-sandbox-proxy` port `3128`. A script that read them can use those values, or set them with `env.set`: `"PI_SANDBOX_PROXY_HOST": "pi-sandbox-proxy", "PI_SANDBOX_PROXY_PORT": "3128"`. The token has no replacement. |
-| `JAVA_TOOL_OPTIONS` with the proxy host, port, user and password and the `jdk.http.auth.*.disabledSchemes` flags | Every JDK in the image, one from `image.dockerfile` included, has the proxy in its own `net.properties`, and no JVM prints `Picked up JAVA_TOOL_OPTIONS` any more. For a JDK installed later, run `/usr/local/lib/pi-sandbox/trust-jdk.sh <its folder>` as its owner, which writes the proxy and the CAs into that JDK, from `setup` when the JDK lives in a volume ([a JDK in a volume](CONFIGURATION.md#a-jdk-in-a-volume)). The name is no longer reserved in `env.allow` and `env.set`. |
-| The Maven proxy's `<username>` and `<password>`, and the entrypoint step that wrote the proxy port into `~/.m2/settings.xml` | The rendered settings name `pi-sandbox-proxy` port `3128` and are linked as they are. Nothing to restore. |
-| `entrypoint.sh` and `bash-env.sh` in the base image | They are copied by the layer, so a base pinned with `image.digest` still gets this launcher's scripts. Nothing to restore. |
+| The token as the password in `HTTPS_PROXY`, `HTTP_PROXY`, `ALL_PROXY` and their lowercase forms | They are `http://pinata-proxy:3128`. Nothing to restore: the proxy ignores a `Proxy-Authorization` header and never forwards it. |
+| `PI_SANDBOX_PROXY_HOST`, `PI_SANDBOX_PROXY_PORT`, `PI_SANDBOX_PROXY_TOKEN` | The proxy is always `pinata-proxy` port `3128`. A script that read them can use those values, or set them with `env.set`: `"PI_SANDBOX_PROXY_HOST": "pinata-proxy", "PI_SANDBOX_PROXY_PORT": "3128"`. The token has no replacement. |
+| `JAVA_TOOL_OPTIONS` with the proxy host, port, user and password and the `jdk.http.auth.*.disabledSchemes` flags | Every JDK in the image, one from `image.dockerfile` included, has the proxy in its own `net.properties`, and no JVM prints `Picked up JAVA_TOOL_OPTIONS` any more. For a JDK installed later, run `/usr/local/lib/pinata/trust-jdk.sh <its folder>` as its owner, which writes the proxy and the CAs into that JDK, from `setup` when the JDK lives in a volume ([a JDK in a volume](CONFIGURATION.md#a-jdk-in-a-volume)). The name is no longer reserved in `env.allow` and `env.set`. |
+| The Maven proxy's `<username>` and `<password>`, and the entrypoint step that wrote the proxy port into `~/.m2/settings.xml` | The rendered settings name `pinata-proxy` port `3128` and are linked as they are. Nothing to restore. |
+| `entrypoint.sh` and `bash-env.sh` in the base image | They are copied by the layer, so a base pinned with `image.digest` still gets this pinata version's scripts. Nothing to restore. |
 
 ## One proxy, network and grant list per folder
 
@@ -53,13 +53,13 @@ Each folder used to get its own proxy, token, relay, internal network and grants
 
 | Removed | Now, and how to get it back |
 | --- | --- |
-| A proxy, token and relay per folder (`pi-sandbox-relay-<id>`) | One proxy and token under the state dir and one relay, `pi-sandbox-relay-<install id>`, where the install id is a short hash of the state dir. The latest launch sets the egress rules for every session, with a notice when other sessions run. Two folders cannot run with different `egress` lists at the same time. |
-| An internal network per folder (`pi-sandbox-<id>`) | One internal network, `pi-sandbox-network-<install id>`, for every session's container of the state dir, its relay and its services pod. It is created so that the VM has no address on it, which needs Docker Engine 28 or later in the VM; with an older engine the launch says to update colima and recreate the VM. An existing network of that name is used as it is when it carries the launcher's managed label (`pi-sandbox.managed`); one without it fails the launch. Old per-folder networks and relays are not removed by the launcher (see below). |
+| A proxy, token and relay per folder (`pi-sandbox-relay-<id>`) | One proxy and token under the state dir and one relay, `pinata-relay-<install id>`, where the install id is a short hash of the state dir. The latest launch sets the egress rules for every session, with a notice when other sessions run. Two folders cannot run with different `egress` lists at the same time. |
+| An internal network per folder (`pi-sandbox-<id>`) | One internal network, `pinata-network-<install id>`, for every session's container of the state dir, its relay and its services pod. It is created so that the VM has no address on it, which needs Docker Engine 28 or later in the VM; with an older engine the launch says to update colima and recreate the VM. An existing network of that name is used as it is when it carries pinata's managed label (`pinata.managed`); one without it fails the launch. Old per-folder networks and relays are not removed by the launcher (see below). |
 | Grants per folder, and `pi sandbox egress allow --user` for every folder | Every grant is for every folder and every session. `--user` is refused as an unknown option. Old per-folder grants in `grants.json` are not read: allow those hosts again. |
 
 ## The GitHub CLI
 
-The image no longer has `gh`, and the launcher no longer reads gh's config. These pieces are gone:
+The image no longer has `gh`, and pinata no longer reads gh's config. These pieces are gone:
 
 | Removed | Now, and how to get it back |
 | --- | --- |
@@ -73,17 +73,17 @@ The image no longer has `gh`, and the launcher no longer reads gh's config. Thes
 
 Without these, plain git over HTTPS to github.com has no credential in the sandbox: a clone of a public repository works once `github.com` is reachable, a push or a private clone fails, since `GIT_TERMINAL_PROMPT` is `0` and git cannot ask. An SSH remote fails too, since the sandbox has no SSH keys.
 
-This config gives back gh and git over HTTPS for github.com. Use your own placeholder: `pi-sandbox-` and 24 lowercase hex digits, such as `pi-sandbox-` followed by the output of `openssl rand -hex 12`. `pinata doctor` reports a `GH_TOKEN` of any other shape as a value that is not a placeholder. Replace `/opt/homebrew/bin/gh` with what `command -v gh` prints on your Mac. The command runs on your Mac with a short list of variables, so give an absolute path.
+This config gives back gh and git over HTTPS for github.com. Use your own placeholder: `pinata-` and 24 lowercase hex digits, such as `pinata-` followed by the output of `openssl rand -hex 12`. `pinata doctor` reports a `GH_TOKEN` of any other shape as a value that is not a placeholder. Replace `/opt/homebrew/bin/gh` with what `command -v gh` prints on your Mac. The command runs on your Mac with a short list of variables, so give an absolute path.
 
 ```json
 {
   "image": { "packages": ["gh"] },
-  "env": { "set": { "GH_TOKEN": "pi-sandbox-6a1f0c2e9b7d4a3851e0f2c4" } },
+  "env": { "set": { "GH_TOKEN": "pinata-6a1f0c2e9b7d4a3851e0f2c4" } },
   "credentials": {
     "rules": [
-      { "id": "github", "host": "github.com", "placeholder": "pi-sandbox-6a1f0c2e9b7d4a3851e0f2c4", "secret": { "command": ["/opt/homebrew/bin/gh", "auth", "token", "--hostname", "github.com"] } },
-      { "id": "github-api", "host": "api.github.com", "placeholder": "pi-sandbox-6a1f0c2e9b7d4a3851e0f2c4", "secret": { "command": ["/opt/homebrew/bin/gh", "auth", "token", "--hostname", "github.com"] } },
-      { "id": "github-uploads", "host": "uploads.github.com", "placeholder": "pi-sandbox-6a1f0c2e9b7d4a3851e0f2c4", "secret": { "command": ["/opt/homebrew/bin/gh", "auth", "token", "--hostname", "github.com"] } }
+      { "id": "github", "host": "github.com", "placeholder": "pinata-6a1f0c2e9b7d4a3851e0f2c4", "secret": { "command": ["/opt/homebrew/bin/gh", "auth", "token", "--hostname", "github.com"] } },
+      { "id": "github-api", "host": "api.github.com", "placeholder": "pinata-6a1f0c2e9b7d4a3851e0f2c4", "secret": { "command": ["/opt/homebrew/bin/gh", "auth", "token", "--hostname", "github.com"] } },
+      { "id": "github-uploads", "host": "uploads.github.com", "placeholder": "pinata-6a1f0c2e9b7d4a3851e0f2c4", "secret": { "command": ["/opt/homebrew/bin/gh", "auth", "token", "--hostname", "github.com"] } }
     ]
   },
   "setup": [
@@ -96,11 +96,11 @@ This config gives back gh and git over HTTPS for github.com. Use your own placeh
 
 - `gh` reads `GH_TOKEN` inside and sends the placeholder; `gh auth git-credential` gives git the user `x-access-token` and the same placeholder; the proxy puts the real token in its place on the hosts the rules name.
 - `setup` runs at every launch, after the home is in place, so the lines land in that launch's `~/.gitconfig`. It replaces nothing the rendered config sets.
-- For git alone, without `gh` in the image, use the helper `!f() { echo username=x-access-token; echo password=pi-sandbox-6a1f0c2e9b7d4a3851e0f2c4; }; f` instead, and leave out `image.packages` and `GH_TOKEN`.
+- For git alone, without `gh` in the image, use the helper `!f() { echo username=x-access-token; echo password=pinata-6a1f0c2e9b7d4a3851e0f2c4; }; f` instead, and leave out `image.packages` and `GH_TOKEN`.
 - Archives and release downloads go through other hosts, such as `codeload.github.com` and `objects.githubusercontent.com`; list them in `egress.allow` if you need them.
 - For a GitHub Enterprise host, add rules for it (and for `api.<host>` on `.ghe.com`) with its own placeholder and `--hostname <host>`, the `setup` lines with its name, and `GH_HOST` or `GH_ENTERPRISE_TOKEN` in `env.set`. `GH_ENTERPRISE_TOKEN` is one value for every enterprise host, so two enterprise hosts with different tokens need a `hosts.yml` inside, written from `setup` (`sh -c` with a `printf` into `~/.config/gh/hosts.yml`), with each host's placeholder.
 
-What the config cannot do as the derivation did: it does not find your gh hosts or your gh binary by itself, so you write the host list and the path, and a config shared by a team needs gh at the same path on every Mac. The launcher also no longer refuses to run a gh that lies inside a folder a sandbox can write; an absolute path outside your projects keeps that guarantee in your hands.
+What the config cannot do as the derivation did: it does not find your gh hosts or your gh binary by itself, so you write the host list and the path, and a config shared by a team needs gh at the same path on every Mac. Pinata also no longer refuses to run a gh that lies inside a folder a sandbox can write; an absolute path outside your projects keeps that guarantee in your hands.
 
 ## Several workspace roots and the home share
 
@@ -111,7 +111,7 @@ What the config cannot do as the derivation did: it does not find your gh hosts 
 | `workspaceRoots: { "roots": ["~/work", "/Volumes/code"] }` | `"workspaceRoot": "~/work"`, one folder. Replace the key by hand, or remove it and run `pinata init`. With the old key still in the file, `pinata init` (with or without `--yes`) changes nothing and exits 1 with `<config file> has a problem this setup does not fix: config: workspaceRoots is not a known key` and the same hint; without the key it asks for the folder. Projects kept in several places go under one folder that holds them all, such as `~/Projects`, or are reached with a [read-only bind](CONFIGURATION.md#read-only-binds). |
 | No `workspaceRoots`: pi started anywhere and the VM shared your whole home, writable | Gone. A sandboxed launch without `workspaceRoot` stops with `config: workspaceRoot is not set, so pi has no folder it may start in`; set it to the folder that holds your projects. Your home, or a folder that holds it, is refused as the root. |
 | The setup's choice to share the whole home, and its several-folder list | `pinata init` asks for one folder: a detected one, or one you type. |
-| `PI_SANDBOX_ROOTS`, folders separated by `:` | `PI_SANDBOX_ROOT`, one folder. `pinata init --yes` (and `pinata install`) now refuses when neither the config nor `PI_SANDBOX_ROOT` names a folder. |
+| `PI_SANDBOX_ROOTS`, folders separated by `:` | `PINATA_ROOT`, one folder. `pinata init --yes` (and `pinata install`) now refuses when neither the config nor `PINATA_ROOT` names a folder. |
 
 At the first launch after the change, the VM restarts once to drop the home share and share only the root, `<agent dir>/sessions`, `<state>/vm` and the bind sources outside the root.
 
@@ -134,7 +134,7 @@ Files an older launcher left in its state dir (`<state>/empty`, `<state>/repos/<
 
 ## Notices about the old config folder and the policy file
 
-Launches and `pi sandbox doctor` used to name a config left in `~/.config/pi-sandbox/` and an administrator policy file that still existed. Neither is read, nothing says so any more, and the launcher never touches `~/.config/pi-sandbox/`. Move your settings into `pi-sandbox/config.json` under pi's agent dir yourself.
+Launches and `pi sandbox doctor` used to name a config left in `~/.config/pi-sandbox/` and an administrator policy file that still existed. Neither is read, nothing says so any more, and pinata never touches `~/.config/pi-sandbox/`. Move your settings into `pinata/config.json` under pi's agent dir yourself.
 
 ## Removed config keys
 
@@ -154,21 +154,21 @@ A `tls.extraCa` entry `{ "hostStore": true }`, which read the CAs of the macOS S
 
 ## Objects left by an older launcher
 
-This launcher does not see the sessions of an earlier launcher build: it keeps its launches in a different place, and lists and changes only engine objects that carry its install label, which an older launcher did not set. Update the launcher with no pi session running.
+This pinata version does not see the sessions of an earlier launcher build: it keeps its launches in a different place, and lists and changes only engine objects that carry its install label, which an older launcher did not set. Update pinata with no pi session running.
 
-The daily collection removes what an older build left in the sandbox VM: every stopped container, volume and network whose name starts with `pi-sandbox-`, that carries the `pi-sandbox.managed=true` label and that has no install label at all (the networks `pi-sandbox-machine` and `pi-sandbox-<id>`, the relays, the pod, the services, and the agent and cache volumes). It tries each volume and network and the engine refuses the ones still in use, so a container that still runs stays, with its volumes and network, until a later day's collection after it stops. Objects labelled by another install, and objects without the managed label, are never touched. An old agent volume holds the in-sandbox settings of that build, and they go with it.
+The daily collection removes what an older build left in the sandbox VM: every stopped container, volume and network whose name starts with `pinata-`, that carries the `pinata.managed=true` label and that has no install label at all (the networks `pinata-machine` and `pinata-<id>`, the relays, the pod, the services, and the agent and cache volumes). It tries each volume and network and the engine refuses the ones still in use, so a container that still runs stays, with its volumes and network, until a later day's collection after it stops. Objects labelled by another install, and objects without the managed label, are never touched. An old agent volume holds the in-sandbox settings of that build, and they go with it.
 
-Shared volumes (`pi-sandbox-shared-*`) of an older build are never removed by the daily collection, nor by `pinata restart` or the uninstall, which remove only volumes with this install's label. Remove them with the engine's own tools, or delete and recreate the sandbox VM.
+Shared volumes (`pinata-shared-*`) of an older build are never removed by the daily collection, nor by `pinata restart` or the uninstall, which remove only volumes with this install's label. Remove them with the engine's own tools, or delete and recreate the sandbox VM.
 
-An old shared volume can have the same name as a new `mounts.volumes` entry, since the name is built from the same state dir hash. The launcher then mounts and reuses it, with its content, but never lists or removes it.
+An old shared volume can have the same name as a new `mounts.volumes` entry, since the name is built from the same state dir hash. Pinata then mounts and reuses it, with its content, but never lists or removes it.
 
 ## One pi folder for every folder
 
-Earlier launchers gave each folder its own pi folder inside the sandbox: an agent volume `pi-sandbox-agent-<install id>-<12 hex>`, a render folder `vm/render/<12 hex>/` and sync records under `repos/<hash>/sync/` in the state folder. Now one agent volume, `pi-sandbox-agent-<install id>`, serves every folder, so pi's packages, its in-sandbox settings and, with `sessions.host` off, its sessions are the same in every folder. The new volume starts empty: the launcher has pi install its packages again at the first launch, and in-sandbox settings and sessions of the old per-folder volumes stay where they were. The launcher removes an old one on its own only once its folder no longer exists: the daily collection removes the unused per-folder agent volume, and with `sessions.host` off the sessions kept in it go with it, and the sweep that forgets the folder removes its render folder and sync records. Until then `pinata status` lists them as `leftover:` lines, and `pinata restart` removes them together with the shared one once no pi session runs. Copy anything you want to keep out of an old volume first, with the engine's own tools.
+Earlier launchers gave each folder its own pi folder inside the sandbox: an agent volume `pinata-agent-<install id>-<12 hex>`, a render folder `vm/render/<12 hex>/` and sync records under `repos/<hash>/sync/` in the state folder. Now one agent volume, `pinata-agent-<install id>`, serves every folder, so pi's packages, its in-sandbox settings and, with `sessions.host` off, its sessions are the same in every folder. The new volume starts empty: pinata has pi install its packages again at the first launch, and in-sandbox settings and sessions of the old per-folder volumes stay where they were. Pinata removes an old one on its own only once its folder no longer exists: the daily collection removes the unused per-folder agent volume, and with `sessions.host` off the sessions kept in it go with it, and the sweep that forgets the folder removes its render folder and sync records. Until then `pinata status` lists them as `leftover:` lines, and `pinata restart` removes them together with the shared one once no pi session runs. Copy anything you want to keep out of an old volume first, with the engine's own tools.
 
 ## Files left in the state folder
 
-The launcher does not remove the files earlier versions left in its state folder: the CA bundles `ca/trust.pem`, `vm/trust.pem` and `vm/trust-*.pem` and the per-folder render dirs `vm/render/<h>/`, render locks `repos/<h>/render.lock` and sync records `repos/<h>/sync/`. Nothing reads them. With no sandbox running, remove them from the state folder (`~/.pi/agent/pi-sandbox/state` by default): `rm -f ca/trust.pem vm/trust*.pem` and `rm -rf vm/render repos/*/render.lock repos/*/sync`.
+Pinata does not remove the files earlier versions left in its state folder: the CA bundles `ca/trust.pem`, `vm/trust.pem` and `vm/trust-*.pem` and the per-folder render dirs `vm/render/<h>/`, render locks `repos/<h>/render.lock` and sync records `repos/<h>/sync/`. Nothing reads them. With no sandbox running, remove them from the state folder (`~/.pi/agent/pinata/state` by default): `rm -f ca/trust.pem vm/trust*.pem` and `rm -rf vm/render repos/*/render.lock repos/*/sync`.
 
 ## Getting the old defaults back
 

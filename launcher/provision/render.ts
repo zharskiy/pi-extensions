@@ -98,7 +98,7 @@ const mavenSettings = (maven: DerivedTools["maven"]) =>
     '<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">',
     "  <proxies>",
     "    <proxy>",
-    "      <id>pi-sandbox</id>",
+    "      <id>pinata</id>",
     "      <active>true</active>",
     "      <protocol>http</protocol>",
     `      <host>${GUEST_PROXY_HOST}</host>`,

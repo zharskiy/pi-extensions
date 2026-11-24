@@ -5,7 +5,7 @@ import { createFakeEngine } from "../support/fake-engine.ts";
 import { createFakeRunner } from "../support/fake-runner.ts";
 import { runBackendConformance } from "./conformance.ts";
 
-const PULLABLE = "example.test/pi-sandbox:1";
+const PULLABLE = "example.test/pinata:1";
 
 runBackendConformance("colima (fake engine)", { describe, it, expect, beforeAll, afterAll }, async () => {
   const engine = await createFakeEngine({ registry: { [PULLABLE]: `sha256:${"a".repeat(64)}` } });

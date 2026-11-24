@@ -123,7 +123,7 @@ describe.skipIf(!liveEnabled)("MCP sign-in owned by the host pi (live)", () => {
 
     expect(new Set(state.mcp?.tokens())).toEqual(new Set([access]));
 
-    expect(await renderedAuthorization(sandbox)).toMatch(/^Bearer pi-sandbox-[0-9a-f]{24}$/);
+    expect(await renderedAuthorization(sandbox)).toMatch(/^Bearer pinata-[0-9a-f]{24}$/);
 
     expect((await sweepSandbox(sandbox, { access })).findings).toEqual([]);
   });

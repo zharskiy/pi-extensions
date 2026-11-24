@@ -42,16 +42,16 @@ describe("protectedRealPathGuard", () => {
     expect(reasonOf(join(agent, "skills"), { PI_CODING_AGENT_DIR: agent })).toBe(
       "it is inside pi's agent directory",
     );
-    expect(reasonOf(join(state, "proxy"), { PI_SANDBOX_STATE_DIR: state })).toBe(
+    expect(reasonOf(join(state, "proxy"), { PINATA_STATE_DIR: state })).toBe(
       "it is inside pinata's state directory",
     );
-    expect(reasonOf(join(agent, "pi-sandbox", "state"), { PI_CODING_AGENT_DIR: agent })).toBe(
+    expect(reasonOf(join(agent, "pinata", "state"), { PI_CODING_AGENT_DIR: agent })).toBe(
       "it is inside pi's agent directory",
     );
     expect(reasonOf(join(base, "pi"), { PI_CODING_AGENT_DIR: join(base, "pi", "agent") })).toBe(
       "it contains pi's agent directory",
     );
-    expect(reasonOf(join(base, "config"), { PI_SANDBOX_USER_CONFIG: config })).toBe(
+    expect(reasonOf(join(base, "config"), { PINATA_USER_CONFIG: config })).toBe(
       "it contains pinata's user config",
     );
   });

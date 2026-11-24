@@ -1,6 +1,6 @@
 import { type ServerResponse, STATUS_CODES } from "node:http";
 
-export const PROXY_AGENT = "pi-sandbox";
+export const PROXY_AGENT = "pinata";
 
 export type RawHeader = readonly [string, string];
 

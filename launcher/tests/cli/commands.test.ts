@@ -38,7 +38,7 @@ describe("pinata status", () => {
     expect(lines).toContain("runtime socket: /fake/docker.sock");
     expect(lines).toContain("containers: 0");
     expect(lines).toContain("proxy: stopped");
-    expect(lines).toContain("image: pi-sandbox-base:local sha256:built-1");
+    expect(lines).toContain("image: pinata-base:local sha256:built-1");
     expect(lines).toContain("launches: 0 running in the sandbox");
     expect(lines).toContain("grants: 0 active");
   });
@@ -86,7 +86,7 @@ describe("pinata status", () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
     const id = fake.addContainer({
-      name: "pi-sandbox-repo",
+      name: "pinata-repo",
       labels: {
         [LABELS.managed]: "true",
         [LABELS.role]: "agent",
@@ -99,7 +99,7 @@ describe("pinata status", () => {
     });
 
     fake.addContainer({
-      name: "pi-sandbox-relay-repo",
+      name: "pinata-relay-repo",
       labels: {
         [LABELS.managed]: "true",
         [LABELS.role]: "relay",
@@ -177,7 +177,7 @@ describe("pinata status", () => {
 
     expect(await runPinata(["status"], harness.deps)).toBe(0);
     expect(harness.stdout()).toContain(
-      "runtime: none (the sandbox VM engine is unreachable at ~/.colima/pi-sandbox/docker.sock: socket missing)",
+      "runtime: none (the sandbox VM engine is unreachable at ~/.colima/pinata/docker.sock: socket missing)",
     );
     expect(harness.stdout()).toContain("proxy: stopped");
     expect(harness.stdout()).toContain("(not built yet)");
@@ -269,10 +269,10 @@ describe("the sweep", () => {
     repoHash: string,
     launchId = "00000000000000ff",
   ) => {
-    await fake.backend.prepareRelay({ hostPort: 3128, imageId: "relay", preamble: "PI-SANDBOX test" });
+    await fake.backend.prepareRelay({ hostPort: 3128, imageId: "relay", preamble: "PINATA test" });
 
     return fake.addContainer({
-      name: `pi-sandbox-${repoHash.slice(0, 12)}`,
+      name: `pinata-${repoHash.slice(0, 12)}`,
       labels: {
         [LABELS.managed]: "true",
         [LABELS.role]: "agent",
@@ -297,7 +297,7 @@ describe("the sweep", () => {
     expect(fake.relays.size).toBe(0);
     expect(fake.networks.has(FAKE_NETWORK)).toBe(false);
     expect(harness.proxyStops()).toBe(1);
-    expect(harness.stdout()).toContain(`removed container pi-sandbox-${orphan.slice(0, 12)} (${id})\n`);
+    expect(harness.stdout()).toContain(`removed container pinata-${orphan.slice(0, 12)} (${id})\n`);
     expect([...fake.containers.values()].map((entry) => entry.summary.name)).toEqual(["unrelated"]);
   });
 
@@ -331,7 +331,7 @@ describe("the sweep", () => {
 
     await harness.writeJson(files.record, { root: gone });
 
-    await fake.backend.ensureVolume("pi-sandbox-agent-gone", {
+    await fake.backend.ensureVolume("pinata-agent-gone", {
       [LABELS.repoHash]: hash,
       [LABELS.repoRoot]: gone,
     });
@@ -340,7 +340,7 @@ describe("the sweep", () => {
 
     expect(await sweepNow(harness.deps)).toBe(0);
     expect(await readFile(files.record, "utf8").catch(() => undefined)).toBeUndefined();
-    expect(fake.volumes.has("pi-sandbox-agent-gone")).toBe(false);
+    expect(fake.volumes.has("pinata-agent-gone")).toBe(false);
     expect(harness.stdout()).toContain(`forgot ${gone}, which no longer exists\n`);
   });
 
@@ -349,17 +349,17 @@ describe("the sweep", () => {
     const harness = await createHarness({ backend: () => fake.backend });
     const context = await tempDir("gc-images");
     const build = (tag: string) => fake.backend.buildImage(context, tag);
-    const dangling = await build("pi-sandbox-layer:old");
-    const used = await build("pi-sandbox-layer:used");
-    const current = await build("pi-sandbox:base");
+    const dangling = await build("pinata-layer:old");
+    const used = await build("pinata-layer:used");
+    const current = await build("pinata:base");
 
     fake.ageImages(2 * 60 * 60);
 
-    await build("pi-sandbox-layer:old");
+    await build("pinata-layer:old");
 
-    await build("pi-sandbox-layer:used");
+    await build("pinata-layer:used");
 
-    await build("pi-sandbox:base");
+    await build("pinata:base");
 
     fake.addContainer({ name: "running", labels: {}, state: "running", image: used.id });
 
@@ -421,7 +421,7 @@ describe("the sweep", () => {
     const harness = await createHarness({ backend: () => fake.backend });
     const gone = await tempDir("gone-repo");
 
-    await fake.backend.ensureVolume("pi-sandbox-agent-gone", {
+    await fake.backend.ensureVolume("pinata-agent-gone", {
       [LABELS.repoHash]: sha256Hex(gone),
       [LABELS.repoRoot]: gone,
     });
@@ -429,8 +429,8 @@ describe("the sweep", () => {
     await rm(gone, { recursive: true, force: true });
 
     expect(await sweepNow(harness.deps)).toBe(0);
-    expect(fake.volumes.has("pi-sandbox-agent-gone")).toBe(false);
-    expect(harness.stdout()).toContain("removed volume pi-sandbox-agent-gone\n");
+    expect(fake.volumes.has("pinata-agent-gone")).toBe(false);
+    expect(harness.stdout()).toContain("removed volume pinata-agent-gone\n");
   });
 
   it("keeps the pi folder every folder's sandbox shares when the repository that made it is gone", async () => {
@@ -468,10 +468,10 @@ describe("the sweep", () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
 
-    await fake.backend.ensureVolume("pi-sandbox-agent-unlabelled");
+    await fake.backend.ensureVolume("pinata-agent-unlabelled");
 
     expect(await sweepNow(harness.deps)).toBe(0);
-    expect(fake.volumes.has("pi-sandbox-agent-unlabelled")).toBe(true);
+    expect(fake.volumes.has("pinata-agent-unlabelled")).toBe(true);
   });
 });
 

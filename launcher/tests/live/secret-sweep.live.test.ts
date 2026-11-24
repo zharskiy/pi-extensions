@@ -12,7 +12,7 @@ import {
 } from "./harness/scenario.ts";
 import { type Secrets, sweepSandbox } from "./harness/sweep.ts";
 
-const ENV_SECRET_NAME = "PI_SANDBOX_FIXTURE_ENV_SECRET";
+const ENV_SECRET_NAME = "PINATA_FIXTURE_ENV_SECRET";
 
 describe.skipIf(!liveEnabled)(
   "secret sweep of the container filesystem, env and build context (live)",

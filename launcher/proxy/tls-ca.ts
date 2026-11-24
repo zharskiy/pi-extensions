@@ -68,7 +68,7 @@ const caConfig = `[req]
 distinguished_name = dn
 prompt = no
 [dn]
-CN = pi-sandbox launcher CA
+CN = pinata CA
 [authority]
 basicConstraints = critical,CA:TRUE
 keyUsage = critical,keyCertSign,cRLSign

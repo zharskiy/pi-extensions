@@ -35,7 +35,7 @@ const NO_HOME = { home: "/nonexistent-home", env: {} };
 describe("requiredRoot", () => {
   it("refuses an unset root, naming the user config file", () => {
     expect(() =>
-      requiredRoot(undefined, { home: "/h", env: { PI_SANDBOX_USER_CONFIG: "/c/config.json" } }),
+      requiredRoot(undefined, { home: "/h", env: { PINATA_USER_CONFIG: "/c/config.json" } }),
     ).toThrow("config: workspaceRoot is not set, so pi has no folder it may start in");
     expect(requiredRoot("~/work", NO_HOME)).toBe("~/work");
   });
@@ -179,8 +179,8 @@ const createHome = async () => {
   const home = join(base, "home");
   const env = {
     PI_CODING_AGENT_DIR: join(home, ".pi", "agent"),
-    PI_SANDBOX_STATE_DIR: join(base, "state"),
-    PI_SANDBOX_USER_CONFIG: join(base, "config", "config.json"),
+    PINATA_STATE_DIR: join(base, "state"),
+    PINATA_USER_CONFIG: join(base, "config", "config.json"),
   };
 
   await Promise.all(
@@ -190,7 +190,7 @@ const createHome = async () => {
       join(home, "code"),
       join(home, "Projects"),
       env.PI_CODING_AGENT_DIR,
-      env.PI_SANDBOX_STATE_DIR,
+      env.PINATA_STATE_DIR,
     ].map((dir) => mkdir(dir, { recursive: true })),
   );
 
@@ -346,9 +346,9 @@ describe("checkRoot", () => {
       ok: true,
       resolved: "/Volumes/Projects",
     });
-    expect(checkRoot("/Volumes/pi-sandbox-test-absent", context)).toEqual({
+    expect(checkRoot("/Volumes/pinata-test-absent", context)).toEqual({
       ok: true,
-      resolved: "/Volumes/pi-sandbox-test-absent",
+      resolved: "/Volumes/pinata-test-absent",
       exists: false,
     });
   });

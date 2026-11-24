@@ -55,9 +55,9 @@ const HEALTHY: NamedCheck[] = [
     }),
   ),
   named("sandbox", "vm", passed("")),
-  named("sandbox", "vm size", passed("profile pi-sandbox has 8 CPUs and 8 GiB", { brief: "8 CPUs, 8 GiB" })),
+  named("sandbox", "vm size", passed("profile pinata has 8 CPUs and 8 GiB", { brief: "8 CPUs, 8 GiB" })),
   named("sandbox", "file cache", passed("1109 open files, released at 30720")),
-  named("sandbox", "image", passed("pi-sandbox-base:local sha256:abc", { brief: "pi-sandbox-base:local" })),
+  named("sandbox", "image", passed("pinata-base:local sha256:abc", { brief: "pinata-base:local" })),
   named("sandbox", "container", passed("")),
   named("sandbox", "sync", passed("")),
   named(
@@ -91,7 +91,7 @@ describe("the doctor report", () => {
       "",
       "sandbox",
       "  ok    vm                running, 8 CPUs, 8 GiB, shares the workspace root",
-      "  ok    sandbox           starts here (pi-sandbox-base:local)",
+      "  ok    sandbox           starts here (pinata-base:local)",
       "",
       "network",
       "  ok    isolation         no direct route to the internet (tried 1.1.1.1:443)",
@@ -109,7 +109,7 @@ describe("the doctor report", () => {
     const lines = renderReport(HEALTHY, [], VERBOSE);
 
     expect(lines.filter((line) => line.startsWith("  "))).toHaveLength(HEALTHY.length);
-    expect(lines).toContain("  ok    image             pi-sandbox-base:local sha256:abc");
+    expect(lines).toContain("  ok    image             pinata-base:local sha256:abc");
     expect(lines).toContain("  skip  parent proxy      no parent proxy configured");
     expect(lines).toContain(
       "  ok    a login           https://a.test/ answered HTTP 200 (rule derived:auth:a:key)",
@@ -170,7 +170,7 @@ describe("the doctor report", () => {
     const unsized = replaced(
       HEALTHY,
       "vm size",
-      skipped("colima did not report the size of profile pi-sandbox", { neutral: true }),
+      skipped("colima did not report the size of profile pinata", { neutral: true }),
     );
 
     expect(renderReport(inVolume, [], PLAIN)).toContain(
@@ -200,7 +200,7 @@ describe("the doctor report", () => {
       "sandbox",
       "  ok    vm shares         the sandbox VM shares exactly the workspaceRoot, the session dir and pinata's vm dir",
       `        ${reasons[0]}`,
-      "  ok    sandbox           starts here (pi-sandbox-base:local)",
+      "  ok    sandbox           starts here (pinata-base:local)",
       "  warn  vm size           small",
       "",
     ]);

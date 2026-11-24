@@ -10,7 +10,7 @@ import { tempDir } from "../support/temp-dir.ts";
 import { fakeTimers, KEY, plainPrompts, richPrompts, until } from "./prompt/fake-tty.ts";
 import { AUTOMATIC_SIZE, candidateOf, factsOf, HOME, runningVm } from "./setup-fixtures.ts";
 
-const FILE = `${HOME}/.pi/agent/pi-sandbox/config.json`;
+const FILE = `${HOME}/.pi/agent/pinata/config.json`;
 
 const candidate = (name: string, repos: number, extra: Partial<FolderCandidate> = {}) =>
   candidateOf({ stored: `~/${name}`, resolved: `${HOME}/${name}`, repos, ...extra });
@@ -189,7 +189,7 @@ describe("a first run", () => {
     expect(lines).toContain("│  Automatic: 8 CPUs · 10 GiB memory · 60 GiB disk");
     expect(lines).toContain("◇  Settings write-back");
     expect(lines).toContain("◇  Review");
-    expect(lines).toContain("│  ✔ Saved ~/.pi/agent/pi-sandbox/config.json");
+    expect(lines).toContain("│  ✔ Saved ~/.pi/agent/pinata/config.json");
     expect(lines).toContain("│  ✔ Created in 54s: 8 CPUs · 10 GiB memory · 60 GiB disk");
     expect(lines.slice(-7)).toEqual([
       "└  Done. The sandbox is ready.",
@@ -197,7 +197,7 @@ describe("a first run", () => {
       "   Next      cd ~/work/api && pi",
       "   Change    pinata init",
       "   Check     pinata doctor",
-      "   Settings  ~/.pi/agent/pi-sandbox/config.json",
+      "   Settings  ~/.pi/agent/pinata/config.json",
       "             every key: /opt/launcher/CONFIGURATION.md",
     ]);
   });
@@ -567,7 +567,7 @@ describe("the VM step", () => {
     expect(await run.exit).toBe(1);
     expect(run.vms).toEqual([]);
     expect(run.text()).toContain(
-      "│  ✖ Could not save ~/.pi/agent/pi-sandbox/config.json: the file changed while",
+      "│  ✖ Could not save ~/.pi/agent/pinata/config.json: the file changed while",
     );
     expect(run.screen.lines().at(-1)).toBe("└  Nothing was changed.");
   });
@@ -581,7 +581,7 @@ describe("an invalid config", () => {
     expect(run.screen.lines().slice(0, 3)).toEqual([
       "┌  pinata setup",
       "│",
-      "│  ✖ ~/.pi/agent/pi-sandbox/config.json is not valid JSON:",
+      "│  ✖ ~/.pi/agent/pinata/config.json is not valid JSON:",
     ]);
     expect(run.screen.lines().slice(-2)).toEqual([
       "└  Nothing was changed. Fix the file, or move it away to start over, then run",
@@ -803,7 +803,7 @@ describe("plain mode", () => {
       "  VM size: 8 CPUs, 10 GiB memory, 60 GiB disk (automatic)",
       "  Settings write-back: on (default)",
       "When you apply:",
-      "  - create ~/.pi/agent/pi-sandbox/config.json",
+      "  - create ~/.pi/agent/pinata/config.json",
       '      added workspaceRoot: "~/work"',
       "  - create the sandbox VM with this folder, pi's sessions folder and pinata's",
       "    read-only state/vm folder; this takes a minute or two, longer the first",
@@ -814,7 +814,7 @@ describe("plain mode", () => {
       "  4) Change settings write-back",
       "  5) Cancel",
       "Choose [1]:",
-      "Saved ~/.pi/agent/pi-sandbox/config.json",
+      "Saved ~/.pi/agent/pinata/config.json",
       "Creating the VM...",
       "  still working (15s)",
       "  still working (30s)",
@@ -824,7 +824,7 @@ describe("plain mode", () => {
       "Next: cd ~/work/api && pi",
       "Change: pinata init",
       "Check: pinata doctor",
-      "Settings: ~/.pi/agent/pi-sandbox/config.json",
+      "Settings: ~/.pi/agent/pinata/config.json",
     ]);
   });
 

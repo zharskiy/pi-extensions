@@ -1,7 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { connect, createServer, type Socket } from "node:net";
 
-const PREAMBLE_PREFIX = "PI-SANDBOX ";
+const PREAMBLE_PREFIX = "PINATA ";
 
 const NEWLINE = 0x0a;
 

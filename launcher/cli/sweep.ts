@@ -307,7 +307,7 @@ const pruneUnnamedState = async (stateDir: string, now: number) =>
   pruneStateFolder(await stateWalkOf(stateDir, now), stateDir);
 
 const isDefaultStateDir = (deps: CliDeps) =>
-  pathsOf({ env: { ...deps.env, PI_SANDBOX_STATE_DIR: undefined }, home: deps.home }).stateDir ===
+  pathsOf({ env: { ...deps.env, PINATA_STATE_DIR: undefined }, home: deps.home }).stateDir ===
   pathsOf(deps).stateDir;
 
 const gcDue = async (deps: CliDeps) => {

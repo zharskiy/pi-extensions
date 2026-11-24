@@ -34,8 +34,8 @@ describe("pi launch wiring", () => {
     const env = Object.values(container?.spec?.env ?? {});
 
     expect(input?.token).toMatch(/^[0-9a-f]{64}$/);
-    expect(route?.preamble).toBe(`PI-SANDBOX ${input?.token}`);
-    expect(container?.spec?.env.HTTPS_PROXY).toBe("http://pi-sandbox-proxy:3128");
+    expect(route?.preamble).toBe(`PINATA ${input?.token}`);
+    expect(container?.spec?.env.HTTPS_PROXY).toBe("http://pinata-proxy:3128");
     expect(env.filter((value) => value.includes(input?.token ?? "-"))).toEqual([]);
     expect(container?.summary.labels[LABELS.repoHash]).toBe(sha256Hex(harness.repoRoot));
     expect(input).not.toHaveProperty("repoHash");
@@ -46,7 +46,7 @@ describe("pi launch wiring", () => {
   });
 
   it("hands env secrets to the proxy, not to the container", async () => {
-    const fake = createFakeBackend({ registry: { "registry.example.test/pi-sandbox:1": PINNED } });
+    const fake = createFakeBackend({ registry: { "registry.example.test/pinata:1": PINNED } });
     const harness = await createHarness({
       backend: () => fake.backend,
       env: { CORP_TOKEN: REAL_KEY },
@@ -58,12 +58,12 @@ describe("pi launch wiring", () => {
           {
             id: "corp",
             host: "corp.example.test",
-            placeholder: "pi-sandbox-corp",
+            placeholder: "pinata-corp",
             secret: { env: "CORP_TOKEN" },
           },
         ],
       },
-      image: { reference: "registry.example.test/pi-sandbox:1", digest: PINNED },
+      image: { reference: "registry.example.test/pinata:1", digest: PINNED },
     });
 
     expect(await run([], harness.deps)).toBe(0);
@@ -73,14 +73,14 @@ describe("pi launch wiring", () => {
   });
 
   it("hands the env parent proxy's credentials to the proxy input and its address without them", async () => {
-    const fake = createFakeBackend({ registry: { "registry.example.test/pi-sandbox:1": PINNED } });
+    const fake = createFakeBackend({ registry: { "registry.example.test/pinata:1": PINNED } });
     const harness = await createHarness({
       backend: () => fake.backend,
       env: { HTTPS_PROXY: "http://corp:p%40ss@proxy.example.test:8080" },
     });
 
     await harness.writeJson(harness.userConfigFile, {
-      image: { reference: "registry.example.test/pi-sandbox:1", digest: PINNED },
+      image: { reference: "registry.example.test/pinata:1", digest: PINNED },
     });
 
     expect(await run([], harness.deps)).toBe(0);
@@ -105,7 +105,7 @@ describe("pi launch wiring", () => {
     const settings = await readFile(join(renderDirOf(harness), "tools", "m2-settings.xml"), "utf8");
 
     expect(settings).toMatch(
-      /<proxy>[\s\S]*<host>pi-sandbox-proxy<\/host>[\s\S]*<port>3128<\/port>[\s\S]*<\/proxy>/,
+      /<proxy>[\s\S]*<host>pinata-proxy<\/host>[\s\S]*<port>3128<\/port>[\s\S]*<\/proxy>/,
     );
     expect(settings).not.toContain("<password>");
     expect(env).toMatchObject({
@@ -113,7 +113,7 @@ describe("pi launch wiring", () => {
       PIP_CERT: "/etc/ssl/certs/ca-certificates.crt",
     });
     expect(
-      Object.keys(env).filter((name) => name.startsWith("PI_SANDBOX_PROXY") || name === "JAVA_TOOL_OPTIONS"),
+      Object.keys(env).filter((name) => name.startsWith("PINATA_PROXY") || name === "JAVA_TOOL_OPTIONS"),
     ).toEqual([]);
 
     await expectNoLeak(fake, renderDirOf(harness), [REAL_KEY]);
@@ -218,11 +218,11 @@ describe("pi launch wiring", () => {
 
     expect(container?.spec?.mounts).toContainEqual({
       source: renderDir,
-      target: "/opt/pi-sandbox/render",
+      target: "/opt/pinata/render",
       readOnly: true,
       kind: "bind",
     });
-    expect(JSON.parse(rendered).example.key).toMatch(/^pi-sandbox-[0-9a-f]{24}$/);
+    expect(JSON.parse(rendered).example.key).toMatch(/^pinata-[0-9a-f]{24}$/);
 
     await expectNoLeak(fake, renderDir, [REAL_KEY]);
   });

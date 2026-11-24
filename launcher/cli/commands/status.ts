@@ -131,7 +131,7 @@ const imageLine = async (context: LaunchContext) => {
   const { image } = context.effective.config;
   const record = await recordedImage(context.stateDir, context.effective.config);
 
-  return `image: ${record?.reference ?? image.reference ?? "pi-sandbox-base:local"} ${image.digest ?? record?.digest ?? "(not built yet)"}`;
+  return `image: ${record?.reference ?? image.reference ?? "pinata-base:local"} ${image.digest ?? record?.digest ?? "(not built yet)"}`;
 };
 
 const launchLine = async (stateDir: string, launch: Launch) => {

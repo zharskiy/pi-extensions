@@ -43,7 +43,7 @@ const GRACE_MS = 5000;
 
 const SIGNALS: NodeJS.Signals[] = ["SIGINT", "SIGTERM", "SIGHUP"];
 
-const PID_FILE = "/tmp/pi-sandbox-pi.pid";
+const PID_FILE = "/tmp/pinata-pi.pid";
 
 const isInteractive = (terminal: HostTerminal) =>
   terminal.stdin.isTTY === true && terminal.stdout.isTTY === true;
@@ -147,7 +147,7 @@ const execPi = (input: RunPiInput, tty: boolean, streams: PiStreams) =>
     {
       containerId: input.containerId,
       command: ["sh", "-c", PI_SCRIPT, "sh", input.workspace.cwd, "pi", ...input.piArgs],
-      env: { ...input.env, PI_SANDBOX_LAUNCH_ID: input.launchId },
+      env: { ...input.env, PINATA_LAUNCH_ID: input.launchId },
       workdir: input.workspace.repoRoot,
     },
     {

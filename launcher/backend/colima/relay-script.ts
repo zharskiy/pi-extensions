@@ -1,4 +1,4 @@
-export const RELAY_PREAMBLE_VARIABLE = "PI_SANDBOX_RELAY_PREAMBLE";
+export const RELAY_PREAMBLE_VARIABLE = "PINATA_RELAY_PREAMBLE";
 
 export const RELAY_SCRIPT = `
 const net = require("node:net");

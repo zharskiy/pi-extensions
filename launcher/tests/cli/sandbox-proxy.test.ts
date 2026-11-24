@@ -16,7 +16,7 @@ describe("env-sourced credentials", () => {
           {
             id: "corp",
             host: "corp.example.test",
-            placeholder: "pi-sandbox-corp",
+            placeholder: "pinata-corp",
             secret: { env: "CORP_TOKEN" },
           },
         ],

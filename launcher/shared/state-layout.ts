@@ -7,7 +7,7 @@ const SALT_BYTES = 32;
 
 export const GUEST_HOME = "/home/pi";
 
-const RENDER_DIR = "/opt/pi-sandbox/render";
+const RENDER_DIR = "/opt/pinata/render";
 
 export const RENDER_STATUS_FILE = "tools/status.json";
 
@@ -17,11 +17,11 @@ export const GUEST_PATHS = {
   renderDir: RENDER_DIR,
   statusFile: `${RENDER_DIR}/${RENDER_STATUS_FILE}`,
   caBundle: "/etc/ssl/certs/ca-certificates.crt",
-  sandboxCaDir: "/usr/local/share/ca-certificates/pi-sandbox",
-  entrypoint: "/usr/local/bin/pi-sandbox-entrypoint",
-  handover: "/tmp/pi-sandbox-handover",
-  ready: "/tmp/pi-sandbox-ready",
-  forwardStatus: "/tmp/pi-sandbox-forward",
+  sandboxCaDir: "/usr/local/share/ca-certificates/pinata",
+  entrypoint: "/usr/local/bin/pinata-entrypoint",
+  handover: "/tmp/pinata-handover",
+  ready: "/tmp/pinata-ready",
+  forwardStatus: "/tmp/pinata-forward",
 } as const;
 
 const SYSTEM_TREES = [
@@ -40,7 +40,7 @@ const SYSTEM_TREES = [
   "/var/run",
   "/var/lock",
   "/root",
-  "/opt/pi-sandbox",
+  "/opt/pinata",
   "/etc/ssl",
 ];
 

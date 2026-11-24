@@ -254,8 +254,8 @@ const yesRoot = (document: ConfigDocument, facts: HostFacts, env: NodeJS.Process
 
   if (configured !== undefined && fromEnv !== undefined && !sameRoot(configured, fromEnv, context)) {
     throw new LauncherError(
-      `${document.file} has another workspaceRoot than PI_SANDBOX_ROOT`,
-      `edit workspaceRoot in ${document.file}, or unset PI_SANDBOX_ROOT`,
+      `${document.file} has another workspaceRoot than PINATA_ROOT`,
+      `edit workspaceRoot in ${document.file}, or unset PINATA_ROOT`,
     );
   }
 
@@ -265,8 +265,8 @@ const yesRoot = (document: ConfigDocument, facts: HostFacts, env: NodeJS.Process
 
   if (fromEnv === undefined) {
     throw new LauncherError(
-      `${document.file} has no workspaceRoot and PI_SANDBOX_ROOT is not set, so there is no folder to share with the sandbox VM`,
-      "run pinata init in a terminal to choose the folder that holds your projects, or set PI_SANDBOX_ROOT to it",
+      `${document.file} has no workspaceRoot and PINATA_ROOT is not set, so there is no folder to share with the sandbox VM`,
+      "run pinata init in a terminal to choose the folder that holds your projects, or set PINATA_ROOT to it",
     );
   }
 
@@ -275,7 +275,7 @@ const yesRoot = (document: ConfigDocument, facts: HostFacts, env: NodeJS.Process
   if (!verdict.ok) {
     throw new LauncherError(
       rootRefusal(fromEnv, verdict.problem),
-      "point PI_SANDBOX_ROOT at the folder that holds your projects",
+      "point PINATA_ROOT at the folder that holds your projects",
     );
   }
 

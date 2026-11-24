@@ -57,7 +57,7 @@ const failureOf = async (promise: Promise<unknown>) => {
 };
 
 beforeAll(async () => {
-  state.stateDir = await mkdtemp(join(tmpdir(), "pi-sandbox-trust-"));
+  state.stateDir = await mkdtemp(join(tmpdir(), "pinata-trust-"));
   state.launcherPem = (await openCa(state.stateDir)).certPem;
   state.corpPem = (await openCa(join(state.stateDir, "corp"))).certPem;
 
@@ -315,7 +315,7 @@ describe("the trust bundle files", () => {
       .sort();
 
   const withStateDir = async (action: (stateDir: string) => Promise<void>) => {
-    const stateDir = await mkdtemp(join(tmpdir(), "pi-sandbox-trust-files-"));
+    const stateDir = await mkdtemp(join(tmpdir(), "pinata-trust-files-"));
 
     try {
       await action(stateDir);

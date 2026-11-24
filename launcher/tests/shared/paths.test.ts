@@ -24,20 +24,20 @@ const compiledModule = pathToFileURL("/opt/pkg/launcher/dist/shared/paths.js").h
 describe("launcherPaths", () => {
   it("keeps the config and the state under pi's default agent dir", () => {
     expect(launcherPaths({ env: {}, home })).toEqual({
-      stateDir: "/home/dev/.pi/agent/pi-sandbox/state",
-      userConfigFile: "/home/dev/.pi/agent/pi-sandbox/config.json",
+      stateDir: "/home/dev/.pi/agent/pinata/state",
+      userConfigFile: "/home/dev/.pi/agent/pinata/config.json",
     });
   });
 
   it("lets the environment override every path", () => {
     const temp = realpathSync.native(tmpdir());
     const env = {
-      PI_SANDBOX_STATE_DIR: join(temp, "pi-sandbox-state"),
-      PI_SANDBOX_USER_CONFIG: "/tmp/user.json",
+      PINATA_STATE_DIR: join(temp, "pinata-state"),
+      PINATA_USER_CONFIG: "/tmp/user.json",
     };
 
     expect(launcherPaths({ env, home })).toEqual({
-      stateDir: join(temp, "pi-sandbox-state"),
+      stateDir: join(temp, "pinata-state"),
       userConfigFile: "/tmp/user.json",
     });
   });
@@ -48,11 +48,11 @@ describe("launcherPaths", () => {
 
     await mkdir(stateDir);
 
-    expect(launcherPaths({ env: { PI_SANDBOX_STATE_DIR: `${stateDir}/` }, home }).stateDir).toBe(
+    expect(launcherPaths({ env: { PINATA_STATE_DIR: `${stateDir}/` }, home }).stateDir).toBe(
       realpathSync.native(stateDir),
     );
     expect(
-      launcherPaths({ env: { PI_SANDBOX_STATE_DIR: join(parent, "missing", "..", "state") }, home }).stateDir,
+      launcherPaths({ env: { PINATA_STATE_DIR: join(parent, "missing", "..", "state") }, home }).stateDir,
     ).toBe(realpathSync.native(stateDir));
   });
 
@@ -64,11 +64,11 @@ describe("launcherPaths", () => {
 
     await symlink(stateDir, join(parent, "alias"));
 
-    expect(launcherPaths({ env: { PI_SANDBOX_STATE_DIR: join(parent, "alias") }, home }).stateDir).toBe(
+    expect(launcherPaths({ env: { PINATA_STATE_DIR: join(parent, "alias") }, home }).stateDir).toBe(
       realpathSync.native(stateDir),
     );
     expect(
-      launcherPaths({ env: { PI_SANDBOX_STATE_DIR: join(parent, "alias", "not-yet") }, home }).stateDir,
+      launcherPaths({ env: { PINATA_STATE_DIR: join(parent, "alias", "not-yet") }, home }).stateDir,
     ).toBe(join(realpathSync.native(stateDir), "not-yet"));
   });
 
@@ -76,14 +76,14 @@ describe("launcherPaths", () => {
     const parent = realpathSync.native(await tempDir("state"));
     const stateDir = join(parent, "missing", "state");
 
-    expect(launcherPaths({ env: { PI_SANDBOX_STATE_DIR: stateDir }, home }).stateDir).toBe(stateDir);
+    expect(launcherPaths({ env: { PINATA_STATE_DIR: stateDir }, home }).stateDir).toBe(stateDir);
     expect(existsSync(join(parent, "missing"))).toBe(false);
   });
 
   it("resolves a relative state dir against the working directory, so two directories give two state dirs", async () => {
     const first = realpathSync.native(await tempDir("cwd"));
     const second = realpathSync.native(await tempDir("cwd"));
-    const env = { PI_SANDBOX_STATE_DIR: "state" };
+    const env = { PINATA_STATE_DIR: "state" };
     const cwd = vi.spyOn(process, "cwd");
 
     cwd.mockReturnValue(first);
@@ -100,17 +100,17 @@ describe("launcherPaths", () => {
   });
 
   it("ignores empty overrides", () => {
-    const env = { PI_SANDBOX_USER_CONFIG: "" };
+    const env = { PINATA_USER_CONFIG: "" };
 
-    expect(launcherPaths({ env, home }).userConfigFile).toBe("/home/dev/.pi/agent/pi-sandbox/config.json");
+    expect(launcherPaths({ env, home }).userConfigFile).toBe("/home/dev/.pi/agent/pinata/config.json");
   });
 
   it("follows pi's agent dir for the config and the state", () => {
     const env = { PI_CODING_AGENT_DIR: "~/work/agent" };
 
     expect(launcherPaths({ env, home })).toMatchObject({
-      stateDir: "/home/dev/work/agent/pi-sandbox/state",
-      userConfigFile: "/home/dev/work/agent/pi-sandbox/config.json",
+      stateDir: "/home/dev/work/agent/pinata/state",
+      userConfigFile: "/home/dev/work/agent/pinata/config.json",
     });
   });
 });

@@ -26,7 +26,7 @@ describe("a launch with services", () => {
     const graceful = fake.stops.filter((stop) => stop.timeoutSeconds === 30);
 
     expect(roles).toEqual(["pod", "service", "service", "agent"]);
-    expect(pod?.summary.name).toBe(`pi-sandbox-pod-${installIdOf(harness.stateDir)}`);
+    expect(pod?.summary.name).toBe(`pinata-pod-${installIdOf(harness.stateDir)}`);
     expect(pod?.summary.labels[LABELS.repoHash]).toBeUndefined();
     expect(pod?.spec?.network).toEqual({ kind: "internal", name: FAKE_NETWORK, alias: SERVICES_ALIAS });
     expect(agent?.spec?.network).toEqual({ kind: "internal", name: FAKE_NETWORK });
@@ -67,8 +67,8 @@ describe("a launch with services", () => {
 
     const agent = fake.created.find((entry) => roleOf(entry.summary.labels) === "agent");
 
-    expect(agent?.spec?.env.PI_SANDBOX_SERVICE_PORTS).toBe("5432 6379 6380");
-    expect(agent?.spec?.env.PI_SANDBOX_SERVICES_HOST).toBe(SERVICES_ALIAS);
+    expect(agent?.spec?.env.PINATA_SERVICE_PORTS).toBe("5432 6379 6380");
+    expect(agent?.spec?.env.PINATA_SERVICES_HOST).toBe(SERVICES_ALIAS);
   });
 
   it("tells the agent the services and their ports in the status file", async () => {
@@ -96,7 +96,7 @@ describe("a launch with services", () => {
     await harness.writeJson(harness.userConfigFile, { services: SERVICES });
 
     const db = fake.addContainer({
-      name: "pi-sandbox-service-db",
+      name: "pinata-service-db",
       labels: {
         [LABELS.managed]: "true",
         [LABELS.role]: "service",

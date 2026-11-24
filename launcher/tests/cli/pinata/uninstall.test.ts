@@ -17,9 +17,9 @@ const installed = async (global: boolean) => {
 
   await mkdir(join(pinata.shim, ".."), { recursive: true });
 
-  await writeFile(pinata.shim, "#!/bin/sh\nexec node '/x/launcher/bin/pi-sandbox.js' \"$@\"\n");
+  await writeFile(pinata.shim, "#!/bin/sh\nexec node '/x/launcher/bin/pi.js' \"$@\"\n");
 
-  await writeFile(zshrc, "alias ll=ls\n\n# pi-sandbox begin\nexport PATH=x\n# pi-sandbox end\n");
+  await writeFile(zshrc, "alias ll=ls\n\n# pinata begin\nexport PATH=x\n# pinata end\n");
 
   await writeFile(stateLayout(pinata.harness.stateDir).salt, "salt");
 
@@ -31,7 +31,7 @@ describe("pinata uninstall", () => {
     const pinata = await installed(global);
 
     expect(await pinata.run("uninstall")).toBe(0);
-    expect(pinata.lines()).toContain("colima delete --profile pi-sandbox --force --data");
+    expect(pinata.lines()).toContain("colima delete --profile pinata --force --data");
     expect(await exists(pinata.shim)).toBe(false);
     expect(await pinata.packages()).toEqual(["npm:other"]);
     expect(await exists(pinata.harness.stateDir)).toBe(false);
@@ -49,9 +49,9 @@ describe("pinata uninstall", () => {
 
     expect(await pinata.run("uninstall")).toBe(1);
     expect(pinata.harness.stderr()).toContain(
-      "pinata: engine broke\n  hint: colima delete --profile pi-sandbox --force --data removes the VM",
+      "pinata: engine broke\n  hint: colima delete --profile pinata --force --data removes the VM",
     );
-    expect(pinata.lines()).not.toContain("colima delete --profile pi-sandbox --force --data");
+    expect(pinata.lines()).not.toContain("colima delete --profile pinata --force --data");
     expect(await exists(pinata.shim)).toBe(true);
   });
 
@@ -66,7 +66,7 @@ describe("pinata uninstall", () => {
 
     await writeFile(join(dir, agentDir ? "salt" : "other"), "");
 
-    pinata.harness.deps.env.PI_SANDBOX_STATE_DIR = dir;
+    pinata.harness.deps.env.PINATA_STATE_DIR = dir;
 
     expect(await pinata.run("uninstall")).toBe(1);
     expect(pinata.harness.stderr()).toContain("does not look like pinata's state");
@@ -79,7 +79,7 @@ describe("pinata while a pi session runs in the VM", () => {
     const pinata = await createPinata({ global: true, vm: { inspect: async () => RUNNING } });
     const session = pinata.busy();
 
-    pinata.harness.deps.env.PI_SANDBOX_STATE_DIR = join(pinata.harness.root, "none");
+    pinata.harness.deps.env.PINATA_STATE_DIR = join(pinata.harness.root, "none");
 
     expect(await pinata.run(command)).toBe(1);
     expect(pinata.harness.stderr()).toContain("1 pi session is running");

@@ -93,7 +93,7 @@ describe("signals from the launch registration to the end of the session", () =>
     const backend: Backend = {
       ...fake.backend,
       exec: async (spec, io) => {
-        if (spec.env.PI_SANDBOX_LAUNCH_ID !== undefined) {
+        if (spec.env.PINATA_LAUNCH_ID !== undefined) {
           counts.push(signals.listenerCount("SIGINT"));
         }
 
@@ -521,7 +521,7 @@ describe("pi arguments that name host files", () => {
 
     const mounts: MountSpec[] = [
       { source: repo, target: repo, readOnly: false, kind: "bind" },
-      { source: "pi-sandbox-overlay", target: join(repo, "target"), readOnly: false, kind: "volume" },
+      { source: "pinata-overlay", target: join(repo, "target"), readOnly: false, kind: "volume" },
     ];
     const notices = await hostPathNotices(
       [

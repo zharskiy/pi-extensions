@@ -494,11 +494,11 @@ describe("pi commands that start no session", () => {
   });
 
   it("asks pi inside a pinned image for its version", async () => {
-    const fake = createFakeBackend({ registry: { "registry.example.test/pi-sandbox:1": PINNED } });
+    const fake = createFakeBackend({ registry: { "registry.example.test/pinata:1": PINNED } });
     const harness = await createHarness({ backend: () => fake.backend });
 
     await harness.writeJson(harness.userConfigFile, {
-      image: { reference: "registry.example.test/pi-sandbox:1", digest: PINNED },
+      image: { reference: "registry.example.test/pinata:1", digest: PINNED },
     });
 
     expect(await run(["--version"], harness.deps)).toBe(0);

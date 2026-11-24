@@ -9,11 +9,11 @@ const segment = (value: object) => Buffer.from(JSON.stringify(value)).toString("
 const JWT = `${segment({ alg: "RS256", typ: "JWT" })}.${segment({ sub: "user", exp: 1 })}.real-signature_part`;
 
 describe("placeholderFor", () => {
-  it("is pi-sandbox- plus 24 hex characters of sha256(salt + identity)", () => {
+  it("is pinata- plus 24 hex characters of sha256(salt + identity)", () => {
     const value = placeholderFor(SALT, "auth:corp:key");
 
-    expect(value).toBe(`pi-sandbox-${sha256Hex(`${SALT}auth:corp:key`).slice(0, 24)}`);
-    expect(value).toMatch(/^pi-sandbox-[0-9a-f]{24}$/);
+    expect(value).toBe(`pinata-${sha256Hex(`${SALT}auth:corp:key`).slice(0, 24)}`);
+    expect(value).toMatch(/^pinata-[0-9a-f]{24}$/);
   });
 
   it("is stable for one salt and identity and differs otherwise", () => {
@@ -83,6 +83,6 @@ describe("isPlaceholder", () => {
   it("refuses real-looking values", () => {
     expect(isPlaceholder(JWT)).toBe(false);
     expect(isPlaceholder("sk-live-1234")).toBe(false);
-    expect(isPlaceholder("pi-sandbox-short")).toBe(false);
+    expect(isPlaceholder("pinata-short")).toBe(false);
   });
 });

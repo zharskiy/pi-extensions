@@ -55,12 +55,12 @@ describe("createFakeBackend exec", () => {
   });
 
   it("never runs a pi session exec in a real shell, even when its command names a bind path", async () => {
-    const root = mkdtempSync(join(tmpdir(), "pi-sandbox-fake-guest-"));
+    const root = mkdtempSync(join(tmpdir(), "pinata-fake-guest-"));
     const marker = join(root, "ran");
     const out = new PassThrough();
     const fake = createFakeBackend({ guestAgentDir: join(root, "agent") });
     const { id } = await fake.backend.createContainer({
-      name: "pi-sandbox-test-0000000000000001",
+      name: "pinata-test-0000000000000001",
       image: "sha256:image",
       labels: {},
       mounts: [{ kind: "bind", source: root, target: root, readOnly: false }],
@@ -80,7 +80,7 @@ describe("createFakeBackend exec", () => {
     const code = await fake.backend.exec(
       {
         containerId: id,
-        env: { PI_SANDBOX_LAUNCH_ID: "0000000000000001" },
+        env: { PINATA_LAUNCH_ID: "0000000000000001" },
         workdir: root,
         command: ["sh", "-c", `touch ${marker}; cd "$1"; shift; exec "$@"`, "sh", root, "pi"],
       },

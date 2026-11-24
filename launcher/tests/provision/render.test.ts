@@ -14,7 +14,7 @@ const NO_TOOLS: DerivedTools = {
 };
 
 const derived = (
-  key = "pi-sandbox-aaaaaaaaaaaaaaaaaaaaaaaa",
+  key = "pinata-aaaaaaaaaaaaaaaaaaaaaaaa",
   tools: Partial<DerivedTools> = {},
 ): DerivedSandboxPi => ({
   rules: [],
@@ -142,11 +142,11 @@ describe("renderAgentDir", () => {
 
     await writeText(join(host, "AGENTS.md"), "changed\n");
 
-    await render("pi-sandbox-bbbbbbbbbbbbbbbbbbbbbbbb");
+    await render("pinata-bbbbbbbbbbbbbbbbbbbbbbbb");
 
     expect(await readFile(agents, "utf8")).toBe("changed\n");
     expect(JSON.parse(await readFile(auth, "utf8"))).toEqual(
-      derived("pi-sandbox-bbbbbbbbbbbbbbbbbbbbbbbb").files["auth.json"],
+      derived("pinata-bbbbbbbbbbbbbbbbbbbbbbbb").files["auth.json"],
     );
     expect((await stat(auth)).ino).not.toBe(before.ino);
   });
@@ -238,9 +238,9 @@ describe("renderAgentDir", () => {
     const proxy = /<proxy>([\s\S]*)<\/proxy>/.exec(settings)?.[1] ?? "";
 
     expect(proxy).toContain("<active>true</active>");
-    expect(proxy).toContain("<host>pi-sandbox-proxy</host>");
+    expect(proxy).toContain("<host>pinata-proxy</host>");
     expect(proxy).toContain("<port>3128</port>");
-    expect(proxy).toContain("<nonProxyHosts>localhost|127.*|[::1]|pi-sandbox-proxy</nonProxyHosts>");
+    expect(proxy).toContain("<nonProxyHosts>localhost|127.*|[::1]|pinata-proxy</nonProxyHosts>");
     expect(proxy).not.toContain("<username>");
     expect(proxy).not.toContain("<password>");
   });
@@ -248,7 +248,7 @@ describe("renderAgentDir", () => {
   it("renders the tool files of the derived glab, npm, pip, Maven and git settings", async () => {
     const stateDir = await tempDir("render-state");
     const host = await tempDir("render-host");
-    const P = "pi-sandbox-bbbbbbbbbbbbbbbbbbbbbbbb";
+    const P = "pinata-bbbbbbbbbbbbbbbbbbbbbbbb";
     const result = await renderAgentDir({
       stateDir,
       hostAgentDir: host,
@@ -425,7 +425,7 @@ describe("renderAgentDir fix round", () => {
         stateDir,
         hostAgentDir: host,
         hostHome: host,
-        derived: derived(`pi-sandbox-${String(index).repeat(24)}`),
+        derived: derived(`pinata-${String(index).repeat(24)}`),
         status: NO_STATUS,
       }),
     );
@@ -446,8 +446,8 @@ describe("renderAgentDir fix round", () => {
       derived: derived(key),
       status: { ...NO_STATUS, setup },
     });
-    const projectA = inputOf(first, `pi-sandbox-${"a".repeat(24)}`, [["npm", "ci"]]);
-    const projectB = inputOf(second, `pi-sandbox-${"b".repeat(24)}`, []);
+    const projectA = inputOf(first, `pinata-${"a".repeat(24)}`, [["npm", "ci"]]);
+    const projectB = inputOf(second, `pinata-${"b".repeat(24)}`, []);
     const snapshot = async (dir: string) =>
       Promise.all(
         (await listTree(dir)).map(async (path) =>
@@ -644,9 +644,9 @@ describe("symlinks in the rendered host entries", () => {
     expect(JSON.parse(text)).toEqual({
       version: 1,
       proxy: {
-        url: "http://pi-sandbox-proxy:3128",
-        denials: "http://pi-sandbox-proxy:3128/denials",
-        health: "http://pi-sandbox-proxy:3128/healthz",
+        url: "http://pinata-proxy:3128",
+        denials: "http://pinata-proxy:3128/denials",
+        health: "http://pinata-proxy:3128/healthz",
       },
       resources: { cpus: 2, pids: 256, shmMiB: 64 },
       volumes: [{ target: "/home/pi/.m2" }, { target: "/home/pi/.gradle" }],

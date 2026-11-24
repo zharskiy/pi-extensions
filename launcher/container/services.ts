@@ -56,7 +56,7 @@ const POD_USER = "65534:65534";
 
 const POD_PIDS = 64;
 
-const POD_VOLUMES = "/pi-sandbox/service-volumes";
+const POD_VOLUMES = "/pinata/service-volumes";
 
 const SERVICE_TMPFS = "mode=1777";
 

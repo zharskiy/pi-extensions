@@ -11,7 +11,7 @@ export const TRUST_SCRIPT = "trust-jdk.sh";
 
 export const JDK_NET_PROPERTIES = "jdk-net.properties";
 
-const LIB_DIR = "/usr/local/lib/pi-sandbox";
+const LIB_DIR = "/usr/local/lib/pinata";
 
 export const TRUST_IMAGE_PATHS = {
   caDir: GUEST_PATHS.sandboxCaDir,

@@ -76,9 +76,9 @@ describe("modes, glyphs and colour", () => {
   it("is rich on a capable terminal and plain on request, on a dumb or unset TERM, or below 40 columns", () => {
     expect(uiWith(ENV).mode).toBe("rich");
 
-    expect(uiWith({ ...ENV, PI_SANDBOX_PLAIN: "1" }).mode).toBe("plain");
+    expect(uiWith({ ...ENV, PINATA_PLAIN: "1" }).mode).toBe("plain");
 
-    expect(uiWith({ ...ENV, PI_SANDBOX_PLAIN: "" }).mode).toBe("rich");
+    expect(uiWith({ ...ENV, PINATA_PLAIN: "" }).mode).toBe("rich");
 
     expect(uiWith({ ...ENV, TERM: "dumb" }).mode).toBe("plain");
 

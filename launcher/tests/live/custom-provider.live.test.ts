@@ -55,6 +55,6 @@ describe.skipIf(!liveEnabled)("custom baseUrl provider with an injected key (liv
 
     expect(models.stdout).not.toContain(apiKey);
 
-    expect(models.stdout).toMatch(/pi-sandbox-[0-9a-f]{24}/);
+    expect(models.stdout).toMatch(/pinata-[0-9a-f]{24}/);
   });
 });
