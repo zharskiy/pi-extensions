@@ -43,9 +43,7 @@ Pinata never installs, updates or removes pi. Without a host pi, `pinata install
 4. With `--config <file>`, writes that file over `~/.pi/agent/pinata/config.json`, after checking it before anything else changes. It writes it on every install that passes it, with no merge: this is how a team hands out one config.
 5. Runs `pinata init`, which asks which folder holds your projects, shows the VM size it picked for this Mac, and creates the VM when you choose Apply. It asks only on a first install (no `workspaceRoot` in the config) at a terminal, without `--yes`, `--config` or `CI`; otherwise it runs as `pinata init --yes`, and not at all when the config has a `workspaceRoot`, the VM exists and no `--config` was given.
 
-Each step that changes something prints one line, such as `✔ Installed colima` or `✔ Linked pi to the sandbox (~/.local/bin/pi)`, and a slow one shows `… Installing colima` at a terminal until it ends. The output of brew, npm, colima and pi appears only when one of them fails: the `✖` line names the step, the last 20 lines of the output follow, then the `pinata:` error. A closing block says how to start and where the settings are.
-
-Run again, `pinata install` changes nothing and prints `Pinata is already installed. Nothing changed.` Open a new terminal afterwards.
+Run again, `pinata install` changes nothing. Open a new terminal afterwards.
 
 To pick other versions, run `pinata update [<version>]`: it runs `npm install -g --legacy-peer-deps @zharskiy/pinata@<version>` (`latest` without a version), then the new copy's `pinata install --yes`. A bare `pi update` moves an npm pi to the latest version. Pi in the sandbox follows the host pi.
 
