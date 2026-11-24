@@ -30,12 +30,12 @@ const replyWith = (body: string): SecretReply => ({
 
 const openedReply = (server: string) =>
   replyWith(
-    `pi-sandbox: sign-in to MCP server ${server} opened in the browser on the host; finish it there, then retry. If no browser opened, run pi mcp login ${server} on the host.`,
+    `pinata: sign-in to MCP server ${server} opened in the browser on the host; finish it there, then retry. If no browser opened, run pi mcp login ${server} on the host.`,
   );
 
 const notSignedInReply = (server: string) =>
   replyWith(
-    `pi-sandbox: MCP server ${server} is not signed in on the host; run pi mcp login ${server} on the host, then retry.`,
+    `pinata: MCP server ${server} is not signed in on the host; run pi mcp login ${server} on the host, then retry.`,
   );
 
 const cachedOf = (entry: McpAuthEntry & { access: string }): CachedSecret => ({

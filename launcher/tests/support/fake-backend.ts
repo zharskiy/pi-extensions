@@ -458,7 +458,7 @@ export const createFakeBackend = (options: FakeBackendOptions = {}) => {
     if (foreignNetworks.has(name)) {
       throw new LauncherError(
         `network ${name} exists but is not managed by pi-sandbox`,
-        "remove that network from the sandbox VM so the launcher can create its own",
+        "remove that network from the sandbox VM so pinata can create its own",
       );
     }
 

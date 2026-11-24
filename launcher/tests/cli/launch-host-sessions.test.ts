@@ -57,7 +57,7 @@ describe("pi launch with host sessions", () => {
     expect(names.some((name) => name.startsWith("foreign.jsonl.rejected-"))).toBe(true);
     expect(await readdir(join(dir, "run", "agents", "one"))).toEqual([]);
     expect(harness.stderr()).toContain(
-      `pi-sandbox: sessions: ${join(dir, "foreign.jsonl")} names a cwd outside the repository; renamed to foreign.jsonl.rejected-`,
+      `pinata: sessions: ${join(dir, "foreign.jsonl")} names a cwd outside the repository; renamed to foreign.jsonl.rejected-`,
     );
   });
 });

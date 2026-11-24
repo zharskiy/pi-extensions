@@ -130,7 +130,7 @@ describe("applying a plan as lines", () => {
       [
         "x Could not restart the VM after 31s.",
         "  colima start failed",
-        "Your settings are saved, but the sandbox VM is not ready. Fix the problem above, then run pi sandbox init again. pi sandbox doctor checks everything.",
+        "Your settings are saved, but the sandbox VM is not ready. Fix the problem above, then run pinata init again. pinata doctor checks everything.",
         "",
       ].join("\n"),
     );

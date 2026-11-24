@@ -43,7 +43,7 @@ describe("protectedRealPathGuard", () => {
       "it is inside pi's agent directory",
     );
     expect(reasonOf(join(state, "proxy"), { PI_SANDBOX_STATE_DIR: state })).toBe(
-      "it is inside the launcher state directory",
+      "it is inside pinata's state directory",
     );
     expect(reasonOf(join(agent, "pi-sandbox", "state"), { PI_CODING_AGENT_DIR: agent })).toBe(
       "it is inside pi's agent directory",
@@ -52,7 +52,7 @@ describe("protectedRealPathGuard", () => {
       "it contains pi's agent directory",
     );
     expect(reasonOf(join(base, "config"), { PI_SANDBOX_USER_CONFIG: config })).toBe(
-      "it contains the launcher user config",
+      "it contains pinata's user config",
     );
   });
 

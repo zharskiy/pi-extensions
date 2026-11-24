@@ -85,7 +85,7 @@ describe("ensureServices", () => {
     const [podEntry, dbEntry, cacheEntry] = fake.created;
     const pod = podOf(fake);
 
-    expect(lines).toEqual(["pi-sandbox: starting service db", "pi-sandbox: starting service cache"]);
+    expect(lines).toEqual(["pinata: starting service db", "pinata: starting service cache"]);
     expect(fake.networks.has(FAKE_NETWORK)).toBe(true);
     expect(podEntry?.spec).toMatchObject({
       name: `pi-sandbox-pod-${installIdOf(STATE)}`,
@@ -175,7 +175,7 @@ describe("ensureServices", () => {
     await ensureServices(input);
 
     expect(podOf(fake)).toBe(pod);
-    expect(lines).toEqual(["pi-sandbox: starting service cache"]);
+    expect(lines).toEqual(["pinata: starting service cache"]);
     expect(fake.removals).toEqual([crashed?.summary.id]);
     expect(live(fake)).toHaveLength(3);
   });
@@ -217,7 +217,7 @@ describe("ensureServices", () => {
 
     expect(podOf(fake)).toBe(pod);
     expect(lines).toEqual([
-      "pi-sandbox: the services in the config changed; they restart once every pi session has ended",
+      "pinata: the services in the config changed; they restart once every pi session has ended",
     ]);
     expect(live(fake)).toHaveLength(3);
   });
@@ -315,8 +315,8 @@ describe("changed services while another session uses them", () => {
     await ensureServices(input);
 
     expect(lines).toEqual([
-      "pi-sandbox: the services in the config changed; they restart once every pi session has ended",
-      "pi-sandbox: starting service cache",
+      "pinata: the services in the config changed; they restart once every pi session has ended",
+      "pinata: starting service cache",
     ]);
     expect(live(fake)).toHaveLength(3);
   });

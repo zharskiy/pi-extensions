@@ -149,7 +149,7 @@ describe("TLS interception", () => {
         port: 443,
         rule: "tls",
         reason:
-          "the client closed the connection during the TLS handshake, so it may not trust the launcher CA or the VM's clock may be more than an hour behind the host's",
+          "the client closed the connection during the TLS handshake, so it may not trust pinata's CA or the VM's clock may be more than an hour behind the host's",
       }),
     ]);
 
@@ -279,7 +279,7 @@ describe("TLS interception", () => {
 
 describe("handshakeDenial", () => {
   const REJECTED =
-    "the client rejected the proxy's certificate, so it may not trust the launcher CA or the VM's clock may be more than an hour behind the host's";
+    "the client rejected the proxy's certificate, so it may not trust pinata's CA or the VM's clock may be more than an hour behind the host's";
 
   const named = { host: HOST, sni: HOST };
 

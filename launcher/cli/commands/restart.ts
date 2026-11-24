@@ -22,8 +22,6 @@ import { Cancelled, type Ui } from "../prompt/types.ts";
 import { releaseRepos, removeStored, withInstallReleased } from "../release.ts";
 import { configuredVmStart, startConfiguredVm } from "../vm.ts";
 
-export const RESTART_OPTIONS_HINT = "pi sandbox restart takes no options; it removes everything";
-
 const RENDER_LOCK_TIMEOUT_MS = 30_000;
 
 const DECLINED_EXIT = 130;
@@ -48,12 +46,12 @@ const plural = (count: number, one: string, many: string) => `${count} ${count =
 
 const TEXT = {
   intro:
-    "pi sandbox restart removes the sandbox's caches (containers, volumes and images) and the next pi rebuilds them from your config",
+    "pinata restart removes the sandbox's caches (containers, volumes and images) and the next pi rebuilds them from your config",
   busy: (sessions: Parameters<typeof busyText>[0]) => `${busyText(sessions)} in the sandbox VM`,
-  busyHint: "exit them, then run pi sandbox restart again",
+  busyHint: "exit them, then run pinata restart again",
   meanwhile: (sessions: Parameters<typeof busyText>[0]) =>
     `a pi session started in the sandbox VM meanwhile (${busyText(sessions)}), so the sandbox network, services, volumes and images were kept`,
-  meanwhileHint: "exit it, then run pi sandbox restart again",
+  meanwhileHint: "exit it, then run pinata restart again",
   stakeLines: (stake: Stake) => [
     ...stake.services.map((service) => `the data of service ${service}`),
     ...(stake.unnamed === 0
@@ -68,8 +66,8 @@ const TEXT = {
   yes: "Yes, delete it",
   no: "No, keep everything",
   noTerminal: (stake: Stake, why: string) =>
-    `pi sandbox restart would delete data the next pi cannot rebuild (${TEXT.stakeLines(stake).join("; ")}), and ${why}`,
-  noTerminalHint: "run pi sandbox restart at a terminal to confirm",
+    `pinata restart would delete data the next pi cannot rebuild (${TEXT.stakeLines(stake).join("; ")}), and ${why}`,
+  noTerminalHint: "run pinata restart at a terminal to confirm",
   declined: "nothing was removed",
   removedContainers: (count: number) => `removed ${plural(count, "container", "containers")}`,
   removedVolumes: (kinds: VolumeKind[]) => {

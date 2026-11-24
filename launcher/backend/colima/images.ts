@@ -33,7 +33,7 @@ const DOWNLOAD_CERTIFICATE_HINT =
   "a proxy or CA on this network signs the downloads; set tls.extraCa to its CA";
 
 const ENGINE_CERTIFICATE_HINT =
-  "a proxy or CA on this network signs the registry and its CA is not declared in tls.extraCa; run pi sandbox doctor, which prints the tls.extraCa line to add";
+  "a proxy or CA on this network signs the registry and its CA is not declared in tls.extraCa; run pinata doctor, which prints the tls.extraCa line to add";
 
 const BUILD_LABELS = JSON.stringify({ [LABELS.managed]: "true" });
 

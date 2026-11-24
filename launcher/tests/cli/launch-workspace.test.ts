@@ -4,16 +4,16 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { pathsOf } from "../../cli/deps.ts";
 import { sandboxReachOf } from "../../cli/host-pi.ts";
-import { run } from "../../cli/index.ts";
+import { run, runPinata } from "../../cli/index.ts";
 import { repoHash, repoRecordOf } from "../../shared/index.ts";
 import { sandboxWriteRoots } from "../../workspace/index.ts";
 import { createFakeBackend, createHarness, type HarnessOptions } from "./harness.ts";
 
 const overlayNotice = (places: string) =>
-  `pi-sandbox: node_modules overlaid in ${places}; the host copies are hidden; set mounts.autoOverlays=false to keep them`;
+  `pinata: node_modules overlaid in ${places}; the host copies are hidden; set mounts.autoOverlays=false to keep them`;
 
 const CAPPED_NOTICE =
-  "pi-sandbox: more than 512 build output directories; overlays disabled, the host copies are used";
+  "pinata: more than 512 build output directories; overlays disabled, the host copies are used";
 
 const occurrences = (text: string, line: string) => text.split("\n").filter((entry) => entry === line).length;
 
@@ -42,7 +42,7 @@ const workspaceHarness = async (layout: Layout, options: HarnessOptions = {}) =>
 };
 
 const notGitNotice = (folder: string) =>
-  `pi-sandbox: ${folder} is not in a git repository; build output is not overlaid, the host copies are used`;
+  `pinata: ${folder} is not in a git repository; build output is not overlaid, the host copies are used`;
 
 describe("pi in a project of the workspace root", () => {
   it("binds the whole root read-write, nothing narrower, and overlays only the started project", async () => {
@@ -102,7 +102,7 @@ describe("pi in a project of the workspace root", () => {
 
     expect(await run([], { ...harness.deps, cwd: worktree })).toBe(1);
     expect(harness.stderr()).toContain(
-      `pi-sandbox: git: the git dir ${gitDir} of ${worktree} is outside the workspace root (workspaceRoot: ${harness.work})`,
+      `pinata: git: the git dir ${gitDir} of ${worktree} is outside the workspace root (workspaceRoot: ${harness.work})`,
     );
     expect(harness.calls.filter((call) => call.file === "colima")).toEqual([]);
     expect(fake.created).toEqual([]);
@@ -139,9 +139,9 @@ describe("pi in a project of the workspace root", () => {
     const harness = await workspaceHarness({ repos: [] }, { backend: () => createFakeBackend().backend });
     const deps = { ...harness.deps, cwd: harness.work };
 
-    expect(await run(["sandbox", "status"], deps)).toBe(0);
+    expect(await runPinata(["status"], deps)).toBe(0);
     expect(harness.stdout()).toContain(`folder: ${harness.work}\n`);
-    expect(await run(["sandbox", "restart"], deps)).toBe(0);
+    expect(await runPinata(["restart"], deps)).toBe(0);
     expect(harness.stdout()).toContain("restarted the sandbox VM\n");
   });
 
@@ -150,7 +150,7 @@ describe("pi in a project of the workspace root", () => {
     const harness = await workspaceHarness({ repos: [] }, { backend: () => fake.backend });
     const home = harness.deps.home;
     const project = join(home, "code", "project");
-    const refusal = `pi-sandbox: pi may not start in ${home}, a protected folder, refusing`;
+    const refusal = `pinata: pi may not start in ${home}, a protected folder, refusing`;
 
     harness.deps.cwd = home;
 
@@ -164,7 +164,7 @@ describe("pi in a project of the workspace root", () => {
 
     expect(await run([], harness.deps)).toBe(1);
     expect(occurrences(harness.stderr(), refusal)).toBe(2);
-    expect(await run(["sandbox", "status"], harness.deps)).toBe(0);
+    expect(await runPinata(["status"], harness.deps)).toBe(0);
     expect(fake.containers.size).toBe(0);
   });
 });
@@ -185,7 +185,7 @@ describe("the overlay notice", () => {
 
     expect(await run([], harness.deps)).toBe(0);
     expect(harness.stderr()).toContain(
-      "pi-sandbox: node_modules, target overlaid in 2 directories; the host copies are hidden",
+      "pinata: node_modules, target overlaid in 2 directories; the host copies are hidden",
     );
   });
 

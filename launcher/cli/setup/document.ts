@@ -35,14 +35,14 @@ const LEADING_PATH = /^\/[^:]*: /;
 const WRITE_REASONS: Record<string, { reason: string; hint: string }> = {
   EACCES: {
     reason: "its folder is not writable",
-    hint: "fix the folder's permissions, then run pi sandbox init again",
+    hint: "fix the folder's permissions, then run pinata init again",
   },
   EPERM: {
     reason: "its folder is not writable",
-    hint: "fix the folder's permissions, then run pi sandbox init again",
+    hint: "fix the folder's permissions, then run pinata init again",
   },
-  EROFS: { reason: "its disk is read-only", hint: "make the disk writable, then run pi sandbox init again" },
-  ENOSPC: { reason: "its disk is full", hint: "free some space, then run pi sandbox init again" },
+  EROFS: { reason: "its disk is read-only", hint: "make the disk writable, then run pinata init again" },
+  ENOSPC: { reason: "its disk is full", hint: "free some space, then run pinata init again" },
 };
 
 export const VM_KEYS: readonly (keyof VmSpec)[] = ["cpus", "memoryGiB", "diskGiB"];
@@ -246,7 +246,7 @@ export const writeDocument = async (document: ConfigDocument, text: string) => {
   if (current !== document.text) {
     throw new LauncherError(
       `could not save ${document.file}: the file changed while setup ran`,
-      "run pi sandbox init again to see the new content",
+      "run pinata init again to see the new content",
     );
   }
 

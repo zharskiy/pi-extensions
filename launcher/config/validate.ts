@@ -91,7 +91,7 @@ const hostPattern = hostCheck(true, false);
 const variable: Check = (value) => (VARIABLE.test(value) ? undefined : "is not an environment variable name");
 
 const launcherSet: Check = (value) =>
-  isLauncherSetVariable(value) ? "is set by the launcher and is not forwarded" : undefined;
+  isLauncherSetVariable(value) ? "is set by pinata and is not forwarded" : undefined;
 
 const forwardableVariable: Check = (value) =>
   variable(value) ??
@@ -99,7 +99,7 @@ const forwardableVariable: Check = (value) =>
   (isSecretName(value) ? "looks like a secret and stays on the host" : undefined);
 
 const settableVariable: Check = (value) =>
-  variable(value) ?? (isLauncherSetVariable(value) ? "is set by the launcher and cannot be set" : undefined);
+  variable(value) ?? (isLauncherSetVariable(value) ? "is set by pinata and cannot be set" : undefined);
 
 const withoutNul: Check = (value) => (value.includes("\0") ? "must not contain a NUL character" : undefined);
 
@@ -832,7 +832,7 @@ const normalized = (config: UserConfig): UserConfig => {
 
 const REPLACED_KEYS: Record<string, string> = {
   workspaceRoots:
-    'workspaceRoots was replaced by workspaceRoot, one folder: write "workspaceRoot": "~/work" in its place, or remove the key and run pi sandbox init',
+    'workspaceRoots was replaced by workspaceRoot, one folder: write "workspaceRoot": "~/work" in its place, or remove the key and run pinata init',
 };
 
 export const validateConfig = (value: unknown): UserConfig => {

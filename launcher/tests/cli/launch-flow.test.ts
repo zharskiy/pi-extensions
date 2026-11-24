@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import type { Backend, MountSpec, VmPath, VmTarget } from "../../backend/index.ts";
 import { onClosedOutput } from "../../cli/deps.ts";
 import { CLEANUP_WAITING, GROUND_WAITING, withGroundLock } from "../../cli/ground.ts";
-import { run } from "../../cli/index.ts";
+import { run, runPinata } from "../../cli/index.ts";
 import { hostPathNotices, launchNotices } from "../../cli/launch-notices.ts";
 import { liveLaunches } from "../../grants/index.ts";
 import { LauncherError } from "../../shared/index.ts";
@@ -16,10 +16,10 @@ import { sandboxConfig } from "../support/sandbox-config.ts";
 import { tempDir } from "../support/temp-dir.ts";
 import { createFakeBackend, createHarness, piSessions, renderDirOf } from "./harness.ts";
 
-const STOPPING = "pi-sandbox: stopping after the current step\n";
+const STOPPING = "pinata: stopping after the current step\n";
 
 const SKIPPING_WAITS =
-  "pi-sandbox: the cleanup will not wait for other pi-sandbox commands; another Ctrl-C ends pi-sandbox at once, leaving the rest to the next start\n";
+  "pinata: the cleanup will not wait for other pinata commands; another Ctrl-C ends pinata at once, leaving the rest to the next start\n";
 
 const PREPARATION_SIGNALS: NodeJS.Signals[] = ["SIGINT", "SIGTERM", "SIGHUP"];
 
@@ -326,9 +326,7 @@ describe("the VM size", () => {
       busy: [0],
       started: [{ cpus: 6, memoryGiB: 8, diskGiB: 80 }],
     });
-    expect(harness.stderr()).toContain(
-      "pi-sandbox: restarting the sandbox VM to change its size to 6 CPUs\n",
-    );
+    expect(harness.stderr()).toContain("pinata: restarting the sandbox VM to change its size to 6 CPUs\n");
   });
 
   it("refuses a vm above what this Mac has before it starts or stops the VM", async () => {
@@ -339,8 +337,8 @@ describe("the VM size", () => {
     expect(await run([], harness.deps)).toBe(1);
     expect(harness.stderr()).toContain(
       [
-        "pi-sandbox: config: vm.cpus 12 is more than the 8 CPUs of this Mac; config: vm.memoryGiB 31 is more than the 30 GiB this Mac can give the VM (32 GiB, less 2 for macOS)",
-        `  hint: lower it in ${harness.userConfigFile}, or run pi sandbox init to choose a size`,
+        "pinata: config: vm.cpus 12 is more than the 8 CPUs of this Mac; config: vm.memoryGiB 31 is more than the 30 GiB this Mac can give the VM (32 GiB, less 2 for macOS)",
+        `  hint: lower it in ${harness.userConfigFile}, or run pinata init to choose a size`,
       ].join("\n"),
     );
     expect(asked).toEqual({ targets: [], busy: [], started: [] });
@@ -355,8 +353,8 @@ describe("the VM size", () => {
     expect(await run([], harness.deps)).toBe(1);
     expect(harness.stderr()).toContain(
       [
-        "pi-sandbox: config: resources.memoryGiB 7 plus the services' memoryGiB 4 is larger than the 10 GiB the VM gets by default on this Mac (vm.memoryGiB is not set); the agent and every service share the VM",
-        `  hint: set vm.memoryGiB in ${harness.userConfigFile}, or run pi sandbox init to choose a size`,
+        "pinata: config: resources.memoryGiB 7 plus the services' memoryGiB 4 is larger than the 10 GiB the VM gets by default on this Mac (vm.memoryGiB is not set); the agent and every service share the VM",
+        `  hint: set vm.memoryGiB in ${harness.userConfigFile}, or run pinata init to choose a size`,
       ].join("\n"),
     );
     expect(asked).toEqual({ targets: [], busy: [], started: [] });
@@ -367,7 +365,7 @@ describe("the VM size", () => {
 
     expect(await run([], harness.deps)).toBe(0);
 
-    await run(["sandbox", "doctor"], harness.deps);
+    await runPinata(["doctor"], harness.deps);
 
     expect(asked.targets).toEqual([{}]);
     expect(asked.started).toEqual([{}, {}]);
@@ -378,7 +376,7 @@ describe("the VM size", () => {
 
     await harness.writeJson(harness.userConfigFile, { vm: { cpus: 6 } });
 
-    await run(["sandbox", "doctor"], harness.deps);
+    await runPinata(["doctor"], harness.deps);
 
     expect(asked.targets).toEqual([]);
     expect(asked.started).toEqual([{ cpus: 6 }]);
@@ -404,7 +402,7 @@ describe("the doctor and the VM", () => {
       }),
     });
 
-    await run(["sandbox", "doctor"], harness.deps);
+    await runPinata(["doctor"], harness.deps);
 
     expect(asked.running).toBe(1);
     expect(asked.shared).toBe(0);
@@ -428,7 +426,7 @@ describe("the doctor and the VM", () => {
 
     await harness.writeJson(harness.userConfigFile, { vm: { releaseFileCache: true } });
 
-    await run(["sandbox", "doctor"], harness.deps);
+    await runPinata(["doctor"], harness.deps);
 
     expect(watched).toEqual(["running"]);
   });
@@ -458,7 +456,7 @@ describe("the launch registration", () => {
     expect(await run([], harness.deps)).toBe(1);
     expect(seen).toEqual({ running: 1, busy: 0 });
     expect(await liveLaunches(harness.stateDir)).toEqual([]);
-    expect(harness.stderr()).toContain("pi-sandbox: the share failed\n  hint: share it by hand\n");
+    expect(harness.stderr()).toContain("pinata: the share failed\n  hint: share it by hand\n");
     expect(harness.stderr()).not.toContain("--no-sandbox");
   });
 
@@ -561,7 +559,7 @@ describe("the overlay notices", () => {
     });
 
     expect(notices).toEqual([
-      "pi-sandbox: the folder is too large to search for build output; overlays disabled, the host copies are used",
+      "pinata: the folder is too large to search for build output; overlays disabled, the host copies are used",
     ]);
   });
 
@@ -579,7 +577,7 @@ describe("the overlay notices", () => {
     };
 
     expect(launchNotices(context)).toEqual([
-      "pi-sandbox: /work/notes is not in a git repository; build output is not overlaid, the host copies are used",
+      "pinata: /work/notes is not in a git repository; build output is not overlaid, the host copies are used",
     ]);
     expect(launchNotices(off)).toEqual([]);
   });

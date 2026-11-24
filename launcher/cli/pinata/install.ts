@@ -16,7 +16,7 @@ import { isSet } from "../prompt/terminal.ts";
 import { launcherVersion, PI_PACKAGE, testedPiVersion } from "../versions.ts";
 import { interactive, isCheckout, PACKAGE, piSources, preflight, refuseBusy, say } from "./host.ts";
 import { setPathBlock } from "./path-block.ts";
-import { inspectShim, installShim } from "./shim.ts";
+import { inspectPinataLink, inspectShim, installPinataLink, installShim, removePinataLink } from "./shim.ts";
 
 export interface InstallFlags {
   pi?: string;
@@ -83,6 +83,11 @@ const setup = async (deps: CliDeps, flags: InstallFlags) => {
   return initCommand(deps, ask && !configured ? [] : [YES_FLAG]);
 };
 
+const linkPinata = (deps: CliDeps, packageDir: string, checkout: boolean) =>
+  checkout
+    ? installPinataLink(deps, join(packageDir, "launcher", "bin", "pinata-dev.js"))
+    : removePinataLink(deps);
+
 export const install = async (deps: CliDeps, packageDir: string, flags: InstallFlags) => {
   await refusePinnedManaged(deps, flags.pi);
 
@@ -95,6 +100,10 @@ export const install = async (deps: CliDeps, packageDir: string, flags: InstallF
 
   await inspectShim(deps);
 
+  if (checkout) {
+    await inspectPinataLink(deps);
+  }
+
   await ensurePi(deps, flags.pi);
 
   const shim = await inspectShim(deps);
@@ -106,6 +115,8 @@ export const install = async (deps: CliDeps, packageDir: string, flags: InstallF
     shim,
     join(packageDir, "launcher", "bin", checkout ? "pi-sandbox-dev.js" : "pi-sandbox.js"),
   );
+
+  await linkPinata(deps, packageDir, checkout);
 
   await setPathBlock(deps, true);
 

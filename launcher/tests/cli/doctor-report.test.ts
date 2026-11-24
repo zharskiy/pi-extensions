@@ -50,7 +50,7 @@ const HEALTHY: NamedCheck[] = [
   named(
     "sandbox",
     "vm shares",
-    passed("the sandbox VM shares exactly the workspaceRoot, the session dir and the launcher's vm dir", {
+    passed("the sandbox VM shares exactly the workspaceRoot, the session dir and pinata's vm dir", {
       brief: "shares the workspace root",
     }),
   ),
@@ -186,7 +186,7 @@ describe("the doctor report", () => {
     const noted = replaced(
       HEALTHY,
       "vm shares",
-      passed("the sandbox VM shares exactly the workspaceRoot, the session dir and the launcher's vm dir", {
+      passed("the sandbox VM shares exactly the workspaceRoot, the session dir and pinata's vm dir", {
         brief: "shares the workspace root",
         reasons,
       }),
@@ -198,7 +198,7 @@ describe("the doctor report", () => {
     expect(merged).toContain(`        ${reasons[0]}`);
     expect(unmerged.slice(unmerged.indexOf("sandbox"), unmerged.indexOf("network"))).toEqual([
       "sandbox",
-      "  ok    vm shares         the sandbox VM shares exactly the workspaceRoot, the session dir and the launcher's vm dir",
+      "  ok    vm shares         the sandbox VM shares exactly the workspaceRoot, the session dir and pinata's vm dir",
       `        ${reasons[0]}`,
       "  ok    sandbox           starts here (pi-sandbox-base:local)",
       "  warn  vm size           small",
@@ -345,11 +345,7 @@ describe("the doctor report", () => {
     const lines = renderReport(
       [
         named("host", "pi", passed(`${HOME}/a and ${HOME}2/b and /x${HOME}/c (${HOME}/d, at:${HOME}/e`)),
-        named(
-          "network",
-          "proxy",
-          failed("the egress proxy could not start", { hint: "run pi sandbox doctor" }),
-        ),
+        named("network", "proxy", failed("the egress proxy could not start", { hint: "run pinata doctor" })),
       ],
       [`see ${HOME}/notes`],
       PLAIN,

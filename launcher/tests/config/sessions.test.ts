@@ -31,10 +31,10 @@ describe("sessions.host", () => {
 describe("env.allow and the launcher's pi directory variables", () => {
   it("refuses PI_CODING_AGENT_SESSION_DIR and PI_CODING_AGENT_DIR", () => {
     expect(configProblem({ env: { allow: ["PI_CODING_AGENT_SESSION_DIR"] } })).toBe(
-      "config: env.allow[0] PI_CODING_AGENT_SESSION_DIR is set by the launcher and is not forwarded",
+      "config: env.allow[0] PI_CODING_AGENT_SESSION_DIR is set by pinata and is not forwarded",
     );
     expect(configProblem({ env: { allow: ["EDITOR", "PI_CODING_AGENT_DIR"] } })).toBe(
-      "config: env.allow[1] PI_CODING_AGENT_DIR is set by the launcher and is not forwarded",
+      "config: env.allow[1] PI_CODING_AGENT_DIR is set by pinata and is not forwarded",
     );
   });
 

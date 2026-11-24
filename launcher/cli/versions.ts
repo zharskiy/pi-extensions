@@ -14,7 +14,7 @@ const readManifest = async () => {
   const manifest = await readJsonFile<PackageManifest>(file);
 
   if (manifest?.version === undefined) {
-    throw new LauncherError(`${file}: no package version`, "reinstall the launcher");
+    throw new LauncherError(`${file}: no package version`, "reinstall pinata");
   }
 
   return { file, manifest, version: manifest.version };

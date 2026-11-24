@@ -60,9 +60,8 @@ describe("pinata install", () => {
 
     await put(pinata.shim);
 
-    await expect(pinata.run("install", "--pi", "1.6.0")).rejects.toMatchObject({
-      hint: "move it away and run this again",
-    });
+    expect(await pinata.run("install", "--pi", "1.6.0")).toBe(1);
+    expect(pinata.harness.stderr()).toContain("  hint: move it away and run this again");
     expect(pinata.lines().filter((line) => line.startsWith("npm"))).toEqual([]);
     expect(await pinata.packages()).toEqual([]);
     expect(await exists(join(pinata.home, ".zshrc"))).toBe(false);
@@ -111,7 +110,8 @@ describe("pinata install", () => {
     async (command) => {
       const pinata = await createPinata({ global: true });
 
-      await expect(pinata.run(command, "--pi", "1.2.3")).rejects.toThrow("pi's managed install");
+      expect(await pinata.run(command, "--pi", "1.2.3")).toBe(1);
+      expect(pinata.harness.stderr()).toContain("pi's managed install");
       expect(pinata.lines().filter((line) => line.includes(" -g "))).toEqual([]);
     },
   );
@@ -122,7 +122,8 @@ describe("pinata install", () => {
 
     await writeFile(given, JSON.stringify({ workspaceRoot: 5 }));
 
-    await expect(pinata.run("install", "--config", given)).rejects.toThrow("workspaceRoot");
+    expect(await pinata.run("install", "--config", given)).toBe(1);
+    expect(pinata.harness.stderr()).toContain("workspaceRoot");
     expect(pinata.lines()).toEqual([]);
     expect(await exists(pinata.shim)).toBe(false);
     expect(await exists(join(pinata.home, ".zshrc"))).toBe(false);
@@ -133,5 +134,89 @@ describe("pinata install", () => {
     expect(JSON.parse(await readFile(pinata.harness.userConfigFile, "utf8"))).toEqual({
       workspaceRoot: pinata.harness.repoRoot,
     });
+  });
+
+  it("links ~/.local/bin/pinata to the checkout, and uninstall removes the link", async () => {
+    const pinata = await createPinata();
+    const link = join(pinata.home, ".local", "bin", "pinata");
+    const target = join(pinata.packageDir, "launcher", "bin", "pinata-dev.js");
+
+    expect(await pinata.run("install", "--yes")).toBe(0);
+    expect(await readlink(link)).toBe(target);
+    expect(pinata.harness.stdout()).toContain(`pinata: linked ${link} to ${target}`);
+
+    await writeFile(join(pinata.harness.stateDir, "salt"), "salt");
+
+    expect(await pinata.run("uninstall")).toBe(0);
+    expect(await exists(link)).toBe(false);
+  });
+
+  it("adds no pinata link to an npm install and removes a checkout's", async () => {
+    const pinata = await createPinata({ global: true });
+    const link = join(pinata.home, ".local", "bin", "pinata");
+
+    expect(await pinata.run("install", "--yes")).toBe(0);
+    expect(await exists(link)).toBe(false);
+
+    await symlink("/elsewhere/launcher/bin/pinata-dev.js", link);
+
+    expect(await pinata.run("install", "--yes")).toBe(0);
+    expect(await exists(link)).toBe(false);
+  });
+
+  it("refuses another file at ~/.local/bin/pinata before it installs pi, and uninstall leaves it there", async () => {
+    const pinata = await createPinata({ hostPi: false });
+    const link = join(pinata.home, ".local", "bin", "pinata");
+
+    await mkdir(join(link, ".."), { recursive: true });
+
+    await writeFile(link, "#!/bin/sh\necho mine\n");
+
+    expect(await pinata.run("install", "--pi", "1.6.0")).toBe(1);
+    expect(pinata.harness.stderr()).toBe(
+      `pinata: ${link} is not pinata's link\n  hint: move it away and run this again\n`,
+    );
+    expect(pinata.lines().filter((line) => line.startsWith("npm"))).toEqual([]);
+    expect(await exists(pinata.shim)).toBe(false);
+
+    await mkdir(pinata.harness.stateDir, { recursive: true });
+
+    await writeFile(join(pinata.harness.stateDir, "salt"), "salt");
+
+    expect(await pinata.run("uninstall")).toBe(0);
+    expect(await readFile(link, "utf8")).toBe("#!/bin/sh\necho mine\n");
+  });
+
+  it.each([
+    [["install", "extra"], 'pinata: install: unexpected argument "extra"'],
+    [["install", "--force"], "pinata: install: Unknown option '--force'"],
+    [["update", "1.0.0", "2.0.0"], 'pinata: update: unexpected argument "2.0.0"'],
+    [["update", "--yes"], "pinata: update: Unknown option '--yes'"],
+    [["uninstall", "--yes"], 'pinata: unknown uninstall option "--yes"'],
+  ])("refuses %j and names its usage", async (argv, message) => {
+    const pinata = await createPinata();
+
+    expect(await pinata.run(...argv)).toBe(1);
+    expect(pinata.harness.stderr()).toMatch(
+      new RegExp(`^${message.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}.*\n  hint: pinata ${argv[0]}`),
+    );
+    expect(pinata.lines()).toEqual([]);
+  });
+
+  it("prints the usage of install, update and uninstall for --help", async () => {
+    const pinata = await createPinata();
+
+    expect(await pinata.run("install", "--help")).toBe(0);
+    expect(await pinata.run("update", "-h")).toBe(0);
+    expect(await pinata.run("uninstall", "--help")).toBe(0);
+    expect(pinata.harness.stdout()).toBe(
+      [
+        "usage: pinata install [--pi <version>] [--config <file>] [--yes]",
+        "usage: pinata update [<version>] [--pi <version>]",
+        "usage: pinata uninstall",
+        "",
+      ].join("\n"),
+    );
+    expect(pinata.lines()).toEqual([]);
   });
 });

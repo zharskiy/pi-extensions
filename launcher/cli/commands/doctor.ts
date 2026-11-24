@@ -88,7 +88,7 @@ interface Run {
   vmRunning?: boolean;
 }
 
-const NOTICE_PREFIX = "pi-sandbox: ";
+const NOTICE_PREFIX = "pinata: ";
 
 const ERASE_LINE = "\r\u001b[2K";
 
@@ -112,7 +112,7 @@ const progressLine = (deps: CliDeps): Progress => {
     line: (text) => {
       state.shown = true;
 
-      deps.stderr.write(`${ERASE_LINE}${`pi sandbox doctor: ${withoutPrefix(text)}`.slice(0, width)}`);
+      deps.stderr.write(`${ERASE_LINE}${`pinata doctor: ${withoutPrefix(text)}`.slice(0, width)}`);
     },
     clear: () => {
       if (state.shown) {
@@ -171,7 +171,7 @@ const configuredSizeCheck = (size: VmSize, target: VmTarget, current: string, br
 
   if (hasSizeChanges(drift)) {
     return warned(`${current}, not the ${vmSizeText(drift.changes)} vm sets`, {
-      hint: "run pi sandbox init, or pi, while no other pi session runs; either restarts the VM with the size vm sets",
+      hint: "run pinata init, or pi, while no other pi session runs; either restarts the VM with the size vm sets",
     });
   }
 
@@ -202,7 +202,7 @@ const sizeCheck = async (deps: CliDeps, context: LaunchContext, sandbox: Sandbox
 
   return isBelow(size, recommended)
     ? warned(`${current}, below ${recommended.cpus} CPUs and ${recommended.memoryGiB} GiB`, {
-        hint: "choose Custom for the VM size in pi sandbox init, or set vm in the config, while no other pi session runs",
+        hint: "choose Custom for the VM size in pinata init, or set vm in the config, while no other pi session runs",
       })
     : passed(current, { brief });
 };
@@ -210,7 +210,7 @@ const sizeCheck = async (deps: CliDeps, context: LaunchContext, sandbox: Sandbox
 type Counted = Extract<VmFileCache, { state: "counted" }>;
 
 const RELEASE_OFF_HINT =
-  "vm.releaseFileCache is off, so nothing releases it; turn it on, or run pi sandbox stop, which frees it all";
+  "vm.releaseFileCache is off, so nothing releases it; turn it on, or run pinata stop, which frees it all";
 
 const pastLimitCheck = ({ count, limit, maxFiles }: Counted, releasing: boolean) => {
   const counted =
@@ -220,7 +220,7 @@ const pastLimitCheck = ({ count, limit, maxFiles }: Counted, releasing: boolean)
 
   return warned(`${counted} the release at ${limit} (kern.maxfiles ${maxFiles})`, {
     hint: releasing
-      ? "it is released while pi runs with vm.releaseFileCache on; pi sandbox stop frees it all"
+      ? "it is released while pi runs with vm.releaseFileCache on; pinata stop frees it all"
       : RELEASE_OFF_HINT,
   });
 };
@@ -259,7 +259,7 @@ const unreadCheck = (reading: Unread) => {
     return warned(
       "looking for the VM's process timed out or could not run, so the file cache release does nothing",
       {
-        hint: `it looks with lsof for the Mac process that holds ${reading.looked.join(" or ")}; pi sandbox stop frees the VM's open files`,
+        hint: `it looks with lsof for the Mac process that holds ${reading.looked.join(" or ")}; pinata stop frees the VM's open files`,
       },
     );
   }
@@ -314,14 +314,13 @@ const rootsCheck = (current: VmShare[], desired: VmShare[]): CheckResult => {
   const { extra, lacking } = shareDrift(current, desired);
 
   if (extra.length === 0 && lacking.length === 0) {
-    return passed(
-      "the sandbox VM shares exactly the workspaceRoot, the session dir and the launcher's vm dir",
-      { brief: "shares the workspace root" },
-    );
+    return passed("the sandbox VM shares exactly the workspaceRoot, the session dir and pinata's vm dir", {
+      brief: "shares the workspace root",
+    });
   }
 
   return warned(`the sandbox VM ${driftText(extra, lacking)}`, {
-    hint: "run pi sandbox init, or pi, while no other pi session runs; either restarts the VM with the shares workspaceRoot sets",
+    hint: "run pinata init, or pi, while no other pi session runs; either restarts the VM with the shares workspaceRoot sets",
   });
 };
 
@@ -355,7 +354,7 @@ const coverageOutcome = (coverage: Coverage, plan: VmSharePlan): SharesOutcome =
   if (coverage.missing.length > 0) {
     return {
       result: warned(`the sandbox VM does not share ${coverage.missing.join(", ")}`, {
-        hint: "run pi once here while no other pi session runs, which shares it and restarts the VM, then pi sandbox doctor again",
+        hint: "run pi once here while no other pi session runs, which shares it and restarts the VM, then pinata doctor again",
       }),
       missing: coverage.missing,
     };

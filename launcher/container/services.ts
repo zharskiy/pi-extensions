@@ -61,7 +61,7 @@ const POD_VOLUMES = "/pi-sandbox/service-volumes";
 const SERVICE_TMPFS = "mode=1777";
 
 const CHANGED_NOTICE =
-  "pi-sandbox: the services in the config changed; they restart once every pi session has ended";
+  "pinata: the services in the config changed; they restart once every pi session has ended";
 
 const volume = (name: string, target: string): MountSpec => ({
   source: name,
@@ -252,7 +252,7 @@ const awaitReady = async (
 const startService = async (input: ServicesInput, service: ResolvedService, pod: string) => {
   input.signal?.throwIfAborted();
 
-  input.report(`pi-sandbox: starting service ${service.name}`);
+  input.report(`pinata: starting service ${service.name}`);
 
   await Promise.all(service.volumes.map((entry) => input.backend.ensureVolume(entry.name)));
 
@@ -322,7 +322,7 @@ const refreshServices = async (
 const restartOne = async (input: ServicesInput, container: ContainerSummary) => {
   const name = container.labels[LABELS.serviceName];
 
-  input.report(`pi-sandbox: starting service ${name}`);
+  input.report(`pinata: starting service ${name}`);
 
   const started = await input.backend.startContainer(container.id).then(
     async () => (await input.backend.inspectContainer(container.id))?.state === "running",

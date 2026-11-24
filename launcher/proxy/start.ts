@@ -264,7 +264,7 @@ const startDaemon = async (options: EnsureProxyOptions, inputHash: string): Prom
     const reason = await failureSince(files.log, offset);
 
     throw new LauncherError(
-      `the pi-sandbox egress proxy did not become healthy${reason === undefined ? "" : `: ${reason}`}`,
+      `the pinata egress proxy did not become healthy${reason === undefined ? "" : `: ${reason}`}`,
       `see ${files.log}`,
     );
   }
@@ -274,7 +274,7 @@ const startDaemon = async (options: EnsureProxyOptions, inputHash: string): Prom
 
 const unhealthyShared = (stateDir: string, record: ProxyRecord) =>
   new LauncherError(
-    `the pi-sandbox egress proxy (pid ${record.pid}) does not answer, and other pi sessions use it, so it was kept`,
+    `the pinata egress proxy (pid ${record.pid}) does not answer, and other pi sessions use it, so it was kept`,
     `see ${proxyFiles(stateDir).log}; once the other pi sessions exit, the next pi starts a new proxy`,
   );
 

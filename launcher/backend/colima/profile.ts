@@ -63,7 +63,7 @@ const deferredUntilIdle = (change: string) =>
 const othersText = (others: string[]) =>
   others.length === 0
     ? ""
-    : ` (${others.join(", ")} of another pi-sandbox install; remove a leftover with docker --context ${instanceOf(ENGINE_PROFILE)} rm --force <name>)`;
+    : ` (${others.join(", ")} of another pinata install; remove a leftover with docker --context ${instanceOf(ENGINE_PROFILE)} rm --force <name>)`;
 
 export const busyText = (busy: VmBusy) => `${sessionsRunning(busy.count)}${othersText(busy.others)}`;
 

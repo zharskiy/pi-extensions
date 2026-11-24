@@ -49,7 +49,7 @@ const fakeTerminal = (isTTY: boolean, stdoutTTY = isTTY) => {
 };
 
 const PI_WRAPPER =
-  /^echo \$\$ > (\/tmp\/pi-sandbox-pi\.pid); cd "\$1" 2>\/dev\/null \|\| echo "pi-sandbox: \$1 is not in the sandbox, pi starts in \$PWD" >&2; shift; exec "\$@"$/;
+  /^echo \$\$ > (\/tmp\/pi-sandbox-pi\.pid); cd "\$1" 2>\/dev\/null \|\| echo "pinata: \$1 is not in the sandbox, pi starts in \$PWD" >&2; shift; exec "\$@"$/;
 
 let launches = 0;
 
@@ -241,7 +241,7 @@ describe("runPi", () => {
 
     expect(hidden.stdout.trim()).toBe(root);
     expect(hidden.stderr).toBe(
-      `pi-sandbox: ${join(root, "node_modules", "pkg")} is not in the sandbox, pi starts in ${root}\n`,
+      `pinata: ${join(root, "node_modules", "pkg")} is not in the sandbox, pi starts in ${root}\n`,
     );
     expect(present.stdout.trim()).toBe(elsewhere);
     expect(present.stderr).toBe("");

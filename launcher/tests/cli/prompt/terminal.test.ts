@@ -235,7 +235,7 @@ describe("notes", () => {
     const { ui, screen } = fakeUi();
     const prompts = createRichPrompts(ui);
 
-    prompts.note(["pi sandbox setup", ""], "start");
+    prompts.note(["pinata setup", ""], "start");
 
     prompts.note(["Sets up the sandbox.", ""]);
 
@@ -244,7 +244,7 @@ describe("notes", () => {
     prompts.note(["Done. The sandbox is ready.", "", "Next      cd ~/x && pi"], "end");
 
     expect(screen.lines()).toEqual([
-      "┌  pi sandbox setup",
+      "┌  pinata setup",
       "│",
       "│  Sets up the sandbox.",
       "│",

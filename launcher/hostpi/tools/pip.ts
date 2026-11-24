@@ -32,7 +32,7 @@ const entrySection = (
   const normalized = pipName(name);
 
   if (normalized === PROXY_KEY) {
-    return dropped(key, "stays on the host; the sandbox reaches the network through the launcher proxy");
+    return dropped(key, "stays on the host; the sandbox reaches the network through pinata's proxy");
   }
 
   if (!INDEX_KEYS.has(normalized)) {

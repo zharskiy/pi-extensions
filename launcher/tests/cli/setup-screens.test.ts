@@ -185,9 +185,9 @@ describe("the hub", () => {
       "restart the sandbox VM with the new size and folders; no pi session is running, and this usually takes under a minute",
       "keep the sandbox VM as it is for now: 2 pi sessions are running. The first pi you start after they all exit restarts it with the new folders",
       "keep the sandbox VM as it is for now: 1 pi session is running. The first pi you start after it exits restarts it with the new size",
-      "create the sandbox VM with this folder, pi's sessions folder and the launcher's read-only state/vm folder; this takes a minute or two, longer the first time while colima downloads the VM's system image",
+      "create the sandbox VM with this folder, pi's sessions folder and pinata's read-only state/vm folder; this takes a minute or two, longer the first time while colima downloads the VM's system image",
       "the sandbox VM is stopped; the next pi starts it with the new size",
-      "the sandbox VM could not be checked (colima status failed); run pi sandbox doctor after applying",
+      "the sandbox VM could not be checked (colima status failed); run pinata doctor after applying",
       undefined,
     ]);
   });

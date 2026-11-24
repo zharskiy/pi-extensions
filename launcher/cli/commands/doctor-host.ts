@@ -50,7 +50,7 @@ const checkHostPi = async (deps: CliDeps, context: LaunchContext, job: HostPi | 
 
   if (isOlderVersion(job.version, tested)) {
     return warned(
-      `pi ${job.version} (${job.location}) is older than ${tested}, the pi this launcher is tested with`,
+      `pi ${job.version} (${job.location}) is older than ${tested}, the pi this pinata version is tested with`,
       { hint: "run pi update" },
     );
   }

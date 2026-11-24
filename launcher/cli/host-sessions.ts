@@ -39,7 +39,7 @@ const containerRunning = async (backend: Backend, context: LaunchContext) =>
   );
 
 const warnUnswept = (deps: CliDeps, dir: string, error: unknown) => {
-  writeLine(deps.stderr, `pi-sandbox: warning: sessions: ${dir} was not swept: ${errorMessage(error)}`);
+  writeLine(deps.stderr, `pinata: warning: sessions: ${dir} was not swept: ${errorMessage(error)}`);
 };
 
 const sweep = async (deps: CliDeps, repoRoot: string, full: boolean): Promise<string[]> => {

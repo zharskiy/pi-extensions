@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import { type ExecIo, type ExecSpec, LABELS, type Vm, type VmFileCache } from "../../backend/index.ts";
-import { run } from "../../cli/index.ts";
+import { runPinata } from "../../cli/index.ts";
 import { testedPiVersion } from "../../cli/versions.ts";
 import { registerLaunch } from "../../grants/index.ts";
 import type { DenialRecord } from "../../proxy/index.ts";
@@ -211,7 +211,7 @@ const doctorWith = async (options: DoctorOptions = {}) => {
     await harness.writeJson(join(harness.hostAgentDir, "settings.json"), options.hostSettings);
   }
 
-  const code = await run(["sandbox", "doctor", ...(options.args ?? ["--verbose"])], harness.deps);
+  const code = await runPinata(["doctor", ...(options.args ?? ["--verbose"])], harness.deps);
   const stdout = harness.stdout();
 
   return { code, stdout, report: doctorReport(stdout), fake, harness, port };
@@ -221,7 +221,7 @@ const check = (stdout: string, name: string) => doctorCheck(stdout, name);
 
 const blocked = (checks: DoctorCheck[]) => checks.filter((entry) => entry.name.startsWith("blocked "));
 
-describe("pi sandbox doctor", () => {
+describe("pinata doctor", () => {
   it("reports every check by area with a result line, in one container removed like a launch, and nothing on stderr", async () => {
     const { code, stdout, port, fake, harness } = await doctorWith();
     const container = fake.execs[0]?.spec.containerId;
@@ -335,9 +335,9 @@ describe("pi sandbox doctor", () => {
   it("rejects an unknown doctor option with its usage", async () => {
     const harness = await createHarness();
 
-    expect(await run(["sandbox", "doctor", "--bogus"], harness.deps)).toBe(1);
+    expect(await runPinata(["doctor", "--bogus"], harness.deps)).toBe(1);
     expect(harness.stderr()).toBe(
-      'pi-sandbox: unknown doctor option "--bogus"\n  hint: pi sandbox doctor [--verbose]\n',
+      'pinata: unknown doctor option "--bogus"\n  hint: pinata doctor [--verbose]\n',
     );
     expect(harness.stdout()).toBe("");
   });
@@ -450,7 +450,7 @@ describe("pi sandbox doctor", () => {
       reasons: [
         "the sandbox VM's clock is more than an hour behind the host's, so the proxy's certificate, dated by the host an hour back, is not valid there yet",
       ],
-      hint: "restart the VM to reset its clock: run pi sandbox stop once no pi session runs, then pi sandbox doctor again",
+      hint: "restart the VM to reset its clock: run pinata stop once no pi session runs, then pinata doctor again",
     };
 
     expect(check(stdout, RULE)).toMatchObject({
@@ -503,7 +503,7 @@ describe("pi sandbox doctor", () => {
       },
     });
 
-    await run(["sandbox", "doctor", "--verbose"], harness.deps);
+    await runPinata(["doctor", "--verbose"], harness.deps);
 
     expect(check(harness.stdout(), "sessions share")).toMatchObject({
       status: "skip",
@@ -606,7 +606,7 @@ describe("pi sandbox doctor", () => {
     });
     const startedAt = Date.now();
 
-    await run(["sandbox", "doctor", "--verbose"], harness.deps);
+    await runPinata(["doctor", "--verbose"], harness.deps);
 
     expect(Date.now() - startedAt).toBeLessThan(2000);
     expect(check(harness.stdout(), "isolation")?.status).toBe("ok");
@@ -731,7 +731,7 @@ describe("pi sandbox doctor", () => {
       image: "x",
     });
 
-    await run(["sandbox", "doctor", "--verbose"], harness.deps);
+    await runPinata(["doctor", "--verbose"], harness.deps);
 
     expect([...fake.containers.keys()]).toEqual([other]);
   });
@@ -828,14 +828,14 @@ describe("pi sandbox doctor", () => {
     });
     const harness = await createHarness({ backend: () => unreachable(fake.backend) });
 
-    expect(await run(["sandbox", "doctor", "--verbose"], harness.deps)).toBe(1);
+    expect(await runPinata(["doctor", "--verbose"], harness.deps)).toBe(1);
     expect(harness.stdout().split("\n")).toEqual([
       ...(await hostSection(false)),
       "",
       "sandbox",
       SHARES_UNKNOWN,
       "  fail  vm                the sandbox VM engine is unreachable at ~/.colima/pi-sandbox/docker.sock: socket missing",
-      "        hint: run pi, which starts the sandbox VM with its planned shares, or pi sandbox init when ~/.colima/pi-sandbox does not exist",
+      "        hint: run pi, which starts the sandbox VM with its planned shares, or pinata init when ~/.colima/pi-sandbox does not exist",
       "  skip  file cache        the sandbox VM is not running",
       "  skip  sandbox checks    not run, because starting the VM failed",
       "",
@@ -879,7 +879,7 @@ describe("pi sandbox doctor", () => {
     expect(check(stdout, "vm shares")).toMatchObject({
       status: "warn",
       detail: "the sandbox VM does not share /Volumes/work",
-      hint: "run pi once here while no other pi session runs, which shares it and restarts the VM, then pi sandbox doctor again",
+      hint: "run pi once here while no other pi session runs, which shares it and restarts the VM, then pinata doctor again",
     });
     expect(check(stdout, "sandbox")).toMatchObject({
       status: "skip",
@@ -907,7 +907,7 @@ describe("pi sandbox doctor", () => {
 
     await harness.writeJson(harness.userConfigFile, { egress: { allow: [] } });
 
-    expect(await run(["sandbox", "doctor", "--verbose"], harness.deps)).toBe(1);
+    expect(await runPinata(["doctor", "--verbose"], harness.deps)).toBe(1);
     expect(harness.stdout().split("\n")).toEqual([
       ...(await hostSection(true)),
       "",
@@ -952,7 +952,7 @@ describe("pi sandbox doctor", () => {
       packages: [{ source: "git:https://user:hunter2@git.example.test/team/ext.git" }],
     });
 
-    expect(await run(["sandbox", "doctor", "--verbose"], harness.deps)).toBe(70);
+    expect(await runPinata(["doctor", "--verbose"], harness.deps)).toBe(70);
 
     const report = doctorReport(harness.stdout());
 
@@ -964,7 +964,7 @@ describe("pi sandbox doctor", () => {
       "settings.json package git.example.test carried a credential in its URL; it was removed inside the sandbox",
     ]);
     expect(report.result).toBeUndefined();
-    expect(harness.stderr()).toBe("pi-sandbox: unexpected error: engine gone\n");
+    expect(harness.stderr()).toBe("pinata: unexpected error: engine gone\n");
   });
 
   describe("on a terminal", () => {
@@ -974,7 +974,7 @@ describe("pi sandbox doctor", () => {
       (harness.deps.stdout as { isTTY?: boolean }).isTTY = true;
       (harness.deps.stderr as { isTTY?: boolean }).isTTY = true;
 
-      const code = await run(["sandbox", "doctor", "--verbose"], harness.deps);
+      const code = await runPinata(["doctor", "--verbose"], harness.deps);
 
       return { code, harness };
     };
@@ -988,7 +988,7 @@ describe("pi sandbox doctor", () => {
       expect(stdout).toContain("\u001b[36mhint:\u001b[0m run pi, which starts the sandbox VM");
       expect(stdout).toContain("result: \u001b[1;31mfail\u001b[0m (");
       expect(doctorReport(stripVTControlCharacters(stdout)).result).toBe("fail (1 failed: vm)");
-      expect(harness.stderr().startsWith("\r\u001b[2Kpi sandbox doctor: preparing the sandbox")).toBe(true);
+      expect(harness.stderr().startsWith("\r\u001b[2Kpinata doctor: preparing the sandbox")).toBe(true);
       expect(harness.stderr().endsWith("\r\u001b[2K")).toBe(true);
       expect(harness.stderr()).not.toContain("\n");
       expect(code).toBe(1);
@@ -1029,7 +1029,7 @@ describe("pi sandbox doctor", () => {
         await harness.writeJson(harness.userConfigFile, userConfig);
       }
 
-      const code = await run(["sandbox", "doctor", "--verbose"], harness.deps);
+      const code = await runPinata(["doctor", "--verbose"], harness.deps);
 
       return { code, found: check(harness.stdout(), "vm size") };
     };
@@ -1040,7 +1040,7 @@ describe("pi sandbox doctor", () => {
       expect(found).toMatchObject({
         status: "warn",
         detail: "profile pi-sandbox has 2 CPUs and 4 GiB, below 8 CPUs and 10 GiB",
-        hint: "choose Custom for the VM size in pi sandbox init, or set vm in the config, while no other pi session runs",
+        hint: "choose Custom for the VM size in pinata init, or set vm in the config, while no other pi session runs",
       });
       expect(code).toBe(0);
     });
@@ -1063,7 +1063,7 @@ describe("pi sandbox doctor", () => {
       expect(differs.found).toMatchObject({
         status: "warn",
         detail: "profile pi-sandbox has 8 CPUs and 10 GiB, not the 4 CPUs, 80 GiB disk vm sets",
-        hint: "run pi sandbox init, or pi, while no other pi session runs; either restarts the VM with the size vm sets",
+        hint: "run pinata init, or pi, while no other pi session runs; either restarts the VM with the size vm sets",
       });
       expect(shrunk.found).toMatchObject({
         status: "warn",
@@ -1089,7 +1089,7 @@ describe("pi sandbox doctor", () => {
 
       await harness.writeJson(harness.userConfigFile, { vm: { cpus: 9 } });
 
-      const code = await run(["sandbox", "doctor", "--verbose"], harness.deps);
+      const code = await runPinata(["doctor", "--verbose"], harness.deps);
 
       expect(code).toBe(1);
       expect(started).toEqual([]);
@@ -1111,7 +1111,7 @@ describe("pi sandbox doctor", () => {
   });
 });
 
-describe("pi sandbox doctor file cache", () => {
+describe("pinata doctor file cache", () => {
   const RUNNING = async () => ({ cpus: 8, memoryGiB: 10 });
 
   const LOOKED = ["/h/.colima/_lima/colima-pi-sandbox/disk", "/h/.colima/_lima/colima-pi-sandbox/diffdisk"];
@@ -1150,7 +1150,7 @@ describe("pi sandbox doctor file cache", () => {
       await harness.writeJson(harness.userConfigFile, options.userConfig);
     }
 
-    const code = await run(["sandbox", "doctor", "--verbose"], {
+    const code = await runPinata(["doctor", "--verbose"], {
       ...harness.deps,
       platform: options.platform ?? "darwin",
     });
@@ -1200,7 +1200,7 @@ describe("pi sandbox doctor file cache", () => {
     expect(found).toMatchObject({
       status: "warn",
       detail: "30720 open files in the VM's process, past the release at 30720 (kern.maxfiles 122880)",
-      hint: "it is released while pi runs with vm.releaseFileCache on; pi sandbox stop frees it all",
+      hint: "it is released while pi runs with vm.releaseFileCache on; pinata stop frees it all",
     });
     expect(code).toBe(0);
   });
@@ -1213,7 +1213,7 @@ describe("pi sandbox doctor file cache", () => {
 
     expect(found).toMatchObject({
       status: "warn",
-      hint: "vm.releaseFileCache is off, so nothing releases it; turn it on, or run pi sandbox stop, which frees it all",
+      hint: "vm.releaseFileCache is off, so nothing releases it; turn it on, or run pinata stop, which frees it all",
     });
   });
 
@@ -1249,7 +1249,7 @@ describe("pi sandbox doctor file cache", () => {
       status: "warn",
       detail:
         "looking for the VM's process timed out or could not run, so the file cache release does nothing",
-      hint: `it looks with lsof for the Mac process that holds ${LOOKED[0]} or ${LOOKED[1]}; pi sandbox stop frees the VM's open files`,
+      hint: `it looks with lsof for the Mac process that holds ${LOOKED[0]} or ${LOOKED[1]}; pinata stop frees the VM's open files`,
     });
     expect(code).toBe(0);
   });
@@ -1323,7 +1323,7 @@ describe("pi sandbox doctor file cache", () => {
   });
 });
 
-describe("pi sandbox doctor file cache without the sandbox", () => {
+describe("pinata doctor file cache without the sandbox", () => {
   const MISSING = { coverage: async () => ({ shares: [], missing: ["/Volumes/work"] }) };
 
   it("still reads the count when the VM lacks a share and the sandbox is not started", async () => {
@@ -1362,7 +1362,7 @@ describe("pi sandbox doctor file cache without the sandbox", () => {
   });
 });
 
-describe("pi sandbox doctor on the host pi", () => {
+describe("pinata doctor on the host pi", () => {
   const hostPiCheck = async (
     prepare: (harness: Awaited<ReturnType<typeof createHarness>>) => Promise<void>,
     hostPi = true,
@@ -1375,7 +1375,7 @@ describe("pi sandbox doctor on the host pi", () => {
 
     await prepare(harness);
 
-    await run(["sandbox", "doctor", "--verbose"], harness.deps);
+    await runPinata(["doctor", "--verbose"], harness.deps);
 
     return { harness, found: check(harness.stdout(), "pi") };
   };
@@ -1398,7 +1398,7 @@ describe("pi sandbox doctor on the host pi", () => {
 
     expect(found).toMatchObject({
       status: "warn",
-      detail: `pi 1.0.0 (~/.pi/agent/bin/pi) is older than ${await testedPiVersion()}, the pi this launcher is tested with`,
+      detail: `pi 1.0.0 (~/.pi/agent/bin/pi) is older than ${await testedPiVersion()}, the pi this pinata version is tested with`,
       hint: "run pi update",
     });
   });
@@ -1443,7 +1443,7 @@ describe("pi sandbox doctor on the host pi", () => {
         },
       });
 
-      await run(["sandbox", "doctor", "--verbose"], harness.deps);
+      await runPinata(["doctor", "--verbose"], harness.deps);
 
       return { stdout: harness.stdout(), report: doctorReport(harness.stdout()) };
     })();
@@ -1454,7 +1454,7 @@ describe("pi sandbox doctor on the host pi", () => {
   });
 });
 
-describe("pi sandbox doctor parent proxy", () => {
+describe("pinata doctor parent proxy", () => {
   const parentLine = async (url: (port: number) => string) => {
     const listener = createServer();
 
@@ -1468,7 +1468,7 @@ describe("pi sandbox doctor parent proxy", () => {
 
     harness.deps.env.HTTPS_PROXY = url(port);
 
-    await run(["sandbox", "doctor", "--verbose"], harness.deps);
+    await runPinata(["doctor", "--verbose"], harness.deps);
 
     return { port, found: check(harness.stdout(), "parent proxy") };
   };
@@ -1492,7 +1492,7 @@ describe("pi sandbox doctor parent proxy", () => {
   });
 });
 
-describe("pi sandbox doctor mcp sign-in checks", () => {
+describe("pinata doctor mcp sign-in checks", () => {
   it("reports one check per OAuth server from the host pi sign-in store, with the login command as the hint", async () => {
     const down = unreachable(createFakeBackend().backend);
     const harness = await createHarness({ backend: () => down });
@@ -1513,7 +1513,7 @@ describe("pi sandbox doctor mcp sign-in checks", () => {
       },
     });
 
-    await run(["sandbox", "doctor", "--verbose"], harness.deps);
+    await runPinata(["doctor", "--verbose"], harness.deps);
 
     const servers = doctorReport(harness.stdout()).checks.filter(
       (entry) => entry.section === "credentials" && entry.name.startsWith("mcp "),
@@ -1528,7 +1528,7 @@ describe("pi sandbox doctor mcp sign-in checks", () => {
   });
 });
 
-describe("pi sandbox doctor by default", () => {
+describe("pinata doctor by default", () => {
   const plain = (options: DoctorOptions = {}) => doctorWith({ ...options, args: [] });
 
   it("prints a failing group member under its own name, without the group's line", async () => {
@@ -1674,7 +1674,7 @@ describe("pi sandbox doctor by default", () => {
       },
     });
 
-    await run(["sandbox", "doctor"], harness.deps);
+    await runPinata(["doctor"], harness.deps);
 
     return harness.stdout();
   };

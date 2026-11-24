@@ -531,7 +531,7 @@ describe("symlinks in the rendered host entries", () => {
 
     expect(tree.filter((path) => path.startsWith("prompts") || path === "agents/linked.md")).toEqual([]);
     expect(notices).toContain(
-      "render: missing in the sandbox, because the launcher follows no symlinks: agents/linked.md, prompts; replace each link with a real directory or file to carry it",
+      "render: missing in the sandbox, because pinata follows no symlinks: agents/linked.md, prompts; replace each link with a real directory or file to carry it",
     );
   });
 
@@ -558,7 +558,7 @@ describe("symlinks in the rendered host entries", () => {
       "skills/own/SKILL.md",
     ]);
     expect(notices).toEqual([
-      "render: missing in the sandbox, because the launcher follows no symlinks: skills/review; replace each link with a real directory or file to carry it",
+      "render: missing in the sandbox, because pinata follows no symlinks: skills/review; replace each link with a real directory or file to carry it",
     ]);
   });
 
@@ -591,7 +591,7 @@ describe("symlinks in the rendered host entries", () => {
       "skills/own/SKILL.md",
     ]);
     expect(notices).toEqual([
-      "render: missing in the sandbox, because the launcher follows no symlinks: skills/foo.md, skills/own/ref.md, ~/.agents/skills/deploy/shared; replace each link with a real directory or file to carry it",
+      "render: missing in the sandbox, because pinata follows no symlinks: skills/foo.md, skills/own/ref.md, ~/.agents/skills/deploy/shared; replace each link with a real directory or file to carry it",
     ]);
   });
 
@@ -612,7 +612,7 @@ describe("symlinks in the rendered host entries", () => {
     const { notices } = await render(host, home);
 
     expect(notices).toEqual([
-      "render: missing in the sandbox, because the launcher follows no symlinks: skills/deploy, ~/.agents/skills; replace each link with a real directory or file to carry it",
+      "render: missing in the sandbox, because pinata follows no symlinks: skills/deploy, ~/.agents/skills; replace each link with a real directory or file to carry it",
     ]);
   });
 

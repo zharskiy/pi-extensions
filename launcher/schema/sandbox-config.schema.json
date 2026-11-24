@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/zharskiy/pinata/launcher/schema/sandbox-config.schema.json",
-  "title": "pi sandbox config",
-  "description": "The pi sandbox config file, owned by the user who runs the launcher. A key it sets replaces the built-in default; env.allow adds to the default terminal variables.",
+  "title": "pinata config",
+  "description": "The pinata config file, owned by the user who runs pinata. A key it sets replaces the built-in default; env.allow adds to the default terminal variables.",
   "type": "object",
   "additionalProperties": false,
   "properties": {
@@ -131,7 +131,7 @@
                       "required": ["urlPassword", "urlUsername"]
                     },
                     "required": ["env"],
-                    "description": "An environment variable of the launcher, read at launch and handed to the proxy in memory."
+                    "description": "An environment variable of pinata, read at launch and handed to the proxy in memory."
                   },
                   {
                     "type": "object",
@@ -438,7 +438,7 @@
     "workspaceRoot": {
       "type": "string",
       "pattern": "^(/|~/.)",
-      "description": "The folder that holds your projects: pi starts only inside it, and the sandbox VM shares it (with the session dir and the launcher's vm dir). Required to launch; never the home dir or a folder that holds it."
+      "description": "The folder that holds your projects: pi starts only inside it, and the sandbox VM shares it (with the session dir and pinata's vm dir). Required to launch; never the home dir or a folder that holds it."
     },
     "mounts": {
       "type": "object",
@@ -577,7 +577,7 @@
                 }
               }
             },
-            "description": "Named volumes, one per sandbox VM, mounted read-write and owned by the service's user; they keep their data until pi sandbox restart."
+            "description": "Named volumes, one per sandbox VM, mounted read-write and owned by the service's user; they keep their data until pinata restart."
           },
           "tmpfs": {
             "type": "array",
@@ -609,7 +609,7 @@
                 "description": "How long the launch waits for the ready command to succeed."
               }
             },
-            "description": "How the launcher knows the service is ready. Unset: ready once it runs."
+            "description": "How pinata knows the service is ready. Unset: ready once it runs."
           },
           "memoryGiB": {
             "type": "number",
@@ -693,7 +693,7 @@
                 }
               }
             ],
-            "description": "Environment variable forwarded from the host; names that look like secrets (token, secret, key, password, passwd, passphrase, credential or jwt in any case), the proxy variables in any case and every variable listed here that the launcher sets inside the container are refused."
+            "description": "Environment variable forwarded from the host; names that look like secrets (token, secret, key, password, passwd, passphrase, credential or jwt in any case), the proxy variables in any case and every variable listed here that pinata sets inside the container are refused."
           }
         },
         "set": {
@@ -747,7 +747,7 @@
             "type": "string",
             "pattern": "^[^\\u0000]*$"
           },
-          "description": "Environment variables set in the sandbox container for pi and everything it runs, name to literal value; nothing in a value is expanded. The names the launcher sets itself (listed under env.allow, and the proxy variables in any case) are refused. A name that is also in env.allow takes this value, not the host's."
+          "description": "Environment variables set in the sandbox container for pi and everything it runs, name to literal value; nothing in a value is expanded. The names pinata sets itself (listed under env.allow, and the proxy variables in any case) are refused. A name that is also in env.allow takes this value, not the host's."
         }
       }
     },
@@ -788,7 +788,7 @@
     "vm": {
       "type": "object",
       "additionalProperties": false,
-      "description": "The size of the sandbox VM, which every sandbox container shares, and whether the launcher releases its file cache. An unset size keeps the size colima gave it. A launch with no other pi session running restarts the VM to this size; the disk only grows.",
+      "description": "The size of the sandbox VM, which every sandbox container shares, and whether pinata releases its file cache. An unset size keeps the size colima gave it. A launch with no other pi session running restarts the VM to this size; the disk only grows.",
       "properties": {
         "cpus": {
           "type": "integer",
@@ -860,7 +860,7 @@
                   "sha256": {
                     "type": "string",
                     "pattern": "^([0-9A-Fa-f]:?){63}[0-9A-Fa-f]$",
-                    "description": "SHA-256 fingerprint of a CA certificate in the macOS System or login keychain, 64 hex digits; colons and case are optional. pi sandbox doctor prints it for the CA that signs this network's TLS."
+                    "description": "SHA-256 fingerprint of a CA certificate in the macOS System or login keychain, 64 hex digits; colons and case are optional. pinata doctor prints it for the CA that signs this network's TLS."
                   }
                 },
                 "required": ["sha256"]
@@ -874,7 +874,7 @@
     "writeBack": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Which keys of the host agent files a sandbox session may write back to the host. The built-in list is the default; code keeps a ceiling no entry can pass (no credentials, commands, paths or package keys). The launcher also refuses a key that is both excluded and added.",
+      "description": "Which keys of the host agent files a sandbox session may write back to the host. The built-in list is the default; code keeps a ceiling no entry can pass (no credentials, commands, paths or package keys). Pinata also refuses a key that is both excluded and added.",
       "properties": {
         "enabled": {
           "type": "boolean",
@@ -882,7 +882,7 @@
         },
         "exclude": {
           "type": "object",
-          "description": "Per built-in file, built-in keys to stop writing back. The launcher refuses a key that is not on the built-in list of that file.",
+          "description": "Per built-in file, built-in keys to stop writing back. Pinata refuses a key that is not on the built-in list of that file.",
           "propertyNames": {
             "enum": [
               "settings.json",
@@ -1007,7 +1007,7 @@
               }
             }
           },
-          "description": "Any one of the checks in of. The launcher refuses anyOf nested more than 4 levels deep."
+          "description": "Any one of the checks in of. Pinata refuses anyOf nested more than 4 levels deep."
         },
         {
           "type": "object",
@@ -1043,7 +1043,7 @@
               }
             }
           },
-          "description": "Any one of the checks in of. The launcher refuses anyOf nested more than 4 levels deep."
+          "description": "Any one of the checks in of. Pinata refuses anyOf nested more than 4 levels deep."
         }
       ]
     },
@@ -1090,7 +1090,7 @@
               "type": "integer"
             }
           },
-          "description": "A whole number from min to max. The launcher refuses min above max."
+          "description": "A whole number from min to max. Pinata refuses min above max."
         },
         {
           "type": "object",
@@ -1107,7 +1107,7 @@
               "type": "number"
             }
           },
-          "description": "A number from min to max. The launcher refuses min above max."
+          "description": "A number from min to max. Pinata refuses min above max."
         },
         {
           "type": "object",

@@ -1,9 +1,9 @@
 import { statfs } from "node:fs/promises";
 import { availableParallelism, homedir, totalmem } from "node:os";
-import { basename, dirname } from "node:path";
+import { basename } from "node:path";
 import { createColimaBackend } from "../backend/index.ts";
 import { ensureProxy, ensureTrustBundle, readDenials, readProxy, stopProxy } from "../proxy/index.ts";
-import { createProcessRunner, launcherRoot } from "../shared/index.ts";
+import { createProcessRunner } from "../shared/index.ts";
 import { type CliDeps, onClosedOutput, pathsOf } from "./deps.ts";
 import { runPinata } from "./pinata/run.ts";
 import { openDevTty } from "./prompt/terminal.ts";
@@ -56,17 +56,15 @@ const exitWith = async (code: number) => {
 
 onClosedOutput([process.stdout, process.stderr], () => process.emit("SIGTERM"));
 
-const name = basename(process.argv[1] ?? "").startsWith("pinata") ? "pinata" : "pi-sandbox";
+const isPinata = basename(process.argv[1] ?? "").startsWith("pinata");
 
 const main = async () => {
   const args = process.argv.slice(2);
 
   try {
-    return name === "pinata"
-      ? await runPinata(args, realDeps(), dirname(launcherRoot()))
-      : await run(args, realDeps());
+    return isPinata ? await runPinata(args, realDeps()) : await run(args, realDeps());
   } catch (error) {
-    return renderFailure(error, process.stderr, name);
+    return renderFailure(error, process.stderr);
   }
 };
 

@@ -25,7 +25,7 @@ describe("env-sourced credentials", () => {
 
     expect(await run([], harness.deps)).toBe(1);
     expect(harness.stderr()).toContain(
-      "pi-sandbox: CORP_TOKEN contains a line break and cannot be used as a credential",
+      "pinata: CORP_TOKEN contains a line break and cannot be used as a credential",
     );
     expect(harness.proxyInputs).toEqual([]);
     expect(fake.containers.size).toBe(0);
@@ -42,7 +42,7 @@ describe("env parent proxy", () => {
 
     expect(await run([], harness.deps)).toBe(0);
     expect(harness.stderr()).toContain(
-      "pi-sandbox: parent proxy: HTTPS_PROXY uses https, only http parent proxies are supported; the proxy connects directly\n",
+      "pinata: parent proxy: HTTPS_PROXY uses https, only http parent proxies are supported; the proxy connects directly\n",
     );
   });
 
@@ -79,10 +79,10 @@ describe("denial lines", () => {
     await run([], harness.deps);
 
     expect(harness.stderr()).toContain(
-      `pi-sandbox: allow.test was blocked in the sandbox; run pi sandbox egress allow allow.test on the host\n`,
+      `pinata: allow.test was blocked in the sandbox; run pinata egress allow allow.test on the host\n`,
     );
     expect(harness.stderr()).toContain(
-      "pi-sandbox: capped.test was blocked in the sandbox; too many denial pages\n",
+      "pinata: capped.test was blocked in the sandbox; too many denial pages\n",
     );
   });
 });

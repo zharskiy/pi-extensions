@@ -126,10 +126,7 @@ const plainSection = (input: ToolsInput, entry: NpmrcEntry): Section<NpmrcEntry[
   }
 
   if (PROXY_KEYS.has(name)) {
-    return dropped(
-      entry.key,
-      "stays on the host; the sandbox reaches the network through the launcher proxy",
-    );
+    return dropped(entry.key, "stays on the host; the sandbox reaches the network through pinata's proxy");
   }
 
   if (isPathKey(name)) {

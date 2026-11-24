@@ -19,7 +19,7 @@ import {
 
 type Harness = Awaited<ReturnType<typeof createHarness>>;
 
-const PREPARING = "preparing pi sandbox, one time";
+const PREPARING = "preparing the sandbox, one time";
 
 const occurrences = (text: string, line: string) => text.split("\n").filter((entry) => entry === line).length;
 
@@ -40,7 +40,7 @@ describe("pi [args]", () => {
 
     expect(await run(["--model", "x"], harness.deps)).toBe(3);
     expect(occurrences(harness.stderr(), PREPARING)).toBe(1);
-    expect(occurrences(harness.stderr(), "pi-sandbox: build: Step 1/1")).toBe(2);
+    expect(occurrences(harness.stderr(), "pinata: build: Step 1/1")).toBe(2);
     expect(fake.builds.map((build) => build.tag)).toEqual([
       "pi-sandbox-base:local",
       expect.stringMatching(/^pi-sandbox-layer:[0-9a-f]{12}$/),
@@ -181,7 +181,7 @@ describe("pi [args]", () => {
 
     expect(await run([], harness.deps)).toBe(1);
     expect(harness.stderr()).toContain(
-      `pi-sandbox: pi may not start in ${harness.deps.home}, a protected folder`,
+      `pinata: pi may not start in ${harness.deps.home}, a protected folder`,
     );
     expect(harness.stderr()).toContain("  hint: run pi inside a project directory");
     expect(fake.containers.size).toBe(0);
@@ -203,7 +203,7 @@ describe("pi [args]", () => {
 
     expect(await run([], harness.deps)).toBe(1);
     expect(harness.stderr()).toContain(
-      "pi-sandbox: the sandbox VM engine is unreachable at ~/.colima/pi-sandbox/docker.sock",
+      "pinata: the sandbox VM engine is unreachable at ~/.colima/pi-sandbox/docker.sock",
     );
     expect(harness.stderr()).toContain("  hint: ");
     expect(harness.stderr()).not.toContain("--no-sandbox");
@@ -215,7 +215,7 @@ describe("pi [args]", () => {
       backend: () => fake.backend,
       proxy: {
         ensure: async () => {
-          throw new LauncherError("the pi-sandbox egress proxy did not become healthy", "see proxy.log");
+          throw new LauncherError("the pinata egress proxy did not become healthy", "see proxy.log");
         },
       },
     });
@@ -239,7 +239,7 @@ describe("pi [args]", () => {
     expect(await run([], harness.deps)).toBe(1);
     expect(harness.stderr()).toContain(
       [
-        `pi-sandbox: ${harness.repoRoot} is outside the workspace root (workspaceRoot: ${elsewhere})`,
+        `pinata: ${harness.repoRoot} is outside the workspace root (workspaceRoot: ${elsewhere})`,
         "  hint: start pi inside it, or point workspaceRoot at a folder that holds the project",
       ].join("\n"),
     );
@@ -256,7 +256,7 @@ describe("pi [args]", () => {
     await harness.writeJson(harness.userConfigFile, { workspaceRoot: elsewhere });
 
     expect(await run(["--no-sandbox"], harness.deps)).toBe(1);
-    expect(harness.stderr()).toContain(`pi-sandbox: ${harness.repoRoot} is outside the workspace root`);
+    expect(harness.stderr()).toContain(`pinata: ${harness.repoRoot} is outside the workspace root`);
     expect(harness.calls.filter((call) => call.interactive)).toEqual([]);
   });
 
@@ -273,7 +273,7 @@ describe("pi [args]", () => {
     expect(await run(args, harness.deps)).toBe(1);
     expect(harness.stderr()).toContain(
       [
-        `pi-sandbox: config: workspaceRoot: ${gone} does not exist`,
+        `pinata: config: workspaceRoot: ${gone} does not exist`,
         "  hint: create the folder, mount the volume it lives on, or point workspaceRoot at a folder that holds your projects",
       ].join("\n"),
     );
@@ -303,8 +303,8 @@ describe("pi [args]", () => {
     expect(await run([], harness.deps)).toBe(1);
     expect(harness.stderr()).toContain(
       [
-        "pi-sandbox: config: workspaceRoot is not set, so pi has no folder it may start in",
-        `  hint: run pi sandbox init, or set workspaceRoot in ${harness.userConfigFile} to the folder that holds your projects`,
+        "pinata: config: workspaceRoot is not set, so pi has no folder it may start in",
+        `  hint: run pinata init, or set workspaceRoot in ${harness.userConfigFile} to the folder that holds your projects`,
       ].join("\n"),
     );
     expect(harness.calls.filter((call) => call.file === "colima" || call.interactive)).toEqual([]);
@@ -324,7 +324,7 @@ describe("pi [args]", () => {
     expect(await run([], harness.deps)).toBe(1);
     expect(harness.stderr()).toContain(
       [
-        `pi-sandbox: config: workspaceRoot: ${root} is the home dir or holds it, which would share all of it with the sandbox VM`,
+        `pinata: config: workspaceRoot: ${root} is the home dir or holds it, which would share all of it with the sandbox VM`,
         "  hint: point workspaceRoot at the folder that holds your projects, not at your home or above it",
       ].join("\n"),
     );
@@ -340,7 +340,7 @@ describe("pi [args]", () => {
 
     expect(await run([], harness.deps)).toBe(1);
     expect(harness.stderr()).toContain(
-      "pi-sandbox: config: workspaceRoot ~ is the home dir, which would share all of it with the sandbox VM",
+      "pinata: config: workspaceRoot ~ is the home dir, which would share all of it with the sandbox VM",
     );
     expect(harness.calls.filter((call) => call.file === "colima")).toEqual([]);
     expect(fake.execs).toHaveLength(0);
@@ -377,7 +377,7 @@ describe("pi [args]", () => {
     expect(call?.file).toBe(join(harness.hostAgentDir, "bin", "pi"));
     expect(call?.args).toEqual(["-p", "hi"]);
     expect(harness.stderr()).toContain(
-      `pi-sandbox: warning: running ${call?.file} on the host, outside the sandbox`,
+      `pinata: warning: running ${call?.file} on the host, outside the sandbox`,
     );
   });
 });

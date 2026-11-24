@@ -5,7 +5,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { describe, expect, it } from "vitest";
 import { createColimaVm } from "../../backend/colima/vm.ts";
 import { LABELS } from "../../backend/index.ts";
-import { run } from "../../cli/index.ts";
+import { run, runPinata } from "../../cli/index.ts";
 import { registerLaunch } from "../../grants/index.ts";
 import { processMark, sha256Hex, stateLayout, withDirectoryLock } from "../../shared/index.ts";
 import { createHarness, sweepNow, writeColimaMounts, writeLimaMounts } from "../cli/harness.ts";
@@ -130,7 +130,7 @@ describe("a launch starts the stopped sandbox VM", () => {
     const context = await setupWith();
 
     expect(await run([], context.harness.deps)).toBe(0);
-    expect(context.harness.stderr()).toContain("pi-sandbox: starting the sandbox VM\n");
+    expect(context.harness.stderr()).toContain("pinata: starting the sandbox VM\n");
     expect(context.colimaCalls()).toEqual([STATUS, startWith(context.harness.shares)]);
     expect(context.fake.created).toHaveLength(1);
   });
@@ -141,8 +141,8 @@ describe("a launch starts the stopped sandbox VM", () => {
     expect(await run([], context.harness.deps)).toBe(1);
     expect(context.harness.stderr()).toContain(
       [
-        "pi-sandbox: the sandbox VM does not exist: there is no colima profile pi-sandbox",
-        "  hint: run pi sandbox init, which creates it",
+        "pinata: the sandbox VM does not exist: there is no colima profile pi-sandbox",
+        "  hint: run pinata init, which creates it",
       ].join("\n"),
     );
     expect(context.colimaCalls()).toEqual([]);
@@ -154,8 +154,8 @@ describe("a launch starts the stopped sandbox VM", () => {
     expect(await run([], context.harness.deps)).toBe(1);
     expect(context.harness.stderr()).toContain(
       [
-        "pi-sandbox: the sandbox VM is running but its engine at ~/.colima/pi-sandbox/docker.sock does not answer: socket missing",
-        "  hint: run pi sandbox stop, then pi again, and see ~/.colima/_lima/colima-pi-sandbox/ha.stderr.log",
+        "pinata: the sandbox VM is running but its engine at ~/.colima/pi-sandbox/docker.sock does not answer: socket missing",
+        "  hint: run pinata stop, then pi again, and see ~/.colima/_lima/colima-pi-sandbox/ha.stderr.log",
       ].join("\n"),
     );
     expect(context.colimaCalls()).toEqual([STATUS]);
@@ -169,7 +169,7 @@ describe("a launch starts the stopped sandbox VM", () => {
     expect(await run([], context.harness.deps)).toBe(1);
     expect(context.harness.stderr()).toContain(
       [
-        'pi-sandbox: could not start the sandbox VM: colima start failed: level=fatal msg="disk full"',
+        'pinata: could not start the sandbox VM: colima start failed: level=fatal msg="disk full"',
         `  hint: run ${START} --mount `,
       ].join("\n"),
     );
@@ -183,7 +183,7 @@ describe("a launch starts the stopped sandbox VM", () => {
 
     expect(await run([], context.harness.deps)).toBe(1);
     expect(context.harness.stderr()).toContain(
-      "pi-sandbox: the sandbox VM started but its engine is unreachable: socket missing\n",
+      "pinata: the sandbox VM started but its engine is unreachable: socket missing\n",
     );
     expect(context.colimaCalls()).toEqual([STATUS, startWith(context.harness.shares)]);
     expect(context.pauses).toEqual([0, 500, 1000, 1500, 2000]);
@@ -194,15 +194,15 @@ describe("a launch starts the stopped sandbox VM", () => {
 
     expect(await run([], context.harness.deps)).toBe(1);
     expect(context.harness.stderr()).toContain(
-      "pi-sandbox: could not start the sandbox VM: colima: command not found\n  hint: install colima, then run pi sandbox init",
+      "pinata: could not start the sandbox VM: colima: command not found\n  hint: install colima, then run pinata init",
     );
   });
 
-  it("never starts the VM for pi sandbox status or the sweep", async () => {
+  it("never starts the VM for pinata status or the sweep", async () => {
     const status = await setupWith();
     const gc = await setupWith();
 
-    expect(await run(["sandbox", "status"], status.harness.deps)).toBe(0);
+    expect(await runPinata(["status"], status.harness.deps)).toBe(0);
     expect(await sweepNow(gc.harness.deps)).toBe(0);
     expect(status.harness.stdout()).toContain("runtime: none (the sandbox VM engine is unreachable");
     expect([...status.colimaCalls(), ...gc.colimaCalls()]).toEqual([]);
@@ -322,7 +322,7 @@ describe("the stopped sandbox VM", () => {
   });
 });
 
-describe("pi sandbox stop", () => {
+describe("pinata stop", () => {
   it("stops the proxy and removes its token, stops the VM and says the next pi starts it again", async () => {
     const context = await setupWith({ colima: { running: true }, proxy: true });
     const proxyFiles = stateLayout(context.harness.stateDir).proxy;
@@ -331,7 +331,7 @@ describe("pi sandbox stop", () => {
 
     await writeFile(proxyFiles.token, "f".repeat(64));
 
-    expect(await run(["sandbox", "stop"], context.harness.deps)).toBe(0);
+    expect(await runPinata(["stop"], context.harness.deps)).toBe(0);
     expect(context.events).toEqual(["proxy stop", STATUS, STOP]);
     expect(existsSync(proxyFiles.token)).toBe(false);
     expect(context.harness.stdout()).toBe(
@@ -348,11 +348,11 @@ describe("pi sandbox stop", () => {
 
     await liveSession(context.harness.stateDir);
 
-    expect(await run(["sandbox", "stop"], context.harness.deps)).toBe(1);
+    expect(await runPinata(["stop"], context.harness.deps)).toBe(1);
     expect(context.harness.stderr()).toBe(
       [
-        "pi-sandbox: 1 pi session is running; stopping the sandbox VM would end them",
-        "  hint: exit them and run pi sandbox stop again",
+        "pinata: 1 pi session is running; stopping the sandbox VM would end them",
+        "  hint: exit them and run pinata stop again",
         "",
       ].join("\n"),
     );
@@ -369,11 +369,11 @@ describe("pi sandbox stop", () => {
       image: "x",
     });
 
-    expect(await run(["sandbox", "stop"], context.harness.deps)).toBe(1);
+    expect(await runPinata(["stop"], context.harness.deps)).toBe(1);
     expect(context.harness.stderr()).toBe(
       [
-        "pi-sandbox: 1 pi session is running (pi-sandbox-agent-other of another pi-sandbox install; remove a leftover with docker --context colima-pi-sandbox rm --force <name>); stopping the sandbox VM would end them",
-        "  hint: exit them and run pi sandbox stop again",
+        "pinata: 1 pi session is running (pi-sandbox-agent-other of another pinata install; remove a leftover with docker --context colima-pi-sandbox rm --force <name>); stopping the sandbox VM would end them",
+        "  hint: exit them and run pinata stop again",
         "",
       ].join("\n"),
     );
@@ -382,9 +382,9 @@ describe("pi sandbox stop", () => {
   it("names the colima error when the stop fails", async () => {
     const context = await setupWith({ colima: { running: true, stop: { code: 1, stderr: "busy\n" } } });
 
-    expect(await run(["sandbox", "stop"], context.harness.deps)).toBe(1);
+    expect(await runPinata(["stop"], context.harness.deps)).toBe(1);
     expect(context.harness.stderr()).toContain(
-      "pi-sandbox: could not stop the sandbox VM: colima stop failed: busy\n  hint: see ~/.colima/_lima/colima-pi-sandbox/ha.stderr.log",
+      "pinata: could not stop the sandbox VM: colima stop failed: busy\n  hint: see ~/.colima/_lima/colima-pi-sandbox/ha.stderr.log",
     );
     expect(context.events).toEqual(["proxy stop", STATUS, STOP]);
   });
@@ -392,7 +392,7 @@ describe("pi sandbox stop", () => {
   it("does nothing when the VM is already stopped", async () => {
     const context = await setupWith();
 
-    expect(await run(["sandbox", "stop"], context.harness.deps)).toBe(0);
+    expect(await runPinata(["stop"], context.harness.deps)).toBe(0);
     expect(context.harness.stdout()).toBe("the sandbox VM is already stopped\n");
     expect(context.events).toEqual(["proxy stop", STATUS]);
   });
@@ -400,7 +400,7 @@ describe("pi sandbox stop", () => {
   it("says there is no VM without the pi-sandbox profile", async () => {
     const context = await setupWith({ profile: false });
 
-    expect(await run(["sandbox", "stop"], context.harness.deps)).toBe(0);
+    expect(await runPinata(["stop"], context.harness.deps)).toBe(0);
     expect(context.harness.stdout()).toBe("no sandbox VM: the colima profile pi-sandbox does not exist\n");
     expect(context.events).toEqual(["proxy stop"]);
   });
@@ -408,10 +408,10 @@ describe("pi sandbox stop", () => {
   it("takes no arguments and is listed in the help", async () => {
     const context = await setupWith({ colima: { running: true } });
 
-    expect(await run(["sandbox", "stop", "now"], context.harness.deps)).toBe(1);
-    expect(await run(["sandbox", "help"], context.harness.deps)).toBe(0);
-    expect(context.harness.stderr()).toContain('pi-sandbox: unknown stop option "now"\n');
-    expect(context.harness.stdout()).toContain("  pi sandbox stop ");
+    expect(await runPinata(["stop", "now"], context.harness.deps)).toBe(1);
+    expect(await runPinata(["help"], context.harness.deps)).toBe(0);
+    expect(context.harness.stderr()).toContain('pinata: unknown stop option "now"\n');
+    expect(context.harness.stdout()).toContain("  pinata stop ");
     expect(context.events).toEqual([]);
   });
 });

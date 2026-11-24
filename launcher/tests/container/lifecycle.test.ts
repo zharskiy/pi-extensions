@@ -425,7 +425,7 @@ describe("volumes the sandbox writes", () => {
       hint: "the share hint",
     });
     expect(await failing(true)).toMatchObject({
-      hint: "the share hint; the image is pinned by image.digest and may predate this launcher",
+      hint: "the share hint; the image is pinned by image.digest and may predate this pinata version",
     });
   });
 
@@ -436,7 +436,7 @@ describe("volumes the sandbox writes", () => {
 
     await expect(startLaunchContainer({ backend: fake.backend, spec: cachedSpec() })).rejects.toMatchObject({
       message: expect.stringMatching(/^the sandbox container exited during startup/),
-      hint: "run pi sandbox doctor",
+      hint: "run pinata doctor",
     });
   });
 

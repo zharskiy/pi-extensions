@@ -148,7 +148,7 @@ describe("runSetup", () => {
     ]);
     expect(fake.execs.map((exec) => exec.tty)).toEqual([false, false]);
     expect(fake.execs.flatMap((exec) => exec.stdin)).toEqual([]);
-    expect(lines).toEqual(["pi-sandbox: setup: npm ci", "pi-sandbox: setup: sh -c make init"]);
+    expect(lines).toEqual(["pinata: setup: npm ci", "pinata: setup: sh -c make init"]);
   });
 
   it("stops at the first command that fails, naming it and its exit code", async () => {

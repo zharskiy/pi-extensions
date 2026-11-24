@@ -66,7 +66,7 @@ describe("prepareBuildContext", () => {
     expect(dockerfile).toMatch(/update-ca-certificates --fresh/);
   });
 
-  it("installs the base tools and a pi-sandbox command that points back to the host", async () => {
+  it("installs the base tools and a pinata command that points back to the host", async () => {
     const dir = await tempDir();
 
     await prepareBuildContext(dir);
@@ -88,9 +88,9 @@ describe("prepareBuildContext", () => {
         "xz-utils",
       ]),
     );
-    expect(dockerfile).toContain(
-      "pi sandbox commands run on the host; ask the user to run pi sandbox $* there",
-    );
+    expect(dockerfile).toContain("pinata commands run on the host; ask the user to run pinata $* there");
+    expect(dockerfile).toContain("> /usr/local/bin/pinata");
+    expect(dockerfile).toContain("ln -s pinata /usr/local/bin/pi-sandbox");
     expect(dockerfile).toContain("exit 2");
   });
 
@@ -108,7 +108,7 @@ describe("prepareBuildContext", () => {
     expect(dockerfile).not.toContain("PI_OFFLINE");
     expect(dockerfile).not.toMatch(/auth\.json|models\.json/);
     expect(dockerfile).toContain("PI_SELF_UPDATE_COMMAND=/usr/local/bin/pi-sandbox-self-update");
-    expect(dockerfile).toContain("is managed by the sandbox and follows the launcher");
+    expect(dockerfile).toContain("is managed by the sandbox and follows pinata");
   });
 
   it("declares the pi version without a default right before the pi install, so a pi update reuses the earlier layers", async () => {

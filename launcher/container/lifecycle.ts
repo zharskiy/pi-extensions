@@ -51,7 +51,7 @@ const DEFAULT_OWNER = "1000:1000";
 
 const ROOT_USER = "0";
 
-const MOUNT_POINT_HINT = "replace it with a directory, or remove it so the launcher can create one";
+const MOUNT_POINT_HINT = "replace it with a directory, or remove it so pinata can create one";
 
 const isMissing = (error: unknown) => (error as NodeJS.ErrnoException).code === "ENOENT";
 
@@ -213,11 +213,11 @@ const READY_SCRIPT = [
 
 const READY_EXEC_TIMEOUT_MS = (READY_TRIES / 10 + 30) * 1000;
 
-const HANDOVER_HINT = "run pi sandbox doctor, and check the targets in mounts.volumes";
+const HANDOVER_HINT = "run pinata doctor, and check the targets in mounts.volumes";
 
-const STARTUP_HINT = "run pi sandbox doctor";
+const STARTUP_HINT = "run pinata doctor";
 
-const PINNED_IMAGE_HINT = "the image is pinned by image.digest and may predate this launcher";
+const PINNED_IMAGE_HINT = "the image is pinned by image.digest and may predate this pinata version";
 
 const handOverVolumes = async (backend: Backend, id: string, spec: LauncherContainerSpec) => {
   if (spec.ownedPaths.length === 0) {

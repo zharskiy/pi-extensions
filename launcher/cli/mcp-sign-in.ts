@@ -19,10 +19,10 @@ import { writeOnce } from "./notices.ts";
 const FAILURE_QUIET_MS = 24 * 60 * 60_000;
 
 const notice = (deps: CliDeps, name: string, text: string) => {
-  writeLine(deps.stderr, `pi-sandbox: mcp ${name}: ${text}`);
+  writeLine(deps.stderr, `pinata: mcp ${name}: ${text}`);
 };
 
-const notSignedInLine = (name: string) => `pi-sandbox: mcp ${name}: not signed in; run pi mcp login ${name}`;
+const notSignedInLine = (name: string) => `pinata: mcp ${name}: not signed in; run pi mcp login ${name}`;
 
 const notSignedIn = (deps: CliDeps, context: LaunchContext, name: string) =>
   writeOnce(deps, context.stateDir, [notSignedInLine(name)]);

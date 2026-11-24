@@ -14,7 +14,7 @@ import { intercept } from "../intercept.ts";
 import { PI_PACKAGE } from "../versions.ts";
 import { interactive, PACKAGE, piSources, refuseBusy, say } from "./host.ts";
 import { setPathBlock } from "./path-block.ts";
-import { removeShim } from "./shim.ts";
+import { removePinataLink, removeShim } from "./shim.ts";
 
 const release = async (deps: CliDeps) => {
   if ((await lstatOrUndefined(pathsOf(deps).stateDir)) === undefined) {
@@ -77,7 +77,7 @@ const removeState = async (deps: CliDeps) => {
 
   if (holds || info.isSymbolicLink() || !marked) {
     throw new LauncherError(
-      `${stateDir} does not look like the launcher's state, left as it is`,
+      `${stateDir} does not look like pinata's state, left as it is`,
       "remove it by hand",
     );
   }
@@ -97,6 +97,8 @@ export const uninstall = async (deps: CliDeps, packageDir: string) => {
   await deleteVm(deps);
 
   await removeShim(deps);
+
+  await removePinataLink(deps);
 
   await removeExtensions(deps, packageDir);
 

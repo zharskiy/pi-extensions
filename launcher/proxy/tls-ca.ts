@@ -238,7 +238,7 @@ const ensureCa = async (layout: StateLayout, runner: CommandRunner) => {
       const created = await storedCa(layout);
 
       if (created === undefined) {
-        throw new LauncherError(`the launcher CA in ${layout.ca} could not be created`);
+        throw new LauncherError(`pinata's CA in ${layout.ca} could not be created`);
       }
 
       return created;

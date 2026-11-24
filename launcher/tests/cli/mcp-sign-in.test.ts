@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { run } from "../../cli/index.ts";
+import { run, runPinata } from "../../cli/index.ts";
 import { mcpAuthKey, stateLayout, withFileLock } from "../../shared/index.ts";
 import type { FakeCall } from "../support/fake-runner.ts";
 import { createFakeBackend, createHarness, doctorCheck } from "./harness.ts";
@@ -67,13 +67,13 @@ describe("MCP sign-in at launch start", () => {
     expect(login?.options.env).toEqual({ PI_CODING_AGENT_DIR: harness.hostAgentDir });
     expect(login?.options.cwd?.startsWith(harness.repoRoot)).toBe(false);
     expect(containersAtLogin).toEqual([0]);
-    expect(harness.stderr()).toContain("pi-sandbox: mcp docs: signing in on the host; your browser opens\n");
+    expect(harness.stderr()).toContain("pinata: mcp docs: signing in on the host; your browser opens\n");
   });
 
-  it("starts no login from pi sandbox doctor, even from a terminal, and names the login command", async () => {
+  it("starts no login from pinata doctor, even from a terminal, and names the login command", async () => {
     const { harness, logins } = await harnessWith();
 
-    await run(["sandbox", "doctor"], harness.deps);
+    await runPinata(["doctor"], harness.deps);
 
     expect(logins()).toEqual([]);
     expect(harness.stderr()).not.toContain("signing in on the host");
@@ -101,9 +101,9 @@ describe("MCP sign-in at launch start", () => {
     expect((await loginRecord(harness.stateDir))?.failedAt).toBe(harness.deps.now());
     expect(await run([], harness.deps)).toBe(0);
     expect(logins()).toHaveLength(1);
-    expect(
-      harness.stderr().split("pi-sandbox: mcp docs: not signed in; run pi mcp login docs\n"),
-    ).toHaveLength(2);
+    expect(harness.stderr().split("pinata: mcp docs: not signed in; run pi mcp login docs\n")).toHaveLength(
+      2,
+    );
 
     const later = harness.deps.now() + 24 * 3_600_000 + 1;
 
@@ -139,7 +139,7 @@ describe("MCP sign-in at launch start", () => {
     await holding;
 
     expect(logins()).toEqual([]);
-    expect(harness.stderr()).toContain("pi-sandbox: mcp docs: a sign-in is already open on the host\n");
+    expect(harness.stderr()).toContain("pinata: mcp docs: a sign-in is already open on the host\n");
   });
 
   it("prints only a notice when the output is not a terminal", async () => {
@@ -147,7 +147,7 @@ describe("MCP sign-in at launch start", () => {
 
     expect(await run([], harness.deps)).toBe(0);
     expect(logins()).toEqual([]);
-    expect(harness.stderr()).toContain("pi-sandbox: mcp docs: not signed in; run pi mcp login docs\n");
+    expect(harness.stderr()).toContain("pinata: mcp docs: not signed in; run pi mcp login docs\n");
   });
 
   it("prints only a notice without a terminal", async () => {
@@ -155,6 +155,6 @@ describe("MCP sign-in at launch start", () => {
 
     expect(await run([], harness.deps)).toBe(0);
     expect(logins()).toEqual([]);
-    expect(harness.stderr()).toContain("pi-sandbox: mcp docs: not signed in; run pi mcp login docs\n");
+    expect(harness.stderr()).toContain("pinata: mcp docs: not signed in; run pi mcp login docs\n");
   });
 });

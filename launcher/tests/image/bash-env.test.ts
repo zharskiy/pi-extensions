@@ -10,10 +10,10 @@ import { tempDir } from "../support/temp-dir.ts";
 const BASH_ENV_FILE = join(launcherRoot(), "image", "bash-env.sh");
 
 const HINT =
-  "bash: pi-sandbox-missing-tool: command not found\npi-sandbox: pi-sandbox-missing-tool is not in the sandbox image; add its Debian package to image.packages or its npm package to image.npmGlobal in pi-sandbox/config.json under pi's agent dir on the host (~/.pi/agent unless PI_CODING_AGENT_DIR is set)\n";
+  "bash: pi-sandbox-missing-tool: command not found\npinata: pi-sandbox-missing-tool is not in the sandbox image; add its Debian package to image.packages or its npm package to image.npmGlobal in pi-sandbox/config.json under pi's agent dir on the host (~/.pi/agent unless PI_CODING_AGENT_DIR is set)\n";
 
 const rootHint = (name: string) =>
-  `bash: ${name}: command not found\npi-sandbox: there is no root in the sandbox, so ${name} cannot help; Debian packages go in image.packages in pi-sandbox/config.json under pi's agent dir on the host and are installed as root when the image is built, and a server the agent needs runs in a container of its own listed under services (see "Services" in the launcher's CONFIGURATION.md)\n`;
+  `bash: ${name}: command not found\npinata: there is no root in the sandbox, so ${name} cannot help; Debian packages go in image.packages in pi-sandbox/config.json under pi's agent dir on the host and are installed as root when the image is built, and a server the agent needs runs in a container of its own listed under services (see "Services" in the launcher's CONFIGURATION.md)\n`;
 
 const bashVersion = spawnSync("bash", ["--version"], { encoding: "utf8" }).stdout ?? "";
 
@@ -81,7 +81,7 @@ describe("the missing-command hint", () => {
     async () => {
       const result = shellTool("pi-sandbox-missing-tool --version", { HOME: await emptyHome() });
 
-      expect(result.stderr).not.toContain("pi-sandbox:");
+      expect(result.stderr).not.toContain("pinata:");
       expect(result.status).toBe(127);
     },
   );
@@ -126,10 +126,10 @@ describe("the missing-command hint", () => {
   });
 });
 
-describe("BASH_ENV is set by the launcher's image", () => {
+describe("BASH_ENV is set by pinata's image", () => {
   it("is refused in env.allow", async () => {
     await expect(loadUserConfig({ env: { allow: ["EDITOR", "BASH_ENV"] } })).rejects.toThrow(
-      "config: env.allow[1] BASH_ENV is set by the launcher and is not forwarded",
+      "config: env.allow[1] BASH_ENV is set by pinata and is not forwarded",
     );
   });
 

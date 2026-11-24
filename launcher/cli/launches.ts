@@ -41,10 +41,7 @@ const removeOwnContainer = async (deps: CliDeps, launch: Launch, backend?: Backe
   }
 
   await removeLaunchContainer(backend, launch.launchId).catch((error: unknown) => {
-    writeLine(
-      deps.stderr,
-      `pi-sandbox: warning: the launch's container was not removed: ${errorMessage(error)}`,
-    );
+    writeLine(deps.stderr, `pinata: warning: the launch's container was not removed: ${errorMessage(error)}`);
   });
 };
 
@@ -94,7 +91,7 @@ export const finishLaunch = async (
   const ended = await endLaunch(context.stateDir, launch.launchId)
     .then((remaining) => endRepo(deps, context, { remaining, backend: engine, signal }))
     .catch((error: unknown) => {
-      writeLine(deps.stderr, `pi-sandbox: warning: could not end the launch: ${errorMessage(error)}`);
+      writeLine(deps.stderr, `pinata: warning: could not end the launch: ${errorMessage(error)}`);
 
       return false;
     });

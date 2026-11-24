@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { run } from "../../cli/index.ts";
+import { run, runPinata } from "../../cli/index.ts";
 import { LauncherError } from "../../shared/index.ts";
 import { createHarness } from "./harness.ts";
 
@@ -13,7 +13,7 @@ describe("error rendering", () => {
 
     const [message, hint, ...rest] = harness.stderr().split("\n");
 
-    expect(message).toMatch(/^pi-sandbox: config: backend /);
+    expect(message).toMatch(/^pinata: config: backend /);
     expect(hint).toBe(`  hint: fix ${harness.userConfigFile}`);
     expect(rest).toEqual([""]);
   });
@@ -26,7 +26,7 @@ describe("error rendering", () => {
     });
 
     expect(await run([], harness.deps)).toBe(1);
-    expect(harness.stderr()).toBe("pi-sandbox: engine refused\n");
+    expect(harness.stderr()).toBe("pinata: engine refused\n");
   });
 
   it("prints an unexpected error message without a stack and exits 70", async () => {
@@ -37,50 +37,59 @@ describe("error rendering", () => {
     });
 
     expect(await run([], harness.deps)).toBe(70);
-    expect(harness.stderr()).toBe("pi-sandbox: unexpected error: boom\n");
+    expect(harness.stderr()).toBe("pinata: unexpected error: boom\n");
   });
 
   it("refuses an unknown subcommand and points at help", async () => {
     const harness = await createHarness();
 
-    expect(await run(["sandbox", "explode"], harness.deps)).toBe(1);
-    expect(harness.stderr()).toBe(
-      'pi-sandbox: unknown command "pi sandbox explode"\n  hint: pi sandbox help\n',
-    );
+    expect(await runPinata(["explode"], harness.deps)).toBe(1);
+    expect(harness.stderr()).toBe('pinata: unknown command "pinata explode"\n  hint: pinata help\n');
   });
 
   it("refuses arguments to a command that takes none and names its usage", async () => {
     const harness = await createHarness();
 
-    expect(await run(["sandbox", "status", "--all"], harness.deps)).toBe(1);
-    expect(harness.stderr()).toBe('pi-sandbox: unknown status option "--all"\n  hint: pi sandbox status\n');
+    expect(await runPinata(["status", "--all"], harness.deps)).toBe(1);
+    expect(harness.stderr()).toBe('pinata: unknown status option "--all"\n  hint: pinata status\n');
   });
 
   it("prints a command's usage for -h or --help in any position and runs nothing", async () => {
     const harness = await createHarness();
 
-    expect(await run(["sandbox", "config", "--json", "--help"], harness.deps)).toBe(0);
-    expect(await run(["sandbox", "restart", "-h"], harness.deps)).toBe(0);
-    expect(await run(["sandbox", "status", "--help"], harness.deps)).toBe(0);
+    expect(await runPinata(["config", "--json", "--help"], harness.deps)).toBe(0);
+    expect(await runPinata(["restart", "-h"], harness.deps)).toBe(0);
+    expect(await runPinata(["status", "--help"], harness.deps)).toBe(0);
     expect(harness.stdout()).toBe(
-      ["usage: pi sandbox config [--json]", "usage: pi sandbox restart", "usage: pi sandbox status", ""].join(
-        "\n",
-      ),
+      ["usage: pinata config [--json]", "usage: pinata restart", "usage: pinata status", ""].join("\n"),
     );
     expect(harness.stderr()).toBe("");
   });
 
-  it("takes no single-letter aliases for help and version", async () => {
+  it("takes -h for help and no single-letter alias for version", async () => {
     const harness = await createHarness();
 
-    expect(await run(["sandbox", "-v"], harness.deps)).toBe(1);
-    expect(await run(["sandbox", "-h"], harness.deps)).toBe(1);
+    expect(await runPinata(["-v"], harness.deps)).toBe(1);
+    expect(await runPinata(["-h"], harness.deps)).toBe(0);
+    expect(harness.stdout()).toMatch(/^usage:\n/);
   });
 
   it("no longer has a gc command", async () => {
     const harness = await createHarness();
 
-    expect(await run(["sandbox", "gc"], harness.deps)).toBe(1);
-    expect(harness.stderr()).toContain('unknown command "pi sandbox gc"');
+    expect(await runPinata(["gc"], harness.deps)).toBe(1);
+    expect(harness.stderr()).toContain('pinata: unknown command "pinata gc"');
+  });
+
+  it("renders a failure of either entry point with the pinata prefix", async () => {
+    const harness = await createHarness({
+      backend: () => {
+        throw new Error("boom");
+      },
+    });
+
+    expect(await runPinata(["status"], harness.deps)).toBe(70);
+    expect(await run([], harness.deps)).toBe(70);
+    expect(harness.stderr()).toBe("pinata: unexpected error: boom\npinata: unexpected error: boom\n");
   });
 });

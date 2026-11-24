@@ -12,10 +12,9 @@ import { busyLaunches } from "./busy.ts";
 import { type CliDeps, pathsOf, writeLine } from "./deps.ts";
 
 export const GROUND_WAITING =
-  "pi-sandbox: waiting for another pi session to finish with the sandbox network, proxy or services";
+  "pinata: waiting for another pi session to finish with the sandbox network, proxy or services";
 
-export const CLEANUP_WAITING =
-  "pi-sandbox: waiting for another pi-sandbox command to finish before cleaning up";
+export const CLEANUP_WAITING = "pinata: waiting for another pinata command to finish before cleaning up";
 
 export const cleanupWaiting = (signal?: AbortSignal) =>
   signal === undefined ? CLEANUP_WAITING : `${CLEANUP_WAITING}; Ctrl-C skips the cleanup`;

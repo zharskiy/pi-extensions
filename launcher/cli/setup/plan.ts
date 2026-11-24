@@ -266,7 +266,7 @@ const yesRoot = (document: ConfigDocument, facts: HostFacts, env: NodeJS.Process
   if (fromEnv === undefined) {
     throw new LauncherError(
       `${document.file} has no workspaceRoot and PI_SANDBOX_ROOT is not set, so there is no folder to share with the sandbox VM`,
-      "run pi sandbox init in a terminal to choose the folder that holds your projects, or set PI_SANDBOX_ROOT to it",
+      "run pinata init in a terminal to choose the folder that holds your projects, or set PI_SANDBOX_ROOT to it",
     );
   }
 

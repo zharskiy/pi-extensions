@@ -269,7 +269,7 @@ describe("ensureProxy start and health", () => {
     });
 
     await expect(failing).rejects.toThrow(
-      "the pi-sandbox egress proxy did not become healthy: broken input (fix the input)",
+      "the pinata egress proxy did not become healthy: broken input (fix the input)",
     );
     expect(seen).toEqual([files().directory]);
   }, 20_000);
@@ -341,7 +341,7 @@ describe("ensureProxy start and health", () => {
     await writeFile(files().record, JSON.stringify(record));
 
     await expect(ensure(await inputFor(), true)).rejects.toThrow(
-      `the pi-sandbox egress proxy (pid ${stranger.pid}) does not answer, and other pi sessions use it, so it was kept`,
+      `the pinata egress proxy (pid ${stranger.pid}) does not answer, and other pi sessions use it, so it was kept`,
     );
     expect(isAlive(stranger)).toBe(true);
     expect(JSON.parse(await readFile(files().record, "utf8"))).toEqual(record);

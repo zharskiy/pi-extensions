@@ -604,7 +604,7 @@ describe("a rule on a non-443 port", () => {
 
     expect(page).toMatchObject({ connect: 200, status: 403 });
     expect(page.body).toBe(
-      "llm.test is not allowed by the sandbox. Ask the user to run pi sandbox egress allow llm.test on the host.",
+      "llm.test is not allowed by the sandbox. Ask the user to run pinata egress allow llm.test on the host.",
     );
     expect(local.test?.log).toContainEqual(
       expect.objectContaining({ host: "llm.test", rule: "egress.allow" }),

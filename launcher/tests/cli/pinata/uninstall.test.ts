@@ -47,16 +47,16 @@ describe("pinata uninstall", () => {
       findContainers: () => Promise.reject(new Error("engine broke")),
     });
 
-    await expect(pinata.run("uninstall")).rejects.toMatchObject({
-      message: "engine broke",
-      hint: expect.stringContaining("colima delete --profile pi-sandbox --force --data removes the VM"),
-    });
+    expect(await pinata.run("uninstall")).toBe(1);
+    expect(pinata.harness.stderr()).toContain(
+      "pinata: engine broke\n  hint: colima delete --profile pi-sandbox --force --data removes the VM",
+    );
     expect(pinata.lines()).not.toContain("colima delete --profile pi-sandbox --force --data");
     expect(await exists(pinata.shim)).toBe(true);
   });
 
   it.each([
-    ["without the launcher's marker", false],
+    ["without pinata's marker", false],
     ["that is pi's agent dir, marked or not", true],
   ])("refuses a state dir %s", async (_, agentDir) => {
     const pinata = await installed(false);
@@ -68,7 +68,8 @@ describe("pinata uninstall", () => {
 
     pinata.harness.deps.env.PI_SANDBOX_STATE_DIR = dir;
 
-    await expect(pinata.run("uninstall")).rejects.toThrow("does not look like the launcher's state");
+    expect(await pinata.run("uninstall")).toBe(1);
+    expect(pinata.harness.stderr()).toContain("does not look like pinata's state");
     expect(await exists(join(dir, agentDir ? "settings.json" : "other"))).toBe(true);
   });
 });
@@ -80,7 +81,8 @@ describe("pinata while a pi session runs in the VM", () => {
 
     pinata.harness.deps.env.PI_SANDBOX_STATE_DIR = join(pinata.harness.root, "none");
 
-    await expect(pinata.run(command)).rejects.toThrow("1 pi session is running");
+    expect(await pinata.run(command)).toBe(1);
+    expect(pinata.harness.stderr()).toContain("1 pi session is running");
     expect(pinata.lines().filter((line) => / -g |delete/.test(line))).toEqual([]);
     expect(pinata.fake.containers.has(session)).toBe(true);
   });

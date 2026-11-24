@@ -5,7 +5,10 @@ import { LauncherError, lstatOrUndefined, realOrResolved } from "../../shared/in
 import { type CliDeps, hostAgentDirOf, pathsOf } from "../deps.ts";
 import { say } from "./host.ts";
 
-const shimPath = async (deps: CliDeps) => join(await realOrResolved(join(deps.home, ".local", "bin")), "pi");
+const linkPath = async (deps: CliDeps, name: string) =>
+  join(await realOrResolved(join(deps.home, ".local", "bin")), name);
+
+const shimPath = (deps: CliDeps) => linkPath(deps, "pi");
 
 const recordOf = (deps: CliDeps) => join(pathsOf(deps).stateDir, "replaced-pi-link");
 
@@ -15,6 +18,12 @@ const isOurs = async (path: string) => {
   return target === undefined
     ? (await readFile(path, "utf8").catch(() => "")).includes("launcher/bin/pi-sandbox")
     : /\/pi-sandbox(-dev)?(\.js)?$/.test(target);
+};
+
+const isPinataLink = async (path: string) => {
+  const target = await readlink(path).catch(() => undefined);
+
+  return target !== undefined && /\/pinata(-dev)?(\.js)?$/.test(target);
 };
 
 const isManaged = async (deps: CliDeps, path: string) =>
@@ -30,7 +39,7 @@ export const inspectShim = async (deps: CliDeps) => {
 
   if (found && !ours && !managed) {
     throw new LauncherError(
-      `${path} is neither the pi-sandbox launcher nor pi's managed install in ${hostAgentDirOf(deps)}`,
+      `${path} is neither pinata's link nor pi's managed install in ${hostAgentDirOf(deps)}`,
       "move it away and run this again",
     );
   }
@@ -59,7 +68,7 @@ export const installShim = async (
 
   await symlink(target, shim.path);
 
-  say(deps, `launcher: linked ${shim.path} to ${target}`);
+  say(deps, `pinata: linked ${shim.path} to ${target}`);
 };
 
 export const removeShim = async (deps: CliDeps) => {
@@ -69,7 +78,7 @@ export const removeShim = async (deps: CliDeps) => {
   if (await isOurs(path)) {
     await rm(path);
 
-    say(deps, `launcher: removed ${path}`);
+    say(deps, `pinata: removed ${path}`);
   }
 
   if (recorded === "" || (await readlink(path).catch(() => "")) === recorded) {
@@ -79,11 +88,47 @@ export const removeShim = async (deps: CliDeps) => {
   if ((await lstatOrUndefined(path)) !== undefined) {
     return say(
       deps,
-      `launcher: put pi's managed link back with ln -s '${recorded}' '${path}' once that path is free`,
+      `pinata: put pi's managed link back with ln -s '${recorded}' '${path}' once that path is free`,
     );
   }
 
   await symlink(recorded, path);
 
-  say(deps, `launcher: restored ${path} to ${recorded}`);
+  say(deps, `pinata: restored ${path} to ${recorded}`);
+};
+
+export const inspectPinataLink = async (deps: CliDeps) => {
+  const path = await linkPath(deps, "pinata");
+
+  if ((await lstatOrUndefined(path)) !== undefined && !(await isPinataLink(path))) {
+    throw new LauncherError(`${path} is not pinata's link`, "move it away and run this again");
+  }
+
+  return path;
+};
+
+export const installPinataLink = async (deps: CliDeps, target: string) => {
+  const path = await inspectPinataLink(deps);
+
+  if ((await readlink(path).catch(() => "")) === target) {
+    return;
+  }
+
+  await rm(path, { force: true });
+
+  await mkdir(dirname(path), { recursive: true });
+
+  await symlink(target, path);
+
+  say(deps, `pinata: linked ${path} to ${target}`);
+};
+
+export const removePinataLink = async (deps: CliDeps) => {
+  const path = await linkPath(deps, "pinata");
+
+  if (await isPinataLink(path)) {
+    await rm(path);
+
+    say(deps, `pinata: removed ${path}`);
+  }
 };

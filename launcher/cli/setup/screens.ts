@@ -34,7 +34,7 @@ const LABEL_WIDTH = 19;
 
 const HUB_TAGS_INLINE = 56;
 
-export const INTRO_TITLE = "pi sandbox setup";
+export const INTRO_TITLE = "pinata setup";
 
 export const CHECKING = "Checking this Mac and the sandbox VM…";
 
@@ -46,7 +46,7 @@ export const HUB_SUMMARY_TITLE = "Your settings:";
 export const FOLDERS_TITLE = "Which folder holds your projects?";
 
 export const FOLDERS_DETAIL =
-  "Only this folder is shared with the sandbox VM, besides pi's sessions folder and the launcher's read-only state/vm folder, and pi starts only inside it. It cannot be your home or a folder that holds it.";
+  "Only this folder is shared with the sandbox VM, besides pi's sessions folder and pinata's read-only state/vm folder, and pi starts only inside it. It cannot be your home or a folder that holds it.";
 
 export const OTHER_FOLDER_TITLE = "Type the folder that holds your projects";
 
@@ -108,11 +108,11 @@ const STILL_RUNNING: Record<VmPhase, string> = {
 
 const stoppedWaiting = (phase: VmPhase | undefined) => [
   `Stopped waiting. Your settings are saved; ${STILL_RUNNING[phase ?? "starting"]}.`,
-  "Check it with pi sandbox doctor, or run pi sandbox init again.",
+  "Check it with pinata doctor, or run pinata init again.",
 ];
 
 const VM_NOT_READY =
-  "Your settings are saved, but the sandbox VM is not ready. Fix the problem above, then run pi sandbox init again. pi sandbox doctor checks everything.";
+  "Your settings are saved, but the sandbox VM is not ready. Fix the problem above, then run pinata init again. pinata doctor checks everything.";
 
 const STILL_BUSY: Record<VmPhase, string> = {
   creating: "The VM is still being created",
@@ -315,7 +315,7 @@ const CREATE_TAIL =
 
 export const vmActionText = (action: VmAction) => {
   if (action.kind === "create") {
-    return `create the sandbox VM with this folder, pi's sessions folder and the launcher's read-only state/vm folder; ${CREATE_TAIL}`;
+    return `create the sandbox VM with this folder, pi's sessions folder and pinata's read-only state/vm folder; ${CREATE_TAIL}`;
   }
 
   if (action.kind === "restart") {
@@ -331,7 +331,7 @@ export const vmActionText = (action: VmAction) => {
   }
 
   if (action.kind === "unknown") {
-    return `the sandbox VM could not be checked (${printable(action.reason)}); run pi sandbox doctor after applying`;
+    return `the sandbox VM could not be checked (${printable(action.reason)}); run pinata doctor after applying`;
   }
 
   return undefined;
@@ -528,7 +528,7 @@ const vmDoneLine = (applied: VmApplied, action: VmAction, elapsed: string, plain
 };
 
 const vmUnknownLine = (reason: string) =>
-  `▲ The VM could not be checked (${printable(reason)}). Run pi sandbox doctor to see why.`;
+  `▲ The VM could not be checked (${printable(reason)}). Run pinata doctor to see why.`;
 
 const verbOf = (action: VmAction) => (action.kind === "create" ? "create" : "restart");
 
@@ -560,8 +560,8 @@ const successLines = (root: Answers["root"], facts: HostFacts, vmReady: boolean,
   const head = vmReady ? "Done. The sandbox is ready." : "Done. Settings saved.";
   const rows: Array<[string, string]> = [
     ["Next", nextCommand(root, facts)],
-    ["Change", "pi sandbox init"],
-    ["Check", "pi sandbox doctor"],
+    ["Change", "pinata init"],
+    ["Check", "pinata doctor"],
     ["Settings", shown(facts.configFile, facts.home)],
   ];
 
@@ -585,11 +585,11 @@ export const invalidText = (read: InvalidRead) =>
   read.kind === "json"
     ? {
         problem: "is not valid JSON",
-        fix: "fix the file, or move it away to start over, then run pi sandbox init again",
+        fix: "fix the file, or move it away to start over, then run pinata init again",
       }
     : {
         problem: "has a problem this setup does not fix",
-        fix: read.hint ?? "fix that key, then run pi sandbox init again",
+        fix: read.hint ?? "fix that key, then run pinata init again",
       };
 
 export const invalidLines = (read: InvalidRead, file: string, home: string) => {

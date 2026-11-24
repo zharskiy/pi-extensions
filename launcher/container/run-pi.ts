@@ -127,7 +127,7 @@ const settleSignal = async (input: RunPiInput, running: Promise<number>, signal:
   return signalled;
 };
 
-const PI_SCRIPT = `echo $$ > ${PID_FILE}; cd "$1" 2>/dev/null || echo "pi-sandbox: $1 is not in the sandbox, pi starts in $PWD" >&2; shift; exec "$@"`;
+const PI_SCRIPT = `echo $$ > ${PID_FILE}; cd "$1" 2>/dev/null || echo "pinata: $1 is not in the sandbox, pi starts in $PWD" >&2; shift; exec "$@"`;
 
 const bridged = (input: RunPiInput, interactive: boolean): PiStreams => {
   const { terminal, clipboard } = input;

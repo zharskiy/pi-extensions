@@ -2,7 +2,7 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { installIdOf, LABELS } from "../../backend/index.ts";
-import { run } from "../../cli/index.ts";
+import { run, runPinata } from "../../cli/index.ts";
 import { agentVolumeName, volumePlan } from "../../container/index.ts";
 import { registerLaunch } from "../../grants/index.ts";
 import {
@@ -22,18 +22,18 @@ const packageVersion = async () =>
   (JSON.parse(await readFile(join(launcherRoot(), "..", "package.json"), "utf8")) as { version: string })
     .version;
 
-describe("pi sandbox status", () => {
+describe("pinata status", () => {
   it("reports runtime, proxy and image, and no container once the last session exited", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
 
     await run([], harness.deps);
 
-    expect(await run(["sandbox", "status"], harness.deps)).toBe(0);
+    expect(await runPinata(["status"], harness.deps)).toBe(0);
 
     const lines = harness.stdout().split("\n");
 
-    expect(lines).toContain(`launcher: ${await packageVersion()}`);
+    expect(lines).toContain(`pinata: ${await packageVersion()}`);
     expect(lines.filter((line) => line.startsWith("runtime: "))).toEqual([]);
     expect(lines).toContain("runtime socket: /fake/docker.sock");
     expect(lines).toContain("containers: 0");
@@ -57,14 +57,14 @@ describe("pi sandbox status", () => {
 
     await mkdir(renders, { recursive: true });
 
-    expect(await run(["sandbox", "status"], harness.deps)).toBe(0);
+    expect(await runPinata(["status"], harness.deps)).toBe(0);
 
     const lines = harness.stdout().split("\n");
 
     expect(lines).toContain(`pi folder: ${agent}, shared by every folder's sandbox`);
     expect(lines.filter((line) => line.startsWith("leftover: "))).toEqual([
-      `leftover: volume ${legacy}, left by an older launcher; pi sandbox restart removes it`,
-      `leftover: ${layout.renders}, left by an older launcher; pi sandbox restart removes it`,
+      `leftover: volume ${legacy}, left by an older pinata; pinata restart removes it`,
+      `leftover: ${layout.renders}, left by an older pinata; pinata restart removes it`,
     ]);
   });
 
@@ -74,7 +74,7 @@ describe("pi sandbox status", () => {
 
     await mkdir(folder, { recursive: true });
 
-    expect(await run(["sandbox", "status"], { ...harness.deps, cwd: folder })).toBe(0);
+    expect(await runPinata(["status"], { ...harness.deps, cwd: folder })).toBe(0);
 
     const lines = harness.stdout().split("\n");
 
@@ -108,7 +108,7 @@ describe("pi sandbox status", () => {
       image: "relay",
     });
 
-    expect(await run(["sandbox", "status"], harness.deps)).toBe(0);
+    expect(await runPinata(["status"], harness.deps)).toBe(0);
 
     const lines = harness.stdout().split("\n");
 
@@ -121,7 +121,7 @@ describe("pi sandbox status", () => {
       proxy: { read: async () => ({ pid: 11, port: 4001, boot: 1, start: "", inputHash: "input" }) },
     });
 
-    expect(await run(["sandbox", "status"], harness.deps)).toBe(0);
+    expect(await runPinata(["status"], harness.deps)).toBe(0);
 
     const proxies = harness
       .stdout()
@@ -153,9 +153,9 @@ describe("pi sandbox status", () => {
       startedAt: 1_700_000_000_000,
     });
 
-    await run(["sandbox", "egress", "allow", "docs.example.test"], harness.deps);
+    await runPinata(["egress", "allow", "docs.example.test"], harness.deps);
 
-    expect(await run(["sandbox", "status"], harness.deps)).toBe(0);
+    expect(await runPinata(["status"], harness.deps)).toBe(0);
 
     const lines = harness.stdout().split("\n");
 
@@ -175,7 +175,7 @@ describe("pi sandbox status", () => {
     const down = { ...fake.backend, detect: async () => ({ available: false, reason: "socket missing" }) };
     const harness = await createHarness({ backend: () => down });
 
-    expect(await run(["sandbox", "status"], harness.deps)).toBe(0);
+    expect(await runPinata(["status"], harness.deps)).toBe(0);
     expect(harness.stdout()).toContain(
       "runtime: none (the sandbox VM engine is unreachable at ~/.colima/pi-sandbox/docker.sock: socket missing)",
     );
@@ -184,13 +184,13 @@ describe("pi sandbox status", () => {
   });
 });
 
-describe("pi sandbox config", () => {
+describe("pinata config", () => {
   it("prints the effective config followed by the source of each key", async () => {
     const harness = await createHarness();
 
     await harness.writeJson(harness.userConfigFile, { sessions: { host: false } });
 
-    expect(await run(["sandbox", "config"], harness.deps)).toBe(0);
+    expect(await runPinata(["config"], harness.deps)).toBe(0);
 
     const output = harness.stdout();
     const json = output.slice(0, output.indexOf("\n# "));
@@ -204,7 +204,7 @@ describe("pi sandbox config", () => {
   it("prints config and sources as one JSON object with --json", async () => {
     const harness = await createHarness();
 
-    expect(await run(["sandbox", "config", "--json"], harness.deps)).toBe(0);
+    expect(await runPinata(["config", "--json"], harness.deps)).toBe(0);
 
     const parsed = JSON.parse(harness.stdout()) as {
       config: { sessions: { host: boolean } };
@@ -225,7 +225,7 @@ describe("pi sandbox config", () => {
       },
     });
 
-    expect(await run(["sandbox", "config"], harness.deps)).toBe(0);
+    expect(await runPinata(["config"], harness.deps)).toBe(0);
     expect(harness.stdout()).toContain(
       "# writeBack settings.json default: defaultProvider, defaultModel, defaultThinkingLevel, enabledModels, hideThinkingBlock,",
     );
@@ -233,7 +233,7 @@ describe("pi sandbox config", () => {
     expect(harness.stdout()).toContain("# writeBack pi-footer.json config: layout\n");
     expect(harness.stdout()).toContain("# writeBack.exclude: config\n");
 
-    expect(await run(["sandbox", "config", "--json"], harness.deps)).toBe(0);
+    expect(await runPinata(["config", "--json"], harness.deps)).toBe(0);
 
     const parsed = JSON.parse(harness.stdout().slice(harness.stdout().lastIndexOf("\n{\n") + 1)) as {
       writeBack: Record<string, Record<string, { source: string }>>;
@@ -250,16 +250,16 @@ describe("pi sandbox config", () => {
 
     await harness.writeJson(harness.userConfigFile, { writeBack: { enabled: false } });
 
-    expect(await run(["sandbox", "config"], harness.deps)).toBe(0);
+    expect(await runPinata(["config"], harness.deps)).toBe(0);
     expect(harness.stdout()).toContain("# writeBack: nothing is written back to the host\n");
   });
 
   it("only shows the config and refuses any other option", async () => {
     const harness = await createHarness();
 
-    expect(await run(["sandbox", "config", "set", "sessions.host", "false"], harness.deps)).toBe(1);
-    expect(harness.stderr()).toContain('pi-sandbox: unknown config option "set"\n');
-    expect(harness.stderr()).toContain("  hint: pi sandbox config [--json]");
+    expect(await runPinata(["config", "set", "sessions.host", "false"], harness.deps)).toBe(1);
+    expect(harness.stderr()).toContain('pinata: unknown config option "set"\n');
+    expect(harness.stderr()).toContain("  hint: pinata config [--json]");
   });
 });
 
@@ -375,10 +375,10 @@ describe("the sweep", () => {
     );
   });
 
-  it("leaves the daily collection due when it ran without an engine, as under pi sandbox stop of a stopped VM", async () => {
+  it("leaves the daily collection due when it ran without an engine, as under pinata stop of a stopped VM", async () => {
     const harness = await createHarness({ backend: () => unreachable(createFakeBackend().backend) });
 
-    expect(await run(["sandbox", "stop"], harness.deps)).toBe(0);
+    expect(await runPinata(["stop"], harness.deps)).toBe(0);
     expect(
       await readFile(stateLayout(harness.stateDir).gcRecord, "utf8").catch(() => undefined),
     ).toBeUndefined();
@@ -475,22 +475,50 @@ describe("the sweep", () => {
   });
 });
 
-describe("pi sandbox help and version", () => {
+describe("pinata help and version", () => {
   it("prints the launcher version from the package manifest", async () => {
     const harness = await createHarness();
 
-    expect(await run(["sandbox", "--version"], harness.deps)).toBe(0);
+    expect(await runPinata(["--version"], harness.deps)).toBe(0);
     expect(harness.stdout()).toBe(`${await packageVersion()}\n`);
   });
 
-  it("prints usage for help and for a bare pi sandbox", async () => {
+  it("lists every pinata command in one list", async () => {
     const harness = await createHarness();
 
-    expect(await run(["sandbox", "help"], harness.deps)).toBe(0);
-    expect(await run(["sandbox"], harness.deps)).toBe(0);
-    expect(harness.stdout().match(/pi sandbox doctor/g)).toHaveLength(2);
-    expect(harness.stdout()).not.toContain("pi sandbox gc");
-    expect(harness.stdout()).toContain("pi sandbox restart  ");
+    expect(await runPinata(["help"], harness.deps)).toBe(0);
+
+    const listed = harness
+      .stdout()
+      .split("\n")
+      .map((line) => /^ {2}pinata (\S+)/.exec(line)?.[1])
+      .filter((command) => command !== undefined);
+
+    expect([...new Set(listed)]).toEqual([
+      "install",
+      "update",
+      "uninstall",
+      "init",
+      "status",
+      "list",
+      "config",
+      "egress",
+      "restart",
+      "stop",
+      "doctor",
+      "--version",
+      "help",
+    ]);
+  });
+
+  it("prints usage for help and for a bare pinata", async () => {
+    const harness = await createHarness();
+
+    expect(await runPinata(["help"], harness.deps)).toBe(0);
+    expect(await runPinata([], harness.deps)).toBe(0);
+    expect(harness.stdout().match(/pinata doctor/g)).toHaveLength(2);
+    expect(harness.stdout()).not.toContain("pinata gc");
+    expect(harness.stdout()).toContain("pinata restart  ");
   });
 
   const readmeRows = async () => {
@@ -519,7 +547,7 @@ describe("pi sandbox help and version", () => {
   it("lists every command of the README table with the same description, in aligned columns", async () => {
     const harness = await createHarness();
 
-    await run(["sandbox", "help"], harness.deps);
+    await runPinata(["help"], harness.deps);
 
     const lines = harness.stdout().trimEnd().split("\n").slice(1);
     const rows = await readmeRows();

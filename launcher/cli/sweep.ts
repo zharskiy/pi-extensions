@@ -64,7 +64,7 @@ const rootState = async (record: RepoRecord | undefined) => {
 };
 
 const warn = (deps: CliDeps, what: string, error: unknown) => {
-  writeLine(deps.stderr, `pi-sandbox: warning: ${what}: ${errorMessage(error)}`);
+  writeLine(deps.stderr, `pinata: warning: ${what}: ${errorMessage(error)}`);
 };
 
 const reachable = async (backend: Backend | undefined) =>

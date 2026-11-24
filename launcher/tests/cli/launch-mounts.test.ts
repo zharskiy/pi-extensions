@@ -2,7 +2,7 @@ import { mkdir, readFile, rename, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { VmPath } from "../../backend/index.ts";
-import { run } from "../../cli/index.ts";
+import { run, runPinata } from "../../cli/index.ts";
 import { hostSessionsDir } from "../../workspace/index.ts";
 import { git } from "../support/git.ts";
 import { createFakeBackend, createHarness, renderDirOf } from "./harness.ts";
@@ -77,9 +77,7 @@ describe("mounts.binds", () => {
     });
 
     expect(await run([], harness.deps)).toBe(1);
-    expect(harness.stderr()).toContain(
-      `pi-sandbox: config: mounts.binds[0].source: ${source} does not exist`,
-    );
+    expect(harness.stderr()).toContain(`pinata: config: mounts.binds[0].source: ${source} does not exist`);
     expect(fake.created).toEqual([]);
     expect(fake.execs).toEqual([]);
   });
@@ -126,7 +124,7 @@ describe("mounts.binds", () => {
 
     expect(await run([], deps)).toBe(1);
     expect(harness.stderr()).toContain(
-      `pi-sandbox: config: mounts.binds[0].source: ${inRepo} overlaps ${root}, which the sandbox already mounts`,
+      `pinata: config: mounts.binds[0].source: ${inRepo} overlaps ${root}, which the sandbox already mounts`,
     );
 
     await harness.writeJson(harness.userConfigFile, {
@@ -134,9 +132,7 @@ describe("mounts.binds", () => {
     });
 
     expect(await run([], deps)).toBe(1);
-    expect(harness.stderr()).toContain(
-      `pi-sandbox: config: mounts.binds[0].source: ${inRoot} overlaps ${root}`,
-    );
+    expect(harness.stderr()).toContain(`pinata: config: mounts.binds[0].source: ${inRoot} overlaps ${root}`);
     expect(fake.created).toEqual([]);
   });
 
@@ -164,7 +160,7 @@ describe("mounts.binds", () => {
 
     expect(await run([], { ...harness.deps, cwd: linked.root })).toBe(1);
     expect(harness.stderr()).toContain(
-      `pi-sandbox: config: mounts.binds[0].source: ${inside} overlaps ${join(harness.root, "worktrees")}, which the sandbox already mounts`,
+      `pinata: config: mounts.binds[0].source: ${inside} overlaps ${join(harness.root, "worktrees")}, which the sandbox already mounts`,
     );
     expect(fake.created).toEqual([]);
   });
@@ -183,7 +179,7 @@ describe("mounts.binds", () => {
 
     expect(await run([], harness.deps)).toBe(1);
     expect(harness.stderr()).toContain(
-      `pi-sandbox: config: mounts.binds[0].source: ${inside} overlaps pi's directory (${join(harness.deps.home, ".pi")})`,
+      `pinata: config: mounts.binds[0].source: ${inside} overlaps pi's directory (${join(harness.deps.home, ".pi")})`,
     );
     expect(fake.created).toEqual([]);
   });
@@ -213,7 +209,7 @@ describe("mounts.binds", () => {
 
     expect(await run([], harness.deps)).toBe(1);
     expect(harness.stderr()).toContain(
-      `pi-sandbox: config: mounts.binds[0].source: ${source} changed while pi was starting, refusing`,
+      `pinata: config: mounts.binds[0].source: ${source} changed while pi was starting, refusing`,
     );
     expect(fake.created).toEqual([]);
   });
@@ -232,7 +228,7 @@ describe("mounts.binds", () => {
 
     expect(await run([], deps)).toBe(1);
     expect(harness.stderr()).toContain(
-      `pi-sandbox: config: mounts.binds: the sandbox VM would share ${other} for a bind source, which holds the share ${root}, and colima refuses nested shares`,
+      `pinata: config: mounts.binds: the sandbox VM would share ${other} for a bind source, which holds the share ${root}, and colima refuses nested shares`,
     );
     expect(fake.created).toEqual([]);
   });
@@ -270,7 +266,7 @@ describe("setup", () => {
     expect(setupExec?.containerId).toBe(piExec?.containerId);
     expect(Object.keys(setupExec?.env ?? {}).sort()).toEqual(Object.keys(piExec?.env ?? {}).sort());
     expect(fake.execs[first]?.tty).toBe(false);
-    expect(harness.stderr()).toContain("pi-sandbox: setup: npm ci\n");
+    expect(harness.stderr()).toContain("pinata: setup: npm ci\n");
   });
 
   it("stops the launch when a command fails, naming it and its exit code, and never starts pi", async () => {
@@ -285,9 +281,7 @@ describe("setup", () => {
     });
 
     expect(await run([], harness.deps)).not.toBe(0);
-    expect(harness.stderr()).toContain(
-      "pi-sandbox: setup: make init exited with code 2, so pi did not start\n",
-    );
+    expect(harness.stderr()).toContain("pinata: setup: make init exited with code 2, so pi did not start\n");
     expect(harness.stderr()).toContain("hint: fix or remove that command in setup");
     expect(commandsOf(fake).some(isPi)).toBe(false);
     expect(commandsOf(fake).some((command) => command[0] === "npm")).toBe(false);
@@ -303,7 +297,7 @@ describe("setup", () => {
       setup: [["make", "init"]],
     });
 
-    await run(["sandbox", "doctor"], harness.deps);
+    await runPinata(["doctor"], harness.deps);
 
     expect(commandsOf(fake).some((command) => command[0] === "make")).toBe(false);
     expect(
@@ -326,7 +320,7 @@ describe("setup", () => {
     expect(await run([], harness.deps)).toBe(0);
     expect((await statusOf()).binds).toEqual([{ target: "/etc/reference" }]);
 
-    await run(["sandbox", "doctor"], harness.deps);
+    await runPinata(["doctor"], harness.deps);
 
     expect((await statusOf()).binds).toEqual([{ target: "/etc/reference" }]);
   });

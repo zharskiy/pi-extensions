@@ -18,7 +18,7 @@ await_handover() {
 
   while [ ! -e "$handover" ]; do
     if [ "$tries" -ge "$handover_tries" ]; then
-      echo "pi-sandbox: the launcher did not hand the volumes to the sandbox user within $((handover_tries / 10)) s, stopping" >&2
+      echo "pinata: the volumes were not handed to the sandbox user within $((handover_tries / 10)) s, stopping" >&2
       exit 1
     fi
 

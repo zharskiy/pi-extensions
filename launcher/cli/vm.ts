@@ -82,7 +82,7 @@ export const assertVmFitsHost = (deps: CliDeps, target: VmTarget) => {
   if (problems.length > 0) {
     throw new LauncherError(
       problems.join("; "),
-      `lower it in ${pathsOf(deps).userConfigFile}, or run pi sandbox init to choose a size`,
+      `lower it in ${pathsOf(deps).userConfigFile}, or run pinata init to choose a size`,
     );
   }
 };
@@ -98,7 +98,7 @@ export const assertMemoryFitsVm = (deps: CliDeps, config: SandboxConfig) => {
   if (problem !== undefined) {
     throw new LauncherError(
       `config: ${problem}`,
-      `set vm.memoryGiB in ${pathsOf(deps).userConfigFile}, or run pi sandbox init to choose a size`,
+      `set vm.memoryGiB in ${pathsOf(deps).userConfigFile}, or run pinata init to choose a size`,
     );
   }
 };
@@ -122,7 +122,7 @@ const assertApart = (shares: VmShare[]) => {
   if (pair !== undefined) {
     throw new LauncherError(
       `config: workspaceRoot: the sandbox VM shares ${pair[0].location} and ${pair[1].location}, which nest, and colima refuses nested shares`,
-      "keep <agent dir>/sessions and the launcher state dir apart from the workspace root",
+      "keep <agent dir>/sessions and pinata's state dir apart from the workspace root",
     );
   }
 };
@@ -186,11 +186,7 @@ export const startVm = async (
 ) => {
   await prepareSessionsDir(sessions);
 
-  await backend.vm.ensureRunning(
-    (notice) => progress(`pi-sandbox: ${notice}`),
-    start.plan.shares,
-    start.size,
-  );
+  await backend.vm.ensureRunning((notice) => progress(`pinata: ${notice}`), start.plan.shares, start.size);
 };
 
 export const configuredVmStart = async (deps: CliDeps, config: SandboxConfig) => {
@@ -210,7 +206,7 @@ export const startConfiguredVm = (
   backend: Backend,
   start: { shares: VmShare[]; size: VmTarget },
   progress: (line: string) => void,
-) => backend.vm.ensureRunning((notice) => progress(`pi-sandbox: ${notice}`), start.shares, start.size);
+) => backend.vm.ensureRunning((notice) => progress(`pinata: ${notice}`), start.shares, start.size);
 
 const vmBusy = (context: LaunchContext, backend: Backend, launchId: string) => () =>
   vmSessions(backend, context.stateDir, launchId);

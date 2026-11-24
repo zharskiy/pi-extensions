@@ -10,7 +10,7 @@ import { promisify } from "node:util";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { Backend, ExecIo, ExecSpec } from "../../backend/index.ts";
 import { readSandboxTls } from "../../cli/commands/doctor-tls.ts";
-import { run } from "../../cli/index.ts";
+import { runPinata } from "../../cli/index.ts";
 import type { FakeCall } from "../support/fake-runner.ts";
 import { createFakeBackend, createHarness, doctorCheck, isTlsProbeScript, unreachable } from "./harness.ts";
 
@@ -301,7 +301,7 @@ const doctorThroughInspection = async (options: InspectedOptions = {}) => {
     await writeFile(join(harness.stateDir, "ca", "extra.pem"), chainOf().root);
   }
 
-  const code = await run(["sandbox", "doctor", "--verbose"], harness.deps);
+  const code = await runPinata(["doctor", "--verbose"], harness.deps);
 
   return { code, harness, proxy, asked, found: doctorCheck(harness.stdout(), "tls inspection") };
 };
@@ -322,7 +322,7 @@ const doctorWithProbe = async (chain: string[], verdict: string, system = "") =>
     },
   });
 
-  await run(["sandbox", "doctor", "--verbose"], harness.deps);
+  await runPinata(["doctor", "--verbose"], harness.deps);
 
   return {
     harness,
@@ -331,7 +331,7 @@ const doctorWithProbe = async (chain: string[], verdict: string, system = "") =>
   };
 };
 
-describe("pi sandbox doctor tls inspection", () => {
+describe("pinata doctor tls inspection", () => {
   it("passes when pi.dev's chain verifies against Node's built-in roots, asking the probe directly without a parent proxy", async () => {
     const asked: FakeCall[] = [];
     const harness = await createHarness({
@@ -345,7 +345,7 @@ describe("pi sandbox doctor tls inspection", () => {
       },
     });
 
-    await run(["sandbox", "doctor", "--verbose"], harness.deps);
+    await runPinata(["doctor", "--verbose"], harness.deps);
 
     expect(doctorCheck(harness.stdout(), "tls inspection")).toMatchObject({
       section: "network",

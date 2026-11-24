@@ -73,7 +73,7 @@ describe("the host pi of host jobs", () => {
     expect(await run([], escaping.harness.deps)).toBe(0);
     expect(marked.requests[0]?.piCommand).toEqual([]);
     expect(escaping.requests[0]?.piCommand).toEqual([]);
-    expect(marked.harness.stderr()).toContain(`pi-sandbox: ${noHostPiLine(marked.harness.hostAgentDir)}\n`);
+    expect(marked.harness.stderr()).toContain(`pinata: ${noHostPiLine(marked.harness.hostAgentDir)}\n`);
   });
 
   it("gives the proxy no pi without a managed install, even with a pi on PATH", async () => {
@@ -85,7 +85,7 @@ describe("the host pi of host jobs", () => {
     expect(await run([], harness.deps)).toBe(0);
     expect(requests[0]?.piCommand).toEqual([]);
     expect(providerScriptCall(harness)).toBeUndefined();
-    expect(harness.stderr()).toContain(`pi-sandbox: ${noHostPiLine(harness.hostAgentDir)}\n`);
+    expect(harness.stderr()).toContain(`pinata: ${noHostPiLine(harness.hostAgentDir)}\n`);
   });
 });
 
@@ -110,7 +110,7 @@ describe("pi --no-sandbox", () => {
 
     expect(await run(["--no-sandbox"], harness.deps)).toBe(1);
     expect(interactiveCall(harness)).toBeUndefined();
-    expect(harness.stderr()).toBe(`pi-sandbox: --no-sandbox: ${noHostPiLine(harness.hostAgentDir)}\n`);
+    expect(harness.stderr()).toBe(`pinata: --no-sandbox: ${noHostPiLine(harness.hostAgentDir)}\n`);
   });
 });
 
@@ -202,7 +202,7 @@ describe("pi installed with npm install -g", () => {
         return {
           code: await run(["--no-sandbox"], harness.deps),
           asked: npmCalls(harness).length,
-          stderr: harness.stderr() === `pi-sandbox: --no-sandbox: ${noHostPiLine(harness.hostAgentDir)}\n`,
+          stderr: harness.stderr() === `pinata: --no-sandbox: ${noHostPiLine(harness.hostAgentDir)}\n`,
         };
       }),
     );
@@ -330,7 +330,7 @@ describe("pi installed with npm install -g", () => {
     harness.deps.cwd = harness.deps.home;
 
     expect(await run(["--no-sandbox"], harness.deps)).toBe(1);
-    expect(harness.stderr()).toContain(`pi-sandbox: ${harness.deps.home} is outside the workspace root`);
+    expect(harness.stderr()).toContain(`pinata: ${harness.deps.home} is outside the workspace root`);
     expect(interactiveCall(harness)).toBeUndefined();
   });
 

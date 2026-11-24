@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { LABELS } from "../../backend/index.ts";
-import { run } from "../../cli/index.ts";
+import { runPinata } from "../../cli/index.ts";
 import { newLaunchId, registerLaunch } from "../../grants/index.ts";
 import { proxyToken } from "../../proxy/index.ts";
 import { processMark, sha256Hex, stateLayout } from "../../shared/index.ts";
@@ -64,16 +64,16 @@ describe("stopping the services", () => {
     expect(fake.containers.has(pod)).toBe(true);
   });
 
-  it("stops the idle services before pi sandbox stop stops the VM", async () => {
+  it("stops the idle services before pinata stop stops the VM", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
     const { first, second } = plantServices(fake);
 
-    expect(await run(["sandbox", "stop"], harness.deps)).toBe(0);
+    expect(await runPinata(["stop"], harness.deps)).toBe(0);
     expect(gracefulStops(fake)).toEqual([first, second].sort());
   });
 
-  it("removes the container a crashed launch left before pi sandbox stop decides on the services", async () => {
+  it("removes the container a crashed launch left before pinata stop decides on the services", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
     const { first, second } = plantServices(fake);
@@ -84,7 +84,7 @@ describe("stopping the services", () => {
       image: "x",
     });
 
-    expect(await run(["sandbox", "stop"], harness.deps)).toBe(0);
+    expect(await runPinata(["stop"], harness.deps)).toBe(0);
     expect(fake.containers.has(crashed)).toBe(false);
     expect(gracefulStops(fake)).toEqual([first, second].sort());
   });
@@ -112,7 +112,7 @@ describe("stopping the services", () => {
 
     await proxyToken(harness.stateDir);
 
-    expect(await run(["sandbox", "stop"], harness.deps)).toBe(0);
+    expect(await runPinata(["stop"], harness.deps)).toBe(0);
     expect(gracefulStops(fake)).toEqual([first, second].sort());
     expect(fake.containers.has(other)).toBe(true);
     expect(harness.proxyStops()).toBeGreaterThan(0);
@@ -128,7 +128,7 @@ describe("stopping the services", () => {
 
     await registerSession(harness.stateDir, sha256Hex(harness.repoRoot));
 
-    await run(["sandbox", "stop"], harness.deps);
+    await runPinata(["stop"], harness.deps);
 
     expect(gracefulStops(fake)).toEqual([]);
   });

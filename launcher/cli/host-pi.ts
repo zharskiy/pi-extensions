@@ -71,7 +71,7 @@ export const spawnHostJob = (
 export const runHostPi = async (deps: CliDeps, context: LaunchContext, piArgs: string[]) => {
   const pi = await requireJobPi(deps, NO_SANDBOX);
 
-  writeLine(deps.stderr, `pi-sandbox: warning: running ${pi.location} on the host, outside the sandbox`);
+  writeLine(deps.stderr, `pinata: warning: running ${pi.location} on the host, outside the sandbox`);
 
   await sweepForHostPi(deps, context);
 

@@ -67,7 +67,7 @@ const ports = () => {
 };
 
 const hint = (host: string) =>
-  `${host} is not allowed by the sandbox. Ask the user to run pi sandbox egress allow ${host} on the host.`;
+  `${host} is not allowed by the sandbox. Ask the user to run pinata egress allow ${host} on the host.`;
 
 beforeAll(async () => {
   state.stateDir = await createStateDir();

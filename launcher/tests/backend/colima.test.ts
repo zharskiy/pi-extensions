@@ -444,7 +444,7 @@ describe("colima container translation", () => {
 
     await expect(backend.createContainer({ ...baseSpec, mounts })).rejects.toMatchObject({
       message: `the sandbox VM does not share ${host}`,
-      hint: "run pi sandbox doctor; its vm shares line names the folders the VM lacks",
+      hint: "run pinata doctor; its vm shares line names the folders the VM lacks",
     });
   });
 
@@ -480,7 +480,7 @@ describe("colima container translation", () => {
 });
 
 const ENGINE_CERTIFICATE_HINT =
-  "a proxy or CA on this network signs the registry and its CA is not declared in tls.extraCa; run pi sandbox doctor, which prints the tls.extraCa line to add";
+  "a proxy or CA on this network signs the registry and its CA is not declared in tls.extraCa; run pinata doctor, which prints the tls.extraCa line to add";
 
 describe("colima images", () => {
   it("names the reference when the registry refuses the pull", async () => {

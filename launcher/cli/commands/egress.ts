@@ -54,7 +54,7 @@ const assertNotDenied = (context: LaunchContext, target: Target) => {
   if (entry !== undefined) {
     throw new LauncherError(
       `egress: ${authorityOf(target.host, target.port)} is denied by the egress.deny entry ${entry}, which a grant cannot override`,
-      "pi sandbox config shows the layers that set egress.deny",
+      "pinata config shows the layers that set egress.deny",
     );
   }
 };

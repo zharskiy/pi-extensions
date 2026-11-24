@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { installIdOf, LABELS, networkName, relayName } from "../../backend/index.ts";
-import { run } from "../../cli/index.ts";
+import { run, runPinata } from "../../cli/index.ts";
 import { sha256Hex } from "../../shared/index.ts";
 import { createFakeBackend, createHarness, holdLaunch, sweepNow } from "./harness.ts";
 
@@ -109,7 +109,7 @@ describe("two installs on one engine", () => {
 
     await holdLaunch(a);
 
-    expect(await run(["sandbox", "stop"], a.deps)).toBe(0);
+    expect(await runPinata(["stop"], a.deps)).toBe(0);
     expect(busy).toEqual([2]);
   });
 });

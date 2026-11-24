@@ -195,7 +195,7 @@ describe("applying a size and shares to the sandbox VM", () => {
     ]);
   });
 
-  it("points a failed create at colima's log and pi sandbox init, not at a bare colima start", async () => {
+  it("points a failed create at colima's log and pinata init, not at a bare colima start", async () => {
     const env = await setupWith({ start: { code: 1, stderr: "disk full\n" } });
 
     await expect(
@@ -205,7 +205,7 @@ describe("applying a size and shares to the sandbox VM", () => {
       }),
     ).rejects.toMatchObject({
       message: "could not create the sandbox VM: colima start failed: disk full",
-      hint: "see ~/.colima/_lima/colima-pi-sandbox/ha.stderr.log, then run pi sandbox init again",
+      hint: "see ~/.colima/_lima/colima-pi-sandbox/ha.stderr.log, then run pinata init again",
     });
   });
 

@@ -31,7 +31,7 @@ describe("validateConfig", () => {
     expect(() => validateConfig({ workspaceRoots: { roots: ["~/work"] } })).toThrow(
       expect.objectContaining({
         message: "config: workspaceRoots is not a known key",
-        hint: 'workspaceRoots was replaced by workspaceRoot, one folder: write "workspaceRoot": "~/work" in its place, or remove the key and run pi sandbox init',
+        hint: 'workspaceRoots was replaced by workspaceRoot, one folder: write "workspaceRoot": "~/work" in its place, or remove the key and run pinata init',
       }),
     );
     expect(() => validateConfig({ egres: {} })).toThrow(expect.objectContaining({ hint: undefined }));
@@ -184,7 +184,7 @@ describe("validateConfig", () => {
       "PATH",
     ].forEach((name) => {
       expect(configProblem({ env: { allow: [name] } })).toBe(
-        `config: env.allow[0] ${name} is set by the launcher and is not forwarded`,
+        `config: env.allow[0] ${name} is set by pinata and is not forwarded`,
       );
     });
   });
@@ -197,7 +197,7 @@ describe("validateConfig", () => {
     expect(configProblem({ env: { set: { GH_TOKEN: "pi-sandbox-github" } } })).toBeUndefined();
     ["HTTPS_PROXY", "no_proxy", "GITLAB_TOKEN", "PI_SANDBOX", "HOME", "PATH"].forEach((name) => {
       expect(configProblem({ env: { set: { CI: "1", [name]: "x" } } })).toBe(
-        `config: env.set["${name}"] is set by the launcher and cannot be set`,
+        `config: env.set["${name}"] is set by pinata and cannot be set`,
       );
     });
     expect(configProblem({ env: { set: { "1BAD": "x" } } })).toBe(

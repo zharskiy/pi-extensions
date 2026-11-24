@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { LABELS } from "../../backend/index.ts";
 import { openContext } from "../../cli/context.ts";
 import { CLEANUP_WAITING, withGroundLock } from "../../cli/ground.ts";
-import { run } from "../../cli/index.ts";
+import { run, runPinata } from "../../cli/index.ts";
 import { withSandbox } from "../../cli/launch.ts";
 import { beginLaunch, finishLaunch } from "../../cli/launches.ts";
 import { withPrepareLock } from "../../cli/prepare.ts";
@@ -51,7 +51,7 @@ const filesUnder = async (dir: string): Promise<string[]> => {
 };
 
 const launchesShown = async (harness: Awaited<ReturnType<typeof createHarness>>) => {
-  await run(["sandbox", "status"], harness.deps);
+  await runPinata(["status"], harness.deps);
 
   return harness
     .stdout()

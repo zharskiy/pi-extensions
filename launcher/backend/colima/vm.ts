@@ -84,7 +84,7 @@ const RESTART_FAILURE = "could not restart the sandbox VM";
 const startHint = (shares: VmShare[]) =>
   `run ${plainStart(ENGINE_PROFILE, shares)} and see ${logHint(ENGINE_PROFILE)}`;
 
-const INIT_HINT = "run pi sandbox init, which creates it";
+const INIT_HINT = "run pinata init, which creates it";
 
 const NOT_BUSY: VmBusy = { count: 0, others: [] };
 
@@ -102,7 +102,7 @@ const vmDiskPaths = (home: string, profile: string) => {
 export const engineUnreachable = (detection?: Detection) =>
   new LauncherError(
     `the sandbox VM engine is unreachable at ${ENGINE_SOCKET_DISPLAY}${detection?.reason === undefined ? "" : `: ${detection.reason}`}`,
-    `${PI_STARTS_VM}, or pi sandbox init when ~/.colima/${ENGINE_PROFILE} does not exist`,
+    `${PI_STARTS_VM}, or pinata init when ~/.colima/${ENGINE_PROFILE} does not exist`,
   );
 
 const profileAbsent = () =>
@@ -111,14 +111,14 @@ const profileAbsent = () =>
 const engineSilent = (detection: Detection) =>
   new LauncherError(
     `the sandbox VM is running but its engine at ${ENGINE_SOCKET_DISPLAY} does not answer: ${detection.reason ?? "not detected"}`,
-    `run pi sandbox stop, then pi again, and see ${logHint(ENGINE_PROFILE)}`,
+    `run pinata stop, then pi again, and see ${logHint(ENGINE_PROFILE)}`,
   );
 
 const assertPlanned = (shares: VmShare[]) => {
   if (shares.length === 0) {
     throw new LauncherError(
       "the sandbox VM may not start without the folders it shares, or colima would share the home dir",
-      "set workspaceRoot (pi sandbox init), then run pi again",
+      "set workspaceRoot (pinata init), then run pi again",
     );
   }
 };
@@ -232,10 +232,7 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
 
   const running = async (failure: string) => {
     const result = await colimaRun(["status", "--profile", profile]).catch((error: unknown) => {
-      throw new LauncherError(
-        `${failure}: ${errorMessage(error)}`,
-        "install colima, then run pi sandbox init",
-      );
+      throw new LauncherError(`${failure}: ${errorMessage(error)}`, "install colima, then run pinata init");
     });
 
     return result.code === 0;
@@ -291,7 +288,7 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
     if (sessions.count > 0) {
       throw new LauncherError(
         `${busyText(sessions)}; stopping the sandbox VM would end them`,
-        "exit them and run pi sandbox stop again",
+        "exit them and run pinata stop again",
       );
     }
   };
@@ -364,7 +361,7 @@ export const createColimaVm = (options: ColimaVmOptions): Vm => {
     await run(
       CREATE_FAILURE,
       startArgs(profile, { shares: desired.shares, size: desired.size, create: true }),
-      `see ${logHint(profile)}, then run pi sandbox init again`,
+      `see ${logHint(profile)}, then run pinata init again`,
     );
 
     await waitForEngine("creating it", progress, desired.shares);

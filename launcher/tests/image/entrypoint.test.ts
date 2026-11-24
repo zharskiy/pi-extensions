@@ -568,7 +568,7 @@ describe("image entrypoint", () => {
 
     expect(result.status).toBe(1);
     expect(result.stderr).toBe(
-      "pi-sandbox: the launcher did not hand the volumes to the sandbox user within 1 s, stopping\n",
+      "pinata: the volumes were not handed to the sandbox user within 1 s, stopping\n",
     );
     await expect(lstat(join(paths.home, ".pi"))).rejects.toThrow();
   });

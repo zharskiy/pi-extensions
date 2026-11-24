@@ -127,7 +127,7 @@ describe("ensureTrustBundle", () => {
       ),
     ).toEqual({
       message: `tls.extraCa: no certificate with sha256 ${missing} in the macOS keychains`,
-      hint: `run pi sandbox doctor to get the sha256 of your network's CA; for a CA that is not in a keychain, export the CA to a PEM file and list it as { "file": "~/ca.pem" }`,
+      hint: `run pinata doctor to get the sha256 of your network's CA; for a CA that is not in a keychain, export the CA to a PEM file and list it as { "file": "~/ca.pem" }`,
     });
   });
 

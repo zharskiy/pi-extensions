@@ -220,7 +220,7 @@ export const initCommand = async (deps: CliDeps, args: string[]) => {
   }
 
   if (isSet(deps.env.CI)) {
-    throw new LauncherError("pi sandbox init asks questions, and CI is set", SETUP_HINT);
+    throw new LauncherError("pinata init asks questions, and CI is set", SETUP_HINT);
   }
 
   const ui = findTerminal({
@@ -231,7 +231,7 @@ export const initCommand = async (deps: CliDeps, args: string[]) => {
   });
 
   if (ui === undefined) {
-    throw new LauncherError("pi sandbox init asks questions and needs a terminal", SETUP_HINT);
+    throw new LauncherError("pinata init asks questions and needs a terminal", SETUP_HINT);
   }
 
   return ask(deps, ui);

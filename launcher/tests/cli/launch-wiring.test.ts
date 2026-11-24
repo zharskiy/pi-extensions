@@ -264,10 +264,10 @@ describe("pi launch wiring", () => {
     await run([], harness.deps);
 
     expect(harness.stderr()).toContain(
-      `pi-sandbox: blocked.example.test was blocked in the sandbox; run pi sandbox egress allow blocked.example.test on the host\n`,
+      `pinata: blocked.example.test was blocked in the sandbox; run pinata egress allow blocked.example.test on the host\n`,
     );
     expect(harness.stderr()).toContain(
-      `pi-sandbox: other.test:8443 was blocked in the sandbox; run pi sandbox egress allow other.test:8443 on the host\n`,
+      `pinata: other.test:8443 was blocked in the sandbox; run pinata egress allow other.test:8443 on the host\n`,
     );
     expect(harness.stderr().match(/blocked\.example\.test was blocked/g)).toHaveLength(1);
   });
@@ -289,7 +289,7 @@ describe("pi launch wiring", () => {
     await run([], harness.deps);
 
     expect(harness.stderr()).toContain(
-      `pi-sandbox: ${record.host} was blocked in the sandbox; ${hint} ${harness.userConfigFile}\n`,
+      `pinata: ${record.host} was blocked in the sandbox; ${hint} ${harness.userConfigFile}\n`,
     );
   });
 
@@ -311,32 +311,32 @@ describe("pi launch wiring", () => {
     [
       "an unavailable credential",
       denial("api.corp.test", 443, "credential", "credential corp is unavailable: token expired"),
-      "pi-sandbox: api.corp.test was blocked in the sandbox; it could not authenticate: credential corp is unavailable: token expired\n",
+      "pinata: api.corp.test was blocked in the sandbox; it could not authenticate: credential corp is unavailable: token expired\n",
     ],
     [
       "a missing or expired host login",
       denial("llm.corp.test", 443, "login", "the corp-llm login on the host is missing or expired"),
-      "pi-sandbox: llm.corp.test was blocked in the sandbox; the corp-llm login on the host is missing or expired; log in again with pi --no-sandbox and /login\n",
+      "pinata: llm.corp.test was blocked in the sandbox; the corp-llm login on the host is missing or expired; log in again with pi --no-sandbox and /login\n",
     ],
     [
       "egress.deny",
       denial("paste.test", 443, "egress.deny", "paste.test is in egress.deny"),
-      "pi-sandbox: paste.test was blocked in the sandbox; denied by egress.deny\n",
+      "pinata: paste.test was blocked in the sandbox; denied by egress.deny\n",
     ],
     [
       "plain HTTP",
       denial("localhost.test", 80, "plain-http", "only HTTPS through CONNECT is proxied"),
-      "pi-sandbox: localhost.test:80 was blocked in the sandbox; plain HTTP is not proxied; use https\n",
+      "pinata: localhost.test:80 was blocked in the sandbox; plain HTTP is not proxied; use https\n",
     ],
     [
       "an upstream failure",
       denial("down.test", 443, "upstream", "connect ECONNREFUSED 203.0.113.9:443"),
-      "pi-sandbox: down.test was blocked in the sandbox; it could not be reached: connect ECONNREFUSED 203.0.113.9:443\n",
+      "pinata: down.test was blocked in the sandbox; it could not be reached: connect ECONNREFUSED 203.0.113.9:443\n",
     ],
     [
       "a TLS name mismatch",
       denial("api.test", 443, "sni", "TLS server name evil.test does not match api.test"),
-      "pi-sandbox: api.test was blocked in the sandbox; TLS server name evil.test does not match api.test\n",
+      "pinata: api.test was blocked in the sandbox; TLS server name evil.test does not match api.test\n",
     ],
   ])("prints its own hint for %s when pi exits", async (_kind, record, line) => {
     const harness = await createHarness({ backend: () => createFakeBackend().backend, denials: [record] });
@@ -357,8 +357,8 @@ describe("pi launch wiring", () => {
 
     await run([], harness.deps);
 
-    expect(harness.stderr()).toContain("pi-sandbox: mcp docs: not signed in; run pi mcp login docs\n");
-    expect(harness.stderr()).toContain(`pi-sandbox: ${noHostPiLine(harness.hostAgentDir)}\n`);
+    expect(harness.stderr()).toContain("pinata: mcp docs: not signed in; run pi mcp login docs\n");
+    expect(harness.stderr()).toContain(`pinata: ${noHostPiLine(harness.hostAgentDir)}\n`);
   });
 
   it("names a pi argument that lies outside the folders mounted, once", async () => {
@@ -369,7 +369,7 @@ describe("pi launch wiring", () => {
 
     expect(await run(["--append-system-prompt", prompt], harness.deps)).toBe(0);
 
-    const line = `pi-sandbox: --append-system-prompt ${prompt}: ${prompt} lies outside the folders mounted in the sandbox, so pi inside cannot read it\n`;
+    const line = `pinata: --append-system-prompt ${prompt}: ${prompt} lies outside the folders mounted in the sandbox, so pi inside cannot read it\n`;
 
     expect(harness.stderr().split(line).length - 1).toBe(1);
   });

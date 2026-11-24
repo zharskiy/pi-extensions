@@ -71,7 +71,7 @@ describe("the writeBack key", () => {
     );
   });
 
-  it("names the source of each key for pi sandbox config", () => {
+  it("names the source of each key for pinata config", () => {
     const { config, sources } = mergeConfig(defaultConfig(), {
       writeBack: { add: { "settings.json": { theme: { type: "fileName" } } } },
     });

@@ -5,7 +5,7 @@ import { PassThrough } from "node:stream";
 import { stripVTControlCharacters } from "node:util";
 import { describe, expect, it } from "vitest";
 import type { VmDesired, VmInspect } from "../../backend/index.ts";
-import { type CliDeps, run } from "../../cli/index.ts";
+import { type CliDeps, runPinata } from "../../cli/index.ts";
 import { LauncherError, stateLayout } from "../../shared/index.ts";
 import { exists } from "../support/temp-dir.ts";
 import { createFakeBackend, createHarness, holdLaunch } from "./harness.ts";
@@ -94,19 +94,19 @@ const answered = (
     Promise.resolve(0),
   );
 
-describe("pi sandbox init without a terminal", () => {
+describe("pinata init without a terminal", () => {
   it("refuses without a terminal, and with CI set even on one, and changes nothing", async () => {
     const harness = await initSetup();
     const before = await listed(harness.root);
 
-    expect(await run(["sandbox", "init"], harness.deps)).toBe(1);
-    expect(harness.stderr()).toBe(`pi-sandbox: pi sandbox init asks questions and needs a terminal\n${HINT}`);
+    expect(await runPinata(["init"], harness.deps)).toBe(1);
+    expect(harness.stderr()).toBe(`pinata: pinata init asks questions and needs a terminal\n${HINT}`);
 
     const ci = await initSetup({ env: { CI: "true" } });
     const tty = withTty(ci.deps, { openTty: () => fakeTtyStreams() });
 
-    expect(await run(["sandbox", "init"], tty.deps)).toBe(1);
-    expect(ci.stderr()).toBe(`pi-sandbox: pi sandbox init asks questions, and CI is set\n${HINT}`);
+    expect(await runPinata(["init"], tty.deps)).toBe(1);
+    expect(ci.stderr()).toBe(`pinata: pinata init asks questions, and CI is set\n${HINT}`);
     expect(tty.output.text()).toBe("");
     expect(await listed(harness.root)).toEqual(before);
   });
@@ -120,20 +120,18 @@ describe("pi sandbox init without a terminal", () => {
       },
     };
 
-    expect(await run(["sandbox", "init"], deps)).toBe(1);
-    expect(harness.stderr()).toContain("pi sandbox init asks questions and needs a terminal");
+    expect(await runPinata(["init"], deps)).toBe(1);
+    expect(harness.stderr()).toContain("pinata init asks questions and needs a terminal");
   });
 
   it("refuses other arguments and prints its usage", async () => {
     const harness = await initSetup();
 
-    expect(await run(["sandbox", "init", "extra"], harness.deps)).toBe(1);
-    expect(harness.stderr()).toBe(
-      'pi-sandbox: unknown init option "extra"\n  hint: pi sandbox init [--yes]\n',
-    );
-    expect(await run(["sandbox", "init", "--help"], harness.deps)).toBe(0);
-    expect(await run(["sandbox", "help"], harness.deps)).toBe(0);
-    expect(harness.stdout()).toContain("usage: pi sandbox init [--yes]\n");
+    expect(await runPinata(["init", "extra"], harness.deps)).toBe(1);
+    expect(harness.stderr()).toBe('pinata: unknown init option "extra"\n  hint: pinata init [--yes]\n');
+    expect(await runPinata(["init", "--help"], harness.deps)).toBe(0);
+    expect(await runPinata(["help"], harness.deps)).toBe(0);
+    expect(harness.stdout()).toContain("usage: pinata init [--yes]\n");
     expect(harness.stdout()).toContain(
       "set up or change the folder that holds your projects, VM size and settings write-back, then apply them to the sandbox VM; --yes asks nothing and applies the current settings",
     );
@@ -148,7 +146,7 @@ const fakeTtyStreams = (closed: string[] = []) => ({
   },
 });
 
-describe("pi sandbox init --yes", () => {
+describe("pinata init --yes", () => {
   it("plans the share of a bind source outside the roots, as a launch does", async () => {
     const harness = await initSetup();
     const work = join(harness.deps.home, "work");
@@ -166,7 +164,7 @@ describe("pi sandbox init --yes", () => {
 
     await writeFile(harness.userConfigFile, JSON.stringify(config));
 
-    expect(await run(["sandbox", "init", "--yes"], harness.deps)).toBe(0);
+    expect(await runPinata(["init", "--yes"], harness.deps)).toBe(0);
     expect(harness.applied.map((desired) => desired.shares)).toEqual([
       [
         { location: work, writable: true },
@@ -185,7 +183,7 @@ describe("pi sandbox init --yes", () => {
 
     const deps = { ...harness.deps, env: { ...harness.deps.env, PI_SANDBOX_ROOT: "~/work/" } };
 
-    expect(await run(["sandbox", "init", "--yes"], deps)).toBe(0);
+    expect(await runPinata(["init", "--yes"], deps)).toBe(0);
     expect(JSON.parse(await readFile(harness.userConfigFile, "utf8"))).toEqual({ workspaceRoot: "~/work" });
     expect((await stat(harness.userConfigFile)).mode & 0o777).toBe(0o600);
     expect((await stat(dirname(harness.userConfigFile))).mode & 0o777).toBe(0o700);
@@ -207,13 +205,13 @@ describe("pi sandbox init --yes", () => {
         "When you apply:",
         `  - create ${harness.userConfigFile}`,
         '      added workspaceRoot: "~/work"',
-        "  - create the sandbox VM with this folder, pi's sessions folder and the launcher's read-only state/vm folder; this takes a minute or two, longer the first time while colima downloads the VM's system image",
+        "  - create the sandbox VM with this folder, pi's sessions folder and pinata's read-only state/vm folder; this takes a minute or two, longer the first time while colima downloads the VM's system image",
         `Saved ${harness.userConfigFile}`,
         "Created the VM in 0s: 8 CPUs, 10 GiB memory, 60 GiB disk",
         "Done. The sandbox is ready.",
         "Next: cd <a project in ~/work> && pi",
-        "Change: pi sandbox init",
-        "Check: pi sandbox doctor",
+        "Change: pinata init",
+        "Check: pinata doctor",
         `Settings: ${harness.userConfigFile}`,
         "",
       ].join("\n"),
@@ -226,17 +224,17 @@ describe("pi sandbox init --yes", () => {
     const gone = join(harness.deps.home, "gone");
     const deps = { ...harness.deps, env: { ...harness.deps.env, PI_SANDBOX_ROOT: gone } };
 
-    expect(await run(["sandbox", "init", "--yes"], deps)).toBe(0);
+    expect(await runPinata(["init", "--yes"], deps)).toBe(0);
     expect(JSON.parse(await readFile(harness.userConfigFile, "utf8"))).toEqual({ workspaceRoot: gone });
     expect(harness.stderr()).toBe(
-      `pi-sandbox: workspaceRoot: ${gone} is missing, so it is not shared until it exists\n`,
+      `pinata: workspaceRoot: ${gone} is missing, so it is not shared until it exists\n`,
     );
   });
 
   it("resolves a relative PI_SANDBOX_ROOT against the current folder", async () => {
     const harness = await initSetup({ env: { PI_SANDBOX_ROOT: ".." }, workspaceRoot: false });
 
-    expect(await run(["sandbox", "init", "--yes"], harness.deps)).toBe(0);
+    expect(await runPinata(["init", "--yes"], harness.deps)).toBe(0);
     expect(JSON.parse(await readFile(harness.userConfigFile, "utf8"))).toEqual({
       workspaceRoot: harness.repoRoot,
     });
@@ -267,7 +265,7 @@ describe("pi sandbox init --yes", () => {
       },
     });
 
-    expect(await run(["sandbox", "init", "--yes"], { ...deps, backend: () => fake.backend })).toBe(0);
+    expect(await runPinata(["init", "--yes"], { ...deps, backend: () => fake.backend })).toBe(0);
     expect(harness.stdout()).toBe(
       "Everything is set up: the file and the sandbox VM already match these settings.\n",
     );
@@ -288,9 +286,9 @@ describe("pi sandbox init --yes", () => {
       env: { ...harness.deps.env, PI_SANDBOX_ROOT: join(harness.root, "other") },
     };
 
-    expect(await run(["sandbox", "init", "--yes"], deps)).toBe(1);
+    expect(await runPinata(["init", "--yes"], deps)).toBe(1);
     expect(harness.stderr()).toBe(
-      `pi-sandbox: ${harness.userConfigFile} has another workspaceRoot than PI_SANDBOX_ROOT\n  hint: edit workspaceRoot in ${harness.userConfigFile}, or unset PI_SANDBOX_ROOT\n`,
+      `pinata: ${harness.userConfigFile} has another workspaceRoot than PI_SANDBOX_ROOT\n  hint: edit workspaceRoot in ${harness.userConfigFile}, or unset PI_SANDBOX_ROOT\n`,
     );
     expect(await readFile(harness.userConfigFile, "utf8")).toBe(text);
     expect(harness.applied).toEqual([]);
@@ -299,11 +297,11 @@ describe("pi sandbox init --yes", () => {
   it("refuses without workspaceRoot and PI_SANDBOX_ROOT, and writes nothing", async () => {
     const harness = await initSetup({ workspaceRoot: false });
 
-    expect(await run(["sandbox", "init", "--yes"], harness.deps)).toBe(1);
+    expect(await runPinata(["init", "--yes"], harness.deps)).toBe(1);
     expect(await exists(harness.userConfigFile)).toBe(false);
     expect(harness.applied).toEqual([]);
     expect(harness.stderr()).toBe(
-      `pi-sandbox: ${harness.userConfigFile} has no workspaceRoot and PI_SANDBOX_ROOT is not set, so there is no folder to share with the sandbox VM\n  hint: run pi sandbox init in a terminal to choose the folder that holds your projects, or set PI_SANDBOX_ROOT to it\n`,
+      `pinata: ${harness.userConfigFile} has no workspaceRoot and PI_SANDBOX_ROOT is not set, so there is no folder to share with the sandbox VM\n  hint: run pinata init in a terminal to choose the folder that holds your projects, or set PI_SANDBOX_ROOT to it\n`,
     );
   });
 
@@ -311,7 +309,7 @@ describe("pi sandbox init --yes", () => {
     const outcomes = await Promise.all(
       ["~", "~/..", "/"].map(async (root) => {
         const harness = await initSetup({ env: { PI_SANDBOX_ROOT: root }, workspaceRoot: false });
-        const code = await run(["sandbox", "init", "--yes"], harness.deps);
+        const code = await runPinata(["init", "--yes"], harness.deps);
 
         return {
           code,
@@ -340,7 +338,7 @@ describe("pi sandbox init --yes", () => {
 
     await holdLaunch(harness);
 
-    expect(await run(["sandbox", "init", "--yes"], harness.deps)).toBe(0);
+    expect(await runPinata(["init", "--yes"], harness.deps)).toBe(0);
     expect(harness.stdout().split("\n").slice(0, 7)).toEqual([
       `  Project folder: ${harness.repoRoot} (current)`,
       "  VM size: 8 CPUs, 10 GiB memory, 60 GiB disk (automatic)",
@@ -360,18 +358,18 @@ describe("pi sandbox init --yes", () => {
 
     await writeFile(harness.userConfigFile, "{ nope");
 
-    expect(await run(["sandbox", "init", "--yes"], harness.deps)).toBe(1);
+    expect(await runPinata(["init", "--yes"], harness.deps)).toBe(1);
     expect(harness.stderr()).toMatch(
       new RegExp(
-        `^pi-sandbox: ${harness.userConfigFile} is not valid JSON: .+\n  hint: fix the file, or move it away to start over, then run pi sandbox init again\n$`,
+        `^pinata: ${harness.userConfigFile} is not valid JSON: .+\n  hint: fix the file, or move it away to start over, then run pinata init again\n$`,
       ),
     );
 
     await writeFile(harness.userConfigFile, JSON.stringify({ egress: { allow: 3 } }));
 
-    expect(await run(["sandbox", "init", "--yes"], harness.deps)).toBe(1);
+    expect(await runPinata(["init", "--yes"], harness.deps)).toBe(1);
     expect(harness.stderr()).toContain(
-      `pi-sandbox: ${harness.userConfigFile} has a problem this setup does not fix: config: egress.allow must be an array\n  hint: fix that key, then run pi sandbox init again\n`,
+      `pinata: ${harness.userConfigFile} has a problem this setup does not fix: config: egress.allow must be an array\n  hint: fix that key, then run pinata init again\n`,
     );
     expect(await readFile(harness.userConfigFile, "utf8")).toBe(JSON.stringify({ egress: { allow: 3 } }));
     expect(harness.applied).toEqual([]);
@@ -385,9 +383,9 @@ describe("pi sandbox init --yes", () => {
     const text = await readFile(harness.userConfigFile, "utf8");
     const deps = { ...harness.deps, env: { ...harness.deps.env, PI_SANDBOX_ROOT: harness.repoRoot } };
 
-    expect(await run(["sandbox", "init", "--yes"], deps)).toBe(1);
+    expect(await runPinata(["init", "--yes"], deps)).toBe(1);
     expect(harness.stderr()).toBe(
-      `pi-sandbox: config: vm.cpus 12 is more than the 8 CPUs of this Mac\n  hint: lower it in ${harness.userConfigFile}, or run pi sandbox init to choose a size\n`,
+      `pinata: config: vm.cpus 12 is more than the 8 CPUs of this Mac\n  hint: lower it in ${harness.userConfigFile}, or run pinata init to choose a size\n`,
     );
     expect(await readFile(harness.userConfigFile, "utf8")).toBe(text);
     expect(harness.applied).toEqual([]);
@@ -400,9 +398,9 @@ describe("pi sandbox init --yes", () => {
 
     const text = await readFile(harness.userConfigFile, "utf8");
 
-    expect(await run(["sandbox", "init", "--yes"], harness.deps)).toBe(1);
+    expect(await runPinata(["init", "--yes"], harness.deps)).toBe(1);
     expect(harness.stderr()).toBe(
-      `pi-sandbox: ${harness.userConfigFile} has a problem this setup does not fix: config: workspaceRoots is not a known key\n  hint: workspaceRoots was replaced by workspaceRoot, one folder: write "workspaceRoot": "~/work" in its place, or remove the key and run pi sandbox init\n`,
+      `pinata: ${harness.userConfigFile} has a problem this setup does not fix: config: workspaceRoots is not a known key\n  hint: workspaceRoots was replaced by workspaceRoot, one folder: write "workspaceRoot": "~/work" in its place, or remove the key and run pinata init\n`,
     );
     expect(await readFile(harness.userConfigFile, "utf8")).toBe(text);
     expect(harness.applied).toEqual([]);
@@ -417,7 +415,7 @@ describe("pi sandbox init --yes", () => {
         await harness.writeJson(harness.userConfigFile, config);
 
         const text = await readFile(harness.userConfigFile, "utf8");
-        const code = await run(["sandbox", "init", "--yes"], harness.deps);
+        const code = await runPinata(["init", "--yes"], harness.deps);
         const kept = (await readFile(harness.userConfigFile, "utf8")) === text;
 
         return {
@@ -432,9 +430,7 @@ describe("pi sandbox init --yes", () => {
 
     outcomes.forEach((outcome) => {
       expect(outcome).toMatchObject({ code: 1, kept: true, applied: 0 });
-      expect(outcome.stderr).toMatch(
-        new RegExp(`^pi-sandbox: config: \\S+ .+\n  hint: fix ${outcome.hint}\n$`),
-      );
+      expect(outcome.stderr).toMatch(new RegExp(`^pinata: config: \\S+ .+\n  hint: fix ${outcome.hint}\n$`));
     });
     expect(outcomes.map((outcome) => outcome.stderr.split("\n")[0])).toEqual([
       expect.stringContaining("config: vm.cpus "),
@@ -457,15 +453,15 @@ describe("pi sandbox init --yes", () => {
       backend: () => fake.backend,
     };
 
-    expect(await run(["sandbox", "init", "--yes"], deps)).toBe(0);
+    expect(await runPinata(["init", "--yes"], deps)).toBe(0);
     expect(JSON.parse(await readFile(harness.userConfigFile, "utf8"))).toEqual({
       workspaceRoot: harness.repoRoot,
     });
     expect(harness.stderr()).toBe(
-      "! The VM could not be checked (colima did not answer within 3 seconds). Run pi sandbox doctor to see why.\n",
+      "! The VM could not be checked (colima did not answer within 3 seconds). Run pinata doctor to see why.\n",
     );
     expect(harness.stdout()).toContain(
-      "  - the sandbox VM could not be checked (colima did not answer within 3 seconds); run pi sandbox doctor after applying\nSaved ",
+      "  - the sandbox VM could not be checked (colima did not answer within 3 seconds); run pinata doctor after applying\nSaved ",
     );
     expect(harness.stdout()).toMatch(/\nSaved .+\nDone\. Settings saved\.\n/);
   });
@@ -488,13 +484,13 @@ describe("pi sandbox init --yes", () => {
       backend: () => fake.backend,
     };
 
-    expect(await run(["sandbox", "init", "--yes"], deps)).toBe(1);
+    expect(await runPinata(["init", "--yes"], deps)).toBe(1);
     expect(await exists(harness.userConfigFile)).toBe(true);
     expect(harness.stderr()).toBe(
       [
         "x Could not create the VM after 0s.",
         "  no space left; see the colima log",
-        "Your settings are saved, but the sandbox VM is not ready. Fix the problem above, then run pi sandbox init again. pi sandbox doctor checks everything.",
+        "Your settings are saved, but the sandbox VM is not ready. Fix the problem above, then run pinata init again. pinata doctor checks everything.",
         "",
       ].join("\n"),
     );
@@ -518,9 +514,9 @@ describe("pi sandbox init --yes", () => {
       backend: () => fake.backend,
     };
 
-    expect(await run(["sandbox", "init", "--yes"], deps)).toBe(70);
+    expect(await runPinata(["init", "--yes"], deps)).toBe(70);
     expect(await exists(harness.userConfigFile)).toBe(true);
-    expect(harness.stderr()).toBe("pi-sandbox: unexpected error: EACCES: permission denied, mkdir\n");
+    expect(harness.stderr()).toBe("pinata: unexpected error: EACCES: permission denied, mkdir\n");
   });
 
   it("prints the review with the changed share before restarting a running VM", async () => {
@@ -545,7 +541,7 @@ describe("pi sandbox init --yes", () => {
     });
     const deps = { ...harness.deps, backend: () => fake.backend };
 
-    expect(await run(["sandbox", "init", "--yes"], deps)).toBe(0);
+    expect(await runPinata(["init", "--yes"], deps)).toBe(0);
     expect(harness.stdout().split("\n").slice(0, 7)).toEqual([
       `  Project folder: ${harness.repoRoot} (current)`,
       "  VM size: 8 CPUs, 10 GiB memory, 60 GiB disk (automatic)",
@@ -563,7 +559,7 @@ const gitRepo = async (dir: string) => {
   await mkdir(join(dir, ".git"), { recursive: true });
 };
 
-describe("pi sandbox init at a terminal", () => {
+describe("pinata init at a terminal", () => {
   it("runs the plain setup, saves the chosen folder and creates the VM", async () => {
     const harness = await initSetup({ env: { PI_SANDBOX_PLAIN: "1" }, workspaceRoot: false });
     const projects = join(harness.deps.home, "Projects");
@@ -571,7 +567,7 @@ describe("pi sandbox init at a terminal", () => {
     await gitRepo(join(projects, "app"));
 
     const tty = withTty(harness.deps);
-    const exit = run(["sandbox", "init"], tty.deps);
+    const exit = runPinata(["init"], tty.deps);
 
     await answered(tty.input, tty.output, "", "", "", "");
 
@@ -605,7 +601,7 @@ describe("pi sandbox init at a terminal", () => {
       openTty: () => streams,
     };
     const before = await listed(harness.root);
-    const exit = run(["sandbox", "init"], deps);
+    const exit = runPinata(["init"], deps);
 
     await until(() => streams.input.isRaw && streams.output.text().includes("step 1 of 3"));
 
@@ -624,7 +620,7 @@ describe("pi sandbox init at a terminal", () => {
       (["SIGTERM", "SIGHUP"] as const).map(async (signal) => {
         const signals = new EventEmitter();
         const tty = withTty(harness.deps, { signals });
-        const exit = run(["sandbox", "init"], tty.deps);
+        const exit = runPinata(["init"], tty.deps);
 
         await until(() => signals.listenerCount(signal) > 0);
 
@@ -651,7 +647,7 @@ describe("pi sandbox init at a terminal", () => {
 
     const tty = withTty(harness.deps);
 
-    expect(await run(["sandbox", "init"], tty.deps)).toBe(1);
+    expect(await runPinata(["init"], tty.deps)).toBe(1);
     expect(tty.output.text()).toContain("is not valid JSON:");
     expect(await readFile(harness.userConfigFile, "utf8")).toBe("[]");
   });

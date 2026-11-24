@@ -119,12 +119,12 @@ interface PreparedInput extends SandboxInput {
   othersLive: () => Promise<boolean>;
 }
 
-const PREPARING = "preparing pi sandbox, one time";
+const PREPARING = "preparing the sandbox, one time";
 
-const STOPPING = "pi-sandbox: stopping after the current step";
+const STOPPING = "pinata: stopping after the current step";
 
 const SKIPPING_WAITS =
-  "pi-sandbox: the cleanup will not wait for other pi-sandbox commands; another Ctrl-C ends pi-sandbox at once, leaving the rest to the next start";
+  "pinata: the cleanup will not wait for other pinata commands; another Ctrl-C ends pinata at once, leaving the rest to the next start";
 
 const PREPARATION_SIGNALS: NodeJS.Signals[] = ["SIGINT", "SIGTERM", "SIGHUP"];
 
@@ -189,8 +189,8 @@ const prepareImage = (
     proxyCaPem: parts.host.trust.caCertPath,
     versions: async () => ({ pi: await imagePiVersion(parts.host.pi) }),
     preparing: () => parts.progress(PREPARING),
-    waiting: () => parts.progress("pi-sandbox: waiting for the image build in another session"),
-    progress: (step) => parts.progress(`pi-sandbox: build: ${step}`),
+    waiting: () => parts.progress("pinata: waiting for the image build in another session"),
+    progress: (step) => parts.progress(`pinata: build: ${step}`),
   });
 
 const sandboxRoute = async (input: PreparedInput, proxy: SandboxProxy, imageId: string) => {
@@ -351,7 +351,7 @@ const prepareContainer = async (
   const { render } = parts.files;
 
   await writeOnce(deps, context.stateDir, [
-    ...render.notices.map((notice) => `pi-sandbox: ${notice}`),
+    ...render.notices.map((notice) => `pinata: ${notice}`),
     ...launchNotices(context),
   ]);
 
@@ -465,7 +465,7 @@ const prepareSandbox = async (input: PreparedInput) => {
   cancelled.throwIfAborted();
 
   await staged("sync", () => prepareAgentFolder(input, prepared)).catch((error: unknown) => {
-    writeLine(deps.stderr, `pi-sandbox: warning: the agent settings were not synced: ${errorMessage(error)}`);
+    writeLine(deps.stderr, `pinata: warning: the agent settings were not synced: ${errorMessage(error)}`);
   });
 
   return { prepared, proxy };
@@ -695,10 +695,7 @@ export const withSandbox = async (
         const lock = { stateDir: context.stateDir, signal: skipWaits, progress };
 
         await withAgentLock(lock, () => syncVolume(deps, context, backend, sync)).catch((error: unknown) => {
-          writeLine(
-            deps.stderr,
-            `pi-sandbox: warning: settings were not written back: ${errorMessage(error)}`,
-          );
+          writeLine(deps.stderr, `pinata: warning: settings were not written back: ${errorMessage(error)}`);
         });
       }
 

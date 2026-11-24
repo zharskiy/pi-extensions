@@ -4,7 +4,7 @@ import { stripVTControlCharacters } from "node:util";
 import { describe, expect, it } from "vitest";
 import { type Backend, installIdOf, LABELS } from "../../backend/index.ts";
 import type { CliDeps } from "../../cli/index.ts";
-import { run } from "../../cli/index.ts";
+import { run, runPinata } from "../../cli/index.ts";
 import { agentVolumeName, configVolumeName, mountedVolumes } from "../../container/index.ts";
 import { registerLaunch } from "../../grants/index.ts";
 import { processMark, sha256Hex, stateLayout } from "../../shared/index.ts";
@@ -106,7 +106,7 @@ const serviceSetup = async () => {
   return { fake, vm, harness, data };
 };
 
-describe("pi sandbox restart", () => {
+describe("pinata restart", () => {
   it("refuses while a pi session of any folder runs, and removes nothing", async () => {
     const fake = createFakeBackend();
     const { vm, backend } = counted(fake);
@@ -123,9 +123,9 @@ describe("pi sandbox restart", () => {
       startedAt: 1,
     });
 
-    expect(await run(["sandbox", "restart"], harness.deps)).toBe(1);
+    expect(await runPinata(["restart"], harness.deps)).toBe(1);
     expect(harness.stderr()).toContain("1 pi session is running in the sandbox VM");
-    expect(harness.stderr()).toContain("exit them, then run pi sandbox restart again");
+    expect(harness.stderr()).toContain("exit them, then run pinata restart again");
     expect(fake.volumes.size).toBe(volumes);
     expect(vm.stops).toBe(0);
     expect(await exists(stateLayout(harness.stateDir).render)).toBe(true);
@@ -142,7 +142,7 @@ describe("pi sandbox restart", () => {
       image: "x",
     });
 
-    expect(await run(["sandbox", "restart"], harness.deps)).toBe(1);
+    expect(await runPinata(["restart"], harness.deps)).toBe(1);
     expect(harness.stderr()).toContain("in the sandbox VM");
     expect(harness.stdout()).toBe("");
   });
@@ -189,7 +189,7 @@ describe("pi sandbox restart", () => {
     expect(fake.volumes.has(agent)).toBe(true);
     expect(fake.volumes.has(cache?.name ?? "")).toBe(true);
     expect(fake.localImages.size).toBeGreaterThan(0);
-    expect(await run(["sandbox", "restart"], harness.deps)).toBe(0);
+    expect(await runPinata(["restart"], harness.deps)).toBe(0);
     expect([...fake.volumes]).toEqual([foreign]);
     expect(fake.containers.size).toBe(0);
     expect(fake.relays.size).toBe(0);
@@ -205,9 +205,7 @@ describe("pi sandbox restart", () => {
     expect(await exists(join(harness.stateDir, "ca", "ca-cert.pem"))).toBe(true);
 
     const lines = harness.stdout().split("\n");
-    const intro = lines.findIndex((line) =>
-      line.startsWith("pi sandbox restart removes the sandbox's caches"),
-    );
+    const intro = lines.findIndex((line) => line.startsWith("pinata restart removes the sandbox's caches"));
 
     expect(lines.slice(intro + 1, -1)).toEqual([
       "removed 1 container",
@@ -224,12 +222,12 @@ describe("pi sandbox restart", () => {
 
     await fake.backend.ensureVolume(agentVolumeName(installIdOf(harness.stateDir)));
 
-    expect(await run(["sandbox", "restart"], harness.deps)).toBe(0);
+    expect(await runPinata(["restart"], harness.deps)).toBe(0);
     expect(vm).toEqual({ up: true, starts: 2, stops: 1 });
     expect(fake.volumes.size).toBe(0);
     expect(harness.stdout()).toBe(
       [
-        "pi sandbox restart removes the sandbox's caches (containers, volumes and images) and the next pi rebuilds them from your config",
+        "pinata restart removes the sandbox's caches (containers, volumes and images) and the next pi rebuilds them from your config",
         "removed 0 containers",
         "removed 1 volume: pi folder 1",
         "removed 0 images",
@@ -252,16 +250,16 @@ describe("pi sandbox restart", () => {
     };
     const harness = await createHarness({ backend: () => backend });
 
-    expect(await run(["sandbox", "restart"], harness.deps)).not.toBe(0);
+    expect(await runPinata(["restart"], harness.deps)).not.toBe(0);
     expect(harness.stderr()).toContain("colima would not start");
   });
 
   it("refuses without a terminal when service data is at stake, and removes nothing", async () => {
     const { fake, vm, harness, data } = await serviceSetup();
 
-    expect(await run(["sandbox", "restart"], harness.deps)).toBe(1);
+    expect(await runPinata(["restart"], harness.deps)).toBe(1);
     expect(harness.stderr()).toContain("the data of service db");
-    expect(harness.stderr()).toContain("hint: run pi sandbox restart at a terminal to confirm");
+    expect(harness.stderr()).toContain("hint: run pinata restart at a terminal to confirm");
     expect(fake.volumes.has(data)).toBe(true);
     expect(vm.stops).toBe(0);
   });
@@ -269,7 +267,7 @@ describe("pi sandbox restart", () => {
   it("removes nothing when the answer is no", async () => {
     const { fake, vm, harness, data } = await serviceSetup();
     const tty = withTty(harness.deps);
-    const exit = run(["sandbox", "restart"], tty.deps);
+    const exit = runPinata(["restart"], tty.deps);
 
     await answer(tty, "n");
 
@@ -283,7 +281,7 @@ describe("pi sandbox restart", () => {
   it("removes the service data when the answer is yes", async () => {
     const { fake, vm, harness, data } = await serviceSetup();
     const tty = withTty(harness.deps);
-    const exit = run(["sandbox", "restart"], tty.deps);
+    const exit = runPinata(["restart"], tty.deps);
 
     await answer(tty, "y");
 
@@ -302,7 +300,7 @@ describe("pi sandbox restart", () => {
 
     await harness.writeJson(harness.userConfigFile, { sessions: { host: false } });
 
-    expect(await run(["sandbox", "restart"], harness.deps)).toBe(1);
+    expect(await runPinata(["restart"], harness.deps)).toBe(1);
     expect(harness.stderr()).toContain("the pi sessions kept in the sandbox while sessions.host is off");
     expect(fake.volumes.has(agent)).toBe(true);
   });
@@ -314,27 +312,15 @@ describe("pi sandbox restart", () => {
 
     await fake.backend.ensureVolume(orphan);
 
-    expect(await run(["sandbox", "restart"], harness.deps)).toBe(1);
+    expect(await runPinata(["restart"], harness.deps)).toBe(1);
     expect(harness.stderr()).toContain("1 volume no config entry names");
     expect(fake.volumes.has(orphan)).toBe(true);
   });
 
-  it("takes no options and points the old flags and the old name at it", async () => {
+  it("takes no options", async () => {
     const harness = await createHarness();
 
-    expect(await run(["sandbox", "restart", "--services"], harness.deps)).toBe(1);
-    expect(await run(["sandbox", "restart", "--agent"], harness.deps)).toBe(1);
-    expect(await run(["sandbox", "reset"], harness.deps)).toBe(1);
-    expect(harness.stderr()).toBe(
-      [
-        'pi-sandbox: unknown restart option "--services"',
-        "  hint: pi sandbox restart takes no options; it removes everything",
-        'pi-sandbox: unknown restart option "--agent"',
-        "  hint: pi sandbox restart takes no options; it removes everything",
-        'pi-sandbox: unknown command "pi sandbox reset"',
-        "  hint: pi sandbox reset is now pi sandbox restart",
-        "",
-      ].join("\n"),
-    );
+    expect(await runPinata(["restart", "--services"], harness.deps)).toBe(1);
+    expect(harness.stderr()).toBe('pinata: unknown restart option "--services"\n  hint: pinata restart\n');
   });
 });

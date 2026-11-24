@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { installIdOf, LABELS, roleOf, SERVICES_ALIAS } from "../../backend/index.ts";
-import { run } from "../../cli/index.ts";
+import { run, runPinata } from "../../cli/index.ts";
 import { FAKE_NETWORK } from "../support/fake-backend.ts";
 import { createFakeBackend, createHarness, holdLaunch, renderDirOf } from "./harness.ts";
 
@@ -30,7 +30,7 @@ describe("a launch with services", () => {
     expect(pod?.summary.labels[LABELS.repoHash]).toBeUndefined();
     expect(pod?.spec?.network).toEqual({ kind: "internal", name: FAKE_NETWORK, alias: SERVICES_ALIAS });
     expect(agent?.spec?.network).toEqual({ kind: "internal", name: FAKE_NETWORK });
-    expect(harness.stderr()).toContain("pi-sandbox: starting service db");
+    expect(harness.stderr()).toContain("pinata: starting service db");
     expect(graceful.map((stop) => stop.id).sort()).toEqual(
       [fake.created[1]?.summary.id, fake.created[2]?.summary.id].sort(),
     );
@@ -89,7 +89,7 @@ describe("a launch with services", () => {
     ]);
   });
 
-  it("lists the install services and their state in pi sandbox status", async () => {
+  it("lists the install services and their state in pinata status", async () => {
     const fake = createFakeBackend();
     const harness = await createHarness({ backend: () => fake.backend });
 
@@ -106,7 +106,7 @@ describe("a launch with services", () => {
       image: "x",
     });
 
-    expect(await run(["sandbox", "status"], harness.deps)).toBe(0);
+    expect(await runPinata(["status"], harness.deps)).toBe(0);
 
     const lines = harness.stdout().split("\n");
 

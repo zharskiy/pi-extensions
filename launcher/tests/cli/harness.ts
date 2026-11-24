@@ -44,7 +44,7 @@ export const unreachable = (backend: Backend): Backend => ({
     ensureRunning: async () => {
       throw new LauncherError(
         "the sandbox VM engine is unreachable at ~/.colima/pi-sandbox/docker.sock: socket missing",
-        "run pi, which starts the sandbox VM with its planned shares, or pi sandbox init when ~/.colima/pi-sandbox does not exist",
+        "run pi, which starts the sandbox VM with its planned shares, or pinata init when ~/.colima/pi-sandbox does not exist",
       );
     },
   },

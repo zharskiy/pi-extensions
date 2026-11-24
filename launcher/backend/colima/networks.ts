@@ -26,7 +26,7 @@ const oldEngine = (version: string | undefined) =>
 const foreign = (name: string) =>
   new LauncherError(
     `network ${name} exists but is not managed by pi-sandbox`,
-    "remove that network from the sandbox VM so the launcher can create its own",
+    "remove that network from the sandbox VM so pinata can create its own",
   );
 
 const noSubnet = (name: string) =>

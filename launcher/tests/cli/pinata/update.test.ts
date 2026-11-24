@@ -21,7 +21,8 @@ describe("pinata update", () => {
   it("refuses in a checkout", async () => {
     const pinata = await createPinata();
 
-    await expect(pinata.run("update")).rejects.toThrow("this is a checkout: git pull, then pinata install");
+    expect(await pinata.run("update")).toBe(1);
+    expect(pinata.harness.stderr()).toContain("pinata: this is a checkout: git pull, then pinata install");
     expect(pinata.lines()).toEqual([]);
   });
 });

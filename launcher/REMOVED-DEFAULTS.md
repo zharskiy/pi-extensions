@@ -33,7 +33,7 @@ The sandbox CAs (the launcher's CA and `tls.extraCa`) are now part of the image 
 | `/tmp/pi-sandbox/truststore.p12`, which the entrypoint built for the `java` on `PATH`, and the `javax.net.ssl.trustStore` flags in `JAVA_TOOL_OPTIONS` (set by the launcher and by `bash-env.sh`) | Every JDK in the image has the CAs in its own `cacerts`. A JDK installed with `image.dockerfile` is covered, because the layer's last step runs after it. For a JDK installed later, run `/usr/local/lib/pi-sandbox/trust-jdk.sh <its folder>` as its owner. |
 | `PI_SANDBOX_TRUST_HASH` | Nothing to restore: each launch creates its container, so no container outlives a CA change. The name is no longer reserved in `env.allow` and `env.set`. |
 
-The first launch after the update rebuilds the image once (`preparing pi sandbox, one time`): the base image and the layer, or only the layer when `image.digest` pins the base.
+The first launch after the update rebuilds the image once (`preparing the sandbox, one time`): the base image and the layer, or only the layer when `image.digest` pins the base.
 
 ## The proxy token inside the sandbox
 
@@ -73,7 +73,7 @@ The image no longer has `gh`, and the launcher no longer reads gh's config. Thes
 
 Without these, plain git over HTTPS to github.com has no credential in the sandbox: a clone of a public repository works once `github.com` is reachable, a push or a private clone fails, since `GIT_TERMINAL_PROMPT` is `0` and git cannot ask. An SSH remote fails too, since the sandbox has no SSH keys.
 
-This config gives back gh and git over HTTPS for github.com. Use your own placeholder: `pi-sandbox-` and 24 lowercase hex digits, such as `pi-sandbox-` followed by the output of `openssl rand -hex 12`. `pi sandbox doctor` reports a `GH_TOKEN` of any other shape as a value that is not a placeholder. Replace `/opt/homebrew/bin/gh` with what `command -v gh` prints on your Mac. The command runs on your Mac with a short list of variables, so give an absolute path.
+This config gives back gh and git over HTTPS for github.com. Use your own placeholder: `pi-sandbox-` and 24 lowercase hex digits, such as `pi-sandbox-` followed by the output of `openssl rand -hex 12`. `pinata doctor` reports a `GH_TOKEN` of any other shape as a value that is not a placeholder. Replace `/opt/homebrew/bin/gh` with what `command -v gh` prints on your Mac. The command runs on your Mac with a short list of variables, so give an absolute path.
 
 ```json
 {
@@ -108,10 +108,10 @@ What the config cannot do as the derivation did: it does not find your gh hosts 
 
 | Removed | Now, and how to get it back |
 | --- | --- |
-| `workspaceRoots: { "roots": ["~/work", "/Volumes/code"] }` | `"workspaceRoot": "~/work"`, one folder. Replace the key by hand, or remove it and run `pi sandbox init`. With the old key still in the file, `pi sandbox init` (with or without `--yes`) changes nothing and exits 1 with `<config file> has a problem this setup does not fix: config: workspaceRoots is not a known key` and the same hint; without the key it asks for the folder. Projects kept in several places go under one folder that holds them all, such as `~/Projects`, or are reached with a [read-only bind](CONFIGURATION.md#read-only-binds). |
+| `workspaceRoots: { "roots": ["~/work", "/Volumes/code"] }` | `"workspaceRoot": "~/work"`, one folder. Replace the key by hand, or remove it and run `pinata init`. With the old key still in the file, `pinata init` (with or without `--yes`) changes nothing and exits 1 with `<config file> has a problem this setup does not fix: config: workspaceRoots is not a known key` and the same hint; without the key it asks for the folder. Projects kept in several places go under one folder that holds them all, such as `~/Projects`, or are reached with a [read-only bind](CONFIGURATION.md#read-only-binds). |
 | No `workspaceRoots`: pi started anywhere and the VM shared your whole home, writable | Gone. A sandboxed launch without `workspaceRoot` stops with `config: workspaceRoot is not set, so pi has no folder it may start in`; set it to the folder that holds your projects. Your home, or a folder that holds it, is refused as the root. |
-| The setup's choice to share the whole home, and its several-folder list | `pi sandbox init` asks for one folder: a detected one, or one you type. |
-| `PI_SANDBOX_ROOTS`, folders separated by `:` | `PI_SANDBOX_ROOT`, one folder. `pi sandbox init --yes` (and `pinata install`) now refuses when neither the config nor `PI_SANDBOX_ROOT` names a folder. |
+| The setup's choice to share the whole home, and its several-folder list | `pinata init` asks for one folder: a detected one, or one you type. |
+| `PI_SANDBOX_ROOTS`, folders separated by `:` | `PI_SANDBOX_ROOT`, one folder. `pinata init --yes` (and `pinata install`) now refuses when neither the config nor `PI_SANDBOX_ROOT` names a folder. |
 
 At the first launch after the change, the VM restarts once to drop the home share and share only the root, `<agent dir>/sessions`, `<state>/vm` and the bind sources outside the root.
 
@@ -158,13 +158,13 @@ This launcher does not see the sessions of an earlier launcher build: it keeps i
 
 The daily collection removes what an older build left in the sandbox VM: every stopped container, volume and network whose name starts with `pi-sandbox-`, that carries the `pi-sandbox.managed=true` label and that has no install label at all (the networks `pi-sandbox-machine` and `pi-sandbox-<id>`, the relays, the pod, the services, and the agent and cache volumes). It tries each volume and network and the engine refuses the ones still in use, so a container that still runs stays, with its volumes and network, until a later day's collection after it stops. Objects labelled by another install, and objects without the managed label, are never touched. An old agent volume holds the in-sandbox settings of that build, and they go with it.
 
-Shared volumes (`pi-sandbox-shared-*`) of an older build are never removed by the daily collection, nor by `pi sandbox restart` or the uninstall, which remove only volumes with this install's label. Remove them with the engine's own tools, or delete and recreate the sandbox VM.
+Shared volumes (`pi-sandbox-shared-*`) of an older build are never removed by the daily collection, nor by `pinata restart` or the uninstall, which remove only volumes with this install's label. Remove them with the engine's own tools, or delete and recreate the sandbox VM.
 
 An old shared volume can have the same name as a new `mounts.volumes` entry, since the name is built from the same state dir hash. The launcher then mounts and reuses it, with its content, but never lists or removes it.
 
 ## One pi folder for every folder
 
-Earlier launchers gave each folder its own pi folder inside the sandbox: an agent volume `pi-sandbox-agent-<install id>-<12 hex>`, a render folder `vm/render/<12 hex>/` and sync records under `repos/<hash>/sync/` in the state folder. Now one agent volume, `pi-sandbox-agent-<install id>`, serves every folder, so pi's packages, its in-sandbox settings and, with `sessions.host` off, its sessions are the same in every folder. The new volume starts empty: the launcher has pi install its packages again at the first launch, and in-sandbox settings and sessions of the old per-folder volumes stay where they were. The launcher removes an old one on its own only once its folder no longer exists: the daily collection removes the unused per-folder agent volume, and with `sessions.host` off the sessions kept in it go with it, and the sweep that forgets the folder removes its render folder and sync records. Until then `pi sandbox status` lists them as `leftover:` lines, and `pi sandbox restart` removes them together with the shared one once no pi session runs. Copy anything you want to keep out of an old volume first, with the engine's own tools.
+Earlier launchers gave each folder its own pi folder inside the sandbox: an agent volume `pi-sandbox-agent-<install id>-<12 hex>`, a render folder `vm/render/<12 hex>/` and sync records under `repos/<hash>/sync/` in the state folder. Now one agent volume, `pi-sandbox-agent-<install id>`, serves every folder, so pi's packages, its in-sandbox settings and, with `sessions.host` off, its sessions are the same in every folder. The new volume starts empty: the launcher has pi install its packages again at the first launch, and in-sandbox settings and sessions of the old per-folder volumes stay where they were. The launcher removes an old one on its own only once its folder no longer exists: the daily collection removes the unused per-folder agent volume, and with `sessions.host` off the sessions kept in it go with it, and the sweep that forgets the folder removes its render folder and sync records. Until then `pinata status` lists them as `leftover:` lines, and `pinata restart` removes them together with the shared one once no pi session runs. Copy anything you want to keep out of an old volume first, with the engine's own tools.
 
 ## Files left in the state folder
 

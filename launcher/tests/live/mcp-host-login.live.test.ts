@@ -12,9 +12,9 @@ const SERVER = "host-login";
 
 const HOUR_MS = 3_600_000;
 
-const OPENED_TEXT = `pi-sandbox: sign-in to MCP server ${SERVER} opened in the browser on the host; finish it there, then retry. If no browser opened, run pi mcp login ${SERVER} on the host.`;
+const OPENED_TEXT = `pinata: sign-in to MCP server ${SERVER} opened in the browser on the host; finish it there, then retry. If no browser opened, run pi mcp login ${SERVER} on the host.`;
 
-const NOT_SIGNED_IN_TEXT = `pi-sandbox: MCP server ${SERVER} is not signed in on the host; run pi mcp login ${SERVER} on the host, then retry.`;
+const NOT_SIGNED_IN_TEXT = `pinata: MCP server ${SERVER} is not signed in on the host; run pi mcp login ${SERVER} on the host, then retry.`;
 
 const FETCH_SCRIPT = [
   "const [url, authorization] = process.argv.slice(1);",

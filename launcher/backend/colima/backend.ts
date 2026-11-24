@@ -125,7 +125,7 @@ export const createColimaBackend = (options: ColimaBackendOptions): Backend => {
       if (path !== undefined) {
         throw new LauncherError(
           `the sandbox VM does not share ${path}`,
-          "run pi sandbox doctor; its vm shares line names the folders the VM lacks",
+          "run pinata doctor; its vm shares line names the folders the VM lacks",
         );
       }
 

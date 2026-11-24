@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { type ContainerState, LABELS, type VmInspect } from "../../backend/index.ts";
-import { run } from "../../cli/index.ts";
+import { runPinata } from "../../cli/index.ts";
 import { sha256Hex, stateLayout } from "../../shared/index.ts";
 import { createFakeBackend, createHarness } from "./harness.ts";
 
@@ -20,12 +20,12 @@ const listed = async (state: VmInspect | Error, setup?: (fake: Fake, hash: strin
     root: harness.repoRoot,
   });
 
-  expect(await run(["sandbox", "list"], harness.deps)).toBe(0);
+  expect(await runPinata(["list"], harness.deps)).toBe(0);
 
   return { stdout: harness.stdout(), harness };
 };
 
-describe("pi sandbox list", () => {
+describe("pinata list", () => {
   it("says when the VM is not created", async () => {
     expect((await listed({ state: "absent" })).stdout).toBe("vm: pi-sandbox not created\n");
   });

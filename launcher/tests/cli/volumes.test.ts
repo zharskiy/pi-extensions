@@ -1,7 +1,7 @@
 import { rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { run } from "../../cli/index.ts";
+import { run, runPinata } from "../../cli/index.ts";
 import { configVolumeName, mountedVolumes, overlayVolumes } from "../../container/index.ts";
 import { sha256Hex, stateLayout } from "../../shared/index.ts";
 import { sandboxConfig } from "../support/sandbox-config.ts";
@@ -73,11 +73,11 @@ describe("the sweep and configured volumes", () => {
   });
 });
 
-describe("pi sandbox status and volumes", () => {
+describe("pinata status and volumes", () => {
   it("lists the node_modules overlays and the configured volumes of this repository", async () => {
     const { harness, shared, data, overlay } = await volumeHarness();
 
-    expect(await run(["sandbox", "status"], harness.deps)).toBe(0);
+    expect(await runPinata(["status"], harness.deps)).toBe(0);
 
     const lines = harness.stdout().split("\n");
 
@@ -91,7 +91,7 @@ describe("pi sandbox status and volumes", () => {
   it("reports none of either when nothing is configured or found", async () => {
     const harness = await createHarness({ backend: () => createFakeBackend().backend });
 
-    expect(await run(["sandbox", "status"], harness.deps)).toBe(0);
+    expect(await runPinata(["status"], harness.deps)).toBe(0);
 
     const lines = harness.stdout().split("\n");
 

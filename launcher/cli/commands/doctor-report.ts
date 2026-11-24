@@ -14,7 +14,7 @@ const STATUS_WIDTH = 4;
 
 const INDENT = " ".repeat(2 + STATUS_WIDTH + 2);
 
-const CIRCULAR_HINT = "run pi sandbox doctor";
+const CIRCULAR_HINT = "run pinata doctor";
 
 const STYLE = {
   ok: "32",

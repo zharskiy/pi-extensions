@@ -46,9 +46,10 @@ RUN test -n "${PI_VERSION}" || { echo "PI_VERSION build argument is required" >&
  && npm cache clean --force
 
 RUN mkdir -p /opt/pi-sandbox/render \
- && printf '#!/bin/sh\necho "pi %s is managed by the sandbox and follows the launcher"\n' "${PI_VERSION}" > /usr/local/bin/pi-sandbox-self-update \
- && printf '%s\n' '#!/bin/sh' 'echo "pi sandbox commands run on the host; ask the user to run pi sandbox $* there" >&2' 'exit 2' > /usr/local/bin/pi-sandbox \
- && chmod 0755 /usr/local/bin/pi-sandbox-self-update /usr/local/bin/pi-sandbox \
+ && printf '#!/bin/sh\necho "pi %s is managed by the sandbox and follows pinata"\n' "${PI_VERSION}" > /usr/local/bin/pi-sandbox-self-update \
+ && printf '%s\n' '#!/bin/sh' 'echo "pinata commands run on the host; ask the user to run pinata $* there" >&2' 'exit 2' > /usr/local/bin/pinata \
+ && ln -s pinata /usr/local/bin/pi-sandbox \
+ && chmod 0755 /usr/local/bin/pi-sandbox-self-update /usr/local/bin/pinata \
  && rm -f /usr/local/share/ca-certificates/pi-sandbox-build.crt \
  && update-ca-certificates --fresh \
  && rm -rf /build

@@ -75,7 +75,7 @@ const containerLines = async (backend: Backend, context: LaunchContext) => {
   ];
 };
 
-const LEFTOVER_HINT = "left by an older launcher; pi sandbox restart removes it";
+const LEFTOVER_HINT = "left by an older pinata; pinata restart removes it";
 
 const leftoverFolders = async (stateDir: string) => {
   const layout = stateLayout(stateDir);
@@ -170,7 +170,7 @@ const grantStatus = async (context: LaunchContext) => {
 export const statusCommand = async (deps: CliDeps) => {
   const { context } = await openContext(deps, "host", { overlays: true });
   const lines = [
-    `launcher: ${await launcherVersion()}`,
+    `pinata: ${await launcherVersion()}`,
     `${context.workspace.isGitRepo ? "repo" : "folder"}: ${context.workspace.repoRoot}`,
     ...(await runtimeLines(deps, context)),
     ...(await proxyLines(deps, context)),

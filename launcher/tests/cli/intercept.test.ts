@@ -86,7 +86,7 @@ describe("pi install and pi remove", () => {
     expect(hostPiRuns(harness)).toHaveLength(sources.length);
     sources.forEach((source) => {
       expect(harness.stderr()).toContain(
-        `pi-sandbox: ${source} lies in the workspace root or a folder a sandbox has run in, which a sandbox can rewrite; pi on the host runs it as it is\n`,
+        `pinata: ${source} lies in the workspace root or a folder a sandbox has run in, which a sandbox can rewrite; pi on the host runs it as it is\n`,
       );
     });
   });
@@ -107,7 +107,7 @@ describe("pi install and pi remove", () => {
     expect(hostPiRuns(harness)).toEqual([]);
     sources.forEach((source) => {
       expect(harness.stderr()).toContain(
-        `pi-sandbox: ${source} is not a plain npm package name and version; not installed on the host\n`,
+        `pinata: ${source} is not a plain npm package name and version; not installed on the host\n`,
       );
     });
   });
@@ -145,19 +145,19 @@ describe("pi install and pi remove", () => {
     expect(hostPiRuns(harness)).toHaveLength(4);
     expect(hostPiRuns(workspace)).toEqual([["install", join(workspace.deps.cwd, "tools", "ext")]]);
     expect(harness.stderr()).toContain(
-      "pi-sandbox: ../ext lies in the workspace root or a folder a sandbox has run in, which a sandbox can rewrite; pi on the host runs it as it is\n",
+      "pinata: ../ext lies in the workspace root or a folder a sandbox has run in, which a sandbox can rewrite; pi on the host runs it as it is\n",
     );
     expect(harness.stderr()).toContain(
-      `pi-sandbox: ${link} lies in the workspace root or a folder a sandbox has run in, which a sandbox can rewrite; pi on the host runs it as it is\n`,
+      `pinata: ${link} lies in the workspace root or a folder a sandbox has run in, which a sandbox can rewrite; pi on the host runs it as it is\n`,
     );
     expect(harness.stderr()).toContain(
-      "pi-sandbox: ext lies in the workspace root or a folder a sandbox has run in, which a sandbox can rewrite; pi on the host runs it as it is\n",
+      "pinata: ext lies in the workspace root or a folder a sandbox has run in, which a sandbox can rewrite; pi on the host runs it as it is\n",
     );
     expect(harness.stderr()).toContain(
-      `pi-sandbox: file://${join(harness.repoRoot, "ext")} lies in the workspace root or a folder a sandbox has run in, which a sandbox can rewrite; pi on the host runs it as it is\n`,
+      `pinata: file://${join(harness.repoRoot, "ext")} lies in the workspace root or a folder a sandbox has run in, which a sandbox can rewrite; pi on the host runs it as it is\n`,
     );
     expect(workspace.stderr()).toContain(
-      "pi-sandbox: ./tools/ext lies in the workspace root or a folder a sandbox has run in, which a sandbox can rewrite; pi on the host runs it as it is\n",
+      "pinata: ./tools/ext lies in the workspace root or a folder a sandbox has run in, which a sandbox can rewrite; pi on the host runs it as it is\n",
     );
   });
 
@@ -171,9 +171,7 @@ describe("pi install and pi remove", () => {
     expect(await run(["install", "./tools/ext"], outside)).toBe(0);
     expect(harness.stderr()).toBe("");
     expect(await run(["install", join(harness.repoRoot, "ext")], outside)).toBe(0);
-    expect(harness.stderr()).toContain(
-      `pi-sandbox: ${join(harness.repoRoot, "ext")} lies in the workspace root`,
-    );
+    expect(harness.stderr()).toContain(`pinata: ${join(harness.repoRoot, "ext")} lies in the workspace root`);
     expect(hostPiRuns(harness)).toEqual([
       ["install", ext],
       ["install", join(harness.repoRoot, "ext")],
@@ -288,7 +286,7 @@ describe("pi update", () => {
     expect(harness.calls.filter((call) => call.interactive).map((call) => [call.file, ...call.args])).toEqual(
       [[managed.wrapper, "update"]],
     );
-    expect(harness.stderr()).toBe("pi-sandbox: the sandbox follows pi 1.7.0 at the next launch\n");
+    expect(harness.stderr()).toBe("pinata: the sandbox follows pi 1.7.0 at the next launch\n");
     expect(harness.stdout()).toBe("");
   });
 
@@ -306,7 +304,7 @@ describe("pi update", () => {
     expect(await run(["update"], harness.deps)).toBe(1);
     expect(harness.calls.filter((call) => call.interactive)).toEqual([]);
     expect(harness.stdout()).toBe("");
-    expect(harness.stderr()).toBe(`pi-sandbox: ${noHostPiLine(harness.hostAgentDir)}\n`);
+    expect(harness.stderr()).toBe(`pinata: ${noHostPiLine(harness.hostAgentDir)}\n`);
   });
 
   it("treats pi update pi, self and --self as the bare self-update", async () => {
@@ -354,7 +352,7 @@ describe("pi update", () => {
 
     expect(hostPiRuns(harness)).toEqual(forms.map((form) => form.argv));
     expect(notices).toEqual(
-      forms.map((form) => (form.self ? "pi-sandbox: the sandbox follows pi 1.6.0 at the next launch\n" : "")),
+      forms.map((form) => (form.self ? "pinata: the sandbox follows pi 1.6.0 at the next launch\n" : "")),
     );
 
     const jobs = hostPiJobs(harness);
@@ -419,7 +417,7 @@ describe("pi update", () => {
     expect(await run(["update", "--extensions"], harness.deps)).toBe(1);
     expect(await run(["update", "--all"], harness.deps)).toBe(1);
     expect(hostPiJobs(harness)).toEqual([]);
-    expect(harness.stderr()).toBe(`pi-sandbox: ${noHostPiLine(harness.hostAgentDir)}\n`.repeat(2));
+    expect(harness.stderr()).toBe(`pinata: ${noHostPiLine(harness.hostAgentDir)}\n`.repeat(2));
   });
 });
 
@@ -583,7 +581,7 @@ describe("pi commands that start no session", () => {
     expect(await run(["auth", "login", "provider-x"], harness.deps)).toBe(1);
     expect(await run(["--list-models"], harness.deps)).toBe(1);
     expect(hostPiJobs(harness)).toEqual([]);
-    expect(harness.stderr()).toBe(`pi-sandbox: ${noHostPiLine(harness.hostAgentDir)}\n`.repeat(2));
+    expect(harness.stderr()).toBe(`pinata: ${noHostPiLine(harness.hostAgentDir)}\n`.repeat(2));
   });
 
   it("lets a subcommand win over a version or help flag, as pi does", async () => {
@@ -613,6 +611,9 @@ describe("pi commands that start no session", () => {
     ["a command that stays inside", ["list"]],
     ["a command that stays inside", ["mcp", "list"]],
     ["a command that stays inside", ["install", "npm:local", "-l"]],
+    ["a prompt that starts with sandbox", ["sandbox", "tidy", "the", "docs"]],
+    ["a prompt that starts with sandbox", ["sandbox", "status"]],
+    ["a prompt that starts with sandbox", ["sandbox"]],
   ])("launches the sandbox for %s: %j", async (_kind, argv) => {
     expect(await launched(argv)).toEqual({ code: 0, inside: [argv], host: [], stdout: "" });
   });
