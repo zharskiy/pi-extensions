@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import { LABELS, type VmInspect } from "../../backend/index.ts";
 import { LauncherError, stateLayout } from "../../shared/index.ts";
@@ -137,7 +137,7 @@ describe("pinata restart", () => {
       detect: async () => {
         detections.count += 1;
 
-        if (detections.count === 3) {
+        if (detections.count === 4) {
           fake.addContainer({
             name: "other",
             labels: { [LABELS.managed]: "true", [LABELS.install]: "other", [LABELS.role]: "agent" },
@@ -160,6 +160,36 @@ describe("pinata restart", () => {
     expect(pinata.deletes()).toBe(0);
     expect(pinata.vm).toEqual({ state: "running", created: 0 });
     expect(await exists(pinata.layout.render)).toBe(true);
+  });
+
+  it("refuses an invalid config before it deletes anything", async () => {
+    const pinata = await sandbox("running");
+
+    await writeRecords(pinata.layout);
+
+    await writeFile(pinata.harness.userConfigFile, JSON.stringify({ workspaceRoot: 5 }));
+
+    expect(await pinata.run("restart")).toBe(1);
+    expect(pinata.harness.stderr()).toContain("workspaceRoot");
+    expect(pinata.harness.stderr()).not.toContain("the sandbox VM is deleted");
+    expect(pinata.harness.stdout()).toBe("");
+    expect(pinata.deletes()).toBe(0);
+    expect(pinata.vm).toEqual({ state: "running", created: 0 });
+    expect(await exists(pinata.layout.render)).toBe(true);
+    expect(await exists(pinata.layout.imageRecord)).toBe(true);
+  });
+
+  it("refuses a VM size the host cannot hold before it deletes anything", async () => {
+    const pinata = await sandbox("running");
+    const config = JSON.parse(await readFile(pinata.harness.userConfigFile, "utf8"));
+
+    await writeFile(pinata.harness.userConfigFile, JSON.stringify({ ...config, vm: { cpus: 32 } }));
+
+    expect(await pinata.run("restart")).toBe(1);
+    expect(pinata.harness.stderr()).toContain("vm.cpus 32 is more than the 8 CPUs of this Mac");
+    expect(pinata.harness.stdout()).toBe("");
+    expect(pinata.deletes()).toBe(0);
+    expect(pinata.vm).toEqual({ state: "running", created: 0 });
   });
 
   it("says the VM is gone and how to create it when creating it fails", async () => {

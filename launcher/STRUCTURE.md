@@ -75,12 +75,12 @@ cli/versions.ts                pinata version, the tested pi version and image p
 cli/commands/status.ts         pinata status as one closing block: the folder, then a row each for the runtime, services, containers, pi folder, proxy, image, overlays, volumes, launches and grants
 cli/commands/config.ts         pinata config: the effective config as JSON, the keys the config file sets and the written-back keys of each file; --json unchanged
 cli/commands/egress.ts         pinata egress allow, revoke and list
-cli/commands/restart.ts        pinata restart: live-session refusal, removeSandbox with the host records of what was in the VM cleared under its locks, then the VM created through acceptAll with stepsFrontEnd; a failed creation says the VM is gone
+cli/commands/restart.ts        pinata restart: live-session refusal, the settings read, validated and planned for a missing VM (planAll) before anything is deleted, removeSandbox with the host records of what was in the VM cleared under its locks, then that plan applied (applyAll) with stepsFrontEnd; a failed creation says the VM is gone
 cli/commands/stop.ts           pinata stop: the orphan sweep, which stops the ground and the proxy when idle, then the VM when no session runs in it, as step lines
 cli/commands/uninstall.ts      releaseSandbox for pinata uninstall and restart: live-session refusal, each folder released, then under the ground and launch registry locks a second session count, the proxy stopped and the teardown it is given, silent unless a folder's session started meanwhile
 cli/release.ts                 what releaseSandbox uses: every known folder released under its preparation lock when free, and the ground and registry locks with the second session count
 cli/commands/list.ts           pinata list: the VM's state and size as one sentence and, when it runs, a Sessions row per agent container with its folder, without starting it
-cli/commands/init.ts           pinata init: --yes, CI and terminal checks, builds the UI and effects, and picks the front end (the wizard, rich or plain, or the step lines and closing block of --yes, or the front end pinata install passes to acceptAll)
+cli/commands/init.ts           pinata init: --yes, CI and terminal checks, builds the UI and effects, and picks the front end (the wizard, rich or plain, or the step lines and closing block of --yes, or the front end pinata install passes to acceptAll); acceptAll is planAll (read, validate, plan, size check) then applyAll, which restart calls apart
 cli/commands/doctor.ts         pinata doctor: stages, probes and host checks as checks by section, the vm size and file cache checks, the denials matched to each rule, the blocked warnings, captured notices and the progress line
 cli/commands/doctor-probes.ts  the doctor's checks inside the container, each credential rule named for its login or host; the credential sweep skips the config's own `env.set` values and names the secret-named ones; a rule whose credential was denied warns, one the proxy refused says why, a certificate not yet valid names the VM clock
 cli/commands/doctor-host.ts    the doctor's checks on the host
@@ -510,7 +510,7 @@ tests/cli/sandbox-proxy.test.ts      the proxy input
 tests/cli/terminal.test.ts           the host terminal
 tests/cli/notices.test.ts            notices printed once per install
 tests/cli/volumes.test.ts            volumes in the sweep and status
-tests/cli/restart.test.ts            pinata restart: the refusal, the delete and creation of a running, stopped or missing VM, the records cleared and kept, a session started meanwhile, a failed creation, no options
+tests/cli/restart.test.ts            pinata restart: the refusal, the delete and creation of a running, stopped or missing VM, the records cleared and kept, a session started meanwhile, an invalid config and a size the host cannot hold refused before the delete, a failed creation, no options
 tests/live/colima.live.test.ts       the conformance suite, volume ownership, read-only folder binds on the share (any letter case) and the image hint on the real engine
 tests/live/colima-relay.live.test.ts  the relay on the real engine
 tests/live/custom-provider.live.test.ts  a custom provider through the proxy

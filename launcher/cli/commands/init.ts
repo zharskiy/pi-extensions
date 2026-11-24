@@ -146,7 +146,7 @@ const invalidConfig = (file: string, read: Extract<DocumentRead, { ok: false }>)
 
 type FrontOf = (facts: HostFacts, timers: Timers) => ApplyFrontEnd;
 
-export const acceptAll = async (deps: CliDeps, frontOf: FrontOf) => {
+export const planAll = async (deps: CliDeps, factsFor = (facts: HostFacts) => facts) => {
   const context = contextOf(deps);
   const read = await readConfig(context.configFile);
 
@@ -158,7 +158,7 @@ export const acceptAll = async (deps: CliDeps, frontOf: FrontOf) => {
 
   validateConfigFile(document.value, document.file);
 
-  const facts = await detectFor(deps, context)(document);
+  const facts = factsFor(await detectFor(deps, context)(document));
   const answers = answersForYes(document, facts, deps.env);
   const plan = planOf(document, answers, facts, sharePlanFor(deps, read)(answers.root));
 
@@ -166,16 +166,27 @@ export const acceptAll = async (deps: CliDeps, frontOf: FrontOf) => {
     throw new LauncherError(plan.problems.join("; "), `fix ${context.configFile}`);
   }
 
-  writeNotices(deps, shareNoticesFor(deps, read, answers.root));
-
   if (plan.vm.kind === "create" || plan.vm.kind === "restart") {
     assertVmFitsHost(deps, plan.vm.size);
   }
+
+  return { context, read, document, facts, answers, plan };
+};
+
+export type Planned = Awaited<ReturnType<typeof planAll>>;
+
+export const applyAll = (deps: CliDeps, planned: Planned, frontOf: FrontOf) => {
+  const { context, read, document, facts, answers, plan } = planned;
+
+  writeNotices(deps, shareNoticesFor(deps, read, answers.root));
 
   const front = frontOf(facts, { ...realTimers, now: deps.now });
 
   return applyPlan(front, effectsFor(deps, context), document, { plan, answers });
 };
+
+export const acceptAll = async (deps: CliDeps, frontOf: FrontOf) =>
+  applyAll(deps, await planAll(deps), frontOf);
 
 const closingFrontEnd = (steps: Steps, facts: HostFacts, timers: Timers): ApplyFrontEnd => {
   const front = stepsFrontEnd(steps, facts, timers);
