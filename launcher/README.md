@@ -112,7 +112,7 @@ npm install
 node launcher/bin/pinata-dev.js install
 ```
 
-The `pi` link then runs this checkout's sources, `~/.local/bin/pinata` links to `launcher/bin/pinata-dev.js` so `pinata` runs them too (any other file there stops the install), and pi registers the checkout folder as the package's source. `pinata update` refuses in a checkout: `git pull`, then install again.
+The `pi` link then runs this checkout's sources, `~/.local/bin/pinata` links to `launcher/bin/pinata-dev.js` so `pinata` runs them too (any other file there stops the install, and `pinata uninstall` leaves it), and pi registers the checkout folder as the package's source. `pinata update` refuses in a checkout: `git pull`, then install again.
 
 </details>
 

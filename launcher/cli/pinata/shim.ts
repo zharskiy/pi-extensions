@@ -14,6 +14,8 @@ const recordOf = (deps: CliDeps) => join(pathsOf(deps).stateDir, "replaced-pi-li
 
 const PI_ENTRY_LINK = /\/launcher\/bin\/pi(-dev)?\.js$/;
 
+const PINATA_ENTRY_LINK = /\/launcher\/bin\/pinata-dev\.js$/;
+
 const isOurs = async (path: string) => {
   const target = await readlink(path).catch(() => undefined);
 
@@ -23,7 +25,7 @@ const isOurs = async (path: string) => {
 const isPinataLink = async (path: string) => {
   const target = await readlink(path).catch(() => undefined);
 
-  return target !== undefined && /\/pinata(-dev)?(\.js)?$/.test(target);
+  return target !== undefined && PINATA_ENTRY_LINK.test(target);
 };
 
 const isManaged = async (deps: CliDeps, path: string) =>

@@ -225,6 +225,44 @@ describe("pinata install", () => {
     expect(await exists(link)).toBe(false);
   });
 
+  it("leaves npm's own pinata link alone on install and uninstall", async () => {
+    const pinata = await createPinata({ global: true });
+    const link = join(pinata.home, ".local", "bin", "pinata");
+    const npmLink = "../lib/node_modules/@zharskiy/pinata/launcher/bin/pinata.js";
+
+    await mkdir(join(link, ".."), { recursive: true });
+
+    await symlink(npmLink, link);
+
+    expect(await pinata.run("install", "--yes")).toBe(0);
+    expect(await readlink(link)).toBe(npmLink);
+
+    await writeFile(join(pinata.harness.stateDir, "salt"), "salt");
+
+    expect(await pinata.run("uninstall")).toBe(0);
+    expect(await readlink(link)).toBe(npmLink);
+  });
+
+  it.each([false, true])("leaves another tool's pinata link alone (global: %s)", async (global) => {
+    const pinata = await createPinata({ global });
+    const link = join(pinata.home, ".local", "bin", "pinata");
+    const foreign = "/opt/other/bin/pinata";
+
+    await mkdir(join(link, ".."), { recursive: true });
+
+    await symlink(foreign, link);
+
+    expect(await pinata.run("install", "--yes")).toBe(global ? 0 : 1);
+    expect(await readlink(link)).toBe(foreign);
+
+    await mkdir(pinata.harness.stateDir, { recursive: true });
+
+    await writeFile(join(pinata.harness.stateDir, "salt"), "salt");
+
+    expect(await pinata.run("uninstall")).toBe(0);
+    expect(await readlink(link)).toBe(foreign);
+  });
+
   it("refuses another file at ~/.local/bin/pinata before it changes anything, and uninstall leaves it there", async () => {
     const pinata = await createPinata();
     const link = join(pinata.home, ".local", "bin", "pinata");
