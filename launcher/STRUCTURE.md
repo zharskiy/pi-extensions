@@ -311,7 +311,7 @@ shared/file-lock.ts            the lock primitives with their once-only waiting 
 shared/liveness.ts             the liveness rule: pid, boot time and process start
 shared/process-start.ts        a process's start time (ps on macOS, /proc on Linux), telling a failed tool from a process without one
 shared/paths.ts                host agent dir, pinata's folder <agent dir>/pinata/ (config.json, state/, with PINATA_STATE_DIR made absolute and real), `launcher/` root, path containment and the outermost of a path list
-shared/state-layout.ts         every path under the state dir, and the named and open paths the daily collection keeps
+shared/state-layout.ts         every path under the state dir, and the guest paths, trees and mount points inside the container
 shared/repo-state.ts           per-repository record files: repo.json with its mount root and the workspace root the launch mounted, created folders, leftovers, forgetRepo
 shared/regular-file.ts         safe reads of regular files
 shared/placeholder.ts          the placeholder format and the JWT shape
