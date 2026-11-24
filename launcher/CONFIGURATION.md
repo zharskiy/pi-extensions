@@ -79,7 +79,7 @@ The file applies to every pi you start in the sandbox, in every folder. There ar
 | `vm.cpus`, `vm.memoryGiB`, `vm.diskGiB` | The size of the VM itself, which every container shares ([below](#vm-size)). | the size the VM was created with; set by `pi sandbox init` |
 | `vm.releaseFileCache` | While pi runs, drop the VM's file cache before your Mac runs short of open files ([below](#file-cache)). | `true` |
 | `writeBack` | Which settings changed inside come back to your Mac ([below](#settings-written-back)); `pi sandbox init` sets `writeBack.enabled`. | the built-in list |
-| `sessions.host` | Keep sessions in host pi's own session folder. Off, they stay in the one pi folder every folder's sandbox shares, and `pi sandbox reset --agent` removes them with it. | `true` |
+| `sessions.host` | Keep sessions in host pi's own session folder. Off, they stay in the one pi folder every folder's sandbox shares, and `pi sandbox restart` removes them with it, after asking. | `true` |
 | `terminal.clipboard` | On a Mac, put what pi inside copies (OSC 52) on the clipboard with `pbcopy`, copy a pasted image path into the sandbox, and paste a clipboard PNG or a single copied image file on Ctrl+V. | `true` |
 | `workspaceRoot` | The folder that holds your projects: pi starts only inside it, and, with the bind sources, it is the only project folder the VM shares ([below](#workspace-root)); set by `pi sandbox init`. Required to launch. | not set: pi does not start |
 
@@ -188,7 +188,7 @@ This keeps Linux builds apart from your Mac's. Inside, the host copy is hidden, 
 
 If there are more than 512 such folders, nothing is overlaid and a notice says so. Only the repository pi starts in is searched, never the other projects in the workspace root. A repository too large to search (over 50,000 directories) gets no overlays and a notice, and so does a folder outside git: `pi-sandbox: <folder> is not in a git repository; build output is not overlaid, the host copies are used`. Set `mounts.autoOverlays` to `false` to use your Mac's copies.
 
-If an overlay folder is missing, the launcher creates it empty on your Mac. It removes it again, if still empty, after the folder's last session. `pi sandbox reset` removes the overlay volumes.
+If an overlay folder is missing, the launcher creates it empty on your Mac. It removes it again, if still empty, after the folder's last session. `pi sandbox restart` removes the overlay volumes.
 
 ### Volumes
 
@@ -216,7 +216,7 @@ Your home inside the sandbox lives in memory, so tool caches are lost when pi ex
 
 Every sandbox can write to a user volume, so a bad package written in one folder reaches the others. Use user volumes for package caches only.
 
-A user volume stays until you uninstall; `pi sandbox reset` of a folder and the daily cleanup never remove it. `pi sandbox reset --services` removes the volumes the services in the config name, so an entry that shares a name with a service volume loses its data too.
+A user volume stays until `pi sandbox restart` or the uninstall; the daily cleanup never removes it. `pi sandbox restart` removes it without asking, since it counts as a package cache, unless a service in the config names it too: then it asks first, as for any service data.
 
 ### Read-only binds
 
@@ -323,8 +323,8 @@ How it works:
 - A service gets only its own `env`: no workspace, home, credentials or variables of yours. It runs with no capabilities, no privilege escalation, a read-only root file system, `/tmp` and the `tmpfs` folders writable, and at most 4096 processes.
 - Before the first service starts, the pod hands each volume's root folder to the service's `user`.
 - A later session, in any folder, reuses the running services, checks again that each is ready, and starts again only those that exited, unless the services changed (below). Services are never restarted in place.
-- When the last pi session of the launcher state folder ends, the services stop together, each with 30 seconds to exit, and then the pod is removed. `pi sandbox stop` and the uninstall stop them too when no session runs. When another pi command holds the lock for that work, the end of a session waits and prints `waiting for another pi-sandbox command to finish before cleaning up; Ctrl-C skips the cleanup`; Ctrl-C ends the wait. `pi sandbox reset` of a folder leaves them alone. Volumes stay.
-- `pi sandbox reset --services` stops the services and removes the volumes of the services in the config, and with them their data. It refuses while a pi session of the launcher state folder runs.
+- When the last pi session of the launcher state folder ends, the services stop together, each with 30 seconds to exit, and then the pod is removed. `pi sandbox stop` and the uninstall stop them too when no session runs. When another pi command holds the lock for that work, the end of a session waits and prints `waiting for another pi-sandbox command to finish before cleaning up; Ctrl-C skips the cleanup`; Ctrl-C ends the wait.Volumes stay.
+- `pi sandbox restart` removes the services with the rest of the sandbox, and their volumes with them. It lists the data that would go and asks first, and refuses while a pi session runs in the sandbox VM.
 - `pi sandbox status` lists each service with its state and ports. `pi sandbox doctor` starts no service.
 
 Some things to know:

@@ -34,7 +34,7 @@ cli/deps.ts                    the dependencies every command gets, and the shar
 cli/index.ts                   public surface
 cli/launch.ts                  the pi pipeline with its stages and progress lines, the proxy route and the install's services under the ground lock inside the preparation lock, the file cache watch while pi runs, and withSandbox for the doctor
 cli/context.ts                 the launch context: the folder to mount, the guard and the workspaceRoot required for the sandbox before the search and the host check (checkHostRoot) for --no-sandbox, config, discovery, the git dir check after it and the mounted root
-cli/vm.ts                      VM start (only with a share plan, the workspaceRoot shares when stopped), the one reconcile of shares and size, trust store, the automatic VM size and the host limits (one clamp), the memory check against the automatic size when vm.memoryGiB is unset, the VM paths a launch needs, the workspaceRoot share list and its nesting check, the VM's busy check from cli/busy.ts
+cli/vm.ts                      VM start (only with a share plan, the workspaceRoot shares when stopped), the start from the config alone for pi sandbox restart, the one reconcile of shares and size, trust store, the automatic VM size and the host limits (one clamp), the memory check against the automatic size when vm.memoryGiB is unset, the VM paths a launch needs, the workspaceRoot share list and its nesting check, the VM's busy check from cli/busy.ts
 cli/clipboard.ts               the host clipboard of a launch: pbcopy for copies, osascript for a Ctrl+V file path or PNG
 cli/launch-notices.ts          the launch notice texts, the host-file flag notice and the proxy stage detail
 cli/terminal.ts                the host terminal: streams, size read at use, resize
@@ -60,7 +60,7 @@ cli/setup/review.ts            the review summary: the rows of the three setting
 cli/setup/apply.ts             applyPlan: the file write and the VM step as typed events, and the two front ends: the wizard's (progress, failure screen with Try again, success screen) and the lines of --yes
 cli/launches.ts                begin and finish a launch (registered under the folder's preparation lock, removing its container), the folder's sandbox removed after its last session under the preparation lock (waiting for it unless another session of the folder is registered), a failure after the registration ending the launch, and the orphan sweep
 cli/busy.ts                    busyLaunches, the live launches of this state dir, and vmSessions, the VM's busy count that adds the running agent containers of other installs and names them
-cli/ground.ts                  the ground lock with its waiting line, the install's services started under it, the idle teardown of services, relay, network and proxy and the idle proxy stop (both wait for the lock unless a launch of this state dir is registered), and wipeServices for reset --services
+cli/ground.ts                  the ground lock with its waiting line, the install's services started under it, the idle teardown of services, relay, network and proxy and the idle proxy stop (both wait for the lock unless a launch of this state dir is registered)
 cli/prepare.ts                 the repository's preparation lock with its waiting line, its if-free form for the opportunistic removals, its wait-unless-another-session form for the folder's last session, and the setup commands run in the agent container; the install's agent lock (withAgentLock) around the shared pi folder
 cli/sweep.ts                   removeRepoSandbox (agent containers, created folders, host sessions), the sweep of ended launches' containers, forgetting a folder that is gone, the orphan sweep with the idle ground stop and build leftovers, and the daily collection with the managed `pi-sandbox-*` objects of older builds that have no install label, shared volumes kept, and the state entries the layout does not name in the default state dir
 cli/derive.ts                  the host side of a launch: host pi files, derivation (host tools exclude the sandbox roots), the CAs the image trusts, notices
@@ -75,9 +75,10 @@ cli/versions.ts                launcher version, the tested pi version and image
 cli/commands/status.ts         pi sandbox status, with each configured service and its state, the shared pi folder and, in one place, what older launchers left
 cli/commands/config.ts         pi sandbox config, with the effective write-back keys of each file and their source
 cli/commands/egress.ts         pi sandbox egress allow, revoke and list
-cli/commands/reset.ts          pi sandbox reset: the folder's sandbox and volumes, keeping the shared pi folder; with --services the install's services and their volumes; with --agent the shared pi folder, its render dir and sync records and older launchers' leftovers
+cli/commands/restart.ts        pi sandbox restart: live-session refusal, the VM started, the y/N for data the next pi cannot rebuild, then every folder released and under the agent, render, ground and registry locks the ground, volumes, managed images and host records removed, the VM restarted, and every line it prints in one table
 cli/commands/stop.ts           pi sandbox stop: the orphan sweep, which stops the ground and the proxy when idle, then the VM when no session runs in it
-cli/commands/uninstall.ts      releaseSandbox for pinata uninstall: live-session refusal, each folder released, then under the ground and launch registry locks a second session count and the install's services, relay, network, proxy and volumes and the managed images, host-side release
+cli/commands/uninstall.ts      releaseSandbox for pinata uninstall: live-session refusal, each folder released, then under the ground and launch registry locks a second session count and the install's services, relay, network, proxy and volumes and the managed images, host-side release, with the lines it prints
+cli/release.ts                 what the uninstall and pi sandbox restart share: every known or engine-labelled folder released under its preparation lock when free, the install's volumes and managed images removed, and the ground and registry locks with the second session count
 cli/commands/list.ts           pi sandbox list: the VM's state and size and, when it runs, every agent container in it with its folder, without starting it
 cli/commands/init.ts           pi sandbox init: --yes, CI and terminal checks, builds the UI and effects, and picks the front end (the wizard, rich or plain, or the lines of --yes)
 cli/commands/doctor.ts         pi sandbox doctor: stages, probes and host checks as checks by section, the vm size and file cache checks, the denials matched to each rule, the blocked warnings, captured notices and the progress line
@@ -172,7 +173,7 @@ container/index.ts             public surface
 container/spec.ts              the container spec: mounts (the workspace root read-write), the install's network, the forwarder's service ports and host, service volumes left out of the hand-over, env (env.set under the launcher's variables, the hand-over wait flag), the env.allow names env.set leaves forwarded, labels, the mount table check (no target twice, no mount over the image's paths)
 container/volumes.ts           the volume plan: agent, overlay and mounts.volumes names, targets and labels; userVolume names a volume shared by every folder of the state dir
 container/names.ts             container and volume names (agent, cache and shared volumes, with isSharedVolumeName), the pod and service container names; the install's agent volume name and isLegacyAgentVolume for the per-repository ones of older launchers
-container/services.ts          ensureServices and stopServices for the install: one pod on the install's network under the services alias, the service specs, the volume hand-over to each service user, the ready wait with its log tail, decide (fresh, refresh or keep by services hash) and the stop of all services at once; serviceVolumes for reset --services
+container/services.ts          ensureServices and stopServices for the install: one pod on the install's network under the services alias, the service specs, the volume hand-over to each service user, the ready wait with its log tail, decide (fresh, refresh or keep by services hash) and the stop of all services at once; serviceVolumes, the service volumes the config names
 container/lifecycle.ts         startLaunchContainer and removeLaunchContainer: one container per launch, mount points, volume hand-over (chownRoots, also for the pod) (fatal when the entrypoint waits for it, a warning otherwise), the wait for the entrypoint's ready marker and the forwarder's status, the exited-during-startup error
 container/run-pi.ts            pi through exec, the pty only for a terminal, signals and resize, the terminal bridges
 container/clipboard.ts         the clipboard bridges: OSC 52 copies teed to pbcopy, pasted image paths and Ctrl+V images or image files copied into /tmp/pi-paste, an OSC 9 notice when an image import fails, held by the copy tee until pi's output is between escape sequences
@@ -449,7 +450,7 @@ tests/cli/harness.ts                 the CLI test harness, the managed pi layout
 tests/cli/commands.test.ts           the pi sandbox commands
 tests/cli/launch-packages.test.ts    the extension install before pi starts: inside the agent lock after the sync, the notices, offline, and the git refresh deferred while another project's launch runs
 tests/cli/launch-services.test.ts    a launch with services: the order pod, services, agent, the install's network, the forwarder's ports, the status file and pi sandbox status
-tests/cli/services-stop.test.ts      the services stopped by the sweep, reset --services and pi sandbox stop, and left alone by a plain reset and while a session runs
+tests/cli/services-stop.test.ts      the services stopped by the sweep and pi sandbox stop, and left alone while a session runs
 tests/cli/installs.test.ts           two installs on one engine: each brings up, tears down and sweeps only its own objects, and the VM stop counts both
 tests/cli/ground-lock.test.ts        the ground lock: its waiting line, the services under it, the idle teardown of services, relay, network and proxy, and the wait for the lock at the end of a session and in stop
 tests/cli/doctor.test.ts             the doctor, its file cache check among them, also when the sandbox does not start and with the release off, and its default view end to end
@@ -507,7 +508,8 @@ tests/cli/mcp-sign-in.test.ts        the launch-start MCP sign-in
 tests/cli/sandbox-proxy.test.ts      the proxy input
 tests/cli/terminal.test.ts           the host terminal
 tests/cli/notices.test.ts            notices printed once per install
-tests/cli/volumes.test.ts            volumes in the sweep, reset and status
+tests/cli/volumes.test.ts            volumes in the sweep and status
+tests/cli/restart.test.ts            pi sandbox restart: the session refusals, the stopped VM, the y/N and its refusal without a terminal, every volume kind, images and records removed, another install's volumes kept, the old flags and name
 tests/live/colima.live.test.ts       the conformance suite, volume ownership, read-only folder binds on the share (any letter case) and the image hint on the real engine
 tests/live/colima-relay.live.test.ts  the relay on the real engine
 tests/live/custom-provider.live.test.ts  a custom provider through the proxy

@@ -2,11 +2,9 @@ import { existsSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { LABELS } from "../../backend/index.ts";
 import { run } from "../../cli/index.ts";
-import { configVolumeName } from "../../container/index.ts";
 import { newLaunchId, registerLaunch } from "../../grants/index.ts";
 import { proxyToken } from "../../proxy/index.ts";
 import { processMark, sha256Hex, stateLayout } from "../../shared/index.ts";
-import { FAKE_NETWORK } from "../support/fake-backend.ts";
 import { createFakeBackend, createHarness, sweepNow } from "./harness.ts";
 
 type Fake = ReturnType<typeof createFakeBackend>;
@@ -41,11 +39,6 @@ const registerSession = async (stateDir: string, repoHash: string) => {
   });
 };
 
-const SERVICES = [
-  { name: "db", command: ["db"], volumes: [{ name: "db-data", target: "/data" }] },
-  { name: "cache", command: ["cache"] },
-];
-
 describe("stopping the services", () => {
   it("stops the idle services, then removes the pod, when the sweep runs", async () => {
     const fake = createFakeBackend();
@@ -69,59 +62,6 @@ describe("stopping the services", () => {
 
     expect(gracefulStops(fake)).toEqual([]);
     expect(fake.containers.has(pod)).toBe(true);
-  });
-
-  it("leaves the services to pi sandbox reset of a repository", async () => {
-    const fake = createFakeBackend();
-    const harness = await createHarness({ backend: () => fake.backend });
-    const hash = sha256Hex(harness.repoRoot);
-    const { pod } = plantServices(fake);
-
-    await harness.writeJson(stateLayout(harness.stateDir).repo(hash).record, { root: harness.repoRoot });
-
-    await registerSession(harness.stateDir, "e".repeat(64));
-
-    expect(await run(["sandbox", "reset"], harness.deps)).toBe(0);
-    expect(gracefulStops(fake)).toEqual([]);
-    expect(fake.containers.has(pod)).toBe(true);
-  });
-
-  it("removes the services and the service volumes under reset --services, and leaves the network to the ground teardown", async () => {
-    const fake = createFakeBackend();
-    const harness = await createHarness({ backend: () => fake.backend });
-    const { pod, first, second } = plantServices(fake);
-    const data = configVolumeName(harness.stateDir, "db-data");
-
-    await harness.writeJson(harness.userConfigFile, { services: SERVICES });
-
-    await fake.backend.ensureVolume(data);
-
-    await fake.backend.prepareNetwork();
-
-    expect(await run(["sandbox", "reset", "--services"], harness.deps)).toBe(0);
-    expect(gracefulStops(fake)).toEqual([first, second].sort());
-    expect(fake.containers.has(pod)).toBe(false);
-    expect(fake.networks.has(FAKE_NETWORK)).toBe(true);
-    expect(fake.volumes.has(data)).toBe(false);
-    expect(harness.stdout()).toContain(`removed volume ${data}`);
-  });
-
-  it("refuses reset --services while a pi session runs", async () => {
-    const fake = createFakeBackend();
-    const harness = await createHarness({ backend: () => fake.backend });
-    const { pod } = plantServices(fake);
-    const data = configVolumeName(harness.stateDir, "db-data");
-
-    await harness.writeJson(harness.userConfigFile, { services: SERVICES });
-
-    await fake.backend.ensureVolume(data);
-
-    await registerSession(harness.stateDir, "e".repeat(64));
-
-    expect(await run(["sandbox", "reset", "--services"], harness.deps)).toBe(1);
-    expect(harness.stderr()).toContain("a pi session is running, so the services were kept");
-    expect(fake.containers.has(pod)).toBe(true);
-    expect(fake.volumes.has(data)).toBe(true);
   });
 
   it("stops the idle services before pi sandbox stop stops the VM", async () => {

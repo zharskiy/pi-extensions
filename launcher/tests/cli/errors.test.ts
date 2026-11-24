@@ -60,15 +60,12 @@ describe("error rendering", () => {
     const harness = await createHarness();
 
     expect(await run(["sandbox", "config", "--json", "--help"], harness.deps)).toBe(0);
-    expect(await run(["sandbox", "reset", "-h"], harness.deps)).toBe(0);
+    expect(await run(["sandbox", "restart", "-h"], harness.deps)).toBe(0);
     expect(await run(["sandbox", "status", "--help"], harness.deps)).toBe(0);
     expect(harness.stdout()).toBe(
-      [
-        "usage: pi sandbox config [--json]",
-        "usage: pi sandbox reset [--services | --agent]",
-        "usage: pi sandbox status",
-        "",
-      ].join("\n"),
+      ["usage: pi sandbox config [--json]", "usage: pi sandbox restart", "usage: pi sandbox status", ""].join(
+        "\n",
+      ),
     );
     expect(harness.stderr()).toBe("");
   });
@@ -78,15 +75,6 @@ describe("error rendering", () => {
 
     expect(await run(["sandbox", "-v"], harness.deps)).toBe(1);
     expect(await run(["sandbox", "-h"], harness.deps)).toBe(1);
-  });
-
-  it("refuses an unknown reset option and names its usage", async () => {
-    const harness = await createHarness();
-
-    expect(await run(["sandbox", "reset", "--volumes"], harness.deps)).toBe(1);
-    expect(harness.stderr()).toBe(
-      'pi-sandbox: unknown reset option "--volumes"\n  hint: pi sandbox reset [--services | --agent]\n',
-    );
   });
 
   it("no longer has a gc command", async () => {

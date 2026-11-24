@@ -75,7 +75,7 @@ const containerLines = async (backend: Backend, context: LaunchContext) => {
   ];
 };
 
-const LEFTOVER_HINT = "left by an older launcher; pi sandbox reset --agent removes it";
+const LEFTOVER_HINT = "left by an older launcher; pi sandbox restart removes it";
 
 const leftoverFolders = async (stateDir: string) => {
   const layout = stateLayout(stateDir);

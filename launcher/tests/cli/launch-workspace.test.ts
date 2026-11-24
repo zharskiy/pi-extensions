@@ -135,14 +135,14 @@ describe("pi in a project of the workspace root", () => {
     expect(await sandboxWriteRoots(await sandboxReachOf(harness.deps))).toEqual([project, harness.work]);
   });
 
-  it("runs status and reset in a folder outside git", async () => {
+  it("runs status and restart in a folder outside git", async () => {
     const harness = await workspaceHarness({ repos: [] }, { backend: () => createFakeBackend().backend });
     const deps = { ...harness.deps, cwd: harness.work };
 
     expect(await run(["sandbox", "status"], deps)).toBe(0);
     expect(harness.stdout()).toContain(`folder: ${harness.work}\n`);
-    expect(await run(["sandbox", "reset"], deps)).toBe(0);
-    expect(harness.stdout()).toContain(`no sandbox for ${harness.work}\n`);
+    expect(await run(["sandbox", "restart"], deps)).toBe(0);
+    expect(harness.stdout()).toContain("restarted the sandbox VM\n");
   });
 
   it("refuses the home and a folder under a dotfiles home, and still runs status there", async () => {

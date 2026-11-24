@@ -577,7 +577,7 @@
                 }
               }
             },
-            "description": "Named volumes, one per sandbox VM, mounted read-write and owned by the service's user; they keep their data until pi sandbox reset --services."
+            "description": "Named volumes, one per sandbox VM, mounted read-write and owned by the service's user; they keep their data until pi sandbox restart."
           },
           "tmpfs": {
             "type": "array",

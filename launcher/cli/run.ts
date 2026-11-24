@@ -7,7 +7,7 @@ import { helpCommand, usageOf } from "./commands/help.ts";
 import { initCommand, YES_FLAG } from "./commands/init.ts";
 import { listCommand } from "./commands/list.ts";
 import { assertOptions } from "./commands/options.ts";
-import { AGENT_FLAG, resetCommand, SERVICES_FLAG } from "./commands/reset.ts";
+import { RESTART_OPTIONS_HINT, restartCommand } from "./commands/restart.ts";
 import { statusCommand } from "./commands/status.ts";
 import { stopCommand } from "./commands/stop.ts";
 import { type CliDeps, writeLine } from "./deps.ts";
@@ -20,6 +20,7 @@ const UNEXPECTED_EXIT = 70;
 interface Command {
   run: (deps: CliDeps, args: string[]) => Promise<number> | number;
   options?: string[];
+  optionsHint?: string;
 }
 
 const printVersion = async (deps: CliDeps) => {
@@ -37,20 +38,25 @@ const COMMANDS: Record<string, Command> = {
   doctor: { run: doctorCommand, options: [VERBOSE_FLAG] },
   config: { run: configCommand, options: [JSON_FLAG] },
   egress: { run: egressCommand },
-  reset: { run: resetCommand, options: [SERVICES_FLAG, AGENT_FLAG] },
+  restart: { run: restartCommand, options: [], optionsHint: RESTART_OPTIONS_HINT },
   stop: { run: stopCommand, options: [] },
   help,
   "--help": help,
   "--version": { run: printVersion },
 };
 
+const RENAMED: Record<string, string> = { reset: "restart" };
+
 const HELP_FLAGS = ["-h", "--help"];
+
+const unknownCommandHint = (name: string) =>
+  Object.hasOwn(RENAMED, name) ? `pi sandbox ${name} is now pi sandbox ${RENAMED[name]}` : "pi sandbox help";
 
 const sandbox = (deps: CliDeps, [name = "help", ...args]: string[]) => {
   const command = Object.hasOwn(COMMANDS, name) ? COMMANDS[name] : undefined;
 
   if (command === undefined) {
-    throw new LauncherError(`unknown command "pi sandbox ${name}"`, "pi sandbox help");
+    throw new LauncherError(`unknown command "pi sandbox ${name}"`, unknownCommandHint(name));
   }
 
   if (command.options === undefined) {
@@ -63,7 +69,7 @@ const sandbox = (deps: CliDeps, [name = "help", ...args]: string[]) => {
     return 0;
   }
 
-  assertOptions(name, args, command.options);
+  assertOptions(name, args, command.options, command.optionsHint);
 
   return command.run(deps, args);
 };

@@ -26,8 +26,8 @@ const COMMANDS: Array<[string, string]> = [
   ["pi sandbox egress revoke <host[:port]>", "remove a grant"],
   ["pi sandbox egress list [--denied]", "the grants, or the hosts the proxy blocked"],
   [
-    "pi sandbox reset [--services | --agent]",
-    "remove this folder's sandbox with its overlay volumes, once none of its sessions runs; --services instead removes the sandbox's services and their data, and --agent the pi folder every folder's sandbox shares, once no pi session runs",
+    "pi sandbox restart",
+    "remove the sandbox's containers, volumes and images and restart the VM, once no pi session runs; the next pi rebuilds them, and it asks first when service data or sandbox sessions would go",
   ],
   ["pi sandbox stop", "stop the services and the sandbox VM when no pi session runs"],
   [
