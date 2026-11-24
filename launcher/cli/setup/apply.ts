@@ -156,7 +156,7 @@ export const stepsFrontEnd = (steps: Steps, facts: HostFacts, timers: Timers): A
     }
 
     if (PROBLEMS.has(event.kind)) {
-      steps.failed(first.replace(/^✖ /, ""), rest.join("\n"));
+      steps.failed(first.replace(/^✖ /, ""), rest.map((line) => line.trimStart()).join("\n"));
 
       return;
     }

@@ -474,7 +474,7 @@ describe("pinata init --yes", () => {
     expect(harness.stderr()).toBe(
       [
         "x Could not create the VM after 0s.",
-        "    no space left; see the colima log",
+        "  no space left; see the colima log",
         "x Your settings are saved, but the sandbox VM is not ready. Fix the problem above, then run pinata init again. pinata doctor checks everything.",
         "",
       ].join("\n"),

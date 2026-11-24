@@ -202,7 +202,7 @@ describe("pinata restart", () => {
     expect(pinata.harness.stderr()).toBe(
       [
         "x Could not create the VM after 0s.",
-        "    colima would not start",
+        "  colima would not start",
         "pinata: the sandbox VM is deleted and could not be created again",
         "  hint: fix that, then run pinata restart, which creates it",
         "",
