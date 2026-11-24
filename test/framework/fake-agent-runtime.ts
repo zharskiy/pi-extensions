@@ -177,7 +177,7 @@ export const createFakeAgentRuntime = (extraModels: CatalogModel[] = []): FakeAg
         .map((model) => ({ ...modelChoiceOf(model), thinking: [...THINKING_LEVELS] }))
         .sort((left, right) => left.ref.localeCompare(right.ref)),
     defaultThinking: () => "medium",
-    skills: [],
+    skills: ["pinata-code-style"],
     skillDescriptions: {},
     skillPaths: {},
     skillCatalog: () =>

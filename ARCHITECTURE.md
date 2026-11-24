@@ -1,6 +1,6 @@
 # Architecture
 
-Fifteen pi extensions in one package, on a small set of shared layers. This file holds the rules that span folders; how each folder works is in its own `ARCHITECTURE.md`, linked below. Where things are is in [STRUCTURE.md](STRUCTURE.md).
+Fifteen pi extensions and several skills in one package, on a small set of shared layers. This file holds the rules that span folders; how each folder works is in its own `ARCHITECTURE.md`, linked below. Where things are is in [STRUCTURE.md](STRUCTURE.md).
 
 ## Layers
 

@@ -37,7 +37,7 @@ const setup = ({ trusted = false, seeded = true } = {}) => {
   const { host, runtime, services } = harness;
 
   host.info.projectTrusted = trusted;
-  runtime.skills = ["docs", "search"];
+  runtime.skills = ["docs", "search", "pinata-code-style"];
 
   const projectFile = join(host.info.cwd, ".pi", "pi-subagents.json");
   const userFile = join(host.info.agentDir, "pi-subagents.json");

@@ -46,6 +46,7 @@
     "extensions/*/prompts/**",
     "extensions/subagents/agents",
     "extensions/*/README.md",
+    "skills",
     "README.md",
     "LICENSE",
     "CHANGELOG.md",
@@ -71,6 +72,9 @@
       "./extensions/transcript/index.ts",
       "./extensions/model-default/index.ts",
       "./extensions/prune/index.ts"
+    ],
+    "skills": [
+      "./skills"
     ]
   },
   "scripts": {

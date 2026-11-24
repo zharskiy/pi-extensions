@@ -10,6 +10,7 @@ pinata/
 │   ├── ui-kit/              theme-aware rendering components
 │   └── extension-manager/   createManagedExtension, plugins, bus, settings
 ├── extensions/<name>/   15 extensions: index.ts api/ core/ ui/ tests/ (prompts/ agents/)
+├── skills/              pinata-code-style/SKILL.md, the shipped skill the implementer agent is granted
 ├── launcher/            the standalone `pinata` command and its `pi` link (the `pinata` bin): bin/ cli/ config/ workspace/ backend/ container/ image/ proxy/ grants/ hostpi/ provision/ shared/ examples/ schema/ tests/
 ├── test/
 │   ├── architecture.test.ts
@@ -37,7 +38,7 @@ pinata/
 
 ## Config files
 
-- `package.json`: version, `name` `@zharskiy/pinata`, `bin` (`pinata`, `launcher/bin/pinata.js`), `pi.extensions` (the 15 `extensions/<name>/index.ts` entries), the published `files`, and the scripts: `check` (typecheck, lint, knip, test), `build:launcher` (compiles `launcher/` to the gitignored `launcher/dist/`, run by `prepack`, because Node does not strip types under `node_modules`), `test`, `test:live`, `evals`, `lint`, `format`, `typecheck`, `knip`.
+- `package.json`: version, `name` `@zharskiy/pinata`, `bin` (`pinata`, `launcher/bin/pinata.js`), `pi.extensions` (the 15 `extensions/<name>/index.ts` entries), `pi.skills` (`./skills`), the published `files`, and the scripts: `check` (typecheck, lint, knip, test), `build:launcher` (compiles `launcher/` to the gitignored `launcher/dist/`, run by `prepack`, because Node does not strip types under `node_modules`), `test`, `test:live`, `evals`, `lint`, `format`, `typecheck`, `knip`.
 - `tsconfig.json`: strict NodeNext, no emit, over every code folder.
 - `vitest.config.ts`: three projects, picked with `--project`:
   - `unit` (`npm run test`): every `tests/` folder (`launcher/tests/` included) and `test/`, without `*.live.test.ts`.
@@ -51,5 +52,5 @@ pinata/
 
 ## Published vs development-only
 
-- Published (`files` in `package.json`): `launcher/` (with the built `launcher/dist/`, without `bin/pi-dev.js`, `bin/pinata-dev.js` and `tsconfig.build.json`), `platform/` (`pi-adapter/`, `extension-manager/`, `ui-kit/`, `shared/`), each extension's `index.ts`, `api/`, `core/`, `ui/`, `prompts/`, `README.md` and the subagents `agents/` (the shipped agent files, which name each agent's `model` and a `limit` of at most 200000; the implementer's differs from the other leads'), plus the root `README.md`, `LICENSE`, `ARCHITECTURE.md`, `STRUCTURE.md` and `AGENTS.md`; every `tests/` folder is excluded.
+- Published (`files` in `package.json`): `launcher/` (with the built `launcher/dist/`, without `bin/pi-dev.js`, `bin/pinata-dev.js` and `tsconfig.build.json`), `platform/` (`pi-adapter/`, `extension-manager/`, `ui-kit/`, `shared/`), `skills/`, each extension's `index.ts`, `api/`, `core/`, `ui/`, `prompts/`, `README.md` and the subagents `agents/` (the shipped agent files, which name each agent's `model` and a `limit` of at most 200000; the implementer's differs from the other leads'), plus the root `README.md`, `LICENSE`, `ARCHITECTURE.md`, `STRUCTURE.md` and `AGENTS.md`; every `tests/` folder is excluded.
 - Development-only: `test/` (with `test/framework/` and `test/evals/`), every `tests/`, `future-plans/`, `.github/` and the config files.

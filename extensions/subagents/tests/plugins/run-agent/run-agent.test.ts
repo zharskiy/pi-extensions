@@ -432,7 +432,7 @@ describe("run_agent batches", () => {
     const [open, closed] = harness.runtime.children.map((child) => child.spec);
 
     expect(open.tools).toBeUndefined();
-    expect(open.skills).toEqual([]);
+    expect(open.skills).toEqual(["pinata-code-style"]);
     expect(closed).toMatchObject({ tools: [], skills: [] });
   });
 
